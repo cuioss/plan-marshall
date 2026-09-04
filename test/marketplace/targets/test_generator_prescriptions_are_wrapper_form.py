@@ -34,7 +34,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from _documented_example_scan import DEFECTIVE_GENERATOR_CALL, WRAPPER_GENERATOR_CALL
+from _documented_example_scan import (
+    DEFECTIVE_BARE_PYTHON_TARGETS_PREFIX,
+    DEFECTIVE_GENERATOR_CALL,
+    WRAPPER_GENERATOR_CALL,
+)
 from conftest import PROJECT_ROOT
 
 #: The tracked source roots the guard walks, as ``(label, relative path)``.
@@ -157,6 +161,77 @@ def test_no_file_prescribes_the_bare_generator_invocation():
         f'{len(offenders)} file(s) of {len(files)} scanned across {labels} prescribe the bare '
         f'generator invocation, which exits 127 outside the wrapper — use '
         f'{WRAPPER_GENERATOR_CALL!r}:\n  ' + '\n  '.join(sorted(offenders))
+    )
+
+
+def _lines_prescribing_bare_python_targets(text: str) -> list[str]:
+    """Lines that OPEN with the host-interpreter invocation of a targets script.
+
+    Prefix-matched after stripping, per the discriminator documented beside
+    :data:`DEFECTIVE_BARE_PYTHON_TARGETS_PREFIX`: a prescription is a line the
+    reader copies and therefore begins with the command, while an explanatory
+    mention is introduced by a backtick or by sentence text. Shared by the sweep
+    and by its positive control so the two cannot diverge.
+    """
+    return [
+        line
+        for line in text.splitlines()
+        if line.strip().startswith(DEFECTIVE_BARE_PYTHON_TARGETS_PREFIX)
+    ]
+
+
+def test_the_bare_python_detector_fires_on_a_constructed_prescription():
+    """Positive control: the detector matches the form it is meant to forbid.
+
+    The sweep below passes over a clean tree, and a clean tree cannot show that
+    the needle still matches anything — the failure mode the sibling literal
+    answers with ``pyproject.toml`` as a real matched site. This literal has no
+    such site, because the one prescription that carried it was repaired rather
+    than exempted, so the control is CONSTRUCTED from the shared constant. It is
+    built by concatenation and never re-spelled, so this file stays outside its
+    own sweep.
+    """
+    prescription = f'{DEFECTIVE_BARE_PYTHON_TARGETS_PREFIX}claude/content_drift_cli.py'
+
+    assert _lines_prescribing_bare_python_targets(prescription) == [prescription], (
+        'the detector no longer matches a bare prescription line — the sweep below '
+        'would pass over a tree that reintroduced the defect'
+    )
+    assert _lines_prescribing_bare_python_targets(f'  {prescription}') == [f'  {prescription}'], (
+        'an indented prescription (inside a fenced block) must still match'
+    )
+    assert not _lines_prescribing_bare_python_targets(f'A bare `{prescription}` fails because …'), (
+        'an explanatory prose mention must NOT match — forbidding it would make the '
+        'repaired sites unable to say which form is broken'
+    )
+
+
+def test_no_file_prescribes_the_bare_python_targets_invocation():
+    """No document hands the reader a targets script on the host interpreter.
+
+    The sibling sweep above forbids the ``uv run`` spelling; the shared constant's
+    docstring already noted that dropping that prefix fails on ``PyYAML`` instead,
+    but nothing enforced it — and the unenforced half is exactly the one that
+    shipped in the steward upgrade flow. Same walk, same population, second
+    literal.
+    """
+    files, labels = _walk_scanned_files()
+    assert files, f'the walk over {labels} read no files at all'
+
+    offenders: list[str] = []
+    for path in files:
+        try:
+            text = path.read_text(encoding='utf-8')
+        except (OSError, UnicodeDecodeError):
+            continue
+        if _lines_prescribing_bare_python_targets(text):
+            offenders.append(path.relative_to(PROJECT_ROOT).as_posix())
+
+    assert not offenders, (
+        f'{len(offenders)} file(s) of {len(files)} scanned across {labels} prescribe a '
+        f'marketplace/targets script on the host interpreter, which dies on the project '
+        f'PyYAML dependency before running — use the ./pw wrapper alias:\n  '
+        + '\n  '.join(sorted(offenders))
     )
 
 

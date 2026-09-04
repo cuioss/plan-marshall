@@ -105,6 +105,15 @@ generate = "uv run python marketplace/targets/generate.py"
 generate-claude = "uv run python marketplace/targets/generate.py --target claude --output target/claude"
 generate-opencode = "uv run python marketplace/targets/generate.py --target opencode --output target/opencode"
 
+# Claude-target content-drift gate — the Stage 3 verify sub-step of the
+# marshall-steward `upgrade` verb. It is an alias for the same reason the
+# generate-* pair above is one: the CLI imports `marketplace.targets`, which
+# pulls in PyYAML, and that dependency lives in the uv-owned project .venv. A
+# bare `python3 marketplace/targets/claude/content_drift_cli.py` resolves the
+# host interpreter instead and dies on `ModuleNotFoundError: No module named
+# 'yaml'`, so the wrapper is what makes the documented command runnable at all.
+content-drift = "uv run python marketplace/targets/claude/content_drift_cli.py"
+
 # =============================================================================
 # Tool Configurations
 # =============================================================================

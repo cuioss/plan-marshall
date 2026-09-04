@@ -498,8 +498,17 @@ thin CLI over the content-drift engine. Exit `0` means the emitted
 named in the TOON report:
 
 ```bash
-python3 marketplace/targets/claude/content_drift_cli.py
+./pw content-drift
 ```
+
+Go through the `./pw` wrapper for the same reason Stage 1's
+`regenerate-target-tree` does: the CLI imports `marketplace.targets`, which pulls
+in PyYAML, and that dependency lives in the uv-owned project `.venv` rather than
+on the host interpreter. A bare
+`python3 marketplace/targets/claude/content_drift_cli.py` therefore fails with
+`ModuleNotFoundError: No module named 'yaml'` before reaching any drift logic —
+so the wrapper is not a stylistic preference here, it is what makes the command
+run.
 
 If drift is reported, the fix is to re-run Stage 1's `generate.py` emit — the
 source `.md` files under `marketplace/bundles/` are canonical and MUST NOT be
