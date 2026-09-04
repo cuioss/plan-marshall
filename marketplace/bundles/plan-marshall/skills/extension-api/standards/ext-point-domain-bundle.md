@@ -65,11 +65,7 @@ See [extension-contract.md](extension-contract.md) for the complete method contr
 
 Among the declarations a domain bundle may make is `provides_file_globs()` — the path globs that characterise the domain's own file types. It is **optional and defaults to the empty list**, so an existing manifest that does not override it stays a valid implementor with no edit. The returned globs seed `skill_domains.{domain}.file_globs`, which the domain detector reads on its glob inclusion leg; they are domain-detection knowledge and contribute no `build.map` route.
 
-The accessor is declarable by a domain-bundle manifest's extension precisely because this ext-point's population is the one the seeding consumer reads: `discover_all_extensions()` locates a bundle's `extension.py` through the `implements:` declaration this document requires and instantiates the module's `Extension` class, and that is the population `convert_extension_to_domain_config` iterates when it writes the seed.
-
-The build-system extensions are **outside this ext-point's population**: each exposes a `BuildExtension` class and is reached only by the separate, name-driven `discover_build_extensions()` collector, which the domain-config conversion never consults. The exclusion turns on that discovery criterion alone — a build extension does declare `get_skill_domains()`, but the domain it names carries empty `profiles` and exists only to key its `build_map` routes, so it is not a declarant of domain-detection globs. The file-type knowledge a build system owns is declared as Axis-B `classify_globs()` routes instead.
-
-See [extension-contract.md § provides_file_globs](extension-contract.md#provides_file_globs) for the glob dialect, the authoring rule, and the seeding precedence.
+See [extension-contract.md § provides_file_globs](extension-contract.md#provides_file_globs) for the glob dialect, the authoring rule, the seeding precedence, and the discovery-population criterion that makes this ext-point's population exactly the set of legitimate declarants — and the build-system extensions, reached by a separate collector, not.
 
 ## Hook API
 
