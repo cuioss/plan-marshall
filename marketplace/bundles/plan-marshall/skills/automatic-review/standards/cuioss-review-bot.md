@@ -513,18 +513,25 @@ recorded above and contributes nothing to any yield figure.
 
 ### The reproduction, re-derived against the live generation
 
-**The empty yield does not reproduce as a knob effect, and that non-reproduction SUPERSEDES the knob
-variation rather than being one of its cells.** The silence run varied the model across its cells and
+**The empty yield does not reproduce as a model effect, and that non-reproduction SUPERSEDES the
+model arm rather than being one of its cells.** The silence run varied the model across its cells and
 the published review stayed byte-identical at 242 bytes. A result that does not move when the model
-changes is not a model result — so the empty list was never a knob to tune, and the arm that would
-have tuned one was retired by this finding rather than by preference.
+changes is not a model result — so the model arm was retired by this finding rather than by
+preference.
 
-The cause is located, and it is not configurable. "No major issues detected" is not a severity
-filter; it is the text rendered when `key_issues_to_review` returns empty, and the suppression lives
-in that field's own description inside the pinned image (`pr_reviewer_prompts.toml:150`) — a ceiling
-read as a target, a scope narrower than the charter's, a confidence gate, and explicit permission to
-return nothing. `extra_instructions` is appended as its own earlier block, so a charter argues
-*alongside* that schema and can never replace it.
+⚠ **That is one knob, not three.** `model` is the only knob any yield cell varied, so the result
+above is evidence about `model` alone. The other two are retired on separate grounds and not on this
+one: `reasoning_effort` is unreachable rather than measured-null, and `temperature` is **unmeasured
+for yield**. The knob table below states each; nothing here upgrades either into a measured negative.
+
+The cause is located, and its load-bearing clause cannot be configured away. "No major issues
+detected" is not a severity filter; it is the text rendered when `key_issues_to_review` returns
+empty, and the suppression lives in that field's own description inside the pinned image
+(`pr_reviewer_prompts.toml:150`) — a ceiling read as a target, a scope narrower than the charter's, a
+confidence gate, and explicit permission to return nothing. Configuration reaches part of that
+description and not the rest: `.pr_agent.toml` sets `num_max_findings`, which is interpolated into
+it, and `extra_instructions`, which is appended as its own earlier block — so a charter argues
+*alongside* the schema rather than replacing it, and no key removes the empty-list permission.
 
 ⛔ **A green run is not a reproduction result.** An empty review is exactly what G1 produced, so "the
 reviewer ran and reported nothing" distinguishes nothing. The known-answer cases are
