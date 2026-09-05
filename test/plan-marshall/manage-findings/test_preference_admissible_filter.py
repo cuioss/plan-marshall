@@ -20,7 +20,14 @@ import json
 from argparse import Namespace
 
 import pytest
-from _manage_findings_fixtures import _add_ns, cmd_add, cmd_query, query_findings_unified
+from _manage_findings_fixtures import (
+    _add_ns,
+    _qgate_add_ns,
+    cmd_add,
+    cmd_qgate_add,
+    cmd_query,
+    query_findings_unified,
+)
 
 #: The globals of the core module ``cmd_query`` actually dispatches into, reached
 #: through a function the fixtures module already exports rather than by importing
@@ -37,6 +44,18 @@ _CORE_GLOBALS = query_findings_unified.__globals__
 _QUERY_FINDINGS = _CORE_GLOBALS['query_findings']
 _QUERY_FINDINGS_UNIFIED = _CORE_GLOBALS['query_findings_unified']
 
+#: The ``bot_registry`` module's OWN namespace, reached the same way — a function's
+#: ``__globals__`` IS its module's namespace, and ``_registry_bot_kinds`` is that
+#: module's ``bot_kinds``. Reaching it through the already-bound function rather
+#: than through ``import bot_registry`` or ``sys.modules`` keeps the identity
+#: argument above intact: this is provably the module object the lazy ``import
+#: bot_registry`` inside ``recognized_bot_kinds`` resolves to, because it is the
+#: one whose function ``_findings_core`` already holds. Patching ``bot_kinds``
+#: HERE therefore drives the REAL ``recognized_bot_kinds`` derivation — which is
+#: what the empty-registry controls below need, since patching
+#: ``_recognized_bot_kinds`` itself would bypass the very derivation under test.
+_REGISTRY_GLOBALS = _CORE_GLOBALS['_registry_bot_kinds'].__globals__
+
 # Plan ids this module's tests file findings against — seeded by the autouse
 # ``_materialize_declared_plan_dirs`` fixture in ``test/conftest.py``.
 PLAN_IDS = (
@@ -51,6 +70,9 @@ PLAN_IDS = (
     'pref-adm-basis-flag-off',
     'pref-adm-basis-unified',
     'pref-adm-basis-degraded-self',
+    'pref-adm-basis-unified-off',
+    'pref-adm-basis-empty-registry',
+    'pref-adm-basis-nonempty-registry',
 )
 
 #: The payload key carrying the two-state disclosure of WHICH authorship check
@@ -64,6 +86,15 @@ BASIS_KEY = 'preference_admissibility_basis'
 #: the store on a legacy, de-registered or hand-edited record but must never clear
 #: the gate. It is a PREFERENCE, not the control itself — see below.
 _LEGACY_PRODUCER_BOT_KIND = 'sonarcloud'
+
+#: The recognized reviewer identity the shared corpus attributes its admissible
+#: pr-comment to. Named once so the corpus and the registry-shape controls below
+#: cannot drift onto two different values — a control that stocks the registry
+#: with a bot_kind the corpus never seeded would assert nothing. It is a literal
+#: rather than a derivation because ``cmd_add`` validates ``bot_kind`` against the
+#: live registry: if this identity were ever de-registered the seeding itself
+#: fails loudly, so the value cannot silently rot the way an unchecked one would.
+_RECOGNIZED_REVIEWER_BOT_KIND = 'coderabbit'
 
 
 def _derive_unrecognized_bot_kind():
@@ -172,7 +203,7 @@ def _seed_mixed_corpus(plan_context, plan_id):
             title='Reviewer claim',
             detail='positively attributed to a recognized reviewer bot',
             author='coderabbitai',
-            bot_kind='coderabbit',
+            bot_kind=_RECOGNIZED_REVIEWER_BOT_KIND,
         )
     )
     cmd_add(
@@ -184,6 +215,50 @@ def _seed_mixed_corpus(plan_context, plan_id):
         )
     )
     _write_unrecognized_bot_comment(plan_context, plan_id, 'Spurious claim')
+
+
+#: The Q-Gate phase the slice below is seeded under. Any phase in ``QGATE_PHASES``
+#: would do — the unified read merges pending records across every phase — so one
+#: is named here rather than spread across the assertions.
+_QGATE_PHASE = '5-execute'
+
+
+def _seed_qgate_slice(plan_id):
+    """File one inadmissible and one admissible finding into the Q-GATE slice.
+
+    ``_seed_mixed_corpus`` stocks only the per-plan store, so a unified read over
+    it exercises the Q-Gate narrowing against an EMPTY slice — the narrowing runs
+    over nothing and every assertion downstream holds whether or not it ran at
+    all. This seeds the other half so the Q-Gate slice is non-empty and its
+    narrowing is observable in both directions.
+
+    Both shapes are ones the ``qgate add`` verb actually produces. That bounds
+    what the Q-Gate slice can demonstrate: ``add_qgate_finding`` accepts and
+    persists no ``bot_kind``, so a bot-ATTRIBUTED Q-Gate pr-comment is not a
+    record this system can write, and fabricating one would pin the gate to a
+    shape it will never meet. The admissible member here is therefore a
+    non-comment tool finding — the same admissible class the per-plan corpus
+    carries — while the inadmissible member is the pr-comment-without-``bot_kind``
+    shape that IS the threat the gate exists to stop.
+    """
+    cmd_qgate_add(
+        _qgate_add_ns(
+            plan_id=plan_id,
+            phase=_QGATE_PHASE,
+            type='pr-comment',
+            title='Q-Gate pipeline note',
+            detail='a Q-Gate pr-comment with no bot_kind: indistinguishable from pipeline traffic',
+        )
+    )
+    cmd_qgate_add(
+        _qgate_add_ns(
+            plan_id=plan_id,
+            phase=_QGATE_PHASE,
+            type='lint-issue',
+            title='Q-Gate lint finding',
+            detail='tool output in the Q-Gate slice: no author, never pipeline chatter',
+        )
+    )
 
 
 # =============================================================================
@@ -395,18 +470,120 @@ class TestPreferenceAdmissibilityBasis:
 
         assert BASIS_KEY not in result
 
-    def test_unified_read_reports_one_basis_for_both_slices(self, plan_context):
+    def test_unified_read_reports_one_basis_for_both_slices(self, plan_context, monkeypatch):
         # `--include-qgate` narrows two slices. The registry is resolved ONCE for
         # the whole query, so the single basis the payload carries describes both
         # — two independent resolutions could disagree and leave the caller with
         # no way to tell which slice each applied to.
+        #
+        # That property needs THREE things observed, and the count assertion is
+        # the load-bearing one: `qgate_included` is a literal constant in the
+        # payload, and `basis == 'recognized'` is what per-slice resolution would
+        # produce too, so neither can fail under the regression this test names.
+        # Counting the resolver calls can: move the resolution back inside each
+        # slice and the count becomes 2.
         plan_id = 'pref-adm-basis-unified'
         _seed_mixed_corpus(plan_context, plan_id)
+        _seed_qgate_slice(plan_id)
+
+        resolver_calls = []
+        real_resolver = _CORE_GLOBALS['_recognized_bot_kinds']
+
+        def _counting_resolver():
+            resolver_calls.append(1)
+            return real_resolver()
+
+        monkeypatch.setitem(_CORE_GLOBALS, '_recognized_bot_kinds', _counting_resolver)
 
         result = cmd_query(_list_ns(plan_id, preference_admissible=True, include_qgate=True))
 
         assert result['qgate_included'] is True
         assert result[BASIS_KEY] == 'recognized'
+        # ONE resolution for the whole query — the property the docstring names.
+        assert len(resolver_calls) == 1
+        # And both slices were demonstrably narrowed, in both directions: each
+        # shed its inadmissible member and kept its admissible one. Without this
+        # the count above could be satisfied by a query that resolved once and
+        # then narrowed only half of what it returned.
+        assert result['plan_count'] == 2
+        assert result['qgate_count'] == 1
+        assert _titles(result) == ['Q-Gate lint finding', 'Reviewer claim', 'Unused import']
+        # `total_count` spans both slices UNNARROWED (4 per-plan + 2 Q-Gate), so
+        # the two counts above are readable as narrowings rather than as totals.
+        assert result['total_count'] == 6
+
+    def test_unified_read_narrows_nothing_when_the_flag_is_off(self, plan_context):
+        # The matched control for the assertion set above: the same two seeded
+        # slices, flag OFF, return every member. It is what makes the counts above
+        # attributable to the narrowing rather than to the seeding.
+        plan_id = 'pref-adm-basis-unified-off'
+        _seed_mixed_corpus(plan_context, plan_id)
+        _seed_qgate_slice(plan_id)
+
+        result = cmd_query(_list_ns(plan_id, include_qgate=True))
+
+        assert result['plan_count'] == 4
+        assert result['qgate_count'] == 2
+        assert result['filtered_count'] == 6
+        assert BASIS_KEY not in result
+
+
+# =============================================================================
+# Test: an empty derived registry is UNRESOLVED, not resolved-and-empty
+# =============================================================================
+
+
+class TestEmptyRegistryIsTreatedAsUnresolved:
+    """An EMPTY derived reviewer set degrades, exactly as an unloadable one does.
+
+    ``bot_registry`` reaches an empty set WITHOUT raising — its loader returns
+    early when the standards dir is absent, and skips a doc it cannot read — so
+    emptiness at this seam is a failure to resolve the population, never a
+    population that was read and found empty. Handing the empty ``frozenset`` on
+    would publish basis ``recognized`` while every bot-attributed pr-comment
+    failed the membership test: the strong check reported over a population
+    nothing ever read.
+
+    Both tests below patch ``bot_kinds`` in the REGISTRY's own namespace rather
+    than ``_recognized_bot_kinds`` in the core's. The sibling class above patches
+    the latter because its subject is the consumer's handling of the ``None``
+    sentinel; here the subject is the DERIVATION that decides whether to produce
+    that sentinel at all, so patching it away would bypass the code under test.
+
+    The two differ in exactly one input — an empty vs a non-empty registry — and
+    the non-empty case is what stops the empty one from passing vacuously: the
+    same patch seam must still yield the strong check when the registry has
+    content, so the degrade is attributable to EMPTINESS and not to the patching.
+    """
+
+    def test_empty_registry_reports_presence_only_and_admits_present_bot_kinds(
+        self, plan_context, monkeypatch
+    ):
+        plan_id = 'pref-adm-basis-empty-registry'
+        _seed_mixed_corpus(plan_context, plan_id)
+        monkeypatch.setitem(_REGISTRY_GLOBALS, 'bot_kinds', lambda: [])
+
+        result = cmd_query(_list_ns(plan_id, preference_admissible=True))
+
+        assert result[BASIS_KEY] == 'presence_only'
+        # The degrade admits any PRESENT `bot_kind` — including 'Spurious claim',
+        # the de-registered value the strong check excludes. 'Pipeline note' is
+        # absent from this list because its `bot_kind` is ABSENT: the threat the
+        # gate actually defends against stays excluded on the degraded path too.
+        assert _titles(result) == ['Reviewer claim', 'Spurious claim', 'Unused import']
+
+    def test_non_empty_registry_still_reports_recognized(self, plan_context, monkeypatch):
+        plan_id = 'pref-adm-basis-nonempty-registry'
+        _seed_mixed_corpus(plan_context, plan_id)
+        monkeypatch.setitem(
+            _REGISTRY_GLOBALS, 'bot_kinds', lambda: [_RECOGNIZED_REVIEWER_BOT_KIND]
+        )
+
+        result = cmd_query(_list_ns(plan_id, preference_admissible=True))
+
+        assert result[BASIS_KEY] == 'recognized'
+        # The strong check runs: the de-registered 'Spurious claim' is excluded.
+        assert _titles(result) == ['Reviewer claim', 'Unused import']
 
 
 # =============================================================================
