@@ -1,0 +1,1677 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
+"""
+Manage run-configuration.json - unified entry point.
+
+Provides operations for managing .plan/run-configuration.json files
+including creation, validation, structure verification, and directory cleanup.
+
+Output: TOON to stdout with operation results.
+"""
+
+import argparse
+import json
+import statistics
+from pathlib import Path
+from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+from constants import CLEANUP_TARGET_ALL, CLEANUP_TARGETS, VALID_WARNING_CATEGORIES
+from file_ops import output_toon, read_json, safe_main, write_json
+from input_validation import check_field_type, check_required_fields
+from marketplace_paths import resolve_main_anchored_path
+
+# Constants for timeout handling
+SAFETY_MARGIN = 1.25  # Multiplier applied to persisted values on retrieval
+HIGHER_WEIGHT = 0.80  # Weight given to higher value during update
+MINIMUM_TIMEOUT_SECONDS = 120  # Floor for timeout values - prevents unreasonably short timeouts
+
+# Architecture-refresh enums and defaults
+ARCHITECTURE_REFRESH_TIER_0_VALUES = ('enabled', 'disabled')
+ARCHITECTURE_REFRESH_TIER_0_DEFAULT = 'enabled'
+ARCHITECTURE_REFRESH_TIER_1_VALUES = ('prompt', 'auto', 'disabled')
+ARCHITECTURE_REFRESH_TIER_1_DEFAULT = 'prompt'
+
+# Build-queue upper-limit clamp bounds (the single source of truth for the
+# adaptive stale-reclaim threshold; build_queue.py imports these). The knob is
+# monotonic-up toward the longest observed real build held-duration, floored at
+# 600 s (10 min) so a legitimately long build is never falsely reaped, and capped
+# at 3600 s (1 h) so a single anomalously long held lock can never ratchet the
+# limit beyond an hour — the validate_lock_queue stale threshold (2 × limit) thus
+# tops out at 7200 s (2 h).
+_BUILD_QUEUE_UPPER_LIMIT_FLOOR_SECONDS = 600
+_BUILD_QUEUE_UPPER_LIMIT_CEILING_SECONDS = 3600
+
+# CI-run duration rolling-window bound. The adaptive CI-wait first-sleep seed is
+# the p50 (median) of the last N observed successful CI-run durations, persisted
+# per command key under the top-level ``ci_durations`` map (mirroring the
+# ``commands`` keyed shape). The window is bounded to the newest N entries — the
+# oldest is evicted on append once the window is full.
+CI_DURATION_WINDOW_SIZE = 5
+
+# Display-timezone knob. A DISPLAY-ONLY IANA zone name consumed exclusively at
+# rendering surfaces (see ``_display_time.render_timestamp``). Storage and
+# comparison stay UTC unconditionally — this value NEVER reaches a write or
+# compare path; that boundary is asserted by the display-timezone guard test.
+# The default ``'UTC'`` makes the unset behaviour byte-identical to the
+# pre-knob rendering, which is what makes the knob safe to land opt-in.
+DISPLAY_TIMEZONE_DEFAULT = 'UTC'
+
+# Commit co-author identity. The trailer every assistant-authored commit ends
+# with names the SYSTEM that produced the commit, never the assistant or vendor
+# behind it, and it does not vary by target. These defaults are what an
+# unconfigured project commits under; a project overrides them through the
+# ``commit-trailer set`` verb, which persists into the git-ignored
+# run-configuration.json. Because that file is git-ignored, a fresh clone (and
+# every cloud session) resolves to exactly these values — which is why the
+# default, not the override, is what the repository's own documentation states.
+COMMIT_TRAILER_NAME_DEFAULT = 'plan-marshall'
+COMMIT_TRAILER_EMAIL_DEFAULT = 'noreply@cuioss.de'
+
+DEFAULT_STRUCTURE = {
+    'version': 1,
+    'commands': {},
+    'maven': {
+        'acceptable_warnings': {'transitive_dependency': [], 'plugin_compatibility': [], 'platform_specific': []}
+    },
+}
+
+
+def _write_json_file(file_path: Path, data: dict) -> None:
+    """Write JSON data to file atomically via file_ops."""
+    write_json(file_path, data)
+
+
+def _output_success(action: str, **kwargs: Any) -> dict:
+    """Build success result dict."""
+    result: dict[str, Any] = {'status': 'success', 'action': action}
+    result.update(kwargs)
+    return result
+
+
+def _output_error(error: str) -> dict:
+    """Build error result dict."""
+    return {'status': 'error', 'error': 'config_error', 'message': error}
+
+
+# =============================================================================
+# Init Subcommand
+# =============================================================================
+
+
+def cmd_init(args: argparse.Namespace) -> dict:
+    """Initialize run-configuration.json with base structure."""
+    try:
+        config_path = get_run_config_path()
+
+        if config_path.exists() and not args.force:
+            return _output_success(
+                'skipped', path=str(config_path), reason='File already exists (use --force to overwrite)'
+            )
+
+        _write_json_file(config_path, DEFAULT_STRUCTURE)
+
+        action = 'recreated' if args.force and config_path.exists() else 'created'
+        return _output_success(action, path=str(config_path), structure=DEFAULT_STRUCTURE)
+
+    except Exception as e:
+        return _output_error(str(e))
+
+
+# =============================================================================
+# Validate Subcommand
+# =============================================================================
+
+
+def validate_run_config(data: dict[str, Any]) -> list[dict[str, Any]]:
+    """Validate run-configuration.json format."""
+    checks: list[dict[str, Any]] = []
+
+    # Check required fields
+    required = ['version', 'commands']
+    passed, missing = check_required_fields(data, required)
+    checks.append(
+        {'check': 'required_fields', 'passed': passed, 'fields': required, 'missing': missing if not passed else []}
+    )
+
+    # Check version is integer
+    if 'version' in data:
+        passed, msg = check_field_type(data, 'version', int)
+        checks.append({'check': 'version_type', 'passed': passed, 'message': msg})
+
+    # Check commands is object
+    if 'commands' in data:
+        passed, msg = check_field_type(data, 'commands', dict)
+        checks.append({'check': 'commands_object', 'passed': passed, 'message': msg})
+
+        # Validate command entries
+        if passed:
+            invalid_commands: list[str] = []
+            for cmd_name, cmd_data in data['commands'].items():
+                if not isinstance(cmd_data, dict):
+                    invalid_commands.append(f'{cmd_name} (not an object)')
+
+            if invalid_commands:
+                checks.append({'check': 'command_entries', 'passed': False, 'invalid': invalid_commands})
+            else:
+                checks.append({'check': 'command_entries', 'passed': True, 'count': len(data['commands'])})
+
+    # Check maven section if present
+    if 'maven' in data:
+        passed, msg = check_field_type(data, 'maven', dict)
+        checks.append({'check': 'maven_object', 'passed': passed, 'message': msg})
+
+    return checks
+
+
+def cmd_validate(args: argparse.Namespace) -> dict:
+    """Validate run-configuration.json format and structure."""
+    try:
+        file_path = Path(args.file)
+
+        if not file_path.exists():
+            return _output_error(f'File not found: {file_path}')
+
+        # Parse JSON
+        try:
+            data = json.loads(file_path.read_text(encoding='utf-8'))
+        except json.JSONDecodeError as e:
+            return {
+                'status': 'success',
+                'valid': False,
+                'file': str(file_path),
+                'format': 'manage-run-config',
+                'checks': [{'check': 'json_syntax', 'passed': False, 'error': str(e)}],
+            }
+
+        # Add JSON syntax check
+        checks = [{'check': 'json_syntax', 'passed': True}]
+
+        # Run validation
+        checks.extend(validate_run_config(data))
+
+        # Determine overall validity
+        valid = all(c.get('passed', True) for c in checks)
+
+        return {
+            'status': 'success',
+            'valid': valid,
+            'file': str(file_path),
+            'format': 'manage-run-config',
+            'checks': checks,
+        }
+
+    except Exception as e:
+        return _output_error(str(e))
+
+
+# =============================================================================
+# Timeout API (for direct Python calls)
+# =============================================================================
+
+
+def get_run_config_path(project_dir: str | None = None) -> Path:
+    """Get path to run-configuration.json.
+
+    run-configuration.json is a genuinely-shared cross-session corpus, so it is
+    main-anchored via the single sanctioned resolver
+    :func:`marketplace_paths.resolve_main_anchored_path` (ADR-002) — it resolves
+    to the MAIN checkout regardless of caller cwd (test override first, then
+    git-common-dir), so a phase-5 worktree-cwd read/write lands on main. There is
+    NO local git-common-dir copy here; the shared utility owns the resolution.
+
+    Args:
+        project_dir: Ignored. Kept for API compatibility.
+    """
+    return resolve_main_anchored_path('run-configuration.json')
+
+
+def read_run_config(config_path: Path) -> dict[str, Any]:
+    """Read run configuration file."""
+    result: dict[str, Any] = read_json(config_path, {'version': 1, 'commands': {}})
+    return result
+
+
+def cmd_timeout_get(args: argparse.Namespace) -> dict:
+    """Get timeout for a command; an explicit bound overrides the learned value."""
+    try:
+        return {
+            'status': 'success',
+            'command': args.command,
+            'timeout_seconds': timeout_get(args.command, args.default, explicit=args.explicit),
+        }
+    except Exception as e:
+        return _output_error(str(e))
+
+
+def compute_weighted_timeout(existing: int, new_duration: int) -> int:
+    """Compute weighted timeout favoring higher value."""
+    higher = max(existing, new_duration)
+    lower = min(existing, new_duration)
+    return int(HIGHER_WEIGHT * higher + (1 - HIGHER_WEIGHT) * lower)
+
+
+def timeout_get(command_key: str, default: int, project_dir: str = '.', explicit: int | None = None) -> int:
+    """Get the timeout (in seconds) for a command.
+
+    An ``explicit`` bound is a true OVERRIDE of the persisted learned value: when
+    supplied it wins outright and no learned value can reduce it. When it is not
+    supplied, a persisted value (scaled by ``SAFETY_MARGIN``) is used, falling
+    back to ``default`` when nothing is persisted — so adaptive learning is
+    unchanged on that path.
+
+    ``MINIMUM_TIMEOUT_SECONDS`` is the unconditional floor on every path,
+    including the override path: the floor protects against under-specification
+    (cold/warm timing differences), so an explicit bound below it is raised to it
+    rather than waiving it.
+
+    Args:
+        command_key: Command identifier the learned value is keyed under.
+        default: Timeout (seconds) used when no value is persisted for the key.
+        project_dir: Kept for API compatibility; the config location is
+            main-anchored (see :func:`get_run_config_path`).
+        explicit: Caller-supplied bound (seconds) that overrides the learned
+            value. ``None`` means "not supplied" and selects the learned path.
+
+    Returns:
+        The resolved timeout in seconds.
+    """
+    if explicit is not None:
+        return max(explicit, MINIMUM_TIMEOUT_SECONDS)
+    config = read_run_config(get_run_config_path(project_dir))
+    persisted = config.get('commands', {}).get(command_key, {}).get('timeout_seconds')
+    timeout = default if persisted is None else int(persisted * SAFETY_MARGIN)
+    return max(timeout, MINIMUM_TIMEOUT_SECONDS)
+
+
+def timeout_measured(command_key: str, project_dir: str = '.') -> int | None:
+    """Return the RAW persisted duration for ``command_key``, or ``None``.
+
+    This is the measured-vs-unmeasured discriminator :func:`timeout_get`
+    structurally cannot provide: ``timeout_get`` returns an ``int`` for a
+    measured and an unmeasured key alike (falling back to ``default`` and then
+    flooring at ``MINIMUM_TIMEOUT_SECONDS``), so its return value carries no
+    signal about whether the key has ever been observed.
+
+    Neither ``SAFETY_MARGIN`` nor ``MINIMUM_TIMEOUT_SECONDS`` is applied — the
+    raw persisted ``commands[key].timeout_seconds`` is returned verbatim. The
+    whole purpose of this accessor is to answer *has this been measured?*, so
+    any adjustment would blur the very distinction it exists to expose.
+
+    Args:
+        command_key: Command identifier the learned value is keyed under.
+        project_dir: Kept for API compatibility; the config location is
+            main-anchored (see :func:`get_run_config_path`).
+
+    Returns:
+        The raw persisted duration in seconds, or ``None`` when the key has
+        never been measured.
+    """
+    config = read_run_config(get_run_config_path(project_dir))
+    persisted = config.get('commands', {}).get(command_key, {}).get('timeout_seconds')
+    return None if persisted is None else int(persisted)
+
+
+def cmd_timeout_measured(args: argparse.Namespace) -> dict:
+    """Report whether a command key has ever been measured, and its raw value."""
+    try:
+        persisted = timeout_measured(args.command)
+        return {
+            'status': 'success',
+            'command': args.command,
+            'measured': persisted is not None,
+            'timeout_seconds': persisted,
+        }
+    except Exception as e:
+        return _output_error(str(e))
+
+
+def timeout_set(command_key: str, duration: int, project_dir: str = '.') -> None:
+    """Set timeout for a command with adaptive weighting."""
+    config_path = get_run_config_path(project_dir)
+    config = read_run_config(config_path)
+    config.setdefault('commands', {}).setdefault(command_key, {})
+    existing = config['commands'][command_key].get('timeout_seconds')
+    config['commands'][command_key]['timeout_seconds'] = (
+        duration if existing is None else compute_weighted_timeout(existing, duration)
+    )
+    _write_json_file(config_path, config)
+
+
+# =============================================================================
+# Warning Subcommands
+# =============================================================================
+
+# VALID_WARNING_CATEGORIES imported from constants
+
+
+def get_acceptable_warnings(config: dict[str, Any], build_system: str = 'maven') -> dict[str, Any]:
+    """Get acceptable_warnings section for a build system."""
+    result: dict[str, Any] = config.get(build_system, {}).get('acceptable_warnings', {})
+    return result
+
+
+def cmd_warning_add(args: argparse.Namespace) -> dict:
+    """Add a warning pattern to acceptable list."""
+    try:
+        config_path = get_run_config_path()
+        config = read_run_config(config_path)
+
+        category = args.category
+        pattern = args.pattern
+        build_system = args.build_system
+
+        if category not in VALID_WARNING_CATEGORIES:
+            return _output_error(f"Invalid category '{category}'. Valid: {VALID_WARNING_CATEGORIES}")
+
+        # Ensure structure exists
+        if build_system not in config:
+            config[build_system] = {}
+        if 'acceptable_warnings' not in config[build_system]:
+            config[build_system]['acceptable_warnings'] = {cat: [] for cat in VALID_WARNING_CATEGORIES}
+
+        warnings_list = config[build_system]['acceptable_warnings'].setdefault(category, [])
+
+        if pattern in warnings_list:
+            return _output_success('skipped', category=category, pattern=pattern, reason='Pattern already exists')
+
+        warnings_list.append(pattern)
+        _write_json_file(config_path, config)
+
+        return _output_success('added', category=category, pattern=pattern, build_system=build_system)
+
+    except Exception as e:
+        return _output_error(str(e))
+
+
+def cmd_warning_list(args: argparse.Namespace) -> dict:
+    """List accepted warning patterns."""
+    try:
+        config_path = get_run_config_path()
+        config = read_run_config(config_path)
+        build_system = args.build_system
+
+        warnings = get_acceptable_warnings(config, build_system)
+
+        if args.category:
+            if args.category not in VALID_WARNING_CATEGORIES:
+                return _output_error(f"Invalid category '{args.category}'. Valid: {VALID_WARNING_CATEGORIES}")
+            return {
+                'status': 'success',
+                'build_system': build_system,
+                'category': args.category,
+                'patterns': warnings.get(args.category, []),
+            }
+        else:
+            return {
+                'status': 'success',
+                'build_system': build_system,
+                'categories': {cat: warnings.get(cat, []) for cat in VALID_WARNING_CATEGORIES},
+            }
+
+    except Exception as e:
+        return _output_error(str(e))
+
+
+def cmd_warning_remove(args: argparse.Namespace) -> dict:
+    """Remove a warning pattern from acceptable list."""
+    try:
+        config_path = get_run_config_path()
+        config = read_run_config(config_path)
+
+        category = args.category
+        pattern = args.pattern
+        build_system = args.build_system
+
+        if category not in VALID_WARNING_CATEGORIES:
+            return _output_error(f"Invalid category '{category}'. Valid: {VALID_WARNING_CATEGORIES}")
+
+        warnings = get_acceptable_warnings(config, build_system)
+        warnings_list = warnings.get(category, [])
+
+        if pattern not in warnings_list:
+            return _output_success('skipped', category=category, pattern=pattern, reason='Pattern not found')
+
+        warnings_list.remove(pattern)
+        _write_json_file(config_path, config)
+
+        return _output_success('removed', category=category, pattern=pattern, build_system=build_system)
+
+    except Exception as e:
+        return _output_error(str(e))
+
+
+# =============================================================================
+# CLI Subcommands
+# =============================================================================
+
+
+def cmd_timeout_set(args: argparse.Namespace) -> dict:
+    """Set timeout for a command with adaptive weighting."""
+    try:
+        config_path = get_run_config_path()
+        config = read_run_config(config_path)
+        cmd_entry = config.setdefault('commands', {}).setdefault(args.command, {})
+        existing = cmd_entry.get('timeout_seconds')
+
+        if existing is None:
+            cmd_entry['timeout_seconds'] = args.duration
+            _write_json_file(config_path, config)
+            return {
+                'status': 'success',
+                'command': args.command,
+                'timeout_seconds': args.duration,
+                'source': 'initial',
+            }
+
+        new_timeout = compute_weighted_timeout(existing, args.duration)
+        cmd_entry['timeout_seconds'] = new_timeout
+        _write_json_file(config_path, config)
+        return {
+            'status': 'success',
+            'command': args.command,
+            'timeout_seconds': new_timeout,
+            'previous_seconds': existing,
+            'observed_seconds': args.duration,
+            'source': 'computed',
+        }
+    except Exception as e:
+        return _output_error(str(e))
+
+
+# =============================================================================
+# Architecture-Refresh Subcommands
+# =============================================================================
+
+
+def _invalid_value_error(value: str, allowed: tuple[str, ...]) -> dict:
+    """Build invalid_value error response with allowed enum values."""
+    return {
+        'status': 'error',
+        'error': 'invalid_value',
+        'allowed': list(allowed),
+        'message': f"Invalid value '{value}'. Allowed: {list(allowed)}",
+    }
+
+
+def _read_architecture_refresh_value(field: str, default: str) -> str:
+    """Read an architecture_refresh field with default fallback.
+
+    The architecture_refresh section is optional — defaults are applied when
+    the section is absent so init does not need to materialise it.
+    """
+    config = read_run_config(get_run_config_path())
+    section = config.get('architecture_refresh', {})
+    value = section.get(field, default)
+    return value if isinstance(value, str) else default
+
+
+def _write_architecture_refresh_value(field: str, value: str) -> None:
+    """Persist an architecture_refresh field, creating the section if needed."""
+    config_path = get_run_config_path()
+    config = read_run_config(config_path)
+    config.setdefault('architecture_refresh', {})[field] = value
+    _write_json_file(config_path, config)
+
+
+def cmd_architecture_refresh_get_tier_0(args: argparse.Namespace) -> dict:
+    """Get architecture_refresh.tier_0 (default 'enabled' when absent)."""
+    del args  # unused — fixed-shape verb
+    try:
+        value = _read_architecture_refresh_value('tier_0', ARCHITECTURE_REFRESH_TIER_0_DEFAULT)
+        return {'status': 'success', 'field': 'tier_0', 'value': value}
+    except Exception as e:
+        return _output_error(str(e))
+
+
+def cmd_architecture_refresh_set_tier_0(args: argparse.Namespace) -> dict:
+    """Set architecture_refresh.tier_0 with enum validation."""
+    try:
+        if args.value not in ARCHITECTURE_REFRESH_TIER_0_VALUES:
+            return _invalid_value_error(args.value, ARCHITECTURE_REFRESH_TIER_0_VALUES)
+        _write_architecture_refresh_value('tier_0', args.value)
+        return {'status': 'success', 'field': 'tier_0', 'value': args.value}
+    except Exception as e:
+        return _output_error(str(e))
+
+
+def cmd_architecture_refresh_get_tier_1(args: argparse.Namespace) -> dict:
+    """Get architecture_refresh.tier_1 (default 'prompt' when absent)."""
+    del args  # unused — fixed-shape verb
+    try:
+        value = _read_architecture_refresh_value('tier_1', ARCHITECTURE_REFRESH_TIER_1_DEFAULT)
+        return {'status': 'success', 'field': 'tier_1', 'value': value}
+    except Exception as e:
+        return _output_error(str(e))
+
+
+def cmd_architecture_refresh_set_tier_1(args: argparse.Namespace) -> dict:
+    """Set architecture_refresh.tier_1 with enum validation."""
+    try:
+        if args.value not in ARCHITECTURE_REFRESH_TIER_1_VALUES:
+            return _invalid_value_error(args.value, ARCHITECTURE_REFRESH_TIER_1_VALUES)
+        _write_architecture_refresh_value('tier_1', args.value)
+        return {'status': 'success', 'field': 'tier_1', 'value': args.value}
+    except Exception as e:
+        return _output_error(str(e))
+
+
+# =============================================================================
+# Build-Queue-Limit Subcommands
+# =============================================================================
+
+
+def _clamp_build_queue_upper_limit(value: int) -> int:
+    """Clamp ``value`` into ``[floor, ceiling]`` for the build-queue upper limit."""
+    return max(
+        _BUILD_QUEUE_UPPER_LIMIT_FLOOR_SECONDS,
+        min(_BUILD_QUEUE_UPPER_LIMIT_CEILING_SECONDS, value),
+    )
+
+
+def _read_build_queue_upper_limit() -> int:
+    """Read ``build.queue.upper_limit_seconds``, clamped to ``[600, 3600]``.
+
+    Defaults to the 600 s floor when the section/key is absent. A non-integer or
+    boolean stored value (``bool`` is an ``int`` subclass) falls back to the
+    floor, mirroring the same guard :func:`_resolve_max_slots` uses in
+    ``build_queue.py``. The returned value is always within the clamp bounds.
+    """
+    config = read_run_config(get_run_config_path())
+    build = config.get('build')
+    if not isinstance(build, dict):
+        return _BUILD_QUEUE_UPPER_LIMIT_FLOOR_SECONDS
+    block = build.get('queue')
+    if not isinstance(block, dict):
+        return _BUILD_QUEUE_UPPER_LIMIT_FLOOR_SECONDS
+    raw = block.get('upper_limit_seconds')
+    if isinstance(raw, bool) or not isinstance(raw, int):
+        return _BUILD_QUEUE_UPPER_LIMIT_FLOOR_SECONDS
+    return _clamp_build_queue_upper_limit(raw)
+
+
+def _write_build_queue_upper_limit(value: int) -> None:
+    """Persist ``build.queue.upper_limit_seconds`` clamped to ``[600, 3600]``."""
+    config_path = get_run_config_path()
+    config = read_run_config(config_path)
+    build = config.setdefault('build', {})
+    build.setdefault('queue', {})['upper_limit_seconds'] = _clamp_build_queue_upper_limit(value)
+    _write_json_file(config_path, config)
+
+
+def cmd_build_queue_limit_get(args: argparse.Namespace) -> dict:
+    """Get build_queue.upper_limit_seconds (default 600 s, clamped [600, 3600])."""
+    del args  # unused — fixed-shape verb
+    try:
+        value = _read_build_queue_upper_limit()
+        return {'status': 'success', 'field': 'build_queue_upper_limit', 'value': value}
+    except Exception as e:
+        return _output_error(str(e))
+
+
+def cmd_build_queue_limit_set(args: argparse.Namespace) -> dict:
+    """Set build_queue.upper_limit_seconds (positive int, clamped to [600, 3600])."""
+    try:
+        if args.value <= 0:
+            return _invalid_value_error(str(args.value), ('positive integer (seconds)',))
+        _write_build_queue_upper_limit(args.value)
+        return {
+            'status': 'success',
+            'field': 'build_queue_upper_limit',
+            'value': _clamp_build_queue_upper_limit(args.value),
+        }
+    except Exception as e:
+        return _output_error(str(e))
+
+
+# =============================================================================
+# CI-Duration Subcommands
+# =============================================================================
+
+
+def _coerce_int_window(value: Any) -> list[int]:
+    """Coerce a stored window value into a clean list of ints.
+
+    Non-list values and non-int (or bool) entries are dropped, so a corrupt or
+    partially-written ``ci_durations`` entry degrades to an empty/partial window
+    rather than raising.
+    """
+    if not isinstance(value, list):
+        return []
+    return [v for v in value if isinstance(v, int) and not isinstance(v, bool)]
+
+
+def _read_ci_duration_window(command_key: str) -> list[int]:
+    """Read the bounded rolling window of observed CI-run durations for a key.
+
+    Returns an empty list when the ``ci_durations`` section or the command key
+    is absent (or holds a non-list / non-int value).
+    """
+    config = read_run_config(get_run_config_path())
+    section = config.get('ci_durations')
+    if not isinstance(section, dict):
+        return []
+    return _coerce_int_window(section.get(command_key))
+
+
+def _record_ci_duration(command_key: str, duration: int) -> list[int]:
+    """Append ``duration`` to the key's window, evict oldest beyond N, persist.
+
+    Returns the resulting bounded window (newest-last).
+    """
+    config_path = get_run_config_path()
+    config = read_run_config(config_path)
+    section = config.get('ci_durations')
+    if not isinstance(section, dict):
+        # A corrupt / hand-edited non-dict value would make section.get() below
+        # raise AttributeError; reset to an empty dict (mirrors the guard in
+        # _read_ci_duration_window).
+        section = {}
+        config['ci_durations'] = section
+    window = _coerce_int_window(section.get(command_key))
+    window.append(duration)
+    # Bound to the newest CI_DURATION_WINDOW_SIZE entries (evict oldest first).
+    window = window[-CI_DURATION_WINDOW_SIZE:]
+    section[command_key] = window
+    _write_json_file(config_path, config)
+    return window
+
+
+def _p50_of(window: list[int]) -> int | float | None:
+    """Return the p50 (median) of ``window``, or ``None`` for an empty window.
+
+    ``statistics.median`` sorts internally, so window insertion order does not
+    matter; it returns the middle element for an odd-sized window and the mean of
+    the two middle elements for an even-sized window.
+    """
+    if not window:
+        return None
+    return statistics.median(window)
+
+
+def cmd_ci_duration_record(args: argparse.Namespace) -> dict:
+    """Append an observed successful CI-run duration to the key's rolling window."""
+    try:
+        window = _record_ci_duration(args.command, args.duration)
+        return _output_success(
+            'recorded',
+            command=args.command,
+            duration=args.duration,
+            window=window,
+            window_size=len(window),
+        )
+    except Exception as e:
+        return _output_error(str(e))
+
+
+def cmd_ci_duration_p50(args: argparse.Namespace) -> dict:
+    """Return the p50 (median) of the key's window, or null on an empty window."""
+    try:
+        window = _read_ci_duration_window(args.command)
+        return {
+            'status': 'success',
+            'command': args.command,
+            'p50_seconds': _p50_of(window),
+            'window_size': len(window),
+        }
+    except Exception as e:
+        return _output_error(str(e))
+
+
+# =============================================================================
+# Language-Servers Subcommands
+# =============================================================================
+
+# The machine-local binding of a language to its locally-installed language
+# server, read by the ``lsp-client`` skill. Machine-local because server
+# availability is per-machine tooling; this is the shared configuration surface
+# the resolver-configuration work extends, not a parallel store.
+
+
+def _read_language_servers_section() -> dict[str, Any]:
+    """Read the ``language_servers`` section, or an empty mapping when absent."""
+    config = read_run_config(get_run_config_path())
+    section = config.get('language_servers')
+    return section if isinstance(section, dict) else {}
+
+
+def cmd_language_server_get(args: argparse.Namespace) -> dict:
+    """Get the language-server binding for a language (``configured: false`` when absent)."""
+    try:
+        entry = _read_language_servers_section().get(args.language)
+        if not isinstance(entry, dict):
+            return {'status': 'success', 'language': args.language, 'configured': False}
+        return {
+            'status': 'success',
+            'language': args.language,
+            'configured': True,
+            'enabled': bool(entry.get('enabled', True)),
+            'command': entry.get('command', []),
+            'language_id': entry.get('language_id', args.language),
+        }
+    except Exception as e:
+        return _output_error(str(e))
+
+
+def cmd_language_server_set(args: argparse.Namespace) -> dict:
+    """Set the language-server binding for a language (``--command`` is a JSON array)."""
+    try:
+        try:
+            command = json.loads(args.command)
+        except json.JSONDecodeError as e:
+            return _output_error(f'--command must be a JSON array of strings: {e}')
+        if not isinstance(command, list) or not command or not all(isinstance(part, str) for part in command):
+            return _output_error('--command must be a non-empty JSON array of strings')
+
+        config_path = get_run_config_path()
+        config = read_run_config(config_path)
+        section = config.get('language_servers')
+        if not isinstance(section, dict):
+            section = {}
+            config['language_servers'] = section
+        language_id = args.language_id or args.language
+        section[args.language] = {
+            'enabled': not args.disabled,
+            'command': command,
+            'language_id': language_id,
+        }
+        _write_json_file(config_path, config)
+        return _output_success(
+            'set',
+            language=args.language,
+            enabled=not args.disabled,
+            command=command,
+            language_id=language_id,
+        )
+    except Exception as e:
+        return _output_error(str(e))
+
+
+def cmd_language_server_list(args: argparse.Namespace) -> dict:
+    """List configured language keys."""
+    del args  # unused — fixed-shape verb
+    try:
+        languages = sorted(_read_language_servers_section().keys())
+        return {'status': 'success', 'languages': languages, 'count': len(languages)}
+    except Exception as e:
+        return _output_error(str(e))
+
+
+def cmd_language_server_remove(args: argparse.Namespace) -> dict:
+    """Remove the language-server binding for a language."""
+    try:
+        config_path = get_run_config_path()
+        config = read_run_config(config_path)
+        section = config.get('language_servers')
+        if not isinstance(section, dict) or args.language not in section:
+            return _output_success('skipped', language=args.language, reason='Not configured')
+        del section[args.language]
+        _write_json_file(config_path, config)
+        return _output_success('removed', language=args.language)
+    except Exception as e:
+        return _output_error(str(e))
+
+
+# =============================================================================
+# Derivation-Resolvers Subcommands
+# =============================================================================
+
+# The machine-local binding deciding WHICH derivation resolvers run in this
+# checkout. Machine-local for the same reason ``language_servers`` is: a
+# resolver's cost and availability depend on locally-installed tooling (the
+# ``lsp`` harvest needs a language server on PATH), so the same project can
+# legitimately have a different active set on two machines. It sits beside
+# ``language_servers`` in that one store rather than forking a parallel one.
+#
+# Keyed on the RESOLVER ID, not on a file pattern. A resolver is handed module
+# maps and returns (module, module) pairs carrying no file provenance, so there
+# is no point in the dispatch at which a per-file binding could be applied — the
+# id is the only key core can act on. See run-config-standard.md
+# § "Derivation-Resolvers Section".
+
+#: Absent configuration means ACTIVE. A discovered resolver runs unless an entry
+#: explicitly disables it, so an unconfigured project derives its edges with the
+#: full discovered set rather than with none — a default of "off" would
+#: reintroduce the zero-edge defect as a configuration failure instead of a
+#: derivation one, which is the same broken outcome one layer up.
+DERIVATION_RESOLVER_ENABLED_DEFAULT = True
+
+
+def read_derivation_resolvers_section() -> dict[str, Any]:
+    """Read the ``derivation_resolvers`` section, or an empty mapping when absent.
+
+    Public because both consumers — the graph seam's dispatch gate and the
+    configuration menu's roster — read the state of SEVERAL resolvers at once,
+    and each would otherwise re-read the store once per resolver. They read the
+    section once and pass it to :func:`is_derivation_resolver_enabled`.
+    """
+    config = read_run_config(get_run_config_path())
+    section = config.get('derivation_resolvers')
+    return section if isinstance(section, dict) else {}
+
+
+def is_derivation_resolver_enabled(resolver_id: str, section: dict[str, Any] | None = None) -> bool:
+    """Return whether ``resolver_id`` is active in this checkout.
+
+    The public read the graph seam calls before dispatching a discovered
+    resolver. An absent section, an absent entry, and a malformed entry all
+    resolve to :data:`DERIVATION_RESOLVER_ENABLED_DEFAULT` — only an explicit
+    ``enabled: false`` switches a resolver off, so no failure to read the store
+    can silently blank the graph.
+
+    Args:
+        resolver_id: The resolver's stable provenance id (e.g. ``'markdown'``).
+        section: A pre-read section, for a caller resolving several resolvers
+            against one snapshot. ``None`` reads the store for this call.
+    """
+    if section is None:
+        section = read_derivation_resolvers_section()
+    entry = section.get(resolver_id)
+    if not isinstance(entry, dict):
+        return DERIVATION_RESOLVER_ENABLED_DEFAULT
+    # ⛔ Only the literal JSON ``false`` disables. ``bool()`` here also disabled
+    # on ``0``, ``""``, ``null`` and ``[]`` — malformed values for a boolean
+    # field, which this store's stated rule fails **open** on. Coercing them to
+    # "disabled" silently turned a typo into a resolver nobody runs, which is
+    # the failure the fail-open direction exists to prevent.
+    return entry.get('enabled', DERIVATION_RESOLVER_ENABLED_DEFAULT) is not False
+
+
+def cmd_derivation_resolver_get(args: argparse.Namespace) -> dict:
+    """Get the binding for a resolver id.
+
+    ``configured`` reports whether a **well-formed** (dict) entry exists — the
+    same test the ``list`` verb and ``extension-api``'s roster apply;
+    ``enabled`` reports the EFFECTIVE state, which is the default when no entry
+    does. The dict test is the shared definition: ``extension_api``'s resolver
+    roster and this module's ``list`` verb apply the same one, so the three
+    readers of this store cannot report different things about a malformed
+    entry.
+    """
+    try:
+        entry = read_derivation_resolvers_section().get(args.resolver)
+        configured = isinstance(entry, dict)
+        return {
+            'status': 'success',
+            'resolver': args.resolver,
+            'configured': configured,
+            'enabled': is_derivation_resolver_enabled(args.resolver),
+        }
+    except Exception as e:
+        return _output_error(str(e))
+
+
+def cmd_derivation_resolver_set(args: argparse.Namespace) -> dict:
+    """Enable or disable a resolver (``--enabled`` / ``--disabled``, exactly one)."""
+    try:
+        if args.enabled == args.disabled:
+            return _output_error('pass exactly one of --enabled / --disabled')
+        enabled = bool(args.enabled)
+
+        config_path = get_run_config_path()
+        config = read_run_config(config_path)
+        section = config.get('derivation_resolvers')
+        if not isinstance(section, dict):
+            section = {}
+            config['derivation_resolvers'] = section
+        section[args.resolver] = {'enabled': enabled}
+        _write_json_file(config_path, config)
+        return _output_success('set', resolver=args.resolver, enabled=enabled)
+    except Exception as e:
+        return _output_error(str(e))
+
+
+def cmd_derivation_resolver_list(args: argparse.Namespace) -> dict:
+    """List every resolver entry the store holds, well-formed or not.
+
+    Reports what the STORE holds, not what is discovered — an empty list means
+    the store is empty, which is the default-everything-active state. The
+    discovered set joined against this one is served by
+    ``extension-api:extension_api derivation-resolvers list``.
+
+    ⛔ **"Every entry" is not "every configured entry", and the difference is
+    the reason each row carries its own ``configured`` flag.** ``configured``
+    means a **well-formed (dict)** entry everywhere else in this store —
+    ``derivation-resolver get`` and ``extension-api``'s roster both apply that
+    test — while this listing is keyed on mere presence. A malformed entry such
+    as ``{"markdown": "yes"}`` therefore appears here and reads ``configured:
+    false``, which is deliberate in both halves: **omitting** it would hide the
+    operator's own typo from the one verb that exists to show them the store,
+    and **calling it configured** would make a third reader disagree with the
+    other two about one entry. Listing it, flagged, is the only answer that is
+    complete and consistent at once.
+    """
+    del args  # unused — fixed-shape verb
+    try:
+        # ONE snapshot for the whole roster, and a per-entry guard: a single
+        # malformed entry costs that entry's state, never the whole listing, and
+        # it fails OPEN so a store problem can never render as "disabled". Same
+        # discipline as the graph seam's dispatch gate.
+        section = read_derivation_resolvers_section()
+        resolvers = []
+        for key in sorted(section):
+            try:
+                enabled = is_derivation_resolver_enabled(key, section)
+            except Exception:
+                enabled = DERIVATION_RESOLVER_ENABLED_DEFAULT
+            # Same definition of `configured` the get verb and the extension-api
+            # roster apply, so the three readers of this store cannot disagree.
+            resolvers.append({'id': key, 'enabled': enabled, 'configured': isinstance(section.get(key), dict)})
+        return {
+            'status': 'success',
+            'resolvers': resolvers,
+            'count': len(resolvers),
+            'unconfigured_default_enabled': DERIVATION_RESOLVER_ENABLED_DEFAULT,
+        }
+    except Exception as e:
+        return _output_error(str(e))
+
+
+def cmd_derivation_resolver_remove(args: argparse.Namespace) -> dict:
+    """Remove a resolver's entry, returning it to the default-active state."""
+    try:
+        config_path = get_run_config_path()
+        config = read_run_config(config_path)
+        section = config.get('derivation_resolvers')
+        if not isinstance(section, dict) or args.resolver not in section:
+            return _output_success('skipped', resolver=args.resolver, reason='Not configured')
+        del section[args.resolver]
+        _write_json_file(config_path, config)
+        return _output_success('removed', resolver=args.resolver)
+    except Exception as e:
+        return _output_error(str(e))
+
+
+# =============================================================================
+# Display-Timezone Subcommands
+# =============================================================================
+#
+# A DISPLAY-ONLY timezone. It is resolved at rendering surfaces to convert a
+# stored UTC timestamp for human reading and is NEVER consulted on a write or
+# compare path — storage and comparison stay UTC unconditionally. The rendering
+# helper that consumes this value lives in ``_display_time.py``.
+
+
+def _is_valid_iana_timezone(name: str) -> bool:
+    """Return ``True`` when *name* is a loadable IANA zone name (``'UTC'`` included).
+
+    ``'UTC'`` is accepted without touching the IANA database — it is the default
+    and must remain resolvable on a system whose ``zoneinfo`` has no bundled
+    tzdata. Every other name is validated by attempting to construct its
+    :class:`zoneinfo.ZoneInfo`; an unknown name or a malformed value is invalid.
+    """
+    if name == DISPLAY_TIMEZONE_DEFAULT:
+        return True
+    try:
+        ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError):
+        return False
+    return True
+
+
+def read_display_timezone() -> str:
+    """Read the display-only timezone (IANA name), defaulting to ``'UTC'``.
+
+    A missing key, a non-string value, or a stored zone that no longer loads all
+    fall back to ``'UTC'``. A display-only setting must never crash or corrupt a
+    rendering surface, and ``'UTC'`` is the fail-safe fallback — it is also
+    byte-identical to the pre-knob behaviour, so an unreadable value degrades to
+    exactly today's output rather than to an error.
+
+    The default path (value absent or literally ``'UTC'``) never constructs a
+    :class:`zoneinfo.ZoneInfo`, so the unset behaviour has no tzdata dependency.
+
+    Returns:
+        The resolved IANA zone name, or ``'UTC'``.
+    """
+    config = read_run_config(get_run_config_path())
+    value = config.get('display_timezone', DISPLAY_TIMEZONE_DEFAULT)
+    if not isinstance(value, str) or not value:
+        return DISPLAY_TIMEZONE_DEFAULT
+    if value == DISPLAY_TIMEZONE_DEFAULT:
+        return DISPLAY_TIMEZONE_DEFAULT
+    if not _is_valid_iana_timezone(value):
+        return DISPLAY_TIMEZONE_DEFAULT
+    return value
+
+
+def _write_display_timezone(name: str) -> None:
+    """Persist the top-level ``display_timezone`` field."""
+    config_path = get_run_config_path()
+    config = read_run_config(config_path)
+    config['display_timezone'] = name
+    _write_json_file(config_path, config)
+
+
+def cmd_display_timezone_get(args: argparse.Namespace) -> dict:
+    """Get display_timezone (default 'UTC' when absent or unreadable)."""
+    del args  # unused — fixed-shape verb
+    try:
+        return {'status': 'success', 'field': 'display_timezone', 'value': read_display_timezone()}
+    except Exception as e:
+        return _output_error(str(e))
+
+
+def cmd_display_timezone_set(args: argparse.Namespace) -> dict:
+    """Set display_timezone after IANA-name validation."""
+    try:
+        if not _is_valid_iana_timezone(args.value):
+            return {
+                'status': 'error',
+                'error': 'invalid_value',
+                'message': (
+                    f"Invalid IANA timezone '{args.value}'. Expected an IANA zone name "
+                    "(e.g. 'UTC', 'America/New_York', 'Europe/Berlin')."
+                ),
+            }
+        _write_display_timezone(args.value)
+        return {'status': 'success', 'field': 'display_timezone', 'value': args.value}
+    except Exception as e:
+        return _output_error(str(e))
+
+
+# =============================================================================
+# Commit-Trailer Knob
+# =============================================================================
+
+
+def compose_commit_trailer(name: str, email: str) -> str:
+    """Compose the ``Co-Authored-By`` line from an identity pair.
+
+    The single place the trailer string is assembled, so every caller — the
+    getter, the setter's echo, and the steward's confirmation — renders one
+    identity in exactly one form.
+    """
+    return f'Co-Authored-By: {name} <{email}>'
+
+
+def _clean_identity_part(value: Any) -> str | None:
+    """Return ``value`` if it is a usable identity fragment, else ``None``.
+
+    A fragment is usable when it is a non-empty string carrying none of the
+    characters that would break the trailer's own grammar (angle brackets,
+    which delimit the address, and any line break, which would end the trailer
+    line early and silently truncate the identity).
+    """
+    if not isinstance(value, str):
+        return None
+    stripped = value.strip()
+    if not stripped:
+        return None
+    if any(ch in stripped for ch in '<>\r\n'):
+        return None
+    return stripped
+
+
+def read_commit_trailer() -> dict[str, str]:
+    """Resolve the co-author identity, per field, against the stored config.
+
+    Each half falls back independently, and the source of each half is reported
+    rather than inferred: a config carrying only a ``name`` yields a configured
+    name beside a default email, and says so. An unusable stored value (wrong
+    type, empty, or carrying trailer-breaking characters) is treated as absent,
+    so a malformed config degrades to the default identity instead of emitting a
+    broken trailer line.
+
+    Returns:
+        A mapping with ``name``, ``email``, ``trailer``, ``name_source`` and
+        ``email_source``; each source is ``'configured'`` or ``'default'``.
+    """
+    config = read_run_config(get_run_config_path())
+    stored = config.get('commit_trailer')
+    stored = stored if isinstance(stored, dict) else {}
+
+    name = _clean_identity_part(stored.get('name'))
+    email = _clean_identity_part(stored.get('email'))
+    return {
+        'name': name or COMMIT_TRAILER_NAME_DEFAULT,
+        'email': email or COMMIT_TRAILER_EMAIL_DEFAULT,
+        'trailer': compose_commit_trailer(
+            name or COMMIT_TRAILER_NAME_DEFAULT, email or COMMIT_TRAILER_EMAIL_DEFAULT
+        ),
+        'name_source': 'configured' if name else 'default',
+        'email_source': 'configured' if email else 'default',
+    }
+
+
+def cmd_commit_trailer_get(args: argparse.Namespace) -> dict:
+    """Report the resolved co-author trailer and where each half came from."""
+    del args  # unused — fixed-shape verb
+    try:
+        return {'status': 'success', **read_commit_trailer()}
+    except Exception as e:
+        return _output_error(str(e))
+
+
+def cmd_commit_trailer_set(args: argparse.Namespace) -> dict:
+    """Persist a co-author identity; each half is optional and set independently."""
+    try:
+        if args.name is None and args.email is None:
+            return {
+                'status': 'error',
+                'error': 'invalid_value',
+                'message': 'Provide at least one of --name or --email.',
+            }
+        updates: dict[str, str] = {}
+        for field, raw in (('name', args.name), ('email', args.email)):
+            if raw is None:
+                continue
+            cleaned = _clean_identity_part(raw)
+            if cleaned is None:
+                return {
+                    'status': 'error',
+                    'error': 'invalid_value',
+                    'message': (
+                        f"Invalid --{field} '{raw}'. Expected a non-empty value carrying "
+                        'no angle bracket and no line break.'
+                    ),
+                }
+            updates[field] = cleaned
+        if 'email' in updates and '@' not in updates['email']:
+            return {
+                'status': 'error',
+                'error': 'invalid_value',
+                'message': f"Invalid --email '{args.email}'. Expected an address of the form user@host.",
+            }
+
+        config_path = get_run_config_path()
+        config = read_run_config(config_path)
+        section = config.get('commit_trailer')
+        config['commit_trailer'] = {**(section if isinstance(section, dict) else {}), **updates}
+        _write_json_file(config_path, config)
+        return {'status': 'success', **read_commit_trailer()}
+    except Exception as e:
+        return _output_error(str(e))
+
+
+# =============================================================================
+# Cleanup Subcommands (delegates to cleanup.py functions)
+# =============================================================================
+
+
+def cmd_cleanup(args: argparse.Namespace) -> dict | None:
+    """Execute cleanup based on retention settings (delegates to cleanup module)."""
+    from _cmd_cleanup import cmd_clean
+
+    return cmd_clean(args)
+
+
+def cmd_cleanup_status(args: argparse.Namespace) -> dict | None:
+    """Show cleanup status (delegates to cleanup module)."""
+    from _cmd_cleanup import cmd_status
+
+    return cmd_status(args)
+
+
+# =============================================================================
+# Main
+# =============================================================================
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description='Manage run-configuration.json files',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
+        epilog="""
+Examples:
+  # Initialize in current project
+  %(prog)s init
+
+  # Force reinitialize (overwrites existing)
+  %(prog)s init --force
+
+  # Validate run configuration
+  %(prog)s validate --file .plan/run-configuration.json
+
+  # Get timeout for a command (seconds; falls back to --default when unlearned)
+  %(prog)s timeout get --command "ci:pr_checks" --default 300
+
+  # Override the learned value with an explicit bound (seconds; floored at 120)
+  %(prog)s timeout get --command "ci:pr_checks" --default 300 --explicit 1800
+
+  # Report whether a command key has ever been measured (raw persisted value)
+  %(prog)s timeout measured --command "python:verify_plan_marshall"
+
+  # Set/update timeout for a command (observed duration in seconds)
+  %(prog)s timeout set --command "ci:pr_checks" --duration 180
+
+  # Add acceptable warning pattern
+  %(prog)s warning add --category transitive_dependency --pattern "uses transitive dependency"
+
+  # List all acceptable warnings
+  %(prog)s warning list
+
+  # List warnings for specific category
+  %(prog)s warning list --category plugin_compatibility
+
+  # Remove warning pattern
+  %(prog)s warning remove --category transitive_dependency --pattern "uses transitive dependency"
+
+  # Get architecture-refresh tier-0 setting (default: enabled)
+  %(prog)s architecture-refresh get-tier-0
+
+  # Set architecture-refresh tier-0 (enabled|disabled)
+  %(prog)s architecture-refresh set-tier-0 --value disabled
+
+  # Get architecture-refresh tier-1 setting (default: prompt)
+  %(prog)s architecture-refresh get-tier-1
+
+  # Set architecture-refresh tier-1 (prompt|auto|disabled)
+  %(prog)s architecture-refresh set-tier-1 --value auto
+
+  # Get the build-queue adaptive upper limit (default: 600 s)
+  %(prog)s build-queue-limit get
+
+  # Set the build-queue adaptive upper limit (clamped to [600, 3600])
+  %(prog)s build-queue-limit set --value 1800
+
+  # Record an observed successful CI-run duration into the p50 window
+  %(prog)s ci-duration record --command "ci:wait" --duration 420
+
+  # Get the p50 (median) seed of the CI-run duration window
+  %(prog)s ci-duration p50 --command "ci:wait"
+
+  # Get the display-only render timezone (default: UTC)
+  %(prog)s display-timezone get
+
+  # Set the display-only render timezone (IANA zone name)
+  %(prog)s display-timezone set --value America/New_York
+
+  # Get the commit co-author trailer (default: plan-marshall)
+  %(prog)s commit-trailer get
+
+  # Set the commit co-author identity (either half, or both)
+  %(prog)s commit-trailer set --name my-system --email noreply@example.org
+
+  # Report whether a derivation resolver is active (unconfigured => enabled)
+  %(prog)s derivation-resolver get --resolver markdown
+
+  # Switch a derivation resolver off for this checkout (machine-local)
+  %(prog)s derivation-resolver set --resolver lsp --disabled
+
+  # List every resolver entry the store holds, each flagged `configured` (empty => every resolver active)
+  %(prog)s derivation-resolver list
+
+  # Drop a resolver entry, returning it to the default-active state
+  %(prog)s derivation-resolver remove --resolver lsp
+
+  # Clean .plan directories based on retention settings
+  %(prog)s cleanup
+
+  # Dry-run cleanup for a specific target
+  %(prog)s cleanup --dry-run --target logs
+
+  # Age out orphaned prepared-body files under the plan-less NO_PLAN sentinel
+  %(prog)s cleanup --target no-plan-bodies
+
+  # Age out build results; a LIVE plan's results are never touched or counted
+  %(prog)s cleanup --target build-results
+
+  # Show cleanup status
+  %(prog)s cleanup-status
+""",
+    )
+
+    subparsers = parser.add_subparsers(dest='command', required=True, help='Operation to perform')
+
+    # init command
+    p_init = subparsers.add_parser('init', help='Initialize run-configuration.json', allow_abbrev=False)
+    p_init.add_argument('--force', action='store_true', help='Overwrite existing file')
+    p_init.set_defaults(func=cmd_init)
+
+    # validate command
+    p_validate = subparsers.add_parser('validate', help='Validate run-configuration.json', allow_abbrev=False)
+    p_validate.add_argument('--file', required=True, help='Path to run-configuration.json')
+    p_validate.set_defaults(func=cmd_validate)
+
+    # timeout command with subcommands
+    p_timeout = subparsers.add_parser('timeout', help='Manage command timeouts', allow_abbrev=False)
+    timeout_subparsers = p_timeout.add_subparsers(dest='timeout_command', required=True, help='Timeout operation')
+
+    # timeout get
+    p_timeout_get = timeout_subparsers.add_parser('get', help='Get timeout for a command', allow_abbrev=False)
+    p_timeout_get.add_argument('--command', required=True, help='Command identifier (e.g., "ci:pr_checks")')
+    p_timeout_get.add_argument(
+        '--default', type=int, required=True, help='Default timeout in seconds if no persisted value'
+    )
+    p_timeout_get.add_argument(
+        '--explicit',
+        type=int,
+        default=None,
+        help='Explicit timeout in seconds that overrides the persisted learned value '
+        f'(still floored at {MINIMUM_TIMEOUT_SECONDS}s)',
+    )
+    p_timeout_get.set_defaults(func=cmd_timeout_get)
+
+    # timeout measured
+    p_timeout_measured = timeout_subparsers.add_parser(
+        'measured', help='Report whether a command key has ever been measured', allow_abbrev=False
+    )
+    p_timeout_measured.add_argument('--command', required=True, help='Command identifier (e.g., "python:verify")')
+    p_timeout_measured.set_defaults(func=cmd_timeout_measured)
+
+    # timeout set
+    p_timeout_set = timeout_subparsers.add_parser('set', help='Set/update timeout for a command', allow_abbrev=False)
+    p_timeout_set.add_argument('--command', required=True, help='Command identifier (e.g., "ci:pr_checks")')
+    p_timeout_set.add_argument('--duration', type=int, required=True, help='Observed duration in seconds')
+    p_timeout_set.set_defaults(func=cmd_timeout_set)
+
+    # warning command with subcommands
+    p_warning = subparsers.add_parser('warning', help='Manage acceptable warnings', allow_abbrev=False)
+    warning_subparsers = p_warning.add_subparsers(dest='warning_command', required=True, help='Warning operation')
+
+    # warning add
+    p_warning_add = warning_subparsers.add_parser('add', help='Add pattern to acceptable warnings', allow_abbrev=False)
+    p_warning_add.add_argument('--category', required=True, choices=VALID_WARNING_CATEGORIES, help='Warning category')
+    p_warning_add.add_argument('--pattern', required=True, help='Warning pattern to accept')
+    p_warning_add.add_argument('--build-system', default='maven', help='Build system (default: maven)')
+    p_warning_add.set_defaults(func=cmd_warning_add)
+
+    # warning list
+    p_warning_list = warning_subparsers.add_parser('list', help='List acceptable warnings', allow_abbrev=False)
+    p_warning_list.add_argument('--category', choices=VALID_WARNING_CATEGORIES, help='Filter by category (optional)')
+    p_warning_list.add_argument('--build-system', default='maven', help='Build system (default: maven)')
+    p_warning_list.set_defaults(func=cmd_warning_list)
+
+    # warning remove
+    p_warning_remove = warning_subparsers.add_parser(
+        'remove', help='Remove pattern from acceptable warnings', allow_abbrev=False
+    )
+    p_warning_remove.add_argument(
+        '--category', required=True, choices=VALID_WARNING_CATEGORIES, help='Warning category'
+    )
+    p_warning_remove.add_argument('--pattern', required=True, help='Warning pattern to remove')
+    p_warning_remove.add_argument('--build-system', default='maven', help='Build system (default: maven)')
+    p_warning_remove.set_defaults(func=cmd_warning_remove)
+
+    # architecture-refresh command with subcommands
+    p_arch = subparsers.add_parser(
+        'architecture-refresh',
+        help='Manage architecture_refresh tier knobs',
+        allow_abbrev=False,
+    )
+    arch_subparsers = p_arch.add_subparsers(
+        dest='architecture_refresh_command', required=True, help='Architecture-refresh operation'
+    )
+
+    # architecture-refresh get-tier-0
+    p_arch_get_t0 = arch_subparsers.add_parser(
+        'get-tier-0', help='Get architecture_refresh.tier_0 value', allow_abbrev=False
+    )
+    p_arch_get_t0.set_defaults(func=cmd_architecture_refresh_get_tier_0)
+
+    # architecture-refresh set-tier-0
+    p_arch_set_t0 = arch_subparsers.add_parser(
+        'set-tier-0', help='Set architecture_refresh.tier_0 value', allow_abbrev=False
+    )
+    p_arch_set_t0.add_argument(
+        '--value',
+        required=True,
+        choices=list(ARCHITECTURE_REFRESH_TIER_0_VALUES),
+        help='Tier-0 value (enabled|disabled)',
+    )
+    p_arch_set_t0.set_defaults(func=cmd_architecture_refresh_set_tier_0)
+
+    # architecture-refresh get-tier-1
+    p_arch_get_t1 = arch_subparsers.add_parser(
+        'get-tier-1', help='Get architecture_refresh.tier_1 value', allow_abbrev=False
+    )
+    p_arch_get_t1.set_defaults(func=cmd_architecture_refresh_get_tier_1)
+
+    # architecture-refresh set-tier-1
+    p_arch_set_t1 = arch_subparsers.add_parser(
+        'set-tier-1', help='Set architecture_refresh.tier_1 value', allow_abbrev=False
+    )
+    p_arch_set_t1.add_argument(
+        '--value',
+        required=True,
+        choices=list(ARCHITECTURE_REFRESH_TIER_1_VALUES),
+        help='Tier-1 value (prompt|auto|disabled)',
+    )
+    p_arch_set_t1.set_defaults(func=cmd_architecture_refresh_set_tier_1)
+
+    # build-queue-limit command with subcommands
+    p_bql = subparsers.add_parser(
+        'build-queue-limit',
+        help='Manage the adaptive build-queue stale-reclaim upper limit',
+        allow_abbrev=False,
+    )
+    bql_subparsers = p_bql.add_subparsers(
+        dest='build_queue_limit_command', required=True, help='Build-queue-limit operation'
+    )
+
+    # build-queue-limit get
+    p_bql_get = bql_subparsers.add_parser(
+        'get', help='Get build_queue.upper_limit_seconds (default 600 s)', allow_abbrev=False
+    )
+    p_bql_get.set_defaults(func=cmd_build_queue_limit_get)
+
+    # build-queue-limit set
+    p_bql_set = bql_subparsers.add_parser(
+        'set', help='Set build_queue.upper_limit_seconds (clamped [600, 3600])', allow_abbrev=False
+    )
+    p_bql_set.add_argument(
+        '--value',
+        type=int,
+        required=True,
+        help='Upper-limit seconds (positive int; clamped to [600, 3600])',
+    )
+    p_bql_set.set_defaults(func=cmd_build_queue_limit_set)
+
+    # ci-duration command with subcommands
+    p_cid = subparsers.add_parser(
+        'ci-duration',
+        help='Manage the observed CI-run duration rolling window (p50 seed source)',
+        allow_abbrev=False,
+    )
+    cid_subparsers = p_cid.add_subparsers(
+        dest='ci_duration_command', required=True, help='CI-duration operation'
+    )
+
+    # ci-duration record
+    p_cid_record = cid_subparsers.add_parser(
+        'record', help='Append an observed CI-run duration to the rolling window', allow_abbrev=False
+    )
+    p_cid_record.add_argument('--command', required=True, help='Command identifier (e.g., "ci:wait")')
+    p_cid_record.add_argument(
+        '--duration', type=int, required=True, help='Observed CI-run duration in seconds'
+    )
+    p_cid_record.set_defaults(func=cmd_ci_duration_record)
+
+    # ci-duration p50
+    p_cid_p50 = cid_subparsers.add_parser(
+        'p50', help='Get the p50 (median) of the CI-run duration window', allow_abbrev=False
+    )
+    p_cid_p50.add_argument('--command', required=True, help='Command identifier (e.g., "ci:wait")')
+    p_cid_p50.set_defaults(func=cmd_ci_duration_p50)
+
+    # language-server command with subcommands
+    p_ls = subparsers.add_parser(
+        'language-server',
+        help='Manage the machine-local language_servers binding (read by lsp-client)',
+        allow_abbrev=False,
+    )
+    ls_subparsers = p_ls.add_subparsers(dest='language_server_command', required=True, help='Language-server operation')
+
+    p_ls_get = ls_subparsers.add_parser('get', help='Get the binding for a language', allow_abbrev=False)
+    p_ls_get.add_argument('--language', required=True, help='Language key (e.g. python)')
+    p_ls_get.set_defaults(func=cmd_language_server_get)
+
+    p_ls_set = ls_subparsers.add_parser('set', help='Set the binding for a language', allow_abbrev=False)
+    p_ls_set.add_argument('--language', required=True, help='Language key (e.g. python)')
+    p_ls_set.add_argument('--command', required=True, help='Server command as a JSON array of strings')
+    p_ls_set.add_argument('--language-id', help='LSP languageId (defaults to --language)')
+    p_ls_set.add_argument('--disabled', action='store_true', help='Store the binding but leave it disabled')
+    p_ls_set.set_defaults(func=cmd_language_server_set)
+
+    p_ls_list = ls_subparsers.add_parser('list', help='List configured language keys', allow_abbrev=False)
+    p_ls_list.set_defaults(func=cmd_language_server_list)
+
+    p_ls_remove = ls_subparsers.add_parser('remove', help='Remove the binding for a language', allow_abbrev=False)
+    p_ls_remove.add_argument('--language', required=True, help='Language key (e.g. python)')
+    p_ls_remove.set_defaults(func=cmd_language_server_remove)
+
+    # derivation-resolver command with subcommands
+    p_dr = subparsers.add_parser(
+        'derivation-resolver',
+        help='Manage the machine-local derivation_resolvers binding (which resolvers run)',
+        allow_abbrev=False,
+    )
+    dr_subparsers = p_dr.add_subparsers(
+        dest='derivation_resolver_command', required=True, help='Derivation-resolver operation'
+    )
+
+    p_dr_get = dr_subparsers.add_parser('get', help='Get the binding for a resolver id', allow_abbrev=False)
+    p_dr_get.add_argument('--resolver', required=True, help='Resolver id (e.g. markdown)')
+    p_dr_get.set_defaults(func=cmd_derivation_resolver_get)
+
+    p_dr_set = dr_subparsers.add_parser('set', help='Enable or disable a resolver', allow_abbrev=False)
+    p_dr_set.add_argument('--resolver', required=True, help='Resolver id (e.g. markdown)')
+    p_dr_set.add_argument('--enabled', action='store_true', help='Activate the resolver')
+    p_dr_set.add_argument('--disabled', action='store_true', help='Deactivate the resolver')
+    p_dr_set.set_defaults(func=cmd_derivation_resolver_set)
+
+    p_dr_list = dr_subparsers.add_parser(
+        'list', help='List every stored resolver entry, each flagged `configured`', allow_abbrev=False)
+    p_dr_list.set_defaults(func=cmd_derivation_resolver_list)
+
+    p_dr_remove = dr_subparsers.add_parser(
+        'remove', help='Remove a resolver entry (returns it to default-active)', allow_abbrev=False
+    )
+    p_dr_remove.add_argument('--resolver', required=True, help='Resolver id (e.g. markdown)')
+    p_dr_remove.set_defaults(func=cmd_derivation_resolver_remove)
+
+    # display-timezone command with subcommands
+    p_dtz = subparsers.add_parser(
+        'display-timezone',
+        help='Manage the display-only render timezone (IANA name, default UTC)',
+        allow_abbrev=False,
+    )
+    dtz_subparsers = p_dtz.add_subparsers(
+        dest='display_timezone_command', required=True, help='Display-timezone operation'
+    )
+
+    p_dtz_get = dtz_subparsers.add_parser(
+        'get', help="Get display_timezone (default 'UTC')", allow_abbrev=False
+    )
+    p_dtz_get.set_defaults(func=cmd_display_timezone_get)
+
+    p_dtz_set = dtz_subparsers.add_parser(
+        'set', help='Set display_timezone (IANA zone name)', allow_abbrev=False
+    )
+    p_dtz_set.add_argument(
+        '--value',
+        required=True,
+        help='IANA timezone name (e.g. UTC, America/New_York, Europe/Berlin)',
+    )
+    p_dtz_set.set_defaults(func=cmd_display_timezone_set)
+
+    # commit-trailer command with subcommands
+    p_ct = subparsers.add_parser(
+        'commit-trailer',
+        help='Manage the commit co-author identity (default: plan-marshall)',
+        allow_abbrev=False,
+    )
+    ct_subparsers = p_ct.add_subparsers(
+        dest='commit_trailer_command', required=True, help='Commit-trailer operation'
+    )
+
+    p_ct_get = ct_subparsers.add_parser(
+        'get', help='Resolve the co-author trailer and the source of each half', allow_abbrev=False
+    )
+    p_ct_get.set_defaults(func=cmd_commit_trailer_get)
+
+    p_ct_set = ct_subparsers.add_parser(
+        'set', help='Set the co-author name and/or email', allow_abbrev=False
+    )
+    p_ct_set.add_argument('--name', help=f'Co-author name (default: {COMMIT_TRAILER_NAME_DEFAULT})')
+    p_ct_set.add_argument('--email', help=f'Co-author email (default: {COMMIT_TRAILER_EMAIL_DEFAULT})')
+    p_ct_set.set_defaults(func=cmd_commit_trailer_set)
+
+    # cleanup command
+    p_cleanup = subparsers.add_parser(
+        'cleanup', help='Clean .plan directories based on retention settings', allow_abbrev=False
+    )
+    p_cleanup.add_argument('--dry-run', action='store_true', help='Show what would be deleted without deleting')
+    p_cleanup.add_argument(
+        '--target',
+        choices=list(CLEANUP_TARGETS),
+        default=CLEANUP_TARGET_ALL,
+        help='Clean specific target only (default: all)',
+    )
+    p_cleanup.set_defaults(func=cmd_cleanup)
+
+    # cleanup-status command
+    p_cleanup_status = subparsers.add_parser(
+        'cleanup-status', help='Show cleanup status and what would be cleaned', allow_abbrev=False
+    )
+    p_cleanup_status.set_defaults(func=cmd_cleanup_status)
+
+    args = parser.parse_args()
+
+    if not args.command:
+        parser.print_help()
+        return 1
+
+    # Handle timeout subcommand
+    if args.command == 'timeout':
+        if not args.timeout_command:
+            p_timeout.print_help()
+            return 1
+
+    # Handle warning subcommand
+    if args.command == 'warning':
+        if not args.warning_command:
+            p_warning.print_help()
+            return 1
+
+    # Handle architecture-refresh subcommand
+    if args.command == 'architecture-refresh':
+        if not args.architecture_refresh_command:
+            p_arch.print_help()
+            return 1
+
+    # Handle build-queue-limit subcommand
+    if args.command == 'build-queue-limit':
+        if not args.build_queue_limit_command:
+            p_bql.print_help()
+            return 1
+
+    # Handle ci-duration subcommand
+    if args.command == 'ci-duration':
+        if not args.ci_duration_command:
+            p_cid.print_help()
+            return 1
+
+    # Handle language-server subcommand
+    if args.command == 'language-server':
+        if not args.language_server_command:
+            p_ls.print_help()
+            return 1
+
+    # Handle display-timezone subcommand
+    if args.command == 'display-timezone':
+        if not args.display_timezone_command:
+            p_dtz.print_help()
+            return 1
+
+    # Handle commit-trailer subcommand
+    if args.command == 'commit-trailer':
+        if not args.commit_trailer_command:
+            p_ct.print_help()
+            return 1
+
+    result = args.func(args)
+    if result is not None:
+        output_toon(result)
+    return 0
+
+
+@safe_main
+def _main() -> int:
+    return main()
+
+
+if __name__ == '__main__':
+    _main()

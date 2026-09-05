@@ -1,0 +1,369 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
+"""Subprocess supervisor for the marshalld build server (clean env, classify).
+
+The supervisor runs one build child per admitted job and owns four
+responsibilities:
+
+* **Clean server-side baseline env (S2)** — the child's environment is built
+  from a fixed server-side whitelist, NEVER forwarded from the client and NEVER
+  carrying provider secrets. A submit cannot smuggle credentials or override
+  ``PATH`` into the build.
+* **Stream capture** — the child's combined stdout/stderr is streamed to a log
+  file as it is produced, so a long build's output is durable even if the wait
+  is reaped.
+* **Liveness tracking** — every output chunk marks progress, so the daemon can
+  answer a bound-expiry ``wait`` with a live running-status TOON
+  (``elapsed`` / ``idle_seconds``) rather than a timeout-shaped body.
+* **Terminal classification** — the child's exit is classified into
+  ``success | failure | timeout | killed``, reusing the shared
+  :mod:`_build_result` shape. ``killed`` (the child died by a signal the
+  supervisor did NOT send) is its own terminal state — "externally killed — not
+  flaky, do not blind-retry" — and is NEVER folded into ``failure``.
+
+**Exit 0 is necessary but not sufficient for ``success``.** The daemon's child is
+normally a build wrapper, and the wrapper exits 0 even when the build failed — it
+reports its real verdict in the build-result TOON it emits (``status:`` /
+``exit_code:``), not in its process exit code. Classifying purely on
+``returncode == 0`` therefore renders a false ``success`` for every failing routed
+build. The shared :func:`_build_server_protocol.read_log_verdict` reads that
+emitted verdict back from the job log — the single reader both this supervisor and
+the client-side ``_build_execute_factory`` cross-check consume — and
+:func:`run_job` downgrades a ``success`` classification (carrying the TOON's
+``exit_code``) whenever the verdict does not affirmatively agree.
+
+**The downgrade preserves WHICH non-green the verdict reported.** The wrapper's
+vocabulary has four non-green values and three of them are not a build that ran
+and failed — ``timeout`` (its own bound fired) and ``killed`` (its build child
+was signalled while it survived: the INNER kill) are NON-FINISHES it observed
+first-hand, and ``indeterminate`` is an outcome it could not establish at all.
+The narrowed status is therefore the verdict's own status translated through
+:func:`_build_server_protocol.wire_status_from_result`, never a hard-coded
+``failure``; flattening them here would re-collapse at the daemon precisely what
+the wrapper distinguished, and a routed timeout or kill would reach every
+downstream gate as a red build.
+
+The one place fidelity is knowingly given up is at the wire boundary itself: the
+wire vocabulary is four-valued, so ``indeterminate`` translates onto ``failure``
+because every published status must be terminal or a waiting client never stops.
+That trade is the protocol module's, documented at
+:data:`_build_server_protocol._RESULT_STATUS_TO_WIRE`, and it is a translation —
+not this supervisor deciding a non-finish was a failure. Because the verdict
+status here is read off a LOG rather than produced by this tree, the translation
+goes through :func:`_wire_status_from_log_verdict`, which is fail-closed: a
+status this daemon's protocol module cannot translate becomes ``indeterminate``
+rather than aborting the job.
+
+This supervisor's OWN ``timeout`` and ``killed`` legs are not subject to the
+narrowing at all — a supervisor timeout and an external kill of the child always
+outrank log content — and a job log carrying no parseable TOON status keeps
+today's exit-code verdict, so a non-wrapper command run through the daemon is
+unaffected.
+
+The classification and env helpers are pure and unit-testable without spawning a
+process; :func:`run_job` drives a real ``asyncio`` subprocess and is exercised
+against trivial commands.
+
+Usage:
+    from _marshalld_supervisor import run_job, JobProgress, build_baseline_env
+
+    progress = JobProgress()
+    payload = await run_job(command, cwd, timeout=300, log_file=log, progress=progress)
+"""
+
+from __future__ import annotations
+
+import asyncio
+import os
+import time
+from dataclasses import dataclass, field
+from typing import IO, Any
+
+from _build_result import (
+    ERROR_BUILD_FAILED,
+    error_result,
+    success_result,
+    timeout_result,
+)
+from _build_result import STATUS_INDETERMINATE as RESULT_STATUS_INDETERMINATE
+from _build_result import STATUS_SUCCESS as RESULT_STATUS_SUCCESS
+from _build_server_protocol import (
+    MARSHALLD_JOB_ENV,
+    STATUS_FAILURE,
+    STATUS_KILLED,
+    read_log_verdict,
+    status_from_result,
+    status_payload,
+    wire_status_from_result,
+)
+
+# The fixed server-side env whitelist. Everything not listed here is dropped, so
+# no client-forwarded variable and no provider secret reaches the build child.
+BASELINE_ENV_KEYS = (
+    'PATH',
+    'HOME',
+    'LANG',
+    'LC_ALL',
+    'LC_CTYPE',
+    'TERM',
+    'TMPDIR',
+    'USER',
+    'SHELL',
+    'PLAN_MARSHALL_HOME',
+)
+
+_READ_CHUNK = 4096
+
+
+def build_baseline_env(source: dict[str, str] | None = None) -> dict[str, str]:
+    """Build a clean build-child environment from the server-side whitelist.
+
+    Args:
+        source: The environment to filter (defaults to ``os.environ``).
+
+    Returns:
+        A new dict containing only the whitelisted keys that are present in the
+        source — no client env, no provider secrets.
+    """
+    src = dict(os.environ) if source is None else source
+    return {key: src[key] for key in BASELINE_ENV_KEYS if key in src}
+
+
+def classify_terminal(returncode: int | None, *, timed_out: bool) -> str:
+    """Classify a finished child into a terminal wire status.
+
+    Args:
+        returncode: The child's exit code (negative ``-N`` when killed by signal
+            ``N``); may be ``None`` only for a never-started child.
+        timed_out: ``True`` when the supervisor terminated the child for
+            exceeding its timeout.
+
+    Returns:
+        One of ``timeout`` / ``killed`` / ``success`` / ``failure``. A timeout
+        outranks the signal exit (the supervisor sent that signal); a negative
+        exit the supervisor did NOT cause is ``killed`` — never ``failure``.
+    """
+    if timed_out:
+        return 'timeout'
+    if returncode is None:
+        return STATUS_KILLED
+    if returncode < 0:
+        return STATUS_KILLED
+    return 'success' if returncode == 0 else 'failure'
+
+
+@dataclass
+class JobProgress:
+    """Liveness tracker for a running job.
+
+    Attributes:
+        start: Monotonic start timestamp.
+        last_activity: Monotonic timestamp of the last output chunk.
+    """
+
+    start: float = field(default_factory=time.monotonic)
+    last_activity: float = field(default_factory=time.monotonic)
+
+    def mark(self) -> None:
+        """Record output activity (resets the idle timer)."""
+        self.last_activity = time.monotonic()
+
+    def elapsed(self) -> float:
+        """Return seconds since the job started."""
+        return time.monotonic() - self.start
+
+    def idle_seconds(self) -> float:
+        """Return seconds since the last output chunk (``last_progress``)."""
+        return time.monotonic() - self.last_activity
+
+
+async def _pump(stream: asyncio.StreamReader | None, sink: IO[bytes], progress: JobProgress | None) -> None:
+    """Stream a child pipe to the log sink, marking progress on each chunk."""
+    if stream is None:
+        return
+    while True:
+        chunk = await stream.read(_READ_CHUNK)
+        if not chunk:
+            return
+        sink.write(chunk)
+        if progress is not None:
+            progress.mark()
+
+
+def _terminal_payload(
+    status: str,
+    *,
+    returncode: int | None,
+    duration: int,
+    log_file: str,
+    command_str: str,
+    timeout_seconds: int,
+) -> dict[str, Any]:
+    """Render a terminal status payload reusing the _build_result shape.
+
+    ``status`` is a WIRE status: either :func:`classify_terminal`'s own verdict
+    or, when the narrowing fired, a log verdict translated by
+    :func:`wire_status_from_result`. Every terminal wire status therefore has an
+    explicit arm here, and ``failure`` is one of them rather than the fallback —
+    a status this function does not recognise must not be rendered as a build
+    that ran and failed, which is the fold-into-a-neighbour the whole
+    non-finish separation exists to prevent.
+    """
+    if status == 'timeout':
+        return status_from_result(
+            timeout_result(timeout_seconds, duration, log_file, command_str)
+        )
+    if status == STATUS_KILLED:
+        return status_payload(
+            STATUS_KILLED,
+            duration_seconds=duration,
+            log_file=log_file,
+            exit_code=returncode if returncode is not None else -1,
+        )
+    if status == 'success':
+        return status_from_result(success_result(duration, log_file, command_str))
+    if status == STATUS_FAILURE:
+        return status_from_result(
+            error_result(ERROR_BUILD_FAILED, returncode or 1, duration, log_file, command_str)
+        )
+    # Unrecognised: the caller handed a status outside the terminal wire
+    # vocabulary. Report it verbatim rather than claiming a failure nobody
+    # observed — the client maps an unrecognised terminal status to
+    # ``indeterminate``, and this arm is what lets it see one.
+    return status_payload(
+        status,
+        duration_seconds=duration,
+        log_file=log_file,
+        exit_code=returncode if returncode is not None else -1,
+    )
+
+
+def _wire_status_from_log_verdict(verdict_status: str) -> str:
+    """Translate a LOG-SOURCED verdict status to the wire vocabulary, fail-closed.
+
+    :func:`wire_status_from_result` raises when handed a :mod:`_build_result`
+    status the wire table cannot translate — a deliberate totality guard on a
+    value that normally arrives from code in this same tree. Here the value did
+    not: it was READ OFF A JOB LOG, so it can come from a version-skewed wrapper
+    binary emitting a status this daemon's protocol module predates (the
+    condition ``manage-build-server status`` reports as ``binary_diverges``).
+
+    Letting that raise escape would abort :func:`run_job` mid-job and lose the
+    whole result, turning a translation gap into a daemon crash. ADR-009's
+    fail-closed rule applies instead: an untranslatable log status becomes
+    ``indeterminate`` — the value that exists precisely for "the outcome could
+    not be established" — and the job still returns a terminal payload.
+
+    A status outside BOTH vocabularies (a truncated or foreign log yielding
+    arbitrary text) does not reach this branch at all: it passes through
+    :func:`wire_status_from_result` unchanged and
+    :func:`_terminal_payload` renders it verbatim for the client to map.
+
+    The two unrecognised classes therefore end DIFFERENTLY, and must not be
+    described as converging: this branch's class is re-read as ``indeterminate``
+    and so leaves on the wire as ``failure`` (``indeterminate`` has no wire row of
+    its own), which a client maps back to ``error``; the outside-both class leaves
+    verbatim, as whatever text the log carried. What they share is narrower than a
+    common outcome — neither crashes the daemon, and both still return a terminal
+    payload.
+
+    Args:
+        verdict_status: The ``status:`` value read back from the job log.
+
+    Returns:
+        The corresponding wire status, or the wire status for ``indeterminate``
+        when the value cannot be translated.
+    """
+    try:
+        return wire_status_from_result(verdict_status)
+    except ValueError:
+        return wire_status_from_result(RESULT_STATUS_INDETERMINATE)
+
+
+async def run_job(
+    command: list[str],
+    cwd: str,
+    *,
+    timeout: int,
+    log_file: str,
+    env: dict[str, str] | None = None,
+    progress: JobProgress | None = None,
+) -> dict[str, Any]:
+    """Run one build child and return its terminal status payload.
+
+    Args:
+        command: The executor-form argv to run (already verified).
+        cwd: The working directory (the submitted tree).
+        timeout: Wall-clock timeout in seconds; on expiry the child is killed
+            and the status is ``timeout``.
+        log_file: Path to stream combined stdout/stderr into.
+        env: The child environment; defaults to :func:`build_baseline_env`.
+        progress: Optional liveness tracker updated on each output chunk.
+
+    Returns:
+        The terminal status payload (``success | failure | timeout | killed``)
+        in the shared result shape.
+    """
+    # Stamp the re-entrancy marker so the child's own build wrapper (when the
+    # child re-runs the executor-form command) never routes back to the daemon —
+    # a build already running inside a marshalld job always runs in-process. The
+    # child env is copied first so a caller-supplied env dict is not mutated.
+    child_env = dict(env if env is not None else build_baseline_env())
+    child_env[MARSHALLD_JOB_ENV] = '1'
+    command_str = ' '.join(command)
+    if progress is None:
+        progress = JobProgress()
+
+    proc = await asyncio.create_subprocess_exec(
+        *command,
+        cwd=cwd,
+        env=child_env,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+
+    timed_out = False
+    with open(log_file, 'wb') as sink:
+        pumps = [
+            asyncio.create_task(_pump(proc.stdout, sink, progress)),
+            asyncio.create_task(_pump(proc.stderr, sink, progress)),
+        ]
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=timeout)
+        except TimeoutError:
+            timed_out = True
+            proc.kill()
+            await proc.wait()
+        finally:
+            await asyncio.gather(*pumps, return_exceptions=True)
+
+    duration = int(progress.elapsed())
+    status = classify_terminal(proc.returncode, timed_out=timed_out)
+    returncode = proc.returncode
+    # Exit 0 is necessary but not sufficient: the build wrapper exits 0 even when
+    # the build failed, so a `success` classification only stands when the
+    # emitted build TOON affirmatively agrees. The supervisor's OWN timeout /
+    # killed legs are untouched — they always outrank log content.
+    #
+    # When the verdict disagrees, the narrowed status is the verdict's OWN status
+    # translated to the wire vocabulary — never a hard-coded `failure`. The
+    # wrapper reports three ways to be non-green, and two of them are NON-FINISHES
+    # it observed first-hand: its own bound fired (`timeout`), or its build child
+    # was signalled while it survived (`killed`, the INNER kill — distinct from
+    # the outer kill `classify_terminal` sees as a negative returncode). Flattening
+    # those to `failure` here would re-collapse, at the daemon, exactly what the
+    # wrapper just took care to distinguish: a routed timeout and a routed kill
+    # would both reach every downstream gate as a red build.
+    if status == 'success':
+        verdict = read_log_verdict(log_file)
+        if verdict is not None and verdict.status != RESULT_STATUS_SUCCESS:
+            status = _wire_status_from_log_verdict(verdict.status)
+            returncode = verdict.exit_code
+    return _terminal_payload(
+        status,
+        returncode=returncode,
+        duration=duration,
+        log_file=log_file,
+        command_str=command_str,
+        timeout_seconds=timeout,
+    )

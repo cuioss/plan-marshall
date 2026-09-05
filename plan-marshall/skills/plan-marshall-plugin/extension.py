@@ -1,0 +1,616 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
+"""Extension API for plan-marshall bundle - build system discovery.
+
+Consolidates module discovery for Maven, Gradle, npm, and Python build systems.
+Delegates to build-system-specific discovery scripts in sibling skill directories
+(build-maven, build-gradle, build-npm, build-pyproject).
+
+Also the bundle's Axis-D path attributor: it declares the repo-relative trees the
+``plan-marshall`` module owns. See
+``extension-api/standards/ext-point-path-attribution.md``.
+
+And its Axis-C derivation resolver: ``lsp``, a pure join over the language-server
+references the discovery-time harvest materializes into ``component_refs``.
+
+Why the ``lsp`` resolver lives on this bundle: a bundle registers at most one
+resolver, and that is the surviving constraint. ``pm-dev-python``'s single slot is
+already spent on its AST-import join, so an ``lsp`` resolver added there would be
+stamped ``python`` and become indistinguishable from it. This bundle's slot was
+free, and it is now spent on ``lsp``. Keeping the ids distinct is the entire point
+— where both derive the same pair they have corroborated rather than disagreed,
+and the core merge unions them into one edge carrying both producer ids.
+"""
+
+from pathlib import Path
+
+from extension_base import DerivationResolverBase, ExtensionBase, PathAttributionBase
+
+# Build systems that indicate code content (vs documentation or plugin metadata)
+_CODE_BUILD_SYSTEMS = {'maven', 'gradle', 'npm', 'python'}
+
+# Build file constants
+POM_XML = 'pom.xml'
+BUILD_GRADLE = 'build.gradle'
+BUILD_GRADLE_KTS = 'build.gradle.kts'
+SETTINGS_GRADLE = 'settings.gradle'
+SETTINGS_GRADLE_KTS = 'settings.gradle.kts'
+PACKAGE_JSON = 'package.json'
+PYPROJECT_TOML = 'pyproject.toml'
+
+LSP_DEP_TYPE = 'lsp'
+"""The single reference kind this resolver owns.
+
+Declared as a literal rather than imported from the engine that writes it: a
+resolver imports nothing from the bundle materializing its field, so each
+registration stands alone. The sibling kinds (``script`` / ``skill`` / ``import``
+/ ``path`` / ``implements``) belong to the markdown, python, and documentation
+resolvers, so a non-``lsp`` entry is outside this resolver's scope rather than an
+edge it suppressed, and carries no note.
+"""
+
+HARVEST_STATUS_FIELD = 'lsp_harvest'
+"""Module-dict field carrying the harvest's ``{ran, reason, notes}`` record.
+
+The field is what makes a zero-edge answer non-vacuous. Without it, a server that
+never started and a workspace with genuinely no references both reach the caller
+as ``status: ok, edge_count: 0`` — the confident empty answer this substrate
+exists to eliminate.
+"""
+
+SUPPRESSION_CATEGORIES = (
+    'malformed-reference',
+    'unresolved-target',
+    'unknown-endpoint',
+    'self-edge',
+)
+"""Suppression buckets reported in ``notes[]``, in emission order.
+
+``malformed-reference`` leads because it is a *structural* rejection decided
+before the reference can be classified at all: an element that is not a mapping,
+or whose ``target_bundle`` is not a usable non-empty string, cannot be asked
+whether it resolved or where it points. The other three are semantic verdicts
+about a well-formed reference.
+
+The category exists because ``component_refs`` is materialized by four different
+discovery engines across four bundles, so a malformed element is a real
+possibility rather than a theoretical one. Reporting it is the point: a silent
+skip would hide a producer defect, which is the opposite of what this resolver's
+notes contract exists for.
+"""
+
+
+class Extension(ExtensionBase, PathAttributionBase, DerivationResolverBase):
+    """Build system discovery and cross-cutting development extension for plan-marshall bundle.
+
+    Opts into Axis-D (path attribution) and Axis-C (``lsp`` edge derivation) by
+    multiple inheritance, which is the only shape that lets an Axis-A domain
+    extension declare path claims and derive module edges — see
+    ``extension-api/standards/ext-point-path-attribution.md`` and
+    ``extension-api/standards/ext-point-derivation-resolver.md``.
+    """
+
+    def get_skill_domains(self) -> list[dict]:
+        """Return the general-dev domain.
+
+        The plan-marshall-plugin extension uses general-dev domain skills; it does
+        not own a build skill-domain (the file-to-build contract is owned by the
+        build-system extensions per ADR-004).
+        """
+        return [
+            self._general_dev_domain(),
+        ]
+
+    def _general_dev_domain(self) -> dict:
+        """Return general-dev domain metadata for skill loading."""
+        return {
+            'domain': {
+                'key': 'general-dev',
+                'name': 'General Development',
+                'description': 'Cross-cutting code quality, documentation, and testing methodology',
+            },
+            'profiles': {
+                'core': {
+                    'defaults': [
+                        {
+                            'skill': 'plan-marshall:persona-plan-marshall-agent',
+                            'description': 'Foundational agent behavior rules (user interaction, tool usage, research, dependency management)',
+                        },
+                    ],
+                    'optionals': [],
+                },
+                'implementation': {
+                    'defaults': [
+                        {
+                            'skill': 'plan-marshall:ref-code-quality',
+                            'description': 'Language-agnostic code quality, refactoring, and documentation principles',
+                        },
+                        {
+                            'skill': 'plan-marshall:build-server-client',
+                            'description': 'marshalld build-server consumption client (submit/wait/ping/preflight) — build-dispatch routes builds through the daemon when the project is registered, else falls back in-process',
+                        },
+                    ],
+                    'optionals': [],
+                },
+                'module_testing': {
+                    'defaults': [
+                        {
+                            'skill': 'plan-marshall:ref-code-quality',
+                            'description': 'Language-agnostic code quality principles (SRP, CQS, complexity, error handling)',
+                        },
+                        {
+                            'skill': 'plan-marshall:persona-module-tester',
+                            'description': 'Language-agnostic testing methodology (AAA, coverage, reliability, determinism)',
+                        },
+                        {
+                            'skill': 'plan-marshall:build-server-client',
+                            'description': 'marshalld build-server consumption client (submit/wait/ping/preflight) — test-run dispatch routes through the daemon when the project is registered, else falls back in-process',
+                        },
+                    ],
+                    'optionals': [],
+                },
+                'quality': {
+                    'defaults': [
+                        {
+                            'skill': 'plan-marshall:ref-code-quality',
+                            'description': 'Language-agnostic code quality, refactoring, and documentation principles',
+                        },
+                    ],
+                    'optionals': [],
+                },
+            },
+        }
+
+    def path_attributor_id(self) -> str:
+        """Return this attributor's stable provenance identity (Axis-D)."""
+        return 'plan-marshall'
+
+    def claim_paths(self) -> tuple[list[tuple[str, str]], list[str]]:
+        """Declare the repo-relative trees the ``plan-marshall`` module owns.
+
+        ``.plan`` is core's own runtime-state tree — the executor,
+        ``marshal.json``, and every plan-scoped script — and this claim closes the
+        ``module: null`` answer every ``.plan/`` path previously received. The
+        prefix is the BARE root segment so prefix containment covers
+        ``.plan/execute-script.py``, ``.plan/marshal.json`` and every nested script
+        path — an fnmatch-shaped ``.plan/**`` would miss the segment itself.
+
+        The project-local ``.claude`` tree is deliberately NOT claimed here. It
+        previously carried a ``.claude/skills`` claim — a re-homing of a legacy
+        inline prefix map, explicitly *"NOT a fresh ownership ruling"*, with the
+        ``pm-plugin-development`` question deferred. That question is now settled:
+        the whole ``.claude`` tree (skills, commands, and settings) belongs to the
+        ``pm-plugin-development`` module, whose domain understands Claude Code
+        plugin artifacts. See that bundle's ``claim_paths`` for the decision and
+        its reasoning.
+        """
+        return [('.plan', 'plan-marshall')], []
+
+    def provides_recipes(self) -> list[dict]:
+        """Return built-in recipes provided by plan-marshall."""
+        return [
+            {
+                'key': 'code-review',
+                'name': 'Code Review',
+                'description': 'On-demand diff-aware structural/quality review emitting lint-issue findings into triage',
+                'skill': 'plan-marshall:recipe-code-review',
+                'default_change_type': 'feature',
+                'scope': 'module',
+            },
+            {
+                'key': 'refactor-to-profile-standards',
+                'name': 'Refactor to Profile Standards',
+                'description': 'Refactor code to comply with configured profile standards, package by package',
+                'skill': 'plan-marshall:recipe-refactor-to-profile-standards',
+                'default_change_type': 'tech_debt',
+                'scope': 'codebase_wide',
+            },
+            {
+                'key': 'security-audit',
+                'name': 'Security Audit',
+                'description': 'On-demand security audit over the footprint emitting bug/anti-pattern findings into triage',
+                'skill': 'plan-marshall:recipe-security-audit',
+                'default_change_type': 'feature',
+                'scope': 'module',
+            },
+            {
+                'key': 'agentfile-hygiene',
+                'name': 'Agentfile Hygiene',
+                'description': 'Cognitive sweep classifying every CLAUDE.md/AGENTS.md section against the hygiene rubric and emitting one remediation deliverable per offending section',
+                'skill': 'plan-marshall:recipe-agentfile-hygiene',
+                'default_change_type': 'tech_debt',
+                'scope': 'codebase_wide',
+            },
+            {
+                'key': 'surgical-fix',
+                'name': 'Surgical Fix',
+                'description': 'Micro-lane fast path for a pre-diagnosed surgical fix — a root-cause-known, single-module change composed as a deterministic surgical outline with automated-review force-kept in the loop',
+                'skill': 'plan-marshall:recipe-surgical-fix',
+                'default_change_type': 'bug_fix',
+                'scope': 'module',
+            },
+        ]
+
+    def provides_file_globs(self) -> list[str]:
+        """Declare no file globs — ``general-dev`` owns no file-type identity.
+
+        The empty list is a deliberate declaration, not an omission. ``general-dev``
+        is a cross-cutting quality domain: its skills are code-quality, testing
+        methodology, and agent-behaviour standards that apply regardless of which
+        language a file is written in. It therefore owns no distinct file type, and
+        any glob it declared would be broad enough to union the domain into every
+        plan — exactly what the ``file_globs`` inclusion leg exists to avoid.
+        """
+        return []
+
+    def applies_to_module(self, module_data: dict, active_profiles: set[str] | None = None) -> dict:
+        """Applicable only to modules with code build systems.
+
+        Uses general-dev domain skills (not build domain, which has empty profiles).
+        """
+        build_systems = set(module_data.get('build_systems') or [])
+        if not build_systems & _CODE_BUILD_SYSTEMS:
+            return {
+                'applicable': False,
+                'confidence': 'none',
+                'signals': [],
+                'additive_to': None,
+                'skills_by_profile': {},
+            }
+
+        return self._build_applicable_result(
+            'high',
+            ['cross-cutting'],
+            module_data=module_data,
+            active_profiles=active_profiles,
+            domain_key='general-dev',
+        )
+
+    # =========================================================================
+    # Axis-C: module-edge derivation (the language-server symbol join)
+    # =========================================================================
+
+    def derivation_resolver_id(self) -> str:
+        """Return the stable provenance identity stamped onto every lsp edge."""
+        return 'lsp'
+
+    def derivation_file_patterns(self) -> list[str]:
+        """Return the file patterns this resolver's harvest reads.
+
+        The harvest drives one language end-to-end (``lsp_harvest``'s
+        ``HARVEST_LANGUAGE``), so the declared set is Python's. It is descriptive
+        only — whether the resolver runs at all is decided by the enabled
+        ``language_servers`` binding and by this resolver's own
+        ``derivation_resolvers`` entry, never by matching a file against these
+        patterns.
+
+        Descriptive metadata for the resolver-configuration menu, never a filter
+        — see ``DerivationResolverBase.derivation_file_patterns``.
+        """
+        return ['**/*.py']
+
+    def derive_edges(
+        self,
+        derived_by_name: dict,
+        enriched_by_name: dict,
+    ) -> tuple[list[tuple[str, str]], list[str]]:
+        """Derive module edges from harvested language-server references.
+
+        A pure join over the ``component_refs`` field discovery materializes: the
+        language server ran at discovery time, its file-granular references were
+        lifted to module granularity, and this method performs no file I/O and
+        runs no subprocess, as the Axis-C purity contract requires.
+
+        **That lift happens upstream, in the harvest, and it does not go through
+        the Axis-D path-attribution seam** — so do not look for an attribution
+        callable in this method; there is none, and this paragraph is a statement
+        about ``lsp_harvest.lift_to_modules`` rather than about the code below.
+        The harvest uses a caller-supplied path-to-module lookup — a
+        longest-prefix table it builds from the discovered module set. That is
+        necessary rather than incidental: no attributor on that seam claims a
+        ``marketplace/bundles/**`` path — the live claim set is ``.claude``,
+        ``.plan`` and three documentation paths — so routing through it would
+        guarantee zero edges. The substitute does **not** carry
+        the seam's ambiguous-ownership obligation (its equal-length tie-break is
+        iteration order, which the seam's contract forbids; unreachable today
+        because bundle directory names are unique), and vendored-tree exclusion
+        is handled by the harvest rather than by the lookup.
+
+        The harvest's own status record is read first and reported. A harvest that
+        did not run yields a note naming the reason, so ``edge_count: 0`` from a
+        server that never started stays distinguishable from ``edge_count: 0`` on
+        a workspace with genuinely no references.
+
+        ``component_refs`` is treated as untrusted input. Four discovery engines
+        across four bundles materialize that field, so an element that is not a
+        mapping — or one whose ``target_bundle`` is not a usable non-empty string
+        — is a real possibility. Such an element is suppressed under
+        ``malformed-reference`` and reported through the same aggregated-note path
+        as the semantic categories, never dropped silently and never allowed to
+        raise: an unguarded ``ref.get(...)`` on a non-mapping would take down the
+        entire graph derivation rather than just the offending reference.
+
+        Args:
+            derived_by_name: Module name → derived data. A module carrying no
+                harvest record contributes nothing.
+            enriched_by_name: Module name → curated overlay. Unused: the
+                precedence of a declared ``internal_dependencies`` over a derived
+                edge set is core's decision, applied ahead of this call.
+
+        Returns:
+            An ``(edges, notes)`` tuple. ``notes`` carries the harvest status
+            first, then one aggregated entry per non-empty suppression category.
+        """
+        edges: set[tuple[str, str]] = set()
+        suppressed: dict[str, list[str]] = {category: [] for category in SUPPRESSION_CATEGORIES}
+        harvest_notes: list[str] = []
+        seen_notes: set[str] = set()
+        saw_status = False
+
+        for module_name, module_data in derived_by_name.items():
+            saw_status |= self._collect_harvest_notes(module_data, harvest_notes, seen_notes)
+
+            for ref in module_data.get('component_refs') or []:
+                if not isinstance(ref, dict):
+                    # Not a mapping, so its dep_type is unreadable and this
+                    # resolver cannot tell whether the entry was even its own.
+                    # Reported rather than skipped: the alternative to a note
+                    # here is an AttributeError that takes down the whole graph
+                    # derivation, not merely this reference.
+                    suppressed['malformed-reference'].append(
+                        f'{module_name} -> <non-mapping {type(ref).__name__}> [{LSP_DEP_TYPE}]'
+                    )
+                    continue
+
+                if ref.get('dep_type') != LSP_DEP_TYPE:
+                    continue
+
+                target = ref.get('target_bundle')
+                if not isinstance(target, str) or not target:
+                    # An unhashable target would raise TypeError on the
+                    # membership test below, and an empty or absent one names no
+                    # endpoint that could be resolved either way.
+                    suppressed['malformed-reference'].append(
+                        f'{module_name} -> {target!r} [{LSP_DEP_TYPE}]'
+                    )
+                    continue
+
+                candidate = f'{module_name} -> {target} [{LSP_DEP_TYPE}]'
+
+                if not ref.get('resolved'):
+                    suppressed['unresolved-target'].append(candidate)
+                elif target not in derived_by_name:
+                    suppressed['unknown-endpoint'].append(candidate)
+                elif target == module_name:
+                    suppressed['self-edge'].append(candidate)
+                else:
+                    edges.add((module_name, target))
+
+        if derived_by_name and not saw_status:
+            # No module carries a harvest record at all, which means no
+            # discovery-time harvest ran over this project. Reporting that is the
+            # difference between "the harvest found nothing" and "no harvest
+            # happened here" — without it, every project whose modules are
+            # discovered by an extension that does not materialize the field would
+            # get a confident `status: ok, edge_count: 0`.
+            harvest_notes.append(
+                'harvest-did-not-run: no module carries a harvest record, so no '
+                'discovery-time language-server harvest ran for this project'
+            )
+
+        return sorted(edges), harvest_notes + self._aggregate_notes(suppressed)
+
+    @staticmethod
+    def _collect_harvest_notes(module_data: dict, notes: list[str], seen: set[str]) -> bool:
+        """Fold one module's harvest record into the deduplicated note list.
+
+        Every module carries the same workspace-wide record, so the notes are
+        deduplicated on content rather than emitted once per module.
+
+        Returns:
+            Whether this module carried a harvest record at all — the caller uses
+            it to tell "the harvest ran and reported" from "nothing harvested
+            here", which are different answers.
+        """
+        status = module_data.get(HARVEST_STATUS_FIELD)
+        if not isinstance(status, dict):
+            return False
+
+        if not status.get('ran'):
+            reason = status.get('reason') or 'unstated reason'
+            note = f'harvest-did-not-run: {reason}'
+            if note not in seen:
+                seen.add(note)
+                notes.append(note)
+            return True
+
+        for note in status.get('notes') or []:
+            if note not in seen:
+                seen.add(note)
+                notes.append(note)
+        return True
+
+    # =========================================================================
+    # discover_modules() - Consolidated build system discovery
+    # =========================================================================
+
+    def discover_modules(self, project_root: str) -> list:
+        """Discover all modules across Maven, Gradle, npm, and Python.
+
+        Delegates to build-system-specific discovery scripts:
+        - Maven: build-maven/scripts/_maven_cmd_discover.py
+        - Gradle: build-gradle/scripts/_gradle_cmd_discover.py
+        - npm: build-npm/scripts/_npm_cmd_discover.py
+        - Python: build-pyproject/scripts/_pyproject_cmd_discover.py
+        """
+        modules = []
+
+        # Maven modules
+        modules.extend(self._discover_maven(project_root))
+
+        # Gradle modules (avoid duplicates with Maven)
+        modules.extend(self._discover_gradle(project_root, modules))
+
+        # npm modules
+        modules.extend(self._discover_npm(project_root))
+
+        # Python modules
+        modules.extend(self._discover_python(project_root))
+
+        # Cross-extension: find nested build descriptors missed by primary discovery
+        modules.extend(self._discover_nested_descriptors(project_root, modules))
+
+        return modules
+
+    # =========================================================================
+    # Maven Discovery
+    # =========================================================================
+
+    def _discover_maven(self, project_root: str) -> list:
+        """Discover Maven modules via pom.xml analysis."""
+        root = Path(project_root)
+        if not (root / POM_XML).exists():
+            return []
+
+        from _maven_cmd_discover import discover_maven_modules
+
+        return discover_maven_modules(project_root)
+
+    # =========================================================================
+    # Gradle Discovery
+    # =========================================================================
+
+    def _discover_gradle(self, project_root: str, existing_modules: list) -> list:
+        """Discover Gradle modules, excluding those already found by Maven."""
+        root = Path(project_root)
+        gradle_files = [BUILD_GRADLE_KTS, BUILD_GRADLE, SETTINGS_GRADLE_KTS, SETTINGS_GRADLE]
+        has_gradle = any((root / bf).exists() for bf in gradle_files)
+        if not has_gradle:
+            return []
+
+        from _gradle_cmd_discover import discover_gradle_modules
+
+        maven_paths = {m['paths']['module'] for m in existing_modules if 'paths' in m}
+        gradle_modules = discover_gradle_modules(project_root)
+
+        result = []
+        for gm in gradle_modules:
+            # Error-only modules (no paths) are always included
+            if 'error' in gm or gm['paths']['module'] not in maven_paths:
+                result.append(gm)
+        return result
+
+    # =========================================================================
+    # npm Discovery (delegated to build-npm)
+    # =========================================================================
+
+    def _discover_npm(self, project_root: str) -> list:
+        """Discover npm modules via package.json analysis.
+
+        Delegates to build-npm/scripts/_npm_cmd_discover.py which handles
+        workspaces, metadata enrichment, and canonical command generation.
+        """
+        root = Path(project_root)
+        if not (root / PACKAGE_JSON).exists():
+            return []
+
+        from _npm_cmd_discover import discover_npm_modules
+
+        return discover_npm_modules(project_root)
+
+    # =========================================================================
+    # Cross-Extension Nested Discovery
+    # =========================================================================
+
+    def _discover_nested_descriptors(self, project_root: str, existing_modules: list) -> list:
+        """Discover nested build descriptors missed by primary discovery.
+
+        Scans module paths discovered by one build system for co-located
+        descriptors from other build systems. For example, a Maven module
+        at path/e2e-playwright/ may also contain a package.json for npm.
+
+        Args:
+            project_root: Absolute path to project root.
+            existing_modules: Modules already discovered by primary discovery.
+
+        Returns:
+            List of additional module dicts for nested descriptors.
+        """
+        from _gradle_cmd_discover import discover_gradle_modules
+        from _npm_cmd_discover import discover_standalone_npm_module
+
+        root = Path(project_root)
+
+        # Collect paths already covered by each build system
+        npm_paths = set()
+        non_npm_paths = set()
+        gradle_paths = set()
+        non_gradle_paths = set()
+        maven_paths = set()
+
+        for mod in existing_modules:
+            if 'paths' not in mod:
+                continue
+            mod_path = mod['paths']['module']
+            build_systems = set(mod.get('build_systems', []))
+            if 'npm' in build_systems:
+                npm_paths.add(mod_path)
+            else:
+                non_npm_paths.add(mod_path)
+            if 'gradle' in build_systems:
+                gradle_paths.add(mod_path)
+            else:
+                non_gradle_paths.add(mod_path)
+            if 'maven' in build_systems:
+                maven_paths.add(mod_path)
+
+        nested = []
+        all_gradle_modules = None
+
+        # Find package.json in non-npm module paths
+        for mod_path in non_npm_paths:
+            abs_path = root / mod_path if mod_path != '.' else root
+            if (abs_path / PACKAGE_JSON).exists() and mod_path not in npm_paths:
+                module = discover_standalone_npm_module(project_root, str(abs_path))
+                if module:
+                    nested.append(module)
+
+        # Find build.gradle[.kts] in non-gradle module paths. A path already
+        # occupied by a Maven module is excluded: Maven and Gradle are mutually
+        # exclusive JVM build systems for one physical module, so a co-located
+        # build.gradle at a Maven module's path is the same-path duplicate that
+        # primary _discover_gradle already suppressed (Maven wins). Re-adding it
+        # here would defeat that dedup and yield two successful modules for one
+        # directory. (Contrast the npm arm above: npm + Maven at one path is a
+        # legitimate pairing, e.g. a Maven module that also runs Playwright.)
+        for mod_path in non_gradle_paths:
+            abs_path = root / mod_path if mod_path != '.' else root
+            gradle_files = [BUILD_GRADLE_KTS, BUILD_GRADLE]
+            has_gradle = any((abs_path / gf).exists() for gf in gradle_files)
+            if has_gradle and mod_path not in gradle_paths and mod_path not in maven_paths:
+                if all_gradle_modules is None:
+                    all_gradle_modules = discover_gradle_modules(project_root)
+                for gm in all_gradle_modules:
+                    if 'paths' in gm and gm['paths']['module'] == mod_path:
+                        nested.append(gm)
+                        break
+
+        return nested
+
+    # =========================================================================
+    # Python Discovery (delegated to build-pyproject)
+    # =========================================================================
+
+    def _discover_python(self, project_root: str) -> list:
+        """Discover Python modules via pyprojectx project analysis.
+
+        Delegates to build-pyproject/scripts/_pyproject_cmd_discover.py which handles
+        module detection, metadata extraction, and canonical command generation.
+        """
+        root = Path(project_root)
+        if not (root / PYPROJECT_TOML).exists():
+            return []
+
+        from _pyproject_cmd_discover import discover_python_modules
+
+        return discover_python_modules(project_root)

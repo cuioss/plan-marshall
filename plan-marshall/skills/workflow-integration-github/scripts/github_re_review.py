@@ -1,0 +1,768 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
+"""GitHub bot_kind-keyed re-review strategy registry.
+
+Closes the post-merge re-review gap: when a HEAD-advancing branch operation in
+phase-6-finalize (branch-cleanup rebase/force-push, or a phase-5 loop-back fix
+commit) leaves new commits unreviewed by automated bots, this registry requests
+a fresh bot review for the new HEAD and polls until a review lands for it.
+
+The registry is ``bot_kind``-keyed with a strict two-method contract — no
+speculative extensibility:
+
+    request_fresh_review(pr_number, push_time) -> trigger_time
+    await_fresh_review(pr_number, head_sha, trigger_time) -> envelope
+
+Data-not-code: there is ONE generic strategy, parameterized by the per-bot
+trigger comment loaded from the registry (``bot_registry.trigger_comment``).
+``request_fresh_review`` posts that bot's explicit trigger comment and returns
+the comment-post time; the trigger comment is the only thing that varies between
+bots, and it is data (each bot's ``trigger_comment`` in
+``automatic-review/standards/{bot_kind}.md``), not a per-bot subclass. The
+explicit comment is the reliable trigger for the new HEAD — a bot's incremental
+auto-review on push can be debounced or skipped on a force-push and does not
+auto-fire at all for some bots.
+
+``await_fresh_review`` is identical for every bot and is satisfied by EITHER of
+two completion signals, checked in that order of strength:
+
+1. A **review** whose reviewed-commit evidence REFERENCES ``head_sha`` AND whose
+   ``submittedAt > trigger_time``. Preferred, and reported as
+   ``matched_signal: review`` with ``head_sha_verified: true``. The reference is
+   recognised wherever the evidence carries the SHA — as a bare token, or embedded
+   in a commit URL — and compared for equality either way, so a differing commit
+   still fails to verify. Comparing the whole field for string equality instead
+   recognised only the bare shape, dropped a URL-shaped review onto signal 2, and
+   published ``head_sha_verified: false`` for a HEAD the bot HAD reviewed.
+2. An **issue comment** authored by the awaited ``bot_kind`` whose later of
+   ``updated_at`` / ``created_at`` post-dates ``trigger_time``. Reported as
+   ``matched_signal: issue_comment`` with ``head_sha_verified: false`` — a
+   comment carries no reviewed-commit SHA, so it establishes that the bot
+   responded, NOT that it reviewed the new HEAD.
+
+BOTH discriminators additionally reject a **refusal notice** — a comment or a
+review body a bot posts to say it could NOT review — running the same
+refusal-recognition STACK the producer applies, arm for arm: the awaited bot's
+registry ``refusal_patterns`` (case-sensitive substring containment), the
+structural ``_is_rate_limit_notice`` for an unknown/unregistered bot or a
+notice-shaped phrasing not yet captured as data, and the enumerative
+``_is_unrecognised_refusal`` for a body no earlier arm could read.
+``_github_pr.REFUSAL_LAYERS`` is the single place those arms are named, and the
+list is open — a further arm is added there rather than by correcting a count
+here. A refusal is the bot talking about itself, never evidence that the new HEAD
+was reviewed, and that holds however weakly it was recognized.
+
+The enumerative arm is what closes the path's worst failure: a reworded refusal
+used to reach ``_match_review``, which admits any body that is "not a refusal
+notice" — so the envelope reported ``head_sha_verified: true`` for a HEAD the bot
+had declined to review. It is also fail-safe by construction: with no derived
+threshold the arm never fires and this module behaves exactly as it did before.
+
+The registry arm reads ``refusal_patterns``, never ``ignore_patterns`` — the
+latter names sections of a *successful* review, so reading it here would report a
+bot that reviewed fine as having declined.
+
+**A rejected refusal is RECORDED, never silently dropped.** Both discriminators
+append every refusal they skip to a per-poll accumulator, and the envelope
+surfaces it: ``refusal_detected`` (bool), ``refusal_class`` (the awaited bot's
+registry ``rate_limit_class`` — ``awaitable_window`` / ``hard_quota`` /
+``unknown`` — displaced to ``unknown`` when ANY detected refusal had to be caught by
+the enumerative arm, because an unread notice supports no claim about its own
+awaitability and the completeness site applies the same per-bot override; see
+:func:`_resolve_refusal_class`), ``refusal_eta`` (the reset time the notice itself stated, parsed
+through the bot's registry ``rate_limit_eta_patterns``), and ``refusals`` (one
+record per detected refusal carrying its source, detecting layer, awaited
+``bot_kind``, ETA, the refusal ``cause``, the stated size ``cap``, and a
+truncated body excerpt — see :meth:`_ReReviewStrategy._refusal_record` for the
+authoritative per-member contract). The refusal still does NOT
+count as a completed review — ``matched`` is unaffected — but the caller can now
+distinguish "the bot refused, and here is the recovery this arms" from "the bot
+never responded". Without the record the two were the same bare
+``matched: false`` / ``timed_out: true``, and the refusal vanished.
+
+Accepted tradeoff: a genuine review or comment whose body happens to quote a
+``refusal_patterns`` substring is skipped — deliberate, because a truthful
+non-match is recoverable, whereas a false ``head_sha_verified: true`` silently
+asserts review coverage that never happened. That skip is now VISIBLE in
+``refusals`` rather than swallowed.
+
+The second signal exists because a bot that posts its review as one persistent
+issue comment and submits no review object could otherwise only ever time out.
+It is generic: no bot is named in code, and every bot's comment is equally valid
+evidence that it responded. The envelope names which signal fired so the caller
+is never misled about the strength of the evidence.
+
+The bot-kind set, the login->bot_kind map, and each trigger comment are all
+DERIVED from the registry (``bot_registry``), whose data source is the per-bot
+standards docs. ``BOT_KINDS`` (imported from ``_findings_core``, itself derived
+from the same registry) remains the argparse ``choices=`` surface, so a new bot
+is added by dropping a ``standards/{bot_kind}.md`` doc — no code change here.
+
+Usage:
+    github_re_review.py re-review --pr-number N --bot-kind coderabbit \
+        --head-sha SHA --push-time ISO8601 [--timeout SECONDS] --plan-id PLAN_ID
+
+Output: TOON format
+"""
+
+import argparse
+import re
+import sys
+from datetime import UTC, datetime
+
+import bot_registry
+import github_ops as _github
+from _findings_core import BOT_KINDS
+from _github_pr import (
+    REFUSAL_LAYER_ENUMERATIVE,
+    REFUSAL_LAYER_REGISTRY,
+    REFUSAL_LAYER_STRUCTURAL,
+    REFUSAL_LAYERS,
+    _extract_rate_limit_eta,
+    _is_rate_limit_notice,
+    _is_unrecognised_refusal,
+    refusal_cause,
+    refusal_size_cap,
+)
+from ci_base import (
+    DEFAULT_CI_INTERVAL,
+    DEFAULT_CI_TIMEOUT,
+    extract_routing_args,
+    make_error,
+    poll_until,
+    register_subcommands,
+    safe_main,
+    serialize_toon,
+    set_default_cwd,
+)
+
+register_subcommands({'re-review'})
+
+# A refusal notice is short by construction, but the envelope it is recorded on is
+# serialized as TOON, whose scalar values are single-line. The recorded body is
+# therefore whitespace-collapsed to one line and truncated to this many characters
+# — enough to identify the notice in a decision log without risking a multi-line
+# value that would be silently clipped at the transport layer.
+_REFUSAL_BODY_EXCERPT_CHARS = 300
+
+
+def _now_iso() -> str:
+    """Current UTC time as an ISO-8601 string (used as the post-comment time)."""
+    return datetime.now(UTC).isoformat()
+
+
+def _parse_iso(value: str) -> datetime | None:
+    """Parse an ISO-8601 timestamp; return None on any malformed input.
+
+    GitHub timestamps end in ``Z``; normalize to ``+00:00`` for fromisoformat.
+    Timezone-naive datetimes are normalized to UTC so comparisons with
+    timezone-aware GitHub API timestamps never raise a TypeError.
+    """
+    if not value:
+        return None
+    normalized = value.replace('Z', '+00:00')
+    try:
+        dt = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt
+
+
+# A reviewed-commit reference is recognised WHEREVER the evidence carries it, not
+# only when the whole field IS the bare SHA. The same reviewed-commit evidence
+# arrives in more than one shape — a bare 40-hex token, or the SHA sitting inside a
+# ``…/commit/{sha}`` permalink — and comparing the whole field for string equality
+# recognises only the first. The second then failed to match a review OF the awaited
+# HEAD, the resolver fell through to the weaker comment discriminator, and the
+# envelope published ``head_sha_verified: false`` — an incremental-review decline the
+# bot never made.
+#
+# ⛔ **This predicate fails toward BLOCKING, which is the opposite direction from the
+# rest of the refusal stack.** A manufactured decline is consumed as the ``declined``
+# taxonomy member, which is blocking and whose documented remedy is to ACCEPT the
+# decline rather than re-trigger — so the false verdict does not merely mislead, it
+# stops a merge and steers the operator away from the retry that would have exposed
+# it. The correction is therefore a WIDENING of where the SHA may sit, and a fix that
+# only tightened recognition would make the live defect strictly worse.
+#
+# The widening is in LOCATION ONLY. Every extracted token is still compared for
+# EQUALITY against the awaited head SHA, so a review naming a genuinely different
+# commit still does not match. Abbreviated / prefix matching is deliberately NOT
+# introduced: that would widen WHICH commit counts rather than merely where its SHA
+# may appear, and it would leave the negative control unable to tell "found the
+# awaited commit" from "matched something SHA-shaped".
+#
+# The surrounding-character guards are what keep the extraction from reading a SLICE
+# of a longer alphanumeric run as a SHA, so a 64-hex digest yields no spurious
+# 40-character prefix match.
+_COMMIT_SHA_TOKEN_RE = re.compile(r'(?<![0-9A-Za-z])[0-9a-fA-F]{7,40}(?![0-9A-Za-z])')
+
+
+def _references_head_sha(evidence: str, head_sha: str) -> bool:
+    """Return True when ``evidence`` names ``head_sha`` as a commit reference.
+
+    ``evidence`` is the reviewed-commit field carried on a review record. It may be
+    the bare SHA, or it may carry the SHA embedded in a commit URL; both name the
+    same commit, so both are recognised. Every SHA-shaped token in ``evidence`` is
+    extracted and compared case-insensitively for EQUALITY against ``head_sha``.
+
+    **Equality, never prefix.** A token that merely shares a leading run with
+    ``head_sha`` does not match. That boundary is what makes the widening
+    demonstrable: a matched negative control referencing a genuinely different
+    commit must still fail, and it could not if this matched abbreviations.
+
+    Fail-closed on either side being empty — an absent head SHA has nothing to
+    verify against, and answering ``True`` there would verify every review at once.
+
+    **The whole-field equality test is kept as an explicit FIRST arm, and that is
+    what makes this function a provable SUPERSET of the comparison it replaces.**
+    Extraction alone would not be: it recognises only SHA-SHAPED runs, so a
+    reviewed-commit value that is not hex-shaped — which the awaited head SHA can
+    equally be, since neither is validated as a SHA anywhere on this path — would
+    yield no token and stop matching, turning a widening into a silent narrowing on
+    exactly the predicate whose failures BLOCK a merge. Reaching the equality answer
+    without depending on the token shape closes that.
+    """
+    if not evidence or not head_sha:
+        return False
+    target = head_sha.strip().lower()
+    if evidence.strip().lower() == target:
+        return True
+    return any(token.lower() == target for token in _COMMIT_SHA_TOKEN_RE.findall(evidence))
+
+
+def _resolve_refusal_class(bot_kind: str | None, refusals: list[dict]) -> str:
+    """Return the recovery class a detected refusal arms.
+
+    The bot's registry ``rate_limit_class`` is the DEFAULT (fail-closed to
+    ``unknown`` for an unregistered bot), displaced by one per-refusal override: a
+    refusal the enumerative arm had to catch resolves to ``unknown`` whatever the bot
+    declares.
+
+    The override exists because the two facts answer different questions. A
+    ``rate_limit_class`` is declared per BOT and says how that bot's refusals
+    normally behave; the enumerative layer is observed per REFUSAL and says only that
+    nothing about this one was readable. Publishing ``awaitable_window`` beside
+    ``layer: enumerative_unrecognised`` would assert a window nobody observed, and
+    the caller would arm a wait on it — the failure
+    ``automatic-review/standards/bot-participation-contract.md`` § "Refusal
+    recognition is ENUMERATIVE" requires both recognition sites to avoid.
+
+    **The quantifier is ANY, and it is ANY because the sibling site's is.**
+    ``review_completeness`` receives this observation as a per-BOT membership test
+    (``bot in unrecognised_refusal``, over a list the producer fills one record per
+    COMMENT), so a bot with one readable refusal and one unreadable one is inside its
+    override. An ``all``-quantifier here would leave that same bot reporting its
+    declared class on this side while the completeness side reported
+    ``refused_unknown`` — the two sites naming different states for one bot, which is
+    exactly the divergence the contract forbids and this function exists to close.
+    Matching the sibling is therefore not a weaker choice than ``all``; it is the one
+    that makes the parity claim true.
+
+    Returns ``''`` when no refusal was detected — there is nothing to arm.
+    """
+    if not refusals:
+        return ''
+    if any(record.get('layer') == REFUSAL_LAYER_ENUMERATIVE for record in refusals):
+        return 'unknown'
+    return bot_registry.rate_limit_class(bot_kind) if bot_kind else 'unknown'
+
+
+def _body_excerpt(body: str) -> str:
+    """Collapse ``body`` to one truncated line safe to carry on a TOON envelope."""
+    collapsed = ' '.join(body.split())
+    if len(collapsed) <= _REFUSAL_BODY_EXCERPT_CHARS:
+        return collapsed
+    return collapsed[:_REFUSAL_BODY_EXCERPT_CHARS] + '...'
+
+
+# ---------------------------------------------------------------------------
+# Strategy registry — one generic strategy parameterized by the trigger comment
+# ---------------------------------------------------------------------------
+
+
+class _ReReviewStrategy:
+    """Generic re-review strategy parameterized by a bot's trigger comment.
+
+    A single class serves every bot: ``request_fresh_review`` posts the
+    ``trigger_comment`` this instance was built with (the bot's data-driven
+    trigger from the registry) and returns the comment-post time;
+    ``await_fresh_review`` is bot-independent. No per-bot subclass exists — the
+    only thing that differs between bots is the trigger string, which is data.
+    """
+
+    def __init__(self, trigger_comment: str) -> None:
+        self.trigger_comment = trigger_comment
+
+    def request_fresh_review(self, pr_number: int | str, push_time: str) -> dict:
+        """Post this bot's explicit trigger comment; return ``{status, trigger_time}``.
+
+        The returned ``trigger_time`` is the comment-post time — the lower bound
+        a fresh review's ``submittedAt`` must exceed for ``await_fresh_review``
+        to match. ``push_time`` is unused (retained for routing uniformity): the
+        trigger time is always the comment-post time, never the push time.
+        """
+        post_result = _github.post_pr_comment(pr_number, self.trigger_comment)
+        if post_result.get('status') != 'success':
+            return make_error('request_fresh_review', post_result.get('error', 'failed to post trigger comment'))
+        return {'status': 'success', 'trigger_time': _now_iso()}
+
+    def await_fresh_review(
+        self,
+        pr_number: int | str,
+        head_sha: str,
+        trigger_time: str,
+        *,
+        bot_kind: str | None = None,
+        timeout: int = DEFAULT_CI_TIMEOUT,
+        interval: int = DEFAULT_CI_INTERVAL,
+    ) -> dict:
+        """Poll until either completion signal for ``bot_kind`` is observed.
+
+        Identical for every bot. The review match is checked first and wins when
+        both are present. Returns a TOON envelope carrying ``matched``,
+        ``matched_signal`` (``review`` | ``issue_comment`` | empty when
+        unmatched), the matched record, and ``head_sha_verified`` — ``true``
+        only on the review path.
+
+        Args:
+            pr_number: PR to poll.
+            head_sha: Commit the fresh review must have reviewed (review path).
+            trigger_time: ISO-8601 lower bound both signals must post-date.
+            bot_kind: The awaited bot. Required for the comment path — without
+                it there is no authorship to gate on, so only the review path
+                can match (fail-closed, never "any comment counts").
+            timeout: Poll budget in seconds.
+            interval: Seconds between polls.
+        """
+        trigger_dt = _parse_iso(trigger_time)
+        if trigger_dt is None:
+            return make_error('await_fresh_review', f'Invalid trigger_time: {trigger_time!r}')
+
+        def _check() -> tuple[bool, dict]:
+            envelope = _github.fetch_pr_reviews_with_commits(pr_number)
+            if envelope.get('status') != 'success':
+                return False, {'error': envelope.get('error', 'fetch failed')}
+            comments: list[dict] = []
+            if bot_kind:
+                comment_envelope = _github.fetch_pr_comments_data(int(pr_number))
+                if comment_envelope.get('status') == 'success':
+                    comments = comment_envelope.get('comments') or []
+            return True, {**envelope, 'comments': comments}
+
+        def _resolve(data: dict) -> tuple[str, dict | None, list[dict]]:
+            """Return ``(matched_signal, record, refusals)`` for the strongest signal present."""
+            refusals: list[dict] = []
+            review = self._match_review(data.get('reviews') or [], head_sha, trigger_dt, bot_kind, refusals)
+            if review is not None:
+                return 'review', review, refusals
+            comment = self._match_bot_comment(data.get('comments') or [], bot_kind, trigger_dt, refusals)
+            if comment is not None:
+                return 'issue_comment', comment, refusals
+            return '', None, refusals
+
+        def _is_complete(data: dict) -> bool:
+            return _resolve(data)[1] is not None
+
+        poll_result = poll_until(_check, _is_complete, timeout=timeout, interval=interval)
+
+        if poll_result.get('error'):
+            return make_error('await_fresh_review', poll_result['error'])
+
+        matched_signal, record, refusals = _resolve(poll_result.get('last_data') or {})
+        # A detected refusal ARMS a recovery strategy instead of vanishing into an
+        # indistinguishable timeout. It never counts as a completed review, so
+        # `matched` is unaffected — the caller branches on `matched: false` AND
+        # `refusal_detected: true` to enter the recovery sequence, and on
+        # `matched: false` with `refusal_detected: false` to treat the run as a
+        # genuine no-response timeout.
+        refusal_eta = next((r['eta'] for r in refusals if r['eta']), '')
+        return {
+            'status': 'success',
+            'operation': 'await_fresh_review',
+            'pr_number': pr_number,
+            'head_sha': head_sha,
+            'trigger_time': trigger_time,
+            'matched': record is not None,
+            'matched_signal': matched_signal,
+            'matched_review': record if matched_signal == 'review' else {},
+            'matched_comment': record if matched_signal == 'issue_comment' else {},
+            # An issue comment carries no reviewed-commit SHA, so it cannot prove
+            # the new HEAD was reviewed. Only the review path verifies that.
+            'head_sha_verified': matched_signal == 'review',
+            'refusal_detected': bool(refusals),
+            # The recovery strategy the refusal arms, from the bot's registry
+            # `rate_limit_class` (fail-closed to `unknown`). Empty when no refusal
+            # was detected — there is nothing to arm.
+            #
+            # OVERRIDDEN to `unknown` when ANY detected refusal had to be caught by
+            # the enumerative arm. A notice no arm could READ supports no claim about
+            # its own awaitability, so publishing the bot's declared
+            # `awaitable_window` beside `layer: enumerative_unrecognised` would arm a
+            # wait on a window nobody observed — the same contradiction
+            # `--unrecognised-refusal-bots` displaces on the completeness side. Both
+            # recognition sites must name the same state for one refusal.
+            #
+            # The quantifier MATCHES the sibling's: `review_completeness` takes this
+            # as a per-BOT membership test over a list the producer fills per COMMENT,
+            # so `any` is what keeps the two sites in agreement on a bot that refused
+            # more than once. See `_resolve_refusal_class`.
+            'refusal_class': _resolve_refusal_class(bot_kind, refusals),
+            'refusal_eta': refusal_eta,
+            'refusals': refusals,
+            # The declared population of ``layer`` values, published so a consumer or
+            # test asserts against the vocabulary the producer actually emits rather
+            # than a hand-copied list that could drift from it. Same precedent as
+            # ``landing_states`` on ``pr landing-state``. Emitted unconditionally, so
+            # a reader can tell an arm that did not fire from one that no longer
+            # exists.
+            'refusal_layers': list(REFUSAL_LAYERS),
+            'timed_out': poll_result.get('timed_out', False),
+            'polls': poll_result.get('polls', 0),
+            'duration_sec': poll_result.get('duration_sec', 0),
+        }
+
+    @staticmethod
+    def _refusal_record(body: str, bot_kind: str | None, source: str) -> dict | None:
+        """Return a refusal RECORD when ``body`` is a refusal notice, else ``None``.
+
+        The same recognition stack the producer applies, arm for arm: the awaited
+        bot's registry ``refusal_patterns`` (case-sensitive substring containment)
+        first, then the structural :func:`_is_rate_limit_notice` for an
+        unknown/unregistered bot or a notice-shaped phrasing not yet captured as
+        data, then the enumerative :func:`_is_unrecognised_refusal` for a body no
+        earlier arm could read. When ``bot_kind`` is ``None`` neither the registry
+        arm nor the enumerative arm can fire — both require a registered bot — so
+        only the structural test applies. This path keeps the arms open rather than
+        calling the ``_github_pr._is_refusal_notice`` boolean seam, because it must
+        REPORT which arm fired (the ``layer`` field below) and because that seam
+        covers only the arms answerable before the producer's noise filter; the
+        recognition rule is otherwise identical, and both callers reach the arms
+        through the same shared definitions.
+
+        **The surviving ``None`` now means what it says.** Before the enumerative
+        arm existed, ``None`` covered two different situations: no refusal, and a
+        refusal nobody could recognize. The second silently reached
+        :meth:`_match_review`, which admits a body that "is not a refusal notice" as
+        a genuine review — so an unrecognised refusal was reported with
+        ``head_sha_verified: true``, asserting that the new HEAD had been reviewed
+        by a bot that had in fact declined. ``None`` now means no arm of the stack
+        recognized this body, and nothing else.
+
+        **Fail-safe direction.** :func:`_is_unrecognised_refusal` returns ``False``
+        when no threshold has been derived, so with none available this function
+        behaves byte-identically to how it behaved before the arm was added. The
+        enumerative arm can therefore never make this path stricter than the
+        evidence supports.
+
+        The data layer reads ``refusal_patterns``, NEVER ``ignore_patterns``. The
+        two lists answer different questions: ``ignore_patterns`` names routine
+        sections of a *successful* review (CodeRabbit's ``## Walkthrough`` and
+        ``✏️ Learnings added``), so reading it here would classify ordinary
+        successful reviews as refusals and let a bot that reviewed fine be reported
+        as having declined. ``refusal_patterns`` names only what a bot publishes
+        when it DECLINES, so a match is positive evidence of non-participation.
+
+        A detected refusal is RECORDED rather than merely reported as a boolean.
+        A refusal still does NOT count as a completed review — that behaviour is
+        correct and preserved — but the record is what lets the caller ARM a
+        recovery strategy instead of seeing an indistinguishable bare timeout. The
+        record carries:
+
+        - ``source`` — which discriminator saw it (``review`` / ``issue_comment``);
+        - ``bot_kind`` — the awaited bot (``''`` when none was supplied);
+        - ``layer`` — which arm of the stack fired, named from the shared
+          vocabulary :data:`_github_pr.REFUSAL_LAYERS` (that tuple is the single
+          place the arms are named, so an arm added there is reportable here with
+          no edit to this list). The value tells a reader how much is actually
+          KNOWN about the refusal: ``registry_refusal_patterns`` means the bot's
+          own declared phrasing matched, so the notice was READ as data;
+          ``structural_fallback`` means it was recognized by notice SHAPE alone;
+          ``enumerative_unrecognised`` means no arm could read it at all — the
+          weakest, recording only that the body was not review
+          feedback. A reader must not treat them as interchangeable: the last one
+          supports no claim about WHY the bot declined;
+        - ``eta`` — the reset time the notice itself stated, parsed through the
+          bot's registry ``rate_limit_eta_patterns``, or ``''`` when the bot
+          declares no patterns or the notice states no ETA;
+        - ``cause`` — the orthogonal SIZE-vs-QUOTA axis (:func:`refusal_cause`),
+          carrying the SAME discriminators the producer's ``rate_limited_bots``
+          record carries, so a consumer reads one vocabulary from both. It is
+          independent of the awaitability axis: a size refusal and a quota refusal
+          can share one ``rate_limit_class``, so the cause cannot be derived from
+          the class, and a recovery path that lacked it offered a wait for a
+          ceiling that waiting does not move;
+        - ``cap`` — the ceiling the size notice itself stated
+          (:func:`refusal_size_cap`), or ``''`` when it stated none. Empty reports
+          as UNKNOWN and is never defaulted: a figure nobody observed would make
+          the recorded gap look audited when it was not;
+        - ``body`` — a whitespace-collapsed, truncated excerpt (see
+          :func:`_body_excerpt`).
+
+        ``cause`` and ``cap`` are emitted on EVERY refusal record, not only a size
+        one, so the shape does not vary by cause; on a quota refusal ``cause`` is
+        ``quota`` and ``cap`` is ``''``. Both are computed from the body even when
+        ``bot_kind`` is ``None`` — the accessors are registry-keyed, so an
+        unregistered bot yields the ``quota`` default and an empty cap rather than
+        an absent key.
+
+        Accepted tradeoff: a genuine review or comment whose body happens to quote
+        a ``refusal_patterns`` substring is skipped as a refusal. That is
+        deliberate — a truthful non-match is recoverable, whereas a false
+        ``head_sha_verified: true`` silently asserts review coverage that never
+        happened. It is now also VISIBLE: the skip is recorded, not swallowed. The
+        tradeoff is far narrower than it was when this layer read
+        ``ignore_patterns``, since a refusal marker is rare phrasing rather than a
+        heading every successful review emits.
+        """
+        if bot_kind and any(marker in body for marker in bot_registry.refusal_patterns(bot_kind)):
+            layer = REFUSAL_LAYER_REGISTRY
+        elif _is_rate_limit_notice(body):
+            layer = REFUSAL_LAYER_STRUCTURAL
+        elif _is_unrecognised_refusal(body, bot_kind):
+            layer = REFUSAL_LAYER_ENUMERATIVE
+        else:
+            return None
+        return {
+            'source': source,
+            'bot_kind': bot_kind or '',
+            'layer': layer,
+            'eta': _extract_rate_limit_eta(body, bot_kind) if bot_kind else '',
+            'cause': refusal_cause(body, bot_kind),
+            'cap': refusal_size_cap(body, bot_kind),
+            'body': _body_excerpt(body),
+        }
+
+    @staticmethod
+    def _match_review(
+        reviews: list[dict],
+        head_sha: str,
+        trigger_dt: datetime | None,
+        bot_kind: str | None,
+        refusals: list[dict],
+    ) -> dict | None:
+        """Return the first genuine review matching ``head_sha`` and post-dating ``trigger_dt``.
+
+        A review matches when its reviewed-commit evidence REFERENCES ``head_sha``
+        (:func:`_references_head_sha` — the SHA is recognised as a bare token or
+        embedded in a commit URL, and is compared for equality either way), its
+        ``submitted_at`` is strictly after ``trigger_dt``, AND its body is not a
+        refusal notice (:meth:`_refusal_record`). Recognising the reference rather
+        than string-comparing the whole field is what stops a URL-shaped value
+        falling through to the comment discriminator and publishing
+        ``head_sha_verified: false`` for a review that DID name this HEAD — a
+        manufactured decline, and the one failure on this path that blocks a merge.
+        A review with an unparseable
+        ``submitted_at`` never matches (fail-closed). When ``trigger_dt`` is
+        ``None`` (invalid or unparseable trigger time) the comparison is
+        fail-closed — no review matches, preventing stale reviews from being
+        incorrectly accepted. There is deliberately NO author gate on this path —
+        the SHA match already establishes provenance.
+
+        Every refusal this path skips is APPENDED to ``refusals`` so the caller can
+        surface it on the envelope. A skipped refusal is a branchable signal, not a
+        silent ``continue`` that degrades into an indistinguishable timeout.
+        """
+        if trigger_dt is None:
+            return None
+        for review in reviews:
+            if not _references_head_sha(str(review.get('commit_sha') or ''), head_sha):
+                continue
+            submitted_dt = _parse_iso(review.get('submitted_at') or '')
+            if submitted_dt is None:
+                continue
+            if submitted_dt <= trigger_dt:
+                continue
+            refusal = _ReReviewStrategy._refusal_record(review.get('body') or '', bot_kind, 'review')
+            if refusal is not None:
+                refusals.append(refusal)
+                continue
+            return review
+        return None
+
+    @staticmethod
+    def _match_bot_comment(
+        comments: list[dict],
+        bot_kind: str | None,
+        trigger_dt: datetime | None,
+        refusals: list[dict],
+    ) -> dict | None:
+        """Return the first comment from ``bot_kind`` post-dating ``trigger_dt``.
+
+        A comment matches when ALL of the following hold:
+
+        - ``bot_kind`` is set and the comment's author resolves through
+          :func:`bot_kind_for_author` to exactly that kind — a human author, or a
+          different bot, never matches;
+        - the LATER of its ``updated_at`` and ``created_at`` is strictly after
+          ``trigger_dt``. Taking the later of the two is what makes an EDITED
+          persistent comment count: such a bot updates one comment in place, so
+          ``created_at`` stops advancing after the first review;
+        - it is not a refusal notice (:meth:`_refusal_record`) — a "the bot could
+          not review" comment is the bot talking about itself, not a completed
+          review.
+
+        Fail-closed on every missing input: no ``bot_kind``, no ``trigger_dt``,
+        or an unparseable timestamp yields no match. Every refusal this path skips
+        is APPENDED to ``refusals`` for the caller to surface, exactly as
+        :meth:`_match_review` does.
+        """
+        if not bot_kind or trigger_dt is None:
+            return None
+        for comment in comments:
+            if bot_kind_for_author(comment.get('author')) != bot_kind:
+                continue
+            refusal = _ReReviewStrategy._refusal_record(comment.get('body') or '', bot_kind, 'issue_comment')
+            if refusal is not None:
+                refusals.append(refusal)
+                continue
+            stamps = [
+                dt
+                for dt in (_parse_iso(comment.get('updated_at') or ''), _parse_iso(comment.get('created_at') or ''))
+                if dt is not None
+            ]
+            if not stamps:
+                continue
+            if max(stamps) > trigger_dt:
+                return comment
+        return None
+
+
+# One generic strategy instance per registered bot_kind, each parameterized by
+# that bot's trigger comment loaded from the registry. Built from data — there is
+# no per-bot class and no hard-coded bot list.
+_STRATEGIES: dict[str, _ReReviewStrategy] = {
+    bot_kind: _ReReviewStrategy(bot_registry.trigger_comment(bot_kind))
+    for bot_kind in bot_registry.bot_kinds()
+}
+
+# Map a GitHub review-author login to its canonical ``bot_kind`` key, DERIVED
+# from the registry (each bot's ``author_login`` in its standards doc). The login
+# is the bot's account name (e.g. ``coderabbitai``, ``cuioss-review-bot``); the
+# ``bot_kind`` is the registry key those accounts resolve to. This is the single
+# source of truth for the login -> bot_kind correspondence — producers
+# (``github_pr.py`` comments-stage) import ``bot_kind_for_author`` rather than
+# inline-copying the mapping.
+_AUTHOR_LOGIN_TO_BOT_KIND: dict[str, str] = bot_registry.login_to_bot_kind()
+
+
+def resolve_strategy(bot_kind: str) -> _ReReviewStrategy | None:
+    """Resolve a strategy by ``bot_kind``; None for an unknown key."""
+    return _STRATEGIES.get(bot_kind)
+
+
+def bot_kind_for_author(author_login: str | None) -> str | None:
+    """Resolve a review-author login to its canonical ``bot_kind`` key.
+
+    Returns the ``bot_kind`` (one of :data:`BOT_KINDS`) for a known reviewer-bot
+    login, or ``None`` for a human author or any login not in the registry. The
+    lookup is case-insensitive to tolerate login-casing drift; the bot-account
+    suffix ``[bot]`` (present on some GraphQL author logins) is stripped before
+    matching.
+    """
+    if not author_login:
+        return None
+    normalized = author_login.lower()
+    if normalized.endswith('[bot]'):
+        normalized = normalized[: -len('[bot]')]
+    return _AUTHOR_LOGIN_TO_BOT_KIND.get(normalized)
+
+
+# ---------------------------------------------------------------------------
+# Registered trigger-comment recognizer (shared with the producer pre-filter)
+# ---------------------------------------------------------------------------
+#
+# Every bot's re-review trigger comment — the exact string ``_ReReviewStrategy``
+# posts to request a fresh review — is a registered value in the registry
+# (``bot_registry.trigger_comment`` over ``bot_registry.bot_kinds``). The
+# producer pre-filter (``github_pr.fetch_findings``) drops a surviving comment
+# whose whitespace-stripped body EQUALS one of these registered triggers: such a
+# comment is a pipeline-authored re-review request this workflow itself posted,
+# never reviewer feedback. Recognition and posting therefore DERIVE from the same
+# registry source — a trigger string added to a ``standards/{bot_kind}.md`` doc
+# is both posted and recognised with no second code edit. Empty triggers (a bot
+# that declares none) are excluded so a whitespace-only body never matches.
+_REGISTERED_TRIGGER_COMMENTS: frozenset[str] = frozenset(
+    trigger.strip()
+    for trigger in (bot_registry.trigger_comment(bot_kind) for bot_kind in bot_registry.bot_kinds())
+    if trigger.strip()
+)
+
+
+def is_registered_trigger_comment(body: str) -> bool:
+    """Return True when ``body`` is exactly a registered bot re-review trigger.
+
+    The comment body is whitespace-stripped and compared for EQUALITY (not
+    substring containment) against :data:`_REGISTERED_TRIGGER_COMMENTS`. An exact
+    match means the comment is a pipeline-authored re-review request this workflow
+    posted — noise for the pre-merge finding pass, not reviewer feedback.
+    Substring matching is deliberately avoided so a genuine review comment that
+    merely quotes a trigger string is not misclassified.
+    """
+    return body.strip() in _REGISTERED_TRIGGER_COMMENTS
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+
+def cmd_re_review(args: argparse.Namespace) -> dict:
+    """Resolve the strategy, request a fresh review, then await it for HEAD."""
+    strategy = resolve_strategy(args.bot_kind)
+    if strategy is None:
+        return make_error('re_review', f'Unknown bot_kind: {args.bot_kind}. Must be one of {BOT_KINDS}')
+
+    request_result = strategy.request_fresh_review(args.pr_number, args.push_time)
+    if request_result.get('status') != 'success':
+        return request_result
+
+    trigger_time = request_result['trigger_time']
+    await_result = strategy.await_fresh_review(
+        args.pr_number,
+        args.head_sha,
+        trigger_time,
+        bot_kind=args.bot_kind,
+        timeout=args.timeout,
+    )
+    if await_result.get('status') != 'success':
+        return await_result
+
+    await_result['bot_kind'] = args.bot_kind
+    return await_result
+
+
+def main() -> int:
+    project_dir, remaining = extract_routing_args(sys.argv[1:])
+    sys.argv = [sys.argv[0], *remaining]
+    if project_dir is not None:
+        set_default_cwd(project_dir)
+
+    parser = argparse.ArgumentParser(description='GitHub bot_kind-keyed re-review strategy registry', allow_abbrev=False)
+    subparsers = parser.add_subparsers(dest='command', required=True)
+
+    re_review = subparsers.add_parser('re-review', help='Request and await a fresh bot review for the current HEAD', allow_abbrev=False)
+    re_review.add_argument('--pr-number', type=int, required=True, help='PR number')
+    re_review.add_argument('--bot-kind', choices=BOT_KINDS, required=True, help='Reviewer bot identity key')
+    re_review.add_argument('--head-sha', required=True, help='Current HEAD SHA the fresh review must match')
+    re_review.add_argument('--push-time', required=True, help='ISO-8601 push time (retained for routing uniformity; every registered bot posts an explicit trigger comment)')
+    re_review.add_argument(
+        '--timeout',
+        type=int,
+        default=DEFAULT_CI_TIMEOUT,
+        help=f'Seconds to await the fresh review before timing out (default: {DEFAULT_CI_TIMEOUT})',
+    )
+    re_review.add_argument('--plan-id', help='Plan identifier (accepted for routing uniformity)')
+
+    args = parser.parse_args()
+
+    handlers = {'re-review': cmd_re_review}
+    result = handlers[args.command](args)
+    print(serialize_toon(result, table_separator='\t'))
+    return 0
+
+
+if __name__ == '__main__':
+    safe_main(main)()

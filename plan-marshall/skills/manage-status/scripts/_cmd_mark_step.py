@@ -1,0 +1,599 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
+"""
+mark-step-done command handler for manage-status.
+
+Persists phase step completion state into status.metadata.phase_steps so that
+phase skills can record which intra-phase steps have finished. Outcomes are
+``done``, ``skipped``, ``failed``, or ``loop_back``. The ``failed`` value
+records that the step aborted with an error (e.g., a graceful timeout
+degradation in the phase-6-finalize dispatcher); the dispatcher will retry
+the step on next phase entry rather than treating it as terminal. The
+``loop_back`` value records that the step deliberately re-fired (loop-back
+iteration recorded; dispatcher will re-fire on next phase-6-finalize entry) and signals
+the dispatcher to treat the step as a fresh dispatch on the next phase entry
+rather than skipping it. The operation is idempotent when outcome,
+display_detail, and head_at_completion all match and returns a ``conflict``
+error when a step already has a different outcome unless ``--force`` is
+supplied. An optional ``--display-detail`` one-line string is persisted
+alongside the outcome so downstream renderers (e.g., phase-6-finalize
+vertical-steps block) can surface user-facing step summaries. An optional
+``--head-at-completion`` SHA is persisted alongside the outcome so resumable
+phase dispatchers (e.g., phase-6-finalize Step 3 for ``pre-push-quality-gate``)
+can detect when the worktree HEAD has advanced past the SHA at which the
+previous run completed and re-fire the gate accordingly. The SHA is treated as
+informational metadata: re-call with same outcome+display_detail but a
+different head_at_completion is a "changed" overwrite without requiring
+``--force``.
+
+The SHA is also the DELTA ANCHOR a later review round scopes itself against
+(``self_review surface --since-ref``), so on a ``done`` outcome its absence is
+refused rather than tolerated: when the step's authoritative doc declares
+``head_dependent: true`` and no ``--head-at-completion`` was supplied, the
+handler returns ``error: missing_head_at_completion`` and writes NOTHING. The
+declaration is read through the registry's own discovery path, so no second
+frontmatter parser exists to drift from it. When that derivation cannot run at
+all, the record IS written and carries a ``warning`` field naming the
+unresolved derivation — an unresolvable derivation must not manufacture an
+unsubstantiated refusal, but must not pass silently either. The obligation is
+declared in ``extension-api/standards/ext-point-finalize-step.md``.
+
+The ``--loop-back-target`` flag classifies loop-back outcomes
+into the two granularity tiers — ``5-execute`` for fix-task-required
+dispositions (full phase rollback) and ``6-finalize`` for inline-fixable
+dispositions (replay the same finalize step from the resumable re-entry
+check). The flag is REQUIRED on every ``loop_back`` outcome and FORBIDDEN
+on every other outcome; the validation has no backwards-compat fallback
+(breaking-change contract per the finalize-loopback plan, Deliverable 3).
+
+The repeatable ``--fact KEY=VALUE`` flag records structured per-step facts.
+The accumulated pairs are parsed into a ``dict[str, str]`` and persisted under
+an optional ``facts`` key, following the same omit-when-absent convention as
+``head_at_completion`` / ``loop_back_target``: a caller that supplies no
+``--fact`` writes the byte-identical historical record shape. The keys a step
+may record are declared by its ``records_facts`` frontmatter obligation (see
+``extension-api/standards/ext-point-finalize-step.md``); this handler does not
+validate keys against that declaration — it only parses, rejecting a malformed
+token (no ``=``, or an empty key) with ``error: invalid_fact`` naming the
+offending token. ``facts`` participates in the idempotency comparison and in
+the ``previous_*`` echo fields, so a re-call that changes only the facts is
+reported as ``changed: true`` rather than silently swallowed.
+
+Every write that CHANGES the entry also folds the superseded firing into two
+additive sibling keys — ``firing_count`` and the append-only ``prior_firings``
+trail — so a step fired ``loop_back`` → ``loop_back`` → ``done`` retains all
+three firings instead of only the last. ``outcome`` continues to mean the
+LATEST firing, the entry stays a dict, and the keys follow the same
+omit-when-absent convention as ``head_at_completion`` / ``loop_back_target``:
+they appear only from the second firing onward, so a step fired once writes the
+byte-identical historical record. An unchanged re-call still reports
+``changed: false`` and appends nothing. See ``_extend_firing_history``.
+"""
+
+import argparse
+from pathlib import Path
+from typing import Any
+
+from _status_core import require_status, write_status
+from _step_completion_marker import format_completion_marker
+from _step_key_canonical import canonicalize_step_key
+from plan_logging import log_entry
+
+VALID_OUTCOMES = ('done', 'skipped', 'loop_back', 'failed')
+VALID_LOOP_BACK_TARGETS = ('5-execute', '6-finalize')
+
+#: The phase whose dispatcher consumes the ``[STEP] … Completed step:`` marker and
+#: whose Step-3 loop the fused completion emission below serves. Scoping the
+#: emission to this phase keeps the marker's population — and the dispatch audit's
+#: completion_count — byte-identical for every other phase, which never used it.
+_COMPLETION_MARKER_PHASE = '6-finalize'
+
+#: The ext-point whose implementors declare the ``head_dependent`` fact.
+_FINALIZE_STEP_EXT_POINT = 'plan-marshall:extension-api/standards/ext-point-finalize-step'
+
+#: The frontmatter key that IS the head-dependence declaration.
+_HEAD_DEPENDENT_KEY = 'head_dependent'
+
+
+def _derive_head_dependence(step: str) -> tuple[bool, str | None]:
+    """Derive whether ``step`` declares ``head_dependent: true`` in its own doc.
+
+    Reuses the registry's OWN discovery path — ``find_implementors`` for the
+    population and ``extension_discovery._read_frontmatter_fields`` for the fact —
+    so no second frontmatter parser exists to drift from the one the dispatcher
+    and the derivation guard already read. Both sides of the comparison are run
+    through :func:`canonicalize_step_key`, because discovery names a built-in step
+    ``default:{name}`` while the caller writes the bare canonical key.
+
+    Returns ``(is_head_dependent, unresolved_reason)``:
+
+    * ``(True, None)`` / ``(False, None)`` — the derivation RESOLVED. A step that
+      is simply absent from the finalize-step population resolves to ``False``
+      rather than "unresolved": ``mark-step-done`` records steps for every phase,
+      so a phase-5 step legitimately matches no finalize-step implementor and must
+      not raise a warning on every call.
+    * ``(False, reason)`` — the derivation MACHINERY could not run at all (import
+      failure, discovery error, or an empty implementor population). The caller
+      writes the record and carries the reason as a ``warning``, following this
+      project's diagnosable-WARNING idiom: an unresolvable derivation must not
+      manufacture an unsubstantiated refusal, but it must not pass silently
+      either.
+    """
+    try:
+        import extension_discovery
+        from extension_discovery import find_implementors
+    except ImportError as exc:
+        return False, f'extension_discovery is not importable ({exc})'
+
+    try:
+        records = find_implementors(_FINALIZE_STEP_EXT_POINT)
+    except Exception as exc:  # any discovery failure is diagnosable, not fatal
+        return False, f'find_implementors({_FINALIZE_STEP_EXT_POINT!r}) failed ({exc})'
+
+    if not records:
+        return False, (
+            f'find_implementors({_FINALIZE_STEP_EXT_POINT!r}) discovered no finalize-step '
+            'implementors, so head-dependence could not be derived for any step'
+        )
+
+    for record in records:
+        if canonicalize_step_key(str(record.get('name', ''))) != step:
+            continue
+        fields = extension_discovery._read_frontmatter_fields(
+            Path(str(record.get('path', ''))), (_HEAD_DEPENDENT_KEY,)
+        )
+        return bool(fields.get(_HEAD_DEPENDENT_KEY, False)), None
+
+    return False, None
+
+
+def _parse_facts(raw: list[str] | None) -> tuple[dict[str, str] | None, str | None]:
+    """Parse repeated ``KEY=VALUE`` tokens into a dict.
+
+    Returns ``(facts, None)`` on success — ``facts`` is ``None`` when the caller
+    supplied no ``--fact`` at all, so the persisted record keeps its historical
+    shape. Returns ``(None, offending_token)`` when a token is malformed: it
+    carries no ``=`` separator, or its key is empty. The value half MAY contain
+    ``=`` (split is on the FIRST separator only) and MAY be empty — only the key
+    is constrained. A later token for the same key overwrites the earlier one.
+    """
+    if not raw:
+        return None, None
+    facts: dict[str, str] = {}
+    for token in raw:
+        key, sep, value = token.partition('=')
+        if not sep or not key:
+            return None, token
+        facts[key] = value
+    return facts, None
+
+
+def _with_warning(result: dict[str, Any], warning: str | None) -> dict[str, Any]:
+    """Attach a diagnosable ``warning`` to a success record, when one was raised.
+
+    Omitted entirely when no warning applies, so the ordinary record keeps its
+    historical shape — the same omit-when-absent convention ``head_at_completion``
+    and ``loop_back_target`` follow.
+    """
+    if warning:
+        result['warning'] = warning
+    return result
+
+
+def _emit_completion_marker(
+    plan_id: str, phase: str, step: str, outcome: str, suppress: bool
+) -> None:
+    """Emit the ``[STEP] … Completed step:`` work-log line from the handshake write.
+
+    Recording a finalize step's terminal outcome and emitting its completion line
+    used to be TWO obligations: this ``mark-step-done`` write PLUS a separate,
+    hand-written ``manage-logging work "[STEP] …"`` step in the phase-6-finalize
+    dispatcher prose. A step could satisfy the handshake and still leave no
+    operational-log trace, because the prose instruction was easy to skip and
+    nothing read the log back to confirm it — the invariant and the log line could
+    drift, and only ever toward silence. Fusing the emission to the write makes
+    them ONE action: the line now rides every terminal recording, so the two
+    records can no longer diverge.
+
+    Scoped to the finalize phase — the only phase whose dispatcher emits, and whose
+    dispatch audit consumes, this marker — so the emission surface (and that
+    audit's completion_count) is unchanged for every other phase: a phase-5
+    ``mark-step-done`` writes no such line, exactly as before.
+
+    ``suppress`` (``--no-completion-log``) is passed ONLY by a call that RE-STAMPS
+    an already-emitted step outcome — the item-5f ``head_at_completion`` re-stamp —
+    so the line is emitted exactly once per step rather than once per
+    ``mark-step-done`` call. A FIRST terminal recording never passes it: the item-7a
+    merge-anyway resolution is the escalate-ask step's first and only terminal
+    write, so it MUST emit and does NOT carry the flag. Best-effort:
+    :func:`plan_logging.log_entry` swallows every error, so
+    a logging failure never turns a successful record into a failed one.
+
+    ``outcome`` is the terminal outcome this write is recording — already
+    validated against :data:`VALID_OUTCOMES` by the caller. The line carries it
+    because the writer already holds it: a completion marker that named only the
+    step said a step *finished* without saying how it finished, so a reader
+    counting completions could not tell a ``done`` from a ``failed`` or a
+    ``loop_back`` without re-reading ``status.metadata.phase_steps``. The shape
+    comes from the shared :data:`COMPLETION_MARKER_TEMPLATE` rather than a local
+    f-string, so the ``--no-completion-log`` help string — which interpolates
+    that same constant — cannot describe a line this function does not emit.
+    The retrospective's read pattern is a SEPARATE literal
+    (:data:`COMPLETION_MARKER_RE`) and is not equal to the template by design;
+    what keeps it reading what this emits is the round-trip test in
+    ``test/plan-marshall/manage-status/test_step_completion_marker.py``, which
+    fails if a widening here leaves the consumer matching a retired shape.
+    """
+    if suppress or phase != _COMPLETION_MARKER_PHASE:
+        return
+    log_entry(
+        'work',
+        plan_id,
+        'INFO',
+        format_completion_marker(phase=phase, step=step, outcome=outcome),
+    )
+
+
+def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
+    """Mark a phase step with an outcome inside status.metadata.phase_steps."""
+    status = require_status(args)
+    if status is None:
+        return None
+
+    outcome = args.outcome
+    if outcome not in VALID_OUTCOMES:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'invalid_outcome',
+            'message': f'Outcome must be one of {list(VALID_OUTCOMES)}, got: {outcome}',
+        }
+
+    phase = args.phase
+    # Canonicalize the step key at the mark-step-done boundary via the shared
+    # resolver so the recorded key always equals the bare manifest key the
+    # dispatcher reads back — no more step_record_mismatched_key orphans.
+    step = canonicalize_step_key(args.step) if args.step else args.step
+    if not phase or not step:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'invalid_argument',
+            'message': '--phase and --step are required and must be non-empty',
+        }
+
+    display_detail = getattr(args, 'display_detail', None)
+    head_at_completion = getattr(args, 'head_at_completion', None)
+    loop_back_target = getattr(args, 'loop_back_target', None)
+
+    facts, bad_fact_token = _parse_facts(getattr(args, 'fact', None))
+    if bad_fact_token is not None:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'invalid_fact',
+            'phase': phase,
+            'step': step,
+            'offending_token': bad_fact_token,
+            'message': (
+                f'--fact expects KEY=VALUE with a non-empty KEY, got: {bad_fact_token!r}'
+            ),
+        }
+
+    # Loop-back target validation: required for loop_back outcomes, forbidden otherwise.
+    # This is a breaking-change validation per Deliverable 3 of the finalize-loopback
+    # plan — no backwards-compat fallback. Loop-back-emitting steps MUST classify
+    # the disposition as inline-fixable (target=6-finalize) or fix-task-required
+    # (target=5-execute) before persisting the outcome.
+    if outcome == 'loop_back':
+        if loop_back_target is None:
+            return {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'missing_loop_back_target',
+                'phase': phase,
+                'step': step,
+                'message': (
+                    "--loop-back-target is required when --outcome=loop_back. "
+                    f"Must be one of {list(VALID_LOOP_BACK_TARGETS)}. See the "
+                    'phase-6-finalize "Loop-back Target Contract" subsection for '
+                    'the granularity invariant.'
+                ),
+            }
+        if loop_back_target not in VALID_LOOP_BACK_TARGETS:
+            return {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'invalid_loop_back_target',
+                'phase': phase,
+                'step': step,
+                'message': (
+                    f'--loop-back-target must be one of '
+                    f'{list(VALID_LOOP_BACK_TARGETS)}, got: {loop_back_target}'
+                ),
+            }
+    elif loop_back_target is not None:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'unexpected_loop_back_target',
+            'phase': phase,
+            'step': step,
+            'message': (
+                f'--loop-back-target is only valid when --outcome=loop_back '
+                f'(got --outcome={outcome}, --loop-back-target={loop_back_target})'
+            ),
+        }
+
+    # Head-anchor validation: a head-dependent step's terminal ``done`` record is
+    # what the NEXT round scopes its delta against (self_review --since-ref), and
+    # what the dispatcher's re-entry check compares the live HEAD to. A ``done``
+    # with no SHA therefore records a verdict nobody can locate in history — it
+    # reads as green for a diff it may never have examined. The absence is refused
+    # rather than tolerated; the obligation is declared in
+    # ``extension-api/standards/ext-point-finalize-step.md``.
+    head_derivation_warning: str | None = None
+    if outcome == 'done':
+        is_head_dependent, head_derivation_warning = _derive_head_dependence(step)
+        if is_head_dependent and not head_at_completion:
+            return {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'missing_head_at_completion',
+                'phase': phase,
+                'step': step,
+                'message': (
+                    f'Step {step!r} declares head_dependent: true, so --head-at-completion '
+                    'is required when --outcome=done. Nothing was written. Resolve the '
+                    'worktree HEAD immediately before this call and pass it as '
+                    '--head-at-completion {sha}. See the ext-point-finalize-step.md '
+                    '"head_dependent" field contract for the fail-closed obligation.'
+                ),
+            }
+
+    metadata: dict[str, Any] = status.setdefault('metadata', {})
+    phase_steps: dict[str, Any] = metadata.setdefault('phase_steps', {})
+    phase_entry: dict[str, Any] = phase_steps.setdefault(phase, {})
+
+    # Prefer an exact match under the canonical key. When it misses, fall back to
+    # a canonicalized-match scan so a stale legacy (pre-migration) key such as
+    # ``default:push`` is still located when the caller writes the canonical
+    # ``push``. Tracking ``existing_key`` lets the conflict check fire against the
+    # true existing outcome AND lets the write below pop the stale key so a
+    # duplicate legacy-vs-canonical pair never survives a re-run.
+    existing = phase_entry.get(step)
+    existing_key: str | None = step if existing is not None else None
+    if existing is None:
+        for stored_key, stored_entry in phase_entry.items():
+            if canonicalize_step_key(stored_key) == step:
+                existing = stored_entry
+                existing_key = stored_key
+                break
+
+    # SHIM(B): status.metadata.phase_steps entries stored as bare strings before step storage became {"outcome": ...} dicts.
+    # shim-owner: manage-status
+    # shim-floor: the mark-step-done change that switched phase_steps step storage from bare strings to {"outcome": ..., "display_detail": ...} dicts
+    # shim-remove-when: no in-flight plan's status.json can still carry a bare-string phase_steps entry
+    if isinstance(existing, str) and not args.force:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'legacy_string_entry',
+            'phase': phase,
+            'step': step,
+            'existing_outcome': existing,
+            'requested_outcome': outcome,
+            'message': (
+                f'Step {step!r} in phase {phase!r} has legacy bare-string storage '
+                f'({existing!r}); re-run with --force to migrate the entry to the '
+                'dict shape {"outcome": ..., "display_detail": ...}.'
+            ),
+        }
+
+    new_entry = _build_entry(outcome, display_detail, head_at_completion, loop_back_target, facts)
+
+    if isinstance(existing, dict):
+        existing_outcome = existing.get('outcome')
+        existing_detail = existing.get('display_detail')
+        existing_head = existing.get('head_at_completion')
+        existing_loop_back_target = existing.get('loop_back_target')
+        existing_facts = existing.get('facts')
+        if (
+            existing_outcome == outcome
+            and existing_detail == display_detail
+            and existing_head == head_at_completion
+            and existing_loop_back_target == loop_back_target
+            and existing_facts == facts
+        ):
+            return _with_warning(
+                {
+                    'status': 'success',
+                    'plan_id': args.plan_id,
+                    'phase': phase,
+                    'step': step,
+                    'outcome': outcome,
+                    'display_detail': display_detail,
+                    'head_at_completion': head_at_completion,
+                    'loop_back_target': loop_back_target,
+                    'facts': facts,
+                    'changed': False,
+                },
+                head_derivation_warning,
+            )
+        if existing_outcome == outcome and (
+            existing_detail != display_detail
+            or existing_head != head_at_completion
+            or existing_loop_back_target != loop_back_target
+            or existing_facts != facts
+        ):
+            if existing_key is not None and existing_key != step:
+                phase_entry.pop(existing_key, None)
+            # This IS a re-fire (same outcome, changed detail/head/target/facts),
+            # so the superseded firing joins the trail. The idempotent branch
+            # ABOVE returned without reaching here, which is what keeps an
+            # unchanged re-call from appending a duplicate firing.
+            _extend_firing_history(existing, new_entry)
+            phase_entry[step] = new_entry
+            write_status(args.plan_id, status)
+            _emit_completion_marker(
+                args.plan_id, phase, step, outcome, getattr(args, 'no_completion_log', False)
+            )
+            return _with_warning(
+                {
+                    'status': 'success',
+                    'plan_id': args.plan_id,
+                    'phase': phase,
+                    'step': step,
+                    'outcome': outcome,
+                    'display_detail': display_detail,
+                    'head_at_completion': head_at_completion,
+                    'loop_back_target': loop_back_target,
+                    'facts': facts,
+                    'changed': True,
+                    'previous_outcome': existing_outcome,
+                    'previous_display_detail': existing_detail,
+                    'previous_head_at_completion': existing_head,
+                    'previous_loop_back_target': existing_loop_back_target,
+                    'previous_facts': existing_facts,
+                },
+                head_derivation_warning,
+            )
+        if existing_outcome != outcome and not args.force:
+            return {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'conflict',
+                'phase': phase,
+                'step': step,
+                'existing_outcome': existing_outcome,
+                'requested_outcome': outcome,
+                'message': (
+                    f'Step {step!r} in phase {phase!r} already marked as '
+                    f'{existing_outcome!r}; use --force to overwrite with {outcome!r}'
+                ),
+            }
+
+    previous_outcome = None
+    previous_detail = None
+    previous_head = None
+    previous_loop_back_target = None
+    previous_facts = None
+    if isinstance(existing, dict):
+        previous_outcome = existing.get('outcome')
+        previous_detail = existing.get('display_detail')
+        previous_head = existing.get('head_at_completion')
+        previous_loop_back_target = existing.get('loop_back_target')
+        previous_facts = existing.get('facts')
+
+    if existing_key is not None and existing_key != step:
+        phase_entry.pop(existing_key, None)
+    # The outcome-changing re-fire path (loop_back → done, and the --force
+    # overwrite). A first firing reaches here with `existing` absent, so nothing
+    # is written and the record keeps its historical shape.
+    _extend_firing_history(existing, new_entry)
+    phase_entry[step] = new_entry
+    write_status(args.plan_id, status)
+    _emit_completion_marker(
+        args.plan_id, phase, step, outcome, getattr(args, 'no_completion_log', False)
+    )
+
+    return _with_warning(
+        {
+            'status': 'success',
+            'plan_id': args.plan_id,
+            'phase': phase,
+            'step': step,
+            'outcome': outcome,
+            'display_detail': display_detail,
+            'head_at_completion': head_at_completion,
+            'loop_back_target': loop_back_target,
+            'facts': facts,
+            'changed': True,
+            'previous_outcome': previous_outcome,
+            'previous_display_detail': previous_detail,
+            'previous_head_at_completion': previous_head,
+            'previous_loop_back_target': previous_loop_back_target,
+            'previous_facts': previous_facts,
+        },
+        head_derivation_warning,
+    )
+
+
+def _build_entry(
+    outcome: str,
+    display_detail: str | None,
+    head_at_completion: str | None,
+    loop_back_target: str | None,
+    facts: dict[str, str] | None,
+) -> dict[str, Any]:
+    """Build the phase_entry[step] dict, omitting optional keys when None.
+
+    Legacy compatibility: callers that omit ``--head-at-completion`` produce
+    the historical two-key shape ``{"outcome": ..., "display_detail": ...}``.
+    Only when a SHA is supplied does the third key appear in the persisted
+    record. Same shape applies to ``loop_back_target`` — it appears only on
+    ``loop_back`` outcome rows (the validation above guarantees it is always
+    present when the outcome is ``loop_back`` and never present otherwise) —
+    and to ``facts``, which appears only when the caller supplied at least one
+    ``--fact KEY=VALUE``.
+    """
+    entry: dict[str, Any] = {'outcome': outcome, 'display_detail': display_detail}
+    if head_at_completion is not None:
+        entry['head_at_completion'] = head_at_completion
+    if loop_back_target is not None:
+        entry['loop_back_target'] = loop_back_target
+    if facts:
+        entry['facts'] = facts
+    return entry
+
+
+def _extend_firing_history(existing: Any, new_entry: dict[str, Any]) -> None:
+    """Fold the SUPERSEDED firing into the new entry's append-only trail.
+
+    A finalize step can fire more than once — the ordinary shape is a step that
+    emits ``loop_back``, is re-fired, and eventually returns ``done``. The write
+    is ``phase_entry[step] = new_entry``, so without this the earlier firings
+    were echoed to the caller in the ``previous_*`` return fields and then lost:
+    a reader of ``status.metadata.phase_steps`` could not tell a step that
+    succeeded first time from one that looped back twice before succeeding.
+
+    Two ADDITIVE sibling keys carry the history, and the shape constraints are
+    load-bearing:
+
+    * ``firing_count`` — how many times the step has now fired.
+    * ``prior_firings`` — the superseded firings in order, oldest first, each a
+      dict carrying its ``outcome`` plus its ``loop_back_target`` when one was
+      set. Append-only: an existing trail is never rewritten, only extended.
+
+    ``outcome`` continues to mean the LATEST firing and keeps its position and
+    meaning, the entry stays a dict, and nothing is nested under a history key.
+    That is what leaves ``_invariants.py::_capture_phase_steps_complete``
+    unperturbed — it rejects a bare-string entry, requires
+    ``raw.get('outcome') == 'done'``, and hashes only the sorted required step
+    NAMES, never the entry contents.
+
+    Both keys follow the module's existing omit-when-absent convention: a FIRST
+    firing has no superseded firing to record, so ``existing`` is absent and this
+    writes nothing — the persisted record is byte-identical to the historical
+    shape. The keys appear only from the second firing onward.
+
+    A legacy bare-string ``existing`` (reachable only under ``--force``, since
+    the unforced path returns ``legacy_string_entry`` and writes nothing) IS a
+    readable firing: the rejection payload reports that very string back to the
+    caller as ``existing_outcome``. The forced migration therefore folds it in as
+    the first superseded firing rather than dropping it — without that, a
+    migrated record would be indistinguishable from a genuine first firing.
+    """
+    if isinstance(existing, str):
+        new_entry['prior_firings'] = [{'outcome': existing}]
+        new_entry['firing_count'] = 2
+        return
+    if not isinstance(existing, dict):
+        return
+    superseded: dict[str, Any] = {'outcome': existing.get('outcome')}
+    prior_target = existing.get('loop_back_target')
+    if prior_target is not None:
+        superseded['loop_back_target'] = prior_target
+    trail = [*(existing.get('prior_firings') or []), superseded]
+    new_entry['prior_firings'] = trail
+    new_entry['firing_count'] = len(trail) + 1

@@ -1,0 +1,441 @@
+# Example: Thin Orchestrator Command (doctor)
+
+This example demonstrates a goal-based command that acts as a thin orchestrator, parsing parameters and routing to skill workflows.
+
+## Command Responsibilities
+
+**What Commands Do**:
+- Parse user parameters
+- Determine scope/intent
+- Route to appropriate skill workflow
+- Display results to user
+- Handle follow-up interactions
+
+**What Commands DON'T Do**:
+- Execute complex logic (delegate to skills)
+- Contain knowledge/standards (use skills)
+- Duplicate workflow logic (invoke skills)
+
+## plugin-doctor Command
+
+### File Location
+
+```text
+marketplace/bundles/pm-plugin-development/commands/plugin-doctor.md
+```
+
+### Command Structure
+
+```markdown
+---
+name: plugin-doctor
+description: Find and understand quality issues in marketplace components
+---
+
+# Diagnose Marketplace Issues
+
+Interactive command to analyze marketplace components and identify issues.
+
+## Usage
+
+**Diagnose specific component**:
+```
+/plugin-doctor agent=my-agent
+/plugin-doctor command=my-command
+/plugin-doctor skill=my-skill
+```text
+
+**Diagnose all components of a type**:
+```
+/plugin-doctor agents
+/plugin-doctor commands
+/plugin-doctor skills
+```text
+
+**Diagnose entire marketplace**:
+```
+/plugin-doctor marketplace
+```text
+
+**Diagnose with auto-fix**:
+```
+/plugin-doctor marketplace --fix
+```text
+
+## Workflow
+
+### Step 1: Determine Scope
+
+Parse parameters to determine what to analyze:
+
+**Parameter Patterns**:
+```
+agent=<name>    → Specific component analysis
+agents          → All agents
+marketplace     → Complete marketplace
+--fix           → Auto-fix flag
+```text
+
+**Logic**:
+```
+If parameter matches "{type}={name}":
+  scope = "single-component"
+  component_type = type (agent/command/skill)
+  component_name = name
+
+Else if parameter matches "{type}s":
+  scope = "all-of-type"
+  component_type = type (agent/command/skill)
+
+Else if parameter = "marketplace":
+  scope = "marketplace"
+
+Else:
+  Ask user: "What would you like to diagnose?"
+  Options:
+    - Specific component
+    - All of a type
+    - Entire marketplace
+```text
+
+**Check for flags**:
+```
+If "--fix" in parameters:
+  auto_fix = true
+```text
+
+### Step 2: Invoke Diagnostic Skill
+
+Route to appropriate workflow based on scope:
+
+**Single Component** (scope = "single-component"):
+```
+Skill: plugin-doctor
+Workflow: analyze-component
+Parameters: {
+  component_path: "marketplace/bundles/.../my-agent.md",
+  component_type: "agent"
+}
+```text
+
+**All of Type** (scope = "all-of-type"):
+```
+Skill: plugin-doctor
+Workflow: analyze-all-of-type
+Parameters: {
+  component_type: "agents",
+  scope: "marketplace"
+}
+```text
+
+**Marketplace** (scope = "marketplace"):
+```
+Skill: plugin-doctor
+Workflow: validate-marketplace
+Parameters: {}
+```text
+
+### Step 3: Display Results
+
+Format and show diagnostic results to user.
+
+**For single component**:
+```
+ANALYSIS: my-agent.md
+
+PASS Structure: Valid
+PASS Frontmatter: Complete
+WARN  References: 2 issues found
+FAIL Tool Coverage: Missing Skill tool in frontmatter
+
+## Issues Found (3)
+
+### High Severity (1)
+- Line 45: Path issue in script reference
+  bash ./scripts/analyzer.sh
+  Fix: bash scripts/analyzer.sh
+
+### Medium Severity (2)
+- Line 67: Prohibited escape sequence
+  Read: ../../../../standards/file.md
+  Fix: Use Skill: cui-skill-name
+
+- Line 89: Missing Skill tool in frontmatter
+  Add 'Skill' to allowed-tools list
+
+## Recommendations
+1. Update script references to use relative path pattern
+2. Replace external file refs with skill invocations
+3. Add Skill to allowed-tools for standards loading
+
+Quality Score: 65/100
+```text
+
+**For all of type**:
+```
+ANALYSIS: All Agents (15 total)
+
+## Summary
+- Clean: 8 (53%)
+- Issues Found: 7 (47%)
+
+## Severity Breakdown
+- Critical: 0
+- High: 5
+- Medium: 12
+- Low: 8
+
+## Components with Issues
+1. my-agent.md (Score: 65) - 3 issues
+2. other-agent.md (Score: 70) - 2 issues
+[...]
+
+## Top Issues
+1. Path issue in scripts (5 occurrences)
+2. Prohibited reference patterns (4 occurrences)
+3. Missing skill invocations (3 occurrences)
+
+Overall Type Health: 75/100
+```text
+
+**For marketplace**:
+```
+MARKETPLACE HEALTH REPORT
+
+## Overall Status: 85/100 PASS
+
+### Statistics
+- Total Bundles: 5
+- Total Components: 78
+  - Agents: 25
+  - Commands: 35
+  - Skills: 18
+- Clean: 52 (67%)
+- Issues: 26 (33%)
+
+### Severity Breakdown
+- Critical: 3 WARN
+- High: 8
+- Medium: 22
+- Low: 15
+
+### Top Issues Across Marketplace
+1. Path issue in scripts (12 occurrences)
+2. Prohibited reference patterns (8 occurrences)
+3. Missing progressive disclosure (6 occurrences)
+
+### Bundle Health Scores
+1. pm-dev-java: 92/100 PASS
+2. pm-dev-frontend: 88/100 PASS
+3. pm-plugin-development: 82/100 PASS
+4. plan-marshall: 78/100 WARN
+5. plan-marshall: 95/100 PASS
+
+### Recommendations
+1. Fix critical issues first (3 components affected)
+2. Update path usage across 12 components
+3. Replace prohibited patterns in 8 components
+```text
+
+### Step 4: Offer Fix Option
+
+If issues found and --fix flag NOT provided:
+
+```
+Ask user:
+  "Found 26 issues across marketplace. Apply automatic fixes?"
+  Options:
+    - Yes, fix automatically (safe fixes only)
+    - No, just show the report
+    - Let me review each fix
+
+If user confirms OR --fix flag was provided:
+  Proceed to Step 5
+```text
+
+### Step 5: Apply Fixes (if confirmed)
+
+Route to fix skill:
+
+```
+Skill: plugin-doctor
+Workflow: categorize-and-fix
+Parameters: {
+  issues: [issues from Step 2],
+  auto_confirm_safe: true,  # If --fix flag
+  prompt_for_risky: true   # Always ask for risky fixes
+}
+```text
+
+Display fix results:
+
+```
+FIXES APPLIED
+
+## Safe Fixes (12 applied automatically)
+PASS Fixed 12 path references
+PASS Fixed 5 YAML frontmatter issues
+PASS Corrected 3 reference patterns
+
+## Risky Fixes (3 require confirmation)
+WARN  Structural change in my-agent.md - Review needed
+WARN  Logic modification in other-command.md - Review needed
+WARN  Deletion of deprecated section - Review needed
+
+Would you like to review and apply risky fixes?
+```text
+
+### Step 6: Verify Fixes (optional)
+
+If fixes were applied, offer verification:
+
+```
+Ask user:
+  "Fixes applied. Run verification?"
+  Options:
+    - Yes, verify all fixes worked
+    - No, I'll verify manually
+
+If confirmed:
+  Skill: plugin-doctor
+  Workflow: validate-marketplace
+  # Re-run diagnosis to verify fixes
+```text
+
+## Key Patterns Demonstrated
+
+### 1. Thin Orchestration
+
+Command contains NO complex logic:
+- Preferred: Parameter parsing (simple if/else)
+- Preferred: Skill invocation (delegation)
+- Preferred: Result display (formatting)
+- Avoid: NO analysis algorithms
+- Avoid: NO quality standards
+- Avoid: NO fix implementation
+
+All complex logic in skills.
+
+### 2. Smart Parameter Parsing
+
+Handles multiple parameter formats:
+- Named parameters: `agent=my-agent`
+- Type flags: `agents`
+- Scope keywords: `marketplace`
+- Option flags: `--fix`
+- Missing parameters: asks user
+
+### 3. Conditional Routing
+
+Routes to different skill workflows based on parsed parameters:
+- Single component → analyze-component workflow
+- All of type → analyze-all-of-type workflow
+- Marketplace → validate-marketplace workflow
+
+### 4. Progressive User Interaction
+
+Asks user only when needed:
+- Ambiguous parameters → ask for clarification
+- Missing required info → ask for input
+- Destructive operations → ask for confirmation
+- Clear defaults → proceed without asking
+
+### 5. Workflow Chaining
+
+Command chains multiple workflows:
+1. Diagnose (plugin-doctor skill)
+2. Categorize and Fix (plugin-doctor skill)
+3. Verify (plugin-doctor skill again)
+
+Each step uses skill workflows.
+
+### 6. Helpful Output
+
+Results formatted for readability:
+- Clear structure with sections
+- Visual indicators (PASS WARN FAIL)
+- Actionable recommendations
+- Severity categorization
+- Summary + details
+
+## Comparison: Old vs New Architecture
+
+### OLD (Component-Centric)
+
+```
+# 5 separate commands
+/plugin-doctor-agents
+/plugin-doctor-commands
+/plugin-doctor-skills
+/plugin-doctor-metadata
+/plugin-doctor-scripts
+
+# Each command duplicates logic
+# Each routes to separate agent
+# User must know which command to use
+```text
+
+### NEW (Goal-Based)
+
+```
+# 1 unified command
+/plugin-doctor {scope}
+
+# Parses scope, routes to appropriate workflow
+# All diagnostic logic in plugin-doctor skill
+# User thinks about goal (diagnose), not component type
+```text
+
+**Benefits**:
+- Simpler discovery (1 vs 5 commands)
+- Unified interface
+- Consistent behavior
+- Single skill to maintain
+- User-focused (goal-based)
+
+## Testing the Command
+
+**Test 1: Single Component**
+```
+Input: /plugin-doctor agent=my-agent
+Expected: Detailed analysis of my-agent.md
+Verify: Report shows component-specific issues
+```text
+
+**Test 2: All of Type**
+```
+Input: /plugin-doctor agents
+Expected: Aggregated report for all agents
+Verify: Statistics and top issues shown
+```text
+
+**Test 3: Marketplace**
+```
+Input: /plugin-doctor marketplace
+Expected: Complete marketplace health report
+Verify: Bundle scores and overall health shown
+```text
+
+**Test 4: Auto-Fix**
+```
+Input: /plugin-doctor marketplace --fix
+Expected: Diagnosis + automatic safe fixes
+Verify: Fix report shows what was applied
+```text
+
+**Test 5: Ambiguous Input**
+```
+Input: /plugin-doctor
+Expected: User prompted for scope
+Verify: Options presented clearly
+```text
+
+## Summary
+
+The plugin-doctor command demonstrates:
+- **Thin orchestration**: No complex logic in command
+- **Goal-based**: Unified interface for diagnostic goal
+- **Smart routing**: Parameters determine workflow
+- **User-friendly**: Clear output, helpful prompts
+- **Skill delegation**: All logic in plugin-doctor and plugin-doctor skills
+- **Workflow chaining**: Diagnose → Fix → Verify

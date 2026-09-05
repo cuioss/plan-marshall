@@ -1,0 +1,92 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
+"""Poll until condition is satisfied. Uses run-config for adaptive timeouts."""
+
+import argparse
+import shlex
+import subprocess
+import sys
+import time
+from typing import Any
+
+from run_config import timeout_get, timeout_set
+
+# Direct imports - PYTHONPATH set by executor
+from toon_parser import parse_toon, serialize_toon
+
+DEFAULT_TIMEOUT = 300
+DEFAULT_INTERVAL = 30
+
+
+def match(parsed: dict[str, Any], pattern: str) -> bool:
+    """Check if parsed TOON matches field=value pattern."""
+    if '=' in pattern:
+        field, expected = pattern.split('=', 1)
+        return str(parsed.get(field, '')).lower() == expected.lower()
+    return bool(parsed.get(pattern))
+
+
+def finish(
+    status: str, start: float, polls: int, command_key: str, error: str | None = None
+) -> dict[str, Any]:
+    """Save timeout and build result dict."""
+    duration = int(time.time() - start)
+    timeout_set(command_key, duration)
+
+    output: dict[str, Any] = {
+        'status': status,
+        'duration_seconds': duration,
+        'polls': polls,
+        'command_key': command_key,
+    }
+    if error:
+        output['error'] = error
+
+    return output
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description='Poll until condition is satisfied', allow_abbrev=False)
+    parser.add_argument('--check-cmd', required=True)
+    parser.add_argument('--success-field', required=True)
+    parser.add_argument('--failure-field')
+    parser.add_argument('--command-key', required=True)
+    parser.add_argument('--interval', type=int, default=DEFAULT_INTERVAL)
+    args = parser.parse_args()
+
+    timeout = timeout_get(args.command_key, DEFAULT_TIMEOUT)
+    start = time.time()
+    polls = 0
+    output = None
+
+    while time.time() - start < timeout:
+        polls += 1
+        try:
+            result = subprocess.run(shlex.split(args.check_cmd), capture_output=True, text=True, timeout=60)
+        except subprocess.TimeoutExpired:
+            time.sleep(args.interval)
+            continue
+        except OSError as e:
+            output = finish('error', start, polls, args.command_key, f'Check command failed: {e}')
+            break
+
+        if result.returncode == 0:
+            parsed = parse_toon(result.stdout)
+            if args.failure_field and match(parsed, args.failure_field):
+                output = finish('error', start, polls, args.command_key, 'Permanent failure')
+                break
+            if match(parsed, args.success_field):
+                output = finish('success', start, polls, args.command_key)
+                break
+
+        time.sleep(args.interval)
+
+    if output is None:
+        output = finish('timeout', start, polls, args.command_key, f'Timeout after {timeout}s')
+
+    print(serialize_toon(output))
+    return 0  # Status modeled in output, not exit code
+
+
+if __name__ == '__main__':
+    sys.exit(main())

@@ -1,0 +1,3049 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
+"""
+Git workflow operations - format commits, analyze diffs, manage worktrees.
+
+Usage:
+    git-workflow.py format-commit --type <type> --subject <subject> [options]
+    git-workflow.py analyze-diff (--plan-id <plan-id> | --project-dir <path>) [--cached]
+    git-workflow.py detect-artifacts [--root <dir>]
+    git-workflow.py force-push-with-lease (--plan-id <plan-id> | --project-dir <path> --branch <branch>)
+    git-workflow.py switch-and-pull (--plan-id <plan-id> | --project-dir <path>) --base <branch>
+    git-workflow.py prune-local-and-remote-ref (--plan-id <plan-id> | --project-dir <path> --head <branch>) [--mode local_and_remote|local_only]
+    git-workflow.py branch-sync-state --plan-id <plan-id>
+    git-workflow.py worktree-path --plan-id <plan-id>
+    git-workflow.py worktree-create --plan-id <plan-id> --branch <branch> [--base <ref>]
+    git-workflow.py worktree-remove --plan-id <plan-id> [--force]
+    git-workflow.py worktree-list
+    git-workflow.py worktree-rebase-to --plan-id <plan-id> --base <branch>
+    git-workflow.py locate-plan-checkout --plan-id <plan-id>
+    git-workflow.py --help
+
+Subcommands:
+    format-commit             Format commit message following conventional commits
+    analyze-diff              Capture and analyze the worktree diff to suggest a commit message
+    detect-artifacts          Scan for committable artifacts (build outputs, temp files)
+    force-push-with-lease     Force-push feature branch with lease guard (post-rebase)
+    switch-and-pull           Checkout base branch and pull from origin (post-merge cleanup)
+    prune-local-and-remote-ref Delete local feature branch and remote-tracking ref (post-merge)
+    branch-sync-state         Report push parity of the plan's feature branch vs its origin
+                              tracking ref (ahead | synced | remote_absent_landed |
+                              remote_absent_unverified); read-only, no fetch
+    worktree-path             Resolve the persisted worktree path for a plan
+    worktree-create           Create a worktree + feature branch + .plan symlink for a plan
+    worktree-remove           Remove a worktree (worktree first, then branch ref)
+    worktree-list             Enumerate plans whose status.json declares a worktree
+    worktree-rebase-to        Rebase the worktree's branch onto --base, dispatching
+                              on the eight documented worktree states
+    locate-plan-checkout      Report where a plan's directory currently lives
+                              (current | worktree | not_found)
+
+Examples:
+    # Format a commit message
+    git-workflow.py format-commit --type feat --scope auth --subject "add login flow"
+
+    # Analyze a worktree diff for commit suggestions
+    git-workflow.py analyze-diff --plan-id EXAMPLE-PLAN [--cached]
+    git-workflow.py analyze-diff --project-dir /path/to/worktree [--cached]
+
+    # Detect artifacts before committing
+    git-workflow.py detect-artifacts --root /path/to/repo
+
+    # New consolidated verbs (Phase C)
+    git-workflow.py force-push-with-lease --plan-id EXAMPLE-PLAN
+    git-workflow.py switch-and-pull --project-dir /path/to/main --base main
+    git-workflow.py prune-local-and-remote-ref --project-dir /path/to/main --head feature/EXAMPLE-PLAN --mode local_and_remote
+
+    # Worktree CRUD verbs
+    git-workflow.py worktree-path --plan-id EXAMPLE-PLAN
+    git-workflow.py worktree-create --plan-id EXAMPLE-PLAN --branch feature/EXAMPLE-PLAN
+    git-workflow.py worktree-remove --plan-id EXAMPLE-PLAN
+    git-workflow.py worktree-list
+    git-workflow.py worktree-rebase-to --plan-id EXAMPLE-PLAN --base main
+"""
+
+import fnmatch
+import json
+import os
+import re
+import shutil
+import subprocess
+import textwrap
+from pathlib import Path
+from typing import Any
+
+from _cmd_baseline_reconcile import cmd_baseline_reconcile
+from _cmd_force_push import cmd_force_push
+from _cmd_prune_ref import cmd_prune_ref
+from _cmd_switch_and_pull import cmd_switch_and_pull
+from _executor_slot import executor_landed, worktree_executor_path
+
+# The shared NUL-delimited git observation. Imported rather than re-derived so
+# the repository keeps ONE trackedness/ignore path predicate instead of a fourth
+# private copy with a fourth path spelling — the same "one predicate, not two
+# copies" rule that unified the .plan/ exemption guard sites. Its own docstring
+# names the `path in tracked` comparison as the failure `-z` was adopted to end,
+# which is precisely the comparison scan_artifacts performs below.
+from _plan_state_exemption import _observe_z
+
+# The archived-plans directory name is shared state between the archiving verb
+# (manage-status) and this guard, so it is imported from the one constants
+# module both sides already read rather than re-spelled as a third literal.
+from constants import DIR_ARCHIVED
+from file_ops import (
+    WorktreeResolutionError,
+    get_executor_path,
+    get_worktree_root,
+    resolve_plan_context,
+)
+
+# ``_DEFAULT_TIMEOUT_SECONDS`` is imported alongside ``run_git`` rather than
+# re-spelled here because :func:`_derive_removal_timeout` uses it as the FLOOR of
+# the derived removal budget. A second literal 60 in this module would be a copy
+# that silently disagrees with the helper's own default the moment either moves —
+# the same "one predicate, not two copies" rule the ``_observe_z`` import above
+# follows. It is private to ``git_provider`` in the sense of "not part of the
+# provider-declaration surface", not in the sense of "off-limits to its own
+# skill's sibling scripts".
+from git_provider import _DEFAULT_TIMEOUT_SECONDS, run_git
+
+# Two main-facing resolvers, imported side by side because they answer two
+# DIFFERENT questions and must not be collapsed into one.
+# ``resolve_main_anchored_path`` is the single sanctioned main-anchored resolver
+# (ADR-002): it honours the PLAN_BASE_DIR / set_base_dir() override before
+# falling back to git's common dir, so a path derived from it is the same path
+# ``integrate_into_main`` writes when it moves a plan dir back. That is what
+# :func:`_plan_dir_on_main_checkout` probes with.
+# ``main_checkout_root`` is pure ``git rev-parse --git-common-dir``. It stays the
+# resolver for the ``git -C`` target, which must name a real git checkout — an
+# override directory is not one.
+from marketplace_paths import (
+    _find_plan_root_from_cwd,
+    main_checkout_root,
+    resolve_main_anchored_path,
+)
+from toon_parser import parse_toon, parse_toon_table
+from triage_helpers import (
+    ErrorCode,
+    create_workflow_cli,
+    is_test_file,
+    load_skill_config,
+    make_error,
+    safe_main,
+)
+
+# ============================================================================
+# CONFIGURATION
+# ============================================================================
+
+_COMMIT_CONFIG = load_skill_config(__file__, 'git-commit-config.json')
+VALID_TYPES: list[str] = _COMMIT_CONFIG['valid_types']
+_IMPERATIVE_ALLOWLIST: set[str] = set(_COMMIT_CONFIG.get('imperative_allowlist', []))
+_SUBJECT_MAX_LENGTH: int = _COMMIT_CONFIG.get('subject_max_length', 72)
+_SUBJECT_WARN_LENGTH: int = _COMMIT_CONFIG.get('subject_warn_length', 50)
+_MONOREPO_ROOTS: set[str] = set(
+    _COMMIT_CONFIG.get(
+        'monorepo_roots',
+        [
+            'packages',
+            'modules',
+            'apps',
+            'libs',
+            'services',
+        ],
+    )
+)
+
+_ARTIFACT_CONFIG = load_skill_config(__file__, 'artifact-patterns.json')
+
+
+# ============================================================================
+# VALIDATION
+# ============================================================================
+
+
+def validate_subject(subject: str) -> dict:
+    """Validate commit subject."""
+    warnings = []
+    valid = True
+
+    if not subject:
+        return {'valid': False, 'warnings': ['Subject is required']}
+
+    # Check length (thresholds from git-commit-config.json)
+    if len(subject) > _SUBJECT_WARN_LENGTH:
+        warnings.append(f'Subject exceeds {_SUBJECT_WARN_LENGTH} chars ({len(subject)} chars)')
+    if len(subject) > _SUBJECT_MAX_LENGTH:
+        valid = False
+        warnings.append(f'Subject must not exceed {_SUBJECT_MAX_LENGTH} chars')
+
+    # Check imperative mood (basic check with false-positive allow-list
+    # loaded from git-commit-config.json)
+    first_word = subject.split()[0].lower() if subject.split() else ''
+    if first_word not in _IMPERATIVE_ALLOWLIST:
+        if first_word.endswith('ed') and len(first_word) > 2:
+            warnings.append("Subject should use imperative mood (e.g., 'add' not 'added')")
+        elif first_word.endswith('ing') and len(first_word) > 3:
+            warnings.append("Subject should use imperative mood (e.g., 'add' not 'adding')")
+
+    # Check case
+    if subject[0].isupper():
+        warnings.append('Subject should start with lowercase')
+
+    # Check period
+    if subject.endswith('.'):
+        warnings.append('Subject should not end with period')
+
+    return {'valid': valid, 'warnings': warnings}
+
+
+def validate_type(commit_type: str) -> dict:
+    """Validate commit type."""
+    if commit_type not in VALID_TYPES:
+        return {'valid': False, 'warnings': [f"Invalid type '{commit_type}'. Valid types: {', '.join(VALID_TYPES)}"]}
+    return {'valid': True, 'warnings': []}
+
+
+# ============================================================================
+# FORMATTING
+# ============================================================================
+
+
+def wrap_text(text: str, width: int) -> str:
+    """Wrap text at specified width, preserving leading indentation."""
+    lines = []
+    for paragraph in text.split('\n'):
+        if len(paragraph) <= width:
+            lines.append(paragraph)
+        else:
+            stripped = paragraph.lstrip()
+            indent = paragraph[: len(paragraph) - len(stripped)]
+            effective_width = width - len(indent)
+            if effective_width < 20:
+                lines.append(paragraph)
+                continue
+            wrapped = textwrap.fill(
+                stripped,
+                width=effective_width,
+                initial_indent='',
+                subsequent_indent='',
+                break_long_words=False,
+                break_on_hyphens=False,
+            )
+            lines.extend(indent + line for line in wrapped.split('\n'))
+    return '\n'.join(lines)
+
+
+def format_message(
+    commit_type: str,
+    scope: str,
+    subject: str,
+    body: str | None = None,
+    breaking: str | None = None,
+    footer: str | None = None,
+) -> str:
+    """Format complete commit message."""
+    # Validate scope doesn't contain parentheses (would break header format)
+    if scope and ('(' in scope or ')' in scope):
+        scope = scope.replace('(', '').replace(')', '')
+
+    # Header
+    breaking_indicator = '!' if breaking else ''
+    if scope:
+        header = f'{commit_type}({scope}){breaking_indicator}: {subject}'
+    else:
+        header = f'{commit_type}{breaking_indicator}: {subject}'
+
+    # Build message parts
+    parts = [header]
+
+    if body:
+        parts.append('')  # Blank line
+        # Wrap body at 72 chars
+        wrapped_body = wrap_text(body, 72)
+        parts.append(wrapped_body)
+
+    if breaking or footer:
+        parts.append('')  # Blank line
+        if breaking:
+            parts.append(f'BREAKING CHANGE: {breaking}')
+        if footer:
+            parts.append(footer)
+
+    # The co-author trailer is NOT appended here — the caller (workflow Step 5
+    # or git commit command) adds it, resolved through
+    # `manage-run-config commit-trailer get`, so the identity matches the
+    # project's configuration and isn't duplicated.
+
+    return '\n'.join(parts)
+
+
+# ============================================================================
+# FORMAT-COMMIT SUBCOMMAND
+# ============================================================================
+
+
+def validate_header_length(commit_type: str, scope: str | None, subject: str, breaking: str | None) -> dict:
+    """Validate total header length (type + scope + subject)."""
+    warnings = []
+    breaking_indicator = '!' if breaking else ''
+    if scope:
+        header = f'{commit_type}({scope}){breaking_indicator}: {subject}'
+    else:
+        header = f'{commit_type}{breaking_indicator}: {subject}'
+    if len(header) > 72:
+        warnings.append(f'Header exceeds 72 chars ({len(header)} chars) — consider shorter scope or subject')
+    return {'valid': len(header) <= 72, 'warnings': warnings}
+
+
+def cmd_format_commit(args):
+    """Handle format-commit subcommand."""
+    # Validate inputs
+    type_validation = validate_type(args.commit_type)
+    subject_validation = validate_subject(args.subject)
+    header_validation = validate_header_length(args.commit_type, args.scope, args.subject, args.breaking)
+
+    all_warnings = type_validation['warnings'] + subject_validation['warnings'] + header_validation['warnings']
+    is_valid = type_validation['valid'] and subject_validation['valid'] and header_validation['valid']
+
+    # Format message
+    formatted = format_message(args.commit_type, args.scope, args.subject, args.body, args.breaking, args.footer)
+
+    result = {
+        'type': args.commit_type,
+        'scope': args.scope,
+        'subject': args.subject,
+        'body': args.body,
+        'breaking': args.breaking,
+        'footer': args.footer,
+        'formatted_message': formatted,
+        'validation': {'valid': is_valid, 'warnings': all_warnings},
+        'status': 'success' if is_valid else 'error',
+    }
+
+    return result
+
+
+# ============================================================================
+# ANALYZE-DIFF SUBCOMMAND
+# ============================================================================
+
+
+def analyze_diff(diff_content: str) -> dict:
+    """Analyze diff content to suggest commit parameters."""
+    detected_changes: list[str] = []
+    suggestions: dict[str, Any] = {
+        'type': 'chore',
+        'scope': None,
+        'detected_changes': detected_changes,
+    }
+
+    # Detect file types changed
+    files_changed = re.findall(r'^diff --git a/(.+?) b/', diff_content, re.MULTILINE)
+
+    if not files_changed:
+        return suggestions
+
+    # Analyze file paths — support Maven, Python, JS, and generic layouts
+    src_files = [
+        f
+        for f in files_changed
+        if '/src/' in f or f.startswith('src/') or f.endswith(('.py', '.js', '.ts', '.jsx', '.tsx'))
+    ]
+    test_files = [f for f in files_changed if is_test_file(f)]
+    doc_files = [f for f in files_changed if f.endswith(('.md', '.adoc', '.txt', '.rst'))]
+    ci_files = [
+        f
+        for f in files_changed
+        if f.startswith('.github/')
+        or f.startswith('.gitlab-ci')
+        or f.startswith('.circleci/')
+        or f in ('Jenkinsfile', '.travis.yml', 'azure-pipelines.yml')
+        or '/ci/' in f
+    ]
+
+    # Detect scope from common path — try multiple project layouts
+    if src_files:
+        paths = [f.split('/') for f in src_files]
+        scope_found = False
+        # Monorepo prefixes loaded from git-commit-config.json
+        for path in paths:
+            if scope_found:
+                break
+            # Monorepo: packages/<name>/src/... or modules/<name>/...
+            if len(path) > 1 and path[0] in _MONOREPO_ROOTS:
+                suggestions['scope'] = path[1]
+                scope_found = True
+            # Maven/Gradle: src/main/java/<package>/...
+            elif 'main' in path:
+                idx = path.index('main')
+                if idx + 2 < len(path):
+                    suggestions['scope'] = path[idx + 2]
+                    scope_found = True
+            # Python: <package>/*.py or src/<package>/*.py
+            # Only check the last component (file name) to avoid matching
+            # directory names like something.py/
+            elif path[-1].endswith('.py'):
+                # Use first directory component (or second if src/)
+                start = 1 if path[0] == 'src' else 0
+                if start < len(path) - 1:
+                    suggestions['scope'] = path[start]
+                    scope_found = True
+            # JS/TS: src/<component>/*.{js,ts,jsx,tsx}
+            elif path[0] == 'src' and len(path) > 2:
+                suggestions['scope'] = path[1]
+                scope_found = True
+            # Generic: use top-level directory
+            elif len(path) > 1:
+                suggestions['scope'] = path[0]
+                scope_found = True
+
+    # Detect type — count content lines only (exclude diff headers like +++ and ---)
+    additions = len(re.findall(r'^\+[^+]', diff_content, re.MULTILINE))
+    deletions = len(re.findall(r'^-[^-]', diff_content, re.MULTILINE))
+
+    # Bug fix indicators — check diff metadata, comments, and added/removed lines.
+    # Use word boundaries to avoid matching identifiers like errorHandler, fixedWidth.
+    bug_pattern = r'\b(fix(?:es|ed)?|bug|bugfix)\b'
+    # Primary: diff metadata lines (high confidence)
+    diff_headers = '\n'.join(
+        line for line in diff_content.split('\n') if line.startswith(('@@', '---', '+++', 'diff '))
+    )
+    # Secondary: comment lines in added/removed code (medium confidence)
+    comment_lines = '\n'.join(
+        line
+        for line in diff_content.split('\n')
+        if (line.startswith('+') or line.startswith('-'))
+        and ('// ' in line or '# ' in line or '/* ' in line or '* ' in line)
+    )
+    if re.search(bug_pattern, diff_headers, re.IGNORECASE) or re.search(bug_pattern, comment_lines, re.IGNORECASE):
+        suggestions['type'] = 'fix'
+        detected_changes.append('Bug fix patterns detected in diff context')
+
+    # Performance improvement indicators — check comments for perf keywords
+    elif (
+        re.search(
+            r'\b(perf(?:ormance)?|optimi[zs]e|benchmark|latency|throughput|cache|memoize)\b',
+            comment_lines,
+            re.IGNORECASE,
+        )
+        and src_files
+    ):
+        suggestions['type'] = 'perf'
+        detected_changes.append('Performance improvement patterns detected in diff context')
+
+    # CI configuration changes
+    elif ci_files and not src_files:
+        suggestions['type'] = 'ci'
+        detected_changes.append('CI configuration files modified')
+
+    # Feature indicators
+    elif additions > deletions * 2 and src_files:
+        suggestions['type'] = 'feat'
+        detected_changes.append('Significant new code added')
+
+    # Test changes
+    elif test_files and not src_files:
+        suggestions['type'] = 'test'
+        detected_changes.append('Test files modified')
+
+    # Documentation
+    elif doc_files and not src_files:
+        suggestions['type'] = 'docs'
+        detected_changes.append('Documentation modified')
+
+    # Refactoring — when additions and deletions are roughly balanced (within 30%
+    # of the smaller count), the change is likely restructuring existing code rather
+    # than adding or removing functionality. The 0.3 threshold was chosen empirically:
+    # pure renames have 0% delta, real refactors rarely exceed 30%, while features
+    # typically add 2x+ more lines than they remove.
+    elif abs(additions - deletions) < min(additions, deletions) * 0.3:
+        suggestions['type'] = 'refactor'
+        detected_changes.append('Similar additions/deletions suggests refactoring')
+
+    # Fallback scope: if no scope found from src_files, use top-level directory
+    # of first changed file (when it has a directory component)
+    if suggestions['scope'] is None and files_changed:
+        parts = files_changed[0].split('/')
+        if len(parts) > 1:
+            suggestions['scope'] = parts[0]
+
+    suggestions['files_changed'] = files_changed[:10]  # Limit to 10
+
+    return suggestions
+
+
+def _resolve_analyze_diff_path(args) -> tuple[Path | None, dict | None]:
+    """Resolve the working tree path for analyze-diff.
+
+    Accepts ``--plan-id`` (primary) or ``--project-dir`` (escape hatch).
+    Returns ``(path, None)`` on success or ``(None, error_dict)`` on failure.
+
+    Note: The argument resolution pattern is intentionally repeated across the
+    ``_resolve_analyze_diff_path``, ``_resolve_branch_and_path``,
+    ``_resolve_project_dir_and_head``, and ``_resolve_project_dir`` helpers in
+    this file. Each function is specific to its command's return shape and error
+    envelope, so they cannot be collapsed without coupling unrelated subcommands.
+    The worktree resolution UNDER them is shared — every one delegates to
+    ``file_ops.resolve_plan_context`` — so only the envelope shaping is repeated.
+    """
+    plan_id: str | None = getattr(args, 'plan_id', None)
+    project_dir: str | None = getattr(args, 'project_dir', None)
+
+    if plan_id is not None:
+        # ``worktree_path`` already yields the cwd-relative checkout root for a
+        # non-worktree plan, so the old explicit non-worktree fallback branch is
+        # subsumed by the resolver rather than re-implemented here.
+        try:
+            path = Path(resolve_plan_context(plan_id, ensure=False).worktree_path)
+        except WorktreeResolutionError as exc:
+            return None, make_error(str(exc), code=ErrorCode.NOT_FOUND)
+
+        if not path.is_dir():
+            return None, make_error(
+                f'Worktree path not found: {path}',
+                code=ErrorCode.NOT_FOUND,
+            )
+        return path, None
+
+    elif project_dir is not None:
+        path = Path(project_dir)
+        if not path.is_dir():
+            return None, make_error(
+                f'Worktree path not found: {project_dir}',
+                code=ErrorCode.NOT_FOUND,
+            )
+        return path, None
+
+    else:
+        return None, make_error(
+            'one of --plan-id or --project-dir is required',
+            code=ErrorCode.INVALID_INPUT,
+        )
+
+
+def cmd_analyze_diff(args):
+    """Handle analyze-diff subcommand.
+
+    Captures the worktree diff in-process via ``git -C {path} diff
+    [--cached]`` and feeds the captured stdout to ``analyze_diff()``. The
+    caller no longer needs to materialize a temp file.
+
+    Accepts ``--plan-id`` (primary) or ``--project-dir`` (escape hatch).
+    The deprecated ``--worktree-path`` flag has been removed.
+    """
+    worktree_path, err = _resolve_analyze_diff_path(args)
+    if err is not None:
+        return err
+
+    assert worktree_path is not None  # narrowing
+
+    cmd = ['git', '-C', str(worktree_path), 'diff']
+    if args.cached:
+        cmd.append('--cached')
+
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=30)
+    except subprocess.CalledProcessError as exc:
+        return make_error(
+            f'git diff failed (exit {exc.returncode}): {exc.stderr.strip()}',
+            code=ErrorCode.FETCH_FAILURE,
+        )
+    except subprocess.TimeoutExpired:
+        return make_error('git diff timed out after 30 seconds', code=ErrorCode.FETCH_FAILURE)
+    except FileNotFoundError:
+        return make_error('git executable not found on PATH', code=ErrorCode.FETCH_FAILURE)
+
+    suggestions = analyze_diff(result.stdout)
+
+    return {'mode': 'analysis', 'suggestions': suggestions, 'status': 'success'}
+
+
+# ============================================================================
+# DETECT-ARTIFACTS SUBCOMMAND
+# ============================================================================
+
+# Artifact patterns loaded from standards/artifact-patterns.json
+SAFE_ARTIFACT_PATTERNS: list[str] = _ARTIFACT_CONFIG.get('safe_patterns', [])
+UNCERTAIN_ARTIFACT_PATTERNS: list[str] = _ARTIFACT_CONFIG.get('uncertain_patterns', [])
+
+
+def get_gitignored_files(root: Path) -> set[str] | None:
+    """Return the relative paths gitignored under ``root``, or ``None``.
+
+    ``None`` means the ignore set could NOT be determined — ``root`` is not
+    inside a git repo, git is unavailable, or the query failed or timed out. It
+    is deliberately distinct from an empty set: empty asserts "nothing here is
+    ignored", whereas ``None`` asserts nothing at all. Collapsing the two lets
+    an unreadable ignore set be reported as a tree with no ignored files, which
+    is how a running plan's own live ``.plan/local`` state reached the
+    auto-deletable bucket.
+
+    ``--directory`` is load-bearing twice over. It collapses a fully-ignored
+    directory to a single trailing-slash entry, which is the form
+    :func:`_split_ignored` partitions on and :func:`_is_ignored` prefix-matches
+    — without it that arm receives no input and can never fire for any path. It
+    also keeps the query small enough to finish: measured on this repository the
+    flagged query returns 207 entries against 213256 unflagged, and the
+    unflagged form routinely exceeded the observation's timeout.
+
+    ``-z`` is load-bearing for the same reason it is in
+    :func:`get_tracked_files`: with ``core.quotePath`` at its default, git
+    QUOTES any pathname carrying non-ASCII bytes or a newline, and the quoted
+    spelling never equals the ``rel`` :func:`scan_artifacts` computes — so the
+    exclusion silently misses exactly those paths.
+    """
+    return _observe_z(
+        root, ['ls-files', '--others', '--ignored', '--exclude-standard', '--directory', '-z']
+    )
+
+
+def get_tracked_files(root: Path) -> set[str] | None:
+    """Return the paths tracked by git relative to ``root``, or ``None``.
+
+    ``git ls-files --cached -z`` runs against ``root`` so results are relative
+    to it — matching the ``rel`` computation in :func:`scan_artifacts` even when
+    ``root`` is a subdirectory of a repo. Tracked files must never be classified
+    as ``safe`` artifacts: a filename matching a safe glob may be a committed
+    fixture the developer intends to keep.
+
+    ``None`` means trackedness could NOT be determined, and is deliberately
+    distinct from an empty set. Empty asserts "nothing here is tracked", which
+    would let every match be promoted to ``safe``; ``None`` asserts nothing, and
+    :func:`scan_artifacts` fails closed on it. Returning ``set()`` for an
+    unreadable oracle is the fail-OPEN direction on a delete-these-files
+    surface.
+
+    ``-z`` is what makes the returned spelling comparable to ``rel`` at all.
+    Under the newline form, ``core.quotePath`` (default true) quotes any
+    pathname with non-ASCII bytes or a newline, and a per-line ``.strip()``
+    additionally destroys leading and trailing spaces — so the ``rel in
+    tracked`` demotion missed for precisely those names and offered a tracked,
+    committed fixture for deletion.
+    """
+    return _observe_z(root, ['ls-files', '--cached', '-z'])
+
+
+def _compile_patterns(patterns: list[str]) -> list[re.Pattern]:
+    """Compile glob-style patterns into regex for single-pass matching.
+
+    Uses ``fnmatch.translate()`` for simple glob patterns and placeholder-based
+    conversion for ``**`` recursive directory patterns (which fnmatch does not
+    support).
+    """
+    compiled = []
+    for pattern in patterns:
+        if '**' in pattern:
+            # fnmatch doesn't support **; convert manually using placeholders
+            # to prevent double-replacement (e.g., * inside (.*/)?).
+            regex = pattern.replace('.', r'\.')
+            regex = regex.replace('**/', '\x00DIR\x00')
+            regex = regex.replace('**', '\x00STAR\x00')
+            regex = regex.replace('*', '[^/]*')
+            regex = regex.replace('\x00DIR\x00', '(.*/)?')
+            regex = regex.replace('\x00STAR\x00', '.*')
+            compiled.append(re.compile(f'^{regex}$'))
+        else:
+            compiled.append(re.compile(fnmatch.translate(pattern)))
+    return compiled
+
+
+_SAFE_REGEXES = _compile_patterns(SAFE_ARTIFACT_PATTERNS)
+_UNCERTAIN_REGEXES = _compile_patterns(UNCERTAIN_ARTIFACT_PATTERNS)
+
+
+# Directories to skip entirely during traversal — large and never useful to scan.
+# Only directories that are NEVER artifact-matched themselves. Directories
+# like __pycache__, .eggs, .next must NOT be skipped since they match
+# safe/uncertain artifact patterns.
+_SKIP_DIRS = set(_ARTIFACT_CONFIG.get('skip_dirs', ['.git', 'node_modules']))
+
+
+#: Name of the plan-state directory. Defined HERE, above :func:`scan_artifacts`,
+#: because that scan's unconditional plan-state exclusion is its first reader;
+#: the worktree subcommands further down are later readers of the same constant.
+_PLAN_DIR_NAME = os.environ.get('PLAN_DIR_NAME', '.plan')
+
+
+def _is_nested_git_boundary(dir_path: str) -> bool:
+    """Whether ``dir_path`` is a nested git repository, worktree, or submodule.
+
+    A directory that itself contains a ``.git`` entry — a directory for an
+    embedded repo/submodule, a file for a linked worktree — is a separate
+    checkout. ``git ls-files`` never descends across such a boundary, so
+    ``scan_artifacts`` must not either: those files are not committable to the
+    scanned repository, and a running plan's live worktree — its in-flight
+    ``logs/work.log`` and build caches — lives at exactly such a boundary.
+    """
+    return os.path.exists(os.path.join(dir_path, '.git'))
+
+
+def _split_ignored(ignored: set[str]) -> tuple[set[str], tuple[str, ...]]:
+    """Partition a git-reported ignore set into file entries and dir prefixes.
+
+    ``git ls-files --others --ignored --exclude-standard`` enumerates ignored
+    *files* individually, but collapses a fully-ignored directory — notably a
+    nested repo/worktree boundary — to a single trailing-slash entry rather
+    than listing its contents. Splitting the set lets the caller exclude every
+    path *beneath* such a directory; a plain membership test matches only the
+    directory entry itself and misses all of its descendants.
+    """
+    files = {p for p in ignored if not p.endswith('/')}
+    dirs = tuple(p for p in ignored if p.endswith('/'))
+    return files, dirs
+
+
+def _is_ignored(rel_posix: str, ignored_files: set[str], ignored_dirs: tuple[str, ...]) -> bool:
+    """Whether ``rel_posix`` is a gitignored file or lives under a gitignored dir.
+
+    ``rel_posix`` is a ``/``-separated path relative to the scan root, matching
+    the spelling ``git ls-files`` emits. Membership covers an individually
+    listed ignored file; the prefix test covers every path beneath a collapsed
+    ignored directory entry (see :func:`_split_ignored`).
+    """
+    return rel_posix in ignored_files or rel_posix.startswith(ignored_dirs)
+
+
+def _is_plan_state(rel_posix: str) -> bool:
+    """Whether ``rel_posix`` lives inside the scan ROOT's own plan-state directory.
+
+    Keyed on the first path segment, so it holds for the scan root itself — the
+    case :func:`_is_nested_git_boundary` cannot cover, since that prunes only
+    checkouts nested *below* the root. From phase-5 onward a plan's cwd is
+    pinned to its own worktree and ``cmd_detect_artifacts`` defaults ``--root``
+    to ``Path.cwd()``, so the run's live audit trail sits directly under the
+    scan root.
+
+    The test is deliberately independent of every ignore mechanism: it must hold
+    under ``--no-gitignore``, under a ``.gitignore`` carrying no ``.plan`` rule,
+    and under a :func:`get_gitignored_files` that returns ``None`` or an
+    empty-but-successful set. Each of those defeats an ignore-based exclusion,
+    which is why the guarantee cannot be attributed to ``.gitignore``.
+    """
+    return rel_posix.split('/', 1)[0] == _PLAN_DIR_NAME
+
+
+def scan_artifacts(root: Path, respect_gitignore: bool = True) -> dict:
+    """Scan directory for committable artifacts.
+
+    Returns dict with 'safe' (auto-deletable) and 'uncertain' (needs confirmation) lists.
+    Files already covered by .gitignore are excluded by default since they
+    cannot be accidentally committed. Exclusion honours git's full ignore set,
+    including a fully-ignored directory that ``git ls-files`` reports as a
+    single collapsed entry (every path beneath it is excluded, not just the
+    directory itself).
+
+    A nested git repository or worktree (submodule, linked worktree) below the
+    scan root is never traversed: its contents are a separate checkout and are
+    not committable to the scanned repository.
+
+    A path whose first segment is the plan-state directory is excluded
+    UNCONDITIONALLY (:func:`_is_plan_state`) — before, and independent of, the
+    ignore oracle. That exclusion is what keeps a plan's finalize from offering
+    the run's own live artifacts (its in-flight ``logs/work.log`` and build
+    caches) for deletion when the plan's own worktree IS the scan root, which is
+    the normal phase-5-onward state. It is stated as unconditional because each
+    of ``--no-gitignore``, a ``.gitignore`` carrying no ``.plan`` rule, and an
+    empty-but-successful ignore set defeats an ignore-based exclusion. A plan
+    worktree nested *beneath* the scan root is covered by the never-traversed
+    rule above instead.
+
+    Uses a single directory traversal with compiled regex patterns instead
+    of multiple Path.glob() calls, improving performance on large repos.
+    Skips known large directories (node_modules, .git, etc.) early to avoid
+    unnecessary traversal.
+
+    Tracked files are never reported as ``safe`` — even when a filename
+    matches a safe glob, a tracked entry may be an intentional fixture
+    (e.g., a committed ``*.log`` used by a test). Matching tracked files
+    are routed to ``uncertain`` so the caller can confirm before any
+    deletion.
+
+    When the ignore set cannot be READ at all (:func:`get_gitignored_files`
+    returns ``None``), the scan does not fall back to "nothing is ignored" —
+    that reading is what let a running plan's own live ``.plan/local`` state be
+    offered for deletion. Instead ``safe`` is left empty, every match is routed
+    to ``uncertain``, and ``gitignore_resolved: False`` is published so the
+    caller can tell a scan that found nothing to clean from one that could not
+    determine what was safe to clean.
+    """
+    gitignore_resolved = True
+    if respect_gitignore:
+        reported = get_gitignored_files(root)
+        if reported is None:
+            # The ignore set is UNKNOWN, not empty. Proceeding as though nothing
+            # were ignored would offer the entire ignored tree — a running
+            # plan's own live state included — in the auto-deletable bucket, so
+            # the scan degrades to reporting every match as 'uncertain' and
+            # publishes the degradation rather than hiding it behind a
+            # confident-looking empty exclusion set.
+            gitignore_resolved = False
+            reported = set()
+    else:
+        reported = set()
+    ignored_files, ignored_dirs = _split_ignored(reported)
+
+    # The tracked oracle fails closed on the same terms as the ignore oracle
+    # above: both feed the one promotion decision below, so an unknown answer
+    # from either must not promote anything to 'safe'. An empty tracked set
+    # would assert every match untracked and auto-deletable.
+    tracked = get_tracked_files(root)
+    tracked_resolved = tracked is not None
+    if tracked is None:
+        tracked = set()
+
+    safe: list[str] = []
+    uncertain: list[str] = []
+
+    root_str = str(root)
+    for dirpath_str, dirnames, filenames in os.walk(root_str):
+        # Prune directories we never need to descend into
+        dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS]
+        # Never descend into a nested git repository/worktree/submodule — its
+        # contents belong to a separate checkout and a running plan's live
+        # worktree lives at such a boundary (see _is_nested_git_boundary).
+        dirnames[:] = [
+            d for d in dirnames if not _is_nested_git_boundary(os.path.join(dirpath_str, d))
+        ]
+
+        for filename in filenames:
+            # Normalised ONCE, here, so every consumer below sees the same
+            # spelling. os.path.relpath returns OS-native separators while the
+            # oracles return the '/'-spelled paths git emits; normalising per
+            # consumer instead let the ignore check speak '/' while the pattern
+            # match and the `rel in tracked` demotion still spoke '\', so on a
+            # '\'-separator platform a nested tracked artifact missed the
+            # demotion and reached the auto-deletable bucket.
+            rel = os.path.relpath(os.path.join(dirpath_str, filename), root_str).replace(
+                os.sep, '/'
+            )
+            # The scan root's OWN plan state is dropped first and
+            # unconditionally, so no ignore-mechanism outcome can admit it.
+            if _is_plan_state(rel):
+                continue
+            if _is_ignored(rel, ignored_files, ignored_dirs):
+                continue
+
+            # Check safe patterns first, but demote tracked files to
+            # 'uncertain' so committed fixtures are never auto-deleted.
+            if any(rx.match(rel) for rx in _SAFE_REGEXES):
+                if rel in tracked or not gitignore_resolved or not tracked_resolved:
+                    uncertain.append(rel)
+                else:
+                    safe.append(rel)
+            elif any(rx.match(rel) for rx in _UNCERTAIN_REGEXES):
+                uncertain.append(rel)
+
+    return {
+        'safe': sorted(safe),
+        'uncertain': sorted(uncertain),
+        'total': len(safe) + len(uncertain),
+        # Whether each oracle this scan applied is trustworthy. Either being
+        # False means 'safe' is empty by construction and every match was
+        # routed to 'uncertain' — the caller must not read that empty 'safe'
+        # as "nothing to clean". They are published separately because they
+        # fail for different reasons and a caller may want to say which.
+        'gitignore_resolved': gitignore_resolved,
+        'tracked_resolved': tracked_resolved,
+    }
+
+
+def cmd_detect_artifacts(args):
+    """Handle detect-artifacts subcommand.
+
+    An indeterminate ignore set under default flags is an ERROR, not a result.
+    The output contract tells every caller to branch on ``status``, so returning
+    ``status: 'success'`` carrying ``gitignore_resolved: False`` made a scan
+    whose ignore oracle could not be read at all indistinguishable from one that
+    genuinely resolved a clean tree. The gate is on the ignore oracle ONLY —
+    ``tracked_resolved`` keeps its existing degradation, in which ``safe`` is
+    empty by construction and every match is routed to ``uncertain``.
+
+    ``--no-gitignore`` is the supported way to scan a tree with no readable
+    ignore set, and it is safe because the plan-state exclusion
+    (:func:`_is_plan_state`) does not depend on the ignore mechanism.
+    """
+    root = Path(args.root) if args.root else Path.cwd()
+
+    if not root.is_dir():
+        return make_error(f'Directory not found: {root}', code=ErrorCode.NOT_FOUND)
+
+    respect_gitignore = not args.no_gitignore
+    result = scan_artifacts(root, respect_gitignore=respect_gitignore)
+    if respect_gitignore and not result['gitignore_resolved']:
+        return make_error(
+            'Ignore set could not be determined for the scan root; refusing to '
+            'report artifacts. Pass --no-gitignore to scan a tree with no '
+            'readable ignore set.',
+            code=ErrorCode.FETCH_FAILURE,
+            root=str(root),
+        )
+    result['root'] = str(root)
+    result['status'] = 'success'
+    return result
+
+
+# ============================================================================
+# WORKTREE SUBCOMMANDS
+# ============================================================================
+#
+# Two-state contract per §9 of the solution outline:
+#   • ``--plan-id X`` is REQUIRED — every worktree subcommand operates on
+#     a worktree, so a plan id is non-negotiable.
+#   • Path resolution for ``worktree-path``/``worktree-remove``/``worktree-list``
+#     goes through ``file_ops.resolve_plan_context``, the single plan-context
+#     resolver, which owns the ``manage-status get-worktree-path`` channel.
+#   • ``worktree-create`` computes the path from
+#     ``get_worktree_root() / plan_id`` (the only verb that materializes a
+#     new worktree on disk), runs ``git worktree add``, then writes
+#     ``metadata.worktree_path`` / ``worktree_branch`` / ``use_worktree``
+#     via ``manage-status metadata --set`` so subsequent verbs can
+#     resolve the path through the canonical channel.
+
+_BOOTSTRAP_TIMEOUT_SECONDS = 120
+
+
+def _executor_path() -> Path | None:
+    """Locate the ``.plan/execute-script.py`` executor via the uniform cwd rule.
+
+    Resolves the executor cwd-relatively (ADR-002, via
+    ``file_ops.get_executor_path()``) — worktree-resident during phase-5+, main
+    during the finalize regenerate-on-main path. Returns ``None`` when the plan
+    root cannot be resolved (no ``.plan/local`` ancestor of cwd) or the executor
+    file is absent (fresh repo, before ``/marshall-steward`` regeneration).
+    """
+    try:
+        candidate = get_executor_path()
+    except RuntimeError:
+        return None
+    return candidate if candidate.exists() else None
+
+
+# ---------------------------------------------------------------------------
+# Post-rebase executor refresh
+# ---------------------------------------------------------------------------
+#
+# The per-tree executor is DERIVED state: it embeds a notation→path map
+# generated from the bundle tree as it stood when the worktree was materialised
+# (``prepare_execute._generate_worktree_executor``). A rebase replays the branch
+# onto a newly-fetched ``origin/{base}``, and when those upstream commits added,
+# removed, or renamed a bundle script the embedded map stops describing the
+# tree — every later dispatch in that worktree then resolves against a stale map
+# and a notation introduced upstream cannot resolve at all.
+#
+# The refresh lives here rather than in any caller because EVERY finalize rebase
+# routes through ``worktree-rebase-to`` — this verb is the single seam, and it
+# already knows whether the rebase actually replayed anything. Callers today
+# include ``finalize-step-sync-baseline`` (``order: 3``), ``automatic-review``
+# (``order: 30``, refusal-recovery path) and ``branch-cleanup`` (``order: 70``);
+# that roster is illustrative, not a closed set, and the placement is chosen so a
+# NEW caller inherits the refresh without having to know it exists.
+
+_GENERATE_EXECUTOR_PATH = (
+    Path(__file__).resolve().parent.parent.parent
+    / 'tools-script-executor'
+    / 'scripts'
+    / 'generate_executor.py'
+)
+
+_EXECUTOR_REFRESH_TIMEOUT_SECONDS = 120
+
+#: The refresh verdict for a rebase that replayed nothing. Shared by both
+#: no-op paths (``state == 'clean'``, and a rebase whose pre/post SHAs match)
+#: so the two report identically: no replay means no upstream file entered the
+#: tree, so the embedded notation map cannot have drifted and the probe is
+#: skipped rather than paid for on every finalize entry.
+_EXECUTOR_REFRESH_NOT_REPLAYED: dict[str, Any] = {
+    'executor_drift': 'ok',
+    'executor_regenerated': False,
+    'executor_detail': 'no commits replayed; executor cannot have drifted',
+}
+
+
+def _run_generate_executor(worktree_path: Path, verb: str, *extra: str) -> tuple[int, str, str]:
+    """Invoke ``generate_executor.py {verb}`` against ``worktree_path``.
+
+    The subprocess seam for the post-rebase refresh — isolated as its own
+    function so the decision logic above it is testable without a vendored
+    bundle tree. ``cwd`` is pinned to the worktree because the generator
+    resolves its OUTPUT location by walking up from cwd; without the pin a
+    refresh would write main's executor instead (the same trap
+    ``prepare_execute`` documents). ``--marketplace-root`` pins bundle
+    DISCOVERY only.
+
+    Returns ``(returncode, stdout, stderr)``; never raises.
+    """
+    try:
+        result = subprocess.run(
+            [
+                'python3',
+                str(_GENERATE_EXECUTOR_PATH),
+                verb,
+                '--marketplace-root',
+                str(worktree_path),
+                *extra,
+            ],
+            cwd=str(worktree_path),
+            capture_output=True,
+            text=True,
+            timeout=_EXECUTOR_REFRESH_TIMEOUT_SECONDS,
+        )
+    except FileNotFoundError:
+        return 127, '', 'python3 executable not found on PATH'
+    except subprocess.TimeoutExpired:
+        return 124, '', f'generate_executor {verb} timed out'
+    return result.returncode, result.stdout, result.stderr
+
+
+def _refresh_worktree_executor(worktree_path: Path) -> dict[str, Any]:
+    """Regenerate the worktree executor when the rebase changed the script set.
+
+    Probes ``generate_executor drift`` — which compares the executor's EMBEDDED
+    mappings against the live bundle state, so it answers "did the script set
+    change?" precisely rather than by guessing from changed paths — and
+    regenerates only on a positive ``drift`` verdict.
+
+    **An indeterminate verdict regenerates nothing.** A tree with no vendored
+    ``marketplace/bundles`` (every consumer project of plan-marshall) cannot
+    produce a meaningful drift answer, and generating there can exit 0 having
+    written nothing — replacing a working executor with an empty one. That
+    outcome is strictly worse than the stale map this refresh guards against:
+    a stale map fails one dispatch loudly and is repairable via
+    ``/marshall-steward``, while an empty executor breaks every dispatch. So
+    ``unknown`` is REPORTED on the payload and acted on by nobody.
+
+    **Non-fatal by contract.** The rebase has already succeeded and moved HEAD
+    by the time this runs; converting a refresh failure into a rebase failure
+    would make callers abort a rebase that worked. Every failure mode is
+    reported in the return value and none is raised.
+
+    Returns ``{executor_drift, executor_regenerated, executor_detail}`` where
+    ``executor_drift`` is ``'ok'`` / ``'drift'`` / ``'unknown'``.
+    """
+    if not _GENERATE_EXECUTOR_PATH.exists():
+        return {
+            'executor_drift': 'unknown',
+            'executor_regenerated': False,
+            'executor_detail': f'generator not found at {_GENERATE_EXECUTOR_PATH}',
+        }
+
+    rc, stdout, stderr = _run_generate_executor(worktree_path, 'drift')
+    drift_status = ''
+    if rc == 0:
+        try:
+            drift_status = str(parse_toon(stdout).get('drift_status') or '')
+        except (ValueError, AttributeError):
+            drift_status = ''
+    if drift_status not in ('ok', 'drift'):
+        return {
+            'executor_drift': 'unknown',
+            'executor_regenerated': False,
+            'executor_detail': (
+                f'drift probe returned no usable verdict (rc={rc}): '
+                f'{(stderr or stdout).strip()[:200] or "no output"}'
+            ),
+        }
+    if drift_status == 'ok':
+        return {
+            'executor_drift': 'ok',
+            'executor_regenerated': False,
+            'executor_detail': 'script set unchanged by the rebase; executor left as-is',
+        }
+
+    gen_rc, gen_out, gen_err = _run_generate_executor(worktree_path, 'generate')
+    if gen_rc != 0:
+        return {
+            'executor_drift': 'drift',
+            'executor_regenerated': False,
+            'executor_detail': (
+                f'script set drifted but regeneration failed (rc={gen_rc}): '
+                f'{(gen_err or gen_out).strip()[:200] or "no output"} — '
+                'run /marshall-steward to repair the executor'
+            ),
+        }
+    # The verdict is derived from ON-DISK reality, never from generation intent.
+    # ``prepare_execute._generate_worktree_executor`` states the same rule for
+    # the same generator: a run that exits 0 having written nothing (anchoring
+    # landed nowhere) is NOT a success, and reporting it as one would claim a
+    # refreshed executor that does not exist.
+    landed = executor_landed(worktree_executor_path(worktree_path))
+    if not landed:
+        return {
+            'executor_drift': 'drift',
+            'executor_regenerated': False,
+            'executor_detail': (
+                'script set drifted and regeneration exited 0, but no executor '
+                f'landed at {worktree_executor_path(worktree_path)} — '
+                'run /marshall-steward to repair the executor'
+            ),
+        }
+    return {
+        'executor_drift': 'drift',
+        'executor_regenerated': True,
+        'executor_detail': 'script set changed by the rebase; worktree executor regenerated',
+    }
+
+
+def _manage_status_call(
+    subcommand: str,
+    *extra_args: str,
+    timeout: int = 30,
+) -> tuple[int, str, str]:
+    """Invoke ``plan-marshall:manage-status:manage-status`` via the executor.
+
+    Returns ``(returncode, stdout, stderr)`` (raw, not stripped). When the
+    executor cannot be located, returns ``(127, '', '<reason>')`` so the
+    caller can surface a clean TOON error rather than crashing.
+    """
+    executor = _executor_path()
+    if executor is None:
+        return 127, '', 'plan-marshall executor not available (.plan/execute-script.py missing)'
+    try:
+        result = subprocess.run(
+            [
+                'python3',
+                str(executor),
+                'plan-marshall:manage-status:manage-status',
+                subcommand,
+                *extra_args,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except FileNotFoundError:
+        return 127, '', 'python3 executable not found on PATH'
+    except subprocess.TimeoutExpired:
+        return 124, '', f'manage-status {subcommand} timed out after {timeout} seconds'
+    return result.returncode, result.stdout, result.stderr
+
+
+def _read_metadata_field(plan_id: str, field: str) -> str:
+    """Best-effort read of ``status.metadata.<field>`` via manage-status.
+
+    Returns the string value when the field is present, or ``''`` when
+    the call fails, the field is absent, or parsing the TOON output
+    raises. Used by branch-name lookups during ``worktree-remove`` and
+    ``worktree-list`` where missing metadata is a soft signal, not a
+    hard error.
+    """
+    rc, stdout, _stderr = _manage_status_call(
+        'metadata', '--plan-id', plan_id, '--get', '--field', field
+    )
+    if rc != 0:
+        return ''
+    try:
+        parsed = parse_toon(stdout)
+    except Exception:  # defensive against TOON drift
+        return ''
+    if parsed.get('status') != 'success':
+        return ''
+    value = parsed.get('value')
+    return str(value) if value is not None else ''
+
+
+def _resolve_worktree_path_for_plan(plan_id: str) -> tuple[Path | None, dict | None]:
+    """Resolve the DEDICATED worktree path for ``plan_id``.
+
+    Returns ``(path, None)`` on success, ``(None, error_dict)`` on
+    failure. The error dict is a fully-formed TOON-shaped payload ready
+    to return from a subcommand handler.
+
+    Delegates to the single plan-context resolver. Unlike the generic worktree
+    face, this helper REFUSES a plan that has no dedicated worktree — its
+    callers (``worktree-path``, ``branch-sync-state``) are worktree verbs, and
+    silently answering with the main checkout would be a fabrication. The
+    ``has_worktree`` face is what makes that refusal expressible without
+    re-reading ``status.metadata``.
+    """
+    try:
+        context = resolve_plan_context(plan_id, ensure=False)
+        has_worktree = context.has_worktree
+    except WorktreeResolutionError as exc:
+        return None, {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'plan_resolution_failed',
+            'message': str(exc),
+        }
+
+    if not has_worktree:
+        return None, {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'plan_resolution_failed',
+            'message': (
+                'No worktree configured for this plan — '
+                'status.metadata.use_worktree is false or worktree_path is unset'
+            ),
+        }
+
+    # Still reachable despite the has_worktree check above: that check caches
+    # the (worktree_state, worktree_path) query, so no SECOND query happens
+    # here — but PlanContext._resolve_worktree_face raises on its own for a
+    # self-contradictory payload, one published as worktree_state=materialized
+    # with an EMPTY path. The message must therefore be the exception's own
+    # text: "No worktree configured" is provably false at this point
+    # (has_worktree just returned true, so the state IS materialized), and
+    # would send the caller looking for the wrong defect.
+    try:
+        return Path(context.worktree_path), None
+    except WorktreeResolutionError as exc:
+        return None, {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'plan_resolution_failed',
+            'message': str(exc),
+        }
+
+
+def _detect_pw_wrapper(worktree: Path) -> Path | None:
+    """Locate a pyprojectx wrapper in the worktree, preferring Unix `pw`."""
+    for name in ('pw', 'pw.bat', 'pwx'):
+        candidate = worktree / name
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _bootstrap_pyprojectx(worktree: Path) -> tuple[str, str]:
+    """Best-effort pre-bootstrap of pyprojectx in a freshly-created worktree.
+
+    Runs ``./pw --version`` so pyprojectx populates ``.pyprojectx`` while ``uv``
+    is still on PATH. Returns ``(status, detail)`` where status is
+    ``ok``, ``skipped``, or ``warning``. The caller treats this strictly as
+    advisory — failures never fail ``cmd_worktree_create``.
+    """
+    wrapper = _detect_pw_wrapper(worktree)
+    if wrapper is None:
+        return 'skipped', 'no pw wrapper found in worktree'
+    try:
+        result = subprocess.run(
+            [str(wrapper), '--version'],
+            cwd=str(worktree),
+            capture_output=True,
+            text=True,
+            timeout=_BOOTSTRAP_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return 'warning', f'bootstrap invocation failed: {exc}'
+    if result.returncode != 0:
+        stderr_tail = (result.stderr or '').strip().splitlines()[-1:]
+        detail = stderr_tail[0] if stderr_tail else f'exit {result.returncode}'
+        return 'warning', detail
+    return 'ok', ''
+
+
+def _ensure_worktree_plan_local_real(worktree: Path) -> tuple[bool, str]:
+    """Materialize ``worktree/.plan/local`` as a fully REAL directory — NO symlinks.
+
+    Under the move-based model (ADR-002) the worktree owns a fully real
+    ``.plan/local``; nothing under it is a symlink. The genuinely-shared
+    cross-session corpora (``merge.lock``, ``run-configuration.json``,
+    ``lessons-learned``) are reached by the main-anchored resolver
+    :func:`marketplace_paths.resolve_main_anchored_path`, NOT by filesystem
+    symlinks. The executor and the plan directory are MOVED in by
+    ``prepare_execute`` (the ``wt_executor`` / plan-dir slots), so neither is
+    symlinked here — a symlink placeholder would only be one the move-in must
+    then replace.
+
+    This function therefore creates ``worktree/.plan/local`` as a real directory
+    and creates NOTHING else: in particular it does NOT create
+    ``.plan/local/plans`` (the move-in lands that real directory). The blanket
+    ``.plan/local`` symlink and the ``execute-script.py`` symlink that earlier
+    revisions created here are gone.
+
+    Returns ``(success, error_message)`` — ``error_message`` is non-empty only on
+    a genuine mkdir / OS failure.
+    """
+    plan_local = worktree / _PLAN_DIR_NAME / 'local'
+    # A pre-existing symlink (a worktree created by an older symlinking revision,
+    # or manual intervention) would let mkdir(exist_ok=True) succeed while leaving
+    # the symlink in place — violating the fully-REAL guarantee. Unlink it first;
+    # unlink(missing_ok=True) avoids a TOCTOU check-then-act race.
+    if plan_local.is_symlink():
+        try:
+            plan_local.unlink(missing_ok=True)
+        except OSError as exc:
+            return False, f'failed to remove existing {_PLAN_DIR_NAME}/local symlink: {exc}'
+    try:
+        plan_local.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        return False, f'failed to create real {_PLAN_DIR_NAME}/local directory: {exc}'
+    return True, ''
+
+
+def cmd_worktree_path(args):
+    """Resolve the persisted worktree path for a plan.
+
+    Two-state contract: ``--plan-id`` is required; resolution goes
+    through ``file_ops.resolve_plan_context``.
+    """
+    path, error = _resolve_worktree_path_for_plan(args.plan_id)
+    if error is not None:
+        return error
+
+    return {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'worktree_path': str(path),
+        'exists': path.is_dir(),
+    }
+
+
+def _ref_resolves(worktree, ref: str) -> bool:
+    """True when ``ref`` resolves to a commit in ``worktree`` (read-only, no fetch)."""
+    rc, stdout, _ = run_git(['-C', str(worktree), 'rev-parse', '--verify', '--quiet', ref])
+    return rc == 0 and bool(stdout.strip())
+
+
+def _resolve_sync_base_branch(plan_id: str, worktree) -> str | None:
+    """Resolve the base branch used to disambiguate a missing tracking ref.
+
+    Read-only, no fetch: only a LOCAL ``origin/{base}`` ref is consulted.
+    Preference order, taking the first whose ``origin/{base}`` resolves locally:
+    the plan's configured ``references.base_branch``, then ``main``, then
+    ``master``. Returns ``None`` when none resolves — the caller then cannot
+    verify containment and DECLINES rather than guessing a verdict.
+    """
+    try:
+        from _references_core import read_references
+
+        refs = read_references(plan_id)
+        candidate = refs.get('base_branch') if isinstance(refs, dict) else None
+        if isinstance(candidate, str) and candidate.strip():
+            base = candidate.strip()
+            if _ref_resolves(worktree, f'origin/{base}'):
+                return base
+    except (ImportError, FileNotFoundError, OSError, ValueError):
+        pass
+
+    for fallback in ('main', 'master'):
+        if _ref_resolves(worktree, f'origin/{fallback}'):
+            return fallback
+    return None
+
+
+def _head_contained_in_base(worktree, head_sha: str, base_branch: str) -> bool:
+    """True when ``head_sha`` is an ancestor of ``origin/{base_branch}``.
+
+    An ancestor relationship means the branch's commits are already contained
+    in the base — the branch's work LANDED (fast-forward or merge-commit merge).
+    Squash merges rewrite history and are NOT ancestors, so a False result does
+    not prove the work never landed; it proves only that containment could not
+    be established, which is why the caller declines rather than asserting
+    "never pushed" on a False.
+    """
+    rc, _, _ = run_git(
+        ['-C', str(worktree), 'merge-base', '--is-ancestor', head_sha, f'origin/{base_branch}']
+    )
+    return rc == 0
+
+
+#: The ONLY ``state`` value the push barrier re-fires on. Every other resolvable
+#: state skips, and the asymmetry is deliberate: re-firing is a PUSH, so an
+#: over-broad re-fire resurrects a landed branch, while an over-broad skip leaves
+#: a genuinely-unpushed branch for the operator to notice. Fail toward the
+#: non-destructive verdict.
+_BARRIER_REFIRE_STATE = 'ahead'
+
+
+def push_barrier_action(state: str) -> str:
+    """Map a ``branch-sync-state`` verdict to the push barrier's re-entry action.
+
+    The push step is a parity-driven barrier, not a done-record-driven one: at
+    re-entry the dispatcher asks this verb what the remote comparison implies
+    rather than trusting a recorded ``done``. This function IS that mapping —
+    the dispatcher branches on the returned ``barrier_action``, so the decision
+    lives in code with a test over it instead of in prose a consumer re-derives.
+
+    - ``ahead`` → ``re-fire``. The tracking ref exists and HEAD is past it, so
+      local commits are genuinely not on origin and the ``done`` record is stale.
+    - ``synced`` → ``skip``. Local HEAD is already on origin.
+    - ``remote_absent_landed`` → ``skip``. The work is contained in the base
+      branch; re-pushing would RESURRECT a landed branch.
+    - ``remote_absent_unverified`` → ``skip``. The tracking ref is absent and its
+      cause is ambiguous (never-pushed and squash-merged-and-deleted are
+      indistinguishable from local state alone), so the barrier DECLINES rather
+      than routing an under-determined verdict to a destructive re-push.
+
+    An unrecognised state also maps to ``skip``, for the same fail-toward-safety
+    reason: a verdict this mapping does not understand is not evidence that a
+    push is safe.
+
+    Args:
+        state: The ``state`` field of a successful ``branch-sync-state`` payload.
+
+    Returns:
+        ``'re-fire'`` or ``'skip'``.
+    """
+    return 're-fire' if state == _BARRIER_REFIRE_STATE else 'skip'
+
+
+def cmd_branch_sync_state(args):
+    """Report the push-parity state of the plan's feature branch vs origin.
+
+    Pure read-only comparison — no fetch, no working-tree mutation. The
+    branch is resolved from ``status.metadata.worktree_branch`` and the
+    working tree via the canonical worktree-resolution channel
+    (:func:`_resolve_worktree_path_for_plan`). ``git rev-parse HEAD`` is
+    compared against ``git rev-parse origin/{branch}``:
+
+    - the SHAs match → ``state: synced``;
+    - the SHAs differ → ``state: ahead`` (local commits not on origin);
+    - the origin tracking ref is absent → the verdict is DISAMBIGUATED rather
+      than collapsed into a single "never pushed" answer, because an absent
+      tracking ref has two causes needing OPPOSITE remedies: a never-pushed
+      branch should be (re-)pushed, but a pushed-merged-and-deleted branch
+      must NOT be re-pushed (that resurrects a landed branch). So:
+
+      - ``state: remote_absent_landed`` — HEAD is an ancestor of
+        ``origin/{base_branch}``, proving the work already landed; do NOT
+        re-push.
+      - ``state: remote_absent_unverified`` — containment could not be proven
+        (no resolvable base ref, or HEAD is not an ancestor, which a squash
+        merge also produces). Never-pushed and squash-merged-and-deleted are
+        indistinguishable from local state alone, so the verb DECLINES to
+        assert "safe to re-push" and surfaces the ambiguity instead.
+
+    ``remote_sha`` is present only when the tracking ref resolves.
+
+    Every successful payload also carries ``barrier_action`` —
+    :func:`push_barrier_action` applied to the returned ``state`` — so the push
+    barrier's consumer branches on a field this verb computes rather than
+    re-deriving the state→action mapping in prose. The error payloads carry no
+    ``barrier_action``: an unresolvable state is not a verdict to map, and the
+    consumer's own ``status: error`` branch (fail toward pushing) governs it.
+    """
+    plan_id = args.plan_id
+    worktree, error = _resolve_worktree_path_for_plan(plan_id)
+    if error is not None:
+        return error
+
+    branch = _read_metadata_field(plan_id, 'worktree_branch')
+    if not branch:
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'worktree_not_materialized',
+            'message': 'worktree_branch absent from status.metadata',
+        }
+
+    rc, head_sha, stderr = run_git(['-C', str(worktree), 'rev-parse', 'HEAD'])
+    if rc != 0:
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'head_unresolvable',
+            'message': stderr or 'git rev-parse HEAD failed',
+        }
+
+    rc, remote_sha, _stderr = run_git(
+        ['-C', str(worktree), 'rev-parse', '--verify', '--quiet', f'origin/{branch}']
+    )
+    if rc == 0:
+        state = 'synced' if head_sha == remote_sha else 'ahead'
+        return {
+            'status': 'success',
+            'plan_id': plan_id,
+            'branch': branch,
+            'state': state,
+            'barrier_action': push_barrier_action(state),
+            'head_sha': head_sha,
+            'remote_sha': remote_sha,
+        }
+
+    # origin/{branch} does not resolve — the ambiguous case. Disambiguate via
+    # containment in the base branch (read-only, local refs only) so the
+    # consumer never routes a merged-and-deleted branch to a re-push.
+    base_branch = _resolve_sync_base_branch(plan_id, worktree)
+    if base_branch is not None and _head_contained_in_base(worktree, head_sha, base_branch):
+        return {
+            'status': 'success',
+            'plan_id': plan_id,
+            'branch': branch,
+            'state': 'remote_absent_landed',
+            'barrier_action': push_barrier_action('remote_absent_landed'),
+            'head_sha': head_sha,
+            'base_branch': base_branch,
+        }
+
+    return {
+        'status': 'success',
+        'plan_id': plan_id,
+        'branch': branch,
+        'state': 'remote_absent_unverified',
+        'barrier_action': push_barrier_action('remote_absent_unverified'),
+        'head_sha': head_sha,
+        'base_branch': base_branch,
+    }
+
+
+def cmd_worktree_create(args):
+    """Create a worktree + feature branch + .plan symlinks for ``--plan-id``.
+
+    Path is computed from ``get_worktree_root() / plan_id`` — the only
+    verb that materializes a new worktree on disk. After ``git worktree
+    add`` succeeds, project state is bookkept by writing
+    ``metadata.use_worktree``/``worktree_path``/``worktree_branch`` via
+    ``manage-status metadata --set`` so subsequent verbs can resolve the
+    path through the canonical channel.
+    """
+    try:
+        target = get_worktree_root() / args.plan_id
+    except RuntimeError as exc:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'plan_resolution_failed',
+            'message': str(exc),
+        }
+
+    if target.exists():
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'worktree_exists',
+            'message': f'Worktree already exists: {target}',
+            'worktree_path': str(target),
+        }
+    target.parent.mkdir(parents=True, exist_ok=True)
+
+    main_root = _find_plan_root_from_cwd()
+    if main_root is None:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'plan_resolution_failed',
+            'message': 'cannot resolve main git checkout root for git worktree add',
+        }
+
+    git_args = ['-C', str(main_root), 'worktree', 'add']
+    if args.base:
+        git_args += ['-b', args.branch, str(target), args.base]
+    else:
+        git_args += ['-b', args.branch, str(target)]
+    rc, _stdout, stderr = run_git(git_args)
+    if rc != 0:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'worktree_add_failed',
+            'message': f'git worktree add failed: {stderr}',
+            'branch': args.branch,
+        }
+
+    ok, link_err = _ensure_worktree_plan_local_real(target)
+    if not ok:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'plan_local_failed',
+            'message': f'Worktree created but real .plan/local materialization failed: {link_err}',
+            'worktree_path': str(target),
+        }
+
+    bootstrap_status, bootstrap_detail = _bootstrap_pyprojectx(target)
+
+    # Project-state bookkeeping: persist the resolved path/branch via
+    # manage-status so subsequent verbs can resolve through the canonical
+    # channel. The ``use_worktree`` field is a string here (manage-status
+    # metadata --set stores values as strings); ``cmd_get_worktree_path``
+    # treats the literal ``true`` as truthy so the round-trip is intact.
+    bookkeeping_warnings: list[str] = []
+    for field, value in (
+        ('use_worktree', 'true'),
+        ('worktree_path', str(target)),
+        ('worktree_branch', args.branch),
+    ):
+        rc, _out, err = _manage_status_call(
+            'metadata',
+            '--plan-id',
+            args.plan_id,
+            '--set',
+            '--field',
+            field,
+            '--value',
+            value,
+        )
+        if rc != 0:
+            bookkeeping_warnings.append(
+                f'manage-status metadata --set --field {field}: {err.strip() or "non-zero exit"}'
+            )
+
+    payload: dict[str, Any] = {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'worktree_path': str(target),
+        'branch': args.branch,
+        'plan_symlink': str(target / _PLAN_DIR_NAME),
+        'bootstrap': bootstrap_status,
+    }
+    if bootstrap_status == 'warning':
+        payload['bootstrap_warning'] = bootstrap_detail
+    if bookkeeping_warnings:
+        # Surface bookkeeping problems without failing the command — the
+        # worktree itself is on disk; status metadata can be fixed later.
+        payload['bookkeeping_warnings'] = bookkeeping_warnings
+    return payload
+
+
+#: Glob shape of the date prefix ``manage-status archive`` puts on an archived
+#: plan directory. DERIVED from the archiving code, not from prose:
+#: ``manage-status/_cmd_lifecycle.cmd_archive`` builds the destination name as
+#: ``f'{now_utc_iso()[:10]}-{plan_id}'`` under ``get_archive_dir()`` — i.e.
+#: ``{base}/archived-plans/YYYY-MM-DD-{plan_id}``. Because the name is
+#: date-PREFIXED, a literal ``archived-plans / plan_id`` join can never find it;
+#: the probe has to scan the directory. The glob is anchored to the exact
+#: ten-character date shape rather than a loose ``*-{plan_id}`` so an unrelated
+#: sibling whose name merely ENDS in the plan id cannot satisfy the guard.
+_ARCHIVE_DATE_GLOB = '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
+
+
+def _main_anchored_plan_records(plan_id: str) -> list[Path]:
+    """Every existing main-anchored ``status.json`` that holds ``plan_id``'s record.
+
+    ONE resolution rule, shared by every consumer in this module that needs
+    MAIN's copy of a plan's record — the move-back guard below and the branch
+    lookup in :func:`cmd_worktree_remove` — so the archived path is spelled once
+    here rather than once per caller. Candidates are returned in precedence
+    order, live before archived, and only when they exist on disk.
+
+    Both shapes are subpaths handed to
+    :func:`marketplace_paths.resolve_main_anchored_path`, the ONE sanctioned
+    main-anchored resolver (ADR-002), which is the SAME call the plan dir's
+    producer writes through: ``integrate_into_main.run_integrate_into_main``
+    computes its move-back DESTINATION as
+    ``resolve_main_anchored_path(f'plans/{plan_id}')``. Producer and consumers
+    thus derive main's plan slot by one mechanism and cannot disagree about
+    where it is.
+
+    ⛔ That agreement is load-bearing, not tidiness. The resolver's FIRST
+    precedence branch honours the ``PLAN_BASE_DIR`` / ``file_ops.set_base_dir()``
+    override, whereas ``main_checkout_root()`` is pure ``git rev-parse
+    --git-common-dir`` and never consults it. Under any active override the two
+    name different trees: the move-back writes ``{override}/plans/{plan_id}``
+    while a git-derived probe reads ``{git-common-parent}/.plan/local/plans/...``,
+    finds nothing, and refuses ``plan_dir_not_moved_back`` — a refusal that is
+    deliberately NOT ``--force``-overridable, so the removal would be blocked
+    permanently with no escape. ``main_checkout_root()`` remains correct for
+    :func:`cmd_worktree_remove`'s ``git -C`` target, which must name a real git
+    checkout; the two needs take two resolvers.
+
+    **Two main-anchored shapes count**, because the question every consumer here
+    asks — "has this plan's record left the tree that is about to be
+    destroyed?" — is answered by a record finalize has already ARCHIVED exactly
+    as well as by a live one. Both are spelled as subpaths handed to the
+    resolver (``{main}/.plan/local/…`` in production, ``{override}/…`` when an
+    override is installed):
+
+    - ``plans/{plan_id}/status.json`` — the live record ``integrate_into_main``
+      moves back.
+    - ``archived-plans/{YYYY-MM-DD}-{plan_id}/status.json`` — the archived record
+      ``manage-status archive`` writes. The date-prefixed shape is derived from
+      ``_cmd_lifecycle.cmd_archive``'s own destination construction (see
+      :data:`_ARCHIVE_DATE_GLOB`), NOT from the archive-plan prose, which spells
+      the destination inconsistently across its call sites. Because the name
+      carries that prefix the archive half is a directory SCAN, not a literal
+      join. Its producer is ``_status_core.get_archive_dir`` —
+      ``base_path(DIR_ARCHIVED)``, which honours the same override — so the
+      archive scan is resolved by the same rule as the live probe rather than by
+      a second one.
+
+    ⛔ An EMPTY list means "no record was established", and that deliberately
+    collapses two distinct states: no such record exists, and the main anchor
+    could not be resolved at all (``resolve_main_anchored_path`` raises
+    ``RuntimeError`` when no override is installed AND no git repo resolves).
+    The collapse is sound ONLY because both consumers in this module treat the
+    two identically and safely — the move-back guard REFUSES, and the branch
+    lookup REPORTS rather than skipping in silence. A consumer that must tell
+    "absent" from "could not look" apart cannot use this helper and has to
+    resolve the anchor itself. Absence within a resolved anchor is likewise
+    closed: ``Path.glob`` over a missing ``archived-plans/`` directory yields
+    nothing rather than raising.
+    """
+    try:
+        live_status = resolve_main_anchored_path(f'plans/{plan_id}/status.json')
+        archived_root = resolve_main_anchored_path(DIR_ARCHIVED)
+    except RuntimeError:
+        return []
+    records = [live_status] if live_status.is_file() else []
+    records.extend(
+        candidate / 'status.json'
+        for candidate in sorted(archived_root.glob(f'{_ARCHIVE_DATE_GLOB}-{plan_id}'))
+        if (candidate / 'status.json').is_file()
+    )
+    return records
+
+
+def _plan_dir_on_main_checkout(plan_id: str) -> bool:
+    """Return True when the plan's authoritative state lives on the MAIN checkout.
+
+    The move-back guard in :func:`cmd_worktree_remove` asks a question the
+    cwd-relative walk-up cannot answer: has the plan directory landed back on
+    **main**? A cwd-derived probe resolves through whichever checkout the caller
+    happens to stand in, so a caller cwd-pinned inside the worktree it is about
+    to destroy finds the plan dir *in that worktree* and reads it as "moved
+    back" — the guard then authorises the removal of the sole authoritative
+    plan-state copy.
+
+    The probe is therefore :func:`_main_anchored_plan_records`, which resolves
+    main-anchored and accepts the archived shape alongside the live one.
+    Accepting the archived shape is what keeps the structural-probe fallback in
+    :func:`cmd_worktree_remove` from being vacuous: the plan whose worktree the
+    probe exists to reach is precisely the archived one, so a ``plans/``-only
+    predicate would refuse every worktree the fallback made reachable. It does
+    NOT widen what the guard permits for a LIVE plan — a plan whose directory is
+    still resident in its worktree matches neither shape and is still refused.
+
+    Fails **closed**: an unresolvable main anchor establishes no record and so
+    answers ``False``, which is never evidence that the move-back happened.
+    """
+    return bool(_main_anchored_plan_records(plan_id))
+
+
+def _worktree_branch_on_main_checkout(plan_id: str) -> str:
+    """Read ``metadata.worktree_branch`` out of MAIN's copy of the plan's record.
+
+    The canonical channel (:func:`_read_metadata_field` → ``manage-status
+    metadata``) resolves through ``get_plan_dir`` →
+    ``{base}/plans/{plan_id}/status.json``, which has NO archived fallback. An
+    archived plan holds no record there — that is the very condition
+    :func:`_structural_worktree_probe` exists to work around — so for one the
+    canonical channel returns ``''`` BY CONSTRUCTION, on every archived-plan
+    removal rather than by accident. Without this fallback the branch delete in
+    :func:`cmd_worktree_remove` was skipped for all of them while the payload
+    reported a clean removal and named no branch.
+
+    Resolved through :func:`_main_anchored_plan_records`, so the branch lookup
+    accepts exactly the shapes the move-back guard accepts, by the same resolver
+    and the same rule — one archive spelling in this module, not two.
+
+    Returns ``''`` when no record is established, none parses as a JSON object,
+    or none carries a non-empty string at ``metadata.worktree_branch``. Each of
+    those is "the name could not be resolved", and the caller REPORTS that as a
+    ``branch_warning`` instead of skipping the delete in silence.
+    """
+    for record in _main_anchored_plan_records(plan_id):
+        try:
+            parsed = json.loads(record.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(parsed, dict):
+            continue
+        metadata = parsed.get('metadata')
+        if not isinstance(metadata, dict):
+            continue
+        branch = metadata.get('worktree_branch')
+        if isinstance(branch, str) and branch:
+            return branch
+    return ''
+
+
+def _structural_worktree_probe(plan_id: str) -> Path | None:
+    """Probe the canonical worktree slot for ``plan_id`` without manage-status.
+
+    The canonical layout ``worktree-create`` materializes is
+    ``get_worktree_root() / {plan_id}``, so the slot is derivable from the plan
+    id alone — no read of any plan record. That is what makes this probe the
+    resolution of last resort for a plan whose ``status.json`` manage-status can
+    no longer find: the archived-plan case, where finalize has moved the record
+    out of ``.plan/local/plans/`` and the metadata channel has nothing to read.
+
+    Returns the candidate path only when the directory exists AND carries the
+    ``.git`` worktree link ``git worktree add`` plants in it. The link is what
+    separates a live worktree slot from a bare directory that merely occupies
+    the name. It is deliberately a filesystem test and runs NO git subprocess,
+    so a probe MISS costs nothing and leaves ``cmd_worktree_remove``'s standing
+    "no git call runs after a resolution failure" contract intact — on EVERY
+    miss, not merely on the ones a fixture happens to arrange.
+
+    The link's presence is not proof of *registration*: a pruned worktree keeps
+    its ``.git`` file after git has forgotten it. That residual case is safe
+    because git itself is the final authority — ``git worktree remove`` refuses
+    an unregistered path and the verb surfaces ``worktree_remove_failed``. The
+    probe never widens what gets destroyed, only what gets *reached*.
+    """
+    try:
+        candidate = get_worktree_root() / plan_id
+    except RuntimeError:
+        # Outside a git repo there is no worktree root to probe.
+        return None
+    if not candidate.is_dir():
+        return None
+    if not (candidate / '.git').exists():
+        return None
+    return candidate
+
+
+#: Location of the pytest scratch tree inside a worktree, relative to the
+#: worktree root. Spelled from ``build.py``'s OWN construction —
+#: ``PYTEST_BASETEMP_ROOT = Path('.plan/temp/pytest-basetemp')``, whose leading
+#: segment is the same ``.plan`` this module already names as
+#: :data:`_PLAN_DIR_NAME` — rather than from prose about where scratch lives, so
+#: the directory this clears and the directory the build fills cannot drift into
+#: being two different directories.
+_SCRATCH_PARTS = ('temp', 'pytest-basetemp')
+
+#: Ceiling on the measuring walk. The tree being measured is unbounded, and a
+#: measurement that is itself unbounded would just relocate the problem the
+#: budget exists to solve. Reaching the cap is REPORTED
+#: (:data:`_BASIS_CAPPED`) rather than rendered as an exact total.
+_MEASURE_ENTRY_CAP = 2_000_000
+
+#: Entries per second the removal is assumed to sustain. Deliberately pessimistic
+#: against a warm local filesystem: ``git worktree remove`` unlinks every entry
+#: and then rewrites git's worktree bookkeeping, and a cold cache or a network
+#: filesystem is far slower than the several-thousand-per-second an APFS/ext4
+#: page-cache-warm delete reaches. Under-estimating the rate LENGTHENS the
+#: budget, which is the safe direction — the failure this derivation exists to
+#: prevent is a budget that expires on a healthy removal.
+_REMOVAL_ENTRIES_PER_SECOND = 2_000
+
+#: Upper bound on the derived budget. Past this a removal is not slow, it is
+#: wedged, and the distinct :data:`worktree_remove_timed_out` verdict serves an
+#: operator better than a longer wait. It also bounds every basis that yields a
+#: lower bound rather than a total (see :func:`_derive_removal_timeout`).
+_REMOVAL_TIMEOUT_CEILING_SECONDS = 1800
+
+#: The walk read every directory it descended into and did not reach the cap, so
+#: the entry count is an exact total. This is the ONLY basis on which the budget
+#: is scaled from the count.
+_BASIS_MEASURED = 'measured_tree'
+#: The walk stopped at :data:`_MEASURE_ENTRY_CAP`; the count is a lower bound.
+_BASIS_CAPPED = 'measurement_capped'
+#: At least one directory could not be read; the count is a lower bound.
+_BASIS_INCOMPLETE = 'measurement_incomplete'
+#: Nothing was counted at all — the root itself could not be scanned.
+_BASIS_FAILED = 'measurement_failed'
+
+
+def _count_tree_entries(root: Path) -> tuple[int | None, str]:
+    """Count filesystem entries under ``root`` and name the basis of the count.
+
+    Returns ``(entries, basis)``. The basis is what makes the number readable:
+    :data:`_BASIS_MEASURED` is an exact total, :data:`_BASIS_CAPPED` and
+    :data:`_BASIS_INCOMPLETE` are lower bounds, and on :data:`_BASIS_FAILED`
+    ``entries`` is ``None``.
+
+    ⛔ ``None`` rather than ``0`` on the failed basis, and that is the contract.
+    A zero published by a walk that never ran is indistinguishable from a walk
+    that ran and found an empty tree — and the two demand opposite budgets (the
+    floor for a genuinely empty tree, the ceiling for an unmeasurable one). A
+    caller that reads the count without the basis therefore finds no number to
+    misread, which is the same discipline ``scope_creep_check`` applies by
+    omitting ``residual_count`` from its ``could_not_look`` shape.
+
+    "Failed" is distinguished from "incomplete" by whether the walk yielded
+    ANYTHING: :func:`os.walk` yields exactly one tuple for a readable empty
+    directory, so yielding nothing means the root itself could not be scanned,
+    while an error raised part-way through leaves a partial count worth
+    reporting. Errors are collected through ``onerror`` rather than allowed to
+    propagate, because ``os.walk`` swallows them by default and a bare
+    ``except OSError`` around it would be a guard that can never fire.
+
+    The walk is cheap relative to the removal it budgets: only directory-entry
+    names are consumed (``scandir`` supplies the directory/file split without a
+    per-entry ``stat``), and no entry is opened. ``followlinks=False`` is stated
+    rather than left to the default so the walk provably cannot leave the tree
+    through a symlink and count some other tree's entries into this budget.
+    """
+    entries = 0
+    yielded = False
+    unreadable = False
+
+    def _note_unreadable(_exc: OSError) -> None:
+        nonlocal unreadable
+        unreadable = True
+
+    for _dirpath, dirnames, filenames in os.walk(root, onerror=_note_unreadable, followlinks=False):
+        yielded = True
+        entries += len(dirnames) + len(filenames)
+        if entries >= _MEASURE_ENTRY_CAP:
+            return _MEASURE_ENTRY_CAP, _BASIS_CAPPED
+    if not yielded:
+        return None, _BASIS_FAILED
+    if unreadable:
+        return entries, _BASIS_INCOMPLETE
+    return entries, _BASIS_MEASURED
+
+
+def _derive_removal_timeout(entries: int | None, basis: str) -> int:
+    """Derive the ``git worktree remove`` budget in seconds from the measurement.
+
+    An exact count scales linearly at :data:`_REMOVAL_ENTRIES_PER_SECOND`,
+    bounded below by ``git_provider._DEFAULT_TIMEOUT_SECONDS`` (a small tree
+    still gets the ordinary short-git-call budget, so this derivation never
+    SHORTENS what the removal had before) and above by
+    :data:`_REMOVAL_TIMEOUT_CEILING_SECONDS`.
+
+    Every other basis takes the ceiling. Capped, incomplete and failed all mean
+    the same thing for budgeting purposes: the real size is unknown and is at
+    least the number in hand, so scaling that number would produce exactly the
+    too-short budget this derivation exists to prevent. ``entries is None``
+    occurs only on :data:`_BASIS_FAILED`; it is tested first so the arithmetic
+    below is unambiguously over an ``int`` rather than resting on that coupling.
+
+    This is deliberately NOT a raised fixed constant. A fixed budget is wrong
+    for the same reason at every size — it encodes an assumption about the tree
+    that nothing checked — and raising it only moves the size at which it is
+    wrong again.
+    """
+    if entries is None or basis != _BASIS_MEASURED:
+        return _REMOVAL_TIMEOUT_CEILING_SECONDS
+    scaled = -(-entries // _REMOVAL_ENTRIES_PER_SECOND)  # ceiling division
+    return max(_DEFAULT_TIMEOUT_SECONDS, min(scaled, _REMOVAL_TIMEOUT_CEILING_SECONDS))
+
+
+def _clear_regenerable_scratch(target: Path, resolved_target: Path) -> tuple[bool, int | None, str]:
+    """Delete the worktree's regenerable pytest scratch before the tree is measured.
+
+    Returns ``(cleared, entries_removed, note)``. ``entries_removed`` is ``None``
+    when the scratch was removed but its size was never established exactly (the
+    measuring walk capped out, hit an unreadable directory, or could not run) and
+    when a removal failed part-way — in both cases a number would be a guess. The
+    ``note`` names why nothing was cleared, and is empty on success.
+
+    Clearing before measuring is the point: the scratch is the largest thing in a
+    worktree that has run the suite, it is regenerated by the next build
+    (``build.py::_prepare_session_basetemp`` recreates the root it prunes), and
+    removing it costs the caller nothing it will miss. Budgeting the git call
+    against the tree AFTER it is gone is what keeps the budget honest about the
+    work git actually has to do.
+
+    Three refusals, all fail-safe — a refusal leaves the scratch in place, so it
+    is simply counted into the measurement and the budget grows to cover it:
+
+    - the path is a SYMLINK. It is never followed, because following it would
+      delete whatever it points at rather than scratch inside this worktree.
+    - the path resolves OUTSIDE ``resolved_target``. Under ADR-002 a worktree's
+      ``.plan`` tree is fully real (see
+      :func:`_ensure_worktree_plan_local_real`), but a worktree materialized by
+      an older symlinking revision, or one edited by hand, can still have a
+      symlinked ancestor — and the resolved path is then some other checkout's
+      scratch. The containment test is the same ``is_relative_to`` shape the cwd
+      guard uses, applied to the same resolved-absolute-paths discipline.
+    - the path is absent or is not a directory. Nothing to clear.
+
+    ``shutil.rmtree`` is called WITHOUT ``ignore_errors`` on purpose: a partial
+    removal must be reportable, and swallowing the error would let the caller
+    publish ``scratch_cleared: true`` over a scratch that is still there.
+    """
+    scratch = target.joinpath(_PLAN_DIR_NAME, *_SCRATCH_PARTS)
+    if scratch.is_symlink():
+        return False, 0, f'scratch path is a symlink and was not followed: {scratch}'
+    if not scratch.is_dir():
+        return False, 0, 'no scratch directory present'
+    try:
+        resolved_scratch = scratch.resolve()
+    except OSError as exc:
+        return False, 0, f'scratch path could not be resolved: {exc}'
+    if not resolved_scratch.is_relative_to(resolved_target):
+        return False, 0, f'scratch resolves outside the removal target: {resolved_scratch}'
+
+    counted, basis = _count_tree_entries(scratch)
+    try:
+        shutil.rmtree(scratch)
+    except OSError as exc:
+        return False, None, f'scratch removal failed part-way: {exc}'
+    return True, (counted if basis == _BASIS_MEASURED else None), ''
+
+
+def cmd_worktree_remove(args):
+    """Remove a worktree (worktree first, then branch ref).
+
+    Order matters: ``git worktree remove`` refuses to drop a branch ref
+    that is still checked out. We remove the worktree first, then delete
+    the branch ref so the cleanup is symmetric with ``cmd_worktree_create``.
+
+    The worktree path resolves by two paths, tried in order, exactly as
+    :func:`cmd_locate_plan_checkout` layers them: first the canonical
+    manage-status channel (:func:`_resolve_worktree_path_for_plan`), then the
+    structural :func:`_structural_worktree_probe` when that channel refuses.
+    The fallback lives HERE, at the call site, and NOT inside the shared
+    resolver — the resolver's other consumers are worktree verbs whose refusal
+    semantics must not change. The success payload names which path was taken
+    (``resolution: metadata | structural_probe``) so an operator can tell a
+    routine removal from an archived-plan recovery.
+
+    The BRANCH NAME layers the same way, and for the same reason: the canonical
+    ``manage-status`` read (:func:`_read_metadata_field`) first, then
+    :func:`_worktree_branch_on_main_checkout` against main's own copy of the
+    record. manage-status resolves ``{base}/plans/{plan_id}`` with no archived
+    fallback, so on the ``structural_probe`` route the canonical read yields
+    nothing for EVERY archived plan. Whichever channel answers, branch cleanup
+    this verb did NOT do is always reported — a failed delete and an
+    unresolvable name both surface as ``branch_warning`` — so no success payload
+    leaves a stranded branch unmentioned.
+
+    Precondition (script-enforced): the plan's authoritative state MUST already
+    live on the MAIN checkout before the worktree may be removed — either as
+    the live directory ``integrate_into_main`` landed back there, or as the
+    archived record ``manage-status archive`` wrote (see
+    :func:`_plan_dir_on_main_checkout` for both shapes and why the archived one
+    counts). Otherwise the removal would destroy the sole authoritative
+    plan-state copy still resident in the worktree.
+    Neither the probe nor the ``git`` target is decided by the caller's cwd, but
+    they resolve through two DIFFERENT main-facing resolvers because they need
+    two different things. The probe asks
+    :func:`marketplace_paths.resolve_main_anchored_path` for the plan slot — the
+    same call ``integrate_into_main`` uses to write it, and the one that honours
+    the ``PLAN_BASE_DIR`` / ``set_base_dir()`` override. The ``git -C`` target
+    below stays on :func:`marketplace_paths.main_checkout_root` (git's common
+    dir, which points at main even from a linked worktree), because that
+    argument must be a real git checkout and an override directory is not.
+    The refusal (``error: plan_dir_not_moved_back``) is
+    NOT overridable by ``--force``: that flag keeps its dirty-tree meaning
+    only. An abandonment flow moves or deletes the plan dir first, then
+    removes the worktree.
+
+    Second precondition (script-enforced, independent of the first): the
+    current working directory MUST NOT be the worktree being removed nor any
+    directory beneath it (``error: cwd_inside_removal_target``). It is a plain
+    containment test between two resolved absolute paths, so it holds whatever
+    the move-back probe concluded — the two failure modes do not share a single
+    predicate. It is likewise NOT overridable by ``--force``; the remedy is to
+    change directory out of the worktree and re-run.
+
+    **The removal is budgeted against the observed tree, not against a
+    constant.** Once BOTH refusals have passed — so nothing below is a side
+    effect of a call that then refuses — the regenerable pytest scratch is
+    deleted (:func:`_clear_regenerable_scratch`), what remains is measured
+    (:func:`_count_tree_entries`), and the git call's timeout is derived from
+    that measurement (:func:`_derive_removal_timeout`). Both the success and the
+    timeout payload carry ``scratch_cleared``, ``scratch_entries_removed``,
+    ``measured_entries``, ``timeout_seconds`` and ``budget_basis``, so the budget
+    a run chose and the evidence behind it are readable after the fact rather
+    than reconstructed. An expired budget returns ``worktree_remove_timed_out``,
+    deliberately distinct from ``worktree_remove_failed``: the documented remedy
+    for the latter is a manual ``--force`` for a dirty worktree, which is the
+    wrong — and the most destructive available — response to a removal that is
+    merely slow.
+    """
+    target, error = _resolve_worktree_path_for_plan(args.plan_id)
+    resolution = 'metadata'
+    if error is not None:
+        # The metadata channel reads the plan's status.json; an archived plan no
+        # longer has one where manage-status looks, so the channel refuses and
+        # the worktree becomes unreachable — the very tree the operator needs to
+        # clean up. Fall back to the structural probe. Reachability is all this
+        # restores: both refusals below still run on this path, in the same
+        # order, against the same evidence.
+        probed = _structural_worktree_probe(args.plan_id)
+        if probed is None:
+            # The probe missed too — nothing corroborates a worktree for this
+            # plan, so the resolver's own diagnosis stands. Propagate it
+            # verbatim rather than replacing it with a worse-informed one.
+            return error
+        target = probed
+        resolution = 'structural_probe'
+
+    try:
+        main_root = main_checkout_root()
+    except RuntimeError:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'plan_resolution_failed',
+            'message': 'cannot resolve main git checkout root for git worktree remove',
+        }
+
+    if not target.exists():
+        return {
+            'status': 'success',
+            'plan_id': args.plan_id,
+            'worktree_path': str(target),
+            'action': 'noop',
+            'resolution': resolution,
+            'message': 'Worktree does not exist',
+        }
+
+    # Script-enforced move-back precondition: refuse while the plan dir has
+    # not landed back on the MAIN checkout. Probed through
+    # ``resolve_main_anchored_path`` rather than the cwd walk-up so a caller
+    # standing inside the worktree cannot satisfy the guard with the very copy
+    # the removal is about to destroy — and through THAT resolver rather than
+    # ``main_checkout_root()`` so the probe lands on the same path the move-back
+    # writes under an active PLAN_BASE_DIR / set_base_dir() override.
+    # Deliberately NOT overridable by --force
+    # (dirty-tree meaning only) — destroying the sole authoritative plan-state
+    # copy has no legitimate fast path.
+    if not _plan_dir_on_main_checkout(args.plan_id):
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'plan_dir_not_moved_back',
+            'worktree_path': str(target),
+            'message': (
+                'Plan directory has not been moved back to the main checkout — '
+                'run integrate_into_main before worktree-remove. The refusal is '
+                'not overridable by --force.'
+            ),
+        }
+
+    # Independent cwd-containment refusal. A caller standing inside the tree it
+    # is about to destroy would lose its own working directory to the removal,
+    # and every cwd-relative resolution it performs afterwards would resolve
+    # through a directory that no longer exists. This is a direct containment
+    # test between two resolved absolute paths — deliberately NOT carried by the
+    # move-back predicate above, so the two failure modes rest on two separate
+    # defences rather than both riding on one probe. ``is_relative_to`` is true
+    # for the target itself as well as for any descendant, which is exactly the
+    # condition being refused. Like ``plan_dir_not_moved_back`` this is NOT
+    # overridable by --force; the remedy is to leave the directory, not to
+    # insist harder.
+    resolved_target = target.resolve()
+    cwd = Path.cwd().resolve()
+    if cwd.is_relative_to(resolved_target):
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'cwd_inside_removal_target',
+            'worktree_path': str(target),
+            'cwd': str(cwd),
+            'message': (
+                'Current working directory is inside the worktree being removed — '
+                'change directory out of the worktree, then re-run worktree-remove. '
+                'The refusal is not overridable by --force.'
+            ),
+        }
+
+    # Budget the removal against the tree that will actually be walked, rather
+    # than against a fixed constant. Both refusals above have already passed, so
+    # this is the first point at which the removal is going to happen — clearing
+    # scratch is a side effect and must never precede a refusal.
+    scratch_cleared, scratch_entries_removed, scratch_note = _clear_regenerable_scratch(
+        target, resolved_target
+    )
+    measured_entries, budget_basis = _count_tree_entries(target)
+    timeout_seconds = _derive_removal_timeout(measured_entries, budget_basis)
+    budget: dict[str, Any] = {
+        'scratch_cleared': scratch_cleared,
+        'scratch_entries_removed': scratch_entries_removed,
+        'measured_entries': measured_entries,
+        'timeout_seconds': timeout_seconds,
+        'budget_basis': budget_basis,
+    }
+    if scratch_note:
+        budget['scratch_note'] = scratch_note
+
+    # Step 1: remove the worktree itself.
+    git_args = ['-C', str(main_root), 'worktree', 'remove', str(target)]
+    if args.force:
+        git_args.append('--force')
+    rc, _out, err = run_git(git_args, timeout=timeout_seconds)
+    if rc == 124:
+        # ``run_git``'s timeout sentinel — the budget expired, so git never
+        # rendered a verdict on the worktree. This is deliberately NOT
+        # ``worktree_remove_failed``: the one remedy that code carries is a
+        # deliberate --force for a dirty worktree, which is the most destructive
+        # available response to a removal that is merely slow on a large but
+        # perfectly clean tree. A distinct code keeps that remedy off this path.
+        measurement = (
+            f'{measured_entries} entries ({budget_basis})'
+            if measured_entries is not None
+            else f'an unmeasurable tree ({budget_basis})'
+        )
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'worktree_remove_timed_out',
+            'message': (
+                f'git worktree remove exceeded its derived {timeout_seconds}s budget for '
+                f'{measurement}. The removal is slow, not refused — git reported no verdict '
+                'on the worktree, which is still on disk.'
+            ),
+            'worktree_path': str(target),
+            'hint': (
+                'Do NOT pass --force: it addresses a dirty worktree, which is a different '
+                'failure, and adds nothing to a command that never finished. Re-run '
+                'worktree-remove — the regenerable scratch has already been cleared, so a '
+                'retry walks a smaller tree — or delete the directory out-of-band and run '
+                'git worktree prune.'
+            ),
+            **budget,
+        }
+    if rc != 0:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'worktree_remove_failed',
+            'message': f'git worktree remove failed: {err}',
+            'worktree_path': str(target),
+            'hint': (
+                'Read message first — it carries git\'s own stderr, and this code is '
+                'the catch-all for any non-timeout failure rather than a dirtiness '
+                'verdict. --force addresses a dirty worktree and nothing else: on that '
+                'cause salvage the uncommitted work, then force deliberately. On any '
+                'other cause forcing is not the remedy.'
+            ),
+        }
+
+    # Step 2: delete the branch ref. The NAME resolves by two channels tried in
+    # order, mirroring the worktree-path layering above: the canonical
+    # manage-status read, then MAIN's own copy of the plan record when that
+    # channel yields nothing. The fallback is not belt-and-braces —
+    # manage-status resolves ``{base}/plans/{plan_id}`` with no archived
+    # fallback, so on the ``structural_probe`` route it yields '' for EVERY
+    # archived plan, which is exactly the route that fallback exists to serve.
+    #
+    # ⛔ An unresolved name is REPORTED, never silently skipped. A success
+    # payload naming no branch at all is indistinguishable from one that had no
+    # branch to delete, so a silent skip strands a local branch behind a clean
+    # removal report. A delete that FAILED and a name that could not be RESOLVED
+    # are both branch cleanup this verb did not do, so both surface the same way
+    # — as ``branch_warning``, not as a command failure: the worktree is gone
+    # either way and branch cleanup stays recoverable.
+    branch_warning: str | None = None
+    branch_name = _read_metadata_field(args.plan_id, 'worktree_branch') or (
+        _worktree_branch_on_main_checkout(args.plan_id)
+    )
+    if branch_name:
+        rc, _out, err = run_git(['-C', str(main_root), 'branch', '-D', branch_name])
+        if rc != 0:
+            branch_warning = f'branch ref {branch_name} not deleted: {err}'
+    else:
+        branch_warning = (
+            'branch ref not deleted: no worktree_branch could be resolved for '
+            f'{args.plan_id}, from status metadata or from the main-anchored plan '
+            'record (live or archived), so no branch name was known to delete. The '
+            'worktree is gone; a local feature branch may still exist — identify it '
+            'with git branch --list and delete it manually.'
+        )
+
+    payload: dict[str, Any] = {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'worktree_path': str(target),
+        'action': 'removed',
+        'resolution': resolution,
+        **budget,
+    }
+    if branch_name:
+        payload['branch'] = branch_name
+    if branch_warning:
+        payload['branch_warning'] = branch_warning
+    return payload
+
+
+def _detect_worktree_state(
+    worktree: Path,
+    base: str,
+    main_root: Path,
+) -> tuple[str, dict[str, Any]]:
+    """Inspect the worktree and return ``(state, evidence)``.
+
+    State is one of the eight documented worktree-state labels:
+
+    - ``missing-target`` — the worktree directory does not exist on disk.
+    - ``missing-base``  — the ``base`` ref cannot be resolved in the
+      shared object database.
+    - ``detached``      — HEAD is detached (no current branch).
+    - ``dirty``         — the worktree has uncommitted changes
+      (staged, unstaged, or untracked).
+    - ``ahead``         — the branch has commits the base does not
+      contain (and the base has none the branch lacks).
+    - ``behind``        — the base has commits the branch does not
+      contain (and the branch has none the base lacks).
+    - ``clean``         — the branch and base point at the same commit
+      (or a divergence with both ahead/behind counts zero).
+    - The eighth label, ``conflict``, is determined by the rebase
+      attempt itself, not this function.
+
+    ``evidence`` carries supplementary fields the dispatcher echoes back
+    in the TOON output (e.g., ``head_branch``, ``ahead``, ``behind``).
+    """
+    if not worktree.is_dir():
+        return 'missing-target', {'worktree_path': str(worktree)}
+
+    rc, _out, err = run_git(['-C', str(main_root), 'rev-parse', '--verify', f'{base}^{{commit}}'])
+    if rc != 0:
+        return 'missing-base', {'base': base, 'message': err.strip() or 'base ref not found'}
+
+    rc, head_branch_out, _err = run_git(
+        ['-C', str(worktree), 'symbolic-ref', '--quiet', '--short', 'HEAD']
+    )
+    if rc != 0:
+        return 'detached', {'message': 'HEAD is detached; rebase requires a checked-out branch'}
+    head_branch = head_branch_out.strip()
+
+    rc, status_out, _err = run_git(['-C', str(worktree), 'status', '--porcelain'])
+    if rc == 0 and status_out.strip():
+        return 'dirty', {
+            'head_branch': head_branch,
+            'message': 'worktree has uncommitted changes; stash, commit, or discard first',
+        }
+
+    # Compute ahead/behind counts relative to the resolved base commit.
+    rc, counts_out, _err = run_git(
+        ['-C', str(worktree), 'rev-list', '--left-right', '--count', f'{base}...HEAD']
+    )
+    ahead = behind = 0
+    if rc == 0 and counts_out.strip():
+        parts = counts_out.split()
+        if len(parts) >= 2:
+            try:
+                behind = int(parts[0])
+                ahead = int(parts[1])
+            except ValueError:
+                behind = ahead = 0
+
+    evidence: dict[str, Any] = {
+        'head_branch': head_branch,
+        'ahead': ahead,
+        'behind': behind,
+    }
+
+    if ahead > 0 and behind == 0:
+        return 'ahead', evidence
+    if behind > 0 and ahead == 0:
+        return 'behind', evidence
+    if ahead == 0 and behind == 0:
+        return 'clean', evidence
+    # Diverged — both ahead and behind. Treat as ``ahead`` for dispatch
+    # since the rebase needs to relocate the local commits onto base.
+    return 'ahead', evidence
+
+
+def cmd_worktree_rebase_to(args):
+    """Rebase the worktree's branch onto ``origin/{base}`` (the fetched remote tip).
+
+    Fetches ``origin/{base}`` first so the rebase and the ahead/behind
+    computation target the CURRENT remote tip — not the stale local ``{base}``
+    ref the orchestrator never advances. A single invocation therefore always
+    lands the branch up-to-date with the remote base (the defect this fixes:
+    rebasing onto the local ``{base}`` left the branch behind ``origin/{base}``
+    and failed branch protection's "up to date with base" check). When the
+    worktree has no ``origin`` remote (local-only fixtures / detached setups) the
+    fetch is a soft signal and the command falls back to the local ``{base}`` ref.
+
+    Detects the current state per :func:`_detect_worktree_state`, dispatches the
+    rebase accordingly, and returns a TOON payload with ``status`` (``success``,
+    ``error``, ``conflict``) and ``state`` (one of the eight documented labels).
+    The reported ``base`` field stays the logical base the caller asked for;
+    ``rebase_ref`` carries the actual ref rebased onto so the behaviour is
+    observable. On conflict, the rebase is left in progress with conflict markers
+    so the caller can inspect or abort. All git invocations use
+    ``git -C {worktree_path}``; no working directory is implicitly assumed.
+
+    ``action`` discriminator on a successful rebase: HEAD is read immediately
+    before and after the rebase, and the two SHAs decide the verdict —
+    ``pre_sha != post_sha`` means the rebase replayed commits and yields
+    ``action: 'rebased'``; ``pre_sha == post_sha`` means the branch already
+    contained the rebase ref and the rebase replayed nothing, yielding
+    ``action: 'noop'``. Both SHAs are reported on the payload so the verdict is
+    substantiated by evidence rather than asserted. The ``clean``-state early
+    return above emits ``action: 'noop'`` without running a rebase at all.
+    """
+    target, error = _resolve_worktree_path_for_plan(args.plan_id)
+    if error is not None:
+        return error
+
+    main_root = _find_plan_root_from_cwd()
+    if main_root is None:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'plan_resolution_failed',
+            'state': 'missing-target',
+            'message': 'cannot resolve main git checkout root for rebase',
+        }
+
+    # Early-return when the worktree directory is absent: the subsequent
+    # ``git -C {target}`` calls would otherwise spawn subprocesses that fail and
+    # print to stderr before ``_detect_worktree_state`` reports the same verdict.
+    if not target.is_dir():
+        return {
+            'plan_id': args.plan_id,
+            'worktree_path': str(target),
+            'base': args.base,
+            'rebase_ref': args.base,
+            'state': 'missing-target',
+            'status': 'error',
+            'error': 'missing_target',
+            'message': f'worktree path does not exist: {target}',
+        }
+
+    # Fetch the remote base so ``origin/{base}`` reflects the current remote tip,
+    # then resolve the actual rebase target. When the worktree has no ``origin``
+    # remote (local-only fixtures), the fetch fails softly and we fall back to the
+    # local ``{base}`` ref so existing no-remote flows still resolve.
+    run_git(['-C', str(target), 'fetch', 'origin', args.base])
+    rc_remote, _remote_out, _remote_err = run_git(
+        ['-C', str(target), 'rev-parse', '--verify', f'origin/{args.base}^{{commit}}']
+    )
+    rebase_base = f'origin/{args.base}' if rc_remote == 0 else args.base
+
+    state, evidence = _detect_worktree_state(target, rebase_base, main_root)
+
+    base_payload: dict[str, Any] = {
+        'plan_id': args.plan_id,
+        'worktree_path': str(target),
+        'base': args.base,
+        'rebase_ref': rebase_base,
+        'state': state,
+    }
+    base_payload.update(evidence)
+
+    # Reject states that require user action without touching git.
+    if state == 'missing-target':
+        return {
+            **base_payload,
+            'status': 'error',
+            'error': 'missing_target',
+            'message': f'worktree path does not exist: {target}',
+        }
+    if state == 'missing-base':
+        return {
+            **base_payload,
+            'status': 'error',
+            'error': 'missing_base',
+            'message': f'base ref not found: {rebase_base}',
+        }
+    if state == 'detached':
+        return {
+            **base_payload,
+            'status': 'error',
+            'error': 'detached_head',
+            'message': 'HEAD is detached; rebase requires a checked-out branch',
+        }
+    if state == 'dirty':
+        return {
+            **base_payload,
+            'status': 'error',
+            'error': 'dirty_worktree',
+            'message': (
+                'worktree has uncommitted changes; stash, commit, '
+                'or discard before rebasing'
+            ),
+        }
+
+    # ``clean`` — already up-to-date relative to base. No-op rebase.
+    if state == 'clean':
+        return {
+            **base_payload,
+            'status': 'success',
+            'action': 'noop',
+            **_EXECUTOR_REFRESH_NOT_REPLAYED,
+            'message': 'branch is already at base; no rebase needed',
+        }
+
+    # ``ahead`` and ``behind`` both attempt a rebase. The detected state
+    # is preserved in the response so callers can distinguish. Rebase onto the
+    # resolved ``rebase_base`` (``origin/{base}`` when present, else local
+    # ``{base}``) so a single invocation lands the branch on the remote tip.
+    #
+    # ``pre_sha`` is captured immediately before the rebase so the post-rebase
+    # verdict rests on evidence that history changed, rather than on an inference
+    # from the ``behind`` count. A strictly-``ahead`` branch (``behind == 0``)
+    # already contains ``rebase_base``, so the rebase replays nothing and leaves
+    # HEAD untouched; the diverged case (``ahead > 0 AND behind > 0``, which
+    # ``_detect_worktree_state`` also labels ``ahead``) genuinely replays and does
+    # move HEAD. Comparing the SHAs distinguishes the two without special-casing
+    # either.
+    _rc_pre, pre_sha, _pre_err = run_git(['-C', str(target), 'rev-parse', 'HEAD'])
+    rc, _stdout, stderr = run_git(['-C', str(target), 'rebase', rebase_base])
+    if rc == 0:
+        _rc_post, post_sha, _post_err = run_git(['-C', str(target), 'rev-parse', 'HEAD'])
+        replayed = pre_sha != post_sha
+        # Only a rebase that actually replayed commits can have brought upstream
+        # script changes into the tree, so a ``noop`` skips the probe entirely
+        # rather than paying for it on every finalize entry.
+        executor_refresh = (
+            _refresh_worktree_executor(target) if replayed else _EXECUTOR_REFRESH_NOT_REPLAYED
+        )
+        return {
+            **base_payload,
+            'status': 'success',
+            'action': 'rebased' if replayed else 'noop',
+            'pre_sha': pre_sha,
+            'post_sha': post_sha,
+            **executor_refresh,
+            'message': (
+                f'rebased {evidence.get("head_branch", "HEAD")} onto {rebase_base}'
+                if replayed
+                else (
+                    f'branch already contained {rebase_base}; '
+                    'the rebase replayed no commits and HEAD is unchanged'
+                )
+            ),
+        }
+
+    # Non-zero exit means rebase produced conflicts (or another git
+    # error). Inspect for an in-progress rebase to surface the conflict
+    # state cleanly. Conflict markers are intentionally left in place
+    # so the caller can resolve manually.
+    rebase_state_dir = target / '.git' / 'rebase-merge'
+    rebase_apply_dir = target / '.git' / 'rebase-apply'
+    in_progress = rebase_state_dir.exists() or rebase_apply_dir.exists()
+
+    if in_progress:
+        # Enumerate conflicting paths via ``git diff --name-only --diff-filter=U``.
+        rc_d, conflicts_out, _err = run_git(
+            ['-C', str(target), 'diff', '--name-only', '--diff-filter=U']
+        )
+        conflicts = (
+            [line for line in conflicts_out.splitlines() if line.strip()]
+            if rc_d == 0
+            else []
+        )
+        return {
+            **base_payload,
+            'status': 'conflict',
+            'state': 'conflict',
+            'error': 'rebase_conflict',
+            'conflicts': conflicts,
+            'message': (
+                f'rebase produced conflicts ({len(conflicts)} file(s)); '
+                'resolve and run `git rebase --continue` or `git rebase --abort`'
+            ),
+        }
+
+    # Rebase failed for another reason (e.g., invalid args). Surface git's stderr.
+    return {
+        **base_payload,
+        'status': 'error',
+        'error': 'rebase_failed',
+        'message': f'git rebase failed: {stderr.strip() or "non-zero exit"}',
+    }
+
+
+def cmd_worktree_list(_args):
+    """Enumerate plans whose status.json declares a worktree.
+
+    Reads from ``manage-status list`` and filters on
+    ``metadata.use_worktree == true`` by resolving each plan through
+    ``file_ops.resolve_plan_context``. Plans without a configured worktree
+    are silently skipped.
+
+    Propagates the ``scope`` field (``main`` / ``worktree_local`` / ``unknown``)
+    from the underlying ``manage-status list`` census onto its own output: this
+    verb inherits the enumeration's cwd-scoped blindness, so a ``worktree_local``
+    listing is BLIND to sibling worktrees and an absent plan under it is
+    ``unknown``, NOT authoritative absence (the sibling-worktree shape). A consumer MUST NOT
+    read an empty ``worktree_local`` listing as proof that no other worktree exists.
+    See ``manage-locks/standards/cwd-keyed-store-resolution-audit.md``.
+    """
+    rc, stdout, stderr = _manage_status_call('list')
+    if rc != 0:
+        return {
+            'status': 'error',
+            'error': 'plan_resolution_failed',
+            'message': (stderr or stdout).strip() or 'manage-status list failed',
+        }
+
+    rows = parse_toon_table(stdout, 'plans')
+    plan_ids = [str(row.get('id')) for row in rows if row.get('id')]
+
+    # Propagate the census scope from the underlying list output — single-sourced in
+    # manage-status cmd_list (_resolution_scope), never re-derived here. A malformed
+    # or scope-less output fails closed to 'unknown' rather than a false 'main'.
+    try:
+        parsed = parse_toon(stdout)
+        # `or 'unknown'` normalizes an explicit None value (key present but null)
+        # to the fail-closed scope, not just an absent key.
+        scope = (parsed.get('scope') or 'unknown') if isinstance(parsed, dict) else 'unknown'
+    except Exception:  # a parse failure degrades to the fail-closed scope
+        scope = 'unknown'
+
+    worktrees: list[dict[str, str]] = []
+    for plan_id in plan_ids:
+        path, error = _resolve_worktree_path_for_plan(plan_id)
+        if error is not None or path is None:
+            continue
+        worktrees.append(
+            {
+                'plan_id': plan_id,
+                'path': str(path),
+                'branch': _read_metadata_field(plan_id, 'worktree_branch'),
+            }
+        )
+
+    try:
+        worktrees_root = str(get_worktree_root())
+    except RuntimeError:
+        worktrees_root = ''
+
+    return {
+        'status': 'success',
+        'worktrees_root': worktrees_root,
+        'scope': scope,
+        'count': len(worktrees),
+        'worktrees': worktrees,
+    }
+
+
+def _plan_dir_on_current_checkout(plan_id: str) -> bool:
+    """Return True when the plan directory lives on the CURRENT checkout.
+
+    Reuses the uniform cwd walk-up (:func:`_find_plan_root_from_cwd`) to find
+    the enclosing checkout root, then probes
+    ``{root}/.plan/local/plans/{plan_id}/status.json`` on disk. This is the
+    same single cwd-relative rule the rest of the codebase uses (ADR-002), so
+    an already-cwd-pinned worktree resolves to its own plan dir (``current``)
+    and a main-checkout plan resolves to main's plan dir (``current``).
+    """
+    root = _find_plan_root_from_cwd()
+    if root is None:
+        return False
+    return (root / _PLAN_DIR_NAME / 'local' / 'plans' / plan_id / 'status.json').is_file()
+
+
+def cmd_locate_plan_checkout(args):
+    """Report where a plan's directory currently lives.
+
+    Resolves one of three states without raw ``git worktree list --porcelain``
+    re-parsing — reusing :func:`_plan_dir_on_current_checkout` (the uniform cwd
+    walk-up) and :func:`_resolve_worktree_path_for_plan` (the canonical
+    manage-status channel):
+
+    - ``current`` — the plan directory exists on the current checkout's
+      ``.plan/local/plans/{plan_id}/status.json`` (covers both main-checkout
+      plans and the already-cwd-pinned-in-worktree case; idempotent).
+    - ``worktree`` — the plan dir lives in its worktree but NOT on the current
+      checkout. Resolved by two paths, tried in order: (1) the canonical
+      manage-status channel (:func:`_resolve_worktree_path_for_plan`), which
+      still succeeds for a not-yet-moved plan whose ``status.json`` is on main;
+      (2) a structural ``get_worktree_root() / {plan_id}`` filesystem probe that
+      handles the moved-in-from-main case — a phase-5+ plan whose dir was MOVED
+      into its worktree (ADR-002) is invisible to the manage-status channel
+      (its ``status.json`` is no longer on main), so the verb probes the
+      canonical worktree location directly and confirms ``status.json`` on disk.
+    - ``not_found`` — neither location holds the plan dir.
+
+    Returns TOON ``{status: success, plan_id, location, worktree_path?}`` where
+    ``worktree_path`` is present only for ``location == worktree``.
+    """
+    plan_id = args.plan_id
+
+    # State (a): plan dir on the current checkout (main or already-pinned
+    # worktree). This is checked first so an already-cwd-pinned worktree
+    # returns ``current`` (idempotent — no double-cd at the entry preflight).
+    if _plan_dir_on_current_checkout(plan_id):
+        return {
+            'status': 'success',
+            'plan_id': plan_id,
+            'location': 'current',
+        }
+
+    # State (b): a registered worktree holds the plan dir, but the current
+    # checkout does not. Two resolution paths are tried in order.
+    #
+    # Primary: the canonical manage-status channel. This still succeeds for a
+    # not-yet-moved plan whose status.json is on main (the channel reads
+    # metadata.worktree_path from main's status.json).
+    worktree_path, error = _resolve_worktree_path_for_plan(plan_id)
+    if error is not None:
+        # Propagate critical infrastructure failures (executor missing, timeout,
+        # parse error) instead of silently masking them as "not_found". Expected
+        # non-worktree or missing-plan errors contain well-known substrings and
+        # are treated as "not_found" so the caller can proceed normally.
+        #
+        # The no-worktree half of that classification is STRUCTURAL, not textual:
+        # ``_resolve_worktree_path_for_plan`` emits the verbatim "No worktree
+        # configured" message off the resolver's ``has_worktree`` face. Only the
+        # missing-plan half is textual, and it matches manage-status's own
+        # wording ("status.json not found") as relayed by the resolver — the same
+        # dependency this check always had, one indirection deeper. The sibling
+        # ``integrate_into_main._resolve_worktree_path_for_plan`` mirrors it.
+        msg = error.get('message', '').lower()
+        _expected_substrings = ('no worktree configured', 'not found', 'does not exist')
+        if not any(s in msg for s in _expected_substrings):
+            return error
+    if worktree_path is not None:
+        status_json = worktree_path / _PLAN_DIR_NAME / 'local' / 'plans' / plan_id / 'status.json'
+        if status_json.is_file():
+            return {
+                'status': 'success',
+                'plan_id': plan_id,
+                'location': 'worktree',
+                'worktree_path': str(worktree_path),
+            }
+
+    # Fallback (structural probe): the manage-status channel could not resolve
+    # the worktree path (expected/masked error or None) — the canonical
+    # moved-in-from-main case, where the plan's status.json was MOVED off main
+    # into its worktree at phase-5 entry (ADR-002), so manage-status (reading
+    # main's status.json) no longer finds it. Probe the canonical worktree
+    # location directly — the exact ``get_worktree_root() / {plan_id}`` layout
+    # ``worktree-create`` materializes — and confirm status.json on disk.
+    try:
+        candidate = get_worktree_root() / plan_id
+    except RuntimeError:
+        # Outside a git repo: no worktree root to probe. Fall through to State (c).
+        candidate = None
+    if candidate is not None:
+        status_json = candidate / _PLAN_DIR_NAME / 'local' / 'plans' / plan_id / 'status.json'
+        if status_json.is_file():
+            return {
+                'status': 'success',
+                'plan_id': plan_id,
+                'location': 'worktree',
+                'worktree_path': str(candidate),
+            }
+
+    # State (c): neither location holds the plan dir.
+    return {
+        'status': 'success',
+        'plan_id': plan_id,
+        'location': 'not_found',
+    }
+
+
+# ============================================================================
+# MAIN
+# ============================================================================
+
+
+def main():
+    """Main entry point."""
+    parser = create_workflow_cli(
+        description='Git workflow operations',
+        epilog="""
+Examples:
+  git-workflow.py format-commit --type feat --scope auth --subject "add login"
+  git-workflow.py analyze-diff --plan-id EXAMPLE-PLAN [--cached]
+  git-workflow.py analyze-diff --project-dir /path/to/worktree [--cached]
+  git-workflow.py detect-artifacts --root /path/to/repo
+  git-workflow.py force-push-with-lease --plan-id EXAMPLE-PLAN
+  git-workflow.py switch-and-pull --project-dir /path/to/main --base main
+  git-workflow.py prune-local-and-remote-ref --project-dir /path/to/main --head feature/EXAMPLE-PLAN
+  git-workflow.py worktree-path --plan-id EXAMPLE-PLAN
+  git-workflow.py worktree-create --plan-id EXAMPLE-PLAN --branch feature/EXAMPLE-PLAN
+  git-workflow.py worktree-remove --plan-id EXAMPLE-PLAN [--force]
+  git-workflow.py worktree-list
+  git-workflow.py worktree-rebase-to --plan-id EXAMPLE-PLAN --base main
+  git-workflow.py locate-plan-checkout --plan-id EXAMPLE-PLAN
+""",
+        subcommands=[
+            {
+                'name': 'format-commit',
+                'help': 'Format commit message following conventional commits',
+                'handler': cmd_format_commit,
+                'args': [
+                    {
+                        'flags': ['--type'],
+                        'dest': 'commit_type',
+                        'required': True,
+                        'choices': VALID_TYPES,
+                        'help': 'Commit type',
+                    },
+                    {'flags': ['--scope'], 'help': 'Commit scope'},
+                    {'flags': ['--subject'], 'required': True, 'help': 'Commit subject'},
+                    {'flags': ['--body'], 'help': 'Commit body'},
+                    {'flags': ['--breaking'], 'help': 'Breaking change description'},
+                    {'flags': ['--footer'], 'help': 'Additional footer'},
+                ],
+            },
+            {
+                'name': 'analyze-diff',
+                'help': 'Capture and analyze the worktree diff to suggest a commit message',
+                'handler': cmd_analyze_diff,
+                'args': [
+                    {
+                        'flags': ['--plan-id'],
+                        'dest': 'plan_id',
+                        'help': 'Plan identifier — resolves working tree path via manage-status',
+                    },
+                    {
+                        'flags': ['--project-dir'],
+                        'dest': 'project_dir',
+                        'help': 'Explicit working tree path (escape hatch when plan-id is unavailable)',
+                    },
+                    {
+                        'flags': ['--cached'],
+                        'action': 'store_true',
+                        'help': 'Use staged diff (git diff --cached) instead of unstaged',
+                    },
+                ],
+            },
+            {
+                'name': 'detect-artifacts',
+                'help': 'Scan for committable artifacts',
+                'handler': cmd_detect_artifacts,
+                'args': [
+                    {'flags': ['--root'], 'help': 'Root directory to scan (default: cwd)'},
+                    {
+                        'flags': ['--no-gitignore'],
+                        'action': 'store_true',
+                        'help': (
+                            'Include gitignored files in results, and scan a tree whose '
+                            'ignore set cannot be read (under default flags that is an '
+                            'error, not a result). The nested git repository/worktree '
+                            'skip is unconditional and unaffected by this flag.'
+                        ),
+                    },
+                ],
+            },
+            {
+                'name': 'force-push-with-lease',
+                'help': 'Force-push feature branch to origin with --force-with-lease guard',
+                'handler': cmd_force_push,
+                'args': [
+                    {
+                        'flags': ['--plan-id'],
+                        'dest': 'plan_id',
+                        'help': (
+                            'Plan identifier — resolves worktree path and branch name '
+                            'via manage-status (mutually exclusive with --project-dir)'
+                        ),
+                    },
+                    {
+                        'flags': ['--project-dir'],
+                        'dest': 'project_dir',
+                        'help': (
+                            'Explicit worktree path (escape hatch; '
+                            'mutually exclusive with --plan-id; requires --branch)'
+                        ),
+                    },
+                    {
+                        'flags': ['--branch'],
+                        'help': (
+                            'Branch name to push (only with --project-dir; '
+                            'resolved from plan metadata when --plan-id is used)'
+                        ),
+                    },
+                ],
+            },
+            {
+                'name': 'switch-and-pull',
+                'help': 'Checkout base branch on main checkout and pull from origin',
+                'handler': cmd_switch_and_pull,
+                'args': [
+                    {
+                        'flags': ['--plan-id'],
+                        'dest': 'plan_id',
+                        'help': (
+                            'Plan identifier — resolves main checkout root via manage-status '
+                            '(mutually exclusive with --project-dir)'
+                        ),
+                    },
+                    {
+                        'flags': ['--project-dir'],
+                        'dest': 'project_dir',
+                        'help': (
+                            'Explicit main checkout path (escape hatch; '
+                            'mutually exclusive with --plan-id)'
+                        ),
+                    },
+                    {
+                        'flags': ['--base'],
+                        'required': True,
+                        'help': 'Base branch to check out and pull (e.g. main)',
+                    },
+                ],
+            },
+            {
+                'name': 'prune-local-and-remote-ref',
+                'help': 'Delete local feature branch and remote-tracking ref after merge',
+                'handler': cmd_prune_ref,
+                'args': [
+                    {
+                        'flags': ['--plan-id'],
+                        'dest': 'plan_id',
+                        'help': (
+                            'Plan identifier — resolves main checkout root and head branch '
+                            'via manage-status (mutually exclusive with --project-dir)'
+                        ),
+                    },
+                    {
+                        'flags': ['--project-dir'],
+                        'dest': 'project_dir',
+                        'help': (
+                            'Explicit main checkout path (escape hatch; '
+                            'mutually exclusive with --plan-id; requires --head)'
+                        ),
+                    },
+                    {
+                        'flags': ['--head'],
+                        'help': (
+                            'Feature branch name to delete (only with --project-dir; '
+                            'resolved from plan metadata when --plan-id is used)'
+                        ),
+                    },
+                    {
+                        'flags': ['--mode'],
+                        'choices': ['local_and_remote', 'local_only'],
+                        'default': 'local_and_remote',
+                        'help': (
+                            'Deletion scope: local_and_remote (default) deletes both the '
+                            'local branch and remote-tracking ref; local_only skips the '
+                            'remote-tracking ref deletion (used in local-only plans)'
+                        ),
+                    },
+                ],
+            },
+            {
+                'name': 'branch-sync-state',
+                'help': (
+                    "Report push parity of the plan's feature branch vs its origin "
+                    'tracking ref (ahead | synced | remote_absent_landed | '
+                    'remote_absent_unverified); read-only, no fetch'
+                ),
+                'handler': cmd_branch_sync_state,
+                'args': [
+                    {
+                        'flags': ['--plan-id'],
+                        'dest': 'plan_id',
+                        'required': True,
+                        'help': (
+                            'Plan identifier (mandatory — resolves the branch from '
+                            'status.metadata.worktree_branch and the tree via the '
+                            'canonical worktree-resolution channel)'
+                        ),
+                    },
+                ],
+            },
+            {
+                'name': 'worktree-path',
+                'help': 'Resolve the persisted worktree path for a plan',
+                'handler': cmd_worktree_path,
+                'args': [
+                    {
+                        'flags': ['--plan-id'],
+                        'dest': 'plan_id',
+                        'required': True,
+                        'help': 'Plan identifier (mandatory — worktree subcommands operate on a worktree)',
+                    },
+                ],
+            },
+            {
+                'name': 'worktree-create',
+                'help': 'Create a worktree + feature branch + .plan symlink for a plan',
+                'handler': cmd_worktree_create,
+                'args': [
+                    {
+                        'flags': ['--plan-id'],
+                        'dest': 'plan_id',
+                        'required': True,
+                        'help': 'Plan identifier (mandatory)',
+                    },
+                    {
+                        'flags': ['--branch'],
+                        'required': True,
+                        'help': 'Feature branch name to create',
+                    },
+                    {
+                        'flags': ['--base'],
+                        'help': 'Base ref for the new branch (default: current HEAD)',
+                    },
+                ],
+            },
+            {
+                'name': 'worktree-remove',
+                'help': 'Remove a worktree (worktree first, then branch ref)',
+                'handler': cmd_worktree_remove,
+                'args': [
+                    {
+                        'flags': ['--plan-id'],
+                        'dest': 'plan_id',
+                        'required': True,
+                        'help': 'Plan identifier (mandatory)',
+                    },
+                    {
+                        'flags': ['--force'],
+                        'action': 'store_true',
+                        'help': 'Force removal (use only if worktree is clean)',
+                    },
+                ],
+            },
+            {
+                'name': 'worktree-list',
+                'help': 'Enumerate plans whose status.json declares a worktree',
+                'handler': cmd_worktree_list,
+                'args': [],
+            },
+            {
+                'name': 'locate-plan-checkout',
+                'help': "Report where a plan's directory currently lives (current | worktree | not_found)",
+                'handler': cmd_locate_plan_checkout,
+                'args': [
+                    {
+                        'flags': ['--plan-id'],
+                        'dest': 'plan_id',
+                        'required': True,
+                        'help': 'Plan identifier (mandatory — resolves the plan checkout location)',
+                    },
+                ],
+            },
+            {
+                'name': 'worktree-rebase-to',
+                'help': "Rebase the worktree's branch onto --base, dispatching on the eight documented worktree states",
+                'handler': cmd_worktree_rebase_to,
+                'args': [
+                    {
+                        'flags': ['--plan-id'],
+                        'dest': 'plan_id',
+                        'required': True,
+                        'help': 'Plan identifier (mandatory — resolves the worktree path via manage-status)',
+                    },
+                    {
+                        'flags': ['--base'],
+                        'required': True,
+                        'help': 'Base ref to rebase onto (e.g., main, origin/main)',
+                    },
+                ],
+            },
+            {
+                'name': 'baseline-reconcile',
+                'help': (
+                    'Mechanical baseline reconciliation for phase-2-refine Step 3d '
+                    '(fetch + diff + merge-tree conflict detection; no LLM dispatch)'
+                ),
+                'handler': cmd_baseline_reconcile,
+                'args': [
+                    {
+                        'flags': ['--plan-id'],
+                        'dest': 'plan_id',
+                        'required': True,
+                        'help': 'Plan identifier (mandatory — resolves worktree path and base branch)',
+                    },
+                    {
+                        'flags': ['--base-branch'],
+                        'dest': 'base_branch',
+                        'help': (
+                            'Optional override for the upstream base branch. '
+                            'Default reads from plan config phase-2-refine.base_branch, '
+                            'falling back to main.'
+                        ),
+                    },
+                    {
+                        'flags': ['--project-dir'],
+                        'dest': 'worktree_path',
+                        'help': (
+                            'Optional override for the worktree path. Default reads '
+                            'metadata.worktree_path from status.json. '
+                            '(Replaces the deprecated --worktree-path flag.)'
+                        ),
+                    },
+                    {
+                        'flags': ['--skip-fetch'],
+                        'dest': 'skip_fetch',
+                        'action': 'store_true',
+                        'help': (
+                            'Skip the git fetch origin {base_branch} round-trip. '
+                            'Use in tests with seeded local refs; the environment '
+                            'variable PLAN_MARSHALL_SKIP_FETCH=1 has the same effect.'
+                        ),
+                    },
+                    {
+                        'flags': ['--no-emit'],
+                        'dest': 'no_emit',
+                        'action': 'store_true',
+                        'help': (
+                            'Run the checks and return the result TOON without writing '
+                            'any Q-Gate findings (dry-run).'
+                        ),
+                    },
+                ],
+            },
+        ],
+    )
+    args = parser.parse_args()
+    from triage_helpers import print_toon as _output_toon
+
+    return _output_toon(args.func(args))
+
+
+if __name__ == '__main__':
+    safe_main(main)()
