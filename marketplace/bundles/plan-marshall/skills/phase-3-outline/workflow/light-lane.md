@@ -156,6 +156,59 @@ Record exactly one disposition (`heeded` / `not_applicable` / `stale`) plus a on
 
 The authoritative procedure lives in [`standards/outline-workflow-detail.md` § Prospective lessons consult](../standards/outline-workflow-detail.md#prospective-lessons-consult); the section's structural spec is owned by [`manage-solution-outline` standards/solution-outline-standard.md](../../manage-solution-outline/standards/solution-outline-standard.md) § Lessons Consulted. Do NOT restate either here.
 
+### Step 5c: Domain Narrowing
+
+The light lane is **not exempt** from the narrowing obligation either, and for the same structural reason the consult above is fired here: Step 4c of [`../SKILL.md`](../SKILL.md) states that the inline Steps 5-12 are NOT run for a light-lane plan, so a step added only to Step 12 would never fire on this lane. Fire it here, after the outline is written and validated and before the phase transitions.
+
+1. Refresh the declared footprint and read it back:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-references:manage-references sync-affected-files \
+     --plan-id {plan_id}
+   ```
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-references:manage-references get \
+     --plan-id {plan_id} --field affected_files
+   ```
+
+   Join the returned paths into a comma-separated `{affected_files_csv}`.
+
+2. Invoke the narrowing verb with that footprint:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-config:manage-config domain-narrow \
+     --plan-id {plan_id} --affected-files {affected_files_csv}
+   ```
+
+   Parse `retained`, `dropped`, `provenance`, `report`, and `narrowed` from the returned TOON.
+
+3. On `narrowed: true`, persist the retained set:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-references:manage-references set-list \
+     --plan-id {plan_id} --field domains --values {retained_csv}
+   ```
+
+3b. On **both** outcomes — the write is NOT gated on `narrowed` — persist the provenance, so a plan the pass examined and found nothing droppable in stays distinguishable from one the pass never ran on:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-references:manage-references set \
+     --plan-id {plan_id} --field domains_provenance --value {provenance_rendering}
+   ```
+
+   `{provenance_rendering}` is the compact one-line `{domain}={legs}` form described in [`manage-references` § Schema Fields](../../manage-references/SKILL.md) — `none` where no leg claimed the domain. Do NOT invent a rendering here: both lanes write the same key, so the format has exactly one home.
+
+4. Emit the returned `report` verbatim — on **both** outcomes, including `narrowed: false` — into the envelope's user-facing summary and a decision-log entry:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+     decision --plan-id {plan_id} --level INFO \
+     --message "(plan-marshall:phase-3-outline) {report}"
+   ```
+
+The verb owns the narrowing decision; this envelope invokes it, persists its result, and reports it. The rationale for the rule — why end-of-outline is the site, why a `narrowed: false` outcome is recorded rather than skipped, and the three-legged safety bound the verb applies — lives in [`../SKILL.md`](../SKILL.md) § Domain Narrowing. Do NOT restate it here.
+
 ### Step 6: Transition Phase
 
 The light lane completes the outline phase in one envelope; transition to phase-4-plan:

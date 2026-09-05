@@ -211,7 +211,9 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
 
 Emit one decision-log entry naming any newly-merged domains. The union is monotonic (widen-only), so re-running the re-merge on a later confidence-loop iteration is idempotent once the affected-files set has stabilised.
 
-**Expected widening on a zero narrative match.** The re-merge reads only `domains` / `glob_matched` / `always_on` — never `ambiguous` — so no branch here changes with the detector's resolution. What does change is the size of the returned set: when the real `affected_files` produce no narrative match and no inclusion-leg hit, `domain-detect` returns every offerable domain under `reason=over_provisioned_resolve` rather than the empty set. That growth is the detector's contract, not an unexplained drift — and it preserves both invariants above, since unioning with a fixed set is monotonic and idempotent.
+**Expected widening on a zero narrative match.** The re-merge reads only `domains` / `glob_matched` / `always_on` — never `ambiguous` — so no branch here changes with the detector's resolution. What does change is the size of the returned set: when the real `affected_files` produce no narrative match and no inclusion-leg hit, `domain-detect` returns every offerable domain under `reason=over_provisioned_resolve` rather than the empty set. That growth is the detector's contract, not an unexplained drift — and it preserves both invariants above, since unioning with a fixed set is monotonic and idempotent. The over-provision it leaves behind is **temporary, not permanent**: phase-3-outline narrows the set once, against the declared footprint, after this phase has finished widening it.
+
+**Widen-only is this phase's contract, not the lifecycle's.** Refine never narrows `domains` — that restriction is unchanged and binds every branch above. It holds because refine iterates: a set it narrowed on one confidence-loop pass could be re-widened on the next, so narrowing here would not converge. The single narrowing pass lives where it does converge — [`phase-3-outline` § Domain Narrowing](../phase-3-outline/SKILL.md), fired once after the outline is written, against the footprint the deliverables declare and before any task is resolved. Read the widen-only statements in this step as scoped to refine rather than as an absolute property of the domain set.
 
 ### Step 10: Evaluate Confidence
 
@@ -287,7 +289,7 @@ refine_prompt:
     ...
 ```
 
-`domains` is the multi-valued union carried in `references.domains` — the detector, `always_on`, and `file_globs` legs plus any operator selections from init. Refine may **widen** it (Step 9's file_globs re-merge against the real `affected_files` unions newly-matched domains in) but never narrows it, so the returned set is a superset of the init-persisted domains.
+`domains` is the multi-valued union carried in `references.domains` — the detector, `always_on`, and `file_globs` legs plus any operator selections from init. Refine may **widen** it (Step 9's file_globs re-merge against the real `affected_files` unions newly-matched domains in) but never narrows it, so the returned set is a superset of the init-persisted domains. That is refine's own contract, not the end state: phase-3-outline narrows the set once against the declared footprint (see Step 9's "Widen-only is this phase's contract" note).
 
 `qgate_validation_required` is `true` when the lesson-derived plan path activated at Step 13.5 (`plan_source` set and not `recipe`), `false` otherwise. See the q-gate-validation activation entry of the Persist and Return Results step for the orchestrator dispatch contract.
 
