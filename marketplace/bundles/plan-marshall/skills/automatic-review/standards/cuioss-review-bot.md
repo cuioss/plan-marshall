@@ -50,8 +50,7 @@ Consumers read `bot_kind`, `author_login`, `trigger_comment`, `completion_check_
 `review_body_summary_patterns`, `refusal_patterns`, `contentless_review_markers`,
 `actionable_content_markers`, `rate_limit_class`, `rate_limit_eta_patterns`, and `severity_map`
 from it; the prose sections carry the rationale. This bot declares no
-`review_body_summary_patterns` — the empty default keeps every one of its `review_body`
-comments COUNTED, which is the fail-closed direction for a finding count.
+`review_body_summary_patterns`.
 
 ```yaml
 bot_kind: cuioss-review-bot
@@ -367,8 +366,11 @@ Extract accordingly:
    row naming a concrete input or state IS a finding — assign `high` via `severity_concern` in the
    map above.
 2. **⚡ row** — the findings themselves, one `<details>` each: a deep-link, a bold title, prose, and
-   usually a fenced excerpt. Capped at `num_max_findings` (5 centrally). Assign `medium` absent
-   other signal. `No major issues detected` in this row is a clean assertion, not a finding.
+   usually a fenced excerpt. Capped centrally at `num_max_findings`; read its value from the G2
+   column of "The two generations" rather than from a number restated here — and note that column
+   is itself a cache, to be re-read at `pr-agent-settings` HEAD before it is relied on. Assign
+   `medium` absent other signal. `No major issues detected` in this row is a clean assertion, not
+   a finding.
 3. **🧪 row** — a coverage assertion. `PR contains tests` is clean; the negative form on a
    behavioural change is a cheap, actionable coverage signal (assign `low`).
 
@@ -571,11 +573,15 @@ configuration declares, so unlike every other row above it cannot be re-derived 
 `pr-agent-settings`. The image is selected by
 `cuioss/cuioss-organization/.github/workflows/reusable-pr-agent-review.yml`, which this repository's
 caller pins by commit SHA in `.github/workflows/pr-agent.yml` (`uses: …@f3b0586c…`, v0.23.0). That
-pin is the revision the list was read against, and it is the thing to re-check — **"dead config for
-Gemini" is a statement about that image, not a standing property of Gemini**. Bumping the `uses:` pin
-can add a Gemini entry to the list and silently make the row false, and nothing in this record or in
-CI would report it. Re-read the list at the new pin whenever that reference moves, before the
-"unreachable" rejection below is relied on again.
+pin fixes the *workflow file*, and with it the image REFERENCE that file names; it fixes the image
+CONTENT only insofar as that reference is a digest rather than a tag — and **this record has not
+verified which form it uses**. The org workflow is not vendored in this checkout, so the form cannot
+be established from here at all. **"Dead config for Gemini" is therefore a statement about the image
+the list was read from, not a standing property of Gemini**, and two independent moves can make the
+row silently false: bumping the `uses:` pin, or — under a tag reference — the org workflow's own
+image reference resolving to a different build with the pin unchanged. Nothing in this record or in
+CI would report either. Re-read the list whenever that pin moves AND whenever the org workflow's own
+image reference changes, before the "unreachable" rejection below is relied on again.
 
 ### The chosen arm, and the arms rejected
 
