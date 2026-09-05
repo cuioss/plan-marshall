@@ -1354,9 +1354,9 @@ population rule above applies to the classification for the same reason.
 empty one.** The population above is derived from the registry and stands on its own, but each
 member's `Class` comes from that configuration, and § Step 8 condition 5 computes its three ratios
 against the sets this read produces. So the read is checked *here*, before anything consumes it, and
-every way it can fail holds the classification rather than yielding a roster the run cannot
-substantiate — the same treatment this subsection gives an unreadable publish surface below, and for
-the same reason: a failed read is not a clean result.
+a failure that leaves the classification unsubstantiated holds it rather than yielding a roster the
+run cannot stand behind — the same treatment this subsection gives an unreadable publish surface
+below, and for the same reason: a failed read is not a clean result.
 
 - **The configuration is absent, unreadable, or unparseable.** There is no classification at all, and
   a file the run could not read is not a project that classified nothing. Record the failure and the
@@ -1374,15 +1374,14 @@ the same reason: a failed read is not a clean result.
   project's configuration may answer, and it would move a reviewer between denominators without
   saying so.
 - **Every configured token must resolve to a registered reviewer.** The lists are keyed by `bot_kind`,
-  so a token that no registry doc declares names a reviewer that does not exist here. It is **not**
-  admitted to either set and MUST NOT reach a denominator: a required set inflated by a non-existent
-  reviewer discloses a shortfall against a reviewer no run could ever have obtained — a denominator
-  carrying a row the participation table can never hold. Route it to the `unregistered_kind`
-  treatment the shared contract defines at
-  `marketplace/bundles/plan-marshall/skills/automatic-review/standards/bot-participation-contract.md`
-  — read the handling there rather than restating it here — and record the token and its rejection.
-  Diverging from that contract would have this lane report a coverage figure the rest of the project
-  computes differently.
+  so a token that no registry doc declares names a reviewer that does not exist here. It **stays in
+  the set that named it and in that set's denominator**, recorded as unproven and blocking exactly as
+  an absent reviewer is, and it MUST carry its own row in the participation record naming the
+  rejection — the row, not removal from a denominator, is what keeps it from reaching a ratio
+  unaccounted for. Route it to the `unregistered_kind` treatment the shared contract defines at
+  `marketplace/bundles/plan-marshall/skills/automatic-review/standards/bot-participation-contract.md`,
+  reading the handling there rather than restating it. Dropping it instead would replace a disclosed
+  block with a silent pass, and report a coverage figure the rest of the project computes differently.
 
 None of this touches the third value: a **registered** reviewer that a well-formed configuration
 names in neither list is `unclassified`, which is a real reading of that configuration rather than a
@@ -1798,11 +1797,11 @@ hold:**
    fires on a required one, so it cannot say whether coverage actually fell short.
 
    ⛔ **These ratios are computed only over a classification the run could substantiate.** § Step 7
-   defines how the classification read fails closed — and every one of those failures leaves no sound
-   denominator to write a ratio against. Where one fired, this disclosure reports **that** read
-   failure and what it held back, in place of the ratios; it never proceeds on a roster the run could
-   not establish. A figure computed over an unsound denominator is the bare-figure defect wearing
-   three names.
+   defines how the classification read fails closed — and a failure that holds the classification
+   leaves no sound denominator for the required and optional ratios. Where one fired, this disclosure
+   reports **that** read failure and what it held back in place of those two; the roster ratio still
+   stands, since its denominator is the registry-derived population and no configuration read feeds
+   it. A figure computed over an unsound denominator is the bare-figure defect wearing three names.
 
    State the coverage as **three named ratios**, never as one bare figure — each ratio naming the
    population it is measured against, so a reader can tell which denominator any number belongs to:
