@@ -1125,9 +1125,12 @@ def artifact_emission_population(
 # `billing-composition` check's restatement of the column set, the four-way cell
 # read and that same provenance gate in
 # `.claude/skills/audit-archived-plan-retrospectives/checks/billing-composition.md`.
-# The last TWO live in a tree the architecture inventory does not crawl, so a
-# content sweep will NOT find them — changing the schema here means editing all
-# five by reading the list, never by searching.
+# The last TWO live in this repository's project-local auditor tree
+# (`.claude/skills/…`), which ships to no target — they are meta-repo-only
+# surfaces of the lock-step, absent from any consumer installation. That tree
+# is also one the architecture inventory does not crawl, so a content sweep
+# will NOT find them — changing the schema here means editing all five by
+# reading the list, never by searching.
 _LEGACY_COLUMN_COUNT = 5
 _CONTEXT_LOAD_COLUMNS = (
     'input_tokens',
@@ -1257,8 +1260,10 @@ def _parse_dispatch_boundary_file(artifact: Path) -> dict[str, Any]:
       read at all, because nothing declares what their cells mean.
 
     This is the same strategy the audit reader
-    (``.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py``
-    ``_parse_dispatch_boundary_totals``) applies. The two readers parse the same
+    (``_parse_dispatch_boundary_totals`` in the project-local cross-plan auditor —
+    ``.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py``, which
+    ships to no target and is absent from a consumer installation) applies. The
+    two readers parse the same
     on-disk ledger in separate processes, so the same bytes MUST yield the same
     measured set and the same datability verdict in both; resolving columns two
     different ways is exactly how they came to disagree.

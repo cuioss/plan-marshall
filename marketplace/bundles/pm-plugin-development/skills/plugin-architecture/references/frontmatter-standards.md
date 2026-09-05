@@ -473,6 +473,18 @@ It must never be used to dodge normalization: format-coupling (metrics shape, pe
 
 **Cross-references are the author's responsibility.** Scoping a component away from a target does not rewrite references to it from components that still ship there. A component that scopes itself out of a target should not be the only path to a capability the remaining components point at.
 
+### Repository scope — a second, orthogonal axis
+
+`targets:` partitions **emission** — which build targets emit a whole component. A second axis is orthogonal to it and is **not** a build field: **which repository's tree does a named path inhabit**. Repository scope is a property of *references inside a shipped body*, never of a whole component, so a component can ship to every target while one of its references names a path only its source repository owns. In this repository the concrete case is `.claude/` — the project-local skills, commands, and settings of the meta-repo — which is version-controlled but **ships to no target**; a consumer installation never contains it.
+
+A shipped reference that names a *specific artifact* in such a tree is a **meta-repo-only** concern: the consumer cannot see it and cannot honour it, so naming it in shipped content without a label hands the consumer an instruction they cannot follow. The rule is recorded in ADR-020 (in this repository's `doc/adr/`) and applies at the reference site:
+
+- **Declare** — annotate the reference as meta-repo-only where it is load-bearing prose or a coupling contract (a lock-step list that names the project-local authority).
+- **Re-point** — replace a live relative link into `.claude/` with prose naming the concept, without a path the consumer cannot resolve.
+- **Correct as-is** — leave a site that already declares its boundary: an explicit "(meta-project)" scope, a roster-addition or coverage-caveat record, or a statement about any project's own dotfile tree.
+
+The discriminator is the *referent*, never the vocabulary. Describing the mechanism of a project-local tree — "every project has its own `.claude/skills/`" — is universal and needs no label; naming this repository's specific artifact is what makes a reference meta-repo-only. `targets:` is never the instrument for this axis: it cannot annotate an individual reference inside a shipped body, and the `.claude/` artifacts are not components.
+
 ## Tools Declaration
 
 ### Correct Format: Comma-Separated

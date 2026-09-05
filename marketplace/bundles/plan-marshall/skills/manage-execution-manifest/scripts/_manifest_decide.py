@@ -311,11 +311,13 @@ def _read_recipe_source(plan_id: str) -> str | None:
     longer depends on the ``phase-4-plan`` agent remembering to forward
     ``--recipe-key`` from ``manage-status read`` — the gap the archived-plan
     audit surfaced as recipe→default drift (lesson/recipe plans composing the
-    ``default`` rule because the flag was omitted). The archived-plan audit's
-    re-derivation of Row 2 (``audit-archived-plan-retrospectives/scripts/audit.py``
-    ``collect_inputs``) reads the SAME two fields in the SAME precedence, so the
-    audit's counterfactual and this live decision agree by construction; a change
-    to the field set here obliges the same change there. An explicit
+    ``default`` rule because the flag was omitted). The archived-plan audit's re-derivation of Row 2 (``collect_inputs`` in the
+    project-local cross-plan auditor —
+    ``.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py``, which ships to no
+    target and is absent from a consumer installation) reads the SAME two fields
+    in the SAME precedence, so the audit's counterfactual and this live decision
+    agree by construction; a change to the field set here obliges the same
+    change there. An explicit
     ``--recipe-key`` argument still takes precedence at the call site in
     :func:`cmd_compose`.
 
