@@ -577,7 +577,7 @@ This is the one point in the lifecycle where narrowing is both possible and safe
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-config:manage-config domain-narrow \
-     --plan-id {plan_id} --affected-files {affected_files_csv}
+     --plan-id {plan_id} --affected-files "{affected_files_csv}"
    ```
 
    **Branch on `status` BEFORE parsing anything else.** The verb has three outcomes, not two, and on the third none of the success fields exist:
@@ -607,10 +607,12 @@ This is the one point in the lifecycle where narrowing is both possible and safe
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-references:manage-references set \
-     --plan-id {plan_id} --field domains_provenance --value {provenance_rendering}
+     --plan-id {plan_id} --field domains_provenance --value "{provenance_rendering}"
    ```
 
    `{provenance_rendering}` is the compact one-line `{domain}={legs}` form described in [`manage-references` § Schema Fields](../manage-references/SKILL.md) — `none` where no leg claimed the domain. It is written alongside the `domains` key, never instead of it.
+
+   **The double quotes are load-bearing.** The rendering separates domains with `;`, which is a shell command separator: unquoted, the write truncates at the first domain and every remaining `{domain}={legs}` word runs as its own command. A plan with more than one domain would then persist a silently-truncated provenance — the same "looked and found nothing" vs "never looked" collapse this key exists to prevent, reproduced in the artifact itself.
 
    **Why this write is unconditional.** The key's stated purpose is to make a narrowed set distinguishable from an over-provisioned one after the fact. Gating it on `narrowed: true` defeats exactly that: the key would then be equally absent for a plan the narrowing pass EXAMINED and found nothing droppable in, and for a plan the pass never ran on — collapsing "looked and found nothing" into "never looked", which is the failure mode this plan exists to remove. A `narrowed: false` run has a full provenance record (every domain claimed by some leg); writing it is what proves the pass ran.
 
@@ -622,7 +624,9 @@ This is the one point in the lifecycle where narrowing is both possible and safe
      --message "(plan-marshall:phase-3-outline) {report}"
    ```
 
-   Second, the phase return TOON's `domain_narrow_report` field (see § Return Results), which carries the report **verbatim** to the orchestrator that reports this phase's outcome to the user. Those two are the report's sinks; `display_detail` is NOT one of them. Its shape is fixed by the output contract and capped at 80 ASCII characters, so it cannot carry the report verbatim and does not claim to — which is why the report needs a field of its own rather than a sentence asserting a summary line it never reaches.
+   Second, the phase return TOON's `domain_narrow_report` field (see § Return Results), which carries the report **verbatim** off this phase without the 80-ASCII-character cap `display_detail` is bound by. `display_detail` is deliberately NOT a sink for it: its shape is fixed by the output contract, so it cannot carry the report verbatim and does not claim to.
+
+   ⛔ **The decision log is the report's only CONSUMED sink today.** `domain_narrow_report` is a declared return field with no reader: `plan-marshall/workflow/planning-outline.md` enumerates the return fields it consumes and this is not among them, and it gives no post-return block to it as it does to `outline_prompt` and `qgate_validation_required`. Stating that the orchestrator surfaces it would be a promise this repository does not keep — the same unreachable-sink defect one level up. The field is emitted so a consumer CAN be wired without re-shaping the return; wiring it in `planning-outline.md` is owed follow-up, not present behaviour.
 
 **A `narrowed: false` result is a valid recorded outcome, not a skip.** Nothing was droppable, and both the report (step 4) and the provenance write (step 3b) still fire — so "nothing to narrow" stays distinguishable from "narrowing never ran". Only step 3's `domains` write is conditional on `narrowed: true`, and only because rewriting an unchanged set is a no-op.
 
@@ -684,7 +688,7 @@ domain_narrow_report: {the domain-narrow report, verbatim; see § Domain Narrowi
 outline_prompt: {optional — present only when the leaf has open operator questions; see § Operator-input contract}
 ```
 
-`domain_narrow_report` carries the `report` string returned by `manage-config domain-narrow`, verbatim and unedited, on **both** of the verb's success outcomes — a `narrowed: false` run reports too. It is the report's user-facing sink: the orchestrator surfaces the narrowing outcome from this field when it reports the phase boundary, because `display_detail`'s fixed shape and 80-character ASCII cap cannot carry the report itself. The field is **omitted** when the verb returned `status: error` — nothing was evaluated, so there is no report, and an empty string would render a pass that could not look as one that looked and found nothing.
+`domain_narrow_report` carries the `report` string returned by `manage-config domain-narrow`, verbatim and unedited, on **both** of the verb's success outcomes — a `narrowed: false` run reports too. It exists because `display_detail`'s fixed shape and 80-character ASCII cap cannot carry the report itself. ⛔ **It has no reader today** — `plan-marshall/workflow/planning-outline.md` does not consume it, so this field is emitted-but-unconsumed and the decision-log entry (§ Domain Narrowing step 4) is the report's only consumed sink. Wiring a consumer there is owed follow-up; do NOT read this row as a claim that the orchestrator surfaces it. The field is **omitted** when the verb returned `status: error` — nothing was evaluated, so there is no report, and an empty string would render a pass that could not look as one that looked and found nothing.
 
 `outline_prompt` is the batched prompt-required envelope described in § "Operator-input contract" — the leaf emits it (alongside an otherwise-complete `status: success`) only when outline authoring surfaced open operator design questions, and omits it entirely when the outline resolved cleanly. The orchestrator fires ONE batched `AskUserQuestion` over it and re-dispatches phase-3-outline at most once with the answers baked in.
 

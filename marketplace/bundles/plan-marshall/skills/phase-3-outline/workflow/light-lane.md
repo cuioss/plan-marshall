@@ -178,7 +178,7 @@ The light lane is **not exempt** from the narrowing obligation either, and for t
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-config:manage-config domain-narrow \
-     --plan-id {plan_id} --affected-files {affected_files_csv}
+     --plan-id {plan_id} --affected-files "{affected_files_csv}"
    ```
 
    **Branch on `status` BEFORE parsing anything else.** The verb has three outcomes, not two, and on the third none of the success fields exist:
@@ -208,10 +208,12 @@ The light lane is **not exempt** from the narrowing obligation either, and for t
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-references:manage-references set \
-     --plan-id {plan_id} --field domains_provenance --value {provenance_rendering}
+     --plan-id {plan_id} --field domains_provenance --value "{provenance_rendering}"
    ```
 
    `{provenance_rendering}` is the compact one-line `{domain}={legs}` form described in [`manage-references` § Schema Fields](../../manage-references/SKILL.md) — `none` where no leg claimed the domain. Do NOT invent a rendering here: both lanes write the same key, so the format has exactly one home.
+
+   The double quotes are load-bearing for a different reason than step 3's: the rendering separates domains with `;`, a shell command separator, so an unquoted interpolation truncates the write at the first domain and runs each remaining `{domain}={legs}` word as its own command.
 
 4. Emit the returned `report` verbatim — on **both** success outcomes, including `narrowed: false` — to its two declared sinks. First, a decision-log entry:
 
@@ -221,7 +223,9 @@ The light lane is **not exempt** from the narrowing obligation either, and for t
      --message "(plan-marshall:phase-3-outline) {report}"
    ```
 
-   Second, the envelope's return TOON `domain_narrow_report` field (see § Output), which carries the report **verbatim** to the orchestrator that reports this phase's outcome to the user. Those two are the report's sinks; `display_detail` is NOT one of them. Its shape is fixed by the Output contract below and capped at 80 ASCII characters, so it cannot carry the report verbatim and does not claim to — which is why the report needs a field of its own rather than a sentence asserting a summary line it never reaches.
+   Second, the envelope's return TOON `domain_narrow_report` field (see § Output), which carries the report **verbatim** off this envelope without the 80-ASCII-character cap `display_detail` is bound by. `display_detail` is deliberately NOT a sink for it: its shape is fixed by the Output contract below, so it cannot carry the report verbatim and does not claim to.
+
+   ⛔ **The decision log is the report's only CONSUMED sink today.** `domain_narrow_report` has no reader — `plan-marshall/workflow/planning-outline.md` does not consume it. The field is emitted so a consumer CAN be wired without re-shaping the return; wiring it is owed follow-up, not present behaviour, and this document must not state that the orchestrator surfaces it.
 
 The verb owns the narrowing decision; this envelope invokes it, persists its result, and reports it. The rationale for the rule — why end-of-outline is the site, why a `narrowed: false` outcome is recorded rather than skipped, and the three-legged safety bound the verb applies — lives in [`../SKILL.md`](../SKILL.md) § Domain Narrowing. Do NOT restate it here.
 
