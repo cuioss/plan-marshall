@@ -281,8 +281,17 @@ def invoked_notations(text: str) -> frozenset[str]:
 def retains(notations: frozenset[str]) -> bool:
     """True when at least one notation's skill segment is not a ``manage-*`` skill.
 
-    This is retention rule (c): a document invoking only ``manage-*`` skills is
-    already covered by the narrow convention and is not part of the gap.
+    This is retention rule (c). It bounds the sweep to the gap the plan set out to
+    close — documents invoking a non-``manage-*`` notation, which carried no
+    convention at all — and drops the ``manage-*``-only documents.
+
+    ⛔ The carve-out is a SCOPE boundary, not a sufficiency claim. Do not read it as
+    "those documents are already covered": the narrow convention they carry states
+    two dispositions and has no exit-0-with-non-``success``-status arm, and the
+    canonical standard's operation-failure clause applies to a ``manage-*`` call as
+    much as to any other. So the dropped population is left holding exactly the rule
+    the canonical standard names as insufficient. Widening it is open work, recorded
+    in that standard's § Purpose carve-out; this predicate deliberately does not do it.
     """
     return any(not notation.split(':')[1].startswith('manage-') for notation in notations)
 

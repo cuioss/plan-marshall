@@ -4,8 +4,18 @@
 
 This is the single statement of the exit-code contract that governs every
 `python3 .plan/execute-script.py` call in the marketplace — of EVERY notation,
-**not only `manage-*`**. Every document that invokes the executor
-cross-references this standard; none of them restates it.
+**not only `manage-*`**. Every document that invokes a **non-`manage-*`**
+notation cross-references this standard; none of them restates it.
+
+**The referencing population is the non-`manage-*` invokers, not every invoker.**
+Documents that invoke only `manage-*` notations were deliberately left carrying
+their own narrower `## Exit-code convention for `manage-*` script calls` section —
+they are the population the sweep's retention rule (c) drops before
+classification. That carve-out is a scope boundary, not a claim that the narrow
+form is sufficient: see [§ Operation failure at exit 0](#operation-failure-at-exit-0),
+whose disposition applies to a `manage-*` call as much as to any other, and which
+the narrow sections do not state. Widening those documents is out of scope here
+and remains open work.
 
 The standard lives in `tools-script-executor` because that skill owns the
 executor the convention governs. It is a sibling of
@@ -101,8 +111,9 @@ documented inline in the step that issues them, never inferred.
 
 ## How a document references this standard
 
-A document that invokes the executor carries a single cross-reference under an
-`## Exit-code convention for every script call` heading, and restates no clause:
+A document that invokes a **non-`manage-*`** notation carries a single
+cross-reference under an `## Exit-code convention for every script call` heading,
+and restates no clause:
 
 ```markdown
 ## Exit-code convention for every script call
@@ -115,8 +126,11 @@ is not restated here.
 
 The heading is kept so the section remains a navigable anchor and so the
 document still declares that the contract binds it. The body is the reference
-and nothing more: one body of this text exists in the tree, and every consuming
-document points at it.
+and nothing more: exactly one body of this text exists in the tree, and every
+document in the referencing population — the non-`manage-*` invokers — points at
+it. The `manage-*`-only documents carved out in § Purpose point at nothing and
+keep their own narrower section; that is a known, bounded gap, not a claim the
+sweep discharged.
 
 **Why a reference rather than an inline copy.** A copy at the point of use is
 stronger for a reader who never follows the link, and that is a real cost of
