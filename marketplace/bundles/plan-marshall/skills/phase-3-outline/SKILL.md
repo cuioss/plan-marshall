@@ -553,6 +553,65 @@ The authoritative procedure — the disposition vocabulary, the prohibition on a
 
 ---
 
+### Domain Narrowing (lane-agnostic, mandatory)
+
+Immediately after `solution_outline.md` has been written and validated — and before the phase returns — narrow the plan's domain set to what its declared footprint justifies.
+
+This is the one point in the lifecycle where narrowing is both possible and safe. Everything upstream only widens `references.domains`: `domain-detect` unions its legs at init, and phase-2-refine's re-merge widens further. Here the declared footprint has just been derived from the deliverables the plan committed to, and no task has been resolved yet — so no task's skill set can be orphaned by a drop.
+
+1. **Refresh the declared footprint** and read it back:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-references:manage-references sync-affected-files \
+     --plan-id {plan_id}
+   ```
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-references:manage-references get \
+     --plan-id {plan_id} --field affected_files
+   ```
+
+   Join the returned paths into a comma-separated `{affected_files_csv}`.
+
+2. **Invoke the narrowing verb** with that footprint:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-config:manage-config domain-narrow \
+     --plan-id {plan_id} --affected-files {affected_files_csv}
+   ```
+
+   Parse `retained`, `dropped`, `provenance`, `report`, and `narrowed` from the returned TOON.
+
+3. **On `narrowed: true`**, persist the retained set and the provenance:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-references:manage-references set-list \
+     --plan-id {plan_id} --field domains --values {retained_csv}
+   ```
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-references:manage-references set \
+     --plan-id {plan_id} --field domains_provenance --value {provenance_rendering}
+   ```
+
+   `{provenance_rendering}` is the compact one-line `{domain}={legs}` form described in [`manage-references` § Schema Fields](../manage-references/SKILL.md) — `none` where no leg claimed the domain. It is written alongside the `domains` key, never instead of it.
+
+4. **Emit the returned `report`** — verbatim, on **both** outcomes — into the phase's user-facing summary and a decision-log entry:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+     decision --plan-id {plan_id} --level INFO \
+     --message "(plan-marshall:phase-3-outline) {report}"
+   ```
+
+**A `narrowed: false` result is a valid recorded outcome, not a skip.** Nothing was droppable, and the report still fires — so "nothing to narrow" stays distinguishable from "narrowing never ran". Only steps 3's two writes are conditional on `narrowed: true`.
+
+**The phase never narrows on its own judgement.** The verb owns the decision through its three-legged safety bound; this phase invokes it, persists its result, and reports it. The safety bound itself — the `always_on` structural exemption, the `file_globs` leg, and the resolved-task leg — is documented in [`manage-config` § Canonical invocations → `domain-narrow`](../manage-config/SKILL.md) and [`manage-config` standards/skill-domains.md § Domain Inclusion](../manage-config/standards/skill-domains.md). Do NOT inline-copy that decision table here.
+
+Like the Prospective Lessons Consult above, this step fires on **every** authoring path this phase owns — the deep-lane Complex Track, the Simple-Track authoring procedure, and the [light lane](workflow/light-lane.md), which fires the same narrowing step from its own envelope. No lane is exempt.
+
+---
+
 ### Log Completion
 
 ```bash

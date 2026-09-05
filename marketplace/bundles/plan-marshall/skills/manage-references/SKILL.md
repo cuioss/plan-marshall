@@ -41,6 +41,7 @@ JSON format for storage:
   "issue_url": "https://github.com/org/repo/issues/123",
   "build_system": "maven",
   "domains": ["java"],
+  "domains_provenance": "java=file_globs",
   "affected_files": [
     "src/main/java/Foo.java"
   ],
@@ -58,7 +59,8 @@ JSON format for storage:
 | `base_branch` | string | Base branch for PR (e.g., main) |
 | `issue_url` | string | GitHub issue URL |
 | `build_system` | string | Build system (maven, gradle, npm, none) |
-| `domains` | list | Plan domains (e.g., java, documentation) |
+| `domains` | list | Plan domains (e.g., java, documentation). Widened by `domain-detect` at init and by phase-2-refine's re-merge; narrowed exactly once, at end-of-outline, by phase-3-outline's narrowing step. |
+| `domains_provenance` | string | Why each domain in the set survived — or did not. Records, per domain, which inclusion leg or legs claimed it (`task` / `always_on` / `file_globs`), or `none` where no leg did. Written by phase-3-outline's narrowing step from `manage-config domain-narrow`'s return, as the compact one-line `{domain}={legs}` rendering (`;`-separated across domains, `+`-separated within one domain's legs — e.g. `documentation=none;python=file_globs;plan-marshall-plugin-dev=always_on`). Written **alongside** `domains`, never instead of it: `domains` says which domains the plan carries, and this key says on what evidence, so a narrowed set stays distinguishable from an over-provisioned one after the fact. Absent on a plan whose set was never narrowed. |
 | `affected_files` | list | The MUTATION half of the plan's declared footprint — the paths the solution outline says the plan expects to **modify**, and only those. Derived by `sync-affected-files` from the outline's structured per-deliverable declarations (all three declaration headings, so a survey-scope deliverable's `Files expected to mutate:` paths are included), never composed by reading outline prose. A path declared with `read` intent is excluded and carried in `read_intent_files` instead; a path declared both ways is a modification and appears here only. Re-derived by set union at every point a later consumer depends on it being current, so it is not frozen at outline time. Contrast `realized_footprint`, which records what the worktree actually touched. |
 | `read_intent_files` | list | The READ half of the declared footprint — paths a deliverable declared it would only consult. Written by `sync-affected-files` alongside `affected_files`, and **disjoint** from it. Kept out of `affected_files` because that key is the denominator of every derived recall figure: the realized footprint is a diff, so a file the plan only read can never appear in it, and counting it as an expected modification caps recall below threshold by construction. Kept *here* rather than dropped so the declaration survives and a genuinely small declared surface stays distinguishable from a filtered one. |
 | `external_docs` | table | External documentation references |
@@ -623,6 +625,7 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
 | `phase-4-plan` (§ Step 7b) | sync-affected-files | Refresh before the manifest is composed from `affected_files_count`, so scope added between outline and plan reaches the manifest |
 | `phase-6-finalize` | sync-affected-files | Refresh on the loop-back re-entry path, so scope added after phase-3 reaches the finalize-time consumers |
 | `phase-6-finalize` (`create-pr`) | set | Record `pr_number` immediately after the PR is created or an open one is reused |
+| `phase-3-outline` (§ Domain Narrowing) | sync-affected-files, set-list, set | Refresh the declared footprint, then persist the narrowed `domains` set and its `domains_provenance` from `manage-config domain-narrow`'s return |
 
 ### Consumers
 
