@@ -10,6 +10,7 @@ Usage (internal):
 """
 
 import re
+from collections.abc import Callable
 from pathlib import Path
 
 from _build_parse import (
@@ -32,13 +33,49 @@ _MYPY_ERROR_PATTERN = re.compile(r'^(.+\.py):(\d+): error: (.+)$', re.MULTILINE)
 _RUFF_ISSUE_PATTERN = re.compile(r'^(.+\.py):(\d+):\d+: ([A-Z]+\d+) (.+)$', re.MULTILINE)
 _PYTEST_FAILED_PATTERN = re.compile(r'^FAILED (.+\.py)::(\S+)(?: - (.+))?$', re.MULTILINE)
 
+# Collection- and setup-level ERRORS, reported under pytest's `E` report
+# character (already present in this project's `-rsfE` addopts). A module-import
+# failure — an assertion or an ImportError raised while pytest is COLLECTING a
+# test module — and a fixture failure raised at setup/teardown are reported as
+# `ERROR ...` short-summary lines, NEVER as FAILED lines. A parser that reads
+# only FAILED lines therefore renders such a run as `failed=0` with an EMPTY
+# `failures[]`: the build still goes red, so no gate is defeated, but a triage
+# consumer reading `failures[]` to learn WHAT broke is told nothing.
+#
+# Two spellings share the one pattern: `ERROR path.py` (a collection error, which
+# names no test) and `ERROR path.py::test_name` (a setup/teardown error, which
+# does). The trailing ` - <message>` is pytest's exception repr and is optional.
+_PYTEST_ERROR_PATTERN = re.compile(r'^ERROR (\S+\.py)(?:::(\S+))?(?: - (.+))?$', re.MULTILINE)
+
 # Failure-detail capture (deliverable 9). pytest renders per-test tracebacks
 # under a `=== FAILURES ===` banner, each test block headed by an
 # underscore-ruled `____ test_name ____` line and terminated by the next such
 # header or the next top-level `=== section ===` line (short-summary / counts).
 _PYTEST_FAILURES_BANNER = re.compile(r'^=+ FAILURES =+\s*$')
-_PYTEST_BLOCK_HEADER = re.compile(r'^_{3,}\s+(.+?)\s+_{3,}\s*$')
+# The ERRORS section has the identical block structure under its own banner, so
+# the same scanner reads both; only the banner and the header-to-key mapping
+# differ (see `_pytest_error_block_key`).
+_PYTEST_ERRORS_BANNER = re.compile(r'^=+ ERRORS =+\s*$')
+# pytest pads a block header out to the terminal width with `_`, so how MANY
+# underscores appear is a function of how long the name inside them is, not of
+# the header's kind. A short `test_alpha` gets a wide rule on both sides; a full
+# `ERROR collecting test/some/deeply/nested/test_module.py` consumes the whole
+# width and the padding collapses to exactly ONE underscore per side. Requiring
+# three would therefore match every short name and silently miss every long one —
+# which is precisely how the ERRORS blocks went unfound while the FAILURES blocks
+# (short test names) were read fine, leaving a collection error with no line
+# number and no assertion message.
+_PYTEST_BLOCK_HEADER = re.compile(r'^_+\s+(.+?)\s+_+\s*$')
 _PYTEST_SECTION_LINE = re.compile(r'^=+\s+\S.*\s+=+\s*$')
+# The two ERRORS-section block-header spellings. Each must map back onto the same
+# key its short-summary line yields: `ERROR collecting <path>` pairs with
+# `ERROR <path>`, and `ERROR at setup of <test>` pairs with `ERROR <path>::<test>`.
+_PYTEST_ERROR_HEADER_COLLECTING = re.compile(r'^ERROR collecting (\S+)$')
+_PYTEST_ERROR_HEADER_PHASE = re.compile(r'^ERROR at (?:setup|teardown) of (\S+)$')
+# The `E   ` gutter pytest prefixes onto the raised exception's own lines inside
+# a traceback block. A collection error's short-summary line carries NO
+# ` - <message>` tail, so this gutter is the only place its real message exists.
+_PYTEST_EXCEPTION_LINE = re.compile(r'^E\s+(\S.*)$', re.MULTILINE)
 # Deepest `path.py:NN:` line in a traceback block — the frame the failure
 # originated at (identical across tests that share a root cause).
 _PYTEST_FRAME_PATTERN = re.compile(r'(\S+\.py):(\d+):')
@@ -52,6 +89,13 @@ _PYTEST_IDENTIFIER = re.compile(r'[A-Za-z_][A-Za-z0-9_.]*')
 # bloating the finding store. Distinct from deliverable 10's `errors` emission
 # cap (which limits the NUMBER of failures shown, not one block's length).
 _MAX_DETAIL_LEN = 2000
+
+# The two Issue categories the pytest parser assigns. BOTH start with `test_`, so
+# `_build_shared._classify_issue_finding_type` routes both to the `test-failure`
+# finding store: a test module that could not even be imported is a broken test,
+# not a build error, and a triage consumer looks for it in the same place.
+CATEGORY_TEST_FAILURE = 'test_failure'
+CATEGORY_COLLECTION_ERROR = 'test_collection_error'
 
 # Python-specific categorization patterns for use with shared categorize_issue().
 # Patterns are checked case-insensitively; regex metacharacters trigger regex mode.
@@ -146,18 +190,22 @@ def _parse_ruff(log_file: str) -> tuple[list[Issue], UnitTestSummary | None, str
 def _parse_pytest(log_file: str) -> tuple[list[Issue], UnitTestSummary | None, str]:
     """Parse pytest test output.
 
-    Extracts file locations from FAILED lines and attempts to find line numbers
-    from traceback context in the output.
+    Extracts file locations from FAILED lines AND from collection/setup ERROR
+    lines, and attempts to find line numbers from traceback context in the
+    output. Both report characters are read because a run whose test modules
+    failed to import produces only ERROR lines: reading FAILED alone would emit a
+    red build with an empty `errors[]`, which tells triage nothing.
     """
     content = read_log_text(log_file)
     lines = content.split('\n')
     issues: list[Issue] = []
     seen: set[str] = set()
 
-    # One record per FAILED line, each carrying the representative per-signature
-    # detail block (deduped so N failures sharing one root cause share ONE
-    # block). The same record set backs the `parse --failures-detail` slice verb.
-    for record in _collect_pytest_failure_records(content):
+    # One record per FAILED line and per ERROR line, each carrying the
+    # representative per-signature detail block (deduped so N failures sharing
+    # one root cause share ONE block). The same record set backs the
+    # `parse --failures-detail` slice verb.
+    for record in _collect_pytest_records(content):
         if not add_issue_deduped(
             issues,
             seen,
@@ -165,7 +213,7 @@ def _parse_pytest(log_file: str) -> tuple[list[Issue], UnitTestSummary | None, s
             line=record['line'],
             message=record['message'],
             severity=SEVERITY_ERROR,
-            category='test_failure',
+            category=record['category'],
         ):
             continue
         # `detail` is the truncated presentation block; `signature` is the full,
@@ -211,31 +259,40 @@ def _find_pytest_line_number(block: str, file_path: str) -> int | None:
     return None
 
 
-def _extract_pytest_failure_blocks(content: str) -> dict[str, list[str]]:
-    """Map each failing test key to its ordered list of traceback blocks.
+def _extract_pytest_blocks(
+    content: str,
+    banner: re.Pattern[str],
+    key_fn: Callable[[str], str],
+) -> dict[str, list[str]]:
+    """Map each block key to its ordered list of traceback blocks under `banner`.
 
-    Scans the `=== FAILURES ===` section, splitting it into per-test blocks on
-    the underscore-ruled `____ test_name ____` headers. A block runs until the
-    next header or the next top-level `=== section ===` line (pytest's short
-    test summary / final counts), which terminates the FAILURES section.
+    Scans the section opened by `banner`, splitting it into per-item blocks on
+    the underscore-ruled `____ name ____` headers. A block runs until the next
+    header or the next top-level `=== section ===` line (pytest's short test
+    summary / final counts), which terminates the section. The FAILURES and
+    ERRORS sections have identical structure, so both are read here; they differ
+    only in their banner and in how a header maps onto a key (`key_fn`).
 
     The value is an ORDERED LIST, not a single block: when separate files or
-    repeated pytest runs share a test name, each occurrence produces its own
-    block. Storing one block per key would overwrite the earlier occurrences and
-    lose their distinct tracebacks/signatures. `_collect_pytest_failure_records`
-    consumes one block per matching FAILED line, in order, to keep them distinct.
+    repeated pytest runs share a name, each occurrence produces its own block.
+    Storing one block per key would overwrite the earlier occurrences and lose
+    their distinct tracebacks/signatures. The record collectors consume one block
+    per matching short-summary line, in order, to keep them distinct.
 
     Args:
         content: ANSI-stripped log content.
+        banner: The section banner that opens the region to scan.
+        key_fn: Maps a block header's name to the key its short-summary line
+            resolves to.
 
     Returns:
-        Dict mapping a normalized block key (see `_pytest_block_key`) to the
-        ordered list of stripped block texts for that key. Empty when the log
-        carries no FAILURES section (e.g. a `--tb=no` or summary-only run) —
-        callers then fall back to the terse FAILED-line message.
+        Dict mapping a normalized block key to the ordered list of stripped block
+        texts for that key. Empty when the log carries no such section (e.g. a
+        `--tb=no` or summary-only run) — callers then fall back to the terse
+        short-summary message.
     """
     blocks: dict[str, list[str]] = {}
-    in_failures = False
+    in_section = False
     current_key: str | None = None
     current_lines: list[str] = []
 
@@ -244,24 +301,24 @@ def _extract_pytest_failure_blocks(content: str) -> dict[str, list[str]]:
             blocks.setdefault(current_key, []).append('\n'.join(current_lines).strip())
 
     for raw in content.split('\n'):
-        if _PYTEST_FAILURES_BANNER.match(raw):
-            in_failures = True
+        if banner.match(raw):
+            in_section = True
             continue
-        if not in_failures:
+        if not in_section:
             continue
 
         header = _PYTEST_BLOCK_HEADER.match(raw)
         if header:
             _flush()
-            current_key = _pytest_block_key(header.group(1))
+            current_key = key_fn(header.group(1))
             current_lines = []
             continue
 
         if _PYTEST_SECTION_LINE.match(raw):
-            # A new top-level `=== section ===` closes the FAILURES section.
+            # A new top-level `=== section ===` closes the section.
             _flush()
             current_key = None
-            in_failures = False
+            in_section = False
             continue
 
         if current_key is not None:
@@ -272,6 +329,16 @@ def _extract_pytest_failure_blocks(content: str) -> dict[str, list[str]]:
     return blocks
 
 
+def _extract_pytest_failure_blocks(content: str) -> dict[str, list[str]]:
+    """Map each failing test key to its ordered traceback blocks from FAILURES."""
+    return _extract_pytest_blocks(content, _PYTEST_FAILURES_BANNER, _pytest_block_key)
+
+
+def _extract_pytest_error_blocks(content: str) -> dict[str, list[str]]:
+    """Map each errored collection/setup key to its ordered blocks from ERRORS."""
+    return _extract_pytest_blocks(content, _PYTEST_ERRORS_BANNER, _pytest_error_block_key)
+
+
 def _pytest_block_key(name: str) -> str:
     """Normalize a pytest test identifier to a block-lookup key.
 
@@ -280,6 +347,50 @@ def _pytest_block_key(name: str) -> str:
     `.` aligns both spellings; parametrized `[param]` suffixes are preserved.
     """
     return name.replace('::', '.').strip()
+
+
+def _pytest_error_block_key(name: str) -> str:
+    """Normalize an ERRORS block header to the key its summary line resolves to.
+
+    The ERRORS section headers and the `ERROR ...` short-summary lines name the
+    same item differently, and the pairing has to hold in both spellings or the
+    block is never found and the record degrades to its terse message:
+
+    * `ERROR collecting test/foo.py` pairs with `ERROR test/foo.py` — the key is
+      the file path, because a collection error names no test.
+    * `ERROR at setup of test_x` pairs with `ERROR test/foo.py::test_x` — the key
+      is the test id, normalized exactly as `_pytest_block_key` normalizes it.
+
+    Any other header falls back to `_pytest_block_key` rather than being dropped.
+    """
+    collecting = _PYTEST_ERROR_HEADER_COLLECTING.match(name.strip())
+    if collecting:
+        return collecting.group(1)
+    phase = _PYTEST_ERROR_HEADER_PHASE.match(name.strip())
+    if phase:
+        return _pytest_block_key(phase.group(1))
+    return _pytest_block_key(name)
+
+
+def _pytest_exception_message(block: str) -> str | None:
+    """Return the raised exception's own first line from a traceback block.
+
+    A FAILED short-summary line carries its message inline (`FAILED x - Boom`),
+    but the collection-error spelling of an ERROR line — `ERROR <path>` — carries
+    NO message tail at all. Reading the block's `E   ` gutter is what recovers it,
+    and without it the record degrades to a restatement of the file name, which
+    tells a triage consumer nothing it did not already have from `file`.
+
+    Args:
+        block: One traceback block from the FAILURES or ERRORS section.
+
+    Returns:
+        The first gutter line's text (e.g. ``AssertionError: bad state``), or
+        ``None`` when the block carries no gutter (a `--tb=no` run, or the
+        terse-message fallback standing in for an absent block).
+    """
+    match = _PYTEST_EXCEPTION_LINE.search(block)
+    return match.group(1).strip() if match else None
 
 
 def _pytest_failing_frame(block: str) -> str | None:
@@ -325,26 +436,69 @@ def _truncate_detail(block: str) -> str:
     return block[:_MAX_DETAIL_LEN] + '\n... (detail truncated)'
 
 
+def _consume_pytest_block(
+    key: str,
+    blocks: dict[str, list[str]],
+    cursors: dict[str, int],
+    fallback: str,
+) -> str:
+    """Take the next unconsumed block for `key`, or `fallback` when none remains.
+
+    The cursor is per-key so repeated names (across files or reruns) each keep
+    their own block instead of all resolving to a single overwritten entry.
+    """
+    blocks_for_key = blocks.get(key, [])
+    cursor = cursors.get(key, 0)
+    if cursor >= len(blocks_for_key):
+        return fallback
+    cursors[key] = cursor + 1
+    return blocks_for_key[cursor]
+
+
+def _build_pytest_record(
+    *,
+    test: str,
+    file_path: str,
+    message: str,
+    block: str,
+    category: str,
+    signature_details: dict[str, str],
+) -> dict:
+    """Assemble one parsed record, capturing its block once per signature.
+
+    `signature_details` is threaded in (and mutated) so a representative
+    traceback/assertion block is captured ONCE per unique failure signature and
+    reused for every record sharing it — N failures with one root cause carry ONE
+    block, not N copies.
+    """
+    line_num = _find_pytest_line_number(block, file_path)
+    frame = _pytest_failing_frame(block) or f'{file_path}:{line_num}'
+    signature = _pytest_failure_signature(message, frame)
+    if signature not in signature_details:
+        signature_details[signature] = _truncate_detail(block)
+
+    return {
+        'test': test,
+        'file': file_path,
+        'line': line_num,
+        'message': message,
+        'signature': signature,
+        'detail': signature_details[signature],
+        'category': category,
+    }
+
+
 def _collect_pytest_failure_records(content: str) -> list[dict]:
     """Collect one record per FAILED line, each with its per-signature block.
-
-    Shared by `_parse_pytest` (to set `Issue.detail`) and the `parse` slice
-    verb (`slice_failure_details`). A representative traceback/assertion block is
-    captured ONCE per unique failure signature (assertion type + normalized
-    message + failing frame) and reused for every failure sharing that
-    signature, so N failures with one root cause carry ONE block, not N copies.
 
     Args:
         content: ANSI-stripped log content.
 
     Returns:
-        A list of ``{test, file, line, message, signature, detail}`` dicts in
-        FAILED-line order.
+        A list of ``{test, file, line, message, signature, detail, category}``
+        dicts in FAILED-line order.
     """
     failure_blocks = _extract_pytest_failure_blocks(content)
-    # Per-key cursor: consume one block per matching FAILED line, in order, so
-    # repeated test names (across files or reruns) each keep their own block
-    # instead of all resolving to a single overwritten entry.
     block_cursors: dict[str, int] = {}
     signature_details: dict[str, str] = {}
     records: list[dict] = []
@@ -354,33 +508,88 @@ def _collect_pytest_failure_records(content: str) -> list[dict]:
         test_name = match.group(2)
         message = match.group(3) if match.group(3) else f'Test {test_name} failed'
 
-        key = _pytest_block_key(test_name)
-        blocks_for_key = failure_blocks.get(key, [])
-        cursor = block_cursors.get(key, 0)
-        if cursor < len(blocks_for_key):
-            block = blocks_for_key[cursor]
-            block_cursors[key] = cursor + 1
-        else:
-            block = message
-
-        line_num = _find_pytest_line_number(block, file_path)
-        frame = _pytest_failing_frame(block) or f'{file_path}:{line_num}'
-        signature = _pytest_failure_signature(message, frame)
-        if signature not in signature_details:
-            signature_details[signature] = _truncate_detail(block)
-
+        block = _consume_pytest_block(
+            _pytest_block_key(test_name), failure_blocks, block_cursors, message
+        )
         records.append(
-            {
-                'test': test_name,
-                'file': file_path,
-                'line': line_num,
-                'message': message,
-                'signature': signature,
-                'detail': signature_details[signature],
-            }
+            _build_pytest_record(
+                test=test_name,
+                file_path=file_path,
+                message=message,
+                block=block,
+                category=CATEGORY_TEST_FAILURE,
+                signature_details=signature_details,
+            )
         )
 
     return records
+
+
+def _collect_pytest_error_records(content: str) -> list[dict]:
+    """Collect one record per ERROR line, each with its per-signature block.
+
+    The counterpart to `_collect_pytest_failure_records` for pytest's `E` report
+    character: a test module that raised while being COLLECTED, or a fixture that
+    raised at setup/teardown. Such a run produces no FAILED line at all, so
+    without this collector its `failures[]` is empty and a triage consumer learns
+    nothing about what broke — which is the whole defect.
+
+    A collection error names no test, so `test` falls back to the file path and
+    the message falls back to naming the file rather than a test that does not
+    exist.
+
+    Args:
+        content: ANSI-stripped log content.
+
+    Returns:
+        A list of ``{test, file, line, message, signature, detail, category}``
+        dicts in ERROR-line order.
+    """
+    error_blocks = _extract_pytest_error_blocks(content)
+    block_cursors: dict[str, int] = {}
+    signature_details: dict[str, str] = {}
+    records: list[dict] = []
+
+    for match in _PYTEST_ERROR_PATTERN.finditer(content):
+        file_path = match.group(1)
+        test_name = match.group(2)
+        summary_message = match.group(3)
+        if test_name:
+            terse = f'Error in {test_name}'
+        else:
+            terse = f'Error collecting {file_path}'
+
+        key = _pytest_block_key(test_name) if test_name else file_path
+        block = _consume_pytest_block(key, error_blocks, block_cursors, terse)
+        # Message precedence: the summary tail when pytest wrote one, then the
+        # block's own `E   ` gutter, and only then the terse restatement of the
+        # file name. The collection-error spelling always takes the middle rung —
+        # it has no summary tail — so skipping it is what leaves a real
+        # `AssertionError: ...` reported as `Error collecting <path>`.
+        message = summary_message or _pytest_exception_message(block) or terse
+        records.append(
+            _build_pytest_record(
+                test=test_name or file_path,
+                file_path=file_path,
+                message=message,
+                block=block,
+                category=CATEGORY_COLLECTION_ERROR,
+                signature_details=signature_details,
+            )
+        )
+
+    return records
+
+
+def _collect_pytest_records(content: str) -> list[dict]:
+    """Every reportable pytest record — the FAILED lines AND the ERROR lines.
+
+    The single entry point shared by `_parse_pytest` (to build Issues) and the
+    `parse` slice verb (`slice_failure_details`), so both surfaces report the
+    same population and a collection error can never be visible to one and
+    invisible to the other.
+    """
+    return _collect_pytest_failure_records(content) + _collect_pytest_error_records(content)
 
 
 def _test_matches(record_test: str, query: str) -> bool:
@@ -430,7 +639,9 @@ def slice_failure_details(
     Backs the `parse --test <name>` / `parse --failures-detail` verb so a leaf
     can retrieve a named (or all) failing test's traceback without hand-scanning
     the raw log. Resolves against the C1 per-signature detail blocks captured by
-    `_collect_pytest_failure_records`.
+    `_collect_pytest_records` — which covers pytest's ERROR lines as well as its
+    FAILED lines, so a run whose test modules failed to import reports its real
+    `total_failures` here instead of a zero over a demonstrably red build.
 
     Args:
         log_file: Path to the build log.
@@ -448,7 +659,7 @@ def slice_failure_details(
     if not log_path.exists():
         return {'status': 'error', 'error': f'Log file not found: {log_file}'}
 
-    records = _collect_pytest_failure_records(read_log_text(log_path))
+    records = _collect_pytest_records(read_log_text(log_path))
 
     if test_name:
         matched = [r for r in records if _test_matches(r['test'], test_name)]
@@ -558,6 +769,13 @@ def _has_pytest_output(content: str) -> bool:
     """Detect pytest output. Uses specific markers to avoid false positives."""
     # FAILED lines are definitive pytest markers
     if 'FAILED ' in content:
+        return True
+    # So are `ERROR <path>.py[::test]` short-summary lines. Without this, a run
+    # pytest INTERRUPTED during collection routes to no parser at all: it emits
+    # no FAILED line and its `N errors in Ns` summary carries neither `passed`
+    # nor `failed`, so the fallback below misses it too and the whole ERROR
+    # population is dropped before any of it can be parsed.
+    if _PYTEST_ERROR_PATTERN.search(content):
         return True
     # pytest summary line uses '=' separators with pass/fail counts
     return '==' in content and ('passed' in content or 'failed' in content)

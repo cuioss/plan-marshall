@@ -93,6 +93,15 @@ class DirectCommandResult(TypedDict, total=False):
             wrapper's emitted TOON) rather than the raw test-runner output, so
             re-parsing yields no summary and the count would collapse to a false
             zero. Its ABSENCE means the count is unknown — never that it is zero.
+        routed_errors: Present ONLY on a daemon-routed FAILING result, carrying
+            the structured ``errors[]`` rows the INNER build wrapper parsed and
+            published. Like ``routed_tests_run`` it is an INPUT to the renderer,
+            not part of the emitted payload, and for the same reason: the
+            renderer's re-parse of the daemon job log finds no per-test rows in
+            what is a TOON document, so without this key it synthesises one
+            opaque ``build_failure`` row and every per-test finding is lost. Its
+            ABSENCE means the routed log carried no parseable table, and the
+            renderer keeps its own parse.
 
     Example (success):
         {
@@ -129,6 +138,7 @@ class DirectCommandResult(TypedDict, total=False):
     error: str  # Error type id (on error/timeout/killed/indeterminate only)
     message: str  # Operator-facing detail (on killed and indeterminate)
     routed_tests_run: int  # Daemon-routed green build: the INNER wrapper's count
+    routed_errors: list  # Daemon-routed failing build: the INNER wrapper's errors[]
 
 
 # =============================================================================
