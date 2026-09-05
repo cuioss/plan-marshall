@@ -154,10 +154,11 @@ def cmd_domain_narrow(args) -> dict[str, Any]:
     glob_matched_set = _glob_matched_domains(user_domains, footprint)
     task_claimed = _task_claimed_domains(plan_dir)
 
+    unique_current = sorted(set(current))
     retained: list[str] = []
     dropped: list[str] = []
     provenance: list[dict[str, Any]] = []
-    for domain in sorted(set(current)):
+    for domain in unique_current:
         claimed_by = [
             leg
             for leg, claimants in (
@@ -176,6 +177,6 @@ def cmd_domain_narrow(args) -> dict[str, Any]:
         'retained': retained,
         'dropped': dropped,
         'provenance': provenance,
-        'report': _compose_report(sorted(set(current)), retained, dropped),
+        'report': _compose_report(unique_current, retained, dropped),
         'narrowed': bool(dropped),
     }
