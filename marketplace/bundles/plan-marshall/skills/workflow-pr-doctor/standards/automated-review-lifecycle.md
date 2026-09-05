@@ -4,6 +4,18 @@ Detailed reference for the Automated Review Lifecycle mode used by phase-6-final
 
 > **Architectural context**: This document owns the lifecycle step list for the consolidated FIND → INGEST → TRIAGE → RESPOND flow (review-bot buffer, `fetch_findings` FIND, batched `ingest`, per-finding TRIAGE reading top-level only, `post_responses` RESPOND, overflow handling). CI completion is a dispatcher-resolved precondition declared via the `requires: [ci-complete]` frontmatter field on the consumer step — the phase-6-finalize dispatcher invokes its precondition resolver (see [`phase-6-finalize/SKILL.md`](../../phase-6-finalize/SKILL.md) Step 3 § "Precondition resolution") before this lifecycle executes and guarantees CI is green. On `wait_failed`, the dispatcher skips this lifecycle entirely and marks the consumer step `failed` with `display_detail "ci_failure (precondition)"`. For the architecture-level synthesis (producer→store→consumer→gate), see [`ref-workflow-architecture/standards/findings-pipeline.md`](../../ref-workflow-architecture/standards/findings-pipeline.md). The pipeline narrative is not restated here.
 
+## Exit-code convention for every script call
+
+Every `python3 .plan/execute-script.py` call in this document — of EVERY notation, **not only `manage-*`** — carries the following exit-code contract unless a step explicitly states otherwise. The scope is widened past `manage-*` because this document invokes `ci` and `github_pr` — a `manage-*`-scoped convention leaves exactly those calls with no rule at all, which is the swallowed-rejection gap.
+
+- **`exit_code == 0` AND `status: success`**: parse the returned TOON and use the value as the step describes.
+- **`exit_code == 0` with a `status` other than `success`, or with no parseable `status` at all**: NOT a usable value — STOP exactly as the `exit_code != 0` disposition below requires, with one difference in what the error TOON carries: on this path the diagnostic is on STDOUT, not stderr. Preserve the stdout **error envelope** as emitted — every field it carries, verbatim — into the returned error TOON; it is the only account of the cause that exists. Copy the whole envelope rather than a fixed field list, because the diagnostic fields vary by verb and `error` is sometimes a generic string whose real cause sits in one of the others. A zero exit is not evidence the operation succeeded; a script MAY print `status: error` and still exit 0. Read `status` FIRST, and never read a **success-payload** field off a non-`success` return. A malformed or truncated stdout carrying **no parseable `status` at all** takes this same path: an unreadable read is not evidence of success, so it fails closed onto STOP rather than falling through to the first clause.
+- **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — silent swallowing of `wrong_parameters` rejections is the prohibited anti-pattern; "log and continue" is equally forbidden.
+
+The middle clause is what the `ci` family makes load-bearing: a `ci` verb reports failure as `status: error` at exit 0 **by design**, so a caller must branch on the payload `status` and never on the exit code. That rule is stated authoritatively in `plan-marshall:tools-integration-ci`; it is not restated here.
+
+Step-level exceptions — calls whose non-zero exit is itself the signal — are documented inline in the step that issues them.
+
 ## Input Parameters
 
 - `plan_id` — for logging, finding storage, and Q-Gate findings
