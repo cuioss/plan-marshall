@@ -61,9 +61,48 @@ import types
 from pathlib import Path
 
 import pytest
-from _build_class_roster import build_class_domain, build_class_prefixes, build_class_roster
+from _build_class_roster import (
+    build_class_domain,
+    build_class_prefixes,
+    build_class_roster,
+    build_notation_prefixes,
+)
 
 from conftest import _MARKETPLACE_SCRIPT_DIRS, PROJECT_ROOT
+
+
+def test_executor_prefixes_and_architecture_build_notations_stay_equal():
+    """REGRESSION PIN across two registries that AGREE TODAY — not a live divergence.
+
+    The executor template's ``_BUILD_CLASS_PREFIXES`` decides which dispatches get
+    a ``kind=build`` ledger row; the architecture client's ``_BUILD_NOTATIONS``
+    decides which notations resolve as build executables. They enumerate the same
+    four build engines and nothing tied them together, so adding a fifth engine to
+    one and not the other was a silent, one-sided change.
+
+    Read the failure message before hunting for a bug: the two sets are EQUAL in
+    the shipped tree, so a failure here means *this change* desynced them, not that
+    a pre-existing divergence was discovered.
+    """
+    template_prefixes = build_class_prefixes()
+    notation_prefixes = build_notation_prefixes()
+
+    # Anti-vacuity: either reader returning an empty set would make the equality
+    # below pass by comparing nothing against nothing.
+    assert template_prefixes, 'the executor template declared no build-class prefixes'
+    assert notation_prefixes, 'the architecture client declared no build notations'
+
+    assert template_prefixes == notation_prefixes, (
+        'REGRESSION PIN, NOT a report of a pre-existing divergence: these two '
+        'registries agree in the shipped tree, and this assertion exists so that a '
+        'build engine added to one and not the other fails loudly instead of '
+        'silently. '
+        f'Only in the executor template _BUILD_CLASS_PREFIXES: '
+        f'{sorted(template_prefixes - notation_prefixes)}. '
+        f'Only in _cmd_client_build._BUILD_NOTATIONS: '
+        f'{sorted(notation_prefixes - template_prefixes)}. '
+        'Add the missing engine to whichever registry lacks it.'
+    )
 
 
 @pytest.fixture()

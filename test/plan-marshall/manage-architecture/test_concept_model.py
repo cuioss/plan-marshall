@@ -24,6 +24,7 @@ from a clone.
 import argparse
 import copy
 import json
+import re
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -31,7 +32,7 @@ from typing import Any
 import pytest
 from _arch_fixtures import setup_test_project
 
-from conftest import load_script_module, parse_ns
+from conftest import MARKETPLACE_ROOT, load_script_module, parse_ns
 
 _architecture_core = load_script_module(
     'plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core'
@@ -46,6 +47,83 @@ InvalidConceptTypeError = _architecture_core.InvalidConceptTypeError
 NonResolvingPathKeyError = _architecture_core.NonResolvingPathKeyError
 
 CONCEPT_TYPES = _architecture_core.CONCEPT_TYPES
+
+#: The standard that RESTATES the concept-type vocabulary in prose. It is a second
+#: copy of a closed vocabulary, so it can drift from the code constant silently.
+_PERSISTENCE_STANDARD = (
+    MARKETPLACE_ROOT
+    / 'plan-marshall'
+    / 'skills'
+    / 'manage-architecture'
+    / 'standards'
+    / 'architecture-persistence.md'
+)
+
+#: The STABLE MARKER the parse anchors on — the constant's own name, which the
+#: standard cites where it enumerates the vocabulary. Anchoring on the marker
+#: rather than on a line number keeps the parse working when the document is
+#: reflowed or a section is inserted above it.
+_CONCEPT_TYPES_MARKER = 'CONCEPT_TYPES'
+
+#: A backticked lowercase identifier — the spelling the standard uses for each
+#: accepted type inside its parenthesised enumeration.
+_BACKTICKED_IDENTIFIER = re.compile(r'`([a-z_]+)`')
+
+
+def _documented_concept_types() -> set[str]:
+    """Parse the accepted concept types out of the standard's own enumeration.
+
+    Walks to the first line carrying the ``CONCEPT_TYPES`` marker that also holds a
+    parenthesised enumeration of backticked identifiers, and returns those
+    identifiers. The document cites the marker in more than one place; the lines
+    that merely reference the vocabulary carry no such enumeration and are skipped,
+    so the parse lands on the declaring site without depending on its position.
+
+    Raises:
+        AssertionError: when no enumeration can be found. A silent empty set would
+            make the equality assertion below compare the code constant against
+            nothing and pass for the wrong reason.
+    """
+    for line in _PERSISTENCE_STANDARD.read_text(encoding='utf-8').splitlines():
+        if _CONCEPT_TYPES_MARKER not in line:
+            continue
+        parenthesised = re.search(r'\(([^)]*)\)', line)
+        if parenthesised is None:
+            continue
+        names = set(_BACKTICKED_IDENTIFIER.findall(parenthesised.group(1)))
+        if names:
+            return names
+    raise AssertionError(
+        f'no parenthesised concept-type enumeration found beside a '
+        f'{_CONCEPT_TYPES_MARKER!r} marker in {_PERSISTENCE_STANDARD} — the '
+        f'standard was restructured and this parse must follow it.'
+    )
+
+
+def test_standard_and_code_declare_the_same_concept_type_vocabulary():
+    """The standard's restatement is held equal to the shipped constant.
+
+    ``architecture-persistence.md`` restates the ``CONCEPT_TYPES`` vocabulary
+    verbatim while the shipped test checked only the code constant, so the two
+    copies could diverge without anything noticing: a type added to the code would
+    leave the standard documenting a closed set that is no longer closed, and a
+    reader obeying the "quote values verbatim from the docs" rule would be led to a
+    wrong value rather than merely an incomplete one.
+
+    Set-equality in BOTH directions, so neither an addition nor a removal on either
+    side can pass.
+    """
+    documented = _documented_concept_types()
+
+    # Anti-vacuity: an empty parse would make the comparison meaningless.
+    assert documented, 'parsed no concept types out of the standard'
+    assert CONCEPT_TYPES, 'the code constant declares no concept types'
+
+    assert documented == set(CONCEPT_TYPES), (
+        'the concept-type vocabulary has desynced between the standard and the code. '
+        f'Only in {_PERSISTENCE_STANDARD.name}: {sorted(documented - set(CONCEPT_TYPES))}. '
+        f'Only in _architecture_core.CONCEPT_TYPES: {sorted(set(CONCEPT_TYPES) - documented)}.'
+    )
 migrate_concept_document = _architecture_core.migrate_concept_document
 validate_concept_type = _architecture_core.validate_concept_type
 build_generation = _architecture_core.build_generation
