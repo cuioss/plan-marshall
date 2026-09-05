@@ -18,6 +18,8 @@ HEAD-dependent steps" for the single authoritative statement.
 
 The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
 
+**This document's own application of it**, which the shared statement does not carry: an absent classification is an **unread** one, never a "not invalidating" verdict — an unread classifier re-fires the gate rather than silently retiring it.
+
 ## Two levers, and only one of them was ever pulled
 
 Bounding this cost has exactly two levers, and they are independent:

@@ -266,11 +266,35 @@ def test_the_three_classes_partition_the_population():
     Without this, a classifier that dropped documents on the floor would report
     two empty classes and a shrunken population while every assertion above
     passed.
+
+    ⛔ The totality arm compares against an INDEPENDENTLY recounted retained set,
+    never against ``population_size``. ``Derivation.population_size`` is itself
+    ``len(widened) + len(narrow) + len(none)``, so asserting the class sizes sum
+    to it is ``assert X == X`` — it cannot fail, and it cannot see the dropped
+    document its own docstring claims to catch. Re-walking the corpus and
+    re-applying the retention predicate is what makes the arm able to fail.
     """
+    retained = []
+    for path in derivation.documents(derivation.PROJECT_ROOT):
+        if not path.is_file():
+            continue
+        try:
+            text = path.read_text(encoding='utf-8')
+        except (OSError, UnicodeDecodeError):
+            continue
+        if derivation.EXECUTOR_TOKEN not in text:
+            continue
+        if derivation.retains(derivation.invoked_notations(text)):
+            retained.append(path)
+
     total = len(DERIVATION.widened) + len(DERIVATION.narrow) + len(DERIVATION.none)
-    assert total == DERIVATION.population_size, (
-        f'the three class sizes sum to {total} but the population is '
-        f'{DERIVATION.population_size} — a retained document was classified into no class.'
+    assert total == len(retained), (
+        f'the three class sizes sum to {total} but an independent re-walk retains '
+        f'{len(retained)} document(s) — a retained document was classified into no class.'
+    )
+    assert DERIVATION.population_size == len(retained), (
+        f'the published population size is {DERIVATION.population_size} but an independent '
+        f're-walk retains {len(retained)} — the published number is not the swept corpus.'
     )
     assert len(set(DERIVATION.widened) | set(DERIVATION.narrow) | set(DERIVATION.none)) == total, (
         'a document appears in more than one class, so the classes are not disjoint and the '

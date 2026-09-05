@@ -38,6 +38,8 @@ frontmatter in `standards/`.
 
 The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
 
+**This document's own application of it**, which the shared statement does not carry: an absent `ci_final_status` is an **unread** CI verdict, never a green one. The two calls this document makes — `ci_complete_precondition resolve` and `ci_verify run` — are the pair that decides whether CI was read at all, so a missing verdict here fails closed rather than passing through.
+
 ## Executor contract
 
 The dispatcher runs the executor inline through the executor proxy after
