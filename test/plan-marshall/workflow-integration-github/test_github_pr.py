@@ -1287,12 +1287,23 @@ def test_fetch_findings_reports_no_drift_for_an_unattributable_refusal(
     assert result['refusal_pattern_drift'] == []
 
 
-#: The CLOSED publish-shape vocabulary a ``participation_evidence`` entry may name —
-#: owned by ``automatic-review/standards/bot-participation-contract.md`` § "Evidence
-#: taxonomy". A registry record may declare any subset of it, so "a shape this bot
-#: does not publish" is always a pairing against THIS set rather than against a
-#: remembered example.
-_PUBLISH_SHAPE_VOCABULARY: tuple[str, ...] = ('inline', 'issue_comment', 'review_body')
+#: The publish-shape vocabulary DERIVED from the live registry: the union of every
+#: registered bot's declared ``participation_evidence``, sorted so the pairing order
+#: below is deterministic.
+#:
+#: Derived rather than transcribed, for two reasons. A hand-written tuple is the
+#: hand-maintained copy of a source-defined enumeration that
+#: ``persona-plan-marshall-agent/standards/agent-behavior-rules.md`` forbids: a shape
+#: newly declared by a registry record would be invisible to it, so
+#: ``_undeclared_shape_pairs()`` would keep returning an older pair, its non-empty
+#: guard would still pass, and the new shape would be exercised by nothing. And a
+#: written-out tuple can name a shape NO registered bot publishes, which pairs against
+#: every bot and proves nothing about per-bot admissibility — the union makes every
+#: generated pairing "a shape SOME bot publishes but THIS one does not", which is the
+#: property the case below asserts.
+_PUBLISH_SHAPE_VOCABULARY: tuple[str, ...] = tuple(
+    sorted({shape for bot in bot_registry.bot_kinds() for shape in bot_registry.participation_evidence(bot)})
+)
 
 
 def _undeclared_shape_pairs() -> list[tuple[str, str]]:

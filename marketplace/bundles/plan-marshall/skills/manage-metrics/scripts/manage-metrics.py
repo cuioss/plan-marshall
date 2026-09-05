@@ -3113,11 +3113,19 @@ def cmd_record_dispatch_boundary(args: argparse.Namespace) -> dict:
     """Record one tabular row per phase Task dispatch termination.
 
     Appends a TOON row to ``work/metrics-dispatch-boundaries-{phase}.toon``
-    capturing why a phase Task dispatch ended (voluntary checkpoint,
-    bare task_complete return, harness cancellation, error, unknown) along
-    with the dispatched agent's <usage> totals at the time of return. The
-    accumulating file becomes the audit trail for diagnosing
-    `[OUTCOME]`-coverage gaps caused by agent-initiated re-dispatch.
+    capturing why a phase Task dispatch ended, along with the dispatched agent's
+    <usage> totals at the time of return. The accumulating file becomes the audit
+    trail for diagnosing `[OUTCOME]`-coverage gaps caused by agent-initiated
+    re-dispatch.
+
+    The admissible causes are exactly the members of
+    ``DISPATCH_TERMINATION_CAUSES`` in this module — argparse rejects any other
+    value — and the ones whose classification is not self-evident carry their
+    rationale as an inline comment at that declaration. They are deliberately
+    named there rather than restated here: this docstring is not one of the
+    mirrors the structural-equality test guards, so a copy of the set living in
+    it would be unguarded by construction and would drift the next time a member
+    is added.
 
     The file uses the same column layout for every row so plan-retrospective
     fact extractors can ingest it without a schema lookup. Each row carries the

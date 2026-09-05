@@ -710,10 +710,12 @@ That is a claim about the drop in isolation, and it is deliberately **not** an a
 say a dropped comment can never resolve to a blocking state. Credit still has to clear the currency
 rule below, and `review_completeness.classify_bot()` assigns `participated_but_empty` only to a
 bot present in `proven_participants` — a bot absent from `participated_bots[]` falls through to an
-unproven state that blocks the quorum. For a bot declaring `participation_requires_update` (of which
-PR-Agent is the only one that opts into the contentless drop) an unchanged clean comment is
-credited while the merge candidate is the commit it was reviewed against, and denied once HEAD
-advances past that commit, so once a loop-back or force-push moves HEAD a dropped clean Guide resolves
+unproven state that blocks the quorum. The reading that follows turns on a CONDITION, not on a named
+roster: it applies to a bot that declares `participation_requires_update` **and** opts into the
+contentless drop by declaring `contentless_review_markers` — PR-Agent is one such bot, and any
+registry doc can add another. For such a bot an unchanged clean comment is credited while the merge
+candidate is the commit it was reviewed against, and denied once HEAD advances past that commit, so
+once a loop-back or force-push moves HEAD a dropped clean Guide resolves
 to **`participated_stale`, not `absent`** — the producer saw the comment in a declared publish shape
 and reports the bot in `stale_participation_bots[]`, so what it records is a review that predates the
 merge candidate rather than a reviewer that never engaged. That is the intended reading of a stale
