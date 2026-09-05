@@ -181,14 +181,28 @@ The light lane is **not exempt** from the narrowing obligation either, and for t
      --plan-id {plan_id} --affected-files {affected_files_csv}
    ```
 
-   Parse `retained`, `dropped`, `provenance`, `report`, and `narrowed` from the returned TOON.
+   **Branch on `status` BEFORE parsing anything else.** The verb has three outcomes, not two, and on the third none of the success fields exist:
+
+   - **`status: error`** — the verb could not evaluate (`plan_dir_not_found`, `domains_unreadable`, `marshal_not_readable`, or `no_skill_domains_configured`). `retained`, `dropped`, `provenance`, `report`, and `narrowed` are ABSENT from the payload. STOP the narrowing step here: do NOT parse the success fields, do NOT run steps 3, 3b or 4, and do NOT write `domains` or `domains_provenance`. Surface the returned `error` and `message` instead, via a decision-log entry:
+
+     ```bash
+     python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+       decision --plan-id {plan_id} --level WARNING \
+       --message "(plan-marshall:phase-3-outline:light-lane) Domain narrowing could not evaluate — domain-narrow returned {error}: {message}. No domains or domains_provenance write was made."
+     ```
+
+     Improvising past this branch is the prohibited move: a fabricated `domains_provenance` value, an invented empty `report`, or a `set-list` call with no values would each render a verb that could not look as one that looked and found nothing. Leaving both keys unwritten is correct here: an absent `domains_provenance` means "never examined", which is precisely what happened.
+
+   - **`status: success`** — and only then, parse `retained`, `dropped`, `provenance`, `report`, and `narrowed`, and continue to step 3.
 
 3. On `narrowed: true`, persist the retained set:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-references:manage-references set-list \
-     --plan-id {plan_id} --field domains --values {retained_csv}
+     --plan-id {plan_id} --field domains --values "{retained_csv}"
    ```
+
+   The placeholder is double-quoted because `retained_csv` is legitimately empty when every domain was dropped — `narrowed` is `true` whenever anything was dropped, so an all-dropped run reaches this call with nothing to interpolate. `--values` is REQUIRED and takes no default, so an unquoted empty interpolation renders a bare `--values` and argparse rejects the call; quoted, it passes the empty string, which `set-list` accepts as "clear the list" — the correct outcome for that state.
 
 3b. On **both** outcomes — the write is NOT gated on `narrowed` — persist the provenance, so a plan the pass examined and found nothing droppable in stays distinguishable from one the pass never ran on:
 
@@ -199,13 +213,15 @@ The light lane is **not exempt** from the narrowing obligation either, and for t
 
    `{provenance_rendering}` is the compact one-line `{domain}={legs}` form described in [`manage-references` § Schema Fields](../../manage-references/SKILL.md) — `none` where no leg claimed the domain. Do NOT invent a rendering here: both lanes write the same key, so the format has exactly one home.
 
-4. Emit the returned `report` verbatim — on **both** outcomes, including `narrowed: false` — into the envelope's user-facing summary and a decision-log entry:
+4. Emit the returned `report` verbatim — on **both** success outcomes, including `narrowed: false` — to its two declared sinks. First, a decision-log entry:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
      decision --plan-id {plan_id} --level INFO \
      --message "(plan-marshall:phase-3-outline) {report}"
    ```
+
+   Second, the envelope's return TOON `domain_narrow_report` field (see § Output), which carries the report **verbatim** to the orchestrator that reports this phase's outcome to the user. Those two are the report's sinks; `display_detail` is NOT one of them. Its shape is fixed by the Output contract below and capped at 80 ASCII characters, so it cannot carry the report verbatim and does not claim to — which is why the report needs a field of its own rather than a sentence asserting a summary line it never reaches.
 
 The verb owns the narrowing decision; this envelope invokes it, persists its result, and reports it. The rationale for the rule — why end-of-outline is the site, why a `narrowed: false` outcome is recorded rather than skipped, and the three-legged safety bound the verb applies — lives in [`../SKILL.md`](../SKILL.md) § Domain Narrowing. Do NOT restate it here.
 
@@ -239,7 +255,10 @@ planning_lane: light
 deliverable_count: {N}
 discovery_bound_hit: false
 qgate_validation_required: false
+domain_narrow_report: {the domain-narrow report, verbatim; see Step 5c}
 ```
+
+`domain_narrow_report` carries the `report` string returned by `manage-config domain-narrow`, verbatim and unedited, on **both** of the verb's success outcomes — a `narrowed: false` run reports too. It is the report's user-facing sink: the orchestrator surfaces the narrowing outcome from this field when it reports the phase boundary, because `display_detail`'s fixed shape above and its 80-character ASCII cap cannot carry the report itself. The field is **omitted** when the verb returned `status: error` — nothing was evaluated, so there is no report, and an empty string would render a pass that could not look as one that looked and found nothing. It is absent from the escalate shape below by construction: the ratchet returns at Step 4, before Step 5c ever runs.
 
 `qgate_validation_required` is always `false` on the light lane — the bounded read set + premise-check + escalation ratchet are the light lane's verification, and the deep-lane q-gate-validation is reached only via escalation.
 

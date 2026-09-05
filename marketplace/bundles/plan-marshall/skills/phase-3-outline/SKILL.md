@@ -580,14 +580,28 @@ This is the one point in the lifecycle where narrowing is both possible and safe
      --plan-id {plan_id} --affected-files {affected_files_csv}
    ```
 
-   Parse `retained`, `dropped`, `provenance`, `report`, and `narrowed` from the returned TOON.
+   **Branch on `status` BEFORE parsing anything else.** The verb has three outcomes, not two, and on the third none of the success fields exist:
+
+   - **`status: error`** — the verb could not evaluate (`plan_dir_not_found`, `domains_unreadable`, `marshal_not_readable`, or `no_skill_domains_configured`). `retained`, `dropped`, `provenance`, `report`, and `narrowed` are ABSENT from the payload. STOP the narrowing step here: do NOT parse the success fields, do NOT run steps 3, 3b or 4, and do NOT write `domains` or `domains_provenance`. Surface the returned `error` and `message` instead, via a decision-log entry:
+
+     ```bash
+     python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+       decision --plan-id {plan_id} --level WARNING \
+       --message "(plan-marshall:phase-3-outline) Domain narrowing could not evaluate — domain-narrow returned {error}: {message}. No domains or domains_provenance write was made."
+     ```
+
+     Improvising past this branch is the prohibited move: a fabricated `domains_provenance` value, an invented empty `report`, or a `set-list` call with no values would each render a verb that could not look as one that looked and found nothing — the exact collapse the verb's three-outcome contract exists to prevent. Leaving both keys unwritten is correct here: an absent `domains_provenance` means "never examined", which is precisely what happened.
+
+   - **`status: success`** — and only then, parse `retained`, `dropped`, `provenance`, `report`, and `narrowed`, and continue to step 3.
 
 3. **On `narrowed: true`**, persist the retained set:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-references:manage-references set-list \
-     --plan-id {plan_id} --field domains --values {retained_csv}
+     --plan-id {plan_id} --field domains --values "{retained_csv}"
    ```
+
+   The placeholder is double-quoted because `retained_csv` is legitimately empty when every domain was dropped — `narrowed` is `true` whenever anything was dropped, so an all-dropped run reaches this call with nothing to interpolate. `--values` is REQUIRED and takes no default, so an unquoted empty interpolation renders a bare `--values` and argparse rejects the call; quoted, it passes the empty string, which `set-list` accepts as "clear the list" — the correct outcome for that state.
 
 3b. **On BOTH outcomes**, persist the provenance — the write is NOT gated on `narrowed`:
 
@@ -600,13 +614,15 @@ This is the one point in the lifecycle where narrowing is both possible and safe
 
    **Why this write is unconditional.** The key's stated purpose is to make a narrowed set distinguishable from an over-provisioned one after the fact. Gating it on `narrowed: true` defeats exactly that: the key would then be equally absent for a plan the narrowing pass EXAMINED and found nothing droppable in, and for a plan the pass never ran on — collapsing "looked and found nothing" into "never looked", which is the failure mode this plan exists to remove. A `narrowed: false` run has a full provenance record (every domain claimed by some leg); writing it is what proves the pass ran.
 
-4. **Emit the returned `report`** — verbatim, on **both** outcomes — into the phase's user-facing summary and a decision-log entry:
+4. **Emit the returned `report`** — verbatim, on **both** success outcomes — to its two declared sinks. First, a decision-log entry:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
      decision --plan-id {plan_id} --level INFO \
      --message "(plan-marshall:phase-3-outline) {report}"
    ```
+
+   Second, the phase return TOON's `domain_narrow_report` field (see § Return Results), which carries the report **verbatim** to the orchestrator that reports this phase's outcome to the user. Those two are the report's sinks; `display_detail` is NOT one of them. Its shape is fixed by the output contract and capped at 80 ASCII characters, so it cannot carry the report verbatim and does not claim to — which is why the report needs a field of its own rather than a sentence asserting a summary line it never reaches.
 
 **A `narrowed: false` result is a valid recorded outcome, not a skip.** Nothing was droppable, and both the report (step 4) and the provenance write (step 3b) still fire — so "nothing to narrow" stays distinguishable from "narrowing never ran". Only step 3's `domains` write is conditional on `narrowed: true`, and only because rewriting an unchanged set is a no-op.
 
@@ -664,8 +680,11 @@ deliverable_count: {N}
 qgate_passed: {true|false}
 qgate_pending_count: {0 if no findings}
 qgate_validation_required: {true|false}
+domain_narrow_report: {the domain-narrow report, verbatim; see § Domain Narrowing}
 outline_prompt: {optional — present only when the leaf has open operator questions; see § Operator-input contract}
 ```
+
+`domain_narrow_report` carries the `report` string returned by `manage-config domain-narrow`, verbatim and unedited, on **both** of the verb's success outcomes — a `narrowed: false` run reports too. It is the report's user-facing sink: the orchestrator surfaces the narrowing outcome from this field when it reports the phase boundary, because `display_detail`'s fixed shape and 80-character ASCII cap cannot carry the report itself. The field is **omitted** when the verb returned `status: error` — nothing was evaluated, so there is no report, and an empty string would render a pass that could not look as one that looked and found nothing.
 
 `outline_prompt` is the batched prompt-required envelope described in § "Operator-input contract" — the leaf emits it (alongside an otherwise-complete `status: success`) only when outline authoring surfaced open operator design questions, and omits it entirely when the outline resolved cleanly. The orchestrator fires ONE batched `AskUserQuestion` over it and re-dispatches phase-3-outline at most once with the answers baked in.
 
@@ -685,7 +704,9 @@ qgate_validation_required: {true|false}
 
 `display_detail` shape on success: `"track {track}, {deliverable_count} deliverables, {qgate_pending_count} pending"` (e.g. `"track complex, 5 deliverables, 0 pending"`); ≤80 chars, ASCII, no trailing period. On error, carries the short error label from § Error Handling.
 
-All other fields (`plan_id`, `track`, `deliverable_count`, `qgate_passed`, `qgate_pending_count`, `qgate_validation_required`, and the optional `outline_prompt` batched-question envelope) are documented in "Return Results" above.
+`display_detail` is NOT a sink for the domain-narrow report: its shape is fixed above and its 80-character ASCII cap cannot carry the report verbatim. The report rides `domain_narrow_report` instead.
+
+All other fields (`plan_id`, `track`, `deliverable_count`, `qgate_passed`, `qgate_pending_count`, `qgate_validation_required`, `domain_narrow_report`, and the optional `outline_prompt` batched-question envelope) are documented in "Return Results" above.
 
 ---
 
