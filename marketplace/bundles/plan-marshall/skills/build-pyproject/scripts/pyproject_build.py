@@ -88,9 +88,10 @@ def cmd_parse(args) -> int:
     rather than a test id. ``_slice_record`` projects only
     ``test``/``file``/``line``/``detail``, so the ``category`` discriminator
     (``test_failure`` vs ``test_collection_error``) does NOT reach slice output;
-    it survives on the standard parse rows (``data.issues[]``), on a failing
-    ``run``'s ``errors[]`` rows, and — via ``Issue.category`` — as the stored
-    finding's ``rule``.
+    it survives on the standard parse rows (``data.issues[]`` — reachable under
+    ``--format json`` only, since the default TOON formatter's field whitelist
+    drops ``data``), on a failing ``run``'s ``errors[]`` rows, and — via
+    ``Issue.category`` — as the stored finding's ``rule``.
     """
     if getattr(args, 'failures_detail', False) or getattr(args, 'test_name', None):
         result = slice_failure_details(
