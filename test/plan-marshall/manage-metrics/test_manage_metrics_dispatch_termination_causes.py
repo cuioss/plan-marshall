@@ -133,11 +133,12 @@ class TestCloseValueScopeDiscriminator:
 class TestDispatchTerminationCausesEnum:
     """Structural assertions on the DISPATCH_TERMINATION_CAUSES tuple."""
 
-    def test_enum_contains_exactly_twelve_values(self):
-        """The enum extends to exactly 12 entries — the legacy 5, the phase-6/phase-4
-        extension (5), the budget_yield phase-5 dispatch-loop signal, plus
-        returned_with_findings (the productive-loop-back member)."""
-        assert len(manage_metrics.DISPATCH_TERMINATION_CAUSES) == 12
+    def test_enum_contains_exactly_thirteen_values(self):
+        """The enum extends to exactly 13 entries — the legacy 5, the phase-6/phase-4
+        extension (5), the budget_yield phase-5 dispatch-loop signal,
+        returned_with_findings (the productive-loop-back member), plus
+        baseline_drift (the recoverable phase-5 drift return)."""
+        assert len(manage_metrics.DISPATCH_TERMINATION_CAUSES) == 13
 
     def test_enum_contains_returned_with_findings_cause(self):
         """The productive-non-completion member is present.
@@ -148,6 +149,19 @@ class TestDispatchTerminationCausesEnum:
         member was added.
         """
         assert 'returned_with_findings' in manage_metrics.DISPATCH_TERMINATION_CAUSES
+
+    def test_enum_contains_baseline_drift_cause(self):
+        """The recoverable-non-completion member is present.
+
+        `plan-marshall/workflow/execution.md` § "After execution-context returns"
+        has always classified a `baseline_drift` return as its own termination
+        cause AND stated that `error` EXCLUDES it, but the member was absent from
+        the declaring tuple: a genuine drift return was rejected at argparse
+        (exit 2) and had to be recorded as `error`, the one bucket that workflow
+        rules out, leaving the ledger unable to separate a recoverable drift from
+        a fatal failure. RED before the member was added.
+        """
+        assert 'baseline_drift' in manage_metrics.DISPATCH_TERMINATION_CAUSES
 
     def test_enum_preserves_legacy_five_values(self):
         """The legacy 5 entries remain present so prior callers do not break."""

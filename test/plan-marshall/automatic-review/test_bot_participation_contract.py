@@ -397,6 +397,15 @@ class TestThisRepositorysSettledConfiguration:
         a merge authorization; moving the reviewer back to ``optional_bots`` is not
         one of them.
 
+        A SECOND blocking shape rides the same requirement, and it is not the
+        quota: CodeRabbit's registry record declares
+        ``participation_requires_update``, so a review predating the merge
+        candidate resolves ``participated_stale`` rather than crediting. For a
+        required bot that verdict blocks too, and its remedy is the re-review
+        trigger the pipeline already posts — not a configuration change. The two
+        shapes are worth telling apart, because only the quota one is answered by
+        splitting the diff.
+
         Sourcery stays optional. Optional is NOT dropped: an optional bot is still
         fetched, classified and triaged, and its findings are acted on. It simply
         cannot hold the step open by hitting its weekly diff-character cap.

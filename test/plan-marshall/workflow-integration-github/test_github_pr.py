@@ -272,10 +272,10 @@ def test_a_deduped_comment_is_still_credited_as_participating(plan_context, monk
 
     Both observables are pinned on ONE fetch: at an unchanged HEAD every comment
     is dropped by the storage dedup, YET every participating bot stays credited
-    byte-identically to the first fetch. It covers a
-    ``participation_requires_update`` bot (cuioss-review-bot, credited via the SHA-current
-    currency arm) alongside the presence-credited bots, so the guard holds across
-    both participation shapes.
+    byte-identically to the first fetch. The ``_COMMENTS`` fixture spans both
+    participation shapes — the currency-tested bots (every bot declaring
+    ``participation_requires_update``, credited via the SHA-current currency arm)
+    alongside the presence-credited ones — so the guard holds across both.
     """
     plan_id = 'gh-pr-dedup-decoupled'
     # A fixed head SHA across both fetches: the requires_update bot stays SHA-current on
@@ -1287,22 +1287,70 @@ def test_fetch_findings_reports_no_drift_for_an_unattributable_refusal(
     assert result['refusal_pattern_drift'] == []
 
 
+#: The publish-shape vocabulary DERIVED from the live registry: the union of every
+#: registered bot's declared ``participation_evidence``, sorted so the pairing order
+#: below is deterministic.
+#:
+#: Derived rather than transcribed, for two reasons. A hand-written tuple is the
+#: hand-maintained copy of a source-defined enumeration that
+#: ``persona-plan-marshall-agent/standards/agent-behavior-rules.md`` forbids: a shape
+#: newly declared by a registry record would be invisible to it, so
+#: ``_undeclared_shape_pairs()`` would keep returning an older pair, its non-empty
+#: guard would still pass, and the new shape would be exercised by nothing. And a
+#: written-out tuple can name a shape NO registered bot publishes, which pairs against
+#: every bot and proves nothing about per-bot admissibility — the union makes every
+#: generated pairing "a shape SOME bot publishes but THIS one does not", which is the
+#: property the case below asserts.
+_PUBLISH_SHAPE_VOCABULARY: tuple[str, ...] = tuple(
+    sorted({shape for bot in bot_registry.bot_kinds() for shape in bot_registry.participation_evidence(bot)})
+)
+
+
+def _undeclared_shape_pairs() -> list[tuple[str, str]]:
+    """Every ``(bot_kind, publish_shape)`` pairing the registry leaves UNDECLARED.
+
+    Derived from the live registry rather than hand-listed. A literal bot name here
+    is the hand-maintained roster this suite's population-derivation rule forbids: it
+    goes stale on the next registry edit, silently, exactly as a ``coderabbit`` /
+    ``issue_comment`` literal did the moment CodeRabbit declared all three shapes.
+    """
+    return [
+        (bot, shape)
+        for bot in bot_registry.bot_kinds()
+        for shape in _PUBLISH_SHAPE_VOCABULARY
+        if shape not in bot_registry.participation_evidence(bot)
+    ]
+
+
 def test_fetch_findings_reports_no_drift_outside_a_declared_publish_shape(
     plan_context, monkeypatch
 ):
     """Scoped to the bot's declared ``participation_evidence`` shapes.
 
-    ``issue_comment`` is not one of CodeRabbit's declared publish shapes, so a body
-    arriving in it is not evidence that the wording it uses when REVIEWING has
-    drifted. Same bot and same body as the positive case — only the shape differs.
+    A body arriving in a shape the bot does NOT declare is no evidence that the
+    wording it uses when REVIEWING has drifted, so the drift channel stays silent
+    while the refusal itself is still recognised and attributed. Same drifted body as
+    the positive case — only the (bot, shape) pairing differs.
+
+    The pairing is DERIVED from the registry and guarded NON-EMPTY, so a registry
+    that left no undeclared pairing FAILS this case rather than passing it over
+    nothing.
     """
     plan_id = 'gh-pr-refusal-drift-shape'
+    undeclared_pairs = _undeclared_shape_pairs()
+    assert undeclared_pairs, (
+        'every registered bot declares every publish shape, so the registry offers no '
+        '(bot_kind, undeclared shape) pairing — this case would assert nothing.'
+    )
+    bot_kind, undeclared_shape = undeclared_pairs[0]
+    login_for_kind = {kind: login for login, kind in bot_registry.login_to_bot_kind().items()}
+
     comments = [
         {
-            'id': 'cr-drifted-issue',
-            'author': 'coderabbitai',
+            'id': 'drifted-undeclared-shape',
+            'author': login_for_kind[bot_kind],
             'thread_id': '',
-            'kind': 'issue_comment',
+            'kind': undeclared_shape,
             'body': _DRIFTED_CODERABBIT_NOTICE,
             'resolved': False,
         },
@@ -1311,9 +1359,9 @@ def test_fetch_findings_reports_no_drift_outside_a_declared_publish_shape(
 
     result = _run_fetch(134, plan_id)
 
-    assert 'issue_comment' not in bot_registry.participation_evidence('coderabbit')
+    assert undeclared_shape not in bot_registry.participation_evidence(bot_kind)
     # Still recognised as a refusal — only the DRIFT channel is scoped.
-    assert result['refused_bots'] == ['coderabbit']
+    assert result['refused_bots'] == [bot_kind]
     assert result['refusal_pattern_drift'] == []
 
 

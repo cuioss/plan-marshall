@@ -100,6 +100,17 @@ DISPATCH_TERMINATION_CAUSES = (
     # `mark-step-done` recorded `outcome: loop_back` (see
     # phase-6-finalize/SKILL.md item 5c).
     'returned_with_findings',
+    # A phase-5-execute dispatch that returned `status: error, error:
+    # baseline_drift` because `baseline-reconcile` reported `conflict_count > 0`
+    # — upstream commits overlap the worktree's in-flight changes. The
+    # orchestrator answers it with a `2-refine` re-cycle rather than a failure,
+    # so it is a RECOVERABLE non-completion, not a fatal one. `execution.md`
+    # § "After execution-context returns" has always documented it as its own
+    # termination cause AND stated that `error` EXCLUDES it, but the member was
+    # missing here: a genuine drift return was rejected at argparse (exit 2) and
+    # had to be recorded as `error`, the one bucket the doc rules out, leaving
+    # the ledger unable to tell a drift return from a fatal failure.
+    'baseline_drift',
 )
 
 # ---------------------------------------------------------------------------
@@ -3102,11 +3113,19 @@ def cmd_record_dispatch_boundary(args: argparse.Namespace) -> dict:
     """Record one tabular row per phase Task dispatch termination.
 
     Appends a TOON row to ``work/metrics-dispatch-boundaries-{phase}.toon``
-    capturing why a phase Task dispatch ended (voluntary checkpoint,
-    bare task_complete return, harness cancellation, error, unknown) along
-    with the dispatched agent's <usage> totals at the time of return. The
-    accumulating file becomes the audit trail for diagnosing
-    `[OUTCOME]`-coverage gaps caused by agent-initiated re-dispatch.
+    capturing why a phase Task dispatch ended, along with the dispatched agent's
+    <usage> totals at the time of return. The accumulating file becomes the audit
+    trail for diagnosing `[OUTCOME]`-coverage gaps caused by agent-initiated
+    re-dispatch.
+
+    The admissible causes are exactly the members of
+    ``DISPATCH_TERMINATION_CAUSES`` in this module — argparse rejects any other
+    value — and the ones whose classification is not self-evident carry their
+    rationale as an inline comment at that declaration. They are deliberately
+    named there rather than restated here: this docstring is not one of the
+    mirrors the structural-equality test guards, so a copy of the set living in
+    it would be unguarded by construction and would drift the next time a member
+    is added.
 
     The file uses the same column layout for every row so plan-retrospective
     fact extractors can ingest it without a schema lookup. Each row carries the

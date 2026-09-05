@@ -420,7 +420,7 @@ See `plan-retrospective` for the correlation logic.
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics record-dispatch-boundary \
   --plan-id {plan_id} --phase {phase} \
-  --termination-cause {voluntary_checkpoint|task_complete_returned_verbatim|budget_yield|harness_cancellation|error|clean_exit_queue_empty|step_complete|blocked_user_review|blocked_session_restart|task_batch_complete|agent_returned|returned_with_findings} \
+  --termination-cause {voluntary_checkpoint|task_complete_returned_verbatim|budget_yield|harness_cancellation|error|clean_exit_queue_empty|step_complete|blocked_user_review|blocked_session_restart|task_batch_complete|agent_returned|returned_with_findings|baseline_drift} \
   [--total-tokens N] [--tool-uses N] [--duration-ms N] \
   [--input-tokens N] [--output-tokens N] [--cache-read-input-tokens N] [--cache-creation-input-tokens N]
 ```
@@ -440,6 +440,7 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics reco
   - `task_batch_complete` — the dispatch completed the batch of tasks assigned to it.
   - `agent_returned` — the agent returned without one of the more specific causes above applying.
   - `returned_with_findings` — the dispatch returned findings and signalled a loop-back: a PRODUCTIVE non-completion (the dispatched step examined its surface and filed findings, and those findings send control back to an upstream phase). Stamped by the finalize dispatcher when a dispatched step's `mark-step-done` recorded `outcome: loop_back` (see [phase-6-finalize/SKILL.md](../phase-6-finalize/SKILL.md) item 5c). It is the dispatch-ledger counterpart of the step-completion `loop_back` outcome, so a findings-bearing loop-back stays distinguishable from a fatal `error` in the ledger.
+  - `baseline_drift` — a phase-5-execute dispatch returned `status: error, error: baseline_drift` because `baseline-reconcile` reported `conflict_count > 0` (upstream commits overlap the worktree's in-flight changes). The orchestrator answers it with a `2-refine` re-cycle rather than a failure, so it is a RECOVERABLE non-completion; [plan-marshall/workflow/execution.md](../plan-marshall/workflow/execution.md) § "After execution-context returns" classifies it as its own cause and states that `error` EXCLUDES it, so recording a drift return as `error` would put it in the one bucket that workflow rules out.
 
   Because this bullet list, the command block above, and the `record-dispatch-boundary` block under **Canonical invocations** all enumerate the same set, a value added to `DISPATCH_TERMINATION_CAUSES` must be added to all three in the same change; the contract test in `test/plan-marshall/manage-metrics/test_manage_metrics.py` discovers every occurrence in this document and fails until each one matches the tuple.
 
@@ -767,7 +768,7 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics accu
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics record-dispatch-boundary \
   --plan-id PLAN_ID --phase PHASE \
-  --termination-cause {voluntary_checkpoint|task_complete_returned_verbatim|budget_yield|harness_cancellation|error|clean_exit_queue_empty|step_complete|blocked_user_review|blocked_session_restart|task_batch_complete|agent_returned|returned_with_findings} \
+  --termination-cause {voluntary_checkpoint|task_complete_returned_verbatim|budget_yield|harness_cancellation|error|clean_exit_queue_empty|step_complete|blocked_user_review|blocked_session_restart|task_batch_complete|agent_returned|returned_with_findings|baseline_drift} \
   [--total-tokens N] [--tool-uses N] [--duration-ms N] \
   [--input-tokens N] [--output-tokens N] [--cache-read-input-tokens N] [--cache-creation-input-tokens N]
 ```

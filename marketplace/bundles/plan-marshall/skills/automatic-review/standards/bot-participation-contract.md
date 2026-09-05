@@ -218,7 +218,7 @@ observed comment's `kind` is one of the publish shapes its own registry doc decl
 |---------------|---------------------------|-------------|
 | `inline` | A per-line comment can only be produced by reading the diff at that line. | CodeRabbit, PR-Agent |
 | `review_body` | The bot's review summary is emitted by a completed review pass over the diff. | CodeRabbit, Sourcery |
-| `issue_comment` | A PR-level comment a bot declares as a publish shape is a review artifact it emitted against the diff — it counts on its own terms, not because the bot has no other shape. | PR-Agent |
+| `issue_comment` | A PR-level comment a bot declares as a publish shape is a review artifact it emitted against the diff — it counts on its own terms, not because the bot has no other shape. | CodeRabbit, PR-Agent |
 
 A shape's evidentiary weight is a property of the shape, never of how many shapes the declaring bot
 has. A bot may declare several: PR-Agent publishes `issue_comment` unconditionally and `inline` when
@@ -541,8 +541,8 @@ gaps in any one bot's record:
 
 - **A bot whose `refusal_patterns[]` is empty rests entirely on the arms that do not read its
   registry record.** Nothing about that is hypothetical: PR-Agent declares an empty list today, and it
-  is the bot this repository's merge barrier treats as *required* — so the reviewer whose silence
-  actually blocks a merge is the one with no registry counterexample on file.
+  is one of the bots this repository's merge barrier treats as *required* — so a reviewer whose
+  silence actually blocks a merge has no registry counterexample on file.
 - **A refusal REWORDED past every enumerated shape is recognised as an
   `unrecognised_refusal`** — not filed as review feedback, and not credited as participation. It
   resolves to the `refused_unknown` member, because an arm that could not read the notice supports no
@@ -749,10 +749,12 @@ That is a claim about the drop in isolation, and it is deliberately **not** an a
 say a dropped comment can never resolve to a blocking state. Credit still has to clear the currency
 rule below, and `review_completeness.classify_bot()` assigns `participated_but_empty` only to a
 bot present in `proven_participants` — a bot absent from `participated_bots[]` falls through to an
-unproven state that blocks the quorum. For a bot declaring `participation_requires_update` (today,
-only PR-Agent, the sole bot that opts into the contentless drop) an unchanged clean comment is
-credited while the merge candidate is the commit it was reviewed against, and denied once HEAD
-advances past that commit, so once a loop-back or force-push moves HEAD a dropped clean Guide resolves
+unproven state that blocks the quorum. The reading that follows turns on a CONDITION, not on a named
+roster: it applies to a bot that declares `participation_requires_update` **and** opts into the
+contentless drop by declaring `contentless_review_markers` — PR-Agent is one such bot, and any
+registry doc can add another. For such a bot an unchanged clean comment is credited while the merge
+candidate is the commit it was reviewed against, and denied once HEAD advances past that commit, so
+once a loop-back or force-push moves HEAD a dropped clean Guide resolves
 to **`participated_stale`, not `absent`** — the producer saw the comment in a declared publish shape
 and reports the bot in `stale_participation_bots[]`, so what it records is a review that predates the
 merge candidate rather than a reviewer that never engaged. That is the intended reading of a stale
@@ -950,8 +952,8 @@ Four further surfaces mention participation or the movement test and were **swep
 excluded** from the taxonomy's documented consumer set, so their absence reads as a decision rather
 than as a gap: `_github_pr.py` (the private helper the producer calls — it computes the observation
 and carries no taxonomy vocabulary of its own), `standards/coderabbit.md` and `standards/sourcery.md`
-(neither bot declares `participation_requires_update`, so neither can reach `participated_stale`, and
-a registry doc declares per-bot data rather than taxonomy semantics), and
+(a registry doc declares per-bot data rather than taxonomy semantics; `sourcery.md` additionally
+declares no `participation_requires_update`, so that bot cannot reach `participated_stale`), and
 `test_pr_wait_for_comments_predicate.py` (it pins the await predicate's movement arm, which is the
 *input* to the currency test rather than the classification it feeds).
 

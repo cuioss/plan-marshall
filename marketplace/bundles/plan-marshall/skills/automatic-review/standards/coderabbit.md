@@ -38,10 +38,21 @@ trigger_comment: "@coderabbitai review"
 trigger_semantics: requires_explicit_trigger   # the trigger comment above must be posted
 completion_check_name: "CodeRabbit"   # in-progress check-run polled to completion by the wait step
 honors_skip_label: true          # central cuioss/coderabbit config skips PRs labelled skip-bot-review
+# ORDERING IS LOAD-BEARING: `issue_comment` is APPENDED after the existing two and must never be
+# placed before them — `review_body` stays at element [0]. `bot_registry.participation_evidence(bot)`
+# returns the declared order, and test_bot_participation_contract.py reads element [0] to synthesize
+# each parametrized bot's observed publish shape — prepending would silently re-point that harness at
+# a different shape without failing any case.
 participation_evidence:          # the publish shapes that prove THIS bot reviewed
   - review_body                  # its review summary comment
   - inline                       # its per-line review comments
-participation_requires_update: false   # each review appends new comments; presence IS the movement
+  - issue_comment                # its standalone summary comment, edited in place on re-review
+participation_requires_update: true    # the summary comment is EDITED in place on re-review, so
+                                 # continued presence proves only that it reviewed at some earlier
+                                 # commit. Evidence therefore has to clear the currency test. Its
+                                 # arms are NOT restated at this annotation — see
+                                 # bot-participation-contract.md § "The currency rule", the
+                                 # cross-bot contract that defines them.
 ignore_patterns:
   - "<!-- This is an auto-generated comment: summarize by coderabbit.ai -->"  # walkthrough / summary
   - "## Walkthrough"                                                          # walkthrough heading
@@ -154,14 +165,27 @@ would classify CodeRabbit's ordinary successful reviews as refusals, and unionin
 the distinction. See [`bot-participation-contract.md`](bot-participation-contract.md) §
 "A refusal is never noise — it is a branch".
 
-## Participation evidence — `review_body`, `inline`
+## Participation evidence — `review_body`, `inline`, `issue_comment`, plus update movement
 
-CodeRabbit publishes both a review summary and per-line comments, so either shape is evidence it
-reviewed this diff. Each review appends new comments rather than editing one in place, which is why
-`participation_requires_update` is `false` — a newly-observed comment of either kind is itself the
-movement. Note the ceiling this evidence carries: it proves CodeRabbit *participated*, never that
-the review was good. See [`bot-participation-contract.md`](bot-participation-contract.md) §
-"Evidence taxonomy".
+CodeRabbit publishes a review summary, per-line comments, and a standalone summary comment, so any
+one of those three shapes is evidence it reviewed this diff.
+
+**Presence alone is not enough — the update must move.** CodeRabbit **edits its summary comment in
+place** on re-review rather than appending a fresh one, so the comment's continued
+presence proves only that the bot reviewed at some *earlier* commit; after a force-push or a
+loop-back an unedited comment would silently credit CodeRabbit with reviewing code it never saw.
+That is the false-positive direction, and `participation_requires_update: true` closes it: every
+declared-shape comment must clear the currency test, which anchors the credit to the merge candidate
+through the plan-scoped **currency ledger** — the sole source that test reads. The credit holds when
+the SHA the ledger recorded for this comment IS the merge candidate, when the ledger holds no row for
+it and this fetch observes it at a resolvable merge candidate the comment does not demonstrably
+predate, or when its `updated_at` differs from the value recorded at the last credit. An unresolvable
+merge-candidate SHA withholds it on every arm. A failed currency test is emphatically **not**
+`absent`: CodeRabbit published, so the remedy is the `@coderabbitai review` re-review trigger rather
+than escalating a reviewer that never engaged.
+
+Note the ceiling this evidence carries: it proves CodeRabbit *participated*, never that the review
+was good. See [`bot-participation-contract.md`](bot-participation-contract.md) § "Evidence taxonomy".
 
 ## Rate-limit class — `awaitable_window`
 
