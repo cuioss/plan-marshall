@@ -105,10 +105,10 @@ def _read_plans(path: Path) -> list[dict]:
     return list(json.loads(path.read_text(encoding='utf-8'))['plans'])
 
 
-def _race(worker, count: int = WRITER_COUNT) -> list:
-    """Run ``count`` writers concurrently and return their results in order."""
-    with ThreadPoolExecutor(max_workers=count) as pool:
-        return list(pool.map(worker, range(count)))
+def _race(worker) -> list:
+    """Run :data:`WRITER_COUNT` writers concurrently, returning results in order."""
+    with ThreadPoolExecutor(max_workers=WRITER_COUNT) as pool:
+        return list(pool.map(worker, range(WRITER_COUNT)))
 
 
 @pytest.mark.xdist_group(name="orchestrator_add_row_contention")
