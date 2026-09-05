@@ -676,14 +676,21 @@ def cmd_update(args) -> dict:
         # one refuses `done`/`failed` too (`_ALREADY_OPENED_TASK_STATUSES`),
         # because a closing call on an already-run task is a RETRY, whereas
         # `done`/`failed` -> `in_progress` through THIS verb is a genuine
-        # reopening whose opening base is the current HEAD. A caller that opens
-        # a task through this verb must land a baseline, or the artifact channel
-        # fires for one entry path and is silently inert for the other. Gating on the
-        # real transition is what stops a REPEATED `update --status in_progress`
-        # on a baseline-less task from stamping one at the current HEAD — after
-        # that task's earlier edits have landed, which the later diff would then
-        # omit. The capture is idempotent as well, so whichever path runs first
-        # owns the SHA and a later transition cannot move it forward.
+        # reopening and is therefore allowed to REACH the capture. A caller that
+        # opens a task through this verb must land a baseline, or the artifact
+        # channel fires for one entry path and is silently inert for the other.
+        # Gating on the real transition is what stops a REPEATED `update --status
+        # in_progress` on a baseline-less task from stamping one at the current
+        # HEAD — after that task's earlier edits have landed, which the later diff
+        # would then omit.
+        #
+        # ⛔ Reaching the capture is not the same as writing. Only a task carrying
+        # NO baseline gets one here at the current HEAD; the capture is idempotent,
+        # so a reopened task that already has a SHA KEEPS it and goes on diffing
+        # against its first run's base. That yields a superset (the reopened run
+        # re-reports its earlier run's files) and that is the deliberate direction —
+        # re-basing would shrink the list to the post-reopening edits and drop
+        # files the task really did write.
         if args.status == 'in_progress' and prior_task_status != 'in_progress':
             capture_task_start_sha(task)
 
