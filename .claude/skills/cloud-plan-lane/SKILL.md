@@ -1407,12 +1407,16 @@ clear), and it leaves no comment to handle, so **merge-gate condition 3 is unaff
 does not do is disappear into `reviewed` — the whole point of the value is that a reader can tell a
 reviewer that examined the diff and found nothing from one that filed findings.
 
-⛔ **This subsection is the single definition of both value sets** — the verdict vocabulary in the
-table above, and the `required` / `optional` / `unclassified` `Class` values. Every other passage that
-needs either one **cross-references this subsection and enumerates neither**, the § Report participation
-record included. A value set written down twice goes stale in one of the two copies, and this contract
-already applies exactly that remedy one section away for condition 6's arms (⛔ *"Do not enumerate the
-arms here … Read them from condition 6"*). Read them from here.
+⛔ **This step is the single definition of every value set it introduces** — the verdict vocabulary in
+the table above, the `required` / `optional` / `unclassified` `Class` values, and the `Reopens?` values
+under *Every verdict that reports no review also records whether it reopens* below. The rule is stated
+over that population rather than over a count of it: a count is itself a claim that goes stale the
+moment a set is added, which is the drift the rule exists to prevent, committed by the rule itself.
+Every other passage that needs any of them **cross-references the subsection that defines it and
+enumerates none of them**, the § Report participation record included. A value set written down twice
+goes stale in one of the two copies, and this contract already applies exactly that remedy one section
+away for condition 6's arms (⛔ *"Do not enumerate the arms here … Read them from condition 6"*). Read
+each from the subsection that defines it.
 
 ⛔ **An unreadable surface is not an empty one, and `silent` MUST NOT be used for it.** `silent` claims
 a reviewer published nothing; a run whose read failed cannot make that claim, and recording it as
@@ -2284,7 +2288,7 @@ cross-named by `.github/workflows/pr-agent.yml` — never a list transcribed her
 reviewer, each verdict derived from the stored comment bodies (§ Step 7), never from a check state or
 a summary:
 
-| Reviewer (`author_login`) | Class — ⛔ **do not enumerate the values here**: read them from § Step 7's *Record per-reviewer participation* subsection, which is their single definition | Verdict — ⛔ **do not enumerate the values here either**: read them from the verdict table in that same § Step 7 subsection. Annotate `(suppressed by label)` where § Step 8 condition 5 calls for it | Reopens? (`yes` / `no` / `unknown`; blank for a completed review, and blank where the label suppressed this reviewer's invitation and was still in place at the gate — a PR-open-only reviewer on an `applied-then-removed` PR takes `no`, not blank) | Body evidence / reason — including **which publish surfaces this verdict was read from** (§ Step 7; a verdict naming none is `unreadable`, not `silent`), and for an **errored-surface** `unreadable`, the surface and the error, plus whatever positive control was taken |
+| Reviewer (`author_login`) | Class — ⛔ **do not enumerate the values here**: read them from § Step 7's *Record per-reviewer participation* subsection, which is their single definition | Verdict — ⛔ **do not enumerate the values here either**: read them from the verdict table in that same § Step 7 subsection. Annotate `(suppressed by label)` where § Step 8 condition 5 calls for it | Reopens? — ⛔ **do not enumerate the values here**: read them from § Step 7's *Every verdict that reports no review also records whether it reopens* subsection, which is their single definition. Blank for a completed review, and blank where the label suppressed this reviewer's invitation and was still in place at the gate — a PR-open-only reviewer on an `applied-then-removed` PR takes `no`, not blank | Body evidence / reason — including **which publish surfaces this verdict was read from** (§ Step 7; a verdict naming none is `unreadable`, not `silent`), and for an **errored-surface** `unreadable`, the surface and the error, plus whatever positive control was taken |
 |---|---|---|---|---|
 | … | … | … | … | … |
 
