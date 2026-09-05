@@ -632,7 +632,8 @@ def _freshness_verdict(monkeypatch, plan_id: str, notation: str) -> dict:
       That pin also means ``exempt`` is UNREACHABLE in this module, which is why
       every refusal below is written against both permitting members rather than
       against ``fresh`` alone: the predicate must stay correct if the pin is ever
-      lost, and ``!= 'fresh'`` would then be satisfied by an open gate.
+      lost, and an inequality against that single token would then be satisfied
+      by an open gate.
     * ``resolve_expected_notations`` is pinned to ``{notation}`` — the dispatched
       notation is derived from the live build-wrapper roster in sorted order, so
       it is whichever build system sorts first, NOT one this repository builds

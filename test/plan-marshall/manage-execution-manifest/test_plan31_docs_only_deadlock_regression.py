@@ -48,8 +48,9 @@ bases: ``fresh`` asserts a build observed this exact tree, while ``exempt``
 asserts only that no build was owed and nothing was examined. The docs-only route
 this file reproduces is the second one, so the assertions below name ``exempt``.
 ⛔ Every refusal assertion here is therefore written against BOTH permitting
-members — ``status not in ('fresh', 'exempt')`` — never against ``!= 'fresh'``
-alone, which a returned ``exempt`` would satisfy while the gate was wide open.
+members — ``status not in ('fresh', 'exempt')`` — never as an inequality against
+the single ``fresh`` token, which a returned ``exempt`` would satisfy while the
+gate was wide open.
 
 THE THIRD VERDICT MUST NOT RE-OPEN THIS. The authority's vocabulary gained an
 ``unknown`` value for the case where the footprint cannot be resolved at all.
@@ -297,9 +298,10 @@ def test_an_unknown_verdict_reaches_neither_permitting_status(
     keyed on ``decision != 'build'`` would return ``exempt`` here and would let any
     plan with an unresolvable worktree walk straight past the freshness check.
 
-    The refusal is asserted against BOTH permitting members. ``!= 'fresh'`` alone
-    would be satisfied by exactly the wrong outcome — an ``exempt`` return, which
-    is the rubber stamp this case exists to forbid.
+    The refusal is asserted against BOTH permitting members. An inequality
+    against the single ``fresh`` token would be satisfied by exactly the wrong
+    outcome — an ``exempt`` return, which is the rubber stamp this case exists to
+    forbid.
     """
     plan_id = 'plan31-unknown-verdict'
     _seed_plan(plan_context, plan_id)
