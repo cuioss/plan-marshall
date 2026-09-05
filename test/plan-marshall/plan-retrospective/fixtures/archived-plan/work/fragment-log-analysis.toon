@@ -1,6 +1,15 @@
 status: success
 aspect: log_analysis
 plan_id: lesson-2026-04-18-13-001
+build_time:
+  total_build_seconds: 42.5
+  build_count: 3
+  suspect_count: 0
+  pass: 3
+  error: 0
+  timeout: 0
+  killed: 0
+  status_unknown: 0
 counts:
   work_entries: 80
   decision_entries: 12
@@ -23,6 +32,54 @@ slowest_scripts[3]{notation,duration_ms}:
   plan-marshall:manage-worktree:manage-worktree,850.0
   plan-marshall:manage-metrics:manage-metrics,480.0
   plan-marshall:manage-tasks:manage-tasks,430.0
+script_cost_rollup:
+  population: plan_script_execution_log
+  ceiling_seconds: 30.0
+  calls_at_or_over_ceiling: 0
+  total_calls: 30
+  total_duration_ms: 9870.0
+  distinct_scripts: 3
+  ranked_count: 3
+  sub_precision_calls: 2
+  ranked[3]{notation,calls,cumulative_ms,share_pct,max_ms,sub_precision_calls}:
+    plan-marshall:manage-tasks:manage-tasks,14,4300.0,43.6,430.0,1
+    plan-marshall:manage-metrics:manage-metrics,9,3120.0,31.6,480.0,0
+    plan-marshall:manage-worktree:manage-worktree,7,2450.0,24.8,850.0,1
 top_tags[1]{tag,count}:
   INFO,80
 top_error_tags[0]:
+context_position_cost:
+  total_rows: 6
+  measured_rows: 4
+  unmeasured_rows: 1
+  no_tool_use_rows: 1
+  by_phase[6]{phase,rows,measured_rows,cache_read_per_tool_use}:
+    1-init,1,1,10240.0
+    2-refine,1,0,unmeasured
+    3-outline,1,1,18300.0
+    4-plan,1,1,24800.0
+    5-execute,1,1,41200.0
+    6-finalize,1,0,undefined
+  position_multiple: 4.02
+  position_multiple_basis: "5-execute/1-init"
+global_log_signals:
+  logs_present: true
+  folded_log_files: 2
+  total_lines: 210
+  error_count: 0
+  slow_call_count: 1
+  fixture_leak_count: 0
+  fixture_leak_signatures[0]:
+  unattributable_calls: 1
+  cost_rollup:
+    population: folded_global_logs
+    ceiling_seconds: 30.0
+    calls_at_or_over_ceiling: 0
+    total_calls: 12
+    total_duration_ms: 480.0
+    distinct_scripts: 2
+    ranked_count: 2
+    sub_precision_calls: 0
+    ranked[2]{notation,calls,cumulative_ms,share_pct,max_ms,sub_precision_calls}:
+      plan-marshall:manage-logging:manage-logging,8,300.0,62.5,90.0,0
+      plan-marshall:manage-status:manage-status,4,180.0,37.5,70.0,0

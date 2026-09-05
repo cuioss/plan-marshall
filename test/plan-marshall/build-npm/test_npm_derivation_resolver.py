@@ -19,9 +19,16 @@ absent:
 
 1. ``@sample/cli`` spells its dependency ``@SAMPLE/API`` — the same package under
    npm's case rules but textually different, so an unfolded join loses the edge.
-2. ``packages/unnamed`` declares no ``name`` while another module depends on the
-   string ``@sample/core``; a resolver that fell back to the directory name would
-   invent a package identity npm never published.
+2. ``packages/unnamed`` declares no ``name``, and ``@sample/api`` depends on the
+   string ``unnamed`` — the identity a directory-name fallback would invent for
+   it. The no-fallback rule is stated normatively in three shipped documents, but
+   until that one dependency line existed nothing in the fixture depended on the
+   invented string, so mutating ``_package_name`` to fall back to
+   ``module_data['name']`` left the whole suite green. With the line in place the
+   mutant manufactures ``('@sample/api', 'unnamed')``, which reddens both the
+   exact-edge-set assertion and the never-an-edge-target one. Under the shipped
+   resolver ``unnamed`` publishes nothing, so the string joins with no module,
+   the edge set is unchanged, and it is not a suppression either — no note.
 3. ``@sample/cli`` reaches ``@sample/core`` only through ``devDependencies``, so a
    join that dropped the dev scope would lose that edge.
 """

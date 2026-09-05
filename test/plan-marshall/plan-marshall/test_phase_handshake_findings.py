@@ -5,9 +5,24 @@
 actionable-vs-knowledge blocking rule.
 
 Split from test_phase_handshake.py: covers the two pluggable invariants
-(``pending_findings_by_type``, ``pending_findings_blocking_count``), the
-intra-finalize re-capture boundary guards, the qgate aggregator, and the
-fixed-rule contract over the hardcoded actionable set.
+(``pending_findings_by_type``, ``pending_findings_blocking_count``), repeat
+captures at the guarded phase, the qgate aggregator, and the fixed-rule contract
+over the hardcoded actionable set.
+
+⛔ **WHAT "GUARDED BOUNDARY" MEANS HERE, because the names below used to claim
+more.** The blocking-findings raise is armed by a STATE, not by a position in
+the finalize step order: it fires on any ``capture`` / ``findings-check`` whose
+``--phase`` is ``6-finalize``, and on nothing else. Every case in this module
+passes that phase directly. None of them exercises a step-to-step boundary,
+because the shipped tree has exactly TWO call sites that arm the gate — the
+pre-merge store gate in ``phase-6-finalize/standards/branch-cleanup.md``
+§ "Pre-merge blocking-findings store gate", and
+``inv.assert_finalize_findings_clean`` at the lifecycle completion boundary. An
+``automatic-review → branch-cleanup`` or ``sonar-roundtrip → next`` step
+boundary issues no such call and never did; ``findings-pipeline.md`` states
+outright that "no orchestration step ever issued one". A test here therefore
+pins the phase-armed predicate, and calling it a step-boundary guard credited
+this file with coverage the tree does not have.
 
 The blocking partition is HARDCODED in ``_invariants._ACTIONABLE_FINDING_TYPES``
 (``build-error``, ``test-failure``, ``lint-issue``, ``sonar-issue``, ``qgate``,
@@ -49,10 +64,9 @@ PLAN_IDS = (
     'pf-block-qgate',
     'pf-block-sonar',
     'pf-by-type',
-    'pf-intra-autoreview',
-    'pf-intra-loop',
-    'pf-intra-sonar',
     'pf-knowledge',
+    'pf-names-pr-comment',
+    'pf-names-sonar-issue',
     'pf-no-actionable',
     'pf-passive',
     'pf-persist',
@@ -61,6 +75,7 @@ PLAN_IDS = (
     'pf-qgate-route',
     'pf-rejected-only',
     'pf-rejected-plus-pending',
+    'pf-repeat-capture',
     'pf-verify-strict',
 )
 
@@ -185,10 +200,17 @@ def test_capture_at_finalize_boundary_blocks_when_actionable_pending(
     assert store.get_row('pf-block-finalize', '6-finalize') is None
 
 
-def test_capture_blocks_automated_review_to_branch_cleanup_boundary(
+def test_capture_at_the_guarded_phase_blocks_on_a_pending_sonar_issue(
     plan_context, only_pending_findings_invariants, stub_metadata, stub_query_counts, stub_qgate_count
 ) -> None:
-    """automatic-review → branch-cleanup boundary is guarded via re-capture."""
+    """``sonar-issue`` is in the actionable set, so a pending one refuses the capture.
+
+    Per-TYPE coverage of the phase-armed refusal, which is why it sits beside the
+    ``build-error`` case above rather than duplicating it: the six actionable
+    types reach the count by two different routes (``qgate`` via the aggregator,
+    every other type via the generic per-type query), so a type-by-type case is
+    the only thing that shows a given type is wired at all.
+    """
     stub_query_counts['sonar-issue'] = 2
 
     result = cmds.cmd_capture(_ns(plan_id='pf-block-autoreview', phase='6-finalize'))
@@ -200,10 +222,16 @@ def test_capture_blocks_automated_review_to_branch_cleanup_boundary(
     assert store.get_row('pf-block-autoreview', '6-finalize') is None
 
 
-def test_capture_blocks_sonar_roundtrip_next_boundary(
+def test_capture_at_the_guarded_phase_blocks_on_a_pending_pr_comment(
     plan_context, only_pending_findings_invariants, stub_metadata, stub_query_counts, stub_qgate_count
 ) -> None:
-    """sonar-roundtrip → next boundary is guarded via re-capture."""
+    """``pr-comment`` is in the actionable set, so a pending one refuses the capture.
+
+    The same per-type coverage as the ``sonar-issue`` case above, for the type an
+    automated review files. It says nothing about WHEN a reviewer's comment is
+    filed or which finalize step runs next — only that a pending one is counted
+    when the capture carries the guarded phase.
+    """
     stub_query_counts['pr-comment'] = 3
 
     result = cmds.cmd_capture(_ns(plan_id='pf-block-sonar', phase='6-finalize'))
@@ -600,69 +628,86 @@ def test_capture_routes_only_qgate_via_aggregator(
     assert 'pr-comment' in type_query_types
 
 
-# --- (f) intra-finalize boundary re-capture (production scenarios) -------
+# --- (f) the refusal names its type, and a repeat capture clears ---------
+#
+# These do not exercise any step-to-step boundary — see the module docstring for
+# why there is none to exercise. What they add over section (b) is the
+# blocking_types MEMBERSHIP assertion (section (b) asserts the count and the
+# per-type row, not that the refusal names the offending type) and the repeat
+# call that shows a capture is not one-shot.
 
 
-def test_pending_pr_comment_blocks_automated_review_to_branch_cleanup(
+def test_the_refusal_names_pr_comment_among_the_blocking_types(
     plan_context,
     only_pending_findings_invariants,
     stub_metadata,
     stub_query_counts,
     stub_qgate_count,
 ) -> None:
-    """automatic-review → branch-cleanup intra-finalize re-capture."""
+    """The refusal payload NAMES the offending type, not only its count.
+
+    A caller reading only ``blocking_count`` learns that something blocks; the
+    ``blocking_types`` membership is what tells it WHICH surface to go and clear.
+    """
     stub_query_counts['pr-comment'] = 2
 
-    result = cmds.cmd_capture(_ns(plan_id='pf-intra-autoreview', phase='6-finalize'))
+    result = cmds.cmd_capture(_ns(plan_id='pf-names-pr-comment', phase='6-finalize'))
 
     assert result['status'] == 'error'
     assert result['error'] == 'blocking_findings_present'
     assert result['blocking_count'] == 2
     assert 'pr-comment' in result['blocking_types']
     assert result['per_type']['pr-comment'] == 2
-    assert store.get_row('pf-intra-autoreview', '6-finalize') is None
+    assert store.get_row('pf-names-pr-comment', '6-finalize') is None
 
 
-def test_pending_sonar_issue_blocks_sonar_roundtrip_to_next(
+def test_the_refusal_names_sonar_issue_among_the_blocking_types(
     plan_context,
     only_pending_findings_invariants,
     stub_metadata,
     stub_query_counts,
     stub_qgate_count,
 ) -> None:
-    """sonar-roundtrip → next intra-finalize re-capture."""
+    """The same membership property for the other externally-filed type."""
     stub_query_counts['sonar-issue'] = 1
 
-    result = cmds.cmd_capture(_ns(plan_id='pf-intra-sonar', phase='6-finalize'))
+    result = cmds.cmd_capture(_ns(plan_id='pf-names-sonar-issue', phase='6-finalize'))
 
     assert result['status'] == 'error'
     assert result['error'] == 'blocking_findings_present'
     assert result['blocking_count'] == 1
     assert 'sonar-issue' in result['blocking_types']
     assert result['per_type']['sonar-issue'] == 1
-    assert store.get_row('pf-intra-sonar', '6-finalize') is None
+    assert store.get_row('pf-names-sonar-issue', '6-finalize') is None
 
 
-def test_intra_finalize_recapture_clears_after_resolution(
+def test_a_repeat_capture_clears_once_the_finding_stops_being_pending(
     plan_context,
     only_pending_findings_invariants,
     stub_metadata,
     stub_query_counts,
     stub_qgate_count,
 ) -> None:
-    """The intra-finalize re-capture loop-back contract: clears after fix."""
+    """The gate re-reads the store: a refused capture is not a latched verdict.
+
+    Two captures at the same guarded phase against the same plan, differing only
+    in what the pending query returns. The first refusing and the second writing
+    a row is what shows the refusal is derived from the store on every call
+    rather than remembered — which is the property a caller that fixes a finding
+    and re-issues the gate depends on.
+    """
     stub_query_counts['pr-comment'] = 1
 
-    first = cmds.cmd_capture(_ns(plan_id='pf-intra-loop', phase='6-finalize'))
+    first = cmds.cmd_capture(_ns(plan_id='pf-repeat-capture', phase='6-finalize'))
     assert first['status'] == 'error'
     assert first['error'] == 'blocking_findings_present'
 
     stub_query_counts['pr-comment'] = 0
 
-    second = cmds.cmd_capture(_ns(plan_id='pf-intra-loop', phase='6-finalize'))
+    second = cmds.cmd_capture(_ns(plan_id='pf-repeat-capture', phase='6-finalize'))
     assert second['status'] == 'success'
     assert second['invariants']['pending_findings_blocking_count'] in (0, '0')
-    row = store.get_row('pf-intra-loop', '6-finalize')
+    row = store.get_row('pf-repeat-capture', '6-finalize')
     assert row is not None
 
 
@@ -862,8 +907,16 @@ def test_findings_check_error_envelope_matches_composite_capture(
     plan_context, only_pending_findings_invariants, stub_metadata, stub_query_counts, stub_qgate_count
 ) -> None:
     """(c) The blocking-findings error payload field set is identical between
-    ``findings-check`` and the composite ``capture`` so the two intra-finalize
-    callers branch on an interchangeable envelope."""
+    ``findings-check`` and the composite ``capture``.
+
+    Interchangeability matters because the two verbs are reached from DIFFERENT
+    places and a caller may meet either: ``findings-check`` from the pre-merge
+    store gate in ``branch-cleanup``, and ``capture`` from an ordinary phase
+    transition. Neither is a "step boundary" caller — the gate is armed by the
+    ``--phase 6-finalize`` argument, not by where in the finalize order the call
+    sits — so what this pins is envelope parity between the two verbs, nothing
+    about the order they run in.
+    """
     stub_query_counts['pr-comment'] = 3
 
     capture_result = cmds.cmd_capture(_ns(plan_id='fc-parity-cap', phase='6-finalize'))
@@ -897,9 +950,15 @@ def test_findings_check_fails_closed_on_unevaluable_query(
 ) -> None:
     """A partial query failure (per-type query returns ``None``) makes the gate
     fail CLOSED with ``query_failed`` rather than failing open as
-    ``status: success``. The intra-finalize boundary must not advance to
-    branch-cleanup without proof that no blocking findings remain — returning
-    success on an unevaluable invariant would be a fail-open gate."""
+    ``status: success``.
+
+    The consequence is concrete rather than abstract: the one shipped caller of
+    this verb is the pre-merge store gate in
+    ``phase-6-finalize/standards/branch-cleanup.md``, which merges on a
+    ``success``. Returning success on an unevaluable invariant would therefore
+    admit a merge with no proof that the store is clean — the fail-open shape
+    this refusal exists to rule out.
+    """
     monkeypatch.setattr(inv, '_query_pending_count_for_type', lambda _p, _t: None)
 
     result = cmds.cmd_findings_check(_ns(plan_id='fc-query-fail', phase='6-finalize'))
