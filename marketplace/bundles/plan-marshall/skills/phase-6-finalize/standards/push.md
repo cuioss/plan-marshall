@@ -41,11 +41,19 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks \
   pre-commit-verify-freshness --plan-id {plan_id}
 ```
 
-Parse `status` from the returned TOON. The contract is **fail-closed**: only `status: fresh` permits the executor to proceed. Any other status halts `push` immediately — record `outcome=failed` with a `display_detail` carrying the reason, the current working-tree `worktree_sha`, and the ledger path so the orchestrator's recovery path has the structured signal it needs to dispatch a fresh `verify` run. The gate is tier-agnostic and build-tool-agnostic — it scans the unified change-ledger for a `kind=build` entry matching the current `worktree_sha`, then cross-checks the `notation` of **every** such row against the build notations this project's architecture resolves (one corroborated row is enough; only a set in which none corroborates is a refusal); see `marketplace/bundles/plan-marshall/skills/manage-change-ledger/SKILL.md`.
+Parse `status` from the returned TOON. The contract is **fail-closed**: exactly two of the gate's four status members permit the executor to proceed — `fresh` and `exempt` — and they permit **on different bases**, which is why the branch below reads the member rather than treating any non-refusal as a pass. Any other status halts `push` immediately — record `outcome=failed` with a `display_detail` carrying the reason, the current working-tree `worktree_sha`, and the ledger path so the orchestrator's recovery path has the structured signal it needs to dispatch a fresh `verify` run.
+
+The gate reaches its verdict by one of **two disjoint routes**, and the status member names which one ran:
+
+- **The exemption route.** The gate first consults the single build/no-build authority. On a `not_necessary` verdict no `kind=build` entry could legally exist for this footprint, so the gate returns `exempt` carrying the authority's own `reason` **before any ledger row is read**. Nothing about the working tree was examined; the push is permitted because no build was ever owed, not because one was observed.
+- **The ledger-scanned route.** Otherwise the gate scans the unified change-ledger for a `kind=build` entry matching the current `worktree_sha`, then cross-checks the `notation` of **every** such row against the build notations this project's architecture resolves (one corroborated row is enough; only a set in which none corroborates is a refusal), and returns `fresh` naming the row it matched; see `marketplace/bundles/plan-marshall/skills/manage-change-ledger/SKILL.md`. The gate is tier-agnostic and build-tool-agnostic on this route.
+
+⛔ **Do not collapse the two permitting members, and do not branch on the absence of a refusal.** A predicate of the shape "`status` is not `stale` and not `undecidable`" admits any future member the gate gains, which is exactly the fail-open ADR-009 forbids. Read the member.
 
 | `status` value | `push` action |
 |----------------|---------------|
-| `fresh` | Proceed to **Execution** below. |
+| `fresh` | Proceed to **Execution** below. A build was observed against this exact working tree. Carry `basis=ledger-verified` into the outcome record (see **Mark Step Complete**). |
+| `exempt` | Proceed to **Execution** below. No build was owed, so **nothing was examined** — the push proceeds on the exemption, not on evidence. Carry `basis=exempt-unscanned` and the gate's `reason` into the outcome record, so a reader of the finalize record can tell which basis this push rested on. |
 | `stale` | Halt. Record `outcome=failed` with `display_detail` `"stale: {reason} observed_status={observed_status} worktree_sha={worktree_sha} ledger={ledger_path}"` (substitute `-` for `observed_status` when absent). Do NOT push. |
 | `undecidable` | Halt. Record `outcome=failed` with `display_detail` `"undecidable: {reason}"` (`reason` is `no_registry` or `head_unresolvable`). Do NOT push. |
 
@@ -89,7 +97,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 - **No reconciliation record names the current HEAD**: the `stale` is genuine un-built source drift. Fail closed per the table above — halt, record `outcome=failed`, do NOT push.
 
-The `--force` escape survives only as the orchestrator-only, log-recorded, never-auto-invoked manual override for the genuine-drift case (mirroring phase-5 Step 12a's escape) — it is NOT the mechanism for the finalize-internal re-stale, which is now handled by the reconciliation record above. When the orchestrator drives finalize with `--force` AND the gate returned a non-`fresh` status with NO matching reconciliation record, the dispatcher records a `decision`-level WARNING (`(plan-marshall:phase-6-finalize:push) Worktree-freshness precondition overridden via --force — proceeding with status={status}` — append `reason={reason}` only when status is `undecidable`; the `stale` branch does not emit a `reason` field) and then allows `push` to proceed.
+The `--force` escape survives only as the orchestrator-only, log-recorded, never-auto-invoked manual override for the genuine-drift case (mirroring phase-5 Step 12a's escape) — it is NOT the mechanism for the finalize-internal re-stale, which is now handled by the reconciliation record above. When the orchestrator drives finalize with `--force` AND the gate returned a refusing status (`stale` or `undecidable`) with NO matching reconciliation record, the dispatcher records a `decision`-level WARNING (`(plan-marshall:phase-6-finalize:push) Worktree-freshness precondition overridden via --force — proceeding with status={status}` — append `reason={reason}` only when status is `undecidable`; the `stale` branch does not emit a `reason` field) and then allows `push` to proceed.
 
 ## Execution
 
@@ -128,10 +136,22 @@ Resolve `{branch}` — the feature branch just pushed — from the worktree HEAD
 git -C {worktree_path} rev-parse --abbrev-ref HEAD
 ```
 
-Pass a `--display-detail` value alongside `--outcome done` so the output-template renderer can surface the push outcome, substituting the resolved `{branch}`:
+Pass a `--display-detail` value alongside `--outcome done` so the output-template renderer can surface the push outcome. The detail carries the resolved `{branch}` **and the basis the freshness precondition passed on**, taken from the status member read in § "Freshness precondition" — `ledger-verified` for `fresh`, `exempt-unscanned` for `exempt`. Recording the basis is what makes a completed push auditable: without it the record is identical whether a build observed this tree or nothing was examined at all, and no reader of the finalize record can recover the difference.
+
+On the `fresh` (ledger-verified) route:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step push --outcome done \
-  --display-detail "pushed {branch}"
+  --display-detail "pushed {branch} basis=ledger-verified"
 ```
+
+On the `exempt` (unscanned) route, carry the gate's own `reason` as well, so the record names why no build was owed:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
+  --plan-id {plan_id} --phase 6-finalize --step push --outcome done \
+  --display-detail "pushed {branch} basis=exempt-unscanned reason={reason}"
+```
+
+The `display_detail` length ceiling still binds. When the gate's `reason` would push the detail past it, truncate the `reason` text — never the `basis=` token, which is the field this record exists to carry.

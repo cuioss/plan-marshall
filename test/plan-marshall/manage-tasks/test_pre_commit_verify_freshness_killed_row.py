@@ -192,24 +192,30 @@ def test_malformed_manifest_is_irrelevant_to_the_gate(
 # retired ``documentation_only`` / ``lint_only`` exemptions). It consults the one
 # authority COMMAND-FREE — "does anything in this footprint need a build?" — and:
 #
-#   * ``not_necessary`` -> short-circuit to ``fresh`` BEFORE the ledger scan,
+#   * ``not_necessary`` -> short-circuit to ``exempt`` BEFORE the ledger scan,
 #     forwarding the verdict's OWN ``reason`` verbatim. No ``kind=build`` entry
 #     could legally exist for a footprint that needs no build, so demanding one
-#     would be an impossible demand rather than a gate.
+#     would be an impossible demand rather than a gate. ``exempt`` is a distinct
+#     status member, NOT ``fresh``: it permits, but on the basis that nothing was
+#     owed and nothing was examined, so a consumer cannot admit an unexamined
+#     tree by branching on ``fresh`` alone.
 #   * ``build``         -> fall through to the ledger scan unchanged.
 #
 # The manifest is written in several cases below purely as a DECOY: whatever its
 # step list looks like, it must not move the outcome.
 
 
-def test_not_necessary_verdict_short_circuits_to_fresh(
+def test_not_necessary_verdict_short_circuits_to_exempt(
     plan_context, monkeypatch, tmp_path
 ) -> None:
-    """A ``not_necessary`` verdict -> fresh, before the ledger is ever consulted.
+    """A ``not_necessary`` verdict -> exempt, before the ledger is ever consulted.
 
     Fail-closed boundary values (``None`` sha, missing ledger file) prove the
     short-circuit fires ahead of them: had the gate reached the scan, the ``None``
     sha would have forced ``undecidable / head_unresolvable``.
+
+    The status is asserted as ``exempt`` and NOT as ``fresh``: this route examined
+    nothing, so it must not share the token that asserts a build observed the tree.
     """
     plan_dir = plan_context.plan_dir_for('freshness-no-build-needed')
     _write_status(plan_dir)
@@ -222,7 +228,7 @@ def test_not_necessary_verdict_short_circuits_to_fresh(
 
     result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-no-build-needed'))
 
-    assert result['status'] == 'fresh', result
+    assert result['status'] == 'exempt', result
     assert result['plan_id'] == 'freshness-no-build-needed'
     # No ledger fields — the short-circuit returns before the scan.
     assert 'worktree_sha' not in result

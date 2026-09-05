@@ -128,9 +128,14 @@ Every entry carries a `kind` discriminator, a `worktree_sha`, and a
   survives to the boundary. A job whose whole process tree is killed dies
   BEFORE the boundary runs and stamps nothing at all: **a missing row is
   itself a signal** (no row + zero output bytes is the whole-tree-kill
-  signature). The freshness gate matches on `worktree_sha` + `status ==
-  success` alone and never inspects the tier, the background flag, or the
-  exit code.
+  signature). On the route that reads this ledger at all, the freshness gate
+  matches on `worktree_sha` + `status == success` alone and never inspects the
+  tier, the background flag, or the exit code. That route is not the gate's only
+  one — a footprint the build/no-build authority rules needs no build is exempted
+  before any row is read, and the gate says so with its own status member. The
+  contract lives in
+  [`../manage-tasks/SKILL.md`](../manage-tasks/SKILL.md) § "Pre-Commit Verify
+  Freshness" and is deliberately not restated here.
 - **`kind=change`** — written by the phase-5 execute loop after each deliverable
   completes-and-commits. Fields: `kind: "change"`, `deliverable_id` (or
   `task_id`), `commit_sha`, `changed_paths` (the **git-sourced** list, stored
@@ -317,7 +322,7 @@ from _ledger_core import (
 | `phase-5-execute` Step 10a chain-tail | produces | `append --kind change` after each per-deliverable commit |
 | `build-server-client` `submit` verb | produces | imports `job_record` + `append_entry`; writes `kind=job` at submit time for re-attach |
 | `build-server-client` `wait` re-attach | consumes | imports `read_entries`; reads the latest `kind=job` for the plan to recover `job_id` |
-| `manage-tasks:pre-commit-verify-freshness` gate | consumes | imports `read_entries` + `compute_worktree_sha`; scans `kind=build` by `status == success` + `worktree_sha`, then cross-checks each matching row's `notation` against the project's architecture-resolved build notations |
+| `manage-tasks:pre-commit-verify-freshness` gate | consumes | imports `read_entries` + `compute_worktree_sha`; scans `kind=build` by `status == success` + `worktree_sha`, then cross-checks each matching row's `notation` against the project's architecture-resolved build notations. This is the gate's ledger-reading route only — an exempted footprint returns before the scan and consumes no entry at all |
 | `plan-retrospective:analyze-logs` `summarize_build_ledger` | consumes | imports `read_entries`; keeps `kind=build` rows for one `plan_id` and partitions their `status` into `pass`/`error`/`timeout`/`killed`/`status_unknown` alongside the `duration_seconds` sum |
 
 The two `kind=build` consuming rows have a completeness FLOOR that can be
