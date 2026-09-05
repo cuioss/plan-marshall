@@ -343,10 +343,16 @@ def cmd_classify(args: argparse.Namespace) -> int:
     """CLI handler for classify command."""
     result = classify_profile(args.profile_id)
 
-    print(f'profile_id: {result["profile_id"]}')
-    print(f'classification: {result["classification"]}')
-    print(f'reason: {result["reason"]}')
-    print(f'confidence: {result["confidence"]}')
+    print(
+        serialize_toon(
+            {
+                'profile_id': result['profile_id'],
+                'classification': result['classification'],
+                'reason': result['reason'],
+                'confidence': result['confidence'],
+            }
+        )
+    )
 
     return 0
 

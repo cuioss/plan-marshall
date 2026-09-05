@@ -7,12 +7,24 @@ this module is the test that compares them. It answers two questions over a
 population it DERIVES from the tree at test time, never from a hand-typed list:
 
 1. **Does every TOON emitter write through the canonical serializer?**
-   The population is every function in ``marketplace/bundles/**/scripts`` whose
-   name matches the TOON naming probe. An emitter is a member of that population
-   that prints to stdout. Every emitter must reach ``serialize_toon`` /
-   ``parse_toon`` in its OWN body — file-level import presence is the wrong
-   predicate, because a module can import the canonical serializer at the top and
-   still hand-roll its own emission below it.
+   Two derivations answer this, because either alone would leave a hole. The
+   first is every function in ``marketplace/bundles/**/scripts`` whose NAME
+   matches the TOON naming probe; an emitter is a member of that population that
+   prints to stdout. Every emitter must reach ``serialize_toon`` / ``parse_toon``
+   in its OWN body — file-level import presence is the wrong predicate, because a
+   module can import the canonical serializer at the top and still hand-roll its
+   own emission below it.
+
+   The naming probe alone cannot substantiate a claim over *every* emitter: a
+   function's name is precisely the property a new emitter is free to choose, so
+   one named without the token would sit outside the population the guard reports
+   its clean result over — absence read as coverage. The second derivation is
+   therefore name-blind, selecting on BEHAVIOUR (a stdout ``print`` of a literal
+   shaped like a TOON scalar line), and the two are cross-checked. What the
+   cross-check asserts is that no name-blind emitter BYPASSES the canonical
+   serializer while being invisible to the naming probe; a canonically-emitting
+   function the probe happens to miss is not a defect, so the guard is over
+   escaped offenders rather than over set equality.
 
 2. **Does the canonical pair round-trip the values that break a hand-rolled one?**
    ``serialize_toon`` → ``parse_toon`` must return the payload it was given for
@@ -28,7 +40,7 @@ serializer IS a property of every emitter's output.
 
 Three controls keep the two answers from being vacuous:
 
-- The derived population size is published and asserted non-zero, as is the
+- Both derived population sizes are published and asserted non-zero, as is the
   emitter subset — a property test over an empty population passes for the wrong
   reason.
 - A fixture emitter that prints TOON WITHOUT the canonical serializer must be
@@ -60,6 +72,17 @@ _TOON_NAME = re.compile(r'^[a-z_]*toon[a-z_]*$', re.IGNORECASE)
 #: The canonical reader/writer names. A body that mentions either reaches the
 #: single implementation; a body that mentions neither has its own.
 _CANONICAL_NAMES = frozenset({'serialize_toon', 'parse_toon'})
+
+#: The TOON scalar-line shape a hand-rolled emitter prints: a bare key, a colon,
+#: then end-of-literal or a space. Used by the name-blind derivation, which does
+#: not get to assume an emitter announced itself in its own name.
+#:
+#: Deliberately CASE-SENSITIVE: TOON keys are lower snake_case, whereas human
+#: progress narration capitalises ("Target: claude", "Using context: ..."). Case
+#: folding here made the probe match narration and report a progress line as an
+#: un-canonical emitter — a guard that cries wolf is one its readers learn to
+#: ignore, which costs more than the coverage the folding bought.
+_TOON_LINE = re.compile(r'^[a-z_][a-z0-9_]*:(?: |$)')
 
 #: Where marketplace scripts live, relative to the repo root.
 _SCRIPTS_GLOB = 'marketplace/bundles/*/skills/*/scripts/**/*.py'
@@ -129,6 +152,71 @@ def derive_toon_population(root: Path) -> list[EmitterRecord]:
                     function=node.name,
                     line=node.lineno,
                     prints_to_stdout=_prints_to_stdout(node),
+                    reaches_canonical=bool(_referenced_names(node) & _CANONICAL_NAMES),
+                )
+            )
+    return records
+
+
+def _leading_literal_text(node: ast.AST) -> str | None:
+    """The literal text a printed expression begins with, if it begins with one.
+
+    An f-string is handled by taking its leading literal segment, because that is
+    where a hand-rolled emitter puts the key: ``print(f'status: {value}')``.
+    """
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.JoinedStr) and node.values:
+        head = node.values[0]
+        if isinstance(head, ast.Constant) and isinstance(head.value, str):
+            return head.value
+    return None
+
+
+def _prints_toon_shaped_line(node: ast.AST) -> bool:
+    """Whether the function prints a literal shaped like a TOON scalar line."""
+    for child in ast.walk(node):
+        if not isinstance(child, ast.Call):
+            continue
+        if not (isinstance(child.func, ast.Name) and child.func.id == 'print'):
+            continue
+        if any(keyword.arg == 'file' for keyword in child.keywords):
+            continue
+        for arg in child.args:
+            text = _leading_literal_text(arg)
+            if text is not None and _TOON_LINE.match(text):
+                return True
+    return False
+
+
+def derive_name_blind_emitters(root: Path) -> list[EmitterRecord]:
+    """Enumerate emitters by BEHAVIOUR rather than by name.
+
+    ``derive_toon_population`` selects on the function NAME, which is the one
+    property a newly-added emitter is entirely free to choose — so on its own it
+    cannot substantiate the module docstring's claim over *every* emitter. This
+    derivation selects on what a function actually prints: a literal shaped like
+    a TOON scalar line, written to stdout. An emitter named without the probe's
+    token is therefore still in a population, and the cross-check below is what
+    turns the docstring's completeness claim into a derived result.
+    """
+    records: list[EmitterRecord] = []
+    for path in sorted(root.glob(_SCRIPTS_GLOB)):
+        try:
+            tree = ast.parse(path.read_text(encoding='utf-8'), filename=str(path))
+        except (OSError, SyntaxError):  # pragma: no cover - a broken file is a build failure
+            continue
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            if not _prints_toon_shaped_line(node):
+                continue
+            records.append(
+                EmitterRecord(
+                    path=str(path.relative_to(root)),
+                    function=node.name,
+                    line=node.lineno,
+                    prints_to_stdout=True,
                     reaches_canonical=bool(_referenced_names(node) & _CANONICAL_NAMES),
                 )
             )
@@ -216,6 +304,41 @@ def test_every_emitter_reaches_the_canonical_serializer():
     assert not offenders, (
         'these functions emit TOON without reaching the canonical serializer: '
         + ', '.join(offenders)
+    )
+
+
+def test_the_name_probe_misses_no_uncanonical_emitter(capsys):
+    """The name-derived population is measured against a name-blind one.
+
+    Without this the module's completeness claim would rest on the naming probe
+    alone, and an emitter named without its token would be outside the population
+    the guard above reports a clean result over — absence read as coverage. Here
+    the two derivations are compared, so the claim is derived rather than
+    asserted. Only an offender is a failure: a canonically-emitting function the
+    name probe missed is not a defect, so the assertion is over the ESCAPED
+    OFFENDERS, not over set equality.
+    """
+    named = {
+        (record.path, record.function)
+        for record in derive_toon_population(PROJECT_ROOT)
+    }
+    behavioural = derive_name_blind_emitters(PROJECT_ROOT)
+    escaped = [
+        f'{record.path}:{record.line} {record.function}'
+        for record in behavioural
+        if (record.path, record.function) not in named and not record.reaches_canonical
+    ]
+
+    with capsys.disabled():
+        print(
+            f'\nname-blind emitter population: {len(behavioural)} function(s); '
+            f'{len(escaped)} of them escape the naming probe uncanonically'
+        )
+
+    assert behavioural, 'the name-blind derivation found nothing — the cross-check would be vacuous'
+    assert not escaped, (
+        'these functions print TOON-shaped output without reaching the canonical '
+        'serializer AND are invisible to the naming probe: ' + ', '.join(escaped)
     )
 
 
@@ -370,6 +493,77 @@ def test_detector_clears_a_health_check_that_only_probes_the_import():
     in the tree as a lookalike and its clean result would mean nothing.
     """
     assert swallows_canonical_import(_PROBING_MODULE) is False
+
+
+_UNNAMED_UNCANONICAL_EMITTER = '''
+def write_summary(payload):
+    """Prints TOON by hand under a name the naming probe cannot see."""
+    print(f'status: {payload["status"]}')
+'''
+
+_UNNAMED_CANONICAL_EMITTER = '''
+from toon_parser import serialize_toon
+
+
+def write_summary(payload):
+    """Prints TOON through the canonical serializer, under an unprobed name."""
+    print(f'status: {payload["status"]}')
+    print(serialize_toon(payload))
+'''
+
+_STDERR_DIAGNOSTIC = '''
+import sys
+
+
+def write_summary(payload):
+    """Writes a TOON-shaped diagnostic to stderr — not emission."""
+    print(f'status: {payload["status"]}', file=sys.stderr)
+'''
+
+
+def test_name_blind_derivation_flags_an_emitter_the_naming_probe_misses(tmp_path):
+    """Control: the cross-check above is a measurement, not a detector that never fires."""
+    _synthetic_script(
+        tmp_path, 'fixture-bundle', 'fixture-skill', 'unnamed.py', _UNNAMED_UNCANONICAL_EMITTER
+    )
+
+    named = {(record.path, record.function) for record in derive_toon_population(tmp_path)}
+    escaped = [
+        record.function
+        for record in derive_name_blind_emitters(tmp_path)
+        if (record.path, record.function) not in named and not record.reaches_canonical
+    ]
+
+    assert named == set(), 'the naming probe is expected to miss this function entirely'
+    assert escaped == ['write_summary']
+
+
+def test_name_blind_derivation_clears_an_unprobed_canonical_emitter(tmp_path):
+    """Matched positive: an unprobed NAME is not itself the defect — bypassing is.
+
+    The fixture prints a TOON-shaped literal AND reaches the serializer, so it
+    enters the population and is then cleared. That combination is what isolates
+    the discriminator: without the literal the function would never be derived at
+    all, and the test would pass on absence rather than on the clearing it claims
+    to check.
+    """
+    _synthetic_script(
+        tmp_path, 'fixture-bundle', 'fixture-skill', 'unnamed_ok.py', _UNNAMED_CANONICAL_EMITTER
+    )
+
+    behavioural = derive_name_blind_emitters(tmp_path)
+
+    assert [record.function for record in behavioural] == ['write_summary']
+    assert behavioural[0].reaches_canonical is True
+
+
+def test_name_blind_derivation_ignores_a_stderr_diagnostic(tmp_path):
+    """Matched negative: stderr is diagnostics, so it must not enter the population."""
+    _synthetic_script(
+        tmp_path, 'fixture-bundle', 'fixture-skill', 'diagnostic.py', _STDERR_DIAGNOSTIC
+    )
+
+    assert derive_name_blind_emitters(tmp_path) == []
 
 
 def test_an_added_emitter_is_picked_up_by_the_derivation(tmp_path):

@@ -872,13 +872,18 @@ The script derives the live footprint from the worktree (reading `references.jso
 ```toon
 status: success
 footprint_resolved: true|false
+unresolved_reason: {reason}        # only when footprint_resolved: false
 total: N
 in_scope_count: I
 out_of_scope_count: O
 exclusively_out_of_scope: true|false
-out_of_scope_paths[O]: [paths]
-unclassified_paths[N]: [paths]     # only when footprint_resolved: false
+out_of_scope_paths[O]:
+  - {path}
+unclassified_paths[N]:             # only when footprint_resolved: false
+  - {path}
 ```
+
+The payload is emitted through the canonical `serialize_toon`, so both path lists are TOON simple arrays that `parse_toon` reads back as lists — parse the block, do not pattern-match it. Each list key is **omitted entirely when its list is empty**, so read the counts (`out_of_scope_count`, `total`) for cardinality and treat an absent key as the empty list rather than as a missing field.
 
 **Read `footprint_resolved` FIRST.** When it is `false` the live footprint could not be derived, so no path was classified: both scope counts are zero, every error path is listed under `unclassified_paths`, and `exclusively_out_of_scope` is `false` because nothing substantiates it. Treat the classification as **absent**, not as a measured "nothing foreign here" — proceed to the standard triage dispatch and do NOT offer the stash remedy below. An unmeasurable footprint reported as an empty one would attribute every failure away from the plan on no evidence.
 

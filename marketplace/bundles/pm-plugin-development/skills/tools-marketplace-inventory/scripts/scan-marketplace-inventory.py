@@ -594,9 +594,15 @@ _SUBDIR_KEYS = ('standards', 'templates', 'references', 'knowledge', 'examples',
 def _full_row(item: dict[str, Any]) -> dict[str, Any]:
     """Build one full-mode inventory row, dropping the keys the item does not carry.
 
-    Absent keys stay absent rather than becoming empty columns: the serializer
-    takes the union of the keys present across the rows, so an omitted key reads
-    as "this component has none" instead of "this component has an empty one".
+    A key omitted here disappears from the OUTPUT only when no sibling row in the
+    same table carries it. The canonical serializer derives a table's columns from
+    the union of the keys across its rows and renders a missing one as an empty
+    value, so where any sibling carries the key this row gets an empty column
+    rather than no column. Omitting is still the right construction — it is what
+    lets a column vanish entirely when nothing in the table has it — but a reader
+    must not take an empty column as "the component carries an empty one"; over a
+    mixed table the two are indistinguishable in the rendered row, and only the
+    per-item source says which.
     """
     row: dict[str, Any] = {'name': item['name']}
     for key in ('path', 'description'):

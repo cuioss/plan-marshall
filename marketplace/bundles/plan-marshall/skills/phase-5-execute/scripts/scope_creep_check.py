@@ -54,6 +54,7 @@ from pathlib import Path
 
 from _findings_core import QGATE_PERSIST_OK, add_qgate_finding
 from file_ops import WorktreeResolutionError, get_plan_dir, resolve_plan_context
+from toon_parser import serialize_toon
 
 DEFAULT_THRESHOLD = 5
 
@@ -87,11 +88,17 @@ def _emit_could_not_look(reason: str, detail: str, threshold: int) -> int:
     Returns:
         ``0`` — an unmeasurable guard is not a failure of the run it guards.
     """
-    print(f'status: {STATUS_COULD_NOT_LOOK}')
-    print(f'reason: {reason}')
-    print(f'detail: {detail}')
-    print(f'threshold: {threshold}')
-    print('finding_emitted: false')
+    print(
+        serialize_toon(
+            {
+                'status': STATUS_COULD_NOT_LOOK,
+                'reason': reason,
+                'detail': detail,
+                'threshold': threshold,
+                'finding_emitted': False,
+            }
+        )
+    )
     return 0
 
 
@@ -216,8 +223,7 @@ def cmd_check(args: argparse.Namespace) -> int:
     try:
         changed = _git_diff_files(worktree, base_sha)
     except subprocess.CalledProcessError as exc:
-        print('status: error')
-        print(f'error: git_diff_failed: {exc}')
+        print(serialize_toon({'status': 'error', 'error': f'git_diff_failed: {exc}'}))
         return 1
 
     declared = _collect_declared_files(plan_dir)
@@ -229,23 +235,32 @@ def cmd_check(args: argparse.Namespace) -> int:
             # A lost finding is never absorbed: reporting `status: success` with
             # `finding_emitted: false` here would be indistinguishable from "no
             # scope creep". Fail loud with the rejected finding's content inline.
-            print('status: error')
-            print('error: finding_persist_failed')
-            print(f'message: {failure["message"]}')
-            print(f'finding_title: {failure["title"]}')
-            print(f'finding_detail: {failure["detail"]}')
-            print(f'residual_count: {len(residual)}')
-            print(f'threshold: {threshold}')
-            print(f'residual_files[{len(residual)}]: {residual}')
+            print(
+                serialize_toon(
+                    {
+                        'status': 'error',
+                        'error': 'finding_persist_failed',
+                        'message': failure['message'],
+                        'finding_title': failure['title'],
+                        'finding_detail': failure['detail'],
+                        'residual_count': len(residual),
+                        'threshold': threshold,
+                        'residual_files': residual,
+                    }
+                )
+            )
             return 1
         emitted = True
 
-    print('status: success')
-    print(f'residual_count: {len(residual)}')
-    print(f'threshold: {threshold}')
-    print(f'finding_emitted: {"true" if emitted else "false"}')
+    emitted_payload: dict[str, object] = {
+        'status': 'success',
+        'residual_count': len(residual),
+        'threshold': threshold,
+        'finding_emitted': emitted,
+    }
     if residual:
-        print(f'residual_files[{len(residual)}]: {residual}')
+        emitted_payload['residual_files'] = residual
+    print(serialize_toon(emitted_payload))
     return 0
 
 
