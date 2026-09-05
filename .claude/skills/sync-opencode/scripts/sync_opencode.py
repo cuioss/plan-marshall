@@ -182,6 +182,9 @@ def _derive_synced_bundles(skills: list[Path], commands: list[Path], only_bundle
     is present, match entry prefixes against the exact bundle directory names
     so the managed namespace is not truncated to a short prefix (which would
     misclassify unrelated user entries as managed and delete them on prune).
+    When several bundles match one entry (``pm-dev-java-cui-{skill}`` matches
+    both ``pm-dev-java`` and ``pm-dev-java-cui``), resolve the single LONGEST
+    match so the managed set holds exactly the bundle the entry belongs to.
     Fall back to the first-hyphen token only when the bundles directory is
     unavailable.
     """
@@ -195,9 +198,12 @@ def _derive_synced_bundles(skills: list[Path], commands: list[Path], only_bundle
             matched: set[str] = set()
             for path in list(skills) + list(commands):
                 name = path.name.removesuffix('.md')
-                for kb in known_bundles:
-                    if name == kb or name.startswith(f'{kb}-'):
-                        matched.add(kb)
+                matches = [
+                    kb for kb in known_bundles
+                    if name == kb or name.startswith(f'{kb}-')
+                ]
+                if matches:
+                    matched.add(max(matches, key=len))
             if matched:
                 return matched
 

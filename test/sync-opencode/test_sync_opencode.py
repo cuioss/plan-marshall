@@ -5,9 +5,11 @@
 
 Covers the singular→plural path mapping, --dry-run (no filesystem
 effect, actions listed), --bundles subsetting, stale-managed-entry
-deletion, preservation of unmanaged destination entries, and
-preservation of unselected bundles' entries under --bundles — all
-against temp directories, no live OpenCode install.
+deletion, preservation of unmanaged destination entries, preservation
+of unselected bundles' entries under --bundles, and the
+prefix-ambiguous bundle derivation (longest match resolves exactly one
+bundle per entry) — all against temp directories, no live OpenCode
+install.
 
 The script under test lives at
 ``.claude/skills/sync-opencode/scripts/sync_opencode.py`` (project-local),
@@ -21,6 +23,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 
 from conftest import PROJECT_ROOT
 from toon_parser import parse_toon
@@ -266,6 +269,99 @@ def test_sync_opencode_bundles_flag_preserves_unselected_bundle_entries(tmp_path
     assert not (dest / 'skills' / 'plan-marshall-gone').exists()
     # Unselected bundle's entry preserved.
     assert (dest / 'skills' / 'other-bundle-stuff' / 'SKILL.md').is_file()
+
+
+# ---------------------------------------------------------------------------
+# Prefix-ambiguous bundle derivation
+# ---------------------------------------------------------------------------
+
+
+def _find_prefix_ambiguous_pair(bundles_dir: Path) -> tuple[str, str] | None:
+    """Find a real prefix-ambiguous bundle pair from the marketplace tree.
+
+    Scans ``bundles_dir`` for any two bundle names where one name plus ``-``
+    is a prefix of the other.  Returns the shorter / longer pair or ``None``
+    when no ambiguous pair exists.
+    """
+    names = sorted(
+        p.name for p in bundles_dir.iterdir() if p.is_dir()
+    )
+    for i, shorter in enumerate(names):
+        for longer in names[i + 1:]:
+            if longer.startswith(f'{shorter}-'):
+                return shorter, longer
+    return None
+
+
+def test_sync_opencode_prefix_ambiguous_shorter_bundle_preserved(tmp_path: Path):
+    """Source carries only the LONGER bundle's entries; shorter bundle's stale
+    destination entry must NOT be pruned.
+
+    The script derives the managed set from ``marketplace/bundles/``.  Two
+    real prefix-ambiguous pairs exist (``pm-dev-frontend`` /
+    ``pm-dev-frontend-cui`` and ``pm-dev-java`` /
+    ``pm-dev-java-cui``).  When only the LONGER bundle's entries are in the
+    source the derivation must resolve exactly one bundle (the longer), so
+    the shorter bundle's destination entries are NOT managed and must survive.
+    """
+    bundles_dir = PROJECT_ROOT / 'marketplace' / 'bundles'
+    pair = _find_prefix_ambiguous_pair(bundles_dir)
+    if pair is None:
+        pytest.skip('no prefix-ambiguous bundle pair in marketplace/bundles/')
+    shorter, longer = pair
+
+    source = tmp_path / 'src' / 'opencode'
+    dest = tmp_path / 'dest'
+    # Source carries ONE entry belonging to the LONGER bundle only.
+    _write(source / 'skill' / f'{longer}-sample' / 'SKILL.md', 'body\n')
+    _write(source / 'opencode.json', '{}\n')
+    # Destination has a stale entry belonging to the SHORTER bundle.
+    _write(dest / 'skills' / f'{shorter}-gone' / 'SKILL.md', '# stale\n')
+
+    result = _run('--source', str(source), '--target-dir', str(dest))
+    assert result.returncode == 0, result.stderr
+    # The shorter bundle's entry must survive — it is NOT managed when the
+    # source carries only the longer bundle.
+    assert (dest / 'skills' / f'{shorter}-gone' / 'SKILL.md').is_file(), (
+        f'{shorter}-gone was pruned: the derivation resolved {shorter} when the source '
+        f'carried only {longer} entries — prefix ambiguity resolved incorrectly'
+    )
+
+
+def test_sync_opencode_prefix_ambiguous_both_bundles_managed(tmp_path: Path):
+    """Source carries entries for BOTH ambiguous bundles; both must be managed.
+
+    When the source carries entries from both the shorter and longer bundle
+    the derivation must resolve exactly two bundles and prune stale entries
+    belonging to either.
+    """
+    bundles_dir = PROJECT_ROOT / 'marketplace' / 'bundles'
+    pair = _find_prefix_ambiguous_pair(bundles_dir)
+    if pair is None:
+        pytest.skip('no prefix-ambiguous bundle pair in marketplace/bundles/')
+    shorter, longer = pair
+
+    source = tmp_path / 'src' / 'opencode'
+    dest = tmp_path / 'dest'
+    # Source carries entries for both bundles.
+    _write(source / 'skill' / f'{shorter}-keep' / 'SKILL.md', 'body\n')
+    _write(source / 'skill' / f'{longer}-keep' / 'SKILL.md', 'body\n')
+    _write(source / 'opencode.json', '{}\n')
+    # Destination has stale entries for both bundles.
+    _write(dest / 'skills' / f'{shorter}-gone' / 'SKILL.md', '# stale\n')
+    _write(dest / 'skills' / f'{longer}-gone' / 'SKILL.md', '# stale\n')
+
+    result = _run('--source', str(source), '--target-dir', str(dest))
+    assert result.returncode == 0, result.stderr
+    data = parse_toon(result.stdout)
+    # Both bundles should be in the managed set; both stale entries pruned.
+    removed_names = {r['name'] for r in data['removed']}
+    assert f'{shorter}-gone' in removed_names, (
+        f'{shorter}-gone not pruned when source carries both {shorter} and {longer}'
+    )
+    assert f'{longer}-gone' in removed_names, (
+        f'{longer}-gone not pruned when source carries both {shorter} and {longer}'
+    )
 
 
 # ---------------------------------------------------------------------------
