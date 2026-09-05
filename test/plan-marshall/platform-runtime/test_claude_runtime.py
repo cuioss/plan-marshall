@@ -30,7 +30,9 @@ test that exercises the happy-path of project_initial_setup without mocking.
 """
 from __future__ import annotations  # noqa: I001
 
+import contextlib
 import json
+import socket
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -57,6 +59,25 @@ from toon_parser import parse_toon
 # =============================================================================
 # Helpers
 # =============================================================================
+
+
+def _refuse_connection(*_args, **_kwargs):
+    """Stand in for ``socket.create_connection`` refusing the JetBrains MCP port.
+
+    ``ConnectionRefusedError`` rather than a bare ``OSError`` because that is what
+    a closed local port actually raises, and the check under test names both.
+    """
+    raise ConnectionRefusedError('mcp port refused (test stub)')
+
+
+def _accept_connection(*_args, **_kwargs):
+    """Stand in for ``socket.create_connection`` succeeding.
+
+    The check uses the result as a context manager and reads nothing off it, so a
+    null context is the whole contract — a mock socket would add surface with no
+    assertion behind it.
+    """
+    return contextlib.nullcontext()
 
 
 def _make_settings(allow: list[str] | None = None) -> dict[str, Any]:
@@ -4259,20 +4280,52 @@ class TestHealthCheck:
         assert "mcp-diagnostics" in result["checks_run"]
         assert "hook" in result["checks_run"]
 
-    def test_unhealthy_mcp_alone_does_not_fail_the_verb(self, rt, tmp_path, monkeypatch):
+    def test_unhealthy_mcp_alone_does_not_fail_the_verb(self, rt, monkeypatch):
         """The fail-closed behaviour is scoped to DISPLAY, not generalised.
 
         An unreachable MCP port means "no JetBrains IDE is running" — an
         environmental condition, not a misconfiguration. Failing the verb on it
         would train callers to ignore the status, which would defeat the
         display fail-closed guarantee this deliverable adds.
+
+        The probe is neutralized rather than consulted. This test used to run the
+        real ``socket.create_connection`` against the JetBrains port and skip when
+        it CONNECTED — an inverted guard: the assertion was deleted precisely on
+        the machines that had the thing under test running, and the suite reported
+        green while covering less. Which branch runs is now the test's decision,
+        not the ambient environment's.
         """
+        monkeypatch.setattr(socket, 'create_connection', _refuse_connection)
+
         result = _parsed(rt.health_check("mcp-diagnostics"))
+
         mcp_result = next(r for r in result["results"] if r["check"] == "mcp-diagnostics")
-        if mcp_result["healthy"]:
-            pytest.skip("an MCP server is reachable in this environment")
+        assert mcp_result["healthy"] is False
         assert result["status"] == "success"
         assert result["all_healthy"] is False
+
+    def test_reachable_mcp_reports_healthy(self, rt, monkeypatch):
+        """Matched positive control for the neutralized probe above.
+
+        Without it, the negative case is compatible with a stub that never took
+        effect — an ``mcp-diagnostics`` check hardcoded to unhealthy would satisfy
+        it on every machine. Driving the opposite branch through the same seam is
+        what proves the seam is the one the check actually reads.
+
+        Asserted on the ``mcp-diagnostics`` row rather than on ``all_healthy``:
+        ``health_check`` unions ``{"hook"}`` into every check set, so the hook
+        check runs here too and is unhealthy in a bare test environment.
+        ``all_healthy`` is therefore not a proxy for the MCP verdict in either
+        direction — which is also why the negative above pairs its
+        ``all_healthy is False`` with an explicit assertion on the same row.
+        """
+        monkeypatch.setattr(socket, 'create_connection', _accept_connection)
+
+        result = _parsed(rt.health_check("mcp-diagnostics"))
+
+        mcp_result = next(r for r in result["results"] if r["check"] == "mcp-diagnostics")
+        assert mcp_result["healthy"] is True
+        assert result["status"] == "success"
 
     def test_permissions_healthy_when_settings_present(self, rt, tmp_path, monkeypatch, in_tmp_cwd):
         """permissions check is healthy when project settings.json exists."""

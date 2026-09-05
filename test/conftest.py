@@ -1222,74 +1222,196 @@ def pytest_report_header(config):
         # neither the test nor the cause. The line is unconditional when it fires,
         # so the omission cannot pass unseen on a green run.
         lines.append('routing-guard roster DRIFT: ' + '; '.join(discrepancies))
+    # Published unconditionally, for the same reason the populations above are: a
+    # green run reports nothing, so an exception list that grew — each entry one
+    # more test the suite no longer runs — would look exactly like one that did
+    # not. The size is the figure a reader can watch; the entries themselves, with
+    # their class and reason, are in _SKIP_EXCEPTIONS.
+    lines.append(f'residual skippable set: {len(_SKIP_EXCEPTIONS)} nodeid(s) permitted to skip')
     return lines
 
 
-#: Opt-in flag for the reference-platform ``skipped == 0`` gate. The gate is off
-#: by default so a developer's ``-k``-filtered or otherwise partial run is never
-#: failed by it.
+#: The residual skippable set: every skip this suite still permits, keyed by
+#: nodeid, each carrying the CLASS it belongs to and the REASON that class is
+#: legitimate. :func:`pytest_sessionfinish` fails the run on any skip NOT listed
+#: here, so this dict is the complete, enumerated boundary of what a green run is
+#: allowed to have left uncovered.
 #:
-#: ⛔ **No producer in this repository sets it.** A sweep over the inventoried tree
-#: and over all seven files in ``.github/workflows/`` (which the inventory does not
-#: reach, so they were read individually) finds this name on exactly three lines,
-#: all of them below in this file. :func:`pytest_sessionfinish` therefore returns at
-#: its first line on every run this project performs, and the gate has never once
-#: rendered a verdict. The one thing this repository cannot see is the body of the
-#: reusable org workflow ``python-verify.yml`` delegates to, which lives in another
-#: repository; the claim is scoped accordingly, and is an absence of a producer
-#: HERE rather than a proof that nothing anywhere sets it.
+#: It is a named enumeration rather than a count or a path prefix on purpose. A
+#: count cannot say WHICH test stopped running, and a prefix silently absorbs a
+#: new skip added later to an already-listed module — which is the failure this
+#: gate exists to catch. A skip that belongs here is added deliberately, with its
+#: reason, in the same change that introduces it.
 #:
-#: Arming it (have CI export ``1``) and deleting it (drop an unreachable gate) are
-#: both defensible and both change what the suite guarantees, so neither is made
-#: here — the choice with its costs is recorded for the operator.
-_STRICT_NO_SKIP_ENV = 'PLAN_MARSHALL_STRICT_NO_SKIP'
+#: Two classes are represented, and only two are legitimate:
+#:
+#: ``absent-dependency``
+#:     An external tool the suite does not require. ``pyright-langserver`` is the
+#:     only one: it is a real language server, deliberately NOT in
+#:     :data:`REQUIRED_TOOLS`, because its absence is an ordinary environment
+#:     difference rather than a broken environment. Ten nodeids across four guard
+#:     sites depend on it — one module-level ``pytestmark`` covering seven tests
+#:     in ``test_lsp_integration.py``, two decorators in ``test_lsp_harvest.py``,
+#:     and one in ``test_lsp_harvest_search_path.py``. A dependency proposal for
+#:     it is recorded with the plan rather than made here, because installing it
+#:     changes what every run costs.
+#:
+#: ``in-suite-policy``
+#:     The skip is a verdict about the suite's own DATA, not about the
+#:     environment: a parametrized case whose parameter carries nothing to assert.
+#:     It cannot be fixed by installing anything, and it legitimately varies as
+#:     the data changes — so it is listed per case, and a second bot acquiring a
+#:     declared refusal phrasing removes its entry rather than silently widening
+#:     an existing one.
+#:
+#: ⛔ **Platform and environment guards that do NOT fire here are deliberately
+#: absent.** ``test_tree_copy.py``'s three ``sys.platform == 'win32'`` guards, and
+#: the undeclared environment-variable preconditions in ``test_qgate_closure.py``
+#: and ``test_plan_state_exemption.py``, skip nothing on this platform and so have
+#: no nodeid to list. Listing them pre-emptively would grant a standing exemption
+#: to skips nobody has observed, which is the opposite of an enumerated boundary.
+#: On a platform where they DO fire, the gate names them and the list is extended
+#: deliberately.
+_SKIP_EXCEPTIONS: dict[str, tuple[str, str]] = {
+    # --- absent-dependency: pyright-langserver (4 guard sites, 10 nodeids) ---
+    'test/plan-marshall/lsp-client/test_lsp_integration.py::test_real_adversarial_defect_fails_and_rolls_back': (
+        'absent-dependency',
+        'pyright-langserver not installed',
+    ),
+    'test/plan-marshall/lsp-client/test_lsp_integration.py::test_real_clean_rename_edit': (
+        'absent-dependency',
+        'pyright-langserver not installed',
+    ),
+    'test/plan-marshall/lsp-client/test_lsp_integration.py::test_real_document_symbol_and_references': (
+        'absent-dependency',
+        'pyright-langserver not installed',
+    ),
+    'test/plan-marshall/lsp-client/test_lsp_integration.py::test_real_document_symbol_flattens_a_class_and_carries_its_path': (
+        'absent-dependency',
+        'pyright-langserver not installed',
+    ),
+    'test/plan-marshall/lsp-client/test_lsp_integration.py::test_real_preflight_ready': (
+        'absent-dependency',
+        'pyright-langserver not installed',
+    ),
+    'test/plan-marshall/lsp-client/test_lsp_integration.py::test_real_workspace_symbol_after_indexing': (
+        'absent-dependency',
+        'pyright-langserver not installed',
+    ),
+    'test/plan-marshall/lsp-client/test_lsp_integration.py::test_real_workspace_symbol_rows_name_the_defining_file': (
+        'absent-dependency',
+        'pyright-langserver not installed',
+    ),
+    'test/pm-plugin-development/plan-marshall-plugin/test_lsp_harvest.py::test_end_to_end_harvest_against_a_real_server': (
+        'absent-dependency',
+        'pyright-langserver not installed',
+    ),
+    'test/pm-plugin-development/plan-marshall-plugin/test_lsp_harvest.py::test_end_to_end_materialization_produces_lsp_component_refs': (
+        'absent-dependency',
+        'pyright-langserver not installed',
+    ),
+    'test/pm-plugin-development/plan-marshall-plugin/test_lsp_harvest_search_path.py::test_a_real_cross_bundle_import_becomes_a_named_module_edge': (
+        'absent-dependency',
+        'pyright-langserver not installed',
+    ),
+    # --- in-suite-policy: a parametrized case with no data to assert ---
+    'test/plan-marshall/workflow-integration-github/test_refusal_recovery_arming.py'
+    '::TestRefusalIsNeverABareTimeout::test_a_bots_declared_refusal_is_recognized_as_DATA[cuioss-review-bot]': (
+        'in-suite-policy',
+        'cuioss-review-bot declares no observed refusal phrasing, so this case has nothing to assert',
+    ),
+}
 
 
-#: Nodeids of every test the session reported as skipped. Under xdist the
-#: workers stream their reports back to the controller, so the controller's
-#: copy of this set is complete and is the one the gate reads.
-_SKIPPED_NODEIDS: set = set()
+#: Nodeids of every test the session reported as skipped, mapped to the reason
+#: pytest recorded. Under xdist the workers stream their reports back to the
+#: controller, so the controller's copy is complete and is the one the gate reads.
+#:
+#: The reason is carried alongside the nodeid because the gate's failure message
+#: is the operator's only view of WHY a test stopped running: a bare list of
+#: nodeids says a guard fired but not which condition fired it, which is the
+#: difference between an actionable failure and one that sends the reader back to
+#: the source.
+_SKIPPED_NODEIDS: dict[str, str] = {}
+
+
+def _skip_reason(report) -> str:
+    """The reason text pytest recorded for a skipped report.
+
+    ``longrepr`` for a skip is a ``(path, lineno, message)`` triple, but a report
+    reconstructed by an xdist worker can carry a plain string instead. Both shapes
+    are handled, and an unrecognised one degrades to a marker rather than raising:
+    this runs inside a reporting hook, where an exception would replace a real
+    skip-gate verdict with a hook traceback.
+    """
+    longrepr = getattr(report, 'longrepr', None)
+    if isinstance(longrepr, tuple) and len(longrepr) == 3:
+        return str(longrepr[2])
+    if isinstance(longrepr, str) and longrepr:
+        return longrepr
+    return '<no reason recorded>'
 
 
 def pytest_runtest_logreport(report):
-    """Accumulate skipped nodeids for the session-level zero-skip gate."""
+    """Accumulate skipped nodeids and their reasons for the session-level gate."""
     if report.skipped:
-        _SKIPPED_NODEIDS.add(report.nodeid)
+        _SKIPPED_NODEIDS[report.nodeid] = _skip_reason(report)
 
 
 def pytest_sessionfinish(session, exitstatus):
-    """Fail a reference-platform full run that skipped any test.
+    """Fail any full run that skipped a test outside :data:`_SKIP_EXCEPTIONS`.
 
-    Every skip in this suite is meant to be either a tracked-artifact guard
-    (which is now a hard assertion) or a genuine environment guard that does
-    not trigger on the reference platform. A non-zero skip count there means a
-    guard silently disarmed a test, so the run fails rather than reporting a
-    green suite that quietly covered less than it claims.
+    The gate is ALWAYS ON. It previously required an opt-in environment flag, and
+    no producer in this repository ever set it — a sweep of the inventoried tree
+    and of every file in ``.github/workflows/`` found the name only in this file —
+    so the gate returned at its first line on every run and had never once
+    rendered a verdict. A gate nothing arms is not a weaker gate; it is the
+    appearance of one, which is worse than none because the suite reads as
+    guarded. The flag is deleted rather than armed from CI, so the guarantee
+    holds on a developer's machine and in CI alike, and cannot be lost again by
+    an environment that simply does not export it.
 
-    The gate is deliberately narrow. It is active only when the opt-in flag is
-    set, and it exempts a ``-k`` / ``-m`` filtered run, which legitimately
-    skips tests. A developer's partial run is therefore never failed by it.
+    ⛔ **One residual is outside this repository's sight.** ``python-verify.yml``
+    delegates the whole verify job to a reusable workflow in
+    ``cuioss/cuioss-organization``, whose body this checkout does not contain.
+    Deleting the flag makes that residual moot for the gate — there is no longer
+    a variable for any workflow, visible or not, to set or fail to set — but it
+    is recorded because the previous claim rested on it.
+
+    Two exemptions remain, and both are about runs that legitimately cover less
+    than the whole suite rather than about skips:
+
+    * an xdist worker never renders the verdict — the controller owns it, and it
+      is the controller that sees every worker's reports;
+    * a ``-k`` / ``-m`` filtered run is exempt, because filtering is the
+      developer asking for a subset and its deselections are not guard failures.
+
+    Every other skip is measured against the enumerated exception list, and one
+    that is not on it fails the session, naming the nodeid AND the reason.
     """
-    if os.environ.get(_STRICT_NO_SKIP_ENV) != '1':
-        return
     config = session.config
     if hasattr(config, 'workerinput'):
         return  # xdist worker — the controller owns the session-level verdict
     if getattr(config.option, 'keyword', '') or getattr(config.option, 'markexpr', ''):
         return
-    if not _SKIPPED_NODEIDS:
+    offenders = sorted(set(_SKIPPED_NODEIDS) - set(_SKIP_EXCEPTIONS))
+    if not offenders:
         return
     session.exitstatus = 1
     reporter = config.pluginmanager.get_plugin('terminalreporter')
-    if reporter is not None:
-        reporter.write_line('')
-        reporter.write_line(
-            f'ERROR: reference-platform run skipped {len(_SKIPPED_NODEIDS)} test(s), '
-            f'but the suite must report zero skips when {_STRICT_NO_SKIP_ENV}=1:',
-            red=True,
-        )
-        for nodeid in sorted(_SKIPPED_NODEIDS):
-            reporter.write_line(f'  {nodeid}', red=True)
+    if reporter is None:
+        return
+    reporter.write_line('')
+    reporter.write_line(
+        f'ERROR: {len(offenders)} test(s) skipped outside the {len(_SKIP_EXCEPTIONS)}-entry '
+        f'residual skippable set. A green run must not quietly cover less than it '
+        f'claims: either fix the condition, or add the nodeid to _SKIP_EXCEPTIONS in '
+        f'test/conftest.py with its class and reason.',
+        red=True,
+    )
+    for nodeid in offenders:
+        reporter.write_line(f'  {nodeid}', red=True)
+        reporter.write_line(f'      reason: {_SKIPPED_NODEIDS[nodeid]}', red=True)
 
 
 _ENTRY_CWD_KEY = pytest.StashKey[str]()
