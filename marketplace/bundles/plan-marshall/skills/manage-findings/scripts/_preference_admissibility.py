@@ -5,10 +5,13 @@
 Preference learning aggregates recurring user gate-dispositions into durable
 architecture hints. This module owns the ONE rule that decides which findings may
 seed such a recurrence at all, so both preference surfaces — the cross-plan
-auditor (``.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py``)
-and the per-plan emitter (``phase-6-finalize`` ``finalize-step-preference-emitter``,
-which reaches it through ``manage-findings list``) — apply the same predicate
-rather than each carrying its own copy.
+auditor and the per-plan emitter — apply the same predicate rather than each
+carrying its own copy. The auditor (``audit-archived-plan-retrospectives``) is
+delivered by this repository's project-local tree
+(``.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py``), which
+ships to no target; the emitter (``phase-6-finalize``
+``finalize-step-preference-emitter``) ships in the bundle and reaches the rule
+through ``manage-findings list``.
 
 The rule, and why it is shaped this way
 ---------------------------------------
@@ -104,8 +107,9 @@ PR_COMMENT_TYPE = 'pr-comment'
 #
 # Both consumers read these names from here: the per-plan surface
 # (``_findings_core``) imports them, and the cross-plan auditor
-# (``audit-archived-plan-retrospectives``) reads them off the module object its
-# loader already returns. Neither restates the literals.
+# (``audit-archived-plan-retrospectives``, a project-local skill tree that ships
+# to no target) reads them off the module object its loader already returns.
+# Neither restates the literals.
 PREFERENCE_BASIS_RECOGNIZED = 'recognized'
 PREFERENCE_BASIS_PRESENCE_ONLY = 'presence_only'
 
