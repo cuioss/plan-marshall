@@ -2,14 +2,19 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Real-tree integration smokes for the manage-invocation analyzer.
 
-EXCLUDED from the default ``module-tests`` run — registered in the root
-``test/conftest.py`` ``collect_ignore`` list, which is the segregation
-mechanism for every real-tree smoke in the suite. These are the only
-manage-invocation tests that probe the REAL ``.plan/execute-script.py``
-executor and derive a real script's ``--help`` surface; the per-shape /
+COLLECTED in the default ``module-tests`` run. These smokes derive a real
+script's ``--help`` surface through a real executor, and the per-shape /
 per-finding-type coverage lives in the sibling in-process unit suite
 (``test_analyze_manage_invocation.py``) against synthetic argparse scripts
 behind an in-process shim.
+
+The executor they probe is BUILT BY :func:`built_executor` into a session
+temporary directory — it is not the tracked ``.plan/execute-script.py``. That
+file is gitignored, so keying these smokes to it made them skip on any checkout
+that had not run the generator, which is most CI runners: the suite reported
+green while three of the analyzer's only real-surface checks had not run.
+Building one from the shipped generator removes the precondition instead of
+guarding it.
 
 Three smokes — each asserts ZERO ``manage-invocation-invalid`` false positives
 against the real shipped bundle for a shape that broke the old AST extractor:
@@ -24,6 +29,8 @@ one the executor generator reads.
 
 from __future__ import annotations
 
+import os
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -47,18 +54,86 @@ analyze_manage_invocation_markdown = _ami.analyze_manage_invocation_markdown
 derive_script_tree = _ami.derive_script_tree
 RULE_MANAGE_INVOCATION_INVALID = _ami.RULE_MANAGE_INVOCATION_INVALID
 
-# Repository (worktree) root:
-# test/pm-plugin-development/plugin-doctor/integration/ -> 4 up.
+#: The shipped generator these smokes build their executor from — the same one
+#: ``/marshall-steward`` and the phase-5 move-in run.
+_GENERATOR = (
+    PROJECT_ROOT
+    / 'marketplace'
+    / 'bundles'
+    / 'plan-marshall'
+    / 'skills'
+    / 'tools-script-executor'
+    / 'scripts'
+    / 'generate_executor.py'
+)
 
 
-def _real_executor() -> Path | None:
-    """Resolve the real ``.plan/execute-script.py`` for the live bundle.
+@pytest.fixture(scope='session')
+def built_executor(tmp_path_factory) -> Path:
+    """A real executor, generated into a session temporary directory.
 
-    Returns ``None`` when the executor is not present (e.g. an unconfigured
-    checkout) so the dependent tests skip rather than fail spuriously.
+    Built once per session because generation costs a subprocess and all three
+    smokes probe the same surface. The executor is a genuine one produced by the
+    shipped generator against the real ``marketplace/bundles`` tree, so the
+    ``--help`` surfaces the smokes derive are the shipped scripts' own.
+
+    ``PM_SURFACE_BUDGET_SECONDS=0`` disables the per-parser-node accept-set
+    derivation, which the generator documents as safe against a fresh target that
+    carries no previous surfaces — and this target is always fresh. It is what
+    keeps the fixture cheap: the derivation's default allowance is 180 seconds,
+    and these smokes need the executor only to DISPATCH, never to pre-spawn
+    validate.
+
+    ``PLAN_TRACKED_CONFIG_DIR`` pins where the executor is written, ahead of both
+    the inherited ``PLAN_BASE_DIR`` and the generator's cwd walk, so the build
+    cannot land on the tracked ``.plan/execute-script.py`` no matter what the
+    ambient environment says.
+
+    Raises through an assertion naming the generator's own output when the build
+    fails: an unbuildable executor is a broken environment, not one these smokes
+    do not apply to.
     """
-    candidate = PROJECT_ROOT / '.plan' / 'execute-script.py'
-    return candidate if candidate.is_file() else None
+    assert _GENERATOR.is_file(), f'Executor generator not found at {_GENERATOR}'
+
+    root = tmp_path_factory.mktemp('built-executor')
+    plan_dir = root / '.plan'
+    plan_dir.mkdir()
+    (plan_dir / 'marshal.json').write_text('{}', encoding='utf-8')
+
+    env = os.environ.copy()
+    env['PLAN_TRACKED_CONFIG_DIR'] = str(plan_dir)
+    env['PLAN_BASE_DIR'] = str(plan_dir)
+    env['PM_SURFACE_BUDGET_SECONDS'] = '0'
+
+    result = subprocess.run(
+        [
+            'python3',
+            str(_GENERATOR),
+            'generate',
+            '--marketplace',
+            '--marketplace-root',
+            str(PROJECT_ROOT),
+        ],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        timeout=300,
+        env=env,
+    )
+
+    executor = plan_dir / 'execute-script.py'
+    assert result.returncode == 0, (
+        f'Executor generation failed (exit {result.returncode}).\n'
+        f'stdout:\n{result.stdout}\nstderr:\n{result.stderr}'
+    )
+    assert executor.is_file(), (
+        f'Executor generation reported success but wrote no file at {executor}.\n'
+        f'stdout:\n{result.stdout}\nstderr:\n{result.stderr}'
+    )
+    assert executor != PROJECT_ROOT / '.plan' / 'execute-script.py', (
+        'The fixture built the tracked executor instead of a temporary one'
+    )
+    return executor
 
 
 class TestRealMarketplaceZeroFalsePositives:
@@ -72,14 +147,13 @@ class TestRealMarketplaceZeroFalsePositives:
     findings.
 
     The surface is derived per-notation (``derive_script_tree``) against the
-    live executor rather than via a whole-marketplace ``build_script_index``
-    so the test cost stays bounded to the two notations under test.
+    fixture-built executor rather than via a whole-marketplace
+    ``build_script_index`` so the test cost stays bounded to the notations
+    under test.
     """
 
-    def test_loop_and_shared_flag_calls_not_flagged_in_real_bundle(self) -> None:
-        executor = _real_executor()
-        if executor is None:
-            pytest.skip('real executor not present in this checkout')
+    def test_loop_and_shared_flag_calls_not_flagged_in_real_bundle(self, built_executor: Path) -> None:
+        executor = built_executor
         # manage-logging registers work/decision via a loop; --plan-id/--level/
         # --message are shared across them — the exact shapes the AST extractor
         # mis-flagged.
@@ -104,7 +178,7 @@ class TestRealMarketplaceZeroFalsePositives:
             ]
             assert invalid == [], f'false positive(s) for canonical call: {call}\n{invalid}'
 
-    def test_documented_alias_calls_not_flagged_in_real_bundle(self) -> None:
+    def test_documented_alias_calls_not_flagged_in_real_bundle(self, built_executor: Path) -> None:
         """The three accepted read-verb aliases resolve against the real surface.
 
         The coverage the consolidation adds. The replaced AST walk never read
@@ -112,9 +186,7 @@ class TestRealMarketplaceZeroFalsePositives:
         subcommand to it — a false rejection of the project's own canonical
         forms.
         """
-        executor = _real_executor()
-        if executor is None:
-            pytest.skip('real executor not present in this checkout')
+        executor = built_executor
         alias_calls = {
             'plan-marshall:manage-tasks:manage-tasks': 'get --plan-id p --task-number 1',
             'plan-marshall:manage-status:manage-status': 'get --plan-id p',
@@ -137,10 +209,8 @@ class TestRealMarketplaceZeroFalsePositives:
                 f'{call}\n{invalid}'
             )
 
-    def test_many_subcommand_calls_not_flagged_in_real_bundle(self) -> None:
-        executor = _real_executor()
-        if executor is None:
-            pytest.skip('real executor not present in this checkout')
+    def test_many_subcommand_calls_not_flagged_in_real_bundle(self, built_executor: Path) -> None:
+        executor = built_executor
         notation = 'plan-marshall:manage-status:manage-status'
         tree = derive_script_tree(notation, executor)
         assert tree is not None, 'manage-status --help must be reachable'

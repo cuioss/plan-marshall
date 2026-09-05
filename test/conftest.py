@@ -66,13 +66,6 @@ collect_ignore = [
     # in-process synthetic-graph units in
     # tools-marketplace-inventory/test_resolve_dependencies.py.
     'pm-plugin-development/tools-marketplace-inventory/integration/test_resolve_dependencies_smoke.py',
-    # Real-tree manage-invocation smokes — derive the real script --help surface
-    # against the live .plan/execute-script.py executor (zero-false-positive
-    # checks for the loop-registered / shared-flag / many-subcommand shapes).
-    # The per-shape / per-finding-type coverage lives in the in-process
-    # synthetic-argparse units in
-    # plugin-doctor/test_analyze_manage_invocation.py.
-    'pm-plugin-development/plugin-doctor/integration/test_analyze_manage_invocation_smoke.py',
 ]
 
 
@@ -80,17 +73,35 @@ collect_ignore = [
 # Executor Bootstrap (CI session setup)
 # =============================================================================
 
+class ExecutorBootstrapError(RuntimeError):
+    """The suite's executor substrate could not be brought into existence.
+
+    Raised by :func:`_ensure_executor_present` at conftest-import time, which
+    aborts the run. That is the point. The bootstrap used to print a warning and
+    return, which meant a broken substrate produced a green run over a smaller
+    suite: the tests that subprocess to the executor either skipped themselves or
+    failed far from the cause, and nothing in the summary said the substrate was
+    the reason.
+    """
+
+
 def _ensure_executor_present() -> None:
-    """Generate ``.plan/execute-script.py`` if missing.
+    """Generate ``.plan/execute-script.py`` if missing, or fail the run.
 
     The executor is gitignored, so a fresh checkout (CI runner, ephemeral
     container) doesn't have it. Several script-under-test invocations
     (e.g., ``tools-input-validation``'s lesson-ID anchor) subprocess to
-    ``python3 .plan/execute-script.py ...`` and fail without it. Local
-    developer environments have it from prior ``/marshall-steward`` runs;
-    CI needs it bootstrapped at session start.
+    ``python3 .plan/execute-script.py ...``, and the real-tree
+    argument-naming corpus asserts the substrate is present rather than
+    skipping when it is not — so its verdict rests on this bootstrap.
 
     Idempotent: re-runs are no-ops if the executor is already present.
+
+    Raises:
+        ExecutorBootstrapError: when the generator is missing, or when
+            generating the executor fails. Both are broken-environment
+            conditions rather than environments the suite does not apply to,
+            so both stop the run and name what went wrong.
     """
     executor_path = PROJECT_ROOT / PLAN_DIR_NAME / 'execute-script.py'
     if executor_path.exists():
@@ -105,14 +116,11 @@ def _ensure_executor_present() -> None:
         / 'generate_executor.py'
     )
     if not generator.exists():
-        # Generator script missing — surface a clear message instead of a
-        # cryptic FileNotFoundError downstream. Tests that depend on the
-        # executor will still fail loudly.
-        print(
-            f'WARNING: conftest could not bootstrap executor — generator missing at {generator}',
-            file=sys.stderr,
+        raise ExecutorBootstrapError(
+            f'Cannot bootstrap the executor: the generator is missing at {generator}. '
+            f'The suite subprocesses to {executor_path} and asserts its presence, so a '
+            f'run without it would cover less than it reports.'
         )
-        return
 
     try:
         subprocess.run(
@@ -124,12 +132,16 @@ def _ensure_executor_present() -> None:
             timeout=120,
         )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
-        # Failure here is non-fatal at conftest-import time. Tests that
-        # genuinely need the executor will fail with their own diagnostics;
-        # tests that don't need it (the majority) keep running.
-        print(
-            f'WARNING: conftest executor bootstrap failed: {exc}',
-            file=sys.stderr,
+        detail = getattr(exc, 'stderr', None) or ''
+        raise ExecutorBootstrapError(
+            f'Executor bootstrap failed while running {generator}: {exc}. '
+            f'{detail}'.rstrip()
+        ) from exc
+
+    if not executor_path.exists():
+        raise ExecutorBootstrapError(
+            f'Executor bootstrap reported success but wrote no executor at {executor_path}. '
+            f'Re-run the generator directly to see why.'
         )
 
 
