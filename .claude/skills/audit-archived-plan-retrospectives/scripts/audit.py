@@ -2520,80 +2520,54 @@ def _preference_module(obj: dict[str, Any]) -> str:
     return _UNATTRIBUTED_MODULE
 
 
-def _recognized_bot_kinds() -> frozenset[str] | None:
-    """Return the live registry-derived recognized reviewer `bot_kind` set, or None.
+def _load_preference_admissibility():
+    """Import the shared authorship-admissibility module, or raise ImportError.
 
-    The authorship gate admits a `pr-comment` only when it is attributed to a
-    RECOGNIZED reviewer bot. `add_finding` validates `bot_kind` against this set at
-    WRITE time, but the auditor reads archived JSONL DIRECTLY — an archived (legacy,
-    de-registered, or hand-edited) record could carry a `bot_kind` that is not a
-    real reviewer identity — so the gate re-derives the set from the live
-    `automatic-review` registry here rather than trusting an arbitrary stored
-    string. Mirrors `_load_routing_logic`'s marketplace-import pattern: repo root is
-    `__file__`'s 4th parent (`scripts/ → skill/ → skills/ → .claude/ → repo`).
+    The admissibility rule has ONE implementation, and it does not live here: it
+    lives at `manage-findings/scripts/_preference_admissibility.py`, which the
+    per-plan preference emitter reaches through `manage-findings list`. This
+    auditor delegates to it so both preference surfaces apply the same predicate.
 
-    Returns None when the marketplace tree or the registry module cannot be loaded
-    — the caller then degrades to a presence-only check rather than over-excluding
-    every bot-attributed comment (the pipeline-self coverage, which keys on an
-    ABSENT `bot_kind`, is unaffected either way).
+    Two `sys.path` entries are injected, of the same `__file__`-anchored shape the
+    registry import has always used (repo root is `__file__`'s 4th parent:
+    `scripts/ → skill/ → skills/ → .claude/ → repo`). Two entries, not one: the two
+    modules sit in two different flat `scripts/` directories with no package
+    `__init__`, so a single entry cannot expose both. The auditor runs as a direct
+    `python3 …/audit.py` invocation with NO executor PYTHONPATH (see `_PLAN_ID_RE`
+    below), so nothing else puts either directory on the path.
+
+    - `manage-findings/scripts` — the shared module itself.
+    - `automatic-review/scripts` — the `bot_registry` the shared module derives the
+      recognized reviewer set from. Its absence is NOT an error here: the shared
+      module's own resolver returns None and the predicate degrades to a
+      presence-only check, exactly as it always has.
+
+    Raises:
+        ImportError: the marketplace tree or the shared module cannot be reached.
+            This is deliberately LOUD rather than degrading. A swallowed failure
+            would silently reduce the gate to presence-only — admitting every
+            bot-attributed comment without checking it against the live registry —
+            and that regression is invisible by construction, because the degrade
+            is a designed behaviour of the rule itself. Failing loudly is confined
+            to this one check (the import is lazy), and the filter tests exercise
+            the recognized-set path, so a wrong path is caught rather than absorbed.
     """
     parents = Path(__file__).resolve().parents
     if len(parents) < 5:
-        return None
-    scripts_dir = (
-        parents[4]
-        / "marketplace" / "bundles" / "plan-marshall" / "skills"
-        / "automatic-review" / "scripts"
-    )
-    if not scripts_dir.is_dir():
-        return None
-    path_str = str(scripts_dir)
-    if path_str not in sys.path:
-        sys.path.insert(0, path_str)
-    try:
-        import bot_registry  # deferred: the sys.path bootstrap above must run first
+        raise ImportError(
+            f"cannot resolve the repo root from {__file__}: fewer than 5 parents"
+        )
+    skills_dir = parents[4] / "marketplace" / "bundles" / "plan-marshall" / "skills"
+    for scripts_dir in (
+        skills_dir / "manage-findings" / "scripts",
+        skills_dir / "automatic-review" / "scripts",
+    ):
+        path_str = str(scripts_dir)
+        if path_str not in sys.path:
+            sys.path.insert(0, path_str)
+    import _preference_admissibility
 
-        return frozenset(str(k) for k in bot_registry.bot_kinds())
-    except Exception:  # any import/parse failure degrades to presence-only
-        return None
-
-
-def _preference_admissible(
-    obj: dict[str, Any], recognized_bot_kinds: frozenset[str] | None
-) -> bool:
-    """Return False for a finding that must not seed a preference recurrence.
-
-    Authorship gate (D1 of the `truthful-signals` "the-pipeline-talks-to-itself"
-    plan). A `pr-comment` finding contributes to preference learning ONLY when it
-    is positively attributed to a recognized external reviewer bot — i.e. it
-    carries a `bot_kind` that is one of the registry-derived reviewer identities
-    (`recognized_bot_kinds`) the ingest verb stamps from the comment author login.
-
-    A `pr-comment` with no `bot_kind` — or a `bot_kind` that is not a recognized
-    reviewer identity — cannot be told apart from the pipeline's own posted
-    comments: the ingest verb records the pipeline's own PR comments (a
-    review-trigger comment, a description-restore) with `bot_kind` absent, exactly
-    as it records an unattributed human comment. Admitting such a comment would let
-    the pipeline's own control traffic become evidence about the pipeline's
-    preferences — a SELF-REINFORCING measurement artifact that grows with pipeline
-    chattiness rather than with operator judgement. There is no self-login signal on
-    the finding to identify "self" directly (the comment-preparation verb stamps no
-    marker), so this gate fails CLOSED on positive external attribution instead of
-    trying to recognize self. When the registry cannot be loaded
-    (`recognized_bot_kinds is None`) the gate degrades to a presence-only check.
-
-    Non-comment findings (lint/sonar/bug/test-failure/…) carry no author and are
-    never pipeline-authored PR chatter; they are unaffected — their tool-disposition
-    recurrences are exactly the signal preference learning exists to capture.
-    """
-    if obj.get("type") == "pr-comment":
-        bot_kind = obj.get("bot_kind")
-        if not (isinstance(bot_kind, str) and bot_kind.strip()):
-            return False
-        if recognized_bot_kinds is None:
-            return True
-        return bot_kind.strip() in recognized_bot_kinds
-    return True
+    return _preference_admissibility
 
 
 def cross_preference_pattern(all_inputs: list[PlanInputs]) -> dict[str, Any]:
@@ -2605,11 +2579,28 @@ def cross_preference_pattern(all_inputs: list[PlanInputs]) -> dict[str, Any]:
     the distinct plans each tuple appears in (a tuple appearing in multiple
     findings within one plan contributes a single occurrence for that plan), and
     threshold-gates at `THRESHOLDS["preference_disposition_occurrences"]`.
+
+    The result carries `preference_admissibility_basis` — `recognized` or
+    `presence_only`. This is the same disclosure
+    `manage-findings list --preference-admissible` publishes, which is what keeps
+    the two preference surfaces symmetric: both apply the shared rule, and both
+    say which of its two paths actually ran.
     """
     threshold = THRESHOLDS["preference_disposition_occurrences"]
-    # Resolve the recognized reviewer-bot set ONCE for the whole corpus walk (the
-    # authorship gate validates archived `bot_kind` values against it).
-    recognized_bot_kinds = _recognized_bot_kinds()
+    # Resolve the shared rule and the recognized reviewer-bot set ONCE for the whole
+    # corpus walk (the authorship gate validates archived `bot_kind` values against
+    # that set). The rule is implemented once, in the shared module; this check
+    # applies it, it does not own it.
+    admissibility = _load_preference_admissibility()
+    recognized_bot_kinds = admissibility.recognized_bot_kinds()
+    # The two basis values are read off the shared module, not restated here: the
+    # loader above already returns it, so naming which of its two paths ran costs
+    # neither a new `sys.path` entry nor a new dependency.
+    admissibility_basis = (
+        admissibility.PREFERENCE_BASIS_PRESENCE_ONLY
+        if recognized_bot_kinds is None
+        else admissibility.PREFERENCE_BASIS_RECOGNIZED
+    )
     tuple_to_plans: dict[tuple[str, str, str], set[str]] = defaultdict(set)
     # Same declaration obligation as `cross_recurring_pattern`: this check narrows
     # on the identical predicate, so it publishes the population it examined rather
@@ -2623,10 +2614,10 @@ def cross_preference_pattern(all_inputs: list[PlanInputs]) -> dict[str, Any]:
         seen_in_plan: set[tuple[str, str, str]] = set()
         for jsonl in findings_dir.glob("*.jsonl"):
             for obj in read_jsonl(jsonl):
-                # D1 authorship gate: a pipeline-self-authored comment (or one with
-                # an unrecognized bot_kind) cannot seed a preference (see
-                # `_preference_admissible`).
-                if not _preference_admissible(obj, recognized_bot_kinds):
+                # D1 authorship gate: a pipeline-self-authored comment cannot seed
+                # a preference. Applied here, implemented in the shared module
+                # resolved above.
+                if not admissibility.preference_admissible(obj, recognized_bot_kinds):
                     continue
                 disposition = _preference_disposition(obj)
                 if disposition is None:
@@ -2677,6 +2668,7 @@ def cross_preference_pattern(all_inputs: list[PlanInputs]) -> dict[str, Any]:
         "candidate_count": len(candidates),
         "unattributed_excluded_count": unattributed_excluded,
         "plans_in_corpus": examined,
+        "preference_admissibility_basis": admissibility_basis,
         "rows": candidates,
     }
 
@@ -6330,6 +6322,19 @@ def emit_preference_pattern_block(result: dict[str, Any]) -> str:
         # threshold but were declined promotion — surfaced so the decision is
         # visible rather than a silent drop.
         f"unattributed_excluded_count: {result.get('unattributed_excluded_count', 0)}",
+        # Which authorship check actually ran: `recognized` (validated against the
+        # live registry-derived reviewer set) or `presence_only` (the registry was
+        # unresolvable and the shared rule took its degrade path). Emitted under
+        # the same absent-key-is-undeclared rule as `plans_in_corpus` above — a
+        # default would assert a basis for a walk that never reported one.
+        *(
+            [
+                "preference_admissibility_basis: "
+                f"{result['preference_admissibility_basis']}"
+            ]
+            if "preference_admissibility_basis" in result
+            else []
+        ),
         f"genuine_signal_count: {genuine_signal_count}",
         f"rows[{len(rows)}]{{module,finding_class,disposition,occurrence_count,plan_ids,severity}}:",
     ]

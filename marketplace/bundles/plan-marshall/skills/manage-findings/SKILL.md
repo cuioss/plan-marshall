@@ -145,7 +145,8 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 # List findings (per-plan; add --include-qgate to merge pending Q-Gate findings)
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
   list --plan-id {plan_id} [--type T] [--resolution R] \
-  [--promoted BOOL] [--file-pattern PATTERN] [--include-qgate] [--any-checkout]
+  [--promoted BOOL] [--file-pattern PATTERN] [--author AUTHOR] [--kind KIND] \
+  [--bot-kind BOT_KIND] [--preference-admissible] [--include-qgate] [--any-checkout]
 
 # Get single finding
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
@@ -176,6 +177,16 @@ Producers file untrusted free-text under a quarantined `raw_input.{field}` sub-o
 By default `list` returns only the per-plan findings store (the per-type `{type}.jsonl` files). Passing `--include-qgate` merges the **pending** per-phase Q-Gate findings — across every phase in the Q-Gate phase set — into the same result set, so a caller can retrieve both the per-plan findings and the in-flight Q-Gate findings in a single read. Only Q-Gate records whose `resolution == 'pending'` are merged; resolved Q-Gate findings are never surfaced through this read. The `--type` and `--file-pattern` filters apply to both slices for parity; the `--resolution` and `--promoted` filters apply to the per-plan slice only (the Q-Gate slice is implicitly `pending`).
 
 The merged response is shape-compatible with the default `list` output and adds three provenance markers — `qgate_included: true`, `plan_count`, and `qgate_count` — so consumers can tell how many findings came from each store (see **Output Format** below). The unified query is the read surface `verification-feedback.md` and `triage.md` consume for the per-plan finding sweep. See the `## Canonical invocations` → `list` section below for the authoritative `--include-qgate` argparse surface.
+
+#### Preference-evidence narrowing (`--preference-admissible`)
+
+`--preference-admissible` narrows the result to the findings that may seed a preference recurrence: a `pr-comment` is kept only when it is positively attributed to a recognized reviewer bot, and every other finding type passes through untouched. The flag APPLIES the authorship-admissibility rule; [`scripts/_preference_admissibility.py`](scripts/_preference_admissibility.py) IMPLEMENTS it, as the single home both preference surfaces reach. For why the gate keys on positive external attribution rather than trying to recognize the pipeline's own comments, see [`../phase-6-finalize/standards/disposition-to-hint-routing.md`](../phase-6-finalize/standards/disposition-to-hint-routing.md) § "(e) Authorship admissibility" — the single source of truth, not restated here.
+
+The recognized reviewer set is re-derived from the live registry, once per query, and that derivation can fail. When it does, the rule **degrades to a presence-only check**: a `pr-comment` is kept on a PRESENT `bot_kind` without validating it against the registry. The degrade is deliberate — the same § "(e) Authorship admissibility" contract argues why — and the pipeline's own comments are excluded on BOTH paths, because they carry an ABSENT `bot_kind` and the presence check runs first.
+
+The degrade is never silent. Whenever the flag is on, the result carries **`preference_admissibility_basis`**; see **Output Format** below for its two values and the absent-key rule. The cross-plan auditor publishes the same field on its `preference-pattern-detector` block, so both preference surfaces state which of the two paths they walked.
+
+The flag is **off by default**, so no existing caller's result changes. It is **keyword-only** on the underlying `query_findings` / `query_findings_unified` functions — both are consumed across skills, and it sits beside `any_checkout`, so positional binding is closed off rather than left to caller discipline. It composes with the other filters by acting on the already-filtered slice — `total_count` still spans the whole store, `filtered_count` reports the post-narrowing result — and it narrows the Q-Gate slice too under `--include-qgate`, so one flag never returns half-excluded output.
 
 ### Q-Gate Commands
 
@@ -315,6 +326,18 @@ a3f2c1,bug,Null check missing,pending
 b4e3d2,sonar-issue,TODO comment,fixed
 ```
 
+**Preference-narrowed query response** (`list --preference-admissible`, with or without `--include-qgate`): the same shape as above, plus `preference_admissibility_basis` naming which authorship check actually ran.
+
+```toon
+status: success
+plan_id: EXAMPLE-PLAN
+total_count: 30
+filtered_count: 9
+preference_admissibility_basis: recognized
+```
+
+⛔ **Read `preference_admissibility_basis` before treating the narrowed set as authorship-validated.** `recognized` means every kept `pr-comment` was checked against the live registry-derived reviewer set. `presence_only` means that registry was unresolvable and the rule degraded: the kept comments carry a `bot_kind`, but nothing validated it, so a legacy or de-registered identity is in the set. The field is emitted only when `--preference-admissible` is on — its absence means the narrowing did not run, never that the strong check did.
+
 ## Integration
 
 ### Producers
@@ -391,7 +414,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings li
   --plan-id PLAN_ID \
   [--type TYPE_CSV] [--resolution RESOLUTION] [--promoted {true|false}] \
   [--file-pattern PATTERN] [--include-qgate] [--author AUTHOR] [--kind KIND] \
-  [--any-checkout]
+  [--bot-kind BOT_KIND] [--preference-admissible] [--any-checkout]
 ```
 
 ### get

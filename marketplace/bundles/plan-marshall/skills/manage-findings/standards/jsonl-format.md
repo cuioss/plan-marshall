@@ -91,9 +91,20 @@ Each line in a `findings/{type}.jsonl` file is a JSON object:
 | `author` | string | Reviewer/comment-author login (e.g. coderabbitai, sourcery-ai) — indexed/queryable; primary attribution field for pr-comment findings |
 | `kind` | string | pr-comment structure discriminator: inline / review_body / issue_comment — indexed/queryable; drives the actionable-vs-meta classification in the review retrospective |
 | `reviewed_commit_sha` | string | PR HEAD SHA at the time the comment was ingested — the commit the reviewer bot saw; indexed/queryable, used to detect when HEAD has advanced past the last reviewed commit and a re-review is owed |
-| `bot_kind` | string | Reviewer-bot identity derived from `author`, validated against the registry-derived `BOT_KINDS` set (currently `coderabbit`, `sourcery`, `cuioss-review-bot` — one entry per `automatic-review/standards/{bot_kind}.md`) — indexed/queryable; distinct from `kind` (which describes comment structure), this identifies WHICH bot reviewed and keys the re-review strategy registry |
+| `bot_kind` | string | Reviewer-bot identity derived from `author`, checked at write time against the registry-derived `BOT_KINDS` set (one entry per `automatic-review/standards/{bot_kind}.md`) — indexed/queryable; distinct from `kind` (which describes comment structure), this identifies WHICH bot reviewed and keys the re-review strategy registry. See **The write-time `bot_kind` guard** below for what that check rejects and what it admits |
 
 For `pr-comment` findings, the queryable `author`, `kind`, `reviewed_commit_sha`, and `bot_kind` fields are the source of truth for reviewer identity, comment structure, and re-review matching; the author/kind lines written into the `detail` blob are retained for human readability only. `bot_kind` (the reviewer's identity) is distinct from `kind` (the comment's structure), and `reviewed_commit_sha` together with `bot_kind` are indexed/queryable so the re-review mechanism can match a reviewer to the commit it last saw.
+
+#### The write-time `bot_kind` guard
+
+`add_finding`'s check has two halves, and stating only the first reads as "always validated":
+
+- It **REJECTS** a value that is present but not in the recognized set — a misspelled or de-registered identity never enters the store through the `add` verb.
+- It **ADMITS** an absent value. That is deliberate, not a gap left to close later: an absent `bot_kind` is the correct recorded state both for an unattributed human comment and for the pipeline's own posted comments, and both must stay ingestible as findings. Rejecting them at write time would discard legitimate `pr-comment` records outright.
+
+Both halves describe the **record**, not the `add` call — and the guard and the writer share one truthiness predicate to keep the two scopes from diverging: the value is validated `if bot_kind`, and stored `if bot_kind`. An empty value is therefore neither validated nor written, and lands in the ADMITS half by producing exactly the absent-`bot_kind` record that half describes as correct. Read at CALL level a third case appears to go unaccounted for — an empty `--bot-kind` argument is supplied, is not a recognized identity, and draws no error. Read at record level, which is the scope that governs what the store holds and what every reader downstream sees, there is no such case: no reachable state puts an unrecognized `bot_kind` on a record unvalidated.
+
+**Admissibility for preference learning is decided at aggregation, not here.** Whether a finding may seed a durable preference is a separate question with a separate answer, and this guard neither asks nor settles it — the two must not be read as one check. The rule, and why it is shaped the way it is, live in [`../../phase-6-finalize/standards/disposition-to-hint-routing.md`](../../phase-6-finalize/standards/disposition-to-hint-routing.md) § "(e) Authorship admissibility"; the argument is not restated here.
 
 ### `raw_input` quarantine namespace + ingestion promotion
 
