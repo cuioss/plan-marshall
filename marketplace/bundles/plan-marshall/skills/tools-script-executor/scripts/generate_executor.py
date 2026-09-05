@@ -795,6 +795,16 @@ def _check_emitted_path_provenance(emitted_paths: list[str], base_path: Path) ->
 # ============================================================================
 
 _SURFACE_DERIVATION_BUDGET_ENV = 'PM_SURFACE_BUDGET_SECONDS'
+# COUPLED to ``test/conftest.py``'s ``_ensure_executor_present``, which
+# bootstraps a missing executor by subprocessing ``generate_executor.py
+# generate`` under ``timeout=300``. That timeout MUST stay strictly above this
+# budget with margin, because this budget bounds accept-set derivation ALONE:
+# script discovery, probe writing and the atomic write all run AFTER it is
+# spent, so a bootstrap timeout at or below 180.0 kills a generation the
+# generator itself still considers within budget. The two numbers are one
+# decision recorded in two places — the mirror comment at that call site names
+# this constant and its 180.0 value, so moving either number without the other
+# leaves one of the two comments wrong.
 _DEFAULT_SURFACE_BUDGET_SECONDS = 180.0
 
 
@@ -1959,10 +1969,13 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         print()
 
     # Generate executor (uses logging skill from plan-marshall/logging).
-    # The generator now self-checks the substituted content (format handshake,
+    # The generator self-checks the substituted content (format handshake,
     # placeholder-residue guard, py_compile) and writes atomically; a failed
-    # self-check surfaces here as the command's status: error (non-zero exit via
-    # the safe_main contract), preserving any pre-existing working executor.
+    # self-check surfaces here as the command's status: error, preserving any
+    # pre-existing working executor. The verdict rides the PAYLOAD, not the exit
+    # code: ``main()`` prints the TOON and returns 0 for every expected error, as
+    # the output contract requires, so a caller reads ``status`` rather than
+    # branching on the exit status.
     print('Generating executor...')
     gen_result = generate_executor(mappings, base_path, dry_run=args.dry_run, target=resolved_target)
     if gen_result.get('status') != 'success':

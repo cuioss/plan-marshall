@@ -8,6 +8,8 @@ the persisted and the rendered side.
 """
 
 
+import re
+
 from _manage_metrics_fixtures import (
     ns_enrich,
     ns_generate,
@@ -183,6 +185,32 @@ def test_cache_read_attribution_fields_match_platform_runtime_contract():
     assert 'cache_read_unattributed' in contract_keys
 
 
+#: One rendered residual bullet: ``- **{label}**: {value} of {total} {denominator}``.
+#: The denominator is captured as the FIELD NAME, which is what makes two
+#: residuals distinguishable — a value alone can coincide.
+_UNATTRIBUTED_BULLET_RE = re.compile(
+    r'^\s*-\s\*\*(?P<label>[^*]+)\*\*:\s[\d,]+\sof\s[\d,]+\s(?P<denominator>[a-z_]+)'
+)
+
+
+def _unattributed_bullets(md: str) -> list[tuple[str, str]]:
+    """Every rendered ``unattributed`` bullet as a ``(label, denominator)`` pair.
+
+    The population is the rendered report itself, so a bullet that stopped
+    naming its denominator drops OUT of this list rather than passing a
+    substring check — which is why the caller asserts the list is non-empty
+    before reading anything off it.
+    """
+    pairs: list[tuple[str, str]] = []
+    for line in md.splitlines():
+        if 'nattributed' not in line:
+            continue
+        match = _UNATTRIBUTED_BULLET_RE.match(line)
+        if match is not None:
+            pairs.append((match.group('label'), match.group('denominator')))
+    return pairs
+
+
 class TestTwoUnattributedPopulationsAreDistinguishable:
     """Plan 030 D1 (GATE): the two "unattributed" quantities are separately named
     and each carries its own denominator, everywhere either is emitted or rendered.
@@ -245,7 +273,7 @@ class TestTwoUnattributedPopulationsAreDistinguishable:
         assert five['exploration_result_bytes'] != five['cache_read_input_tokens']
 
     def test_render_names_quantity_and_denominator_for_each_residual(
-        self, plan_context, monkeypatch
+        self, plan_context, monkeypatch, record_property
     ):
         """metrics.md renders each residual with its quantity (bytes vs cache_read
         tokens) AND its denominator, so the two lines are unambiguously different."""
@@ -291,11 +319,41 @@ class TestTwoUnattributedPopulationsAreDistinguishable:
             '- **Unattributed cache_read tokens**: 1,000 of 9,000 cache_read_input_tokens'
             in md
         )
-        # Neither figure is rendered under a bare "unattributed" label: every
-        # rendered line carrying the word also carries its denominator ("… of …").
-        for line in md.splitlines():
-            if 'nattributed' in line and line.lstrip().startswith('- **'):
-                assert ' of ' in line, f'unattributed line lacks a denominator: {line!r}'
+        # ⭐ Neither figure is rendered under a bare "unattributed" label — and
+        # the reading is over the SETS of labels and named denominators, not
+        # over the presence of the substring `' of '`. Two residuals rendering
+        # an identical label over an identical denominator — the exact state D1
+        # exists to prevent — satisfies a `' of ' in line` check on every line,
+        # so that check could not fail for the reason it was written. The exact
+        # lines asserted above pin THESE two residuals; the sets below extend to
+        # a third residual those lines say nothing about.
+        rendered = _unattributed_bullets(md)
+        record_property('unattributed_bullets_rendered', len(rendered))
+        record_property('unattributed_render_map_size', len(manage_metrics._UNATTRIBUTED_RENDER))
+
+        assert rendered, (
+            'no denominator-bearing unattributed bullet was rendered — the '
+            'population is empty and every check below would be vacuous'
+        )
+        labels = [label for label, _denominator in rendered]
+        denominators = [denominator for _label, denominator in rendered]
+        assert len(set(labels)) == len(labels), (
+            f'two residuals rendered under the same label: {labels}'
+        )
+        assert len(set(denominators)) == len(denominators), (
+            f'two residuals rendered over the same denominator: {denominators}'
+        )
+        # Every rendered pair is one the render map declares. A subset rather
+        # than an equality, deliberately: a residual declared in the map but not
+        # supplied by THIS fixture must not turn this red — that coverage is
+        # `test_unattributed_render_map_covers_every_residual`'s job.
+        declared = {
+            (label, denominator)
+            for label, denominator, _note in manage_metrics._UNATTRIBUTED_RENDER.values()
+        }
+        assert set(rendered) <= declared, (
+            f'rendered pairs not declared by the render map: {sorted(set(rendered) - declared)}'
+        )
 
 
 def test_unattributed_render_map_covers_every_residual():

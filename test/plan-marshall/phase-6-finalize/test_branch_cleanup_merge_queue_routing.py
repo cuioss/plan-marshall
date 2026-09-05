@@ -136,6 +136,7 @@ from __future__ import annotations
 
 import ast
 import re
+import sys
 import tokenize
 from collections.abc import Callable
 from pathlib import Path
@@ -799,6 +800,52 @@ def _code_without_prose(source: str) -> str:
                 tokenize.DEDENT,
             )
     return ''.join(chars)
+
+
+def test_the_predicate_can_see_inside_an_f_string():
+    """The identifier predicate depends on PEP 701, and the dependency is ASSERTED.
+
+    ``first_queue_symbol`` reads ``NAME`` tokens only, which is exactly what
+    excludes prose. On an interpreter older than Python 3.12 an f-string is ONE
+    ``STRING`` token, so a queue symbol referenced only inside one is invisible
+    to it and the handler is classified ``inert`` — a VACUOUS miss,
+    indistinguishable from a handler that really performs no guard. It would then
+    surface as a mystifying red in the parity sweep, blamed on the handler,
+    rather than as "this interpreter cannot support the derivation".
+
+    The load-bearing assertion is on the RUNNING tokenizer, because the
+    tokenizer's behaviour is the property the predicate needs; the version check
+    beside it names the CAUSE, so a failure points at the ``requires-python``
+    floor rather than sending a reader to debug the predicate.
+
+    The paired negative keeps the positive honest: PEP 701 must widen the scan to
+    interpolated EXPRESSIONS without also admitting the f-string's literal text,
+    which is prose and stays excluded.
+    """
+    assert sys.version_info >= (3, 12), (
+        'the merge-shaped predicate reads identifiers out of f-string '
+        'interpolations, which requires PEP 701 (Python 3.12). A requires-python '
+        f'floor below 3.12 silently blinds it; running {sys.version_info[:2]}.'
+    )
+
+    interpolated = 'def handler(payload):\n    return f"{_probe_merge_train_state(payload)}"\n'
+
+    found = first_queue_symbol(interpolated, 'handler')
+
+    assert found is not None, (
+        'the tokenizer did not expose the identifier inside the f-string, so '
+        'first_queue_symbol is blind to a guard referenced only there'
+    )
+    _offset, identifier = found
+    assert identifier == '_probe_merge_train_state'
+
+    # The negative: the same vocabulary as literal f-string TEXT is prose, and
+    # must still yield nothing — otherwise the widened scan would re-open the
+    # docstring-satisfies-the-predicate hole one layer in.
+    prose_only = 'def handler(payload):\n    return f"merge_queue state for {payload}"\n'
+    assert first_queue_symbol(prose_only, 'handler') is None, (
+        'the vocabulary appearing in an f-string LITERAL was read as a reference'
+    )
 
 
 def test_registry_populations_are_published_and_plausible():
