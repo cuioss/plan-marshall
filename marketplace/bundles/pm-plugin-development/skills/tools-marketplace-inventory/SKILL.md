@@ -25,6 +25,10 @@ mode: script-executor
 
 Provides complete marketplace inventory scanning capabilities using the scan-marketplace-inventory.py script.
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../../plan-marshall/skills/tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Purpose
 
 This skill scans the marketplace directory structure and returns a comprehensive TOON inventory of all bundles and their resources (agents, commands, skills, scripts).

@@ -10,6 +10,10 @@ Workflows for plan creation and setup phases: init, refine, outline, and plan.
 
 **CRITICAL CONSTRAINT**: These workflows create and manage **plans only**. NEVER implement tasks directly. All task descriptions MUST result in plans - not actual implementation. After completing 1-init through 4-plan phases, check `execute_without_asking` config. If false (default): STOP and wait for execute action. If true: Auto-continue to execute phase.
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Action Routing
 
 | Action | Workflow |

@@ -20,6 +20,10 @@ Manage implementation tasks with sequential sub-steps within a plan. Each task r
 - Adding a task uses the three-step path-allocate pattern: `prepare-add` → write TOON file → `commit-add`. No multi-line content is marshalled through the shell boundary.
 - Step finalization requires explicit `--outcome` (done, skipped, or failed)
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Storage Location
 
 Tasks are stored in the plan directory:

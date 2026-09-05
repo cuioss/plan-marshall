@@ -38,6 +38,10 @@ or an unregistered project, behaves byte-identically to today.
 - All script output uses TOON format (see `plan-marshall:ref-toon-format`).
 - The entry-point script (`build_server.py`) is invoked only through `python3 .plan/execute-script.py` with the 3-part notation.
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## The call model — submit, then bounded long-poll
 
 1. **submit** — the client S3-verifies the daemon (socket-owner uid check +

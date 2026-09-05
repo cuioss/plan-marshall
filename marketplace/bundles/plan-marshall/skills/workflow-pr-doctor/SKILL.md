@@ -21,6 +21,10 @@ The pr-doctor body (CI wait, multi-source fetch over build / PR comments / Sonar
 **Constraints:**
 - The slash-command surface (`/workflow-pr-doctor`) MUST resolve through `manage-config effort resolve-target --phase phase-6-finalize --role verification-feedback` and dispatch the canonical executor variant.
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Dispatch
 
 When `/workflow-pr-doctor` is invoked, resolve the level + target via:

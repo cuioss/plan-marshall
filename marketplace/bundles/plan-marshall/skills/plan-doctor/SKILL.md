@@ -31,6 +31,10 @@ This skill complements the at-write-time validation in `manage-tasks` (which pre
 - Findings are emitted to the Q-Gate store under phase `5-execute` so they surface in the Phase 5 triage path; the script also prints a TOON summary to stdout
 - Exit non-zero (`1`) when `findings_count > 0` so CI / orchestrators can fail fast on regressions
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## When to Use
 
 - After a plan has been planned (Phase 4) but before execution (Phase 5), to catch stale lesson-ID references introduced by hand-edited TASK files

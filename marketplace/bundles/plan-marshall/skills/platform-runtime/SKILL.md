@@ -25,6 +25,10 @@ Script-based platform abstraction that routes 25 goal-based operations to the co
 - `no-op` responses are not errors; the calling skill must continue
 - See `standards/contract.md` for per-operation TOON schemas
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## What This Skill Provides
 
 Twenty-five operations covering the full platform lifecycle:

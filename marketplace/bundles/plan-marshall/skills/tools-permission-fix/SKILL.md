@@ -26,6 +26,10 @@ mode: script-executor
 - Executor-pattern and marketplace-wildcard operations that have no runtime op run through `python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fix {command} {args}`, addressed by `--scope` / `--target` (never a literal settings path).
 - Always use `--dry-run` first to preview changes before applying.
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Platform-routed permission edits
 
 The common permission mutations are platform-neutral: they flow through the `platform-runtime` permission ops, which carry the operation's semantic intent and let the runtime resolve + write the active platform's settings. The runtime is the single home for settings path-resolution and load/save — the body never names a settings file.

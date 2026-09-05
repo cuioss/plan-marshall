@@ -6,6 +6,10 @@ implements: plan-marshall:extension-api/standards/ext-point-execution-context-wo
 
 This standard defines the protocol for verifying links in AsciiDoc documentation, with critical emphasis on manual verification before any link removal to prevent accidental deletion of valid links.
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../../../plan-marshall/skills/tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Core Principle
 
 **NEVER blindly trust automated link verification tools.** Always perform manual verification by reading the target file before removing any link.

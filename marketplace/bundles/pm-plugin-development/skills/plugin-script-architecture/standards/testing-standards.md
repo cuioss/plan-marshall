@@ -2,6 +2,10 @@
 
 Standards for testing Python scripts in the marketplace. Tests use **Python stdlib only** - no external frameworks required.
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../../../plan-marshall/skills/tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Quick Start
 
 Run the suite through the canonical build command (pytest under the hood), never

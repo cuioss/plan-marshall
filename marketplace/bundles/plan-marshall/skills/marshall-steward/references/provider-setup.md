@@ -2,6 +2,10 @@
 
 Extracted provider-related wizard logic covering discovery, activation, CI detection, and credential setup. Referenced by `wizard-flow.md` Steps 7 and 13.
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Provider Discovery and Activation (Step 7)
 
 Scan executor SCRIPTS entries for `*_provider.py` files, group discovered providers by category, and persist only the activated subset to `marshal.json`. This must run after the executor is generated (Step 4) and marshal.json is initialized (Step 5), but before CI detection or credential setup (both Step 13) which read from the providers list.

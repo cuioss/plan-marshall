@@ -2,6 +2,10 @@
 
 Classification of allowed vs prohibited reference types in marketplace components, using relative paths for portability.
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../../../plan-marshall/skills/tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## The Relative Path Pattern
 
 **Critical Principle**: All resource paths in skills use relative paths from the skill directory for portability across installation contexts.

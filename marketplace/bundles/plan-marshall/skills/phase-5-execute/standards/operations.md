@@ -4,14 +4,9 @@ Reference for executing common checklist items. The executor uses these patterns
 
 **Manifest-driven execution**: This document does not encode any skip-conditional language for verification steps. Whether `quality-gate`, `module-tests`, or `coverage` fires at the end of Phase 5 is decided by the per-plan execution manifest (`manage-execution-manifest read`) Step 2 of `SKILL.md` consumes — the dispatch templates here are unconditional and only run when the manifest's `phase_5.verification_steps` list includes the corresponding step name.
 
-## Exit-code convention for `manage-*` script calls
+## Exit-code convention for every script call
 
-Every `manage-*` script call in this document carries the following exit-code contract unless a step explicitly states otherwise:
-
-- **`exit_code == 0`**: parse the returned TOON and use the value as the step describes.
-- **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — silent swallowing of `wrong_parameters` rejections is the prohibited anti-pattern; "log and continue" is equally forbidden.
-
-Step-level exceptions — calls whose non-zero exit is itself the signal (e.g., `manage-files exists` returning `exists: false`, `manage-status get-worktree-path` returning an empty `worktree_path`) — are documented inline in the step that issues them.
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
 
 ## Worktree Header Protocol (Applies to ALL Dispatch Patterns)
 

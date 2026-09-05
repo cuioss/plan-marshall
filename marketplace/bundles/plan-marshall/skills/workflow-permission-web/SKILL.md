@@ -24,6 +24,10 @@ Analyzes WebFetch domains across global and project settings, researches domains
 - All user interactions use `AskUserQuestion` tool with proper YAML structure
 - Track all statistics (domains_analyzed, permissions_added/removed, security_checks, files_read/modified) throughout workflow
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Description |

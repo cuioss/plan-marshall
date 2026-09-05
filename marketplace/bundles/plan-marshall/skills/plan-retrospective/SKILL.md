@@ -43,6 +43,10 @@ implements:
 - Strictly comply with all rules from `plan-marshall:persona-plan-marshall-agent`.
 - Report filename is `quality-verification-report.md` in live modes (overwrite on repeat invocation) and `quality-verification-report-audit-{YYYYMMDDTHHMMSSZ}.md` in archived mode.
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Foundational Practices
 
 ```text

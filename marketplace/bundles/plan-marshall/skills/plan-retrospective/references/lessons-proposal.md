@@ -2,6 +2,10 @@
 
 Synthesizes high-confidence signals from all prior aspects into candidate lessons, formatted for `manage-lessons add`. LLM-driven; consumes the TOON fragments of earlier aspects as input.
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Inputs
 
 All aspect fragments produced in earlier workflow steps, especially:

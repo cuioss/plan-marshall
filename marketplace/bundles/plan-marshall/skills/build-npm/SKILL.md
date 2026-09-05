@@ -16,6 +16,10 @@ See `build-api-reference.md` § Enforcement for shared rules.
 All commands use `python3 .plan/execute-script.py plan-marshall:build-npm:npm {command} {args}`.
 npm vs npx routing is automatic; do not force one over the other.
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Scripts
 
 | Script | Purpose |

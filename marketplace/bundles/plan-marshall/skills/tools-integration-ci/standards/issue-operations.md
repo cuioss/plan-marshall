@@ -7,6 +7,10 @@ and `wait-for-label`; their flags are listed in
 [leaf-command-reference.md](leaf-command-reference.md) and the pattern they
 implement is in [blocking-wait-pattern.md](blocking-wait-pattern.md).
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Plan-less callers: `--plan-id NO_PLAN`
 
 `--plan-id` is required on all four body-store verbs here (`prepare-body`,

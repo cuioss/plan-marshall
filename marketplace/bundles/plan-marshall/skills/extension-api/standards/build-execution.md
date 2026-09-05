@@ -2,6 +2,10 @@
 
 Specification for build command execution in domain extensions. This document covers the **execution contract** (input/output fields, lifecycle, format specs). For subcommand documentation and error categories, see `build-api-reference.md`. For timeouts and log handling standards, see `build-systems-common.md`.
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Purpose
 
 Domain bundles that provide build capabilities expose a **unified execution API** that:

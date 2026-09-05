@@ -4,6 +4,10 @@ Architecture for CI operations using a provider-agnostic router pattern.
 
 ---
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Design Decision: Router Pattern for CI
 
 CI operations use a **router pattern**: the `ci.py` router finds the CI provider from the `providers[]` array in marshal.json (matching known CI skill_name with bundle prefix, e.g., `plan-marshall:workflow-integration-github`) and delegates to the correct provider script (`github.py` or `gitlab.py`). Unlike build commands, CI has no per-module variation — one provider per repo, fixed operation set.

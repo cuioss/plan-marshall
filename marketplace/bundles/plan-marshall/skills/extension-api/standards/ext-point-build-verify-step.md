@@ -2,6 +2,10 @@
 
 > **Type**: Phase-5 Step Doc Extension | **Hook Method**: `implements:` frontmatter on each step doc | **Implementations**: 1 | **Status**: Active
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Overview
 
 A build verify step is one canonical verification command in the phase-5-execute pipeline — `quality-gate`, `module-tests` (`verify`), `coverage`, and the whole-tree-only gates `integration-tests` and `e2e`. Every built-in build verify step is backed by a single **parameterized** step body doc (`phase-5-execute/standards/canonical_verify.md`): the doc reads the canonical from the trailing segment of a `default:verify:{canonical}` step ID, resolves it via `architecture resolve --command {canonical}`, and runs the resolved executable. The canonical is a parameter, never a hardcoded branch, so one doc backs the whole set.

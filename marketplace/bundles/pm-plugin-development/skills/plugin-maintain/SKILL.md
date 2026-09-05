@@ -35,6 +35,10 @@ Before encoding any doc/prose convention as a **blocking static lint rule** (a p
 - **(b) Textually-indistinguishable convention → checklist, not a rule.** If the defect pattern is textually indistinguishable from legitimate usage (a human needs context or judgment to tell a violation from a valid use), the convention belongs in a **review checklist / authoring standard**, NOT a blocking static rule. A static rule can only enforce what is mechanically separable; encoding a judgment-call convention as a hard rule guarantees false positives on legitimate content.
 - **(c) A false-positive flood is the kill signal.** When a deployed rule produces a flood of false positives, the correct response is to **REMOVE the rule** — do not downgrade it to advisory and leave it in place. An advisory rule that everyone learns to ignore is corpus noise that erodes trust in the whole gate; a rule that cannot cleanly distinguish violations from valid usage has failed its design test and must go.
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../../plan-marshall/skills/tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Overview
 
 This skill provides 5 maintenance workflows:

@@ -24,6 +24,10 @@ Provides git commit workflow following conventional commits specification. Inclu
 - All git invocations MUST use `git -C {worktree_path} <subcommand>`. `{worktree_path}` is resolved from `status.metadata.worktree_path` in Step 0 of the Commit Changes workflow. See `standards/worktree-handling.md` for the worktree-specific application of this rule.
 - Temp files MUST be written under `.plan/temp/` per project policy — never `/tmp/`.
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Description |

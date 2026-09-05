@@ -46,6 +46,10 @@ server.
 - All script output uses TOON format (see `plan-marshall:ref-toon-format`).
 - The entry-point script (`lsp_client.py`) is invoked only through `python3 .plan/execute-script.py` with the 3-part notation.
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## The coverage contract (no silent empty result)
 
 Every verb keeps *no server ran* distinguishable from *the server ran and found

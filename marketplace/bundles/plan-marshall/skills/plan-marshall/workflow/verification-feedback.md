@@ -8,6 +8,10 @@ Thin orchestrator that unifies the LLM-driven feedback flows under a single disp
 
 Dispatched under the **phase-scoped** `verification-feedback` role key — the resolver bubbles from `<caller-phase>.verification-feedback` to `<caller-phase>.default` to `effort`. Phase-5 dispatches use `--phase phase-5-execute --role verification-feedback`; every phase-6-finalize dispatch (finalize-feedback, plugin-doctor, pr-state) uses `--phase phase-6-finalize --role verification-feedback`. The standalone `sonar` and `pr-comment` producer modes are retired as finalize dispatch modes — `sonar-roundtrip` and `automatic-review` are now FIND-only and no longer dispatch this workflow themselves; the dispatcher-owned `finalize-feedback` mode triages the union of their filed findings instead (see the Producer modes table below).
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Producer modes
 
 | `producer` | Caller surface | Producer-side work (Step 1) | Pre-flight gate |

@@ -24,6 +24,10 @@ Manages project-level infrastructure configuration in `.plan/marshal.json`.
 - A new **provisioning write** (any handler that persists a caller-supplied field into `marshal.json`) MUST route its field through `_config_core.reject_unknown_provisioning_field` before `save_config`, and a new **status-producing read** MUST model its evidence-absent case as an explicit third state. Both invariants are enumerated site-by-site, with a disposition per site, in [standards/provisioning-fail-closed-audit.md](standards/provisioning-fail-closed-audit.md) — consult it when adding either kind of surface so the new site is classified rather than left unexamined.
 - Domain-specific content resident in this core bundle (a domain-conditional gating site, or a domain literal in a domain-agnostic script/standard) is enumerated with a fix-or-justify disposition in [standards/domain-residency-audit.md](standards/domain-residency-audit.md). Consult it before introducing a domain name or a domain-owned tool into a `manage-config` script, so the new item lands as a justified illustration rather than an ungated per-domain branch.
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Workflow: Initialize Configuration
 
 **Pattern**: Script Automation

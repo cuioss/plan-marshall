@@ -6,6 +6,10 @@ implements: plan-marshall:extension-api/standards/ext-point-execution-context-wo
 
 Comprehensive web-based research workflow that gathers best practices, recommendations, and information about a specified topic from multiple online sources. Research has **no sub-key of its own** — it inherits the calling phase's `default` slot, so the lookup is the bare-group form `--phase phase-N` where N is the calling phase (outside any plan, `--default`). See [`plan-marshall/standards/effort-roles.md`](../standards/effort-roles.md) § Workflow → resolver-key mapping.
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Untrusted-content isolation (reader + deterministic validator gate)
 
 Web pages are **untrusted external content** — a fetched page can carry a prompt-injection payload. This workflow therefore runs inside the **read-only reader** variant `execution-context-reader-{level}` (tool surface `WebSearch, WebFetch, Read, Grep` — no Write/Edit/Bash/Skill), NOT the write-capable `execution-context-{level}`. The reader performs semantic extraction ONLY and emits a CANDIDATE findings struct; that candidate is **untrusted until a deterministic script validates it**. See `plan-marshall:untrusted-ingestion` (threat model, reader contract, output-schema rules).

@@ -24,6 +24,25 @@ Unified CI provider abstraction using **static routing** - one script per provid
 - Provider routing is config-driven; do not hard-code provider names
 - Before invoking any `ci` leaf subcommand whose exact flags you do not already know, Read [`standards/leaf-command-reference.md`](standards/leaf-command-reference.md) (or the relevant group standard). Never guess
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
+## A `ci` verb reports failure as `status: error` at exit 0 — by design
+
+This is the authoritative statement of the rule. Every other document cross-references this section rather than restating it.
+
+**A `ci` call's exit code carries no verdict. Branch on the payload `status`, never on the exit code.** An exit code of 0 from any `ci` verb means the process ran to completion — it does not mean the operation succeeded. The failure is reported in the TOON payload on stdout as `status: error`, alongside `operation`, `error`, and where present `error_cause` and `context`.
+
+This is deliberate, not a defect and not a caveat. It is the skill's three-tier model: an *expected* error — no such PR, an unmergeable branch, a provider refusal — is a well-formed result the caller is meant to read and route on, so it exits 0 and puts the verdict in the payload. A non-zero exit is reserved for the process failing to produce a result at all.
+
+Two places in the source make this concrete, and both are read-only references — neither is modified by this contract:
+
+- `ci_base.output_error` (`scripts/ci_base.py:883-891`) builds the error dict, prints it with `serialize_toon`, and returns `EXIT_SUCCESS`. The error envelope goes to stdout; the exit code stays 0.
+- Both provider front-ends close their `main()` the same way — `github_ops.py:1877` (closing `print(serialize_toon(result, …))` / `return 0` at lines 1973-1974) and `gitlab_ops.py:2684` (closing at lines 2761-2762). Each ends `dispatch → print → return 0` with **no branch on the dispatched result's `status`**, so a handler that returned an error dict exits exactly as a handler that succeeded.
+
+The consequence a caller must design for: an exit-code-only reading accepts a failed `ci` call as a usable value, and then reads success-payload fields off an error envelope that does not carry them. That is the swallowed-rejection failure this rule exists to prevent — a `create-pr` step marking itself done on a PR that does not exist.
+
 ## What This Skill Provides
 
 - Provider detection and health verification

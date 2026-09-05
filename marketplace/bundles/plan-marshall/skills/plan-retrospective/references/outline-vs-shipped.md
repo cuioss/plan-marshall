@@ -4,6 +4,10 @@ The outline-vs-shipped aspect compares what `phase-3-outline` said it would touc
 
 Nothing checked that correspondence before. Outline records a per-file judgement, the work proceeds, and the two are never placed side by side. This aspect is that comparison and nothing more.
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Deterministic facts vs LLM judgment
 
 The split the whole skill follows: `check-outline-vs-shipped` produces deterministic, counted facts; this reference is the contract the LLM synthesizes a judgment from. The script computes three set differences and publishes each beside the population it was taken over. It decides nothing about whether a divergence mattered.

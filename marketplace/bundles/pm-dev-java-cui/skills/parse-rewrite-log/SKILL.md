@@ -41,6 +41,10 @@ its exit code and result TOON. No LLM judgement is involved in parsing.
 - The line format and this parser's `FINDING_PATTERN` must agree with the provenance corpus, never with recollection of the format.
 - A change to the upstream #118 WARN shape (template wording, identifier, or prefix) that the corpus no longer matches must fail the format-drift regression test rather than silently disabling the parser.
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../../plan-marshall/skills/tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## WARN-line format
 
 The recipe emits two WARN `LogRecord` templates per finding (from

@@ -4,14 +4,9 @@ Detailed procedures for the phase-3-outline skill. This document contains the st
 
 For the high-level overview, input/output contract, and track routing logic, see the parent [SKILL.md](../SKILL.md).
 
-## Exit-code convention for `manage-*` script calls
+## Exit-code convention for every script call
 
-Every `manage-*` script call in this document carries the following exit-code contract unless a step explicitly states otherwise:
-
-- **`exit_code == 0`**: parse the returned TOON and use the value as the step describes.
-- **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — silent swallowing of `wrong_parameters` rejections is the prohibited anti-pattern; "log and continue" is equally forbidden.
-
-Step-level exceptions — calls whose non-zero exit is itself the signal (e.g., `manage-files exists` returning `exists: false`) — are documented inline in the step that issues them.
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
 
 ---
 

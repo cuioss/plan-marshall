@@ -2,6 +2,10 @@
 
 > **Type**: Phase-6 Step Doc Extension | **Hook Method**: `implements:` frontmatter on each step doc | **Implementations**: 26 | **Status**: Active
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Overview
 
 A finalize step is one unit of work in the phase-6-finalize pipeline — push, create-pr, lessons-capture, sonar-roundtrip, archive-plan, and so on. Each step is an LLM-driven body doc (a `workflow/*.md` or `standards/*.md` file under `phase-6-finalize`, an opt-in bundle `SKILL.md`, or a project-local `.claude/skills/finalize-step-*/SKILL.md`) whose `---`-fenced frontmatter declares the step's identity, execution order, default-seed membership, and named-preset memberships.

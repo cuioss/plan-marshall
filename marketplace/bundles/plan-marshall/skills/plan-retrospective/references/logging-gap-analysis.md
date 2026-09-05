@@ -2,6 +2,10 @@
 
 Identifies places where the LLM or a component should have logged but didn't — gaps make plan introspection harder and invalidate log-analysis findings. LLM-driven; inputs include the existing logs and the skill references that drive the plan.
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Inputs
 
 - `work.log`, `decision.log`, `script.log` — what was actually logged.

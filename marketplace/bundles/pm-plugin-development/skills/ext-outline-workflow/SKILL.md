@@ -10,6 +10,10 @@ implements: plan-marshall:extension-api/standards/ext-point-outline
 
 Shared workflow steps for plugin development outline, loaded by the `phase-3-outline` skill when the domain is `plan-marshall-plugin-dev`. Change-type-specific instructions are in `standards/change-types.md` (consolidated document with sections for each type: bug_fix, enhancement, feature, tech_debt).
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../../plan-marshall/skills/tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Step 1: Load Foundational Practices
 
 ```text
