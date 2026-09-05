@@ -469,6 +469,15 @@ that no longer exists. The generation boundary is fixed by reading
 [`cuioss/pr-agent-settings`](https://github.com/cuioss/pr-agent-settings) at its default-branch
 HEAD — the file PR-Agent actually loads — never from a value cached here.
 
+⚠ **The G2 column below IS such a cache, and is recorded as one rather than presented as a mirror.**
+`.pr_agent.toml` is re-read at default-branch HEAD on every CI invocation, so nothing pins the
+revision these values were transcribed at, and this record cannot refresh itself. What anchors them
+is not a commit but the merged pull requests named below — `#5`, `#7`, `#13`, `#14`, `#15` — which do
+not move; the column is exactly "the state after `#15`", and any settings change landing after it
+ages the column silently, with nothing here to notice. Re-read the file at HEAD before relying on a
+G2 cell for anything load-bearing, and treat a disagreement as the column being stale rather than as
+the reviewer having drifted.
+
 ### The two generations
 
 | | G1 — the suppressed charter | G2 — live at `pr-agent-settings` HEAD |
@@ -555,6 +564,19 @@ One knob per run. A knob that was not varied is named here as not varied, never 
 ⛔ The `temperature` row is a **not-measured** null, not a measured-nil one. Reading it as evidence
 that temperature does not matter would be reading an absent experiment as a negative result.
 
+⚠ **The `reasoning_effort` row's verdict is anchored to an image revision, and the anchor is named
+here rather than left implicit.** `SUPPORT_REASONING_EFFORT_MODELS` is transcribed from
+`litellm_ai_handler.py` **inside the reviewer image** — it is not a setting this project's
+configuration declares, so unlike every other row above it cannot be re-derived from
+`pr-agent-settings`. The image is selected by
+`cuioss/cuioss-organization/.github/workflows/reusable-pr-agent-review.yml`, which this repository's
+caller pins by commit SHA in `.github/workflows/pr-agent.yml` (`uses: …@f3b0586c…`, v0.23.0). That
+pin is the revision the list was read against, and it is the thing to re-check — **"dead config for
+Gemini" is a statement about that image, not a standing property of Gemini**. Bumping the `uses:` pin
+can add a Gemini entry to the list and silently make the row false, and nothing in this record or in
+CI would report it. Re-read the list at the new pin whenever that reference moves, before the
+"unreachable" rejection below is relied on again.
+
 ### The chosen arm, and the arms rejected
 
 **Chosen — the charter arm.** Rewrite `extra_instructions` to state what to look for rather than
@@ -600,12 +622,30 @@ BODY; `test_counting_rule_parity.py` pins that predicate across both implementat
 Before the carve-out existed, a reviewer's `"Actionable comments posted: N"` status summary counted
 as one actionable finding.
 
-⛔ **The carve-out does not fire for this bot, and the asymmetry is the point.** This record declares
-no `review_body_summary_patterns`, so every one of its `review_body` comments stays counted — while
-the comparator in the #103 figure, CodeRabbit, does declare one. A PR-Agent-versus-CodeRabbit *ratio*
-computed before the carve-out therefore overstates the comparator by up to one finding per pull
-request it posted a summary on. The #103 figure above is a raw count on each side rather than a
-ratio, so it survives; a ratio carried over from that era does not.
+⛔ **The carve-out is INAPPLICABLE to this bot, not merely non-firing — and saying "it does not fire"
+understates the gap.** This record declares no `review_body_summary_patterns`, but that is not what
+excludes it: the bot publishes **no `review_body` at all**. `participation_evidence` declares
+`issue_comment` and `inline`, and the bot submits no GitHub review object (see "Structural
+constraints"), so "every one of its `review_body` comments stays counted" is a claim over an empty
+population — true, and about nothing.
+
+⛔ **What the counting rule actually does to this bot is stronger: its `/review` Guide contributes
+ZERO.** `_is_actionable` counts `inline` and substantive `review_body`; `issue_comment` is meta. The
+Guide is an `issue_comment`, so under the in-tree rule it counts as **nothing at all**, however many
+⚡ focus-area rows it carries. Only its `inline` `/improve` comments are countable — the shape that
+had never once appeared in this repository before the #1334 pilot. So the in-tree counter's view of
+this reviewer is not "counted without a summary carve-out"; it is "not counted on the `/review`
+surface at any time".
+
+⚠ **Therefore #103 is a RAW count and is labelled that way.** Its PR-Agent side — one focus-area
+finding — was read by hand out of the Guide body; `assess_delta` would score that side **0**, because
+the Guide is an `issue_comment`. Its CodeRabbit side is a raw count too, and CodeRabbit *does* declare
+`review_body_summary_patterns`, so the two sides are not even drawn from the same countable
+population. Read #103 as a manual observation of review CONTENT, never as an `assess_delta` figure,
+and never as a ratio: a PR-Agent-versus-CodeRabbit ratio is incomparable in both directions at once —
+the carve-out moves the comparator's side by up to one finding per pull request it summarised, while
+the whole of this bot's `/review` output is outside the counted population on ours. Any ratio carried
+over from that era does not survive; the raw counts do, as raw counts.
 
 The reviewer's **identity** moved too: `bot_kind` is `cuioss-review-bot`, so a corpus keyed on the
 retired `pr-agent` token predates that rename. Establish which token a figure was filed under before
