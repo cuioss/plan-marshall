@@ -225,6 +225,7 @@ import sys
 import bot_registry
 from _findings_core import query_findings
 from _findings_store_state import as_unresolved_store_error
+from toon_parser import serialize_toon
 
 # The state every classified bot resolves to. Every member below except
 # ``participated`` is part of the closed NON-participation taxonomy owned by
@@ -1310,40 +1311,44 @@ def check_deficit(
 
 
 def _emit_toon(payload: dict) -> None:
-    """Print a minimal TOON block matching the documented contract."""
-    print(f'status: {payload.get("status", "success")}')
-    if payload.get('status') == 'error':
-        print(f'error: {payload.get("error", "unknown")}')
+    """Print the documented TOON block through the canonical serializer.
+
+    Every row set is narrowed to its declared columns before serialization, so the
+    emitted table header stays the contract's rather than whatever keys the payload
+    record happens to carry.
+    """
+    emitted: dict[str, object] = {'status': payload.get('status', 'success')}
+
+    if emitted['status'] == 'error':
+        emitted['error'] = payload.get('error', 'unknown')
         if 'detail' in payload:
-            print(f'detail: {payload["detail"]}')
+            emitted['detail'] = payload['detail']
         # Emitted only on the store-refusal branch, where the payload carries it.
         # It names WHICH unreached state produced the refusal (plan_absent vs
         # unknown), which is the difference between "this plan lives in another
         # checkout" and "no runtime-state root was resolved at all" — two
         # different remedies that the error code alone does not separate.
         if 'findings_store_state' in payload:
-            print(f'findings_store_state: {payload["findings_store_state"]}')
+            emitted['findings_store_state'] = payload['findings_store_state']
+        print(serialize_toon(emitted))
         return
-    print('participation_complete: ' + ('true' if payload['participation_complete'] else 'false'))
-    print(f'proves: {payload["proves"]}')
+
+    emitted['participation_complete'] = bool(payload['participation_complete'])
+    emitted['proves'] = payload['proves']
     summary = payload.get('review_state_summary', '')
     if summary:
-        print(f'review_state_summary: {summary}')
+        emitted['review_state_summary'] = summary
     pending = payload['pending_bots']
     if pending:
-        print(f'pending_bots[{len(pending)}]:')
-        for bot in pending:
-            print(f'  - {bot}')
+        emitted['pending_bots'] = list(pending)
     unproven = payload['unproven_bots']
     if unproven:
-        print(f'unproven_bots[{len(unproven)}]:')
-        for bot in unproven:
-            print(f'  - {bot}')
+        emitted['unproven_bots'] = list(unproven)
     states = payload['bot_states']
     if states:
-        print(f'bot_states[{len(states)}]{{bot_kind,state}}:')
-        for record in states:
-            print(f'  {record["bot_kind"]},{record["state"]}')
+        emitted['bot_states'] = [
+            {'bot_kind': record['bot_kind'], 'state': record['state']} for record in states
+        ]
     # The ADR-019 coverage discriminator for the registry-membership test, emitted
     # ONLY when at least one configured token actually failed it. The condition is
     # DERIVED from the states just rendered rather than from a second flag, so the
@@ -1355,25 +1360,29 @@ def _emit_toon(payload: dict) -> None:
     # When none failed, the same list is noise on every run: a population nobody is
     # being asked to choose from, printed beside a verdict it did not shape.
     if any(record['state'] == STATE_UNREGISTERED_KIND for record in states):
-        kinds = payload.get('known_bot_kinds') or []
-        print(f'known_bot_kinds[{len(kinds)}]:')
-        for kind in kinds:
-            print(f'  - {kind}')
+        emitted['known_bot_kinds'] = list(payload.get('known_bot_kinds') or [])
     # Emitted immediately before the causes it qualifies, and only when a refusal cause
     # was reported: a measured diff size standing alone would be a statistic about the
     # PR with nothing to reconcile it against.
     measured = payload.get('measured_diff_size', '')
     causes = payload.get('refusal_causes') or []
     if causes and measured:
-        print(f'measured_diff_size: {measured}')
+        emitted['measured_diff_size'] = measured
     if causes:
-        print(f'refusal_causes[{len(causes)}]{{bot_kind,cause,cap}}:')
-        for record in causes:
-            # An unstated cap renders as the literal ``unknown``, never as an empty
-            # column and never as a number: the reader must be able to tell "the notice
-            # named no ceiling" from "the ceiling is N", because only the second can be
-            # reconciled against a measured diff size.
-            print(f'  {record["bot_kind"]},{record["cause"]},{record.get("cap") or "unknown"}')
+        emitted['refusal_causes'] = [
+            {
+                'bot_kind': record['bot_kind'],
+                'cause': record['cause'],
+                # An unstated cap renders as the literal ``unknown``, never as an empty
+                # column and never as a number: the reader must be able to tell "the
+                # notice named no ceiling" from "the ceiling is N", because only the
+                # second can be reconciled against a measured diff size.
+                'cap': record.get('cap') or 'unknown',
+            }
+            for record in causes
+        ]
+
+    print(serialize_toon(emitted))
 
 
 def declared_size_caps() -> list[dict]:
@@ -1422,14 +1431,18 @@ def declared_size_caps() -> list[dict]:
 
 def _emit_size_caps_toon(payload: dict) -> None:
     """Print the advance-disclosure TOON block for the ``size-caps`` subcommand."""
-    print(f'status: {payload.get("status", "success")}')
+    emitted: dict[str, object] = {'status': payload.get('status', 'success')}
     rows = payload.get('size_capped_reviewers') or []
     if rows:
-        print(f'size_capped_reviewers[{len(rows)}]{{bot_kind,structural_cap,cap_extractable}}:')
-        for record in rows:
-            declared = 'true' if record['structural_cap'] else 'false'
-            extractable = 'true' if record['cap_extractable'] else 'false'
-            print(f'  {record["bot_kind"]},{declared},{extractable}')
+        emitted['size_capped_reviewers'] = [
+            {
+                'bot_kind': record['bot_kind'],
+                'structural_cap': bool(record['structural_cap']),
+                'cap_extractable': bool(record['cap_extractable']),
+            }
+            for record in rows
+        ]
+    print(serialize_toon(emitted))
 
 
 def cmd_size_caps(args: argparse.Namespace) -> int:
@@ -1449,42 +1462,53 @@ def _emit_deficit_toon(payload: dict) -> None:
     The ``gates_merge: false`` line is emitted verbatim so a reader — or a cold read
     of the rendered output — sees in as many words that this signal moves no gate.
     """
-    print(f'status: {payload.get("status", "success")}')
-    if payload.get('status') == 'error':
-        print(f'error: {payload.get("error", "unknown")}')
+    emitted: dict[str, object] = {'status': payload.get('status', 'success')}
+
+    if emitted['status'] == 'error':
+        emitted['error'] = payload.get('error', 'unknown')
         if 'detail' in payload:
-            print(f'detail: {payload["detail"]}')
+            emitted['detail'] = payload['detail']
         # Same store-refusal disclosure the ``check`` emitter makes, for the same
         # reason: the two commands share one read and must not render one store's
         # refusal differently.
         if 'findings_store_state' in payload:
-            print(f'findings_store_state: {payload["findings_store_state"]}')
+            emitted['findings_store_state'] = payload['findings_store_state']
+        print(serialize_toon(emitted))
         return
-    print(f'verdict: {payload["verdict"]}')
-    print(f'proves: {payload["proves"]}')
-    print('gates_merge: ' + ('true' if payload['gates_merge'] else 'false'))
-    print(f'baseline_max: {payload["baseline_max"]}')
+
+    emitted['verdict'] = payload['verdict']
+    emitted['proves'] = payload['proves']
+    emitted['gates_merge'] = bool(payload['gates_merge'])
+    emitted['baseline_max'] = payload['baseline_max']
     baseline = payload['baseline_reviewers']
     if baseline:
-        print(f'baseline_reviewers[{len(baseline)}]:')
-        for bot in baseline:
-            print(f'  - {bot}')
+        emitted['baseline_reviewers'] = list(baseline)
     required_reviewed = payload['required_reviewed']
     if required_reviewed:
-        print(f'required_reviewed[{len(required_reviewed)}]:')
-        for bot in required_reviewed:
-            print(f'  - {bot}')
+        emitted['required_reviewed'] = list(required_reviewed)
     deficits = payload['deficit_reviewers']
     if deficits:
-        print(f'deficit_reviewers[{len(deficits)}]{{bot_kind,findings,deficit}}:')
-        for record in deficits:
-            print(f'  {record["bot_kind"]},{record["findings"]},{record["deficit"]}')
+        emitted['deficit_reviewers'] = [
+            {
+                'bot_kind': record['bot_kind'],
+                'findings': record['findings'],
+                'deficit': record['deficit'],
+            }
+            for record in deficits
+        ]
     reviewers = payload.get('reviewers') or []
     if reviewers:
-        print(f'reviewers[{len(reviewers)}]{{bot_kind,reviewed,finding_count,state}}:')
-        for record in reviewers:
-            reviewed = 'true' if record['reviewed'] else 'false'
-            print(f'  {record["bot_kind"]},{reviewed},{record["finding_count"]},{record["state"]}')
+        emitted['reviewers'] = [
+            {
+                'bot_kind': record['bot_kind'],
+                'reviewed': bool(record['reviewed']),
+                'finding_count': record['finding_count'],
+                'state': record['state'],
+            }
+            for record in reviewers
+        ]
+
+    print(serialize_toon(emitted))
 
 
 def _split_bots(raw: str | None, flag: str = 'a bare-form bot flag') -> list[str]:

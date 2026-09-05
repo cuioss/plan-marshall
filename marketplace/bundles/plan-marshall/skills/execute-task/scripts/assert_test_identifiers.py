@@ -91,6 +91,8 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
+from toon_parser import serialize_toon
+
 
 @dataclass(frozen=True, slots=True)
 class DiffResult:
@@ -233,32 +235,35 @@ def _emit_toon(result: DiffResult) -> None:
     """Write the TOON output contract for ``run`` to stdout.
 
     The shape is kept flat on purpose so the output is easy to diff and easy
-    to parse with :func:`toon_parser.parse_toon` in tests.
+    to parse with :func:`toon_parser.parse_toon` in tests. The canonical
+    serializer does the writing, which is what quotes a pytest nodeid — every
+    one of which carries ``::`` — instead of letting it split its own row.
+
+    ``found_forms`` and ``missing`` are always present, empty or not: an empty
+    list serializes as the ``key[0]:`` idiom, so downstream parsers see one
+    stable schema rather than a key that disappears when nothing matched.
     """
-    print('status: success')
-    print(f'passed: {"true" if result.passed else "false"}')
-    print(f'found_count: {len(result.found)}')
-    print(f'missing_count: {len(result.missing)}')
     # Report how many of the found identifiers matched only via a per-case
     # nodeid. A caller that supplied a parametrize stem needs to know the match
     # was not exact, so an absence stays distinguishable from a stem supply.
     parametrized_count = sum(1 for form in result.found_forms if form == 'parametrized')
-    print(f'parametrized_match_count: {parametrized_count}')
-    if result.found_forms:
-        print(f'found_forms[{len(result.found_forms)}]{{identifier,matched_form}}:')
-        for identifier, form in zip(result.found, result.found_forms, strict=True):
-            print(f'  {identifier},{form}')
-    else:
-        print('found_forms[0]:')
-    if result.missing:
-        print(f'missing[{len(result.missing)}]:')
-        for identifier in result.missing:
-            print(f'  - {identifier}')
-    else:
-        # Empty uniform array — keep the key present so downstream parsers
-        # always see a stable schema. ``missing[0]:`` is the TOON idiom for
-        # "this list exists and is empty".
-        print('missing[0]:')
+
+    print(
+        serialize_toon(
+            {
+                'status': 'success',
+                'passed': result.passed,
+                'found_count': len(result.found),
+                'missing_count': len(result.missing),
+                'parametrized_match_count': parametrized_count,
+                'found_forms': [
+                    {'identifier': identifier, 'matched_form': form}
+                    for identifier, form in zip(result.found, result.found_forms, strict=True)
+                ],
+                'missing': list(result.missing),
+            }
+        )
+    )
 
 
 def _emit_toon_error(message: str) -> None:
@@ -267,11 +272,10 @@ def _emit_toon_error(message: str) -> None:
     Uses ``status: error`` (not ``success``) to signal that the assertion
     never ran — distinguishing a pass/fail outcome from a plumbing failure.
     """
-    print('status: error')
     # Normalise newlines in the error message so multi-line exception text
     # never breaks the flat TOON shape.
     flattened = message.replace('\n', ' ').strip()
-    print(f'error: {flattened}')
+    print(serialize_toon({'status': 'error', 'error': flattened}))
 
 
 def cmd_run(args: argparse.Namespace) -> int:

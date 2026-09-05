@@ -337,3 +337,73 @@ def test_footprint_resolver_never_diffs_the_current_directory(plan_context, monk
 
     assert vfs._resolve_declared_footprint(plan_dir, 'vfs-unresolvable') is None
     assert 'worktree' not in captured, 'no diff may be attempted against any tree'
+
+
+# =============================================================================
+# Emitted TOON — the reader-facing half of the contract
+#
+# Every assertion above reads the payload DICT, which the emitter never touched.
+# The emitter interpolated the Python list repr after a ``key[N]:`` header, so
+# the block this script actually printed could not be read back by any canonical
+# reader while every test here stayed green. These read the emitted bytes.
+# =============================================================================
+
+
+def test_emitted_paths_parse_back_as_a_list(plan_context, monkeypatch, capsys):
+    """``out_of_scope_paths`` comes back out of parse_toon as a list of paths."""
+    from toon_parser import parse_toon
+
+    plan_dir = plan_context.plan_dir_for('vfs-emit-list')
+    _write_refs(plan_dir)
+    _stub_footprint(monkeypatch, ['src/a.py'])
+    payload = vfs.classify_failure_scope(
+        'vfs-emit-list', ['foreign/x.py', 'foreign/y.py'], plan_dir=plan_dir
+    )
+
+    vfs._emit_toon(payload)
+
+    emitted = parse_toon(capsys.readouterr().out)
+    assert emitted['status'] == 'success'
+    assert emitted['exclusively_out_of_scope'] is True
+    assert sorted(emitted['out_of_scope_paths']) == ['foreign/x.py', 'foreign/y.py']
+
+
+def test_emitted_unclassified_paths_parse_back_as_a_list(plan_context, monkeypatch, capsys):
+    """The unmeasurable-footprint branch emits a readable list too.
+
+    Its paths carry the same shape as the classified branch, so a consumer of the
+    could-not-look return is not handed a different, unparseable rendering.
+    """
+    from toon_parser import parse_toon
+
+    plan_dir = plan_context.plan_dir_for('vfs-emit-unclassified')
+    _write_refs(plan_dir)
+    monkeypatch.setattr(vfs, '_resolve_declared_footprint', lambda plan_dir, plan_id: None)
+    payload = vfs.classify_failure_scope(
+        'vfs-emit-unclassified', ['foreign/x.py'], plan_dir=plan_dir
+    )
+
+    vfs._emit_toon(payload)
+
+    emitted = parse_toon(capsys.readouterr().out)
+    assert emitted['footprint_resolved'] is False
+    assert emitted['unresolved_reason'] == vfs.UNRESOLVED_REASON_FOOTPRINT
+    assert emitted['unclassified_paths'] == ['foreign/x.py']
+    # The measured keys are still present and still zero: an unmeasurable
+    # footprint reports no classification, never a foreign-failure verdict.
+    assert emitted['out_of_scope_count'] == 0
+    assert emitted['exclusively_out_of_scope'] is False
+
+
+def test_emitted_error_block_carries_only_the_error_fields(capsys):
+    """The error branch emits status/error/detail and stops."""
+    from toon_parser import parse_toon
+
+    vfs._emit_toon({'status': 'error', 'error': 'plan_not_found', 'detail': 'no references.json'})
+
+    emitted = parse_toon(capsys.readouterr().out)
+    assert emitted == {
+        'status': 'error',
+        'error': 'plan_not_found',
+        'detail': 'no references.json',
+    }

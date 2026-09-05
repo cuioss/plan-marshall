@@ -461,6 +461,33 @@ def test_filtered_produces_valid_toon(scan):
         raise AssertionError(f'Filtered mode should produce valid TOON: {e}') from e
 
 
+def test_full_mode_toon_parses_back_into_component_rows(scan):
+    """--full TOON is READ BACK, not merely parsed without raising.
+
+    The three checks above only assert that ``parse_toon`` does not raise, which
+    the hand-rolled full-mode output satisfied while emitting each component as a
+    ``- name: X`` line followed by indented keys — a shape the parser read as an
+    opaque scalar, so every per-component field was silently unrecoverable. This
+    asserts the fields come back as fields.
+    """
+    result = scan(
+        '--direct-result', '--full', '--bundles', 'alpha-bundle', '--resource-types', 'skills'
+    )
+    assert result.returncode == 0, f'Script returned error: {result.stdout}'
+
+    bundles = get_bundles(parse_toon(result.stdout))
+    assert bundles, 'the synthetic marketplace declares an alpha-bundle to report'
+
+    skills = bundles[0]['skills']
+    assert sorted(row['name'] for row in skills) == ['manage-beta', 'plan-alpha']
+    plan_alpha = next(row for row in skills if row['name'] == 'plan-alpha')
+    assert plan_alpha['description'] == 'Plan alpha skill'
+    assert plan_alpha['user_invocable'] is True
+    # The skill's standards/ listing survives as a list, not as prose.
+    assert isinstance(plan_alpha['standards'], list)
+    assert plan_alpha['standards']
+
+
 # =============================================================================
 # Tests - Bundle Structure
 # =============================================================================

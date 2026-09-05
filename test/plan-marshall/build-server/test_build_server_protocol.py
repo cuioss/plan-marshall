@@ -617,6 +617,38 @@ class TestReadLogVerdict:
         assert verdict.status == 'error'
         assert verdict.exit_code == 2
 
+    def test_unquotes_an_escaped_internal_quote(self, tmp_path):
+        """The canonical escape is honoured, which the local unquote never did.
+
+        ``serialize_toon`` writes an internal quote as ``\\"``; the hand-rolled
+        unquote stripped the outer pair and left the backslash behind, so a
+        status carrying a quote came back with escape syntax still in it.
+        """
+        log = tmp_path / 'job.log'
+        log.write_text('status: "said \\"go\\""\nexit_code: 0\n')
+
+        verdict = proto.read_log_verdict(str(log))
+
+        assert verdict is not None
+        assert verdict.status == 'said "go"'
+
+    def test_a_single_quoted_value_is_not_unwrapped(self, tmp_path):
+        """Single quotes are not TOON quoting, so they stay part of the value.
+
+        The local unquote stripped them, which meant this reader accepted a shape
+        no writer in the tree emits — and silently reinterpreted whatever wrote
+        it. Under the canonical rule the text is carried verbatim, and a status
+        that then matches no vocabulary member is handled fail-closed by the
+        consumer rather than being quietly normalised here.
+        """
+        log = tmp_path / 'job.log'
+        log.write_text("status: 'error'\nexit_code: 1\n")
+
+        verdict = proto.read_log_verdict(str(log))
+
+        assert verdict is not None
+        assert verdict.status == "'error'"
+
     def test_last_occurrence_wins_over_progress_output(self, tmp_path):
         # The wrapper streams progress first, then emits its final result TOON to
         # the SAME log; the last top-level status:/exit_code: must win.
