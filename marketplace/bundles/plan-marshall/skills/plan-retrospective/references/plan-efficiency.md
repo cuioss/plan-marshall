@@ -2,6 +2,10 @@
 
 How much time and how many tokens did the plan consume relative to its scope? LLM-driven; inputs come from `metrics.md` and log counts produced by `analyze-logs.py`.
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Inputs
 
 - `work/metrics.toon` — the **persisted aggregate**: `totals_tokens`, `totals_worked_ms`, `totals_wall_ms`, each with its `{field}_population_count` companion, plus the shared `totals_population_denominator` and `totals_tokens_spans_populations`. **Read the totals from the record.** They are written by `manage-metrics generate` and are the same figures the report renders — see [`manage-metrics/standards/data-format.md`](../../manage-metrics/standards/data-format.md) § "The Persisted Aggregate". Re-summing the phase breakdown here would make this aspect a second producer of a figure the store already holds, free to pick a different population than the renderer did.

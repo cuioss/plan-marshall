@@ -14,6 +14,10 @@ against. All git invocations use the explicit `git -C {repo_root} …` form (nev
 `cd {repo_root} && git …`), and all CI/PR operations go through the
 `tools-integration-ci:ci` abstraction (never `gh`/`glab` directly).
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Step 1: Detect an uncommitted plan-marshall artifact diff
 
 ```bash

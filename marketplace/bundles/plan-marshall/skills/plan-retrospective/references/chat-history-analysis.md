@@ -6,6 +6,10 @@ Complements log-analysis with conversational context — user pivots, mid-plan c
 
 The session transcript itself, its resolution, and its format are owned by the platform-runtime `chat extract-signal` operation — that op's record schema and the reduction's operator-provenance and gated-decision contracts are specified in `platform-runtime/standards/contract.md` § `chat extract-signal`, and are NOT restated here. This skill never resolves or reads a session JSONL; it passes a `session_id` to the op and routes on the op's normalized record.
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Input Resolution
 
 This skill does **not** construct a transcript path and does **not** perform file discovery. Raw session transcripts are routinely multi-megabyte JSONL, and feeding the raw file to the LLM analysis prompt would blow the read budget on tool-output noise; the runtime op owns the reduction. The orchestrator therefore runs the `extract-chat-signal.py` signal-extraction pre-pass against the recorded `session_id` BEFORE deciding which tier applies — see [Two-Tier Degradation Path](#two-tier-degradation-path) below. The pre-pass forwards the runtime's reduction and returns the flags (`no_signal`, `over_budget`) that select Tier 1 (full analysis) vs Tier 2 (graceful skip).

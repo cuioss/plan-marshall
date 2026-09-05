@@ -4,6 +4,10 @@ Workflow doc for the `cleanup` verb: review and reconcile the epic's **spec corp
 
 **Phase order is an invariant, not a preference**: corpus → ledger → archive → restart-readiness. The rationale — compacting the ledger first relocates settled narrative the corpus pass is about to contradict — is stated once at [§ Cleanup Contract](../../persona-plan-orchestrator/standards/orchestration-model.md#cleanup-contract) and is not repeated here.
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Inputs
 
 | Parameter | Required | Description |

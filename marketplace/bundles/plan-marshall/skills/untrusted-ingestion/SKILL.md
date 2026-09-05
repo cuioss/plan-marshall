@@ -11,6 +11,10 @@ mode: knowledge
 
 The single shared contract every untrusted-external-content ingestion surface loads. It defines the prompt-injection threat model, the read-only-reader contract, and the output-schema discipline for candidate structs parsed from untrusted external bytes (web pages, GitHub issue/PR/comment bodies, Sonar issue messages). The **deterministic `untrusted-ingestion:validate_struct` script** — not reader prose — is the containment boundary: the orchestrator/writer runs it on the reader's emitted candidate struct BEFORE any write-capable context consumes the struct. Security does not rest on the reader behaving; it rests on the script.
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Role
 
 Every surface that ingests untrusted external content loads this skill via `Skill: plan-marshall:untrusted-ingestion` and conforms to its contract:

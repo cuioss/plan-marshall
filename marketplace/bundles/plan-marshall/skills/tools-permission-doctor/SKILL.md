@@ -25,6 +25,10 @@ Read-only permission analysis for host-platform settings. Detects redundant perm
 - User-approved permissions must be excluded from suspicious reports.
 - Do not hardcode a platform settings-file path (no `~/.claude/settings.json`). Address the host platform by `--scope`; the runtime layer resolves the settings location for the active platform.
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## What This Skill Provides
 
 ### Permission Validation Standards

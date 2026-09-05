@@ -2,6 +2,10 @@
 
 Pull request lifecycle operations: create, view, merge, auto-merge, safe-merge, merge-queue, close, ready, edit. Also covers the `branch delete` leaf, which supports post-merge remote branch cleanup, and the repo-level `repo merge-queue probe` / `repo merge-queue enable` provisioning verbs.
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Branch-Aware Operations: `--head BRANCH`
 
 Several operations identify a PR by source branch, and the underlying `gh`/`glab` CLI derives that branch from `git symbolic-ref HEAD` in the cwd. When the Bash tool's cwd HEAD is not the branch the operation should target, cwd-based derivation picks the wrong branch and operations fail (e.g. `pr create` returns *"No commits between main and main"*).

@@ -2,6 +2,10 @@
 
 Primary API for module discovery — returns comprehensive module information for project analysis and build command resolution.
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Purpose
 
 Provides the extension hook for discovering project modules with complete metadata. This is the primary API for project analysis, enabling:

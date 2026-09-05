@@ -4,6 +4,10 @@ Synchronous polling utility for blocking until an async operation completes, ins
 
 ---
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](exit-code-convention.md); it is not restated here.
+
 ## Overview
 
 The wait pattern provides a **synchronous blocking** mechanism that:

@@ -9,6 +9,10 @@ mode: workflow
 
 Verb router for epic orchestration. Sits ABOVE the plan lifecycle: it manages the persisted ledger under `.plan/local/orchestrator/{slug}/`, stages plans, and hands work down to `/plan-marshall` — it never implements anything itself.
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Usage
 
 ```text

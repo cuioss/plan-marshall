@@ -6,6 +6,10 @@ Detect CI-abstraction leaks where the GitHub CLI (`gh`) or GitLab CLI (`glab`) i
 
 **Conditional**: always runs; emits zero findings when the plan is clean.
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Purpose
 
 The CI integration abstraction exists because `gh`/`glab` invocations mix two concerns the retrospective needs to keep separate: remote provider operations (PR, issue, review) and local git mutations (checkout, branch delete). This aspect surfaces every runtime or code-level direct-CLI leak so the plan retrospective report carries concrete, file-line-snippet evidence rather than a generic rule reminder.

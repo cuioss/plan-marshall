@@ -39,16 +39,12 @@ Skill: plan-marshall:persona-plan-marshall-agent
 **Constraints:**
 - Strictly comply with all rules from persona-plan-marshall-agent, especially tool usage and workflow step discipline
 
-## Exit-code convention for `manage-*` script calls
+## Exit-code convention for every script call
 
-Every `manage-*` script call in this document carries the following exit-code contract unless a step explicitly states otherwise:
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
 
-- **`exit_code == 0`**: parse the returned TOON and use the value as the step describes. **`exit 0` does NOT imply the operation succeeded** — the `manage-*` scripts follow the canonical output contract (`pm-plugin-development:plugin-script-architecture/standards/output-contract.md`), under which an *operation* failure (`file_not_found`, `field_not_found`, `plan_not_found`, validation rejection, already-exists, etc.) exits `0` and carries the verdict in the stdout TOON `status: error` payload. Branch on the TOON `status` field to detect operation failures; never infer "the record landed" or "the plan exists" from a zero exit code.
-- **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — silent swallowing of `wrong_parameters` rejections is the prohibited anti-pattern; "log and continue" is equally forbidden.
+Two obligations this phase carries at its own call sites:
 
-**Operation-failure carve-out:** Because operation failures exit `0`, a step that issues a `manage-*` call whose *effect* matters — a `qgate add` that must land a finding, a `read`/`get` that must find a field — MUST detect the rejection by inspecting the TOON `status` (`status: error` plus the precise `error` code), NOT by testing `exit_code != 0`. Reserving `exit_code != 0` for crash/argparse detection and reading the TOON for operation-failure detection are two distinct branches; conflating them (treating a zero exit as "the write landed") regresses the contract and is forbidden.
-
-Step-level exceptions — calls whose non-zero exit is itself the signal (e.g., `manage-files exists` returning `exists: false`, `manage-status get-worktree-path` returning an empty `worktree_path`) — are documented inline in the step that issues them.
 - On phase entry (Step 4), resolve the active worktree absolute path and surface it as a `[STATUS]` work-log line so it stays visible in model context throughout the run.
 - Every subagent dispatch (Task / Skill / execution-context invocation) MUST pass `plan_id` as an input parameter to satisfy the subagent's Input Contract (e.g., `execute-task`, `execution-context`). Under the cwd-pinned model the worktree binding is inherited via the pinned cwd, not forwarded per call — subagents resolve `.plan/` cwd-relatively. A short reminder header MAY be embedded (see **Dispatch Protocol** below); it is a salience reminder, not a path-routing mechanism.
 
