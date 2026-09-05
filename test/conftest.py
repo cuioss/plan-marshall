@@ -848,6 +848,54 @@ def create_temp_dir() -> Path:
 
 import pytest  # noqa: E402
 
+# =============================================================================
+# Required-tool preflight (checked once per session)
+# =============================================================================
+
+#: External binaries the suite shells out to and may therefore assume are on
+#: ``PATH``. :func:`pytest_sessionstart` checks the set ONCE per session and
+#: fails the run loudly, naming what is missing.
+#:
+#: These are REQUIRED, not optional. The tests that use them previously carried
+#: 42 per-test ``shutil.which`` skip guards, which turned a missing binary into a
+#: quietly smaller run: the suite reported green while covering 42 fewer tests
+#: than it claimed, and nothing in the output said so. One loud preflight
+#: replaces all of them, so an absent tool is a failed run rather than a silent
+#: coverage hole.
+#:
+#: Tooling a test may legitimately run WITHOUT is deliberately absent from this
+#: tuple — ``pyright-langserver`` is the standing example. Those tests keep their
+#: own guards, because their absence is an expected environment difference rather
+#: than a broken one. Adding an optional tool here would fail every run on every
+#: machine that does not install it.
+REQUIRED_TOOLS: tuple[str, ...] = ('git', 'rsync')
+
+
+def pytest_sessionstart() -> None:
+    """Refuse to run the suite when a required external tool is missing.
+
+    Fails rather than skips, and fails at session start rather than per test.
+    A skip lets the run finish green with less coverage than it advertises;
+    failing here means the operator learns immediately, and learns which tool to
+    install.
+
+    Declares no parameters on purpose: pluggy passes a hook only the arguments it
+    asks for, and this check needs none of the session state.
+    """
+    missing = [tool for tool in REQUIRED_TOOLS if shutil.which(tool) is None]
+    if not missing:
+        return
+    raise pytest.UsageError(
+        'Required external tool(s) not found on PATH: '
+        + ', '.join(missing)
+        + '.\n\nThis suite requires all of: '
+        + ', '.join(REQUIRED_TOOLS)
+        + '. Install the missing tool(s) and re-run. The tests that need them are '
+        'no longer individually skipped, so a missing tool fails the run instead '
+        'of silently shrinking it.'
+    )
+
+
 #: Context managers that OWN ``PLAN_BASE_DIR`` for the block they wrap. A module
 #: naming one of them drives real plan state even when it never requests the
 #: ``plan_context`` fixture, which is the gap a fixture-name-only predicate left:
