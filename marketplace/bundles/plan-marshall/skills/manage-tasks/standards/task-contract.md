@@ -140,7 +140,7 @@ the base the `[ARTIFACT]` channel diffs against.
 |----------|-------|
 | Type | string — a git object id, validated by `is_object_id` |
 | Producer | `_task_artifacts.capture_task_start_sha` |
-| Write path | The FIRST transition into `in_progress`, from either entry point: the implicit flip inside `finalize-step`, or an explicit `update --status in_progress` |
+| Write path | An OPENING transition into `in_progress`, from either entry point — but the two entry points do not gate the same population. `update --status in_progress` writes it on any transition into `in_progress`, a `done`/`failed` reopening included, because that reopening's base genuinely is the current HEAD. The implicit flip inside `finalize-step` writes it only from a status that was never opened: a call on an `in_progress`, `done` or `failed` record (`_ALREADY_OPENED_TASK_STATUSES`) is a retry of a task that already ran, and stamping the current HEAD there records a base taken after that task's own edits |
 | Serialisation | `_tasks_core.format_task_file` (`json.dumps` over the whole record), so the key reaches `TASK-NNN.json` on disk |
 
 Two properties a reader must not assume away:

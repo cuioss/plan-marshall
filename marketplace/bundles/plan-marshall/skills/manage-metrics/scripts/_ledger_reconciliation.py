@@ -225,11 +225,16 @@ def read_token_column(value: object) -> tuple[int, str]:
       it parses, so no cell can pass the test and raise in the conversion.
       The sign is admitted by the string arm because the int arm
       admits it, so the two arms agree on what a recorded number is; this reader
-      classifies a cell's READABILITY and leaves the plausibility of the number
-      to the consumer that presents it. (Its sibling
-      ``check-dispatch-audit.finalize_token_records`` DOES reject a negative,
-      because the value there is a per-step evidence discriminator where a
-      negative would classify as a measured dispatch record.)
+      classifies a cell's READABILITY and returns that state ALONGSIDE the
+      value, leaving the plausibility of the number to the consumer that
+      presents it. (Both ``execution_log`` readers in ``plan-retrospective``
+      reject a negative instead, and the divergence is a property of the return
+      rather than an oversight: each of those is itself the presenting consumer
+      and has no state to hand on.
+      ``check-dispatch-audit.finalize_token_records`` maps a negative to
+      ``None`` so it cannot classify as a measured dispatch record, and
+      ``check-routing-decisions.summarize_execution_log_tokens`` counts it
+      ``rows_unrecognised`` so it cannot subtract from a published sum.)
     * :data:`UNMEASURED_COLUMN_TOKEN` is :data:`COLUMN_UNMEASURED` — the writer
       recorded that nobody measured this column;
     * anything else, including an absent column, is :data:`COLUMN_UNRECOGNISED`.

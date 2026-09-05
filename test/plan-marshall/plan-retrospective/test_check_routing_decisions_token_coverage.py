@@ -9,10 +9,14 @@ alone reconstructs the fabricated figure the token exists to prevent, one level
 up from the ledger.
 
 These tests pin the reader's own output: the per-state row counts beside the sum,
-the int-parsing floor that keeps historical all-numeric rows summing exactly as
-before, the refusal to emit a delta computed against a floor, and the refusal to
-emit one over an EMPTY population — the case the floor guard cannot reach,
-because "every in-population row was readable" is vacuously true over zero rows.
+the int-parsing floor that keeps every NON-NEGATIVE numeric row summing exactly
+as before, the agreement of the int and string arms about what a measured count
+is — a negative is unrecognised in both, because it is the one unreadable cell
+that would SUBTRACT rather than merely fail to add — the refusal to emit a delta
+computed against a floor, and the refusal to emit one over an EMPTY population,
+the case the floor guard cannot reach because "every in-population row was
+readable" is vacuously true over zero rows.
+
 Every positive assertion has its fully-measured, populated control beside it.
 """
 
@@ -310,6 +314,57 @@ class TestANonDecimalDigitCellIsUnrecognisedNotAnException:
 
         assert coverage['rows_measured'] == 1
         assert coverage['total_tokens'] == 12_000
+
+
+class TestANegativeCountIsUnrecognisedInBothArms:
+    """⛔ The two arms must classify the same number the same way.
+
+    ``is_ascii_digits`` refuses the string ``'-1'`` while the int arm tested
+    nothing, so ONE value in two encodings landed in two different states — the
+    reader disagreeing with itself about what a measured count is.
+
+    A negative is also the only unreadable cell that MOVES the sum. Every other
+    one merely fails to add; this one subtracts, pulling the published figure
+    below the floor the coverage counts promise it is, and feeding a delta
+    computed from invalid evidence into the cost comparison.
+
+    The controls are carried inline — a readable row beside the negative, and
+    the ``0`` boundary beside ``-1`` — because a guard that rejected every int
+    would satisfy the positive half alone.
+    """
+
+    def test_a_negative_int_is_unrecognised(self):
+        coverage = _crd.summarize_execution_log_tokens(_manifest(_row('a', -1)))
+
+        assert coverage['rows_unrecognised'] == 1
+        assert coverage['rows_measured'] == 0
+        assert coverage['total_tokens'] == 0
+
+    def test_a_negative_digit_string_is_unrecognised(self):
+        """The adjacent arm, pinned so a future edit cannot move one and not the other."""
+        coverage = _crd.summarize_execution_log_tokens(_manifest(_row('a', '-1')))
+
+        assert coverage['rows_unrecognised'] == 1
+        assert coverage['rows_measured'] == 0
+
+    def test_a_negative_does_not_subtract_from_a_readable_population(self):
+        """The consequence: the readable rows sum intact and the gap is published."""
+        coverage = _crd.summarize_execution_log_tokens(
+            _manifest(_row('a', 40_000), _row('b', -1))
+        )
+
+        assert coverage['total_tokens'] == 40_000
+        assert coverage['rows_in_population'] == 2
+        assert coverage['rows_measured'] == 1
+        assert coverage['rows_unrecognised'] == 1
+
+    def test_zero_and_minus_one_split_at_the_guard_boundary(self):
+        """The boundary is ``>= 0``, so a measured ``0`` stays measured beside ``-1``."""
+        coverage = _crd.summarize_execution_log_tokens(_manifest(_row('a', 0), _row('b', -1)))
+
+        assert coverage['rows_measured'] == 1
+        assert coverage['rows_unrecognised'] == 1
+        assert coverage['total_tokens'] == 0
 
 
 def test_unmeasured_token_matches_writer():

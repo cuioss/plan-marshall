@@ -577,8 +577,20 @@ def summarize_execution_log_tokens(manifest: dict[str, Any]) -> dict[str, int]:
     non-measured states contribute nothing, so a sum taken over them is a FLOOR —
     and a sum published without saying how many rows it could not read is exactly
     the fabricated total the token exists to prevent, reconstructed one level up.
-    The int-parsing branch is kept unchanged, so every historical all-numeric row
-    still parses and still sums as before.
+
+    ⛔ **A NEGATIVE count is unrecognised in BOTH arms.** No token count is
+    negative, so ``-1`` is a recorded cell nobody can read as a measurement — and
+    it is the one unreadable value that does not merely fail to add: it
+    SUBTRACTS, pulling the published figure BELOW the floor the paragraph above
+    promises it is. The two arms read the same value by two different rules:
+    :func:`is_ascii_digits` refuses the string ``'-1'``, while the int arm tested
+    nothing, so one encoding of one number counted as measured and the other as
+    unrecognised. Both arms now route a negative to ``rows_unrecognised``, which
+    is also the direction the sibling reader
+    ``check-dispatch-audit.finalize_token_records`` takes (it maps a negative to
+    ``None``). The bound is that every NON-NEGATIVE row parses and sums exactly
+    as before, an explicit ``0`` among them, so no manifest whose rows carry real
+    token columns changes its figure.
 
     Returns:
         ``{'total_tokens', 'rows_in_population', 'rows_measured',
@@ -607,8 +619,13 @@ def summarize_execution_log_tokens(manifest: dict[str, Any]) -> dict[str, int]:
             # A bool is not a token count; it is an unreadable cell.
             coverage['rows_unrecognised'] += 1
         elif isinstance(value, int):
-            coverage['total_tokens'] += value
-            coverage['rows_measured'] += 1
+            if value < 0:
+                # Classified, not added — the string arm below refuses `'-1'`,
+                # so admitting it here read one number two ways.
+                coverage['rows_unrecognised'] += 1
+            else:
+                coverage['total_tokens'] += value
+                coverage['rows_measured'] += 1
         elif isinstance(value, str):
             # Strip ONCE and branch on the stripped value. Stripping for the
             # unmeasured comparison but not for the digit test made a padded
