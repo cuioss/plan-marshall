@@ -158,8 +158,9 @@ Two properties a reader must not assume away:
   it is the same superset property two tasks of one deliverable already have. A
   REPEATED `update --status in_progress` never reaches the capture at all — the
   transition gate (`prior_task_status != 'in_progress'`) stops it one level
-  earlier — and a second `finalize-step` is held off by
-  `_ALREADY_OPENED_TASK_STATUSES`.
+  earlier — and a second `finalize-step` does not reach it either, because
+  `_ALREADY_OPENED_TASK_STATUSES` gates the capture and nothing else: the repeat
+  call is not refused, it just leaves the recorded base alone.
 - **Absent, never fabricated.** When HEAD cannot be resolved the field is not
   written at all. A task carrying no baseline is an honestly-unknown state, and
   the emission gate gives it an empty artifact list rather than deriving one from
