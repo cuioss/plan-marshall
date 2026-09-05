@@ -831,7 +831,7 @@ Use `resolve-domain-skills --domain {domain} --profile {profile}` to get aggrega
 Script characteristics:
 - Uses Python stdlib only (json, argparse, pathlib, xml.etree)
 - Outputs TOON to stdout
-- Exit code 0 for success, 1 for errors
+- Outcome is read from the payload `status`, never from the exit code alone — an operation can fail and still exit 0. See [§ Exit-code convention for every script call](#exit-code-convention-for-every-script-call) above.
 - Supports `--help` flag
 
 ---

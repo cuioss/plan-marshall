@@ -586,10 +586,21 @@ The following subcommands all return the standard success shape (`status: succes
 
 ## Exit Codes
 
-| Code | Meaning | Output Stream |
-|------|---------|---------------|
-| 0 | Success | stdout |
-| 1 | Error | stderr |
+⛔ **An exit code alone never establishes the outcome of a `ci` call.** `ci_base.output_error`
+prints `status: error` and returns `EXIT_SUCCESS` **by design**, and both provider `main()`
+functions end `dispatch → print → return 0` without branching on the payload's status. A reader
+who maps `0` to success accepts a failed call as a usable value — which is precisely the defect
+the canonical convention exists to prevent.
+
+| Code | What it establishes | Output stream | Disposition |
+|------|---------------------|---------------|-------------|
+| 0 | **Nothing on its own.** The process ran to completion; whether the *operation* succeeded is carried only by the payload's `status`. | stdout | Read `status` FIRST. `status: success` → the value is usable. Any other status, or no parseable status at all → NOT usable; STOP and preserve the stdout error envelope verbatim. |
+| non-zero | The process itself failed. | stderr | STOP and return an error TOON carrying stderr verbatim. Includes `argparse_rejection` (exit 2). |
+
+The full disposition, including envelope preservation and the unparseable-stdout sub-path, is
+stated once in
+[`tools-script-executor/standards/exit-code-convention.md`](../../tools-script-executor/standards/exit-code-convention.md)
+and is not restated here.
 
 ---
 

@@ -12,7 +12,7 @@ Documents that invoke only `manage-*` notations were deliberately left carrying
 their own narrower `## Exit-code convention for `manage-*` script calls` section —
 they are the population the sweep's retention rule (c) drops before
 classification. That carve-out is a scope boundary, not a claim that the narrow
-form is sufficient: see [§ Operation failure at exit 0](#operation-failure-at-exit-0),
+form is sufficient: see [§ Operation-failure carve-out](#operation-failure-carve-out),
 whose disposition applies to a `manage-*` call as much as to any other, and which
 the narrow sections do not state. Widening those documents is out of scope here
 and remains open work.

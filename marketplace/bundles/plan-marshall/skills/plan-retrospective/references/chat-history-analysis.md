@@ -10,6 +10,17 @@ The session transcript itself, its resolution, and its format are owned by the p
 
 The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
 
+**Documented step-level exception — `extract-chat-signal.py run`.** That standard's general
+disposition for a zero exit with a non-`success` status is to STOP. This document's pre-pass is
+an explicit exception to it, and the exception is the whole Tier-2 mechanism: `extract-chat-signal.py`
+returns `status: skipped` with `reason: transcript_unavailable` at exit 0 when the runtime op
+declines to reduce, and the orchestrator MUST **continue** on that return and route it into
+[Tier 2 — graceful skip](#two-tier-degradation-path), forwarding the emitted `reason` verbatim per
+the [Skip-Reason Token Contract](#skip-reason-token-contract). Treating it as a STOP would abort the
+retrospective on the one input the two-tier path exists to degrade over. The exception covers
+`status: skipped` from this one call ONLY — a `status: error` from it, and any non-`success` status
+from any other call in this document, keeps the standard's STOP disposition unchanged.
+
 ## Input Resolution
 
 This skill does **not** construct a transcript path and does **not** perform file discovery. Raw session transcripts are routinely multi-megabyte JSONL, and feeding the raw file to the LLM analysis prompt would blow the read budget on tool-output noise; the runtime op owns the reduction. The orchestrator therefore runs the `extract-chat-signal.py` signal-extraction pre-pass against the recorded `session_id` BEFORE deciding which tier applies — see [Two-Tier Degradation Path](#two-tier-degradation-path) below. The pre-pass forwards the runtime's reduction and returns the flags (`no_signal`, `over_budget`) that select Tier 1 (full analysis) vs Tier 2 (graceful skip).
