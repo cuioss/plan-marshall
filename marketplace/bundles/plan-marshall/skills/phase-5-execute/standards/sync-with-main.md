@@ -55,11 +55,17 @@ Catch the recurring failure mode where a long-running execute phase is interrupt
      baseline-reconcile --plan-id {plan_id} --no-emit
    ```
 
-   Parse `conflict_count`, `upstream_commit_count`, and `upstream_commits` from the returned TOON.
+   **Branch on the returned `status` BEFORE reading `conflict_count`.** The wrapper prints the payload through a helper that always exits 0, so an "if the script exits non-zero" test never fires, and the probe's non-classifying returns carry **no `conflict_count` field at all**. An agent that reads the absent field as falsy records a new baseline on the strength of a probe that declined to classify:
 
-5. **Self-absorb (`conflict_count == 0`)** — the upstream commits touch a disjoint set of files from the worktree's in-flight changes. Phase-5-execute absorbs the new baseline metadata in place and continues the task loop (see § Self-absorption contract below). No abort, no return to orchestrator, no refine re-dispatch.
+   - **`status: error`** (e.g. `error: probe_mutated_head`) → ABORT via step 6 below with `error: baseline_drift`. Do NOT self-absorb and do NOT enter the task loop.
+   - **`status: skipped`** → the same abort, with `display_detail` carrying the returned `reason` (`main_checkout_flow`, `worktree_not_materialized`, `status_not_found`, `status_module_unavailable`, `worktree_path_missing`, `worktree_path_not_a_directory`, `no_remote`, `fetch_failed`, `head_unresolved`, `merge_base_unresolved`). A skip is the probe **declining to classify**, which is not evidence of zero overlap.
+   - **`status: success`** → and only then, parse `conflict_count`, `upstream_commit_count`, and `upstream_commits` from the returned TOON.
 
-6. **Drift abort (`conflict_count > 0`)** — the upstream commits touch files that overlap with the worktree's in-flight changes. Phase-5-execute returns the structured drift TOON for the orchestrator to act on:
+   An absent `conflict_count` is **never** treated as zero. Only a `conflict_count` read off a `status: success` payload may drive the self-absorb branch below.
+
+5. **Self-absorb (`status: success` AND `conflict_count == 0`)** — the upstream commits touch a disjoint set of files from the worktree's in-flight changes. Phase-5-execute absorbs the new baseline metadata in place and continues the task loop (see § Self-absorption contract below). No abort, no return to orchestrator, no refine re-dispatch.
+
+6. **Drift abort (`conflict_count > 0`, or a non-`success` probe return)** — either the upstream commits touch files that overlap with the worktree's in-flight changes, or the probe declined to classify. Phase-5-execute returns the structured drift TOON for the orchestrator to act on:
 
    ```toon
    status: error
@@ -68,6 +74,18 @@ Catch the recurring failure mode where a long-running execute phase is interrupt
    upstream_commit_count: {upstream_commit_count}
    conflict_count: {conflict_count}
    display_detail: "baseline drift: {upstream_commit_count} upstream commits"
+   ```
+
+   On the non-`success` route there is no overlap verdict to report, so the payload carries the probe's own outcome instead of a fabricated count — `conflict_count` is **omitted**, never sent as `0`, and `upstream_commit_count` is the count of `{divergent_commits}` captured from `git log`, not a probe-derived field:
+
+   ```toon
+   status: error
+   error: baseline_drift
+   reconcile_status: skipped | error
+   reason: {reason from a skipped return, or the error token from an error return}
+   divergent_commits: {divergent_commits}
+   upstream_commit_count: {count of divergent_commits}
+   display_detail: "baseline drift: probe {reconcile_status} ({reason})"
    ```
 
    The orchestrator's drift-recovery branch (`plan-marshall/workflow/execution.md` § "Baseline drift recovery (non-zero overlap)") re-dispatches phase-2-refine via the standard envelope, where the iterate-to-confidence loop absorbs the overlap. ABORT the phase. Do NOT enter the task loop. Do NOT auto-merge. Do NOT auto-rebase.
@@ -115,10 +133,12 @@ No footprint reconciliation is needed: the plan footprint is derived on demand f
 | Scenario | Detection | Action |
 |----------|-----------|--------|
 | Worktree HEAD already contains `origin/{base_branch}` (refine reconciled, no upstream movement since) | `merge-base --is-ancestor` exit `0` | Fast-path: log INFO, continue to Step 4 |
-| Drift detected, `baseline-reconcile` reports `conflict_count == 0` (zero-overlap upstream commits) | `merge-base --is-ancestor` exit non-zero AND `conflict_count == 0` | Self-absorb: write `worktree_sha`/`main_sha`, emit decision-log entry, continue task loop |
-| Drift detected, `baseline-reconcile` reports `conflict_count > 0` (non-zero-overlap upstream commits) | `merge-base --is-ancestor` exit non-zero AND `conflict_count > 0` | Drift abort: return structured drift TOON; orchestrator re-dispatches phase-2-refine |
+| Drift detected, `baseline-reconcile` reports `conflict_count == 0` (zero-overlap upstream commits) | `merge-base --is-ancestor` exit non-zero AND `status: success` AND `conflict_count == 0` | Self-absorb: write `worktree_sha`/`main_sha`, emit decision-log entry, continue task loop |
+| Drift detected, `baseline-reconcile` reports `conflict_count > 0` (non-zero-overlap upstream commits) | `merge-base --is-ancestor` exit non-zero AND `status: success` AND `conflict_count > 0` | Drift abort: return structured drift TOON; orchestrator re-dispatches phase-2-refine |
+| Drift detected, `baseline-reconcile` declined to classify | `merge-base --is-ancestor` exit non-zero AND `status: skipped` | Drift abort carrying `reconcile_status: skipped` and the returned `reason`; NO `conflict_count` is reported, and the absent field is never read as `0` |
+| Drift detected, `baseline-reconcile` refused to return a verdict | `merge-base --is-ancestor` exit non-zero AND `status: error` (e.g. `probe_mutated_head`) | Drift abort carrying `reconcile_status: error` and the returned error token; NO `conflict_count` is reported, and the absent field is never read as `0` |
 | Worktree HEAD is AHEAD of `origin/{base_branch}` AND contains the upstream tip | `merge-base --is-ancestor` exit `0` | Fast-path: log INFO, continue to Step 4 |
-| Worktree HEAD is AHEAD of `origin/{base_branch}` BUT does NOT contain the upstream tip (parallel divergence) | `merge-base --is-ancestor` exit non-zero | Branch on `conflict_count` per the two drift rows above |
+| Worktree HEAD is AHEAD of `origin/{base_branch}` BUT does NOT contain the upstream tip (parallel divergence) | `merge-base --is-ancestor` exit non-zero | Branch on `status` first, then on `conflict_count`, per the four drift rows above |
 | `git fetch` fails (network, auth) | Non-zero exit | Log WARNING, continue to Step 4 — do not block on transient infrastructure issues |
 
 ## Main-Checkout Fallback
@@ -140,6 +160,7 @@ The split moves substantive reconciliation back to where the loop already exists
 - **Do NOT add merge/rebase logic back to phase-5-execute Step 3.** The split is structural; reverting it re-creates the original failure mode. Self-absorption is metadata-only — there is no working-tree mutation, ever.
 - **Do NOT self-absorb when `conflict_count > 0`.** The structured drift TOON is the only safe path for non-zero overlap. Self-absorbing non-zero-overlap drift would silently keep the worktree on a stale baseline while the upstream commits touch files the plan reasons about.
 - **Do NOT auto-resolve conflicts in phase-5-execute.** The drift contract is fail-loud by design for non-zero overlap — silent reconciliation hides what should be an explicit refine-time decision.
+- **Do NOT read `conflict_count` without branching on `status` first.** A `skipped` or `error` return carries no `conflict_count` at all, and the wrapper exits 0 on every one of them — so an absent field read as falsy silently takes the self-absorb branch and records a new baseline from a probe that never classified anything. An absent `conflict_count` is never zero.
 - **Do NOT skip the `baseline-reconcile --no-emit` invocation on drift detection.** `merge-base --is-ancestor` alone tells you that drift exists but not whether it overlaps with the worktree's surface. The deterministic `conflict_count` predicate is what makes the self-absorb branch safe.
 
 ## Cross-References

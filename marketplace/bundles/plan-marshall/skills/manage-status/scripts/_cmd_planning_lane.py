@@ -21,18 +21,28 @@ The signal set (DQ1 of the planning-lanes solution outline):
 
 ``deep`` IFF (S1 ∨ S2 ∨ S3 ∨ S4 ∨ S5 ∨ S6-deep ∨ S7); otherwise ``light`` — with
 ONE corroboration bound (D2): S7 alone does not carry ``deep`` when the scope
-estimate resolved to the non-committal middle band (``single_module``). A prose
-warning that is the SOLE fired signal AND is contradicted by a resolved scope
-estimate is uncorroborated, so it cannot force ``deep`` on its own; the fired-but-
-denied signal is reported under ``suppressed_signals`` (``signals.risk_prose`` still
-reports True). S7 still OUTRANKS a positively-earned narrow band (``surgical``) —
-the author overriding a concrete bound — so that case is unchanged.
+estimate is the non-committal middle band (``single_module``) AND that band was
+MEASURED — the ``path_count_middle_band`` rule, i.e. a counted set of distinct
+paths that landed in the middle. A band the body never earned (``pathless_non_empty
+_body``) and a caller that supplies no band rule at all both leave the warning
+uncorroborated-against-nothing, so S7 keeps the lane. Only against a measured
+middle band is the prose warning contradicted by evidence, and only then is the
+fired-but-denied signal reported under ``suppressed_signals``
+(``signals.risk_prose`` still reports True). S7 still OUTRANKS a positively-earned
+narrow band (``surgical``) — the author overriding a concrete bound — so that case
+is unchanged.
 
-The route also reports the signal-vector confidence (D1): the resolved-vs-null
-split of the S1–S7 inputs under ``confidence`` (``signals_resolved`` /
-``signals_null`` / ``null_signals`` / ``low_confidence``). A signal whose value is
-None cannot vote for or against ``deep``, so a verdict over a mostly-null vector is
-flagged low-confidence — a 1-of-4 decision no longer reads like a 1-of-7 one.
+The route also reports the signal-vector confidence (D1) under ``confidence``
+(``signals_resolved`` / ``signals_null`` / ``null_signals`` / ``low_confidence``).
+The split is taken over every READ signal — DERIVED from the reported ``signals``
+mapping rather than mirrored into a second list, so a signal added there is
+scored by the same edit — minus ``planning_lane_override``, which is excluded
+because its absence is the normal state rather than a read that failed. The size
+of that population rides beside the counts as ``signals_total``.
+``low_confidence`` keys on the four discriminating reads — ``plan_source``,
+``scope_estimate``, ``change_type``, ``compatibility`` — and is True when two or
+more of them are null, so a verdict resting on two unresolved inputs is flagged
+whether or not the rest of the vector happens to outnumber them.
 
 The narrow-and-concrete carve-out: when ``scope_estimate == surgical`` AND the
 request is concrete, S3 (generative change_type) and S4 (breaking compatibility)
@@ -84,6 +94,23 @@ MINIMAL = 'minimal'
 STANDARD = 'standard'
 FULL = 'full'
 
+# Coarse scope bands the pre-route heuristic emits. The band line is scale-
+# truthful in both directions: it can report a bounded change (surgical) AND a
+# large one (multi_module), so "I cannot bound this" never reads as "it is
+# small". This is still a pre-route GUESS from cheap request signals, never the
+# authoritative scope — the deep-lane refine Step 9 module-mapping derivation
+# overwrites it with the measured band when the deep lane runs.
+SURGICAL = 'surgical'
+SINGLE_MODULE = 'single_module'
+MULTI_MODULE = 'multi_module'
+# The declared-unknown band emitted when the request body is unscoreable (absent,
+# unreadable, or empty). It is a member of _DEEP_SCOPE_ESTIMATES, so S2 reads it
+# as a deep-biasing signal — an unscoreable request never yields a confident
+# narrow band. Reusing 'none' keeps the field inside the closed
+# none|surgical|single_module|multi_module|broad enum that
+# `manage-solution-outline validate` checks; no new member is introduced.
+UNKNOWN = 'none'
+
 # Scope bands that read as broad-surface for the profile projection (a superset
 # trigger toward keeping full ceremony when combined with a generative change).
 _BROAD_SCOPE_ESTIMATES = frozenset({'multi_module', 'broad'})
@@ -93,6 +120,13 @@ _BROAD_SCOPE_ESTIMATES = frozenset({'multi_module', 'broad'})
 # (the posture projection), so this frozenset governs BOTH by construction:
 # widening it would re-suppress S3/S4 *and* re-collapse the posture to minimal.
 _NARROW_SCOPE_ESTIMATES = frozenset({'surgical'})
+# The bands that read as NON-COMMITTAL — resolved, yet neither deep-biasing nor
+# positively narrow. An explicit ALLOWLIST, not the complement of the two sets
+# above: the complement admitted every value the module does not recognise,
+# including an empty or whitespace-padded band, so a scope estimate that means
+# nothing at all could deny S7 the lane. Membership is now a positive test, and
+# an unrecognised band falls through to "no corroboration" — S7 keeps the lane.
+_NONCOMMITTAL_SCOPE_ESTIMATES = frozenset({SINGLE_MODULE})
 
 # S2 — scope_estimate values that bias deep (broad-surface / unknown bands).
 # surgical / single_module do not fire S2; of the two only surgical additionally
@@ -102,6 +136,32 @@ _DEEP_SCOPE_ESTIMATES = frozenset({'multi_module', 'broad', 'none'})
 # S3 — change_type values that bias deep (generative, broad-surface).
 # bug_fix / tech_debt / enhancement / verification bias light.
 _DEEP_CHANGE_TYPES = frozenset({'feature', 'feature_breaking'})
+
+# The ONE key excluded from the confidence split: the S6 override.
+# `planning_lane_override` is null on every plan where the operator simply set
+# none, which is the normal state and not a read that failed, so counting it
+# kept a permanent null in the denominator of every vector.
+#
+# ⛔ The exclusion is stated as a SUBTRAHEND, not as a hand-written copy of the
+# complement. The predecessor mirrored the `signals` mapping minus this key as a
+# literal tuple, so a routing signal added to `signals` was silently omitted from
+# `scored_signals` / `null_signals` / `signals_resolved` — the confidence vector
+# then reported full resolution over a population it had never scanned, and
+# `signals_total` under-published the size of the set it was taken over. Deriving
+# the population from the mapping itself (see `evaluate_signals_pure`) makes the
+# split total by construction: a new signal enters the denominator on the same
+# edit that introduces it, with no second site to remember.
+_OVERRIDE_SIGNAL = 'planning_lane_override'
+# The subset whose null-ness discriminates: the four FIELD READS that can come
+# back None. `request_concrete` and `risk_prose` are derived from the request
+# body and are never None, so they can only pad the resolved side; keying
+# `low_confidence` on the four below stops them from outvoting a real gap.
+_DISCRIMINATING_SIGNALS = (
+    'plan_source',
+    'scope_estimate',
+    'change_type',
+    'compatibility',
+)
 
 # S5 — request-concreteness regexes.
 # A file-path anchor: a repo-relative path with a directory separator and an
@@ -237,22 +297,6 @@ def _distinct_paths(body: str) -> set[str]:
 
 
 # --- Pre-route scope_estimate heuristic --------------------------------------
-# Coarse scope bands the pre-route heuristic emits. The band line is scale-
-# truthful in both directions: it can report a bounded change (surgical) AND a
-# large one (multi_module), so "I cannot bound this" never reads as "it is
-# small". This is still a pre-route GUESS from cheap request signals, never the
-# authoritative scope — the deep-lane refine Step 9 module-mapping derivation
-# overwrites it with the measured band when the deep lane runs.
-SURGICAL = 'surgical'
-SINGLE_MODULE = 'single_module'
-MULTI_MODULE = 'multi_module'
-# The declared-unknown band emitted when the request body is unscoreable (absent,
-# unreadable, or empty). It is a member of _DEEP_SCOPE_ESTIMATES, so S2 reads it
-# as a deep-biasing signal — an unscoreable request never yields a confident
-# narrow band. Reusing 'none' keeps the field inside the closed
-# none|surgical|single_module|multi_module|broad enum that
-# `manage-solution-outline validate` checks; no new member is introduced.
-UNKNOWN = 'none'
 # At most this many distinct file-path references still reads as a surgical,
 # tightly-bounded change.
 _SURGICAL_MAX_PATHS = 3
@@ -598,6 +642,7 @@ def evaluate_signals_pure(
     request_concrete: bool,
     risk_prose: bool = False,
     override: str | None = None,
+    scope_band_rule: str | None = None,
 ) -> dict[str, Any]:
     """Score the S1–S7 signal set into a lane verdict — pure, I/O-free.
 
@@ -612,23 +657,37 @@ def evaluate_signals_pure(
     Two keys make the verdict's basis legible rather than leaving a bare lane:
 
     - ``suppressed_signals`` (D2) — signals that FIRED but were denied the lane by
-      the prose-only corroboration rule. When S7 (``risk_prose``) is the sole fired
-      signal AND the scope estimate resolved to the non-committal middle band
-      (``single_module``), the prose warning is uncorroborated and contradicted by a
-      resolved scope estimate, so it does not carry the lane alone; ``S7:risk_prose``
-      moves here and ``fired_signals`` is left empty. ``signals.risk_prose`` still
+      the prose-only corroboration rule. ``S7:risk_prose`` moves here (and
+      ``fired_signals`` is left empty) in exactly one shape: S7 is the sole fired
+      signal, the scope estimate is the non-committal middle band
+      (``single_module``), AND ``scope_band_rule`` says that band was MEASURED
+      (``path_count_middle_band``). Only a measurement can contradict the author's
+      warning; a band nothing was counted for cannot. ``signals.risk_prose`` still
       reports True, so the record shows the signal fired and was suppressed rather
       than hiding it.
-    - ``confidence`` (D1) — the resolved-vs-null split of the signal vector
+    - ``confidence`` (D1) — the resolved-vs-null split over every READ signal
       (``signals_total`` / ``signals_resolved`` / ``signals_null`` / ``null_signals``
-      / ``low_confidence``). A signal whose value is None cannot vote, so a verdict
-      over a mostly-null vector is reported as low-confidence — a 1-of-4 decision no
-      longer reads like a 1-of-7 one.
+      / ``low_confidence``). The population is DERIVED from the ``signals`` mapping
+      this function returns, minus ``planning_lane_override``, which is excluded
+      because its absence is the normal state, not an unresolved read; a signal
+      added to that mapping therefore enters the split automatically, and
+      ``signals_total`` publishes the size it was actually taken over.
+      ``low_confidence`` is True when two
+      or more of the four discriminating reads (``plan_source`` / ``scope_estimate``
+      / ``change_type`` / ``compatibility``) are null — the two body-derived
+      booleans are never null and so can never outvote a real gap.
 
     ``risk_prose`` (S7) defaults to False so a consumer that scores only the
     band-and-metadata signals keeps working; the default is the ABSENCE of a
     warning, which is the neutral value — it can never manufacture a deep verdict
     a caller did not supply evidence for.
+
+    ``scope_band_rule`` is the ``band_rule`` ``classify_scope_pure`` already
+    computes for the scored body (``_evaluate_signals`` threads it through; no new
+    sensor is introduced). It defaults to None, which means the caller measured
+    nothing this function can see — so the S7 suppression above cannot fire, and
+    the warning keeps the lane. A caller that wants the suppression must supply
+    the band rule it actually measured.
     """
     # Carve-out — the positively-bounded case. A request that is BOTH narrowly
     # scoped (scope_estimate ∈ _NARROW_SCOPE_ESTIMATES, i.e. surgical) AND
@@ -687,28 +746,32 @@ def evaluate_signals_pure(
     # it deliberately OUTRANKS a positively-earned narrow band: an author overriding
     # a concrete `surgical` bound is a high-information act, and that case
     # (surgical + S7-alone -> deep) is preserved verbatim — the prior false-negative
-    # fix this seam already carries. But when S7 is the SOLE fired signal AND the
-    # scope estimate resolved to the NON-COMMITTAL middle band (`single_module` —
-    # resolved, yet neither deep-biasing nor positively narrow), the prose warning
-    # is uncorroborated and contradicted by a resolved scope estimate, so it must
-    # NOT carry the lane alone. This is the exact shape of a prose-heavy
-    # orchestrator-spec ingestion tripping S7 on house-convention vocabulary while
-    # the measured scope reads middle-band. It is CORROBORATION, not a provenance
-    # exemption of the spec body: the sensor (`_RISK_PROSE_RE`) scores semantic
-    # scale-warning vocabulary, not markup, so blanket-exempting spec bodies would
-    # suppress a genuine author warning. The condition is expressed through this
-    # module's own scope frozensets, so its residue is exactly {single_module} and
-    # it adapts automatically if the band set changes. A genuinely large change is
-    # unaffected: it fires a corroborator (broad/unknown scope -> S2, generative
-    # change_type -> S3, breaking compat -> S4, no anchors -> S5), keeps the S6
-    # override, and keeps the mid-execute escalation ratchet.
-    scope_resolved_noncommittal = (
-        scope_estimate is not None
-        and scope_estimate not in _DEEP_SCOPE_ESTIMATES
-        and scope_estimate not in _NARROW_SCOPE_ESTIMATES
+    # fix this seam already carries. S7 is denied the lane in exactly ONE shape: it
+    # is the SOLE fired signal, the scope estimate is the NON-COMMITTAL middle band
+    # (`single_module` — resolved, yet neither deep-biasing nor positively narrow),
+    # AND that band was MEASURED — `band_rule == 'path_count_middle_band'`, i.e. a
+    # counted set of distinct paths that landed in the middle. Only a measurement
+    # contradicts the author. A `pathless_non_empty_body` band counted nothing and a
+    # caller that supplies no `scope_band_rule` measured nothing this function can
+    # see, so neither is evidence against the warning and neither suppresses it.
+    # This is the exact shape of a prose-heavy orchestrator-spec ingestion tripping
+    # S7 on house-convention vocabulary while the MEASURED scope reads middle-band.
+    # It is CORROBORATION, not a provenance exemption of the spec body: the sensor
+    # (`_RISK_PROSE_RE`) scores semantic scale-warning vocabulary, not markup, so
+    # blanket-exempting spec bodies would suppress a genuine author warning. The
+    # residue is the explicit `_NONCOMMITTAL_SCOPE_ESTIMATES` allowlist, which does
+    # NOT track the other band frozensets: adding a band elsewhere leaves this rule
+    # untouched, by design. A large change that fires any second signal is
+    # unaffected (broad/unknown scope -> S2, generative change_type -> S3, breaking
+    # compat -> S4, no anchors -> S5), and so is one whose middle band was never
+    # measured; the S6 override and the mid-execute escalation ratchet remain
+    # available in every case.
+    scope_measured_noncommittal = (
+        scope_estimate in _NONCOMMITTAL_SCOPE_ESTIMATES
+        and scope_band_rule == 'path_count_middle_band'
     )
     suppressed_signals: list[str] = []
-    if fired == ['S7:risk_prose'] and scope_resolved_noncommittal:
+    if fired == ['S7:risk_prose'] and scope_measured_noncommittal:
         suppressed_signals = ['S7:risk_prose']
         fired = []
 
@@ -724,23 +787,31 @@ def evaluate_signals_pure(
         'planning_lane_override': override,
     }
     # D1 — signal-resolution confidence. A signal whose value is None resolved to
-    # NOTHING: it cannot vote for or against deep, so a verdict over a mostly-null
-    # vector is structurally low-confidence — every unresolved field is one that
-    # cannot contradict a signal that did fire. Reporting the resolved-vs-null split
-    # keeps a 1-of-4 decision from reading like a 1-of-7 one. The two boolean
-    # readings (`request_concrete`, `risk_prose`) are derived from the request body
-    # and are never None, so they always count as resolved.
-    null_signals = sorted(name for name, value in signals.items() if value is None)
+    # NOTHING: it cannot vote for or against deep, so it cannot contradict a signal
+    # that did fire. The split is DERIVED from the `signals` mapping just built,
+    # minus the one excluded key (`_OVERRIDE_SIGNAL`, the S6 override — its absence
+    # is the normal state rather than a failed read, and it used to sit as a
+    # permanent null in the denominator). Deriving rather than mirroring is what
+    # keeps the population total: a signal added to `signals` is scored on the same
+    # edit, instead of being silently omitted from a hand-maintained second copy
+    # while `signals_total` kept publishing the smaller size.
+    scored_signals = {
+        name: value for name, value in signals.items() if name != _OVERRIDE_SIGNAL
+    }
+    null_signals = sorted(name for name, value in scored_signals.items() if value is None)
     signals_null = len(null_signals)
-    signals_resolved = len(signals) - signals_null
+    signals_resolved = len(scored_signals) - signals_null
+    # `low_confidence` keys on the four DISCRIMINATING reads, not on a bare majority
+    # of the vector: `request_concrete` and `risk_prose` are body-derived booleans
+    # that are never None, so a majority rule let them outvote a genuine gap. Two or
+    # more null discriminators means the verdict rests on half the evidence it names.
+    discriminating_nulls = [name for name in _DISCRIMINATING_SIGNALS if signals[name] is None]
     confidence = {
-        'signals_total': len(signals),
+        'signals_total': len(scored_signals),
         'signals_resolved': signals_resolved,
         'signals_null': signals_null,
         'null_signals': null_signals,
-        # More of the vector was unresolved than resolved — the majority of inputs
-        # could not vote, so the verdict rests on a minority of the signal set.
-        'low_confidence': signals_null > signals_resolved,
+        'low_confidence': len(discriminating_nulls) >= 2,
     }
 
     recommended_posture = project_profile_pure(
@@ -775,6 +846,10 @@ def _evaluate_signals(plan_id: str, metadata: dict[str, Any]) -> dict[str, Any]:
       ``band_rule``). It explains the band THIS BODY would produce; the S2 signal
       value itself is read from ``references.json``, which a later phase's
       module-mapping derivation may have overwritten with a measured band.
+
+    ``band_rule`` is additionally threaded into the scorer as ``scope_band_rule``
+    — the same value, no second sensor — which is what lets the S7 corroboration
+    demand a MEASURED middle band before it suppresses the author's warning.
     """
     plan_source = metadata.get('plan_source')
     if plan_source is None:
@@ -800,6 +875,7 @@ def _evaluate_signals(plan_id: str, metadata: dict[str, Any]) -> dict[str, Any]:
         request_concrete=concrete,
         risk_prose=risk_prose,
         override=override,
+        scope_band_rule=scope_provenance['band_rule'],
     )
     evaluation['scope_provenance'] = scope_provenance
     return evaluation

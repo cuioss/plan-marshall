@@ -81,32 +81,31 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks finalize
 
 ### Task Completion Emission ([STEP] + [ARTIFACT])
 
-After all steps of a task are complete and verification has passed, but **before** the orchestrator calls `manage-tasks next` to advance to the following task, the orchestrator MUST emit two work-log entries in this order:
+After all steps of a task are complete and verification has passed, but **before** the orchestrator calls `manage-tasks next` to advance to the following task, two work-log entries exist for the task. They have different owners, and the split is the point:
 
-1. **Per-task completion `[STEP]`** — exactly one line summarizing the task. Substitute `{N}` with the task number, `{title}` with the task title, `{steps_done}` with the count of finalized steps, and `{steps_total}` with the task's total step count:
+1. **Per-task completion `[STEP]`** — exactly one line summarizing the task, emitted by the orchestrator. Substitute `{N}` with the task number, `{title}` with the task title, `{steps_done}` with the count of finalized steps, and `{steps_total}` with the task's total step count:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
      work --plan-id {plan_id} --level INFO --message "[STEP] (plan-marshall:phase-5-execute) Completed task {N}: {title} — {steps_done}/{steps_total} steps"
    ```
 
-2. **One `[ARTIFACT]` per changed path** — see procedure below. Together these entries let a plan-level audit reconstruct both the per-task progression and the file-system effects each task produced.
+2. **One `[ARTIFACT]` per changed path** — emitted by `manage-tasks finalize-step` itself, from the same task-closing branch that emits `[OUTCOME]`. **The orchestrator emits nothing here**: a caller-side emission is lost whenever an execution-context is re-dispatched before it fires, which is the same reason `[OUTCOME]` moved into the script. Together these entries let a plan-level audit reconstruct both the per-task progression and the file-system effects each task produced.
 
-**Baseline SHA**: Record the worktree's HEAD SHA the moment a task transitions to `in_progress` and persist it as `task_start_sha` in task metadata. This is the single source of truth for the task's starting point. Capture it with:
+**Baseline SHA**: `task_start_sha` is written by `manage-tasks` on the first transition of a task into `in_progress` — the implicit flip inside `finalize-step`, and the explicit `update --status in_progress`. The capture is idempotent, so a re-entry cannot move the base forward. Nothing else writes the field, and a task carrying no baseline emits no artifact line rather than deriving one from a guessed base.
 
-```bash
-git -C {worktree_path} rev-parse HEAD
+**Diff computation**: the script compares the recorded baseline against the **working tree**, plus the untracked-file walk:
+
+```text
+git -C {checkout_root} diff --name-status -M {task_start_sha}
+git -C {checkout_root} ls-files --others --exclude-standard
 ```
 
-(Or `git -C . rev-parse HEAD` when no worktree is active — the `cd && git` compound is prohibited; see `persona-plan-marshall-agent` Hard Rules.)
+⛔ The second operand is deliberately absent — a `{task_start_sha} HEAD` comparison is EMPTY for the whole window this channel covers, because a task's edits are uncommitted until the per-deliverable chain-tail commit. The untracked walk is needed for the same reason at one remove: a file the task created is untracked and appears in neither form until it is staged.
 
-**Diff computation**: At task completion, compute the name-status diff from the recorded baseline to the current HEAD:
+⚠ Commits fire at the per-deliverable chain tail, so two tasks of the same deliverable share one base and the later task's artifact list is a **superset** — it re-reports the files of the task that preceded it. That is a property of a SHA base under per-deliverable commits, and it is stated rather than hidden.
 
-```bash
-git -C {worktree_path} diff --name-status {task_start_sha} HEAD
-```
-
-Walk each entry of the output and map it to exactly one `[ARTIFACT]` message. Each line of `diff --name-status` output has the shape `{status}\t{path}` (or `{status}\t{old_path}\t{new_path}` for renames/copies):
+Each `diff --name-status` line has the shape `{status}\t{path}` (or `{status}\t{old_path}\t{new_path}` for renames/copies) and maps to exactly one `[ARTIFACT]` message:
 
 | Status code | Message shape |
 |-------------|---------------|
@@ -115,17 +114,11 @@ Walk each entry of the output and map it to exactly one `[ARTIFACT]` message. Ea
 | `R*` (rename, any similarity score) | `[ARTIFACT] (plan-marshall:phase-5-execute:{task_number}) Renamed {old_path} -> {new_path}` |
 | `C*` (copy) | Treat as `A` for `{new_path}` — emit a single `Wrote` entry |
 
-Rename entries produce **exactly one** `Renamed` message — never a delete entry for the old path plus a write entry for the new path. This keeps the audit trail unambiguous about the operation's intent.
+An untracked path maps to `Wrote` — it is a file the task created. Rename entries produce **exactly one** `Renamed` message — never a delete entry for the old path plus a write entry for the new path. This keeps the audit trail unambiguous about the operation's intent.
 
-Emit each entry via the work logger:
+Paths are **worktree-relative** (as git emits them). If the diff is empty (no paths changed), the script emits **nothing** — an empty artifact list is a valid outcome (for example, a pre-implemented task or a verification-profile task that legitimately modified no files). The absence of artifact entries in the work log is itself meaningful signal, and the `finalize-step` result echoes `artifact_lines` — the count the script emitted.
 
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level INFO \
-  --message "[ARTIFACT] (plan-marshall:phase-5-execute:{task_number}) Wrote {relative_path}"
-```
-
-Substitute the appropriate message shape per row. Paths are **worktree-relative** (as git emits them). If the diff is empty (no paths changed), emit **nothing** — an empty artifact list is a valid outcome (for example, a pre-implemented task or a verification-profile task that legitimately modified no files). The absence of artifact entries in the work log is itself meaningful signal.
+The mapping above is implemented by `manage-tasks/scripts/_task_artifacts.py`; `manage-tasks/SKILL.md` § "Script-Level `[OUTCOME]` + `[ARTIFACT]` Emission" carries the script-side contract.
 
 **Caller-format exception**: The `(plan-marshall:phase-5-execute:{task_number})` caller prefix deliberately uses a three-segment form (`bundle:skill:task_number`) rather than the usual two-segment `(bundle:skill)` convention documented in [manage-logging log-format.md](../../manage-logging/standards/log-format.md). The trailing `:{task_number}` segment is an approved extension specific to artifact emission so a log reader can attribute each file change to the exact task that produced it without cross-referencing timestamps against task transitions. The third segment in this exception is always a **numeric task id** — this is distinct from other skills that already carry a third segment of a different kind (e.g., `(plan-marshall:phase-6-finalize:record-metrics)` where the third segment names a sub-topic within the skill). No other skill may emit the three-segment `bundle:skill:{numeric}` form; the numeric-tail shape is reserved for `plan-marshall:phase-5-execute` artifact entries.
 

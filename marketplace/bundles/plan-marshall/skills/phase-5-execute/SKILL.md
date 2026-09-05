@@ -397,7 +397,7 @@ Inlined flow:
    git -C {worktree_path} merge-base --is-ancestor origin/{base_branch} HEAD
    ```
 
-   Exit code `0` means up to date. Log and continue to Step 4:
+   Exit code `0` means up to date. Log, then **proceed to Step 4** — this is one of the only two branches that reach it:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -420,9 +420,15 @@ Inlined flow:
      baseline-reconcile --plan-id {plan_id} --no-emit
    ```
 
-   Parse `conflict_count`, `upstream_commit_count`, and `upstream_commits` from the returned TOON.
+   **Branch on the returned `status` BEFORE reading `conflict_count`.** The wrapper prints the payload through a helper that always exits 0, so an "if the script exits non-zero" test never fires, and the probe's non-classifying returns carry **no `conflict_count` field at all**. An agent that reads the absent field as falsy records a new baseline on the strength of a probe that declined to classify:
 
-7. **Self-absorption branch — `conflict_count == 0`** (zero-overlap case): the upstream tip can be absorbed into the baseline metadata without re-authoring the request, the outline, or any task. Persist the new `worktree_sha` (the current HEAD sha after the fetch — unchanged, but recorded for audit) and the new `main_sha` (the resolved `origin/{base_branch}` sha) into `status.metadata` via a single fused `manage-status metadata --set` call:
+   - **`status: error`** (e.g. `error: probe_mutated_head`) → ABORT. Return the structured drift TOON with `error: baseline_drift` per step 8 below; do NOT self-absorb and do NOT enter the task loop. A probe that could not be trusted to classify the state it reported is not evidence that the drift is safe to absorb.
+   - **`status: skipped`** → the same abort, with `display_detail` carrying the returned `reason` (`main_checkout_flow`, `worktree_not_materialized`, `status_not_found`, `status_module_unavailable`, `worktree_path_missing`, `worktree_path_not_a_directory`, `no_remote`, `fetch_failed`, `head_unresolved`, `merge_base_unresolved`). A skip is the probe **declining to classify**, which is not evidence of zero overlap.
+   - **`status: success`** → and only then, parse `conflict_count`, `upstream_commit_count`, and `upstream_commits` from the returned TOON and continue to step 7.
+
+   An absent `conflict_count` is **never** treated as zero. Only a `conflict_count` read off a `status: success` payload may drive the self-absorption branch in step 7.
+
+7. **Self-absorption branch — `status: success` AND `conflict_count == 0`** (zero-overlap case): the upstream tip can be absorbed into the baseline metadata without re-authoring the request, the outline, or any task. Persist the new `worktree_sha` (the current HEAD sha after the fetch — unchanged, but recorded for audit) and the new `main_sha` (the resolved `origin/{base_branch}` sha) into `status.metadata` via a single fused `manage-status metadata --set` call:
 
    ```bash
    git -C {worktree_path} rev-parse HEAD
@@ -459,9 +465,9 @@ Inlined flow:
      --message "[STATUS] (plan-marshall:phase-5-execute) Self-absorbed zero-overlap drift: {upstream_commit_count} commits, new main_sha={main_sha}"
    ```
 
-   Then **continue the task loop** — no return to orchestrator, no dispatch to phase-2-refine, no architecture reload, no source-premise verification, no Q-Gate. Self-absorption is metadata-only: the request narrative, solution outline, task list, and confidence score remain valid because the upstream commits touched no overlapping files. Proceed to Step 4.
+   Then **continue the task loop** — no return to orchestrator, no dispatch to phase-2-refine, no architecture reload, no source-premise verification, no Q-Gate. Self-absorption is metadata-only: the request narrative, solution outline, task list, and confidence score remain valid because the upstream commits touched no overlapping files. **Proceed to Step 4** — the second and last branch that reaches it.
 
-8. **Drift contract — `conflict_count > 0`** (non-zero-overlap case): the upstream commits touch files that overlap with the worktree's in-flight changes. ABORT the phase fail-loud — re-authoring is required and only refine's iterate-to-confidence loop can absorb the overlap correctly. Return the structured drift TOON for the orchestrator's drift-recovery branch to act on (see `plan-marshall:plan-marshall/workflow/execution.md` § "Baseline drift recovery (non-zero overlap)"):
+8. **Drift contract — `conflict_count > 0`, or a non-`success` probe return**: either the upstream commits touch files that overlap with the worktree's in-flight changes, or the probe declined to classify at all. ABORT the phase fail-loud — re-authoring is required and only refine's iterate-to-confidence loop can absorb the overlap correctly. Return the structured drift TOON for the orchestrator's drift-recovery branch to act on (see `plan-marshall:plan-marshall/workflow/execution.md` § "Baseline drift recovery (non-zero overlap)"):
 
    ```toon
    status: error
@@ -472,17 +478,39 @@ Inlined flow:
    display_detail: "baseline drift: {upstream_commit_count} upstream commits"
    ```
 
-   Log the failure to work-log:
+   On the non-`success` route from step 6 there is no overlap verdict to report, so the payload carries the probe's own outcome instead of a fabricated count — `conflict_count` is **omitted**, never sent as `0`, and `upstream_commit_count` is the count of `{divergent_commits}` captured from `git log` in step 5, not a probe-derived field:
+
+   ```toon
+   status: error
+   error: baseline_drift
+   reconcile_status: skipped | error
+   reason: {reason from a skipped return, or the error token from an error return}
+   divergent_commits: {divergent_commits}
+   upstream_commit_count: {count of divergent_commits}
+   display_detail: "baseline drift: probe {reconcile_status} ({reason})"
+   ```
+
+   Log the failure to work-log. **The message is route-specific, because the two routes establish different things** — a log line MUST NOT assert a cause the probe never established, the same rule `pre-commit-verify-freshness` applies to its own stale reasons.
+
+   On the **`conflict_count > 0`** route the probe DID classify, so the message may name the overlap:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
      work --plan-id {plan_id} --level ERROR \
-     --message "[ERROR] (plan-marshall:phase-5-execute) Baseline drift at {worktree_path} with non-zero overlap ({conflict_count} conflicting files) — origin/{base_branch} contains commits not in HEAD: {divergent_commits}. Returning structured drift TOON; orchestrator will re-dispatch phase-2-refine."
+     --message "[ERROR] (plan-marshall:phase-5-execute) Baseline drift at {worktree_path} — origin/{base_branch} contains commits not in HEAD and the merge-tree probe found {conflict_count} conflicting file(s): {divergent_commits}. Returning structured drift TOON; orchestrator will re-dispatch phase-2-refine."
+   ```
+
+   On the **non-`success`** route there is NO overlap verdict, so the message reports the probe's own outcome instead and claims nothing about conflicts:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+     work --plan-id {plan_id} --level ERROR \
+     --message "[ERROR] (plan-marshall:phase-5-execute) Baseline drift at {worktree_path} — origin/{base_branch} contains commits not in HEAD and baseline-reconcile returned {reconcile_status} ({reason}), so no overlap verdict was established: {divergent_commits}. Returning structured drift TOON; orchestrator will re-dispatch phase-2-refine."
    ```
 
    Phase-5-execute does NOT perform substantive reconciliation for non-zero overlap. The orchestrator's drift-recovery branch dispatches phase-2-refine, which surfaces the upstream commits as Q-Gate findings and runs the iterate-to-confidence loop to absorb the overlap.
 
-Proceed to Step 4.
+   ⛔ **This step is TERMINAL. Do NOT continue to Step 4.** Return the structured drift TOON above and stop. Exactly two branches reach Step 4 — the fast path (step 4) and the zero-overlap self-absorption (step 7) — and each says so at its own exit, which is why no unconditional continuation follows this abort: an agent that has just aborted would read one and enter the task loop on a baseline nothing classified, silently undoing the status-branch contract step 6 establishes.
 
 ### Step 4: Log Phase Start and Surface Active Worktree (Once per phase)
 
@@ -623,9 +651,9 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks finalize
 
 ### Step 8: Log Task Completion
 
-After each task completes, the canonical `[OUTCOME]` work-log line is emitted **inside `manage-tasks finalize-step`** — see `manage-tasks/SKILL.md` § "Script-Level [OUTCOME] Emission" for the contract. The script fires exactly one `[OUTCOME] (plan-marshall:phase-5-execute) Completed TASK-NNN: {title} ({M} steps)` line on the task-closing finalize call. **Skills MUST NOT emit a manual `[OUTCOME]` line here** — duplicating the script-level guard creates double entries; the line is lost whenever an execution-context is re-dispatched and the original agent's working context is discarded before its caller-side `[OUTCOME]` can fire, which is exactly why the emission was moved into the script.
+After each task completes, the canonical `[OUTCOME]` work-log line is emitted **inside `manage-tasks finalize-step`** — see `manage-tasks/SKILL.md` § "Script-Level `[OUTCOME]` + `[ARTIFACT]` Emission (`finalize-step`)" for the contract. The script fires exactly one `[OUTCOME] (plan-marshall:phase-5-execute) Completed TASK-NNN: {title} ({M} steps)` line on the task-closing finalize call. **Skills MUST NOT emit a manual `[OUTCOME]` line here** — duplicating the script-level guard creates double entries; the line is lost whenever an execution-context is re-dispatched and the original agent's working context is discarded before its caller-side `[OUTCOME]` can fire, which is exactly why the emission was moved into the script.
 
-Immediately after the script-emitted `[OUTCOME]` line, emit one `[ARTIFACT]` work-log entry per file the task changed by diffing the task-start SHA (recorded at `in_progress` transition as `task_start_sha`) against the current HEAD. See `standards/workflow.md` § **Artifact Emission at Task Completion** for the authoritative procedure, status-code mapping, and rename-handling rule. The artifact entries use a deliberate three-segment caller prefix `(plan-marshall:phase-5-execute:{task_number})` — a documented exception to the usual two-segment `(bundle:skill)` convention in [manage-logging/standards/log-format.md](../manage-logging/standards/log-format.md). Emit nothing when the diff is empty. This step precedes `manage-tasks next` so the audit trail for each task is flushed before the orchestrator advances.
+The `[ARTIFACT]` lines ride the SAME script call. `manage-tasks finalize-step` emits one `[ARTIFACT]` entry per file the task changed, immediately after the `[OUTCOME]` line, from the same task-closing branch — the contract is the same `manage-tasks/SKILL.md` section the paragraph above already cites. See `standards/workflow.md` § **Task Completion Emission ([STEP] + [ARTIFACT])** for the status-code mapping, the rename-handling rule, and the three-segment caller-prefix exception. The script owns the diff base too (`task_start_sha`, captured at the task's `in_progress` transition), so no baseline needs to be recorded by hand. The `finalize-step` result echoes `artifact_lines` — the count the script emitted; what a `0` there does and does not tell you is the cited `manage-tasks/SKILL.md` section's contract, not restated here. **Skills MUST NOT emit `[ARTIFACT]` lines by hand**, for the same reason they must not emit `[OUTCOME]` by hand: a caller-side emission is lost whenever an execution-context is re-dispatched before it fires, and a duplicated line double-counts the change.
 
 ### Step 8b: Persist Per-Task Subagent Usage to Accumulator
 
@@ -651,15 +679,19 @@ After a verification step settles (its build/check completes with a known outcom
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest record-step \
-  --plan-id {plan_id} --step-id {step_id} --phase 5-execute --outcome {executed|skipped|error} \
-  --total-tokens {total_tokens} --tool-uses {tool_uses} --duration-ms {duration_ms}
+  --plan-id {plan_id} --step-id {step_id} --phase 5-execute --outcome {executed|skipped|failed|error} \
+  [--total-tokens {total_tokens}] [--tool-uses {tool_uses}] [--duration-ms {duration_ms}]
 ```
+
+The three token flags are bracketed because omission is a REAL branch, not a
+formatting nicety — an inline build invocation carrying no `<usage>` tag passes
+none of them, so its columns record as `unmeasured` instead of a fabricated `0`.
 
 See `manage-execution-manifest` Canonical invocations → `record-step` for the authoritative argument surface. Contract:
 
 - `--phase` is always `5-execute` in this phase; `--step-id` is the verification step ID (e.g. `verify:quality-gate`, `verify:module-tests`, `verify:coverage`, or an external step's notation).
-- `--outcome` is `executed` when the step ran, `skipped` when a skip rule fired (e.g. the Step 11b skip when `verification_steps` is empty, or the Step 10b documentation-only / empty-list skip), and `error` when the step's build/check exited non-zero (recorded BEFORE the Step 11/11b `triage_required` return so the failed attempt is on the execution log).
-- The token-attribution triple (`--total-tokens` / `--tool-uses` / `--duration-ms`) is the per-step cost; supply the integers parsed from the dispatched agent's `<usage>` block when one is available, and `0` for inline build invocations that carry no `<usage>` tag (a skipped step legitimately reports zeros). These are the SAME integers forwarded to the Step 8b `accumulate-agent-usage` call — Step 8b sums them into the per-phase accumulator that fills the `total_tokens` column, while Step 8c records the per-step breakdown; the two are complementary, not redundant.
+- `--outcome` is `executed` when the step ran, `skipped` when a skip rule fired (e.g. the Step 11b skip when `verification_steps` is empty, or the Step 10b documentation-only / empty-list skip), and **`failed` when the step's build/check RAN and exited non-zero** (recorded BEFORE the Step 11/11b `triage_required` return so the failed attempt is on the execution log). Reserve `error` for a build that never rendered a verdict — the invocation raised, timed out, or was cut short. A red gate is a negative verdict from a run that completed, not a run that broke, and the same partition governs the phase-6 producer: see [`../manage-execution-manifest/standards/manifest-schema.md`](../manage-execution-manifest/standards/manifest-schema.md) § "Which situation each `outcome` value means". Recording a red build as `error` is the collapse this partition exists to undo — it makes an archive-wide `error` count grade a gate that worked as a gate that broke.
+- The token-attribution triple (`--total-tokens` / `--tool-uses` / `--duration-ms`) is the per-step cost, and it is **three-state, not defaulted**. Supply the integers parsed from the dispatched agent's `<usage>` block when one is available. **OMIT the flags entirely** for an inline build invocation that carries no `<usage>` tag — nothing was measured, and `record-step` records the omission as the `unmeasured` token rather than as a fabricated `0`. Pass an explicit `0` only where zero is what you actually measured: a step that was **skipped** genuinely consumed nothing, so `--total-tokens 0 --tool-uses 0 --duration-ms 0` is the correct record for a skip. Passing `0` for an unmeasured column is the prohibited move — it is byte-identical to a measured zero and no reader can recover the difference. See [`../manage-execution-manifest/standards/manifest-schema.md`](../manage-execution-manifest/standards/manifest-schema.md) § "`execution_log[]` — the per-step execution log". The integers you DO supply are the SAME ones forwarded to the Step 8b `accumulate-agent-usage` call — Step 8b sums them into the per-phase accumulator that fills the `total_tokens` column, while Step 8c records the per-step breakdown; the two are complementary, not redundant.
 - The manifest MUST already exist (composed by `phase-4-plan` Step 8b); `record-step` returns `file_not_found` otherwise. The append is atomic and one decision-log line is emitted per record.
 
 **Exec-blind contract**: Phase 5 exec token counts MUST be recorded on EVERY plan. The combination of Step 8b (`accumulate-agent-usage` → fills the per-phase `total_tokens` column) and the orchestrator's end-of-execute `phase-boundary` call (which always fires at the `5-execute → 6-finalize` transition, reading the accumulator as its fallback) guarantees the phase-5 `total_tokens` in `metrics.toon` is non-zero — closing the historical exec-blind path where phase-5 `total_tokens==0`. Step 8c's per-step `execution_log[]` rows are the auditable per-step breakdown behind that aggregate. Because the `phase-boundary` record is reached unconditionally at the transition (Step 12 → **Phase Transition**), there is no plan path that skips the closing-phase token record.

@@ -1038,6 +1038,24 @@ class TestUnresolvableStepProvenance:
         assert 'in marshal.json is unresolvable' in message
         assert 'execution_tier COMMAND routing' not in message
 
+    def test_no_step_map_message_states_the_origin_is_undetermined(self):
+        """With no step map read, the message SAYS the origin could not be determined.
+
+        The branch previously stated no origin at all, which reads as "the origin was
+        checked and nothing was found" — indistinguishable from a step genuinely
+        absent from a map that WAS read. The two are different situations: this one
+        holds no key map to answer the question from. Naming the indeterminacy is
+        what separates them, and it is the only claim this branch can honestly make.
+        """
+        result = _mem.check_emitted_steps_resolvable(['verify:compile'], [], None, None)
+
+        assert result is not None
+        message = result['message']
+        assert "origin (authored vs routed) could not be determined" in message
+        # It is an indeterminacy, not a marshal.json origin claim.
+        assert 'in marshal.json is unresolvable' not in message
+        assert 'NOT authored in marshal.json' not in message
+
     def test_phase_6_absent_step_is_not_attributed_to_derive_verification(self):
         """A phase-6 step absent from the map is NOT misattributed to derive-verification.
 

@@ -900,11 +900,19 @@ def _apply_unresolved_ask_provider_drop(
 # for a leaf to run inline. THREE kinds stay with the consumer instead:
 # per-task-tier commands, unparseable (raw-shell / non-``plan-marshall:build-``)
 # commands, and — the build-phase-canonical carve-out — a verb that is a KNOWN
-# canonical build command (``compile`` / ``test-compile``) with no phase-5
-# verify gate, whose ``verify:{verb}`` generalization would not resolve. Routing
-# that last kind would append an unresolvable step and fail the whole compose,
-# so the routing pass keeps it with the task (see
-# ``_route_task_verification_commands``).
+# canonical build command with no phase-5 verify gate, whose ``verify:{verb}``
+# generalization would not resolve. Routing that last kind would append an
+# unresolvable step and fail the whole compose, so the routing pass keeps it with
+# the task (see ``_route_task_verification_commands``).
+#
+# That carve-out's membership is the PREDICATE
+# ``verb in ALL_CANONICAL_COMMANDS and not
+# _check_step_resolvable(f'verify:{verb}', 'phase_5')['resolvable']``, evaluated
+# per verb at compose time — never a list. ``compile`` and ``test-compile`` are
+# the verbs that motivated it and are cited elsewhere as ILLUSTRATIONS, not as
+# the complete set: the current membership is whatever executing that predicate
+# over ``ALL_CANONICAL_COMMANDS`` at HEAD returns, and it moves whenever a
+# canonical gains or loses a phase-5 verify gate.
 #
 # The step IDs are BARE (no ``default:`` prefix) per the boundary-
 # normalization contract: the candidate lists are stripped to bare names at

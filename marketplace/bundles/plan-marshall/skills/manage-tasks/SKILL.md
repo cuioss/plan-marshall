@@ -70,7 +70,7 @@ Script: `plan-marshall:manage-tasks:manage-tasks`
 | `exists` | `--plan-id --task-number` | Boolean presence probe — returns `status: success exists: true\|false`, never errors on absence (use instead of `read` for existence checks) |
 | `next` | `--plan-id [--include-context] [--ignore-deps]` | Get next pending task/step |
 | `next-tasks` | `--plan-id` | Get all tasks ready for parallel execution |
-| `finalize-step` | `--plan-id --task-number --step --outcome [--reason] [--outcome-task-title] [--outcome-step-count] [--outcome-caller]` | Complete step with outcome (done/skipped/failed). When the call closes a task as `done`, the script emits one canonical `[OUTCOME] ({caller}) Completed TASK-NNN: {title} ({M} steps)` work-log line — see "Script-Level [OUTCOME] Emission" below for the contract and overrides. |
+| `finalize-step` | `--plan-id --task-number --step --outcome [--reason] [--outcome-task-title] [--outcome-step-count] [--outcome-caller]` | Complete step with outcome (done/skipped/failed). When the call closes a task as `done`, the script emits one canonical `[OUTCOME] ({caller}) Completed TASK-NNN: {title} ({M} steps)` work-log line plus one `[ARTIFACT]` line per changed path — see "Script-Level [OUTCOME] + [ARTIFACT] Emission" below for both contracts, the overrides, and the `task_start_sha` baseline the artifact diff is taken against. |
 | `add-step` | `--plan-id --task-number --target --intent [--after]` | Add step to task |
 | `update-step` | `--plan-id --task-number --step-number --intent --reason [--finding-id]` | Update step intent and reason (e.g., to record a triage finding reference) |
 | `remove-step` | `--plan-id --task-number --step` | Remove step from task |
@@ -554,7 +554,14 @@ absence of a crash:
 ⛔ "The gate never raises" must never be read as "the gate always refuses on bad
 input" — the `Outcome` column above is the authority on which inputs refuse.
 
-### Script-Level `[OUTCOME]` Emission (`finalize-step`)
+### Script-Level `[OUTCOME]` + `[ARTIFACT]` Emission (`finalize-step`)
+
+The task-closing `finalize-step` call owns **two** work-log channels, and both
+are script-emitted under the same contract: a caller-side emission is lost
+whenever the caller envelope is re-fired and its working context is discarded
+before the line is written, so neither channel may depend on an agent
+remembering to emit it. `[OUTCOME]` is documented first; `[ARTIFACT]` follows
+under "The `[ARTIFACT]` channel" below.
 
 When a `finalize-step --outcome done` call closes the targeted task (i.e. all
 steps are `done` AND no step is `failed`), the script emits exactly one
@@ -592,6 +599,49 @@ flips the task to `done`). It does NOT fire for `--outcome skipped`,
 `--outcome failed`, or for intermediate `--outcome done` calls that leave the
 task `in_progress`. Caller-side `[OUTCOME]` emissions in skills MUST NOT
 duplicate this line — the script-level guard is the single source of truth.
+
+#### The `[ARTIFACT]` channel
+
+The same task-closing branch emits one `[ARTIFACT]` line per file the task
+changed, immediately after the `[OUTCOME]` line:
+
+```text
+[ARTIFACT] (plan-marshall:phase-5-execute:{task_number}) Wrote {path}
+[ARTIFACT] (plan-marshall:phase-5-execute:{task_number}) Deleted {path}
+[ARTIFACT] (plan-marshall:phase-5-execute:{task_number}) Renamed {old} -> {new}
+```
+
+The three-segment caller prefix and the status-code mapping are owned by
+[`phase-5-execute/standards/workflow.md`](../phase-5-execute/standards/workflow.md)
+§ "Task Completion Emission ([STEP] + [ARTIFACT])"; the script implements that
+mapping and does not restate it. An empty diff emits nothing — an empty artifact
+list is a valid outcome, and its absence from the log is itself the signal. The
+`finalize-step` result echoes `artifact_lines` — the count the script emitted.
+
+⛔ That count is a plain int and is NOT a fired-vs-not discriminator: it reads
+`0` for an empty diff (the measured zero), for a task carrying no
+`task_start_sha`, for a failed `git diff`, and for any `finalize-step` call that
+did not close the task. Reading a `0` as "the channel fired and found nothing" is
+the measured-zero-versus-unmeasured conflation this bundle removes elsewhere;
+distinguishing the four would need a tri-state field, which `_cmd_step.py` does
+not have.
+
+**The diff base is `task_start_sha`, and `manage-tasks` writes it.** The field
+is captured on the FIRST transition of a task into `in_progress` — the implicit
+flip inside `finalize-step`, and the explicit `update --status in_progress` —
+and the capture is idempotent, so a re-entry cannot move the base forward and
+shrink the artifact list. Nothing else writes the field: before this contract it
+was named only by documentation, with no script reading or writing it, which
+made the prose-instructed channel unimplementable as written. A task carrying no
+baseline emits nothing rather than deriving a list from a guessed base.
+
+⚠ **Two boundaries a reader must know.** Commits fire at the per-deliverable
+chain tail, so two tasks of the SAME deliverable share one base and the later
+task's artifact list is a SUPERSET — it re-reports the files of the task that
+preceded it. And the diff is taken against the WORKING TREE (`git diff {base}`,
+plus the untracked-file walk), not against `HEAD`: a task's edits are
+uncommitted at the moment it closes, so a `{base}..HEAD` comparison would see
+nothing at all.
 
 ### Add Flow — Three-Step Path-Allocate Pattern
 

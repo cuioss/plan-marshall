@@ -76,6 +76,24 @@ MANIFEST_FILENAME = 'execution.toon'
 #: contract-drift test ``test_reconciliation_execution_log_phases_match_writer``.
 EXECUTION_LOG_PHASES = ('5-execute', '6-finalize')
 
+#: The literal an OMITTED ``execution_log[]`` token-attribution column carries.
+#: A hand-mirror of ``UNMEASURED_COLUMN_TOKEN`` in
+#: ``manage-execution-manifest/scripts/_manifest_core.py`` (the writer), which
+#: this skill runs in a different process from and cannot import — the same
+#: cross-skill mirror shape :data:`EXECUTION_LOG_PHASES` already uses, and the
+#: same literal this skill's own ``manage-metrics.UNMEASURED_COLUMN_TOKEN``
+#: defines for the dispatch-boundary row. Held honest by the contract-drift test
+#: ``test_reconciliation_unmeasured_token_matches_writer``.
+UNMEASURED_COLUMN_TOKEN = 'unmeasured'
+
+#: The three states an ``execution_log[]`` token column can be read in. An
+#: unmeasured or unrecognised cell contributes NOTHING to a sum and is reported
+#: as its own state — coercing either to ``0`` is what makes an unmeasured column
+#: read as a measured zero.
+COLUMN_MEASURED = 'measured'
+COLUMN_UNMEASURED = 'unmeasured'
+COLUMN_UNRECOGNISED = 'unrecognised'
+
 #: Default pairing window. Both writers fire around the same dispatch return —
 #: ``record-dispatch-boundary`` at the termination, ``record-step`` once the
 #: orchestrator has recorded the outcome — with intervening script calls between
@@ -142,15 +160,101 @@ def _row_sort_key(row: dict[str, Any]) -> tuple[bool, datetime, str, str, int]:
     )
 
 
+def is_int_literal(text: str) -> bool:
+    """True for an ASCII decimal integer literal — digits, one optional leading ``-``.
+
+    A deliberate SUBSET of what ``int()`` accepts, in one direction only: every
+    string this admits parses, and that one-way guarantee is the whole property
+    the callers rely on. ``int()`` additionally accepts forms this refuses — a
+    non-ASCII decimal, surrounding whitespace, a leading ``+`` — each of which
+    the paragraphs below argue for on its own terms.
+
+    ⛔ **The predicate must never admit what the conversion rejects.** That is the
+    direction the defect ran, and it is the one the callers cannot survive: a
+    string the test lets through and ``int()`` refuses raises inside a reader
+    whose job is to report an unreadable cell. Both readers below tested
+    ``…lstrip('-').isdigit()`` and then called ``int()`` on the value they had NOT
+    tested, so two reachable cells passed the test and raised an uncaught
+    ``ValueError`` in the conversion one line later:
+
+    * ``'--1'`` — ``lstrip('-')`` removes BOTH signs, so the residue is a digit
+      string while the value is not a number;
+    * ``'²'`` — ``str.isdigit()`` is True for a superscript, which is a digit
+      character but not a DECIMAL one, and ``int()`` accepts only decimals.
+
+    Neither is producible by the writer, and that is exactly the point: this
+    module classifies a cell's READABILITY so a hand-edited or corrupt row is
+    reported rather than crashed on, and a reader that aborts on the corrupt row
+    it exists to describe has no third state at all.
+
+    The ASCII bound is deliberate on top of ``str.isdecimal()``. ``int()`` would
+    accept a non-ASCII decimal such as ``'٣'``, but a recorded token count
+    written in one is an unreadable cell rather than a measurement — classifying
+    it as measured would put a number nobody wrote in that column into a sum.
+    """
+    body = text[1:] if text[:1] == '-' else text
+    return bool(body) and body.isascii() and body.isdigit()
+
+
 def _as_int(value: object) -> int:
     """Coerce a TOON scalar to int, defaulting to 0. Booleans are not counts."""
     if isinstance(value, bool):
         return 0
     if isinstance(value, int):
         return value
-    if isinstance(value, str) and value.strip().lstrip('-').isdigit():
-        return int(value)
+    if isinstance(value, str):
+        # Strip ONCE and both test and parse the stripped value — the same
+        # one-value rule `read_token_column` follows below.
+        stripped = value.strip()
+        if is_int_literal(stripped):
+            return int(stripped)
     return 0
+
+
+def read_token_column(value: object) -> tuple[int, str]:
+    """Read an ``execution_log[]`` token column into ``(value, state)``.
+
+    The three-state read the writer's absence-vs-zero contract requires. It keeps
+    an int-parsing FLOOR — every historical all-numeric row parses exactly as it
+    did before — and refuses to coerce the other two states into it:
+
+    * any int, and any string :func:`is_int_literal` admits after stripping (an
+      optional leading ``-`` included), is :data:`COLUMN_MEASURED` — a measured
+      ``0`` among them. That predicate is what makes "parses as one" a fact
+      rather than an aspiration: everything it admits, the ``int()`` call below
+      it parses, so no cell can pass the test and raise in the conversion.
+      The sign is admitted by the string arm because the int arm
+      admits it, so the two arms agree on what a recorded number is; this reader
+      classifies a cell's READABILITY and returns that state ALONGSIDE the
+      value, leaving the plausibility of the number to the consumer that
+      presents it. (Both ``execution_log`` readers in ``plan-retrospective``
+      reject a negative instead, and the divergence is a property of the return
+      rather than an oversight: each of those is itself the presenting consumer
+      and has no state to hand on.
+      ``check-dispatch-audit.finalize_token_records`` maps a negative to
+      ``None`` so it cannot classify as a measured dispatch record, and
+      ``check-routing-decisions.summarize_execution_log_tokens`` counts it
+      ``rows_unrecognised`` so it cannot subtract from a published sum.)
+    * :data:`UNMEASURED_COLUMN_TOKEN` is :data:`COLUMN_UNMEASURED` — the writer
+      recorded that nobody measured this column;
+    * anything else, including an absent column, is :data:`COLUMN_UNRECOGNISED`.
+
+    ⛔ The non-measured states carry ``0`` as their numeric placeholder so the
+    row shape stays uniform, but the STATE is what a caller must branch on. Using
+    the number alone re-creates the defect: ``_as_int`` returned ``0`` for the
+    token, and that zero re-entered the reconciliation looking measured.
+    """
+    if isinstance(value, bool):
+        return 0, COLUMN_UNRECOGNISED
+    if isinstance(value, int):
+        return value, COLUMN_MEASURED
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped == UNMEASURED_COLUMN_TOKEN:
+            return 0, COLUMN_UNMEASURED
+        if is_int_literal(stripped):
+            return int(stripped), COLUMN_MEASURED
+    return 0, COLUMN_UNRECOGNISED
 
 
 def load_execution_log(plan_dir: Path) -> tuple[list[dict[str, Any]] | None, str]:
@@ -196,19 +300,74 @@ def execution_rows_for_phase(rows: list[dict[str, Any]], phase: str) -> list[dic
     timestamps), so it surfaces as an unpaired row — the honest outcome for a row
     whose position nothing can establish — and its finding still quotes the raw
     value, so a reader can see what could not be parsed.
+
+    Each row also carries ``total_tokens_state`` (:func:`read_token_column`), so
+    a downstream consumer can tell a MEASURED ``0`` from a column the writer
+    recorded as unmeasured. The numeric field stays an int either way, which is
+    what keeps the sort key and every arithmetic consumer unchanged; the state is
+    the field that must be read before the number is presented as a measurement.
     """
     selected = [row for row in rows if str(row.get('phase')) == phase]
-    normalised = [
-        {
-            'step_id': str(row.get('step_id') or ''),
-            'timestamp': row.get('timestamp'),
-            'parsed_timestamp': _parse_iso(row.get('timestamp')),
-            'total_tokens': _as_int(row.get('total_tokens')),
-            'outcome': str(row.get('outcome') or ''),
-        }
-        for row in selected
-    ]
+    normalised: list[dict[str, Any]] = []
+    for row in selected:
+        total_tokens, token_state = read_token_column(row.get('total_tokens'))
+        normalised.append(
+            {
+                'step_id': str(row.get('step_id') or ''),
+                'timestamp': row.get('timestamp'),
+                'parsed_timestamp': _parse_iso(row.get('timestamp')),
+                'total_tokens': total_tokens,
+                'total_tokens_state': token_state,
+                'outcome': str(row.get('outcome') or ''),
+            }
+        )
     return sorted(normalised, key=_row_sort_key)
+
+
+def summarize_token_states(rows: list[dict[str, Any]]) -> dict[str, int]:
+    """Return the per-state row counts over ``rows``' ``total_tokens_state``.
+
+    Total over the three states by construction: every row is counted, and a row
+    carrying no state at all is counted as :data:`COLUMN_UNRECOGNISED` rather
+    than dropped, so ``sum(result.values()) == len(rows)`` holds unconditionally.
+    A dropped row would shrink the population a caller reports its coverage
+    against, which is the same absence-reads-as-nothing defect one level up.
+    """
+    counts = {COLUMN_MEASURED: 0, COLUMN_UNMEASURED: 0, COLUMN_UNRECOGNISED: 0}
+    for row in rows:
+        state = row.get('total_tokens_state', COLUMN_UNRECOGNISED)
+        counts[state] = counts.get(state, 0) + 1
+    return counts
+
+
+def aggregate_token_state(rows: list[dict[str, Any]]) -> str:
+    """Return the state of a SUM taken over ``rows``' token columns.
+
+    A sum is only as readable as its least-readable term. :data:`COLUMN_MEASURED`
+    therefore requires that every row was measured AND that there is at least one
+    row; otherwise the sum is a FLOOR and says so:
+
+    * any :data:`COLUMN_UNRECOGNISED` row → :data:`COLUMN_UNRECOGNISED` (a cell
+      nobody could read is the weaker evidence of the two, so it wins);
+    * else any :data:`COLUMN_UNMEASURED` row → :data:`COLUMN_UNMEASURED`;
+    * else :data:`COLUMN_MEASURED`.
+
+    ⛔ **An EMPTY population is :data:`COLUMN_UNMEASURED`, never measured.** Over
+    zero rows the sum is ``0`` and "every row was measured" is VACUOUSLY true, so
+    stamping the aggregate ``measured`` would publish a fabricated zero as a
+    measurement — the same vacuous-guard shape the per-row states exist to end,
+    reconstructed at the aggregate. Callers publish the population size beside
+    the state (see :func:`summarize_token_states`) so the ``0`` is legible either
+    way.
+    """
+    if not rows:
+        return COLUMN_UNMEASURED
+    counts = summarize_token_states(rows)
+    if counts[COLUMN_UNRECOGNISED]:
+        return COLUMN_UNRECOGNISED
+    if counts[COLUMN_UNMEASURED]:
+        return COLUMN_UNMEASURED
+    return COLUMN_MEASURED
 
 
 def load_boundary_rows(path: Path) -> list[dict[str, Any]]:
@@ -219,6 +378,17 @@ def load_boundary_rows(path: Path) -> list[dict[str, Any]]:
     the two header lines plus the ``rows[]`` schema line are skipped, matching
     the reader ``manage-metrics`` already uses for the sum. A short or malformed
     row is skipped rather than partially parsed.
+
+    Each row carries ``total_tokens_state`` from :func:`read_token_column`, the
+    same three-state read :func:`execution_rows_for_phase` applies to the other
+    ledger. It previously read the column with :func:`_as_int`, which coerces
+    this module's OWN :data:`UNMEASURED_COLUMN_TOKEN` to ``0`` — an omitted
+    boundary measurement then re-entered the reconciliation looking like a
+    measured zero, which is precisely the conflation
+    :func:`read_token_column`'s contract exists to end. The numeric field stays
+    an int either way, so the sort key and every arithmetic consumer are
+    unchanged; the STATE is the field a caller must branch on before presenting
+    the number as a measurement.
     """
     if not path.exists():
         return []
@@ -235,12 +405,14 @@ def load_boundary_rows(path: Path) -> list[dict[str, Any]]:
         if len(columns) < 3:
             continue
         timestamp = columns[0].strip()
+        total_tokens, token_state = read_token_column(columns[2].strip())
         rows.append(
             {
                 'timestamp': timestamp,
                 'parsed_timestamp': _parse_iso(timestamp),
                 'termination_cause': columns[1].strip(),
-                'total_tokens': _as_int(columns[2].strip()),
+                'total_tokens': total_tokens,
+                'total_tokens_state': token_state,
             }
         )
     return sorted(rows, key=_row_sort_key)
@@ -359,7 +531,17 @@ def _phase_findings(
     unpaired_boundary: list[dict],
     structurally_excluded: bool,
 ) -> list[dict[str, Any]]:
-    """One finding per unpaired row, in each direction."""
+    """One finding per unpaired row, in each direction.
+
+    A finding in EITHER direction publishes ``total_tokens_state`` beside its
+    ``total_tokens``, and in both directions the state is READ OFF THE ROW rather
+    than stamped. Without it a row whose token column the writer recorded as
+    UNMEASURED is reported carrying ``0``, and a reader has no way to tell that
+    from a dispatch that genuinely spent nothing — the same absence-read-as-zero
+    conflation the column state exists to end, arriving through the finding. The
+    boundary direction used to hard-stamp :data:`COLUMN_MEASURED`, which made the
+    conflation unconditional on that side however carefully the row was read.
+    """
     findings: list[dict[str, Any]] = []
     for row in unpaired_execution:
         findings.append(
@@ -369,6 +551,11 @@ def _phase_findings(
                 'step_id': row['step_id'],
                 'timestamp': row['timestamp'],
                 'total_tokens': row['total_tokens'],
+                # Both directions default to UNRECOGNISED, never to MEASURED: a
+                # row that carries no state is one whose column nothing read, and
+                # defaulting it to `measured` is the conflation this field exists
+                # to end, re-entered through the default argument.
+                'total_tokens_state': row.get('total_tokens_state', COLUMN_UNRECOGNISED),
                 'detail': (
                     'recorded by record-step with no dispatch-boundary row in the window — '
                     'either the dispatch registers no boundary (a declared exclusion class) '
@@ -386,6 +573,7 @@ def _phase_findings(
                 'step_id': '',
                 'timestamp': row['timestamp'],
                 'total_tokens': row['total_tokens'],
+                'total_tokens_state': row.get('total_tokens_state', COLUMN_UNRECOGNISED),
                 'detail': (
                     'a dispatch terminated and recorded its usage, but no record-step row '
                     'names it in the window — this spend is invisible to any execution_log sum'
@@ -431,6 +619,15 @@ def reconcile_phase(
 
     # The two partiality shapes, labelled distinctly from an absent row.
     if boundary_rows and not metrics_row.get('end_time'):
+        # The token figure here is an AGGREGATE over the phase's boundary rows,
+        # so its state is derived from the rows it sums (`aggregate_token_state`)
+        # rather than stamped MEASURED. A stamped `measured` said the sum was a
+        # total whatever the rows carried, so a phase whose boundary writes
+        # omitted their token flags published a FLOOR — often 0 — as a
+        # measurement. The per-state counts ride alongside so a reader sees how
+        # much of the population the sum could read, not merely that it could
+        # not read all of it.
+        token_states = summarize_token_states(boundary_rows)
         findings.append(
             {
                 'finding': FINDING_BOUNDARY_NEVER_CLOSED,
@@ -438,6 +635,11 @@ def reconcile_phase(
                 'step_id': '',
                 'timestamp': '',
                 'total_tokens': sum(row['total_tokens'] for row in boundary_rows),
+                'total_tokens_state': aggregate_token_state(boundary_rows),
+                'total_tokens_rows_in_population': len(boundary_rows),
+                'total_tokens_rows_measured': token_states[COLUMN_MEASURED],
+                'total_tokens_rows_unmeasured': token_states[COLUMN_UNMEASURED],
+                'total_tokens_rows_unrecognised': token_states[COLUMN_UNRECOGNISED],
                 'detail': (
                     f'{len(boundary_rows)} dispatch-boundary row(s) recorded but the phase '
                     'row carries no end_time — the rows are present and no close recorded '
@@ -455,6 +657,10 @@ def reconcile_phase(
                 'step_id': '',
                 'timestamp': '',
                 'total_tokens': 0,
+                # A re-entry finding measures no tokens — the ``0`` is a shape
+                # placeholder keeping the finding rows uniform, and the state
+                # says so rather than letting it read as a measured zero.
+                'total_tokens_state': COLUMN_UNMEASURED,
                 'detail': (
                     f'the phase closed {close_count} times, so its metrics.toon totals are '
                     'cumulative across closes while both row ledgers are append logs — a '

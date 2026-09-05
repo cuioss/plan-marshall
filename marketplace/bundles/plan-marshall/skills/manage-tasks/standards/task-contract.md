@@ -129,6 +129,42 @@ A command literal that invokes a BUILD in a `verification`-profile task's `steps
 | `cost_size` | string | No | Predicted T-shirt cost size (`S`/`M`/`L`/`XL`), stamped by phase-4-plan from the cost-sizing rubric (see Cost-Sizing Fields below) |
 | `predicted_cost_tokens` | integer | No | Predicted token cost for the task, stamped alongside `cost_size` (see Cost-Sizing Fields below) |
 | `envelope_id` | integer | No | Bin-packer envelope-group identifier assigned by `manage-tasks pack-envelopes` (see Cost-Sizing Fields below) |
+| `task_start_sha` | string | No | Worktree HEAD recorded as the task's artifact-diff baseline (see Artifact-Baseline Field below) |
+
+## Artifact-Baseline Field
+
+`task_start_sha` is written by `manage-tasks` itself, not by a caller, and it is
+the base the `[ARTIFACT]` channel diffs against.
+
+| Property | Value |
+|----------|-------|
+| Type | string — a git object id, validated by `is_object_id` |
+| Producer | `_task_artifacts.capture_task_start_sha` |
+| Write path | An OPENING transition into `in_progress`, from either entry point — but the two entry points do not gate the same population. `update --status in_progress` REACHES the capture on any transition into `in_progress`, a `done`/`failed` reopening included. The implicit flip inside `finalize-step` reaches it only from a status that was never opened: a call on an `in_progress`, `done` or `failed` record (`_ALREADY_OPENED_TASK_STATUSES`) is a retry of a task that already ran, and stamping the current HEAD there records a base taken after that task's own edits. ⛔ Reaching the capture is not the same as writing. The SHA lands only when the task carries none, so a REOPENED task keeps the base its first run recorded and does NOT take the current HEAD — see Idempotent below for what that means for the artifact list |
+| Serialisation | `_tasks_core.format_task_file` (`json.dumps` over the whole record), so the key reaches `TASK-NNN.json` on disk |
+
+Two properties a reader must not assume away:
+
+- **Idempotent.** A task already carrying the field keeps it — a well-formed
+  value is returned unchanged, and a malformed one is neither returned nor
+  overwritten (it is refused at the read instead). A REOPENING is the case this
+  governs: `done`/`failed` -> `in_progress` reaches the capture, the capture
+  returns the SHA already on the record, and the reopened run therefore diffs
+  against the base its FIRST run recorded. The consequence is a SUPERSET — the
+  reopened run re-reports the files its earlier run wrote — and that direction is
+  deliberate. Re-basing would move the base forward and silently shrink the list
+  to the edits made after the reopening, dropping files the task really did
+  write; over-reporting a task's own earlier files is the recoverable error, and
+  it is the same superset property two tasks of one deliverable already have. A
+  REPEATED `update --status in_progress` never reaches the capture at all — the
+  transition gate (`prior_task_status != 'in_progress'`) stops it one level
+  earlier — and a second `finalize-step` does not reach it either, because
+  `_ALREADY_OPENED_TASK_STATUSES` gates the capture and nothing else: the repeat
+  call is not refused, it just leaves the recorded base alone.
+- **Absent, never fabricated.** When HEAD cannot be resolved the field is not
+  written at all. A task carrying no baseline is an honestly-unknown state, and
+  the emission gate gives it an empty artifact list rather than deriving one from
+  a guessed base.
 
 ## Task ID Format
 

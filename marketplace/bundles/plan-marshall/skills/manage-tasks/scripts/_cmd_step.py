@@ -6,6 +6,7 @@ Step management command handlers for manage-tasks.py.
 Contains: finalize-step, add-step, remove-step subcommands.
 """
 
+from _task_artifacts import capture_task_start_sha, emit_artifact_lines
 from _tasks_core import (
     calculate_progress,
     find_task_file,
@@ -18,6 +19,22 @@ from _tasks_core import (
 )
 from file_ops import atomic_write_file
 from plan_logging import log_entry
+
+#: Task statuses from which this call CANNOT be the task's opening transition,
+#: because the record already says the task was observed running (or has already
+#: run).
+#:
+#: ⛔ `done` and `failed` belong here for the SAME reason `in_progress` does, and
+#: leaving them out was the residual half of this gate. A persisted `done` task
+#: carrying no baseline — one closed before this field existed, or hand-edited —
+#: reached the capture on a RETRY of its closing call and got the current HEAD
+#: stamped on it, i.e. a base taken AFTER every edit that task made. The write
+#: persists, and because the capture is idempotent a later `update --status
+#: in_progress` reopening KEEPS that wrong base rather than recording the real
+#: opening one. A guessed base is worse than none: `emit_artifact_lines` returns
+#: [] for a baseline-less task precisely so a wrong list cannot be published as a
+#: confident one.
+_ALREADY_OPENED_TASK_STATUSES = ('in_progress', 'done', 'failed')
 
 
 def cmd_finalize_step(args) -> dict:
@@ -51,6 +68,30 @@ def cmd_finalize_step(args) -> dict:
 
     if not step_found:
         return output_error(f'Step {args.step} not found in TASK-{args.task_number}')
+
+    # ⛔ The PRE-mutation task status, read before anything below writes to the
+    # record. Two predicates in this handler are about a TRANSITION — "did this
+    # call open the task?" and "did this call close it?" — and both were computed
+    # from the POST-mutation state, where a transition and a repeat are
+    # indistinguishable. Neither question can be answered without this value, so
+    # it is captured first and used by both.
+    prior_task_status = task.get('status')
+
+    # Capture the task-start baseline only when THIS call actually opens the
+    # task. An unconditional capture stamped a baseline on a task that was
+    # ALREADY `in_progress` and carried none — at the current HEAD, i.e. AFTER
+    # that task's earlier edits had landed — so the artifact diff silently
+    # omitted them. That defeats `emit_artifact_lines`' own honesty guard, which
+    # returns [] for a baseline-less task precisely because a guessed base is
+    # worse than none. The capture remains idempotent, so a task that already
+    # carries a SHA keeps it whichever entry path opened it.
+    #
+    # The gate reads EVERY already-opened status, not `in_progress` alone — see
+    # `_ALREADY_OPENED_TASK_STATUSES`. A `done` or `failed` record is a task that
+    # has already run, so this call is a retry rather than an opening, and the
+    # late baseline it stamped was the same defect one status over.
+    if prior_task_status not in _ALREADY_OPENED_TASK_STATUSES:
+        capture_task_start_sha(task)
 
     # Mark step with outcome
     step_found['status'] = args.outcome
@@ -96,7 +137,19 @@ def cmd_finalize_step(args) -> dict:
     # boundary so the line cannot be lost when an orchestrator skill
     # re-dispatches a phase-5-execute agent and the original agent's working
     # context is discarded before its own [OUTCOME] emission would fire.
-    if args.outcome == 'done' and all_terminal and not has_failed:
+    #
+    # ⛔ The gate is a TRANSITION, not a state. `all_terminal and not has_failed`
+    # is computed after `step_found['status']` is assigned, so a RETRY of the
+    # closing call on an already-`done` task satisfied it just as the real
+    # closing call did, and both channels fired again — duplicate audit records
+    # inflating anything derived from them. A re-dispatch after a lost context is
+    # exactly the scenario this script-level guard exists for, so the retry path
+    # is reachable in normal operation. `prior_task_status != 'done'` is what
+    # makes the emission fire for the call that actually flips the task, which is
+    # also what `manage-tasks/SKILL.md` has said all along.
+    artifact_lines: list[str] = []
+    task_closed_by_this_call = all_terminal and not has_failed and prior_task_status != 'done'
+    if args.outcome == 'done' and task_closed_by_this_call:
         caller = getattr(args, 'outcome_caller', None) or 'plan-marshall:phase-5-execute'
         title = getattr(args, 'outcome_task_title', None) or task.get('title', '')
         step_count = getattr(args, 'outcome_step_count', None)
@@ -108,6 +161,13 @@ def cmd_finalize_step(args) -> dict:
             'INFO',
             f'[OUTCOME] ({caller}) Completed TASK-{args.task_number:03d}: {title} ({step_count} steps)',
         )
+
+        # The [ARTIFACT] channel rides the SAME task-closing branch, for the same
+        # reason [OUTCOME] was moved into this script: a caller-side emission is
+        # lost when an execution-context is re-dispatched before it fires. Both
+        # channels are now script-owned, so neither depends on an agent
+        # remembering to emit it.
+        artifact_lines = emit_artifact_lines(args.plan_id, args.task_number, task)
 
     # Calculate progress
     completed, total = calculate_progress(task)
@@ -124,6 +184,10 @@ def cmd_finalize_step(args) -> dict:
         'task_complete': all_terminal,
         'task_status': task['status'],
         'progress': f'{completed}/{total}',
+        # Echoed so a caller can SEE what the script emitted rather than having
+        # to read the work log back. A task that closed with an empty diff
+        # legitimately reports zero.
+        'artifact_lines': len(artifact_lines),
     }
 
     # Include reason if provided (for skipped or failed steps)

@@ -294,7 +294,7 @@ For the exact fill-in-the-blank structure, see:
 
 | Field | Required | Description | Used For |
 |-------|----------|-------------|----------|
-| `change_type` | Yes | Type of change | Grouping analysis |
+| `change_type` | Yes | DELIVERABLE-scoped type of change (see [Change Types](#change-types)) | Grouping analysis |
 | `execution_mode` | Yes | automated/manual/mixed | Split detection |
 | `domain` | Yes | Single domain from config.domains | Domain skill loading |
 | `module` | Yes | Module name from architecture | Skill resolution |
@@ -466,6 +466,8 @@ The `depends` field enables task-plan to determine execution order and paralleli
 ### Change Types
 
 The `change_type` field uses the fixed vocabulary defined in `plan-marshall:ref-workflow-architecture/standards/change-types.md`.
+
+This deliverable-contract field is the **DELIVERABLE-scoped** `change_type` — one per deliverable, describing that deliverable's local kind. It is not the identically-named PLAN-scoped field at `status.metadata.change_type`, which carries the plan's single settled classification and is authoritative wherever the two are compared. See [`manage-execution-manifest/standards/decision-rules.md` § change_type scope reconciliation](../../manage-execution-manifest/standards/decision-rules.md#change_type-scope-reconciliation) for how the composer reconciles the two scopes.
 
 | Key | Priority | Description | Grouping Hint |
 |-----|----------|-------------|---------------|

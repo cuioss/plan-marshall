@@ -266,8 +266,10 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
   refire-report --plan-id {plan_id} --phase 6-finalize
 ```
 
-Per step it reports `firings`, `refires` (`max(0, firings - 1)`), `skipped`, `errors`,
-and the summed token-attribution triple, sorted worst-offender first.
+Per step it reports `firings`, `refires` (`max(0, firings - 1)`), and the remaining
+outcome partition alongside the summed token-attribution triple and its column-state
+counts, sorted worst-offender first. The emitted column set is `summarize_refires`' own —
+read it there rather than from a second enumeration here.
 
 **`refires` counts extra firings, NOT re-stales — the causes are several and the column
 does not separate them.** `max(0, firings - 1)` is agnostic about *why* a step fired
@@ -289,10 +291,11 @@ never folded into `firings`: folding it in would restore the very count the clas
 removes and blind the instrument to its own effect.
 
 **`total_tokens` is a floor.** `record-step` receives the `<usage>` triple only for steps
-dispatched as Task agents, while every inline step records zeros by contract, so the payload
-carries a `token_population` field naming exactly which rows the figure was summed over.
-`default:pre-push-quality-gate` is inline AND head-dependent, so the single most expensive
-re-firing gate contributes zero to this column. A saving computed from it is stated with
+dispatched as Task agents, while an inline step's caller OMITS the three flags and the row
+records the `unmeasured` token, so the payload carries a `token_population` field naming
+exactly which rows the figure was summed over. `default:pre-push-quality-gate` is inline AND
+head-dependent, so the single most expensive re-firing gate contributes nothing readable to
+this column. A saving computed from it is stated with
 that floor attached, never as a measured total.
 
 ## Related

@@ -50,6 +50,7 @@ from _manifest_core import (
     EXECUTION_LOG_KEY,
     MANIFEST_FILENAME,
     MANIFEST_VERSION,
+    UNMEASURED_COLUMN_TOKEN,
     VALID_CHANGE_TYPES,
     VALID_RECORD_OUTCOMES,
     VALID_RECORD_PHASES,
@@ -68,6 +69,7 @@ from _manifest_core import (
 )
 from _manifest_decide import (
     _decide,
+    _read_raw_settled_change_type,
     _read_recipe_source,
     _read_settled_change_type,
     _read_task_queue_active,
@@ -1848,7 +1850,39 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # § "change_type scope reconciliation".
     supplied_change_type = args.change_type
     settled_change_type = _read_settled_change_type(plan_id)
-    if settled_change_type is not None and settled_change_type != supplied_change_type:
+    if settled_change_type is None:
+        # A settled value that is PRESENT but non-canonical reads as ``None`` above —
+        # it is unusable, not a conflicting scope, so it must not reach the refusal
+        # below (no supplied value can equal it, so every re-run would refuse and the
+        # plan could never compose). The fall-through is to the supplied value on the
+        # existing no-settled path; naming the discarded value here is what keeps that
+        # fall-through auditable, since the return alone cannot distinguish "absent"
+        # from "unusable".
+        discarded_settled_change_type = _read_raw_settled_change_type(plan_id)
+        if discarded_settled_change_type is not None:
+            _emit_decision_log(
+                plan_id,
+                '(plan-marshall:manage-execution-manifest:compose) change_type reconciliation — '
+                f'discarded unusable settled status.metadata.change_type='
+                f'{discarded_settled_change_type!r} (not one of {list(VALID_CHANGE_TYPES)}); '
+                f'composing on the supplied --plan-change-type={supplied_change_type!r}',
+            )
+    elif settled_change_type != supplied_change_type:
+        # The refusal is a reconciliation OUTCOME and belongs in the decision log
+        # beside the accepting one. Without this line the refusal returned an error
+        # to its caller and left no trace in the plan's own record, so a compose that
+        # never wrote a manifest was indistinguishable from one that was never
+        # attempted. The shared ``change_type reconciliation — `` prefix is what puts
+        # it in front of the retrospective's compose-tag filter, so both outcomes of
+        # the same decision are read back by one consumer.
+        _emit_decision_log(
+            plan_id,
+            '(plan-marshall:manage-execution-manifest:compose) change_type reconciliation — '
+            f'REFUSED: settled status.metadata.change_type={settled_change_type!r} '
+            f'(the PLAN scope) contradicts the supplied '
+            f'--plan-change-type={supplied_change_type!r} (a DELIVERABLE-scoped value); '
+            'returning change_type_scope_conflict and writing no manifest',
+        )
         return {
             'status': 'error',
             'plan_id': plan_id,
@@ -2300,9 +2334,23 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # step id MUST resolve to a real built-in doc, project-local skill, or bundle
     # discovery-registry entry. An unresolvable id — a built-in doc deleted
     # without sweeping marshal.json, a renamed/removed project skill, or a
-    # never-existed bundle:skill key — fails the compose loud, naming the
-    # offending ORIGINAL marshal.json key and the phase (mapped back from the
-    # boundary-normalized emitted id via marshal_phase_{5,6}_map). The gate runs
+    # never-existed bundle:skill key — fails the compose loud, naming the phase and
+    # the step's PROVENANCE. The naming is not universal, because an emitted id has
+    # more than one possible origin and each sends the reader to a different file:
+    #   - authored — the id is in the phase's marshal_phase_{5,6}_map, so the
+    #     message names the author's ORIGINAL marshal.json key (mapped back from
+    #     the boundary-normalized emitted id).
+    #   - routed (phase_5 only) — the id is absent from that map, so it was
+    #     appended by the execution_tier COMMAND routing pass from a derived
+    #     `verification.commands` entry; the message names `architecture
+    #     derive-verification` as the emitter and says the step is NOT authored in
+    #     marshal.json.
+    #   - composer-injected (phase_6) — absent from the map with no routing path to
+    #     attribute it to, so the message carries a neutral not-authored note
+    #     rather than a false derive-verification claim.
+    #   - CSV-fallback — no marshal step map was read at all, so no origin can be
+    #     determined and the message reports the emitted id.
+    # The gate runs
     # here, on the FINAL step lists AFTER the sort + placement validator, so only
     # steps that will actually be persisted are checked. See
     # _manifest_validation.check_emitted_steps_resolvable and SKILL.md §
@@ -2600,6 +2648,28 @@ def _log_record_step(plan_id: str, entry: dict[str, Any]) -> None:
     _emit_decision_log(plan_id, message)
 
 
+def _record_step_column(value: int | None) -> int | str:
+    """Return a measured non-negative int, or the unmeasured token when OMITTED.
+
+    The discriminator is ``value is None`` — the flag's ABSENCE — and never
+    falsiness. The predecessor wrote ``max(0, int(value or 0))``, and the
+    ``or 0`` is exactly what erased the distinction: an explicitly-passed ``0``
+    is a MEASURED zero (a skipped step really did consume nothing, and a caller
+    that forwarded a zero-token ``<usage>`` really did measure it) and must stay
+    byte-distinct from a column nobody measured.
+
+    Args:
+        value: The parsed flag value — ``None`` when the caller omitted the flag.
+
+    Returns:
+        ``max(0, int(value))`` for a supplied value, or
+        :data:`UNMEASURED_COLUMN_TOKEN` when the flag was omitted.
+    """
+    if value is None:
+        return UNMEASURED_COLUMN_TOKEN
+    return max(0, int(value))
+
+
 def cmd_record_step(args: argparse.Namespace) -> dict[str, Any] | None:
     """Append a per-step execution-log row to the manifest.
 
@@ -2611,10 +2681,14 @@ def cmd_record_step(args: argparse.Namespace) -> dict[str, Any] | None:
     manifest is written atomically and one decision-log line is emitted per
     record.
 
-    Token-attribution fields (``total_tokens`` / ``tool_uses`` /
-    ``duration_ms``) default to ``0`` when the caller omits them — a skipped
-    step legitimately consumes no tokens, and a step dispatched without a
-    ``<usage>`` tag reports zeros rather than a missing column.
+    The token-attribution fields (``total_tokens`` / ``tool_uses`` /
+    ``duration_ms``) are OPTIONAL and three-state. An explicitly-passed value —
+    including ``0`` — is a measured value and is stored as a non-negative int.
+    An OMITTED flag is stored as :data:`UNMEASURED_COLUMN_TOKEN`, because the
+    caller measured nothing and a fabricated ``0`` would be byte-identical to a
+    step that genuinely consumed nothing. See :func:`_record_step_column` and
+    ``standards/manifest-schema.md`` § "``execution_log[]`` — the per-step
+    execution log".
     """
     plan_id = require_valid_plan_id(args)
 
@@ -2650,9 +2724,9 @@ def cmd_record_step(args: argparse.Namespace) -> dict[str, Any] | None:
         'step_id': canonicalize_step_key(args.step_id),
         'phase': args.phase,
         'outcome': args.outcome,
-        'total_tokens': max(0, int(args.total_tokens or 0)),
-        'tool_uses': max(0, int(args.tool_uses or 0)),
-        'duration_ms': max(0, int(args.duration_ms or 0)),
+        'total_tokens': _record_step_column(args.total_tokens),
+        'tool_uses': _record_step_column(args.tool_uses),
+        'duration_ms': _record_step_column(args.duration_ms),
         'timestamp': datetime.now(UTC).isoformat(),
     }
 
@@ -2691,21 +2765,54 @@ def cmd_record_step(args: argparse.Namespace) -> dict[str, Any] | None:
 _REFIRE_EXECUTED_OUTCOME = 'executed'
 
 
-def _refire_metric(value: Any) -> int:
-    """Coerce one execution-log metric to a non-negative int, tolerating junk.
+#: The three states an ``execution_log[]`` metric cell can be read in. A
+#: measured cell contributes to the sum; the other two contribute nothing and are
+#: COUNTED instead, so the report says how much of its own population it could
+#: actually measure rather than publishing a sum whose coverage is unstated.
+_METRIC_MEASURED = 'measured'
+_METRIC_UNMEASURED = 'unmeasured'
+_METRIC_UNRECOGNISED = 'unrecognised'
+
+
+def _refire_metric(value: Any) -> tuple[int, str]:
+    """Read one execution-log metric cell into ``(contribution, state)``.
 
     ``summarize_refires`` tolerates a non-dict row and a row with no ``step_id``
-    by skipping it, and says so. The metric sums MUST follow the same discipline:
+    by skipping it, and says so. The metric reads MUST follow the same discipline:
     ``execution_log[]`` is append-only history parsed back from TOON, so a legacy
     or hand-edited row can carry a non-numeric value, and letting that raise would
     deny the whole report over one bad row — turning a diagnosable gap into a
-    total outage of the instrument. An uncoercible metric contributes ``0``, which
-    is the same attribution an inline step's row already carries.
+    total outage of the instrument.
+
+    Three states, never two:
+
+    * a value that parses as an int is MEASURED and contributes it (clamped at
+      ``0``) — the int-parsing floor that keeps every historical all-numeric row
+      reading exactly as before;
+    * :data:`UNMEASURED_COLUMN_TOKEN`, or a missing column (``None``), is
+      UNMEASURED — the writer recorded no measurement, so there is nothing to add;
+    * anything else is UNRECOGNISED and is reported as such rather than coerced.
+
+    ⛔ The two non-measured states contribute ``0`` to the SUM but are never
+    folded into it as a measured zero: coercing them is exactly what makes a
+    fabricated total look measured. The caller counts them per step and in the
+    totals so the coverage of the sum is legible beside it.
     """
+    if value is None or value == UNMEASURED_COLUMN_TOKEN:
+        return 0, _METRIC_UNMEASURED
+    # ⛔ `bool` subclasses `int`, so `int(True)` is `1` and a boolean cell would
+    # fall through the parse below as MEASURED contributing 1 — a fabricated
+    # measurement, which is the exact defect the three-state read exists to
+    # prevent. TOON parses a bare `true` to a Python bool, so this is reachable
+    # from a legacy or hand-edited row. A boolean in a token column is a
+    # malformed cell, not a count. The sibling reader
+    # (`_ledger_reconciliation.read_token_column`) guards it the same way.
+    if isinstance(value, bool):
+        return 0, _METRIC_UNRECOGNISED
     try:
-        return max(0, int(value or 0))
+        return max(0, int(value)), _METRIC_MEASURED
     except (TypeError, ValueError):
-        return 0
+        return 0, _METRIC_UNRECOGNISED
 
 
 def summarize_refires(
@@ -2733,6 +2840,21 @@ def summarize_refires(
     skip is precisely the outcome a preserved verdict produces, so folding it in
     would make the instrument unable to measure the thing it exists to measure.
 
+    **The three non-completion outcomes are counted APART.** ``loop_backs`` is a
+    productive non-completion (the step filed findings and handed control back),
+    ``failures`` is a step that ran cleanly and self-assessed not-clean, and
+    ``errors`` is a dispatch that raised. Summing them into one column is what
+    made a thorough gate read as a defective one: the more rounds a self-review
+    filed findings for, the worse any ``error``-counting analysis graded its
+    plan. Each has its own column so a reader never has to infer which happened.
+
+    **Each metric sum carries its own coverage.** The three token-attribution
+    columns are three-state (see :func:`_refire_metric`), so every step entry and
+    the totals publish ``unmeasured_columns`` and ``unrecognised_columns`` beside
+    the sums. A sum over rows whose columns were never measured is a FLOOR, and
+    the counts are what say so — without them an all-unmeasured population and a
+    genuinely-zero one are the same number.
+
     Args:
         execution_log: The manifest's ``execution_log[]`` rows.
         phase: When given, restrict the derivation to rows of that phase.
@@ -2757,10 +2879,14 @@ def summarize_refires(
                 'firings': 0,
                 'refires': 0,
                 'skipped': 0,
+                'loop_backs': 0,
+                'failures': 0,
                 'errors': 0,
                 'total_tokens': 0,
                 'tool_uses': 0,
                 'duration_ms': 0,
+                'unmeasured_columns': 0,
+                'unrecognised_columns': 0,
             },
         )
         outcome = str(row.get('outcome', ''))
@@ -2768,11 +2894,23 @@ def summarize_refires(
             entry['firings'] += 1
         elif outcome == 'skipped':
             entry['skipped'] += 1
+        elif outcome == 'loop_back':
+            # A PRODUCTIVE non-completion, counted in its own column. Folding it
+            # into `errors` is what made a thorough gate's plan look defective —
+            # the more rounds a self-review filed findings for, the worse the
+            # archive graded it.
+            entry['loop_backs'] += 1
+        elif outcome == 'failed':
+            entry['failures'] += 1
         elif outcome == 'error':
             entry['errors'] += 1
-        entry['total_tokens'] += _refire_metric(row.get('total_tokens'))
-        entry['tool_uses'] += _refire_metric(row.get('tool_uses'))
-        entry['duration_ms'] += _refire_metric(row.get('duration_ms'))
+        for column in ('total_tokens', 'tool_uses', 'duration_ms'):
+            contribution, state = _refire_metric(row.get(column))
+            entry[column] += contribution
+            if state == _METRIC_UNMEASURED:
+                entry['unmeasured_columns'] += 1
+            elif state == _METRIC_UNRECOGNISED:
+                entry['unrecognised_columns'] += 1
 
     for entry in per_step.values():
         entry['refires'] = max(0, entry['firings'] - 1)
@@ -2783,10 +2921,14 @@ def summarize_refires(
         'firings': sum(e['firings'] for e in steps),
         'refires': sum(e['refires'] for e in steps),
         'skipped': sum(e['skipped'] for e in steps),
+        'loop_backs': sum(e['loop_backs'] for e in steps),
+        'failures': sum(e['failures'] for e in steps),
         'errors': sum(e['errors'] for e in steps),
         'total_tokens': sum(e['total_tokens'] for e in steps),
         'tool_uses': sum(e['tool_uses'] for e in steps),
         'duration_ms': sum(e['duration_ms'] for e in steps),
+        'unmeasured_columns': sum(e['unmeasured_columns'] for e in steps),
+        'unrecognised_columns': sum(e['unrecognised_columns'] for e in steps),
     }
     return steps, totals
 
@@ -2801,11 +2943,17 @@ def cmd_refire_report(args: argparse.Namespace) -> dict[str, Any] | None:
 
     **The token column carries a KNOWN downward bias, and the payload says so.**
     ``record-step`` receives the ``<usage>`` triple only for steps dispatched as
-    Task agents; every inline step records a row with zeros by contract. So
+    Task agents; an inline step's caller omits the flags, and that omission is
+    now recorded as the unmeasured token rather than as a fabricated zero. So
     ``total_tokens`` is a FLOOR over the inline steps' real cost, and
     ``token_population`` names exactly which rows the figure was summed over.
     Reporting the number without that boundary would be the confident-but-untrue
     signal this verb exists to replace.
+
+    ``totals.unmeasured_columns`` / ``totals.unrecognised_columns`` size that
+    boundary rather than merely asserting it: they count the cells the sum could
+    NOT read, so a reader can tell a measured zero from a population nobody
+    measured.
     """
     plan_id = require_valid_plan_id(args)
 
@@ -2842,7 +2990,9 @@ def cmd_refire_report(args: argparse.Namespace) -> dict[str, Any] | None:
         'totals': totals,
         'token_population': (
             'record-step rows only; dispatched steps carry their <usage> triple and inline '
-            'steps record zeros by contract, so total_tokens is a FLOOR over inline-step cost'
+            'steps omit the flags (recorded as the unmeasured token, never a fabricated '
+            'zero), so total_tokens is a FLOOR over inline-step cost — see '
+            'totals.unmeasured_columns / totals.unrecognised_columns for its size'
         ),
     }
 
@@ -3304,15 +3454,53 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     add_plan_id_arg(record_step_parser)
     record_step_parser.add_argument('--step-id', required=True, help='Step identifier being recorded')
+    # ⛔ Both help strings DERIVE their member list from the constant they name.
+    # Hand-copying it beside the constant's own name is the closure-claim
+    # staleness shape: the text tells the reader the list is the complete legal
+    # set, so a member added to the constant leaves the CLI actively pointing at
+    # a wrong vocabulary rather than merely an incomplete one — and a caller
+    # obeying "quote flag values verbatim from the docs" is led to the stale copy.
     record_step_parser.add_argument(
-        '--phase', required=True, help='Phase the step ran in (one of VALID_RECORD_PHASES: 5-execute|6-finalize)'
+        '--phase',
+        required=True,
+        help='Phase the step ran in (one of VALID_RECORD_PHASES: '
+        + '|'.join(VALID_RECORD_PHASES)
+        + ')',
     )
     record_step_parser.add_argument(
-        '--outcome', required=True, help='Execution outcome (one of VALID_RECORD_OUTCOMES: executed|skipped|error)'
+        '--outcome',
+        required=True,
+        help='Execution outcome (one of VALID_RECORD_OUTCOMES: '
+        + '|'.join(VALID_RECORD_OUTCOMES)
+        + ')',
     )
-    record_step_parser.add_argument('--total-tokens', type=int, default=0, help='Total tokens attributed to the step')
-    record_step_parser.add_argument('--tool-uses', type=int, default=0, help='Tool-use count attributed to the step')
-    record_step_parser.add_argument('--duration-ms', type=int, default=0, help='Wall-clock duration in milliseconds')
+    # The three optional token-attribution flags default to ``None``, NOT ``0``.
+    # The default is the whole discriminator: with ``default=0`` an omitted flag
+    # reaches the handler byte-identical to an explicitly-passed ``0``, so no
+    # amount of care in the handler can tell a measured zero from an unmeasured
+    # column. Omission writes UNMEASURED_COLUMN_TOKEN; an explicit ``0`` writes a
+    # measured ``0``.
+    record_step_parser.add_argument(
+        '--total-tokens',
+        type=int,
+        default=None,
+        help='Total tokens attributed to the step. OMIT when nothing was measured — '
+        'an omitted flag records the unmeasured token, an explicit 0 records a measured zero.',
+    )
+    record_step_parser.add_argument(
+        '--tool-uses',
+        type=int,
+        default=None,
+        help='Tool-use count attributed to the step. OMIT when nothing was measured — '
+        'an omitted flag records the unmeasured token, an explicit 0 records a measured zero.',
+    )
+    record_step_parser.add_argument(
+        '--duration-ms',
+        type=int,
+        default=None,
+        help='Wall-clock duration in milliseconds. OMIT when nothing was measured — '
+        'an omitted flag records the unmeasured token, an explicit 0 records a measured zero.',
+    )
 
     refire_report_parser = subparsers.add_parser(
         'refire-report',

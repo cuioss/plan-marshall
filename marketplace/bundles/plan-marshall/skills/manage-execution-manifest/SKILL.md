@@ -10,7 +10,7 @@ scope: plan
 
 Compose, read, and validate the per-plan **execution manifest** — a small declarative artifact emitted at the end of `phase-4-plan` that names the exact Phase 5 verification steps and Phase 6 finalize steps for this plan. Phases 5 and 6 become dumb manifest executors; per-doc skip logic in their standards is removed in favor of this single source of truth.
 
-This skill is **script-only**: it has no user-invocable command and is not loaded into LLM context via `Skill:` directives. It is invoked exclusively through the 3-part script notation `plan-marshall:manage-execution-manifest:manage-execution-manifest`. Per the project memory's plugin.json registration rules, it MUST NOT be registered in `plugin.json`.
+This skill is **script-only**: it has no user-invocable command and is not loaded into LLM context via `Skill:` directives. It is invoked exclusively through the 3-part script notation `plan-marshall:manage-execution-manifest:manage-execution-manifest`. Registration in `plugin.json` is OPTIONAL for such a skill: `plugin-doctor`'s `plugin-json-orphan-component` rule EXEMPTS a `user-invocable: false` skill from the registration requirement rather than forbidding it from registering. This bundle's `plugin.json` does list `./skills/manage-execution-manifest`.
 
 ## Enforcement
 
@@ -61,7 +61,10 @@ phase_6:
 execution_log[K]{step_id,phase,outcome,total_tokens,tool_uses,duration_ms,timestamp}:
   - quality_check,5-execute,executed,12000,8,4200,2026-06-08T10:15:00+00:00
   - create-pr,6-finalize,skipped,0,0,0,2026-06-08T10:42:00+00:00
+  - push,6-finalize,executed,unmeasured,unmeasured,unmeasured,2026-06-08T10:44:00+00:00
 ```
+
+The three rows differ in kind, not only in value. The `skipped` row carries a MEASURED `0` — its caller passed `--total-tokens 0` because the step genuinely consumed nothing — while the `push` row carries `unmeasured` because its caller ran the step inline, had no `<usage>` envelope to forward, and OMITTED the flags. See [standards/manifest-schema.md](standards/manifest-schema.md) § "`execution_log[]` — the per-step execution log".
 
 ### Schema Fields
 
@@ -77,7 +80,7 @@ execution_log[K]{step_id,phase,outcome,total_tokens,tool_uses,duration_ms,timest
 | `phase_6.candidate_steps` | list[string] | The phase-6 candidate set this compose selected FROM, snapshotted **before** any pre-filter or decision-matrix row subtracted from it, boundary-normalized exactly like `phase_6.steps`. Written by `compose`; read only by `reconcile`, which diffs it against live configuration to tell a candidate that is NEW since compose (owed a backfill) from one the matrix considered and deliberately dropped (must stay dropped). The emitted `phase_6.steps` cannot serve that purpose — it is the post-subtraction result, so "in live config but not in the manifest" would match both cases. A manifest composed before this field existed has no `phase_6.candidate_steps` key; `reconcile` then reports `backfill_determinable: false` rather than guessing. |
 | `phase_5.step_params` | object | Per-step param snapshot for the selected Phase 5 verify steps, keyed by the (bare) in-manifest step id; each value is the step's resolved param object snapshotted from the marshal.json keyed map at compose time. Verify steps own no params, so values are typically `{}`. Read via `step-params get`; per-plan overridable via `step-params set`. |
 | `phase_6.step_params` | object | Per-step param snapshot for the selected Phase 6 finalize steps, keyed by the (bare) in-manifest step id; each value is the step's resolved param object snapshotted from the marshal.json keyed map at compose time (e.g. `branch-cleanup` carries `pr_merge_strategy` / `final_merge_without_asking` / `auto_rebase_threshold`; `sonar-roundtrip` carries `touched_file_cleanup` / `do_transition` / `ce_wait_timeout_seconds`; `automated-review` carries `review_bot_buffer_seconds`). This is the **plan-local runtime source** that phase-5/6 consumers read via `step-params get` (per-plan overridable via `step-params set`), NOT the marshal.json keyed map (the compose-time default). |
-| `execution_log` | list[object] | Ordered append log of per-step execution records, written one row per `record-step` invocation. Each row carries `step_id` (the dispatched step), `phase` (`5-execute` or `6-finalize`), `outcome` (`executed`/`skipped`/`error`), the token-attribution triple `total_tokens`/`tool_uses`/`duration_ms` (default `0`), and an ISO-8601 `timestamp`. Absent until the first `record-step` call; the `compose`/`read`/`validate`/`validate-loadable` operations never read or write it. |
+| `execution_log` | list[object] | Ordered append log of per-step execution records, written one row per `record-step` invocation. Each row carries `step_id` (the dispatched step), `phase` (`5-execute` or `6-finalize`), `outcome` (`executed`/`skipped`/`loop_back`/`failed`/`error`), the token-attribution triple `total_tokens`/`tool_uses`/`duration_ms`, and an ISO-8601 `timestamp`. Each of the three token columns is **three-state**: a non-negative int is a measured value (including a measured `0`), the literal `unmeasured` is written when the caller OMITTED the flag, and any other cell is unrecognised. There is no `0` default — see [standards/manifest-schema.md](standards/manifest-schema.md) § "`execution_log[]` — the per-step execution log" for the write-side discriminator and the reader obligation. Absent until the first `record-step` call; the `compose`/`read`/`validate`/`validate-loadable` operations never read or write it. |
 
 ---
 
@@ -150,6 +153,7 @@ security_class_omitted[0]:
 scope_gated_finalize_dropped[0]:
 scope_gated_finalize_immune[0]:
 unresolved_ask_provider_dropped[0]:
+terminal_emission_dropped[0]:
 ceremony_finalize_gates:
   self_review: auto
   qgate: auto
@@ -162,7 +166,14 @@ lane_dropped[0]:
 lane_warnings[0]:
 ```
 
-Every field that can name more than one dropped step is a `{step, reason}` **record list**, not a boolean — `commit_push_dropped`, `decision_matrix_dropped`, `security_class_omitted`, `unresolved_ask_provider_dropped`, `lane_dropped`, and the two `scope_gated_finalize_*` lists. A boolean cannot say *which* step went or *why*, and each such field pairs with one `[STATUS]` `decision.log` line per record. **Not every multi-step field has reached that shape yet.** `ceremony_finalize_forced_out`, `scope_gated_finalize_dropped`, `scope_gated_finalize_immune`, and `unresolved_ask_provider_dropped` are still emitted as bare step-id lists: each reports *which* steps went but not *why*, and in some cases (`ceremony_finalize_forced_out`) a per-entry reason is available upstream and discarded by the compose-result projection. Treat `cmd_compose`'s return dict in [`scripts/manage-execution-manifest.py`](scripts/manage-execution-manifest.py) as the authority on each field's actual shape rather than inferring it from this paragraph. `pre_push_quality_gate_omitted` and `simplify_omitted` stay booleans because each names one fixed step; `build_verdict_decision` carries the build verdict verbatim (`build` / `not_necessary` / `unknown`) so an `unknown` verdict — which KEEPS the gate — is distinguishable from a `build` one. The full convention is normative in [`standards/decision-rules.md`](standards/decision-rules.md) § "Every subtraction is reported".
+A field that can name more than one dropped step is never a boolean, because a boolean cannot say *which* step went or *why*. Each such field carries ONE shape, and the two groups are disjoint — no field appears in both:
+
+- **`{step, reason}` record lists** — `commit_push_dropped`, `decision_matrix_dropped`, `security_class_omitted`, `lane_dropped`. Each pairs with one `[STATUS]` `decision.log` line per record. (`lane_warnings` is a record list of a different shape, `{step, warning}`.)
+- **Bare step-id lists** — `scope_gated_finalize_dropped`, `scope_gated_finalize_immune`, `unresolved_ask_provider_dropped`, `terminal_emission_dropped`, `ceremony_finalize_forced_in`, `ceremony_finalize_forced_out`. Each reports *which* steps went but not *why*; the reason is readable only on the decision-log line the composer emits alongside. For `terminal_emission_dropped` and the two `ceremony_finalize_forced_*` lists a per-entry reason exists upstream and is discarded by the compose-result projection.
+
+The bare-list group is a known divergence from the record-list convention, registered as such in [`standards/decision-rules.md`](standards/decision-rules.md) § "Every subtraction is reported" → *Known conformance gaps* rather than left as a silent exception. `cmd_compose`'s return dict in [`scripts/manage-execution-manifest.py`](scripts/manage-execution-manifest.py) remains the authority on each field's actual shape.
+
+`pre_push_quality_gate_omitted` and `simplify_omitted` stay booleans because each names one fixed step; `build_verdict_decision` carries the build verdict verbatim (`build` / `not_necessary` / `unknown`) so an `unknown` verdict — which KEEPS the gate — is distinguishable from a `build` one. The full convention is normative in [`standards/decision-rules.md`](standards/decision-rules.md) § "Every subtraction is reported".
 
 **change_type scope record.** `change_type_scope` names which scope drove every change-type-gated decision this compose made: `settled` when the plan's authoritative classification at `status.metadata.change_type` was present and used, or `supplied` when no settled classification existed and the caller-supplied `--plan-change-type` value stood alone. `effective_change_type` is the value actually consumed by the decision matrix and pre-filters; `settled_change_type` and `supplied_change_type` carry the two candidate inputs (either may be `null`/absent). This makes the narrowing auditable after the fact — a run can no longer disagree with itself about which change type narrowed the plan. A supplied value that contradicts a present settled classification never reaches this output: compose returns `change_type_scope_conflict` instead. See [decision-rules.md](standards/decision-rules.md) § "change_type scope reconciliation".
 
@@ -256,7 +267,7 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
   --plan-id {plan_id} \
   --step-id {step_id} \
   --phase {5-execute|6-finalize} \
-  --outcome {executed|skipped|error} \
+  --outcome {executed|skipped|loop_back|failed|error} \
   [--total-tokens {N}] \
   [--tool-uses {N}] \
   [--duration-ms {N}]
@@ -266,10 +277,12 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 - `--plan-id` (required): Plan identifier
 - `--step-id` (required): Step identifier being recorded (e.g., a phase-5 verification step ID or a phase-6 finalize step ID)
 - `--phase` (required): `5-execute|6-finalize` — the phase the step ran in
-- `--outcome` (required): `executed|skipped|error` — whether the step ran, was skipped, or errored
-- `--total-tokens` (optional, default `0`): Total tokens attributed to the step
-- `--tool-uses` (optional, default `0`): Tool-use count attributed to the step
-- `--duration-ms` (optional, default `0`): Wall-clock duration in milliseconds
+- `--outcome` (required): `executed|skipped|loop_back|failed|error` — which of the five situations the row records. The four non-`executed` values do not overlap: `skipped` is a step that never ran, `loop_back` is a **productive non-completion** (the step examined its surface, filed findings and handed control back), `failed` is a step that ran cleanly and self-assessed not-clean, and `error` is a dispatch that raised, timed out, or was cut short. See [standards/manifest-schema.md](standards/manifest-schema.md) § "Which situation each `outcome` value means" — collapsing `loop_back` and `failed` into `error` is what made a thorough multi-round gate read as a defect.
+- `--total-tokens` (optional, **no default**): Total tokens attributed to the step
+- `--tool-uses` (optional, **no default**): Tool-use count attributed to the step
+- `--duration-ms` (optional, **no default**): Wall-clock duration in milliseconds
+
+**Absence is not zero for the three token columns.** Each of the three flags is three-state and has NO `0` default. Pass a value — including `0` — only when that is what you MEASURED: a `skipped` step really did consume nothing, so `--total-tokens 0` is its correct record. **Omit the flag entirely when nothing was measured** (an inline step with no `<usage>` envelope to forward), and the row records the literal `unmeasured` instead. Passing `0` for an unmeasured column is the prohibited move: it is byte-identical to a measured zero, and no reader can recover the difference afterwards. The absence-vs-zero contract is a property of the ledger FAMILY — `manage-metrics` publishes the same rule and the same literal for its dispatch-boundary row — and the two definitions are mirrors held in lock-step by a contract-drift test on each side. See [standards/manifest-schema.md](standards/manifest-schema.md) § "`execution_log[]` — the per-step execution log".
 
 Each call appends exactly one row to `execution_log[]` (an ordered append log, not a keyed map) and emits one `decision.log` line via the in-process `_emit_decision_log` helper. Re-invocation appends another row deterministically, so every dispatch of a step is recorded. This makes per-step execution metadata loggable per-plan deterministically rather than relying on the fragile orchestrator `<usage>`-forwarding boundary call.
 
@@ -312,18 +325,20 @@ Because `execution_log[]` is an ordered append log with one row per firing, a st
 
 **`refires` counts extra firings, NOT re-stales.** At least four mechanisms produce a second `executed` row — the dispatcher's HEAD-advance re-entry check re-firing a re-staled verdict, a `loop_back` record re-firing the step on the next entry, a retry after a `failed` record, and the `push` barrier's parity-driven re-fire plus its explicit post-PR re-invocation — and this column does not separate them. A before/after comparison over the same plan shape stays sound, since the other causes are common to both arms; a single run's `refires` is not a re-stale count and must not be reported as one. The consuming model — what advances HEAD, what a re-stale costs, and how an advance is classified as invalidating or not — is owned by [`phase-6-finalize/standards/verdict-currency.md`](../phase-6-finalize/standards/verdict-currency.md).
 
-**Two coverage boundaries the payload names rather than hides.** A `skipped` row is counted in its own column and never folded into `firings` — a skip is precisely what a preserved verdict produces, so folding it in would make the instrument unable to measure the thing it exists to measure. And `total_tokens` is a **floor**: `record-step` receives the `<usage>` triple only for steps dispatched as Task agents, while every inline step records zeros by contract, so `token_population` states which rows the figure was summed over. A saving computed from this column is reported with that floor attached, never as a measured total.
+**Two coverage boundaries the payload names rather than hides.** A `skipped` row is counted in its own column and never folded into `firings` — a skip is precisely what a preserved verdict produces, so folding it in would make the instrument unable to measure the thing it exists to measure. And `total_tokens` is a **floor**: `record-step` receives the `<usage>` triple only for steps dispatched as Task agents, while an inline step's caller omits the flags (recorded as the `unmeasured` token, never a fabricated zero), so `token_population` states which rows the figure was summed over. A saving computed from this column is reported with that floor attached, never as a measured total.
+
+**The floor is SIZED, not merely asserted.** Every step row and the `totals` block carry `unmeasured_columns` and `unrecognised_columns` — the count of three-state cells the sum could not read. Without them an all-unmeasured population and a genuinely-zero one are the same number, which is the confident-but-untrue signal the column state exists to remove.
 
 **Output** (TOON):
 ```toon
 status: success
 plan_id: EXAMPLE-PLAN
 phase: 6-finalize
-execution_log_rows: 11
-steps[2]{step_id,firings,refires,skipped,errors,total_tokens,tool_uses,duration_ms}:
-  pre-submission-self-review,7,6,0,0,412000,58,930000
-  push,1,0,3,0,0,0,0
-totals: { steps: 2, firings: 8, refires: 6, skipped: 3, errors: 0, ... }
+execution_log_rows: <len(execution_log), UNFILTERED by --phase — not derivable from the rows below>
+steps[2]{step_id,firings,refires,skipped,loop_backs,failures,errors,total_tokens,tool_uses,duration_ms,unmeasured_columns,unrecognised_columns}:
+  pre-submission-self-review,7,6,0,6,0,0,412000,58,930000,0,0
+  push,1,0,3,0,0,0,0,0,0,3,0
+totals: { steps: 2, firings: 8, refires: 6, skipped: 3, loop_backs: 6, failures: 0, errors: 0, unmeasured_columns: 3, ... }
 token_population: record-step rows only; ...
 ```
 
@@ -515,7 +530,7 @@ The bulk form requires the manifest to exist on disk; if it does not, the script
 | `compose` | `--plan-id --plan-change-type --track --scope-estimate [--recipe-key] [--affected-files-count] [--phase-5-steps] [--phase-6-steps] [--commit-and-push] [--envelope-count]` | Compose and write execution.toon (`--phase-5-steps`/`--phase-6-steps` are fallback-only — `marshal.json` is the authoritative candidate source; `--plan-change-type` is reconciled against the settled `status.metadata.change_type`) |
 | `read` | `--plan-id` | Read manifest as TOON |
 | `lanes preview` | `--plan-id [--phase-6-steps]` | Resolve the minimal/standard/full phase-6 step sets + cost sums in one TOON (the posture-dialogue projection) |
-| `record-step` | `--plan-id --step-id --phase {5-execute\|6-finalize} --outcome {executed\|skipped\|error} [--total-tokens] [--tool-uses] [--duration-ms]` | Append a per-step execution-log row (outcome + token attribution) to execution.toon |
+| `record-step` | `--plan-id --step-id --phase {5-execute\|6-finalize} --outcome [--total-tokens] [--tool-uses] [--duration-ms]` | Append a per-step execution-log row (outcome + token attribution) to execution.toon. The accepted `--outcome` set is `VALID_RECORD_OUTCOMES`, declared in `scripts/_manifest_core.py` — never restated here |
 | `refire-report` | `--plan-id [--phase {5-execute\|6-finalize}]` | Report per-step firing / re-fire counts derived from the existing `execution_log[]` rows (read-only; names its token-population floor) |
 | `step-params get` | `--plan-id --phase {5-execute\|6-finalize} --step-id` | Return a step's snapshotted param object from the manifest (plan-local read) |
 | `step-params set` | `--plan-id --phase {5-execute\|6-finalize} --step-id --param --value` | Write a per-plan param override into the manifest snapshot |
@@ -538,7 +553,7 @@ The bulk form requires the manifest to exist on disk; if it does not, the script
 | `invalid_scope_estimate` | --scope-estimate not in the valid enum |
 | `invalid_track` | --track not `simple` or `complex` |
 | `invalid_phase` | `record-step` --phase not `5-execute` or `6-finalize` |
-| `invalid_outcome` | `record-step` --outcome not `executed`, `skipped`, or `error` |
+| `invalid_outcome` | `record-step` --outcome outside `VALID_RECORD_OUTCOMES` |
 | `invalid_manifest` | Manifest schema invalid or step IDs unknown; or `step-params set` target section malformed |
 | `unresolvable_step` | `compose` — a FINAL emitted phase-5/6 step id resolves to no built-in doc, project-local skill, or bundle discovery-registry entry (fail-loud; names the offending step's provenance — the `marshal.json` key for an authored step, or the derive-verification routing origin for a routed phase-5 step — and phase) |
 | `phase_6_order_violation` | `compose` — the FINAL composed `phase_6.steps` is not verifiably in ascending frontmatter `order`: either an `order_inversion` (a step precedes one with a lower `order`) or an `unresolvable_order` (a built-in / `project:` step whose `order` does not resolve, so its pinned position cannot be verified). Fail-loud; names the offending `step_id`, the `reason`, and `phase`; writes no partial manifest |
@@ -593,9 +608,11 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
   --plan-id PLAN_ID \
   --step-id STEP_ID \
   --phase {5-execute|6-finalize} \
-  --outcome {executed|skipped|error} \
+  --outcome {executed|skipped|loop_back|failed|error} \
   [--total-tokens N] [--tool-uses N] [--duration-ms N]
 ```
+
+The three token flags are optional **and have no `0` default** — omit them when nothing was measured and the row records the `unmeasured` token; pass a value, `0` included, only when that is what was measured.
 
 ### refire-report
 

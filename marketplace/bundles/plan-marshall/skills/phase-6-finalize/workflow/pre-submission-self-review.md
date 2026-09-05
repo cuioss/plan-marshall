@@ -20,7 +20,7 @@ implements:
 
 Pure executor for the `pre-submission-self-review` finalize step. Catches the class of structural defects that PR-review bots reliably surface but local quality gates systematically miss: missing initialization in symmetric save/restore pairs, regex/glob over-fit, ambiguous user-facing wording, duplicate prose sections covering the same contract, and schema/contract drift.
 
-Outcome bookkeeping (Step 4) now includes finding persistence: every returned finding is written to the plan's `qgate-6-finalize.jsonl` finding store before the step's `--outcome failed` is recorded.
+Outcome bookkeeping (Step 4) now includes finding persistence: every returned finding is written to the plan's `qgate-6-finalize.jsonl` finding store before the step's `--outcome loop_back` is recorded.
 
 ## Exit-code convention for every script call
 
@@ -30,9 +30,9 @@ Every `python3 .plan/execute-script.py` call in this document — of EVERY notat
 - **`exit_code == 0` with a `status` other than `success`, or with no parseable `status` at all**: NOT a usable value — STOP exactly as the `exit_code != 0` disposition below requires, with one difference in what the error TOON carries: on this path the diagnostic is on STDOUT, not stderr. Preserve the stdout **error envelope** as emitted — every field it carries, verbatim — into the returned error TOON; it is the only account of the cause that exists. Copy the whole envelope rather than looking for a fixed field list: beyond `status` and `error` the diagnostic fields vary by verb — `ci` verbs carry `operation`, `error_cause`, and `context`, the plan-resolution envelopes carry `message` and `plan_id` instead, and neither list is exhaustive. `error` is sometimes a hard-coded generic string whose real cause sits in one of the other fields, so dropping them can discard the cause entirely. A zero exit is not evidence the operation succeeded; a script MAY print `status: error` and still exit 0. Read `status` FIRST, and never read a **success-payload** field off a non-`success` return — the envelope's diagnostic fields are not success payload, and dropping any of them leaves the step reporting a failure with no cause. A malformed or truncated stdout that carries **no parseable `status` at all** takes this same path: an unreadable read is not evidence of success, so it fails closed onto STOP rather than falling through to the first clause. There is no envelope to preserve on that sub-path — synthesize the error TOON instead, naming the call (notation, subcommand, and arguments) and carrying the raw stdout verbatim as the only account of the cause that exists.
 - **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — silent swallowing of `wrong_parameters` rejections is the prohibited anti-pattern; "log and continue" is equally forbidden.
 
-The step combines a deterministic helper that surfaces concrete candidates from the staged diff (Step 1 below) with an LLM cognitive review applied only to those candidates (Steps 2–3 below). Step 1 (deterministic surface) and Step 4 (outcome bookkeeping) run inline in the manifest dispatcher's context; Steps 2–3 (contract cross-reference setup + the seventeen LLM cognitive checks) run in the dispatched envelope under `--phase phase-6-finalize` (no `--role` — pre-submission-self-review tracks `phase-6-finalize.default`). On any finding the LLM returns, the step hard-fails and halts the phase, mirroring the gating-step convention established by `pre-push-quality-gate`.
+The step combines a deterministic helper that surfaces concrete candidates from the staged diff (Step 1 below) with an LLM cognitive review applied only to those candidates (Steps 2–3 below). Step 1 (deterministic surface) and Step 4 (outcome bookkeeping) run inline in the manifest dispatcher's context; Steps 2–3 (contract cross-reference setup + the seventeen LLM cognitive checks) run in the dispatched envelope under `--phase phase-6-finalize` (no `--role` — pre-submission-self-review tracks `phase-6-finalize.default`). On any finding the LLM returns, the step records `outcome=loop_back` with `loop_back_target: 6-finalize` and the dispatcher's continuation hook admits the round — a PRODUCTIVE non-completion, not a failure. This is deliberately NOT the convention `pre-push-quality-gate` follows: that step records `failed`, because a red build gate ran cleanly and returned a negative verdict, whereas this step hands back findings for amendment on the branch in hand. The two being different is the point — see [`../../manage-execution-manifest/standards/manifest-schema.md`](../../manage-execution-manifest/standards/manifest-schema.md) § "Which situation each `outcome` value means".
 
-This document carries NO step-activation logic. Activation is controlled by the manifest composer in `manage-execution-manifest/scripts/manage-execution-manifest.py` (see `manage-execution-manifest/standards/decision-rules.md`). No footprint-gated pre-filter drops this step: the seventeen cognitive checks it targets apply to any code or doc change, so there is no glob gate to fail. More than one compose-time subtraction can drop it. The `commit_push_disabled` pre-filter drops it transitively when `commit_and_push == false`, because both push-only gates are meaningless with no downstream push. The `scope_gated_finalize` pre-filter also drops it when `scope_estimate == 'surgical'` — independently of `commit_and_push` — unless the step carries a declared lane override, which grants it immunity from that gate. For the authoritative set of compose-time subtractions and what each one reads, see [`../../manage-execution-manifest/standards/decision-rules.md`](../../manage-execution-manifest/standards/decision-rules.md); do not treat the two named here as exhaustive. When the dispatcher runs this step the executor always runs to completion: a clean run records `outcome=done`; a non-empty findings list records `outcome=failed` and halts the phase.
+This document carries NO step-activation logic. Activation is controlled by the manifest composer in `manage-execution-manifest/scripts/manage-execution-manifest.py` (see `manage-execution-manifest/standards/decision-rules.md`). No footprint-gated pre-filter drops this step: the seventeen cognitive checks it targets apply to any code or doc change, so there is no glob gate to fail. More than one compose-time subtraction can drop it. The `commit_push_disabled` pre-filter drops it transitively when `commit_and_push == false`, because both push-only gates are meaningless with no downstream push. The `scope_gated_finalize` pre-filter also drops it when `scope_estimate == 'surgical'` — independently of `commit_and_push` — unless the step carries a declared lane override, which grants it immunity from that gate. For the authoritative set of compose-time subtractions and what each one reads, see [`../../manage-execution-manifest/standards/decision-rules.md`](../../manage-execution-manifest/standards/decision-rules.md); do not treat the two named here as exhaustive. When the dispatcher runs this step the executor always runs to completion: a clean run records `outcome=done`; a non-empty findings list records `outcome=loop_back` with `loop_back_target: 6-finalize`, and the dispatcher re-enters the finalize step loop rather than halting the phase.
 
 ## Domain-Aware Candidate Surfacing
 
@@ -61,9 +61,11 @@ Skills the caller MUST forward in `skills[]`: none (the workflow reads files wit
 
 ## HEAD-dependency
 
-`pre-submission-self-review` declares `head_dependent: true` in its frontmatter — that fact IS the membership declaration the dispatcher's re-entry check reads (see [`../../extension-api/standards/ext-point-finalize-step.md`](../../extension-api/standards/ext-point-finalize-step.md) § "Implementor Frontmatter"). Its verdict is a **structural review of the plan's diff**, so the verdict is a function of that diff: a loop-back fix task that advances HEAD past the recorded `head_at_completion` produces a diff this step never examined, and a `done` record carried across that advance would stand as green for a diff no check ever ran against. The dispatcher MUST therefore re-fire this step against the newer HEAD. Capture `git rev-parse HEAD` immediately before EVERY terminal `mark-step-done` call — Branch A and Branch B alike — and forward it via `--head-at-completion {sha}`.
+`pre-submission-self-review` declares `head_dependent: true` in its frontmatter — that fact IS the membership declaration the dispatcher's re-entry check reads (see [`../../extension-api/standards/ext-point-finalize-step.md`](../../extension-api/standards/ext-point-finalize-step.md) § "Implementor Frontmatter"). Its verdict is a **structural review of the plan's diff**, so the verdict is a function of that diff: a loop-back fix task that advances HEAD past the recorded `head_at_completion` produces a diff this step never examined, and a `done` record carried across that advance would stand as green for a diff no check ever ran against. The dispatcher MUST therefore re-fire this step against the newer HEAD. Capture `git rev-parse HEAD` immediately before EVERY terminal `mark-step-done` call — every branch of Step 4 without exception — and forward it via `--head-at-completion {sha}`. Naming the branches individually here is what let a later-added branch fall outside the rule while still reading as covered by it.
 
-The recorded SHA carries a **second, independent** load: it is the **delta anchor** the next round scopes itself against (Step 1 reads it back and passes it as `--since-ref`). That is why it is written on the `failed` branch too, where the dispatcher's retry decision does not need it, and why its absence on a `done` record is now REFUSED rather than tolerated — `manage-status mark-step-done` returns `error: missing_head_at_completion` and writes nothing when a `head_dependent: true` step records `done` without it. An unanchored record would leave the following round unable to define its delta, silently degrading it to a full re-sweep.
+The only thing that releases a branch from FORWARDING the value is the capture itself failing. Branch C is reached by `git_unavailable` among others, so its `rev-parse` can return no SHA; it then omits the flag rather than passing an unresolved placeholder (§ Step 4 Branch C). That is not a branch exempted from the rule — it is the rule with nothing to hand it, and it is available only because the `missing_head_at_completion` refusal is scoped to the `done` outcome.
+
+The recorded SHA carries a **second, independent** load: it is the **delta anchor** the next round scopes itself against (Step 1 reads it back and passes it as `--since-ref`). That is why its absence on a `done` record is now REFUSED rather than tolerated — `manage-status mark-step-done` returns `error: missing_head_at_completion` and writes nothing when a `head_dependent: true` step records `done` without it. An unanchored record would leave the following round unable to define its delta, silently degrading it to a full re-sweep.
 
 ## Execution
 
@@ -101,10 +103,12 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read \
   --plan-id {plan_id}
 ```
 
-Locate `metadata.phase_steps.6-finalize.pre-submission-self-review.head_at_completion` and capture it as `{since_ref}`. Exactly one of two cases holds:
+Locate `metadata.phase_steps.6-finalize.pre-submission-self-review` and read BOTH its `outcome` and its `head_at_completion`. Exactly one of two cases holds:
 
-- **A prior record carries a non-empty SHA** → this is a **delta round**. Pass `--since-ref {since_ref}` on the surface call below. The surfacer narrows the file set to the footprint intersected with the paths changed since that SHA.
-- **No prior record, or its `head_at_completion` is absent/empty** → this is a **full round** (round 1, or a first run after a record that carried no anchor). Do NOT pass `--since-ref` at all. Never substitute the base branch, `HEAD`, or any other ref for a missing anchor — a fabricated anchor would silently scope the round against a boundary no round ever completed at.
+- **The prior record's `outcome` is `done` or `loop_back` AND its `head_at_completion` is a non-empty SHA** → this is a **delta round**. Capture that SHA as `{since_ref}` and pass `--since-ref {since_ref}` on the surface call below. The surfacer narrows the file set to the footprint intersected with the paths changed since that SHA.
+- **Anything else** — no prior record, an absent/empty `head_at_completion`, or an `outcome` outside `{done, loop_back}` — → this is a **full round** (round 1, a first run after a record that carried no anchor, or the round after a Branch C infrastructure failure). Do NOT pass `--since-ref` at all. Never substitute the base branch, `HEAD`, or any other ref for an inadmissible anchor — a fabricated anchor would silently scope the round against a boundary no round ever completed at.
+
+⛔ **The outcome test is what makes the SHA an anchor rather than a timestamp.** An anchor asserts *everything up to here has been reviewed*, and only a round that actually ran the review can assert it. Branch C records `failed` after the surfacer aborted on an infrastructure error — carrying a HEAD whenever one could be resolved, for the reasons stated there — so that round examined nothing; `phase_steps` keeps one record per step, so the `failed` write also REPLACES the last reviewing round's anchor. Reading `head_at_completion` without the outcome test therefore hands the next round a `--since-ref` at which no file was ever examined — and because `failed` records are re-fired, the very next round scopes its delta past the un-reviewed fix commits, so nothing it surfaces is drawn from them. A full re-sweep is the correct fallback: it costs a round, whereas the narrowed one reviews the wrong file set.
 
 Passing `--since-ref` narrows WHICH FILES are surfaced, never how deeply a surfaced file is reviewed: hunks are still computed against the base branch, so every surviving file is still reviewed against its full plan diff.
 
@@ -148,7 +152,7 @@ The surfacer echoes `surface_scope` (`delta` or `full`), `since_ref`, `files_in_
 
 **A delta round cannot close the step on its own evidence.** A delta-scoped round examined only the files that changed since the previous round, so a clean result from it is a *filter* result, not a closing verdict: it says nothing about the files it did not look at. When a delta round returns zero findings, re-run this step ONCE at full scope — repeat the surface call WITHOUT `--since-ref` and carry that full candidate set through Steps 1b–3 — and record the outcome from that full-surface pass. Only a full-surface clean pass may record `done` (see Step 4 Branch A). A delta round that DOES return findings needs no confirmation sweep: it has already found the work that sends the step round the loop again.
 
-If the resolved implementor exits non-zero, halt and proceed to **Step 4 — Mark Step Complete (Failure)**, surfacing the helper error in the `display_detail` payload. Do NOT dispatch the LLM cognitive phase below.
+If the resolved implementor exits non-zero, halt and proceed to **Step 4 Branch C — helper failure**, surfacing the helper error in the `display_detail` payload. Do NOT dispatch the LLM cognitive phase below. A helper non-zero exit is an INFRASTRUCTURE failure, not a review verdict, and it must reach neither of the other two branches: Branch A would record a clean `done` for a round that never ran, and Branch B would re-fire the round loop over an error no amendment to the diff can fix.
 
 Capture the helper's TOON output as `{candidates_toon}` for forwarding to the cognitive-phase dispatch.
 
@@ -362,7 +366,9 @@ findings[N]{file,line,defect_class,rationale,cohort_size}:
 
 `cohort_size` is the number of findings in this round sharing that entry's `defect_class` (see § Class-closure obligation). Every entry carries it, including a genuine cohort of one — an omitted field would be indistinguishable from a cohort whose other members were never looked for.
 
-`status: success` regardless of findings count — the workflow itself succeeds at producing the structural-review verdict; the caller's manifest-step orchestration translates a non-empty `findings` list into the manifest step's `--outcome failed` per the gating-step convention. Empty `findings` → caller marks `--outcome done`.
+`status: success` regardless of findings count — the workflow itself succeeds at producing the structural-review verdict; the caller's manifest-step orchestration translates a non-empty `findings` list into the manifest step's `--outcome loop_back --loop-back-target 6-finalize`. Empty `findings` → caller marks `--outcome done`.
+
+⚠ **A findings-bearing return is a loop-back, not a failure.** This step examined its surface, filed real findings and handed control back — a PRODUCTIVE non-completion. Recording it as `failed` made every archive-wide analysis that counts failures mis-grade a thorough round as a defect, so *the more findings this gate legitimately raised, the worse its plan looked*. `loop_back` is also what makes the dispatch ledger's `returned_with_findings` stamp correct **by construction** rather than by coincidence — that stamp's documented trigger is precisely a `mark-step-done` recording `outcome: loop_back`. The contrast to keep is `pre-push-quality-gate`, which records `failed`: a red build gate RAN CLEANLY and self-assessed not-clean, which is a negative verdict rather than a productive hand-back. See [`../../manage-execution-manifest/standards/manifest-schema.md`](../../manage-execution-manifest/standards/manifest-schema.md) § "Which situation each `outcome` value means".
 
 `display_detail` shape. A run that produced no finding has FOUR disjoint **non-finding** verdicts, only THREE of which are `clean:` verdicts — the fourth reports that no analysis ran at all, and a not-run outcome is not a clean one. [`ext-point-self-review-surfacing.md`](../../extension-api/standards/ext-point-self-review-surfacing.md) is the authority on that boundary and states it outright: the fallback's outcome is `done`; its verdict is not "clean". An undifferentiated clean string is prohibited, because "no analysis was performed", "the analysis ran and had nothing to check", "the analysis ran, checked things, and none matched" and "the analysis ran but drew no observation from the files it searched" are four different pieces of information, and an operator reading any one as another draws the wrong conclusion about review coverage. The split that matters most is the first: **an un-run analysis and an analysis that ran and observed nothing are not the same verdict**, and a single string covering both reports absence of analysis as absence of defects. Let `{N}` be the surfacer's emitted `counts.total`. Which lists that sum covers is the surfacer's contract — see [`../../extension-api/standards/ext-point-self-review-surfacing.md`](../../extension-api/standards/ext-point-self-review-surfacing.md) § Output Schema — and is deliberately not restated here:
 
@@ -398,15 +404,16 @@ The `{worktree_path}` value is the path resolved by `phase-6-finalize` Step 0 (R
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step default:pre-submission-self-review --outcome done \
   --display-detail "{display_detail_from_workflow}" \
-  --head-at-completion {sha}
+  --head-at-completion {sha} \
+  --force
 ```
 
 **`--force` is REQUIRED whenever the outcome about to be written DIFFERS from the live record's, in BOTH directions.** `mark-step-done` refuses to overwrite a live record with a *differing* outcome — and only a differing one; a same-outcome overwrite lands without the flag. The multi-round shape this step is built around produces that refusal on each terminal branch, not only on the closing one:
 
-- **`failed` → `done`** (Branch A): round 1 files findings and records `--outcome failed`, the findings are fixed, and the converged round records `done` over that live `failed` record.
-- **`done` → `failed`** (Branch B): a round records `done`, a later settle-band step advances HEAD, § HEAD-dependency re-fires this step against the newer diff, and the re-fire finds a defect — writing `failed` over that live `done` record.
+- **`loop_back` → `done`** (Branch A): round 1 files findings and records `--outcome loop_back`, the findings are fixed, and the converged round records `done` over that live `loop_back` record. This is the state Branch A is *most often* reached from — the clean round that closes a loop-back is the whole point of re-firing this step.
+- **`done` → `loop_back`** (Branch B): a round records `done`, a later settle-band step advances HEAD, § HEAD-dependency re-fires this step against the newer diff, and the re-fire finds a defect — writing `loop_back` over that live `done` record.
 
-Both are ordinary terminal writes of the loop this document prescribes, not escape hatches for an unexpected state, and neither round can record its outcome without the flag. The trigger is therefore symmetric: add `--force` to a terminal `mark-step-done` whenever a prior round of this step recorded ANY outcome differing from the one about to be written. Branch A's forced form:
+Both are ordinary terminal writes of the loop this document prescribes, not escape hatches for an unexpected state, and neither round can record its outcome without the flag. Omitting it returns `error: conflict`, the step records nothing, and the dispatcher's post-dispatch completion guard halts the phase reporting a missing terminal record — i.e. the round that finally came back clean is the one that cannot record itself. The trigger is therefore symmetric: add `--force` to a terminal `mark-step-done` whenever a prior round of this step recorded ANY outcome differing from the one about to be written. Branch A's forced form:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
@@ -415,7 +422,9 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   --head-at-completion {sha} --force
 ```
 
-The overwrite is intended and is not a loss of signal in either direction: a superseded `failed` record's findings are already persisted in the finding store by Branch B, a superseded `done` record's verdict was anchored to a SHA the re-fire has left behind, and `mark-step-done` returns `previous_outcome` / `previous_head_at_completion` so the transition it replaced stays legible in the return.
+⛔ **Branch B carries it for the same reason** — the mirror case is real, not hypothetical, and the "Branch B only ever re-writes `loop_back` over `loop_back`" reading is FALSE. This step is `head_dependent: true` (§ HEAD-dependency above), so the dispatcher re-fires it on any HEAD advance past the recorded `head_at_completion` — including an advance past a stored `done`. A findings-bearing round after such a re-fire runs Branch B, writes `loop_back` over that `done`, and hits the identical `error: conflict`. The governing rule is [`../standards/external-step-contract.md`](../standards/external-step-contract.md), which makes `--force` mandatory on ANY terminal branch whose write can land on a record carrying a different outcome.
+
+The overwrite is intended and is not a loss of signal in either direction: a superseded `loop_back` record's findings are already persisted in the finding store by Branch B, a superseded `done` record's verdict was anchored to a SHA the re-fire has left behind, and `mark-step-done` returns `previous_outcome` / `previous_head_at_completion` so the transition it replaced stays legible in the return.
 
 **Branch B — findings list is non-empty**: first persist every finding to the plan's `qgate-6-finalize.jsonl` finding store, then surface the findings in the finalize TOON output (consumed by `output-template.md`) so the operator sees `file:line` and `defect_class` per finding.
 
@@ -431,7 +440,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qg
   --component pm-plugin-development:ext-self-review-plan-marshall --severity warning
 ```
 
-Then resolve the worktree HEAD SHA — the same call and the same `{worktree_path}` as Branch A — and record the failed outcome carrying it:
+Then resolve the worktree HEAD SHA — the same call and the same `{worktree_path}` as Branch A — and record the loop-back outcome carrying it:
 
 ```bash
 git -C {worktree_path} rev-parse HEAD
@@ -439,27 +448,62 @@ git -C {worktree_path} rev-parse HEAD
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
-  --plan-id {plan_id} --phase 6-finalize --step default:pre-submission-self-review --outcome failed \
+  --plan-id {plan_id} --phase 6-finalize --step default:pre-submission-self-review --outcome loop_back \
+  --loop-back-target 6-finalize \
   --display-detail "{display_detail_from_workflow}" \
-  --head-at-completion {sha}
+  --head-at-completion {sha} \
+  --force
 ```
 
-Per the symmetric `--force` rule under Branch A, add `--force` to this call whenever a prior round recorded `done` — the `done` → `failed` direction the HEAD-dependency re-fire produces:
+`--loop-back-target 6-finalize` is the inline-fixable tier: the findings are addressed on this branch and the finalize step loop is re-entered, with no phase-5-execute re-dispatch. The target is not a free choice — `5-execute` is the fix-task-required tier, and these findings are amendments to the diff in hand.
+
+Per the symmetric `--force` rule under Branch A, add `--force` to this call whenever a prior round recorded `done` — the `done` → `loop_back` direction the HEAD-dependency re-fire produces:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
-  --plan-id {plan_id} --phase 6-finalize --step default:pre-submission-self-review --outcome failed \
+  --plan-id {plan_id} --phase 6-finalize --step default:pre-submission-self-review --outcome loop_back \
+  --loop-back-target 6-finalize \
   --display-detail "{display_detail_from_workflow}" \
   --head-at-completion {sha} --force
 ```
 
-Branch A (empty findings) persists nothing — there are no findings to write. Branch B forwards `--head-at-completion` even though the dispatcher retries `failed` records unconditionally: the SHA carries no *retry* decision value, but it IS the delta anchor the NEXT round reads in Step 1. A `failed` record written without it leaves the following round with no anchor, which silently degrades that round to a full sweep — the exact re-sweep this scoping exists to remove. The anchor is written on both terminal branches for that reason, not for the dispatcher's benefit.
+**Branch C — the deterministic helper exited non-zero** (Step 1's halt path). This is an INFRASTRUCTURE failure — `git_unavailable`, `base_branch_not_found`, `since_ref_unresolvable`, `worktree_resolution_failed` — not a review verdict, and it must not be routed into either branch above. Branch A would record a clean `done` for a round that never examined anything, and Branch B would send the round loop back over an error no amendment to the diff can fix. Record `failed`, which `external-step-contract.md` still admits and `assert-step-recorded --require-terminal` treats as terminal, and carry the helper's own error into the detail so the operator sees which of the four it was.
 
-The dispatcher's existing failure handling halts the phase on `outcome=failed`, matching the gating-step contract used by `pre-push-quality-gate`. The operator must address every finding (amend the diff: rename, tighten regex, rewrite wording, delete duplicate section, fix contract drift), re-run the step, and only then advance to `push`.
+Resolve the worktree HEAD SHA first, exactly as Branches A and B do — `{sha}` is not in scope here otherwise, and `--head-at-completion` applies no shape validation on a non-`done` outcome, so an unresolved placeholder would persist verbatim in the record and leave no account of the HEAD the failure happened at:
+
+```bash
+git -C {worktree_path} rev-parse HEAD
+```
+
+Capture the stdout as `{sha}`, then record:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
+  --plan-id {plan_id} --phase 6-finalize --step default:pre-submission-self-review --outcome failed \
+  --display-detail "surfacer failed: {helper_error}" \
+  --head-at-completion {sha} \
+  --force
+```
+
+⛔ **When `rev-parse` ITSELF fails, OMIT the flag — never forward an unresolved or empty `{sha}`.** This is not a remote case: `git_unavailable` is one of the four errors that reach Branch C, and it names the same git this resolution needs, so on that arm the `rev-parse` above is expected to fail too. `--head-at-completion` is optional on `mark-step-done`, and terminality comes from the `failed` outcome rather than from the SHA, so the record without it still satisfies `assert-step-recorded --require-terminal`. Substituting a literal `{sha}` or an empty string instead would persist the exact unresolved placeholder the paragraph above exists to prevent — and would cost the audit its honesty in the same move, because a record carrying NO HEAD says the HEAD was unobtainable, while one carrying an empty string claims a HEAD was read. Name the omission's cause in the detail so the absent field is legible rather than merely missing:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
+  --plan-id {plan_id} --phase 6-finalize --step default:pre-submission-self-review --outcome failed \
+  --display-detail "surfacer failed: {helper_error}; HEAD unresolvable" \
+  --force
+```
+
+Branch A (empty findings) persists nothing — there are no findings to write. Branch B always forwards `--head-at-completion`; Branch C forwards it whenever the SHA resolved and omits it when it did not. The two are forwarded for different reasons, and only ONE of the two SHAs is ever read as an anchor.
+
+- **Branch B** — the SHA carries no *re-fire* decision value (the dispatcher re-fires `loop_back` records unconditionally), but it IS the delta anchor the NEXT round reads in Step 1. A `loop_back` record written without it leaves the following round with no anchor, which silently degrades that round to a full sweep — the exact re-sweep this scoping exists to remove.
+- **Branch C** — the SHA is recorded for the audit record of where the failure happened, and because an unresolved `{sha}` placeholder would otherwise persist verbatim in its place. When git cannot resolve it at all the field is omitted rather than filled, so the record distinguishes a HEAD nobody could read from a HEAD read as blank. Either way it is **NOT** an anchor: Step 1 admits an anchor only from a `done` or `loop_back` record, because a round that aborted before surfacing anything reviewed nothing and cannot assert that everything up to its HEAD was examined. See Step 1's ⛔ note for the false-green that reading it would produce.
+
+The dispatcher's loop-back continuation hook admits the round under `loop_back_without_asking` and the `max_iterations` ceiling, so the round loop is bounded exactly as before. The operator must address every finding (amend the diff: rename, tighten regex, rewrite wording, delete duplicate section, fix contract drift), re-run the step, and only then advance to `push`.
 
 ## Round-loop termination: converged, self-seeding, and out of budget
 
-This step re-fires per round (§ HEAD-dependency). Two shapes close it through a non-finding round at Step 4 Branch A, and they are NOT the same verdict: a **full-surface clean pass**, where a surfacer ran and found nothing, and the **zero-generator not-run close**, where no surfacer resolved so nothing was searched — it carries no surface scope to be full because it ran no surface at all, and § "A clean verdict states what the round observed" holds it apart from a clean one for exactly that reason. Both close the step; only the first is a clean pass. A third close does NOT go through Branch A at all — *out of budget*, which records `--outcome failed` via Branch B; the termination criterion below carries all three. Two halves of what it reviews converge at DIFFERENT rates, and the termination criterion MUST keep them distinct — collapsing them is how a spiralling loop reads as either falsely clean or as an endless defect stream.
+This step re-fires per round (§ HEAD-dependency). Two shapes close it through a non-finding round at Step 4 Branch A, and they are NOT the same verdict: a **full-surface clean pass**, where a surfacer ran and found nothing, and the **zero-generator not-run close**, where no surfacer resolved so nothing was searched — it carries no surface scope to be full because it ran no surface at all, and § "A clean verdict states what the round observed" holds it apart from a clean one for exactly that reason. Both close the step; only the first is a clean pass. A third close does NOT go through Branch A at all — *out of budget*, which records `--outcome loop_back` via Branch B; the termination criterion below carries all three. Two halves of what it reviews converge at DIFFERENT rates, and the termination criterion MUST keep them distinct — collapsing them is how a spiralling loop reads as either falsely clean or as an endless defect stream.
 
 - **The behavioural half** — findings about SHIPPED CODE (a missing test, an unguarded boundary, a producer with no consumer, an unreachable guard behind a scan-derived key). It converges under fixing: once the code defects are corrected, later rounds find fewer, and eventually a round finds none.
 - **The doc-claim half** — findings about PROSE the change authors (a duplicated section, a stale count, a drifted contract statement, a description-vs-body mismatch). It does NOT converge under *correction*: resolving a doc-claim finding by AUTHORING new prose hands the next round new prose to audit. This is the standing lesson — correction breeds the next instance of the class; only DELETION converges — now observed at the level of the round loop rather than the individual claim.
@@ -468,7 +512,7 @@ This step re-fires per round (§ HEAD-dependency). Two shapes close it through a
 
 **Resolve a self-seeding finding by deletion, not correction.** The convergent action on a self-seeding finding is to DELETE the over-claiming prose — the stale count, the duplicated section, the claim phrased wider than the code — rather than rewrite it. Rewriting authors the next round's finding; deletion ends the class. This is the only resolution that lets the doc-claim half reach a clean pass, and it is the same lesson the round-loop level inherits from the individual claim.
 
-**How this is recorded — no new outcome, an existing channel.** D5 introduces NO new `mark-step-done` outcome: a self-seeding round still has findings, so it records `--outcome failed` through Step 4 Branch B exactly as any non-clean round does, and the dispatcher re-fires it. The difference is entirely in RESOLUTION and REPORTING, not in the outcome enum. Resolution is deletion (above), so the re-fired round converges instead of re-seeding. Reporting is a `manage-logging decision --level WARNING` naming the round self-seeding — the same deviation-logging channel this step already uses for its gate decisions (Step 1b) — so the classification is an auditable record rather than merely narrative, and an *out of budget* close (below) is a distinct WARNING from a *converged* one. "Reported as self-seeding rather than counted as an ordinary non-clean round" is therefore precise: the round's `failed` record is unchanged, but its findings are deleted (not corrected) and its nature is logged, so it is neither mistaken for clean nor fed back into the correct-and-re-run cycle that spirals.
+**How this is recorded — no new outcome, an existing channel.** A self-seeding round introduces NO outcome of its own: it still has findings, so it records `--outcome loop_back` through Step 4 Branch B exactly as any non-clean round does, and the dispatcher re-fires it. The difference is entirely in RESOLUTION and REPORTING, not in the outcome enum. Resolution is deletion (above), so the re-fired round converges instead of re-seeding. Reporting is a `manage-logging decision --level WARNING` naming the round self-seeding — the same deviation-logging channel this step already uses for its gate decisions (Step 1b) — so the classification is an auditable record rather than merely narrative, and an *out of budget* close (below) is a distinct WARNING from a *converged* one. "Reported as self-seeding rather than counted as an ordinary non-clean round" is therefore precise: the round's loop-back record is unchanged, but its findings are deleted (not corrected) and its nature is logged, so it is neither mistaken for clean nor fed back into the correct-and-re-run cycle that spirals.
 
 **The termination criterion — converged, not-run, and out of budget.** These are DIFFERENT closes and a later reader MUST NOT collapse them. The not-run close is the zero-generator path named in the section opening; it is listed here so the criterion covers every close this step can reach rather than only the two that involve a surfacer:
 

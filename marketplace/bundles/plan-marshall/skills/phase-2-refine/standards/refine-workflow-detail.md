@@ -286,7 +286,7 @@ falls back to `main` (`base_branch_source: default`) and the probe proceeds. A s
 | `git rev-parse HEAD` does not resolve in the worktree | `skipped` / `head_unresolved` | Fail closed: skip without a classification. An unresolvable HEAD leaves nothing to anchor the comparison on |
 | `merge-base(HEAD, origin/{base_branch})` does not resolve | `skipped` / `merge_base_unresolved` | Fail closed: skip without a classification. Unrelated histories or an absent upstream ref leave no anchor for the commit range or the conflict probe |
 | HEAD moved during the probe | `error` / `probe_mutated_head` | STOP. The classifier moves no refs, so a moved ref means it cannot be trusted to have classified the state it reported; it refuses to return a verdict derived from a mutated tree |
-| Zero upstream commits since phase-1-init | `success` | Fast-path log, no findings |
+| Zero upstream commits since `merge-base(HEAD, origin/{base_branch})` | `success` | Fast-path log, no findings |
 | Upstream commits exist but none overlap request files | `success` | Log each commit, no findings |
 | Upstream commits overlap request files | `success` | Emit one blocking Q-Gate finding per overlapping commit |
 

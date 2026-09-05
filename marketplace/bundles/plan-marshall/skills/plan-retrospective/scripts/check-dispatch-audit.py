@@ -31,12 +31,20 @@ D2 — ``dispatch_coverage`` (did dispatch that SHOULD have happened, happen —
     The discriminator is the **token record**, not the completion line: the
     ``[STEP] … Completed step:`` line fires for inline steps too, whereas a
     non-zero ``execution_log[]`` ``total_tokens`` is written only when the step
-    ran as a dispatched Task agent (an inline step records a measured ``0``). So
-    each terminal finalize step is classified from its token record into one of
-    three evidence states — ``dispatched`` (non-zero tokens), ``ran_inline`` (a
-    RECORDED zero), ``no_evidence`` (no token row at all, OR a row whose
-    ``total_tokens`` could not be read) — and NEVER reported as "ran inline where
-    dispatch was required" on the strength of a missing dispatch line alone.
+    ran as a dispatched Task agent. So each terminal finalize step is classified
+    from its token record into one of three evidence states — ``dispatched``
+    (a positive token count), ``ran_inline`` (a RECORDED zero), ``no_evidence``
+    (no token row at all, OR a row whose ``total_tokens`` could not be read —
+    the writer's ``unmeasured`` token and a negative value among them) — and
+    NEVER reported as "ran inline where dispatch was required" on the strength
+    of a missing dispatch line alone.
+
+    ⚠ The writer distinguishes the two zero-shaped states on its own side: a
+    caller with no ``<usage>`` envelope OMITS the flags and the row records
+    ``unmeasured``, while an explicit ``0`` is written only where zero was
+    actually measured. That NARROWS ``ran_inline`` — an inline step no longer
+    lands there by default — so a small ``ran_inline`` is not evidence that few
+    steps ran inline.
 
     ⛔ ``ran_inline`` is an **UPPER BOUND on inline execution, never proof of it**.
     It means *a recorded zero token attribution*, which an inline step produces —
@@ -381,23 +389,62 @@ def parse_resolve_records(decision_lines: list[str]) -> list[dict[str, str | Non
     return out
 
 
+def is_ascii_digits(text: str) -> bool:
+    """True for an unsigned ASCII decimal integer literal.
+
+    A deliberate SUBSET of what ``int()`` accepts, in one direction only:
+    everything this admits parses to a non-negative int, which is the whole
+    property the caller relies on. ``int()`` additionally accepts a signed form
+    and a non-ASCII decimal, both of which this refuses on purpose — see below.
+
+    ⛔ ``str.isdigit()`` alone is NOT that predicate. It is True for a superscript
+    such as ``'²'`` — a digit CHARACTER that is not a DECIMAL one — which
+    ``int()`` then rejects with an uncaught ``ValueError``, aborting the whole
+    audit over a single corrupt cell in a reader whose entire job is to CLASSIFY
+    an unreadable cell rather than crash on it. The ASCII bound also excludes a
+    non-ASCII decimal such as ``'٣'``, which ``int()`` WOULD accept: a token
+    count recorded in one is an unreadable cell, not a measurement, and admitting
+    it would route a number nobody wrote into ``ran_inline``.
+
+    The sign rejection is carried by ``str.isdigit()`` itself, so ``'-1'`` and
+    ``'+1'`` are both refused — see the negative-value paragraph in
+    :func:`finalize_token_records`.
+    """
+    return text.isascii() and text.isdigit()
+
+
 def finalize_token_records(manifest: dict[str, Any] | None) -> dict[str, int | None]:
     """Return ``{canonical_step_id: total_tokens | None}`` for finalize rows.
 
     ``record-step`` writes one row per finalize step — dispatched OR inline —
     carrying ``step_id``, ``phase`` and ``total_tokens``; a dispatched step's row
-    carries the agent's measured tokens, an inline step's a measured ``0``. Rows
+    carries the agent's measured tokens, while a caller that measured nothing
+    omits the flag and the row carries the writer's ``unmeasured`` token. Rows
     for other phases are ignored.
 
     ⛔ **An unreadable ``total_tokens`` maps to ``None``, never to ``0``.** A row
     with no ``total_tokens`` column at all, a non-integer value, and a
-    non-digit string are three ways of saying *nothing was recorded* — and the
-    predecessor coerced all three to ``0``, which the classifier then read as a
-    MEASURED zero and filed under ``ran_inline``, the bucket the module docstring
-    and the shipped standard both present as evidence the step ran inline. ``None``
-    routes to ``no_evidence`` instead, where the absence belongs. An EXPLICIT
-    integer ``0`` still maps to ``0`` and still classifies ``ran_inline``, which
-    bounds the change: no plan whose rows carry real token columns changes verdict.
+    non-digit string — the writer's ``unmeasured`` token among them — are ways of
+    saying *nothing was recorded*, and the predecessor coerced all of them to
+    ``0``, which the classifier then read as a MEASURED zero and filed under
+    ``ran_inline``, the bucket the module docstring and the shipped standard both
+    present as evidence the step ran inline. ``None`` routes to ``no_evidence``
+    instead, where the absence belongs. An EXPLICIT integer ``0`` still maps to
+    ``0`` and still classifies ``ran_inline``, which bounds the change: no plan
+    whose rows carry real token columns changes verdict.
+
+    ⛔ **A NEGATIVE value is unreadable too, and maps to ``None``.** No token
+    count is negative, so ``-1`` is a recorded cell nobody can read as a
+    measurement — yet the string arm tested ``raw.strip().lstrip('-').isdigit()``
+    and the int arm tested nothing at all, so a negative classified as MEASURED
+    and routed to ``ran_inline``: the very bucket the paragraph above says is a
+    recorded zero, filled by a value that is not a count. The digit test is now
+    taken on the STRIPPED value with no sign strip
+    (:func:`is_ascii_digits`, which rejects ``'-1'`` and ``'+1'`` alike),
+    matching the sibling reader in
+    ``check-routing-decisions.summarize_execution_log_tokens``, and the parse
+    consumes that same stripped value rather than the raw one — reading a field by
+    two different rules in one branch is how the third state went unnoticed.
 
     When two rows name the same step (a re-fire that re-recorded) the larger
     RECORDED value wins, so a later zero cannot mask an earlier dispatched
@@ -425,9 +472,15 @@ def finalize_token_records(manifest: dict[str, Any] | None) -> dict[str, int | N
             # so it is an absence of evidence rather than a measured zero.
             value = None
         elif isinstance(raw, int):
-            value = raw
-        elif isinstance(raw, str) and raw.strip().lstrip('-').isdigit():
-            value = int(raw)
+            # A negative is not a token count either, and it reached `ran_inline`
+            # as a MEASURED value while this arm tested nothing.
+            value = raw if raw >= 0 else None
+        elif isinstance(raw, str) and is_ascii_digits(raw.strip()):
+            # Strip ONCE and both test and parse the stripped value. The
+            # predicate carries the sign rejection itself — no `lstrip('-')`,
+            # which is what admitted `'-1'` here — and the ASCII bound is what
+            # keeps the test and the `int()` below admitting the SAME set.
+            value = int(raw.strip())
         else:
             value = None
         key = _canon_step(step_id)

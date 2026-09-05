@@ -31,6 +31,9 @@ phase_6:
   step_params:
     <step-id>: { <param>: <value>, ... }
     ...
+execution_log[N]{step_id,phase,outcome,total_tokens,tool_uses,duration_ms,timestamp}:
+  <step-id>,5-execute | 6-finalize,executed | skipped | loop_back | failed | error,<int> | unmeasured,<int> | unmeasured,<int> | unmeasured,<iso-8601>
+  ...
 ```
 
 The in-manifest `verification_steps` / `steps` arrays carry the ordered step-id list (a `list[str]`); the sibling `step_params` map carries each selected step's resolved per-step params alongside it, keyed by the same (bare) step id.
@@ -59,6 +62,50 @@ The stamp is **not the routing authority**. Its input — `bash_timeout_seconds`
 ## `phase_6.steps` is the lane-resolved set
 
 The persisted `phase_6.steps` array is the **execution-profile-resolved** finalize-step set, not the raw configured candidate list. `compose` reads the chosen posture from `status.metadata.execution_profile` (absent → `full` → no pruning) and applies the lane cutoff over each element's `lane:` frontmatter block (`class` / `tier` / `cost_size`) — the contract is owned by [`../../extension-api/standards/ext-point-lane-element.md`](../../extension-api/standards/ext-point-lane-element.md). The resolution rules, the twice-compose timing, and the q-gate / derived-state invariants are documented in [decision-rules.md](decision-rules.md) § "Execution-profile lane resolution". Because the same `lanes preview` projection feeds both the `phase-1-init` posture dialogue and this composed manifest, the previewed step set and the executed step set cannot diverge for the config-only part.
+
+## `execution_log[]` — the per-step execution log
+
+`execution_log[]` is an ordered APPEND log, not a keyed map: `record-step` appends exactly one row per invocation, so a step that fired seven times carries seven rows and `refire-report` derives the re-fire count from them. The section is created on the first `record-step` call; a composed-but-unrun plan carries no `execution_log` key at all.
+
+`step_id` is canonicalized on write by the same rule the id-keyed accessor family applies (see § "`step_params`" below), so `default:push` and `push` record under the bare key `push`. `phase` is one of `VALID_RECORD_PHASES` and `outcome` one of `VALID_RECORD_OUTCOMES` (both in `scripts/_manifest_core.py`); a value outside either set is refused rather than recorded.
+
+### Which situation each `outcome` value means
+
+| Value | The situation it records |
+|-------|--------------------------|
+| `executed` | The step ran and completed. |
+| `skipped` | The step did not run — a re-entry skip, a preserved verdict, a signal-gate zero. |
+| `loop_back` | A **productive non-completion**: the step examined its surface, filed real findings, and handed control back. Its dispatcher recorded `mark-step-done --outcome loop_back --loop-back-target 6-finalize`, and the dispatch ledger stamps `returned_with_findings` for the same event. |
+| `failed` | The step **ran cleanly and self-assessed not-clean** — a red gate. The dispatch did not raise; the verdict is negative. |
+| `error` | The **dispatch itself** raised, timed out, or was cut short. Reserved for that, and for nothing else. |
+
+⚠ **`loop_back` and `failed` were both recorded as `error` before this partition, and the consequence was not cosmetic.** Any archive-wide analysis that counts `error` — a plan-doctor health rule, a reliability report, a preference emitter keyed on recurrence — then mis-graded every multi-round self-review as a defect, so *the more thoroughly a gate worked, the worse its plan looked*. The corruption was silent, cumulative, and lived in the archive. A reader partitions the three by value; nothing has to be inferred from the step id or from surrounding prose.
+
+`refire-report` publishes the partition as three separate columns (`loop_backs`, `failures`, `errors`) per step and in its totals, so the distinction survives into the derived report rather than stopping at the row.
+
+### The three token-attribution columns are three-state
+
+`total_tokens`, `tool_uses` and `duration_ms` are OPTIONAL, and each carries one of exactly three states:
+
+| Cell | Means | Written when |
+|------|-------|--------------|
+| a non-negative integer | a MEASURED value, including a measured `0` | the caller passed the flag — `--total-tokens 0` is a real measurement that the step consumed nothing |
+| `unmeasured` (`UNMEASURED_COLUMN_TOKEN`) | nobody measured this column | the caller OMITTED the flag — an inline step with no `<usage>` envelope to forward |
+| anything else | UNRECOGNISED | never by this writer; a hand-edited row, or a row from a legacy shape a reader cannot parse |
+
+The discriminator on the write side is the flag's ABSENCE (`args.X is None`), never falsiness, and the three flags therefore declare `default=None` rather than `default=0`. A `default=0` makes an omitted flag reach the handler byte-identical to an explicit `0`, so no care in the handler can recover the distinction — the default is where this contract is enforced.
+
+**The absence-vs-zero contract is a property of the ledger FAMILY, not of this verb.** `manage-metrics` states the same three-state rule for the dispatch-boundary row's context-load columns and defines the same literal (`UNMEASURED_COLUMN_TOKEN`); see [`../../manage-metrics/standards/data-format.md`](../../manage-metrics/standards/data-format.md) § "Per-Dispatch Context-Load Attribution". The two definitions are deliberate mirrors — the skills run in different processes and neither may import the other's private module — and are held in lock-step by a contract-drift test on each side.
+
+### Reader obligation
+
+Every reader of these columns MUST:
+
+- keep an **int-parsing floor**, so a historical all-numeric row parses and sums exactly as it did before the token existed;
+- report a non-numeric cell as **unmeasured** (or unrecognised) rather than coercing it to `0`. A `_to_int`-style helper that returns `0` for the token re-enters the sum looking measured, which reconstructs the fabricated total this contract removes — and does so **silently**, which is why a reader left un-updated is the failure mode to guard against rather than a partial improvement;
+- publish the **coverage of any sum** it derives — how many rows it could read against how many it walked — so a floor is never presented as a total.
+
+The readers at HEAD are `refire-report` in `scripts/manage-execution-manifest.py`, `manage-metrics/scripts/_ledger_reconciliation.py`, `plan-retrospective/scripts/check-routing-decisions.py`, and `plan-retrospective/scripts/check-dispatch-audit.py`. That list is a lead for a future change, not a closed set: re-derive it by sweeping for `execution_log` before editing this contract.
 
 ## `step_params` — per-step param snapshot + per-plan override
 
