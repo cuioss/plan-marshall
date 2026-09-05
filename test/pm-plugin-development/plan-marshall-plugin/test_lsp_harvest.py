@@ -18,6 +18,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+import lsp_harvest
 import plugin_discover
 import pytest
 from lsp_harvest import (
@@ -552,15 +553,51 @@ def test_skip_list_still_excludes_vendor_trees_inside_the_workspace(tmp_path):
     assert outcome.reason.startswith('workspace-unsupported:')
 
 
-def test_every_failure_mode_states_a_distinct_reason(tmp_path):
+def _declared_reason_prefixes() -> set[str]:
+    """Every reason prefix the harvest module DECLARES, read off its own constants.
+
+    The population is derived from the module rather than copied into this file,
+    so a failure mode a sibling plan adds enlarges the declared set here without
+    anyone remembering to. Raises rather than returning an empty set when no
+    ``REASON_*`` constant is found: an empty population would make the
+    membership check below pass by containing nothing, which is the vacuity this
+    derivation exists to avoid.
+    """
+    prefixes = {
+        str(value).split(':', 1)[0]
+        for name, value in vars(lsp_harvest).items()
+        if name.startswith('REASON_') and isinstance(value, str)
+    }
+    if not prefixes:
+        raise AssertionError(
+            'no REASON_* constants found on lsp_harvest — the declared population '
+            'is empty, so any membership assertion against it is vacuous'
+        )
+    return prefixes
+
+
+def test_every_failure_mode_states_a_distinct_reason(tmp_path, record_property):
     """Each mode must be tellable apart BY ITS PREFIX, not merely by its text.
 
     Collecting whole interpolated strings and counting them cannot fail: the
-    strings already differ by interpolated binary name, so two modes can collapse
-    onto one prefix — the part a reader classifies by — and the count stays
-    right. The assertion is therefore over the set of prefixes, and it is an
-    equality rather than a length, so a mode reporting under the *wrong*
-    prefix is caught as well as one reporting under a duplicate.
+    strings already differ by an interpolated binary path, so two modes can
+    collapse onto one prefix — the part a reader classifies by — while the count
+    of distinct strings stays right. The reading is therefore over PREFIXES.
+
+    ⭐ The expected set is DERIVED from the module's own ``REASON_*`` constants,
+    not written out here. A hard-coded literal turns a sibling plan's new failure
+    mode into a red build in this file, which teaches the next author to widen
+    the literal rather than to look at the mode — so the two properties are
+    asserted separately instead:
+
+    - **membership** — every observed prefix is one the module declares, which
+      catches a mode reporting under a *wrong* prefix;
+    - **injectivity** — the number of distinct observed prefixes equals the
+      number of calls made, which catches two modes collapsing onto one.
+
+    Neither moves when a seventh reason is declared but not exercised here. Both
+    populations are published, so a shrunken one is visible in the record rather
+    than silently making the assertions cheap.
     """
     # Arrange
     sourced = tmp_path / 'sourced'
@@ -571,40 +608,44 @@ def test_every_failure_mode_states_a_distinct_reason(tmp_path):
     (empty / 'README.md').write_text('none\n')
 
     # Act — one call per mode: absent, fails-to-start, times-out, a workspace
-    # with nothing to scan, and a server that REFUSES the handshake.
-    prefixes = {
-        outcome.reason.split(':', 1)[0]
-        for outcome in (
-            harvest_workspace(sourced, server_cmd=['definitely-not-a-real-language-server-xyz']),
-            harvest_workspace(
-                sourced, server_cmd=_unlaunchable_server(tmp_path), timeout_s=20.0, request_timeout_s=5.0
-            ),
-            harvest_workspace(
-                sourced,
-                server_cmd=[PYTHON, '-c', 'import sys; sys.stdin.read()'],
-                timeout_s=2.0,
-                request_timeout_s=0.5,
-            ),
-            harvest_workspace(empty, server_cmd=[PYTHON, '-c', 'pass']),
-            harvest_workspace(sourced, server_cmd=_rejecting_server(tmp_path), timeout_s=20.0, request_timeout_s=5.0),
-            harvest_workspace(
-                sourced,
-                server_cmd=_handshake_then_silent_server(tmp_path),
-                timeout_s=90.0,
-                request_timeout_s=0.5,
-            ),
-        )
-    }
+    # with nothing to scan, a server that REFUSES the handshake, and one that
+    # completes the handshake then fails a per-file request.
+    outcomes = [
+        harvest_workspace(sourced, server_cmd=['definitely-not-a-real-language-server-xyz']),
+        harvest_workspace(
+            sourced, server_cmd=_unlaunchable_server(tmp_path), timeout_s=20.0, request_timeout_s=5.0
+        ),
+        harvest_workspace(
+            sourced,
+            server_cmd=[PYTHON, '-c', 'import sys; sys.stdin.read()'],
+            timeout_s=2.0,
+            request_timeout_s=0.5,
+        ),
+        harvest_workspace(empty, server_cmd=[PYTHON, '-c', 'pass']),
+        harvest_workspace(sourced, server_cmd=_rejecting_server(tmp_path), timeout_s=20.0, request_timeout_s=5.0),
+        harvest_workspace(
+            sourced,
+            server_cmd=_handshake_then_silent_server(tmp_path),
+            timeout_s=90.0,
+            request_timeout_s=0.5,
+        ),
+    ]
+    observed = [outcome.reason.split(':', 1)[0] for outcome in outcomes]
+    declared = _declared_reason_prefixes()
 
-    # Assert
-    assert prefixes == {
-        'server-absent',
-        'server-failed-to-start',
-        'server-timeout',
-        'workspace-unsupported',
-        'server-rejected',
-        'request-failed',
-    }
+    record_property('lsp_harvest_modes_exercised', len(outcomes))
+    record_property('lsp_harvest_reason_prefixes_declared', len(declared))
+
+    # Assert — membership first: an undeclared prefix is a mode reporting under a
+    # name no reader can classify.
+    assert set(observed) <= declared, (
+        f'reason prefixes not declared by lsp_harvest: {sorted(set(observed) - declared)}'
+    )
+    # Then injectivity: as many distinct prefixes as calls means no two modes
+    # collapsed onto one.
+    assert len(set(observed)) == len(outcomes), (
+        f'two failure modes share a reason prefix: {observed}'
+    )
 
 
 def test_no_failure_mode_reports_a_zero_edge_success(tmp_path):

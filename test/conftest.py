@@ -85,7 +85,18 @@ class ExecutorBootstrapError(RuntimeError):
     """
 
 
-def _ensure_executor_present() -> None:
+#: The stdout token a generation failure carries. ``generate_executor.main()``
+#: ends ``print(serialize_toon(result)); return 0`` with no branch on
+#: ``result['status']``, so an expected error is announced in the PAYLOAD and
+#: never in the exit code. Named as a constant so the bootstrap and the test
+#: that drives it through the subprocess boundary read the same token.
+EXECUTOR_GENERATION_ERROR_TOKEN = 'status: error'
+
+
+def _ensure_executor_present(
+    project_root: Path | None = None,
+    generator: Path | None = None,
+) -> None:
     """Generate ``.plan/execute-script.py`` if missing, or fail the run.
 
     The executor is gitignored, so a fresh checkout (CI runner, ephemeral
@@ -97,24 +108,46 @@ def _ensure_executor_present() -> None:
 
     Idempotent: re-runs are no-ops if the executor is already present.
 
+    ``project_root`` and ``generator`` default to the real checkout and the real
+    generator. They are parameters so a test can drive this bootstrap against a
+    stub generator THROUGH THE SUBPROCESS BOUNDARY — an in-process monkeypatch
+    is invisible to ``subprocess.run``, so the failure-detection branch below
+    could otherwise only be read, never exercised.
+
+    **Failure detection is on the payload, not on the exit code.** The removed
+    ``check=True`` could not fire on ANY expected generation error: the
+    generator reports template-not-found, each of its five write guards, and an
+    unresolvable base path as ``status: error`` at exit ``0``. Trusting the exit
+    code alone therefore left this bootstrap returning having written nothing and
+    raised nothing. Six refusal paths are reachable this way; the fail-open guard
+    is NOT among them, because this bootstrap returns early when the executor
+    already exists, so the previous-surfaces map it compares against is always
+    empty here.
+
     Raises:
-        ExecutorBootstrapError: when the generator is missing, or when
-            generating the executor fails. Both are broken-environment
-            conditions rather than environments the suite does not apply to,
-            so both stop the run and name what went wrong.
+        ExecutorBootstrapError: when the generator is missing, when running it
+            raises, or when it did not produce an executor — the last covering
+            both an expected refusal announced in the payload at exit ``0`` and a
+            run that claimed success while writing nothing. Every one is a
+            broken-environment condition rather than an environment the suite
+            does not apply to, so every one stops the run and names what went
+            wrong.
     """
-    executor_path = PROJECT_ROOT / PLAN_DIR_NAME / 'execute-script.py'
+    if project_root is None:
+        project_root = PROJECT_ROOT
+    executor_path = project_root / PLAN_DIR_NAME / 'execute-script.py'
     if executor_path.exists():
         return
 
-    generator = (
-        MARKETPLACE_ROOT
-        / 'plan-marshall'
-        / 'skills'
-        / 'tools-script-executor'
-        / 'scripts'
-        / 'generate_executor.py'
-    )
+    if generator is None:
+        generator = (
+            MARKETPLACE_ROOT
+            / 'plan-marshall'
+            / 'skills'
+            / 'tools-script-executor'
+            / 'scripts'
+            / 'generate_executor.py'
+        )
     if not generator.exists():
         raise ExecutorBootstrapError(
             f'Cannot bootstrap the executor: the generator is missing at {generator}. '
@@ -123,25 +156,45 @@ def _ensure_executor_present() -> None:
         )
 
     try:
-        subprocess.run(
+        result = subprocess.run(
             ['python3', str(generator), 'generate'],
-            cwd=PROJECT_ROOT,
+            cwd=project_root,
             capture_output=True,
             text=True,
-            check=True,
-            timeout=120,
+            # COUPLED to ``generate_executor._DEFAULT_SURFACE_BUDGET_SECONDS``,
+            # whose value is 180.0 seconds. That budget bounds accept-set
+            # derivation ALONE — discovery, probe writing and the atomic write
+            # all run after it is spent — so this timeout must stay strictly
+            # above it with margin. The retired value of 120 sat BELOW the
+            # budget and could kill a generation the generator itself still
+            # considered within budget. The mirror comment at that constant
+            # names this 300, so moving either number without the other leaves
+            # one of the two comments wrong.
+            timeout=300,
         )
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
+    except (subprocess.TimeoutExpired, OSError) as exc:
         detail = getattr(exc, 'stderr', None) or ''
         raise ExecutorBootstrapError(
             f'Executor bootstrap failed while running {generator}: {exc}. '
             f'{detail}'.rstrip()
         ) from exc
 
-    if not executor_path.exists():
+    # Three independent readings of "the generation did not succeed", because no
+    # single one covers the whole space: a crash shows in the exit code, an
+    # expected refusal only in the payload, and a silent no-write only on disk.
+    # All three raise rather than warn — a warning let the run continue over a
+    # broken substrate and report green on a smaller suite, which is the failure
+    # this bootstrap is closed against.
+    wrote_executor = executor_path.exists()
+    if (
+        result.returncode != 0
+        or EXECUTOR_GENERATION_ERROR_TOKEN in result.stdout
+        or not wrote_executor
+    ):
         raise ExecutorBootstrapError(
-            f'Executor bootstrap reported success but wrote no executor at {executor_path}. '
-            f'Re-run the generator directly to see why.'
+            f'Executor bootstrap failed while running {generator}: '
+            f'exit={result.returncode} executor_written={wrote_executor} '
+            f'stdout={result.stdout.strip()} stderr={result.stderr.strip()}'
         )
 
 
