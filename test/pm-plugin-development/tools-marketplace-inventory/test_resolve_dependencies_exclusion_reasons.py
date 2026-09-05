@@ -78,6 +78,46 @@ UNRESOLVED_REASON_MISSING_COMPONENT = _dep_index_mod.UNRESOLVED_REASON_MISSING_C
 UNRESOLVED_REASON_UNKNOWN_BUNDLE = _dep_index_mod.UNRESOLVED_REASON_UNKNOWN_BUNDLE
 UNRESOLVED_REASON_UNREGISTERED_VERB = _dep_index_mod.UNRESOLVED_REASON_UNREGISTERED_VERB
 
+# The manage-config module that OWNS the canonical-verify prefix vocabulary.
+# ``_dep_detection.CANONICAL_COMMAND_PREFIXES`` documents itself as mirroring it,
+# and the two live in DIFFERENT bundles — so it is file-loaded through the same
+# path-loading helper used above rather than imported, which would imply an import
+# package spanning the two bundles that does not exist.
+_cmd_quality_phases_mod = load_script_module(
+    'plan-marshall',
+    'manage-config',
+    '_cmd_quality_phases.py',
+    '_cmd_quality_phases',
+)
+
+
+def test_canonical_command_prefixes_mirror_the_manage_config_declaration():
+    """The documented mirror is enforced, not merely asserted in a docstring.
+
+    ``_dep_detection.CANONICAL_COMMAND_PREFIXES`` states that it mirrors
+    ``_cmd_quality_phases._CANONICAL_VERIFY_PREFIXES``. Nothing tied the two
+    together, so the claim was prose: the owning module could gain or reorder a
+    prefix and this bundle's copy would silently keep the old vocabulary, quietly
+    changing which references the validator treats as canonical commands.
+
+    Equality is asserted across the two MODULES — the mirror is a copy, so the
+    check is structural equality between two independently-read declarations, not
+    a restatement of either.
+    """
+    mirror = _dep_detection_mod.CANONICAL_COMMAND_PREFIXES
+    source_of_truth = _cmd_quality_phases_mod._CANONICAL_VERIFY_PREFIXES
+
+    # Anti-vacuity: two empty tuples would compare equal and assert nothing.
+    assert mirror, '_dep_detection.CANONICAL_COMMAND_PREFIXES is empty'
+    assert source_of_truth, '_cmd_quality_phases._CANONICAL_VERIFY_PREFIXES is empty'
+
+    assert tuple(mirror) == tuple(source_of_truth), (
+        'the canonical-verify prefix vocabulary has desynced across bundles. '
+        f'pm-plugin-development _dep_detection.CANONICAL_COMMAND_PREFIXES = {tuple(mirror)}; '
+        f'plan-marshall _cmd_quality_phases._CANONICAL_VERIFY_PREFIXES = {tuple(source_of_truth)}. '
+        'The second is the owning declaration; update the mirror to match it.'
+    )
+
 cmd_validate = _resolve_mod.cmd_validate
 
 

@@ -177,25 +177,69 @@ class TestDeclaredExclusionList:
         ):
             assert excluded in report, f'{excluded!r} not named in the exclusion list'
 
-    def test_exclusion_constant_is_source_derived_not_a_registering_phase(self):
-        """The constant lists non-registering classes and excludes the registering ones.
+    def test_exclusion_constant_is_disjoint_from_the_derived_registering_set(self):
+        """The constant's "derived from the DISPATCHING code" claim, actually enforced.
 
-        Guards the D1 derivation: phase-4-plan / phase-5-execute / phase-6-finalize
-        DO register a boundary, so they must never appear in the exclusion list.
+        The previous form asserted hand-written literals against the constant
+        itself — ``'phase-2-refine' in excluded`` and three ``not in`` checks whose
+        expected values were typed into this file. Both sides of that comparison
+        were the same declaration, so it stayed green no matter where the real
+        ``record-dispatch-boundary`` call sites moved: adding a registration for an
+        excluded class, or deleting one for a registering class, changed nothing it
+        could see.
+
+        The oracle is now the INDEPENDENT producer:
+        ``scan_boundary_registrations`` reads the dispatching code and derives which
+        phases register. The property is disjointness — a class the code registers
+        for must never be declared non-registering.
         """
-        excluded = manage_metrics.DISPATCH_BOUNDARY_EXCLUDED_CLASSES
-        assert 'phase-2-refine' in excluded
-        assert 'q-gate-validation' in excluded
-        for registering in ('phase-4-plan', 'phase-5-execute', 'phase-6-finalize'):
-            assert registering not in excluded, f'{registering} registers a boundary'
+        scan = manage_metrics.scan_boundary_registrations()
 
-    def test_negative_control_dispatched_phase_shortfall_is_declared_not_silent(self, plan_context):
+        # Anti-vacuity: an empty scan makes disjointness trivially true. Assert the
+        # population is real BEFORE reading the verdict computed over it.
+        assert scan['documents_scanned'] > 0, 'scan walked no documents'
+        assert scan['registering_classes'], 'scan derived no registering class at all'
+
+        overlap = set(scan['registering_classes']) & set(
+            manage_metrics.DISPATCH_BOUNDARY_EXCLUDED_CLASSES
+        )
+        assert not overlap, (
+            f'declared non-registering, but the dispatching code registers a boundary '
+            f'for them: {sorted(overlap)}. Registering call sites: '
+            f'{[(r["path"], r["line"], r["phase"]) for r in scan["registering"]]}'
+        )
+
+    def test_registration_scan_reports_every_invocation_it_could_not_read(self):
+        """The scan suppresses nothing — ADR-14's reporting obligation.
+
+        A scan that silently dropped the invocations it could not parse would
+        derive a SMALLER registering set that agrees with the declared constant for
+        the wrong reason. Every occurrence must land in exactly one published
+        bucket, and the unparsed bucket must be empty for the disjointness verdict
+        above to be trustworthy rather than merely narrow.
+        """
+        scan = manage_metrics.scan_boundary_registrations()
+
+        # The three invocation buckets partition the invocations found — no
+        # occurrence is counted twice and none is dropped between them.
+        assert scan['invocations_found'] == (
+            len(scan['registering']) + len(scan['template']) + len(scan['unparsed'])
+        )
+        assert not scan['unparsed'], (
+            f'the scan found call sites it could not read, so its derived set is '
+            f'narrower than the real population: {scan["unparsed"]}'
+        )
+
+    def test_shortfall_renders_the_partial_note_alongside_the_exclusion_list(self, plan_context):
         """A phase that dispatched but under-registers is EXPLAINED, not silently shrunk.
 
-        D3 negative control: a phase with more `subagent_samples` than boundary rows
-        (a class within it did not register) must render both the PARTIAL coverage
-        note AND the declared exclusion list — the shortfall is named, never a bare
-        smaller denominator.
+        RENAMED to what it actually checks. It was called a "negative control", but
+        it removes no registration: of its three assertions only the ``PARTIAL: 1 of
+        2`` one depends on the shortfall at all — ``excluded by declaration`` and
+        ``q-gate-validation`` are rendered for ANY report carrying a boundary
+        surface, so two thirds of it hold whether or not the property under test
+        holds. The real control is
+        ``test_rendered_exclusion_list_follows_the_declaration`` below.
         """
         report = _render_report(
             plan_context,
@@ -215,6 +259,48 @@ class TestDeclaredExclusionList:
         # The shortfall is declared, not silent.
         assert 'excluded by declaration' in report, report
         assert 'q-gate-validation' in report, report
+
+    def test_rendered_exclusion_list_follows_the_declaration(self, plan_context, monkeypatch):
+        """The REAL negative control: remove a registration and the render follows.
+
+        The assertions above check that the exclusion list appears. That is
+        satisfied by a hardcoded sentence, so it cannot tell a render DRIVEN by the
+        declaration from one that merely recites the same names. This removes a
+        class from a fixture copy of the declaration and asserts the rendered list
+        loses exactly that class and keeps the rest — the discriminating pair the
+        positive assertion lacks.
+        """
+        declared = manage_metrics.DISPATCH_BOUNDARY_EXCLUDED_CLASSES
+        dropped = 'q-gate-validation'
+        reduced = tuple(name for name in declared if name != dropped)
+
+        # Fixture preconditions — without these the assertions below say nothing.
+        assert dropped in declared, f'{dropped} is not declared; pick another class'
+        assert reduced, 'reduced declaration is empty — the retained-class check would be vacuous'
+
+        monkeypatch.setattr(manage_metrics, 'DISPATCH_BOUNDARY_EXCLUDED_CLASSES', reduced)
+        report = _render_report(
+            plan_context,
+            'boundary-exclusion-follows-declaration',
+            {
+                '4-plan': {
+                    'total_tokens': 100000,
+                    'dispatch_boundary_total': 90000,
+                    'dispatch_boundary_rows_recorded': 1,
+                    'subagent_samples': 2,
+                },
+            },
+        )
+
+        # The render still declares an exclusion set...
+        assert 'excluded by declaration' in report, report
+        # ...but the removed class is gone from it, and every retained one remains.
+        assert dropped not in report, (
+            f'{dropped!r} was removed from the declaration yet still appears in the '
+            f'render — the exclusion list is hardcoded prose, not the declaration'
+        )
+        for retained in reduced:
+            assert retained in report, retained
 
 
 # =============================================================================

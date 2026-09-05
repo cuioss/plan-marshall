@@ -124,7 +124,7 @@ def test_the_hit_list_names_a_bounded_set_and_discloses_the_remainder(monkeypatc
     assert f'{len(hits) - 1} fewer file(s)' not in title
 
 
-def test_the_finding_names_every_hit_and_states_the_true_total():
+def test_the_finding_names_every_hit_and_states_the_true_total(monkeypatch):
     """The hit list and the title are pinned against a REAL multi-hit glob.
 
     Both other claim-vs-index tests are blind to this: one uses a glob that
@@ -140,9 +140,18 @@ def test_the_finding_names_every_hit_and_states_the_true_total():
     """
     hits = _independent_expansion(_MULTI_HIT_GLOB)
     assert len(hits) > 2, 'precondition: more hits than a slice-of-1 mutant would name'
-    assert len(hits) <= _closure._MAX_HITS_NAMED, (
-        'precondition: below the naming cap, so every hit must appear un-elided'
-    )
+
+    # The below-the-cap precondition is ESTABLISHED, not asserted against the
+    # shipped constant. ``_MULTI_HIT_GLOB`` expands a live production scripts
+    # directory, so comparing its cardinality to the real ``_MAX_HITS_NAMED``
+    # couples this test to how many files that directory happens to hold: once the
+    # count crossed the cap, adding an unrelated script would turn this red with a
+    # "precondition" failure that says nothing about the disclosure property under
+    # test. Raising the cap above the derived population makes the precondition
+    # true by construction and leaves the property itself — every hit named, nothing
+    # elided — exactly as exercised, including against the ``unenumerated[:1]``
+    # slicing mutant, since the population is still > 2.
+    monkeypatch.setattr(_closure, '_MAX_HITS_NAMED', len(hits) + 1)
 
     gaps, _population = check_declared_scope_reconciliation(
         [_deliverable(1, survey=[_MULTI_HIT_GLOB])], PROJECT_ROOT
