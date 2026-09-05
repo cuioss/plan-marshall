@@ -216,30 +216,72 @@ class TestCandidateFilesAreCached:
     ~125 ms for a 443-edge component, and unchanged on repeat calls. A surface
     whose whole justification is residency must not have a hot path that never
     warms up.
+
+    ⭐ **These count real filesystem walks.** Observing only that the cache is
+    WRITTEN says nothing about the cache being READ: deleting the read left the
+    whole directory green, because a re-walk produces byte-identical candidates,
+    so a cache compared against a copy of itself agrees either way and a verdict
+    derived from what the cache CONTAINS is derived from the write. The walk is
+    counted at ``Path.rglob`` — the one call ``_candidate_files`` makes when it
+    misses — so the read is what the assertions actually measure.
     """
 
-    def test_repeat_calls_reuse_the_walk(self, tmp_path: Path) -> None:
+    @staticmethod
+    def _count_walks(monkeypatch) -> list[Path]:
+        """Tally every ``rglob`` from this point on; returns the growing list.
+
+        Installed AFTER the index is built, so the index construction's own walk
+        is deliberately outside the tally and the numbers below are the query
+        path's alone.
+        """
+        walks: list[Path] = []
+        real_rglob = Path.rglob
+
+        def counting_rglob(path_self, pattern, *args, **kwargs):
+            walks.append(path_self)
+            return real_rglob(path_self, pattern, *args, **kwargs)
+
+        monkeypatch.setattr(Path, 'rglob', counting_rglob)
+        return walks
+
+    def test_the_walk_runs_once_across_repeat_calls(self, tmp_path: Path, monkeypatch) -> None:
+        """The cache READ, asserted directly: a second call walks nothing new."""
         index = corpus_index.CorpusIndex(build_corpus(tmp_path))
-        index.references('alpha:target-skill')
-        cached_after_first = dict(index._candidate_cache)
-        assert cached_after_first, 'the first call must populate the candidate cache'
+        walks = self._count_walks(monkeypatch)
 
         index.references('alpha:target-skill')
-        assert index._candidate_cache == cached_after_first
+        after_first = len(walks)
+        assert after_first > 0, (
+            'precondition: the first call must actually walk the filesystem, '
+            'otherwise the repeat assertion below measures nothing'
+        )
 
-    def test_walk_runs_once_per_owner_not_once_per_edge(self, tmp_path: Path) -> None:
+        index.references('alpha:target-skill')
+
+        assert len(walks) == after_first, (
+            f'the candidate cache was not read: {len(walks) - after_first} extra '
+            f'filesystem walk(s) on the repeat call'
+        )
+
+    def test_the_walk_runs_once_per_owner_not_once_per_edge(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """One walk per distinct owner, however many edges that owner contributes.
+
+        ``resolve_reference_site`` runs once per reverse edge, so the population
+        this is graded against is the edge count — published here rather than
+        assumed, because an edge count of one would make the inequality hold on
+        an uncached implementation too.
+        """
         index = corpus_index.CorpusIndex(build_corpus(tmp_path))
-        calls: list[Path] = []
-        original = index._candidate_files
+        edges = index.index.get_reverse_deps('alpha:target-skill')
+        owners = {dep.source.to_notation() for dep in edges}
+        assert len(edges) >= 2, f'precondition: fixture must yield >=2 inbound edges, got {len(edges)}'
 
-        def counting(owner_file: Path) -> list[Path]:
-            calls.append(owner_file)
-            return original(owner_file)
-
-        index._candidate_files = counting  # type: ignore[method-assign]
+        walks = self._count_walks(monkeypatch)
         index.references('alpha:target-skill')
-        index.references('alpha:target-skill:target_script')
 
-        # Called once per edge, but each distinct owner is walked only once.
-        walked = {owner for owner in calls if index._candidate_cache.get(owner) is not None}
-        assert len(walked) < len(calls), 'repeat owners must be served from the cache'
+        assert len(walks) == len(owners), (
+            f'expected one walk per distinct owner ({len(owners)}), got {len(walks)} '
+            f'across {len(edges)} edge(s)'
+        )

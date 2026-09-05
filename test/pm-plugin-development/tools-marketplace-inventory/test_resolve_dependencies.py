@@ -1524,9 +1524,20 @@ class TestRetargetAppliesToWrittenNotationOnly:
         entry script is `extension_api`. Those are different FILES, not a verb and
         its script, so retargeting the import would silently resolve a mapping
         that is genuinely wrong — hiding 11 real findings in this marketplace.
+
+        ⭐ **The fixture bundle is named `plan-marshall`, and that is the whole
+        point.** The mapping resolves `toon_parser` to
+        `plan-marshall:ref-toon-format`, so a fixture bundle named anything else
+        makes the candidate lookup miss on the BUNDLE segment: the import target
+        is absent from the index, the retargeted entry script
+        (`plan-marshall:ref-toon-format:ref-toon-format`) is absent too, and the
+        row stays unresolved whether or not the guard under test exists. Naming
+        the fixture bundle after the mapping's own target is what puts a real
+        entry script in the index for the retarget to land on, so deleting the
+        `dep_type is not SCRIPT_NOTATION` guard now turns this red.
         """
-        root = tmp_path / 'marketplace' / 'bundles' / 'probe-bundle'
-        _write(root / '.claude-plugin' / 'plugin.json', '{\n  "name": "probe-bundle"\n}\n')
+        root = tmp_path / 'marketplace' / 'bundles' / 'plan-marshall'
+        _write(root / '.claude-plugin' / 'plugin.json', '{\n  "name": "plan-marshall"\n}\n')
         _write(
             root / 'skills' / 'ref-toon-format' / 'SKILL.md',
             '---\nname: ref-toon-format\ndescription: Owns a differently-named script\n---\n# T\n',
@@ -1544,6 +1555,13 @@ class TestRetargetAppliesToWrittenNotationOnly:
             '#!/usr/bin/env python3\nfrom toon_parser import serialize_toon  # noqa: F401\n',
         )
         index = build_dependency_index(root.parent, set(DependencyType))
+
+        # Anti-vacuity: the entry script the retarget WOULD land on is really in
+        # the index. Without this the assertion below could pass because there
+        # was nothing to retarget onto — the exact defect this fixture rebuild
+        # removes.
+        assert 'plan-marshall:ref-toon-format:ref-toon-format' in index.components
+
         imports = [
             (dep.target.to_notation(), dep.resolved)
             for deps in index.forward_deps.values()
@@ -1551,6 +1569,113 @@ class TestRetargetAppliesToWrittenNotationOnly:
             if dep.dep_type == DependencyType.PYTHON_IMPORT
         ]
         assert imports == [('plan-marshall:ref-toon-format:toon_parser', False)]
+
+    def test_a_written_notation_in_the_same_bundle_does_retarget(self, tmp_path):
+        """The discriminating half: the retarget itself works in this fixture shape.
+
+        Same bundle, same entry script — only the dependency KIND differs. A
+        written notation carrying a verb resolves onto the entry script, so the
+        unresolved row above is attributable to the import guard rather than to
+        a fixture in which nothing could ever retarget.
+        """
+        root = tmp_path / 'marketplace' / 'bundles' / 'plan-marshall'
+        _write(root / '.claude-plugin' / 'plugin.json', '{\n  "name": "plan-marshall"\n}\n')
+        _write(
+            root / 'skills' / 'ref-toon-format' / 'SKILL.md',
+            '---\nname: ref-toon-format\ndescription: Owns a differently-named script\n---\n# T\n',
+        )
+        _write(
+            root / 'skills' / 'ref-toon-format' / 'scripts' / 'ref-toon-format.py',
+            '#!/usr/bin/env python3\n',
+        )
+        _write(
+            root / 'skills' / 'caller' / 'SKILL.md',
+            '---\nname: caller\ndescription: Cites a verb\n---\n# C\n'
+            'Run plan-marshall:ref-toon-format:serialize now.\n',
+        )
+        index = build_dependency_index(root.parent, set(DependencyType))
+        notations = [
+            (dep.target.to_notation(), dep.resolved)
+            for deps in index.forward_deps.values()
+            for dep in deps
+            if dep.dep_type == DependencyType.SCRIPT_NOTATION
+        ]
+        assert notations == [('plan-marshall:ref-toon-format:ref-toon-format', True)]
+
+
+class TestEntryScriptDocumentingItsOwnVerbs:
+    """An entry script citing its OWN verbs must not become a self-edge.
+
+    The skip has no test today: replacing it with ``if False:`` leaves the whole
+    file green while the index gains self-edges and manufactures a cycle for
+    every entry script that documents its own subcommands — which is most of
+    them. The assertions below are on the BRANCH (no self-edge, no cycle
+    containing the entry script), never on an edge-count figure, which moves
+    with the corpus.
+    """
+
+    _ENTRY = 'probe-bundle:real-skill:real-skill'
+
+    def _index(self, tmp_path):
+        """A bundle whose entry script cites a verb of itself, plus an outside caller."""
+        root = tmp_path / 'marketplace' / 'bundles' / 'probe-bundle'
+        _write(root / '.claude-plugin' / 'plugin.json', '{\n  "name": "probe-bundle"\n}\n')
+        _write(
+            root / 'skills' / 'real-skill' / 'SKILL.md',
+            '---\nname: real-skill\ndescription: Owns the verbs\n---\n# Real\n',
+        )
+        _write(
+            root / 'skills' / 'real-skill' / 'scripts' / 'real-skill.py',
+            '#!/usr/bin/env python3\n'
+            '"""Dispatches probe-bundle:real-skill:compose."""\n',
+        )
+        _write(
+            root / 'skills' / 'caller' / 'SKILL.md',
+            '---\nname: caller\ndescription: Cites the same verb from outside\n---\n# C\n'
+            'Run probe-bundle:real-skill:compose now.\n',
+        )
+        return build_dependency_index(root.parent, set(DependencyType))
+
+    def test_the_citation_shape_is_detected_at_all(self, tmp_path):
+        """Anti-vacuity control, and it must come first.
+
+        Both assertions below are absences, and an absence proves nothing unless
+        the citation was seen in the first place. The OUTSIDE caller writes the
+        byte-identical verb citation and DOES produce a resolved edge onto the
+        entry script, so the detector demonstrably reads this shape.
+        """
+        index = self._index(tmp_path)
+
+        caller_targets = [
+            dep.target.to_notation() for dep in index.forward_deps.get('probe-bundle:caller', [])
+        ]
+        assert self._ENTRY in caller_targets, (
+            'the outside caller must retarget onto the entry script — without '
+            'this the self-edge assertions below are vacuous'
+        )
+
+    def test_no_self_edge_is_recorded_for_the_entry_script(self, tmp_path):
+        """A script is not dependent on itself, however many of its verbs it names."""
+        index = self._index(tmp_path)
+
+        self_targets = [
+            dep.target.to_notation()
+            for dep in index.forward_deps.get(self._ENTRY, [])
+            if dep.target.to_notation() == self._ENTRY
+        ]
+        assert self_targets == [], f'entry script retargeted onto itself: {self_targets}'
+
+    def test_no_cycle_contains_the_entry_script(self, tmp_path):
+        """The consequence the skip exists to prevent: a manufactured circular dep.
+
+        Asserted separately from the edge above because they fail for different
+        reasons — an edge can be recorded without the cycle detector reaching it,
+        and a cycle is what a `validate` run actually reports to a user.
+        """
+        index = self._index(tmp_path)
+
+        offending = [cycle for cycle in index.detect_circular_deps() if self._ENTRY in cycle]
+        assert offending == [], f'self-loop reported as a circular dependency: {offending}'
 
 
 class TestOnlyVerbBearingShapesRetarget:
