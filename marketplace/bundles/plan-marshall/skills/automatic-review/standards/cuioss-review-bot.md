@@ -579,9 +579,11 @@ verified which form it uses**. The org workflow is not vendored in this checkout
 be established from here at all. **"Dead config for Gemini" is therefore a statement about the image
 the list was read from, not a standing property of Gemini**, and two independent moves can make the
 row silently false: bumping the `uses:` pin, or — under a tag reference — the org workflow's own
-image reference resolving to a different build with the pin unchanged. Nothing in this record or in
-CI would report either. Re-read the list whenever that pin moves AND whenever the org workflow's own
-image reference changes, before the "unreachable" rejection below is relied on again.
+image reference resolving to a different build with the pin unchanged. Re-read the list whenever
+that pin moves, before the "unreachable" rejection below is relied on again. The second move gets no
+trigger, and that is recorded rather than papered over with one that could not fire: a tag re-point
+changes no text in this repository and no text in the pinned org workflow, so nothing observable
+from this checkout marks it. It is an open gap, not a covered risk.
 
 ### The chosen arm, and the arms rejected
 
