@@ -612,11 +612,8 @@ Rejected, each with the reason:
   that this key is inert it changes nothing by construction, and on the reading that it is live and
   routes review output inline rather than into the summary comment it changes only WHERE findings
   are posted. Neither fills an empty findings list. ⚠ **Which reading holds is not established here,
-  in either direction.** This repository carries no PR-Agent source and no `.pr_agent.toml` — the
-  settings file lives in `cuioss/pr-agent-settings` and the reviewer image is not vendored, both
-  recorded above — so an assertion that the key does not exist would be exactly as unsourced as one
-  that it does. The rejection deliberately rests on neither; re-opening this arm means settling the
-  key against the reviewer image's own configuration schema first.
+  in either direction.** The rejection deliberately rests on neither; re-opening this arm means
+  settling the key against the reviewer image's own configuration schema first.
 - **`[skills]` prompt inlining.** Rejected on trust-boundary grounds: it is a filesystem scan, so it
   needs a checkout of the pull request head, which would let reviewed content rewrite the reviewer's
   own instructions — the hole `repo_context_from_default_branch` exists to close.
