@@ -38,7 +38,7 @@ server.
 **Prohibited actions:**
 - Do not treat a `degraded` return as an error — it is the opt-out signal. Fall back to `Read`/`Edit` and proceed.
 - Do not derive an edit's footprint from a later `git diff` — the `edit` verb captures it from the `WorkspaceEdit` itself and returns it in `files[]`. Trust that footprint.
-- Do not read the `diagnose` verb as a replacement for the quality gate — it **supplements** the gate, it does not replace it. Run the canonical build (`./pw verify`) before relying on a clean result.
+- Do not read the `diagnose` verb as a replacement for the quality gate — it **supplements** the gate, it does not replace it. Run the project's canonical `verify` build before relying on a clean result, resolving it through `plan-marshall:manage-architecture:architecture resolve --command verify` and running the returned `executable`. This skill is language-agnostic, so never hard-code one project's build wrapper here.
 - Do not invent script arguments not listed in the **Canonical invocations** section below.
 
 **Constraints:**
@@ -164,9 +164,11 @@ one that says the edit was wrong; these two say only that nobody checked.
 round-trip — unresolved imports, syntax errors, type errors. It is a **pre-build
 correctness signal**, and every payload carries the boundary in `boundary_note`.
 It does **not** run the project's quality gate, tests, linters, or coverage, and
-a clean `diagnose` is **not** a green build. Run `./pw verify` (the canonical
-build) before relying on a clean result. Use `diagnose` to catch a broken edit
-early and cheaply; use the gate to decide the change is correct.
+a clean `diagnose` is **not** a green build. Run the project's canonical `verify`
+build — resolved through `architecture resolve --command verify`, exactly as the
+`diagnostics_unavailable` path above directs — before relying on a clean result.
+Use `diagnose` to catch a broken edit early and cheaply; use the gate to decide
+the change is correct.
 
 ## Opt-in configuration
 

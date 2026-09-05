@@ -159,14 +159,16 @@ neither substitutes for the other:
 
 | Field | Layer | Example |
 |-------|-------|---------|
-| `args` | The **executor argv** — what the caller handed to `.plan/execute-script.py`. | `run --command-args "verify plan-marshall"` |
-| `command` | The **wrapper-resolved command** — what the build wrapper turned that argv into and actually ran. | `./pw verify plan-marshall` |
+| `args` | The **executor argv** — what the caller handed to `.plan/execute-script.py`. | `run --command-args "verify my-module"` |
+| `command` | The **wrapper-resolved command** — what the build wrapper turned that argv into and actually ran. | whatever the project's own wrapper detection produced from that argv: a Maven project records `./mvnw -pl my-module verify`, an npm one `npm run verify --workspace my-module` |
 
 The mapping between them belongs to the wrapper: a build-tool switch or a
-routing decision changes `command` while `args` stays byte-identical. A reader
-asking *"what did the caller request?"* reads `args`; one asking *"what actually
-ran?"* reads `command`. Recording only one of the two makes the other
-unrecoverable.
+routing decision changes `command` while `args` stays byte-identical. That is
+why the `command` column above is deliberately not a single literal — pinning
+one build tool's form there would illustrate the opposite of what this row
+records. A reader asking *"what did the caller request?"* reads `args`; one
+asking *"what actually ran?"* reads `command`. Recording only one of the two
+makes the other unrecoverable.
 
 `command`, `duration_seconds` (the wrapper's measured build duration) and
 `outcome` (the wrapper's whole stdout TOON, retained verbatim as a dict, so a

@@ -8,6 +8,10 @@ compatibility: breaking — Clean-slate approach, no deprecation nor transitiona
 
 Add a build caching skill to the builder bundle that caches build outputs and restores them when inputs haven't changed, reducing build times for unchanged modules.
 
+> **Scope of this example — marketplace plugin development only.** Every deliverable below targets `marketplace/bundles/**` in the plan-marshall marketplace repository itself, which is a pyprojectx project and ships `plugin-doctor`. That is why the `Verification` blocks name `plan-marshall:build-pyproject:pyproject_build` and the criteria name plugin-doctor: they are this repository resolving its own build tool and its own linter, not a form to copy.
+>
+> **Copy the SHAPE, not the commands.** An outline for any other project resolves its verification command through `plan-marshall:manage-architecture:architecture resolve --command {canonical}` and states the returned `executable`, and states criteria against gates that project actually has. A consumer project has neither `./pw` nor plugin-doctor, so a `Verification` block copied verbatim from here is unrunnable there and its criteria are vacuous.
+
 ## Overview
 
 ```text

@@ -95,11 +95,12 @@ Grep(pattern="pattern", path="/path", glob="*.md", output_mode="content")
 
 When you need the *why* of a build/test failure — the traceback or assertion body behind a terse `FAILED …` line — follow this strict preference order. Do NOT default to a full-file `Read` of the build `log_file`.
 
-1. **First choice — the structured slice.** Ask the build tool for the deduped per-signature traceback via the `parse` verb's failure-detail flags (`--failures-detail` for all failing tests, `--test <name>` for one). It returns one block per root cause with no log scanning at all. See the `### parse` entry in [`build-pyproject` SKILL.md → Canonical invocations](../../build-pyproject/SKILL.md#canonical-invocations):
+1. **First choice — the structured slice, from YOUR project's build skill.** Ask the build tool for the deduped per-signature traceback via **its own** `parse` verb and that verb's failure-detail flags (`--failures-detail` for all failing tests, `--test <name>` for one). It returns one block per root cause with no log scanning at all. The verb belongs to whichever `build-{tool}` skill the project resolves to — `build-maven`, `build-gradle`, `build-npm`, `build-pyproject` — so read the `### parse` entry in **that** skill's Canonical-invocations section for its exact flag surface; the flags are not guaranteed identical across build skills. For a pyprojectx project the call reads (see [`build-pyproject` SKILL.md → Canonical invocations](../../build-pyproject/SKILL.md#canonical-invocations)):
    ```text
    python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build parse --log {log_file} --failures-detail --format json
    ```
-2. **Fallback — the `Grep` tool over the log, WHEN the runtime grants it.** When the structured slice is unavailable (a non-pyproject build, or a signal the slice does not carry) AND the `Grep` tool is available in the current runtime, query the log with the **`Grep` tool** over `log_file`:
+   That literal is one build skill's instance, not the universal first step. Substitute your project's build skill notation and its own parse flags.
+2. **Fallback — the `Grep` tool over the log, WHEN the runtime grants it.** When the structured slice is unavailable (the project's build skill has no `parse` verb or its verb does not carry the signal you need) AND the `Grep` tool is available in the current runtime, query the log with the **`Grep` tool** over `log_file`:
    ```text
    Grep(pattern="FAILED|AssertionError|Error", path="{log_file}", output_mode="content", -C=5)
    ```

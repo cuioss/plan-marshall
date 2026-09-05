@@ -121,8 +121,10 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create 
 
 ## Plugin Operations
 
+> **This whole section applies to the plan-marshall marketplace repository only.** `/plugin-doctor` is a marketplace-authoring command that exists where the marketplace bundles are authored; it is not installed into a consumer project, and a consumer is not expected to carry an equivalent. In any other project this section names no available operation — do not route a delegation to it, and do not record a deliverable as verified by it. Verify markdown components there through the project's own gates (the architecture-resolved `quality-gate` when the deliverable also touches buildable sources) or by declaring the verification manual.
+
 ### Plugin Doctor
-**Trigger**: "/plugin-doctor", "verify component"
+**Trigger**: "/plugin-doctor", "verify component" — *marketplace repository only, per the note above*
 
 ```text
 SlashCommand: /plugin-doctor {type}={name}

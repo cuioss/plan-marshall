@@ -37,9 +37,63 @@ _GATE_DOC = (
 #: The three guards the gate runs, in `build.py:cmd_verify` order.
 _GUARD_TOKENS = ('quality-gate', 'test-compile', 'module-tests')
 
-#: The three quality-gate dimensions ONLY whole-tree scope reaches. A
-#: degradation WARNING naming fewer than all three is a partial-truth signal.
+#: The three quality-gate dimensions ONLY whole-tree scope reaches IN THIS
+#: repository. They are this project's derived set, not a portable list, so they
+#: are asserted of the gate document's labelled WORKED EXAMPLE — the rendering
+#: of the degradation template for this repository — rather than of the emitted
+#: message itself. A worked example naming fewer than all three is the
+#: partial-truth signal.
+#:
+#: This tuple MIRRORS the gate document's own enumeration and is reconciled
+#: against it below, in both directions, rather than standing as an independent
+#: assertion of the population. A mirror nothing checks drifts silently: were
+#: the source section to gain a fourth dimension, the worked example could omit
+#: it and every sweep keyed on this tuple would still pass.
 _WHOLE_TREE_ONLY_DIMENSIONS = ('plugin-doctor', '.claude/', 'marketplace/targets')
+
+#: The label of the section that AUTHORITATIVELY enumerates those dimensions.
+#: The tuple above is derived from it, so the label is the anchor that keeps the
+#: population sourced rather than asserted.
+_DIMENSION_SOURCE_LABEL = '**Why guard 1 carries a whole-tree arm.**'
+
+#: The paragraph that closes the enumeration — the governing rule stated after
+#: the numbered items. Bounding the sweep here keeps the surrounding prose's
+#: bullet lists out of the item count.
+_DIMENSION_SOURCE_TERMINATOR = '**The general rule'
+
+#: A numbered enumeration item, as the source section renders one.
+_ENUMERATED_ITEM = re.compile(r'^\d+\.\s')
+
+#: The placeholder the emitted degradation WARNING interpolates. The dimension
+#: set is the PROJECT's — whatever its own ``quality-gate`` widens to beyond
+#: module scope — so the emitted message must carry the placeholder rather than
+#: one project's dimension names. The literal is what a downstream agent copies,
+#: and a copied literal asserts THIS repository's dimensions of a project whose
+#: set is different: prose saying "the project's own" does not undo a pinned
+#: artifact.
+_DIMENSION_PLACEHOLDER = '{dimension_clause}'
+
+#: The label anchoring the worked example that renders the placeholder for this
+#: repository. Anchored on the label rather than a line number, so ordinary
+#: prose edits around it do not silently empty the sweep — an absent label
+#: yields an empty block, which the assertion below rejects.
+_WORKED_EXAMPLE_LABEL = "**Worked example — this repository's instance.**"
+
+#: The two clauses the UNENUMERABLE rendering must state. A template with no
+#: legal value on the derivation-failed path is how an author ends up filling
+#: the placeholder with an empty list — rendering "no dimensions are un-gated",
+#: which is the confident-empty signal this gate exists to refuse.
+_UNENUMERABLE_RENDERING_CLAUSES = (
+    'could not be enumerated',
+    'UNKNOWN set of dimensions',
+)
+
+#: The label anchoring the block that DECLARES the template's renderings. The
+#: clauses above are asserted of that block rather than of the whole document:
+#: searched document-wide they also occur in the surrounding explanatory prose,
+#: so the assertion would stay green after the rendering it names is removed or
+#: broken — passing without verifying its own mechanism.
+_TEMPLATE_RENDERINGS_LABEL = '`{dimension_clause}` has exactly two renderings'
 
 #: Guard 1's whole-tree arm, as the ADJACENT phrase "whole-tree quality-gate"
 #: (tolerating only markdown emphasis/backtick noise between the two words).
@@ -51,8 +105,32 @@ _WHOLE_TREE_QUALITY_GATE = re.compile(
     r'whole-tree[\s`*_]{0,4}quality-gate', re.IGNORECASE
 )
 
-#: The whole-tree (no bundle argument) quality-gate invocation.
-_WHOLE_TREE_QG_INVOCATION = re.compile(r'run --command-args "quality-gate"')
+#: The heading of the section that owns guard 1's whole-tree arm, and the
+#: heading levels that terminate it (``####`` and deeper stay inside).
+_WHOLE_TREE_ARM_HEADING = '### Whole-tree quality-gate arm'
+_SAME_OR_HIGHER_HEADING = re.compile(r'#{1,3} ')
+
+#: A ``quality-gate`` resolve, and the module argument that scopes one. The arm
+#: is reachable when it resolves the canonical at DEFAULT scope — no
+#: ``--module`` — and runs what came back. Deliberately structural: the arm
+#: derives its invocation from the resolver, so which executable a project gets
+#: is that project's business. Pinning a build-tool literal here could only ever
+#: pass over a hardcoded gate document, which is the defect this sweep removes.
+_QG_RESOLVE = re.compile(r'resolve\s+--command\s+quality-gate')
+_MODULE_ARG = re.compile(r'--module\b')
+
+#: The arm must RUN what it resolved — a resolved-then-discarded executable
+#: gates nothing, so presence of the resolve alone would be a half-assertion.
+_RUNS_RESOLVED_EXECUTABLE = re.compile(
+    r'run\s+the\s+captured\s+`?executable`?', re.IGNORECASE
+)
+
+#: A WARNING the gate actually EMITS, as opposed to prose that mentions one. An
+#: emitted warning is the payload of a ``manage-logging`` invocation, so it
+#: always rides on a ``--message "[WARNING]`` line. Prose in a *different* arm
+#: that cross-references this arm's warning is not itself a warning and carries
+#: no obligation to name this arm's dimensions.
+_EMITTED_WARNING = '--message "[WARNING]'
 
 # The real Python build_map globs (single-``*`` fnmatch spans ``/``).
 _GLOBS = ['marketplace/bundles/*.py', 'test/*.py', 'pyproject.toml']
@@ -239,13 +317,20 @@ def test_unmapped_footprint_fails_closed_to_the_whole_tree_route():
 # Guard 1's whole-tree arm: reachability, honest degradation, lock-step
 # ---------------------------------------------------------------------------
 #
-# Three quality-gate dimensions exist ONLY at whole-tree scope (the
-# marketplace-wide plugin-doctor pass, the `.claude/` ruff coverage, and the
-# `marketplace/targets` SPDX coverage). A purely bundle-scoped guard 1 can never
-# reach them, so they surface first at remote CI. These tests pin that guard 1
-# carries a whole-tree arm, that any skip path degrades honestly by naming all
-# three dimensions, and that the lock-step sites describing the guard set cannot
-# drift apart one site at a time.
+# Three quality-gate dimensions exist ONLY at whole-tree scope IN THIS
+# repository (the marketplace-wide plugin-doctor pass, the `.claude/` ruff
+# coverage, and the `marketplace/targets` SPDX coverage). A purely bundle-scoped
+# guard 1 can never reach them, so they surface first at remote CI. These tests
+# pin that guard 1 carries a whole-tree arm, that any skip path degrades
+# honestly, and that the lock-step sites describing the guard set cannot drift
+# apart one site at a time.
+#
+# The degradation obligation is split across two assertions because the set is
+# the PROJECT's, not this repository's: the EMITTED message must interpolate the
+# derived set (so a consumer names its own dimensions), while the labelled
+# WORKED EXAMPLE — this repository's rendering of that template — must name all
+# three. Asserting all three of the emitted message would re-pin the literal;
+# asserting nothing of the example would let the template ship with no instance.
 
 
 def _gate_text() -> str:
@@ -282,26 +367,85 @@ def _lock_step_sites() -> dict[str, str]:
     return sites
 
 
+def _section(heading: str) -> list[str]:
+    """Return the body lines under ``heading``, up to the next heading.
+
+    Anchored on the heading text rather than a line number so ordinary prose
+    edits around the section do not silently empty the sweep — an absent
+    heading returns ``[]``, which every caller asserts against.
+    """
+    lines = _gate_text().splitlines()
+    start = next(
+        (i for i, line in enumerate(lines) if line.strip() == heading), None
+    )
+    if start is None:
+        return []
+    body: list[str] = []
+    for line in lines[start + 1 :]:
+        if _SAME_OR_HIGHER_HEADING.match(line):
+            break
+        body.append(line)
+    return body
+
+
+def _default_scope_quality_gate_resolves(lines: list[str]) -> list[str]:
+    """Return the ``quality-gate`` resolves carrying NO ``--module`` argument."""
+    return [
+        line
+        for line in lines
+        if _QG_RESOLVE.search(line) and not _MODULE_ARG.search(line)
+    ]
+
+
 def _names_all_three_dimensions(text: str) -> bool:
     return all(dimension in text for dimension in _WHOLE_TREE_ONLY_DIMENSIONS)
 
 
+def _is_emitted_warning(line: str) -> bool:
+    return _EMITTED_WARNING in line
+
+
 def _degradation_warning_lines() -> list[str]:
-    """Return the WARNING lines covering the whole-tree quality-gate skip path."""
+    """Return the WARNINGs the gate EMITS on the whole-tree quality-gate skip path.
+
+    Scoped to *emitted* warnings on purpose. A sibling arm's prose may
+    cross-reference this arm ("exactly as the whole-tree `quality-gate` arm's
+    honest-degradation branch does for its own dimension set") while describing
+    its OWN, single-dimension warning; that sentence is documentation of another
+    guard, not a warning this arm emits, and holding it to this arm's
+    dimension-naming rule would demand a false claim of it.
+    """
     return [
         line
         for line in _gate_text().splitlines()
-        if '[WARNING]' in line and _WHOLE_TREE_QUALITY_GATE.search(line)
+        if _is_emitted_warning(line) and _WHOLE_TREE_QUALITY_GATE.search(line)
     ]
 
 
 def test_whole_tree_quality_gate_pass_is_reachable_from_the_gate_document():
-    text = _gate_text()
+    """Guard 1's whole-tree arm must resolve its own invocation and then run it.
 
-    assert _WHOLE_TREE_QG_INVOCATION.search(text), (
-        'The gate document must carry a whole-tree (no bundle argument) '
-        'quality-gate invocation — without it the three whole-tree-only '
-        'dimensions are unreachable from the pre-push gate'
+    Reachability is asserted STRUCTURALLY — a default-scope (no ``--module``)
+    ``quality-gate`` resolve inside the arm, plus the instruction to run what
+    that resolve returned. Asserting a literal build-tool invocation instead
+    would pin the very hardcoding this sweep exists to remove: the arm obtains
+    its executable from the resolver, so a literal assertion can only pass on a
+    gate document that hardcodes one project's build tool.
+    """
+    arm = _section(_WHOLE_TREE_ARM_HEADING)
+
+    assert arm, (
+        f'The gate document carries no "{_WHOLE_TREE_ARM_HEADING}" section, so '
+        f'the three whole-tree-only dimensions are unreachable from the pre-push gate'
+    )
+    assert _default_scope_quality_gate_resolves(arm), (
+        'The whole-tree arm must resolve quality-gate at DEFAULT scope (no '
+        '--module argument) — a module-scoped resolve reaches only the '
+        'per-bundle dimensions, never the three whole-tree-only ones'
+    )
+    assert any(_RUNS_RESOLVED_EXECUTABLE.search(line) for line in arm), (
+        'The whole-tree arm resolves an executable but never says to run it — '
+        'a resolved-then-discarded invocation gates nothing'
     )
 
 
@@ -377,7 +521,44 @@ def test_gate_document_parses_and_discloses_unresolved_paths():
     )
 
 
-def test_degradation_warning_names_all_three_dimensions():
+def _worked_example_block() -> list[str]:
+    """Return the fenced block rendering the degradation template for this repo.
+
+    Located by the worked-example label rather than by ordinal, so the sweep
+    survives prose edits around it. An absent label — or a label with no fenced
+    block under it — yields ``[]``, which the caller asserts against, so a
+    deleted example fails loudly instead of emptying the assertion.
+    """
+    lines = _gate_text().splitlines()
+    start = next(
+        (i for i, line in enumerate(lines) if _WORKED_EXAMPLE_LABEL in line), None
+    )
+    if start is None:
+        return []
+    block: list[str] = []
+    in_fence = False
+    for line in lines[start + 1 :]:
+        if line.lstrip().startswith('```'):
+            if in_fence:
+                break
+            in_fence = True
+            continue
+        if in_fence:
+            block.append(line)
+    return block
+
+
+def test_degradation_warning_interpolates_the_derived_dimension_set():
+    """The EMITTED WARNING carries the derived set, never one project's literal.
+
+    The surrounding prose has always said the dimensions to name are "the
+    project's own", but prose is not the artifact a downstream agent copies —
+    the message literal is. A hardcoded literal therefore asserts THIS
+    repository's three dimensions of a project whose whole-tree-only set is
+    different, which is the shipped-guard-assumes-our-layout defect in the one
+    place it does the most damage: a WARNING that is supposed to state a
+    coverage boundary honestly.
+    """
     warnings = _degradation_warning_lines()
 
     assert warnings, (
@@ -385,11 +566,168 @@ def test_degradation_warning_names_all_three_dimensions():
         'whole-tree quality-gate skip path — a silent skip is prohibited'
     )
     for warning in warnings:
-        assert _names_all_three_dimensions(warning), (
-            f'A whole-tree quality-gate degradation WARNING must name ALL '
-            f'THREE un-gated dimensions {_WHOLE_TREE_ONLY_DIMENSIONS} — never a '
-            f'singular "the whole-tree dimension". Offending line: {warning!r}'
+        assert _DIMENSION_PLACEHOLDER in warning, (
+            f'A whole-tree quality-gate degradation WARNING must interpolate '
+            f'the derived dimension set via {_DIMENSION_PLACEHOLDER!r}, so a '
+            f'consumer emits ITS OWN whole-tree-only dimensions. Offending '
+            f'line: {warning!r}'
         )
+        pinned = [d for d in _WHOLE_TREE_ONLY_DIMENSIONS if d in warning]
+        assert not pinned, (
+            f'The emitted WARNING pins this repository\'s dimension names '
+            f'{pinned} instead of interpolating the derived set — the literal '
+            f'is what a downstream agent copies. Offending line: {warning!r}'
+        )
+
+
+def _degradation_template_block() -> list[str]:
+    """Return the lines declaring the two renderings of the degradation template.
+
+    Located by the renderings label rather than by ordinal, so the sweep
+    survives prose edits around it. An absent label — or a label with no body
+    beneath it — yields ``[]``, which the caller asserts against, so a deleted
+    or relocated declaration fails loudly instead of silently emptying the
+    sweep. Bounded by the worked-example label that follows it, since that block
+    is this repository's RENDERING of the template and is swept separately.
+    """
+    lines = _gate_text().splitlines()
+    start = next(
+        (i for i, line in enumerate(lines) if _TEMPLATE_RENDERINGS_LABEL in line),
+        None,
+    )
+    if start is None:
+        return []
+    block: list[str] = []
+    for line in lines[start + 1 :]:
+        if _SAME_OR_HIGHER_HEADING.match(line) or _WORKED_EXAMPLE_LABEL in line:
+            break
+        block.append(line)
+    return block
+
+
+def _enumerated_dimension_items() -> list[str]:
+    """Return the numbered items of the gate document's own dimension enumeration.
+
+    The authoritative source for ``_WHOLE_TREE_ONLY_DIMENSIONS``. Anchored on
+    the section label rather than an ordinal; an absent label yields ``[]``,
+    which the caller asserts against.
+    """
+    lines = _gate_text().splitlines()
+    start = next(
+        (i for i, line in enumerate(lines) if _DIMENSION_SOURCE_LABEL in line), None
+    )
+    if start is None:
+        return []
+    items: list[str] = []
+    for line in lines[start + 1 :]:
+        if _SAME_OR_HIGHER_HEADING.match(line) or line.startswith(
+            _DIMENSION_SOURCE_TERMINATOR
+        ):
+            break
+        if _ENUMERATED_ITEM.match(line):
+            items.append(line)
+    return items
+
+
+def test_degradation_warning_declares_an_unenumerable_rendering():
+    """The template must have a legal value when the derivation yields no set.
+
+    Without one, the only rendering an author can reach for on that path is the
+    empty list — which prints "no dimensions are un-gated" and turns an
+    unestablished set into a confident all-clear.
+
+    Scoped to the declaring block, for the same reason its two siblings are
+    scoped (``_degradation_warning_lines``, ``_worked_example_block``): searched
+    document-wide, both clauses also occur in the surrounding explanatory prose,
+    so the assertion would survive the removal of the very rendering it names —
+    green without verifying its own mechanism.
+    """
+    block = _degradation_template_block()
+
+    assert block, (
+        f'The gate document declares no degradation-template block under '
+        f'{_TEMPLATE_RENDERINGS_LABEL!r}, so the unenumerable rendering has no '
+        f'declared home and this sweep would pass on prose alone'
+    )
+    declared = '\n'.join(block)
+
+    missing = [c for c in _UNENUMERABLE_RENDERING_CLAUSES if c not in declared]
+
+    assert not missing, (
+        f'The degradation template declares no unenumerable rendering '
+        f'(missing: {missing}), so a project that cannot derive its '
+        f'whole-tree-only dimension set has no honest value for '
+        f'{_DIMENSION_PLACEHOLDER!r} and an empty list becomes the default'
+    )
+
+
+def test_whole_tree_only_dimension_population_is_derived_not_asserted():
+    """The expected dimension set must reconcile with the document's enumeration.
+
+    ``_WHOLE_TREE_ONLY_DIMENSIONS`` is what every dimension sweep above keys on,
+    so its own completeness is load-bearing. Left as a hand-written triple that
+    nothing reconciles against the authoritative section, it is an ASSERTED
+    population — and an asserted population cannot notice a fourth dimension
+    being added: the worked example could omit the new one and stay green.
+    Reconciled in BOTH directions, so neither an enumerated item without a token
+    nor a token without an enumerated item can pass.
+    """
+    items = _enumerated_dimension_items()
+
+    assert items, (
+        f'The gate document carries no enumerated dimension list under '
+        f'{_DIMENSION_SOURCE_LABEL!r}, so the authoritative source for '
+        f'{_WHOLE_TREE_ONLY_DIMENSIONS} is gone and every sweep keyed on that '
+        f'tuple now pins an unsourced literal'
+    )
+    assert len(items) == len(_WHOLE_TREE_ONLY_DIMENSIONS), (
+        f'The gate document enumerates {len(items)} whole-tree-only dimension(s) '
+        f'but the expected set carries {len(_WHOLE_TREE_ONLY_DIMENSIONS)}: '
+        f'{_WHOLE_TREE_ONLY_DIMENSIONS}. Enumerated: {items}'
+    )
+
+    enumerated = '\n'.join(items)
+    unsourced = [d for d in _WHOLE_TREE_ONLY_DIMENSIONS if d not in enumerated]
+    assert not unsourced, (
+        f'These expected dimensions appear in no enumerated item, so the tuple '
+        f'has drifted from the section that defines it: {unsourced}'
+    )
+
+    uncovered = [
+        item
+        for item in items
+        if not any(d in item for d in _WHOLE_TREE_ONLY_DIMENSIONS)
+    ]
+    assert not uncovered, (
+        f'These enumerated dimensions are matched by no token in '
+        f'{_WHOLE_TREE_ONLY_DIMENSIONS}, so the worked example could omit them '
+        f'while every sweep stayed green: {uncovered}'
+    )
+
+
+def test_degradation_warning_worked_example_names_all_three_dimensions():
+    """The template's worked example must render this repository's full set.
+
+    A template with no instance is the opposite failure from a pinned literal:
+    the reader gets a placeholder and no evidence of what a correct rendering
+    looks like. The example is therefore mandatory, and — being this
+    repository's own rendering — it carries the same all-three obligation the
+    emitted literal used to.
+    """
+    block = _worked_example_block()
+
+    assert block, (
+        f'The gate document carries no fenced worked example under '
+        f'{_WORKED_EXAMPLE_LABEL!r}, so the degradation template ships with no '
+        f'concrete rendering to be read against'
+    )
+    rendered = '\n'.join(block)
+    assert _names_all_three_dimensions(rendered), (
+        f'The worked example renders the degradation template for THIS '
+        f'repository, so it must name ALL THREE un-gated dimensions '
+        f'{_WHOLE_TREE_ONLY_DIMENSIONS} — never a singular "the whole-tree '
+        f'dimension". Rendered: {rendered!r}'
+    )
 
 
 def test_lock_step_sites_all_name_the_whole_tree_quality_gate_arm():
@@ -480,6 +818,57 @@ def test_three_dimension_detector_rejects_a_single_dimension_warning():
     assert _names_all_three_dimensions(complete), (
         'Three-dimension detector rejected a complete three-dimension WARNING'
     )
+
+
+def test_reachability_detector_rejects_a_module_scoped_resolve_and_an_empty_arm():
+    # Mutation guard for the reachability sweep. The per-bundle loop resolves
+    # the SAME canonical, so a detector that only looked for `--command
+    # quality-gate` would be satisfied by a gate document that dropped the
+    # whole-tree arm entirely — vacuously green on exactly the regression the
+    # sweep exists to catch. The `--module` argument is the discriminator.
+    per_bundle = '  resolve --command quality-gate --module {bundle} --audit-plan-id {plan_id}'
+    assert not _default_scope_quality_gate_resolves([per_bundle]), (
+        'Reachability detector accepted the per-bundle module-scoped resolve as '
+        'a whole-tree one — the sweep would pass with no whole-tree arm at all'
+    )
+
+    assert not _default_scope_quality_gate_resolves([]), (
+        'Reachability detector reported a resolve over an EMPTY section — an '
+        'absent arm must never read as a present one'
+    )
+
+    # Positive control — the whole-tree, default-scope resolve IS accepted.
+    whole_tree = '  resolve --command quality-gate --audit-plan-id {plan_id}'
+    assert _default_scope_quality_gate_resolves([whole_tree])
+
+
+def test_degradation_warning_detector_separates_an_emitted_warning_from_prose():
+    # Mutation guard for the dimension-naming sweep. A sibling arm's prose may
+    # name this arm while describing its own single-dimension warning; holding
+    # that sentence to this arm's dimension-naming rule would demand a false
+    # claim of it. Only a warning the gate EMITS carries the obligation.
+    sibling_prose = (
+        'this project exposes no `test-compile` target at any scope: emit one '
+        '`[WARNING]` naming the test-tree type-checking dimension as un-gated '
+        "for this push, exactly as the whole-tree `quality-gate` arm's "
+        'honest-degradation branch does for its own dimension set.'
+    )
+    assert _WHOLE_TREE_QUALITY_GATE.search(sibling_prose), (
+        'Fixture drift: the sibling-arm prose no longer names the whole-tree '
+        'quality-gate arm, so it no longer exercises the discrimination'
+    )
+    assert not _is_emitted_warning(sibling_prose), (
+        'Emitted-warning detector accepted prose that merely mentions a '
+        'WARNING — a cross-reference is not an emitted warning'
+    )
+
+    # Positive control — the arm's own emitted warning IS selected.
+    emitted = (
+        '  --message "[WARNING] (plan-marshall:pre-push-quality-gate) Whole-tree '
+        'quality-gate unavailable — three whole-tree-only dimensions are UN-GATED."'
+    )
+    assert _is_emitted_warning(emitted)
+    assert _WHOLE_TREE_QUALITY_GATE.search(emitted)
 
 
 def test_whole_tree_arm_detector_fires_on_the_pre_fix_bundle_only_prose():

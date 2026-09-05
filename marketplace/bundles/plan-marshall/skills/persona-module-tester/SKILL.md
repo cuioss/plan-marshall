@@ -72,6 +72,15 @@ def test_discount_applied_for_premium_user():
 | Property-based testing | Scoped to universal contracts (parsers, validators, normalisers, round-trip encoders) | testing-methodology.md § "Property-Based Testing" |
 | One layer per contract | In-process test is authoritative; subprocess collapses to one CLI-plumbing smoke, with two exceptions | testing-methodology.md § "One Layer Per Contract" |
 
-The structural half of these rules is enforced by the `pm-plugin-development:plugin-doctor`
-`test-conventions` scope — see its
-[standards doc](../../../pm-plugin-development/skills/plugin-doctor/standards/doctor-test-conventions.md).
+**Who enforces these rules depends on the project.** In the plan-marshall
+marketplace repository — and only there — the structural half is enforced by the
+`pm-plugin-development:plugin-doctor` `test-conventions` scope (see its
+[standards doc](../../../pm-plugin-development/skills/plugin-doctor/standards/doctor-test-conventions.md)).
+Plugin-doctor is a marketplace-authoring tool: it ships in that repository, it is
+not installed into a consumer project, and a consumer is not expected to carry an
+equivalent.
+
+Everywhere else these are **house-style rules a reviewer applies by reading** —
+no tool reports a violation. Read the table above as the standard to meet, not as
+a gate that will catch you missing it, and do not cite plugin-doctor as the
+verification for a test deliverable in a project that does not have it.

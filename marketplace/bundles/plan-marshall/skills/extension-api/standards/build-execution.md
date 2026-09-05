@@ -169,7 +169,7 @@ All build output **must** go to a log file, not stdout/stderr.
 |-----------|--------|---------|
 | `{plan_id}` | The plan that caused the build, or `NO_PLAN` | `my-feature-plan`, `NO_PLAN` |
 | `{scope}` | `default` (root) or module name | `default`, `core-api` |
-| `{build-system}` | `maven`, `gradle`, `npm` | `maven` |
+| `{build-system}` | `maven`, `gradle`, `npm`, `python`, and whatever a later-registered build skill reports. The set is OPEN — do not read this column as closed | `maven` |
 | `{timestamp}` | `YYYY-MM-DD-HHMMSS` | `2026-01-03-141523` |
 
 **Examples**:
@@ -426,7 +426,7 @@ All `execute_direct()` implementations return `DirectCommandResult` (TypedDict f
 | `exit_code` | int | Process exit code (-1 for timeout / execution failure / indeterminate; the negative `-N` signal code for `killed`) |
 | `duration_seconds` | int | Actual execution time. On `killed` this is a **truncation**, not a measurement of the command — which is why it is never fed to the adaptive-timeout learner |
 | `log_file` | string | Path to captured output (R1 requirement) |
-| `command` | string | Full command executed |
+| `command` | string | Full command executed — the argv the **auto-detected project wrapper** produced (R2), never a literal this contract fixes. Its shape varies per build system, so read it as a record of what ran, not as the form a caller should reproduce; a caller that needs the command resolves it through `plan-marshall:manage-architecture:architecture resolve --command {canonical}` and runs the returned `executable`. Resolution is scoped: a canonical may be exposed only at MODULE scope, so a caller asks the default scope first and, on a `Command not found` answer there, re-resolves with `--module {module}` rather than concluding the command is unavailable. See [`manage-architecture/standards/resolve-command.md`](../../manage-architecture/standards/resolve-command.md) for the resolve contract and how a scope's command set is derived. |
 
 **Optional fields** (present when applicable):
 
@@ -461,6 +461,8 @@ def execute_direct(...) -> DirectCommandResult:
 ```
 
 ## Format Examples
+
+The examples below deliberately vary the build system — a Maven wrapper in the success and error cases, a Python one in the timeout case — because `command` is the one field whose shape is decided by the project's own wrapper rather than by this contract. `log_file` is not: R1 fixes its path and names `file_ops.get_build_results_dir(plan_id)` as that path's single owner, so every part of a `log_file` literal that varies across the examples is a contract-declared component of that path — `{build-system}` and `{timestamp}`, both R1 rows. The variation is in the components, never in the path's shape. Read each literal as one build system's instance, not as the exemplar to copy: an implementor of `ext-point-build-verify-step` for Maven, Gradle or npm reproduces the *field set* and the *status semantics*, and lets its own wrapper detection decide what `command` says.
 
 ### TOON Format (Default)
 

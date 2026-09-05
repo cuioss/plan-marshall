@@ -37,7 +37,7 @@ Tasks are stored as JSON files: `TASK-{NNN}.json`
     {"number": 2, "target": "src/main/java/com/example/CacheManager.java", "status": "pending", "intent": "write-replace"}
   ],
   "verification": {
-    "commands": ["mvn test -Dtest=CacheConfigTest"],
+    "commands": ["python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -Ppre-commit\""],
     "criteria": "All tests pass",
     "manual": false
   },
@@ -69,7 +69,7 @@ Tasks are stored as JSON files: `TASK-{NNN}.json`
     {"number": 1, "target": "src/test/java/com/example/CacheTest.java", "status": "pending", "intent": "write-replace"}
   ],
   "verification": {
-    "commands": ["mvn test -Dtest=CacheTest"],
+    "commands": ["python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"test\""],
     "criteria": "Test passes",
     "manual": false
   },
@@ -81,23 +81,25 @@ Tasks are stored as JSON files: `TASK-{NNN}.json`
 
 For `verification` profile tasks, steps contain verification commands instead of file paths. File-path validation is skipped for this profile.
 
+A command literal that invokes a BUILD in a `verification`-profile task's `steps[].target` or in a task's `verification.commands[]` is **what `architecture resolve --command {canonical} --module {module}` returned for that project** — run at outline time (phase-3-outline Steps 9-10) and copied verbatim from there. `verification.commands[]` also admits non-build shell commands (the `curl … | jq` probe under § "Verification Block" is one), which no resolver produces and this rule does not govern. What the resolver returns is the **executor notation** routing to the project's build skill, not a bare build-tool invocation: the literal is read out of the module's `commands` map, whose shape is documented in [`extension-api/standards/build-execution.md`](../../extension-api/standards/build-execution.md) § "From discover_modules()". The build tool itself appears only inside the `--command-args` payload the build skill hands to its own wrapper. These literals are therefore build-system-specific by construction — the examples in this document resolve through the build skill their illustrated project uses (`build-maven` for the Java examples, `build-gradle` for the Gradle one under § "Verification Block"); an npm or Python project's task carries whatever its own resolver returned. Never copy a build command literal across projects, and never hand-write a build wrapper into this field.
+
 ```json
 {
   "number": 6,
-  "title": "Verify plan-marshall bundle",
+  "title": "Verify auth-service module",
   "status": "pending",
-  "domain": "plan-marshall-plugin-dev",
+  "domain": "java",
   "profile": "verification",
   "origin": "plan",
   "skills": [],
   "deliverable": 6,
   "depends_on": ["TASK-5"],
-  "description": "Run full verification suite for the plan-marshall bundle.",
+  "description": "Run full verification suite for the auth-service module.",
   "steps": [
-    {"number": 1, "target": "./pw verify plan-marshall", "status": "pending", "intent": "read"}
+    {"number": 1, "target": "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -pl auth-service\"", "status": "pending", "intent": "read"}
   ],
   "verification": {
-    "commands": ["./pw verify plan-marshall"],
+    "commands": ["python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"verify -pl auth-service\""],
     "criteria": "All tests, types, and linting pass",
     "manual": false
   },
@@ -468,7 +470,9 @@ TOON task definition consumed by `commit-add`. Field types:
       {"target": "src/main/java/CacheConfig.java", "intent": "write-new"}
     ],
     "verification": {                                  // object, optional
-      "commands": ["mvn test -Dtest=CacheConfigTest"], // string[]
+      "commands": [                                    // string[] — a BUILD entry is resolver output
+        "python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args \"test -Dtest=CacheConfigTest\""
+      ],
       "criteria": "All tests pass",                    // string
       "manual": false                                  // bool
     }
@@ -680,7 +684,7 @@ The verification block defines how to verify task completion:
 {
   "verification": {
     "commands": [
-      "./gradlew test --tests *AuthController*",
+      "python3 .plan/execute-script.py plan-marshall:build-gradle:gradle run --command-args \"test --tests *AuthController*\"",
       "curl -s http://localhost:8080/auth | jq .status"
     ],
     "criteria": "All tests pass and endpoint responds",
