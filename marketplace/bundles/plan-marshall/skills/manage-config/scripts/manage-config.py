@@ -897,9 +897,13 @@ def main() -> int:
     p_dn.add_argument(
         '--affected-files',
         dest='affected_files',
-        required=True,
-        help='Comma-separated declared footprint — the file signal the file_globs leg is '
-        'evaluated against. Required: narrowing without a footprint has no evidence to act on.',
+        default=None,
+        help='OPTIONAL override for the declared footprint, comma-separated. Omit it on the '
+        'normal path: the verb reads references.affected_files directly, which keeps the '
+        'paths a list end to end. Passing them through a comma-joined string loses a path '
+        'that contains a comma (it splits into two) and puts repository-controlled text on a '
+        'documented shell command line. Use this flag only for an out-of-band footprint. '
+        'Narrowing still refuses to run without a footprint from either source.',
     )
 
     args = parse_args_with_toon_errors(parser)

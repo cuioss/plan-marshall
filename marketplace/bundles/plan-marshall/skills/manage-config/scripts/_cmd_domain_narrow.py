@@ -69,6 +69,45 @@ SYSTEM_DOMAIN = 'system'
 EXEMPT_SYSTEM = 'system_exempt'
 
 
+class _TaskLegUnreadable(Exception):
+    """A ``TASK-*.json`` could not be read, so the task leg cannot be evaluated.
+
+    Raised rather than skipped: a skipped task file silently removes the domain it
+    claims from the leg, and the run then reports ``status: success`` with that domain
+    dropped and an empty ``claimed_by`` — which the return contract reads as "no leg
+    claimed it". That publishes a looked-and-found-nothing verdict for a leg that never
+    looked, so the only honest outcome is the could-not-evaluate error.
+    """
+
+    def __init__(self, task_file, cause: Exception) -> None:
+        self.task_file = task_file
+        self.cause = cause
+        super().__init__(f'{task_file}: {cause}')
+
+
+def _read_affected_files(plan_dir) -> list[str] | None:
+    """Return ``references.affected_files`` as a list, or ``None`` when unreadable.
+
+    This is the PRIMARY footprint source and it keeps the paths a list end to end. The
+    ``--affected-files`` flag remains as an out-of-band override, but routing the normal
+    path through a comma-joined string was lossy twice over: a path legitimately
+    containing a comma split into two entries, and the joined string had to be
+    interpolated into a documented shell command line, putting repository-controlled
+    text where ``$(...)``, backticks and backslashes are live.
+    """
+    refs_file = plan_dir / 'references.json'
+    try:
+        refs = json.loads(refs_file.read_text(encoding='utf-8'))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(refs, dict):
+        return None
+    files = refs.get('affected_files')
+    if not isinstance(files, list):
+        return None
+    return [f for f in files if isinstance(f, str) and f]
+
+
 def _read_domains(plan_dir) -> list[str] | None:
     """Return ``references.domains`` for the plan, or ``None`` when unreadable.
 
@@ -96,13 +135,21 @@ def _task_claimed_domains(plan_dir) -> set[str]:
     named by any ``TASK-*.json`` is load-bearing for work already planned and is never
     droppable. At the end-of-outline narrowing site no task file exists yet, so this leg
     is vacuously empty there — which is what makes that site the safest one to narrow at.
+
+    An unreadable or malformed task file raises :class:`_TaskLegUnreadable` rather than
+    being skipped. Skipping it would drop the domain that file claims out of the leg
+    silently, and the run would then report ``status: success`` with that domain in
+    ``dropped`` and an empty ``claimed_by`` — publishing "no leg claimed it" for a leg
+    that could not be evaluated at all. That is the fail-open the safety bound exists to
+    prevent: a guard that could not look must not read as a guard that looked and found
+    nothing.
     """
     claimed: set[str] = set()
     for task_file in sorted(plan_dir.glob('TASK-*.json')):
         try:
             task = json.loads(task_file.read_text(encoding='utf-8'))
-        except (OSError, json.JSONDecodeError):
-            continue
+        except (OSError, json.JSONDecodeError) as exc:
+            raise _TaskLegUnreadable(task_file, exc) from exc
         domain = task.get('domain') if isinstance(task, dict) else None
         if isinstance(domain, str) and domain:
             claimed.add(domain)
@@ -135,7 +182,7 @@ def cmd_domain_narrow(args) -> dict[str, Any]:
     never carries an empty ``claimed_by``, so an empty one always means dropped.
     """
     plan_id: str = args.plan_id
-    affected_files_raw: str = args.affected_files
+    affected_files_raw: str | None = getattr(args, 'affected_files', None)
 
     plan_dir = get_plan_dir(plan_id)
     if not plan_dir.exists():
@@ -178,11 +225,49 @@ def cmd_domain_narrow(args) -> dict[str, Any]:
     # here, neither inclusion leg below can ever contain it, which is exactly why
     # the retention loop exempts it instead of judging it.
     user_domains = {k: v for k, v in skill_domains.items() if k != SYSTEM_DOMAIN}
-    footprint = {p.strip() for p in affected_files_raw.split(',') if p.strip()}
+
+    # Primary source: the persisted list, which survives a path containing a comma.
+    # The flag is the out-of-band override and is parsed the lossy way only because a
+    # caller who passes it has already chosen a string surface.
+    if affected_files_raw is None:
+        declared = _read_affected_files(plan_dir)
+        if declared is None:
+            return {
+                'status': 'error',
+                'error': 'footprint_unreadable',
+                'message': (
+                    f'references.json for plan {plan_id} carries no readable affected_files '
+                    'list and no --affected-files override was given, so the file_globs leg '
+                    'had no footprint to evaluate against'
+                ),
+            }
+        footprint = {f.strip() for f in declared if f.strip()}
+    else:
+        footprint = {p.strip() for p in affected_files_raw.split(',') if p.strip()}
+
+    if not footprint:
+        return {
+            'status': 'error',
+            'error': 'footprint_empty',
+            'message': (
+                'The declared footprint resolved to zero paths, so narrowing has no evidence '
+                'to act on and refuses to drop any domain'
+            ),
+        }
 
     always_on_set = _always_on_domains(user_domains)
     glob_matched_set = _glob_matched_domains(user_domains, footprint)
-    task_claimed = _task_claimed_domains(plan_dir)
+    try:
+        task_claimed = _task_claimed_domains(plan_dir)
+    except _TaskLegUnreadable as exc:
+        return {
+            'status': 'error',
+            'error': 'task_leg_unreadable',
+            'message': (
+                f'Task file {exc.task_file} could not be read, so the task leg of the '
+                f'safety bound could not be evaluated and no domain may be dropped on it: {exc.cause}'
+            ),
+        }
 
     unique_current = sorted(set(current))
     retained: list[str] = []

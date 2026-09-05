@@ -178,7 +178,7 @@ The light lane is **not exempt** from the narrowing obligation either, and for t
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-config:manage-config domain-narrow \
-     --plan-id {plan_id} --affected-files "{affected_files_csv}"
+     --plan-id {plan_id}
    ```
 
    **Branch on `status` BEFORE parsing anything else.** The verb has three outcomes, not two, and on the third none of the success fields exist:

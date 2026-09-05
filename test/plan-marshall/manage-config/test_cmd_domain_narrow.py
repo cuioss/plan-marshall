@@ -479,10 +479,66 @@ def test_main_routes_domain_narrow_to_its_handler(monkeypatch):
     assert received[0].affected_files == 'a.py'
 
 
-def test_affected_files_is_required():
-    """Narrowing without a footprint has no evidence to act on, so the parser refuses."""
-    with pytest.raises(SystemExit):
-        parse_ns(_BUNDLE, _SKILL, _SCRIPT_NAME, 'domain-narrow', '--plan-id', 'dispatch-check')
+def test_affected_files_is_optional_at_the_parser():
+    """The flag is an out-of-band override, so omitting it parses and yields None.
+
+    The footprint requirement did not go away — it moved from the parser to the verb,
+    which reads references.affected_files and refuses when neither source yields one
+    (test_footprint_is_read_from_references / test_missing_footprint_is_refused).
+    Keeping it required at the parser would have forced every caller through the lossy
+    comma-joined string surface.
+    """
+    ns = parse_ns(_BUNDLE, _SKILL, _SCRIPT_NAME, 'domain-narrow', '--plan-id', 'dispatch-check')
+
+    assert ns.affected_files is None
+
+
+def test_footprint_is_read_from_references_when_the_flag_is_absent(plan_context):
+    """The primary source is the persisted list, so a comma in a path cannot split it."""
+    plan_dir = _seed(plan_context, 'dn-refs-footprint', _CONFIGURED_DOMAINS)
+    (plan_dir / 'references.json').write_text(
+        json.dumps(
+            {
+                'base_branch': 'main',
+                'domains': _CONFIGURED_DOMAINS,
+                'affected_files': ['marketplace/bundles/plan-marshall/skills/a,b/scripts/x.py'],
+            }
+        ),
+        encoding='utf-8',
+    )
+
+    ns = parse_ns(_BUNDLE, _SKILL, _SCRIPT_NAME, 'domain-narrow', '--plan-id', 'dn-refs-footprint')
+    result = cmd_domain_narrow(ns)
+
+    assert result['status'] == 'success'
+    # The comma-bearing path stayed ONE path, so the .py glob still claims python.
+    assert 'python' in result['retained']
+    assert _claimed_by(result, 'python') == ['file_globs']
+
+
+def test_missing_footprint_is_refused(plan_context):
+    """No list and no override is a could-not-evaluate error, never a silent full drop."""
+    _seed(plan_context, 'dn-no-footprint', _CONFIGURED_DOMAINS)
+
+    ns = parse_ns(_BUNDLE, _SKILL, _SCRIPT_NAME, 'domain-narrow', '--plan-id', 'dn-no-footprint')
+    result = cmd_domain_narrow(ns)
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'footprint_unreadable'
+
+
+def test_unreadable_task_file_is_refused_not_skipped(plan_context):
+    """A task leg that could not be evaluated must not render as a leg that found nothing."""
+    plan_dir = _seed(plan_context, 'dn-bad-task', _CONFIGURED_DOMAINS)
+    (plan_dir / 'TASK-001.json').write_text('{not valid json', encoding='utf-8')
+
+    result = cmd_domain_narrow(_ns('dn-bad-task', _PY_FOOTPRINT))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'task_leg_unreadable'
+    # The fail-open this replaces would have returned success with the task's domain
+    # dropped and an empty claimed_by — "no leg claimed it" for a leg that never ran.
+    assert 'dropped' not in result
 
 
 def test_help_lists_both_flags(monkeypatch, capsys):
