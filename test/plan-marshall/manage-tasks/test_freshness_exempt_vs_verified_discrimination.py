@@ -152,12 +152,6 @@ def test_the_two_routes_differ_on_the_field_a_consumer_branches_on(
 
     assert exempt['status'] == 'exempt', exempt
     assert verified['status'] == 'fresh', verified
-    assert exempt['status'] != verified['status'], (
-        f'the exempt and verified routes returned the same status '
-        f'{exempt["status"]!r}; a consumer reading the token cannot tell an '
-        f'unexamined tree from a verified one. Permitting members: '
-        f'{len(_PERMITTING)} of {len(_ALL_STATUSES)}.'
-    )
 
 
 def test_both_permitting_members_are_reachable_and_are_the_only_ones(
