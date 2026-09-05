@@ -313,7 +313,7 @@ def _read_recipe_source(plan_id: str) -> str | None:
     audit surfaced as recipe→default drift (lesson/recipe plans composing the
     ``default`` rule because the flag was omitted). The archived-plan audit's re-derivation of Row 2 (``collect_inputs`` in the
     project-local cross-plan auditor —
-    ``audit-archived-plan-retrospectives/scripts/audit.py``, which ships to no
+    ``.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py``, which ships to no
     target and is absent from a consumer installation) reads the SAME two fields
     in the SAME precedence, so the audit's counterfactual and this live decision
     agree by construction; a change to the field set here obliges the same
