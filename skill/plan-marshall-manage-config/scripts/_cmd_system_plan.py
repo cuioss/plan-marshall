@@ -1,0 +1,276 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+"""
+System, project, and plan command handlers for manage-config.
+
+Handles: system, project, plan
+
+Plan sub-nouns delegate to phase handlers in _cmd_quality_phases:
+  phase-1-init, phase-2-refine, phase-5-execute, phase-6-finalize
+"""
+
+import json
+
+from _cmd_quality_phases import PHASE_SECTIONS, cmd_phase
+from _config_core import (
+    MarshalNotInitializedError,
+    _coerce_value,
+    error_exit,
+    load_config,
+    reject_unknown_provisioning_field,
+    require_initialized,
+    save_config,
+    success_exit,
+)
+from _config_defaults import (
+    DEFAULT_PROJECT,
+    DEFAULT_SYSTEM_RETENTION,
+    pr_compact_rides_existing_pr,
+    validate_plugin_cache_retention,
+    validate_pr_compact_max_changed_files,
+    validate_pr_strategy,
+    validate_user_language,
+)
+
+# Retention fields carrying a numeric contract beyond the whitelist check.
+_PLUGIN_CACHE_RETENTION_FIELDS = ('plugin_cache_keep_versions', 'plugin_cache_keep_days')
+
+# Project fields whose value is a list serialized as JSON on the
+# `manage-config project set` command line. _coerce_value only handles scalar
+# coercion (bool/int/str), so these fields take a json.loads path instead so a
+# list value round-trips through get.
+_PROJECT_JSON_FIELDS = ('working_prefixes',)
+
+
+def cmd_system(args) -> dict:
+    """Handle system noun."""
+    try:
+        require_initialized()
+    except MarshalNotInitializedError as e:
+        return error_exit(str(e))
+
+    config = load_config()
+    system_config = config.get('system', {})
+    if not isinstance(system_config, dict):
+        return error_exit(
+            f"system block in marshal.json is not a dict, got "
+            f"{type(system_config).__name__}",
+            error_type='invalid_type',
+        )
+
+    if args.sub_noun == 'retention':
+        retention = system_config.get('retention', {})
+
+        if args.verb == 'get':
+            return success_exit({'retention': retention})
+
+        elif args.verb == 'set':
+            field = args.field
+            value = _coerce_value(args.value)
+
+            if not isinstance(retention, dict):
+                return error_exit(
+                    f"system.retention block in marshal.json is not a dict, got "
+                    f"{type(retention).__name__}",
+                    error_type='invalid_type',
+                )
+            # Fail-closed provisioning-write guard (ADR-009): reject an unknown
+            # retention field before persisting it, rather than silently writing a
+            # typo'd/retired key that no reader would ever consult. Generalizes the
+            # `cmd_project set` whitelist via the shared seam;
+            # DEFAULT_SYSTEM_RETENTION is the canonical retention field whitelist.
+            rejection = reject_unknown_provisioning_field(field, DEFAULT_SYSTEM_RETENTION, 'system.retention')
+            if rejection is not None:
+                return rejection
+            # Validate the numeric plugin-cache knobs at this system boundary so
+            # an out-of-contract value returns status: error rather than
+            # persisting a keep-set the sweep cannot honour.
+            if field in _PLUGIN_CACHE_RETENTION_FIELDS:
+                try:
+                    validate_plugin_cache_retention(value, f'system.retention.{field}')
+                except ValueError as e:
+                    return error_exit(str(e), error_type='invalid_value')
+            retention[field] = value
+            system_config['retention'] = retention
+            config['system'] = system_config
+            save_config(config)
+            return success_exit({'field': field, 'value': value})
+
+    return error_exit('Unknown system sub-noun or verb')
+
+
+def cmd_project(args) -> dict:
+    """Handle project noun.
+
+    Exposes the project-level `project.*` block in marshal.json — the admitted
+    field set is exactly the :data:`DEFAULT_PROJECT` keys, enforced on BOTH
+    verbs through the one
+    :func:`reject_unknown_provisioning_field` seam, so `get` and `set` cannot
+    give two different answers to "what is a project field?". On a fresh
+    marshal.json that lacks the `project` block, `get` returns the value from
+    :data:`DEFAULT_PROJECT` so consumers always observe the canonical
+    default — mirroring the implicit-default semantics of the other
+    `DEFAULT_PLAN_*` blocks.
+    """
+    try:
+        require_initialized()
+    except MarshalNotInitializedError as e:
+        return error_exit(str(e))
+
+    config = load_config()
+    project_config = config.get('project', {})
+    if not isinstance(project_config, dict):
+        return error_exit(
+            f"project block in marshal.json is not a dict, got "
+            f"{type(project_config).__name__}",
+            error_type='invalid_type',
+        )
+
+    if args.verb == 'get':
+        field = args.field
+        # Fail-closed provisioning-READ guard (ADR-009) — the read half of the
+        # boundary whose write half the `set` arm below already guards, routed
+        # through the SAME seam so one predicate answers "what is a project
+        # field?" for both verbs. Membership is checked BEFORE the live block is
+        # consulted, and that order is the whole point: marshal.json is
+        # operator-editable and `sync-defaults` preserves an already-present key
+        # without inspecting it, so a retired or typo'd key persisted in the
+        # live `project` block would otherwise read back as a success that `set`
+        # would have refused for the same name.
+        rejection = reject_unknown_provisioning_field(field, DEFAULT_PROJECT, 'project')
+        if rejection is not None:
+            return rejection
+        if field in project_config:
+            value = project_config[field]
+            # Re-validate the persisted value at this read boundary — mirroring
+            # the sibling `set` arm and the `pr-decision` verb below. marshal.json
+            # is operator-editable and `sync-defaults` preserves an already-present
+            # key without inspecting its value, so a hand-edited or migrated
+            # non-string survives indefinitely. The language rule resolves anything
+            # other than `auto` as a pinned language, so an unguarded `true` or `42`
+            # would read as a pin; failing loud here is what keeps that off the
+            # rule's input.
+            if field == 'user_language':
+                try:
+                    validate_user_language(value)
+                except ValueError as e:
+                    return error_exit(str(e), error_type='invalid_value')
+            return success_exit({'field': field, 'value': value})
+        # The field is admitted (the guard above proved it) but absent from the
+        # live block — the implicit-default fallback. It needs no value guard:
+        # `get_default_config` already self-validates the seed.
+        return success_exit({'field': field, 'value': DEFAULT_PROJECT[field]})
+
+    elif args.verb == 'set':
+        field = args.field
+        # List-valued JSON fields (working_prefixes) take a json.loads path so a
+        # list value persists and round-trips through get; scalar fields use the
+        # bool/int/str coercion.
+        if field in _PROJECT_JSON_FIELDS:
+            try:
+                value = json.loads(args.value)
+            except json.JSONDecodeError as e:
+                return error_exit(
+                    f"Field '{field}' expects a JSON value: {e}",
+                    error_type='invalid_json',
+                )
+            # Validate the parsed shape at this system boundary. A wrong-typed
+            # value would persist silently and crash downstream readers.
+            # working_prefixes is a flat JSON array of strings.
+            if not isinstance(value, list):
+                return error_exit(
+                    f"Field '{field}' expects a JSON array, got {type(value).__name__}",
+                    error_type='invalid_type',
+                )
+            if not all(isinstance(item, str) for item in value):
+                return error_exit(
+                    f"Field '{field}' must be a JSON array of strings",
+                    error_type='invalid_type',
+                )
+        else:
+            value = _coerce_value(args.value)
+
+        # Validate the knobs carrying a value contract at this system boundary so
+        # an invalid value returns a status: error rather than persisting garbage.
+        if field == 'pr_strategy':
+            try:
+                validate_pr_strategy(value)
+            except ValueError as e:
+                return error_exit(str(e), error_type='invalid_value')
+        elif field == 'pr_compact_max_changed_files':
+            try:
+                validate_pr_compact_max_changed_files(value)
+            except ValueError as e:
+                return error_exit(str(e), error_type='invalid_value')
+        elif field == 'user_language':
+            try:
+                validate_user_language(value)
+            except ValueError as e:
+                return error_exit(str(e), error_type='invalid_value')
+
+        # Reject any field not in the project schema before persisting it, via
+        # the shared fail-closed provisioning-write seam (ADR-009). `get` routes
+        # the same seam before it consults the live block, so both verbs answer
+        # "what is a project field?" identically: a typo'd or retired key (e.g. a
+        # dead lane knob) is rejected rather than silently written to marshal.json
+        # where no reader would ever consult it.
+        # DEFAULT_PROJECT is the canonical field whitelist. Routing through the
+        # single seam (rather than an inline check) is what encodes the invariant
+        # once — the same guard `cmd_system retention set` now uses.
+        rejection = reject_unknown_provisioning_field(field, DEFAULT_PROJECT, 'project')
+        if rejection is not None:
+            return rejection
+
+        project_config[field] = value
+        config['project'] = project_config
+        save_config(config)
+        return success_exit({'field': field, 'value': value})
+
+    elif args.verb == 'pr-decision':
+        # Resolve the two knobs (falling back to DEFAULT_PROJECT when absent,
+        # exactly like `get`) and return a ride|split verdict. `max` is the
+        # resolved compact ceiling; `threshold` is the first changed-file count
+        # that forces a split under the compact strategy (max + 1).
+        changed_files = args.changed_files
+        if changed_files < 0:
+            return error_exit(
+                f"--changed-files must be an int >= 0, got {changed_files}",
+                error_type='invalid_value',
+            )
+        strategy = project_config.get('pr_strategy', DEFAULT_PROJECT['pr_strategy'])
+        max_changed_files = project_config.get(
+            'pr_compact_max_changed_files',
+            DEFAULT_PROJECT['pr_compact_max_changed_files'],
+        )
+        # Re-validate the resolved knobs at this read boundary — mirroring the
+        # sibling `set` verb — so a hand-corrupted marshal.json fails loud with a
+        # clear message here rather than silently producing a wrong verdict or
+        # crashing with an opaque TypeError inside pr_compact_rides_existing_pr.
+        try:
+            validate_pr_strategy(strategy)
+            validate_pr_compact_max_changed_files(max_changed_files)
+        except ValueError as e:
+            return error_exit(str(e), error_type='invalid_value')
+        rides = pr_compact_rides_existing_pr(strategy, changed_files, max_changed_files)
+        return success_exit({
+            'decision': 'ride' if rides else 'split',
+            'strategy': strategy,
+            'changed_files': changed_files,
+            'max': max_changed_files,
+            'threshold': max_changed_files + 1,
+        })
+
+    return error_exit('Unknown project verb')
+
+
+def cmd_plan(args) -> dict:
+    """Handle plan noun.
+
+    Delegates to phase handlers for phase-based sub-nouns.
+    """
+    sub_noun = args.sub_noun
+
+    # Phase-based sub-nouns delegate to cmd_phase
+    if sub_noun in PHASE_SECTIONS:
+        return cmd_phase(args, sub_noun)
+
+    return error_exit('Unknown plan sub-noun')

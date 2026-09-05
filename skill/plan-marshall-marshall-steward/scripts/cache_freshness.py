@@ -1,0 +1,271 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
+"""Fail-closed plugin-cache freshness verdict emitter for the ``upgrade`` verb.
+
+``marshall-steward`` is a hybrid skill: an LLM workflow router
+(``references/upgrade-flow.md``) over deterministic decision-emitter scripts
+(``determine_mode``, ``upgrade``). This script extends that model with the
+consumer upgrade flow's cache-freshness gate — it emits a verdict and mutates
+nothing.
+
+The gate answers the one question ``generate_executor preflight`` structurally
+cannot: **is the installed plugin cache current with the marketplace clone?**
+Preflight compares the executor's stamp against a *local* manifest, so a cache
+that is twenty versions behind upstream still reports ``fresh`` (executor and
+cache agree with each other). This verb instead compares the two local surfaces
+that genuinely diverge when a consumer never refreshed:
+
+* the newest version dir under the plugin-cache root, and
+* the ``version`` recorded in the marketplace-clone-root ``dist-manifest.json``,
+  resolved by reusing the executor generator's manifest-resolution order
+  (imported from ``generate_executor``, never re-implemented here).
+
+The verdict is three-valued per ADR-009 and **never vacuously ``fresh``**:
+
+* ``fresh``   — cache version >= clone-root manifest version.
+* ``stale``   — cache version < clone-root manifest version.
+* ``unknown`` — the cache root or the clone-root manifest could not be
+  resolved, so no verdict can be substantiated.
+
+``stale`` and ``unknown`` are distinct verdicts (a caller can tell "you are
+behind" from "I cannot tell"), but BOTH set ``refuses_upgrade: true`` and both
+name the exact operator commands to run. ``unknown`` is terminal: there is no
+age-based, mtime-based, or otherwise-inferred fallback that downgrades it to a
+guessed ``fresh``/``stale``. The verdict set is exactly these three values.
+
+Every verdict stamps ``compared_against: local_clone_manifest``. This verb has NO
+upstream leg, so a ``fresh`` verdict means "the cache is current with the LOCAL
+marketplace clone", never "current with the actual upstream": a clone that is
+itself behind upstream can still read ``fresh`` here. The field declares that
+scope so ``fresh`` is never mistakable for an upstream-currency claim — fetching
+the git remote belongs to the separately-owned version-resolution surface, not to
+this read-only deterministic emitter. The refusing verdicts' remediation already
+leads the operator through refreshing the clone.
+
+Subcommand:
+    check  Emit the freshness verdict. ``--cache-root`` optionally overrides the
+           resolved plugin-cache root (tests / alternate installs).
+
+Usage:
+    python3 cache_freshness.py check
+    python3 cache_freshness.py check --cache-root /path/to/plugins/cache/plan-marshall
+
+Output (TOON):
+    status: success
+    freshness: stale
+    refuses_upgrade: true
+    cache_version: 0.1.1180
+    manifest_version: 0.1.1195
+    compared_against: local_clone_manifest
+    cache_root: /Users/x/.claude/plugins/cache/plan-marshall
+    manifest_path: /Users/x/.claude/plugins/marketplaces/plan-marshall/dist-manifest.json
+    remediation: Run '/plugin update plan-marshall' (non-destructive), then verify the version,
+                 then reload the session's plugin set so the refreshed cache is visible ...
+    warning:
+
+Exit 0 on success, 2 on argparse rejection.
+"""
+
+from __future__ import annotations
+
+import argparse
+import re
+import sys
+from pathlib import Path
+
+# The PLAN-08 manifest-resolution order, imported rather than re-implemented.
+from generate_executor import _version_tuple, find_installed_manifest_path, read_installed_manifest
+from marketplace_bundles import _version_sort_key
+from marketplace_paths import get_plugin_cache_path
+
+# A cache version directory (``.../plan-marshall/0.1.1180/``).
+_VERSION_DIR_RE = re.compile(r'^\d+\.\d+')
+
+# The remediation names the operator commands verbatim rather than describing
+# them. It is a module constant so every refusing branch emits the identical
+# string and a test can assert the literal commands.
+#
+# It ends with the reload step because updating the cache is not the same as the
+# running session SEEING the update: the plugin registry is pinned at session
+# start, so a session that updates and carries on keeps reading the pre-update
+# cache and the operator concludes the update did not work. Three in-tree
+# surfaces state that requirement independently (`doc/user/installation.adoc`,
+# `platform-runtime/standards/contract.md`,
+# `extension-api/standards/ext-point-dynamic-level-executor.md`); omitting it
+# here made this remediation the one that stopped a step short of the outcome.
+REMEDIATION = (
+    "Run '/plugin update plan-marshall' to update the installed plugin in place "
+    "(non-destructive — no uninstall or reinstall), then verify the update landed by "
+    "running '/plugin' and confirming plan-marshall reports the expected version, then "
+    "reload the session's plugin set so the refreshed cache is visible to the running "
+    "session — resolve the directive with 'platform_runtime session reload-directive' "
+    "(on Claude it is '/reload-plugins'; on OpenCode the seam returns a no-op whose "
+    "alternative is a full session restart)."
+)
+
+FRESH = 'fresh'
+STALE = 'stale'
+UNKNOWN = 'unknown'
+
+# The comparison scope this verb can substantiate, stamped on every verdict.
+# It compares the cache only against the *local* marketplace-clone manifest; it
+# has no upstream leg (a git-remote fetch belongs to the separately-owned
+# version-resolution surface). Stamping this makes a ``fresh`` verdict declare
+# what it does NOT check — clone-vs-upstream currency — so ``fresh`` can never be
+# read as a claim of being current with the actual upstream (ADR-009: a verdict
+# names what it could not substantiate rather than implying it).
+COMPARED_AGAINST = 'local_clone_manifest'
+
+
+def newest_cache_version(cache_root: Path) -> str:
+    """Return the newest version-dir name under ``cache_root``, or ``''``.
+
+    The plugin cache is laid out as ``<cache_root>/<bundle>/<version>/``. Every
+    bundle is versioned in lock-step by the target generator, so the newest
+    version dir across all bundles IS the installed cache version. Ordering uses
+    ``_version_sort_key`` — the same numeric tuple sort the bundle resolver uses
+    — so ``0.1.9`` never shadows ``0.1.10``.
+
+    Args:
+        cache_root: The plugin-cache root directory.
+
+    Returns:
+        The newest version directory name, or ``''`` when the root carries none.
+    """
+    version_dirs: list[str] = []
+    try:
+        bundle_dirs = [d for d in cache_root.iterdir() if d.is_dir() and not d.name.startswith('.')]
+    except OSError:
+        return ''
+    for bundle_dir in bundle_dirs:
+        try:
+            children = list(bundle_dir.iterdir())
+        except OSError:
+            continue
+        version_dirs.extend(
+            child.name for child in children if child.is_dir() and _VERSION_DIR_RE.match(child.name)
+        )
+    if not version_dirs:
+        return ''
+    return max(version_dirs, key=_version_sort_key)
+
+
+def _unknown(reason: str, cache_root: Path | None, cache_version: str) -> dict:
+    """Build the ``unknown`` verdict — refusing, never downgraded to a guess."""
+    return {
+        'status': 'success',
+        'freshness': UNKNOWN,
+        'refuses_upgrade': True,
+        'cache_version': cache_version or UNKNOWN,
+        'manifest_version': UNKNOWN,
+        'compared_against': COMPARED_AGAINST,
+        'cache_root': str(cache_root) if cache_root is not None else '',
+        'manifest_path': '',
+        'remediation': REMEDIATION,
+        'warning': reason,
+    }
+
+
+def check_freshness(cache_root: Path | None) -> dict:
+    """Compute the three-valued freshness verdict. Read-only; mutates nothing.
+
+    Args:
+        cache_root: Explicit plugin-cache root, or ``None`` to resolve it via
+            the shared deployed-bundle cache resolver.
+
+    Returns:
+        The verdict dict — ``freshness`` is exactly one of ``fresh``, ``stale``,
+        ``unknown``; ``refuses_upgrade`` is ``False`` only on ``fresh``.
+    """
+    if cache_root is None:
+        cache_root = get_plugin_cache_path()
+    if cache_root is None or not cache_root.is_dir():
+        return _unknown(
+            'plugin-cache root could not be resolved; cache freshness cannot be substantiated',
+            cache_root,
+            '',
+        )
+
+    cache_version = newest_cache_version(cache_root)
+    if not cache_version:
+        return _unknown(
+            f'no version directory found under the plugin-cache root {cache_root}; '
+            'cache freshness cannot be substantiated',
+            cache_root,
+            '',
+        )
+
+    manifest_path = find_installed_manifest_path(cache_root)
+    manifest = read_installed_manifest(cache_root)
+    manifest_version = str(manifest.get('version', '') or '')
+    if manifest_path is None or not manifest_version:
+        return _unknown(
+            'marketplace-clone-root dist-manifest.json could not be resolved; '
+            'cache freshness cannot be substantiated',
+            cache_root,
+            cache_version,
+        )
+
+    is_fresh = _version_tuple(cache_version) >= _version_tuple(manifest_version)
+    return {
+        'status': 'success',
+        'freshness': FRESH if is_fresh else STALE,
+        'refuses_upgrade': not is_fresh,
+        'cache_version': cache_version,
+        'manifest_version': manifest_version,
+        'compared_against': COMPARED_AGAINST,
+        'cache_root': str(cache_root),
+        'manifest_path': str(manifest_path),
+        'remediation': '' if is_fresh else REMEDIATION,
+        'warning': '',
+    }
+
+
+def cmd_check(args: argparse.Namespace) -> dict:
+    """Handle the ``check`` subcommand."""
+    cache_root = Path(args.cache_root).expanduser() if args.cache_root else None
+    return check_freshness(cache_root)
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        prog='cache_freshness',
+        description=(
+            'Emit the fail-closed three-valued plugin-cache freshness verdict '
+            '(fresh|stale|unknown) for the consumer upgrade flow.'
+        ),
+        allow_abbrev=False,
+    )
+    subparsers = parser.add_subparsers(dest='command', required=True)
+
+    check_parser = subparsers.add_parser(
+        'check',
+        help='Emit the fresh|stale|unknown cache-freshness verdict. Read-only.',
+        allow_abbrev=False,
+    )
+    check_parser.add_argument(
+        '--cache-root',
+        type=str,
+        default=None,
+        help=(
+            'Explicit plugin-cache root to inspect. Defaults to the resolved '
+            'deployed-bundle cache root for the active runtime target.'
+        ),
+    )
+
+    args = parser.parse_args(argv)
+
+    if args.command == 'check':
+        result = cmd_check(args)
+    else:  # pragma: no cover - argparse enforces a valid subcommand
+        parser.print_help()
+        return 2
+
+    from toon_parser import serialize_toon
+
+    print(serialize_toon(result))
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

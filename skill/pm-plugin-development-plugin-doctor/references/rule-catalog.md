@@ -1,0 +1,1532 @@
+# Rule Catalog
+
+Rules that plugin-doctor validates in other components. See the Enforcement block in SKILL.md for this skill's own constraints.
+
+> **Related**: For architectural principles with rationale and examples, see `plugin-architecture:architecture-rules`. This catalog lists validation rules only.
+>
+> **Provenance**: For the source-of-truth classification and lesson / contract citation behind every rule below, see [rule-provenance.md](rule-provenance.md). Adding a rule without a corresponding provenance entry is inadmissible — the rule will be removed by the next provenance audit.
+
+## Declarative Suppression Substrate
+
+Real-file finding suppression is consolidated into one declarative substrate consulted before any finding is emitted, replacing the scattered per-analyzer inline markers and hardcoded allowlists. A finding for rule `R` against file `F` is suppressed when **any** of three composing granularities matches. The matching, precedence ordering, and config-parsing logic are owned by [`scripts/_analyze_shared.py`](../scripts/_analyze_shared.py) (`is_rule_suppressed` and its helpers) — that module is the enforcement-critical source of truth and the authority for the constrained flat-YAML config subset (stdlib-parseable, no PyYAML). This section describes the model; it does not restate the parser or the precedence resolution.
+
+| Granularity | Source | Scope | Rule-id maps to |
+|-------------|--------|-------|-----------------|
+| **Granularity-1** (shipped default) | `config/default-suppression.yml` (bundle-resident) | path-prefix, relative to `marketplace/bundles/` | a list of path prefixes |
+| **Granularity-2** (project config) | `.plan/plugin-doctor.yml` (git-controlled, project root) | path-prefix, relative to the invocation root | a list of path prefixes |
+| **Granularity-3** (per-file frontmatter) | the file's own YAML frontmatter `plugin-doctor-disable` key | the single file | a flat list of rule-ids |
+
+The three granularities are **additive**: each adds reach the others do not. Granularity-1 ships the marketplace's baseline exemptions (the path-prefix tables formerly hardcoded in each analyzer's `_is_allowlisted()` predicate). Granularity-2 lets a consuming project register its own path-prefix exemptions under git control without touching the bundle. Granularity-3 lets an individual file opt out of named rules in place, via a frontmatter list of rule-ids:
+
+```yaml
+---
+plugin-doctor-disable: [no-historical-prose-in-skills, prose-verb-chain-consistency]
+---
+```
+
+Both the inline-list form above and the YAML block-list form are accepted. The disable list names **canonical rule-ids** (e.g. `prose-verb-chain-consistency`, `skill-resolver-gap`, `no-historical-prose-in-skills`, `no-lesson-id-in-skill-prose`, `allowed-tools-body-drift`, `skill-self-declared-rule-violation`) — the same IDs used in this catalog and in [rule-provenance.md](rule-provenance.md).
+
+**Relationship to the zero-match detector.** This receiver-side suppression substrate (the layer that exempts findings on real files) is distinct from the `zero-match-rule` detector's `EXEMPT_RULE_IDS` (see [Zero-match coverage](#zero-match-coverage-test-layer-not-a-runtime-rule)), which governs which registered rules are excused from the positive-fixture self-test. The two share no state.
+
+The legacy inline `<!-- doctor-ignore: {token} -->` markers are removed — no analyzer accepts them, and the per-analyzer `_SUPPRESS_MARKER` / `_IGNORE_MARKER` mechanisms are deleted. The declarative substrate above is the only suppression channel for the rules that previously used inline markers.
+
+## Agent Rules
+
+**agent-task-tool-prohibited**: Agents cannot declare the Task tool (unavailable at runtime).
+
+**agent-maven-restricted**: Only the maven-builder agent may execute Maven commands.
+
+**agent-lessons-via-skill**: Agents record lessons via manage-lessons skill, not self-invoke commands.
+
+**agent-skill-tool-visibility**: Agents declaring explicit tools must include Skill, otherwise invisible to Task dispatcher.
+
+**agent-glob-resolver-workaround** (severity: error): Flags `agents/*.md` whose YAML frontmatter `tools:` field includes `Glob` unless the same frontmatter declares `forwards_tool_capabilities: true` as a typed boolean flag. Scope: `marketplace/bundles/*/agents/*.md`.
+
+- **Rationale**: Agents granted `Glob` access overwhelmingly use it to hand-roll discovery that should be delegated to a canonical resolver script. This is the same resolver-gap anti-pattern as `skill-resolver-gap`, but at the agent permission layer: once `Glob` is in the agent's tool list, prose-driven discovery becomes the path of least resistance and resolver scripts go unused.
+- **Discovery approach**: Parse YAML frontmatter, check the `tools:` array for the `Glob` token (handles both inline `tools: Read, Write, Glob` and block-list forms). If present, check the same frontmatter for `forwards_tool_capabilities: true` (canonical lowercase YAML boolean, top-level key). Absence emits an `agent-glob-resolver-workaround` finding pointing at the agent file.
+- **Fix**: Remove `Glob` from the agent's `tools:` field and replace any Glob-driven discovery with a `python3 .plan/execute-script.py` call to a canonical resolver. If the agent legitimately forwards tool capabilities to dispatched subagents (the recognized exemption case — e.g., dispatchers that need to pass `Glob` access through), add `forwards_tool_capabilities: true` to the agent's frontmatter to declare intent structurally.
+- **Exemptions**: Add `forwards_tool_capabilities: true` as a top-level YAML key in the agent's frontmatter. The value MUST be the unquoted lowercase YAML boolean `true`; quoted forms (`"true"`, `'true'`), `True`, and `yes` are NOT accepted. The legacy body-comment marker `# resolver-glob-exempt: <justification>` is no longer scoped as an exemption — agents still carrying that marker without the frontmatter flag will be flagged.
+
+## Workflow Rules
+
+**workflow-explicit-script-calls**: All script/tool invocations in workflow documentation have explicit bash code blocks with the full `python3 .plan/execute-script.py` command.
+
+**workflow-hardcoded-script-path**: Use executor notation (`bundle:skill:script`) instead of hardcoded file paths.
+
+**workflow-prose-parameter-inconsistency**: Prose instructions adjacent to `execute-script.py` bash blocks must reference parameter values consistent with the actual script API.
+
+**prose-verb-chain-consistency** (severity: error): Flags prose sentences in workflow documentation that reference a `{notation} {verb-chain}` combination where the verb chain is not a registered subcommand path of the referenced script. Scope: `SKILL.md` plus every `standards/*.md` inside each script-bearing skill directory under `marketplace/bundles/*/skills/`.
+
+- **Rationale**: Prose drift lets workflow instructions reference verb chains the script never exposed. Concrete drift incident driving this rule: `phase-2-refine/SKILL.md` prose referenced `manage-plan-documents request clarify` when the script only registered `request read` and `request mark-clarified` — a human-reader would copy the command and hit an argparse error at runtime, with no structural check catching the mismatch.
+- **Discovery approach**: AST-based, mirroring `argparse_safety`. The rule walks each script's argparse tree (`add_subparsers` → `add_parser` calls) recursively to enumerate the set of registered verb chains, then greps prose for `{notation} {tokens...}` occurrences and reports any token sequence that is not a valid prefix path in the registered tree. No subprocess execution, no imports of the target script — pure static analysis.
+- **Fix**: Update the prose to use a registered verb chain. If the intended verb chain does not yet exist in the script, either add it to the argparse tree or choose the nearest registered command.
+- **Exemptions**: Suppress via the declarative suppression substrate (see [Declarative Suppression Substrate](#declarative-suppression-substrate)). Disable file-wide via the per-file frontmatter key `plugin-doctor-disable: [prose-verb-chain-consistency]` (Granularity-3), or path-scoped via project / shipped-default config (Granularity-2 / Granularity-1). Use sparingly — only when prose deliberately documents a command the script does not expose (illustrative or aspirational examples).
+
+## Command Rules
+
+**command-self-contained-notation**: Components that execute scripts have the exact notation (`bundle:skill:script`) explicitly defined within themselves.
+
+Four detection modes:
+
+| Mode | Catches |
+|------|---------|
+| A: Delegation | "Execute command from section Nb" - parent-passed |
+| B: Notation | `execute-script.py artifact_store` - missing bundle:skill |
+| C: Missing Section | "Log the assessment" without ## Logging Command section |
+| D: Parameters | `--plan-id` when should be positional (via --help) |
+
+**command-thin-wrapper**: Commands delegate all logic to skills; they are thin orchestrators.
+
+**command-progressive-disclosure**: Load skills on-demand, not all at once.
+
+**command-completion-checks**: Mandatory post-fix verification after applying changes.
+
+**command-no-embedded-standards**: No standards blocks in commands; standards belong in skills.
+
+## Skill Rules
+
+**skill-enforcement-block-required**: Script-bearing skills need an `## Enforcement` block.
+
+**skill-naming-noun-suffix**: Skill directory names must not end with a reserved noun suffix (`-executor`/`-executors`, `-manager`/`-managers`, `-runner`/`-runners`, `-handler`/`-handlers`, `-orchestrator`/`-orchestrators`). These suffixes are reserved for spawnable marketplace agents. Skills must use verb-first names (e.g. `execute-task` instead of `task-executor`). See `pm-plugin-development:plugin-architecture` `references/skill-design.md` "Skill Naming Convention" for the full rationale. Detection runs during skill structure analysis.
+
+**skill-resolver-gap** (severity: warning): Flags skill `SKILL.md` and `standards/*.md` prose containing LLM-Glob discovery patterns (`Use Glob:`, `Glob pattern:`, `Discover ... using Glob`, `find ... using Glob patterns`) without an adjacent `python3 .plan/execute-script.py` invocation within the next 5 lines. Scope: `marketplace/bundles/*/skills/*/SKILL.md` and `marketplace/bundles/*/skills/*/standards/*.md`.
+
+- **Rationale**: Skills that direct an LLM to perform discovery via `Glob`/`Grep` when a canonical resolver script already exists for that domain re-introduce the resolver-gap anti-pattern: the LLM hand-rolls discovery logic that should live in a deterministic script, and successive runs drift in coverage and ordering. Concrete drift incident: prose like "Use Glob: marketplace/bundles/*/skills/*/SKILL.md" appearing without a follow-up `execute-script.py` call to a resolver — a human-reader copies the suggestion and produces non-deterministic results compared to the resolver's output.
+- **Discovery approach**: Line-by-line regex scan over markdown content. For each match of an LLM-Glob trigger phrase, the analyzer inspects the next ≤5 lines for `python3 .plan/execute-script.py`. If absent, a `skill-resolver-gap` finding is emitted with the line of the prose match. Pure static analysis — no script execution, no imports.
+- **Fix**: Replace the LLM-Glob prose with a `python3 .plan/execute-script.py {bundle}:{skill}:{script}` invocation that delegates discovery to a canonical resolver. If no resolver exists yet, add one before relying on Glob from prose.
+- **Exemptions**: Suppress via the declarative suppression substrate (see [Declarative Suppression Substrate](#declarative-suppression-substrate)). Disable file-wide via the per-file frontmatter key `plugin-doctor-disable: [skill-resolver-gap]` (Granularity-3), or path-scoped via project / shipped-default config (Granularity-2 / Granularity-1). Use sparingly — only when prose deliberately documents an LLM-driven discovery for which no resolver is appropriate (debugging instructions or single-shot diagnostics).
+
+**skill-missing-mode** (severity: error, fixable: false): Flags any skill `SKILL.md` whose YAML frontmatter omits the `mode:` archetype field, or declares a `mode:` value outside the closed enum `{knowledge, workflow, script-executor, manifest}`. The `mode:` field is the sole source of truth for the skill's execution archetype — it replaces the prose `**REFERENCE MODE**` line and the Enforcement-block `**Execution mode**:` line skills previously carried. Scope: `marketplace/bundles/*/skills/*/SKILL.md` plus the project-local `.claude/skills/*/SKILL.md` tree. Findings carry `details.reason` (`mode_missing` or `mode_invalid`), `details.valid_modes` (the enum), and — for the invalid case — `details.declared_mode` (the offending value).
+
+- **Rationale**: The enum value taxonomy and its per-value semantics are owned authoritatively by `pm-plugin-development:plugin-architecture` `references/frontmatter-standards.md` § "mode (required)"; this presence rule checks only that every skill declares a value in the enum. A skill with no `mode:` (or a typo'd value) is unclassifiable by the archetype-aware `persona-plan-marshall-agent` compliance rule, so the runtime signal silently degrades.
+- **Discovery approach**: Pure static analysis mirroring `recipe-missing-implements` (`_analyze_frontmatter.py`) — leading `---`-fenced frontmatter is parsed line-by-line into a flat scalar map, and the `mode` value is checked against the enum membership set. Stdlib-only, no subprocess, no imports of target scripts, no file mutation. Implemented in `_analyze_skill_mode.py::analyze_skill_mode`. Wired into `cmd_quality_gate` (build-failing) and registered in the zero-match-rule corpus (`_analyze_zero_match_rule.py`).
+- **Fix**: Add a `mode:` line to the skill's frontmatter (after `user-invocable:`) with the value matching the skill's archetype: `knowledge` for reference/standards skills, `workflow` for step-procedure / wizard / phase skills, `script-executor` for executor-driven analyzer/library suites, `manifest` for extension manifests.
+- **Exemptions**: None — every skill `SKILL.md` is expected to declare a valid `mode:` value.
+
+**persona-profile-uniqueness** (severity: error, fixable: false): Flags any two persona skills (`implements: persona`) that declare the same **primary** identity profile — the **first** entry of the `profiles:` frontmatter list. In the persona / ref / profile identity model, phase-4-plan reverse-looks-up a task's persona by matching that primary profile, so the persona↔primary-profile binding must be unique. Meta/evaluator personas that omit `profiles:` own no primary work-activity profile and are exempt. Scope: `marketplace/bundles/*/skills/*/SKILL.md`. The finding attaches to the later-sorted colliding file (the first-declared owner is treated as canonical) and carries `details.primary_profile` (the duplicated profile) and `details.conflicting_skill` (the persona that first claimed it).
+
+- **Rationale**: A duplicated primary profile makes the phase-4-plan persona reverse-lookup ambiguous — two personas would both claim the same task profile, so skill augmentation becomes non-deterministic. Enforcing uniqueness keeps the binding a function from profile to persona.
+- **Discovery approach**: Pure static analysis mirroring `skill-missing-mode` (`_analyze_skill_mode.py`) — leading `---`-fenced frontmatter is parsed line-by-line, `implements: persona` gates the skill, and the `profiles:` list (inline-flow or block form) is parsed exactly as `manage_personas._parse_yaml_list` does. Stdlib-only, no subprocess, no imports of target scripts, no file mutation. Implemented in `_analyze_persona_profile_uniqueness.py::analyze_persona_profile_uniqueness`. Wired into `cmd_quality_gate` (build-failing).
+- **Fix**: Give the colliding persona a distinct primary (first) `profiles:` entry, or remove the duplicate binding so each work-activity profile is owned by exactly one persona.
+- **Exemptions**: Meta/evaluator personas (those that omit `profiles:`) are inherently exempt — they declare no primary profile.
+
+**persona-binding-resolves** (severity: error, fixable: false): Flags any persona that declares a `profiles:` binding but whose composition DAG does not resolve — a missing composed `persona-*` (the resolver's `composed_persona_not_found`) or a composition cycle (`composition_cycle`). A profile-declaring persona is a dispatch target phase-4-plan resolves via `manage-personas resolve`; the binding must be backed by a resolvable persona so the resolver returns a non-empty `skills[]` (which always includes the base `persona-plan-marshall-agent`) rather than an error. Scope: `marketplace/bundles/*/skills/*/SKILL.md`. The finding carries `details.persona_key`, `details.profiles` (the declared binding), and `details.resolve_error` (`composition_cycle` or `composed_persona_not_found`).
+
+- **Rationale**: A persona that declares `profiles:` advertises a profile→persona binding phase-4-plan relies on. If the persona's composition DAG is broken, resolving it raises an error and the task's skill augmentation silently degrades — the advertised binding is a dead end.
+- **Discovery approach**: Pure static analysis. The analyzer mirrors the resolver's DAG walk (`manage_personas._flatten`) over the same on-disk frontmatter — following only `persona-*` composition edges, detecting cycles and missing composed personas — without importing the target script or shelling out. A clean walk is equivalent to a successful `resolve` call (the base is always added, so non-empty is guaranteed once the walk succeeds). Stdlib-only, no subprocess, no file mutation. Implemented in `_analyze_persona_binding_resolves.py::analyze_persona_binding_resolves`. Wired into `cmd_quality_gate` (build-failing).
+- **Fix**: Repair the broken composition edge — add the missing composed persona, correct its `bundle:skill` notation, or break the composition cycle.
+- **Exemptions**: Meta/evaluator personas that omit `profiles:` are not dispatch targets and are out of scope.
+
+**askuserquestion-prompt-quality** (severity: warning, fixable: false): Flags an `AskUserQuestion:` **invocation block** whose preamble or options violate one of the three mechanically checkable authoring obligations in `pm-plugin-development:plugin-architecture` [`references/askuserquestion-patterns.md`](../../plugin-architecture/references/askuserquestion-patterns.md). Scope: `marketplace/bundles/*/skills/**/*.md`. Registered on the **analyze** (authoring-time) surface only — deliberately absent from `quality-gate`, whose status derivation (`'fail' if all_issues else 'pass'`) is severity-blind, so a default-on rule with a standing finding count over the whole `AskUserQuestion:` corpus would turn the tree red.
+
+- **Two checks, and only two**: **check A — preamble/option vocabulary** (obligations 5 and 2) flags a `question:` preamble, or an option `label` / `description`, carrying a workflow step-number token (`Step 4`, `Step 4b`), a tool-API type name, or an internal-mechanics noun. **check B — option missing consequence** (obligation 1) flags an option entry that declares a `label` with no `description` sub-key, or whose `description` only restates its `label` (normalised equality after lower-casing and punctuation stripping).
+- **What this rule does not check**: obligation **3** (the recommended option is marked and ordered first) and obligation **4** (the question names what the system already knows and why it still needs the user) are **declared blind spots** — they are not evaluated, and no approximation is attempted, because both require judging whether a recommendation is correct and whether context is sufficient rather than testing a token-level property. A clean run of this rule therefore does **not** certify a conformant prompt. The same statement is carried by the analyzer's module docstring and by the obligations document's **What this document does not enforce** section.
+- **Discovery approach**: Pure static analysis, stdlib-only, no subprocess, no imports of target scripts, no file mutation. The invocation-block recognizer is the sibling `askuserquestion-in-dispatched-workflow` recognizer unchanged — a line that is exactly `AskUserQuestion:` immediately introducing a `questions:` / `question:` / `options:` sub-key — so a prose mention of the tool is never examined and a bare header with no block body is not an invocation. Both check-A token sets are small, literal, module-level frozensets rather than a general "internal noun" classifier. Implemented in `_analyze_askuserquestion_prompt_quality.py::analyze_askuserquestion_prompt_quality`.
+- **Fix**: Rewrite the flagged preamble or option in terms of the reader's own work: state what choosing the option does, and drop the step number, tool-API type name, or internal noun. The obligations document carries a BAD/GOOD pair per obligation plus the worked `api-sheriff` negative example and its conformant rewrite.
+- **Exemptions**: None. The declarative suppression substrate does not reach this rule — `doctor-marketplace.py::filter_suppressed_findings` is gated on `_SUPPRESSIBLE_RULE_IDS`, of which this rule is not a member, and the analyzer never consults the substrate itself.
+
+## Script Rules
+
+**argparse_safety** (severity: error): Flags every `argparse.ArgumentParser(...)` constructor call and every `subparsers.add_parser(...)` call in marketplace Python scripts that does not pass `allow_abbrev=False`. Scope: files under `marketplace/bundles/*/skills/*/scripts/` and `marketplace/targets/**/*.py`. Tests are exempt (files under `test/`/`tests/` directories or named `test_*.py` / `*_test.py`).
+
+- **Rationale**: Without `allow_abbrev=False`, argparse matches unknown long options by unique prefix. When a flag is renamed or retired, old callers keep working silently via prefix binding — the contract rot is invisible until something behaves wrong under a rename.
+- **Fix**: Add `allow_abbrev=False` to the constructor or `add_parser(...)` call. The rule is a lightweight AST walk (no parser execution); it flags the exact line and call name (`ArgumentParser` or `add_parser`).
+- **Exemptions**: Test files may intentionally exercise argparse default behavior and are excluded from the scan.
+
+## Simplification Rules
+
+The `SIMPLICITY_*` rule cluster is the mechanical enforcement layer for the "minimum viable code" posture defined in `plan-marshall:ref-code-quality` `standards/code-organization.md` [#minimum-viable-code](../../../../plan-marshall/skills/ref-code-quality/standards/code-organization.md). The seven anti-patterns in that section are the source-of-truth definitions; these five rules detect the deterministically-recognisable subset in marketplace bundle scripts. The cognitive judgement calls (the remaining anti-patterns and the non-mechanical instances of these five) are handled by the `default:finalize-step-simplify` phase-6 cognitive pass — the two layers compose, the doctor catching the static patterns and the finalize step reasoning about the rest. No new registered entry-point: the rules run behind the existing `doctor-marketplace analyze` interface, alongside `argparse_safety`.
+
+**Scope**: `marketplace/bundles/*/skills/*/scripts/**/*.py` (test files excluded). **Discovery approach**: one `ast.parse` walk plus a per-line regex pass per script — pure static analysis, no subprocess, no module imports. Implemented in `_analyze_simplicity.py`.
+
+**SIMPLICITY_UNUSED_PARAMETER** (severity: warning, fixable: false): Flags a function whose body discards a declared parameter via `del <param>` (the "preserved for future use" pattern that keeps a signature stable while no code path reads the argument), or a parameter/assignment line tagged with a trailing `# unused` marker.
+
+- **Rationale**: A parameter that no code path reads, kept "because a caller might need it later", is surplus structure. Remove it and add it back against a real caller. Maps to the `#minimum-viable-code` "Unused parameters preserved for future use" bullet.
+- **Fix**: Remove the parameter from the signature and the discarding `del`. Confirm-before-apply (risky) because it changes a public signature — surfaced for human review rather than auto-applied.
+
+**SIMPLICITY_BACKWARD_COMPAT_REEXPORT** (severity: warning, fixable: false): Flags an `import`/`from` line carrying a `# backward compat` or `# re-exported for` comment.
+
+- **Rationale**: A module that exists only to re-export a symbol, with at most one importer, is a shim. Inline the import at the single call site and delete the shim. Maps to the "Thin/backward-compat re-exports with <= 1 live caller" bullet.
+- **Fix**: Inline the import at its call site and delete the re-export. Confirm-before-apply (risky) — requires verifying the live-caller count.
+
+**SIMPLICITY_DEFENSIVE_CATCHALL** (severity: warning, fixable: false): Flags an `except Exception` / `except BaseException` / bare `except` handler tagged `# defensive only` or `# pragma: no cover -- defensive` on the handler header or its first body line.
+
+- **Rationale**: A guard that swallows or re-wraps an exception the caller already handles, or that masks a programming error that should crash loudly, hides failures. Let it propagate. Maps to the "Defensive try/except around already-handled or should-fail-loudly failures" bullet.
+- **Fix**: Remove the handler and let the exception propagate. Confirm-before-apply (risky) — the propagation path must be verified.
+
+**SIMPLICITY_THIN_WRAPPER** (severity: warning, fixable: false): Flags a function whose body (after an optional docstring) is a single `return <call>(...)` forwarding its arguments to one other call.
+
+- **Rationale**: A thin pass-through wrapper adds an indirection layer with no value. Inline it at the call site. Maps to the Over-Abstraction "Utility methods called from only one place" / wrapper-class bullets.
+- **Fix**: Inline the wrapper at its call sites and delete it. Confirm-before-apply (risky) — inlining requires rewriting every caller, which is not a single-file mechanical edit.
+
+**SIMPLICITY_SIGNATURE_DOCSTRING** (severity: warning, fixable: true): Flags a function docstring whose first paragraph only restates `Args:`/`Returns:` structural headers with no intent ("WHY") content.
+
+- **Rationale**: A docstring that names the parameters and return type without adding intent beyond the signature is noise. Delete it or replace it with a rationale. Maps to the "Signature-restating docstrings/comments" bullet.
+- **Fix**: **Safe auto-apply** — the fix handler re-parses the file and deletes every signature-restating docstring node. This is the one mechanically-safe simplification fix: deleting a pure-structural docstring changes no behaviour and no signature.
+- **Exemptions**: Docstrings carrying any prose summary line in their first paragraph (intent content) are not flagged.
+
+## Argument Naming Rules
+
+The `ARGUMENT_NAMING_*` rule cluster cross-checks marketplace prose against the actual argparse surface of the scripts that prose references. The cluster also cross-checks the Canonical Forms table in `marketplace/bundles/plan-marshall/skills/persona-plan-marshall-agent/standards/argument-naming.md` against the same surface. Every rule below emits findings with `severity: error` and `fixable: false`, mirroring the `DISPLAY_DETAIL_*` finding shape used elsewhere in plugin-doctor. Five of the six are drift rules; the sixth, `ARGUMENT_NAMING_SUBSTRATE_ABSENT`, reports that the cluster could not derive an accept-set at all, and when it fires it is the ONLY finding the cluster emits (no drift rule runs without ground truth).
+
+**Root argument**: `analyze_argument_naming` takes the **marketplace** directory — the parent of `bundles/` — not the bundles directory every other analyzer in `_runner.py` takes. It derives its markdown corpus as `{arg}/bundles` and its executor as `{arg}/../.plan/execute-script.py`, so passing the bundles dir resolves the executor to `marketplace/.plan/execute-script.py`, which does not exist. That is not a silent narrowing: it is an absent substrate, and it now surfaces as the `ARGUMENT_NAMING_SUBSTRATE_ABSENT` outcome rather than as an empty finding list.
+
+**Activation**: This cluster is unconditionally active. Multiple recurrences of stale-flag drift in skill workflows drove the move from a gated transitional period to default-on enforcement. Tests exercise the cluster directly against synthetic fixtures.
+
+**Scope**: every `python3 .plan/execute-script.py {notation} ...` token across SKILL.md, agents/*.md, commands/*.md, skills/*/standards/*.md, skills/*/references/*.md, skills/*/recipes/*.md within `marketplace/bundles/*/`. The Canonical Forms cross-check additionally reads the table at `marketplace/bundles/plan-marshall/skills/persona-plan-marshall-agent/standards/argument-naming.md`.
+
+**Discovery approach**: Markdown extraction is pure static analysis — line-by-line regex extraction of executor invocations (notation, subcommand, flags). The accept-set each invocation is checked against is NOT derived by this cluster: it is a thin adapter (`build_script_index` in `_analyze_argument_naming.py`) over the shared, help-derived derivation in [`plan-marshall:script-shared`'s `argparse_surface` module](../../../../plan-marshall/skills/script-shared/scripts/argparse_surface.py) — the single "what does this script accept?" derivation in the tree, shared with the `plan-marshall:tools-script-executor` executor generator so the edit-time rule and the dispatch-time pre-spawn rejection cannot disagree. The mechanism is live `--help`, never an AST walk: the module runs the script with `--help`, then recurses into each discovered verb (`{script} {verb} --help`, and deeper for nested trees), so a parser assembled in an imported module (the `tools-integration-ci:ci` shape) is covered exactly like one built inline, and alias spellings (`manage-tasks get`) are accepted flat because argparse's own choice list carries them. This spawns one `--help` child process per parser node, bounded on the edit-time path by a per-probe timeout and a per-script node cap — the shared total wall-clock deadline is opt-in via the derivation config, and this cluster passes none, so only the executor generator runs under one — cached on two levels (an in-process memo and an on-disk cache under `.plan/temp/plugin-doctor-help-cache/`, keyed by script content hash). The module-private `add_parser` AST walk this cluster used to carry was deleted rather than kept as a fallback — it was blind to `aliases=` and to any parser assembled in an imported module, and a too-small accept-set is strictly more dangerous than no accept-set because it rejects valid calls. Every derivation ambiguity resolves in the direction that widens the accept-set or abandons the node (fail-closed on uncertainty); see the module's own docstring for the four parse anchors and the asymmetric-error rule.
+
+**A usage string is not a call**: the invocation extractor resolves the verb slot with `[a-z][A-Za-z0-9_-]*`, so a line whose positional region holds usage-template syntax (`{type} create`, `permission_doctor {command} {args}`, `profiles [--project-dir | --plan-id] list [--module MODULE]`) names no verb and resolves to `subcommand=None`. Every flag on the line was then judged against the ROOT scope, and a pure subcommand-dispatching script legitimately declares almost nothing there — so each flag read as invented against a line that was never a call. The three flag/verb scanners therefore skip an invocation whose positional region carries `{}`, `<>`, `[]`, `|`, or a literal ellipsis, using the same shapes `manage-invocation-invalid` has always skipped (the two regexes are kept byte-identical, since both rules scan the same corpus and a divergence would make one report what the other correctly skipped). Template syntax inside a flag *value* (`--set k={worktree_path}`) is deliberately NOT covered — those invocations keep full validation. ⛔ The cause is NOT a derived accept-set that came back empty for a script that declares flags: `permission_doctor` and `profiles` were probed live and genuinely declare no root long flags beyond the two-state `--project-dir` / `--plan-id` pair, so the derived surface was correct and the extractor was wrong. A skipped site is COUNTED as a `blind_spot` rather than dropped silently — it is an enumerated invocation the cluster looked at and drew no verdict about, and a skip that did not raise the figure would shrink the corpus quietly.
+
+**Published coverage figures**: the cluster's runner summary carries **two** additive keys, both derived by `analyze_argument_naming_with_population` in the same pass the findings come from — never by a second derivation that could disagree with it. `population_size` is every executor invocation the markdown corpus carries; enumerating it consults no registry, because the corpus is what the cluster looks at while the registry is only the authority it judges what it saw against. `blind_spots` is the part of that population no verdict could be drawn about: a templated positional region that names no concrete verb (see "A usage string is not a call" above), a registered notation whose `--help` surface was dropped fail-closed by `build_script_index`, an unconfident verb listing that makes absence no evidence, or an underived (`None`) flag surface on the scope the invocation addresses. A notation ABSENT from the registry is **not** a blind spot — it is decided, and reported as `ARGUMENT_NAMING_NOTATION_INVALID`; counting it would file the cluster's loudest verdict as a gap. Both figures are whole-tree and are never narrowed by a `--paths`-scoped run, matching the `population_size` contract `canonical-enum-choices-drift` and `shim-marker-missing` already publish. Without them a clean gate reports `findings: 0` over a corpus the reader is told nothing about, and the git-ignored substrate makes "judged nothing" a state a checkout can genuinely be in.
+
+**ARGUMENT_NAMING_SUBSTRATE_ABSENT** (severity: error, fixable: false): Emitted when the notation registry the whole cluster judges against could not be derived, so no invocation in the corpus was examined. The finding carries the `could_not_look` outcome — the third state, distinct from both pass and fail, that `_plugin_pin_trap.py` models for its own three stores. `details` carries `outcome` (`could_not_look`), `reason`, `substrate` (the executor path that was tried), `population_size` and `blind_spots` (equal on this path — the corpus IS enumerated, and every site in it went undecided), `markdown_targets` (the same corpus counted in files rather than invocations), and `remedy`. The equality is the report: a cluster that enumerated 2800 sites and ruled on none of them is saying something a zero cannot.
+
+- **Rationale**: The accept-set is derived from the generated executor at `.plan/execute-script.py`, and that path is **git-ignored** — a fresh clone carries none. The cluster used to answer an unreadable or empty registry with an empty finding list, which is byte-identical to the answer it gives a corpus it read in full and found clean. A gate cannot tell those apart, so the absent-substrate case read as a pass over hundreds of unexamined markdown files. Publishing `markdown_targets` alongside the outcome is what makes the difference legible: the corpus size is stated, and the fact that none of it was judged is stated with it.
+- **Three reasons, kept distinct** (`details.reason`): `executor_absent` (the executor path does not exist — bootstrap the checkout), `executor_unreadable` (the path exists but could not be read or decoded — repair the file), and `registry_empty` (the executor was read but its `SCRIPTS` literal registers no notation — regenerate it). An executor that is present and registers nothing is a different defect from one that is not there at all; collapsing the three would file a demonstrated defect as a missing file.
+- **Discovery approach**: `read_notation_registry` returns the parsed notation set together with the state that produced it, and `analyze_argument_naming` emits this finding instead of running the drift rules when that state is not `present`. `FileNotFoundError` is caught before its `OSError` base so the absent and unreadable cases stay separable. Pure static analysis, stdlib-only, no subprocess.
+- **Anchoring**: the finding is anchored at the **bundles root**, so `cmd_quality_gate`'s `_finding_is_tree_wide` bypass keeps it under a `--paths`-scoped run. A file-anchored guard would be dropped by the scope filter — the same anchoring the `thinking-directive-in-workflow-doc` and `shim-marker-missing` anti-vacuity guards use.
+- **Fix**: Regenerate the executor with `/marshall-steward`. When the gate is deliberately run from a tree that has no executor, read the outcome as "this cluster could not report on this tree" — never as a clean one.
+- **Exemptions**: None. Suppressing this finding restores exactly the false-clean it exists to prevent.
+
+**ARGUMENT_NAMING_NOTATION_INVALID** (severity: error): Flags `python3 .plan/execute-script.py {notation}` tokens whose 3-part `{bundle}:{skill}:{script}` notation is not present in the executor's embedded `SCRIPTS` dict. The finding `details.reason` distinguishes three failure modes: `snake_case_not_registered` (the notation contains underscores where the registry expects kebab-case), `third_segment_repeats_second` (the script segment exactly repeats the skill segment, e.g. `manage-providers:manage-providers`), and `not_registered` (the notation does not appear in the registry for any other reason). The `details.notation` field carries the offending notation verbatim.
+
+- **Rationale**: A mistyped notation routes through `.plan/execute-script.py` to a missing entry; the executor errors out at the caller's site, but no static check has caught the drift earlier. The cluster moves the failure forward to plugin-doctor time so reviewers see the issue before merge.
+- **Fix**: Update the prose to use a registered notation. Run `/marshall-steward` after bundle changes to regenerate the executor with updated mappings.
+- **Exemptions**: None — every executor invocation in marketplace prose is expected to resolve.
+
+**ARGUMENT_NAMING_SUBCOMMAND_UNKNOWN** (severity: error): Flags `python3 .plan/execute-script.py {notation} {sub}` tokens where `{sub}` is not a registered subcommand on the resolved script. The cluster checks `{sub}` against the shared derived surface's known top-level spellings — canonical names AND alias spellings alike, exactly as argparse's own choice list renders them — and reports any `{sub}` absent from that set. The `details.known_subcommands` field lists the known subcommands, and `details.subcommand` carries the offending token.
+
+- **Rationale**: Prose drift lets workflow instructions reference subcommands the script never exposed (e.g., the historical `manage-references list` and `manage-status get-plan-dir` patterns). A reader who copies the command hits an argparse error at runtime; the cluster catches the drift statically.
+- **Fix**: Update the prose to use a registered subcommand, or add the missing subcommand to the script's argparse tree.
+- **Exemptions**: Scripts that declare no subparsers are skipped — any token following the notation is a positional argument, not a subcommand. Scripts whose surface cannot be confidently derived (the `--help` probe fails, times out, or renders no recognisable argparse structure) are skipped silently; the notation rule reports the missing script when applicable.
+
+**ARGUMENT_NAMING_FLAG_UNKNOWN** (severity: error): Flags `--{flag}` tokens following a notation+sub pair when `{flag}` is absent from the ACCEPTANCE surface for the resolved (notation, subcommand) pair — the subcommand's whole subtree, unioned with the root parser's own flags, unioned with the executor/router accept-set. The union is deliberate OVER-APPROXIMATION, not a claim about argparse: argparse does NOT honour a root-declared flag after the verb — the subparser owns everything from the verb onward and rejects it. Widening exists so this rule cannot manufacture an invented-flag finding out of a scope question; WHERE such a flag belongs is answered by `ARGUMENT_NAMING_ROUTER_FLAG_MISPLACED` against the subcommand's own declared flags. The `details.known_flags` field lists the known long flags, and `details.flag` carries the offending name. Flag sensitivity here is deliberately lower than an exact `add_argument` declaration set: the shared derivation over-approximates a node's flags (every `--long-token` anywhere in that node's `--help` output, widened further by the subtree union), so a flag declared two levels down validates a top-level invocation too. That is a real, deliberate widening — fewer findings, never a false finding — not the exact-declaration boundary this rule checked before the surface consolidation.
+
+- **The argparse table is not the layer that accepts**: some flags are consumed by the **executor / router layer that runs BEFORE the target script's argparse ever sees argv**, so they are declared by no node's `--help` and yet every documented call carrying them works. `--audit-plan-id` is the canonical case: verified live across all eight scripts whose prose documents it, every one ACCEPTS it, every one REJECTS an arbitrary unknown flag, and none DECLARES it in `--help`. Router-consumed `--project-dir` on `plan-marshall:tools-integration-ci:ci` (stripped by `extract_project_dir` ahead of argparse) is the same species. The accept-set for that layer is NOT re-derived here — it is `argparse_surface.UNIVERSAL_FLAGS`, the single definition the executor's own pre-spawn validator mirrors and the sibling `manage-invocation-invalid` rule already imports, so all three guards agree about what a script accepts. It is unioned into the ACCEPTANCE surface (`_ScriptEntry.subcommands` values and `_ScriptEntry.root_accept_flags`) and deliberately NOT into `root_flags` / `subcommand_own_flags`, which are the placement authority — see the exemption note on `ARGUMENT_NAMING_ROUTER_FLAG_MISPLACED` below.
+- **Rationale**: Renaming or retiring a flag while leaving prose unchanged silently breaks instructions. Concrete drift incidents: `--content-stdin`, `--field`, `--limit`, and `--json` references in prose where the script declared none of them. The cluster moves these failures from runtime to review time.
+- **Fix**: Update the prose to use a declared flag, or add the missing flag to the script's `add_argument` declarations.
+- **Exemptions**: Short flags (`-f`) are not subject to canonical-forms convention and are excluded from the scan. Flags on a script whose derived surface has no entry for the resolved (notation, subcommand) pair are skipped silently — the notation rule reports the missing script when applicable. Members of `UNIVERSAL_FLAGS` are accepted on every scope of every script, per the paragraph above.
+
+**ARGUMENT_NAMING_ROUTER_FLAG_MISPLACED** (severity: error): Flags a documented invocation that writes a ROOT-declared flag AFTER the verb it does not belong to. Argparse gives the subparser everything from the verb onward, so a root flag written there is rejected at parse time with `unrecognized arguments` — a message naming the flag while reading as "this flag does not exist". The sibling `ARGUMENT_NAMING_FLAG_UNKNOWN` rule structurally CANNOT see this: it judges against the accept-set widened with the root's own flags, and widening only ever ADDS flags, so a root flag is in every subcommand's set by construction. This rule asks the placement question instead, against `_ScriptEntry.subcommand_own_flags` — the subcommand's own declared flags, without the widening. `details` carries `flag`, `subcommand`, `root_flags` and `subcommand_flags`, and the description names the pre-verb position as the fix. Fail-closed: an unconfident root flag surface or an unconfident subcommand surface emits nothing, since a placement claim over an underived surface is the false finding the widening exists to prevent.
+
+- **`UNIVERSAL_FLAGS` is deliberately NOT exempted here.** That set is the ACCEPTANCE surface ("does this flag exist?"), and its four members do not share one placement behaviour: `--audit-plan-id` is consumed by the executor before the script's argparse runs, so it is stripped wherever it was written and no position is wrong (`architecture which-module --path P --audit-plan-id X` is accepted with the flag after the verb), while `--plan-id` / `--project-dir` are on many scripts ordinary `add_argument` declarations on the ROOT parser, which argparse rejects after the verb (`architecture which-module --path P --plan-id X` exits 2 with `unrecognized arguments`, and the executor's own note tells the author to move it ahead of the verb). A global exemption would silence the verb-scoped and router-scoped `--plan-id` / `--project-dir` recurrence signatures this rule exists to catch. The `flag not in root_flags` test is the discriminator instead, and it is PER-SCRIPT rather than per-flag: a flag the router consumes ahead of argparse appears in no node's `--help`, so it is absent from `root_flags` and skipped automatically (the `tools-integration-ci:ci` `--project-dir` shape, consumed by `extract_project_dir` before dispatch), while a flag argparse really declares on the root is judged. One test separates both cases on every script with no global list to maintain.
+
+**ARGUMENT_NAMING_CANONICAL_FORMS_DRIFT** (severity: error): Cross-checks every row of the Canonical Forms table at `marketplace/bundles/plan-marshall/skills/persona-plan-marshall-agent/standards/argument-naming.md` against the derived surface of the script the row prescribes. The cluster parses each row's `{script} {sub} --{flag1} {value1} --{flag2} ...` shape, resolves the `{script}` shorthand to a registered notation (matching on either the third segment of the notation or the second when the script shares its skill name), and confirms that `{sub}` is a known subcommand on that script's derived surface and every `--{flag}` is present in that subcommand's derived flag set. Failure modes carried in `details.reason`: `shorthand_unresolved`, `subcommand_drift`, `flag_drift`.
+
+- **Rationale**: The Canonical Forms table is the documented contract for argument naming across `manage-*` scripts. If the table prescribes a spelling the argparse declarations no longer honor, every author who consults the table for guidance writes broken prose. The cross-check guarantees the table stays in sync with the implementations it governs.
+- **Fix**: Update either the Canonical Forms row or the argparse declaration so the two agree. When the table is correct and the script lags, rename the argparse flag; when the script is correct and the table lags, update the row.
+- **Exemptions**: None within the table's scope. Rows whose `{script}` shorthand resolves to multiple registered notations are reported with `reason: shorthand_unresolved` so the table can be tightened to use the full bundle:skill:script form when ambiguity arises.
+
+**manage-findings-invocation-invalid** (severity: error): Catches three canonical invalid spellings of the `plan-marshall:manage-findings:manage-findings` notation and its argparse tree that have surfaced as LLM hallucinations at runtime: (1) **script-position underscore** — `plan-marshall:manage-findings:manage_findings` (snake_case where the executor registry uses kebab-case); (2) **invalid top-level subcommand** — any token other than the registered `add, list, get, resolve, promote, qgate, assessment`; the historically recurring invented form is `list-qgate`; (3) **invalid `qgate` sub-verb** — any sub-verb other than the registered `add, list, resolve, clear`; the recurring legacy form is `qgate query` (the canonical verb is `list`). The rule also catches invalid `assessment` sub-verbs as defence in depth. Findings carry `details.canonical_hint` with the closest correct spelling.
+
+- **Discovery approach**: Pure static analysis — line-anchored regex extraction of `plan-marshall:manage-findings:*` notation tokens from skill markdown bodies (`SKILL.md`, `standards/*.md`, `references/*.md`, `workflow/*.md`, `recipes/*.md`). The registered argparse tree (`add, list, get, resolve, promote, qgate, assessment` top-level; `add, list, resolve, clear` under `qgate`; `add, list, get, clear` under `assessment`) is baked into the analyzer as the source-of-truth constant; the rule does not import `manage-findings.py` or subprocess-execute the script. Mirrors `_analyze_argument_naming.py` and `_analyze_verb_chains.py` patterns. No `did-you-mean` runtime changes to `manage-findings.py`.
+- **Fix**: Update the prose to use the canonical-form hint emitted in the finding payload. For `list-qgate`, use `qgate list --plan-id {plan_id} --phase {phase}`. For `qgate query`, use `qgate list --plan-id {plan_id} --phase {phase}`. For snake_case script position, replace `manage_findings` with `manage-findings` in the third notation segment.
+- **Rationale**: Three invalid `manage-findings` invocation shapes surfaced as LLM hallucinations at runtime, producing silent argparse rejections that the calling workflow swallowed. Grepping `marketplace/bundles/` for these shapes returns zero matches at source time — the failure mode is recurrence-prone LLM drift, not source drift. Catching the shapes at edit time via plugin-doctor moves the structural guard from runtime to review time, in the same spirit as the `ARGUMENT_NAMING_*` cluster.
+- **Exemptions**: None — every `plan-marshall:manage-findings:*` invocation in skill markdown is expected to resolve to a registered notation, subcommand, and sub-verb. The rule is gated on the `manage-findings-invocation-invalid` opt-in token in `active_rules` (mirroring the `verb_chain` opt-in semantics), so it only runs when the caller explicitly requests it.
+
+**manage-invocation-invalid** (severity: error): Generalization of the `manage-findings-invocation-invalid` rule across every script-bearing skill in the marketplace. The in-scope set is derived at scan time by walking the bundle tree — each skill that registers an argparse CLI entry-point invoked via 3-part `bundle:skill:script` executor notation is covered, keyed off the on-disk path (`{bundle}:{skill}:{script_stem}`) rather than any filename==skill assumption (e.g. `plan-marshall:plan-doctor:plan_doctor`, `plan-marshall:extension-api:extension_discovery`). The derivation excludes `_`-prefixed helper modules, shared-only helper skills (`script-shared`, `tools-file-ops`, `tools-input-validation`), non-entry-point reference skills (`ref-toon-format`, `platform-runtime`), and `manage-findings` (covered by its own dedicated analyzer). For each invocation found in skill markdown, the analyzer extracts the `(subcommand, sub_verb, flags)` tuple and validates it against the script's canonical argparse tree built at scan time. Four failure modes are reported independently, each with `details.canonical_hint` carrying the closest correct form: (1) unknown top-level subcommand (`details.reason: subcommand_unknown`); (2) unknown sub-verb under a subcommand that declares its own subparser (`details.reason: sub_verb_unknown`); (3) unknown long flag `--{flag}` under the resolved leaf parser (`details.reason: flag_unknown`); (4) missing required flag declared by the resolved leaf parser (`details.reason: required_flag_missing`).
+
+- **Discovery approach**: The in-scope set is auto-derived by `discover_in_scope_scripts`, which walks `bundles/{bundle}/skills/{skill}/scripts/*.py`, drops `_`-prefixed and excluded-skill scripts, and keeps a candidate whose source text contains an `ArgumentParser`/`argparse` marker — a substring check, not an AST walk; any script referencing either name is assumed to publish a CLI surface. Each in-scope script's canonical tree is then derived from its live `--help` output via the shared, help-derived `argparse_surface` module — the same derivation and the same one-`--help`-subprocess-per-parser-node mechanism the `ARGUMENT_NAMING_*` cluster uses (see that cluster's Discovery approach above for the mechanism, the asymmetric-error rule, and the fail-closed-on-uncertainty invariant); this rule no longer owns a surface derivation of its own. The markdown scan is line-anchored regex extraction of `python3 .plan/execute-script.py {bundle}:{skill}:{script}` invocations from `SKILL.md`, `standards/*.md`, `references/*.md`, `workflow/*.md`, and `recipes/*.md`. Each occurrence is tokenized into positional + flag args and cross-checked against the derived surface. Mirrors the `_analyze_argument_naming.py` and `_analyze_manage_findings_invocation.py` precedents for the markdown side. The implementation lives in `_analyze_manage_invocation.py` (analyzer module) — see the canonical-block convention published in each in-scope SKILL.md's `## Canonical invocations` section for the authoritative spelling reference. The cluster runs unconditionally under `cmd_quality_gate` (build-failing) and `cmd_analyze`.
+- **Fix**: Update the markdown invocation to match the script's canonical argparse surface. The finding's `details.canonical_hint` names the closest correct subcommand / sub-verb / flag spelling; the corresponding `## Canonical invocations` section in the script's owning SKILL.md is the full reference.
+- **Rationale**: Argparse-surface drift in LLM-authored prose is a recurring failure mode that produces silent `exit_code: 2` rejections at runtime. The `manage-findings-invocation-invalid` rule covers one script; this rule generalizes the same structural guard across every script-bearing skill in the marketplace and runs as a build-failing `quality-gate` regression net. Catching token-tree mismatches at edit time moves a class of runtime argparse rejections to review time.
+- **Exemptions**: The in-scope set auto-derives from the bundle tree — new script-bearing skills are covered automatically as they land, with no whitelist edit required. Excluded from derivation: `_`-prefixed helper modules, shared-only helper skills (`script-shared`, `tools-file-ops`, `tools-input-validation`), non-entry-point reference skills (`ref-toon-format`, `platform-runtime`), and `manage-findings` (covered by its own dedicated analyzer). Scripts whose surface cannot be confidently derived (the `--help` probe fails, times out, or renders no recognisable argparse structure) are dropped from the index silently; the notation-validity rule (`ARGUMENT_NAMING_*` cluster) reports the missing-script case independently.
+
+**missing-canonical-block** (severity: warning, build-failing under quality-gate): Emitted when a script-bearing SKILL.md lacks a `## Canonical invocations` section. The in-scope set is auto-derived from the bundle tree (every skill that registers an argparse CLI entry-point invoked via 3-part notation). The section is the documented source-of-truth authoring contract: it carries one `### {subcommand}` heading per registered top-level subcommand with a fenced bash block showing the canonical invocation shape (positional sub-verbs + required flags + optional flags). Authors consult the block when writing prose that invokes the script, and Rule-2 xrefs resolve against it; missing it leaves authors with no in-skill reference and leaves xrefs unresolvable. Findings carry `details.notation` (the in-scope notation triple owned by the skill) and `details.canonical_hint` (the relative path to repair).
+
+- **Discovery approach**: Pure regex scan — search each in-scope SKILL.md for `^##\s+Canonical\s+invocations\s*$` (case-insensitive). Absence emits one finding per skill directory (deduplicated when multiple notation triples share the same owning skill). The finding payload carries severity `warning`, but the rule runs inside `cmd_quality_gate`, so any finding fails the build — a script-bearing skill that ships without its Canonical-invocations section breaks the gate.
+- **Fix**: Add a `## Canonical invocations` section to the named SKILL.md, with one `### {subcommand}` subsection per registered top-level subcommand. Each subsection contains a fenced bash block showing the canonical invocation shape. See `marketplace/bundles/plan-marshall/skills/manage-status/SKILL.md` for the reference layout.
+- **Rationale**: The canonical-block convention is the in-skill mirror of the `manage-invocation-invalid` rule above. The rule machine-validates markdown invocations against the script's derived argparse surface; the canonical block gives human authors the same view in the spelling they will write, and is the source-of-truth a Rule-2 xref points at. Together they close the drift surface from both ends. Wiring the rule into the build gate enforces that every script-bearing skill publishes the section.
+- **Exemptions**: The in-scope set auto-derives from the bundle tree — new script-bearing skills are checked automatically as they land, with no whitelist edit required. Excluded from derivation: `_`-prefixed helper modules, shared-only helper skills (`script-shared`, `tools-file-ops`, `tools-input-validation`), non-entry-point reference skills (`ref-toon-format`, `platform-runtime`), and `manage-findings` (covered by its own dedicated analyzer).
+
+## Content Rules
+
+**checklist-pattern**: Checkbox patterns (`- [ ]`, `- [x]`) in LLM-consumed files. These are human UI elements with zero value for LLMs. Exception: files in `/templates/` directories (rendered by GitHub).
+
+**thinking-directive-in-workflow-doc** (severity: error, fixable: false): Flags an in-prose directive that instructs the model to adopt a reasoning *level* or to narrate a reasoning *process* inside a dispatched workflow doc — the population of markdown reachable as an `execution-context-{level}` `workflow:` target. Scope: the DERIVED population — every `SKILL.md` and `workflow/*.md` under `marketplace/bundles/*/skills/*/` whose `implements:` frontmatter declares `plan-marshall:extension-api/standards/ext-point-execution-context-workflow` (scalar or block-sequence form). Findings carry `details.family` (the matched pattern family) and `details.population_size` (the roster size examined).
+
+- **Rationale**: `plan-marshall:agents/execution-context.md` states the contract outright — model and effort are NOT prompt-body fields; they are pinned by the variant filename (`execution-context-{level}.md`) the caller dispatched against. A doc reached only through such a dispatch runs at a level fixed before its first line is read, so a prose directive such as "use **ultrathink** mode" or "use careful step-by-step reasoning" cannot do what it says: it is at best inert and at worst in tension with the pin — the *vacuous guard* archetype (a predicate that can never fire), which this project has reintroduced repeatedly, more than once inside a fix for it.
+- **Discovery approach**: Pure static analysis, mirroring `_analyze_historical_prose_in_skills.py` — regex-driven extraction from markdown source, stdlib-only, no subprocess, no imports of target scripts, no file mutation. The population is derived from each doc's own frontmatter (never a hardcoded path list). Six high-precision families fire (all case-insensitive): `ultrathink` and `extended-thinking` (the two bare-term families, each requiring a directive cue — use/enable/apply/invoke/consider/… — in the same clause, so a descriptive mention is not flagged), `careful-reasoning` ("careful (step-by-step) reasoning/thinking", "reason carefully"), `step-by-step-reasoning` ("step-by-step reasoning", "reason/think step by step"), `think-imperative` ("think carefully/deeply/hard/…"), and `take-your-time`. YAML frontmatter, fenced code blocks (backtick or tilde, three-or-more markers), and inline-code spans are exempt. Implemented in `_analyze_thinking_directive_in_workflow_docs.py::analyze_thinking_directive_in_workflow_docs`; wired into `cmd_quality_gate` (build-failing) and `cmd_analyze`.
+- **False-positive boundary (the load-bearing part)**: descriptive prose about workflow *sequencing* ("Step-by-step workflow for creating a solution outline") is NOT a violation — only a directive about the model's own reasoning is. The cognition noun adjacent to "step by step" is the discriminator: "step-by-step reasoning" fires; "step-by-step workflow/guide/process/analysis" does not. "careful analysis" (a review activity) does not fire; "careful reasoning" does. A detector that fires on procedural prose is a regression, so the negative test cases are as load-bearing as the positive ones.
+- **Anti-vacuity guard**: every finding publishes the `population_size` it examined, and when the ext-point IS defined in the tree (the standard doc exists) but the derived population is empty, the rule emits its own finding — so a clean result can never read as a vacuous pass over an unread population. The finding is anchored at the marketplace root, and `cmd_quality_gate` keeps a root-anchored finding unfiltered (`_finding_is_tree_wide`), so the guard survives a `--paths`-scoped run rather than being dropped by the scope filter.
+- **Fix**: Remove the reasoning-level directive from the workflow doc, preserving every surrounding criteria sentence. The level is governed by which `execution-context-{level}` variant the caller dispatches against, not by prose.
+- **Exemptions**: None — a dispatched workflow doc has no legitimate reason to instruct the model about its own reasoning level, because the level is already pinned before the doc is read.
+
+**shim-marker-missing** (severity: error, fixable: false): Flags a migration / back-compat *version shim* — a read path that accommodates a data shape an earlier version of this tooling wrote and the current version no longer writes — that is unmarked or malformedly marked. The convention (`pm-plugin-development:plugin-script-architecture` `standards/shim-marker-convention.md`) requires every shim to declare an owner, a version floor, and a removal trigger via a `# SHIM(A|B):` marker at its definition site. Scope: the DERIVED population — every `*.py` under `marketplace/bundles/*/skills/*/scripts/`. Findings carry `details.population_size` (scripts scanned).
+
+- **Rationale**: A shim left unmarked carries no owner, no record of *what* old shape it tolerates, and no record of *since when* — so nobody can prove it is safe to delete, and shims accumulate silently. Two finding kinds: `shim_marker_malformed` (a `# SHIM` anchor missing a required field — zero false positives by construction) and `shim_unmarked` (a high-precision shim indicator in a comment not covered by a marker in its enclosing function).
+- **Discovery approach**: Pure static analysis, stdlib-only, no subprocess, no file mutation. Comments are read via `tokenize` (COMMENT tokens only — never docstrings or string literals, so the analyzer's own regex phrases and doc examples never self-trigger) and function spans via `ast`. The population is derived from the script tree (never a hardcoded path list). Implemented in `_analyze_shim_marker.py::analyze_shim_marker`; wired into `cmd_quality_gate` (build-failing) and `cmd_analyze`.
+- **False-positive boundary (the load-bearing part)**: prose vocabulary cannot cleanly separate a shim from defensive code — "legacy", "written before", "backward compatibility", and "pre-dating" all appear in BOTH real shims and non-shims (defensive `None`-handling, CLI/env-var compatibility, external-system variance, and deliberate breaking *refusals* of the old shape). So the indicator set is deliberately NARROW — it favours a false negative over a false positive (a detector that fires on defensive code is a regression). The negative test cases (ordinary `None`-handling; a write-side guard that *rejects* a retired key; a caller that merely *triggers* a migration) are as load-bearing as the positive ones.
+- **Measured recall (what the narrowness costs)**: the trade is published as a number rather than described. Each conforming marker in the real tree is stripped from a copy of its file and the site re-scanned: of **26** conforming marker anchors, **4** still produce a finding once the marker is gone. The other 22 are invisible to the indicator set, because the only shim vocabulary in the file is inside the marker block itself. So the rule's real-tree zero-findings anchor is evidence that *the indicator set fires on nothing in the current tree* — never that every shim is marked, and never that a new unmarked shim would turn it red. The harness is `test_analyze_shim_marker.py::test_measured_recall_over_the_real_marked_population`; re-derive both figures there and here together, since a change to the indicator set is meant to move them visibly.
+- **Anti-vacuity guard**: every finding publishes the `population_size` it examined, and an EMPTY script population over a non-empty bundles tree emits its own finding — so a clean result can never read as a vacuous pass over an unread population. The finding is anchored at the marketplace root, and `cmd_quality_gate` keeps a root-anchored finding unfiltered (`_finding_is_tree_wide`), so the guard survives a `--paths`-scoped run rather than being dropped by the scope filter.
+- **Fix**: Add a conforming `# SHIM(A|B):` marker (owner + version floor + removal trigger) at the shim's definition site, or — if the flagged code is ordinary defensive / CLI / external handling rather than a version shim — reword the comment so it does not read as a shim.
+- **Exemptions**: None at the rule level; the precision-first indicator set is the boundary. Re-export shims are out of scope (governed by `SIMPLICITY_BACKWARD_COMPAT_REEXPORT`).
+
+## Phase-6 Finalize Step Termination
+
+Three rules guard against defective `mark-step-done` invocations inside marketplace skill/agent markdown. They fire on any bash code fence that references `mark-step-done` and inspect the single logical invocation (including backslash-continued continuation lines). Each defect code is emitted independently, so a single malformed invocation may produce multiple findings.
+
+**Rationale**: Phase-6 finalize step termination is a silent-failure surface. A mistyped notation resolves to a non-existent script and is swallowed by the executor; a missing `--phase` routes the termination to the wrong phase record; a missing `--outcome` leaves the step in an ambiguous `in_progress` state even though the workflow believes it completed. Static detection in plugin-doctor is the cheapest way to catch these errors before they ship.
+
+**MARK_STEP_DONE_STALE_NOTATION** (severity: error): The invocation line contains the stale underscored notation `manage-status:manage_status` instead of the canonical kebab-case form `manage-status:manage-status`. The executor uses notation segments as literal keys — the underscored form no longer resolves after the entrypoint-rename cutover. Detection is a substring check on every line of the invocation (including continuation lines, since the notation often lives on the command line itself).
+
+**MARK_STEP_DONE_MISSING_PHASE** (severity: error): The full `mark-step-done` invocation (single line or backslash-continued multi-line) does not contain `--phase`. Without it, the status manager cannot route the step termination to the correct phase record, and finalize-phase orchestration reads stale status.
+
+**MARK_STEP_DONE_MISSING_OUTCOME** (severity: error): The full invocation does not contain `--outcome`. Without an explicit outcome (e.g. `done`, `skipped`, `deferred`), the step cannot be definitively terminated and the phase status entry remains ambiguous.
+
+Canonical form — kebab-case notation with every required flag present:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
+  mark-step-done --plan-id {plan_id} --phase phase-6-finalize --step {step} --outcome done
+```
+
+A violation is any deviation from this shape: the underscored `manage_status` notation (STALE_NOTATION), a dropped `--phase` (MISSING_PHASE), or a dropped `--outcome` (MISSING_OUTCOME).
+
+Detection lives in `_analyze_markdown.py::check_mark_step_done_violations`; findings are surfaced through the standard markdown reporting channel in `_doctor_analysis.py::extract_issues_from_markdown_analysis` with the defect code as the issue `type`.
+
+**finalize-step-token-mismatch** (severity: error, fixable: false): Flags a finalize-step skill whose documented `mark-step-done --step {token}` argument under `--phase 6-finalize` does not match the skill's fully-qualified manifest step_id. The documented token is the key the dispatched finalize step records its terminal outcome under; the manifest declares the SAME step under its canonical step_id. When the documented token drifts away from the manifest step_id, the recording side keys `phase_steps` under the wrong name, the `phase_steps_complete` handshake reports the canonical step missing, and the halt-and-retry recovery loop runs forever. Findings carry `details.documented_token` (the parsed `--step` value) and `details.expected_step_id` (the canonical manifest step_id).
+
+- **Scope**: Two roots are walked. (1) **Bundle finalize-step skills** — `marketplace/bundles/{bundle}/skills/{skill}/SKILL.md` for every `{bundle}:{skill}` bundle-optional finalize-step implementor surfaced by `extension_discovery.find_implementors` (the SOLE finalize-step discovery path; membership is declared via `implements: plan-marshall:extension-api/standards/ext-point-finalize-step` frontmatter); the expected step_id is that discovered reference, i.e. `{bundle}:{skill}`. (2) **Project-local finalize-step skills** — `<repo>/.claude/skills/finalize-step-*/SKILL.md` discovered by glob; the expected step_id is `project:{name}` where `{name}` is the skill directory basename.
+- **Discovery approach**: Pure static analysis, mirroring `_analyze_historical_prose_in_skills.py` and `_analyze_lesson_id_in_skill_prose.py` — regex-driven extraction from markdown source, stdlib-only, no subprocess execution, no imports of target scripts, no file mutation. The `--step` token is parsed from the first `mark-step-done` block that carries both `--phase 6-finalize` and `--step {token}` (order-independent; both `--flag value` space and `--flag=value` equals forms). Skills emitting no `mark-step-done --phase 6-finalize` invocation are silently skipped (no false positive). A finding is emitted only when the parsed token differs from the expected step_id. Implemented in `_analyze_finalize_step_token.py::scan_finalize_step_token`.
+- **Activation**: Runs unconditionally inside `cmd_quality_gate` (build-failing). Findings carry absolute file paths, so `--paths` scoping applies uniformly.
+- **Fix**: Align the documented `mark-step-done --step` token with the skill's manifest step_id named in `details.expected_step_id` — for a bundle finalize-step that is the `{bundle}:{skill}` registry reference, for a project-local step it is `project:finalize-step-{name}` (the full `finalize-step-*` directory basename).
+- **Exemptions**: None — every finalize-step skill that documents a `mark-step-done --phase 6-finalize` invocation is expected to record under its canonical manifest step_id. Skills with no such invocation are out of scope by construction.
+
+**step-configurable-contract** (severity: error, fixable: false): Flags a finalize-step body doc whose `configurable:` frontmatter block is present but malformed. A param-owning finalize step declares its params (`key`, `default`, `description`) in the `---`-fenced YAML frontmatter of its body doc, and `manage-config` / `manage-execution-manifest` consume that declaration as the canonical default/description source for step-owned params. A malformed declaration — a missing required sub-field, a wrong-typed `key`/`description`, an empty `description`, a duplicate `key`, or any block that fails to parse — silently breaks default resolution at runtime. The rule turns the central D1 contract parser's `ValueError` into a build-failing finding. Findings carry `details.parser_error` (the verbatim parser message).
+
+- **Scope**: Two roots are walked at the body-doc granularity the contract parser resolves. (1) **Built-in finalize step docs** — `marketplace/bundles/plan-marshall/skills/phase-6-finalize/{workflow,standards}/*.md`, the body docs that declare built-in (`default:`) finalize-step configurable blocks. (2) **Project-local finalize-step skills** — `<repo>/.claude/skills/finalize-step-*/SKILL.md` discovered by glob.
+- **Discovery approach**: Pure static analysis, mirroring `_analyze_finalize_step_token.py` — no subprocess execution, no file mutation. The declaration schema and validation logic are NOT re-implemented: the analyzer imports the central contract parser `marketplace/bundles/plan-marshall/skills/extension-api/scripts/configurable_contract.py` (the single source of truth — see `extension-api/scripts/configurable_contract.py` for the declaration shape and the per-case `ValueError` messages) and delegates every malformed-declaration decision to its `parse_configurable`. The ownerless-vs-malformed distinction follows the parser's `resolve_step_defaults_optional` semantics: a doc whose frontmatter omits the `configurable:` key is *ownerless* (a legitimate state for a step that owns no params) and is silently skipped (no false positive); a doc that declares the key is parsed, and a `ValueError` becomes a finding anchored at the `configurable:` line. Implemented in `_analyze_step_configurable_contract.py::scan_step_configurable_contract`.
+- **Activation**: Runs unconditionally inside `cmd_quality_gate` (build-failing). Findings carry absolute file paths, so `--paths` scoping applies uniformly.
+- **Fix**: Repair the offending `configurable:` block so it parses cleanly. The `details.parser_error` message names the precise defect (missing sub-field, wrong type, empty description, duplicate key); every entry MUST carry exactly the three mandatory sub-fields `key` (str), `default` (any JSON scalar), and `description` (non-empty str). See `extension-api/scripts/configurable_contract.py` for the canonical declaration shape.
+- **Exemptions**: None for a present-but-malformed block. A body doc that declares no `configurable:` block at all is ownerless and out of scope by construction.
+
+## Pre-merge source-edit pushability
+
+**mutates-source-step-post-merge-order** (class: structural, severity: error, fixable: false): Flags two shapes at or after the merge gate (`default:branch-cleanup`), both under this one rule id. **(1)** A finalize step that declares `mutates_source: true` in its frontmatter yet is ordered at or after the merge gate: its source edits land after the plan's feature branch has been squash-merged, so they cannot be pushed onto that branch, cannot ride the PR, and cannot be CI-covered or reviewed with the rest of the change (finding `type: mutates_source_step_post_merge_order`). **(2)** A finalize step ordered at or after the merge gate that declares NO `mutates_source` key at all: a step in the merge/post-merge band must settle its pushability explicitly in frontmatter, and a silent omission is exactly how a source-mutating step slips past shape (1) without ever making the claim (finding `type: mutates_source_declaration_missing`). Findings carry `details.step_name`, `details.step_order`, and `details.merge_gate_order`, anchored at the step doc's `order:` line.
+
+- **Scope**: every finalize-step doc across the three addressing surfaces owned by the finalize-step extension point — `phase-6-finalize/{workflow,standards}/*.md`, every bundle's `skills/*/SKILL.md`, and the project-local `<repo>/.claude/skills/finalize-step-*/SKILL.md` tree. Membership is declared, not inferred: a doc is in scope only when its frontmatter carries `implements: plan-marshall:extension-api/standards/ext-point-finalize-step` (scalar or block-sequence form).
+- **Structural discriminator**: either (a) the co-presence of a truthy `mutates_source:` frontmatter key and a declared integer `order:` at or above the merge-gate order, or (b) an ABSENT `mutates_source:` key on a step whose declared integer `order:` is at or above the merge-gate order. The merge-gate order is resolved **dynamically** from the discovered `default:branch-cleanup` record rather than a hardcoded literal, so moving the merge gate moves both thresholds with it.
+- **Legitimate-occurrence note**: a step doc that declares no `mutates_source:` key is out of scope **only below the merge gate** — there it makes no source-mutation claim, cannot evade the gate, and is silently skipped without a false positive; at or after the gate the same omission is flagged under shape (2). A source-mutating step ordered anywhere in the settle band (below the merge gate) is the correct shape and is not flagged, and a step below the gate that declares `mutates_source: false` (or omits the key) is likewise clean. When the merge-gate step is not discoverable (a synthetic `tmp_path` marketplace with no phase-6-finalize tree), the rule skips cleanly rather than guessing a threshold.
+- **Discovery approach**: pure static analysis mirroring `_analyze_finalize_step_token.py` — frontmatter parsing driven by the file text alone, stdlib-only, no subprocess, no imports of target scripts, no file mutation. Implemented in `_analyze_mutates_source_order.py::analyze_mutates_source_order`. Runs unconditionally inside `cmd_quality_gate` (build-failing).
+- **Fix**: for shape (1), move the step into the pre-merge settle band (an `order:` below the merge gate), or drop the step's source mutation and its `mutates_source: true` declaration. For shape (2), declare `mutates_source: true` or `false` explicitly on the step (a `true` declaration then also demands the shape-(1) pre-merge placement; a `false` declaration affirms the step edits no tracked source). The ordering contract itself is owned by the central standard — see [source-edit-pushability.md](../../../../plan-marshall/skills/phase-6-finalize/standards/source-edit-pushability.md) and its § "Mutation-settling stage" counterpart in [phase-6-finalize/SKILL.md](../../../../plan-marshall/skills/phase-6-finalize/SKILL.md); it is deliberately not restated here.
+- **Exemptions**: The sole out-of-scope class is a **pre-merge** step (ordered below the merge gate) that omits the `mutates_source:` key — it makes no claim and cannot evade the gate, so it is never flagged. Every step at or after the merge gate is in scope: it must either declare `mutates_source: false` or, if it mutates source, declare `mutates_source: true` AND move into the pre-merge settle band.
+
+## PM-Workflow Rules
+
+**pm-implicit-script-call** (PM-001): Script operations without explicit bash code blocks.
+
+**pm-generic-api-reference** (PM-002): Generic API references instead of specific script notation.
+
+**pm-wrong-plan-parameter** (PM-003): Incorrect plan parameter values in script calls.
+
+**pm-missing-plan-parameter** (PM-004): Missing required plan parameters.
+
+**pm-invalid-contract-path** (PM-005): Invalid contract file path references.
+
+**pm-contract-non-compliance** (PM-006): Contract specification violations.
+
+## Rule Pack: Plugin-doctor lint guards
+
+Forward-looking lint rules.
+
+| Rule ID | Intent | False-positive policy | Suppression |
+|---------|--------|-----------------------|-------------|
+| `shell-active-tokens` | Detect shell-active constructs (backticks in flags, brace expansion, glob wildcards, dollar tokens) in skill standards prose | Four specific token classes; `glob-wildcard` exempt inside fenced blocks and inline code | None — fix the offending prose |
+| `metadata-field-undefined` | Flag backtick snake_case tokens near metadata prose that reference field names not written by any `set-metadata --key` invocation | Heuristic proximity (±3 lines); builtin fields always exempt | Add `set-metadata --key <field>` write anywhere in the marketplace |
+| `resolution-branch-side-effect-undocumented` | Require `## Resolution` branches in standards to document at least one observable side effect | Allowlist-gated branch names; non-allowlist headings ignored | Add a log/metadata/status/artifact mention to the branch body |
+| `executor-path-in-production` | Detect `.plan/execute-script.py` in production Python scripts outside whitelisted categories | Whitelist covers generator, lint analyzers, permission tooling | Add path to whitelist in `_analyze_executor_path_in_production.py` |
+| `plan-path-in-scripts` | Detect hand-rolled plan-path and worktree-path resolution in marketplace Python scripts outside whitelisted categories — three forms: code-literal `.plan/plans/` (A), `__file__` parent-walk joined against a `.plan`-domain dir (B), and a working-tree-binding consumer re-deriving a worktree path instead of routing through `tools-file-ops:file_ops.resolve_plan_context` (C) | Whitelist covers the analyzer itself, the canonical source `file_ops.py`, and the canonical `get-worktree-path` producer `manage-status.py`; docstring-only hits (inside `"""..."""` / `'''...'''`) are structurally exempt for all forms; form C additionally exempts a named baseline straggler set that may only shrink | Add path to whitelist in `_analyze_plan_path_in_scripts.py` with a rationale comment, or route the call site through `get_plan_dir(plan_id)` / `resolve_plan_context(plan_id)` |
+| `fail-closed-gate-read` | Detect a file read (`.read_text`, `open`, `json.load`, `parse_toon(...read_text())`) inside a read-only gate/boundary verb that is NOT enclosed in a `try` catching `OSError` — the verdict path must fail closed (structured error), never crash on an I/O-boundary failure | Only gate-verb-named functions (`cmd_*` / `*_status` / `assert_*` / `*_verify` / `*_validate` / `check_*` / `load_*`); a read covered by a try catching `OSError` / `Exception` / bare-except is exempt; `tools-file-ops:file_ops.py` (the canonical fail-closed read) and the analyzer's own file are whitelisted | Wrap the read in `try/except OSError` returning a structured error, or add the file to the whitelist in `_analyze_fail_closed_gate_reads.py` with a rationale comment |
+| `redundant-contract-typed-isinstance` | Detect an `isinstance(param, Cls)` guard where `param` is a function parameter already annotated with that concrete contract type (e.g. `metadata: dict[str, Any]` then `isinstance(metadata, dict)`) — defensive theatre the signature already pins | Only concrete builtin contract types (`dict`/`list`/`str`/...); `Any`/union/`Optional` annotations and ingestion-boundary checks are not flagged | Remove the redundant guard, or widen the parameter annotation if the value is genuinely polymorphic |
+| `file-bloat-ack` | Allow explicitly acknowledged bloated files to suppress the `file-bloat` finding | Ack tag must match `^ack-[a-z0-9_-]+$`; bare `ack-` or generic values do not suppress | Add `quality.file-bloat: ack-<rationale>` to the file's YAML frontmatter |
+| `orphan-argparse-flag` | Flag argparse flags declared but never read in their handler | Conservative: `vars(args)`, `**kwargs`, or `getattr` usage suppresses the check | Read the flag in the handler, or remove the declaration |
+| `cmd-root-anchoring-missing` | Require `cmd_*` dispatcher functions to call `find_marketplace_root(...)` and declare `--marketplace-root` | Dispatcher-heuristic gated: only fires for scripts with `set_defaults(func=cmd_*)` | Add both the prelude call and the `--marketplace-root` flag to the subparser |
+
+## Rule Pack: Shell-substitution invariant
+
+| Rule ID | Intent | False-positive policy | Suppression |
+|---------|--------|-----------------------|-------------|
+| `shell-substitution-in-skills` | Forbid `$(` command substitution in plan-marshall skill markdown — violates the persona-plan-marshall-agent "Bash: no shell constructs" hard rule | Two structural exemptions: any occurrence inside a markdown inline-code span (`` `…` ``), or any occurrence inside a fenced block with `markdown`/`text` info-string. Subagents do not execute either context | None — convert to the documented two-call + text-substitution pattern |
+
+### shell-substitution-in-skills
+
+**Rule ID**: `shell-substitution-in-skills`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_shell_substitution_in_skills.py`
+
+**Scope**: All `*.md` files under `marketplace/bundles/plan-marshall/skills/`.
+
+**Intent**: Enforce the persona-plan-marshall-agent "Bash: no shell constructs" hard rule (`persona-plan-marshall-agent/SKILL.md` § "Bash: One command per call", `tool-usage-patterns.md` § "Bash safety rules") at the skill-documentation layer. A `$(` in a workflow doc gets interpreted by subagents that copy the snippet into a Bash call literally — the host platform's permission UI then either pops a security prompt or rejects the dispatch outright. The rule prevents regressions of the sweep that removed all such patterns.
+
+**Detection logic**: Scans every line of every markdown file under `marketplace/bundles/plan-marshall/skills/`. Each `$(` two-character occurrence is a candidate finding unless it falls into one of the two exempt documentary contexts below.
+
+**Permitted contexts**:
+1. **Inline-code span** — A `$(` inside a markdown inline-code span (`` `…` ``). Subagents do not execute inline-code tokens; these are structural token references (e.g., when a standards doc says "the `$(...)` form is forbidden"), not runnable commands.
+2. **Verbatim-source fenced block** — A `$(` inside a fenced block whose info-string is `markdown` or `text`. These fences hold verbatim source examples (before/after illustrations) that subagents do not interpret as instructions.
+
+**Rationale**: The two-call + text-substitution pattern (run the script as a bare command, then use a `{placeholder}` slot in the next command's narrative substitution) is the documented safe alternative — see `persona-plan-marshall-agent/SKILL.md` § "Bash: One command per call". The exemption logic is purely structural (inline-code span or `markdown`/`text` fence) so the rule does not depend on a fragile keyword heuristic in the surrounding prose.
+
+**Recommended fix**: Replace `target=$(python3 .plan/execute-script.py …)` with the bare `python3 .plan/execute-script.py …` invocation followed by a one-sentence narrative ("Extract the `target` field from the TOON output. Use that value as `{target}` in the dispatch and the post-resolve log line below."). Replace `$var` references in subsequent bash blocks with `{var}` placeholders.
+
+**Suppression mechanism**: None — convert the substitution to the documented safe alternative. If the occurrence is genuinely documentary (a standards doc that names the forbidden pattern), wrap it in an inline-code span (`` `…` ``) so the structural exemption applies.
+
+---
+
+## Rule Pack: AskUserQuestion reachability
+
+**Activation**: Analyze-surfaced only. Registered in `doctor-marketplace.py::cmd_analyze` (via the runner's marketplace-wide pass), **NOT** in `cmd_quality_gate` — it surfaces findings without failing the build. The rule is registered NON-gating initially so any remaining unreachable dialogue is visibly surfaced as a finding rather than silently passing green, without exploding the migration scope or breaking the build. The rule flags only the structured `AskUserQuestion:` invocation block (see Detection logic); prose mentions of the tool are never flagged, so a dispatched leaf that already returns a prompt-required envelope (as `phase-3-outline`'s Step 12 operator-feedback dialogue does with its `outline_prompt` block) produces zero findings. The known remaining deferred dialogue is `phase-2-refine` Step 11's in-envelope confidence-loop clarification. Promotion to `quality-gate` (build-failing) is a follow-up once that deferred call site has been migrated to the orchestrator-owned pattern.
+
+| Rule ID | Intent | False-positive policy | Suppression |
+|---------|--------|-----------------------|-------------|
+| `askuserquestion-in-dispatched-workflow` | Flag an `AskUserQuestion:` invocation block inside a dispatched-leaf workflow doc — a doc dispatched as an `execution-context` leaf cannot reach the operator at runtime, so the prompt silently degrades to a default | Only the structured invocation block (a bare `AskUserQuestion:` line introducing `questions:`/`question:`/`options:`) is flagged; prose references ("fire an `AskUserQuestion`", "via `AskUserQuestion`") are never flagged. Main-context orchestrators (docs carrying `Task:` dispatch directives) are excluded, so the orchestrator's own menus never trip the rule | `plugin-doctor-disable: [askuserquestion-in-dispatched-workflow]` frontmatter (Granularity-3), or path-scoped project / shipped-default config |
+
+### askuserquestion-in-dispatched-workflow
+
+**Rule ID**: `askuserquestion-in-dispatched-workflow`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_askuserquestion_reachability.py`
+
+**Scope**: All `*.md` files under `marketplace/bundles/*/skills/` across every bundle.
+
+**Intent**: A workflow doc dispatched as an `execution-context` leaf cannot fire `AskUserQuestion` — operator input is unreachable inside a dispatched subagent envelope even though `agents/execution-context.md` frontmatter lists the tool. A leaf that "fires" the prompt silently falls through to a default, so the operator is never asked. The canonical contract — a dispatched leaf returns an escalation/prompt-required envelope for the inline orchestrator to own the prompt — lives at `plan-marshall:ref-workflow-architecture/standards/agents.md` § "Leaf cannot fire AskUserQuestion — return a prompt-required envelope". This rule makes every remaining unreachable dialogue visible.
+
+**Detection logic**: For each markdown doc, the analyzer decides whether it is a dispatched-leaf workflow body (both conditions must hold): (1) it is a declared dispatchable workflow body — it carries `implements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow` in its frontmatter (the `implements:` marker is the sole dispatchability signal; a phase skill that omits it — e.g. `phase-1-init`, which runs inline in the orchestrator — is NOT a dispatched leaf and is not flagged); AND (2) it is NOT itself a main-context orchestrator — it carries no `Task:` dispatch directive. The `Task:`-dispatch discriminator is the structural separator: a leaf cannot spawn a subagent, so a doc that drives dispatches (e.g. `plan-marshall/workflow/planning.md`, which carries the `implements:` marker yet dispatches every phase and legitimately prompts in its own list / cleanup / lessons menus) is an orchestrator and is excluded. Inside a qualifying doc, the analyzer flags each `AskUserQuestion:` invocation block — a bare `AskUserQuestion:` line whose next non-blank line is a `questions:` / `question:` / `options:` sub-key. Pure static analysis — no subprocess, no imports of target scripts, no file mutation.
+
+**Recommended fix**: Move the prompt to the inline orchestrator. The leaf computes the prompt's options and recommended default, then returns a prompt-required envelope (a block on its return TOON, as `plan-marshall:automatic-review/SKILL.md` § "`escalate_ask` return (timeout escalations)" does with `status: escalate_ask`); the main-context orchestrator fires the `AskUserQuestion` and performs any resulting persistence.
+
+**Suppression mechanism**: `plugin-doctor-disable: [askuserquestion-in-dispatched-workflow]` frontmatter (Granularity-3) for a doc where the deferred migration is knowingly accepted, or path-scoped project / shipped-default config (Granularity-2 / Granularity-1). Use sparingly — a suppressed finding is a known unreachable dialogue.
+
+---
+
+## Rule Pack: Bash chain-shape invariant
+
+**Activation**: Unconditionally active in `doctor-marketplace.py analyze` mode. NOT included in `quality-gate` — the existing marketplace tree pre-dates these rules and contains documented examples of the forbidden patterns inside bash fences; a cleanup sweep is required before these rules can be promoted to quality-gate level. Invoke via `analyze` for explicit drift sweeps; new code written after this plan is checked by the analyze path.
+
+| Rule ID | Intent | False-positive policy | Suppression |
+|---------|--------|-----------------------|-------------|
+| `bash-chain-shapes-in-skills` | Detect compound Bash command sequences (`&&`, `;`, trailing `&`) inside fenced `bash`/`sh` blocks in plan-marshall skill/agent/command markdown — violates the persona-plan-marshall-agent "Bash: one command per call" hard rule | Comment lines (`#`) and inline-code spans are exempt; only `bash`/`sh`-fenced blocks are scanned | None — split the compound command into separate Bash tool calls |
+| `tmp-redirect-in-skills` | Detect `>` / `>>` redirect targets pointing at `/tmp/` or `/var/tmp/` inside fenced `bash`/`sh` blocks in plan-marshall skill/agent/command markdown — violates the project policy that temporary files must live under `.plan/temp/` | Comment lines (`#`) and inline-code spans are exempt; only `bash`/`sh`-fenced blocks are scanned | None — replace with a `Write` tool call targeting `.plan/temp/{plan_id}-<name>` or pass the value through a TOON field |
+| `bash-fence-inline-code-exemption` | Detect analyzer modules that scan inside a bash/sh fence (define `_BASH_FENCE_INFO_STRINGS`) while also carrying a markdown inline-code exemption (`_INLINE_CODE_RE` / `_inline_code_spans`) — the two are mutually exclusive because inside a bash fence backticks are command substitution, not markdown inline-code | This analyzer's own source names both marker families and is whitelisted by self-reference; files with only one marker family are compliant | None — remove the inline-code exemption helper from the bash-fence analyzer |
+
+### bash-chain-shapes-in-skills
+
+**Rule ID**: `bash-chain-shapes-in-skills`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_bash_chain_shapes_in_skills.py`
+
+**Scope**: All `*.md` files under `marketplace/bundles/plan-marshall/{skills,agents,commands}/`.
+
+**Intent**: Enforce the persona-plan-marshall-agent "Bash: one command per call" hard rule at the skill-documentation layer. A `&&`, `;`, or trailing `&` in a workflow doc gets interpreted by subagents that copy the snippet into a Bash call literally — the host platform's permission UI then either pops a security prompt or rejects the dispatch outright. The rule prevents regressions of the class of violation documented by the originating source (compound-Bash + tmp-redirect pattern that triggered a 25-minute permission-prompt pause).
+
+**Detection logic**: Scans every line of fenced `bash` or `sh` blocks in every in-scope markdown file. Each occurrence of `&&`, `;`, or a trailing `&` (not preceded by `\`) on a non-comment line is a candidate finding, unless it falls into one of the exempt contexts below.
+
+**Permitted contexts**:
+1. **Comment lines** — Lines whose first non-whitespace character is `#` are treated as shell comments and skipped.
+2. **Inline-code span** — A compound operator inside a backtick span (`` `…` ``). Token references are not runnable commands.
+3. **Lines outside bash/sh fenced blocks** — Only lines inside fenced blocks whose info-string is `bash` or `sh` are scanned. Prose, Python fences, and so on are not checked.
+
+**Recommended fix**: Split the compound command into two or more separate Bash tool calls. Each Bash call must contain exactly one command.
+
+**Suppression mechanism**: None — convert to separate Bash calls. If the occurrence is genuinely documentary (a standards doc naming the forbidden pattern), wrap it in an inline-code span (`` `…` ``) or a `markdown`/`text` fence so the structural exemption applies.
+
+---
+
+### tmp-redirect-in-skills
+
+**Rule ID**: `tmp-redirect-in-skills`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_tmp_redirect_in_skills.py`
+
+**Scope**: All `*.md` files under `marketplace/bundles/plan-marshall/{skills,agents,commands}/`.
+
+**Intent**: Enforce the project policy that all temporary files must live under `.plan/temp/` (covered by `Edit(.plan/**)` permission, which avoids permission prompts and ensures the file tree is self-consistent). A `> /tmp/` redirect in a workflow doc signals that the subagent will write a temp file outside the pre-approved `.plan/temp/` tree, which either triggers a permission prompt or leaves an unreachable artefact. The rule also catches the compound-violation pattern (redirect + chain) documented by the originating source, where the `/tmp/` write was paired with a `; grep` chain on the same line.
+
+**Detection logic**: Scans every line of fenced `bash` or `sh` blocks in every in-scope markdown file. Each occurrence of `>` or `>>` followed (optionally with whitespace) by `/tmp/` or `/var/tmp/` on a non-comment line is a candidate finding, unless it falls into one of the exempt contexts below.
+
+**Permitted contexts**:
+1. **Comment lines** — Lines whose first non-whitespace character is `#` are treated as shell comments and skipped.
+2. **Inline-code span** — A redirect inside a backtick span (`` `…` ``). Token references are not runnable commands.
+3. **Lines outside bash/sh fenced blocks** — Only lines inside fenced blocks whose info-string is `bash` or `sh` are scanned.
+
+**Recommended fix**: Replace the `/tmp/` write with a `Write` tool call targeting `.plan/temp/{plan_id}-<descriptive-name>` (the `.plan/temp/` prefix is covered by the `Edit(.plan/**)` pre-approved permission). Alternatively, if the value is small, pass it through a TOON field in the previous command's stdout instead of writing it to a file.
+
+**Suppression mechanism**: None — fix the redirect target. If the occurrence is genuinely documentary (a standards doc naming the forbidden pattern), wrap it in an inline-code span or a `markdown`/`text` fence.
+
+---
+
+### bash-fence-inline-code-exemption
+
+**Rule ID**: `bash-fence-inline-code-exemption`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_bash_fence_inline_code_exemption.py`
+
+**Scope**: All `*.py` files under `marketplace/bundles/**/scripts/`.
+
+**Intent**: Reintroduction guard. A plugin-doctor analyzer that scopes its scan to `bash`/`sh` fenced blocks (it defines a `_BASH_FENCE_INFO_STRINGS` marker) must NOT also carry the markdown-prose inline-code exemption (an `_INLINE_CODE_RE` or `_inline_code_spans` helper). Inside a bash fence a backtick span denotes command substitution, not a markdown inline-code span, so exempting "inline-code" inside a bash-fence scanner silently skips real command-substitution shapes — the exact mismatch that PR #474 removed from the bash-fence analyzers. This rule prevents the exemption from creeping back in.
+
+**Detection logic**: For every `*.py` under `marketplace/bundles/**/scripts/`, the analyzer checks literal-token co-presence: `_BASH_FENCE_INFO_STRINGS` AND (`_INLINE_CODE_RE` OR `_inline_code_spans`). When both are present the file is flagged with the 1-based line of the first inline-code marker. Files with only one of the two marker families are compliant — prose scanners define only the inline-code helper (exemption is correct there); bash-fence scanners define only the fence-info-strings marker.
+
+**Permitted contexts**:
+1. **Self-reference** — This analyzer's own source names both marker families in its docstring and detection constants; it is whitelisted by a path-component-anchored match on its own filename.
+2. **Single-marker files** — Files defining only one marker family are correct by construction and produce no finding.
+
+**Recommended fix**: Remove the inline-code exemption helper (`_INLINE_CODE_RE` / `_inline_code_spans`) from the bash-fence analyzer. The bash-fence analyzer's only structural filters are "skip non-bash/sh fences" and "skip `#`-comment lines".
+
+**Suppression mechanism**: None — remove the inline-code exemption helper from the bash-fence analyzer.
+
+---
+
+## Rule Pack: Relative-temp-path git -C invariant
+
+**Activation**: Unconditionally active in `doctor-marketplace.py analyze` mode AND included in `quality-gate`. Unlike the bash chain-shape pack, this is a NEW anti-pattern with no legacy occurrences in the marketplace tree (the single offender was the bug that motivated the rule, fixed in the same plan), so the tree carries zero residual findings and the rule enforces at quality-gate level on day one.
+
+| Rule ID | Intent | False-positive policy | Suppression |
+|---------|--------|-----------------------|-------------|
+| `skill-relative-temp-path-git-c` | Detect a relative `.plan/temp/...` path consumed by a `git -C ... commit -F` command inside fenced `bash`/`sh` blocks in plan-marshall skill/agent/command markdown — the harness `Write` tool resolves a relative `.plan/temp` path against the main checkout while `git -C {worktree_path}` resolves it against the worktree, so a relative-path round-trip references two different files and the commit may read a stale message | Comment lines (`#`) are exempt; only `bash`/`sh`-fenced blocks are scanned; the worktree-absolute `{worktree_path}/.plan/temp/...` form does not match because the path token after `-F` no longer starts with `.plan/temp/` | None — use the worktree-absolute `{worktree_path}/.plan/temp/...` form on BOTH the `Write` call and the `git commit -F` |
+
+### skill-relative-temp-path-git-c
+
+**Rule ID**: `skill-relative-temp-path-git-c`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_skill_relative_temp_path.py`
+
+**Scope**: All `*.md` files under `marketplace/bundles/plan-marshall/{skills,agents,commands}/`.
+
+**Intent**: Catch the relative-`.plan/temp`-with-`git -C` divergence that produced a stale-commit-message bug. The harness `Write` tool resolves a relative `.plan/temp/...` path against the MAIN checkout, but a subsequent `git -C {worktree_path} commit -F .plan/temp/...` resolves the same relative path against the WORKTREE. The two legs reference two different files on disk, so the commit reads a stale or empty message instead of the one just authored. A deterministic edit-time lint rule is the regression guard against reintroducing the anti-pattern in any skill that authors a temp file with `Write` and consumes it with `git -C`.
+
+**Detection logic**: Scans every line of fenced `bash` or `sh` blocks in every in-scope markdown file. A `git -C <something> ... commit ... -F <path>` invocation whose `-F` argument is a relative `.plan/temp/...` path (the path token begins with `.plan/temp/` immediately after `-F`) on a non-comment line is a finding, unless it falls into one of the exempt contexts below.
+
+**Permitted contexts**:
+1. **Comment lines** — Lines whose first non-whitespace character is `#` are treated as shell comments and skipped.
+2. **Lines outside bash/sh fenced blocks** — Only lines inside fenced blocks whose info-string is `bash` or `sh` are scanned.
+3. **Worktree-absolute form** — `git -C {worktree_path} commit -F {worktree_path}/.plan/temp/...` produces no finding because the path token after `-F` starts with `{worktree_path}/`, not `.plan/temp/`.
+
+This analyzer scopes its scan to `bash`/`sh` fences and therefore carries NO markdown inline-code exemption — inside a bash fence a backtick span denotes command substitution, not a markdown inline-code span (enforced by the `bash-fence-inline-code-exemption` reintroduction guard).
+
+**Recommended fix**: Use the worktree-absolute `{worktree_path}/.plan/temp/...` path on BOTH legs of the round-trip — the `Write(file_path="{worktree_path}/.plan/temp/...")` call AND the `git -C {worktree_path} commit -F {worktree_path}/.plan/temp/...` command — so they provably reference the same file. `{worktree_path}` is already resolved earlier in the commit workflow, so no new resolution step is required.
+
+**Suppression mechanism**: None — fix the path to the worktree-absolute form.
+
+---
+
+## Rule Pack: Workflow-doc TOON error-field invariant
+
+**Activation**: Unconditionally active in `doctor-marketplace.py analyze` mode AND included in `quality-gate`. Unlike the bash chain-shape pack, the marketplace tree carries zero residual findings (the normalization sweep that established the canonical `error:` discriminator eliminated every fenced-TOON `error_type` key), so the rule enforces at quality-gate level on day one.
+
+| Rule ID | Intent | False-positive policy | Suppression |
+|---------|--------|-----------------------|-------------|
+| `WORKFLOW_DOC_TOON_ERROR_FIELD` | Detect the non-canonical `error_type` key inside fenced ` ```toon ` workflow/agent error blocks in plan-marshall skill/agent/command markdown — the canonical error-envelope discriminator field is `error` | Detection scope is fenced ` ```toon ` blocks only; the key must be at the start of a TOON line (after leading whitespace). Inline `{status: error, error_type: ...}` brace shorthands, prose `error_type:` references outside any fence, and `error_type` keys inside non-`toon` fences are out of scope by design | None — rename the key to `error`; for a two-key block carrying both a category and a human-readable message, demote the message to `display_detail` |
+
+### WORKFLOW_DOC_TOON_ERROR_FIELD
+
+**Rule ID**: `WORKFLOW_DOC_TOON_ERROR_FIELD`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_workflow_doc_toon_error_field.py`
+
+**Scope**: All `*.md` files under `marketplace/bundles/plan-marshall/{skills,agents,commands}/`.
+
+**Intent**: Enforce the canonical error-envelope contract established at `plan-marshall/skills/plan-marshall/workflow/planning.md`, where an agent/workflow error TOON block uses `error:` as the category discriminator (with the human-readable message carried by `display_detail:`). Some workflow and agent docs drifted to `error_type:` for the discriminator. Because the orchestrator and the execution-context dispatcher branch on the field name they read out of the TOON block, the drifted key silently desynchronises the read-side match. This rule prevents the drift class from recurring after the normalization sweep.
+
+**Detection logic**: Builds a fence map of every fenced block whose info-string is `toon`. Within each fenced TOON block, flags any line whose TOON key is `error_type` — both the colon-style (`error_type:`) and the tab-style (`error_type\t`) forms, since TOON blocks may use either key/value separator. The key must appear at the start of a TOON line (after leading whitespace); anchoring at the line start is what excludes inline brace shorthands.
+
+**Permitted contexts**:
+1. **Inline brace shorthands** — `{status: error, error_type: ...}` table shorthands are not flagged; the key is embedded mid-line in a brace expression, not at the start of a TOON line.
+2. **Prose references** — `error_type:` mentions in narrative or log-message text live outside any `toon` fence and are not scanned.
+3. **Non-`toon` fences** — `error_type` keys inside a `python`, `json`, or other non-`toon` fence are not workflow/agent error TOON blocks and are not flagged.
+
+**Recommended fix**: Rename the `error_type` key to `error`. For a two-key block carrying BOTH a category discriminator AND a human-readable message, rename the discriminator to `error` and demote the message line to `display_detail` (matching the canonical `error:` + `display_detail:` envelope shape).
+
+**Suppression mechanism**: None — rename the key. If the occurrence is genuinely documentary (a doc naming the forbidden pattern), move it outside the `toon` fence (e.g. into prose or a `text` fence) so the structural exemption applies.
+
+---
+
+## Rule Pack: Script-call drift
+
+| Rule ID | Intent | False-positive policy | Suppression |
+|---------|--------|-----------------------|-------------|
+| `script-call-drift` | Detect drift between documented `python3 .plan/execute-script.py {notation} {verb}` invocations in skill markdown and the live argparse interface published by the target script's `--help` output | The analyzer probes `--help` per process and caches results. Single-action scripts (no subparsers) skip verb checking. Placeholder tokens (`{value}`, `{plan_id}`) are skipped. Universal flags (`--help`, `--audit-plan-id`) are exempt | None — fix the skill prose to match the script's published `--help` interface, or correct the script's argparse declaration |
+
+### script-call-drift
+
+**Rule ID**: `script-call-drift`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_script_call_drift.py`
+
+**Scope**: All `*.md` files under `marketplace/bundles/**/skills/**`.
+
+**Intent**: Catch drift between documented invocations and the script's actual argparse interface at dev time, before the prose ships. The rule consumes argparse's published interface (`--help` text) rather than parsing the script source via AST — `--help` is the canonical interface, and AST walking proved fragile against argparse's dynamic shapes. The executor also validates before it spawns, but through the shared `argparse_surface` derivation that `manage-invocation-invalid` and `ARGUMENT_NAMING_*` consume, not this rule's own probe — that guard is deliberately fail-open (see **Rationale** for how the two checks can diverge), so this rule remains the complete-coverage check rather than a redundant one.
+
+**Detection logic**:
+1. Regex-match `python3 .plan/execute-script.py {notation} [verb] [flags...]` invocations in skill markdown.
+2. For each unique `notation`, invoke `python3 .plan/execute-script.py {notation} --help` (subprocess) and parse the `{choice1, choice2, ...}` subcommand-choices block from the usage line.
+3. For each `(notation, verb)` referenced in prose, invoke `python3 .plan/execute-script.py {notation} {verb} --help` and parse declared `--flag` names from argparse's options block.
+4. Emit `verb_not_in_subcommand_list` when a documented verb is absent from the choices set. Emit `flag_not_in_options` when a documented `--flag` is absent from the options set.
+
+**Caching**: `--help` text is cached per process — one subprocess per unique notation, one per unique `(notation, verb)` pair.
+
+**Activation**: Opt-in via `--rules script_call_drift` on the `analyze` subcommand. NOT included in the unconditional `quality-gate` set — the subprocess overhead is too high for an unattended build gate. Invoke explicitly for drift sweeps after large skill-prose changes.
+
+**Rationale**: Drift is caught at three points, and this rule is the only one of the three with complete coverage.
+
+- **Edit time (this rule)** — the doctor runs against the latest source on every invocation, so it sees the interface as it is now rather than as it was when some artifact was generated. It judges every documented invocation in skill prose, whether or not that invocation is ever dispatched.
+- **Dispatch time (the executor's pre-spawn validator)** — the executor carries the shared `argparse_surface` derivation (the same surface `manage-invocation-invalid` and `ARGUMENT_NAMING_*` consume), embedded at generation time and keyed by script content so a stale entry is re-derived rather than trusted. It refuses only what it can PROVE invalid: `_validate_invocation` returns `None` for "this call is valid" and for "I cannot judge this" alike, and the two are deliberately indistinguishable to the caller because both must dispatch. Every uncertainty path — an underivable surface, an unconfident node, an unknown flag arity that would change which node argv resolves to — spawns. That fail-open boundary is what makes the guard safe to run in front of every dispatch, and equally what stops it from being a coverage claim.
+- **Post hoc (the plan-retrospective `script-failure-analysis` pass)** — mines `script-execution.log` and `work.log` for argparse rejections, catching drift that reached a real dispatch.
+
+Sharing one derivation across the first two points is the load-bearing property for `manage-invocation-invalid` and `ARGUMENT_NAMING_*`: those rules and the dispatch-time rejection read the same accept-set, so they cannot disagree about what a script accepts. `script-call-drift` does not share it. This rule keeps its own independent probe — a separate `--help` subprocess call, its own usage-line choices parser, its own options-block flag parser, and its own per-process cache — and that probe reads flags from argparse's `options:` block only (see **Detection logic** step 3). `argparse_surface` instead deliberately harvests every long token anywhere in the `--help` output, because a section-scoped scan omits a flag declared inside a custom argument group and would reject a valid call. Such a flag is `flag_not_in_options` under this rule at edit time while the executor accepts it at dispatch — the two checks CAN disagree about what a script accepts, unlike the `manage-invocation-invalid`/`ARGUMENT_NAMING_*` pair.
+
+**Suppression mechanism**: None — fix the prose or the argparse declaration to converge.
+
+---
+
+## Rule Pack: Documented-verb-set drift
+
+| Rule ID | Intent | False-positive policy | Suppression |
+|---------|--------|-----------------------|-------------|
+| `documented-verb-set-drift` | Compare a script's AST-derived registered top-level verb SET against the verb set its skill's fenced bash invocations document, in both directions | Fail-closed: any derivation the AST walk cannot trust is reported as a SKIP finding naming the reason, never as a clean pass. An empty derived verb set is treated as a derivation failure, never as "registers nothing" | None — fix the documentation or the argparse declaration to converge |
+
+### documented-verb-set-drift
+
+**Rule ID**: `documented-verb-set-drift` (opt-in token: `documented_verb_set_drift`)
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_documented_verb_set_drift.py`
+
+**Scope**: Every skill whose `SKILL.md` carries a `## Canonical invocations` heading. The population is derived from the bundle tree at call time and published as `details.population_size` on every finding; an empty population over a non-empty tree emits its own finding rather than reading as a clean pass.
+
+**Intent**: Detect verb-set drift structurally, in the direction no existing rule covers. `verb_missing_from_docs` reports a registered verb carrying no fenced example invocation — a class that per-invocation analysis structurally cannot see, because an undocumented verb appears in no invocation for such a rule to inspect.
+
+**Detection logic**:
+1. Derive the population (skills with a canonical-invocations block).
+2. For each documented invocation naming a script of that same skill, collect the first verb of its chain.
+3. Derive the skill's OWNED entry scripts from disk — `scripts/*.py` carrying an `if __name__ == '__main__':` guard — and take the candidate set as the **union** of those and the documented notations.
+4. AST-walk each candidate script for `add_parser` calls, resolving each to its owning parser, and take the ROOT parser's children — each call's verb name together with any `aliases=[...]` it declares — as the registered set.
+5. Emit `verb_missing_from_docs` for registered − documented, and `phantom_documented_verb` for documented − registered.
+
+⛔ **Step 3's union is what makes `verb_missing_from_docs` reachable.** Walking only the documented notations meant a skill containing a CLI script with NO fenced invocation created no candidate entry at all: it never reached the verb derivation and the rule returned CLEAN over it — a detector that could not fire, of exactly the class it exists to detect. An owned entry script absent from the docs is now compared against an EMPTY documented set, so every verb it registers is reported. The entry-script discriminator is the `__main__` guard rather than a leading-underscore filter, because this tree carries non-underscore helper MODULES that are imported and never invoked; a file that cannot be read or parsed is admitted anyway and reported as a skip, never resolved to "not an entry script".
+
+**Fail-closed contract**: the rule SKIPS rather than passes whenever the registered set is not trustworthy, emitting `verb_set_drift_skipped` with a `reason` of `unreadable_script`, `unparseable_script`, `dynamic_verb_registration`, `unresolved_subparser_group`, `no_root_parser_resolved`, or `no_subparser_registration_in_file`. The skip count is the rule's own coverage gap and is reported, never absorbed.
+
+⛔ **`no_root_parser_resolved` is the fail-open this rule most needs to refuse.** `add_parser` calls exist but none attaches to a recognised root parser, so the derived set is empty through derivation failure rather than observation. Treating that emptiness as authoritative reports every documented verb as a phantom: measured during development, doing so produced **60 phantom findings** on the live tree, and the spot-checked ones were all real registered verbs. This is why the analyzer does not reuse `_analyze_verb_chains.build_subparser_tree`, whose bare `{}` return cannot distinguish unreadable, unparseable, and genuinely-subparser-free.
+
+**Relationship to `manage-invocation-invalid`**: the `phantom_documented_verb` class OVERLAPS that default-on rule, which already rejects a documented invocation naming an unregistered subcommand via a live `--help` walk. The two differ in unit of analysis — one written invocation versus two SETS — and a consumer running both should expect the phantom findings to corroborate rather than add to it. `verb_missing_from_docs` carries this rule's independent value.
+
+**Scope caveat**: the documentation side of the comparison is *fenced bash invocations*, not documentation in general. A verb described only in a prose verb table is reported, and the finding message states that narrower fact. `manage-tasks loop-exit-guard` is the worked example — a full table row and a dedicated section, and no fenced invocation.
+
+**Activation**: Opt-in via `--rules documented_verb_set_drift` on the `analyze` subcommand. **NOT registered in `quality-gate`.**
+
+⛔ **Why not gate-registered, and the promotion proposal.** `cmd_quality_gate` derives its status as `'fail' if all_issues else 'pass'` — it is **severity-blind**, so it has no registered-but-non-failing mode; any finding turns the tree red. Only `cmd_test_conventions` derives status from error-severity findings alone (`'fail' if error_count else 'pass'`), and its scope is the test tree, not the bundle tree. With a standing non-zero finding count this rule cannot be gate-registered without leaving the tree red, so it lands discoverable and opt-in instead.
+
+**Promotion requires EITHER** of the two, and is deliberately left as a proposal rather than taken here:
+
+1. Drive the drift count to zero (add the missing fenced invocations), then register it in `run_quality_gate`; or
+2. Teach `cmd_quality_gate` the severity split `cmd_test_conventions` already implements, and register the rule at `warning` severity.
+
+**Baseline**: no absolute population, finding or skip count is recorded here. Every one of them moves on any commit that adds a script, a verb, or a fenced invocation — so a written-down number is stale by the next commit, and a reader comparing against it would be measuring the document rather than the tree. Read the live figures from a run: each finding publishes `details.population_size`, and `analyze --rules documented_verb_set_drift` reports the finding and skip breakdown. The standing count is non-zero, which is why the rule is opt-in rather than gate-registered (above); the whole-tree `quality-gate` verdict is unaffected either way, because this rule is not in that rule set.
+
+**Suppression mechanism**: None — fix the prose or the argparse declaration to converge.
+
+---
+
+## Rule Pack: Lesson-ID prose hygiene
+
+| Rule ID | Intent | False-positive policy | Suppression |
+|---------|--------|-----------------------|-------------|
+| `no-lesson-id-in-skill-prose` | Forbid narrative lesson-ID citations in skill prose — strip the ID and trivia, keep the rule content. Scans `*.md` AND `*.py` (comments, docstrings, string literals) | Allowlisted skill paths apply to both file classes. For markdown only: YAML frontmatter, fenced code blocks, `Source:` provenance lines, and bare inline-code spans (without a prose "lesson" prefix). For Python these markdown-only exemptions do NOT apply | Declarative suppression substrate — `plugin-doctor-disable: [no-lesson-id-in-skill-prose]` frontmatter (Granularity-3) or path-scoped config (Granularity-2 / Granularity-1) |
+| `no-historical-prose-in-skills` | Forbid historical/transitional narrative in skill prose — driving-lesson prefixes, back-references, earlier-proposal descriptions, seed-failure citations, plan-authorship annotations, guard-introduction prose | Seven allowlisted file paths; YAML frontmatter, fenced code blocks, `Source:` provenance lines, and inline-code spans are exempt per-line | Declarative suppression substrate — `plugin-doctor-disable: [no-historical-prose-in-skills]` frontmatter (Granularity-3) or path-scoped config (Granularity-2 / Granularity-1) |
+
+### no-lesson-id-in-skill-prose
+
+**Rule ID**: `no-lesson-id-in-skill-prose`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_lesson_id_in_skill_prose.py`
+
+**Scope**: Three trees, two file classes:
+
+- `*.md` and `*.py` under `marketplace/bundles/*/{skills,agents,commands}/**`.
+- `*.md` and `*.py` under the project-local `.claude/skills/**` tree (resolved relative to the marketplace bundles root). This tree has no allowlisted members — it is scanned in full.
+
+For `.py` sources the rule scans comments, docstrings, and string literals — the contexts where narrative lesson-ID citations accumulate in scripts.
+
+**Intent**: Strip narrative lesson-ID citations and recurrence trivia from skill prose so the surface documents present-tense rules rather than the historical incidents that motivated them. The rule recognises two lesson-ID format families — `YYYY-MM-DD-NNN` and `YYYY-MM-DD-HH-NNN` — and the prose-prefixed forms `lesson XXX` and `lesson-XXX`. In markdown it also catches the backtick-wrapped form `` lesson `YYYY-...` `` where "lesson" is prose context outside the backtick — this is a narrative citation regardless of the backtick, since the word "lesson" establishes the reader-navigation intent.
+
+**Detection logic**: Two-pass scan per line. Pass 1 detects non-backtick prose forms using the main regex; in markdown it skips bare IDs inside inline-code spans, while in Python backticks carry no inline-code meaning so the ID is flagged. Pass 2 detects the `` lesson `YYYY-...` `` backtick-prefixed form using a dedicated regex — this Pass runs for markdown only (in Python the bare ID was already caught by Pass 1, so Pass 2 would double-count). In markdown this form is never exempt, because "lesson" outside the backtick is always prose context.
+
+**Allowlist** (file-level skip — the entire file is exempt because it operates ON lessons as domain content; applies to both `*.md` and `*.py` under `marketplace/bundles/`):
+
+- `marketplace/bundles/plan-marshall/skills/manage-lessons/**`
+- `marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/lessons-*.md`
+- `marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/lessons-*.md`
+- `marketplace/bundles/plan-marshall/skills/plan-retrospective/**`
+- `marketplace/bundles/plan-marshall/skills/plan-doctor/**`
+- `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/references/rule-provenance.md` — the canonical citation home for plugin-doctor rules.
+- `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/standards/doctor-test-conventions.md` — cites lesson IDs as authoritative design references.
+
+The allowlist is unchanged by the widened scope — the same exempt prefixes apply across both file classes and both trees. (The project-local `.claude/skills/**` tree has no allowlisted members.)
+
+**Per-line structural exemptions** — **markdown only** (skip the match, not the file). These do NOT apply to `.py` sources, where comments, docstrings, and string literals are deliberately in scope:
+
+1. **YAML frontmatter** — between the leading `---` fences at the start of a markdown file.
+2. **Fenced code block** — any line inside a ``` ``` ``` fence regardless of info-string.
+3. **`Source:` line** — provenance citation marker (e.g., `Source: lesson-XXX`).
+4. **Bare inline-code span** — a lesson-ID inside backticks WITHOUT a prose `lesson` prefix immediately before the span. Token references in code spans are not narrative prose. The `` lesson `YYYY-...` `` form is NOT exempt: "lesson" is prose context and signals a narrative citation.
+
+**Suppression mechanism**: Declarative suppression substrate (see [Declarative Suppression Substrate](#declarative-suppression-substrate)). Disable file-wide via `plugin-doctor-disable: [no-lesson-id-in-skill-prose]` in the file's frontmatter (Granularity-3), or path-scoped via the project (`.plan/plugin-doctor.yml`, Granularity-2) or shipped-default (`config/default-suppression.yml`, Granularity-1) config. Use sparingly — most legitimate citations already qualify as `Source:` or inline-code and need no exemption at all.
+
+**Recommended fix**: Locate the line cited by the finding. If the lesson-ID + trivia is parenthetical or sits in its own sentence whose only payload is the citation, remove the entire sentence/parenthetical. Otherwise, strip the lesson-ID, the bracketed citation form (`(lesson XXX)`, `lesson-XXX`, `see lesson XXX`), and the recurrence-trivia phrases while preserving the surrounding rule/decision content. The rule remains; the citation goes.
+
+---
+
+## Rule Pack: Test-tree infrastructure
+
+The three build-failing (`severity: error`) rules of the `test-conventions` scope. They predate the house-style pack below and were catalogued late; `standards/doctor-test-conventions.md` carries their full detection and remediation details.
+
+| Rule ID | Intent | False-positive policy | Suppression |
+|---------|--------|-----------------------|-------------|
+| `unique-fixture-basenames` | Reject a helper module under the test tree whose basename is generic (`_fixtures.py`, `_helpers.py`, `_common.py`) or collides across sibling directories — pytest keys `sys.modules` on the basename alone, so one of a colliding pair silently wins | Only `_`-prefixed modules are in scope; dunder files are excluded. A collision reports **both** paths so the author chooses which to rename | Not provided — the failure mode is a silent import-surface swap |
+| `subprocess-pythonpath` | Flag `subprocess.run([sys.executable, ...])` under the test tree that does not propagate `PYTHONPATH`, so a spawned script cannot resolve marketplace imports in a clean CI environment | AST-based, so it survives quoting and whitespace variation. Calls routed through `conftest.run_script(...)` are exempt, as are calls whose `env=` introduces `PYTHONPATH` | Not provided |
+| `identifier-validator-corpus` | Assert that each registered identifier validator's regex full-matches every ID its `list_command` returns, so a validator cannot drift from the data it validates | Driven entirely by the Rule 3 registry. **An empty registry is a documented no-op**, which is its current live state — see the note below | Not provided |
+
+**The Rule 3 registry currently ships empty**, so `identifier-validator-corpus` reports zero findings over this tree. That zero is a no-op rather than a clean result, and the two are not the same claim: the rule fires only against pairs explicitly listed in `standards/doctor-test-conventions.md` § "Rule 3 — Validator Registry". Populating it requires, per entry, a validator whose regex constant is AST-extractable and a `list_command` that emits TOON `id:` lines — so registering a pair is a deliberate act with a runnable command behind it, not a table edit. Until an entry exists, read this rule's `0` as "not asked", never as "asked and clean".
+
+## Rule Pack: Test-tree house style
+
+The structural half of the test-authoring standards stated in `plan-marshall:persona-module-tester` and `pm-dev-python:pytest-testing`. All four run under the `test-conventions` scope over `--test-root` (default `test/`). Severity is **per rule and conditional**: a rule ships at `severity: warning` while the tree still violates it, and is flipped to `error` once its own violation count reaches zero. `test-helper-module-misnamed` has made that transition and ships at `error`; the other three remain `warning`. See `standards/doctor-test-conventions.md` § "Severity Summary". This pack is **not** part of the `quality-gate` subcommand.
+
+| Rule ID | Intent | False-positive policy | Suppression |
+|---------|--------|-----------------------|-------------|
+| `test-module-line-budget` | Flag **any** test-tree module over the 400-line budget — collected and helper alike, since a helper costs a reader the same — so oversized modules are split rather than left to grow. `_is_collected_module` selects the remedy the message names (behaviour cluster for a collected module, supplied surface for a helper) and lands in `details.kind`; it is a kind discriminator here, not a gate | Two carve-outs, both structural. A module whose whole content is **one class within the 520-line class ceiling** is exempt: it has one nameable subject and no split boundary, so neither remedy applies — the ceiling is measured on the class, not the module. Otherwise the verdict is a line count against a fixed budget, with no textual ambiguity. A module deliberately over budget is a judgement the reviewer makes, not a detector question | Not provided; the rule reports at `warning` and does not fail the build |
+| `test-helper-module-misnamed` | Flag a module matching pytest's collection patterns that declares no test — collected, contributing nothing, and invisible in the run | None — "declares no `test*` function and no `Test*` class" is an AST fact | Not provided; ships at `error` (its violation count reached zero) |
+| `test-module-preamble-boilerplate` | Flag `spec_from_file_location` preambles and `Path(__file__).parent` chains of depth ≥ 3, both of which resolve a module by the test file's own location instead of by identity | Chains shorter than depth 3 are not flagged (a `.parent.parent` hop is ordinary path work). Only the outermost `.parent` of a chain is reported, so one chain yields one finding. Both spellings of the idiom count — a `.parent` chain and an indexed `parents[N]` — through any path-preserving `.resolve()` / `.absolute()` hop, so the rule's count cannot be cleared by respelling. **One known-legitimate occurrence:** the rule fires on `test/conftest.py`'s own `_exec_module_from_path`, the construction both sanctioned loaders share, whose `spec_from_file_location` call *is* the helper the message points at — the remediation there is circular, since the message tells the canonical helper to call itself. It is left unsuppressed deliberately: the rule reports at `warning`, one structurally-unfixable finding among many is cheaper than a path allowlist that would also silence real defects in the same file | Not provided; reports at `warning` |
+| `test-docstring-historical-prose` | Forbid lesson-ID, PR-reference, and plan/deliverable-ID citations in test docstrings and comments — the test-tree counterpart of `no-lesson-id-in-skill-prose` / `no-incident-references` | **Two discriminators.** (1) *Docstrings and comments only* — string literals are never scanned, since the same shapes appear far more often as test *data* (a lesson id fed to the validator under test). Measured with the shipped matchers: 286 prose segments carrying a citation (the rule's own finding count, one per segment) vs 955 non-docstring string-literal constants carrying the same shapes and correctly left alone. (2) *Inline literals inside prose are exempt* — prose must name values as well as cite records, and the two are told apart by formatting: a value named in a backtick span or a quoted string is not a citation. The exemption is per occurrence, so backticking one id cannot launder a segment | Not provided; reports at `warning` |
+
+### test-docstring-historical-prose
+
+**Rule ID**: `test-docstring-historical-prose`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_test_conventions.py`
+
+**Scope**: `*.py` under `--test-root` (default `test/`) — the tree `no-lesson-id-in-skill-prose` and `no-incident-references` do **not** cover, since both take a `marketplace_root`.
+
+**Intent**: A test docstring states the invariant in the present tense, not the incident that produced the test. This is `CLAUDE.md` § Documentation Standards ("No version history", "Current state only") applied to a tree those standards were never scoped over.
+
+**Detection logic**: The prose segments — module/class/function docstrings via `ast.get_docstring`, plus `#` comments via `tokenize` — are matched against five citation shapes. The lesson-ID matchers (`_LESSON_ID_RE`, `_LESSON_BACKTICK_ID_RE`) and the `plan-marshall#NNNN` matcher (`_PLAN_MARSHALL_REF_RE`) are **imported from** the two analyzers that already own them rather than restated: one textual shape, one matcher. Two shapes those analyzers do not carry are defined locally — PR references (`PR #NNN` / `pull request #NNN`, and a bare `#NN` carrying at least two digits), and plan/deliverable ids (`TASK-NNN`, `deliverable D<n>` and `deliverable <n>` alike, ``plan `slug` ``). At most one finding is emitted per segment; `details.kind` names which shape fired.
+
+A match inside an **inline literal** — a `` `…` `` / ` ``…`` ` code span, or a single- or double-quoted string — is then skipped, because prose in that position names a value rather than citing a record. The convention this teaches is **backtick the value you name**. No literal alternative may cross a newline: a prose segment arrives as one multi-line string, so an unbounded quote alternative would let a possessive apostrophe open a span swallowing every citation after it.
+
+**Both discriminators are load-bearing**, not performance choices — see the false-positive policy above.
+
+**Recommended fix**: Rewrite the docstring to state the invariant in the present tense. Where the invariant is genuinely non-obvious, add a second paragraph explaining *why it is load-bearing* — which survives the next refactor, unlike the citation. `plan-marshall:persona-module-tester` § "Test Docstring Content" carries a worked before/after.
+
+---
+
+## Rule Pack: Allowed-tools-body drift
+
+| Rule ID | Intent | False-positive policy | Suppression |
+|---------|--------|-----------------------|-------------|
+| `allowed-tools-body-drift` | Flag a component whose body invokes a tool absent from its declared, non-empty `allowed-tools`/`tools` frontmatter list — a consistency check, NOT a schema prohibition | Components that omit `allowed-tools`/`tools` entirely are NOT flagged (the "inherit all tools" default; the retired `unsupported-skill-tools-field` rule stays deleted). Only directive-shaped invocations (`Read:`, `- Skill:`, `Tool: Bash`) count; fenced code blocks are exempt; declared-but-unused tools are NOT flagged | Declarative suppression substrate — `plugin-doctor-disable: [allowed-tools-body-drift]` frontmatter (Granularity-3) or path-scoped config (Granularity-2 / Granularity-1) |
+
+### allowed-tools-body-drift
+
+**Rule ID**: `allowed-tools-body-drift`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_allowed_tools_drift.py`
+
+**Scope**: All `*.md` under two trees:
+
+- `marketplace/bundles/*/{skills,agents,commands}/**`.
+- the project-local `.claude/skills/**` tree (resolved relative to the marketplace bundles root).
+
+**Intent**: Detect a one-directional *drift* between a component's declared tool surface and the tools its workflow body actually invokes — a tool the body invokes that the frontmatter omits. This is a self-consistency check, not a schema rule. Skills MAY declare `allowed-tools` per the Claude Code skills schema but are not required to; a missing declaration is the "inherit all tools" default and is never flagged. The rule fires only where a tool is BOTH invoked in the body AND the frontmatter declares a non-empty list that omits it.
+
+**Detection logic**: Parse the declared tool set from the `allowed-tools` (or `tools`) frontmatter using the shared `parse_declared_tools` parser (reused from `_analyze_coverage.py` so the two analyzers stay consistent). When the declared list is empty/absent, emit nothing. Otherwise scan the body for tool invocations — a known tool name (`Read`, `Write`, `Edit`, `Glob`, `Grep`, `Bash`, `AskUserQuestion`, `Skill`, `Task`, `WebFetch`) appearing as a directive at a line start (`Read:`, `- Skill:`) or in a `Tool: {ToolName}` directive. Emit one finding per invoked tool absent from the declared set.
+
+**Per-line structural exemptions**:
+
+1. **Fenced code block** — body lines inside ``` ``` ``` fences (any info-string) are exempt: a tool name inside an example command block is not a live invocation.
+2. **No-frontmatter / empty declaration** — a component without an `allowed-tools`/`tools` declaration, or with an empty one, is exempt entirely (the "inherit all tools" default).
+
+**Suppression mechanism**: Declarative suppression substrate (see [Declarative Suppression Substrate](#declarative-suppression-substrate)). Disable file-wide via `plugin-doctor-disable: [allowed-tools-body-drift]` in the file's frontmatter (Granularity-3), or path-scoped via the project (`.plan/plugin-doctor.yml`, Granularity-2) or shipped-default (`config/default-suppression.yml`, Granularity-1) config.
+
+**Recommended fix**: Reconcile the declaration with usage — either add the invoked tool to the `allowed-tools`/`tools` frontmatter list, or remove the body invocation if the tool genuinely should not be used. The rule never prescribes which direction; it flags the inconsistency.
+
+---
+
+## Rule Pack: Skill self-declared-rule self-compliance
+
+| Rule ID | Intent | False-positive policy | Suppression |
+|---------|--------|-----------------------|-------------|
+| `skill-self-declared-rule-violation` | Flag a `SKILL.md` that declares a flat-numbering / no-sub-numbering rule in its own body yet uses sub-numbered (`1a`/`3a`/`5a`-style) step headings in that same body — a self-consistency check, NOT a global numbering ban | Self-referential: a `SKILL.md` that uses sub-numbering WITHOUT declaring such a rule is NOT flagged. Only `SKILL.md` is scanned. Heading-shaped lines inside YAML frontmatter and fenced code blocks are exempt. Scoped narrowly to the one self-rule class that is regex-checkable (numbering discipline); non-regex-checkable self-rule classes are out of scope by design | Declarative suppression substrate — `plugin-doctor-disable: [skill-self-declared-rule-violation]` frontmatter (Granularity-3) or path-scoped config (Granularity-2 / Granularity-1) |
+
+### skill-self-declared-rule-violation
+
+**Rule ID**: `skill-self-declared-rule-violation`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_self_declared_rule_compliance.py`
+
+**Scope**: All `SKILL.md` under two trees:
+
+- `marketplace/bundles/*/{skills,agents,commands}/**`.
+- the project-local `.claude/skills/**` tree (resolved relative to the marketplace bundles root).
+
+Only `SKILL.md` is scanned — the numbering-discipline rule is a property of a skill's workflow document, not of every markdown file.
+
+**Intent**: Detect a self-referential defect: a `SKILL.md` that *authors* a numbering-discipline rule (a body passage prohibiting sub-numbering / mandating flat step numbering) must obey that rule in its own step headings. The check is self-referential, not a global numbering ban — sub-numbering is permitted in the general case, and a file that uses it without declaring a flat-numbering rule is never flagged. Scope is deliberately narrowed to the numbering-discipline class — the one self-rule class that is regex-checkable; non-regex-checkable self-rule classes (tone, structure, naming) have no deterministic surfacer and are out of scope.
+
+**Detection logic**: First test whether the file declares a numbering-discipline rule — a body passage (outside YAML frontmatter and fenced code blocks) matching any of the declaration phrases (`flat-numbering`, `flat numbering`, `no sub-numbering`, `no-sub-numbering`, `prohibit sub-numbering`, `without sub-numbering`, etc.). When such a declaration is present, scan the file's own step headings for the banned sub-numbered shape: a markdown heading (`##` .. `####`) whose leading label is `Step Nx` or a bare `Nx`, where `N` is a digit immediately followed by a lowercase letter (e.g. `### Step 1a`, `#### 3b`). Emit one finding per self-violating heading, naming both the declared rule and the offending heading.
+
+**Per-line structural exemptions**:
+
+1. **YAML frontmatter** — heading-shaped lines inside the leading `---` fences are not body content and are skipped for both declaration and violation detection.
+2. **Fenced code block** — lines inside ``` ``` ``` fences are exempt: a heading-shaped line inside an example block is not a live heading, and a declaration phrase inside an example block is not an authored rule.
+
+**Suppression mechanism**: Declarative suppression substrate (see [Declarative Suppression Substrate](#declarative-suppression-substrate)). Disable file-wide via `plugin-doctor-disable: [skill-self-declared-rule-violation]` in the file's frontmatter (Granularity-3), or path-scoped via the project (`.plan/plugin-doctor.yml`, Granularity-2) or shipped-default (`config/default-suppression.yml`, Granularity-1) config.
+
+**Recommended fix**: Renumber the offending headings to a flat sequence so the document obeys the numbering rule it declares — or, if the declared rule no longer reflects intent, revise the declaration. The rule flags the inconsistency between the authored rule and the document's own headings.
+
+---
+
+### no-historical-prose-in-skills
+
+**Rule ID**: `no-historical-prose-in-skills`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_historical_prose_in_skills.py`
+
+**Scope**: All `*.md` files under `marketplace/bundles/*/{skills,agents,commands}/**`.
+
+**Intent**: Strip historical and transitional narrative from skill prose so skill documents describe current requirements rather than the events that motivated them. Seven pattern families are detected:
+
+1. **driving_lesson_prefix** — `Driving lesson:` used as a bullet or inline annotation.
+2. **back_reference_prefix** — `Back-reference:` or `Back-reference—` citing the originating plan/lesson/PR.
+3. **earlier_proposal** — "An earlier proposal", "the earlier approach", "earlier version", etc.
+4. **historical_activation** — "activated end-to-end by lesson", "introduced by plan", etc.
+5. **seed_failure_observation** — "seed failure", "seed observation", "seed defect", "seed gap".
+6. **plan_task_authorship** — "added in TASK-NNN of plan", "added by deliverable N of this plan", etc.
+7. **guard_introduction** — "guard introduced in", "rule introduced in", "validator introduced in", etc.
+
+**Allowlist** (file-level skip — historical context is intrinsic to the file's purpose):
+
+- `marketplace/bundles/plan-marshall/skills/manage-lessons/**`
+- `marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/lessons-*.md`
+- `marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/lessons-*.md`
+- `marketplace/bundles/plan-marshall/skills/plan-retrospective/**`
+- `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/references/rule-provenance.md`
+- `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/references/rule-catalog.md`
+- `marketplace/bundles/plan-marshall/skills/plan-doctor/standards/**`
+
+**Per-line structural exemptions**: YAML frontmatter, fenced code blocks, `Source:` provenance lines, inline-code spans.
+
+**Suppression mechanism**: Declarative suppression substrate (see [Declarative Suppression Substrate](#declarative-suppression-substrate)). Disable file-wide via `plugin-doctor-disable: [no-historical-prose-in-skills]` in the file's frontmatter (Granularity-3), or path-scoped via the project (`.plan/plugin-doctor.yml`, Granularity-2) or shipped-default (`config/default-suppression.yml`, Granularity-1) config.
+
+**Recommended fix**: Rewrite the sentence as a present-tense rule without the historical context. If the entire sentence's value is "this is why the rule exists", remove it — the rule statement itself is the durable artifact. If a brief rationale is genuinely needed, state the principle rather than citing the incident: replace "Driving lesson: `2026-04-30-23-001` (TASK-9 scope expanded silently)" with "Check sibling directories when scope changes touch a shared symbol."
+
+---
+
+### no-incident-references
+
+**Rule ID**: `no-incident-references`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_incident_reference_in_docs.py`
+
+**Scope**: All `*.md` **and** `*.py` files under `marketplace/bundles/*/{skills,agents,commands}/**`. Broader than the sibling `no-historical-prose-in-skills` (markdown-only) because an incident label in a docstring or code comment is the same misleading signal as one in prose.
+
+**Intent**: A bundle document or script must reason from the mechanism in front of the reader, not from a plan-marshall PR/issue number the reader cannot see. Such a reference costs context on every load and teaches reasoning from an invisible incident. `CLAUDE.md` § Documentation Standards already forbids it ("No version history", "No timestamps", "Current state only"); this rule enforces it so the pattern cannot regress.
+
+**Detection** — one family (`incident_reference`) fires on any of these narration forms outside the exempt contexts below:
+
+1. **Explicit plan-marshall ref** — `plan-marshall#NNNN`.
+2. **Observed-on citation** — a capitalized `Observed on` clause opener followed by a `#NNNN` reference. Case-sensitive on `Observed`, so a lowercase mid-sentence "…observed on #NNNN" in an observation record (a bot data-sheet citing where a field was confirmed) is not flagged.
+3. **Temporal narration** — `post-#NNNN` / `pre-#NNNN` / `since #NNNN`.
+4. **Incident term-of-art** — a `#NNNN` (optionally `PR #NNNN`) bound to an incident noun (`failure mode` / `signature` / `shape` / `defect` / `incident` / `regression`), with an optional single hyphenated qualifier between.
+5. **Incident term-of-art, reversed** — the same noun set with the reference AFTER it ("the failure mode #NNNN"), same optional hyphenated qualifier. English prose reaches for this ordering at least as often as form 4's, and a family that matched only form 4 passed prose its own brief named.
+6. **Dated / version-pinned narration** — a temporal preposition (`as of` / `since` / `before` / `after`) followed by a `YYYY`(`-MM`(`-DD`)) date or an `N.N.N` version. The date IS the incident marker: prose pinned to a moment states when something was true rather than what is true, which is the defect a `#NNNN` carries without needing a reference to carry it.
+
+**Deliberately not flagged**: a bare `#NNNN` in prose with no incident noun (ordinary provenance, a worked-example citation, an external-tracker issue), a back-ticked `#NNNN` (a code token, exempt as inline code — tested at the **reference's** offset inside the match rather than at the match start, so a back-ticked reference is exempt in every family. Four families' matches begin before the reference, but only two — form 2 and form 5 — have patterns that permit a backtick to sit BETWEEN the two, which is what decides whether the offsets can land on opposite sides of a code-span boundary. This widened form 2's exemption, which previously fired on a back-ticked reference, and correspondingly narrowed it where the opener rather than the reference is quoted), a lowercase "observed on #NNNN" in an observation record, and a version CONSTRAINT with no temporal preposition ("requires Python 3.12", "Node 20.1.0 or newer", ">= 1.2.3") — those state a requirement that holds now.
+
+**Exemption posture**: Ships **unconditional** — no prefix is registered under `no-incident-references` in `config/default-suppression.yml`. The genuinely-referential contexts that exist (bot data-sheets, `rule-provenance.md` / `rule-catalog.md`) fall outside the detection family above, so none needs a permanent exemption. The shared config-suppression capability remains available (a maintainer may register a prefix) but is left carrying zero entries rather than a token unused mechanism.
+
+**Anti-vacuity guard**: the examined file population is derived at runtime (`incident_reference_targets()` — never a hand-maintained list) and asserted non-empty by the rule's tests; when the derived population is empty the analyzer emits its own `empty_population` finding (`population_size: 0`), so a clean result over an unread population can never read as a clean tree. The finding is anchored at the marketplace root, and `cmd_quality_gate` keeps a root-anchored finding unfiltered (`_finding_is_tree_wide`), so the guard survives a `--paths`-scoped run rather than being dropped by the scope filter.
+
+**Per-line structural exemptions**: YAML frontmatter, fenced code blocks, `Source:` provenance lines, inline-code spans.
+
+**Suppression mechanism**: Declarative suppression substrate (see [Declarative Suppression Substrate](#declarative-suppression-substrate)). Disable file-wide via `plugin-doctor-disable: [no-incident-references]` in the file's frontmatter (Granularity-3), or path-scoped via the project (`.plan/plugin-doctor.yml`, Granularity-2) or shipped-default (`config/default-suppression.yml`, Granularity-1) config.
+
+**Recommended fix**: State the mechanism the incident named, not the PR number. Where an incident label is a genuine term of art (the recurring name of a behaviour), replace it with a descriptor of the mechanism — e.g. "the close-unmerged failure mode" for "an immediate merge on a merge-queue-required base closes the PR unmerged". Where the mechanism is already stated in the preceding sentence, delete the incident narrative outright — the mechanism statement is the durable artifact.
+
+---
+
+### shell-active-tokens
+
+**Rule ID**: `shell-active-tokens`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_shell_active_tokens.py`
+
+**Scope**: `standards/*.md` within each skill directory.
+
+**Intent**: Detect shell-active constructs embedded in skill markdown prose that would cause unintended shell expansion when copied into a terminal session. Four token classes are checked:
+
+1. **backtick-in-flag** — Backtick characters inside `--detail`, `--message`, or `--title` flag values.
+2. **brace-expansion** — Bash brace expansion (`{a..b}`, `{x,y,z}`) inside fenced `bash`/`sh` blocks or inline-code path-pattern regions.
+3. **glob-wildcard** — Unquoted `*` or `?` outside fenced code blocks.
+4. **dollar-token** — Unescaped `$VAR` or `$(...)` in inline-code spans.
+
+**False-positive policy**: Glob wildcards inside fenced blocks and inline-code spans are exempt. Backtick checks are restricted to the three flag names listed. Dollar tokens are restricted to inline-code spans.
+
+**Recommended fix**: Replace the shell-active token with a shell-safe equivalent (quoted string, escaped form, or narrative description).
+
+**Suppression mechanism**: None — modify the prose.
+
+---
+
+### metadata-field-undefined
+
+**Rule ID**: `metadata-field-undefined`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_metadata_field_validity.py`
+
+**Scope**: All markdown under each skill directory (`SKILL.md`, `standards/`, `references/`, `workflow/`, `templates/`).
+
+**Intent**: Flag backtick snake_case tokens that appear within three lines of a `metadata` or `set-metadata` mention and refer to field names not established by any `set-metadata --key {field}` invocation in the marketplace.
+
+**False-positive policy**: Heuristic-based (±3 line proximity window). Builtin core fields (`change_type`, `worktree_path`, `use_worktree`, `confidence`, `plan_id`, etc.) are always exempt. Tokens shorter than 4 characters are ignored.
+
+**Recommended fix**: Either add a `set-metadata --key <field>` write for the field, or correct the field name to a known one.
+
+**Suppression mechanism**: The field is automatically recognized once a `set-metadata --key <field>` write appears anywhere in the marketplace.
+
+---
+
+### resolution-branch-side-effect-undocumented
+
+**Rule ID**: `resolution-branch-side-effect-undocumented`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_resolution_branch_markers.py`
+
+**Scope**: `standards/*.md` within each skill directory.
+
+**Intent**: Every named branch under a `## Resolution` section must document at least one observable side effect — a write to a log, metadata, status, or artifact — so readers know what the branch actually does beyond its label.
+
+**False-positive policy**: The branch-name allowlist gates which `###` headings are treated as resolution branches (`Hold`, `Accept`, `Split`, `Defer`, `Reject`, etc.). Non-allowlist headings inside Resolution sections are ignored. Side-effect keyword set: `log`, `metadata`, `status`, `artifact`, `decision.log`, `work.log`, `record`, `emit`, `persist`, `update`, `write`.
+
+**Recommended fix**: Add a sentence to the branch body that explicitly names the side effect (e.g., "Record the decision to decision.log.").
+
+**Suppression mechanism**: None — add the side-effect documentation.
+
+---
+
+### executor-path-in-production
+
+**Rule ID**: `executor-path-in-production`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_executor_path_in_production.py`
+
+**Scope**: `marketplace/bundles/**/scripts/**/*.py`.
+
+**Intent**: Production Python scripts must not embed the `.plan/execute-script.py` literal path, because this creates a runtime coupling to the `.plan/` directory structure that breaks when the script is called from an unexpected location. Interactive Claude / manage-* invocations use executor notation; production code uses direct module imports.
+
+**Whitelist categories** (path-component-anchored, not substring):
+- `tools-script-executor/scripts/generate_executor.py` (executor generator)
+- `tools-script-executor/templates/execute-script.py.template` (the template)
+- `_analyze_verb_chains.py`, `_analyze_argument_naming.py`, `_analyze_markdown.py`, `_analyze_executor_path_in_production.py` (lint analyzers that inspect markdown)
+- `tools-permission-fix/scripts/permission_fix.py` (permission tooling)
+
+**Finding categories**: `production_script` or `test_assertion` (test files categorised separately).
+
+**Recommended fix**: Remove the executor path literal. Replace with a direct module import or a documented interface contract.
+
+**Suppression mechanism**: Add the file to the whitelist inside `_analyze_executor_path_in_production.py` with a comment explaining the rationale.
+
+---
+
+### plan-path-in-scripts
+
+**Rule ID**: `plan-path-in-scripts`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_plan_path_in_scripts.py`
+
+**Scope**: `marketplace/bundles/**/scripts/**/*.py`.
+
+**Intent**: Production Python scripts must not hand-roll plan-path or worktree-path resolution. The canonical helpers live in `tools-file-ops:file_ops` — `get_plan_dir(plan_id)` for the plan directory (`<repo>/.plan/local/plans/{plan_id}`) and `resolve_plan_context(plan_id)` for a plan's working tree. Any script that joins `plans/{plan_id}` against `cwd/.plan` directly resolves to the wrong path and produces a "ghost" `.plan/plans/{plan_id}/` tree at the repo root on every invocation. The originating failure mode is documented under the ghost-plan-dir bug, where two CI-completion scripts (`ci_complete_precondition.py` and `manage-ci-artifacts.py`) shipped hand-rolled `_resolve_plan_base_dir()` helpers that drifted from the canonical layout.
+
+**Detected forms** — the rule detects exactly three, all via AST analysis:
+
+- **Form A — literal bypass**: a string constant containing `.plan/plans/` (the drifted form omitting `/local/`) in a code-active path-construction context.
+- **Form B — parent-walk bypass**: a `Path(__file__).parent…` / `os.path.dirname(__file__)` chain joined against a `.plan`-domain subdirectory name (`plans`, `lessons-learned`, `logs`, `archived-plans`, `workspace`).
+- **Form C — resolver bypass**: a working-tree-binding consumer that re-derives a worktree path by hand instead of routing through `file_ops.resolve_plan_context`.
+
+**Form C population** — Form C is *population-derived* rather than per-file: the consumer set is recomputed from the live tree on every run, never hand-listed. A non-whitelisted bundle script joins the population when it matches at least one of five working-tree-binding arms:
+
+1. `project_dir_flag` — declares the `--project-dir` escape-hatch flag.
+2. `resolve_project_dir_ref` — references the shared `resolve_project_dir` argv layer, as a function name or as an imported module name.
+3. `worktree_path_shell_out` — names the `get-worktree-path` command in its own code.
+4. `private_rederiver` — defines a `_resolve_worktree*` / `_resolve_project_dir*` helper.
+5. `resolver_ref` — references `resolve_plan_context` itself.
+
+Arm 5 is *migration-stable* and load-bearing rather than redundant: arms 1–4 describe how a consumer binds a working tree *by hand*, so migrating it to the resolver would erase the arm that put it in the population and evict the file from the guard's watch. Routing through the one plan-context resolver is itself proof the consumer binds a working tree, so arm 5 keeps every migrated consumer permanently in scope. It widens the population only, never the verdict — a consumer referencing the resolver is by definition migrated and can never be flagged.
+
+**Form C verdict — body-based, never name-based**: a population member is flagged only when its body carries a re-derivation signal *and* it does not reference the resolver. Two signals: `worktree_path_shell_out` (naming `get-worktree-path` in its own argv) and `worktree_path_metadata_read` (reading the `worktree_path` key out of status metadata, by subscript or `.get`). Several helpers legitimately keep `_resolve_worktree*` / `_resolve_project_dir*` names as CLI argument adapters that own the `--project-dir` escape hatch and delegate the real resolution to the resolver; a name-pattern verdict would flag precisely those escape hatches and nothing else useful. The name seeds a population candidate only.
+
+**Known limitation**: the population is not self-closing. A script can carry a bypass signal while matching no population arm, and is then invisible to Form C. Concretely, a regression that removes a `resolve_plan_context` call *and* substitutes a metadata read also drops the consumer out of the population and escapes the guard, while a partial regression that keeps the import is caught.
+
+**Whitelist categories** (path-component-anchored, not substring):
+
+- `_analyze_plan_path_in_scripts.py` — the analyzer's own file, which contains the marker literals as its detection targets (self-referential).
+- `tools-file-ops/scripts/file_ops.py` — the canonical source: it IS the implementation of `get_base_dir` / `get_plan_dir` / `base_path` and of `resolve_plan_context`.
+- `manage-status/scripts/manage-status.py` — the canonical producer: it owns the `get-worktree-path` command the resolver shells out to, so routing it through the resolver would close a cycle. Excluded by design, not by omission.
+
+**Form C baseline stragglers**: a named, enumerated exemption set (`_BASELINE_STRAGGLERS`) of working-tree-binding consumers deliberately deferred to a later workstream. The set **may only shrink** — removing an entry records a migration, while adding one would license a new un-migrated consumer, which is exactly what Form C exists to prevent. Four properties are asserted against the live tree: the derived population is non-empty; the baseline is a strict subset of it; every baseline entry resolves to a file that still exists (no phantom exemption silently un-guarding a renamed successor); and the raw bypassing set taken *before* the baseline is subtracted is non-empty — the anti-vacuity proof that the guard can flag something real.
+
+**Docstring exemption**: The scanner deliberately ignores occurrences that fall entirely inside a `"""..."""` or `'''...'''` block. Many legacy docstring examples still cite the shorter shorthand; sweeping those is out of scope for this rule. Only code-literal hits in module-level or function-body source produce findings. Form C applies the same exemption, so a module that merely *describes* `--project-dir` or `get-worktree-path` in prose is not treated as declaring or invoking it.
+
+**Import-bootstrap exemption**: `Path(__file__).parent…` chains appearing exclusively as the argument to `sys.path.insert` / `sys.path.append` are bootstrap idioms, not path-resolution drift, and are exempt from Form B.
+
+**Finding categories**: `production_script` or `test_assertion` (test files categorised separately by directory or `test_*` filename heuristic). Form C findings additionally carry `form: 'C'` and the `signal` that fired.
+
+**Recommended fix**: For forms A and B, replace the hand-rolled resolver with `from file_ops import get_plan_dir` and use `get_plan_dir(plan_id)` directly. For Form C, replace the hand-rolled worktree derivation with `from file_ops import resolve_plan_context` and read the worktree off the returned context, gating on `context.has_worktree` rather than on the truthiness of the resolved path (the resolver falls back to the main checkout whenever no worktree is materialized — both for a plan that binds none and for one whose worktree phase-5-execute has not created yet, so the path alone cannot distinguish them). A consumer whose answer depends on which of those two states holds branches on `context.worktree_state` instead.
+
+**Suppression mechanism**: Add the file to the whitelist inside `_analyze_plan_path_in_scripts.py` with a comment explaining the rationale. Suppression should be rare; the canonical alternatives (`get_plan_dir`, `resolve_plan_context`) cover nearly every legitimate use case. Form C's baseline straggler set is **not** a suppression mechanism — it may only shrink, so a new consumer cannot be added to it.
+
+---
+
+### fail-closed-gate-read
+
+**Rule ID**: `fail-closed-gate-read`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_fail_closed_gate_reads.py`
+
+**Scope**: `marketplace/bundles/**/scripts/**/*.py`.
+
+**Fixable**: `false`.
+
+**Intent**: A read-only gate or boundary verb — a function that forms a verdict by reading a file without mutating state — must fail closed. A file read guarded only by a prior `.exists()` check can still raise `OSError` (permission denied, the path resolving to a directory, a mid-read deletion race). An uncaught `OSError` crashes the verdict path, which is strictly worse than a structured error: the caller cannot distinguish "the invariant could not be evaluated" from a hard process death and may silently advance past an unverified gate. The read must be enclosed in a `try` whose handler catches `OSError` and convert the failure into a structured error status.
+
+**Detection**: A file-read call — `<x>.read_text(...)` / `<x>.read_bytes(...)`, `open(...)`, `json.load(...)`, or `json.loads(...)` / `parse_toon(...)` wrapping a read — inside a function whose name matches the gate-verb pattern (`cmd_*`, `*_status`, `assert_*`, `*_verify` / `verify_*`, `*_validate` / `validate_*`, `check_*`, `load_*`) that is NOT lexically enclosed by a `try` in that function whose `except` catches `OSError`, `Exception`, `BaseException`, or is a bare `except`.
+
+**Whitelist categories** (path-component-anchored, not substring):
+
+- `_analyze_fail_closed_gate_reads.py` — the analyzer's own file (self-referential).
+- `tools-file-ops/scripts/file_ops.py` — the canonical fail-closed read implementation (`read_json` etc.).
+
+**Finding categories**: `production_script` (test files are not scanned).
+
+**Recommended fix**: Wrap the read in `try/except OSError` and convert the failure into the verb's documented fail-closed sentinel — a structured `status: error` verdict, an empty-result sentinel, or a `ValueError` carrying the OSError context — never an uncaught exception.
+
+**Suppression mechanism**: Add the file to the whitelist inside `_analyze_fail_closed_gate_reads.py` with a comment explaining the rationale. Suppression should be rare; wrapping the read is almost always the correct response.
+
+---
+
+### redundant-contract-typed-isinstance
+
+**Rule ID**: `redundant-contract-typed-isinstance`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_fail_closed_gate_reads.py`
+
+**Scope**: `marketplace/bundles/**/scripts/**/*.py`.
+
+**Fixable**: `false`.
+
+**Intent**: When a conditional accesses a parameter already annotated with a concrete contract type (e.g. `metadata: dict[str, Any]`), wrapping the access in a runtime type guard (`isinstance(metadata, dict)`) is defensive theatre: the annotation is the contract, so in correct code the guard can never be false, and it misleads the next reader into thinking the value is polymorphic. Runtime type checks are reserved for genuine polymorphism (`Any` / union runtime types) or untrusted-input ingestion boundaries. This is the inverse of `fail-closed-gate-read`: a superfluous guard on a contract-typed value versus a missing guard at an I/O boundary.
+
+**Detection**: An `isinstance(param, Cls)` call where `param` is a parameter of the enclosing function annotated with a concrete builtin contract type whose base is exactly `Cls` — bare (`dict`) or subscripted (`dict[str, Any]`). Only concrete builtins are eligible (`dict`, `list`, `str`, `int`, `float`, `bool`, `set`, `tuple`, `bytes`, `frozenset`); `Any`, `X | Y` unions, `Optional[X]`, and `Union[...]` annotations are NOT flagged.
+
+**Finding categories**: `production_script` (test files are not scanned).
+
+**Recommended fix**: Remove the redundant `isinstance` guard. If the value is genuinely polymorphic, widen the parameter annotation to the real union or `Any` so the signature reflects the contract the guard is enforcing.
+
+**Suppression mechanism**: Add the file to the whitelist inside `_analyze_fail_closed_gate_reads.py` with a comment explaining the rationale.
+
+---
+
+### file-bloat-ack
+
+**Rule ID**: Extension of `file-bloat` / `subdoc-bloat`
+
+**Mechanism**: `_doctor_analysis.py` — `_has_file_bloat_ack()` helper called before `file-bloat` and `subdoc-bloat` issue emission.
+
+**Intent**: Allow explicitly acknowledged bloated files to suppress the `file-bloat` and `subdoc-bloat` findings. The ack tag provides a human-readable rationale slug so the suppression is auditable.
+
+**Ack format**: Add to the file's YAML frontmatter:
+
+```yaml
+quality:
+  file-bloat: ack-<rationale-slug>
+```
+
+The ack tag must match `^ack-[a-z0-9_-]+$`. The slug after `ack-` must be non-empty and lowercase alphanumeric-or-hyphen-or-underscore. Examples: `ack-validator-registry`, `ack-large-reference-doc`, `ack-legacy-content`.
+
+**Audit trail**: When an ack suppresses a finding, the tag value is stored under `bloat_ack_tag` in the analysis output dict for downstream reporting.
+
+**False-positive policy**: Malformed values (`yes`, `true`, `ack-`, bare words) do not suppress — the finding is still emitted. Only well-formed `ack-*` values suppress.
+
+**Suppression mechanism**: Add `quality.file-bloat: ack-<rationale>` to the file's YAML frontmatter. The plugin.json per-component override is explicitly out of scope — frontmatter is the only suppression channel.
+
+---
+
+### orphan-argparse-flag
+
+**Rule ID**: `orphan-argparse-flag`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_orphan_argparse_flags.py`
+
+**Scope**: Individual Python scripts passed to `analyze_orphan_argparse_flags(script_path)`.
+
+**Intent**: Flag argparse flags that are declared in a `manage-*` script but never read in the corresponding subcommand handler body. Orphan flags accumulate when configuration keys are removed or renamed without also removing the argparse declaration.
+
+**Detection**: AST walk. For each `add_argument('--flag', ...)` on a known parser variable, the analyzer resolves the handler via `set_defaults(func=cmd_*)` and checks whether `args.{dest}` appears in the function body.
+
+**False-positive policy**: Conservative — when a handler uses `vars(args)`, `getattr(args, ...)`, or `**vars(args)` unpacking, the analyzer emits no findings for any flag in that handler (static analysis cannot determine which attrs are accessed).
+
+**Recommended fix**: Either read the flag in the handler body, or remove the `add_argument` declaration.
+
+**Suppression mechanism**: Use `vars(args)` or `getattr(args, ...)` in the handler body (triggers the conservative path), or remove the orphan flag declaration.
+
+---
+
+### cmd-root-anchoring-missing
+
+**Rule ID**: `cmd-root-anchoring-missing`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_cmd_root_anchoring.py`
+
+**Scope**: Dispatcher scripts — identified by the heuristic: at least one `set_defaults(func=cmd_*)` call with a `cmd_*` function name.
+
+**Intent**: Every `cmd_*` function in a dispatcher script must (a) call `find_marketplace_root(...)` to anchor itself to the marketplace root, and (b) have a corresponding argparse subparser that declares `--marketplace-root` so callers can override the root path. Missing either piece creates a hidden coupling to the script's working directory.
+
+**Three missing modes**:
+- `prelude`: `find_marketplace_root(...)` call absent from the function body.
+- `flag`: `--marketplace-root` flag absent from the corresponding subparser.
+- `both`: neither the prelude call nor the flag is present.
+
+**False-positive policy**: Non-dispatcher scripts (no `set_defaults(func=cmd_*)`) are out of scope. Prelude detection is order-tolerant — intermediate assignments and comments before the `find_marketplace_root(...)` call are allowed.
+
+**Recommended fix**: Add `marketplace_root = find_marketplace_root(args.marketplace_root)` at the start of the function body, and add `p_sub.add_argument('--marketplace-root', dest='marketplace_root', ...)` to the corresponding subparser.
+
+**Suppression mechanism**: None — implement the anchoring contract.
+
+---
+
+### notation-staleness
+
+**Rule ID**: `notation-staleness`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_notation_staleness.py`
+
+**Scope**: Per-skill — `SKILL.md` plus every `*.md` under `standards/`, `references/`, `workflow/`, `recipes/`, plus every `*.py` under `scripts/`. Wired into `_doctor_analysis.py` unconditionally active (not gated on `active_rules`), mirroring the `refine-contract-violation` integration.
+
+**Intent**: Flag three-part executor notations (`{bundle}:{skill}:{script}`) whose third segment has no matching `{script}.py` file under the resolved `bundles/{bundle}/skills/{skill}/scripts/` directory. `generate_executor` derives a script's public notation from its filename, so renaming an entrypoint script silently changes the notation — callers that still use the old third segment resolve to `Unknown notation`.
+
+**Detection**: Pure static analysis — regex extraction of three-segment notations from each line, then a filesystem check that `{script}.py` exists under the resolved scripts directory. Notations whose target `scripts/` directory does not exist are skipped (they are not executor notations).
+
+**Canonical hint**: When the literal third segment has no matching file but the hyphen/underscore-flipped form does, the finding carries `details.canonical_hint` naming the corrected notation so the fix can be applied mechanically.
+
+**False-positive policy**: Conservative — the analyzer only evaluates notations whose `bundles/{bundle}/skills/{skill}/scripts/` directory exists, filtering out incidental colon-separated tokens (URLs, timestamps, prose).
+
+**Recommended fix**: Update the notation's third segment to match the actual script filename (typically the hyphen/underscore-flipped form named in `details.canonical_hint`).
+
+**Suppression mechanism**: None — a non-resolving notation is a hard breakage and must be fixed.
+
+---
+
+## Rule Pack: Manually-maintained-mirror drift
+
+Six rules that make a hand-maintained documentation mirror of a machine-derivable fact machine-checkable. **Activation**: build-failing — every one is registered in `doctor-marketplace.py::cmd_quality_gate` (through `_runner.RuleRunner.run_quality_gate`), so a drifted mirror fails the build, and they are also reported under `doctor-marketplace.py analyze`. `provides-method-table-drift`, `literal-count-drift`, `canonical-enum-choices-drift` and `readme-skill-registration-drift` run as marketplace-wide passes (wired into both `cmd_quality_gate` and `cmd_analyze`); `broken-relative-link` and `fenced-code-no-language` run as the marketplace-wide `analyze_markdown_mirror_rules` pass inside `cmd_quality_gate` and also surface per-component through `cmd_analyze`'s `analyze_component` pass.
+
+### provides-method-table-drift
+
+**Rule ID**: `provides-method-table-drift`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_provides_method_table.py`
+
+**Scope**: every `marketplace/bundles/*/skills/plan-marshall-plugin/SKILL.md` paired with its sibling `extension.py`.
+
+**Intent**: A bundle's `plan-marshall-plugin` "Extension API" table is a hand-maintained mirror of that bundle's `extension.py` workflow-hook overrides (`provides_triage` / `provides_outline_skill` / `provides_recipes` / `provides_retrospective_aspects`, whose `ExtensionBase` defaults are `None` / `None` / `[]` / `[]`). When an override is added or removed in `extension.py` without a matching table edit, the mirror silently rots — a SKILL.md reader sees a stale capability list. This rule makes the mirror machine-checkable.
+
+**Detection**: Pure static analysis — AST-load `extension.py`, find the concrete `*ExtensionBase` subclass, and classify each `provides_*` hook as a *real override* (a single non-default return value) or a *default override* (its body returns only `None` / `[]` / `pass`). Then extract the `provides_*()` function-name tokens from the markdown-TABLE rows (lines beginning with `|`) in the SKILL.md "Extension API" section. Two finding directions:
+
+- `override_missing_from_table` — a real override absent from the table (warning, line 1).
+- `phantom_table_row` — a table row naming a `provides_*()` method that is undefined on the class or returns only the base default (warning, at the offending row's line).
+
+**Structural discriminator**: only markdown-TABLE rows (`| `provides_x()` | ... |`) are mirror rows. Generic API prose in bullet-list form (`- `provides_x()` - Triage skill reference or None`) describes the hook contract abstractly rather than enumerating concrete overrides, so it is NOT a mirror and is deliberately out of scope — this is what keeps the rule free of false positives on bundles (`pm-dev-oci`, `pm-requirements`) that document the hooks generically.
+
+**Recommended fix**: Add the missing override's row to the "Extension API" table, or remove the phantom row whose method is no longer (or never was) overridden.
+
+**Suppression mechanism**: None — a stale mirror is a real drift.
+
+---
+
+### literal-count-drift
+
+**Rule ID**: `literal-count-drift`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_literal_count.py`
+
+**Scope**: two governed surfaces — the `extension-api` `SKILL.md` "Extension Points" table (`marketplace/bundles/plan-marshall/skills/extension-api/SKILL.md`) and the `persona-security-expert` `SKILL.md` standards index (`marketplace/bundles/plan-marshall/skills/persona-security-expert/SKILL.md`, checked against that skill's `standards/` directory listing).
+
+**Intent**: A count token restated by hand alongside the set it describes rots the moment the set changes and the token does not. The "Extension Points" table's "Implementations" column states, per extension point, a numeric-literal count mirroring the on-disk implementer set. The persona-security-expert standards index restates the SAME set three times — a prose count in the REFERENCE MODE paragraph, the "Available Standards" load-on-demand table, and the "Standards Reference" table — so adding or removing a `standards/` document requires three hand edits and nothing fails when one is missed. This rule makes both mirrors machine-checkable against a derived population.
+
+**Detection (Extension Points table)**: Pure static analysis — locate the "Extension Points" section table, and for each data row read the "Hook Method" cell (the structural discriminator) and the bare-integer "Implementations" cell. Compute the actual implementer count from the bundle tree and flag any mismatch:
+
+- For the four AST hooks (`discover_modules()` / `provides_triage()` / `provides_outline_skill()` / `provides_recipes()`), the count is the number of bundles whose `plan-marshall-plugin` `extension.py` carries a *real override* — the same `_is_default_return` classification `provides-method-table-drift` uses, so the two mirrors of the same overrides agree on what an override is.
+- For the `*_provider.py` provider hook, the count is the number of `*_provider.py` files under any bundle's `skills/*/scripts/` tree.
+
+A mismatch emits a warning-severity finding at the offending row's line.
+
+**Detection (persona-security-expert standards index)**: The population is DERIVED from the `standards/*.md` directory listing — never restated in the analyzer, in this catalog, or anywhere else. Three claims are compared against it: the anchored prose counts (``N `standards/` sub-documents`` and `load all N at once`, compared against the population size rendered both as a digit and as an English number word), the "Available Standards" table's `standards/<name>.md` link set, and the "Standards Reference" table's `<name>.md` first-column set. Every finding publishes the derived `population_size` in its `details`. That is disclosure, not the safeguard: the keys ride on FINDINGS, so a clean tree emits none of them and the runner summary for this rule carries no population either. What actually stops a clean result reading as a pass over an unread population is the **empty-population guard** — a zero-size `standards/` derivation emits a finding of its own (`surface: population`, `population_size: 0`), so a clean run proves the population was non-empty. The `details`-key phrasing was carried here as the reason and is a non-sequitur, the same one corrected for `canonical-enum-choices-drift`.
+
+**Fail-closed conditions**: on the standards-index surface, an empty or unreadable `standards/` directory, a missing index section, and a body carrying no anchored prose count each emit a finding rather than passing silently. Only the governed `SKILL.md` being absent short-circuits to "out of scope", exactly as the Extension Points surface does.
+
+**Structural discriminator**: on the Extension Points surface a row is checkable ONLY when its "Hook Method" cell carries a recognised hook token AND its "Implementations" cell is a bare integer. On the standards-index surface a prose token is checkable ONLY when it sits inside one of the two anchored phrasings AND is itself a digit run or an English number word — an ordinary word that happens to precede the anchor phrase is not a count claim and does not match. A row with an unrecognised hook token, and any count number appearing in unanchored prose or bullet lists elsewhere in the tree, is out of scope and never flagged — this is what keeps the rule free of false positives on incidental numbers.
+
+**Recommended fix**: Correct the stale "Implementations" count to the enumerated implementer count (or add/remove the implementation the count was meant to mirror). On the standards-index surface, bring the prose count and both index tables into line with the `standards/` directory contents — never by hand-maintaining a second copy of the file list.
+
+**Suppression mechanism**: None — a stale count is a real drift.
+
+---
+
+### canonical-enum-choices-drift
+
+**Rule ID**: `canonical-enum-choices-drift`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_canonical_enum_drift.py`
+
+**Scope**: every `SKILL.md` `## Canonical invocations` block in the marketplace tree — each documented `--flag {a|b|c}` enum, scoped to the subcommand path of the executor invocation it sits under.
+
+**Intent**: A documented `{a|b|c}` enum is a hand-maintained mirror of the flag's live argparse `choices=`. When a choice is added or renamed in the script and the block is not edited, the mirror rots and a reader writes an invocation the parser rejects — the same failure shape the `ARGUMENT_NAMING_*` cluster catches one surface over, at the flag NAME rather than at its value set.
+
+**Detection**: Pure static analysis. Enum tokens are extracted per fenced block and attributed to the executor invocation ABOVE them — every line is searched for a notation, so a fence documenting several invocations scopes each enum to its own subcommand rather than to the block's first. The authority is resolved from the script's AST, reading `choices=` ONLY — never a `description=` hand-list — so the declared-vs-derived distinction holds. A documented set that differs from the resolved set emits a finding naming the members missing from the doc and those the doc lists but the parser does not accept.
+
+**Fail-closed conditions**: the seven census causes below each emit NOTHING — there is no authority to compare against, and inventing one would manufacture a false finding. **Two** further skips are NOT among them and are counted nowhere, both dropped at collection rather than resolved: (1) an enum sitting above its fenced block's first executor invocation, which has no notation and so no script to compare against; and (2) a token whose member split is EMPTY or whose members include a `--`-prefixed item, which is a flag list rather than an enum body. Zero live sites carry either shape, but each is a declined token with no figure — the same shape as the one-member drop this rule corrected — so both are disclosed here. ⛔ This paragraph said "one further skip" while the second was already in the code; a disclosure that calls itself complete while omitting a case is the defect this rule reports, committed by its own catalogue entry. The unresolved share is published on each finding (`unresolved_notation_fraction`) with a per-cause census (`unresolved_notation_causes`). Those keys ride on FINDINGS, so on a clean tree — the only state a passing gate is ever in — they are not emitted at all; the rule's runner summary carries `population_size` for exactly that reason, and `derive_coverage` over `derive_population` is the full clean-run surface. This sentence read "so a clean sweep states what it could not check" while the gate published nothing on a clean run, which is this rule's own defect asserted as its remedy. The census reports every cause including the zeroes, and separates the ONE cause that is not a blind spot from the rest. The seven causes are `notation_unresolved`, `script_unparseable`, `parser_surface_not_derived`, `authority_incomplete`, `choices_unresolvable`, `single_member_ambiguous` — all blind spots — and `no_choices_declared`, which is not. `no_choices_declared` means the subcommand's parser WAS modelled, the module's authority is complete, and it declares no `choices=` for that flag — so this rule's authority is established as ABSENT rather than merely unestablished. (Where the walk cannot read the whole of a module's `choices=` authority for the site — a receiver shadowed by an enclosing function parameter, or a parser handed to a call this analyzer does not model, typically an imported helper that declares the flag — it reports `authority_incomplete` instead: declining to attribute an authority is not establishing its absence.) That is a statement about the rule's authority, not about the flag: both sites in this bucket ARE constrained, by a rejecting lookup or by a handler that validates and names the route for a rejected value, neither of which this rule reads by design. Every other cause is a gap where the authority was never established, and the largest is `parser_surface_not_derived` — the documented subcommand's parser was never modelled, either because it is built by an imported helper or because the verb is registered from a loop variable rather than a literal. (A parser merely passed INTO a helper is not one of these: the caller's own `add_parser` models the path, so the surface IS derived and such a site reports `authority_incomplete`, not this cause.) The cause asserts only that the surface was not modelled — not where the flag's `choices=` live, which varies and is sometimes nowhere. Filing that under "no choices declared" would report the largest gap as reassurance, so the actionable number is published rather than left to a reader who would have to know which causes count: on every finding as `details.unresolved_notation_blind_spots`, and on `derive_coverage` as `blind_spots` — each the sum over every cause except `no_choices_declared`.
+
+**Structural discriminator**: a token is an enum only inside a fenced block and only below an executor invocation. Prose braces elsewhere in the document are out of scope. A group parsing to ONE member is collected but never compared: the notation cannot tell a template slot (`--scope {phase}.{role}|plan|...` yields `{phase}`) from a truncated enum (`{bug}` against a live `choices=['bug','improvement']`), and the second is this rule's own headline drift shape. It is counted under `single_member_ambiguous` and included in `blind_spots`. This was a silent drop at collection for one round, described here as reading the token "as the template slot it is" — a discriminator the analyzer does not have.
+
+**Recommended fix**: Bring the documented enum into line with the flag's live `choices=`, or correct the `choices=` if the documentation states the intended set.
+
+**Suppression mechanism**: None — a stale enum is a real drift.
+
+---
+
+### readme-skill-registration-drift
+
+**Rule ID**: `readme-skill-registration-drift`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_readme_skill_coverage.py`
+
+**Scope**: every bundle `README.md`, checked against the skills that bundle's `plugin.json` registers.
+
+**Intent**: A bundle README's skill enumeration is a hand-maintained mirror of the registration set in `plugin.json`. A skill added to the manifest without a README edit is invisible to every reader who arrives at the bundle through its README — the same mirror-vs-derived shape as the two rules above, one surface further out.
+
+**Detection**: Pure static analysis — the registered skill set is read from the bundle's `plugin.json`, the README body is scanned for each registered name, and any registered skill the README fails to name emits a finding.
+
+**Fail-closed conditions**: a bundle with no `README.md`, or an unreadable / unparseable `plugin.json`, is out of scope rather than flagged — there is no derivable registration set to mirror.
+
+**Structural discriminator**: the derived set is the `plugin.json` registration, never the on-disk `skills/` listing, so a skill directory that is present but unregistered is not a README obligation.
+
+**Recommended fix**: Name the missing skill in the bundle README, or remove its registration if it was not meant to ship.
+
+**Suppression mechanism**: None — an unnamed registered skill is a real drift.
+
+---
+
+### broken-relative-link
+
+**Rule ID**: `broken-relative-link`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_markdown.py` (`check_broken_relative_link`), run as the marketplace-wide `analyze_markdown_mirror_rules` pass under `cmd_quality_gate` and surfaced per-component through `_doctor_analysis.py`'s `analyze_component` pass under `cmd_analyze`.
+
+**Scope**: every `*.md` under `marketplace/bundles/*/{skills,agents,commands}/`.
+
+**Intent**: A relative markdown link is a hand-maintained mirror of the on-disk file layout. When a target file moves or is renamed without updating every `[text](relative/path.md)` that points at it, the link becomes a dead reference no structural check catches. This rule makes the layout mirror machine-checkable.
+
+**Detection**: Pure static analysis — for each non-fenced line, resolve every relative link target against the linking file's own directory and `exists()`-check it (after stripping any `#fragment`). A missing target that resolves inside the containment boundary emits an error-severity finding at the link's line. The containment boundary is the repo root (the `.git`-bearing directory, via `derive_link_boundary`), so in-repo cross-tree references (e.g. a bundle file linking into `doc/`) are existence-checked while a link resolving outside the repo root is skipped without a disk probe.
+
+**Structural discriminator**: absolute URLs (any `scheme:`), root-absolute paths (leading `/`), pure-anchor links (leading `#`), links inside fenced code blocks, and links inside inline-code spans (single/multi backticks — a `[text](p)` or `![](p)` literal inside backticks is illustrative example text) are out of scope. `*-template.md` scaffolds and files under `/templates/` are also exempt — their relative links are written for the location the template is instantiated into, not where the scaffold is stored. Only genuine in-boundary relative references are checked, so external links, illustrative code, and template placeholders never trip the rule.
+
+**Recommended fix**: Repair the link target to the file's current on-disk path, or remove the dead reference.
+
+**Suppression mechanism**: None — a broken relative link is a hard reference breakage.
+
+---
+
+### fenced-code-no-language
+
+**Rule ID**: `fenced-code-no-language`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_markdown.py` (`check_fenced_code_no_language`), run as the marketplace-wide `analyze_markdown_mirror_rules` pass under `cmd_quality_gate` and surfaced per-component through `_doctor_analysis.py`'s `analyze_component` pass under `cmd_analyze`.
+
+**Scope**: every `*.md` under `marketplace/bundles/*/{skills,agents,commands}/`.
+
+**Intent**: A fenced code block's opening info-string mirrors the author's intended block language. An omitted info-string (MD040) degrades rendering and downstream language-aware tooling. This rule flags the missing-language defect at authoring time.
+
+**Detection**: Pure static analysis — track fence state and flag every *opening* fence (` ``` ` or `~~~`) whose line carries no info-string. Warning severity, **fixable**.
+
+**Structural discriminator**: only opening fences are inspected; the closing fence of a block legitimately carries no info-string and is never flagged because the scanner distinguishes open from close via fence-state tracking.
+
+**Recommended fix**: Auto-fixable — the `apply_fenced_code_language_fix` handler (`_cmd_apply.py`, registered in `FIX_HANDLERS`, classified safe in `SAFE_FIX_TYPES`) appends a default `text` info-string to every bare opening fence, leaving closing fences and already-tagged fences untouched. See [fix-catalog.md](fix-catalog.md) § fenced-code-no-language. For a more specific language, set the info-string by hand (e.g. ` ```bash `, ` ```python `, ` ```toon `).
+
+**Suppression mechanism**: None — a missing fence language is a real style defect.
+
+---
+
+## Rule Pack: Reference-resolution
+
+Five rules that catch gaps between what the marketplace *declares* and what is *discoverable on disk*. Each gap resolves to a dead reference at runtime: a missing component, an unresolvable `Skill:` directive, a drifted notation segment, an undeclared component, or an undiscoverable recipe. **Activation**: unconditionally active under `doctor-marketplace.py analyze` (each analyzer is a cheap json / regex / filesystem pass over the bundle tree). NOT included in `quality-gate`. `notation-bundle-skill-drift` rides the existing per-skill `notation-staleness` integration in `_doctor_analysis.py`; the other four are marketplace-wide passes wired into `cmd_analyze`.
+
+### declared-component-vs-disk
+
+**Rule ID**: `declared-component-vs-disk`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_declared_vs_disk.py`
+
+**Scope**: every bundle's `.claude-plugin/plugin.json` under the marketplace tree.
+
+**Intent**: Forward manifest-integrity check. For each component declared in a bundle's `plugin.json` (`agents` / `commands` / `skills` arrays), the corresponding file must exist on disk — `./skills/{skill}` resolves to `{bundle}/skills/{skill}/SKILL.md`, `./agents/{agent}.md` and `./commands/{command}.md` resolve to the named markdown file. A declared entry whose target file is missing is a dead manifest reference: the plugin loader fails to load the component.
+
+**Detection**: Pure static analysis — `json.loads` each `plugin.json`, resolve each entry to its on-disk anchor, and `is_file()`-check it. Malformed manifests are skipped silently (the `invalid-yaml` / structural rules cover them).
+
+**Recommended fix**: Either restore the missing file or remove the stale entry from `plugin.json`. Run `/marshall-steward` after bundle changes.
+
+**Suppression mechanism**: None — a declared-but-missing component is a hard breakage.
+
+---
+
+### plugin-json-orphan-component
+
+**Rule ID**: `plugin-json-orphan-component`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_plugin_json.py`
+
+**Scope**: every bundle's `skills/*/SKILL.md`, `agents/*.md`, and `commands/*.md` under the marketplace tree.
+
+**Intent**: Reverse manifest-integrity check (the bidirectional complement of `declared-component-vs-disk`). An on-disk component that ships but is NOT declared in its bundle's `plugin.json` is invisible to the plugin loader. The check honours the marketplace registration convention: user-invocable skills (`user-invocable: true`) MUST register, so an undeclared one is a real orphan; script-only / context-loaded / extension-implementor skills (`user-invocable: false`) are legitimately unregistered and therefore exempt. Agents and commands always register, so any undeclared `agents/*.md` / `commands/*.md` is an orphan with no frontmatter exemption.
+
+**Detection**: Pure static analysis — `json.loads` each `plugin.json` into the declared set (normalising the leading `./`), enumerate on-disk components, and report each one absent from the declared set. SKILL.md orphans are filtered to `user-invocable: true` via a frontmatter scan.
+
+**Severity**: `warning` (advisory) — a missing registration degrades discoverability rather than breaking a resolving reference.
+
+**Recommended fix**: Add the on-disk component's `./skills/{skill}` / `./agents/{file}.md` / `./commands/{file}.md` entry to its bundle's `plugin.json`. If a skill is deliberately script-only, set `user-invocable: false` in its frontmatter so the rule exempts it.
+
+**Suppression mechanism**: Set `user-invocable: false` on a deliberately-unregistered skill (no exemption channel for agents / commands).
+
+---
+
+### skill-notation-unresolved
+
+**Rule ID**: `skill-notation-unresolved`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_skill_notation.py`
+
+**Scope**: every `*.md` under `marketplace/bundles/*/{skills,agents,commands}/`.
+
+**Intent**: A `Skill: {bundle}:{skill}` directive whose target skill directory `bundles/{bundle}/skills/{skill}/` does not exist is a dead reference — the dispatcher cannot load it, and the workflow that depends on it silently misfires. The rule validates the two-segment bundle-prefixed directive form; the bare single-segment form and project-local `.claude/skills` references are out of scope.
+
+**Detection**: Pure static analysis — line-anchored regex extraction of `Skill: {bundle}:{skill}` tokens, then a filesystem check that the skill directory resolves. To avoid false positives on incidental colon-joined tokens, the rule only evaluates a directive whose `{bundle}` is a real bundle on disk (carries a `.claude-plugin/plugin.json`).
+
+**Recommended fix**: Correct the directive's bundle / skill segment to a skill directory that exists.
+
+**Suppression mechanism**: None — an unresolvable `Skill:` directive is a hard breakage.
+
+---
+
+### notation-bundle-skill-drift
+
+**Rule ID**: `notation-bundle-skill-drift`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_notation_staleness.py` (emitted alongside `notation-staleness` from the same scan).
+
+**Scope**: per-skill — `SKILL.md` plus every `*.md` under `standards/`, `references/`, `workflow/`, `recipes/`, plus every `*.py` under `scripts/` (same surface as `notation-staleness`).
+
+**Intent**: Where `notation-staleness` validates only the third (script) segment of a `{bundle}:{skill}:{script}` notation, this rule validates the FIRST and SECOND segments — the `{bundle}` directory and the `{skill}` directory must resolve on disk. The drift is only evaluated for notations anchored to the executor invocation prefix (`python3 .plan/execute-script.py {notation}`), because a bare three-segment token whose bundle / skill is unknown is indistinguishable from an incidental colon-joined token (URL, timestamp, prose). Anchoring on the executor prefix removes that ambiguity.
+
+**Detection**: Pure static analysis — a second regex (`execute-script\.py\s+{notation}`) extracts executor-anchored notations; the bundle segment is checked for a real `bundles/{bundle}/.claude-plugin/plugin.json`, then the skill segment for a real `bundles/{bundle}/skills/{skill}/` directory. The first failing segment is reported.
+
+**Canonical hint**: `details.canonical_hint` names which segment (bundle or skill) failed to resolve so the fix can be applied mechanically.
+
+**Recommended fix**: Correct the failing notation segment (`details.reason` distinguishes `bundle_dir_missing` from `skill_dir_missing`) to a real bundle / skill name.
+
+**Suppression mechanism**: None — a non-resolving notation is a hard breakage.
+
+---
+
+### recipe-missing-implements
+
+**Rule ID**: `recipe-missing-implements`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_frontmatter.py`
+
+**Scope**: every `recipe-*` skill `SKILL.md` under BOTH `marketplace/bundles/*/skills/recipe-*` AND the project-local `.claude/skills/recipe-*` tree.
+
+**Intent**: Recipe skills are recipe-extension-point implementors; the `extension-api` discovery layer resolves them via the `implements:` frontmatter field. A `recipe-*` skill whose `SKILL.md` omits `implements:` (or declares a divergent value) is invisible to recipe discovery and cannot be offered via `/plan-marshall action=recipe`. The canonical value is `implements: plan-marshall:extension-api/standards/ext-point-recipe` (see `plan-marshall:extension-api/standards/ext-point-recipe.md` § Implementor Frontmatter).
+
+**Detection**: Pure static analysis — enumerate every `recipe-*` skill directory across both trees, parse the leading frontmatter, and compare the `implements:` value to the required notation. `details.reason` distinguishes `implements_missing` from `implements_divergent`.
+
+**Recommended fix**: Add (or correct) `implements: plan-marshall:extension-api/standards/ext-point-recipe` in the recipe skill's `SKILL.md` frontmatter.
+
+**Suppression mechanism**: None — declare the canonical `implements:` value.
+
+---
+
+## Rule: targets-scope-invalid
+
+Kept out of the reference-resolution pack above deliberately: every member of that pack catches a
+gap that resolves to a **dead reference at runtime**, and every member is analyze-only. An invalid
+`targets:` declaration is neither — it is a build-time authoring error, and this rule is
+build-failing under `quality-gate`.
+
+**Activation**: build-failing under `quality-gate` (via `RuleRunner.run_quality_gate`, routed
+through the `scoped(...)` wrapper) and also active in `doctor-marketplace.py analyze`.
+
+**Rule ID**: `targets-scope-invalid`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_target_scope.py`
+
+**Scope**: every component that may carry the field — `marketplace/bundles/*/agents/*.md`, `marketplace/bundles/*/commands/*.md`, and `marketplace/bundles/*/skills/*/SKILL.md`.
+
+**Intent**: A component may declare the build-time `targets:` frontmatter field naming the build targets it ships to (absent ⇒ every target). The multi-target generator reads it with `yaml.safe_load` and rejects an unknown target name, an empty declaration, a declaration naming only targets that emit no component tree, a value resolving to neither a list of names nor a single name (a mapping, a number, a boolean), a list holding an item that is not a name (`targets: [true]`), and unparseable frontmatter that mentions the field. A single name is accepted — a bare or quoted scalar is a valid declaration, and a scalar containing commas is split on them. This rule surfaces what a stdlib-only scanner can see of that while the author is still looking at the file. An absent field is correct and is the state of nearly every component — it is never flagged.
+
+**Detection**: Pure static analysis — the leading `---`-fenced frontmatter is line-scanned for a column-zero `targets:` key. `details.reason` distinguishes `targets_unknown` (with `details.unknown_targets` and `details.registered_targets`) and `targets_empty`. Valid names are derived from the targets' own `register_target('{name}', …)` registrations under `marketplace/targets/*/__init__.py`, never transcribed into the analyzer.
+
+**Coverage boundary**: This rule is an **approximation of the build, not a mirror of it**, and the asymmetry is deliberate. A plugin-doctor script is stdlib-only — a consumer project installs the bundles without `marketplace/` and without this repository's dependencies — so it cannot parse YAML, while the build does. It therefore reads only the shapes it is certain of and stays **silent** on every other: a block scalar, a quoted or plain value spanning lines, a flow sequence opening below the key or spanning them, an indented frontmatter block, a value carrying a nested structure, a flow sequence any of whose ITEMS is quoted, tagged or anchored, since nothing here resolves those; and a `targets:` line sitting inside a construct opened on an earlier line, which only looks like a key. Each of those is legal YAML the build reads correctly, so silence is the accurate answer rather than a gap to close by guessing. What this rule promises is **soundness**: anything it reports is a real build failure. A test runs a shared corpus through both the rule and the build and fails if the rule ever flags something the build accepts. Two further checks stay in the build outright: the ships-nowhere case asks each target class for its `emits_bundle_tree` capability, which would need importing the target classes; and `marketplace/targets/` is a meta-project tree absent from a consumer install, so when it cannot be located the unknown-name check is skipped (nothing to check names against) while the empty-declaration check, which needs no registry, still runs.
+
+**Recommended fix**: correct the target name to one the registry declares, or remove the `targets:` field entirely if the component should ship to every target. The build's error message names the registered set.
+
+**Suppression mechanism**: None — a declaration the build rejects is a hard breakage.
+
+---
+
+## Rule Pack: Agentfile-hygiene backstop
+
+Two deterministic rules that are the fast backstop for the cognitive `plan-marshall:recipe-agentfile-hygiene` sweep. Both embody the single normative rubric in `plan-marshall:ref-agentfile-hygiene` `standards/rubric.md`; shared detection helpers (agentfile discovery, fenced-block spans, tree-glyph detection) live in `_analyze_agentfile_shared.py`. **Activation**: build-failing under `quality-gate` (via `RuleRunner.run_quality_gate`, routed through the `scoped(...)` wrapper) and also active in `doctor-marketplace.py analyze`. An always-on agentfile that drifts over the line budget or draws a directory tree regresses the build. Discovery anchors at the **repo root** (every `CLAUDE.md` at any nesting level plus `AGENTS.md`), pruning `.plan/`, `.git/`, `node_modules/`, and `target/`.
+
+| Rule ID | Intent | False-positive policy | Suppression |
+|---------|--------|-----------------------|-------------|
+| `agentfile-line-count-over-budget` | Flag an always-on agentfile whose total line count exceeds the always-on line budget (`DEFAULT_LINE_BUDGET`, 200) — a proxy signal for accumulated bloat that prompts a section re-classification pass | Only files named `CLAUDE.md`/`AGENTS.md` outside the pruned dirs are scanned; the budget is the single configurable default the rubric mandates across all agentfile types | None — re-classify and demote/delete sections (via the cognitive recipe) until the file is back within budget; raise the budget only with rubric justification |
+| `agentfile-directory-tree-present` | Flag a fenced code block drawing the repo structure with box-drawing glyphs (`├──`, `│`, `└──`) inside an always-on agentfile — inert content the assistant reads more reliably from the filesystem | Only fenced blocks are scanned; a glyph in ordinary prose or a markdown table (ASCII `|`) does not match; one finding per offending fenced block | None — delete the tree (or demote a genuinely-wanted overview to a doc) |
+
+### agentfile-line-count-over-budget
+
+**Rule ID**: `agentfile-line-count-over-budget`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_agentfile_line_budget.py` (shared helpers: `_analyze_agentfile_shared.py`)
+
+**Scope**: every always-on agentfile under the repo root — `CLAUDE.md` at any nesting level plus `AGENTS.md` — excluding `.plan/`, `.git/`, `node_modules/`, and `target/`.
+
+**Intent**: An always-on agentfile is loaded into context on every session before any task work, so its cost is paid unconditionally. Total length is a cheap proxy for accumulated bloat; the rubric (`plan-marshall:ref-agentfile-hygiene` `standards/rubric.md` § "Always-on line budget") sets a single configurable default (200 lines) applied across all agentfile types. An agentfile over budget is a prompt to re-classify its sections and demote or delete until it is back within budget.
+
+**Detection logic**: Discover every agentfile under the repo root, count its lines, and emit one finding (anchored at line 1) for each file whose line count strictly exceeds `budget` (default `DEFAULT_LINE_BUDGET = 200`; callers may pass a different threshold). The snippet records `{line_count} lines (budget {budget})`.
+
+**Recommended fix**: Run the cognitive `recipe-agentfile-hygiene` sweep to re-classify each section against the rubric and demote (`demotable-to-skill`) or delete (`inert/deletable`) until the file is within budget. A project that genuinely needs a different budget tunes the single configurable threshold rather than hard-coding per-type values.
+
+**Suppression mechanism**: None — this is a build-failing rule; resolve by trimming the agentfile (or adjusting the configured budget with rubric justification).
+
+---
+
+### agentfile-directory-tree-present
+
+**Rule ID**: `agentfile-directory-tree-present`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_agentfile_directory_tree.py` (shared helpers: `_analyze_agentfile_shared.py`)
+
+**Scope**: every always-on agentfile under the repo root — `CLAUDE.md` at any nesting level plus `AGENTS.md` — excluding `.plan/`, `.git/`, `node_modules/`, and `target/`.
+
+**Intent**: A fenced code block that draws the repository's directory structure with box-drawing characters (`├──`, `│`, `└──`) is a specific, high-frequency instance of inert content (rubric § "The directory-tree anti-pattern"). An assistant enumerates the project tree far more reliably by reading the filesystem than by trusting a hand-maintained drawing that goes stale the instant a file moves. A directory tree belongs in a deliberately-loaded doc, never in an always-on agentfile.
+
+**Detection logic**: For each agentfile, compute its fenced-block spans (` ``` ` and `~~~` fences, same-marker close, unterminated fence extends to EOF), then scan each block's inner lines for any of the three directory-tree glyphs. Emit one finding per offending fenced block, anchored at the block's first glyph line, with the glyph line as the snippet.
+
+**Permitted contexts**:
+1. **Outside fenced blocks** — glyphs in ordinary prose are not scanned; only fenced-block content counts.
+2. **Markdown tables** — markdown tables use the ASCII pipe `|`, not the box-drawing `│` (U+2502), so a table never matches.
+
+**Recommended fix**: Delete the directory-tree drawing (classification `inert/deletable`). If a structural overview is genuinely wanted, demote it to a human-facing doc loaded deliberately, rather than keeping it always-on.
+
+**Suppression mechanism**: None — this is a build-failing rule; resolve by deleting the tree.
+
+---
+
+## Rule Pack: Find/triage-flow containment guards
+
+Two build-failing quality-gate rules backing the consolidated find → ingest → one-triage → one-respond flow: the triage-reads-top-level-only containment invariant and the build-verify-step canonicals-membership contract.
+
+| Rule ID | Intent | False-positive policy | Suppression |
+|---------|--------|-----------------------|-------------|
+| `triage-reads-top-level-only` | Flag a triage surface (a triage workflow doc or an `ext-triage-{domain}` skill doc) that READS the `raw_input.*` quarantine namespace — triage MUST read the clean top-level fields only (the batched `manage-findings ingest` pass already promoted validated values to top-level). Reading `raw_input.*` re-opens the prompt-injection surface the ingestion boundary closes | Detection matches only concrete ACCESS reads (`raw_input.<field>`, `raw_input[...]`, `['raw_input']`, `.get('raw_input')`); the placeholder/wildcard forms the docs use when documenting the invariant (`raw_input.*`, `raw_input.{field}`, a bare backtick-quoted `raw_input`) never match. Only the two triage workflow docs (`triage.md` / `verification-feedback.md`) and `ext-triage-*` skill dirs are scanned — the `manage-findings` store scripts that legitimately write/ingest `raw_input` are never in scope | None — read the clean top-level field instead of the quarantined `raw_input.*` sub-object |
+| `verify-step-canonicals-required` | Flag an `implements: ...ext-point-build-verify-step` doc whose `canonicals:` frontmatter list is missing or empty — the discovery query expands `canonicals` into `default:verify:{canonical}` step IDs, so an empty list seeds no runnable step and the doc contributes zero verification coverage | Only docs whose `implements:` frontmatter names the build-verify-step ext-point are scanned; a non-implementor doc is never flagged. Both scalar and block-sequence `implements:` forms are recognized; `canonicals:` is read as scalar / inline `[...]` / block sequence | None — declare a non-empty `canonicals:` list |
+
+### triage-reads-top-level-only
+
+**Rule ID**: `triage-reads-top-level-only`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_triage_read_surface.py`
+
+**Scope**: every `.md` file under the bundles root whose basename is `triage.md` or `verification-feedback.md`, or which lives under an `ext-triage-*` directory.
+
+**Intent**: The consolidated find/triage flow quarantines every producer's untrusted free-text under a `raw_input.{field}` sub-namespace, and a single batched `validate_struct` ingestion pass promotes only the cleaned values to the top-level field names. The containment invariant is structural — `raw_input.*` is the un-ingested untrusted quarantine kept solely for audit; top-level is clean-by-construction. Triage reading `raw_input.*` re-opens the prompt-injection surface the ingestion boundary closes.
+
+**Detection logic**: For each triage surface, scan each line for a concrete `raw_input` READ — a dotted access to a lowercase identifier field (`raw_input.detail`), a subscript (`raw_input['detail']`), or a key access of the sub-object itself (`['raw_input']`, `.get('raw_input')`). Emit one finding per matching line. The placeholder forms `raw_input.*` and `raw_input.{field}` never match (neither `.*` nor `.{` satisfies the `.<lowercase-identifier>` shape), so a doc that DOCUMENTS the invariant is not a false positive.
+
+**Recommended fix**: Read the promoted clean top-level field (`title` / `detail` / `message` / `body`) instead of the quarantined `raw_input.*` sub-object.
+
+**Suppression mechanism**: None — this is a safety invariant; resolve by reading top-level.
+
+### verify-step-canonicals-required
+
+**Rule ID**: `verify-step-canonicals-required`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_verify_step_contract.py`
+
+**Scope**: every `.md` file under the bundles root whose `implements:` frontmatter names `plan-marshall:extension-api/standards/ext-point-build-verify-step`.
+
+**Intent**: A build-verify-step doc enumerates the canonical commands it backs through a `canonicals:` list that the discovery query expands into `default:verify:{canonical}` step IDs. An implementor whose `canonicals:` list is missing or empty is surfaced by discovery but seeds no runnable step — it silently contributes zero verification coverage.
+
+**Detection logic**: Parse each `.md` file's leading frontmatter. When `implements:` (scalar or block-sequence) names the build-verify-step ext-point, read `canonicals:` (scalar / inline `[...]` / block sequence). Emit a finding — anchored at line 1 — when the key is absent (`missing required canonicals: list`) or present but resolving to zero non-empty entries (`empty canonicals: list`).
+
+**Recommended fix**: Declare a non-empty `canonicals:` list naming the canonical commands the step backs.
+
+**Suppression mechanism**: None — the non-empty `canonicals:` list is a structural requirement of the ext-point contract.
+
+---
+
+## Zero-match coverage (test-layer, not a runtime rule)
+
+The zero-match invariant is enforced at the **test layer**, not by a runtime analyzer. There is no `zero-match-rule` finding emitted by any `_analyze_*.py` module, and the invariant is not part of the `analyze` / `quality-gate` registered rule set. The check is the meta-test `test_zero_match_suite_coverage.py`.
+
+**Invariant**: every audit-tracked rule ID the analyzers emit must fire at least once during the plugin-doctor analyzer test suite:
+
+```text
+registered_rule_ids(real_tree) − fired_in_suite − EXEMPT_RULE_IDS == ∅
+```
+
+**Where the pieces live**: `registered_rule_ids(root)` and the `fired_in_suite` derivation (each registered rule run against its positive fixture, plus the cross-file rules) are in the plugin-doctor tests' `_plugin_doctor_fixtures.py`; `EXEMPT_RULE_IDS` — the shrunken, per-entry-justified frozenset of rules that structurally cannot fire on a static positive fixture — is in `test_zero_match_suite_coverage.py`. A companion test (`test_exempt_rule_ids_are_all_registered`) asserts `EXEMPT_RULE_IDS` is a subset of the real-tree registered IDs, so a stale or misspelled exemption fails the build.
+
+**Detection logic**: The meta-test statically derives the registered rule-ID population from the in-tree `_analyze_*.py` modules (the same extractor `test_rule_provenance_table.py` uses — `'type'`/`'rule_id'` literals plus `RULE_*`/`FINDING_TYPE` constants filtered through the audit-tracked-rule-ID heuristic), unions the rule IDs each positive fixture emits when run over its own scratch tree, subtracts the exempt set, and asserts the residual is empty. The assertion message names every uncovered rule so the gap is unambiguous. Stdlib-only, fixtures written under the system temp root.
+
+**Recommended fix for a coverage gap**: write a GENUINE positive unit test for the uncovered rule — materialize a minimal known-defect fixture and assert the analyzer emits the rule (real coverage, not a parallel corpus stub). Only when a rule structurally cannot fire on a static positive fixture, add it to `EXEMPT_RULE_IDS` with a per-entry justification comment. Coverage is proven from the test suite itself, over the full registered population minus the exempt set.
+
+**Suppression mechanism**: None — a non-empty gap is a self-test failure resolved by writing the missing positive test or adding a justified exemption.
+
+---
+
+## Provenance Contract for New Rules
+
+Every rule emitted by plugin-doctor must have a documented provenance entry before merge. This contract is enforced by the regression tests in `test/pm-plugin-development/plugin-doctor/test_rule_provenance_table.py`.
+
+**Required artifacts for any new rule** (created in a single PR):
+
+1. **Emitter** — a new branch in an `_analyze_*.py` module (or a new module under the same convention) that constructs the finding with `'type'` or `'rule_id'` set to the new rule ID.
+2. **Row in [rule-provenance.md](rule-provenance.md)** under the appropriate section, carrying:
+   - **Rule ID** (verbatim — the string that appears in the emitter)
+   - **Class** (`structural` / `content` / `style` / `safety`)
+   - **Emitter** (the module file that constructs the finding)
+   - **Source** citation — a lesson ID (`2026-MM-DD-HH-NNN`), a referenced architectural standard, or a `decision.log` entry. The Source field MUST be non-empty.
+3. **Row in this `rule-catalog.md`** documenting the rule's intent, detection approach, fix strategy, and suppression mechanism (if any).
+4. **Test** in `test/pm-plugin-development/plugin-doctor/` exercising the rule against synthetic fixtures.
+
+**Additional artifacts for fixable rules**:
+
+5. **Apply handler** in `_cmd_apply.py::FIX_HANDLERS` keyed by the rule ID.
+6. **Verify branch** in `_cmd_verify.py::cmd_verify` (or a deliberate route to `verify_generic`).
+7. **Row in [fix-catalog.md](fix-catalog.md)** documenting the safe/risky classification and the fix payload shape.
+8. **Membership in `_doctor_shared.py::FIXABLE_ISSUE_TYPES`** plus either `SAFE_FIX_TYPES` or `RISKY_FIX_TYPES`.
+
+**Inadmissible rules** — rules without a provenance entry are fabricated and will be removed in the next provenance audit. See the audit history at the bottom of `rule-provenance.md` for precedents.
+
+**Audit gate**: The `test_every_emitted_rule_id_has_provenance_entry` regression test in `test_rule_provenance_table.py` will fail the build if any analyzer-emitted rule ID is missing a provenance row. The `test_fixable_issue_types_have_provenance` test enforces the same constraint for the fix registry.
