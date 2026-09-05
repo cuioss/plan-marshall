@@ -47,8 +47,10 @@ Suite wall-clock cannot tell you *which* test moved. The per-test `--durations` 
 
 [source,bash]
 ----
-./pw module-tests {bundle} -- --durations=25
+./pw module-tests {bundle}
 ----
+
+No trailing `-- --durations=25` is passed, and none is accepted: the `module-tests` subparser declares only `module`, `--parallel` and `--no-parallel`, and it parses strictly, so the form this line used to carry was rejected rather than run. The flag is not needed — `--durations=25` lives in the `addopts` of `[tool.pytest.ini_options]`, so the ranked table (and the SKIPPED short-summary block, from `-rsfE`) rides the plain canonical invocation.
 
 (Resolve the wrapper through the architecture API in workflow code — never hard-code `./pw`; see xref:build.adoc[Build].)
 
