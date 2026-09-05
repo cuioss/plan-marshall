@@ -1350,6 +1350,44 @@ that honestly is what stops a run inferring required-ness from a reviewer's iden
 the mere fact that it reviewed. ⛔ **Do not transcribe a reviewer list here or into the report** — the
 population rule above applies to the classification for the same reason.
 
+⛔ **The classification read itself fails closed — an unreadable or malformed configuration is not an
+empty one.** The population above is derived from the registry and stands on its own, but each
+member's `Class` comes from that configuration, and § Step 8 condition 5 computes its three ratios
+against the sets this read produces. So the read is checked *here*, before anything consumes it, and
+every way it can fail holds the classification rather than yielding a roster the run cannot
+substantiate — the same treatment this subsection gives an unreadable publish surface below, and for
+the same reason: a failed read is not a clean result.
+
+- **The configuration is absent, unreadable, or unparseable.** There is no classification at all, and
+  a file the run could not read is not a project that classified nothing. Record the failure and the
+  reason, and do **not** compute the condition 5 ratios from it — a required-set ratio written over a
+  set that was never read is a figure with no denominator behind it. What condition 5 discloses in
+  that case is the read failure itself.
+- **A list field is present but is not the comma-separated string described above.** Same handling,
+  for the same reason: a field of the wrong shape is configuration the run cannot read, not
+  configuration that names nothing. Do not coerce it, and do not fall back to treating it as absent.
+- **The two configured sets must be unique and disjoint.** A token repeated within one list, or named
+  by both, leaves that reviewer's `Class` undetermined — the two are exclusive and the configuration
+  is asserting both — so it is malformed configuration and takes the same fail-closed handling,
+  naming the colliding token and the list or lists it appeared on. ⛔ **Never resolve a collision by
+  precedence.** Preferring one list would settle, on this contract's authority, a question only the
+  project's configuration may answer, and it would move a reviewer between denominators without
+  saying so.
+- **Every configured token must resolve to a registered reviewer.** The lists are keyed by `bot_kind`,
+  so a token that no registry doc declares names a reviewer that does not exist here. It is **not**
+  admitted to either set and MUST NOT reach a denominator: a required set inflated by a non-existent
+  reviewer discloses a shortfall against a reviewer no run could ever have obtained — a denominator
+  carrying a row the participation table can never hold. Route it to the `unregistered_kind`
+  treatment the shared contract defines at
+  `marketplace/bundles/plan-marshall/skills/automatic-review/standards/bot-participation-contract.md`
+  — read the handling there rather than restating it here — and record the token and its rejection.
+  Diverging from that contract would have this lane report a coverage figure the rest of the project
+  computes differently.
+
+None of this touches the third value: a **registered** reviewer that a well-formed configuration
+names in neither list is `unclassified`, which is a real reading of that configuration rather than a
+failure of it.
+
 **Record a verdict per reviewer, derived from the stored comment bodies** — never from a check state,
 a review summary, an absence of complaint, or this contract's prose. For each `author_login` in the
 population, read that author's actual comment/review bodies on the PR (all three surfaces above) and
@@ -1754,6 +1792,13 @@ hold:**
    restated here. The shortfall is computed **against the required set**, not across the whole
    roster: a roster-wide trigger fires on an optional reviewer's absence with exactly the force it
    fires on a required one, so it cannot say whether coverage actually fell short.
+
+   ⛔ **These ratios are computed only over a classification the run could substantiate.** § Step 7
+   defines how the classification read fails closed — and every one of those failures leaves no sound
+   denominator to write a ratio against. Where one fired, this disclosure reports **that** read
+   failure and what it held back, in place of the ratios; it never proceeds on a roster the run could
+   not establish. A figure computed over an unsound denominator is the bare-figure defect wearing
+   three names.
 
    State the coverage as **three named ratios**, never as one bare figure — each ratio naming the
    population it is measured against, so a reader can tell which denominator any number belongs to:
