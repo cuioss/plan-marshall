@@ -107,7 +107,13 @@ python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build pa
   (--project-dir PROJECT_DIR | --plan-id PLAN_ID)
 ```
 
-`--failures-detail` slices the deduped per-signature traceback detail for ALL failing tests; `--test TEST` slices the traceback for one named failing test. Both are additive to the standard parse surface — with neither set, `parse` behaves exactly as before.
+`--failures-detail` slices the deduped per-signature traceback detail across the whole failing population; `--test TEST` slices the detail for the records matching one name. Both are additive to the standard parse surface — with neither set, `parse` behaves exactly as before.
+
+**The sliced population is wider than the FAILED lines.** Both flags resolve against the same record set `parse` itself reports: pytest's `FAILED` lines **unioned with** its collection- and setup-level `ERROR` lines. A run whose test modules failed to import produces no `FAILED` line at all, so reading only those would report zero failures over a demonstrably red build. Three consequences of that union are not evident from the flag names:
+
+- **`total_failures` counts collection/setup errors as failures.** It is the size of the whole union, not of the `FAILED` slice alone. `root_causes` is that union deduped by failure signature, and `failures[]` carries one entry per root cause. `--test TEST` reports `matched` and returns the matching records **un-deduped**, matching on the exact test id, on the bare function name (class prefix and `[param]` suffix stripped), or on a suffix.
+- **A record's `test` may be a FILE PATH rather than a test id.** A collection error names no test, so `test` falls back to the file whose collection failed — which is also the value `--test` must be given to select it.
+- **The slice drops the `category` discriminator (known limitation).** Each `failures[]` entry projects only `test`, `file`, `line` and `detail`, so a `test_failure` record and a `test_collection_error` record are indistinguishable in slice output. The discriminator survives on every other surface: the standard `parse` rows (`data.issues[]`) and the failing `run` rows (`errors[]`) both carry `category`, and the `run --plan-id` producer path stores it as the finding's `rule` (see § Producer-Side Finding Storage above). A consumer that must separate the two populations reads one of those, not the slice.
 
 ### coverage-report
 

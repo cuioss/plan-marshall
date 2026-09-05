@@ -869,11 +869,13 @@ import pytest  # noqa: E402
 #: fails the run loudly, naming what is missing.
 #:
 #: These are REQUIRED, not optional. The tests that use them previously carried
-#: 42 per-test ``shutil.which`` skip guards, which turned a missing binary into a
-#: quietly smaller run: the suite reported green while covering 42 fewer tests
-#: than it claimed, and nothing in the output said so. One loud preflight
-#: replaces all of them, so an absent tool is a failed run rather than a silent
-#: coverage hole.
+#: 42 per-test ``shutil.which`` skip guards spread over 37 distinct tests — the
+#: two counts are NOT the same number, because five tests guarded on BOTH
+#: binaries and so carried two decorators each. A missing binary turned the run
+#: quietly smaller: the suite reported green while dropping up to 37 tests (28 on
+#: an absent ``git``, 14 on an absent ``rsync``), and nothing in the output said
+#: so. One loud preflight replaces all 42 guards, so an absent tool is a failed
+#: run rather than a silent coverage hole.
 #:
 #: Tooling a test may legitimately run WITHOUT is deliberately absent from this
 #: tuple — ``pyright-langserver`` is the standing example. Those tests keep their

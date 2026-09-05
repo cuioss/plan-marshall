@@ -76,11 +76,21 @@ def cmd_parse(args) -> int:
     """Parse handler with optional per-signature failure-detail slicing.
 
     With neither slice flag set, behaves EXACTLY like the standard parse
-    (delegates to ``cmd_parse_common``). With ``--failures-detail`` (all failing
-    tests, deduped by signature) or ``--test <name>`` (one named test), returns
-    the traceback slice(s) so a leaf never re-scans the raw log by hand. Both
-    flags are additive; the existing ``--mode`` / ``--format`` surface is
-    unchanged.
+    (delegates to ``cmd_parse_common``). With ``--failures-detail`` (the whole
+    failing population, deduped by signature) or ``--test <name>`` (the records
+    matching one name, un-deduped), returns the traceback slice(s) so a leaf
+    never re-scans the raw log by hand. Both flags are additive; the existing
+    ``--mode`` / ``--format`` surface is unchanged.
+
+    The sliced population is ``_collect_pytest_records`` — the FAILED lines
+    UNIONED with the collection/setup ERROR lines — so ``total_failures`` counts
+    a collection error as a failure and a record's ``test`` may be a file path
+    rather than a test id. ``_slice_record`` projects only
+    ``test``/``file``/``line``/``detail``, so the ``category`` discriminator
+    (``test_failure`` vs ``test_collection_error``) does NOT reach slice output;
+    it survives on the standard parse rows (``data.issues[]``), on a failing
+    ``run``'s ``errors[]`` rows, and — via ``Issue.category`` — as the stored
+    finding's ``rule``.
     """
     if getattr(args, 'failures_detail', False) or getattr(args, 'test_name', None):
         result = slice_failure_details(
@@ -109,13 +119,15 @@ def _register_pyproject_parse(subparsers) -> None:
         '--failures-detail',
         action='store_true',
         dest='failures_detail',
-        help='Slice the deduped per-signature traceback detail for ALL failing tests',
+        help='Slice the deduped per-signature traceback detail across ALL failing tests AND '
+        'collection/setup errors (total_failures counts both)',
     )
     parse_parser.add_argument(
         '--test',
         dest='test_name',
         default=None,
-        help='Slice the traceback detail for one named failing test',
+        help='Slice the traceback detail for records matching one name: a failing test id, or the '
+        'file path of a collection error (which names no test)',
     )
     parse_parser.set_defaults(func=cmd_parse)
 
