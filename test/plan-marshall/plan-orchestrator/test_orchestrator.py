@@ -648,6 +648,44 @@ class TestQueueAddRowRejections:
         assert result['error'] == 'invalid_plan_id'
         assert _read_status_file(status_path)['plans'] == []
 
+    def test_should_reject_a_trailing_newline_plan_id_without_writing(self, plan_context):
+        """A trailing newline must not slip past the tail anchor.
+
+        Python's ``$`` matches immediately before a trailing newline, so an
+        ``^…$`` anchoring accepts ``PLAN-07\\n``. That newline would ride into
+        ``row['id']``, and because the duplicate check compares ids by exact
+        string it would never collide with a clean ``PLAN-07`` already queued —
+        appending the same logical plan twice and evading the
+        ``duplicate_plan_id`` guard. The tail anchor is ``\\Z`` for this reason.
+        """
+        status_path = _write_status(plan_context, 'add-newline-epic', plans=[])
+
+        result = cmd_queue(_add_row_args('add-newline-epic', add_row='PLAN-07\n'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_plan_id'
+        assert _read_status_file(status_path)['plans'] == []
+
+    def test_should_reject_a_newline_duplicate_of_an_already_queued_row(self, plan_context):
+        """The newline variant must not append alongside its clean twin.
+
+        This is the consequence the anchor fix exists to prevent, asserted at
+        the level that matters: with a clean ``PLAN-07`` already queued, the
+        newline-bearing spelling must be refused rather than appended as a
+        second row for the same logical plan.
+        """
+        status_path = _write_status(
+            plan_context,
+            'add-newline-dup-epic',
+            plans=[{'id': 'PLAN-07', 'slug': 'clean', 'workstream': 'WS-01', 'status': 'staged'}],
+        )
+
+        result = cmd_queue(_add_row_args('add-newline-dup-epic', add_row='PLAN-07\n'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_plan_id'
+        assert len(_read_status_file(status_path)['plans']) == 1
+
     def test_should_require_slug_value_with_add_row(self, plan_context):
         _write_status(plan_context, 'add-nosl-epic', plans=[])
 

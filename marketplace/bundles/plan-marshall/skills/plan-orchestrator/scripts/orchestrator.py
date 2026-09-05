@@ -183,7 +183,15 @@ ADD_ROW_DEFAULT_STATUS = 'staged'
 #: single definition exists to prevent. The anchoring is added HERE because the
 #: shared segment is deliberately unanchored so a prose scan can match one
 #: mid-sentence; an unanchored ``search`` would accept ``PLAN-01 and friends``.
-_ADD_ROW_PLAN_ID_RE = re.compile(rf'^{PLAN_ID_SEGMENT}$')
+#:
+#: The tail anchor is ``\Z``, NOT ``$``. Python's ``$`` also matches immediately
+#: before a trailing newline, so ``^…$`` would accept ``PLAN-01\n`` — and the
+#: newline would then ride into ``row['id']``. Because ``_append_plan_row``
+#: compares ids by exact string, that newline-bearing id never collides with the
+#: clean row already queued, so the same logical plan appends twice and the
+#: ``duplicate_plan_id`` guard below is evaded by one trailing byte. ``\Z``
+#: matches only at the true end of the string and closes that hole.
+_ADD_ROW_PLAN_ID_RE = re.compile(rf'^{PLAN_ID_SEGMENT}\Z')
 
 #: The three-valued verdict of the appended row's spec-presence probe. ``absent``
 #: and ``unlistable`` are held apart because they are two DIFFERENT zeros:
