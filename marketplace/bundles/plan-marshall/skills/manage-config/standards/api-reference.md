@@ -62,6 +62,27 @@ Used by `get-extensions` and `set-extensions`:
 
 ---
 
+## Standalone Command: domain-narrow
+
+Narrow a plan's `references.domains` to the domains its declared footprint justifies. Every leg upstream of this verb only widens the set, so a domain admitted by early over-provisioning can otherwise never leave it.
+
+| Command | Parameters | Description |
+|---------|-----------|-------------|
+| `domain-narrow` | `--plan-id`, `--affected-files` (comma-separated declared footprint; **required**) | Drop a domain only when all three legs of the safety bound agree it is droppable. Read-only, no LLM dispatch. |
+
+```bash
+manage-config domain-narrow \
+  --plan-id my-plan --affected-files "src/a.py,doc/b.md"
+```
+
+Returns `retained[]`, `dropped[]`, `provenance[]` (exactly one `{domain, claimed_by}` entry per domain in the pre-narrowing set), `report` (the one-line summary, emitted on both outcomes), and `narrowed`.
+
+The safety bound, the `always_on` structural exemption, the strict-subset guarantee, and the three mutually distinguishable outcomes (dropped / nothing droppable / could not evaluate) are specified once in [`../SKILL.md`](../SKILL.md) § Canonical invocations → `domain-narrow`; the inclusion legs themselves are owned by [`skill-domains.md`](skill-domains.md) § Domain Inclusion.
+
+`--affected-files` is required because narrowing without a footprint has no evidence to act on. The verb writes nothing — persisting the narrowed set is the caller's job.
+
+---
+
 ## Standalone Commands (Skill Resolution)
 
 | Command | Parameters | Description |

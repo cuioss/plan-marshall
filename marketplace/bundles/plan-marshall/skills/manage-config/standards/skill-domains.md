@@ -345,6 +345,8 @@ Two additive, per-domain inclusion keys let a domain be pulled into a plan's `re
 | `always_on` | bool | `false` (absent) | When `true`, the domain is unconditionally unioned into every plan's `domains` set — no narrative or file signal required. |
 | `file_globs` | list[str] | seeded from the owning domain extension's `provides_file_globs()`; absent when that accessor returns empty | Path globs (`**/*.py`, `src/*.js`, …). A plan whose affected-files signal matches any glob unions this domain in. |
 
+**Both keys govern the set in both directions.** A key that claims a domain widens the set at detection time *and* exempts that domain from narrowing later — see § The narrowing direction below. The two roles are the same claim read twice, which is why the inclusion legs have exactly one implementation shared by `domain-detect` and `domain-narrow`.
+
 The two defaults are **asymmetric**, and the asymmetry is the point. `always_on` is genuinely **absent by default** — nothing seeds it, because whether a domain should be unconditionally on is a project policy no extension can know. `file_globs` IS seeded, because which file types a domain owns is exactly what the owning bundle knows.
 
 Neither key is seeded into `DEFAULT_SYSTEM_DOMAIN` / `get_default_config()`, so `sync-defaults`' non-destructive deep-merge neither adds nor wipes them, and existing domain configs need no migration. Both are validated by `validate_domain_inclusion` (`always_on` must be a bool; `file_globs` must be a list of str) and preserved across a `skill-domains configure` reconfigure (mirroring `project_skills` / `active_profiles`).
@@ -357,7 +359,7 @@ Neither key is seeded into `DEFAULT_SYSTEM_DOMAIN` / `get_default_config()`, so 
 
 **An operator value wins over the seed.** A value set through `set-inclusion` is present in the config, so it is snapshotted and restored over the rebuild on every subsequent `configure`. That includes a deliberate `file_globs: []`: presence, not truthiness, is what the snapshot keys on, so an operator who empties a domain's globs is not silently re-seeded.
 
-**These globs are domain-detection knowledge, not build knowledge.** They never enter `build.map`, contribute no `(pattern, role)` route, and trigger no build gate — the file-to-build contract belongs to `BuildExtensionBase` alone (ADR-004).
+**These globs are domain-selection knowledge, not build knowledge.** They are read by both selection passes — `domain-detect`'s widening leg and `domain-narrow`'s exemption test — and by nothing else. They never enter `build.map`, contribute no `(pattern, role)` route, and trigger no build gate — the file-to-build contract belongs to `BuildExtensionBase` alone (ADR-004).
 
 The domain detector (`manage-config domain-detect`) composes the plan's domain set as the union `{detector/prompt selections} ∪ always_on_set ∪ glob_matched_set`: the narrative/override/multiSelect detector leg, the `always_on` leg, and the `file_globs` leg (evaluated against the request narrative's path tokens at init, and the real `affected_files` at refine).
 
@@ -365,13 +367,29 @@ The domain detector (`manage-config domain-detect`) composes the plan's domain s
 
 The zero-narrative-match branch therefore resolves three ways:
 
-| Inclusion state on a zero narrative match | `domains` | `reason` |
-|-------------------------------------------|-----------|----------|
-| `file_globs` matched (with or without `always_on`) | the inclusion union | `inclusion_only_resolve` |
-| `always_on` only, no glob hit | the whole offerable set, retaining the `always_on` domains | `over_provisioned_always_on_only` |
-| all three legs empty — no narrative match, no `always_on` domain, no glob hit | the whole offerable set | `over_provisioned_resolve` |
+| Inclusion state on a zero narrative match | `domains` | `reason` | Correctable later by `domain-narrow` |
+|-------------------------------------------|-----------|----------|--------------------------------------|
+| `file_globs` matched (with or without `always_on`) | the inclusion union | `inclusion_only_resolve` | Yes — the init-time glob evaluation ran against narrative path tokens, so the union it produced can still hold a domain the declared footprint does not justify |
+| `always_on` only, no glob hit | the whole offerable set, retaining the `always_on` domains | `over_provisioned_always_on_only` | Yes — every domain not claimed by a leg is dropped; the `always_on` domains stay by structural exemption |
+| all three legs empty — no narrative match, no `always_on` domain, no glob hit | the whole offerable set | `over_provisioned_resolve` | Yes — with no leg claiming anything, the whole set is droppable except what the footprint then claims |
 
 All three return `ambiguous: false`, rather than prompting over a candidate list that already holds every offerable domain. Over-provisioning is bounded by the offerable set itself, so a project whose `skill_domains` carries no dict-valued non-`system` entry has nothing to over-provision and still returns the empty set with `ambiguous: true` (`reason=no_narrative_match`).
+
+**No row of this table is a permanent verdict.** Over-provisioning is a temporary state of the set, not a property of the plan: every outcome above — the `inclusion_only_resolve` row exactly as much as the two `over_provisioned_*` rows — is re-evaluated by the narrowing pass below once the declared footprint exists.
+
+### The narrowing direction
+
+`domain-detect` and phase-2-refine's re-merge only ever widen `references.domains`. `manage-config domain-narrow` is the one pass that removes from it, invoked once at the end of phase-3-outline, where the declared footprint has just been derived and no task has been resolved yet.
+
+A domain currently in the set is **droppable** exactly when all three legs of the safety bound agree:
+
+1. no already-resolved task depends on it;
+2. the `always_on` leg does not claim it;
+3. the `file_globs` leg does not claim it against the **declared footprint** — the real affected-files list, which is stronger evidence than the narrative path tokens the init-time evaluation had.
+
+Everything not droppable is retained, so the retained set is always a superset of `always_on_set ∪ glob_matched_set` and narrowing never adds a domain. An `always_on` domain is therefore **structurally exempt**: no footprint can drop it, which is the property that makes a project-wide standing inclusion safe to declare.
+
+The verb's flags, return contract, and error set are specified in [`../SKILL.md`](../SKILL.md) § Canonical invocations → `domain-narrow`.
 
 Set the keys via the `skill-domains set-inclusion` verb (each key is written independently; an omitted flag leaves the persisted value untouched):
 
