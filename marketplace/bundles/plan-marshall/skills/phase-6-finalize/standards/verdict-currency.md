@@ -16,39 +16,7 @@ HEAD-dependent steps" for the single authoritative statement.
 
 ## Exit-code convention for every script call
 
-Every `python3 .plan/execute-script.py` call in this document — of EVERY notation, **not
-only `manage-*`** — carries the following exit-code contract unless a step explicitly
-states otherwise. The scope is widened past `manage-*` because the classifier this
-document owns, `verdict_currency classify`, is not `manage-*`, and its verdict is what
-decides whether a gate re-fires.
-
-- **`exit_code == 0` AND `status: success`**: parse the returned TOON and use the value as
-  the step describes.
-- **`exit_code == 0` with a `status` other than `success`, or with no parseable `status` at all**: NOT a usable value — STOP
-  exactly as the `exit_code != 0` disposition below requires, with one difference in what
-  the error TOON carries: on this path the diagnostic is on STDOUT, not stderr. Preserve
-  the stdout **error envelope** as emitted — every field it carries, verbatim — into the
-  returned error TOON; it is the only account of the cause that exists. Copy the whole
-  envelope rather than looking for a fixed field list: beyond `status` and `error` the
-  diagnostic fields vary by verb — `ci` verbs carry `operation`, `error_cause`, and
-  `context`, the plan-resolution envelopes carry `message` and `plan_id` instead, and
-  neither list is exhaustive. `error` is sometimes a hard-coded generic string whose real
-  cause sits in one of the other fields, so dropping them can discard the cause entirely.
-  A zero exit is not evidence the operation succeeded; a script MAY print `status: error`
-  and still exit 0. Read `status` FIRST, and never read a **success-payload** field off a
-  non-`success` return — the envelope's diagnostic fields are not success payload, and
-  dropping any of them leaves the step reporting a failure with no cause. A malformed or
-  truncated stdout that carries **no parseable `status` at all** takes this same path: an
-  unreadable read is not evidence of success, so it fails closed onto STOP rather than
-  falling through to the first clause. There is no envelope to preserve on that sub-path —
-  synthesize the error TOON instead, naming the call (notation, subcommand, and arguments)
-  and carrying the raw stdout verbatim as the only account of the cause that exists. Here that means an
-  absent classification is an **unread** one, never a "not invalidating" verdict — an
-  unread classifier re-fires the gate rather than silently retiring it.
-- **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the
-  script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — silent
-  swallowing of `wrong_parameters` rejections is the prohibited anti-pattern; "log and
-  continue" is equally forbidden.
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
 
 ## Two levers, and only one of them was ever pulled
 

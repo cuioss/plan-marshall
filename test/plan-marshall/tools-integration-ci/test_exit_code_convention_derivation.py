@@ -29,15 +29,25 @@ import _exit_code_convention_derivation as derivation
 # Fixture fragments — each is one property, composed into documents below
 # ---------------------------------------------------------------------------
 
-#: A convention that reaches every notation AND carries the exit-zero clause.
-WIDENED_CONVENTION = """\
+#: The covered form every CONSUMING document carries: a reference to the
+#: canonical standard, restating no clause.
+XREF_CONVENTION = """\
 ## Exit-code convention for every script call
 
-Every `python3 .plan/execute-script.py` call in this document — of EVERY notation,
-**not only `manage-*`** — carries the following contract.
+The exit-code contract for every `python3 .plan/execute-script.py` call in this
+document — of EVERY notation, not only `manage-*` — is stated once in
+[`tools-script-executor/standards/exit-code-convention.md`](../../tools-script-executor/standards/exit-code-convention.md);
+it is not restated here.
+"""
+
+#: The covered form the CANONICAL standard carries: the contract stated in full,
+#: with a disposition for every exit-code condition.
+FULL_CONTRACT_CONVENTION = """\
+## Exit-code convention for every script call
 
 - **`exit_code == 0` AND `status: success`**: parse the returned TOON.
-  A zero exit is not evidence the operation succeeded.
+- **`exit_code == 0` with a `status` other than `success`, or with no parseable
+  `status` at all**: NOT a usable value — STOP.
 - **`exit_code != 0`**: STOP.
 """
 
@@ -210,22 +220,58 @@ def test_retention_needs_only_one_non_manage_notation(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_document_with_widened_convention_classifies_widened(tmp_path):
-    _write(tmp_path, 'bundles/b/skills/s/SKILL.md', WIDENED_CONVENTION, CI_INVOCATION)
+def test_document_referencing_the_canonical_standard_classifies_widened(tmp_path):
+    """The consuming form: a reference to the canonical standard is covered."""
+    _write(tmp_path, 'bundles/b/skills/s/SKILL.md', XREF_CONVENTION, CI_INVOCATION)
 
     result = derivation.derive(tmp_path)
 
     assert result.widened == ('marketplace/bundles/b/skills/s/SKILL.md',), (
-        f'A convention reaching every notation and carrying the exit-zero clause was not '
-        f'classified widened. narrow={result.narrow}, none={result.none}.'
+        f'A convention referencing the canonical standard was not classified as covered. '
+        f'narrow={result.narrow}, none={result.none}.'
+    )
+
+
+def test_document_stating_the_contract_in_full_classifies_widened(tmp_path):
+    """The canonical form: stating every disposition clause is also covered.
+
+    The matched counterpart to the reference test above — the two are the only
+    ways a document reaches the contract, so both must classify the same.
+    """
+    _write(tmp_path, 'bundles/b/skills/s/SKILL.md', FULL_CONTRACT_CONVENTION, CI_INVOCATION)
+
+    result = derivation.derive(tmp_path)
+
+    assert result.widened == ('marketplace/bundles/b/skills/s/SKILL.md',), (
+        f'A convention stating the contract in full was not classified as covered. '
+        f'narrow={result.narrow}, none={result.none}.'
+    )
+
+
+def test_partial_clause_set_does_not_count_as_stating_the_contract(tmp_path):
+    """Fewer than every disposition clause is not a statement of the contract.
+
+    The negative control for the clause-count predicate: `NARROW_CONVENTION`
+    carries two `exit_code` bullets, so a predicate keyed on "mentions exit_code"
+    rather than on dispositioning every condition would pass it.
+    """
+    _write(tmp_path, 'bundles/b/skills/s/SKILL.md', NARROW_CONVENTION, CI_INVOCATION)
+
+    assert derivation.states_full_contract(NARROW_CONVENTION) is False, (
+        'A two-clause convention was read as stating the full contract, so the clause-count '
+        'predicate does not distinguish a partial statement from a complete one.'
+    )
+    assert derivation.states_full_contract(FULL_CONTRACT_CONVENTION) is True, (
+        'The matched positive control failed: the full-contract fixture was not recognised, '
+        'so the negative above says nothing.'
     )
 
 
 def test_document_with_manage_scoped_convention_classifies_narrow(tmp_path):
-    """A `manage-*`-scoped convention is `narrow` even though it states the exit-zero rule.
+    """A `manage-*`-scoped convention is `narrow`: it neither refers nor states.
 
-    This is the discrimination the whole plan turns on: the clause is present but
-    the scope does not reach the `ci` call the same document issues.
+    This is the superseded form — the rule reads as complete while reaching
+    neither the canonical standard nor the `ci` call the same document issues.
     """
     _write(tmp_path, 'bundles/b/skills/s/SKILL.md', NARROW_CONVENTION, CI_INVOCATION)
 
@@ -250,7 +296,7 @@ def test_document_without_convention_heading_classifies_none(tmp_path):
 
 def test_convention_heading_inside_a_fenced_block_is_not_the_documents_own(tmp_path):
     """A convention quoted inside a code fence is an example, not a heading."""
-    fenced_example = '```markdown\n' + WIDENED_CONVENTION + '```\n'
+    fenced_example = '```markdown\n' + XREF_CONVENTION + '```\n'
     _write(tmp_path, 'bundles/b/skills/s/SKILL.md', fenced_example, CI_INVOCATION)
 
     result = derivation.derive(tmp_path)
@@ -263,7 +309,7 @@ def test_convention_heading_inside_a_fenced_block_is_not_the_documents_own(tmp_p
 
 def test_the_three_classes_are_disjoint_and_total(tmp_path):
     """Every retained document lands in exactly one class, and they sum to the population."""
-    _write(tmp_path, 'bundles/b/skills/w/SKILL.md', WIDENED_CONVENTION, CI_INVOCATION)
+    _write(tmp_path, 'bundles/b/skills/w/SKILL.md', XREF_CONVENTION, CI_INVOCATION)
     _write(tmp_path, 'bundles/b/skills/n/SKILL.md', NARROW_CONVENTION, CI_INVOCATION)
     _write(tmp_path, 'bundles/b/skills/x/SKILL.md', CI_INVOCATION)
     _write(tmp_path, 'bundles/b/skills/dropped/SKILL.md', MANAGE_ONLY_INVOCATION)
@@ -334,4 +380,86 @@ def test_empty_tree_is_not_reported_as_complete_coverage(tmp_path):
     assert result.coverage.complete is False, (
         'A tree with no documents at all reported complete coverage, so a derivation pointed at '
         'the wrong root would pass vacuously.'
+    )
+
+
+# ---------------------------------------------------------------------------
+# Body sweep — the contract is stated in exactly one place
+# ---------------------------------------------------------------------------
+
+
+def test_body_sweep_finds_the_single_document_stating_the_contract(tmp_path):
+    """One document states the contract; the documents referencing it do not."""
+    _write(tmp_path, 'bundles/b/skills/canon/standards/x.md', FULL_CONTRACT_CONVENTION)
+    _write(tmp_path, 'bundles/b/skills/s/SKILL.md', XREF_CONVENTION, CI_INVOCATION)
+    _write(tmp_path, 'bundles/b/skills/t/SKILL.md', XREF_CONVENTION, CI_INVOCATION)
+
+    sweep = derivation.sweep_convention_bodies(tmp_path)
+
+    assert sweep.documents == ('marketplace/bundles/b/skills/canon/standards/x.md',), (
+        f'The sweep did not resolve to the single stating document: {list(sweep.documents)}.'
+    )
+    assert sweep.occurrences == 1
+    assert sweep.coverage.files_scanned == 3, (
+        f'The sweep scanned {sweep.coverage.files_scanned} of 3 documents, so the single-body '
+        'result covers less than the tree.'
+    )
+
+
+def test_body_sweep_detects_a_reintroduced_verbatim_copy(tmp_path):
+    """A second full statement is reported, which is what makes the guard bite.
+
+    The matched negative control for the test above: the tree differs only in
+    that one referencing document was replaced by a verbatim copy.
+    """
+    _write(tmp_path, 'bundles/b/skills/canon/standards/x.md', FULL_CONTRACT_CONVENTION)
+    _write(tmp_path, 'bundles/b/skills/s/SKILL.md', FULL_CONTRACT_CONVENTION, CI_INVOCATION)
+
+    sweep = derivation.sweep_convention_bodies(tmp_path)
+
+    assert sweep.occurrences == 2, (
+        f'A reintroduced verbatim copy was not counted — occurrences={sweep.occurrences}, '
+        f'documents={list(sweep.documents)}. The single-body guard would pass on a duplicated tree.'
+    )
+
+
+def test_body_sweep_reports_an_unreadable_file_rather_than_a_clean_single_body(tmp_path):
+    """An undecodable document is a file that might hold a second body.
+
+    Without this, a tree with one readable statement and one unreadable file
+    would report `occurrences == 1` and read as single-sourced.
+    """
+    _write(tmp_path, 'bundles/b/skills/canon/standards/x.md', FULL_CONTRACT_CONVENTION)
+    undecodable = tmp_path / 'marketplace' / 'bundles' / 'b' / 'skills' / 'canon' / 'standards' / 'broken.md'
+    undecodable.write_bytes(b'\xff\xfe not valid utf-8 \xff')
+
+    sweep = derivation.sweep_convention_bodies(tmp_path)
+
+    assert sweep.occurrences == 1
+    assert sweep.coverage.unreadable == (
+        'marketplace/bundles/b/skills/canon/standards/broken.md',
+    ), f'The undecodable document was not named: {sweep.coverage.unreadable}.'
+    assert sweep.coverage.complete is False, (
+        'The sweep reports complete coverage despite an unreadable file, so its single-body '
+        'result would read as a measurement rather than a gap.'
+    )
+
+
+def test_body_sweep_and_derivation_walk_the_same_documents(tmp_path):
+    """Both read one document set, so the count and the population are comparable.
+
+    A sweep over a narrower walk could report a clean single body for a tree the
+    population guard covered more of — the two numbers would then describe
+    different trees while being published side by side.
+    """
+    _write(tmp_path, 'bundles/b/skills/canon/standards/x.md', FULL_CONTRACT_CONVENTION)
+    _write(tmp_path, 'bundles/b/skills/s/SKILL.md', XREF_CONVENTION, CI_INVOCATION)
+    _write(tmp_path, 'bundles/b/skills/dropped/SKILL.md', MANAGE_ONLY_INVOCATION)
+
+    sweep = derivation.sweep_convention_bodies(tmp_path)
+    result = derivation.derive(tmp_path)
+
+    assert sweep.coverage.files_scanned == result.coverage.files_scanned, (
+        f'The sweep scanned {sweep.coverage.files_scanned} documents and the derivation '
+        f'{result.coverage.files_scanned} — the two describe different trees.'
     )

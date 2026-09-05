@@ -20,9 +20,18 @@ call sites — a curated list is the artifact this plan exists to retire:
   a FAILED call satisfies an exit-code-only ``exit_code == 0`` clause. Two sweeps close it,
   both derived from the tree: every doc under the two skills that invokes a non-``manage-*``
   script must carry the widened convention (so a NEW such doc fails on arrival, which the
-  curated doc tuple above cannot catch), and every such convention must state the
+  curated doc tuple above cannot catch), and every such convention must REACH the
   exit-0-non-``success`` disposition. A third sweep ties each derived ``ci`` call site to one
   of the two discharge arms — the doc-level clause or a call-site positive shape requirement.
+
+  "Reach" rather than "state", because the convention is now single-sourced. The contract
+  has exactly ONE body in the tree — :data:`_CANONICAL_STANDARD` — and every consuming doc
+  points at it under the widened heading rather than restating it, an arrangement adopted
+  because the duplicated paragraph produced two multi-site defects at two consecutive HEADs.
+  This suite did not soften to match: it pins the literal AND its disposition body at the
+  canonical standard unconditionally, and a referencing doc's obligation is discharged by
+  that assertion rather than in place of it. What each doc must show is the same obligation
+  as before, reached one hop away — never a hop into a document nobody checked.
 
 * **D3 — every documented review-and-merge invocation parses against its own parser.**
   A workflow doc that prescribes a flag on a parser which does not DECLARE it — the
@@ -310,12 +319,17 @@ _NEW_CLAUSE = (
 #: which is the vacuous-guard shape this literal exists to prevent — so the heading is
 #: pinned AND the body is required to still prescribe those three things.
 #:
-#: Each marker is DERIVED from the live clause bodies across the pool, not composed from
-#: memory: every one is carried by every clause-bearing doc today, so no doc fails on
-#: arrival of the assertion. They are deliberately the SHORT invariant fragments rather
-#: than whole sentences — the pool's clause bodies are not byte-identical (two docs carry
-#: an abridged body that drops sentences the others keep), so a longer literal would pin
-#: one doc's phrasing and fail the abridged ones for wording rather than for substance.
+#: Each marker is DERIVED from a live clause body, not composed from memory. They were
+#: derived from the pool's clause bodies when every obligated doc carried one; under
+#: single-sourcing there is exactly one such body left — the canonical standard's — and
+#: the markers still hold of it, which the canonical-standard test below asserts
+#: unconditionally rather than assuming. The marker SET is
+#: unchanged by that migration: single-sourcing moved where the body lives, and softening
+#: the set to whatever the surviving body happened to keep would have let the migration
+#: quietly drop a disposition, which is the direction this check exists to watch.
+#:
+#: They are deliberately the SHORT invariant fragments rather than whole sentences, so a
+#: re-worded disposition still counts and only a DELETED one fails.
 #:
 #: This ADDS to the heading assertion; it does not weaken it. The exact-substring
 #: ``_NEW_CLAUSE`` check is unchanged, so the standing decision recorded above — not to
@@ -329,6 +343,64 @@ _NEW_CLAUSE_REQUIRED_MARKERS: tuple[str, ...] = (
 
 #: The per-step positive shape requirement — the stricter, call-site-local discharge.
 _SHAPE_MARKER = '**Positive shape requirement.**'
+
+#: The ONE document that states the contract in full. Every consuming doc reaches
+#: it by reference, so this is where ``_NEW_CLAUSE`` and its disposition body are
+#: pinned — unconditionally, and independently of whether any consuming doc happens
+#: to be swept on a given run.
+#:
+#: It sits OUTSIDE ``_POOL_ROOTS`` (a different skill owns it), so it can never be
+#: the doc that discharges itself: the per-doc sweep below never reaches it, and the
+#: assertion that does is the one this file states in its own right.
+_CANONICAL_STANDARD = (
+    _SKILLS / 'tools-script-executor' / 'standards' / 'exit-code-convention.md'
+)
+
+#: The tail of the canonical standard's path that a reference must name. Matching
+#: the TAIL is what makes the writing doc's relative prefix (``../``, ``../../``,
+#: ``../../../plan-marshall/skills/``) irrelevant — a reference is correct wherever
+#: it is written from, and the predicate should not have to know the depth of the
+#: document writing it.
+_CANONICAL_REFERENCE = 'tools-script-executor/standards/exit-code-convention.md'
+
+
+def _convention_section(text: str) -> str:
+    """Return the doc's exit-code-convention section: the wide heading to the next ``##``.
+
+    Scoped for the same reason :func:`_clause_body` is scoped. A link to the canonical
+    standard dropped ANYWHERE else in the doc — a See-Also list, an unrelated step, a
+    sentence about some other contract — would otherwise discharge the reference arm
+    while the doc's own convention section said nothing at all. That is the whole-document
+    search the body-scoping above was introduced to reject, and it would arrive here by
+    the back door if the reference arm were matched against the raw text.
+
+    Returns the empty string when the doc carries no widened heading, so a doc missing
+    the section reads as reaching nothing rather than raising.
+    """
+    idx = text.find(_WIDE_HEADING)
+    if idx == -1:
+        return ''
+    tail = text[idx + len(_WIDE_HEADING) :]
+    boundary = re.search(r'\n#{1,2} ', tail)
+    return tail if boundary is None else tail[: boundary.start()]
+
+
+def _reaches_the_clause(text: str) -> bool:
+    """True when the doc reaches the exit-0-non-``success`` clause by either arm.
+
+    Two arms, and the second is what single-sourcing added:
+
+    * the doc STATES the clause itself — the arrangement before the contract was
+      single-sourced, and still the canonical standard's own arrangement; or
+    * the doc's convention SECTION references the canonical standard, which is
+      asserted separately to carry the clause and its disposition.
+
+    The second arm is not a weakening of the first. It is an obligation reached one
+    hop away, and the hop terminates at a document this suite checks unconditionally
+    (the canonical-standard test in ``TestExitZeroNonSuccessIsDisposedOf``) rather
+    than at a link nobody follows.
+    """
+    return _NEW_CLAUSE in text or _CANONICAL_REFERENCE in _convention_section(text)
 
 
 def _clause_body(text: str) -> str:
@@ -356,6 +428,22 @@ def _missing_disposition_markers(text: str) -> list[str]:
     """Return the required disposition markers absent from the doc's clause body."""
     body = _clause_body(text)
     return [marker for marker in _NEW_CLAUSE_REQUIRED_MARKERS if marker not in body]
+
+
+def _undischarged_markers(text: str, canonical_text: str) -> list[str]:
+    """Return the disposition markers a doc leaves unprescribed, by whichever arm it uses.
+
+    A doc that STATES the clause is judged on its own body; a doc that REFERENCES the
+    standard is judged on the standard's body. The canonical text is a parameter rather
+    than a filesystem read so the matched control below can drive this with a GUTTED
+    standard — a reference into a document whose disposition has been deleted has to
+    fail, and a predicate that read the real standard off disk could never be shown to
+    fail for that reason.
+
+    Precondition: :func:`_reaches_the_clause` holds for *text*. A doc reaching neither
+    arm is a different failure and is reported by that predicate, not by a marker list.
+    """
+    return _missing_disposition_markers(text if _NEW_CLAUSE in text else canonical_text)
 
 #: Docs that invoke a non-`manage-*` script yet are deliberately exempt from the widened
 #: convention, mapped to the reason. **Empty**: the sweep below found no doc in the pool
@@ -583,7 +671,12 @@ class TestWideningReachesTheWholeFinalizePool:
 
 
 class TestExitZeroNonSuccessIsDisposedOf:
-    """The widened convention states a disposition for an exit-0 non-``success`` return.
+    """The widened convention reaches a disposition for an exit-0 non-``success`` return.
+
+    "Reaches" because the contract is single-sourced: the disposition is stated once, in
+    :data:`_CANONICAL_STANDARD`, and every obligated doc points at it. The obligation is
+    unchanged — it is pinned at the canonical standard unconditionally and followed from
+    each doc, so a gutted standard fails at every referencing doc rather than nowhere.
 
     The defect this pins: keying the convention on the exit code ALONE. ``ci_base.output_error``
     prints ``status: error`` and returns exit 0, and both provider ``main()`` functions return 0
@@ -591,70 +684,171 @@ class TestExitZeroNonSuccessIsDisposedOf:
     ``exit_code == 0`` clause and its payload fields are then read off a return that has none.
     """
 
-    @pytest.mark.parametrize('obligated', _WIDENING_OBLIGATED, ids=_obligated_id)
-    def test_widened_convention_carries_the_exit_zero_non_success_clause(self, obligated):
-        """A widened convention without the clause — or without its body — is the hole left open.
+    def test_the_canonical_standard_states_the_clause_and_its_disposition(self):
+        """The literal is pinned HERE, once, unconditionally — both of its halves.
 
-        Two assertions, because the clause has two halves and only the second one
-        prescribes anything. The heading pins WHICH returns the clause covers; the body
-        pins WHAT to do with them. A doc that keeps the heading and deletes the body
-        satisfies a heading-only guard while instructing nobody to do anything — the
-        vacuous-guard shape.
+        This is the assertion the reference arm rests on, and it is deliberately not
+        parametrized, not exemptible, and not conditional on the pool sweep finding
+        anything: every referencing doc discharges its obligation by pointing at this
+        document, so an unchecked canonical standard would turn 150-odd references into
+        150-odd redirections nobody verified.
+
+        The two-assertion structure is the same one the per-doc test used to carry, for
+        the same reason. The heading pins WHICH returns the clause covers; the body pins
+        WHAT to do with them. A standard that keeps the lead-in byte-for-byte while
+        deleting the disposition beneath it satisfies a heading-only guard while
+        instructing nobody to do anything — and would now do so on behalf of the whole
+        tree rather than one document.
+        """
+        text = _CANONICAL_STANDARD.read_text(encoding='utf-8')
+
+        assert _NEW_CLAUSE in text, (
+            f'{_CANONICAL_STANDARD.name} is the one document that states this contract, yet '
+            f'it carries no disposition for an exit-0 return whose status is not `success` '
+            f'(expected the clause {_NEW_CLAUSE!r}). Every doc that references it is thereby '
+            'covered by nothing at all.'
+        )
+        missing = _missing_disposition_markers(text)
+        assert not missing, (
+            f'{_CANONICAL_STANDARD.name} keeps the exit-0-non-success clause HEADING but its '
+            f'body no longer prescribes {missing} — the clause states which returns it covers '
+            'and then instructs nobody to do anything. Restore the disposition (STOP, preserve '
+            'the stdout error envelope, synthesize the error TOON when no `status` parses).'
+        )
+
+    @pytest.mark.parametrize('obligated', _WIDENING_OBLIGATED, ids=_obligated_id)
+    def test_widened_convention_reaches_the_exit_zero_non_success_clause(self, obligated):
+        """A widened convention that neither states the clause nor reaches it is the hole left open.
+
+        Two assertions, as before, and they still divide the same way: the first is about
+        WHICH returns are covered, the second about WHAT to do with them. What changed is
+        only where the doc is allowed to say it — in place, or by reference to the one
+        standard that does. The second assertion follows the reference: a doc pointing at a
+        gutted standard fails here exactly as a doc with a gutted body of its own would.
         """
         rel, _non_manage = obligated
         if rel in _WIDENING_EXEMPTIONS:
             pytest.skip(f'{rel} is an enumerated exemption: {_WIDENING_EXEMPTIONS[rel]}')
         text = (MARKETPLACE_ROOT / rel).read_text(encoding='utf-8')
 
-        assert _NEW_CLAUSE in text, (
-            f"{rel} carries the widened convention but states no disposition for an exit-0 "
-            f"return whose status is not `success` (expected the clause {_NEW_CLAUSE!r}). "
-            'Keying on the exit code alone is exactly how a failed call reads as usable.'
+        assert _reaches_the_clause(text), (
+            f'{rel} carries the widened convention but neither states the exit-0-non-success '
+            f'clause ({_NEW_CLAUSE!r}) nor references {_CANONICAL_REFERENCE} from its own '
+            'convention section. Keying on the exit code alone is exactly how a failed call '
+            'reads as usable.'
         )
-        missing = _missing_disposition_markers(text)
+        missing = _undischarged_markers(text, _CANONICAL_STANDARD.read_text(encoding='utf-8'))
         assert not missing, (
-            f'{rel} keeps the exit-0-non-success clause HEADING but its body no longer '
+            f'{rel} reaches the exit-0-non-success clause, but the body it reaches no longer '
             f'prescribes {missing} — the clause states which returns it covers and then '
             'instructs nobody to do anything. Restore the disposition (STOP, preserve the '
-            'stdout error envelope, synthesize the error TOON when no `status` parses), or '
-            'add the doc to _WIDENING_EXEMPTIONS with a reason.'
+            'stdout error envelope, synthesize the error TOON when no `status` parses) in '
+            f'whichever document carries it — this doc, or {_CANONICAL_STANDARD.name}.'
         )
 
     def test_the_disposition_marker_check_can_fail_for_the_reason_it_exists_for(self):
-        """Matched control pair: a real doc passes, a heading-only doc FAILS.
+        """Matched controls: real docs pass on BOTH arms, gutted ones FAIL on both.
 
-        The negative control is the whole point. A doc that keeps the clause heading
-        byte-for-byte while deleting the disposition body is exactly the mutation the
+        The negative arms are the whole point. A doc that keeps the clause heading
+        byte-for-byte while deleting the disposition body is exactly the mutation a
         heading-only assertion could not see, so the check is proved able to fail on it
-        rather than assumed to be. The positive control — a doc the sweep currently
-        obligates — is what proves the markers are satisfiable by real prose and that a
-        green run above is not green merely because the markers match nothing anywhere.
+        rather than assumed to be. Single-sourcing added a second way to commit the same
+        mutation — leave every referencing doc untouched and gut the ONE document they all
+        point at — so it gets its own negative arm here. Without it the reference arm would
+        be a hop this suite never proved it could reject.
+
+        The positive arms prove the markers are satisfiable by real prose, so a green run
+        above is not green merely because the markers match nothing anywhere: one checks the
+        canonical standard's live body directly, the other checks a doc the sweep currently
+        obligates, reaching that body by reference.
         """
+        canonical = _CANONICAL_STANDARD.read_text(encoding='utf-8')
+
+        # Positive — the inline arm, at the one document that uses it.
+        assert _missing_disposition_markers(canonical) == [], (
+            f'positive control: {_CANONICAL_STANDARD.name} is the document the whole tree '
+            'references, yet the marker set is not satisfied by its live clause body — the '
+            'markers were composed rather than derived from a real body'
+        )
+
+        # Positive — the reference arm, at a doc the sweep currently obligates.
         obligated_paths = [p for p, _ in _WIDENING_OBLIGATED if p not in _WIDENING_EXEMPTIONS]
         assert obligated_paths, (
             'every obligated doc is exempt, so this control has no real doc to check '
             'the positive arm against'
         )
         real = (MARKETPLACE_ROOT / obligated_paths[0]).read_text(encoding='utf-8')
-        assert _missing_disposition_markers(real) == [], (
-            f'positive control: {obligated_paths[0]} is a doc the sweep obligates, yet the '
-            'marker set is not satisfied by its live clause body — the markers were composed '
-            'rather than derived from the pool'
+        assert _reaches_the_clause(real), (
+            f'positive control: {obligated_paths[0]} is a doc the sweep obligates, yet it '
+            'reaches the clause by neither arm — the reference predicate matches nothing in '
+            'the live tree, so a green sweep above would prove nothing'
+        )
+        assert _undischarged_markers(real, canonical) == [], (
+            f'positive control: {obligated_paths[0]} reaches the clause, yet the marker set is '
+            'not satisfied by the body it reaches'
         )
 
-        heading_only = (
+        # A document shaped like a convention section whose heading survived and whose
+        # disposition body did not. Used twice below: as a doc mutated in place, and as
+        # the canonical standard a reference points INTO.
+        gutted = (
             f'{_WIDE_HEADING}\n\n'
             f'{_NEW_CLAUSE}: see the convention above.\n\n'
             '- **`exit_code != 0`**: STOP and return an error TOON.\n'
         )
-        assert _NEW_CLAUSE in heading_only, (
-            'the negative control must keep the heading intact — otherwise it would fail '
-            'the heading assertion and prove nothing about the body assertion'
+        assert _NEW_CLAUSE in gutted, (
+            'the negative controls must keep the heading intact — otherwise they would fail '
+            'the reach assertion and prove nothing about the body assertion'
         )
-        assert _missing_disposition_markers(heading_only) == list(_NEW_CLAUSE_REQUIRED_MARKERS), (
-            'negative control: a doc carrying the clause heading with no disposition body '
-            'was not reported as missing every marker — the body assertion cannot fail for '
-            'the reason it exists for, so it is vacuous'
+
+        # Negative — the inline arm: the doc states the clause and prescribes nothing.
+        assert _undischarged_markers(gutted, canonical) == list(_NEW_CLAUSE_REQUIRED_MARKERS), (
+            'negative control (inline arm): a doc carrying the clause heading with no '
+            'disposition body was not reported as missing every marker — the body assertion '
+            'cannot fail for the reason it exists for, so it is vacuous'
+        )
+
+        # Negative — the reference arm: the doc is untouched and correct, and the standard
+        # it points at has been gutted. This is the mutation single-sourcing made possible,
+        # and it must fail at every referencing doc rather than nowhere.
+        referencing = (
+            f'{_WIDE_HEADING}\n\n'
+            'The exit-code contract for every call in this document is stated once in '
+            f'[`exit-code-convention.md`](../../{_CANONICAL_REFERENCE}); it is not restated '
+            'here.\n'
+        )
+        assert _reaches_the_clause(referencing), (
+            'the negative control must REACH the clause by the reference arm — otherwise it '
+            'fails the reach assertion and proves nothing about the body assertion'
+        )
+        assert _undischarged_markers(referencing, gutted) == list(_NEW_CLAUSE_REQUIRED_MARKERS), (
+            'negative control (reference arm): a doc referencing a canonical standard whose '
+            'disposition body has been deleted was not reported as missing every marker. The '
+            'reference would then be a hop into an unchecked document, which is the failure '
+            'the single-sourced arrangement makes possible and this arm exists to reject.'
+        )
+        assert _undischarged_markers(referencing, canonical) == [], (
+            'matched pair: the same referencing doc must PASS against the real standard. '
+            'Without this the arm above could be failing for the reference rather than for '
+            'the gutted body it points at.'
+        )
+
+        # Negative — neither arm: a widened heading with no clause and no reference.
+        assert not _reaches_the_clause(f'{_WIDE_HEADING}\n\nNothing is said here.\n'), (
+            'negative control (neither arm): a widened convention section that states no '
+            'clause and names no reference was reported as reaching the contract'
+        )
+
+        # Negative — the reference is present but OUTSIDE the convention section, which is
+        # the whole-document match `_convention_section` exists to reject.
+        stray = (
+            f'{_WIDE_HEADING}\n\nNothing is said here.\n\n'
+            f'## See also\n\n[the standard]({_CANONICAL_REFERENCE})\n'
+        )
+        assert not _reaches_the_clause(stray), (
+            'negative control (stray reference): a link to the canonical standard from an '
+            'unrelated section discharged the reference arm, so the doc\'s own convention '
+            'section may say nothing at all and still pass'
         )
 
     @pytest.mark.parametrize('section', _CI_SECTIONS, ids=_ci_section_id)
@@ -671,12 +865,12 @@ class TestExitZeroNonSuccessIsDisposedOf:
         """
         rel, heading, has_shape = section
         text = (MARKETPLACE_ROOT / rel).read_text(encoding='utf-8')
-        by_convention = _NEW_CLAUSE in text
+        by_convention = _reaches_the_clause(text)
 
         assert by_convention or has_shape, (
             f'{rel} § {heading} invokes `ci` but the call is discharged by neither arm: its '
-            f'doc states no exit-0-non-success clause and the section states no '
-            f'{_SHAPE_MARKER!r}. A failed `ci` call there is read as a usable value.'
+            f'doc neither states nor references an exit-0-non-success clause, and the section '
+            f'states no {_SHAPE_MARKER!r}. A failed `ci` call there is read as a usable value.'
         )
 
     def test_the_discharge_split_is_visible(self):

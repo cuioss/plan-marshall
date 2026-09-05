@@ -15,6 +15,23 @@ test beside it drives fixture documents through :func:`derive` to pin each
 retention and classification branch, and the population guard re-runs the same
 derivation over the live tree.
 
+What "covered" means
+--------------------
+
+The contract is stated ONCE, in :data:`CANONICAL_STANDARD`, and every other
+document reaches it by reference. A retained document is therefore covered when
+its convention section refers to that standard; the standard itself is covered by
+stating the contract in full. Both halves are derived properties — a link target
+and a count of disposition clauses — rather than a list of sentences a
+convention might happen to contain, so re-wording a reference does not silently
+reclassify the document that carries it.
+
+The complementary measurement is :func:`sweep_convention_bodies`, which counts
+how many documents state the contract in full. :func:`classify` answers "is this
+document covered?" and that sweep answers "is it stated in exactly one place?" —
+two questions a single predicate would conflate, since a reintroduced verbatim
+copy is covered *and* wrong.
+
 Why the discrimination is mechanized rather than arithmetic
 -----------------------------------------------------------
 
@@ -76,22 +93,33 @@ _CONVENTION_HEADING_RE = re.compile(r'^(#{1,6})\s+(.*exit-code convention.*)$', 
 #: Any markdown heading — used to find where a convention section ends.
 _ANY_HEADING_RE = re.compile(r'^(#{1,6})\s')
 
-#: Phrases by which a convention declares it governs more than ``manage-*``.
-#: Matched against normalized text, so ``manage-*`` arrives as ``manage-``.
-_WIDENING_MARKERS = (
-    'not only manage-',
-    'every script call',
-    'every notation',
+#: The one document that states the contract. Every other document reaches the
+#: contract by referring to this one.
+CANONICAL_STANDARD = (
+    'marketplace/bundles/plan-marshall/skills/tools-script-executor/standards/exit-code-convention.md'
 )
 
-#: Phrases by which a convention states that a zero exit alone does not
-#: establish success — the clause that makes the rule bite on a ``ci`` call.
-_EXIT_ZERO_MARKERS = (
-    'does not imply the operation succeeded',
-    'zero exit is not evidence',
-    'alone does not establish success',
-    'exit 0 alone does not',
-)
+#: The tail of :data:`CANONICAL_STANDARD` that a reference must name. Matching the
+#: TAIL rather than the whole path is what makes the per-document relative prefix
+#: (``standards/``, ``../``, ``../../../plan-marshall/skills/``) irrelevant: a
+#: reference is correct wherever it is written from, and the predicate should not
+#: have to know the depth of the document writing it.
+_CANONICAL_LINK_TAIL = 'tools-script-executor/standards/exit-code-convention.md'
+
+#: A disposition clause, as it appears in the contract: a list item opening with
+#: the ``exit_code`` condition it discriminates on.
+#:
+#: This is a DERIVED property, not a phrase alternation. The previous classifier
+#: matched a hand-kept list of sentences a convention might contain, which made the
+#: predicate a guess about wording; this one keys on the contract's own structure —
+#: how many exit-code conditions the section actually dispositions — so a
+#: re-worded clause still counts and a paragraph that merely discusses exit codes
+#: does not.
+_CLAUSE_BULLET_RE = re.compile(r'^[ \t]*[-*][ \t]+\*\*`exit_code\s*[!=]=\s*0`', re.MULTILINE)
+
+#: How many disposition clauses a full statement of the contract carries: exit 0
+#: with success, exit 0 without it, and a non-zero exit.
+FULL_CONTRACT_CLAUSE_COUNT = 3
 
 
 @dataclass(frozen=True)
@@ -115,14 +143,35 @@ class Coverage:
 
 
 @dataclass(frozen=True)
+class BodySweep:
+    """Where the contract is stated in full, and what was swept to establish it.
+
+    The single-body property is a claim about the WHOLE document set, not about
+    the retained population, so the sweep carries its own coverage record: a
+    ``documents`` tuple of length one is evidence of single-sourcing only when the
+    sweep that produced it actually read the tree.
+    """
+
+    #: Repo-relative paths of every document stating the contract in full.
+    documents: tuple[str, ...]
+    coverage: Coverage
+
+    @property
+    def occurrences(self) -> int:
+        """How many documents state the contract in full."""
+        return len(self.documents)
+
+
+@dataclass(frozen=True)
 class Derivation:
     """The three disjoint classes of the retained population, plus coverage."""
 
-    #: Documents whose convention reaches every notation AND states that a zero
-    #: exit alone does not establish success.
+    #: Documents that reach the contract — either by referring to the canonical
+    #: standard, or (the canonical standard itself) by stating it in full.
     widened: tuple[str, ...]
-    #: Documents carrying a convention heading that does not reach that far —
-    #: in practice, one scoped to ``manage-*`` calls only.
+    #: Documents carrying a convention heading that neither refers to the
+    #: canonical standard nor states the contract — in practice, the superseded
+    #: ``manage-*``-scoped form.
     narrow: tuple[str, ...]
     #: Documents carrying no exit-code convention heading at all.
     none: tuple[str, ...]
@@ -134,15 +183,25 @@ class Derivation:
         return len(self.widened) + len(self.narrow) + len(self.none)
 
 
-def _normalize(text: str) -> str:
-    """Fold *text* to the form the marker phrases are written against.
+def references_canonical(section: str) -> bool:
+    """True when *section* points at the canonical standard.
 
-    Emphasis markers and backticks are removed rather than matched around,
-    because a convention's wording is authored with both and neither carries
-    meaning for the classification. Underscores are deliberately preserved:
-    stripping them would fuse ``exit_code`` into ``exitcode``.
+    This is the covered state for every document but one. The predicate is a
+    single structural fact — does the text name the canonical document? — rather
+    than a judgement about how the reference is worded.
     """
-    return re.sub(r'\s+', ' ', re.sub(r'[`*]', '', text.lower()))
+    return _CANONICAL_LINK_TAIL in section
+
+
+def states_full_contract(text: str) -> bool:
+    """True when *text* dispositions every exit-code condition itself.
+
+    The canonical standard is the one document for which this is the covered
+    state. Anywhere else it is the duplication the single-body guard rejects —
+    this predicate is what that guard counts with, so the two read the same
+    property rather than each deciding for itself what a copy looks like.
+    """
+    return len(_CLAUSE_BULLET_RE.findall(text)) >= FULL_CONTRACT_CLAUSE_COUNT
 
 
 def _fenced_line_flags(lines: list[str]) -> list[bool]:
@@ -258,18 +317,30 @@ def _convention_section(text: str) -> str | None:
 def classify(text: str) -> str:
     """Classify *text* as :data:`WIDENED`, :data:`NARROW`, or :data:`NONE`.
 
-    ``widened`` requires both halves: the convention must reach past ``manage-*``
-    AND state that a zero exit alone does not establish success. A convention
-    carrying the exit-zero clause but scoped to ``manage-*`` is ``narrow`` — it
-    is precisely the shape that leaves a ``ci`` caller with no rule.
+    A document reaches the contract in one of exactly two ways, and the covered
+    class is their union:
+
+    * it REFERS to the canonical standard — the arrangement every consuming
+      document uses; or
+    * it STATES the contract in full — which only the canonical standard is
+      supposed to do, and which the single-body guard checks separately.
+
+    ``narrow`` is what remains: a convention heading whose section does neither,
+    which in this tree is the superseded ``manage-*``-scoped form — the shape
+    that reads as complete while leaving a ``ci`` caller with no rule.
+
+    Note the deliberate division of labour with :func:`sweep_convention_bodies`.
+    This function answers "is this document covered?", so a stray verbatim copy
+    is covered and classifies ``widened``; the single-body sweep is what rejects
+    it. Folding the duplicate check in here would make a reintroduced copy look
+    like a *missing* convention, which is the opposite of what it is.
     """
     section = _convention_section(text)
     if section is None:
         return NONE
-    normalized = _normalize(section)
-    reaches_every_notation = any(marker in normalized for marker in _WIDENING_MARKERS)
-    states_exit_zero_rule = any(marker in normalized for marker in _EXIT_ZERO_MARKERS)
-    return WIDENED if reaches_every_notation and states_exit_zero_rule else NARROW
+    if references_canonical(section) or states_full_contract(section):
+        return WIDENED
+    return NARROW
 
 
 def documents(root: Path) -> list[Path]:
@@ -317,5 +388,43 @@ def derive(root: Path | None = None) -> Derivation:
         widened=tuple(buckets[WIDENED]),
         narrow=tuple(buckets[NARROW]),
         none=tuple(buckets[NONE]),
+        coverage=Coverage(files_scanned=files_scanned, unreadable=tuple(unreadable)),
+    )
+
+
+def sweep_convention_bodies(root: Path | None = None) -> BodySweep:
+    """Find every document under *root* that states the contract in full.
+
+    The convention is meant to have exactly one body in the tree, and this is the
+    measurement that establishes it. The sweep walks the SAME document set
+    :func:`derive` does, so the occurrence count and the population are taken over
+    one tree rather than two — a count from a narrower walk could report a clean
+    single body for a sweep that never reached the duplicate.
+
+    Coverage travels with the result for the reason it travels with
+    :func:`derive`: a single-element result is evidence of single-sourcing only
+    when the walk was complete. One unreadable file is one file that might hold a
+    second body.
+    """
+    base = Path(root) if root is not None else PROJECT_ROOT
+
+    found: list[str] = []
+    unreadable: list[str] = []
+    files_scanned = 0
+
+    for path in documents(base):
+        if not path.is_file():
+            continue
+        try:
+            text = path.read_text(encoding='utf-8')
+        except (OSError, UnicodeDecodeError):
+            unreadable.append(path.relative_to(base).as_posix())
+            continue
+        files_scanned += 1
+        if states_full_contract(text):
+            found.append(path.relative_to(base).as_posix())
+
+    return BodySweep(
+        documents=tuple(found),
         coverage=Coverage(files_scanned=files_scanned, unreadable=tuple(unreadable)),
     )
