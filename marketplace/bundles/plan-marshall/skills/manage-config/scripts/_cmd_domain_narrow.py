@@ -9,14 +9,23 @@ only widen the set further. A domain admitted by early over-provisioning — the
 ``inclusion_only_resolve`` branches, which resolve without a plan-specific narrative
 signal — can therefore never leave the set once the plan's real file footprint is known.
 
-This verb is the missing narrowing leg. A domain currently in the set is DROPPABLE
-exactly when all three legs of the safety bound agree:
+This verb is the missing narrowing leg. A domain currently in the set — other than the
+synthetic ``system`` domain, which is exempt from the bound entirely (below) — is
+DROPPABLE exactly when all three legs of the safety bound agree:
 
 1. no already-resolved task depends on it,
 2. the ``always_on`` inclusion leg does not claim it,
 3. the ``file_globs`` inclusion leg does not claim it against the supplied declared
    footprint (the stronger signal that replaces the narrative path tokens available at
    init).
+
+The synthetic ``system`` domain is EXEMPT from that bound rather than judged by it. It
+is not an implementation domain, so it is filtered out of the mapping both inclusion legs
+are evaluated over — meaning neither leg can contain it and neither ever looks at it.
+Subjecting it to the bound would therefore drop it on the strength of two legs that were
+structurally incapable of claiming it, which is the opposite of the bound agreeing. It is
+retained unconditionally and its provenance records ``EXEMPT_SYSTEM`` rather than an empty
+``claimed_by``, so the empty-``claimed_by``-means-dropped reading below stays exact.
 
 Everything not droppable is retained, so narrowing is a strict subset operation that
 never adds a domain. The inclusion semantics themselves are NOT restated here — the two
@@ -44,6 +53,20 @@ from file_ops import get_plan_dir
 LEG_TASK = 'task'
 LEG_ALWAYS_ON = 'always_on'
 LEG_FILE_GLOBS = 'file_globs'
+
+#: The synthetic ``system`` domain key. It holds the workflow-skill wiring rather
+#: than implementation skills, so it is filtered out of the mapping the inclusion
+#: legs are evaluated over — the same filter the detector applies.
+SYSTEM_DOMAIN = 'system'
+
+#: Provenance marker for a domain retained WITHOUT any leg evaluation.
+#:
+#: Deliberately NOT named ``LEG_SYSTEM``. Each ``LEG_*`` token above names an
+#: inclusion leg that ran and claimed the domain; this token names the opposite —
+#: the domain was exempted from leg evaluation, so no leg ever looked at it. A
+#: ``LEG_`` prefix would assert a symmetry that does not hold and would let
+#: ``claimed_by`` report an evaluation that never happened.
+EXEMPT_SYSTEM = 'system_exempt'
 
 
 def _read_domains(plan_dir) -> list[str] | None:
@@ -105,6 +128,11 @@ def cmd_domain_narrow(args) -> dict[str, Any]:
     success. ``provenance`` carries exactly one entry per domain in the PRE-narrowing
     set — ``{domain, claimed_by}`` — where an empty ``claimed_by`` records that no leg
     claimed the domain, which is why it was dropped.
+
+    The synthetic ``system`` domain is the one entry ``claimed_by`` does not describe a
+    leg evaluation for: it is retained by exemption and carries ``[EXEMPT_SYSTEM]``. That
+    marker is what keeps the empty-``claimed_by`` reading above exact — a retained domain
+    never carries an empty ``claimed_by``, so an empty one always means dropped.
     """
     plan_id: str = args.plan_id
     affected_files_raw: str = args.affected_files
@@ -146,8 +174,10 @@ def cmd_domain_narrow(args) -> dict[str, Any]:
         }
 
     # The synthetic ``system`` domain is not an implementation domain — the same
-    # filter the detector applies before evaluating its legs.
-    user_domains = {k: v for k, v in skill_domains.items() if k != 'system'}
+    # filter the detector applies before evaluating its legs. Because it is absent
+    # here, neither inclusion leg below can ever contain it, which is exactly why
+    # the retention loop exempts it instead of judging it.
+    user_domains = {k: v for k, v in skill_domains.items() if k != SYSTEM_DOMAIN}
     footprint = {p.strip() for p in affected_files_raw.split(',') if p.strip()}
 
     always_on_set = _always_on_domains(user_domains)
@@ -159,6 +189,15 @@ def cmd_domain_narrow(args) -> dict[str, Any]:
     dropped: list[str] = []
     provenance: list[dict[str, Any]] = []
     for domain in unique_current:
+        if domain == SYSTEM_DOMAIN:
+            # Exempt from the safety bound, not judged by it: ``system`` is absent
+            # from ``user_domains``, so the always_on and file_globs legs could
+            # never claim it. Recording an empty ``claimed_by`` here would publish
+            # "no leg claimed it" — whose documented reading is "dropped for want
+            # of a claim" — for a domain two of the three legs never considered.
+            provenance.append({'domain': domain, 'claimed_by': [EXEMPT_SYSTEM]})
+            retained.append(domain)
+            continue
         claimed_by = [
             leg
             for leg, claimants in (

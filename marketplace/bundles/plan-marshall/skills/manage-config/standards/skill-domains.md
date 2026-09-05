@@ -381,11 +381,13 @@ All three return `ambiguous: false`, rather than prompting over a candidate list
 
 `domain-detect` and phase-2-refine's re-merge only ever widen `references.domains`. `manage-config domain-narrow` is the one pass that removes from it, invoked once at the end of phase-3-outline, where the declared footprint has just been derived and no task has been resolved yet.
 
-A domain currently in the set is **droppable** exactly when all three legs of the safety bound agree:
+A domain currently in the set — other than the synthetic `system` domain, which is exempt from the bound entirely (below) — is **droppable** exactly when all three legs of the safety bound agree:
 
 1. no already-resolved task depends on it;
 2. the `always_on` leg does not claim it;
 3. the `file_globs` leg does not claim it against the **declared footprint** — the real affected-files list, which is stronger evidence than the narrative path tokens the init-time evaluation had.
+
+**The synthetic `system` domain is exempt from the bound, not judged by it.** It is not an implementation domain, so both passes filter it out before evaluating their legs — which means the `always_on` and `file_globs` legs can never contain it and never look at it. Judging it by the bound would drop it because two of the three legs were structurally incapable of claiming it, and that is not the legs agreeing. `domain-narrow` therefore retains it unconditionally and records the `system_exempt` provenance marker for it. The marker is deliberately not a fourth leg name: an exemption from evaluation is not a claim, and a retained domain must never publish the empty `claimed_by` whose documented reading is "no leg claimed it, which is why it was dropped".
 
 Everything not droppable is retained, so the retained set is always a superset of `(always_on_set ∪ glob_matched_set) ∩ current_set` and narrowing never adds a domain. The intersection is load-bearing: the pass iterates the CURRENT set only, so it cannot restore a claimed domain that is missing from `references.domains` — restoring one is `domain-detect`'s widening job, not narrowing's. An `always_on` domain **that is in the set** is therefore **structurally exempt**: no footprint can drop it, which is the property that makes a project-wide standing inclusion safe to declare.
 

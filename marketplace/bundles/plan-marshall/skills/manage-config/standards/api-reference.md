@@ -68,16 +68,16 @@ Narrow a plan's `references.domains` to the domains its declared footprint justi
 
 | Command | Parameters | Description |
 |---------|-----------|-------------|
-| `domain-narrow` | `--plan-id`, `--affected-files` (comma-separated declared footprint; **required**) | Drop a domain only when all three legs of the safety bound agree it is droppable. Read-only, no LLM dispatch. |
+| `domain-narrow` | `--plan-id`, `--affected-files` (comma-separated declared footprint; **required**) | Drop a domain only when all three legs of the safety bound agree it is droppable. The synthetic `system` domain is exempt from the bound rather than judged by it, and is retained unconditionally. Read-only, no LLM dispatch. |
 
 ```bash
 manage-config domain-narrow \
   --plan-id my-plan --affected-files "src/a.py,doc/b.md"
 ```
 
-Returns `retained[]`, `dropped[]`, `provenance[]` (exactly one `{domain, claimed_by}` entry per domain in the pre-narrowing set), `report` (the one-line summary, emitted on both outcomes), and `narrowed`.
+Returns `retained[]`, `dropped[]`, `provenance[]` (exactly one `{domain, claimed_by}` entry per domain in the pre-narrowing set), `report` (the one-line summary, emitted on both outcomes), and `narrowed`. A retained domain always carries a non-empty `claimed_by`: the exempt `system` domain records the `system_exempt` marker, so an empty `claimed_by` unambiguously means the domain was dropped for want of a claim.
 
-The safety bound, the `always_on` structural exemption, the strict-subset guarantee, and the three mutually distinguishable outcomes (dropped / nothing droppable / could not evaluate) are specified once in [`../SKILL.md`](../SKILL.md) § Canonical invocations → `domain-narrow`; the inclusion legs themselves are owned by [`skill-domains.md`](skill-domains.md) § Domain Inclusion.
+The safety bound, the `always_on` structural exemption, the `system` exemption from leg evaluation, the strict-subset guarantee, and the three mutually distinguishable outcomes (dropped / nothing droppable / could not evaluate) are specified once in [`../SKILL.md`](../SKILL.md) § Canonical invocations → `domain-narrow`; the inclusion legs themselves are owned by [`skill-domains.md`](skill-domains.md) § Domain Inclusion.
 
 `--affected-files` is required because narrowing without a footprint has no evidence to act on. The verb writes nothing — persisting the narrowed set is the caller's job.
 

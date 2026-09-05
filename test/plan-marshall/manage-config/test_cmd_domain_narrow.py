@@ -7,6 +7,11 @@ The narrowing counterpart to ``domain-detect``: it removes from a plan's
 domain is droppable only when all three legs of the safety bound agree — no
 resolved task depends on it, ``always_on`` does not claim it, and ``file_globs``
 does not claim it against the supplied footprint.
+
+The synthetic ``system`` domain is exempt from that bound rather than judged by it:
+both inclusion legs are evaluated over a mapping it is filtered out of, so neither
+can ever claim it. It is retained carrying an exemption marker, which is what keeps
+an empty ``claimed_by`` meaning "dropped for want of a claim" and nothing else.
 """
 
 from __future__ import annotations
@@ -48,7 +53,13 @@ _DOMAINS_CONFIG = {
     }
 }
 
-_ALL_FOUR = ['documentation', 'general-dev', 'python', 'plan-marshall-plugin-dev']
+#: Every non-system domain `_DOMAINS_CONFIG` declares, DERIVED from that config
+#: rather than restated as a literal. A hand-maintained copy goes stale silently:
+#: a domain added to the config above would be missing here, the assertions that
+#: compare against this list would omit it, and they would keep passing while no
+#: longer covering the case the new domain was added to exercise. The identifier
+#: names the set, not its cardinality, for the same reason.
+_CONFIGURED_DOMAINS = sorted(d for d in _DOMAINS_CONFIG['skill_domains'] if d != 'system')
 
 _PY_FOOTPRINT = 'marketplace/bundles/plan-marshall/skills/manage-config/scripts/a.py'
 _MD_FOOTPRINT = 'doc/user/configuration.adoc'
@@ -99,7 +110,7 @@ def _claimed_by(result: dict, domain: str) -> list[str]:
 
 def test_always_on_domain_is_never_dropped(plan_context):
     """An always_on domain survives a footprint that no glob and no task claims."""
-    _seed(plan_context, 'dn-always-on', _ALL_FOUR)
+    _seed(plan_context, 'dn-always-on', _CONFIGURED_DOMAINS)
 
     result = cmd_domain_narrow(_ns('dn-always-on', _MD_FOOTPRINT))
 
@@ -116,7 +127,7 @@ def test_always_on_domain_is_never_dropped(plan_context):
 )
 def test_file_globs_leg_follows_the_declared_footprint(plan_context, footprint, expect_retained):
     """The file_globs leg claims a domain only when the declared footprint matches."""
-    _seed(plan_context, 'dn-globs', _ALL_FOUR)
+    _seed(plan_context, 'dn-globs', _CONFIGURED_DOMAINS)
 
     result = cmd_domain_narrow(_ns('dn-globs', footprint))
 
@@ -127,7 +138,7 @@ def test_file_globs_leg_follows_the_declared_footprint(plan_context, footprint, 
 
 def test_domain_claimed_by_no_leg_is_dropped(plan_context):
     """No task, no always_on, no glob hit — the domain leaves the set."""
-    _seed(plan_context, 'dn-unclaimed', _ALL_FOUR)
+    _seed(plan_context, 'dn-unclaimed', _CONFIGURED_DOMAINS)
 
     result = cmd_domain_narrow(_ns('dn-unclaimed', _PY_FOOTPRINT))
 
@@ -137,7 +148,7 @@ def test_domain_claimed_by_no_leg_is_dropped(plan_context):
 
 def test_task_claimed_domain_is_retained_without_an_inclusion_leg(plan_context):
     """A domain a resolved task depends on is retained though no inclusion leg claims it."""
-    plan_dir = _seed(plan_context, 'dn-task', _ALL_FOUR)
+    plan_dir = _seed(plan_context, 'dn-task', _CONFIGURED_DOMAINS)
     _write_task(plan_dir, 1, 'documentation')
 
     result = cmd_domain_narrow(_ns('dn-task', _PY_FOOTPRINT))
@@ -153,7 +164,7 @@ def test_all_three_legs_are_recorded_together(plan_context):
     plan_dir = _seed(
         plan_context,
         'dn-multi-leg',
-        _ALL_FOUR,
+        _CONFIGURED_DOMAINS,
         config={
             'skill_domains': {
                 'system': {'defaults': []},
@@ -173,6 +184,47 @@ def test_all_three_legs_are_recorded_together(plan_context):
 
 
 # =============================================================================
+# The synthetic system domain — exempt from the bound, not judged by it
+# =============================================================================
+
+
+def test_system_domain_is_retained_by_exemption_not_by_a_leg(plan_context):
+    """A ``system`` entry in the set is retained and records the exemption marker.
+
+    ``system`` is filtered out of the mapping both inclusion legs are evaluated over,
+    so neither can ever claim it. Judging it by the bound would drop it because two
+    legs were structurally incapable of looking — the marker records that it was
+    exempted instead.
+    """
+    _seed(plan_context, 'dn-system', [*_CONFIGURED_DOMAINS, 'system'])
+
+    result = cmd_domain_narrow(_ns('dn-system', _MD_FOOTPRINT))
+
+    assert 'system' in result['retained']
+    assert 'system' not in result['dropped']
+    assert _claimed_by(result, 'system') == ['system_exempt']
+
+
+def test_a_retained_domain_never_carries_an_empty_claimed_by(plan_context):
+    """Empty ``claimed_by`` means dropped, exactly — including when ``system`` is present.
+
+    The documented reading of an empty ``claimed_by`` is "no leg claimed the domain,
+    which is why it was dropped". A retained domain publishing one would make that
+    reading false, which is the failure the exemption marker exists to prevent.
+    """
+    _seed(plan_context, 'dn-system-reading', [*_CONFIGURED_DOMAINS, 'system'])
+
+    result = cmd_domain_narrow(_ns('dn-system-reading', _MD_FOOTPRINT))
+
+    retained = set(result['retained'])
+    assert 'system' in retained
+    assert all(e['claimed_by'] for e in result['provenance'] if e['domain'] in retained)
+    assert {e['domain'] for e in result['provenance'] if not e['claimed_by']} == set(
+        result['dropped']
+    )
+
+
+# =============================================================================
 # Set algebra — narrowing never adds
 # =============================================================================
 
@@ -182,13 +234,13 @@ def test_all_three_legs_are_recorded_together(plan_context):
 )
 def test_narrowing_is_a_strict_subset(plan_context, footprint):
     """Retained is a subset of the pre-narrowing set, and partitions it with dropped."""
-    _seed(plan_context, 'dn-subset', _ALL_FOUR)
+    _seed(plan_context, 'dn-subset', _CONFIGURED_DOMAINS)
 
     result = cmd_domain_narrow(_ns('dn-subset', footprint))
 
     retained, dropped = set(result['retained']), set(result['dropped'])
-    assert retained <= set(_ALL_FOUR)
-    assert retained | dropped == set(_ALL_FOUR)
+    assert retained <= set(_CONFIGURED_DOMAINS)
+    assert retained | dropped == set(_CONFIGURED_DOMAINS)
     assert retained & dropped == set()
 
 
@@ -201,7 +253,7 @@ def test_retained_covers_the_inclusion_union_intersected_with_the_current_set(pl
     test_a_domain_outside_the_current_set_is_never_added. This test seeds both
     claimed domains, so it exercises the intersected form and nothing wider.
     """
-    _seed(plan_context, 'dn-superset', _ALL_FOUR)
+    _seed(plan_context, 'dn-superset', _CONFIGURED_DOMAINS)
 
     result = cmd_domain_narrow(_ns('dn-superset', _PY_FOOTPRINT))
 
@@ -225,7 +277,7 @@ def test_a_domain_outside_the_current_set_is_never_added(plan_context):
 
 def test_narrowed_outcome_reports_true_with_a_non_empty_dropped_set(plan_context):
     """Narrowing ran and dropped domains."""
-    _seed(plan_context, 'dn-narrowed', _ALL_FOUR)
+    _seed(plan_context, 'dn-narrowed', _CONFIGURED_DOMAINS)
 
     result = cmd_domain_narrow(_ns('dn-narrowed', _PY_FOOTPRINT))
 
@@ -248,7 +300,7 @@ def test_already_minimal_set_reports_not_narrowed_rather_than_an_error(plan_cont
 
 @pytest.mark.parametrize(
     ('domains', 'footprint', 'expect_narrowed'),
-    [(_ALL_FOUR, _PY_FOOTPRINT, True), (['python'], _PY_FOOTPRINT, False)],
+    [(_CONFIGURED_DOMAINS, _PY_FOOTPRINT, True), (['python'], _PY_FOOTPRINT, False)],
     ids=['narrowed', 'nothing-droppable'],
 )
 def test_report_line_is_emitted_on_both_outcomes(plan_context, domains, footprint, expect_narrowed):
@@ -302,7 +354,7 @@ def test_missing_plan_dir_errors(plan_context):
 
 def test_unconfigured_skill_domains_errors(plan_context):
     """With no configured domain there is no inclusion leg to evaluate."""
-    _seed(plan_context, 'dn-no-domains', _ALL_FOUR, config={'skill_domains': {}})
+    _seed(plan_context, 'dn-no-domains', _CONFIGURED_DOMAINS, config={'skill_domains': {}})
 
     result = cmd_domain_narrow(_ns('dn-no-domains', _PY_FOOTPRINT))
 
@@ -317,18 +369,18 @@ def test_unconfigured_skill_domains_errors(plan_context):
 
 def test_provenance_covers_every_pre_narrowing_domain(plan_context):
     """One entry per domain in the PRE-narrowing set — retained and dropped alike."""
-    _seed(plan_context, 'dn-provenance', _ALL_FOUR)
+    _seed(plan_context, 'dn-provenance', _CONFIGURED_DOMAINS)
 
     result = cmd_domain_narrow(_ns('dn-provenance', _PY_FOOTPRINT))
 
     recorded = [e['domain'] for e in result['provenance']]
-    assert recorded == sorted(_ALL_FOUR)
+    assert recorded == sorted(_CONFIGURED_DOMAINS)
     assert set(recorded) == set(result['retained']) | set(result['dropped'])
 
 
 def test_provenance_records_the_absence_of_a_claim(plan_context):
     """A dropped domain carries an empty claimed_by rather than being omitted."""
-    _seed(plan_context, 'dn-prov-empty', _ALL_FOUR)
+    _seed(plan_context, 'dn-prov-empty', _CONFIGURED_DOMAINS)
 
     result = cmd_domain_narrow(_ns('dn-prov-empty', _PY_FOOTPRINT))
 
@@ -347,7 +399,7 @@ def test_verb_writes_nothing(plan_context):
     The baseline is captured by this test immediately before the invocation, so
     the comparison is against recorded bytes rather than an assumed prior state.
     """
-    plan_dir = _seed(plan_context, 'dn-readonly', _ALL_FOUR)
+    plan_dir = _seed(plan_context, 'dn-readonly', _CONFIGURED_DOMAINS)
     marshal_path: Path = plan_context.fixture_dir / 'marshal.json'
     references_path = plan_dir / 'references.json'
     marshal_before = marshal_path.read_bytes()
@@ -385,23 +437,46 @@ def test_inclusion_legs_are_borrowed_from_the_detector_not_re_implemented():
 # =============================================================================
 
 
-def test_domain_narrow_registered_in_manage_config_dispatch():
-    """argparse routes 'domain-narrow' to cmd_domain_narrow through the real parser."""
-    assert _mc.cmd_domain_narrow is not None
+def test_main_routes_domain_narrow_to_its_handler(monkeypatch):
+    """`main()` reaches cmd_domain_narrow with the parsed namespace.
 
-    ns = parse_ns(
-        _BUNDLE,
-        _SKILL,
-        _SCRIPT_NAME,
-        'domain-narrow',
-        '--plan-id',
-        'dispatch-check',
-        '--affected-files',
-        'a.py',
+    The real entry point is driven because nothing weaker observes the routing.
+    Asserting that the handler symbol is importable and that the subparser accepts
+    the flags leaves every assertion true after the `domain-narrow` dispatch branch
+    is deleted — the test would pass over a verb that can no longer be invoked. The
+    namespace the handler receives is also the parsed namespace, so the parser
+    surface is covered here rather than separately.
+    """
+    received: list = []
+
+    def _recording_handler(args):
+        received.append(args)
+        return {'status': 'success'}
+
+    monkeypatch.setattr(_mc, 'cmd_domain_narrow', _recording_handler)
+    monkeypatch.setattr(
+        sys,
+        'argv',
+        [
+            _SCRIPT_NAME,
+            'domain-narrow',
+            '--plan-id',
+            'dispatch-check',
+            '--affected-files',
+            'a.py',
+        ],
     )
-    assert ns.noun == 'domain-narrow'
-    assert ns.plan_id == 'dispatch-check'
-    assert ns.affected_files == 'a.py'
+
+    # main() is safe_main-wrapped, so a clean run leaves through SystemExit(0) —
+    # the same shape test_help_lists_both_flags relies on.
+    with pytest.raises(SystemExit) as exit_info:
+        _mc.main()
+
+    assert exit_info.value.code == 0
+    assert len(received) == 1
+    assert received[0].noun == 'domain-narrow'
+    assert received[0].plan_id == 'dispatch-check'
+    assert received[0].affected_files == 'a.py'
 
 
 def test_affected_files_is_required():
