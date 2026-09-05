@@ -153,12 +153,11 @@ class TestRealMarketplaceZeroFalsePositives:
     """
 
     def test_loop_and_shared_flag_calls_not_flagged_in_real_bundle(self, built_executor: Path) -> None:
-        executor = built_executor
         # manage-logging registers work/decision via a loop; --plan-id/--level/
         # --message are shared across them — the exact shapes the AST extractor
         # mis-flagged.
         notation = 'plan-marshall:manage-logging:manage-logging'
-        tree = derive_script_tree(notation, executor)
+        tree = derive_script_tree(notation, built_executor)
         assert tree is not None, 'manage-logging --help must be reachable'
         index = {notation: tree}
         canonical_calls = [
@@ -186,14 +185,13 @@ class TestRealMarketplaceZeroFalsePositives:
         subcommand to it — a false rejection of the project's own canonical
         forms.
         """
-        executor = built_executor
         alias_calls = {
             'plan-marshall:manage-tasks:manage-tasks': 'get --plan-id p --task-number 1',
             'plan-marshall:manage-status:manage-status': 'get --plan-id p',
             'plan-marshall:manage-lessons:manage-lessons': 'read --lesson-id L-1',
         }
         for notation, tail in alias_calls.items():
-            tree = derive_script_tree(notation, executor)
+            tree = derive_script_tree(notation, built_executor)
             assert tree is not None, f'{notation} --help must be reachable'
             call = f'python3 .plan/execute-script.py {notation} {tail}'
             findings = analyze_manage_invocation_markdown(
@@ -210,9 +208,8 @@ class TestRealMarketplaceZeroFalsePositives:
             )
 
     def test_many_subcommand_calls_not_flagged_in_real_bundle(self, built_executor: Path) -> None:
-        executor = built_executor
         notation = 'plan-marshall:manage-status:manage-status'
-        tree = derive_script_tree(notation, executor)
+        tree = derive_script_tree(notation, built_executor)
         assert tree is not None, 'manage-status --help must be reachable'
         index = {notation: tree}
         # Subcommands the AST extractor commonly dropped.

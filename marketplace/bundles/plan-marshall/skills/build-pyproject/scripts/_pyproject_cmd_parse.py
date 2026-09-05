@@ -329,16 +329,6 @@ def _extract_pytest_blocks(
     return blocks
 
 
-def _extract_pytest_failure_blocks(content: str) -> dict[str, list[str]]:
-    """Map each failing test key to its ordered traceback blocks from FAILURES."""
-    return _extract_pytest_blocks(content, _PYTEST_FAILURES_BANNER, _pytest_block_key)
-
-
-def _extract_pytest_error_blocks(content: str) -> dict[str, list[str]]:
-    """Map each errored collection/setup key to its ordered blocks from ERRORS."""
-    return _extract_pytest_blocks(content, _PYTEST_ERRORS_BANNER, _pytest_error_block_key)
-
-
 def _pytest_block_key(name: str) -> str:
     """Normalize a pytest test identifier to a block-lookup key.
 
@@ -498,7 +488,7 @@ def _collect_pytest_failure_records(content: str) -> list[dict]:
         A list of ``{test, file, line, message, signature, detail, category}``
         dicts in FAILED-line order.
     """
-    failure_blocks = _extract_pytest_failure_blocks(content)
+    failure_blocks = _extract_pytest_blocks(content, _PYTEST_FAILURES_BANNER, _pytest_block_key)
     block_cursors: dict[str, int] = {}
     signature_details: dict[str, str] = {}
     records: list[dict] = []
@@ -545,7 +535,7 @@ def _collect_pytest_error_records(content: str) -> list[dict]:
         A list of ``{test, file, line, message, signature, detail, category}``
         dicts in ERROR-line order.
     """
-    error_blocks = _extract_pytest_error_blocks(content)
+    error_blocks = _extract_pytest_blocks(content, _PYTEST_ERRORS_BANNER, _pytest_error_block_key)
     block_cursors: dict[str, int] = {}
     signature_details: dict[str, str] = {}
     records: list[dict] = []
