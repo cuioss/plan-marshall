@@ -25,7 +25,19 @@ Two properties get particular attention:
 from conftest import PROJECT_ROOT, load_script_module
 
 _cmd_client_build = load_script_module('plan-marshall', 'manage-architecture', '_cmd_client_build.py', '_cmd_client_build')
-_cmd_client_query = load_script_module('plan-marshall', 'manage-architecture', '_cmd_client_query.py', '_cmd_client_query')
+# ⛔ ``register=False`` is load-bearing, not tidiness. Publishing this module in
+# ``sys.modules`` under ``_cmd_client_query`` satisfies the BY-NAME import that
+# ``_freshness_crosscheck.resolve_expected_notations`` performs, so the sibling
+# gate-level control below would corroborate through this registration instead of
+# through ``sys.path`` — and would stay green with the resolver unreachable. This
+# module only needs the returned object, so it publishes nothing.
+_cmd_client_query = load_script_module(
+    'plan-marshall',
+    'manage-architecture',
+    '_cmd_client_query.py',
+    '_cmd_client_query',
+    register=False,
+)
 
 build_notation_for_executable = _cmd_client_build.build_notation_for_executable
 resolve_project_build_notations = _cmd_client_query.resolve_project_build_notations
@@ -186,8 +198,17 @@ def test_the_live_repository_resolves_its_own_build_notation() -> None:
     runtime import is exercised by the sibling gate-level case
     ``test_freshness_notation_crosscheck.test_the_real_resolution_path_refuses_and_corroborates_against_this_repository``,
     which reaches the resolver the way production does — ``from _cmd_client_query
-    import …`` by NAME, inside ``resolve_expected_notations``. Neither case alone
-    covers both halves; the pair does, and that is why both exist.
+    import …`` by NAME, inside ``resolve_expected_notations``.
+
+    The two halves are only genuinely disjoint because of two deliberate
+    provisions, and WITHOUT them they were not: this module loads the resolver
+    with ``register=False`` so it publishes no ``sys.modules`` entry, and the
+    sibling evicts that name for the duration of its case. Absent either one, a
+    by-name import consults ``sys.modules`` before any finder, this module is
+    collected first in the real suite, and the sibling's "import path" half would
+    be satisfied by THIS module's registration — green with the resolver
+    unreachable. With both in place, neither case alone covers both halves, the
+    pair does, and that is why both exist.
 
     Asserted as a superset rather than an equality: the repository is Python-only
     today, and pinning that would turn adding a second build system into a test

@@ -31,15 +31,23 @@ from _freshness_notation_crosscheck_fixtures import (
     _write_status,
     cmd_pre_commit_verify_freshness,
 )
+from _resolve_project_dir_fixtures import worktree_query_result
 
 from conftest import PROJECT_ROOT
 
 
 @pytest.fixture(autouse=True)
 def _stub_resolver_seam(monkeypatch):
-    """Keep worktree-root resolution hermetic (no ``manage-status`` subprocess)."""
+    """Keep worktree-root resolution hermetic (no ``manage-status`` subprocess).
+
+    The return value is built by ``worktree_query_result`` rather than written
+    as a tuple here, so this stub speaks the same state vocabulary the producer
+    publishes and cannot encode a pairing the producer never emits.
+    """
     monkeypatch.setattr(
-        file_ops, '_query_worktree_path', lambda _plan_id: (True, str(Path.cwd()))
+        file_ops,
+        '_query_worktree_path',
+        lambda _plan_id: worktree_query_result(True, str(Path.cwd())),
     )
 
 
@@ -279,13 +287,25 @@ def test_the_real_resolution_path_refuses_and_corroborates_against_this_reposito
     path or a crawl that stopped working is a test failure rather than a silent
     no-op.
 
+    ⛔ That claim is only true because of the ``sys.modules`` eviction below, and
+    it was FALSE without it. ``resolve_expected_notations`` imports the resolver
+    BY NAME, and a by-name import consults ``sys.modules`` before any finder — so
+    any earlier collected module that published ``_cmd_client_query`` under that
+    name (a sibling loading it by absolute path, say) satisfies the import
+    whether or not the resolver is reachable on ``sys.path`` at all. Evicting the
+    name for the duration of this case is what makes the import path the thing
+    under test rather than whatever collection order happened to leave behind.
+
     Both directions are asserted in one case on purpose: a refusal alone would
     also be produced by a resolver that resolves the empty set and (wrongly)
     treated it as a refutation, so the corroboration is what proves the set was
     really populated.
     """
+    monkeypatch.delitem(__import__('sys').modules, '_cmd_client_query', raising=False)
     monkeypatch.setattr(
-        file_ops, '_query_worktree_path', lambda _plan_id: (True, str(PROJECT_ROOT))
+        file_ops,
+        '_query_worktree_path',
+        lambda _plan_id: worktree_query_result(True, str(PROJECT_ROOT)),
     )
     plan_dir = plan_context.plan_dir_for('crosscheck-live')
     _write_status(plan_dir)

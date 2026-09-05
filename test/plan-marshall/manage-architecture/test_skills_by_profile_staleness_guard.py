@@ -2,11 +2,24 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the skills_by_profile staleness guard in ``_cmd_client_query.py``.
 
-The guard is a non-blocking, read-path WARNING surface: it flags a module whose
-``skills_by_profile`` references skill notations absent from the live registry
-(retired / renamed IDs) or is missing entirely. It never raises. The pure
-``detect_stale_skills_by_profile`` core takes an injected ``is_live`` predicate
-so staleness detection is deterministic without a real bundle tree.
+The guard is a non-blocking, read-path WARNING surface over a module's
+``skills_by_profile`` map. It never raises. THREE distinct conditions surface a
+warning, and this file covers all three — the docstring lists them because a
+two-signal description of a three-signal guard is how the third stops being
+maintained:
+
+1. **A notation absent from the live registry** — a retired or renamed skill id
+   still referenced by the map.
+2. **The whole map missing or empty** — reported without any registry lookup,
+   since there is nothing to look up.
+3. **A present-but-empty PROFILE block that does not declare itself minimal** —
+   the per-profile condition, distinct from (2) because the map itself is
+   non-empty and contributes no notations to (1), so neither of the other two
+   signals fires. A block declaring ``"minimal": true`` is the escape hatch and
+   is deliberately silent; the two states differ by exactly that declaration.
+
+The pure ``detect_stale_skills_by_profile`` core takes an injected ``is_live``
+predicate so staleness detection is deterministic without a real bundle tree.
 """
 
 from conftest import load_script_module
