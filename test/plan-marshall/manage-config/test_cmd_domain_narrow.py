@@ -192,8 +192,15 @@ def test_narrowing_is_a_strict_subset(plan_context, footprint):
     assert retained & dropped == set()
 
 
-def test_retained_is_a_superset_of_the_inclusion_union(plan_context):
-    """Every domain an inclusion leg claims is retained, whatever else happens."""
+def test_retained_covers_the_inclusion_union_intersected_with_the_current_set(plan_context):
+    """A claimed domain ALREADY IN the set is retained; the claim alone never adds one.
+
+    The invariant is `retained >= (always_on | glob_matched) & current`, NOT
+    `retained >= always_on | glob_matched`. The verb iterates the current set only,
+    so a claimed-but-absent domain stays absent — pinned by the sibling
+    test_a_domain_outside_the_current_set_is_never_added. This test seeds both
+    claimed domains, so it exercises the intersected form and nothing wider.
+    """
     _seed(plan_context, 'dn-superset', _ALL_FOUR)
 
     result = cmd_domain_narrow(_ns('dn-superset', _PY_FOOTPRINT))

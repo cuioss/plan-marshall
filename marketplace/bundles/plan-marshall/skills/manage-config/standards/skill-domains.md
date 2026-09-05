@@ -387,7 +387,7 @@ A domain currently in the set is **droppable** exactly when all three legs of th
 2. the `always_on` leg does not claim it;
 3. the `file_globs` leg does not claim it against the **declared footprint** — the real affected-files list, which is stronger evidence than the narrative path tokens the init-time evaluation had.
 
-Everything not droppable is retained, so the retained set is always a superset of `always_on_set ∪ glob_matched_set` and narrowing never adds a domain. An `always_on` domain is therefore **structurally exempt**: no footprint can drop it, which is the property that makes a project-wide standing inclusion safe to declare.
+Everything not droppable is retained, so the retained set is always a superset of `(always_on_set ∪ glob_matched_set) ∩ current_set` and narrowing never adds a domain. The intersection is load-bearing: the pass iterates the CURRENT set only, so it cannot restore a claimed domain that is missing from `references.domains` — restoring one is `domain-detect`'s widening job, not narrowing's. An `always_on` domain **that is in the set** is therefore **structurally exempt**: no footprint can drop it, which is the property that makes a project-wide standing inclusion safe to declare.
 
 The verb's flags, return contract, and error set are specified in [`../SKILL.md`](../SKILL.md) § Canonical invocations → `domain-narrow`.
 

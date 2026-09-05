@@ -1437,7 +1437,7 @@ A domain currently in the set is **droppable** exactly when all three legs of th
 2. the `always_on` inclusion leg does not claim it — an `always_on` domain is structurally exempt from narrowing, under any footprint;
 3. the `file_globs` inclusion leg does not claim it against `--affected-files`.
 
-Everything not droppable is retained, so narrowing is a strict subset operation that never adds a domain and the retained set is always a superset of `always_on ∪ file_globs_matched`. The inclusion semantics are not re-implemented here — the leg helpers are shared with `domain-detect`, so they keep exactly one home. See [standards/skill-domains.md § Domain Inclusion](standards/skill-domains.md).
+Everything not droppable is retained, so narrowing is a strict subset operation over the CURRENT set: it never adds a domain, and it retains every current domain that `always_on` or `file_globs` claims. The bound is `always_on ∪ file_globs_matched` **intersected with the current set** — not a superset of the inclusion union itself. A domain the inclusion legs would claim but which is absent from `references.domains` stays absent, because this verb only ever removes; adding one back is `domain-detect`'s job, not narrowing's. The inclusion semantics are not re-implemented here — the leg helpers are shared with `domain-detect`, so they keep exactly one home. See [standards/skill-domains.md § Domain Inclusion](standards/skill-domains.md).
 
 `--affected-files` (comma-separated) is REQUIRED: narrowing without a footprint has no evidence to act on.
 

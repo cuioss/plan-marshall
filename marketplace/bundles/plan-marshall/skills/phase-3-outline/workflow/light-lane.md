@@ -183,12 +183,14 @@ The light lane is **not exempt** from the narrowing obligation either, and for t
 
    Parse `retained`, `dropped`, `provenance`, `report`, and `narrowed` from the returned TOON.
 
-3. On `narrowed: true`, persist the retained set and the provenance:
+3. On `narrowed: true`, persist the retained set:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-references:manage-references set-list \
      --plan-id {plan_id} --field domains --values {retained_csv}
    ```
+
+3b. On **both** outcomes — the write is NOT gated on `narrowed` — persist the provenance, so a plan the pass examined and found nothing droppable in stays distinguishable from one the pass never ran on:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-references:manage-references set \

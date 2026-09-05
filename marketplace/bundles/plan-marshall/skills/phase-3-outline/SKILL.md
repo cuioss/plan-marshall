@@ -582,12 +582,14 @@ This is the one point in the lifecycle where narrowing is both possible and safe
 
    Parse `retained`, `dropped`, `provenance`, `report`, and `narrowed` from the returned TOON.
 
-3. **On `narrowed: true`**, persist the retained set and the provenance:
+3. **On `narrowed: true`**, persist the retained set:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-references:manage-references set-list \
      --plan-id {plan_id} --field domains --values {retained_csv}
    ```
+
+3b. **On BOTH outcomes**, persist the provenance — the write is NOT gated on `narrowed`:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-references:manage-references set \
@@ -595,6 +597,8 @@ This is the one point in the lifecycle where narrowing is both possible and safe
    ```
 
    `{provenance_rendering}` is the compact one-line `{domain}={legs}` form described in [`manage-references` § Schema Fields](../manage-references/SKILL.md) — `none` where no leg claimed the domain. It is written alongside the `domains` key, never instead of it.
+
+   **Why this write is unconditional.** The key's stated purpose is to make a narrowed set distinguishable from an over-provisioned one after the fact. Gating it on `narrowed: true` defeats exactly that: the key would then be equally absent for a plan the narrowing pass EXAMINED and found nothing droppable in, and for a plan the pass never ran on — collapsing "looked and found nothing" into "never looked", which is the failure mode this plan exists to remove. A `narrowed: false` run has a full provenance record (every domain claimed by some leg); writing it is what proves the pass ran.
 
 4. **Emit the returned `report`** — verbatim, on **both** outcomes — into the phase's user-facing summary and a decision-log entry:
 
@@ -604,7 +608,7 @@ This is the one point in the lifecycle where narrowing is both possible and safe
      --message "(plan-marshall:phase-3-outline) {report}"
    ```
 
-**A `narrowed: false` result is a valid recorded outcome, not a skip.** Nothing was droppable, and the report still fires — so "nothing to narrow" stays distinguishable from "narrowing never ran". Only steps 3's two writes are conditional on `narrowed: true`.
+**A `narrowed: false` result is a valid recorded outcome, not a skip.** Nothing was droppable, and both the report (step 4) and the provenance write (step 3b) still fire — so "nothing to narrow" stays distinguishable from "narrowing never ran". Only step 3's `domains` write is conditional on `narrowed: true`, and only because rewriting an unchanged set is a no-op.
 
 **The phase never narrows on its own judgement.** The verb owns the decision through its three-legged safety bound; this phase invokes it, persists its result, and reports it. The safety bound itself — the `always_on` structural exemption, the `file_globs` leg, and the resolved-task leg — is documented in [`manage-config` § Canonical invocations → `domain-narrow`](../manage-config/SKILL.md) and [`manage-config` standards/skill-domains.md § Domain Inclusion](../manage-config/standards/skill-domains.md). Do NOT inline-copy that decision table here.
 
