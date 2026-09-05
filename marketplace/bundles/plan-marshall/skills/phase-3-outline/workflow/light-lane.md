@@ -197,6 +197,8 @@ The light lane is **not exempt** from the narrowing obligation either, and for t
      --plan-id {plan_id} --field domains_provenance --value {provenance_rendering}
    ```
 
+   `{provenance_rendering}` is the compact one-line `{domain}={legs}` form described in [`manage-references` § Schema Fields](../../manage-references/SKILL.md) — `none` where no leg claimed the domain. Do NOT invent a rendering here: both lanes write the same key, so the format has exactly one home.
+
 4. Emit the returned `report` verbatim — on **both** outcomes, including `narrowed: false` — into the envelope's user-facing summary and a decision-log entry:
 
    ```bash
