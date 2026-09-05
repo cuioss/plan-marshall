@@ -86,7 +86,7 @@ These rules apply to ALL work in this repository — ad-hoc tasks, plan executio
 
 ## Standalone Plan Lane (`doc/plans/`)
 
-Plans under `doc/plans/` execute **outside the plan-marshall command lifecycle** — no `/plan-marshall`, no `/plan-orchestrator`, no `.plan/execute-script.py`, no `.plan/` state at all. The lane exists because `.plan/` is git-ignored: its state (plan directories, orchestrator ledgers, findings, locks, and the generated executor) lives only on the machine that created it, so a cloud session at claude.ai/code clones the repository and has none of it. Everything a `doc/plans/` plan needs is in git.
+Plans under `doc/plans/` execute **outside the plan-marshall command lifecycle** — no `/plan-marshall`, no `/plan-orchestrator`, no `.plan/execute-script.py`, and none of the git-ignored `.plan/local/` state. The lane exists because `.plan/local/` is git-ignored: its state (plan directories, orchestrator ledgers, findings, locks, and the generated executor) lives only on the machine that created it, so a cloud session at claude.ai/code clones the repository and has none of it. Everything a `doc/plans/` plan needs is in git — including the git-tracked `.plan/marshal.json`, which the lane may read.
 
 **The complete working contract is the `cloud-plan-lane` skill** (`.claude/skills/cloud-plan-lane/SKILL.md`), loaded as the first action of every run:
 
@@ -103,7 +103,7 @@ Within this lane only, these hard rules are superseded — the tooling they mand
 | Build commands: resolve via architecture | `./pw verify` called directly, gated on a git-derived Python-change check |
 | CI operations: use abstraction layer | The GitHub MCP server (the cloud path) or `gh` directly |
 | GitHub access: `gh`, not MCP | The GitHub MCP server is the expected path in a cloud session |
-| `.plan/` access: scripts only | Not applicable — the lane never touches `.plan/` |
+| `.plan/` access: scripts only | Narrowed — the generated executor is absent from a clone, so no `manage-*` script is callable. The lane MAY `Read` git-tracked `.plan/` configuration directly (`.plan/marshal.json`, e.g. the `automatic-review` step's `required_bots` / `optional_bots`); the git-ignored `.plan/local/` tree is absent and out of reach. Read-only — the lane writes nothing under `.plan/` |
 | Temp files under `.plan/temp/` | The system temp dir (`$TMPDIR`) — never the repository, never `.plan/` |
 | Structured queries first | Not applicable — `architecture` requires the executor; Glob/Grep/Read are used instead |
 | Triage findings via manage-findings + ext-triage | Findings recorded per instance in the run report |

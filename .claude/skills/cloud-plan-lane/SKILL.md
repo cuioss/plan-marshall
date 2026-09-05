@@ -9,13 +9,15 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Task, Skill, AskUserQuestion
 # Cloud Plan Lane
 
 The working contract for one plan under `doc/plans/`. It is **self-contained**: it does not use
-`/plan-marshall`, `/plan-orchestrator`, `.plan/execute-script.py`, or any `.plan/` state.
+`/plan-marshall`, `/plan-orchestrator`, `.plan/execute-script.py`, or any of the git-ignored
+`.plan/local/` state. It **reads** git-tracked `.plan/` configuration where it needs it, and **writes**
+nothing under `.plan/` at all (§ Scope and precedence).
 
 Load this skill as the **first action of every run**, before reading the plan.
 
 ## Why this lane exists
 
-`.plan/` is git-ignored, so the plan-marshall lifecycle's state — plan directories, orchestrator
+`.plan/local/` is git-ignored, so the plan-marshall lifecycle's state — plan directories, orchestrator
 ledgers, findings, locks, and the generated executor — exists only on the machine that created it.
 A cloud session clones the repository and gets none of it. This lane keeps everything a plan needs
 inside git: the plan, the rules, and the report.
@@ -31,7 +33,7 @@ records the carve-out. Specifically, within this lane:
 | Build commands resolved via `architecture resolve` | **Superseded** — call `./pw` directly (§ Build gate) |
 | CI operations via `tools-integration-ci:ci` | **Superseded** — see § GitHub access |
 | GitHub access via `gh`, not MCP | **Superseded** — the GitHub MCP server is the cloud path (§ GitHub access) |
-| `.plan/` access through `execute-script.py` | **Not applicable** — this lane never touches `.plan/` |
+| `.plan/` access through `execute-script.py` | **Narrowed** — the generated executor is git-ignored and absent from a clone, so no `manage-*` script is callable and that half of the rule cannot apply. But `.plan/marshal.json` is **git-tracked**, so a clone carries it: this lane MAY `Read` it directly for configuration it needs — the `automatic-review` step's `required_bots` / `optional_bots` is the case in point, and § Step 7 names the key path rather than it being restated here. Everything under `.plan/local/` is git-ignored, absent from a clone, and out of reach. The access is **read-only**: the lane writes nothing under `.plan/` at all |
 | Temp files under `.plan/temp/` | **Superseded** — scratch goes in the system temp dir (`$TMPDIR`), never in the repository and never in `.plan/` |
 | Structured queries before Glob/Grep | **Not applicable** — `architecture` needs the executor; use Glob/Grep/Read |
 | Findings via `manage-findings` + `ext-triage-*` | **Superseded** — findings go in the run report (§ Report) |
@@ -373,7 +375,7 @@ run the quality gate first:
 python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "quality-gate"
 ```
 
-A lane run without the generated executor — the ordinary cloud case, since `.plan/` is git-ignored —
+A lane run without the generated executor — the ordinary cloud case, since the executor is git-ignored —
 runs the same gate directly:
 
 ```bash
@@ -405,8 +407,8 @@ diff before the PR — that one stays.
 
 Every commit message ends with exactly this trailer, and **no** "Generated with …" footer. The
 identity names the system that produced the commit, never the assistant or vendor behind it. A local
-run resolves it through `manage-run-config commit-trailer get`; this lane has no executor and no
-`.plan/`, so it writes that resolver's default directly:
+run resolves it through `manage-run-config commit-trailer get`; this lane has no executor to run that
+resolver with, so it writes the resolver's default directly:
 
 ```text
 Co-Authored-By: plan-marshall <noreply@cuioss.de>
@@ -1327,6 +1329,64 @@ set **is** the expected reviewer population for this PR. Do **not** transcribe a
 this contract or into the report: a hand-maintained list is the defect this step exists to prevent,
 and it goes stale the instant a reviewer is added to or removed from the registry.
 
+**Classify each member of that population `required` / `optional` / `unclassified`.** The population is
+unchanged — it stays the registry-derived `author_login` set above — and the classification is read
+from the project's own configuration, in the git-tracked `.plan/marshal.json` that § Scope and
+precedence makes readable here: the `automatic-review` step's `required_bots` and `optional_bots` under
+`plan.phase-6-finalize.steps["plan-marshall:automatic-review"]`, each a comma-separated string.
+
+⛔ **Those two lists are keyed by `bot_kind`, not by `author_login` — the classification join crosses
+two key spaces and must be made explicitly.** Every registry doc declares **both** keys: the
+`author_login` the population above is built from, and the `bot_kind` the configuration classifies by.
+So classify a reviewer by taking **its registry entry's `bot_kind`** and testing *that* token against
+the two lists — never its `author_login`. The two keys coincide for some registered reviewers and
+differ for others, which is exactly what makes the wrong join look like it works: matching on
+`author_login` classifies the coincident ones correctly while silently leaving every reviewer whose
+keys differ **`unclassified`** on every PR, and a permanent false shortfall is then disclosed
+downstream at § Step 8 condition 5. A
+registered reviewer named by **neither** list is **`unclassified`**, which is a real third value rather
+than padding: the configuration genuinely may classify no list for a registered reviewer, and recording
+that honestly is what stops a run inferring required-ness from a reviewer's identity, its prominence, or
+the mere fact that it reviewed. ⛔ **Do not transcribe a reviewer list here or into the report** — the
+population rule above applies to the classification for the same reason.
+
+⛔ **The classification read itself fails closed — an unreadable or malformed configuration is not an
+empty one.** The population above is derived from the registry and stands on its own, but each
+member's `Class` comes from that configuration, and § Step 8 condition 5 computes its three ratios
+against the sets this read produces. So the read is checked *here*, before anything consumes it, and
+a failure that leaves the classification unsubstantiated holds it rather than yielding a roster the
+run cannot stand behind — the same treatment this subsection gives an unreadable publish surface
+below, and for the same reason: a failed read is not a clean result.
+
+- **The configuration is absent, unreadable, or unparseable.** There is no classification at all, and
+  a file the run could not read is not a project that classified nothing. Record the failure and the
+  reason, and do **not** compute the condition 5 ratios from it — a required-set ratio written over a
+  set that was never read is a figure with no denominator behind it. What condition 5 discloses in
+  that case is the read failure itself.
+- **A list field is present but is not the comma-separated string described above.** Same handling,
+  for the same reason: a field of the wrong shape is configuration the run cannot read, not
+  configuration that names nothing. Do not coerce it, and do not fall back to treating it as absent.
+- **The two configured sets must be unique and disjoint.** A token repeated within one list, or named
+  by both, leaves that reviewer's `Class` undetermined — the two are exclusive and the configuration
+  is asserting both — so it is malformed configuration and takes the same fail-closed handling,
+  naming the colliding token and the list or lists it appeared on. ⛔ **Never resolve a collision by
+  precedence.** Preferring one list would settle, on this contract's authority, a question only the
+  project's configuration may answer, and it would move a reviewer between denominators without
+  saying so.
+- **Every configured token must resolve to a registered reviewer.** The lists are keyed by `bot_kind`,
+  so a token that no registry doc declares names a reviewer that does not exist here. It **stays in
+  the set that named it and in that set's denominator**, recorded as unproven and blocking exactly as
+  an absent reviewer is, and it MUST carry its own row in the participation record naming the
+  rejection — the row, not removal from a denominator, is what keeps it from reaching a ratio
+  unaccounted for. Route it to the `unregistered_kind` treatment the shared contract defines at
+  `marketplace/bundles/plan-marshall/skills/automatic-review/standards/bot-participation-contract.md`,
+  reading the handling there rather than restating it. Dropping it instead would replace a disclosed
+  block with a silent pass, and report a coverage figure the rest of the project computes differently.
+
+None of this touches the third value: a **registered** reviewer that a well-formed configuration
+names in neither list is `unclassified`, which is a real reading of that configuration rather than a
+failure of it.
+
 **Record a verdict per reviewer, derived from the stored comment bodies** — never from a check state,
 a review summary, an absence of complaint, or this contract's prose. For each `author_login` in the
 population, read that author's actual comment/review bodies on the PR (all three surfaces above) and
@@ -1334,10 +1394,28 @@ assign exactly one verdict:
 
 | Verdict | Body evidence |
 |---|---|
-| `reviewed` | The author published a review artifact **against the diff** — an inline thread comment, or a review/issue-comment body carrying findings (or an explicit "nothing to report" over the diff). |
+| `reviewed` | The author published a review artifact **against the diff** — an inline thread comment, or a review/issue-comment body **carrying findings**. |
+| `reviewed-empty` | The author published a review artifact **against the diff** carrying **no findings** — an explicit "nothing to report" over it. The reviewer ran and found nothing, which is a different fact from finding nine and a different fact again from never having looked. |
 | `rate-limited` | The author published **only a refusal/quota notice** in place of a review (e.g. "Review limit reached", "reached your weekly rate limit of … diff characters"). It engaged but did not review this diff. |
 | `silent` | The author published **nothing at all** — no review, no notice. Before recording it, run the recovery check below — **not owed where the label governs this reviewer** (⛔ below), owed as usual where it does not; an unexplained silence is recorded as such only once that check has been made. |
-| `unreadable` | The surface that would carry this author's body **errored**. Not a statement about the author at all — a statement about the run's access. |
+| `unreadable` | Either the surface that would carry this author's body **errored**, or the verdict **names no surface** it was read from. Not a statement about the author at all — a statement about the run's access: in both cases the run cannot substantiate what it read. |
+
+`reviewed-empty` is a **completed review**, so it behaves as `reviewed` does wherever the other
+verdicts are consumed: its `Reopens?` cell is **blank** (nothing was refused, so there is no limit to
+clear), and it leaves no comment to handle, so **merge-gate condition 3 is unaffected** by it. What it
+does not do is disappear into `reviewed` — the whole point of the value is that a reader can tell a
+reviewer that examined the diff and found nothing from one that filed findings.
+
+⛔ **This step is the single definition of every value set it introduces** — the verdict vocabulary in
+the table above, the `required` / `optional` / `unclassified` `Class` values, and the `Reopens?` values
+under *Every verdict that reports no review also records whether it reopens* below. The rule is stated
+over that population rather than over a count of it: a count is itself a claim that goes stale the
+moment a set is added, which is the drift the rule exists to prevent, committed by the rule itself.
+Every other passage that needs any of them **cross-references the subsection that defines it and
+enumerates none of them**, the § Report participation record included. A value set written down twice
+goes stale in one of the two copies, and this contract already applies exactly that remedy one section
+away for condition 6's arms (⛔ *"Do not enumerate the arms here … Read them from condition 6"*). Read
+each from the subsection that defines it.
 
 ⛔ **An unreadable surface is not an empty one, and `silent` MUST NOT be used for it.** `silent` claims
 a reviewer published nothing; a run whose read failed cannot make that claim, and recording it as
@@ -1365,12 +1443,34 @@ A check-run state is never a verdict: a green check can conclude having publishe
 reviewer that posts no check at all would read as absent on every run. The verdict comes from the
 bodies or it is not evidence.
 
-#### Every non-`reviewed` verdict also records whether it reopens
+#### Every verdict names the surfaces it was read from
+
+The verdict says what a reviewer did. It does not say **where the run looked** to establish that — and
+without that, `silent` is an assertion a reader must take on trust rather than a claim they can audit.
+The three publish surfaces are enumerated above and this step already binds the run to reading all
+three, so ⛔ **do not enumerate them again here**; the contract is not missing them. What is added is
+the record obligation: **each verdict states which of those surfaces it was read from.** A `silent`
+then means *these surfaces were checked and were empty* — checkable against the run's own evidence —
+and the failure this closes stops being expressible: the observed run that recorded `sourcery-ai`
+`silent` while the review-summary surface carried a rate-limit notice from it could not have written
+that row without showing it had read that surface.
+
+⛔ **A verdict that names no surface is `unreadable`, not `silent`.** There is no third state for *the
+run did not say*: an unattributed verdict is an unverified claim, and it is recorded as the verdict
+that reports the run cannot vouch for what it read. The consequence follows the value, and it is
+**intended**: `unreadable` blocks merge-gate condition 3 where `silent` does not (the paragraph above),
+so an **unattributed verdict holds the gate**. That is the purpose of the rule, not a side effect of it
+— a run that cannot say where it looked has not established that every comment was handled. No grace
+period, no "unless", and no carve-out for a run that read the surfaces and merely omitted to record
+which.
+
+#### Every verdict that reports no review also records whether it reopens
 
 The verdict says a reviewer did not review. It does not say whether that is temporary — and the two
-cases call for opposite handling, so the record carries both. Alongside each non-`reviewed` verdict,
-state **`Reopens? yes / no / unknown`** — except where the label suppressed the invitation, where the
-cell is blank because no limit was ever reached:
+cases call for opposite handling, so the record carries both. Alongside each verdict that reports the
+reviewer did **not** review — that is, every verdict except the two completed-review ones, `reviewed`
+and `reviewed-empty` — state **`Reopens? yes / no / unknown`**, except where the label suppressed the
+invitation, where the cell is blank because no limit was ever reached:
 
 | Reopens? | Meaning | Example |
 |---|---|---|
@@ -1386,9 +1486,12 @@ reader of the table could not tell which — if either — was worth re-requesti
 Take the value from the **notice body**, the same source as the verdict; do not infer it from the
 reviewer's identity, since one reviewer can refuse under both kinds.
 
-Record the population, each reviewer's verdict, its `Reopens?` value, and the body evidence for it in
-the report's **Reviewer participation** table (§ Report), and state the coverage as N-of-M. A reviewer
-that never spoke is then *visibly* `silent` in the record, not merely unmentioned.
+Record the population, each reviewer's verdict, its `Class`, its `Reopens?` value, and the body
+evidence for it in the report's **Reviewer participation** table (§ Report), and state the coverage as
+the three named ratios § Step 8 condition 5 defines — required, optional, and overall, each written
+against its own denominator — never as one bare figure, so no number can be read against a population
+it was not measured over. A reviewer that never spoke is then *visibly* `silent` in the record, not
+merely unmentioned.
 
 #### A `Reopens? yes` refusal is RETRIED, not recorded
 
@@ -1687,13 +1790,37 @@ hold:**
    is complete and pushed **immediately before arming**, whichever commit that turns out to be.
 
 5. **A review-coverage shortfall is disclosed to the operator.** From the per-reviewer participation
-   record (§ Step 7), read the verdict of every expected reviewer. When **any** expected reviewer's
-   verdict is not `reviewed`, state the shortfall and its reason to the operator, explicitly and in
-   words, *before* arming auto-merge — carrying each reviewer's `Reopens?` value (§ Step 7), since
-   that is what tells the operator whether the gap was ever closable. For example: "Review coverage:
-   1 of 3 — `cuioss-review-bot` reviewed; `coderabbitai` rate-limited on a countdown, six attempts
-   spent without obtaining it; `sourcery-ai` rate-limited on a size ceiling, does not reopen."
-   **A run that merges on 1-of-3 must _say_ 1-of-3.**
+   record (§ Step 7), read the verdict **and the `Class`** of every expected reviewer — the `Class`
+   values are defined in § Step 7's *Record per-reviewer participation* subsection and are not
+   restated here. The shortfall is computed **against the required set**, not across the whole
+   roster: a roster-wide trigger fires on an optional reviewer's absence with exactly the force it
+   fires on a required one, so it cannot say whether coverage actually fell short.
+
+   ⛔ **These ratios are computed only over a classification the run could substantiate.** § Step 7
+   defines how the classification read fails closed — and a failure that holds the classification
+   leaves no sound denominator for the required and optional ratios. Where one fired, this disclosure
+   reports **that** read failure and what it held back in place of those two; the roster ratio still
+   stands, since its denominator is the registry-derived population and no configuration read feeds
+   it. A figure computed over an unsound denominator is the bare-figure defect wearing three names.
+
+   State the coverage as **three named ratios**, never as one bare figure — each ratio naming the
+   population it is measured against, so a reader can tell which denominator any number belongs to:
+
+   > **`k of |required_bots|` required reviewers reviewed, `j of |optional_bots|` optional reviewers
+   > reviewed, `r of |roster|` overall.**
+
+   A reviewer whose verdict is `reviewed` **or** `reviewed-empty` counts toward these ratios — one that
+   ran and found nothing did participate — while staying separately visible in the participation table,
+   so the two are never conflated. Disclose whenever `k` falls short of `|required_bots|`, stating the
+   reason per reviewer explicitly and in words *before* arming auto-merge, and carrying each reviewer's
+   `Reopens?` value (§ Step 7), since that is what tells the operator whether the gap was ever closable.
+   An optional-set or roster shortfall is stated alongside it; it is the required-set ratio that says
+   whether the coverage the project asked for was obtained. For example: "Review coverage: 1 of 1
+   required reviewers reviewed, 0 of 2 optional reviewers reviewed, 1 of 3 overall —
+   `cuioss-review-bot` (required) reviewed; `coderabbitai` (optional) rate-limited on a countdown, six
+   attempts spent without obtaining it; `sourcery-ai` (optional) rate-limited on a size ceiling, does
+   not reopen." **A run that merges short of its required set must _say_ which ratio it is short on,
+   and by how much.**
 
    **On a `skip-bot-review` PR an empty result is expected from the reviewers the label governs,
    and is not a shortfall for them.** A reviewer with `honors_skip_label: false` was invited, so its
@@ -1702,7 +1829,7 @@ hold:**
    population is still the registry set (§ Step 7) — it is never emptied — and every verdict is
    still read **from the bodies**, never from this contract's prose. Where the bodies are empty and
    the label was in place at PR-open, annotate the `silent` as `(suppressed by label)` and state the
-   coverage as N-of-M with that annotation, not as a shortfall. Where the label landed *after* the
+   coverage as the three named ratios above, carrying that annotation, not as a shortfall. Where the label landed *after* the
    PR-open trigger, or was removed mid-cycle, the annotation does not apply and any gap is a real
    shortfall. **Whether the label governs a given reviewer is declared by the registry**, in the same
    docs the run already reads to derive the population: each carries `honors_skip_label`. Read it
@@ -2160,11 +2287,13 @@ cross-named by `.github/workflows/pr-agent.yml` — never a list transcribed her
 reviewer, each verdict derived from the stored comment bodies (§ Step 7), never from a check state or
 a summary:
 
-| Reviewer (`author_login`) | Verdict (`reviewed` / `rate-limited` / `silent` / `unreadable`), annotated `(suppressed by label)` where § Step 8 condition 5 calls for it | Reopens? (`yes` / `no` / `unknown`; blank when `reviewed`, and blank where the label suppressed this reviewer's invitation and was still in place at the gate — a PR-open-only reviewer on an `applied-then-removed` PR takes `no`, not blank) | Body evidence / reason — for `unreadable`, the surface and the error, plus whatever positive control was taken |
-|---|---|---|---|
-| … | … | … | … |
+| Reviewer (`author_login`) | Class — ⛔ **do not enumerate the values here**: read them from § Step 7's *Record per-reviewer participation* subsection, which is their single definition | Verdict — ⛔ **do not enumerate the values here either**: read them from the verdict table in that same § Step 7 subsection. Annotate `(suppressed by label)` where § Step 8 condition 5 calls for it | Reopens? — ⛔ **do not enumerate the values here**: read them from § Step 7's *Every verdict that reports no review also records whether it reopens* subsection, which is their single definition. Blank for a completed review, and blank where the label suppressed this reviewer's invitation and was still in place at the gate — a PR-open-only reviewer on an `applied-then-removed` PR takes `no`, not blank | Body evidence / reason — including **which publish surfaces this verdict was read from** (§ Step 7; a verdict naming none is `unreadable`, not `silent`), and for an **errored-surface** `unreadable`, the surface and the error, plus whatever positive control was taken |
+|---|---|---|---|---|
+| … | … | … | … | … |
 
-State the coverage as N-of-M, and whether the § Step 8 shortfall disclosure fired and what it said.
+State the coverage as the three named ratios § Step 8 condition 5 defines — required, optional, and
+overall, each written against its own denominator — never as one bare figure, and state whether the
+§ Step 8 shortfall disclosure fired and what it said.
 
 Where a reviewer was `rate-limited` with `Reopens? yes`, add its **retry log** — one row per attempt,
 each carrying the time, the notice the attempt drew, and the wait-plus-jitter that preceded it:
@@ -2266,4 +2395,6 @@ A finding is recorded **per instance**, not bundled: three occurrences of one de
   otherwise idle, take the fallback and record in the report both that the ask was issued and that it
   went unanswered.** An ask that blocks forever is strictly worse than stopping with survivors
   disclosed, which is the same reasoning the headless carve-out rests on.
-- **Never write outside the repository** — this lane has no business in `.plan/` or `~/.claude/`.
+- **Never write outside the repository** — this lane **writes** nothing in `.plan/` or `~/.claude/`.
+  It is a rule about writing: reading git-tracked `.plan/` configuration is permitted and is scoped by
+  § Scope and precedence.
