@@ -24,6 +24,7 @@ from profiles import (
     list_profiles,
     suggest_classifications,
 )
+from toon_parser import parse_toon
 
 from conftest import get_script_path, parse_ns, run_script
 
@@ -561,3 +562,46 @@ def test_cmd_suggest_prints_count_and_suggestion_table(capsys):
 
         assert rc == 0
         assert 'count: 2' in capsys.readouterr().out
+
+
+# =============================================================================
+# Emit/parse round trip
+#
+# The pair below is the quoting contract for this module's TOON output: a value
+# carrying a separator must come back out of parse_toon byte-for-byte, and a
+# value that needs no quoting must come back unchanged too. The positive case is
+# the one the retired hand-rolled emitter could not satisfy — it joined a row
+# with tabs and never consulted the quoting rule, so a value containing a tab, a
+# comma or a colon split the row at the wrong place. The negative is the matched
+# control: without it, a parser that mangled every value equally would still pass
+# the positive.
+# =============================================================================
+
+
+def test_cmd_list_round_trips_a_profile_id_that_needs_quoting(capsys):
+    """A profile id carrying a tab, a comma and a colon survives emit -> parse."""
+    separator_laden_id = 'weird\tid,with:separators'
+    with tempfile.TemporaryDirectory() as tmpdir:
+        create_test_derived_data(
+            tmpdir, profiles=[{'id': separator_laden_id, 'canonical': 'coverage'}]
+        )
+
+        rc = cmd_list(_ns(_LIST_NS, project_dir=tmpdir, module=None))
+
+        assert rc == 0
+        recovered = parse_toon(capsys.readouterr().out)
+        assert [row['id'] for row in recovered['profiles']] == [separator_laden_id]
+
+
+def test_cmd_list_round_trips_a_profile_id_that_needs_no_quoting(capsys):
+    """Matched negative: an ordinary id round-trips unchanged and unquoted."""
+    plain_id = 'jacoco'
+    with tempfile.TemporaryDirectory() as tmpdir:
+        create_test_derived_data(tmpdir, profiles=[{'id': plain_id, 'canonical': 'coverage'}])
+
+        rc = cmd_list(_ns(_LIST_NS, project_dir=tmpdir, module=None))
+
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert [row['id'] for row in parse_toon(out)['profiles']] == [plain_id]
+        assert f'"{plain_id}"' not in out

@@ -18,7 +18,6 @@ from _architecture_core import (
     load_module_derived,
 )
 from _config_core import ext_defaults_get
-from file_ops import print_toon_list, print_toon_table
 from input_validation import (
     add_module_arg,
     parse_args_with_toon_errors,
@@ -308,7 +307,7 @@ def cmd_list(args: argparse.Namespace) -> int:
             print(f'module: {module["name"]}')
             if module['profiles']:
                 items = [{'id': p['id'], 'canonical': p['canonical']} for p in module['profiles']]
-                print_toon_table('profiles', items, ['id', 'canonical'])
+                print(serialize_toon({'profiles': items}))
             print()
 
         return 0
@@ -329,7 +328,7 @@ def cmd_unmatched(args: argparse.Namespace) -> int:
 
         print(f'count: {len(unmatched)}')
         if unmatched:
-            print_toon_list('profiles', unmatched)
+            print(serialize_toon({'profiles': unmatched}))
 
         return 0
     except DataNotFoundError as e:
@@ -360,7 +359,16 @@ def cmd_suggest(args: argparse.Namespace) -> int:
         print(f'count: {len(suggestions)}')
         if suggestions:
             print()
-            print_toon_table('suggestions', suggestions, ['profile_id', 'suggested', 'confidence', 'reason'])
+            rows = [
+                {
+                    'profile_id': s['profile_id'],
+                    'suggested': s['suggested'],
+                    'confidence': s['confidence'],
+                    'reason': s['reason'],
+                }
+                for s in suggestions
+            ]
+            print(serialize_toon({'suggestions': rows}))
 
         return 0
     except DataNotFoundError as e:
