@@ -198,19 +198,19 @@ Every site in scope at this decision, its disposition, and the consequence appli
 | Correct as-is
 | A generic statement about any project's own dotfile tree, not a reference to a meta-repo artifact.
 
-| `plan-marshall/skills/tools-permission-doctor/standards/menu-maintenance.md` — the "Detect/Restore Dropped Finalize Steps" passage scoped "(meta-project)"
+| `plan-marshall/skills/marshall-steward/references/menu-maintenance.md` — the "Detect/Restore Dropped Finalize Steps" passage scoped "(meta-project)"
 | Correct as-is
 | Explicitly meta-project-scoped, with the consumer contrast — consumer projects ship no project-local finalize steps — stated in the same passage.
 
-| `plan-marshall/skills/marshall-steward/standards/upgrade-flow.md` — the freshness-gate rationale naming `finalize-step-sync-plugin-cache` as "meta-project-only"
+| `plan-marshall/skills/marshall-steward/references/upgrade-flow.md` — the freshness-gate rationale naming `finalize-step-sync-plugin-cache` as "meta-project-only"
 | Correct as-is
 | Explicitly meta-project-only, with the "consumer projects neither ship it nor have it seeded" contrast stated.
 
-| `plan-marshall/skills/plan-marshall/README.md` — the project-local skills table listing `.claude/skills/` paths
+| `plan-marshall/README.md` — the project-local skills table listing `.claude/skills/` paths
 | Correct as-is
 | Already states consumer projects do not receive this surface.
 
-| `plan-marshall/skills/script-shared/scripts/build/_gate_coverage.py` (parity cells) and `tools-script-executor/standards/pre-push-quality-gate.md` — lint-scope path lists including `.claude/`
+| `plan-marshall/skills/script-shared/scripts/build/_gate_coverage.py` (parity cells) and `phase-6-finalize/standards/pre-push-quality-gate.md` — lint-scope path lists including `.claude/`
 | Correct as-is
 | Recorded literal of the actual whole-tree gate scope; data consumed by the gate's own test suite, not narrative a consumer acts on.
 |===
