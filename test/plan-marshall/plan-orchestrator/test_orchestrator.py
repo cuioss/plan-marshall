@@ -9,9 +9,13 @@ group's envelope schema and handler surface have theirs
 (``test_inbox_envelope.py``):
 
 - ``scaffold``: directory-tree creation (including ``inbox/``) and idempotency.
-- ``queue``: read, transition, and per-row field-set round-trips against a
-  fixture status.json, plus the error envelopes (missing status, unknown
-  plan, unknown field, unpaired flags, mutually-exclusive write forms).
+- ``queue``: read, transition, per-row field-set, and single-row append
+  round-trips against a fixture status.json, plus the error envelopes (missing
+  status, unknown plan, unknown field, invalid plan id, duplicate plan id,
+  unpaired flags, mutually-exclusive write forms). The append form also carries
+  the three-valued spec-presence probe, whose ``absent`` and ``unlistable``
+  verdicts are asserted apart so a measured negative is never confused with an
+  unobserved one.
 - ``resume-summary``: START-HERE block generation derived purely from
   status.json (resume anchor, phase, running/parked plans, ordered queue), plus
   the render-time-derived inbox counts — which come from the epic's ``inbox/``
@@ -121,6 +125,9 @@ def _queue_args(
     set_row: str | None = None,
     field: str | None = None,
     value: str | None = None,
+    add_row: str | None = None,
+    slug_value: str | None = None,
+    workstream: str | None = None,
 ) -> argparse.Namespace:
     """Derive a complete ``queue`` namespace so every flag attribute is present."""
     return _variant(
@@ -131,6 +138,9 @@ def _queue_args(
         set_row=set_row,
         field=field,
         value=value,
+        add_row=add_row,
+        slug_value=slug_value,
+        workstream=workstream,
     )
 
 
@@ -495,6 +505,295 @@ class TestQueueSetRow:
 
 
 # =============================================================================
+# queue — add-row
+# =============================================================================
+
+
+def _add_row_args(
+    slug: str, plan_id: str = 'PLAN-07', **overrides: Any
+) -> argparse.Namespace:
+    """A complete ``--add-row`` namespace, with the required triple supplied.
+
+    ``overrides`` names only what a case differs in, so a test asserting the
+    INCOMPLETE-triple rejection passes ``slug_value=None`` explicitly rather than
+    relying on a default that would make the omission invisible.
+    """
+    return _queue_args(
+        slug,
+        add_row=overrides.pop('add_row', plan_id),
+        slug_value=overrides.pop('slug_value', plan_id.lower()),
+        workstream=overrides.pop('workstream', 'WS-01'),
+        **overrides,
+    )
+
+
+def _write_spec(plan_context, slug: str, name: str) -> Path:
+    """Stage one spec file under the epic's ``plans/`` directory."""
+    plans = _epic_dir(plan_context, slug) / 'plans'
+    plans.mkdir(parents=True, exist_ok=True)
+    path = plans / name
+    path.write_text('# spec', encoding='utf-8')
+    return path
+
+
+class TestQueueAddRow:
+    def test_should_append_onto_an_empty_queue(self, plan_context):
+        status_path = _write_status(plan_context, 'add-empty-epic', plans=[])
+
+        result = cmd_queue(_add_row_args('add-empty-epic'))
+
+        assert result['status'] == 'success'
+        assert result['operation'] == 'queue-add-row'
+        assert result['plan'] == 'PLAN-07'
+        assert _read_status_file(status_path)['plans'] == [_make_plan('PLAN-07')]
+
+    def test_should_append_onto_a_populated_queue_leaving_siblings_untouched(
+        self, plan_context
+    ):
+        existing = [_make_plan('PLAN-01', status='running'), _make_plan('PLAN-02')]
+        status_path = _write_status(
+            plan_context, 'add-populated-epic', plans=copy.deepcopy(existing)
+        )
+
+        cmd_queue(_add_row_args('add-populated-epic'))
+
+        on_disk = _read_status_file(status_path)['plans']
+        assert on_disk[:2] == existing
+        assert on_disk[2] == _make_plan('PLAN-07')
+
+    def test_should_seed_the_row_with_empty_result_fields(self, plan_context):
+        _write_status(plan_context, 'add-shape-epic', plans=[])
+
+        result = cmd_queue(_add_row_args('add-shape-epic'))
+
+        # The seeded row is exactly the fixture shape: three identity fields, a
+        # status, and the three PLAN_ROW_FIELDS empty — an appended row has
+        # landed nothing yet.
+        assert result['row'] == _make_plan('PLAN-07')
+        assert all(result['row'][field] == '' for field in PLAN_ROW_FIELDS)
+
+    def test_should_default_the_seed_status_to_staged(self, plan_context):
+        _write_status(plan_context, 'add-default-status-epic', plans=[])
+
+        result = cmd_queue(_add_row_args('add-default-status-epic', status=None))
+
+        assert result['row']['status'] == 'staged'
+
+    def test_should_honour_a_supplied_seed_status(self, plan_context):
+        status_path = _write_status(plan_context, 'add-status-epic', plans=[])
+
+        result = cmd_queue(_add_row_args('add-status-epic', status='running'))
+
+        assert result['row']['status'] == 'running'
+        assert _read_status_file(status_path)['plans'][0]['status'] == 'running'
+
+    def test_should_reject_a_duplicate_plan_id_leaving_the_queue_unchanged(
+        self, plan_context
+    ):
+        existing = [_make_plan('PLAN-07', status='shipped', pr='#900')]
+        status_path = _write_status(
+            plan_context, 'add-dup-epic', plans=copy.deepcopy(existing)
+        )
+        before = _read_status_file(status_path)
+
+        result = cmd_queue(_add_row_args('add-dup-epic'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'duplicate_plan_id'
+        assert result['existing_status'] == 'shipped'
+        # Rejected in-lock BEFORE any write: the document is byte-identical,
+        # including its ``updated`` stamp.
+        assert _read_status_file(status_path) == before
+
+    def test_should_stamp_updated_only_on_a_real_append(self, plan_context):
+        status_path = _write_status(
+            plan_context, 'add-stamp-epic', plans=[_make_plan('PLAN-07')]
+        )
+
+        rejected = cmd_queue(_add_row_args('add-stamp-epic'))
+        assert _read_status_file(status_path)['updated'] == FIXED_TIMESTAMP
+
+        accepted = cmd_queue(_add_row_args('add-stamp-epic', plan_id='PLAN-08'))
+
+        assert rejected['status'] == 'error'
+        assert accepted['status'] == 'success'
+        assert _read_status_file(status_path)['updated'] != FIXED_TIMESTAMP
+
+
+class TestQueueAddRowRejections:
+    def test_should_reject_a_lowercase_plan_id_without_writing(self, plan_context):
+        status_path = _write_status(plan_context, 'add-lower-epic', plans=[])
+
+        result = cmd_queue(_add_row_args('add-lower-epic', add_row='plan-07'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_plan_id'
+        assert _read_status_file(status_path)['plans'] == []
+
+    def test_should_reject_a_path_shaped_plan_id_without_writing(self, plan_context):
+        status_path = _write_status(plan_context, 'add-path-epic', plans=[])
+
+        result = cmd_queue(_add_row_args('add-path-epic', add_row='PLAN-07/evil'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_plan_id'
+        assert _read_status_file(status_path)['plans'] == []
+
+    def test_should_reject_a_traversing_plan_id_without_writing(self, plan_context):
+        status_path = _write_status(plan_context, 'add-traverse-epic', plans=[])
+
+        result = cmd_queue(_add_row_args('add-traverse-epic', add_row='../PLAN-07'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_plan_id'
+        assert _read_status_file(status_path)['plans'] == []
+
+    def test_should_require_slug_value_with_add_row(self, plan_context):
+        _write_status(plan_context, 'add-nosl-epic', plans=[])
+
+        result = cmd_queue(_add_row_args('add-nosl-epic', slug_value=None))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'wrong_parameters'
+
+    def test_should_require_workstream_with_add_row(self, plan_context):
+        _write_status(plan_context, 'add-nows-epic', plans=[])
+
+        result = cmd_queue(_add_row_args('add-nows-epic', workstream=None))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'wrong_parameters'
+
+    def test_should_require_add_row_with_its_companions(self, plan_context):
+        _write_status(plan_context, 'add-companion-epic', plans=[])
+
+        result = cmd_queue(
+            _queue_args('add-companion-epic', slug_value='plan-07', workstream='WS-01')
+        )
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'wrong_parameters'
+
+    def test_should_reject_add_row_combined_with_transition(self, plan_context):
+        _write_status(plan_context, 'add-excl-tr-epic', plans=[_make_plan('PLAN-01')])
+
+        result = cmd_queue(
+            _add_row_args('add-excl-tr-epic', transition='PLAN-01', status='running')
+        )
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'wrong_parameters'
+
+    def test_should_reject_add_row_combined_with_set_row(self, plan_context):
+        _write_status(plan_context, 'add-excl-sr-epic', plans=[_make_plan('PLAN-01')])
+
+        result = cmd_queue(
+            _add_row_args('add-excl-sr-epic', set_row='PLAN-01', field='pr', value='#1')
+        )
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'wrong_parameters'
+
+    def test_should_reject_all_three_write_forms_together(self, plan_context):
+        _write_status(plan_context, 'add-excl-all-epic', plans=[_make_plan('PLAN-01')])
+
+        result = cmd_queue(
+            _add_row_args(
+                'add-excl-all-epic',
+                transition='PLAN-01',
+                status='running',
+                set_row='PLAN-01',
+                field='pr',
+                value='#1',
+            )
+        )
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'wrong_parameters'
+
+    def test_should_reject_status_with_neither_transition_nor_add_row(self, plan_context):
+        # ``--status`` is shared between two forms, so it no longer marks the
+        # transition form on its own. It must still be rejected when it dangles:
+        # the restructured three-way guard has to keep the case the old
+        # two-way pairing predicate expressed.
+        status_path = _write_status(plan_context, 'add-dangle-epic', plans=[_make_plan('PLAN-01')])
+
+        result = cmd_queue(_queue_args('add-dangle-epic', status='running'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'wrong_parameters'
+        assert _read_status_file(status_path)['plans'][0]['status'] == 'staged'
+
+    def test_should_error_when_status_json_missing(self, plan_context):
+        result = cmd_queue(_add_row_args('add-absent-epic'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'file_not_found'
+
+
+class TestQueueAddRowSpecPresence:
+    def test_should_report_present_when_the_spec_is_staged(self, plan_context):
+        _write_status(plan_context, 'spec-present-epic', plans=[])
+        _write_spec(plan_context, 'spec-present-epic', 'PLAN-07-add-row.md')
+
+        result = cmd_queue(_add_row_args('spec-present-epic'))
+
+        assert result['spec_presence'] == 'present'
+        assert result['spec'] == 'PLAN-07-add-row.md'
+        assert result['spec_absent_warning'] == ''
+        assert result['spec_probe_error'] == ''
+
+    def test_should_report_absent_when_the_plans_dir_holds_no_matching_spec(
+        self, plan_context
+    ):
+        _write_status(plan_context, 'spec-absent-epic', plans=[])
+        _write_spec(plan_context, 'spec-absent-epic', 'PLAN-99-other.md')
+
+        result = cmd_queue(_add_row_args('spec-absent-epic'))
+
+        assert result['spec_presence'] == 'absent'
+        assert result['spec'] == ''
+        # A MEASURED negative: the warning names the directory that was listed.
+        assert 'spec-absent-epic' in result['spec_absent_warning']
+        assert result['spec_probe_error'] == ''
+
+    def test_should_report_absent_when_the_plans_dir_does_not_exist(self, plan_context):
+        _write_status(plan_context, 'spec-nodir-epic', plans=[])
+
+        result = cmd_queue(_add_row_args('spec-nodir-epic'))
+
+        assert result['spec_presence'] == 'absent'
+        assert 'does not exist' in result['spec_absent_warning']
+
+    def test_should_report_unlistable_and_never_fold_it_into_absent(self, plan_context):
+        # A ``plans`` path that is a FILE makes ``iterdir`` raise
+        # NotADirectoryError — a deterministic, privilege-independent way to
+        # reach the branch a chmod-based probe cannot reach when tests run as
+        # root. Nothing was observed, so the verdict must NOT read as ``absent``.
+        _write_status(plan_context, 'spec-unlistable-epic', plans=[])
+        (_epic_dir(plan_context, 'spec-unlistable-epic') / 'plans').write_text(
+            'not a directory', encoding='utf-8'
+        )
+
+        result = cmd_queue(_add_row_args('spec-unlistable-epic'))
+
+        assert result['spec_presence'] == 'unlistable'
+        assert result['spec_probe_error'] != ''
+        assert result['spec_absent_warning'] == ''
+
+    def test_should_still_append_the_row_when_the_spec_is_absent(self, plan_context):
+        # The probe REPORTS; it never gates the append. A plan is routinely
+        # queued before its spec is written.
+        status_path = _write_status(plan_context, 'spec-nogate-epic', plans=[])
+
+        result = cmd_queue(_add_row_args('spec-nogate-epic'))
+
+        assert result['status'] == 'success'
+        assert result['spec_presence'] == 'absent'
+        assert _read_status_file(status_path)['plans'] == [_make_plan('PLAN-07')]
+
+
+# =============================================================================
 # resume-summary
 # =============================================================================
 
@@ -853,6 +1152,31 @@ class TestCli:
         assert '#1001' in set_row.stdout
         assert read.returncode == 0
         assert '#1001' in read.stdout
+
+    def test_should_add_row_and_read_it_back_through_cli(self, plan_context):
+        env = {'PLAN_BASE_DIR': str(plan_context.fixture_dir)}
+        _write_status(plan_context, 'cli-addrow-epic', plans=[])
+
+        add_row = run_script(
+            SCRIPT_PATH,
+            'queue',
+            '--slug',
+            'cli-addrow-epic',
+            '--add-row',
+            'PLAN-07',
+            '--slug-value',
+            'plan-07',
+            '--workstream',
+            'WS-01',
+            env_overrides=env,
+        )
+        read = run_script(SCRIPT_PATH, 'queue', '--slug', 'cli-addrow-epic', env_overrides=env)
+
+        assert add_row.returncode == 0
+        assert 'operation: queue-add-row' in add_row.stdout
+        assert 'plan: PLAN-07' in add_row.stdout
+        assert read.returncode == 0
+        assert 'PLAN-07' in read.stdout
 
     def test_should_generate_resume_summary_through_cli(self, plan_context):
         env = {'PLAN_BASE_DIR': str(plan_context.fixture_dir)}

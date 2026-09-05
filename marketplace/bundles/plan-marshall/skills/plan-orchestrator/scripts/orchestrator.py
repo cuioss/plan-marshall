@@ -3,18 +3,22 @@
 """Thin scaffolding script for the plan-orchestrator skill.
 
 Deliberately lean, per the orchestrator's lean posture: everything that
-requires judgement stays LLM-workflow; this script owns seven deterministic
+requires judgement stays LLM-workflow; this script owns eight deterministic
 operation groups against the main-anchored orchestrator store
 (``.plan/local/orchestrator/{slug}/``, resolved via
 ``file_ops.get_store_dir('orchestrator', slug)``):
 
 - ``scaffold --slug S`` — create the epic directory tree (idempotent).
 - ``queue --slug S [--transition PLAN-NN --status X | --set-row PLAN-NN
-  --field F --value V]`` — a three-way surface over the plan queue in
-  ``status.json``: read the whole queue, transition one plan's ``status``,
-  or set one result field (:data:`PLAN_ROW_FIELDS`) of one plan row. Both
-  write forms mutate the located row inside the shared ``rmw_json``
-  critical section, so no unsynchronised whole-array rewrite remains.
+  --field F --value V | --add-row PLAN-NN --slug-value SLUG --workstream WS-NN
+  [--status X]]`` — a four-way surface over the plan queue in ``status.json``:
+  read the whole queue, transition one plan's ``status``, set one result field
+  (:data:`PLAN_ROW_FIELDS`) of one plan row, or append one new plan row. All
+  three write forms run inside the shared ``rmw_json`` critical section — the
+  two row-locating forms mutate the row they find, and ``--add-row`` appends
+  after re-checking the FRESH in-lock queue for its id — so no unsynchronised
+  whole-array rewrite remains, and staging one plan no longer means rewriting
+  every row.
 - ``resume-summary --slug S`` — generate the two derivable ``epic.md`` blocks
   from ``status.json`` (the machine authority) and the filesystem for the LLM to
   paste between their generated-block markers: the ``summary`` (START-HERE) block
@@ -119,6 +123,7 @@ from _orchestrator_inbox import (
     inbox_counts,
 )
 from epic_spec_parser import (
+    PLAN_ID_SEGMENT,
     SpecClaim,
     UnclassifiableSpecError,
     classify_spec,
@@ -143,10 +148,53 @@ EPIC_SUBDIRS = ('workstreams', 'plans', 'landings', 'logs', INBOX_SUBDIR)
 FILE_STATUS = 'status.json'
 
 # The per-row RESULT fields ``queue --set-row`` may write. Deliberately narrow:
-# ``status`` stays exclusive to ``--transition`` (a status change and a landing
-# stamp are independent events), and ``id``/``slug``/``workstream`` are row
-# identity, not result, so they are seeded by ``decompose`` and never patched.
+# ``status`` stays outside the set (a status change and a landing stamp are
+# independent events, so a status is written by ``--transition`` or seeded once
+# by ``--add-row``, never patched as a result), and ``id``/``slug``/
+# ``workstream`` are row identity, not result, so they are seeded at row
+# creation — by ``decompose`` or by ``--add-row`` — and never patched.
 PLAN_ROW_FIELDS = frozenset({'plan_marshall_plan_id', 'pr', 'landing'})
+
+#: The fields one appended ``plans[]`` row is seeded with, in the order
+#: ``--add-row`` writes them: the three identity fields the caller supplies, the
+#: status it starts at, and the three RESULT fields (:data:`PLAN_ROW_FIELDS`)
+#: seeded EMPTY because an appended row has landed nothing yet. Stated here so
+#: the seed shape is readable in one place; :data:`PLAN_ROW_FIELDS` and
+#: :func:`_set_row_field` are untouched by the append path, which writes a whole
+#: row rather than patching a field of one.
+ADD_ROW_SEED_FIELDS = (
+    'id',
+    'slug',
+    'workstream',
+    'status',
+    'plan_marshall_plan_id',
+    'pr',
+    'landing',
+)
+
+#: The status an appended row starts at when the caller names none. ``--status``
+#: is OPTIONAL on the append form precisely because this default is the
+#: overwhelmingly common case: a row is staged first and transitioned later.
+ADD_ROW_DEFAULT_STATUS = 'staged'
+
+#: The plan-id grammar ``--add-row`` accepts, ANCHORED to the whole argument.
+#: The segment itself is owned by ``epic_spec_parser`` and imported rather than
+#: re-spelled — a fourth hand-rolled plan-id regex is exactly the drift that
+#: single definition exists to prevent. The anchoring is added HERE because the
+#: shared segment is deliberately unanchored so a prose scan can match one
+#: mid-sentence; an unanchored ``search`` would accept ``PLAN-01 and friends``.
+_ADD_ROW_PLAN_ID_RE = re.compile(rf'^{PLAN_ID_SEGMENT}$')
+
+#: The three-valued verdict of the appended row's spec-presence probe. ``absent``
+#: and ``unlistable`` are held apart because they are two DIFFERENT zeros:
+#: ``absent`` is a measured negative — the plans directory was listed and holds
+#: no spec for this id, a staging gap the caller closes by writing one — while
+#: ``unlistable`` is no observation at all, because the directory could not be
+#: read. Folding the second into the first would report an unmeasured tree as a
+#: confidently empty one (ADR-019).
+SPEC_PRESENCE_PRESENT = 'present'
+SPEC_PRESENCE_ABSENT = 'absent'
+SPEC_PRESENCE_UNLISTABLE = 'unlistable'
 
 # Statuses at which a plan row is finished, so its result links are expected to
 # be present. A terminal row missing one is the reconciliation gap the summary's
@@ -614,9 +662,10 @@ def _epic_root(slug: str, allow_archived: bool = False) -> Path:
     :func:`file_ops.get_store_dir`'s read-fallback: when ``True`` and the active
     ``orchestrator/{slug}`` tree is absent, the archived home
     ``archived-orchestrators/{slug}`` is resolved instead (when it exists).
-    READ verbs pass ``True``; ``scaffold``, ``queue --transition``, and the
-    ``archive`` source resolution stay strict (default ``False``) so a frozen
-    archived epic is never mutated at the active path.
+    READ verbs pass ``True``; ``scaffold``, every ``queue`` WRITE form
+    (``--transition``, ``--set-row``, ``--add-row``), and the ``archive`` source
+    resolution stay strict (default ``False``) so a frozen archived epic is
+    never mutated at the active path.
     """
     return get_store_dir(ORCHESTRATOR_STORE, slug, allow_archived=allow_archived)
 
@@ -650,9 +699,13 @@ def _mutate_plan_row(
 ) -> dict[str, Any]:
     """Apply ``apply`` to one ``plans[]`` row inside a serialized critical section.
 
-    The single write path for the plan queue: both ``--transition`` and
+    The row-LOCATING write path for the plan queue: ``--transition`` and
     ``--set-row`` route through here, so no unsynchronised read-modify-write of
-    ``plans[]`` remains. The mutation runs against the FRESH in-lock state via
+    an existing ``plans[]`` row remains. The third write form, ``--add-row``,
+    creates a row rather than locating one and therefore has its own entry point
+    (:func:`_append_plan_row`) — but it shares this function's critical section,
+    so "no unsynchronised read-modify-write of ``plans[]``" holds across all
+    three forms. The mutation runs against the FRESH in-lock state via
     the shared ``O_EXCL``-guarded :func:`_locks_core.rmw_json` — the same
     critical section ``manage-status update-field`` uses for this very document
     — so a concurrent orchestrator session stamping a DIFFERENT row (or a
@@ -677,6 +730,126 @@ def _mutate_plan_row(
 
     rmw_json(_epic_root(slug) / FILE_STATUS, _mutate)
     return outcome
+
+
+def _append_plan_row(slug: str, row: dict[str, Any]) -> dict[str, Any]:
+    """Append one row to ``plans[]`` inside the SAME serialized critical section.
+
+    The append counterpart to :func:`_mutate_plan_row`: it runs the identical
+    ``O_EXCL``-guarded :func:`_locks_core.rmw_json` over the identical
+    ``status.json`` path, so staging one plan appends one row instead of
+    re-serializing the whole array from a stale read. Two concurrent sessions
+    each staging a DIFFERENT plan therefore both land, where a read-modify-write
+    over a pre-lock snapshot would have silently dropped whichever wrote first.
+
+    The duplicate check is deliberately taken against the FRESH in-lock
+    ``plans[]`` and never against a pre-lock :func:`_read_status` snapshot. That
+    is the whole point of doing it here: a snapshot read outside the lock is
+    exactly the window in which a competing session appends the same id, and a
+    check against it would report "no collision" for a row that collides by the
+    time this one writes.
+
+    Returns a dict carrying either ``row`` (the appended row) or
+    ``duplicate`` (the already-queued row bearing that id). ``updated`` is
+    re-stamped only on a real append, so a rejected duplicate leaves the
+    document byte-identical.
+    """
+    outcome: dict[str, Any] = {}
+
+    def _mutate(state: dict[str, Any]) -> dict[str, Any]:
+        plans = state.get('plans')
+        if not isinstance(plans, list):
+            # A status.json whose ``plans`` is absent or non-list is an EMPTY
+            # queue for append purposes; seeding the list here is what makes the
+            # first staged row land rather than raising inside the lock.
+            plans = []
+            state['plans'] = plans
+        for existing in plans:
+            if isinstance(existing, dict) and existing.get('id') == row['id']:
+                outcome['duplicate'] = existing
+                return state
+        plans.append(row)
+        state['updated'] = now_utc_iso()
+        outcome['row'] = row
+        return state
+
+    rmw_json(_epic_root(slug) / FILE_STATUS, _mutate)
+    return outcome
+
+
+def _spec_presence(root: Path, plan_id: str) -> dict[str, Any]:
+    """Probe whether ``plan_id``'s staged spec exists, in three values.
+
+    Reports one of :data:`SPEC_PRESENCE_PRESENT`, :data:`SPEC_PRESENCE_ABSENT`
+    and :data:`SPEC_PRESENCE_UNLISTABLE`, plus the evidence behind it: the
+    directory that was probed, the spec that matched, and the error that stopped
+    the probe. The three states are held apart because two of them are
+    zeros that mean opposite things — ``absent`` is a MEASURED negative (the
+    directory was listed and holds no spec for this id, which is a staging gap
+    the caller closes by writing one), while ``unlistable`` is NO OBSERVATION
+    (the directory could not be read, so nothing is known either way). Folding
+    the second into the first would publish an unmeasured tree as a confidently
+    empty one, which is the reading ADR-019 exists to forbid.
+
+    The match reuses :data:`SPEC_GLOB` and :func:`_spec_matches_row` — the
+    module's existing corpus enumeration pattern and its existing row-to-spec
+    matcher — rather than hand-rolling a ``{plan_id}-*.md`` pattern here. That
+    matters beyond tidiness: the shared matcher carries the load-bearing hyphen
+    rule that stops ``PLAN-1`` from claiming ``PLAN-10-foo.md``, and a second
+    pattern written here would reintroduce exactly that bug.
+
+    The listing goes through :meth:`Path.iterdir` and NOT through
+    :meth:`Path.glob`, even though :func:`_spec_paths` uses the latter. ``glob``
+    swallows a :class:`PermissionError` internally and yields nothing, so an
+    unreadable directory would come back through it as an empty listing —
+    indistinguishable from a readable directory holding no spec, and reported as
+    ``absent``. That is precisely the fold this probe exists to avoid, so the
+    listing is done with the call that RAISES and the two failures are separated
+    here: a missing directory is a derived ``absent``, and every other
+    :class:`OSError` is ``unlistable``.
+
+    The probe never blocks the append and never fails it — a plan is routinely
+    queued before its spec is written, so the verdict RIDES the payload as a
+    reported fact rather than gating the row.
+    """
+    plans_dir = root / PLANS_SUBDIR
+    verdict: dict[str, Any] = {
+        'spec_presence': SPEC_PRESENCE_ABSENT,
+        'spec': '',
+        'spec_probed_dir': str(plans_dir),
+        'spec_probe_error': '',
+        'spec_absent_warning': '',
+    }
+    try:
+        listed = sorted(
+            path
+            for path in plans_dir.iterdir()
+            if path.match(SPEC_GLOB) and path.is_file()
+        )
+    except FileNotFoundError:
+        # A derived absence: the directory that would hold the spec does not
+        # exist, so it holds no spec for any id. The warning names the directory
+        # the zero was derived from rather than asserting a bare absence.
+        verdict['spec_absent_warning'] = (
+            f'no spec staged for {plan_id}: {plans_dir} does not exist'
+        )
+        return verdict
+    except OSError as exc:
+        # Something occupies the path but could not be walked (permissions, not
+        # a directory, I/O). Nothing was observed, so no absence may be claimed.
+        verdict['spec_presence'] = SPEC_PRESENCE_UNLISTABLE
+        verdict['spec_probe_error'] = str(exc)
+        return verdict
+    match = next((path for path in listed if _spec_matches_row(path, plan_id)), None)
+    if match is None:
+        verdict['spec_absent_warning'] = (
+            f'no spec staged for {plan_id}: {plans_dir} holds '
+            f'{len(listed)} spec(s), none matching'
+        )
+        return verdict
+    verdict['spec_presence'] = SPEC_PRESENCE_PRESENT
+    verdict['spec'] = match.name
+    return verdict
 
 
 def cmd_scaffold(args: argparse.Namespace) -> dict[str, Any]:
@@ -706,10 +879,56 @@ def cmd_scaffold(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
-def cmd_queue(args: argparse.Namespace) -> dict[str, Any]:
-    """Read the plan queue, transition one plan's status, or set one row field.
+def _queue_add_row(args: argparse.Namespace) -> dict[str, Any]:
+    """Append one plan row, reporting it with its spec-presence verdict.
 
-    Three-way surface over ``status.json``'s ``plans[]``:
+    The ``--add-row`` branch of :func:`cmd_queue`, split out so each write form
+    reads as one path instead of three interleaved branches of one body.
+
+    The :func:`_read_status` call here is an EXISTENCE guard only — it refuses an
+    epic with no ``status.json`` rather than letting ``rmw_json`` conjure one.
+    It is deliberately NOT the duplicate check: that runs against the fresh
+    in-lock queue inside :func:`_append_plan_row`, because a duplicate decided
+    from this pre-lock snapshot could be overtaken by a competing session
+    between the read and the write.
+    """
+    if not _read_status(args.slug):
+        return _error(
+            args.slug, 'file_not_found', 'status.json not found in orchestrator store'
+        )
+    # Seeded from the declared field tuple so the row's key ORDER is the declared
+    # order, and the three result fields start empty: an appended row has landed
+    # nothing yet.
+    row: dict[str, Any] = dict.fromkeys(ADD_ROW_SEED_FIELDS, '')
+    row['id'] = args.add_row
+    row['slug'] = args.slug_value
+    row['workstream'] = args.workstream
+    row['status'] = args.status if args.status is not None else ADD_ROW_DEFAULT_STATUS
+    outcome = _append_plan_row(args.slug, row)
+    if 'row' not in outcome:
+        duplicate = outcome['duplicate']
+        return _error(
+            args.slug,
+            'duplicate_plan_id',
+            f'plan {args.add_row!r} is already queued; '
+            'use --transition or --set-row to update the existing row',
+            existing_status=str(duplicate.get('status', '')),
+        )
+    return {
+        'status': 'success',
+        'operation': 'queue-add-row',
+        'slug': args.slug,
+        'store': ORCHESTRATOR_STORE,
+        'plan': args.add_row,
+        'row': row,
+        **_spec_presence(_epic_root(args.slug), args.add_row),
+    }
+
+
+def cmd_queue(args: argparse.Namespace) -> dict[str, Any]:
+    """Read the plan queue, transition a status, set a row field, or append a row.
+
+    Four-way surface over ``status.json``'s ``plans[]``:
 
     - **read** (no write flags): returns ``phase``, ``resume_anchor``, and the
       full ``plans[]`` queue.
@@ -720,23 +939,45 @@ def cmd_queue(args: argparse.Namespace) -> dict[str, Any]:
       field of that plan's row, where ``F`` is one of :data:`PLAN_ROW_FIELDS`.
       This is the sanctioned way to stamp a landing (``pr``, ``landing``,
       ``plan_marshall_plan_id``) without re-serializing the whole array.
+    - **add-row** (``--add-row PLAN-NN --slug-value SLUG --workstream WS-NN
+      [--status X]``): appends ONE new plan row seeded with
+      :data:`ADD_ROW_SEED_FIELDS`, defaulting its status to
+      :data:`ADD_ROW_DEFAULT_STATUS`. This is the sanctioned way to stage a plan
+      without rewriting every queued row.
 
-    The two write forms are mutually exclusive, each triple/pair must be
-    supplied complete, and both mutate the located row through
-    :func:`_mutate_plan_row`'s critical section.
+    The three write forms are mutually exclusive and each must be supplied
+    complete. All three run inside :func:`_locks_core.rmw_json`'s critical
+    section — ``--transition`` and ``--set-row`` through
+    :func:`_mutate_plan_row`, which LOCATES a row, and ``--add-row`` through
+    :func:`_append_plan_row`, which CREATES one.
+
+    ``--status`` is shared between two forms and its obligation differs by form:
+    it is REQUIRED with ``--transition`` (a transition with no target status is
+    meaningless) and OPTIONAL with ``--add-row`` (an appended row defaults to
+    ``staged``). It therefore no longer marks the transition form on its own,
+    which is why the transition/status pairing below is conditional on
+    ``--add-row`` being absent rather than unconditional.
     """
     invalid = _validate_slug(args.slug)
     if invalid:
         return _error(args.slug, 'invalid_slug', invalid)
     set_row_args = (args.set_row, args.field, args.value)
-    transition_args = (args.transition, args.status)
+    add_row_args = (args.add_row, args.slug_value, args.workstream)
     set_row_given = any(arg is not None for arg in set_row_args)
-    transition_given = any(arg is not None for arg in transition_args)
-    if set_row_given and transition_given:
+    add_row_given = any(arg is not None for arg in add_row_args)
+    # ``--status`` names the transition form ONLY when --add-row is absent,
+    # because the append form legitimately carries it as the seed status. Without
+    # that carve-out every `--add-row ... --status X` call would read as two
+    # write forms at once and be rejected by the mutual-exclusion guard below.
+    transition_given = args.transition is not None or (
+        args.status is not None and not add_row_given
+    )
+    if sum((transition_given, set_row_given, add_row_given)) > 1:
         return _error(
             args.slug,
             'wrong_parameters',
-            '--set-row/--field/--value are mutually exclusive with --transition/--status',
+            '--transition/--status, --set-row/--field/--value and '
+            '--add-row/--slug-value/--workstream are mutually exclusive',
         )
     if set_row_given and not all(arg is not None for arg in set_row_args):
         return _error(
@@ -744,7 +985,13 @@ def cmd_queue(args: argparse.Namespace) -> dict[str, Any]:
             'wrong_parameters',
             '--set-row, --field and --value must be supplied together',
         )
-    if (args.transition is None) != (args.status is None):
+    if add_row_given and not all(arg is not None for arg in add_row_args):
+        return _error(
+            args.slug,
+            'wrong_parameters',
+            '--add-row, --slug-value and --workstream must be supplied together',
+        )
+    if not add_row_given and (args.transition is None) != (args.status is None):
         return _error(
             args.slug,
             'wrong_parameters',
@@ -756,7 +1003,15 @@ def cmd_queue(args: argparse.Namespace) -> dict[str, Any]:
             'invalid_field',
             f'--field must be one of {sorted(PLAN_ROW_FIELDS)}, got: {args.field}',
         )
-    # Read-path resolves an archived epic transparently; both write-paths stay
+    if add_row_given and not _ADD_ROW_PLAN_ID_RE.match(args.add_row):
+        return _error(
+            args.slug,
+            'invalid_plan_id',
+            f'--add-row must be a plan id ({PLAN_ID_SEGMENT}), got: {args.add_row}',
+        )
+    if add_row_given:
+        return _queue_add_row(args)
+    # Read-path resolves an archived epic transparently; every write-path stays
     # strict so an archived epic is never mutated at the active path.
     is_read = not set_row_given and not transition_given
     status_doc = _read_status(args.slug, allow_archived=is_read)
@@ -3112,9 +3367,9 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         prog='orchestrator',
         description=(
             'Thin scaffolding for plan-orchestrator epics: scaffold the '
-            'epic tree, read/transition/stamp the plan queue, generate the '
-            'START-HERE resume summary, archive a closed epic, reconcile the '
-            'staged spec corpus and its re-grounding verdicts, report the '
+            'epic tree, read/transition/stamp/append the plan queue, generate '
+            'the START-HERE resume summary, archive a closed epic, reconcile '
+            'the staged spec corpus and its re-grounding verdicts, report the '
             'restart-readiness verdict, and drive the plan-writable inbox '
             'OUTBOX and its drain.'
         ),
@@ -3134,7 +3389,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         'queue',
         help=(
             'Read the plan queue from status.json, transition one plan status, '
-            'or set one plan row field.'
+            'set one plan row field, or append one plan row.'
         ),
         allow_abbrev=False,
     )
@@ -3149,7 +3404,11 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         '--status',
         default=None,
         metavar='STATUS',
-        help='New status value for the plan named by --transition.',
+        help=(
+            'Status value: REQUIRED with --transition (the new status of that '
+            'plan); OPTIONAL with --add-row (the seed status of the appended '
+            f'row, default {ADD_ROW_DEFAULT_STATUS}).'
+        ),
     )
     queue.add_argument(
         '--set-row',
@@ -3157,8 +3416,30 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         metavar='PLAN-NN',
         help=(
             'Plan id whose row field to set (requires --field and --value; '
-            'mutually exclusive with --transition/--status).'
+            'mutually exclusive with the --transition and --add-row forms).'
         ),
+    )
+    queue.add_argument(
+        '--add-row',
+        default=None,
+        metavar='PLAN-NN',
+        help=(
+            'Plan id to append as a new queue row (requires --slug-value and '
+            '--workstream; --status optional; mutually exclusive with the '
+            '--transition and --set-row forms).'
+        ),
+    )
+    queue.add_argument(
+        '--slug-value',
+        default=None,
+        metavar='SLUG',
+        help='Plan slug for the appended row (requires --add-row).',
+    )
+    queue.add_argument(
+        '--workstream',
+        default=None,
+        metavar='WS-NN',
+        help='Workstream id for the appended row (requires --add-row).',
     )
     queue.add_argument(
         '--field',
