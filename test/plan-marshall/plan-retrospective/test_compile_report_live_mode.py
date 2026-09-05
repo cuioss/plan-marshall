@@ -9,6 +9,7 @@ archived mode differs — its filename, and its refusal to overwrite.
 from __future__ import annotations
 
 import itertools
+import re
 import shutil
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -26,8 +27,110 @@ from _compile_report_fixtures import (
     cmd_run,
 )
 from _plan_retrospective_fixtures import setup_archived_plan, setup_live_plan
+from toon_parser import parse_toon
 
-from conftest import run_script
+from conftest import MARKETPLACE_ROOT, run_script
+
+_REFERENCES_DIR = (
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'references'
+)
+
+#: Top-level keys the log-analysis fragment shape carries beyond the original
+#: fixture's counts/percentiles core. Written out rather than derived from the
+#: reference document: a list read back from the same document the widened
+#: fixture is measured against could not see that document change.
+WIDENED_LOG_ANALYSIS_KEYS = (
+    'build_time',
+    'script_cost_rollup',
+    'context_position_cost',
+    'global_log_signals',
+)
+
+
+def _documented_ratio_keys() -> set[str]:
+    """The ratio identifiers declared by ``plan-efficiency.md``'s fragment shape.
+
+    Parsed from the document rather than restated here, so the fixture below is
+    measured against the shipped contract and not against a second copy of it.
+    Anchored on the ``ratios:`` line itself and terminated by the first line that
+    is not an indented ``key:`` entry, so a reflow or an inserted block above
+    cannot shift what is read.
+    """
+    lines = (_REFERENCES_DIR / 'plan-efficiency.md').read_text(encoding='utf-8').split('\n')
+    keys: set[str] = set()
+    inside = False
+    for line in lines:
+        if line.rstrip() == 'ratios:':
+            inside = True
+            continue
+        if not inside:
+            continue
+        entry = re.match(r'^  (\w+):', line)
+        if entry is None:
+            break
+        keys.add(entry.group(1))
+    if not keys:
+        raise AssertionError(
+            'no ratio identifiers were parsed out of plan-efficiency.md — the '
+            'assertions below would compare against an empty set and prove nothing'
+        )
+    return keys
+
+
+class TestCommittedFragmentKeyNames:
+    """The committed fixtures are measured against the shipped contract by NAME.
+
+    A fixture renamed to a new key while nothing asserts the key name is a
+    fixture that cannot see the contract revert: the ratio block would go back to
+    the retired spelling and the whole directory would stay green, because every
+    consumer test reads whatever the fixture happens to carry.
+    """
+
+    def test_the_efficiency_fixture_names_the_worked_time_ratio(self) -> None:
+        """``worked_seconds_per_task`` is the key; ``seconds_per_task`` is retired.
+
+        The rename is load-bearing rather than cosmetic — the retired spelling
+        divided WALL CLOCK by task count and asserted a per-task cost the number
+        was not — so the identifier is what carries the meaning here and is what
+        is asserted. Keyed on the identifier alone: a prose assertion over the
+        document would be brittle to rewording, and the document deliberately
+        still MENTIONS the retired name when explaining why it was retired.
+        """
+        fragment = parse_toon(
+            (_STRIPPED_ARCHIVE_FIXTURE / 'work' / 'fragment-plan-efficiency.toon').read_text(
+                encoding='utf-8'
+            )
+        )
+        documented = _documented_ratio_keys()
+        ratios = fragment['ratios']
+
+        assert 'worked_seconds_per_task' in documented
+        assert 'seconds_per_task' not in documented
+        assert 'worked_seconds_per_task' in ratios
+        assert 'seconds_per_task' not in ratios
+        assert set(ratios) <= documented, (
+            f'the fixture carries ratio keys the shipped shape does not declare: '
+            f'{sorted(set(ratios) - documented)}'
+        )
+
+    def test_the_efficiency_fixture_carries_the_ratio_numerator_companion(self) -> None:
+        """A ratio key without its numerator in ``totals`` is not a whole record.
+
+        ``worked_seconds_per_task`` reads ``totals.worked_seconds``; the retired
+        spelling read ``totals.duration_seconds``. Both fields exist in the
+        fixture, so the ratio key alone does not tell a reader which numerator
+        produced it — the companion is what makes the pair legible, and its
+        absence is what a revert would leave behind.
+        """
+        fragment = parse_toon(
+            (_STRIPPED_ARCHIVE_FIXTURE / 'work' / 'fragment-plan-efficiency.toon').read_text(
+                encoding='utf-8'
+            )
+        )
+        totals = fragment['totals']
+
+        assert 'worked_seconds' in totals
+        assert 'files_modified' in totals, 'the companion of tokens_per_file_modified'
 
 
 class TestLiveMode:
@@ -293,6 +396,24 @@ class TestStrippedArchiveIntegration:
             # Sanity: each non-executive section heading appears in the body.
             for heading in expected_headings:
                 assert f'## {heading}' in content, f'Expected heading "## {heading}" not found in report'
+
+            # The log-analysis fragment's newer blocks reach the RENDERED section.
+            # The committed fixture stopped at the counts/percentiles core, so the
+            # render path for every block added since was exercised by nothing —
+            # a section could silently stop naming them and no test would move.
+            # The section body is sliced out rather than searched whole, so a key
+            # named under a different section cannot satisfy this.
+            log_heading = next(
+                heading
+                for heading, fragment_key, _trigger in _retro_sections.SECTION_SPEC
+                if fragment_key == 'log-analysis'
+            )
+            section = content.split(f'## {log_heading}', 1)[1].split('\n## ', 1)[0]
+            for key in WIDENED_LOG_ANALYSIS_KEYS:
+                assert key in section, (
+                    f'the rendered "{log_heading}" section does not name {key!r}; '
+                    'the widened fragment reached the report but the render dropped it'
+                )
         finally:
             # compile-report auto-deletes the bundle on success but may
             # leave it behind on failure — clean up so we never leak into
