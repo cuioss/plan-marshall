@@ -45,14 +45,30 @@ properties pinned here:
 
 from typing import Any
 
-from conftest import load_script_module
+from conftest import PROJECT_ROOT, load_script_module
 
 _merge = load_script_module(
     'plan-marshall', 'extension-api', '_path_attribution_merge.py', 'path_attribution_merge'
 )
 
+_architecture_core = load_script_module(
+    'plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core'
+)
+
 # The known-module universe every test validates claim modules against.
 _MODULES = {'plan-marshall', 'pm-plugin-development', 'documentation', 'other'}
+
+
+def _real_known_modules() -> set[str]:
+    """Return the module universe derived from the marketplace tree itself.
+
+    Derived from the filesystem, NOT from the attributors under test: the
+    module-existence guard drops a claim naming a module that does not exist, so
+    feeding the guard a set derived from the claims would make the guard agree
+    with its own input. The bundle directories are the independent producer.
+    """
+    bundles = PROJECT_ROOT / 'marketplace' / 'bundles'
+    return {entry.name for entry in bundles.iterdir() if entry.is_dir()}
 
 
 class _StubAttributor:
@@ -638,17 +654,50 @@ def test_lookup_claim_still_rejects_a_sibling_after_normalization():
     assert _merge.lookup_claim('./.plans/x', claims) is None
 
 
-def test_lookup_claim_consumes_the_merge_output_end_to_end():
-    # Arrange — the shipped claims, produced by the real merge over the two real
-    # attributors: pm-plugin-development owns the bare-root ``.claude`` tree, and
-    # plan-marshall owns ``.plan``.
+def test_lookup_claim_consumes_the_merge_output_of_stub_records():
+    # Arrange — STUB records, and the fixture says so. This is the merge-level
+    # property only: whatever the merge emits feeds ``lookup_claim`` without
+    # reshaping. It deliberately asserts nothing about which claims ship, because
+    # the records here are hand-written and could not detect a shipped claim
+    # changing. The end-to-end reading over the real attributors is the test below.
     pm_dev = _StubAttributor(claims=[('.claude', 'pm-plugin-development')])
     plan_marshall = _StubAttributor(claims=[('.plan', 'plan-marshall')])
     claims, _ = _merge_with(('pm-plugin-development', pm_dev), ('plan-marshall', plan_marshall))
 
-    # Act / Assert — merge output feeds the matcher without reshaping. The bare-root
-    # ``.claude`` claim covers every subtree, so a former-sibling settings path
-    # resolves alongside a skills path rather than answering a confident None.
+    # Act / Assert — a bare-root claim covers the directory itself and every subtree.
     assert _merge.lookup_claim('.plan/execute-script.py', claims) == 'plan-marshall'
     assert _merge.lookup_claim('.claude/skills/foo/SKILL.md', claims) == 'pm-plugin-development'
     assert _merge.lookup_claim('.claude/settings.json', claims) == 'pm-plugin-development'
+
+
+def test_lookup_claim_consumes_the_real_shipped_claims_end_to_end(record_property):
+    """Drive the REAL attributors through the live seam, not stub records.
+
+    The previous form built two ``_StubAttributor`` instances and called them, in
+    its own comment, "the two real attributors" producing "the shipped claims".
+    They are neither: the records were hand-written here, so the assertion could
+    not notice a shipped claim being deleted, renamed or re-homed — the expectation
+    and the subject were the same text. The count was wrong as well, since more
+    than two extensions implement ``claim_paths``.
+
+    This drives ``discover()`` so the claims come from the shipped attributors, and
+    validates them against a module universe derived from the marketplace tree
+    rather than from the claims themselves.
+    """
+    discover, merge, lookup = _architecture_core._load_path_attribution_seam()
+
+    records = discover()
+    claims, reports = merge(records, _real_known_modules())
+
+    # Anti-vacuity: a zero-attributor discovery would make every assertion below
+    # pass by finding nothing. Publish the population that was actually merged.
+    assert reports, 'discover() found no attributors — the assertions below would be vacuous'
+    record_property('attributors_discovered', len(reports))
+    record_property('claims_merged', len(claims))
+
+    # The shipped ownership answers, read off the real claim set.
+    assert lookup('.plan/execute-script.py', claims) == 'plan-marshall'
+    assert lookup('.claude/skills/foo/SKILL.md', claims) == 'pm-plugin-development'
+    assert lookup('.claude/settings.json', claims) == 'pm-plugin-development'
+    # The nest-inside guard still holds against the real claim set.
+    assert lookup('.plans/x', claims) is None

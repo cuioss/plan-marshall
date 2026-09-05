@@ -37,6 +37,7 @@ import sys
 import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from _display_time import render_timestamp
 from _ledger_reconciliation import (
@@ -68,6 +69,7 @@ from input_validation import (
     parse_args_with_toon_errors,
     require_valid_plan_id,
 )
+from marketplace_bundles import resolve_bundles_root
 from toon_parser import parse_toon
 
 METRICS_FILE = FILE_WORK_METRICS
@@ -531,6 +533,155 @@ DISPATCH_BOUNDARY_EXCLUDED_CLASSES = (
     'research',              # ad-hoc research dispatch (any phase)
     'enrich-module',         # 6-finalize architecture-refresh parallel dispatch
 )
+
+# ---------------------------------------------------------------------------
+# The registration scan — deriving the population the constant above declares
+# ---------------------------------------------------------------------------
+#
+# The tuple above CLAIMS to be "derived from the DISPATCHING code", and until this
+# scan existed nothing enforced that claim: the constant and the call sites it
+# describes were two independent declarations, and the only test over it asserted
+# hand-written membership literals against the constant itself — an oracle derived
+# from its own subject, which stays green no matter how far the call sites move.
+#
+# This function supplies the INDEPENDENT producer. It reads the dispatching code
+# (the workflow docs that actually issue the verb) and derives which phases
+# register a boundary, so a caller can compare the derived registering set against
+# the declared exclusion tuple instead of against a restatement of it.
+#
+# ADR-14 governs the reporting shape: an aggregation carries producer identity and
+# suppresses nothing silently. A scan that quietly dropped the invocations it could
+# not read would derive a SMALLER registering set that agrees with the declared
+# constant for the wrong reason — the population-derived-detector failure mode this
+# plan exists to remove. Every invocation this scan finds is therefore accounted
+# for in exactly one of three published buckets (``registering`` / ``template`` /
+# ``unparsed``), and the counts that make the coverage checkable ride with them.
+_BOUNDARY_VERB = 'record-dispatch-boundary'
+
+#: An invocation is a line that DISPATCHES the verb, not prose that merely names
+#: it. The discriminator is the executor notation standing immediately before the
+#: verb, which is what separates a real call site from the dozen sentences that
+#: reference the verb in passing — including the ones that quote a DIFFERENT
+#: script's executor command in the same sentence, where a bare "mentions the verb
+#: and mentions the executor" test produces a false invocation.
+_BOUNDARY_DISPATCH = re.compile(r'manage-metrics:manage-metrics\s+' + _BOUNDARY_VERB)
+
+#: The ``--phase`` argument of an invocation, read off the joined logical line.
+_BOUNDARY_PHASE_FLAG = re.compile(r'--phase\s+(\S+)')
+
+#: A CONCRETE phase key (``4-plan``, ``5-execute``, ``6-finalize``). A value that
+#: does not match is a documentation placeholder (``{phase}``, ``PHASE``) — the
+#: verb's own reference block describing the flag rather than registering for a
+#: phase. Placeholders are classified ``template`` and reported, never counted as
+#: registrations and never silently dropped.
+_CONCRETE_PHASE_KEY = re.compile(r'^\d+-[a-z0-9-]+$')
+
+
+def _join_continuation(lines: list[str], index: int) -> str:
+    """Join a backslash-continued shell invocation into one logical line.
+
+    Every registering call site spans several physical lines. Reading only the
+    line carrying the verb would miss the ``--phase`` argument on the next one and
+    report a real registration as unparseable, so the continuation is followed
+    before anything is parsed.
+    """
+    parts = [lines[index]]
+    cursor = index
+    while parts[-1].rstrip().endswith('\\') and cursor + 1 < len(lines):
+        cursor += 1
+        parts.append(lines[cursor])
+    return ' '.join(part.strip().rstrip('\\').strip() for part in parts)
+
+
+def scan_boundary_registrations(bundles_root: Path | None = None) -> dict[str, Any]:
+    """Derive which dispatch classes register a boundary, from the dispatching code.
+
+    Walks every markdown document under the marketplace bundles root, finds each
+    ``record-dispatch-boundary`` COMMAND invocation, and reads its ``--phase``
+    argument. The registering dispatch classes are returned as
+    ``phase-{key}`` names so they are directly comparable with
+    :data:`DISPATCH_BOUNDARY_EXCLUDED_CLASSES`.
+
+    The result PUBLISHES the population it derived from, because a bare set gives
+    a consumer no way to tell "scanned the tree and found three registering
+    classes" from "scanned nothing and found three registering classes". A caller
+    asserting over ``registering_classes`` must first check that
+    ``documents_scanned`` and ``invocations_found`` are non-zero — an empty scan
+    makes any equality assertion vacuously true.
+
+    Args:
+        bundles_root: Marketplace bundles root to scan. Defaults to the root
+            resolved from this module's own location.
+
+    Returns:
+        A dict carrying the derived verdict and its coverage:
+
+        * ``registering_classes`` — sorted ``phase-{key}`` names, the derived set.
+        * ``documents_scanned`` / ``invocations_found`` — the population.
+        * ``registering`` — one record per invocation that named a concrete phase.
+        * ``template`` — invocations whose ``--phase`` value is a documentation
+          placeholder. Reported, never counted as a registration.
+        * ``unparsed`` — invocations carrying NO readable ``--phase`` at all.
+          Reported so a call-site shape this parser cannot read is visible as a
+          coverage gap rather than shrinking the derived set silently.
+        * ``prose_mentions`` — lines naming the verb without dispatching it. Not
+          invocations, and counted separately so that every occurrence of the verb
+          in the tree lands in exactly one published bucket. A call site that
+          stopped being recognised as a dispatch shows up here as a jump in this
+          count rather than vanishing from the scan.
+        * ``scan_root`` — the directory actually walked.
+
+    Raises:
+        RuntimeError: when the bundles root cannot be resolved — a loud failure,
+            never a silent empty scan that would read as "nothing registers".
+    """
+    root = Path(bundles_root) if bundles_root is not None else resolve_bundles_root(Path(__file__))
+
+    registering: list[dict[str, Any]] = []
+    template: list[dict[str, Any]] = []
+    unparsed: list[dict[str, Any]] = []
+    prose_mentions: list[dict[str, Any]] = []
+    documents_scanned = 0
+
+    for document in sorted(root.rglob('*.md')):
+        try:
+            lines = document.read_text(encoding='utf-8').splitlines()
+        except OSError as exc:
+            # An unreadable document is a hole in the coverage, not an absence of
+            # call sites. Report it rather than letting the walk skip it silently.
+            unparsed.append(
+                {'path': str(document), 'line': 0, 'reason': f'unreadable: {exc}', 'text': ''}
+            )
+            continue
+        documents_scanned += 1
+        for index, line in enumerate(lines):
+            if _BOUNDARY_VERB not in line:
+                continue
+            joined = _join_continuation(lines, index)
+            record = {'path': str(document.relative_to(root)), 'line': index + 1, 'text': joined}
+            if not _BOUNDARY_DISPATCH.search(joined):
+                prose_mentions.append(record)
+                continue
+            match = _BOUNDARY_PHASE_FLAG.search(joined)
+            if match is None:
+                unparsed.append({**record, 'reason': 'no --phase argument'})
+                continue
+            value = match.group(1)
+            if _CONCRETE_PHASE_KEY.match(value):
+                registering.append({**record, 'phase': value})
+            else:
+                template.append({**record, 'phase': value})
+
+    return {
+        'registering_classes': tuple(sorted({f'phase-{r["phase"]}' for r in registering})),
+        'documents_scanned': documents_scanned,
+        'invocations_found': len(registering) + len(template) + len(unparsed),
+        'registering': tuple(registering),
+        'template': tuple(template),
+        'unparsed': tuple(unparsed),
+        'prose_mentions': tuple(prose_mentions),
+        'scan_root': str(root),
+    }
 
 
 def _boundary_coverage_state(phase_row: dict) -> str | None:

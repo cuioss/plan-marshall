@@ -11,7 +11,11 @@ commands, and the ``settings.json`` harness config alike. These tests cover:
   tree resolves to ``pm-plugin-development`` through the live seam, and a sibling
   sharing the string prefix (``.claudex``) does not. The check ENUMERATES the tree
   and publishes the population size it walked, rather than probing a fixed path list —
-  a fixed-list probe would pass against a partially-claimed tree.
+  a fixed-list probe would pass against a partially-claimed tree. The population is
+  the TRACKED corpus (``git ls-files .claude``), not a live filesystem walk, so the
+  published count does not move with ``__pycache__`` or a developer's untracked
+  ``settings.local.json``; and it is published through ``record_property``, a channel
+  a PASSING run surfaces, rather than asserted back out of the test's own stdout.
 - **D4** (not-covered vs covered-no-matches): the seam's ``attributor_count`` residue
   distinguishes "no attributor ran" (an absence of capability) from "N attributors ran
   and none claimed this path" (a real, positive answer) — the coverage contract that
@@ -27,6 +31,8 @@ SOLE resolution route for it; ``project_local_module_for_path`` IS that route (r
 See ``plan-marshall:extension-api/standards/ext-point-path-attribution.md`` for the contract.
 """
 
+
+import subprocess
 
 from extension_base import ExtensionBase, PathAttributionBase
 
@@ -92,31 +98,60 @@ def test_claims_the_bare_claude_root():
 # --------------------------------------------------------------------------- #
 
 
-def test_every_path_under_the_real_claude_tree_resolves_to_pm_plugin_development(capsys):
-    """Walk the actual ``.claude`` tree; every file resolves to the one owner.
+def _tracked_claude_paths() -> list[str]:
+    """Return the repo-relative ``.claude`` paths git TRACKS, sorted.
+
+    The population is taken from the index rather than from a live
+    ``rglob``/``iterdir`` over the working tree. A filesystem walk also picks up
+    ``__pycache__`` directories and a developer's untracked
+    ``.claude/settings.local.json``, so the count it publishes moves with local
+    state that has nothing to do with the claim under test — and two runs on the
+    same commit legitimately disagree. The tracked corpus is the same set on every
+    checkout of a given commit.
+
+    No assertion weakens as a result: every entry the walk would have added is a
+    ``.claude`` path, which resolves through the same claim as every tracked one.
+    """
+    result = subprocess.run(
+        ['git', 'ls-files', '.claude'],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return sorted(line for line in result.stdout.splitlines() if line.strip())
+
+
+def test_every_path_under_the_real_claude_tree_resolves_to_pm_plugin_development(record_property):
+    """Walk the tracked ``.claude`` corpus; every file resolves to the one owner.
 
     This ENUMERATES the population rather than sampling a fixed probe list. A check
     that probed ``.claude/skills/x`` and ``.claude/commands/y`` would pass against a
-    partially-claimed tree, so the assertion that bites walks every file the tree
+    partially-claimed tree, so the assertion that bites walks every path the tree
     actually holds and PUBLISHES the count it walked (D3's "publishes its count").
-    """
-    claude_root = PROJECT_ROOT / '.claude'
-    files = sorted(p for p in claude_root.rglob('*') if p.is_file())
 
-    # A zero-file walk would pass vacuously — assert the population is real first.
-    assert files, f'no files found under {claude_root}'
+    The count is published through ``record_property``. The previous form printed it
+    and then asserted its own ``print`` back out of ``capsys``, with ``len(files)``
+    interpolated on BOTH sides of the comparison — an oracle derived from its own
+    subject, which cannot fail while the ``print`` is present and says nothing about
+    the claim. ``record_property`` also survives a passing run, which a bare ``print``
+    does not: ``capsys.readouterr()`` drains the buffer, so even ``-s`` showed nothing.
+    """
+    tracked = _tracked_claude_paths()
+
+    # A zero-path corpus would pass vacuously — assert the population is real first.
+    assert tracked, 'git ls-files .claude returned no tracked paths'
 
     mismatches = []
-    for path in files:
-        rel = path.relative_to(PROJECT_ROOT).as_posix()
+    for rel in tracked:
         owner = project_local_module_for_path(rel, _KNOWN_WITH_PM)
         if owner != _PM_PLUGIN_DEV:
             mismatches.append((rel, owner))
 
     assert not mismatches, f'paths under .claude not owned by {_PM_PLUGIN_DEV}: {mismatches}'
-    # Publish the population size the enumeration walked.
-    print(f'[D3] enumerated {len(files)} files under {claude_root}, all resolve to {_PM_PLUGIN_DEV}')
-    assert f'enumerated {len(files)} files' in capsys.readouterr().out
+    # Publish the population the enumeration actually covered.
+    record_property('claude_tracked_paths_walked', len(tracked))
+    record_property('claude_tree_owner', _PM_PLUGIN_DEV)
 
 
 def test_each_top_level_claude_subtree_resolves_uniformly():

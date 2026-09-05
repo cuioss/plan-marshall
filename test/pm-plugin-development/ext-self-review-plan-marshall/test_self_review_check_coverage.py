@@ -52,7 +52,22 @@ _CHECKS_REGION_END = '### Dispatched-envelope output'
 #: numbered checks. This is the discriminator that keeps a key mentioned only in
 #: explanatory prose (which precedes the first numbered check) from reading as
 #: covered.
+#:
+#: That structural assumption is no longer only a comment: it is asserted against
+#: the REAL document by
+#: ``test_numbered_check_block_is_one_contiguous_run_with_no_heading_inside``. If
+#: the doc grows a ``####`` subsection after the checks, or an ordered list in the
+#: preamble whose first item precedes the real checks, the block silently stops
+#: being "exactly the numbered checks" and every coverage verdict above is drawn
+#: against the wrong text — a failure that would otherwise surface as an
+#: inexplicable uncovered-key report, or not at all.
 _NUMBERED_CHECK_OPENER = re.compile(r'^\d+\.\s', re.MULTILINE)
+
+#: The same opener, capturing its ordinal so the run can be checked for gaps.
+_NUMBERED_CHECK_ORDINAL = re.compile(r'^(\d+)\.\s', re.MULTILINE)
+
+#: Any markdown ATX heading at column zero.
+_ATX_HEADING = re.compile(r'^#{1,6}\s', re.MULTILINE)
 
 
 def _checks_region(text: str) -> str:
@@ -100,6 +115,50 @@ def _uncovered(candidate_lists: tuple[CandidateList, ...], check_block: str) -> 
 
 
 class TestCountedListCheckCoverage:
+    def test_numbered_check_block_is_one_contiguous_run_with_no_heading_inside(self):
+        """Pin the extraction assumption the coverage verdict rests on.
+
+        ``_numbered_check_block`` takes everything from the first ``N.`` opener to
+        the region end and calls the result "exactly the numbered checks". That
+        holds only while two structural properties hold of the real document, and
+        neither was asserted anywhere — the claim lived in a comment, so the doc
+        could drift out from under it and the coverage assertions above would
+        quietly start reading the wrong span of text.
+
+        Both are checked here against the shipped document:
+
+        * the openers form ONE contiguous ascending run, so the block is a single
+          list rather than two lists with prose (or a second, unrelated ordered
+          list) between them;
+        * no ATX heading occurs inside the block, so no ``####`` subsection was
+          added after the checks — the property that makes "to the region end" the
+          right terminator.
+        """
+        region = _checks_region(_WORKFLOW_DOC.read_text(encoding='utf-8'))
+        block = _numbered_check_block(region)
+
+        # Anti-vacuity: an empty block would satisfy both properties trivially.
+        assert block, 'Step-3 region carries no numbered check entry'
+
+        ordinals = [int(match.group(1)) for match in _NUMBERED_CHECK_ORDINAL.finditer(block)]
+        assert ordinals, 'no numbered opener parsed out of the block'
+
+        expected = list(range(ordinals[0], ordinals[0] + len(ordinals)))
+        assert ordinals == expected, (
+            'the numbered-check openers are not one contiguous ascending run, so '
+            'the block from the first opener to the region end is NOT exactly the '
+            f'numbered checks. Parsed ordinals: {ordinals}; expected {expected}. '
+            'A gap or a restart means a second ordered list was picked up, and every '
+            'coverage verdict in this module is drawn against the wrong text.'
+        )
+
+        headings = [line for line in block.splitlines() if _ATX_HEADING.match(line)]
+        assert headings == [], (
+            'a markdown heading occurs inside the extracted numbered-check block, '
+            'so the checks are no longer the last thing in the Step-3 region and '
+            f'"to the region end" over-reaches: {headings}'
+        )
+
     def test_every_counted_candidate_list_has_a_consuming_check(self, capsys):
         population = _counted_lists()
         # Guard against a silently empty population. A set-guarding test that can
