@@ -33,11 +33,14 @@ owners — ``NOTATION_INVALID`` is prose drift a documentation edit fixes, while
 question. Without the per-rule row those two read identically in the total.
 
 Substrate handling is the module's own thesis applied to itself. When the
-registry is unusable the corpus was not judged at all, so these tests SKIP with
-the substrate state named rather than passing — a pass would be the exact
-could_not_look-read-as-clean confusion the rule exists to end. A checkout
-without ``.plan/execute-script.py`` (a fresh clone, CI) is that case; bootstrap
-it with ``/marshall-steward`` to make the corpus judgeable.
+registry is unusable the corpus was not judged at all, so these tests FAIL with
+the substrate state and the absent path named, rather than passing — a pass
+would be the exact could_not_look-read-as-clean confusion the rule exists to
+end, and a skip would be the same confusion wearing a quieter colour: the run
+finishes green having covered less than it claims, and nothing in the output
+says so. ``test/conftest.py`` bootstraps ``.plan/execute-script.py`` at session
+start precisely so this prerequisite holds; if that bootstrap did not run,
+``/marshall-steward`` builds the executor and makes the corpus judgeable.
 """
 
 from __future__ import annotations
@@ -45,8 +48,6 @@ from __future__ import annotations
 from collections import Counter
 from functools import lru_cache
 from pathlib import Path
-
-import pytest
 
 from conftest import MARKETPLACE_ROOT, load_script_module
 
@@ -157,20 +158,22 @@ def corpus_report() -> str:
 
 
 def _require_judged_corpus() -> dict:
-    """Return the corpus, or SKIP when the substrate made it unjudgeable.
+    """Return the corpus, asserting the substrate left it judgeable.
 
     A checkout whose registry is unusable produced no verdict about the corpus.
-    Reporting that as a pass is the defect this rule cluster exists to remove, so
-    the skip names the state and the substrate path instead.
+    Reporting that as a pass is the defect this rule cluster exists to remove,
+    and skipping is the same defect at one remove — the run goes green having
+    judged nothing. The assertion names the state and the absent substrate path
+    instead, so an unbootstrapped checkout is a red run with a fix in the
+    message rather than a silently smaller one.
     """
     corpus = _corpus()
-    if corpus['substrate_status'] != _aan.SUBSTRATE_PRESENT:
-        pytest.skip(
-            f'could_not_look: the notation registry is {corpus["substrate_status"]} '
-            f'({corpus["substrate_path"]}), so the corpus was NOT judged — this is '
-            f'not a clean corpus. Bootstrap the checkout (/marshall-steward) to '
-            f'make it judgeable.\n{corpus_report()}'
-        )
+    assert corpus['substrate_status'] == _aan.SUBSTRATE_PRESENT, (
+        f'could_not_look: the notation registry is {corpus["substrate_status"]} '
+        f'({corpus["substrate_path"]}), so the corpus was NOT judged — this is '
+        f'not a clean corpus. Bootstrap the checkout (/marshall-steward) to '
+        f'make it judgeable.\n{corpus_report()}'
+    )
     return corpus
 
 

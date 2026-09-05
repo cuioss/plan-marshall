@@ -38,6 +38,16 @@ from conftest import PROJECT_ROOT, get_script_path, get_scripts_dir, load_script
 SCRIPT_PATH = get_script_path('pm-plugin-development', 'plugin-doctor', 'doctor-marketplace.py')
 MARKETPLACE_ROOT = PROJECT_ROOT / 'marketplace' / 'bundles'
 
+# This repository IS the marketplace, so ``marketplace/bundles/`` is present in
+# every valid checkout. An absent tree is a broken checkout, not an environment
+# this module does not apply to. Asserted once at import rather than guarded per
+# test: a skip would silently delete the two real-tree anchors below — including
+# the CI-equivalent whole-tree quality-gate regression anchor — and still report
+# the run green.
+assert MARKETPLACE_ROOT.is_dir() and any(MARKETPLACE_ROOT.iterdir()), (
+    f'Marketplace bundles tree is missing or empty at {MARKETPLACE_ROOT}'
+)
+
 # Direct-import handle for ``_doctor_shared.find_marketplace_root`` so the
 # --marketplace-root flag tests can exercise the resolution logic without
 # the subprocess overhead of a full doctor-marketplace.py invocation.
@@ -88,11 +98,6 @@ def _ns(**overrides):
 def parse_output(result):
     """Parse TOON output from script result."""
     return parse_toon(result.stdout)
-
-
-def marketplace_available():
-    """Check if marketplace is available for integration tests."""
-    return MARKETPLACE_ROOT.is_dir() and any(MARKETPLACE_ROOT.iterdir())
 
 
 # =============================================================================
@@ -1069,9 +1074,6 @@ def test_real_marketplace_quality_gate_has_zero_findings():
     immediately — forcing a fix of the violations or a narrowing of the rule
     before the PR can produce a passing ``verify / verify`` check.
     """
-    if not marketplace_available():
-        pytest.skip('Real marketplace not available')
-
     # No env_overrides / --marketplace-root: script-relative discovery targets
     # the real tree, exactly as CI runs it. The generous timeout covers the
     # whole-tree manage-invocation scan that derives script --help surfaces.
@@ -1834,9 +1836,6 @@ def test_zero_hit_grep_pm_argument_naming_enabled_in_source():
     The test directory is intentionally excluded — this very file mentions the
     legacy name in its assertion strings.
     """
-    if not marketplace_available():
-        pytest.skip('Real marketplace not available')
-
     marketplace_root = MARKETPLACE_ROOT
     legacy_token = 'PM_ARGUMENT' + '_NAMING_ENABLED'  # split to avoid self-hit
 

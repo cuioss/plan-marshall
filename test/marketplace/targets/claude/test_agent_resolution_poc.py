@@ -32,8 +32,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from conftest import PROJECT_ROOT
 
 FIXTURE_DIR = PROJECT_ROOT / 'test' / 'fixtures'
@@ -141,8 +139,11 @@ def test_fixture_files_have_no_test_collisions():
     no production agent shares.
     """
     bundles_root = PROJECT_ROOT / 'marketplace' / 'bundles'
-    if not bundles_root.exists():
-        pytest.skip('marketplace/bundles not available in this checkout')
+    # This repository IS the marketplace, so the bundles tree is present in every
+    # valid checkout. An absent tree is a broken checkout, not one this test does
+    # not apply to — a skip would delete the collision sweep and still report the
+    # run green.
+    assert bundles_root.is_dir(), f'Marketplace bundles tree not found at {bundles_root}'
     collisions: list[Path] = []
     for agent_md in bundles_root.rglob('agents/*.md'):
         if agent_md.name in ('poc-agent.md', 'poc-agent-high.md'):

@@ -56,6 +56,15 @@ FINDING_TYPE = _mod.FINDING_TYPE
 EMPTY_POPULATION_TYPE = _mod.EMPTY_POPULATION_TYPE
 EXT_POINT = _mod.EXT_POINT
 
+# This repository IS the marketplace, so ``marketplace/bundles/`` is present in
+# every valid checkout. An absent tree is a broken checkout, not an environment
+# this module does not apply to. Asserted once at import rather than guarded per
+# test: a skip would silently delete both real-tree anchors below — including the
+# anti-vacuity population floor — and still report the run green.
+assert MARKETPLACE_ROOT.is_dir() and any(MARKETPLACE_ROOT.iterdir()), (
+    f'Marketplace bundles tree is missing or empty at {MARKETPLACE_ROOT}'
+)
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -382,10 +391,6 @@ def test_one_finding_per_line(tmp_path: Path) -> None:
 # ===========================================================================
 
 
-def _marketplace_available() -> bool:
-    return MARKETPLACE_ROOT.is_dir() and any(MARKETPLACE_ROOT.iterdir())
-
-
 def test_real_marketplace_population_is_non_empty() -> None:
     """The derived population is non-empty — the anti-vacuity floor.
 
@@ -393,9 +398,6 @@ def test_real_marketplace_population_is_non_empty() -> None:
     fails, so the zero-findings result below can never be a vacuous pass over
     an unread population.
     """
-    if not _marketplace_available():
-        pytest.skip('Real marketplace not available')
-
     population = enumerate_docs(MARKETPLACE_ROOT)
 
     assert len(population) >= 20, (
@@ -411,9 +413,6 @@ def test_real_marketplace_tree_produces_zero_findings() -> None:
     level pinned by the dispatched variant, so none may instruct the model
     about its own reasoning level.
     """
-    if not _marketplace_available():
-        pytest.skip('Real marketplace not available')
-
     findings = analyze(MARKETPLACE_ROOT)
 
     assert findings == [], (

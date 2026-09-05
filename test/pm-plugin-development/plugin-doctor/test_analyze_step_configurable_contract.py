@@ -64,6 +64,15 @@ RULE_ID = _ascc.RULE_ID
 RULE_NAME = _ascc.RULE_NAME
 FINDING_TYPE = _ascc.FINDING_TYPE
 
+# This repository IS the marketplace, so ``marketplace/bundles/`` is present in
+# every valid checkout. An absent tree is a broken checkout, not an environment
+# this module does not apply to. Asserted once at import rather than guarded per
+# test: a skip would silently delete both real-tree anchors below and still
+# report the run green.
+assert MARKETPLACE_ROOT.is_dir() and any(MARKETPLACE_ROOT.iterdir()), (
+    f'Marketplace bundles tree is missing or empty at {MARKETPLACE_ROOT}'
+)
+
 
 # The real contract parser the synthetic tree must carry so the analyzer's
 # dynamic import (``_load_contract_parser``) succeeds. The parser imports
@@ -437,9 +446,6 @@ class TestDoctorMarketplaceWiring:
         records its rule summary) against the real marketplace, which doubles as
         the gate-level zero-findings anchor for this rule.
         """
-        if not _marketplace_available():
-            pytest.skip('Real marketplace not available')
-
         doctor = _load_module('doctor_marketplace', 'doctor-marketplace.py')
 
         result = doctor.cmd_quality_gate(_Args())
@@ -460,10 +466,6 @@ class TestDoctorMarketplaceWiring:
 # ===========================================================================
 
 
-def _marketplace_available() -> bool:
-    return MARKETPLACE_ROOT.is_dir() and any(MARKETPLACE_ROOT.iterdir())
-
-
 def test_real_marketplace_tree_produces_zero_findings() -> None:
     """The real bundles tree has zero malformed ``configurable:`` declarations.
 
@@ -471,9 +473,6 @@ def test_real_marketplace_tree_produces_zero_findings() -> None:
     must declare a contract-valid ``configurable:`` block. A non-empty result
     means a real step's declaration drifted out of the D1 contract schema.
     """
-    if not _marketplace_available():
-        pytest.skip('Real marketplace not available')
-
     findings = scan_step_configurable_contract(MARKETPLACE_ROOT)
 
     assert findings == [], (

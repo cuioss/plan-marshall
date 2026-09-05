@@ -43,10 +43,18 @@ Test layers:
 
 from pathlib import Path
 
-import pytest
 from conftest import MARKETPLACE_ROOT, load_script_module
 
 from _plugin_doctor_fixtures import assert_analyzer_findings
+
+# This repository IS the marketplace, so ``marketplace/bundles/`` is present in
+# every valid checkout. An absent tree is a broken checkout, not an environment
+# this module does not apply to. Asserted once at import rather than guarded per
+# test: a skip would silently delete the real-tree anchor below and still report
+# the run green.
+assert MARKETPLACE_ROOT.is_dir() and any(MARKETPLACE_ROOT.iterdir()), (
+    f'Marketplace bundles tree is missing or empty at {MARKETPLACE_ROOT}'
+)
 
 
 def _load_module(name: str, filename: str):
@@ -394,10 +402,6 @@ class TestFindingShape:
 # ===========================================================================
 
 
-def _marketplace_available() -> bool:
-    return MARKETPLACE_ROOT.is_dir() and any(MARKETPLACE_ROOT.iterdir())
-
-
 def test_real_marketplace_tree_produces_zero_findings() -> None:
     """The real bundles tree has zero finalize-step token drifts.
 
@@ -407,9 +411,6 @@ def test_real_marketplace_tree_produces_zero_findings() -> None:
     skill drifted and the ``phase_steps_complete`` handshake would loop
     forever.
     """
-    if not _marketplace_available():
-        pytest.skip('Real marketplace not available')
-
     findings = scan_finalize_step_token(MARKETPLACE_ROOT)
 
     assert findings == [], (

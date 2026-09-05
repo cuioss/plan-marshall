@@ -262,8 +262,11 @@ def test_real_marketplace_user_invocable_one_to_one_mapping(tmp_path: Path):
     project_root = PROJECT_ROOT
     marketplace = project_root / 'marketplace' / 'bundles'
     config_dir = project_root / 'marketplace' / 'targets' / 'opencode'
-    if not marketplace.is_dir():
-        pytest.skip('marketplace/bundles not available in this checkout')
+    # This repository IS the marketplace, so the bundles tree is present in every
+    # valid checkout. An absent tree is a broken checkout, not one this test does
+    # not apply to — a skip would delete the one-to-one wrapper invariant and
+    # still report the run green.
+    assert marketplace.is_dir(), f'Marketplace bundles tree not found at {marketplace}'
 
     lookup = build_user_invocable_lookup(marketplace)
     assert lookup, f'no user-invocable skills found in marketplace: {marketplace}'
