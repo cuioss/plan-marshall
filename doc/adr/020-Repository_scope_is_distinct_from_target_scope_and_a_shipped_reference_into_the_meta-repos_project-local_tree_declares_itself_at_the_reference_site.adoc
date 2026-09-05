@@ -1,0 +1,262 @@
+= ADR-020: Repository scope is distinct from target scope and a shipped reference into the meta-repo's project-local tree declares itself at the reference site
+:toc: left
+:toclevels: 2
+:sectnums:
+
+// adr-metadata
+// Progressive-disclosure metadata block (see manage-adr SKILL.md → "ADR Template
+// Structure"). Read by `manage-adr.py scan` so a caller can assess an ADR's
+// relevance without reading the full file. List fields are comma-separated.
+// summary: Repository scope — which repository's tree owns a named path — is a distinct axis from target scope; a shipped reference that names a specific artifact in the meta-repo's unshipped project-local tree declares itself at the reference site, and no build field or new mechanism scopes it.
+// tags: repo-scope, target-scope, meta-repo, project-local, reference-hygiene, distribution
+// affects: plan-marshall, pm-plugin-development
+// supersedes:
+// end-adr-metadata
+
+// Authoring discipline (see manage-adr SKILL.md → "Authoring Discipline"):
+// ADRs are durable architectural statements, not incident write-ups. No PR numbers,
+// commit SHAs, dates, or lesson IDs anywhere in the body. CLAUDE.md's "current state
+// only" rule applies — describe the architecture, not the chronology.
+
+== Status
+
+Proposed
+
+== Context
+
+This repository ships a marketplace of skills, agents, and commands that consumer
+projects install and run. A component's **target scope** — which build targets
+emit the whole component — is settled by the `targets:` frontmatter declaration and
+enforced by the multi-target generator at build time. Target scope is documented,
+validated, and mechanical.
+
+Alongside the shipped bundles, the same repository carries a **project-local
+tree**: `.claude/skills/`, `.claude/commands/`, and `.claude/settings.json`. That
+tree holds this repository's own finalize steps, its cross-plan auditor, its
+cache-sync and review tooling. It is version-controlled, but it **ships to no
+target** — no registered target emits it and no consumer installation ever
+contains it. It is this repository's private surface.
+
+The two facts collide wherever **shipped content** names a **specific artifact in
+the project-local tree**. Today the shipped corpus carries references that a
+consumer cannot resolve:
+
+* Live relative links into `.claude/skills/…` that resolve only inside this
+  repository and dangle everywhere else.
+* Lock-step obligations that bind a shipped metric format to
+  `.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py` and
+  `checks/billing-composition.md` — two files a consumer project does not have.
+* Docstrings in shipped scripts that cite the same project-local auditor as the
+  authority for a multi-surface contract.
+* Quality-gate parity cells whose path lists include `.claude/` — data describing
+  this repository's own gate, read by that gate's test suite.
+
+Three distinct defects follow. A **consumer** reads shipped content that hands it
+instructions it cannot honor and links that cannot resolve. A **maintainer of
+this repository** who wants to say "this reference is meaningful only here"
+reaches for the only scoping instrument the architecture documents — `targets:` —
+and that instrument answers a different question: it gates whole-component
+emission across build targets, not which repository's tree a named path inhabits.
+And a **future author** has no written rule telling them which case a new
+reference is in, so every site is a fresh guess.
+
+The structural choice the architecture has to settle is three-fold. Is "which
+repository's tree owns this path" a distinct axis from "which build targets emit
+this component"? Does the meta-repo's project-local tree count as normative for
+anything a consumer reads? And where — if at all — does a reference to a
+meta-repo-only path declare itself?
+
+== Decision
+
+**Repository scope is distinct from target scope. The meta-repo's project-local
+tree is not normative for consumers. A shipped reference that names a specific
+artifact inside it declares itself at the reference site, and no build field or
+new mechanism scopes it.**
+
+Three statements bind together.
+
+**1. The axes are distinct.** Target scope answers "which *build targets* emit
+this whole component" and is enforced by the generator. Repository scope answers
+"which *repository's tree* does this named path inhabit" and is a property of
+references inside a shipped body. They are orthogonal: a component can ship to
+every target while one of its references names a meta-repo-only path, and a
+component can be scoped to a single target while every reference is universally
+addressable. Neither is a special case of the other, and repository scope is not
+a shadow purpose of `targets:` — the field's scope-of-application is the
+component, not the body text of one of its files.
+
+**2. The meta-repo's project-local tree is not normative for consumers.** `.claude/`
+ships to no target, so a shipped reference to a specific artifact inside it is a
+**meta-repo-only concern**: it binds this repository's maintainers, and a consumer
+can neither see nor honor it. "Normative" is read the way a consumer reads it —
+an address the content instructs them to follow. Just as this repository does not
+name git-ignored machine-local state it expects the reader to have, it does not
+name its own unshipped tree in content a consumer installs.
+
+**3. The obligation is a documentation rule at the reference site, applied by the
+author.** A site is fixed exactly when one of three dispositions is applied:
+
+* **Declare** — annotate the reference as meta-repo-only. Used where the reference
+  is load-bearing prose or a coupling contract: a shipped metric-format standard
+  that binds five surfaces to move together, or a shipped script docstring that
+  names the project-local auditor as the contract's authority.
+* **Re-point** — replace a live relative link into `.claude/` with prose that
+  names the concept without a path a consumer cannot resolve. Used where the
+  referent is a capability, not a file: the reader needs to know the mechanism
+  exists and that it is project-local, not to navigate to it.
+* **Correct as-is** — leave the site alone when it already declares the boundary:
+  an explicit "(meta-project)" scope, a roster-addition record that names the
+  project-local consumer and its coverage caveat, a generic statement about any
+  project's own dotfile tree, or a recorded-literal parity string that is gate
+  data rather than narrative.
+
+`targets:` is the wrong instrument and is not extended. It scopes whole components
+at build time; it cannot annotate an individual reference inside a shipped body.
+The `.claude/` artifacts are not components, and registering a tree that emits
+nothing as an emission target would manufacture a target that exists only to be
+excluded from — which is to say, it would not model the situation. Repository
+scope is carried by the document that contains the reference, because that is the
+only place that knows both the referent and the reader.
+
+== Consequences
+
+=== Positive
+
+* Shipped content is self-consistent for consumers: a lock-step obligation or a
+  link either resolves in every installation or says plainly that it binds this
+  repository only.
+* Future authors inherit a written rule instead of making a per-site guess:
+  classify the reference, then Declare / Re-point / Correct-as-is. The reduction
+  table below is the worked example.
+* `targets:` keeps a single meaning — whole-component emission — so the target-scope
+  contract documented for authors stays unambiguous, and the "no mechanism unless
+  D1 concludes one is needed" boundary of the originating request holds.
+* The question the architecture previously left to each site — "is this tree
+  normative for the reader?" — now has one durable answer in one place.
+
+=== Negative
+
+* Repo-scope-aware prose is louder. A shipped standard that binds several surfaces
+  to move together must now spend a sentence distinguishing the consumer-relevant
+  surfaces from the meta-repo-only ones.
+* The rule is a convention, not a check. Nothing in the build fails when a new
+  reference misses its label; enforcement rests on review and on this ADR being
+  read, not on a mechanical sweep.
+* Sites reduced "as-is" carry a standing maintenance tax: their correctness rests
+  on declaration language — "(meta-project)", "project-local roster", "crawler
+  caveat" — that a later edit could casually remove without any gate noticing.
+
+=== Risks
+
+* **Misclassification.** The rule's discriminator — "names a *specific artifact*
+  in the meta-repo's tree" vs "describes the *mechanism* of a project-local tree" —
+  is subtle. A statement that every project has its own `.claude/skills/` tree is
+  universal and needs no label; only a reference to this repository's specific
+  artifact is meta-repo-only. Mitigation: the decision keys on the referent, never
+  on the vocabulary, and the reduction table below shows both sides.
+* **Drift of "correct as-is".** A site that declares its boundary today may lose
+  that declaration without any gate noticing. Mitigation: the dispositions are
+  recorded below, so a future sweep can re-verify each row rather than rediscover
+  the set.
+* **The mechanism question re-opens.** This ADR closes "no mechanism" only for the
+  scope decision itself; a later mechanism plan that builds enforcement (a scoping
+  field, a doctor rule) would legitimately supersede it rather than diverge
+  silently.
+
+=== Reduction of the existing sites
+
+Every site in scope at this decision, its disposition, and the consequence applied:
+
+|===
+| Reference site | Disposition | Consequence
+
+| `plan-marshall/skills/phase-6-finalize/standards/finalize-step-preference-emitter.md` — preference-pattern hint routing carries a live relative link into `.claude/skills/audit-archived-plan-retrospectives/`
+| Re-point
+| The link is removed; prose names the cross-plan preference check as a project-local mechanism this repository alone maintains.
+
+| `plan-marshall/skills/manage-metrics/standards/data-format.md` — the "Restating surfaces" lock-step list names `.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py` and `checks/billing-composition.md`
+| Declare
+| Those two surfaces are annotated meta-repo-only; the remaining surfaces keep their lock-step for consumers who carry the format.
+
+| `plan-marshall/skills/plan-retrospective/scripts/analyze-logs.py` — the lock-step comment and the cross-plan docstring mirror the same two surfaces
+| Declare
+| Same two surfaces annotated meta-repo-only at the coupling statement; the docstring names the auditor as project-local.
+
+| `plan-marshall/skills/manage-findings/scripts/_preference_admissibility.py` — module docstring and comment name `.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py`
+| Declare
+| The auditor's address is annotated project-local; the rule it anchors stays consumer-reachable.
+
+| `plan-marshall/skills/manage-execution-manifest/scripts/_manifest_decide.py` — docstring names the auditor as the source of the counters it must match
+| Declare
+| The auditor's address is annotated project-local; the counting contract itself is unchanged.
+
+| `plan-marshall/skills/manage-lessons/standards/cwd-keyed-store-resolution-audit.md` — roster addition naming `finalize-step-lessons-housekeeping` as a project-local consumer
+| Correct as-is
+| Already declares the boundary: the step is added from the declared project-local finalize-step roster, with the crawler-coverage caveat stated beside it.
+
+| `plan-marshall/skills/manage-locks/standards/cwd-keyed-store-resolution-audit.md` — the inventory-scope caveat that the crawl does not walk `.claude/**`
+| Correct as-is
+| A generic statement about any project's own dotfile tree, not a reference to a meta-repo artifact.
+
+| `plan-marshall/skills/tools-permission-doctor/standards/menu-maintenance.md` — the "Detect/Restore Dropped Finalize Steps" passage scoped "(meta-project)"
+| Correct as-is
+| Explicitly meta-project-scoped, with the consumer contrast — consumer projects ship no project-local finalize steps — stated in the same passage.
+
+| `plan-marshall/skills/marshall-steward/standards/upgrade-flow.md` — the freshness-gate rationale naming `finalize-step-sync-plugin-cache` as "meta-project-only"
+| Correct as-is
+| Explicitly meta-project-only, with the "consumer projects neither ship it nor have it seeded" contrast stated.
+
+| `plan-marshall/skills/plan-marshall/README.md` — the project-local skills table listing `.claude/skills/` paths
+| Correct as-is
+| Already states consumer projects do not receive this surface.
+
+| `plan-marshall/skills/script-shared/scripts/build/_gate_coverage.py` (parity cells) and `tools-script-executor/standards/pre-push-quality-gate.md` — lint-scope path lists including `.claude/`
+| Correct as-is
+| Recorded literal of the actual whole-tree gate scope; data consumed by the gate's own test suite, not narrative a consumer acts on.
+|===
+
+== Alternatives Considered
+
+**Scope by a build field (`repos:` in frontmatter, or an extended `targets:`).**
+Let every component declare which repository's tree may reference it, with the
+build failing on violations. Rejected: a component-level field cannot express the
+case this decision is built on — a component that ships everywhere while one of
+its in-body references is meta-repo-only. The reference lives in a file the
+generator does not parse; enforcing per-reference rules at build time is a new
+grammar over body text, which is the mechanism this ADR exists to avoid. It also
+presupposes the build knows which repository a reader is in, which the generator,
+running in this repository, structurally cannot know.
+
+**Register `.claude/` as just another emission target.** Model the project-local
+tree as a target so "ships nowhere" is expressed by "no target lists it". Rejected:
+a target is a distributor of emitted components, and a tree the registry emits
+nothing from is not a target. Manufacturing one gives a false model — "which
+repository owns this path" is not "which channel ships this component" — and it
+would force consumer-side readers to learn target machinery to understand that an
+unshipped tree exists, which is exactly the indirection the convention removes.
+
+**Enforce with a plugin-doctor rule.** Add a static check that flags shipped
+references to `.claude/…` paths and demands a label. Rejected for the same reason
+as the scoping field: a rule over arbitrary body text is a grammar over prose,
+and it would need a durable list of "the meta-repo's specific artifacts" — a list
+that changes as the project-local tree changes. Recording the dispositions in this
+ADR keeps the sweep-and-classify pattern the sites came from. Enforcement remains
+a legitimate future supersession, as under Risks.
+
+**Leave the sites as they are.** Keep shipped content naming this repository's
+private tree without a label and without a written rule. Rejected: it leaves
+non-resolvable links and non-honorable lock-steps in shipped content, and it
+leaves the next author with no decision to inherit — reproducing, unchecked, the
+exact class of defect that produced the reduction table.
+
+The rejected options fall together around one property: each tries to make an
+emission-time, whole-component instrument — or a prose sweep over bodies — carry a
+distinction that is per-reference and per-reader. Only the reference site knows
+both the referent and the reader, so only the reference site can carry the label.
+
+== References
+
+* `marketplace/bundles/pm-plugin-development/skills/plugin-architecture/references/frontmatter-standards.md` § Target Scoping — the `targets:` contract this decision scopes against; the home of the accompanying repo-scope documentation.
+* `doc/developer/marketplace-build.adoc` — the emission pipeline the `targets:` field feeds, including `TARGET_REGISTRY` and the build-time scope the field exercises.
+* `doc/developer/repository-layout.adoc` § `.claude/` — the project-local tree this decision declares unshipped.
+* xref:006-Generated-tree_drift_is_gated_at_the_consume_boundary_not_in_CI.adoc[ADR-006: Generated-tree drift is gated at the consume boundary, not in CI] — the boundary behind "ships to no target": nothing generated is committed, and consumers meet the tree at the consume boundary, never in the source.
