@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# ruff: noqa: I001, E402
 # SPDX-License-Identifier: FSL-1.1-ALv2
+# ruff: noqa: E402
 """Population guard: every executor-invoking skill document carries the widened convention.
 
 The guard re-runs the D1 derivation over the live tree rather than reading a
@@ -56,7 +56,7 @@ _HELPER_DIR = Path(__file__).resolve().parent
 if str(_HELPER_DIR) not in sys.path:
     sys.path.insert(0, str(_HELPER_DIR))
 
-import _exit_code_convention_derivation as derivation  # noqa: E402
+import _exit_code_convention_derivation as derivation
 
 #: Derived once at import. The same object backs every assertion below and the
 #: published size, so the number reported is the number actually swept.

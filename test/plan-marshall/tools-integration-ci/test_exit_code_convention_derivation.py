@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# ruff: noqa: I001, E402
 # SPDX-License-Identifier: FSL-1.1-ALv2
+# ruff: noqa: E402
 """Unit tests for the exit-code-convention derivation helper.
 
 Every case here drives fixture documents written to ``tmp_path`` rather than the
@@ -23,7 +23,7 @@ _HELPER_DIR = Path(__file__).resolve().parent
 if str(_HELPER_DIR) not in sys.path:
     sys.path.insert(0, str(_HELPER_DIR))
 
-import _exit_code_convention_derivation as derivation  # noqa: E402
+import _exit_code_convention_derivation as derivation
 
 # ---------------------------------------------------------------------------
 # Fixture fragments — each is one property, composed into documents below
