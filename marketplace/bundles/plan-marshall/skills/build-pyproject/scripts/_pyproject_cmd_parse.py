@@ -31,6 +31,13 @@ from _build_parser_registry import DetectionRule, ParserRegistry
 # Pre-compiled patterns for tool-specific parsers
 _MYPY_ERROR_PATTERN = re.compile(r'^(.+\.py):(\d+): error: (.+)$', re.MULTILINE)
 _RUFF_ISSUE_PATTERN = re.compile(r'^(.+\.py):(\d+):\d+: ([A-Z]+\d+) (.+)$', re.MULTILINE)
+# ⛔ This pattern's `\S+` node-id capture is deliberately NOT widened to `(.+?)`
+# the way the ERROR patterns below are, and the asymmetry is intentional rather
+# than an oversight. Its path group is GREEDY (`(.+\.py)`), so it runs to the LAST
+# `.py` on the line; the `\S+` is what currently stops a FAILED line whose MESSAGE
+# contains `.py::` from mis-splitting. Widening the node id alone would break that.
+# Widening it safely means making the path group lazy too — a behaviour change to a
+# pre-existing surface that no finding raised, so it is left as it stands.
 _PYTEST_FAILED_PATTERN = re.compile(r'^FAILED (.+\.py)::(\S+)(?: - (.+))?$', re.MULTILINE)
 
 # Collection- and setup-level ERRORS, reported under pytest's `E` report
@@ -45,7 +52,20 @@ _PYTEST_FAILED_PATTERN = re.compile(r'^FAILED (.+\.py)::(\S+)(?: - (.+))?$', re.
 # Two spellings share the one pattern: `ERROR path.py` (a collection error, which
 # names no test) and `ERROR path.py::test_name` (a setup/teardown error, which
 # does). The trailing ` - <message>` is pytest's exception repr and is optional.
-_PYTEST_ERROR_PATTERN = re.compile(r'^ERROR (\S+\.py)(?:::(\S+))?(?: - (.+))?$', re.MULTILINE)
+#
+# The captures tolerate WHITESPACE. pytest renders a string parameter through
+# `ascii_escaped`, which escapes non-ascii and non-printable characters but leaves
+# a plain space intact, so `test_x[a b]` reaches the summary line with its space —
+# and a `\S+` capture does not merely truncate such a line, it fails to match it
+# ENTIRELY. The record would then be ABSENT, leaving `failures[]` empty for the
+# very run this collector exists to describe. A path containing a space fails the
+# same way.
+#
+# ⛔ The path group's LAZY quantifier is load-bearing — do NOT "simplify" it to a
+# greedy `(.+\.py)`. Lazy takes the FIRST `.py`, so a line whose MESSAGE itself
+# contains `.py::` still splits at the path; a greedy group would run to the LAST
+# `.py` and mis-split it.
+_PYTEST_ERROR_PATTERN = re.compile(r'^ERROR (.+?\.py)(?:::(.+?))?(?: - (.+))?$', re.MULTILINE)
 
 # Failure-detail capture (deliverable 9). pytest renders per-test tracebacks
 # under a `=== FAILURES ===` banner, each test block headed by an
@@ -70,8 +90,12 @@ _PYTEST_SECTION_LINE = re.compile(r'^=+\s+\S.*\s+=+\s*$')
 # The two ERRORS-section block-header spellings. Each must map back onto the same
 # key its short-summary line yields: `ERROR collecting <path>` pairs with
 # `ERROR <path>`, and `ERROR at setup of <test>` pairs with `ERROR <path>::<test>`.
-_PYTEST_ERROR_HEADER_COLLECTING = re.compile(r'^ERROR collecting (\S+)$')
-_PYTEST_ERROR_HEADER_PHASE = re.compile(r'^ERROR at (?:setup|teardown) of (\S+)$')
+# These widen in LOCK-STEP with `_PYTEST_ERROR_PATTERN` above: both sides of each
+# pairing must tolerate whitespace, or a space-bearing name matches on one side
+# only and the block is never found — the record then degrades to its terse
+# message, losing the line number and the real exception text.
+_PYTEST_ERROR_HEADER_COLLECTING = re.compile(r'^ERROR collecting (.+)$')
+_PYTEST_ERROR_HEADER_PHASE = re.compile(r'^ERROR at (?:setup|teardown) of (.+)$')
 # The `E   ` gutter pytest prefixes onto the raised exception's own lines inside
 # a traceback block. A collection error's short-summary line carries NO
 # ` - <message>` tail, so this gutter is the only place its real message exists.

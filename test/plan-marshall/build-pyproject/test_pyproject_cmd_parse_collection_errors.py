@@ -277,3 +277,121 @@ def test_a_green_log_yields_no_error_records():
     content = '======================== 398 passed in 8.51s ========================\n'
 
     assert _error_issues(content) == []
+
+
+# =============================================================================
+# Whitespace in a node id or a path — the second trap.
+# =============================================================================
+#
+# pytest renders a string parameter through ``ascii_escaped``, which escapes
+# non-ascii and non-printable characters but leaves a plain SPACE intact. So
+# ``test_x[a b]`` reaches the short-summary line with its space, and a ``\\S+``
+# capture does not truncate such a line — it fails to match it ENTIRELY. The
+# record is then ABSENT rather than partial, which is the failure mode a
+# presence-only assertion would never surface.
+
+_SPACED_TEST_ID = 'test_widget[a b]'
+
+#: A setup error whose node id carries a space. Both halves of the pairing must
+#: tolerate it: the ``ERROR at setup of <test>`` block header AND the
+#: ``ERROR <path>::<test>`` summary line resolve to the same key, or the block is
+#: never found and the record silently degrades to its terse message.
+_SPACED_SETUP_ERROR_LOG = f"""==================================== ERRORS ====================================
+____________________ ERROR at setup of {_SPACED_TEST_ID} ____________________
+test/test_widget.py:4: in a_fixture
+    raise RuntimeError('boom')
+E   RuntimeError: boom
+=========================== short test summary info ============================
+ERROR test/test_widget.py::{_SPACED_TEST_ID} - RuntimeError: boom
+======================== 10 passed, 1 error in 1.10s ========================
+"""
+
+_SPACED_PATH = 'test/plan-marshall/build-pyproject/broken module/test_x.py'
+
+#: A collection error whose FILE PATH carries a space — the same defect reached
+#: through the other capture group.
+_SPACED_PATH_COLLECTION_LOG = f"""==================================== ERRORS ====================================
+_ ERROR collecting {_SPACED_PATH} _
+{_SPACED_PATH}:3: in <module>
+    raise ImportError('no such thing')
+E   ImportError: no such thing
+=========================== short test summary info ============================
+ERROR {_SPACED_PATH}
+======================== 5 passed, 1 error in 2.00s ========================
+"""
+
+
+def test_a_setup_error_whose_node_id_carries_a_space_yields_one_record():
+    """The record exists at all — under ``\\S+`` the line matched nothing."""
+    assert len(_error_issues(_SPACED_SETUP_ERROR_LOG)) == 1
+
+
+def test_a_spaced_node_id_record_resolves_its_block_not_just_its_presence():
+    """Presence is not enough: the record must RESOLVE its block.
+
+    A terse fallback record would satisfy a presence-only assertion while
+    carrying no line number and a restated message, so the line and the message
+    are both pinned. The line can only come from the block, which is what proves
+    the header/summary pairing survived the widening.
+    """
+    issue = _error_issues(_SPACED_SETUP_ERROR_LOG)[0]
+
+    assert issue.file == 'test/test_widget.py'
+    assert issue.line == 4
+    assert issue.message == 'RuntimeError: boom'
+    assert issue.detail is not None and 'a_fixture' in issue.detail
+
+
+def test_a_collection_error_whose_path_carries_a_space_names_that_path():
+    """The path capture tolerates the space, and the whole path is reported.
+
+    The message comes from the block's ``E`` gutter — a collection error's
+    summary line carries no tail — so asserting it also proves the block was
+    found under the spaced key.
+    """
+    issues = _error_issues(_SPACED_PATH_COLLECTION_LOG)
+
+    assert len(issues) == 1
+    assert issues[0].file == _SPACED_PATH
+    assert issues[0].line == 3
+    assert issues[0].message == 'ImportError: no such thing'
+
+
+def test_a_message_containing_py_colons_still_splits_at_the_first_py():
+    """⛔ The control the LAZY path quantifier exists for.
+
+    A greedy ``(.+\\.py)`` would run to the LAST ``.py`` on the line and swallow
+    the node id and half the message into the file path. Lazy takes the FIRST,
+    so a message that itself names a ``path.py::test`` still splits correctly.
+    This is why the widening must not be "simplified" to a greedy group.
+    """
+    content = (
+        '=========================== short test summary info ============================\n'
+        'ERROR test/test_alpha.py::test_thing - '
+        'ValueError: could not import test/test_beta.py::test_other\n'
+        '======================== 5 passed, 1 error in 2.00s ========================\n'
+    )
+
+    issues = _error_issues(content)
+
+    assert len(issues) == 1
+    assert issues[0].file == 'test/test_alpha.py'
+    assert issues[0].message == 'ValueError: could not import test/test_beta.py::test_other'
+
+
+def test_the_unspaced_fixtures_parse_identically_after_the_widening():
+    """Matched control: the widened captures did not regress the original forms.
+
+    The cases above this section already assert each field individually; this one
+    states the non-regression as its own claim, over both summary spellings at
+    once, so a widening that broke the common case fails here by name.
+    """
+    collection = _error_issues(_COLLECTION_ERROR_LOG)
+    setup = _error_issues(_SETUP_ERROR_LOG)
+
+    assert [(i.file, i.line, i.message) for i in collection] == [
+        (_BROKEN_MODULE, 7, 'AssertionError: deliberate module-import assertion')
+    ]
+    assert [(i.file, i.line, i.message) for i in setup] == [
+        ('test/test_widget.py', 4, 'RuntimeError: fixture blew up')
+    ]
