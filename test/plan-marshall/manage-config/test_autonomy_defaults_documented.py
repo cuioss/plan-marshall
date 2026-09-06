@@ -40,7 +40,7 @@ out by construction, because no test module is under a documentation root.
 from __future__ import annotations
 
 import re
-from functools import lru_cache
+from functools import cache
 from pathlib import Path
 
 import pytest
@@ -97,7 +97,7 @@ def _read(document: str) -> str:
     return (_REPO_ROOT / document).read_text(encoding='utf-8')
 
 
-@lru_cache(maxsize=None)
+@cache
 def _parseable_text(document: str) -> str:
     """Return the document text with every excluded region removed.
 
