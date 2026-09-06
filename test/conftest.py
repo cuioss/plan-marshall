@@ -1020,6 +1020,10 @@ _ROUTING_GUARD_MODULES: tuple[tuple[str, str], ...] = (
         'pinned-build-tool',
         'plan-marshall/phase-6-finalize/test_no_pinned_build_tool_in_shipped_docs.py',
     ),
+    (
+        'exit-code-convention',
+        'plan-marshall/tools-integration-ci/test_exit_code_convention_population.py',
+    ),
     ('parser-seam', 'test_parser_seam_coverage.py'),
 )
 

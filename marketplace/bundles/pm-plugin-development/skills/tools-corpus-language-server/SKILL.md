@@ -35,6 +35,10 @@ component-discovery rule changes to serve this surface.
 - The CLI verbs (`preflight`, `query`) are invoked only through `python3 .plan/execute-script.py` with the 3-part notation.
 - Do **not** run `serve` through the executor — see "How `serve` is launched" below. It is spawned by an LSP client, not by a verb call.
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../../plan-marshall/skills/tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Why the server is resident
 
 Building the index costs about **1.9 s**, and that cost is paid **per process**.
