@@ -59,25 +59,33 @@ python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventor
 
 **Output with --full** (excerpt):
 ```toon
+status: success
+scope: marketplace
+base_path: marketplace/bundles
+
 plan-marshall:
   path: marketplace/bundles/plan-marshall
-
-  skills[18]:
-    - name: tools-permission-doctor
-      path: marketplace/bundles/plan-marshall/skills/tools-permission-doctor
-      description: Diagnose permission issues across settings files
-      user_invocable: true
-      allowed_tools: Read, Grep, Bash
-      standards[2]:
-        - permission-syntax.md
-        - security-patterns.md
-      scripts[1]:
-        - permission_doctor.py
+  skills[18]{name,path,description,user_invocable,standards,scripts}:
+    tools-permission-doctor,marketplace/bundles/plan-marshall/skills/tools-permission-doctor,"Diagnose permission issues across settings files",true,"[""permission-syntax.md"", ""security-patterns.md""]","[""permission_doctor.py""]"
 ```
 
 **Full mode includes:**
 - Skill frontmatter: `user_invocable`, `allowed_tools`, `model`
 - Skill subdirectories with their files: `standards/`, `templates/`, `scripts/`, `references/`, `knowledge/`, `examples/`, `documents/`
+
+**Read the block, do not pattern-match it.** The output is written by the canonical
+serializer, so a full-mode component list is a **uniform-array table** — one header
+naming the columns, then one comma-separated row per component — not a `- name:`
+entry with indented keys. Quoting is the serializer's decision, so any value carrying
+a comma, a colon or a quote arrives quoted and a consumer must `parse_toon` the block
+rather than split it by hand.
+
+The column set is the **union of the keys present across that table's rows**, so it
+varies with what the scanned components actually carry: a component missing a key a
+sibling has renders an empty column rather than no column, and a key no component in
+the table carries is absent from the header entirely. Read a column's presence from
+the header of the run in hand — never from this excerpt, which shows one shape among
+many.
 
 ## --name-pattern (optional)
 

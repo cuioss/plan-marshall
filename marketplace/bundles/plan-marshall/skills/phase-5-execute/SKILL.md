@@ -606,7 +606,8 @@ status: success
 residual_count: N
 threshold: T
 finding_emitted: true|false
-residual_files[N]: [paths]
+residual_files[N]:                 # omitted entirely when the residual is empty
+  - {path}
 ```
 
 **Could not look** — the guard performed no comparison at all:
@@ -625,7 +626,7 @@ finding_emitted: false
 status: error
 ```
 
-Two causes reach this shape. `git_diff_failed` means the diff itself could not be computed — the `error` line carries the token followed by the underlying exception, not the token alone. `finding_persist_failed` means a residual set OVER the threshold was measured but its finding could not be written, so the run reports the rejected finding's content inline (`message`, `finding_title`, `finding_detail`, `residual_count`) rather than absorbing the loss. Both return exit code `1` — unlike the `could_not_look` shape above, an error IS a failure of the guard.
+Two causes reach this shape. `git_diff_failed` means the diff itself could not be computed — the `error` line carries the token followed by the underlying exception, not the token alone. `finding_persist_failed` means a residual set OVER the threshold was measured but its finding could not be written, so the run reports the rejected finding's content inline (`message`, `finding_title`, `finding_detail`, `residual_count`, `threshold`, and `residual_files` as a simple array) rather than absorbing the loss. Both return exit code `1` — unlike the `could_not_look` shape above, an error IS a failure of the guard.
 
 ⛔ **`residual_count` is ABSENT on the `could_not_look` shape, and that absence is the contract.** The count is the field consumers gate on, so a `0` published by a run that never compared anything is indistinguishable from "compared, and found no scope creep" — a `reason` field alone does not fix that, because it is advisory and trivially dropped. Read `status` FIRST: on `could_not_look` there is no measurement to act on, and a caller that branches on `residual_count` finds no key rather than a false zero. Never substitute `0` for the missing key.
 

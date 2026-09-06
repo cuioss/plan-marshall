@@ -38,7 +38,6 @@ from constants import (
     DIR_PER_MODULE_ENRICHED,
     FILE_PROJECT_META,
 )
-from toon_parser import serialize_toon
 
 # Data sub-directory for architecture files (appended to base dir / project_dir)
 _ARCHITECTURE_SUBDIR = DIR_ARCHITECTURE
@@ -1466,33 +1465,3 @@ def handle_module_not_found_result(module_name: str, project_dir: str) -> dict[s
     }
 
 
-def _profile_entries(entries: list[Any]) -> list[Any]:
-    """Normalise one profile bucket into rows the canonical serializer can render.
-
-    A dict entry becomes a ``{skill, description}`` row; a bare entry is passed
-    through as a scalar. The previous hand-rolled form wrapped the description in
-    literal quotes of its own, which escaped nothing — a description carrying a
-    quote or a comma produced a row no reader could recover.
-    """
-    rows: list[Any] = []
-    for entry in entries:
-        if isinstance(entry, dict):
-            rows.append(
-                {'skill': entry.get('skill', ''), 'description': entry.get('description', '')}
-            )
-        else:
-            rows.append(entry)
-    return rows
-
-
-def print_skills_by_profile(skills_by_profile: dict[str, Any]) -> None:
-    """Print skills_by_profile through the canonical serializer."""
-    payload: dict[str, Any] = {}
-    for profile, profile_data in skills_by_profile.items():
-        bucket: dict[str, Any] = {}
-        for key in ('defaults', 'optionals'):
-            entries = profile_data.get(key, [])
-            if entries:
-                bucket[key] = _profile_entries(entries)
-        payload[profile] = bucket
-    print(serialize_toon({'skills_by_profile': payload}))
