@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from _manage_metrics_fixtures import (
     ns_end_phase,
+    ns_generate,
     ns_start_phase,
 )
 from _manage_metrics_module_fixtures import (
@@ -28,10 +29,12 @@ from _manage_metrics_module_fixtures import (
     _parse_lattice_directions,
     _parse_termination_cause_sites,
     _phase_row,
+    _recorded_phase_row,
     _row_field,
     _run_enrich_with_buckets,
     _seed_guarded_plan_dirs,
     cmd_end_phase,
+    cmd_generate,
     cmd_start_phase,
     manage_metrics,
 )
@@ -339,3 +342,39 @@ def test_repeated_enrich_keeps_a_genuinely_mixed_row_labelled_mixed(plan_context
     assert row['total_tokens_population'] == manage_metrics.POPULATION_MIXED
     assert row['total_tokens'] == 88000, 'the dispatched total must never be overwritten'
     assert row['inline_main_context_tokens'] == _INLINE_SUM
+
+
+def test_unattributed_residual_missing_its_denominator_field_discloses_it(plan_context):
+    """D6-S12: a residual present without its denominator field renders a
+    named disclosure, never a crash and never a silently-dropped bullet.
+
+    ``cache_read_unattributed`` is co-present with its denominator
+    (``cache_read_input_tokens``) in every runtime-produced row — the
+    fallback below is a display guard for a hand-edited/partial row
+    ``generate`` itself would never write. The guard reads ``phase.get(
+    denom_field)`` and branches on ``isinstance(denom, (int, float))``,
+    so a genuinely ABSENT denominator (not a measured zero) must still
+    render, naming the exact field that is missing rather than raising on
+    ``int(denom):,`` against ``None`` or dropping the bullet outright.
+    """
+    plan_id = 'denom-field-missing-disclosure'
+    phases = {
+        '5-execute': {
+            **_recorded_phase_row(),
+            # The residual is present; its denominator (cache_read_input_tokens)
+            # is deliberately absent from this row.
+            'cache_read_unattributed': 1000,
+        }
+    }
+    manage_metrics.write_metrics(plan_id, {'phases': phases})
+
+    result = cmd_generate(ns_generate(plan_id))
+    assert result['status'] == 'success', result
+
+    md = plan_context.plan_dir_for(plan_id).joinpath('metrics.md').read_text(encoding='utf-8')
+    assert '- **Unattributed cache_read tokens**: 1,000 (' in md, md
+    assert 'denominator cache_read_input_tokens not recorded on this row' in md, md
+    # Matched negative control: the numerator-with-denominator form (the "X of
+    # Y {field}" shape) must NOT also appear for this row — the two renderings
+    # are mutually exclusive branches of the same guard.
+    assert 'of 1,000 cache_read_input_tokens' not in md, md
