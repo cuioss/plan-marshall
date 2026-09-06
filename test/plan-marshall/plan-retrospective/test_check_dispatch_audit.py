@@ -501,3 +501,163 @@ def test_absent_inputs_degrade_cleanly(tmp_path, monkeypatch):
     assert int(coverage_entry['count']) == 0
     assert coverage_entry['status'] == 'evaluated'
     assert int(coverage_entry['evaluated_population']) == 0
+
+
+# ---------------------------------------------------------------------------
+# Document contract: the metrics reconcile the efficiency aspect depends on
+# ---------------------------------------------------------------------------
+#
+# ⛔ Scope of this section, stated so it is not read for more than it checks.
+#
+# Every test ABOVE drives ``check-dispatch-audit.py`` directly. The retrospective
+# workflow's own prose is a separate artefact, and one of its steps — the
+# ``manage-metrics generate`` reconcile that closes the open ``6-finalize``
+# accumulator before the plan-efficiency aspect reads ``metrics.md`` — is shipped
+# ONLY as prose. Nothing executes it in a test, so deleting the step from
+# ``SKILL.md`` left this whole directory green: the deliverable could be reverted
+# without a single failure.
+#
+# These tests close that hole and NOTHING else. They assert the invocation is
+# still in the workflow, still positioned ahead of the aspect that consumes its
+# output, and still carries its live-modes-only bound. They do NOT assert that a
+# run performs the reconcile, that the reconcile produces correct numbers, or
+# that the aspect reads the reconciled file — none of that is observable from the
+# document, and a green here is not evidence of any of it.
+#
+# The anchors are the COMMAND STRING and the ORDER, never a heading and never the
+# step number: both of those move under ordinary renumbering while the invocation
+# and its position relative to its consumer do not.
+
+_RETRO_SKILL_DOC = (
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'SKILL.md'
+)
+
+#: The reconcile invocation itself — the load-bearing literal of the prose step.
+_METRICS_RECONCILE_COMMAND = 'plan-marshall:manage-metrics:manage-metrics generate'
+
+#: The canonical registry key of the aspect that CONSUMES the reconciled file.
+#: Backticked, so the row's ``references/plan-efficiency.md`` cell is not matched.
+_CONSUMING_ASPECT_KEY = '`plan-efficiency`'
+
+
+def _reconcile_offset(text: str) -> int:
+    """Character offset of the reconcile invocation, or ``-1`` when absent."""
+    return text.find(_METRICS_RECONCILE_COMMAND)
+
+
+def _consumer_offset(text: str) -> int:
+    """Character offset of the consuming aspect's registry key, or ``-1``."""
+    return text.find(_CONSUMING_ASPECT_KEY)
+
+
+def _reconcile_conditions(text: str) -> str:
+    """The prose from the reconcile invocation to the next ``### `` step heading.
+
+    The heading is used as a TERMINATOR only — the region is entered at the
+    command string, so a renamed or renumbered step heading does not move it.
+    """
+    start = _reconcile_offset(text)
+    if start < 0:
+        return ''
+    end = text.find('\n### ', start)
+    return text[start:] if end < 0 else text[start:end]
+
+
+def test_retrospective_workflow_still_carries_the_metrics_reconcile():
+    text = _RETRO_SKILL_DOC.read_text(encoding='utf-8')
+
+    assert _reconcile_offset(text) >= 0, (
+        f'{_RETRO_SKILL_DOC} no longer invokes {_METRICS_RECONCILE_COMMAND!r}. The '
+        'step is shipped as prose only, so its deletion is invisible to every other '
+        'test in this directory — an unreconciled metrics.md renders the 6-finalize '
+        'row as zero and the plan-efficiency aspect reads the largest finalize phase '
+        'as if it did no work.'
+    )
+
+
+def test_metrics_reconcile_precedes_the_aspect_that_consumes_it():
+    text = _RETRO_SKILL_DOC.read_text(encoding='utf-8')
+    reconcile = _reconcile_offset(text)
+    consumer = _consumer_offset(text)
+
+    assert reconcile >= 0, 'the reconcile invocation is absent — see the sibling test'
+    assert consumer >= 0, (
+        f'the consuming aspect key {_CONSUMING_ASPECT_KEY} is absent from '
+        f'{_RETRO_SKILL_DOC}, so the ordering assertion below would be vacuous'
+    )
+    assert reconcile < consumer, (
+        'the metrics reconcile is positioned AFTER the plan-efficiency aspect that '
+        'reads metrics.md. Order is the whole contract here: the reconcile exists to '
+        'close the open 6-finalize accumulator before that aspect reads the file, so '
+        'a reconcile that runs later leaves the aspect reading a zero row.'
+    )
+
+
+def test_metrics_reconcile_keeps_its_live_modes_only_bound():
+    conditions = _reconcile_conditions(_RETRO_SKILL_DOC.read_text(encoding='utf-8'))
+
+    assert conditions, 'the reconcile region is empty — the invocation is absent'
+    assert 'archived' in conditions, (
+        'the reconcile no longer names archived mode. Archived mode is a read-only '
+        'historic audit whose plan directory must not be written, so the bound is '
+        'the condition that keeps the step legal rather than an aside.'
+    )
+    assert 'MUST NOT' in conditions, (
+        'the archived-mode exclusion is no longer normative. A descriptive mention '
+        'of archived mode does not forbid the write the Prohibited-actions block '
+        'forbids, and this step is the one that would perform it.'
+    )
+
+
+def test_document_contract_detects_the_pre_fix_and_reordered_shapes():
+    """Mutation guard: the three assertions above must fire on the shapes they name.
+
+    Without this, a typo in either literal would leave all three vacuously green
+    against any document — which is the exact failure mode this section exists to
+    remove, reproduced one level up.
+    """
+    step = (
+        '### Step 2.5: Reconcile the phase accumulators (live modes only)\n\n'
+        '```bash\n'
+        f'python3 .plan/execute-script.py {_METRICS_RECONCILE_COMMAND} \\\n'
+        '  --plan-id {plan_id}\n'
+        '```\n\n'
+        '**Live modes only.** Archived mode is read-only and MUST NOT write to the '
+        'archived plan directory.\n\n'
+    )
+    aspect_table = (
+        '### Step 3: Dispatch Aspects (in order)\n\n'
+        f'| 4 | Plan efficiency | {_CONSUMING_ASPECT_KEY} | (LLM) | ref |\n'
+    )
+
+    # Positive control — the shipped shape clears all three checks, so none of
+    # them is unconditionally negative.
+    shipped = step + aspect_table
+    assert _reconcile_offset(shipped) >= 0
+    assert _reconcile_offset(shipped) < _consumer_offset(shipped)
+    conditions = _reconcile_conditions(shipped)
+    assert 'archived' in conditions and 'MUST NOT' in conditions
+
+    # Pre-fix shape — the step deleted entirely. This is the mutation that used to
+    # leave the whole directory green.
+    deleted = aspect_table
+    assert _reconcile_offset(deleted) < 0, (
+        'the presence check failed to notice a document with the reconcile step '
+        'removed — the exact revert it exists to catch'
+    )
+    assert _reconcile_conditions(deleted) == ''
+
+    # Reordered shape — the step survives but sinks below its consumer.
+    reordered = aspect_table + step
+    assert _reconcile_offset(reordered) >= 0
+    assert _reconcile_offset(reordered) > _consumer_offset(reordered), (
+        'the ordering check failed to notice a reconcile positioned after the aspect '
+        'that consumes it'
+    )
+
+    # Condition stripped — the step and its order survive, the bound does not.
+    unbounded = step.replace('MUST NOT write', 'may write') + aspect_table
+    assert 'MUST NOT' not in _reconcile_conditions(unbounded), (
+        'the condition check reads text outside the reconcile region — a normative '
+        'token from a later step would satisfy it for the wrong document'
+    )
