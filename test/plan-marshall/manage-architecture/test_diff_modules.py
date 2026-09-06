@@ -7,9 +7,9 @@ of ``cmd_diff_modules`` plus its ``snapshot_not_found`` error contract and
 the argparse wiring on ``architecture.py``.
 
 Under the on-demand crawl model the snapshot side still reads
-``derived.json`` files from disk (snapshots remain file-based per
-deliverable 4 of plan ``architecture-files-on-demand``) while the current
-side hashes the canonical JSON of a fresh ``crawl_module_derived`` call.
+``derived.json`` files from disk (snapshots remain file-based) while the
+current side hashes the canonical JSON of a fresh ``crawl_module_derived``
+call.
 For test fixtures, ``save_module_derived`` is used to seed the on-disk
 fallback that ``crawl_all_modules`` consults when the extension discovery
 pipeline returns no modules (typical for tmp project trees with no real

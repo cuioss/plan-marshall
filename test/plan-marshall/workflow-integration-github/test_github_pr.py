@@ -1188,7 +1188,7 @@ def test_fetch_findings_reports_no_drift_when_only_the_registry_arm_matched(
     the REGISTRY arm reads is the registry doing precisely the job it is
     load-bearing FOR: Sourcery's size refusal is invisible to the structural arm BY
     CONSTRUCTION, so this state is permanent and correct, and reporting it as drift
-    named a stale record that does not exist. It fired for real on PR #1368.
+    named a stale record that does not exist. It has fired for real in production.
 
     Anti-vacuity: the registry-only direction is ASSERTED against the live registry
     (not assumed of the fixture), and the publish shape is asserted to be one
@@ -1394,7 +1394,7 @@ def test_fetch_findings_dedupes_drift_per_bot_and_layer(plan_context, monkeypatc
 def test_fetch_findings_splits_a_refusing_bot_from_a_participating_one(plan_context, monkeypatch):
     """A bot that only refused lands in ``refused_bots``, never in ``participated_bots``.
 
-    This is the #1037 signature, pinned: over a set where CodeRabbit posts ONLY a
+    The signature pinned here: over a set where CodeRabbit posts ONLY a
     rate-limit notice, Sourcery posts a genuine review comment in its declared
     publish shape, and a human comments, the producer must report the two bots
     DIFFERENTLY.
@@ -2817,7 +2817,7 @@ class TestBareClassificationFlags:
 _PR_AGENT_REQUIRED_MARKERS = bot_registry.contentless_review_markers('cuioss-review-bot')
 
 # Both Guide bodies come from ``test/_shared/_pr_agent_guide_bodies.py`` — the
-# CLEAN one is the verbatim body observed on #1078 (an HTML ``<table>`` of
+# CLEAN one is a verbatim observed body (an HTML ``<table>`` of
 # ``<strong>`` assertions, NOT the markdown rendering a human reads), and the
 # finding-bearing one is rendered from the same markup with one ``<details>``
 # added. A local literal is what previously let these units and the registry
@@ -3027,7 +3027,7 @@ def test_edit_at_one_commit_does_not_credit_a_later_commit(
 ):
     """An in-place edit credits the commit it was made against, NOT every later HEAD.
 
-    The defect PR-Agent flagged on #1141: with the edit arm keyed on
+    The defect this forbids: with the edit arm keyed on
     ``updated_at != created_at`` (a permanent "was ever edited" flag), a comment edited
     at commit N was credited at N+1, N+2, ... even without re-review, defeating the
     currency check for the edit case. The ledger fix measures a fresh edit against the
@@ -3413,7 +3413,7 @@ def test_a_fresh_edit_at_an_unreadable_head_blocks_on_both_fetches(
 
     assert first['participated_bots'] == []
     # The credit is withheld on the EDIT arm — and disclosed as undecidable rather than
-    # stale, because the head read is what failed (deliverable 4's routing).
+    # stale, because the head read is what failed.
     assert first['stale_participation_bots'] == []
     assert first['undecidable_participation_bots'] == [
         {'bot_kind': bot_kind, 'evidence_kind': edited['kind']}
@@ -3877,7 +3877,7 @@ def test_an_append_per_review_bot_stays_credited_after_a_head_advance(
     """The documented behaviour, asserted as a REACH DIFFERENCE on one identical fixture.
 
     ⚠ This case is deliberately GREEN against the pre-change code, and that is the correct
-    outcome rather than a weakness to hide: deliverable 6's disposition is to DOCUMENT this
+    outcome rather than a weakness to hide: the recorded disposition is to DOCUMENT this
     gap, explicitly not to change the behaviour, so a case that went red here would be
     evidence the reach had moved. The discrimination for the documentation itself lives in
     ``test_the_contract_records_the_currency_blind_gap_rather_than_leaving_it_inferable``.

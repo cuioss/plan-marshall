@@ -922,7 +922,7 @@ def test_ast_subcommand_extractor_symbols_removed():
         )
 
 
-# Executor-guard backstop decision (ADR-002, deliverable 11): under the
+# Executor-guard backstop decision (ADR-002): under the
 # move-based, cwd-pinned hermetic worktree model the structural cwd-pinning is
 # the PRIMARY enforcement; a secondary runtime worktree-write refusal guard
 # inside generate_executor.py was evaluated and REJECTED as redundant. These
@@ -930,7 +930,7 @@ def test_ast_subcommand_extractor_symbols_removed():
 # reintroduced and the ADR cross-reference does not rot.
 def test_module_docstring_records_executor_guard_backstop_decision():
     """The module docstring MUST record the keep/remove backstop decision and
-    cross-reference ADR-002 (deliverable 11 acceptance criterion)."""
+    cross-reference ADR-002."""
     module = load_module()
     docstring = module.__doc__ or ''
 
@@ -1137,7 +1137,7 @@ def test_template_build_ledger_helpers_loadable_and_predicate_works():
 
 
 # ============================================================================
-# Deliverable 1: machine-portable script-set fingerprint
+# Machine-portable script-set fingerprint
 # ============================================================================
 # compute_executor_scripts_fingerprint() relativizes the discover_scripts
 # notation→path mapping before hashing, so the fingerprint is identical across
@@ -1207,7 +1207,7 @@ def test_scripts_fingerprint_changes_on_add_remove_and_move():
 
 
 # ============================================================================
-# Deliverable 1: template version/fingerprint placeholder substitution
+# Template version/fingerprint placeholder substitution
 # ============================================================================
 
 
@@ -1503,7 +1503,7 @@ def test_template_declares_version_and_fingerprint_constants():
 
 
 # ============================================================================
-# Deliverable 1: preflight verb
+# The preflight verb
 # ============================================================================
 # The preflight verb compares the executor's embedded MARSHALL_VERSION and
 # marshal.json's system.provisioned_version against the installed manifest's
@@ -1899,7 +1899,7 @@ def test_claude_resolver_reresolves_after_pinned_version_pruned(tmp_path, monkey
 
 
 # ============================================================================
-# Deliverable 1: regeneration safety — format handshake, residue guard,
+# Regeneration safety — format handshake, residue guard,
 # py_compile self-check, atomic write
 # ============================================================================
 # generate_executor() runs four deterministic guards on the substituted content

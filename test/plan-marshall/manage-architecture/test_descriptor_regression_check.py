@@ -2,8 +2,7 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the ``descriptor-regression-check`` commit-gate verb.
 
-Deliverable 2 of the accept/commit/write-gate hardening plan: the
-``architecture-refresh`` finalize step must REFUSE to commit a regenerated
+The ``architecture-refresh`` finalize step must REFUSE to commit a regenerated
 ``_project.json`` whose project identity regressed — name overwritten with the
 worktree/plan-id basename, or description/description_reasoning blanked from a
 previously-curated value. ``cmd_descriptor_regression_check`` is the

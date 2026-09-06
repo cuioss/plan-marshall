@@ -697,7 +697,7 @@ def test_main_cleanup_dispatch_returns_zero(monkeypatch, capsys, plan_base_dir_a
 # =============================================================================
 #
 # Regression coverage for the leaf-no-background-build / tier-agnostic freshness
-# stamp invariant (deliverable 2): a build-class notation dispatched through the
+# stamp invariant: a build-class notation dispatched through the
 # generated executor writes exactly one kind=build change-ledger entry carrying a
 # worktree_sha and exit_code — including the orchestrator/global-tier shape
 # (plan_id: null) the detached await-long-running path produces. This proves the

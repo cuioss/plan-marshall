@@ -503,8 +503,8 @@ class TestCommentsStageAuthorKindFields:
     """Every stored pr-comment finding carries first-class, queryable ``author``
     and ``kind`` fields.
 
-    Deliverable 2 promotes reviewer identity (``author``) and comment structure
-    (``kind``) to indexed top-level finding fields (see manage-findings
+    Reviewer identity (``author``) and comment structure
+    (``kind``) are indexed top-level finding fields (see manage-findings
     ``standards/jsonl-format.md``), distinct from the human-readable
     ``author:`` / ``kind:`` lines inside the ``detail`` blob. The producer
     sources ``author`` from the GitHub comment author login and ``kind`` from
@@ -752,7 +752,7 @@ class TestCommentsStageReviewedShaAndBotKind:
     time (``reviewed_commit_sha``) and the reviewer-bot identity derived from
     the comment author login (``bot_kind``).
 
-    Deliverable 3 stamps these two re-review-matching fields at ingestion:
+    The producer stamps these two re-review-matching fields at ingestion:
     ``reviewed_commit_sha`` is the PR HEAD SHA fetched once for the whole batch
     (so re-review matching can tell whether HEAD has advanced past the reviewed
     commit), and ``bot_kind`` is derived from each comment's author login via the
@@ -1073,8 +1073,8 @@ class TestPerBotIgnoreFilter:
 #     filter, never inside ``_is_refusal_notice``.
 #
 # No arm is a superset of another, and the list is open — a further arm is added
-# to ``REFUSAL_LAYERS`` and named here, never by correcting a count. The #1014
-# Sourcery refusal below is the proof that the arms are genuinely independent: it
+# to ``REFUSAL_LAYERS`` and named here, never by correcting a count. The
+# ``_SOURCERY_1014_REFUSAL`` body below is the proof that the arms are genuinely independent: it
 # is invisible to the structural recognizer (asserted), so ONLY the registry
 # marker recognizes it.
 #
@@ -1082,7 +1082,7 @@ class TestPerBotIgnoreFilter:
 # collapses each body's newlines to spaces before any detector runs (the same
 # convention documented in test_pr_wait_for_comments_rate_limited.py).
 
-# Sourcery's OBSERVED #1014 refusal: it declined the review because the PR
+# Sourcery's OBSERVED size-limit refusal: it declined the review because the PR
 # exceeded its size budget. Handle-free and number-free in the registry, so the
 # marker survives a different account handle and a different character budget.
 _SOURCERY_1014_REFUSAL = (
@@ -1098,7 +1098,7 @@ _CODERABBIT_REVIEW_LIMIT_REFUSAL = (
     'Reviews will resume once the limit resets.'
 )
 
-# CodeRabbit's SECOND refusal surface, observed on PR #1368: the reply to a COMMAND
+# CodeRabbit's SECOND observed refusal surface: the reply to a COMMAND
 # INVOCATION (``@coderabbitai review``) rather than the review-summary notice above.
 # Recognized ONLY by the registry marker ``Review rate limited`` — every other arm is
 # blind to it, which is asserted below and is why the wording had to be filed as data:
@@ -1129,7 +1129,7 @@ _CODERABBIT_GENUINE_INLINE = (
     'Guard the cap before entering the loop.'
 )
 
-# Sourcery's size-limit refusal in a NOTICE-SHAPED phrasing. The OBSERVED #1014
+# Sourcery's size-limit refusal in a NOTICE-SHAPED phrasing. The OBSERVED
 # wording above is deliberately invisible to the structural recognizer (asserted
 # in test_sourcery_1014_refusal_recognized_via_registry_data_layer), and the per-bot
 # rate-limit detector on the wait-return classifies on shape alone — so a body
@@ -1139,8 +1139,8 @@ _SOURCERY_SHAPED_REFUSAL = (
     'Reviews will resume once the limit resets.'
 )
 
-# Sourcery's SECOND observed refusal mode (#1034 / #1037): the account-level weekly
-# diff-character quota, distinct from the per-PR size ceiling of #1014. Two observed
+# Sourcery's SECOND observed refusal mode: the account-level weekly
+# diff-character quota, distinct from the per-PR size ceiling above. Two observed
 # phrasings is the point — "the generic structural recogniser covers Sourcery" is
 # REFUTED, so each observed mode must be filed as registry data.
 _SOURCERY_WEEKLY_QUOTA_REFUSAL = (
@@ -1178,7 +1178,7 @@ class TestRefusalNoticeProducerFilter:
     """
 
     def test_sourcery_1014_refusal_recognized_via_registry_data_layer(self):
-        """#1014 regression: the Sourcery refusal is seen ONLY because it is filed as data.
+        """The Sourcery size-limit refusal is seen ONLY because it is filed as data.
 
         This is the case that regressed. The structural recognizer does not match
         this phrasing (no limit-EXCEEDED statement — "larger than the review limit
@@ -1205,7 +1205,7 @@ class TestRefusalNoticeProducerFilter:
         assert _is_refusal_notice(_CODERABBIT_REVIEW_LIMIT_REFUSAL, 'coderabbit')
 
     def test_coderabbit_command_reply_refusal_recognized_via_registry_data_layer(self):
-        """#1368 regression: the COMMAND-INVOCATION reply refusal is seen, and only as data.
+        """The COMMAND-INVOCATION reply refusal is seen, and only as data.
 
         Every other arm is asserted BLIND to this body first, so a pass here cannot be
         borrowed from a fallback: the structural recognizer sees no limit-EXCEEDED
@@ -1276,9 +1276,9 @@ class TestRefusalNoticeProducerFilter:
     def test_sourcery_has_two_distinct_registered_refusal_modes(self):
         """Both observed Sourcery refusal phrasings are filed as registry data.
 
-        #1034 / #1037 refuted the assumption that one recogniser covers this bot:
+        Observation refutes the assumption that one recogniser covers this bot:
         the weekly diff-character QUOTA is a different mode from the per-PR SIZE
-        ceiling of #1014, and neither marker matches the other's text. Each observed
+        ceiling, and neither marker matches the other's text. Each observed
         mode must therefore have its own ``refusal_patterns`` entry — filing only one
         leaves the other invisible, which is how a refused review reached the merge
         gate as a clean one.
@@ -1406,7 +1406,7 @@ class TestRefusalNoticeProducerFilter:
     def test_fetch_findings_counts_the_command_reply_refusal_and_keeps_the_real_finding(
         self, plan_context
     ):
-        """#1368 end-to-end: the command reply is a REFUSAL, not an actionable finding.
+        """End-to-end: the command reply is a REFUSAL, not an actionable finding.
 
         This is the observed producer half of the defect. Unrecognized, the reply
         survived the pre-filter and was stored as a ``pr-comment`` finding — so triage

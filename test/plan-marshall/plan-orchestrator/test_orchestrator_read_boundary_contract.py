@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Doc-contract tests pinning the orchestrator read/write boundary (deliverable 3).
+"""Doc-contract tests pinning the orchestrator read/write boundary.
 
 The pinned contract: **no governed document states an orchestrator read
 prohibition covering a path that another governed document states is readable.**

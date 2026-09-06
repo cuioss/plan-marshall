@@ -408,8 +408,8 @@ def test_detail_doc_documents_bypass_rule_and_examples() -> None:
 # Sanity check: pin the file's own location — the deliverable explicitly named
 # this path. A future restructure should update this assertion deliberately.
 def test_test_file_lives_at_expected_path() -> None:
-    """Pin the file's location to the path named in deliverable 4 of the
-    workflow-scope-adaptive-execution solution outline.
+    """Pin the file's location to the path the workflow-scope-adaptive-execution
+    contract names.
     """
     here = Path(__file__).resolve()
     expected_suffix = Path('test/plan-marshall/phase-3-outline/test_phase_3_outline_qgate_bypass.py')

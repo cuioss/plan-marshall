@@ -46,7 +46,7 @@ Seven arms:
    whether or not that comment produced a finding. Without the ledger the test would
    be blind on the drop path.
 7. **Rendering-invariance arm** — the drop must not depend on which emphasis
-   PR-Agent emits. The verbatim observed #1078 body (HTML ``<strong>`` inside a
+   PR-Agent emits. The verbatim observed body (HTML ``<strong>`` inside a
    ``<table>``) and the same Guide in GitHub's markdown ``**`` rendering are both
    dropped, which is the whole reason the registry markers are BARE INNER TEXT.
    The HTML case is the anti-vacuity pin: it is red against the superseded
@@ -125,7 +125,7 @@ _PR_AGENT_REQUIRED_MARKERS = bot_registry.contentless_review_markers('cuioss-rev
 # ---------------------------------------------------------------------------
 #
 # The four observable shapes (clean / with-finding / deviating-marker /
-# missing-marker) and the verbatim observed #1078 body live in
+# missing-marker) and the verbatim observed body live in
 # ``test/_shared/_pr_agent_guide_bodies.py``, shared with the layer-3 predicate
 # units in ``test_github_pr.py``. Only the provider-record wrapper is local.
 
@@ -392,7 +392,7 @@ def test_clean_guide_is_dropped_in_either_emphasis_rendering(plan_context, monke
     This is the ANTI-VACUITY pin, and the reason the registry markers are bare
     inner text rather than a rendering:
 
-    - ``html-strong-observed`` feeds the VERBATIM body PR-Agent posted on #1078.
+    - ``html-strong-observed`` feeds the VERBATIM body PR-Agent posted.
       Its assertions sit inside an HTML ``<table>``, where GitHub renders no
       markdown, so the raw API body carries ``<strong>PR contains tests</strong>``.
       Against the superseded ``**PR contains tests**`` markers two of the three

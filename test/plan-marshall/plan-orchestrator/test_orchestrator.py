@@ -680,7 +680,7 @@ class TestResumeSummaryDerivedInbox:
         self, plan_context
     ):
         # Could not look. Rendering "0 queued" here would be the same collapse
-        # deliverable 2 removed from ``inbox list``.
+        # ``inbox list`` refuses to make.
         _write_status(plan_context, 'inbox-absent-epic')
         assert not (_epic_dir(plan_context, 'inbox-absent-epic') / 'inbox').exists()
 

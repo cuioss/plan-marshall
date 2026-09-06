@@ -887,7 +887,7 @@ def test_await_does_not_verify_a_review_naming_a_different_commit(monkeypatch):
 
 _SOURCERY_LOGIN = 'sourcery-ai'
 
-# Sourcery's OBSERVED #1014 refusal. Recognized ONLY by the registry data layer:
+# Sourcery's OBSERVED size-limit refusal. Recognized ONLY by the registry data layer:
 # "larger than the review limit of" is a comparison, not an exceeded/reached/hit
 # statement, so the structural recognizer does not see it.
 _SOURCERY_REFUSAL = (
@@ -911,8 +911,8 @@ _GENUINE_REVIEW_BODY = (
 
 _CODERABBIT_LOGIN = 'coderabbitai'
 
-# CodeRabbit's reply to the COMMAND INVOCATION this very strategy posts. Observed on
-# PR #1368: the trigger comment is `@coderabbitai review`, and THIS is what came back.
+# CodeRabbit's reply to the COMMAND INVOCATION this very strategy posts. As observed:
+# the trigger comment is `@coderabbitai review`, and THIS is what came back.
 # Recognized only by the registry marker ``Review rate limited`` — the structural arm
 # sees no exceeded/reached/hit verb, and the enumerative arm is vetoed by ``<details``.
 _CODERABBIT_COMMAND_REPLY_REFUSAL = (
@@ -932,7 +932,7 @@ _CODERABBIT_GENUINE_COMMENT = (
 
 
 def test_await_does_not_credit_the_coderabbit_command_reply_as_a_review(monkeypatch):
-    """⛔ #1368 regression: the reply to OUR OWN trigger is a refusal, not a completion.
+    """⛔ The reply to OUR OWN trigger is a refusal, not a completion.
 
     The sharpest false-green on the comment path, and the one that actually fired: the
     strategy posts ``@coderabbitai review``, CodeRabbit replies that it is rate limited,
@@ -1020,7 +1020,7 @@ def test_await_still_matches_a_genuine_coderabbit_comment(monkeypatch):
 
 
 def test_await_does_not_match_a_refusal_delivered_as_a_review(monkeypatch):
-    """#1014 regression: a refusal submitted as a REVIEW object is not a completed review.
+    """A refusal submitted as a REVIEW object is not a completed review.
 
     This is the observed case and the sharpest false-green: the refusal review
     satisfies both the commit_sha and submitted_at gates, so before the fix it
@@ -1050,7 +1050,7 @@ def test_await_does_not_match_a_refusal_delivered_as_a_review(monkeypatch):
 
 
 def test_await_does_not_match_a_refusal_delivered_as_a_comment(monkeypatch):
-    """The same #1014 refusal delivered as an issue comment is likewise not a response."""
+    """The same refusal delivered as an issue comment is likewise not a response."""
     result = _await_with_comments(
         monkeypatch,
         [_comment(_SOURCERY_LOGIN, created_at='2026-01-01T00:05:00Z', body=_SOURCERY_REFUSAL)],
@@ -1287,7 +1287,7 @@ def test_matched_review_reports_no_refusal(monkeypatch):
 def test_a_registry_recognised_size_refusal_records_its_cause_and_stated_cap():
     """⛔ The producer's OWN unit-level pin for the two-axis keys.
 
-    Sourcery's observed #1014 refusal is a per-PR SIZE ceiling, and the ceiling it
+    Sourcery's observed size refusal is a per-PR SIZE ceiling, and the ceiling it
     states is read off the notice rather than declared anywhere. Asserted directly
     on ``_refusal_record`` — the producer — so that removing either key fails a
     named test in the producer's own unit module, instead of only surfacing in the
