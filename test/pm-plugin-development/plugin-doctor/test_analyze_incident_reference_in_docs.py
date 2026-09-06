@@ -514,7 +514,7 @@ class TestBacktickExemptionIsTestedAtTheReference:
     """
 
     def test_observed_on_with_a_backticked_ref_is_exempt(self, tmp_path: Path) -> None:
-        """``Observed on … `#812` `` is a code token like every other quoted ref.
+        """A back-ticked ``#812`` in an ``Observed on`` line is a quoted code token.
 
         This WIDENED ``observed_on``'s exemption: before the offset change the
         same line fired, making it the one family in which the back-tick

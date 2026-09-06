@@ -1648,7 +1648,7 @@ def _pollution_guard(request):
     directory or adds entries to the real repo-local ``.plan/local/`` tree.
 
     The ``.plan/local/`` arm backstops the ``_plan_base_dir_sandbox`` autouse
-    default (deliverable 1): that fixture redirects ``PLAN_BASE_DIR`` into a
+    default: that fixture redirects ``PLAN_BASE_DIR`` into a
     per-test tmp sandbox so writes into the real tree become structurally
     impossible. This guard verifies the redirect actually held — if any
     non-opted-out test leaks a new path into ``.plan/local/``, it fails loudly
