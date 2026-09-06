@@ -19,6 +19,14 @@ Covers the four deliverables of ``150-architecture-store-concept-model``:
 Every store-shape claim is verified against the WRITER and against fixtures —
 the live store lives under the git-ignored ``.plan/`` tree and is not reachable
 from a clone.
+
+A final section covers the Axis-D **claimed-path collapse at its two reader call
+sites** (``cmd_find`` and ``cmd_search``). The collapse helper itself is unit-
+tested in ``test_doc_corpus_dedup.py`` against synthetic rows, which leaves the
+CALL SITES uncovered: deleting both invocations keeps every one of those unit
+tests green because the helper is still there and still correct in isolation.
+The tests here drive the shipped handlers end to end over a seeded project, so a
+removed call site reddens.
 """
 
 import argparse
@@ -30,7 +38,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from _arch_fixtures import setup_test_project
+from _arch_fixtures import seed_project, setup_test_project
 
 from conftest import MARKETPLACE_ROOT, load_script_module, parse_ns
 
@@ -41,6 +49,13 @@ _cmd_manage = load_script_module('plan-marshall', 'manage-architecture', '_cmd_m
 _cmd_enrich = load_script_module('plan-marshall', 'manage-architecture', '_cmd_enrich.py', '_cmd_enrich')
 _cmd_client_query = load_script_module(
     'plan-marshall', 'manage-architecture', '_cmd_client_query.py', '_cmd_client_query'
+)
+#: Loaded DIRECTLY (rather than through the ``_cmd_client`` facade) so the
+#: attribution stub below patches the very module globals
+#: ``_collapse_claimed_duplicate_rows`` reads. Going through the facade would
+#: risk patching a different module object than the handler's own globals.
+_handlers = load_script_module(
+    'plan-marshall', 'manage-architecture', '_cmd_client_handlers.py', '_cmd_client_handlers'
 )
 
 InvalidConceptTypeError = _architecture_core.InvalidConceptTypeError
@@ -182,6 +197,22 @@ _ENRICH_PACKAGE_ARGS = parse_ns(
     _ARCH_BUNDLE, _ARCH_SKILL, _ARCH_SCRIPT,
     '--project-dir', '.', 'enrich', 'package',
     '--module', 'module', '--package', 'package', '--description', 'description',
+    register=False,
+)
+
+#: The ``find`` and ``search`` namespaces, built by the same parser for the same
+#: reason — the reader call sites below must run against the defaults the shipped
+#: CLI applies, including ``search``'s ``--literal`` / ``--ignore-case``
+#: store_true pair.
+_FIND_ARGS = parse_ns(
+    _ARCH_BUNDLE, _ARCH_SKILL, _ARCH_SCRIPT,
+    '--project-dir', '.', 'find', '--pattern', '.',
+    register=False,
+)
+
+_SEARCH_ARGS = parse_ns(
+    _ARCH_BUNDLE, _ARCH_SKILL, _ARCH_SCRIPT,
+    '--project-dir', '.', 'search', '--content', '--pattern', '.',
     register=False,
 )
 
@@ -538,3 +569,170 @@ def test_merge_module_data_migrates_dotted_key_packages():
 
         assert 'mod/src/pkg' in merged['key_packages']
         assert 'com.example.pkg' not in merged['key_packages']
+
+
+# =============================================================================
+# Axis-D claimed-path collapse — covered at its CALL SITES, not in isolation
+# =============================================================================
+#
+# ``_collapse_claimed_duplicate_rows`` is invoked from exactly two places:
+# ``cmd_find`` and ``cmd_search``. Replacing BOTH invocations with a no-op used
+# to leave every covering directory green, because the only tests of the collapse
+# drove the helper directly with synthetic rows and a stubbed resolver — a shape
+# that keeps passing however the readers are wired. The unit tests are correct and
+# stay; what was missing is a reader that actually reaches the seam.
+#
+# The recorded fixture constraint is honoured rather than worked around: the crawl
+# reads the live worktree and no Axis-D attributor is registered in a bare tmp
+# project, so seeding two modules alone would make the collapse a deliberate
+# no-op and the assertion vacuous. The resolver is therefore INJECTED, and each
+# test carries its no-claim arm as a matched negative control — that arm is what
+# proves the fixture really produces the cross-module duplicate the claimed arm
+# then collapses, so neither result can be explained by an empty population.
+#
+# Every expected count is DERIVED from the two seeded populations — the claimed
+# corpus and the set of modules inventorying it — never written as a literal, so
+# growing either fixture cannot silently leave a stale expectation behind.
+
+#: The claimed documentation corpus — every entry is a real file on disk AND is
+#: listed in BOTH seeded modules' inventories, which is the duplicate shape.
+_CLAIMED_DOCS = ('doc/api.adoc', 'doc/guide.adoc')
+
+#: The module the injected attributor names as the owner of that corpus.
+_DOC_OWNER = 'documentation'
+
+#: The second inventorying module — the whole-tree crawl that also sees ``doc/**``.
+_ROOT_CRAWLER = 'root-crawl'
+
+#: Written into every seeded doc body so ``search --content`` has a real hit.
+_DOC_BODY_TOKEN = 'CLAIMED_CORPUS_TOKEN'
+
+#: The modules that BOTH inventory the claimed corpus, mapped to the
+#: ``paths.module`` root each declares — the whole-tree root crawl, and the
+#: documentation module that owns ``doc/**``. The seeding below and the expected
+#: duplicate arity are read from this ONE mapping, so a third inventorying module
+#: moves the fixture and the expected counts together instead of leaving a stale
+#: literal behind.
+_INVENTORYING_MODULES = {_ROOT_CRAWLER: '.', _DOC_OWNER: 'doc'}
+
+#: Rows a reader emits over the seeded corpus while NO ownership claim applies —
+#: one per (module, file) pair. Derived from both populations, never a literal, so
+#: neither can grow without the expectation following it.
+_UNCOLLAPSED_ROWS = len(_INVENTORYING_MODULES) * len(_CLAIMED_DOCS)
+
+
+def _seed_claimed_doc_corpus(tmpdir: str) -> None:
+    """Seed real doc files inventoried by BOTH modules under an explicit block.
+
+    The ``files`` blocks are explicit and uncapped, so the reader takes the
+    ``_resolve_module_inventory`` fast path and the inventory under test is
+    exactly what is written here — no dependence on the crawler's heuristics.
+    """
+    project = Path(tmpdir)
+    for rel in _CLAIMED_DOCS:
+        target = project / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(f'= Heading\n\n{_DOC_BODY_TOKEN}\n', encoding='utf-8')
+
+    inventory = {'doc': list(_CLAIMED_DOCS)}
+    seed_project(
+        tmpdir,
+        {
+            name: {'name': name, 'paths': {'module': root}, 'files': dict(inventory)}
+            for name, root in _INVENTORYING_MODULES.items()
+        },
+    )
+
+
+def _claiming_attributor(path: str, _module_names: list[str]) -> tuple[str | None, list[dict]]:
+    """Stand in for the Axis-D seam, claiming the seeded corpus for its owner."""
+    owner = _DOC_OWNER if path in _CLAIMED_DOCS else None
+    return owner, [{'id': 'stub-doc-claim', 'notes': []}]
+
+
+def _no_claim_attributor(_path: str, _module_names: list[str]) -> tuple[None, list[dict]]:
+    """The negative control: an attributor that runs and claims nothing."""
+    return None, [{'id': 'stub-doc-claim', 'notes': []}]
+
+
+def test_find_collapses_a_claimed_duplicate_to_one_row_per_file(monkeypatch):
+    """``find`` emits ONE row per physical claimed file, not one per attributor.
+
+    Reddens when the ``cmd_find`` collapse invocation is removed: the reader falls
+    back to a row per attributing module and the count doubles.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_claimed_doc_corpus(tmpdir)
+        pattern = 'doc/*.adoc'
+
+        # Negative control — no claim, so nothing may collapse. This is what
+        # proves the fixture genuinely produces the cross-module duplicate.
+        monkeypatch.setattr(_handlers, 'resolve_path_attribution', _no_claim_attributor)
+        unclaimed = _handlers.cmd_find(_variant(_FIND_ARGS, project_dir=tmpdir, pattern=pattern))
+
+        assert unclaimed['status'] == 'success'
+        assert unclaimed['count'] == _UNCOLLAPSED_ROWS, (
+            'the fixture did not produce a cross-module duplicate for every claimed '
+            f'doc, so the collapse assertion below would be vacuous: {unclaimed}'
+        )
+
+        # Under the claim, the call site collapses each duplicate onto its owner.
+        monkeypatch.setattr(_handlers, 'resolve_path_attribution', _claiming_attributor)
+        claimed = _handlers.cmd_find(_variant(_FIND_ARGS, project_dir=tmpdir, pattern=pattern))
+
+        assert claimed['status'] == 'success'
+        assert claimed['count'] == len(_CLAIMED_DOCS), (
+            'find returned more rows than there are physical claimed files — the '
+            'reader-side collapse is not running at this call site'
+        )
+        assert [row['path'] for row in claimed['results']] == sorted(_CLAIMED_DOCS)
+        assert {row['module'] for row in claimed['results']} == {_DOC_OWNER}, (
+            "the surviving rows are not the owner's — the collapse kept the crawl "
+            'row instead of yielding to the ownership claim'
+        )
+
+
+def test_search_count_and_file_count_converge_for_a_claimed_duplicate(monkeypatch):
+    """``search``'s row count meets its distinct-file count once the claim applies.
+
+    ``count`` counts ROWS and ``file_count`` counts distinct PATHS, so they diverge
+    exactly while a duplicate survives. Convergence is therefore the observable of
+    the collapse at this second call site, and it reddens when that invocation is
+    removed. ``files_scanned`` is asserted UNCHANGED across both arms: the collapse
+    is a reporting-side precedence, not a narrowing of what was read, and a
+    convergence bought by scanning fewer files would be a different bug wearing
+    this one's green.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_claimed_doc_corpus(tmpdir)
+
+        # Negative control — the unclaimed duplicate makes the two counts differ.
+        monkeypatch.setattr(_handlers, 'resolve_path_attribution', _no_claim_attributor)
+        unclaimed = _handlers.cmd_search(
+            _variant(_SEARCH_ARGS, project_dir=tmpdir, pattern=_DOC_BODY_TOKEN)
+        )
+
+        assert unclaimed['status'] == 'success'
+        assert unclaimed['count'] == _UNCOLLAPSED_ROWS
+        assert unclaimed['file_count'] == len(_CLAIMED_DOCS)
+        assert unclaimed['count'] != unclaimed['file_count'], (
+            'the fixture produced no divergence to collapse, so the convergence '
+            'assertion below would hold for the wrong reason'
+        )
+
+        monkeypatch.setattr(_handlers, 'resolve_path_attribution', _claiming_attributor)
+        claimed = _handlers.cmd_search(
+            _variant(_SEARCH_ARGS, project_dir=tmpdir, pattern=_DOC_BODY_TOKEN)
+        )
+
+        assert claimed['status'] == 'success'
+        assert claimed['count'] == len(_CLAIMED_DOCS)
+        assert claimed['file_count'] == len(_CLAIMED_DOCS)
+        assert claimed['count'] == claimed['file_count'], (
+            'search still reports more rows than distinct files under an ownership '
+            'claim — the reader-side collapse is not running at this call site'
+        )
+        assert claimed['files_scanned'] == unclaimed['files_scanned'] == _UNCOLLAPSED_ROWS, (
+            'the scanned population moved between the two arms; the collapse must '
+            'change what is REPORTED, never what is read'
+        )
