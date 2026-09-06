@@ -572,6 +572,78 @@ def test_merge_module_data_migrates_dotted_key_packages():
 
 
 # =============================================================================
+# D6-S13: merge_module_data's unresolved-key WARNING (deferred plan_logging import)
+# =============================================================================
+#
+# ``_log_unresolved_package_keys`` performs ``from plan_logging import log_entry``
+# INSIDE the function body (a deferred import) — there is no module-level
+# ``_architecture_core.log_entry`` name to patch, so the call must be
+# intercepted at its SOURCE by substituting ``sys.modules['plan_logging']``
+# before the deferred import runs. Mirrors the pattern
+# ``test_skills_by_profile_staleness_guard.py`` established for the sibling
+# deferred-import emitter (``_emit_skills_by_profile_staleness_warning``).
+
+
+def _install_recording_plan_logging(monkeypatch) -> list[tuple]:
+    """Substitute ``sys.modules['plan_logging']`` with a call-recording stand-in.
+
+    Returns the list every ``log_entry(*args)`` call appends its positional
+    args to.
+    """
+    import sys
+    import types
+
+    calls: list[tuple] = []
+    fake = types.ModuleType('plan_logging')
+    fake.log_entry = lambda *args: calls.append(args)
+    monkeypatch.setitem(sys.modules, 'plan_logging', fake)
+    return calls
+
+
+def test_merge_module_data_warns_with_the_unresolved_key_named(monkeypatch):
+    """A key that resolves to neither a path nor a derived entry names itself
+    in the emitted WARNING.
+
+    Reddens if the emitted message ever stops naming the specific offending
+    key — a generic "some keys did not migrate" message would satisfy a
+    weaker assertion while leaving a reader with nothing actionable.
+    """
+    calls = _install_recording_plan_logging(monkeypatch)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        save_module_derived('mod', {'name': 'mod', 'paths': {'module': 'mod'}, 'packages': {}}, tmpdir)
+        save_module_enriched('mod', {'key_packages': {'com.orphan.pkg': {'description': 'D'}}}, tmpdir)
+
+        merge_module_data('mod', tmpdir)
+
+    assert calls, 'no WARNING was emitted for the unresolved key_packages key'
+    channel, plan_id, level, message = calls[0]
+    assert channel == 'script'
+    assert plan_id is None
+    assert level == 'WARNING'
+    assert 'com.orphan.pkg' in message
+    assert "module 'mod'" in message
+
+
+def test_merge_module_data_emits_no_warning_when_every_key_resolves(monkeypatch):
+    """Matched negative control: a fully-resolving key_packages map warns nothing.
+
+    Without this, the positive assertion above could pass merely because the
+    emitter fires unconditionally on every ``merge_module_data`` call.
+    """
+    calls = _install_recording_plan_logging(monkeypatch)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        (Path(tmpdir) / 'mod' / 'src').mkdir(parents=True)
+        save_module_derived('mod', {'name': 'mod', 'paths': {'module': 'mod'}, 'packages': {}}, tmpdir)
+        save_module_enriched('mod', {'key_packages': {'mod/src': {'description': 'D'}}}, tmpdir)
+
+        merge_module_data('mod', tmpdir)
+
+    assert calls == []
+
+
+# =============================================================================
 # Axis-D claimed-path collapse — covered at its CALL SITES, not in isolation
 # =============================================================================
 #
