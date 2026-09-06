@@ -7,8 +7,8 @@ Six knobs decide whether a plan run pauses for the operator: the five flat
 Each has exactly one declaring source — the ``DEFAULT_PLAN_*`` blocks in
 ``_config_defaults.py`` for the flat five, and ``default:branch-cleanup``'s
 ``configurable:`` frontmatter (reached through ``configurable_contract``) for the
-merge gate. Each is then restated across six documents as a JSON example, a table
-row, or a sentence.
+merge gate. Each is then restated in prose across the documentation as a JSON
+example, a table row, or a sentence.
 
 A restatement that disagrees with its declaring source is worse than an omission:
 an operator reading it configures against a default the code does not have, and a
@@ -17,20 +17,35 @@ module keeps the copies honest — it derives the declared value and asserts eve
 documented restatement of that knob states it, so drift fails a build instead of
 shipping.
 
-Two sites deliberately state the OPPOSITE value and are excluded by explicit
-region assertion below: they illustrate non-destructive merge by showing a
-user-set value surviving the opposite default, so flipping them would turn the
-illustration into a tautology.
+BOTH sides are derived, never hand-listed. The declared side is discovered from
+the seeded config; the documented side is discovered by walking the documentation
+roots in :data:`_DOC_ROOTS` and keeping every file an extractor matches. A
+hand-maintained document tuple would leave a restatement unguarded the moment one
+was added elsewhere — which is exactly what "asserts every restatement" must not
+mean.
+
+The guarantee is therefore bounded by the walk, and by nothing else: it covers
+every ``.md`` under ``marketplace/bundles`` and every ``.md`` / ``.adoc`` under
+``doc``. A restatement outside those two roots — a repo-root file, ``.claude/``,
+``.github/`` — is not reached. No such site exists today; the bound is stated so a
+future one is recognised as out of guard rather than assumed covered.
+
+Two sites deliberately state the OPPOSITE value: they illustrate non-destructive
+merge by showing a user-set value surviving the opposite default, so flipping them
+would turn the illustration into a tautology. The one in ``manage-config/SKILL.md``
+is cut out by the region assertion below; the one in ``test_sync_defaults.py`` is
+out by construction, because no test module is under a documentation root.
 """
 
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 from pathlib import Path
 
 import pytest
 
-from conftest import MARKETPLACE_ROOT, load_script_module
+from conftest import load_script_module
 
 # repo_root/test/plan-marshall/manage-config/test_autonomy_defaults_documented.py
 #                                          ^ parents[3] == repo root
@@ -53,21 +68,16 @@ _MERGE_GATE_STEP = 'default:branch-cleanup'
 _ANCHOR_KNOB = 'loop_back_without_asking'
 _ANCHOR_DOC = 'doc/user/configuration.adoc'
 
-#: Documents that restate at least one family default. Marketplace-relative.
-_MARKETPLACE_DOCS = (
-    'plan-marshall/skills/manage-config/SKILL.md',
-    'plan-marshall/skills/manage-config/standards/data-model.md',
-    'plan-marshall/skills/manage-config/standards/api-reference.md',
-    'plan-marshall/skills/extension-api/standards/marshal-json-reference.md',
+#: The documentation roots walked to derive the guarded population, each paired
+#: with the glob patterns that select its documents. Repo-root-relative. Both are
+#: documentation trees, so no test module is reachable from either — which is what
+#: makes :func:`test_the_documented_population_is_documentation_only` a guarantee
+#: of construction rather than a maintained exclusion list. These two roots are
+#: also the exact bound on this module's coverage claim; see the module docstring.
+_DOC_ROOTS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ('marketplace/bundles', ('**/*.md',)),
+    ('doc', ('**/*.md', '**/*.adoc')),
 )
-
-#: Documents that restate at least one family default. Repo-root-relative.
-_REPO_DOCS = (
-    'doc/user/configuration.adoc',
-    'doc/user/parallelism-and-locking.adoc',
-)
-
-_DOCUMENTS = _MARKETPLACE_DOCS + _REPO_DOCS
 
 #: The polarity illustration in ``manage-config/SKILL.md``: a user-set value
 #: surviving the OPPOSITE default, proving the deep merge preserves what the
@@ -83,13 +93,17 @@ _POLARITY_REGION_RE = re.compile(
 
 
 def _read(document: str) -> str:
-    """Return the text of a document addressed by its entry in :data:`_DOCUMENTS`."""
-    root = _REPO_ROOT if document in _REPO_DOCS else MARKETPLACE_ROOT
-    return (root / document).read_text(encoding='utf-8')
+    """Return the text of a document addressed by its repo-root-relative path."""
+    return (_REPO_ROOT / document).read_text(encoding='utf-8')
 
 
+@lru_cache(maxsize=None)
 def _parseable_text(document: str) -> str:
-    """Return the document text with every excluded region removed."""
+    """Return the document text with every excluded region removed.
+
+    Cached because the derivation scans every candidate document once per knob,
+    and the parity checks then re-scan the surviving population once per case.
+    """
     text = _read(document)
     return _POLARITY_REGION_RE.sub('', text)
 
@@ -166,6 +180,37 @@ def _family() -> list[str]:
     return sorted(_declared_defaults())
 
 
+def _candidate_documents() -> tuple[str, ...]:
+    """Return every document under :data:`_DOC_ROOTS`, repo-root-relative and sorted."""
+    paths = {
+        path
+        for root, patterns in _DOC_ROOTS
+        for pattern in patterns
+        for path in (_REPO_ROOT / root).glob(pattern)
+        if path.is_file()
+    }
+    return tuple(sorted(path.relative_to(_REPO_ROOT).as_posix() for path in paths))
+
+
+def _derive_documents() -> tuple[str, ...]:
+    """Return every candidate document that restates at least one family default.
+
+    This is the documented half of the parity, DISCOVERED rather than listed. A
+    hand-maintained tuple would guard only the sites someone remembered to
+    register, so a restatement added to a document nobody registered would ship
+    unguarded while the module still claimed to cover every one.
+    """
+    knobs = _family()
+    return tuple(
+        document
+        for document in _candidate_documents()
+        if any(_documented_values(document, knob) for knob in knobs)
+    )
+
+
+_DOCUMENTS = _derive_documents()
+
+
 def test_the_declared_family_is_derived_and_not_silently_empty():
     """The declaring sources yield the whole family, so the parity checks are not vacuous.
 
@@ -209,7 +254,24 @@ def test_every_declared_knob_has_a_documented_row(knob):
         for shape, value in _documented_values(document, knob)
     ]
 
-    assert sites, f'{knob} is declared but restated in none of {list(_DOCUMENTS)}'
+    assert sites, f'{knob} is declared but restated in no document under {[r for r, _ in _DOC_ROOTS]}'
+
+
+def test_the_derived_population_is_not_silently_empty():
+    """The walk reaches both roots and yields a population to run the parity over.
+
+    Every parity assertion is parametrized over the derived population, so a
+    mistyped root or a glob that stops matching reports green while covering
+    nothing. Each assertion below is one of the ways that can happen: a root that
+    yields no candidate files at all, and a root that contributes no restating
+    document to the population.
+    """
+    candidates = _candidate_documents()
+
+    for root, _ in _DOC_ROOTS:
+        assert any(d.startswith(f'{root}/') for d in candidates), f'{root} yielded no candidates'
+        assert any(d.startswith(f'{root}/') for d in _DOCUMENTS), f'{root} contributed no restatement'
+    assert _ANCHOR_DOC in _DOCUMENTS
 
 
 def test_the_scan_finds_the_anchor_so_the_extractors_still_match():
@@ -234,7 +296,7 @@ def test_polarity_illustration_is_present_and_excluded_from_the_parse():
     if the passage is reworded, this fails and forces the anchor to be re-cut
     rather than letting the passage silently re-enter the parse and fail as drift.
     """
-    document = 'plan-marshall/skills/manage-config/SKILL.md'
+    document = 'marketplace/bundles/plan-marshall/skills/manage-config/SKILL.md'
     raw = _read(document)
 
     region = _POLARITY_REGION_RE.search(raw)
@@ -247,13 +309,16 @@ def test_polarity_illustration_is_present_and_excluded_from_the_parse():
 
 
 def test_the_documented_population_is_documentation_only():
-    """The parse covers documents, never test modules.
+    """The parse covers documents under the declared roots, never test modules.
 
     ``test_sync_defaults.py`` carries the second polarity illustration. It is out
-    of scope by construction rather than by exclusion — no test module is in the
-    population — and this pins that, so a future addition cannot quietly pull a
-    test file into the documented side.
+    of scope by construction rather than by exclusion — no test module lives under
+    a documentation root — and this pins that, so widening :data:`_DOC_ROOTS`
+    cannot quietly pull a test file into the documented side.
     """
+    roots = tuple(f'{root}/' for root, _ in _DOC_ROOTS)
+
     for document in _DOCUMENTS:
         assert not document.startswith('test/'), f'{document} is a test path'
         assert document.endswith(('.md', '.adoc')), f'{document} is not a document'
+        assert document.startswith(roots), f'{document} is outside {list(roots)}'
