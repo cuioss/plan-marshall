@@ -501,10 +501,11 @@ class TestCmdRunInProcess:
     def _mixed_record_plan(self, tmp_path: Path) -> Path:
         """The fixture the three legs below share, minus the task records.
 
-        TASK-001 is the only task with no ``[ARTIFACT]`` line; TASK-002 and
-        TASK-003 both emit one. The footprint is non-empty, so the emission guard
-        is armed. Each leg supplies a different recording state over these same
-        three completed tasks, which is what makes the legs comparable.
+        ``TASK-001`` is the only task with no ``[ARTIFACT]`` line; ``TASK-002``
+        and ``TASK-003`` both emit one. The footprint is non-empty, so the
+        emission guard is armed. Each leg supplies a different recording state
+        over these same three completed tasks, which is what makes the legs
+        comparable.
         """
         plan_dir = tmp_path / 'plan'
         plan_dir.mkdir(parents=True)
@@ -531,8 +532,8 @@ class TestCmdRunInProcess:
         neither the changed set nor the unchanged one.
 
         This fixture is that defect in the direction that manufactures a FALSE
-        finding. TASK-001 is recorded as having changed a file and emitted no
-        ``[ARTIFACT]`` line; TASK-002 and TASK-003 are unrecorded and both DID
+        finding. ``TASK-001`` is recorded as having changed a file and emitted
+        no ``[ARTIFACT]`` line; ``TASK-002`` and ``TASK-003`` are unrecorded and both DID
         emit one. Qualifying over the recorded subset alone reads ``M=1`` /
         ``N=0`` and fires ``ARTIFACT_EMISSION_ABSENT`` — the exact false ABSENT the
         change-qualification was introduced to remove, re-entering through the
@@ -609,8 +610,8 @@ class TestCmdRunInProcess:
         never reports ``measured`` at all, and the guard would be silently dead
         rather than correctly scoped.
 
-        TASK-001 changed a file and emitted nothing, so the emission guard must
-        still BITE here over the fully-recorded population.
+        ``TASK-001`` changed a file and emitted nothing, so the emission guard
+        must still BITE here over the fully-recorded population.
         """
         plan_dir = self._mixed_record_plan(tmp_path)
         self._write_tasks(plan_dir, {1: ['src/a.py'], 2: ['src/b.py'], 3: ['src/c.py']})

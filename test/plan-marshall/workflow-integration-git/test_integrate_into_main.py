@@ -7,7 +7,7 @@ Contract under test (solution_outline.md §5):
 * **Happy path** — ACQUIRES the merge lock, FOLDS the plan's own global logs into
   the plan dir, MOVES the plan dir back from the worktree to main, and RELEASES the
   lock. The executor is NOT regenerated — on-main executor regeneration is the
-  project-level finalize-step-sync-plugin-cache step's responsibility (Deliverable 5).
+  project-level finalize-step-sync-plugin-cache step's responsibility.
 * **Idempotent re-run** — an already-integrated plan (plan dir on main, none in the
   worktree) is a no-op success that never acquires the lock.
 * **Rollback-on-partial-failure** — a move-back step that raises rolls the plan dir
@@ -18,7 +18,7 @@ Contract under test (solution_outline.md §5):
 * **Executor never touched** — integrate neither moves nor regenerates any
   ``.plan/execute-script.py``; the success payload carries no regen fields.
 
-cwd-independence (this plan, Deliverable 1): integrate resolves its SOURCE
+cwd-independence: integrate resolves its SOURCE
 (worktree via ``file_ops.resolve_plan_context`` — the single plan-context
 resolver, which owns the ``manage-status get-worktree-path`` shell-out; stubbed
 in most cases at the composite ``_resolve_worktree_path_for_plan`` seam, and
@@ -104,7 +104,7 @@ def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
           worktrees/{plan_id}/.plan/local/plans/{plan_id}/   (worktree-resident plan)
           worktrees/{plan_id}/.plan/local/logs/work.log      (plan's global logs)
 
-    Resolution seams (cwd-independent — Deliverable 1):
+    Resolution seams (cwd-independent):
 
     * **DESTINATION** is resolved by the REAL ``resolve_main_anchored_path`` via
       ``PLAN_BASE_DIR`` pointing at the staged main ``.plan/local`` — NOT mocked.
@@ -195,8 +195,8 @@ class TestIntegrateHappyPath:
         assert env['fake_lock'].acquired == 1
         assert env['fake_lock'].released == 1
 
-        # Deliverable 5: the success payload carries NO regen fields — integrate
-        # no longer regenerates the executor.
+        # The success payload carries NO regen fields — integrate does not
+        # regenerate the executor.
         assert 'regenerated' not in result
         assert 'regen_detail' not in result
 
@@ -213,7 +213,7 @@ class TestIntegrateHappyPath:
         assert env['worktree_path'].is_dir()
 
     def test_executor_never_touched_by_integrate(self, isolated_env: dict) -> None:
-        """Deliverable 5: integrate neither moves nor regenerates any executor.
+        """Integrate neither moves nor regenerates any executor.
         Stage both a main-resident executor and a worktree-bound one, and assert
         both are left byte-for-byte untouched across the move-back — integrate has
         no executor responsibility at all.
@@ -236,7 +236,7 @@ class TestIntegrateHappyPath:
 
 
 # =============================================================================
-# Merge-lock title-token suppression (this plan, Deliverable 3)
+# Merge-lock title-token suppression
 # =============================================================================
 
 
@@ -408,12 +408,12 @@ class TestIntegrateLockFailure:
 
 
 # =============================================================================
-# Reentrant merge-lock — self-held-before-integrate (this plan, Deliverable 2)
+# Reentrant merge-lock — self-held-before-integrate
 # =============================================================================
 
 
 class TestIntegrateWhenMergeLockAlreadySelfHeld:
-    """The finalize auto-merge sequence (Deliverable 2): ``branch-cleanup`` acquires
+    """The finalize auto-merge sequence: ``branch-cleanup`` acquires
     the merge lock under ``plan_id``, then ``integrate_into_main`` re-acquires it
     under the SAME ``plan_id``. Before the reentrant fix, integrate's ``run_acquire``
     fell through to the wait loop and self-deadlocked on a lock its own session
@@ -561,7 +561,7 @@ class TestIntegrateNotFound:
 
 
 # =============================================================================
-# Reclaim a status.json-less orphan destination (this plan, Deliverable 3)
+# Reclaim a status.json-less orphan destination
 # =============================================================================
 
 
@@ -686,7 +686,7 @@ class TestIntegrateReclaimOrphan:
 
 # =============================================================================
 # cwd-independent SOURCE resolution — structural probe + channel/probe fallback
-# (this plan, Deliverable 1 — the moved-in-from-main case)
+# (the moved-in-from-main case)
 # =============================================================================
 
 

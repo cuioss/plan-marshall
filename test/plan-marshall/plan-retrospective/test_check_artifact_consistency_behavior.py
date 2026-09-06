@@ -154,7 +154,7 @@ class TestTaskDeliverableMatch:
         tasks = tmp_path / 'tasks'
         tasks.mkdir()
         (tasks / 'TASK-001.json').write_text(json.dumps({'deliverable': 1}), encoding='utf-8')
-        # Two deliverables declared but only deliverable 1 has a task.
+        # Two deliverables declared but only `deliverable 1` has a task.
         status, message = _cac.check_task_deliverable_match([{'n': '1'}, {'n': '2'}], tasks)
         assert status == 'fail'
         assert '[2]' in message
@@ -172,7 +172,7 @@ class TestTaskDeliverableMatch:
         tasks = tmp_path / 'tasks'
         tasks.mkdir()
         (tasks / 'TASK-001.json').write_text('{ corrupt', encoding='utf-8')
-        # The corrupt file contributes no coverage, so deliverable 1 is missing.
+        # The corrupt file contributes no coverage, so `deliverable 1` is missing.
         status, _message = _cac.check_task_deliverable_match([{'n': '1'}], tasks)
         assert status == 'fail'
 

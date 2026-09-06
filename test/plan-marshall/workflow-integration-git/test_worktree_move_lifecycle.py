@@ -11,7 +11,7 @@ stubbed to write the worktree executor file; the move-in contract under test is
 that main's executor is NOT moved, not the generator internals (covered by
 generate_executor's own tests).
 
-Contract under test (solution_outline.md §5, deliverable 5):
+Contract under test:
 
 * ``worktree/.plan/local/plans/{plan_id}`` is a REAL non-symlink directory
   carrying the moved-in sentinel.
@@ -187,13 +187,13 @@ class TestWorktreeMoveLifecycle:
     def test_integrate_round_trip_leaves_main_executor_untouched(
         self, real_repo: dict, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """FIX 1 + Deliverable 5: across the full move-in → move-back round-trip,
+        """FIX 1: across the full move-in → move-back round-trip,
         main's executor is present and byte-for-byte UNCHANGED, and
         ``integrate_into_main`` does NOT touch (move or regenerate) any
-        ``.plan/execute-script.py``. On-main executor regeneration is relocated to
-        the project-level ``finalize-step-sync-plugin-cache`` step — it is no
-        longer ``integrate_into_main``'s responsibility, so the integrate payload
-        carries no regen fields."""
+        ``.plan/execute-script.py``. On-main executor regeneration belongs to
+        the project-level ``finalize-step-sync-plugin-cache`` step, not to
+        ``integrate_into_main``, so the integrate payload carries no regen
+        fields."""
         main = real_repo['main']
         main_local = real_repo['main_local']
         plan_id = real_repo['plan_id']
@@ -213,7 +213,7 @@ class TestWorktreeMoveLifecycle:
         assert main_executor.read_text() == before
 
         # integrate resolves its SOURCE worktree path via the manage-status
-        # get-worktree-path channel (cwd-independent — Deliverable 1). The tmp
+        # get-worktree-path channel (cwd-independent). The tmp
         # fixture's executor stub is not a working executor, so stub the SOURCE
         # resolver to the real worktree path created above; the DESTINATION
         # resolver (resolve_main_anchored_path) still runs REAL against
@@ -231,7 +231,7 @@ class TestWorktreeMoveLifecycle:
         assert move_back['status'] == 'success', move_back
         assert move_back['action'] == 'integrated'
 
-        # Deliverable 5: integrate carries NO regen fields and never touched the executor.
+        # Integrate carries NO regen fields and never touched the executor.
         assert 'regenerated' not in move_back
         assert 'regen_detail' not in move_back
 

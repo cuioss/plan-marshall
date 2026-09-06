@@ -171,7 +171,7 @@ def _finding_by_code(findings: list, code: str) -> dict | None:
 
 
 # =============================================================================
-# Routing-decision aspect (deliverable 10)
+# Routing-decision aspect
 # =============================================================================
 #
 # check-routing-decisions re-evaluates the lane prune predicates against the

@@ -253,7 +253,7 @@ def test_ambiguous_flips_when_the_closure_population_is_incomplete(plan_context)
         f'### 1. One deliverable\n\n**Affected files:**\n- `{_REAL_A}` (read)\n',
     )
     _write_task_file(plan_dir / 'tasks', _task(1, 1, [_REAL_A]))
-    # TASK-002 names deliverable 99, which the outline does not contain.
+    # `TASK-002` names `deliverable 99`, which the outline does not contain.
     _write_task_file(plan_dir / 'tasks', _task(2, 99, [_REAL_A]))
 
     result = cmd_qgate_mechanical(Namespace(plan_id='closure-ambiguous', no_emit=True))

@@ -305,12 +305,12 @@ class TestAffectedFilesBulletParsing:
     def test_sibling_declaration_does_not_absorb_unparseable_deliverable(
         self, tmp_path, monkeypatch
     ):
-        """Sibling-absorption regression: a well-formed deliverable 1 must not
-        mask deliverable 2's unparseable heading.
+        """Sibling-absorption regression: a well-formed ``deliverable 1`` must
+        not mask ``deliverable 2``'s unparseable heading.
 
-        Before the per-deliverable read, the checker compared only the flattened
-        aggregate declared set: deliverable 1's bullets made it non-empty, so
-        deliverable 2's heading-with-no-bullets slipped through into a recall
+        Without the per-deliverable read the checker compares only the flattened
+        aggregate declared set: ``deliverable 1``'s bullets make it non-empty, so
+        ``deliverable 2``'s heading-with-no-bullets slips through into a recall
         computation instead of the parse failure it is.
         """
         declared = ['src/foo.py', 'src/bar.py']

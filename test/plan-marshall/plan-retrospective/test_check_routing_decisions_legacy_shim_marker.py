@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""The ``posture_cutoff_legacy_aggregate`` entry is a MARKED back-compat shim (D9/D8).
+"""The ``posture_cutoff_legacy_aggregate`` entry is a MARKED back-compat shim.
 
 ``_REMOVAL_CAUSE_PATTERNS``'s first entry matches a decision-log line shape the
 composer once emitted and no longer does. That is the textbook Category-B shim —
 a permanent read path accommodating a shape OUR OWN prior writer produced — and
-before this deliverable it carried explanatory prose but no marker, so it had no
-owner, no version floor, and no removal trigger.
+explanatory prose without a marker would leave it with no owner, no version
+floor, and no removal trigger.
 
 Three things are pinned here, and the third is the one that matters:
 
@@ -16,7 +16,7 @@ Three things are pinned here, and the third is the one that matters:
    finding naming ``check-routing-decisions.py``.
 3. The retired shape this entry matches is a shape THE EMITTER ACTUALLY PRODUCED.
 
-Point 3 exists because of lesson ``2026-08-08-20-001`` (Instance 1). The sibling
+Point 3 exists because a sibling pattern already failed exactly this way. The
 ``posture_cutoff`` pattern that preceded this one was dead in production for a
 long time while its test stayed green, because both the pattern and the test
 literal were copied from ``decision-rules.md``. Doc → regex and doc → test-literal
@@ -58,7 +58,7 @@ LEGACY_CAUSE = 'posture_cutoff_legacy_aggregate'
 #
 # PROVENANCE — recovered from the emitter, not from a standards document:
 #   commit `d04ac98ed^` (the parent of "fix(manage-execution-manifest): guard
-#   compose-time step subtractions", #1066 — the change that retired this shape),
+#   compose-time step subtractions" — the change that retired this shape),
 #   file `manage-execution-manifest/scripts/manage-execution-manifest.py`,
 #   the `_emit_decision_log` call guarded by `if execution_profile != 'full' and
 #   lane_dropped:`, which rendered:

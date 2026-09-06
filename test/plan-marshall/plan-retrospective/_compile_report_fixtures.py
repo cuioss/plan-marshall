@@ -191,7 +191,7 @@ def _write_fragments_with_dispatch_boundaries(
 
 
 # =============================================================================
-# Registry-consistency regression guard (deliverable 2)
+# Registry-consistency regression guard
 # =============================================================================
 #
 # The class of defect this guard pins down: a producer aspect key drifting from

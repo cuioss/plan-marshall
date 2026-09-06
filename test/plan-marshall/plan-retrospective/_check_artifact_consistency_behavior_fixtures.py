@@ -56,7 +56,7 @@ def _outline(
     the plain backticked ``- `path``` form, a string emits the canonical
     annotated ``- `path` (annotation)`` form real outlines use.
 
-    ``empty_affected_heading`` emits deliverable 1 with the
+    ``empty_affected_heading`` emits `deliverable 1` with the
     ``**Affected files:**`` heading and NO bullets beneath it — the loud-fail
     shape. It is independent of the heading-absent shape (the default, where
     the deliverable carries no ``Affected files`` heading at all), so the two

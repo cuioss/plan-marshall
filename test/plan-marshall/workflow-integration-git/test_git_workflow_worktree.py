@@ -33,9 +33,7 @@ The tests below split into two tiers:
   plan-marshall executor.
 
 A sibling ``_fixtures.py`` is intentionally not introduced — the helpers are
-small and stay co-located with the test cases. The pre-existing
-``manage-worktree`` tests (3 failures) are out-of-scope here; deliverable 10
-removes that skill in a later task.
+small and stay co-located with the test cases.
 """
 
 from __future__ import annotations
@@ -141,7 +139,7 @@ def _init_repo(repo: Path) -> None:
 
 class TestEnsureWorktreePlanLocalReal:
     """``_ensure_worktree_plan_local_real`` creates a REAL .plan/local with NO
-    symlinks (deliverable 5). The retired ``_ensure_worktree_plan_symlinks``
+    symlinks. The retired ``_ensure_worktree_plan_symlinks``
     symlinked ``.plan/local`` and ``.plan/execute-script.py`` into main; the
     move-based model owns a fully real worktree ``.plan/local`` instead.
     """
