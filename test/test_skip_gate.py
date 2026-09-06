@@ -232,6 +232,45 @@ def test_the_two_offender_kinds_are_reported_distinguishably(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# The class vocabulary the entries are drawn from
+# ---------------------------------------------------------------------------
+
+
+def test_the_declared_class_set_and_the_classes_in_use_are_the_same_set():
+    """:data:`conftest._SKIP_CLASSES` is exactly the set of classes the entries use.
+
+    The prose above :data:`conftest._SKIP_EXCEPTIONS` closes the vocabulary —
+    "only three are legitimate" — and a closure claim nobody derives is the
+    vacuity this suite exists to remove. Both directions are checked, because
+    each catches a different way the claim goes false:
+
+    * an entry carrying an UNDECLARED class is a fourth class introduced without
+      the documentation that says what it means and why it is legitimate, which
+      is the silent widening a per-entry class exists to prevent;
+    * a DECLARED class no entry uses is a class documented as "represented" that
+      nothing represents — the standing pre-emptive exemption the ⛔ note under
+      the dict rules out, arrived at through the vocabulary instead of through
+      the entry list.
+
+    Both sides are read from the live objects rather than transcribed, so this
+    cannot go on passing against a vocabulary either one has moved away from.
+    """
+    declared = set(conftest._SKIP_CLASSES)
+    in_use = {entry[0] for entry in conftest._SKIP_EXCEPTIONS.values()}
+
+    assert not in_use - declared, (
+        f'_SKIP_EXCEPTIONS uses class(es) _SKIP_CLASSES does not declare: '
+        f'{sorted(in_use - declared)}. Declare the class and document what it '
+        f'means under _SKIP_EXCEPTIONS, or file the entry under an existing one.'
+    )
+    assert not declared - in_use, (
+        f'_SKIP_CLASSES declares class(es) no entry uses: {sorted(declared - in_use)}. '
+        f'A class with no entry is a standing exemption for a skip nobody has '
+        f'observed — remove it, along with the prose describing it.'
+    )
+
+
+# ---------------------------------------------------------------------------
 # The classifier itself
 # ---------------------------------------------------------------------------
 

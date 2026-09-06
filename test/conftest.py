@@ -1302,6 +1302,23 @@ def pytest_report_header(config):
     return lines
 
 
+#: Every class an entry in :data:`_SKIP_EXCEPTIONS` may carry, and the whole set
+#: of them. The classes are described under that dict, where the prose closes the
+#: set — "only three are legitimate" — and this constant is what makes that
+#: closure checkable instead of merely asserted: ``test_skip_gate.py`` holds this
+#: set and the classes the entries ACTUALLY use to each other in both directions,
+#: so neither a fourth class smuggled in on a new entry nor a class declared here
+#: that no entry uses can pass unseen. A closure claim nobody derives is the
+#: vacuity this gate exists to remove, and it applies to the gate's own prose.
+_SKIP_CLASSES: frozenset[str] = frozenset(
+    {
+        'absent-dependency',
+        'in-suite-policy',
+        'platform-absent',
+    }
+)
+
+
 #: The residual skippable set: every skip this suite still permits, keyed by
 #: nodeid, each carrying the CLASS it belongs to and the REASON that class is
 #: legitimate. :func:`pytest_sessionfinish` fails the run on any skip NOT listed
@@ -1321,7 +1338,8 @@ def pytest_report_header(config):
 #: gate exists to catch. A skip that belongs here is added deliberately, with its
 #: reason, in the same change that introduces it.
 #:
-#: Three classes are represented, and only three are legitimate:
+#: Three classes are represented, and only three are legitimate. They are named
+#: in :data:`_SKIP_CLASSES` so this closure is derived rather than asserted:
 #:
 #: ``absent-dependency``
 #:     An external tool the suite does not require. ``pyright-langserver`` is the
@@ -1342,26 +1360,32 @@ def pytest_report_header(config):
 #:     declared refusal phrasing removes its entry rather than silently widening
 #:     an existing one.
 #:
-#: ``absent-platform-facility``
-#:     An OS facility the running platform does not provide, so the guarded
-#:     branch has nothing to exercise. ``/proc`` is the only one: the test drives
-#:     the real ``/proc`` fast path, which exists on Linux (where CI runs, so the
-#:     test executes there) and not on macOS. It is distinct from
-#:     ``absent-dependency`` because nothing can be installed to satisfy it — the
-#:     facility is the platform's, not a package's — and distinct from
-#:     ``in-suite-policy`` because the cause is the environment rather than the
-#:     suite's own data. The entry was added when the gate first named it on a
-#:     macOS run, which is the deliberate extension the paragraph below describes,
-#:     not a pre-emptive exemption.
+#: ``platform-absent``
+#:     A capability the running OS does not provide and no installation can add,
+#:     so the test has no subject to exercise rather than a missing tool or a
+#:     thin parameter. ``/proc`` is the only one: Linux publishes it and macOS
+#:     does not, so ``_read_process_argv``'s ``/proc`` fast path has a real
+#:     process to read in CI and nothing to read on a developer's Mac. It is
+#:     deliberately NOT filed under ``absent-dependency`` — that class means a
+#:     tool the suite chose not to require and that someone could install, and a
+#:     class stretched to mean both a tool and a kernel interface can no longer
+#:     discriminate between them, which is the whole reason the class is recorded
+#:     beside the reason. Unlike the other two, an entry here is expected to be
+#:     inert on the platform that HAS the capability: on Linux the nodeid runs
+#:     and never reaches this list, so a green run on one platform is no evidence
+#:     about the entry's standing on the other.
 #:
-#: ⛔ **Platform and environment guards that do NOT fire here are deliberately
-#: absent.** ``test_tree_copy.py``'s three ``sys.platform == 'win32'`` guards, and
-#: the undeclared environment-variable preconditions in ``test_qgate_closure.py``
-#: and ``test_plan_state_exemption.py``, skip nothing on this platform and so have
-#: no nodeid to list. Listing them pre-emptively would grant a standing exemption
-#: to skips nobody has observed, which is the opposite of an enumerated boundary.
-#: On a platform where they DO fire, the gate names them and the list is extended
-#: deliberately.
+#: ⛔ **A platform or environment guard is listed only where it has been OBSERVED
+#: to fire.** The gate has now rendered its verdict on both platforms this suite
+#: is run on — Linux in CI and macOS locally — and between them named exactly one
+#: such skip, the ``/proc`` entry below. ``test_tree_copy.py``'s three
+#: ``sys.platform == 'win32'`` guards, and the undeclared environment-variable
+#: preconditions in ``test_qgate_closure.py`` and ``test_plan_state_exemption.py``,
+#: fired on neither and so have no nodeid to list. Listing them pre-emptively
+#: would grant a standing exemption to skips nobody has observed, which is the
+#: opposite of an enumerated boundary. On a platform where they DO fire, the gate
+#: names them and the list is extended deliberately — which is exactly how the
+#: ``/proc`` entry got here.
 _SKIP_EXCEPTIONS: dict[str, tuple[str, str]] = {
     # --- absent-dependency: pyright-langserver (4 guard sites, 10 nodeids) ---
     'test/plan-marshall/lsp-client/test_lsp_integration.py::test_real_adversarial_defect_fails_and_rolls_back': (
@@ -1404,15 +1428,6 @@ _SKIP_EXCEPTIONS: dict[str, tuple[str, str]] = {
         'absent-dependency',
         'pyright-langserver not installed',
     ),
-    # --- absent-platform-facility: no /proc outside Linux ---
-    # The reason is the guard's own text, verbatim, for the same reason the
-    # in-suite-policy entry below carries its guard's text: the gate compares the
-    # approved cause against what pytest records.
-    'test/plan-marshall/build-server/test_manage_build_server.py'
-    '::test_read_process_argv_reads_this_process_from_proc': (
-        'absent-platform-facility',
-        'no /proc on this platform',
-    ),
     # --- in-suite-policy: a parametrized case with no data to assert ---
     # The reason is the guard's own text, verbatim: the gate compares it against
     # what pytest records, so an explanatory gloss appended here would never match
@@ -1422,6 +1437,14 @@ _SKIP_EXCEPTIONS: dict[str, tuple[str, str]] = {
     '::TestRefusalIsNeverABareTimeout::test_a_bots_declared_refusal_is_recognized_as_DATA[cuioss-review-bot]': (
         'in-suite-policy',
         'cuioss-review-bot declares no observed refusal phrasing',
+    ),
+    # --- platform-absent: no /proc outside Linux ---
+    # Fires on macOS and not in CI, so this entry is inert on the platform that
+    # decides the merge. The reason is the guard's own text, verbatim, for the
+    # same enforcement reason as the entry above.
+    'test/plan-marshall/build-server/test_manage_build_server.py::test_read_process_argv_reads_this_process_from_proc': (
+        'platform-absent',
+        'no /proc on this platform',
     ),
 }
 
