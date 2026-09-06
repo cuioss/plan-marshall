@@ -82,8 +82,8 @@ def test_auto_rebase_threshold_roundtrips_when_set(plan_context):
     assert get_result['params']['auto_rebase_threshold'] == 'auto_resolvable'
 
 
-def test_final_merge_without_asking_default_is_false(plan_context):
-    """Fresh marshal.json must surface final_merge_without_asking default False.
+def test_final_merge_without_asking_default_is_true(plan_context):
+    """Fresh marshal.json must surface final_merge_without_asking default True.
 
     The knob is a step-owned param of default:branch-cleanup; the runtime read is
     now `plan phase-6-finalize step get --step-id default:branch-cleanup`.
@@ -94,7 +94,7 @@ def test_final_merge_without_asking_default_is_false(plan_context):
     result = _cmd_quality_phases_mod.cmd_phase(args, 'phase-6-finalize')
 
     assert result['status'] == 'success'
-    assert result['params']['final_merge_without_asking'] is False
+    assert result['params']['final_merge_without_asking'] is True
 
 
 def test_final_merge_without_asking_read_from_branch_cleanup_step(plan_context):
@@ -110,7 +110,7 @@ def test_final_merge_without_asking_read_from_branch_cleanup_step(plan_context):
     result = _cmd_quality_phases_mod.cmd_phase(args, 'phase-6-finalize')
 
     assert result['status'] == 'success'
-    assert result['params']['final_merge_without_asking'] is False
+    assert result['params']['final_merge_without_asking'] is True
     # the param is NOT a flat sibling read anymore
     flat = _cmd_quality_phases_mod.cmd_phase(
         Namespace(verb='get', field='final_merge_without_asking'), 'phase-6-finalize'

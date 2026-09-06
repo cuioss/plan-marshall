@@ -59,8 +59,8 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config sync-d
 
 - A key already present in the live config is preserved unchanged. "Present"
   means "key exists" — value comparison is NOT performed, so a user-set
-  `final_merge_without_asking: true` (nested under `steps['default:branch-cleanup']`)
-  survives even when the default is `false`.
+  `final_merge_without_asking: false` (nested under `steps['default:branch-cleanup']`)
+  survives even when the default is `true`.
 - **Exception — provisioning stamps**: `system.provisioned_version` and
   `system.config_seed_fingerprint` are the two runtime-stamped provisioning fields
   (written by `stamp_provisioning_fields()` at both `init` and `sync-defaults` time,
@@ -705,7 +705,7 @@ The defaults template contains only `system` domain. Technical domains (java, ja
         "default:lessons-capture": {},
         "default:branch-cleanup": {
           "pr_merge_strategy": "squash",
-          "final_merge_without_asking": false,
+          "final_merge_without_asking": true,
           "auto_rebase_threshold": "no_overlap_only"
         },
         "default:archive-plan": {}
@@ -766,7 +766,7 @@ The lane mechanism's per-element vocabulary (the closed `lane.class` enum, the c
 | `do_transition` | bool | `false` | Gate for the server-side SonarCloud dismissal path. `false` routes FALSE-POSITIVE / WON'T-FIX dispositions through in-code suppression; `true` re-enables `sonar_rest transition` dismissal. Consumed by triage Step 3c as the fall-through gate. |
 | `ce_wait_timeout_seconds` | int | `600` | Budget (seconds) for the synchronous in-Python CE-readiness wait in `sonar.py fetch_findings` — sibling of the flat `checks_wait_timeout_seconds`; overridable by `--ce-wait-timeout`. |
 
-`plan-marshall:automatic-review`: `required_bots` and `optional_bots` (comma-separated bot-kinds, both default **EMPTY**) — the review-bot participation classification. A required bot's silence is a failure and gates the completeness quorum; an optional bot's silence never gates; a bot in NEITHER list is warned about but STILL ingested (the two lists classify, they do not admit). Each entry maps one-to-one to a `standards/{bot_kind}.md` registry doc. Both default empty so a never-asked key stays distinguishable from an answered-empty value; the three-valued `bot_lists_provenance` (`never_asked` / `migrated` / `answered`) records which. See [`standards/data-model.md`](standards/data-model.md) for the provenance contract and [`../automatic-review/standards/bot-participation-contract.md`](../automatic-review/standards/bot-participation-contract.md) for the participation semantics and the failure taxonomy. `review_bot_buffer_seconds` (int, default `180`) — max-wait ceiling for `pr wait-for-comments`. `default:branch-cleanup`: `pr_merge_strategy` (default `squash`), `final_merge_without_asking` (bool, default `false`), `auto_rebase_threshold` (default `no_overlap_only`).
+`plan-marshall:automatic-review`: `required_bots` and `optional_bots` (comma-separated bot-kinds, both default **EMPTY**) — the review-bot participation classification. A required bot's silence is a failure and gates the completeness quorum; an optional bot's silence never gates; a bot in NEITHER list is warned about but STILL ingested (the two lists classify, they do not admit). Each entry maps one-to-one to a `standards/{bot_kind}.md` registry doc. Both default empty so a never-asked key stays distinguishable from an answered-empty value; the three-valued `bot_lists_provenance` (`never_asked` / `migrated` / `answered`) records which. See [`standards/data-model.md`](standards/data-model.md) for the provenance contract and [`../automatic-review/standards/bot-participation-contract.md`](../automatic-review/standards/bot-participation-contract.md) for the participation semantics and the failure taxonomy. `review_bot_buffer_seconds` (int, default `180`) — max-wait ceiling for `pr wait-for-comments`. `default:branch-cleanup`: `pr_merge_strategy` (default `squash`), `final_merge_without_asking` (bool, default `true`), `auto_rebase_threshold` (default `no_overlap_only`).
 
 **Access shape.** Read/write each FLAT knob through the standard `plan <phase> get/set --field <knob>` verb — e.g. `plan phase-1-init get --field deep_lane`, `plan phase-6-finalize get --field finalize_without_asking`. Read/write each STEP-OWNED param — including a ceremony gate's `lane` override — through the one-stop `plan phase-6-finalize step get/set --step-id {step} [--param {k} --value {v}]` verb against the marshal.json keyed-map serial form (the global-config default + wizard write target), or via the plan-local manifest snapshot `manage-execution-manifest step-params get/set` (the per-plan runtime read/override). See [§ Workflow: Phase-Local gate_mode Gates and Automation Knobs](#workflow-phase-local-gate_mode-gates-and-automation-knobs).
 

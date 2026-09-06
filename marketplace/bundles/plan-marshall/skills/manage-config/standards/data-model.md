@@ -120,7 +120,7 @@ JSON structure and field definitions for project configuration.
         "default:lessons-capture": {},
         "default:branch-cleanup": {
           "pr_merge_strategy": "squash",
-          "final_merge_without_asking": false,
+          "final_merge_without_asking": true,
           "auto_rebase_threshold": "no_overlap_only"
         },
         "default:record-metrics": {},
@@ -811,7 +811,7 @@ Finalize pipeline with a `steps` keyed map. `steps` serializes on disk as a JSON
         "default:lessons-capture": {},
         "default:branch-cleanup": {
           "pr_merge_strategy": "squash",
-          "final_merge_without_asking": false,
+          "final_merge_without_asking": true,
           "auto_rebase_threshold": "no_overlap_only"
         },
         "default:record-metrics": {},
@@ -858,7 +858,7 @@ Finalize pipeline with a `steps` keyed map. `steps` serializes on disk as a JSON
 | Param | Type | Default | Description |
 |-------|------|---------|-------------|
 | `pr_merge_strategy` | string | "squash" | squash, merge, rebase — the merge method the branch-cleanup step passes to `pr merge`. |
-| `final_merge_without_asking` | bool | false | Whether to merge the PR after CI passes without prompting the operator. `true` merges under the unified `manage-locks:merge_lock` cross-plan mutex (acquired by the branch-cleanup Pre-Merge Gate); `false` (default) prompts the operator before merging. |
+| `final_merge_without_asking` | bool | true | Whether to merge the PR after CI passes without prompting the operator. `true` (default) merges under the unified `manage-locks:merge_lock` cross-plan mutex (acquired by the branch-cleanup Pre-Merge Gate); `false` prompts the operator before merging. |
 | `auto_rebase_threshold` | string | "no_overlap_only" | Gates the pre-merge auto-rebase decision in `branch-cleanup.md`, orthogonal to `final_merge_without_asking`. `no_overlap_only` permits the auto-rebase only when it would touch a disjoint file set; any overlap defers to the operator. |
 
 `default:finalize-step-simplify` is config-less — its `simplify` ceremony gate rides the step's `lane` override (`off`/`minimal`/`standard`), not a run-at-all param.

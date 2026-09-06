@@ -216,7 +216,7 @@ def test_apply_preset_writes_keyed_map_form_to_disk(plan_context):
     # param object.
     assert _params_for(section['steps'], 'default:branch-cleanup') == {
         'pr_merge_strategy': 'squash',
-        'final_merge_without_asking': False,
+        'final_merge_without_asking': True,
         'auto_rebase_threshold': 'no_overlap_only',
     }
 

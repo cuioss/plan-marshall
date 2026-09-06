@@ -71,7 +71,7 @@ Three structural rules define the serial form:
         },
         "default:branch-cleanup": {
           "pr_merge_strategy": "squash",
-          "final_merge_without_asking": false,
+          "final_merge_without_asking": true,
           "auto_rebase_threshold": "no_overlap_only"
         }
       }

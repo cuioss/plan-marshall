@@ -6,7 +6,7 @@ The single home for manage-config's default-config coverage — the root-level
 `test_manage_config_defaults.py` straggler was folded in here.
 
 Covers:
-- `DEFAULT_PLAN_FINALIZE` includes `final_merge_without_asking` with default `False`.
+- `DEFAULT_PLAN_FINALIZE` includes `final_merge_without_asking` with default `True`.
 - A fresh marshal.json carries `project.default_base_branch == 'main'`.
 - The new `project` CLI noun round-trips a custom `default_base_branch`.
 - The bootstrap-defaults surface returned by `get_default_config()`: the
@@ -185,9 +185,9 @@ def test_finalize_step_params_constant_is_deleted():
 #: Each is declared in that step's `configurable:` body-doc frontmatter and folded
 #: into the step's nested param object by the get_default_config() finalize seed.
 _BRANCH_CLEANUP_PARAM_DEFAULTS = [
-    # Interactive by default: prompt the operator before the final merge. Set True
-    # to merge unattended, serialized via the cross-plan merge-lock.
-    ('final_merge_without_asking', False),
+    # Unattended by default: merge once CI is green, serialized via the cross-plan
+    # merge-lock. Set False to be prompted before the final merge.
+    ('final_merge_without_asking', True),
     ('auto_rebase_threshold', 'no_overlap_only'),
     # Seconds (~30 min) bounding the Pre-Merge Gate FIFO merge-queue poll loop
     # before it gives up to the last-resort AskUserQuestion.
@@ -1517,7 +1517,7 @@ def test_default_plan_finalize_steps_nests_step_owned_params():
     # branch-cleanup params nest under default:branch-cleanup
     assert _params_for(steps, 'default:branch-cleanup') == {
         'pr_merge_strategy': 'squash',
-        'final_merge_without_asking': False,
+        'final_merge_without_asking': True,
         'auto_rebase_threshold': 'no_overlap_only',
         'merge_queue_wait_budget_seconds': 1800,
         'merge_hold_window': 'full_window_release_at_waits',
@@ -3335,11 +3335,11 @@ class TestLoopBackWithoutAskingDefault:
 
 
 class TestFinalMergeWithoutAskingDefault:
-    """``final_merge_without_asking`` defaults to ``False`` — the operator is
-    prompted before the irreversible final merge (interactive-by-default).
-    ``True`` is the explicit opt-in to merge without asking, coordinated via
-    the cross-plan merge-lock so concurrently-finalizing plans serialize
-    safely on the merge-to-main critical section. The flag is a plain boolean
+    """``final_merge_without_asking`` defaults to ``True`` — the post-CI merge
+    proceeds unattended, coordinated via the cross-plan merge-lock so
+    concurrently-finalizing plans serialize safely on the merge-to-main
+    critical section. ``False`` is the opt-in to being prompted before the
+    irreversible final merge. The flag is a plain boolean
     — NOT a tri-state. It is a step-owned param of ``default:branch-cleanup``
     in the keyed-map ``steps`` structure (no longer a flat sibling of
     ``steps``)."""
@@ -3354,16 +3354,16 @@ class TestFinalMergeWithoutAskingDefault:
             resolve_step_defaults('default:branch-cleanup')[
                 'final_merge_without_asking'
             ]
-            is False
+            is True
         )
 
-    def test_fresh_project_seeds_false(self) -> None:
+    def test_fresh_project_seeds_true(self) -> None:
         """A fresh project bootstrap (calling ``get_default_config()``
         without any prior marshal.json) MUST seed
-        ``final_merge_without_asking`` with the ``False`` default nested under
+        ``final_merge_without_asking`` with the ``True`` default nested under
         ``default:branch-cleanup`` — the key being absent would force every
         downstream consumer to apply its own fallback, and the
-        interactive-by-default behavior would not flow to fresh projects.
+        unattended-by-default behavior would not flow to fresh projects.
         It must NOT survive as a flat sibling of ``steps``."""
         cfg = _config_defaults_mod.get_default_config()
         finalize = cfg['plan']['phase-6-finalize']
@@ -3380,7 +3380,7 @@ class TestFinalMergeWithoutAskingDefault:
                 'final_merge_without_asking'
             ]
         )
-        assert branch_cleanup['final_merge_without_asking'] is False
+        assert branch_cleanup['final_merge_without_asking'] is True
         # the knob is no longer a flat phase-level field
         assert 'final_merge_without_asking' not in finalize
 
