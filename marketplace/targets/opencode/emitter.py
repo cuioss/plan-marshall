@@ -17,7 +17,11 @@ target-shared ``body_transform_engine`` (data-driven from
 A component declaring a ``targets:`` frontmatter scope that omits this
 target is not emitted at all — see ``component_targets.py``. A skill's
 declaration governs its whole directory, including the command wrapper a
-user-invocable skill would otherwise dual-emit.
+user-invocable skill would otherwise dual-emit. A single ``*.md`` file
+inside a skill may also declare a file-level scope that governs only
+itself — the walk in ``excluded_emission_roots`` computes both the
+directory-level and the file-level exclusions, and the per-file copy below
+skips either shape.
 
 Validation contract (silent exclusion is prohibited):
   * Missing required frontmatter field → ``UnmappedFrontmatterError``
@@ -35,7 +39,12 @@ import shutil
 from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path
 
-from marketplace.targets.component_targets import emits_to
+from marketplace.targets.component_targets import (
+    EXCLUDED_DIR_NAMES,
+    emits_to,
+    excluded_emission_roots,
+    is_under_any,
+)
 from marketplace.targets.fs_safety import refuse_tree_overlap, safe_rmtree
 from marketplace.targets.opencode.frontmatter import (
     OPENCODE_MODEL_PREFIX,
@@ -60,8 +69,6 @@ _USER_INVOCABLE_TEMPLATE = _TEMPLATES_DIR / 'user-invocable-command.md'
 #: module that needs it, and importing the class from ``target.py`` (which
 #: imports this module) would close a cycle.
 OPENCODE_TARGET_NAME = 'opencode'
-
-EXCLUDED_DIR_NAMES = frozenset({'__pycache__', '.pytest_cache', '.mypy_cache', '.ruff_cache'})
 
 # Sub-directories that are copied verbatim alongside SKILL.md so the
 # generated skill remains self-contained at runtime.
@@ -138,13 +145,39 @@ def _read_plugin_json(bundle_dir: Path) -> dict:
     return parsed
 
 
-def _copy_verbatim(src: Path, dst: Path, *, output_dir: Path, written: list[Path]) -> None:
+def _copy_verbatim(
+    src: Path,
+    dst: Path,
+    *,
+    output_dir: Path,
+    bundle_dir: Path,
+    excluded: frozenset[Path],
+    written: list[Path],
+) -> None:
+    """Copy ``src`` (a skill sub-directory) into ``dst``, file by file.
+
+    Per-file rather than ``copytree`` because the file-level scope mechanism
+    can exclude a single ``*.md`` inside the sub-directory; a directory-level
+    exclusion of the whole sub-directory already falls out of the same
+    ``is_under_any`` predicate, so no separate subtree check is needed.
+    Cache and bytecode directories are skipped the way ``copytree``'s
+    ignore-pattern did.
+    """
     if dst.exists():
         safe_rmtree(dst, output_dir)
-    shutil.copytree(src, dst, ignore=shutil.ignore_patterns(*EXCLUDED_DIR_NAMES))
-    for f in dst.rglob('*'):
-        if f.is_file():
-            written.append(f)
+    dst.mkdir(parents=True, exist_ok=False)
+    for source in src.rglob('*'):
+        if not source.is_file():
+            continue
+        rel = source.relative_to(src)
+        if any(part in EXCLUDED_DIR_NAMES for part in rel.parts):
+            continue
+        if is_under_any(source.relative_to(bundle_dir), excluded):
+            continue
+        target = dst / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, target)
+        written.append(target)
 
 
 def _prune_stale_outputs(output_dir: Path, written: list[Path]) -> None:
@@ -194,6 +227,8 @@ def _emit_skill(
     bundle_name: str,
     skill_dir: Path,
     output_dir: Path,
+    bundle_dir: Path,
+    excluded: frozenset[Path],
     mapping: dict[str, dict[str, str]],
     rules: dict[str, list[str]],
     body_transformer: BodyTransformer,
@@ -224,7 +259,14 @@ def _emit_skill(
         src_subdir = skill_dir / subdir_name
         if src_subdir.exists() and src_subdir.is_dir():
             dst_subdir = target_skill_dir / subdir_name
-            _copy_verbatim(src_subdir, dst_subdir, output_dir=output_dir, written=written)
+            _copy_verbatim(
+                src_subdir,
+                dst_subdir,
+                output_dir=output_dir,
+                bundle_dir=bundle_dir,
+                excluded=excluded,
+                written=written,
+            )
 
     # Dual-emit: user-invocable: true skills also get a command wrapper.
     if _is_user_invocable(fm):
@@ -518,6 +560,12 @@ def emit_bundles(
         plugin_config = _read_plugin_json(bundle_dir)
         bundle_name = plugin_config.get('name', bundle_dir.name)
 
+        # Computed once per bundle: the directory-level exclusions plus every
+        # file-level exclusion a skill-internal declaration contributes, all
+        # validated. The verbatim copy below skips either shape through the
+        # same predicate.
+        excluded = excluded_emission_roots(bundle_dir, target_name)
+
         for skill_dir in _resolve_skill_dirs(bundle_dir, plugin_config):
             # A skill's scope is declared on its manifest and governs the whole
             # directory — the verbatim sub-directories and the user-invocable
@@ -525,7 +573,17 @@ def emit_bundles(
             # ``_emit_skill``.
             if not emits_to(skill_dir / 'SKILL.md', target_name):
                 continue
-            _emit_skill(bundle_name, skill_dir, output_dir, mapping, rules, transform_body, written)
+            _emit_skill(
+                bundle_name,
+                skill_dir,
+                output_dir,
+                bundle_dir,
+                excluded,
+                mapping,
+                rules,
+                transform_body,
+                written,
+            )
 
         for agent_md in _resolve_md_components(bundle_dir, plugin_config, 'agents', 'agents'):
             if not emits_to(agent_md, target_name):

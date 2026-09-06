@@ -16,6 +16,7 @@ from marketplace.targets.component_targets import (
     excluded_emission_roots,
     is_under_any,
     iter_component_manifests,
+    iter_skill_internal_files,
     read_target_scope,
     registered_target_names,
 )
@@ -715,3 +716,137 @@ def test_a_dotfile_component_is_not_walked(tmp_path):
     )
 
     assert excluded_emission_roots(bundle, 'claude') == frozenset()
+
+
+# ---------------------------------------------------------------------------
+# File-level scoping — a single ``*.md`` inside a skill may scope itself
+# ---------------------------------------------------------------------------
+
+
+def _skill_bundle(
+    tmp_path: Path,
+    *,
+    parent_declaration: str | None,
+    file_declaration: str | None,
+    file_rel: str = 'references/x.md',
+) -> Path:
+    """A one-skill bundle; SKILL.md declares ``parent_declaration`` and the file declares ``file_declaration``.
+
+    A declaration argument is the value of ``targets:`` (e.g. ``'[claude]'``);
+    ``None`` means the field is absent.
+    """
+    bundle = tmp_path / 'demo'
+    skill_dir = bundle / 'skills' / 'demo'
+    (skill_dir / 'SKILL.md').parent.mkdir(parents=True)
+
+    def manifest(rel: Path, name: str, declaration: str | None) -> None:
+        field = '' if declaration is None else f'targets: {declaration}\n'
+        rel.parent.mkdir(parents=True, exist_ok=True)
+        rel.write_text(
+            f'---\nname: {name}\ndescription: d\n{field}---\n\n# Body\n', encoding='utf-8'
+        )
+
+    manifest(skill_dir / 'SKILL.md', 'demo', parent_declaration)
+    manifest(skill_dir / file_rel, 'x', file_declaration)
+    return bundle
+
+
+def test_a_file_inside_a_skill_can_scope_itself(tmp_path):
+    """``targets: [claude]`` on a file inside an UNSCOPED skill is a file-level scope.
+
+    The parent declares nothing, so the file's own declaration is the only
+    thing deciding its reach: opencode excludes it, claude does not.
+    """
+    bundle = _skill_bundle(tmp_path, parent_declaration=None, file_declaration='[claude]')
+
+    assert excluded_emission_roots(bundle, 'opencode') == frozenset(
+        {Path('skills/demo/references/x.md')}
+    )
+    assert excluded_emission_roots(bundle, 'claude') == frozenset()
+
+
+def test_a_file_may_narrow_its_parent_scope(tmp_path):
+    """``targets: [claude]`` inside a skill scoped ``[claude, opencode]`` narrows."""
+    bundle = _skill_bundle(
+        tmp_path, parent_declaration='[claude, opencode]', file_declaration='[claude]'
+    )
+
+    assert excluded_emission_roots(bundle, 'opencode') == frozenset(
+        {Path('skills/demo/references/x.md')}
+    )
+    assert excluded_emission_roots(bundle, 'claude') == frozenset()
+
+
+@pytest.mark.parametrize(
+    ('parent', 'file', 'expected_value'),
+    [
+        pytest.param('[claude]', '[claude, opencode]', 'opencode', id='wider'),
+        pytest.param('[claude]', '[opencode]', 'opencode', id='disjoint'),
+    ],
+)
+def test_a_file_that_contradicts_its_parent_scope_fails_closed(
+    tmp_path, parent, file, expected_value
+):
+    """A file may only NARROW its component's scope; widening fails closed.
+
+    The walker is the only reader that holds both scopes, so the check lives
+    there, and its message names the file and the offending value.
+    """
+    bundle = _skill_bundle(tmp_path, parent_declaration=parent, file_declaration=file)
+
+    with pytest.raises(TargetScopeError) as excinfo:
+        excluded_emission_roots(bundle, 'claude')
+
+    message = str(excinfo.value)
+    assert 'references/x.md' in message
+    assert expected_value in message
+
+
+def test_an_internal_file_unknown_scope_fails_closed_under_any_target(tmp_path):
+    """A file-level typo is validated the way a component's is — on every read."""
+    bundle = _skill_bundle(tmp_path, parent_declaration=None, file_declaration='[typo]')
+
+    for target_name in ('claude', 'opencode'):
+        with pytest.raises(TargetScopeError, match='typo'):
+            excluded_emission_roots(bundle, target_name)
+
+
+def test_an_empty_file_declaration_fails_closed(tmp_path):
+    """A file shipped nowhere is an authoring error wherever the field sits."""
+    bundle = _skill_bundle(tmp_path, parent_declaration=None, file_declaration='[]')
+
+    with pytest.raises(TargetScopeError, match='empty list'):
+        excluded_emission_roots(bundle, 'claude')
+
+
+def test_a_file_declaration_is_validated_even_inside_an_excluded_skill(tmp_path):
+    """An excluded skill still brings its internal files' failures to the build.
+
+    The parent is scoped to opencode only; generating FOR opencode must still
+    refuse, even though the skill itself ships there.
+    """
+    bundle = _skill_bundle(tmp_path, parent_declaration='[opencode]', file_declaration='[typo]')
+
+    with pytest.raises(TargetScopeError, match='typo'):
+        excluded_emission_roots(bundle, 'opencode')
+
+
+def test_the_manifest_itself_is_not_walked_as_an_internal_file(tmp_path):
+    """SKILL.md is the component manifest; the walker must not yield it again."""
+    bundle = _skill_bundle(tmp_path, parent_declaration=None, file_declaration=None)
+    skill_dir = bundle / 'skills' / 'demo'
+    (skill_dir / 'references' / 'x.md').unlink()
+
+    assert list(iter_skill_internal_files(skill_dir)) == []
+
+
+def test_the_internal_walk_skips_dotfiles_and_cache_dirs(tmp_path):
+    """Dotfiles and cache directories are not emitted, so they are not walked."""
+    bundle = _skill_bundle(tmp_path, parent_declaration=None, file_declaration='[claude]')
+    skill_dir = bundle / 'skills' / 'demo'
+    (skill_dir / 'references' / '.hidden.md').write_text('# hidden\n', encoding='utf-8')
+    cache_dir = skill_dir / 'references' / '__pycache__'
+    cache_dir.mkdir(parents=True)
+    (cache_dir / 'cache.md').write_text('# cache\n', encoding='utf-8')
+
+    assert list(iter_skill_internal_files(skill_dir)) == [skill_dir / 'references' / 'x.md']

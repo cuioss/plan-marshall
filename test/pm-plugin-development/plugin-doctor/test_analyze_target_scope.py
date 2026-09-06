@@ -46,6 +46,7 @@ analyze_target_scope = _ats.analyze_target_scope
 component_files = _ats.component_files
 declared_targets = _ats.declared_targets
 registered_target_names = _ats.registered_target_names
+skill_internal_files = _ats.skill_internal_files
 RULE_ID = _ats.RULE_ID
 
 
@@ -678,3 +679,122 @@ def test_the_rule_walks_every_component_kind_the_build_walks(tmp_path):
 
     assert from_the_rule, 'the walk found nothing — the comparison would be vacuous'
     assert from_the_rule == from_the_build
+
+
+# ---------------------------------------------------------------------------
+# File-level scoping — a ``*.md`` inside a skill may scope itself
+# ---------------------------------------------------------------------------
+
+
+def test_a_file_that_widens_its_parent_scope_is_flagged(tmp_path):
+    """A file naming a target its SKILL.md scopes away is a real build failure."""
+    bundles = _marketplace(tmp_path)
+    _component(bundles, 'skills/s/SKILL.md', 'targets: [claude]')
+    _write(
+        bundles / 'demo' / 'skills' / 's' / 'references' / 'x.md',
+        '---\nname: x\ndescription: d\ntargets: [claude, opencode]\n---\n\n# B\n',
+    )
+
+    findings = analyze_target_scope(bundles)
+
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding['rule_id'] == RULE_ID
+    assert finding['severity'] == 'error'
+    assert finding['file'].endswith('references/x.md')
+    assert finding['details']['reason'] == 'targets_contradiction'
+    assert finding['details']['parent_targets'] == ['claude']
+    assert finding['details']['file_targets'] == ['claude', 'opencode']
+    assert finding['details']['contradiction'] == ['opencode']
+
+
+def test_a_file_narrowing_its_parent_scope_is_accepted(tmp_path):
+    """Narrowing is the point of the file-level mechanism, never a finding."""
+    bundles = _marketplace(tmp_path)
+    _component(bundles, 'skills/s/SKILL.md', 'targets: [claude, opencode]')
+    _write(
+        bundles / 'demo' / 'skills' / 's' / 'references' / 'x.md',
+        '---\nname: x\ndescription: d\ntargets: [claude]\n---\n\n# B\n',
+    )
+
+    assert analyze_target_scope(bundles) == []
+
+
+def test_a_file_inside_an_unscoped_skill_is_a_narrowing(tmp_path):
+    """Unscoped parents allow any file scope — the default resolves to everywhere."""
+    bundles = _marketplace(tmp_path)
+    _component(bundles, 'skills/s/SKILL.md')
+    _write(
+        bundles / 'demo' / 'skills' / 's' / 'references' / 'x.md',
+        '---\nname: x\ndescription: d\ntargets: [claude]\n---\n\n# B\n',
+    )
+
+    assert analyze_target_scope(bundles) == []
+
+
+def test_an_unknown_target_inside_a_skill_file_is_flagged(tmp_path):
+    """A typo in a skill-internal file is reported at the FILE, not the skill."""
+    bundles = _marketplace(tmp_path)
+    _component(bundles, 'skills/s/SKILL.md')
+    target = bundles / 'demo' / 'skills' / 's' / 'references' / 'x.md'
+    _write(
+        target,
+        '---\nname: x\ndescription: d\ntargets: [cluade]\n---\n\n# B\n',
+    )
+
+    findings = analyze_target_scope(bundles)
+
+    assert len(findings) == 1
+    assert findings[0]['file'] == str(target)
+    assert findings[0]['details']['reason'] == 'targets_unknown'
+    assert findings[0]['details']['unknown_targets'] == ['cluade']
+
+
+def test_an_empty_declaration_inside_a_skill_file_is_flagged(tmp_path):
+    """The empty declaration is rejected wherever the field sits."""
+    bundles = _marketplace(tmp_path)
+    _component(bundles, 'skills/s/SKILL.md')
+    _write(
+        bundles / 'demo' / 'skills' / 's' / 'references' / 'x.md',
+        '---\nname: x\ndescription: d\ntargets: []\n---\n\n# B\n',
+    )
+
+    findings = analyze_target_scope(bundles)
+
+    assert len(findings) == 1
+    assert findings[0]['details']['reason'] == 'targets_empty'
+
+
+def test_the_rules_skill_file_walk_matches_the_builds(tmp_path):
+    """`skill_internal_files` must find exactly what the build's walk does.
+
+    The same forced duplication as `component_files`, kept in step by the
+    same means: a differential against `iter_skill_internal_files`.
+    """
+    from marketplace.targets.component_targets import iter_skill_internal_files
+
+    bundles = _marketplace(tmp_path)
+    bundle = bundles / 'demo'
+    _write(bundle / 'skills' / 's' / 'SKILL.md', '---\nname: s\ndescription: d\n---\n\n# B\n')
+    _write(bundle / 'skills' / 's' / 'references' / 'a.md', '# a\n')
+    _write(bundle / 'skills' / 's' / 'standards' / 'b.md', '# b\n')
+    # A directory without a manifest contributes no parent, so no internal walk.
+    _write(bundle / 'skills' / 'no-manifest' / 'reference.md', '# not part of any skill\n')
+    # Dotfiles and cache dirs are not emitted, so they are not walked.
+    _write(bundle / 'skills' / 's' / 'references' / '.hidden.md', '# hidden\n')
+    cache = bundle / 'skills' / 's' / 'references' / '__pycache__'
+    cache.mkdir(parents=True)
+    _write(cache / 'cache.md', '# cache\n')
+
+    from_the_build = set(iter_skill_internal_files(bundle / 'skills' / 's'))
+    from_the_rule = set(skill_internal_files(bundles))
+
+    assert from_the_rule, 'the walk found nothing — the comparison would be vacuous'
+    assert from_the_rule == from_the_build
+
+
+def test_the_rules_cache_dirs_match_the_builds(tmp_path):
+    """The walk's cache-dir skip must not drift from the emitters' copy skip."""
+    from marketplace.targets.component_targets import EXCLUDED_DIR_NAMES
+
+    assert set(_ats._SKILL_CACHE_DIR_NAMES) == set(EXCLUDED_DIR_NAMES)
