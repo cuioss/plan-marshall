@@ -163,6 +163,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+from typing import NamedTuple
 
 from _dispatch_roster import parse_roster, parse_roster_rows, section_lines
 from conftest import MARKETPLACE_ROOT, PROJECT_ROOT
@@ -705,7 +706,28 @@ def _step_doc_claims(
     return claims, findings
 
 
-def _roster_correctness_coverage() -> dict[str, int | list[str]]:
+class _RosterCoverage(NamedTuple):
+    """The three (f) coverage figures plus the registry-absence findings.
+
+    A NamedTuple rather than a ``dict[str, int | list[str]]``: the heterogeneous
+    mapping typed every lookup as the union of ALL its value types, so ``len()``
+    over the findings list could not be checked without narrowing the read back
+    down at each call site. Naming the fields gives each one its own type, which
+    is what lets the checker verify these figures instead of the call sites
+    asserting them.
+    """
+
+    #: Implementor docs ``find_implementors`` discovered — the walked population.
+    discovered_docs: int
+    #: Steps ``marshal.json`` registers — the denominator the ratio is against.
+    registered_steps: int
+    #: Distinct registered keys that actually contributed a comparison.
+    compared: int
+    #: One message per discovered doc that self-classifies under no registered key.
+    unregistered_self_classifiers: list[str]
+
+
+def _roster_correctness_coverage() -> _RosterCoverage:
     """The (f) coverage figures, derived by calling this module's own helpers.
 
     Nothing here is transcribed: ``discovered_docs`` comes from
@@ -716,20 +738,20 @@ def _roster_correctness_coverage() -> dict[str, int | list[str]]:
     """
     paths = _finalize_step_doc_paths()
     claims, findings = _step_doc_claims(paths)
-    return {
-        'discovered_docs': len(paths),
-        'registered_steps': len(_registered_steps()),
-        'compared': len({key for _path, key, _claim in claims}),
-        'unregistered_self_classifiers': findings,
-    }
+    return _RosterCoverage(
+        discovered_docs=len(paths),
+        registered_steps=len(_registered_steps()),
+        compared=len({key for _path, key, _claim in claims}),
+        unregistered_self_classifiers=findings,
+    )
 
 
-def _coverage_line(coverage: dict[str, int | list[str]]) -> str:
+def _coverage_line(coverage: _RosterCoverage) -> str:
     """Render the (f) coverage figures as the one line the report header carries."""
     return (
-        f'{coverage["compared"]} of {coverage["registered_steps"]} registered steps '
-        f'compared ({coverage["discovered_docs"]} implementor docs discovered, '
-        f'{len(coverage["unregistered_self_classifiers"])} unregistered '
+        f'{coverage.compared} of {coverage.registered_steps} registered steps '
+        f'compared ({coverage.discovered_docs} implementor docs discovered, '
+        f'{len(coverage.unregistered_self_classifiers)} unregistered '
         'self-classifier(s))'
     )
 
@@ -1169,15 +1191,15 @@ def test_roster_correctness_coverage_is_reported_not_asserted_shut():
     """
     coverage = _roster_correctness_coverage()
 
-    assert coverage['compared'] >= 1, (
+    assert coverage.compared >= 1, (
         f'no registered step contributes a comparison ({_coverage_line(coverage)}) — '
         'the correctness check would be vacuous, and its green would mean nothing'
     )
-    assert coverage['compared'] <= coverage['registered_steps'], (
+    assert coverage.compared <= coverage.registered_steps, (
         f'more comparisons than registered steps ({_coverage_line(coverage)}) — a '
         'comparison must resolve to a registered key, so this is a derivation defect'
     )
-    assert coverage['discovered_docs'] >= coverage['compared'], (
+    assert coverage.discovered_docs >= coverage.compared, (
         f'more comparisons than discovered docs ({_coverage_line(coverage)}) — every '
         'comparison comes from a discovered doc, so this is a derivation defect'
     )
