@@ -130,6 +130,45 @@ def _only(deps):
 
 
 # =============================================================================
+# (D6-S08) The lsp dependency kind — declared, but with no detector here
+# =============================================================================
+
+
+def test_lsp_dependency_kind_has_no_file_scan_detector(tmp_path):
+    """``DependencyType.LSP`` is real vocabulary, materialized ONLY by the harvest.
+
+    ``detect_all_dependencies`` checks each of the five file-scanning kinds by
+    name; ``LSP`` is deliberately absent from every ``if DependencyType.X in
+    dep_types`` branch. Requesting ``dep_types={DependencyType.LSP}`` alone must
+    therefore resolve to an EMPTY index for a bundle that DOES contain a real
+    script-notation reference — proving the filter genuinely excludes an
+    undetected kind rather than silently falling back to scanning every type.
+    Before this member existed there was no real enum value with no detector to
+    assert this against; it is the concrete regression the enum's own docstring
+    names as the gap declaring ``LSP`` here closes.
+    """
+    # Arrange — a bundle whose skill.md carries a real, otherwise-detectable
+    # script notation.
+    bundles = _build_tree(
+        tmp_path,
+        skill_md=(
+            '---\nname: alpha\ndescription: Alpha skill\n---\n'
+            '# Alpha\n\n'
+            'Run demo-bundle:alpha:alpha to build it.\n'
+        ),
+        script_source='def main() -> int:\n    return 0\n',
+    )
+
+    # Act — request ONLY the lsp kind.
+    index = build_dependency_index(bundles, {DependencyType.LSP})
+
+    # Assert — no dependency at all, not even the real notation this skill.md
+    # carries (which SCRIPT_NOTATION alone would have caught).
+    rows = [dep for deps in index.forward_deps.values() for dep in deps]
+    assert rows == []
+
+
+# =============================================================================
 # (c) The five formerly-unconditional skips record a reason
 # =============================================================================
 
