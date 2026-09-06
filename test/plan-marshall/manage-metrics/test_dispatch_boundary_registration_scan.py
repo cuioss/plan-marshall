@@ -19,7 +19,6 @@ inside the very scan written to make the declaration checkable. These tests asse
 over the classification itself, which is what no other test reads.
 """
 
-# ruff: noqa: I001
 import importlib.util
 
 from _manage_metrics_fixtures import SCRIPT_PATH
