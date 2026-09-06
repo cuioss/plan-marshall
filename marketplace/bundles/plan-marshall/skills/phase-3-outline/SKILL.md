@@ -559,21 +559,16 @@ Immediately after `solution_outline.md` has been written and validated — and b
 
 This is the one point in the lifecycle where narrowing is both possible and safe. Everything upstream only widens `references.domains`: `domain-detect` unions its legs at init, and phase-2-refine's re-merge widens further. Here the declared footprint has just been derived from the deliverables the plan committed to, and no task has been resolved yet — so no task's skill set can be orphaned by a drop.
 
-1. **Refresh the declared footprint** and read it back:
+1. **Refresh the declared footprint** so the verb reads a current one:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-references:manage-references sync-affected-files \
      --plan-id {plan_id}
    ```
 
-   ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-references:manage-references get \
-     --plan-id {plan_id} --field affected_files
-   ```
+   Nothing is read back here, and nothing is joined into a footprint string. The verb reads `references.affected_files` itself and keeps it a list end to end, so a path containing a comma survives and no repository-controlled path is interpolated into a command line.
 
-   Join the returned paths into a comma-separated `{affected_files_csv}`.
-
-2. **Invoke the narrowing verb** with that footprint:
+2. **Invoke the narrowing verb**, which reads that footprint itself:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-config:manage-config domain-narrow \
@@ -582,7 +577,7 @@ This is the one point in the lifecycle where narrowing is both possible and safe
 
    **Branch on `status` BEFORE parsing anything else.** The verb has three outcomes, not two, and on the third none of the success fields exist:
 
-   - **`status: error`** — the verb could not evaluate (`plan_dir_not_found`, `domains_unreadable`, `marshal_not_readable`, or `no_skill_domains_configured`). `retained`, `dropped`, `provenance`, `report`, and `narrowed` are ABSENT from the payload. STOP the narrowing step here: do NOT parse the success fields, do NOT run steps 3, 3b or 4, and do NOT write `domains` or `domains_provenance`. Surface the returned `error` and `message` instead, via a decision-log entry:
+   - **`status: error`** — the verb could not evaluate. The reason codes are `plan_dir_not_found`, `domains_unreadable`, `marshal_not_readable`, `no_skill_domains_configured`, `footprint_unreadable`, `footprint_empty`, and `task_leg_unreadable`; the canonical set with the condition each names is owned by [`manage-config` § Canonical invocations → `domain-narrow`](../manage-config/SKILL.md), which is the source to re-check this list against. `retained`, `dropped`, `provenance`, `report`, and `narrowed` are ABSENT from the payload. STOP the narrowing step here: do NOT parse the success fields, do NOT run steps 3, 3b or 4, and do NOT write `domains` or `domains_provenance`. Surface the returned `error` and `message` instead, via a decision-log entry:
 
      ```bash
      python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -612,7 +607,15 @@ This is the one point in the lifecycle where narrowing is both possible and safe
 
    `{provenance_rendering}` is the compact one-line `{domain}={legs}` form described in [`manage-references` § Schema Fields](../manage-references/SKILL.md) — `none` where no leg claimed the domain. It is written alongside the `domains` key, never instead of it.
 
-   **The double quotes are load-bearing.** The rendering separates domains with `;`, which is a shell command separator: unquoted, the write truncates at the first domain and every remaining `{domain}={legs}` word runs as its own command. A plan with more than one domain would then persist a silently-truncated provenance — the same "looked and found nothing" vs "never looked" collapse this key exists to prevent, reproduced in the artifact itself.
+   **The quotes are not the injection defence — check the domain alphabet before writing.** This call and step 3's both interpolate domain names, taken from `references.domains`, into a shell command line. Quoting the placeholder does fix one real failure: the rendering separates domains with `;`, a shell command separator, so an unquoted interpolation truncates the write at the first domain and runs every remaining `{domain}={legs}` word as its own command, persisting a silently-truncated provenance. But quoting does **not** neutralize `$(...)`, backticks, or backslashes, so it is not what makes either write safe. Before running either call, confirm every domain name in `{retained_csv}` and `{provenance_rendering}` matches the domain alphabet `^[a-z][a-z0-9-]*$`. If any does not, make **neither** write, and log the refusal:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+     decision --plan-id {plan_id} --level WARNING \
+     --message "(plan-marshall:phase-3-outline) Domain narrowing wrote nothing: a domain name falls outside the documented alphabet and would be interpolated into a command line."
+   ```
+
+   **The alphabet is checked here because no write path guarantees it.** A `--domain` flag validates against exactly this pattern (`validate_domain_name`, owned by [`tools-input-validation`](../tools-input-validation/SKILL.md)), but `manage-references set-list --field domains --values` takes an arbitrary comma-separated string with no per-item check, and `marshal.json` — whose `skill_domains` keys seed the set — is git-tracked and edited by hand. The check above is therefore a guard this step performs, not a property it inherits.
 
    **Why this write is unconditional.** The key's stated purpose is to make a narrowed set distinguishable from an over-provisioned one after the fact. Gating it on `narrowed: true` defeats exactly that: the key would then be equally absent for a plan the narrowing pass EXAMINED and found nothing droppable in, and for a plan the pass never ran on — collapsing "looked and found nothing" into "never looked", which is the failure mode this plan exists to remove. A `narrowed: false` run has a full provenance record (every domain claimed by some leg); writing it is what proves the pass ran.
 

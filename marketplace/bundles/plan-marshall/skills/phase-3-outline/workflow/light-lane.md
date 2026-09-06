@@ -160,21 +160,16 @@ The authoritative procedure lives in [`standards/outline-workflow-detail.md` § 
 
 The light lane is **not exempt** from the narrowing obligation either, and for the same structural reason the consult above is fired here: Step 4c of [`../SKILL.md`](../SKILL.md) states that the inline Steps 5-12 are NOT run for a light-lane plan, so a step added only to Step 12 would never fire on this lane. Fire it here, after the outline is written and validated and before the phase transitions.
 
-1. Refresh the declared footprint and read it back:
+1. Refresh the declared footprint so the verb reads a current one:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-references:manage-references sync-affected-files \
      --plan-id {plan_id}
    ```
 
-   ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-references:manage-references get \
-     --plan-id {plan_id} --field affected_files
-   ```
+   Nothing is read back here, and nothing is joined into a footprint string. The verb reads `references.affected_files` itself and keeps it a list end to end, so a path containing a comma survives and no repository-controlled path is interpolated into a command line.
 
-   Join the returned paths into a comma-separated `{affected_files_csv}`.
-
-2. Invoke the narrowing verb with that footprint:
+2. Invoke the narrowing verb, which reads that footprint itself:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-config:manage-config domain-narrow \
@@ -183,7 +178,7 @@ The light lane is **not exempt** from the narrowing obligation either, and for t
 
    **Branch on `status` BEFORE parsing anything else.** The verb has three outcomes, not two, and on the third none of the success fields exist:
 
-   - **`status: error`** — the verb could not evaluate (`plan_dir_not_found`, `domains_unreadable`, `marshal_not_readable`, or `no_skill_domains_configured`). `retained`, `dropped`, `provenance`, `report`, and `narrowed` are ABSENT from the payload. STOP the narrowing step here: do NOT parse the success fields, do NOT run steps 3, 3b or 4, and do NOT write `domains` or `domains_provenance`. Surface the returned `error` and `message` instead, via a decision-log entry:
+   - **`status: error`** — the verb could not evaluate. The reason codes are `plan_dir_not_found`, `domains_unreadable`, `marshal_not_readable`, `no_skill_domains_configured`, `footprint_unreadable`, `footprint_empty`, and `task_leg_unreadable`; the canonical set with the condition each names is owned by [`manage-config` § Canonical invocations → `domain-narrow`](../../manage-config/SKILL.md), which is the source to re-check this list against. `retained`, `dropped`, `provenance`, `report`, and `narrowed` are ABSENT from the payload. STOP the narrowing step here: do NOT parse the success fields, do NOT run steps 3, 3b or 4, and do NOT write `domains` or `domains_provenance`. Surface the returned `error` and `message` instead, via a decision-log entry:
 
      ```bash
      python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -213,7 +208,15 @@ The light lane is **not exempt** from the narrowing obligation either, and for t
 
    `{provenance_rendering}` is the compact one-line `{domain}={legs}` form described in [`manage-references` § Schema Fields](../../manage-references/SKILL.md) — `none` where no leg claimed the domain. Do NOT invent a rendering here: both lanes write the same key, so the format has exactly one home.
 
-   The double quotes are load-bearing for a different reason than step 3's: the rendering separates domains with `;`, a shell command separator, so an unquoted interpolation truncates the write at the first domain and runs each remaining `{domain}={legs}` word as its own command.
+   The quotes here address a different failure than step 3's — the rendering separates domains with `;`, a shell command separator, so an unquoted interpolation truncates the write at the first domain and runs each remaining `{domain}={legs}` word as its own command — but they are **not** the injection defence for either call, because quoting does not neutralize `$(...)`, backticks, or backslashes. Both calls interpolate domain names taken from `references.domains`, so before running either, confirm every domain name in `{retained_csv}` and `{provenance_rendering}` matches the domain alphabet `^[a-z][a-z0-9-]*$`; if any does not, make **neither** write and log the refusal:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+     decision --plan-id {plan_id} --level WARNING \
+     --message "(plan-marshall:phase-3-outline:light-lane) Domain narrowing wrote nothing: a domain name falls outside the documented alphabet and would be interpolated into a command line."
+   ```
+
+   Why the alphabet is checked rather than assumed — no upstream write path guarantees it — is stated once in [`../SKILL.md`](../SKILL.md) § Domain Narrowing; do not restate the reasoning here.
 
 4. Emit the returned `report` verbatim — on **both** success outcomes, including `narrowed: false` — to its two declared sinks. First, a decision-log entry:
 
