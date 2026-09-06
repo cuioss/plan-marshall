@@ -400,8 +400,10 @@ Read `review_rate_window_await` and `review_rate_window_timeout_seconds` off the
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_re_review recovery-action \
-  --bot-kind {bot_kind} --cause {cause} --plan-id {plan_id}
+  --bot-kind {bot_kind} [--cause {cause}] --plan-id {plan_id}
 ```
+
+⛔ **Pass `--cause` only when a cause was actually OBSERVED, and omit the flag entirely when it was not.** `--cause` declares `choices=('size','quota')` and is not `required`, so an unobserved cause has no token to interpolate: substituting an empty or non-choice value is an argparse rejection (exit 2), which this document's exit-code convention turns into a hard STOP — killing the recovery for exactly the refusal this sequence exists to arm. An unobserved cause is a modelled state, not a hypothetical: `bot-participation-contract.md` documents "a refusal NO arm of the recognition stack could READ", and the selector defaults `cause` to the empty string precisely so the omission resolves rather than rejects.
 
 Pass `--window-expired` and `--attempts-remaining` only once a claim exists to report them (Branch 3 polls both); omit them here, where no window has been claimed yet. Read `action` from the returned TOON and enter the branch it names:
 
@@ -606,11 +608,13 @@ Then RE-CONSULT the selector, now that both observations exist, and route on the
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_re_review recovery-action \
-  --bot-kind {bot_kind} --cause {cause} --window-expired true \
+  --bot-kind {bot_kind} [--cause {cause}] --window-expired true \
   --attempts-remaining {attempts_remaining} --plan-id {plan_id}
 ```
 
-`{attempts_remaining}` is the field the Branch 3 `rate-window check` poll returned. Both flags are supplied here **because both were observed** — omitting either returns `action: unmeasured`, which authorizes nothing and would leave this boundary with no route.
+`{attempts_remaining}` is the field the Branch 3 `rate-window check` poll returned. `--window-expired` and `--attempts-remaining` are supplied here **because both were observed** — omitting either returns `action: unmeasured`, which authorizes nothing and would leave this boundary with no route.
+
+⛔ **`--cause` keeps the same conditional treatment it has at the first consult: pass it only when a cause was observed, and omit the flag entirely when it was not.** The rejection is worse here than there — this site fires *after* the window claim and the full poll-to-expiry wait, so an argparse exit 2 discards a completed wait and a spent recovery attempt. Reaching this boundary at all means `cause != size` (a size cause routes to Branch 0), so an absent cause is a live possibility on the path that reaches this line.
 
 - **`action: generate_trigger`** — the bot re-reviews on push (`trigger_semantics: auto_on_push`), so new commits are an event it honours. Proceed to **Branch 4**.
 - **`action: close_and_reopen`** — the bot reviews only when explicitly asked (`trigger_semantics: requires_explicit_trigger`), so a push is not an event it answers. Proceed to **Branch 5**.

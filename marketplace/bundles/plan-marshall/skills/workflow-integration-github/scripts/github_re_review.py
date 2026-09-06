@@ -1113,7 +1113,11 @@ def main() -> int:
     recovery.add_argument(
         '--cause',
         choices=('size', 'quota'),
-        help="The refusal's observed cause; 'size' resolves escalate_structural and dominates the class",
+        help=(
+            "The refusal's observed cause; 'size' resolves escalate_structural and dominates "
+            'the class. OMIT it when unobserved (reads as an empty cause) — a refusal no arm '
+            'of the recognition stack could read is a modelled state, not a hypothetical'
+        ),
     )
     recovery.add_argument(
         '--window-expired',
