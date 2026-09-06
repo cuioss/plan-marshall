@@ -1239,6 +1239,13 @@ def pytest_report_header(config):
 #: here, so this dict is the complete, enumerated boundary of what a green run is
 #: allowed to have left uncovered.
 #:
+#: **The reason is enforced, not merely recorded.** An entry approves a specific
+#: CAUSE for a nodeid, not the nodeid itself: a listed test that starts skipping
+#: for a different cause fails the run exactly as an unlisted one does. Without
+#: that, an approval granted for an absent tool would go on covering a fixture
+#: that broke later — a new skip inheriting an old exemption, which is the same
+#: silent loss of coverage this gate exists to catch.
+#:
 #: It is a named enumeration rather than a count or a path prefix on purpose. A
 #: count cannot say WHICH test stopped running, and a prefix silently absorbs a
 #: new skip added later to an already-listed module — which is the failure this
@@ -1317,10 +1324,14 @@ _SKIP_EXCEPTIONS: dict[str, tuple[str, str]] = {
         'pyright-langserver not installed',
     ),
     # --- in-suite-policy: a parametrized case with no data to assert ---
+    # The reason is the guard's own text, verbatim: the gate compares it against
+    # what pytest records, so an explanatory gloss appended here would never match
+    # and would read as a changed cause. Why this case has nothing to assert is
+    # documented under ``in-suite-policy`` above, where prose belongs.
     'test/plan-marshall/workflow-integration-github/test_refusal_recovery_arming.py'
     '::TestRefusalIsNeverABareTimeout::test_a_bots_declared_refusal_is_recognized_as_DATA[cuioss-review-bot]': (
         'in-suite-policy',
-        'cuioss-review-bot declares no observed refusal phrasing, so this case has nothing to assert',
+        'cuioss-review-bot declares no observed refusal phrasing',
     ),
 }
 
@@ -1352,6 +1363,67 @@ def _skip_reason(report) -> str:
     if isinstance(longrepr, str) and longrepr:
         return longrepr
     return '<no reason recorded>'
+
+
+#: The prefix pytest puts in front of the reason it renders into ``longrepr``.
+_SKIP_REASON_PREFIX = 'skipped:'
+
+
+def _normalize_skip_reason(reason: str) -> str:
+    """The comparable form of a skip reason.
+
+    pytest renders the message in the ``longrepr`` triple as ``Skipped: <reason>``
+    in the common case, so the RECORDED text carries a prefix the APPROVED text
+    in :data:`_SKIP_EXCEPTIONS` never does — comparing the two raw would report a
+    mismatch on every entry. The strip is case-insensitive because the casing is
+    pytest's to choose, not this suite's.
+
+    Whitespace is collapsed as well as trimmed: a reason that reaches the report
+    rewrapped across lines is the same reason, and a comparison that says
+    otherwise fails for formatting rather than for cause.
+
+    This is a named function rather than an expression inlined at the comparison
+    so the transformation applied to both sides is inspectable in one place.
+    """
+    text = reason.strip()
+    if text.lower().startswith(_SKIP_REASON_PREFIX):
+        text = text[len(_SKIP_REASON_PREFIX) :]
+    return ' '.join(text.split())
+
+
+def _skip_offenders(
+    skipped: dict[str, str],
+    approved: dict[str, tuple[str, str]],
+) -> tuple[list[str], list[tuple[str, str, str]]]:
+    """The two kinds of unapproved skip, as ``(unlisted, mismatched)``.
+
+    ``unlisted`` holds the nodeids absent from ``approved`` — the arm that has
+    always fired. ``mismatched`` holds ``(nodeid, approved_reason,
+    recorded_reason)`` triples whose nodeid IS listed but whose recorded reason
+    is not the one it was listed for: an entry exempts a nodeid for the CAUSE
+    recorded beside it, so a test that starts skipping for a new cause is a new
+    skip and must not inherit the old approval.
+
+    The two are returned separately because they need different remedies — add an
+    entry, versus investigate a changed cause — and a caller that cannot tell
+    them apart cannot say which.
+
+    Containment, not equality: pytest may append context to a reason, and a
+    whole-string comparison would redden every such run for no defect. Both sides
+    are normalized (see :func:`_normalize_skip_reason`) and compared
+    case-insensitively.
+    """
+    unlisted: list[str] = []
+    mismatched: list[tuple[str, str, str]] = []
+    for nodeid, recorded in sorted(skipped.items()):
+        entry = approved.get(nodeid)
+        if entry is None:
+            unlisted.append(nodeid)
+            continue
+        approved_reason = entry[1]
+        if _normalize_skip_reason(approved_reason).lower() not in _normalize_skip_reason(recorded).lower():
+            mismatched.append((nodeid, approved_reason, recorded))
+    return unlisted, mismatched
 
 
 def pytest_runtest_logreport(report):
@@ -1388,32 +1460,49 @@ def pytest_sessionfinish(session, exitstatus):
     * a ``-k`` / ``-m`` filtered run is exempt, because filtering is the
       developer asking for a subset and its deselections are not guard failures.
 
-    Every other skip is measured against the enumerated exception list, and one
-    that is not on it fails the session, naming the nodeid AND the reason.
+    Every other skip is measured against the enumerated exception list on BOTH
+    halves of its entry: the nodeid AND the reason. A nodeid that is not on the
+    list fails the session, and so does a listed nodeid that skipped for a cause
+    other than the one it was listed for — an entry approves a specific cause,
+    not the test. Each kind is reported separately, naming the nodeid and the
+    reason, because they need different remedies.
     """
     config = session.config
     if hasattr(config, 'workerinput'):
         return  # xdist worker — the controller owns the session-level verdict
     if getattr(config.option, 'keyword', '') or getattr(config.option, 'markexpr', ''):
         return
-    offenders = sorted(set(_SKIPPED_NODEIDS) - set(_SKIP_EXCEPTIONS))
-    if not offenders:
+    unlisted, mismatched = _skip_offenders(_SKIPPED_NODEIDS, _SKIP_EXCEPTIONS)
+    if not unlisted and not mismatched:
         return
     session.exitstatus = 1
     reporter = config.pluginmanager.get_plugin('terminalreporter')
     if reporter is None:
         return
     reporter.write_line('')
-    reporter.write_line(
-        f'ERROR: {len(offenders)} test(s) skipped outside the {len(_SKIP_EXCEPTIONS)}-entry '
-        f'residual skippable set. A green run must not quietly cover less than it '
-        f'claims: either fix the condition, or add the nodeid to _SKIP_EXCEPTIONS in '
-        f'test/conftest.py with its class and reason.',
-        red=True,
-    )
-    for nodeid in offenders:
-        reporter.write_line(f'  {nodeid}', red=True)
-        reporter.write_line(f'      reason: {_SKIPPED_NODEIDS[nodeid]}', red=True)
+    if unlisted:
+        reporter.write_line(
+            f'ERROR: {len(unlisted)} test(s) skipped outside the {len(_SKIP_EXCEPTIONS)}-entry '
+            f'residual skippable set. A green run must not quietly cover less than it '
+            f'claims: either fix the condition, or add the nodeid to _SKIP_EXCEPTIONS in '
+            f'test/conftest.py with its class and reason.',
+            red=True,
+        )
+        for nodeid in unlisted:
+            reporter.write_line(f'  {nodeid}', red=True)
+            reporter.write_line(f'      reason: {_SKIPPED_NODEIDS[nodeid]}', red=True)
+    if mismatched:
+        reporter.write_line(
+            f'ERROR: {len(mismatched)} listed test(s) skipped for a reason other than the '
+            f'approved one. An entry in _SKIP_EXCEPTIONS approves a specific CAUSE, not the '
+            f'test, so a new cause is an unapproved skip: investigate what changed, and '
+            f'update the entry in test/conftest.py only once the new cause is understood.',
+            red=True,
+        )
+        for nodeid, approved_reason, recorded_reason in mismatched:
+            reporter.write_line(f'  {nodeid}', red=True)
+            reporter.write_line(f'      approved reason: {approved_reason}', red=True)
+            reporter.write_line(f'      recorded reason: {recorded_reason}', red=True)
 
 
 _ENTRY_CWD_KEY = pytest.StashKey[str]()

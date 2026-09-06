@@ -206,6 +206,14 @@ its reason, and every entry must be on the residual skippable set in
 any that is not. The set's size is printed in the session header as
 `residual skippable set: N nodeid(s) permitted to skip`.
 
+An entry there approves a **cause**, not a test: it carries the class and the
+reason, and the gate enforces the reason as well as the nodeid. A listed test that
+starts skipping for a different cause fails the run just as an unlisted one does,
+and the failure names the approved reason beside the recorded one so the
+divergence is readable without opening the source. The two kinds are reported
+separately because the remedies differ — add an entry, versus find out what
+changed.
+
 **How long the suite took, and where it went.** The same command's
 `--durations=25` table, followed by the trailing total:
 
