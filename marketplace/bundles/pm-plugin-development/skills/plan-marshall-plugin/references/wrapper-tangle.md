@@ -6,6 +6,10 @@ This is the domain-specific retrospective aspect contributed by `pm-plugin-devel
 
 **Conditional**: runs only when the audited plan's domain is `plan-marshall-plugin-dev`. Emits zero findings when the wrapper sources are clean.
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../../../plan-marshall/skills/tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Purpose
 
 The CI integration abstraction exists because `gh`/`glab` invocations mix two concerns the retrospective needs to keep separate: remote provider operations (PR, issue, review) and local git mutations (checkout, branch delete). When a wrapper shortcuts to direct CLI usage AND tangles local-git side-effects into the same subprocess call, two failure modes become hard to prevent:

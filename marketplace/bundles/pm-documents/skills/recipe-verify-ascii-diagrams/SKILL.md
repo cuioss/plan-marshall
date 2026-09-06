@@ -14,6 +14,10 @@ per offending file. Discovers candidate `.md` (marketplace) and `.adoc` (doc)
 files, classifies which contain misaligned boxes via the validator's `check`
 mode, and outlines a fix per offending file via the validator's `fix` mode.
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../../plan-marshall/skills/tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Input
 
 | Parameter | Type | Required | Description |

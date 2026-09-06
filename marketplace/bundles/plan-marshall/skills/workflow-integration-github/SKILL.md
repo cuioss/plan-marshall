@@ -33,6 +33,10 @@ All four verbs FAIL LOUD when GitHub is not configured (a typed `unconfigured` s
 - Review comment responses must explain the fix or provide rationale for disagreement
 - CI wait timeout must be respected with user prompt on expiry
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Parameters
 
 | Parameter | Type | Required | Default | Description |

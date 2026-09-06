@@ -30,6 +30,10 @@ its exit code and result TOON. No LLM judgement is involved in detection.
 - The marker syntax and this detector's `MARKER_PATTERN` must agree with the provenance fixture, never with recollection of the format.
 - The exit-code contract below is the gate's machine-readable verdict and must not be weakened by category.
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../../plan-marshall/skills/tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Marker syntax
 
 ```text

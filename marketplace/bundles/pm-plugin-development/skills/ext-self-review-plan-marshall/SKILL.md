@@ -10,6 +10,10 @@ implements: plan-marshall:extension-api/standards/ext-point-self-review-surfacin
 
 **Role**: Plan-marshall-domain implementor of the `ext-self-review-{domain}` extension point (see [`../../../plan-marshall/skills/extension-api/standards/ext-point-self-review-surfacing.md`](../../../plan-marshall/skills/extension-api/standards/ext-point-self-review-surfacing.md)). Surfaces concrete candidates from the worktree's staged diff so the LLM cognitive review pass in [`../../../plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md`](../../../plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md) can apply the seventeen structural-defect checks (symmetric pair, regex over-fit, wording disambiguation, duplication, contract drift, producer-without-consumer, source-of-truth drift, same-document contradiction, description-vs-body drift, unguarded boundary, stale count-prose, touched-claim re-check, ordinal-reference re-check, scan-derived-key reachability, worked-example clause mismatch, duplicate-claimable key, discard-without-report) against a bounded surface, not an unbounded read of the whole diff.
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../../plan-marshall/skills/tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Finding-authoring contract (cognitive review pass)
 
 When the cognitive review pass files a finding for a confirmed structural defect, it MUST honor two rules so the finding flows cleanly through the consolidated find → ingest → one-triage → one-respond pipeline:

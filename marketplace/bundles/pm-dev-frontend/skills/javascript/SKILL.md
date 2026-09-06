@@ -14,6 +14,10 @@ Core JavaScript development standards covering modern JavaScript features (ES202
 - **Prohibited actions**: Do not invent script arguments not documented below; do not skip analysis before fixing
 - **Constraints**: All script calls use Rule 9 explicit notation (`python3 .plan/execute-script.py pm-dev-frontend:javascript:jsdoc {subcommand} {args}`)
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../../plan-marshall/skills/tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Prerequisites
 
 - ES2015+ and ES modules
