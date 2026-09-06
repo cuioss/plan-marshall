@@ -21,14 +21,15 @@ These tests pin the closure invariant and the count-free rewrite:
 (d) Every row under ``## Dispatched steps`` declares the ``effort
     resolve-target`` lookup it resolves under — the roster's resolver-lookup
     completeness invariant.
-(e) Every dispatch branch in ``SKILL.md`` § "Step 3: Execute Step Pipeline"
-    emits its ``[DISPATCH]`` line from the **resolve seam**, not by hand: every
-    ``Task:`` spawn is preceded by an ``effort resolve-target … --workflow`` call
-    (the resolve that emits the line per firing, so a re-fire that re-resolves
-    re-emits), and NO hand-written ``--message "[DISPATCH] …"`` step survives (it
-    would double-emit and reintroduce the per-role blind spot the seam closes).
-    The sweep is scoped to that one section — the section that holds every dispatch
-    branch the document has.
+(e) Every dispatch branch in the finalize skill emits its ``[DISPATCH]`` line from
+    the **resolve seam**, not by hand: every ``Task:`` spawn is preceded by an
+    ``effort resolve-target … --workflow`` call (the resolve that emits the line per
+    firing, so a re-fire that re-resolves re-emits), and NO hand-written
+    ``--message "[DISPATCH] …"`` step survives (it would double-emit and reintroduce
+    the per-role blind spot the seam closes). The population is EVERY markdown file
+    under the skill directory, walked — not ``SKILL.md`` alone. See "The (e)
+    population is the whole skill directory" below for why the single-file scope was
+    a blind spot and what the per-file scoping still narrows.
 (f) Every step doc in the finalize-step registry that **self-classifies** (asserts
     "This step is \\*\\*inline\\*\\*" / "\\*\\*dispatched\\*\\*" in its own body)
     agrees with the roster: an inline-asserting doc's step appears under
@@ -38,19 +39,27 @@ These tests pin the closure invariant and the count-free rewrite:
     RIGHT, because they never read the step's own doc. The roster and the executor
     doc are two sources that can disagree, and ``default:architecture-refresh`` is
     the case that did: its executor doc asserted inline while the roster classified
-    it dispatched.
+    it dispatched. ⛔ Read "What (f) actually compares" below before crediting it
+    with whole-registry coverage — it does not have it.
+(g) ``SKILL.md`` item 5c's dispatch-boundary **classification contract** still routes
+    a findings-bearing ``loop_back`` to ``returned_with_findings`` rather than to
+    ``error``, and its five termination causes agree between the ``--termination-cause``
+    command string, the detection table, and item 5e's cross-ledger sentence. Anchored
+    on the ``record-dispatch-boundary`` command string and on the cause ORDER, never on
+    a heading: no test in this directory read that table, so editing it back to the
+    pre-fix four-cause routing reverted the deliverable with every test green.
 
 Steps are named in the roster by their exact registry key (``default:`` /
 ``project:`` / ``bundle:skill`` prefix included), so the comparison is a plain
 set equality with no normalisation heuristics.
 
 The (d), (e) and (f) populations are **derived, never hardcoded**: (d) iterates
-the rows the roster parser finds under ``## Dispatched steps``, (e) iterates the
-``Task:`` spawns found in that ``SKILL.md`` section (pairing each with its seam
-resolve) rather than a hardcoded emit-site list, and (f) reads each step doc's OWN
-self-classification sentence over a population DISCOVERED from the finalize-step
-registry (``find_implementors``) rather than a pinned file list or a
-``default:architecture-refresh`` literal. A
+the rows the roster parser finds under ``## Dispatched steps``, (e) walks the
+markdown files under the finalize skill directory and iterates the ``Task:`` spawns
+found in each (pairing every one with its seam resolve) rather than a hardcoded
+emit-site list, and (f) reads each step doc's OWN self-classification sentence over
+a population DISCOVERED from the finalize-step registry (``find_implementors``)
+rather than a pinned file list or a ``default:architecture-refresh`` literal. A
 hardcoded roster or emit-site list would pass vacuously the moment a row or a
 dispatch branch is added, which is precisely the drift these tests exist to
 catch — and an ``assert 'default:architecture-refresh' in inline`` literal would
@@ -58,16 +67,95 @@ pass vacuously the instant the pair is fixed, detecting nothing else ever again.
 Each detector carries a mutation guard asserting it fires on the exact
 pre-fix shape, so a regex typo cannot make it vacuously green.
 
+The (e) population is the whole skill directory
+-----------------------------------------------
+The seam sweep used to read ONE file — ``SKILL.md`` — and blank every line outside
+one section of it. The detector itself was alive (mutating an in-section line did
+redden it), but two real dispatch branches sat OUTSIDE that file entirely, in
+``standards/finalize-step-simplify.md`` and ``workflow/pre-submission-self-review.md``,
+and no shape they could take was visible to it. The population is now every
+``*.md`` under the skill directory, discovered by walk.
+
+The **per-file section scoping is kept**, and it is now per-file rather than global:
+``_SECTION_SCOPED_DOCS`` narrows a named document to a named section, and every other
+document is swept whole. Only ``SKILL.md`` is narrowed, for its documented reason —
+a ``dispatch-logging.md`` citation in unrelated prose (the trailing ``## Related``
+table) must not be read as an emit site. An executor doc has no such section
+structure to scope against and carries its dispatch branch inline in its own
+workflow, so sweeping it whole is what makes its spawn visible at all; its
+``## Related`` table carries neither a ``Task:`` spawn line nor a
+``--message "[DISPATCH]`` emit, so the false positive the SKILL.md scoping avoids
+cannot arise there.
+
+What (f) actually compares
+--------------------------
 (f)'s population is the WHOLE finalize-step registry, DERIVED from
 ``find_implementors`` — not a hardcoded file list. Every registered step's own
 authoritative doc is read for a self-classification sentence, so a step that gains
 one is covered for free and a doc that moves is followed by the registry rather
-than dropping out of a pinned tuple. Only ``architecture-refresh.md``
-self-classifies today, so it is the only step the correctness check currently
-compares — a property of the docs, not a bound on the check. Closing this with a
-second hand-written pin (a per-step ``assert '…' in inline`` literal) is exactly the
+than dropping out of a pinned tuple. Closing this with a second hand-written pin (a
+per-step ``assert '…' in inline`` literal) is exactly the
 hand-maintained-mirror-of-a-derived-set archetype these tests exist to prevent, so
 the population is discovered, never enumerated.
+
+⛔ **The comparison is far narrower than the discovery, and this check does not
+close that gap.** A doc contributes a comparison only when it carries the bold
+self-classification sentence, and almost none of them do — so (f) discovers the
+whole registry and then compares a small fraction of it. That fraction is
+PUBLISHED (see "Published coverage" below) rather than asserted away: the number of
+registered steps that contribute a comparison is reported on every run, including a
+passing one, and no test asserts that it equals the registered-step count. Do not
+read a green (f) as "every registered step's classification was checked" — read it
+as "every step that states a classification agrees with the roster", which is a
+strictly weaker claim over a population the header names.
+
+Closing the gap needs a decision this test suite must not make on its own: the
+preferred remedy adds a REQUIRED machine-readable classification fact to the
+finalize-step extension-point frontmatter contract, and that contract reaches
+implementor docs in CONSUMER projects outside this repository. A contract change
+with that reach is escalated to the operator, not self-approved by a run. The
+proposal — both options, the migration hazard, and the state of the
+discovered-but-unregistered doc — is recorded in the plan's decision log and carried
+in the PR body.
+
+⛔ **The figures once quoted for this gap are stale, and were re-derived here by
+calling the helpers above rather than trusted.** The lead said "26 implementor docs
+against 25 registered steps"; the two sets are now the same size and the same
+membership, so no discovered doc is unregistered today. That is a property of the
+tree at this moment, not a guarantee — which is exactly why the registry-absence
+finding below is reported rather than asserted empty.
+
+Registry absence is REPORTED, never asserted
+--------------------------------------------
+A discovered doc that self-classifies but whose frontmatter ``name:`` resolves to no
+registered key used to raise a hard ``AssertionError`` about frontmatter resolution.
+That is the wrong failure: the real condition is REGISTRY ABSENCE — the doc exists
+and declares a classification, and nothing registers it — and the assertion reported
+neither that nor the doc. It is downgraded to a collected finding naming registry
+absence, carried in the published coverage line and asserted for its CONTENT rather
+than for its emptiness. ⛔ A silent skip would not be the fix: the reported finding
+is the load-bearing half, and a doc that drops out of the comparison without saying
+so is the same invisible-shrink defect this module exists to prevent.
+
+The finding list is EMPTY in the tree as it stands (see the re-derivation above), and
+nothing asserts that it stays that way. The assertion this replaced was dormant for
+the same reason — the unregistered doc of the day did not self-classify — and would
+have fired, with a message about the wrong condition, the moment it did.
+
+Published coverage
+------------------
+The (f) coverage figures ride the session report header
+(``GUARD_POPULATION_LABEL`` / ``GUARD_POPULATION_SIZE`` below, rendered by the root
+conftest's ``pytest_report_header``), so a comparison population that quietly shrank
+is visible on the GREEN run. A ``print`` cannot publish it: this repository's
+``addopts`` carry neither ``-s`` nor ``-rA``, so a passing test's stdout is captured
+and discarded, and under the ``-n auto`` xdist run the canonical build performs, even
+a capture-suspended write is swallowed at the worker boundary. The header is rendered
+by the CONTROLLER before collection and is the one channel a pass surfaces.
+
+⛔ **Stated rather than left implied**: the (e) sweep's per-document spawn counts do
+NOT ride that channel. The header carries the (f) coverage line only; (e)'s
+population floors are asserted by their own tests, whose messages carry the counts.
 """
 
 from __future__ import annotations
@@ -89,12 +177,14 @@ _DISPATCHED_HEADING = '## Dispatched steps'
 _INLINE_HEADING = '## Inline steps'
 _SKILL_SECTION_HEADING = '## Dispatched workflows vs inline steps'
 
-#: The one ``SKILL.md`` section that carries every dispatch branch. The (e)
-#: sweeps are scoped to it so a ``dispatch-logging.md`` link in unrelated prose
-#: (e.g. the trailing ``## Related`` table) is not read as an emit site — the
-#: exact false positive raised in review. The scoping drops no dispatch branch:
-#: every ``Task: plan-marshall:`` spawn and every emission-contract citation in
-#: the document today lies inside this section.
+#: The one ``SKILL.md`` section that carries every dispatch branch IN THAT FILE.
+#: The (e) sweep narrows ``SKILL.md`` to it so a ``dispatch-logging.md`` link in
+#: unrelated prose (e.g. the trailing ``## Related`` table) is not read as an emit
+#: site — the exact false positive raised in review. The scoping drops no dispatch
+#: branch from ``SKILL.md``: every ``Task: plan-marshall:`` spawn and every
+#: emission-contract citation in THAT document lies inside this section. It never
+#: bounded the sweep's population, which is the whole skill directory — see
+#: ``_SECTION_SCOPED_DOCS``.
 _SKILL_STEP3_HEADING = (
     '### Step 3: Execute Step Pipeline (Manifest-Driven, Resumable, Timeout-Wrapped)'
 )
@@ -106,6 +196,17 @@ _SKILL_STEP3_HEADING = (
 #: sub-headings inside Step 3 correctly do not terminate it, for the same
 #: prefix-comparison reason.
 _SKILL_SECTION_STOP_PREFIXES = ('## ', '### ')
+
+#: Per-file section scoping for the (e) seam sweep, as
+#: ``path -> (heading, stop_prefixes)``. A document listed here is swept ONLY
+#: inside the named section; every other markdown file under the skill directory
+#: is swept WHOLE. The map is what keeps the widened population from
+#: reintroducing the ``## Related``-link false positive in ``SKILL.md`` while
+#: still reaching the executor docs, which carry their dispatch branch inline in
+#: their own workflow and have no equivalent section to scope against.
+_SECTION_SCOPED_DOCS: dict[Path, tuple[str, tuple[str, ...]]] = {
+    _SKILL_DOC: (_SKILL_STEP3_HEADING, _SKILL_SECTION_STOP_PREFIXES),
+}
 
 #: Spelled-out cardinals a step-count claim can use instead of a digit. ``one``
 #: is deliberately EXCLUDED: "one step" is overwhelmingly ordinary singular prose
@@ -204,6 +305,49 @@ _FRONTMATTER_NAME = re.compile(r'^name:\s*(.+?)\s*$', re.MULTILINE)
 #: Registry-key prefixes a bare frontmatter ``name:`` may resolve under.
 _REGISTRY_KEY_PREFIXES = ('', 'default:', 'project:', 'plan-marshall:')
 
+#: (g) The item-5c dispatch-boundary classification contract. Anchored on the
+#: ``--termination-cause`` alternation of the ``record-dispatch-boundary`` command —
+#: a command string, deliberately NOT a heading and NOT an item number, both of
+#: which move with ordinary editing while the invocation does not.
+_TERMINATION_CAUSE_FLAG = re.compile(r'--termination-cause\s+\{([^}]+)\}')
+
+#: The boundary-recording invocation the ``--termination-cause`` flag belongs to.
+#: Asserted present so a renamed verb fails loudly rather than leaving the sweep
+#: reading an alternation that no longer governs anything.
+_BOUNDARY_RECORD_COMMAND = (
+    'plan-marshall:manage-metrics:manage-metrics record-dispatch-boundary'
+)
+
+#: The five causes, in the order the contract declares them. This tuple is the
+#: INDEPENDENT oracle — it is copied from the specification, not derived from the
+#: document, so a document that renames or reorders its own two surfaces
+#: consistently still reddens. The two in-document surfaces (the command's
+#: alternation and the detection table) are additionally compared to EACH OTHER,
+#: which catches the half-edit the oracle alone would not localise.
+_TERMINATION_CAUSES = (
+    'step_complete',
+    'returned_with_findings',
+    'blocked_user_review',
+    'blocked_session_restart',
+    'error',
+)
+
+#: The routing each cause's detection rule MUST state — the deliverable this
+#: contract locks. ``returned_with_findings`` exists precisely so a findings-bearing
+#: ``loop_back`` is NOT stamped ``error``; before it, a multi-round self-review was
+#: graded a defect, so the more thoroughly a gate worked the worse its plan looked.
+#: Editing the table back to that routing is the silent revert (g) exists to catch.
+_TERMINATION_CAUSE_ROUTING = {
+    'step_complete': ('`outcome: done`',),
+    'returned_with_findings': ('`outcome: loop_back`', 'never `error`'),
+    'error': ('`outcome: failed`',),
+}
+
+#: Item 5e's cross-ledger sentence: the manifest execution log's ``loop_back``
+#: outcome and item 5c's ``returned_with_findings`` cause must be documented as the
+#: SAME event, or the two ledgers agree only by coincidence.
+_CROSS_LEDGER_SENTENCE = 'the SAME event item 5c stamps `returned_with_findings` for'
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -253,12 +397,14 @@ def _row_declares_resolver_lookup(row: str) -> bool:
     return bool(_RESOLVER_LOOKUP.search(row))
 
 
-def _dispatch_branch_scoped_skill_text() -> str:
-    """Return ``SKILL.md`` with every line outside the dispatch-branch section blanked.
+def _blank_outside_section(
+    text: str, heading: str, stop_prefixes: tuple[str, ...]
+) -> str:
+    """Return ``text`` with every line outside the named section blanked.
 
     Blanking rather than slicing keeps the line count — and therefore every
     index the (e) detectors report — identical to the real document, so a
-    reported ``line N`` still names the actual ``SKILL.md`` line. The detectors
+    reported ``line N`` still names the actual line in the file. The detectors
     themselves keep taking raw text, so their mutation guards can go on feeding
     them synthetic snippets; the scoping lives here, at the call sites.
 
@@ -266,20 +412,92 @@ def _dispatch_branch_scoped_skill_text() -> str:
         AssertionError: via ``section_lines`` when the heading is renamed —
         a loud failure rather than a silently empty (vacuous) sweep.
     """
-    text = _SKILL_DOC.read_text(encoding='utf-8')
     lines = text.splitlines()
-    section = section_lines(
-        text, _SKILL_STEP3_HEADING, stop_prefixes=_SKILL_SECTION_STOP_PREFIXES
-    )
+    section = section_lines(text, heading, stop_prefixes=stop_prefixes)
     heading_index = next(
-        index
-        for index, line in enumerate(lines)
-        if line.strip() == _SKILL_STEP3_HEADING
+        index for index, line in enumerate(lines) if line.strip() == heading
     )
     start = heading_index + 1
     scoped = [''] * len(lines)
     scoped[start : start + len(section)] = section
     return '\n'.join(scoped)
+
+
+def _finalize_skill_markdown_docs() -> list[Path]:
+    """Every markdown file under the finalize skill directory, discovered by walk.
+
+    The (e) population. Walked rather than listed: a hand-written file tuple would
+    go stale the moment a dispatch branch moved into a new document, which is the
+    single-file blind spot this widening removes — and it would do so silently,
+    because a sweep over a shrunken file set reports clean.
+    """
+    return sorted(_SKILL_DIR.rglob('*.md'))
+
+
+def _seam_sweep_corpus() -> list[tuple[str, str]]:
+    """Return ``(relative_path, scoped_text)`` for every document in the (e) population.
+
+    ``scoped_text`` is the whole file, except for the documents named in
+    ``_SECTION_SCOPED_DOCS``, which are narrowed to their declared section (line
+    numbering preserved — see :func:`_blank_outside_section`).
+    """
+    docs = _finalize_skill_markdown_docs()
+    assert docs, (
+        f'no markdown file found under {_SKILL_DIR} — the seam sweep would be '
+        'vacuous, and there would be no failure to say so'
+    )
+    corpus: list[tuple[str, str]] = []
+    for path in docs:
+        text = path.read_text(encoding='utf-8')
+        scope = _SECTION_SCOPED_DOCS.get(path)
+        if scope is not None:
+            heading, stop_prefixes = scope
+            text = _blank_outside_section(text, heading, stop_prefixes)
+        corpus.append((path.relative_to(_SKILL_DIR).as_posix(), text))
+    return corpus
+
+
+def _spawn_bearing_documents(corpus: list[tuple[str, str]]) -> list[str]:
+    """Relative paths of the corpus documents that carry at least one ``Task:`` spawn."""
+    return [rel for rel, text in corpus if _TASK_SPAWN.search(text)]
+
+
+def _termination_causes_in_command(text: str) -> list[str]:
+    """Return the causes the ``--termination-cause`` alternation accepts, in order.
+
+    Pure over ``text`` so the mutation guard can drive it with the pre-fix block.
+    """
+    alternations = _TERMINATION_CAUSE_FLAG.findall(text)
+    assert len(alternations) == 1, (
+        f'expected exactly one `--termination-cause {{…}}` alternation, found '
+        f'{len(alternations)}: {alternations} — the sweep cannot tell which one '
+        'governs'
+    )
+    return [cause.strip() for cause in alternations[0].split('|')]
+
+
+def _termination_cause_rows(text: str) -> list[tuple[str, str]]:
+    """Return ``(cause, detection_rule)`` for each classification-table row, in order.
+
+    The row population is DERIVED from the command's alternation rather than
+    matched by table position or heading: a two-cell markdown row whose first cell
+    backticks one of the accepted causes is a classification row. Restricting to
+    two-cell rows is what keeps the wider three- and four-column tables in the same
+    document (the resolver-outcome mappings) out of the population.
+    """
+    causes = set(_termination_causes_in_command(text))
+    rows: list[tuple[str, str]] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not (stripped.startswith('|') and stripped.endswith('|')):
+            continue
+        cells = [cell.strip() for cell in stripped.strip('|').split('|')]
+        if len(cells) != 2:
+            continue
+        name = cells[0].strip('`')
+        if name in causes:
+            rows.append((name, cells[1]))
+    return rows
 
 
 #: The HEAD-dependent prose region inside § "Step 3: Execute Step Pipeline".
@@ -417,30 +635,114 @@ def _finalize_step_doc_paths() -> list[Path]:
     return [Path(str(record['path'])) for record in find_implementors(_FINALIZE_STEP_EXT_POINT)]
 
 
-def _step_doc_claims() -> list[tuple[str, str, str]]:
-    """Return ``(doc_path, registry_key, claim)`` for self-classifying step docs.
+def _classify_discovered_doc(
+    doc_path: str, text: str, registered: set[str]
+) -> tuple[tuple[str, str, str] | None, str | None]:
+    """Return ``(claim, finding)`` for ONE discovered step doc — at most one is set.
 
-    Iterates the registry-DERIVED (f) population and reads each doc's OWN
-    classification sentence. Docs that make no classification claim contribute
-    nothing — the check is about *disagreement* between two sources, so a doc that
-    asserts nothing cannot disagree with the roster.
+    Pure over its three inputs so the mutation guard can drive it with a synthetic
+    document, and the single place the registry-absence disposition lives.
+
+    A doc that carries no self-classification sentence contributes NEITHER: the
+    check is about *disagreement* between two sources, so a doc that asserts nothing
+    cannot disagree with the roster.
+
+    A doc that DOES self-classify but resolves to no registered key contributes a
+    **finding naming registry absence**, never an exception. The hard assertion this
+    replaced reported "frontmatter resolution" — which is not the condition. The doc
+    exists, declares a classification, and nothing registers it; that is the fact
+    worth reporting, and it is reported rather than raised so an unregistered doc
+    gaining the sentence does not fail the suite with a message about the wrong
+    thing. ⛔ It is NOT skipped silently: the finding is the load-bearing half.
+    """
+    match = _SELF_CLASSIFICATION.search(text)
+    if not match:
+        return None, None
+    claim = match.group(1)
+    name = _frontmatter_name(text)
+    if not name:
+        return None, (
+            f'{doc_path}: self-classifies **{claim}** but declares no frontmatter '
+            '`name:`, so it resolves to no registered finalize-step key (registry '
+            'absence) and contributes no comparison'
+        )
+    key = _registry_key(name, registered)
+    if key is None:
+        return None, (
+            f'{doc_path}: self-classifies **{claim}** under frontmatter name '
+            f'{name!r}, which resolves to no registered finalize-step key (registry '
+            'absence) — the doc is discovered but unregistered, so it contributes no '
+            'comparison'
+        )
+    return (doc_path, key, claim), None
+
+
+def _step_doc_claims(
+    paths: list[Path] | None = None,
+) -> tuple[list[tuple[str, str, str]], list[str]]:
+    """Return ``(claims, findings)`` over the registry-DERIVED (f) population.
+
+    ``claims`` are ``(doc_path, registry_key, claim)`` triples the correctness check
+    compares; ``findings`` name every discovered self-classifying doc that resolves
+    to no registered key. Both are products of the same walk, so the comparison
+    population and the reported shortfall can never be read from different sets.
+
+    ``paths`` defaults to a fresh ``find_implementors`` discovery; the coverage
+    helper passes the discovery it already performed so one call site does not walk
+    the registry twice.
     """
     registered = _registered_steps()
     claims: list[tuple[str, str, str]] = []
-    for path in _finalize_step_doc_paths():
-        text = path.read_text(encoding='utf-8')
-        match = _SELF_CLASSIFICATION.search(text)
-        if not match:
-            continue
-        name = _frontmatter_name(text)
-        assert name, f'{path} self-classifies but declares no frontmatter `name:`'
-        key = _registry_key(name, registered)
-        assert key, (
-            f'{path} declares frontmatter name {name!r}, which resolves to no '
-            f'registered finalize-step key'
+    findings: list[str] = []
+    for path in _finalize_step_doc_paths() if paths is None else paths:
+        claim, finding = _classify_discovered_doc(
+            str(path), path.read_text(encoding='utf-8'), registered
         )
-        claims.append((str(path), key, match.group(1)))
-    return claims
+        if claim is not None:
+            claims.append(claim)
+        if finding is not None:
+            findings.append(finding)
+    return claims, findings
+
+
+def _roster_correctness_coverage() -> dict[str, int | list[str]]:
+    """The (f) coverage figures, derived by calling this module's own helpers.
+
+    Nothing here is transcribed: ``discovered_docs`` comes from
+    ``find_implementors``, ``registered_steps`` from ``marshal.json``, and
+    ``compared`` from the claims the walk actually produced. Publishing the three
+    together is what makes "discovered the whole registry, compared a fraction of
+    it" legible instead of implied.
+    """
+    paths = _finalize_step_doc_paths()
+    claims, findings = _step_doc_claims(paths)
+    return {
+        'discovered_docs': len(paths),
+        'registered_steps': len(_registered_steps()),
+        'compared': len({key for _path, key, _claim in claims}),
+        'unregistered_self_classifiers': findings,
+    }
+
+
+def _coverage_line(coverage: dict[str, int | list[str]]) -> str:
+    """Render the (f) coverage figures as the one line the report header carries."""
+    return (
+        f'{coverage["compared"]} of {coverage["registered_steps"]} registered steps '
+        f'compared ({coverage["discovered_docs"]} implementor docs discovered, '
+        f'{len(coverage["unregistered_self_classifiers"])} unregistered '
+        'self-classifier(s))'
+    )
+
+
+#: Published on EVERY run — passing included — by the root conftest's
+#: ``pytest_report_header``. See the module docstring's "Published coverage"
+#: section for why this channel and not a ``print``, and for what it does and does
+#: not carry. The value is a rendered LINE rather than a bare integer because the
+#: figure that matters is a RATIO: a bare "1" would report the comparison count as
+#: if it were the coverage, which is the over-crediting this publication exists to
+#: stop.
+GUARD_POPULATION_LABEL = 'finalize roster self-classification coverage'
+GUARD_POPULATION_SIZE = _coverage_line(_roster_correctness_coverage())
 
 
 def _classification_mismatches(
@@ -656,21 +958,49 @@ def test_roster_row_population_matches_the_closure_parser():
 # ---------------------------------------------------------------------------
 
 
+def test_the_seam_sweep_population_reaches_past_the_skill_document():
+    # The population floor for (e). The sweep used to read ONE file and blank
+    # everything outside one of its sections, so two real dispatch branches in the
+    # executor docs were invisible to it whatever shape they took. These assertions
+    # are what redden if the walk silently collapses back to that scope — a shrunken
+    # population reports clean, and there is no hardcoded file list to notice it.
+    corpus = _seam_sweep_corpus()
+    spawn_bearing = _spawn_bearing_documents(corpus)
+
+    assert len(corpus) > 1, (
+        f'the (e) walk over {_SKILL_DIR} found {len(corpus)} document(s) — the sweep '
+        'has collapsed back to a single file'
+    )
+    assert spawn_bearing, (
+        f'no `Task:` spawn found in ANY of the {len(corpus)} documents under '
+        f'{_SKILL_DIR} — both (e) assertions below would be vacuous'
+    )
+    beyond_skill_doc = [rel for rel in spawn_bearing if rel != 'SKILL.md']
+    assert beyond_skill_doc, (
+        f'every `Task:` spawn under {_SKILL_DIR} is inside SKILL.md '
+        f'(spawn-bearing documents: {spawn_bearing}). The widening past SKILL.md is '
+        'what makes an out-of-file dispatch branch visible; if the skill genuinely '
+        'has no such branch left, re-derive this floor rather than deleting it — a '
+        'silently single-file sweep is exactly the blind spot it replaced.'
+    )
+
+
 def test_every_task_spawn_is_preceded_by_a_seam_resolve():
     # The `[DISPATCH]` emission rides the resolve seam: every `Task:` spawn must be
     # preceded by an `effort resolve-target … --workflow` call, which emits the line
     # per firing. A spawn under a bare (no --workflow) resolve carries no dispatch
     # record — the seam resolve and the spawn are one indivisible pair.
-    text = _dispatch_branch_scoped_skill_text()
-    assert _TASK_SPAWN.search(text), (
-        'No `Task:` spawn found in the SKILL.md '
-        f'"{_SKILL_STEP3_HEADING}" section — the assertion would be vacuous'
+    corpus = _seam_sweep_corpus()
+    assert _spawn_bearing_documents(corpus), (
+        f'no `Task:` spawn found under {_SKILL_DIR} — the assertion would be vacuous'
     )
 
-    unpaired = _spawns_missing_seam_resolve(text)
+    unpaired = [
+        f'{rel}: {hit}' for rel, text in corpus for hit in _spawns_missing_seam_resolve(text)
+    ]
 
     assert not unpaired, (
-        f'`Task:` spawn(s) in phase-6-finalize/SKILL.md with no preceding '
+        f'`Task:` spawn(s) under the finalize skill with no preceding '
         f'`effort resolve-target … --workflow` seam call — the seam emission and the '
         f'spawn are one indivisible pair, and a spawn under a bare (no --workflow) '
         f'resolve leaves no [DISPATCH] record: {unpaired}'
@@ -681,13 +1011,15 @@ def test_no_hand_written_dispatch_emit_survives():
     # The resolve seam owns the `[DISPATCH]` emission; a hand-written
     # `manage-logging work "[DISPATCH]"` step double-emits and reintroduces the
     # per-role blind spot the seam closes. No dispatch branch may carry one.
-    text = _dispatch_branch_scoped_skill_text()
+    corpus = _seam_sweep_corpus()
 
-    hand_written = _hand_written_dispatch_emits(text)
+    hand_written = [
+        f'{rel}: {hit}' for rel, text in corpus for hit in _hand_written_dispatch_emits(text)
+    ]
 
     assert not hand_written, (
-        f'Hand-written `--message "[DISPATCH] …"` emit(s) in phase-6-finalize/SKILL.md '
-        f'Step 3 — the resolve seam owns the emission now, so a hand-written line '
+        f'Hand-written `--message "[DISPATCH] …"` emit(s) under the finalize skill '
+        f'— the resolve seam owns the emission now, so a hand-written line '
         f'double-emits and reintroduces the per-role blind spot: {hand_written}'
     )
 
@@ -797,7 +1129,12 @@ def test_finalize_step_registry_population_is_non_empty_and_readable():
 def test_touched_step_docs_agree_with_the_roster_classification():
     # Arrange — the claims are READ from the docs, not asserted about a named
     # step, so a second doc gaining a self-classification is covered for free.
-    claims = _step_doc_claims()
+    #
+    # ⛔ A green result here is NOT whole-registry coverage. It says every doc that
+    # STATES a classification agrees with the roster, over a comparison population
+    # the report header names (see the module docstring, "What (f) actually
+    # compares"). Do not size this guard from its name.
+    claims, _findings = _step_doc_claims()
     assert claims, (
         'No step doc in the cross-document consistency population declares its own '
         'dispatched/inline classification — the assertion would be vacuous'
@@ -813,6 +1150,111 @@ def test_touched_step_docs_agree_with_the_roster_classification():
         f'Step doc(s) whose own classification contradicts dispatch-inline-split.md — '
         f'the roster is the single source of truth and the executor doc states the '
         f'reason, so the two must agree: {mismatches}'
+    )
+
+
+def test_roster_correctness_coverage_is_reported_not_asserted_shut():
+    """Report how many registered steps contribute a comparison — without failing.
+
+    This is the NON-CONTRACT half of closing (f)'s coverage gap. The contract half —
+    requiring a machine-readable classification fact in the finalize-step
+    extension-point frontmatter, which would reach implementor docs in consumer
+    projects outside this repository — is escalated to the operator, not decided by a
+    run. See the module docstring, "What (f) actually compares".
+
+    So this test deliberately does NOT assert ``compared == registered_steps``. It
+    asserts the figure is real (non-vacuous, and bounded by the registry), and that
+    the line the report header publishes is the line the live derivation renders — so
+    the published coverage cannot drift away from what the sweep actually did.
+    """
+    coverage = _roster_correctness_coverage()
+
+    assert coverage['compared'] >= 1, (
+        f'no registered step contributes a comparison ({_coverage_line(coverage)}) — '
+        'the correctness check would be vacuous, and its green would mean nothing'
+    )
+    assert coverage['compared'] <= coverage['registered_steps'], (
+        f'more comparisons than registered steps ({_coverage_line(coverage)}) — a '
+        'comparison must resolve to a registered key, so this is a derivation defect'
+    )
+    assert coverage['discovered_docs'] >= coverage['compared'], (
+        f'more comparisons than discovered docs ({_coverage_line(coverage)}) — every '
+        'comparison comes from a discovered doc, so this is a derivation defect'
+    )
+    assert GUARD_POPULATION_SIZE == _coverage_line(coverage), (
+        'the coverage line published on the report header disagrees with the live '
+        f'derivation: header={GUARD_POPULATION_SIZE!r} live={_coverage_line(coverage)!r}'
+    )
+
+
+def test_unregistered_self_classifying_docs_are_reported_as_registry_absence():
+    """A discovered doc that resolves to no registered key is a FINDING, not a raise.
+
+    The helper used to hard-assert registry resolution, so the moment the
+    discovered-but-unregistered doc gained a self-classification sentence the suite
+    would fail with a message about frontmatter resolution rather than about the real
+    condition. The finding is what carries the condition, so its CONTENT is what this
+    test pins — and its count rides the published coverage line, so a doc that drops
+    out of the comparison says so on a green run.
+
+    ⛔ This test does not assert the finding list is empty. An empty list and a
+    reported one are both valid states of the tree; what is not valid is the
+    condition going unreported.
+    """
+    _claims, findings = _step_doc_claims()
+
+    for finding in findings:
+        assert 'registry absence' in finding, (
+            f'registry-absence finding does not name the condition: {finding!r}'
+        )
+        assert 'contributes no comparison' in finding, (
+            f'registry-absence finding does not name its consequence: {finding!r}'
+        )
+    assert f'{len(findings)} unregistered self-classifier(s)' in GUARD_POPULATION_SIZE, (
+        'the registry-absence count is not carried on the published coverage line, so '
+        'a reported finding would be invisible on a passing run'
+    )
+
+
+def test_registry_absence_is_collected_rather_than_raised():
+    # Mutation guard for the downgrade: drive the pure classifier with a synthetic
+    # doc that self-classifies under a name no registry knows. The pre-fix helper
+    # raised here; the fixed one returns a finding naming registry absence, and the
+    # positive control below shows it still produces a claim for a registered name.
+    unregistered = (
+        '---\n'
+        'name: finalize-step-not-in-any-registry\n'
+        'order: 99\n'
+        '---\n\n'
+        'This step is **inline** because it is cheap to run in the main context.\n'
+    )
+    registered = {'default:architecture-refresh'}
+
+    claim, finding = _classify_discovered_doc('synthetic.md', unregistered, registered)
+
+    assert claim is None
+    assert finding is not None and 'registry absence' in finding, (
+        f'a self-classifying doc resolving to no registered key produced {finding!r} '
+        'instead of a registry-absence finding'
+    )
+
+    # Positive control — a doc whose name DOES resolve still yields a claim and no
+    # finding, so the downgrade is not unconditionally a finding.
+    known = (
+        '---\n'
+        'name: architecture-refresh\n'
+        '---\n\n'
+        'This step is **inline** (executed directly inside the finalize main context).\n'
+    )
+    claim, finding = _classify_discovered_doc('architecture-refresh.md', known, registered)
+    assert claim == ('architecture-refresh.md', 'default:architecture-refresh', 'inline')
+    assert finding is None
+
+    # And a doc that states no classification contributes neither.
+    silent = '---\nname: architecture-refresh\n---\n\nNo classification sentence here.\n'
+    assert _classify_discovered_doc('architecture-refresh.md', silent, registered) == (
+        None,
+        None,
     )
 
 
@@ -916,3 +1358,154 @@ def test_builtin_dispatch_table_lists_the_previously_missing_steps():
 
     assert '| `default:pre-push-quality-gate` |' in text
     assert '| `default:finalize-step-preference-emitter` |' in text
+
+
+# ---------------------------------------------------------------------------
+# (g) item-5c dispatch-boundary classification contract — a DOCUMENT contract
+# ---------------------------------------------------------------------------
+
+
+def test_step_5c_declares_the_five_termination_causes_in_order():
+    """The ``--termination-cause`` command string accepts exactly the five causes.
+
+    No test in this directory read item 5c at all, so editing the table back to the
+    pre-fix four-cause routing reverted the deliverable with every test green. The
+    anchor is the COMMAND STRING and the ORDER — not a heading and not the item
+    number, both of which move under ordinary editing while the invocation does not.
+    """
+    text = _SKILL_DOC.read_text(encoding='utf-8')
+    assert _BOUNDARY_RECORD_COMMAND in text, (
+        f'{_BOUNDARY_RECORD_COMMAND!r} is absent from phase-6-finalize/SKILL.md — the '
+        'classification contract is anchored on that invocation, so a renamed verb '
+        'must fail here rather than leave the sweep reading an orphaned alternation'
+    )
+
+    causes = _termination_causes_in_command(text)
+
+    assert tuple(causes) == _TERMINATION_CAUSES, (
+        f'item 5c\'s `--termination-cause` alternation is {causes}, expected '
+        f'{list(_TERMINATION_CAUSES)}. A findings-bearing `loop_back` must classify '
+        'as `returned_with_findings`, never as `error`.'
+    )
+
+
+def test_step_5c_classification_table_matches_the_command_string():
+    """The detection table and the command's alternation are one contract.
+
+    The table is the routing a reader follows; the alternation is what the script
+    accepts. A half-edit that changes one and not the other leaves the document
+    self-contradicting, and no test read either surface before this one.
+    """
+    text = _SKILL_DOC.read_text(encoding='utf-8')
+
+    rows = _termination_cause_rows(text)
+    table_causes = [cause for cause, _rule in rows]
+
+    duplicates = {cause for cause in table_causes if table_causes.count(cause) > 1}
+    assert not duplicates, (
+        f'item 5c\'s classification table carries duplicate cause row(s): '
+        f'{sorted(duplicates)}'
+    )
+    assert table_causes == _termination_causes_in_command(text), (
+        f'item 5c\'s classification table lists {table_causes}, while its '
+        f'`--termination-cause` alternation accepts {_termination_causes_in_command(text)} '
+        '— the two surfaces are one contract and must agree in membership AND order'
+    )
+
+
+def test_step_5c_routes_a_findings_bearing_loop_back_away_from_error():
+    """The deliverable itself: which outcome each cause is detected from.
+
+    This is the independent oracle — the routing literals come from the
+    specification, not from the document — so a document that renames or reorders
+    both of its own surfaces consistently still reddens here.
+    """
+    text = _SKILL_DOC.read_text(encoding='utf-8')
+    rules = dict(_termination_cause_rows(text))
+
+    missing: list[str] = []
+    for cause, required_tokens in _TERMINATION_CAUSE_ROUTING.items():
+        rule = rules.get(cause)
+        if rule is None:
+            missing.append(f'{cause}: no detection row at all')
+            continue
+        for token in required_tokens:
+            if token not in rule:
+                missing.append(f'{cause}: detection rule does not state {token!r}')
+
+    assert not missing, (
+        'item 5c\'s classification contract no longer routes as specified — a '
+        'findings-bearing `loop_back` stamped `error` grades a working gate as a '
+        f'defect, which is the silent revert this test exists to catch: {missing}'
+    )
+
+    assert _CROSS_LEDGER_SENTENCE in text, (
+        f'item 5e no longer states that its `loop_back` outcome is {_CROSS_LEDGER_SENTENCE!r} '
+        '— without it the manifest execution log and the dispatch-boundary ledger '
+        'agree only by coincidence'
+    )
+
+
+def test_step_5c_detectors_fire_on_the_pre_fix_four_cause_block():
+    # Mutation guard: reproduce the pre-fix shape — four causes, with a
+    # findings-bearing loop_back folded into `error`. Both detectors must reject it,
+    # or the sweeps above are vacuously green.
+    pre_fix = '\n'.join(
+        [
+            '      | Cause | Detection rule |',
+            '      |-------|----------------|',
+            '      | `step_complete` | The dispatched step returned cleanly (its '
+            '`mark-step-done` call recorded `outcome: done`). |',
+            '      | `blocked_user_review` | The dispatched step raised an '
+            '`AskUserQuestion` review gate that halted dispatch. |',
+            '      | `blocked_session_restart` | The dispatch was cut short by a '
+            'session restart, harness cancellation, or the per-agent timeout. |',
+            '      | `error` | The dispatched step recorded `outcome: failed` or '
+            '`outcome: loop_back`. |',
+            '',
+            '         python3 .plan/execute-script.py '
+            'plan-marshall:manage-metrics:manage-metrics record-dispatch-boundary \\',
+            '           --plan-id {plan_id} --phase 6-finalize --termination-cause '
+            '{step_complete|blocked_user_review|blocked_session_restart|error} \\',
+        ]
+    )
+
+    pre_fix_causes = _termination_causes_in_command(pre_fix)
+    assert tuple(pre_fix_causes) != _TERMINATION_CAUSES, (
+        'the order/membership detector failed to reject the pre-fix four-cause '
+        'alternation'
+    )
+    assert 'returned_with_findings' not in pre_fix_causes
+
+    pre_fix_rules = dict(_termination_cause_rows(pre_fix))
+    assert 'returned_with_findings' not in pre_fix_rules, (
+        'the table parser invented a `returned_with_findings` row the pre-fix block '
+        'does not contain'
+    )
+    assert '`outcome: loop_back`' in pre_fix_rules['error'], (
+        'fixture sanity: the pre-fix block must fold `loop_back` into `error`, or the '
+        'guard proves nothing'
+    )
+    assert _CROSS_LEDGER_SENTENCE not in pre_fix
+
+    # Positive control — the parsers agree on the post-fix shape, so neither is
+    # unconditionally negative.
+    post_fix = '\n'.join(
+        [
+            '      | Cause | Detection rule |',
+            '      |-------|----------------|',
+            '      | `step_complete` | recorded `outcome: done`. |',
+            '      | `returned_with_findings` | recorded `outcome: loop_back`, '
+            'carrying a `loop_back_target`. Stamp this cause — never `error`. |',
+            '      | `blocked_user_review` | an `AskUserQuestion` review gate. |',
+            '      | `blocked_session_restart` | a session restart or timeout. |',
+            '      | `error` | recorded `outcome: failed`. |',
+            '',
+            '           --termination-cause {step_complete|returned_with_findings|'
+            'blocked_user_review|blocked_session_restart|error} \\',
+        ]
+    )
+    assert tuple(_termination_causes_in_command(post_fix)) == _TERMINATION_CAUSES
+    assert [cause for cause, _rule in _termination_cause_rows(post_fix)] == list(
+        _TERMINATION_CAUSES
+    )
