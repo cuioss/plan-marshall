@@ -1148,6 +1148,10 @@ _ROUTING_GUARD_MODULES: tuple[tuple[str, str], ...] = (
         'surface-guard-notations',
         'plan-marshall/tools-script-executor/test_population_derived_surface_guard.py',
     ),
+    (
+        'roster-correctness-coverage',
+        'plan-marshall/phase-6-finalize/test_dispatch_roster_closure.py',
+    ),
 )
 
 
