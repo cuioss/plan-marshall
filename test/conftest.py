@@ -1252,7 +1252,7 @@ def pytest_report_header(config):
 #: gate exists to catch. A skip that belongs here is added deliberately, with its
 #: reason, in the same change that introduces it.
 #:
-#: Two classes are represented, and only two are legitimate:
+#: Three classes are represented, and only three are legitimate:
 #:
 #: ``absent-dependency``
 #:     An external tool the suite does not require. ``pyright-langserver`` is the
@@ -1272,6 +1272,18 @@ def pytest_report_header(config):
 #:     the data changes — so it is listed per case, and a second bot acquiring a
 #:     declared refusal phrasing removes its entry rather than silently widening
 #:     an existing one.
+#:
+#: ``absent-platform-facility``
+#:     An OS facility the running platform does not provide, so the guarded
+#:     branch has nothing to exercise. ``/proc`` is the only one: the test drives
+#:     the real ``/proc`` fast path, which exists on Linux (where CI runs, so the
+#:     test executes there) and not on macOS. It is distinct from
+#:     ``absent-dependency`` because nothing can be installed to satisfy it — the
+#:     facility is the platform's, not a package's — and distinct from
+#:     ``in-suite-policy`` because the cause is the environment rather than the
+#:     suite's own data. The entry was added when the gate first named it on a
+#:     macOS run, which is the deliberate extension the paragraph below describes,
+#:     not a pre-emptive exemption.
 #:
 #: ⛔ **Platform and environment guards that do NOT fire here are deliberately
 #: absent.** ``test_tree_copy.py``'s three ``sys.platform == 'win32'`` guards, and
@@ -1322,6 +1334,15 @@ _SKIP_EXCEPTIONS: dict[str, tuple[str, str]] = {
     'test/pm-plugin-development/plan-marshall-plugin/test_lsp_harvest_search_path.py::test_a_real_cross_bundle_import_becomes_a_named_module_edge': (
         'absent-dependency',
         'pyright-langserver not installed',
+    ),
+    # --- absent-platform-facility: no /proc outside Linux ---
+    # The reason is the guard's own text, verbatim, for the same reason the
+    # in-suite-policy entry below carries its guard's text: the gate compares the
+    # approved cause against what pytest records.
+    'test/plan-marshall/build-server/test_manage_build_server.py'
+    '::test_read_process_argv_reads_this_process_from_proc': (
+        'absent-platform-facility',
+        'no /proc on this platform',
     ),
     # --- in-suite-policy: a parametrized case with no data to assert ---
     # The reason is the guard's own text, verbatim: the gate compares it against
