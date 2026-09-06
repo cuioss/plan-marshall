@@ -4,6 +4,10 @@ Authoritative reference for the `phase-5-execute` Step 3 "Baseline Fast-Path Che
 
 **Scope note**: This step is a worktree-hygiene action that always runs (no opt-out). It is NOT part of the manifest-driven verification-step selection in `phase_5.verification_steps` from `manage-execution-manifest`.
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Authoritative Reconciliation Lives in phase-2-refine
 
 Substantive baseline reconciliation — pulling upstream commits, surfacing overlapping diffs against the request narrative, and absorbing baseline shifts via the iterate-to-confidence loop — happens at refine time. See [`phase-2-refine/standards/refine-workflow-detail.md` § Step 3d](../../phase-2-refine/standards/refine-workflow-detail.md#step-3d-baseline-reconciliation) for the canonical procedure.

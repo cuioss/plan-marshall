@@ -4,6 +4,10 @@ Analyze script failures from the plan to identify source components, trace how i
 
 **Conditional**: only meaningful when `log_analysis.counts.errors_script > 0`.
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Inputs
 
 - `script.log` — complete list of script invocations and outcomes (via `manage-logging read --type script`).

@@ -2,6 +2,10 @@
 
 Workflow doc for the `lessons` verb: a repeatable orchestrator mode that scans, dedups, and (optionally) cross-repo-integrates the lessons-learned corpus into a dated epic. This doc implements the **Lessons-Handling Mode Contract** in [`persona-plan-orchestrator/standards/orchestration-model.md`](../../persona-plan-orchestrator/standards/orchestration-model.md) — the dated-slug convention, the local dedup/aggregate obligation, and the cross-repo integrate-then-remove sequence are OWNED by that standard; this doc sequences the steps and quotes the exact script invocations. When this doc and the standard disagree, the standard wins.
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Inputs
 
 | Parameter | Required | Description |

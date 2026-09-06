@@ -2,6 +2,10 @@
 
 The canonical standard for epic orchestration in plan-marshall. It defines the granularity model, the persisted ledger layout, the persist/stop-resume contract, the terminal-title repaint contract, the two operational carve-outs, the ledger write-boundary, the prime directive, the verify-first contract for inferred claims, the dispatch decision rule, the cleanup contract, and the lessons-handling mode contract. The `plan-orchestrator` skill's verb workflows and the `persona-plan-orchestrator` identity both bind to this document — when a workflow doc and this standard disagree, this standard wins.
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Granularity Model: Epic → Workstream → Plan
 
 Orchestration operates on exactly three tiers:

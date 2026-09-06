@@ -2,6 +2,10 @@
 
 > **Type**: Workflow Skill Extension | **Hook Method**: `provides_retrospective_aspects()` | **Implementations**: 1 | **Status**: Active
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Overview
 
 Retrospective-aspect extensions declare domain-specific analysis aspects that `plan-marshall:plan-retrospective` merges into its aspect dispatch (Step 3) when the plan being audited belongs to the contributing domain. The generic retrospective ships a fixed set of domain-invariant aspects (artifact consistency, log analysis, invariant outcomes, plan efficiency, request-result alignment, and the generic CI-leak surfaces A+B of `direct-gh-glab-usage`). A domain extension contributes ADDITIONAL deterministic, script-backed aspects that are only meaningful for plans authored against that domain — e.g. a marketplace-CI-wrapper-tangle scan that only makes sense when the plan touched plan-marshall's own CI abstraction sources.

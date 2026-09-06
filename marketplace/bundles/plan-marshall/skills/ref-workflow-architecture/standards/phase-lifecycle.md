@@ -6,6 +6,10 @@ See [phases.md](phases.md) for the phase flow model and transition rules.
 
 ---
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Phase Enforcement Template
 
 All phase skills enforce these rules. Phase-specific enforcement blocks may add additional constraints.

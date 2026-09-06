@@ -2,6 +2,10 @@
 
 Extracted architecture-related wizard logic covering extension config defaults, module discovery, build-command documentation, Maven-profile resolution, and the LLM architectural analysis (including the architecture-refresh tier knobs). Referenced by `wizard-flow.md` Step 8.
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Apply Extension Defaults
 
 Apply project-specific configuration defaults from domain extensions BEFORE discovery. Each extension's `config_defaults()` callback is invoked to set domain-specific values in `marshal.json`.

@@ -23,6 +23,10 @@ Unified API for domain bundle extensions providing module discovery, build syste
 - Canonical command constants must be used instead of string literals
 - CLI commands use `python3 .plan/execute-script.py plan-marshall:extension-api:extension_discovery {command} {args}`
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Purpose
 
 - **ExtensionBase ABC** - Abstract base class with required/optional methods

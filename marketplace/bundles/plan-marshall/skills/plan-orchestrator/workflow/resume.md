@@ -2,6 +2,10 @@
 
 Workflow doc for the `resume` verb: re-anchor a fresh session from the persisted tree alone. The persist/stop-resume contract — `status.json` as machine authority, the generated START-HERE block, the `resume_anchor` discipline — is owned by [`persona-plan-orchestrator/standards/orchestration-model.md`](../../persona-plan-orchestrator/standards/orchestration-model.md); when this doc and the standard disagree, the standard wins.
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Inputs
 
 | Parameter | Required | Description |

@@ -12,6 +12,10 @@ Each row lists the subcommand, its required flags, optional flags, and a one-lin
 
 Every group table below carries one row per registered sub-verb of that group — the tables are the complete index, not a selection. When a sub-verb is added, its row is added in the same change.
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## `--plan-id` and the `NO_PLAN` sentinel
 
 Two different flags spell `--plan-id` in these tables, and both accept the plan-less sentinel `NO_PLAN`:

@@ -2,6 +2,10 @@
 
 Verification procedure for claims referenced in a plan's source narrative. Activates during phase-2-refine before quality analysis to catch stale or invalid premises early.
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Purpose
 
 Plan sources (lessons, issues, PR reviews, free-form descriptions) capture observations at a point in time. The referenced code may have changed, flags may not exist, or the premise may have been wrong from the start. This step performs targeted verification against the current codebase before the request is accepted for planning.

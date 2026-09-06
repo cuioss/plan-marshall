@@ -23,6 +23,10 @@ For common standards (timeouts, log handling, acceptable warnings), see `build-s
 
 ---
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Subcommands
 
 All build skills share these subcommands. The table enumerates every subcommand each of the four `build_main`-routed wrappers registers, tool-exclusive ones included. It does NOT cover build-class scripts that declare their own `ArgumentParser` instead of routing through `build_main` (`build-npm/scripts/js_coverage.py`), which the executor still treats as build-class:
