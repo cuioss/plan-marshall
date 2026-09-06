@@ -1451,7 +1451,21 @@ The three outcomes stay mutually distinguishable, so a verb that could not look 
 |---------|--------|
 | Narrowing ran and dropped domains | `status: success`, `narrowed: true`, non-empty `dropped[]` |
 | Narrowing ran and found nothing droppable | `status: success`, `narrowed: false`, empty `dropped[]` |
-| Narrowing could not evaluate | `status: error` carrying the reason — `plan_dir_not_found`, `domains_unreadable` (no readable `domains` list in `references.json`), `marshal_not_readable`, or `no_skill_domains_configured` |
+| Narrowing could not evaluate | `status: error`, plus the `error` / `message` pair specified below |
+
+**The could-not-evaluate arm carries exactly `status`, `error`, and `message` — and none of the success fields.** `error` is one of the reason codes below; `message` is its human-readable explanation, naming the path or value that could not be read. `plan_id`, `retained[]`, `dropped[]`, `provenance[]`, `report`, and `narrowed` are **absent** on this arm. A caller that reads `dropped[]` without branching on `status` first therefore finds no key at all, rather than an empty list it would read as "looked, and nothing was droppable".
+
+The reason codes below are the complete set the verb can return: every `status: error` return in [`scripts/_cmd_domain_narrow.py`](scripts/_cmd_domain_narrow.py)'s `cmd_domain_narrow` is listed here, and that function is the declaring source to re-read this table against whenever either is touched.
+
+| `error` | Raised when |
+|---------|-------------|
+| `plan_dir_not_found` | The plan directory does not exist. |
+| `domains_unreadable` | `references.json` carries no readable `domains` list, so there is no set to narrow. |
+| `marshal_not_readable` | `marshal.json` could not be loaded, so no inclusion leg could be evaluated. |
+| `no_skill_domains_configured` | `marshal.json` configures no `skill_domains`, so no inclusion leg could be evaluated. |
+| `footprint_unreadable` | `references.json` carries no readable `affected_files` list and no `--affected-files` override was given, so the `file_globs` leg had no footprint to evaluate against. |
+| `footprint_empty` | The declared footprint resolved to zero paths, so narrowing has no evidence to act on and refuses to drop any domain. |
+| `task_leg_unreadable` | A `TASK-*.json` could not be read, so the task leg of the safety bound could not be evaluated. An unreadable task file is an **error**, never evidence that no task claims the domain: skipping it would silently remove the domain that file claims from the leg, and the run would then report `status: success` with that domain dropped and an empty `claimed_by` — publishing "no leg claimed it" for a leg that never looked. |
 
 Read-only: it reads `marshal.json`, `references.json`, and the plan's task state, and writes nothing (no LLM dispatch). Persisting the narrowed set is the caller's job — phase-3-outline writes it back through `manage-references`.
 

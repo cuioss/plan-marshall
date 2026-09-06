@@ -79,6 +79,8 @@ Returns `retained[]`, `dropped[]`, `provenance[]` (exactly one `{domain, claimed
 
 The safety bound, the `always_on` structural exemption, the `system` exemption from leg evaluation, the strict-subset guarantee, and the three mutually distinguishable outcomes (dropped / nothing droppable / could not evaluate) are specified once in [`../SKILL.md`](../SKILL.md) § Canonical invocations → `domain-narrow`; the inclusion legs themselves are owned by [`skill-domains.md`](skill-domains.md) § Domain Inclusion.
 
+The could-not-evaluate arm carries exactly `status: error`, an `error` reason code, and a `message` explaining it — none of the success fields above are present on it, so branch on `status` before reading `dropped[]`. That contract, and the complete set of reason codes the verb can return, are specified in the same `../SKILL.md` section.
+
 The footprint is read from `references.affected_files`, which keeps the paths a list end to end: a path containing a comma survives, and nothing is interpolated into a shell command line. `--affected-files` is the out-of-band override and carries both hazards, so pass it only when the footprint is not the plan's own. Narrowing refuses to run when neither source yields one — `footprint_unreadable` when the list is missing or malformed and no override was given, `footprint_empty` when it resolves to zero paths. The verb writes nothing — persisting the narrowed set is the caller's job.
 
 ---

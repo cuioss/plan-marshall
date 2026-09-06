@@ -383,9 +383,11 @@ All three return `ambiguous: false`, rather than prompting over a candidate list
 
 A domain currently in the set — other than the synthetic `system` domain, which is exempt from the bound entirely (below) — is **droppable** exactly when all three legs of the safety bound agree:
 
-1. no already-resolved task depends on it;
+1. no already-resolved task depends on it — and a task leg that could not be **evaluated** is an error, never a leg that looked and found nothing (below);
 2. the `always_on` leg does not claim it;
 3. the `file_globs` leg does not claim it against the **declared footprint** — the real affected-files list, which is stronger evidence than the narrative path tokens the init-time evaluation had.
+
+**An unreadable task file fails the pass; it does not read as an absent claim.** The task leg is evaluated by reading every `TASK-*.json` in the plan directory, so a file that cannot be read or parsed is a leg the pass could not evaluate. `domain-narrow` therefore aborts with the `task_leg_unreadable` error rather than skipping the file. Skipping it would silently remove the domain that file claims from the leg, and the run would then report success with that domain dropped and an empty `claimed_by` — whose documented reading is "no leg claimed it, which is why it was dropped". That is the fail-open the safety bound exists to prevent: a guard that could not look must never render as a guard that looked and found nothing.
 
 **The synthetic `system` domain is exempt from the bound, not judged by it.** It is not an implementation domain, so both passes filter it out before evaluating their legs — which means the `always_on` and `file_globs` legs can never contain it and never look at it. Judging it by the bound would drop it because two of the three legs were structurally incapable of claiming it, and that is not the legs agreeing. `domain-narrow` therefore retains it unconditionally and records the `system_exempt` provenance marker for it. The marker is deliberately not a fourth leg name: an exemption from evaluation is not a claim, and a retained domain must never publish the empty `claimed_by` whose documented reading is "no leg claimed it, which is why it was dropped".
 
