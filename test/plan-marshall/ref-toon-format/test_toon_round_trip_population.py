@@ -59,6 +59,7 @@ from __future__ import annotations
 
 import ast
 import re
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -110,8 +111,8 @@ def _referenced_names(node: ast.AST) -> set[str]:
     return found
 
 
-def _prints_to_stdout(node: ast.AST) -> bool:
-    """Whether the function body prints to stdout.
+def _stdout_print_calls(node: ast.AST) -> Iterator[ast.Call]:
+    """Every ``print(...)`` call in the body that writes to stdout.
 
     A ``print(..., file=sys.stderr)`` is a diagnostic, not TOON emission, so it
     does not make its function an emitter. Without this discrimination the
@@ -125,16 +126,23 @@ def _prints_to_stdout(node: ast.AST) -> bool:
             continue
         if any(keyword.arg == 'file' for keyword in child.keywords):
             continue
-        return True
-    return False
+        yield child
 
 
-def derive_toon_population(root: Path) -> list[EmitterRecord]:
-    """Enumerate the TOON-named functions across the marketplace script tree.
+def _prints_to_stdout(node: ast.AST) -> bool:
+    """Whether the function body prints to stdout."""
+    return next(_stdout_print_calls(node), None) is not None
 
-    Derived by walking the tree, so a component added tomorrow is in the
-    population without anyone remembering to list it here.
-    """
+
+#: The two derivations below differ ONLY in which functions they select — by NAME
+#: versus by BEHAVIOUR. That difference is the whole point of the cross-check, so
+#: it is what stays per-derivation; the traversal, the parse-failure skip and the
+#: record construction they shared are collapsed into ``_derive_emitters``.
+_Selector = Callable[[ast.FunctionDef | ast.AsyncFunctionDef], bool]
+
+
+def _derive_emitters(root: Path, selects: _Selector) -> list[EmitterRecord]:
+    """Record every function in the marketplace script tree that ``selects`` accepts."""
     records: list[EmitterRecord] = []
     for path in sorted(root.glob(_SCRIPTS_GLOB)):
         try:
@@ -144,7 +152,7 @@ def derive_toon_population(root: Path) -> list[EmitterRecord]:
         for node in ast.walk(tree):
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
-            if not _TOON_NAME.match(node.name):
+            if not selects(node):
                 continue
             records.append(
                 EmitterRecord(
@@ -156,6 +164,15 @@ def derive_toon_population(root: Path) -> list[EmitterRecord]:
                 )
             )
     return records
+
+
+def derive_toon_population(root: Path) -> list[EmitterRecord]:
+    """Enumerate the TOON-named functions across the marketplace script tree.
+
+    Derived by walking the tree, so a component added tomorrow is in the
+    population without anyone remembering to list it here.
+    """
+    return _derive_emitters(root, lambda node: bool(_TOON_NAME.match(node.name)))
 
 
 def _leading_literal_text(node: ast.AST) -> str | None:
@@ -175,14 +192,8 @@ def _leading_literal_text(node: ast.AST) -> str | None:
 
 def _prints_toon_shaped_line(node: ast.AST) -> bool:
     """Whether the function prints a literal shaped like a TOON scalar line."""
-    for child in ast.walk(node):
-        if not isinstance(child, ast.Call):
-            continue
-        if not (isinstance(child.func, ast.Name) and child.func.id == 'print'):
-            continue
-        if any(keyword.arg == 'file' for keyword in child.keywords):
-            continue
-        for arg in child.args:
+    for call in _stdout_print_calls(node):
+        for arg in call.args:
             text = _leading_literal_text(arg)
             if text is not None and _TOON_LINE.match(text):
                 return True
@@ -200,27 +211,7 @@ def derive_name_blind_emitters(root: Path) -> list[EmitterRecord]:
     token is therefore still in a population, and the cross-check below is what
     turns the docstring's completeness claim into a derived result.
     """
-    records: list[EmitterRecord] = []
-    for path in sorted(root.glob(_SCRIPTS_GLOB)):
-        try:
-            tree = ast.parse(path.read_text(encoding='utf-8'), filename=str(path))
-        except (OSError, SyntaxError):  # pragma: no cover - a broken file is a build failure
-            continue
-        for node in ast.walk(tree):
-            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                continue
-            if not _prints_toon_shaped_line(node):
-                continue
-            records.append(
-                EmitterRecord(
-                    path=str(path.relative_to(root)),
-                    function=node.name,
-                    line=node.lineno,
-                    prints_to_stdout=True,
-                    reaches_canonical=bool(_referenced_names(node) & _CANONICAL_NAMES),
-                )
-            )
-    return records
+    return _derive_emitters(root, _prints_toon_shaped_line)
 
 
 def _defines_substitute_serializer(tree: ast.AST) -> bool:

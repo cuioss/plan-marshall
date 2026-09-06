@@ -1310,6 +1310,30 @@ def check_deficit(
     return result
 
 
+def _emit_error_toon(payload: dict) -> None:
+    """Print the error TOON block shared by the ``check`` and ``deficit`` emitters.
+
+    The two commands share one findings read, so they must not render one store's
+    refusal differently. One emitter is what makes that structural — two copies
+    could only promise it.
+
+    ``findings_store_state`` rides along on the store-refusal branch, where the
+    payload carries it. It names WHICH unreached state produced the refusal
+    (plan_absent vs unknown), which is the difference between "this plan lives in
+    another checkout" and "no runtime-state root was resolved at all" — two
+    different remedies that the error code alone does not separate.
+    """
+    emitted: dict[str, object] = {
+        'status': payload.get('status', 'success'),
+        'error': payload.get('error', 'unknown'),
+    }
+    if 'detail' in payload:
+        emitted['detail'] = payload['detail']
+    if 'findings_store_state' in payload:
+        emitted['findings_store_state'] = payload['findings_store_state']
+    print(serialize_toon(emitted))
+
+
 def _emit_toon(payload: dict) -> None:
     """Print the documented TOON block through the canonical serializer.
 
@@ -1317,22 +1341,12 @@ def _emit_toon(payload: dict) -> None:
     emitted table header stays the contract's rather than whatever keys the payload
     record happens to carry.
     """
-    emitted: dict[str, object] = {'status': payload.get('status', 'success')}
-
-    if emitted['status'] == 'error':
-        emitted['error'] = payload.get('error', 'unknown')
-        if 'detail' in payload:
-            emitted['detail'] = payload['detail']
-        # Emitted only on the store-refusal branch, where the payload carries it.
-        # It names WHICH unreached state produced the refusal (plan_absent vs
-        # unknown), which is the difference between "this plan lives in another
-        # checkout" and "no runtime-state root was resolved at all" — two
-        # different remedies that the error code alone does not separate.
-        if 'findings_store_state' in payload:
-            emitted['findings_store_state'] = payload['findings_store_state']
-        print(serialize_toon(emitted))
+    status = payload.get('status', 'success')
+    if status == 'error':
+        _emit_error_toon(payload)
         return
 
+    emitted: dict[str, object] = {'status': status}
     emitted['participation_complete'] = bool(payload['participation_complete'])
     emitted['proves'] = payload['proves']
     summary = payload.get('review_state_summary', '')
@@ -1462,20 +1476,12 @@ def _emit_deficit_toon(payload: dict) -> None:
     The ``gates_merge: false`` line is emitted verbatim so a reader — or a cold read
     of the rendered output — sees in as many words that this signal moves no gate.
     """
-    emitted: dict[str, object] = {'status': payload.get('status', 'success')}
-
-    if emitted['status'] == 'error':
-        emitted['error'] = payload.get('error', 'unknown')
-        if 'detail' in payload:
-            emitted['detail'] = payload['detail']
-        # Same store-refusal disclosure the ``check`` emitter makes, for the same
-        # reason: the two commands share one read and must not render one store's
-        # refusal differently.
-        if 'findings_store_state' in payload:
-            emitted['findings_store_state'] = payload['findings_store_state']
-        print(serialize_toon(emitted))
+    status = payload.get('status', 'success')
+    if status == 'error':
+        _emit_error_toon(payload)
         return
 
+    emitted: dict[str, object] = {'status': status}
     emitted['verdict'] = payload['verdict']
     emitted['proves'] = payload['proves']
     emitted['gates_merge'] = bool(payload['gates_merge'])
