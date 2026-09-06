@@ -20,7 +20,9 @@ population it DERIVES from the tree at test time, never from a hand-typed list:
    still ``print`` a TOON line it composed itself, so the symbol's presence would
    launder the hand-roll. A stdout ``print`` whose argument STARTS with a
    TOON-shaped literal is therefore an offence in its own right, whatever else
-   the body calls.
+   the body calls — and the literal counts whether it is written into the
+   ``print`` call or composed into a local one statement earlier, since the two
+   emit the same bytes.
 
    The naming probe alone cannot substantiate a claim over *every* emitter: a
    function's name is precisely the property a new emitter is free to choose, so
@@ -223,12 +225,64 @@ def _leading_literal_text(node: ast.AST) -> str | None:
     return None
 
 
+def _local_literal_assignments(node: ast.AST) -> dict[str, list[str]]:
+    """Map each name the body assigns a literal to onto the text(s) it was given.
+
+    A hand-rolled emitter does not have to compose its line inside the ``print``
+    call: ``line = f'status: {value}'`` followed by ``print(line)`` produces the
+    same output through an ``ast.Name`` the literal probe cannot read. Resolving
+    that one hop is what keeps the indirect form visible.
+
+    Every literal ever assigned to a name is kept, not just the last, because the
+    order two assignments execute in is not something this walk can decide. The
+    fail-closed reading is the right one here: a name that EVER holds a TOON line
+    is one whose ``print`` may emit it, and a predicate that guessed the other way
+    would hand an emitter a trivial way to hide behind a re-assignment.
+
+    Scope is deliberately one hop and no further — only ``name = <literal>``. This
+    is not a dataflow engine, and widening it into one would buy coverage the two
+    findings that motivated it never asked for.
+    """
+    assigned: dict[str, list[str]] = {}
+    for child in ast.walk(node):
+        if not isinstance(child, ast.Assign):
+            continue
+        text = _leading_literal_text(child.value)
+        if text is None:
+            continue
+        for target in child.targets:
+            if isinstance(target, ast.Name):
+                assigned.setdefault(target.id, []).append(text)
+    return assigned
+
+
+def _printed_literal_texts(node: ast.expr, assigned: dict[str, list[str]]) -> list[str]:
+    """The literal text(s) a printed argument can begin with.
+
+    A direct literal contributes itself. A bare name contributes whatever literals
+    the body assigned to it — and a name the body never assigned a literal to
+    contributes NOTHING, which is what keeps this from degenerating into "any
+    printed variable is a hand-roll".
+    """
+    text = _leading_literal_text(node)
+    if text is not None:
+        return [text]
+    if isinstance(node, ast.Name):
+        return assigned.get(node.id, [])
+    return []
+
+
 def _prints_toon_shaped_line(node: ast.AST) -> bool:
-    """Whether the function prints a literal shaped like a TOON scalar line."""
+    """Whether the function prints a literal shaped like a TOON scalar line.
+
+    The literal may be written into the ``print`` call or assigned to a local name
+    first; both emit the same bytes, so both count. See
+    ``_local_literal_assignments`` for the bound on that resolution.
+    """
+    assigned = _local_literal_assignments(node)
     for call in _stdout_print_calls(node):
         for arg in call.args:
-            text = _leading_literal_text(arg)
-            if text is not None and _TOON_LINE.match(text):
+            if any(_TOON_LINE.match(text) for text in _printed_literal_texts(arg, assigned)):
                 return True
     return False
 
@@ -311,14 +365,37 @@ def _defines_substitute_serializer(tree: ast.AST) -> bool:
     return False
 
 
+#: Handler types broad enough to swallow a failing ``toon_parser`` import.
+#: ``ImportError`` inherits from ``Exception``, which inherits from
+#: ``BaseException``, so each of these genuinely catches the failure — and they
+#: are the BROADEST handlers a module could route around the serializer with,
+#: which is to say the ones the guard most needs to see rather than the ones it
+#: can afford to miss. A bare ``except:`` is broader still and is recognised by
+#: ``_catches_import_failure`` directly, since it names no type at all.
+_IMPORT_CATCHING_HANDLERS = frozenset({'ImportError', 'Exception', 'BaseException'})
+
+
+def _catches_import_failure(handler: ast.ExceptHandler) -> bool:
+    """Whether this handler catches a failing canonical import.
+
+    Recognising only a handler that NAMES ``ImportError`` read the narrowest form
+    of the scenario as the whole of it: a bare ``except:`` names nothing and an
+    ``except Exception:`` names a supertype, yet both swallow the same failure.
+    """
+    if handler.type is None:
+        return True
+    return bool(_referenced_names(handler.type) & _IMPORT_CATCHING_HANDLERS)
+
+
 def swallows_canonical_import(source: str) -> bool:
     """Whether the module swallows a failing ``toon_parser`` import into a substitute.
 
     This is the lookalike-substitution shape: the canonical import is guarded by
-    ``except ImportError``, the handler does NOT re-raise, and the module carries
-    its own TOON writer to route around the loss with. Detected by that shape
-    rather than by one flag name — a single flag name resolves to a single file
-    and cannot establish a population.
+    a handler broad enough to catch its failure (see ``_catches_import_failure``),
+    the handler does NOT re-raise, and the module carries its own TOON writer to
+    route around the loss with. Detected by that shape rather than by one flag
+    name — a single flag name resolves to a single file and cannot establish a
+    population.
 
     **The substitute is the discriminator, not the swallow.** A health check that
     probes whether ``toon_parser`` imports and records the boolean also swallows
@@ -338,8 +415,7 @@ def swallows_canonical_import(source: str) -> bool:
         if not imports_canonical:
             continue
         for handler in node.handlers:
-            names = _referenced_names(handler.type) if handler.type is not None else set()
-            if 'ImportError' not in names:
+            if not _catches_import_failure(handler):
                 continue
             if not any(isinstance(stmt, ast.Raise) for stmt in ast.walk(handler)):
                 return True
@@ -530,6 +606,50 @@ def emit_toon(payload):
     print(serialize_toon(payload))
 '''
 
+#: The same hand-roll, composed one statement earlier. Reading only the direct
+#: arguments of the ``print`` call saw an ``ast.Name`` here and nothing else.
+_ASSIGNED_LINE_HAND_ROLL = '''
+def emit_toon(payload):
+    """Composes the TOON line into a local, then prints the local."""
+    line = f'status: {payload["status"]}'
+    print(line)
+'''
+
+#: The same again, with the name re-assigned. Which assignment reaches the
+#: ``print`` is not something a walk can decide, so the fail-closed reading — any
+#: literal the name ever holds counts — is the one that does not hand an emitter a
+#: one-line way to hide.
+_REASSIGNED_LINE_HAND_ROLL = '''
+def emit_toon(payload):
+    """Assigns twice; one of the two is a TOON line."""
+    line = 'starting'
+    line = f'status: {payload["status"]}'
+    print(line)
+'''
+
+#: Matched negative: a local carrying a literal that is NOT TOON-shaped. The
+#: resolution reads the assigned text and judges it, rather than treating the
+#: indirection itself as the offence.
+_ASSIGNED_NON_TOON_LINE = '''
+def emit_toon(payload):
+    """Prints a local holding ordinary narration."""
+    line = f'processing {payload["name"]}'
+    print(line)
+'''
+
+#: Matched negative: a printed name the body never assigns a literal to. Nothing
+#: is known about it, and "not known" must not read as "hand-rolled" — otherwise
+#: the resolution would flag every function that prints a variable.
+_PRINTS_AN_UNASSIGNED_NAME = '''
+from toon_parser import serialize_toon
+
+
+def emit_toon(payload):
+    """Prints a parameter and the canonical serializer's output."""
+    print(payload)
+    print(serialize_toon(payload))
+'''
+
 #: A file the AST parser cannot read. Its ``def`` is deliberately unterminated so
 #: the failure is a ``SyntaxError`` rather than anything importable.
 _UNPARSEABLE_SCRIPT = '''
@@ -566,6 +686,68 @@ def cmd_self_test():
         return ('import_toon_parser', True)
     except ImportError:
         return ('import_toon_parser', False)
+'''
+
+#: The swallowing shape behind a BARE handler. It names no exception type at all,
+#: which is the broadest catch Python has, so the narrow ``ImportError``-by-name
+#: reading skipped it while it swallowed exactly the failure the guard is about.
+_BARE_EXCEPT_SWALLOWING_MODULE = '''
+try:
+    from toon_parser import serialize_toon
+
+    HAS_TOON_PARSER = True
+except:  # noqa: E722
+    HAS_TOON_PARSER = False
+
+
+def serialize_toon_simple(data):
+    return '\\n'.join(f'{k}: {v}' for k, v in data.items())
+'''
+
+#: The swallowing shape behind ``except Exception:``. ``ImportError`` is a
+#: subclass, so this catches the failed import as surely as naming it would.
+_BROAD_EXCEPT_SWALLOWING_MODULE = '''
+try:
+    from toon_parser import serialize_toon
+
+    HAS_TOON_PARSER = True
+except Exception:
+    HAS_TOON_PARSER = False
+
+
+def serialize_toon_simple(data):
+    return '\\n'.join(f'{k}: {v}' for k, v in data.items())
+'''
+
+#: The probing module's sibling under the widened handler set: it catches the
+#: broadest thing there is and still installs no substitute. This is the fixture
+#: that keeps the widening from quietly turning every health check into a
+#: lookalike — the substitute remains the discriminator, not the swallow.
+_BROAD_EXCEPT_PROBING_MODULE = '''
+def cmd_self_test():
+    """Records whether the canonical serializer imports; substitutes nothing."""
+    try:
+        from toon_parser import serialize_toon  # noqa: F401
+
+        return ('import_toon_parser', True)
+    except Exception:
+        return ('import_toon_parser', False)
+'''
+
+#: A module that DOES carry a substitute writer, but whose guarded import catches
+#: something that cannot be the import failing. The widening added supertypes of
+#: ``ImportError``, not every handler, and this fixture is what says so.
+_UNRELATED_HANDLER_MODULE = '''
+try:
+    from toon_parser import serialize_toon
+
+    HAS_TOON_PARSER = True
+except ValueError:
+    HAS_TOON_PARSER = False
+
+
+def serialize_toon_simple(data):
+    return '\\n'.join(f'{k}: {v}' for k, v in data.items())
 '''
 
 
@@ -614,6 +796,66 @@ def test_detector_clears_an_emitter_that_uses_the_serializer(tmp_path):
 
     assert [record.function for record in population] == ['emit_toon']
     assert population[0].reaches_canonical is True
+    assert population[0].bypasses_canonical is False
+
+
+def test_detector_flags_a_hand_roll_composed_into_a_local(tmp_path):
+    """Control: composing the line one statement earlier is still a hand-roll.
+
+    The literal probe read only the direct arguments of the ``print`` call, so an
+    ``ast.Name`` produced no text and the hand-roll went unseen — which let
+    ``bypasses_canonical`` fall back to ``not reaches_canonical``, the exact
+    laundering the ``hand_rolls_toon`` disjunct exists to stop.
+    """
+    _synthetic_script(
+        tmp_path, 'fixture-bundle', 'fixture-skill', 'assigned.py', _ASSIGNED_LINE_HAND_ROLL
+    )
+
+    population = derive_toon_population(tmp_path).records
+
+    assert [record.function for record in population] == ['emit_toon']
+    assert population[0].hand_rolls_toon is True
+    assert population[0].bypasses_canonical is True
+
+
+def test_detector_flags_a_local_that_ever_holds_a_toon_line(tmp_path):
+    """A re-assignment does not clear the name: the fail-closed reading wins."""
+    _synthetic_script(
+        tmp_path, 'fixture-bundle', 'fixture-skill', 'reassigned.py', _REASSIGNED_LINE_HAND_ROLL
+    )
+
+    population = derive_toon_population(tmp_path).records
+
+    assert [record.function for record in population] == ['emit_toon']
+    assert population[0].hand_rolls_toon is True
+
+
+def test_detector_clears_a_local_that_is_not_toon_shaped(tmp_path):
+    """Matched negative: the assigned TEXT is judged, not the indirection."""
+    _synthetic_script(
+        tmp_path, 'fixture-bundle', 'fixture-skill', 'narration.py', _ASSIGNED_NON_TOON_LINE
+    )
+
+    population = derive_toon_population(tmp_path).records
+
+    assert [record.function for record in population] == ['emit_toon']
+    assert population[0].hand_rolls_toon is False
+
+
+def test_detector_clears_a_printed_name_it_knows_nothing_about(tmp_path):
+    """Matched negative: an unresolved name contributes no text, so it flags nothing.
+
+    Without this the resolution could degenerate into "any printed variable is a
+    hand-roll", which would flag every canonical emitter that prints a value.
+    """
+    _synthetic_script(
+        tmp_path, 'fixture-bundle', 'fixture-skill', 'unassigned.py', _PRINTS_AN_UNASSIGNED_NAME
+    )
+
+    population = derive_toon_population(tmp_path).records
+
+    assert [record.function for record in population] == ['emit_toon']
+    assert population[0].hand_rolls_toon is False
     assert population[0].bypasses_canonical is False
 
 
@@ -666,6 +908,40 @@ def test_detector_clears_a_health_check_that_only_probes_the_import():
     assert swallows_canonical_import(_PROBING_MODULE) is False
 
 
+def test_detector_flags_a_swallow_behind_a_bare_handler():
+    """A bare ``except:`` names nothing and catches everything, this failure included.
+
+    Recognising only a handler that NAMED ``ImportError`` read the narrowest form
+    of the scenario as the whole of it, and let the broadest form through.
+    """
+    assert swallows_canonical_import(_BARE_EXCEPT_SWALLOWING_MODULE) is True
+
+
+def test_detector_flags_a_swallow_behind_a_broad_handler():
+    """``except Exception:`` catches ``ImportError`` by inheritance, so it swallows too."""
+    assert swallows_canonical_import(_BROAD_EXCEPT_SWALLOWING_MODULE) is True
+
+
+def test_detector_clears_a_broad_handler_that_installs_no_substitute():
+    """Matched negative for the widening: the substitute is still the discriminator.
+
+    This is the ``_PROBING_MODULE`` control's sibling under the widened handler
+    set. Without it the widening could start reporting every health check that
+    catches broadly as a second implementation, and the guard's clean result would
+    stop meaning anything.
+    """
+    assert swallows_canonical_import(_BROAD_EXCEPT_PROBING_MODULE) is False
+
+
+def test_detector_clears_a_substitute_behind_an_unrelated_handler():
+    """Matched negative: the handler set grew to ``ImportError``'s supertypes, not to all.
+
+    The module carries a substitute writer, so only the handler type clears it. A
+    widening that had dropped the type check altogether would flag this.
+    """
+    assert swallows_canonical_import(_UNRELATED_HANDLER_MODULE) is False
+
+
 _UNNAMED_UNCANONICAL_EMITTER = '''
 def write_summary(payload):
     """Prints TOON by hand under a name the naming probe cannot see."""
@@ -683,6 +959,26 @@ def write_summary(payload):
     """Hand-prints a TOON line under an unprobed name, then serializes the rest."""
     print(f'status: {payload["status"]}')
     print(serialize_toon(payload))
+'''
+
+#: The indirect hand-roll under a name the probe cannot see. This is the second
+#: consequence of reading only direct ``print`` arguments: the same predicate is
+#: ``derive_name_blind_emitters``'s SELECTOR, so an emitter missed by both the
+#: naming probe and the literal probe landed in neither population.
+_UNNAMED_ASSIGNED_LINE_HAND_ROLL = '''
+def write_summary(payload):
+    """Composes a TOON line into a local under an unprobed name, then prints it."""
+    line = f'status: {payload["status"]}'
+    print(line)
+'''
+
+#: Matched negative for the selector widening: an unprobed name printing a local
+#: that is not TOON-shaped stays out of the name-blind population entirely.
+_UNNAMED_ASSIGNED_NON_TOON_LINE = '''
+def write_summary(payload):
+    """Prints a local holding ordinary narration, under an unprobed name."""
+    line = f'processing {payload["name"]}'
+    print(line)
 '''
 
 #: The matched positive for the cross-check. Selection is the hand-roll itself,
@@ -760,6 +1056,46 @@ def test_name_blind_derivation_flags_an_unprobed_partial_hand_roll(tmp_path):
     assert named == set(), 'the naming probe is expected to miss this function entirely'
     assert [record.reaches_canonical for record in behavioural] == [True]
     assert escaped == ['write_summary']
+
+
+def test_name_blind_derivation_selects_an_indirect_hand_roll(tmp_path):
+    """The selector reads composed lines too, so both probes can no longer miss one.
+
+    ``derive_name_blind_emitters`` selects on ``_prints_toon_shaped_line``, so
+    every hole in that predicate is a hole in the population as well as in
+    ``hand_rolls_toon``. An emitter whose NAME the probe also misses used to land
+    in neither.
+    """
+    _synthetic_script(
+        tmp_path,
+        'fixture-bundle',
+        'fixture-skill',
+        'unnamed_assigned.py',
+        _UNNAMED_ASSIGNED_LINE_HAND_ROLL,
+    )
+
+    named = {(record.path, record.function) for record in derive_toon_population(tmp_path).records}
+    escaped = [
+        record.function
+        for record in derive_name_blind_emitters(tmp_path).records
+        if (record.path, record.function) not in named
+    ]
+
+    assert named == set(), 'the naming probe is expected to miss this function entirely'
+    assert escaped == ['write_summary']
+
+
+def test_name_blind_derivation_ignores_an_indirect_narration_line(tmp_path):
+    """Matched negative: resolving the local did not make every printed local an emitter."""
+    _synthetic_script(
+        tmp_path,
+        'fixture-bundle',
+        'fixture-skill',
+        'unnamed_narration.py',
+        _UNNAMED_ASSIGNED_NON_TOON_LINE,
+    )
+
+    assert derive_name_blind_emitters(tmp_path).records == []
 
 
 def test_name_blind_derivation_clears_an_emitter_the_naming_probe_sees(tmp_path):
