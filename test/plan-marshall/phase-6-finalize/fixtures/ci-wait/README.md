@@ -2,8 +2,7 @@
 
 Representative `ci checks wait --pr-number {N}` TOON stdout fixtures used
 by `test_ci_complete_precondition.py` to drive the fixture-based
-resolver tests (plan
-`ci-complete-resolver-still-mis-maps-green-ci-mock`).
+resolver tests.
 
 Each fixture is a verbatim-shape TOON envelope that mirrors what
 `workflow-integration-github:github_ops.cmd_ci_wait` emits via
@@ -15,15 +14,23 @@ under "ci wait" and the production emit path in
 function `cmd_ci_wait`.
 
 These are **representative** (authored to mirror real-stdout structure)
-rather than captured from live `gh pr checks` runs. The deliverable
-description in the parent plan (`solution_outline.md` § 2) initially
-listed live capture as the preferred source, but the verification
-criterion is "fixtures load without error in the fixture-driven
-tests" — i.e. parse-and-extract round-trip. Authored fixtures cover the
-full CI state matrix (lesson `2026-05-24-14-001` § "Root cause 1" —
-mock-only unit tests cannot reproduce the live failure mode, but
-representative TOON envelopes exercise the same `parse_toon` →
-`resolve()` code path that the live failure exercises).
+rather than captured from live `gh pr checks` runs. What the fixture-driven
+tests require is a parse-and-extract round-trip — fixtures load without
+error — and authored fixtures cover the full CI state matrix. A mock-only
+unit test cannot reproduce a live failure mode, but a representative TOON
+envelope exercises the same `parse_toon` → `resolve()` code path that a live
+failure exercises.
+
+Each fixture's `pr_number`, `run_id`, and `head_sha` values are illustrative
+and need not correspond to real GitHub artifacts — the fixture-driven tests
+assert on resolver-classification keys (`final_status`, `failing_checks`,
+`wait_outcome`, `status`), not on identifier round-trip. To regenerate a
+fixture from a live run:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci \
+  checks wait --pr-number <N> > new-fixture.toon
+```
 
 ## Fixture catalogue
 
@@ -39,12 +46,12 @@ representative TOON envelopes exercise the same `parse_toon` →
 | `single-check-success.toon` | Exactly one check, green | Minimum non-empty checks table — exercises the inline-table parser at the smallest table size. |
 | `many-checks-success.toon` | Eight checks, all green | Larger inline-table to exercise parser performance and column-alignment on realistic check counts. |
 
-### Stress fixtures (Q-Gate finding e2c3ee re-direction)
+### Stress fixtures
 
-Added under the phase-5-execute review's directive to widen TASK-002's
-fixture set with the six stressor categories the original 9 captures
-didn't cover. The (b) category surfaced a live parser bug — see TASK-004
-for the fix.
+Six stressor categories the nine catalogue fixtures above do not reach.
+Category (b) is the sharpest: a colon-bearing check name must not trip
+`parse_toon`'s key/value-detection heuristic, and a parser that mis-splits
+one returns an empty `failing_checks` enumeration rather than failing.
 
 | Fixture | Stressor | Why it matters |
 |---------|----------|----------------|
@@ -88,18 +95,3 @@ this directory cover every branch:
 | `status: success`, `final_status: failure` | `wait_failed / ci_final_status: failure` |
 | `status: success`, `final_status: none` | `wait_failed / ci_final_status: no_checks` |
 | `status: error` (timeout) | `wait_failed / ci_final_status: timeout` |
-
-## Provenance
-
-Authored 2026-05-24 as part of plan
-`ci-complete-resolver-still-mis-maps-green-ci-mock`. Each fixture's
-`pr_number`, `run_id`, and `head_sha` values are illustrative and do
-not need to correspond to real GitHub artifacts — the fixture-driven
-tests assert on resolver-classification keys (`final_status`,
-`failing_checks`, `wait_outcome`, `status`), not on identifier round-
-trip. If a fixture needs to be regenerated from a live run, use:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci \
-  checks wait --pr-number <N> > new-fixture.toon
-```
