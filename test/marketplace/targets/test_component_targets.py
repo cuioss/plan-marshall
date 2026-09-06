@@ -819,6 +819,28 @@ def test_an_empty_file_declaration_fails_closed(tmp_path):
         excluded_emission_roots(bundle, 'claude')
 
 
+def test_a_file_declaring_only_non_tree_targets_fails_closed(tmp_path):
+    """A file-level list naming only non-component-tree targets ships nowhere.
+
+    The same registry-valid-but-shipped-nowhere shape the component level
+    rejects is rejected at the file level — a file narrowed onto ``pr-agent``
+    would vanish from every tree, which is the authoring error the declaration
+    is supposed to name, not silently commit.
+    """
+    treeless = sorted(registered_target_names() - component_tree_target_names())
+    assert treeless, 'fixture assumes at least one registered non-component-tree target'
+    bundle = _skill_bundle(
+        tmp_path, parent_declaration=None, file_declaration=f'[{", ".join(treeless)}]'
+    )
+
+    with pytest.raises(TargetScopeError) as excinfo:
+        excluded_emission_roots(bundle, 'claude')
+
+    message = str(excinfo.value)
+    assert 'ship nowhere' in message
+    assert 'references/x.md' in message
+
+
 def test_a_file_declaration_is_validated_even_inside_an_excluded_skill(tmp_path):
     """An excluded skill still brings its internal files' failures to the build.
 
