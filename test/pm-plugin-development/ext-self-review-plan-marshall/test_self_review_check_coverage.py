@@ -98,6 +98,32 @@ def _counted_lists() -> list[CandidateList]:
     return [spec for spec in CANDIDATE_LISTS if spec.in_total]
 
 
+# Non-emptiness asserted at IMPORT. A registry that stopped marking any entry
+# ``in_total`` would leave every sweep below iterating nothing, and a sweep over
+# nothing reports clean — the vacuous-confident-zero shape this module exists to
+# prevent, reproduced inside it.
+assert _counted_lists(), (
+    'no CANDIDATE_LISTS entry carries in_total, so the coverage sweep below would '
+    'pass having examined nothing'
+)
+
+#: Published on EVERY run — passing included — by the root conftest's
+#: ``pytest_report_header`` (see ``_ROUTING_GUARD_MODULES`` in
+#: ``test/conftest.py``). The import-time assertion above fails an EMPTY
+#: population; publishing the size is what makes a SHRUNKEN one visible on the
+#: GREEN run, where no failure message is ever rendered.
+#:
+#: This replaces a bare ``print`` inside the sweep below. That print could not
+#: publish anything: this repository's ``addopts`` carry neither ``-s`` nor
+#: ``-rA``, so pytest captures a passing test's stdout and discards it, and under
+#: the ``-n auto`` xdist run the canonical build performs, even a
+#: capture-suspended write is swallowed by the worker boundary. The report header
+#: is rendered by the CONTROLLER before collection and is therefore the one
+#: channel a passing run actually surfaces.
+GUARD_POPULATION_LABEL = 'self-review counted candidate lists'
+GUARD_POPULATION_SIZE = len(_counted_lists())
+
+
 def _uncovered(candidate_lists: tuple[CandidateList, ...], check_block: str) -> list[str]:
     """Return the counted keys with no backtick-quoted reference in ``check_block``.
 
@@ -159,14 +185,27 @@ class TestCountedListCheckCoverage:
             f'"to the region end" over-reaches: {headings}'
         )
 
-    def test_every_counted_candidate_list_has_a_consuming_check(self, capsys):
+    def test_every_counted_candidate_list_has_a_consuming_check(self):
+        """Every ``in_total`` registry entry is adjudicated by a numbered check.
+
+        PUBLICATION CHANNEL — the session report header, via this module's
+        ``GUARD_POPULATION_LABEL`` / ``GUARD_POPULATION_SIZE`` pair. The channel
+        is named here because it is part of the contract: the population size is
+        what distinguishes "examined the whole registry and found every entry
+        covered" from "examined a registry that quietly shrank", and those two
+        are indistinguishable in a green run that publishes nothing.
+
+        This test therefore emits nothing of its own. It requests no ``capsys``
+        — the fixture it used to request and never use is gone — and it prints
+        nothing, because a print here would be captured and discarded on the
+        pass it is supposed to inform.
+        """
         population = _counted_lists()
         # Guard against a silently empty population. A set-guarding test that can
         # pass having enumerated nothing is exactly the vacuous-confident-zero
-        # archetype under test, so the population size is asserted > 0
-        # and PUBLISHED before the coverage claim is made.
+        # archetype under test, so the population size is asserted > 0 here and
+        # PUBLISHED through the report header (see GUARD_POPULATION_SIZE above).
         assert len(population) > 0
-        print(f'counted candidate lists (population size): {len(population)}')
         region = _checks_region(_WORKFLOW_DOC.read_text(encoding='utf-8'))
         block = _numbered_check_block(region)
         # The region MUST carry numbered checks, or the block is empty and every
