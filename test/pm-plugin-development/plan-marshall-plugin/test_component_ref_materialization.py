@@ -10,10 +10,15 @@ dependency engine has to run at discovery time and its component-granular
 vocabulary (``bundle:skill:script``) has to be projected onto the bundle
 granularity the architecture graph keys on before a resolver ever sees it.
 
-The fixture marketplace below is built so that every ``DependencyType`` value is
-reachable from one bundle, and so that ``resolved`` is a discriminating flag
-rather than a constant — ``alpha`` references a bundle that exists (``beta``)
-and one that does not (``gamma``).
+The fixture marketplace below is built so that every DETECTOR-produced
+``DependencyType`` value is reachable from one bundle, and so that ``resolved``
+is a discriminating flag rather than a constant — ``alpha`` references a bundle
+that exists (``beta``) and one that does not (``gamma``).
+
+One enum kind is deliberately out of the fixture's reach: ``lsp`` is materialized
+by the language-server harvest, which requires a running server, and this fixture
+runs none. It is carved out by name rather than by weakening the sweep — see
+:data:`HARVEST_ONLY_DEP_TYPES`.
 """
 
 import json
@@ -26,10 +31,31 @@ from plugin_discover import build_component_refs, discover_plugin_modules
 ALL_DEP_TYPES = frozenset(member.value for member in DependencyType)
 """Every dependency kind the authoritative :class:`DependencyType` enum declares.
 
-Derived rather than restated as literals: a sixth kind added to the enum must
-fail the round-trip sweep below (the fixture does not produce it yet) instead of
-slipping through a hand-listed set that still reads as complete.
+Derived rather than restated as literals: a kind added to the enum must fail the
+round-trip sweep below (the fixture does not produce it yet) instead of slipping
+through a hand-listed set that still reads as complete.
 """
+
+HARVEST_ONLY_DEP_TYPES = frozenset({DependencyType.LSP.value})
+"""The enum kinds NO file-scanning detector produces, so no fixture can round-trip them.
+
+``lsp`` references are stamped by the language-server harvest
+(``lsp_harvest.DEP_TYPE_LSP``), a discovery-time engine that needs a running
+server; the fixture marketplace below runs none, so the kind is unreachable here
+by construction rather than by omission.
+
+⛔ This is a NAMED carve-out, not a weakening of the sweep. It is stated as its
+own set so it stays visible and countable, and the sweep below asserts it is a
+PROPER subset of the enum — a carve-out that grew to swallow the whole vocabulary,
+or that named a member the enum no longer declares, fails there rather than
+quietly emptying the expectation. A future kind produced by a DETECTOR is not in
+this set, so it still lands in :data:`MATERIALIZABLE_DEP_TYPES` and still turns
+the round-trip sweep red until the fixture produces it — the alarm the sweep
+exists to raise is intact.
+"""
+
+MATERIALIZABLE_DEP_TYPES = ALL_DEP_TYPES - HARVEST_ONLY_DEP_TYPES
+"""The kinds this discovery path can actually materialize, derived by subtraction."""
 
 # =============================================================================
 # Fixture marketplace
@@ -208,14 +234,24 @@ def test_every_entry_carries_the_three_contract_fields():
 # =============================================================================
 
 
-def test_every_dep_type_round_trips():
-    """Every ``DependencyType`` value survives materialization.
+def test_every_detector_produced_dep_type_round_trips():
+    """Every detector-produced ``DependencyType`` value survives materialization.
 
-    The expected set is derived from the enum, so a sixth kind added there turns
-    this into a red test naming the gap rather than leaving a hand-listed set of
-    five that still reads as complete while the new kind goes untested.
+    The expected set is derived from the enum minus the named harvest-only
+    carve-out, so a new DETECTOR kind added to the enum turns this into a red test
+    naming the gap rather than leaving a hand-listed set that still reads as
+    complete while the new kind goes untested.
+
+    The two guards before the sweep are what keep the subtraction honest: an empty
+    expectation would assert nothing, and a carve-out that is not a PROPER subset
+    of the enum is either swallowing the whole vocabulary or naming a member the
+    enum no longer declares. Either would hollow out the sweep silently.
     """
-    assert ALL_DEP_TYPES, 'the derived dep-type population must not be empty'
+    assert MATERIALIZABLE_DEP_TYPES, 'the derived dep-type population must not be empty'
+    assert HARVEST_ONLY_DEP_TYPES < ALL_DEP_TYPES, (
+        f'the harvest-only carve-out {sorted(HARVEST_ONLY_DEP_TYPES)} must be a proper '
+        f'subset of the enum vocabulary {sorted(ALL_DEP_TYPES)}'
+    )
 
     with tempfile.TemporaryDirectory() as tmpdir:
         root = Path(tmpdir)
@@ -223,7 +259,7 @@ def test_every_dep_type_round_trips():
 
         refs = _modules_by_name(root)['alpha']['component_refs']
 
-        assert {ref['dep_type'] for ref in refs} == set(ALL_DEP_TYPES)
+        assert {ref['dep_type'] for ref in refs} == set(MATERIALIZABLE_DEP_TYPES)
 
 
 # =============================================================================
