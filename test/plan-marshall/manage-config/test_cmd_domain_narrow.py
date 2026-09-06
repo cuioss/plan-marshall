@@ -624,6 +624,7 @@ def test_unreadable_task_file_is_refused_not_skipped(plan_context):
         '"plan-marshall-plugin-dev"',
         '{"number": 1}',
         '{"number": 1, "domain": ""}',
+        '{"number": 1, "domain": "   "}',
         '{"number": 1, "domain": 42}',
     ],
     ids=[
@@ -631,6 +632,7 @@ def test_unreadable_task_file_is_refused_not_skipped(plan_context):
         'a-bare-string',
         'domain-absent',
         'domain-empty',
+        'domain-whitespace-only',
         'domain-not-a-string',
     ],
 )

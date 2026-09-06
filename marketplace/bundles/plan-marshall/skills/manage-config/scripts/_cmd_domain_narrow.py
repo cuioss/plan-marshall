@@ -178,7 +178,13 @@ def _task_claimed_domains(plan_dir) -> set[str]:
                 TypeError(f'task record is a {type(task).__name__}, not a JSON object'),
             )
         domain = task.get('domain')
-        if not isinstance(domain, str) or not domain:
+        # `.strip()`, not bare truthiness: a whitespace-only domain is as unusable as an
+        # empty one — it claims nothing any real domain key can match, so accepting it
+        # would let the leg succeed with a claim that cannot bind and drop the domain the
+        # task actually needs. The sibling filter in `_read_affected_files` already tests
+        # `f.strip()`; stopping at truthiness here left the two guards asymmetric against
+        # the same class of input.
+        if not isinstance(domain, str) or not domain.strip():
             raise _TaskLegUnreadable(
                 task_file,
                 ValueError(f'task record carries no usable domain field (got {domain!r})'),

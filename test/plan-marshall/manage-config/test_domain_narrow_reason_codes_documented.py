@@ -38,12 +38,15 @@ _SENTENCE_DOCS = (
     'plan-marshall/skills/phase-3-outline/workflow/light-lane.md',
 )
 
-#: Every document that mirrors the whole set. ``manage-config/standards/skill-domains.md``
-#: and ``manage-config/standards/api-reference.md`` are deliberately absent: the first
-#: delegates the error set to ``SKILL.md`` by cross-reference and the second names two
-#: codes as conditions without claiming to enumerate the set, so neither is a mirror.
-#: test_no_unguarded_mirror_exists is what keeps this tuple honest.
-_MIRROR_DOCS = (_TABLE_DOC, *_SENTENCE_DOCS)
+#: The mirror population is DISCOVERED, never restated. A hand-written tuple here would
+#: itself be a mirror of the set this module exists to keep from drifting: a document that
+#: started enumerating the codes would be found by the scan but never parametrized, so its
+#: contents would go unchecked until someone remembered to add it. Deriving the population
+#: from the same scan that polices it removes the second registry entirely.
+#:
+#: ``manage-config/standards/skill-domains.md`` and ``manage-config/standards/api-reference.md``
+#: fall below the threshold by construction: the first delegates the error set to ``SKILL.md``
+#: by cross-reference, the second names two codes as conditions without enumerating the set.
 
 #: A document naming at least this many declared codes is enumerating the set rather
 #: than mentioning a condition or two in passing, so it needs to be under guard.
@@ -90,10 +93,38 @@ def _codes_from_sentence(text: str) -> list[str]:
     return _BACKTICKED_TOKEN_RE.findall(match.group(1))
 
 
-_EXTRACTORS = {
-    _TABLE_DOC: _codes_from_table,
-    **dict.fromkeys(_SENTENCE_DOCS, _codes_from_sentence),
-}
+def _discover_mirror_docs() -> list[str]:
+    """Return every markdown file that ENUMERATES the declared set, by scanning for it.
+
+    This is the single population: the parametrized equality test and the no-unguarded-mirror
+    test both consume it, so a newly-added mirror is checked the moment it appears rather
+    than when someone remembers to register it.
+    """
+    declared = set(_declared_codes())
+    return sorted(
+        str(path.relative_to(MARKETPLACE_ROOT))
+        for path in MARKETPLACE_ROOT.rglob('*.md')
+        if len(declared & set(_BACKTICKED_TOKEN_RE.findall(path.read_text(encoding='utf-8'))))
+        >= _MIRROR_THRESHOLD
+    )
+
+
+def _extractor_for(document: str, text: str):
+    """Select the extractor from the document's own FORMAT, not from a path registry.
+
+    A path-keyed map is the same second registry the discovered population removes: a new
+    mirror would have no entry and raise KeyError, which reads as a test-harness fault
+    rather than as the unguarded mirror it is. Dispatching on the shape actually present
+    means a recognised format is parsed and an unrecognised one fails saying so.
+    """
+    if _TABLE_HEADER in text:
+        return _codes_from_table
+    if _SENTENCE_RE.search(text) is not None:
+        return _codes_from_sentence
+    raise AssertionError(
+        f'{document} enumerates the reason codes in a format this module cannot parse; '
+        'add an extractor for it rather than dropping it from the guarded population'
+    )
 
 
 def test_the_declared_set_is_extracted_and_not_silently_empty():
@@ -104,30 +135,29 @@ def test_the_declared_set_is_extracted_and_not_silently_empty():
     assert len(declared) == len(set(declared))
 
 
-@pytest.mark.parametrize('document', _MIRROR_DOCS)
+@pytest.mark.parametrize('document', _discover_mirror_docs())
 def test_documented_reason_codes_equal_the_declared_set(document):
     """Each mirror enumerates exactly the codes the script can return — no more, no fewer."""
-    documented = _EXTRACTORS[document](_read(document))
+    text = _read(document)
+    documented = _extractor_for(document, text)(text)
 
     assert _ANCHOR_CODE in documented
     assert len(documented) == len(set(documented))
     assert set(documented) == set(_declared_codes())
 
 
-def test_no_unguarded_mirror_exists():
-    """Every document that enumerates the set is under guard, so the list above cannot rot.
+def test_every_discovered_mirror_is_parseable_and_the_population_is_not_empty():
+    """The discovered population is non-empty and every member has a usable extractor.
 
-    Without this the guarded tuple is itself a hand-maintained mirror with exactly the
-    drift problem the module exists to remove: a new document could start restating the
-    set and no assertion would ever look at it.
+    Two failures this catches that the equality test above cannot. An EMPTY population
+    parametrizes zero cases, so the suite would report all-green while checking no mirror
+    at all — the vacuous pass this module's anchor assertion exists to prevent, one level
+    up. And a mirror written in an unrecognised format would raise inside the extractor
+    selector; asserting it here names it as an unguarded mirror rather than surfacing it
+    as a parametrization error.
     """
-    declared = set(_declared_codes())
+    discovered = _discover_mirror_docs()
 
-    enumerating = {
-        str(path.relative_to(MARKETPLACE_ROOT))
-        for path in MARKETPLACE_ROOT.rglob('*.md')
-        if len(declared & set(_BACKTICKED_TOKEN_RE.findall(path.read_text(encoding='utf-8'))))
-        >= _MIRROR_THRESHOLD
-    }
-
-    assert enumerating == set(_MIRROR_DOCS)
+    assert discovered, 'no document enumerates the reason codes; the scan or threshold is wrong'
+    for document in discovered:
+        assert _extractor_for(document, _read(document)) is not None
