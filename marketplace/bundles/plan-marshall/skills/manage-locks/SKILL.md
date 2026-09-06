@@ -43,7 +43,10 @@ Two primitives live here:
   orchestrator escalation. The same entry point also carries the **rate-window
   claim** (`rate-window claim` / `check` / `release`) — a cross-plan claim on ONE
   review bot's rate window that shares the merge-lock STORE but never the merge
-  MUTEX (see below).
+  MUTEX (see below) — and the **`poll-delay`** computation, a bounded jittered
+  delay for a caller about to wake from an elapsed rate window. `poll-delay` shares
+  neither the store nor the mutex: it is a pure computation that touches no state
+  and never sleeps, returning the number for its CALLER to wait.
 - **The build-queue limiter** (`scripts/build_queue.py`, notation
   `plan-marshall:manage-locks:build_queue`) — a bounded-`k`-slot admitter with a
   FIFO waiting queue, persisted in the machine-global `build-queue.json` under the
@@ -397,6 +400,48 @@ Unlike `claim` and `check`, `release` takes no `--pr-number` and refuses nothing
 it is absent: it drops the holder without consulting the per-PR counter, so it has no
 PR to count against.
 
+### merge_lock — poll-delay
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock poll-delay \
+  [--min-seconds MIN_SECONDS] [--max-seconds MAX_SECONDS]
+```
+
+Returns ONE uniformly-drawn delay in seconds, bounded by `--min-seconds` (default
+`300`) and `--max-seconds` (default `1200`) — the 5-to-20-minute range. Output:
+
+- **`status: success`** — fields `delay_seconds` (the drawn value), plus
+  `min_seconds` and `max_seconds` echoing the range it was drawn from, so a consumer
+  reading only the payload need not know the defaults.
+- **`status: error`** (`error_code: INVALID_INPUT`) — the bounds are malformed, in
+  exactly two ways. Either bound is **negative**: the drawn value is interpolated
+  straight into the caller's `sleep` command, so a negative bound leaves this verb as
+  a malformed shell command rather than as a merely-odd number. Or `--min-seconds`
+  **exceeds** `--max-seconds`: the pair is REFUSED, never silently swapped, because a
+  swap returns a plausible delay drawn from a range the caller never asked for, so
+  the caller's mistake survives as a wrong-but-believable number instead of surfacing
+  as an error it can act on. Both refusals echo `min_seconds` and `max_seconds`.
+
+**It computes; it does not wait.** The verb returns the number and exits — the
+CALLER sleeps it. `automatic-review` awaits it once at the Branch 3 → Branch 4
+boundary of its rate-limit recovery, as a single standalone `sleep` Bash call. The
+split is deliberate and matches the rate-window verbs, which are likewise
+non-waiting (an atomic claim or release, with the caller re-polling): a wait
+embedded in this script would hold a process open inside a primitive every
+concurrently-finalizing plan contends on.
+
+**It shares neither the store nor the mutex — it touches no state at all.** Unlike
+the `rate-window` verbs, which at least co-tenant `merge-queue.json`, `poll-delay`
+is a pure computation behind a CLI. It takes no `--plan-id`, reads no store, and
+writes nothing to `merge.lock`, `merge-queue.json`, or the `rate_windows` key, so it
+can be called from anywhere without contending for anything.
+
+The randomness is injectable at the function seam (`compute_poll_delay`'s `rng`
+parameter) rather than through a `--seed` flag, so a test can pin the draw and
+assert the range deterministically. There is deliberately no seed flag: a seed is an
+operator-facing reproducibility knob, and this value has no operator-facing reason to
+be reproducible.
+
 ### build_queue — acquire
 
 ```bash
@@ -420,6 +465,7 @@ python3 .plan/execute-script.py plan-marshall:manage-locks:build_queue release \
 | build wrappers (`_build_execute_factory`, `_pyproject_execute`) | consume | `build_queue acquire`/`release` around `execute_direct` — the in-process fallback path (unregistered / daemon-down) |
 | `manage-build-server:_marshalld_scheduler` (via the D5 routing seam) | consumes | the same machine-global `build-queue.json` — the registered path (daemon-served builds) |
 | `automatic-review/SKILL.md` rate-limit recovery sequence | consumes | `merge_lock rate-window claim`/`check`/`release` |
+| `automatic-review/SKILL.md` Branch 3 → Branch 4 boundary | consumes | `merge_lock poll-delay` — awaits the returned `delay_seconds` once before generating the trigger event |
 | `_locks_core.rmw_json` | consumed by | both `build_queue` (`build-queue.json`) and `merge_lock` (`merge-queue.json` FIFO layer AND `rate_windows` claims) |
 
 ## Standards

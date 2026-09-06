@@ -2,7 +2,9 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 
 """Tests for the ``merge_lock.py`` ``rate-window`` verbs — the cross-plan claim on
-ONE review bot's rate window, co-tenanting the merge-lock store.
+ONE review bot's rate window, co-tenanting the merge-lock store — and for the
+``poll-delay`` verb, the storeless jitter computation a caller waits after that
+window elapses.
 """
 
 
@@ -11,6 +13,7 @@ from __future__ import annotations
 import json
 import time
 from argparse import Namespace
+from pathlib import Path
 
 import pytest
 from _merge_lock_rate_window_fixtures import (
@@ -318,3 +321,268 @@ def test_expires_at_is_derived_from_the_supplied_window_length(isolated_base: di
 
     assert result['expires_at'] >= before + 900.0
     assert result['seconds_remaining'] <= 900.0
+
+
+# =============================================================================
+# poll-delay — a bounded jittered delay the CALLER waits
+# =============================================================================
+#
+# The verb's whole value is a RANGE, and a range assertion is the easiest thing in
+# this corpus to write vacuously: `300 <= delay <= 1200` holds just as well against
+# an implementation that hard-codes 600 and never draws anything at all. So the
+# range is pinned from two directions that fail for different reasons — through the
+# `rng` injection seam, where the drawn value is known exactly and an ignored seam
+# is structurally detectable, and over a real sample, where the SPREAD is what is
+# measured and a degenerate constant cannot survive.
+#
+# The sample size below is 200. A uniform draw over a continuous interval repeats a
+# value with probability zero, so "at least two distinct values" is not a flaky
+# statistical bet — it is a property that only a broken (constant) implementation
+# can fail.
+_SAMPLE_SIZE = 200
+
+
+def _poll_delay(min_seconds: float = 300.0, max_seconds: float = 1200.0) -> dict:
+    """Drive ``run_poll_delay`` with a hand-built Namespace (argparse bypassed).
+
+    Like the ``rate-window`` helpers above, this sees whatever bounds it is handed
+    — never the ones the SHIPPED command line supplies when a caller omits the
+    flags. Those are asserted in :class:`TestPollDelayCli`.
+    """
+    result: dict = merge_lock.run_poll_delay(
+        Namespace(min_seconds=min_seconds, max_seconds=max_seconds)
+    )
+    return result
+
+
+class TestPollDelayInjectionSeam:
+    """``compute_poll_delay``'s ``rng`` parameter is the determinism seam.
+
+    Without it the draw is observable only statistically, and a test that can only
+    observe a distribution cannot assert which number came back.
+    """
+
+    def test_the_injected_draw_is_what_comes_back(self) -> None:
+        assert merge_lock.compute_poll_delay(300.0, 1200.0, rng=lambda low, _high: low) == 300.0
+        assert merge_lock.compute_poll_delay(300.0, 1200.0, rng=lambda _low, high: high) == 1200.0
+
+    def test_an_out_of_range_injected_draw_comes_back_unclamped(self) -> None:
+        """Matched negative control for every range assertion in this section.
+
+        The injected callable returns a value no bound admits. Were ``rng`` ignored
+        — dropped for a hard-wired ``random.uniform`` call inside the function — the
+        result would land inside [300, 1200] and this assertion would fail. That is
+        what makes the sibling range tests non-vacuous: they measure a draw the seam
+        actually produced, not a constant the implementation could have baked in.
+
+        It also pins that the function does not clamp: an out-of-range draw is
+        returned as-is rather than pulled to the nearest bound, so `run_poll_delay`'s
+        bounds validation is the only thing standing between a caller and a bad
+        number — which is why that validation is tested as its own class below.
+        """
+        assert merge_lock.compute_poll_delay(300.0, 1200.0, rng=lambda _low, _high: -1.0) == -1.0
+
+    def test_the_bounds_are_forwarded_to_the_injected_callable(self) -> None:
+        """Custom bounds are honoured by being HANDED to the draw, not post-filtered."""
+        seen: list[tuple[float, float]] = []
+
+        def _record(low: float, high: float) -> float:
+            seen.append((low, high))
+            return low
+
+        merge_lock.compute_poll_delay(45.0, 90.0, rng=_record)
+
+        assert seen == [(45.0, 90.0)]
+
+    def test_the_default_draw_delegates_to_random_uniform(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """``rng=None`` means ``random.uniform``, over the caller's own bounds.
+
+        Asserted deterministically rather than inferred from the sample below: the
+        sample can show that SOME spread exists, only this can show WHICH callable
+        produced it and that the bounds reached it intact.
+        """
+        seen: list[tuple[float, float]] = []
+
+        def _fake_uniform(low: float, high: float) -> float:
+            seen.append((low, high))
+            return 777.0
+
+        monkeypatch.setattr(merge_lock.random, 'uniform', _fake_uniform)
+
+        assert merge_lock.compute_poll_delay(300.0, 1200.0) == 777.0
+        assert seen == [(300.0, 1200.0)]
+
+
+class TestPollDelayRange:
+    def test_every_draw_of_a_large_sample_lies_within_the_default_bounds(self) -> None:
+        sample = [_poll_delay()['delay_seconds'] for _ in range(_SAMPLE_SIZE)]
+
+        out_of_range = [d for d in sample if not 300.0 <= d <= 1200.0]
+        assert out_of_range == [], out_of_range
+
+    def test_the_sample_is_not_a_degenerate_constant(self) -> None:
+        """A range assertion alone passes against a hard-coded 600.
+
+        This is the assertion that constant cannot pass, and it is why the range
+        test above measures anything: together they say "inside the bounds AND
+        actually varying", which is the property the caller depends on.
+        """
+        sample = [_poll_delay()['delay_seconds'] for _ in range(_SAMPLE_SIZE)]
+
+        assert len(set(sample)) > 1, sample[:5]
+
+    def test_custom_bounds_are_honoured_end_to_end(self) -> None:
+        sample = [_poll_delay(10.0, 20.0)['delay_seconds'] for _ in range(_SAMPLE_SIZE)]
+
+        out_of_range = [d for d in sample if not 10.0 <= d <= 20.0]
+        assert out_of_range == [], out_of_range
+        # ...and the narrow range is the one drawn from, not the shipped range
+        # filtered down to it: no draw may even reach the 300-second default floor.
+        assert max(sample) < 300.0
+        assert len(set(sample)) > 1, sample[:5]
+
+    def test_the_payload_echoes_the_range_it_drew_from(self) -> None:
+        """A consumer reading only the payload must be able to see the bounds."""
+        result = _poll_delay(10.0, 20.0)
+
+        assert result['status'] == 'success', result
+        assert result['min_seconds'] == 10.0, result
+        assert result['max_seconds'] == 20.0, result
+
+    def test_equal_bounds_collapse_to_that_single_value(self) -> None:
+        """``min == max`` is a legal degenerate range, not an inverted pair."""
+        result = _poll_delay(42.0, 42.0)
+
+        assert result['status'] == 'success', result
+        assert result['delay_seconds'] == 42.0, result
+
+
+class TestPollDelayBoundsRefusals:
+    def test_inverted_bounds_are_refused_rather_than_swapped(self) -> None:
+        """A swap would return a plausible delay from a range nobody asked for.
+
+        Two things are asserted, and the second is the one that distinguishes a
+        refusal from a silent correction: no ``delay_seconds`` is produced at all,
+        and the echoed bounds are the caller's own, still in the caller's order.
+        """
+        result = _poll_delay(1200.0, 300.0)
+
+        assert result['status'] == 'error', result
+        assert result['error_code'] == 'INVALID_INPUT', result
+        assert 'delay_seconds' not in result, result
+        assert result['min_seconds'] == 1200.0, result
+        assert result['max_seconds'] == 300.0, result
+
+    @pytest.mark.parametrize(
+        ('min_seconds', 'max_seconds'),
+        [
+            (-300.0, 1200.0),  # negative floor, otherwise well-ordered
+            (300.0, -1200.0),  # negative ceiling (and inverted — negativity wins)
+            (-1200.0, -300.0),  # both negative, correctly ordered
+        ],
+    )
+    def test_negative_bounds_are_refused(self, min_seconds: float, max_seconds: float) -> None:
+        """A negative bound does not stay inside this function as an odd number.
+
+        ``delay_seconds`` is interpolated straight into the caller's ``sleep``
+        command, so a negative draw leaves the verb as a malformed shell command at
+        the one site that consumes it. The third case is the one an
+        ordering-only guard misses entirely: ``-1200 <= -300`` is well-ordered.
+        """
+        result = _poll_delay(min_seconds, max_seconds)
+
+        assert result['status'] == 'error', result
+        assert result['error_code'] == 'INVALID_INPUT', result
+        assert 'non-negative' in result['error'], result
+        assert 'delay_seconds' not in result, result
+
+    def test_a_zero_floor_is_still_accepted(self) -> None:
+        """Matched negative control for the refusals above.
+
+        The guard rejects NEGATIVE bounds, not FALSY ones. A ``not min_seconds``
+        style check would pass every case above while refusing this legitimate
+        zero floor — so without this test the guard could be written wrong and
+        stay green.
+        """
+        result = _poll_delay(0.0, 5.0)
+
+        assert result['status'] == 'success', result
+        assert 0.0 <= result['delay_seconds'] <= 5.0, result
+
+
+# The tests above drive `run_poll_delay` with a hand-built Namespace, which bypasses
+# argparse: each asserts the semantics of whatever bounds it passes in, and would
+# pass just as happily against shipped defaults of 1 and 2 seconds. The range a
+# caller actually gets when it omits both flags is decided by the parser and is
+# observable ONLY through the real entry point.
+
+
+class TestPollDelayCli:
+    def test_shipped_default_bounds_are_five_to_twenty_minutes(
+        self, tmp_path: Path
+    ) -> None:
+        """Omitting both flags must yield the 300-1200 second range.
+
+        The literals are the assertion. Every sibling test derives its bounds from
+        what it passed in, so all of them agree with any defaults at all — only a
+        test that names the numbers can fail when the numbers are wrong.
+        """
+        result = run_script(
+            SCRIPT_PATH, 'poll-delay',
+            env_overrides={'PLAN_BASE_DIR': str(tmp_path)},
+        )
+
+        assert result.returncode == 0, result.stderr
+        parsed = parse_toon(result.stdout)
+        assert parsed['status'] == 'success', parsed
+        assert float(parsed['min_seconds']) == 300.0, parsed
+        assert float(parsed['max_seconds']) == 1200.0, parsed
+        assert 300.0 <= float(parsed['delay_seconds']) <= 1200.0, parsed
+
+    def test_help_advertises_both_bounds_and_their_defaults(self) -> None:
+        """``--help`` is the surface an operator reads before choosing a range."""
+        result = run_script(SCRIPT_PATH, 'poll-delay', '--help')
+
+        assert result.returncode == 0, result.stderr
+        # argparse hard-wraps help text at the terminal width, so a wrap between
+        # any two words of '(default: 300.0)' would break a raw substring match.
+        advertised = ' '.join(result.stdout.split())
+        assert '--min-seconds' in advertised, advertised
+        assert '--max-seconds' in advertised, advertised
+        assert '(default: 300.0)' in advertised, advertised
+        assert '(default: 1200.0)' in advertised, advertised
+
+    def test_the_shipped_cli_refuses_a_negative_bound(self, tmp_path: Path) -> None:
+        """The guard must be reachable from the command line a human types.
+
+        ``--min-seconds=-300`` uses the ``=`` form deliberately: a bare
+        ``--min-seconds -300`` leans on argparse's negative-number heuristic, which
+        is a property of the parser's option set rather than of this verb.
+        """
+        result = run_script(
+            SCRIPT_PATH, 'poll-delay', '--min-seconds=-300',
+            env_overrides={'PLAN_BASE_DIR': str(tmp_path)},
+        )
+
+        parsed = parse_toon(result.stdout)
+        assert parsed['status'] == 'error', parsed
+        assert parsed['error_code'] == 'INVALID_INPUT', parsed
+        assert 'delay_seconds' not in parsed, parsed
+
+    def test_the_shipped_cli_takes_no_plan_id(self, tmp_path: Path) -> None:
+        """``poll-delay`` touches no state, so it declares no ``--plan-id``.
+
+        The absence is the contract, not an omission: a pure computation that
+        accepted a plan identifier would invite a reader to assume it reads or
+        writes that plan's store. Asserted against the parser, which is the only
+        place the flag set is real.
+        """
+        result = run_script(
+            SCRIPT_PATH, 'poll-delay', '--plan-id', 'plan-a',
+            env_overrides={'PLAN_BASE_DIR': str(tmp_path)},
+        )
+
+        assert result.returncode != 0, result.stdout
+        assert '--plan-id' in result.stderr, result.stderr

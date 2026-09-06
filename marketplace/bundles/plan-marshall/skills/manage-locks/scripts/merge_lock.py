@@ -35,8 +35,8 @@ this script no longer sleeps internally for the queue case. The ``O_EXCL`` mutex
 stays the final ``k=1`` grant — the FIFO layer decides WHO may attempt it, the
 kernel race decides the single winner.
 
-It exposes four actions — the three merge-mutex actions plus the ``rate-window``
-claim that co-tenants the same store:
+It exposes five actions — the three merge-mutex actions, the ``rate-window`` claim
+that co-tenants the same store, and the storeless ``poll-delay`` computation:
 
   * ``acquire`` — FIFO-enqueue ``--plan-id`` into ``merge-queue.json`` (idempotent,
     FIFO-position-preserving), then — only when this plan is the FIFO front —
@@ -86,6 +86,20 @@ claim that co-tenants the same store:
     the attempt past the cap; ``check`` is a pure read that reports the SAME per-PR
     budget ``claim`` would apply; ``release`` drops the holder while RETAINING the
     attempt counter so the cap survives the release between attempts.
+  * ``poll-delay`` — a bounded jittered delay, in seconds, for a caller about to
+    wake from an elapsed rate window. It COMPUTES and RETURNS the number; it never
+    sleeps. See "``poll-delay`` computes, the caller waits" below.
+
+**``poll-delay`` computes, the caller waits.** This module has no ``time.sleep``
+and must keep none. ``_claim_rate_window`` / ``_release_rate_window`` are
+non-waiting by design — an atomic claim or release, with the caller re-polling —
+so a wait embedded here would hold a process open inside a primitive every
+concurrently-finalizing plan contends on. ``poll-delay`` keeps that split: the
+jitter COMPUTATION is the script seam, and the WAIT stays at the workflow layer
+where it already lives (``automatic-review``'s paced, tool-call-driven poll loop).
+It also touches NO state — no ``--plan-id``, no store read, and no write to
+``merge.lock``, ``merge-queue.json``, or the ``rate_windows`` key — so it is a pure
+function behind a CLI, safe to call from anywhere without contending for anything.
 
 **The rate window shares the STORE, never the MUTEX.** The rate-window actions
 read and write only the ``rate_windows`` key. They never create, read, reclaim, or
@@ -230,11 +244,13 @@ import errno
 import json
 import logging
 import os
+import random
 import subprocess
 import sys
 import time
 import uuid
 from argparse import Namespace
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -288,6 +304,23 @@ _DEFAULT_RECOVERY_ATTEMPT_CAP = 6
 # `rate_limit_eta_patterns`. One hour is the coarsest window any registered bot
 # advertises, so an un-parsed ETA errs toward waiting rather than re-triggering.
 _DEFAULT_WINDOW_SECONDS = 3600.0
+
+# Default bounds for the `poll-delay` jitter, in seconds — 5 to 20 minutes.
+#
+# The range is CORROBORATED, not invented: `.claude/skills/cloud-plan-lane/SKILL.md`
+# § "A `Reopens? yes` refusal is RETRIED, not recorded" instructs a cloud-lane run to
+# "wait the window the notice states, then add jitter — a random 5-20 minutes on top".
+# Matching it keeps one jitter magnitude across both lanes, which is what makes the
+# two decorrelate against EACH OTHER rather than merely each against itself.
+#
+# ⛔ The RANGE transfers; the cloud lane's RATIONALE does not. That lane argues from a
+# shared per-developer allowance several parallel plans draw on, which makes its jitter
+# a thundering-herd remedy. In THIS lane the rate-window claim already serialises every
+# in-repo claimant by construction, so no in-repo herd exists to break up. What survives
+# is stated at the call site — see `automatic-review/standards/coderabbit.md`
+# § "Rate-limit class".
+_DEFAULT_POLL_DELAY_MIN_SECONDS = 300.0
+_DEFAULT_POLL_DELAY_MAX_SECONDS = 1200.0
 
 # Title-token state names persisted via manage-status (the bare state string;
 # manage-terminal-title owns the state → glyph rendering).
@@ -1648,6 +1681,87 @@ _RATE_WINDOW_ACTIONS = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Poll delay — a pure jitter computation (no store, no mutex, no sleep)
+# ---------------------------------------------------------------------------
+
+
+def compute_poll_delay(
+    min_seconds: float,
+    max_seconds: float,
+    rng: Callable[[float, float], float] | None = None,
+) -> float:
+    """Return one uniformly-drawn delay in ``[min_seconds, max_seconds]``.
+
+    ``rng`` is the injection seam: any ``(low, high) -> float`` callable, defaulting
+    to :func:`random.uniform`. It exists so a test can pin the draw to a bound and
+    assert the range deterministically — a bare module-level ``random.uniform`` call
+    at the wait site would be observable only statistically, which is not a property
+    a test can assert without flaking. It is deliberately NOT a ``--seed`` flag: a
+    seed on the CLI is a reproducibility knob for the operator, and this value has no
+    operator-facing reason to be reproducible. Injection keeps the determinism where
+    it is needed (the test) instead of adding an argument every caller must ignore.
+
+    The caller is responsible for having validated the bounds; :func:`run_poll_delay`
+    is the boundary that does so.
+    """
+    draw = random.uniform if rng is None else rng
+    return draw(min_seconds, max_seconds)
+
+
+def run_poll_delay(args: Namespace) -> dict[str, Any]:
+    """``poll-delay`` — compute a bounded jittered delay; NEVER sleep it.
+
+    A pure computation behind a CLI: it reads no store, holds no lock, takes no
+    ``--plan-id``, and writes nothing. The returned ``delay_seconds`` is what the
+    CALLER waits — ``automatic-review`` awaits it once at the Branch 3 → Branch 4
+    boundary, as a single standalone ``sleep`` Bash call. Keeping the wait out of
+    this module is the point; see the module docstring's "``poll-delay`` computes,
+    the caller waits".
+
+    Negative bounds are REFUSED. Both bounds arrive from a CLI flag a human types,
+    and the returned ``delay_seconds`` is interpolated straight into the caller's
+    ``sleep`` command — so a negative bound does not stay inside this function as a
+    merely-odd number. It leaves as a malformed shell command at the one site that
+    consumes it. This is the same already-guarded validation path the inversion
+    check below occupies, one comparison wider.
+
+    Inverted bounds are REFUSED rather than silently swapped. A swap would make
+    ``--min-seconds 1200 --max-seconds 300`` return a plausible delay drawn from a
+    range the caller never asked for, so the caller's mistake would survive as a
+    wrong-but-believable number instead of surfacing as an error it can act on.
+    """
+    min_seconds: float = args.min_seconds
+    max_seconds: float = args.max_seconds
+
+    if min_seconds < 0 or max_seconds < 0:
+        return make_error(
+            f'poll-delay requires non-negative bounds: '
+            f'got min_seconds={min_seconds}, max_seconds={max_seconds}',
+            code=ErrorCode.INVALID_INPUT,
+            min_seconds=min_seconds,
+            max_seconds=max_seconds,
+        )
+
+    if min_seconds > max_seconds:
+        return make_error(
+            f'poll-delay requires --min-seconds <= --max-seconds: '
+            f'got min_seconds={min_seconds}, max_seconds={max_seconds}',
+            code=ErrorCode.INVALID_INPUT,
+            min_seconds=min_seconds,
+            max_seconds=max_seconds,
+        )
+
+    return {
+        'status': 'success',
+        'delay_seconds': compute_poll_delay(min_seconds, max_seconds),
+        # Echoed so a consumer reading only this payload can see the range the
+        # delay was drawn from, rather than having to know the defaults.
+        'min_seconds': min_seconds,
+        'max_seconds': max_seconds,
+    }
+
+
 def run_rate_window(args: Namespace) -> dict[str, Any]:
     """Dispatch the ``rate-window {claim,check,release}`` action.
 
@@ -1669,7 +1783,7 @@ def run_rate_window(args: Namespace) -> dict[str, Any]:
 
 
 def main() -> int:
-    """Entry point — ``acquire`` / ``check`` / ``release`` / ``rate-window`` actions."""
+    """Entry point — ``acquire`` / ``check`` / ``release`` / ``rate-window`` / ``poll-delay``."""
     parser = create_workflow_cli(
         description='Unified merge lock: the single main-anchored merge-to-main serializer with a FIFO admission queue',
         epilog="""
@@ -1680,6 +1794,7 @@ Examples:
   merge_lock.py rate-window claim --plan-id EXAMPLE-PLAN --bot-kind coderabbit --pr-number 42 [--window-seconds 3600] [--attempt-cap 6]
   merge_lock.py rate-window check --plan-id EXAMPLE-PLAN --bot-kind coderabbit --pr-number 42
   merge_lock.py rate-window release --plan-id EXAMPLE-PLAN --bot-kind coderabbit
+  merge_lock.py poll-delay [--min-seconds 300] [--max-seconds 1200]
 """,
         subcommands=[
             {
@@ -1787,6 +1902,27 @@ Examples:
                         'type': int,
                         'default': _DEFAULT_RECOVERY_ATTEMPT_CAP,
                         'help': f'Recovery attempts allowed per (bot_kind, pr_number) before claim refuses (default: {_DEFAULT_RECOVERY_ATTEMPT_CAP})',
+                    },
+                ],
+            },
+            {
+                'name': 'poll-delay',
+                'help': 'Compute a bounded jittered delay in seconds (pure computation; touches no store, no lock, and never sleeps)',
+                'handler': run_poll_delay,
+                'args': [
+                    {
+                        'flags': ['--min-seconds'],
+                        'dest': 'min_seconds',
+                        'type': float,
+                        'default': _DEFAULT_POLL_DELAY_MIN_SECONDS,
+                        'help': f'Lower bound of the jitter range in seconds (default: {_DEFAULT_POLL_DELAY_MIN_SECONDS})',
+                    },
+                    {
+                        'flags': ['--max-seconds'],
+                        'dest': 'max_seconds',
+                        'type': float,
+                        'default': _DEFAULT_POLL_DELAY_MAX_SECONDS,
+                        'help': f'Upper bound of the jitter range in seconds (default: {_DEFAULT_POLL_DELAY_MAX_SECONDS})',
                     },
                 ],
             },

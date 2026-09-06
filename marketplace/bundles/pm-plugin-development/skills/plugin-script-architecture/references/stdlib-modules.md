@@ -33,6 +33,7 @@
 | `string` | String constants |
 | `enum` | Enumerations |
 | `uuid` | UUID generation |
+| `random` | Pseudo-random draws (jitter, sampling) — never for secrets; use `secrets` for those |
 | `glob` | Filename pattern matching |
 | `fnmatch` | Unix filename matching |
 

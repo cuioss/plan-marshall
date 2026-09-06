@@ -516,8 +516,8 @@ python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock rate-windo
   --plan-id {plan_id} --bot-kind {bot_kind} --pr-number {pr_number}
 ```
 
-- **`expired: true`** (or `status: free`) — the window has elapsed. Proceed to Branch 4 (generate the
-  event).
+- **`expired: true`** (or `status: free`) — the window has elapsed. Do NOT enter Branch 4 yet: cross
+  the **jittered wake boundary** below first, then generate the event.
 - **`expired: false`** with budget remaining — pace with a single standalone `sleep` call, then
   re-poll:
 
@@ -541,6 +541,46 @@ python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock rate-windo
     --message "(plan-marshall:automatic-review) refusal recovery: review_rate_window_timeout_seconds={review_rate_window_timeout_seconds} exhausted with {bot_kind} window still open — released the claim, returning escalate_ask{reason: rate_window_timeout}; orchestrator will fire AskUserQuestion"
   ```
 
+**The jittered wake boundary (Branch 3 → Branch 4).** Reached ONLY on the `expired: true` arm above,
+and crossed exactly ONCE per recovery. It is emphatically **not** a per-poll delay: the poll loop's
+own 60 s pacing above is unchanged, and adding this delay to each iteration would stretch a bounded
+poll into a slow one. This fires after the window is observed elapsed and before any event is
+generated.
+
+Compute the delay — see [`../manage-locks/SKILL.md`](../manage-locks/SKILL.md) § Canonical
+invocations → `merge_lock — poll-delay`. The verb is a pure computation: it claims nothing, reads no
+store, and does not itself sleep:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock poll-delay
+```
+
+Read `delay_seconds` from the returned TOON, decision-log it, then pace with a single standalone
+`sleep {delay_seconds}` Bash call — the same tool-call-driven pacing shape the poll loop uses, never
+a shell loop:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO \
+  --message "(plan-marshall:automatic-review) refusal recovery: jittered wake — sleeping {delay_seconds}s (drawn from {min_seconds}-{max_seconds}s) before generating the {bot_kind} trigger event, to decorrelate this wake from a concurrent lane's"
+```
+
+```bash
+sleep {delay_seconds}
+```
+
+**Why a delay at a boundary the claim already guards.** The rate-window claim serialises every
+*in-repo* claimant, so no second plan in THIS repository reaches here for the same bot. What it
+cannot see is a `doc/plans/` cloud-lane run: that lane holds no `merge_lock` claim and draws on the
+same reviewer allowance, so both lanes can wake on the same stated ETA and generate their events
+together. The jitter also decorrelates this wake from the moment the claim was released, so a
+recovery that has just finished does not hand the next attempt a synchronised start. ⛔ This is NOT
+the cloud lane's thundering-herd argument, which reasons from several unserialised plans sharing one
+allowance — that rationale does not transfer, because the claim above already rules out the in-repo
+herd. See [`standards/coderabbit.md`](standards/coderabbit.md) § "Rate-limit class".
+
+Then proceed to Branch 4.
+
 #### Branch 4 — GENERATE the event (rebase-and-push preferred, trigger comment as fallback)
 
 Recovery is **event generation**, not continued waiting. New commits are the trigger every registered
@@ -549,9 +589,10 @@ bot honours, so the primary recovery is to rebase the feature branch onto base a
 trigger burns a recovery attempt and resets the bot's window, which is precisely the failure this
 ordering prevents.
 
-**Reached only after the window has elapsed** (Branch 3 observed `expired: true`). There is no path
-into this branch while the window is still open — a trigger comment during an open rate-limit window
-is structurally unreachable, not merely discouraged.
+**Reached only after the window has elapsed** (Branch 3 observed `expired: true`) **and the jittered
+wake boundary above has been awaited**. There is no path into this branch while the window is still
+open — a trigger comment during an open rate-limit window is structurally unreachable, not merely
+discouraged.
 
 1. **Resolve the base branch** and check whether it advanced past the branch's merge base — a rebase
    only produces new commits when base has moved:
