@@ -602,6 +602,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci issue view
 | `normalize-keys` | Re-write `marshal.json` with the canonical top-level key order (reuses the `save_config` key-order writer). Idempotent and byte-stable on a canonical file; returns `unrecognized_keys` and a `warning` status naming any top-level key it could not order — a key absent from `CANONICAL_TOP_LEVEL_KEY_ORDER`, appended out of canonical position rather than dropped |
 | `steps-sort` | Re-sort `plan.phase-6-finalize.steps` into ascending frontmatter `order` (silent, idempotent, values byte-identical; reuses the manifest composer's `_sort_steps_by_frontmatter_order` choke-point; `phase-5-execute.verification_steps` is out of scope; unresolvable-order steps pinned at their original index) |
 | `domain-detect` | `--plan-id [--domain-override] [--affected-files CSV]` (deterministic detector for phase-1-init Step 7 and phase-2-refine; walks `request.md` clarified narrative for explicit mentions of configured `skill_domains` and their bundle aliases; returns the multi-valued `domains` SET plus `candidates` (narrative matches, offered first in the multiSelect prompt), `additional_candidates` (the remaining configured non-system domains — neither a narrative match nor already supplied by the `always_on` / `file_globs` legs — offered as the prompt's second group so a configured-but-unmatched domain stays selectable), `always_on`, `glob_matched`, `ambiguous`, `source`, `reason`. `ambiguous` is `true` on a detector multi-match; a zero-match is silent whether it resolves on a `file_globs` hit (`reason=inclusion_only_resolve`) or over-provisions the offerable set — under `reason=over_provisioned_always_on_only` when only the project-wide `always_on` leg contributed, and under `reason=over_provisioned_resolve` when all three legs were empty. The optional `--affected-files` CSV is the file signal for the `file_globs` leg (refine passes the real affected files; init falls back to narrative path tokens). No LLM dispatch fallback applies.) |
+| `domain-narrow` | `--plan-id [--affected-files CSV]` (the narrowing counterpart to `domain-detect`, invoked once at end-of-outline; drops a domain from `references.domains` only when all three legs of the safety bound agree it is droppable — no already-resolved task depends on it, the `always_on` leg does not claim it, and the `file_globs` leg does not claim it against the declared footprint. The synthetic `system` domain is EXEMPT from that bound rather than judged by it — it is filtered out of the mapping the inclusion legs evaluate, so it is retained unconditionally and its provenance records the `system_exempt` marker instead of an empty `claimed_by`. Returns `retained[]`, `dropped[]`, `provenance[]` (one entry per domain in the pre-narrowing set), `report` (the one-line summary), and `narrowed`. A strict subset operation: it never adds a domain, and an `always_on` domain is structurally exempt. The footprint is read from `references.affected_files`, which keeps the paths a list end to end; `--affected-files` is an OPTIONAL out-of-band override and is the lossy surface (a path containing a comma splits into two, and the joined string has to be interpolated into a shell command line). Narrowing still refuses to run when neither source yields a footprint. Read-only, no LLM dispatch.) |
 | `recipe-match` | `--request-text [--threshold 0.6]` (Tier 1 recipe-match for phase-1-init; scores free-form request text against the live recipe registry via the shared `recipe_scoring` core; returns ranked `matches[]` + `top_match` + `meets_auto_route_threshold`. Heuristic-first, zero LLM call inside the script — the bounded LLM fallback is orchestrator-driven.) |
 | `aspect-classify` | `--request-text [--threshold 0.7]` (request-aspect classifier for phase-1-init; scores free-form request text against fixed analysis/planning/implementation keyword tables via `recipe_scoring.tokenize`; returns `aspect` + `confidence` + per-aspect `breakdown`. A winning analysis/planning aspect is accepted only when its `_overlap_score` confidence clears `>= --threshold` (default `0.7`, NO `0.6` cap) AND beats the implementation overlap; below threshold the conservative `implementation` fallback applies. The verb classifies request INTENT only and has no say in build necessity — that is the `build-decision` verdict's exclusive province. Heuristic-first, zero LLM call inside the script — the bounded LLM fallback is orchestrator-driven.) |
 
@@ -846,6 +847,7 @@ Script characteristics:
 | Client | Operation | Purpose |
 |--------|-----------|---------|
 | `phase-1-init` | plan get, resolve-domain-skills | Read plan config, resolve skills |
+| `phase-3-outline` | domain-narrow | Narrow the plan's domain set once the declared footprint is known |
 | `phase-5-execute` | resolve-domain-skills | Load skills for task execution |
 | `manage-run-config` | system retention get | Read retention settings for cleanup |
 
@@ -907,7 +909,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config skill-
   --domain DOMAIN [--always-on] [--file-globs CSV]
 ```
 
-Sets the per-domain inclusion keys `always_on` (bool) and `file_globs` (list[str], via the comma-separated `--file-globs` CSV) after `validate_domain_inclusion`. `--always-on` is a `BooleanOptionalAction` flag: pass `--always-on` to set it `true` or its `--no-always-on` companion to set it `false`; omitting the flag entirely leaves the persisted value untouched (each key is written independently). Domains carrying these keys are unioned into `references.domains` by `domain-detect`.
+Sets the per-domain inclusion keys `always_on` (bool) and `file_globs` (list[str], via the comma-separated `--file-globs` CSV) after `validate_domain_inclusion`. `--always-on` is a `BooleanOptionalAction` flag: pass `--always-on` to set it `true` or its `--no-always-on` companion to set it `false`; omitting the flag entirely leaves the persisted value untouched (each key is written independently). Both keys govern the domain set in both directions: `domain-detect` unions the domains carrying them into `references.domains`, and `domain-narrow` treats the same claim as exemption from narrowing. See [standards/skill-domains.md § Domain Inclusion](standards/skill-domains.md).
 
 A `file_globs` value set here is the **operator override, and it wins over the seed** `configure` writes (see `skill-domains configure` below). `configure` keys its snapshot on key PRESENCE rather than truthiness, so a deliberate `--file-globs ""` empty declaration is preserved across re-runs rather than silently re-seeded.
 
@@ -958,7 +960,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config skill-
   --domains LIST
 ```
 
-Rebuilds each named domain's config from its owning bundle's extension. Alongside the bundle reference and `workflow_skill_extensions`, the rebuild seeds `skill_domains.{domain}.file_globs` from the extension's `provides_file_globs()` accessor — an accessor returning `[]` writes no key, so a domain that owns no distinct file type stays absent. The seed fires whenever the key is absent and is re-evaluated on **every** `configure`, not only the first, so an already-configured project is backfilled on its next run with no remove-and-re-add cycle. An operator value set through `set-inclusion` is snapshotted and restored over the rebuild, so it always wins. The seeded globs are read only by `domain-detect`'s `file_globs` inclusion leg; they contribute no `build.map` route (ADR-004). See [standards/skill-domains.md § Domain Inclusion](standards/skill-domains.md).
+Rebuilds each named domain's config from its owning bundle's extension. Alongside the bundle reference and `workflow_skill_extensions`, the rebuild seeds `skill_domains.{domain}.file_globs` from the extension's `provides_file_globs()` accessor — an accessor returning `[]` writes no key, so a domain that owns no distinct file type stays absent. The seed fires whenever the key is absent and is re-evaluated on **every** `configure`, not only the first, so an already-configured project is backfilled on its next run with no remove-and-re-add cycle. An operator value set through `set-inclusion` is snapshotted and restored over the rebuild, so it always wins. The seeded globs are read only by the `file_globs` inclusion leg — `domain-detect`'s widening pass and `domain-narrow`'s exemption test alike; they contribute no `build.map` route (ADR-004). See [standards/skill-domains.md § Domain Inclusion](standards/skill-domains.md).
 
 ### skill-domains discover-project
 
@@ -1419,6 +1421,53 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config domain
 ```
 
 Returns the multi-valued `domains` SET plus `candidates` / `additional_candidates` / `always_on` / `glob_matched` / `ambiguous` / `source` / `reason`. `candidates` is the detector's narrative matches; `additional_candidates` is the remaining configured non-system domains — neither a narrative match nor already supplied by the `always_on` / `file_globs` legs — so the caller's ambiguous-branch prompt offers `candidates` first and `additional_candidates` second, keeping a configured-but-unmatched domain selectable. Callers branch on whether `candidates` / `additional_candidates` are empty, never on the `reason` code. A zero match resolves silently when a `file_globs` hit supplies the set (`reason=inclusion_only_resolve`), or by over-provisioning the whole offerable set — under `reason=over_provisioned_always_on_only` when only the project-wide `always_on` leg contributed, and under `reason=over_provisioned_resolve` when all three legs were empty. `--affected-files` (comma-separated) is the file signal for the `file_globs` inclusion leg — refine supplies the real affected files; init falls back to path-like tokens extracted from the narrative. Read-only: it reads config + `request.md` and writes nothing (no LLM dispatch).
+
+### domain-narrow
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config domain-narrow \
+  --plan-id PLAN_ID [--affected-files CSV]
+```
+
+The narrowing counterpart to `domain-detect`. Every leg upstream of it only ever widens `references.domains`, so a domain admitted by early over-provisioning — before any file footprint existed to rank with — can otherwise never leave the set. This verb removes it once the declared footprint is known.
+
+A domain currently in the set — other than the synthetic `system` domain, which is exempt from the bound entirely (below) — is **droppable** exactly when all three legs of the safety bound agree:
+
+1. no already-resolved task depends on it (vacuously true at the end-of-outline site, where no task exists yet);
+2. the `always_on` inclusion leg does not claim it — an `always_on` domain is structurally exempt from narrowing, under any footprint;
+3. the `file_globs` inclusion leg does not claim it against the declared footprint.
+
+**The synthetic `system` domain is EXEMPT from the bound, not judged by it.** It is not an implementation domain, so it is filtered out of the mapping the two inclusion legs are evaluated over — neither leg can contain it and neither ever looks at it. Judging it by the bound would drop it on the strength of two legs that were structurally incapable of claiming it, which is not the bound agreeing. It is therefore retained unconditionally, and its provenance entry carries the `system_exempt` marker rather than an empty `claimed_by`. The marker is deliberately **not** a fourth `always_on`-style leg name: an exemption from evaluation is not a claim, and naming it as a leg would record an evaluation that never ran.
+
+Everything not droppable is retained, so narrowing is a strict subset operation over the CURRENT set: it never adds a domain, and it retains every current domain that `always_on` or `file_globs` claims. The bound is `always_on ∪ file_globs_matched` **intersected with the current set** — not a superset of the inclusion union itself. A domain the inclusion legs would claim but which is absent from `references.domains` stays absent, because this verb only ever removes; adding one back is `domain-detect`'s job, not narrowing's. The inclusion semantics are not re-implemented here — the leg helpers are shared with `domain-detect`, so they keep exactly one home. See [standards/skill-domains.md § Domain Inclusion](standards/skill-domains.md).
+
+The footprint comes from `references.affected_files` by default — a list, so a path containing a comma survives it, and nothing has to be interpolated into a shell command line. `--affected-files` (comma-separated) remains as an out-of-band override and carries both of those hazards; pass it only when the footprint is genuinely not the plan's own. Narrowing refuses to run when neither source yields a footprint (`footprint_unreadable` / `footprint_empty`): without one it has no evidence to act on.
+
+Returns `retained[]`, `dropped[]`, `provenance[]`, `report`, and `narrowed`. `provenance` carries exactly one entry per domain in the PRE-narrowing set — `{domain, claimed_by}` — where `claimed_by` names the legs that claimed it (`task` / `always_on` / `file_globs`) and an empty `claimed_by` records that no leg did, which is why the domain was dropped. The one value that is not a leg name is `system_exempt`, carried by the synthetic `system` domain: it marks a domain retained by exemption, with no leg evaluated. A retained domain therefore never carries an empty `claimed_by`, which is what keeps the empty-means-dropped reading exact. `report` is the one-line user-facing summary and is emitted on both outcomes.
+
+The three outcomes stay mutually distinguishable, so a verb that could not look never renders as one that looked and found nothing:
+
+| Outcome | Return |
+|---------|--------|
+| Narrowing ran and dropped domains | `status: success`, `narrowed: true`, non-empty `dropped[]` |
+| Narrowing ran and found nothing droppable | `status: success`, `narrowed: false`, empty `dropped[]` |
+| Narrowing could not evaluate | `status: error`, plus the `error` / `message` pair specified below |
+
+**The could-not-evaluate arm carries exactly `status`, `error`, and `message` — and none of the success fields.** `error` is one of the reason codes below; `message` is its human-readable explanation, naming the path or value that could not be read. `plan_id`, `retained[]`, `dropped[]`, `provenance[]`, `report`, and `narrowed` are **absent** on this arm. A caller that reads `dropped[]` without branching on `status` first therefore finds no key at all, rather than an empty list it would read as "looked, and nothing was droppable".
+
+The reason codes below are the complete set the verb can return: every `status: error` return in [`scripts/_cmd_domain_narrow.py`](scripts/_cmd_domain_narrow.py)'s `cmd_domain_narrow` is listed here, and that function is the declaring source to re-read this table against whenever either is touched.
+
+| `error` | Raised when |
+|---------|-------------|
+| `plan_dir_not_found` | The plan directory does not exist. |
+| `domains_unreadable` | `references.json` carries no readable `domains` list, so there is no set to narrow. |
+| `marshal_not_readable` | `marshal.json` could not be loaded, so no inclusion leg could be evaluated. |
+| `no_skill_domains_configured` | `marshal.json` configures no `skill_domains`, so no inclusion leg could be evaluated. |
+| `footprint_unreadable` | `references.json` carries no readable `affected_files` list and no `--affected-files` override was given, so the `file_globs` leg had no footprint to evaluate against. |
+| `footprint_empty` | The declared footprint resolved to zero paths, so narrowing has no evidence to act on and refuses to drop any domain. |
+| `task_leg_unreadable` | A `TASK-*.json` could not be read, **or carries no usable domain** — it is not a JSON object, or its required `domain` field is absent, empty, or not a string — so the task leg of the safety bound could not be evaluated. Both shapes are an **error**, never evidence that no task claims the domain: skipping either would silently remove the domain that file claims from the leg, and the run would then report `status: success` with that domain dropped and an empty `claimed_by` — publishing "no leg claimed it" for a leg that never looked. |
+
+Read-only: it reads `marshal.json`, `references.json`, and the plan's task state, and writes nothing (no LLM dispatch). Persisting the narrowed set is the caller's job — phase-3-outline writes it back through `manage-references`.
 
 ### build-map seed
 

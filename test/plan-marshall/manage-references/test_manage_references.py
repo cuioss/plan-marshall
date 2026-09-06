@@ -954,9 +954,10 @@ def test_sync_refuses_when_no_deliverable_was_parsed(plan_context):
 def test_sync_does_not_write_when_it_refuses(plan_context):
     """A refusal leaves the previously-derived value exactly as it was.
 
-    This is what makes a failed refresh non-blocking for its callers: the union
-    write never removes anything, so a caller that proceeds past an error is
-    reading the last successful derivation rather than a damaged one.
+    The union write never removes anything, so what a refusal leaves behind is the
+    last SUCCESSFUL derivation — undamaged, and also stale. That is precisely why a
+    caller must branch on ``status`` rather than proceed: the value is intact enough
+    to be read and old enough to be wrong. The sibling below pins that hazard.
     """
     cmd_create(_create_ns())
     _write_outline('test-plan', _OUTLINE)
@@ -968,6 +969,47 @@ def test_sync_does_not_write_when_it_refuses(plan_context):
 
     assert result['status'] == 'error'
     assert _affected() == before
+
+
+@pytest.mark.parametrize(
+    ('broken_outline', 'expected_error'),
+    [
+        (None, 'outline_not_found'),
+        ('# Solution\n\n## Summary\n\nThe deliverables went away.\n', 'no_deliverables_parsed'),
+    ],
+    ids=['outline-removed', 'outline-yields-no-deliverables'],
+)
+def test_a_failed_refresh_exits_zero_and_leaves_a_stale_footprint(
+    plan_context, broken_outline, expected_error
+):
+    """A failed refresh signals only through ``status`` and leaves the old list intact.
+
+    This is the hazard the outline lanes' status branch exists for. The exit code is
+    zero on the failure, so a caller watching it alone sees a clean run; the previous
+    derivation is still on disk, so the next verb reads a footprint that predates the
+    outline the plan just committed to and narrows against it — publishing a confident
+    verdict for a pass that never saw the current footprint. An ABSENT list would be
+    caught downstream; a stale-but-present one is not.
+    """
+    from toon_parser import parse_toon
+
+    cmd_create(_create_ns())
+    _write_outline('test-plan', _OUTLINE)
+    cmd_sync_affected_files(_sync_ns())
+    stale = list(_affected())
+    outline_path = get_references_path('test-plan').parent / 'solution_outline.md'
+    if broken_outline is None:
+        outline_path.unlink()
+    else:
+        _write_outline('test-plan', broken_outline)
+
+    result = run_script(SCRIPT_PATH, 'sync-affected-files', '--plan-id', 'test-plan')
+
+    assert result.returncode == 0, 'the exit code is not the failure signal'
+    payload = parse_toon(result.stdout)
+    assert payload['status'] == 'error'
+    assert payload['error'] == expected_error
+    assert _affected() == stale
 
 
 def test_sync_reports_a_non_list_affected_files_rather_than_overwriting_it(plan_context):

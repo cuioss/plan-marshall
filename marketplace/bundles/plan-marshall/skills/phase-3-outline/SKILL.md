@@ -553,6 +553,116 @@ The authoritative procedure — the disposition vocabulary, the prohibition on a
 
 ---
 
+### Domain Narrowing (lane-agnostic, mandatory)
+
+Immediately after `solution_outline.md` has been written and validated — and before the phase returns — narrow the plan's domain set to what its declared footprint justifies.
+
+This is the one point in the lifecycle where narrowing is both possible and safe. Everything upstream only widens `references.domains`: `domain-detect` unions its legs at init, and phase-2-refine's re-merge widens further. Here the declared footprint has just been derived from the deliverables the plan committed to, and no task has been resolved yet — so no task's skill set can be orphaned by a drop.
+
+1. **Refresh the declared footprint** so the verb reads a current one:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-references:manage-references sync-affected-files \
+     --plan-id {plan_id}
+   ```
+
+   Nothing is joined into a footprint string: the verb reads `references.affected_files` itself and keeps it a list end to end, so a path containing a comma survives and no repository-controlled path is interpolated into a command line.
+
+   **Branch on the returned `status` BEFORE continuing.** The refresh can fail, and it fails the same way `domain-narrow` does in step 2 — `status: error` with a **zero exit code**, so the exit code is not the signal and the `status` field is the only channel. `outline_not_found`, `outline_unreadable`, and `no_deliverables_parsed` each return `status: error`, and each writes nothing.
+
+   On `status: error`: STOP the narrowing step here. Do NOT invoke `domain-narrow`, do NOT run steps 3, 3b or 4, and do NOT write `domains` or `domains_provenance`. Surface the returned `error` and `message` via a decision-log entry:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+     decision --plan-id {plan_id} --level WARNING \
+     --message "(plan-marshall:phase-3-outline) Domain narrowing could not start — sync-affected-files returned {error}: {message}. No domains or domains_provenance write was made."
+   ```
+
+   Leaving both keys unwritten is correct here for the same reason it is correct in step 2: an absent `domains_provenance` means "never examined", which is exactly what happened.
+
+   **Why the status matters even though nothing is read back.** The failure that the downstream error branch already catches is the harmless one: when a failed refresh leaves `references.affected_files` ABSENT, `domain-narrow` returns `footprint_unreadable` / `footprint_empty` and step 2 stops the run. The unsafe case is a STALE-but-present list — the refresh fails, the previous run's list survives untouched, and `domain-narrow` evaluates the `file_globs` leg against a footprint that predates the outline this phase has just committed to. It then returns `status: success` with a confident `dropped` set and a full `provenance`, which step 3 persists through `set-list`. Proceeding past a failed refresh therefore narrows against a stale footprint and publishes a confident verdict for a pass that never saw the current one.
+
+2. **Invoke the narrowing verb**, which reads that footprint itself:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-config:manage-config domain-narrow \
+     --plan-id {plan_id}
+   ```
+
+   **Branch on `status` BEFORE parsing anything else.** The verb has three outcomes, not two, and on the third none of the success fields exist:
+
+   - **`status: error`** — the verb could not evaluate. The reason codes are `plan_dir_not_found`, `domains_unreadable`, `marshal_not_readable`, `no_skill_domains_configured`, `footprint_unreadable`, `footprint_empty`, and `task_leg_unreadable`; the canonical set with the condition each names is owned by [`manage-config` § Canonical invocations → `domain-narrow`](../manage-config/SKILL.md), which is the source to re-check this list against. `retained`, `dropped`, `provenance`, `report`, and `narrowed` are ABSENT from the payload. STOP the narrowing step here: do NOT parse the success fields, do NOT run steps 3, 3b or 4, and do NOT write `domains` or `domains_provenance`. Surface the returned `error` and `message` instead, via a decision-log entry:
+
+     ```bash
+     python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+       decision --plan-id {plan_id} --level WARNING \
+       --message "(plan-marshall:phase-3-outline) Domain narrowing could not evaluate — domain-narrow returned {error}: {message}. No domains or domains_provenance write was made."
+     ```
+
+     Improvising past this branch is the prohibited move: a fabricated `domains_provenance` value, an invented empty `report`, or a `set-list` call with no values would each render a verb that could not look as one that looked and found nothing — the exact collapse the verb's three-outcome contract exists to prevent. Leaving both keys unwritten is correct here: an absent `domains_provenance` means "never examined", which is precisely what happened.
+
+   - **`status: success`** — and only then, parse `retained`, `dropped`, `provenance`, `report`, and `narrowed`, and continue to step 2b.
+
+2b. **Domain-alphabet gate — it runs HERE, immediately after `status: success` and before steps 3, 3b and 4.**
+
+   Confirm that every domain name in `{retained_csv}` (step 3), in `{provenance_rendering}` (step 3b), **and in `{report}` (step 4)** matches the domain alphabet `^[a-z][a-z0-9-]*$`.
+
+   **The report is in scope, and naming it explicitly is the point.** `_compose_report` renders `domain-narrow: {N} domain(s) -> {M} retained; dropped {names}` — it EMBEDS the dropped domain names, which are the very names this gate rejects, taken from the same repository-controlled `references.domains`. Step 4 then interpolates `{report}` into a `manage-logging decision --message "..."` command line. The report is therefore a **third interpolation of the same text**, not a derived summary that launders it. A gate scoped to the two writes alone would refuse them, log a refusal, and then hand the same tainted text to a third shell sink one step later — a third-of-three guard that reads like a whole one.
+
+   **On a violation the refusal is TERMINAL for the whole narrowing step.** Make no write, do NOT run steps 3, 3b or 4, and do NOT emit the report to the decision log. The refusal entry below is the ONLY output of this branch, and it MUST stay a fixed string carrying no interpolated value of any kind — quoting the offending name into it would reopen the sink the gate just closed:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+     decision --plan-id {plan_id} --level WARNING \
+     --message "(plan-marshall:phase-3-outline) Domain narrowing wrote nothing and withheld its report: a domain name falls outside the documented alphabet, and that name is embedded in the report as well as in both writes, so all three interpolations were refused."
+   ```
+
+   **`domain_narrow_report` is OMITTED from the phase return on this branch** — the same treatment § Return Results already gives a `status: error` return. The report was withheld rather than produced and dropped, and the refusal entry above is the record that one existed; carrying the field while its decision-log sink was refused would leave the two sinks disagreeing about whether the step reported at all.
+
+   **The alphabet is checked here because no write path guarantees it.** A `--domain` flag validates against exactly this pattern (`validate_domain_name`, owned by [`tools-input-validation`](../tools-input-validation/SKILL.md)), but `manage-references set-list --field domains --values` takes an arbitrary comma-separated string with no per-item check, and `marshal.json` — whose `skill_domains` keys seed the set — is git-tracked and edited by hand. The check is therefore a guard this step performs, not a property it inherits.
+
+3. **On `narrowed: true`**, persist the retained set:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-references:manage-references set-list \
+     --plan-id {plan_id} --field domains --values "{retained_csv}"
+   ```
+
+   The placeholder is double-quoted because `retained_csv` is legitimately empty when every domain was dropped — `narrowed` is `true` whenever anything was dropped, so an all-dropped run reaches this call with nothing to interpolate. `--values` is REQUIRED and takes no default, so an unquoted empty interpolation renders a bare `--values` and argparse rejects the call; quoted, it passes the empty string, which `set-list` accepts as "clear the list" — the correct outcome for that state.
+
+3b. **On BOTH outcomes**, persist the provenance — the write is NOT gated on `narrowed`:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-references:manage-references set \
+     --plan-id {plan_id} --field domains_provenance --value "{provenance_rendering}"
+   ```
+
+   `{provenance_rendering}` is the compact one-line `{domain}={legs}` form described in [`manage-references` § Schema Fields](../manage-references/SKILL.md) — `none` where no leg claimed the domain. It is written alongside the `domains` key, never instead of it.
+
+   **The quotes are not the injection defence.** This call and step 3's both interpolate domain names, taken from `references.domains`, into a shell command line. Quoting the placeholder does fix one real failure: the rendering separates domains with `;`, a shell command separator, so an unquoted interpolation truncates the write at the first domain and runs every remaining `{domain}={legs}` word as its own command, persisting a silently-truncated provenance. But quoting does **not** neutralize `$(...)`, backticks, or backslashes, so it is not what makes either write safe. What makes them safe is the domain-alphabet gate at step 2b, which has already run by the time this call is reached and refuses the whole step — both writes and the report — when any domain name falls outside the alphabet.
+
+   **Why this write is unconditional.** The key's stated purpose is to make a narrowed set distinguishable from an over-provisioned one after the fact. Gating it on `narrowed: true` defeats exactly that: the key would then be equally absent for a plan the narrowing pass EXAMINED and found nothing droppable in, and for a plan the pass never ran on — collapsing "looked and found nothing" into "never looked", which is the failure mode this plan exists to remove. A `narrowed: false` run has a full provenance record (every domain claimed by some leg); writing it is what proves the pass ran.
+
+4. **Emit the returned `report`** — verbatim, on **both** success outcomes — to its two declared sinks. First, a decision-log entry:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+     decision --plan-id {plan_id} --level INFO \
+     --message "(plan-marshall:phase-3-outline) {report}"
+   ```
+
+   Second, the phase return TOON's `domain_narrow_report` field (see § Return Results), which carries the report **verbatim** off this phase without the 80-ASCII-character cap `display_detail` is bound by. `display_detail` is deliberately NOT a sink for it: its shape is fixed by the output contract, so it cannot carry the report verbatim and does not claim to.
+
+   ⛔ **The decision log is the report's only CONSUMED sink today.** `domain_narrow_report` is a declared return field with no reader: `plan-marshall/workflow/planning-outline.md` enumerates the return fields it consumes and this is not among them, and it gives no post-return block to it as it does to `outline_prompt` and `qgate_validation_required`. Stating that the orchestrator surfaces it would be a promise this repository does not keep — the same unreachable-sink defect one level up. The field is emitted so a consumer CAN be wired without re-shaping the return; wiring it in `planning-outline.md` is owed follow-up, not present behaviour.
+
+**A `narrowed: false` result is a valid recorded outcome, not a skip.** Nothing was droppable, and both the report (step 4) and the provenance write (step 3b) still fire — so "nothing to narrow" stays distinguishable from "narrowing never ran". Only step 3's `domains` write is conditional on `narrowed: true`, and only because rewriting an unchanged set is a no-op.
+
+**The phase never narrows on its own judgement.** The verb owns the decision through its three-legged safety bound; this phase invokes it, persists its result, and reports it. The safety bound itself — the `always_on` structural exemption, the `file_globs` leg, and the resolved-task leg — is documented in [`manage-config` § Canonical invocations → `domain-narrow`](../manage-config/SKILL.md) and [`manage-config` standards/skill-domains.md § Domain Inclusion](../manage-config/standards/skill-domains.md). Do NOT inline-copy that decision table here.
+
+Like the Prospective Lessons Consult above, this step fires on **every** authoring path this phase owns — the deep-lane Complex Track, the Simple-Track authoring procedure, and the [light lane](workflow/light-lane.md), which fires the same narrowing step from its own envelope. No lane is exempt.
+
+---
+
 ### Log Completion
 
 ```bash
@@ -601,8 +711,11 @@ deliverable_count: {N}
 qgate_passed: {true|false}
 qgate_pending_count: {0 if no findings}
 qgate_validation_required: {true|false}
+domain_narrow_report: {the domain-narrow report, verbatim; see § Domain Narrowing}
 outline_prompt: {optional — present only when the leaf has open operator questions; see § Operator-input contract}
 ```
+
+`domain_narrow_report` carries the `report` string returned by `manage-config domain-narrow`, verbatim and unedited, on **both** of the verb's success outcomes — a `narrowed: false` run reports too. It exists because `display_detail`'s fixed shape and 80-character ASCII cap cannot carry the report itself. ⛔ **It has no reader today** — `plan-marshall/workflow/planning-outline.md` does not consume it, so this field is emitted-but-unconsumed and the decision-log entry (§ Domain Narrowing step 4) is the report's only consumed sink. Wiring a consumer there is owed follow-up; do NOT read this row as a claim that the orchestrator surfaces it. The field is **omitted** when the verb returned `status: error` — nothing was evaluated, so there is no report, and an empty string would render a pass that could not look as one that looked and found nothing. It is **omitted on the domain-alphabet refusal branch too** (§ Domain Narrowing step 2b): there the verb did produce a report and the step withheld it, so carrying the field while its decision-log sink was refused would leave the two sinks disagreeing about whether the step reported. The refusal decision-log entry is the record that a report existed.
 
 `outline_prompt` is the batched prompt-required envelope described in § "Operator-input contract" — the leaf emits it (alongside an otherwise-complete `status: success`) only when outline authoring surfaced open operator design questions, and omits it entirely when the outline resolved cleanly. The orchestrator fires ONE batched `AskUserQuestion` over it and re-dispatches phase-3-outline at most once with the answers baked in.
 
@@ -622,7 +735,9 @@ qgate_validation_required: {true|false}
 
 `display_detail` shape on success: `"track {track}, {deliverable_count} deliverables, {qgate_pending_count} pending"` (e.g. `"track complex, 5 deliverables, 0 pending"`); ≤80 chars, ASCII, no trailing period. On error, carries the short error label from § Error Handling.
 
-All other fields (`plan_id`, `track`, `deliverable_count`, `qgate_passed`, `qgate_pending_count`, `qgate_validation_required`, and the optional `outline_prompt` batched-question envelope) are documented in "Return Results" above.
+`display_detail` is NOT a sink for the domain-narrow report: its shape is fixed above and its 80-character ASCII cap cannot carry the report verbatim. The report rides `domain_narrow_report` instead.
+
+All other fields (`plan_id`, `track`, `deliverable_count`, `qgate_passed`, `qgate_pending_count`, `qgate_validation_required`, `domain_narrow_report`, and the optional `outline_prompt` batched-question envelope) are documented in "Return Results" above.
 
 ---
 

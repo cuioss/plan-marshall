@@ -21,6 +21,7 @@ from _cmd_aspect_classify import cmd_aspect_classify
 from _cmd_build_map import cmd_build_decision, cmd_build_map
 from _cmd_coverage import cmd_coverage_expand, cmd_coverage_read, cmd_coverage_resolve
 from _cmd_domain_detect import cmd_domain_detect
+from _cmd_domain_narrow import cmd_domain_narrow
 from _cmd_effort import (
     cmd_effort,
     cmd_effort_apply_preset,
@@ -878,6 +879,33 @@ def main() -> int:
         '(refine passes the real affected_files; init falls back to narrative path tokens).',
     )
 
+    # --- domain-narrow ---
+    p_dn = subparsers.add_parser(
+        'domain-narrow',
+        help="Narrow a plan's domain set to what its declared footprint justifies (read-only)",
+        description=(
+            'Drop a domain from references.domains only when all three legs of the '
+            'safety bound agree it is droppable: no already-resolved task depends on '
+            'it, the always_on leg does not claim it, and the file_globs leg does not '
+            'claim it against --affected-files. Narrowing is a strict subset operation '
+            'and never adds a domain. The verb writes nothing and dispatches no LLM.'
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
+    )
+    p_dn.add_argument('--plan-id', dest='plan_id', required=True, help='Plan identifier')
+    p_dn.add_argument(
+        '--affected-files',
+        dest='affected_files',
+        default=None,
+        help='OPTIONAL override for the declared footprint, comma-separated. Omit it on the '
+        'normal path: the verb reads references.affected_files directly, which keeps the '
+        'paths a list end to end. Passing them through a comma-joined string loses a path '
+        'that contains a comma (it splits into two) and puts repository-controlled text on a '
+        'documented shell command line. Use this flag only for an out-of-band footprint. '
+        'Narrowing still refuses to run without a footprint from either source.',
+    )
+
     args = parse_args_with_toon_errors(parser)
 
     if args.noun is None:
@@ -1001,6 +1029,8 @@ def main() -> int:
             result = cmd_get_skills_by_profile(args)
         elif args.noun == 'domain-detect':
             result = cmd_domain_detect(args)
+        elif args.noun == 'domain-narrow':
+            result = cmd_domain_narrow(args)
         elif args.noun == 'list-recipes':
             result = cmd_list_recipes(args)
         elif args.noun == 'resolve-recipe':

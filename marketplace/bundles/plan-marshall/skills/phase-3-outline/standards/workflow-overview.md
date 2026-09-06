@@ -127,6 +127,10 @@ Both tracks converge at Step 10:
 │          → manage-lessons consult --plan-id {plan_id}            │
 │          → surfaced lessons recorded, never auto-applied         │
 │                                                                  │
+│  Step 10.1c: Domain Narrowing (all lanes)                        │
+│          → manage-config domain-narrow --affected-files {csv}    │
+│          → retained set + provenance persisted, report emitted   │
+│                                                                  │
 │  Step 10.2: Log Completion                                       │
 │          → Log artifact and decision                            │
 │                                                                  │
