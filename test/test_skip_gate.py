@@ -27,12 +27,48 @@ import pytest
 
 import conftest
 
-#: A real entry from the residual skippable set, used as the approved case. Taking
-#: it from the live set rather than inventing one keeps the fixture honest about
-#: the shape the gate actually reads.
-_LISTED_NODEID = 'test/plan-marshall/lsp-client/test_lsp_integration.py::test_real_clean_rename_edit'
-_APPROVED_REASON = 'pyright-langserver not installed'
-_APPROVED = {_LISTED_NODEID: ('absent-dependency', _APPROVED_REASON)}
+
+def _live_approved_entry() -> tuple[str, tuple[str, str]]:
+    """One real ``(nodeid, (class, reason))`` record from the live exception set.
+
+    DERIVED from :data:`conftest._SKIP_EXCEPTIONS` rather than transcribed. A
+    hardcoded copy of an entry mirrors a set defined elsewhere: when that entry's
+    class or reason changes, the copy keeps this module asserting over a record
+    the gate no longer has, and every test here goes on passing against a fixture
+    the live set no longer contains. Which entry is taken does not matter — the
+    tests assert over the gate's HANDLING of an approved record, not over any
+    particular test's exemption — so the first is taken and nothing is sorted.
+
+    Raises:
+        RuntimeError: when the exception set is empty. Every test in this module
+            drives the gate over a REAL approved record, so an empty set is a
+            premise failure, and saying so beats a bare ``StopIteration`` from an
+            unguarded ``next``.
+    """
+    approved: dict[str, tuple[str, str]] = conftest._SKIP_EXCEPTIONS
+    first = next(iter(approved.items()), None)
+    if first is None:
+        raise RuntimeError(
+            'conftest._SKIP_EXCEPTIONS is empty, so there is no real approved record '
+            'for test_skip_gate to drive the gate over. If the suite genuinely permits '
+            'no skips any more, delete the negative-control tests here rather than '
+            'reintroducing a synthetic entry.'
+        )
+    return first
+
+
+#: A real entry from the residual skippable set, used as the approved case. Read
+#: from the live set rather than invented so the fixture stays honest about the
+#: shape — and the content — the gate actually reads.
+_LISTED_NODEID, _APPROVED_ENTRY = _live_approved_entry()
+_APPROVED_REASON = _APPROVED_ENTRY[1]
+_APPROVED = {_LISTED_NODEID: _APPROVED_ENTRY}
+
+#: The approved reason as pytest would record it if the terminal rewrapped it
+#: across lines. Built FROM the reason for the same drift reason the record above
+#: is: a transcribed rewrap of a reason that later changed would stop being a
+#: rewrap of anything, and the case would test a string nobody approves.
+_REWRAPPED_REASON = 'Skipped: ' + _APPROVED_REASON.replace(' ', '\n   ', 1)
 
 #: A cause the entry above does NOT approve — the fixture-broke case from the
 #: finding, which the nodeid-only gate green-lit.
@@ -109,7 +145,7 @@ def _rendered(reporter: _Reporter) -> str:
         pytest.param(f'Skipped: {_APPROVED_REASON}', id='pytest-Skipped-prefix'),
         pytest.param(f'skipped:  {_APPROVED_REASON}', id='lowercase-prefix-and-padding'),
         pytest.param(f'Skipped: {_APPROVED_REASON} (PATH searched)', id='reason-with-appended-context'),
-        pytest.param('Skipped: pyright-langserver\n   not installed', id='rewrapped-across-lines'),
+        pytest.param(_REWRAPPED_REASON, id='rewrapped-across-lines'),
     ],
 )
 def test_a_listed_nodeid_skipping_for_its_approved_reason_keeps_the_session_green(monkeypatch, recorded):

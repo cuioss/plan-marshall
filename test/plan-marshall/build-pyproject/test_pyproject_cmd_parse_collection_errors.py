@@ -379,6 +379,129 @@ def test_a_message_containing_py_colons_still_splits_at_the_first_py():
     assert issues[0].message == 'ValueError: could not import test/test_beta.py::test_other'
 
 
+# =============================================================================
+# ` - ` inside a parametrized node id — the third trap.
+# =============================================================================
+#
+# The node id and the exception repr are separated by ` - `, but a parametrized id
+# can CONTAIN that sequence verbatim (pytest leaves a plain space intact). Splitting
+# at the first occurrence anywhere on the line truncates ``test_case[a - b]`` to
+# ``test_case[a``, which then resolves to no ERRORS block — so the record keeps its
+# file but loses its line number and its real message while still looking populated.
+
+_DASHED_PARAM_ID = 'test_case[a - b]'
+
+#: A setup error whose parametrized node id contains ` - ` and whose summary line
+#: carries NO message tail. The message can then only come from the block, so
+#: asserting it proves the untruncated id resolved its header.
+_DASHED_PARAM_ERROR_LOG = f"""==================================== ERRORS ====================================
+_______________________ ERROR at setup of {_DASHED_PARAM_ID} _______________________
+test/test_api.py:12: in a_fixture
+    raise RuntimeError('fixture blew up')
+E   RuntimeError: fixture blew up
+=========================== short test summary info ============================
+ERROR test/test_api.py::{_DASHED_PARAM_ID}
+======================== 10 passed, 1 error in 1.10s ========================
+"""
+
+
+def test_a_dash_inside_a_parametrized_node_id_does_not_truncate_the_record():
+    """The finding: the id kept its bracket, so the block still resolved.
+
+    Line and message are pinned together because both are what the truncation
+    cost: the id ``test_case[a`` matched no block header, so the record fell back
+    to a terse message with no line number — populated-looking and empty.
+    """
+    issue = _error_issues(_DASHED_PARAM_ERROR_LOG)[0]
+
+    assert issue.file == 'test/test_api.py'
+    assert issue.line == 12
+    assert issue.message == 'RuntimeError: fixture blew up'
+
+
+def test_a_parametrized_node_id_containing_a_dash_stays_addressable_by_name():
+    """The id itself survives, not merely the record built from it.
+
+    ``slice_failure_details`` is the only surface that publishes the parsed node
+    id, so it is what can tell an intact ``test_case[a - b]`` from a truncated
+    ``test_case[a`` — which matches this query on none of ``_test_matches``' arms.
+    """
+    with _temp_log(_DASHED_PARAM_ERROR_LOG) as path:
+        result = slice_failure_details(path, test_name=_DASHED_PARAM_ID)
+
+    assert result['matched'] == 1
+    assert result['failures'][0]['test'] == _DASHED_PARAM_ID
+
+
+def test_a_dash_after_the_closing_bracket_still_separates_the_message():
+    """Matched control: the split moved outside brackets, it did not go away.
+
+    A separator that genuinely ends a parametrized id is still honoured, so the
+    fix cannot be satisfied by never splitting a bracketed id at all.
+    """
+    content = (
+        '=========================== short test summary info ============================\n'
+        f'ERROR test/test_api.py::{_DASHED_PARAM_ID} - RuntimeError: fixture blew up\n'
+        '======================== 10 passed, 1 error in 1.10s ========================\n'
+    )
+
+    issue = _error_issues(content)[0]
+
+    assert issue.message == 'RuntimeError: fixture blew up'
+
+
+# =============================================================================
+# Which gutter line is the exception — the fourth trap.
+# =============================================================================
+
+_SYNTAX_ERROR_MODULE = 'test/plan-marshall/build-pyproject/test_bad_syntax.py'
+
+#: A SyntaxError raised during collection. Its gutter carries pytest's rendering
+#: of ``traceback.format_exception_only()``, which opens with the offending
+#: LOCATION and its caret and names the exception only on the last line — the
+#: shape that makes "the first gutter line" the wrong answer.
+_SYNTAX_ERROR_LOG = f"""==================================== ERRORS ====================================
+_ ERROR collecting {_SYNTAX_ERROR_MODULE} _
+E     File "/repo/{_SYNTAX_ERROR_MODULE}", line 3
+E       def broken(:
+E                  ^
+E   SyntaxError: invalid syntax
+=========================== short test summary info ============================
+ERROR {_SYNTAX_ERROR_MODULE}
+======================== 398 passed, 1 error in 8.51s ========================
+"""
+
+
+def test_a_syntax_error_collection_block_reports_the_exception_line():
+    """The exception, not the location line that precedes it in the gutter."""
+    issue = _error_issues(_SYNTAX_ERROR_LOG)[0]
+
+    assert issue.message == 'SyntaxError: invalid syntax'
+
+
+def test_a_syntax_error_message_is_not_the_traceback_location_line():
+    """The matched negative: ``File "...", line 3`` is well-formed and non-empty.
+
+    A message assertion alone would pass on it while publishing a file location
+    where triage expects an exception, so the wrong answer is named explicitly.
+    """
+    issue = _error_issues(_SYNTAX_ERROR_LOG)[0]
+
+    assert not issue.message.startswith('File ')
+
+
+def test_two_gutter_lines_at_one_indent_still_resolve_to_the_first():
+    """Matched control: indent selects the OUTERMOST line, not the last one.
+
+    ``_COLLECTION_ERROR_LOG``'s two gutter lines sit at the same indent — a
+    multi-line exception message — and its opening line is the one to report.
+    Selecting the last at the minimal indent would silently publish ``assert 0 == 1``.
+    """
+    issue = _error_issues(_COLLECTION_ERROR_LOG)[0]
+
+    assert issue.message == 'AssertionError: deliberate module-import assertion'
+
+
 def test_the_unspaced_fixtures_parse_identically_after_the_widening():
     """Matched control: the widened captures did not regress the original forms.
 

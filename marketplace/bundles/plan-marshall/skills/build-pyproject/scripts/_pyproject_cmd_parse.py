@@ -65,7 +65,21 @@ _PYTEST_FAILED_PATTERN = re.compile(r'^FAILED (.+\.py)::(\S+)(?: - (.+))?$', re.
 # greedy `(.+\.py)`. Lazy takes the FIRST `.py`, so a line whose MESSAGE itself
 # contains `.py::` still splits at the path; a greedy group would run to the LAST
 # `.py` and mis-split it.
-_PYTEST_ERROR_PATTERN = re.compile(r'^ERROR (.+?\.py)(?:::(.+?))?(?: - (.+))?$', re.MULTILINE)
+#
+# ⛔ The node-id group is GREEDY and deliberately swallows any ` - <message>` tail;
+# the delimiter is then located by `_split_pytest_error_tail`, NOT by this pattern.
+# A LAZY node id made the regex split at the FIRST ` - ` anywhere on the line, and
+# a parametrized node id legitimately CONTAINS one — pytest leaves a plain space
+# intact — so `ERROR tests/test_api.py::test_case[a - b]` parsed as the node id
+# `test_case[a` plus a message `b]`. The truncated id then matched no ERRORS block
+# header, and the record degraded to its terse message with no line number. Group 3
+# still carries the tail for the NO-node-id spelling (`ERROR <path> - <message>`),
+# which has no bracketed region a delimiter could hide inside.
+_PYTEST_ERROR_PATTERN = re.compile(r'^ERROR (.+?\.py)(?:::(.+))?(?: - (.+))?$', re.MULTILINE)
+# The separator pytest writes between an ERROR line's node id and its exception
+# repr. Named because both the pattern comment above and the splitter below are
+# about this exact three-character sequence.
+_PYTEST_ERROR_MESSAGE_DELIMITER = ' - '
 
 # Failure-detail capture (deliverable 9). pytest renders per-test tracebacks
 # under a `=== FAILURES ===` banner, each test block headed by an
@@ -99,7 +113,11 @@ _PYTEST_ERROR_HEADER_PHASE = re.compile(r'^ERROR at (?:setup|teardown) of (.+)$'
 # The `E   ` gutter pytest prefixes onto the raised exception's own lines inside
 # a traceback block. A collection error's short-summary line carries NO
 # ` - <message>` tail, so this gutter is the only place its real message exists.
-_PYTEST_EXCEPTION_LINE = re.compile(r'^E\s+(\S.*)$', re.MULTILINE)
+#
+# The gutter INDENT is captured rather than discarded, because it is what tells
+# the exception line apart from the location/source/caret lines a SyntaxError
+# renders ahead of it — see `_pytest_exception_message`.
+_PYTEST_EXCEPTION_LINE = re.compile(r'^E([ \t]+)(\S.*?)[ \t]*$', re.MULTILINE)
 # Deepest `path.py:NN:` line in a traceback block — the frame the failure
 # originated at (identical across tests that share a root cause).
 _PYTEST_FRAME_PATTERN = re.compile(r'(\S+\.py):(\d+):')
@@ -386,6 +404,46 @@ def _pytest_error_block_key(name: str) -> str:
     return _pytest_block_key(name)
 
 
+def _split_pytest_error_tail(tail: str) -> tuple[str, str | None]:
+    """Split an ERROR line's node-id tail into ``(node_id, message)``.
+
+    The delimiter is pytest's ` - `, but only an occurrence OUTSIDE parameter
+    brackets separates the two. A parametrized node id can contain the sequence
+    verbatim — pytest renders a string parameter through `ascii_escaped`, which
+    leaves a plain space intact, so `test_case[a - b]` reaches the summary line
+    unchanged — and splitting at it truncates the id to `test_case[a`. The
+    truncated id then resolves to no ERRORS block, and the record degrades to its
+    terse message with no line number: a well-formed-looking record that has lost
+    both halves of what it was collected for.
+
+    Bracket depth is tracked rather than the whole id being bracket-matched, so the
+    scan stops at the first separator that is genuinely between the id and the
+    message. Everything after that point is the message and is never re-scanned —
+    a stray `]` inside an exception repr cannot reopen the question.
+
+    An unbalanced `[` (a node id no `]` closes) never returns to depth zero, so no
+    split is made and the whole tail is the node id. That degrades to the terse
+    fallback rather than inventing a boundary, which is the safe direction: a
+    truncated id is silently wrong, an unsplit one is merely unhelpful.
+
+    Args:
+        tail: Everything after `::` on an `ERROR <path>::<tail>` summary line.
+
+    Returns:
+        ``(node_id, message)``, where ``message`` is ``None`` when the tail
+        carries no separator outside brackets.
+    """
+    depth = 0
+    for index, char in enumerate(tail):
+        if char == '[':
+            depth += 1
+        elif char == ']':
+            depth = max(depth - 1, 0)
+        elif depth == 0 and tail.startswith(_PYTEST_ERROR_MESSAGE_DELIMITER, index):
+            return tail[:index], tail[index + len(_PYTEST_ERROR_MESSAGE_DELIMITER) :]
+    return tail, None
+
+
 def _pytest_exception_message(block: str) -> str | None:
     """Return the raised exception's own first line from a traceback block.
 
@@ -395,16 +453,37 @@ def _pytest_exception_message(block: str) -> str | None:
     and without it the record degrades to a restatement of the file name, which
     tells a triage consumer nothing it did not already have from `file`.
 
+    ⛔ The FIRST gutter line is NOT the exception line in general, so this does not
+    simply take it. A SyntaxError raised during collection renders
+    `traceback.format_exception_only()` output through the gutter, and that output
+    opens with the offending `File "...", line N` location, then the source line,
+    then a caret, and only then names the exception — so taking the first match
+    published `File "...", line 3` as the failure's message.
+
+    The exception line is identified by INDENT instead: `format_exception_only`
+    indents a SyntaxError's location/source/caret lines relative to the exception
+    line, and pytest preserves that relative indentation inside the gutter, so the
+    exception line is the one at the block's MINIMAL gutter indent. The FIRST line
+    at that indent is taken rather than the last, because a multi-line exception
+    message continues at the same indent and its opening line is the one to report
+    (the same reason two same-indent gutter lines resolve to the first).
+
     Args:
         block: One traceback block from the FAILURES or ERRORS section.
 
     Returns:
-        The first gutter line's text (e.g. ``AssertionError: bad state``), or
+        The exception line's text (e.g. ``AssertionError: bad state``), or
         ``None`` when the block carries no gutter (a `--tb=no` run, or the
         terse-message fallback standing in for an absent block).
     """
-    match = _PYTEST_EXCEPTION_LINE.search(block)
-    return match.group(1).strip() if match else None
+    gutter = [
+        (len(match.group(1)), match.group(2))
+        for match in _PYTEST_EXCEPTION_LINE.finditer(block)
+    ]
+    if not gutter:
+        return None
+    base_indent = min(indent for indent, _text in gutter)
+    return next(text for indent, text in gutter if indent == base_indent)
 
 
 def _pytest_failing_frame(block: str) -> str | None:
@@ -566,8 +645,14 @@ def _collect_pytest_error_records(content: str) -> list[dict]:
 
     for match in _PYTEST_ERROR_PATTERN.finditer(content):
         file_path = match.group(1)
-        test_name = match.group(2)
+        node_id = match.group(2)
         summary_message = match.group(3)
+        test_name: str | None = None
+        if node_id:
+            # Group 2 swallowed any ` - <message>` tail; only a separator outside
+            # parameter brackets ends the node id (see `_split_pytest_error_tail`).
+            test_name, node_message = _split_pytest_error_tail(node_id)
+            summary_message = node_message or summary_message
         if test_name:
             terse = f'Error in {test_name}'
         else:
