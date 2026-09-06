@@ -110,8 +110,14 @@ RACED_PLAN_IDS = ('PLAN-02', 'PLAN-03')
 PRE_EXISTING_ID = 'PLAN-01'
 
 
-def _make_plan(plan_id: str, status: str = 'staged') -> dict:
-    """One queue row in the layout contract's shape."""
+def _make_plan(plan_id: str, status: str = 'staged') -> dict[str, str]:
+    """One queue row in the layout contract's shape.
+
+    Typed ``dict[str, str]`` rather than bare ``dict`` because every value in the
+    row genuinely is a string. The precision is load-bearing at one call site:
+    :func:`_race`'s worker returns ``row['id']`` under a ``-> str`` declaration,
+    which off a bare ``dict`` is an ``Any`` return.
+    """
     return {
         'id': plan_id,
         'slug': plan_id.lower(),
