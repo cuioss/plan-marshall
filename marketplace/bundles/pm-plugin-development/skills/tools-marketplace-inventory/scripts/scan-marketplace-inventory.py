@@ -485,6 +485,15 @@ def filter_resources_by_content(
     return result, stats
 
 
+#: The ONE resource-type vocabulary. It governs both admission (which
+#: ``--resource-types`` values are accepted, and the error message listing them)
+#: and publication (which buckets ``serialize_inventory_toon`` renders, in this
+#: order). A second copy for the serializer used to sit beside that function, and
+#: nothing kept the two in step: adding a type here and to ``process_bundle``
+#: made it accepted and discovered while the serializer silently omitted it from
+#: the output — an absence, not an error. Should publication order ever need to
+#: diverge from admission order, that is a decision to record, not a constant to
+#: reintroduce.
 VALID_RESOURCE_TYPES = ('agents', 'commands', 'skills', 'scripts', 'tests')
 
 
@@ -584,9 +593,6 @@ def get_base_path(scope: str) -> Path:
     return _shared_get_base_path(scope)
 
 
-#: Resource buckets rendered per bundle, in the order the inventory publishes them.
-_RESOURCE_TYPES = ('agents', 'commands', 'skills', 'scripts', 'tests')
-
 #: Skill subdirectories carried on a full-mode row, in publication order.
 _SUBDIR_KEYS = ('standards', 'templates', 'references', 'knowledge', 'examples', 'documents')
 
@@ -658,7 +664,7 @@ def serialize_inventory_toon(data: dict[str, Any], full: bool = False) -> str:
 
     for bundle in data['bundles']:
         block: dict[str, Any] = {'path': bundle['path']}
-        for resource_type in _RESOURCE_TYPES:
+        for resource_type in VALID_RESOURCE_TYPES:
             items = bundle.get(resource_type, [])
             if items:
                 block[resource_type] = (

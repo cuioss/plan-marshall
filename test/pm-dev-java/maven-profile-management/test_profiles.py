@@ -519,17 +519,17 @@ def test_cmd_classify_prints_fields_and_returns_zero(capsys):
 
 
 def test_cmd_list_prints_totals_and_module_table(capsys):
-    """cmd_list prints the totals header and a per-module profile table."""
+    """cmd_list prints the totals and one profile table carrying the module column."""
     with tempfile.TemporaryDirectory() as tmpdir:
         create_test_derived_data(tmpdir)
 
         rc = cmd_list(_ns(_LIST_NS, project_dir=tmpdir, module=None))
 
         assert rc == 0
-        out = capsys.readouterr().out
-        assert 'total_profiles: 4' in out
-        assert 'unmatched_count: 2' in out
-        assert 'module: module-a' in out
+        recovered = parse_toon(capsys.readouterr().out)
+        assert recovered['total_profiles'] == 4
+        assert recovered['unmatched_count'] == 2
+        assert {row['module'] for row in recovered['profiles']} == {'module-a'}
 
 
 def test_cmd_list_on_greenfield_reports_zero_profiles(capsys):
@@ -543,25 +543,49 @@ def test_cmd_list_on_greenfield_reports_zero_profiles(capsys):
 
 
 def test_cmd_unmatched_prints_count_and_profiles(capsys):
-    """cmd_unmatched prints the deduplicated unmatched count and profile list."""
+    """cmd_unmatched emits one document carrying the count and the profile list."""
     with tempfile.TemporaryDirectory() as tmpdir:
         create_test_derived_data(tmpdir)
 
         rc = cmd_unmatched(_ns(_UNMATCHED_NS, project_dir=tmpdir))
 
         assert rc == 0
-        assert 'count: 2' in capsys.readouterr().out
+        recovered = parse_toon(capsys.readouterr().out)
+        assert recovered['count'] == 2
+        assert sorted(recovered['profiles']) == ['apache-release', 'custom-profile']
+
+
+def test_cmd_unmatched_emits_the_profiles_key_when_nothing_is_unmatched(capsys):
+    """Matched negative: the key is present and empty, never absent.
+
+    The retired shape printed ``profiles`` only when the list was non-empty, so a
+    reader could not tell "none unmatched" from "this emitter forgot the key".
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        create_test_derived_data(tmpdir, profiles=[{'id': 'jacoco', 'canonical': 'coverage'}])
+
+        rc = cmd_unmatched(_ns(_UNMATCHED_NS, project_dir=tmpdir))
+
+        assert rc == 0
+        recovered = parse_toon(capsys.readouterr().out)
+        assert recovered['count'] == 0
+        assert recovered['profiles'] == []
 
 
 def test_cmd_suggest_prints_count_and_suggestion_table(capsys):
-    """cmd_suggest prints the suggestion count for unmatched profiles."""
+    """cmd_suggest emits one document carrying the count and the suggestion rows."""
     with tempfile.TemporaryDirectory() as tmpdir:
         create_test_derived_data(tmpdir)
 
         rc = cmd_suggest(_ns(_SUGGEST_NS, project_dir=tmpdir))
 
         assert rc == 0
-        assert 'count: 2' in capsys.readouterr().out
+        recovered = parse_toon(capsys.readouterr().out)
+        assert recovered['count'] == 2
+        assert {row['profile_id'] for row in recovered['suggestions']} == {
+            'apache-release',
+            'custom-profile',
+        }
 
 
 # =============================================================================
@@ -576,6 +600,35 @@ def test_cmd_suggest_prints_count_and_suggestion_table(capsys):
 # control: without it, a parser that mangled every value equally would still pass
 # the positive.
 # =============================================================================
+
+
+def test_cmd_list_recovers_every_module_from_a_multi_module_project(capsys):
+    """Both modules and both profile lists survive emit -> parse.
+
+    The retired shape serialized once per module inside the loop, so the document
+    carried repeated top-level ``module`` / ``profiles`` keys and ``parse_toon``
+    kept only the last binding — a reader recovered exactly one module. A
+    single-module assertion would pass against that defect and prove nothing,
+    which is why this fixture seeds TWO.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_project(
+            tmpdir,
+            {
+                'module-a': (['maven'], [{'id': 'jacoco', 'canonical': 'coverage'}]),
+                'module-b': (['maven'], [{'id': 'jmh', 'canonical': 'benchmark'}]),
+            },
+        )
+
+        rc = cmd_list(_ns(_LIST_NS, project_dir=tmpdir, module=None))
+
+        assert rc == 0
+        recovered = parse_toon(capsys.readouterr().out)
+        assert recovered['total_profiles'] == 2
+        assert {(row['module'], row['id']) for row in recovered['profiles']} == {
+            ('module-a', 'jacoco'),
+            ('module-b', 'jmh'),
+        }
 
 
 def test_cmd_list_round_trips_a_profile_id_that_needs_quoting(capsys):

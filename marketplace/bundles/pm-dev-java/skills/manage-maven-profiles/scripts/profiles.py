@@ -295,20 +295,42 @@ def suggest_classifications(project_dir: str = '.') -> list[dict[str, str]]:
 
 
 def cmd_list(args: argparse.Namespace) -> int:
-    """CLI handler for list command."""
+    """CLI handler for list command.
+
+    Emits ONE document from ONE ``serialize_toon`` call. Serializing per module
+    inside the loop repeated the top-level ``module`` and ``profiles`` keys, and
+    ``parse_toon`` keeps only the last binding of a repeated top-level key — so a
+    multi-module project wrote a document from which a reader recovered exactly
+    one module, silently losing every earlier one.
+
+    The module is carried as a COLUMN of one flat uniform array rather than as a
+    nesting level. TOON has no native array-of-objects-each-holding-an-array:
+    ``serialize_toon`` renders a list-valued cell as an embedded JSON string, so
+    the nested shape would round-trip only by putting a second encoding inside
+    the first — and every profile id inside that cell would bypass TOON's own
+    quoting rule. One column per module keeps a single format end to end, and
+    every module survives because each is a value rather than a repeated key.
+    """
     try:
         result = list_profiles(args.project_dir, args.module)
 
-        print(f'total_profiles: {result["total_profiles"]}')
-        print(f'unmatched_count: {result["unmatched_count"]}')
-        print()
-
-        for module in result['modules']:
-            print(f'module: {module["name"]}')
-            if module['profiles']:
-                items = [{'id': p['id'], 'canonical': p['canonical']} for p in module['profiles']]
-                print(serialize_toon({'profiles': items}))
-            print()
+        print(
+            serialize_toon(
+                {
+                    'total_profiles': result['total_profiles'],
+                    'unmatched_count': result['unmatched_count'],
+                    'profiles': [
+                        {
+                            'module': module['name'],
+                            'id': profile['id'],
+                            'canonical': profile['canonical'],
+                        }
+                        for module in result['modules']
+                        for profile in module['profiles']
+                    ],
+                }
+            )
+        )
 
         return 0
     except DataNotFoundError as e:
@@ -322,13 +344,17 @@ def cmd_list(args: argparse.Namespace) -> int:
 
 
 def cmd_unmatched(args: argparse.Namespace) -> int:
-    """CLI handler for unmatched command."""
+    """CLI handler for unmatched command.
+
+    ``count`` is part of the payload rather than a hand-printed scalar line, so
+    the whole document comes from one ``serialize_toon`` call. ``profiles`` is
+    emitted even when empty: a reader that has to distinguish "no profiles" from
+    "key absent" should not have to.
+    """
     try:
         unmatched = get_unmatched_profiles(args.project_dir)
 
-        print(f'count: {len(unmatched)}')
-        if unmatched:
-            print(serialize_toon({'profiles': unmatched}))
+        print(serialize_toon({'count': len(unmatched), 'profiles': unmatched}))
 
         return 0
     except DataNotFoundError as e:
@@ -358,23 +384,30 @@ def cmd_classify(args: argparse.Namespace) -> int:
 
 
 def cmd_suggest(args: argparse.Namespace) -> int:
-    """CLI handler for suggest command."""
+    """CLI handler for suggest command.
+
+    Same single-payload shape as its siblings — ``count`` is serialized rather
+    than hand-printed, and ``suggestions`` is always present.
+    """
     try:
         suggestions = suggest_classifications(args.project_dir)
 
-        print(f'count: {len(suggestions)}')
-        if suggestions:
-            print()
-            rows = [
+        print(
+            serialize_toon(
                 {
-                    'profile_id': s['profile_id'],
-                    'suggested': s['suggested'],
-                    'confidence': s['confidence'],
-                    'reason': s['reason'],
+                    'count': len(suggestions),
+                    'suggestions': [
+                        {
+                            'profile_id': s['profile_id'],
+                            'suggested': s['suggested'],
+                            'confidence': s['confidence'],
+                            'reason': s['reason'],
+                        }
+                        for s in suggestions
+                    ],
                 }
-                for s in suggestions
-            ]
-            print(serialize_toon({'suggestions': rows}))
+            )
+        )
 
         return 0
     except DataNotFoundError as e:

@@ -239,6 +239,73 @@ def scan(synthetic_marketplace, monkeypatch, capsys):
 
 
 # =============================================================================
+# Tests - One resource-type vocabulary
+# =============================================================================
+
+
+def test_serialized_output_carries_every_admitted_resource_type():
+    """The admission vocabulary IS the publication vocabulary.
+
+    A second copy of the tuple used to govern the serializer, and nothing kept
+    the two in step: a type added to the admission vocabulary and to
+    ``process_bundle`` became accepted on the command line and discovered into
+    the bundle dict, while the serializer omitted it from the output — a quiet
+    absence rather than an error.
+
+    The bundle here is BUILT FROM ``VALID_RESOURCE_TYPES`` rather than from a
+    literal list, so the property survives the vocabulary changing. Asserting the
+    tuple equals its current five members would pin the defect instead: both
+    copies agreed on those five, and what failed was the divergence they allowed.
+    """
+    module = _scan_module()
+    resource_types = module.VALID_RESOURCE_TYPES
+    data = {
+        'scope': 'auto',
+        'base_path': 'marketplace/bundles',
+        'bundles': [
+            {
+                'name': 'alpha-bundle',
+                'path': 'marketplace/bundles/alpha-bundle',
+                **{rtype: [{'name': f'{rtype}-item'}] for rtype in resource_types},
+            }
+        ],
+        'statistics': {'total_bundles': 1},
+    }
+
+    recovered = parse_toon(module.serialize_inventory_toon(data))
+
+    assert resource_types, 'the vocabulary is empty — the assertion below would be vacuous'
+    assert set(recovered['alpha-bundle']) - {'path'} == set(resource_types)
+
+
+def test_a_resource_type_the_bundle_does_not_carry_is_omitted():
+    """Matched negative: the serializer publishes buckets, not the vocabulary.
+
+    Without this the test above would pass against a serializer that emitted
+    every admitted type unconditionally, and the empty-bucket suppression the
+    real output relies on would be unguarded.
+    """
+    module = _scan_module()
+    carried = module.VALID_RESOURCE_TYPES[0]
+    data = {
+        'scope': 'auto',
+        'base_path': 'marketplace/bundles',
+        'bundles': [
+            {
+                'name': 'alpha-bundle',
+                'path': 'marketplace/bundles/alpha-bundle',
+                carried: [{'name': 'only-item'}],
+            }
+        ],
+        'statistics': {'total_bundles': 1},
+    }
+
+    recovered = parse_toon(module.serialize_inventory_toon(data))
+
+    assert set(recovered['alpha-bundle']) - {'path'} == {carried}
+
+
+# =============================================================================
 # Tests - Basic Discovery
 # =============================================================================
 
