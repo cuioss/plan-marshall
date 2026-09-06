@@ -10,6 +10,7 @@ a clean site (it must not fire). The divergent-site assertions are the
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from toon_parser import serialize_toon
@@ -418,6 +419,143 @@ def test_low_confidence_when_dispatch_lines_short_of_dispatched_steps(tmp_path, 
     assert channel['confidence'] == 'low'
     assert int(channel['dispatch_line_count']) == 1
     assert int(channel['dispatched_step_count']) == 2
+
+
+# ---------------------------------------------------------------------------
+# D6-S03 — the RATIO arm of the ``low`` grade, and its strict-comparison edge
+# ---------------------------------------------------------------------------
+#
+# ``low`` is reached by two independent branches, and every fixture above and in
+# the measurement-contract sibling reaches it through the FIRST one (fewer
+# dispatch lines than token-proven dispatched steps). The second — a
+# dispatch/completion ratio under ``_SPARSE_RATIO`` — had no fixture at all, so
+# deleting that branch, or flipping its comparison, changed no test.
+#
+# The two cases below are the sparse-but-NONZERO case (dispatch lines present, no
+# shortfall against the proven dispatches, ratio under the threshold) and the
+# strict-comparison boundary (ratio EXACTLY at the threshold, which the strict
+# ``<`` must leave nominal). They are a matched pair over otherwise-identical
+# fixtures differing by one completion line, so the grade flip is attributable to
+# the ratio and to nothing else.
+#
+# The threshold is READ FROM THE SCRIPT rather than restated as ``0.5``: a
+# literal here would keep passing after the production constant moved, grading
+# the boundary against a threshold the script no longer uses.
+
+#: The ``_SPARSE_RATIO`` declaration in the audit script. The value group is
+#: unbounded so a threshold changed to any number is still read, rather than the
+#: pattern silently failing to match and the tests below going vacuous.
+_SPARSE_RATIO_DECL_RE = re.compile(r'^_SPARSE_RATIO\s*=\s*(?P<value>[0-9]*\.?[0-9]+)\s*$', re.MULTILINE)
+
+#: The token-proven dispatched step shared by both ratio fixtures. One step, one
+#: finalize [DISPATCH] line — so the shortfall branch cannot fire and the ratio
+#: branch is the only one left that can grade ``low``.
+_RATIO_STEP = 'default:finalize-step-simplify'
+_RATIO_TOKEN_ROW = {
+    'step_id': 'finalize-step-simplify',
+    'phase': '6-finalize',
+    'outcome': 'done',
+    'total_tokens': 5000,
+}
+
+
+def _sparse_ratio_threshold() -> float:
+    """The ``_SPARSE_RATIO`` value the script actually compares against."""
+    match = _SPARSE_RATIO_DECL_RE.search(SCRIPT_PATH.read_text(encoding='utf-8'))
+    assert match, (
+        f'{SCRIPT_PATH} no longer declares a module-level `_SPARSE_RATIO` constant. '
+        'The boundary tests below derive their fixtures from it, so a missing '
+        'declaration must fail loudly here rather than let them assert against a '
+        'threshold nothing uses.'
+    )
+    return float(match.group('value'))
+
+
+def _ratio_channel(tmp_path, monkeypatch, plan_id: str, completion_steps: list[str]) -> dict:
+    """One finalize dispatch line and one token-proven step over N completions."""
+    written = _write_plan(
+        tmp_path,
+        monkeypatch,
+        plan_id=plan_id,
+        work_lines=[_dispatch_line('default'), *(_step_completed_line(s) for s in completion_steps)],
+        execution_log=[dict(_RATIO_TOKEN_ROW)],
+        phase_steps={_RATIO_STEP: {'outcome': 'done'}},
+    )
+    return _run(written)['channel_completeness']
+
+
+def test_sparse_but_nonzero_channel_grades_low_on_the_ratio_alone(tmp_path, monkeypatch):
+    """A populated-but-thin channel downgrades even with no dispatch shortfall.
+
+    Every other ``low`` fixture reaches the grade through the shortfall branch, so
+    this is the first that exercises the ratio branch: the dispatch-line count
+    MATCHES the token-proven dispatched-step count (asserted below, because that
+    equality is what rules the shortfall branch out), and the only thing left that
+    can downgrade the grade is the ratio.
+    """
+    channel = _ratio_channel(
+        tmp_path,
+        monkeypatch,
+        'ratio-sparse-nonzero',
+        ['default:finalize-step-simplify', 'default:push', 'default:create-pr'],
+    )
+
+    assert int(channel['dispatch_line_count']) == 1, 'the channel must be NONZERO, not the `none` grade'
+    assert int(channel['dispatch_line_count']) == int(channel['dispatched_step_count']), (
+        'the shortfall branch must be ruled out, or this fixture would grade low '
+        'for the reason the sibling tests already cover'
+    )
+    assert float(channel['ratio']) < _sparse_ratio_threshold()
+    assert channel['confidence'] == 'low', (
+        'a nonzero but thin channel — one dispatch line against three completions — '
+        f'must downgrade on the ratio; got {channel["confidence"]!r}'
+    )
+
+
+def test_ratio_exactly_at_the_threshold_stays_nominal(tmp_path, monkeypatch):
+    """The comparison is strict: AT the threshold is not UNDER it.
+
+    Paired with the test above over a fixture that differs by exactly one
+    completion line. Flipping the production ``<`` to ``<=`` turns this green
+    fixture red, which is what makes the strictness observable — the sparse case
+    alone passes under either operator.
+    """
+    channel = _ratio_channel(
+        tmp_path,
+        monkeypatch,
+        'ratio-at-threshold',
+        ['default:finalize-step-simplify', 'default:push'],
+    )
+
+    assert float(channel['ratio']) == _sparse_ratio_threshold(), (
+        'the fixture no longer sits exactly on the threshold, so it no longer tests '
+        'the boundary; regenerate the completion count from the threshold'
+    )
+    assert int(channel['dispatch_line_count']) == int(channel['dispatched_step_count'])
+    assert channel['confidence'] == 'nominal', (
+        'a ratio equal to the sparse threshold is not under it — the comparison is '
+        f'strict; got {channel["confidence"]!r}'
+    )
+
+
+def test_one_more_completion_is_what_flips_the_grade(tmp_path, monkeypatch):
+    """The pair above, asserted as a pair — the delta is one completion line.
+
+    Read separately, each test is consistent with a grader that ignores the ratio
+    entirely and happens to return the expected constant. Asserting that the two
+    otherwise-identical fixtures DISAGREE is the claim neither can make alone.
+    """
+    at_threshold = _ratio_channel(
+        tmp_path, monkeypatch, 'flip-at-threshold', ['default:a', 'default:b']
+    )
+    below_threshold = _ratio_channel(
+        tmp_path, monkeypatch, 'flip-below-threshold', ['default:a', 'default:b', 'default:c']
+    )
+
+    assert int(below_threshold['completion_count']) == int(at_threshold['completion_count']) + 1
+    assert int(below_threshold['dispatch_line_count']) == int(at_threshold['dispatch_line_count'])
+    assert int(below_threshold['dispatched_step_count']) == int(at_threshold['dispatched_step_count'])
+    assert (at_threshold['confidence'], below_threshold['confidence']) == ('nominal', 'low')
 
 
 # ---------------------------------------------------------------------------
