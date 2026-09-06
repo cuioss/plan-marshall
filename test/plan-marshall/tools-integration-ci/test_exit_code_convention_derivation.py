@@ -283,6 +283,75 @@ def test_document_with_manage_scoped_convention_classifies_narrow(tmp_path):
     )
 
 
+def test_a_retained_manage_heading_classifies_narrow_whichever_section_comes_first(tmp_path):
+    """A leftover `manage-*` heading is `narrow` even with a reference above it.
+
+    The defect this pins: classifying on the FIRST convention section made the
+    verdict order-dependent, so a canonical reference placed above a stale
+    `manage-*` section hid that section entirely and the document classified
+    `widened`. That is precisely the "no document retains the narrow form
+    alongside the widened one" case the guard exists to catch, and it was
+    invisible to it.
+
+    Both orderings are asserted, because a fix that only walked further would
+    still be order-dependent in the other direction.
+    """
+    _write(
+        tmp_path,
+        'bundles/b/skills/reference_first/SKILL.md',
+        XREF_CONVENTION,
+        NARROW_CONVENTION,
+        CI_INVOCATION,
+    )
+    _write(
+        tmp_path,
+        'bundles/b/skills/narrow_first/SKILL.md',
+        NARROW_CONVENTION,
+        XREF_CONVENTION,
+        CI_INVOCATION,
+    )
+
+    result = derivation.derive(tmp_path)
+
+    assert result.narrow == (
+        'marketplace/bundles/b/skills/narrow_first/SKILL.md',
+        'marketplace/bundles/b/skills/reference_first/SKILL.md',
+    ), (
+        'A retained manage-*-scoped heading was not classified narrow in both orderings. '
+        f'widened={result.widened}, narrow={result.narrow}, none={result.none}. '
+        'A document listed under widened kept the superseded heading and the classifier '
+        'read past it.'
+    )
+
+
+def test_a_manage_heading_stating_every_clause_is_still_narrow(tmp_path):
+    """The forbidden thing is the HEADING, not an incomplete body.
+
+    A `manage-*`-scoped section that spells out all three clauses satisfies
+    `states_full_contract`, so a reachability-first classifier accepts it. The
+    heading test must therefore run before the reachability test — this asserts
+    that ordering, which a body-only check cannot satisfy.
+    """
+    manage_heading_full_body = FULL_CONTRACT_CONVENTION.replace(
+        '## Exit-code convention for every script call',
+        '## Exit-code convention for `manage-*` script calls',
+    )
+    _write(tmp_path, 'bundles/b/skills/s/SKILL.md', manage_heading_full_body, CI_INVOCATION)
+
+    assert derivation.states_full_contract(manage_heading_full_body) is True, (
+        'Matched control failed: the fixture no longer states the full contract, so the '
+        'assertion below would pass for the wrong reason.'
+    )
+
+    result = derivation.derive(tmp_path)
+
+    assert result.narrow == ('marketplace/bundles/b/skills/s/SKILL.md',), (
+        'A manage-*-scoped heading whose body states every clause was not classified narrow. '
+        f'widened={result.widened}, none={result.none}. The reachability test ran before the '
+        'heading test and accepted the forbidden heading.'
+    )
+
+
 def test_document_without_convention_heading_classifies_none(tmp_path):
     _write(tmp_path, 'bundles/b/skills/s/SKILL.md', CI_INVOCATION)
 

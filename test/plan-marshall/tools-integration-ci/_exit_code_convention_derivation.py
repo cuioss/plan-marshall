@@ -93,6 +93,13 @@ _CONVENTION_HEADING_RE = re.compile(r'^(#{1,6})\s+(.*exit-code convention.*)$', 
 #: Any markdown heading — used to find where a convention section ends.
 _ANY_HEADING_RE = re.compile(r'^(#{1,6})\s')
 
+#: A convention heading that scopes itself to ``manage-*`` — the superseded form.
+#: Matched on the HEADING rather than the body, because the heading is forbidden
+#: for a retained document however complete its prose happens to be: a narrow
+#: section that spells out all three clauses still satisfies
+#: :func:`states_full_contract`, so a body-only test would accept it.
+_NARROW_HEADING_RE = re.compile(r'^#{1,6}\s+.*exit-code convention.*manage-', re.IGNORECASE)
+
 #: The one document that states the contract. Every other document reaches the
 #: contract by referring to this one.
 CANONICAL_STANDARD = (
@@ -296,14 +303,23 @@ def retains(notations: frozenset[str]) -> bool:
     return any(not notation.split(':')[1].startswith('manage-') for notation in notations)
 
 
-def _convention_section(text: str) -> str | None:
-    """The body of *text*'s exit-code-convention section, or ``None`` if it has none.
+def _convention_sections(text: str) -> list[str]:
+    """The body of EVERY exit-code-convention section in *text*, in document order.
 
-    The section runs from its heading to the next heading at the same level or
+    Each section runs from its heading to the next heading at the same level or
     higher, so a nested subsection stays part of the convention it belongs to.
+
+    ⛔ ALL sections are returned, deliberately. Returning only the first made the
+    classification order-dependent: a document that kept a superseded
+    ``manage-*``-scoped section AND gained a canonical reference was classified on
+    whichever heading happened to appear first, so a reference placed above the
+    stale section hid it entirely. The retained narrow heading is exactly what
+    D2's "no document retains the narrow form alongside the widened one" criterion
+    forbids, and it was invisible to the check meant to enforce it.
     """
     lines = text.splitlines()
     flags = _fenced_line_flags(lines)
+    sections: list[str] = []
 
     for index, (line, fenced) in enumerate(zip(lines, flags, strict=True)):
         if fenced:
@@ -319,8 +335,8 @@ def _convention_section(text: str) -> str | None:
                 if boundary is not None and len(boundary.group(1)) <= level:
                     break
             body.append(next_line)
-        return '\n'.join(body)
-    return None
+        sections.append('\n'.join(body))
+    return sections
 
 
 def classify(text: str) -> str:
@@ -343,11 +359,25 @@ def classify(text: str) -> str:
     is covered and classifies ``widened``; the single-body sweep is what rejects
     it. Folding the duplicate check in here would make a reintroduced copy look
     like a *missing* convention, which is the opposite of what it is.
+
+    ⛔ EVERY convention section is examined, and a retained ``manage-*``-scoped
+    HEADING decides the answer before any reachability test runs. Two properties
+    make that ordering load-bearing:
+
+    * **Order-independence.** Reading only the first section made the verdict
+      depend on which heading came first, so a canonical reference placed above a
+      stale ``manage-*`` section hid it and the document classified ``widened``.
+    * **The heading is forbidden, not merely its prose.** A ``manage-*`` section
+      that happens to spell out all three clauses satisfies
+      :func:`states_full_contract`, so testing reachability first would accept
+      the very shape D2 forbids. The heading test therefore runs first and wins.
     """
-    section = _convention_section(text)
-    if section is None:
+    sections = _convention_sections(text)
+    if not sections:
         return NONE
-    if references_canonical(section) or states_full_contract(section):
+    if any(_NARROW_HEADING_RE.match(section.splitlines()[0]) for section in sections):
+        return NARROW
+    if any(references_canonical(s) or states_full_contract(s) for s in sections):
         return WIDENED
     return NARROW
 
