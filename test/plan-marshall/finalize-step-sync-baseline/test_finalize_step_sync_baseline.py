@@ -203,3 +203,21 @@ class TestSyncBaselineBodyContract:
             'at order 3 no PR exists — sync-baseline must NOT invoke a CI wait, '
             f'found: {invocation_lines}'
         )
+
+    def test_body_documents_executor_refresh_as_non_fatal(self):
+        # The executor-refresh seam (`worktree-rebase-to`'s post-rebase
+        # `_refresh_worktree_executor` probe) can fail or, on an unanticipated
+        # fault, raise past its own module boundary (see
+        # test_worktree_rebase_executor_refresh.py::
+        # TestUnexpectedSeamExceptionAtTheCliGate for the raising case and the
+        # CLI-level `safe_main` gate that absorbs it). This document's own
+        # contract must NOT convert either outcome into a sync-baseline step
+        # failure — the rebase already succeeded and moved HEAD by the time
+        # the refresh runs.
+        body = _doc_body(_SYNC_BASELINE_DOC)
+        assert 'non-fatal by contract' in body, (
+            'the body must document that a degraded or raised executor '
+            'refresh is a reported degradation, never a sync-baseline step '
+            'failure — see workflow-integration-git/standards/'
+            'worktree-handling.md § "Post-Rebase Executor Refresh"'
+        )
