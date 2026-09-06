@@ -360,11 +360,12 @@ class TestExtractProfilesBucketComment:
 # Deliverables-section fixtures shared by the block/deliverable parsing tests
 # =============================================================================
 
-# Two deliverables in ascending document order. Deliverable 1 deliberately
+# Two deliverables in ascending document order. `Deliverable 1` deliberately
 # declares NEITHER a `**Metadata:**` block NOR `**Success Criteria:**`, while
-# deliverable 2 declares both — so a bounding failure (deliverable 1's content
-# running past its own heading into deliverable 2's) is directly observable as
-# deliverable 1 inheriting deliverable 2's metadata / success-criteria flag.
+# `deliverable 2` declares both — so a bounding failure (`deliverable 1`'s
+# content running past its own heading into `deliverable 2`'s) is directly
+# observable as `deliverable 1` inheriting `deliverable 2`'s metadata /
+# success-criteria flag.
 TWO_DELIVERABLE_SECTION = """### 1. First deliverable
 
 **Profiles:**
@@ -518,10 +519,10 @@ class TestExtractDeliverables:
     def test_later_deliverable_fields_do_not_leak_into_the_earlier_one(self):
         first = extract_deliverables(TWO_DELIVERABLE_SECTION)[0]
 
-        # deliverable 1 declares neither a Metadata block nor Success
-        # Criteria; deliverable 2 declares both. A bounding regression (content
-        # not cut at the next `### ` heading) would show up here as deliverable
-        # 1 inheriting deliverable 2's values.
+        # `deliverable 1` declares neither a Metadata block nor Success
+        # Criteria; `deliverable 2` declares both. A bounding regression (content
+        # not cut at the next `### ` heading) would show up here as
+        # `deliverable 1` inheriting `deliverable 2`'s values.
         assert first['metadata'] == {}, (
             'Deliverable 1 declares no **Metadata:** block; a non-empty value '
             "means deliverable 2's block leaked across the heading boundary."
@@ -558,8 +559,8 @@ class TestExtractDeliverables:
 # One outline carrying BOTH declaration forms, so a derivation that reads only
 # the flat heading fails visibly rather than merely returning a smaller set.
 #
-# Deliverable 1 declares the flat `**Affected files:**` list with one bullet per
-# intent form (two writes, one read, one unmarked). Deliverable 2 is a
+# `Deliverable 1` declares the flat `**Affected files:**` list with one bullet
+# per intent form (two writes, one read, one unmarked). `Deliverable 2` is a
 # SURVEY-SCOPE deliverable: it declares the `Files to survey:` /
 # `Files expected to mutate:` pair INSTEAD of a flat list, which is exactly the
 # shape whose change-bearing paths belonged to no declared set before this
@@ -736,7 +737,7 @@ class TestDeclaredPathsPopulation:
 
         assert population == {
             'deliverables_scanned': 2,
-            # deliverable 1 declares one heading; deliverable 2 declares the pair.
+            # `deliverable 1` declares one heading; `deliverable 2` declares the pair.
             'headings_found': 3,
             # counted BEFORE deduplication: 4 flat bullets + 2 survey + 2 mutation.
             'bullets_parsed': 8,

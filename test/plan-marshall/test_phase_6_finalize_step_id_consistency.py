@@ -157,7 +157,7 @@ def test_phase_steps_complete_fails_when_required_prefixed_but_recorded_bare(
     ``excinfo.value.missing`` — the bare key is invisible to the
     required-step lookup, so the step counts as missing.
 
-    Reverting deliverable 2's normalization (e.g. restoring the bare
+    Reverting the step-id normalization (e.g. restoring the bare
     ``--step pre-submission-self-review`` invocation in the workflow doc)
     re-introduces this exact failure: the recorded key drifts to the bare
     form while the manifest keeps the prefixed form, and the handshake
@@ -290,7 +290,7 @@ def test_finalize_step_wrappers_mark_step_done_calls_present() -> None:
 
     Each source is checked for both the ``mark-step-done`` script call and
     the canonical ``--step project:finalize-step-{name}`` argument; missing
-    either signals that deliverable 2's normalization has been reverted.
+    either signals that the step-id normalization has been reverted.
     """
     sources: list[tuple[Path, str]] = [
         (

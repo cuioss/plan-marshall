@@ -60,8 +60,8 @@ from conftest import PROJECT_ROOT
 def test_default_constants():
     """Shared constants should have expected values.
 
-    ``DEFAULT_CI_TIMEOUT`` is now resolved from marshal.json at module load via
-    ``_resolve_ci_timeout`` — see deliverable 7 (B8). The 600s value is the
+    ``DEFAULT_CI_TIMEOUT`` is resolved from marshal.json at module load via
+    ``_resolve_ci_timeout``. The 600s value is the
     conservative fallback when marshal.json is absent (the test runs outside
     a configured project) OR the value baked into the project's marshal.json.
     A real marshal.json override would surface as a different integer here;
@@ -2281,7 +2281,7 @@ def test_enrich_passes_empty_job_id_when_absent(plan_context):
 
 
 # =============================================================================
-# repo merge-queue — 3-level parser tree + dispatch routing (deliverable 2)
+# repo merge-queue — 3-level parser tree + dispatch routing
 # =============================================================================
 #
 # `repo merge-queue {probe|enable}` is a NEW top-level subcommand grouping a
@@ -2400,7 +2400,7 @@ def test_merge_queue_eligible_states_set():
 
 
 # =============================================================================
-# checks wait — opt-in adaptive ci:wait budget (deliverable 2)
+# checks wait — opt-in adaptive ci:wait budget
 # =============================================================================
 #
 # ``checks wait --adaptive`` wires the branch-cleanup / verification-feedback CI

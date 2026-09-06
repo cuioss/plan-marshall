@@ -35,7 +35,7 @@ def test_impossible_duration_flags_deterministic_call_over_600(tmp_path):
 
 def test_impossible_duration_spares_ratcheted_ci_wait_call(tmp_path):
     # Arrange: a build/ci-wait class call at 700s AND a run-configuration whose
-    # ratcheted build-queue ceiling (1200s) covers it — #849's adaptive ratchet.
+    # ratcheted build-queue ceiling (1200s) covers it — the adaptive ratchet.
     _write_log(
         tmp_path,
         PROBE_LOG_NAME,

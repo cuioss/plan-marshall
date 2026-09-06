@@ -78,7 +78,8 @@ class TestAbsentExecutePhaseIsBlind:
 
         The guard must widen to cover absence WITHOUT swallowing the
         marker-explained case — otherwise it would trade a false-clean verdict for
-        a false-alarm one, and the #812 markers would stop meaning anything.
+        a false-alarm one, and the end_time-presence markers would stop meaning
+        anything.
         """
         inputs = _write_ii_plan(
             tmp_path,

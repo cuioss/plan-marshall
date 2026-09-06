@@ -15,7 +15,7 @@ from _audit_fixtures import (
 class TestInputIntegrityDataConfidence:
     """The per-plan ``data_confidence`` bucket: ``blind`` iff the 5-execute phase
     recorded zero tokens, else ``partial`` on any other gap/defect — including an
-    UNREADABLE #812 marker record — else ``fully-recorded``."""
+    UNREADABLE end_time-presence marker record — else ``fully-recorded``."""
 
     def test_fully_recorded_when_no_gap_or_defect(self, tmp_path: Path):
         # every input present, every flag clear, marker record readable

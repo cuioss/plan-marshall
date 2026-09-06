@@ -296,7 +296,7 @@ def test_negation_phrase_does_not_override_the_classification(phrase):
 
 
 def test_negation_phrase_does_not_change_a_docs_review_request():
-    """The TokenSheriff #576 shape: sub-threshold docs review WITH 'no build'.
+    """The TokenSheriff shape: sub-threshold docs review WITH 'no build'.
 
     This request is what the override existed to catch. Its build implications
     are now settled by the footprint at run time, not by the sentence, so the

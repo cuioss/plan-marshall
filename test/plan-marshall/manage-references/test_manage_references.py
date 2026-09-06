@@ -907,7 +907,7 @@ def test_sync_publishes_the_population_it_walked(plan_context):
     result = cmd_sync_affected_files(_sync_ns())
 
     assert result['deliverables_scanned'] == 2
-    # deliverable 1 declares one heading; deliverable 2 declares the pair.
+    # `deliverable 1` declares one heading; `deliverable 2` declares the pair.
     assert result['headings_found'] == 3
     assert result['bullets_parsed'] == 4
     assert result['declared_count'] == len(_OUTLINE_DECLARED)
@@ -1085,8 +1085,8 @@ _OUTLINE_EXPLICIT_READ = """# Solution: fixture
 - Criteria: passes
 """
 
-#: Two deliverables disagreeing about one path: deliverable 1 declares
-#: ``src/contested.py`` a write, deliverable 2 declares the same path a read.
+#: Two deliverables disagreeing about one path: `deliverable 1` declares
+#: ``src/contested.py`` a write, `deliverable 2` declares the same path a read.
 _OUTLINE_CONTESTED = """# Solution: fixture
 
 ## Deliverables

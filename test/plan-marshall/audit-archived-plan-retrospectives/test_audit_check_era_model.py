@@ -47,9 +47,10 @@ def test_check_era_covers_exactly_all_checks():
 def test_reworked_checks_carry_this_plan_boundary():
     # Plan-13 reworks two checks' mechanics — the classify-before-route lane
     # signals and the Tier-1 recipe floor that re-arms the checkpoint measurement
-    # — so their era boundary is plan-13's PR (#875), kept in lock-step with the
-    # audit.py mirror. The `metrics` check has since moved OFF #875 to this plan's
-    # own PR-PENDING boundary (see test_metrics_check_carries_this_plan_pr_boundary).
+    # — so their era boundary is plan-13's PR (`#875`), kept in lock-step with the
+    # audit.py mirror. The `metrics` check does not share that boundary; it carries
+    # this plan's own PR-PENDING stamp instead (see
+    # test_metrics_check_carries_this_plan_pr_boundary).
     for check in ("track-selection-accuracy", "lane-lever-effectiveness"):
         assert audit.CHECK_ERA[check] == "#875", check
 
@@ -59,9 +60,9 @@ def test_metrics_check_carries_this_plan_pr_boundary():
     # reconciliation, D2 inline 6-finalize main-context attribution, and D3 the
     # loop-back boundary-monotonicity idle guard — exactly the per-phase
     # token/duration recording mechanics the `metrics` check verifies. So its era
-    # boundary is this plan's own PR, carried as the PR-PENDING placeholder
-    # (bumped from #875) until project:finalize-step-era-stamp-fill resolves it to
-    # the real PR at finalize. This is the co-changing mirror of the audit.py
+    # boundary is this plan's own PR, carried as the PR-PENDING placeholder until
+    # project:finalize-step-era-stamp-fill resolves it to the real PR at finalize.
+    # This is the co-changing mirror of the audit.py
     # CHECK_ERA constant — the pair changes together and is the designated
     # acceptance for era-fill firing from a composed manifest.
     assert audit.CHECK_ERA["metrics"] == "#922"
@@ -72,7 +73,7 @@ def test_global_log_analysis_carries_this_plan_pr_boundary():
     # signal-precision mechanics: it adds the `dominant-cost-caller` row kind and
     # ends the `genuine_signal_count == row count` identity, so a reader of an
     # archived row needs to know which side of that boundary it was recorded on.
-    # Bumped from #849. Co-changing mirror of the audit.py CHECK_ERA constant.
+    # Co-changing mirror of the audit.py CHECK_ERA constant.
     assert audit.CHECK_ERA["global-log-analysis"] == "#1260"
 
 
@@ -80,7 +81,7 @@ def test_merge_window_accounting_carries_this_plan_pr_boundary():
     # Plan-14 reworked the merge-window-accounting mechanics — D1 strips
     # --delete-branch/--strategy from the pr merge-queue enqueue path and D3 fixes the
     # merge-lock stale-holder liveness — both surfaces this check accounts for, so its
-    # era boundary is plan-14's PR (#877, bumped from #863).
+    # era boundary is plan-14's PR (`#877`).
     assert audit.CHECK_ERA["merge-window-accounting"] == "#877"
 
 
@@ -88,7 +89,7 @@ def test_finalize_flow_conformance_carries_this_plan_pr_boundary():
     # Plan-17 reworked the finalize-flow-conformance mechanics — D1's pre-merge
     # comment barrier and D2's completion-aware polling rework the finalize
     # merge-completeness surface this check accounts for, so its era boundary is
-    # plan-17's PR (#884, bumped from #849).
+    # plan-17's PR (`#884`).
     assert audit.CHECK_ERA["finalize-flow-conformance"] == "#884"
 
 
@@ -102,8 +103,8 @@ def test_sequence_build_minimality_carries_this_plan_pr_boundary():
     # column (a build whose outcome could not be read is its own state instead of
     # silently joining the pass or fail bucket). Each turns a former confident zero
     # into an explicit not-measured, so rows computed under the old semantics are
-    # no longer datable against #1224 and the boundary moves to this plan's own PR,
-    # carried as the PR-PENDING placeholder (bumped from #1224) until
+    # not datable against the preceding boundary, so the boundary moves to this
+    # plan's own PR, carried as the PR-PENDING placeholder until
     # project:finalize-step-era-stamp-fill resolves it to the real PR at finalize.
     # This is the co-changing mirror of the audit.py CHECK_ERA constant — the pair
     # changes together and is the designated acceptance for era-fill firing from a
@@ -214,9 +215,9 @@ def test_plan8_reworked_checks_carry_pr_pending_boundary():
     # the pair changes together and is the designated acceptance for era-fill firing
     # from a composed manifest):
     #   * token-economics — plan-8's finalize-wait consolidation changes the
-    #     finalize_heavy token-economics accounting this check flags (bumped from #887).
+    #     finalize_heavy token-economics accounting this check flags.
     #   * token-efficiency-trend — plan-8's per-dispatch context trim lowers the
-    #     tokens-per-phase floor this cross-plan trend check reads (bumped from plan-10).
+    #     tokens-per-phase floor this cross-plan trend check reads.
     for check in ("token-economics", "token-efficiency-trend"):
         assert audit.CHECK_ERA[check] == "#899", check
 
@@ -257,7 +258,7 @@ def test_stamp_era_leaves_meta_blocks_untouched():
 
 def test_execution_context_manifest_era_stamped_to_promotion_boundary():
     # The self-review promotion (default:pre-submission-self-review) bumped the
-    # finalize-step-id surface this check re-derives, so its era stamp moves to #872.
+    # finalize-step-id surface this check re-derives, so its era stamp moves to `#872`.
     assert audit.CHECK_ERA["execution-context-manifest"] == "#872"
     block = "check: execution-context-manifest\nstatus: success\nrows[0]{a}:\n"
     stamped = audit._stamp_era(block)

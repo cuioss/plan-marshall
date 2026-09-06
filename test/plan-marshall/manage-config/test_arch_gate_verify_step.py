@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the arch-gate verify-step append in skill-domains configure.
 
-Covers deliverable 2 of the arch-gate-build-command plan:
+The contract this pins:
 - ``_configured_domains_provide_arch_gate()`` returns True only when a configured
   domain's extension declares a non-None ``provides_arch_gate()`` descriptor.
 - ``skill-domains configure`` appends ``default:verify:arch-gate`` to

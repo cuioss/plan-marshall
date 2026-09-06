@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the EffortPresets constant-class.
 
-Covers behavior and cross-checks defined for deliverable 1 of the
-``manage-config effort write API`` plan:
+Covers the behavior and cross-checks the ``manage-config effort`` write API
+requires:
 
 1. All three presets exist as class-level attributes.
 2. ``get(name)`` resolves canonical names and case/separator aliases.

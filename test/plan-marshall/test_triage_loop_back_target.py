@@ -144,9 +144,9 @@ class TestTriageGranularityCallSiteAlignment:
     - ``automatic-review.md`` still records ``--outcome loop_back`` on its own
       Branch C intermediate-pass tail and MUST forward
       ``--loop-back-target`` there (per the manage-status validation contract).
-    - ``sonar-roundtrip.md`` is now **FIND-only** (deliverable 4 removed its
-      inline ``verification-feedback`` triage dispatch and all loop-back
-      bookkeeping): it files ``sonar-issue`` findings and stops. Loop-back is
+    - ``sonar-roundtrip.md`` is **FIND-only** — it carries no inline
+      ``verification-feedback`` triage dispatch and no loop-back bookkeeping:
+      it files ``sonar-issue`` findings and stops. Loop-back is
       owned by the dispatcher-level unified wait-region triage
       (``producer=finalize-feedback``), so sonar-roundtrip MUST NOT forward
       ``--loop-back-target`` itself."""
