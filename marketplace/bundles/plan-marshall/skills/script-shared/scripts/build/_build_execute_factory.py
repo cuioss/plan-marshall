@@ -436,6 +436,31 @@ def _record_resolution(
         # WARNING is suppressed; the single transition ERROR stands for it.
 
 
+def _routed_errors_extra(verdict: Any) -> dict[str, Any]:
+    """Carry the INNER wrapper's structured ``errors[]`` onto a routed result.
+
+    The routing counterpart of ``routed_tests_run``, and the same boundary defect
+    one field over. The log a routed run hands back is the daemon job log — the
+    wrapper's emitted TOON, not the raw test-runner output — so the outer
+    renderer's re-parse of it finds no per-test rows and falls through to its
+    synthetic ``build_failure`` row reading *"Build failed but no structured
+    errors were parsed"*. The inner wrapper had already parsed them correctly;
+    the routing layer's job is to hand them on, not to re-derive them.
+
+    An absent verdict or an empty table attaches NO key, so the renderer keeps its
+    existing re-parse path unchanged for every build that carries nothing.
+
+    Args:
+        verdict: The :class:`LogVerdict` read back from the job log, or ``None``.
+
+    Returns:
+        ``{'routed_errors': [...]}`` when the log carried rows, else ``{}``.
+    """
+    if verdict is None or not verdict.errors:
+        return {}
+    return {'routed_errors': [dict(row) for row in verdict.errors]}
+
+
 def _daemon_result_to_direct(waited: dict[str, Any], command_str: str) -> DirectCommandResult:
     """Map a client ``wait`` status-TOON to a ``DirectCommandResult``.
 
@@ -522,12 +547,18 @@ def _daemon_result_to_direct(waited: dict[str, Any], command_str: str) -> Direct
             result['message'] = str(daemon_message)
         return result  # type: ignore[return-value]
     if job_status == WIRE_STATUS_FAILURE:
+        # The routed-failure leg, and the one the observed defect took: the
+        # daemon's own exit-0-narrowing already downgraded the wrapper's `error`
+        # verdict to `failure`, so the log is read here purely to carry the
+        # per-test rows it recorded. Without them the renderer re-parses this same
+        # TOON as if it were test-runner output and synthesises one opaque row.
         return error_result(  # type: ignore[return-value]
             ERROR_BUILD_FAILED,
             exit_code or 1,
             duration,
             log_file,
             command_str,
+            **_routed_errors_extra(read_log_verdict(log_file)),
         )
     return indeterminate_result(  # type: ignore[return-value]
         f'daemon reported terminal job_status {job_status!r}, which this client '
@@ -578,7 +609,12 @@ def _result_for_log_verdict(
         )
     if status == 'error':
         return error_result(  # type: ignore[return-value]
-            ERROR_BUILD_FAILED, exit_code or 1, duration, log_file, command_str
+            ERROR_BUILD_FAILED,
+            exit_code or 1,
+            duration,
+            log_file,
+            command_str,
+            **_routed_errors_extra(verdict),
         )
     return indeterminate_result(  # type: ignore[return-value]
         f'job log reported status {status!r}, which is outside the build-result '

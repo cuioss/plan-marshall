@@ -562,6 +562,36 @@ def _cap_errors_with_truncation(errors: list[Issue], cap: int = _ERRORS_EMIT_CAP
     return shown, truncated
 
 
+def _issues_from_routed_errors(rows: list[dict[str, Any]]) -> list[Issue]:
+    """Rehydrate the INNER wrapper's ``errors[]`` rows into Issue objects.
+
+    Every row on an emitted ``errors[]`` table is an ERROR by construction — the
+    producer partitioned by severity before emitting, and warnings go to their own
+    array — so the severity is reinstated rather than read off a field the wire
+    shape does not carry.
+
+    ``signature`` is deliberately left unset: it is the parser-computed dedup
+    identity and the wire shape does not carry it, so the shown-set dedup falls
+    back to its per-failure ``category:file:line:message`` key. That is the
+    correct outcome here, because the inner wrapper already applied the signature
+    dedup before emitting these rows.
+    """
+    issues: list[Issue] = []
+    for row in rows:
+        line = row.get('line')
+        issues.append(
+            Issue(
+                file=row.get('file') or None,
+                line=line if isinstance(line, int) else None,
+                message=str(row.get('message') or ''),
+                severity=SEVERITY_ERROR,
+                category=str(row.get('category') or '') or None,
+                detail=row.get('detail') or None,
+            )
+        )
+    return issues
+
+
 def _non_finish_evidence(
     log_file: str,
     command_str: str,
@@ -884,6 +914,21 @@ def cmd_run_common(
             issues, test_summary, build_status = parser_fn(log_file, command_str)
         else:
             issues, test_summary, build_status = parser_fn(log_file)
+
+        # A DAEMON-ROUTED failure carries the INNER wrapper's own structured rows
+        # on the result (`routed_errors`), and they WIN over the re-parse above.
+        # The log a routed run hands back is the daemon job log — the wrapper's
+        # emitted TOON, not the raw test-runner output — so the parse finds no
+        # per-test rows and the run falls through to the synthetic
+        # `build_failure` row below, publishing "no structured errors were
+        # parsed" over findings that were parsed perfectly well one layer in.
+        # This is the same boundary rule `routed_tests_run` already follows: a
+        # routed result carries what the routed job produced, and the outer
+        # wrapper re-derives nothing it was handed. An in-process build carries
+        # no such key and keeps its own parse unchanged.
+        routed_errors = result.get('routed_errors')
+        if routed_errors:
+            issues = _issues_from_routed_errors(routed_errors)
 
         # Auto-store parsed issues as findings when --plan-id is provided.
         # Always-on: every parsed issue (build-error / test-failure /

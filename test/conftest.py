@@ -66,13 +66,6 @@ collect_ignore = [
     # in-process synthetic-graph units in
     # tools-marketplace-inventory/test_resolve_dependencies.py.
     'pm-plugin-development/tools-marketplace-inventory/integration/test_resolve_dependencies_smoke.py',
-    # Real-tree manage-invocation smokes — derive the real script --help surface
-    # against the live .plan/execute-script.py executor (zero-false-positive
-    # checks for the loop-registered / shared-flag / many-subcommand shapes).
-    # The per-shape / per-finding-type coverage lives in the in-process
-    # synthetic-argparse units in
-    # plugin-doctor/test_analyze_manage_invocation.py.
-    'pm-plugin-development/plugin-doctor/integration/test_analyze_manage_invocation_smoke.py',
 ]
 
 
@@ -80,17 +73,35 @@ collect_ignore = [
 # Executor Bootstrap (CI session setup)
 # =============================================================================
 
+class ExecutorBootstrapError(RuntimeError):
+    """The suite's executor substrate could not be brought into existence.
+
+    Raised by :func:`_ensure_executor_present` at conftest-import time, which
+    aborts the run. That is the point. The bootstrap used to print a warning and
+    return, which meant a broken substrate produced a green run over a smaller
+    suite: the tests that subprocess to the executor either skipped themselves or
+    failed far from the cause, and nothing in the summary said the substrate was
+    the reason.
+    """
+
+
 def _ensure_executor_present() -> None:
-    """Generate ``.plan/execute-script.py`` if missing.
+    """Generate ``.plan/execute-script.py`` if missing, or fail the run.
 
     The executor is gitignored, so a fresh checkout (CI runner, ephemeral
     container) doesn't have it. Several script-under-test invocations
     (e.g., ``tools-input-validation``'s lesson-ID anchor) subprocess to
-    ``python3 .plan/execute-script.py ...`` and fail without it. Local
-    developer environments have it from prior ``/marshall-steward`` runs;
-    CI needs it bootstrapped at session start.
+    ``python3 .plan/execute-script.py ...``, and the real-tree
+    argument-naming corpus asserts the substrate is present rather than
+    skipping when it is not — so its verdict rests on this bootstrap.
 
     Idempotent: re-runs are no-ops if the executor is already present.
+
+    Raises:
+        ExecutorBootstrapError: when the generator is missing, or when
+            generating the executor fails. Both are broken-environment
+            conditions rather than environments the suite does not apply to,
+            so both stop the run and name what went wrong.
     """
     executor_path = PROJECT_ROOT / PLAN_DIR_NAME / 'execute-script.py'
     if executor_path.exists():
@@ -105,14 +116,11 @@ def _ensure_executor_present() -> None:
         / 'generate_executor.py'
     )
     if not generator.exists():
-        # Generator script missing — surface a clear message instead of a
-        # cryptic FileNotFoundError downstream. Tests that depend on the
-        # executor will still fail loudly.
-        print(
-            f'WARNING: conftest could not bootstrap executor — generator missing at {generator}',
-            file=sys.stderr,
+        raise ExecutorBootstrapError(
+            f'Cannot bootstrap the executor: the generator is missing at {generator}. '
+            f'The suite subprocesses to {executor_path} and asserts its presence, so a '
+            f'run without it would cover less than it reports.'
         )
-        return
 
     try:
         subprocess.run(
@@ -124,12 +132,16 @@ def _ensure_executor_present() -> None:
             timeout=120,
         )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
-        # Failure here is non-fatal at conftest-import time. Tests that
-        # genuinely need the executor will fail with their own diagnostics;
-        # tests that don't need it (the majority) keep running.
-        print(
-            f'WARNING: conftest executor bootstrap failed: {exc}',
-            file=sys.stderr,
+        detail = getattr(exc, 'stderr', None) or ''
+        raise ExecutorBootstrapError(
+            f'Executor bootstrap failed while running {generator}: {exc}. '
+            f'{detail}'.rstrip()
+        ) from exc
+
+    if not executor_path.exists():
+        raise ExecutorBootstrapError(
+            f'Executor bootstrap reported success but wrote no executor at {executor_path}. '
+            f'Re-run the generator directly to see why.'
         )
 
 
@@ -848,6 +860,56 @@ def create_temp_dir() -> Path:
 
 import pytest  # noqa: E402
 
+# =============================================================================
+# Required-tool preflight (checked once per session)
+# =============================================================================
+
+#: External binaries the suite shells out to and may therefore assume are on
+#: ``PATH``. :func:`pytest_sessionstart` checks the set ONCE per session and
+#: fails the run loudly, naming what is missing.
+#:
+#: These are REQUIRED, not optional. The tests that use them previously carried
+#: 42 per-test ``shutil.which`` skip guards spread over 37 distinct tests — the
+#: two counts are NOT the same number, because five tests guarded on BOTH
+#: binaries and so carried two decorators each. A missing binary turned the run
+#: quietly smaller: the suite reported green while dropping up to 37 tests (28 on
+#: an absent ``git``, 14 on an absent ``rsync``), and nothing in the output said
+#: so. One loud preflight replaces all 42 guards, so an absent tool is a failed
+#: run rather than a silent coverage hole.
+#:
+#: Tooling a test may legitimately run WITHOUT is deliberately absent from this
+#: tuple — ``pyright-langserver`` is the standing example. Those tests keep their
+#: own guards, because their absence is an expected environment difference rather
+#: than a broken one. Adding an optional tool here would fail every run on every
+#: machine that does not install it.
+REQUIRED_TOOLS: tuple[str, ...] = ('git', 'rsync')
+
+
+def pytest_sessionstart() -> None:
+    """Refuse to run the suite when a required external tool is missing.
+
+    Fails rather than skips, and fails at session start rather than per test.
+    A skip lets the run finish green with less coverage than it advertises;
+    failing here means the operator learns immediately, and learns which tool to
+    install.
+
+    Declares no parameters on purpose: pluggy passes a hook only the arguments it
+    asks for, and this check needs none of the session state.
+    """
+    missing = [tool for tool in REQUIRED_TOOLS if shutil.which(tool) is None]
+    if not missing:
+        return
+    raise pytest.UsageError(
+        'Required external tool(s) not found on PATH: '
+        + ', '.join(missing)
+        + '.\n\nThis suite requires all of: '
+        + ', '.join(REQUIRED_TOOLS)
+        + '. Install the missing tool(s) and re-run. The tests that need them are '
+        'no longer individually skipped, so a missing tool fails the run instead '
+        'of silently shrinking it.'
+    )
+
+
 #: Context managers that OWN ``PLAN_BASE_DIR`` for the block they wrap. A module
 #: naming one of them drives real plan state even when it never requests the
 #: ``plan_context`` fixture, which is the gap a fixture-name-only predicate left:
@@ -1162,74 +1224,285 @@ def pytest_report_header(config):
         # neither the test nor the cause. The line is unconditional when it fires,
         # so the omission cannot pass unseen on a green run.
         lines.append('routing-guard roster DRIFT: ' + '; '.join(discrepancies))
+    # Published unconditionally, for the same reason the populations above are: a
+    # green run reports nothing, so an exception list that grew — each entry one
+    # more test the suite no longer runs — would look exactly like one that did
+    # not. The size is the figure a reader can watch; the entries themselves, with
+    # their class and reason, are in _SKIP_EXCEPTIONS.
+    lines.append(f'residual skippable set: {len(_SKIP_EXCEPTIONS)} nodeid(s) permitted to skip')
     return lines
 
 
-#: Opt-in flag for the reference-platform ``skipped == 0`` gate. The gate is off
-#: by default so a developer's ``-k``-filtered or otherwise partial run is never
-#: failed by it.
+#: The residual skippable set: every skip this suite still permits, keyed by
+#: nodeid, each carrying the CLASS it belongs to and the REASON that class is
+#: legitimate. :func:`pytest_sessionfinish` fails the run on any skip NOT listed
+#: here, so this dict is the complete, enumerated boundary of what a green run is
+#: allowed to have left uncovered.
 #:
-#: ⛔ **No producer in this repository sets it.** A sweep over the inventoried tree
-#: and over all seven files in ``.github/workflows/`` (which the inventory does not
-#: reach, so they were read individually) finds this name on exactly three lines,
-#: all of them below in this file. :func:`pytest_sessionfinish` therefore returns at
-#: its first line on every run this project performs, and the gate has never once
-#: rendered a verdict. The one thing this repository cannot see is the body of the
-#: reusable org workflow ``python-verify.yml`` delegates to, which lives in another
-#: repository; the claim is scoped accordingly, and is an absence of a producer
-#: HERE rather than a proof that nothing anywhere sets it.
+#: **The reason is enforced, not merely recorded.** An entry approves a specific
+#: CAUSE for a nodeid, not the nodeid itself: a listed test that starts skipping
+#: for a different cause fails the run exactly as an unlisted one does. Without
+#: that, an approval granted for an absent tool would go on covering a fixture
+#: that broke later — a new skip inheriting an old exemption, which is the same
+#: silent loss of coverage this gate exists to catch.
 #:
-#: Arming it (have CI export ``1``) and deleting it (drop an unreachable gate) are
-#: both defensible and both change what the suite guarantees, so neither is made
-#: here — the choice with its costs is recorded for the operator.
-_STRICT_NO_SKIP_ENV = 'PLAN_MARSHALL_STRICT_NO_SKIP'
+#: It is a named enumeration rather than a count or a path prefix on purpose. A
+#: count cannot say WHICH test stopped running, and a prefix silently absorbs a
+#: new skip added later to an already-listed module — which is the failure this
+#: gate exists to catch. A skip that belongs here is added deliberately, with its
+#: reason, in the same change that introduces it.
+#:
+#: Two classes are represented, and only two are legitimate:
+#:
+#: ``absent-dependency``
+#:     An external tool the suite does not require. ``pyright-langserver`` is the
+#:     only one: it is a real language server, deliberately NOT in
+#:     :data:`REQUIRED_TOOLS`, because its absence is an ordinary environment
+#:     difference rather than a broken environment. Ten nodeids across four guard
+#:     sites depend on it — one module-level ``pytestmark`` covering seven tests
+#:     in ``test_lsp_integration.py``, two decorators in ``test_lsp_harvest.py``,
+#:     and one in ``test_lsp_harvest_search_path.py``. A dependency proposal for
+#:     it is recorded with the plan rather than made here, because installing it
+#:     changes what every run costs.
+#:
+#: ``in-suite-policy``
+#:     The skip is a verdict about the suite's own DATA, not about the
+#:     environment: a parametrized case whose parameter carries nothing to assert.
+#:     It cannot be fixed by installing anything, and it legitimately varies as
+#:     the data changes — so it is listed per case, and a second bot acquiring a
+#:     declared refusal phrasing removes its entry rather than silently widening
+#:     an existing one.
+#:
+#: ⛔ **Platform and environment guards that do NOT fire here are deliberately
+#: absent.** ``test_tree_copy.py``'s three ``sys.platform == 'win32'`` guards, and
+#: the undeclared environment-variable preconditions in ``test_qgate_closure.py``
+#: and ``test_plan_state_exemption.py``, skip nothing on this platform and so have
+#: no nodeid to list. Listing them pre-emptively would grant a standing exemption
+#: to skips nobody has observed, which is the opposite of an enumerated boundary.
+#: On a platform where they DO fire, the gate names them and the list is extended
+#: deliberately.
+_SKIP_EXCEPTIONS: dict[str, tuple[str, str]] = {
+    # --- absent-dependency: pyright-langserver (4 guard sites, 10 nodeids) ---
+    'test/plan-marshall/lsp-client/test_lsp_integration.py::test_real_adversarial_defect_fails_and_rolls_back': (
+        'absent-dependency',
+        'pyright-langserver not installed',
+    ),
+    'test/plan-marshall/lsp-client/test_lsp_integration.py::test_real_clean_rename_edit': (
+        'absent-dependency',
+        'pyright-langserver not installed',
+    ),
+    'test/plan-marshall/lsp-client/test_lsp_integration.py::test_real_document_symbol_and_references': (
+        'absent-dependency',
+        'pyright-langserver not installed',
+    ),
+    'test/plan-marshall/lsp-client/test_lsp_integration.py::test_real_document_symbol_flattens_a_class_and_carries_its_path': (
+        'absent-dependency',
+        'pyright-langserver not installed',
+    ),
+    'test/plan-marshall/lsp-client/test_lsp_integration.py::test_real_preflight_ready': (
+        'absent-dependency',
+        'pyright-langserver not installed',
+    ),
+    'test/plan-marshall/lsp-client/test_lsp_integration.py::test_real_workspace_symbol_after_indexing': (
+        'absent-dependency',
+        'pyright-langserver not installed',
+    ),
+    'test/plan-marshall/lsp-client/test_lsp_integration.py::test_real_workspace_symbol_rows_name_the_defining_file': (
+        'absent-dependency',
+        'pyright-langserver not installed',
+    ),
+    'test/pm-plugin-development/plan-marshall-plugin/test_lsp_harvest.py::test_end_to_end_harvest_against_a_real_server': (
+        'absent-dependency',
+        'pyright-langserver not installed',
+    ),
+    'test/pm-plugin-development/plan-marshall-plugin/test_lsp_harvest.py::test_end_to_end_materialization_produces_lsp_component_refs': (
+        'absent-dependency',
+        'pyright-langserver not installed',
+    ),
+    'test/pm-plugin-development/plan-marshall-plugin/test_lsp_harvest_search_path.py::test_a_real_cross_bundle_import_becomes_a_named_module_edge': (
+        'absent-dependency',
+        'pyright-langserver not installed',
+    ),
+    # --- in-suite-policy: a parametrized case with no data to assert ---
+    # The reason is the guard's own text, verbatim: the gate compares it against
+    # what pytest records, so an explanatory gloss appended here would never match
+    # and would read as a changed cause. Why this case has nothing to assert is
+    # documented under ``in-suite-policy`` above, where prose belongs.
+    'test/plan-marshall/workflow-integration-github/test_refusal_recovery_arming.py'
+    '::TestRefusalIsNeverABareTimeout::test_a_bots_declared_refusal_is_recognized_as_DATA[cuioss-review-bot]': (
+        'in-suite-policy',
+        'cuioss-review-bot declares no observed refusal phrasing',
+    ),
+}
 
 
-#: Nodeids of every test the session reported as skipped. Under xdist the
-#: workers stream their reports back to the controller, so the controller's
-#: copy of this set is complete and is the one the gate reads.
-_SKIPPED_NODEIDS: set = set()
+#: Nodeids of every test the session reported as skipped, mapped to the reason
+#: pytest recorded. Under xdist the workers stream their reports back to the
+#: controller, so the controller's copy is complete and is the one the gate reads.
+#:
+#: The reason is carried alongside the nodeid because the gate's failure message
+#: is the operator's only view of WHY a test stopped running: a bare list of
+#: nodeids says a guard fired but not which condition fired it, which is the
+#: difference between an actionable failure and one that sends the reader back to
+#: the source.
+_SKIPPED_NODEIDS: dict[str, str] = {}
+
+
+def _skip_reason(report) -> str:
+    """The reason text pytest recorded for a skipped report.
+
+    ``longrepr`` for a skip is a ``(path, lineno, message)`` triple, but a report
+    reconstructed by an xdist worker can carry a plain string instead. Both shapes
+    are handled, and an unrecognised one degrades to a marker rather than raising:
+    this runs inside a reporting hook, where an exception would replace a real
+    skip-gate verdict with a hook traceback.
+    """
+    longrepr = getattr(report, 'longrepr', None)
+    if isinstance(longrepr, tuple) and len(longrepr) == 3:
+        return str(longrepr[2])
+    if isinstance(longrepr, str) and longrepr:
+        return longrepr
+    return '<no reason recorded>'
+
+
+#: The prefix pytest puts in front of the reason it renders into ``longrepr``.
+_SKIP_REASON_PREFIX = 'skipped:'
+
+
+def _normalize_skip_reason(reason: str) -> str:
+    """The comparable form of a skip reason.
+
+    pytest renders the message in the ``longrepr`` triple as ``Skipped: <reason>``
+    in the common case, so the RECORDED text carries a prefix the APPROVED text
+    in :data:`_SKIP_EXCEPTIONS` never does — comparing the two raw would report a
+    mismatch on every entry. The strip is case-insensitive because the casing is
+    pytest's to choose, not this suite's.
+
+    Whitespace is collapsed as well as trimmed: a reason that reaches the report
+    rewrapped across lines is the same reason, and a comparison that says
+    otherwise fails for formatting rather than for cause.
+
+    This is a named function rather than an expression inlined at the comparison
+    so the transformation applied to both sides is inspectable in one place.
+    """
+    text = reason.strip()
+    if text.lower().startswith(_SKIP_REASON_PREFIX):
+        text = text[len(_SKIP_REASON_PREFIX) :]
+    return ' '.join(text.split())
+
+
+def _skip_offenders(
+    skipped: dict[str, str],
+    approved: dict[str, tuple[str, str]],
+) -> tuple[list[str], list[tuple[str, str, str]]]:
+    """The two kinds of unapproved skip, as ``(unlisted, mismatched)``.
+
+    ``unlisted`` holds the nodeids absent from ``approved`` — the arm that has
+    always fired. ``mismatched`` holds ``(nodeid, approved_reason,
+    recorded_reason)`` triples whose nodeid IS listed but whose recorded reason
+    is not the one it was listed for: an entry exempts a nodeid for the CAUSE
+    recorded beside it, so a test that starts skipping for a new cause is a new
+    skip and must not inherit the old approval.
+
+    The two are returned separately because they need different remedies — add an
+    entry, versus investigate a changed cause — and a caller that cannot tell
+    them apart cannot say which.
+
+    Containment, not equality: pytest may append context to a reason, and a
+    whole-string comparison would redden every such run for no defect. Both sides
+    are normalized (see :func:`_normalize_skip_reason`) and compared
+    case-insensitively.
+    """
+    unlisted: list[str] = []
+    mismatched: list[tuple[str, str, str]] = []
+    for nodeid, recorded in sorted(skipped.items()):
+        entry = approved.get(nodeid)
+        if entry is None:
+            unlisted.append(nodeid)
+            continue
+        approved_reason = entry[1]
+        if _normalize_skip_reason(approved_reason).lower() not in _normalize_skip_reason(recorded).lower():
+            mismatched.append((nodeid, approved_reason, recorded))
+    return unlisted, mismatched
 
 
 def pytest_runtest_logreport(report):
-    """Accumulate skipped nodeids for the session-level zero-skip gate."""
+    """Accumulate skipped nodeids and their reasons for the session-level gate."""
     if report.skipped:
-        _SKIPPED_NODEIDS.add(report.nodeid)
+        _SKIPPED_NODEIDS[report.nodeid] = _skip_reason(report)
 
 
 def pytest_sessionfinish(session, exitstatus):
-    """Fail a reference-platform full run that skipped any test.
+    """Fail any full run that skipped a test outside :data:`_SKIP_EXCEPTIONS`.
 
-    Every skip in this suite is meant to be either a tracked-artifact guard
-    (which is now a hard assertion) or a genuine environment guard that does
-    not trigger on the reference platform. A non-zero skip count there means a
-    guard silently disarmed a test, so the run fails rather than reporting a
-    green suite that quietly covered less than it claims.
+    The gate is ALWAYS ON. It previously required an opt-in environment flag, and
+    no producer in this repository ever set it — a sweep of the inventoried tree
+    and of every file in ``.github/workflows/`` found the name only in this file —
+    so the gate returned at its first line on every run and had never once
+    rendered a verdict. A gate nothing arms is not a weaker gate; it is the
+    appearance of one, which is worse than none because the suite reads as
+    guarded. The flag is deleted rather than armed from CI, so the guarantee
+    holds on a developer's machine and in CI alike, and cannot be lost again by
+    an environment that simply does not export it.
 
-    The gate is deliberately narrow. It is active only when the opt-in flag is
-    set, and it exempts a ``-k`` / ``-m`` filtered run, which legitimately
-    skips tests. A developer's partial run is therefore never failed by it.
+    ⛔ **One residual is outside this repository's sight.** ``python-verify.yml``
+    delegates the whole verify job to a reusable workflow in
+    ``cuioss/cuioss-organization``, whose body this checkout does not contain.
+    Deleting the flag makes that residual moot for the gate — there is no longer
+    a variable for any workflow, visible or not, to set or fail to set — but it
+    is recorded because the previous claim rested on it.
+
+    Two exemptions remain, and both are about runs that legitimately cover less
+    than the whole suite rather than about skips:
+
+    * an xdist worker never renders the verdict — the controller owns it, and it
+      is the controller that sees every worker's reports;
+    * a ``-k`` / ``-m`` filtered run is exempt, because filtering is the
+      developer asking for a subset and its deselections are not guard failures.
+
+    Every other skip is measured against the enumerated exception list on BOTH
+    halves of its entry: the nodeid AND the reason. A nodeid that is not on the
+    list fails the session, and so does a listed nodeid that skipped for a cause
+    other than the one it was listed for — an entry approves a specific cause,
+    not the test. Each kind is reported separately, naming the nodeid and the
+    reason, because they need different remedies.
     """
-    if os.environ.get(_STRICT_NO_SKIP_ENV) != '1':
-        return
     config = session.config
     if hasattr(config, 'workerinput'):
         return  # xdist worker — the controller owns the session-level verdict
     if getattr(config.option, 'keyword', '') or getattr(config.option, 'markexpr', ''):
         return
-    if not _SKIPPED_NODEIDS:
+    unlisted, mismatched = _skip_offenders(_SKIPPED_NODEIDS, _SKIP_EXCEPTIONS)
+    if not unlisted and not mismatched:
         return
     session.exitstatus = 1
     reporter = config.pluginmanager.get_plugin('terminalreporter')
-    if reporter is not None:
-        reporter.write_line('')
+    if reporter is None:
+        return
+    reporter.write_line('')
+    if unlisted:
         reporter.write_line(
-            f'ERROR: reference-platform run skipped {len(_SKIPPED_NODEIDS)} test(s), '
-            f'but the suite must report zero skips when {_STRICT_NO_SKIP_ENV}=1:',
+            f'ERROR: {len(unlisted)} test(s) skipped outside the {len(_SKIP_EXCEPTIONS)}-entry '
+            f'residual skippable set. A green run must not quietly cover less than it '
+            f'claims: either fix the condition, or add the nodeid to _SKIP_EXCEPTIONS in '
+            f'test/conftest.py with its class and reason.',
             red=True,
         )
-        for nodeid in sorted(_SKIPPED_NODEIDS):
+        for nodeid in unlisted:
             reporter.write_line(f'  {nodeid}', red=True)
+            reporter.write_line(f'      reason: {_SKIPPED_NODEIDS[nodeid]}', red=True)
+    if mismatched:
+        reporter.write_line(
+            f'ERROR: {len(mismatched)} listed test(s) skipped for a reason other than the '
+            f'approved one. An entry in _SKIP_EXCEPTIONS approves a specific CAUSE, not the '
+            f'test, so a new cause is an unapproved skip: investigate what changed, and '
+            f'update the entry in test/conftest.py only once the new cause is understood.',
+            red=True,
+        )
+        for nodeid, approved_reason, recorded_reason in mismatched:
+            reporter.write_line(f'  {nodeid}', red=True)
+            reporter.write_line(f'      approved reason: {approved_reason}', red=True)
+            reporter.write_line(f'      recorded reason: {recorded_reason}', red=True)
 
 
 _ENTRY_CWD_KEY = pytest.StashKey[str]()

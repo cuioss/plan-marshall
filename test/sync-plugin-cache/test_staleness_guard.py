@@ -53,7 +53,6 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
-import shutil
 import subprocess
 import sys
 import textwrap
@@ -187,8 +186,6 @@ def _compute_fingerprint_for(cwd: Path) -> str:
 # =============================================================================
 
 
-@pytest.mark.skipif(shutil.which('git') is None, reason='git not on PATH')
-@pytest.mark.skipif(shutil.which('rsync') is None, reason='rsync not on PATH')
 def test_fresh_emit_with_matching_fingerprint_passes(tmp_path: Path) -> None:
     """A sentinel written with the live fingerprint lets sync proceed."""
     cwd = tmp_path / 'project'
@@ -214,7 +211,6 @@ def test_fresh_emit_with_matching_fingerprint_passes(tmp_path: Path) -> None:
 # =============================================================================
 
 
-@pytest.mark.skipif(shutil.which('git') is None, reason='git not on PATH')
 def test_missing_sentinel_refuses(tmp_path: Path) -> None:
     """Sync refuses with the documented message when the sentinel is absent."""
     cwd = tmp_path / 'project'
@@ -232,7 +228,6 @@ def test_missing_sentinel_refuses(tmp_path: Path) -> None:
     assert 'finalize-step-deploy-target' in data['summary_message']
 
 
-@pytest.mark.skipif(shutil.which('git') is None, reason='git not on PATH')
 def test_unparseable_sentinel_refuses(tmp_path: Path) -> None:
     """A corrupted sentinel JSON triggers the same refusal branch."""
     cwd = tmp_path / 'project'
@@ -249,7 +244,6 @@ def test_unparseable_sentinel_refuses(tmp_path: Path) -> None:
     assert 'sentinel' in data['summary_message']
 
 
-@pytest.mark.skipif(shutil.which('git') is None, reason='git not on PATH')
 def test_sentinel_with_null_fingerprint_refuses(tmp_path: Path) -> None:
     """The non-git fallback sentinel (null fingerprint) must NOT pass the guard."""
     cwd = tmp_path / 'project'
@@ -271,7 +265,6 @@ def test_sentinel_with_null_fingerprint_refuses(tmp_path: Path) -> None:
 # =============================================================================
 
 
-@pytest.mark.skipif(shutil.which('git') is None, reason='git not on PATH')
 def test_source_drift_after_emit_refuses(tmp_path: Path) -> None:
     """Mutating a tracked file after the sentinel was written trips the guard."""
     cwd = tmp_path / 'project'
@@ -301,7 +294,6 @@ def test_source_drift_after_emit_refuses(tmp_path: Path) -> None:
 # =============================================================================
 
 
-@pytest.mark.skipif(shutil.which('git') is None, reason='git not on PATH')
 def test_skip_staleness_guard_bypasses_missing_sentinel(tmp_path: Path) -> None:
     """--skip-staleness-guard reaches the sync path even when the sentinel is missing."""
     cwd = tmp_path / 'project'
@@ -322,8 +314,6 @@ def test_skip_staleness_guard_bypasses_missing_sentinel(tmp_path: Path) -> None:
     assert 'no matching bundles' in data['summary_message']
 
 
-@pytest.mark.skipif(shutil.which('git') is None, reason='git not on PATH')
-@pytest.mark.skipif(shutil.which('rsync') is None, reason='rsync not on PATH')
 def test_skip_staleness_guard_bypasses_fingerprint_mismatch(tmp_path: Path) -> None:
     """--skip-staleness-guard reaches the sync path even with a stale sentinel."""
     cwd = tmp_path / 'project'
@@ -347,7 +337,6 @@ def test_skip_staleness_guard_bypasses_fingerprint_mismatch(tmp_path: Path) -> N
 # =============================================================================
 
 
-@pytest.mark.skipif(shutil.which('git') is None, reason='git not on PATH')
 def test_fingerprint_is_deterministic_across_repeated_calls(tmp_path: Path) -> None:
     """(i) The fingerprint must be byte-stable for an unchanged tree."""
     cwd = tmp_path / 'project'
@@ -362,7 +351,6 @@ def test_fingerprint_is_deterministic_across_repeated_calls(tmp_path: Path) -> N
     assert len(first) == 40  # sha-1 hex
 
 
-@pytest.mark.skipif(shutil.which('git') is None, reason='git not on PATH')
 def test_fingerprint_sorts_paths_before_folding(tmp_path: Path) -> None:
     """(ii) The helper folds paths in sorted order, so iteration order is irrelevant.
 
@@ -387,7 +375,6 @@ def test_fingerprint_sorts_paths_before_folding(tmp_path: Path) -> None:
     assert compute_source_tree_fingerprint(cwd) == expected.hexdigest()
 
 
-@pytest.mark.skipif(shutil.which('git') is None, reason='git not on PATH')
 def test_fingerprint_excludes_untracked_and_gitignored_paths(tmp_path: Path) -> None:
     """(iii) Untracked + gitignored files MUST NOT contribute to the digest."""
     cwd = tmp_path / 'project'
@@ -409,7 +396,6 @@ def test_fingerprint_excludes_untracked_and_gitignored_paths(tmp_path: Path) -> 
     assert after == baseline
 
 
-@pytest.mark.skipif(shutil.which('git') is None, reason='git not on PATH')
 def test_fingerprint_changes_when_tracked_worktree_file_mutates(tmp_path: Path) -> None:
     """(iv) Mutating a tracked worktree file (without commit) changes the digest.
 
@@ -433,7 +419,6 @@ def test_fingerprint_changes_when_tracked_worktree_file_mutates(tmp_path: Path) 
     assert drifted != baseline
 
 
-@pytest.mark.skipif(shutil.which('git') is None, reason='git not on PATH')
 def test_hash_objects_matches_git_native_invocation(tmp_path: Path) -> None:
     """(v) Per-file blob SHA must equal ``git hash-object`` invoked independently.
 
@@ -455,7 +440,6 @@ def test_hash_objects_matches_git_native_invocation(tmp_path: Path) -> None:
     assert helper_sha == native
 
 
-@pytest.mark.skipif(shutil.which('git') is None, reason='git not on PATH')
 def test_fingerprint_raises_outside_git_repo(outside_repo_dir: Path) -> None:
     """The helper refuses on non-git trees — no silent zero-hash fallback."""
     # ``cwd`` must be OUTSIDE the repo: pytest's tmp_path now roots under the
@@ -489,7 +473,6 @@ def test_fingerprint_raises_outside_git_repo(outside_repo_dir: Path) -> None:
 # manifest file (missing), or a live file absent from the manifest (extra).
 
 
-@pytest.mark.skipif(shutil.which('git') is None, reason='git not on PATH')
 def test_file_drift_missing_from_target_refuses(tmp_path: Path) -> None:
     """A manifest entry whose live target file is deleted is named as missing.
 
@@ -520,7 +503,6 @@ def test_file_drift_missing_from_target_refuses(tmp_path: Path) -> None:
     assert './pw generate-claude' in data['summary_message']
 
 
-@pytest.mark.skipif(shutil.which('git') is None, reason='git not on PATH')
 def test_file_drift_extra_in_target_refuses(tmp_path: Path) -> None:
     """A live target file absent from the manifest is named as extra in target.
 
@@ -547,7 +529,6 @@ def test_file_drift_extra_in_target_refuses(tmp_path: Path) -> None:
     assert 'extra in target: demo/STALE.md' in data['summary_message']
 
 
-@pytest.mark.skipif(shutil.which('git') is None, reason='git not on PATH')
 def test_file_drift_content_diverged_refuses(tmp_path: Path) -> None:
     """A manifest-listed file whose live bytes change is named as diverged.
 
@@ -574,7 +555,6 @@ def test_file_drift_content_diverged_refuses(tmp_path: Path) -> None:
     assert 'content diverged: demo/README.md' in data['summary_message']
 
 
-@pytest.mark.skipif(shutil.which('git') is None, reason='git not on PATH')
 def test_file_drift_reports_all_three_classes_together(tmp_path: Path) -> None:
     """missing, extra, and diverged drift are reported in one refusal message."""
     cwd = tmp_path / 'project'
@@ -605,8 +585,6 @@ def test_file_drift_reports_all_three_classes_together(tmp_path: Path) -> None:
     assert 'content diverged: demo/README.md' in msg
 
 
-@pytest.mark.skipif(shutil.which('git') is None, reason='git not on PATH')
-@pytest.mark.skipif(shutil.which('rsync') is None, reason='rsync not on PATH')
 def test_no_file_drift_when_target_matches_manifest_passes(tmp_path: Path) -> None:
     """An intact tree matching its emit manifest clears the file-level check.
 
@@ -632,8 +610,6 @@ def test_no_file_drift_when_target_matches_manifest_passes(tmp_path: Path) -> No
     assert (cache / 'demo2' / '0.2.0' / 'README.md').is_file()
 
 
-@pytest.mark.skipif(shutil.which('git') is None, reason='git not on PATH')
-@pytest.mark.skipif(shutil.which('rsync') is None, reason='rsync not on PATH')
 def test_skip_staleness_guard_bypasses_file_drift(tmp_path: Path) -> None:
     """--skip-staleness-guard reaches the sync path even with file-level drift."""
     cwd = tmp_path / 'project'
@@ -818,7 +794,6 @@ def _guard_ready_project(cwd: Path) -> tuple[Path, Path]:
     return cwd / 'target' / 'claude', cwd / 'marketplace' / 'bundles'
 
 
-@pytest.mark.skipif(shutil.which('git') is None, reason='git not on PATH')
 def test_helper_import_failure_is_reported_as_probe_failed_not_stale(
     tmp_path: Path, sync_module, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -842,7 +817,6 @@ def test_helper_import_failure_is_reported_as_probe_failed_not_stale(
     assert "No module named 'yaml'" in refusal.message
 
 
-@pytest.mark.skipif(shutil.which('git') is None, reason='git not on PATH')
 def test_probe_failure_does_not_borrow_the_staleness_remedy(
     tmp_path: Path, sync_module, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -869,7 +843,6 @@ def test_probe_failure_does_not_borrow_the_staleness_remedy(
     assert 'Regenerate with' not in refusal.message
 
 
-@pytest.mark.skipif(shutil.which('git') is None, reason='git not on PATH')
 def test_fingerprint_recompute_failure_is_reported_as_probe_failed(
     tmp_path: Path, sync_module, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -898,7 +871,6 @@ def test_fingerprint_recompute_failure_is_reported_as_probe_failed(
     assert sync_module._regenerate_hint() not in refusal.message
 
 
-@pytest.mark.skipif(shutil.which('git') is None, reason='git not on PATH')
 def test_genuine_staleness_is_still_reported_as_stale_with_the_remedy(
     tmp_path: Path, sync_module
 ) -> None:
@@ -921,7 +893,6 @@ def test_genuine_staleness_is_still_reported_as_stale_with_the_remedy(
     assert sync_module._regenerate_hint() in refusal.message
 
 
-@pytest.mark.skipif(shutil.which('git') is None, reason='git not on PATH')
 def test_file_level_probe_import_failure_refuses_instead_of_returning_none(
     tmp_path: Path, sync_module, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -951,7 +922,6 @@ def test_file_level_probe_import_failure_refuses_instead_of_returning_none(
     assert sync_module._regenerate_hint() not in drift.message
 
 
-@pytest.mark.skipif(shutil.which('git') is None, reason='git not on PATH')
 def test_file_level_hashing_failure_refuses_instead_of_returning_none(
     tmp_path: Path, sync_module, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -977,7 +947,6 @@ def test_file_level_hashing_failure_refuses_instead_of_returning_none(
     assert 'git hash-object exited 128' in drift.message
 
 
-@pytest.mark.skipif(shutil.which('git') is None, reason='git not on PATH')
 def test_file_level_check_still_returns_none_on_an_intact_tree(
     tmp_path: Path, sync_module
 ) -> None:
@@ -998,7 +967,6 @@ def test_file_level_check_still_returns_none_on_an_intact_tree(
     assert drift is None
 
 
-@pytest.mark.skipif(shutil.which('git') is None, reason='git not on PATH')
 def test_cli_refusal_surfaces_guard_outcome_on_the_toon(tmp_path: Path) -> None:
     """The refusal KIND is machine-readable, not only prose in the summary."""
     cwd = tmp_path / 'project'
@@ -1015,8 +983,6 @@ def test_cli_refusal_surfaces_guard_outcome_on_the_toon(tmp_path: Path) -> None:
     assert data['guard_outcome'] == 'stale'
 
 
-@pytest.mark.skipif(shutil.which('git') is None, reason='git not on PATH')
-@pytest.mark.skipif(shutil.which('rsync') is None, reason='rsync not on PATH')
 def test_successful_sync_emits_no_guard_outcome(tmp_path: Path) -> None:
     """No guard verdict was reached, so no guard verdict is reported.
 

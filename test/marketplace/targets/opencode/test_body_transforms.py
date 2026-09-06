@@ -45,6 +45,18 @@ def _project_root() -> Path:
     return Path(PROJECT_ROOT)
 
 
+#: The real marketplace bundles tree the three real-marketplace tests below read.
+#: This repository IS the marketplace, so the tree is present in every valid
+#: checkout; an absent one is a broken checkout rather than an environment those
+#: tests do not apply to. Asserted once at import rather than guarded per test —
+#: a skip would silently delete all three and still report the run green.
+_REAL_MARKETPLACE_BUNDLES = Path(PROJECT_ROOT) / 'marketplace' / 'bundles'
+
+assert _REAL_MARKETPLACE_BUNDLES.is_dir(), (
+    f'Marketplace bundles tree not found at {_REAL_MARKETPLACE_BUNDLES}'
+)
+
+
 def _opencode_mapping_path() -> Path:
     return _project_root() / 'marketplace' / 'targets' / 'opencode' / 'mapping.json'
 
@@ -495,11 +507,7 @@ def test_integration_fixture_skill_body_both_transforms(tmp_path: Path):
 
 def test_integration_real_marketplace_lookup_namespacing():
     """The real marketplace lookup namespacing matches {bundle}-{skill} convention."""
-    marketplace = _project_root() / 'marketplace' / 'bundles'
-    if not marketplace.is_dir():
-        pytest.skip('marketplace/bundles not available in this checkout')
-
-    lookup = build_user_invocable_lookup(marketplace)
+    lookup = build_user_invocable_lookup(_REAL_MARKETPLACE_BUNDLES)
 
     # Every emitted target must have the form {bundle}-{skill}.
     for skill_name, target in lookup.items():
@@ -511,11 +519,7 @@ def test_integration_real_marketplace_lookup_namespacing():
 
 def test_integration_real_marketplace_pickup_at_least_one():
     """Sanity check: real marketplace has user-invocable skills."""
-    marketplace = _project_root() / 'marketplace' / 'bundles'
-    if not marketplace.is_dir():
-        pytest.skip('marketplace/bundles not available in this checkout')
-
-    lookup = build_user_invocable_lookup(marketplace)
+    lookup = build_user_invocable_lookup(_REAL_MARKETPLACE_BUNDLES)
     assert len(lookup) >= 1, 'expected at least one user-invocable skill in real marketplace'
 
 
@@ -580,13 +584,9 @@ def test_integration_source_fix_contract_no_skill_entry_placeholder_in_bundles()
     fixed in the source. Because the emitter never rewrites this idiom, a source
     regression would flow verbatim into every emitted agent/skill body."""
     project_root = _project_root()
-    marketplace = project_root / 'marketplace' / 'bundles'
-    if not marketplace.is_dir():
-        pytest.skip('marketplace/bundles not available in this checkout')
-
     offenders = [
         path.relative_to(project_root).as_posix()
-        for path in sorted(marketplace.rglob('*.md'))
+        for path in sorted(_REAL_MARKETPLACE_BUNDLES.rglob('*.md'))
         if 'Skill: <entry>' in path.read_text(encoding='utf-8')
     ]
     assert not offenders, (

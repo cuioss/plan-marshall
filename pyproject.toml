@@ -127,7 +127,21 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 norecursedirs = ["fixtures", "__pycache__", ".git"]
-addopts = ["-v", "--tb=short", "--strict-markers", "--strict-config", "--durations=25"]
+# ``-rsfE`` publishes the two run conditions the canonical ``module-tests``
+# command otherwise leaves unmeasured: ``s`` prints the SKIPPED short-summary
+# block (which test stopped running, and why), and ``--durations=25`` below
+# already carries the wall-clock table. Both then read off the ONE canonical
+# command — no wrapper flag, no pytest-args passthrough.
+#
+# ⛔ The value is ``-rsfE``, never a bare ``-rs``. ``-r`` is a STORE option, not
+# an accumulating one: a later ``-rs`` REPLACES pytest's ``fE`` default rather
+# than adding to it, which would drop the ``FAILED <path>::<test>`` short-summary
+# lines. Those lines are not cosmetic — ``build-pyproject``'s
+# ``_PYTEST_FAILED_PATTERN`` parses them to file per-test ``test-failure``
+# findings, so losing them would collapse a failing build into one synthetic
+# ``build_failure`` row and take the per-test triage surface with it. ``f`` and
+# ``E`` are therefore re-stated alongside ``s`` rather than assumed to survive.
+addopts = ["-v", "--tb=short", "--strict-markers", "--strict-config", "-rsfE", "--durations=25"]
 # Every warning is an error. Armed on a measured census, not on optimism: a full
 # whole-tree run under the flags above emitted ZERO warnings — no
 # warnings-summary section at all, in any category, from third-party or

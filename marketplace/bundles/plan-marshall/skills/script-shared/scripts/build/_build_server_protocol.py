@@ -51,13 +51,15 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import re
 import socket
 import struct
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from hashlib import sha256
 from typing import Any
 
 import _build_result
+from toon_parser import ToonParseError, parse_toon_table
 
 # =============================================================================
 # Framing constants
@@ -934,11 +936,38 @@ class LogVerdict:
             what made a 2750-test run announce that it had tested nothing. Only a
             green run publishes the key at all, so ``None`` is the normal value on
             every non-green verdict.
+        errors: The INNER wrapper's own structured ``errors[]`` rows — one
+            ``{file, line, message, category}`` dict per finding it parsed out of
+            the raw test-runner output — or empty when the log carried no
+            parseable table (the normal state of a green verdict).
+
+            Carried for the same reason ``tests_run`` is: the routed client's own
+            parser sees only THIS log, which holds the wrapper's emitted TOON
+            rather than the raw test-runner output, so re-parsing it finds no
+            per-test rows at all. The client then had to synthesise one
+            ``build_failure`` row reading *"Build failed but no structured errors
+            were parsed"*, discarding per-test findings the inner wrapper had
+            already produced correctly. The reader's job is to carry them, not to
+            recompute them.
     """
 
     status: str
     exit_code: int | None
     tests_run: int | None = None
+    errors: tuple[dict[str, Any], ...] = field(default_factory=tuple)
+
+
+# The wrapper's emitted ``errors[N]{cols}:`` table header, matched at column 0 so
+# an indented table row can never be mistaken for the start of a table. ``N`` is
+# captured because it is the table's own declared row count, and comparing it
+# against the rows actually present is the only way to detect a log the daemon
+# truncated mid-table.
+_ERRORS_TABLE_HEADER = re.compile(r'^errors\[(\d+)\]\{[^}]*\}:\s*$')
+
+# The dash the build formatter renders for an absent ``file`` / ``line`` /
+# ``detail`` cell (see ``_build_format.format_toon``), mapped back to ``None`` on
+# the way in so a missing line number does not return as the string ``'-'``.
+_ERRORS_NULL_MARKERS = frozenset({'-'})
 
 
 def _toon_scalar(line: str) -> str:
@@ -949,15 +978,53 @@ def _toon_scalar(line: str) -> str:
     return value
 
 
+def _parse_errors_table(block_lines: list[str]) -> tuple[dict[str, Any], ...]:
+    """Parse a captured ``errors[N]{...}`` table block into its rows.
+
+    Delegates to the canonical TOON table parser rather than splitting on commas:
+    a message or a failure detail legitimately contains commas and is quoted by
+    the serializer, so a hand-rolled split would shred exactly the rows this
+    exists to recover.
+
+    A block that does not parse, and a block whose recovered row count disagrees
+    with the count its own header declares, both yield NO rows rather than a
+    partial set — the caller then falls back to its pre-existing behaviour, which
+    points the reader at the full log. The count check is not belt-and-braces: the
+    TOON parser returns whatever rows a truncated table did contain WITHOUT
+    complaining, so publishing them would present three of a build's ten failures
+    as if they were all of them — the same quiet understatement of a failure this
+    whole carry exists to end.
+
+    Args:
+        block_lines: The header line followed by the indented row lines captured
+            beneath it.
+
+    Returns:
+        The parsed rows, or an empty tuple when the block is unusable.
+    """
+    header = _ERRORS_TABLE_HEADER.match(block_lines[0])
+    try:
+        rows = parse_toon_table(
+            '\n'.join(block_lines) + '\n', 'errors', null_markers=set(_ERRORS_NULL_MARKERS)
+        )
+    except (ToonParseError, ValueError):
+        return ()
+    parsed = tuple(row for row in rows if isinstance(row, dict))
+    if header is not None and len(parsed) != int(header.group(1)):
+        return ()
+    return parsed
+
+
 def read_log_verdict(log_file: str) -> LogVerdict | None:
     """Read the build wrapper's emitted TOON verdict back from a job log.
 
     Pure with respect to any daemon/client state — it only reads the log the
-    supervisor already streamed. Only the three top-level (column-0) ``status:``,
-    ``exit_code:`` and ``tests_run:`` keys are parsed; indented TOON rows (e.g.
-    ``errors[]`` table lines) and every other key are ignored. The LAST occurrence
-    of each key wins, because the wrapper emits its result TOON after any progress
-    output it already wrote to the same log.
+    supervisor already streamed. Four top-level (column-0) keys are parsed:
+    ``status:``, ``exit_code:``, ``tests_run:``, and the ``errors[N]{...}:`` table
+    header, whose indented rows are then collected as that table's body. Every
+    other key is ignored. The LAST occurrence of each wins, because the wrapper
+    emits its result TOON after any progress output it already wrote to the same
+    log.
 
     ``status:`` is what makes a verdict exist; the other two are enrichment.
     ``tests_run`` is read here rather than re-derived by the client because the
@@ -985,9 +1052,25 @@ def read_log_verdict(log_file: str) -> LogVerdict | None:
     status: str | None = None
     exit_code: int | None = None
     tests_run: int | None = None
+    errors: tuple[dict[str, Any], ...] = ()
+    # Non-None only while an `errors[N]{...}:` header has been seen and its
+    # indented rows are still being collected.
+    errors_block: list[str] | None = None
     try:
         with open(log_file, encoding='utf-8', errors='replace') as handle:
-            for line in handle:
+            for raw_line in handle:
+                line = raw_line.rstrip('\n')
+                if errors_block is not None:
+                    if line[:1].isspace() and line.strip():
+                        errors_block.append(line)
+                        continue
+                    # A column-0 line closes the table; parse what was collected
+                    # and let this same line fall through to the scalar checks.
+                    errors = _parse_errors_table(errors_block)
+                    errors_block = None
+                if _ERRORS_TABLE_HEADER.match(line):
+                    errors_block = [line]
+                    continue
                 if line.startswith('status:'):
                     status = _toon_scalar(line)
                 elif line.startswith('exit_code:'):
@@ -1012,8 +1095,13 @@ def read_log_verdict(log_file: str) -> LogVerdict | None:
                         # "this run executed no tests", a different fact from
                         # "the log stated no count".
                         tests_run = parsed_count if parsed_count >= 0 else None
+            # A table that ran to end-of-file is closed by the file's end.
+            if errors_block is not None:
+                errors = _parse_errors_table(errors_block)
     except OSError:
         return None
     if status is None:
         return None
-    return LogVerdict(status=status, exit_code=exit_code, tests_run=tests_run)
+    return LogVerdict(
+        status=status, exit_code=exit_code, tests_run=tests_run, errors=errors
+    )

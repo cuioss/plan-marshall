@@ -2,7 +2,6 @@
 """Tests for the Claude verbatim emitter."""
 
 import json
-import shutil
 from pathlib import Path
 
 import pytest
@@ -491,16 +490,19 @@ def test_emit_marker_fingerprint_non_empty_for_real_worktree(tmp_path: Path):
     against the project root that contains ``marketplace/``.
 
     The test invokes the target against the *real* worktree so the
-    fingerprint is computed against the actual repository contents.
-    Skipped when ``git`` is unavailable (the fingerprint helper raises
-    ``FingerprintError`` in that case and the sentinel writer falls
-    through to ``source_tree_fingerprint: null``, which would mask the
-    regression signal).
+    fingerprint is computed against the actual repository contents. Both
+    prerequisites are asserted rather than skipped on: ``git`` is a
+    REQUIRED_TOOL the session preflight in ``test/conftest.py`` already
+    checks once per run, and this repository IS the marketplace, so the
+    bundles tree is present in every valid checkout. Skipping on either
+    would delete exactly the regression signal this test exists for —
+    an unavailable ``git`` makes the fingerprint helper raise
+    ``FingerprintError``, the sentinel writer falls through to
+    ``source_tree_fingerprint: null``, and the run still reports green.
     """
-    if shutil.which('git') is None:
-        pytest.skip('git binary not on PATH — fingerprint cannot be computed')
-    if not _REAL_MARKETPLACE_BUNDLES.is_dir():
-        pytest.skip(f'real marketplace/bundles not found at {_REAL_MARKETPLACE_BUNDLES}')
+    assert _REAL_MARKETPLACE_BUNDLES.is_dir(), (
+        f'Marketplace bundles tree not found at {_REAL_MARKETPLACE_BUNDLES}'
+    )
 
     output_dir = tmp_path / 'out'
     ClaudeTarget().generate(_REAL_MARKETPLACE_BUNDLES, output_dir)

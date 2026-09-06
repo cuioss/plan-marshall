@@ -187,3 +187,45 @@ state it reaches. It is never the fix for a test that leaks by accident.
 Build commands are resolved through the build system, never hard-coded — see
 [`CLAUDE.md`](../CLAUDE.md) § Build Commands for the canonical invocations and
 `doc/developer/build.adoc` for the build system itself.
+
+### Reading the two run conditions off the canonical command
+
+Both conditions are published by the ordinary run. Neither needs a wrapper flag,
+a pytest-args passthrough, or a second command — `-rsfE` and `--durations=25` are
+in the `addopts` of `[tool.pytest.ini_options]`.
+
+**How many tests did not run, and which.** The `SKIPPED` short-summary block:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "module-tests"
+```
+
+An empty block means every test ran. A non-empty one lists each skipped test with
+its reason, and every entry must be on the residual skippable set in
+`test/conftest.py` (`_SKIP_EXCEPTIONS`) — the session-finish gate fails the run on
+any that is not. The set's size is printed in the session header as
+`residual skippable set: N nodeid(s) permitted to skip`.
+
+An entry there approves a **cause**, not a test: it carries the class and the
+reason, and the gate enforces the reason as well as the nodeid. A listed test that
+starts skipping for a different cause fails the run just as an unlisted one does,
+and the failure names the approved reason beside the recorded one so the
+divergence is readable without opening the source. The two kinds are reported
+separately because the remedies differ — add an entry, versus find out what
+changed.
+
+**How long the suite took, and where it went.** The same command's
+`--durations=25` table, followed by the trailing total:
+
+```text
+============================= slowest 25 durations =============================
+46.29s call     test/pm-plugin-development/plan-marshall-plugin/test_lsp_harvest.py::...
+...
+================ 24564 passed, 11 skipped in 199.27s (0:03:19) =================
+```
+
+Read the per-test table for attribution and the trailing line for the total. The
+methodology for turning either into a defensible claim — median-of-five, the
+20-second detection limit, and the confounds that must be held fixed or stated —
+is not repeated here: see
+[`doc/developer/measurement-protocol.adoc`](../doc/developer/measurement-protocol.adoc).

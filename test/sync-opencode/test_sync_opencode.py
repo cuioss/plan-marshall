@@ -23,8 +23,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
-
 from conftest import PROJECT_ROOT
 from toon_parser import parse_toon
 
@@ -293,6 +291,42 @@ def _find_prefix_ambiguous_pair(bundles_dir: Path) -> tuple[str, str] | None:
     return None
 
 
+_BUNDLES_DIR = PROJECT_ROOT / 'marketplace' / 'bundles'
+
+#: The prefix-ambiguous bundle pairs this repository provably ships. The two
+#: tests below need one such pair, and they DERIVE it from the tree rather than
+#: hardcoding it — but the derivation's result is asserted, not skipped on. The
+#: guarded condition is a tree-CONTENT precondition that holds here, so a skip
+#: would delete both prefix-ambiguity tests on a checkout that in fact carries
+#: the pairs, and still report the run green.
+_REQUIRED_PREFIX_AMBIGUOUS_PAIRS = (
+    ('pm-dev-frontend', 'pm-dev-frontend-cui'),
+    ('pm-dev-java', 'pm-dev-java-cui'),
+)
+
+_MISSING_REQUIRED_PAIRS = [
+    f'{shorter}/{longer}'
+    for shorter, longer in _REQUIRED_PREFIX_AMBIGUOUS_PAIRS
+    if not ((_BUNDLES_DIR / shorter).is_dir() and (_BUNDLES_DIR / longer).is_dir())
+]
+assert not _MISSING_REQUIRED_PAIRS, (
+    f'Required prefix-ambiguous bundle pair(s) absent from {_BUNDLES_DIR}: '
+    f'{", ".join(_MISSING_REQUIRED_PAIRS)}. This repository ships both pairs, so '
+    'an absence means a bundle was renamed or removed — not that these tests do '
+    'not apply to this checkout.'
+)
+
+#: The pair the two tests below run against, derived from the tree. Asserting it
+#: separately from the membership check above keeps a broken
+#: ``_find_prefix_ambiguous_pair`` distinguishable from a renamed bundle.
+_PREFIX_AMBIGUOUS_PAIR = _find_prefix_ambiguous_pair(_BUNDLES_DIR)
+assert _PREFIX_AMBIGUOUS_PAIR is not None, (
+    f'_find_prefix_ambiguous_pair derived no pair from {_BUNDLES_DIR} even though '
+    f'{_REQUIRED_PREFIX_AMBIGUOUS_PAIRS[0][0]}/{_REQUIRED_PREFIX_AMBIGUOUS_PAIRS[0][1]} '
+    'is present — the derivation itself is broken.'
+)
+
+
 def test_sync_opencode_prefix_ambiguous_shorter_bundle_preserved(tmp_path: Path):
     """Source carries only the LONGER bundle's entries; shorter bundle's stale
     destination entry must NOT be pruned.
@@ -304,11 +338,7 @@ def test_sync_opencode_prefix_ambiguous_shorter_bundle_preserved(tmp_path: Path)
     source the derivation must resolve exactly one bundle (the longer), so
     the shorter bundle's destination entries are NOT managed and must survive.
     """
-    bundles_dir = PROJECT_ROOT / 'marketplace' / 'bundles'
-    pair = _find_prefix_ambiguous_pair(bundles_dir)
-    if pair is None:
-        pytest.skip('no prefix-ambiguous bundle pair in marketplace/bundles/')
-    shorter, longer = pair
+    shorter, longer = _PREFIX_AMBIGUOUS_PAIR
 
     source = tmp_path / 'src' / 'opencode'
     dest = tmp_path / 'dest'
@@ -335,11 +365,7 @@ def test_sync_opencode_prefix_ambiguous_both_bundles_managed(tmp_path: Path):
     the derivation must resolve exactly two bundles and prune stale entries
     belonging to either.
     """
-    bundles_dir = PROJECT_ROOT / 'marketplace' / 'bundles'
-    pair = _find_prefix_ambiguous_pair(bundles_dir)
-    if pair is None:
-        pytest.skip('no prefix-ambiguous bundle pair in marketplace/bundles/')
-    shorter, longer = pair
+    shorter, longer = _PREFIX_AMBIGUOUS_PAIR
 
     source = tmp_path / 'src' / 'opencode'
     dest = tmp_path / 'dest'

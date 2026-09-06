@@ -18,12 +18,9 @@ tooling that does not ship to consumers of plan-marshall.
 from __future__ import annotations
 
 import json
-import shutil
 import subprocess
 import sys
 from pathlib import Path
-
-import pytest
 
 from conftest import PROJECT_ROOT
 from toon_parser import parse_toon
@@ -62,7 +59,6 @@ def _run(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess[str
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.skipif(shutil.which('rsync') is None, reason='rsync not on PATH')
 def test_sync_engine_emits_canonical_toon(tmp_path: Path):
     target = tmp_path / 'target' / 'claude'
     cache = tmp_path / 'cache'
@@ -81,7 +77,6 @@ def test_sync_engine_emits_canonical_toon(tmp_path: Path):
     assert int(data['failed_count']) == 0
 
 
-@pytest.mark.skipif(shutil.which('rsync') is None, reason='rsync not on PATH')
 def test_sync_engine_writes_into_versioned_cache_subdirs(tmp_path: Path):
     target = tmp_path / 'target' / 'claude'
     cache = tmp_path / 'cache'
@@ -98,7 +93,6 @@ def test_sync_engine_writes_into_versioned_cache_subdirs(tmp_path: Path):
     assert expected_path.is_file(), f'expected sync output at {expected_path}'
 
 
-@pytest.mark.skipif(shutil.which('rsync') is None, reason='rsync not on PATH')
 def test_sync_engine_skips_directories_without_plugin_json(tmp_path: Path):
     # Directories under target/claude/ that lack ``.claude-plugin/plugin.json``
     # are NOT bundles and must NOT be rsynced into the cache. Specifically,
@@ -128,7 +122,6 @@ def test_sync_engine_skips_directories_without_plugin_json(tmp_path: Path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.skipif(shutil.which('rsync') is None, reason='rsync not on PATH')
 def test_sync_engine_bundle_flag_scopes_to_one(tmp_path: Path):
     target = tmp_path / 'target' / 'claude'
     cache = tmp_path / 'cache'
@@ -169,7 +162,6 @@ def test_sync_engine_bundle_flag_unknown_returns_error(tmp_path: Path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.skipif(shutil.which('rsync') is None, reason='rsync not on PATH')
 def test_sync_engine_from_worktree_redirects_source(tmp_path: Path):
     worktree = tmp_path / 'wt'
     target = worktree / 'target' / 'claude'
@@ -221,7 +213,6 @@ def test_sync_engine_failure_path_when_rsync_missing(tmp_path: Path, monkeypatch
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.skipif(shutil.which('rsync') is None, reason='rsync not on PATH')
 def test_sync_engine_copies_dist_manifest_to_cache_root_byte_for_byte(tmp_path: Path):
     # After a successful sync the top-level target/claude/dist-manifest.json is
     # mirrored to {cache_root}/dist-manifest.json byte-for-byte, so the
@@ -245,7 +236,6 @@ def test_sync_engine_copies_dist_manifest_to_cache_root_byte_for_byte(tmp_path: 
     assert copied.read_bytes() == (target / 'dist-manifest.json').read_bytes()
 
 
-@pytest.mark.skipif(shutil.which('rsync') is None, reason='rsync not on PATH')
 def test_sync_engine_dist_manifest_lands_at_cache_root_not_versioned_subdir(tmp_path: Path):
     # The manifest lands at the cache ROOT (alongside the versioned
     # {bundle}/{version}/ dirs), never inside a per-bundle versioned subdir.
@@ -265,7 +255,6 @@ def test_sync_engine_dist_manifest_lands_at_cache_root_not_versioned_subdir(tmp_
     assert not (cache / 'demo' / '0.4.0' / 'dist-manifest.json').exists()
 
 
-@pytest.mark.skipif(shutil.which('rsync') is None, reason='rsync not on PATH')
 def test_sync_engine_absent_dist_manifest_degrades_to_noop(tmp_path: Path):
     # An absent source manifest is a best-effort no-op: the sync still reports
     # success, raises nothing, and leaves no stray file at the cache root.
@@ -284,7 +273,6 @@ def test_sync_engine_absent_dist_manifest_degrades_to_noop(tmp_path: Path):
     assert not (cache / 'dist-manifest.json').exists()
 
 
-@pytest.mark.skipif(shutil.which('rsync') is None, reason='rsync not on PATH')
 def test_sync_engine_dist_manifest_copy_does_not_perturb_bundle_sync(tmp_path: Path):
     # The manifest copy is additive: the per-bundle rsync outcome
     # (synced_count and the versioned subdir writes) is unchanged.

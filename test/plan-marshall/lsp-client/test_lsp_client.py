@@ -10,9 +10,11 @@ all without a live language server.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import run_config
+from _fake_lsp_server import write_fake_server
 from _lsp_jsonrpc import LspSession
 from _lsp_workspace_edit import path_to_uri
 
@@ -186,6 +188,33 @@ def test_preflight_unreachable(plan_context):
     assert result['configured'] is True
     assert result['reachable'] is False
     assert 'reason' in result
+
+
+def test_preflight_ready_against_a_fake_server(plan_context, tmp_path):
+    """The READY state, reached without a real language server.
+
+    ``STATE_READY`` is the sentinel every consumer gates its opt-in LSP path on,
+    and it was the one preflight state with no portable coverage: the two
+    negatives above are pure config resolution, and the only test that drove a
+    server far enough to answer ``initialize`` lived in ``test_lsp_integration.py``
+    behind a ``pyright-langserver`` guard. On a runner without pyright — which is
+    every CI runner here — nothing exercised the branch, and the suite reported
+    green.
+
+    The fake is the subprocess server the diagnostics-contract suite already uses,
+    driven over the real ``StdioTransport``, so the handshake under test is the
+    real one rather than a stubbed-past return value. Answering ``initialize`` is
+    the whole precondition for READY, which is why no server config beyond the
+    empty default is needed.
+    """
+    command = write_fake_server(tmp_path, {})
+    run_config.cmd_language_server_set(parse_ns('plan-marshall', 'manage-run-config', 'run_config.py', 'language-server', 'set', '--language', 'python', '--command', json.dumps(command), '--language-id', 'python'))
+
+    result = client.cmd_preflight(parse_ns('plan-marshall', 'lsp-client', 'lsp_client.py', 'preflight', '--language', 'python', '--project-path', str(tmp_path)))
+
+    assert result['state'] == client.STATE_READY
+    assert result['configured'] is True
+    assert result['reachable'] is True
 
 
 # =============================================================================

@@ -32,8 +32,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from conftest import PROJECT_ROOT
 
 FIXTURE_DIR = PROJECT_ROOT / 'test' / 'fixtures'
@@ -139,13 +137,33 @@ def test_fixture_files_have_no_test_collisions():
     between fixture and production agent is still a smell — the fixture
     test relies on `poc-agent` and `poc-agent-high` being unique names
     no production agent shares.
+
+    ⛔ The POPULATION is asserted as well as the tree, and the distinction is
+    the whole point: `is_dir()` proves the tree exists, never that the sweep
+    iterated anything. If the bundles directory survived but its agent files did
+    not, `rglob` would yield nothing, `collisions == []` would hold trivially,
+    and this guard would report green having checked no agent at all. Publishing
+    the population as its own assertion is what stops a sweep from passing over
+    an empty set — the same convention `test/conftest.py` follows for its
+    routing-guard populations.
+
+    The fixture names are read from the module's own constants rather than
+    restated: a hardcoded pair would go on matching the OLD name after a rename,
+    so the sweep would silently stop protecting the name it exists to protect
+    while the rest of the module followed the rename.
     """
     bundles_root = PROJECT_ROOT / 'marketplace' / 'bundles'
-    if not bundles_root.exists():
-        pytest.skip('marketplace/bundles not available in this checkout')
+    # This repository IS the marketplace, so the bundles tree is present in every
+    # valid checkout. An absent tree is a broken checkout, not one this test does
+    # not apply to — a skip would delete the collision sweep and still report the
+    # run green.
+    assert bundles_root.is_dir(), f'Marketplace bundles tree not found at {bundles_root}'
+    fixture_names = {CANONICAL.name, VARIANT_HIGH.name}
+    agent_files = list(bundles_root.rglob('agents/*.md'))
+    assert agent_files, f'No production agent files found under {bundles_root}'
     collisions: list[Path] = []
-    for agent_md in bundles_root.rglob('agents/*.md'):
-        if agent_md.name in ('poc-agent.md', 'poc-agent-high.md'):
+    for agent_md in agent_files:
+        if agent_md.name in fixture_names:
             collisions.append(agent_md)
     assert collisions == [], (
         f'POC fixture filenames collide with production agents: {collisions}'
