@@ -513,7 +513,7 @@ Each poll:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock rate-window check \
-  --plan-id {plan_id} --bot-kind {bot_kind}
+  --plan-id {plan_id} --bot-kind {bot_kind} --pr-number {pr_number}
 ```
 
 - **`expired: true`** (or `status: free`) — the window has elapsed. Proceed to Branch 4 (generate the

@@ -318,14 +318,20 @@ owner-scoped `merge-lock` clear and settles the state for the next render event.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock rate-window claim \
-  --plan-id PLAN_ID --bot-kind BOT_KIND --pr-number PR_NUMBER [--window-seconds WINDOW_SECONDS]
+  --plan-id PLAN_ID --bot-kind BOT_KIND --pr-number PR_NUMBER \
+  [--window-seconds WINDOW_SECONDS] [--attempt-cap ATTEMPT_CAP]
 ```
 
 Claims `--bot-kind`'s rate window for `--plan-id`, recording the window expiry and
 advancing the recovery-attempt counter. `--window-seconds` carries the ETA parsed
-from the bot's registry `rate_limit_eta_patterns` (default `3600`). Idempotent for
-the self-holder: a re-claim renews the same record in place rather than contending.
-Outcomes:
+from the bot's registry `rate_limit_eta_patterns` (default `3600`). `--attempt-cap`
+is the recovery budget per `(bot_kind, pr_number)`; omit it to take the shipped
+default, which `rate-window --help` prints — this page names the flag rather than
+restating its value, so the number cannot drift out of agreement with the code that
+defines it. Idempotent for the self-holder: a re-claim renews the same record in
+place rather than contending. `--pr-number` is REQUIRED: the counter is scoped to
+the PR, so a claim without one is refused (`status: error`) before the store is
+touched. Outcomes:
 
 - **`status: success`** — the claim is held. `action` is `claimed` (first claim),
   `renewed` (self-holder re-claim), or `reclaimed` (the previous holder's window
@@ -345,15 +351,35 @@ Outcomes:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock rate-window check \
-  --plan-id PLAN_ID --bot-kind BOT_KIND
+  --plan-id PLAN_ID --bot-kind BOT_KIND --pr-number PR_NUMBER [--attempt-cap ATTEMPT_CAP]
 ```
 
 A pure non-mutating read: `status: held` while a holder's window is unexpired,
 `status: free` otherwise (including a released or elapsed record). Fields: `holder`,
 `pr_number`, `expires_at`, `seconds_remaining`, `expired`, `attempts`,
-`attempt_cap`, `attempts_remaining`. This is the observable the recovery sequence
-polls between paced `sleep` calls — never a single long blocking sleep of the
-parsed ETA.
+`attempts_for_pr`, `attempt_cap`, `attempts_remaining` — on BOTH branches, including
+the one where no record exists yet, so a consumer never branches on whether the
+window has been claimed. This is the observable the recovery sequence polls between
+paced `sleep` calls — never a single long blocking sleep of the parsed ETA.
+
+`--pr-number` is REQUIRED here for the same reason it is on `claim`: the budget
+`check` reports is the budget the caller's PR has left, which is unanswerable
+without knowing the PR. A `check` without one is refused (`status: error`) before
+the store is read.
+
+Two counts are published because they answer different questions. `attempts` is the
+raw stored count for `--bot-kind`, whatever PR it belongs to. `attempts_for_pr` is
+the part of it that counts against the CALLER's PR — zero when the stored record
+belongs to a different PR, since the cap is scoped to `(bot_kind, pr_number)`.
+`attempts_remaining` is derived from `attempts_for_pr`, never from `attempts`.
+
+**Invariant — `check` and `claim` agree.** A `check` immediately followed by a
+successful `claim` for the SAME PR reports exactly one more remaining attempt than
+that claim does, because both compute the spent count the same way. This is what
+makes `check` safe to read before acting: when the two disagreed, a `check` for a
+PR the stored record did not belong to reported the budget exhausted while the
+`claim` that followed would have succeeded, so a read-before-act consumer skipped a
+recovery it was still allowed to run.
 
 ### merge_lock — rate-window release
 
@@ -366,6 +392,10 @@ Drops this plan's claim (`action: released`), or is a benign no-op when the wind
 is unclaimed or held by another plan (`action: noop`). The record is RETAINED with
 its `attempts` counter intact — the recursion cap counts recovery events per bot per
 PR across the whole sequence, which releases the window between attempts.
+
+Unlike `claim` and `check`, `release` takes no `--pr-number` and refuses nothing when
+it is absent: it drops the holder without consulting the per-PR counter, so it has no
+PR to count against.
 
 ### build_queue — acquire
 

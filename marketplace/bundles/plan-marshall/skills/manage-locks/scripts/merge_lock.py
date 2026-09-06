@@ -80,11 +80,12 @@ claim that co-tenants the same store:
     lives under a ``rate_windows`` top-level key inside the SAME main-anchored
     ``merge-queue.json`` store, keyed by ``bot_kind``, mutated through the SAME
     :func:`_locks_core.rmw_json` critical section. ``claim`` is idempotent for the
-    self-holder (it renews rather than contending) and enforces a recursion cap of
-    :data:`_RECOVERY_ATTEMPT_CAP` recovery events per bot per PR, returning an
-    explicit ``exhausted`` verdict on the attempt past the cap; ``check`` is a pure
-    read; ``release`` drops the holder while RETAINING the attempt counter so the
-    cap survives the release between attempts.
+    self-holder (it renews rather than contending) and enforces a recursion cap —
+    ``--attempt-cap``, defaulting to :data:`_DEFAULT_RECOVERY_ATTEMPT_CAP` — of
+    recovery events per bot per PR, returning an explicit ``exhausted`` verdict on
+    the attempt past the cap; ``check`` is a pure read that reports the SAME per-PR
+    budget ``claim`` would apply; ``release`` drops the holder while RETAINING the
+    attempt counter so the cap survives the release between attempts.
 
 **The rate window shares the STORE, never the MUTEX.** The rate-window actions
 read and write only the ``rate_windows`` key. They never create, read, reclaim, or
@@ -274,10 +275,14 @@ _QUEUE_FILENAME = 'merge-queue.json'
 # mutators never read or write `rate_windows`.
 _RATE_WINDOWS_KEY = 'rate_windows'
 
-# Recursion cap: a plan may generate at most this many recovery events per bot
-# per PR. The next attempt returns the explicit `exhausted` verdict for the
-# orchestrator to escalate, rather than looping a bot into its own rate limit.
-_RECOVERY_ATTEMPT_CAP = 2
+# Recursion cap DEFAULT: a plan may generate at most this many recovery events
+# per bot per PR before the next attempt returns the explicit `exhausted` verdict
+# for the orchestrator to escalate, rather than looping a bot into its own rate
+# limit. It is the `--attempt-cap` default, not a fixed bound — the resolved cap
+# is threaded through every rate-window verb as a parameter, so a caller whose
+# recovery sequence needs a different budget supplies one rather than editing
+# this module.
+_DEFAULT_RECOVERY_ATTEMPT_CAP = 6
 
 # Fallback window length when the caller has no parsed ETA from the bot's
 # `rate_limit_eta_patterns`. One hour is the coarsest window any registered bot
@@ -553,8 +558,33 @@ def _rate_windows(state: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return windows
 
 
+def _attempts_for_pr(record: dict[str, Any] | None, pr_number: int) -> int:
+    """Return the attempts already spent against ``pr_number``, per-PR reset applied.
+
+    The store is keyed by ``bot_kind`` ALONE, so the record a caller reads may
+    belong to a previous PR — and the cap is per ``(bot_kind, pr_number)``. A
+    record for a different PR (or no record at all) therefore contributes ZERO
+    spent attempts, not its stored count.
+
+    This is the single arithmetic both ``claim`` and ``check`` read. Keeping it in
+    one place is the point: when ``check`` computed the budget off the raw stored
+    ``attempts`` while ``claim`` reset per PR, ``check`` reported a fresh PR's
+    budget as exhausted while the ``claim`` that followed would have succeeded —
+    so a read-before-act caller skipped a recovery that was still allowed.
+    """
+    if record is None or record['pr_number'] != pr_number:
+        return 0
+    attempts: int = record['attempts']
+    return attempts
+
+
 def _claim_rate_window(
-    plan_id: str, bot_kind: str, pr_number: int, window_seconds: float, now: float
+    plan_id: str,
+    bot_kind: str,
+    pr_number: int,
+    window_seconds: float,
+    now: float,
+    attempt_cap: int,
 ) -> dict[str, Any]:
     """Claim ``bot_kind``'s rate window for ``plan_id``, enforcing the recursion cap.
 
@@ -570,8 +600,14 @@ def _claim_rate_window(
         elapsed or whose plan is dead). ``expires_at`` and ``attempts`` are the
         committed values.
       * ``blocked`` — a DIFFERENT, live plan holds an unexpired window. No mutation.
-      * ``exhausted`` — the recursion cap (:data:`_RECOVERY_ATTEMPT_CAP` recovery
-        events per bot per PR) is already spent. No mutation; the caller escalates.
+      * ``exhausted`` — the recursion cap (``attempt_cap`` recovery events per bot
+        per PR) is already spent. No mutation; the caller escalates.
+
+    ``attempt_cap`` is the caller-resolved budget, passed in rather than read from
+    module state, and the ``next_attempts > attempt_cap`` comparison lives INSIDE
+    the :func:`_locks_core.rmw_json` mutator below — deciding exhaustion outside
+    the critical section and handing in a verdict would reintroduce the TOCTOU
+    window the serialized read-modify-write exists to close.
 
     The attempt counter is scoped to ``(bot_kind, pr_number)`` and survives both a
     release and a holder takeover — resetting it on release would make the cap
@@ -604,9 +640,9 @@ def _claim_rate_window(
             record['holder'] if record is not None and record['holder'] not in ('', plan_id) else None
         )
         # The cap is per (bot_kind, PR): a record for a DIFFERENT PR starts fresh.
-        attempts_before = record['attempts'] if record is not None and record['pr_number'] == pr_number else 0
+        attempts_before = _attempts_for_pr(record, pr_number)
         next_attempts = attempts_before + 1
-        if next_attempts > _RECOVERY_ATTEMPT_CAP:
+        if next_attempts > attempt_cap:
             outcome.update(
                 verdict='exhausted',
                 holder=plan_id,
@@ -1419,15 +1455,42 @@ def run_release(args: Namespace) -> dict[str, Any]:
     }
 
 
+def _missing_pr_number(args: Namespace) -> dict[str, Any] | None:
+    """Return the refusal payload when ``--pr-number`` is absent, else ``None``.
+
+    ``claim`` and ``check`` both count attempts against ``(bot_kind, pr_number)``,
+    so neither has a meaningful answer without the PR. The guard runs BEFORE the
+    store is touched: an absent PR previously read as a sentinel that matched no
+    stored record, which silently reported (and granted) a full fresh budget
+    instead of refusing. ``release`` is unaffected — it drops the holder without
+    consulting the counter, so it neither takes nor needs the flag.
+    """
+    if args.pr_number is not None:
+        return None
+    return make_error(
+        f'rate-window {args.action} requires --pr-number: '
+        'recovery attempts are counted per (bot_kind, pr_number)',
+        code=ErrorCode.INVALID_INPUT,
+        plan_id=args.plan_id,
+        bot_kind=args.bot_kind,
+        action=args.action,
+    )
+
+
 def _run_rate_window_claim(args: Namespace) -> dict[str, Any]:
     """``rate-window claim`` — claim one bot's rate window under the recursion cap."""
+    refusal = _missing_pr_number(args)
+    if refusal is not None:
+        return refusal
+
     plan_id: str = args.plan_id
     bot_kind: str = args.bot_kind
     pr_number: int = args.pr_number
     window_seconds: float = args.window_seconds
+    attempt_cap: int = args.attempt_cap
     now = time.time()
 
-    outcome = _claim_rate_window(plan_id, bot_kind, pr_number, window_seconds, now)
+    outcome = _claim_rate_window(plan_id, bot_kind, pr_number, window_seconds, now, attempt_cap)
     verdict = outcome['verdict']
 
     if verdict == 'blocked':
@@ -1445,13 +1508,13 @@ def _run_rate_window_claim(args: Namespace) -> dict[str, Any]:
             'expires_at': outcome['expires_at'],
             'seconds_remaining': max(0.0, outcome['expires_at'] - now),
             'attempts': outcome['attempts'],
-            'attempt_cap': _RECOVERY_ATTEMPT_CAP,
+            'attempt_cap': attempt_cap,
         }
 
     if verdict == 'exhausted':
         log_lock_event(
             'rate-window', 'exhausted', lock_id=plan_id, bot_kind=bot_kind,
-            pr_number=pr_number, attempts=outcome['attempts'], attempt_cap=_RECOVERY_ATTEMPT_CAP,
+            pr_number=pr_number, attempts=outcome['attempts'], attempt_cap=attempt_cap,
         )
         return {
             'status': 'refused',
@@ -1460,7 +1523,7 @@ def _run_rate_window_claim(args: Namespace) -> dict[str, Any]:
             'reason': 'recovery_cap_exhausted',
             'pr_number': pr_number,
             'attempts': outcome['attempts'],
-            'attempt_cap': _RECOVERY_ATTEMPT_CAP,
+            'attempt_cap': attempt_cap,
         }
 
     log_lock_event(
@@ -1482,24 +1545,41 @@ def _run_rate_window_claim(args: Namespace) -> dict[str, Any]:
         'expires_at': outcome['expires_at'],
         'seconds_remaining': max(0.0, outcome['expires_at'] - now),
         'attempts': outcome['attempts'],
-        'attempt_cap': _RECOVERY_ATTEMPT_CAP,
-        'attempts_remaining': _RECOVERY_ATTEMPT_CAP - outcome['attempts'],
+        'attempt_cap': attempt_cap,
+        'attempts_remaining': attempt_cap - outcome['attempts'],
         'reclaimed_from': outcome.get('reclaimed_from'),
     }
 
 
 def _run_rate_window_check(args: Namespace) -> dict[str, Any]:
-    """``rate-window check`` — non-mutating read of one bot's rate-window state."""
+    """``rate-window check`` — non-mutating read of one bot's rate-window state.
+
+    The budget this reports is the budget the ``claim`` that follows would apply:
+    both derive the spent count through :func:`_attempts_for_pr`, so a ``check``
+    for a PR the stored record does not belong to reports a fresh budget rather
+    than the previous PR's spent one. Two counts are published because they answer
+    different questions — ``attempts`` is the raw stored count (whatever PR it
+    belongs to) and ``attempts_for_pr`` is what counts against THIS caller — and
+    ``attempts_remaining`` is derived from the latter.
+    """
+    refusal = _missing_pr_number(args)
+    if refusal is not None:
+        return refusal
+
     plan_id: str = args.plan_id
     bot_kind: str = args.bot_kind
+    pr_number: int = args.pr_number
+    attempt_cap: int = args.attempt_cap
     now = time.time()
 
     record = _rate_windows(_read_store()).get(bot_kind)
+    attempts_for_pr = _attempts_for_pr(record, pr_number)
+    attempts_remaining = max(0, attempt_cap - attempts_for_pr)
     if record is None:
         # An unclaimed window carries the SAME field set as a claimed one — a
-        # consumer polling `expired` / `seconds_remaining` must not have to
-        # branch on whether the record exists yet. `expires_at` is None (no
-        # window), matching the sibling absent-value fields above it.
+        # consumer polling `expired` / `seconds_remaining` / `attempts_for_pr`
+        # must not have to branch on whether the record exists yet. `expires_at`
+        # is None (no window), matching the sibling absent-value fields above it.
         return {
             'status': 'free',
             'plan_id': plan_id,
@@ -1510,8 +1590,9 @@ def _run_rate_window_check(args: Namespace) -> dict[str, Any]:
             'seconds_remaining': 0.0,
             'expired': True,
             'attempts': 0,
-            'attempt_cap': _RECOVERY_ATTEMPT_CAP,
-            'attempts_remaining': _RECOVERY_ATTEMPT_CAP,
+            'attempts_for_pr': attempts_for_pr,
+            'attempt_cap': attempt_cap,
+            'attempts_remaining': attempts_remaining,
         }
 
     held = bool(record['holder']) and record['expires_at'] > now
@@ -1525,15 +1606,23 @@ def _run_rate_window_check(args: Namespace) -> dict[str, Any]:
         'seconds_remaining': max(0.0, record['expires_at'] - now),
         'expired': not held,
         'attempts': record['attempts'],
-        'attempt_cap': _RECOVERY_ATTEMPT_CAP,
-        'attempts_remaining': max(0, _RECOVERY_ATTEMPT_CAP - record['attempts']),
+        'attempts_for_pr': attempts_for_pr,
+        'attempt_cap': attempt_cap,
+        'attempts_remaining': attempts_remaining,
     }
 
 
 def _run_rate_window_release(args: Namespace) -> dict[str, Any]:
-    """``rate-window release`` — drop this plan's claim, retaining the attempt count."""
+    """``rate-window release`` — drop this plan's claim, retaining the attempt count.
+
+    Deliberately takes no ``--pr-number``: the release drops the holder without
+    consulting the per-PR counter (it RETAINS whatever is stored), so unlike
+    ``claim`` and ``check`` it has nothing to count against a PR and refuses
+    nothing when the flag is absent.
+    """
     plan_id: str = args.plan_id
     bot_kind: str = args.bot_kind
+    attempt_cap: int = args.attempt_cap
 
     outcome = _release_rate_window(plan_id, bot_kind)
     if outcome['action'] == 'released':
@@ -1548,7 +1637,7 @@ def _run_rate_window_release(args: Namespace) -> dict[str, Any]:
         'action': outcome['action'],
         'holder': outcome['holder'],
         'attempts': outcome['attempts'],
-        'attempt_cap': _RECOVERY_ATTEMPT_CAP,
+        'attempt_cap': attempt_cap,
     }
 
 
@@ -1588,8 +1677,8 @@ Examples:
   merge_lock.py acquire --plan-id EXAMPLE-PLAN [--timeout 0]
   merge_lock.py check --plan-id EXAMPLE-PLAN
   merge_lock.py release --plan-id EXAMPLE-PLAN
-  merge_lock.py rate-window claim --plan-id EXAMPLE-PLAN --bot-kind coderabbit --pr-number 42 [--window-seconds 3600]
-  merge_lock.py rate-window check --plan-id EXAMPLE-PLAN --bot-kind coderabbit
+  merge_lock.py rate-window claim --plan-id EXAMPLE-PLAN --bot-kind coderabbit --pr-number 42 [--window-seconds 3600] [--attempt-cap 6]
+  merge_lock.py rate-window check --plan-id EXAMPLE-PLAN --bot-kind coderabbit --pr-number 42
   merge_lock.py rate-window release --plan-id EXAMPLE-PLAN --bot-kind coderabbit
 """,
         subcommands=[
@@ -1682,8 +1771,8 @@ Examples:
                         'flags': ['--pr-number'],
                         'dest': 'pr_number',
                         'type': int,
-                        'default': 0,
-                        'help': 'PR the recovery attempts are counted against (required for claim)',
+                        'default': None,
+                        'help': 'PR the recovery attempts are counted against (required for claim and check; ignored by release)',
                     },
                     {
                         'flags': ['--window-seconds'],
@@ -1691,6 +1780,13 @@ Examples:
                         'type': float,
                         'default': _DEFAULT_WINDOW_SECONDS,
                         'help': f'Window length in seconds, from the parsed bot ETA (default: {_DEFAULT_WINDOW_SECONDS})',
+                    },
+                    {
+                        'flags': ['--attempt-cap'],
+                        'dest': 'attempt_cap',
+                        'type': int,
+                        'default': _DEFAULT_RECOVERY_ATTEMPT_CAP,
+                        'help': f'Recovery attempts allowed per (bot_kind, pr_number) before claim refuses (default: {_DEFAULT_RECOVERY_ATTEMPT_CAP})',
                     },
                 ],
             },
