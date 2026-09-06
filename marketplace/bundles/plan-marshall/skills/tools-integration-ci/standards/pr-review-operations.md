@@ -283,6 +283,12 @@ consumes it before the provider parser is built, so writing it after `pr view` i
 `unrecognized arguments` rejection. Capture the PR's `title`, `body` and head branch from the return —
 the replacement PR carries them forward, so nothing an operator or a reviewer wrote is lost.
 
+`body` is the last field of the return and arrives as a block scalar (`body: |` with the description
+indented beneath it). Take the whole indented block, with its two-space indent removed; it is the
+description verbatim. ⛔ **Do not regenerate the body from the plan instead.** A regenerated body is
+precisely what loses the reviewer and operator edits this step exists to preserve — carry forward what
+you read, or the promise above is unfulfilled whatever the replacement PR ends up saying.
+
 ### Step 2: Allocate the replacement body path
 
 ```bash

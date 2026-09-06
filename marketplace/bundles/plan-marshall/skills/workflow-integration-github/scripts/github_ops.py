@@ -115,6 +115,7 @@ from ci_base import (
     MERGE_QUEUE_UNSUPPORTED,
     PR_VIEW_CAUSE_AUTH_FAILED,
     PR_VIEW_CAUSE_MALFORMED_RESPONSE,
+    BlockScalar,
     HandlerMap,
     add_pr_create_args,
     build_parser,
@@ -265,6 +266,11 @@ def view_pr_data(head: str | None = None) -> dict:
     provider reports none. See :func:`_extract_merge_commit_sha` for why the absent
     form is ``None`` and never ``''``.
 
+    ``body`` is the PR's description, verbatim and whole. It comes from the SAME
+    ``gh pr view`` call as every other field — one extra name in the ``--json``
+    list, no second round trip — and it is emitted as a TOON block scalar so a
+    multi-line description crosses the boundary intact. See :func:`_extract_body`.
+
     Every error return carries an ``error_cause`` drawn from ``PR_VIEW_CAUSES``.
     It exists because this envelope collapses three materially different causes
     onto one shape whose human ``error`` reads as "no PR exists" — so a consumer
@@ -289,7 +295,7 @@ def view_pr_data(head: str | None = None) -> dict:
     pr_view_args.extend(
         [
             '--json',
-            'number,url,state,title,headRefName,baseRefName,isDraft,mergeable,'
+            'number,url,state,title,body,headRefName,baseRefName,isDraft,mergeable,'
             'mergeStateStatus,reviewDecision,mergeCommit',
         ]
     )
@@ -332,7 +338,29 @@ def view_pr_data(head: str | None = None) -> dict:
         'merge_state': data.get('mergeStateStatus', 'unknown').lower() if data.get('mergeStateStatus') else 'unknown',
         'review_decision': data.get('reviewDecision', 'none').lower() if data.get('reviewDecision') else 'none',
         'merge_commit_sha': _extract_merge_commit_sha(data),
+        'body': _extract_body(data),
     }
+
+
+def _extract_body(data: dict) -> BlockScalar:
+    """Return the PR's description text from a ``gh pr view`` payload, verbatim.
+
+    The body is returned WHOLE — never truncated, summarised, or replaced by a
+    regenerated equivalent. That fidelity is the field's entire reason to exist:
+    the close-and-re-open recovery carries a PR's description across to its
+    replacement, and anything an operator or a reviewer edited into that
+    description is lost the moment a caller substitutes a body it generated
+    itself. A caller may only carry forward what it read here.
+
+    ``BlockScalar`` is what makes the text survive the TOON boundary; see that
+    class for what an unmarked multi-line string does to the envelope around it.
+    A provider reporting no body at all yields the empty string — an absent
+    description is genuinely empty text, not an unreadable one, and a read
+    failure never reaches here because :func:`view_pr_data` returns
+    ``status: error`` before constructing a payload.
+    """
+    body = data.get('body')
+    return BlockScalar(body if isinstance(body, str) else '')
 
 
 def _extract_merge_commit_sha(data: dict) -> str | None:

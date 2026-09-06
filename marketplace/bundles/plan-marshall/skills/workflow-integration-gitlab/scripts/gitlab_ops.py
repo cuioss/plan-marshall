@@ -85,6 +85,7 @@ from ci_base import (
     MERGE_QUEUE_UNSUPPORTED,
     PR_VIEW_CAUSE_AUTH_FAILED,
     PR_VIEW_CAUSE_MALFORMED_RESPONSE,
+    BlockScalar,
     HandlerMap,
     add_pr_create_args,
     add_pr_resolve_thread_pr_number,
@@ -313,6 +314,11 @@ def view_pr_data(head: str | None = None) -> dict:
     provider reports none. See :func:`_extract_merge_commit_sha` for the two-key read
     (squash vs regular merge) and why the absent form is ``None`` and never ``''``.
 
+    ``body`` is the MR's description, verbatim and whole, read from GitLab's
+    ``description`` key and normalised onto the shared name. See
+    :func:`_extract_body`; the field is present on BOTH providers, so a caller
+    carrying a description forward is not writing a GitHub-only path.
+
     Every error return carries an ``error_cause`` drawn from ``PR_VIEW_CAUSES``,
     in LOCK-STEP with the GitHub provider: the same three causes, the same
     vocabulary, the same additive placement. See
@@ -392,7 +398,27 @@ def view_pr_data(head: str | None = None) -> dict:
         'merge_state': merge_status,
         'review_decision': review_decision,
         'merge_commit_sha': _extract_merge_commit_sha(data),
+        'body': _extract_body(data),
     }
+
+
+def _extract_body(data: dict) -> BlockScalar:
+    """Return the MR's description text from a ``glab mr view`` payload, verbatim.
+
+    The GitLab peer of ``github_ops._extract_body``, reading GitLab's own name for
+    the field: an MR carries its body as ``description`` where a PR carries it as
+    ``body``. Normalising it onto the shared ``body`` key is what keeps ``pr view``
+    ONE contract rather than a GitHub field a GitLab caller has to know about.
+
+    Same guarantees as the GitHub peer and for the same reasons: the text is whole
+    and never regenerated, it is marked ``BlockScalar`` so a multi-line description
+    survives the TOON boundary, and a provider reporting none yields the empty
+    string. It comes from the same ``glab mr view --output json`` call as every
+    other field — that payload already carries the description, so parity costs no
+    extra round trip.
+    """
+    description = data.get('description')
+    return BlockScalar(description if isinstance(description, str) else '')
 
 
 def _extract_merge_commit_sha(data: dict) -> str | None:
