@@ -832,7 +832,7 @@ class TestPublishedCountIsTheExecutedCount:
 
 
 class TestFailureDetailRoundTrip:
-    """The per-signature failure-detail block (deliverable 9) round-trips into
+    """The per-signature failure-detail block round-trips into
     the ``manage-findings --type test-failure`` store via ``_store_build_findings``."""
 
     def test_detail_round_trips_into_test_failure_finding(self, plan_context):

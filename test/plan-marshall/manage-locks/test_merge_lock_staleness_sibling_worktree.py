@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Cross-cutting regression test for the #948 sibling-worktree staleness shape.
+"""Cross-cutting regression test for the sibling-worktree staleness shape.
 
-The #948 incident: a merge-lock holder (``steward-provisioning-fail-closed``) was
-judged stale from a WORKTREE-SCOPED view and its lock released while it was live in
-another session's sibling worktree. The manual-release recovery path inferred death
-from a cwd-scoped enumeration (``manage-status list`` / ``worktree-list``) which,
-from a session pinned to its OWN worktree, structurally cannot observe a holder
-living in a SIBLING worktree — so the empty result was mistaken for proof of death.
+The shape: a merge-lock holder (``steward-provisioning-fail-closed``) is live in
+another session's sibling worktree, and a WORKTREE-SCOPED view judges it stale. A
+cwd-scoped enumeration (``manage-status list`` / ``worktree-list``) issued from a
+session pinned to its OWN worktree structurally cannot observe a holder living in a
+SIBLING worktree, so an empty result reads as proof of death and the manual-release
+recovery path releases a live holder's lock.
 
-This test reproduces that shape end-to-end and asserts the D1 fix closes it:
+This test reproduces that shape end-to-end and asserts the main-anchored staleness
+verdict closes it:
 
 * A holder whose live plan dir sits in a SIBLING worktree, with the staleness query
   / ``release --require-stale`` issued from a DIFFERENT worktree cwd, is judged
@@ -28,10 +29,9 @@ into a THIRD worktree that does NOT contain the holder's plan dir: a cwd-scoped
 resolver would see nothing there, yet the main-anchored verdict still sees the
 holder's real sibling-worktree plan dir.
 
-Pre-D1 discrimination: the test targets ``release --require-stale`` and the
-``staleness`` verdict, neither of which existed before D1 — against the pre-D1 code
-path the ``--require-stale`` conditional (fail-closed on a live sibling holder) is
-absent, so the sibling holder's lock would be force-removed. After D1 it is refused.
+Discrimination: the test targets ``release --require-stale`` and the ``staleness``
+verdict. Without the ``--require-stale`` conditional — fail-closed on a live sibling
+holder — the sibling holder's lock is force-removed; with it, the release is refused.
 """
 
 from __future__ import annotations
@@ -51,7 +51,7 @@ merge_lock = load_script_module(
 
 @pytest.fixture
 def sibling_worktree_scene(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
-    """Stage the #948 topology under a PLAN_BASE_DIR main stand-in.
+    """Stage the sibling-worktree topology under a PLAN_BASE_DIR main stand-in.
 
     Layout::
 
@@ -87,20 +87,20 @@ def sibling_worktree_scene(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> d
 
 
 def _make_sibling_worktree_live_plan(base: Path, holder: str) -> None:
-    """Place the holder's live plan dir ONLY in its sibling worktree (#948 shape)."""
+    """Place the holder's live plan dir ONLY in its sibling worktree."""
     (base / 'worktrees' / holder / '.plan' / 'local' / 'plans' / holder).mkdir(parents=True)
 
 
 def test_sibling_worktree_holder_is_not_released_from_a_foreign_worktree_cwd(
     sibling_worktree_scene: dict, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # #948 reproduction: the holder is live in its SIBLING worktree; the caller is
+    # Reproduction: the holder is live in its SIBLING worktree; the caller is
     # pinned to a DIFFERENT worktree. A cwd-scoped view from the caller's worktree
     # would see the holder absent (its plan dir is not there) and wrongly infer
     # death. The main-anchored verdict must see the live sibling-worktree plan dir
     # and refuse the release fail-closed.
     scene = sibling_worktree_scene
-    holder = 'steward-provisioning-fail-closed'  # the real #948 holder id shape
+    holder = 'steward-provisioning-fail-closed'  # the real holder id shape
     _make_sibling_worktree_live_plan(scene['base'], holder)
     _write_lock(scene['lock_path'], holder)
 
@@ -113,7 +113,7 @@ def test_sibling_worktree_holder_is_not_released_from_a_foreign_worktree_cwd(
     assert result['status'] == 'refused'
     assert result['reason'] == 'holder_not_provably_dead'
     assert result['staleness'] == 'fresh'
-    # The live sibling holder's lock is NOT removed — the #948 mis-release is closed.
+    # The live sibling holder's lock is NOT removed — the mis-release is closed.
     assert scene['lock_path'].is_file()
     assert scene['lock_path'].read_text(encoding='utf-8').strip() == holder
 

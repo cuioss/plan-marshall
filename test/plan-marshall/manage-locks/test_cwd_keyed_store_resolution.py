@@ -4,7 +4,7 @@
 
 The D3 audit (``manage-locks/standards/cwd-keyed-store-resolution-audit.md``) FIXES
 the two authority-bearing plan-census sites so a cwd-scoped enumeration cannot be
-silently read as a global census (the #948 sibling-worktree shape):
+silently read as a global census (the sibling-worktree shape):
 
 * ``manage-status`` ``cmd_list`` surfaces a first-class ``scope`` field
   (``main`` / ``worktree_local`` / ``unknown``, from ``_resolution_scope``): from
