@@ -572,7 +572,7 @@ class _ReReviewStrategy:
     there rather than re-derived from the trigger string.
     """
 
-    def __init__(self, trigger_comment: str, bot_kind: str = '') -> None:
+    def __init__(self, trigger_comment: str, bot_kind: str) -> None:
         self.trigger_comment = trigger_comment
         self.bot_kind = bot_kind
 
