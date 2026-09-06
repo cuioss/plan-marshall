@@ -704,6 +704,20 @@ def test_freshness_gate_reports_fresh_after_a_build_executing_dispatch(tmp_path,
     working-tree sha the match was made against. On the exempt route none of
     those keys exists, so this control cannot be satisfied by an exemption even
     if the pinned build-necessity verdict were lost.
+
+    ⛔ Nor is PRESENCE of those keys the predicate. ``'matched_entry_index' in
+    verdict`` is satisfied by ``None`` and by an out-of-range integer, so it
+    checks that the gate emitted a field, not that the field points anywhere --
+    the producer -> consumer evidence link would go unvalidated. The index is
+    therefore RESOLVED against the rows this dispatch actually wrote, and the row
+    it selects is required to carry the dispatched notation and the same
+    ``worktree_sha`` the verdict reports. That is what makes the citation a link
+    rather than a decoration.
+
+    Index alignment holds because ``matched_entry_index`` is a position among the
+    ledger's PARSED entries and ``_dispatch`` parses the same file the same way;
+    the appender writes one well-formed JSON object per line, so no line is
+    skipped on either side and the two enumerations coincide.
     """
     notation, subcommand = _a_build_executing_subcommand()
     ledger_root = tmp_path / 'gate-base'
@@ -714,7 +728,7 @@ def test_freshness_gate_reports_fresh_after_a_build_executing_dispatch(tmp_path,
 
     monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', ledger_root, raising=False)
 
-    _dispatch(tmp_path, notation, [subcommand], ledger_root=ledger_root)
+    entries = _dispatch(tmp_path, notation, [subcommand], ledger_root=ledger_root)
 
     verdict = _freshness_verdict(monkeypatch, 'discriminator-regression-plan', notation)
 
@@ -727,13 +741,36 @@ def test_freshness_gate_reports_fresh_after_a_build_executing_dispatch(tmp_path,
         f'not the {notation!r} row this dispatch stamped. A pass that cannot name the row '
         'it rests on is not a verified pass.'
     )
-    assert 'matched_entry_index' in verdict, (
-        'the gate passed without naming the ledger position of its evidence, so the '
-        'verdict cannot be audited back to a row that was actually examined.'
-    )
     assert verdict.get('worktree_sha'), (
         'the gate passed without reporting the working-tree sha it matched against — the '
         'field the exempt route omits precisely because it examines nothing.'
+    )
+
+    # Resolve the cited index against the rows this dispatch actually wrote. A
+    # bool is excluded explicitly: ``isinstance(True, int)`` is True in Python, so
+    # a ``matched_entry_index: True`` would otherwise index entries[1].
+    index = verdict.get('matched_entry_index')
+    assert isinstance(index, int) and not isinstance(index, bool), (
+        f'the gate cited matched_entry_index={index!r}, which is not an integer position; '
+        'a non-integer citation addresses no row and cannot be audited.'
+    )
+    assert 0 <= index < len(entries), (
+        f'the gate cited matched_entry_index={index} against a ledger holding '
+        f'{len(entries)} parsed row(s) — the citation points outside the evidence it '
+        'claims to rest on.'
+    )
+
+    matched_row = entries[index]
+    assert matched_row.get('notation') == notation, (
+        f'matched_entry_index={index} selects a row carrying '
+        f'{matched_row.get("notation")!r}, not the {notation!r} this dispatch stamped — '
+        'the index and the cited notation disagree, so the citation is not a link to the '
+        'row that was examined.'
+    )
+    assert matched_row.get('worktree_sha') == verdict.get('worktree_sha'), (
+        f'matched_entry_index={index} selects a row stamped at worktree_sha '
+        f'{matched_row.get("worktree_sha")!r} while the verdict reports '
+        f'{verdict.get("worktree_sha")!r} — the gate cited a row it did not match against.'
     )
 
 

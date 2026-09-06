@@ -1086,7 +1086,7 @@ This gate runs after Step 11b's quality sweep and before Step 12.
 
 #### Step 12a: Pending-tasks transition guard
 
-Before invoking `manage-status transition --completed 5-execute` (see **Phase Transition** section below), refuse to transition when any pending tasks remain AND when the on-disk worktree has not been observed by a fresh `verify` run. Pending-queue emptiness is **necessary but not sufficient**: a task that was marked `done` against a prior code state still leaves the queue empty, yet the codebase the orchestrator is about to ship has never been verified end-to-end. The canonical failure mode for this gap: `loop-exit-guard` returns `pending_count: 0` while the most recent `verify` predated the last source-file mutation, and CI fails on the pushed commit. Step 12a therefore enforces two co-equal gates: (a) `manage-tasks next` only surfaces the head of the queue, so a `null` next does NOT prove the queue is empty when downstream tasks are still in `pending` — fix tasks created by Step 11 triage commonly land here, and a premature transition silently abandons them; (b) the worktree state must clear the freshness gate — either a successful `kind=build` entry exists whose `worktree_sha` matches the current working-tree currency hash (`fresh`), or the single build/no-build authority ruled that no build was owed for this footprint at all (`exempt`, returned before any ledger row is read). Both permit; they are separate status members precisely so the transition record can state which of the two authorised it.
+Before invoking `manage-status transition --completed 5-execute` (see **Phase Transition** section below), refuse to transition when any pending tasks remain OR when the on-disk worktree has not been observed by a fresh `verify` run. The predicate is a disjunction — either gate refusing alone is enough to refuse the transition, which is exactly what the procedure below implements. Pending-queue emptiness is **necessary but not sufficient**: a task that was marked `done` against a prior code state still leaves the queue empty, yet the codebase the orchestrator is about to ship has never been verified end-to-end. The canonical failure mode for this gap: `loop-exit-guard` returns `pending_count: 0` while the most recent `verify` predated the last source-file mutation, and CI fails on the pushed commit. Step 12a therefore enforces two co-equal gates: (a) `manage-tasks next` only surfaces the head of the queue, so a `null` next does NOT prove the queue is empty when downstream tasks are still in `pending` — fix tasks created by Step 11 triage commonly land here, and a premature transition silently abandons them; (b) the worktree state must clear the freshness gate — either a successful `kind=build` entry exists whose `worktree_sha` matches the current working-tree currency hash (`fresh`), or the single build/no-build authority ruled that no build was owed for this footprint at all (`exempt`, returned before any ledger row is read). Both permit; they are separate status members precisely so the transition record can state which of the two authorised it.
 
 **Script-level enforcement**: the authoritative pending-count check is `python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks loop-exit-guard --plan-id {plan_id}` — see `manage-tasks/SKILL.md` § "Loop-Exit Guard". `status: continue` (with `pending_count > 0` and `pending_ids`) forces the orchestrator to re-dispatch the execution-context; `status: success` (with `pending_count: 0`) is the precondition for recording the `clean_exit_queue_empty` termination cause via the `manage-metrics record-dispatch-boundary` verb. The list-based check below remains documented for backwards compatibility with existing callers — both forms read the same on-disk state, but `loop-exit-guard` is the canonical surface and the verb the orchestrator MUST consult.
 
@@ -1097,25 +1097,29 @@ Before invoking `manage-status transition --completed 5-execute` (see **Phase Tr
 
 The script returns one of **four** statuses. Exactly two of them permit the transition, and they permit **on different bases**: `fresh` (a build was observed against this exact tree) and `exempt` (no build was owed, so nothing was examined). `stale` and `undecidable` block the transition with the same `[BLOCKED]` log line shape used for the pending-tasks branch. ⛔ Read the member — a predicate of the shape "not `stale` and not `undecidable`" admits any future member the script gains, which is the fail-open ADR-009 forbids. The gate fails closed by design — there is no LLM judgement and no "probably fine" fallback. Pending-queue emptiness and worktree freshness are **co-equal** gates: both MUST succeed before the phase may transition.
 
-1. Query the pending-task list:
+Both gates are **evaluated before either is acted on**. Evaluation order is fixed: the freshness check runs FIRST, unconditionally, and the pending-count query runs second — neither short-circuits the other. This ordering is load-bearing, not cosmetic: a procedure that branched on the pending count first would leave the freshness gate unevaluated whenever pending tasks remain, and step 6's `--force` escape would then bypass a gate that never ran, leaving no record that the tree was never examined. Running both first puts both verdicts in hand no matter which one refuses.
 
-   ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks list \
-     --plan-id {plan_id} --status pending
-   ```
-
-2. Parse the row count from the returned `tasks_table`. **If the count is zero**, proceed to step 2.5 (freshness check). **If non-zero**, jump to step 3.
-
-2.5. Run the freshness check:
+1. Run the freshness check — **unconditionally, and before any branch on the pending count**:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks \
      pre-commit-verify-freshness --plan-id {plan_id}
    ```
 
-   Parse `status` from the returned TOON and branch on the member itself — never on the absence of a refusal.
+   Parse `status` from the returned TOON, along with whichever of `reason`, `worktree_sha`, `ledger_path`, `matched_notation`, and `observed_status` the returned payload carries. Hold the verdict; do not act on it yet.
 
-   **On `status: fresh`**, a build was observed against this exact working tree. Record the basis on the transition, then proceed to Phase Transition:
+2. Query the pending-task list:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks list \
+     --plan-id {plan_id} --status pending
+   ```
+
+   Parse the row count and the `TASK-{number}` identifiers from the returned `tasks_table`. Hold that verdict too.
+
+3. **Freshness gate verdict.** Branch on the status member itself — never on the absence of a refusal. The two permitting branches record a basis line; because the transition now also depends on the pending gate, that basis line is emitted at step 5, once both gates have permitted and the transition is actually going ahead. The two refusing branches log their `[BLOCKED]` line here, at the point the refusal is established.
+
+   **On `status: fresh`**, a build was observed against this exact working tree. The freshness gate PERMITS on `basis=ledger-verified`; the basis line emitted at step 5 is:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -1123,7 +1127,7 @@ The script returns one of **four** statuses. Exactly two of them permit the tran
      --message "[STATUS] (plan-marshall:phase-5-execute) Worktree freshness: basis=ledger-verified (worktree_sha={worktree_sha}, matched_notation={matched_notation}) — transitioning 5-execute -> 6-finalize."
    ```
 
-   **On `status: exempt`**, no build was owed for this footprint, so **nothing was examined** — the transition proceeds on the exemption, not on evidence. It is authorised, and the record must say so, because a transition record identical to the `fresh` one would leave no reader able to tell an observed tree from an unexamined one. Record the basis and the gate's own `reason`, then proceed to Phase Transition:
+   **On `status: exempt`**, no build was owed for this footprint, so **nothing was examined** — the freshness gate PERMITS on the exemption, not on evidence. It is authorised, and the record must say so, because a transition record identical to the `fresh` one would leave no reader able to tell an observed tree from an unexamined one. The basis line carries the gate's own `reason` and is emitted at step 5:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -1131,7 +1135,7 @@ The script returns one of **four** statuses. Exactly two of them permit the tran
      --message "[STATUS] (plan-marshall:phase-5-execute) Worktree freshness: basis=exempt-unscanned (reason={reason}) — no build was owed for this footprint, so no ledger row was read and the working tree was not examined. Transitioning 5-execute -> 6-finalize on the exemption, not on observed build evidence."
    ```
 
-   **On `status: stale` or `status: undecidable`**, log a `[BLOCKED]` line and abort the transition:
+   **On `status: stale` or `status: undecidable`**, the freshness gate REFUSES. Log a `[BLOCKED]` line here — the refusal is established at this point regardless of what the pending gate says:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -1143,7 +1147,7 @@ The script returns one of **four** statuses. Exactly two of them permit the tran
 
    **The recovery path depends on the `reason` — do not re-dispatch reflexively.** `worktree_mutated` and `build_timeout` are recovered by dispatching a fresh `verify` run, after which Step 12a is re-entered. `build_error` means a build already ran against this exact tree and reported failures: re-dispatching without fixing them reproduces the same result, so route the failures through triage first. ⛔ `build_killed` means the build was **externally killed — not flaky, do not blind-retry**; establish why it was killed before dispatching anything. `build_indeterminate` means the outcome could not be read at all — a re-dispatch is appropriate, but so is recording that no verdict was obtained. ⛔ `notation_unrelated` and `notation_absent` are the two routes on which **re-dispatching is not the remedy at all**: a green *was* recorded against this exact tree, but by something the architecture cannot attribute to this project — an unresolved build notation, or a row carrying no usable notation — missing, empty, or not a string — which no dispatch boundary could have written, since a dispatched build always stamps a registered one. Something other than a build of this project is writing to the ledger; establish what before trusting any verdict from it. A fresh `verify` run will clear the block by adding a corroborated row, and will leave the polluting writer in place. See `manage-tasks/SKILL.md` § "Pre-Commit Verify Freshness" for the reason table.
 
-3. **If the pending count is non-zero**, the phase is NOT complete. Log a `[BLOCKED]` line and abort the transition:
+4. **Pending-tasks gate verdict.** **If the count parsed at step 2 is zero**, the pending gate PERMITS. **If it is non-zero**, the phase is NOT complete and the pending gate REFUSES — log a `[BLOCKED]` line here:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -1153,7 +1157,11 @@ The script returns one of **four** statuses. Exactly two of them permit the tran
 
    `{ids}` is a comma-separated list of `TASK-{number}` identifiers parsed from the `tasks_table`. Do NOT call `manage-status transition` and do NOT auto-continue to finalize.
 
-4. **`--force` escape** (mirrors the verification-cap escape in `Step 11b`): when the orchestrator is invoked with `--force`, log the override decision, then proceed to Phase Transition. The escape covers both gates — pending tasks left intact AND a refusing freshness status (`stale` or `undecidable`). It is never reached on `fresh` or `exempt`, which permit on their own and need no override. Emit one decision line per gate that the override bypasses:
+5. **Combine the two verdicts.** The gates are co-equal and conjunctive to permit: the transition proceeds only when the freshness gate permitted (step 3) AND the pending gate permitted (step 4). Emit the step-3 basis line for the permitting freshness member, then proceed to Phase Transition.
+
+   **If EITHER gate refused**, abort — the refusing gate has already logged its `[BLOCKED]` line, and both gates' verdicts are on the record either way. Do NOT emit a basis line when the transition is not going ahead: `basis=ledger-verified` / `basis=exempt-unscanned` is a record OF a transition, and emitting one for a transition that was refused would assert a phase advance that never happened. Do NOT call `manage-status transition` and do NOT auto-continue to finalize. The only route past a refusal is step 6.
+
+6. **`--force` escape** (mirrors the verification-cap escape in `Step 11b`): when the orchestrator is invoked with `--force`, log the override decision, then proceed to Phase Transition. The escape covers both gates — pending tasks left intact AND a refusing freshness status (`stale` or `undecidable`) — and it can do so honestly precisely because steps 1-4 evaluated BOTH gates before either was acted on: every placeholder below carries a real value read off a verdict that was actually reached, never a placeholder for a gate that was skipped. Emit one decision line per gate that **actually refused**; a gate that permitted is not being overridden and gets no line. A `fresh` or `exempt` freshness verdict therefore produces no freshness override line, because it permitted on its own and needed no override.
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \

@@ -469,8 +469,12 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks \
   `push`.
 
 Both gates permit on `exempt` and on `fresh`, and both fail closed on `stale` and
-`undecidable`, emitting a `[BLOCKED]` work-log line carrying the reason and the
-working-tree sha. Both also **record which of the two permitting members
+`undecidable`, emitting a `[BLOCKED]` work-log line that always carries the
+`reason`, and carries the working-tree sha except on the
+`undecidable` / `head_unresolvable` sub-case — where the sha is by definition
+uncomputable, which is the very thing that reason reports, and `ledger_path` is
+likewise absent. See the reason list above for which fields each route carries.
+Both also **record which of the two permitting members
 authorised them** — `basis=ledger-verified` for `fresh`, `basis=exempt-unscanned`
 plus the gate's `reason` for `exempt` — in the outcome record they already emit
 (`push`'s `mark-step-done --display-detail`, Step 12a's transition `[STATUS]`
