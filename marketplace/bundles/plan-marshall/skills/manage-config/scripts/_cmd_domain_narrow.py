@@ -70,7 +70,14 @@ EXEMPT_SYSTEM = 'system_exempt'
 
 
 class _TaskLegUnreadable(Exception):
-    """A ``TASK-*.json`` could not be read, so the task leg cannot be evaluated.
+    """A ``TASK-*.json`` could not be read, or carries no usable domain.
+
+    Both shapes are the same failure: the file names a task whose domain the leg was
+    supposed to evaluate, and the leg came away with nothing from it. An I/O error and a
+    parse error are the unreadable half; a document that parses cleanly but is not an
+    object, or an object whose required ``domain`` field is absent, empty, or not a
+    string, is the unusable half. ``domain`` is a required task field, so such a record
+    is malformed rather than merely sparse.
 
     Raised rather than skipped: a skipped task file silently removes the domain it
     claims from the leg, and the run then reports ``status: success`` with that domain
@@ -94,6 +101,15 @@ def _read_affected_files(plan_dir) -> list[str] | None:
     containing a comma split into two entries, and the joined string had to be
     interpolated into a documented shell command line, putting repository-controlled
     text where ``$(...)``, backticks and backslashes are live.
+
+    Blank entries — empty AND whitespace-only — are excluded here, and this is the only
+    place the primary path filters them. The test is ``f.strip()`` but the value kept is
+    ``f`` VERBATIM: stripping the value it keeps would mutate a persisted path before the
+    ``file_globs`` leg matches against it, so a domain whose glob matches only the
+    recorded form would land in ``dropped`` with an empty ``claimed_by`` — a leg that
+    evaluated corrupted evidence rendering as a leg that looked and found nothing.
+    Filtering here rather than at the call site is what lets the caller take the list as
+    given while ``footprint_empty`` still fires on an all-blank list.
     """
     refs_file = plan_dir / 'references.json'
     try:
@@ -105,7 +121,7 @@ def _read_affected_files(plan_dir) -> list[str] | None:
     files = refs.get('affected_files')
     if not isinstance(files, list):
         return None
-    return [f for f in files if isinstance(f, str) and f]
+    return [f for f in files if isinstance(f, str) and f.strip()]
 
 
 def _read_domains(plan_dir) -> list[str] | None:
@@ -143,6 +159,12 @@ def _task_claimed_domains(plan_dir) -> set[str]:
     that could not be evaluated at all. That is the fail-open the safety bound exists to
     prevent: a guard that could not look must not read as a guard that looked and found
     nothing.
+
+    "Malformed" covers the parsed-but-unusable shapes too, not only the I/O and parse
+    failures: a document that is not an object, and an object whose required ``domain``
+    field is absent, empty, or not a string, each raise. Skipping those would reopen the
+    same fail-open through a different door — the file would contribute no claim and the
+    loop would move on, which is the very outcome the paragraph above rules out.
     """
     claimed: set[str] = set()
     for task_file in sorted(plan_dir.glob('TASK-*.json')):
@@ -150,9 +172,18 @@ def _task_claimed_domains(plan_dir) -> set[str]:
             task = json.loads(task_file.read_text(encoding='utf-8'))
         except (OSError, json.JSONDecodeError) as exc:
             raise _TaskLegUnreadable(task_file, exc) from exc
-        domain = task.get('domain') if isinstance(task, dict) else None
-        if isinstance(domain, str) and domain:
-            claimed.add(domain)
+        if not isinstance(task, dict):
+            raise _TaskLegUnreadable(
+                task_file,
+                TypeError(f'task record is a {type(task).__name__}, not a JSON object'),
+            )
+        domain = task.get('domain')
+        if not isinstance(domain, str) or not domain:
+            raise _TaskLegUnreadable(
+                task_file,
+                ValueError(f'task record carries no usable domain field (got {domain!r})'),
+            )
+        claimed.add(domain)
     return claimed
 
 
@@ -205,7 +236,7 @@ def cmd_domain_narrow(args) -> dict[str, Any]:
 
     try:
         config = load_config()
-    except (FileNotFoundError, ValueError) as exc:
+    except (OSError, ValueError) as exc:
         return {
             'status': 'error',
             'error': 'marshal_not_readable',
@@ -241,7 +272,10 @@ def cmd_domain_narrow(args) -> dict[str, Any]:
                     'had no footprint to evaluate against'
                 ),
             }
-        footprint = {f.strip() for f in declared if f.strip()}
+        # Taken verbatim: ``_read_affected_files`` has already excluded the blank
+        # entries, and stripping here would hand the ``file_globs`` leg a path in a
+        # form the plan never declared.
+        footprint = set(declared)
     else:
         footprint = {p.strip() for p in affected_files_raw.split(',') if p.strip()}
 
@@ -264,8 +298,9 @@ def cmd_domain_narrow(args) -> dict[str, Any]:
             'status': 'error',
             'error': 'task_leg_unreadable',
             'message': (
-                f'Task file {exc.task_file} could not be read, so the task leg of the '
-                f'safety bound could not be evaluated and no domain may be dropped on it: {exc.cause}'
+                f'Task file {exc.task_file} could not be read, or carries no usable domain, '
+                'so the task leg of the safety bound could not be evaluated and no domain '
+                f'may be dropped on it: {exc.cause}'
             ),
         }
 

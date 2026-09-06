@@ -64,6 +64,19 @@ _CONFIGURED_DOMAINS = sorted(d for d in _DOMAINS_CONFIG['skill_domains'] if d !=
 _PY_FOOTPRINT = 'marketplace/bundles/plan-marshall/skills/manage-config/scripts/a.py'
 _MD_FOOTPRINT = 'doc/user/configuration.adoc'
 
+#: A persisted path whose recorded form carries significant leading and trailing
+#: whitespace, paired with a glob anchored on that whitespace. The glob matches the
+#: recorded form and NOT its stripped counterpart, which is what makes the pair a
+#: discriminating probe for whether the primary path mutates the value it matches.
+_PADDED_FOOTPRINT = f' {_PY_FOOTPRINT} '
+_PADDED_GLOB_CONFIG = {
+    'skill_domains': {
+        'system': {'defaults': []},
+        'documentation': {'bundle': 'pm-documents'},
+        'python': {'bundle': 'pm-dev-python', 'file_globs': [' **/*.py ']},
+    }
+}
+
 
 def _ns(plan_id: str, affected_files: str) -> Namespace:
     """Args for ``manage-config domain-narrow``, built by the script's own parser."""
@@ -89,6 +102,29 @@ def _seed(plan_context, plan_id: str, domains: list[str], *, config: dict | None
         json.dumps({'base_branch': 'main', 'domains': domains}), encoding='utf-8'
     )
     return plan_dir
+
+
+def _seed_with_footprint(
+    plan_context,
+    plan_id: str,
+    domains: list[str],
+    affected_files: list[str],
+    *,
+    config: dict | None = None,
+) -> Path:
+    """Seed a plan whose references.json also carries a persisted ``affected_files`` list."""
+    plan_dir = _seed(plan_context, plan_id, domains, config=config)
+    (plan_dir / 'references.json').write_text(
+        json.dumps({'base_branch': 'main', 'domains': domains, 'affected_files': affected_files}),
+        encoding='utf-8',
+    )
+    return plan_dir
+
+
+def _ns_without_flag(plan_id: str) -> Namespace:
+    """Args for ``domain-narrow`` with the override omitted, so the persisted list is the source."""
+    ns: Namespace = parse_ns(_BUNDLE, _SKILL, _SCRIPT_NAME, 'domain-narrow', '--plan-id', plan_id)
+    return ns
 
 
 def _write_task(plan_dir: Path, number: int, domain: str) -> None:
@@ -495,20 +531,14 @@ def test_affected_files_is_optional_at_the_parser():
 
 def test_footprint_is_read_from_references_when_the_flag_is_absent(plan_context):
     """The primary source is the persisted list, so a comma in a path cannot split it."""
-    plan_dir = _seed(plan_context, 'dn-refs-footprint', _CONFIGURED_DOMAINS)
-    (plan_dir / 'references.json').write_text(
-        json.dumps(
-            {
-                'base_branch': 'main',
-                'domains': _CONFIGURED_DOMAINS,
-                'affected_files': ['marketplace/bundles/plan-marshall/skills/a,b/scripts/x.py'],
-            }
-        ),
-        encoding='utf-8',
+    _seed_with_footprint(
+        plan_context,
+        'dn-refs-footprint',
+        _CONFIGURED_DOMAINS,
+        ['marketplace/bundles/plan-marshall/skills/a,b/scripts/x.py'],
     )
 
-    ns = parse_ns(_BUNDLE, _SKILL, _SCRIPT_NAME, 'domain-narrow', '--plan-id', 'dn-refs-footprint')
-    result = cmd_domain_narrow(ns)
+    result = cmd_domain_narrow(_ns_without_flag('dn-refs-footprint'))
 
     assert result['status'] == 'success'
     # The comma-bearing path stayed ONE path, so the .py glob still claims python.
@@ -520,11 +550,57 @@ def test_missing_footprint_is_refused(plan_context):
     """No list and no override is a could-not-evaluate error, never a silent full drop."""
     _seed(plan_context, 'dn-no-footprint', _CONFIGURED_DOMAINS)
 
-    ns = parse_ns(_BUNDLE, _SKILL, _SCRIPT_NAME, 'domain-narrow', '--plan-id', 'dn-no-footprint')
-    result = cmd_domain_narrow(ns)
+    result = cmd_domain_narrow(_ns_without_flag('dn-no-footprint'))
 
     assert result['status'] == 'error'
     assert result['error'] == 'footprint_unreadable'
+
+
+# =============================================================================
+# Footprint fidelity — the persisted path is matched in the form it was recorded
+# =============================================================================
+
+
+def test_a_whitespace_bearing_persisted_path_reaches_the_glob_leg_verbatim(plan_context):
+    """A recorded path keeps its significant whitespace all the way to ``file_globs``.
+
+    The glob here matches ONLY the recorded form, so the assertion fails the moment
+    the primary path mutates the value: a stripped path misses the glob, ``python``
+    lands in ``dropped`` with an empty ``claimed_by``, and the leg that evaluated a
+    path the plan never declared reads as a leg that looked and found nothing.
+    """
+    _seed_with_footprint(
+        plan_context,
+        'dn-verbatim',
+        ['documentation', 'python'],
+        [_PADDED_FOOTPRINT],
+        config=_PADDED_GLOB_CONFIG,
+    )
+
+    result = cmd_domain_narrow(_ns_without_flag('dn-verbatim'))
+
+    assert result['status'] == 'success'
+    assert 'python' in result['retained']
+    assert _claimed_by(result, 'python') == ['file_globs']
+
+
+def test_an_all_blank_persisted_footprint_still_refuses_to_narrow(plan_context):
+    """Blank-only entries leave no footprint, so the guard refuses rather than narrowing.
+
+    This is the negative control for the sibling above. Keeping the recorded form
+    verbatim must not also keep a blank entry: a footprint of ``{'   '}`` is
+    non-empty enough to pass the ``footprint_empty`` guard while matching no glob,
+    which would drop every glob-only domain on evidence that matches nothing.
+    """
+    _seed_with_footprint(
+        plan_context, 'dn-blank-footprint', _CONFIGURED_DOMAINS, ['   ', '\t', '\n', '']
+    )
+
+    result = cmd_domain_narrow(_ns_without_flag('dn-blank-footprint'))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'footprint_empty'
+    assert 'dropped' not in result
 
 
 def test_unreadable_task_file_is_refused_not_skipped(plan_context):
@@ -539,6 +615,62 @@ def test_unreadable_task_file_is_refused_not_skipped(plan_context):
     # The fail-open this replaces would have returned success with the task's domain
     # dropped and an empty claimed_by — "no leg claimed it" for a leg that never ran.
     assert 'dropped' not in result
+
+
+@pytest.mark.parametrize(
+    'task_body',
+    [
+        '[]',
+        '"plan-marshall-plugin-dev"',
+        '{"number": 1}',
+        '{"number": 1, "domain": ""}',
+        '{"number": 1, "domain": 42}',
+    ],
+    ids=[
+        'not-an-object',
+        'a-bare-string',
+        'domain-absent',
+        'domain-empty',
+        'domain-not-a-string',
+    ],
+)
+def test_a_parsed_but_unusable_task_file_is_refused_not_skipped(plan_context, task_body):
+    """A task record carrying no usable domain is refused exactly like an unparseable one.
+
+    ``domain`` is a required task field, so a record without a usable string one is
+    malformed rather than sparse. Skipping it reopens the same fail-open through a
+    different door: the file contributes no claim, the loop moves on, and the domain it
+    named is dropped carrying an empty ``claimed_by`` — "no leg claimed it" published for
+    a leg that never evaluated the file at all.
+    """
+    plan_dir = _seed(plan_context, 'dn-unusable-task', _CONFIGURED_DOMAINS)
+    (plan_dir / 'TASK-001.json').write_text(task_body, encoding='utf-8')
+
+    result = cmd_domain_narrow(_ns('dn-unusable-task', _PY_FOOTPRINT))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'task_leg_unreadable'
+    assert 'dropped' not in result
+
+
+def test_a_marshal_read_failure_is_reported_rather_than_raised(plan_context):
+    """A read failure that is not absence still returns the documented error.
+
+    The guard used to catch ``FileNotFoundError`` alone, so any other ``OSError`` from
+    the read — a permission denial, a path that is a directory — escaped
+    ``cmd_domain_narrow`` as a traceback instead of the ``marshal_not_readable`` result
+    the contract promises. The two sibling readers in the same module already caught
+    ``OSError``; this pins that the config read now agrees with them.
+    """
+    _seed(plan_context, 'dn-marshal-unreadable', _CONFIGURED_DOMAINS)
+    marshal_path: Path = plan_context.fixture_dir / 'marshal.json'
+    marshal_path.unlink()
+    marshal_path.mkdir()
+
+    result = cmd_domain_narrow(_ns('dn-marshal-unreadable', _PY_FOOTPRINT))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'marshal_not_readable'
 
 
 def test_help_lists_both_flags(monkeypatch, capsys):
