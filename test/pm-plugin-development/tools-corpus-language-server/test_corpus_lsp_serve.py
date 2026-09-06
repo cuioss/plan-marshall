@@ -62,6 +62,18 @@ def _capabilities(stdout: bytes) -> dict:
     return capabilities
 
 
+def _messages(stdout: bytes) -> list[dict]:
+    """Split a framed byte stream into JSON-RPC messages, in order."""
+    out: list[dict] = []
+    rest = stdout
+    while rest:
+        header, _, remainder = rest.partition(b'\r\n\r\n')
+        length = int(header.split(b':', 1)[1].strip())
+        out.append(json.loads(remainder[:length]))
+        rest = remainder[length:]
+    return out
+
+
 def _project(root: Path, marshal: dict | None) -> Path:
     (root / 'marketplace' / 'bundles').mkdir(parents=True, exist_ok=True)
     if marshal is not None:
@@ -294,3 +306,157 @@ class TestDocumentSyncIsWiredToResolution:
         assert file_line != 0, 'the fixture must place the reference away from line 0'
         assert at_buffer_line is not None and at_buffer_line['result'] is None
         assert at_file_line is not None and at_file_line['result'] is not None
+
+
+class TestCorpusPathResolvesThroughTheRealClient:
+    """D6-S05 — ``corpus_path`` driven end to end through the ``serve`` entry point.
+
+    Every other e2e test in this module builds its corpus at the DEFAULT
+    location (``marketplace/bundles``), so none of them exercise
+    ``resolve_corpus_path`` reading a configured ``corpus_path`` at all — a
+    resolver that silently fell back to the default on any custom value would
+    still pass every other test here. This class configures a location the
+    default would never find, and proves the answer comes from THAT tree.
+    """
+
+    @staticmethod
+    def _project_with_custom_corpus(root: Path) -> Path:
+        corpus_root = build_corpus(root)  # root/bundles/{alpha,beta}
+        custom = root / 'my-corpus'
+        custom.mkdir(parents=True, exist_ok=True)
+        for child in corpus_root.iterdir():
+            child.rename(custom / child.name)
+        (root / '.plan').mkdir(parents=True, exist_ok=True)
+        marshal = {
+            'code_intelligence': {
+                'corpus_language_server': {'enabled': True, 'corpus_path': 'my-corpus'}
+            }
+        }
+        (root / '.plan' / 'marshal.json').write_text(json.dumps(marshal), encoding='utf-8')
+        return root
+
+    def test_definition_resolves_from_the_configured_path(self, tmp_path: Path) -> None:
+        root = self._project_with_custom_corpus(tmp_path)
+        skill = root / 'my-corpus' / 'beta' / 'skills' / 'caller' / 'SKILL.md'
+        line_no = skill.read_text(encoding='utf-8').split('\n').index(CURSOR_LINE)
+        env = {k: v for k, v in os.environ.items() if k != 'PYTHONPATH'}
+        stdin = (
+            _framed({'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {}})
+            + _framed({
+                'jsonrpc': '2.0', 'id': 2, 'method': 'textDocument/definition',
+                'params': {
+                    'textDocument': {'uri': skill.as_uri()},
+                    'position': {'line': line_no, 'character': NOTATION_COLUMN},
+                },
+            })
+            + _framed({'jsonrpc': '2.0', 'method': 'exit'})
+        )
+
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), 'serve', '--project-path', str(root)],
+            input=stdin,
+            capture_output=True,
+            env=env,
+            timeout=120,
+        )
+
+        assert result.returncode == 0, result.stderr.decode()
+        definition_response = next(m for m in _messages(result.stdout) if m.get('id') == 2)
+        assert definition_response['result'] is not None, 'the configured corpus_path was not resolved'
+        assert definition_response['result']['uri'].endswith('my-corpus/alpha/skills/target-skill/SKILL.md')
+
+    def test_the_same_tree_answers_nothing_once_corpus_path_is_pointed_away(self, tmp_path: Path) -> None:
+        """The control: re-pointing ``corpus_path`` off the built tree must lose the answer.
+
+        Same corpus on disk as the positive test above, only ``corpus_path``
+        changes. Without this, the positive test could pass for the wrong
+        reason — e.g. a resolver that always finds the corpus some other way
+        (cwd, a cached root) regardless of what ``corpus_path`` says.
+        """
+        root = self._project_with_custom_corpus(tmp_path)
+        marshal = {
+            'code_intelligence': {
+                'corpus_language_server': {'enabled': True, 'corpus_path': 'no/such/directory'}
+            }
+        }
+        (root / '.plan' / 'marshal.json').write_text(json.dumps(marshal), encoding='utf-8')
+        skill = root / 'my-corpus' / 'beta' / 'skills' / 'caller' / 'SKILL.md'
+        line_no = skill.read_text(encoding='utf-8').split('\n').index(CURSOR_LINE)
+        env = {k: v for k, v in os.environ.items() if k != 'PYTHONPATH'}
+        stdin = (
+            _framed({'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {}})
+            + _framed({
+                'jsonrpc': '2.0', 'id': 2, 'method': 'textDocument/definition',
+                'params': {
+                    'textDocument': {'uri': skill.as_uri()},
+                    'position': {'line': line_no, 'character': NOTATION_COLUMN},
+                },
+            })
+            + _framed({'jsonrpc': '2.0', 'method': 'exit'})
+        )
+
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), 'serve', '--project-path', str(root)],
+            input=stdin,
+            capture_output=True,
+            env=env,
+            timeout=120,
+        )
+
+        assert result.returncode == 0, result.stderr.decode()
+        definition_response = next(m for m in _messages(result.stdout) if m.get('id') == 2)
+        assert definition_response['result'] is None
+
+
+class TestMissingCorpusDegradesWithoutCorruptingTheSession:
+    """D6-S05 — enabled, but the configured ``corpus_path`` does not exist.
+
+    ``cmd_preflight``/``cmd_query`` report this as a ``degraded`` payload (see
+    ``test_corpus_lsp_optin.py``), but nothing drove the SAME misconfiguration
+    through the resident ``serve`` loop: ``CorpusLanguageServer.index`` returns
+    ``None`` in this case, and every handler above it must fold that into a
+    clean empty answer rather than raising and corrupting the frame stream.
+    """
+
+    @staticmethod
+    def _project_with_missing_corpus(root: Path) -> Path:
+        (root / 'marketplace' / 'bundles').mkdir(parents=True, exist_ok=True)
+        (root / '.plan').mkdir(parents=True, exist_ok=True)
+        marshal = {
+            'code_intelligence': {
+                'corpus_language_server': {'enabled': True, 'corpus_path': 'no/such/corpus'}
+            }
+        }
+        (root / '.plan' / 'marshal.json').write_text(json.dumps(marshal), encoding='utf-8')
+        return root
+
+    def test_definition_answers_null_rather_than_erroring(self, tmp_path: Path) -> None:
+        root = self._project_with_missing_corpus(tmp_path)
+        doc = root / 'doc.md'
+        doc.write_text('Run alpha:target-skill here.\n', encoding='utf-8')
+        env = {k: v for k, v in os.environ.items() if k != 'PYTHONPATH'}
+        stdin = (
+            _framed({'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {}})
+            + _framed({
+                'jsonrpc': '2.0', 'id': 2, 'method': 'textDocument/definition',
+                'params': {
+                    'textDocument': {'uri': doc.as_uri()},
+                    'position': {'line': 0, 'character': 5},
+                },
+            })
+            + _framed({'jsonrpc': '2.0', 'method': 'exit'})
+        )
+
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), 'serve', '--project-path', str(root)],
+            input=stdin,
+            capture_output=True,
+            env=env,
+            timeout=120,
+        )
+
+        assert result.returncode == 0, result.stderr.decode()
+        assert result.stderr == b'', f'a missing corpus must degrade quietly, not log a defect: {result.stderr!r}'
+        definition_response = next(m for m in _messages(result.stdout) if m.get('id') == 2)
+        assert 'error' not in definition_response, f'a missing corpus must not surface as a handler error: {definition_response}'
+        assert definition_response['result'] is None
