@@ -149,7 +149,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 [#pause-gate-census]
 === Pause-gate census
 
-Every gate that can still stop a *plan run*, with its default, the config path that owns it, and the verdict. The closure is over the plan tier alone — the epic-tier `orchestrator.auto_emit` gate is a knob of the epic orchestrator, not of a plan run, and is documented in <<orchestrator-knobs>>.
+Every gate that can still stop a *plan run*, with its default, the config path that owns it, and how it halts. The closure is over the plan tier alone — the epic-tier `orchestrator.auto_emit` gate is a knob of the epic orchestrator, not of a plan run, and is documented in <<orchestrator-knobs>>.
 
 The inclusion predicate is **"halts the run for operator input"** — deliberately not "fires an `AskUserQuestion`". Two knobs halt with a `Display` + `STOP` and no prompt at all (`execute_without_asking` and `loop_back_without_asking`), so a census built from prompt sites alone would omit both. The predicate also reaches the orchestrator workflows, not only the phase skills: a dispatched phase leaf cannot prompt — it returns a prompt-required envelope and the orchestrator fires it — so phases 2–5 raise no prompts of their own.
 
@@ -157,33 +157,33 @@ A timeout budget is in the census only when its own exhaustion reaches the opera
 
 [cols="2,1,2,2", options="header"]
 |===
-| Gate | Default | Owning config path | Verdict
+| Gate | Default | Owning config path | Halt behaviour
 
-| `init_without_asking` | `true` | `plan.phase-1-init.init_without_asking` | keep
-| `plan_without_asking` | `false` | `plan.phase-3-outline.plan_without_asking` | keep — the single deliberate human checkpoint in the plan lifecycle
-| `execute_without_asking` | `true` | `plan.phase-4-plan.execute_without_asking` | keep — halts with `Display` + `STOP`, no prompt
-| `finalize_without_asking` | `true` | `plan.phase-6-finalize.finalize_without_asking` | keep
-| `loop_back_without_asking` | `true` | `plan.phase-6-finalize.loop_back_without_asking` | **FLIP** — halts with `Display` + `STOP`, no prompt; bounded by `max_iterations`
-| `deep_lane` | `auto` | `plan.phase-1-init.deep_lane` | keep
-| `escalation` | `auto` | `plan.phase-1-init.escalation` | keep
-| `revalidation` | `auto` | `plan.phase-2-refine.revalidation` | keep
-| `lane_selection` | `ask` | `plan.phase-1-init.lane_selection` | keep
-| `q_gate_validation` (outline) | `once` | `plan.phase-3-outline.q_gate_validation` | keep
-| `q_gate_validation` (plan) | `once` | `plan.phase-4-plan.q_gate_validation` | keep
-| `automatic-review` infra lane | `ask` | `plan.phase-6-finalize.steps['plan-marshall:automatic-review'].lane` | keep — a setup-time prompt, not a run-time halt
-| `sonar-roundtrip` infra lane | `ask` | `plan.phase-6-finalize.steps['default:sonar-roundtrip'].lane` | keep — a setup-time prompt, not a run-time halt
-| `re_review_on_timeout` | `ask` | `plan.phase-6-finalize.steps['plan-marshall:automatic-review'].re_review_on_timeout` | keep — `ask` halts and asks the operator when a re-review await expires with no fresh bot review
-| `review_rate_window_await` | `false` | `plan.phase-6-finalize.steps['plan-marshall:automatic-review'].review_rate_window_await` | keep — off by default; `true` arms the rate-limit refusal recovery, whose escalations ask the operator
-| `review_rate_window_timeout_seconds` | `3600` | `plan.phase-6-finalize.steps['plan-marshall:automatic-review'].review_rate_window_timeout_seconds` | keep — consulted only when the row above is `true`; exhaustion escalates to the operator
-| `auto_route_recipe` | `true` | `plan.phase-1-init.auto_route_recipe` | keep
-| `auto_route_recipe_threshold` | `0.6` | `plan.phase-1-init.auto_route_recipe_threshold` | keep
-| `auto_rebase_threshold` (sync-baseline) | `no_overlap_only` | `plan.phase-6-finalize.steps['default:finalize-step-sync-baseline'].auto_rebase_threshold` | keep — any overlap defers to the operator; `never` always does
-| `final_merge_without_asking` | `true` | `plan.phase-6-finalize.steps['default:branch-cleanup'].final_merge_without_asking` | **FLIP** — see the residual-safety note below
-| `auto_rebase_threshold` (branch-cleanup) | `no_overlap_only` | `plan.phase-6-finalize.steps['default:branch-cleanup'].auto_rebase_threshold` | keep
-| `pre_merge_comment_barrier` | `fail_into_loopback` | `plan.phase-6-finalize.steps['default:branch-cleanup'].pre_merge_comment_barrier` | keep
-| `admin_merge_on_stuck_state` | `false` | `plan.phase-6-finalize.steps['default:branch-cleanup'].admin_merge_on_stuck_state` | keep
-| `merge_queue_wait_budget_seconds` | `1800` | `plan.phase-6-finalize.steps['default:branch-cleanup'].merge_queue_wait_budget_seconds` | keep
-| `merge_hold_budget_seconds` | `3600` | `plan.phase-6-finalize.steps['default:branch-cleanup'].merge_hold_budget_seconds` | keep
+| `init_without_asking` | `true` | `plan.phase-1-init.init_without_asking` |
+| `plan_without_asking` | `false` | `plan.phase-3-outline.plan_without_asking` | the single deliberate human checkpoint in the plan lifecycle
+| `execute_without_asking` | `true` | `plan.phase-4-plan.execute_without_asking` | halts with `Display` + `STOP`, no prompt
+| `finalize_without_asking` | `true` | `plan.phase-6-finalize.finalize_without_asking` |
+| `loop_back_without_asking` | `true` | `plan.phase-6-finalize.loop_back_without_asking` | halts with `Display` + `STOP`, no prompt; bounded by `max_iterations`
+| `deep_lane` | `auto` | `plan.phase-1-init.deep_lane` |
+| `escalation` | `auto` | `plan.phase-1-init.escalation` |
+| `revalidation` | `auto` | `plan.phase-2-refine.revalidation` |
+| `lane_selection` | `ask` | `plan.phase-1-init.lane_selection` |
+| `q_gate_validation` (outline) | `once` | `plan.phase-3-outline.q_gate_validation` |
+| `q_gate_validation` (plan) | `once` | `plan.phase-4-plan.q_gate_validation` |
+| `automatic-review` infra lane | `ask` | `plan.phase-6-finalize.steps['plan-marshall:automatic-review'].lane` | a setup-time prompt, not a run-time halt
+| `sonar-roundtrip` infra lane | `ask` | `plan.phase-6-finalize.steps['default:sonar-roundtrip'].lane` | a setup-time prompt, not a run-time halt
+| `re_review_on_timeout` | `ask` | `plan.phase-6-finalize.steps['plan-marshall:automatic-review'].re_review_on_timeout` | `ask` halts and asks the operator when a re-review await expires with no fresh bot review
+| `review_rate_window_await` | `false` | `plan.phase-6-finalize.steps['plan-marshall:automatic-review'].review_rate_window_await` | off by default; `true` arms the rate-limit refusal recovery, whose escalations ask the operator
+| `review_rate_window_timeout_seconds` | `3600` | `plan.phase-6-finalize.steps['plan-marshall:automatic-review'].review_rate_window_timeout_seconds` | consulted only when the row above is `true`; exhaustion escalates to the operator
+| `auto_route_recipe` | `true` | `plan.phase-1-init.auto_route_recipe` |
+| `auto_route_recipe_threshold` | `0.6` | `plan.phase-1-init.auto_route_recipe_threshold` |
+| `auto_rebase_threshold` (sync-baseline) | `no_overlap_only` | `plan.phase-6-finalize.steps['default:finalize-step-sync-baseline'].auto_rebase_threshold` | any overlap defers to the operator; `never` always does
+| `final_merge_without_asking` | `true` | `plan.phase-6-finalize.steps['default:branch-cleanup'].final_merge_without_asking` | see the residual-safety note below
+| `auto_rebase_threshold` (branch-cleanup) | `no_overlap_only` | `plan.phase-6-finalize.steps['default:branch-cleanup'].auto_rebase_threshold` |
+| `pre_merge_comment_barrier` | `fail_into_loopback` | `plan.phase-6-finalize.steps['default:branch-cleanup'].pre_merge_comment_barrier` |
+| `admin_merge_on_stuck_state` | `false` | `plan.phase-6-finalize.steps['default:branch-cleanup'].admin_merge_on_stuck_state` |
+| `merge_queue_wait_budget_seconds` | `1800` | `plan.phase-6-finalize.steps['default:branch-cleanup'].merge_queue_wait_budget_seconds` |
+| `merge_hold_budget_seconds` | `3600` | `plan.phase-6-finalize.steps['default:branch-cleanup'].merge_hold_budget_seconds` |
 |===
 
 [NOTE]
