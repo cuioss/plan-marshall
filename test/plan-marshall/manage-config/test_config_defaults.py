@@ -1025,9 +1025,11 @@ def test_project_set_then_get_roundtrip_default_base_branch(plan_context):
 # orchestrator noun — orchestrator.auto_emit knob
 # =============================================================================
 #
-# The orchestrator-tier autonomy knob mirrors the plan-tier autonomy family
-# (finalize_without_asking / loop_back_without_asking). Default False: manual
-# emit is the safe posture. The knob automates the `launched` emit, NEVER the
+# The orchestrator-tier autonomy knob is the counterpart of the plan-tier
+# autonomy family (finalize_without_asking / loop_back_without_asking) but does
+# NOT share its posture. Default False: manual emit is the safe posture, because
+# this knob's blast radius is a whole further plan rather than a step inside an
+# already-approved one. The knob automates the `launched` emit, NEVER the
 # operator-confirmed `launched -> running` (started) transition — the
 # emit != running invariant is absolute.
 
@@ -3269,22 +3271,21 @@ class TestLoopBackWithoutAskingDefault:
     """``loop_back_without_asking`` is the reverse-direction symmetric
     counterpart of ``finalize_without_asking``. Both are flat knobs under
     ``plan.phase-6-finalize`` (the ``ceremony_policy`` block was dissolved and
-    every gate/automation knob distributed back into its owning phase). The
-    defaults are intentionally asymmetric: forward auto-continue is the common
-    case and defaults to ``True``; reverse loop-back surfaces a control return
-    to the user and defaults to ``False`` so unattended runs cannot silently
-    re-enter execute on a finalize-side fix."""
+    every gate/automation knob distributed back into its owning phase). Both
+    default to ``True``: a finalize-side fix is corrective work inside a plan
+    the user already approved, so the cycle auto-continues in both directions
+    and ``max_iterations`` is what terminates it."""
 
-    def test_default_is_false(self) -> None:
+    def test_default_is_true(self) -> None:
         """``get_default_config()`` MUST expose
-        ``plan.phase-6-finalize.loop_back_without_asking == False``."""
+        ``plan.phase-6-finalize.loop_back_without_asking == True``."""
         cfg = _config_defaults_mod.get_default_config()
         assert (
             cfg['plan']['phase-6-finalize']['loop_back_without_asking']
-            is False
+            is True
         ), (
             'get_default_config()["plan"]["phase-6-finalize"]'
-            '["loop_back_without_asking"] must default to False'
+            '["loop_back_without_asking"] must default to True'
         )
 
     def test_finalize_block_default_matches(self) -> None:
@@ -3293,24 +3294,23 @@ class TestLoopBackWithoutAskingDefault:
         physical default and must never drift."""
         assert (
             _config_defaults_mod.DEFAULT_PLAN_FINALIZE['loop_back_without_asking']
-            is False
+            is True
         )
 
-    def test_asymmetric_with_finalize_without_asking(self) -> None:
-        """The two auto-continuation knobs default asymmetrically —
+    def test_symmetric_with_finalize_without_asking(self) -> None:
+        """The two auto-continuation knobs default symmetrically —
         ``finalize_without_asking=True`` (forward auto) and
-        ``loop_back_without_asking=False`` (reverse halt). Both are flat
-        ``plan.phase-6-finalize`` knobs. If they drift to a symmetric pair,
+        ``loop_back_without_asking=True`` (reverse auto). Both are flat
+        ``plan.phase-6-finalize`` knobs. If either drifts back to ``False``,
         the contract documented in ``marshall-steward/references/wizard-flow.md``
         § Step 7c is broken."""
         cfg = _config_defaults_mod.get_default_config()
         finalize = cfg['plan']['phase-6-finalize']
         forward = finalize['finalize_without_asking']
         reverse = finalize['loop_back_without_asking']
-        assert forward is True and reverse is False, (
-            'finalize_without_asking must default to True and '
-            'loop_back_without_asking must default to False '
-            '(asymmetric auto-continuation pair)'
+        assert forward is True and reverse is True, (
+            'finalize_without_asking and loop_back_without_asking must both '
+            'default to True (symmetric auto-continuation pair)'
         )
 
     def test_fresh_project_fallback_seeds_key(self) -> None:

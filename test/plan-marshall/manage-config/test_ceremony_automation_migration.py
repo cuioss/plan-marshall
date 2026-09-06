@@ -55,7 +55,7 @@ import conftest
 # under default:branch-cleanup, covered by the dedicated step-shape tests below.
 _MIGRATED_KNOBS = (
     ('finalize_without_asking', True),
-    ('loop_back_without_asking', False),
+    ('loop_back_without_asking', True),
 )
 
 # The step-owned knob: (step_id, param, default).

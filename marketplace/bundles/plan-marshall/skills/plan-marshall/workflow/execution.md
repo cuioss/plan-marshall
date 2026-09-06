@@ -603,14 +603,14 @@ All three `manage-metrics` commands (`end-phase`, `enrich`, `generate`) are exec
 
 When `phase-6-finalize` returns `status: loop_back` — a step recorded `outcome: loop_back` with a `loop_back_target` of `5-execute` (fix-task-required dispositions) or `6-finalize` (inline-fixable dispositions) — the orchestrator's behaviour mirrors the forward `finalize_without_asking` shape but is gated by the symmetric reverse-direction `loop_back_without_asking` knob and routed by the persisted target. Read `loop_back_without_asking` (via `manage-config plan phase-6-finalize get --field loop_back_without_asking`) and the `loop_back_target` from the most recent `phase_steps["6-finalize"]` outcome record (via `manage-status read`), then branch:
 
-**IF `loop_back_without_asking == true`** — auto-continue. The actual inline dispatch is performed inside `phase-6-finalize/SKILL.md` Step 3 § Loop-back continuation hook and routes on `loop_back_target`:
+**IF `loop_back_without_asking == true` (default)** — auto-continue. The actual inline dispatch is performed inside `phase-6-finalize/SKILL.md` Step 3 § Loop-back continuation hook and routes on `loop_back_target`:
 
 - `loop_back_target == "5-execute"`: re-dispatches phase-5-execute against the freshly-allocated fix tasks, then transitions `5-execute → 6-finalize` via the standard `finalize_without_asking` gate. This tier is **doubly-gated**: both `loop_back_without_asking` AND `finalize_without_asking` must be `true` for a full unattended cycle — when `finalize_without_asking` is `false` the inline cycle halts at the same prompt the forward path uses.
 - `loop_back_target == "6-finalize"`: skips the phase-5-execute re-dispatch entirely and re-enters the finalize step loop. This tier is single-gated by `loop_back_without_asking` only.
 
 Both branches are capped by `phase-6-finalize.max_iterations` (default 3, counted across both tiers).
 
-**ELSE (default, `loop_back_without_asking == false`)** — assert the persisted `current_phase` matches the recorded `loop_back_target` (else log the invariant violation and **STOP** without prompting), then display the explicit target-named user prompt and **STOP**:
+**ELSE (`loop_back_without_asking == false`)** — assert the persisted `current_phase` matches the recorded `loop_back_target` (else log the invariant violation and **STOP** without prompting), then display the explicit target-named user prompt and **STOP**:
 
 - `loop_back_target == "5-execute"`: prompt the user to run `/plan-marshall action=execute` to dispatch the fix tasks, then `/plan-marshall action=finalize` to re-enter finalize.
 - `loop_back_target == "6-finalize"` (inline replay): prompt the user to run `/plan-marshall action=finalize` to replay the finalize step.

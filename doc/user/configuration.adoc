@@ -127,7 +127,7 @@ Boolean fields under each phase that decide whether the next-phase transition pa
 | `plan.phase-3-outline.plan_without_asking` | `false` | …from the outline review checkpoint to task creation.
 | `plan.phase-4-plan.execute_without_asking` | `true` | …from `phase-4-plan` to `phase-5-execute`.
 | `plan.phase-6-finalize.finalize_without_asking` | `true` | …from `phase-5-execute` to `phase-6-finalize` (forward direction).
-| `plan.phase-6-finalize.loop_back_without_asking` | `false` | …from a `phase-6-finalize` `loop_back` outcome back into `phase-5-execute` (reverse direction). Defaults differ from `finalize_without_asking` to prevent silent unattended loops. Note the mechanics: `loop_back_without_asking=false` *halts and instructs* (a Display + STOP prompt, no `AskUserQuestion`), whereas the similarly-suffixed step-owned `final_merge_without_asking=false` fires a genuine inline pre-merge `AskUserQuestion` confirmation — same suffix, opposite mechanics.
+| `plan.phase-6-finalize.loop_back_without_asking` | `true` | …from a `phase-6-finalize` `loop_back` outcome back into `phase-5-execute` (reverse direction), bounded by `plan.phase-6-finalize.max_iterations`, which is what terminates the cycle. Note the mechanics: `loop_back_without_asking=false` *halts and instructs* (a Display + STOP prompt, no `AskUserQuestion`), whereas the similarly-suffixed step-owned `final_merge_without_asking=false` fires a genuine inline pre-merge `AskUserQuestion` confirmation — same suffix, opposite mechanics.
 |===
 
 [NOTE]

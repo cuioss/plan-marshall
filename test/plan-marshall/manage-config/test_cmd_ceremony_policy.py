@@ -58,7 +58,7 @@ import conftest
 # covered by the step-get tests below.
 _MIGRATED_KNOBS = (
     ('finalize_without_asking', True),
-    ('loop_back_without_asking', False),
+    ('loop_back_without_asking', True),
 )
 
 

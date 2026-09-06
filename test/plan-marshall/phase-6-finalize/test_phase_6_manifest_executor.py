@@ -988,7 +988,7 @@ class TestLoopBackWithoutAskingContract:
     """Pin the symmetric auto-continuation contract:
 
     1. ``plan.phase-6-finalize.loop_back_without_asking`` field exists with
-       default ``False`` in the manage-config defaults surface.
+       default ``True`` in the manage-config defaults surface.
     2. ``phase-6-finalize/SKILL.md`` Step 3 dispatch loop documents the
        flag-set, flag-unset, and cap-reached branches.
     3. The canonical ``[STATUS] Loop-back iteration {N}/{max}`` work-log
@@ -1034,20 +1034,19 @@ class TestLoopBackWithoutAskingContract:
 
     # ---- Defaults surface ------------------------------------------------
 
-    def test_loop_back_without_asking_default_is_false(
+    def test_loop_back_without_asking_default_is_true(
         self, config_defaults_text: str
     ):
-        """``loop_back_without_asking`` MUST default to ``False`` — the
-        asymmetric counterpart of ``finalize_without_asking=True``. Forward
-        auto-continue is the common case (default ``True``); reverse
-        loop-back surfaces a control return to the user so unattended runs
-        cannot silently re-enter execute on a finalize-side fix. The full
-        unattended cycle remains opt-in via ``loop_back_without_asking=True``.
-        The knob is a flat field under ``plan.phase-6-finalize`` — the
-        ``ceremony_policy`` block was dissolved and every automation knob
-        distributed back into its owning phase."""
+        """``loop_back_without_asking`` MUST default to ``True`` — the
+        symmetric counterpart of ``finalize_without_asking=True``. A
+        finalize-side fix is corrective work inside a plan the user already
+        approved, so the cycle auto-continues in both directions and
+        ``max_iterations`` is the ceiling that terminates it. The knob is a
+        flat field under ``plan.phase-6-finalize`` — the ``ceremony_policy``
+        block was dissolved and every automation knob distributed back into
+        its owning phase."""
         # Locate the DEFAULT_PLAN_FINALIZE block and confirm the field is
-        # declared with default False.
+        # declared with default True.
         assert "DEFAULT_PLAN_FINALIZE = {" in config_defaults_text, (
             'DEFAULT_PLAN_FINALIZE block must exist in _config_defaults.py'
         )
@@ -1055,9 +1054,9 @@ class TestLoopBackWithoutAskingContract:
         # Find the closing brace of the dict literal.
         block_end = config_defaults_text.index("\n}\n", block_start)
         block = config_defaults_text[block_start : block_end + 3]
-        # The field MUST be present and default to False in the finalize block.
-        assert "'loop_back_without_asking': False" in block, (
-            'DEFAULT_PLAN_FINALIZE must declare loop_back_without_asking with default False'
+        # The field MUST be present and default to True in the finalize block.
+        assert "'loop_back_without_asking': True" in block, (
+            'DEFAULT_PLAN_FINALIZE must declare loop_back_without_asking with default True'
         )
         # The dissolved ceremony_policy block must not survive.
         assert 'DEFAULT_CEREMONY_POLICY' not in config_defaults_text, (

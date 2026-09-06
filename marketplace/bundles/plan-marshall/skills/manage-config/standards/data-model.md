@@ -98,7 +98,7 @@ JSON structure and field definitions for project configuration.
       "max_iterations": 3,
       "checks_wait_timeout_seconds": 600,
       "finalize_without_asking": true,
-      "loop_back_without_asking": false,
+      "loop_back_without_asking": true,
       "steps": {
         "default:pre-submission-self-review": {},
         "default:finalize-step-simplify": {},
@@ -789,7 +789,7 @@ Finalize pipeline with a `steps` keyed map. `steps` serializes on disk as a JSON
       "max_iterations": 3,
       "checks_wait_timeout_seconds": 600,
       "finalize_without_asking": true,
-      "loop_back_without_asking": false,
+      "loop_back_without_asking": true,
       "steps": {
         "default:pre-submission-self-review": {},
         "default:finalize-step-simplify": {},
@@ -829,7 +829,7 @@ Finalize pipeline with a `steps` keyed map. `steps` serializes on disk as a JSON
 | `max_iterations` | int | 3 | Maximum finalize-verify-finalize loops |
 | `checks_wait_timeout_seconds` | int | 600 | Default timeout (seconds) for the CI-completion polling commands consumed by `ci_base.py` (`ci checks wait`, `ci pr wait-for-comments`, `ci checks wait-for-status-flip`, and the two `issue wait-for-*` polls). An explicit `--timeout` CLI flag always wins; the 600s fallback covers callers running outside a plan-marshall project. This is a cross-step finalize wait-policy with no single owning step, so it **stays flat** (phase-level). |
 | `finalize_without_asking` | bool | true | Forward auto-continuation: auto-continue into finalize after execute completes. `true` (default) skips the gate. |
-| `loop_back_without_asking` | bool | false | Reverse auto-continuation: auto-re-enter execute on a `phase-6-finalize` `loop_back` outcome. `false` (default) halts at every loop_back and returns control to the user; `true` opts into the full unattended cycle, capped by `max_iterations`. |
+| `loop_back_without_asking` | bool | true | Reverse auto-continuation: auto-re-enter execute on a `phase-6-finalize` `loop_back` outcome. `true` (default) runs the unattended fix cycle, capped by `max_iterations`; `false` halts at every loop_back and returns control to the user. |
 | — (pre-push-quality-gate activation) | derived | — | The `default:pre-push-quality-gate` finalize step's activation is **derived from `build.map`** — no dedicated config key. The manifest composer consumes the three-value `build-decision` verdict and drops the step on `not_necessary` ONLY (an absent build_map, or a resolvable footprint matching no glob); an `unknown` verdict — the footprint is unresolvable — KEEPS the step, and `build` keeps it. Its ceremony gate (`qgate`) rides `steps['default:pre-push-quality-gate'].lane`, not a flat run-at-all knob. |
 | `steps` | dict | (see below) | Keyed map of step references to execute (key insertion order = execution order), persisted sorted ascending by each step's authoritative `order` value. Config-less steps map to `{}`; param-owning steps map to their nested param object. The keyed map is both the internal normalized representation and the on-disk serial form. |
 

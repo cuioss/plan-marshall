@@ -315,10 +315,11 @@ the run recoverable. The three candidate outcomes are not interchangeable here:
   **not** halt the FOR loop — item 5e records an `error` execution-log row and the loop advances, so
   `archive-plan` still runs and still destroys the directory. Only the *post-dispatch guard*
   (`step_record_missing`) halts, and that is a different path.
-- **`loop_back`** is the one outcome that does both halves: the dispatcher halts and returns control
-  on the default `loop_back_without_asking: false`, so `archive-plan` never runs, and the general
-  resumability rule re-fires the step on re-entry (*"treat as no record"*). The `max_iterations`
-  ceiling bounds it, so a persistently failing inbox cannot spin.
+- **`loop_back`** is the one outcome that does both halves: it stops the FOR loop advancing past the
+  marked step — on the default `loop_back_without_asking: true` the dispatcher breaks and re-enters
+  the loop from the start, and on `false` it halts and returns control — so `archive-plan` is not
+  reached either way, and the general resumability rule re-fires the step on re-entry (*"treat as no
+  record"*). The `max_iterations` ceiling bounds it, so a persistently failing inbox cannot spin.
 
 This is the same defect shape as `branch-cleanup` Branch F, and it takes the same remedy — a `done`
 record standing in for work that did not happen, on a step with no re-entry override.

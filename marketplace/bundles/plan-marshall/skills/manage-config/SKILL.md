@@ -691,7 +691,7 @@ The defaults template contains only `system` domain. Technical domains (java, ja
     "phase-6-finalize": {
       "max_iterations": 3,
       "finalize_without_asking": true,
-      "loop_back_without_asking": false,
+      "loop_back_without_asking": true,
       "qgate": "auto",
       "steps": {
         "default:push": {},
@@ -752,7 +752,7 @@ The lane mechanism's per-element vocabulary (the closed `lane.class` enum, the c
 | Field | Default | Meaning |
 |-------|---------|---------|
 | `finalize_without_asking` | `true` | Auto-continue into finalize after execute. |
-| `loop_back_without_asking` | `false` | Auto-re-enter on a finalize loop_back outcome. |
+| `loop_back_without_asking` | `true` | Auto-re-enter on a finalize loop_back outcome, bounded by `max_iterations`. |
 
 (`final_merge_without_asking` is NOT flat — it is a step-owned param nested under the `default:branch-cleanup` step; see the step-owned param tables below.)
 
