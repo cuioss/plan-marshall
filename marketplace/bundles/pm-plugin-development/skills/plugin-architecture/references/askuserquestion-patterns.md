@@ -1,3 +1,7 @@
+---
+targets: [claude]
+---
+
 # AskUserQuestion Authoring Obligations
 
 Five obligations every `AskUserQuestion` prompt in this marketplace must meet. Each one is stated as a rule a prompt can be tested against — not as advice — and each carries an **enforced by** marker naming what actually checks it.

@@ -1,3 +1,7 @@
+---
+targets: [claude]
+---
+
 # Hook Authoring Guide
 
 Canonical contract for plan-marshall scripts invoked as Claude Code hooks. Read this before adding a new hook-driven script or modifying an existing one; the post-2.1.139 delivery channel is JSON-on-stdout, and the silent-fallback failure mode (hook exits 0, terminal sees nothing) recurs whenever authors assume a clean exit is proof of working delivery.
