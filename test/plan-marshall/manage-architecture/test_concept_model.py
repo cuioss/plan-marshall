@@ -595,7 +595,9 @@ def _install_recording_plan_logging(monkeypatch) -> list[tuple]:
 
     calls: list[tuple] = []
     fake = types.ModuleType('plan_logging')
-    fake.log_entry = lambda *args: calls.append(args)
+    # ``ModuleType`` declares no ``log_entry``; the attribute exists only on the
+    # real module, so mypy cannot see it on the stand-in we are substituting in.
+    fake.log_entry = lambda *args: calls.append(args)  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, 'plan_logging', fake)
     return calls
 
