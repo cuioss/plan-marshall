@@ -578,19 +578,32 @@ _CONCRETE_PHASE_KEY = re.compile(r'^\d+-[a-z0-9-]+$')
 
 
 def _join_continuation(lines: list[str], index: int) -> str:
-    """Join a backslash-continued shell invocation into one logical line.
+    """Join the WHOLE backslash-continued invocation that ``index`` falls inside.
 
-    Every registering call site spans several physical lines. Reading only the
-    line carrying the verb would miss the ``--phase`` argument on the next one and
-    report a real registration as unparseable, so the continuation is followed
-    before anything is parsed.
+    Every registering call site spans several physical lines, and this repository
+    writes an executor invocation in two documented continuation styles: the
+    notation and the verb on one physical line, and the notation alone on one line
+    with the verb on the NEXT. The scan enters at the line carrying the verb, which
+    in the second style is not the first line of the command — so the walk goes
+    BACKWARD to the first physical line of the continuation before it goes forward
+    to the last. Both directions are needed, and for different reasons:
+
+    * forward, or the ``--phase`` argument on a later line is missed and a real
+      registration is reported as unparseable;
+    * backward, or the executor notation on an earlier line is missed, the joined
+      text fails the :data:`_BOUNDARY_DISPATCH` adjacency test, and a real
+      registration is filed as a ``prose_mentions`` record — a bucket no caller
+      asserts over, so the derived registering set would shrink SILENTLY instead of
+      failing loudly. A smaller derived set satisfies the disjointness property
+      this scan feeds more easily, so that miss fails toward green.
     """
-    parts = [lines[index]]
-    cursor = index
-    while parts[-1].rstrip().endswith('\\') and cursor + 1 < len(lines):
-        cursor += 1
-        parts.append(lines[cursor])
-    return ' '.join(part.strip().rstrip('\\').strip() for part in parts)
+    start = index
+    while start > 0 and lines[start - 1].rstrip().endswith('\\'):
+        start -= 1
+    end = start
+    while end + 1 < len(lines) and lines[end].rstrip().endswith('\\'):
+        end += 1
+    return ' '.join(part.strip().rstrip('\\').strip() for part in lines[start:end + 1])
 
 
 def scan_boundary_registrations(bundles_root: Path | None = None) -> dict[str, Any]:
