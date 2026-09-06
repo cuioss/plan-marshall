@@ -632,9 +632,11 @@ the failure this ordering prevents.
 
 ⛔ **A push is not universally a trigger, which is why this branch is selected rather than assumed.**
 `trigger_semantics` is registry data and its fail-closed default is `requires_explicit_trigger`; a bot
-declaring that answers no push at all (`cuioss-review-bot` is the shipped case — it has no push
-trigger). Branch 4 is therefore entered only on `action: generate_trigger`, and a
-`requires_explicit_trigger` bot routes to Branch 5 instead. Reading a push as a universal trigger is
+declaring that answers no push at all. Branch 4 is therefore entered only on
+`action: generate_trigger`, and a `requires_explicit_trigger` bot routes to Branch 5 instead. Derive
+which bots that covers from the registry at the moment of the run — `recovery-action` publishes the
+population as `known_bot_kinds` alongside each bot's resolved `trigger_semantics`, so the answer is
+read rather than recalled. Reading a push as a universal trigger is
 how a recovery comes to rebase, force-push, and then report success while the bot it was recovering
 was never asked anything.
 
