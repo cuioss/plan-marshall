@@ -12,10 +12,17 @@ group's envelope schema and handler surface have theirs
 - ``queue``: read, transition, per-row field-set, and single-row append
   round-trips against a fixture status.json, plus the error envelopes (missing
   status, unknown plan, unknown field, invalid plan id, duplicate plan id,
-  unpaired flags, mutually-exclusive write forms). The append form also carries
-  the three-valued spec-presence probe, whose ``absent`` and ``unlistable``
-  verdicts are asserted apart so a measured negative is never confused with an
-  unobserved one.
+  malformed ``plans`` value, unpaired flags, mutually-exclusive write forms).
+  The append form holds an ABSENT ``plans`` key apart from a PRESENT non-list
+  one — the first is seeded, the second refused with nothing written — and both
+  arms are asserted so the refusal cannot be met by rejecting either state. It
+  also carries the three-valued spec-presence probe, whose ``absent`` and
+  ``unlistable`` verdicts are asserted apart so a measured negative is never
+  confused with an unobserved one.
+- doc contract: the ``--field`` whitelist SKILL.md publishes is asserted EQUAL
+  to ``PLAN_ROW_FIELDS`` — the constant ``cmd_queue`` validates against — in
+  both directions, with the anchored extraction and both populations asserted
+  non-empty FIRST, so the equality can never pass over two empty sets.
 - ``resume-summary``: START-HERE block generation derived purely from
   status.json (resume anchor, phase, running/parked plans, ordered queue), plus
   the render-time-derived inbox counts — which come from the epic's ``inbox/``
@@ -31,8 +38,11 @@ group's envelope schema and handler surface have theirs
 import argparse
 import copy
 import json
+import re
 from pathlib import Path
 from typing import Any
+
+import pytest
 
 from conftest import get_script_path, load_script_module, parse_ns, run_script
 
@@ -43,6 +53,22 @@ _ORCH_SKILL = 'plan-orchestrator'
 _ORCH_SCRIPT = 'orchestrator.py'
 
 SCRIPT_PATH = get_script_path(_ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT)
+
+#: The skill doc that publishes the CLI contract, resolved from the script path
+#: so the two can never point at different installations
+#: (``.../{skill}/scripts/orchestrator.py`` -> ``.../{skill}/SKILL.md``).
+SKILL_MD_PATH = Path(SCRIPT_PATH).parent.parent / 'SKILL.md'
+
+#: The fixed anchor SKILL.md publishes the ``--field`` whitelist behind. The doc
+#: keeps the list on its own line specifically so this is a LINE lookup rather
+#: than a prose scan; if the anchor is ever reworded the extractor returns
+#: nothing, which the non-vacuity assertion below turns into a failure instead
+#: of a silent pass.
+FIELD_WHITELIST_ANCHOR = '`--field` whitelist (mirrors `PLAN_ROW_FIELDS`):'
+
+#: Every backticked token, used to lift the whitelist entries off the anchored
+#: line.
+_BACKTICKED_RE = re.compile(r'`([^`]+)`')
 
 _orch = load_script_module(
     _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT, 'orchestrator_script'
@@ -163,15 +189,27 @@ def _make_plan(
     }
 
 
+#: Sentinel for :func:`_write_status`: write the document with NO ``plans`` key
+#: at all. Distinct from ``None``, which keeps the default empty list — the
+#: append path treats an ABSENT key and a PRESENT value as different inputs, so
+#: a fixture that can only ever write the key cannot express the absent arm.
+_OMIT_PLANS = object()
+
+
 def _write_status(
     plan_context,
     slug: str,
-    plans: list | None = None,
+    plans: Any = None,
     phase: str = 'orchestrating',
     resume_anchor: str = 'await PR #912 CI, then analyze landing',
 ) -> Path:
-    """Write a kind=orchestrator fixture status.json into the isolated store."""
-    doc = {
+    """Write a kind=orchestrator fixture status.json into the isolated store.
+
+    ``plans`` is written VERBATIM when supplied, so a case may seed a malformed
+    non-list value; ``None`` writes the default empty queue, and
+    :data:`_OMIT_PLANS` writes a document carrying no ``plans`` key.
+    """
+    doc: dict[str, Any] = {
         'kind': 'orchestrator',
         'title': 'Fixture Epic',
         'phase': phase,
@@ -182,6 +220,8 @@ def _write_status(
         'created': FIXED_TIMESTAMP,
         'updated': FIXED_TIMESTAMP,
     }
+    if plans is _OMIT_PLANS:
+        del doc['plans']
     path = _epic_dir(plan_context, slug) / 'status.json'
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(doc, indent=2), encoding='utf-8')
@@ -505,6 +545,77 @@ class TestQueueSetRow:
 
 
 # =============================================================================
+# queue — documented --field whitelist vs. its declaring source
+# =============================================================================
+
+
+def _documented_field_whitelist() -> tuple[set[str], int]:
+    """Extract the ``--field`` whitelist SKILL.md publishes.
+
+    Returns the parsed entries AND the number of anchored lines the lookup
+    matched, so a caller can tell an anchor that matched nothing apart from an
+    anchored line that legitimately listed nothing. Collapsing those two into a
+    bare empty set is what would let a reworded doc pass this file silently.
+    """
+    lines = [
+        line
+        for line in SKILL_MD_PATH.read_text(encoding='utf-8').splitlines()
+        if line.startswith(FIELD_WHITELIST_ANCHOR)
+    ]
+    if len(lines) != 1:
+        return set(), len(lines)
+    return set(_BACKTICKED_RE.findall(lines[0][len(FIELD_WHITELIST_ANCHOR):])), 1
+
+
+class TestDocumentedFieldWhitelistMatchesDeclaration:
+    """SKILL.md's ``--field`` whitelist equals ``PLAN_ROW_FIELDS``, both ways.
+
+    The doc states CLOSURE over an enumeration declared in ``orchestrator.py``
+    and validated there by ``cmd_queue``. Re-checking the claim against its
+    declaring source on every run is what the standing "never assert closure
+    over an enumeration without re-checking it" rule prescribes, in preference
+    to a hand-maintained second copy.
+    """
+
+    def test_the_whitelist_and_its_declaration_are_both_non_empty(self):
+        """Neither side of the comparison is empty, so equality cannot be vacuous.
+
+        Two empty sets compare EQUAL, so the equality test below is only
+        meaningful while both populations are non-zero. This asserts that
+        precondition separately and names both populations, rather than leaving
+        a reworded anchor and an emptied constant to agree on nothing.
+        """
+        documented, anchor_matches = _documented_field_whitelist()
+
+        assert anchor_matches == 1, (
+            f'expected exactly ONE line in {SKILL_MD_PATH} starting with '
+            f'{FIELD_WHITELIST_ANCHOR!r}, matched {anchor_matches} — the '
+            'extractor found no anchored whitelist to compare'
+        )
+        assert documented, (
+            f'the anchored whitelist line in {SKILL_MD_PATH} yielded no '
+            'backticked entries (population 0), so a set-equality check '
+            'against it would compare an empty set'
+        )
+        assert PLAN_ROW_FIELDS, (
+            'PLAN_ROW_FIELDS is empty (population 0), so a set-equality check '
+            'against it would compare an empty set'
+        )
+
+    def test_documented_whitelist_equals_plan_row_fields(self):
+        documented, _ = _documented_field_whitelist()
+        declared = set(PLAN_ROW_FIELDS)
+
+        assert documented == declared, (
+            f'documented --field whitelist {sorted(documented)} '
+            f'(population {len(documented)}) disagrees with PLAN_ROW_FIELDS '
+            f'{sorted(declared)} (population {len(declared)}): '
+            f'documented-only={sorted(documented - declared)}, '
+            f'declared-only={sorted(declared - documented)}'
+        )
+
+
+# =============================================================================
 # queue — add-row
 # =============================================================================
 
@@ -767,6 +878,54 @@ class TestQueueAddRowRejections:
 
         assert result['status'] == 'error'
         assert result['error'] == 'file_not_found'
+
+
+class TestQueueAddRowMalformedPlans:
+    """An absent ``plans`` key seeds the queue; a non-list value is refused.
+
+    The two arms are asserted together on purpose. Refusing BOTH states would
+    satisfy the refusal arm on its own while breaking every first append, so the
+    absent-key arm is what makes the refusal arm mean "the malformed value was
+    held apart" rather than "the guard now rejects everything".
+    """
+
+    @pytest.mark.parametrize(
+        ('slug', 'malformed', 'observed_type'),
+        [
+            ('add-plans-dict-epic', {'PLAN-01': 'staged'}, 'dict'),
+            ('add-plans-str-epic', 'PLAN-01,PLAN-02', 'str'),
+        ],
+        ids=['dict', 'string'],
+    )
+    def test_should_refuse_a_present_non_list_plans_value_without_writing(
+        self, plan_context, slug, malformed, observed_type
+    ):
+        status_path = _write_status(plan_context, slug, plans=malformed)
+        before = _read_status_file(status_path)
+
+        result = cmd_queue(_add_row_args(slug))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_plans'
+        assert result['observed_type'] == observed_type
+        # Refused in-lock before any mutation: the malformed value survives
+        # intact rather than being replaced by a queue holding only the new row,
+        # and ``updated`` is not re-stamped.
+        assert _read_status_file(status_path) == before
+        assert _read_status_file(status_path)['plans'] == malformed
+
+    def test_should_still_seed_the_queue_when_the_plans_key_is_absent(
+        self, plan_context
+    ):
+        status_path = _write_status(
+            plan_context, 'add-plans-absent-epic', plans=_OMIT_PLANS
+        )
+        assert 'plans' not in _read_status_file(status_path)
+
+        result = cmd_queue(_add_row_args('add-plans-absent-epic'))
+
+        assert result['status'] == 'success'
+        assert _read_status_file(status_path)['plans'] == [_make_plan('PLAN-07')]
 
 
 class TestQueueAddRowSpecPresence:

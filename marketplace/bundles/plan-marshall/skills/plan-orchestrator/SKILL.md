@@ -118,13 +118,19 @@ The accepted flag set per form — `--status` is the one flag two forms share, a
 
 A four-way surface over `status.json`'s `plans[]` — one read and three writes. With no write flags the verb reads the queue.
 
-`--transition` and `--status` are supplied together and transition the named plan to the new status. `--set-row`, `--field`, and `--value` are likewise supplied together and stamp ONE result field of the named plan's row — `--field` is restricted to the whitelist `plan_marshall_plan_id`, `pr`, `landing` (an out-of-whitelist field returns `invalid_field`; `status` is reachable only through `--transition`). `--add-row`, `--slug-value`, and `--workstream` are supplied together and APPEND one new row.
+`--transition` and `--status` are supplied together and transition the named plan to the new status. `--set-row`, `--field`, and `--value` are likewise supplied together and stamp ONE result field of the named plan's row — an out-of-whitelist `--field` returns `invalid_field`, and `status` is reachable only through `--transition`. `--add-row`, `--slug-value`, and `--workstream` are supplied together and APPEND one new row.
+
+`--field` whitelist (mirrors `PLAN_ROW_FIELDS`): `plan_marshall_plan_id`, `pr`, `landing`
+
+That whitelist sits on its own line, behind a fixed anchor, so it is machine-locatable rather than embedded in prose: `test_orchestrator.py` extracts it and asserts SET EQUALITY against `PLAN_ROW_FIELDS` — the constant `cmd_queue` actually validates `--field` against — in both directions, and fails rather than passes if the extraction yields nothing. Closure is therefore re-checked against the declaring source on every run instead of being asserted here by hand.
 
 The three write forms are mutually exclusive: supplying more than one returns `wrong_parameters`, as does an incomplete triple. `--status` is REQUIRED with `--transition` and OPTIONAL with `--add-row`, so it no longer marks the transition form on its own — supplied with neither, it is still rejected.
 
 All three run inside the same shared read-modify-write critical section: `--transition` and `--set-row` mutate only the located row, and `--add-row` appends after re-checking the FRESH in-lock queue for its id. This, not a whole-array `manage-status update-field --field plans` rewrite, is the mechanism for both stamping a landing and staging a plan — the bulk rewrite is reserved for `decompose`'s seed of a queue from nothing.
 
 `--add-row` seeds `id`, `slug`, and `workstream` from the supplied triple and `status` from `--status` (default `staged`), and initializes `plan_marshall_plan_id`, `pr`, and `landing` EMPTY. It gains no stamping path by doing so: `--set-row` remains the sole writer of those three result fields. The plan id is validated against `epic_spec_parser`'s `PLAN_ID_SEGMENT` — the single definition of the settled plan-id forms — and an id outside that grammar returns `invalid_plan_id` with nothing written. An id already in the queue returns `duplicate_plan_id`, decided against the in-lock queue rather than a pre-lock snapshot, and leaves the document untouched.
+
+The two ways `status.json` can carry no usable queue are held apart, per ADR-019. An **absent** `plans` key is a measured empty queue: the first append seeds the list and lands. A **present but non-list** `plans` value is a malformed ledger, and the append refuses it with `invalid_plans` — naming the observed type in `observed_type` — writing NOTHING, so whatever that value held survives instead of being normalized away by a seeded empty list that would persist a document carrying only the new row.
 
 A successful append also carries a three-valued spec-presence verdict for the new row: `present` (a `plans/PLAN-NN-*.md` spec is staged), `absent` (the directory was listed and holds none — reported in a named warning field, never silently), and `unlistable` (the directory could not be read, so nothing was observed). `absent` and `unlistable` are never folded together, per ADR-019: a measured negative and an unobserved one are different facts. The probe REPORTS and never gates — a plan is routinely queued before its spec is written.
 

@@ -757,19 +757,40 @@ def _append_plan_row(slug: str, row: dict[str, Any]) -> dict[str, Any]:
     check against it would report "no collision" for a row that collides by the
     time this one writes.
 
-    Returns a dict carrying either ``row`` (the appended row) or
-    ``duplicate`` (the already-queued row bearing that id). ``updated`` is
-    re-stamped only on a real append, so a rejected duplicate leaves the
-    document byte-identical.
+    An ABSENT ``plans`` key and a PRESENT non-list ``plans`` value are two
+    different states and are handled as two, per ADR-019: the absent key is a
+    MEASURED empty queue, so seeding ``[]`` is correct and is what makes the
+    first staged row land; a present non-list value is a MALFORMED ledger, and
+    seeding ``[]`` over it would destroy whatever it held and persist a document
+    carrying only the new row. This is the only ``plans[]`` writer that could
+    destroy data that way — the sibling :func:`_mutate_plan_row` reads through
+    ``state.get('plans', [])`` and merely fails to locate a row, and
+    :func:`_read_status`'s coercion is a READ returning an empty view — so the
+    malformed case is REFUSED here rather than normalized away.
+
+    Returns a dict carrying exactly one of three outcomes: ``row`` (the appended
+    row), ``duplicate`` (the already-queued row bearing that id), or
+    ``invalid_plans`` (the type name of the present-but-non-list ``plans``
+    value). ``updated`` is re-stamped only on a real append, so both a rejected
+    duplicate and a refused malformed ledger leave the document byte-identical.
     """
     outcome: dict[str, Any] = {}
 
     def _mutate(state: dict[str, Any]) -> dict[str, Any]:
-        plans = state.get('plans')
-        if not isinstance(plans, list):
-            # A status.json whose ``plans`` is absent or non-list is an EMPTY
-            # queue for append purposes; seeding the list here is what makes the
-            # first staged row land rather than raising inside the lock.
+        if 'plans' in state:
+            plans = state['plans']
+            if not isinstance(plans, list):
+                # A MALFORMED ledger, not an empty queue. Return ``state``
+                # unmutated so ``rmw_json`` rewrites the document
+                # byte-identically — the same no-op-return shape the duplicate
+                # branch below relies on — and report the observed type so the
+                # caller can name what it found.
+                outcome['invalid_plans'] = type(plans).__name__
+                return state
+        else:
+            # A MEASURED empty queue: the key is absent, so there is nothing to
+            # destroy and seeding the list here is what makes the first staged
+            # row land rather than raising inside the lock.
             plans = []
             state['plans'] = plans
         for existing in plans:
@@ -899,6 +920,11 @@ def _queue_add_row(args: argparse.Namespace) -> dict[str, Any]:
     in-lock queue inside :func:`_append_plan_row`, because a duplicate decided
     from this pre-lock snapshot could be overtaken by a competing session
     between the read and the write.
+
+    :func:`_append_plan_row`'s outcome is three-way and is discriminated as
+    three: ``invalid_plans`` (a malformed ``plans`` value, refused with nothing
+    written) is separated from ``duplicate`` before the ``'row' not in outcome``
+    test, which would otherwise read a refusal as a duplicate and raise.
     """
     if not _read_status(args.slug):
         return _error(
@@ -913,6 +939,16 @@ def _queue_add_row(args: argparse.Namespace) -> dict[str, Any]:
     row['workstream'] = args.workstream
     row['status'] = args.status if args.status is not None else ADD_ROW_DEFAULT_STATUS
     outcome = _append_plan_row(args.slug, row)
+    if 'invalid_plans' in outcome:
+        observed = outcome['invalid_plans']
+        return _error(
+            args.slug,
+            'invalid_plans',
+            f"status.json carries a {observed} at 'plans', not a list; the row "
+            'was refused and NOTHING was written — repair the malformed value '
+            'before staging, so whatever it holds is not silently discarded',
+            observed_type=observed,
+        )
     if 'row' not in outcome:
         duplicate = outcome['duplicate']
         return _error(
