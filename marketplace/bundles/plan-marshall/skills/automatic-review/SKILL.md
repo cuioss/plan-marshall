@@ -541,8 +541,8 @@ python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock rate-windo
   --plan-id {plan_id} --bot-kind {bot_kind} --pr-number {pr_number}
 ```
 
-- **`expired: true`** (or `status: free`) — the window has elapsed. Do NOT enter Branch 4 yet: cross
-  the **jittered wake boundary** below first, then generate the event.
+- **`expired: true`** (or `status: free`) — the window has elapsed. Cross the **jittered wake
+  boundary** below first; the re-consult at that boundary is what names the destination.
 - **`expired: false`** with budget remaining — pace with a single standalone `sleep` call, then
   re-poll:
 
@@ -566,11 +566,11 @@ python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock rate-windo
     --message "(plan-marshall:automatic-review) refusal recovery: review_rate_window_timeout_seconds={review_rate_window_timeout_seconds} exhausted with {bot_kind} window still open — released the claim, returning escalate_ask{reason: rate_window_timeout}; orchestrator will fire AskUserQuestion"
   ```
 
-**The jittered wake boundary (Branch 3 → Branch 4).** Reached ONLY on the `expired: true` arm above,
-and crossed exactly ONCE per recovery. It is emphatically **not** a per-poll delay: the poll loop's
-own 60 s pacing above is unchanged, and adding this delay to each iteration would stretch a bounded
-poll into a slow one. This fires after the window is observed elapsed and before any event is
-generated.
+**The jittered wake boundary (Branch 3 → trigger-arm boundary).** Reached ONLY on the `expired: true`
+arm above, and crossed exactly ONCE per recovery. It is emphatically **not** a per-poll delay: the
+poll loop's own 60 s pacing above is unchanged, and adding this delay to each iteration would stretch
+a bounded poll into a slow one. This fires after the window is observed elapsed and before the
+re-consult below routes.
 
 Compute the delay — see [`../manage-locks/SKILL.md`](../manage-locks/SKILL.md) § Canonical
 invocations → `merge_lock — poll-delay`. The verb is a pure computation: it claims nothing, reads no
