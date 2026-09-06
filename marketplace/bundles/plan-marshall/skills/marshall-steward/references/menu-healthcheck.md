@@ -192,6 +192,12 @@ AskUserQuestion:
 
 ## Step 6b: Check Terminal Title Hook
 
+> **Claude only.** This check owns the terminal-title-hook twin of the wizard
+> in the Claude-only `marshall-steward-claude-wizards` skill. On a non-Claude
+> target the hook is not installed by this plan-marshall surface and this step
+> is skipped (report `terminal_title: {hook_installed: false, target: non-claude}`
+> in the Step 7 summary rather than probing).
+
 Verify whether the SessionStart hook for the dynamic terminal title is installed:
 
 ```bash

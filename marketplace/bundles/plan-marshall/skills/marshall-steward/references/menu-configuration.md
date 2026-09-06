@@ -92,6 +92,13 @@ AskUserQuestion:
       value: "more-3"
 ```
 
+> **Target-conditional rows.** The "Terminal Title" and "Enforcement Hook"
+> options install wiring into the resolved **Claude** settings file and are
+> meaningless on any other harness. They are present on the Claude target only;
+> on a non-Claude target they are omitted from this page (its remaining options
+> — Recipes and "More..." — continue to Page 4 unchanged). The flows they route
+> to live in the Claude-only `marshall-steward-claude-wizards` skill.
+
 **Page 4** — shown only when the user selects "More..." on Page 3 — the next 3 options plus the "More..." continuation:
 
 ```text
@@ -143,8 +150,8 @@ AskUserQuestion:
 | review-gates | Execute "Configuration: Review Gates" below |
 | credentials | Execute "Configuration: Credentials & Secrets" below |
 | more-2 | Present Configuration Page 3 `AskUserQuestion` |
-| terminal-title | Load `Read references/menu-terminal-title.md` → Execute |
-| enforcement-hook | Load `Read references/menu-enforcement-hook.md` → Execute |
+| terminal-title | Claude only: load `Read ../marshall-steward-claude-wizards/references/menu-terminal-title.md` → Execute |
+| enforcement-hook | Claude only: load `Read ../marshall-steward-claude-wizards/references/menu-enforcement-hook.md` → Execute |
 | recipes | Load `Read references/menu-recipes.md` → Execute "Configuration: Recipes" below |
 | more-3 | Present Configuration Page 4 `AskUserQuestion` |
 | derivation-resolvers | Load `Read references/menu-derivation-resolvers.md` → Execute |
@@ -819,12 +826,16 @@ Non-secret field updates via CLI args. For secret changes, user edits the creden
 
 ## Configuration: Terminal Title
 
+> **Claude only.** This section routes to the Claude-only wizard skill
+> `marshall-steward-claude-wizards`. On a non-Claude target the option is absent
+> from the Configuration page and this branch is never reached.
+
 Configure the dynamic terminal-title integration so each terminal tab shows the active plan-marshall phase and live status (running / waiting / done / complete, plus the lock/build glyph) for the Claude Code session running in it. The title is a three-way split: `manage-status` persists the state into `status.json` (the single source of persisted title state), the pure `plan-marshall:manage-terminal-title` composer renders `{icon} {glyph} {body}`, and `plan-marshall:platform-runtime` (`session render-title`) reads `status.json` and emits per target. See [Terminal title integration](../../plan-marshall/SKILL.md#terminal-title-integration) in the plan-marshall skill for the runtime contract and `manage-terminal-title/standards/terminal-title-architecture.md` for the full architecture.
 
 Load and execute the dedicated reference:
 
 ```text
-Read references/menu-terminal-title.md
+Read ../marshall-steward-claude-wizards/references/menu-terminal-title.md
 ```
 
 After completion, return to Main Menu.
@@ -833,12 +844,16 @@ After completion, return to Main Menu.
 
 ## Configuration: Enforcement Hook
 
+> **Claude only.** This section routes to the Claude-only wizard skill
+> `marshall-steward-claude-wizards`. On a non-Claude target the option is absent
+> from the Configuration page and this branch is never reached.
+
 Configure the conditional PreToolUse enforcement hook. When enabled, the hook deterministically blocks four mechanically-checkable hard-rule violation families (shell-construct compounds, Bash file-ops, generated-executor edits, hard-coded build commands) — but ONLY when the call originates inside a plan-marshall plan context, failing open everywhere else. The opt-in is orthogonal to the terminal-title wiring: enabling one does not enable the other. See [`../../platform-runtime/standards/pretooluse-enforcement.md`](../../platform-runtime/standards/pretooluse-enforcement.md) for the canonical contract.
 
 Load and execute the dedicated reference:
 
 ```text
-Read references/menu-enforcement-hook.md
+Read ../marshall-steward-claude-wizards/references/menu-enforcement-hook.md
 ```
 
 After completion, return to Main Menu.

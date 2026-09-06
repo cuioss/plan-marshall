@@ -196,7 +196,7 @@ without the other).
   [`contract.md`](contract.md) § `health-check` for the value domain.
 - **Menu surface.** The marshall-steward Configuration → Enforcement Hook action
   drives the detect→confirm→install flow; see
-  [`../../marshall-steward/references/menu-enforcement-hook.md`](../../marshall-steward/references/menu-enforcement-hook.md).
+  [`../../marshall-steward-claude-wizards/references/menu-enforcement-hook.md`](../../marshall-steward-claude-wizards/references/menu-enforcement-hook.md).
 - **Human-gated activation.** Writing the live `.claude/settings.local.json`
   entry hits the harness permission prompt and has session-reload activation
   latency, so it is performed by the operator (via the marshall-steward menu),

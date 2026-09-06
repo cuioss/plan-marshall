@@ -184,7 +184,7 @@ bundle), surfaces a dedicated `PreToolUse:enforcement`
 `present` / `divergence` / `MISSING` label on
 the `health-check --checks display` diagnostic, and is registered through the
 marshall-steward Configuration → Enforcement Hook menu
-([`../marshall-steward/references/menu-enforcement-hook.md`](../marshall-steward/references/menu-enforcement-hook.md)).
+([`../marshall-steward-claude-wizards/references/menu-enforcement-hook.md`](../marshall-steward-claude-wizards/references/menu-enforcement-hook.md)).
 The context gate, the four rule families with their redirect reasons, the
 fail-open / best-effort-no-raise contract, and the capture-validates-the-gate
 dependency chain are documented in

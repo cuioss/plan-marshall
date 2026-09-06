@@ -191,7 +191,7 @@ Artifacts this ruling edits: `manage-status/scripts/_status_core.py`,
 `manage-terminal-title/scripts/manage_terminal_title.py` (reads the structured
 record), `platform-runtime/scripts/session_binding.py` (`_plan_is_live`),
 `platform-runtime/scripts/claude_runtime.py` (the build-command predicate that
-sets the token), `marshall-steward/references/menu-terminal-title.md`, and this
+sets the token), `marshall-steward-claude-wizards/references/menu-terminal-title.md`, and this
 document.
 
 ### (d) Render cadence — keep the live, narrow shape
@@ -227,7 +227,7 @@ Artifacts this ruling edits:
 `platform-runtime/scripts/_claude_runtime_impl.py` (`_DISPLAY_RENDER_ENTRIES`,
 `_prune_matcher_scoped_render_entries`),
 `plan-marshall/references/hook-authoring-guide.md`,
-`marshall-steward/references/menu-terminal-title.md`, and this document.
+`marshall-steward-claude-wizards/references/menu-terminal-title.md`, and this document.
 
 ### Deferred — the statusLine rendered-state substitution
 
