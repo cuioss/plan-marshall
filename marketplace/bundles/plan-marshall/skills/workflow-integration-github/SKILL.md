@@ -74,7 +74,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings li
 |--------|----------|---------|
 | github_ops | `plan-marshall:workflow-integration-github:github_ops` | GitHub PR, CI, and issue operations via gh CLI |
 | github_pr | `plan-marshall:workflow-integration-github:github_pr` | Producer-side PR review comment fetcher (fetch + pre-filter + store) |
-| github_re_review | `plan-marshall:workflow-integration-github:github_re_review` | `bot_kind`-keyed re-review strategy registry (request + await a fresh bot review for the current HEAD) |
+| github_re_review | `plan-marshall:workflow-integration-github:github_re_review` | `bot_kind`-keyed re-review strategy registry (request + await a fresh bot review for the current HEAD, with the refusal re-trigger guard at the trigger chokepoint), plus the registry-derived `recovery-action` selector |
 
 ## Consumers
 
@@ -190,15 +190,41 @@ Both operations take the same `PRRT_` thread ID — pass the comment's `thread_i
 
 **Purpose:** Close the post-merge re-review gap. When a HEAD-advancing branch operation in phase-6-finalize (branch-cleanup rebase/force-push, or a phase-5 loop-back fix commit) advances HEAD past the `reviewed_commit_sha` of the staged `pr-comment` findings, the new commits are unreviewed by automated bots. The `re-review` subcommand requests a fresh bot review for the new HEAD and polls until a review lands for it.
 
-**Strategy registry:** `github_re_review.py` is a `bot_kind`-keyed registry with a strict two-method contract per strategy (`request_fresh_review`, `await_fresh_review`) and **no speculative extensibility**. The registry is **GitHub-only** — a sibling GitLab registry would be added separately without changing the consumer-side workflow docs. The canonical `bot_kind` list is imported from `manage-findings/_findings_core.BOT_KINDS`; the registry does **not** inline-copy the enum. Downstream consumers that need the enforcement-critical `bot_kind` list MUST reference that canonical source (or query a finding's `bot_kind` field) rather than hard-coding the values.
+**Strategy registry:** `github_re_review.py` is a `bot_kind`-keyed registry with a strict two-method contract per strategy (`request_fresh_review` — which returns `status: refused` / `reason: window_open` instead of posting when the bot's rate window is claimed and unexpired, see § "The refusal re-trigger guard" below — and `await_fresh_review`) and **no speculative extensibility**. The registry is **GitHub-only** — a sibling GitLab registry would be added separately without changing the consumer-side workflow docs. The canonical `bot_kind` list is imported from `manage-findings/_findings_core.BOT_KINDS`; the registry does **not** inline-copy the enum. Downstream consumers that need the enforcement-critical `bot_kind` list MUST reference that canonical source (or query a finding's `bot_kind` field) rather than hard-coding the values.
 
-The strategies differ **only** in the trigger comment `request_fresh_review` posts — each posts an explicit trigger and uses the comment-post time as the trigger time:
+The strategies differ **only** in the trigger comment `request_fresh_review` posts — each posts an explicit trigger and uses the comment-post time as the trigger time. The refusal re-trigger guard below is the one thing that can stop any of them posting at all, and it is identical for every row: on a claimed, unexpired rate window the method returns `status: refused` / `reason: window_open` and publishes nothing.
 
-| `bot_kind` | `request_fresh_review` | Trigger time |
-|------------|------------------------|--------------|
+| `bot_kind` | `request_fresh_review` (when the guard permits the post) | Trigger time |
+|------------|---------------------------------------------------------|--------------|
 | `coderabbit` | Posts `@coderabbitai review`. CodeRabbit's incremental auto-review on push is not a reliable trigger for the new HEAD (it can be debounced or skipped on a force-push), so the explicit comment is the trigger that guarantees a fresh review lands. | The comment-post time. |
 | `sourcery` | Posts `@sourcery-ai review`. | The comment-post time. |
 | `cuioss-review-bot` | Posts `/review` (PR-Agent does **not** auto-review on push). | The comment-post time. |
+
+#### The refusal re-trigger guard
+
+**Do not ask a bot again while it is refusing for quota reasons.** That rule shipped as prose and was violated within hours: a loop posted a trigger comment roughly every two minutes for most of an hour — some twenty-seven comments on a public PR — which spent the bot's *separate* chat-message quota and removed the recovery path altogether. A prose rule needs a mechanical backstop, so this one is enforced in code.
+
+**The guard runs BEFORE the comment is posted, for every registered bot, with no per-bot branch.** One generic strategy serves the whole registry, so there is exactly one `_github.post_pr_comment` call site in `github_re_review.py`, and `request_fresh_review` consults the bot's rate window before reaching it. There is no path to a trigger comment that skips the check, and no bot is exempt from it.
+
+The read is `manage-locks`' existing NON-MUTATING `merge_lock rate-window check` (see [`../manage-locks/SKILL.md`](../manage-locks/SKILL.md) § Canonical invocations). It claims nothing, releases nothing, and increments no counter — the guard keeps no second budget of its own. `request_fresh_review` therefore has a **third outcome** beside success and error:
+
+```toon
+status: refused
+operation: request_fresh_review
+reason: window_open
+bot_kind: {the bot whose window is claimed}
+pr_number: {pr_number}
+holder: "{the plan holding the claim}"
+seconds_remaining: {seconds left on the claim}
+```
+
+The refusal is a **returned envelope, never an exception** — a caller branches on `status` exactly as it does for an error return. `re-review` propagates it verbatim: nothing was posted and nothing was awaited.
+
+⛔ **The ordinary post-merge path is safe BY CONSTRUCTION, not by a carve-out.** `rate-window check` reports `expired: true` for a bot with **no stored record**, so a re-review that followed no refusal at all is authorized through the very same predicate that refuses one that did. Preserve that property: the guard refuses only on `expired` being positively `false`. Every other observation permits the post, including a read that could not be performed — refusing on an unreadable read would take the whole re-review path down whenever `manage-locks` is unreachable, a far larger failure than the one the guard prevents.
+
+⛔ **A re-trigger inside an open window RESETS it rather than shortening it** (an advertised wait was observed going from 50 to 59 minutes) and spends quota doing so. That is why the guard refuses rather than merely warning, and why the recovery selector below never reaches a trigger arm while a claim is still running.
+
+#### Completion signals (`await_fresh_review`)
 
 `await_fresh_review` is **identical** for every bot and is satisfied by **either** of two completion signals, checked in order of evidential strength:
 
@@ -234,11 +260,11 @@ refusal_layers[N]: [the declared layer vocabulary]
    python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_re_review re-review --pr-number {pr} --bot-kind {coderabbit|sourcery|cuioss-review-bot} --head-sha {new HEAD} --push-time {ISO8601 push time} [--timeout {seconds}] --plan-id {plan_id}
    ```
 
-   The subcommand resolves the strategy by `bot_kind`, runs `request_fresh_review` (posts each bot's registry `trigger_comment` — `@coderabbitai review`, `@sourcery-ai review`, `/review` — each using the comment-post time as the trigger time), then awaits either completion signal. The await budget is configurable via `--timeout` (default `DEFAULT_CI_TIMEOUT`); the phase-6-finalize trigger sites pass their `re_review_await_timeout_seconds` step-param value. It emits a TOON envelope with `matched: true|false`, `timed_out: true|false`, `matched_signal` (`review` | `issue_comment`, empty when unmatched), the matched `matched_review` / `matched_comment` record, and `head_sha_verified`.
+   The subcommand resolves the strategy by `bot_kind`, runs `request_fresh_review` (which first consults the bot's rate window and returns `status: refused` / `reason: window_open` **without posting** when a claim is unexpired; otherwise posts that bot's registry `trigger_comment` — `@coderabbitai review`, `@sourcery-ai review`, `/review` — using the comment-post time as the trigger time), then awaits either completion signal. **A `refused` return short-circuits the whole subcommand**: it is returned verbatim, no comment was published and no await ran, so the caller reads `holder` and `seconds_remaining` and waits rather than re-issuing the call. The await budget is configurable via `--timeout` (default `DEFAULT_CI_TIMEOUT`); the phase-6-finalize trigger sites pass their `re_review_await_timeout_seconds` step-param value. It emits a TOON envelope with `matched: true|false`, `timed_out: true|false`, `matched_signal` (`review` | `issue_comment`, empty when unmatched), the matched `matched_review` / `matched_comment` record, and `head_sha_verified`.
 
-2. **Consume the match outcome.** On `matched: true`, re-run `fetch_findings` to file the fresh review's comments, then re-run the consolidated ingest → triage → respond pass (Workflow 2). On `matched: false` / `timed_out: true`, the await budget expired with no fresh review — the consumer decides how to handle the timeout. This registry surfaces `timed_out` and does NOT decide policy itself; the timeout-handling responsibility (the `re_review_on_timeout` ask/defer/proceed branches) lives in the two trigger docs: trigger A in [`phase-6-finalize/standards/branch-cleanup.md`](../phase-6-finalize/standards/branch-cleanup.md) § "On re-review timeout (trigger A)" and trigger B in [`automatic-review`](../automatic-review/SKILL.md) § "On re-review timeout (trigger B)".
+2. **Consume the match outcome.** On `status: refused` / `reason: window_open` the guard stopped the trigger before it was posted — there is no match outcome to read at all. Wait out the reported `seconds_remaining` (or let the holding plan's recovery run) and re-issue the call afterwards; re-issuing it now only resets the bot's window. On `matched: true`, re-run `fetch_findings` to file the fresh review's comments, then re-run the consolidated ingest → triage → respond pass (Workflow 2). On `matched: false` / `timed_out: true`, the await budget expired with no fresh review — the consumer decides how to handle the timeout. This registry surfaces `timed_out` and does NOT decide policy itself; the timeout-handling responsibility (the `re_review_on_timeout` ask/defer/proceed branches) lives in the two trigger docs: trigger A in [`phase-6-finalize/standards/branch-cleanup.md`](../phase-6-finalize/standards/branch-cleanup.md) § "On re-review timeout (trigger A)" and trigger B in [`automatic-review`](../automatic-review/SKILL.md) § "On re-review timeout (trigger B)".
 
-**Registry extension pattern:** to support a new `bot_kind`, add its `automatic-review/standards/{bot_kind}.md` registry doc and nothing else. `_findings_core.BOT_KINDS`, the login→`bot_kind` map, the `--bot-kind` `choices=` surface, and the strategy instance all DERIVE from that data. There is exactly ONE generic strategy class parameterized by the doc's `trigger_comment` — no per-bot subclass, and neither `request_fresh_review` nor `await_fresh_review` is re-implemented per bot.
+**Registry extension pattern:** to support a new `bot_kind`, add its `automatic-review/standards/{bot_kind}.md` registry doc and nothing else. `_findings_core.BOT_KINDS`, the login→`bot_kind` map, the `--bot-kind` `choices=` surface, and the strategy instance all DERIVE from that data. There is exactly ONE generic strategy class parameterized by the doc's `trigger_comment` — no per-bot subclass, and neither `request_fresh_review` nor `await_fresh_review` is re-implemented per bot. A newly registered bot therefore inherits the refusal re-trigger guard, and its `status: refused` / `reason: window_open` outcome, with no code change: the guard sits in that one generic `request_fresh_review`, so it covers every registered bot by construction rather than by a per-bot opt-in. It likewise inherits `recovery-action`'s derivation, whose arms read that doc's own `rate_limit_class` and `trigger_semantics`.
 
 ## Comment Classification
 
@@ -268,8 +294,9 @@ has no CLI surface and is not invoked directly.
 
 Both `github_ops` and `github_pr` accept the top-level `--plan-id PLAN_ID` /
 `--project-dir DIR` routing pair (mutually exclusive) consumed before argparse runs.
-`github_re_review` accepts the same `--project-dir DIR` routing flag; its
-`re-review` subcommand declares its own `--plan-id` (accepted for routing uniformity).
+`github_re_review` accepts the same `--project-dir DIR` routing flag; both its
+`re-review` and `recovery-action` subcommands declare their own `--plan-id`
+(accepted for routing uniformity).
 
 **`--plan-id NO_PLAN`** is accepted wherever `--plan-id` is — both as the top-level
 routing flag (it binds to the main checkout, never to a worktree) and as the
@@ -788,6 +815,40 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github
 ```
 
 `--timeout SECONDS` bounds the `await_fresh_review` poll (default `DEFAULT_CI_TIMEOUT`); consumers (the trigger-A / trigger-B re-review sites in phase-6-finalize) supply their `re_review_await_timeout_seconds` step-param value here.
+
+The verb has three terminal shapes, not two: `status: success` (the trigger was posted and the await ran to a verdict), `status: error`, and `status: refused` with `reason: window_open` — the refusal re-trigger guard declining to post into an unexpired rate window. See § "The refusal re-trigger guard" for the envelope's field set.
+
+### github_re_review recovery-action
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_re_review recovery-action \
+  --bot-kind BOT_KIND \
+  [--cause {size|quota}] [--window-expired {true|false}] [--attempts-remaining N] [--plan-id PLAN_ID]
+```
+
+DERIVES which recovery a detected refusal arms, from the bot registry plus the caller's own observations. A pure read: it touches no PR, claims no window, and posts nothing.
+
+⛔ **This verb is a SELECTION the workflow must still make — it is NOT a second, weaker guard.** Nothing is enforced by calling it and nothing is bypassed by skipping it. The unbypassable posture is the one `request_fresh_review` enforces at the trigger chokepoint; this verb only answers *which* recovery is worth attempting once a refusal has been seen.
+
+`--bot-kind` deliberately takes **no `choices=`**: an unregistered token must reach the derivation and fail closed to `escalate_not_awaitable` with the live kind set published beside it, which is exactly the answer an operator holding a stale config token needs. An argparse rejection would replace that verdict with exit 2 and name no remedy.
+
+`--window-expired` and `--attempts-remaining` are the `expired` and `attempts_remaining` fields of `merge_lock rate-window check`. **Omit either when it was not observed** — the derivation then returns the distinct `action: unmeasured` rather than an authorizing verdict, because acting on an unobserved window is the move that spent the bot's quota in the first place.
+
+The returned `action` is one of:
+
+| `action` | `reason` | Meaning |
+|----------|----------|---------|
+| `escalate_structural` | `size_ceiling` | The cause is a diff-size ceiling. It DOMINATES the class — a class is declared per BOT while a cause is observed per REFUSAL — and waiting cannot move it. |
+| `escalate_not_awaitable` | `class_not_awaitable` | `hard_quota` or `unknown`. Fail-closed per ADR-009; an unregistered `bot_kind` lands here by derivation, not by a special case. |
+| `escalate_exhausted` | `attempt_cap_exhausted` | The per-(bot, PR) recovery budget is spent. Checked before both trigger arms, since each would spend an attempt. |
+| `await_window` | `claim_window_open` | The claim clock is still running. |
+| `close_and_reopen` | `claim_window_elapsed` | The claim elapsed and the bot declares `requires_explicit_trigger` — re-DELIVER the dropped request (see [`../tools-integration-ci/standards/pr-review-operations.md`](../tools-integration-ci/standards/pr-review-operations.md) § "Workflow: Close and Re-open a PR to Re-deliver a Review Request"). |
+| `generate_trigger` | `claim_window_elapsed` | The claim elapsed and the bot re-reviews on push — produce new commits. |
+| `unmeasured` | `registry_empty` / `no_window_observation` / `no_attempt_budget_observation` | An input the derivation needs was absent, so no verdict was computed. Authorizes nothing. |
+
+⛔ **The elapsed arm is named `claim_window_elapsed`, never `bot_window_reopened`.** What elapsed is the CLAIM clock this pipeline set, not the bot's real window: a stated ETA is an estimate (observed wrong by roughly 2.4x, then roughly 15x) and the real window slides. The arm lifts the refusal without asserting the bot is ready.
+
+Every return publishes `rate_limit_class`, `trigger_semantics`, `known_bot_kinds`, `known_bot_kind_count`, `bot_kind_registered`, and the declared `recovery_actions` vocabulary — so the verdict names the registry facts and the population it was computed from (ADR-019) rather than only its conclusion.
 
 ## Error Handling
 

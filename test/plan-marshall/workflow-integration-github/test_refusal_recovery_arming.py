@@ -2,36 +2,36 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Cross-cutting suite: a NON-CodeRabbit refusal arms the right recovery.
 
-Fail-first suite for D2 (registry-driven per-bot detection) and D4 (refusal
-recovery). Against the pre-fix code the detector selected CodeRabbit-authored
-comments only and a detected refusal was ``continue``-d into an indistinguishable
-bare timeout, so every assertion below about a non-CodeRabbit bot's refusal — and
-every assertion that a refusal is not reported as a bare timeout — was red.
+Detection answers per REGISTERED bot rather than for one privileged bot, and a
+detected refusal is REPORTED as a refusal rather than collapsing into an
+indistinguishable bare timeout. Both properties are swept over the whole registry
+population here, so no bot is detection-privileged and none is left uncovered.
 
 Cross-cutting counterpart to the co-located suites: ``test_comments_stage.py``
 owns the producer's noise filters and ``test_re_review_strategy.py`` owns the
-discriminators' match/no-match behaviour. This suite pins the ARMING — the recovery a
-detected refusal selects — under the shipped TWO-AXIS rule, with no bot-name
-literal in the path. The CAUSE axis is consulted first and dominates:
+discriminators' match/no-match behaviour and the trigger-chokepoint guard. This
+suite pins the ARMING — the recovery a detected refusal selects — with no
+bot-name literal in the path.
 
-    cause == size  -> escalate structurally (split / accept / disable; NEVER wait)
+⛔ **The arming rule has exactly ONE definition, and it is the shipped selector.**
+Every case below reaches it through :func:`github_re_review.resolve_recovery_action`;
+this module keeps no class-to-recovery table of its own. A test-local model of the
+rule is a second definition that can agree with the docs while the shipped code
+does something else — the two drift apart silently, and the suite keeps reporting
+green on the model rather than on what ships.
 
-Only a ``quota`` cause falls through to the refusing bot's own declared
-``rate_limit_class``:
+The selector consults the CAUSE axis first, and it dominates: a ``size`` refusal
+resolves ``escalate_structural`` whatever the bot's class declares, because a
+cause is observed per REFUSAL while a class is declared per BOT and one bot can
+refuse for both at one class. Only a ``quota`` cause falls through to the class,
+and only ``awaitable_window`` reaches the window arms — which additionally
+require BOTH a window observation and an attempt budget, so an unobserved input
+yields ``unmeasured`` rather than an authorizing verdict.
 
-    awaitable_window -> claim and await the window
-    hard_quota       -> escalate immediately (nothing reopens by waiting)
-    unknown          -> escalate immediately (fail-closed, ADR-009)
-
-The cause outranks the class because a cause is observed per REFUSAL while a
-class is declared per BOT, and one bot can refuse for both causes at one class.
-Reading the class alone is the defect this ordering closes: an
-``awaitable_window`` bot refusing because the DIFF is too big would otherwise be
-handed a claim-and-await for a ceiling no amount of waiting moves.
-
-The bot population and every class expectation are DERIVED from
-``bot_registry``, never hard-coded, so a bot added or reclassified in a standards
-doc is swept here automatically.
+The bot population and every expectation are DERIVED from ``bot_registry`` and
+from the selector's own published ``RECOVERY_ACTIONS`` vocabulary, never
+hard-coded, so a bot added or reclassified in a standards doc is swept here
+automatically.
 """
 
 from __future__ import annotations
@@ -61,50 +61,53 @@ from _github_pr import (  # noqa: E402
     refusal_layers,
 )
 
-# The recovery each rate-limit class arms. This is the CLASS axis of the mapping
-# under test; it is expressed once here and applied to whatever population the
-# registry declares. It is reached only for a ``quota``-caused refusal.
-_RECOVERY_BY_CLASS = {
-    'awaitable_window': 'claim_and_await',
-    'hard_quota': 'escalate_immediately',
-    'unknown': 'escalate_immediately',
-}
-
-# The recovery a SIZE-caused refusal arms, on the cause axis. Its own value rather
-# than a reuse of ``escalate_immediately``: the remedy sets are disjoint — a
-# temporal refusal may be waited out or accepted, a structural one is answered by
-# splitting the diff, accepting the gap, or disabling the reviewer for this PR.
-_RECOVERY_STRUCTURAL = 'escalate_structural'
-
-# The escalation ``reason`` each arming surfaces on the envelope, so a test can
-# pin WHICH escalation fired rather than only that one did. ``claim_and_await``
-# is absent because it escalates nothing.
-_ESCALATION_REASON = {
-    _RECOVERY_STRUCTURAL: 'refusal_structural',
-    'escalate_immediately': 'rate_window_not_awaitable',
-}
+# A positive attempt budget, deliberately off the exhausted boundary — that arm
+# has its own case, so a shared default sitting on it would make every other
+# window case pass for the wrong reason.
+_ATTEMPTS_REMAINING = 2
 
 
-def _arms(bot_kind: str, cause: str = _github_pr.REFUSAL_CAUSE_QUOTA) -> str:
-    """The recovery a detected refusal from ``bot_kind`` arms, under the two-axis rule.
+def _verdict(
+    bot_kind: str,
+    cause: str = _github_pr.REFUSAL_CAUSE_QUOTA,
+    *,
+    window_expired: bool | None = False,
+    attempts_remaining: int | None = _ATTEMPTS_REMAINING,
+) -> dict:
+    """The SHIPPED selector's verdict for a detected refusal from ``bot_kind``.
 
-    The CAUSE axis is consulted FIRST and dominates: a ``size`` refusal is over a
-    per-PR diff ceiling, so the same request never succeeds while the diff is this
-    size — it arms a structural escalation whatever the bot's declared class says.
-    Only a ``quota`` cause falls through to the per-bot class map.
+    The single definition of the arming rule: this module states no class-to-
+    recovery table of its own, so a rule change lands here as a failing assertion
+    rather than as a silent disagreement between a test-local model and the code.
 
-    ``cause`` defaults to ``quota`` because that is the producer's own default for a
-    refusal matching no declared size marker, so an existing call site that passes
-    only a bot kind still expresses the case it always expressed.
+    ``cause`` defaults to ``quota`` — the producer's own default for a refusal
+    matching no declared size marker — so a call site passing only a bot kind
+    expresses the quota case. ``window_expired=False`` is the freshly-claimed
+    clock, which is the observation under which the class axis is visible: it is
+    the only one where an ``awaitable_window`` bot's answer differs from an
+    escalating one.
     """
-    if cause == _github_pr.REFUSAL_CAUSE_SIZE:
-        return _RECOVERY_STRUCTURAL
-    return _RECOVERY_BY_CLASS[bot_registry.rate_limit_class(bot_kind)]
+    return github_re_review.resolve_recovery_action(
+        bot_kind,
+        cause=cause,
+        window_expired=window_expired,
+        attempts_remaining=attempts_remaining,
+    )
 
 
-def _escalation_reason(bot_kind: str, cause: str) -> str:
-    """The ``reason`` the envelope escalates with, or ``''`` when it awaits instead."""
-    return _ESCALATION_REASON.get(_arms(bot_kind, cause), '')
+def _action(bot_kind: str, cause: str = _github_pr.REFUSAL_CAUSE_QUOTA, **kwargs) -> str:
+    """The recovery ACTION the shipped selector derives for ``bot_kind``."""
+    return str(_verdict(bot_kind, cause, **kwargs)['action'])
+
+
+def _reason(bot_kind: str, cause: str = _github_pr.REFUSAL_CAUSE_QUOTA, **kwargs) -> str:
+    """The REASON the shipped selector publishes beside the action.
+
+    Pinned separately because the action alone cannot distinguish two escalations
+    that share a value: a ``hard_quota`` bot escalates for BOTH causes, and only
+    the reason says which remedies the operator should be offered.
+    """
+    return str(_verdict(bot_kind, cause, **kwargs)['reason'])
 
 
 def _declare_size_refusal(monkeypatch, bot_kind: str) -> str:
@@ -347,19 +350,27 @@ class TestRecoveryArmingFollowsTheTwoAxisRule:
 
     @pytest.mark.parametrize('bot_kind', _registered_bots())
     def test_the_class_arms_exactly_one_recovery(self, bot_kind):
-        """Every declared class maps to a defined recovery — none is unhandled."""
+        """Every declared class maps to a defined recovery — none is unhandled.
+
+        The admissible pair is the CLASS partition of a quota refusal made with
+        both observations present: wait, or escalate as not-awaitable. Reaching
+        ``unmeasured`` here would mean the class axis never decided anything.
+        """
         detected = _detect_rate_limited_bots([_comment(bot_kind, _refusal_body(bot_kind))])
 
-        assert detected[0]['rate_limit_class'] in _RECOVERY_BY_CLASS
-        assert _arms(bot_kind) in ('claim_and_await', 'escalate_immediately')
+        assert detected[0]['rate_limit_class'] == bot_registry.rate_limit_class(bot_kind)
+        assert _action(bot_kind) in (
+            github_re_review.RECOVERY_ACTION_AWAIT_WINDOW,
+            github_re_review.RECOVERY_ACTION_ESCALATE_NOT_AWAITABLE,
+        )
 
-    def test_an_awaitable_window_arms_claim_and_await(self):
+    def test_an_awaitable_window_arms_a_wait_on_the_claim(self):
         """A window that reopens on its own makes waiting productive work."""
         awaitable = [b for b in _registered_bots() if bot_registry.rate_limit_class(b) == 'awaitable_window']
         assert awaitable, 'registry must declare at least one awaitable_window bot'
 
         for bot in awaitable:
-            assert _arms(bot) == 'claim_and_await'
+            assert _action(bot) == github_re_review.RECOVERY_ACTION_AWAIT_WINDOW
 
     def test_a_hard_quota_escalates_immediately(self):
         """A rate/budget quota that does not reopen usefully, so awaiting burns it.
@@ -379,7 +390,7 @@ class TestRecoveryArmingFollowsTheTwoAxisRule:
         assert hard, 'registry must declare at least one hard_quota bot'
 
         for bot in hard:
-            assert _arms(bot) == 'escalate_immediately'
+            assert _action(bot) == github_re_review.RECOVERY_ACTION_ESCALATE_NOT_AWAITABLE
 
     def test_an_unknown_class_escalates_immediately(self):
         """FAIL-CLOSED (ADR-009): an unverified class is never treated as awaitable.
@@ -391,12 +402,22 @@ class TestRecoveryArmingFollowsTheTwoAxisRule:
         assert unknown, 'registry must declare at least one unknown-class bot'
 
         for bot in unknown:
-            assert _arms(bot) == 'escalate_immediately'
+            assert _action(bot) == github_re_review.RECOVERY_ACTION_ESCALATE_NOT_AWAITABLE
 
     def test_no_registered_bot_has_an_unhandled_class(self):
-        """Totality: the class→recovery mapping covers the whole population."""
+        """Totality: the selector names a recovery for every declared class.
+
+        The admissible population is the selector's OWN published vocabulary, so a
+        recovery added there joins this check with no test edit — and
+        ``unmeasured`` is excluded, because "no verdict was computed" is not a
+        recovery the class arms.
+        """
+        assert github_re_review.RECOVERY_ACTIONS, 'the action vocabulary is empty — this is vacuous'
+
         for bot in _registered_bots():
-            assert bot_registry.rate_limit_class(bot) in _RECOVERY_BY_CLASS
+            action = _action(bot)
+            assert action in github_re_review.RECOVERY_ACTIONS, bot
+            assert action != github_re_review.RECOVERY_ACTION_UNMEASURED, bot
 
 
 class TestTheDeclaredWordingSweep:
@@ -660,31 +681,34 @@ class TestTheCauseAxisDominatesTheClassAxis:
             # Read off the notice, comma-stripped for the CLI boundary.
             assert detected[0]['cap'] == '150000 characters'
 
-    def test_that_size_refusal_arms_structural_escalation_not_claim_and_await(self, monkeypatch):
+    def test_that_size_refusal_arms_structural_escalation_not_a_window_wait(self, monkeypatch):
         """The whole point: waiting is not offered for a ceiling waiting cannot move.
 
-        Paired with its matched negative control — the SAME bot, same class, whose
-        refusal is a QUOTA — which must still arm ``claim_and_await``. Without the
-        control this would also pass on an implementation that escalated every
-        refusal structurally.
+        Paired with its matched negative control — the SAME bot, same class, same
+        window observation, whose refusal is a QUOTA — which must still arm the
+        wait. Without the control this would also pass on an implementation that
+        escalated every refusal structurally.
         """
         for bot in self._awaitable_bots():
             body = _declare_size_refusal(monkeypatch, bot)
             detected = _detect_rate_limited_bots([_comment(bot, body)])
             cause = detected[0]['cause']
 
-            assert _arms(bot, cause) == _RECOVERY_STRUCTURAL
-            assert _arms(bot, cause) != 'claim_and_await'
+            assert _action(bot, cause) == github_re_review.RECOVERY_ACTION_ESCALATE_STRUCTURAL
+            assert _action(bot, cause) != github_re_review.RECOVERY_ACTION_AWAIT_WINDOW
             # Matched negative control: same bot, same declared class, quota cause.
-            assert _arms(bot, _github_pr.REFUSAL_CAUSE_QUOTA) == 'claim_and_await'
+            assert (
+                _action(bot, _github_pr.REFUSAL_CAUSE_QUOTA)
+                == github_re_review.RECOVERY_ACTION_AWAIT_WINDOW
+            )
 
-    def test_a_hard_quota_bots_size_refusal_escalates_as_refusal_structural(self, monkeypatch):
-        """Its reason is ``refusal_structural``, never ``rate_window_not_awaitable``.
+    def test_a_hard_quota_bots_size_refusal_escalates_for_the_size_ceiling(self, monkeypatch):
+        """Its reason is ``size_ceiling``, never ``class_not_awaitable``.
 
-        Both causes escalate for a ``hard_quota`` bot, so the arming alone cannot
+        Both causes escalate for a ``hard_quota`` bot, so the ACTION alone cannot
         tell them apart — the REASON is what distinguishes them, and it decides
         which remedies the operator is offered. Reporting a size refusal as
-        ``rate_window_not_awaitable`` describes a window that was never the problem.
+        ``class_not_awaitable`` describes a window that was never the problem.
         """
         hard = [b for b in _registered_bots() if bot_registry.rate_limit_class(b) == 'hard_quota']
         assert hard, 'registry must declare at least one hard_quota bot'
@@ -692,13 +716,15 @@ class TestTheCauseAxisDominatesTheClassAxis:
         for bot in hard:
             _declare_size_refusal(monkeypatch, bot)
 
-            assert _escalation_reason(bot, _github_pr.REFUSAL_CAUSE_SIZE) == 'refusal_structural'
-            assert _escalation_reason(bot, _github_pr.REFUSAL_CAUSE_SIZE) != 'rate_window_not_awaitable'
+            assert _reason(bot, _github_pr.REFUSAL_CAUSE_SIZE) == 'size_ceiling'
+            assert _reason(bot, _github_pr.REFUSAL_CAUSE_SIZE) != 'class_not_awaitable'
             # Matched negative control: the same bot's QUOTA refusal keeps the
             # temporal reason, so the size branch is not simply relabelling both.
-            assert (
-                _escalation_reason(bot, _github_pr.REFUSAL_CAUSE_QUOTA)
-                == 'rate_window_not_awaitable'
+            assert _reason(bot, _github_pr.REFUSAL_CAUSE_QUOTA) == 'class_not_awaitable'
+            # ...and the ACTION is identical across both, which is exactly why the
+            # reason has to carry the distinction.
+            assert _action(bot, _github_pr.REFUSAL_CAUSE_QUOTA) == (
+                github_re_review.RECOVERY_ACTION_ESCALATE_NOT_AWAITABLE
             )
 
     def test_a_quota_refusal_reports_cause_quota_and_an_empty_cap(self):
@@ -763,6 +789,246 @@ class TestTheCauseAxisDominatesTheClassAxis:
 
             assert 'cause' in detected[0], bot
             assert 'cap' in detected[0], bot
+
+
+def _bots_of_class(rate_class: str) -> list[str]:
+    """The registered bots declaring ``rate_class``, asserted non-empty."""
+    bots = [b for b in _registered_bots() if bot_registry.rate_limit_class(b) == rate_class]
+    assert bots, f'registry must declare at least one {rate_class} bot for this to discriminate'
+    return bots
+
+
+def _set_trigger_semantics(monkeypatch, bot_kind: str, value: str) -> None:
+    """Re-declare ``bot_kind``'s ``trigger_semantics`` in the parsed registry record.
+
+    Patched at the RECORD rather than at the accessor, so the real
+    ``trigger_semantics`` read — including its closed-set validation and its
+    fail-closed default — is the one the selector still travels through.
+    """
+    record = dict(bot_registry.REGISTRY._by_kind[bot_kind])
+    record['trigger_semantics'] = value
+    monkeypatch.setitem(bot_registry.REGISTRY._by_kind, bot_kind, record)
+
+
+class TestTheRecoveryActionSelectorDerivesItsVerdict:
+    """``resolve_recovery_action`` reads the registry rather than assuming a bot.
+
+    The ORDER of its arms is load-bearing, and each case below is the one that
+    fails when its step is moved: an empty population must not be answered with a
+    verdict that reads as derived; an observed size CAUSE must outrank a declared
+    class; a class that is not awaitable must never reach a window arm; and a
+    missing observation must yield no verdict at all rather than an authorizing
+    one.
+    """
+
+    def test_an_empty_registry_is_unmeasured_rather_than_a_derived_verdict(self, monkeypatch):
+        """⛔ A verdict over an empty population would read as derived while being blind.
+
+        With no bots registered ``rate_limit_class`` fails closed to ``unknown``
+        and the class arm would answer ``escalate_not_awaitable`` — a real-looking
+        escalation computed over nothing. Publishing the population and declining
+        to name a verdict is the honest answer.
+
+        Its matched control is the SAME call against the real registry, which must
+        NOT be ``unmeasured``: without it this would pass on a selector that
+        answered ``unmeasured`` for everything.
+        """
+        bot_kind = _registered_bots()[0]
+        assert _action(bot_kind) != github_re_review.RECOVERY_ACTION_UNMEASURED
+
+        monkeypatch.setattr(bot_registry.REGISTRY, '_by_kind', {})
+        verdict = _verdict(bot_kind)
+
+        assert verdict['action'] == github_re_review.RECOVERY_ACTION_UNMEASURED
+        assert verdict['reason'] == 'registry_empty'
+        assert verdict['known_bot_kinds'] == []
+        assert verdict['known_bot_kind_count'] == 0
+
+    def test_a_non_awaitable_class_never_reaches_a_window_arm(self):
+        """Fail-closed: the window observations cannot buy a wait for a class that has none.
+
+        Swept over BOTH window states and both budget states, because reaching a
+        window arm is exactly what these inputs would do for an awaitable bot —
+        the matched control below shows they do.
+        """
+        non_awaitable = _bots_of_class('hard_quota') + _bots_of_class('unknown')
+        window_arms = (
+            github_re_review.RECOVERY_ACTION_AWAIT_WINDOW,
+            github_re_review.RECOVERY_ACTION_CLOSE_AND_REOPEN,
+            github_re_review.RECOVERY_ACTION_GENERATE_TRIGGER,
+        )
+
+        for bot in non_awaitable:
+            for expired in (True, False):
+                for attempts in (0, _ATTEMPTS_REMAINING):
+                    action = _action(bot, window_expired=expired, attempts_remaining=attempts)
+
+                    assert action not in window_arms, (bot, expired, attempts)
+                    assert action == github_re_review.RECOVERY_ACTION_ESCALATE_NOT_AWAITABLE
+
+    def test_the_same_window_inputs_do_reach_a_window_arm_for_an_awaitable_class(self):
+        """MATCHED CONTROL — the inputs above are genuinely window-arm-reaching.
+
+        Without this the sweep above would pass on a selector that never reached a
+        window arm for anyone, which is a different (and equally broken) code.
+        """
+        for bot in _bots_of_class('awaitable_window'):
+            assert (
+                _action(bot, window_expired=False)
+                == github_re_review.RECOVERY_ACTION_AWAIT_WINDOW
+            )
+            assert _action(bot, window_expired=True) in (
+                github_re_review.RECOVERY_ACTION_CLOSE_AND_REOPEN,
+                github_re_review.RECOVERY_ACTION_GENERATE_TRIGGER,
+            )
+
+    def test_close_and_reopen_needs_an_elapsed_window_on_an_explicit_trigger_bot(
+        self, monkeypatch
+    ):
+        """Re-DELIVERING a dropped request is worth nothing before the claim is up.
+
+        Close-and-reopen buys back no quota — the limit is ACCOUNT-scoped and no
+        PR-level move touches it — so an OPEN claim must still resolve the wait.
+        The matched control is the same bot with the same elapsed window and an
+        ``auto_on_push`` declaration, which gets ``generate_trigger`` instead:
+        that is what shows the arm is chosen from the registry's trigger semantics
+        rather than being the fixed answer for an elapsed window.
+        """
+        for bot in _bots_of_class('awaitable_window'):
+            _set_trigger_semantics(
+                monkeypatch, bot, bot_registry.TRIGGER_SEMANTICS_REQUIRES_EXPLICIT_TRIGGER
+            )
+            assert (
+                _action(bot, window_expired=True)
+                == github_re_review.RECOVERY_ACTION_CLOSE_AND_REOPEN
+            )
+            # Same bot, same semantics, claim still running: no close-and-reopen.
+            assert (
+                _action(bot, window_expired=False)
+                == github_re_review.RECOVERY_ACTION_AWAIT_WINDOW
+            )
+
+            _set_trigger_semantics(monkeypatch, bot, bot_registry.TRIGGER_SEMANTICS_AUTO_ON_PUSH)
+            assert (
+                _action(bot, window_expired=True)
+                == github_re_review.RECOVERY_ACTION_GENERATE_TRIGGER
+            )
+
+    def test_the_elapsed_arm_is_named_for_the_claim_clock_not_the_bots_readiness(
+        self, monkeypatch
+    ):
+        """⛔ ``claim_window_elapsed`` — what elapsed is the CLAIM, not the bot's window.
+
+        A stated ETA is an estimate and the real window slides, so a reason
+        claiming the bot has reopened would assert something nobody observed. The
+        evidence that the name describes the CLAIM is that both elapsed arms —
+        close-and-reopen and generate-trigger — publish the SAME reason while
+        naming different moves: the reason cannot be a property of the bot's
+        readiness if it does not vary with the bot's trigger semantics.
+        """
+        for bot in _bots_of_class('awaitable_window'):
+            _set_trigger_semantics(
+                monkeypatch, bot, bot_registry.TRIGGER_SEMANTICS_REQUIRES_EXPLICIT_TRIGGER
+            )
+            explicit = _verdict(bot, window_expired=True)
+
+            _set_trigger_semantics(monkeypatch, bot, bot_registry.TRIGGER_SEMANTICS_AUTO_ON_PUSH)
+            auto = _verdict(bot, window_expired=True)
+
+            assert explicit['reason'] == 'claim_window_elapsed'
+            assert auto['reason'] == explicit['reason']
+            assert explicit['action'] != auto['action']
+            # The OPEN claim names the clock too, from the other side.
+            assert _reason(bot, window_expired=False) == 'claim_window_open'
+
+    def test_an_unregistered_bot_kind_fails_closed_by_derivation(self):
+        """The stale token lands on the class arm because the REGISTRY resolves it there.
+
+        There is no unknown-bot list: ``rate_limit_class`` fails closed to
+        ``unknown`` for a kind it does not know, and the ordinary class arm does
+        the rest. The matched control is a REGISTERED bot whose declared class is
+        also ``unknown`` — it must reach the identical action and reason, so the
+        two verdicts differ ONLY in ``bot_kind_registered``. A special-cased
+        unknown-bot branch could not produce that agreement.
+        """
+        stale = _verdict('some-retired-bot')
+        registered_unknown = _verdict(_bots_of_class('unknown')[0])
+
+        assert stale['action'] == github_re_review.RECOVERY_ACTION_ESCALATE_NOT_AWAITABLE
+        assert stale['reason'] == registered_unknown['reason'] == 'class_not_awaitable'
+        assert stale['action'] == registered_unknown['action']
+        assert stale['rate_limit_class'] == bot_registry.rate_limit_class('some-retired-bot')
+        assert stale['bot_kind_registered'] is False
+        assert registered_unknown['bot_kind_registered'] is True
+
+    def test_every_arm_publishes_the_inputs_its_derivation_read(self):
+        """One verdict SHAPE across every arm, and the whole vocabulary is reached.
+
+        A consumer must never probe for a key, so the derived-input fields are
+        asserted present on every arm rather than on the happy one. The arm table
+        is also checked to COVER the selector's published ``RECOVERY_ACTIONS``: a
+        member no case reaches is either an arm nothing can select or one this
+        suite forgot, and both are worth failing on.
+        """
+        awaitable = _bots_of_class('awaitable_window')[0]
+        not_awaitable = _bots_of_class('hard_quota')[0]
+        size = _github_pr.REFUSAL_CAUSE_SIZE
+        arms = [
+            (_verdict(awaitable, size), github_re_review.RECOVERY_ACTION_ESCALATE_STRUCTURAL, 'size_ceiling'),
+            (
+                _verdict(not_awaitable),
+                github_re_review.RECOVERY_ACTION_ESCALATE_NOT_AWAITABLE,
+                'class_not_awaitable',
+            ),
+            (
+                _verdict(awaitable, window_expired=None),
+                github_re_review.RECOVERY_ACTION_UNMEASURED,
+                'no_window_observation',
+            ),
+            (
+                _verdict(awaitable, attempts_remaining=None),
+                github_re_review.RECOVERY_ACTION_UNMEASURED,
+                'no_attempt_budget_observation',
+            ),
+            (
+                _verdict(awaitable, attempts_remaining=0),
+                github_re_review.RECOVERY_ACTION_ESCALATE_EXHAUSTED,
+                'attempt_cap_exhausted',
+            ),
+            (_verdict(awaitable), github_re_review.RECOVERY_ACTION_AWAIT_WINDOW, 'claim_window_open'),
+            (
+                _verdict(awaitable, window_expired=True),
+                github_re_review.RECOVERY_ACTION_CLOSE_AND_REOPEN,
+                'claim_window_elapsed',
+            ),
+        ]
+        derived_inputs = (
+            'bot_kind',
+            'cause',
+            'rate_limit_class',
+            'trigger_semantics',
+            'known_bot_kinds',
+            'known_bot_kind_count',
+            'bot_kind_registered',
+            'window_expired',
+            'attempts_remaining',
+            'recovery_actions',
+        )
+
+        for verdict, expected_action, expected_reason in arms:
+            assert verdict['action'] == expected_action
+            assert verdict['reason'] == expected_reason
+            for field in derived_inputs:
+                assert field in verdict, (expected_action, field)
+            assert verdict['recovery_actions'] == list(github_re_review.RECOVERY_ACTIONS)
+
+        reached = {verdict['action'] for verdict, _a, _r in arms}
+        # ``generate_trigger`` is unreachable without re-declaring a bot's trigger
+        # semantics, which is the neighbouring test's subject; it is named here so
+        # the coverage claim states its one exclusion rather than hiding it.
+        assert reached | {github_re_review.RECOVERY_ACTION_GENERATE_TRIGGER} == set(
+            github_re_review.RECOVERY_ACTIONS
+        ), f'arms reached {sorted(reached)} of {sorted(github_re_review.RECOVERY_ACTIONS)}'
 
 
 class TestTheEtaExtractorCannotRaise:
@@ -943,7 +1209,10 @@ class TestTheEnumerativeArmOnTheReReviewPath:
 
         assert record is not None
         # It is a refusal, so it arms a recovery rather than vanishing into a timeout.
-        assert _arms(bot_kind) in ('claim_and_await', 'escalate_immediately')
+        assert _action(bot_kind) in (
+            github_re_review.RECOVERY_ACTION_AWAIT_WINDOW,
+            github_re_review.RECOVERY_ACTION_ESCALATE_NOT_AWAITABLE,
+        )
         # And it states no ETA — nothing was read, so nothing can be claimed about
         # when the window reopens.
         assert record['eta'] == ''

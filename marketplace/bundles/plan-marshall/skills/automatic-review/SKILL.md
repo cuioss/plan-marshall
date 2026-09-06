@@ -396,11 +396,34 @@ Both carry the same discriminators, so this section treats them uniformly: `{bot
 
 Read `review_rate_window_await` and `review_rate_window_timeout_seconds` off the same `params` object returned by the one-stop `manage-execution-manifest step-params get --plan-id {plan_id} --phase 6-finalize --step-id plan-marshall:automatic-review` call used for `review_bot_buffer_seconds` (defaults: `false` and `3600`). **When `review_rate_window_await == false`**, skip this entire subsection and proceed directly to "Producer: FIND" below — a detected refusal is treated as an ordinary settle.
 
-**When `review_rate_window_await == true` AND a refusal was detected on a bot in `required_bots`**, branch BEFORE claiming or awaiting anything — recovery is only productive for a limit that actually moves. Evaluate the branches **in the order given**: the CAUSE branch first, then the `rate_limit_class` branches.
+**When `review_rate_window_await == true` AND a refusal was detected on a bot in `required_bots`**, CONSULT the recovery selector BEFORE claiming or awaiting anything, and route on the `action` it returns. Recovery is only productive for a limit that actually moves, and which limit this is comes from the bot registry rather than from a judgement made here:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_re_review recovery-action \
+  --bot-kind {bot_kind} --cause {cause} --plan-id {plan_id}
+```
+
+Pass `--window-expired` and `--attempts-remaining` only once a claim exists to report them (Branch 3 polls both); omit them here, where no window has been claimed yet. Read `action` from the returned TOON and enter the branch it names:
+
+| `action` | Branch |
+|----------|--------|
+| `escalate_structural` | **Branch 0** — escalate, do not await, do not generate |
+| `escalate_not_awaitable` | **Branch 1** — escalate, do not await, do not generate |
+| `await_window` (and the `unmeasured` no-observation reasons, which are what an unclaimed window reads as here) | **Branch 2** — claim the window, then poll it in Branch 3 |
+| `escalate_exhausted` | Branch 2's `recovery_cap_exhausted` arm — `escalate_ask{reason: rate_window_exhausted}` |
+| `close_and_reopen` | **Branch 5** — re-deliver the dropped request (reached from Branch 3, after the window elapsed) |
+| `generate_trigger` | **Branch 4** — generate the event (reached from Branch 3, after the window elapsed) |
+| `unmeasured` with `reason: registry_empty` | Escalate as Branch 1 does. No verdict was computed, so nothing here authorizes a recovery. |
+
+See [`../workflow-integration-github/SKILL.md`](../workflow-integration-github/SKILL.md) § Canonical invocations → `github_re_review recovery-action` for the full action vocabulary and the fields each return publishes.
 
 ⛔ **Scope the recovery to REQUIRED bots — an optional bot's refusal is settled, never escalated.** An optional bot's silence is not a failure and can never hold the step open, so awaiting its window burns budget and escalating it puts a decision the operator does not need in front of them. Treat a refusal from a bot outside `required_bots` as an ordinary settle and proceed to "Producer: FIND"; it is still surfaced in `refused_bots[]` and still classified for visibility. This filter is also what makes moving a refusing bot to `optional_bots` an EFFECTIVE remedy rather than a loop: without it, the reclassification changes the quorum but the recovery re-detects the same refusal and re-escalates on the next pass, so the operator lands back on the identical prompt.
 
-⛔ **The cause branch comes first, and reading `rate_limit_class` alone is the defect it closes.** `rate_limit_class` is declared once per BOT while a cause is observed per REFUSAL, so a bot declaring `awaitable_window` that refuses because the **diff is too big** would otherwise fall into Branch 2 and be handed the full claim-await-generate recovery — spending `review_rate_window_timeout_seconds` on a ceiling that no amount of waiting moves, then re-triggering a bot whose answer cannot change while the diff is this size. Waiting is not merely unproductive there; it is an action guaranteed to fail.
+⛔ **The cause outranks the class, and the selector — not this prose — is what enforces it.** `rate_limit_class` is declared once per BOT while a cause is observed per REFUSAL, so a bot declaring `awaitable_window` that refuses because the **diff is too big** would otherwise be handed the full claim-await-generate recovery — spending `review_rate_window_timeout_seconds` on a ceiling that no amount of waiting moves, then re-triggering a bot whose answer cannot change while the diff is this size. Waiting is not merely unproductive there; it is an action guaranteed to fail. `recovery-action` resolves `escalate_structural` before it reads the class, so the precedence holds whether or not a reader of this section remembers it.
+
+⛔ **Why this is a GUARD and not guidance.** The rule *do not re-trigger a bot that is refusing for quota reasons* was first written here as prose — and was violated roughly six hours later, in this same epic. A loop posted a trigger comment about every two minutes for most of an hour, some twenty-seven comments on a public PR, which exhausted the bot's **separate chat-message quota** and removed the recovery path entirely. A rule a workflow is merely told to obey is a discretionary call at exactly the moment it costs most. So the posture is now enforced in code at the single point every bot's trigger comment passes through: `request_fresh_review` consults the bot's rate window before posting and returns `status: refused` / `reason: window_open` instead — see [`../workflow-integration-github/SKILL.md`](../workflow-integration-github/SKILL.md) § "The refusal re-trigger guard". The `recovery-action` consult above is a SELECTION this workflow still has to make; it is not a second guard, and skipping it bypasses nothing.
+
+⛔ **A re-trigger inside an open window RESETS it rather than shortening it** — an advertised wait was observed going from 50 to 59 minutes — and spends quota doing so. The bot's own stated ETA is an ESTIMATE, not a contract (observed wrong by roughly 2.4x, then roughly 15x), which is why Branch 3 polls the claim's own observable instead of sleeping through the ETA.
 
 **Every branch below is decision-logged.** A refusal never leaves this section without an auditable record of what was decided and why.
 
@@ -579,20 +602,42 @@ the cloud lane's thundering-herd argument, which reasons from several unserialis
 allowance — that rationale does not transfer, because the claim above already rules out the in-repo
 herd. See [`standards/coderabbit.md`](standards/coderabbit.md) § "Rate-limit class".
 
-Then proceed to Branch 4.
+Then RE-CONSULT the selector, now that both observations exist, and route on the `action` it returns. This is the second and last consult; the first (before Branch 0) had no claim to report:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_re_review recovery-action \
+  --bot-kind {bot_kind} --cause {cause} --window-expired true \
+  --attempts-remaining {attempts_remaining} --plan-id {plan_id}
+```
+
+`{attempts_remaining}` is the field the Branch 3 `rate-window check` poll returned. Both flags are supplied here **because both were observed** — omitting either returns `action: unmeasured`, which authorizes nothing and would leave this boundary with no route.
+
+- **`action: generate_trigger`** — the bot re-reviews on push (`trigger_semantics: auto_on_push`), so new commits are an event it honours. Proceed to **Branch 4**.
+- **`action: close_and_reopen`** — the bot reviews only when explicitly asked (`trigger_semantics: requires_explicit_trigger`), so a push is not an event it answers. Proceed to **Branch 5**.
+- **`action: escalate_exhausted`** — the recovery budget was spent while this branch waited. Release the claim and escalate as Branch 2's `recovery_cap_exhausted` arm does.
+
+⛔ **Both trigger arms are reachable ONLY from here, after the window elapsed.** That is the ordering the whole section exists to enforce: a trigger issued while the claim is still running resets the bot's window instead of shortening it, and spends quota doing so. The `request_fresh_review` guard is the mechanical backstop for the same rule, so a trigger posted out of order is refused rather than merely discouraged.
 
 #### Branch 4 — GENERATE the event (rebase-and-push preferred, trigger comment as fallback)
 
-Recovery is **event generation**, not continued waiting. New commits are the trigger every registered
-bot honours, so the primary recovery is to rebase the feature branch onto base and push. The registry
-`trigger_comment` is a FALLBACK only — and only under the two conditions below, because a premature
-trigger burns a recovery attempt and resets the bot's window, which is precisely the failure this
-ordering prevents.
+Recovery is **event generation**, not continued waiting. For a bot that re-reviews on push, new
+commits are an event it honours, so the primary recovery is to rebase the feature branch onto base and
+push. The registry `trigger_comment` is a FALLBACK only — and only under the two conditions below,
+because a premature trigger burns a recovery attempt and resets the bot's window, which is precisely
+the failure this ordering prevents.
+
+⛔ **A push is not universally a trigger, which is why this branch is selected rather than assumed.**
+`trigger_semantics` is registry data and its fail-closed default is `requires_explicit_trigger`; a bot
+declaring that answers no push at all (`cuioss-review-bot` is the shipped case — it has no push
+trigger). Branch 4 is therefore entered only on `action: generate_trigger`, and a
+`requires_explicit_trigger` bot routes to Branch 5 instead. Reading a push as a universal trigger is
+how a recovery comes to rebase, force-push, and then report success while the bot it was recovering
+was never asked anything.
 
 **Reached only after the window has elapsed** (Branch 3 observed `expired: true`) **and the jittered
 wake boundary above has been awaited**. There is no path into this branch while the window is still
 open — a trigger comment during an open rate-limit window is structurally unreachable, not merely
-discouraged.
+discouraged: the `request_fresh_review` guard refuses it in code.
 
 1. **Resolve the base branch** and check whether it advanced past the branch's merge base — a rebase
    only produces new commits when base has moved:
@@ -658,6 +703,42 @@ discouraged.
    ```
 
 Then proceed to "Producer: FIND" below, which surfaces whatever the regenerated review produced.
+
+#### Branch 5 — CLOSE and RE-OPEN the PR (re-deliver a request the bot dropped)
+
+Entered on `action: close_and_reopen` from the Branch 3 → trigger-arm boundary above: the claim
+elapsed AND the bot declares `trigger_semantics: requires_explicit_trigger`, so no push is an event it
+answers and Branch 4's rebase would recover nothing.
+
+⛔ **Close-and-reopen buys back NO quota — the limit is ACCOUNT-scoped.** No PR-level move touches it:
+not closing and re-opening, not opening a fresh PR, not a force-push, not a new SHA. The one observed
+successful reopen worked *only* because the window had already elapsed. So this is a way to
+**re-deliver a request the bot dropped**, and it is worth nothing before the window is up. That is the
+whole reason this branch hangs off the elapsed-window boundary and is unreachable from anywhere else:
+reopen is for the dropped-request case, waiting (Branch 3) is for the active-refusal case, and running
+them in the wrong order spends an attempt to learn what the claim already reported.
+
+The sequence composes from EXISTING `ci pr` verbs — no new CI verb is introduced. See
+[`../tools-integration-ci/standards/pr-review-operations.md`](../tools-integration-ci/standards/pr-review-operations.md)
+§ "Workflow: Close and Re-open a PR to Re-deliver a Review Request" for the invocations, each flag in
+the position its own parser requires, and the `pr_number` re-binding that closes the sequence. Do not
+restate them here.
+
+Decision-log the re-delivery, then release the claim exactly as Branch 4 step 4 does — the attempt
+counter is retained by the verb, so the cap survives the release:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO \
+  --message "(plan-marshall:automatic-review) refusal recovery RE-DELIVERED — closed and re-opened pr {pr_number} for {bot_kind} (trigger_semantics=requires_explicit_trigger) after the claim window elapsed; new pr_number={new_pr_number}. This re-delivers a dropped request and buys back no quota — the limit is account-scoped"
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock rate-window release \
+  --plan-id {plan_id} --bot-kind {bot_kind}
+```
+
+Then proceed to "Producer: FIND" below, against the re-bound `{pr_number}`.
 
 ### Producer: FIND — file PR comments to the ledger (entry-point)
 
