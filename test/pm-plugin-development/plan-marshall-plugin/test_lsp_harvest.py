@@ -16,11 +16,15 @@ Two groups carry the weight:
 import shutil
 import sys
 import tempfile
+import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import lsp_harvest
 import plugin_discover
 import pytest
+from _lsp_jsonrpc import LspError, LspSession
+from _lsp_workspace_edit import path_to_uri
 from lsp_harvest import (
     DEP_TYPE_LSP,
     HarvestOutcome,
@@ -691,6 +695,142 @@ def test_garbage_emitting_server_does_not_escape_as_an_exception(tmp_path):
     # Assert
     assert outcome.ran is False
     assert outcome.reason
+
+
+# =============================================================================
+# Deterministic mid-file expiry and out-of-workspace drop (fake transport)
+# =============================================================================
+
+
+class _FakeHarvestTransport:
+    """A programmable, zero-real-time transport for :func:`harvest_workspace`.
+
+    No subprocess, no I/O wait, and no call of its own to ``time.monotonic`` — so
+    a test that also monkeypatches the clock controls EVERY reading the harvest
+    loop sees, with nothing here racing it.
+    """
+
+    def __init__(self, definition_responses):
+        """``definition_responses``: one list-of-Locations per ``definition()`` call, popped in order."""
+        self._definition_responses = list(definition_responses)
+        self.definition_calls = 0
+
+    def request(self, method, params, timeout=30.0):
+        if method == 'initialize':
+            return {'jsonrpc': '2.0', 'id': 0, 'result': {'capabilities': {}}}
+        if method == 'textDocument/definition':
+            self.definition_calls += 1
+            result = self._definition_responses.pop(0) if self._definition_responses else []
+            return {'jsonrpc': '2.0', 'id': 0, 'result': result}
+        return {'jsonrpc': '2.0', 'id': 0, 'result': None}
+
+    def notify(self, method, params):
+        pass
+
+    def diagnostics_seq(self, uri):
+        return 0
+
+    def wait_for_diagnostics(self, uri, settle=2.0, timeout=15.0, after_seq=None):
+        return None
+
+    def wait_until_idle(self, settle=1.5, timeout=8.0):
+        return None
+
+    def close(self):
+        pass
+
+
+def _fake_client_module(transport):
+    """A stand-in for the ``lsp_client`` module ``_load_lsp_client`` normally returns.
+
+    ``StdioTransport`` ignores its real argv/cwd and hands back the pre-built fake
+    transport — no subprocess is ever spawned. ``LspSession`` is the REAL session
+    class, so the handshake/open/definition wiring under test is the shipped
+    code; only the wire transport is a double.
+    """
+    return SimpleNamespace(
+        StdioTransport=lambda *args, **kwargs: transport,
+        LspSession=LspSession,
+        analysis_config_with_extra_paths=lambda extra_paths: {},
+        LspError=LspError,
+    )
+
+
+class _FakeClock:
+    """A ``time.monotonic`` stand-in returning a pre-scripted, index-clamped sequence.
+
+    The readings are fixed instants, not real elapsed time, so the exact call at
+    which the deadline trips does not depend on how fast the test machine runs.
+    """
+
+    def __init__(self, readings):
+        self._readings = list(readings)
+        self._index = 0
+
+    def __call__(self):
+        value = self._readings[min(self._index, len(self._readings) - 1)]
+        self._index += 1
+        return value
+
+
+def test_mid_file_expiry_truncates_before_the_next_position_and_is_reported(tmp_path, monkeypatch):
+    """The deadline check INSIDE the position loop, not only the one between files.
+
+    A single file — also the LAST file — carries two import positions. Because it
+    is the only file, the outer per-file check (harvest_workspace's own loop over
+    ``files``) never gets a second iteration to independently catch the expiry;
+    only the inner mid-file check can. Without this test, a regression removing
+    the inner check would still pass every other test here, since a
+    between-files check alone never fires for a single-file workspace. The clock
+    is monkeypatched so the exact expiry point is deterministic, not a race
+    against how fast the position loop executes.
+    """
+    # Arrange — two imports, so the position loop runs twice.
+    (tmp_path / 'x.py').write_text('import alpha\nimport beta\n')
+    transport = _FakeHarvestTransport(definition_responses=[[]])
+    monkeypatch.setattr(lsp_harvest, '_load_lsp_client', lambda: _fake_client_module(transport))
+    # Six monotonic() reads on this path: started, initialize-budget, the
+    # outer-loop check, the position-1 check, the position-2 check (expired
+    # here), and the final elapsed_s.
+    monkeypatch.setattr(time, 'monotonic', _FakeClock([0.0, 0.0, 0.0, 0.0, 20.0, 20.0]))
+
+    # Act
+    outcome = harvest_workspace(tmp_path, server_cmd=[PYTHON], timeout_s=10.0)
+
+    # Assert — a stopping condition, not a failure: ran=True with a budget note.
+    assert outcome.ran is True
+    assert outcome.files_scanned == 1
+    assert any(note.startswith('harvest-budget:') for note in outcome.notes)
+    assert any('stopped after 1 of 1 files' in note for note in outcome.notes)
+    # The mid-file assertion: the SECOND position's request never went out.
+    assert transport.definition_calls == 1
+
+
+def test_out_of_workspace_reference_is_dropped_and_reported(tmp_path_factory, monkeypatch):
+    """A definition resolving OUTSIDE the workspace root owns no module and is dropped.
+
+    The workspace and the out-of-workspace target live in disjoint trees (two
+    independent ``tmp_path_factory`` roots), so the fake transport's answer is
+    unambiguously external — deterministic, unlike relying on which interpreter
+    a real server happens to resolve a standard-library import against.
+    """
+    # Arrange
+    workspace = tmp_path_factory.mktemp('harvest_workspace')
+    outside_root = tmp_path_factory.mktemp('harvest_outside')
+    (workspace / 'x.py').write_text('import alpha\n')
+    target = outside_root / 'target_mod.py'
+    target.write_text('VALUE = 1\n')
+    transport = _FakeHarvestTransport(definition_responses=[[{'uri': path_to_uri(target)}]])
+    monkeypatch.setattr(lsp_harvest, '_load_lsp_client', lambda: _fake_client_module(transport))
+
+    # Act
+    outcome = harvest_workspace(workspace, server_cmd=[PYTHON])
+
+    # Assert — no edge for a target that owns no module, and the drop is stated.
+    assert outcome.ran is True
+    assert outcome.references == []
+    assert any(note.startswith('out-of-workspace:') for note in outcome.notes)
+    assert any('1 reference(s)' in note for note in outcome.notes)
 
 
 # =============================================================================
