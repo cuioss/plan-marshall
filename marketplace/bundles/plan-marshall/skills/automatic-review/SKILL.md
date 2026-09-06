@@ -587,7 +587,7 @@ a shell loop:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO \
-  --message "(plan-marshall:automatic-review) refusal recovery: jittered wake — sleeping {delay_seconds}s (drawn from {min_seconds}-{max_seconds}s) before generating the {bot_kind} trigger event, to decorrelate this wake from a concurrent lane's"
+  --message "(plan-marshall:automatic-review) refusal recovery: jittered wake — sleeping {delay_seconds}s (drawn from {min_seconds}-{max_seconds}s) before re-consulting the selector for {bot_kind}, to decorrelate this wake from a concurrent lane's"
 ```
 
 ```bash

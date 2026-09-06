@@ -1714,8 +1714,8 @@ def run_poll_delay(args: Namespace) -> dict[str, Any]:
 
     A pure computation behind a CLI: it reads no store, holds no lock, takes no
     ``--plan-id``, and writes nothing. The returned ``delay_seconds`` is what the
-    CALLER waits — ``automatic-review`` awaits it once at the Branch 3 → Branch 4
-    boundary, as a single standalone ``sleep`` Bash call. Keeping the wait out of
+    CALLER waits — ``automatic-review`` awaits it once at the Branch 3 →
+    trigger-arm boundary, as a single standalone ``sleep`` Bash call. Keeping the wait out of
     this module is the point; see the module docstring's "``poll-delay`` computes,
     the caller waits".
 

@@ -199,7 +199,7 @@ awaits a bounded jittered delay, and only then generates a fresh trigger event; 
 § "Rate-limit refusal recovery (opt-in)".
 
 **Why the wake is jittered.** The delay (`merge_lock poll-delay`, 5-20 minutes) sits at the
-Branch 3 → Branch 4 boundary and serves two purposes here:
+Branch 3 → trigger-arm boundary and serves two purposes here:
 
 - **Cross-lane contention.** A `doc/plans/` cloud-lane run is not serialised by `merge_lock`'s
   rate-window claim — it holds no claim and cannot see one — yet it draws on the same CodeRabbit

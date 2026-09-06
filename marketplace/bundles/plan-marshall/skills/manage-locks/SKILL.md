@@ -423,7 +423,7 @@ Returns ONE uniformly-drawn delay in seconds, bounded by `--min-seconds` (defaul
   as an error it can act on. Both refusals echo `min_seconds` and `max_seconds`.
 
 **It computes; it does not wait.** The verb returns the number and exits — the
-CALLER sleeps it. `automatic-review` awaits it once at the Branch 3 → Branch 4
+CALLER sleeps it. `automatic-review` awaits it once at the Branch 3 → trigger-arm
 boundary of its rate-limit recovery, as a single standalone `sleep` Bash call. The
 split is deliberate and matches the rate-window verbs, which are likewise
 non-waiting (an atomic claim or release, with the caller re-polling): a wait
@@ -465,7 +465,7 @@ python3 .plan/execute-script.py plan-marshall:manage-locks:build_queue release \
 | build wrappers (`_build_execute_factory`, `_pyproject_execute`) | consume | `build_queue acquire`/`release` around `execute_direct` — the in-process fallback path (unregistered / daemon-down) |
 | `manage-build-server:_marshalld_scheduler` (via the D5 routing seam) | consumes | the same machine-global `build-queue.json` — the registered path (daemon-served builds) |
 | `automatic-review/SKILL.md` rate-limit recovery sequence | consumes | `merge_lock rate-window claim`/`check`/`release` |
-| `automatic-review/SKILL.md` Branch 3 → Branch 4 boundary | consumes | `merge_lock poll-delay` — awaits the returned `delay_seconds` once before generating the trigger event |
+| `automatic-review/SKILL.md` Branch 3 → trigger-arm boundary | consumes | `merge_lock poll-delay` — awaits the returned `delay_seconds` once before the boundary's selector re-consult routes |
 | `_locks_core.rmw_json` | consumed by | both `build_queue` (`build-queue.json`) and `merge_lock` (`merge-queue.json` FIFO layer AND `rate_windows` claims) |
 
 ## Standards
