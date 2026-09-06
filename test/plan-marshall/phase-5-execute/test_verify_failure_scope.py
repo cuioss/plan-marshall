@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for verify_failure_scope.py.
 
-Cover the five contract cases from solution_outline.md deliverable 5:
+Cover the five contract cases:
 
     (a) all in_scope                   -> exclusively_out_of_scope=False
     (b) all out_of_scope               -> exclusively_out_of_scope=True

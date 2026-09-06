@@ -196,11 +196,11 @@ class TestSupplementSkeleton:
 
 
 class TestProducerConsumerContract:
-    """The producer/consumer artifact path matches between D4 and D5.
+    """The producer/consumer artifact path matches at both ends.
 
-    This is the cross-deliverable contract: deliverable 4 documents the
-    renderer (consumer), deliverable 5 implements the finalize-step
-    (producer). Both must reference the same path string verbatim.
+    This is the cross-document contract: the output template documents the
+    renderer (consumer), the finalize-step standards implement the producer.
+    Both must reference the same path string verbatim.
     """
 
     def test_finalize_step_standards_exists(self):

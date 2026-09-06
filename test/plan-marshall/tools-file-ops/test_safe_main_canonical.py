@@ -9,7 +9,7 @@ preserves exit code 1 for genuine crashes. It is defined once, in
 build barrel ``_build_cli``, the workflow barrel ``triage_helpers``, and the CI
 barrel ``ci_base`` — re-exports the canonical object instead of defining its own
 copy, so error-handling behaviour (exit codes, error formatting, TOON output on
-failure) cannot silently drift between subsystems (#821).
+failure) cannot silently drift between subsystems.
 
 These tests fail if a new ``def safe_main`` reappears anywhere else, catching a
 re-duplication at review time.

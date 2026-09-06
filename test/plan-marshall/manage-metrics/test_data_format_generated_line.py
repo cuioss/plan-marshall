@@ -1,18 +1,17 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""``data-format.md`` documents the report's one rendered timestamp (D8).
+"""``data-format.md`` documents the report's one rendered timestamp.
 
 ``metrics.md`` carries exactly one absolute wall-clock value — the ``Generated:``
 line — and it is the only figure in the report that passes through the
-display-only timezone knob. The standard's worked example omitted it entirely, so
-a reader comparing the documented report against a real one found a line the
-contract never mentioned, and nothing told them that this single line is the
-knob's whole reach into the report.
+display-only timezone knob. The standard's worked example carries that line, so a
+reader comparing the documented report against a real one meets no line the
+contract never mentions, and the example is what tells them this single line is
+the knob's whole reach into the report.
 
 Every assertion here binds the DOC to the EMITTER rather than to another document.
 That direction is deliberate: a doc-to-doc check is a closed loop that agrees with
-itself while the code walks away from both (lesson ``2026-08-08-20-001``). The
-emitter is ``manage-metrics.py``'s report builder, and its literals are read from
-source here.
+itself while the code walks away from both. The emitter is
+``manage-metrics.py``'s report builder, and its literals are read from source here.
 """
 
 from __future__ import annotations

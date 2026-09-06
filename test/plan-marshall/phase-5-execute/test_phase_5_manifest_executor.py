@@ -154,9 +154,9 @@ class TestExecutorDispatchScenarios:
         """verification_steps non-empty → all steps fire **in declared order**
         + exactly one canonical 'quality-gate' sweep appended at end.
 
-        Pins coverage target #2 from deliverable 5: manifest with
-        [quality-gate, module-tests, coverage] dispatches all three steps in
-        that order, then Step 11b appends a single quality-gate sweep.
+        A manifest carrying [quality-gate, module-tests, coverage] dispatches all
+        three steps in that order, then Step 11b appends a single quality-gate
+        sweep.
         """
         plan_context.plan_dir_for('p5-full')
         cmd_compose(

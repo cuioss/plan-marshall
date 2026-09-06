@@ -264,7 +264,7 @@ def test_refusal_size_patterns_mark_the_diff_size_cause():
     for size_marker in sourcery_size:
         assert size_marker in bot_registry.refusal_patterns('sourcery')
     # Both account-quota wordings are refusals but NOT a size cause. The second is the
-    # *used* phrasing (PR #1391), which the structural recogniser cannot see either.
+    # *used* phrasing, which the structural recogniser cannot see either.
     for quota_marker in ('reached your weekly rate limit of', 'used your own review budget of'):
         assert quota_marker in bot_registry.refusal_patterns('sourcery')
         assert quota_marker not in sourcery_size
@@ -337,7 +337,7 @@ def test_rate_limit_eta_patterns_per_bot():
     sourcery = bot_registry.rate_limit_eta_patterns('sourcery')
     assert sourcery
     assert all(isinstance(pattern, str) and pattern for pattern in sourcery)
-    # The pattern must read the ETA out of the notice as actually observed (PR #1391) —
+    # The pattern must read the ETA out of the notice as it is actually worded —
     # a declared-but-non-matching pattern degrades silently to "no ETA stated".
     observed = (
         "Sorry @SomeUser, you've used your own review budget of 250,000 diff characters "

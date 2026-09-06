@@ -11,7 +11,7 @@ conditional merge-lock release):
 * **Fail-closed on ``fresh``** — a holder alive on main, alive in a (sibling)
   worktree, or mid-recovery (live worktree marker) yields ``fresh`` → the release
   REFUSES (``status: refused``, ``reason: holder_not_provably_dead``) with NO
-  ``os.unlink``; the lock is left intact. This is the #948 sibling-worktree shape.
+  ``os.unlink``; the lock is left intact. This is the sibling-worktree shape.
 * **Fail-closed on ``unknown``** — when the main-anchored base cannot be resolved
   the verdict is ``unknown`` → the release REFUSES (ADR-009: evidence-absent is
   never treated as death).
@@ -85,7 +85,7 @@ def _stub_title_tokens(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _make_worktree_live_plan(base: Path, plan_id: str) -> None:
-    """Move the holder's plan dir into its worktree (executing) — the #948 shape."""
+    """Move the holder's plan dir into its worktree (executing) — the sibling-worktree shape."""
     (base / 'worktrees' / plan_id / '.plan' / 'local' / 'plans' / plan_id).mkdir(parents=True)
 
 
@@ -157,7 +157,7 @@ class TestConditionalReleaseFailClosed:
         assert lock_path.read_text(encoding='utf-8').strip() == 'live-holder'
 
     def test_refuses_when_holder_alive_in_sibling_worktree(self, isolated_base: dict) -> None:
-        # The #948 shape: the holder's plan dir lives in its (sibling) worktree —
+        # The sibling-worktree shape: the holder's plan dir lives in its worktree —
         # absent on main, but ALIVE. A cwd-scoped enumeration would read it absent;
         # the main-anchored verdict is fresh → refuse, lock intact.
         base = isolated_base['base']
