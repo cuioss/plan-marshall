@@ -1140,6 +1140,14 @@ _ROUTING_GUARD_MODULES: tuple[tuple[str, str], ...] = (
         'plan-marshall/tools-integration-ci/test_exit_code_convention_population.py',
     ),
     ('parser-seam', 'test_parser_seam_coverage.py'),
+    (
+        'counted-list-coverage',
+        'pm-plugin-development/ext-self-review-plan-marshall/test_self_review_check_coverage.py',
+    ),
+    (
+        'surface-guard-notations',
+        'plan-marshall/tools-script-executor/test_population_derived_surface_guard.py',
+    ),
 )
 
 
