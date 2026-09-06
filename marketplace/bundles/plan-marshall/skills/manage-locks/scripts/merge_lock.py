@@ -243,6 +243,7 @@ from __future__ import annotations
 import errno
 import json
 import logging
+import math
 import os
 import random
 import subprocess
@@ -547,6 +548,28 @@ def _read_store() -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
+def _attempts_ledger(raw: Any) -> dict[int, int]:
+    """Normalize a stored ``attempts_by_pr`` mapping to ``{pr_number: attempts}``.
+
+    JSON object keys are always strings, so a ledger written as ``{101: 6}`` reads
+    back as ``{"101": 6}`` and is restored to int keys here. Anything unreadable — a
+    non-mapping, a non-numeric key, a non-integer or negative count — degrades to
+    "no entry" rather than raising, the same hand-edited-store tolerance every other
+    field in :func:`_rate_windows` gets.
+    """
+    if not isinstance(raw, dict):
+        return {}
+    ledger: dict[int, int] = {}
+    for key, value in raw.items():
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+            continue
+        try:
+            ledger[int(key)] = value
+        except (TypeError, ValueError):
+            continue
+    return ledger
+
+
 def _rate_windows(state: dict[str, Any]) -> dict[str, dict[str, Any]]:
     """Return ``state['rate_windows']`` as a ``bot_kind → record`` map, junk → empty.
 
@@ -554,14 +577,29 @@ def _rate_windows(state: dict[str, Any]) -> dict[str, dict[str, Any]]:
     ``waiting``: a missing, non-dict, or malformed ``rate_windows`` value degrades
     to an empty mapping and is rebuilt from scratch, so a hand-edited store can
     never crash the merge path that shares this file. Each retained record is
-    normalized to the four fields the claim contract defines:
+    normalized to the five fields the claim contract defines:
 
       * ``holder`` — the claiming ``plan_id``, or ``''`` once released (a released
         record is RETAINED so its ``attempts`` counter survives; see
         :func:`_release_rate_window`).
-      * ``pr_number`` — the PR the recovery attempts are counted against, or None.
+      * ``pr_number`` — the PR that most recently claimed this bot's window, or None.
       * ``expires_at`` — epoch seconds at which the bot's rate window elapses.
-      * ``attempts`` — recovery events generated for this ``(bot_kind, pr_number)``.
+      * ``attempts_by_pr`` — the AUTHORITATIVE per-PR attempt ledger,
+        ``{pr_number: attempts}``. The cap is per ``(bot_kind, pr_number)`` while
+        this store is keyed by ``bot_kind`` ALONE, so a single stored counter is
+        lost the moment a second PR claims the same bot's window — after which the
+        first PR's next claim starts from zero and walks straight past a cap it had
+        already spent. The ledger is what makes a prior PR's count SURVIVE the
+        ownership change.
+      * ``attempts`` — the ledger entry for this record's own ``pr_number``, kept as
+        a top-level field because ``claim`` / ``check`` / ``release`` all publish it.
+
+    **Migration.** A record written before the ledger existed carries its count only
+    in ``attempts``, and those attempts belong to the record's own ``pr_number`` — so
+    they are seeded into the ledger under that key rather than dropped. Discarding
+    them would hand an already-exhausted PR a fresh budget on the first read after an
+    upgrade. A record carrying no ``pr_number`` has no PR to attribute them to and
+    keeps its raw ``attempts`` unattributed.
     """
     raw = state.get(_RATE_WINDOWS_KEY)
     if not isinstance(raw, dict):
@@ -582,22 +620,33 @@ def _rate_windows(state: dict[str, Any]) -> dict[str, dict[str, Any]]:
         pr_number = entry.get('pr_number')
         if not isinstance(pr_number, int) or isinstance(pr_number, bool):
             pr_number = None
+        attempts_by_pr = _attempts_ledger(entry.get('attempts_by_pr'))
+        if pr_number is not None and pr_number not in attempts_by_pr and attempts > 0:
+            attempts_by_pr[pr_number] = attempts
         windows[bot_kind] = {
             'holder': holder,
             'pr_number': pr_number,
             'expires_at': float(expires_at),
-            'attempts': attempts,
+            # The ledger is authoritative; `attempts` is its entry for the record's
+            # own PR. A count no PR can be named for keeps its raw stored value.
+            'attempts': attempts if pr_number is None else attempts_by_pr.get(pr_number, 0),
+            'attempts_by_pr': attempts_by_pr,
         }
     return windows
 
 
 def _attempts_for_pr(record: dict[str, Any] | None, pr_number: int) -> int:
-    """Return the attempts already spent against ``pr_number``, per-PR reset applied.
+    """Return the attempts already spent against ``pr_number``, read from the ledger.
 
     The store is keyed by ``bot_kind`` ALONE, so the record a caller reads may
-    belong to a previous PR — and the cap is per ``(bot_kind, pr_number)``. A
-    record for a different PR (or no record at all) therefore contributes ZERO
-    spent attempts, not its stored count.
+    belong to a different PR — and the cap is per ``(bot_kind, pr_number)``. The
+    spent count is therefore read from the record's ``attempts_by_pr`` ledger, never
+    from its top-level ``attempts``, which names only whichever PR most recently
+    claimed the window. A PR with no ledger entry has spent nothing; a PR that spent
+    its cap keeps that count even after a DIFFERENT PR takes the window over, which
+    is the whole reason the ledger exists. Reading the single stored counter instead
+    made the cap bypassable: PR 101 spends its budget, PR 202 claims once and
+    replaces the record, and PR 101's next claim restarts at zero.
 
     This is the single arithmetic both ``claim`` and ``check`` read. Keeping it in
     one place is the point: when ``check`` computed the budget off the raw stored
@@ -605,10 +654,10 @@ def _attempts_for_pr(record: dict[str, Any] | None, pr_number: int) -> int:
     budget as exhausted while the ``claim`` that followed would have succeeded —
     so a read-before-act caller skipped a recovery that was still allowed.
     """
-    if record is None or record['pr_number'] != pr_number:
+    if record is None:
         return 0
-    attempts: int = record['attempts']
-    return attempts
+    ledger: dict[int, int] = record['attempts_by_pr']
+    return ledger.get(pr_number, 0)
 
 
 def _claim_rate_window(
@@ -643,8 +692,11 @@ def _claim_rate_window(
     window the serialized read-modify-write exists to close.
 
     The attempt counter is scoped to ``(bot_kind, pr_number)`` and survives both a
-    release and a holder takeover — resetting it on release would make the cap
-    vacuous, since the recovery sequence releases the window between attempts.
+    release and a takeover, by two distinct mechanisms. A RELEASE retains the record
+    (resetting on release would make the cap vacuous, since the recovery sequence
+    releases the window between attempts). A TAKEOVER — by another plan, or by
+    another PR — carries the whole ``attempts_by_pr`` ledger forward, so the
+    displaced PR's spent count is still there when it claims again.
     """
     queue_path = _resolve_merge_queue_path()
     outcome: dict[str, Any] = {}
@@ -686,11 +738,17 @@ def _claim_rate_window(
             return state
 
         expires_at = now + window_seconds
+        # Carry the WHOLE per-PR ledger forward. A takeover by another PR replaces
+        # `holder` / `pr_number` / `attempts`, and if it replaced the counts too the
+        # displaced PR's next claim would restart at zero past a cap it had spent.
+        attempts_by_pr = dict(record['attempts_by_pr']) if record is not None else {}
+        attempts_by_pr[pr_number] = next_attempts
         windows[bot_kind] = {
             'holder': plan_id,
             'pr_number': pr_number,
             'expires_at': expires_at,
             'attempts': next_attempts,
+            'attempts_by_pr': attempts_by_pr,
         }
         if reclaimed_from is not None:
             verdict = 'reclaimed'
@@ -715,11 +773,12 @@ def _claim_rate_window(
 def _release_rate_window(plan_id: str, bot_kind: str) -> dict[str, Any]:
     """Release ``plan_id``'s claim on ``bot_kind``'s rate window (idempotent).
 
-    Clears the holder and the expiry but RETAINS the record so its ``attempts``
-    counter survives — the recursion cap counts recovery events per bot per PR
-    across the whole recovery sequence, which releases the window between
-    attempts. Releasing a window held by another plan, or one that was never
-    claimed, is a benign no-op. Touches only the ``rate_windows`` key.
+    Clears the holder and the expiry but RETAINS the record — both its ``attempts``
+    field and the ``attempts_by_pr`` ledger behind it — so the counters survive: the
+    recursion cap counts recovery events per bot per PR across the whole recovery
+    sequence, which releases the window between attempts. Releasing a window held by
+    another plan, or one that was never claimed, is a benign no-op. Touches only the
+    ``rate_windows`` key.
 
     Returns an outcome dict carrying ``action`` (``released`` / ``noop``), the
     observed ``holder``, and the retained ``attempts``.
@@ -742,6 +801,7 @@ def _release_rate_window(plan_id: str, bot_kind: str) -> dict[str, Any]:
             'pr_number': record['pr_number'],
             'expires_at': 0.0,
             'attempts': record['attempts'],
+            'attempts_by_pr': record['attempts_by_pr'],
         }
         outcome.update(action='released', holder=plan_id, attempts=record['attempts'])
         return {**state, _RATE_WINDOWS_KEY: windows}
@@ -1730,9 +1790,27 @@ def run_poll_delay(args: Namespace) -> dict[str, Any]:
     ``--min-seconds 1200 --max-seconds 300`` return a plausible delay drawn from a
     range the caller never asked for, so the caller's mistake would survive as a
     wrong-but-believable number instead of surfacing as an error it can act on.
+
+    NON-FINITE bounds are REFUSED FIRST, ahead of both checks above, because neither
+    of them can see one. ``float('nan')`` compares False against every bound — so it
+    is neither negative nor inverted — and ``float('inf')`` as the ceiling is a
+    well-ordered pair. Both reach :func:`random.uniform`, which returns a non-finite
+    draw, and that draw is interpolated straight into the caller's ``sleep``: a
+    ``sleep nan`` at the one site that consumes this verb. The ordering also decides
+    which refusal ``-inf`` gets — the accurate "not finite" one rather than the
+    narrower "negative" one it would collect from the check below.
     """
     min_seconds: float = args.min_seconds
     max_seconds: float = args.max_seconds
+
+    if not math.isfinite(min_seconds) or not math.isfinite(max_seconds):
+        return make_error(
+            f'poll-delay requires finite bounds: '
+            f'got min_seconds={min_seconds}, max_seconds={max_seconds}',
+            code=ErrorCode.INVALID_INPUT,
+            min_seconds=min_seconds,
+            max_seconds=max_seconds,
+        )
 
     if min_seconds < 0 or max_seconds < 0:
         return make_error(

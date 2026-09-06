@@ -343,10 +343,11 @@ can never go green. This is the step that makes the replacement the plan's PR ra
 Every review operation on this surface feeds ONE downstream classification: the closed
 non-participation taxonomy owned by
 [`automatic-review/standards/bot-participation-contract.md`](../../automatic-review/standards/bot-participation-contract.md).
-That taxonomy has **eleven** non-participation members, and this section records only which observation
-on this surface feeds which member — the semantics, the severity rules, and the closure statement live
-in the contract and are not restated here (a member fed only by another surface, such as `declined`
-from the re-review await, is therefore absent from the table below).
+That contract declares the member set, its cardinality, the semantics and the severity rules, and none
+of it is restated here — a restated roster or count drifts out of step with the contract while still
+reading as authoritative. This section records only which observation on this surface feeds which
+member (a member fed only by another surface, such as `declined` from the re-review await, is
+therefore absent from the table below).
 
 | Member | Fed by |
 |--------|--------|

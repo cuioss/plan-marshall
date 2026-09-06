@@ -347,8 +347,10 @@ touched. Outcomes:
 - **`status: refused`, `reason: recovery_cap_exhausted`** — the recursion cap
   (`attempt_cap` recovery events per bot per PR) is spent. No mutation; the consumer
   escalates rather than re-triggering the bot. The attempt counter is scoped to
-  `(bot_kind, pr_number)` and survives both a release and a holder takeover, so the
-  cap cannot be reset by releasing and re-claiming.
+  `(bot_kind, pr_number)` and survives a release, a takeover by another PLAN, and a
+  takeover by another PR — the store keeps a per-PR ledger beside the record, so the
+  cap can be reset neither by releasing and re-claiming, nor by letting a second PR
+  claim the same bot's window in between.
 
 ### merge_lock — rate-window check
 
@@ -414,13 +416,16 @@ Returns ONE uniformly-drawn delay in seconds, bounded by `--min-seconds` (defaul
   `min_seconds` and `max_seconds` echoing the range it was drawn from, so a consumer
   reading only the payload need not know the defaults.
 - **`status: error`** (`error_code: INVALID_INPUT`) — the bounds are malformed, in
-  exactly two ways. Either bound is **negative**: the drawn value is interpolated
-  straight into the caller's `sleep` command, so a negative bound leaves this verb as
-  a malformed shell command rather than as a merely-odd number. Or `--min-seconds`
-  **exceeds** `--max-seconds`: the pair is REFUSED, never silently swapped, because a
-  swap returns a plausible delay drawn from a range the caller never asked for, so
-  the caller's mistake survives as a wrong-but-believable number instead of surfacing
-  as an error it can act on. Both refusals echo `min_seconds` and `max_seconds`.
+  exactly three ways, checked in this order. Either bound is **non-finite** (`nan`,
+  `inf`, `-inf`): `nan` compares False against every bound so neither check below can
+  see it, and both it and `+inf` produce a non-finite draw that reaches the caller's
+  `sleep`. Either bound is **negative**: the drawn value is interpolated straight into
+  the caller's `sleep` command, so a negative bound leaves this verb as a malformed
+  shell command rather than as a merely-odd number. Or `--min-seconds` **exceeds**
+  `--max-seconds`: the pair is REFUSED, never silently swapped, because a swap returns
+  a plausible delay drawn from a range the caller never asked for, so the caller's
+  mistake survives as a wrong-but-believable number instead of surfacing as an error
+  it can act on. Every refusal echoes `min_seconds` and `max_seconds`.
 
 **It computes; it does not wait.** The verb returns the number and exits — the
 CALLER sleeps it. `automatic-review` awaits it once at the Branch 3 → trigger-arm

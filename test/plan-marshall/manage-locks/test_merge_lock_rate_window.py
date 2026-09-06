@@ -460,6 +460,50 @@ class TestPollDelayRange:
 
 
 class TestPollDelayBoundsRefusals:
+    @pytest.mark.parametrize(
+        ('min_seconds', 'max_seconds'),
+        [
+            (float('nan'), 1200.0),   # NaN floor — neither negative nor inverted
+            (300.0, float('nan')),    # NaN ceiling — the same hole, from the other side
+            (300.0, float('inf')),    # +inf ceiling — a perfectly well-ordered pair
+            (float('inf'), 1200.0),   # +inf floor — inverted, but caught here first
+            (float('-inf'), 1200.0),  # -inf floor — negative, but caught here first
+        ],
+    )
+    def test_non_finite_bounds_are_refused(
+        self, min_seconds: float, max_seconds: float
+    ) -> None:
+        """Neither sibling refusal below can see the first two cases.
+
+        ``nan`` compares False against every bound, so it is neither negative nor
+        inverted, and ``+inf`` as the ceiling is a well-ordered non-negative pair. Both
+        pass straight through to ``random.uniform``, which returns a NON-FINITE draw —
+        and that draw is interpolated into the caller's ``sleep``, so the verb leaves as
+        ``sleep nan`` at the one site that consumes it.
+
+        The last two cases pin the ORDER rather than a second hole: they are reachable
+        by the checks below, and the assertion that they carry the ``finite`` refusal is
+        what says this guard runs first.
+        """
+        result = _poll_delay(min_seconds, max_seconds)
+
+        assert result['status'] == 'error', result
+        assert result['error_code'] == 'INVALID_INPUT', result
+        assert 'finite' in result['error'], result
+        assert 'delay_seconds' not in result, result
+
+    def test_a_finite_in_range_pair_is_still_accepted(self) -> None:
+        """Matched positive control for the refusal above.
+
+        The guard rejects bounds that are not FINITE, not bounds that are large. Written
+        as a magnitude ceiling it would pass every case above while refusing this
+        entirely ordinary pair — the shipped range itself.
+        """
+        result = _poll_delay(300.0, 1200.0)
+
+        assert result['status'] == 'success', result
+        assert 300.0 <= result['delay_seconds'] <= 1200.0, result
+
     def test_inverted_bounds_are_refused_rather_than_swapped(self) -> None:
         """A swap would return a plausible delay from a range nobody asked for.
 

@@ -148,6 +148,8 @@ import bot_registry
 import github_ops as _github
 from _findings_core import BOT_KINDS
 from _github_pr import (
+    REFUSAL_CAUSE_QUOTA,
+    REFUSAL_CAUSE_SIZE,
     REFUSAL_LAYER_ENUMERATIVE,
     REFUSAL_LAYER_REGISTRY,
     REFUSAL_LAYER_STRUCTURAL,
@@ -535,7 +537,7 @@ def resolve_recovery_action(
 
     if not known:
         return {**verdict, 'action': RECOVERY_ACTION_UNMEASURED, 'reason': 'registry_empty'}
-    if cause == 'size':
+    if cause == REFUSAL_CAUSE_SIZE:
         return {**verdict, 'action': RECOVERY_ACTION_ESCALATE_STRUCTURAL, 'reason': 'size_ceiling'}
     if rate_class != 'awaitable_window':
         return {**verdict, 'action': RECOVERY_ACTION_ESCALATE_NOT_AWAITABLE, 'reason': 'class_not_awaitable'}
@@ -1112,7 +1114,9 @@ def main() -> int:
     recovery.add_argument('--bot-kind', required=True, help='Registry bot_kind whose refusal is being recovered')
     recovery.add_argument(
         '--cause',
-        choices=('size', 'quota'),
+        # The accepted set IS `refusal_cause()`'s codomain, so it is spelled with
+        # that function's own constants rather than re-literalled here.
+        choices=(REFUSAL_CAUSE_SIZE, REFUSAL_CAUSE_QUOTA),
         help=(
             "The refusal's observed cause; 'size' resolves escalate_structural and dominates "
             'the class. OMIT it when unobserved (reads as an empty cause) — a refusal no arm '

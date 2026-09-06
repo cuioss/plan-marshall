@@ -195,8 +195,11 @@ CodeRabbit's review limit is a **rolling window that reopens on its own**, so `r
 `review_rate_window_timeout_seconds`, defaulted to 3600 to match the roughly hourly reset) worth
 enabling for this bot — the class is the field the recovery decision reads, rather than assuming
 every bot's refusal is waitable. For this bot the recovery claims the window, polls it to expiry,
-awaits a bounded jittered delay, and only then generates a fresh trigger event; see `../SKILL.md`
-§ "Rate-limit refusal recovery (opt-in)".
+awaits a bounded jittered delay, and only then RE-DELIVERS the request by closing and re-opening the
+PR — the elapsed claim resolves through this record's `trigger_semantics` above, and this bot asks
+for an explicit trigger, so a rebase-push or a trigger comment is not what fires. See `../SKILL.md`
+§ "Rate-limit refusal recovery (opt-in)" for the branch this lands on, and
+`workflow-integration-github`'s `resolve_recovery_action` for the derivation itself.
 
 **Why the wake is jittered.** The delay (`merge_lock poll-delay`, 5-20 minutes) sits at the
 Branch 3 → trigger-arm boundary and serves two purposes here:

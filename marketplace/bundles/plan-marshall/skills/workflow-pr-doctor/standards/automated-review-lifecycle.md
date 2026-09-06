@@ -53,12 +53,11 @@ For GitLab projects use `plan-marshall:workflow-integration-gitlab:gitlab_pr fet
 > ceilings), `unclassified_bots[]`.
 > This lifecycle does not classify them; the
 > `plan-marshall:automatic-review` step-done participation guard does, and it resolves every required
-> bot into **exactly one of ten** terminal non-participation states — `absent`, `not_triggered`,
-> `in_progress`, `refused_awaitable`, `refused_hard`, `refused_unknown`, `refused_structural`,
-> `participated_but_empty`, `participated_stale`, `declined` — or into `participated`, their
-> complement. The taxonomy is closed and is owned by
-> [`automatic-review/standards/bot-participation-contract.md`](../../automatic-review/standards/bot-participation-contract.md);
-> its semantics are not restated here.
+> bot into exactly one terminal non-participation state, or into `participated`, their complement.
+> The taxonomy is closed and is owned by
+> [`automatic-review/standards/bot-participation-contract.md`](../../automatic-review/standards/bot-participation-contract.md),
+> which declares the member set, its cardinality and its semantics. None of that is restated here —
+> a restated roster or count drifts out of step with the contract while still reading as complete.
 >
 > The one consequence for a reader of this lifecycle: **a blocking state is not one undifferentiated
 > "the bot did not review".** `participated_stale` (the bot published, but against a HEAD this branch
