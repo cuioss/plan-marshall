@@ -656,11 +656,24 @@ def test_merge_module_data_emits_no_warning_when_every_key_resolves(monkeypatch)
 # that keeps passing however the readers are wired. The unit tests are correct and
 # stay; what was missing is a reader that actually reaches the seam.
 #
-# The recorded fixture constraint is honoured rather than worked around: the crawl
-# reads the live worktree and no Axis-D attributor is registered in a bare tmp
-# project, so seeding two modules alone would make the collapse a deliberate
-# no-op and the assertion vacuous. The resolver is therefore INJECTED, and each
-# test carries its no-claim arm as a matched negative control — that arm is what
+# The recorded fixture constraint is honoured rather than worked around: module
+# DISCOVERY (not just Axis-D attribution) reads the live worktree. In particular
+# ``pm-documents``'s ``discover_modules()`` treats any ``doc/`` or ``docs/``
+# directory holding an ``.adoc``/``.md`` file (or a root-level ``README.adoc``)
+# as a REAL module — a discovery that runs BEFORE the synthetic-project fallback
+# and would silently replace both seeded fixture modules below with its own
+# single crawl-derived ``documentation`` module, collapsing the intended
+# cross-module duplicate to one row before either test body ever runs (this is
+# exactly what happened when the corpus was first seeded under ``doc/``: the
+# real crawl found it, ``crawl_all_modules`` took the non-empty-modules branch,
+# and the two hand-seeded ``derived.json`` fixtures were never read at all). The
+# claimed corpus is therefore seeded under a directory name no registered
+# ``discover_modules()`` recognises, so the live crawl finds nothing real, falls
+# back to the synthetic per-module ``derived.json`` fixtures this file seeds
+# directly (the documented test-fixture seam — see ``crawl_all_modules``'s
+# "Synthetic-project fallback"), and both seeded modules survive verbatim. The
+# Axis-D OWNERSHIP CLAIM resolver is separately INJECTED (below), and each test
+# carries its no-claim arm as a matched negative control — that arm is what
 # proves the fixture really produces the cross-module duplicate the claimed arm
 # then collapses, so neither result can be explained by an empty population.
 #
@@ -670,12 +683,15 @@ def test_merge_module_data_emits_no_warning_when_every_key_resolves(monkeypatch)
 
 #: The claimed documentation corpus — every entry is a real file on disk AND is
 #: listed in BOTH seeded modules' inventories, which is the duplicate shape.
-_CLAIMED_DOCS = ('doc/api.adoc', 'doc/guide.adoc')
+#: Deliberately NOT under ``doc/``/``docs/`` — see the module-level comment
+#: above: those names trip ``pm-documents``'s real ``discover_modules()`` crawl,
+#: which would replace the seeded fixture with its own single discovered module.
+_CLAIMED_DOCS = ('notes/api.adoc', 'notes/guide.adoc')
 
 #: The module the injected attributor names as the owner of that corpus.
 _DOC_OWNER = 'documentation'
 
-#: The second inventorying module — the whole-tree crawl that also sees ``doc/**``.
+#: The second inventorying module — the whole-tree crawl that also sees ``notes/**``.
 _ROOT_CRAWLER = 'root-crawl'
 
 #: Written into every seeded doc body so ``search --content`` has a real hit.
@@ -683,11 +699,11 @@ _DOC_BODY_TOKEN = 'CLAIMED_CORPUS_TOKEN'
 
 #: The modules that BOTH inventory the claimed corpus, mapped to the
 #: ``paths.module`` root each declares — the whole-tree root crawl, and the
-#: documentation module that owns ``doc/**``. The seeding below and the expected
+#: documentation module that owns ``notes/**``. The seeding below and the expected
 #: duplicate arity are read from this ONE mapping, so a third inventorying module
 #: moves the fixture and the expected counts together instead of leaving a stale
 #: literal behind.
-_INVENTORYING_MODULES = {_ROOT_CRAWLER: '.', _DOC_OWNER: 'doc'}
+_INVENTORYING_MODULES = {_ROOT_CRAWLER: '.', _DOC_OWNER: 'notes'}
 
 #: Rows a reader emits over the seeded corpus while NO ownership claim applies —
 #: one per (module, file) pair. Derived from both populations, never a literal, so
@@ -737,7 +753,7 @@ def test_find_collapses_a_claimed_duplicate_to_one_row_per_file(monkeypatch):
     """
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_claimed_doc_corpus(tmpdir)
-        pattern = 'doc/*.adoc'
+        pattern = 'notes/*.adoc'
 
         # Negative control — no claim, so nothing may collapse. This is what
         # proves the fixture genuinely produces the cross-module duplicate.
