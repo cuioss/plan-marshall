@@ -174,9 +174,26 @@ _INFRA_CONFIG_PARENT_DIR_SUFFIXES: tuple[str, ...] = ('.yml', '.yaml')
 # exact name, so the name is not the author's to choose and the file is that
 # tool's configuration wherever it sits. Entries are grouped by the resolving
 # tool — CI definitions, container orchestration and build context, container
-# lint/scan, and review bots today. The family is OPEN: it grows as tools are
-# adopted and a new entry may open a group of its own, so no size or closure
-# claim about it is stated here or anywhere else.
+# lint/scan, review bots, and the planning system's own project configuration
+# today. The family is OPEN: it grows as tools are adopted and a new entry may
+# open a group of its own, so no size or closure claim about it is stated here or
+# anywhere else.
+#
+# ``marshal.json`` is the entry that opens the planning-system group, and it is
+# basename-anchored deliberately rather than by location. A ``('.plan',)`` entry
+# in :data:`_INFRA_CONFIG_DIR_TREES` would additionally reclassify every
+# git-tracked ``.plan/project-architecture/**/*.json`` file — content nobody
+# asked about — and a ``.plan`` entry in :data:`_INFRA_CONFIG_PARENT_DIRS` would
+# require widening the SHARED :data:`_INFRA_CONFIG_PARENT_DIR_SUFFIXES` tuple to
+# ``.json``, whose reach extends to ``.github/*.json`` as well. The basename
+# entry reaches exactly the intended path: an ``architecture find
+# '*marshal.json*'`` sweep matches no other file. ⚠ That sweep is
+# INVENTORY-SCOPED — it does not walk ``.plan/``, gitignored trees, or dotfile
+# trees outside the allowlist, so it does not see ``.plan/marshal.json`` itself
+# either, and it is NOT evidence about the tree as a whole. The zero-collateral
+# claim holds on the classifier's own reach instead: it runs only over declared
+# repository paths, so the files the sweep cannot see are files this predicate is
+# never asked to classify.
 _INFRA_CONFIG_BASENAME_GLOBS: tuple[str, ...] = (
     'docker-compose*.yml',
     'docker-compose*.yaml',
@@ -191,6 +208,7 @@ _INFRA_CONFIG_BASENAME_GLOBS: tuple[str, ...] = (
     '.pr_agent.toml',
     '.coderabbit.yaml',
     '.coderabbit.yml',
+    'marshal.json',
 )
 
 
