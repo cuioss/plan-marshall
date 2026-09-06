@@ -27,6 +27,7 @@ import types
 from pathlib import Path
 
 import pytest
+
 from conftest import load_script_module
 
 _cmd_client_query = load_script_module(
