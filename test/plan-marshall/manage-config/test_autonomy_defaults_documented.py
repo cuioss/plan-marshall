@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """The documented autonomy-gate default set equals the declared default set.
 
-Six knobs decide whether a plan run pauses for the operator: the five flat
-``*_without_asking`` gates and the step-owned ``final_merge_without_asking``.
+Six knobs form the autonomy-gate family: the five flat ``*_without_asking``
+gates and the step-owned ``final_merge_without_asking``.
 Each has exactly one declaring source — the ``DEFAULT_PLAN_*`` blocks in
 ``_config_defaults.py`` for the flat five, and ``default:branch-cleanup``'s
 ``configurable:`` frontmatter (reached through ``configurable_contract``) for the

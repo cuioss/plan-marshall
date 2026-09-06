@@ -3303,7 +3303,7 @@ class TestLoopBackWithoutAskingDefault:
         ``loop_back_without_asking=True`` (reverse auto). Both are flat
         ``plan.phase-6-finalize`` knobs. If either drifts back to ``False``,
         the contract documented in ``marshall-steward/references/wizard-flow.md``
-        § Step 7c is broken."""
+        § Review Gates is broken."""
         cfg = _config_defaults_mod.get_default_config()
         finalize = cfg['plan']['phase-6-finalize']
         forward = finalize['finalize_without_asking']

@@ -149,7 +149,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 [#pause-gate-census]
 === Pause-gate census
 
-Every gate that can still stop a run, with its default, the config path that owns it, and the verdict.
+Every gate that can still stop a *plan run*, with its default, the config path that owns it, and the verdict. The closure is over the plan tier alone — the epic-tier `orchestrator.auto_emit` gate is a knob of the epic orchestrator, not of a plan run, and is documented in <<orchestrator-knobs>>.
 
 The inclusion predicate is **"halts the run for operator input"** — deliberately not "fires an `AskUserQuestion`". Two knobs halt with a `Display` + `STOP` and no prompt at all (`execute_without_asking` and `loop_back_without_asking`), so a census built from prompt sites alone would omit both. The predicate also reaches the orchestrator workflows, not only the phase skills: a dispatched phase leaf cannot prompt — it returns a prompt-required envelope and the orchestrator fires it — so phases 2–5 raise no prompts of their own.
 
