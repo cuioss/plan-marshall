@@ -49,4 +49,7 @@ def test_unresolvable_worktree_falls_back_to_cwd(
     result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-unresolvable'))
 
     assert seen == [Path.cwd()]
-    assert result['status'] in ('fresh', 'stale', 'undecidable')
+    # The gate's whole status vocabulary, enumerated — a tuple that omitted one
+    # member would silently narrow what this case accepts as "a verdict was
+    # produced", which is the one thing it exists to assert.
+    assert result['status'] in ('exempt', 'fresh', 'stale', 'undecidable')

@@ -81,7 +81,7 @@ Script: `plan-marshall:manage-tasks:manage-tasks`
 | `rename-path` | `--plan-id --old-path --new-path [--include-completed]` | Record path rename and rewrite step targets. By default only unfinished work is rewritten — a `done` task is skipped whole, and elsewhere only `pending` steps are touched — so a finished task's record stays a faithful account of the paths it edited. `--include-completed` lifts both guards, for the case that default cannot serve: an upstream rename landing mid-plan, where the path a completed step names no longer exists, so leaving it alone strands the task on a dead path that `declared_set_closure` then flags with no sanctioned way to correct it. Returns `rewritten_completed_count` and, per entry, BOTH the `step_status` and the `task_status` the record carried BEFORE the rewrite, so an edit to finished work is visible in the result rather than merely inferable from the flag. Both statuses are reported, and the count treats an entry as finished work when EITHER is finished, because either guard alone can be the one lifted — a done task whose step rows still read `pending` is finished work just as much as a done step is |
 | `qgate-mechanical-checks` | `--plan-id [--no-emit]` | Run the deterministic Q-Gate checks for phase-4-plan Step 8: coverage, skill-resolution, acyclic, files-exist, keyword-drift, structural-token-drift, plus the two CLOSURE checks — declared-set-closure and declared-scope-reconciliation. The first six ask whether each declared thing is well-formed and resolves; the closure pair asks whether the declared SET is complete, which none of the others can see. Pure regex + graph + filesystem; no LLM dispatch. Each failure becomes a Q-Gate finding under `--source qgate` so phase-4-plan's existing aggregate consumes it. Returns `total_failed`, per-check counts, a `population` block reporting what each closure check actually scanned (with `population_complete`), and an `ambiguous` flag the caller uses to decide whether the LLM q-gate-validation dispatch still needs to fire — `ambiguous` flips on an unparseable outline OR an incomplete closure population, since a zero over an unscanned set is not a verdict. Also returns `qgate_persist_failed` (bool) and `qgate_persist_failures` (list of `{title, message}`) — a persist the Q-Gate primitive rejected means the check failed but its finding never reached the store, so the caller MUST fail loudly on `qgate_persist_failed: true` rather than trusting `total_failed` alone. |
 | `loop-exit-guard` | `--plan-id` | Script-level enforcement of the phase-5-execute "unfinished > 0 → must continue" invariant. The predicate is the union of `pending` AND `in_progress` tasks. Emits `status: continue` (with `pending_count`, `pending_ids`, `in_progress_count`, `in_progress_ids`) when EITHER bucket is non-empty — the non-success status forces the orchestrator to re-dispatch the execution-context. Emits `status: success` (with all four count/id fields present and zero-valued) only when BOTH counts are zero. See "Loop-Exit Guard" below for the contract. |
-| `pre-commit-verify-freshness` | `--plan-id` | Script-level enforcement that the current working-tree state has been observed by a successful build before any pre-commit transition — but only where a build was necessary at all. Consults the command-free `build-decision` verdict first, then queries the unified change-ledger for a `kind=build` entry with `status == success` whose `worktree_sha` matches the recomputed working-tree currency hash, and finally cross-checks the matching rows on two dimensions — their notations against the build notations this project's architecture resolves, and the canonical + scope they recorded against the blast radius of the change. Emits `status: fresh` (verdict `not_necessary`, with the verdict's own `reason` forwarded verbatim, or a matching successful build entry citable on BOTH dimensions — `notation_cross_check` and `scope_cross_check` say whether each was audited or merely undetermined, and the record names the matched row and every candidate's recorded scope), `status: stale` (no successful build matches the current working-tree sha, or every one that does names a build this project never runs, or every one that does is narrower than the change — carrying a `reason` that names WHICH route: `worktree_mutated`, `build_error`, `build_timeout`, `build_killed`, `build_indeterminate`, `notation_unrelated`, `notation_absent`, `build_scope_narrow`, or `no_row_both_attributable_and_adequate`, since the routes need different remedies and a `killed` build must never be blind-retried), or `status: undecidable` (no positive proof — `no_registry` when the ledger is absent/empty, `head_unresolvable` when the working-tree sha cannot be computed). Fail-closed contract: only `fresh` permits transition. See "Pre-Commit Verify Freshness" below for the contract. |
+| `pre-commit-verify-freshness` | `--plan-id` | Script-level enforcement that the current working-tree state has been observed by a successful build before any pre-commit transition — but only where a build was necessary at all. Consults the command-free `build-decision` verdict first, then queries the unified change-ledger for a `kind=build` entry with `status == success` whose `worktree_sha` matches the recomputed working-tree currency hash, and finally cross-checks the matching rows on two dimensions — their notations against the build notations this project's architecture resolves, and the canonical + scope they recorded against the blast radius of the change. Emits `status: exempt` (verdict `not_necessary` — no build was owed, so the gate returns BEFORE the ledger scan with the verdict's own `reason` forwarded verbatim; nothing about the tree was examined), `status: fresh` (a matching successful build entry citable on BOTH dimensions — `notation_cross_check` and `scope_cross_check` say whether each was audited or merely undetermined, and the record names the matched row and every candidate's recorded scope), `status: stale` (no successful build matches the current working-tree sha, or every one that does names a build this project never runs, or every one that does is narrower than the change — carrying a `reason` that names WHICH route: `worktree_mutated`, `build_error`, `build_timeout`, `build_killed`, `build_indeterminate`, `notation_unrelated`, `notation_absent`, `build_scope_narrow`, or `no_row_both_attributable_and_adequate`, since the routes need different remedies and a `killed` build must never be blind-retried), or `status: undecidable` (no positive proof — `no_registry` when the ledger is absent/empty, `head_unresolvable` when the working-tree sha cannot be computed). Fail-closed contract: exactly `exempt` and `fresh` permit transition, and they permit on different bases — read the member, never the absence of a refusal. See "Pre-Commit Verify Freshness" below for the contract. |
 
 ### Loop-Exit Guard (`loop-exit-guard`)
 
@@ -363,11 +363,31 @@ refusal the coverage check never made.
 
 **Return statuses (fail-closed contract):**
 
-- `status: fresh`, `reason: <verdict reason>` — the command-free `build-decision`
+The vocabulary has **four** members. Exactly two permit — `exempt` and `fresh` —
+and they permit on **structurally different bases**: `fresh` asserts that a build
+was observed against this exact working tree, while `exempt` asserts only that no
+build was owed and **nothing was examined**. They are separate members rather than
+one token plus a side field, because the token is what every consumer branches on:
+sharing it would let a consumer admit an unexamined tree while reading only the
+value it already read. Per ADR-019 obligation 3 the evidence-absent state carries
+its own member and is never promoted into the clean one; ADR-009 rejects the
+alternative — keeping the shared token and reporting the basis alongside it —
+because the machine-readable verdict would be unchanged.
+
+⛔ A consumer branches on the **member**. A predicate of the shape "not `stale`
+and not `undecidable`" admits any member the gate later gains, which is the
+fail-open ADR-009 forbids; and a consumer that permits on `exempt` MUST record
+that it did, so its outcome record stays distinguishable from one that permitted
+on observed evidence.
+
+- `status: exempt`, `reason: <verdict reason>` — the command-free `build-decision`
   verdict is `not_necessary` for the plan's live footprint, so no build was
   required and no `kind=build` ledger entry could exist. The gate short-circuits
-  to `fresh` BEFORE the ledger scan and forwards the verdict's own `reason` text
-  verbatim; the gate invents no exemption vocabulary of its own.
+  BEFORE the ledger scan and forwards the verdict's own `reason` text
+  verbatim; the gate invents no exemption vocabulary of its own. Because it
+  returns before the scan, the return carries **no** `worktree_sha`, no
+  `matched_*` evidence fields, and no `ledger_path` — the absence of those keys is
+  itself the record that nothing was examined.
 - `status: fresh` — a `kind=build` entry with `status == success` and a matching
   `worktree_sha` exists AND one such entry is citable on BOTH cross-check
   dimensions, so the gate is permitted to pass. The record **names its
@@ -452,9 +472,19 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks \
   § "Freshness precondition" — fires BEFORE the clean-tree assertion of
   `push`.
 
-Both gates fail closed on any non-`fresh` status and emit a `[BLOCKED]` work-log
-line carrying the reason and the working-tree sha. The `--force` orchestrator
-escape mirrors the existing pending-tasks-guard escape — deliberate,
+Both gates permit on `exempt` and on `fresh`, and both fail closed on `stale` and
+`undecidable`, emitting a `[BLOCKED]` work-log line that always carries the
+`reason`, and carries the working-tree sha except on the
+`undecidable` / `head_unresolvable` sub-case — where the sha is by definition
+uncomputable, which is the very thing that reason reports, and `ledger_path` is
+likewise absent. See the reason list above for which fields each route carries.
+Both also **record which of the two permitting members
+authorised them** — `basis=ledger-verified` for `fresh`, `basis=exempt-unscanned`
+plus the gate's `reason` for `exempt` — in the outcome record they already emit
+(`push`'s `mark-step-done --display-detail`, Step 12a's transition `[STATUS]`
+line). Without that field the two records are byte-identical, and no reader can
+recover whether the tree was observed or merely exempted. The `--force`
+orchestrator escape mirrors the existing pending-tasks-guard escape — deliberate,
 log-recorded override for triage-driven aborts. Never invoked programmatically
 from inside the loop.
 
@@ -467,10 +497,12 @@ from inside the loop.
    short-circuits this gate:
 
    - `not_necessary` — the positive answer that nothing here needs building.
-     Return `fresh` and forward the verdict's `reason` verbatim. This is the
-     ONLY value that short-circuits.
+     Return `exempt` and forward the verdict's `reason` verbatim. This is the
+     ONLY value that short-circuits, and `exempt` is the ONLY status this step
+     can produce: the ledger-scanned `fresh` is unreachable from here, because
+     the short-circuit returns before step 4 ever reads a row.
    - `unknown` — the footprint is unresolvable, so there is no evidence either
-     way. **Do NOT short-circuit to `fresh`.** Fall through to the ledger scan,
+     way. **Do NOT short-circuit to `exempt`.** Fall through to the ledger scan,
      which decides on real evidence and returns `stale` / `undecidable` when it
      finds none. Treating an unsubstantiated verdict as a positive one would let
      an unverified worktree pass the gate — exactly the fail-closed discipline

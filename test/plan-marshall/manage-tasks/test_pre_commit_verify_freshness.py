@@ -78,7 +78,7 @@ def test_short_circuit_forwards_the_verdict_reason_verbatim(
 
     result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-reason-forwarded'))
 
-    assert result['status'] == 'fresh', result
+    assert result['status'] == 'exempt', result
     assert result['reason'] == (
         'build_map registers no globs — project has no buildable file types'
     )
@@ -106,7 +106,7 @@ def test_short_circuit_beats_an_otherwise_stale_ledger(
 
     result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-nb-stale-ledger'))
 
-    assert result['status'] == 'fresh', result
+    assert result['status'] == 'exempt', result
     assert result['reason'] == 'plan footprint is empty'
 
 
@@ -156,7 +156,7 @@ def test_build_shaped_steps_still_exempt_a_footprint_needing_no_build(
         Namespace(plan_id='freshness-docs-footprint-build-steps')
     )
 
-    assert result['status'] == 'fresh', result
+    assert result['status'] == 'exempt', result
     assert 'no build_map glob' in result['reason']
 
 
@@ -191,7 +191,7 @@ def test_consult_is_command_free(plan_context, monkeypatch, tmp_path) -> None:
     result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-command-free'))
 
     assert calls == [(None, 'freshness-command-free')]
-    assert result['status'] == 'fresh', result
+    assert result['status'] == 'exempt', result
     assert result['reason'] == 'stubbed'
 
 
@@ -242,8 +242,8 @@ def test_empty_step_list_does_not_exempt_when_a_build_is_necessary(
     """Empty ``verification_steps`` + ``build`` verdict -> still gated.
 
     The retired ``documentation_only`` exemption keyed on exactly this manifest
-    shape and would have short-circuited to ``fresh``, waving through a code
-    footprint with no build proof.
+    shape and would have short-circuited to the exempt route, waving through a
+    code footprint with no build proof.
     """
     plan_dir = plan_context.plan_dir_for('freshness-empty-steps-but-code')
     _write_status(plan_dir)
@@ -304,7 +304,7 @@ def test_absent_manifest_is_irrelevant_to_the_gate(
 
     result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-nb-no-manifest'))
 
-    assert result['status'] == 'fresh', result
+    assert result['status'] == 'exempt', result
     assert result['reason'] == 'plan footprint is empty'
 
 

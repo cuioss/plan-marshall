@@ -39,8 +39,18 @@ migration (``test_pre_commit_verify_freshness.py``) and of the compose-time
 assertion (``test_build_verdict_contradiction_guard.py``). Each of those proves
 its own site behaves; none of them proves the sites AGREE end to end, which is
 precisely where the deadlock lived. This file asserts the reachable end state
-positively — the gate returns ``fresh`` for the authority's stated reason — and
+positively — the gate returns ``exempt`` for the authority's stated reason — and
 that no build is invoked anywhere along that path.
+
+WHAT THE PERMITTED END STATE IS CALLED. The gate's permitting statuses are
+``exempt`` and ``fresh``, and they are distinct members resting on different
+bases: ``fresh`` asserts a build observed this exact tree, while ``exempt``
+asserts only that no build was owed and nothing was examined. The docs-only route
+this file reproduces is the second one, so the assertions below name ``exempt``.
+⛔ Every refusal assertion here is therefore written against BOTH permitting
+members — ``status not in ('fresh', 'exempt')`` — never as an inequality against
+the single ``fresh`` token, which a returned ``exempt`` would satisfy while the
+gate was wide open.
 
 THE THIRD VERDICT MUST NOT RE-OPEN THIS. The authority's vocabulary gained an
 ``unknown`` value for the case where the footprint cannot be resolved at all.
@@ -166,13 +176,20 @@ def _forbid_builds(monkeypatch, invoked: list) -> None:
     monkeypatch.setattr(subprocess, 'Popen', _boom)
 
 
-def test_plan31_docs_only_footprint_reaches_fresh(plan_context, monkeypatch, tmp_path) -> None:
-    """THE regression: PLAN-31's manifest + a markdown-only footprint reaches ``fresh``.
+def test_plan31_docs_only_footprint_reaches_the_exemption(
+    plan_context, monkeypatch, tmp_path
+) -> None:
+    """THE regression: PLAN-31's manifest + a markdown-only footprint reaches ``exempt``.
 
     Asserted positively — the gate arrives at the permitted state and names the
     authority's own reason for it — rather than merely asserting that nothing
     raised. An absence-of-exception assertion would also pass against a gate
     that returned ``stale``, which is the exact bug.
+
+    What the deadlock's resolution required is that this plan can TRANSITION, and
+    ``exempt`` is what permits it. The token is asserted exactly, not merely as
+    "not stale": the tree really was unexamined here, so a ``fresh`` return would
+    be the collapse this member exists to prevent.
     """
     plan_id = 'plan31-docs-only-deadlock'
     _seed_plan(plan_context, plan_id)
@@ -185,7 +202,7 @@ def test_plan31_docs_only_footprint_reaches_fresh(plan_context, monkeypatch, tmp
     result = cmd_pre_commit_verify_freshness(Namespace(plan_id=plan_id))
 
     # The permitted end state — the plan can transition and reach push.
-    assert result['status'] == 'fresh', result
+    assert result['status'] == 'exempt', result
     assert result['plan_id'] == plan_id
     # Sourced from the authority's verdict, verbatim — not a reason the gate
     # invented, and emphatically not one of the retired shape-derived names.
@@ -223,7 +240,7 @@ def test_no_build_is_invoked_on_the_freshness_path(plan_context, monkeypatch, tm
 
     result = cmd_pre_commit_verify_freshness(Namespace(plan_id=plan_id))
 
-    assert result['status'] == 'fresh', result
+    assert result['status'] == 'exempt', result
     assert invoked == []
 
 
@@ -269,15 +286,22 @@ def test_a_buildable_footprint_with_the_same_manifest_still_blocks(
     assert result.get('reason') != _NOT_NECESSARY_VERDICT['reason']
 
 
-def test_an_unknown_verdict_does_not_reach_fresh(plan_context, monkeypatch, tmp_path) -> None:
+def test_an_unknown_verdict_reaches_neither_permitting_status(
+    plan_context, monkeypatch, tmp_path
+) -> None:
     """The third verdict FAILS CLOSED — ``unknown`` never grants the exemption.
 
     Same PLAN-31 manifest, same missing ledger entry; only the verdict differs
     from the docs-only case at the top of this file. ``unknown`` says the
     authority could not resolve the footprint, which is not the positive
     "nothing here needs building" that licenses skipping the ledger entry. A gate
-    keyed on ``decision != 'build'`` would return ``fresh`` here and would let any
+    keyed on ``decision != 'build'`` would return ``exempt`` here and would let any
     plan with an unresolvable worktree walk straight past the freshness check.
+
+    The refusal is asserted against BOTH permitting members. An inequality
+    against the single ``fresh`` token would be satisfied by exactly the wrong
+    outcome — an ``exempt`` return, which is the rubber stamp this case exists to
+    forbid.
     """
     plan_id = 'plan31-unknown-verdict'
     _seed_plan(plan_context, plan_id)
@@ -289,14 +313,14 @@ def test_an_unknown_verdict_does_not_reach_fresh(plan_context, monkeypatch, tmp_
     result = cmd_pre_commit_verify_freshness(Namespace(plan_id=plan_id))
 
     assert result['status'] in ('stale', 'undecidable'), result
-    assert result['status'] != 'fresh'
+    assert result['status'] not in ('fresh', 'exempt'), result
     assert result.get('reason') != _UNKNOWN_VERDICT['reason']
 
 
 def test_not_necessary_and_unknown_diverge_on_identical_inputs(
     plan_context, monkeypatch, tmp_path
 ) -> None:
-    """The paired opposite: only the decision differs, and only one reaches ``fresh``.
+    """The paired opposite: only the decision differs, and only one reaches ``exempt``.
 
     Comparing the two outcomes against each other — rather than asserting each
     alone — is what fails if a future change collapses the two verdicts back into
@@ -317,5 +341,5 @@ def test_not_necessary_and_unknown_diverge_on_identical_inputs(
     _stub_authority(monkeypatch, _UNKNOWN_VERDICT, [])
     unknown = cmd_pre_commit_verify_freshness(Namespace(plan_id='plan31-diverge-unknown'))
 
-    assert not_necessary['status'] == 'fresh'
-    assert unknown['status'] != 'fresh'
+    assert not_necessary['status'] == 'exempt'
+    assert unknown['status'] not in ('fresh', 'exempt')

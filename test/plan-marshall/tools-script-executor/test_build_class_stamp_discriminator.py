@@ -609,7 +609,7 @@ def test_help_probe_leaves_the_freshness_gate_unable_to_report_fresh(tmp_path, m
 
     verdict = _freshness_verdict(monkeypatch, 'discriminator-regression-plan', notation)
 
-    assert verdict['status'] != 'fresh', (
+    assert verdict['status'] not in ('fresh', 'exempt'), (
         f'the freshness gate reported {verdict["status"]!r} on the strength of a '
         f'{notation} {subcommand} --help usage probe that ran no build.'
     )
@@ -627,8 +627,13 @@ def _freshness_verdict(monkeypatch, plan_id: str, notation: str) -> dict:
     that would decide the verdict before the property under test could:
 
     * ``_build_necessity_verdict`` is pinned to ``build`` — the build-necessity
-      short-circuit would return ``fresh`` without ever reaching the ledger scan,
+      short-circuit would return ``exempt`` without ever reaching the ledger scan,
       and the ledger scan is exactly what this module's regressions are about.
+      That pin also means ``exempt`` is UNREACHABLE in this module, which is why
+      every refusal below is written against both permitting members rather than
+      against ``fresh`` alone: the predicate must stay correct if the pin is ever
+      lost, and an inequality against that single token would then be satisfied
+      by an open gate.
     * ``resolve_expected_notations`` is pinned to ``{notation}`` — the dispatched
       notation is derived from the live build-wrapper roster in sorted order, so
       it is whichever build system sorts first, NOT one this repository builds
@@ -676,7 +681,7 @@ def test_freshness_gate_cannot_report_fresh_after_a_query_dispatch(tmp_path, mon
 
     verdict = _freshness_verdict(monkeypatch, 'discriminator-regression-plan', notation)
 
-    assert verdict['status'] != 'fresh', (
+    assert verdict['status'] not in ('fresh', 'exempt'), (
         f'the freshness gate reported {verdict["status"]!r} on the strength of a '
         f'{notation} {subcommand} dispatch that ran no build.'
     )
@@ -689,6 +694,30 @@ def test_freshness_gate_reports_fresh_after_a_build_executing_dispatch(tmp_path,
     dispatch boundary, the ledger and the gate are genuinely wired together
     against the same working-tree sha, so the absence of a row is what withheld
     the ``fresh`` verdict, not a broken fixture.
+
+    ⛔ The pass predicate is NOT the bare status token. A control that admits on
+    ``status == 'fresh'`` alone never reads WHAT was examined, so it would go on
+    passing against a gate that permitted without examining anything -- the very
+    shape this vocabulary was split to remove. The assertions below therefore
+    name the evidence the VERIFIED route carries and the unexamined route cannot:
+    the matched row's own notation, its position in the ledger, and the
+    working-tree sha the match was made against. On the exempt route none of
+    those keys exists, so this control cannot be satisfied by an exemption even
+    if the pinned build-necessity verdict were lost.
+
+    ⛔ Nor is PRESENCE of those keys the predicate. ``'matched_entry_index' in
+    verdict`` is satisfied by ``None`` and by an out-of-range integer, so it
+    checks that the gate emitted a field, not that the field points anywhere --
+    the producer -> consumer evidence link would go unvalidated. The index is
+    therefore RESOLVED against the rows this dispatch actually wrote, and the row
+    it selects is required to carry the dispatched notation and the same
+    ``worktree_sha`` the verdict reports. That is what makes the citation a link
+    rather than a decoration.
+
+    Index alignment holds because ``matched_entry_index`` is a position among the
+    ledger's PARSED entries and ``_dispatch`` parses the same file the same way;
+    the appender writes one well-formed JSON object per line, so no line is
+    skipped on either side and the two enumerations coincide.
     """
     notation, subcommand = _a_build_executing_subcommand()
     ledger_root = tmp_path / 'gate-base'
@@ -699,13 +728,49 @@ def test_freshness_gate_reports_fresh_after_a_build_executing_dispatch(tmp_path,
 
     monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', ledger_root, raising=False)
 
-    _dispatch(tmp_path, notation, [subcommand], ledger_root=ledger_root)
+    entries = _dispatch(tmp_path, notation, [subcommand], ledger_root=ledger_root)
 
     verdict = _freshness_verdict(monkeypatch, 'discriminator-regression-plan', notation)
 
     assert verdict['status'] == 'fresh', (
         f'the freshness gate reported {verdict["status"]!r} after a real build-executing '
         'dispatch; the negative case above would then pass for the wrong reason.'
+    )
+    assert verdict.get('matched_notation') == notation, (
+        f'the gate passed but cited {verdict.get("matched_notation")!r} as the evidence, '
+        f'not the {notation!r} row this dispatch stamped. A pass that cannot name the row '
+        'it rests on is not a verified pass.'
+    )
+    assert verdict.get('worktree_sha'), (
+        'the gate passed without reporting the working-tree sha it matched against — the '
+        'field the exempt route omits precisely because it examines nothing.'
+    )
+
+    # Resolve the cited index against the rows this dispatch actually wrote. A
+    # bool is excluded explicitly: ``isinstance(True, int)`` is True in Python, so
+    # a ``matched_entry_index: True`` would otherwise index entries[1].
+    index = verdict.get('matched_entry_index')
+    assert isinstance(index, int) and not isinstance(index, bool), (
+        f'the gate cited matched_entry_index={index!r}, which is not an integer position; '
+        'a non-integer citation addresses no row and cannot be audited.'
+    )
+    assert 0 <= index < len(entries), (
+        f'the gate cited matched_entry_index={index} against a ledger holding '
+        f'{len(entries)} parsed row(s) — the citation points outside the evidence it '
+        'claims to rest on.'
+    )
+
+    matched_row = entries[index]
+    assert matched_row.get('notation') == notation, (
+        f'matched_entry_index={index} selects a row carrying '
+        f'{matched_row.get("notation")!r}, not the {notation!r} this dispatch stamped — '
+        'the index and the cited notation disagree, so the citation is not a link to the '
+        'row that was examined.'
+    )
+    assert matched_row.get('worktree_sha') == verdict.get('worktree_sha'), (
+        f'matched_entry_index={index} selects a row stamped at worktree_sha '
+        f'{matched_row.get("worktree_sha")!r} while the verdict reports '
+        f'{verdict.get("worktree_sha")!r} — the gate cited a row it did not match against.'
     )
 
 
@@ -852,7 +917,7 @@ def test_freshness_gate_is_not_fresh_after_an_unknown_stamped_dispatch(tmp_path,
 
     verdict = _freshness_verdict(monkeypatch, 'discriminator-regression-plan', notation)
 
-    assert verdict['status'] != 'fresh', (
+    assert verdict['status'] not in ('fresh', 'exempt'), (
         f'the freshness gate reported {verdict["status"]!r} on the strength of an '
         'unknown-stamped row; an undetermined build outcome must never read as proof '
         'the working tree was built.'

@@ -20,6 +20,7 @@ from _pre_commit_verify_freshness_fixtures import (
     _build_entry,
     _build_is_necessary,
     _expected_notations_resolve,
+    _freshness_mod,
     _stub_expected_notations,
     _stub_ledger_path,
     _stub_verdict,
@@ -192,24 +193,43 @@ def test_malformed_manifest_is_irrelevant_to_the_gate(
 # retired ``documentation_only`` / ``lint_only`` exemptions). It consults the one
 # authority COMMAND-FREE — "does anything in this footprint need a build?" — and:
 #
-#   * ``not_necessary`` -> short-circuit to ``fresh`` BEFORE the ledger scan,
+#   * ``not_necessary`` -> short-circuit to ``exempt`` BEFORE the ledger scan,
 #     forwarding the verdict's OWN ``reason`` verbatim. No ``kind=build`` entry
 #     could legally exist for a footprint that needs no build, so demanding one
-#     would be an impossible demand rather than a gate.
+#     would be an impossible demand rather than a gate. ``exempt`` is a distinct
+#     status member, NOT ``fresh``: it permits, but on the basis that nothing was
+#     owed and nothing was examined, so a consumer cannot admit an unexamined
+#     tree by branching on ``fresh`` alone.
 #   * ``build``         -> fall through to the ledger scan unchanged.
 #
 # The manifest is written in several cases below purely as a DECOY: whatever its
 # step list looks like, it must not move the outcome.
 
 
-def test_not_necessary_verdict_short_circuits_to_fresh(
+def test_not_necessary_verdict_short_circuits_to_exempt(
     plan_context, monkeypatch, tmp_path
 ) -> None:
-    """A ``not_necessary`` verdict -> fresh, before the ledger is ever consulted.
+    """A ``not_necessary`` verdict -> exempt, before the ledger is ever consulted.
 
-    Fail-closed boundary values (``None`` sha, missing ledger file) prove the
-    short-circuit fires ahead of them: had the gate reached the scan, the ``None``
-    sha would have forced ``undecidable / head_unresolvable``.
+    The documented property is that the gate returns ``exempt`` carrying the
+    authority's own ``reason`` BEFORE any ledger row is read — i.e. ZERO ledger
+    reads. Each assertion below buys something different, and only one of them
+    asserts that property directly:
+
+    * ``read_calls == []`` asserts the invariant ITSELF. ``read_entries`` is the
+      single seam through which the gate reads the ledger, so a spy that records
+      no call is a direct measurement of "no ledger row was read", not an
+      inference from something correlated with it.
+    * ``status == 'exempt'`` (and NOT ``fresh``) pins the member: this route
+      examined nothing, so it must not share the token that asserts a build
+      observed the tree. It is also an ORDERING proxy — with ``None`` sha stubbed,
+      a gate that lost the short-circuit would fail at algorithm step 3 with
+      ``undecidable / head_unresolvable`` before ever reaching ``read_entries``.
+      That proxy holds only while the sha resolution precedes the ledger scan; it
+      would stop discriminating the moment the algorithm were reordered, which is
+      exactly why the spy above does not rely on it.
+    * The key-absence assertions pin the RECORD shape — an exempt verdict carries
+      no ledger-derived fields to report.
     """
     plan_dir = plan_context.plan_dir_for('freshness-no-build-needed')
     _write_status(plan_dir)
@@ -220,9 +240,19 @@ def test_not_necessary_verdict_short_circuits_to_fresh(
     _stub_worktree_sha(monkeypatch, None)
     _stub_ledger_path(monkeypatch, tmp_path / 'never-written.jsonl')
 
+    read_calls: list[object] = []
+
+    def _spy_read_entries(ledger_path):
+        read_calls.append(ledger_path)
+        return []
+
+    monkeypatch.setattr(_freshness_mod, 'read_entries', _spy_read_entries)
+
     result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-no-build-needed'))
 
-    assert result['status'] == 'fresh', result
+    # The invariant, asserted directly: the exemption path reads NO ledger row.
+    assert read_calls == [], read_calls
+    assert result['status'] == 'exempt', result
     assert result['plan_id'] == 'freshness-no-build-needed'
     # No ledger fields — the short-circuit returns before the scan.
     assert 'worktree_sha' not in result

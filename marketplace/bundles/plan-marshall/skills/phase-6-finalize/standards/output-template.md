@@ -27,7 +27,7 @@ Deliverables ({N_done}/{N_total})
   [OK]  2. {deliverable 2 title}
 
 Finalize steps ({N_done}/{N_total} done)
-  [OK]  push                              pushed {branch}
+  [OK]  push                              pushed {branch} basis=ledger-verified
   [OK]  create-pr                         #{pr_number}
   [OK]  automated-review                  {N} comment(s) resolved (no loop-back)
   [OK]  sonar-roundtrip                   quality gate passed
@@ -53,7 +53,7 @@ Deliverables ({N_done}/{N_total})
   [OK]  1. {deliverable 1 title}
 
 Finalize steps ({N_done}/{N_total} done)
-  [OK]  push                              pushed {branch}
+  [OK]  push                              pushed {branch} basis=ledger-verified
   [OK]  create-pr                         #{pr_number}
   [OK]  automated-review                  {N} comment(s) resolved (no loop-back)
   [OK]  sonar-roundtrip                   quality gate passed
@@ -374,9 +374,12 @@ The dispatcher owns the commit; the step authors only the message. The same sing
 
 ### Concrete Examples per Built-in Step
 
+Each row ILLUSTRATES the contract its own step doc declares; that doc, not this table, is authoritative. The `push` rows follow [`push.md`](push.md) § "Mark Step Complete".
+
 | Step | Outcome scenario | display_detail |
 |------|------------------|----------------|
-| `push` | Branch pushed | `pushed feature/jwt-auth` |
+| `push` | Branch pushed, freshness `fresh` | `pushed feature/jwt-auth basis=ledger-verified` |
+| `push` | Branch pushed, freshness `exempt` | `pushed feature/jwt-auth basis=exempt-unscanned reason={reason}` |
 | `finalize-step-simplify` | Edits applied | `Simplify: 2 edits, 0 findings` |
 | `create-pr` | New PR created | `#212` |
 | `create-pr` | Existing PR re-used | `existing PR #212` |

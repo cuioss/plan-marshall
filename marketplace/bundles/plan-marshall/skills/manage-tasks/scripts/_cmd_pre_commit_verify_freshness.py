@@ -15,7 +15,7 @@ place. Build necessity is NOT re-derived here: the gate consults the single
 build/no-build authority (``extension_base.should_execute_build``, the
 ``manage-config build-decision`` verb) with NO canonical command — it asks the
 plan-wide "does anything in this footprint need a build?" question and MUST NOT
-pick a representative command. A ``not_necessary`` verdict returns ``fresh``
+pick a representative command. A ``not_necessary`` verdict returns ``exempt``
 carrying the verdict's own ``reason`` verbatim, so the gate never invents a
 reason vocabulary of its own; a ``build`` verdict falls through to the ledger
 scan below unchanged. See ADR-004 § "Amendment: ``build-decision`` is the sole
@@ -75,11 +75,24 @@ correctly reports ``stale``.
 
 Outcomes:
 
-- ``fresh`` (+ the verdict's ``reason``) — the build-decision verdict is
+- ``exempt`` (+ the verdict's ``reason``) — the build-decision verdict is
                      ``not_necessary``: no build was ever required for this
                      footprint, so no ``kind=build`` entry could legally exist
                      and none is demanded. The short-circuit fires BEFORE the
                      ledger scan and forwards the authority's own reason text.
+                     ``exempt`` is a PASSING verdict — a consumer may proceed on
+                     it — but it is a DISTINCT member, never ``fresh``, because
+                     the two rest on structurally different bases: ``fresh``
+                     asserts that a build observed this exact tree, while
+                     ``exempt`` asserts only that no build was owed and nothing
+                     was examined. A consumer therefore cannot admit an
+                     unexamined tree by branching on ``fresh`` alone, and it
+                     records WHICH basis it passed on. Per ADR-019 obligation 3
+                     the evidence-absent state carries its own member and is
+                     never promoted into the clean one; ADR-009 rejects the
+                     alternative of keeping the shared token and reporting the
+                     basis only as a side field, because the machine-readable
+                     verdict every consumer branches on would be unchanged.
 - ``fresh``        — a ``kind=build`` entry with ``status == 'success'`` and a
                      matching ``worktree_sha`` exists AND one such entry is
                      citable on BOTH cross-check dimensions; a successful build
@@ -529,13 +542,15 @@ def cmd_pre_commit_verify_freshness(args) -> dict:
     verdict = _build_necessity_verdict(plan_id)
     if verdict.get('decision') == 'not_necessary':
         return {
-            'status': 'fresh',
+            'status': 'exempt',
             'plan_id': plan_id,
             'reason': verdict.get('reason', ''),
             'message': (
                 'build-decision ruled a build not_necessary for this footprint, so no '
-                'kind=build entry can exist and none is required. Gate permitted without '
-                'a ledger scan.'
+                'kind=build entry can exist and none is required. Gate permitted WITHOUT '
+                'a ledger scan: nothing was examined, so this is an exemption and not a '
+                'verified pass. A consumer may proceed, and MUST record that it proceeded '
+                'on the exemption rather than on observed build evidence.'
             ),
         }
 

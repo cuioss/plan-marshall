@@ -8,6 +8,16 @@ absent ledger, an entry for a different sha, and a build for THIS sha that
 failed, timed out, was killed, or carries no status at all. The last three tests
 hold the stated reason to the row it was actually read from.
 
+⛔ **Every case in this file reaches the LEDGER SCAN, so the fourth status member
+is deliberately absent from it.** The shared autouse fixture pins the
+build-necessity verdict to ``build``, which is what makes that so. The gate's
+status vocabulary is ``exempt`` / ``fresh`` / ``stale`` / ``undecidable``;
+``exempt`` is the no-build-was-owed route that returns BEFORE any ledger row is
+read, and it is exercised in ``test_pre_commit_verify_freshness.py`` and
+``test_freshness_exempt_vs_verified_discrimination.py``. A reader who took this
+file's three observed statuses for the complete set would conclude the exempt
+route cannot happen.
+
 ⛔ **The routes exercised here are the ``_stale_reason`` ones only, and they are
 not the whole `reason` vocabulary.** Four further routes —
 ``notation_unrelated``, ``notation_absent``, ``build_scope_narrow`` and
@@ -125,8 +135,10 @@ def test_a_pass_publishes_the_coverage_dimension_at_its_honest_value(
 # =============================================================================
 # The ``stale`` REASON — a distinct remedy per route
 #
-# The gate's pass/fail behaviour is identical on every route below (only
-# ``fresh`` ever permits), so these cases pin the half that differs: what the
+# The gate's pass/fail behaviour is identical on every route below (of the
+# statuses reachable here, only ``fresh`` permits; the exempt route that also
+# permits is never reached, because the autouse fixture pins the build-necessity
+# verdict to ``build``), so these cases pin the half that differs: what the
 # refusal SAYS. The historical single message asserted "the worktree has been
 # mutated since the last observed build ... re-dispatch a build before
 # retrying" on every one of them — a cause the gate never established, and a
@@ -334,8 +346,10 @@ def test_stale_when_only_change_entry_matches_sha(plan_context, monkeypatch, tmp
 # =============================================================================
 # The ``stale`` REASON — a distinct remedy per route
 #
-# The gate's pass/fail behaviour is identical on every route below (only
-# ``fresh`` ever permits), so these cases pin the half that differs: what the
+# The gate's pass/fail behaviour is identical on every route below (of the
+# statuses reachable here, only ``fresh`` permits; the exempt route that also
+# permits is never reached, because the autouse fixture pins the build-necessity
+# verdict to ``build``), so these cases pin the half that differs: what the
 # refusal SAYS. The historical single message asserted "the worktree has been
 # mutated since the last observed build ... re-dispatch a build before
 # retrying" on every one of them — a cause the gate never established, and a

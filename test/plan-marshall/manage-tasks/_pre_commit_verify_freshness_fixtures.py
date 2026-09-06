@@ -10,7 +10,7 @@ Tests for the ``pre-commit-verify-freshness`` subcommand of manage-tasks.
 The subcommand answers a single deterministic question — "does the unified
 change-ledger contain a ``kind=build`` entry with ``status == 'success'`` whose
 ``worktree_sha`` equals the CURRENT working-tree currency hash?" — and returns
-one of three statuses (``fresh``, ``stale``, ``undecidable``) for the
+one of four statuses (``exempt``, ``fresh``, ``stale``, ``undecidable``) for the
 orchestrator to consume as a fail-closed gate. Matching on ``status`` rather
 than ``exit_code`` is load-bearing: the build wrapper exits 0 on timeout, so an
 exit-code predicate would launder a build that never finished into a false
@@ -22,10 +22,12 @@ Before that question is asked at all, the gate consults the single build/no-buil
 authority (``extension_base.should_execute_build``, the ``manage-config
 build-decision`` verb) COMMAND-FREE. A ``not_necessary`` verdict means no
 ``kind=build`` entry could ever legally exist for this footprint, so the gate
-short-circuits to ``fresh`` carrying the verdict's OWN ``reason`` verbatim. The
+short-circuits to ``exempt`` carrying the verdict's OWN ``reason`` verbatim. The
 gate derives no build-necessity signal of its own — it neither reads the
-manifest's step shapes nor owns an exemption vocabulary. See ADR-004 §
-"Amendment: ``build-decision`` is the sole build/no-build authority".
+manifest's step shapes nor owns an exemption vocabulary. ``exempt`` is a passing
+verdict on a DIFFERENT basis from ``fresh``: nothing was examined, so a consumer
+that branches on ``fresh`` alone can no longer admit an unexamined tree. See
+ADR-004 § "Amendment: ``build-decision`` is the sole build/no-build authority".
 
 The freshness primitive is the change-ledger lookup, NOT a file-mtime heuristic.
 Tests stub the three module-level boundary functions the command uses:
@@ -40,9 +42,9 @@ Tests stub the three module-level boundary functions the command uses:
   An autouse fixture pins it to ``build`` so every ledger-scan case reaches the
   scan; the build-necessity cases override it explicitly.
 
-Together they make the gate's three-way decision (``fresh`` / ``stale`` /
-``undecidable``) deterministic and isolated from git, the real ledger, and the
-live project footprint.
+Together they make the gate's four-way decision (``exempt`` / ``fresh`` /
+``stale`` / ``undecidable``) deterministic and isolated from git, the real
+ledger, and the live project footprint.
 """
 
 
