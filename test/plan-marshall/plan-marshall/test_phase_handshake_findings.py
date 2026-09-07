@@ -213,13 +213,13 @@ def test_capture_at_the_guarded_phase_blocks_on_a_pending_sonar_issue(
     """
     stub_query_counts['sonar-issue'] = 2
 
-    result = cmds.cmd_capture(_ns(plan_id='pf-block-autoreview', phase='6-finalize'))
+    result = cmds.cmd_capture(_ns(plan_id='pf-block-sonar', phase='6-finalize'))
 
     assert result['status'] == 'error'
     assert result['error'] == 'blocking_findings_present'
     assert result['blocking_count'] == 2
     assert result['per_type']['sonar-issue'] == 2
-    assert store.get_row('pf-block-autoreview', '6-finalize') is None
+    assert store.get_row('pf-block-sonar', '6-finalize') is None
 
 
 def test_capture_at_the_guarded_phase_blocks_on_a_pending_pr_comment(
@@ -234,13 +234,13 @@ def test_capture_at_the_guarded_phase_blocks_on_a_pending_pr_comment(
     """
     stub_query_counts['pr-comment'] = 3
 
-    result = cmds.cmd_capture(_ns(plan_id='pf-block-sonar', phase='6-finalize'))
+    result = cmds.cmd_capture(_ns(plan_id='pf-block-autoreview', phase='6-finalize'))
 
     assert result['status'] == 'error'
     assert result['error'] == 'blocking_findings_present'
     assert result['blocking_count'] == 3
     assert result['per_type']['pr-comment'] == 3
-    assert store.get_row('pf-block-sonar', '6-finalize') is None
+    assert store.get_row('pf-block-autoreview', '6-finalize') is None
 
 
 def test_verify_at_finalize_boundary_reports_drift_for_strict_mode(
