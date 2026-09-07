@@ -26,6 +26,7 @@ silently shipping.
 
 import re
 
+import pytest
 from _self_review_patterns import CANDIDATE_LISTS, CandidateList
 
 from conftest import MARKETPLACE_ROOT
@@ -74,10 +75,31 @@ _NUMBERED_CHECK_ORDINAL = re.compile(r'^(\d+)\.\s', re.MULTILINE)
 #: with nothing failing.
 _ATX_HEADING = re.compile(r'^ {0,3}#{1,6}\s', re.MULTILINE)
 
-#: A line that CONTINUES the numbered entry above it: any indented line. Every
-#: continuation the shipped document writes — a bolded sub-heading, a nested
-#: bullet, a worked example — is indented under its opener.
-_LIST_CONTINUATION = re.compile(r'^\s+\S')
+#: A LAZY continuation: an indented line sitting DIRECTLY below the line above
+#: it, with no blank line between. CommonMark continues the open paragraph there
+#: whatever its indentation, so any indentation continues the entry. After a
+#: BLANK line this pattern does NOT apply — the stricter rule below governs.
+_LAZY_CONTINUATION = re.compile(r'^\s+\S')
+
+#: A numbered opener with its MARKER captured (``1. `` / ``17. ``). The marker's
+#: width IS the list item's content column, and CommonMark requires a
+#: continuation to REACH that column once a blank line has closed the preceding
+#: paragraph. Deriving the requirement from the ACTIVE marker is what keeps a
+#: one- or two-space paragraph after a blank line — a NEW paragraph outside the
+#: list, i.e. genuinely interleaved prose — from reading as a continuation.
+#:
+#: The retired ``^\s+\S`` admitted any indentation here, so such a paragraph
+#: landed in ``list_lines``, ``interleaved`` stayed EMPTY, the structural guard
+#: asserting ``interleaved == []`` stayed green, and every backtick-quoted key in
+#: the paragraph read as COVERED by :func:`_uncovered` while no numbered check
+#: adjudicated it — volume-read-as-coverage, reproduced inside the module built
+#: to detect it.
+_NUMBERED_CHECK_MARKER = re.compile(r'^(\d+\.[ \t]+)')
+
+
+def _indent_width(line: str) -> int:
+    """The line's leading-space count — the column at which its content starts."""
+    return len(line) - len(line.lstrip(' '))
 
 
 def _checks_region(text: str) -> str:
@@ -105,7 +127,13 @@ def _split_numbered_check_run(region: str) -> tuple[list[str], list[str]]:
 
     A blank line is neither a continuation nor a break on its own: it is resolved
     by the line that follows it, so a paragraph break INSIDE an entry keeps the
-    entry together while a blank before unindented prose does not absorb it.
+    entry together while a blank before under-indented prose does not absorb it.
+    Which of the two a following line is depends on the ACTIVE entry's content
+    column — the width of its ``N. `` marker, tracked as the openers are walked.
+    A line reaching that column continues the entry; one indented less opens a
+    NEW paragraph outside the list, which is what interleaved prose IS. A line
+    following its predecessor with no blank between is a lazy continuation and
+    needs no such indentation.
     """
     match = _NUMBERED_CHECK_OPENER.search(region)
     if match is None:
@@ -114,11 +142,20 @@ def _split_numbered_check_run(region: str) -> tuple[list[str], list[str]]:
     list_lines: list[str] = []
     interleaved: list[str] = []
     pending_blanks: list[str] = []
+    content_column = 0
     for line in region[match.start() :].splitlines():
         if not line.strip():
             pending_blanks.append(line)
             continue
-        if _NUMBERED_CHECK_OPENER.match(line) or _LIST_CONTINUATION.match(line):
+        opener = _NUMBERED_CHECK_MARKER.match(line)
+        if opener is not None:
+            content_column = len(opener.group(1))
+            continues = True
+        elif pending_blanks:
+            continues = _indent_width(line) >= content_column
+        else:
+            continues = _LAZY_CONTINUATION.match(line) is not None
+        if continues:
             list_lines.extend(pending_blanks)
             list_lines.append(line)
         else:
@@ -392,6 +429,45 @@ class TestCountedListCheckCoverage:
         # ...and four spaces is an indented CODE BLOCK, not a heading, so it is
         # correctly NOT reported. The boundary, not just the positive side.
         assert _headings_inside('    #### not a heading') == []
+
+    # NEGATIVE CONTROL 5 AND ITS MATCHED POSITIVE ARM, driven with SYNTHETIC input
+    # because the shipped document contains neither shape — so a real-document
+    # assertion alone can never demonstrate that the under-indented one WOULD be
+    # caught, exactly as for _headings_inside above.
+    #
+    # After a blank line CommonMark resolves the following line against the active
+    # item's content column: `1. ` is three wide, so two spaces open a NEW paragraph
+    # outside the list while three continue the entry. The retired `^\s+\S` admitted
+    # both, so the two-space paragraph landed in list_lines, interleaved stayed empty
+    # with the structural guard green, and its `smuggled_key` read as covered by a
+    # numbered check that never adjudicated it. Both arms are required: a predicate
+    # that rejected EVERY blank-line continuation would pass the negative arm alone.
+    @pytest.mark.parametrize(
+        ('indent', 'continues'),
+        [(2, False), (3, True)],
+        ids=['two-space-prose-after-blank-is-interleaved', 'marker-width-after-blank-continues'],
+    )
+    def test_blank_line_continuation_requires_the_active_marker_width(self, indent, continues):
+        prose = f'{" " * indent}Prose quoting `smuggled_key` while adjudicating nothing at all.'
+        region = (
+            '### Step 3: Apply seventeen checks\n'
+            '1. **Real check** — for each `covered_key` entry, adjudicate it.\n'
+            '\n'
+            f'{prose}\n'
+            '\n'
+            '2. **Another check** — for each `other_covered_key` entry.\n'
+            '### Dispatched-envelope output\n'
+        )
+        synthetic = (CandidateList('smuggled_key', 'smuggled', True, 'prose_contract'),)
+
+        list_lines, interleaved = _split_numbered_check_run(_checks_region(region))
+
+        assert (prose in list_lines) is continues, prose
+        assert (prose in interleaved) is not continues, prose
+        # The consequence, not just the bucket: an under-indented paragraph's key
+        # must be REPORTED uncovered, and a real continuation's key must not be.
+        uncovered = _uncovered(synthetic, '\n'.join(list_lines))
+        assert uncovered == ([] if continues else ['smuggled_key'])
 
     def test_both_new_checks_exist(self):
         # The two entries the plan targets each gained a consuming numbered check.
