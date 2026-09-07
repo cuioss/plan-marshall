@@ -43,9 +43,13 @@ collisions observed here feed the next pairing decision.}
 {The ledger updates this landing drives — each action is executed, not just listed, and
 each names the sanctioned verb that performs it. The four `status.json` row updates are
 one call each: `queue --transition` for the status, `queue --set-row` for each of the
-three result fields. Never edit `status.json` by direct file access, and never stamp a
-landing with the whole-array `manage-status update-field --field plans` rewrite — that
-form is reserved for `decompose`'s bulk queue seed.}
+three result fields. `plans[]` has three sanctioned write forms — bulk seed at
+`decompose`, single append via `queue --add-row`, single mutate via `queue --transition`
+and `queue --set-row` — stated once in
+`persona-plan-orchestrator/standards/orchestration-model.md` § The queue-write boundary.
+Never edit `status.json` by direct file access, and never stamp a landing with the
+whole-array `manage-status update-field --field plans` rewrite — that form is reserved
+for `decompose`'s bulk queue seed.}
 
 - [ ] row `status` → `shipped` — `orchestrator queue --transition PLAN-NN --status shipped`
 - [ ] row `pr` stamped — `orchestrator queue --set-row PLAN-NN --field pr --value {pr}`
