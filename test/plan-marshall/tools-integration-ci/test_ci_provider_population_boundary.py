@@ -63,6 +63,13 @@ def declaring(monkeypatch):
             'a mixed-type skill_name breaks the sort',
         ),
         (
+            [{'skill_name': 7}],
+            'TypeError',
+            'a LONE non-string skill_name is malformed too — set and sort both '
+            'succeed over a single homogeneous scalar, so nothing downstream '
+            'would have caught it and the declared tuple[str, ...] would ship a 7',
+        ),
+        (
             ['not-a-mapping'],
             'AttributeError',
             'a declaration that is not a mapping has no .get at all',

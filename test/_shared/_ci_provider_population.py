@@ -54,7 +54,23 @@ def discover_ci_provider_skills() -> tuple[tuple[str, ...], str]:
         from _list_providers import find_full_providers_by_category
 
         declared = find_full_providers_by_category(CI_CATEGORY)
-        skill_names = {p['skill_name'] for p in declared if p.get('skill_name')}
+        skill_names = set()
+        for provider in declared:
+            skill_name = provider.get('skill_name')
+            if not skill_name:
+                continue
+            # A non-string skill_name is a MALFORMED declaration, not a provider.
+            # Without this check a single truthy scalar (`{'skill_name': 7}`) is
+            # accepted and returned as `(7,)`: set construction succeeds, and
+            # sorting a homogeneous non-string set succeeds too, so the declared
+            # `tuple[str, ...]` is violated silently and the bad value reaches
+            # `build_provider_arms` as if it were a discovered provider. Raising
+            # here puts it on the SAME reported-failure path as a failed scan —
+            # the `except` below converts it into the named failure tuple rather
+            # than letting it escape a parametrize source.
+            if not isinstance(skill_name, str):
+                raise TypeError(f'skill_name must be a string, got {type(skill_name).__name__}: {skill_name!r}')
+            skill_names.add(skill_name)
         return tuple(sorted(skill_names)), ''
     # Broad by intent: the failure is REPORTED to the caller, never swallowed and
     # never raised out of a parametrize source, where it would take collection down.
