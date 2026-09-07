@@ -665,11 +665,11 @@ def test_boundary_normalization_strips_prefix_for_all_downstream_consumers(plan_
 # =============================================================================
 # Bundle-self-modification tests removed
 #
-# The ``bundle_self_modification`` stacked rule is retired — the built-in
-# ``default:sync-plugin-cache`` step (order 14) sits unconditionally between
-# ``default:deploy-target`` (order 12) and the agent-dispatched steps in the
-# canonical Phase 6 ordering, which subsumes the rule's job. Tests pinning the
-# removed rule are deleted with the rule itself.
+# The ``bundle_self_modification`` stacked rule is retired — the project-local
+# ``project:finalize-step-sync-plugin-cache`` step (order 85) runs after
+# ``project:finalize-step-deploy-target`` (order 81) in the post-merge band of
+# the canonical Phase 6 ordering, which subsumes the rule's job. Tests pinning
+# the removed rule are deleted with the rule itself.
 # =============================================================================
 
 
