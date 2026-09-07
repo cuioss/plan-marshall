@@ -70,21 +70,28 @@ class BlockScalar(str):
     and carries the same hazard a plain multi-line string does. Put opaque text in
     an object field, never in a table column.
 
-    Round-trip: :func:`parse_toon` returns the body with leading and trailing
-    whitespace stripped (``_parse_multiline_value`` ends in ``.strip()``). The
-    strip acts on the JOINED body, so what it removes is the body's outer EDGE —
-    its opening and closing blank lines, the first line's leading indent, and the
-    last line's trailing spaces. Everything between those edges is preserved
-    exactly: interior blank lines, interior indentation and content. A caller
-    needing an outer edge carried verbatim does not have it here; a body whose
-    edges are already bare round-trips byte for byte.
+    Round-trip: the body is carried VERBATIM — its opening and closing blank
+    lines, the first line's own indentation, and every interior line all survive
+    :func:`parse_toon`. The exact pairing is the one the transport already uses:
+    ``print(serialize_toon(payload))`` on the way out, :func:`parse_toon` over the
+    captured stdout on the way back.
 
-    Preserving the edge would need the serializer to MARK the body's extent (a
-    chomping indicator), because a trailing blank line in a TOON document is
-    otherwise ambiguous between the body's own and the separator before the next
-    key — and every current consumer reads the stripped form. The boundary is
-    pinned by ``test/plan-marshall/ref-toon-format/test_toon_parser.py``, so it
-    cannot move in either direction unobserved.
+    Two edges are not carried, and both are properties of the DOCUMENT rather
+    than silent edits to the body:
+
+    - A whitespace-only body line arrives empty. ``_serialize_block_scalar``
+      writes a blank payload line as a genuinely empty line, so those spaces never
+      enter the document; nothing downstream can restore what was never written.
+    - ``serialize_toon`` returns a document WITHOUT its terminating newline, so
+      handing that return straight to ``parse_toon`` — instead of the printed form
+      — costs a body its final blank line. The body's own trailing blank and the
+      document's terminator are the same byte, so the two are indistinguishable;
+      ``parse_toon`` resolves the ambiguity in favour of the terminated form,
+      because that is the form every emitter produces.
+
+    The boundary is pinned by
+    ``test/plan-marshall/ref-toon-format/test_toon_parser.py``, so it cannot move
+    in either direction unobserved.
     """
 
     __slots__ = ()
@@ -410,7 +417,25 @@ def block_scalar_body_continues(line: str, header_indent: int) -> bool:
 
 
 def _parse_multiline_value(ctx: ParseContext, base_indent: int) -> str:
-    """Parse a multi-line string value (indicated by |)."""
+    """Parse a multi-line string value (indicated by ``|``), keeping the body verbatim.
+
+    Every line :func:`block_scalar_body_continues` admits is kept, the body's
+    opening and closing blank lines included. The join is deliberately NOT
+    stripped: a strip here discards part of what that predicate has just declared
+    to BE the body, so the parser's two halves would disagree about the block's
+    extent — and opaque foreign text carried through this parser (a pull-request
+    description, an issue body) would come back edited at its edges by a reader
+    that promised to carry it whole.
+
+    One normalisation remains, and it is the emitter's rather than this
+    function's: a whitespace-only body line is recorded as empty, because
+    :func:`_serialize_block_scalar` writes a blank payload line as a genuinely
+    empty line and so never puts those spaces in the document at all.
+
+    The document's own terminating newline is NOT part of the body; it is removed
+    by :func:`parse_toon` before this walk begins. See that function for why the
+    two cannot be told apart here.
+    """
     lines = []
 
     while ctx.index < len(ctx.lines):
@@ -425,7 +450,7 @@ def _parse_multiline_value(ctx: ParseContext, base_indent: int) -> str:
             lines.append(line[base_indent + 2 :] if len(line) > base_indent + 2 else line.strip())
         ctx.index += 1
 
-    return '\n'.join(lines).strip()
+    return '\n'.join(lines)
 
 
 def _parse_object(ctx: ParseContext, base_indent: int) -> dict[str, Any]:
@@ -547,6 +572,16 @@ def parse_toon(content: str) -> dict[str, Any]:
         {'name': 'Alice', 'age': 30, 'roles': [{'id': 1, 'name': 'admin'}, {'id': 2, 'name': 'user'}]}
     """
     lines = content.split('\n')
+    # A TOON document is newline-TERMINATED text: every emitter writes it as
+    # ``print(serialize_toon(payload))``, so the final newline CLOSES the last
+    # line rather than opening an empty one. ``split('\n')`` cannot tell those two
+    # apart, and the difference is observable in exactly one place — inside a
+    # block scalar, whose body admits blank lines. Every other construct skips
+    # them. Left in place, the terminator would be appended to the body of a
+    # block scalar that is the document's last key, which is the shape
+    # ``ci pr view`` emits: its ``body`` is the final field.
+    if lines and lines[-1] == '':
+        lines.pop()
     ctx = ParseContext(lines=lines)
 
     try:

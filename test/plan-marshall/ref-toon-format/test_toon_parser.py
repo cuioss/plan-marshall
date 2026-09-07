@@ -737,11 +737,7 @@ def test_unmarked_multiline_string_corrupts_the_document():
 
 
 def test_block_scalar_preserves_interior_blank_lines_and_indentation():
-    """Interior structure survives — only the body's OUTER whitespace is stripped.
-
-    ``_parse_multiline_value`` ends in ``.strip()``, so a body's leading and
-    trailing blank lines are not preserved. Everything between them is.
-    """
+    """Interior structure survives a round trip untouched."""
     body = 'alpha\n\n    deep indent\n\nomega'
 
     reparsed = parse_toon(serialize_toon({'note': BlockScalar(body)}))
@@ -749,49 +745,102 @@ def test_block_scalar_preserves_interior_blank_lines_and_indentation():
     assert reparsed['note'] == body
 
 
-# The block scalar's round trip is exact for INTERIOR structure and normalising at
-# the body's OUTER edges: `_parse_multiline_value` ends in `.strip()`. The three
-# cases below pin that edge from both sides, because it is the one place a
-# "verbatim body" promise is not literally kept — a PR description that opens with
-# a blank line, or ends with one, reads back without it.
+def _emitted(payload):
+    """Render ``payload`` the way every emitter does: ``print(serialize_toon(...))``.
+
+    ``serialize_toon`` returns the document WITHOUT its terminating newline;
+    ``print`` supplies it, and ``parse_toon`` reads it back off the captured
+    stdout. Tests that assert body fidelity must exercise that pairing, because it
+    is the only one production runs — a bare ``parse_toon(serialize_toon(...))``
+    is an unterminated document, and the terminator is the byte the trailing-edge
+    ambiguity turns on.
+    """
+    return serialize_toon(payload) + '\n'
+
+
+# The block scalar carries its body VERBATIM across the emitted-then-parsed
+# boundary — outer blank lines and first-line indentation included. The cases
+# below pin that edge from both sides, because it is the promise a PR or issue
+# description depends on: `github_ops._extract_body` returns the body whole, and
+# the close-and-reopen recovery hands what it read back to `pr create`.
 #
-# ⛔ They assert the CURRENT boundary, not a preference. Preserving outer whitespace
-# needs the serializer to mark the body's extent (a chomping indicator), because a
-# trailing blank line in a TOON document is otherwise ambiguous between "part of the
-# body" and "the separator before the next key" — and every existing block-scalar
-# consumer reads the stripped form today. Until that marker exists these tests are
-# what stops the edge moving unnoticed in either direction; a deliberate change to
-# preserve it lands here as a failing assertion rather than as a silent behaviour
-# swap under `manage-tasks` and the retrospective fragment reader.
+# ⛔ The exactness is asserted against `_emitted`, not against a bare
+# `serialize_toon` return. Two edges are document properties rather than body
+# edits, and each has its own case below: a whitespace-only line never reaches the
+# document with its spaces, and an UNTERMINATED document cannot distinguish a
+# body's final blank line from its own terminator.
 
 
-def test_block_scalar_drops_the_bodys_outer_blank_lines():
-    """A body opening and closing on a blank line reads back without them."""
+def test_block_scalar_carries_the_bodys_outer_blank_lines():
+    """A body opening and closing on a blank line reads back with both.
+
+    This is the fidelity the `.strip()` this parser used to end on destroyed. A PR
+    description that opens on a blank line was silently re-created without it by
+    the close-and-reopen recovery, which reads a body back through this parser.
+    """
+    body = '\nmiddle\n'
+
+    reparsed = parse_toon(_emitted({'note': BlockScalar(body)}))
+
+    assert reparsed['note'] == body
+
+
+def test_block_scalar_keeps_leading_indent_on_every_line_including_the_first():
+    """Indentation is body content wherever it sits.
+
+    Its own matched control: the identical two-space indent must survive on BOTH
+    lines. Asserting only the first would pass equally on a parser that had
+    stopped dedenting at all, which is a different and much worse behaviour — the
+    body would then carry the emitter's structural two-space prefix as content.
+    """
+    reparsed = parse_toon(_emitted({'note': BlockScalar('  first\n  second')}))
+
+    assert reparsed['note'] == '  first\n  second'
+
+
+def test_block_scalar_reduces_a_whitespace_only_line_to_a_blank_one():
+    """A whitespace-only line survives AS a line; only its spaces are gone.
+
+    ``_serialize_block_scalar`` writes a blank payload line as a genuinely empty
+    line, so those spaces never enter the document — this is the emitter's
+    normalisation, not a parser edit, and the line itself is still there.
+    """
+    reparsed = parse_toon(_emitted({'note': BlockScalar('tail\n   ')}))
+
+    assert reparsed['note'] == 'tail\n'
+
+
+def test_block_scalar_body_is_not_extended_by_the_documents_terminator():
+    """The final newline of an emitted document closes the last line, not the body.
+
+    ``ci pr view`` puts ``body`` LAST in its payload, so the block scalar runs to
+    the end of the document and the terminator ``print`` adds is the very next
+    line the body walk sees. Reading it as body appends a newline no provider
+    sent — the mirror-image corruption of the strip this replaced, and the reason
+    dropping the strip alone is not the whole fix.
+    """
+    body = 'first\n\nlast'
+
+    reparsed = parse_toon(_emitted({'status': 'success', 'note': BlockScalar(body)}))
+
+    assert reparsed['note'] == body
+
+
+def test_an_unterminated_document_cannot_keep_a_bodys_final_blank_line():
+    """MATCHED CONTROL for the pairing — the documented cost of skipping ``print``.
+
+    ``serialize_toon`` emits no terminator, so a body's own final blank line and
+    the document's terminator are the same byte and cannot be told apart. The
+    parser resolves that in favour of the terminated form; fed the unterminated
+    return directly, the final blank line is the one thing it cannot recover.
+    Paired with ``test_block_scalar_carries_the_bodys_outer_blank_lines`` above,
+    which passes the identical body through ``_emitted`` and gets it back whole.
+    """
     body = '\nmiddle\n'
 
     reparsed = parse_toon(serialize_toon({'note': BlockScalar(body)}))
 
-    assert reparsed['note'] == 'middle'
-
-
-def test_block_scalar_drops_leading_indent_only_on_the_first_line():
-    """The strip acts on the joined body's ENDS, never on its interior.
-
-    Its own matched control: the identical two-space indent is lost from the first
-    line and kept on the second. Asserting the loss alone would pass equally on a
-    parser that had stopped preserving indentation at all, which is a different and
-    much worse behaviour.
-    """
-    reparsed = parse_toon(serialize_toon({'note': BlockScalar('  first\n  second')}))
-
-    assert reparsed['note'] == 'first\n  second'
-
-
-def test_block_scalar_drops_trailing_whitespace_from_the_last_line():
-    """A whitespace-only final line is normalised away with the rest of the edge."""
-    reparsed = parse_toon(serialize_toon({'note': BlockScalar('tail\n   ')}))
-
-    assert reparsed['note'] == 'tail'
+    assert reparsed['note'] == '\nmiddle'
 
 
 def test_block_scalar_is_a_str_for_in_process_consumers():

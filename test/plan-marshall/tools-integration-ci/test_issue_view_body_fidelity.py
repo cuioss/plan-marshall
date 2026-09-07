@@ -18,20 +18,18 @@ Three properties are asserted, each with a control that makes it non-vacuous:
   the TOON boundary the CLI actually prints through, AND the envelope's own keys
   are unaffected by it. The control is the same payload with the body left
   unmarked, asserted to break both halves — so the positive arm cannot be passing
-  because the check is toothless. "Intact" is what the block-scalar transport
-  defines, and that is not byte-exact at one edge: its round trip normalises the
-  body's OUTER whitespace. The boundary is stated once at
-  ``toon_parser.BlockScalar`` and pinned by
-  ``test/plan-marshall/ref-toon-format/test_toon_parser.py`` — deliberately not
+  because the check is toothless. "Intact" is whatever the block-scalar transport
+  defines; that contract is stated once at ``toon_parser.BlockScalar`` and pinned
+  by ``test/plan-marshall/ref-toon-format/test_toon_parser.py`` — deliberately not
   restated here, so this suite cannot drift into describing a fidelity the
-  transport stopped providing. The fixtures below carry no leading or trailing
-  whitespace, which is why fidelity and containment can share them; the Fidelity
-  arm is byte-exact because it asserts the HANDLER's return, which crosses no
-  transport at all.
-* **Parity** — both providers carry the field, read from each platform's own name
-  for it (``body`` on GitHub, ``description`` on GitLab). The control is that the
-  parity arm derives its provider set from the cases it ran rather than naming
-  one.
+  transport does not provide, in either direction. The Fidelity arm is byte-exact
+  independently of all that, because it asserts the HANDLER's return, which
+  crosses no transport at all.
+* **Parity** — every provider carries the field, read from each platform's own
+  name for it (``body`` on GitHub, ``description`` on GitLab). The control is that
+  the provider population is DERIVED from the same ``*_provider.py`` discovery
+  production uses, not named here: a provider added to the tree with no arm in
+  this suite fails the coverage assertion instead of going uncovered.
 
 ``issue view`` puts ``body`` MID-payload — ``author``, ``state``, the timestamps
 and the ``labels[]`` / ``assignees[]`` tables all follow it — which is the shape
@@ -51,6 +49,7 @@ import json
 import github_ops
 import gitlab_ops
 import pytest
+from _ci_provider_population import build_provider_arms, population_defect
 from toon_parser import parse_toon, serialize_toon
 
 # A description that exercises every shape a naive scalar emission mishandles: a
@@ -138,14 +137,20 @@ def _gitlab_issue_view(monkeypatch, description):
     return gitlab_ops.cmd_issue_view(argparse.Namespace(issue=str(ISSUE_NUMBER))), captured
 
 
-#: The provider arms, as ``(provider_name, driver)``. Every parity assertion
-#: derives its provider set from THIS table rather than naming a provider, so an
-#: arm that stopped running is a shrunken population the parity test reports,
-#: not a silently narrower green.
-PROVIDER_DRIVERS = (
-    ('github', _github_issue_view),
-    ('gitlab', _gitlab_issue_view),
-)
+#: The stub drivers this suite owns, keyed by the provider's declared
+#: ``skill_name``. The suite owns the DRIVERS; it does not own the POPULATION —
+#: which providers must appear here is derived from the tree below.
+DRIVERS_BY_SKILL = {
+    'plan-marshall:workflow-integration-github': _github_issue_view,
+    'plan-marshall:workflow-integration-gitlab': _gitlab_issue_view,
+}
+
+#: The provider arms, as ``(skill_name, driver)``, DERIVED from the same
+#: ``*_provider.py`` discovery that decides which CI providers exist at run time.
+#: A provider added to the tree therefore arrives here on its own; if it has no
+#: driver it is reported by the coverage assertion below rather than quietly
+#: omitted, which is what a hard-coded table did.
+PROVIDER_DRIVERS, UNDRIVEN_PROVIDERS, DISCOVERY_FAILURE = build_provider_arms(DRIVERS_BY_SKILL)
 
 
 # =============================================================================
@@ -162,17 +167,21 @@ def test_issue_view_returns_a_body_field(monkeypatch, provider, drive):
     assert 'body' in payload, f'{provider}: issue view returned no body field: {sorted(payload)}'
 
 
-def test_body_is_present_on_every_provider_not_just_one():
-    """The field is provider-agnostic, so no arm may be the only one carrying it.
+def test_every_discovered_ci_provider_is_covered_by_a_body_fidelity_arm():
+    """⛔ Vacuity guard — the arms below cover the DISCOVERED provider population.
 
-    Derived from :data:`PROVIDER_DRIVERS` rather than from a named pair: a
-    provider dropped from the table shrinks the population, and the size
-    assertion is what makes that shrink visible instead of green.
+    Every per-provider case in this module is parametrized over
+    :data:`PROVIDER_DRIVERS`. A parametrize over a short or empty sequence
+    produces correspondingly few cases and still reports green, so the suite would
+    look like whole-population coverage while asserting nothing about the provider
+    that was missing. The three ways that can happen — discovery failed, a
+    discovered provider has no driver here, or fewer arms than parity needs — are
+    decided in one shared place so this suite and its ``pr view`` twin cannot be
+    hardened one at a time.
     """
-    assert len(PROVIDER_DRIVERS) >= 2, (
-        f'parity is unassertable over {len(PROVIDER_DRIVERS)} provider(s): '
-        f'{[name for name, _ in PROVIDER_DRIVERS]}'
-    )
+    defect = population_defect(PROVIDER_DRIVERS, UNDRIVEN_PROVIDERS, DISCOVERY_FAILURE, suite='issue view')
+
+    assert not defect, defect
 
 
 # =============================================================================

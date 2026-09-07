@@ -331,6 +331,19 @@ _MERGE_LOCK_NOTATION = 'plan-marshall:manage-locks:merge_lock'
 #: what stops an omitted ``--plan-id`` becoming a way to post past the guard.
 _GUARD_PLAN_SENTINEL = 'NO_PLAN'
 
+#: Wall-clock ceiling on the executor fallback, in seconds.
+#:
+#: The read behind it is a local JSON lookup that returns in well under a second;
+#: this budget is sized for a cold interpreter start and a contended lock file,
+#: not for the read itself. What it exists to bound is the OTHER outcome: an
+#: executor that never returns. Unbounded, that call blocks the whole
+#: automatic-review budget (900s) and the ``unreadable`` envelope this function
+#: promises on a failed read never arrives — the guard stops being fail-open and
+#: becomes fail-silent, taking the recovery path down with it. On expiry
+#: ``subprocess.TimeoutExpired`` is raised, and the surrounding broad ``except``
+#: turns it into that envelope like any other failure of this route.
+_EXECUTOR_ROUTE_TIMEOUT_SECONDS = 30
+
 
 def read_rate_window(plan_id: str, bot_kind: str, pr_number: int | str) -> dict[str, Any]:
     """Return manage-locks' NON-MUTATING read of ``bot_kind``'s rate-window claim.
@@ -357,7 +370,11 @@ def read_rate_window(plan_id: str, bot_kind: str, pr_number: int | str) -> dict[
       guard refuses only on a POSITIVE observation of an unexpired claim.
 
     Returns ``{'status': 'unreadable', 'error': ...}`` when neither route worked —
-    a shape carrying no ``expired`` key, so it reads as "no observation".
+    a shape carrying no ``expired`` key, so it reads as "no observation". The
+    executor route is time-boxed by :data:`_EXECUTOR_ROUTE_TIMEOUT_SECONDS` so
+    that "no observation" is something this function can still RETURN: an
+    executor that never exits would otherwise hold the caller for the whole
+    automatic-review budget and the envelope would never be produced at all.
     """
     try:
         import merge_lock
@@ -409,6 +426,7 @@ def read_rate_window(plan_id: str, bot_kind: str, pr_number: int | str) -> dict[
             capture_output=True,
             text=True,
             check=False,
+            timeout=_EXECUTOR_ROUTE_TIMEOUT_SECONDS,
         )
         parsed = parse_toon(proc.stdout)
     # Broad by intent: an unreadable read is REPORTED as such, never raised — the

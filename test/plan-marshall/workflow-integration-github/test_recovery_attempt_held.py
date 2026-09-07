@@ -60,6 +60,14 @@ _TRIGGER_ARMS = (
 _CAP_FINAL_REMAINING = 0
 
 
+#: The ONE class the selector lets past its class arm. ``resolve_recovery_action``
+#: tests ``rate_class != 'awaitable_window'``, so the awaitable and non-awaitable
+#: populations below are the two sides of this single predicate rather than one
+#: derived set and one hand-listed one — a class added to the registry lands in
+#: whichever population it belongs to without either being edited.
+_AWAITABLE_CLASS = 'awaitable_window'
+
+
 def _awaitable_bots() -> list[str]:
     """The registered bots whose class reaches the window arms at all.
 
@@ -67,8 +75,21 @@ def _awaitable_bots() -> list[str]:
     past the class arm, so a case built on any other bot would pass for the wrong
     reason — the escalation it observed would be the class's, not the budget's.
     """
-    bots = [b for b in bot_registry.bot_kinds() if bot_registry.rate_limit_class(b) == 'awaitable_window']
+    bots = [b for b in bot_registry.bot_kinds() if bot_registry.rate_limit_class(b) == _AWAITABLE_CLASS]
     assert bots, 'registry must declare an awaitable_window bot for these cases to discriminate'
+    return bots
+
+
+def _non_awaitable_bots() -> list[str]:
+    """The registered bots the class arm turns away — the COMPLEMENT, not a list.
+
+    The selector treats every class other than ``awaitable_window`` as
+    non-awaitable, so the population is derived by negating that one predicate.
+    Enumerating the class names instead silently excludes any class added later:
+    such a bot would be escalated by the shipped code and covered by nothing here.
+    """
+    bots = [b for b in bot_registry.bot_kinds() if bot_registry.rate_limit_class(b) != _AWAITABLE_CLASS]
+    assert bots, 'registry must declare a non-awaitable bot for this to discriminate'
     return bots
 
 
@@ -207,25 +228,18 @@ class TestAHeldAttemptAuthorizesNothingElse:
         assert verdict['action'] == github_re_review.RECOVERY_ACTION_UNMEASURED
         assert verdict['reason'] == 'no_attempt_budget_observation'
 
-    def test_a_non_awaitable_class_still_escalates(self):
+    @pytest.mark.parametrize('bot_kind', _non_awaitable_bots())
+    def test_a_non_awaitable_class_still_escalates(self, bot_kind):
         """The class arm precedes every window arm and is unmoved by the flag.
 
-        Swept over both non-awaitable classes, derived from the registry — a bot
-        whose limit does not reopen must never reach a trigger arm, since asking it
-        again cannot produce a review.
+        Swept over the registry's whole non-awaitable population — every class the
+        selector's own predicate turns away, not an enumeration of the ones it
+        turns away today. A bot whose limit does not reopen must never reach a
+        trigger arm, since asking it again cannot produce a review.
         """
-        non_awaitable = [
-            b
-            for b in bot_registry.bot_kinds()
-            if bot_registry.rate_limit_class(b) in ('hard_quota', 'unknown')
-        ]
-        assert non_awaitable, 'registry must declare a non-awaitable bot for this to discriminate'
+        verdict = _verdict(bot_kind, attempt_held=True)
 
-        for bot in non_awaitable:
-            verdict = _verdict(bot, attempt_held=True)
-
-            assert verdict['action'] == github_re_review.RECOVERY_ACTION_ESCALATE_NOT_AWAITABLE
-            assert verdict['action'] not in _TRIGGER_ARMS
+        assert verdict['action'] == github_re_review.RECOVERY_ACTION_ESCALATE_NOT_AWAITABLE
 
 
 class TestTheFlagIsReachableFromTheCommandLine:
