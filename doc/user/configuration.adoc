@@ -483,7 +483,7 @@ NOTE: The `default:pre-push-quality-gate` finalize step has no dedicated activat
 [#merge-queue]
 === Platform merge queue (both providers)
 
-The `use_merge_queue` opt-in, its `/marshall-steward` provisioning, live-eligibility probing, and the per-provider verification posture are documented with the concurrent-plan operator guide: see xref:parallelism-and-locking.adoc#merge-queue[Parallelism and Locking → Platform merge queue].
+The `use_merge_queue` opt-in, its `/marshall-steward` provisioning, live-eligibility probing, and how each provider path is verified are documented with the concurrent-plan operator guide: see xref:parallelism-and-locking.adoc#merge-queue[Parallelism and Locking → Platform merge queue].
 
 [#automated-review]
 === Automated PR review and post-branch-update re-review
