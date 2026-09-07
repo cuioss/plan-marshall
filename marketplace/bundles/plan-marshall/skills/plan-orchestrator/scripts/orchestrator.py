@@ -89,6 +89,7 @@ No implementation-side capability (no build/CI/source verbs) exists here.
 """
 
 import argparse
+import json
 import re
 import shutil
 import subprocess
@@ -203,6 +204,17 @@ _ADD_ROW_PLAN_ID_RE = re.compile(rf'^{PLAN_ID_SEGMENT}\Z')
 SPEC_PRESENCE_PRESENT = 'present'
 SPEC_PRESENCE_ABSENT = 'absent'
 SPEC_PRESENCE_UNLISTABLE = 'unlistable'
+
+#: The three-valued verdict of the ``--add-row`` pre-lock ``status.json`` probe,
+#: held apart for the same ADR-019 reason the spec-presence vocabulary above is:
+#: a document that is NOT THERE and a document that IS there but cannot be read
+#: as a JSON object are different facts, and they owe the operator different
+#: remedies. :data:`STATUS_DOC_OBJECT` deliberately includes the EMPTY document
+#: ``{}`` — a valid, if bare, object, and therefore a legitimate first-append
+#: seed rather than a missing file.
+STATUS_DOC_ABSENT = 'absent'
+STATUS_DOC_NON_OBJECT = 'non_object'
+STATUS_DOC_OBJECT = 'object'
 
 # Statuses at which a plan row is finished, so its result links are expected to
 # be present. A terminal row missing one is the reconciliation gap the summary's
@@ -695,6 +707,70 @@ def _read_status(slug: str, allow_archived: bool = False) -> dict[str, Any]:
     return dict(data)
 
 
+def _probe_status_document(slug: str) -> dict[str, str]:
+    """Classify the epic's ``status.json`` three ways for the append WRITE path.
+
+    The write-side counterpart to :func:`_read_status`, which structurally cannot
+    serve this caller: ``_read_status`` returns ``{}`` for FOUR different on-disk
+    states — an absent file, an unreadable one, an unparseable one, and one whose
+    top-level JSON is valid but not a mapping — and that coercion is a READ
+    convenience its other callers rely on. Its contract is therefore left
+    untouched and the discrimination is made here instead.
+
+    A bare presence check would not serve either, and is the reason this probe is
+    three-valued rather than two. A document that is PRESENT but not a JSON
+    object must be REFUSED, not admitted: ``rmw_json``'s own read degrades it to
+    ``{}``, so letting one reach :func:`_append_plan_row` would persist a
+    document holding nothing but the appended row and destroy whatever the file
+    held. That is exactly the destruction :func:`_append_plan_row` already
+    refuses one level down for a malformed ``plans`` value, refused here one
+    level up for a malformed document.
+
+    Returns ``state`` (one of :data:`STATUS_DOC_ABSENT`,
+    :data:`STATUS_DOC_NON_OBJECT` and :data:`STATUS_DOC_OBJECT`),
+    ``observed_type`` (the top-level JSON type name, or ``unparseable`` /
+    ``unreadable`` when no type could be read at all) and ``detail`` (the
+    evidence behind the verdict, so the operator sees what is in the file).
+    """
+    path = _epic_root(slug) / FILE_STATUS
+    try:
+        raw = path.read_text(encoding='utf-8')
+    except FileNotFoundError:
+        return {
+            'state': STATUS_DOC_ABSENT,
+            'observed_type': '',
+            'detail': f'{path} does not exist',
+        }
+    except OSError as exc:
+        # Something occupies the path but could not be read (a directory,
+        # permissions, I/O). Nothing was parsed, so no type may be named — and
+        # the file is emphatically NOT absent, so it must not be reported as one.
+        return {
+            'state': STATUS_DOC_NON_OBJECT,
+            'observed_type': 'unreadable',
+            'detail': f'{path} could not be read: {exc}',
+        }
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        return {
+            'state': STATUS_DOC_NON_OBJECT,
+            'observed_type': 'unparseable',
+            'detail': f'{path} does not parse as JSON: {exc}',
+        }
+    if not isinstance(parsed, dict):
+        observed = type(parsed).__name__
+        return {
+            'state': STATUS_DOC_NON_OBJECT,
+            'observed_type': observed,
+            'detail': f'{path} parses to a {observed} at its top level, not an object',
+        }
+    # An EMPTY object reaches here deliberately: ``{}`` is a valid object, so the
+    # append proceeds and :func:`_append_plan_row` takes its absent-key branch to
+    # seed the queue with the first row.
+    return {'state': STATUS_DOC_OBJECT, 'observed_type': 'dict', 'detail': ''}
+
+
 def _set_row_field(row: dict[str, Any], field: str, value: str) -> dict[str, Any]:
     """Set one field of a plan row, returning the previous and new values."""
     previous = row.get(field, '')
@@ -914,11 +990,26 @@ def _queue_add_row(args: argparse.Namespace) -> dict[str, Any]:
     The ``--add-row`` branch of :func:`cmd_queue`, split out so each write form
     reads as one path instead of three interleaved branches of one body.
 
-    The :func:`_read_status` call here is an EXISTENCE guard only — it refuses an
-    epic with no ``status.json`` rather than letting ``rmw_json`` conjure one.
-    It is deliberately NOT the duplicate check: that runs against the fresh
-    in-lock queue inside :func:`_append_plan_row`, because a duplicate decided
-    from this pre-lock snapshot could be overtaken by a competing session
+    The opening guard discriminates ``status.json`` THREE ways through
+    :func:`_probe_status_document`, because neither of the two-valued tests it
+    replaces is safe here. A truthiness test on the PARSED document collapses
+    four different on-disk states into one and reports every one of them as a
+    missing file — sending an operator with a corrupt ledger to the wrong remedy,
+    and blocking the legitimate first append into an empty ``{}`` document. A
+    bare file-PRESENCE test collapses the same states the other way, admitting an
+    unparseable or non-object document to a write that ``rmw_json``'s degrading
+    read would turn into a document holding only the new row. So:
+
+    - ABSENT — ``file_not_found``, rather than letting ``rmw_json`` conjure one.
+    - PRESENT but not a JSON object — ``invalid_status_document``, refused with
+      NOTHING written and the observed type named.
+    - PRESENT and a JSON object, INCLUDING the empty document ``{}`` — proceed;
+      :func:`_append_plan_row` then takes its absent-key branch and seeds the
+      queue.
+
+    The guard is deliberately NOT the duplicate check: that runs against the
+    fresh in-lock queue inside :func:`_append_plan_row`, because a duplicate
+    decided from a pre-lock snapshot could be overtaken by a competing session
     between the read and the write.
 
     :func:`_append_plan_row`'s outcome is three-way and is discriminated as
@@ -926,9 +1017,19 @@ def _queue_add_row(args: argparse.Namespace) -> dict[str, Any]:
     written) is separated from ``duplicate`` before the ``'row' not in outcome``
     test, which would otherwise read a refusal as a duplicate and raise.
     """
-    if not _read_status(args.slug):
+    probe = _probe_status_document(args.slug)
+    if probe['state'] == STATUS_DOC_ABSENT:
         return _error(
             args.slug, 'file_not_found', 'status.json not found in orchestrator store'
+        )
+    if probe['state'] == STATUS_DOC_NON_OBJECT:
+        return _error(
+            args.slug,
+            'invalid_status_document',
+            f"status.json is present but is not a JSON object ({probe['detail']}); "
+            'the row was refused and NOTHING was written — repair the document '
+            'before staging, so whatever it holds is not silently discarded',
+            observed_type=probe['observed_type'],
         )
     # Seeded from the declared field tuple so the row's key ORDER is the declared
     # order, and the three result fields start empty: an appended row has landed
