@@ -27,10 +27,7 @@ import re
 from argparse import Namespace
 from pathlib import Path
 
-from conftest import get_script_path, load_script_module, parse_ns
-
-SCRIPT_PATH = get_script_path('plan-marshall', 'manage-metrics', 'manage-metrics.py')
-
+from conftest import load_script_module, parse_ns
 
 # The entrypoint filename is kebab-case (manage-metrics.py), which is not a valid
 # Python module identifier — resolved by (bundle, skill, file) instead of imported.

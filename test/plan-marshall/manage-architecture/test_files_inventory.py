@@ -35,9 +35,6 @@ FILE_CATEGORIES = _architecture_core.FILE_CATEGORIES
 cmd_which_module = _cmd_client.cmd_which_module
 resolve_module_for_path = _architecture_core.resolve_module_for_path
 
-# The real-tree tests below walk the live ``marketplace/bundles/`` population
-# rather than a hard-coded list.
-
 #: The architecture script's address, as module-level string constants so the
 #: ``parse_ns`` call below stays statically resolvable.
 _ARCH_BUNDLE = 'plan-marshall'

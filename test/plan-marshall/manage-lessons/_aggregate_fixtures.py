@@ -41,10 +41,7 @@ from argparse import Namespace
 from pathlib import Path
 from unittest.mock import patch
 
-from conftest import MARKETPLACE_ROOT, load_script_module
-
-SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'manage-lessons' / 'scripts' / 'manage-lessons.py'
-
+from conftest import load_script_module
 
 # Tier 2 direct import. Loaded unregistered under a name of this module's own
 # choosing, so the copy staged here cannot displace one another suite holds.
