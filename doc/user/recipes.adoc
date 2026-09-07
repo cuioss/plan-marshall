@@ -20,7 +20,7 @@ Two entry points reach a recipe:
 [#surgical-fix-micro-lane]
 == The surgical-fix micro-lane
 
-`surgical-fix` is a **micro-lane fast path for a pre-diagnosed fix** — a change whose root cause is already known, whose exact edit is already known, that touches ≤~2 files / ~50 LOC, and that carries no cross-module behavioral delta. Instead of re-discovering scope through the full refine → outline → Q-Gate pipeline, the recipe takes the pre-diagnosed request as its contract and composes a deterministic `surgical`-scope outline directly, then hands off to task planning.
+`surgical-fix` is a **micro-lane fast path for a change you have already diagnosed** — one whose root cause is already known, whose exact edit is already known, that touches ≤~2 files / ~50 LOC, and that carries no cross-module behavioral delta. Instead of re-discovering scope through the full refine → outline → quality-check pipeline, the recipe takes that already-diagnosed request as its contract and composes a deterministic `surgical`-scope outline directly, then hands off to task planning.
 
 === What it skips, what it keeps
 
