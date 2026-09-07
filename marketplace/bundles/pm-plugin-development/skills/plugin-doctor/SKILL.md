@@ -27,6 +27,10 @@ Comprehensive diagnostic and fix skill for marketplace components. Combines diag
 - Only `doctor-marketplace.py` is registered in the executor. `_analyze.py`, `_validate.py`, and `_fix.py` are separate verb-bearing entry points whose verbs are NOT `doctor-marketplace` subcommands; a workflow needing one invokes the script directly, and no executor form may be documented for them. See § External Resources
 - Prose instructions adjacent to script calls must reference parameter values consistent with the script API (workflow-prose-parameter-inconsistency)
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../../plan-marshall/skills/tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Purpose
 
 Provides unified doctor workflows following the pattern: **Diagnose → Auto-Fix Safe → Prompt Risky → Verify**

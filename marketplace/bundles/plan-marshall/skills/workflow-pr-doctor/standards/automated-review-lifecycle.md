@@ -4,6 +4,10 @@ Detailed reference for the Automated Review Lifecycle mode used by phase-6-final
 
 > **Architectural context**: This document owns the lifecycle step list for the consolidated FIND → INGEST → TRIAGE → RESPOND flow (review-bot buffer, `fetch_findings` FIND, batched `ingest`, per-finding TRIAGE reading top-level only, `post_responses` RESPOND, overflow handling). CI completion is a dispatcher-resolved precondition declared via the `requires: [ci-complete]` frontmatter field on the consumer step — the phase-6-finalize dispatcher invokes its precondition resolver (see [`phase-6-finalize/SKILL.md`](../../phase-6-finalize/SKILL.md) Step 3 § "Precondition resolution") before this lifecycle executes and guarantees CI is green. On `wait_failed`, the dispatcher skips this lifecycle entirely and marks the consumer step `failed` with `display_detail "ci_failure (precondition)"`. For the architecture-level synthesis (producer→store→consumer→gate), see [`ref-workflow-architecture/standards/findings-pipeline.md`](../../ref-workflow-architecture/standards/findings-pipeline.md). The pipeline narrative is not restated here.
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Input Parameters
 
 - `plan_id` — for logging, finding storage, and Q-Gate findings

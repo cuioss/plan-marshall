@@ -50,6 +50,10 @@ confirm alignment.
   [`standards/box-conventions.md`](standards/box-conventions.md) so the
   heuristic validator does not mistake them for misaligned boxes.
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../../plan-marshall/skills/tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## When to use this skill
 
 Load this skill when:

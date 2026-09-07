@@ -90,7 +90,7 @@ Authoring templates for the ledger documents live in `templates/` and mirror the
 
 | Script | Notation | Purpose |
 |--------|----------|---------|
-| orchestrator | `plan-marshall:plan-orchestrator:orchestrator` | Thin scaffolding: `scaffold` (create the epic tree), `queue` (read the plan queue, transition a plan's status, or set one plan row's result field), `resume-summary` (generate the two derivable `epic.md` blocks — START-HERE and the Ordered Queue table — from status.json, with the START-HERE self-validation detectors), `archive` (relocate a closed epic tree to `archived-orchestrators/`), `compact` (regenerate every derivable `epic.md` surface in place, verify the invariants, and report — the ledger-compaction stage `cleanup` Phase B calls; refuses a closed epic), `corpus` (enumerate the epic population across both store homes, reconcile the staged spec corpus against the queue, cross-check it against sibling epics and live plans, publish every spec's declared Expected Surface with its derivation status and population — the read the disjointness gate decides on — and read or stamp the re-grounding verdict field), `cleanup` (report the restart-readiness verdict), `inbox` (append/amend/supersede/validate a plan-written OUTBOX message, close a sender's stream, list the queued messages with their lifecycle, archive a consumed one under its per-sender subdirectory, migrate a flat archive into that layout, or detect orchestration context from a plan's `source_id`) |
+| orchestrator | `plan-marshall:plan-orchestrator:orchestrator` | Thin scaffolding: `scaffold` (create the epic tree), `queue` (read the plan queue, transition a plan's status, set one plan row's result field, or append one new plan row), `resume-summary` (generate the two derivable `epic.md` blocks — START-HERE and the Ordered Queue table — from status.json, with the START-HERE self-validation detectors), `archive` (relocate a closed epic tree to `archived-orchestrators/`), `compact` (regenerate every derivable `epic.md` surface in place, verify the invariants, and report — the ledger-compaction stage `cleanup` Phase B calls; refuses a closed epic), `corpus` (enumerate the epic population across both store homes, reconcile the staged spec corpus against the queue, cross-check it against sibling epics and live plans, publish every spec's declared Expected Surface with its derivation status and population — the read the disjointness gate decides on — and read or stamp the re-grounding verdict field), `cleanup` (report the restart-readiness verdict), `inbox` (append/amend/supersede/validate a plan-written OUTBOX message, close a sender's stream, list the queued messages with their lifecycle, archive a consumed one under its per-sender subdirectory, migrate a flat archive into that layout, or detect orchestration context from a plan's `source_id`) |
 
 ## Canonical invocations
 
@@ -107,10 +107,40 @@ python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator sca
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator queue \
-  --slug SLUG [--transition PLAN-NN --status STATUS] [--set-row PLAN-NN --field FIELD --value VALUE]
+  --slug SLUG [--transition PLAN-NN --status STATUS] [--set-row PLAN-NN --field FIELD --value VALUE] \
+  [--add-row PLAN-NN --slug-value SLUG --workstream WS-NN [--status STATUS]]
 ```
 
-A three-way surface over `status.json`'s `plans[]`. With no write flags the verb reads the queue. `--transition` and `--status` are supplied together and transition the named plan to the new status. `--set-row`, `--field`, and `--value` are likewise supplied together and stamp ONE result field of the named plan's row — `--field` is restricted to the whitelist `plan_marshall_plan_id`, `pr`, `landing` (an out-of-whitelist field returns `invalid_field`; `status` is reachable only through `--transition`). The two write forms are mutually exclusive: supplying both returns `wrong_parameters`. Both mutate only the located row, inside a shared read-modify-write critical section — this, not a whole-array `manage-status update-field --field plans` rewrite, is the mechanism for stamping a landing.
+The accepted flag set per form — `--status` is the one flag two forms share, and its obligation differs between them:
+
+| Form | Required | Optional |
+|------|----------|----------|
+| read | `--slug` | — |
+| transition | `--slug`, `--transition`, `--status` | — |
+| set-row | `--slug`, `--set-row`, `--field`, `--value` | — |
+| add-row | `--slug`, `--add-row`, `--slug-value`, `--workstream` | `--status` (default `staged`) |
+
+A four-way surface over `status.json`'s `plans[]` — one read and three writes. With no write flags the verb reads the queue.
+
+`--transition` and `--status` are supplied together and transition the named plan to the new status. `--set-row`, `--field`, and `--value` are likewise supplied together and stamp ONE result field of the named plan's row — an out-of-whitelist `--field` returns `invalid_field`, and `status` is reachable only through `--transition`. `--add-row`, `--slug-value`, and `--workstream` are supplied together and APPEND one new row.
+
+`--field` whitelist (mirrors `PLAN_ROW_FIELDS`): `plan_marshall_plan_id`, `pr`, `landing`
+
+Both enumerations this section publishes — the `--field` whitelist above and the `--add-row` seed fields below — sit on their own line, behind a fixed anchor, so each is machine-locatable rather than embedded in prose. `test_orchestrator.py` extracts them through one shared reader and asserts SET EQUALITY in both directions against the constant each mirrors: `PLAN_ROW_FIELDS`, which `cmd_queue` actually validates `--field` against, and `ADD_ROW_SEED_FIELDS`, the tuple `--add-row` seeds a row from. Each check fails rather than passes if its extraction yields nothing, so a reworded or deleted anchor is a red test and not a silent skip. The seed-field line is additionally asserted in DECLARATION ORDER, because that tuple's order is the key order an appended row is written in. Closure is therefore re-checked against the declaring source on every run instead of being asserted here by hand.
+
+The three write forms are mutually exclusive: supplying more than one returns `wrong_parameters`, as does an incomplete triple. `--status` is REQUIRED with `--transition` and OPTIONAL with `--add-row`, so it no longer marks the transition form on its own — supplied with neither, it is still rejected.
+
+All three run inside the same shared read-modify-write critical section: `--transition` and `--set-row` mutate only the located row, and `--add-row` appends after re-checking the FRESH in-lock queue for its id. This, not a whole-array `manage-status update-field --field plans` rewrite, is the mechanism for both stamping a landing and staging a plan — the bulk rewrite is reserved for `decompose`'s seed of a queue from nothing.
+
+`--add-row` seeds one row from the declared seed-field tuple, in the order that tuple states — three identity fields from the supplied triple, `status` from `--status` (default `staged`), and the three result fields EMPTY, because an appended row has landed nothing yet. It gains no stamping path by doing so: `--set-row` remains the sole writer of those result fields. The plan id is validated against `epic_spec_parser`'s `PLAN_ID_SEGMENT` — the single definition of the settled plan-id forms — and an id outside that grammar returns `invalid_plan_id` with nothing written. An id already in the queue returns `duplicate_plan_id`, decided against the in-lock queue rather than a pre-lock snapshot, and leaves the document untouched.
+
+`--add-row` seed fields (mirrors `ADD_ROW_SEED_FIELDS`): `id`, `slug`, `workstream`, `status`, `plan_marshall_plan_id`, `pr`, `landing`
+
+The append also discriminates `status.json` itself three ways before it writes, because neither presence nor parsed-document truthiness alone is safe. An **absent** file returns `file_not_found`. A file that is **present but not a JSON object** — unreadable, unparseable, or valid JSON whose top level is not a mapping — returns `invalid_status_document`, naming what was found in `observed_type`, with NOTHING written: the shared read-modify-write section degrades such a document to `{}` on read, so admitting one would persist a document carrying only the new row. A file that **is** a JSON object proceeds, **including the empty document `{}`** — a valid, if bare, ledger whose first append seeds the queue rather than a file that does not exist.
+
+The two ways `status.json` can carry no usable queue are held apart, per ADR-019. An **absent** `plans` key is a measured empty queue: the first append seeds the list and lands. A **present but non-list** `plans` value is a malformed ledger, and the append refuses it with `invalid_plans` — naming the observed type in `observed_type` — writing NOTHING, so whatever that value held survives instead of being normalized away by a seeded empty list that would persist a document carrying only the new row.
+
+A successful append also carries a three-valued spec-presence verdict for the new row: `present` (a `plans/PLAN-NN-*.md` spec is staged), `absent` (the directory was listed and holds none — reported in a named warning field, never silently), and `unlistable` (the directory could not be read, so nothing was observed). `absent` and `unlistable` are never folded together, per ADR-019: a measured negative and an unobserved one are different facts. The probe REPORTS and never gates — a plan is routinely queued before its spec is written.
 
 ### resume-summary
 

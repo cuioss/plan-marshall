@@ -6,6 +6,10 @@ implements: plan-marshall:extension-api/standards/ext-point-execution-context-wo
 
 Loads marketplace inventory via the `tools-marketplace-inventory` script with caller-specified component types, content filter, bundle scope, and test / project-skill inclusion flags. Persists a filtered inventory file under the plan's work directory.
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../../../plan-marshall/skills/tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Inputs
 
 | Prompt-body field | Required | Description |

@@ -27,6 +27,10 @@ Interactive wizard for creating well-structured marketplace components following
 - Agents and commands use manage-lessons skill for the CONTINUOUS IMPROVEMENT RULE section; skills do not have this section
 - Each workflow step that performs a script operation has an explicit bash code block with the full `python3 .plan/execute-script.py` command
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../../plan-marshall/skills/tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## What This Skill Provides
 
 **Component Creation**: Unified workflows for creating agents, commands, skills, and bundles with proper structure, frontmatter, and standards compliance.

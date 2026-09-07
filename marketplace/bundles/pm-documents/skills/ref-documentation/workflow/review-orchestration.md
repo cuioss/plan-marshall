@@ -6,6 +6,10 @@ implements: plan-marshall:extension-api/standards/ext-point-execution-context-wo
 
 This standard defines the orchestration workflow for comprehensive AsciiDoc documentation review. It coordinates three specialized workflows (format, links, content) into a unified review process with proper sequencing, failure handling, and consolidated reporting.
 
+## Exit-code convention for every script call
+
+The exit-code contract for every `python3 .plan/execute-script.py` call in this document — of EVERY notation, not only `manage-*` — is stated once in [`tools-script-executor/standards/exit-code-convention.md`](../../../../plan-marshall/skills/tools-script-executor/standards/exit-code-convention.md); it is not restated here.
+
 ## Orchestration Principle
 
 **Sequential execution with fail-fast:** Format validation must pass before proceeding to links and content review. This prevents wasting effort on documents with structural issues.

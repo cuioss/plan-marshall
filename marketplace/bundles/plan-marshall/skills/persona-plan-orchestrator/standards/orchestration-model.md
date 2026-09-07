@@ -99,6 +99,22 @@ A Write or Edit outside the epic's own `{slug}/` tree — repository source, ano
 
 **This carve-out governs writes only.** Reads are governed by the small-ops carve-out's read-only-analysis clause below, not by this one.
 
+### The queue-write boundary
+
+`status.json`'s `plans[]` is written by exactly three sanctioned forms, and which one applies is decided by the SHAPE of the change rather than by which verb happens to be running. Stated as one whole, because the failure mode is reaching for the widest form out of habit:
+
+| Occasion | Form | Scope of the write |
+|---|---|---|
+| **Bulk seed** at `decompose` | the whole-array `manage-status update-field --field plans` rewrite | Seeding a queue from nothing — the ONLY sanctioned use |
+| **Single append** at stage | `orchestrator.py queue --add-row` | One new row, appended inside the shared critical section |
+| **Single mutate** at reconcile | `orchestrator.py queue --transition` (status) and `queue --set-row` (the three result fields) | One located row |
+
+Three rules bind this boundary:
+
+- **The three `queue` forms are mutually exclusive per call.** Supplying more than one returns `wrong_parameters`. The accepted flag set per form — including that `--status` is REQUIRED with `--transition` and OPTIONAL with `--add-row` — is published at [`plan-orchestrator/SKILL.md` § Canonical invocations → queue](../../plan-orchestrator/SKILL.md#queue) and is not restated here.
+- **The bulk rewrite MUST NOT be used for either single-row operation.** It re-serializes the whole array from a read taken OUTSIDE the lock, so a concurrent session's row is silently lost — the reason the single-row forms exist at all. Reserved to the seed-from-nothing case above.
+- **Direct `status.json` file edits remain prohibited outright**, per the script-mediation bullet above. This subsection narrows WHICH script-mediated form to use; it grants no direct-write path.
+
 ### Small-ops carve-out
 
 The orchestrator MAY perform small operations inline, without spawning a plan:
