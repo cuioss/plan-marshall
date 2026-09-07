@@ -26,7 +26,7 @@ configurable:
     default: squash
     description: Merge strategy (squash|merge|rebase) used when merging the plan's PR.
   - key: final_merge_without_asking
-    default: false
+    default: true
     description: Gate the post-CI auto-merge — false prompts before merging; true merges automatically once CI is green.
   - key: auto_rebase_threshold
     default: no_overlap_only
@@ -512,7 +512,14 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
   step-params get --plan-id {plan_id} --phase 6-finalize --step-id branch-cleanup
 ```
 
-Extract `final_merge_without_asking` from the returned `params` object as `{final_merge_without_asking}` (default: `false`). Valid values: `true`, `false`. The default is now `false` — interactive-by-default: the operator is prompted to confirm before the irreversible merge to `main`. `true` is the explicit opt-in to unattended auto-merge after CI, serialized across plans via the cross-plan merge-lock so concurrent plans can never race on the merge-to-main critical section. The read mechanism is a plain boolean — no tri-state, no back-compat normalization.
+Extract `final_merge_without_asking` from the returned `params` object as `{final_merge_without_asking}` (default: `true`). Valid values: `true`, `false`. The default is `true` — unattended auto-merge once CI is green, serialized across plans via the cross-plan merge-lock so concurrent plans can never race on the merge-to-main critical section. `false` is the opt-in to being prompted before the irreversible merge to `main`. The read mechanism is a plain boolean — no tri-state, no back-compat normalization.
+
+**Why the default is `true`** — this is an operator decision, not an inherited default. It consolidates the shipping-side gate into the same autonomy posture as the forward-transition gates, leaving `plan_without_asking` as the single deliberate human checkpoint in the plan lifecycle.
+
+**Two safety mechanisms still bind on the now-default auto path**, and neither depends on the human consent point the default removes:
+
+- `pre_merge_comment_barrier` (`fail_into_loopback`) still fires. The auto bypass sets `{merge_consent} = explicit_yes`, which is exactly the barrier's entry condition (§ "Pre-Merge Review Barrier") — so an unproven or refusing required reviewer still blocks the merge and loops back.
+- The cross-plan merge mutex is still acquired. The widened hold runs on both paths (§ "Merge-Mutex Hold Window"), so the merge-to-main critical section stays serialized whether or not the operator was asked.
 
 #### Re-run the classifier against the current head
 
@@ -1187,7 +1194,7 @@ Neither barrier mode offers the re-triage remedy:
 
   Do NOT proceed to **Merge PR**, and **return control to the finalize dispatcher** — exactly as the pending-findings and UNKNOWN loop-backs do. ⛔ **"Do not merge" is not sufficient on its own**: the sections after **Merge PR** are not merge-gated. § "Remove Worktree (if any)" fires on `{worktree_path}` alone and § "Switch to Base Branch, Pull, and Delete Local Branch" is uniform across `open` and `merged`, so falling through would remove the worktree and delete the branch of an **unmerged** PR — and the loop-back just recorded would then re-enter with no worktree to work in.
 
-  ⚠ Unlike the pending-findings loop-back, the re-fired pipeline cannot clear this on its own — it clears only if an operator applied a remedy in between. Two costs to know before enabling an unattended retry: the plan's `max_iterations` bound is what terminates the run (on the default `loop_back_without_asking: false` it halts after one pass), and **each pass re-runs trigger A, plus whatever the `use_merge_queue` path prescribes: on `false`, the rebase and the authoritative CI wait; on `true`, no rebase and only a non-authoritative CI snapshot, because the queue re-tests** — so a re-review trigger comment is spent per pass on either path, even though the refusing bot's answer cannot change.
+  ⚠ Unlike the pending-findings loop-back, the re-fired pipeline cannot clear this on its own — it clears only if an operator applied a remedy in between. Two costs to know about the unattended retry: the plan's `max_iterations` bound is what terminates the run (on the default `loop_back_without_asking: true` it re-enters up to that ceiling rather than halting after one pass), and **each pass re-runs trigger A, plus whatever the `use_merge_queue` path prescribes: on `false`, the rebase and the authoritative CI wait; on `true`, no rebase and only a non-authoritative CI snapshot, because the queue re-tests** — so a re-review trigger comment is spent per pass on either path, even though the refusing bot's answer cannot change.
 
 **The `{barrier_mode} == ask` structural prompt.** This is an operator-wait boundary, so under `merge_hold_window == full_window_release_at_waits` release the merge mutex if held and FIFO-re-enqueue BEFORE the prompt (§ "Merge-Mutex Hold Window" invariant 1) — carried inline here rather than by reference, as every sibling `ask` branch does:
 

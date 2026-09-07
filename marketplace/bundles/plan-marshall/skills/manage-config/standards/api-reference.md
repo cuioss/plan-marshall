@@ -284,7 +284,7 @@ Their **default values** are not held in any centralized constant: each param-ow
 # Get a step's complete nested param object in a single call
 manage-config plan phase-6-finalize step get --step-id default:branch-cleanup
 # → { "phase": "phase-6-finalize", "step_id": "default:branch-cleanup",
-#     "params": { "pr_merge_strategy": "squash", "final_merge_without_asking": false,
+#     "params": { "pr_merge_strategy": "squash", "final_merge_without_asking": true,
 #                 "auto_rebase_threshold": "no_overlap_only" } }
 
 # Set one step-owned param into the step's nested object (value-coerced)

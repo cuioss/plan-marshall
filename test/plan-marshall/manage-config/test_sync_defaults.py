@@ -251,17 +251,18 @@ def test_sync_defaults_preserves_user_set_param_in_keyed_map(plan_context):
     assert 'plan.phase-6-finalize.steps.default:branch-cleanup.auto_rebase_threshold' in result['added']
 
 
-def test_sync_defaults_preserves_user_set_true_in_keyed_map(plan_context):
-    """A user-set True survives even though the default value is False (keyed-map merge).
+def test_sync_defaults_preserves_user_set_false_in_keyed_map(plan_context):
+    """A user-set False survives even though the default value is True (keyed-map merge).
 
     final_merge_without_asking is a nested param of default:branch-cleanup in the
-    keyed map. The deep-merge preserves the present param key, so an explicit True
-    survives the False default.
+    keyed map. The deep-merge preserves the present param key, so an explicit False
+    survives the True default. The polarity is deliberate: asserting the user value
+    that MATCHES the default would pass whether or not the merge preserved anything.
     """
-    # user explicitly opted into merge-without-asking (default is False)
+    # user explicitly opted out of merge-without-asking (default is True)
     _write_marshal(
         plan_context.fixture_dir,
-        {'plan': {'phase-6-finalize': {'steps': {'default:branch-cleanup': {'final_merge_without_asking': True}}}}},
+        {'plan': {'phase-6-finalize': {'steps': {'default:branch-cleanup': {'final_merge_without_asking': False}}}}},
     )
 
     result = cmd_sync_defaults(_sync_ns())
@@ -269,8 +270,8 @@ def test_sync_defaults_preserves_user_set_true_in_keyed_map(plan_context):
     assert result['status'] == 'success'
     config = _read_marshal(plan_context.fixture_dir)
     steps = config['plan']['phase-6-finalize']['steps']
-    # the user's True override survives the deep-merge
-    assert _params_for(steps, 'default:branch-cleanup')['final_merge_without_asking'] is True
+    # the user's False override survives the deep-merge
+    assert _params_for(steps, 'default:branch-cleanup')['final_merge_without_asking'] is False
     # the present param key is not re-added
     assert 'plan.phase-6-finalize.steps.default:branch-cleanup.final_merge_without_asking' not in result['added']
 

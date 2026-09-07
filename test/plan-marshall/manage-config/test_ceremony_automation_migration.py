@@ -21,9 +21,10 @@ Orthogonal assertions per knob:
    ``DEFAULT_PLAN_FINALIZE`` and the step-owned knob is declared in its step's
    ``configurable:`` frontmatter (resolved via the ``configurable_contract`` parser).
 3. **The distributed defaults are exact** — forward auto-continue ``True``, reverse
-   halt ``False``, ``final_merge_without_asking`` ``False``. The merge gate defaults to
-   prompting because the merge it guards is irreversible, so a fresh project must opt
-   in to unattended merging rather than out of it.
+   auto-continue ``True``, ``final_merge_without_asking`` ``True``. All three run
+   unattended by default, consolidating the shipping-side gate into the same autonomy
+   posture as the forward-transition gates; a fresh project opts OUT of unattended
+   merging rather than in to it.
 
 The handlers are exercised as directly-loaded modules; read-only round-trip stability of marshal.json is asserted by hashing
 the file before and after each ``get``.
@@ -55,11 +56,11 @@ import conftest
 # under default:branch-cleanup, covered by the dedicated step-shape tests below.
 _MIGRATED_KNOBS = (
     ('finalize_without_asking', True),
-    ('loop_back_without_asking', False),
+    ('loop_back_without_asking', True),
 )
 
 # The step-owned knob: (step_id, param, default).
-_STEP_OWNED_KNOB = ('default:branch-cleanup', 'final_merge_without_asking', False)
+_STEP_OWNED_KNOB = ('default:branch-cleanup', 'final_merge_without_asking', True)
 
 
 def _params_for(steps_map: dict, step_id: str):

@@ -2556,6 +2556,11 @@ MARSHAL_SCHEMA_JAVA: dict[str, Any] = {
                 'default:sonar-roundtrip': {},
                 'default:lessons-capture': {},
                 'default:branch-cleanup': {
+                    # ``final_merge_without_asking`` is deliberately seeded
+                    # non-default: param-preservation tests assert this exact
+                    # value back, and a seed equal to the declared default
+                    # cannot distinguish "preserved" from "re-seeded to the
+                    # default". Do not track a future default flip here.
                     'pr_merge_strategy': 'squash',
                     'final_merge_without_asking': False,
                     'auto_rebase_threshold': 'no_overlap_only',
