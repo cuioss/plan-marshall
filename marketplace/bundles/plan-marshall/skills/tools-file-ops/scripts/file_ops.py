@@ -26,7 +26,8 @@ Usage:
         resolve_plan_context,
         cwd_checkout_root,
         PlanContext,
-        WorktreeResolutionError
+        WorktreeResolutionError,
+        WorktreeEscapeWarning
     )
 """
 
@@ -37,6 +38,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import warnings
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -260,6 +262,82 @@ def guard_worktree_cwd(plan_id: str) -> dict[str, Any] | None:
     }
 
 
+class WorktreeEscapeWarning(RuntimeWarning):
+    """Warning category for a worktree-escape executor resolution.
+
+    A git worktree under ``<plan-root>/.plan/local/worktrees/{name}`` carries no
+    ``.plan/local`` of its own (``.plan/`` is gitignored and never travels with
+    a branch), so from inside it the walk-up succeeds — silently — against the
+    MAIN checkout's ``.plan/local``. A plan-root-relative executor regeneration
+    then lands in the main checkout instead of the worktree, which is the
+    wrong-tree trap observed in the PLAN-11 run (an executor regenerated into
+    the main checkout presented as a branch defect).
+
+    Instances of this category are issued via :func:`warnings.warn` by
+    :func:`_warn_on_worktree_escape`, which :func:`get_executor_path` invokes on
+    its resolved root; the resolution still returns the escaped root. The
+    warning — not a raised error — IS the flag: its presence marks the executor
+    path as wrong-tree, and the message names the remedy
+    (``PLAN_TRACKED_CONFIG_DIR``) in the same line. Read-side resolution
+    (:func:`_resolve_plan_root`, :func:`get_base_dir`) deliberately does not
+    surface the escape — see their docstrings for why. Subclassing
+    ``RuntimeWarning`` keeps the category consistent with the module's existing
+    ``except RuntimeError`` surface while staying distinct from it.
+    """
+
+
+def _worktree_escape_origin(root: Path) -> Path | None:
+    """Return the originating worktree when *root*'s own ``worktrees/`` subtree
+    contains the current working directory; ``None`` otherwise.
+
+    The check is structural against the RESOLVED root: ``{root}/.plan/local/
+    worktrees``. It never fires for a moved-in worktree (phase-5+) whose own
+    ``.plan/local`` resolved first — there the cwd IS the resolved root, so it
+    cannot lie inside that root's ``worktrees/`` subtree — nor for a clean
+    checkout / CI / fresh clone with no ``.plan/local`` ancestor (the git
+    toplevel fallback resolves the checkout root, never a ``worktrees/``
+    subtree of it). It also returns ``None`` when cwd IS the ``worktrees/``
+    container itself (no named worktree below it): the container is not a
+    worktree, so there is no originating-worktree escape to name, and a warning
+    would invent an invalid ``PLAN_TRACKED_CONFIG_DIR`` override for it.
+    """
+    cwd = Path.cwd().resolve()
+    worktrees_root = (root / PLAN_DIR_NAME / 'local' / 'worktrees').resolve()
+    if not cwd.is_relative_to(worktrees_root):
+        return None
+    relative = cwd.relative_to(worktrees_root)
+    if not relative.parts:
+        return None
+    return worktrees_root / relative.parts[0]
+
+
+def _warn_on_worktree_escape(root: Path) -> None:
+    """Emit :class:`WorktreeEscapeWarning` when *root*'s ``worktrees/`` subtree
+    contains cwd.
+
+    Called by :func:`get_executor_path` on its resolved root — the executor is
+    the write-reach path where the PLAN-11 wrong-tree regeneration landed. The
+    resolution still returns the escaped root (this only warns); read-side
+    resolution is deliberately silent (see :func:`_resolve_plan_root`).
+    """
+    escaped = _worktree_escape_origin(root)
+    if escaped is None:
+        return
+    cwd = Path.cwd().resolve()
+    warnings.warn(
+        'plan root resolution escape: the working directory '
+        f'{str(cwd)!r} is inside the worktrees/ subtree '
+        f'{str((root / PLAN_DIR_NAME / "local" / "worktrees").resolve())!r} of '
+        f'the resolved plan root {str(root.resolve())!r}, and the originating '
+        f'worktree {str(escaped)!r} carries no {PLAN_DIR_NAME}/local of its own. '
+        'Plan-root-relative state would be written into the MAIN checkout, not '
+        'the worktree. Pin tracked-config writes (executor, marshal.json) to '
+        f'the worktree by setting PLAN_TRACKED_CONFIG_DIR={escaped / PLAN_DIR_NAME}.',
+        WorktreeEscapeWarning,
+        stacklevel=3,
+    )
+
+
 def _resolve_plan_root() -> Path | None:
     """Resolve the plan-root directory by the uniform cwd rule, with a
     clean-checkout git fallback.
@@ -272,8 +350,20 @@ def _resolve_plan_root() -> Path | None:
     robustness the prior ``git_main_checkout_root`` resolver provided while
     keeping the cwd-walk-up as the primary path (ADR-002): the git toplevel is
     consulted ONLY as a last resort, so phase-5+ cwd-pinning is never overridden
-    when ``.plan/local`` is present. Returns ``None`` only when neither resolves
-    (no ``.plan/local`` ancestor AND not inside a git repository).
+    when ``.plan/local`` is present.
+
+    This resolver is deliberately SILENT about the worktree-escape trap: it is
+    called directly by read-side project discovery
+    (:func:`extension_discovery._scan_project_for_implementors` resolves the
+    project root to scan it), and a gate run legitimately does that from the
+    raw-worktree cwd under pytest's ``filterwarnings=["error"]`` regime — a
+    warning here would abort the whole suite. The escape is instead surfaced by
+    the write-reach :func:`get_executor_path`, where a wrong-tree executor
+    regeneration (the PLAN-11 symptom) would actually land; that caller invokes
+    :func:`_warn_on_worktree_escape` on the resolved root.
+
+    Returns ``None`` only when neither resolves (no ``.plan/local`` ancestor
+    AND not inside a git repository).
     """
     root = _find_plan_root_from_cwd()
     if root is not None:
@@ -310,10 +400,22 @@ def get_executor_path() -> Path:
         Path to ``<plan-root>/.plan/execute-script.py`` where ``<plan-root>`` is
         resolved by the uniform cwd rule.
 
+    Resolution honours the overrides in the same precedence as
+    :func:`get_tracked_config_dir`: ``set_base_dir()`` override, then the
+    fine-grained ``PLAN_TRACKED_CONFIG_DIR`` environment override (which pins
+    the executor to a specific ``.plan`` dir — the remedy the
+    :class:`WorktreeEscapeWarning` message advertises), then ``PLAN_BASE_DIR``,
+    then the uniform cwd walk-up.
+
     Raises:
         RuntimeError: when the base directory cannot be resolved (no override,
             no ``PLAN_BASE_DIR``, no ``.plan/local`` ancestor of cwd, AND the
             cwd is not inside a git repository — see :func:`_resolve_plan_root`).
+    Warns:
+        WorktreeEscapeWarning: when the walk-up resolves a plan root whose own
+            ``worktrees/`` subtree contains the working directory — the
+            worktree-escape trap; the resolution still returns the escaped root
+            (:func:`_resolve_plan_root`).
     """
     # Honour the set_base_dir() / PLAN_BASE_DIR override exactly as get_base_dir
     # does, but anchor the executor at <override>/execute-script.py (the override
@@ -323,6 +425,9 @@ def get_executor_path() -> Path:
     # regenerate-on-main path.
     if _BASE_DIR_OVERRIDE is not None:
         return Path(_BASE_DIR_OVERRIDE) / 'execute-script.py'
+    env_tracked = os.environ.get('PLAN_TRACKED_CONFIG_DIR')
+    if env_tracked:
+        return Path(env_tracked) / 'execute-script.py'
     env_dir = os.environ.get('PLAN_BASE_DIR')
     if env_dir:
         return Path(env_dir) / 'execute-script.py'
@@ -333,6 +438,7 @@ def get_executor_path() -> Path:
             'ancestor of the current working directory could be found. '
             'Set PLAN_BASE_DIR to override (tests).'
         )
+    _warn_on_worktree_escape(root)
     return root / PLAN_DIR_NAME / 'execute-script.py'
 
 
@@ -385,6 +491,17 @@ def get_base_dir() -> Path:
             the cwd is not inside a git repository — the git-toplevel fallback
             in :func:`_resolve_plan_root` covers clean checkouts / CI / fresh
             clones that have no ``.plan/local`` yet).
+
+    This helper is deliberately SILENT about the worktree-escape trap. It is
+    read-reach: ``_config_core`` calls it at import time and the phase-5 caller
+    guard routes through it, so a warning here is raised to an error by the
+    test suite's ``filterwarnings=["error"]`` whenever the suite runs from the
+    raw-worktree cwd (``pytest --basetemp`` sits under the worktree's
+    ``.plan/temp``, inside the resolved root's ``worktrees/`` subtree). The
+    escape is surfaced by :func:`get_executor_path` instead — the executor is
+    where the PLAN-11 wrong-tree REGENERATION actually wrote, so the write-reach
+    surfacing lands exactly on the defect without turning read-side resolution
+    into a suite failure.
     """
     if _BASE_DIR_OVERRIDE is not None:
         return _BASE_DIR_OVERRIDE
