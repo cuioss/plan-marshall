@@ -224,11 +224,13 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ```text
 AskUserQuestion:
-  question: "A plan with id '{plan_id}' already exists. How should I proceed?"
+  question: "A plan called '{plan_id}' already exists here, so this request collides with work that is already under way. What should happen to the existing one?"
+  header: "Plan exists"
   options:
-    - label: "Resume"  description: "Continue with the existing plan as-is (proceed to refine)"
-    - label: "Replace" description: "Delete the existing plan and create a fresh one"
-    - label: "Rename"  description: "Create the plan under a different plan_id"
+    - label: "Resume (recommended)" description: "Picks the existing plan up where it left off; nothing already finished is repeated or thrown away"
+    - label: "Replace" description: "Deletes the existing plan and everything recorded against it, then starts this request from nothing"
+    - label: "Rename"  description: "Leaves the existing plan untouched and starts this request under a different name, so both can run"
+  multiSelect: false
 ```
 
 Apply the resolution in-context:
@@ -378,11 +380,13 @@ If ANY reference is stale, fire an `AskUserQuestion` natively at this site (the 
 
 ```text
 AskUserQuestion:
-  question: "Some code references cited by this lesson are stale: {stale_reference_summary}. How should I proceed?"
+  question: "This note was written a while ago and points at code that has since moved or gone: {stale_reference_summary}. Planning against it would aim at things that are no longer there. How should I proceed?"
+  header: "Stale refs"
   options:
-    - label: "Refine"   description: "Attach the obsolescence report to request.md as a clarifying note and proceed"
-    - label: "Close"    description: "The problem no longer exists — delete the lesson and this plan, and abort"
-    - label: "Residual" description: "Drop the stale references, keep the still-valid ones, and proceed"
+    - label: "Refine (recommended)" description: "Records what no longer matches alongside the request and carries on, so the later steps plan around it knowingly"
+    - label: "Close"    description: "Treats the problem as already solved: deletes both the note and this plan, and stops here"
+    - label: "Residual" description: "Drops only the parts that no longer exist and plans just the ones that still do"
+  multiSelect: false
 ```
 
 Apply the resolution in-context:
@@ -563,11 +567,13 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
   ```text
   AskUserQuestion:
-    question: "This request may match a predefined recipe. Which should I use?"
+    question: "Your request resembles {match_count} ready-made plan templates, but none closely enough to choose for you — so this one is yours to call. A template skips the usual clarifying questions and goes straight to a known set of steps. Use one?"
+    header: "Template"
     options:
-      - label: "{match_1_name}" description: "confidence {match_1_confidence} — {match_1_key}"
-      - label: "{match_2_name}" description: "confidence {match_2_confidence} — {match_2_key}"
-      - label: "No recipe"      description: "Proceed with the standard refine/outline pipeline"
+      - label: "{match_1_name}" description: "Plans this as a {match_1_name} job, using that template's fixed steps; it was the closest match, scored {match_1_confidence}"
+      - label: "{match_2_name}" description: "Plans this as a {match_2_name} job instead; a weaker match, scored {match_2_confidence}"
+      - label: "No recipe"      description: "Plans this request from scratch, asking you the usual clarifying questions first — slower, but it fits any request"
+    multiSelect: false
   ```
 
   Apply the choice in-context: on a recipe selection, persist `status.metadata.recipe_key = {selected_key}` (`manage-status metadata --set --plan-id {plan_id} --field recipe_key --value {selected_key}`); on "No recipe", persist nothing. Emit a decision-log entry recording the resolution:
@@ -760,13 +766,15 @@ The script reads `request.md` (clarified_request → original_input fallback; le
 - **Ambiguous** (`ambiguous: true`): do NOT auto-select. Branch on the OBSERVABLE — whether there is anything to offer — never on the `reason` code, which names several ambiguous conditions and would leave any unenumerated one with no prescribed handling at an operator-prompt site. When `candidates` or `additional_candidates` is non-empty, fire a native **multiSelect** `AskUserQuestion` at this site (allowing several selections): offer every entry of `candidates` first, then every entry of `additional_candidates`. When BOTH are empty there is nothing to offer — route to the **Retained bounded escape** paragraph below, whatever the `reason`. Offering the second group is what keeps a domain the project configured but the narrative never mentioned reachable through the prompt — without it the operator has to notice the omission and inject the domain by hand. Distinguish the two groups by the per-option `description`:
 
   ```text
-  AskUserQuestion (multiSelect):
-    question: "The domain for this plan is ambiguous. Which domain(s) apply? (select all that apply)"
+  AskUserQuestion:
+    question: "Your request reads as more than one kind of work, so the standards to hold it to cannot be picked for you. The kinds your own wording pointed at are listed first. Which of them apply? Pick every one that does."
+    header: "Standards"
+    multiSelect: true
     options:
-      - label: "{candidate_1.domain}" description: "Detected candidate domain"
-      - label: "{candidate_2.domain}" description: "Detected candidate domain"
+      - label: "{candidate_1.domain}" description: "Your request mentions this kind of work; picking it holds the plan to that area's conventions"
+      - label: "{candidate_2.domain}" description: "Your request mentions this kind of work; picking it holds the plan to that area's conventions"
       # ... one option per candidates entry (each is an object — use its `domain` field)
-      - label: "{additional_1}" description: "Configured for this project, not detected in the request"
+      - label: "{additional_1}" description: "Set up for this project but not mentioned in your request — pick it if this work touches that area too"
       # ... one option per additional_candidates entry (each is a bare domain-key string)
   ```
 
@@ -880,11 +888,13 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ```text
 AskUserQuestion:
-  question: "This plan collides with active sibling(s) {comma_separated_sibling_ids} ({collision_classes}). How should I proceed?"
+  question: "Work already under way covers the same ground as this request: {comma_separated_sibling_ids} ({collision_classes}). Two runs changing the same files usually end in a clash at merge time. How should I proceed?"
+  header: "Overlap"
   options:
-    - label: "Proceed" description: "Accept the overlap — the sibling and this plan are intentionally distinct"
-    - label: "Rename"  description: "Delete this plan and re-create it with updated source/files (and a new plan_id if needed)"
-    - label: "Abort"   description: "This plan duplicates an active sibling — delete it and stop plan creation"
+    - label: "Proceed" description: "Creates this plan anyway and runs both; you sort out any clash yourself when they come to merge"
+    - label: "Rename"  description: "Discards this plan and starts again over different files or a different source, so the two no longer overlap"
+    - label: "Abort"   description: "Discards this plan and stops here, on the grounds that the work already under way covers it"
+  multiSelect: false
 ```
 
 Apply the resolution in-context:
@@ -916,11 +926,13 @@ Parse `lanes.{minimal,standard,full}.phase_6_steps`, `phase_6_steps_count`, and 
 
 ```text
 AskUserQuestion:
-  question: "Which execution posture should this plan use? (recommended: {projected_posture})"
-  options:
-    - label: "full"    description: "{full_count} steps · ≈{full_tokens} tok — full security audit + retrospectives"
-    - label: "standard" description: "{standard_count} steps · ≈{standard_tokens} tok — skips sonar / lessons-housekeeping"
-    - label: "minimal" description: "{minimal_count} steps · ≈{minimal_tokens} tok — no security audit, no retrospectives; appropriate for docs / mechanical changes"
+  question: "When this plan finishes, its work goes through a series of checks before it ships. More checks catch more, but each one costs time and money. Judging by what you asked for, {projected_posture} is the fit. Take it?"
+  header: "Thoroughness"
+  options:                        # order the {projected_posture} option FIRST and append " (recommended)" to its label
+    - label: "full"    description: "{full_count} checks, roughly {full_tokens} tokens — everything below plus a security review and a written look back at how the run went"
+    - label: "standard" description: "{standard_count} checks, roughly {standard_tokens} tokens — build, review and merge as usual, with no security review and no write-up"
+    - label: "minimal" description: "{minimal_count} checks, roughly {minimal_tokens} tokens — the least that still ships safely; right for documentation and mechanical edits"
+  multiSelect: false
 ```
 
 Persist the operator's choice in-context, overwriting Step 8b's projection:
@@ -972,11 +984,13 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ```text
 AskUserQuestion:
-  question: "The build server is registered for this project but not responding ({reason}). How should I proceed?"
+  question: "This project is set up to hand its builds to a background service, but that service is not answering ({reason}). Builds still work without it, just more slowly. What should I do?"
+  header: "Build server"
   options:
-    - label: "Start now"        description: "Start marshalld (version-pinned), then re-run preflight"
-    - label: "Continue without" description: "Run builds in-process this session (the fallback)"
-    - label: "Unregister"       description: "Drop this project from the registry — builds run in-process from now on"
+    - label: "Start now (recommended)" description: "Starts the service and checks once more; if it still does not answer, this session simply builds without it"
+    - label: "Continue without" description: "Builds run in this session instead — slower, but nothing else changes, and the service is tried again next time"
+    - label: "Unregister"       description: "Stops this project using the service at all, so nothing reaches for it again until you set it up afresh"
+  multiSelect: false
 ```
 
 Apply the resolution in-context:

@@ -278,19 +278,19 @@ Treat a non-zero exit as the unset case — silently fall through to `main`.
 ```text
 AskUserQuestion:
   questions:
-    - question: "What is this project's default base branch?"
-      header: "Project Default Base Branch"
+    - question: "Every plan branches off one long-lived branch and merges back into it. Asking your git host which branch that is gave {detected_default}. Is that the one to use?"
+      header: "Base branch"
       description: |
-        `phase-1-init` will seed `references.base_branch` for every new plan from this value. Per-plan overrides remain available via `manage-references set --field base_branch` after init.
+        Each new plan starts from this branch, and you can still point an individual plan somewhere else afterwards.
 
-        **Detected default** (from `git symbolic-ref refs/remotes/origin/HEAD`): {detected_default}
+        **Detected** (from `git symbolic-ref refs/remotes/origin/HEAD`): {detected_default}
       options:
-        - label: "{detected_default}"
-          description: "Use the detected default"
+        - label: "{detected_default} (recommended)"
+          description: "Plans branch off {detected_default} and merge back into it — this is what your git host reports as the main line"
         - label: "main"
-          description: "Use main"
+          description: "Plans branch off main instead, for a repository whose git host has not been told which branch is the main line"
         - label: "Custom"
-          description: "Enter a custom branch name"
+          description: "Plans branch off a branch you name next, for a repository that develops on something other than these two"
       multiSelect: false
 ```
 
@@ -377,17 +377,17 @@ Optionally detect the current preset first — deep-equality of `plan.phase-6-fi
 
 ```text
 AskUserQuestion:
-  question: "Finalize-step pipeline — pick a preset"
-  header: "Finalize Steps"
+  question: "Finished work goes through a fixed sequence of shipping steps — committing, pushing, opening a pull request, reviewing, merging. Three ready-made sequences cover the usual cases. Which one fits this project?"
+  header: "Shipping"
   options:
+    - label: "Apply standard preset (recommended)"
+      description: <FinalizeStepPresets.describe("standard")>
     - label: "Apply local preset"
       description: <FinalizeStepPresets.describe("local")>
-    - label: "Apply standard preset"
-      description: <FinalizeStepPresets.describe("standard")>
     - label: "Apply full preset"
       description: <FinalizeStepPresets.describe("full")>
     - label: "Custom"
-      description: "Pick individual steps via the per-step multi-select"
+      description: "None of the three fits — you pick the individual steps yourself on the next screen"
   multiSelect: false
 ```
 
@@ -455,19 +455,19 @@ roundtrip".
 
 ```text
 AskUserQuestion:
-  question: "Does this project use {human label for the element}?"
-  header: "Adversarial Infra: {element id}"
+  question: "Nothing in this project's setup says whether it has {human label for the element}, and guessing wrong either wastes a wait or skips a real check. Does it?"
+  header: "Reviewers"
   description: |
-    This finalize element is gated on external infrastructure. Answer for THIS
-    project so the finalize pipeline includes it only when you actually have the
-    provider configured.
+    This one depends on a service outside this repository, so it can only be
+    answered per project. Answering keeps finished work from waiting on
+    something you do not have.
   options:
-    - label: "No"
-      description: "Not used — exclude this element (lane: off)"
     - label: "Yes"
-      description: "Used — include at the default posture (lane: standard)"
+      description: "Plans wait for it and act on what it reports, except on the quickest runs"
     - label: "Yes, always"
-      description: "Used and always run regardless of posture (lane: full)"
+      description: "Plans wait for it and act on what it reports on every run, however small"
+    - label: "No"
+      description: "Plans never wait for it; nothing here is checked against it"
   multiSelect: false
 ```
 
@@ -547,14 +547,16 @@ See [merge-queue-setup.md](merge-queue-setup.md) for the full provisioning flow.
 
 ```text
 AskUserQuestion:
-  question: "Configure permissions now?"
+  question: "Setup is otherwise done. Without a few standing approvals, routine commands will stop and ask you to confirm them one at a time. Grant those approvals now?"
+  header: "Permissions"
   options:
-    - label: "Yes"
-      description: "Set up global and project permissions"
+    - label: "Yes (recommended)"
+      description: "Approves the routine commands once, so later runs proceed without interrupting you"
       value: "yes"
     - label: "Later"
-      description: "Skip permission setup for now"
+      description: "Approves nothing now; you confirm each command as it comes up, and can grant them from the maintenance menu"
       value: "no"
+  multiSelect: false
 ```
 
 If yes, run these two commands sequentially — the first applies project-scope fixes; the second installs a narrow global allow rule for the `TERM_PROGRAM` detection pattern used by workflow auto-open / IDE hand-off steps (eliminates the `simple_expansion` permission prompt):

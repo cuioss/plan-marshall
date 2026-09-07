@@ -917,10 +917,10 @@ After the test-contract task completes, the standard verification path resumes �
 **For infeasible blocks**: The leaf returned `status: infeasible` with an `infeasibility_reason` — the declared deliverable cannot be built as scoped. This is a **planning decision, NOT a fixable code failure**: it is explicitly NOT routed through `verification-feedback` (there is no test/lint/build finding to FIX, SUPPRESS, or ACCEPT). The orchestrator's handling:
 
 1. **Mark the task `infeasible` in the ledger** (the leaf has already done this via `manage-tasks update --status infeasible`; the orchestrator confirms the terminal status is recorded). Because `infeasible` is a terminal state the loop-exit guard does NOT count, it never re-enters the task loop.
-2. **Raise `AskUserQuestion`** surfacing the `infeasibility_reason` and offering exactly three gate-level options:
-   - **(a) Drop the task** — accept that this deliverable will not be built; remove it from the active scope and continue with the remaining queue.
-   - **(b) Re-scope via a new task** — create a replacement task with a buildable, value-preserving deliverable that supersedes the infeasible one; the new task enters the queue.
-   - **(c) Abort the plan** — the infeasible deliverable is load-bearing for the whole plan; stop and return control for re-planning.
+2. **Raise `AskUserQuestion`.** Open the question by naming what execution has already established — which deliverable could not be built, and the `infeasibility_reason` that stopped it — and then what only the operator can settle: whether the plan is still worth having without it. Offer exactly three gate-level options, the recommended one first:
+   - **(a) Re-scope via a new task (recommended)** — the value is still worth having, just not in the shape that was planned; a replacement task carrying a buildable, value-preserving deliverable supersedes the infeasible one and enters the queue.
+   - **(b) Drop the task** — this deliverable is not built at all; it leaves the active scope and the rest of the queue carries on without it, so the plan ships smaller than it was written to be.
+   - **(c) Abort the plan** — the rest of the plan rests on this deliverable, so continuing would ship something incoherent; the run stops and returns for re-planning.
 3. **Record the chosen option to `decision.log`** and act on it. Do NOT dispatch `verification-feedback` on this path — the AskUserQuestion gate is the resolution mechanism.
 
 **For `no_changes_detected` blocks**: The implementation task produced no file changes. Triage options:

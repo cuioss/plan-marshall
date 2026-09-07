@@ -138,12 +138,12 @@ Ask the user which profile to use for each conflicting canonical command:
 ```text
 AskUserQuestion:
   questions:
-    - question: "Multiple profiles map to '{canonical}'. Which should be used?"
-      header: "Profile conflict"
+    - question: "More than one Maven profile in this project looks like the '{canonical}' build, so it is ambiguous which one to run. Which of them is it?"
+      header: "Profiles"
       options:
         # For each conflicting profile (dynamic):
         - label: "{profile_id}"
-          description: "Uses: mvn verify -P{profile_id}"
+          description: "Runs `mvn verify -P{profile_id}` whenever this project's {canonical} build is called for"
       multiSelect: false
 ```
 
@@ -207,13 +207,13 @@ This sub-operation is also the entry point reached when a returning user selects
 
 ```text
 AskUserQuestion:
-  question: "Refresh architecture data on every plan finalize?"
-  header: "Architecture Refresh — Tier 0"
+  question: "plan-marshall keeps a map of how this project is laid out and uses it to find things. Each time a plan finishes, it can re-read the project and correct that map. Doing so is quick. Should it?"
+  header: "Re-read"
   options:
     - label: "Enabled (recommended)"
-      description: "Run `architecture discover --force` and commit if any module diff is detected"
+      description: "Re-reads the project after every plan and records the changes, so the map never silently goes stale"
     - label: "Disabled"
-      description: "Skip the deterministic refresh entirely"
+      description: "Never re-reads it; the map drifts out of date as the project changes until you refresh it yourself"
   multiSelect: false
 ```
 
@@ -228,19 +228,19 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config \
 
 ```text
 AskUserQuestion:
-  question: "When affected modules need LLM re-enrichment, what should the finalize step do?"
-  header: "Architecture Refresh — Tier 1"
+  question: "Re-reading the project can show that a part of it changed enough that its written description no longer fits. Rewriting those descriptions takes noticeably longer than the re-read itself. What should happen when that comes up?"
+  header: "Descriptions"
   options:
-    - label: "Prompt me each time (recommended)"
-      description: "AskUserQuestion fires when modules need re-enrichment so you can decide per-plan"
-    - label: "Re-enrich automatically"
-      description: "Run enrich Steps 5–8 per affected module and commit chore(architecture); the finalize push step ships it"
-    - label: "Skip — only commit deterministic refresh"
-      description: "Always skip Tier 1 and record the deferred modules in the decision log"
+    - label: "Ask me each time (recommended)"
+      description: "You are asked once, at the end of the plan that changed it, so you can weigh the extra time against the day you are having"
+    - label: "Rewrite them automatically"
+      description: "The out-of-date descriptions are rewritten and committed for you, and ship alongside the rest of the plan's work"
+    - label: "Leave them alone"
+      description: "Descriptions are never rewritten; the parts that had drifted are written down so you can catch up on them later"
   multiSelect: false
 ```
 
-Map the selection to a `tier_1` value (`Prompt me each time (recommended)` → `prompt`; `Re-enrich automatically` → `auto`; `Skip — only commit deterministic refresh` → `disabled`) and persist:
+Map the selection to a `tier_1` value (`Ask me each time (recommended)` → `prompt`; `Rewrite them automatically` → `auto`; `Leave them alone` → `disabled`) and persist:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config \

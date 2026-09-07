@@ -28,7 +28,7 @@ Finalize steps ({N_done}/{N_total} done)
   [OK]  automated-review                  {N} comment(s) resolved (no loop-back)
   [OK]  sonar-roundtrip                   quality gate passed
   [OK]  lessons-capture                   {N} lesson(s) recorded ({lesson_ids})
-  [OK]  branch-cleanup                    main pulled, branch deleted (local+remote), worktree removed
+  [OK]  branch-cleanup                    rebased onto base, merged directly, cleanup complete
   [OK]  record-metrics                    {total_wall_formatted} / {total_tokens_formatted} tokens
   [OK]  archive-plan                      -> {archive_path}
 
@@ -54,7 +54,7 @@ Finalize steps ({N_done}/{N_total} done)
   [OK]  automated-review                  {N} comment(s) resolved (no loop-back)
   [OK]  sonar-roundtrip                   quality gate passed
   [OK]  lessons-capture                   {N} lesson(s) recorded ({lesson_ids})
-  [OK]  branch-cleanup                    main pulled, branch deleted (local+remote), worktree removed
+  [OK]  branch-cleanup                    rebased onto base, merged directly, cleanup complete
   [OK]  record-metrics                    {total_wall_formatted} / {total_tokens_formatted} tokens
   [OK]  archive-plan                      -> {archive_path}
 
@@ -224,6 +224,27 @@ When EITHER condition fails, the supplement is inactive and emission proceeds wi
 
 Invoked after `default:archive-plan` completes. Inputs: the snapshot from above plus `archive_path` returned by archive-plan.
 
+### 0. The completeness floor, then the brevity ceiling — in that order
+
+Read this before any other rule in this section, because every later rule trims, pads or bounds what the floor has already released. The order is the point: a ceiling applied first has nothing to stop it cutting the three things the reader came for.
+
+**The floor — an outcome is reported completely.** A step that failed, a step that was skipped, and a result that landed only partway are **outcome**, not narration. Each is named in the report, with the reason it turned out that way:
+
+- A step that failed is named, with what made it fail.
+- A step that was skipped is named, with the condition that skipped it.
+- A result that landed only partway says which part landed and which part did not.
+
+**No trim may drop one of these, and shortness is never the justification.** A report that fits on one line because a failure was left out of it is not a short report; it is a wrong one. The failure modes this closes are concrete and all three have shipped: a bare `skipped` that never says why, a `quality gate failed` that never says what failed, and a `[FAILED]` headline whose step rows all read `[OK]` because the failing row was trimmed for width.
+
+**The ceiling — everything that is narration is cut.** Only once the floor is satisfied does brevity apply. Narration is the account of the work; outcome is what the work produced. The reader is standing at a decision point, not reading a transcript:
+
+- **Cut**: step-by-step retelling of what was read or considered, reasoning restated after its own conclusion, per-file progress commentary, and a closing line that re-summarises the summary above it.
+- **Keep**: what changed, what failed and why, what was skipped and why, what landed only partway, and any number the reader is being asked to act on.
+
+**Where the ceiling actually binds.** The ≤80-character bound on `display_detail` (§ "display_detail Contract for Step Authors") is a ceiling in this sense, and it does not license dropping a reason: a step whose honest outcome will not fit writes the reason short rather than writing a reasonless string. The unbounded surfaces — the work-log and decision-log lines each step emits — are where the full expansion belongs, and the two are complementary rather than alternatives.
+
+This section states the discipline for THIS renderer. The governing standard, and the same floor/ceiling split applied to every other user-facing surface, is [`persona-plan-marshall-agent/standards/user-communication.md`](../../persona-plan-marshall-agent/standards/user-communication.md) § "Rule 3 — Say only what the next decision needs"; it is cross-referenced rather than restated, so this document cannot drift from it.
+
 ### 1. Resolve headline token
 
 Walk the precedence chain:
@@ -346,13 +367,20 @@ Every finalize step — built-in (`default:*`), project (`project:*`), and fully
 
 **Canonical step-ID spelling**: the `--step` argument MUST use the manifest-entry-ID spelling (`default:pre-submission-self-review`, not the bare `pre-submission-self-review`; `default:push` is normalized by `mark-step-done` to the bare `push` form used in `phase_steps`). The renderer's exact-then-strip-prefix lookup (Emission Procedure step 5 above) is a transitional defense against legacy call sites, not a license to drift — record under the canonical manifest ID so the exact-match branch wins and the strip-prefix retry stays dormant.
 
-Detail string rules:
+Detail string rules, floor first (see Emission Procedure step 0 — the floor is what the ceiling is applied to, so it is stated first here too):
 
-- **Max 80 characters** (softer limits encouraged; the renderer does not truncate)
+**The floor — what the string must carry:**
+
+- **A non-`done` outcome names its reason.** `skipped` alone, `failed` alone, and `quality gate failed` alone are contract violations: each says a thing happened and withholds the only part the reader needed. Write `skipped: no PR to review`, not `skipped`.
+- **A partial result says which part landed.** A step that did some of its work and not the rest reports both halves, never just the half that succeeded.
+- **Concrete and user-facing** — describe what the step did and what it means for the reader, not how it was implemented.
+
+**The ceiling — what the string must fit into:**
+
+- **Max 80 characters** (softer limits encouraged; the renderer does not truncate). ⛔ When an honest reason will not fit, shorten the REASON — never drop it. The unbounded work-log and decision-log lines the step also emits are where the full account belongs.
 - **No trailing period**
 - **No embedded newlines** — single line only
 - **Plain ASCII** — no unicode glyphs
-- **Concrete and user-facing** — describe what the step did, not how
 
 ### `commit_message` Step-Return Contract (mutates_source steps)
 
@@ -370,7 +398,9 @@ The dispatcher owns the commit; the step authors only the message. The same sing
 
 ### Concrete Examples per Built-in Step
 
-Each row ILLUSTRATES the contract its own step doc declares; that doc, not this table, is authoritative. The `push` rows follow [`push.md`](push.md) § "Mark Step Complete".
+Each row ILLUSTRATES the contract its own step doc declares; that doc, not this table, is authoritative. The `push` rows follow [`push.md`](push.md) § "Mark Step Complete", and the `branch-cleanup` rows follow [`branch-cleanup.md`](branch-cleanup.md) § "Mark Step Complete".
+
+**Every non-`done` row below carries its reason** — that is the floor from Emission Procedure step 0 shown at work, not incidental wording. A bare `skipped` or a bare `quality gate failed` would fail the contract these rows exist to illustrate, so no such row appears here.
 
 | Step | Outcome scenario | display_detail |
 |------|------------------|----------------|
@@ -379,16 +409,18 @@ Each row ILLUSTRATES the contract its own step doc declares; that doc, not this 
 | `finalize-step-simplify` | Edits applied | `Simplify: 2 edits, 0 findings` |
 | `create-pr` | New PR created | `#212` |
 | `create-pr` | Existing PR re-used | `existing PR #212` |
-| `create-pr` | Skipped | `skipped` |
+| `create-pr` | Skipped — local-only run | `skipped: local-only run, no PR opened` |
 | `automated-review` | Bot comments resolved on first pass | `3 comment(s) resolved (no loop-back)` |
-| `automated-review` | Skipped (no PR) | `skipped` |
+| `automated-review` | Skipped — no PR to review | `skipped: no PR exists, nothing to review` |
 | `automated-review` | Loop-back fixes applied | `loop-back iteration 2` |
 | `sonar-roundtrip` | Quality gate passed | `quality gate passed` |
-| `sonar-roundtrip` | Quality gate failed | `quality gate failed` |
-| `sonar-roundtrip` | Skipped | `skipped` |
+| `sonar-roundtrip` | Quality gate failed | `quality gate failed: 3 new issue(s) on changed lines` |
+| `sonar-roundtrip` | Skipped — no Sonar configured | `skipped: no Sonar service configured for this project` |
 | `lessons-capture` | Lessons recorded | `2 lesson(s) recorded (2026-04-17-006, 2026-04-17-007)` |
-| `lessons-capture` | Nothing captured | `no lessons recorded` |
-| `branch-cleanup` | PR mode full cleanup | `main pulled, branch deleted (local+remote), worktree removed` |
+| `lessons-capture` | Nothing captured | `no lessons recorded: no lesson-bearing signals` |
+| `branch-cleanup` | PR mode, merged directly after a rebase | `rebased onto base, merged directly, cleanup complete` |
+| `branch-cleanup` | PR mode, merged past a recorded gap | `merged under barrier-ask-override, gap recorded` |
+| `branch-cleanup` | Enqueued, merge not landed in budget | `queued, merge not landed in budget, cleanup deferred` |
 | `branch-cleanup` | Local-only mode | `local-only: switched to main` |
 | `branch-cleanup` | Declined by user | `declined by user` |
 | `record-metrics` | Metrics recorded | `{total_wall_formatted} / {total_tokens_formatted} tokens` (e.g. `1h46m / 599K tokens`) |

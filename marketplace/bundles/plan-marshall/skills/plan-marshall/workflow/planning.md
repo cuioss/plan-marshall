@@ -63,20 +63,20 @@ Build options dynamically from Step 1 and Step 2 results:
 ```text
 AskUserQuestion:
   questions:
-    - question: "Which plan would you like to work on?"
+    - question: "These are the pieces of work already under way in this project. Pick one to carry on with, or start something new."
       header: "Plans"
       options:
         # For each plan from Step 1 (dynamic):
         - label: "{plan_name} [{phase}]"
-          description: "{task_count} tasks - {title or summary}"
+          description: "Picks {plan_name} up where it stopped, at the {phase} stage — {task_count} task(s) so far: {title or summary}"
         # Always include these static options:
         - label: "Create new plan"
-          description: "Start a new plan from a task description or GitHub issue"
+          description: "Starts something new from a description you type, or from a GitHub issue you name"
         - label: "Create plan from recipe"
-          description: "Start a new plan using a project recipe"
+          description: "Starts something new from a ready-made template, for a job this project does often"
         # Only include if Step 2 returned total > 0:
         - label: "List lessons"
-          description: "Browse lessons learned and convert to plans"
+          description: "Shows the notes earlier runs left behind, any of which can be turned into a plan"
       multiSelect: false
 ```
 
@@ -567,13 +567,13 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ```text
 AskUserQuestion:
-  question: "Prune {count} superseded lesson stub(s)? (Tombstones will be preserved.)"
+  question: "{count} of the notes kept here have been replaced by newer ones, and all that is left of them is a pointer to the replacement. Deleting those pointers tidies the list, and the record of what replaced what is kept either way. Delete them?"
   header: "Cleanup"
   options:
     - label: "Yes, prune"
-      description: "Delete the .md redirect stubs; tombstones at .tombstones/{id}.json remain"
+      description: "Recommended. Deletes the {count} leftover pointer(s). Anything that still refers to an old note by name goes on resolving, because the rename record is kept"
     - label: "No, keep"
-      description: "Leave the stubs in place"
+      description: "Leaves the pointers where they are. Nothing stops working; the list of notes just stays longer than it needs to be"
   multiSelect: false
 ```
 
@@ -643,12 +643,12 @@ For each orphan entry:
 
   ```text
   AskUserQuestion:
-    question: "Select orphan plan directories to delete. Each lists the top-level entries it contains so you can decide whether the contents are recoverable."
-    header: "Orphans"
+    question: "These folders carry no plan record, so nothing can say what they were for — usually the sign of a plan interrupted while it was being created. Each is listed with what it holds, because only you can tell whether any of it is still wanted. Which should be deleted?"
+    header: "Leftovers"
     options:
       # For each non-empty orphan:
       - label: "{id}"
-        description: "{path} — contains: {comma-separated contents}"
+        description: "Deletes {path} and everything in it, permanently. It currently holds: {comma-separated contents}"
     multiSelect: true
   ```
 
@@ -725,12 +725,12 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ```text
 AskUserQuestion:
-  question: "Select stalled plans whose lesson(s) should be restored to the active corpus."
+  question: "Each of these plans took a note out of the shared list to act on, then stopped without finishing. Until the note goes back, nothing will ever pick it up again. Which of them should hand their notes back?"
   header: "Restore"
   options:
     # For each stalled plan:
     - label: "{plan_id}"
-      description: "stalled in {current_phase} ({phase_status}) — lesson(s): {comma-separated lesson_ids}{' — COLLIDES with an existing corpus entry' when correlated in duplicate_lessons}"
+      description: "Returns {comma-separated lesson_ids} to the shared list, where a later run can act on it. This plan stopped at the {current_phase} stage ({phase_status}){' — WARNING: a note of that name is already back on the list, so this one cannot be returned until you reconcile the two' when correlated in duplicate_lessons}"
   multiSelect: true
 ```
 
@@ -801,19 +801,19 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons list
 ```text
 AskUserQuestion:
   questions:
-    - question: "What would you like to do with lessons?"
-      header: "Lessons"
+    - question: "Earlier runs left these notes behind about things worth changing. Nothing acts on a note until you ask it to. Turn one into a plan, or tidy the whole set?"
+      header: "Notes"
       options:
         # For each lesson from list (dynamic):
         - label: "[{category}] {title}"
-          description: "Component: {component} — Convert to plan"
+          description: "Starts a plan that carries this note out against {component}, and takes the note off the list"
         # Always include:
         - label: "Analyze all lessons"
-          description: "Review validity, find done/combinable lessons, cleanup"
+          description: "Reads every note and reports which are already done, which say the same thing twice, and which can go — it changes nothing on its own"
         - label: "Aggregate aggressively"
-          description: "Cross-lesson grouping + supersede + prune in one batch — routes to Action: lessons-aggregate"
+          description: "Merges the notes that overlap into single ones and deletes what they replaced, in one pass. Faster than reviewing them one at a time, and less careful"
         - label: "Back to main menu"
-          description: "Return to plan list"
+          description: "Leaves every note exactly as it is and returns you to the list of plans"
       multiSelect: false
 ```
 
@@ -902,26 +902,30 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons list
 AskUserQuestion:
   questions:
     - question: |
-        ## Lessons Analysis
+        Every note was read and checked against the code as it stands today.
+        Three groups came out of that, listed below with the reasoning for
+        each. Nothing has been changed yet — this is the whole set of changes,
+        proposed once rather than one note at a time.
 
-        ### Close (already done):
+        ### Already dealt with, so proposed for deletion:
         {for each close candidate:}
         - {id}: {title} — {reasoning}
 
-        ### Merge:
+        ### Saying the same thing, so proposed for merging:
         {for each merge group:}
         - {source_id} → {target_id}: {reasoning}
 
-        ### Keep open:
+        ### Still worth doing, so left alone:
         {for each open lesson:}
         - {id}: {title}
 
-        Proceed with these actions?
+        Apply the deletions and merges above?
+      header: "Notes"
       options:
         - label: "Proceed"
-          description: "Execute all proposed close and merge actions"
+          description: "Deletes the notes in the first group and folds the second group into the notes they duplicate. The third group is untouched"
         - label: "Cancel"
-          description: "Make no changes"
+          description: "Changes nothing at all. Every note stays exactly where it is, and you can run this again later"
       multiSelect: false
 ```
 

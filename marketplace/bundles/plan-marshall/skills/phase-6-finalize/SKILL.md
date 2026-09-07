@@ -1374,6 +1374,10 @@ FOR each step_id in manifest.phase_6.steps:
 
       - **policy `ask`**: fire an `AskUserQuestion` using the options encoded in the returned `prompt_options[]`. ⛔ **Render `prompt_options[]` as returned — never a hard-coded option list.** The envelope is the authority on what the operator may choose, precisely because the option sets differ by reason; a hook that renders its own fixed three would offer the wrong ones the moment a reason's remedies diverge, which is exactly what `refusal_structural` does. Classify the halt under the existing `blocked_user_review` termination cause (item 5c) when it fires AskUserQuestion.
 
+        ⛔ **Order the envelope's `recommended` option FIRST and mark it.** `prompt_options[]` carries a `recommended` field; when it names one, that option leads the list and its label ends in ` (recommended)` — obligation 3 of [`pm-plugin-development:plugin-architecture` askuserquestion-patterns.md](../../../pm-plugin-development/skills/plugin-architecture/references/askuserquestion-patterns.md). Rendering the options in envelope order with the recommendation unmarked makes the operator re-derive a judgement the producing step already made, at the one point in the run where they have least context. When `recommended` is absent the producing step is declaring it has no view — leave every option unmarked and say so in the question rather than inventing a default; a marked recommendation that no one actually made is worse than none. Marking never removes an option: the operator still chooses.
+
+        ⛔ **Every rendered option states what happens when it is chosen, in the operator's own terms** — obligations 1 and 2 of that same document. The envelope supplies the option text; when a returned description names only the mechanism (a step id, a config key, a wait budget) rather than the consequence, render the consequence alongside it. The operator is deciding whether their change ships unreviewed, not administering the review machinery.
+
         **The four TEMPORAL reasons** (`re_review_timeout`, `rate_window_timeout`, `rate_window_not_awaitable`, `rate_window_exhausted`) share one option set and one terminal-record contract, differing only in how the "merge anyway" branch resolves the SHA it stamps (the three rate-window envelopes carry no `head_sha`; see the sub-branch note below).
 
         ⛔ **Alongside the question, name `{outcome_detail}`** — resolved from the table above — exactly as the `refusal_structural` branch below names the two figures its envelope carries. This is the prompt the UNKNOWN row exists for: an operator choosing between *wait / merge anyway / defer* is choosing on the strength of what the envelope reported, and the three rows read differently — a timeout says a budget expired, a decline says the bot answered without reviewing, and UNKNOWN says the envelope did not state which. Rendering the bare `{reason}` here collapses all three into "re-review timeout" and hands the operator a claim the envelope never made. Branch on the operator's selection:
@@ -1459,7 +1463,7 @@ FOR each step_id in manifest.phase_6.steps:
                work --plan-id {plan_id} --level WARNING \
                --message "[STATUS] (plan-marshall:phase-6-finalize) Loop-back ceiling breached — {step_ref} requested iteration {loop_back_iteration + 1} against a ceiling of {max_iterations}; refusing to admit it. The findings this round raised have no remaining iteration in which their fixes could be reviewed."
 
-             Display: "Loop-back ceiling reached: {loop_back_iteration} of {max_iterations} iterations already spent, and {step_ref} asked for another. The run is halting WITHOUT admitting it, so the findings this round raised are recorded but their fixes have NOT been reviewed — no iteration remains in which they could be. Inspect them via 'manage-findings qgate list --plan-id {plan_id} --phase 6-finalize --resolution pending' and the pending fix tasks via 'manage-tasks list --status pending --plan-id {plan_id}', then re-run when ready."
+             Display: "Stopped one round short. This run allows {max_iterations} rounds of fix-and-recheck; all {max_iterations} are spent, and {step_ref} asked for another, so the run halted instead of granting it. What that costs you: the problems found in this last round ARE recorded, but nothing checked the fixes for them — there was no round left to do it in. Nothing was merged. See exactly what is unreviewed with 'python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate list --plan-id {plan_id} --phase 6-finalize --resolution pending', and the fix tasks still open for them with the same executor's manage-tasks list verb for this plan, filtered to pending. Then re-run finalize when you are ready to give it another round."
 
              STOP.
 
@@ -1515,9 +1519,9 @@ FOR each step_id in manifest.phase_6.steps:
             work --plan-id {plan_id} --level INFO \
             --message "[STATUS] (plan-marshall:phase-6-finalize) Loop-back signalled by {step_ref} (target={loop_back_target}), iteration {loop_back_iteration + 1}/{max_iterations} admitted: returning control to user (loop_back_without_asking=false)"
         IF `loop_back_target == "5-execute"`:
-          Display: "Loop-back signalled. Run '/plan-marshall action=execute plan={plan_id}' when ready to dispatch the fix tasks."
+          Display: "Review turned up problems, and tasks to fix them have been written. Nothing is merged yet. Run '/plan-marshall action=execute plan={plan_id}' when you are ready to work through them."
         IF `loop_back_target == "6-finalize"`:
-          Display: "Loop-back signalled (inline replay). Run '/plan-marshall action=finalize plan={plan_id}' to replay the finalize step."
+          Display: "Review turned up problems that can be settled without changing any code. Nothing is merged yet. Run '/plan-marshall action=finalize plan={plan_id}' to pick the run back up at the step that raised them."
         STOP.
 
       - IF `value == true` (default): proceed directly to the granularity branch below. The ceiling has already been evaluated and the iteration already persisted at (i), so this branch performs no counting of its own.

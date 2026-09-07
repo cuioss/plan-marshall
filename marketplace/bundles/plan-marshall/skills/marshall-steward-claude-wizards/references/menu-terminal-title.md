@@ -70,13 +70,13 @@ Before either action runs, ask the user which one to take:
 
 ```text
 AskUserQuestion:
-  question: "Terminal Title — what would you like to do?"
-  header: "Terminal Title"
+  question: "A terminal tab can show which plan is running in it and whether that plan is busy, waiting on you, or finished. There are two separate things to set here. Which do you want?"
+  header: "Tab title"
   options:
     - label: "Configure hook wiring"
-      description: "Install or repair the SessionStart (matcher-less), SessionStart:clear, UserPromptSubmit, Notification, Stop, PreToolUse:AskUserQuestion, PreToolUse:Bash, PostToolUse:AskUserQuestion, PostToolUse:Bash render entries plus statusLine and env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE in the resolved Claude settings file (Action A)"
+      description: "Sets up the tab title and the status line so both refresh as the work moves along; this writes into your Claude settings"
     - label: "Override active-plan for this session"
-      description: "Write the cache mapping ${XDG_CACHE_HOME:-$HOME/.cache}/plan-marshall/sessions/$CLAUDE_CODE_SESSION_ID/active-plan so the next render trigger uses the selected plan (Action B)"
+      description: "Tells this one terminal which plan it is showing — useful when several are open, or before you have run a plan in it"
   multiSelect: false
 ```
 
@@ -232,13 +232,13 @@ install does not clear it.
 
 ```text
 AskUserQuestion:
-  question: "Every entry is installed. A re-run fixes an out-of-range timeout in ./.claude/settings.local.json, and adds a duplicate for any entry that actually lives in the shared ./.claude/settings.json. Re-run the install?"
-  header: "Terminal Title"
+  question: "The tab title is already fully set up, so there is nothing missing to install. What a re-run can still fix is a wrong time limit on one of the entries — but only for entries in your own settings file. Re-run it?"
+  header: "Tab title"
   options:
     - label: "Re-run install"
-      description: "Rewrites any hook timeout that falls outside the plausible seconds range and lives in ./.claude/settings.local.json; an entry already correct there is left untouched, and an entry homed in the shared ./.claude/settings.json is not converged — a second copy is added alongside it, leaving that surface dual-homed"
+      description: "Corrects a wrong time limit on any entry in ./.claude/settings.local.json. An entry that lives in the shared ./.claude/settings.json is not corrected — it gets a second copy alongside it instead"
     - label: "Leave as is"
-      description: "Make no changes and return to the Configuration menu"
+      description: "Changes nothing and returns you to the settings menu; the tab title keeps working as it does now"
   multiSelect: false
 ```
 
@@ -269,13 +269,13 @@ Prompt the user before writing anything:
 
 ```text
 AskUserQuestion:
-  question: "Enable the dynamic terminal title and statusLine? This installs nine render-trigger hook entries, a statusLine command, and an env entry into the resolved Claude settings file."
-  header: "Terminal Title"
+  question: "The live tab title is not set up in this project yet. Turning it on adds a small amount of wiring to your Claude settings so the title and status line can refresh as the work moves along. Turn it on?"
+  header: "Tab title"
   options:
     - label: "Enable"
-      description: "Install the SessionStart (matcher-less), SessionStart:clear, UserPromptSubmit, Notification, Stop, PreToolUse:AskUserQuestion, PreToolUse:Bash, PostToolUse:AskUserQuestion, PostToolUse:Bash hook entries plus statusLine and env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE"
+      description: "Your tab and status line start showing the running plan, the stage it is at, and whether it is busy or waiting on you"
     - label: "Skip"
-      description: "Make no changes; the terminal title stays disabled"
+      description: "Changes nothing; your tabs keep whatever title the terminal gives them, and you can turn this on later"
   multiSelect: false
 ```
 
@@ -349,13 +349,13 @@ SessionStart capture:     <capture_status>
 
   ```text
   AskUserQuestion:
-    question: "An existing statusLine command was found in the resolved Claude settings file. Overwrite it with the plan-marshall renderer?"
-    header: "Existing statusLine"
+    question: "Your Claude settings already define a status line, and it is not this one, so it was left alone rather than replaced behind your back. Only one can be shown. Replace it?"
+    header: "Status line"
     options:
       - label: "Overwrite"
-        description: "Replace the existing statusLine with `session render-title --statusline`"
+        description: "Your status line shows the running plan from now on; whatever it showed before is gone unless you put it back"
       - label: "Keep existing"
-        description: "Leave the existing statusLine command untouched; only hook entries and env will be installed"
+        description: "Your status line is left exactly as it is; the tab title still works, but the status line will not show plan progress"
     multiSelect: false
   ```
 
@@ -382,13 +382,13 @@ SessionStart capture:     <capture_status>
 
   ```text
   AskUserQuestion:
-    question: "env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE is already set in the resolved Claude settings file to a value other than \"1\". Overwrite it?"
-    header: "Existing env"
+    question: "Claude Code sets the tab title itself unless told not to, and your settings currently tell it to carry on doing so. Left as is, it will keep overwriting the plan title. Change that setting?"
+    header: "Env value"
     options:
       - label: "Overwrite"
-        description: "Set CLAUDE_CODE_DISABLE_TERMINAL_TITLE to \"1\" so Claude Code does not overwrite our title"
+        description: "Sets CLAUDE_CODE_DISABLE_TERMINAL_TITLE to \"1\", so Claude Code stops writing the tab title and the plan title survives"
       - label: "Keep existing"
-        description: "Leave the existing env value untouched"
+        description: "Leaves your setting untouched; the plan title is still written, but Claude Code will overwrite it again"
     multiSelect: false
   ```
 
@@ -473,13 +473,13 @@ client-side to retain only non-terminal plans. For each surviving plan, capture
 
   ```text
   AskUserQuestion:
-    question: "Set active plan for this session to `<plan_id>`?"
-    header: "Override active plan"
+    question: "Exactly one plan is currently running — `<plan_id>` (<current_phase> — <short_description>). Should this terminal show that one?"
+    header: "Active plan"
     options:
       - label: "Confirm"
-        description: "<current_phase> — <short_description>"
+        description: "This tab starts showing `<plan_id>` and its progress from the next update onwards"
       - label: "Cancel"
-        description: "Leave the current mapping untouched"
+        description: "This tab keeps whatever it shows now; nothing about the plan itself changes"
     multiSelect: false
   ```
 

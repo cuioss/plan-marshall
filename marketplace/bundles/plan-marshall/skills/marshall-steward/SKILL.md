@@ -173,17 +173,17 @@ The Main Menu has 6 options, which exceeds the `AskUserQuestion` 4-option cap. I
 
 ```text
 AskUserQuestion:
-  question: "What would you like to do?"
+  question: "This project is already set up, so this is the maintenance menu rather than first-run setup. What would you like to do?"
   header: "Main Menu"
   options:
     - label: "1. Maintenance"
-      description: "Regenerate executor, clean logs"
+      description: "Rebuilds the generated command runner and clears out old logs, temporary files, and archived plans"
     - label: "2. Health Check"
-      description: "Verify setup, diagnose issues"
+      description: "Checks the setup end to end and reports anything broken, missing, or out of date"
     - label: "3. Configuration"
-      description: "Build systems, skill domains"
+      description: "Change how this project builds, which standards apply, and the other project settings"
     - label: "More..."
-      description: "Show remaining Main Menu options"
+      description: "Shows the three remaining entries: Effort, Upgrade, and Quit"
   multiSelect: false
 ```
 
@@ -191,15 +191,15 @@ AskUserQuestion:
 
 ```text
 AskUserQuestion:
-  question: "What would you like to do?"
-  header: "Main Menu (continued)"
+  question: "These are the three entries that did not fit on the first page. What would you like to do?"
+  header: "More actions"
   options:
     - label: "4. Effort"
-      description: "Configure per-role model levels (variant routing)"
+      description: "Choose how much model capability each kind of work gets — more for planning and review, less for routine steps"
     - label: "5. Upgrade"
-      description: "Post-change reconciliation: regenerate, reconcile, verify, land"
+      description: "Brings this checkout back in line after a plan-marshall change: rebuilds the runner, reconciles settings, verifies, and lands the result"
     - label: "6. Quit"
-      description: "Exit plan-marshall"
+      description: "Ends this session, offering first to commit any settings changes it made"
   multiSelect: false
 ```
 
@@ -355,25 +355,25 @@ the bots not already chosen as required):
 
 ```text
 AskUserQuestion:
-  question: "Which review bots MUST participate? A required bot's silence blocks the merge gate."
-  header: "Required bots"
+  question: "No automated reviewers are configured for this project yet, so nothing is currently required to look at a pull request before it merges. Which reviewers must always weigh in?"
+  header: "Must review"
   options:                        # one per bot_registry.bot_kinds(), plus the none escape
     - label: "{bot_kind}"
-      description: "Require {bot_kind} to review before the step may complete"
+      description: "Your pull request waits for {bot_kind}, and cannot merge until it has reviewed"
     - label: "None"
-      description: "No bot is required — record an explicit empty answer"
+      description: "No reviewer is required; a merge is never held up waiting for an automated review"
   multiSelect: true
 ```
 
 ```text
 AskUserQuestion:
-  question: "Which remaining bots MAY participate? An optional bot's silence never blocks."
-  header: "Optional bots"
+  question: "Those reviewers will now block a merge until they answer. Which of the remaining ones should still review, without ever holding a merge up?"
+  header: "May review"
   options:                        # bot_registry.bot_kinds() minus the required selections
     - label: "{bot_kind}"
-      description: "Ingest and report {bot_kind}, but never gate on it"
+      description: "{bot_kind}'s comments are collected and shown to you, but a merge never waits for them"
     - label: "None"
-      description: "No optional bots — record an explicit empty answer"
+      description: "Only the reviewers you just marked as required run; no other review comments are collected"
   multiSelect: true
 ```
 
@@ -579,13 +579,13 @@ shape. The verb is read-only — it never mutates `marshal.json`. It returns
 
   ```text
   AskUserQuestion:
-    question: "The persisted build.map differs from the live-tree derivation. Re-seed it?"
-    header: "build.map drift"
+    question: "The record of which files belong to which build no longer matches what this source tree actually contains — the differences are listed above. Should that record be rebuilt from the tree?"
+    header: "Build map"
     options:
-      - label: "Yes, re-seed"
-        description: "Overwrite build.map with the live derivation"
-      - label: "No, leave as-is"
-        description: "Keep the persisted build.map (preserves deliberate hand-edits)"
+      - label: "Yes, rebuild it (recommended)"
+        description: "Replaces the record with one read straight from the current tree, so builds are chosen from what is really here"
+      - label: "No, leave it alone"
+        description: "Keeps the record exactly as it is — choose this if you edited it by hand and want those edits kept"
     multiSelect: false
   ```
 

@@ -33,20 +33,20 @@ The Configuration submenu has 14 options, which exceeds the `AskUserQuestion` 4-
 
 ```text
 AskUserQuestion:
-  question: "What would you like to configure?"
-  header: "Configuration"
+  question: "This project's settings are already in place, so nothing here has to change. Which of them do you want to look at?"
+  header: "Configure"
   options:
     - label: "Skill Domains"
-      description: "Configure implementation skills per domain"
+      description: "Choose which coding standards this project's work is written and reviewed against"
       value: "skill-domains"
     - label: "Plan Phase Settings"
-      description: "Branching, compatibility, commit strategy"
+      description: "Change how a plan branches, how far it may break existing behaviour, and when it commits"
       value: "plan-phases"
     - label: "Project Structure"
-      description: "View, regenerate, and enrich architecture data"
+      description: "See what was found in this project, re-detect it, or add your own notes to a module"
       value: "structure"
     - label: "More..."
-      description: "Show remaining configuration options"
+      description: "Shows the next three entries: Quality Pipelines, Review Gates, and Credentials"
       value: "more-1"
 ```
 
@@ -54,20 +54,20 @@ AskUserQuestion:
 
 ```text
 AskUserQuestion:
-  question: "What would you like to configure?"
-  header: "Configuration (continued)"
+  question: "These are the next three settings groups. Which one do you want to look at?"
+  header: "More config"
   options:
     - label: "Quality Pipelines"
-      description: "Verification and finalize step pipelines"
+      description: "Choose which checks run while work is being done and which run before it ships"
       value: "quality-pipelines"
     - label: "Review Gates"
-      description: "Auto-continue between phases or pause for review"
+      description: "Decide where a plan pauses for your approval and where it carries straight on"
       value: "review-gates"
     - label: "Credentials & Secrets"
-      description: "Manage external tool credentials"
+      description: "Store the logins plan-marshall needs to reach outside services on your behalf"
       value: "credentials"
     - label: "More..."
-      description: "Show remaining configuration options"
+      description: "Shows the next three entries: Terminal Title, Enforcement Hook, and Recipes"
       value: "more-2"
 ```
 
@@ -75,20 +75,20 @@ AskUserQuestion:
 
 ```text
 AskUserQuestion:
-  question: "What would you like to configure?"
-  header: "Configuration (continued)"
+  question: "These three only apply to Claude Code sessions. Which one do you want to look at?"
+  header: "More config"
   options:
     - label: "Terminal Title"
-      description: "Dynamic terminal tab title + statusline (hook-driven)"
+      description: "Makes each terminal tab show which plan is running in it and whether it is busy, waiting, or done"
       value: "terminal-title"
     - label: "Enforcement Hook"
-      description: "Conditional PreToolUse hook blocking hard-rule violations inside a plan context"
+      description: "Blocks a handful of known-bad commands while a plan is running, and stays out of the way otherwise"
       value: "enforcement-hook"
     - label: "Recipes"
-      description: "Browse built-in plan recipes (lesson_cleanup, refactor-to-profile-standards)"
+      description: "Browse the ready-made plan templates for common jobs, so a routine change skips the questions"
       value: "recipes"
     - label: "More..."
-      description: "Show remaining configuration options"
+      description: "Shows the next three entries: Derivation Resolvers, Display Timezone, and Merge Queue"
       value: "more-3"
 ```
 
@@ -103,20 +103,20 @@ AskUserQuestion:
 
 ```text
 AskUserQuestion:
-  question: "What would you like to configure?"
-  header: "Configuration (continued)"
+  question: "These three are remembered on this machine only, so a fresh clone falls back to the defaults. Which one do you want to look at?"
+  header: "More config"
   options:
     - label: "Derivation Resolvers"
-      description: "Which module-edge resolvers run in this checkout (machine-local)"
+      description: "Choose which tools are used to work out how this project's parts depend on each other"
       value: "derivation-resolvers"
     - label: "Display Timezone"
-      description: "IANA zone timestamps are rendered in (machine-local; default UTC)"
+      description: "Choose the timezone times are shown in; what is recorded never changes, only what you read"
       value: "display-timezone"
     - label: "Merge Queue"
-      description: "Probe and enable the platform merge queue (GitHub merge queue / GitLab merge train)"
+      description: "Check whether your host can queue merges and turn it on, so branches land one at a time"
       value: "merge-queue"
     - label: "More..."
-      description: "Show remaining configuration options"
+      description: "Shows the last entries: Commit Trailer, Full Reconfigure, and Back"
       value: "more-4"
 ```
 
@@ -124,17 +124,17 @@ AskUserQuestion:
 
 ```text
 AskUserQuestion:
-  question: "What would you like to configure?"
-  header: "Configuration (continued)"
+  question: "These are the last entries. Pick one, or go back if none of them is what you were after."
+  header: "More config"
   options:
     - label: "Commit Trailer"
-      description: "Co-author identity commits are recorded under (machine-local; default plan-marshall)"
+      description: "Choose the co-author name and address that assistant-written commits are recorded under"
       value: "commit-trailer"
     - label: "Full Reconfigure"
-      description: "Re-run setup wizard from Step 5 onwards (skips bootstrap steps 1-4)"
+      description: "Walks the whole setup again so you can revisit every answer; the one-time install work is not repeated"
       value: "wizard"
     - label: "Back"
-      description: "Return to the Main Menu"
+      description: "Leaves everything as it is and returns you to the main menu"
       value: "back"
 ```
 
@@ -296,12 +296,14 @@ python3 .plan/execute-script.py plan-marshall:tools-permission-doctor:permission
 If `missing` is non-empty, ask user:
 ```text
 AskUserQuestion:
-  question: "{N} project-step(s) in your phase-5-execute selection lack matching Skill() allow rules. Add them?"
+  question: "{N} of the checks you just selected are not yet allowed to run without asking, so execute would stop and prompt you for each one. Grant them now?"
+  header: "Permissions"
   options:
-    - label: "Yes"
-      description: "Add missing rules to project settings to avoid permission prompts"
+    - label: "Yes (recommended)"
+      description: "Adds the missing permissions to this project's settings, so execute runs these checks without interrupting you"
     - label: "No"
-      description: "Skip (may cause permission prompts during execute)"
+      description: "Leaves the settings alone; you will be asked to approve each of these checks every time execute reaches it"
+  multiSelect: false
 ```
 
 If yes, apply fixes:
@@ -317,17 +319,17 @@ Optionally detect the current preset first — deep-equality of `plan.phase-6-fi
 
 ```text
 AskUserQuestion:
-  question: "Finalize-step pipeline — pick a preset"
-  header: "Finalize Steps"
+  question: "Finished work goes through a fixed sequence of shipping steps — committing, pushing, opening a pull request, reviewing, merging. Three ready-made sequences cover the usual cases. Which one fits this project?"
+  header: "Shipping"
   options:
+    - label: "Apply standard preset (recommended)"
+      description: <FinalizeStepPresets.describe("standard")>
     - label: "Apply local preset"
       description: <FinalizeStepPresets.describe("local")>
-    - label: "Apply standard preset"
-      description: <FinalizeStepPresets.describe("standard")>
     - label: "Apply full preset"
       description: <FinalizeStepPresets.describe("full")>
     - label: "Custom"
-      description: "Pick individual steps via the per-step multi-select"
+      description: "None of the three fits — you pick the individual steps yourself on the next screen"
   multiSelect: false
 ```
 
@@ -347,20 +349,20 @@ The `list-finalize-steps` output includes three sources: built-in (`default:*`),
 
 ```text
 AskUserQuestion:
-  question: "Which finalize steps to include?"
-  header: "Finalize Steps"
+  question: "You chose to pick the shipping steps yourself. Every step you tick runs each time a plan finishes; every one you leave out never runs. Which should this project use?"
+  header: "Shipping"
   multiSelect: true
   options:
     - label: "default:push (Recommended)"
-      description: "Push the converged branch to remote"
+      description: "Sends the finished branch to your git host, so the work exists somewhere other than this machine"
     - label: "default:create-pr"
-      description: "Create pull request"
+      description: "Opens a pull request for the branch, so the change can be reviewed and merged the usual way"
     - label: "plan-marshall:automatic-review"
-      description: "CI automated review (CI completion is a dispatcher-resolved precondition declared via requires: [ci-complete] on this step; triage-only 900 s budget)"
+      description: "Waits for your build and review bots to finish on the pull request, then works through what they reported"
     - label: "default:lessons-capture (Recommended)"
-      description: "Record lessons learned"
+      description: "Writes down what went wrong or surprised it, so a later plan does not repeat the same mistake"
     - label: "plan-marshall:plan-retrospective (Opt-in)"
-      description: "Capture a structured retrospective of the completed plan"
+      description: "Produces a written review of how the plan itself ran — useful when tuning, noise otherwise"
 ```
 
 ```bash
@@ -376,15 +378,15 @@ After `set-steps` completes for phase-6-finalize, repeat the same project-step v
 ```text
 AskUserQuestion:
   questions:
-    - question: "Which merge strategy should be used when merging PRs?"
+    - question: "When a plan's pull request is merged, its commits can land on the main branch in three different shapes. Which does this project use?"
       header: "PR Merge"
       options:
         - label: "squash (Recommended)"
-          description: "Squash all commits into one before merging"
+          description: "The whole branch lands as a single commit; the individual commit messages are discarded"
         - label: "merge"
-          description: "Create a merge commit preserving all commits"
+          description: "Every commit lands as written, plus a merge commit recording where the branch joined"
         - label: "rebase"
-          description: "Rebase commits onto the base branch"
+          description: "Every commit lands as written, one after another, with no merge commit"
       multiSelect: false
 ```
 
@@ -424,15 +426,15 @@ answer — one `AskUserQuestion` and one `set-lane` write per element:
 
 ```text
 AskUserQuestion:
-  question: "Does this project use {PR-review bots | the Sonar new-code roundtrip}?"
-  header: "Adversarial Infra: {element id}"
+  question: "Nothing in this project's setup says whether it has {automated pull-request reviewers | a Sonar code-quality service}, and guessing wrong either wastes a wait or skips a real check. Does it?"
+  header: "Reviewers"
   options:
-    - label: "No"
-      description: "Not used — exclude this element (lane: off)"
     - label: "Yes"
-      description: "Used — include at the default posture (lane: standard)"
+      description: "Plans wait for it and act on what it reports, except on the quickest runs"
     - label: "Yes, always"
-      description: "Used and always run regardless of posture (lane: full)"
+      description: "Plans wait for it and act on what it reports on every run, however small"
+    - label: "No"
+      description: "Plans never wait for it; nothing here is checked against it"
   multiSelect: false
 ```
 
@@ -487,20 +489,20 @@ Present AskUserQuestion with applicable domains pre-selected:
 
 ```yaml
 AskUserQuestion:
-  question: "Confirm skill domains for this project:"
-  header: "Skill Domains"
+  question: "Scanning this project turned up the languages marked (detected) below, but only you know which ones the work here should actually be held to. Which standards should apply?"
+  header: "Standards"
   multiSelect: true
   options:
     # Pre-select domains from extensions_used
     # Show all available domains, mark applicable ones
     - label: "Java Development (detected)"
-      description: "Java code patterns, CDI, JUnit (pm-dev-java)"
+      description: "Java work is written and reviewed against the Java conventions: naming, null-safety, dependency injection, and JUnit tests"
     - label: "Documentation (detected)"
-      description: "AsciiDoc, ADRs (pm-documents)"
+      description: "Documentation is written and reviewed against the AsciiDoc conventions, including how decisions are recorded"
     - label: "JavaScript Development"
-      description: "Modern JS, ESLint, Jest (pm-dev-frontend)"
+      description: "JavaScript work is written and reviewed against the modern JS conventions, with ESLint and Jest expectations"
     - label: "Plugin Development"
-      description: "Claude Code components (pm-plugin-development)"
+      description: "Work on plan-marshall's own components is held to the conventions those components must follow"
 ```
 
 **Step 4: Configure selected domains**
@@ -565,17 +567,17 @@ The Project Structure operation list has 5 options, which exceeds the `AskUserQu
 
 ```yaml
 AskUserQuestion:
-  question: "What would you like to do with project structure?"
-  header: "Operation"
+  question: "plan-marshall keeps a picture of how this project is laid out and uses it to decide where new code belongs. What do you want to do with it?"
+  header: "Structure"
   options:
     - label: "View"
-      description: "Display current project structure"
+      description: "Shows the parts of the project it found and what it believes each one is for"
     - label: "Edit Module"
-      description: "Update module metadata (layer, responsibility, tips)"
+      description: "Correct or add to what it believes about one part — what it is for, and anything worth knowing when working in it"
     - label: "Manage Placement"
-      description: "Add or update placement rules"
+      description: "Change the rules that decide where a new file of a given kind is put"
     - label: "More..."
-      description: "Show remaining project-structure operations"
+      description: "Shows the remaining two entries: Regenerate and Re-seed Build Map"
   multiSelect: false
 ```
 
@@ -583,13 +585,13 @@ AskUserQuestion:
 
 ```yaml
 AskUserQuestion:
-  question: "What would you like to do with project structure?"
-  header: "Operation (continued)"
+  question: "These are the two remaining entries, both of which re-read the project instead of editing it by hand. What do you want to do?"
+  header: "Structure"
   options:
     - label: "Regenerate"
-      description: "Re-detect structure from project files"
+      description: "Reads the project again from its build files and rebuilds the picture of how it is laid out"
     - label: "Re-seed Build Map"
-      description: "Re-seed build.map after a domain extension change"
+      description: "Refreshes which files belong to which build after a new language or toolchain was added"
   multiSelect: false
 ```
 
@@ -659,13 +661,13 @@ If status is `exists`, ask user:
 
 ```yaml
 AskUserQuestion:
-  question: "Existing enrichment data found. How should we proceed?"
-  header: "Enrichment"
+  question: "This project already carries written descriptions of what each part is for — some added automatically, some possibly by you. Re-reading the project can either keep them or clear them. Which should it do?"
+  header: "Notes"
   options:
-    - label: "Keep enrichment"
-      description: "Rediscover modules but preserve LLM-added descriptions"
+    - label: "Keep enrichment (recommended)"
+      description: "The layout is re-read, but every existing description is left exactly as it is"
     - label: "Reset enrichment"
-      description: "Start fresh with empty enrichment"
+      description: "Every existing description is discarded and written again from scratch; anything you wrote by hand is lost"
   multiSelect: false
 ```
 
@@ -704,13 +706,13 @@ After automatic analysis completes, offer user the option to refine:
 
 ```yaml
 AskUserQuestion:
-  question: "LLM analysis complete. Would you like to refine any descriptions?"
-  header: "Refinement"
+  question: "Each part of the project now has a written description of what it is for, produced by reading the code and docs. Those descriptions are shown above. Do any of them need correcting?"
+  header: "Descriptions"
   options:
-    - label: "Accept all"
-      description: "Use LLM-generated descriptions as-is"
+    - label: "Accept all (recommended)"
+      description: "Keeps the descriptions as written and finishes; you can correct any of them later from this same menu"
     - label: "Refine"
-      description: "Review and adjust specific modules"
+      description: "Takes you through the parts one at a time so you can reword the ones that got it wrong"
   multiSelect: false
 ```
 
@@ -736,22 +738,23 @@ Manage credentials for external tool authentication (SonarCloud, etc.). System-a
 
 ```text
 AskUserQuestion:
-  question: "What would you like to do with credentials?"
+  question: "Some steps reach outside services on your behalf and need a login to do it. What do you want to do with those logins?"
+  header: "Logins"
   options:
     - label: "Configure new"
-      description: "Set up credentials for an external tool"
+      description: "Sets up a login for a service that has none yet; you paste the secret into a file it creates"
       value: "configure"
     - label: "Edit existing"
-      description: "Update URL, token, or password for a configured tool"
+      description: "Changes the address or sign-in method already stored for a service"
       value: "edit"
     - label: "List"
-      description: "Show configured credentials (no secrets)"
+      description: "Shows which services have a login stored; the secrets themselves are never printed"
       value: "list"
     - label: "Verify"
-      description: "Test connectivity for a configured tool"
+      description: "Tries the stored login against the service and reports whether it still works"
       value: "verify"
     - label: "Remove"
-      description: "Remove credentials for a tool"
+      description: "Deletes the stored login for a service; steps that need it will stop working"
       value: "remove"
 ```
 

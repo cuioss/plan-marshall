@@ -16,17 +16,17 @@ The Maintenance submenu has 6 options, which exceeds the `AskUserQuestion` 4-opt
 
 ```text
 AskUserQuestion:
-  question: "Which maintenance operation?"
+  question: "Nothing here is broken as far as this menu knows — these are the routine refreshes that keep the setup current after the project or plan-marshall itself has moved on. Which one do you want?"
   header: "Maintenance"
   options:
-    - label: "1. All"
-      description: "Regenerate executor + architecture + cleanup (recommended)"
+    - label: "1. All (recommended)"
+      description: "Runs the next three in order, which is what you want unless you are chasing one specific problem"
     - label: "2. Regenerate Executor"
-      description: "Rebuild executor with fresh script mappings"
+      description: "Rebuilds the command runner so newly added commands become available in this project"
     - label: "3. Regenerate Architecture"
-      description: "Re-detect project structure and extensions"
+      description: "Reads the project again and updates what plan-marshall believes about how it is laid out"
     - label: "More..."
-      description: "Show remaining maintenance operations"
+      description: "Shows the remaining entries: Cleanup, Leftover Plan Copies, and Back"
   multiSelect: false
 ```
 
@@ -34,15 +34,15 @@ AskUserQuestion:
 
 ```text
 AskUserQuestion:
-  question: "Which maintenance operation?"
-  header: "Maintenance (continued)"
+  question: "These are the entries that reclaim disk space rather than refresh anything. Which one do you want?"
+  header: "Maintenance"
   options:
     - label: "4. Cleanup"
-      description: "Clean temp, old logs, archived plans, plan-less bodies"
-    - label: "5. Worktree Cleanup"
-      description: "Reconcile git worktrees against active/archived plans"
+      description: "Deletes temporary files, old logs, and finished plans once they are past the age you configured"
+    - label: "5. Leftover Plan Copies"
+      description: "Finds the separate copies of the repository that past plans worked in, and offers to delete the ones whose plan has finished"
     - label: "6. Back"
-      description: "Return to main menu"
+      description: "Leaves everything as it is and returns you to the main menu"
   multiSelect: false
 ```
 
@@ -50,12 +50,12 @@ AskUserQuestion:
 
 | User Selection | Action | After Completion |
 |----------------|--------|------------------|
-| "1. All" | Execute Operation: All (below) | → Return to Main Menu |
+| "1. All (recommended)" | Execute Operation: All (below) | → Return to Main Menu |
 | "2. Regenerate Executor" | Execute Operation: Regenerate Executor (below) | → Return to Main Menu |
 | "3. Regenerate Architecture" | Execute Operation: Regenerate Architecture (below) | → Return to Main Menu |
 | "More..." | Present Maintenance Page 2 `AskUserQuestion` | — |
 | "4. Cleanup" | Execute Operation: Cleanup (below) | → Return to Main Menu |
-| "5. Worktree Cleanup" | Execute Operation: Worktree Cleanup (below) | → Return to Main Menu |
+| "5. Leftover Plan Copies" | Execute Operation: Worktree Cleanup (below) | → Return to Main Menu |
 | "6. Back" | Do nothing | → Return to Main Menu |
 
 ---
@@ -253,10 +253,13 @@ For each archived candidate, ask the user:
 
 ```text
 AskUserQuestion:
-  question: "Remove worktree for archived plan '{plan_id}' at {path}?"
+  question: "Plan '{plan_id}' has finished and been filed away, but the separate copy of the repository it worked in is still on disk at {path}. Delete that copy?"
+  header: "Old copy"
   options:
-    - label: "Yes, remove"
+    - label: "Yes, remove (recommended)"
+      description: "Deletes the folder at {path} and frees the disk space it holds; the plan that used it is already finished"
     - label: "No, keep"
+      description: "Leaves the folder untouched — choose this if you think it still holds changes that never made it back"
   multiSelect: false
 ```
 
