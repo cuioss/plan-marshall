@@ -29,10 +29,24 @@ which already renders correctly today) alongside the two regression arms
 arms do.
 """
 
-# ruff: noqa: I001
+# ruff: noqa: I001, E402
 import importlib.util
+import sys
+from pathlib import Path
 
 import pytest
+
+# This module publishes a guard population (see GUARD_POPULATION_SIZE below), and
+# the root conftest's ``pytest_report_header`` LOADS it to read that number BEFORE
+# collection — i.e. before pytest has prepended this file's own directory to
+# ``sys.path``. Without this insert the sibling-fixture import below raises
+# ModuleNotFoundError at that point and the header reports UNAVAILABLE for exactly
+# the run the number matters on, the passing one. See
+# ``pm-plugin-development:plugin-script-architecture`` standards/test-scaffolding.md
+# for the canonical prologue this follows.
+_FIXTURE_DIR = Path(__file__).parent
+if str(_FIXTURE_DIR) not in sys.path:
+    sys.path.insert(0, str(_FIXTURE_DIR))
 
 from _manage_metrics_fixtures import ns_generate, SCRIPT_PATH
 
@@ -45,6 +59,54 @@ _spec.loader.exec_module(manage_metrics)
 cmd_generate = manage_metrics.cmd_generate
 write_metrics = manage_metrics.write_metrics
 read_metrics_raw = manage_metrics.read_metrics_raw
+
+
+# =============================================================================
+# The derived dispatch-class population, run once and published
+# =============================================================================
+
+#: Run ONCE at import. The same result feeds the published size below and the
+#: equality assertion further down, so the number the session header reports and
+#: the number the guard actually swept cannot drift apart.
+_DISPATCH_CLASS_SCAN = manage_metrics.scan_dispatch_classes()
+
+# Non-emptiness asserted at IMPORT. Every assertion below is an equality against
+# ``population - registering``: over an EMPTY population that difference is empty
+# too, so a declaration that had also gone empty would agree with it and the guard
+# would pass having derived nothing. This failure direction is the dangerous one —
+# the smaller the derived population, the easier the equality is to satisfy.
+assert _DISPATCH_CLASS_SCAN['dispatch_classes'], (
+    'the call-graph scan derived no dispatch class at all, so every equality '
+    f'assertion below would be vacuous: {_DISPATCH_CLASS_SCAN["source"]}'
+)
+
+#: Published on EVERY run — passing included — by the root conftest's
+#: ``pytest_report_header`` (see ``_ROUTING_GUARD_MODULES`` in
+#: ``test/conftest.py``). The import-time assertion above fails an EMPTY
+#: population; publishing the size is what makes a SHRUNKEN one visible on the
+#: GREEN run, where no failure message is ever rendered.
+GUARD_POPULATION_LABEL = 'call-graph dispatch classes'
+GUARD_POPULATION_SIZE = len(_DISPATCH_CLASS_SCAN['dispatch_classes'])
+
+
+def _exclusion_divergence(
+    population: tuple[str, ...] | list[str],
+    registering: tuple[str, ...] | list[str],
+    declared: tuple[str, ...] | list[str],
+) -> dict[str, list[str]]:
+    """Compare a declared exclusion set against ``population - registering``.
+
+    The pure oracle behind the equality assertion, split out so the two failure
+    DIRECTIONS equality makes checkable can each be driven with synthetic input.
+    Both are reported separately rather than as one boolean, because they are
+    different defects with different repairs: a class the code dispatches and
+    nobody declared, versus a declared name no dispatch class answers to.
+    """
+    expected = set(population) - set(registering)
+    return {
+        'missing_from_declaration': sorted(expected - set(declared)),
+        'absent_from_population': sorted(set(declared) - expected),
+    }
 
 
 # =============================================================================
@@ -177,37 +239,134 @@ class TestDeclaredExclusionList:
         ):
             assert excluded in report, f'{excluded!r} not named in the exclusion list'
 
-    def test_exclusion_constant_is_disjoint_from_the_derived_registering_set(self):
-        """The constant's "derived from the DISPATCHING code" claim, actually enforced.
+    def test_exclusion_constant_equals_the_non_registering_half_of_the_population(self):
+        """The constant IS ``population - registering``, checked as an equality.
 
-        The previous form asserted hand-written literals against the constant
-        itself — ``'phase-2-refine' in excluded`` and three ``not in`` checks whose
-        expected values were typed into this file. Both sides of that comparison
-        were the same declaration, so it stayed green no matter where the real
-        ``record-dispatch-boundary`` call sites moved: adding a registration for an
-        excluded class, or deleting one for a registering class, changed nothing it
-        could see.
+        Two independent producers, neither of them the constant: the FULL dispatch
+        class population from ``scan_dispatch_classes`` (the call graph) and the
+        REGISTERING subset from ``scan_boundary_registrations`` (the workflow docs
+        that issue the verb). The tuple must be exactly their difference.
 
-        The oracle is now the INDEPENDENT producer:
-        ``scan_boundary_registrations`` reads the dispatching code and derives which
-        phases register. The property is disjointness — a class the code registers
-        for must never be declared non-registering.
+        This SUPERSEDES the disjointness form, which was strictly weaker in both
+        directions and is subsumed here: a class that both registers and is
+        declared lands in ``absent_from_population`` below, so the overlap the old
+        assertion caught still fails. What disjointness could NOT see is what this
+        adds — a new non-registering dispatch class nobody added to the tuple is
+        disjoint from the registering set, and a tuple entry that no longer names
+        any dispatch class is disjoint from it too. Both left the constant stale
+        while the guard stayed green and the report's "excluded by declaration"
+        list under-explained the shortfall it exists to explain.
+
+        The failure message names WHICH SIDE diverged, as the disjointness message
+        did — the two directions are different defects with different repairs.
         """
-        scan = manage_metrics.scan_boundary_registrations()
+        scan = _DISPATCH_CLASS_SCAN
+        registrations = manage_metrics.scan_boundary_registrations()
 
-        # Anti-vacuity: an empty scan makes disjointness trivially true. Assert the
-        # population is real BEFORE reading the verdict computed over it.
-        assert scan['documents_scanned'] > 0, 'scan walked no documents'
-        assert scan['registering_classes'], 'scan derived no registering class at all'
+        # Anti-vacuity for BOTH producers, asserted BEFORE the verdict computed
+        # over them is read. An empty population makes the difference empty, and an
+        # empty registering set makes the difference the whole population — either
+        # way the equality stops meaning what it says.
+        assert scan['lines_scanned'] > 0, f'read no line of {scan["source"]}'
+        assert scan['dispatch_edges_found'] > 0, f'found no dispatch edge in {scan["source"]}'
+        assert registrations['documents_scanned'] > 0, 'registration scan walked no documents'
+        assert registrations['registering_classes'], 'registration scan derived no registering class'
 
-        overlap = set(scan['registering_classes']) & set(
-            manage_metrics.DISPATCH_BOUNDARY_EXCLUDED_CLASSES
+        population = scan['dispatch_classes']
+        registering = registrations['registering_classes']
+        # The registering set is derived from a DIFFERENT source than the
+        # population, so their agreement is a real cross-check rather than a
+        # tautology: a phase that registers a boundary must be a dispatch class the
+        # call graph draws. Without this, a registering name the graph does not
+        # carry would silently subtract nothing and inflate the expected exclusions.
+        assert set(registering) <= set(population), (
+            'the dispatching code registers a boundary for phase(s) the call graph '
+            f'does not draw as a dispatch class: {sorted(set(registering) - set(population))}. '
+            f'Population from {scan["source"]}: {list(population)}'
         )
-        assert not overlap, (
-            f'declared non-registering, but the dispatching code registers a boundary '
-            f'for them: {sorted(overlap)}. Registering call sites: '
-            f'{[(r["path"], r["line"], r["phase"]) for r in scan["registering"]]}'
+
+        divergence = _exclusion_divergence(
+            population, registering, manage_metrics.DISPATCH_BOUNDARY_EXCLUDED_CLASSES
         )
+        assert divergence == {'missing_from_declaration': [], 'absent_from_population': []}, (
+            'DISPATCH_BOUNDARY_EXCLUDED_CLASSES is not the non-registering half of '
+            'the derived population. Dispatch classes the call graph names that '
+            'register no boundary and the tuple does not declare: '
+            f'{divergence["missing_from_declaration"]}. Names the tuple declares '
+            'that are not in the derived non-registering set (either no longer a '
+            'dispatch class, or the code now registers for them): '
+            f'{divergence["absent_from_population"]}. Population ({len(population)}) '
+            f'from {scan["source"]}; registering {list(registering)} from '
+            f'{[(r["path"], r["line"], r["phase"]) for r in registrations["registering"]]}'
+        )
+
+    def test_dispatch_class_scan_reports_every_edge_it_could_not_read(self):
+        """The call-graph scan suppresses nothing — ADR-14's reporting obligation.
+
+        A dropped edge shrinks the derived population, and a SMALLER population
+        makes the equality above EASIER to satisfy, so this scan's coverage holes
+        fail toward green. Every glyph occurrence therefore lands in exactly one
+        published bucket, and the one edge shape that legitimately names no class
+        carries its own reason so the residue cannot absorb a genuinely unreadable
+        edge added later.
+        """
+        scan = _DISPATCH_CLASS_SCAN
+
+        assert scan['dispatch_edges_found'] == (
+            len(scan['resolved_edges']) + len(scan['unparsed'])
+        )
+        for record in scan['unparsed']:
+            # Reported ACTIONABLY: a bucket whose records name no location is a
+            # count, not a report.
+            assert set(record) >= {'line', 'reason', 'text'}, record
+
+        unreadable = [
+            record
+            for record in scan['unparsed']
+            if record['reason'] != manage_metrics._UNPARSED_NO_ROLE_KEY
+        ]
+        assert unreadable == [], (
+            'the call-graph scan found dispatch edges it could not resolve into a '
+            'class, so its derived population is narrower than the real one: '
+            f'{unreadable}'
+        )
+
+    def test_equality_fails_when_a_non_registering_class_is_absent_from_the_tuple(self):
+        # MUTATION ARM 1 — the direction disjointness could not see. A dispatch
+        # class the code does NOT register for, and that nobody added to the
+        # declaration, is disjoint from the registering set, so the retired
+        # assertion stayed green over it. Equality reports it.
+        divergence = _exclusion_divergence(
+            population=('phase-4-plan', 'phase-5-execute', 'research', 'newly-added-class'),
+            registering=('phase-4-plan', 'phase-5-execute'),
+            declared=('research',),
+        )
+        assert divergence['missing_from_declaration'] == ['newly-added-class']
+        assert divergence['absent_from_population'] == []
+
+    def test_equality_fails_when_a_tuple_entry_is_absent_from_the_population(self):
+        # MUTATION ARM 2 — the other direction disjointness could not see. A name
+        # the tuple declares that answers to no dispatch class any longer (the
+        # class was renamed or removed) is also disjoint from the registering set.
+        divergence = _exclusion_divergence(
+            population=('phase-4-plan', 'phase-5-execute', 'research'),
+            registering=('phase-4-plan', 'phase-5-execute'),
+            declared=('research', 'retired-class'),
+        )
+        assert divergence['absent_from_population'] == ['retired-class']
+        assert divergence['missing_from_declaration'] == []
+
+    def test_equality_still_fails_on_the_overlap_disjointness_used_to_catch(self):
+        # The subsumption claim in the equality test's docstring, made checkable
+        # rather than asserted: a class the code REGISTERS for that is also
+        # declared non-registering — the only defect the retired disjointness
+        # assertion could see — still fails here.
+        divergence = _exclusion_divergence(
+            population=('phase-4-plan', 'phase-5-execute', 'research'),
+            registering=('phase-4-plan', 'phase-5-execute'),
+            declared=('research', 'phase-5-execute'),
+        )
+        assert divergence['absent_from_population'] == ['phase-5-execute']
 
     def test_registration_scan_reports_every_invocation_it_could_not_read(self):
         """The scan suppresses nothing — ADR-14's reporting obligation.

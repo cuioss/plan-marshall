@@ -18,9 +18,10 @@ For each counted entry it requires a backtick-quoted reference to the entry's ke
 inside the workflow doc's NUMBERED-CHECK block (not merely somewhere in the
 Step-3 region): a key that appears only in the region's explanatory prose — the
 preamble, the class-closure obligation, the present-state grounding precondition,
-or a worked example — does NOT count as a consuming check, because none of those
-adjudicates the candidate. A counted entry with no numbered check that references
-it fails here rather than silently shipping.
+a worked example, or a paragraph interleaved BETWEEN two numbered entries — does
+NOT count as a consuming check, because none of those adjudicates the candidate.
+A counted entry with no numbered check that references it fails here rather than
+silently shipping.
 """
 
 import re
@@ -66,8 +67,17 @@ _NUMBERED_CHECK_OPENER = re.compile(r'^\d+\.\s', re.MULTILINE)
 #: The same opener, capturing its ordinal so the run can be checked for gaps.
 _NUMBERED_CHECK_ORDINAL = re.compile(r'^(\d+)\.\s', re.MULTILINE)
 
-#: Any markdown ATX heading at column zero.
-_ATX_HEADING = re.compile(r'^#{1,6}\s', re.MULTILINE)
+#: Any markdown ATX heading. CommonMark permits UP TO THREE spaces of indentation
+#: before the ``#`` run, and the retired column-zero-only form matched none of
+#: them — so an indented ``#### `` subsection added after the checks was invisible
+#: to the structural guard, and "to the region end" over-reached past the checks
+#: with nothing failing.
+_ATX_HEADING = re.compile(r'^ {0,3}#{1,6}\s', re.MULTILINE)
+
+#: A line that CONTINUES the numbered entry above it: any indented line. Every
+#: continuation the shipped document writes — a bolded sub-heading, a nested
+#: bullet, a worked example — is indented under its opener.
+_LIST_CONTINUATION = re.compile(r'^\s+\S')
 
 
 def _checks_region(text: str) -> str:
@@ -77,20 +87,72 @@ def _checks_region(text: str) -> str:
     return text[start:end]
 
 
-def _numbered_check_block(region: str) -> str:
-    """Return only the numbered-check entries of a Step-3 ``region``.
+def _split_numbered_check_run(region: str) -> tuple[list[str], list[str]]:
+    """Split the numbered-check run into its LIST lines and the prose between them.
 
-    The block runs from the first ``N.`` numbered-check opener to the end of the
-    region, so the preamble and the ``####`` subsections that precede the checks
-    — where a candidate-list key may legitimately appear in explanatory prose
-    without any check adjudicating it — are excluded. An empty string is
-    returned when the region carries no numbered check (which the caller asserts
-    against, so it cannot pass vacuously).
+    Returns ``(list_lines, interleaved)``. ``list_lines`` are the numbered
+    openers and their indented continuations — the entries themselves.
+    ``interleaved`` are the non-list lines sitting BETWEEN entries: unindented,
+    non-blank text that opens no entry.
+
+    Splitting them is what closes the hole the ordinal-continuity check cannot
+    see. Ordinals ``[1, 2]`` are contiguous whether or not paragraphs sit between
+    ``1.`` and ``2.``, so a run taken wholesale from the first opener to the
+    region end silently swallows any such paragraph. A backtick-quoted candidate
+    key in one then reads as covered by :func:`_uncovered` while NO numbered
+    check adjudicates it — volume-read-as-coverage, reproduced inside the module
+    built to detect it.
+
+    A blank line is neither a continuation nor a break on its own: it is resolved
+    by the line that follows it, so a paragraph break INSIDE an entry keeps the
+    entry together while a blank before unindented prose does not absorb it.
     """
     match = _NUMBERED_CHECK_OPENER.search(region)
     if match is None:
-        return ''
-    return region[match.start() :]
+        return [], []
+
+    list_lines: list[str] = []
+    interleaved: list[str] = []
+    pending_blanks: list[str] = []
+    for line in region[match.start() :].splitlines():
+        if not line.strip():
+            pending_blanks.append(line)
+            continue
+        if _NUMBERED_CHECK_OPENER.match(line) or _LIST_CONTINUATION.match(line):
+            list_lines.extend(pending_blanks)
+            list_lines.append(line)
+        else:
+            interleaved.append(line)
+        pending_blanks = []
+    return list_lines, interleaved
+
+
+def _numbered_check_block(region: str) -> str:
+    """Return only the numbered-check ENTRIES of a Step-3 ``region``.
+
+    The run starts at the first ``N.`` numbered-check opener, so the preamble and
+    the ``####`` subsections that precede the checks — where a candidate-list key
+    may legitimately appear in explanatory prose without any check adjudicating
+    it — are excluded. Non-list content interleaved BETWEEN entries is excluded
+    too (see :func:`_split_numbered_check_run`); it is not dropped silently — that
+    function returns it, and the structural guard asserts it is empty against the
+    shipped document. An empty string is returned when the region carries no
+    numbered check (which the caller asserts against, so it cannot pass
+    vacuously).
+    """
+    return '\n'.join(_split_numbered_check_run(region)[0])
+
+
+def _headings_inside(block: str) -> list[str]:
+    """The ATX headings occurring inside an extracted ``block``.
+
+    Pure so a negative control can drive it with synthetic input. The guard that
+    consumes it reads the shipped document, where an indented heading does not
+    occur — so the real-document assertion alone can never demonstrate that an
+    indented heading WOULD be caught, which is precisely the hole the
+    column-zero-only pattern left open.
+    """
+    return [line for line in block.splitlines() if _ATX_HEADING.match(line)]
 
 
 def _counted_lists() -> list[CandidateList]:
@@ -151,19 +213,26 @@ class TestCountedListCheckCoverage:
         could drift out from under it and the coverage assertions above would
         quietly start reading the wrong span of text.
 
-        Both are checked here against the shipped document:
+        Three are checked here against the shipped document:
 
         * the openers form ONE contiguous ascending run, so the block is a single
           list rather than two lists with prose (or a second, unrelated ordered
           list) between them;
+        * NO non-list content sits between entries. Ordinal continuity does not
+          imply this — ``[1, 2]`` is contiguous with or without paragraphs
+          between ``1.`` and ``2.`` — and the extraction now excludes such
+          paragraphs, so this assertion is what keeps the exclusion visible
+          instead of silent: a check legitimately rewritten as an unindented
+          paragraph would otherwise vanish from the block with no signal;
         * no ATX heading occurs inside the block, so no ``####`` subsection was
           added after the checks — the property that makes "to the region end" the
           right terminator.
         """
         region = _checks_region(_WORKFLOW_DOC.read_text(encoding='utf-8'))
-        block = _numbered_check_block(region)
+        list_lines, interleaved = _split_numbered_check_run(region)
+        block = '\n'.join(list_lines)
 
-        # Anti-vacuity: an empty block would satisfy both properties trivially.
+        # Anti-vacuity: an empty block would satisfy all three properties trivially.
         assert block, 'Step-3 region carries no numbered check entry'
 
         ordinals = [int(match.group(1)) for match in _NUMBERED_CHECK_ORDINAL.finditer(block)]
@@ -178,7 +247,14 @@ class TestCountedListCheckCoverage:
             'coverage verdict in this module is drawn against the wrong text.'
         )
 
-        headings = [line for line in block.splitlines() if _ATX_HEADING.match(line)]
+        assert interleaved == [], (
+            'non-list content sits between the numbered check entries. It is '
+            'excluded from the block (a candidate key quoted in it must not read '
+            'as covered), so if any of it is meant to BE a check it has silently '
+            f'stopped counting as one: {interleaved}'
+        )
+
+        headings = _headings_inside(block)
         assert headings == [], (
             'a markdown heading occurs inside the extracted numbered-check block, '
             'so the checks are no longer the last thing in the Step-3 region and '
@@ -252,6 +328,70 @@ class TestCountedListCheckCoverage:
             CandidateList('other_covered_key', 'other', True, 'structural'),
         )
         assert _uncovered(synthetic, block) == ['prose_only_key']
+
+    def test_coverage_predicate_rejects_a_key_present_only_in_interleaved_prose(self):
+        # NEGATIVE CONTROL 3: a counted key that appears in a paragraph sitting
+        # BETWEEN two numbered entries must still be reported as uncovered. This
+        # is the hole ordinal continuity cannot see: ordinals [1, 2] are
+        # contiguous whether or not prose sits between them, so the retired
+        # "first opener to region end" extraction swallowed the paragraph and its
+        # backtick-quoted key read as covered by a check that never adjudicates it.
+        region = (
+            '### Step 3: Apply seventeen checks\n'
+            '1. **Real check** — for each `covered_key` entry, adjudicate it.\n'
+            '\n'
+            'Interleaved commentary that quotes `interleaved_key` while adjudicating\n'
+            'nothing at all.\n'
+            '\n'
+            '2. **Another check** — for each `other_covered_key` entry.\n'
+            '### Dispatched-envelope output\n'
+        )
+        list_lines, interleaved = _split_numbered_check_run(_checks_region(region))
+        block = '\n'.join(list_lines)
+        synthetic = (
+            CandidateList('interleaved_key', 'interleaved', True, 'prose_contract'),
+            CandidateList('covered_key', 'covered', True, 'structural'),
+            CandidateList('other_covered_key', 'other', True, 'structural'),
+        )
+
+        assert _uncovered(synthetic, block) == ['interleaved_key']
+        # The prose is reported, not silently dropped — the structural guard above
+        # asserts this list is empty against the shipped document.
+        assert interleaved == [
+            'Interleaved commentary that quotes `interleaved_key` while adjudicating',
+            'nothing at all.',
+        ]
+
+    def test_structural_guard_rejects_an_indented_heading_inside_the_block(self):
+        # NEGATIVE CONTROL 4: CommonMark permits up to three leading spaces on an
+        # ATX heading, so a `   #### ` subsection added after the checks is a real
+        # heading. The retired column-zero-only pattern matched none of the
+        # indented forms, leaving "to the region end" free to over-reach past the
+        # checks with the structural guard reporting clean.
+        smuggled = '   #### Subsection smuggled in behind three spaces'
+        region = (
+            '### Step 3: Apply seventeen checks\n'
+            '1. **Real check** — for each `covered_key` entry, adjudicate it.\n'
+            f'{smuggled}\n'
+            '2. **Another check** — for each `other_covered_key` entry.\n'
+            '### Dispatched-envelope output\n'
+        )
+        list_lines, interleaved = _split_numbered_check_run(_checks_region(region))
+
+        # An INDENTED heading is an indented continuation, so it lands inside the
+        # block rather than in the interleaved bucket. Naming which of the guard's
+        # assertions must catch it is the point: the other one demonstrably does
+        # not, so a heading assertion that cannot see indentation catches nothing.
+        assert interleaved == []
+        assert _headings_inside('\n'.join(list_lines)) == [smuggled]
+
+        # Every indentation CommonMark admits is a heading...
+        for indent in ('', ' ', '  ', '   '):
+            line = f'{indent}#### Subsection after the checks'
+            assert _headings_inside(line) == [line], indent
+        # ...and four spaces is an indented CODE BLOCK, not a heading, so it is
+        # correctly NOT reported. The boundary, not just the positive side.
+        assert _headings_inside('    #### not a heading') == []
 
     def test_both_new_checks_exist(self):
         # The two entries the plan targets each gained a consuming numbered check.
