@@ -8,8 +8,6 @@ phase-5-execute default:verify:coverage verify step requires only one
 resolver call (architecture resolve --command coverage) — threshold
 enforcement happens inside the build tool, not in a follow-up
 build-pyproject:pyproject_build coverage-report dispatch.
-
-See solution_outline.md deliverable 2 for the contract this guards.
 """
 
 import importlib.util

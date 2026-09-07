@@ -2,10 +2,10 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the project-level finalize-step-sync-plugin-cache SKILL contract.
 
-Deliverable 5 relocates on-main executor regeneration OUT of ``integrate_into_main``
-and INTO this project-level finalize step: after a successful cache sync, the step
-regenerates ``.plan/execute-script.py`` against the freshly-synced cache, in BOTH
-worktree and no-worktree finalize flows (closing the no-worktree staleness gap).
+On-main executor regeneration belongs to this project-level finalize step, NOT to
+``integrate_into_main``: after a successful cache sync, the step regenerates
+``.plan/execute-script.py`` against the freshly-synced cache, in BOTH worktree and
+no-worktree finalize flows (closing the no-worktree staleness gap).
 
 The step body is a markdown workflow (no executable Python body), so these tests
 assert the documented contract — the regen invocation ordering, its

@@ -3,7 +3,7 @@
 
 Every WARN literal these tests assert against is DERIVED from the checked-in
 provenance corpus (``fixtures/warn-corpus/rewrite-run-warnings.log``), never
-hand-written. The corpus carries the upstream ``cui-open-rewrite`` #118 WARN
+hand-written. The corpus carries the upstream ``cui-open-rewrite`` ``#118`` WARN
 templates filled with the upstream test's asserted fixture values — see
 ``fixtures/warn-corpus/PROVENANCE.md``.
 
@@ -189,7 +189,7 @@ class TestSubstringMatch:
 
 
 class TestFormatDriftRegression:
-    """Regression tests that fail loudly if the upstream #118 WARN shape drifts."""
+    """Regression tests that fail loudly if the upstream ``#118`` WARN shape drifts."""
 
     def test_every_corpus_finding_line_matches_the_parser(self):
         # If FINDING_PATTERN drifts away from the pinned corpus, this fails

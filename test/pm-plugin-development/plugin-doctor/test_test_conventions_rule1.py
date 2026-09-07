@@ -5,7 +5,8 @@
 The rule flags helper modules under the test tree whose basename is a
 generic name (`_fixtures.py`, `_helpers.py`, `_common.py`) or that
 collides with another helper module in a different sibling test
-directory. Lesson `2026-04-29-22-002` documents the original incident.
+directory. Either shape makes pytest register only one of the colliding
+modules in ``sys.modules``, so the other silently never loads.
 """
 
 from pathlib import Path

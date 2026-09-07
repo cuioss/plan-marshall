@@ -142,7 +142,7 @@ def test_s5_concrete_request_with_cli_signal_stays_light(plan_context):
 # S5 regex constants + _request_is_concrete importability (downstream consumers)
 # =============================================================================
 #
-# The audit retrospective check (deliverable 2) re-derives request_concrete from
+# The audit retrospective check re-derives request_concrete from
 # each archived request.md by importing these symbols. These tests lock that they
 # remain module-level and importable, and that _request_is_concrete matches the
 # documented S5 anchors.

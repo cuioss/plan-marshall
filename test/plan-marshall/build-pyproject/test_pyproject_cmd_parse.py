@@ -325,7 +325,7 @@ def test_summary_extraction_is_order_independent():
 
 
 # =============================================================================
-# Per-signature failure-detail capture (deliverable 9).
+# Per-signature failure-detail capture.
 #
 # A pytest run with N failures across M root causes must yield exactly M
 # distinct deduped detail blocks on the parsed Issues: failures sharing one
@@ -460,7 +460,7 @@ def test_issue_to_dict_round_trips_detail():
 
 
 # =============================================================================
-# `parse` slice verb (deliverable 11): `slice_failure_details`.
+# `parse` slice verb: `slice_failure_details`.
 # =============================================================================
 
 

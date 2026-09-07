@@ -31,7 +31,7 @@ null. Three defects, three deliverables exercised here:
   seeds ``status.metadata.plan_source`` on the file-pointer branch. The router
   bridges the two at read time.
 
-D3 coverage (each of a–d from the plan's deliverable 4):
+D3 coverage (each of a–d):
 
 - ``test_d3a_recorded_vector_does_not_route_deep`` — (a) replay the exact recorded
   vector against a MEASURED middle band (``path_count_middle_band``); it must NOT

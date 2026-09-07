@@ -12,10 +12,10 @@ declared meta-project-only.
 
 **The document population is DERIVED from the tree** — every ``*.md`` under
 ``marketplace/bundles/plan-marshall/`` — so a doc added later is swept without
-anyone remembering to list it. **The allow-list is derived from deliverable 1's
-classification**, not composed here: it is the set of files carrying a token
-after that classification and its remediation, and the two sub-lists below are
-read straight off deliverable 1's record rather than re-judged.
+anyone remembering to list it. **The allow-list is derived from the recorded
+shape classification**, not composed here: it is the set of files carrying a
+token after that classification and its remediation, and the two sub-lists below
+are read straight off that record rather than re-judged.
 
 Both sizes are published, because the two failure directions are different. An
 empty population would pass every assertion over nothing; an allow-list that
@@ -94,14 +94,14 @@ GUARD_POPULATION_SIZE = len(_DOCS)
 
 
 # ---------------------------------------------------------------------------
-# The allow-list, derived from deliverable 1's classification
+# The allow-list, derived from the recorded shape classification
 # ---------------------------------------------------------------------------
 #
-# Deliverable 1 walked the shipped plan-marshall bundle and classified every
-# site it found as shape-A (the meta-project's own layout or tool, named at a
+# The classification walks the shipped plan-marshall bundle and sorts every
+# site it finds into shape-A (the meta-project's own layout or tool, named at a
 # site where a consumer's behaviour does not depend on it) or shape-B (a
 # shipped instruction, guard or gate a consumer would execute and get a wrong
-# or vacuous outcome from). Deliverables 2-5 then disposed of every shape-B.
+# or vacuous outcome from). Every shape-B site is disposed of.
 #
 # The two tuples below are read off that record, not re-judged here, and each
 # carries a distinct, separately falsifiable obligation.
@@ -125,7 +125,7 @@ _D1_SHAPE_B_SCOPE_DECLARED = (
     'marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/pre-push-quality-gate.md',
 )
 
-#: Files carrying a build-tool token against which deliverable 1 raised no
+#: Files carrying a build-tool token against which the classification raises no
 #: shape-B finding: the tool is named as this repository's own, in its own
 #: documentation, in a per-build-system table, or as the token a rule forbids
 #: pinning. Legitimate self-reference.
@@ -274,7 +274,7 @@ def test_the_two_allow_list_categories_are_disjoint():
 
 
 # ---------------------------------------------------------------------------
-# Deliverable 1's remediated shape-B files stay remediated
+# The remediated shape-B files stay remediated
 # ---------------------------------------------------------------------------
 
 

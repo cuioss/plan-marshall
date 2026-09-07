@@ -4,7 +4,7 @@
 
 Drive ``cmd_check`` directly, through the shared ``conftest.load_script_module``
 loader, patching the git-diff helper. Verifies the four residual/threshold contract
-cases from solution_outline.md deliverable 4:
+cases:
 
     (a) empty residual           -> no finding
     (b) residual <= threshold    -> no finding

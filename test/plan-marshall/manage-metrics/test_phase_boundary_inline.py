@@ -139,8 +139,7 @@ def test_inline_init_phase_absent_from_missing_end_time_list(plan_context):
 def test_inline_main_context_surfaced_on_mixed_finalize_phase(plan_context, monkeypatch):
     """A 6-finalize phase carrying BOTH a dispatched total_tokens AND four-field usage
     surfaces inline_main_context_tokens (input+output+cache_creation, cache_read
-    EXCLUDED), keeps total_tokens byte-identical, and keeps its end_time marker
-    (#812).
+    EXCLUDED), keeps total_tokens byte-identical, and keeps its end_time marker.
     """
     _drive_full_six_phase_plan('inline-mixed-finalize')
     # 6-finalize closed with dispatched total_tokens=31000. Feed enrich a
@@ -159,7 +158,7 @@ def test_inline_main_context_surfaced_on_mixed_finalize_phase(plan_context, monk
     _run_inline_enrich('inline-mixed-finalize', monkeypatch, buckets=buckets)
     result = cmd_generate(ns_generate('inline-mixed-finalize'))
 
-    # #812: the timestamps-closed row keeps its end_time marker — attribution
+    # The timestamps-closed row keeps its end_time marker — attribution
     # never touches it.
     assert result['any_phase_missing_end_time'] is False
 
