@@ -532,10 +532,8 @@ _DISPATCHED_MEASURE_FIELDS = (
 # it checkable for EQUALITY rather than only for disjointness — a class the code
 # neither registers for nor names here is a hole disjointness cannot see.
 #
-# The sentence retired from this spot stated both cardinalities in prose ("Of the
-# 9 dispatch classes the call graph enumerates, 3 register a boundary"). Nothing
-# read either number, so both went stale the moment a set moved. Ask the two scans
-# for the counts; they are not restated here.
+# Neither cardinality is restated here. A count written into this comment is read
+# by nothing, so it goes stale the moment either set moves — ask the two scans.
 DISPATCH_BOUNDARY_EXCLUDED_CLASSES = (
     'phase-2-refine',        # main envelope dispatch; issues no record-dispatch-boundary
     'phase-3-outline',       # main envelope dispatch; issues no record-dispatch-boundary
@@ -721,9 +719,8 @@ def scan_boundary_registrations(bundles_root: Path | None = None) -> dict[str, A
 # list under-explains the very shortfall it exists to explain.
 #
 # Closing that gap needs the OTHER half — every dispatch class the orchestrator
-# spawns, registering or not. That population was named in prose above and never
-# produced, so the constant and the call graph were two independent declarations
-# again. This scan produces it, which upgrades the check to EQUALITY:
+# spawns, registering or not. This scan PRODUCES that population instead of
+# describing it, which is what makes the check an EQUALITY:
 #
 #     set(DISPATCH_BOUNDARY_EXCLUDED_CLASSES)
 #         == set(scan_dispatch_classes()['dispatch_classes'])
