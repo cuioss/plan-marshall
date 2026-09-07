@@ -12,6 +12,8 @@ Dependency types:
 - import: Python from X import Y statements
 - path: Relative markdown links (../../skill/file.md)
 - implements: implements: frontmatter interface references
+- lsp: language-server-derived symbol references (harvested elsewhere; see
+  :class:`DependencyType`)
 """
 
 import ast
@@ -23,13 +25,36 @@ from typing import Any, NamedTuple
 
 
 class DependencyType(Enum):
-    """Types of dependencies that can be detected."""
+    """The dependency kinds a ``component_refs`` entry can carry.
+
+    This enum is the AUTHORITATIVE VOCABULARY, not merely the list of kinds this
+    module's own detectors produce. The Axis-C derivation resolvers each derive
+    two populations from it — the kinds the resolver owns, and the complement it
+    must ignore — precisely so a new kind lands in one of the two sweeps
+    automatically rather than going untested behind a hand-listed tuple.
+
+    ``LSP`` is therefore a member with no detector HERE: the kind is materialized
+    at discovery time by the language-server harvest, not by the file-scanning
+    detectors below. While it was absent from this enum every sibling resolver's
+    ignore-population was derived over five kinds, so NO resolver was asserted to
+    ignore an ``lsp`` reference — a real kind flowing through the join that no
+    sweep covered. Declaring it here closes that gap at the single point the
+    populations are derived from, instead of hard-coding the string into each
+    sibling's ignore test, where the next kind would re-open it.
+
+    ⛔ ``resolve-dependencies.py``'s ``parse_dep_types`` type_map is deliberately
+    NOT widened to accept ``lsp``. That map is the ``--dep-types`` FILTER surface
+    of a tool whose detectors emit no ``lsp`` row, so accepting the token would
+    advertise a filter that can only ever select nothing. The map under-covering
+    this member is the intended asymmetry, not drift.
+    """
 
     SCRIPT_NOTATION = 'script'  # bundle:skill:script references
     SKILL_REFERENCE = 'skill'  # skills: frontmatter, Skill: patterns
     PYTHON_IMPORT = 'import'  # from module import statements
     RELATIVE_PATH = 'path'  # ../../skill/file.md references
     IMPLEMENTS = 'implements'  # implements: frontmatter interface refs
+    LSP = 'lsp'  # language-server-harvested symbol references (no detector here)
 
 
 class Exclusion(Enum):

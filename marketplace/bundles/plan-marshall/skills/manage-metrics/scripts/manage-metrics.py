@@ -37,6 +37,7 @@ import sys
 import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from _display_time import render_timestamp
 from _ledger_reconciliation import (
@@ -68,6 +69,7 @@ from input_validation import (
     parse_args_with_toon_errors,
     require_valid_plan_id,
 )
+from marketplace_bundles import resolve_bundles_root
 from toon_parser import parse_toon
 
 METRICS_FILE = FILE_WORK_METRICS
@@ -521,8 +523,17 @@ _DISPATCHED_MEASURE_FIELDS = (
 # (``workflow/execution.md`` → 5-execute, ``workflow/planning-outline.md`` →
 # 4-plan, ``phase-6-finalize/SKILL.md`` → 6-finalize) — NOT from any single run's
 # emitted classes, which by construction cannot contain a class that never
-# registers. Of the 9 dispatch classes the call graph enumerates, 3 register a
-# boundary (phase-4-plan, phase-5-execute, phase-6-finalize); the 6 below do not.
+# registers.
+#
+# BOTH halves of that derivation are produced rather than described:
+# :func:`scan_dispatch_classes` reads the call graph for the FULL dispatch-class
+# population, :func:`scan_boundary_registrations` reads the workflow docs for the
+# subset that REGISTERS, and the tuple below is exactly the difference. That makes
+# it checkable for EQUALITY rather than only for disjointness — a class the code
+# neither registers for nor names here is a hole disjointness cannot see.
+#
+# Neither cardinality is restated here. A count written into this comment is read
+# by nothing, so it goes stale the moment either set moves — ask the two scans.
 DISPATCH_BOUNDARY_EXCLUDED_CLASSES = (
     'phase-2-refine',        # main envelope dispatch; issues no record-dispatch-boundary
     'phase-3-outline',       # main envelope dispatch; issues no record-dispatch-boundary
@@ -531,6 +542,388 @@ DISPATCH_BOUNDARY_EXCLUDED_CLASSES = (
     'research',              # ad-hoc research dispatch (any phase)
     'enrich-module',         # 6-finalize architecture-refresh parallel dispatch
 )
+
+# ---------------------------------------------------------------------------
+# The registration scan — deriving the population the constant above declares
+# ---------------------------------------------------------------------------
+#
+# The tuple above CLAIMS to be "derived from the DISPATCHING code", and until this
+# scan existed nothing enforced that claim: the constant and the call sites it
+# describes were two independent declarations, and the only test over it asserted
+# hand-written membership literals against the constant itself — an oracle derived
+# from its own subject, which stays green no matter how far the call sites move.
+#
+# This function supplies the INDEPENDENT producer. It reads the dispatching code
+# (the workflow docs that actually issue the verb) and derives which phases
+# register a boundary, so a caller can compare the derived registering set against
+# the declared exclusion tuple instead of against a restatement of it.
+#
+# ADR-14 governs the reporting shape: an aggregation carries producer identity and
+# suppresses nothing silently. A scan that quietly dropped the invocations it could
+# not read would derive a SMALLER registering set that agrees with the declared
+# constant for the wrong reason — the population-derived-detector failure mode this
+# plan exists to remove. Every invocation this scan finds is therefore accounted
+# for in exactly one of three published buckets (``registering`` / ``template`` /
+# ``unparsed``), and the counts that make the coverage checkable ride with them.
+_BOUNDARY_VERB = 'record-dispatch-boundary'
+
+#: An invocation is a line that DISPATCHES the verb, not prose that merely names
+#: it. The discriminator is the executor notation standing immediately before the
+#: verb, which is what separates a real call site from the dozen sentences that
+#: reference the verb in passing — including the ones that quote a DIFFERENT
+#: script's executor command in the same sentence, where a bare "mentions the verb
+#: and mentions the executor" test produces a false invocation.
+_BOUNDARY_DISPATCH = re.compile(r'manage-metrics:manage-metrics\s+' + _BOUNDARY_VERB)
+
+#: The ``--phase`` argument of an invocation, read off the joined logical line.
+_BOUNDARY_PHASE_FLAG = re.compile(r'--phase\s+(\S+)')
+
+#: A CONCRETE phase key (``4-plan``, ``5-execute``, ``6-finalize``). A value that
+#: does not match is a documentation placeholder (``{phase}``, ``PHASE``) — the
+#: verb's own reference block describing the flag rather than registering for a
+#: phase. Placeholders are classified ``template`` and reported, never counted as
+#: registrations and never silently dropped.
+_CONCRETE_PHASE_KEY = re.compile(r'^\d+-[a-z0-9-]+$')
+
+
+def _join_continuation(lines: list[str], index: int) -> str:
+    """Join the WHOLE backslash-continued invocation that ``index`` falls inside.
+
+    Every registering call site spans several physical lines, and this repository
+    writes an executor invocation in two documented continuation styles: the
+    notation and the verb on one physical line, and the notation alone on one line
+    with the verb on the NEXT. The scan enters at the line carrying the verb, which
+    in the second style is not the first line of the command — so the walk goes
+    BACKWARD to the first physical line of the continuation before it goes forward
+    to the last. Both directions are needed, and for different reasons:
+
+    * forward, or the ``--phase`` argument on a later line is missed and a real
+      registration is reported as unparseable;
+    * backward, or the executor notation on an earlier line is missed, the joined
+      text fails the :data:`_BOUNDARY_DISPATCH` adjacency test, and a real
+      registration is filed as a ``prose_mentions`` record — a bucket no caller
+      asserts over, so the derived registering set would shrink SILENTLY instead of
+      failing loudly. A smaller derived set satisfies the disjointness property
+      this scan feeds more easily, so that miss fails toward green.
+    """
+    start = index
+    while start > 0 and lines[start - 1].rstrip().endswith('\\'):
+        start -= 1
+    end = start
+    while end + 1 < len(lines) and lines[end].rstrip().endswith('\\'):
+        end += 1
+    return ' '.join(part.strip().rstrip('\\').strip() for part in lines[start:end + 1])
+
+
+def scan_boundary_registrations(bundles_root: Path | None = None) -> dict[str, Any]:
+    """Derive which dispatch classes register a boundary, from the dispatching code.
+
+    Walks every markdown document under the marketplace bundles root, finds each
+    ``record-dispatch-boundary`` COMMAND invocation, and reads its ``--phase``
+    argument. The registering dispatch classes are returned as
+    ``phase-{key}`` names so they are directly comparable with
+    :data:`DISPATCH_BOUNDARY_EXCLUDED_CLASSES`.
+
+    The result PUBLISHES the population it derived from, because a bare set gives
+    a consumer no way to tell "scanned the tree and found three registering
+    classes" from "scanned nothing and found three registering classes". A caller
+    asserting over ``registering_classes`` must first check that
+    ``documents_scanned`` and ``invocations_found`` are non-zero — an empty scan
+    makes any equality assertion vacuously true.
+
+    Args:
+        bundles_root: Marketplace bundles root to scan. Defaults to the root
+            resolved from this module's own location.
+
+    Returns:
+        A dict carrying the derived verdict and its coverage:
+
+        * ``registering_classes`` — sorted ``phase-{key}`` names, the derived set.
+        * ``documents_scanned`` / ``invocations_found`` — the population.
+        * ``registering`` — one record per invocation that named a concrete phase.
+        * ``template`` — invocations whose ``--phase`` value is a documentation
+          placeholder. Reported, never counted as a registration.
+        * ``unparsed`` — invocations carrying NO readable ``--phase`` at all.
+          Reported so a call-site shape this parser cannot read is visible as a
+          coverage gap rather than shrinking the derived set silently.
+        * ``prose_mentions`` — lines naming the verb without dispatching it. Not
+          invocations, and counted separately so that every occurrence of the verb
+          in the tree lands in exactly one published bucket. A call site that
+          stopped being recognised as a dispatch shows up here as a jump in this
+          count rather than vanishing from the scan.
+        * ``scan_root`` — the directory actually walked.
+
+    Raises:
+        RuntimeError: when the bundles root cannot be resolved — a loud failure,
+            never a silent empty scan that would read as "nothing registers".
+    """
+    root = Path(bundles_root) if bundles_root is not None else resolve_bundles_root(Path(__file__))
+
+    registering: list[dict[str, Any]] = []
+    template: list[dict[str, Any]] = []
+    unparsed: list[dict[str, Any]] = []
+    prose_mentions: list[dict[str, Any]] = []
+    documents_scanned = 0
+
+    for document in sorted(root.rglob('*.md')):
+        try:
+            lines = document.read_text(encoding='utf-8').splitlines()
+        except OSError as exc:
+            # An unreadable document is a hole in the coverage, not an absence of
+            # call sites. Report it rather than letting the walk skip it silently.
+            unparsed.append(
+                {'path': str(document), 'line': 0, 'reason': f'unreadable: {exc}', 'text': ''}
+            )
+            continue
+        documents_scanned += 1
+        for index, line in enumerate(lines):
+            if _BOUNDARY_VERB not in line:
+                continue
+            joined = _join_continuation(lines, index)
+            record = {'path': str(document.relative_to(root)), 'line': index + 1, 'text': joined}
+            if not _BOUNDARY_DISPATCH.search(joined):
+                prose_mentions.append(record)
+                continue
+            match = _BOUNDARY_PHASE_FLAG.search(joined)
+            if match is None:
+                unparsed.append({**record, 'reason': 'no --phase argument'})
+                continue
+            value = match.group(1)
+            if _CONCRETE_PHASE_KEY.match(value):
+                registering.append({**record, 'phase': value})
+            else:
+                template.append({**record, 'phase': value})
+
+    return {
+        'registering_classes': tuple(sorted({f'phase-{r["phase"]}' for r in registering})),
+        'documents_scanned': documents_scanned,
+        'invocations_found': len(registering) + len(template) + len(unparsed),
+        'registering': tuple(registering),
+        'template': tuple(template),
+        'unparsed': tuple(unparsed),
+        'prose_mentions': tuple(prose_mentions),
+        'scan_root': str(root),
+    }
+
+
+# ---------------------------------------------------------------------------
+# The full dispatch-class population — derived from the call graph
+# ---------------------------------------------------------------------------
+#
+# ``scan_boundary_registrations`` above derives only the REGISTERING half of the
+# population, which is enough to check the declared exclusion tuple for
+# DISJOINTNESS and no more. Disjointness is strictly weaker than the property the
+# tuple claims to hold: a new NON-registering dispatch class that nobody adds to
+# the tuple is disjoint from the registering set, so the tuple silently goes
+# stale while the guard stays green and the report's "excluded by declaration"
+# list under-explains the very shortfall it exists to explain.
+#
+# Closing that gap needs the OTHER half — every dispatch class the orchestrator
+# spawns, registering or not. This scan PRODUCES that population instead of
+# describing it, which is what makes the check an EQUALITY:
+#
+#     set(DISPATCH_BOUNDARY_EXCLUDED_CLASSES)
+#         == set(scan_dispatch_classes()['dispatch_classes'])
+#            - set(scan_boundary_registrations()['registering_classes'])
+#
+# ADR-14 governs the reporting shape here exactly as it does for the registration
+# scan, and for a sharper reason: a dispatch edge this parser cannot read would
+# shrink the derived population, and a SMALLER population makes the equality above
+# EASIER to satisfy. A silent drop therefore fails toward green, so every glyph
+# occurrence lands in exactly one published bucket and the counts ride with the
+# verdict.
+#: The call graph, relative to the marketplace bundles root. It is the document
+#: that enumerates every dispatch path, so it is the population's producer.
+_CALL_GRAPH_RELATIVE_PATH = (
+    'plan-marshall/skills/ref-workflow-architecture/standards/call-graph.md'
+)
+
+#: A dispatch class named by its PHASE key, in any of the three spellings the
+#: graph uses: ``role=phase-5-execute`` in a diagram box, ``--phase
+#: phase-6-finalize`` in a resolver invocation, and ``--role
+#: phase-6-finalize.verification-feedback`` in the lookup-form list. The character
+#: class stops at ``.``, so the dotted form yields its phase GROUP — which is the
+#: dispatch class; the sub-key selects a level, not a different class.
+_DISPATCH_PHASE_CLASS = re.compile(r'(?:role=|--phase\s+|--role\s+)(phase-\d+-[a-z0-9-]+)')
+
+#: A SHARED dispatch envelope in the graph's bracket notation
+#: (``[verification-feedback]``). The whole bracket body must be one lowercase
+#: kebab token, and a markdown link is excluded by the negative lookahead — both
+#: keep a link label such as ``[findings-pipeline.md](...)`` from reading as an
+#: envelope. ``[VFB]`` is the legend's ABBREVIATION for one of these, not a
+#: separate class, and its uppercase spelling is what keeps it out.
+_DISPATCH_SHARED_CLASS = re.compile(r'\[([a-z][a-z0-9-]*)\](?!\()')
+
+#: The graph's dispatch-edge glyphs — the two arrows its legend defines as
+#: CROSSING a subagent envelope boundary (``══►`` and the predicate-gated
+#: ``╵┄═►``). In-context (``──►``) and conditional-in-context (``┄┄►``) arrows
+#: cross no boundary and are deliberately not matched.
+_DISPATCH_EDGE = re.compile('═+►')
+
+#: What makes a glyph occurrence an EDGE rather than prose ABOUT the notation: the
+#: line also carries a dispatch target. The legend and the "Reading the graphs"
+#: bullets name the arrow and no target, so without this discriminator every one
+#: of them would be counted as an unreadable edge — the same false-invocation
+#: problem :data:`_BOUNDARY_DISPATCH` solves for the registration scan.
+_DISPATCH_TARGET = re.compile(r'\[[a-z]|execution-context|role=|--phase\s+phase-')
+
+#: The one edge shape that legitimately names NO dispatch class: the graph draws
+#: a bare ``execution-context`` dispatch for the change-type LLM fallback, which
+#: the document itself annotates "uses effort, no role key". It has no class name
+#: to derive, so it is reported here rather than silently counted as a resolved
+#: edge or silently dropped. Any OTHER unresolvable edge carries the generic
+#: reason below, which is what a caller can assert has not appeared.
+_UNPARSED_NO_ROLE_KEY = 'dispatch target carries no role key, so it names no class'
+_UNPARSED_UNREADABLE = 'edge names a target this parser cannot resolve into a class'
+
+#: A bracket envelope token the diagram WRAPPED across two rows: an opening
+#: ``[``, a lowercase kebab fragment, and no closing ``]`` before the row ends.
+#: Matched against the row with its trailing box border stripped.
+_WRAPPED_LABEL_HEAD = re.compile(r'\[([a-z][a-z0-9-]*)$')
+
+#: The tail of such a label on the FOLLOWING row: the first kebab token that
+#: closes the bracket. The two rows are NOT column-aligned in this document, so
+#: the tail is located by token shape rather than by position.
+_WRAPPED_LABEL_TAIL = re.compile(r'([a-z0-9-]+)\]')
+
+#: Box-drawing characters that frame every diagram row. Stripped from the right
+#: edge before the wrapped-label test, so a label ending a row is visible as
+#: ending it.
+_BOX_EDGE_CHARS = '│ \t'
+
+
+def _wrapped_shared_class(lines: list[str], index: int) -> str | None:
+    """Rejoin a bracket envelope label the diagram split across two rows.
+
+    The sibling of :func:`_join_continuation`, and it exists for the same reason:
+    a real occurrence written across two physical lines must not read as an
+    unreadable one. Two edges in the call graph draw ``[verification-feedback]``
+    with the ``[verification-`` head on one row and the ``feedback]`` tail on the
+    next, and both would otherwise be reported as coverage gaps forever —
+    normalising a non-empty ``unparsed`` bucket until a REAL gap could hide in it.
+
+    Returns the joined class name, or ``None`` when this row carries no
+    unterminated label or the next row carries no closing token.
+    """
+    head = _WRAPPED_LABEL_HEAD.search(lines[index].rstrip(_BOX_EDGE_CHARS))
+    if head is None or index + 1 >= len(lines):
+        return None
+    tail = _WRAPPED_LABEL_TAIL.search(lines[index + 1])
+    if tail is None:
+        return None
+    return head.group(1) + tail.group(1)
+
+
+def scan_dispatch_classes(call_graph: Path | None = None) -> dict[str, Any]:
+    """Derive the FULL dispatch-class population from the call-graph document.
+
+    Reads the document that enumerates every dispatch path and returns every
+    dispatch class it names — the phase envelopes (``phase-2-refine`` …
+    ``phase-6-finalize``) and the shared envelopes the graph writes in bracket
+    notation (``[verification-feedback]`` and friends) — so a caller can compare
+    :data:`DISPATCH_BOUNDARY_EXCLUDED_CLASSES` against the population MINUS the
+    registering set derived by :func:`scan_boundary_registrations`.
+
+    The result PUBLISHES its coverage for the same reason that scan does: a bare
+    set gives a consumer no way to tell "read the graph and found nine classes"
+    from "read nothing and found nine classes". A caller asserting over
+    ``dispatch_classes`` must first check ``lines_scanned`` and
+    ``dispatch_edges_found`` are non-zero — over an empty scan any equality
+    assertion is vacuously true, and here it fails toward GREEN, because the
+    smaller the derived population the easier the equality is to satisfy.
+
+    Args:
+        call_graph: The call-graph document to read. Defaults to the path
+            resolved from this module's own location.
+
+    Returns:
+        A dict carrying the derived population and its coverage:
+
+        * ``dispatch_classes`` — the union of the two producers below, sorted.
+          THIS is the full population. Only edge TARGETS contribute; the same two
+          notations appearing in prose do not.
+        * ``phase_classes`` / ``shared_classes`` — the two producers separately,
+          so a caller can see which half moved.
+        * ``lines_scanned`` — the document's size, the anti-vacuity denominator.
+        * ``dispatch_edges_found`` — edges that named a target, i.e.
+          ``len(resolved_edges) + len(unparsed)``.
+        * ``resolved_edges`` — one record per edge whose class(es) were read.
+        * ``unparsed`` — one record per edge that carried a target this parser
+          could NOT resolve into a class, each carrying the ``reason``. Published
+          so an unreadable edge shows as a coverage gap instead of quietly
+          shrinking the population. Two reasons are distinguished:
+          :data:`_UNPARSED_NO_ROLE_KEY` for the graph's one deliberately
+          class-less dispatch, and :data:`_UNPARSED_UNREADABLE` for everything
+          else — so a caller can assert the second has not appeared without
+          having to tolerate a permanently non-empty bucket.
+        * ``glyph_mentions`` — occurrences of the arrow that name no target at
+          all: the legend, and the prose that documents the notation. Counted
+          separately so every glyph in the document lands in exactly one bucket.
+        * ``source`` — the document actually read.
+
+    Raises:
+        RuntimeError: when the call graph cannot be read — a loud failure, never
+            a silent empty scan that would read as "nothing dispatches".
+    """
+    path = (
+        Path(call_graph)
+        if call_graph is not None
+        else resolve_bundles_root(Path(__file__)) / _CALL_GRAPH_RELATIVE_PATH
+    )
+    try:
+        lines = path.read_text(encoding='utf-8').splitlines()
+    except OSError as exc:
+        raise RuntimeError(f'cannot read the call graph at {path}: {exc}') from exc
+
+    phase_classes: set[str] = set()
+    shared_classes: set[str] = set()
+    resolved_edges: list[dict[str, Any]] = []
+    unparsed: list[dict[str, Any]] = []
+    glyph_mentions: list[dict[str, Any]] = []
+
+    for index, line in enumerate(lines):
+        # A dispatch class is a class named as the TARGET OF A DISPATCH EDGE. The
+        # document-wide alternative was tried and is wrong: both notations also
+        # occur in ordinary prose — ``requires: [ci-complete]`` is a step's
+        # precondition list, not an envelope — and harvesting those INFLATES the
+        # population with names no class answers to. Restricting to edge rows is
+        # the same adjacency discriminator :data:`_BOUNDARY_DISPATCH` applies for
+        # the registration scan, and it costs no real class: every one is drawn as
+        # an edge target somewhere in the graph.
+        if not _DISPATCH_EDGE.search(line):
+            continue
+        on_line_phase = _DISPATCH_PHASE_CLASS.findall(line)
+        on_line_shared = _DISPATCH_SHARED_CLASS.findall(line)
+        wrapped = _wrapped_shared_class(lines, index)
+        if wrapped is not None:
+            on_line_shared = [*on_line_shared, wrapped]
+        phase_classes.update(on_line_phase)
+        shared_classes.update(on_line_shared)
+
+        record = {'line': index + 1, 'text': line.strip()}
+        if on_line_phase or on_line_shared:
+            resolved_edges.append({**record, 'dispatch_classes': [*on_line_phase, *on_line_shared]})
+        elif _DISPATCH_TARGET.search(line):
+            reason = (
+                _UNPARSED_NO_ROLE_KEY
+                if 'execution-context' in line and '[' not in line
+                else _UNPARSED_UNREADABLE
+            )
+            unparsed.append({**record, 'reason': reason})
+        else:
+            glyph_mentions.append(record)
+
+    return {
+        'dispatch_classes': tuple(sorted(phase_classes | shared_classes)),
+        'phase_classes': tuple(sorted(phase_classes)),
+        'shared_classes': tuple(sorted(shared_classes)),
+        'lines_scanned': len(lines),
+        'dispatch_edges_found': len(resolved_edges) + len(unparsed),
+        'resolved_edges': tuple(resolved_edges),
+        'unparsed': tuple(unparsed),
+        'glyph_mentions': tuple(glyph_mentions),
+        'source': str(path),
+    }
 
 
 def _boundary_coverage_state(phase_row: dict) -> str | None:

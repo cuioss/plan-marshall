@@ -160,11 +160,17 @@ def _forbid_builds(monkeypatch, invoked: list) -> None:
     cases here take. It is NOT a claim that the gate is subprocess-free in
     general: past the short-circuit, a ledger row that satisfies the primary
     predicate is cross-checked against the architecture, and that resolution runs
-    the live module crawl — which does shell out (``git``, and a build tool's own
-    discovery verbs on a Maven/Gradle/npm project). Those are discovery commands,
-    not a build, so the "never run a build to satisfy the gate" rule still holds;
-    the blanket "no subprocess" property does not, and asserting it on the
-    candidate path would fail for the right reason.
+    the live module crawl — which shells out to ``git`` (``_architecture_core``
+    resolves a checkout root with ``git rev-parse --show-toplevel``). That single
+    invocation is a discovery command, not a build, so the "never run a build to
+    satisfy the gate" rule still holds while the blanket "no subprocess" property
+    does not — and it alone is enough to make asserting the blanket property on
+    the candidate path fail for the right reason.
+
+    Deliberately NOT said, because this file has no evidence for either: that the
+    crawl also runs a build tool's own discovery verbs, and that the ``git`` call
+    computes a worktree sha. The narrowing above stands on the checkout-root
+    resolution, which is what the crawl demonstrably issues.
     """
     import subprocess
 

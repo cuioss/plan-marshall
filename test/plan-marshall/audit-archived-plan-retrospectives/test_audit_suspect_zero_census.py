@@ -129,6 +129,78 @@ class TestZeroClassification:
         )
 
 
+class TestMissingCountVersusMeasuredZero:
+    """`.get(check)` — NOT `.get(check, 0)`. The two states must stay separable.
+
+    The census reads each check's genuine count with a bare `.get`, so a check
+    the caller supplied NO count for arrives as `None` and is reported
+    `no_count`. Substituting `.get(check, 0)` collapses that into a measured
+    zero: the row would read `disciplinary` — *"a non-empty examined population
+    and nothing genuine"* — about a count the census never had, and the blank
+    column would become a `0` no reader could tell from a real measurement.
+
+    That substitution survived the whole suite directory, because every other
+    case here either supplies the key or takes the earlier `no_block` branch,
+    which returns before the `.get` is reached. The two cases below are one
+    another's discriminator: identical block, identical corpus, differing only
+    in whether the key is present.
+    """
+
+    _CHECK = "dispatch-topology"
+
+    def _row(self, per_check_genuine: dict) -> dict:
+        rows = audit.suspect_zero_census(
+            [_MEASURED_ZERO_BLOCK], per_check_genuine, {}, corpus_size=5
+        )
+        return next(r for r in rows if r["check"] == self._CHECK)
+
+    def test_a_check_absent_from_the_counts_is_no_count_with_a_blank_signal(self):
+        """No count was read, so the row says so and renders nothing in its place."""
+        row = self._row({})
+
+        assert row["zero_class"] == audit._ZERO_NO_COUNT
+        assert row["genuine_signal_count"] == "", (
+            "the blank is absence of a reading; a 0 here would be indistinguishable "
+            "from a measured zero"
+        )
+        assert "NOT a measured zero" in row["reading"]
+
+    def test_the_same_check_carrying_zero_is_disciplinary_with_a_zero_signal(self):
+        """The mirror: an explicit 0 IS a measurement, and reads as one.
+
+        Without this half the case above would also pass on a census that
+        classified every row `no_count`, and the `.get`-vs-`.get(…, 0)`
+        distinction would be asserted from only one side.
+        """
+        row = self._row({self._CHECK: 0})
+
+        assert row["zero_class"] == audit._ZERO_DISCIPLINARY
+        assert row["genuine_signal_count"] == 0
+
+    def test_the_two_states_tally_on_different_axes(self):
+        """The rendered block separates them too, one line apart.
+
+        Classifying correctly and then tallying both under one count would
+        republish the conflation the class exists to remove, so both counts are
+        asserted as a pair on each side.
+        """
+        missing = audit.emit_suspect_zero_census_block(
+            audit.suspect_zero_census([_MEASURED_ZERO_BLOCK], {}, {}, corpus_size=5),
+            corpus_size=5,
+        )
+        measured = audit.emit_suspect_zero_census_block(
+            audit.suspect_zero_census(
+                [_MEASURED_ZERO_BLOCK], {self._CHECK: 0}, {}, corpus_size=5
+            ),
+            corpus_size=5,
+        )
+
+        assert "no_count_count: 1" in missing
+        assert "disciplinary_count: 0" in missing
+        assert "no_count_count: 0" in measured
+        assert "disciplinary_count: 1" in measured
+
+
 class TestCensusRows:
     def test_every_registered_check_gets_a_row(self):
         rows = audit.suspect_zero_census([], {}, {}, corpus_size=3)

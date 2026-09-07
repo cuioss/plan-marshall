@@ -307,7 +307,7 @@ def test_footprint_resolver_accepts_the_no_plan_sentinel(plan_context, monkeypat
 
 
 def test_footprint_resolver_never_diffs_the_current_directory(plan_context, monkeypatch):
-    """An unresolvable worktree yields ``None``; no diff is attempted at all.
+    """A RAISING worktree query yields ``None``; no diff is attempted on that route.
 
     This previously degraded to ``Path.cwd()`` on the reasoning that
     verify-failure classification is advisory and an archived plan should still
@@ -319,6 +319,18 @@ def test_footprint_resolver_never_diffs_the_current_directory(plan_context, monk
     The assertion is that ``compute_plan_branch_diff`` is never reached: a test
     that only checked the return value would still pass if the resolver diffed
     the cwd and happened to discard the result.
+
+    ⛔ SCOPE, stated because the name reads wider than the coverage. The stub
+    makes ``file_ops._query_worktree_path`` RAISE, so this case covers exactly
+    the raising route — ``_resolve_declared_footprint`` guards
+    ``WorktreeResolutionError`` and nothing else. It does NOT cover the
+    ``pending`` route: ``resolve_plan_context`` returns the MAIN CHECKOUT rather
+    than raising for a plan whose worktree is opted into but not yet
+    materialized, so a pending plan is still diffed against a tree that is not
+    its own and the result is still returned as the plan's footprint. No
+    ``has_worktree`` / ``worktree_state`` gate exists in the resolver to make
+    that route reachable from here, so the claim this docstring makes stops at
+    the raising route rather than at "any unresolvable worktree".
     """
     plan_dir = plan_context.plan_dir_for('vfs-unresolvable')
     (plan_dir / 'references.json').write_text(json.dumps({'base_branch': 'main'}))
@@ -336,7 +348,10 @@ def test_footprint_resolver_never_diffs_the_current_directory(plan_context, monk
     monkeypatch.setattr(file_ops, '_query_worktree_path', _raise)
 
     assert vfs._resolve_declared_footprint(plan_dir, 'vfs-unresolvable') is None
-    assert 'worktree' not in captured, 'no diff may be attempted against any tree'
+    assert 'worktree' not in captured, (
+        'a RAISING worktree query still reached compute_plan_branch_diff; on this '
+        'route no diff may be attempted against any tree'
+    )
 
 
 # =============================================================================

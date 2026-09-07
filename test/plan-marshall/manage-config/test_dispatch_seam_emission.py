@@ -28,6 +28,17 @@ write), asserting:
   it does not;
 - the ``[DISPATCH]`` line's ``plan_id=`` field names the log the record was
   filed under, so the truthy ``NO_PLAN`` sentinel renders as ``none``.
+
+⛔ **Scope boundary — this file exercises the SEAM, never a document.** Every test
+here drives ``resolve-target`` directly, so nothing in it can observe whether a
+shipped workflow document actually goes through the seam: a doc that reinstated a
+hand-written ``[DISPATCH]`` line, or dropped ``--workflow`` from its resolve, leaves
+every assertion below unchanged. That is a DOCUMENT contract, and it is verified
+where the documents are read — ``test/plan-marshall/phase-6-finalize/
+test_dispatch_roster_closure.py`` (the seam-pairing and hand-written-emit sweeps
+over every markdown file under the finalize skill). A finalize-flavoured copy of
+the per-firing test used to sit here and was deleted for exactly this reason; see
+the comment block below where it stood.
 """
 
 import json
@@ -164,44 +175,33 @@ def test_role_fired_n_times_produces_n_records(plan_context):
 
 
 # =============================================================================
-# (plan-180 D2) The FINALIZE dispatch rides the seam: N spawns emit N lines under
-# the finalize caller. Finalize previously HAND-WROTE the [DISPATCH] line once per
-# role, so a re-fire that reused the envelope logged once; migrating its resolves
-# to the seam makes every finalize firing re-emit. This pins the N>1 per-spawn
-# property specifically for the finalize dispatch path.
+# (plan-180 D2) The FINALIZE dispatch rides the seam — verified ELSEWHERE.
+#
+# A `test_finalize_dispatch_emits_one_line_per_spawn` used to sit here. It called
+# `resolve-target` three times with `--caller plan-marshall:phase-6-finalize` and
+# asserted three lines came back. That is this file's own per-firing property
+# (already covered by `test_role_fired_n_times_produces_n_records` below, over
+# n ∈ {1, 2, 3, 7}) with a different `--caller` string — it read no finalize
+# document, so it passed unchanged against the exact document mutation its comment
+# claimed to catch: restoring a hand-written `[DISPATCH]` line, or dropping
+# `--workflow` from a finalize resolve, leaves three seam calls emitting three
+# lines and the test green.
+#
+# The property "the finalize documents dispatch through the seam" is a DOCUMENT
+# contract and is verified where the documents are read:
+#
+#   test/plan-marshall/phase-6-finalize/test_dispatch_roster_closure.py
+#     ::test_every_task_spawn_is_preceded_by_a_seam_resolve
+#     ::test_no_hand_written_dispatch_emit_survives
+#     ::test_the_seam_sweep_population_reaches_past_the_skill_document
+#
+# Those sweep every markdown file under the finalize skill, pair each `Task:`
+# spawn with a preceding `effort resolve-target … --workflow` call, and reject any
+# surviving hand-written `--message "[DISPATCH] …"` step — the mutations this test
+# named and could not see. The duplicate is deleted rather than repaired: repairing
+# it would mean reading the finalize documents from this file, which is the other
+# suite's job and would leave two populations to keep in step.
 # =============================================================================
-
-
-def test_finalize_dispatch_emits_one_line_per_spawn(plan_context):
-    _seed_marshal(plan_context)
-    _init_plan(plan_context, 'finalize-per-spawn')
-
-    finalize_caller = 'plan-marshall:phase-6-finalize'
-    finalize_workflow = 'plan-marshall:phase-6-finalize/workflow/create-pr.md'
-    for _ in range(3):
-        result = run_script(
-            SCRIPT_PATH,
-            'effort',
-            'resolve-target',
-            '--phase',
-            'phase-6-finalize',
-            '--workflow',
-            finalize_workflow,
-            '--plan-id',
-            'finalize-per-spawn',
-            '--caller',
-            finalize_caller,
-        )
-        assert result.returncode == 0, result.stderr
-
-    lines = _dispatch_lines('finalize-per-spawn')
-    # N > 1: three spawns, three lines — the property that fails against the
-    # pre-migration finalize emission (hand-written once per role).
-    assert len(lines) == 3, f'three finalize spawns must emit three lines, got {lines}'
-    assert all(line.startswith(f'[DISPATCH] ({finalize_caller})') for line in lines), (
-        f'every finalize [DISPATCH] line must carry the finalize caller so the '
-        f'audit counts it under phase-6-finalize, got {lines}'
-    )
 
 
 # =============================================================================

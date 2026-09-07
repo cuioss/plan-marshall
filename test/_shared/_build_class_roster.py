@@ -31,8 +31,11 @@ Consumers get ``{notation: {subcommand: declares_flag_pair}}`` from
 :func:`build_class_roster`. :func:`build_class_prefixes` is the SEPARATE,
 independently-sourced read of the executor template's ``_BUILD_CLASS_PREFIXES``
 — the NOTATION half of the executor's definition of which dispatches are
-build-class. The two derivations deliberately share no input, so cross-checking
-one against the other is a real check rather than a restatement.
+build-class. :func:`build_notation_prefixes` is a THIRD, again independently
+sourced, read of the architecture client's ``_BUILD_NOTATIONS`` registry,
+projected onto the same ``{bundle}:{skill}:`` vocabulary. All three derivations
+deliberately share no input, so cross-checking one against another is a real
+check rather than a restatement.
 
 **Build-class-ness is a conjunction, and this module supplies only one conjunct
 directly.** The executor stamps a ``kind=build`` ledger row only when the
@@ -99,6 +102,22 @@ _PREFIXES_LITERAL = re.compile(
     r'_BUILD_CLASS_PREFIXES\s*=\s*frozenset\(\s*(\[.*?\])\s*\)',
     re.DOTALL,
 )
+
+#: The architecture client's build-notation registry — the THIRD independently
+#: sourced read in this module, and the counterpart the executor template's
+#: ``_BUILD_CLASS_PREFIXES`` must stay equal to. It is an ordinary module, so it
+#: is read by ``ast.parse`` rather than by the template's regex-extract shape.
+_CLIENT_BUILD_MODULE = (
+    MARKETPLACE_ROOT
+    / 'plan-marshall'
+    / 'skills'
+    / 'manage-architecture'
+    / 'scripts'
+    / '_cmd_client_build.py'
+)
+
+#: The constant naming that registry inside the module above.
+_BUILD_NOTATIONS_NAME = '_BUILD_NOTATIONS'
 
 
 # =============================================================================
@@ -361,3 +380,51 @@ def build_class_prefixes() -> frozenset[str]:
             'build-class definition moved and this reader must follow it.'
         )
     return frozenset(ast.literal_eval(match.group(1)))
+
+
+def build_notation_prefixes() -> frozenset[str]:
+    """Return the ``{bundle}:{skill}:`` prefixes implied by ``_BUILD_NOTATIONS``.
+
+    The architecture client keys its build registry by the FULL
+    ``{bundle}:{skill}:{script}`` notation, while the executor template declares
+    the same population as ``{bundle}:{skill}:`` prefixes. Projecting each notation
+    onto its leading two segments puts the two registries in one vocabulary so they
+    can be compared directly.
+
+    This is a THIRD derivation sharing no input with either
+    :func:`build_class_roster` (argparse introspection) or
+    :func:`build_class_prefixes` (the template's own literal), which is what makes
+    a comparison against it a real check rather than a restatement.
+
+    Raises:
+        AssertionError: when the registry cannot be located — a moved constant must
+            fail loudly here rather than yield an empty set that would make any
+            equality assertion against it vacuously narrow.
+    """
+    tree = ast.parse(_CLIENT_BUILD_MODULE.read_text(encoding='utf-8'))
+    for node in ast.walk(tree):
+        # Bind targets AND value inside the isinstance branches: an ``ast.walk``
+        # element is only an ``ast.AST`` to a type checker, so reading ``.value``
+        # off the loop variable is not statically valid.
+        targets: list[ast.expr]
+        value: ast.expr | None
+        if isinstance(node, ast.Assign):
+            targets = list(node.targets)
+            value = node.value
+        elif isinstance(node, ast.AnnAssign):
+            targets = [node.target]
+            value = node.value
+        else:
+            continue
+        if value is None:
+            continue
+        for target in targets:
+            if isinstance(target, ast.Name) and target.id == _BUILD_NOTATIONS_NAME:
+                mapping = ast.literal_eval(value)
+                return frozenset(
+                    f'{notation.rsplit(":", 1)[0]}:' for notation in mapping
+                )
+    raise AssertionError(
+        f'{_BUILD_NOTATIONS_NAME} not found in {_CLIENT_BUILD_MODULE} — the '
+        'build-notation registry moved and this reader must follow it.'
+    )

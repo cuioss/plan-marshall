@@ -122,10 +122,56 @@ def test_transitive_lines_are_not_extracted():
 # =============================================================================
 
 
-def test_gradle_modules_carry_the_coordinate_pair_the_maven_join_reads():
-    """The premise of the whole claim: Gradle publishes what Maven publishes."""
-    metadata = _gradle_module('core', [])['metadata']
-    assert metadata['group_id'] and metadata['artifact_id']
+def _real_gradle_module(tmp_path, gradle_data: dict) -> dict:
+    """Call the REAL ``_extract_gradle_module`` hermetically.
+
+    The extractor takes ``gradle_data`` as a PARAMETER and runs no subprocess, so
+    a temp directory holding an empty build file plus a literal metadata dict is a
+    complete call. The "it needs a Gradle daemon" escape applies to discovery's
+    shelling-out path, not to this function.
+
+    The build-file name is read off the discoverer's own constant rather than
+    spelled here, so a rename cannot leave this fixture silently unable to produce
+    a module (which would turn every assertion below vacuous).
+    """
+    module_dir = tmp_path / 'core'
+    module_dir.mkdir()
+    (module_dir / _gradle_cmd_discover.BUILD_GRADLE).write_text('', encoding='utf-8')
+    module: dict = _gradle_cmd_discover._extract_gradle_module(
+        module_dir, tmp_path, 'core', gradle_data, []
+    )
+    return module
+
+
+def test_gradle_modules_carry_the_coordinate_pair_the_maven_join_reads(tmp_path):
+    """The premise of the whole claim: Gradle publishes what Maven publishes.
+
+    Asserted against the REAL extractor. The previous form read the coordinate
+    pair back out of ``_gradle_module``, a helper in this same file that hard-codes
+    both values — so it asserted that a literal dict contains the keys the literal
+    was written with, and would have stayed green if the shipped extractor stopped
+    publishing a coordinate entirely.
+    """
+    module = _real_gradle_module(tmp_path, {'name': 'core', 'group_id': 'com.example'})
+
+    metadata = module['metadata']
+    assert metadata['artifact_id'] == 'core'
+    assert metadata['group_id'] == 'com.example'
+
+
+def test_gradle_module_without_a_group_publishes_no_joinable_coordinate(tmp_path):
+    """The no-``group`` case: a Gradle build declaring no ``group`` yields no join key.
+
+    ``group`` is optional in Gradle, and the extractor passes ``group_id`` through
+    as ``None`` when it is absent. The Maven join keys on ``groupId:artifactId``,
+    so such a module publishes no coordinate for a dependent to match — the same
+    "no edge" outcome as the inter-project form, reached by a different route.
+    """
+    module = _real_gradle_module(tmp_path, {'name': 'core'})
+
+    metadata = module['metadata']
+    assert metadata['artifact_id'] == 'core'
+    assert metadata['group_id'] is None
 
 
 def test_coordinate_declared_dependency_yields_an_edge():

@@ -85,7 +85,18 @@ class ExecutorBootstrapError(RuntimeError):
     """
 
 
-def _ensure_executor_present() -> None:
+#: The stdout token a generation failure carries. ``generate_executor.main()``
+#: ends ``print(serialize_toon(result)); return 0`` with no branch on
+#: ``result['status']``, so an expected error is announced in the PAYLOAD and
+#: never in the exit code. Named as a constant so the bootstrap and the test
+#: that drives it through the subprocess boundary read the same token.
+EXECUTOR_GENERATION_ERROR_TOKEN = 'status: error'
+
+
+def _ensure_executor_present(
+    project_root: Path | None = None,
+    generator: Path | None = None,
+) -> None:
     """Generate ``.plan/execute-script.py`` if missing, or fail the run.
 
     The executor is gitignored, so a fresh checkout (CI runner, ephemeral
@@ -97,24 +108,46 @@ def _ensure_executor_present() -> None:
 
     Idempotent: re-runs are no-ops if the executor is already present.
 
+    ``project_root`` and ``generator`` default to the real checkout and the real
+    generator. They are parameters so a test can drive this bootstrap against a
+    stub generator THROUGH THE SUBPROCESS BOUNDARY — an in-process monkeypatch
+    is invisible to ``subprocess.run``, so the failure-detection branch below
+    could otherwise only be read, never exercised.
+
+    **Failure detection is on the payload, not on the exit code.** The removed
+    ``check=True`` could not fire on ANY expected generation error: the
+    generator reports template-not-found, each of its five write guards, and an
+    unresolvable base path as ``status: error`` at exit ``0``. Trusting the exit
+    code alone therefore left this bootstrap returning having written nothing and
+    raised nothing. Six refusal paths are reachable this way; the fail-open guard
+    is NOT among them, because this bootstrap returns early when the executor
+    already exists, so the previous-surfaces map it compares against is always
+    empty here.
+
     Raises:
-        ExecutorBootstrapError: when the generator is missing, or when
-            generating the executor fails. Both are broken-environment
-            conditions rather than environments the suite does not apply to,
-            so both stop the run and name what went wrong.
+        ExecutorBootstrapError: when the generator is missing, when running it
+            raises, or when it did not produce an executor — the last covering
+            both an expected refusal announced in the payload at exit ``0`` and a
+            run that claimed success while writing nothing. Every one is a
+            broken-environment condition rather than an environment the suite
+            does not apply to, so every one stops the run and names what went
+            wrong.
     """
-    executor_path = PROJECT_ROOT / PLAN_DIR_NAME / 'execute-script.py'
+    if project_root is None:
+        project_root = PROJECT_ROOT
+    executor_path = project_root / PLAN_DIR_NAME / 'execute-script.py'
     if executor_path.exists():
         return
 
-    generator = (
-        MARKETPLACE_ROOT
-        / 'plan-marshall'
-        / 'skills'
-        / 'tools-script-executor'
-        / 'scripts'
-        / 'generate_executor.py'
-    )
+    if generator is None:
+        generator = (
+            MARKETPLACE_ROOT
+            / 'plan-marshall'
+            / 'skills'
+            / 'tools-script-executor'
+            / 'scripts'
+            / 'generate_executor.py'
+        )
     if not generator.exists():
         raise ExecutorBootstrapError(
             f'Cannot bootstrap the executor: the generator is missing at {generator}. '
@@ -123,25 +156,45 @@ def _ensure_executor_present() -> None:
         )
 
     try:
-        subprocess.run(
+        result = subprocess.run(
             ['python3', str(generator), 'generate'],
-            cwd=PROJECT_ROOT,
+            cwd=project_root,
             capture_output=True,
             text=True,
-            check=True,
-            timeout=120,
+            # COUPLED to ``generate_executor._DEFAULT_SURFACE_BUDGET_SECONDS``,
+            # whose value is 180.0 seconds. That budget bounds accept-set
+            # derivation ALONE — discovery, probe writing and the atomic write
+            # all run after it is spent — so this timeout must stay strictly
+            # above it with margin. The retired value of 120 sat BELOW the
+            # budget and could kill a generation the generator itself still
+            # considered within budget. The mirror comment at that constant
+            # names this 300, so moving either number without the other leaves
+            # one of the two comments wrong.
+            timeout=300,
         )
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
+    except (subprocess.TimeoutExpired, OSError) as exc:
         detail = getattr(exc, 'stderr', None) or ''
         raise ExecutorBootstrapError(
             f'Executor bootstrap failed while running {generator}: {exc}. '
             f'{detail}'.rstrip()
         ) from exc
 
-    if not executor_path.exists():
+    # Three independent readings of "the generation did not succeed", because no
+    # single one covers the whole space: a crash shows in the exit code, an
+    # expected refusal only in the payload, and a silent no-write only on disk.
+    # All three raise rather than warn — a warning let the run continue over a
+    # broken substrate and report green on a smaller suite, which is the failure
+    # this bootstrap is closed against.
+    wrote_executor = executor_path.exists()
+    if (
+        result.returncode != 0
+        or EXECUTOR_GENERATION_ERROR_TOKEN in result.stdout
+        or not wrote_executor
+    ):
         raise ExecutorBootstrapError(
-            f'Executor bootstrap reported success but wrote no executor at {executor_path}. '
-            f'Re-run the generator directly to see why.'
+            f'Executor bootstrap failed while running {generator}: '
+            f'exit={result.returncode} executor_written={wrote_executor} '
+            f'stdout={result.stdout.strip()} stderr={result.stderr.strip()}'
         )
 
 
@@ -1087,6 +1140,22 @@ _ROUTING_GUARD_MODULES: tuple[tuple[str, str], ...] = (
         'plan-marshall/tools-integration-ci/test_exit_code_convention_population.py',
     ),
     ('parser-seam', 'test_parser_seam_coverage.py'),
+    (
+        'counted-list-coverage',
+        'pm-plugin-development/ext-self-review-plan-marshall/test_self_review_check_coverage.py',
+    ),
+    (
+        'surface-guard-notations',
+        'plan-marshall/tools-script-executor/test_population_derived_surface_guard.py',
+    ),
+    (
+        'roster-correctness-coverage',
+        'plan-marshall/phase-6-finalize/test_dispatch_roster_closure.py',
+    ),
+    (
+        'call-graph-dispatch-classes',
+        'plan-marshall/manage-metrics/test_dispatch_boundary_ledger_population.py',
+    ),
 )
 
 
@@ -1237,6 +1306,23 @@ def pytest_report_header(config):
     return lines
 
 
+#: Every class an entry in :data:`_SKIP_EXCEPTIONS` may carry, and the whole set
+#: of them. The classes are described under that dict, where the prose closes the
+#: set — "only three are legitimate" — and this constant is what makes that
+#: closure checkable instead of merely asserted: ``test_skip_gate.py`` holds this
+#: set and the classes the entries ACTUALLY use to each other in both directions,
+#: so neither a fourth class smuggled in on a new entry nor a class declared here
+#: that no entry uses can pass unseen. A closure claim nobody derives is the
+#: vacuity this gate exists to remove, and it applies to the gate's own prose.
+_SKIP_CLASSES: frozenset[str] = frozenset(
+    {
+        'absent-dependency',
+        'in-suite-policy',
+        'platform-absent',
+    }
+)
+
+
 #: The residual skippable set: every skip this suite still permits, keyed by
 #: nodeid, each carrying the CLASS it belongs to and the REASON that class is
 #: legitimate. :func:`pytest_sessionfinish` fails the run on any skip NOT listed
@@ -1256,7 +1342,8 @@ def pytest_report_header(config):
 #: gate exists to catch. A skip that belongs here is added deliberately, with its
 #: reason, in the same change that introduces it.
 #:
-#: Three classes are represented, and only three are legitimate:
+#: Three classes are represented, and only three are legitimate. They are named
+#: in :data:`_SKIP_CLASSES` so this closure is derived rather than asserted:
 #:
 #: ``absent-dependency``
 #:     An external tool the suite does not require. ``pyright-langserver`` is the
@@ -1277,26 +1364,32 @@ def pytest_report_header(config):
 #:     declared refusal phrasing removes its entry rather than silently widening
 #:     an existing one.
 #:
-#: ``absent-platform-facility``
-#:     An OS facility the running platform does not provide, so the guarded
-#:     branch has nothing to exercise. ``/proc`` is the only one: the test drives
-#:     the real ``/proc`` fast path, which exists on Linux (where CI runs, so the
-#:     test executes there) and not on macOS. It is distinct from
-#:     ``absent-dependency`` because nothing can be installed to satisfy it — the
-#:     facility is the platform's, not a package's — and distinct from
-#:     ``in-suite-policy`` because the cause is the environment rather than the
-#:     suite's own data. The entry was added when the gate first named it on a
-#:     macOS run, which is the deliberate extension the paragraph below describes,
-#:     not a pre-emptive exemption.
+#: ``platform-absent``
+#:     A capability the running OS does not provide and no installation can add,
+#:     so the test has no subject to exercise rather than a missing tool or a
+#:     thin parameter. ``/proc`` is the only one: Linux publishes it and macOS
+#:     does not, so ``_read_process_argv``'s ``/proc`` fast path has a real
+#:     process to read in CI and nothing to read on a developer's Mac. It is
+#:     deliberately NOT filed under ``absent-dependency`` — that class means a
+#:     tool the suite chose not to require and that someone could install, and a
+#:     class stretched to mean both a tool and a kernel interface can no longer
+#:     discriminate between them, which is the whole reason the class is recorded
+#:     beside the reason. Unlike the other two, an entry here is expected to be
+#:     inert on the platform that HAS the capability: on Linux the nodeid runs
+#:     and never reaches this list, so a green run on one platform is no evidence
+#:     about the entry's standing on the other.
 #:
-#: ⛔ **Platform and environment guards that do NOT fire here are deliberately
-#: absent.** ``test_tree_copy.py``'s three ``sys.platform == 'win32'`` guards, and
-#: the undeclared environment-variable preconditions in ``test_qgate_closure.py``
-#: and ``test_plan_state_exemption.py``, skip nothing on this platform and so have
-#: no nodeid to list. Listing them pre-emptively would grant a standing exemption
-#: to skips nobody has observed, which is the opposite of an enumerated boundary.
-#: On a platform where they DO fire, the gate names them and the list is extended
-#: deliberately.
+#: ⛔ **A platform or environment guard is listed only where it has been OBSERVED
+#: to fire.** The gate has now rendered its verdict on both platforms this suite
+#: is run on — Linux in CI and macOS locally — and between them named exactly one
+#: such skip, the ``/proc`` entry below. ``test_tree_copy.py``'s three
+#: ``sys.platform == 'win32'`` guards, and the undeclared environment-variable
+#: preconditions in ``test_qgate_closure.py`` and ``test_plan_state_exemption.py``,
+#: fired on neither and so have no nodeid to list. Listing them pre-emptively
+#: would grant a standing exemption to skips nobody has observed, which is the
+#: opposite of an enumerated boundary. On a platform where they DO fire, the gate
+#: names them and the list is extended deliberately — which is exactly how the
+#: ``/proc`` entry got here.
 _SKIP_EXCEPTIONS: dict[str, tuple[str, str]] = {
     # --- absent-dependency: pyright-langserver (4 guard sites, 10 nodeids) ---
     'test/plan-marshall/lsp-client/test_lsp_integration.py::test_real_adversarial_defect_fails_and_rolls_back': (
@@ -1339,15 +1432,6 @@ _SKIP_EXCEPTIONS: dict[str, tuple[str, str]] = {
         'absent-dependency',
         'pyright-langserver not installed',
     ),
-    # --- absent-platform-facility: no /proc outside Linux ---
-    # The reason is the guard's own text, verbatim, for the same reason the
-    # in-suite-policy entry below carries its guard's text: the gate compares the
-    # approved cause against what pytest records.
-    'test/plan-marshall/build-server/test_manage_build_server.py'
-    '::test_read_process_argv_reads_this_process_from_proc': (
-        'absent-platform-facility',
-        'no /proc on this platform',
-    ),
     # --- in-suite-policy: a parametrized case with no data to assert ---
     # The reason is the guard's own text, verbatim: the gate compares it against
     # what pytest records, so an explanatory gloss appended here would never match
@@ -1357,6 +1441,14 @@ _SKIP_EXCEPTIONS: dict[str, tuple[str, str]] = {
     '::TestRefusalIsNeverABareTimeout::test_a_bots_declared_refusal_is_recognized_as_DATA[cuioss-review-bot]': (
         'in-suite-policy',
         'cuioss-review-bot declares no observed refusal phrasing',
+    ),
+    # --- platform-absent: no /proc outside Linux ---
+    # Fires on macOS and not in CI, so this entry is inert on the platform that
+    # decides the merge. The reason is the guard's own text, verbatim, for the
+    # same enforcement reason as the entry above.
+    'test/plan-marshall/build-server/test_manage_build_server.py::test_read_process_argv_reads_this_process_from_proc': (
+        'platform-absent',
+        'no /proc on this platform',
     ),
 }
 

@@ -19,19 +19,28 @@ Covers the four deliverables of ``150-architecture-store-concept-model``:
 Every store-shape claim is verified against the WRITER and against fixtures —
 the live store lives under the git-ignored ``.plan/`` tree and is not reachable
 from a clone.
+
+A final section covers the Axis-D **claimed-path collapse at its two reader call
+sites** (``cmd_find`` and ``cmd_search``). The collapse helper itself is unit-
+tested in ``test_doc_corpus_dedup.py`` against synthetic rows, which leaves the
+CALL SITES uncovered: deleting both invocations keeps every one of those unit
+tests green because the helper is still there and still correct in isolation.
+The tests here drive the shipped handlers end to end over a seeded project, so a
+removed call site reddens.
 """
 
 import argparse
 import copy
 import json
+import re
 import tempfile
 from pathlib import Path
 from typing import Any
 
 import pytest
-from _arch_fixtures import setup_test_project
+from _arch_fixtures import seed_project, setup_test_project
 
-from conftest import load_script_module, parse_ns
+from conftest import MARKETPLACE_ROOT, load_script_module, parse_ns
 
 _architecture_core = load_script_module(
     'plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core'
@@ -41,11 +50,95 @@ _cmd_enrich = load_script_module('plan-marshall', 'manage-architecture', '_cmd_e
 _cmd_client_query = load_script_module(
     'plan-marshall', 'manage-architecture', '_cmd_client_query.py', '_cmd_client_query'
 )
+#: Loaded DIRECTLY (rather than through the ``_cmd_client`` facade) so the
+#: attribution stub below patches the very module globals
+#: ``_collapse_claimed_duplicate_rows`` reads. Going through the facade would
+#: risk patching a different module object than the handler's own globals.
+_handlers = load_script_module(
+    'plan-marshall', 'manage-architecture', '_cmd_client_handlers.py', '_cmd_client_handlers'
+)
 
 InvalidConceptTypeError = _architecture_core.InvalidConceptTypeError
 NonResolvingPathKeyError = _architecture_core.NonResolvingPathKeyError
 
 CONCEPT_TYPES = _architecture_core.CONCEPT_TYPES
+
+#: The standard that RESTATES the concept-type vocabulary in prose. It is a second
+#: copy of a closed vocabulary, so it can drift from the code constant silently.
+_PERSISTENCE_STANDARD = (
+    MARKETPLACE_ROOT
+    / 'plan-marshall'
+    / 'skills'
+    / 'manage-architecture'
+    / 'standards'
+    / 'architecture-persistence.md'
+)
+
+#: The STABLE MARKER the parse anchors on — the constant's own name, which the
+#: standard cites where it enumerates the vocabulary. Anchoring on the marker
+#: rather than on a line number keeps the parse working when the document is
+#: reflowed or a section is inserted above it.
+_CONCEPT_TYPES_MARKER = 'CONCEPT_TYPES'
+
+#: A backticked lowercase identifier — the spelling the standard uses for each
+#: accepted type inside its parenthesised enumeration.
+_BACKTICKED_IDENTIFIER = re.compile(r'`([a-z_]+)`')
+
+
+def _documented_concept_types() -> set[str]:
+    """Parse the accepted concept types out of the standard's own enumeration.
+
+    Walks to the first line carrying the ``CONCEPT_TYPES`` marker that also holds a
+    parenthesised enumeration of backticked identifiers, and returns those
+    identifiers. The document cites the marker in more than one place; the lines
+    that merely reference the vocabulary carry no such enumeration and are skipped,
+    so the parse lands on the declaring site without depending on its position.
+
+    Raises:
+        AssertionError: when no enumeration can be found. A silent empty set would
+            make the equality assertion below compare the code constant against
+            nothing and pass for the wrong reason.
+    """
+    for line in _PERSISTENCE_STANDARD.read_text(encoding='utf-8').splitlines():
+        if _CONCEPT_TYPES_MARKER not in line:
+            continue
+        parenthesised = re.search(r'\(([^)]*)\)', line)
+        if parenthesised is None:
+            continue
+        names = set(_BACKTICKED_IDENTIFIER.findall(parenthesised.group(1)))
+        if names:
+            return names
+    raise AssertionError(
+        f'no parenthesised concept-type enumeration found beside a '
+        f'{_CONCEPT_TYPES_MARKER!r} marker in {_PERSISTENCE_STANDARD} — the '
+        f'standard was restructured and this parse must follow it.'
+    )
+
+
+def test_standard_and_code_declare_the_same_concept_type_vocabulary():
+    """The standard's restatement is held equal to the shipped constant.
+
+    ``architecture-persistence.md`` restates the ``CONCEPT_TYPES`` vocabulary
+    verbatim while the shipped test checked only the code constant, so the two
+    copies could diverge without anything noticing: a type added to the code would
+    leave the standard documenting a closed set that is no longer closed, and a
+    reader obeying the "quote values verbatim from the docs" rule would be led to a
+    wrong value rather than merely an incomplete one.
+
+    Set-equality in BOTH directions, so neither an addition nor a removal on either
+    side can pass.
+    """
+    documented = _documented_concept_types()
+
+    # Anti-vacuity: an empty parse would make the comparison meaningless.
+    assert documented, 'parsed no concept types out of the standard'
+    assert CONCEPT_TYPES, 'the code constant declares no concept types'
+
+    assert documented == set(CONCEPT_TYPES), (
+        'the concept-type vocabulary has desynced between the standard and the code. '
+        f'Only in {_PERSISTENCE_STANDARD.name}: {sorted(documented - set(CONCEPT_TYPES))}. '
+        f'Only in _architecture_core.CONCEPT_TYPES: {sorted(set(CONCEPT_TYPES) - documented)}.'
+    )
 migrate_concept_document = _architecture_core.migrate_concept_document
 validate_concept_type = _architecture_core.validate_concept_type
 build_generation = _architecture_core.build_generation
@@ -104,6 +197,22 @@ _ENRICH_PACKAGE_ARGS = parse_ns(
     _ARCH_BUNDLE, _ARCH_SKILL, _ARCH_SCRIPT,
     '--project-dir', '.', 'enrich', 'package',
     '--module', 'module', '--package', 'package', '--description', 'description',
+    register=False,
+)
+
+#: The ``find`` and ``search`` namespaces, built by the same parser for the same
+#: reason — the reader call sites below must run against the defaults the shipped
+#: CLI applies, including ``search``'s ``--literal`` / ``--ignore-case``
+#: store_true pair.
+_FIND_ARGS = parse_ns(
+    _ARCH_BUNDLE, _ARCH_SKILL, _ARCH_SCRIPT,
+    '--project-dir', '.', 'find', '--pattern', '.',
+    register=False,
+)
+
+_SEARCH_ARGS = parse_ns(
+    _ARCH_BUNDLE, _ARCH_SKILL, _ARCH_SCRIPT,
+    '--project-dir', '.', 'search', '--content', '--pattern', '.',
     register=False,
 )
 
@@ -460,3 +569,260 @@ def test_merge_module_data_migrates_dotted_key_packages():
 
         assert 'mod/src/pkg' in merged['key_packages']
         assert 'com.example.pkg' not in merged['key_packages']
+
+
+# =============================================================================
+# D6-S13: merge_module_data's unresolved-key WARNING (deferred plan_logging import)
+# =============================================================================
+#
+# ``_log_unresolved_package_keys`` performs ``from plan_logging import log_entry``
+# INSIDE the function body (a deferred import) — there is no module-level
+# ``_architecture_core.log_entry`` name to patch, so the call must be
+# intercepted at its SOURCE by substituting ``sys.modules['plan_logging']``
+# before the deferred import runs. Mirrors the pattern
+# ``test_skills_by_profile_staleness_guard.py`` established for the sibling
+# deferred-import emitter (``_emit_skills_by_profile_staleness_warning``).
+
+
+def _install_recording_plan_logging(monkeypatch) -> list[tuple]:
+    """Substitute ``sys.modules['plan_logging']`` with a call-recording stand-in.
+
+    Returns the list every ``log_entry(*args)`` call appends its positional
+    args to.
+    """
+    import sys
+    import types
+
+    calls: list[tuple] = []
+    fake = types.ModuleType('plan_logging')
+    # ``ModuleType`` declares no ``log_entry``; the attribute exists only on the
+    # real module, so mypy cannot see it on the stand-in we are substituting in.
+    fake.log_entry = lambda *args: calls.append(args)  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, 'plan_logging', fake)
+    return calls
+
+
+def test_merge_module_data_warns_with_the_unresolved_key_named(monkeypatch):
+    """A key that resolves to neither a path nor a derived entry names itself
+    in the emitted WARNING.
+
+    Reddens if the emitted message ever stops naming the specific offending
+    key — a generic "some keys did not migrate" message would satisfy a
+    weaker assertion while leaving a reader with nothing actionable.
+    """
+    calls = _install_recording_plan_logging(monkeypatch)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        save_module_derived('mod', {'name': 'mod', 'paths': {'module': 'mod'}, 'packages': {}}, tmpdir)
+        save_module_enriched('mod', {'key_packages': {'com.orphan.pkg': {'description': 'D'}}}, tmpdir)
+
+        merge_module_data('mod', tmpdir)
+
+    assert calls, 'no WARNING was emitted for the unresolved key_packages key'
+    channel, plan_id, level, message = calls[0]
+    assert channel == 'script'
+    assert plan_id is None
+    assert level == 'WARNING'
+    assert 'com.orphan.pkg' in message
+    assert "module 'mod'" in message
+
+
+def test_merge_module_data_emits_no_warning_when_every_key_resolves(monkeypatch):
+    """Matched negative control: a fully-resolving key_packages map warns nothing.
+
+    Without this, the positive assertion above could pass merely because the
+    emitter fires unconditionally on every ``merge_module_data`` call.
+    """
+    calls = _install_recording_plan_logging(monkeypatch)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        (Path(tmpdir) / 'mod' / 'src').mkdir(parents=True)
+        save_module_derived('mod', {'name': 'mod', 'paths': {'module': 'mod'}, 'packages': {}}, tmpdir)
+        save_module_enriched('mod', {'key_packages': {'mod/src': {'description': 'D'}}}, tmpdir)
+
+        merge_module_data('mod', tmpdir)
+
+    assert calls == []
+
+
+# =============================================================================
+# Axis-D claimed-path collapse — covered at its CALL SITES, not in isolation
+# =============================================================================
+#
+# ``_collapse_claimed_duplicate_rows`` is invoked from exactly two places:
+# ``cmd_find`` and ``cmd_search``. Replacing BOTH invocations with a no-op used
+# to leave every covering directory green, because the only tests of the collapse
+# drove the helper directly with synthetic rows and a stubbed resolver — a shape
+# that keeps passing however the readers are wired. The unit tests are correct and
+# stay; what was missing is a reader that actually reaches the seam.
+#
+# The recorded fixture constraint is honoured rather than worked around: module
+# DISCOVERY (not just Axis-D attribution) reads the live worktree. In particular
+# ``pm-documents``'s ``discover_modules()`` treats any ``doc/`` or ``docs/``
+# directory holding an ``.adoc``/``.md`` file (or a root-level ``README.adoc``)
+# as a REAL module — a discovery that runs BEFORE the synthetic-project fallback
+# and would silently replace both seeded fixture modules below with its own
+# single crawl-derived ``documentation`` module, collapsing the intended
+# cross-module duplicate to one row before either test body ever runs (this is
+# exactly what happened when the corpus was first seeded under ``doc/``: the
+# real crawl found it, ``crawl_all_modules`` took the non-empty-modules branch,
+# and the two hand-seeded ``derived.json`` fixtures were never read at all). The
+# claimed corpus is therefore seeded under a directory name no registered
+# ``discover_modules()`` recognises, so the live crawl finds nothing real, falls
+# back to the synthetic per-module ``derived.json`` fixtures this file seeds
+# directly (the documented test-fixture seam — see ``crawl_all_modules``'s
+# "Synthetic-project fallback"), and both seeded modules survive verbatim. The
+# Axis-D OWNERSHIP CLAIM resolver is separately INJECTED (below), and each test
+# carries its no-claim arm as a matched negative control — that arm is what
+# proves the fixture really produces the cross-module duplicate the claimed arm
+# then collapses, so neither result can be explained by an empty population.
+#
+# Every expected count is DERIVED from the two seeded populations — the claimed
+# corpus and the set of modules inventorying it — never written as a literal, so
+# growing either fixture cannot silently leave a stale expectation behind.
+
+#: The claimed documentation corpus — every entry is a real file on disk AND is
+#: listed in BOTH seeded modules' inventories, which is the duplicate shape.
+#: Deliberately NOT under ``doc/``/``docs/`` — see the module-level comment
+#: above: those names trip ``pm-documents``'s real ``discover_modules()`` crawl,
+#: which would replace the seeded fixture with its own single discovered module.
+_CLAIMED_DOCS = ('notes/api.adoc', 'notes/guide.adoc')
+
+#: The module the injected attributor names as the owner of that corpus.
+_DOC_OWNER = 'documentation'
+
+#: The second inventorying module — the whole-tree crawl that also sees ``notes/**``.
+_ROOT_CRAWLER = 'root-crawl'
+
+#: Written into every seeded doc body so ``search --content`` has a real hit.
+_DOC_BODY_TOKEN = 'CLAIMED_CORPUS_TOKEN'
+
+#: The modules that BOTH inventory the claimed corpus, mapped to the
+#: ``paths.module`` root each declares — the whole-tree root crawl, and the
+#: documentation module that owns ``notes/**``. The seeding below and the expected
+#: duplicate arity are read from this ONE mapping, so a third inventorying module
+#: moves the fixture and the expected counts together instead of leaving a stale
+#: literal behind.
+_INVENTORYING_MODULES = {_ROOT_CRAWLER: '.', _DOC_OWNER: 'notes'}
+
+#: Rows a reader emits over the seeded corpus while NO ownership claim applies —
+#: one per (module, file) pair. Derived from both populations, never a literal, so
+#: neither can grow without the expectation following it.
+_UNCOLLAPSED_ROWS = len(_INVENTORYING_MODULES) * len(_CLAIMED_DOCS)
+
+
+def _seed_claimed_doc_corpus(tmpdir: str) -> None:
+    """Seed real doc files inventoried by BOTH modules under an explicit block.
+
+    The ``files`` blocks are explicit and uncapped, so the reader takes the
+    ``_resolve_module_inventory`` fast path and the inventory under test is
+    exactly what is written here — no dependence on the crawler's heuristics.
+    """
+    project = Path(tmpdir)
+    for rel in _CLAIMED_DOCS:
+        target = project / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(f'= Heading\n\n{_DOC_BODY_TOKEN}\n', encoding='utf-8')
+
+    inventory = {'doc': list(_CLAIMED_DOCS)}
+    seed_project(
+        tmpdir,
+        {
+            name: {'name': name, 'paths': {'module': root}, 'files': dict(inventory)}
+            for name, root in _INVENTORYING_MODULES.items()
+        },
+    )
+
+
+def _claiming_attributor(path: str, _module_names: list[str]) -> tuple[str | None, list[dict]]:
+    """Stand in for the Axis-D seam, claiming the seeded corpus for its owner."""
+    owner = _DOC_OWNER if path in _CLAIMED_DOCS else None
+    return owner, [{'id': 'stub-doc-claim', 'notes': []}]
+
+
+def _no_claim_attributor(_path: str, _module_names: list[str]) -> tuple[None, list[dict]]:
+    """The negative control: an attributor that runs and claims nothing."""
+    return None, [{'id': 'stub-doc-claim', 'notes': []}]
+
+
+def test_find_collapses_a_claimed_duplicate_to_one_row_per_file(monkeypatch):
+    """``find`` emits ONE row per physical claimed file, not one per attributor.
+
+    Reddens when the ``cmd_find`` collapse invocation is removed: the reader falls
+    back to a row per attributing module and the count doubles.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_claimed_doc_corpus(tmpdir)
+        pattern = 'notes/*.adoc'
+
+        # Negative control — no claim, so nothing may collapse. This is what
+        # proves the fixture genuinely produces the cross-module duplicate.
+        monkeypatch.setattr(_handlers, 'resolve_path_attribution', _no_claim_attributor)
+        unclaimed = _handlers.cmd_find(_variant(_FIND_ARGS, project_dir=tmpdir, pattern=pattern))
+
+        assert unclaimed['status'] == 'success'
+        assert unclaimed['count'] == _UNCOLLAPSED_ROWS, (
+            'the fixture did not produce a cross-module duplicate for every claimed '
+            f'doc, so the collapse assertion below would be vacuous: {unclaimed}'
+        )
+
+        # Under the claim, the call site collapses each duplicate onto its owner.
+        monkeypatch.setattr(_handlers, 'resolve_path_attribution', _claiming_attributor)
+        claimed = _handlers.cmd_find(_variant(_FIND_ARGS, project_dir=tmpdir, pattern=pattern))
+
+        assert claimed['status'] == 'success'
+        assert claimed['count'] == len(_CLAIMED_DOCS), (
+            'find returned more rows than there are physical claimed files — the '
+            'reader-side collapse is not running at this call site'
+        )
+        assert [row['path'] for row in claimed['results']] == sorted(_CLAIMED_DOCS)
+        assert {row['module'] for row in claimed['results']} == {_DOC_OWNER}, (
+            "the surviving rows are not the owner's — the collapse kept the crawl "
+            'row instead of yielding to the ownership claim'
+        )
+
+
+def test_search_count_and_file_count_converge_for_a_claimed_duplicate(monkeypatch):
+    """``search``'s row count meets its distinct-file count once the claim applies.
+
+    ``count`` counts ROWS and ``file_count`` counts distinct PATHS, so they diverge
+    exactly while a duplicate survives. Convergence is therefore the observable of
+    the collapse at this second call site, and it reddens when that invocation is
+    removed. ``files_scanned`` is asserted UNCHANGED across both arms: the collapse
+    is a reporting-side precedence, not a narrowing of what was read, and a
+    convergence bought by scanning fewer files would be a different bug wearing
+    this one's green.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_claimed_doc_corpus(tmpdir)
+
+        # Negative control — the unclaimed duplicate makes the two counts differ.
+        monkeypatch.setattr(_handlers, 'resolve_path_attribution', _no_claim_attributor)
+        unclaimed = _handlers.cmd_search(
+            _variant(_SEARCH_ARGS, project_dir=tmpdir, pattern=_DOC_BODY_TOKEN)
+        )
+
+        assert unclaimed['status'] == 'success'
+        assert unclaimed['count'] == _UNCOLLAPSED_ROWS
+        assert unclaimed['file_count'] == len(_CLAIMED_DOCS)
+        assert unclaimed['count'] != unclaimed['file_count'], (
+            'the fixture produced no divergence to collapse, so the convergence '
+            'assertion below would hold for the wrong reason'
+        )
+
+        monkeypatch.setattr(_handlers, 'resolve_path_attribution', _claiming_attributor)
+        claimed = _handlers.cmd_search(
+            _variant(_SEARCH_ARGS, project_dir=tmpdir, pattern=_DOC_BODY_TOKEN)
+        )
+
+        assert claimed['status'] == 'success'
+        assert claimed['count'] == len(_CLAIMED_DOCS)
+        assert claimed['file_count'] == len(_CLAIMED_DOCS)
+        assert claimed['count'] == claimed['file_count'], (
+            'search still reports more rows than distinct files under an ownership '
+            'claim — the reader-side collapse is not running at this call site'
+        )
+        assert claimed['files_scanned'] == unclaimed['files_scanned'] == _UNCOLLAPSED_ROWS, (
+            'the scanned population moved between the two arms; the collapse must '
+            'change what is REPORTED, never what is read'
+        )
