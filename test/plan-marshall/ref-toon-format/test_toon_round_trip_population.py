@@ -73,6 +73,7 @@ No ``conftest.py`` either — helpers live in this module.
 from __future__ import annotations
 
 import ast
+import builtins
 import re
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
@@ -392,26 +393,55 @@ def _defines_substitute_serializer(tree: ast.AST) -> bool:
     return False
 
 
-#: Handler types broad enough to swallow a failing ``toon_parser`` import.
-#: ``ImportError`` inherits from ``Exception``, which inherits from
-#: ``BaseException``, so each of these genuinely catches the failure — and they
-#: are the BROADEST handlers a module could route around the serializer with,
-#: which is to say the ones the guard most needs to see rather than the ones it
-#: can afford to miss. A bare ``except:`` is broader still and is recognised by
-#: ``_catches_import_failure`` directly, since it names no type at all.
-_IMPORT_CATCHING_HANDLERS = frozenset({'ImportError', 'Exception', 'BaseException'})
+def _name_catches_import_failure(name: str) -> bool:
+    """Whether a handler naming ``name`` catches a failing ``toon_parser`` import.
+
+    Answered from the LIVE exception hierarchy rather than from a hand-written
+    list of type names. The distinction is the whole point: an enumeration states
+    its own completeness, so every round found one more name it had not thought
+    of — ``ModuleNotFoundError`` being the one that actually shipped, since that
+    is what a missing module raises and a set holding only ``ImportError`` /
+    ``Exception`` / ``BaseException`` does not contain it. ``issubclass`` does not
+    have that failure mode: it reads the real class graph, so a handler naming any
+    present or future member of it is decided correctly without this module being
+    edited.
+
+    Relatedness is tested in BOTH directions, because the two directions are two
+    different catches and either one swallows:
+
+    - ``issubclass(caught, ImportError)`` — a SUBTYPE such as
+      ``ModuleNotFoundError``. It does not catch every ``ImportError``, but it
+      catches the one a missing ``toon_parser`` actually raises.
+    - ``issubclass(ImportError, caught)`` — a SUPERTYPE such as ``Exception`` or
+      ``BaseException``, which catches the failure by inheritance.
+
+    A name that does not resolve to a builtin exception class fails CLOSED, and
+    is reported as catching. An unresolvable name is one this module cannot reason
+    about at all — a module-local alias, a project exception, an attribute path —
+    and treating the unknown as harmless is precisely how a predicate is evaded by
+    naming something it has never heard of. It is the same fail-closed reading
+    ``_is_provably_not_stdout`` takes for an unrecognised stream, and it costs only
+    false positives, which a control below pins.
+    """
+    caught = getattr(builtins, name, None)
+    if not (isinstance(caught, type) and issubclass(caught, BaseException)):
+        return True
+    return issubclass(caught, ImportError) or issubclass(ImportError, caught)
 
 
 def _catches_import_failure(handler: ast.ExceptHandler) -> bool:
     """Whether this handler catches a failing canonical import.
 
     Recognising only a handler that NAMES ``ImportError`` read the narrowest form
-    of the scenario as the whole of it: a bare ``except:`` names nothing and an
-    ``except Exception:`` names a supertype, yet both swallow the same failure.
+    of the scenario as the whole of it: a bare ``except:`` names nothing, an
+    ``except Exception:`` names a supertype, and an ``except ModuleNotFoundError:``
+    names the subtype a missing module actually raises — yet all three swallow the
+    same failure. Which names qualify is DERIVED per name; see
+    ``_name_catches_import_failure``.
     """
     if handler.type is None:
         return True
-    return bool(_referenced_names(handler.type) & _IMPORT_CATCHING_HANDLERS)
+    return any(_name_catches_import_failure(name) for name in _referenced_names(handler.type))
 
 
 def swallows_canonical_import(source: str) -> bool:
@@ -790,14 +820,58 @@ def cmd_self_test():
 '''
 
 #: A module that DOES carry a substitute writer, but whose guarded import catches
-#: something that cannot be the import failing. The widening added supertypes of
-#: ``ImportError``, not every handler, and this fixture is what says so.
+#: something that cannot be the import failing. The handler set covers types
+#: RELATED to ``ImportError``, not every handler, and this fixture is what says
+#: so: ``ValueError`` resolves to a real builtin exception that is neither a
+#: subtype nor a supertype of ``ImportError``, so it is decided — not guessed —
+#: and it clears.
 _UNRELATED_HANDLER_MODULE = '''
 try:
     from toon_parser import serialize_toon
 
     HAS_TOON_PARSER = True
 except ValueError:
+    HAS_TOON_PARSER = False
+
+
+def serialize_toon_simple(data):
+    return '\\n'.join(f'{k}: {v}' for k, v in data.items())
+'''
+
+#: The swallowing shape behind ``except ModuleNotFoundError:`` — a SUBTYPE of
+#: ``ImportError``, and the exception a genuinely missing ``toon_parser``
+#: actually raises. A hand-written set of the BROADEST handler names contained
+#: ``ImportError``/``Exception``/``BaseException`` and therefore not this one, so
+#: the narrowest realistic spelling of the very failure the guard is about walked
+#: straight through it. That is the enumeration failure mode in one fixture:
+#: reasoning about which names are broad enough silently assumed breadth was the
+#: only way to catch.
+_MODULE_NOT_FOUND_SWALLOWING_MODULE = '''
+try:
+    from toon_parser import serialize_toon
+
+    HAS_TOON_PARSER = True
+except ModuleNotFoundError:
+    HAS_TOON_PARSER = False
+
+
+def serialize_toon_simple(data):
+    return '\\n'.join(f'{k}: {v}' for k, v in data.items())
+'''
+
+#: A substitute-carrying module whose handler names something this module cannot
+#: resolve — a project exception reached through an attribute path. Nothing here
+#: can decide whether it catches the import failure, and the fail-OPEN reading
+#: (unknown ⇒ harmless) is exactly the evasion route the enumeration left open:
+#: name your handler something the predicate has never heard of. It is reported.
+_UNRESOLVABLE_HANDLER_MODULE = '''
+import toon_errors
+
+try:
+    from toon_parser import serialize_toon
+
+    HAS_TOON_PARSER = True
+except toon_errors.MissingParser:
     HAS_TOON_PARSER = False
 
 
@@ -1106,12 +1180,48 @@ def test_detector_clears_a_broad_handler_that_installs_no_substitute():
 
 
 def test_detector_clears_a_substitute_behind_an_unrelated_handler():
-    """Matched negative: the handler set grew to ``ImportError``'s supertypes, not to all.
+    """Matched negative: the handler set covers ``ImportError``'s relatives, not all.
 
     The module carries a substitute writer, so only the handler type clears it. A
-    widening that had dropped the type check altogether would flag this.
+    widening that had dropped the type check altogether would flag this, and so
+    would a fail-closed reading applied to a name that DOES resolve — ``ValueError``
+    is a real builtin exception unrelated to ``ImportError``, which is a decided
+    answer rather than an unknown one.
     """
     assert swallows_canonical_import(_UNRELATED_HANDLER_MODULE) is False
+
+
+def test_detector_flags_a_swallow_behind_a_module_not_found_handler():
+    """A SUBTYPE of ``ImportError`` catches the failure that actually occurs.
+
+    ``from toon_parser import ...`` against a missing module raises
+    ``ModuleNotFoundError``, so this handler swallows the real failure while
+    naming neither ``ImportError`` nor any supertype of it. The predicate this
+    replaced was a hand-written set of the three BROADEST handler names, and
+    breadth is the wrong axis: a narrow enough type still catches, and the
+    narrowest one that does is the one a real module would write.
+
+    The remedy is the reason this is a control and not a fourth entry in that
+    set. Adding the name would have closed this instance and left the shape —
+    the next handler nobody enumerated — exactly as open. Deciding relatedness
+    with ``issubclass`` against the live hierarchy has no such next instance.
+    """
+    assert swallows_canonical_import(_MODULE_NOT_FOUND_SWALLOWING_MODULE) is True
+
+
+def test_detector_flags_a_swallow_behind_an_unresolvable_handler():
+    """The fail-closed direction, pinned: an unknown handler name is reported.
+
+    A handler naming something outside ``builtins`` cannot be decided here, and
+    the fail-OPEN reading — unknown means harmless — is the evasion the previous
+    predicate permitted by construction: any module could clear the guard by
+    catching a project exception. This costs false positives on modules that
+    guard a canonical import with an unrelated custom error AND carry a
+    substitute writer; the whole-tree guard measures that cost against the real
+    tree, and the sibling control above keeps the clause from collapsing into a
+    constant by pinning a resolvable unrelated name that still clears.
+    """
+    assert swallows_canonical_import(_UNRESOLVABLE_HANDLER_MODULE) is True
 
 
 def test_detector_flags_a_swallow_whose_handler_raises_conditionally():
