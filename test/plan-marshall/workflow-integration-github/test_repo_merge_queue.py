@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the GitHub `repo merge-queue` probe/enable handlers (deliverable 2).
+"""Tests for the GitHub `repo merge-queue` probe/enable handlers.
 
 All fixtures are API-shape-faithful (no live gh). The probe reads the evaluated
 branch rules via ``GET /repos/{owner}/{repo}/rules/branches/{branch}`` and maps
@@ -741,7 +741,7 @@ def test_enable_unconfigured_post_carries_resolved_method(monkeypatch):
 
 
 def test_enable_445_reproduction_squash_config_provisions_squash_queue(monkeypatch):
-    # The #445 shape: pr_merge_strategy=squash configured, repo unconfigured —
+    # The reproduction shape: pr_merge_strategy=squash configured, repo unconfigured —
     # the provisioned queue must merge with SQUASH, not the historical MERGE.
     import _config_core
 

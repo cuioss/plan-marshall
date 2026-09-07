@@ -1526,7 +1526,7 @@ def test_fetch_pr_overall_ci_status_pass_plus_skipping_is_success(monkeypatch):
 
 
 # =============================================================================
-# SKIPPED-as-terminal regression — deliverable 7
+# SKIPPED-as-terminal regression
 # =============================================================================
 #
 # The SKIPPED-classification root cause is the gh CLI's gerund bucket form

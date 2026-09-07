@@ -50,7 +50,7 @@ def test_full_sweep_emits_exploration_share_block(tmp_path):
 def test_lane_lever_registered_and_era_stamped():
     assert "lane-lever-effectiveness" in audit.CHECK_NAMES
     assert "lane-lever-effectiveness" in audit.CROSS_PLAN_CHECKS
-    # Era bumped to this plan's own PR boundary (#875).
+    # Era stamped to this plan's own PR boundary (`#875`).
     assert audit.CHECK_ERA["lane-lever-effectiveness"] == "#875"
     # cross-check-synthesis stays last after the new registration.
     assert audit.CHECK_NAMES[-1] == "cross-check-synthesis"

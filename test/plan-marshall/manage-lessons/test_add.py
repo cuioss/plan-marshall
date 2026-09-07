@@ -233,15 +233,15 @@ class TestCliPlumbingAdd:
 
 
 # =============================================================================
-# Tier 2: main-anchored lessons corpus via the shared utility (deliverable 3)
+# Tier 2: main-anchored lessons corpus via the shared utility
 # =============================================================================
 
 
 class TestLessonsCorpusMainAnchoring:
     """The lessons corpus resolves to the MAIN checkout via
-    ``resolve_main_anchored_path`` regardless of caller cwd (deliverable 3).
+    ``resolve_main_anchored_path`` regardless of caller cwd.
 
-    Audit finding: phase-5 ``execute-task`` records lessons with cwd pinned to a
+    Why it matters: phase-5 ``execute-task`` records lessons with cwd pinned to a
     worktree. With the corpus main-anchored, a ``cmd_add`` from a worktree cwd
     lands the lesson under MAIN's ``lessons-learned``, NOT the worktree's empty
     corpus. The override-first branch keeps every PLAN_BASE_DIR-based test green.

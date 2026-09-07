@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """End-to-end regression tests for the prospective lessons-consult seam.
 
-Deliverable 1's co-located unit tests exercise ``cmd_consult`` in isolation.
-This file covers the verification scope those units cannot reach: the
+The co-located unit tests exercise ``cmd_consult`` in isolation. This file
+covers the verification scope those units cannot reach: the
 plan-lifecycle wiring driven through the **real**
 ``python3 .plan/execute-script.py`` executor against a seeded lessons corpus
 and a seeded ``solution_outline.md`` — never a ``PYTHONPATH``-constructed

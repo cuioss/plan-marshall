@@ -104,8 +104,8 @@ _CORROBORATION_PAYLOADS: dict[str, dict] = {
         'baseRefName': 'main',
         'headRefOid': 'abc123',
     },
-    # The #866 signature: the merge command reported success but GitHub closed
-    # the PR without merging it.
+    # The closed-unmerged signature: the merge command reports success but
+    # GitHub closed the PR without merging it.
     'closed': {
         'state': 'CLOSED',
         'mergedAt': None,
@@ -466,7 +466,7 @@ def test_pr_merge_delete_branch_does_not_touch_local_git(monkeypatch):
 def test_pr_merge_refuses_when_base_merge_queue_required(monkeypatch):
     """A required merge queue on the PR's base branch refuses the immediate merge.
 
-    Without the preflight this is the #866 signature: ``gh pr merge`` exits zero
+    Without the preflight this is the closed-unmerged signature: ``gh pr merge`` exits zero
     and GitHub closes the PR unmerged.
     """
     _install_common(monkeypatch)
@@ -517,7 +517,7 @@ def test_pr_merge_preflight_probe_error_fails_closed(monkeypatch):
     'post_merge_state', ['closed', 'open', 'merged_without_timestamp', 'unreadable']
 )
 def test_pr_merge_uncorroborated_merge_refuses_and_skips_branch_delete(monkeypatch, post_merge_state):
-    """#1081 lock: an uncorroborated merge reports error and deletes NOTHING.
+    """An uncorroborated merge reports error and deletes NOTHING.
 
     The verdict is established from the post-merge re-read BEFORE the
     branch-delete REST call, so a merge that never landed can never take the head
@@ -1089,7 +1089,7 @@ def test_safe_merge_poll_failure_propagates(monkeypatch):
 #
 # Before any readiness poll, cmd_pr_safe_merge probes the merge-queue state of
 # the PR's OWN base branch. A configured (required) queue refuses the immediate
-# merge (which would otherwise close the PR unmerged — the #866 signature); a
+# merge (which would otherwise close the PR unmerged); a
 # probe error fails closed; unconfigured / ineligible / unsupported proceed.
 # In the polled-clean path a post-merge re-fetch converts a false success (PR
 # closed unmerged despite a success-reporting merge) into an error.
@@ -1243,7 +1243,7 @@ def test_safe_merge_polled_clean_closed_without_merge_is_error(monkeypatch, post
 
     The old guard probed only for the single known-bad ``state == closed``, so
     every OTHER non-merged shape read as a merge. The positive assertion covers
-    all three: the #866 closed-unmerged signature, a PR left ``open``, and the
+    all three: the closed-unmerged signature, a PR left ``open``, and the
     wrongly-shaped record whose ``mergedAt`` key exists but carries no instant —
     the last of which a narrow presence check would wave through.
     """

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the centralized build-decision API.
 
-Covers the two halves of deliverable 4:
+Covers the two halves of the API:
 
 - ``should_execute_build`` (module-level in ``script-shared``/``extension_base``):
   the pure build-necessity decision over the ``build.map`` globs and

@@ -136,10 +136,10 @@ class TestMetricsCoreFlags:
 
 
 class TestMetricsEndTimeMarkerStates:
-    """``check_metrics`` reads the #812 markers three-state and reports all three.
+    """``check_metrics`` reads the end_time markers three-state and reports all three.
 
     The retired reader degraded BOTH unreadable states to "nothing to explain",
-    which after the rename would have read every post-#812 archive as clean.
+    which after the rename would have read every archive written since as clean.
     """
 
     _ZERO_TOKEN_PHASES = (

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the shared ``--extra`` passthrough guard (deliverable 3).
+"""Tests for the shared ``--extra`` passthrough guard.
 
 ``apply_extra_passthrough`` in ``_providers_core`` is the single guard the
 ``credentials configure`` and ``credentials edit`` commands share so that both

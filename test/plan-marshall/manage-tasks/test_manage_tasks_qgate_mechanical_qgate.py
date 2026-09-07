@@ -80,7 +80,7 @@ def test_qgate_mechanical_coverage_missing_deliverable(plan_context):
             {'number': 2, 'title': 'Add bar', 'affected_files': ['src/B.java (read)']},
         ],
     )
-    # Only deliverable 1 has a task; deliverable 2 is uncovered.
+    # Only `deliverable 1` has a task; `deliverable 2` is uncovered.
     _write_task(
         plan_dir / 'tasks',
         1,
@@ -117,7 +117,7 @@ def test_qgate_mechanical_coverage_orphan_task(plan_context):
     )
 
     result = cmd_qgate_mechanical(_ns('qgate-cov-orphan'))
-    # One orphan task; deliverable 1 is covered.
+    # One orphan task; `deliverable 1` is covered.
     assert result['checks']['coverage']['failed'] == 1
 
 

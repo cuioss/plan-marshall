@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Property/outcome tests for the single deterministic deriver (Deliverable 10).
+"""Property/outcome tests for the single deterministic deriver.
 
-Where ``test_derive_verification.py`` (Deliverable 4) pins the deriver's
-behaviour case-by-case, this suite asserts the two aggregate *properties* the
-build_map plan promises about the derived build ladder:
+Where ``test_derive_verification.py`` pins the deriver's behaviour
+case-by-case, this suite asserts the two aggregate *properties* the
+build_map contract promises about the derived build ladder:
 
 1. **docs_only_build_check** — for documentation-only changed sets the deriver
    returns ZERO Python build commands (no ``compile`` / ``test-compile`` /

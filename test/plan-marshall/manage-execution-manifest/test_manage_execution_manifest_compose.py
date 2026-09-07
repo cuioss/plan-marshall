@@ -665,12 +665,11 @@ def test_boundary_normalization_strips_prefix_for_all_downstream_consumers(plan_
 # =============================================================================
 # Bundle-self-modification tests removed
 #
-# The ``bundle_self_modification`` stacked rule was retired by cluster 02
-# deliverable 9 — the new built-in ``default:sync-plugin-cache`` step
-# (order 14) sits unconditionally between ``default:deploy-target`` (order 12)
-# and the agent-dispatched steps in the canonical Phase 6 ordering, which
-# subsumes the rule's previous job. Tests pinning the removed rule have been
-# deleted with the rule itself.
+# The ``bundle_self_modification`` stacked rule is retired — the project-local
+# ``project:finalize-step-sync-plugin-cache`` step (order 85) runs after
+# ``project:finalize-step-deploy-target`` (order 81) in the post-merge band of
+# the canonical Phase 6 ordering, which subsumes the rule's job. Tests pinning
+# the removed rule are deleted with the rule itself.
 # =============================================================================
 
 
@@ -3852,7 +3851,7 @@ def test_task_command_survives_when_compose_fails_unresolvable_step(plan_context
 # =============================================================================
 # scope_gated_finalize pre-filter tests
 #
-# Deliverable 2: the composer drops heavyweight phase-6 review/audit steps by
+# The composer drops heavyweight phase-6 review/audit steps by
 # scope. surgical drops the three review/audit steps (plan-retrospective,
 # pre-submission-self-review, plugin-doctor) but RETAINS automatic-review by
 # default (the implicit scope gate never drops it — its presence is governed by

@@ -184,7 +184,7 @@ def test_input_integrity_unexplained_execute_is_blind(tmp_path):
 def test_input_integrity_marker_explained_execute_is_partial_not_blind(tmp_path):
     inputs = _plan_with_metrics(tmp_path, _METRICS_MARKED)
     result = audit.check_input_integrity(inputs)
-    # A #812-marker-explained zero-token execute is an explained gap, never blind.
+    # A marker-explained zero-token execute is an explained gap, never blind.
     assert result["data_confidence"] == "partial"
     assert "5-execute" not in result["metrics_blind"]
     assert result["metrics_marker_schema"] == audit.METRICS_SCHEMA_CURRENT

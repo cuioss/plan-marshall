@@ -71,8 +71,8 @@ class TestQualityChainResolution:
     def test_accepted_suppressed_rejected_pass_through(self):
         assert audit._qc_resolution({'resolution': 'accepted'}) == 'accepted'
         assert audit._qc_resolution({'resolution': 'suppressed'}) == 'suppressed'
-        # `rejected` is the ext-point-verify validity-stage disposition (#788); it
-        # is a first-class resolution bucket, not a KeyError into the matrix.
+        # `rejected` is the ext-point-verify validity-stage disposition; it is a
+        # first-class resolution bucket, not a KeyError into the matrix.
         assert audit._qc_resolution({'resolution': 'rejected'}) == 'rejected'
         assert 'rejected' in audit._QC_RESOLUTIONS
 
@@ -82,8 +82,9 @@ class TestQualityChainResolution:
         assert audit._qc_resolution({'resolution': ''}) == 'pending'
         assert audit._qc_resolution({}) == 'pending'
         # An unrecognized resolution coerces to `pending` rather than returning
-        # an unbucketed value that would KeyError the matrix (the next #788-style
-        # disposition addition is crash-safe, surfaced as unresolved).
+        # an unbucketed value that would KeyError the matrix (the next
+        # disposition added to the validity stage is crash-safe, surfaced as
+        # unresolved).
         assert audit._qc_resolution({'resolution': 'unrecognized_disposition'}) == 'pending'
 
 

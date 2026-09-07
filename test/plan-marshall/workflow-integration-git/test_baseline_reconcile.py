@@ -615,7 +615,7 @@ def _write_status_main_checkout(plan_dir: Path) -> None:
 
 
 # =============================================================================
-# Classification tests (deliverable 6)
+# Classification tests
 # =============================================================================
 
 

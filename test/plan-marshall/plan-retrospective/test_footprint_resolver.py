@@ -330,7 +330,7 @@ def test_coerce_pr_number_rejects_unusable_values():
 
 
 def test_coerce_pr_number_rejects_bool():
-    """bool is an int subclass; True must not coerce to PR #1."""
+    """bool is an int subclass; True must not coerce to PR number 1."""
     assert _fr.coerce_pr_number(True) is None
     assert _fr.coerce_pr_number(False) is None
 

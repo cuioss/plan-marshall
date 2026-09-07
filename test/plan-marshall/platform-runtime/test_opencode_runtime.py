@@ -660,7 +660,7 @@ def test_wait_for_noop_reports_no_outcome(runtime: OpenCodeRuntime) -> None:
 
 def test_wait_for_reason_names_the_absent_session_id(runtime: OpenCodeRuntime) -> None:
     """The decline is grounded in a verified fact: OpenCode provides no platform
-    session id (issue #9292), so a held wait could not be re-attached."""
+    session id (issue ``#9292``), so a held wait cannot be re-attached."""
     reason = _parse(runtime.wait_for("build-job", "job-1", 60))["reason"]
     assert "session id" in reason
     assert "#9292" in reason

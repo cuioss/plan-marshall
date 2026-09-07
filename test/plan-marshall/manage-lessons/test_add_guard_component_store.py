@@ -13,7 +13,7 @@ import marketplace_paths
 
 
 # =============================================================================
-# Tier 2: cross-repo wrong-store refusal guard (deliverable 3)
+# Tier 2: cross-repo wrong-store refusal guard
 # =============================================================================
 
 

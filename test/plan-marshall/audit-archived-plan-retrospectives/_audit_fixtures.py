@@ -433,7 +433,7 @@ def _write_ii_plan(
     - ``logs/work.log`` — carries a ``[DISPATCH] role=phase-N`` marker iff
       ``dispatch_marker`` is True.
 
-    ``marker_schema`` selects which of the three #812 end_time-presence marker
+    ``marker_schema`` selects which of the three end_time-presence marker
     states the written ``metrics.toon`` is in, because the state is load-bearing
     for the ``data_confidence`` bucket:
 
@@ -595,7 +595,7 @@ def _clean_metrics_body(**execute_fields: int) -> str:
 
     Every canonical phase carries a non-zero ``total_tokens`` so
     ``check_input_integrity`` reports no ``metrics_blind`` phase and every
-    canonical row is present, AND the body carries the CURRENT #812
+    canonical row is present, AND the body carries the CURRENT
     ``end_time``-presence keys reporting nothing missing — an unreadable marker
     record floors a plan on its own, so a baseline without them would be floored
     for a reason unrelated to whatever the test is measuring. The fixture is

@@ -667,7 +667,7 @@ def test_mr_merge_preflight_probe_error_fails_closed(monkeypatch):
 
 @pytest.mark.parametrize('post_merge_state', ['open', 'closed', 'unknown'])
 def test_mr_merge_uncorroborated_merge_refuses_and_skips_branch_delete(monkeypatch, post_merge_state):
-    """#1081 lock: an uncorroborated merge reports error and deletes NOTHING.
+    """Corroboration lock: an uncorroborated merge reports error and deletes NOTHING.
 
     GitLab corroborates from ``state == 'merged'`` — ``view_pr_data`` surfaces no
     ``merged_at`` here, so state is the whole verdict. The verdict is established

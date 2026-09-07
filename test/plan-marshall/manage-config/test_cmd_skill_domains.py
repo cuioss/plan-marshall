@@ -916,7 +916,7 @@ def test_discover_project_returns_structured_output(plan_context):
 
 
 # =============================================================================
-# Prefix-exclusion filter tests (deliverable 2 / Finding B)
+# Prefix-exclusion filter tests
 # =============================================================================
 
 
@@ -1548,7 +1548,7 @@ def test_cli_skill_domains_get(plan_context):
 
 
 # =============================================================================
-# Domain inclusion (always_on / file_globs) Tests — deliverable 1
+# Domain inclusion (always_on / file_globs) Tests
 # =============================================================================
 
 

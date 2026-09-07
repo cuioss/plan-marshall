@@ -180,7 +180,7 @@ class TestInputIntegrityFlags:
 
 
 class TestDataConfidenceBucket:
-    """``data_confidence`` — BOTH routes into ``blind`` and the #812 carve-out.
+    """``data_confidence`` — BOTH routes into ``blind`` and the marker carve-out.
 
     The shipped predicate is
     ``(execute_absent or execute_recorded_zero) and not execute_marker_explained``,
@@ -222,7 +222,7 @@ class TestDataConfidenceBucket:
         assert row['data_confidence'] != 'partial'
 
     def test_marker_explained_zero_execute_grades_partial_not_blind(self, tmp_path: Path):
-        # the #812 carve-out: a zero-token 5-execute listed in
+        # the marker-explained carve-out: a zero-token 5-execute listed in
         # `phases_missing_end_time` was never CLOSED by design, so the gap is
         # explained rather than accidental.
         inputs = _write_ii_plan(
@@ -255,7 +255,7 @@ class TestDataConfidenceBucket:
 
     def test_a_fully_recorded_plan_grades_fully_recorded(self, tmp_path: Path):
         # the positive control: without it, every assertion above would pass
-        # against a predicate that graded literally every plan `blind`.
+        # against a predicate that returned `blind` for literally every plan.
         inputs = _write_ii_plan(
             tmp_path, 'dc-clean',
             phase_tokens={'5-execute': 10_000, '6-finalize': 5_000},

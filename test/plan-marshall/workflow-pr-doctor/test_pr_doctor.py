@@ -392,7 +392,7 @@ def test_combined_diagnosis():
 
 
 def test_build_pass_with_review_issues():
-    """Test diagnosis with passing build but unresolved review comments (#52)."""
+    """Test diagnosis with passing build but unresolved review comments."""
     result = diagnose_pr(
         build_status='success',
         review_comments=[{'priority': 'high', 'body': 'Fix this'}],
@@ -430,7 +430,7 @@ def test_sonar_severity_breakdown():
 
 
 # =============================================================================
-# diagnose build severity (#46)
+# diagnose build severity
 # =============================================================================
 
 
@@ -542,7 +542,7 @@ def test_diagnose_build_failures_non_dict_entries():
 
 
 # =============================================================================
-# parse-handoff skip_sonar field (#31)
+# parse-handoff skip_sonar field
 # =============================================================================
 
 
@@ -565,7 +565,7 @@ def test_skip_sonar_defaults_false():
 
 
 # =============================================================================
-# parse-handoff automated_review field (#32)
+# parse-handoff automated_review field
 # =============================================================================
 
 
@@ -588,7 +588,7 @@ def test_automated_review_defaults_false():
 
 
 # =============================================================================
-# parse-handoff semantic validation (#41)
+# parse-handoff semantic validation
 # =============================================================================
 
 

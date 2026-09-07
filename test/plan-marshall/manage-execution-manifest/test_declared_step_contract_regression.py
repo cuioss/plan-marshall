@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """End-to-end regression coverage for the composer's declared-step contracts.
 
-Deliverable 1's tests pin the composer's helpers at the unit boundary. This
+Sibling unit tests pin the composer's helpers at the unit boundary. This
 module exercises the same two defects from the USER-VISIBLE angle: it drives the
 real ``cmd_compose`` / ``cmd_lanes_preview`` entry points over seeded marshal
 fixtures and reads the result back from the PERSISTED ``execution.toon``, never

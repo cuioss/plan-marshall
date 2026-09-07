@@ -17,8 +17,8 @@ seam rather than re-implementing the resolution logic:
 2. **An explicit ``--timeout`` binds end-to-end.** Driving the factory
    ``cmd_run`` in-process leg with an explicit ``--timeout`` far above a
    SEEDED persisted value must put the explicit bound on the subprocess.
-   (Red before deliverable 1: ``timeout_get`` discarded the caller's bound
-   whenever any persisted value existed, and the argparse default made an
+   (The failure this forbids: ``timeout_get`` discarding the caller's bound
+   whenever any persisted value exists, with the argparse default making an
    explicit value indistinguishable from an unsupplied flag.)
 3. **Each engine carries its floor, the resolve stamp agrees with the run, and
    the tier follows the MEASUREMENT.** ``_lookup_bash_timeout``'s stamp must
@@ -27,11 +27,10 @@ seam rather than re-implementing the resolution logic:
    follows that floored stamp, but ``execution_tier`` does NOT: it is
    ``per_task`` only for a MEASURED command whose stamp stays within the
    ceiling, and ``orchestrator`` otherwise, so an unmeasured command fails
-   closed uniformly across all four engines. (Red before deliverable 2: the
-   stamp omitted the floor, under-reporting the bound. Red before this plan:
-   the tier was derived from the floor, so an over-provisioned floor emptied
-   the runnable slice and an unmeasured slow command could be run in-leaf on
-   its very first run.)
+   closed uniformly across all four engines. (Two failures this forbids: a
+   stamp that omits the floor, under-reporting the bound; and a tier derived
+   from the floor, where an over-provisioned floor empties the runnable slice
+   and an unmeasured slow command can be run in-leaf on its very first run.)
 
 The engine list itself is the coverage guarantee: every case is parameterised
 over :data:`_ENGINES`, so adding a fifth engine without a declared floor fails
@@ -266,8 +265,8 @@ def test_explicit_timeout_binds_end_to_end_through_cmd_run(
 
     Driven through the factory ``cmd_run`` in-process leg with a REAL
     ``run-configuration.json`` carrying a learned value for the very key the
-    invocation resolves to — the exact shape that discarded the caller's bound
-    before deliverable 1.
+    invocation resolves to — the exact shape that would discard the caller's
+    bound.
     """
     module = _engine_module(skill, script_file, f'_{tool_name}_truthfulness_execute')
     config = module._CONFIG

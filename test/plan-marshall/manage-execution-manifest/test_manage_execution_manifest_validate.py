@@ -411,7 +411,7 @@ def test_orchestrator_owned_registry_steps_all_resolve_orchestrator_owned():
 # =============================================================================
 # Ascending-order barrier invariant (general regression, order-independent)
 #
-# Distinct verification scope from Deliverable 1's single-case reproduction
+# Distinct verification scope from the single-case reproduction
 # (test_manage_execution_manifest_compose.py :: test_compose_sorts_phase_6_steps
 # _by_frontmatter_order, which pins one archive-plan/preference-emitter pair):
 # this drives cmd_compose across SEVERAL shuffled seed orderings of the SAME

@@ -298,7 +298,7 @@ def test_persist_rejects_empty_run_id(plan_context):
 
 
 # ---------------------------------------------------------------------------
-# cmd_persist with a populated --jobs-file — deliverable 3. The CLI surface
+# cmd_persist with a populated --jobs-file. The CLI surface
 # accepts a JSON file path so the green-CI path can persist per-job
 # evidence. The manifest MUST carry one jobs[] row per input job, each with
 # a non-empty log_path, and the manifest+return MUST be labelled
@@ -411,7 +411,7 @@ def test_cmd_persist_without_jobs_file_labels_empty_source(capsys, plan_context)
 
 
 # ---------------------------------------------------------------------------
-# read --latest accessor — deliverable 4. Recency is decided by the
+# read --latest accessor. Recency is decided by the
 # manifest fetched_at timestamp, NEVER by lexicographic run_id sorting.
 # ---------------------------------------------------------------------------
 

@@ -125,7 +125,7 @@ class TestPreferenceEmitterSeedWiring:
         )
 
     def test_step_declares_post_run_review(self):
-        # deliverable 1: the post-run-review role is a DECLARED frontmatter fact,
+        # The post-run-review role is a DECLARED frontmatter fact,
         # not an undeclared convention — it is what obliges the post-merge
         # placement asserted above and what the derivation guard reads.
         record = _discovered_record(_STEP_ID)
@@ -142,7 +142,7 @@ class TestPreferenceEmitterSeedWiring:
         )
 
     def test_step_declares_mutates_source_false(self):
-        # deliverable 1: the source write is REMOVED, not relocated — the owed
+        # The step performs no source write, and none was relocated — the owed
         # architecture hints are filed as a follow-up artifact instead. The
         # declaration must be EXPLICIT (`is False`, so an absent key fails too):
         # a step ordered at or after the merge gate that declares no

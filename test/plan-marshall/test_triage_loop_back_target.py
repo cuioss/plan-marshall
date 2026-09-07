@@ -144,12 +144,18 @@ class TestTriageGranularityCallSiteAlignment:
     - ``automatic-review.md`` still records ``--outcome loop_back`` on its own
       Branch C intermediate-pass tail and MUST forward
       ``--loop-back-target`` there (per the manage-status validation contract).
-    - ``sonar-roundtrip.md`` is now **FIND-only** (deliverable 4 removed its
-      inline ``verification-feedback`` triage dispatch and all loop-back
-      bookkeeping): it files ``sonar-issue`` findings and stops. Loop-back is
-      owned by the dispatcher-level unified wait-region triage
-      (``producer=finalize-feedback``), so sonar-roundtrip MUST NOT forward
-      ``--loop-back-target`` itself."""
+    - ``sonar-roundtrip.md`` is **FIND-only**: it files ``sonar-issue``
+      findings and stops, and loop-back is owned by the dispatcher-level
+      unified wait-region triage (``producer=finalize-feedback``), so
+      sonar-roundtrip MUST NOT forward ``--loop-back-target`` itself.
+
+    What the sonar-roundtrip case below actually asserts is the three
+    observables it names: ``--loop-back-target`` is absent, ``FIND-only`` is
+    declared, and ``finalize-feedback`` is named as the triage owner. The
+    absence of the forwarding flag is the marker standing in for the wider
+    property; the presence of an inline ``verification-feedback`` dispatch is
+    NOT independently asserted, so a dispatch reintroduced without the flag
+    would pass."""
 
     def test_automated_review_forwards_loop_back_target(self) -> None:
         """`automatic-review.md` Branch C / "Handle findings (loop-back)"

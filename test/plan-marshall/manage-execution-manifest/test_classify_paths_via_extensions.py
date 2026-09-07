@@ -36,8 +36,8 @@ _strip_template_suffix = _manifest_mod._strip_template_suffix
 _manifest_mod._emit_decision_log = lambda *a, **kw: None
 
 # =============================================================================
-# Local FakeExtension (Deliverable 4's conftest fixture is built in a later
-# task; this module uses inline fakes so it can run before that fixture lands.)
+# Local FakeExtension — this module defines its own inline fakes rather than
+# depending on a shared conftest fixture, so it stands alone.
 # =============================================================================
 
 

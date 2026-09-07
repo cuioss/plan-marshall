@@ -54,7 +54,7 @@ class TestNoOrphanGetPlanDir:
     """Regression guard for the orphan-removal of ``get_plan_dir``.
 
     ``get_plan_dir`` was a duplicate base resolver removed from
-    ``marketplace_paths`` (deliverable 2). Runtime plan-dir resolution lives
+    ``marketplace_paths``. Runtime plan-dir resolution lives
     solely in ``tools-file-ops/file_ops.py``. This guard fails if the orphan
     is ever reintroduced into the shared module, re-creating the duplication.
     """

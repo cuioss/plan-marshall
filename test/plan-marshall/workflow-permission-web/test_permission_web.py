@@ -109,7 +109,7 @@ def test_categorize_not_array():
 
 
 # =============================================================================
-# categorize edge cases (#42)
+# categorize edge cases
 # =============================================================================
 
 
@@ -123,7 +123,7 @@ def test_categorize_domain_star_prefix():
 
 
 # =============================================================================
-# categorize with protocol-prefixed domains (#35)
+# categorize with protocol-prefixed domains
 # =============================================================================
 
 

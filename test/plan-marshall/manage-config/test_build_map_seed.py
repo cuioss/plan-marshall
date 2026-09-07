@@ -803,11 +803,11 @@ def test_force_reseed_overwrites_user_correction(plan_context, monkeypatch):
 
 
 # =============================================================================
-# Seed-boundary dead-glob regression — the user-visible contract of D1's filter
+# Seed-boundary dead-glob regression — the user-visible contract of the filter
 # =============================================================================
 #
-# The end-to-end guarantee deliverable 1's per-route tree-presence filter exists
-# to provide: after a build.map seeding pass, a declared route whose file type is
+# The end-to-end guarantee the per-route tree-presence filter exists to
+# provide: after a build.map seeding pass, a declared route whose file type is
 # absent from the project tree (a dead glob) does NOT appear in the persisted
 # build.map, while a live route (whose pattern matches a tracked file) survives.
 # This drives the REAL seed pipeline (cmd_build_map_seed → aggregate_build_map →

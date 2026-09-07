@@ -504,7 +504,7 @@ class TestAnalyzeDiffCli:
 class TestBranchSyncState:
     """branch-sync-state — push-parity verdicts driving the barrier re-fire rule.
 
-    Repo-fixture tests reproducing the nifi #445 shape: a work repo with a
+    Repo-fixture tests reproducing the observed nifi shape: a work repo with a
     ``file://`` bare origin. Metadata resolution (worktree path + branch) is
     monkeypatched onto the real fixture repo; the git comparison itself runs
     against real refs.
@@ -852,7 +852,7 @@ class TestDetectArtifacts:
         assert '.next/' in uncertain_str
 
     def test_detects_root_level_artifacts(self, tmp_path: Path):
-        """Detection of artifacts at repo root (#23)."""
+        """Detection of artifacts at repo root."""
         _create_file(tmp_path, 'Example.class')
         _create_file(tmp_path, '.DS_Store')
         _create_file(tmp_path, 'scratch.temp')
@@ -1614,7 +1614,7 @@ class TestWrapText:
         assert wrap_text(text, 72) == text
 
     def test_very_long_word_not_broken(self):
-        """A single word longer than width is not split (#20)."""
+        """A single word longer than width is not split."""
         url = 'https://example.com/very/long/path/that/exceeds/seventy/two/characters/easily'
 
         assert wrap_text(url, 72) == url

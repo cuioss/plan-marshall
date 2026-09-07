@@ -26,7 +26,7 @@ short-circuited by monkeypatching ``_resolve_worktree_path_for_plan``
 so the tests never depend on the real plan-marshall executor or any
 ``manage-status`` state on disk.
 
-Rebase target (Deliverable 2): ``cmd_worktree_rebase_to`` fetches
+Rebase target: ``cmd_worktree_rebase_to`` fetches
 ``origin/{base}`` and rebases onto the fetched remote tip — NOT the stale
 local ``{base}`` ref. The fixtures clone from ``main_repo`` (so the worktree
 has an ``origin`` remote and ``origin/main``); the base-advancing helper commits
@@ -143,7 +143,7 @@ def _advance_main_via_branch_switch(repo: Path, name: str, content: str, message
 def _advance_origin_main(origin_repo: Path, name: str, content: str, message: str) -> None:
     """Commit ``name`` to ``origin_repo``'s ``main`` (the remote the worktree clones).
 
-    Deliverable 2: the rebase now targets ``origin/{base}``, so advancing the
+    The rebase targets ``origin/{base}``, so advancing the
     base means committing to the ORIGIN's ``main`` (``main_repo``), then letting
     the production code's ``git fetch origin main`` pull the advance into the
     worktree's ``origin/main`` remote-tracking ref. The worktree's OWN local
@@ -493,7 +493,7 @@ class TestRebaseToStaleLocalBaseRegression:
 
 
 # ---------------------------------------------------------------------------
-# Deliverable 2 — no-origin fallback to the local {base} ref
+# No-origin fallback to the local {base} ref
 # ---------------------------------------------------------------------------
 
 

@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Regression coverage for the manifest-bundle canonicalize_step_key migration.
 
-Deliverable 2 DELETED ``_manifest_core._strip_default_prefix`` and migrated every
-manifest-bundle call site to the shared ``canonicalize_step_key`` resolver. Because
+``_manifest_core._strip_default_prefix`` is deleted, and every manifest-bundle
+call site resolves through the shared ``canonicalize_step_key`` resolver. Because
 ``canonicalize_step_key`` subsumes the full ``_strip_default_prefix`` semantics
 (``default:`` strip + ``PROMOTED_BUILTIN_STEP_IDS`` alias map), the migration is
 behaviour-preserving. These tests pin that invariant at every migrated surface so a

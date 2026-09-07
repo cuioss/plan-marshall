@@ -350,7 +350,7 @@ def test_log_script_execution_error_with_details(monkeypatch):
 # TESTS: log_script_execution producer-tier routing (--plan-id presence)
 # =============================================================================
 #
-# Regression guard for the orchestrator-context build-call bug (deliverable 1):
+# Regression guard for the orchestrator-context build call:
 # the pre-push-quality-gate build MUST forward --plan-id so its log line lands in
 # the plan-scoped script-execution.log tier. The old --project-dir-only shape
 # carried no --plan-id, so log_script_execution's extract_plan_id() returned None

@@ -8,8 +8,8 @@ from _audit_fixtures import audit
 
 
 def test_sequence_ci_rerun_fires_on_multiple_ci_run_dirs(tmp_path):
-    # Pin: the ci_rerun signal still counts CI run directories (logic unchanged by
-    # the post-#849/#850 re-doc; only the interpretation guidance changed).
+    # Pin: the ci_rerun signal counts CI run directories. The re-doc that reworded
+    # this signal changed only the interpretation guidance, not the counting logic.
     plan_dir = tmp_path / ".plan" / "local" / "archived-plans" / "seq-plan"
     (plan_dir / "artifacts" / "ci-runs" / "run-1").mkdir(parents=True)
     (plan_dir / "artifacts" / "ci-runs" / "run-2").mkdir(parents=True)

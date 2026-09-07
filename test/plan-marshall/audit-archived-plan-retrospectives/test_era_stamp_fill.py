@@ -189,7 +189,7 @@ def test_run_fills_pending_in_lock_step(tmp_path, capsys):
     assert '"PR-PENDING"' not in test_text
     assert '"#901"' in audit_text
     assert '"#901"' in test_text
-    # the concrete #877 on the sibling check is preserved
+    # the concrete `#877` stamp on the sibling check is preserved
     assert '"#877"' in audit_text
     # the unquoted comment mention is preserved verbatim
     assert '# PR-PENDING is the finalize-resolved sentinel' in audit_text
