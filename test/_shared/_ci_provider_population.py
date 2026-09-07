@@ -34,6 +34,15 @@ CI_CATEGORY = 'ci'
 def discover_ci_provider_skills() -> tuple[tuple[str, ...], str]:
     """Return the discovered CI providers' ``skill_name`` values, plus any failure.
 
+    The normalisation of the scan result — extracting ``skill_name`` and sorting
+    it — is INSIDE the boundary, not after it. Discovery returns whatever the
+    scanned ``*_provider.py`` modules declared, so a malformed declaration (a
+    non-string ``skill_name``, say) raises in the extraction rather than in the
+    scan; left outside, that exception escapes a parametrize source and takes
+    collection down, which is precisely the outcome the boundary exists to
+    prevent. The boundary has to cover every step that reads the scan's data, not
+    only the call that produced it.
+
     Returns:
         ``(skill_names, failure)``. ``failure`` is empty on a successful scan and
         carries the exception text otherwise — reported rather than raised so a
@@ -45,11 +54,28 @@ def discover_ci_provider_skills() -> tuple[tuple[str, ...], str]:
         from _list_providers import find_full_providers_by_category
 
         declared = find_full_providers_by_category(CI_CATEGORY)
+        skill_names = set()
+        for provider in declared:
+            skill_name = provider.get('skill_name')
+            if not skill_name:
+                continue
+            # A non-string skill_name is a MALFORMED declaration, not a provider.
+            # Without this check a single truthy scalar (`{'skill_name': 7}`) is
+            # accepted and returned as `(7,)`: set construction succeeds, and
+            # sorting a homogeneous non-string set succeeds too, so the declared
+            # `tuple[str, ...]` is violated silently and the bad value reaches
+            # `build_provider_arms` as if it were a discovered provider. Raising
+            # here puts it on the SAME reported-failure path as a failed scan —
+            # the `except` below converts it into the named failure tuple rather
+            # than letting it escape a parametrize source.
+            if not isinstance(skill_name, str):
+                raise TypeError(f'skill_name must be a string, got {type(skill_name).__name__}: {skill_name!r}')
+            skill_names.add(skill_name)
+        return tuple(sorted(skill_names)), ''
     # Broad by intent: the failure is REPORTED to the caller, never swallowed and
     # never raised out of a parametrize source, where it would take collection down.
     except Exception as exc:
         return (), f'{type(exc).__name__}: {exc}'
-    return tuple(sorted({p['skill_name'] for p in declared if p.get('skill_name')})), ''
 
 
 def build_provider_arms(

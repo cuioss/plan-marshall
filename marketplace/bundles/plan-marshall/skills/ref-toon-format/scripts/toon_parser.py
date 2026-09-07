@@ -427,6 +427,17 @@ def _parse_multiline_value(ctx: ParseContext, base_indent: int) -> str:
     description, an issue body) would come back edited at its edges by a reader
     that promised to carry it whole.
 
+    The dedent removes the emitter's structural prefix and NEVER more than that:
+    :func:`_serialize_block_scalar` writes the body two spaces past the header, so
+    ``base_indent + 2`` is what has to come back off, but the CLAMP against the
+    line's own indent is what keeps the two halves of this parser agreeing.
+    :func:`block_scalar_body_continues` admits every line indented deeper than the
+    header — one space past it included — and a fixed ``base_indent + 2`` slice of
+    such a line cuts into the payload's own characters, silently deleting them. A
+    hand-written or foreign document is exactly where that shape arrives, and it is
+    also exactly where verbatim carriage matters, so the shallower-than-canonical
+    body is dedented by what it actually carries rather than truncated.
+
     One normalisation remains, and it is the emitter's rather than this
     function's: a whitespace-only body line is recorded as empty, because
     :func:`_serialize_block_scalar` writes a blank payload line as a genuinely
@@ -447,7 +458,7 @@ def _parse_multiline_value(ctx: ParseContext, base_indent: int) -> str:
         if not line.strip():
             lines.append('')
         else:
-            lines.append(line[base_indent + 2 :] if len(line) > base_indent + 2 else line.strip())
+            lines.append(line[min(base_indent + 2, _get_indent(line)) :])
         ctx.index += 1
 
     return '\n'.join(lines)
