@@ -252,8 +252,17 @@ _RESOLVER_LOOKUP = re.compile(r'`phase-6-finalize(?:\s+--role\s+[\w-]+)?`')
 #: ``effort resolve-target`` when the caller passes ``--workflow`` (the resolve
 #: seam — ``dispatch-logging.md`` § Placement contract), emitted per firing so the
 #: record survives a re-fire that re-resolves. A bare resolve WITHOUT
-#: ``--workflow`` is a pure query and emits nothing, so BOTH tokens are required
-#: for a spawn to count as paired.
+#: ``--workflow`` is a pure query and emits nothing.
+#:
+#: ⛔ The two tokens are required IN THE SAME INVOCATION, never merely both
+#: somewhere in the lookback window. Searched independently over the window, a
+#: genuinely bare resolve sitting immediately before a spawn PASSES whenever any
+#: unrelated earlier command in the window happens to carry ``--workflow`` — so the
+#: sweep would report clean over the exact bare-resolve regression it exists to
+#: catch. ``--workflow`` is therefore matched against the backslash-continued
+#: command block the ``effort resolve-target`` token belongs to (see
+#: :func:`_continued_command_span`), the same continuation join the sibling scans in
+#: this directory use to tell a real flag from one on a neighbouring command.
 _SEAM_RESOLVE = re.compile(r'effort resolve-target\b')
 _WORKFLOW_FLAG = re.compile(r'--workflow\b')
 
@@ -261,7 +270,13 @@ _WORKFLOW_FLAG = re.compile(r'--workflow\b')
 #: resolve seam emits the line, a hand-written ``manage-logging work "[DISPATCH]"``
 #: step double-emits AND, placed once per role, reintroduces the per-role blind
 #: spot the seam closes. No dispatch branch may carry one.
-_HAND_WRITTEN_DISPATCH_EMIT = re.compile(r'--message\s+"\[DISPATCH\]')
+#:
+#: ⛔ BOTH shell quote styles are accepted. The pattern used to anchor on the
+#: double quote alone, and ``--message '[DISPATCH] …'`` is equally shell-valid — so
+#: a duplicate hand-written emission written in single quotes evaded the sweep
+#: entirely and the whole-corpus scan passed over the very double-emit the seam was
+#: introduced to remove.
+_HAND_WRITTEN_DISPATCH_EMIT = re.compile(r'--message\s+["\']\[DISPATCH\]')
 
 #: A dispatch branch's ``Task:`` spawn line. ``MULTILINE`` so the same pattern
 #: anchors per-line both when matched line-by-line and when swept over the whole
@@ -564,23 +579,65 @@ def _head_dependent_region() -> str:
     return region
 
 
+def _continued_command_span(lines: list[str], index: int) -> str:
+    """Return the whole backslash-continued command block ``lines[index]`` belongs to.
+
+    Walks BOTH ways from the anchor line: backwards while the preceding line ends
+    in ``\\`` (the invocation's ``python3 …`` head and any earlier argument lines),
+    and forwards while the current line ends in ``\\`` (its remaining arguments).
+    The result is one invocation's full argument list and nothing else, which is
+    what makes "this flag belongs to THIS command" answerable at all.
+
+    The join is the one the sibling scans in this directory already use to tell a
+    real flag from a mention on a neighbouring command (see
+    ``test_step_completion_emission.py::_block_suppresses_via_mark_step_done``).
+    """
+    start = index
+    while start > 0 and lines[start - 1].rstrip().endswith('\\'):
+        start -= 1
+    end = index
+    while end + 1 < len(lines) and lines[end].rstrip().endswith('\\'):
+        end += 1
+    return '\n'.join(lines[start : end + 1])
+
+
+def _seam_resolve_sites(lines: list[str]) -> list[tuple[int, str]]:
+    """Return ``(line_index, whole_invocation_text)`` per ``effort resolve-target`` call."""
+    return [
+        (index, _continued_command_span(lines, index))
+        for index, line in enumerate(lines)
+        if _SEAM_RESOLVE.search(line)
+    ]
+
+
 def _spawns_missing_seam_resolve(text: str) -> list[str]:
     """Return every ``Task:`` spawn not preceded by a ``--workflow`` seam resolve.
 
     The population is derived from the spawn sites present in ``text``; nothing
     about how many dispatch branches exist is assumed. A spawn is paired when an
-    ``effort resolve-target`` call carrying ``--workflow`` sits within the lookback
-    window before it — that resolve is the seam that emitted the ``[DISPATCH]``
-    line and its paired decision-log record for this firing. A spawn under a bare
-    (no ``--workflow``) resolve leaves no dispatch record.
+    ``effort resolve-target`` invocation **that itself carries** ``--workflow`` sits
+    within the lookback window before it — that resolve is the seam that emitted the
+    ``[DISPATCH]`` line and its paired decision-log record for this firing. A spawn
+    under a bare (no ``--workflow``) resolve leaves no dispatch record.
+
+    ⛔ ``--workflow`` is read off the resolve's OWN continued command block, never
+    off the window as a whole. The two tokens searched independently made a bare
+    resolve pass on the strength of an unrelated ``--workflow``-bearing command
+    earlier in the same 25-line window — the guard's own comment names one
+    invocation, so a window-wide search is weaker than the property it claims.
     """
     lines = text.splitlines()
+    seam_sites = _seam_resolve_sites(lines)
     unpaired: list[str] = []
     for index, line in enumerate(lines):
         if not _TASK_SPAWN.match(line):
             continue
-        window = '\n'.join(lines[max(0, index - _EMIT_LOOKBACK_LINES) : index])
-        if not (_SEAM_RESOLVE.search(window) and _WORKFLOW_FLAG.search(window)):
+        window_start = max(0, index - _EMIT_LOOKBACK_LINES)
+        paired = any(
+            window_start <= site_index < index and _WORKFLOW_FLAG.search(invocation)
+            for site_index, invocation in seam_sites
+        )
+        if not paired:
             unpaired.append(f'line {index + 1}: {line.strip()!r}')
     return unpaired
 
@@ -1124,6 +1181,95 @@ def test_seam_resolve_detectors_fire_on_the_pre_fix_shape():
 
     assert not _spawns_missing_seam_resolve(post_fix)
     assert not _hand_written_dispatch_emits(post_fix)
+
+
+def test_seam_resolve_detector_fires_on_a_bare_resolve_beside_a_decoy_workflow():
+    """The discriminating arm: a bare resolve does NOT borrow a neighbour's --workflow.
+
+    This is the shape the window-wide token search could not see. The branch spawns
+    under a genuinely bare ``effort resolve-target`` — a pure query that emits no
+    ``[DISPATCH]`` line — while an unrelated command earlier in the SAME lookback
+    window carries ``--workflow``. Searched independently, both tokens are present
+    and the spawn reports paired; read per invocation, the resolve is bare and the
+    spawn is unpaired.
+    """
+    decoyed = '\n'.join(
+        [
+            '      (1) Compose the manifest (unrelated command, carries --workflow):',
+            '          python3 .plan/execute-script.py '
+            'plan-marshall:manage-execution-manifest:manage-execution-manifest \\',
+            '            compose --plan-id {plan_id} \\',
+            '            --workflow plan-marshall:phase-6-finalize/workflow/{other}.md',
+            '      (2) Resolve the level-bound target (BARE — no --workflow):',
+            '          python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \\',
+            '            effort resolve-target --phase phase-6-finalize [--role <subkey>]',
+            '      (3) Dispatch:',
+            '          Task: plan-marshall:{target}',
+        ]
+    )
+
+    # Fixture sanity — both tokens ARE in the window, which is precisely why the
+    # independent search passed this shape. Stated so the arm cannot silently stop
+    # being the discriminating one.
+    window = '\n'.join(decoyed.splitlines()[:-1])
+    assert _SEAM_RESOLVE.search(window) and _WORKFLOW_FLAG.search(window), (
+        'Fixture sanity: the decoy arm must carry BOTH tokens in the lookback '
+        'window, or it does not discriminate the per-invocation check from the '
+        'window-wide one'
+    )
+
+    assert _spawns_missing_seam_resolve(decoyed), (
+        'Seam-resolve detector failed to flag a spawn under a BARE resolve whose '
+        'lookback window carries an unrelated --workflow-bearing command — the '
+        'window-wide blind spot: a pure query emits no [DISPATCH] line, so this '
+        'spawn has no dispatch record whatever a neighbouring command passes'
+    )
+
+    # Positive control — moving --workflow ONTO the resolve pairs the same spawn, so
+    # the per-invocation read is not unconditionally negative.
+    paired = decoyed.replace(
+        '            effort resolve-target --phase phase-6-finalize [--role <subkey>]',
+        '            effort resolve-target --phase phase-6-finalize [--role <subkey>] \\\n'
+        '            --workflow plan-marshall:phase-6-finalize/workflow/{name}.md',
+    )
+    assert not _spawns_missing_seam_resolve(paired)
+
+
+def test_hand_written_emit_detector_fires_on_the_single_quoted_form():
+    """The discriminating arm: ``--message '[DISPATCH] …'`` is caught too.
+
+    The detector used to anchor on the double quote alone. The single-quoted form is
+    equally shell-valid, so a duplicate hand-written emission written that way evaded
+    the whole-corpus sweep completely — the sweep reported clean over the exact
+    double-emit and per-role blind spot the resolve seam was introduced to close.
+    """
+    single_quoted = (
+        '          python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \\\n'
+        '            work --plan-id {plan_id} --level INFO \\\n'
+        "            --message '[DISPATCH] (plan-marshall:phase-6-finalize) "
+        "target={target} level={level} role={role}'"
+    )
+
+    assert _hand_written_dispatch_emits(single_quoted), (
+        "Hand-written-emit detector failed to flag a single-quoted --message "
+        "'[DISPATCH] …' line — shell-valid, and the exact shape that slipped past "
+        'the double-quote-only pattern'
+    )
+
+    # The double-quoted form stays covered — the widening adds a shape, it does not
+    # trade one for the other.
+    double_quoted = single_quoted.replace("'[DISPATCH]", '"[DISPATCH]').replace(
+        "role={role}'", 'role={role}"'
+    )
+    assert _hand_written_dispatch_emits(double_quoted)
+
+    # Negative control — prose ABOUT the flag, with no --message argument, is not an
+    # emit site. A detector that fired here would have to be suppressed to stay green.
+    prose = (
+        '            The resolve seam owns the emission; a hand-written [DISPATCH] '
+        'line double-emits.'
+    )
+    assert not _hand_written_dispatch_emits(prose)
 
 
 # ---------------------------------------------------------------------------

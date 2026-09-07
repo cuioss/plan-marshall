@@ -677,6 +677,26 @@ _METRICS_RECONCILE_COMMAND = 'plan-marshall:manage-metrics:manage-metrics genera
 #: Backticked, so the row's ``references/plan-efficiency.md`` cell is not matched.
 _CONSUMING_ASPECT_KEY = '`plan-efficiency`'
 
+#: The archived-mode bound, as ONE normative prohibition on the WRITE.
+#:
+#: ⛔ Deliberately not two independent substring checks. Testing ``'archived' in
+#: conditions`` and ``'MUST NOT' in conditions`` separately is satisfied by a region
+#: that PERMITS archived writes while forbidding some unrelated action — strictly
+#: weaker than the property the failure message names ("the archived-mode exclusion
+#: is no longer normative"). The tokens must belong to one statement: the
+#: prohibition, the write, and the archived target inside a single sentence, which
+#: is what ``[^.]`` enforces (a sentence boundary breaks the span).
+#:
+#: Both orderings are accepted because either reads naturally — "Archived mode …
+#: MUST NOT write to the archived plan directory" and "MUST NOT write to the
+#: archived plan directory" are the same bound, and pinning one word order would
+#: make an ordinary rewording look like a removed prohibition.
+_ARCHIVED_WRITE_PROHIBITION = re.compile(
+    r'\bMUST NOT\b[^.]{0,160}?\bwrite\b[^.]{0,160}?\barchived\b'
+    r'|\barchived\b[^.]{0,160}?\bMUST NOT\b[^.]{0,160}?\bwrite\b',
+    re.IGNORECASE,
+)
+
 
 def _reconcile_offset(text: str) -> int:
     """Character offset of the reconcile invocation, or ``-1`` when absent."""
@@ -731,19 +751,22 @@ def test_metrics_reconcile_precedes_the_aspect_that_consumes_it():
     )
 
 
+def _prohibits_the_archived_write(conditions: str) -> bool:
+    """Whether the region carries ONE normative prohibition on the archived write."""
+    return bool(_ARCHIVED_WRITE_PROHIBITION.search(conditions))
+
+
 def test_metrics_reconcile_keeps_its_live_modes_only_bound():
     conditions = _reconcile_conditions(_RETRO_SKILL_DOC.read_text(encoding='utf-8'))
 
     assert conditions, 'the reconcile region is empty — the invocation is absent'
-    assert 'archived' in conditions, (
-        'the reconcile no longer names archived mode. Archived mode is a read-only '
-        'historic audit whose plan directory must not be written, so the bound is '
-        'the condition that keeps the step legal rather than an aside.'
-    )
-    assert 'MUST NOT' in conditions, (
-        'the archived-mode exclusion is no longer normative. A descriptive mention '
-        'of archived mode does not forbid the write the Prohibited-actions block '
-        'forbids, and this step is the one that would perform it.'
+    assert _prohibits_the_archived_write(conditions), (
+        'the archived-mode exclusion is no longer normative. Archived mode is a '
+        'read-only historic audit whose plan directory must not be written, and this '
+        'step is the one that would perform that write — so the region must forbid '
+        'the archived write in one statement. A descriptive mention of archived mode '
+        'beside an unrelated `MUST NOT` does not forbid anything, which is exactly '
+        f'what this region now reads as: {conditions!r}'
     )
 
 
@@ -774,7 +797,7 @@ def test_document_contract_detects_the_pre_fix_and_reordered_shapes():
     assert _reconcile_offset(shipped) >= 0
     assert _reconcile_offset(shipped) < _consumer_offset(shipped)
     conditions = _reconcile_conditions(shipped)
-    assert 'archived' in conditions and 'MUST NOT' in conditions
+    assert _prohibits_the_archived_write(conditions)
 
     # Pre-fix shape — the step deleted entirely. This is the mutation that used to
     # leave the whole directory green.
@@ -795,7 +818,42 @@ def test_document_contract_detects_the_pre_fix_and_reordered_shapes():
 
     # Condition stripped — the step and its order survive, the bound does not.
     unbounded = step.replace('MUST NOT write', 'may write') + aspect_table
-    assert 'MUST NOT' not in _reconcile_conditions(unbounded), (
+    assert not _prohibits_the_archived_write(_reconcile_conditions(unbounded)), (
         'the condition check reads text outside the reconcile region — a normative '
         'token from a later step would satisfy it for the wrong document'
+    )
+
+    # PERMISSIVE-ARCHIVE shape — the arm that discriminates the bound conjunction
+    # from two independent substring checks. The region names archived mode AND
+    # carries a `MUST NOT`, but the prohibition governs an unrelated action while the
+    # archived write is expressly PERMITTED. Two separate `in` checks pass here;
+    # the property they claim to test ("the archived-mode exclusion is normative")
+    # is false. Without this arm nothing proves the conjunction discriminates.
+    permissive_archive = (
+        '### Step 2.5: Reconcile the phase accumulators\n\n'
+        '```bash\n'
+        f'python3 .plan/execute-script.py {_METRICS_RECONCILE_COMMAND} \\\n'
+        '  --plan-id {plan_id}\n'
+        '```\n\n'
+        '**All modes.** Archived mode may write the reconciled `metrics.md` back '
+        'into the archived plan directory.\n'
+        'The caller MUST NOT re-run invariant capture.\n\n'
+    )
+    permissive_conditions = _reconcile_conditions(permissive_archive + aspect_table)
+
+    # Fixture sanity — the arm must be exactly the shape the independent checks
+    # passed, or it discriminates nothing.
+    assert 'archived' in permissive_conditions.lower(), (
+        'Fixture sanity: the permissive-archive arm must NAME archived mode'
+    )
+    assert 'MUST NOT' in permissive_conditions, (
+        'Fixture sanity: the permissive-archive arm must carry a `MUST NOT`, or the '
+        'two independent substring checks would already have rejected it and the arm '
+        'would prove nothing'
+    )
+
+    assert not _prohibits_the_archived_write(permissive_conditions), (
+        'the archived-write bound fired on a region that PERMITS the archived write '
+        'and forbids something else entirely — the prohibition is not bound to the '
+        'write, so the check is weaker than the property its failure message names'
     )
