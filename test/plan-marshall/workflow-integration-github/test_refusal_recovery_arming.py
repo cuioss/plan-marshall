@@ -1012,6 +1012,7 @@ class TestTheRecoveryActionSelectorDerivesItsVerdict:
             'bot_kind_registered',
             'window_expired',
             'attempts_remaining',
+            'attempt_held',
             'recovery_actions',
         )
 

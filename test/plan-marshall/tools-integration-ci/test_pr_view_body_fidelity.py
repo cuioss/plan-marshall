@@ -19,7 +19,16 @@ here. Three properties are, each with a control that makes it non-vacuous:
 * **Survival** — the body still reads back intact after the payload crosses the
   TOON boundary the CLI actually prints through. The control is the same payload
   with the body left unmarked, which is asserted to be corrupted — so the
-  positive arm cannot be passing because the check is toothless.
+  positive arm cannot be passing because the check is toothless. "Intact" is what
+  the block-scalar transport defines, and that is not byte-exact at one edge: its
+  round trip normalises the body's OUTER whitespace. The boundary is stated once
+  at ``toon_parser.BlockScalar`` and pinned by
+  ``test/plan-marshall/ref-toon-format/test_toon_parser.py`` — deliberately not
+  restated here, so this suite cannot drift into describing a fidelity the
+  transport stopped providing. The fixtures below carry no leading or trailing
+  whitespace, which is why the two properties can share them; the Fidelity arm is
+  byte-exact because it asserts the HANDLER's return, which crosses no transport
+  at all.
 * **Parity** — both providers carry the field, read from each platform's own name
   for it (``body`` on GitHub, ``description`` on GitLab). The control is that the
   parity arm derives its provider set from the cases it ran rather than naming

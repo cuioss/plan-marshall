@@ -133,7 +133,8 @@ Usage:
     github_re_review.py re-review --pr-number N --bot-kind coderabbit \
         --head-sha SHA --push-time ISO8601 [--timeout SECONDS] --plan-id PLAN_ID
     github_re_review.py recovery-action --bot-kind coderabbit [--cause size|quota] \
-        [--window-expired true|false] [--attempts-remaining N] [--plan-id PLAN_ID]
+        [--window-expired true|false] [--attempts-remaining N] \
+        [--attempt-held true|false] [--plan-id PLAN_ID]
 
 Output: TOON format
 """
@@ -462,6 +463,7 @@ def resolve_recovery_action(
     cause: str = '',
     window_expired: bool | None = None,
     attempts_remaining: int | None = None,
+    attempt_held: bool = False,
 ) -> dict[str, Any]:
     """Return the recovery move a detected refusal arms, DERIVED from the registry.
 
@@ -495,8 +497,21 @@ def resolve_recovery_action(
        observations. A missing window observation or a missing attempt budget is
        ``unmeasured``, never an authorizing verdict: acting on an unobserved
        window is the exact move that spent the bot's chat quota.
-    5. **An exhausted budget outranks the window arms.** Both remaining arms
-       spend an attempt, so a spent budget must stop them before either fires.
+    5. **An exhausted budget outranks the window arms — unless the attempt is
+       already HELD.** ``attempts_remaining`` answers *may a FURTHER claim be
+       made?*, never *may the event this claim already bought be delivered?*
+       Those are different questions, and which one is being asked is a fact the
+       arithmetic cannot recover: a successful claim INCREMENTS the ledger before
+       it returns, so the cap-final claim — the one the primitive deliberately
+       admitted — reports ``attempts_remaining: 0`` the moment it succeeds. A
+       caller that then re-consults after waiting out its own claim would be told
+       the budget is spent and would release without triggering anything, so a cap
+       of one delivered zero recovery events and the default cap of six delivered
+       five. ``attempt_held=True`` is the caller stating it holds such a claim; the
+       exhausted arm is then skipped, because the attempt is already paid for and
+       the cap was already enforced — by ``rate-window claim``'s own ``exhausted``
+       refusal, which is where exhaustion is decided. The default is ``False``, so
+       a pre-claim budget read (the honest use of a zero here) still escalates.
     6. **An OPEN claim resolves ``await_window``.** ⛔ A re-trigger inside the
        window RESETS it rather than shortening it — an advertised wait was
        observed going from 50 to 59 minutes — and spends quota doing so.
@@ -532,6 +547,10 @@ def resolve_recovery_action(
         'bot_kind_registered': bot_kind in known,
         'window_expired': window_expired,
         'attempts_remaining': attempts_remaining,
+        # Which of the two questions the budget was read for — published so the
+        # verdict names the observation that decided whether the exhausted arm
+        # was even eligible, rather than only its conclusion.
+        'attempt_held': attempt_held,
         'recovery_actions': list(RECOVERY_ACTIONS),
     }
 
@@ -545,7 +564,7 @@ def resolve_recovery_action(
         return {**verdict, 'action': RECOVERY_ACTION_UNMEASURED, 'reason': 'no_window_observation'}
     if attempts_remaining is None:
         return {**verdict, 'action': RECOVERY_ACTION_UNMEASURED, 'reason': 'no_attempt_budget_observation'}
-    if attempts_remaining <= 0:
+    if attempts_remaining <= 0 and not attempt_held:
         return {**verdict, 'action': RECOVERY_ACTION_ESCALATE_EXHAUSTED, 'reason': 'attempt_cap_exhausted'}
     if not window_expired:
         return {**verdict, 'action': RECOVERY_ACTION_AWAIT_WINDOW, 'reason': 'claim_window_open'}
@@ -1048,6 +1067,9 @@ def cmd_recovery_action(args: argparse.Namespace) -> dict:
         cause=args.cause or '',
         window_expired=window_expired,
         attempts_remaining=args.attempts_remaining,
+        # Absent reads as NOT held, which keeps the exhausted arm active — the
+        # conservative direction, since it escalates rather than triggers.
+        attempt_held=args.attempt_held == 'true',
     )
     return {'status': 'success', 'operation': 'recovery_action', **verdict}
 
@@ -1132,6 +1154,17 @@ def main() -> int:
         '--attempts-remaining',
         type=int,
         help='The `attempts_remaining` field from the same read; OMIT it when unobserved (reads as unmeasured)',
+    )
+    recovery.add_argument(
+        '--attempt-held',
+        choices=('true', 'false'),
+        help=(
+            "Pass 'true' when a `rate-window claim` for this recovery already SUCCEEDED, so the "
+            'attempt is spent and its event is owed. A successful cap-final claim reports '
+            'attempts_remaining: 0, and without this the re-consult after the wait would escalate '
+            'as exhausted and deliver nothing. OMIT it for a pre-claim budget read, where a zero '
+            'genuinely means no further claim is allowed'
+        ),
     )
     recovery.add_argument('--plan-id', help='Plan identifier (accepted for routing uniformity)')
 

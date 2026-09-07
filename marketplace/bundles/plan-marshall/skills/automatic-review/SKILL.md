@@ -609,16 +609,18 @@ Then RE-CONSULT the selector, now that both observations exist, and route on the
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_re_review recovery-action \
   --bot-kind {bot_kind} [--cause {cause}] --window-expired true \
-  --attempts-remaining {attempts_remaining} --plan-id {plan_id}
+  --attempts-remaining {attempts_remaining} --attempt-held true --plan-id {plan_id}
 ```
 
 `{attempts_remaining}` is the field the Branch 3 `rate-window check` poll returned. `--window-expired` and `--attempts-remaining` are supplied here **because both were observed** — omitting either returns `action: unmeasured`, which authorizes nothing and would leave this boundary with no route.
+
+⛔ **`--attempt-held true` is REQUIRED at this consult, and omitting it silently loses the last recovery event.** Branch 2's claim already spent an attempt — a successful claim increments the ledger before it returns — so the cap-final claim reports `attempts_remaining: 0` the instant it is granted. Feeding that post-claim zero to a selector that reads it as *no budget left* routes to `escalate_exhausted`, and this branch then releases the claim without ever generating the event the claim bought: a cap of 1 delivers zero events, and the default cap of 6 delivers five. The flag tells the selector the attempt is already HELD, so the budget is read as *may a FURTHER claim be made?* rather than as permission for this one. Exhaustion is still enforced — by `rate-window claim`'s own `recovery_cap_exhausted` refusal in Branch 2, which is the single place the cap is decided.
 
 ⛔ **`--cause` keeps the same conditional treatment it has at the first consult: pass it only when a cause was observed, and omit the flag entirely when it was not.** The rejection is worse here than there — this site fires *after* the window claim and the full poll-to-expiry wait, so an argparse exit 2 discards a completed wait and a spent recovery attempt. Reaching this boundary at all means `cause != size` (a size cause routes to Branch 0), so an absent cause is a live possibility on the path that reaches this line.
 
 - **`action: generate_trigger`** — the bot re-reviews on push (`trigger_semantics: auto_on_push`), so new commits are an event it honours. Proceed to **Branch 4**.
 - **`action: close_and_reopen`** — the bot reviews only when explicitly asked (`trigger_semantics: requires_explicit_trigger`), so a push is not an event it answers. Proceed to **Branch 5**.
-- **`action: escalate_exhausted`** — the recovery budget was spent while this branch waited. Release the claim and escalate as Branch 2's `recovery_cap_exhausted` arm does.
+- **`action: escalate_exhausted`** — release the claim and escalate as Branch 2's `recovery_cap_exhausted` arm does. Under the `--attempt-held true` above this arm is not reachable from here, because the attempt this recovery holds is already paid for; it is routed anyway rather than left off, so the table below stays total over the selector's published `recovery_actions` vocabulary and an action can never arrive with no branch to enter.
 
 ⛔ **Both trigger arms are reachable ONLY from here, after the window elapsed.** That is the ordering the whole section exists to enforce: a trigger issued while the claim is still running resets the bot's window instead of shortening it, and spends quota doing so. The `request_fresh_review` guard is the mechanical backstop for the same rule, so a trigger posted out of order is refused rather than merely discouraged.
 

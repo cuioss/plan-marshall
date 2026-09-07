@@ -823,7 +823,8 @@ The verb has three terminal shapes, not two: `status: success` (the trigger was 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_re_review recovery-action \
   --bot-kind BOT_KIND \
-  [--cause {size|quota}] [--window-expired {true|false}] [--attempts-remaining N] [--plan-id PLAN_ID]
+  [--cause {size|quota}] [--window-expired {true|false}] [--attempts-remaining N] \
+  [--attempt-held {true|false}] [--plan-id PLAN_ID]
 ```
 
 DERIVES which recovery a detected refusal arms, from the bot registry plus the caller's own observations. A pure read: it touches no PR, claims no window, and posts nothing.
@@ -834,13 +835,15 @@ DERIVES which recovery a detected refusal arms, from the bot registry plus the c
 
 `--window-expired` and `--attempts-remaining` are the `expired` and `attempts_remaining` fields of `merge_lock rate-window check`. **Omit either when it was not observed** — the derivation then returns the distinct `action: unmeasured` rather than an authorizing verdict, because acting on an unobserved window is the move that spent the bot's quota in the first place.
 
+⛔ **`--attempt-held true` is what tells the derivation WHICH question the budget was read for.** `attempts_remaining` answers *may a FURTHER claim be made?*, never *may the event this claim already bought be delivered?* — and the arithmetic cannot recover which is being asked, because a successful `rate-window claim` increments the ledger before it returns. The cap-final claim, the one the primitive deliberately admitted, therefore reports `attempts_remaining: 0` the moment it is granted; a post-claim re-consult that omits this flag reads that zero as *budget spent*, escalates, and delivers no event at all — so a cap of 1 yields zero recovery events and the default cap of 6 yields five. Pass it whenever a claim for this recovery already succeeded. Omit it for a pre-claim budget read, where a zero genuinely means no further claim is allowed. The cap itself is enforced by `rate-window claim`'s own `recovery_cap_exhausted` refusal, not by this verb.
+
 The returned `action` is one of:
 
 | `action` | `reason` | Meaning |
 |----------|----------|---------|
 | `escalate_structural` | `size_ceiling` | The cause is a diff-size ceiling. It DOMINATES the class — a class is declared per BOT while a cause is observed per REFUSAL — and waiting cannot move it. |
 | `escalate_not_awaitable` | `class_not_awaitable` | `hard_quota` or `unknown`. Fail-closed per ADR-009; an unregistered `bot_kind` lands here by derivation, not by a special case. |
-| `escalate_exhausted` | `attempt_cap_exhausted` | The per-(bot, PR) recovery budget is spent. Checked before both trigger arms, since each would spend an attempt. |
+| `escalate_exhausted` | `attempt_cap_exhausted` | The per-(bot, PR) recovery budget is spent and no attempt is held. Checked before both trigger arms, since each would spend one — but skipped under `--attempt-held true`, where the attempt is already paid for. |
 | `await_window` | `claim_window_open` | The claim clock is still running. |
 | `close_and_reopen` | `claim_window_elapsed` | The claim elapsed and the bot declares `requires_explicit_trigger` — re-DELIVER the dropped request (see [`../tools-integration-ci/standards/pr-review-operations.md`](../tools-integration-ci/standards/pr-review-operations.md) § "Workflow: Close and Re-open a PR to Re-deliver a Review Request"). |
 | `generate_trigger` | `claim_window_elapsed` | The claim elapsed and the bot re-reviews on push — produce new commits. |
@@ -848,7 +851,7 @@ The returned `action` is one of:
 
 ⛔ **The elapsed arm is named `claim_window_elapsed`, never `bot_window_reopened`.** What elapsed is the CLAIM clock this pipeline set, not the bot's real window: a stated ETA is an estimate (observed wrong by roughly 2.4x, then roughly 15x) and the real window slides. The arm lifts the refusal without asserting the bot is ready.
 
-Every return publishes `rate_limit_class`, `trigger_semantics`, `known_bot_kinds`, `known_bot_kind_count`, `bot_kind_registered`, and the declared `recovery_actions` vocabulary — so the verdict names the registry facts and the population it was computed from (ADR-019) rather than only its conclusion.
+Every return publishes `rate_limit_class`, `trigger_semantics`, `known_bot_kinds`, `known_bot_kind_count`, `bot_kind_registered`, `attempt_held`, and the declared `recovery_actions` vocabulary — so the verdict names the registry facts and the population it was computed from (ADR-019) rather than only its conclusion.
 
 ## Error Handling
 

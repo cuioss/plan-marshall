@@ -71,9 +71,20 @@ class BlockScalar(str):
     an object field, never in a table column.
 
     Round-trip: :func:`parse_toon` returns the body with leading and trailing
-    whitespace stripped (``_parse_multiline_value`` ends in ``.strip()``), so a
-    body's outer blank lines are not preserved. Interior blank lines, indentation
-    and content are.
+    whitespace stripped (``_parse_multiline_value`` ends in ``.strip()``). The
+    strip acts on the JOINED body, so what it removes is the body's outer EDGE —
+    its opening and closing blank lines, the first line's leading indent, and the
+    last line's trailing spaces. Everything between those edges is preserved
+    exactly: interior blank lines, interior indentation and content. A caller
+    needing an outer edge carried verbatim does not have it here; a body whose
+    edges are already bare round-trips byte for byte.
+
+    Preserving the edge would need the serializer to MARK the body's extent (a
+    chomping indicator), because a trailing blank line in a TOON document is
+    otherwise ambiguous between the body's own and the separator before the next
+    key — and every current consumer reads the stripped form. The boundary is
+    pinned by ``test/plan-marshall/ref-toon-format/test_toon_parser.py``, so it
+    cannot move in either direction unobserved.
     """
 
     __slots__ = ()
