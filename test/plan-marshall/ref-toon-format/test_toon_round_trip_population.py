@@ -225,6 +225,27 @@ def _leading_literal_text(node: ast.AST) -> str | None:
     return None
 
 
+#: The node types that open a new lexical scope. An assignment inside one of them
+#: belongs to that scope, not to the function being analysed.
+_SCOPE_BOUNDARIES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+
+
+def _walk_own_scope(node: ast.AST) -> Iterator[ast.AST]:
+    """Every node under ``node`` that belongs to ``node``'s OWN lexical scope.
+
+    ``ast.walk`` descends into nested ``def`` and ``class`` bodies, which is the
+    wrong reach for a per-function name map: a nested helper's
+    ``line = f'status: {value}'`` is not a binding the enclosing function's
+    ``print(line)`` can read, so collecting it there attributes the helper's line
+    to its parent and reports a canonical emitter as a hand-roll.
+    """
+    for child in ast.iter_child_nodes(node):
+        if isinstance(child, _SCOPE_BOUNDARIES):
+            continue
+        yield child
+        yield from _walk_own_scope(child)
+
+
 def _local_literal_assignments(node: ast.AST) -> dict[str, list[str]]:
     """Map each name the body assigns a literal to onto the text(s) it was given.
 
@@ -239,12 +260,18 @@ def _local_literal_assignments(node: ast.AST) -> dict[str, list[str]]:
     is one whose ``print`` may emit it, and a predicate that guessed the other way
     would hand an emitter a trivial way to hide behind a re-assignment.
 
-    Scope is deliberately one hop and no further — only ``name = <literal>``. This
-    is not a dataflow engine, and widening it into one would buy coverage the two
-    findings that motivated it never asked for.
+    Two bounds hold, and they are independent. The CHAIN is one hop and no
+    further — only ``name = <literal>``; this is not a dataflow engine, and
+    widening it into one would buy coverage the two findings that motivated it
+    never asked for. The SCOPE is the analysed function's own, so the walk stops
+    at nested ``def``/``class`` boundaries (see ``_walk_own_scope``). Confining
+    the scope loses no detection: ``_derive_emitters`` walks the whole module
+    tree, so a nested helper is already a population member in its own right and
+    is analysed with its own map. What it stops is the mis-attribution — pairing
+    a nested helper's literal with an unrelated ``print`` in the parent.
     """
     assigned: dict[str, list[str]] = {}
-    for child in ast.walk(node):
+    for child in _walk_own_scope(node):
         if not isinstance(child, ast.Assign):
             continue
         text = _leading_literal_text(child.value)
@@ -401,6 +428,16 @@ def swallows_canonical_import(source: str) -> bool:
     probes whether ``toon_parser`` imports and records the boolean also swallows
     the error, and installs nothing in its place; flagging it would report a
     diagnostic as a second implementation.
+
+    **Only an unconditional top-level ``raise`` clears a handler.** The clearing
+    clause reads ``handler.body``, not the handler subtree, because "a ``raise``
+    appears somewhere below this handler" does not imply "the failed import
+    propagates". A ``raise`` guarded by an ``if``, or one sitting in a nested
+    function defined inside the handler, leaves the ordinary path falling through
+    to the substitute — which is the lookalike shape itself, and the subtree
+    reading cleared it. A conditional or nested raise is therefore deliberately
+    read as NOT propagating: the narrow, fail-closed reading, matching the one
+    ``_is_provably_not_stdout`` and ``_local_literal_assignments`` already take.
     """
     tree = ast.parse(source)
     if not _defines_substitute_serializer(tree):
@@ -417,7 +454,7 @@ def swallows_canonical_import(source: str) -> bool:
         for handler in node.handlers:
             if not _catches_import_failure(handler):
                 continue
-            if not any(isinstance(stmt, ast.Raise) for stmt in ast.walk(handler)):
+            if not any(isinstance(stmt, ast.Raise) for stmt in handler.body):
                 return True
     return False
 
@@ -751,6 +788,66 @@ def serialize_toon_simple(data):
 '''
 
 
+#: The swallowing shape behind a handler that raises only CONDITIONALLY. On the
+#: ordinary path — the one that runs without the escape hatch set — the import
+#: failure is absorbed and the substitute takes over, so this is a lookalike. A
+#: clearing clause reading the handler SUBTREE sees the guarded ``raise`` and
+#: reports it clean.
+_CONDITIONAL_RAISE_SWALLOWING_MODULE = '''
+import os
+
+try:
+    from toon_parser import serialize_toon
+
+    HAS_TOON_PARSER = True
+except ImportError:
+    if os.environ.get('STRICT'):
+        raise
+    HAS_TOON_PARSER = False
+
+
+def serialize_toon_simple(data):
+    return '\\n'.join(f'{k}: {v}' for k, v in data.items())
+'''
+
+#: The same shape with the ``raise`` moved into a nested function defined inside
+#: the handler. It never executes at handler time at all, which is the second
+#: reach ``ast.walk`` had over the handler and the first has no bearing on.
+_NESTED_RAISE_SWALLOWING_MODULE = '''
+try:
+    from toon_parser import serialize_toon
+
+    HAS_TOON_PARSER = True
+except ImportError:
+    def _explain():
+        raise
+
+    HAS_TOON_PARSER = False
+
+
+def serialize_toon_simple(data):
+    return '\\n'.join(f'{k}: {v}' for k, v in data.items())
+'''
+
+#: Matched positive for the narrowing above: the handler re-raises at its own top
+#: level, so the failure really does propagate and the substitute below is never
+#: reached through it. Without this fixture the narrowed clause could degenerate
+#: into "every guarded import is a swallow" and nothing would say so.
+_UNCONDITIONAL_RAISE_MODULE = '''
+try:
+    from toon_parser import serialize_toon
+
+    HAS_TOON_PARSER = True
+except ImportError:
+    HAS_TOON_PARSER = False
+    raise
+
+
+def serialize_toon_simple(data):
+    return '\\n'.join(f'{k}: {v}' for k, v in data.items())
+'''
+
+
 def _synthetic_script(root: Path, bundle: str, skill: str, name: str, source: str) -> Path:
     """Write a script into a synthetic tree shaped like the real script glob."""
     path = root / 'marketplace' / 'bundles' / bundle / 'skills' / skill / 'scripts' / name
@@ -940,6 +1037,108 @@ def test_detector_clears_a_substitute_behind_an_unrelated_handler():
     widening that had dropped the type check altogether would flag this.
     """
     assert swallows_canonical_import(_UNRELATED_HANDLER_MODULE) is False
+
+
+def test_detector_flags_a_swallow_whose_handler_raises_conditionally():
+    """A guarded ``raise`` does not propagate on the path that reaches the substitute.
+
+    The clearing clause used to read the handler SUBTREE, which turns "a ``raise``
+    appears somewhere below here" into "the failed import propagates" — an inverse
+    reading that does not hold. This module absorbs the failure whenever the escape
+    hatch is unset and hands over to its own writer, which is the lookalike shape
+    the guard is about, and the subtree reading reported it clean.
+    """
+    assert swallows_canonical_import(_CONDITIONAL_RAISE_SWALLOWING_MODULE) is True
+
+
+def test_detector_flags_a_swallow_whose_raise_sits_in_a_nested_function():
+    """A ``raise`` inside a function DEFINED in the handler never runs at handler time.
+
+    The second reach the subtree walk had: defining the statement is not executing
+    it, so the handler falls through to the substitute exactly as an empty one
+    would.
+    """
+    assert swallows_canonical_import(_NESTED_RAISE_SWALLOWING_MODULE) is True
+
+
+def test_detector_clears_a_handler_that_re_raises_unconditionally():
+    """Matched positive for the narrowing: a top-level ``raise`` still clears.
+
+    Without this control the narrowed clause could tighten into "every guarded
+    canonical import is a swallow" and every assertion built on it would keep
+    passing — a clearing clause with no matched positive is not a predicate, it is
+    a constant.
+    """
+    assert swallows_canonical_import(_UNCONDITIONAL_RAISE_MODULE) is False
+
+
+#: A canonical emitter whose nested helper happens to bind a TOON-shaped literal
+#: to the same name the parent prints. The two bindings are in different scopes
+#: and cannot reach each other, so pairing them reports a canonical emitter as a
+#: hand-roll — the false-positive direction.
+_NESTED_SCOPE_ASSIGNMENT = '''
+from toon_parser import serialize_toon
+
+
+def emit_toon(payload):
+    """Emits canonically; the TOON-shaped literal belongs to a nested helper."""
+    def build_label():
+        line = f'status: {payload["status"]}'
+        return line
+
+    line = serialize_toon(payload)
+    print(line)
+'''
+
+#: A nested helper that composes AND prints its own TOON line. Confining the
+#: assignment map to one scope must not lose it: ``_derive_emitters`` walks the
+#: whole module tree, so the helper is a population member in its own right.
+_NESTED_HELPER_EMITTER = '''
+def emit_toon(payload):
+    """Delegates to a nested helper that composes and prints its own TOON line."""
+    def write_toon_line():
+        line = f'status: {payload["status"]}'
+        print(line)
+
+    write_toon_line()
+'''
+
+
+def test_detector_clears_a_literal_bound_in_a_nested_scope(tmp_path):
+    """Matched negative: a nested helper's binding is not the parent's to read.
+
+    ``ast.walk`` crosses lexical scope, so the helper's ``line`` landed in the
+    parent's map and paired with the parent's unrelated ``print(line)`` — marking
+    a function that emits through the canonical serializer as a hand-roll.
+    """
+    _synthetic_script(
+        tmp_path, 'fixture-bundle', 'fixture-skill', 'nested_scope.py', _NESTED_SCOPE_ASSIGNMENT
+    )
+
+    population = derive_toon_population(tmp_path).records
+
+    assert [record.function for record in population] == ['emit_toon']
+    assert population[0].hand_rolls_toon is False
+    assert population[0].bypasses_canonical is False
+
+
+def test_a_nested_helper_is_still_flagged_as_its_own_population_member(tmp_path):
+    """Confining the map to one scope loses no detection, only the mis-attribution.
+
+    The helper composes and prints its own line, so it is flagged where the
+    binding actually is; the parent, which binds nothing, is not. Both halves are
+    asserted, because the coverage claim and the false-positive fix are the same
+    change and either one alone would leave the other unproven.
+    """
+    _synthetic_script(
+        tmp_path, 'fixture-bundle', 'fixture-skill', 'nested_emitter.py', _NESTED_HELPER_EMITTER
+    )
+
+    by_name = {record.function: record for record in derive_toon_population(tmp_path).records}
+
+    assert sorted(by_name) == ['emit_toon', 'write_toon_line']
+    assert by_name['write_toon_line'].hand_rolls_toon is True
+    assert by_name['emit_toon'].hand_rolls_toon is False
 
 
 _UNNAMED_UNCANONICAL_EMITTER = '''
