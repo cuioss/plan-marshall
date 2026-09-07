@@ -624,7 +624,7 @@ Why this looped back — and any remedies the step recorded:
 
 This is dispatcher-wide rather than barrier-specific on purpose: the pointer costs one line, holds for every step that can loop back, and needs no edit when a step starts recording remedies. Without it the operator sees a replay instruction alone, and the remedies sit unread in a log nothing told them to open.
 
-The conservative default preserves the interactive shape and eliminates any chance of silent re-routing through `2-refine`. The full config-check / target-read / auto-continue routing / persisted-phase assertion / prompt procedure lives in [`../standards/execution-recovery.md`](../standards/execution-recovery.md) § "Loop-back continuation".
+Setting `loop_back_without_asking == false` selects the interactive shape, which eliminates any chance of silent re-routing through `2-refine`. On the auto-continuing default that risk does not arise either: the hook re-enters the recorded `loop_back_target` inline, so control never returns to a `/plan-marshall` re-entry where the route resolver could redirect it. The full config-check / target-read / auto-continue routing / persisted-phase assertion / prompt procedure lives in [`../standards/execution-recovery.md`](../standards/execution-recovery.md) § "Loop-back continuation".
 
 ### Finalize Validation
 
