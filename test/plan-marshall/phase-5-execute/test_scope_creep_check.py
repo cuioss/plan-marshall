@@ -4,7 +4,7 @@
 
 Drive ``cmd_check`` directly, through the shared ``conftest.load_script_module``
 loader, patching the git-diff helper. Verifies the four residual/threshold contract
-cases from solution_outline.md deliverable 4:
+cases:
 
     (a) empty residual           -> no finding
     (b) residual <= threshold    -> no finding
@@ -41,6 +41,7 @@ from _resolve_project_dir_fixtures import (
     patch_query_worktree_path,
     worktree_query_result,
 )
+from toon_parser import parse_toon
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -291,20 +292,24 @@ def test_rejected_persist_fails_loud(plan_with_refs, monkeypatch, capsys):
 
     rc = scc.cmd_check(Namespace(plan_id='scope-creep-test', threshold=None))
     out = capsys.readouterr().out
+    # Assert over the PARSED payload: the command emits through the canonical
+    # serializer, and the title carries a colon and commas so it is quoted on the
+    # wire. A substring assertion against the bare text pinned the pre-quoting
+    # shape — the very shape this format's single implementation removes.
+    payload = parse_toon(out)
 
     assert rc == 1
-    assert 'status: error' in out
-    assert 'error: finding_persist_failed' in out
-    assert 'Invalid finding type: scope_creep_warning' in out
+    assert payload['status'] == 'error'
+    assert payload['error'] == 'finding_persist_failed'
+    assert 'Invalid finding type: scope_creep_warning' in payload['message']
     # The rejected finding's own content travels inline.
-    assert 'finding_title: Scope creep detected' in out
-    assert 'threshold=5' in out
-    assert 'residual_count: 6' in out
-    for extra in extras:
-        assert extra in out
+    assert payload['finding_title'].startswith('Scope creep detected')
+    assert 'threshold=5' in payload['finding_detail']
+    assert payload['residual_count'] == 6
+    assert payload['residual_files'] == list(extras)
     # The success shape must NOT also be printed.
-    assert 'status: success' not in out
-    assert 'finding_emitted: true' not in out
+    assert payload['status'] != 'success'
+    assert 'finding_emitted' not in payload
 
 
 @pytest.mark.parametrize('benign_status', ['success', 'deduplicated', 'reopened'])

@@ -265,6 +265,20 @@ def first_queue_symbol(source: str, own_symbol: str) -> tuple[int, str] | None:
       binding line of exactly the two verbs whose guard matters most — again at
       an offset preceding every literal, so again unfalsifiable.
 
+    ⚠ **This depends on PEP 701 (Python 3.12), and the dependency is silent.**
+    Only since 3.12 does the tokenizer emit an f-string's interpolated
+    expressions as real tokens; before that an f-string is ONE ``STRING`` token,
+    so a queue symbol referenced only inside one is invisible to a ``NAME``-token
+    scan. The predicate would then return ``None`` for a handler that genuinely
+    reaches the surface — a *vacuous* miss, indistinguishable from an inert
+    handler, and it would surface as a mystifying red in the consuming guard
+    rather than as "this interpreter cannot support the derivation". The
+    project's ``requires-python`` floor is what keeps that unreachable, so the
+    dependency is asserted by
+    ``test_branch_cleanup_merge_queue_routing.test_the_predicate_can_see_inside_an_f_string``
+    against the RUNNING tokenizer rather than left as a comment — a floor that
+    moves down must fail loudly at that assertion, not quietly here.
+
     Returns ``None`` when the handler references no queue/train symbol.
     """
     starts = line_starts(source)

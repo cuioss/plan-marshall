@@ -20,9 +20,9 @@ stayed green. Sharing the observed body is therefore not deduplication for its
 own sake: it removes the second place a fake shape can hide.
 
 :data:`OBSERVED_CLEAN_GUIDE` is the byte-exact evidence — copied from the
-quarantined ``raw_input.body`` of the ``pr-comment`` finding PR-Agent's clean
-Guide produced on ``cuioss/plan-marshall`` PR #1078 — and is deliberately a
-literal rather than a render, so it cannot drift with :func:`guide_body`. The
+quarantined ``raw_input.body`` of a ``pr-comment`` finding carrying PR-Agent's
+clean Guide — and is deliberately a literal rather than a render, so it cannot
+drift with :func:`guide_body`. The
 derived shapes below ARE rendered, and
 ``test_pr_agent_contentless_guide_interaction`` pins the renderer against the
 literal so a drifted renderer cannot quietly fake all four of them.
@@ -70,8 +70,8 @@ def guide_body(*rows: str) -> str:
     return f'{GUIDE_HEADING}  <table> ' + ' '.join(rows) + ' </table> '
 
 
-#: The VERBATIM body PR-Agent posted on ``cuioss/plan-marshall`` PR #1078,
-#: copied from the stored finding's quarantined ``raw_input.body``. This is the
+#: The VERBATIM body PR-Agent posts for a clean Guide, copied from a stored
+#: finding's quarantined ``raw_input.body``. This is the
 #: project's only capture of the RAW API body — every other shape here is
 #: derived from it. Whitespace is reproduced exactly.
 OBSERVED_CLEAN_GUIDE = (

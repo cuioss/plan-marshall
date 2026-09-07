@@ -136,13 +136,15 @@ from __future__ import annotations
 
 import ast
 import re
+import sys
 import tokenize
+import tomllib
 from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
-from conftest import MARKETPLACE_ROOT
+from conftest import MARKETPLACE_ROOT, PROJECT_ROOT
 from _merge_shaped_roster import (
     QUEUE_VOCAB_RE,
     ProviderSources,
@@ -159,6 +161,35 @@ _BUNDLE_ROOT: Path = Path(MARKETPLACE_ROOT)
 _SKILLS: Path = _BUNDLE_ROOT / 'plan-marshall' / 'skills'
 _STANDARDS_DIR: Path = _SKILLS / 'phase-6-finalize' / 'standards'
 _BRANCH_CLEANUP: Path = _STANDARDS_DIR / 'branch-cleanup.md'
+
+#: The interpreter floor ``first_queue_symbol`` depends on: PEP 701 made an
+#: f-string tokenize into its interpolated parts, which is what lets the
+#: identifier-bound predicate see inside one.
+_PEP_701_FLOOR: tuple[int, int] = (3, 12)
+
+#: The project's packaging metadata — the single source for the DECLARED floor.
+_PYPROJECT: Path = Path(PROJECT_ROOT) / 'pyproject.toml'
+
+#: The lower bound of a ``requires-python`` specifier.
+_REQUIRES_PYTHON_FLOOR_RE = re.compile(r'>=\s*(\d+)\.(\d+)')
+
+
+def _declared_python_floor() -> tuple[int, int]:
+    """Return the ``project.requires-python`` lower bound as a version tuple.
+
+    Read from the packaging metadata, never from the running interpreter: the
+    interpreter reports what happens to be executing this run, while the declared
+    floor is what every INSTALL of this project is permitted to be. Only the
+    second can be lowered by an edit no CI runner's version would reveal.
+    """
+    metadata = tomllib.loads(_PYPROJECT.read_text(encoding='utf-8'))
+    requires = metadata['project']['requires-python']
+    match = _REQUIRES_PYTHON_FLOOR_RE.search(requires)
+    assert match is not None, (
+        f'{_PYPROJECT} declares requires-python = {requires!r}, which carries no '
+        '`>=MAJOR.MINOR` lower bound, so the floor this test grades cannot be read'
+    )
+    return int(match.group(1)), int(match.group(2))
 
 #: The two provider handler modules. The registry population is read from these.
 _PROVIDER_MODULES: dict[str, Path] = {
@@ -799,6 +830,70 @@ def _code_without_prose(source: str) -> str:
                 tokenize.DEDENT,
             )
     return ''.join(chars)
+
+
+def test_the_predicate_can_see_inside_an_f_string():
+    """The identifier predicate depends on PEP 701, and the dependency is ASSERTED.
+
+    ``first_queue_symbol`` reads ``NAME`` tokens only, which is exactly what
+    excludes prose. On an interpreter older than Python 3.12 an f-string is ONE
+    ``STRING`` token, so a queue symbol referenced only inside one is invisible
+    to it and the handler is classified ``inert`` — a VACUOUS miss,
+    indistinguishable from a handler that really performs no guard. It would then
+    surface as a mystifying red in the parity sweep, blamed on the handler,
+    rather than as "this interpreter cannot support the derivation".
+
+    The load-bearing assertion is on the RUNNING tokenizer, because the
+    tokenizer's behaviour is the property the predicate needs. Two version checks
+    stand beside it to name the CAUSE, so a failure points at the floor rather
+    than sending a reader to debug the predicate — and they grade DIFFERENT
+    things, which is why both are here:
+
+    * the DECLARED floor, read out of ``pyproject.toml``'s ``requires-python``.
+      This is the one that can silently rot: lowering the declaration to 3.11
+      leaves every 3.12 CI runner green while anyone installing at the new floor
+      gets a ``first_queue_symbol`` blind to f-string identifiers.
+    * the RUNNING interpreter, which catches the complementary case of executing
+      below the floor the project declares.
+
+    The paired negative keeps the positive honest: PEP 701 must widen the scan to
+    interpolated EXPRESSIONS without also admitting the f-string's literal text,
+    which is prose and stays excluded.
+    """
+    declared = _declared_python_floor()
+    assert declared >= _PEP_701_FLOOR, (
+        f'{_PYPROJECT.name} declares a requires-python floor of '
+        f'{declared[0]}.{declared[1]}, below the {_PEP_701_FLOOR[0]}.{_PEP_701_FLOOR[1]} '
+        'PEP 701 needs. Every install at the declared floor reads an f-string as ONE '
+        'STRING token, so first_queue_symbol goes blind to a guard referenced only '
+        'there and classifies a guarded handler as inert — while this suite stays '
+        f'green on any {_PEP_701_FLOOR[0]}.{_PEP_701_FLOOR[1]}+ runner.'
+    )
+
+    assert sys.version_info >= _PEP_701_FLOOR, (
+        'the merge-shaped predicate reads identifiers out of f-string '
+        f'interpolations, which requires PEP 701 (Python {_PEP_701_FLOOR[0]}.'
+        f'{_PEP_701_FLOOR[1]}); running {sys.version_info[:2]}.'
+    )
+
+    interpolated = 'def handler(payload):\n    return f"{_probe_merge_train_state(payload)}"\n'
+
+    found = first_queue_symbol(interpolated, 'handler')
+
+    assert found is not None, (
+        'the tokenizer did not expose the identifier inside the f-string, so '
+        'first_queue_symbol is blind to a guard referenced only there'
+    )
+    _offset, identifier = found
+    assert identifier == '_probe_merge_train_state'
+
+    # The negative: the same vocabulary as literal f-string TEXT is prose, and
+    # must still yield nothing — otherwise the widened scan would re-open the
+    # docstring-satisfies-the-predicate hole one layer in.
+    prose_only = 'def handler(payload):\n    return f"merge_queue state for {payload}"\n'
+    assert first_queue_symbol(prose_only, 'handler') is None, (
+        'the vocabulary appearing in an f-string LITERAL was read as a reference'
+    )
 
 
 def test_registry_populations_are_published_and_plausible():

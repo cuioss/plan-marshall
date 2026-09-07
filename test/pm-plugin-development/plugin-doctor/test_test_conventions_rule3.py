@@ -5,7 +5,8 @@
 The rule extracts a regex literal from a registered validator file via
 AST, runs the registered ``list_command``, parses IDs out of the TOON
 output, and asserts the regex fullmatches every ID. Empty registry =
-no-op. Lesson ``2026-04-29-10-001`` documents the original incident.
+no-op. Anchoring the regex against real repository data is what keeps a
+validator from rejecting IDs its own corpus hands it.
 """
 
 import sys

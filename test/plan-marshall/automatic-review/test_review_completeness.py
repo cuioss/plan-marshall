@@ -2972,3 +2972,112 @@ class TestAbsentVersusInProgressDistinction:
         assert _state_of(absent, 'coderabbit') == rc.STATE_ABSENT
         assert _state_of(not_triggered, 'coderabbit') == rc.STATE_NOT_TRIGGERED
         assert rc.STATE_NOT_TRIGGERED not in {rc.STATE_ABSENT, rc.STATE_IN_PROGRESS}
+
+
+# =============================================================================
+# Emitted TOON round-trips
+#
+# Every other assertion in this module reads the payload DICT or a SUBSTRING of
+# stdout. Neither notices a value that needed quoting and did not get it: the
+# substring is still there, and the dict never went through the writer. These
+# read the emitted block back with the canonical parser, which is the only check
+# that fails when a summary carrying a comma splits a line it should not.
+# =============================================================================
+
+
+class TestEmittedToonRoundTrips:
+    """Each of the three emitters parses back into the payload it was given."""
+
+    def test_check_block_round_trips(self, capsys):
+        from toon_parser import parse_toon
+
+        rc._emit_toon(
+            {
+                'status': 'success',
+                'participation_complete': False,
+                'proves': 'participation_only',
+                # Carries a comma, so it is quoted on the way out — the case the
+                # hand-rolled emitter wrote bare.
+                'review_state_summary': '2 reviewed, 1 refused',
+                'pending_bots': ['sourcery'],
+                'unproven_bots': ['coderabbit'],
+                'bot_states': [
+                    {'bot_kind': 'coderabbit', 'state': rc.STATE_ABSENT},
+                    {'bot_kind': 'sourcery', 'state': rc.STATE_IN_PROGRESS},
+                ],
+                'measured_diff_size': '4,200 lines',
+                'refusal_causes': [{'bot_kind': 'sourcery', 'cause': 'size', 'cap': ''}],
+            }
+        )
+
+        emitted = parse_toon(capsys.readouterr().out)
+        assert emitted['participation_complete'] is False
+        assert emitted['proves'] == 'participation_only'
+        assert emitted['review_state_summary'] == '2 reviewed, 1 refused'
+        assert emitted['pending_bots'] == ['sourcery']
+        assert emitted['unproven_bots'] == ['coderabbit']
+        assert emitted['bot_states'] == [
+            {'bot_kind': 'coderabbit', 'state': rc.STATE_ABSENT},
+            {'bot_kind': 'sourcery', 'state': rc.STATE_IN_PROGRESS},
+        ]
+        assert emitted['measured_diff_size'] == '4,200 lines'
+        # An unstated cap still renders as the literal ``unknown``.
+        assert emitted['refusal_causes'] == [
+            {'bot_kind': 'sourcery', 'cause': 'size', 'cap': 'unknown'}
+        ]
+
+    def test_deficit_block_round_trips(self, capsys):
+        from toon_parser import parse_toon
+
+        rc._emit_deficit_toon(
+            {
+                'status': 'success',
+                'verdict': 'deficit',
+                'proves': 'finding_yield_only',
+                'gates_merge': False,
+                'baseline_max': 7,
+                'baseline_reviewers': ['coderabbit'],
+                'required_reviewed': ['coderabbit'],
+                'deficit_reviewers': [{'bot_kind': 'sourcery', 'findings': 0, 'deficit': 7}],
+                'reviewers': [
+                    {
+                        'bot_kind': 'sourcery',
+                        'reviewed': True,
+                        'finding_count': 0,
+                        'state': rc.STATE_PARTICIPATED_BUT_EMPTY,
+                    }
+                ],
+            }
+        )
+
+        emitted = parse_toon(capsys.readouterr().out)
+        assert emitted['gates_merge'] is False
+        assert emitted['baseline_max'] == 7
+        assert emitted['deficit_reviewers'] == [
+            {'bot_kind': 'sourcery', 'findings': 0, 'deficit': 7}
+        ]
+        assert emitted['reviewers'] == [
+            {
+                'bot_kind': 'sourcery',
+                'reviewed': True,
+                'finding_count': 0,
+                'state': rc.STATE_PARTICIPATED_BUT_EMPTY,
+            }
+        ]
+
+    def test_size_caps_block_round_trips_the_registry_population(self, capsys):
+        """The disclosure parses back over the REGISTRY's own population."""
+        from toon_parser import parse_toon
+
+        declared = rc.declared_size_caps()
+        assert declared, 'the registry declares no reviewers — the round trip would be vacuous'
+
+        rc._emit_size_caps_toon({'status': 'success', 'size_capped_reviewers': declared})
+
+        emitted = parse_toon(capsys.readouterr().out)
+        assert [row['bot_kind'] for row in emitted['size_capped_reviewers']] == [
+            row['bot_kind'] for row in declared
+        ]
+        assert [row['structural_cap'] for row in emitted['size_capped_reviewers']] == [
+            bool(row['structural_cap']) for row in declared
+        ]

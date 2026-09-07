@@ -24,8 +24,10 @@ Return TOON shape:
     in_scope_count: I
     out_of_scope_count: O
     exclusively_out_of_scope: true|false
-    out_of_scope_paths[O]: [paths]
-    unclassified_paths[N]: [paths]      # only when footprint_resolved: false
+    out_of_scope_paths[O]:              # canonical simple array, one '- path' per row
+      - path
+    unclassified_paths[N]:              # only when footprint_resolved: false
+      - path
 
 ``footprint_resolved: false`` means the live footprint could not be derived, so
 NO path was classified: both scope counts are zero, every error path is listed
@@ -49,6 +51,7 @@ from _references_core import (
     resolve_base_ref,
 )
 from file_ops import WorktreeResolutionError, get_plan_dir, resolve_plan_context
+from toon_parser import serialize_toon
 
 #: Named reason accompanying ``footprint_resolved: false``. The D2 contract asks
 #: for an explicit unknown state **with a reason token**, so the state field
@@ -184,32 +187,41 @@ def classify_failure_scope(
 
 
 def _emit_toon(payload: dict) -> None:
-    """Print a minimal TOON block matching the documented contract."""
-    print(f'status: {payload.get("status", "success")}')
-    if payload.get('status') == 'error':
-        print(f'error: {payload.get("error", "unknown")}')
+    """Print the documented TOON block through the canonical serializer.
+
+    The path lists are handed to ``serialize_toon`` as lists, so they come out
+    as a TOON simple array that ``parse_toon`` reads back as a list. The prior
+    hand-printed form interpolated the Python list repr after the ``[N]:``
+    header, which no canonical reader could parse.
+    """
+    emitted: dict[str, object] = {'status': payload.get('status', 'success')}
+
+    if emitted['status'] == 'error':
+        emitted['error'] = payload.get('error', 'unknown')
         if 'detail' in payload:
-            print(f'detail: {payload["detail"]}')
+            emitted['detail'] = payload['detail']
+        print(serialize_toon(emitted))
         return
+
     # Emitted unconditionally: a consumer must be able to tell a measured
     # classification from one that could not be performed, and an absent field
     # would read as the measured case.
-    print('footprint_resolved: ' + ('true' if payload.get('footprint_resolved') else 'false'))
+    emitted['footprint_resolved'] = bool(payload.get('footprint_resolved'))
     if not payload.get('footprint_resolved'):
-        print(f'unresolved_reason: {payload.get("unresolved_reason", UNRESOLVED_REASON_FOOTPRINT)}')
-    print(f'total: {payload["total"]}')
-    print(f'in_scope_count: {payload["in_scope_count"]}')
-    print(f'out_of_scope_count: {payload["out_of_scope_count"]}')
-    print(
-        'exclusively_out_of_scope: '
-        + ('true' if payload['exclusively_out_of_scope'] else 'false')
-    )
+        emitted['unresolved_reason'] = payload.get('unresolved_reason', UNRESOLVED_REASON_FOOTPRINT)
+    emitted['total'] = payload['total']
+    emitted['in_scope_count'] = payload['in_scope_count']
+    emitted['out_of_scope_count'] = payload['out_of_scope_count']
+    emitted['exclusively_out_of_scope'] = bool(payload['exclusively_out_of_scope'])
+
     paths = payload['out_of_scope_paths']
     if paths:
-        print(f'out_of_scope_paths[{len(paths)}]: {paths}')
+        emitted['out_of_scope_paths'] = paths
     unclassified = payload.get('unclassified_paths') or []
     if unclassified:
-        print(f'unclassified_paths[{len(unclassified)}]: {unclassified}')
+        emitted['unclassified_paths'] = unclassified
+
+    print(serialize_toon(emitted))
 
 
 def cmd_classify(args: argparse.Namespace) -> int:

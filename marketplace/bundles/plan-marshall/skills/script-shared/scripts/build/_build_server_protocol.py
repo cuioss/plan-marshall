@@ -59,7 +59,7 @@ from hashlib import sha256
 from typing import Any
 
 import _build_result
-from toon_parser import ToonParseError, parse_toon_table
+from toon_parser import ToonParseError, parse_toon, parse_toon_table
 
 # =============================================================================
 # Framing constants
@@ -971,11 +971,28 @@ _ERRORS_NULL_MARKERS = frozenset({'-'})
 
 
 def _toon_scalar(line: str) -> str:
-    """Return the unquoted scalar value of a ``key: value`` TOON line."""
-    value = line.split(':', 1)[1].strip()
-    if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
-        return value[1:-1]
-    return value
+    """Return the unquoted scalar value of a ``key: value`` TOON line.
+
+    The unquoting is the CANONICAL parser's, not a local restatement of it: a
+    quoted value is handed to :func:`toon_parser.parse_toon`, which owns the
+    double-quote-plus-``\\"``-escape rule that :func:`toon_parser.serialize_toon`
+    writes. The prior hand-rolled version also stripped SINGLE quotes, a shape no
+    writer in this tree emits, and it never unescaped an internal quote.
+
+    Only the scalar unquote is delegated. The surrounding scan stays as it is —
+    deliberately streaming, top-level-only and last-occurrence-wins over a log
+    that also carries non-TOON build chatter — so an unquoted value is returned
+    as the log's own raw text, and every numeric caller keeps parsing it itself.
+    """
+    raw = line.split(':', 1)[1].strip()
+    if len(raw) < 2 or not (raw.startswith('"') and raw.endswith('"')):
+        return raw
+    parsed = parse_toon(f'value: {raw}')
+    value = parsed.get('value')
+    # A quoted payload the canonical reader resolves to something other than a
+    # string (an embedded JSON array or object) is not a scalar; the raw text is
+    # the honest answer rather than a coerced repr of a different type.
+    return value if isinstance(value, str) else raw
 
 
 def _parse_errors_table(block_lines: list[str]) -> tuple[dict[str, Any], ...]:

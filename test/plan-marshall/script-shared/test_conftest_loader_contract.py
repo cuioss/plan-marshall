@@ -48,11 +48,20 @@ from conftest import (
 #: The skill every bundle uses for its plan-marshall extension entry point.
 EXTENSION_SKILL = 'plan-marshall-plugin'
 
-#: How many loader call sites the walker cannot resolve statically today. Asserted
-#: from BOTH sides so the guard's blind spot stays a truthful quantity: it may not
-#: grow (that widens what the guard cannot see) and it may not silently shrink
-#: (that leaves the constant overstating the gap).
-UNRESOLVED_CALL_SITE_BOUND = 86
+#: The ceiling and floor on the PROPORTION of the wrapper's total call-site
+#: population (every resolved-plus-unresolved call the walk counts) that may be
+#: statically unresolvable -- not a raw count. The wrapper is used in a larger and
+#: growing set of files, so pinning an absolute count forces a bump on every such
+#: addition regardless of whether resolvability itself got worse: that is exactly
+#: how a growth guard stops biting ("raising a bound to match an unmeasured
+#: population"). A ratio absorbs organic population growth automatically and only
+#: trips when the SHARE of unresolvable sites actually moves -- the real regression
+#: signal. Asserted from BOTH sides for the same reason the old absolute bound was:
+#: the ratio may not grow (that widens what the guard cannot see) and it may not
+#: silently shrink (that would mean the bound overstates the current blind spot and
+#: needs retuning, left as a visible failure rather than assumed away).
+UNRESOLVED_RATIO_LOWER_BOUND = 0.10
+UNRESOLVED_RATIO_UPPER_BOUND = 0.14
 
 #: Names a file-load registers that some test module ALSO imports plainly.
 #:
@@ -349,20 +358,35 @@ def test_unresolved_call_sites_are_reported_not_hidden(tree_scan):
     That is a bound on what the guard can see, and a zero here would be a stronger
     claim than the walker can make — so the count is asserted as a known quantity
     that a later change has to look at, not assumed away.
-    """
-    _, _, unresolved = tree_scan
 
-    assert len(unresolved) <= UNRESOLVED_CALL_SITE_BOUND, (
-        f'{len(unresolved)} loader call sites could not be resolved statically, over '
-        f'the {UNRESOLVED_CALL_SITE_BOUND} this bound was set against. The guard cannot '
-        'see these, so a collision introduced at one is invisible: hoist the argument '
-        'into a module-level constant, or pass a literal.'
+    The bound is DERIVED from the wrapper's total call-site population (every
+    resolved-plus-unresolved call the walk counts) and that population is published
+    alongside the verdict below — never a raw unresolved count pinned once and
+    bumped whenever the tree grows. Bumping a raw count to match an unmeasured
+    population is how a growth guard stops biting.
+    """
+    registered, _, unresolved = tree_scan
+
+    population = sum(len(sites) for sites in registered.values()) + len(unresolved)
+    assert population > 0, (
+        'the wrapper has no call sites at all — the scan is broken, and the ratio '
+        'below would be a division against an empty population'
     )
-    assert len(unresolved) >= UNRESOLVED_CALL_SITE_BOUND, (
-        f'only {len(unresolved)} call sites are now unresolvable, below the '
-        f'{UNRESOLVED_CALL_SITE_BOUND} this bound records — good, but retune the '
-        'constant. Left alone it overstates the blind spot, which is the same rot the '
-        'collision baseline is guarded against in the opposite direction.'
+    ratio = len(unresolved) / population
+
+    assert ratio <= UNRESOLVED_RATIO_UPPER_BOUND, (
+        f'{len(unresolved)} of {population} wrapper call sites ({ratio:.1%}) are now '
+        f'statically unresolvable, over the {UNRESOLVED_RATIO_UPPER_BOUND:.0%} bound '
+        'this guard was set against. The guard cannot see these, so a collision '
+        'introduced at one is invisible: hoist the argument into a module-level '
+        'constant, or pass a literal.'
+    )
+    assert ratio >= UNRESOLVED_RATIO_LOWER_BOUND, (
+        f'only {len(unresolved)} of {population} wrapper call sites ({ratio:.1%}) are '
+        f'now unresolvable, below the {UNRESOLVED_RATIO_LOWER_BOUND:.0%} bound this '
+        'guard was set against — good, but retune the bound. Left alone it overstates '
+        'the blind spot, which is the same rot the collision baseline is guarded '
+        'against in the opposite direction.'
     )
 
 

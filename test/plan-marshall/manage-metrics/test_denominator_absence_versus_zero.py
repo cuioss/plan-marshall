@@ -275,8 +275,8 @@ def test_deliverable_count_agrees_with_the_sibling_producer(plan_context, label)
 def test_sampling_point_reuses_the_modules_single_discriminator_vocabulary():
     """Every value vocabulary the module publishes is a closed tuple of strings.
 
-    Deliverable 3 is forbidden from introducing a second, parallel discriminator
-    vocabulary. The guard that enforces that MUST be population-derived: a
+    A second, parallel discriminator vocabulary is forbidden. The guard that
+    enforces that MUST be population-derived: a
     hand-listed trio stops covering a FOURTH vocabulary the moment one is added,
     which is precisely the drift it exists to catch — the check would keep
     passing while the new vocabulary bypassed the shape contract entirely.

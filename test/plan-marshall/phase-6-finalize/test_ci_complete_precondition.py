@@ -369,11 +369,11 @@ def test_ci_timeout_returns_wait_failed_with_timeout_reason(plan_context):
 
 
 # ---------------------------------------------------------------------------
-# Deliverable 3 — the elapsed-at-deadline upward ratchet.
+# The elapsed-at-deadline upward ratchet.
 #
 # When the ci:wait ceiling sits below the true CI duration, every wait hits
 # deadline_exceeded before CI completes, so the success-path record never
-# fires and the ceiling can never grow. The fix records the measured
+# fires and the ceiling can never grow. The resolver records the measured
 # elapsed-at-deadline (>= the current ceiling) via the SAME timeout_set call
 # so compute_weighted_timeout (0.80) + timeout_get (1.25) ratchet the ceiling
 # upward across finalizes until it exceeds the true CI duration.
@@ -665,7 +665,7 @@ def test_failure_forwards_failing_checks_list(plan_context):
     """A ``ci wait`` envelope with ``failing_checks`` MUST forward the list
     verbatim through the resolver return so the dispatcher can name the
     failing checks in the consumer step's display_detail and emit the
-    structured triage finding documented in deliverable 5.
+    documented structured triage finding.
     """
     plan_id = 'ci-precond-failing-checks'
     git_stub = _StubGitHead(_SHA_A)
@@ -704,7 +704,7 @@ def test_no_checks_returns_distinct_ci_final_status(plan_context):
     """``final_status: none`` from ``ci wait`` MUST surface as
     ``ci_final_status: no_checks`` so the dispatcher can distinguish
     "CI never ran" from a real failure and route to the
-    ``ci-verify-missing`` producer (deliverable 6).
+    ``ci-verify-missing`` producer.
     """
     plan_id = 'ci-precond-no-checks'
     git_stub = _StubGitHead(_SHA_A)
@@ -778,9 +778,9 @@ def test_timeout_forwards_wait_outcome_deadline_exceeded(plan_context):
 
 def test_satisfied_does_not_carry_failing_checks_field(plan_context):
     """``satisfied`` (cache hit) MUST NOT include the failing_checks /
-    wait_outcome fields — they are wait_failed-only signals. Deliverable 5
-    specifies "satisfied and wait_succeeded outcomes produce no finding";
-    the absence of the fields is the structural complement.
+    wait_outcome fields — they are wait_failed-only signals. The contract is
+    "satisfied and wait_succeeded outcomes produce no finding"; the absence of
+    the fields is the structural complement.
     """
     plan_id = 'ci-precond-satisfied-no-failing-checks'
     git_stub = _StubGitHead(_SHA_A)
@@ -1016,7 +1016,7 @@ def test_resolve_routes_subprocess_timeout_to_wait_failed_timeout(
 
 
 # ---------------------------------------------------------------------------
-# Run-config-backed CI-wait timeout — deliverable 2. The resolver sources the
+# Run-config-backed CI-wait timeout. The resolver sources the
 # ``ci wait --timeout`` ceiling from run-configuration.json (command key
 # ``ci:wait``) instead of the hard-coded constant, and records the observed
 # CI duration back after a successful wait so the ceiling adapts like
@@ -1183,7 +1183,7 @@ def test_resolve_explicit_timeout_overrides_run_config_lookup(plan_context):
 
 
 def test_consume_failures_mode_threads_wait_failed_envelope(plan_context):
-    """Regression guard for deliverable 6.
+    """Regression guard for the consume-failures envelope.
 
     A failing CI run resolved with ``mode='consume-failures'`` MUST surface
     the full ``wait_failed`` envelope — ``failing_checks``, ``wait_outcome``,
@@ -1839,7 +1839,7 @@ def test_run_config_timeout_get_degrades_when_executor_unresolvable(monkeypatch)
 
 
 # ---------------------------------------------------------------------------
-# Per-signal FIND-gate mode (``--signal-arm review|sonar``) — deliverable 1.
+# Per-signal FIND-gate mode (``--signal-arm review|sonar``).
 #
 # The per-signal gate keys a producer's FIND step on that producer's OWN
 # barrier arm reaching a terminal state (settled OR failed), not on global CI
@@ -2160,7 +2160,7 @@ def test_build_parser_accepts_signal_arm():
 
 
 # ---------------------------------------------------------------------------
-# Deliverable 3 — the harness-ceiling clamp on the consumed wait ceiling.
+# The harness-ceiling clamp on the consumed wait ceiling.
 #
 # The resolver's inner ``ci wait --timeout`` ceiling is clamped at the single
 # point where it is settled in ``resolve``, so ``inner +

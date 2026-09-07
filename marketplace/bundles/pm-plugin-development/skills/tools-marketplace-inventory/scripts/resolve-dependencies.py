@@ -48,57 +48,15 @@ from _dep_index import (
     unresolved_reason,
 )
 from file_ops import output_toon, safe_main
-
-# Try to import toon_parser, fall back to simple serialization
-try:
-    from toon_parser import serialize_toon
-
-    HAS_TOON_PARSER = True
-except ImportError:
-    HAS_TOON_PARSER = False
-
-
-def serialize_toon_simple(data: dict[str, Any]) -> str:
-    """Simple TOON serialization for when toon_parser is not available."""
-    lines: list[str] = []
-
-    def _serialize(obj: Any, indent: int = 0) -> None:
-        prefix = '  ' * indent
-        if isinstance(obj, dict):
-            for key, value in obj.items():
-                if isinstance(value, dict):
-                    lines.append(f'{prefix}{key}:')
-                    _serialize(value, indent + 1)
-                elif isinstance(value, list):
-                    lines.append(f'{prefix}{key}[{len(value)}]:')
-                    for item in value:
-                        if isinstance(item, dict):
-                            lines.append(f'{prefix}  - {_format_dict_inline(item)}')
-                        else:
-                            lines.append(f'{prefix}  - {item}')
-                else:
-                    lines.append(f'{prefix}{key}: {value}')
-        else:
-            lines.append(f'{prefix}{obj}')
-
-    _serialize(data)
-    return '\n'.join(lines)
-
-
-def _format_dict_inline(d: dict[str, Any]) -> str:
-    """Format a dict inline for list items."""
-    parts = [f'{k}: {v}' for k, v in d.items()]
-    return ', '.join(parts)
+from toon_parser import serialize_toon
 
 
 def serialize_output(data: dict[str, Any], fmt: str) -> str:
     """Serialize output in requested format."""
     if fmt == 'json':
         return json.dumps(data, indent=2)
-    if HAS_TOON_PARSER:
-        result: str = serialize_toon(data)
-        return result
-    return serialize_toon_simple(data)
+    result: str = serialize_toon(data)
+    return result
 
 
 def parse_dep_types(dep_types_str: str) -> set[DependencyType]:

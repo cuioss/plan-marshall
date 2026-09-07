@@ -164,41 +164,72 @@ def _parse_value(value_str: str) -> Any:
     return value_str
 
 
+def _row_separator(row: str) -> str:
+    """Detect the separator in force for one uniform-array row.
+
+    Tab when the row carries a tab OUTSIDE a quoted cell, comma otherwise. The
+    scan skips quoted cells because a quoted value is exactly where a separator
+    character may legitimately appear as data: ``serialize_toon`` quotes such a
+    value precisely so it does not split the row, and a detector that saw the
+    quoted tab would answer TSV for a row the serializer wrote as CSV.
+    """
+    in_quotes = False
+    i = 0
+    while i < len(row):
+        char = row[i]
+        if in_quotes and char == '\\' and i + 1 < len(row) and row[i + 1] == '"':
+            i += 2
+            continue
+        if char == '"':
+            in_quotes = not in_quotes
+        elif char == '\t' and not in_quotes:
+            return '\t'
+        i += 1
+    return ','
+
+
+def _split_row(row: str, separator: str) -> list[str]:
+    """Split one row on ``separator``, treating double-quoted cells as opaque.
+
+    Escaped quotes (``\\"``) stay inside the cell and do not close it; the outer
+    quotes are left on the value for ``_parse_value`` to strip.
+    """
+    values: list[str] = []
+    current = ''
+    in_quotes = False
+    i = 0
+
+    while i < len(row):
+        char = row[i]
+        # Handle escaped quotes within quoted strings
+        if in_quotes and char == '\\' and i + 1 < len(row) and row[i + 1] == '"':
+            current += '\\"'
+            i += 2
+            continue
+        if char == '"':
+            current += char
+            in_quotes = not in_quotes
+        elif char == separator and not in_quotes:
+            values.append(current.strip())
+            current = ''
+        else:
+            current += char
+        i += 1
+
+    values.append(current.strip())
+    return values
+
+
 def _parse_csv_row(row: str, fields: list[str]) -> dict[str, Any]:
     """Parse a CSV/TSV-style row into a dictionary using field headers.
 
-    Auto-detects separator: tabs if present, otherwise commas.
+    Auto-detects the separator (tab if one appears outside a quoted cell, else
+    comma) and splits on it quote-aware, so a value carrying the separator
+    round-trips through ``serialize_toon`` unchanged.
     """
     result = {}
 
-    # Auto-detect separator: tab-separated if tabs present, else comma-separated
-    if '\t' in row:
-        values = [v.strip() for v in row.split('\t')]
-    else:
-        # Handle quoted values with commas and escaped quotes
-        values = []
-        current = ''
-        in_quotes = False
-        i = 0
-
-        while i < len(row):
-            char = row[i]
-            # Handle escaped quotes within quoted strings
-            if in_quotes and char == '\\' and i + 1 < len(row) and row[i + 1] == '"':
-                current += '\\"'
-                i += 2
-                continue
-            if char == '"':
-                current += char
-                in_quotes = not in_quotes
-            elif char == ',' and not in_quotes:
-                values.append(current.strip())
-                current = ''
-            else:
-                current += char
-            i += 1
-
-        values.append(current.strip())
+    values = _split_row(row, _row_separator(row))
 
     # Map values to fields
     for i, field in enumerate(fields):
@@ -427,6 +458,17 @@ def _parse_multiline_value(ctx: ParseContext, base_indent: int) -> str:
     description, an issue body) would come back edited at its edges by a reader
     that promised to carry it whole.
 
+    The dedent removes the emitter's structural prefix and NEVER more than that:
+    :func:`_serialize_block_scalar` writes the body two spaces past the header, so
+    ``base_indent + 2`` is what has to come back off, but the CLAMP against the
+    line's own indent is what keeps the two halves of this parser agreeing.
+    :func:`block_scalar_body_continues` admits every line indented deeper than the
+    header — one space past it included — and a fixed ``base_indent + 2`` slice of
+    such a line cuts into the payload's own characters, silently deleting them. A
+    hand-written or foreign document is exactly where that shape arrives, and it is
+    also exactly where verbatim carriage matters, so the shallower-than-canonical
+    body is dedented by what it actually carries rather than truncated.
+
     One normalisation remains, and it is the emitter's rather than this
     function's: a whitespace-only body line is recorded as empty, because
     :func:`_serialize_block_scalar` writes a blank payload line as a genuinely
@@ -447,7 +489,7 @@ def _parse_multiline_value(ctx: ParseContext, base_indent: int) -> str:
         if not line.strip():
             lines.append('')
         else:
-            lines.append(line[base_indent + 2 :] if len(line) > base_indent + 2 else line.strip())
+            lines.append(line[min(base_indent + 2, _get_indent(line)) :])
         ctx.index += 1
 
     return '\n'.join(lines)

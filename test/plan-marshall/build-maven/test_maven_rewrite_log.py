@@ -8,9 +8,9 @@ Covers the four fail-closed verdicts of the build-maven Signal B consumer:
 - ``domain_inactive``— the verb resolves to null (never a false clean).
 - ``parse_error``    — dispatch returned an error payload / non-dict (never a false observed).
 
-The observed fixture's #118 WARN lines are copied verbatim from deliverable 1's
-provenance corpus — the SINGLE format source of truth — and a cross-check test
-pins that identity so the two never drift.
+The observed fixture's ``#118`` WARN lines are copied verbatim from the
+domain-owned parser's provenance corpus — the SINGLE format source of truth —
+and a cross-check test pins that identity so the two never drift.
 """
 
 from pathlib import Path
@@ -30,7 +30,7 @@ VERDICT_NOT_OBSERVED = _rewrite_log.VERDICT_NOT_OBSERVED
 VERDICT_DOMAIN_INACTIVE = _rewrite_log.VERDICT_DOMAIN_INACTIVE
 VERDICT_PARSE_ERROR = _rewrite_log.VERDICT_PARSE_ERROR
 
-# The domain-owned parser (deliverable 1) — imported here only to drive the
+# The domain-owned parser — imported here only to drive the
 # observed-case dispatch against the fixture without the executor subprocess.
 _parser = load_script_module(
     'pm-dev-java-cui', 'parse-rewrite-log', 'parse_rewrite_log.py', 'parse_rewrite_log'
@@ -41,8 +41,8 @@ OBSERVED_LOG = TEST_DATA_DIR / 'rewrite-run-observed.log'
 NOT_OBSERVED_LOG = TEST_DATA_DIR / 'rewrite-run-not-observed.log'
 DRYRUN_ADVISORY_LOG = TEST_DATA_DIR / 'rewrite-run-dryrun-advisory.log'
 
-#: Deliverable 1's provenance corpus — the single format source of truth for the
-#: #118 WARN lines. parents[2] is the test/ root.
+#: The domain-owned parser's provenance corpus — the single format source of
+#: truth for the ``#118`` WARN lines. parents[2] is the test/ root.
 D1_CORPUS = (
     Path(__file__).resolve().parents[2]
     / 'pm-dev-java-cui'
@@ -56,7 +56,7 @@ _PREFIX_TOKEN = 'CUI_REWRITE-'
 
 
 def _corpus_finding_lines(path: Path) -> list[str]:
-    """Return the lines of ``path`` that carry a #118 WARN finding."""
+    """Return the lines of ``path`` that carry a ``#118`` WARN finding."""
     return [line for line in path.read_text(encoding='utf-8').splitlines() if _PREFIX_TOKEN in line]
 
 
@@ -64,7 +64,7 @@ def _real_dispatch(notation: str, log_file: str) -> dict:
     """Dispatch stand-in that runs the real domain parser directly against the log.
 
     Avoids the executor subprocess while still exercising the genuine parser, so
-    the observed-case assertions rest on real #118 parsing, not a canned payload.
+    the observed-case assertions rest on real ``#118`` parsing, not a canned payload.
     """
     return dict(_parser.parse_rewrite_log_file(log_file))
 

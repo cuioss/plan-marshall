@@ -1277,7 +1277,7 @@ class TestCallSitePopulation:
 
 
 # =============================================================================
-# The crashed-gate-records-a-pass regression (#1063), end to end for both families
+# A crashed gate never records a pass — end to end for both families
 # =============================================================================
 
 _GH_SCRIPT = get_script_path('plan-marshall', 'workflow-integration-github', 'github_pr.py')

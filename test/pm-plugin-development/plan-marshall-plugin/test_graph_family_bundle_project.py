@@ -201,9 +201,12 @@ def test_resolver_count_matches_the_expected_roster():
     This is the discovered count, which is what this pipeline exercises: it calls
     ``discover_derivation_resolvers`` directly, with no configuration gate in
     front of it. A response's ``resolver_count`` is a different quantity — the
-    number that actually RAN, excluding any the machine-local binding switched
-    off — and is pinned in
+    number that actually RAN, excluding any the dispatch control switched off —
+    and is pinned in
     ``test/plan-marshall/manage-architecture/test_derivation_resolver_configuration.py``.
+    That control's effect is not observable from THIS module: the autouse
+    ``_plan_base_dir_sandbox`` fixture redirects every case here into an empty
+    per-test sandbox, so nothing is ever switched off in this suite.
     """
     assert len(_pipeline()['resolvers']) == len(EXPECTED_RESOLVER_IDS)
 
@@ -347,11 +350,20 @@ def test_graph_response_names_every_discovered_resolver():
     assert sorted(report['id'] for report in graph['resolvers']) == discovered_ids
 
     # ``resolver_count`` is a DIFFERENT quantity: the number that actually ran.
-    # It equals the discovered count only while nothing is switched off, which is
-    # true of a fresh clone and of CI but NOT of a developer machine whose
-    # machine-local binding disables a resolver. Asserting the equivalence
-    # unconditionally would turn this red for that developer, so the count is
-    # checked against the dispatched population it actually describes.
+    # The two differ because a dispatch control EXISTS — a resolver whose report
+    # carries ``status: not_dispatched`` is discovered but not run — so equality
+    # is a property of one particular configuration, not of the contract.
+    #
+    # ⛔ No test in this module can observe a machine's own resolver
+    # configuration, so "a developer's local binding would redden this" is not
+    # the reason and never was. The autouse ``_plan_base_dir_sandbox`` fixture in
+    # ``test/conftest.py`` redirects ``PLAN_BASE_DIR`` into a fresh per-test tmp
+    # directory for EVERY test here, and this module carries no
+    # ``allow_pollution`` marker to opt out, so the binding every case reads is
+    # an empty sandbox in which nothing is switched off — a run against a store
+    # disabling every shipped resolver is fully green. Asserting the equivalence
+    # would therefore pin a harness artefact, so the count is checked against the
+    # dispatched population it actually describes.
     dispatched_ids = [
         report['id'] for report in graph['resolvers'] if report.get('status') != 'not_dispatched'
     ]

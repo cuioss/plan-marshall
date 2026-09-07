@@ -165,7 +165,7 @@ def test_toon_carries_documented_keys(
 
 
 # ============================================================================
-# Deliverable 2: project-kind detection and the kind-aware sub-step matrix
+# Project-kind detection and the kind-aware sub-step matrix
 # ============================================================================
 
 

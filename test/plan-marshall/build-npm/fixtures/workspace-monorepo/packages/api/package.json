@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "dependencies": {
     "@sample/core": "workspace:*",
+    "unnamed": "^1.0.0",
     "zod": "^3.22.0"
   },
   "scripts": {

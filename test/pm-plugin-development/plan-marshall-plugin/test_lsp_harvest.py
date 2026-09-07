@@ -16,10 +16,15 @@ Two groups carry the weight:
 import shutil
 import sys
 import tempfile
+import time
 from pathlib import Path
+from types import SimpleNamespace
 
+import lsp_harvest
 import plugin_discover
 import pytest
+from _lsp_jsonrpc import LspError, LspSession
+from _lsp_workspace_edit import path_to_uri
 from lsp_harvest import (
     DEP_TYPE_LSP,
     HarvestOutcome,
@@ -552,15 +557,51 @@ def test_skip_list_still_excludes_vendor_trees_inside_the_workspace(tmp_path):
     assert outcome.reason.startswith('workspace-unsupported:')
 
 
-def test_every_failure_mode_states_a_distinct_reason(tmp_path):
+def _declared_reason_prefixes() -> set[str]:
+    """Every reason prefix the harvest module DECLARES, read off its own constants.
+
+    The population is derived from the module rather than copied into this file,
+    so a failure mode a sibling plan adds enlarges the declared set here without
+    anyone remembering to. Raises rather than returning an empty set when no
+    ``REASON_*`` constant is found: an empty population would make the
+    membership check below pass by containing nothing, which is the vacuity this
+    derivation exists to avoid.
+    """
+    prefixes = {
+        str(value).split(':', 1)[0]
+        for name, value in vars(lsp_harvest).items()
+        if name.startswith('REASON_') and isinstance(value, str)
+    }
+    if not prefixes:
+        raise AssertionError(
+            'no REASON_* constants found on lsp_harvest — the declared population '
+            'is empty, so any membership assertion against it is vacuous'
+        )
+    return prefixes
+
+
+def test_every_failure_mode_states_a_distinct_reason(tmp_path, record_property):
     """Each mode must be tellable apart BY ITS PREFIX, not merely by its text.
 
     Collecting whole interpolated strings and counting them cannot fail: the
-    strings already differ by interpolated binary name, so two modes can collapse
-    onto one prefix — the part a reader classifies by — and the count stays
-    right. The assertion is therefore over the set of prefixes, and it is an
-    equality rather than a length, so a mode reporting under the *wrong*
-    prefix is caught as well as one reporting under a duplicate.
+    strings already differ by an interpolated binary path, so two modes can
+    collapse onto one prefix — the part a reader classifies by — while the count
+    of distinct strings stays right. The reading is therefore over PREFIXES.
+
+    ⭐ The expected set is DERIVED from the module's own ``REASON_*`` constants,
+    not written out here. A hard-coded literal turns a sibling plan's new failure
+    mode into a red build in this file, which teaches the next author to widen
+    the literal rather than to look at the mode — so the two properties are
+    asserted separately instead:
+
+    - **membership** — every observed prefix is one the module declares, which
+      catches a mode reporting under a *wrong* prefix;
+    - **injectivity** — the number of distinct observed prefixes equals the
+      number of calls made, which catches two modes collapsing onto one.
+
+    Neither moves when a seventh reason is declared but not exercised here. Both
+    populations are published, so a shrunken one is visible in the record rather
+    than silently making the assertions cheap.
     """
     # Arrange
     sourced = tmp_path / 'sourced'
@@ -571,40 +612,44 @@ def test_every_failure_mode_states_a_distinct_reason(tmp_path):
     (empty / 'README.md').write_text('none\n')
 
     # Act — one call per mode: absent, fails-to-start, times-out, a workspace
-    # with nothing to scan, and a server that REFUSES the handshake.
-    prefixes = {
-        outcome.reason.split(':', 1)[0]
-        for outcome in (
-            harvest_workspace(sourced, server_cmd=['definitely-not-a-real-language-server-xyz']),
-            harvest_workspace(
-                sourced, server_cmd=_unlaunchable_server(tmp_path), timeout_s=20.0, request_timeout_s=5.0
-            ),
-            harvest_workspace(
-                sourced,
-                server_cmd=[PYTHON, '-c', 'import sys; sys.stdin.read()'],
-                timeout_s=2.0,
-                request_timeout_s=0.5,
-            ),
-            harvest_workspace(empty, server_cmd=[PYTHON, '-c', 'pass']),
-            harvest_workspace(sourced, server_cmd=_rejecting_server(tmp_path), timeout_s=20.0, request_timeout_s=5.0),
-            harvest_workspace(
-                sourced,
-                server_cmd=_handshake_then_silent_server(tmp_path),
-                timeout_s=90.0,
-                request_timeout_s=0.5,
-            ),
-        )
-    }
+    # with nothing to scan, a server that REFUSES the handshake, and one that
+    # completes the handshake then fails a per-file request.
+    outcomes = [
+        harvest_workspace(sourced, server_cmd=['definitely-not-a-real-language-server-xyz']),
+        harvest_workspace(
+            sourced, server_cmd=_unlaunchable_server(tmp_path), timeout_s=20.0, request_timeout_s=5.0
+        ),
+        harvest_workspace(
+            sourced,
+            server_cmd=[PYTHON, '-c', 'import sys; sys.stdin.read()'],
+            timeout_s=2.0,
+            request_timeout_s=0.5,
+        ),
+        harvest_workspace(empty, server_cmd=[PYTHON, '-c', 'pass']),
+        harvest_workspace(sourced, server_cmd=_rejecting_server(tmp_path), timeout_s=20.0, request_timeout_s=5.0),
+        harvest_workspace(
+            sourced,
+            server_cmd=_handshake_then_silent_server(tmp_path),
+            timeout_s=90.0,
+            request_timeout_s=0.5,
+        ),
+    ]
+    observed = [outcome.reason.split(':', 1)[0] for outcome in outcomes]
+    declared = _declared_reason_prefixes()
 
-    # Assert
-    assert prefixes == {
-        'server-absent',
-        'server-failed-to-start',
-        'server-timeout',
-        'workspace-unsupported',
-        'server-rejected',
-        'request-failed',
-    }
+    record_property('lsp_harvest_modes_exercised', len(outcomes))
+    record_property('lsp_harvest_reason_prefixes_declared', len(declared))
+
+    # Assert — membership first: an undeclared prefix is a mode reporting under a
+    # name no reader can classify.
+    assert set(observed) <= declared, (
+        f'reason prefixes not declared by lsp_harvest: {sorted(set(observed) - declared)}'
+    )
+    # Then injectivity: as many distinct prefixes as calls means no two modes
+    # collapsed onto one.
+    assert len(set(observed)) == len(outcomes), (
+        f'two failure modes share a reason prefix: {observed}'
+    )
 
 
 def test_no_failure_mode_reports_a_zero_edge_success(tmp_path):
@@ -650,6 +695,142 @@ def test_garbage_emitting_server_does_not_escape_as_an_exception(tmp_path):
     # Assert
     assert outcome.ran is False
     assert outcome.reason
+
+
+# =============================================================================
+# Deterministic mid-file expiry and out-of-workspace drop (fake transport)
+# =============================================================================
+
+
+class _FakeHarvestTransport:
+    """A programmable, zero-real-time transport for :func:`harvest_workspace`.
+
+    No subprocess, no I/O wait, and no call of its own to ``time.monotonic`` — so
+    a test that also monkeypatches the clock controls EVERY reading the harvest
+    loop sees, with nothing here racing it.
+    """
+
+    def __init__(self, definition_responses):
+        """``definition_responses``: one list-of-Locations per ``definition()`` call, popped in order."""
+        self._definition_responses = list(definition_responses)
+        self.definition_calls = 0
+
+    def request(self, method, params, timeout=30.0):
+        if method == 'initialize':
+            return {'jsonrpc': '2.0', 'id': 0, 'result': {'capabilities': {}}}
+        if method == 'textDocument/definition':
+            self.definition_calls += 1
+            result = self._definition_responses.pop(0) if self._definition_responses else []
+            return {'jsonrpc': '2.0', 'id': 0, 'result': result}
+        return {'jsonrpc': '2.0', 'id': 0, 'result': None}
+
+    def notify(self, method, params):
+        pass
+
+    def diagnostics_seq(self, uri):
+        return 0
+
+    def wait_for_diagnostics(self, uri, settle=2.0, timeout=15.0, after_seq=None):
+        return None
+
+    def wait_until_idle(self, settle=1.5, timeout=8.0):
+        return None
+
+    def close(self):
+        pass
+
+
+def _fake_client_module(transport):
+    """A stand-in for the ``lsp_client`` module ``_load_lsp_client`` normally returns.
+
+    ``StdioTransport`` ignores its real argv/cwd and hands back the pre-built fake
+    transport — no subprocess is ever spawned. ``LspSession`` is the REAL session
+    class, so the handshake/open/definition wiring under test is the shipped
+    code; only the wire transport is a double.
+    """
+    return SimpleNamespace(
+        StdioTransport=lambda *args, **kwargs: transport,
+        LspSession=LspSession,
+        analysis_config_with_extra_paths=lambda extra_paths: {},
+        LspError=LspError,
+    )
+
+
+class _FakeClock:
+    """A ``time.monotonic`` stand-in returning a pre-scripted, index-clamped sequence.
+
+    The readings are fixed instants, not real elapsed time, so the exact call at
+    which the deadline trips does not depend on how fast the test machine runs.
+    """
+
+    def __init__(self, readings):
+        self._readings = list(readings)
+        self._index = 0
+
+    def __call__(self):
+        value = self._readings[min(self._index, len(self._readings) - 1)]
+        self._index += 1
+        return value
+
+
+def test_mid_file_expiry_truncates_before_the_next_position_and_is_reported(tmp_path, monkeypatch):
+    """The deadline check INSIDE the position loop, not only the one between files.
+
+    A single file — also the LAST file — carries two import positions. Because it
+    is the only file, the outer per-file check (harvest_workspace's own loop over
+    ``files``) never gets a second iteration to independently catch the expiry;
+    only the inner mid-file check can. Without this test, a regression removing
+    the inner check would still pass every other test here, since a
+    between-files check alone never fires for a single-file workspace. The clock
+    is monkeypatched so the exact expiry point is deterministic, not a race
+    against how fast the position loop executes.
+    """
+    # Arrange — two imports, so the position loop runs twice.
+    (tmp_path / 'x.py').write_text('import alpha\nimport beta\n')
+    transport = _FakeHarvestTransport(definition_responses=[[]])
+    monkeypatch.setattr(lsp_harvest, '_load_lsp_client', lambda: _fake_client_module(transport))
+    # Six monotonic() reads on this path: started, initialize-budget, the
+    # outer-loop check, the position-1 check, the position-2 check (expired
+    # here), and the final elapsed_s.
+    monkeypatch.setattr(time, 'monotonic', _FakeClock([0.0, 0.0, 0.0, 0.0, 20.0, 20.0]))
+
+    # Act
+    outcome = harvest_workspace(tmp_path, server_cmd=[PYTHON], timeout_s=10.0)
+
+    # Assert — a stopping condition, not a failure: ran=True with a budget note.
+    assert outcome.ran is True
+    assert outcome.files_scanned == 1
+    assert any(note.startswith('harvest-budget:') for note in outcome.notes)
+    assert any('stopped after 1 of 1 files' in note for note in outcome.notes)
+    # The mid-file assertion: the SECOND position's request never went out.
+    assert transport.definition_calls == 1
+
+
+def test_out_of_workspace_reference_is_dropped_and_reported(tmp_path_factory, monkeypatch):
+    """A definition resolving OUTSIDE the workspace root owns no module and is dropped.
+
+    The workspace and the out-of-workspace target live in disjoint trees (two
+    independent ``tmp_path_factory`` roots), so the fake transport's answer is
+    unambiguously external — deterministic, unlike relying on which interpreter
+    a real server happens to resolve a standard-library import against.
+    """
+    # Arrange
+    workspace = tmp_path_factory.mktemp('harvest_workspace')
+    outside_root = tmp_path_factory.mktemp('harvest_outside')
+    (workspace / 'x.py').write_text('import alpha\n')
+    target = outside_root / 'target_mod.py'
+    target.write_text('VALUE = 1\n')
+    transport = _FakeHarvestTransport(definition_responses=[[{'uri': path_to_uri(target)}]])
+    monkeypatch.setattr(lsp_harvest, '_load_lsp_client', lambda: _fake_client_module(transport))
+
+    # Act
+    outcome = harvest_workspace(workspace, server_cmd=[PYTHON])
+
+    # Assert — no edge for a target that owns no module, and the drop is stated.
+    assert outcome.ran is True
+    assert outcome.references == []
+    assert any(note.startswith('out-of-workspace:') for note in outcome.notes)
+    assert any('1 reference(s)' in note for note in outcome.notes)
 
 
 # =============================================================================

@@ -555,6 +555,89 @@ def test_cli_exit_code_matrix(tmp_path, identifiers, found_count, missing_count,
 
 
 # =============================================================================
+# Emitted bytes — nodeids survive the row they are written into
+#
+# Every pytest nodeid carries ``::``, and a found_forms row is separator-joined.
+# The hand-rolled emitter wrote the nodeid bare, so the row it produced split at
+# the wrong place when read back. These assert against the emitted bytes rather
+# than the DiffResult the other tests inspect.
+# =============================================================================
+
+
+def test_cli_found_forms_row_round_trips_the_nodeid(tmp_path):
+    """A found_forms row parses back into the exact nodeid that was written."""
+    written = [
+        'test/plan-marshall/execute-task/test_foo.py::test_alpha',
+        'test/plan-marshall/execute-task/test_foo.py::test_beta',
+    ]
+    log_path = _write_log(tmp_path, _pytest_log_lines(written))
+    ids_path = _write_identifiers(tmp_path, written)
+
+    result = run_script(
+        SCRIPT_PATH,
+        'run',
+        '--identifiers-file',
+        str(ids_path),
+        '--log',
+        str(log_path),
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 0, f'CLI stderr: {result.stderr}'
+    data = result.toon()
+    assert [row['identifier'] for row in data['found_forms']] == written
+    assert [row['matched_form'] for row in data['found_forms']] == ['exact', 'exact']
+
+
+def test_cli_missing_list_round_trips_the_nodeid(tmp_path):
+    """A missing entry parses back as the exact nodeid, quotes and all."""
+    written = [
+        'test/plan-marshall/execute-task/test_foo.py::test_alpha',
+        'test/plan-marshall/execute-task/test_foo.py::test_beta',
+    ]
+    log_path = _write_log(tmp_path, _pytest_log_lines([written[0]]))
+    ids_path = _write_identifiers(tmp_path, written)
+
+    result = run_script(
+        SCRIPT_PATH,
+        'run',
+        '--identifiers-file',
+        str(ids_path),
+        '--log',
+        str(log_path),
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 1, f'CLI stderr: {result.stderr}'
+    assert result.toon()['missing'] == [written[1]]
+
+
+def test_cli_empty_lists_keep_their_keys(tmp_path):
+    """``found_forms[0]:`` / ``missing[0]:`` — the empty-list idiom is preserved.
+
+    The keys stay present so a consumer sees one stable schema; an emitter that
+    dropped them would make "nothing matched" indistinguishable from "this run
+    never reported the field".
+    """
+    log_path = _write_log(tmp_path, _pytest_log_lines([]))
+    ids_path = _write_identifiers(tmp_path, [])
+
+    result = run_script(
+        SCRIPT_PATH,
+        'run',
+        '--identifiers-file',
+        str(ids_path),
+        '--log',
+        str(log_path),
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 0, f'CLI stderr: {result.stderr}'
+    assert 'found_forms[0]:' in result.stdout
+    assert 'missing[0]:' in result.stdout
+
+
+# =============================================================================
 # Parametrized-nodeid matching (regression: finding 07775b)
 # =============================================================================
 

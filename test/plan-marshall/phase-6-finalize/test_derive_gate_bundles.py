@@ -26,7 +26,7 @@ so the "is a real bundle directory" predicate is exercised, not stubbed:
 This module is the **sole owner** of the rule-4 behavioural pair — the
 consumer-shaped negative AND its matched positive control. The control is not
 optional: a test asserting only the negative would pass just as well against a
-seam that routed *everything* to ``unresolved``. Deliverable 6's
+seam that routed *everything* to ``unresolved``. The sibling
 ``test_gate_derivation_diagnosability.py`` covers the disjoint contract-text
 dimension and must not re-assert this pair.
 

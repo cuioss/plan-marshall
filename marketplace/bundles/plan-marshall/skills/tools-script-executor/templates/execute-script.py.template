@@ -311,6 +311,23 @@ _DISPATCH_FAILURE_SUPPRESS_NOTATIONS = frozenset([
 # each build-* skill (e.g. the pyproject_build entry point) satisfies this half.
 # It is NOT sufficient on its own: see _BUILD_EXECUTING_SUBCOMMANDS below and
 # the conjunction in _is_build_class_notation.
+#
+# MUST STAY EQUAL TO the build-notation registry this set's bundle:skill segments
+# enumerate: the ``_BUILD_NOTATIONS`` map in
+# ``manage-architecture/scripts/_cmd_client_build.py``. That map keys the same
+# four build wrappers by their FULL ``{bundle}:{skill}:{script}`` notation, and
+# each key's leading ``{bundle}:{skill}:`` segment is exactly one member here —
+# so the two registries are one declaration kept in two places, and a build
+# engine added to either one is a defect until it is added to the other.
+#
+# The two AGREE EXACTLY as written. This cross-reference is therefore a
+# REGRESSION PIN, not a report of a present divergence: it exists so that adding
+# a fifth build engine to one registry and not the other fails loudly, rather
+# than silently leaving the executor stamping no kind=build ledger row for a
+# wrapper the architecture client already resolves (or the reverse). Any
+# assertion written against this coupling must say the same in its failure
+# message, so a future reader is not sent hunting for a divergence that has
+# never existed.
 _BUILD_CLASS_PREFIXES = frozenset([
     'plan-marshall:build-pyproject:',
     'plan-marshall:build-maven:',

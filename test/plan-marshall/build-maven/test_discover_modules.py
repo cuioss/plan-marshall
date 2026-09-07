@@ -889,7 +889,7 @@ def test_discover_quality_gate_plain_without_mutating_key(monkeypatch):
 
 
 # =============================================================================
-# Unit Tests: Discovery Walk Exclusion Invariant (deliverable 3)
+# Unit Tests: Discovery Walk Exclusion Invariant
 # =============================================================================
 
 

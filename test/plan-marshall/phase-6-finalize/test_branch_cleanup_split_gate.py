@@ -135,7 +135,7 @@ def test_doc_routes_pre_rebase_via_auto_rebase_threshold():
     text = _branch_cleanup_text()
 
     assert 'auto_rebase_threshold' in text
-    # The legacy step-prefixed name MUST be fully removed by deliverable 1.
+    # The legacy step-prefixed name MUST be absent.
     assert 'branch_cleanup_auto_proceed_threshold' not in text
 
 

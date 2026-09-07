@@ -292,7 +292,7 @@ def test_holder_has_live_worktree_traversal_does_not_escape_worktrees_root(plan_
 # holder_staleness composes the two main-anchored predicates into a fresh / stale
 # / unknown verdict, consulting ONLY main-anchored paths — never a cwd-scoped
 # plan/worktree enumeration. It is the guard the manual-release recovery path
-# lacked (the #948 sibling-worktree misjudgement). fresh = alive or mid-recovery;
+# lacks (the sibling-worktree misjudgement). fresh = alive or mid-recovery;
 # stale = main-anchored-dead AND no live worktree; unknown = the main-anchored
 # .plan/local base could not be resolved (ADR-009: evidence-absent is surfaced
 # explicitly, NEVER collapsed into stale).
@@ -309,7 +309,7 @@ def test_holder_staleness_fresh_when_alive_on_main(plan_context):
 def test_holder_staleness_fresh_when_alive_in_worktree(plan_context):
     # While executing, the plan dir is MOVED into the worktree (absent on main).
     # The worktree-resident plan dir keeps the holder alive → fresh. This is the
-    # exact #948 shape: a holder live in a (sibling) worktree is never stale.
+    # decisive shape: a holder live in a (sibling) worktree is never stale.
     base = plan_context.fixture_dir
     wt_plan = base / 'worktrees' / 'lc-fresh-wt' / '.plan' / 'local' / 'plans' / 'lc-fresh-wt'
     wt_plan.mkdir(parents=True, exist_ok=True)

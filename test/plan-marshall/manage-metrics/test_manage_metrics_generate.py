@@ -73,7 +73,7 @@ def test_generate_all_six_phases(plan_context):
 
 class TestGenerateReconcilesDispatchBoundaries:
     """cmd_generate reconciles a dispatched phase's under-counted total against the
-    dispatch-boundaries sum via same-population max — the #565 divergence.
+    dispatch-boundaries sum via same-population max — the under-count divergence.
     """
 
     def test_reconciles_undercounted_phase_to_boundary_sum(self, plan_context):

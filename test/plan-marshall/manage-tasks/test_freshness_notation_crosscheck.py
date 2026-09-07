@@ -31,15 +31,23 @@ from _freshness_notation_crosscheck_fixtures import (
     _write_status,
     cmd_pre_commit_verify_freshness,
 )
+from _resolve_project_dir_fixtures import worktree_query_result
 
 from conftest import PROJECT_ROOT
 
 
 @pytest.fixture(autouse=True)
 def _stub_resolver_seam(monkeypatch):
-    """Keep worktree-root resolution hermetic (no ``manage-status`` subprocess)."""
+    """Keep worktree-root resolution hermetic (no ``manage-status`` subprocess).
+
+    The return value is built by ``worktree_query_result`` rather than written
+    as a tuple here, so this stub speaks the same state vocabulary the producer
+    publishes and cannot encode a pairing the producer never emits.
+    """
     monkeypatch.setattr(
-        file_ops, '_query_worktree_path', lambda _plan_id: (True, str(Path.cwd()))
+        file_ops,
+        '_query_worktree_path',
+        lambda _plan_id: worktree_query_result(True, str(Path.cwd())),
     )
 
 
@@ -224,6 +232,95 @@ def test_resolver_reports_a_raising_crawl_as_an_inability(monkeypatch) -> None:
     assert reason == crosscheck.REASON_RESOLUTION_FAILED
 
 
+def test_resolver_reports_a_non_import_error_import_fault_as_unimportable(monkeypatch) -> None:
+    """The import guard is ``except Exception``, not ``except ImportError`` -- and must be.
+
+    Importing another skill's module executes that module's BODY, and a body can
+    raise anything -- the module docstring names a real case: ``_cmd_client_build``
+    resolves its bundles root at module scope via ``marketplace_paths
+    .resolve_bundles_root``, which raises ``RuntimeError`` by design. A narrower
+    ``except ImportError`` would let that escape uncaught, past this guard,
+    straight into the gate's caller as a traceback instead of a stated
+    ``REASON_RESOLVER_UNIMPORTABLE`` -- so the injected fault here is deliberately
+    NOT an ``ImportError``.
+    """
+    import builtins
+
+    real_import = builtins.__import__
+
+    def _misconfigured_import(name, *args, **kwargs):
+        if name == '_cmd_client_query':
+            raise RuntimeError('bundles root misconfigured')
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.delitem(__import__('sys').modules, '_cmd_client_query', raising=False)
+    monkeypatch.setattr(builtins, '__import__', _misconfigured_import)
+
+    notations, reason = crosscheck.resolve_expected_notations('.')
+
+    assert notations == frozenset()
+    assert reason == crosscheck.REASON_RESOLVER_UNIMPORTABLE
+
+
+def test_resolver_reports_a_non_container_return_as_a_resolution_failure(monkeypatch) -> None:
+    """A resolver handing back something that is not a set/frozenset is an inability.
+
+    Defence against a FUTURE resolver: today ``resolve_project_build_notations``
+    has a single ``return frozenset(...)``, so it cannot hand back a non-container
+    -- but a second return that could would otherwise pass the truthiness check
+    below it and then raise ``TypeError`` from the ``in`` comparison in
+    ``cross_check_candidates``, OUTSIDE this function and past the gate boundary.
+    A non-empty, truthy list is the sharper fixture than an empty one: it is the
+    shape that would slip past a bare ``if not notations`` check were the
+    ``isinstance`` guard removed.
+    """
+    monkeypatch.setitem(
+        __import__('sys').modules, '_cmd_client_query', _FakeQueryModule(['not', 'a', 'set'])
+    )
+    notations, reason = crosscheck.resolve_expected_notations('.')
+
+    assert notations == frozenset()
+    assert reason == crosscheck.REASON_RESOLUTION_FAILED
+
+
+# =============================================================================
+# gate-level: the resolver's faults never escape the gate boundary
+# =============================================================================
+
+
+def test_gate_never_raises_when_the_resolver_import_faults_with_a_non_import_error(
+    plan_context, monkeypatch, tmp_path
+) -> None:
+    """The SAME non-ImportError fault, driven through the full gate, never raises.
+
+    ``resolve_expected_notations``'s own return-pair contract is pinned directly
+    above; this exercises the identical fault through
+    ``cmd_pre_commit_verify_freshness`` end to end (the resolver seam is NOT
+    stubbed here), so a caller that never inspects the resolver in isolation is
+    still protected -- the gate must render a stated ``unverified`` cross-check
+    in its decision record, never propagate the exception past its own boundary.
+    """
+    import builtins
+
+    real_import = builtins.__import__
+
+    def _misconfigured_import(name, *args, **kwargs):
+        if name == '_cmd_client_query':
+            raise RuntimeError('bundles root misconfigured')
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.delitem(__import__('sys').modules, '_cmd_client_query', raising=False)
+    monkeypatch.setattr(builtins, '__import__', _misconfigured_import)
+
+    result = _run(
+        plan_context, monkeypatch, tmp_path, [_build_entry()], 'crosscheck-nonimporterror'
+    )
+
+    assert result['status'] == 'fresh', result
+    assert result['notation_cross_check'] == crosscheck.UNVERIFIED
+    assert result['notation_cross_check_reason'] == crosscheck.REASON_RESOLVER_UNIMPORTABLE
+
+
 # =============================================================================
 # cross_check_candidates preconditions
 # =============================================================================
@@ -279,13 +376,25 @@ def test_the_real_resolution_path_refuses_and_corroborates_against_this_reposito
     path or a crawl that stopped working is a test failure rather than a silent
     no-op.
 
+    ⛔ That claim is only true because of the ``sys.modules`` eviction below, and
+    it was FALSE without it. ``resolve_expected_notations`` imports the resolver
+    BY NAME, and a by-name import consults ``sys.modules`` before any finder — so
+    any earlier collected module that published ``_cmd_client_query`` under that
+    name (a sibling loading it by absolute path, say) satisfies the import
+    whether or not the resolver is reachable on ``sys.path`` at all. Evicting the
+    name for the duration of this case is what makes the import path the thing
+    under test rather than whatever collection order happened to leave behind.
+
     Both directions are asserted in one case on purpose: a refusal alone would
     also be produced by a resolver that resolves the empty set and (wrongly)
     treated it as a refutation, so the corroboration is what proves the set was
     really populated.
     """
+    monkeypatch.delitem(__import__('sys').modules, '_cmd_client_query', raising=False)
     monkeypatch.setattr(
-        file_ops, '_query_worktree_path', lambda _plan_id: (True, str(PROJECT_ROOT))
+        file_ops,
+        '_query_worktree_path',
+        lambda _plan_id: worktree_query_result(True, str(PROJECT_ROOT)),
     )
     plan_dir = plan_context.plan_dir_for('crosscheck-live')
     _write_status(plan_dir)

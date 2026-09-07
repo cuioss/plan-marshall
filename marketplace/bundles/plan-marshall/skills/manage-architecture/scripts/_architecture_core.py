@@ -1465,28 +1465,3 @@ def handle_module_not_found_result(module_name: str, project_dir: str) -> dict[s
     }
 
 
-def print_skills_by_profile(skills_by_profile: dict[str, Any]) -> None:
-    """Print skills_by_profile in TOON format."""
-    print('skills_by_profile:')
-    for profile, profile_data in skills_by_profile.items():
-        print(f'  {profile}:')
-        defaults = profile_data.get('defaults', [])
-        optionals = profile_data.get('optionals', [])
-        if defaults:
-            print(f'    defaults[{len(defaults)}]{{skill,description}}:')
-            for entry in defaults:
-                if isinstance(entry, dict):
-                    skill = entry.get('skill', '')
-                    desc = entry.get('description', '')
-                    print(f'      - {skill},"{desc}"')
-                else:
-                    print(f'      - {entry}')
-        if optionals:
-            print(f'    optionals[{len(optionals)}]{{skill,description}}:')
-            for entry in optionals:
-                if isinstance(entry, dict):
-                    skill = entry.get('skill', '')
-                    desc = entry.get('description', '')
-                    print(f'      - {skill},"{desc}"')
-                else:
-                    print(f'      - {entry}')

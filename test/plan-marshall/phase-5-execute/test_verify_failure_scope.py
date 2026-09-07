@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for verify_failure_scope.py.
 
-Cover the five contract cases from solution_outline.md deliverable 5:
+Cover the five contract cases:
 
     (a) all in_scope                   -> exclusively_out_of_scope=False
     (b) all out_of_scope               -> exclusively_out_of_scope=True
@@ -307,7 +307,7 @@ def test_footprint_resolver_accepts_the_no_plan_sentinel(plan_context, monkeypat
 
 
 def test_footprint_resolver_never_diffs_the_current_directory(plan_context, monkeypatch):
-    """An unresolvable worktree yields ``None``; no diff is attempted at all.
+    """A RAISING worktree query yields ``None``; no diff is attempted on that route.
 
     This previously degraded to ``Path.cwd()`` on the reasoning that
     verify-failure classification is advisory and an archived plan should still
@@ -319,6 +319,18 @@ def test_footprint_resolver_never_diffs_the_current_directory(plan_context, monk
     The assertion is that ``compute_plan_branch_diff`` is never reached: a test
     that only checked the return value would still pass if the resolver diffed
     the cwd and happened to discard the result.
+
+    ⛔ SCOPE, stated because the name reads wider than the coverage. The stub
+    makes ``file_ops._query_worktree_path`` RAISE, so this case covers exactly
+    the raising route — ``_resolve_declared_footprint`` guards
+    ``WorktreeResolutionError`` and nothing else. It does NOT cover the
+    ``pending`` route: ``resolve_plan_context`` returns the MAIN CHECKOUT rather
+    than raising for a plan whose worktree is opted into but not yet
+    materialized, so a pending plan is still diffed against a tree that is not
+    its own and the result is still returned as the plan's footprint. No
+    ``has_worktree`` / ``worktree_state`` gate exists in the resolver to make
+    that route reachable from here, so the claim this docstring makes stops at
+    the raising route rather than at "any unresolvable worktree".
     """
     plan_dir = plan_context.plan_dir_for('vfs-unresolvable')
     (plan_dir / 'references.json').write_text(json.dumps({'base_branch': 'main'}))
@@ -336,4 +348,77 @@ def test_footprint_resolver_never_diffs_the_current_directory(plan_context, monk
     monkeypatch.setattr(file_ops, '_query_worktree_path', _raise)
 
     assert vfs._resolve_declared_footprint(plan_dir, 'vfs-unresolvable') is None
-    assert 'worktree' not in captured, 'no diff may be attempted against any tree'
+    assert 'worktree' not in captured, (
+        'a RAISING worktree query still reached compute_plan_branch_diff; on this '
+        'route no diff may be attempted against any tree'
+    )
+
+
+# =============================================================================
+# Emitted TOON — the reader-facing half of the contract
+#
+# Every assertion above reads the payload DICT, which the emitter never touched.
+# The emitter interpolated the Python list repr after a ``key[N]:`` header, so
+# the block this script actually printed could not be read back by any canonical
+# reader while every test here stayed green. These read the emitted bytes.
+# =============================================================================
+
+
+def test_emitted_paths_parse_back_as_a_list(plan_context, monkeypatch, capsys):
+    """``out_of_scope_paths`` comes back out of parse_toon as a list of paths."""
+    from toon_parser import parse_toon
+
+    plan_dir = plan_context.plan_dir_for('vfs-emit-list')
+    _write_refs(plan_dir)
+    _stub_footprint(monkeypatch, ['src/a.py'])
+    payload = vfs.classify_failure_scope(
+        'vfs-emit-list', ['foreign/x.py', 'foreign/y.py'], plan_dir=plan_dir
+    )
+
+    vfs._emit_toon(payload)
+
+    emitted = parse_toon(capsys.readouterr().out)
+    assert emitted['status'] == 'success'
+    assert emitted['exclusively_out_of_scope'] is True
+    assert sorted(emitted['out_of_scope_paths']) == ['foreign/x.py', 'foreign/y.py']
+
+
+def test_emitted_unclassified_paths_parse_back_as_a_list(plan_context, monkeypatch, capsys):
+    """The unmeasurable-footprint branch emits a readable list too.
+
+    Its paths carry the same shape as the classified branch, so a consumer of the
+    could-not-look return is not handed a different, unparseable rendering.
+    """
+    from toon_parser import parse_toon
+
+    plan_dir = plan_context.plan_dir_for('vfs-emit-unclassified')
+    _write_refs(plan_dir)
+    monkeypatch.setattr(vfs, '_resolve_declared_footprint', lambda plan_dir, plan_id: None)
+    payload = vfs.classify_failure_scope(
+        'vfs-emit-unclassified', ['foreign/x.py'], plan_dir=plan_dir
+    )
+
+    vfs._emit_toon(payload)
+
+    emitted = parse_toon(capsys.readouterr().out)
+    assert emitted['footprint_resolved'] is False
+    assert emitted['unresolved_reason'] == vfs.UNRESOLVED_REASON_FOOTPRINT
+    assert emitted['unclassified_paths'] == ['foreign/x.py']
+    # The measured keys are still present and still zero: an unmeasurable
+    # footprint reports no classification, never a foreign-failure verdict.
+    assert emitted['out_of_scope_count'] == 0
+    assert emitted['exclusively_out_of_scope'] is False
+
+
+def test_emitted_error_block_carries_only_the_error_fields(capsys):
+    """The error branch emits status/error/detail and stops."""
+    from toon_parser import parse_toon
+
+    vfs._emit_toon({'status': 'error', 'error': 'plan_not_found', 'detail': 'no references.json'})
+
+    emitted = parse_toon(capsys.readouterr().out)
+    assert emitted == {
+        'status': 'error',
+        'error': 'plan_not_found',
+        'detail': 'no references.json',
+    }

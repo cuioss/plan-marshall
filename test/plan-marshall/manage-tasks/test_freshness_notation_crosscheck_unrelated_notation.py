@@ -27,13 +27,22 @@ from _freshness_notation_crosscheck_fixtures import (
     _run,
     _stub_expected,
 )
+from _resolve_project_dir_fixtures import worktree_query_result
 
 
 @pytest.fixture(autouse=True)
 def _stub_resolver_seam(monkeypatch):
-    """Keep worktree-root resolution hermetic (no ``manage-status`` subprocess)."""
+    """Keep worktree-root resolution hermetic (no ``manage-status`` subprocess).
+
+    The return value is built by ``worktree_query_result`` rather than written
+    as a tuple here, so this stub speaks the same state vocabulary the producer
+    publishes and cannot encode a pairing the producer never emits. The fixture
+    is autouse, so it governs every case in this module.
+    """
     monkeypatch.setattr(
-        file_ops, '_query_worktree_path', lambda _plan_id: (True, str(Path.cwd()))
+        file_ops,
+        '_query_worktree_path',
+        lambda _plan_id: worktree_query_result(True, str(Path.cwd())),
     )
 
 

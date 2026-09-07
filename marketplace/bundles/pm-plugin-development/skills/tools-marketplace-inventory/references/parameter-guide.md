@@ -61,27 +61,52 @@ python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventor
   --full --bundles plan-marshall
 ```
 
-**Output with --full** (excerpt):
+**Output with --full.** The block below is **captured verbatim from a live run**,
+narrowed to one skill with `--name-pattern tools-permission-doctor` so it fits.
+It is not a hand-written illustration, and it must not be edited by hand: re-capture
+it from a real run if it ever needs to change, because a hand-authored row reliably
+disagrees with the emitter in exactly the ways this format's single implementation
+exists to prevent.
+
 ```toon
+status: success
+scope: auto
+base_path: /abs/path/to/marketplace/bundles
 plan-marshall:
   path: marketplace/bundles/plan-marshall
-
-  skills[18]:
-    - name: tools-permission-doctor
-      path: marketplace/bundles/plan-marshall/skills/tools-permission-doctor
-      description: Diagnose permission issues across settings files
-      user_invocable: true
-      allowed_tools: Read, Grep, Bash
-      standards[2]:
-        - permission-syntax.md
-        - security-patterns.md
-      scripts[1]:
-        - permission_doctor.py
+  skills[1]{name,path,description,user_invocable,standards}:
+    tools-permission-doctor,marketplace/bundles/plan-marshall/skills/tools-permission-doctor,Diagnose permission issues across settings files (read-only analysis),true,"[\"marketplace/bundles/plan-marshall/skills/tools-permission-doctor/standards/permission-anti-patterns.md\", \"marketplace/bundles/plan-marshall/skills/tools-permission-doctor/standards/permission-architecture.md\", \"marketplace/bundles/plan-marshall/skills/tools-permission-doctor/standards/permission-validation-standards.md\"]"
+statistics:
+  total_bundles: 1
+  total_skills: 1
 ```
+
+Three properties of that row are worth naming, because each is a place a
+hand-written example gets it wrong:
+
+- A **list cell is JSON**, escaped with **backslashes** (`\"`), not by doubling the
+  quote as CSV does. The reader half recognises only the backslash form.
+- Subdirectory entries are **repo-relative paths**, not bare filenames.
+- `scripts` is a **sibling bucket**, never a column of the skills table — the
+  columns come from the row composer, and `scripts` is not among them.
 
 **Full mode includes:**
 - Skill frontmatter: `user_invocable`, `allowed_tools`, `model`
-- Skill subdirectories with their files: `standards/`, `templates/`, `scripts/`, `references/`, `knowledge/`, `examples/`, `documents/`
+- Skill subdirectories with their files: `standards/`, `templates/`, `references/`, `knowledge/`, `examples/`, `documents/` — `scripts/` is deliberately absent from this set, being a sibling bucket of its own rather than a column of the skills table
+
+**Read the block, do not pattern-match it.** The output is written by the canonical
+serializer, so a full-mode component list is a **uniform-array table** — one header
+naming the columns, then one comma-separated row per component — not a `- name:`
+entry with indented keys. Quoting is the serializer's decision, so any value carrying
+a comma, a colon or a quote arrives quoted and a consumer must `parse_toon` the block
+rather than split it by hand.
+
+The column set is the **union of the keys present across that table's rows**, so it
+varies with what the scanned components actually carry: a component missing a key a
+sibling has renders an empty column rather than no column, and a key no component in
+the table carries is absent from the header entirely. Read a column's presence from
+the header of the run in hand — never from the capture above, which is one real run
+over one skill and therefore shows one shape among many.
 
 ## --name-pattern (optional)
 
