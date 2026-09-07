@@ -69,7 +69,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read -
 
 The field is structurally guaranteed to be present on every `loop_back` outcome (the manage-status `--loop-back-target` validation contract enforces this — absence is a dispatcher contract bug, not a routing case to handle).
 
-**IF `loop_back_without_asking == true`**:
+**IF `loop_back_without_asking == true` (default)**:
 - Log: `"(plan-marshall:plan-marshall) Config: loop_back_without_asking=true, loop_back_target={target} — auto-continuing"`
 - The actual inline dispatch is performed inside `phase-6-finalize/SKILL.md` Step 3 § Loop-back continuation hook (item 7b in the Step 3 dispatch loop). The hook reads `loop_back_target` and routes deterministically:
   - `loop_back_target == "5-execute"`: re-dispatches `Skill: plan-marshall:phase-5-execute --plan-id {plan_id}` against the freshly-allocated fix tasks, then re-enters the finalize FOR loop with the resumable re-entry check skipping already-`done` steps. The hook then transitions `5-execute → 6-finalize` via the standard `plan.phase-6-finalize.finalize_without_asking` gate. When that gate is `false`, the inline cycle halts at the same prompt the forward path uses — so the `5-execute` granularity tier is doubly-gated: both `loop_back_without_asking` AND `finalize_without_asking` must be `true` for full unattended execution.
@@ -77,7 +77,7 @@ The field is structurally guaranteed to be present on every `loop_back` outcome 
 - Both branches are capped by `phase-6-finalize.max_iterations` (default 3, counted across BOTH granularity tiers); beyond that the loop halts and prompts the user even with the flag set.
 - Continue control flow at the orchestrator level by waiting for `phase-6-finalize` to return again; either it returns `status: success` (clean finalize) or another `status: loop_back` (next iteration up to the cap).
 
-**ELSE (default)**:
+**ELSE (`loop_back_without_asking == false`)**:
 
 **Persisted-phase assertion (loopback target invariant)** — before displaying any user-facing prompt, assert that the persisted `current_phase` matches the recorded `loop_back_target`:
 
@@ -100,6 +100,6 @@ In both branches, append a third line clarifying the precise target so the user 
 
 Then **STOP**.
 
-The conservative default (`loop_back_without_asking == false`) preserves the conservative interactive shape: a `loop_back` outcome from any phase-6-finalize step halts the dispatcher and prompts the user with the explicit target, eliminating any chance of silent re-routing through `2-refine`. Plans that want full unattended cycles must opt into both `loop_back_without_asking` AND `finalize_without_asking`.
+Setting `loop_back_without_asking == false` selects the interactive shape: a `loop_back` outcome from any phase-6-finalize step halts the dispatcher and prompts the user with the explicit target, eliminating any chance of silent re-routing through `2-refine`. On the auto-continuing default that risk does not arise: the hook re-enters the recorded `loop_back_target` inline, so control never returns to a `/plan-marshall` re-entry where the route resolver could redirect it.
 
 > **Cross-reference**: The full target-phase invariant — including the legal-target enumeration and the granularity rule (`5-execute` for fix-task-required dispositions, `6-finalize` for inline-fixable ones) — lives in `phase-6-finalize/SKILL.md` § "Loop-back continuation hook" → "Two invariants". The assertion above is the dispatcher-level enforcement of that invariant.

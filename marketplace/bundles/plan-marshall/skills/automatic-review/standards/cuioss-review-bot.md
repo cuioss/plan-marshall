@@ -299,17 +299,19 @@ evidence, not as a claim that this bot never refuses.
 `unknown` is the FAIL-CLOSED value (ADR-009): a caller must NOT claim this bot's rate window, await
 it, or generate a recovery event for a bot whose refusal shape has never been seen — awaiting a quota
 that does not reopen burns the full budget and still times out, and re-triggering a bot that cannot
-answer spends a capped recovery attempt for nothing. The recovery sequence therefore escalates
-immediately for a refusal of this class **whose cause is a quota** — `escalate_ask{reason:
-rate_window_not_awaitable}`; see `../SKILL.md` § "Rate-limit refusal recovery (opt-in)".
+answer spends a capped recovery attempt for nothing.
 
-⛔ **The class is not the only discriminator, and it is not the one read first.** A refusal whose
-observed CAUSE is `size` is routed by **Branch 0** instead, whatever this field declares: it resolves
-`refused_structural` and escalates with **`reason: refusal_structural`**, carrying the cap the notice
-stated and the measured diff size. Both paths escalate rather than await — so `unknown` buys no wait
-on either — but they escalate with **different reasons and different remedies**: a quota refusal's
-remedies are wait-or-accept, a size refusal's are split / accept the gap / disable this reviewer for
-this PR, and ⛔ never wait. A consumer reading `rate_limit_class` alone offers the wrong set.
+**Which recovery that yields is not restated here.** The routing — which discriminator is read first,
+which branch each combination reaches, and which remedies each offers — is owned by
+[`../SKILL.md`](../SKILL.md) § "Rate-limit refusal recovery (opt-in)", and is DERIVED at runtime by
+`github_re_review recovery-action` from this record's own `rate_limit_class` and `trigger_semantics`.
+Read it there. A per-bot copy of a cross-bot routing rule is invisible to the next bot registered, and
+goes stale the moment a branch is added — which is exactly what this record is for: it declares the
+bot's evidence position, and the routing consumes it.
+
+This record's evidence position, in full: **no refusal of any kind has been observed**, so the class
+is `unknown` and `rate_limit_eta_patterns` is empty — an honest absence of evidence, never a claim
+that this bot never refuses, and never a claim about whether waiting would help it.
 
 Should a refusal ever be observed, record its OBSERVED text in
 `refusal_patterns` — **never** in `ignore_patterns`, which is the noise-drop list and would suppress the

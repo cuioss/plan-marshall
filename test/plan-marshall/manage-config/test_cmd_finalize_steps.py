@@ -213,7 +213,11 @@ def test_apply_preset_writes_keyed_map_form_to_disk(plan_context):
     assert 'default:push' in section['steps']
     assert _params_for(section['steps'], 'default:push') == {}
     # branch-cleanup carried params in the keyed-map seed, so it keeps its nested
-    # param object.
+    # param object. ``final_merge_without_asking`` mirrors the deliberately
+    # non-default seed in ``create_marshal_json``: a seed equal to the declared
+    # default could not distinguish "preserved" from "re-seeded to the default",
+    # so this literal tracks the seed, never the default. Do not flip it when the
+    # declared default changes.
     assert _params_for(section['steps'], 'default:branch-cleanup') == {
         'pr_merge_strategy': 'squash',
         'final_merge_without_asking': False,

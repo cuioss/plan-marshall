@@ -112,7 +112,7 @@ See the canonical per-key reference in link:../../marketplace/bundles/plan-marsh
 Two `max_iterations` caps bound the retry loops so a stuck plan cannot spin indefinitely:
 
 * `plan.phase-5-execute.max_iterations` (default `5`) — the maximum verify → execute → verify loops in the execute phase.
-* `plan.phase-6-finalize.max_iterations` (default `3`) — the maximum finalize → verify → finalize loops, including the `loop_back` re-entries into execute (see <<review-gates>>).
+* `plan.phase-6-finalize.max_iterations` (default `3`) — the maximum finalize → verify → finalize loops, counting every `loop_back` re-entry across both tiers — the ones that re-enter execute and the ones that replay a finalize step in place (see <<review-gates>>).
 
 [#review-gates]
 === Review gates
@@ -127,12 +127,12 @@ Boolean fields under each phase that decide whether the next-phase transition pa
 | `plan.phase-3-outline.plan_without_asking` | `false` | …from the outline review checkpoint to task creation.
 | `plan.phase-4-plan.execute_without_asking` | `true` | …from `phase-4-plan` to `phase-5-execute`.
 | `plan.phase-6-finalize.finalize_without_asking` | `true` | …from `phase-5-execute` to `phase-6-finalize` (forward direction).
-| `plan.phase-6-finalize.loop_back_without_asking` | `false` | …from a `phase-6-finalize` `loop_back` outcome back into `phase-5-execute` (reverse direction). Defaults differ from `finalize_without_asking` to prevent silent unattended loops. Note the mechanics: `loop_back_without_asking=false` *halts and instructs* (a Display + STOP prompt, no `AskUserQuestion`), whereas the similarly-suffixed step-owned `final_merge_without_asking=false` fires a genuine inline pre-merge `AskUserQuestion` confirmation — same suffix, opposite mechanics.
+| `plan.phase-6-finalize.loop_back_without_asking` | `true` | …out of a `phase-6-finalize` `loop_back` outcome (reverse direction), along the target that outcome recorded: `5-execute` goes back into `phase-5-execute` for the freshly-allocated fix tasks, while `6-finalize` replays the loop-back-marked step in place and never leaves finalize. Bounded by `plan.phase-6-finalize.max_iterations`, which is what terminates the cycle. Note the mechanics: `loop_back_without_asking=false` *halts and instructs* (a Display + STOP prompt, no `AskUserQuestion`), whereas the similarly-suffixed step-owned `final_merge_without_asking=false` fires a genuine inline pre-merge `AskUserQuestion` confirmation — same suffix, opposite mechanics.
 |===
 
 [NOTE]
 ====
-The post-CI merge gate is **not** a flat `plan.phase-6-finalize` field. It is `final_merge_without_asking` (default `false`), a step-owned parameter under the `default:branch-cleanup` finalize step — read and set via the step-params path (see <<step-configuration>>), not the flat phase `set` verb. When `false` (default) the operator is prompted with an inline pre-merge `AskUserQuestion` before the irreversible merge to the base branch; `true` is the explicit opt-in to unattended auto-merge after CI, serialised across concurrent plans by the cross-plan merge-lock.
+The post-CI merge gate is **not** a flat `plan.phase-6-finalize` field. It is `final_merge_without_asking` (default `true`), a step-owned parameter under the `default:branch-cleanup` finalize step — read and set via the step-params path (see <<step-configuration>>), not the flat phase `set` verb. When `true` (default) the merge to the base branch proceeds unattended once CI is green, serialised across concurrent plans by the cross-plan merge-lock; `false` opts into being prompted with an inline pre-merge `AskUserQuestion` before the irreversible merge.
 ====
 
 Every gate lives under the phase block whose outbound transition it governs; the two auto-continuation knobs (`finalize_without_asking`, `loop_back_without_asking`) are flat fields under `plan.phase-6-finalize` (the post-CI merge gate is a step-owned param — see the note above). Set a flat gate via `/marshall-steward` → Configuration → Review Gates, or directly with the standard phase `set` verb:
@@ -145,6 +145,76 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-6-finalize set --field loop_back_without_asking --value true
 ----
+
+[#pause-gate-census]
+=== Pause-gate census
+
+Every gate that can still stop a *plan run*, with its default, the config path that owns it, and how it halts. The closure is over the plan tier alone — the epic-tier `orchestrator.auto_emit` gate is a knob of the epic orchestrator, not of a plan run, and is documented in <<orchestrator-knobs>>.
+
+The inclusion predicate is **"halts the run for operator input"** — deliberately not "fires an `AskUserQuestion`". Two knobs halt with a `Display` + `STOP` and no prompt at all (`execute_without_asking` and `loop_back_without_asking`), so a census built from prompt sites alone would omit both. The predicate also reaches the orchestrator workflows, not only the phase skills: a dispatched phase leaf cannot prompt — it returns a prompt-required envelope and the orchestrator fires it — so phases 2–5 raise no prompts of their own.
+
+A timeout budget is in the census only when its own exhaustion reaches the operator — `merge_queue_wait_budget_seconds`, `merge_hold_budget_seconds` and `review_rate_window_timeout_seconds` each do. A budget that expires into a separate policy knob is not: `re_review_await_timeout_seconds` expires into `re_review_on_timeout`, and that knob is the row carrying the halt.
+
+[cols="2,1,2,2", options="header"]
+|===
+| Gate | Default | Owning config path | Halt behaviour
+
+| `init_without_asking` | `true` | `plan.phase-1-init.init_without_asking` |
+| `plan_without_asking` | `false` | `plan.phase-3-outline.plan_without_asking` | the single deliberate human checkpoint in the plan lifecycle
+| `execute_without_asking` | `true` | `plan.phase-4-plan.execute_without_asking` | halts with `Display` + `STOP`, no prompt
+| `finalize_without_asking` | `true` | `plan.phase-6-finalize.finalize_without_asking` |
+| `loop_back_without_asking` | `true` | `plan.phase-6-finalize.loop_back_without_asking` | halts with `Display` + `STOP`, no prompt; bounded by `max_iterations`
+| `deep_lane` | `auto` | `plan.phase-1-init.deep_lane` |
+| `escalation` | `auto` | `plan.phase-1-init.escalation` |
+| `revalidation` | `auto` | `plan.phase-2-refine.revalidation` |
+| `lane_selection` | `ask` | `plan.phase-1-init.lane_selection` |
+| `q_gate_validation` (outline) | `once` | `plan.phase-3-outline.q_gate_validation` |
+| `q_gate_validation` (plan) | `once` | `plan.phase-4-plan.q_gate_validation` |
+| `automatic-review` infra lane | `ask` | `plan.phase-6-finalize.steps['plan-marshall:automatic-review'].lane` | a setup-time prompt, not a run-time halt
+| `sonar-roundtrip` infra lane | `ask` | `plan.phase-6-finalize.steps['default:sonar-roundtrip'].lane` | a setup-time prompt, not a run-time halt
+| `re_review_on_timeout` | `ask` | `plan.phase-6-finalize.steps['plan-marshall:automatic-review'].re_review_on_timeout` | `ask` halts and asks the operator when a re-review await expires with no fresh bot review
+| `review_rate_window_await` | `false` | `plan.phase-6-finalize.steps['plan-marshall:automatic-review'].review_rate_window_await` | off by default; `true` arms the rate-limit refusal recovery, whose escalations ask the operator
+| `review_rate_window_timeout_seconds` | `3600` | `plan.phase-6-finalize.steps['plan-marshall:automatic-review'].review_rate_window_timeout_seconds` | consulted only when the row above is `true`; exhaustion escalates to the operator
+| `auto_route_recipe` | `true` | `plan.phase-1-init.auto_route_recipe` |
+| `auto_route_recipe_threshold` | `0.6` | `plan.phase-1-init.auto_route_recipe_threshold` |
+| `auto_rebase_threshold` (sync-baseline) | `no_overlap_only` | `plan.phase-6-finalize.steps['default:finalize-step-sync-baseline'].auto_rebase_threshold` | any overlap defers to the operator; `never` always does
+| `final_merge_without_asking` | `true` | `plan.phase-6-finalize.steps['default:branch-cleanup'].final_merge_without_asking` | see the residual-safety note below
+| `auto_rebase_threshold` (branch-cleanup) | `no_overlap_only` | `plan.phase-6-finalize.steps['default:branch-cleanup'].auto_rebase_threshold` |
+| `pre_merge_comment_barrier` | `fail_into_loopback` | `plan.phase-6-finalize.steps['default:branch-cleanup'].pre_merge_comment_barrier` |
+| `admin_merge_on_stuck_state` | `false` | `plan.phase-6-finalize.steps['default:branch-cleanup'].admin_merge_on_stuck_state` |
+| `merge_queue_wait_budget_seconds` | `1800` | `plan.phase-6-finalize.steps['default:branch-cleanup'].merge_queue_wait_budget_seconds` |
+| `merge_hold_budget_seconds` | `3600` | `plan.phase-6-finalize.steps['default:branch-cleanup'].merge_hold_budget_seconds` |
+|===
+
+[NOTE]
+====
+**What the Default column states.** Every value above is the **shipped default** — what a freshly initialised project's `marshal.json` carries — never the value in any particular project's config. Read your own with `manage-config plan <phase> get --field <knob>`, or `manage-config plan phase-6-finalize step get --step-id <step-id>` for a step-owned one; a configured project routinely differs.
+
+The two infra-lane rows are where the two readings diverge most visibly. Their `ask` is the seed `_LANE_ASK_INFRA_STEPS` applies in `manage-config`'s `_config_defaults.py` — not a value either step's own `lane:` frontmatter declares, since both declare `class: adversarial` with no `tier` and would otherwise resolve at that class's `standard` default. `ask` means "`/marshall-steward` asks about this element at setup"; the operator's persisted answer (`off`, `standard`, or `full`) replaces it, so a project that has been through setup never reads `ask` back for either step.
+
+These two are also **not** ceremony gates. The ceremony set is closed at four — `qgate`, `self_review`, `simplify`, `security_audit` — with four named owning steps, none of them these; see <<run-at-all-gates>>. They share only the `steps.<step-id>.lane` channel, which every lane-participating element uses.
+====
+
+[IMPORTANT]
+====
+**Residual safety on the `final_merge_without_asking` row.** Defaulting this gate to `true` removes the human consent point before the merge, so it is worth stating what still binds without it. Two mechanisms do, and neither depends on the operator being asked:
+
+* `pre_merge_comment_barrier` (`fail_into_loopback`) still fires. The auto bypass sets the merge consent to `explicit_yes`, which is exactly the barrier's own entry condition — so a still-unhandled review comment, or a required reviewer whose participation against the merge HEAD is unproven, still blocks the merge and loops back.
+* The cross-plan merge mutex is still acquired and held across the staleness window. The widened hold runs on the auto path exactly as on the interactive one, so concurrent plans cannot race on the merge-to-main critical section. See xref:parallelism-and-locking.adoc[Parallelism and locking].
+====
+
+==== Prompts with no knob
+
+Seven pause points are evidence-triggered rather than configured — there is nothing to flip, because each fires only when a specific condition is detected:
+
+* Plan-directory collision, lesson-source obsolescence, sibling collision, and build-server daemon-down (all in `phase-1-init`).
+* The sync-baseline prompt, the branch-cleanup re-review prompt, and the branch-cleanup user-confirmation gate.
+
+They are listed here so that an absent knob reads as deliberate rather than as an omission from the table above.
+
+The sync-baseline prompt appears here *and* carries an `auto_rebase_threshold` row in the table above without contradiction: the knob decides only whether the **auto-proceed** arm bypasses the prompt, while a genuine content conflict prompts unconditionally at every threshold. That unconditional arm is the pause point listed here.
+
+The skill-domain detector is adjacent to this family but out of scope for this census: it is owned separately and is not a run-halting gate.
 
 [#run-at-all-gates]
 === Run-at-all gates

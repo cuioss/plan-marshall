@@ -33,7 +33,7 @@ from input_validation import (
     add_plan_id_arg,
     parse_args_with_toon_errors,
 )
-from toon_parser import parse_toon, serialize_toon  # noqa: F401
+from toon_parser import BlockScalar, parse_toon, serialize_toon  # noqa: F401
 
 # Exit codes
 EXIT_SUCCESS = 0

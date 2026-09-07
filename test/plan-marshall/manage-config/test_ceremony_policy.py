@@ -90,7 +90,7 @@ _DISTRIBUTED_GATES = (
 # manifest composer's scope_gated_finalize pre-filter — none of the three is a
 # folded knob any more, so none is exercised here.
 _SEEDED_FOLDED_KNOBS = (
-    ('default:branch-cleanup', 'final_merge_without_asking', False),
+    ('default:branch-cleanup', 'final_merge_without_asking', True),
     ('default:branch-cleanup', 'pr_merge_strategy', 'squash'),
 )
 

@@ -95,7 +95,15 @@ def cmd_issue_comment(args: argparse.Namespace) -> dict:
 
 
 def cmd_issue_view(args: argparse.Namespace) -> dict:
-    """Handle 'issue view' subcommand."""
+    """Handle 'issue view' subcommand.
+
+    ``body`` is the issue description, whole, and it is marked ``BlockScalar`` by
+    ``github_ops._extract_body`` — the same extractor ``pr view`` uses, because an
+    issue description is the same kind of opaque foreign text a PR description is.
+    Emitted unmarked, its second and later lines would land at column zero where
+    ``parse_toon`` reads them as sibling keys, so an issue body containing a line
+    that reads ``status: blocked`` would overwrite this envelope's own ``status``.
+    """
     # Check auth
     is_auth, err = github_ops.check_auth()
     if not is_auth:
@@ -128,7 +136,7 @@ def cmd_issue_view(args: argparse.Namespace) -> dict:
         'issue_number': data.get('number', 'unknown'),
         'issue_url': data.get('url', ''),
         'title': data.get('title', ''),
-        'body': data.get('body', ''),
+        'body': github_ops._extract_body(data),
         'author': (data.get('author') or {}).get('login', 'unknown'),
         'state': data.get('state', 'unknown').lower(),
         'created_at': data.get('createdAt', ''),

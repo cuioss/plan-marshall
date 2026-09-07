@@ -98,9 +98,43 @@ standards docs. ``BOT_KINDS`` (imported from ``_findings_core``, itself derived
 from the same registry) remains the argparse ``choices=`` surface, so a new bot
 is added by dropping a ``standards/{bot_kind}.md`` doc — no code change here.
 
+**The refusal re-trigger guard runs INSIDE ``request_fresh_review``, and that
+placement is the whole point.** The rule it enforces — do not ask a bot again
+while it is refusing for quota reasons — already existed as prose, and was
+violated roughly six hours later by a loop that posted a trigger comment every
+two minutes for most of an hour, spending the bot's separate chat-message quota
+and removing the recovery path entirely. A rule a workflow is merely TOLD to obey
+is a discretionary call at the moment it matters least. So the guard sits at the
+single chokepoint every bot's trigger comment passes through: there is exactly
+ONE ``_github.post_pr_comment`` call site in this module, because one generic
+strategy serves every bot, and :meth:`_ReReviewStrategy.request_fresh_review`
+consults :func:`read_rate_window` BEFORE reaching it. No per-bot branch, and no
+caller can route around it while still posting a trigger.
+
+The guard refuses ONLY on a positive observation — a rate window that is claimed
+and unexpired — and returns ``status: refused`` / ``reason: window_open`` naming
+the holder and the seconds remaining, as a RETURNED ENVELOPE rather than an
+exception. Every other observation permits the post. That is what keeps the
+ordinary post-merge re-review path safe BY CONSTRUCTION rather than by a
+carve-out: ``rate-window check`` reports ``expired: true`` for a bot with no
+stored record, so a re-review that followed no refusal is authorized through the
+same predicate that refuses one that did. The read is manage-locks' existing
+NON-MUTATING ``rate-window check`` path — no second counter is kept here, and no
+claim is taken.
+
+``recovery-action`` exposes :func:`resolve_recovery_action`, which DERIVES the
+recovery move from the bot registry rather than assuming one. ⛔ **That verb is a
+SELECTION the workflow must still make; it is not a second, weaker guard.**
+Nothing is enforced by calling it and nothing is bypassed by skipping it — the
+unbypassable posture is the ``request_fresh_review`` guard above, and this verb
+only answers *which* recovery is worth attempting once a refusal has been seen.
+
 Usage:
     github_re_review.py re-review --pr-number N --bot-kind coderabbit \
         --head-sha SHA --push-time ISO8601 [--timeout SECONDS] --plan-id PLAN_ID
+    github_re_review.py recovery-action --bot-kind coderabbit [--cause size|quota] \
+        [--window-expired true|false] [--attempts-remaining N] \
+        [--attempt-held true|false] [--plan-id PLAN_ID]
 
 Output: TOON format
 """
@@ -109,11 +143,14 @@ import argparse
 import re
 import sys
 from datetime import UTC, datetime
+from typing import Any
 
 import bot_registry
 import github_ops as _github
 from _findings_core import BOT_KINDS
 from _github_pr import (
+    REFUSAL_CAUSE_QUOTA,
+    REFUSAL_CAUSE_SIZE,
     REFUSAL_LAYER_ENUMERATIVE,
     REFUSAL_LAYER_REGISTRY,
     REFUSAL_LAYER_STRUCTURAL,
@@ -136,7 +173,7 @@ from ci_base import (
     set_default_cwd,
 )
 
-register_subcommands({'re-review'})
+register_subcommands({'re-review', 'recovery-action'})
 
 # A refusal notice is short by construction, but the envelope it is recorded on is
 # serialized as TOON, whose scalar values are single-line. The recorded body is
@@ -279,6 +316,282 @@ def _body_excerpt(body: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# The rate-window read the trigger guard consults
+# ---------------------------------------------------------------------------
+
+#: The manage-locks notation the executor fallback invokes. The in-process import
+#: is tried first; this is the SAME script reached by the other route, never a
+#: second implementation of the read.
+_MERGE_LOCK_NOTATION = 'plan-marshall:manage-locks:merge_lock'
+
+#: The plan-less sentinel the guard reads under when its caller supplied no
+#: ``--plan-id``. ``rate-window check`` only ECHOES that value — the stored record
+#: is keyed by ``bot_kind`` alone, and the per-PR attempt budget by
+#: ``(bot_kind, pr_number)`` — so the sentinel changes no verdict. Using one is
+#: what stops an omitted ``--plan-id`` becoming a way to post past the guard.
+_GUARD_PLAN_SENTINEL = 'NO_PLAN'
+
+#: Wall-clock ceiling on the executor fallback, in seconds.
+#:
+#: The read behind it is a local JSON lookup that returns in well under a second;
+#: this budget is sized for a cold interpreter start and a contended lock file,
+#: not for the read itself. What it exists to bound is the OTHER outcome: an
+#: executor that never returns. Unbounded, that call blocks the whole
+#: automatic-review budget (900s) and the ``unreadable`` envelope this function
+#: promises on a failed read never arrives — the guard stops being fail-open and
+#: becomes fail-silent, taking the recovery path down with it. On expiry
+#: ``subprocess.TimeoutExpired`` is raised, and the surrounding broad ``except``
+#: turns it into that envelope like any other failure of this route.
+_EXECUTOR_ROUTE_TIMEOUT_SECONDS = 30
+
+
+def read_rate_window(plan_id: str, bot_kind: str, pr_number: int | str) -> dict[str, Any]:
+    """Return manage-locks' NON-MUTATING read of ``bot_kind``'s rate-window claim.
+
+    Delegates to ``merge_lock``'s ``rate-window check`` — the existing read path,
+    reached by whichever route is available: the in-process import first, and the
+    executor subprocess as the fallback when this process cannot import that
+    module. Both routes run the same handler, so ``expired`` is computed in ONE
+    place and this module never re-derives it. Nothing is claimed, no counter is
+    incremented, and no window is released.
+
+    The return is the payload that handler produced, whatever its shape. The
+    caller's predicate is ``expired is False`` and nothing else, which is what
+    makes every non-answer permit rather than refuse:
+
+    - a bot with NO stored record answers ``status: free`` with ``expired: true``,
+      so the ordinary post-merge re-review — one that followed no refusal at all —
+      is authorized through the same predicate that refuses a live window. That is
+      the property that keeps the guard carve-out-free, and it must be preserved;
+    - a read that could not be performed at all carries NO ``expired`` key, so it
+      permits. The direction is deliberate: refusing on an unreadable read would
+      take the whole re-review path down whenever manage-locks is unreachable,
+      which is a far larger failure than the one the guard exists to prevent. The
+      guard refuses only on a POSITIVE observation of an unexpired claim.
+
+    Returns ``{'status': 'unreadable', 'error': ...}`` when neither route worked —
+    a shape carrying no ``expired`` key, so it reads as "no observation". The
+    executor route is time-boxed by :data:`_EXECUTOR_ROUTE_TIMEOUT_SECONDS` so
+    that "no observation" is something this function can still RETURN: an
+    executor that never exits would otherwise hold the caller for the whole
+    automatic-review budget and the envelope would never be produced at all.
+    """
+    try:
+        import merge_lock
+    # Broad by intent: ANY import failure falls back to the executor route below.
+    except Exception as exc:
+        in_process_error: str | None = f'in-process import failed: {exc}'
+    else:
+        in_process_error = None
+        try:
+            return dict(
+                merge_lock.run_rate_window(
+                    argparse.Namespace(
+                        action='check',
+                        plan_id=plan_id,
+                        bot_kind=bot_kind,
+                        pr_number=int(pr_number),
+                        # The module's own declared default, read rather than
+                        # re-literalled, so the budget this read reports is the
+                        # budget a later `claim` would apply.
+                        attempt_cap=merge_lock._DEFAULT_RECOVERY_ATTEMPT_CAP,
+                    )
+                )
+            )
+        # Broad by intent: any failure of the in-process route falls through to
+        # the executor one rather than propagating out of a guard read.
+        except Exception as exc:
+            in_process_error = f'in-process check failed: {exc}'
+
+    try:
+        import subprocess
+
+        from file_ops import get_executor_path
+        from toon_parser import parse_toon
+
+        proc = subprocess.run(
+            [
+                sys.executable,
+                str(get_executor_path()),
+                _MERGE_LOCK_NOTATION,
+                'rate-window',
+                'check',
+                '--plan-id',
+                plan_id,
+                '--bot-kind',
+                bot_kind,
+                '--pr-number',
+                str(pr_number),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=_EXECUTOR_ROUTE_TIMEOUT_SECONDS,
+        )
+        parsed = parse_toon(proc.stdout)
+    # Broad by intent: an unreadable read is REPORTED as such, never raised — the
+    # guard's contract is that a refusal is a returned envelope, so a read that
+    # failed must not surface as an exception out of the trigger path.
+    except Exception as exc:
+        return {'status': 'unreadable', 'error': f'{in_process_error}; executor route failed: {exc}'}
+
+    if not isinstance(parsed, dict):
+        return {'status': 'unreadable', 'error': f'{in_process_error}; executor route returned non-dict TOON'}
+    return parsed
+
+
+# ---------------------------------------------------------------------------
+# Recovery-action selection — DERIVED from the registry, never assumed
+# ---------------------------------------------------------------------------
+
+#: A refusal whose observed CAUSE is a diff-size ceiling. Waiting cannot move it.
+RECOVERY_ACTION_ESCALATE_STRUCTURAL = 'escalate_structural'
+#: The bot's declared class does not reopen on a useful timescale, or has never
+#: been observed at all. Fail-closed per ADR-009.
+RECOVERY_ACTION_ESCALATE_NOT_AWAITABLE = 'escalate_not_awaitable'
+#: The per-(bot, PR) recovery budget is spent; a further attempt is not available.
+RECOVERY_ACTION_ESCALATE_EXHAUSTED = 'escalate_exhausted'
+#: The claim clock is still running — wait it out before doing anything else.
+RECOVERY_ACTION_AWAIT_WINDOW = 'await_window'
+#: Re-DELIVER a request the bot dropped, by closing and re-opening the PR.
+RECOVERY_ACTION_CLOSE_AND_REOPEN = 'close_and_reopen'
+#: Produce the event the bot re-reviews on by itself (new commits on the branch).
+RECOVERY_ACTION_GENERATE_TRIGGER = 'generate_trigger'
+#: No verdict was computed, because an input the derivation needs was absent.
+#: Distinct from every arm above: it authorizes nothing.
+RECOVERY_ACTION_UNMEASURED = 'unmeasured'
+
+#: The declared action vocabulary, published on every return so a consumer or a
+#: test validates a value against the producer's own population rather than a
+#: hand-copied list. Same precedent as ``refusal_layers``.
+RECOVERY_ACTIONS = (
+    RECOVERY_ACTION_ESCALATE_STRUCTURAL,
+    RECOVERY_ACTION_ESCALATE_NOT_AWAITABLE,
+    RECOVERY_ACTION_ESCALATE_EXHAUSTED,
+    RECOVERY_ACTION_AWAIT_WINDOW,
+    RECOVERY_ACTION_CLOSE_AND_REOPEN,
+    RECOVERY_ACTION_GENERATE_TRIGGER,
+    RECOVERY_ACTION_UNMEASURED,
+)
+
+
+def resolve_recovery_action(
+    bot_kind: str,
+    *,
+    cause: str = '',
+    window_expired: bool | None = None,
+    attempts_remaining: int | None = None,
+    attempt_held: bool = False,
+) -> dict[str, Any]:
+    """Return the recovery move a detected refusal arms, DERIVED from the registry.
+
+    Every branch below reads a registry fact — ``rate_limit_class`` and
+    ``trigger_semantics`` — rather than assuming how a bot behaves. Those two
+    accessors already ship exactly the facts this needs and are unchanged by this
+    function; ``trigger_semantics`` gains its first production consumer here.
+
+    The order is load-bearing, and each step is here because reordering it
+    produces a specific wrong answer:
+
+    1. **An empty registry is UNMEASURED, checked first.** With no bots
+       registered, ``rate_limit_class`` fails closed to ``unknown`` and would
+       yield ``escalate_not_awaitable`` — a verdict that reads as derived while
+       having been computed over an empty population. Publishing the population
+       (ADR-019) and refusing to name a verdict over an empty one is the honest
+       answer.
+    2. **``cause: size`` resolves ``escalate_structural`` and DOMINATES the
+       class.** A class is declared per BOT while a cause is observed per
+       REFUSAL, and one bot can refuse for both at one class — so reading the
+       class first hands an ``awaitable_window`` bot's size refusal the full
+       claim-and-await recovery, spending a budget on a ceiling that no amount of
+       waiting moves.
+    3. **``hard_quota`` and ``unknown`` resolve ``escalate_not_awaitable``.**
+       Fail-closed per ADR-009: a bot whose refusal shape has never been observed
+       is never treated as awaitable. This is also where an UNREGISTERED
+       ``bot_kind`` lands, by derivation rather than by a special case — the
+       registry resolves it to ``unknown`` — and ``bot_kind_registered`` on the
+       return is what tells the reader which of the two it was looking at.
+    4. **Only ``awaitable_window`` reaches the window arms**, and they need BOTH
+       observations. A missing window observation or a missing attempt budget is
+       ``unmeasured``, never an authorizing verdict: acting on an unobserved
+       window is the exact move that spent the bot's chat quota.
+    5. **An exhausted budget outranks the window arms — unless the attempt is
+       already HELD.** ``attempts_remaining`` answers *may a FURTHER claim be
+       made?*, never *may the event this claim already bought be delivered?*
+       Those are different questions, and which one is being asked is a fact the
+       arithmetic cannot recover: a successful claim INCREMENTS the ledger before
+       it returns, so the cap-final claim — the one the primitive deliberately
+       admitted — reports ``attempts_remaining: 0`` the moment it succeeds. A
+       caller that then re-consults after waiting out its own claim would be told
+       the budget is spent and would release without triggering anything, so a cap
+       of one delivered zero recovery events and the default cap of six delivered
+       five. ``attempt_held=True`` is the caller stating it holds such a claim; the
+       exhausted arm is then skipped, because the attempt is already paid for and
+       the cap was already enforced — by ``rate-window claim``'s own ``exhausted``
+       refusal, which is where exhaustion is decided. The default is ``False``, so
+       a pre-claim budget read (the honest use of a zero here) still escalates.
+    6. **An OPEN claim resolves ``await_window``.** ⛔ A re-trigger inside the
+       window RESETS it rather than shortening it — an advertised wait was
+       observed going from 50 to 59 minutes — and spends quota doing so.
+    7. **An ELAPSED claim resolves by the bot's ``trigger_semantics``**:
+       ``close_and_reopen`` for a bot that reviews only when explicitly asked,
+       ``generate_trigger`` for one that re-reviews on push. Close-and-reopen
+       re-DELIVERS a request the bot dropped; it buys back no quota, because the
+       limit is ACCOUNT-scoped and no PR-level move touches it. It is therefore
+       worth nothing before the window is up, which is precisely why this arm is
+       unreachable until then.
+
+    ⛔ **The elapsed arm is named ``claim_window_elapsed``, never
+    ``bot_window_reopened``.** What elapsed is the CLAIM clock this pipeline set,
+    not the bot's real window: a stated ETA is an estimate (observed wrong by
+    ~2.4x, then ~15x) and the real window slides. The arm lifts the guard's
+    refusal without asserting that the bot is ready, and a name claiming the
+    latter would be a claim nobody observed.
+    """
+    known = bot_registry.bot_kinds()
+    rate_class = bot_registry.rate_limit_class(bot_kind)
+    semantics = bot_registry.trigger_semantics(bot_kind)
+    verdict: dict[str, Any] = {
+        'bot_kind': bot_kind,
+        'cause': cause,
+        # The two registry facts the derivation read, published so the verdict
+        # names what it was computed FROM rather than only what it concluded.
+        'rate_limit_class': rate_class,
+        'trigger_semantics': semantics,
+        # The population the membership test above ran against (ADR-019), and the
+        # remedy an unregistered token is unreadable without.
+        'known_bot_kinds': list(known),
+        'known_bot_kind_count': len(known),
+        'bot_kind_registered': bot_kind in known,
+        'window_expired': window_expired,
+        'attempts_remaining': attempts_remaining,
+        # Which of the two questions the budget was read for — published so the
+        # verdict names the observation that decided whether the exhausted arm
+        # was even eligible, rather than only its conclusion.
+        'attempt_held': attempt_held,
+        'recovery_actions': list(RECOVERY_ACTIONS),
+    }
+
+    if not known:
+        return {**verdict, 'action': RECOVERY_ACTION_UNMEASURED, 'reason': 'registry_empty'}
+    if cause == REFUSAL_CAUSE_SIZE:
+        return {**verdict, 'action': RECOVERY_ACTION_ESCALATE_STRUCTURAL, 'reason': 'size_ceiling'}
+    if rate_class != 'awaitable_window':
+        return {**verdict, 'action': RECOVERY_ACTION_ESCALATE_NOT_AWAITABLE, 'reason': 'class_not_awaitable'}
+    if window_expired is None:
+        return {**verdict, 'action': RECOVERY_ACTION_UNMEASURED, 'reason': 'no_window_observation'}
+    if attempts_remaining is None:
+        return {**verdict, 'action': RECOVERY_ACTION_UNMEASURED, 'reason': 'no_attempt_budget_observation'}
+    if attempts_remaining <= 0 and not attempt_held:
+        return {**verdict, 'action': RECOVERY_ACTION_ESCALATE_EXHAUSTED, 'reason': 'attempt_cap_exhausted'}
+    if not window_expired:
+        return {**verdict, 'action': RECOVERY_ACTION_AWAIT_WINDOW, 'reason': 'claim_window_open'}
+    if semantics == bot_registry.TRIGGER_SEMANTICS_REQUIRES_EXPLICIT_TRIGGER:
+        return {**verdict, 'action': RECOVERY_ACTION_CLOSE_AND_REOPEN, 'reason': 'claim_window_elapsed'}
+    return {**verdict, 'action': RECOVERY_ACTION_GENERATE_TRIGGER, 'reason': 'claim_window_elapsed'}
+
+
+# ---------------------------------------------------------------------------
 # Strategy registry — one generic strategy parameterized by the trigger comment
 # ---------------------------------------------------------------------------
 
@@ -291,19 +604,67 @@ class _ReReviewStrategy:
     trigger from the registry) and returns the comment-post time;
     ``await_fresh_review`` is bot-independent. No per-bot subclass exists — the
     only thing that differs between bots is the trigger string, which is data.
+
+    ``bot_kind`` is carried because ``request_fresh_review`` needs to know WHOSE
+    rate window to consult before posting. The ``_STRATEGIES`` comprehension that
+    builds these instances already has the key in hand, so it is threaded in
+    there rather than re-derived from the trigger string.
     """
 
-    def __init__(self, trigger_comment: str) -> None:
+    def __init__(self, trigger_comment: str, bot_kind: str) -> None:
         self.trigger_comment = trigger_comment
+        self.bot_kind = bot_kind
 
-    def request_fresh_review(self, pr_number: int | str, push_time: str) -> dict:
+    def request_fresh_review(
+        self,
+        pr_number: int | str,
+        push_time: str,
+        *,
+        plan_id: str | None = None,
+        window_reader: Any = None,
+    ) -> dict:
         """Post this bot's explicit trigger comment; return ``{status, trigger_time}``.
 
         The returned ``trigger_time`` is the comment-post time — the lower bound
         a fresh review's ``submittedAt`` must exceed for ``await_fresh_review``
         to match. ``push_time`` is unused (retained for routing uniformity): the
         trigger time is always the comment-post time, never the push time.
+
+        **The refusal re-trigger guard runs here, before the post.** This is the
+        one place any bot's trigger comment is published, so enforcing the rule
+        here makes it unbypassable rather than advisory — see the module
+        docstring for the incident that made a mechanical backstop necessary. The
+        guard consults :func:`read_rate_window` and refuses ONLY when that read
+        positively reports a claimed, unexpired window (``expired is False``),
+        returning a ``status: refused`` envelope naming the holder and the
+        remaining seconds. It never raises: a refusal is a value the caller
+        branches on, exactly as ``make_error`` is.
+
+        Every other observation — including a bot with no stored record, and a
+        read that could not be performed — permits the post. The no-record case is
+        what makes the ordinary post-merge path safe by construction: it reports
+        ``expired: true``, so a re-review that followed no refusal needs no
+        special case to be authorized.
+
+        ``window_reader`` is the injection seam: any
+        ``(plan_id, bot_kind, pr_number) -> dict`` callable, defaulting to
+        :func:`read_rate_window`. It exists so a test can drive both sides of the
+        predicate without a real lock store; it is deliberately not a CLI flag,
+        because an operator has no reason to substitute the read.
         """
+        reader = read_rate_window if window_reader is None else window_reader
+        observation = reader(plan_id or _GUARD_PLAN_SENTINEL, self.bot_kind, pr_number)
+        if observation.get('expired') is False:
+            return {
+                'status': 'refused',
+                'operation': 'request_fresh_review',
+                'reason': 'window_open',
+                'bot_kind': self.bot_kind,
+                'pr_number': pr_number,
+                'holder': observation.get('holder') or '',
+                'seconds_remaining': observation.get('seconds_remaining', 0.0),
+            }
+
         post_result = _github.post_pr_comment(pr_number, self.trigger_comment)
         if post_result.get('status') != 'success':
             return make_error('request_fresh_review', post_result.get('error', 'failed to post trigger comment'))
@@ -634,7 +995,7 @@ class _ReReviewStrategy:
 # that bot's trigger comment loaded from the registry. Built from data — there is
 # no per-bot class and no hard-coded bot list.
 _STRATEGIES: dict[str, _ReReviewStrategy] = {
-    bot_kind: _ReReviewStrategy(bot_registry.trigger_comment(bot_kind))
+    bot_kind: _ReReviewStrategy(bot_registry.trigger_comment(bot_kind), bot_kind)
     for bot_kind in bot_registry.bot_kinds()
 }
 
@@ -709,13 +1070,37 @@ def is_registered_trigger_comment(body: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
+def cmd_recovery_action(args: argparse.Namespace) -> dict:
+    """``recovery-action`` — DERIVE which recovery a detected refusal arms.
+
+    A pure read over the bot registry plus the caller's own observations; it
+    touches no PR, claims no window, and posts nothing. ⛔ It is a SELECTION the
+    workflow makes, never a guard: the unbypassable posture is the one
+    :meth:`_ReReviewStrategy.request_fresh_review` enforces at the trigger
+    chokepoint, and skipping this verb bypasses nothing.
+    """
+    window_expired = None if args.window_expired is None else args.window_expired == 'true'
+    verdict = resolve_recovery_action(
+        args.bot_kind,
+        cause=args.cause or '',
+        window_expired=window_expired,
+        attempts_remaining=args.attempts_remaining,
+        # Absent reads as NOT held, which keeps the exhausted arm active — the
+        # conservative direction, since it escalates rather than triggers.
+        attempt_held=args.attempt_held == 'true',
+    )
+    return {'status': 'success', 'operation': 'recovery_action', **verdict}
+
+
 def cmd_re_review(args: argparse.Namespace) -> dict:
     """Resolve the strategy, request a fresh review, then await it for HEAD."""
     strategy = resolve_strategy(args.bot_kind)
     if strategy is None:
         return make_error('re_review', f'Unknown bot_kind: {args.bot_kind}. Must be one of {BOT_KINDS}')
 
-    request_result = strategy.request_fresh_review(args.pr_number, args.push_time)
+    # A `refused` return from the trigger guard propagates verbatim: the caller
+    # branches on `status` / `reason`, and nothing was posted or awaited.
+    request_result = strategy.request_fresh_review(args.pr_number, args.push_time, plan_id=args.plan_id)
     if request_result.get('status') != 'success':
         return request_result
 
@@ -756,9 +1141,54 @@ def main() -> int:
     )
     re_review.add_argument('--plan-id', help='Plan identifier (accepted for routing uniformity)')
 
+    recovery = subparsers.add_parser(
+        'recovery-action',
+        help='Derive which recovery a detected refusal arms, from the bot registry',
+        allow_abbrev=False,
+    )
+    # Deliberately NOT `choices=BOT_KINDS`: an unregistered token must reach the
+    # derivation and fail closed to `escalate_not_awaitable` with the live kind
+    # set published beside it, which is the answer an operator holding a stale
+    # config token needs. An argparse rejection would replace that verdict with
+    # exit 2 and name no remedy.
+    recovery.add_argument('--bot-kind', required=True, help='Registry bot_kind whose refusal is being recovered')
+    recovery.add_argument(
+        '--cause',
+        # The accepted set IS `refusal_cause()`'s codomain, so it is spelled with
+        # that function's own constants rather than re-literalled here.
+        choices=(REFUSAL_CAUSE_SIZE, REFUSAL_CAUSE_QUOTA),
+        help=(
+            "The refusal's observed cause; 'size' resolves escalate_structural and dominates "
+            'the class. OMIT it when unobserved (reads as an empty cause) — a refusal no arm '
+            'of the recognition stack could read is a modelled state, not a hypothetical'
+        ),
+    )
+    recovery.add_argument(
+        '--window-expired',
+        choices=('true', 'false'),
+        help='The `expired` field from `merge_lock rate-window check`; OMIT it when unobserved (reads as unmeasured)',
+    )
+    recovery.add_argument(
+        '--attempts-remaining',
+        type=int,
+        help='The `attempts_remaining` field from the same read; OMIT it when unobserved (reads as unmeasured)',
+    )
+    recovery.add_argument(
+        '--attempt-held',
+        choices=('true', 'false'),
+        help=(
+            "Pass 'true' when a `rate-window claim` for this recovery already SUCCEEDED, so the "
+            'attempt is spent and its event is owed. A successful cap-final claim reports '
+            'attempts_remaining: 0, and without this the re-consult after the wait would escalate '
+            'as exhausted and deliver nothing. OMIT it for a pre-claim budget read, where a zero '
+            'genuinely means no further claim is allowed'
+        ),
+    )
+    recovery.add_argument('--plan-id', help='Plan identifier (accepted for routing uniformity)')
+
     args = parser.parse_args()
 
-    handlers = {'re-review': cmd_re_review}
+    handlers = {'re-review': cmd_re_review, 'recovery-action': cmd_recovery_action}
     result = handlers[args.command](args)
     print(serialize_toon(result, table_separator='\t'))
     return 0

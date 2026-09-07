@@ -245,15 +245,115 @@ When the list is non-empty, the just-observed comment growth is a status notice 
 
 ---
 
+## Workflow: Close and Re-open a PR to Re-deliver a Review Request
+
+**Pattern**: Provider-Agnostic Router (composition — **no new verb**)
+
+Re-DELIVER a review request a bot dropped, by closing the pull request and opening a replacement on
+the same head branch. Composed entirely from the `ci pr` verbs above; nothing here is a new CI
+capability.
+
+### Precondition — reachable only after the window has elapsed
+
+⛔ **Close-and-reopen buys back NO quota.** A reviewer's rate limit is **ACCOUNT-scoped**, so no
+PR-level move touches it: not closing and re-opening, not opening a fresh PR, not a force-push, and
+not a new SHA. The one observed successful reopen worked *only* because the bot's window had **already
+elapsed** — the reopen re-delivered a request that had been dropped, it did not shorten anything.
+
+This workflow is therefore reachable **only after** the rate window has elapsed, and it is worth
+nothing before then. Running it inside an open window spends a recovery attempt to learn what the
+window claim already reported, and the re-delivered request is dropped exactly as the first one was.
+The caller that enters here is `automatic-review` § "Rate-limit refusal recovery (opt-in)" Branch 5,
+which is reachable only from the elapsed-window boundary.
+
+⛔ **A push remains the trigger every reviewer that re-reviews on push honours, so close-and-reopen
+never substitutes for a push that would work.** It exists for the reviewer that answers only an
+explicit request — one declaring `trigger_semantics: requires_explicit_trigger`, for which no push is
+an event at all. Where a push would do, rebase and push instead.
+
+### Step 1: Read the current PR
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --plan-id {plan_id} pr view \
+    --pr-number {pr_number}
+```
+
+⚠ `--plan-id` is **router-scoped on this verb** and MUST precede the first verb token: `ci.py`
+consumes it before the provider parser is built, so writing it after `pr view` is an
+`unrecognized arguments` rejection. Capture the PR's `title`, `body` and head branch from the return —
+the replacement PR carries them forward, so nothing an operator or a reviewer wrote is lost.
+
+`body` is the last field of the return and arrives as a block scalar (`body: |` with the description
+indented beneath it). Take the whole indented block, with its two-space indent removed; it is the
+description verbatim. ⛔ **Do not regenerate the body from the plan instead.** A regenerated body is
+precisely what loses the reviewer and operator edits this step exists to preserve — carry forward what
+you read, or the promise above is unfulfilled whatever the replacement PR ends up saying.
+
+### Step 2: Allocate the replacement body path
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr prepare-body \
+    --plan-id {plan_id} --for create --slot {unique_slot}
+```
+
+⚠ `--plan-id` is declared **on this subcommand** and MUST follow the verb — the mirror of Step 1, and
+the reason each invocation here spells its own position rather than inheriting one. Read the `path`
+field from the returned TOON.
+
+### Step 3: Write the captured body
+
+```text
+Write({path from prepare-body}) with the body captured in Step 1
+```
+
+The body is written with the native Write tool, so no multi-line markdown crosses the shell boundary.
+
+### Step 4: Close the current PR
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr close \
+    --pr-number {pr_number}
+```
+
+### Step 5: Open the replacement, pinned to the SAME head branch
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr create \
+    --plan-id {plan_id} --title "{title from Step 1}" --slot {unique_slot} \
+    --base {base_branch} --head {head_branch}
+```
+
+⛔ **`--head` MUST pin the same head branch the closed PR used.** Omitted, `pr create` defaults to the
+cwd HEAD — which is the wrong branch whenever finalize runs from the main checkout against a
+worktree-isolated plan branch, and would open the replacement against a branch nobody reviewed. The
+commits are unchanged; only the pull request is new.
+
+Read the new `pr_number` from the return.
+
+### Step 6: Re-bind `pr_number`
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references set \
+    --plan-id {plan_id} --field pr_number --value {new_pr_number}
+```
+
+⛔ **The sequence is not complete until this write lands.** Every downstream step — the finding
+producer, the comment barrier, the merge gate — resolves the PR through `references.json`, so a
+re-opened PR whose number was never re-bound leaves the whole pipeline polling a **closed** PR that
+can never go green. This is the step that makes the replacement the plan's PR rather than an orphan.
+
+---
+
 ## The widened participation taxonomy
 
 Every review operation on this surface feeds ONE downstream classification: the closed
 non-participation taxonomy owned by
 [`automatic-review/standards/bot-participation-contract.md`](../../automatic-review/standards/bot-participation-contract.md).
-That taxonomy has **ten** non-participation members, and this section records only which observation
-on this surface feeds which member — the semantics, the severity rules, and the closure statement live
-in the contract and are not restated here (a member fed only by another surface, such as `declined`
-from the re-review await, is therefore absent from the table below).
+That contract declares the member set, its cardinality, the semantics and the severity rules, and none
+of it is restated here — a restated roster or count drifts out of step with the contract while still
+reading as authoritative. This section records only which observation on this surface feeds which
+member (a member fed only by another surface, such as `declined` from the re-review await, is
+therefore absent from the table below).
 
 | Member | Fed by |
 |--------|--------|

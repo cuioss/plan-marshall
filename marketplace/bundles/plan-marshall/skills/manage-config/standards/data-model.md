@@ -98,7 +98,7 @@ JSON structure and field definitions for project configuration.
       "max_iterations": 3,
       "checks_wait_timeout_seconds": 600,
       "finalize_without_asking": true,
-      "loop_back_without_asking": false,
+      "loop_back_without_asking": true,
       "steps": {
         "default:pre-submission-self-review": {},
         "default:finalize-step-simplify": {},
@@ -120,7 +120,7 @@ JSON structure and field definitions for project configuration.
         "default:lessons-capture": {},
         "default:branch-cleanup": {
           "pr_merge_strategy": "squash",
-          "final_merge_without_asking": false,
+          "final_merge_without_asking": true,
           "auto_rebase_threshold": "no_overlap_only"
         },
         "default:record-metrics": {},
@@ -789,7 +789,7 @@ Finalize pipeline with a `steps` keyed map. `steps` serializes on disk as a JSON
       "max_iterations": 3,
       "checks_wait_timeout_seconds": 600,
       "finalize_without_asking": true,
-      "loop_back_without_asking": false,
+      "loop_back_without_asking": true,
       "steps": {
         "default:pre-submission-self-review": {},
         "default:finalize-step-simplify": {},
@@ -811,7 +811,7 @@ Finalize pipeline with a `steps` keyed map. `steps` serializes on disk as a JSON
         "default:lessons-capture": {},
         "default:branch-cleanup": {
           "pr_merge_strategy": "squash",
-          "final_merge_without_asking": false,
+          "final_merge_without_asking": true,
           "auto_rebase_threshold": "no_overlap_only"
         },
         "default:record-metrics": {},
@@ -829,7 +829,7 @@ Finalize pipeline with a `steps` keyed map. `steps` serializes on disk as a JSON
 | `max_iterations` | int | 3 | Maximum finalize-verify-finalize loops |
 | `checks_wait_timeout_seconds` | int | 600 | Default timeout (seconds) for the CI-completion polling commands consumed by `ci_base.py` (`ci checks wait`, `ci pr wait-for-comments`, `ci checks wait-for-status-flip`, and the two `issue wait-for-*` polls). An explicit `--timeout` CLI flag always wins; the 600s fallback covers callers running outside a plan-marshall project. This is a cross-step finalize wait-policy with no single owning step, so it **stays flat** (phase-level). |
 | `finalize_without_asking` | bool | true | Forward auto-continuation: auto-continue into finalize after execute completes. `true` (default) skips the gate. |
-| `loop_back_without_asking` | bool | false | Reverse auto-continuation: auto-re-enter execute on a `phase-6-finalize` `loop_back` outcome. `false` (default) halts at every loop_back and returns control to the user; `true` opts into the full unattended cycle, capped by `max_iterations`. |
+| `loop_back_without_asking` | bool | true | Reverse auto-continuation: continue a `phase-6-finalize` `loop_back` outcome unattended, along that step's recorded `loop_back_target` — `5-execute` re-dispatches the execute pipeline against the freshly-allocated fix tasks, `6-finalize` replays the loop-back-marked finalize step in place and dispatches no execute pipeline at all. `true` (default) runs the unattended cycle, capped by `max_iterations`; `false` halts at every loop_back and returns control to the user. See [`phase-6-finalize/SKILL.md`](../../phase-6-finalize/SKILL.md) Step 3 § "Loop-back continuation hook" for the routing. |
 | — (pre-push-quality-gate activation) | derived | — | The `default:pre-push-quality-gate` finalize step's activation is **derived from `build.map`** — no dedicated config key. The manifest composer consumes the three-value `build-decision` verdict and drops the step on `not_necessary` ONLY (an absent build_map, or a resolvable footprint matching no glob); an `unknown` verdict — the footprint is unresolvable — KEEPS the step, and `build` keeps it. Its ceremony gate (`qgate`) rides `steps['default:pre-push-quality-gate'].lane`, not a flat run-at-all knob. |
 | `steps` | dict | (see below) | Keyed map of step references to execute (key insertion order = execution order), persisted sorted ascending by each step's authoritative `order` value. Config-less steps map to `{}`; param-owning steps map to their nested param object. The keyed map is both the internal normalized representation and the on-disk serial form. |
 
@@ -858,7 +858,7 @@ Finalize pipeline with a `steps` keyed map. `steps` serializes on disk as a JSON
 | Param | Type | Default | Description |
 |-------|------|---------|-------------|
 | `pr_merge_strategy` | string | "squash" | squash, merge, rebase — the merge method the branch-cleanup step passes to `pr merge`. |
-| `final_merge_without_asking` | bool | false | Whether to merge the PR after CI passes without prompting the operator. `true` merges under the unified `manage-locks:merge_lock` cross-plan mutex (acquired by the branch-cleanup Pre-Merge Gate); `false` (default) prompts the operator before merging. |
+| `final_merge_without_asking` | bool | true | Whether to merge the PR after CI passes without prompting the operator. `true` (default) merges under the unified `manage-locks:merge_lock` cross-plan mutex (acquired by the branch-cleanup Pre-Merge Gate); `false` prompts the operator before merging. |
 | `auto_rebase_threshold` | string | "no_overlap_only" | Gates the pre-merge auto-rebase decision in `branch-cleanup.md`, orthogonal to `final_merge_without_asking`. `no_overlap_only` permits the auto-rebase only when it would touch a disjoint file set; any overlap defers to the operator. |
 
 `default:finalize-step-simplify` is config-less — its `simplify` ceremony gate rides the step's `lane` override (`off`/`minimal`/`standard`), not a run-at-all param.
@@ -881,6 +881,8 @@ Default steps (execution order): `default:pre-submission-self-review`, `default:
 The three surviving lifecycle gates ride the `gate_mode` enum (`auto|always|never`, validated at set-time by `validate_gate_mode`), each a flat phase-local knob owned by the phase whose decision machinery consumes it: `deep_lane` / `escalation` under `phase-1-init`, `revalidation` under `phase-2-refine`. There is no top-level policy block. `deep_lane` / `escalation` are consumed by the phase-1-init lane router, and `revalidation` by the refine revalidation pass. (The planning-time Q-Gate dispatch on `phase-3-outline` / `phase-4-plan` is governed by the distinct `q_gate_validation` knob — `off`/`once`/`until_clean` — not a `gate_mode` gate; see those phase sections above.)
 
 The four **finalize ceremony gates** — `qgate`, `self_review`, `simplify`, `security_audit` — no longer ride a run-at-all knob. Each is governed by its owning step's per-element `steps.<step>.lane` override, resolved from the merged plan-local-over-marshal source and consumed by the manifest composer's finalize-selection ceremony transform (`off→never`, `minimal→always`, every other value `→auto`) — see [`manage-execution-manifest/standards/decision-rules.md`](../../manage-execution-manifest/standards/decision-rules.md) § "plan.phase-6-finalize Selection". Under `phase-6-finalize` the flat phase-level knobs are the two automation knobs (`finalize_without_asking` / `loop_back_without_asking`, boolean) and the timeout/iteration knobs; every ceremony gate rides its owning step's `lane` override, and `final_merge_without_asking` remains a step-owned param (see the per-step param sub-tables above).
+
+**Census of every run-halting gate.** For the operator-facing inventory of every gate that can stop a run — its default, its owning config path, and whether this project keeps or has flipped it, including the pause points that carry no knob at all — see `doc/user/configuration.adoc` § "Pause-gate census". That table is the single home for the inventory; this document stays the source of truth for each knob's schema and semantics and does not duplicate it.
 
 **Access shape.** Read/write the `gate_mode` planning gates and the flat automation knobs via the standard `manage-config plan <phase> get/set --field <knob>` verb; read/write the finalize ceremony gates by setting the owning step's `lane` override — project-wide via `step set --step-id <owning-step> --param lane --value <off|minimal|standard>` or `finalize-steps set-lane --step-id <owning-step> --lane <value>`, and for a single plan via `finalize-steps set-lane --plan-id <plan> --step-id <owning-step> --lane <value>` — and the other step-owned knobs (e.g. `final_merge_without_asking`) via the same `step get/set --step-id <owning-step>` verb. See [`manage-config/SKILL.md`](../SKILL.md) § "Phase-Local gate_mode Gates and Automation Knobs".
 

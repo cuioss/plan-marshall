@@ -33,7 +33,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr wait-fo
 | `status: success`, `timed_out: true` | No new comment within timeout — proceed to Step 2 anyway (the producer at Step 2 surfaces whatever is on the PR; if nothing, the lifecycle returns `comments_total: 0`) |
 | `status: error` | Treat as warning, log, proceed to Step 2 best-effort |
 
-> **Rate-limit refusal recovery (cross-reference).** The `pr wait-for-comments` return also carries a per-bot `rate_limited_bots[]` discriminator — one `{bot_kind, rate_limit_class, eta, cause, cap}` record per REGISTERED bot whose newest comment is a rate-limit notice posted in place of a review, empty when no registered bot is rate-limited. The `plan-marshall:automatic-review` finalize step exposes an opt-in `review_rate_window_await` knob (with `review_rate_window_timeout_seconds`) that arms a recovery sequence rather than a bare wait. It branches on the refusal's CAUSE first: a `size` cause is STRUCTURAL — the diff exceeds a ceiling the reviewer declares, so nothing reopens by waiting — and escalates immediately via `escalate_ask{reason: refusal_structural}`, whose options are split / accept / disable-for-this-PR and never a wait. Otherwise, for an `awaitable_window` bot it claims the bot's rate window through `merge_lock rate-window claim`, polls that claim's own expiry as a bounded paced wait, then GENERATES the trigger event (rebase onto base and push; the registry `trigger_comment` only as a fallback when main is unchanged and only after the window elapsed). A `hard_quota` or `unknown` bot whose cause is not `size` escalates immediately via `escalate_ask{reason: rate_window_not_awaitable}` since a limit that does not reopen cannot be waited out; a refusal from a bot outside `required_bots` is an ordinary settle rather than an escalation; a spent recursion cap escalates via `escalate_ask{reason: rate_window_exhausted}`; budget exhaustion escalates via `escalate_ask{reason: rate_window_timeout}`. This lifecycle reference does NOT duplicate that behaviour — see [`automatic-review/SKILL.md`](../../automatic-review/SKILL.md) § "Rate-limit refusal recovery (opt-in)" for the authoritative sequence and escalation contract, and [`tools-integration-ci/standards/api-contract.md`](../../tools-integration-ci/standards/api-contract.md) § "Provider Field Mapping" for the field contract.
+> **Rate-limit refusal recovery (cross-reference).** The `pr wait-for-comments` return also carries a per-bot `rate_limited_bots[]` discriminator — one `{bot_kind, rate_limit_class, eta, cause, cap}` record per REGISTERED bot whose newest comment is a rate-limit notice posted in place of a review, empty when no registered bot is rate-limited. The `plan-marshall:automatic-review` finalize step exposes an opt-in `review_rate_window_await` knob (with `review_rate_window_timeout_seconds`) that arms a recovery sequence rather than a bare wait. **Which arm that sequence takes, and what each one escalates, is deliberately not restated here** — read it at [`automatic-review/SKILL.md`](../../automatic-review/SKILL.md) § "Rate-limit refusal recovery (opt-in)", the authoritative sequence and escalation contract. A copy of the arms in this reference is not merely redundant: the arms change as the recovery is armed, and a corrected copy is a NEW claim that drifts again on the next change, so a pointer is the only form that stays true. For the field contract see [`tools-integration-ci/standards/api-contract.md`](../../tools-integration-ci/standards/api-contract.md) § "Provider Field Mapping".
 
 ### Step 2: FIND — file PR comments to the ledger
 
@@ -57,12 +57,11 @@ For GitLab projects use `plan-marshall:workflow-integration-gitlab:gitlab_pr fet
 > ceilings), `unclassified_bots[]`.
 > This lifecycle does not classify them; the
 > `plan-marshall:automatic-review` step-done participation guard does, and it resolves every required
-> bot into **exactly one of ten** terminal non-participation states — `absent`, `not_triggered`,
-> `in_progress`, `refused_awaitable`, `refused_hard`, `refused_unknown`, `refused_structural`,
-> `participated_but_empty`, `participated_stale`, `declined` — or into `participated`, their
-> complement. The taxonomy is closed and is owned by
-> [`automatic-review/standards/bot-participation-contract.md`](../../automatic-review/standards/bot-participation-contract.md);
-> its semantics are not restated here.
+> bot into exactly one terminal non-participation state, or into `participated`, their complement.
+> The taxonomy is closed and is owned by
+> [`automatic-review/standards/bot-participation-contract.md`](../../automatic-review/standards/bot-participation-contract.md),
+> which declares the member set, its cardinality and its semantics. None of that is restated here —
+> a restated roster or count drifts out of step with the contract while still reading as complete.
 >
 > The one consequence for a reader of this lifecycle: **a blocking state is not one undifferentiated
 > "the bot did not review".** `participated_stale` (the bot published, but against a HEAD this branch

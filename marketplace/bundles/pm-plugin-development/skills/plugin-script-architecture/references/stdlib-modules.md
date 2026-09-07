@@ -33,6 +33,8 @@
 | `string` | String constants |
 | `enum` | Enumerations |
 | `uuid` | UUID generation |
+| `random` | Pseudo-random draws (jitter, sampling) — never for secrets; use `secrets` for those |
+| `math` | Numeric predicates and functions — `isfinite`/`isnan` guards on float input, `ceil`/`floor` |
 | `glob` | Filename pattern matching |
 | `fnmatch` | Unix filename matching |
 

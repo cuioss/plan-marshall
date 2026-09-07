@@ -94,7 +94,22 @@ title: Add feature X
 head_branch: feature/add-x
 base_branch: main
 merge_commit_sha: null
+body: |
+  ## Summary
+
+  Adds feature X.
 ```
+
+#### `body` — the description, whole, and how it crosses the boundary
+
+`body` is the PR/MR description exactly as the provider reports it. It is **provider-neutral**: GitHub reports it as `body` and GitLab as `description`, and both are normalised onto this one key, so a caller carrying a description forward is not writing a GitHub-only path. It costs no extra round trip — the field rides the `pr view` call that was already being made.
+
+It is emitted as a **TOON block scalar** (`body: |` with the text indented beneath it), which is what lets a multi-line markdown description cross the boundary intact. Two consequences a caller must know:
+
+- The text is **verbatim and whole** — never truncated, summarised, or regenerated. That is the point of the field: a caller that substitutes a body it generated itself discards whatever an operator or a reviewer edited into the description.
+- Read the block, not the first line. Only the indented body belongs to the field, so a description line that happens to read like `status: blocked` is inert text rather than a key.
+
+A PR with no description yields the empty string. Unlike `merge_commit_sha` below, there is no explicitly-absent form to preserve: an absent description **is** empty text, and a read failure never presents as one because the whole verb returns `status: error` instead.
 
 **A `status: error` from this verb is not a no-PR signal.** One envelope covers several materially different causes, and its `error` message is hard-coded to the no-PR wording, so branching on `status` alone reads an auth or transient failure as an absent PR. Every error return carries an `error_cause` discriminator; only `no_pr_found` establishes that the PR genuinely does not exist. See [`api-contract.md`](api-contract.md) § "`pr view` and the `error_cause` discriminator" for the vocabulary and the fail-closed classification.
 

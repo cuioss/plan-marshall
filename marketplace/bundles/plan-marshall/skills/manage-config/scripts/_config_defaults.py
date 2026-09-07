@@ -224,9 +224,12 @@ DEFAULT_PROJECT = {
 # key unset (the fall-through notes say how), so this block changes what is
 # DISCOVERABLE, never what is EFFECTIVE.
 #
-# `auto_emit` (bool, default `false`) is the orchestrator-tier analog of the
+# `auto_emit` (bool, default `false`) is the orchestrator-tier counterpart of the
 # plan-tier autonomy family (`finalize_without_asking` / `loop_back_without_asking`
-# / `auto_merge_after_ci`). When `false` (the default, the safe posture), the epic
+# / the step-owned `final_merge_without_asking`). It deliberately does NOT share
+# their posture: those knobs automate steps inside a plan the operator has already
+# approved, while `auto_emit` governs the epic-level queue-fill emit, whose blast
+# radius is a whole further plan. When `false` (the default, the safe posture), the epic
 # orchestrator's post-landing queue-fill emit stays stage-and-wait: it produces the
 # copy-paste block and records the `launched` transition only on operator
 # confirmation. When `true`, the emit fires automatically under the existing
@@ -1108,15 +1111,16 @@ def _seed_finalize_steps() -> dict:
 DEFAULT_PLAN_FINALIZE = {
     'max_iterations': 3,
     # Automation knobs — once a finalize gate has run, proceed without asking?
-    # finalize_without_asking gates the auto-continue from execute into the
-    # finalize pipeline; loop_back_without_asking gates the auto-loop-back on a
-    # finalize-driven fix. (final_merge_without_asking, which gates the post-CI
-    # auto-merge, is a step-owned param under `default:branch-cleanup` — declared
-    # in that step's `configurable:` frontmatter and read via
-    # `configurable_contract.py`.) Read via
-    # `manage-config plan phase-6-finalize get --field <knob>`.
+    # Both default `True`: finalize_without_asking gates the auto-continue from
+    # execute into the finalize pipeline; loop_back_without_asking gates the
+    # auto-loop-back on a finalize-driven fix, so a fix cycle re-enters execute
+    # unattended and `max_iterations` above is the ceiling that terminates it.
+    # (final_merge_without_asking, which gates the post-CI auto-merge, is a
+    # step-owned param under `default:branch-cleanup` — declared in that step's
+    # `configurable:` frontmatter and read via `configurable_contract.py`.) Read
+    # via `manage-config plan phase-6-finalize get --field <knob>`.
     'finalize_without_asking': True,
-    'loop_back_without_asking': False,
+    'loop_back_without_asking': True,
     # The finalize `qgate` gate no longer lives here as a flat run-at-all sibling.
     # Finalize-qgate now rides `steps['default:pre-push-quality-gate'].lane` — the same
     # per-element `lane` override channel the other three ceremony gates

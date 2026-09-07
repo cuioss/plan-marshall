@@ -58,7 +58,7 @@ import conftest
 # covered by the step-get tests below.
 _MIGRATED_KNOBS = (
     ('finalize_without_asking', True),
-    ('loop_back_without_asking', False),
+    ('loop_back_without_asking', True),
 )
 
 
@@ -128,15 +128,17 @@ def test_final_merge_without_asking_reads_via_step_get(plan_context):
     )
 
     assert result['status'] == 'success'
-    assert result['params']['final_merge_without_asking'] is False
+    assert result['params']['final_merge_without_asking'] is True
 
 
 def test_final_merge_without_asking_step_set_then_get_roundtrips(plan_context):
-    """``step set --step-id default:branch-cleanup --param final_merge_without_asking --value true`` round-trips.
+    """``step set --step-id default:branch-cleanup --param final_merge_without_asking --value false`` round-trips.
 
-    Sets the knob to ``true`` (the non-default opt-in to merge without asking)
-    so the round-trip proves persistence against a value distinct from the
-    ``False`` default, via the one-stop step verb against the keyed map.
+    Sets the knob to ``false`` (the non-default opt-in to being prompted before
+    the merge) so the round-trip proves persistence against a value distinct
+    from the ``True`` default, via the one-stop step verb against the keyed map.
+    Asserting the default value here instead would pass whether or not the set
+    persisted, which is exactly the tautology this polarity avoids.
     """
     _cmd_init_mod.cmd_init(Namespace(force=False))
 
@@ -147,7 +149,7 @@ def test_final_merge_without_asking_step_set_then_get_roundtrips(plan_context):
             step_verb='set',
             step_id='default:branch-cleanup',
             param='final_merge_without_asking',
-            value='true',
+            value='false',
         ),
         'phase-6-finalize',
     )
@@ -158,7 +160,7 @@ def test_final_merge_without_asking_step_set_then_get_roundtrips(plan_context):
 
     # bool coercion + persistence
     assert set_result['status'] == 'success'
-    assert get_result['params']['final_merge_without_asking'] is True
+    assert get_result['params']['final_merge_without_asking'] is False
 
 
 def test_qgate_is_not_a_seeded_flat_finalize_field(plan_context):

@@ -143,7 +143,10 @@ operation: issue_view
 issue_number: 123
 issue_url: https://github.com/org/repo/issues/123
 title: Bug in authentication flow
-body: When users try to login...
+body: |
+  ## Steps to reproduce
+
+  When users try to login...
 author: username
 state: open
 created_at: 2025-01-15T10:30:00Z
@@ -156,6 +159,11 @@ labels[2]:
 assignees[1]:
 - alice
 ```
+
+`body` is a block scalar on both providers — read the indented block rather than
+the first line. The contract, and why an issue description in particular must
+cross the boundary this way, is in
+[api-contract.md](api-contract.md) § "issue view"; it is not restated here.
 
 ---
 

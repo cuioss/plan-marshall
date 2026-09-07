@@ -110,7 +110,7 @@
           "re_review_on_branch_cleanup": true,
           "re_review_await_timeout_seconds": 600,
           "re_review_on_timeout": "ask",
-          "review_rate_window_await": false,
+          "review_rate_window_await": true,
           "review_rate_window_timeout_seconds": 3600,
           "review_completion_poll_timeout_seconds": 600,
           "lane": "minimal",

@@ -8,7 +8,7 @@
 
 xref:../../README.md[Plan Marshall] » xref:README.adoc[User Guide]
 
-Operating Plan Marshall with several plans in flight at once. Concurrent plans contend for two shared resources — the merge-to-`main` boundary and the build machine — and Plan Marshall serializes both with cooperative, main-anchored locks. This page covers the operator-tunable knobs (build concurrency and the PR-merge boundary), where the lock events are logged, and what to do when the build queue looks stuck. For how the locks work, see xref:../concepts/parallelism-and-locking.adoc[Concepts › Parallelism and Locking].
+Operating Plan Marshall with several plans in flight at once. Concurrent plans contend for three shared resources — the merge-to-`main` boundary, the build machine, and a rate-limited review bot's window — and Plan Marshall serializes all three with cooperative, main-anchored locks. This page covers the operator-tunable knobs (build concurrency, the PR-merge boundary, and the review-bot rate window), where the lock events are logged, and what to do when the build queue looks stuck. For how the locks work, see xref:../concepts/parallelism-and-locking.adoc[Concepts › Parallelism and Locking].
 
 [#knobs]
 == Knobs
@@ -44,7 +44,7 @@ The knobs below govern how a plan crosses the shared merge-to-`main` boundary �
 | Config key | Default | What it controls
 
 | `steps['default:branch-cleanup'].pr_merge_strategy` | `squash` | Step-owned param of `default:branch-cleanup`. The merge method the branch-cleanup step passes to `pr merge` — `squash`, `merge`, or `rebase`. Read/written via `step get` / `step set` (see xref:configuration.adoc#step-configuration[Configuration → Step configuration] § Step parameters).
-| `steps['default:branch-cleanup'].final_merge_without_asking` | `false` | Step-owned param of `default:branch-cleanup`. Gates the post-CI auto-merge — `false` prompts before merging; `true` merges automatically once CI is green.
+| `steps['default:branch-cleanup'].final_merge_without_asking` | `true` | Step-owned param of `default:branch-cleanup`. Gates the post-CI auto-merge — `true` merges automatically once CI is green, under the cross-plan merge mutex; setting it `false` opts into being prompted before merging.
 | `steps['default:branch-cleanup'].auto_rebase_threshold` | `no_overlap_only` | Step-owned param of `default:branch-cleanup`. Gates the pre-merge auto-rebase decision. `no_overlap_only` lets the auto-rebase proceed only when it would touch a disjoint file set; any overlap defers to the operator.
 | `steps['default:branch-cleanup'].merge_queue_wait_budget_seconds` | `1800` | Step-owned param of `default:branch-cleanup`. Bounds (in seconds, ~30 min) the FIFO merge-queue poll loop — caps how long branch-cleanup waits for its turn at the head of the merge queue before falling back to a last-resort prompt.
 | `steps['default:branch-cleanup'].merge_hold_window` | `full_window_release_at_waits` | Step-owned param of `default:branch-cleanup`. Hold-scope mode for the merge mutex. `full_window_release_at_waits` acquires the lock before the first staleness-creating operation — the pre-merge force-push when `use_merge_queue` is `false`, the enqueue when it is `true` (that path performs no rebase) — and holds it through the CI gate, merge, and merge-CI-wait, releasing + FIFO-re-enqueueing at every operator-wait / loop-back boundary and re-validating after re-acquire. `pre_merge_only` is the legacy narrow hold (acquire only at the Pre-Merge Gate).
@@ -57,7 +57,7 @@ The knobs below govern how a plan crosses the shared merge-to-`main` boundary �
 
 NOTE: All `default:branch-cleanup` step params — `pr_merge_strategy`, `final_merge_without_asking`, `auto_rebase_threshold`, `merge_queue_wait_budget_seconds`, `merge_hold_window`, `merge_hold_budget_seconds`, `use_merge_queue`, `pre_merge_comment_barrier`, and `admin_merge_on_stuck_state` — are nested under the `default:branch-cleanup` step in the `plan.phase-6-finalize.steps` keyed map, not flat phase-level fields. Read the whole param object in one call with `manage-config plan phase-6-finalize step get --step-id default:branch-cleanup`.
 
-NOTE: The `pre_merge_comment_barrier` is the final safety net that makes leaving `re_review_on_loopback` off (its `false` default, see xref:configuration.adoc#automated-review[Configuration → Automated PR review]) safe: even when a loop-back fix commit is not re-reviewed by the bots, the barrier re-fetches and blocks on any unhandled comment before the merge. It is independent of the initial-wait knobs (`review_bot_buffer_seconds`, `review_completion_poll_timeout_seconds`, and the opt-in `review_rate_window_await` rate-window handling): those bound how long the *initial* review wait polls, whereas the barrier is a distinct, always-on re-fetch at merge time — so a comment that lands after the initial wait (a late pass, or one posted once a bot's rate window reopens) is still caught.
+NOTE: The `pre_merge_comment_barrier` is the final safety net that makes leaving `re_review_on_loopback` off (its `false` default, see xref:configuration.adoc#automated-review[Configuration → Automated PR review]) safe: even when a loop-back fix commit is not re-reviewed by the bots, the barrier re-fetches and blocks on any unhandled comment before the merge. It is independent of the initial-wait knobs (`review_bot_buffer_seconds`, `review_completion_poll_timeout_seconds`, and the rate-window await of <<rate-window-await>>): those bound how long the *initial* review wait polls, whereas the barrier is a distinct, always-on re-fetch at merge time — so a comment that lands after the initial wait (a late pass, or one posted once a bot's rate window reopens) is still caught.
 
 [#merge-queue]
 === Platform merge queue (both providers)
@@ -90,6 +90,20 @@ The two provider paths carry different verification postures:
 
 * *GitHub — fixture-tested verbs, live-eligible target.* The probe/enable verbs are unit-tested against API-shape-faithful fixtures (not the live `gh` CLI). GitHub merge queue is GA and this repository was confirmed eligible by a live platform probe, so — unlike GitLab — a real, accessible target exists: the steward provisioning exercises the verbs against the live GitHub API the first time it runs on this repo.
 * *GitLab — fixture-verified only.* The GitLab merge-train probe/enable/enqueue path is verified against *API-shape-faithful fixtures only* (no live-GitLab-consumer verification is implied). The fixtures mirror the real Projects-API and merge-train response shapes so the handler logic is validated without a live GitLab instance.
+
+[#rate-window-await]
+== Review-bot rate window
+
+A rate-limited review bot can answer a review request with a *refusal* instead of a review — CodeRabbit accepts roughly one review per hour, and its window then resets. When the refusing bot is a required one, finalize has no review verdict to proceed on, and the window it is waiting for is a shared resource: the claim co-tenants the merge-mutex store, so concurrent plans queue for the same window instead of each spending it. Whether finalize waits at all is governed by two step-owned params of `plan-marshall:automatic-review` — `review_rate_window_await`, which is off by default, and `review_rate_window_timeout_seconds`, which caps the wait at 3600 s.
+
+*This repository arms the await.* `review_rate_window_await` is `true` here, so on a required bot's *awaitable* refusal finalize blocks for up to `review_rate_window_timeout_seconds` — 3600 s — waiting for the window to reopen, and escalates to the operator only once that budget is spent. A *structural* refusal is unaffected and never waits: the diff exceeds a ceiling the reviewer itself declares, so no reopening window would admit it, and the step escalates immediately. With the await left off, a detected refusal settles as ordinary and the step proceeds without waiting at all.
+
+Read both params in one call:
+
+[source,bash]
+----
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config plan phase-6-finalize step get --step-id plan-marshall:automatic-review
+----
 
 == The [LOCK] Log
 

@@ -143,7 +143,7 @@ Those four keys describe the error shape of a subcommand that reached the provid
 | `pr prepare-body` | `--plan-id` | `--for create\|edit`, `--slot` | `path` |
 | `pr prepare-comment` | `--plan-id` | `--for reply\|thread-reply`, `--slot` | `path` |
 | `pr create` | `--title`, `--plan-id` | `--slot`, `--base` (default: repo default), `--head`, `--draft`, `--label` (repeatable) | `pr_number`, `pr_url` |
-| `pr view` | — (uses current branch) | _at most one of_ `--pr-number` _or_ `--head` | **Success**: `pr_number`, `pr_url`, `state`, `title`, `head_branch`, `base_branch`, `is_draft`, `mergeable`, `merge_state`, `review_decision`. **Error**: `status`, `operation`, `error`, and `error_cause` on every arm; `context` on every arm EXCEPT the pre-provider auth failure, which has no provider output to report — see § "`pr view` and the `error_cause` discriminator" |
+| `pr view` | — (uses current branch) | _at most one of_ `--pr-number` _or_ `--head` | **Success**: `pr_number`, `pr_url`, `state`, `title`, `head_branch`, `base_branch`, `is_draft`, `mergeable`, `merge_state`, `review_decision`, `merge_commit_sha`, `body` (emitted last, as a block scalar — see [pr-operations.md](pr-operations.md) § "`body` — the description, whole"). **Error**: `status`, `operation`, `error`, and `error_cause` on every arm; `context` on every arm EXCEPT the pre-provider auth failure, which has no provider output to report — see § "`pr view` and the `error_cause` discriminator" |
 | `pr list` | — | `--head {branch}`, `--state open\|closed\|all` (default `open`) | `total`, `state_filter`, `head_filter`, `prs[N]{number,url,title,state,head_branch,base_branch}` |
 | `pr landing-state` **(GitHub only)** | — (uses the routed working tree's checked-out branch) | `--branch {branch}` | `provider`, `branch`, `tip_sha`, `pushed`, `pr_count`, `landing_state`, `landing_states` |
 | `pr reply` | `--pr-number`, `--plan-id` | `--slot` | `pr_number` |
@@ -160,7 +160,7 @@ Those four keys describe the error shape of a subcommand that reached the provid
 
 The PR operations normalize responses from `gh` (JSON) and `glab` (JSON) into the same shape. Mappings:
 
-- **Top-level identifiers**: `pr_number` ← `.number` (GitHub) / `.iid` (GitLab); `pr_url` ← `.url` / `.web_url`; `state` lower-cased ("opened" → "open"); `title`, `head_branch` ← `.headRefName` / `.source_branch`; `base_branch` ← `.baseRefName` / `.target_branch`; `is_draft` ← `.isDraft` / `.draft`; `mergeable` ← `.mergeable` / `.merge_status`; `merge_state` ← `.mergeStateStatus` (GitHub only); `review_decision` ← `.reviewDecision` / `.approved_by` (mapped).
+- **Top-level identifiers**: `pr_number` ← `.number` (GitHub) / `.iid` (GitLab); `pr_url` ← `.url` / `.web_url`; `state` lower-cased ("opened" → "open"); `title`, `head_branch` ← `.headRefName` / `.source_branch`; `base_branch` ← `.baseRefName` / `.target_branch`; `is_draft` ← `.isDraft` / `.draft`; `mergeable` ← `.mergeable` / `.merge_status`; `merge_state` ← `.mergeStateStatus` (GitHub only); `review_decision` ← `.reviewDecision` / `.approved_by` (mapped); `body` ← `.body` / `.description` — the two platforms' different names for the same text, normalised onto one key so the field is present on BOTH providers rather than one.
 - **`pr list` CLI differences**: GitHub `gh pr list --head {branch} --state open|closed|all --json number,url,...`; GitLab `glab mr list --source-branch {branch} --state opened|closed|all --output json`.
 - **`pr resolve-thread`**: GitHub uses the GraphQL `resolveReviewThread` mutation with a self-contained thread node id (e.g. `PRRT_kwDO...`), so `--pr-number` is ignored; GitLab uses REST `PUT discussions/:id` and requires both `--pr-number` and the discussion id.
 - **`pr thread-reply`**: GitHub uses GraphQL `addPullRequestReviewComment` with `inReplyTo` set to the comment node id (the PR node id is fetched internally); GitLab uses REST `POST discussions/:id/notes` and does not require a PR node id.
@@ -534,7 +534,12 @@ operation: issue_view
 issue_number: 123
 issue_url: https://github.com/org/repo/issues/123
 title: Bug in authentication flow
-body: When users try to login...
+body: |
+  ## Steps to reproduce
+
+  When users try to login...
+
+  status: blocked
 author: username
 state: open
 created_at: 2025-01-15T10:30:00Z
@@ -548,12 +553,16 @@ assignees[1]:
 - alice
 ```
 
+**`body` is a TOON block scalar** (`body: |` with the text indented beneath it), on both providers, exactly as `pr view`'s `body` is — see [pr-operations.md](pr-operations.md) § "`body` — the description, whole, and how it crosses the boundary" for the transport, the verbatim-and-whole guarantee, and the empty-description form, none of which are restated here.
+
+An issue body is untrusted external content, which is what makes the marking load-bearing rather than cosmetic: emitted as a quoted scalar, its second and later lines would land at column zero and parse as **sibling keys**, so the `status: blocked` line in the example above would not merely be lost — it would overwrite the envelope's own `status`. Read the indented block, not the first line, and note that `body` sits **mid-payload** here (`author`, `state`, the timestamps and the `labels[]` / `assignees[]` tables all follow it): those keys resume at column zero, which is precisely where the block ends.
+
 **Field Mapping (GitHub vs GitLab)**:
 | Field | GitHub | GitLab |
 |-------|--------|--------|
 | `issue_number` | `.number` | `.iid` |
 | `issue_url` | `.url` | `.web_url` |
-| `body` | `.body` | `.description` |
+| `body` | `.body` | `.description` — normalised onto the one key and block-scalar-marked on both |
 | `author` | `.author.login` | `.author.username` |
 | `state` | `.state` (lowercase) | `.state` ("opened"→"open") |
 | `labels[]` | `.labels[].name` | `.labels[]` (direct strings) |
