@@ -1152,6 +1152,10 @@ _ROUTING_GUARD_MODULES: tuple[tuple[str, str], ...] = (
         'roster-correctness-coverage',
         'plan-marshall/phase-6-finalize/test_dispatch_roster_closure.py',
     ),
+    (
+        'call-graph-dispatch-classes',
+        'plan-marshall/manage-metrics/test_dispatch_boundary_ledger_population.py',
+    ),
 )
 
 
