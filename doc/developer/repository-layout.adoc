@@ -109,6 +109,11 @@ The gitignore rules and rationale are documented end-to-end in xref:../user/gett
 
 All access to `.plan/` from inside a workflow goes through `python3 .plan/execute-script.py {notation}` (a hard rule in `persona-plan-marshall-agent`). Direct Read/Write/Edit on `.plan/` files is forbidden except via documented workflow exceptions. See xref:../concepts/security.adoc[Concepts › Security] for the rationale.
 
+For anyone working from a `local/worktrees/{plan-id}/` tree: that directory is a *raw* git worktree — `git worktree add` checks the feature branch out into a fresh tree that carries no `.plan/local`, because `.plan/` is gitignored and never travels with a branch. The cwd-relative root rule (xref:../adr/002-Plan-scoped_operations_move_into_a_cwd-pinned_hermetic_worktree.adoc[ADR-002], resolution precedence step 3) walks up from a cwd *inside* such a worktree and lands on the main checkout's `.plan/local` — the nearest ancestor containing one — so plan-root-relative writes resolve silently into the main checkout instead of the worktree. In a proper phase-5 execution this cannot arise: `prepare_execute` moves the plan directory into the worktree first, making the worktree's own `.plan/local` the resolution target. It bites when a resolver runs from a raw worktree — before the move-in, or from a hand-made `git worktree add` checkout. Two mitigations exist:
+
+* `tools-file-ops` `get_executor_path()` emits `WorktreeEscapeWarning` instead of resolving silently when the resolved root's own `worktrees/` subtree contains the working directory — a wrong-tree executor regeneration is never invisible. (The escape is surfaced on the executor path — where the wrong-tree regeneration actually lands — and deliberately not on read-side resolution, which `manage-config` invokes at import time.)
+* Tracked-config writes can be pinned to the worktree explicitly with `PLAN_TRACKED_CONFIG_DIR={worktree}/.plan` (executor regeneration, `marshal.json`) — the top override in `tools-file-ops` `file_ops.py`.
+
 == `.claude/`
 
 Project-level Claude Code configuration committed to the repository:

@@ -17,6 +17,7 @@ Tests functions:
 import os
 import subprocess
 import sys
+import warnings
 from io import StringIO
 from pathlib import Path
 
@@ -24,6 +25,7 @@ import file_ops
 import pytest
 from file_ops import (
     PlanNotFoundError,
+    WorktreeEscapeWarning,
     atomic_write_file,
     base_path,
     ensure_directory,
@@ -637,6 +639,32 @@ def test_get_executor_path_plan_base_dir_override(tmp_path, plan_base_dir_at_tmp
     assert result == tmp_path / 'execute-script.py'
 
 
+def test_get_executor_path_tracked_config_override_from_raw_worktree(tmp_path, monkeypatch):
+    """The WorktreeEscapeWarning remedy actually works: from a raw worktree cwd,
+    PLAN_TRACKED_CONFIG_DIR pins the executor to the worktree's own .plan —
+    no warning, no escape to the main checkout."""
+    main = tmp_path / 'main'
+    (main / '.plan' / 'local').mkdir(parents=True)
+    worktree = main / '.plan' / 'local' / 'worktrees' / 'plan-x'
+    worktree.mkdir(parents=True)
+    monkeypatch.chdir(worktree)
+    monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
+    monkeypatch.setenv('PLAN_TRACKED_CONFIG_DIR', str(worktree / '.plan'))
+    with warnings.catch_warnings(record=True) as caught:
+        result = get_executor_path()
+    assert not [w for w in caught if issubclass(w.category, WorktreeEscapeWarning)]
+    assert result == (worktree / '.plan' / 'execute-script.py').resolve()
+
+
+def test_get_executor_path_tracked_config_override_wins_over_plan_base_dir(tmp_path, monkeypatch):
+    """PLAN_TRACKED_CONFIG_DIR is the fine-grained tracked-config override and
+    precedes PLAN_BASE_DIR, matching get_tracked_config_dir's precedence."""
+    monkeypatch.setenv('PLAN_TRACKED_CONFIG_DIR', str(tmp_path / 'tracked' / '.plan'))
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path / 'base'))
+    result = get_executor_path()
+    assert result == (tmp_path / 'tracked' / '.plan' / 'execute-script.py').resolve()
+
+
 def test_get_executor_path_cwd_walk_up(tmp_path, no_plan_base_dir, in_tmp_cwd):
     """In production, the executor anchors at <plan-root>/.plan/execute-script.py."""
     (tmp_path / '.plan' / 'local').mkdir(parents=True)
@@ -656,6 +684,73 @@ def test_get_executor_path_pinned_in_worktree_resolves_worktree_resident(tmp_pat
     monkeypatch.chdir(worktree)
     result = get_executor_path()
     assert result == worktree.resolve() / '.plan' / 'execute-script.py'
+
+
+def test_get_executor_path_worktree_subtree_escape_warns(tmp_path, monkeypatch, no_plan_base_dir):
+    """A worktree under the main checkout's worktrees/ subtree with NO .plan/local
+    of its own is the silent wrong-tree trap: the walk-up resolves the MAIN
+    checkout. The escape must emit WorktreeEscapeWarning naming the resolved
+    root, the originating worktree, and PLAN_TRACKED_CONFIG_DIR as the override,
+    and it must be distinguishable from the moved-in worktree above (which
+    resolves its own root)."""
+    main = tmp_path / 'main'
+    (main / '.plan' / 'local').mkdir(parents=True)
+    worktree = main / '.plan' / 'local' / 'worktrees' / 'plan-x'
+    worktree.mkdir(parents=True)
+    monkeypatch.chdir(worktree)
+    with pytest.warns(WorktreeEscapeWarning, match='plan root') as record:
+        result = get_executor_path()
+    message = str(record[0].message)
+    assert str(main.resolve()) in message
+    assert str(worktree.resolve()) in message
+    assert 'PLAN_TRACKED_CONFIG_DIR' in message
+    assert result == main.resolve() / '.plan' / 'execute-script.py'
+
+
+def test_get_base_dir_worktree_subtree_escape_read_reach_stays_silent(tmp_path, monkeypatch, no_plan_base_dir):
+    """get_base_dir is read-reach: _config_core calls it at import time and the
+    phase-5 caller guard routes through it, so a warning here becomes an error
+    under the suite's filterwarnings=['error'] whenever tests run from the
+    raw-worktree cwd. It must resolve main silently; the escape is surfaced by
+    get_executor_path, the write-reach path where the PLAN-11 regeneration
+    actually landed."""
+    main = tmp_path / 'main'
+    (main / '.plan' / 'local').mkdir(parents=True)
+    worktree = main / '.plan' / 'local' / 'worktrees' / 'plan-x'
+    worktree.mkdir(parents=True)
+    monkeypatch.chdir(worktree)
+    with warnings.catch_warnings(record=True) as caught:
+        result = get_base_dir()
+    assert not [w for w in caught if issubclass(w.category, WorktreeEscapeWarning)]
+    assert result == main.resolve() / '.plan' / 'local'
+
+
+def test_get_executor_path_unaffected_from_cwd_under_plan_local_plans(tmp_path, monkeypatch, no_plan_base_dir):
+    """A cwd under {root}/.plan/local/ but OUTSIDE the worktrees/ subtree is
+    not an escape: resolution must keep resolving the main checkout. This is
+    the matched negative — the escape check is scoped to the worktrees/ subtree
+    only, so the genuine no-.plan/local-descendant positions stay unaffected."""
+    main = tmp_path / 'main'
+    (main / '.plan' / 'local' / 'plans' / 'plan-x').mkdir(parents=True)
+    monkeypatch.chdir(main / '.plan' / 'local' / 'plans' / 'plan-x')
+    with warnings.catch_warnings(record=True) as caught:
+        result = get_executor_path()
+    assert not [w for w in caught if issubclass(w.category, WorktreeEscapeWarning)]
+    assert result == main.resolve() / '.plan' / 'execute-script.py'
+
+
+def test_get_executor_path_unaffected_from_cwd_at_worktrees_container(tmp_path, monkeypatch, no_plan_base_dir):
+    """cwd exactly at the {root}/.plan/local/worktrees container (no named
+    worktree below it) is not an escape: the container is not a worktree, so
+    there is no originating worktree to name and no PLAN_TRACKED_CONFIG_DIR to
+    invent for it. Resolution keeps resolving main without warning."""
+    main = tmp_path / 'main'
+    (main / '.plan' / 'local' / 'worktrees').mkdir(parents=True)
+    monkeypatch.chdir(main / '.plan' / 'local' / 'worktrees')
+    with warnings.catch_warnings(record=True) as caught:
+        result = get_executor_path()
+    assert not [w for w in caught if issubclass(w.category, WorktreeEscapeWarning)]
+    assert result == main.resolve() / '.plan' / 'execute-script.py'
 
 
 def test_get_executor_path_without_plan_root_raises(outside_repo_dir, monkeypatch, no_plan_base_dir):
