@@ -30,12 +30,30 @@ class TestAspectTableKeysMatchTheRegistry:
     than *transcribed*: a key that drifts from ``SECTION_SPEC`` fails here.
 
     ⚠ The correspondence is checked in ONE direction only — ``table → registry``.
-    A ``SECTION_SPEC`` row shipped with no table row is caught by nothing here,
-    and deliberately so: the reverse assertion would fail today on the two rows
-    that have no producer (``_executive-summary``, ``dispatch_boundaries``), and
-    encoding those exemptions in a test would pin the dead rows in place rather
-    than surface them. They are carried as residue in the plan's run report
-    instead. Re-open the reverse direction once neither dead row remains.
+    A ``SECTION_SPEC`` row shipped with no table row is caught by nothing here, so
+    a registry row whose section can never be filled passes this class unnoticed.
+    Do not read a green result as "registry and table agree"; it is "no table row
+    names a key the registry does not have", which is the weaker half.
+
+    ⛔ What blocks the reverse direction, re-derived against HEAD rather than
+    recalled. THREE ``SECTION_SPEC`` rows have no producer, and they do not all
+    block it:
+
+    * ``_executive-summary`` and ``_footprint-derivation`` — injected by
+      ``compile-report`` itself and refused by ``collect-fragments add``. A reverse
+      assertion scoped to :func:`retro_sections.valid_aspect_keys` excludes both by
+      that function's own leading-underscore rule, which is a STRUCTURAL exclusion,
+      not an exemption list. Neither blocks anything.
+    * ``dispatch_boundaries`` — registerable (no underscore), and the token appears
+      nowhere in the Step-3 aspect table. This is the one genuine blocker: the
+      reverse assertion fails on it today, and the only way to land it green would
+      be to write it into an exemption list, which pins the dead row in place
+      instead of surfacing it.
+
+    The reverse assertion is therefore written and HELD rather than shipped — its
+    body is carried in the plan's verification record, to be added verbatim once
+    ``dispatch_boundaries`` is resolved (given a producer and a table row, or
+    deleted). It is deliberately NOT landed with an exemption.
     """
 
     def test_scan_finds_a_key_for_every_numbered_row(self):

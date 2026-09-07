@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Regression tests for plan 070 — dispatch spend on dispatches that produced nothing.
+"""Regression tests for plan 070 — terminal-error versus retryable dispatch spend.
 
 Two deliverables are pinned here, both against
 ``plan-retrospective/scripts/analyze-logs.py``'s dispatch-boundary reader:
@@ -10,15 +10,27 @@ Two deliverables are pinned here, both against
   ``returned_with_findings`` and ``error`` rows land, and which carries the
   majority of the finalize dispatch spend) was read by no rule. The fact
   extractor now surfaces every dispatching phase, and the productive-loop-back
-  population is counted so it is distinguishable from genuinely-wasted spend.
+  population is counted so it is distinguishable from terminal-error spend.
 
-* **D4 / D5 — genuinely-wasted vs retryable dispatch spend, reported distinctly.**
-  ``error_total_tokens`` (a dispatch that raised a fatal error and returned
-  nothing — the genuinely-wasted spend, a reported figure rather than a
-  derivable one) is summed and reported DISTINCTLY from ``retryable_total_tokens``
-  (``blocked_session_restart`` + ``harness_cancellation`` — infrastructure a
-  re-run recovers), because the two need different remedies and conflating them
-  produces a fix for the wrong half.
+* **D4 / D5 — terminal-error vs retryable dispatch spend, reported distinctly.**
+  ``error_total_tokens`` sums ``total_tokens`` over the rows whose
+  ``termination_cause`` is terminal, and is reported DISTINCTLY from
+  ``retryable_total_tokens`` (``blocked_session_restart`` +
+  ``harness_cancellation`` — infrastructure a re-run recovers), because the two
+  need different remedies and conflating them produces a fix for the wrong half.
+
+⛔ **The claim is SPEND, and the finding-yield half is deferred.** This module
+used to describe the same figure as spend on "a dispatch that … returned
+nothing". The reader establishes no such thing: ``error_total_tokens`` is
+classified by ``termination_cause`` ALONE, and a boundary row carries no signal
+of what its dispatch yielded — a terminal error can perfectly well have written
+findings before it died. Calling the figure "genuinely wasted" therefore asserts
+a second property from evidence that speaks only to the first, and the
+difference matters, because a reader acting on "wasted" would go looking for
+spend to eliminate rather than for an error to fix. The stronger claim is
+deferred until a per-row yield signal exists to carry it;
+:func:`test_error_spend_is_classified_by_cause_not_by_yield` pins the boundary
+of what is claimed today.
 
 Every assertion pins the concrete counter value, not merely a terminal pass, so
 a reader can tell a measured figure from an unexamined one.
@@ -74,10 +86,10 @@ def _write_finalize_boundary(work_dir: Path) -> Path:
 
 
 def test_error_total_tokens_sums_only_terminal_error_rows(tmp_path):
-    """The genuinely-wasted figure sums total_tokens over `error` rows alone.
+    """The terminal-error SPEND figure sums total_tokens over `error` rows alone.
 
     RED before D5 — the reader emitted no such field, so a reader had to
-    reconstruct the waste from the raw rows.
+    reconstruct the figure from the raw rows.
     """
     path = _write_finalize_boundary(tmp_path / 'work')
 
@@ -108,6 +120,47 @@ def test_retryable_total_tokens_reported_distinctly_from_error(tmp_path):
     # The two classes are genuinely distinct on this fixture, so a reader that
     # conflated them would have to report one wrong.
     assert parsed['error_total_tokens'] != parsed['retryable_total_tokens']
+
+
+def test_error_spend_is_classified_by_cause_not_by_yield(tmp_path):
+    """The boundary of the claim the module docstring makes, asserted.
+
+    A dispatch that returned FINDINGS carries tokens exactly like a terminal
+    error does, and the row says nothing about either one's yield. What
+    separates them is the ``termination_cause`` alone — so the figure is
+    terminal-error SPEND, and the "produced nothing" reading the module used to
+    print is a second property no field here supports.
+
+    The fixture is a single ``returned_with_findings`` row carrying the SAME
+    token count the terminal-error rows carry elsewhere in this module, so the
+    zero below cannot come from the figure happening to be small: it comes from
+    the cause classification and nothing else. The productive count is asserted
+    alongside it, because a reader that had simply failed to parse the row would
+    also report ``error_total_tokens: 0``.
+    """
+    work_dir = tmp_path / 'work'
+    work_dir.mkdir(parents=True, exist_ok=True)
+    path = work_dir / 'metrics-dispatch-boundaries-6-finalize.toon'
+    path.write_text(
+        'plan_id: waste-scope\n'
+        'phase: 6-finalize\n'
+        'rows[]{timestamp,termination_cause,total_tokens,tool_uses,duration_ms,'
+        'input_tokens,output_tokens,cache_read_input_tokens,cache_creation_input_tokens}:\n'
+        '2026-06-01T10:00:00Z,returned_with_findings,7000,3,20000,'
+        'unmeasured,unmeasured,unmeasured,unmeasured\n',
+        encoding='utf-8',
+    )
+
+    parsed = analyze_logs._parse_dispatch_boundary_file(path)
+
+    assert parsed['returned_with_findings_count'] == 1, (
+        'precondition: the row must have parsed, or the zero below says nothing'
+    )
+    assert parsed['error_total_tokens'] == 0, (
+        'a productive dispatch was counted as terminal-error spend; the figure is '
+        'classified by termination_cause, never by what the dispatch yielded'
+    )
+    assert parsed['retryable_total_tokens'] == 0
 
 
 def test_returned_with_findings_counted_as_the_productive_population(tmp_path):

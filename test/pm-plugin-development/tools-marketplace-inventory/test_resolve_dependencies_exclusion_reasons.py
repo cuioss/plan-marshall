@@ -78,6 +78,46 @@ UNRESOLVED_REASON_MISSING_COMPONENT = _dep_index_mod.UNRESOLVED_REASON_MISSING_C
 UNRESOLVED_REASON_UNKNOWN_BUNDLE = _dep_index_mod.UNRESOLVED_REASON_UNKNOWN_BUNDLE
 UNRESOLVED_REASON_UNREGISTERED_VERB = _dep_index_mod.UNRESOLVED_REASON_UNREGISTERED_VERB
 
+# The manage-config module that OWNS the canonical-verify prefix vocabulary.
+# ``_dep_detection.CANONICAL_COMMAND_PREFIXES`` documents itself as mirroring it,
+# and the two live in DIFFERENT bundles — so it is file-loaded through the same
+# path-loading helper used above rather than imported, which would imply an import
+# package spanning the two bundles that does not exist.
+_cmd_quality_phases_mod = load_script_module(
+    'plan-marshall',
+    'manage-config',
+    '_cmd_quality_phases.py',
+    '_cmd_quality_phases',
+)
+
+
+def test_canonical_command_prefixes_mirror_the_manage_config_declaration():
+    """The documented mirror is enforced, not merely asserted in a docstring.
+
+    ``_dep_detection.CANONICAL_COMMAND_PREFIXES`` states that it mirrors
+    ``_cmd_quality_phases._CANONICAL_VERIFY_PREFIXES``. Nothing tied the two
+    together, so the claim was prose: the owning module could gain or reorder a
+    prefix and this bundle's copy would silently keep the old vocabulary, quietly
+    changing which references the validator treats as canonical commands.
+
+    Equality is asserted across the two MODULES — the mirror is a copy, so the
+    check is structural equality between two independently-read declarations, not
+    a restatement of either.
+    """
+    mirror = _dep_detection_mod.CANONICAL_COMMAND_PREFIXES
+    source_of_truth = _cmd_quality_phases_mod._CANONICAL_VERIFY_PREFIXES
+
+    # Anti-vacuity: two empty tuples would compare equal and assert nothing.
+    assert mirror, '_dep_detection.CANONICAL_COMMAND_PREFIXES is empty'
+    assert source_of_truth, '_cmd_quality_phases._CANONICAL_VERIFY_PREFIXES is empty'
+
+    assert tuple(mirror) == tuple(source_of_truth), (
+        'the canonical-verify prefix vocabulary has desynced across bundles. '
+        f'pm-plugin-development _dep_detection.CANONICAL_COMMAND_PREFIXES = {tuple(mirror)}; '
+        f'plan-marshall _cmd_quality_phases._CANONICAL_VERIFY_PREFIXES = {tuple(source_of_truth)}. '
+        'The second is the owning declaration; update the mirror to match it.'
+    )
+
 cmd_validate = _resolve_mod.cmd_validate
 
 
@@ -87,6 +127,68 @@ _SOURCE = ComponentId(bundle='test', component_type='skill', name='test')
 def _only(deps):
     assert len(deps) == 1, f'expected exactly one detected notation, got {len(deps)}'
     return deps[0]
+
+
+# =============================================================================
+# (D6-S08) The lsp dependency kind — declared, but with no detector here
+# =============================================================================
+
+
+def test_lsp_dependency_kind_has_no_file_scan_detector(tmp_path):
+    """``DependencyType.LSP`` is real vocabulary, materialized ONLY by the harvest.
+
+    ``detect_all_dependencies`` checks each of the five file-scanning kinds by
+    name; ``LSP`` is deliberately absent from every ``if DependencyType.X in
+    dep_types`` branch. Requesting ``dep_types={DependencyType.LSP}`` alone must
+    therefore resolve to an EMPTY index for a bundle that DOES contain a real
+    script-notation reference — proving the filter genuinely excludes an
+    undetected kind rather than silently falling back to scanning every type.
+    Before this member existed there was no real enum value with no detector to
+    assert this against; it is the concrete regression the enum's own docstring
+    names as the gap declaring ``LSP`` here closes.
+
+    MATCHED POSITIVE CONTROL. The emptiness assertion alone is evidence about the
+    filter only while the fixture really does carry something a detector finds,
+    and nothing used to establish that: the claim that "SCRIPT_NOTATION alone
+    would have caught this" lived in this docstring. If the fixture stopped
+    matching ``detect_script_notations``, or script-notation detection stopped
+    producing rows at all, the empty LSP index would still be empty and this test
+    would pass for the wrong reason with the filter never exercised. The same tree
+    is therefore indexed under ``{DependencyType.SCRIPT_NOTATION}`` FIRST and the
+    detected row asserted, so the second assertion is a comparison between two
+    runs rather than an absence with nothing to contrast against.
+    """
+    # Arrange — a bundle whose skill.md carries a real, otherwise-detectable
+    # script notation.
+    bundles = _build_tree(
+        tmp_path,
+        skill_md=(
+            '---\nname: alpha\ndescription: Alpha skill\n---\n'
+            '# Alpha\n\n'
+            'Run demo-bundle:alpha:alpha to build it.\n'
+        ),
+        script_source='def main() -> int:\n    return 0\n',
+    )
+
+    # Control — the SAME tree under the kind that DOES have a detector.
+    detected = build_dependency_index(bundles, {DependencyType.SCRIPT_NOTATION})
+    detected_rows = [
+        (dep.target.to_notation(), dep.resolved)
+        for deps in detected.forward_deps.values()
+        for dep in deps
+    ]
+    assert detected_rows == [('demo-bundle:alpha:alpha', True)], (
+        'the fixture no longer carries a notation SCRIPT_NOTATION detects, so the '
+        f'LSP-only emptiness below would say nothing about the filter: {detected_rows}'
+    )
+
+    # Act — request ONLY the lsp kind.
+    index = build_dependency_index(bundles, {DependencyType.LSP})
+
+    # Assert — no dependency at all, not even the notation the control just
+    # proved SCRIPT_NOTATION finds in this very tree.
+    rows = [dep for deps in index.forward_deps.values() for dep in deps]
+    assert rows == []
 
 
 # =============================================================================

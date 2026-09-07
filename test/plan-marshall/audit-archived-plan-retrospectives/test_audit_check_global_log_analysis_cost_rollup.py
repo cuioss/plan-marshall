@@ -10,6 +10,26 @@ answer "what owns the time?": a key below the count gate is dropped entirely
 however much time it owns, and above the gate the ordering ignores duration.
 The cost roll-up is the complementary instrument — no count gate, ranked by
 time owned, with the share of the published denominator.
+
+**What these tests do NOT cover: the share population divides evenly.** Every
+``share_pct`` assertion below lands on a split that is exact at the reporting
+precision — an 80% dominant key, a 75/25 pair, a 50/50 pair, and whole-corpus
+100% cases. Not one of them can exhibit a rounding artifact, so the share
+arithmetic is never exercised where rounding actually bites, and the
+reconciliation asserted for the 50/50 pair
+(``test_two_short_calls_do_not_both_report_the_whole_share``) must not be read as
+a general one.
+
+The uncovered case is a split that does NOT divide evenly: three equal keys, where
+each share rounds to 33.3 and the published shares sum to 99.9 rather than 100.0.
+It is HELD rather than written, because asserting the reconciliation there would
+require a production change this test module may not make. ``share_pct`` is
+computed in ``cross_global_log_analysis`` as
+``round(key_seconds / rollup_total * 100.0, 1)`` against an INTERNAL 3-decimal
+denominator that never reaches the output, and that function's own comment
+records aligning the two precisions as "owned elsewhere" and "out of scope here".
+The bound is stated rather than silently left open, so the even-split
+reconciliation is not mistaken for coverage of the rounding case.
 """
 
 from pathlib import Path

@@ -22,7 +22,6 @@ from _resolve_project_dir_fixtures import (
     assert_sentinel_accepted,
     assert_worktree_face_routes_through_resolver,
 )
-from file_ops import format_toon_value
 
 from conftest import get_script_path, load_script_module, run_script
 
@@ -553,37 +552,6 @@ def test_merge_module_data_missing_derived_raises():
         save_project_meta({'name': 'p', 'modules': {'gone': {}}, 'extensions_used': []}, tmpdir)
         with pytest.raises(DataNotFoundError):
             merge_module_data('gone', tmpdir)
-
-
-# =============================================================================
-# Tests for TOON Formatting
-# =============================================================================
-
-
-def test_format_toon_value_none():
-    """format_toon_value returns empty string for None."""
-    assert format_toon_value(None) == ''
-
-
-def test_format_toon_value_bool():
-    """format_toon_value formats booleans."""
-    assert format_toon_value(True) == 'true'
-    assert format_toon_value(False) == 'false'
-
-
-def test_format_toon_value_list():
-    """format_toon_value joins list with +."""
-    assert format_toon_value(['a', 'b', 'c']) == 'a+b+c'
-
-
-def test_format_toon_value_string():
-    """format_toon_value passes strings through."""
-    assert format_toon_value('test') == 'test'
-
-
-def test_format_toon_value_int():
-    """format_toon_value converts int to string."""
-    assert format_toon_value(42) == '42'
 
 
 # =============================================================================

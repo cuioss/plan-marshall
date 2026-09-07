@@ -82,7 +82,25 @@ class TestFraming:
         # it had already committed to, so it has consumed whatever was left.
         # `recoverable=False` means "I cannot say where the next frame begins",
         # never "the bytes are untouched".
-        assert stream.read().endswith(good)
+        remainder = stream.read()
+        assert remainder.endswith(good)
+
+        # ⭐ And READ that frame, rather than only looking at its bytes. Byte
+        # equality says the frame is PRESENT; it cannot say the stream is in a
+        # state a caller could resynchronise from, and "the bytes are untouched"
+        # is only worth anything to a caller who can then go on reading. A
+        # refusal that rewound the stream instead of leaving it in place —
+        # re-presenting the rejected header as if it were the next frame's —
+        # satisfies the byte comparison above and fails here.
+        assert remainder.count(b'Content-Length') == 1, (
+            'the surviving bytes must offer exactly one resynchronisation point'
+        )
+        resynchronised = remainder[remainder.index(b'Content-Length') :]
+        assert protocol.read_message(io.BytesIO(resynchronised)) == {
+            'jsonrpc': '2.0',
+            'id': 2,
+            'method': 'shutdown',
+        }
 
     def test_zero_content_length_is_not_rejected_as_negative(self) -> None:
         """Zero is a valid length; only negatives are refused.

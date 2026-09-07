@@ -14,7 +14,6 @@ Usage:
         extract_deliverables,
         declared_paths_by_intent,
         declared_paths_population,
-        parse_toon_simple,
     )
 """
 
@@ -714,56 +713,3 @@ def _extract_verification(content: str) -> dict[str, str]:
         verification['criteria'] = criteria_match.group(1).strip()
 
     return verification
-
-
-def parse_toon_simple(content: str) -> dict[str, Any]:
-    """Parse simple TOON format (key: value pairs and lists).
-
-    Handles basic TOON structures:
-    - Key: value pairs
-    - Lists with [N]: header
-    - Comments (# lines)
-
-    Args:
-        content: TOON format content
-
-    Returns:
-        Dictionary with parsed values
-    """
-    result: dict[str, Any] = {}
-    current_list_key: str | None = None
-    current_list: list[str] = []
-
-    for line in content.strip().split('\n'):
-        line = line.strip()
-        if not line or line.startswith('#'):
-            continue
-
-        # Check for list header
-        if '[' in line and line.endswith(':'):
-            if current_list_key and current_list:
-                result[current_list_key] = current_list
-            key_part = line.split('[')[0]
-            current_list_key = key_part
-            current_list = []
-            continue
-
-        # Check if we're in a list
-        if current_list_key:
-            if ':' in line and not line.startswith(' '):
-                result[current_list_key] = current_list
-                current_list_key = None
-                current_list = []
-            else:
-                current_list.append(line.strip())
-                continue
-
-        # Key-value pair
-        if ':' in line:
-            key, value = line.split(':', 1)
-            result[key.strip()] = value.strip()
-
-    if current_list_key and current_list:
-        result[current_list_key] = current_list
-
-    return result

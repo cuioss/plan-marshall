@@ -1426,11 +1426,44 @@ per-entry **list** fields are elided from the flat tabular examples above (a
 row-per-entry TOON table cannot nest a list inside a cell); the real payload
 carries them on every entry.
 
+**Why the leaf answer is not a weaker answer.** *Envelope-scoped* is easy to read
+as an admission that a dispatched leaf gets a degraded report, because a leaf's
+harness tool grant IS narrower than the orchestrator's. It does not, and the
+question was settled by taking the reading rather than by arguing from the
+design: invoked inside a dispatched `execution-context` leaf, `capabilities`
+returns the same fully-populated three-entry report — `module_edges` and
+`path_attribution` both `derivable` off producers that ran in that envelope, and
+`content_search` `available` off the leaf's own crawl.
+
+The reasoning is what generalises that single reading. Every `status` here is a
+function of exactly two inputs: the executing `--project-dir`, and which
+producers ran against it. Both are properties of the PROCESS this verb starts,
+not of the tools granted to the agent that invoked it. A narrowed grant removes
+`Grep` / `Glob` from the CALLER; it does not unregister a derivation resolver,
+retract a path attributor's claims, or stop the crawl yielding an inventory. The
+constraint is therefore closed from both ends — the leaf reading confirms it,
+and the purity argument says why no envelope can silently answer weaker.
+
+⛔ What this closes is *"is the report correct in a leaf?"* — **not** *"is the
+report identical in every envelope?"*. A leaf whose `--project-dir` resolves to a
+different tree legitimately answers differently, which is exactly what
+**Envelope-scoped** says above. Read this as a guarantee about the report's
+derivation, never as licence to reuse another envelope's answer.
+
+No concrete producer ids or counts from that reading are transcribed here. They
+move with the resolver registry and with the corpus, and a literal pinned into
+this document would go stale with no test to catch it — the same failure already
+recorded against the `resolvers[N]` examples in § [Resolver
+provenance](#resolver-provenance-the-graph-family). Run the verb in the envelope
+you are asking about; that is the whole point of it being uncached.
+
 **Use cases**:
 
 - A dispatched leaf asking "can I answer graph / path-ownership / content
   questions in *this* envelope?" before it relies on one — the report is
-  correct in a leaf, not only in the orchestrator.
+  correct in a leaf, not only in the orchestrator (see "Why the leaf answer is
+  not a weaker answer" above, which records the leaf-taken reading that
+  established this rather than leaving it as a design claim).
 - The refine feasibility check reading `module_edges.status` to avoid treating an
   empty graph as a clean dependency-direction pass (see
   [`phase-2-refine:refine-workflow-detail.md`](../../phase-2-refine/standards/refine-workflow-detail.md)

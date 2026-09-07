@@ -19,7 +19,14 @@ import sys
 import textwrap
 from pathlib import Path
 
-from conftest import get_scripts_dir
+import pytest
+
+from conftest import (
+    EXECUTOR_GENERATION_ERROR_TOKEN,
+    ExecutorBootstrapError,
+    _ensure_executor_present,
+    get_scripts_dir,
+)
 
 # The shared-module skills the executor template bootstraps onto sys.path before
 # its own top-level imports (plan_logging, toon_parser, _ledger_core,
@@ -120,6 +127,143 @@ class TestBootstrapGuard:
         assert real_idx != -1
         assert injected_idx != -1
         assert real_idx < injected_idx
+
+
+# =============================================================================
+# conftest executor bootstrap — failure detection across the subprocess boundary
+# =============================================================================
+#
+# ``_ensure_executor_present`` shells out to the generator, whose ``main()`` ends
+# ``print(serialize_toon(result)); return 0`` with no branch on
+# ``result['status']``. The retired ``check=True`` therefore could not fire on
+# ANY expected generation error, so the bootstrap returned having written
+# nothing and raised nothing — a fresh CI checkout then ran the whole suite
+# against an absent executor with no diagnostic naming the cause.
+#
+# Detection is now fail-CLOSED: each reading raises ``ExecutorBootstrapError``
+# at conftest-import time, which aborts the run. A warning would have left the
+# run going over a broken substrate and reporting green on a smaller suite, so
+# the assertions below are on the raised message rather than on stderr.
+#
+# The pair below is taken THROUGH THE SUBPROCESS BOUNDARY, deliberately: the
+# bootstrap's detection lives on the far side of ``subprocess.run``, so an
+# in-process stub (a monkeypatched function, a fake return value) is invisible
+# to it and would exercise nothing. Each stub is a real script, run by a real
+# interpreter, whose observable is exactly what a real generator emits.
+
+_ERROR_STUB = (
+    'import sys\n'
+    'print("status: error")\n'
+    'print("error: Fail-open regeneration refused: stub refusal")\n'
+    'sys.exit(0)\n'
+)
+
+
+def _success_stub(executor_target: Path) -> str:
+    """A stub that behaves like a real successful generation: writes, then reports."""
+    return (
+        'import sys\n'
+        'from pathlib import Path\n'
+        f'target = Path({str(executor_target)!r})\n'
+        'target.parent.mkdir(parents=True, exist_ok=True)\n'
+        'target.write_text("# generated\\n", encoding="utf-8")\n'
+        'print("status: success")\n'
+        'sys.exit(0)\n'
+    )
+
+
+def _write_stub(tmp_path: Path, source: str) -> Path:
+    stub = tmp_path / 'stub_generator.py'
+    stub.write_text(source, encoding='utf-8')
+    return stub
+
+
+class TestBootstrapFailureDetection:
+    """A generation that reports ``status: error`` at exit 0 must abort the run."""
+
+    def test_error_payload_at_exit_zero_raises(self, tmp_path):
+        """The stub exits 0 and writes nothing — the payload is the only signal.
+
+        ``check=True`` cannot raise here, so a bootstrap that trusted the exit
+        code alone would detect nothing at all. The raised message must name the
+        generator's own stdout so the cause is legible in the CI log rather than
+        left to be inferred from a later cascade of unrelated failures.
+        """
+        project_root = tmp_path / 'project'
+        project_root.mkdir()
+        stub = _write_stub(tmp_path, _ERROR_STUB)
+
+        with pytest.raises(ExecutorBootstrapError) as excinfo:
+            _ensure_executor_present(project_root=project_root, generator=stub)
+
+        message = str(excinfo.value)
+        assert 'executor bootstrap failed' in message.lower(), message
+        assert EXECUTOR_GENERATION_ERROR_TOKEN in message, message
+        assert 'stub refusal' in message, message
+        assert not (project_root / '.plan' / 'execute-script.py').exists()
+
+    def test_successful_generation_returns(self, tmp_path):
+        """Discriminating half — the raise is a verdict, not an unconditional abort.
+
+        Same boundary, same exit code, and the stub differs only in writing the
+        executor and reporting success. Without this case the assertion above
+        would also pass on a bootstrap that raised after every run.
+        """
+        project_root = tmp_path / 'project'
+        project_root.mkdir()
+        executor = project_root / '.plan' / 'execute-script.py'
+        stub = _write_stub(tmp_path, _success_stub(executor))
+
+        _ensure_executor_present(project_root=project_root, generator=stub)
+
+        assert executor.exists()
+
+    def test_silent_no_write_at_exit_zero_raises(self, tmp_path):
+        """A generation claiming success while writing nothing is still a failure.
+
+        The third reading — the executor is simply absent afterwards — is what
+        covers a future refusal path that forgets to say ``status: error``. The
+        stub reports success and writes nothing, which neither the exit code nor
+        the payload can catch.
+        """
+        project_root = tmp_path / 'project'
+        project_root.mkdir()
+        stub = _write_stub(tmp_path, 'import sys\nprint("status: success")\nsys.exit(0)\n')
+
+        with pytest.raises(ExecutorBootstrapError) as excinfo:
+            _ensure_executor_present(project_root=project_root, generator=stub)
+
+        assert 'executor_written=False' in str(excinfo.value), str(excinfo.value)
+
+    def test_missing_generator_raises_without_running_anything(self, tmp_path):
+        """A generator that is not on disk is a broken environment, not a skip.
+
+        The earliest reading, and the only one that never reaches
+        ``subprocess.run`` — the message names the path it looked for.
+        """
+        project_root = tmp_path / 'project'
+        project_root.mkdir()
+        absent = tmp_path / 'no_such_generator.py'
+
+        with pytest.raises(ExecutorBootstrapError) as excinfo:
+            _ensure_executor_present(project_root=project_root, generator=absent)
+
+        assert str(absent) in str(excinfo.value), str(excinfo.value)
+
+    def test_present_executor_short_circuits_without_running_the_generator(self, tmp_path):
+        """Idempotence: an existing executor returns before any subprocess runs.
+
+        Pinned with a stub that would RAISE if it ran, so the short-circuit is
+        proven by the absence of that failure rather than merely assumed.
+        """
+        project_root = tmp_path / 'project'
+        (project_root / '.plan').mkdir(parents=True)
+        (project_root / '.plan' / 'execute-script.py').write_text('# existing\n', encoding='utf-8')
+        stub = _write_stub(tmp_path, _ERROR_STUB)
+
+        _ensure_executor_present(project_root=project_root, generator=stub)
+
+        assert (project_root / '.plan' / 'execute-script.py').read_text(encoding='utf-8') == '# existing\n'
 
 
 def _skills_dir() -> Path:

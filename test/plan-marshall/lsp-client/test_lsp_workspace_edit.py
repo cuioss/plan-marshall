@@ -381,3 +381,82 @@ def test_delta_ignores_non_error_severities():
 def test_delta_distinguishes_same_message_at_a_different_line():
     added, _removed = we.diagnostic_delta([_error('A', line=1)], [_error('A', line=1), _error('A', line=9)])
     assert [diag['range']['start']['line'] for diag in added] == [9]
+
+
+# -- D6-S06: a real edit spanning two MODULES, and the rollback mirrored purely --
+
+
+def test_a_real_edit_spans_two_separate_module_directories(tmp_path):
+    """Every other multi-file case here uses flat siblings; a rename spans packages too.
+
+    ``lsp_client._run_edit`` is the caller this module's footprint/apply/restore
+    triple exists for, and a cross-file rename routinely touches two distinct
+    packages (the definition site's module and an importer's), not just two
+    files sitting in the same directory. Nothing here drove that shape through
+    ``apply_workspace_edit`` before, so a resolver that assumed sibling paths —
+    e.g. by joining on a shared parent rather than resolving each URI on its own
+    — would still pass every other test in this file.
+    """
+    definer = tmp_path / 'pkg_definer' / 'target.py'
+    caller = tmp_path / 'pkg_caller' / 'importer.py'
+    definer.parent.mkdir(parents=True)
+    caller.parent.mkdir(parents=True)
+    definer.write_text('def old_name():\n    return 1\n')
+    caller.write_text('from pkg_definer.target import old_name\nold_name()\n')
+    edit = {'documentChanges': [
+        {'textDocument': {'uri': we.path_to_uri(definer)}, 'edits': [_text_edit(0, 4, 0, 12, 'new_name')]},
+        {'textDocument': {'uri': we.path_to_uri(caller)}, 'edits': [
+            _text_edit(0, 31, 0, 39, 'new_name'),
+            _text_edit(1, 0, 1, 8, 'new_name'),
+        ]},
+    ]}
+
+    footprint, originals = we.apply_workspace_edit(edit)
+
+    assert {row['path'] for row in footprint} == {str(definer.resolve()), str(caller.resolve())}
+    assert definer.read_text() == 'def new_name():\n    return 1\n'
+    assert caller.read_text() == 'from pkg_definer.target import new_name\nnew_name()\n'
+
+    we.restore_files(originals)
+    assert definer.read_text() == 'def old_name():\n    return 1\n'
+    assert caller.read_text() == 'from pkg_definer.target import old_name\nold_name()\n'
+
+
+def test_the_diagnostics_worsened_rollback_mirrored_at_the_pure_layer(tmp_path):
+    """The mirror of ``test_lsp_client.test_edit_worsened_fails_and_rolls_back``.
+
+    That test proves the rollback through ``lsp_client._run_edit`` behind a
+    ``FakeTransport``, so a defect in the ORCHESTRATION (the sequencing of
+    apply -> diagnose -> verdict -> restore) is visible there but a defect in
+    the pure helpers underneath it is not distinguishable from one in the
+    glue. This composes the same three pure calls directly — no session, no
+    transport — over TWO files, so the guarantee is pinned at the layer that
+    actually owns it.
+    """
+    first = tmp_path / 'a.py'
+    second = tmp_path / 'b.py'
+    first.write_text('foo = 1\n')
+    second.write_text('bar = 2\n')
+    edit = {'documentChanges': [
+        {'textDocument': {'uri': we.path_to_uri(first)}, 'edits': [_text_edit(0, 0, 0, 3, 'FOO')]},
+        {'textDocument': {'uri': we.path_to_uri(second)}, 'edits': [_text_edit(0, 0, 0, 3, 'BAR')]},
+    ]}
+    before_by_path = {str(first.resolve()): [], str(second.resolve()): []}
+    # The server's post-edit verdict: `first` stays clean, `second` gained an error.
+    after_by_path = {str(first.resolve()): [], str(second.resolve()): [_error('boom')]}
+
+    footprint, originals = we.apply_workspace_edit(edit)
+    assert first.read_text() == 'FOO = 1\n' and second.read_text() == 'BAR = 2\n'
+
+    added_by_path = {}
+    for row in footprint:
+        path = row['path']
+        added, _removed = we.diagnostic_delta(before_by_path[path], after_by_path[path])
+        added_by_path[path] = added
+
+    verdict = we.edit_verdict(added_by_path)
+    assert verdict == 'failed'
+    we.restore_files(originals)
+
+    assert first.read_text() == 'foo = 1\n', 'the clean file must be rolled back too — the verdict is whole-edit'
+    assert second.read_text() == 'bar = 2\n'

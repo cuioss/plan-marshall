@@ -324,3 +324,71 @@ class TestConflictPathIsUnaffected:
 
         assert result['status'] == 'conflict'
         assert spy.verbs == []
+
+
+class TestUnexpectedSeamExceptionAtTheCliGate:
+    """An UNANTICIPATED fault from the executor-refresh seam is a raising
+    case, not a reported degradation — and the "non-fatal by contract" promise
+    in :func:`_refresh_worktree_executor`'s docstring is kept by the OUTER
+    ``safe_main`` CLI wrapper, not by any guard inside the seam itself.
+
+    ``_refresh_worktree_executor`` calls ``_run_generate_executor`` with no
+    surrounding ``try``/``except``; that inner helper catches only the two
+    anticipated subprocess faults (``FileNotFoundError``,
+    ``subprocess.TimeoutExpired``). Every other exception the seam raises
+    (a ``RuntimeError`` from a monkeypatched fault injector stands in for any
+    of them) propagates straight through ``_refresh_worktree_executor`` and
+    ``cmd_worktree_rebase_to`` uncaught — the rebase has already moved HEAD,
+    yet the caller receives a raised exception instead of the documented
+    reported-degradation payload. Only the module's ``main()`` entry point,
+    wrapped in ``safe_main``, actually converts that raise into the
+    ``status: error`` TOON the rest of the script's callers rely on.
+    """
+
+    def test_unexpected_seam_exception_propagates_through_cmd_worktree_rebase_to(
+        self, env, monkeypatch
+    ):
+        _commit(env['main_repo'], 'upstream.txt', 'new\n', 'upstream script change')
+        _commit(env['worktree'], 'local.txt', 'mine\n', 'local work')
+
+        def _raising_spy(_worktree, _verb, *_args):
+            raise RuntimeError('boom: unexpected seam fault')
+
+        with pytest.raises(RuntimeError, match='boom: unexpected seam fault'):
+            _invoke(env, monkeypatch, spy=_raising_spy)
+
+    def test_safe_main_absorbs_the_same_fault_into_an_error_toon(
+        self, env, monkeypatch, capsys
+    ):
+        _commit(env['main_repo'], 'upstream.txt', 'new\n', 'upstream script change')
+        _commit(env['worktree'], 'local.txt', 'mine\n', 'local work')
+
+        target = env['worktree']
+        monkeypatch.setattr(
+            git_workflow, '_resolve_worktree_path_for_plan', lambda _pid: (target, None)
+        )
+        monkeypatch.setattr(git_workflow, '_find_plan_root_from_cwd', lambda: target)
+
+        def _raising_spy(_worktree, _verb, *_args):
+            raise RuntimeError('boom: unexpected seam fault')
+
+        monkeypatch.setattr(git_workflow, '_run_generate_executor', _raising_spy)
+
+        def _crashing_entry_point():
+            return cmd_worktree_rebase_to(Namespace(plan_id='plan-x', base='main'))
+
+        wrapped = git_workflow.safe_main(_crashing_entry_point)
+        with pytest.raises(SystemExit) as exc_info:
+            wrapped()
+
+        assert exc_info.value.code == 1, (
+            'safe_main must exit 1 on an absorbed exception, matching a genuine '
+            'crash rather than an operation failure (exit 0)'
+        )
+        captured = capsys.readouterr()
+        assert 'status: error' in captured.out
+        assert 'internal_error' in captured.out
+        assert 'boom: unexpected seam fault' in captured.out, (
+            'the absorbed exception message must reach the TOON payload, not '
+            'be swallowed by the gate'
+        )

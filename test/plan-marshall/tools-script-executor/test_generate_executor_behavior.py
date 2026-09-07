@@ -12,6 +12,8 @@ handlers / main() dispatch — all paths the existing subprocess-and-fixture sui
 leaves untouched.
 """
 
+import os
+import subprocess
 import sys
 import types
 from pathlib import Path
@@ -460,6 +462,139 @@ def test_surface_stats_line_emitted_on_both_fail_open_and_success(tmp_path, monk
     assert result_nonzero['status'] == 'success'
     assert _gen._SURFACE_STATS_LINE_PREFIX in out_nonzero
     assert 'surfaces_derived=1' in out_nonzero
+
+
+# =============================================================================
+# CLI-level refusal triple — the observable a CALLER actually sees
+# =============================================================================
+#
+# Every fail-open assertion above reads the guard off the RETURNED DICT, which
+# no caller ever holds: callers invoke the generator as a subprocess and see
+# only an exit code and stdout. ``main()`` ends ``print(serialize_toon(result));
+# return 0`` with no branch on ``result['status']``, so the CLI observable of a
+# refusal is a TRIPLE — exit ``0``, a ``status: error`` payload, and the
+# unconditional ``surface-stats:`` line — and the three state ONE contract only
+# when they are asserted together, on one real run, through the process
+# boundary. Exit ``0`` on an expected error is the DECLARED output contract, not
+# a defect, so it is pinned here: a "fix" that made the exit non-zero fails this
+# test rather than silently changing what every caller reads.
+
+
+_GENERATOR_PATH = (
+    PROJECT_ROOT
+    / 'marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py'
+)
+
+#: A previously generated executor carrying exactly ONE surfaces entry. The
+#: digest is deliberately stale, so no freshly computed digest can match it and
+#: the entry is never reused — the previous set is non-empty (what the fail-open
+#: guard compares against) while the emitted set is forced to zero.
+_PREVIOUS_EXECUTOR_WITH_ONE_SURFACE = (
+    '#!/usr/bin/env python3\n'
+    'SCRIPTS = {\n'
+    '}\n'
+    'SCRIPT_SURFACES = {\n'
+    '    "a:b:c": {"digest": "stale-digest", "surface": {"root": {"flags": []}}},\n'
+    '}\n'
+)
+
+
+def _synthetic_marketplace_root(tmp_path: Path) -> Path:
+    """Build a minimal ``<root>/marketplace/bundles`` tree for glob discovery.
+
+    Carries no inventory scanner, so ``discover_scripts`` exits and
+    ``cmd_generate`` falls back to the pure ``discover_scripts_fallback`` walk —
+    which finds this one script and nothing else. Keeping the discovered set at
+    one entry is what makes this a fast CLI test rather than a full real-tree
+    regeneration; the template itself is unaffected, because
+    ``get_templates_dir`` deliberately resolves the REAL script-relative
+    template regardless of ``base_path``.
+    """
+    scripts = (
+        tmp_path / 'mkt' / 'marketplace' / 'bundles' / 'probe-bundle'
+        / 'skills' / 'probe-skill' / 'scripts'
+    )
+    scripts.mkdir(parents=True)
+    (scripts / 'probe_script.py').write_text('# probe\n', encoding='utf-8')
+    return tmp_path / 'mkt'
+
+
+def _run_generate_cli(tmp_path: Path, *, stage_previous: bool) -> tuple[subprocess.CompletedProcess, Path]:
+    """Run the real generator CLI with derivation disabled, returning (result, executor).
+
+    ``PM_SURFACE_BUDGET_SECONDS=0`` disables accept-set derivation outright, so
+    the generation emits zero surfaces. Whether that is a refusal or a normal
+    first build is decided ONLY by ``stage_previous`` — which is what makes the
+    pair below discriminating.
+    """
+    plan_dir = tmp_path / '.plan'
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    executor = plan_dir / 'execute-script.py'
+    if stage_previous:
+        executor.write_text(_PREVIOUS_EXECUTOR_WITH_ONE_SURFACE, encoding='utf-8')
+
+    env = dict(os.environ)
+    env['PLAN_BASE_DIR'] = str(plan_dir)
+    env['PM_SURFACE_BUDGET_SECONDS'] = '0'
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(_GENERATOR_PATH),
+            'generate',
+            '--marketplace',
+            '--marketplace-root',
+            str(_synthetic_marketplace_root(tmp_path)),
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=300,
+        env=env,
+    )
+    return result, executor
+
+
+def test_cli_refusal_reports_exit_zero_with_error_payload_and_stats_line(tmp_path):
+    """The fail-open refusal, observed the way a caller observes it.
+
+    All three legs are asserted on ONE run: the exit code a shell would branch
+    on, the payload token that carries the real verdict, and the surface-stats
+    line whose zero value proves the derivation outcome rather than leaving it
+    to be inferred from an absent line. A caller that read only the exit code
+    would conclude this generation succeeded.
+    """
+    result, executor = _run_generate_cli(tmp_path, stage_previous=True)
+
+    assert result.returncode == 0, (
+        'the expected-error exit contract is 0 — main() prints the TOON and '
+        f'returns 0. stdout={result.stdout!r} stderr={result.stderr!r}'
+    )
+    assert 'status: error' in result.stdout, result.stdout
+    assert 'Fail-open regeneration refused' in result.stdout, result.stdout
+    assert _gen._SURFACE_STATS_LINE_PREFIX in result.stdout, result.stdout
+    assert 'surfaces_derived=0' in result.stdout, result.stdout
+    # The refusal writes nothing: the still-validating previous executor is
+    # byte-identical afterwards.
+    assert executor.read_text(encoding='utf-8') == _PREVIOUS_EXECUTOR_WITH_ONE_SURFACE
+
+
+def test_cli_zero_surfaces_without_a_previous_reports_success(tmp_path):
+    """Discriminating half: a zero-surface generation is not by itself an error.
+
+    Identical invocation, identical disabled budget — the ONLY difference is
+    that no previous executor was staged. Without this case the test above would
+    also pass on a generator that reported ``status: error`` for every
+    zero-surface run, and the ``status: error`` assertion would be measuring the
+    budget rather than the guard.
+    """
+    result, executor = _run_generate_cli(tmp_path, stage_previous=False)
+
+    assert result.returncode == 0, result.stderr
+    assert 'status: success' in result.stdout, result.stdout
+    assert 'Fail-open regeneration refused' not in result.stdout
+    assert _gen._SURFACE_STATS_LINE_PREFIX in result.stdout, result.stdout
+    assert 'surfaces_derived=0' in result.stdout, result.stdout
+    assert executor.exists(), 'a first build with no previous surfaces is written normally'
 
 
 def test_format_surface_stats_line_names_every_count():

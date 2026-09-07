@@ -485,6 +485,15 @@ def filter_resources_by_content(
     return result, stats
 
 
+#: The ONE resource-type vocabulary. It governs both admission (which
+#: ``--resource-types`` values are accepted, and the error message listing them)
+#: and publication (which buckets ``serialize_inventory_toon`` renders, in this
+#: order). A second copy for the serializer used to sit beside that function, and
+#: nothing kept the two in step: adding a type here and to ``process_bundle``
+#: made it accepted and discovered while the serializer silently omitted it from
+#: the output — an absence, not an error. Should publication order ever need to
+#: diverge from admission order, that is a decision to record, not a constant to
+#: reintroduce.
 VALID_RESOURCE_TYPES = ('agents', 'commands', 'skills', 'scripts', 'tests')
 
 
@@ -584,87 +593,88 @@ def get_base_path(scope: str) -> Path:
     return _shared_get_base_path(scope)
 
 
+#: Skill subdirectories carried on a full-mode row, in publication order.
+_SUBDIR_KEYS = ('standards', 'templates', 'references', 'knowledge', 'examples', 'documents')
+
+
+def _full_row(item: dict[str, Any]) -> dict[str, Any]:
+    """Build one full-mode inventory row, dropping the keys the item does not carry.
+
+    A key omitted here disappears from the OUTPUT only when no sibling row in the
+    same table carries it. The canonical serializer derives a table's columns from
+    the union of the keys across its rows and renders a missing one as an empty
+    value, so where any sibling carries the key this row gets an empty column
+    rather than no column. Omitting is still the right construction — it is what
+    lets a column vanish entirely when nothing in the table has it — but a reader
+    must not take an empty column as "the component carries an empty one"; over a
+    mixed table the two are indistinguishable in the rendered row, and only the
+    per-item source says which.
+    """
+    row: dict[str, Any] = {'name': item['name']}
+    for key in ('path', 'description'):
+        if item.get(key):
+            row[key] = item[key]
+    if item.get('user_invocable') is not None:
+        row['user_invocable'] = bool(item['user_invocable'])
+    if item.get('allowed_tools'):
+        row['allowed_tools'] = list(item['allowed_tools'])
+    # Scripts have additional fields
+    for key in ('model', 'skill', 'notation', 'type'):
+        if item.get(key):
+            row[key] = item[key]
+    for subdir_name in _SUBDIR_KEYS:
+        if item.get(subdir_name):
+            row[subdir_name] = list(item[subdir_name])
+    return row
+
+
 def serialize_inventory_toon(data: dict[str, Any], full: bool = False) -> str:
     """Serialize inventory to TOON with bundle-block structure.
 
     Bundles are top-level keys. Components are nested lists.
     Default mode shows simple name lists.
     Full mode includes paths, descriptions, frontmatter, and skill subdirs.
+
+    The writing is the canonical serializer's. The hand-rolled version it
+    replaces emitted a description or an ``allowed_tools`` list bare, so a value
+    carrying a comma or a colon — which a description routinely does — produced a
+    file ``parse_toon`` could not read back. Quoting is now the serializer's
+    decision, and a full-mode component list serializes as a uniform-array table
+    rather than the ``- name:``-plus-indented-keys shape, which no canonical
+    reader ever accepted.
     """
-    lines: list[str] = []
-    lines.append('status: success')
-    lines.append(f'scope: {data["scope"]}')
-    lines.append(f'base_path: {data["base_path"]}')
+    payload: dict[str, Any] = {
+        'status': 'success',
+        'scope': data['scope'],
+        'base_path': data['base_path'],
+    }
 
     # Add content filter info if present
     if data.get('content_pattern'):
-        lines.append(f'content_pattern: "{data["content_pattern"]}"')
+        payload['content_pattern'] = data['content_pattern']
     if data.get('content_exclude'):
-        lines.append(f'content_exclude: "{data["content_exclude"]}"')
+        payload['content_exclude'] = data['content_exclude']
     if data.get('content_filter_stats'):
         stats = data['content_filter_stats']
-        lines.append('content_filter_stats:')
-        lines.append(f'  input_count: {stats["input_count"]}')
-        lines.append(f'  matched_count: {stats["matched_count"]}')
-        lines.append(f'  excluded_count: {stats["excluded_count"]}')
-
-    lines.append('')
+        payload['content_filter_stats'] = {
+            'input_count': stats['input_count'],
+            'matched_count': stats['matched_count'],
+            'excluded_count': stats['excluded_count'],
+        }
 
     for bundle in data['bundles']:
-        bundle_name = bundle['name']
-        lines.append(f'{bundle_name}:')
-        lines.append(f'  path: {bundle["path"]}')
-
-        for resource_type in ['agents', 'commands', 'skills', 'scripts', 'tests']:
+        block: dict[str, Any] = {'path': bundle['path']}
+        for resource_type in VALID_RESOURCE_TYPES:
             items = bundle.get(resource_type, [])
             if items:
-                lines.append(f'  {resource_type}[{len(items)}]:')
-                for item in items:
-                    if full:
-                        # Detailed format with frontmatter
-                        lines.append(f'    - name: {item["name"]}')
-                        if item.get('path'):
-                            lines.append(f'      path: {item["path"]}')
-                        if item.get('description'):
-                            lines.append(f'      description: {item["description"]}')
-                        if item.get('user_invocable') is not None:
-                            lines.append(f'      user_invocable: {str(item["user_invocable"]).lower()}')
-                        if item.get('allowed_tools'):
-                            lines.append(f'      allowed_tools: [{", ".join(item["allowed_tools"])}]')
-                        if item.get('model'):
-                            lines.append(f'      model: {item["model"]}')
-                        # Scripts have additional fields
-                        if item.get('skill'):
-                            lines.append(f'      skill: {item["skill"]}')
-                        if item.get('notation'):
-                            lines.append(f'      notation: {item["notation"]}')
-                        if item.get('type'):
-                            lines.append(f'      type: {item["type"]}')
-                        # Skill subdirectories
-                        for subdir_name in [
-                            'standards',
-                            'templates',
-                            'references',
-                            'knowledge',
-                            'examples',
-                            'documents',
-                        ]:
-                            if item.get(subdir_name):
-                                subdir_files = item[subdir_name]
-                                lines.append(f'      {subdir_name}[{len(subdir_files)}]:')
-                                for file_name in subdir_files:
-                                    lines.append(f'        - {file_name}')
-                    else:
-                        # Simple format - just names
-                        lines.append(f'    - {item["name"]}')
-        lines.append('')
+                block[resource_type] = (
+                    [_full_row(item) for item in items] if full else [item['name'] for item in items]
+                )
+        payload[bundle['name']] = block
 
-    # Statistics
-    lines.append('statistics:')
-    for key, value in data['statistics'].items():
-        lines.append(f'  {key}: {value}')
+    payload['statistics'] = dict(data['statistics'])
 
-    return '\n'.join(lines)
+    return serialize_toon(payload)
 
 
 def write_file_output(
@@ -691,21 +701,20 @@ def write_file_output(
     # Write full inventory in TOON format with bundle-block structure
     output_file.write_text(serialize_inventory_toon(output, full))
 
-    # Return summary in TOON format
-    summary_lines = [
-        'status: success',
-        'output_mode: file',
-        f'output_file: {output_file}',
-        f'scope: {output["scope"]}',
-        f'base_path: {output["base_path"]}',
-        '',
-        'statistics:',
-    ]
-    for key, value in output['statistics'].items():
-        summary_lines.append(f'  {key}: {value}')
-    summary_lines.append('')
-    summary_lines.append(f'next_step: Read {output_file} for full inventory details')
-    return output_file, '\n'.join(summary_lines)
+    # Return summary in TOON format — same canonical writer as the file body, so
+    # the stdout summary and the artifact it points at cannot disagree on quoting.
+    summary = serialize_toon(
+        {
+            'status': 'success',
+            'output_mode': 'file',
+            'output_file': str(output_file),
+            'scope': output['scope'],
+            'base_path': output['base_path'],
+            'statistics': dict(output['statistics']),
+            'next_step': f'Read {output_file} for full inventory details',
+        }
+    )
+    return output_file, summary
 
 
 @safe_main

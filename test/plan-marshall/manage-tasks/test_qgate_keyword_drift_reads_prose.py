@@ -34,6 +34,7 @@ _qgate_mod = load_script_module(
 )
 cmd_qgate_mechanical = _qgate_mod.cmd_qgate_mechanical
 _build_haystack = _qgate_mod._build_haystack
+_load_deliverables = _qgate_mod._load_deliverables
 
 #: A real repository path, so the unrelated files-exist check stays green and
 #: cannot be mistaken for the keyword-drift verdict under test.
@@ -134,9 +135,20 @@ def test_heading_less_deliverables_section_is_unparseable(plan_context):
 
     ``extract_deliverables`` returns an empty list for it, and every downstream
     check then passes vacuously — coverage finds nothing uncovered, keyword-drift
-    finds no drift — while ``ambiguous`` stays False and reports the mechanical
-    pass as authoritative. An outline nobody could parse has to reach the LLM
-    dispatch instead of receiving a clean bill of health.
+    finds no drift — while the outline is reported as an authoritative mechanical
+    pass. An outline nobody could parse has to reach the LLM dispatch instead of
+    receiving a clean bill of health.
+
+    ⭐ **The assertion is on ``parseable``, not on ``ambiguous``, and that is the
+    whole point of this test.** ``ambiguous`` is a DISJUNCTION — ``not parseable
+    or not population_complete`` — and this fixture's task references a
+    deliverable the unparseable outline cannot supply, so the second disjunct is
+    already True. Asserting ``ambiguous`` alone therefore holds whether or not
+    the guard under test exists: restoring the defect left the entire owning
+    bundle's suite green. Reading the loader's own verdict is what makes the
+    guard falsifiable. ``ambiguous`` is asserted too, one line down, because the
+    guard's PURPOSE is to reach the caller — but it is the consequence, not the
+    discriminator.
     """
     plan_dir = Path(plan_context.plan_dir_for('qgate-no-headings'))
     plan_dir.mkdir(parents=True, exist_ok=True)
@@ -146,11 +158,38 @@ def test_heading_less_deliverables_section_is_unparseable(plan_context):
     )
     _write_task(plan_dir, "'Something'. Tighten the CI pipeline trigger.")
 
+    deliverables, _prose, parseable = _load_deliverables('qgate-no-headings')
+
+    assert deliverables == [], 'precondition: the section yields no deliverables'
+    assert parseable is False, (
+        'an outline whose Deliverables section carries no `### N.` heading was '
+        'reported as parseable'
+    )
+
     result = cmd_qgate_mechanical(Namespace(plan_id='qgate-no-headings', no_emit=True))
 
     assert result['ambiguous'] is True, (
         'an unparseable outline was reported as an authoritative mechanical pass'
     )
+
+
+def test_a_headed_deliverables_section_is_parseable(plan_context):
+    """The discriminating half: the loader's verdict moves with the heading.
+
+    Identical harness, identical task shape — only the `### 1.` heading is
+    present. Without this the assertion above would also pass on a loader that
+    reported ``parseable is False`` for every outline, which is no verdict at
+    all.
+    """
+    plan_dir = Path(plan_context.plan_dir_for('qgate-headed'))
+    _write_outline_with_prose(plan_dir, 'The gate re-runs on every push.')
+    _write_task(plan_dir, "'Harden the gate'. Tighten the trigger.")
+
+    deliverables, prose_by_number, parseable = _load_deliverables('qgate-headed')
+
+    assert parseable is True
+    assert [int(d['number']) for d in deliverables] == [1]
+    assert 're-runs on every push' in prose_by_number[1]
 
 
 def test_keyword_absent_everywhere_is_still_flagged(plan_context):

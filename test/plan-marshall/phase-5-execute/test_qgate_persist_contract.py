@@ -38,6 +38,7 @@ from pathlib import Path
 # returns, and only a plain import gives mypy the real module — the shared loader
 # returns ``Any``, which discards those annotations.
 import scope_creep_check as scc
+from toon_parser import parse_toon
 
 from conftest import load_script_module
 
@@ -94,23 +95,28 @@ def test_real_rejection_is_loud_and_carries_finding_content(plan_context, monkey
 
     rc = _run_check(plan_id)
     out = capsys.readouterr().out
+    # The command emits through the canonical serializer, so the contract is
+    # asserted over the PARSED payload rather than over raw substrings. The
+    # title carries a colon and commas and is therefore quoted on the wire; a
+    # substring assertion against the bare text pinned the pre-quoting shape and
+    # would fail on correctly-quoted output.
+    payload = parse_toon(out)
 
     # Loud: non-zero rc plus the typed error.
     assert rc != 0
-    assert 'status: error' in out
-    assert 'error: finding_persist_failed' in out
+    assert payload['status'] == 'error'
+    assert payload['error'] == 'finding_persist_failed'
     # The primitive's own message, so the cause is diagnosable from the output.
-    assert 'Invalid finding type' in out
-    assert _SCOPE_CREEP_TYPE in out
+    assert 'Invalid finding type' in payload['message']
+    assert _SCOPE_CREEP_TYPE in payload['message']
     # The rejected finding's content travels inline — never a content-free
     # referral to a store that does not hold it.
-    assert 'finding_title: Scope creep detected' in out
-    assert 'finding_detail:' in out
-    for path in _EXCESS_FILES:
-        assert path in out
+    assert payload['finding_title'].startswith('Scope creep detected')
+    assert payload['finding_detail']
+    assert payload['residual_files'] == list(_EXCESS_FILES)
     # The clean-pass shape is unreachable on a rejection.
-    assert 'status: success' not in out
-    assert 'finding_emitted: true' not in out
+    assert payload['status'] != 'success'
+    assert 'finding_emitted' not in payload
 
     # And the store genuinely does not hold the finding.
     store = plan_dir / 'artifacts' / 'findings' / 'qgate-5-execute.jsonl'
