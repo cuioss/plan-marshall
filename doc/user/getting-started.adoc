@@ -25,8 +25,8 @@ When the executor (`​.plan/execute-script.py`) is missing, `/marshall-steward`
 7. **Configure skill domains** — chooses which bundles' skill domains apply to which modules.
 8. **Set review gates** — interactive prompts for the five review-gate booleans (`init_without_asking`, `plan_without_asking`, `execute_without_asking`, and the paired `finalize_without_asking` + `loop_back_without_asking`). See xref:configuration.adoc#review-gates[Configuration › Review gates].
 9. **Detect CI provider and tools** — identifies GitHub vs. GitLab, Sonar/SonarCloud, and any other integrations.
-10. **Configure architecture-refresh tier knobs** — sets `tier_0` (deterministic discover) and `tier_1` (LLM re-enrichment) policies in `run-configuration.json`.
-11. **Credential setup** — interactively prompts for credentials for each registered provider (GitHub, GitLab, Sonar, Git) and stores them under `~/.plan-marshall/credentials/` (the machine-global home root, overridable via `PLAN_MARSHALL_HOME`). The credentials never enter the LLM's context.
+10. **Configure architecture-refresh tier settings** — sets `tier_0` (deterministic discover) and `tier_1` (LLM re-enrichment) policies in `run-configuration.json`.
+11. **Credential setup** — interactively prompts for credentials for each registered provider (GitHub, GitLab, Sonar, Git) and stores them under `~/.plan-marshall/credentials/` (the machine-global home root, overridable via `PLAN_MARSHALL_HOME`). The credentials are never shown to the assistant.
 12. **Permission setup** — applies any marketplace-recommended permission updates from `tools-permission-fix`.
 
 Plus several smaller steps (configuration validation, terminal-title opt-in, etc.). The wizard is idempotent — re-running it on a fresh checkout produces the same setup.
@@ -37,7 +37,7 @@ Once the executor exists, `/marshall-steward` opens an interactive menu instead:
 
 * **Maintenance** — regenerate the executor (after bundle changes), clean execution logs.
 * **Health Check** — verify the setup, diagnose missing scripts or stale configuration.
-* **Configuration** — adjust build systems, skill domains, the per-role effort/model registry, terminal-title integration, and other project-level knobs.
+* **Configuration** — adjust build systems, skill domains, the per-role effort/model registry, terminal-title integration, and other project-level settings.
 
 Use `--wizard` to force the first-run wizard explicitly:
 
@@ -134,7 +134,10 @@ In addition to scaffolding `.plan/`, the first-run wizard *appends* a small set 
 
 [NOTE]
 ====
-If `CLAUDE.md` already contains hand-written build patterns (`mvn`, `mvnw`, `gradle`, `npm run`, `./pw`, or the phrase "build command") *and* no `### Build Commands` heading, the wizard will pause and ask whether to **Replace existing** or **Keep existing** before writing the Build Commands block. Replace overwrites the hand-written section with the resolved canonical commands; Keep leaves your `CLAUDE.md` untouched.
+The wizard reads `CLAUDE.md` before it writes the Build Commands block. When the file already contains hand-written build patterns (`mvn`, `mvnw`, `gradle`, `npm run`, `./pw`, or the phrase "build command") *and* carries no `### Build Commands` heading, the wizard cannot tell whether that text is stale or deliberate — so it stops, names the patterns it found, and asks you to decide:
+
+* **Replace existing** (recommended) — the hand-written text is overwritten with the canonical commands resolved for your modules, so agents call builds by canonical name rather than by a spelling that may no longer be correct. This is the only edit in the whole wizard that removes content you wrote, and it happens only on this answer.
+* **Keep existing** — your `CLAUDE.md` is left byte-for-byte as it is and no Build Commands block is written. Choose this when the hand-written text is deliberate; re-run the wizard later if you change your mind.
 ====
 
 The canonical implementations live in `marshall-steward`'s scripts and references:

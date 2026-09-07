@@ -23,7 +23,7 @@ See xref:getting-started.adoc[Getting Started] for the first-run wizard steps. T
 
 * **Maintenance** — regenerate the executor (after `/plugin install` / `/plugin uninstall`), clean execution logs.
 * **Health Check** — verify setup, diagnose missing scripts or stale configuration.
-* **Configuration** — adjust build systems, skill domains, the per-role effort/model registry (see xref:configuration.adoc[Configuration]), terminal-title integration (xref:terminal-title.adoc[Terminal Title]), and other project-level knobs.
+* **Configuration** — adjust build systems, skill domains, the per-role effort/model registry (see xref:configuration.adoc[Configuration]), terminal-title integration (xref:terminal-title.adoc[Terminal Title]), and other project-level settings.
 * **Upgrade** — run the post-change reconciliation described below.
 
 The **Upgrade** verb runs the full post-change reconciliation in one flow, in four stages:
@@ -90,7 +90,7 @@ If two or more of `{task, issue, lesson, recipe, plan}` are supplied together wi
 
 You do not have to name a recipe to use one. When you create a plan from an informal description — `task="…"` or `issue=…` — `phase-1-init` scores the request against the registered recipe set and may *auto-route* it into a matching recipe's known-shape path, skipping the standard refine/outline discovery. This is the same Tier 1 recipe-match routing described in xref:../concepts/recipes.adoc[Concepts › Recipes].
 
-Two configurable knobs govern the behaviour (full reference in xref:configuration.adoc#recipe-routing[Configuration › Recipe-match routing]):
+Two settings govern the behaviour (full reference in xref:configuration.adoc#recipe-routing[Configuration › Recipe-match routing]):
 
 * `plan.phase-1-init.auto_route_recipe` (default `true`) — when a request's top recipe match clears the confidence floor, route into it without prompting. Set to `false` to always be shown the ranked matches and choose.
 * `plan.phase-1-init.auto_route_recipe_threshold` (default `0.6`) — the confidence floor a top match must clear to auto-route.
@@ -99,13 +99,13 @@ A request labelled analysis- or planning-only by the companion `aspect-classify`
 
 === Audit recipe parameters
 
-The audit recipes — `recipe=code-review` and `recipe=security-audit` — run a diff-aware review over the current footprint and emit findings into the triage pipeline (see xref:../concepts/recipes.adoc[Concepts › Recipes]). Both accept two optional parameters that bound the footprint:
+The audit recipes — `recipe=code-review` and `recipe=security-audit` — review the files your branch has changed and emit findings into the triage pipeline (see xref:../concepts/recipes.adoc[Concepts › Recipes]). Both accept two optional parameters that narrow the files this covers:
 
 [cols="1,1,3", options="header"]
 |===
 | Parameter | Type | Description
 
-| `scope` | optional | Path or file restriction. When supplied, the review footprint is bounded to these paths. When omitted, the footprint is the full current-branch-vs-base diff.
+| `scope` | optional | Path or file restriction. When supplied, the review covers only these paths. When omitted, it covers every file the current branch changed relative to the base branch.
 | `base_branch` | optional | Explicit base ref for the diff. When omitted, defaults to the configured base branch (falling back to `main`).
 |===
 
@@ -113,11 +113,11 @@ With neither parameter, both recipes audit the full current-branch-vs-base diff.
 
 === Personas
 
-You never pass a persona on the command line — persona selection is automatic. Each task is dispatched **as** a named identity (a *persona*) resolved from the work it does: an implementation task runs as the Implementer, a module-testing task as the Module Tester, a security audit as the Security Expert. The persona determines which skills enter the subagent's context; the command surface stays the same regardless.
+You never pass a persona on the command line — persona selection is automatic. Each task is handed off **as** a named identity (a *persona*) resolved from the work it does: an implementation task runs as the Implementer, a module-testing task as the Module Tester, a security audit as the Security Expert. The persona determines which skills the sub-agent has in front of it; the command surface stays the same regardless.
 
-Where the binding comes from depends on the dispatch:
+Where the binding comes from depends on what is being run:
 
 * **Plan tasks** derive their persona from the task's profile — no declaration needed.
-* **Entry points** (recipes, finalize steps, and the slash commands themselves) declare one persona explicitly, so `/plan-marshall recipe=…` and the finalize phase each run under the identity their definition names.
+* **Entry points** (recipes, finalize steps, and the slash commands themselves) name one persona explicitly, so `/plan-marshall recipe=…` and the finalize phase each run under the identity their definition names.
 
-Personas surface to you as the *names* in logs and status output ("the Auditor persona", "the Security Expert persona") rather than as a knob you set. For the full model — the persona / ref / profile archetypes, the composition resolver, and how a persona differs from the model-and-effort role/level — see xref:../concepts/personas.adoc[Concepts › Personas].
+Personas surface to you as the *names* in logs and status output ("the Auditor persona", "the Security Expert persona") rather than as a setting you choose. For the full model — the persona / ref / profile archetypes, the composition resolver, and how a persona differs from the model-and-effort role/level — see xref:../concepts/personas.adoc[Concepts › Personas].

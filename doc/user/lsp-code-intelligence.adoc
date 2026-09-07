@@ -22,10 +22,10 @@ xref:../../README.md[Plan Marshall] » xref:README.adoc[User Guide]
 | Capability | What it does
 
 | Locate by coordinate
-| `definition`, `references`, `document-symbol`, and `workspace-symbol` return *coordinates, not file bodies* — so a leaf can find where a symbol is defined or used without reading the containing files.
+| `definition`, `references`, `document-symbol`, and `workspace-symbol` return *coordinates, not file bodies* — so execute can find where a symbol is defined or used without reading the containing files.
 
 | Verified rename
-| A rename produces one `WorkspaceEdit` — a complete, parser-verified, multi-file patch. Its footprint is captured *from the edit itself*, it is applied, and diagnostics are re-run over exactly the touched files. A *worsened* diagnostic set fails the step and rolls the change back.
+| A rename produces one `WorkspaceEdit` — a complete, parser-verified, multi-file patch. The list of files it touches is taken *from the edit itself*, the edit is applied, and diagnostics are re-run over exactly those files. A *worsened* diagnostic set fails the step and rolls the change back.
 
 | Pre-build diagnostics
 | `diagnose` surfaces unresolved imports, syntax errors, and type errors *ahead of* the build round-trip.
@@ -68,10 +68,10 @@ The client never returns a bare empty result. Every response makes these situati
 | State | Meaning
 
 | `not_configured`
-| No server is configured (or it is disabled) for the language. The leaf falls back to `Read` / `Edit`. This is the state of every unconfigured project — and it costs nothing.
+| No server is configured (or it is disabled) for the language. Execute falls back to `Read` / `Edit`. This is the state of every unconfigured project — and it costs nothing.
 
 | `unreachable`
-| A server is configured but did not start (wrong command, not installed). Carries a `reason`. The leaf falls back to `Read` / `Edit`, and the degradation is *reported*, not silent.
+| A server is configured but did not start (wrong command, not installed). Carries a `reason`. Execute falls back to `Read` / `Edit`, and the degradation is *reported*, not silent.
 
 | `ok`
 | A server ran. A result with `provider_count: 1` and an empty location list is then a *real* "found nothing" — genuinely no references, not a missing server.
@@ -90,7 +90,7 @@ A `WorkspaceEdit` touching twenty files is a mutation nothing read. The rename p
 
 * the touched-file list is captured *from the edit*, never inferred from a later `git diff`;
 * the edit is applied, then diagnostics are re-run over exactly those files — each wait requiring a *newer* verdict than the one cached before the change, so the check cannot settle for the server's opinion of the pre-edit content;
-* if *any* file gained an error diagnostic, the step *fails* with `reason: diagnostics_worsened` — the one reason code that means your edit was wrong — and the whole change is *rolled back*. A per-file set rather than a footprint-wide count, because a count cannot see one error swapped for a different one, or an error moving between two files in the same edit: both net to zero;
+* if *any* file gained an error diagnostic, the step *fails* with `reason: diagnostics_worsened` — the one reason code that means your edit was wrong — and the whole change is *rolled back*. The check is a per-file set rather than one count across every touched file, because a single count cannot see one error swapped for a different one, or an error moving between two files in the same edit: both net to zero;
 * an edit carrying a file create/rename/delete is *refused whole* rather than applied minus the part the client cannot perform, and a failure part-way through the apply restores every file already written — reporting `rolled_back: false` with a `restore_error` in the one case where the tree could not be put back, rather than letting a partly-edited tree read as clean. That field is derived by re-reading the files, not from whether the restore call raised, so a write the filesystem refused outright reports no `restore_error`: it damaged nothing.
 
 So a rename that lands is one the language server produced and the parser re-verified; a rename that would have broken the parse never survives in the tree.
