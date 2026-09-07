@@ -4,11 +4,14 @@
 
 Implements the ``targets-scope-invalid`` rule. A component — an
 ``agents/*.md``, a ``commands/*.md``, or a skill's ``SKILL.md`` — may declare
-the build-time field ``targets:`` naming the build targets it ships to. The
-field is consumed by the multi-target generator
-(``marketplace/targets/component_targets.py``); a value the generator rejects
-fails the build, so this rule surfaces the same defect at authoring time,
-where the author is still looking at the file.
+the build-time field ``targets:`` naming the build targets it ships to. Since
+file-level scoping, a single ``*.md`` file INSIDE a skill may declare the same
+field for itself: a skill-internal file (everything under the skill directory
+but its ``SKILL.md`` manifest) may name the targets it ships to, provided it
+only NARROWS its enclosing skill's scope. The field is consumed by the
+multi-target generator (``marketplace/targets/component_targets.py``); a value
+the generator rejects fails the build, so this rule surfaces the same defect
+at authoring time, where the author is still looking at the file.
 
 An approximation, and deliberately so
 -------------------------------------
@@ -29,10 +32,15 @@ What is flagged
 ---------------
 - **Unknown target name** — a value naming no registered build target. Almost
   always a typo, and one that would otherwise silently narrow the component's
-  reach.
+  reach. Reported for a component and for a skill-internal file alike; the
+  internal-file finding is attributed to the FILE, not its skill.
 - **Empty declaration** — ``targets: []``, or a ``targets:`` key with nothing
   after it. A component that ships nowhere is an authoring error; omitting the
   field is how an author says "every target".
+- **A file inside a skill widening its skill's scope** — a skill-internal file
+  naming a target its ``SKILL.md`` scopes away (``[claude]`` inside a skill
+  scoped ``[opencode]``). The generator rejects it: a file may only narrow its
+  component's scope. Reported with the parent's targets and the file's.
 
 What is NOT flagged
 -------------------
@@ -47,6 +55,12 @@ a flow sequence any of whose ITEMS is quoted, tagged or anchored, and a
 which only looks like a key.
 Every one of those is legal YAML that the build reads correctly, so silence is
 the accurate answer rather than a gap to be closed by guessing.
+
+Nor is an internal file whose parent's declaration this scanner cannot read:
+with no certain parent scope there is nothing to test a widening against, and
+reporting one would invent a contract the build did not state. Unreadable
+parent and readable file stay silent together; so does an unscoped parent
+(readable but absent), which permits any file scope by construction.
 
 The generator additionally rejects a declaration naming ONLY targets that emit
 no component tree, and one whose value is not a list of names at all. The
@@ -82,6 +96,7 @@ Public API
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
 from pathlib import Path
 
 from _doctor_shared import Finding
@@ -129,6 +144,20 @@ _DESCRIPTION_EMPTY = (
     'component `targets:` frontmatter declares an empty list — a component that ships '
     'to no target is an authoring error. Omit the field to ship to every target.'
 )
+
+_DESCRIPTION_CONTRADICTION = (
+    'skill-internal file `targets:` frontmatter names a target its enclosing skill '
+    'scopes away — a file may only NARROW its component\'s scope, and the multi-target '
+    'build rejects a widening, so until it is fixed the build fails.'
+)
+
+#: Ephemeral and generated directories no component-tree target ever emits
+#: (bytecode and cache dirs). The build's internal-file walk does not descend
+#: into them (a declaration there would shape nothing it could ship), so this
+#: walk must not either. Defined here because a plugin-doctor script is
+#: stdlib-only and cannot import ``component_targets``; a differential test
+#: pins that this set and the build's ``EXCLUDED_DIR_NAMES`` never drift.
+_SKILL_CACHE_DIR_NAMES = frozenset({'__pycache__', '.pytest_cache', '.mypy_cache', '.ruff_cache'})
 
 
 def _frontmatter_block(text: str) -> str | None:
@@ -538,4 +567,104 @@ def analyze_target_scope(marketplace_root: Path) -> list[dict]:
     findings: list[dict] = []
     for path in component_files(marketplace_root):
         findings.extend(_scan_component(path, registered))
+        if path.name == 'SKILL.md':
+            findings.extend(_scan_skill_internals(path, registered))
+    return findings
+
+
+def skill_internal_files(marketplace_root: Path) -> list[Path]:
+    """Enumerate every file inside a skill that may carry a file-level declaration.
+
+    The mirror of :func:`component_files` for the file-level mechanism: a
+    ``*.md`` under a skill directory, but never the ``SKILL.md`` manifest
+    itself, never a dotfile, and never a path inside one of the ephemeral
+    directories in ``_SKILL_CACHE_DIR_NAMES``. Kept in step with the build's
+    walk by a differential test.
+    """
+    files: list[Path] = []
+    try:
+        bundle_dirs = sorted(marketplace_root.iterdir())
+    except OSError:
+        return files
+    for bundle_dir in bundle_dirs:
+        if not bundle_dir.is_dir():
+            continue
+        skills_dir = bundle_dir / 'skills'
+        if not skills_dir.is_dir():
+            continue
+        for skill_dir in sorted(skills_dir.iterdir()):
+            skill_md = skill_dir / 'SKILL.md'
+            if skill_dir.is_dir() and skill_md.is_file():
+                files.extend(iter_skill_internal_files(skill_dir))
+    return files
+
+
+def iter_skill_internal_files(skill_dir: Path) -> Iterator[Path]:
+    """Yield the ``*.md`` files inside ``skill_dir`` that may scope themselves."""
+    manifest = skill_dir / 'SKILL.md'
+    for path in sorted(skill_dir.rglob('*.md'), key=str):
+        if path == manifest or path.name.startswith('.'):
+            continue
+        rel = path.relative_to(skill_dir)
+        if any(part in _SKILL_CACHE_DIR_NAMES for part in rel.parts):
+            continue
+        yield path
+
+
+def _scan_skill_internals(skill_md: Path, registered: frozenset[str] | None) -> list[dict]:
+    """Return findings for the internal files of the skill whose manifest is ``skill_md``.
+
+    Each file is scanned as a component would be — empty and unknown-target
+    declarations are findings there. The contradiction test is additional and
+    needs both scopes at once, and it fires only when BOTH are read with
+    certainty: the parent's declaration readable and non-empty, and the file's
+    declaration readable and name-based (an unknown name is already its own
+    finding, and testing set inclusion on it could attribute a real target to
+    a typo's parent).
+    """
+    try:
+        parent_text = skill_md.read_text(encoding='utf-8')
+    except (OSError, UnicodeDecodeError):
+        parent_text = ''
+    parent_declaration = declared_targets(parent_text)
+    if parent_declaration is None or not parent_declaration[0]:
+        parent_names = None
+    else:
+        parent_names = parent_declaration[0]
+
+    findings: list[dict] = []
+    for sibling in iter_skill_internal_files(skill_md.parent):
+        findings.extend(_scan_component(sibling, registered))
+        try:
+            text = sibling.read_text(encoding='utf-8')
+        except (OSError, UnicodeDecodeError):
+            continue
+        declaration = declared_targets(text)
+        if (
+            declaration is None
+            or not declaration[0]
+            or parent_names is None
+            or (registered is not None and any(name not in registered for name in declaration[0]))
+        ):
+            continue
+        file_names, line_number = declaration
+        if not set(file_names) <= set(parent_names):
+            findings.append(
+                Finding(
+                    type=RULE_ID,
+                    file=str(sibling),
+                    line=line_number,
+                    severity='error',
+                    fixable=False,
+                    rule_id=RULE_ID,
+                    description=_DESCRIPTION_CONTRADICTION,
+                    details={
+                        'reason': 'targets_contradiction',
+                        'parent_targets': sorted(parent_names),
+                        'file_targets': sorted(file_names),
+                        'contradiction': sorted(set(file_names) - set(parent_names)),
+                    },
+                    extra={'rule': RULE_NAME},
+                ).to_dict()
+            )
     return findings

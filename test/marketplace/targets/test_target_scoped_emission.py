@@ -44,6 +44,14 @@ _FIXTURE_SCOPES: dict[str, frozenset[str] | None] = {
     'plain-skill': None,
 }
 
+# Skill-INTERNAL files carry a file-level scope: their declaration governs
+# that one file, not the parent skill. Each lives inside the UNscoped
+# ``plain-skill``, so emission for only some targets is the file's own
+# declaration, not a re-scope of the parent.
+_SKILL_FILE_SCOPES: dict[str, frozenset[str]] = {
+    'claude-notes': frozenset({'claude'}),
+}
+
 _UNSCOPED_COMMAND = 'plain-cmd'
 
 
@@ -109,6 +117,13 @@ def marketplace(tmp_path: Path) -> Path:
         else:
             _write(bundle / 'skills' / stem / 'SKILL.md', _frontmatter(stem))
             _write(bundle / 'skills' / stem / 'standards' / 'x.md', '# standard\n')
+
+    for stem, scope in _SKILL_FILE_SCOPES.items():
+        declaration = f'targets: [{", ".join(sorted(scope))}]\n' if scope else ''
+        _write(
+            bundle / 'skills' / 'plain-skill' / 'references' / f'{stem}.md',
+            f'---\nname: {stem}\ndescription: fixture skill-internal file\n{declaration}---\n# {stem}\n',
+        )
     return bundles
 
 
@@ -189,6 +204,24 @@ def test_unscoped_components_reach_every_target(claude_tree: Path, opencode_tree
     assert (opencode_tree / 'skill' / 'demo-plain-skill' / 'SKILL.md').is_file()
 
 
+def test_a_file_inside_an_unscoped_skill_takes_its_own_scope(
+    claude_tree: Path, opencode_tree: Path
+):
+    """A skill-internal file declaring ``targets: [claude]`` reaches claude only.
+
+    The parent SKILL.md declares no scope, so this is the FILE-LEVEL mechanism
+    rather than the parent's: the file ships to claude and is absent from the
+    OpenCode tree, while its parent skill still ships everywhere.
+    """
+    claude_file = claude_tree / 'demo' / 'skills' / 'plain-skill' / 'references' / 'claude-notes.md'
+    opencode_file = (
+        opencode_tree / 'skill' / 'demo-plain-skill' / 'references' / 'claude-notes.md'
+    )
+
+    assert claude_file.is_file()
+    assert not opencode_file.exists()
+
+
 def test_every_component_tree_target_honours_the_filter(marketplace: Path, tmp_path: Path):
     """Generate through EVERY registered component-tree target; none may emit a scoped-out component.
 
@@ -219,6 +252,16 @@ def test_every_component_tree_target_honours_the_filter(marketplace: Path, tmp_p
         for stem in sorted(_scoped_away_from(name)):
             assert not any(stem in segment for segment in segments), (
                 f'{name} emitted {stem}, which declares a scope excluding {name}'
+            )
+
+        # The file-level declarations ride the same sweep: a skill-internal
+        # file scoped away from the target must not surface in its output
+        # either, at one rule and no per-target path knowledge.
+        for stem in sorted(
+            stem for stem, scope in _SKILL_FILE_SCOPES.items() if scope and name not in scope
+        ):
+            assert not any(stem in segment for segment in segments), (
+                f'{name} emitted skill file {stem}, which declares a scope excluding {name}'
             )
 
         # Anti-vacuity: a target that emitted nothing would satisfy every

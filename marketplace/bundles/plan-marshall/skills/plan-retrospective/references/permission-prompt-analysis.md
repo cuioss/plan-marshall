@@ -1,3 +1,7 @@
+---
+targets: [claude]
+---
+
 # Aspect: Permission Prompt Analysis
 
 Diagnose permission prompts encountered during the plan by analyzing screenshots, descriptions, chat history, and permission configurations to identify source components and fix paths. Content absorbed from the original `pm-plugin-development/commands/tools-analyze-user-prompted.md` command.

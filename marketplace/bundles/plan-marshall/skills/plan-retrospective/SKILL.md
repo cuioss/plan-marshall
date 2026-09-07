@@ -191,7 +191,7 @@ For each aspect below, produce a TOON fragment on disk at `work/fragment-{aspect
 | 6 | LLM-to-script opportunities | `llm-to-script-opportunities` | (LLM on logs + scripts) | `references/llm-to-script-opportunities.md` |
 | 7 | Logging gap analysis | `logging-gap-analysis` | (LLM on references + logs) | `references/logging-gap-analysis.md` |
 | 8 | Script failure analysis | `script-failure-analysis` | `script-failure-analysis` | `references/script-failure-analysis.md` |
-| 9 | Permission prompt analysis | `permission-prompt-analysis` | (LLM on description or session) | `references/permission-prompt-analysis.md` |
+| 9 | Permission prompt analysis (**Claude only**) | `permission-prompt-analysis` | (LLM on description or session) | `references/permission-prompt-analysis.md` |
 | 10 | Direct gh/glab usage (Surfaces A+B: plan logs + plan diff) | `direct-gh-glab-usage` | `direct-gh-glab-usage` | `references/direct-gh-glab-usage.md` |
 | 11 | Execution-context dispatch audit (deterministic facts: shape / three-state coverage / channel completeness) | `execution-context-dispatch-audit` | `check-dispatch-audit` | `standards/execution-context-dispatch-audit.md` |
 | 12 | Manifest decisions (conditional) | `manifest-decisions` | `check-manifest-consistency` | `standards/manifest-crosscheck.md` |

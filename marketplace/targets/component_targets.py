@@ -28,9 +28,12 @@ A component (an ``agents/*.md``, a ``commands/*.md``, or a skill's
 
 A skill's declaration governs the whole skill DIRECTORY, since a skill is
 a directory whose ``SKILL.md`` is its manifest. An agent's or a command's
-governs that one file. Files *inside* a skill are not individually
-scopable — that would need a file-level mechanism this one deliberately
-is not.
+governs that one file. A single ``*.md`` file *inside* a skill MAY also
+declare a ``targets:`` field that governs only itself — the reference
+document inside an otherwise target-neutral skill is exactly the case the
+component level cannot express. A file's declaration may only NARROW its
+parent skill's scope; a file that widens it contradicts the component it
+lives in and fails the build.
 
 Fail closed
 -----------
@@ -46,6 +49,11 @@ moment it is read and an invalid one aborts the build
   derives a single reviewer configuration from skill rules, so it has no
   component to filter) — such a declaration passes a registry-membership
   check while still shipping the component nowhere;
+* a file inside a skill declaring a scope its enclosing component does not
+  share — a file may only narrow its parent's. ``[claude]`` inside a skill
+  scoped ``[opencode]`` contradicts the component it lives in. Only the
+  walker in :func:`excluded_emission_roots` holds both scopes at once, so
+  the check lives there rather than in :func:`read_target_scope`;
 * a value resolving to neither a list of names nor a single name — a
   mapping, a number, a boolean. Coercing one into a name and then rejecting
   it as unregistered would name a target nobody wrote. A bare or quoted
@@ -158,6 +166,14 @@ class TargetScopeError(RuntimeError):
     Carries the offending component path and the offending value, so the
     build failure names the file an author has to edit.
     """
+
+
+#: Ephemeral and generated directories no component-tree target ever copies
+#: (bytecode and cache dirs). The file-level scope walk must not descend into
+#: them either: a declaration there would shape nothing it could ship. Holds
+#: the single definition — the claude and opencode emitters import it here
+#: rather than each keeping a private copy that could drift.
+EXCLUDED_DIR_NAMES = frozenset({'__pycache__', '.pytest_cache', '.mypy_cache', '.ruff_cache'})
 
 
 # ---------------------------------------------------------------------------
@@ -499,21 +515,83 @@ def iter_component_manifests(bundle_dir: Path) -> Iterator[tuple[Path, Path]]:
                 yield manifest, skill_dir
 
 
+def iter_skill_internal_files(skill_dir: Path) -> Iterator[Path]:
+    """Yield the ``*.md`` files inside ``skill_dir`` that may scope themselves.
+
+    The skill's own ``SKILL.md`` is the component manifest and is not an
+    internal file, so it is not yielded. Dotfiles and the ephemeral
+    directories named in :data:`EXCLUDED_DIR_NAMES` are not emitted by any
+    component-tree target, so a declaration there would shape nothing it
+    could ship — they are not walked either.
+    """
+    manifest = skill_dir / _SKILL_MANIFEST
+    for path in sorted(skill_dir.rglob('*.md'), key=str):
+        if path == manifest or path.name.startswith('.'):
+            continue
+        rel = path.relative_to(skill_dir)
+        if any(part in EXCLUDED_DIR_NAMES for part in rel.parts):
+            continue
+        yield path
+
+
+def _file_level_exclusions(
+    bundle_dir: Path,
+    manifest: Path,
+    parent_scope: frozenset[str] | None,
+    target_name: str,
+) -> set[Path]:
+    """Return the file-level exclusions the skill at ``manifest`` contributes.
+
+    ``parent_scope`` is the scope of the skill's ``SKILL.md``. Every internal
+    file is read and validated the same way a component is; a file whose scope
+    contradicts its parent's raises, because only this walker holds both scopes
+    at once (:func:`read_target_scope` sees one declaration, not two).
+
+    An internally-scoped file contributes its own exclusion only when its
+    parent is not itself already excluded — an excluded directory already
+    removes everything beneath it, so a second root would be redundant noise
+    in the answer, not a correctness change.
+    """
+    parent_excluded = parent_scope is not None and target_name not in parent_scope
+    collected: set[Path] = set()
+    for sibling in iter_skill_internal_files(manifest.parent):
+        file_scope = read_target_scope(sibling)
+        if file_scope is None:
+            continue
+        if parent_scope is not None and not file_scope <= parent_scope:
+            widening = file_scope - parent_scope
+            raise TargetScopeError(
+                f'{sibling}: `{TARGET_SCOPE_FIELD}:` names target(s) the enclosing '
+                f'skill scopes away: the file scope [{_joined(file_scope)}] is not a '
+                f'subset of the component scope [{_joined(parent_scope)}]; narrowing '
+                f'is legal, widening is not ({_joined(widening)})'
+            )
+        if not parent_excluded and target_name not in file_scope:
+            collected.add(sibling.relative_to(bundle_dir))
+    return collected
+
+
+def _joined(names: frozenset[str]) -> str:
+    return ', '.join(sorted(names))
+
+
 def excluded_emission_roots(bundle_dir: Path, target_name: str) -> frozenset[Path]:
     """Return the bundle-relative paths ``target_name`` must NOT emit.
 
-    An entry is either a component file (agent, command) or a skill
-    directory; a caller skips a path that equals an entry or lies beneath
-    one. Validating every component of the bundle — not only the excluded
-    ones — is deliberate: an invalid declaration fails the build even when
-    the generating target would have included it anyway.
+    An entry is a component (agent file, command file), a skill directory —
+    or a single ``*.md`` file *inside* a skill whose own file-level ``targets:``
+    declaration omits it. A caller skips a path that equals an entry or lies
+    beneath one. Validating every component of the bundle — not only the
+    excluded ones — is deliberate: an invalid declaration fails the build even
+    when the generating target would have included it anyway. The file-level
+    walk extends that stance to every internal file, and a file whose scope
+    contradicts its enclosing skill's is the fourth fail-closed shape.
 
     "Every component of the bundle" means every one this function WALKS, which
-    is everything on disk under ``agents/``, ``commands/`` and ``skills/``. The
-    Claude target calls it that way. The OpenCode emitter validates only the
-    components its bundle ``plugin.json`` declares, so a file on disk that the
-    manifest omits is unvalidated there — a file that ships to no target
-    anyway, and one the ``declared-component-vs-disk`` rule already reports.
+    is everything on disk under ``agents/``, ``commands/`` and ``skills/``.
+    Both component-tree targets — claude and opencode — call it this way, so
+    a declaration that fails fails BOTH targets' emits rather than one; the
+    OpenCode emitter needs no narrower validation of its own.
 
     Raises:
         TargetScopeError: Some component in the bundle declares an invalid
@@ -521,8 +599,11 @@ def excluded_emission_roots(bundle_dir: Path, target_name: str) -> frozenset[Pat
     """
     excluded: set[Path] = set()
     for manifest, emission_root in iter_component_manifests(bundle_dir):
-        if not emits_to(manifest, target_name):
+        scope = read_target_scope(manifest)
+        if scope is not None and target_name not in scope:
             excluded.add(emission_root.relative_to(bundle_dir))
+        if emission_root.is_dir():
+            excluded.update(_file_level_exclusions(bundle_dir, manifest, scope, target_name))
     return frozenset(excluded)
 
 
@@ -558,6 +639,7 @@ def is_under_any(rel: Path, roots: frozenset[Path]) -> bool:
 
 
 __all__ = [
+    'EXCLUDED_DIR_NAMES',
     'validate_component_scopes',
     'TargetScopeError',
     'component_tree_target_names',
@@ -565,6 +647,7 @@ __all__ = [
     'excluded_emission_roots',
     'is_under_any',
     'iter_component_manifests',
+    'iter_skill_internal_files',
     'read_target_scope',
     'registered_target_names',
 ]

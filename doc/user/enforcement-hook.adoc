@@ -31,4 +31,4 @@ The hook enforces only when the call is eligible. Eligibility is the OR of two s
 
 Enable the hook from `/marshall-steward` → Configuration → Enforcement Hook. The wizard detects whether the entry is already present, confirms before writing, and idempotently installs only the matcher-less PreToolUse enforcement entry into `./.claude/settings.local.json`. It never touches the terminal-title render, statusLine, or env entries.
 
-After installation, restart or reload the Claude Code session so the harness arms the hook. The full detect → confirm → install flow is documented in xref:../../marketplace/bundles/plan-marshall/skills/marshall-steward/references/menu-enforcement-hook.md[menu-enforcement-hook.md].
+After installation, restart or reload the Claude Code session so the harness arms the hook. The full detect → confirm → install flow is documented in xref:../../marketplace/bundles/plan-marshall/skills/marshall-steward-claude-wizards/references/menu-enforcement-hook.md[menu-enforcement-hook.md].
