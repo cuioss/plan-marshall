@@ -32,7 +32,10 @@ arms do.
 # ruff: noqa: I001, E402
 import importlib.util
 import sys
+from collections import Counter
+from collections.abc import Callable, Iterable
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -110,67 +113,135 @@ def _exclusion_divergence(
 
 
 def _partition_divergence(
-    independent_total: int,
+    truth_identities: Iterable[Any],
     buckets: dict[str, tuple | list],
+    identity: Callable[[Any], Any] = lambda record: record,
 ) -> dict[str, object]:
-    """Compare an INDEPENDENTLY recounted occurrence total against a scan's buckets.
+    """Compare a scan's buckets against an INDEPENDENTLY recounted identity MULTISET.
 
-    The pure oracle behind both partition assertions below. It takes the total as a
-    parameter precisely so the total can come from somewhere other than the scan
-    being checked: a partition claim compared against the producer's own
+    The pure oracle behind both partition assertions below. It takes the truth
+    identities as a parameter precisely so they can come from somewhere other than
+    the scan being checked: a partition claim compared against the producer's own
     ``len(a) + len(b)`` expression is that expression compared with itself and holds
     for every possible scan result, including one that dropped records.
 
-    ``unaccounted`` is signed, because the two directions are different defects:
-    positive means occurrences the document carries that no bucket claims (the scan
-    dropped them, narrowing its derived population — the direction that fails toward
-    green), negative means occurrences two buckets both claim (double counting).
+    The comparison is over OCCURRENCE IDENTITIES, not over totals, because a count
+    equality is an ASSERTED commensurability rather than a DERIVED one. A scan that
+    drops occurrence A while assigning occurrence B to two buckets cancels exactly:
+    the bucket cardinality still equals the recounted cardinality, so an aggregate
+    oracle passes a scan that both LOST a record and DOUBLE-COUNTED another. Two
+    verdicts are therefore reported, and they are different defects with different
+    repairs:
+
+    * ``missing`` — identities the documents carry that the buckets do not claim
+      (the scan dropped them, narrowing its derived population — the direction that
+      fails toward green).
+    * ``duplicated`` — identities the buckets claim MORE OFTEN than the documents
+      carry them: two buckets claiming one occurrence, one bucket claiming it
+      twice, or a claim on an occurrence the documents do not carry at all.
+
+    ``unaccounted`` — the signed aggregate delta this supersedes — is RETAINED so
+    the older, weaker signal stays visible in the failure message, and so the
+    cancelling case is legible as ``unaccounted == 0`` sitting beside a non-empty
+    ``missing``/``duplicated``.
+
+    Args:
+        truth_identities: Occurrence identities recounted from the documents.
+        buckets: The scan's published buckets, name → records.
+        identity: Maps one bucket record to its canonical occurrence identity.
+            Defaults to the record itself, for synthetic identity-valued buckets.
     """
     sizes = {name: len(records) for name, records in buckets.items()}
-    bucketed_total = sum(sizes.values())
+    truth_counts = Counter(truth_identities)
+    bucket_counts = Counter(
+        identity(record) for records in buckets.values() for record in records
+    )
+    independent_total = sum(truth_counts.values())
     return {
         'independent_total': independent_total,
-        'bucketed_total': bucketed_total,
-        'unaccounted': independent_total - bucketed_total,
+        'bucketed_total': sum(sizes.values()),
+        'unaccounted': independent_total - sum(sizes.values()),
+        'missing': sorted((truth_counts - bucket_counts).elements()),
+        'duplicated': sorted((bucket_counts - truth_counts).elements()),
         'sizes': sizes,
     }
 
 
-def _independent_glyph_line_count(source: str) -> int:
-    """Recount the call graph's dispatch-edge glyph lines from the DOCUMENT itself.
+def _bucket_identities(buckets: dict[str, tuple | list]) -> list[Any]:
+    """Flatten identity-valued buckets into the occurrences they collectively claim."""
+    return [identity for records in buckets.values() for identity in records]
 
-    Re-reads the subject ``scan_dispatch_classes`` read and applies the same
-    ``_DISPATCH_EDGE`` filter its loop enters on, so the total is derived from the
-    document rather than from the scan's return value. Every line that matches puts
-    exactly one record into exactly one of the three published buckets, so this
-    count is the population those buckets must partition.
+
+def _without_last_occurrence(buckets: dict[str, tuple | list]) -> tuple[dict[str, tuple], Any]:
+    """Return bucket copies that DROPPED the last claimed occurrence, and which one."""
+    dropped = _bucket_identities(buckets)[-1]
+    mutated = {name: list(records) for name, records in buckets.items()}
+    owner = next(name for name in mutated if dropped in mutated[name])
+    mutated[owner].remove(dropped)
+    return {name: tuple(records) for name, records in mutated.items()}, dropped
+
+
+def _with_a_second_claim(buckets: dict[str, tuple | list]) -> tuple[dict[str, tuple], Any]:
+    """Return bucket copies where a SECOND bucket also claims the first occurrence."""
+    claimed = _bucket_identities(buckets)[0]
+    mutated = {name: list(records) for name, records in buckets.items()}
+    owner = next(name for name in mutated if claimed in mutated[name])
+    other = next(name for name in mutated if name != owner)
+    mutated[other].append(claimed)
+    return {name: tuple(records) for name, records in mutated.items()}, claimed
+
+
+def _independent_glyph_line_identities(source: str) -> list[int]:
+    """Recount the call graph's dispatch-edge glyph occurrences as IDENTITIES.
+
+    Re-reads the document ``scan_dispatch_classes`` read and applies the same
+    ``_DISPATCH_EDGE`` filter its loop enters on, so the population is derived from
+    the document rather than from the scan's return value. Every matching line puts
+    exactly one record into exactly one of the three published buckets, and each of
+    those records carries its 1-based ``line`` (manage-metrics.py:903) — so the line
+    number IS the canonical occurrence identity, and this is the identity multiset
+    those buckets must partition.
     """
     lines = Path(source).read_text(encoding='utf-8').splitlines()
-    return sum(1 for line in lines if manage_metrics._DISPATCH_EDGE.search(line))
+    return [
+        index + 1
+        for index, line in enumerate(lines)
+        if manage_metrics._DISPATCH_EDGE.search(line)
+    ]
 
 
-def _independent_verb_line_count(scan_root: str) -> int:
-    """Recount boundary-verb occurrences from the DOCUMENTS themselves.
+def _independent_verb_line_identities(scan_root: str) -> list[tuple[str, int]]:
+    """Recount boundary-verb occurrences from the DOCUMENTS themselves, as IDENTITIES.
 
-    The registration-scan counterpart of :func:`_independent_glyph_line_count`:
-    walks the same tree ``scan_boundary_registrations`` walks and counts the lines
-    naming the verb, independently of that scan's return value. Each such line
-    yields exactly one record in exactly one of the four published buckets.
+    The registration-scan counterpart of
+    :func:`_independent_glyph_line_identities`: walks the same tree
+    ``scan_boundary_registrations`` walks, independently of that scan's return
+    value. Every record that scan files carries ``path`` + ``line``
+    (manage-metrics.py:683), so the identity is that pair — and the recount must
+    mirror the scan's exact normalization or every identity mismatches:
 
-    An unreadable document counts as ONE occurrence, mirroring the single
-    coverage-gap record the scan files for it — otherwise a document neither side
-    can read would register as a partition failure rather than as the reported hole
-    it is.
+    * a READABLE document is keyed by ``str(document.relative_to(root))``, exactly
+      as the scan keys it;
+    * an UNREADABLE one is keyed by the ABSOLUTE ``str(document)`` with line 0,
+      which is the single synthetic coverage-gap record the scan files for it
+      (manage-metrics.py:674-676). Minting the SAME identity preserves the existing
+      contract that a document neither side can read stays a reported hole rather
+      than becoming a spurious partition failure.
     """
-    total = 0
-    for document in sorted(Path(scan_root).rglob('*.md')):
+    root = Path(scan_root)
+    identities: list[tuple[str, int]] = []
+    for document in sorted(root.rglob('*.md')):
         try:
             text = document.read_text(encoding='utf-8')
         except OSError:
-            total += 1
+            identities.append((str(document), 0))
             continue
-        total += sum(1 for line in text.splitlines() if manage_metrics._BOUNDARY_VERB in line)
-    return total
+        identities.extend(
+            (str(document.relative_to(root)), index + 1)
+            for index, line in enumerate(text.splitlines())
+            if manage_metrics._BOUNDARY_VERB in line
+        )
+    return identities
 
 
 # =============================================================================
@@ -374,42 +445,48 @@ class TestDeclaredExclusionList:
         carries its own reason so the residue cannot absorb a genuinely unreadable
         edge added later.
 
-        The partition is checked against a total RECOUNTED from the call-graph
-        document, not against the scan's own ``len(resolved) + len(unparsed)``
-        expression: that form compared the producer's arithmetic with itself and
-        held for every scan result, dropped edges included.
+        The partition is checked against the line IDENTITIES recounted from the
+        call-graph document, not against the scan's own ``len(resolved) +
+        len(unparsed)`` expression (the producer's arithmetic compared with itself,
+        which held for every scan result, dropped edges included) and not against a
+        recounted TOTAL either: a total cancels a dropped edge against a
+        double-assigned one and passes both.
         """
         scan = _DISPATCH_CLASS_SCAN
 
         # Anti-vacuity for the recount itself, BEFORE the partition computed over
-        # it is read: a recount that returned zero would make the comparison below
-        # nothing against nothing — the same failure class one layer up.
-        glyph_lines = _independent_glyph_line_count(scan['source'])
-        assert glyph_lines > 0, (
+        # it is read: a recount that returned nothing would make the comparison
+        # below nothing against nothing — the same failure class one layer up.
+        glyph_identities = _independent_glyph_line_identities(scan['source'])
+        assert glyph_identities, (
             f'the recount found no dispatch-edge glyph in {scan["source"]}, so the '
             'partition below would compare nothing against nothing'
         )
 
         divergence = _partition_divergence(
-            glyph_lines,
+            glyph_identities,
             {
                 'resolved_edges': scan['resolved_edges'],
                 'unparsed': scan['unparsed'],
                 'glyph_mentions': scan['glyph_mentions'],
             },
+            identity=lambda record: record['line'],
         )
-        assert divergence['unaccounted'] == 0, (
+        assert (divergence['missing'], divergence['duplicated']) == ([], []), (
             'the three published buckets do not partition the dispatch-edge glyph '
-            f'lines the document actually carries: {divergence}. Positive means the '
-            'scan dropped occurrences (a narrower derived population, which fails '
-            'toward green); negative means two buckets claim the same one. Source: '
-            f'{scan["source"]}'
+            f'lines the document actually carries: {divergence}. "missing" names '
+            'lines the document carries that no bucket claims (the scan dropped '
+            'them, narrowing its derived population — the direction that fails '
+            'toward green); "duplicated" names lines claimed more than once (two '
+            'buckets claiming one edge, or one bucket claiming it twice). The '
+            'aggregate "unaccounted" is reported alongside but is NOT the verdict: '
+            f'it reads 0 whenever those two directions cancel. Source: {scan["source"]}'
         )
         # The published edge count is that partition minus the non-edge bucket,
         # checked against the recounted total so a wrong expression is visible.
-        assert scan['dispatch_edges_found'] == glyph_lines - len(scan['glyph_mentions']), (
+        assert scan['dispatch_edges_found'] == len(glyph_identities) - len(scan['glyph_mentions']), (
             f'dispatch_edges_found ({scan["dispatch_edges_found"]}) is not the '
-            f'{glyph_lines} recounted glyph lines minus the '
+            f'{len(glyph_identities)} recounted glyph lines minus the '
             f'{len(scan["glyph_mentions"])} that name no target'
         )
         for record in scan['unparsed']:
@@ -474,17 +551,19 @@ class TestDeclaredExclusionList:
         bucket, and the unparsed bucket must be empty for the disjointness verdict
         above to be trustworthy rather than merely narrow.
 
-        The partition is checked against a total RECOUNTED from the scanned
-        documents, not against the scan's own ``len(registering) + len(template) +
-        len(unparsed)`` expression: that form was the producer's arithmetic compared
-        with itself and held for every scan result, dropped invocations included.
+        The partition is checked against the ``(path, line)`` IDENTITIES recounted
+        from the scanned documents, not against the scan's own ``len(registering) +
+        len(template) + len(unparsed)`` expression (the producer's arithmetic
+        compared with itself, which held for every scan result, dropped invocations
+        included) and not against a recounted TOTAL either: a total cancels a
+        dropped invocation against a double-assigned one and passes both.
         """
         scan = manage_metrics.scan_boundary_registrations()
 
         # Anti-vacuity for the recount itself, BEFORE the partition computed over
-        # it is read — a zero recount would compare nothing against nothing.
-        verb_lines = _independent_verb_line_count(scan['scan_root'])
-        assert verb_lines > 0, (
+        # it is read — an empty recount would compare nothing against nothing.
+        verb_identities = _independent_verb_line_identities(scan['scan_root'])
+        assert verb_identities, (
             f'the recount found no boundary-verb occurrence under {scan["scan_root"]}, '
             'so the partition below would compare nothing against nothing'
         )
@@ -493,27 +572,32 @@ class TestDeclaredExclusionList:
         # carry — prose_mentions included, since a call site that stopped being
         # recognised as a dispatch moves into it rather than vanishing.
         divergence = _partition_divergence(
-            verb_lines,
+            verb_identities,
             {
                 'registering': scan['registering'],
                 'template': scan['template'],
                 'unparsed': scan['unparsed'],
                 'prose_mentions': scan['prose_mentions'],
             },
+            identity=lambda record: (record['path'], record['line']),
         )
-        assert divergence['unaccounted'] == 0, (
+        assert (divergence['missing'], divergence['duplicated']) == ([], []), (
             'the four published buckets do not partition the boundary-verb lines '
-            f'the documents actually carry: {divergence}. Positive means the scan '
-            'dropped occurrences (a narrower registering set, which agrees with the '
-            'declared constant for the wrong reason); negative means two buckets '
-            f'claim the same one. Root: {scan["scan_root"]}'
+            f'the documents actually carry: {divergence}. "missing" names '
+            'occurrences the documents carry that no bucket claims (the scan dropped '
+            'them, giving a narrower registering set that agrees with the declared '
+            'constant for the wrong reason); "duplicated" names occurrences claimed '
+            'more than once (two buckets claiming one line, or one bucket claiming '
+            'it twice). The aggregate "unaccounted" is reported alongside but is NOT '
+            'the verdict: it reads 0 whenever those two directions cancel. Root: '
+            f'{scan["scan_root"]}'
         )
         # The published invocation count is that partition minus the non-invocation
         # bucket, checked against the recounted total rather than against itself.
-        assert scan['invocations_found'] == verb_lines - len(scan['prose_mentions']), (
-            f'invocations_found ({scan["invocations_found"]}) is not the {verb_lines} '
-            f'recounted verb lines minus the {len(scan["prose_mentions"])} that '
-            'dispatch nothing'
+        assert scan['invocations_found'] == len(verb_identities) - len(scan['prose_mentions']), (
+            f'invocations_found ({scan["invocations_found"]}) is not the '
+            f'{len(verb_identities)} recounted verb lines minus the '
+            f'{len(scan["prose_mentions"])} that dispatch nothing'
         )
         assert not scan['unparsed'], (
             f'the scan found call sites it could not read, so its derived set is '
@@ -536,21 +620,52 @@ class TestDeclaredExclusionList:
     def test_partition_reports_a_record_the_buckets_do_not_account_for(self, buckets):
         """MUTATION ARM for both partition assertions, in each site's bucket shape.
 
-        Drives the shared oracle with a synthetic scan whose recounted total does
-        not match its buckets, and pairs each failing arm with the passing one that
-        makes it discriminating. This is the direction the retired self-referential
-        form could not see at all: dropping a record shrank both sides of
-        ``found == len(a) + len(b)`` equally, so it stayed green over exactly the
-        coverage hole it claimed to close.
-        """
-        accounted = sum(len(records) for records in buckets.values())
+        Drives the shared oracle with synthetic scans that mis-partition their
+        occurrences, and pairs each failing arm with the passing one that makes it
+        discriminating.
 
-        # Positive control — buckets that DO account for every occurrence.
-        assert _partition_divergence(accounted, buckets)['unaccounted'] == 0
+        The COMBINED arm is the one that matters, and it is why the oracle compares
+        identities rather than totals. A scan that drops occurrence A while
+        assigning occurrence B to two buckets keeps its bucket cardinality equal to
+        the recounted cardinality, so the aggregate ``unaccounted`` reads 0 — the
+        control asserted below — and a count-only oracle certifies a scan that both
+        LOST a record and DOUBLE-COUNTED another. A drop-only arm proves nothing
+        new here: the aggregate already catches that direction.
+        """
+        truth = _bucket_identities(buckets)
+
+        # Positive control — buckets that DO account for every occurrence, once.
+        clean = _partition_divergence(truth, buckets)
+        assert (clean['missing'], clean['duplicated'], clean['unaccounted']) == ([], [], 0)
+
         # A record the scan dropped: the document carries one the buckets lost.
-        assert _partition_divergence(accounted + 1, buckets)['unaccounted'] == 1
+        absent = max(truth) + 1
+        dropped_only = _partition_divergence([*truth, absent], buckets)
+        assert dropped_only['unaccounted'] == 1
+        assert (dropped_only['missing'], dropped_only['duplicated']) == ([absent], [])
+
         # The other direction — one occurrence claimed by two buckets.
-        assert _partition_divergence(accounted - 1, buckets)['unaccounted'] == -1
+        doubled_buckets, double_claimed = _with_a_second_claim(buckets)
+        doubled = _partition_divergence(truth, doubled_buckets)
+        assert doubled['unaccounted'] == -1
+        assert (doubled['missing'], doubled['duplicated']) == ([], [double_claimed])
+
+        # COMBINED — one occurrence dropped AND another double-assigned, so the
+        # bucket cardinality still equals the truth cardinality and the two errors
+        # cancel in every aggregate.
+        short_buckets, dropped = _without_last_occurrence(buckets)
+        combined_buckets, redoubled = _with_a_second_claim(short_buckets)
+        combined = _partition_divergence(truth, combined_buckets)
+
+        # DISCRIMINATING CONTROL — the pre-fix aggregate oracle PASSES this input,
+        # which is what makes the identity assertion below strictly stronger rather
+        # than a restatement of the count check.
+        assert combined['unaccounted'] == 0
+        assert combined['bucketed_total'] == combined['independent_total']
+        # The identity multiset rejects it, naming exactly the two identities and
+        # keeping the two defects separate — they have different repairs.
+        assert combined['missing'] == [dropped]
+        assert combined['duplicated'] == [redoubled]
 
     def test_shortfall_renders_the_partial_note_alongside_the_exclusion_list(self, plan_context):
         """A phase that dispatched but under-registers is EXPLAINED, not silently shrunk.
