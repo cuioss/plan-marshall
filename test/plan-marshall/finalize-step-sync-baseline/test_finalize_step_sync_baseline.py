@@ -15,6 +15,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import pytest
+
 # Repo root resolved from this test file:
 # test/plan-marshall/finalize-step-sync-baseline/test_*.py -> repo root is 4 parents up (index 3).
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -65,7 +67,13 @@ def _doc_body(doc: Path) -> str:
     return after[1] if len(after) == 2 else ''
 
 
-_HEADING_RE = re.compile(r'^(#{1,6})\s+(.*)$')
+# CommonMark permits up to three leading spaces on an ATX heading. Anchoring at
+# column zero makes an indented heading invisible, which does not fail loudly —
+# _markdown_sections silently omits it and _section_containing then returns the
+# enclosing LARGER section, re-admitting the document-wide looseness the
+# section-binding exists to remove. The identical widening was applied to
+# _ATX_HEADING in ext-self-review-plan-marshall/test_self_review_check_coverage.py.
+_HEADING_RE = re.compile(r'^ {0,3}(#{1,6})\s+(.*)$')
 
 
 def _markdown_sections(body: str) -> list[tuple[int, str, str]]:
@@ -269,4 +277,66 @@ class TestSyncBaselineBodyContract:
             'never a sync-baseline step failure — see '
             'workflow-integration-git/standards/worktree-handling.md '
             '§ "Post-Rebase Executor Refresh"'
+        )
+
+
+# ---------------------------------------------------------------------------
+# Section-binding seam — the heading recogniser bounds what "innermost" means
+# ---------------------------------------------------------------------------
+
+
+class TestHeadingRecognitionBoundsTheSectionBinding:
+    """``_HEADING_RE`` decides which spans exist, so its blind spots are the
+    section-binding's blind spots.
+
+    A heading the recogniser cannot see is not a loud failure: ``_markdown_sections``
+    omits it, and ``_section_containing`` then returns the enclosing LARGER section.
+    The phrase assertion above is satisfied by anything in that wider span, which is
+    the document-wide looseness the section-binding was introduced to remove. The
+    guard therefore fails toward GREEN, and only a driven seam can show it.
+
+    Both arms drive the pure helper with synthetic input rather than the shipped
+    document — the shipped document currently carries no indented heading, so
+    asserting against it would prove nothing about the recogniser.
+    """
+
+    _ANCHOR = 'executor_regenerated'
+
+    def _body_with_indent(self, indent: str) -> str:
+        return '\n'.join([
+            '## Parent section',
+            '',
+            'non-fatal by contract',
+            '',
+            f'{indent}### Nested subsection',
+            '',
+            f'The refresh returns {self._ANCHOR} on success.',
+        ])
+
+    @pytest.mark.parametrize('indent', ['', ' ', '  ', '   '])
+    def test_an_atx_heading_indented_up_to_three_spaces_opens_its_own_section(self, indent):
+        # CommonMark permits 0-3 leading spaces. Each must yield the NESTED
+        # section as the innermost one citing the anchor; returning the parent
+        # means the recogniser missed the heading.
+        title, section = _section_containing(self._body_with_indent(indent), self._ANCHOR)
+        assert title == 'Nested subsection', (
+            f'an ATX heading indented {len(indent)} space(s) must open its own '
+            f'section, got innermost title {title!r} — the recogniser missed it, '
+            f'so the binding silently widened to the enclosing section'
+        )
+        assert 'non-fatal by contract' not in section, (
+            'the nested section must NOT inherit the parent\'s prose; it doing so '
+            'is exactly how a missed heading lets an unrelated occurrence satisfy '
+            'a section-bound assertion'
+        )
+
+    def test_a_four_space_indented_line_is_not_a_heading(self):
+        # The complement, and the reason the widening stops at three: four spaces
+        # is an indented code block in CommonMark, not a heading. Without this arm
+        # a recogniser widened to `^\s*` would pass the arm above while inventing
+        # sections out of code.
+        title, _section = _section_containing(self._body_with_indent('    '), self._ANCHOR)
+        assert title == 'Parent section', (
+            'a four-space-indented line is an indented code block, not an ATX '
+            f'heading — it must not open a section, got innermost title {title!r}'
         )
