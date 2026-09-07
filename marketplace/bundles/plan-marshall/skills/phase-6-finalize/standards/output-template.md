@@ -243,7 +243,7 @@ Read this before any other rule in this section, because every later rule trims,
 
 **Where the ceiling actually binds.** The ≤80-character bound on `display_detail` (§ "display_detail Contract for Step Authors") is a ceiling in this sense, and it does not license dropping a reason: a step whose honest outcome will not fit writes the reason short rather than writing a reasonless string. The unbounded surfaces — the work-log and decision-log lines each step emits — are where the full expansion belongs, and the two are complementary rather than alternatives.
 
-This section states the discipline for THIS renderer. The governing standard, and the same floor/ceiling split applied to every other user-facing surface, is [`persona-plan-marshall-agent/standards/user-communication.md`](../../persona-plan-marshall-agent/standards/user-communication.md) § "Rule 3 — Say only what the next decision needs"; it is cross-referenced rather than restated, so this document cannot drift from it.
+This section states the discipline for THIS renderer. The governing standard, and the same floor/ceiling split applied to every other user-facing surface, is [`persona-plan-marshall-agent/standards/user-communication.md`](../../persona-plan-marshall-agent/standards/user-communication.md) § "Rule 3 — Say only what the next decision needs".
 
 ### 1. Resolve headline token
 

@@ -690,7 +690,7 @@ The canonical schema (the field table, the build-class enum source of truth, the
 [#build-queue]
 === Build queue
 
-`marshal.json` also carries a top-level `build.queue` block — the cross-session build-queue concurrency settings (`build.queue.max_slots`, `build.queue.max_retries`, and the adaptive `build.queue.upper_limit_seconds` stale-slot threshold) that govern how concurrent builds share the machine. Because they matter only when several plans build at once, they are documented with the concurrent-plan operator guide: see xref:parallelism-and-locking.adoc#knobs[Parallelism and Locking → Build-concurrency settings].
+`marshal.json` also carries a top-level `build.queue` block — the cross-session build-queue concurrency settings (`build.queue.max_slots`, `build.queue.max_retries`, and the adaptive `build.queue.upper_limit_seconds` stale-slot threshold) that govern how concurrent builds share the machine. Because they matter only when several plans build at once, they are documented with the concurrent-plan operator guide: see xref:parallelism-and-locking.adoc#build-concurrency[Parallelism and Locking → Build-concurrency settings].
 
 [#worktrees]
 === Branch strategy and worktrees

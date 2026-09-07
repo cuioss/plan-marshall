@@ -75,7 +75,7 @@ AskUserQuestion:
 
 ```text
 AskUserQuestion:
-  question: "These three only apply to Claude Code sessions. Which one do you want to look at?"
+  question: "Terminal Title and Enforcement Hook only take effect in Claude Code sessions; Recipes work wherever plan-marshall runs. Which one do you want to look at?"
   header: "More config"
   options:
     - label: "Terminal Title"
@@ -353,13 +353,13 @@ AskUserQuestion:
   header: "Shipping"
   multiSelect: true
   options:
-    - label: "default:push (Recommended)"
+    - label: "default:push (recommended)"
       description: "Sends the finished branch to your git host, so the work exists somewhere other than this machine"
     - label: "default:create-pr"
       description: "Opens a pull request for the branch, so the change can be reviewed and merged the usual way"
     - label: "plan-marshall:automatic-review"
       description: "Waits for your build and review bots to finish on the pull request, then works through what they reported"
-    - label: "default:lessons-capture (Recommended)"
+    - label: "default:lessons-capture (recommended)"
       description: "Writes down what went wrong or surprised it, so a later plan does not repeat the same mistake"
     - label: "plan-marshall:plan-retrospective (Opt-in)"
       description: "Produces a written review of how the plan itself ran — useful when tuning, noise otherwise"
@@ -381,7 +381,7 @@ AskUserQuestion:
     - question: "When a plan's pull request is merged, its commits can land on the main branch in three different shapes. Which does this project use?"
       header: "PR Merge"
       options:
-        - label: "squash (Recommended)"
+        - label: "squash (recommended)"
           description: "The whole branch lands as a single commit; the individual commit messages are discarded"
         - label: "merge"
           description: "Every commit lands as written, plus a merge commit recording where the branch joined"

@@ -158,8 +158,8 @@ AskUserQuestion:
         combination that will actually land. Nothing is pushed, and nothing is
         merged, at this point.
       options:
-        - label: "Yes, rebase"
-          description: "Recommended. Your commits are replayed on top of the current {base_branch}, so everything from here on tests what will really land"
+        - label: "Yes, rebase (recommended)"
+          description: "Your commits are replayed on top of the current {base_branch}, so everything from here on tests what will really land"
         - label: "No, skip"
           description: "Your branch stays where it is and the checks run against the older combination. The same update is attempted again later, just before the merge"
       multiSelect: false

@@ -1463,7 +1463,10 @@ FOR each step_id in manifest.phase_6.steps:
                work --plan-id {plan_id} --level WARNING \
                --message "[STATUS] (plan-marshall:phase-6-finalize) Loop-back ceiling breached — {step_ref} requested iteration {loop_back_iteration + 1} against a ceiling of {max_iterations}; refusing to admit it. The findings this round raised have no remaining iteration in which their fixes could be reviewed."
 
-             Display: "Stopped one round short. This run allows {max_iterations} rounds of fix-and-recheck; all {max_iterations} are spent, and {step_ref} asked for another, so the run halted instead of granting it. What that costs you: the problems found in this last round ARE recorded, but nothing checked the fixes for them — there was no round left to do it in. Nothing was merged. See exactly what is unreviewed with 'python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate list --plan-id {plan_id} --phase 6-finalize --resolution pending', and the fix tasks still open for them with the same executor's manage-tasks list verb for this plan, filtered to pending. Then re-run finalize when you are ready to give it another round."
+             Display: "Stopped one round short. This run allows {max_iterations} rounds of fix-and-recheck; all {max_iterations} are spent, and {step_ref} asked for another, so the run halted instead of granting it. What that costs you: the problems found in this last round ARE recorded, but nothing checked the fixes for them — there was no round left to do it in. Nothing was merged.
+               See exactly what is unreviewed with 'python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate list --plan-id {plan_id} --phase 6-finalize --resolution pending',
+               and the fix tasks still open for them with 'python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks list --plan-id {plan_id} --status pending'.
+               Then re-run finalize when you are ready to give it another round."
 
              STOP.
 

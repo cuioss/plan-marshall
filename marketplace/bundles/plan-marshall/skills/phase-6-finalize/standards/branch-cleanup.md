@@ -300,8 +300,8 @@ AskUserQuestion:
         - Pull latest
         - Delete local branch {head_branch}
       options:
-        - label: "Yes, proceed"
-          description: "Recommended. Runs the preparation listed above and stops there — you are asked again before anything is merged, so nothing lands on {base_branch} on the strength of this answer alone"
+        - label: "Yes, proceed (recommended)"
+          description: "Runs the preparation listed above and stops there — you are asked again before anything is merged, so nothing lands on {base_branch} on the strength of this answer alone"
         - label: "No, skip"
           description: "Nothing is prepared and nothing is merged. Your branch, the pull request and the local checkout are all left exactly as they stand, and finalize can be re-run later"
       multiSelect: false
@@ -612,8 +612,8 @@ AskUserQuestion:
         this plan keeps its place whichever option you choose. It has not
         been overtaken and it has not failed.
       options:
-        - label: "Wait and retry"
-          description: "Recommended. Keeps this plan's place in line and waits another {wait_budget} seconds; usually the plan ahead finishes and this one merges next"
+        - label: "Wait and retry (recommended)"
+          description: "Keeps this plan's place in line and waits another {wait_budget} seconds; usually the plan ahead finishes and this one merges next"
         - label: "Skip merge"
           description: "Stops here without merging. Your branch and pull request are untouched, and re-running finalize later rejoins the queue"
       multiSelect: false
@@ -661,8 +661,8 @@ AskUserQuestion:
         - Workflow exits cleanly; the branch is left in place as it stands
         - Re-enter finalize later to merge (state == merged short-circuits this prompt if you merged manually)
       options:
-        - label: "Yes, merge"
-          description: "Recommended, since the checks above have already passed. The change lands on {base_branch} and the branch is deleted; this is the point of no easy return"
+        - label: "Yes, merge (recommended)"
+          description: "The checks above have already passed. The change lands on {base_branch} and the branch is deleted; this is the point of no easy return"
         - label: "No, skip merge"
           description: "Nothing is merged and nothing is deleted. Your pull request stays open exactly as it is, and re-running finalize picks up from here"
       multiSelect: false
@@ -1023,8 +1023,8 @@ AskUserQuestion:
         cannot be described, so it cannot be authorized past — merging is
         not on offer here.
       options:
-        - label: "Retry the barrier now"
-          description: "Recommended. Runs the check again straight away; a call that failed once usually succeeds on a second attempt and the merge then proceeds normally"
+        - label: "Retry the barrier now (recommended)"
+          description: "Runs the check again straight away; a call that failed once usually succeeds on a second attempt and the merge then proceeds normally"
         - label: "Defer merge"
           description: "Stops here without merging and without retrying. Your pull request is left open and untouched; re-run finalize when you want another attempt"
       multiSelect: false
@@ -1302,8 +1302,8 @@ AskUserQuestion:
         were never handled. Merging now would land the PR with open
         bot feedback.
       options:
-        - label: "Re-triage now"
-          description: "Recommended. Works through the outstanding comments first — fixing, dismissing or accepting each — and then comes back here to merge"
+        - label: "Re-triage now (recommended)"
+          description: "Works through the outstanding comments first — fixing, dismissing or accepting each — and then comes back here to merge"
         - label: "Merge anyway (record reason)"
           description: "The change lands on {base_branch} with those comments still unanswered. Your reason is written down against this exact version, so a later reader can see what was accepted and why"
         - label: "Defer merge"
@@ -1737,8 +1737,8 @@ AskUserQuestion:
 
         The branch on the remote is untouched either way.
       options:
-        - label: "Yes, proceed"
-          description: "Recommended once the branch is pushed. Moves you back to {base_branch}, brings it up to date, and deletes the local copy of {head_branch}"
+        - label: "Yes, proceed (recommended)"
+          description: "Right once the branch is pushed. Moves you back to {base_branch}, brings it up to date, and deletes the local copy of {head_branch}"
         - label: "No, skip"
           description: "Leaves you on {head_branch} with everything as it stands. Choose this if the branch is not pushed yet, or if you still have work to do on it"
       multiSelect: false

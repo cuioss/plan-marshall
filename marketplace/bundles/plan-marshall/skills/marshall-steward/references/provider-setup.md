@@ -233,7 +233,7 @@ AskUserQuestion:
     - question: "The services you picked need a login before they can be reached, and none is stored yet. Setting one up means pasting a secret into a file, which is easier away from this wizard. Do it now or later?"
       header: "Logins"
       options:
-        - label: "Skip (Recommended)"
+        - label: "Skip (recommended)"
           description: "Finishes setup now; those services stay unreachable until you add a login from the maintenance menu"
         - label: "Configure now"
           description: "Walks you through each service's address and sign-in method, then pauses while you paste in the secret"
@@ -256,7 +256,7 @@ AskUserQuestion:
     - question: "The login you are about to enter can be stored once for everything you work on, or kept to this project alone. Where should it be kept?"
       header: "Scope"
       options:
-        - label: "Global (Recommended)"
+        - label: "Global (recommended)"
           description: "Stored once on this machine and reused by every project, so you enter it only this once"
         - label: "Project"
           description: "Stored with this project only; another project asks you for its own login"
@@ -288,13 +288,13 @@ AskUserQuestion:
     - question: "{skill_name} is normally reached at the address below. Self-hosted installations sit somewhere else — if yours does, type its address instead."
       header: "URL"
       options:
-        - label: "{url} (Recommended)"
+        - label: "{url} (recommended)"
           description: "Uses the service's own hosted address, which is right unless you run your own copy"
       multiSelect: false
     - question: "The address is set; what remains is how you prove who you are to it. {skill_name} normally expects the first option. How should it sign in?"
       header: "Sign-in"
       options:
-        - label: "{provider_auth_type} (Recommended)"
+        - label: "{provider_auth_type} (recommended)"
           description: "Signs in the way {skill_name} expects; you paste the secret in a moment"
         - label: "none"
           description: "Sends no credential at all — only right for a service left open to anyone who can reach it"
@@ -323,13 +323,13 @@ AskUserQuestion:
     - question: "SonarCloud groups projects under an organization name. Reading this repository's address suggests the one below — correct it if your SonarCloud account uses a different name."
       header: "Org"
       options:
-        - label: "{detected_org} (Recommended)"
+        - label: "{detected_org} (recommended)"
           description: "Taken from this repository's address, which usually matches the SonarCloud organization"
       multiSelect: false
     - question: "SonarCloud also needs the name it files this particular project under. That is normally the organization and repository joined together, as below."
       header: "Project"
       options:
-        - label: "{detected_project_key} (Recommended)"
+        - label: "{detected_project_key} (recommended)"
           description: "Built from this repository's address in the shape SonarCloud creates by default"
       multiSelect: false
 ```

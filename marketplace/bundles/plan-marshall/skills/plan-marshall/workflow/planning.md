@@ -570,8 +570,8 @@ AskUserQuestion:
   question: "{count} of the notes kept here have been replaced by newer ones, and all that is left of them is a pointer to the replacement. Deleting those pointers tidies the list, and the record of what replaced what is kept either way. Delete them?"
   header: "Cleanup"
   options:
-    - label: "Yes, prune"
-      description: "Recommended. Deletes the {count} leftover pointer(s). Anything that still refers to an old note by name goes on resolving, because the rename record is kept"
+    - label: "Yes, prune (recommended)"
+      description: "Deletes the {count} leftover pointer(s). Anything that still refers to an old note by name goes on resolving, because the rename record is kept"
     - label: "No, keep"
       description: "Leaves the pointers where they are. Nothing stops working; the list of notes just stays longer than it needs to be"
   multiSelect: false
