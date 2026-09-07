@@ -343,21 +343,29 @@ def view_pr_data(head: str | None = None) -> dict:
 
 
 def _extract_body(data: dict) -> BlockScalar:
-    """Return the PR's description text from a ``gh pr view`` payload, verbatim.
+    """Return the body text from a ``gh pr view`` / ``gh issue view`` payload, verbatim.
+
+    ONE helper serves both view verbs. GitHub spells the field ``body`` on a pull
+    request and on an issue alike, and the two carry the same thing: opaque
+    foreign text that a human or a bot wrote, which has to cross the TOON
+    boundary intact and inert. Giving each verb its own extractor would let one
+    of them be hardened and the other left plain — the exact asymmetry this
+    marking exists to prevent.
 
     The body is returned WHOLE — never truncated, summarised, or replaced by a
-    regenerated equivalent. That fidelity is the field's entire reason to exist:
-    the close-and-re-open recovery carries a PR's description across to its
-    replacement, and anything an operator or a reviewer edited into that
-    description is lost the moment a caller substitutes a body it generated
+    regenerated equivalent. On the PR side that fidelity is the field's entire
+    reason to exist: the close-and-re-open recovery carries a PR's description
+    across to its replacement, and anything an operator or a reviewer edited into
+    that description is lost the moment a caller substitutes a body it generated
     itself. A caller may only carry forward what it read here.
 
     ``BlockScalar`` is what makes the text survive the TOON boundary; see that
-    class for what an unmarked multi-line string does to the envelope around it.
-    A provider reporting no body at all yields the empty string — an absent
-    description is genuinely empty text, not an unreadable one, and a read
-    failure never reaches here because :func:`view_pr_data` returns
-    ``status: error`` before constructing a payload.
+    class for what an unmarked multi-line string does to the envelope around it —
+    a payload line reading ``status: blocked`` does not merely get lost, it
+    OVERWRITES the envelope's own ``status``. A provider reporting no body at all
+    yields the empty string — an absent description is genuinely empty text, not
+    an unreadable one, and a read failure never reaches here because the calling
+    verb returns ``status: error`` before constructing a payload.
     """
     body = data.get('body')
     return BlockScalar(body if isinstance(body, str) else '')

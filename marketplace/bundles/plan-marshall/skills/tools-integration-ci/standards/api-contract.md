@@ -534,7 +534,12 @@ operation: issue_view
 issue_number: 123
 issue_url: https://github.com/org/repo/issues/123
 title: Bug in authentication flow
-body: When users try to login...
+body: |
+  ## Steps to reproduce
+
+  When users try to login...
+
+  status: blocked
 author: username
 state: open
 created_at: 2025-01-15T10:30:00Z
@@ -548,12 +553,16 @@ assignees[1]:
 - alice
 ```
 
+**`body` is a TOON block scalar** (`body: |` with the text indented beneath it), on both providers, exactly as `pr view`'s `body` is — see [pr-operations.md](pr-operations.md) § "`body` — the description, whole, and how it crosses the boundary" for the transport, the verbatim-and-whole guarantee, and the empty-description form, none of which are restated here.
+
+An issue body is untrusted external content, which is what makes the marking load-bearing rather than cosmetic: emitted as a quoted scalar, its second and later lines would land at column zero and parse as **sibling keys**, so the `status: blocked` line in the example above would not merely be lost — it would overwrite the envelope's own `status`. Read the indented block, not the first line, and note that `body` sits **mid-payload** here (`author`, `state`, the timestamps and the `labels[]` / `assignees[]` tables all follow it): those keys resume at column zero, which is precisely where the block ends.
+
 **Field Mapping (GitHub vs GitLab)**:
 | Field | GitHub | GitLab |
 |-------|--------|--------|
 | `issue_number` | `.number` | `.iid` |
 | `issue_url` | `.url` | `.web_url` |
-| `body` | `.body` | `.description` |
+| `body` | `.body` | `.description` — normalised onto the one key and block-scalar-marked on both |
 | `author` | `.author.login` | `.author.username` |
 | `state` | `.state` (lowercase) | `.state` ("opened"→"open") |
 | `labels[]` | `.labels[].name` | `.labels[]` (direct strings) |

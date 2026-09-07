@@ -403,19 +403,25 @@ def view_pr_data(head: str | None = None) -> dict:
 
 
 def _extract_body(data: dict) -> BlockScalar:
-    """Return the MR's description text from a ``glab mr view`` payload, verbatim.
+    """Return the body text from a ``glab mr view`` / ``glab issue view`` payload, verbatim.
 
     The GitLab peer of ``github_ops._extract_body``, reading GitLab's own name for
-    the field: an MR carries its body as ``description`` where a PR carries it as
-    ``body``. Normalising it onto the shared ``body`` key is what keeps ``pr view``
-    ONE contract rather than a GitHub field a GitLab caller has to know about.
+    the field: an MR and an issue both carry their body as ``description`` where
+    GitHub carries it as ``body``. Normalising it onto the shared ``body`` key is
+    what keeps ``pr view`` and ``issue view`` one contract each rather than a
+    GitHub field a GitLab caller has to know about.
+
+    ONE helper serves both view verbs here for the reason it does on GitHub: an
+    issue description is the same opaque foreign text an MR description is, and a
+    field hardened on one verb but not the other is exactly the asymmetry the
+    marking exists to prevent.
 
     Same guarantees as the GitHub peer and for the same reasons: the text is whole
     and never regenerated, it is marked ``BlockScalar`` so a multi-line description
     survives the TOON boundary, and a provider reporting none yields the empty
-    string. It comes from the same ``glab mr view --output json`` call as every
-    other field — that payload already carries the description, so parity costs no
-    extra round trip.
+    string. It comes from the same ``--output json`` call as every other field —
+    that payload already carries the description, so parity costs no extra round
+    trip.
     """
     description = data.get('description')
     return BlockScalar(description if isinstance(description, str) else '')
@@ -2023,7 +2029,15 @@ def cmd_issue_comment(args: argparse.Namespace) -> dict:
 
 
 def cmd_issue_view(args: argparse.Namespace) -> dict:
-    """Handle 'issue view' subcommand."""
+    """Handle 'issue view' subcommand.
+
+    ``body`` is the issue description, whole, normalised off GitLab's
+    ``description`` key and marked ``BlockScalar`` by :func:`_extract_body` — the
+    same extractor ``pr view`` uses. Emitted unmarked, its second and later lines
+    would land at column zero where ``parse_toon`` reads them as sibling keys, so
+    an issue body containing a line that reads ``status: blocked`` would overwrite
+    this envelope's own ``status``.
+    """
     # Check auth
     is_auth, err = check_auth()
     if not is_auth:
@@ -2053,7 +2067,7 @@ def cmd_issue_view(args: argparse.Namespace) -> dict:
         'issue_number': data.get('iid', 'unknown'),
         'issue_url': data.get('web_url', ''),
         'title': data.get('title', ''),
-        'body': data.get('description', ''),  # GitLab uses 'description'
+        'body': _extract_body(data),  # GitLab uses 'description'
         'author': data.get('author', {}).get('username', 'unknown'),
         'state': state,
         'created_at': data.get('created_at', ''),
