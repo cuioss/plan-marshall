@@ -55,11 +55,22 @@ from pathlib import Path
 import pytest
 from _manage_locks_fixtures import _make_live_plan
 
-from conftest import load_script_module
+from conftest import get_script_path, load_script_module
 
 merge_lock = load_script_module(
     'plan-marshall', 'manage-locks', 'merge_lock.py', 'merge_lock_rate_window_under_test'
 )
+
+# The real CLI entry point. The Namespace-driven helpers below bypass argparse,
+# so anything the SHIPPED command line decides — which flags exist, and what a
+# flag defaults to when the caller omits it — is only observable by driving this.
+SCRIPT_PATH = get_script_path('plan-marshall', 'manage-locks', 'merge_lock.py')
+
+# The cap the ``rate-window`` CLI ships as ``--attempt-cap``'s default. The
+# helpers below forward it on every verb, so a Namespace-driven test sees the
+# same attribute argparse would have produced; a test that needs a narrower cap
+# passes its own rather than reaching for a second helper.
+_DEFAULT_ATTEMPT_CAP = 6
 
 
 def _read_store(queue_path: Path) -> dict:
@@ -71,7 +82,11 @@ def _read_store(queue_path: Path) -> dict:
 
 
 def _claim(
-    plan_id: str, bot_kind: str = 'coderabbit', pr_number: int = 42, window_seconds: float = 3600.0
+    plan_id: str,
+    bot_kind: str = 'coderabbit',
+    pr_number: int = 42,
+    window_seconds: float = 3600.0,
+    attempt_cap: int = _DEFAULT_ATTEMPT_CAP,
 ) -> dict:
     result: dict = merge_lock.run_rate_window(
         Namespace(
@@ -80,21 +95,38 @@ def _claim(
             bot_kind=bot_kind,
             pr_number=pr_number,
             window_seconds=window_seconds,
+            attempt_cap=attempt_cap,
         )
     )
     return result
 
 
-def _check(plan_id: str, bot_kind: str = 'coderabbit') -> dict:
+def _check(
+    plan_id: str,
+    pr_number: int,
+    bot_kind: str = 'coderabbit',
+    attempt_cap: int = _DEFAULT_ATTEMPT_CAP,
+) -> dict:
+    """``pr_number`` is REQUIRED: ``check`` counts attempts against the caller's PR."""
     result: dict = merge_lock.run_rate_window(
-        Namespace(action='check', plan_id=plan_id, bot_kind=bot_kind)
+        Namespace(
+            action='check',
+            plan_id=plan_id,
+            bot_kind=bot_kind,
+            pr_number=pr_number,
+            attempt_cap=attempt_cap,
+        )
     )
     return result
 
 
-def _release(plan_id: str, bot_kind: str = 'coderabbit') -> dict:
+def _release(
+    plan_id: str, bot_kind: str = 'coderabbit', attempt_cap: int = _DEFAULT_ATTEMPT_CAP
+) -> dict:
     result: dict = merge_lock.run_rate_window(
-        Namespace(action='release', plan_id=plan_id, bot_kind=bot_kind)
+        Namespace(
+            action='release', plan_id=plan_id, bot_kind=bot_kind, attempt_cap=attempt_cap
+        )
     )
     return result
 

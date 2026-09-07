@@ -126,11 +126,15 @@ class TestRateWindowClaim:
 
 class TestRateWindowCheck:
     def test_check_on_unclaimed_bot_reports_free(self, isolated_base: dict) -> None:
-        result = _check('plan-a')
+        result = _check('plan-a', pr_number=42)
 
         assert result['status'] == 'free', result
         assert result['holder'] is None
         assert result['attempts'] == 0
+        # The absent-record branch publishes the per-PR count too, so a caller
+        # reading `attempts_for_pr` never has to branch on record existence.
+        assert result['attempts_for_pr'] == 0
+        assert result['attempts_remaining'] == result['attempt_cap']
         assert not isolated_base['queue_path'].exists()
 
     def test_unclaimed_check_carries_the_same_field_set_as_a_claimed_one(
@@ -141,9 +145,9 @@ class TestRateWindowCheck:
         must not KeyError just because the window was never claimed. The
         SKILL.md ``rate-window check`` contract lists those fields
         unconditionally."""
-        unclaimed = _check('plan-a')
+        unclaimed = _check('plan-a', pr_number=42)
         _claim('plan-a')
-        claimed = _check('plan-a')
+        claimed = _check('plan-a', pr_number=42)
 
         assert set(unclaimed) == set(claimed), unclaimed
         assert unclaimed['expired'] is True
@@ -154,7 +158,7 @@ class TestRateWindowCheck:
         _claim('plan-a')
         before = _read_store(isolated_base['queue_path'])
 
-        _check('plan-b')
+        _check('plan-b', pr_number=42)
 
         assert _read_store(isolated_base['queue_path']) == before
 
@@ -164,7 +168,7 @@ class TestRateWindowCheck:
         says so — a premature trigger has no branch to enter."""
         _claim('plan-a')
 
-        result = _check('plan-a')
+        result = _check('plan-a', pr_number=42)
 
         assert result['status'] == 'held', result
         assert result['expired'] is False
@@ -173,11 +177,61 @@ class TestRateWindowCheck:
     def test_elapsed_window_reports_expired(self, isolated_base: dict) -> None:
         _claim('plan-a', window_seconds=-1.0)
 
-        result = _check('plan-a')
+        result = _check('plan-a', pr_number=42)
 
         assert result['status'] == 'free', result
         assert result['expired'] is True
         assert result['seconds_remaining'] == 0.0
+
+    def test_check_for_a_fresh_pr_agrees_with_the_claim_that_follows(self, isolated_base: dict) -> None:
+        """``check`` and ``claim`` must report the SAME budget for the same PR.
+
+        The store is keyed by ``bot_kind`` alone, so a record left behind by an
+        earlier PR is what a ``check`` for a fresh PR reads. ``claim`` already
+        resets the count per PR; ``check`` must apply the same arithmetic, or a
+        read-before-act caller concludes the budget is spent when it is not and
+        the recovery it was about to run never happens.
+        """
+        _make_live_plan(isolated_base['base'], 'plan-a')
+        # Spend PR 101's budget to the cap, so a bot_kind-keyed read of the
+        # stored record would report the window exhausted.
+        cap = _claim('plan-a', pr_number=101)['attempt_cap']
+        for _ in range(cap - 1):
+            _claim('plan-a', pr_number=101)
+
+        fresh = _check('plan-a', pr_number=202)
+
+        assert fresh['attempts_for_pr'] == 0, fresh
+        assert fresh['attempts_remaining'] == cap
+        # `attempts` keeps its own meaning — the raw stored count, whatever PR it
+        # belongs to — so the per-PR reset is visible as a distinct field rather
+        # than by overwriting one.
+        assert fresh['attempts'] == cap
+
+        claimed = _claim('plan-a', pr_number=202)
+
+        assert claimed['status'] == 'success', claimed
+        assert claimed['attempts'] == 1
+        assert claimed['attempts_remaining'] == fresh['attempts_remaining'] - 1
+
+    def test_check_for_the_stored_pr_still_reports_its_consumed_budget(self, isolated_base: dict) -> None:
+        """Matched negative control for the per-PR reset above.
+
+        The fix must be a reset scoped to the CALLER's PR, not a blanket reset
+        that reports a free budget to everyone: the PR that actually spent the
+        attempts still has to see them spent, and the ``claim`` that follows still
+        has to refuse.
+        """
+        _make_live_plan(isolated_base['base'], 'plan-a')
+        cap = _claim('plan-a', pr_number=101)['attempt_cap']
+        for _ in range(cap - 1):
+            _claim('plan-a', pr_number=101)
+
+        stored = _check('plan-a', pr_number=101)
+
+        assert stored['attempts_for_pr'] == cap, stored
+        assert stored['attempts_remaining'] == 0
+        assert _claim('plan-a', pr_number=101)['status'] == 'refused'
 
 
 # =============================================================================

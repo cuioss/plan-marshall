@@ -31,6 +31,13 @@ Covers the three concerns of the post-merge re-review registry:
        ``refusal_eta`` / ``refusals[]`` so a caller can distinguish "the bot
        refused, and here is the recovery this arms" from "the bot never
        responded". A refusal still does not count as a completed review.
+    5. The refusal RE-TRIGGER GUARD at the trigger chokepoint — there is exactly
+       ONE ``_github.post_pr_comment`` call site in the module, and
+       ``request_fresh_review`` consults the rate window before reaching it. The
+       load-bearing assertion for every guard case is that ``post_pr_comment``
+       was NOT CALLED: the guard exists so that no comment reaches the PR, and a
+       test that only inspects the returned envelope passes just as well on an
+       implementation that posts first and computes the status afterwards.
 
 Plus the ``cmd_re_review`` CLI handler that wires request → await together.
 
@@ -42,6 +49,25 @@ through the comment matcher — and ``time.sleep`` inside ``poll_until`` is
 neutralised so the timeout branch runs in constant time. Module import resolves
 via the root conftest's marketplace PYTHONPATH setup (``import
 github_re_review``).
+
+Tests never reach the real lock store either. ``request_fresh_review`` consults
+``read_rate_window``, which reads the machine-global main-anchored
+``merge-queue.json``; the autouse ``_neutralize_rate_window`` fixture below holds
+that seam at the NO-STORED-RECORD observation for every test in this module, so
+no test's verdict is a function of what some other plan happened to claim on this
+machine. The fixture is default-on and structural: a test added later inherits it
+without remembering anything, and a test that needs the other side of the
+predicate injects its own ``window_reader`` rather than depending on the store.
+
+``test_the_neutralized_guard_posts_despite_a_claimed_window_in_the_store`` and
+``test_the_unneutralized_guard_refuses_on_the_same_claimed_window`` are a MATCHED
+PAIR standing guard over that fixture, and DELETING OR WEAKENING EITHER ARM
+SILENTLY VOIDS THE OTHER'S EVIDENTIARY VALUE. Both arms simulate a claimed,
+unexpired window in the store BELOW the fixture's seam; they differ only in
+whether the fixture is engaged. The positive arm alone cannot tell "the fixture
+works" from "this machine's store happens to hold no claim", and the negative
+control alone proves only that a claim CAN refuse, not that it is suppressed by
+default.
 """
 
 import argparse
@@ -53,6 +79,74 @@ import bot_registry
 import ci_base
 import github_re_review
 import pytest
+
+# ---------------------------------------------------------------------------
+# The rate-window seam the trigger guard reads, and its neutralization
+# ---------------------------------------------------------------------------
+
+#: A rate-window observation carrying NO stored record — what ``rate-window
+#: check`` reports for a bot that has never refused. ``expired: True`` is what
+#: authorizes the ordinary post-merge trigger through the guard's single
+#: ``expired is False`` predicate, with no carve-out for the no-refusal case.
+_NO_RECORD_WINDOW = {'status': 'free', 'expired': True, 'holder': '', 'seconds_remaining': 0.0}
+
+#: A CLAIMED, UNEXPIRED window — the ONE observation the guard refuses on.
+_OPEN_WINDOW = {
+    'status': 'claimed',
+    'expired': False,
+    'holder': 'a-concurrently-finalizing-plan',
+    'seconds_remaining': 1800.0,
+}
+
+#: A claim whose clock has run out. Structurally an open record, so it is not the
+#: no-record case, yet ``expired: True`` means the guard permits — which is what
+#: makes it the discriminating positive control for the refusing arm.
+_EXPIRED_WINDOW = {
+    'status': 'claimed',
+    'expired': True,
+    'holder': 'a-concurrently-finalizing-plan',
+    'seconds_remaining': 0.0,
+}
+
+#: The LIVE, store-reading observer, captured at import time — BEFORE the autouse
+#: fixture below can replace it. The negative control restores it to show the
+#: ambient store is genuinely reachable through this seam, which is what makes the
+#: positive arm's outcome attributable to the fixture rather than to an empty
+#: store on this particular machine.
+_LIVE_WINDOW_READER = github_re_review.read_rate_window
+
+
+def _window_reader(observation):
+    """Build a ``(plan_id, bot_kind, pr_number) -> dict`` reader for ``observation``.
+
+    The injected seam ``request_fresh_review`` documents, so a test drives both
+    sides of the guard predicate without a real lock store.
+    """
+
+    def _read(_plan_id, _bot_kind, _pr_number):
+        return dict(observation)
+
+    return _read
+
+
+@pytest.fixture(autouse=True)
+def _neutralize_rate_window(monkeypatch):
+    """Hold the trigger guard's window read at NO STORED RECORD for every test here.
+
+    ``request_fresh_review`` consults ``read_rate_window``, which reads the
+    machine-global main-anchored lock store. Left alone, every call site in this
+    module that passes neither ``plan_id`` nor ``window_reader`` would reach that
+    store: the verdict stays correct today (no record permits) but it is a
+    function of ambient machine state, so a concurrently-finalizing plan holding
+    a claim on the same bot would flip tests that have nothing to do with the
+    guard.
+
+    Default-on and inherited by construction: a test written later is hermetic
+    without its author remembering an incantation. A test that needs the refusing
+    side of the predicate injects its own ``window_reader``; the matched pair
+    named in the module docstring is what keeps this fixture honest.
+    """
+    monkeypatch.setattr(github_re_review, 'read_rate_window', _window_reader(_NO_RECORD_WINDOW))
 
 
 @pytest.fixture(autouse=True)
@@ -370,6 +464,258 @@ def test_sourcery_request_fresh_review_propagates_post_failure(monkeypatch):
 
     assert result['status'] == 'error'
     assert result['operation'] == 'request_fresh_review'
+
+
+# =============================================================================
+# Concern 5: the refusal re-trigger guard at the trigger chokepoint
+# =============================================================================
+#
+# ⛔ Every case below asserts that ``post_pr_comment`` was NOT CALLED. That is the
+# guard's PURPOSE — no trigger comment reaches the PR while the bot is refusing —
+# and it is not the same claim as "a refusal status came back": an implementation
+# that posted the comment first and computed the status afterwards satisfies the
+# envelope assertion and violates the guard completely. The envelope fields are
+# asserted too, but they are the weaker half.
+#
+# The sweep runs over the registry-derived bot population rather than a bot-name
+# literal, because the guard sits at the single chokepoint EVERY bot's trigger
+# passes through — a per-bot exemption is exactly what it must not have.
+
+#: The bot population the chokepoint sweep runs over, DERIVED from the registry so
+#: a bot added in a ``standards/{bot_kind}.md`` doc is swept with no test edit.
+_GUARD_SWEEP_POPULATION: list[str] = bot_registry.bot_kinds()
+
+#: PUBLISHED population size. A ``parametrize`` over an empty population yields
+#: zero cases and still reports green, so the breadth of the sweep is stated
+#: rather than implied — an empty registry fails loudly instead of certifying
+#: nothing.
+_GUARD_SWEEP_POPULATION_SIZE = len(_GUARD_SWEEP_POPULATION)
+
+_GUARD_PR_NUMBER = 42
+_GUARD_PUSH_TIME = '2026-01-01T00:00:00Z'
+
+
+def _record_posts(monkeypatch) -> list[tuple]:
+    """Replace ``post_pr_comment`` with a recorder; return the list it appends to.
+
+    The SAME recorder shape backs both the refusing cases (which assert the list
+    is empty) and the permitting cases (which assert it holds exactly the trigger
+    comment), so an empty list can never be read as "the recorder was never
+    wired".
+    """
+    posted: list[tuple] = []
+
+    def fake_post(pr_number, body):
+        posted.append((pr_number, body))
+        return {'status': 'success', 'operation': 'post_pr_comment', 'pr_number': pr_number}
+
+    monkeypatch.setattr(github_re_review._github, 'post_pr_comment', fake_post)
+    return posted
+
+
+def _simulate_store(monkeypatch, observation) -> dict:
+    """Put ``observation`` in the store the LIVE reader delegates to, and count reads.
+
+    Patched at ``merge_lock.run_rate_window`` — one layer BELOW the seam the
+    autouse fixture replaces — which is what lets the matched pair simulate an
+    ambient claim while the fixture is engaged. The read count is the direct
+    evidence of which route the guard took.
+
+    ``merge_lock`` is imported HERE rather than at module scope, mirroring
+    ``read_rate_window``'s own lazy import: only the matched pair needs it, so an
+    import problem fails those two tests loudly instead of failing collection for
+    every test in this module.
+    """
+    import merge_lock
+
+    reads = {'count': 0}
+
+    def fake_run_rate_window(_namespace):
+        reads['count'] += 1
+        return dict(observation)
+
+    monkeypatch.setattr(merge_lock, 'run_rate_window', fake_run_rate_window)
+    return reads
+
+
+def test_the_guard_sweep_population_is_non_empty_and_publishes_its_size():
+    """⛔ Vacuity guard for the derived chokepoint sweeps below, size STATED.
+
+    Every guard case is parametrized over ``_GUARD_SWEEP_POPULATION``. A
+    parametrize over an empty list produces zero cases and reports green, so the
+    sweep would look like whole-population coverage while asserting nothing about
+    any bot. The population is therefore asserted non-empty and its size
+    published, and every member is asserted to resolve a strategy — a bot with no
+    strategy has no chokepoint to guard, so it would silently contribute a
+    hollow case.
+    """
+    assert _GUARD_SWEEP_POPULATION, (
+        'the registry declares no bots — every chokepoint sweep below would be vacuous'
+    )
+    assert _GUARD_SWEEP_POPULATION_SIZE == len(_GUARD_SWEEP_POPULATION)
+    for bot_kind in _GUARD_SWEEP_POPULATION:
+        assert github_re_review.resolve_strategy(bot_kind) is not None, bot_kind
+
+
+@pytest.mark.parametrize('bot_kind', _GUARD_SWEEP_POPULATION)
+def test_an_unexpired_claimed_window_posts_no_trigger_comment(bot_kind, monkeypatch):
+    """⛔ The load-bearing case: a live claim means NO comment reaches the PR.
+
+    Paired with ``test_an_expired_window_posts_the_trigger_comment`` over the same
+    population and the same recorder: without that control an empty post list here
+    is equally consistent with a guard that never posts for anyone.
+    """
+    posted = _record_posts(monkeypatch)
+    strategy = github_re_review.resolve_strategy(bot_kind)
+
+    result = strategy.request_fresh_review(
+        _GUARD_PR_NUMBER, _GUARD_PUSH_TIME, window_reader=_window_reader(_OPEN_WINDOW)
+    )
+
+    assert posted == [], (
+        f'{bot_kind}: the guard posted a trigger comment while the rate window was '
+        f'claimed and unexpired — the refusal envelope is not the contract, NOT '
+        f'posting is'
+    )
+    assert result['status'] == 'refused'
+    assert result['reason'] == 'window_open'
+
+
+@pytest.mark.parametrize('bot_kind', _GUARD_SWEEP_POPULATION)
+def test_the_refusal_envelope_names_the_holder_and_the_seconds_remaining(bot_kind, monkeypatch):
+    """The refusal is a RETURNED value naming who holds the window and for how long.
+
+    A caller cannot decide between waiting and escalating without both, and the
+    guard must never raise — a raise out of the trigger path would take down the
+    whole re-review sequence instead of handing back a branchable verdict.
+    """
+    _record_posts(monkeypatch)
+    strategy = github_re_review.resolve_strategy(bot_kind)
+
+    result = strategy.request_fresh_review(
+        _GUARD_PR_NUMBER, _GUARD_PUSH_TIME, window_reader=_window_reader(_OPEN_WINDOW)
+    )
+
+    assert result['operation'] == 'request_fresh_review'
+    assert result['bot_kind'] == bot_kind
+    assert result['pr_number'] == _GUARD_PR_NUMBER
+    assert result['holder'] == _OPEN_WINDOW['holder']
+    assert result['seconds_remaining'] == _OPEN_WINDOW['seconds_remaining']
+
+
+@pytest.mark.parametrize('bot_kind', _GUARD_SWEEP_POPULATION)
+def test_an_expired_window_posts_the_trigger_comment(bot_kind, monkeypatch):
+    """MATCHED CONTROL — a claim whose clock ran out permits the post.
+
+    The record still EXISTS here, so this is not the no-record case: the only
+    thing that changed against the refusing arm is ``expired``. That is what
+    attributes the refusal above to the predicate rather than to the presence of a
+    record, and what shows the guard did not simply disable re-review.
+    """
+    posted = _record_posts(monkeypatch)
+    strategy = github_re_review.resolve_strategy(bot_kind)
+
+    result = strategy.request_fresh_review(
+        _GUARD_PR_NUMBER, _GUARD_PUSH_TIME, window_reader=_window_reader(_EXPIRED_WINDOW)
+    )
+
+    assert result['status'] == 'success'
+    assert posted == [(_GUARD_PR_NUMBER, strategy.trigger_comment)]
+
+
+@pytest.mark.parametrize('bot_kind', _GUARD_SWEEP_POPULATION)
+def test_a_bot_with_no_stored_record_posts_the_trigger_comment(bot_kind, monkeypatch):
+    """The ORDINARY post-merge path: a re-review that followed no refusal at all.
+
+    ``rate-window check`` reports ``expired: true`` for a bot with no stored
+    record, so this case is authorized through the SAME ``expired is False``
+    predicate that refuses a live claim — no carve-out, no second branch. Pinning
+    it is what keeps a future tightening of the guard from quietly taking the
+    common path down with it.
+    """
+    posted = _record_posts(monkeypatch)
+    strategy = github_re_review.resolve_strategy(bot_kind)
+
+    result = strategy.request_fresh_review(
+        _GUARD_PR_NUMBER, _GUARD_PUSH_TIME, window_reader=_window_reader(_NO_RECORD_WINDOW)
+    )
+
+    assert result['status'] == 'success'
+    assert posted == [(_GUARD_PR_NUMBER, strategy.trigger_comment)]
+
+
+@pytest.mark.parametrize('bot_kind', _GUARD_SWEEP_POPULATION)
+def test_an_unreadable_window_read_posts_the_trigger_comment(bot_kind, monkeypatch):
+    """A read that could not be performed carries no ``expired`` key, so it permits.
+
+    The guard refuses only on a POSITIVE observation. Refusing on an unreadable
+    read would take the whole re-review path down whenever the lock store is
+    unreachable — a far larger failure than the one the guard exists to prevent —
+    so the direction here is deliberate rather than incidental.
+    """
+    posted = _record_posts(monkeypatch)
+    strategy = github_re_review.resolve_strategy(bot_kind)
+
+    result = strategy.request_fresh_review(
+        _GUARD_PR_NUMBER,
+        _GUARD_PUSH_TIME,
+        window_reader=_window_reader({'status': 'unreadable', 'error': 'store unreachable'}),
+    )
+
+    assert result['status'] == 'success'
+    assert posted == [(_GUARD_PR_NUMBER, strategy.trigger_comment)]
+
+
+def test_the_neutralized_guard_posts_despite_a_claimed_window_in_the_store(monkeypatch):
+    """POSITIVE ARM — the autouse fixture is engaged, so an ambient claim is ignored.
+
+    A claimed, unexpired window is simulated in the store the LIVE reader
+    delegates to — one layer below the seam the fixture replaces — and the guard
+    must still permit, which is only true if the fixture actually replaced that
+    seam. The zero read count is the direct evidence: the live route was never
+    taken.
+
+    Pairs with ``test_the_unneutralized_guard_refuses_on_the_same_claimed_window``.
+    """
+    reads = _simulate_store(monkeypatch, _OPEN_WINDOW)
+    posted = _record_posts(monkeypatch)
+    strategy = github_re_review.resolve_strategy(_GUARD_SWEEP_POPULATION[0])
+
+    result = strategy.request_fresh_review(_GUARD_PR_NUMBER, _GUARD_PUSH_TIME)
+
+    assert result['status'] == 'success'
+    assert posted == [(_GUARD_PR_NUMBER, strategy.trigger_comment)]
+    assert reads['count'] == 0, (
+        'the autouse _neutralize_rate_window fixture did not engage — a guard read '
+        'reached the live store route, so every test in this module that drives '
+        'request_fresh_review is silently dependent on machine-global lock state'
+    )
+
+
+def test_the_unneutralized_guard_refuses_on_the_same_claimed_window(monkeypatch):
+    """NEGATIVE CONTROL — with the fixture disengaged, the SAME claim refuses.
+
+    This is what makes the positive arm meaningful: it proves the simulated claim
+    is genuinely reachable through the live reader, so that arm's permitting
+    outcome is attributable to the fixture rather than to a store that happens to
+    hold nothing on this machine.
+
+    Pairs with
+    ``test_the_neutralized_guard_posts_despite_a_claimed_window_in_the_store``.
+    """
+    monkeypatch.setattr(github_re_review, 'read_rate_window', _LIVE_WINDOW_READER)
+    reads = _simulate_store(monkeypatch, _OPEN_WINDOW)
+    posted = _record_posts(monkeypatch)
+    strategy = github_re_review.resolve_strategy(_GUARD_SWEEP_POPULATION[0])
+
+    result = strategy.request_fresh_review(_GUARD_PR_NUMBER, _GUARD_PUSH_TIME)
+
+    assert reads['count'] == 1, (
+        'restoring the live reader did not reach the simulated store, so the '
+        'positive arm proves nothing about the fixture'
+    )
+    assert result['status'] == 'refused'
+    assert posted == []
 
 
 # =============================================================================
@@ -2128,6 +2474,77 @@ def test_main_parses_timeout_flag_and_threads_it(monkeypatch):
 
     assert rc == 0
     assert captured['timeout'] == 77
+
+
+def _run_recovery_action(monkeypatch, capsys, *extra: str) -> dict:
+    """Drive ``main()`` through the ``recovery-action`` verb; return the parsed TOON.
+
+    The envelope is PARSED rather than substring-matched: every verdict publishes
+    the whole ``recovery_actions`` vocabulary, so ``'escalate_not_awaitable' in
+    out`` is true of every return this verb can make and would assert nothing.
+    """
+    from toon_parser import parse_toon
+
+    monkeypatch.setattr(sys, 'argv', ['github_re_review.py', 'recovery-action', *extra])
+
+    rc = github_re_review.main()
+
+    assert rc == 0
+    parsed = parse_toon(capsys.readouterr().out)
+    assert isinstance(parsed, dict)
+    return parsed
+
+
+def test_main_recovery_action_accepts_an_unregistered_bot_kind(monkeypatch, capsys):
+    """A STALE ``--bot-kind`` reaches the derivation instead of an argparse rejection.
+
+    ``--bot-kind`` on this verb deliberately declares no ``choices=``. An operator
+    holding a config token for a bot that has since been renamed or retired needs
+    the fail-closed verdict WITH the live kind set published beside it; an
+    argparse rejection would replace that answer with exit 2 and name no remedy.
+
+    Paired with ``test_main_recovery_action_still_rejects_an_unknown_verb`` below,
+    which shows a rejection is reachable in this harness at all — without it,
+    "no ``SystemExit``" would be an assertion about nothing.
+    """
+    verdict = _run_recovery_action(monkeypatch, capsys, '--bot-kind', 'some-retired-bot')
+
+    assert verdict['action'] == github_re_review.RECOVERY_ACTION_ESCALATE_NOT_AWAITABLE
+    assert verdict['bot_kind_registered'] is False
+    # The live kind set travels with the verdict — the remedy a stale token needs.
+    assert verdict['known_bot_kind_count'] == len(bot_registry.bot_kinds())
+
+
+def test_main_recovery_action_still_rejects_an_omitted_bot_kind(monkeypatch):
+    """POSITIVE CONTROL — argparse rejection IS reachable through this entry point.
+
+    The permissiveness above is scoped to the flag's VALUE, not to the parser:
+    ``--bot-kind`` is still required, and omitting it exits 2. Without this the
+    "no ``SystemExit``" above would be an assertion about a parser that might
+    reject nothing at all.
+    """
+    monkeypatch.setattr(sys, 'argv', ['github_re_review.py', 'recovery-action'])
+
+    with pytest.raises(SystemExit) as excinfo:
+        github_re_review.main()
+
+    assert excinfo.value.code == 2
+
+
+def test_main_recovery_action_derives_a_registered_bots_verdict(monkeypatch, capsys):
+    """MATCHED CONTROL — a REGISTERED kind travels the same verb to a real verdict.
+
+    Without it the case above is consistent with a verb that answers
+    ``escalate_not_awaitable`` for every input. Here the bot is registered and its
+    refusal is a diff-SIZE one, which dominates the class and resolves the
+    structural escalation instead.
+    """
+    bot_kind = bot_registry.bot_kinds()[0]
+
+    verdict = _run_recovery_action(monkeypatch, capsys, '--bot-kind', bot_kind, '--cause', 'size')
+
+    assert verdict['action'] == github_re_review.RECOVERY_ACTION_ESCALATE_STRUCTURAL
+    assert verdict['bot_kind_registered'] is True
 
 
 def test_main_timeout_defaults_when_flag_omitted(monkeypatch):

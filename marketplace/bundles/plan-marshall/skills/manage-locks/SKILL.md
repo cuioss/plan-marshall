@@ -43,7 +43,10 @@ Two primitives live here:
   orchestrator escalation. The same entry point also carries the **rate-window
   claim** (`rate-window claim` / `check` / `release`) — a cross-plan claim on ONE
   review bot's rate window that shares the merge-lock STORE but never the merge
-  MUTEX (see below).
+  MUTEX (see below) — and the **`poll-delay`** computation, a bounded jittered
+  delay for a caller about to wake from an elapsed rate window. `poll-delay` shares
+  neither the store nor the mutex: it is a pure computation that touches no state
+  and never sleeps, returning the number for its CALLER to wait.
 - **The build-queue limiter** (`scripts/build_queue.py`, notation
   `plan-marshall:manage-locks:build_queue`) — a bounded-`k`-slot admitter with a
   FIFO waiting queue, persisted in the machine-global `build-queue.json` under the
@@ -318,14 +321,20 @@ owner-scoped `merge-lock` clear and settles the state for the next render event.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock rate-window claim \
-  --plan-id PLAN_ID --bot-kind BOT_KIND --pr-number PR_NUMBER [--window-seconds WINDOW_SECONDS]
+  --plan-id PLAN_ID --bot-kind BOT_KIND --pr-number PR_NUMBER \
+  [--window-seconds WINDOW_SECONDS] [--attempt-cap ATTEMPT_CAP]
 ```
 
 Claims `--bot-kind`'s rate window for `--plan-id`, recording the window expiry and
 advancing the recovery-attempt counter. `--window-seconds` carries the ETA parsed
-from the bot's registry `rate_limit_eta_patterns` (default `3600`). Idempotent for
-the self-holder: a re-claim renews the same record in place rather than contending.
-Outcomes:
+from the bot's registry `rate_limit_eta_patterns` (default `3600`). `--attempt-cap`
+is the recovery budget per `(bot_kind, pr_number)`; omit it to take the shipped
+default, which `rate-window --help` prints — this page names the flag rather than
+restating its value, so the number cannot drift out of agreement with the code that
+defines it. Idempotent for the self-holder: a re-claim renews the same record in
+place rather than contending. `--pr-number` is REQUIRED: the counter is scoped to
+the PR, so a claim without one is refused (`status: error`) before the store is
+touched. Outcomes:
 
 - **`status: success`** — the claim is held. `action` is `claimed` (first claim),
   `renewed` (self-holder re-claim), or `reclaimed` (the previous holder's window
@@ -338,22 +347,44 @@ Outcomes:
 - **`status: refused`, `reason: recovery_cap_exhausted`** — the recursion cap
   (`attempt_cap` recovery events per bot per PR) is spent. No mutation; the consumer
   escalates rather than re-triggering the bot. The attempt counter is scoped to
-  `(bot_kind, pr_number)` and survives both a release and a holder takeover, so the
-  cap cannot be reset by releasing and re-claiming.
+  `(bot_kind, pr_number)` and survives a release, a takeover by another PLAN, and a
+  takeover by another PR — the store keeps a per-PR ledger beside the record, so the
+  cap can be reset neither by releasing and re-claiming, nor by letting a second PR
+  claim the same bot's window in between.
 
 ### merge_lock — rate-window check
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock rate-window check \
-  --plan-id PLAN_ID --bot-kind BOT_KIND
+  --plan-id PLAN_ID --bot-kind BOT_KIND --pr-number PR_NUMBER [--attempt-cap ATTEMPT_CAP]
 ```
 
 A pure non-mutating read: `status: held` while a holder's window is unexpired,
 `status: free` otherwise (including a released or elapsed record). Fields: `holder`,
 `pr_number`, `expires_at`, `seconds_remaining`, `expired`, `attempts`,
-`attempt_cap`, `attempts_remaining`. This is the observable the recovery sequence
-polls between paced `sleep` calls — never a single long blocking sleep of the
-parsed ETA.
+`attempts_for_pr`, `attempt_cap`, `attempts_remaining` — on BOTH branches, including
+the one where no record exists yet, so a consumer never branches on whether the
+window has been claimed. This is the observable the recovery sequence polls between
+paced `sleep` calls — never a single long blocking sleep of the parsed ETA.
+
+`--pr-number` is REQUIRED here for the same reason it is on `claim`: the budget
+`check` reports is the budget the caller's PR has left, which is unanswerable
+without knowing the PR. A `check` without one is refused (`status: error`) before
+the store is read.
+
+Two counts are published because they answer different questions. `attempts` is the
+raw stored count for `--bot-kind`, whatever PR it belongs to. `attempts_for_pr` is
+the part of it that counts against the CALLER's PR — zero when the stored record
+belongs to a different PR, since the cap is scoped to `(bot_kind, pr_number)`.
+`attempts_remaining` is derived from `attempts_for_pr`, never from `attempts`.
+
+**Invariant — `check` and `claim` agree.** A `check` immediately followed by a
+successful `claim` for the SAME PR reports exactly one more remaining attempt than
+that claim does, because both compute the spent count the same way. This is what
+makes `check` safe to read before acting: when the two disagreed, a `check` for a
+PR the stored record did not belong to reported the budget exhausted while the
+`claim` that followed would have succeeded, so a read-before-act consumer skipped a
+recovery it was still allowed to run.
 
 ### merge_lock — rate-window release
 
@@ -366,6 +397,55 @@ Drops this plan's claim (`action: released`), or is a benign no-op when the wind
 is unclaimed or held by another plan (`action: noop`). The record is RETAINED with
 its `attempts` counter intact — the recursion cap counts recovery events per bot per
 PR across the whole sequence, which releases the window between attempts.
+
+Unlike `claim` and `check`, `release` takes no `--pr-number` and refuses nothing when
+it is absent: it drops the holder without consulting the per-PR counter, so it has no
+PR to count against.
+
+### merge_lock — poll-delay
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock poll-delay \
+  [--min-seconds MIN_SECONDS] [--max-seconds MAX_SECONDS]
+```
+
+Returns ONE uniformly-drawn delay in seconds, bounded by `--min-seconds` (default
+`300`) and `--max-seconds` (default `1200`) — the 5-to-20-minute range. Output:
+
+- **`status: success`** — fields `delay_seconds` (the drawn value), plus
+  `min_seconds` and `max_seconds` echoing the range it was drawn from, so a consumer
+  reading only the payload need not know the defaults.
+- **`status: error`** (`error_code: INVALID_INPUT`) — the bounds are malformed, in
+  exactly three ways, checked in this order. Either bound is **non-finite** (`nan`,
+  `inf`, `-inf`): `nan` compares False against every bound so neither check below can
+  see it, and both it and `+inf` produce a non-finite draw that reaches the caller's
+  `sleep`. Either bound is **negative**: the drawn value is interpolated straight into
+  the caller's `sleep` command, so a negative bound leaves this verb as a malformed
+  shell command rather than as a merely-odd number. Or `--min-seconds` **exceeds**
+  `--max-seconds`: the pair is REFUSED, never silently swapped, because a swap returns
+  a plausible delay drawn from a range the caller never asked for, so the caller's
+  mistake survives as a wrong-but-believable number instead of surfacing as an error
+  it can act on. Every refusal echoes `min_seconds` and `max_seconds`.
+
+**It computes; it does not wait.** The verb returns the number and exits — the
+CALLER sleeps it. `automatic-review` awaits it once at the Branch 3 → trigger-arm
+boundary of its rate-limit recovery, as a single standalone `sleep` Bash call. The
+split is deliberate and matches the rate-window verbs, which are likewise
+non-waiting (an atomic claim or release, with the caller re-polling): a wait
+embedded in this script would hold a process open inside a primitive every
+concurrently-finalizing plan contends on.
+
+**It shares neither the store nor the mutex — it touches no state at all.** Unlike
+the `rate-window` verbs, which at least co-tenant `merge-queue.json`, `poll-delay`
+is a pure computation behind a CLI. It takes no `--plan-id`, reads no store, and
+writes nothing to `merge.lock`, `merge-queue.json`, or the `rate_windows` key, so it
+can be called from anywhere without contending for anything.
+
+The randomness is injectable at the function seam (`compute_poll_delay`'s `rng`
+parameter) rather than through a `--seed` flag, so a test can pin the draw and
+assert the range deterministically. There is deliberately no seed flag: a seed is an
+operator-facing reproducibility knob, and this value has no operator-facing reason to
+be reproducible.
 
 ### build_queue — acquire
 
@@ -390,6 +470,7 @@ python3 .plan/execute-script.py plan-marshall:manage-locks:build_queue release \
 | build wrappers (`_build_execute_factory`, `_pyproject_execute`) | consume | `build_queue acquire`/`release` around `execute_direct` — the in-process fallback path (unregistered / daemon-down) |
 | `manage-build-server:_marshalld_scheduler` (via the D5 routing seam) | consumes | the same machine-global `build-queue.json` — the registered path (daemon-served builds) |
 | `automatic-review/SKILL.md` rate-limit recovery sequence | consumes | `merge_lock rate-window claim`/`check`/`release` |
+| `automatic-review/SKILL.md` Branch 3 → trigger-arm boundary | consumes | `merge_lock poll-delay` — awaits the returned `delay_seconds` once before the boundary's selector re-consult routes |
 | `_locks_core.rmw_json` | consumed by | both `build_queue` (`build-queue.json`) and `merge_lock` (`merge-queue.json` FIFO layer AND `rate_windows` claims) |
 
 ## Standards

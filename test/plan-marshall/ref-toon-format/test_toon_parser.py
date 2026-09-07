@@ -8,6 +8,7 @@
 # Import the module under test (PYTHONPATH set by conftest)
 import pytest
 from toon_parser import (
+    BlockScalar,
     block_scalar_body_continues,
     block_scalar_header_indent,
     parse_toon,
@@ -685,3 +686,198 @@ def test_serialize_toon_output_is_byte_exact_for_every_quoting_disjunct():
         'rows[1]{target,intent}:\n'
         '  src/a.py,write-replace'
     )
+
+
+# =============================================================================
+# Test: BlockScalar — the only safe emission for multi-line text
+# =============================================================================
+#
+# The parser has always READ block scalars; the serializer had no way to WRITE
+# one, so a producer with multi-line text had no correct option. These tests pin
+# the marked path and — with a matched control on the unmarked one — pin why the
+# marking is load-bearing rather than cosmetic.
+
+#: Opaque foreign text of the kind a PR body or an issue description is: a
+#: heading, interior blank lines, an indented continuation, and a line that reads
+#: exactly like a TOON key/value pair for a key the ENVELOPE also uses.
+OPAQUE_TEXT = '## Heading\n\nstatus: blocked\n\n- item: with colon\n    continued\n\ntail'
+
+
+def test_block_scalar_is_emitted_with_a_header_and_an_indented_body():
+    """A marked value becomes ``key: |`` plus a body indented two spaces."""
+    rendered = serialize_toon({'note': BlockScalar('first\nsecond')})
+
+    assert rendered == 'note: |\n  first\n  second'
+
+
+def test_block_scalar_round_trips_through_parse_toon():
+    """Serialised then re-parsed, opaque multi-line text is unchanged."""
+    payload = {'status': 'success', 'note': BlockScalar(OPAQUE_TEXT)}
+
+    reparsed = parse_toon(serialize_toon(payload))
+
+    assert reparsed['note'] == OPAQUE_TEXT
+    assert reparsed['status'] == 'success'
+
+
+def test_unmarked_multiline_string_corrupts_the_document():
+    """The matched control: without the marking, both properties above fail.
+
+    This is what makes the round-trip test meaningful. The identical text left as
+    a plain ``str`` is emitted as a quoted scalar whose later lines land at column
+    zero, so the body is truncated at its first line AND the payload's own
+    ``status`` is overwritten by the ``status: blocked`` line inside the text.
+    """
+    payload = {'status': 'success', 'note': OPAQUE_TEXT}
+
+    reparsed = parse_toon(serialize_toon(payload))
+
+    assert reparsed['note'] != OPAQUE_TEXT
+    assert reparsed['status'] == 'blocked'
+
+
+def test_block_scalar_preserves_interior_blank_lines_and_indentation():
+    """Interior structure survives a round trip untouched."""
+    body = 'alpha\n\n    deep indent\n\nomega'
+
+    reparsed = parse_toon(serialize_toon({'note': BlockScalar(body)}))
+
+    assert reparsed['note'] == body
+
+
+def _emitted(payload):
+    """Render ``payload`` the way every emitter does: ``print(serialize_toon(...))``.
+
+    ``serialize_toon`` returns the document WITHOUT its terminating newline;
+    ``print`` supplies it, and ``parse_toon`` reads it back off the captured
+    stdout. Tests that assert body fidelity must exercise that pairing, because it
+    is the only one production runs — a bare ``parse_toon(serialize_toon(...))``
+    is an unterminated document, and the terminator is the byte the trailing-edge
+    ambiguity turns on.
+    """
+    return serialize_toon(payload) + '\n'
+
+
+# The block scalar carries its body VERBATIM across the emitted-then-parsed
+# boundary — outer blank lines and first-line indentation included. The cases
+# below pin that edge from both sides, because it is the promise a PR or issue
+# description depends on: `github_ops._extract_body` returns the body whole, and
+# the close-and-reopen recovery hands what it read back to `pr create`.
+#
+# ⛔ The exactness is asserted against `_emitted`, not against a bare
+# `serialize_toon` return. Two edges are document properties rather than body
+# edits, and each has its own case below: a whitespace-only line never reaches the
+# document with its spaces, and an UNTERMINATED document cannot distinguish a
+# body's final blank line from its own terminator.
+
+
+def test_block_scalar_carries_the_bodys_outer_blank_lines():
+    """A body opening and closing on a blank line reads back with both.
+
+    This is the fidelity the `.strip()` this parser used to end on destroyed. A PR
+    description that opens on a blank line was silently re-created without it by
+    the close-and-reopen recovery, which reads a body back through this parser.
+    """
+    body = '\nmiddle\n'
+
+    reparsed = parse_toon(_emitted({'note': BlockScalar(body)}))
+
+    assert reparsed['note'] == body
+
+
+def test_block_scalar_keeps_leading_indent_on_every_line_including_the_first():
+    """Indentation is body content wherever it sits.
+
+    Its own matched control: the identical two-space indent must survive on BOTH
+    lines. Asserting only the first would pass equally on a parser that had
+    stopped dedenting at all, which is a different and much worse behaviour — the
+    body would then carry the emitter's structural two-space prefix as content.
+    """
+    reparsed = parse_toon(_emitted({'note': BlockScalar('  first\n  second')}))
+
+    assert reparsed['note'] == '  first\n  second'
+
+
+def test_block_scalar_reduces_a_whitespace_only_line_to_a_blank_one():
+    """A whitespace-only line survives AS a line; only its spaces are gone.
+
+    ``_serialize_block_scalar`` writes a blank payload line as a genuinely empty
+    line, so those spaces never enter the document — this is the emitter's
+    normalisation, not a parser edit, and the line itself is still there.
+    """
+    reparsed = parse_toon(_emitted({'note': BlockScalar('tail\n   ')}))
+
+    assert reparsed['note'] == 'tail\n'
+
+
+def test_block_scalar_body_is_not_extended_by_the_documents_terminator():
+    """The final newline of an emitted document closes the last line, not the body.
+
+    ``ci pr view`` puts ``body`` LAST in its payload, so the block scalar runs to
+    the end of the document and the terminator ``print`` adds is the very next
+    line the body walk sees. Reading it as body appends a newline no provider
+    sent — the mirror-image corruption of the strip this replaced, and the reason
+    dropping the strip alone is not the whole fix.
+    """
+    body = 'first\n\nlast'
+
+    reparsed = parse_toon(_emitted({'status': 'success', 'note': BlockScalar(body)}))
+
+    assert reparsed['note'] == body
+
+
+def test_an_unterminated_document_cannot_keep_a_bodys_final_blank_line():
+    """MATCHED CONTROL for the pairing — the documented cost of skipping ``print``.
+
+    ``serialize_toon`` emits no terminator, so a body's own final blank line and
+    the document's terminator are the same byte and cannot be told apart. The
+    parser resolves that in favour of the terminated form; fed the unterminated
+    return directly, the final blank line is the one thing it cannot recover.
+    Paired with ``test_block_scalar_carries_the_bodys_outer_blank_lines`` above,
+    which passes the identical body through ``_emitted`` and gets it back whole.
+    """
+    body = '\nmiddle\n'
+
+    reparsed = parse_toon(serialize_toon({'note': BlockScalar(body)}))
+
+    assert reparsed['note'] == '\nmiddle'
+
+
+def test_block_scalar_is_a_str_for_in_process_consumers():
+    """The marker is a ``str`` subclass, so nothing downstream has to know about it."""
+    marked = BlockScalar('plain text')
+
+    assert isinstance(marked, str)
+    assert marked == 'plain text'
+    assert marked.upper() == 'PLAIN TEXT'
+
+
+def test_single_line_block_scalar_still_uses_the_block_form():
+    """The marking, not the content, decides the emission.
+
+    A body that happens to be one line today may be many tomorrow; a producer
+    must not have to re-decide the encoding per value, and a consumer must not
+    see the shape flip underneath it.
+    """
+    rendered = serialize_toon({'note': BlockScalar('one line')})
+
+    assert rendered == 'note: |\n  one line'
+    assert parse_toon(rendered)['note'] == 'one line'
+
+
+def test_block_scalar_nested_in_an_object_indents_past_its_own_header():
+    """Nested one level deeper, the header and body both shift by the parent indent."""
+    rendered = serialize_toon({'outer': {'note': BlockScalar('a\nb')}})
+
+    assert rendered == 'outer:\n  note: |\n    a\n    b'
+
+
+def test_plain_string_emission_is_unchanged_by_the_marker_type():
+    """Adding the marker changed nothing for an unmarked value.
+
+    ``value_needs_quoting`` remains the accurate description of what the
+    serializer does to a plain ``str`` — including a multi-line one, which is
+    still quoted rather than blocked.
+    """
+    assert serialize_toon({'k': 'a\nb'}) == 'k: "a\nb"'
+    assert value_needs_quoting('a\nb') is True

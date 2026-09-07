@@ -1260,8 +1260,9 @@ def test_resolve_plan_footprint_returns_sorted_paths_when_resolvable(
 
 # One representative of each infrastructure-config anchoring group the aggregator
 # recognizes generically — location-anchored trees plus the basename-anchored tool
-# descriptors (container orchestration, container lint/scan, review bots). No
-# build extension may declare a route matching any of them.
+# descriptors (container orchestration, container lint/scan, review bots, and the
+# planning system's own project configuration). No build extension may declare a
+# route matching any of them.
 _INFRA_CONFIG_PATHS = (
     '.github/workflows/python-verify.yml',
     '.github/dependabot.yml',
@@ -1276,6 +1277,7 @@ _INFRA_CONFIG_PATHS = (
     '.pr_agent.toml',
     '.coderabbit.yaml',
     '.coderabbit.yml',
+    '.plan/marshal.json',
 )
 
 

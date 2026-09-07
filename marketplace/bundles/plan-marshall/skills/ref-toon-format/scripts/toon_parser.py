@@ -11,7 +11,8 @@ Supports:
 - Nested objects via indentation (2-space indent only)
 - Uniform arrays with headers (items[N]{field1,field2}:)
 - Comments (#)
-- Multi-line values (|)
+- Multi-line values (|) — parsed always; SERIALIZED only for a value the producer
+  marked with ``BlockScalar``, which is the only safe way to emit multi-line text
 
 Limitations:
 - Only 2-space indentation is supported for nesting (not tabs or 4-space)
@@ -20,7 +21,7 @@ Limitations:
 Stdlib-only - no external dependencies.
 
 Usage:
-    from toon_parser import parse_toon, serialize_toon, ToonParseError
+    from toon_parser import BlockScalar, parse_toon, serialize_toon, ToonParseError
 """
 
 import json
@@ -31,6 +32,7 @@ from typing import Any, NamedTuple
 __version__ = '3.0'
 
 __all__ = [
+    'BlockScalar',
     'SimpleArrayLine',
     'ToonParseError',
     'block_scalar_body_continues',
@@ -42,6 +44,57 @@ __all__ = [
     'serialize_toon',
     'value_needs_quoting',
 ]
+
+
+class BlockScalar(str):
+    """A string :func:`serialize_toon` must emit as a block scalar (``key: |``).
+
+    A plain ``str`` carrying newlines cannot be emitted as a TOON scalar at all.
+    :func:`_serialize_value` wraps it in quotes but escapes nothing, so its second
+    and later lines land in the document at column zero — where
+    :func:`parse_toon` reads them as SIBLING KEYS of the value they belong to. A
+    payload line that happens to read ``status: blocked`` therefore does not merely
+    get lost; it OVERWRITES the envelope's own ``status``. Any producer whose value
+    is opaque foreign text — a pull-request body, an issue description, a captured
+    log — must mark it with this type so it crosses the boundary intact and inert.
+
+    Marking is explicit, and deliberately not inferred from the presence of a
+    newline: :func:`value_needs_quoting` is the published predicate for what the
+    serializer quotes, and switching plain multi-line strings to a different
+    emission would make that predicate wrong for every existing caller. A
+    ``BlockScalar`` is a ``str``, so an in-process consumer reading the field
+    compares, slices and writes it exactly as before.
+
+    **Scope: object values only.** A uniform-array row is one physical line, so a
+    ``BlockScalar`` used as a table CELL is emitted by the ordinary quoting path
+    and carries the same hazard a plain multi-line string does. Put opaque text in
+    an object field, never in a table column.
+
+    Round-trip: the body is carried VERBATIM — its opening and closing blank
+    lines, the first line's own indentation, and every interior line all survive
+    :func:`parse_toon`. The exact pairing is the one the transport already uses:
+    ``print(serialize_toon(payload))`` on the way out, :func:`parse_toon` over the
+    captured stdout on the way back.
+
+    Two edges are not carried, and both are properties of the DOCUMENT rather
+    than silent edits to the body:
+
+    - A whitespace-only body line arrives empty. ``_serialize_block_scalar``
+      writes a blank payload line as a genuinely empty line, so those spaces never
+      enter the document; nothing downstream can restore what was never written.
+    - ``serialize_toon`` returns a document WITHOUT its terminating newline, so
+      handing that return straight to ``parse_toon`` — instead of the printed form
+      — costs a body its final blank line. The body's own trailing blank and the
+      document's terminator are the same byte, so the two are indistinguishable;
+      ``parse_toon`` resolves the ambiguity in favour of the terminated form,
+      because that is the form every emitter produces.
+
+    The boundary is pinned by
+    ``test/plan-marshall/ref-toon-format/test_toon_parser.py``, so it cannot move
+    in either direction unobserved.
+    """
+
+    __slots__ = ()
 
 
 class ToonParseError(Exception):
@@ -364,7 +417,25 @@ def block_scalar_body_continues(line: str, header_indent: int) -> bool:
 
 
 def _parse_multiline_value(ctx: ParseContext, base_indent: int) -> str:
-    """Parse a multi-line string value (indicated by |)."""
+    """Parse a multi-line string value (indicated by ``|``), keeping the body verbatim.
+
+    Every line :func:`block_scalar_body_continues` admits is kept, the body's
+    opening and closing blank lines included. The join is deliberately NOT
+    stripped: a strip here discards part of what that predicate has just declared
+    to BE the body, so the parser's two halves would disagree about the block's
+    extent — and opaque foreign text carried through this parser (a pull-request
+    description, an issue body) would come back edited at its edges by a reader
+    that promised to carry it whole.
+
+    One normalisation remains, and it is the emitter's rather than this
+    function's: a whitespace-only body line is recorded as empty, because
+    :func:`_serialize_block_scalar` writes a blank payload line as a genuinely
+    empty line and so never puts those spaces in the document at all.
+
+    The document's own terminating newline is NOT part of the body; it is removed
+    by :func:`parse_toon` before this walk begins. See that function for why the
+    two cannot be told apart here.
+    """
     lines = []
 
     while ctx.index < len(ctx.lines):
@@ -379,7 +450,7 @@ def _parse_multiline_value(ctx: ParseContext, base_indent: int) -> str:
             lines.append(line[base_indent + 2 :] if len(line) > base_indent + 2 else line.strip())
         ctx.index += 1
 
-    return '\n'.join(lines).strip()
+    return '\n'.join(lines)
 
 
 def _parse_object(ctx: ParseContext, base_indent: int) -> dict[str, Any]:
@@ -501,6 +572,16 @@ def parse_toon(content: str) -> dict[str, Any]:
         {'name': 'Alice', 'age': 30, 'roles': [{'id': 1, 'name': 'admin'}, {'id': 2, 'name': 'user'}]}
     """
     lines = content.split('\n')
+    # A TOON document is newline-TERMINATED text: every emitter writes it as
+    # ``print(serialize_toon(payload))``, so the final newline CLOSES the last
+    # line rather than opening an empty one. ``split('\n')`` cannot tell those two
+    # apart, and the difference is observable in exactly one place — inside a
+    # block scalar, whose body admits blank lines. Every other construct skips
+    # them. Left in place, the terminator would be appended to the body of a
+    # block scalar that is the document's last key, which is the shape
+    # ``ci pr view`` emits: its ``body`` is the final field.
+    if lines and lines[-1] == '':
+        lines.pop()
     ctx = ParseContext(lines=lines)
 
     try:
@@ -616,6 +697,32 @@ def _serialize_value(value: Any, table_separator: str = ',') -> str:
     return str(value)
 
 
+def _serialize_block_scalar(key: str, value: str, prefix: str) -> list[str]:
+    """Render ``key``/``value`` as a TOON block scalar, one output line per element.
+
+    Emits the ``key: |`` header, then every line of ``value`` indented two spaces
+    past the header. That indent is exactly what :func:`_parse_multiline_value`
+    strips back off, so the body round-trips, and it is also what makes the body
+    INERT: no payload line can reach column zero, so none of them can be read as a
+    key. A blank payload line is emitted as a genuinely empty line rather than as
+    two spaces — ``block_scalar_body_continues`` admits both, and the empty form
+    leaves no trailing whitespace in the document.
+
+    Args:
+        key: The field name.
+        value: The multi-line (or single-line) body.
+        prefix: The current indentation prefix of the enclosing object.
+
+    Returns:
+        The output lines, header first.
+    """
+    lines = [f'{prefix}{key}: |']
+    body_prefix = f'{prefix}  '
+    for body_line in value.split('\n'):
+        lines.append(f'{body_prefix}{body_line}' if body_line else '')
+    return lines
+
+
 def _is_uniform_array(arr: list) -> tuple[bool, list[str]]:
     """Check if array is uniform (all dicts with compatible keys).
 
@@ -649,6 +756,11 @@ def _is_uniform_array(arr: list) -> tuple[bool, list[str]]:
 def serialize_toon(data: dict[str, Any], indent: int = 0, table_separator: str = ',') -> str:
     """Serialize a Python dictionary to TOON format.
 
+    A value wrapped in :class:`BlockScalar` is emitted as a block scalar
+    (``key: |`` plus an indented body) instead of as a quoted scalar. That is the
+    only supported way to put multi-line text into a TOON document — see that
+    class for why an unmarked multi-line ``str`` corrupts the envelope.
+
     Args:
         data: Dictionary to serialize
         indent: Current indentation level (internal use)
@@ -667,7 +779,9 @@ def serialize_toon(data: dict[str, Any], indent: int = 0, table_separator: str =
     prefix = '  ' * indent
 
     for key, value in data.items():
-        if isinstance(value, dict):
+        if isinstance(value, BlockScalar):
+            lines.extend(_serialize_block_scalar(key, value, prefix))
+        elif isinstance(value, dict):
             lines.append(f'{prefix}{key}:')
             lines.append(serialize_toon(value, indent + 1, table_separator))
         elif isinstance(value, list):

@@ -194,8 +194,30 @@ CodeRabbit's review limit is a **rolling window that reopens on its own**, so `r
 `automatic-review` opt-in rate-limit refusal recovery (`review_rate_window_await`, bounded by
 `review_rate_window_timeout_seconds`, defaulted to 3600 to match the roughly hourly reset) worth
 enabling for this bot — the class is the field the recovery decision reads, rather than assuming
-every bot's refusal is waitable. For this bot the recovery claims the window, polls it to expiry, and
-then generates a fresh trigger event; see `../SKILL.md` § "Rate-limit refusal recovery (opt-in)".
+every bot's refusal is waitable. For this bot the recovery claims the window, polls it to expiry,
+awaits a bounded jittered delay, and only then RE-DELIVERS the request by closing and re-opening the
+PR — the elapsed claim resolves through this record's `trigger_semantics` above, and this bot asks
+for an explicit trigger, so a rebase-push or a trigger comment is not what fires. See `../SKILL.md`
+§ "Rate-limit refusal recovery (opt-in)" for the branch this lands on, and
+`workflow-integration-github`'s `resolve_recovery_action` for the derivation itself.
+
+**Why the wake is jittered.** The delay (`merge_lock poll-delay`, 5-20 minutes) sits at the
+Branch 3 → trigger-arm boundary and serves two purposes here:
+
+- **Cross-lane contention.** A `doc/plans/` cloud-lane run is not serialised by `merge_lock`'s
+  rate-window claim — it holds no claim and cannot see one — yet it draws on the same CodeRabbit
+  allowance, which the notice itself describes as per-developer and set by 7-day history rather than
+  by this PR. Both lanes can therefore read the same stated ETA and wake together. The claim cannot
+  reach across that boundary; the jitter is what separates the two wakes.
+- **Post-release decorrelation.** The claim is released as each recovery completes, so without a
+  jittered delay the next attempt would start from the moment the previous one finished — a
+  synchronised start the claim permits precisely because the claim is no longer held.
+
+⛔ **This is NOT the shared-allowance thundering-herd rationale**, and repeating that argument here
+would be wrong rather than merely redundant. That argument reasons from several *unserialised* plans
+converging on one slot; in this repository the rate-window claim already serialises every in-repo
+claimant by construction, so the in-repo herd it describes cannot form. What survives is the pair
+above — a lane the claim cannot see, and the release edge it does not cover.
 
 The notice usually states its own reset time; `rate_limit_eta_patterns` extracts it so the caller
 can report a concrete ETA instead of an opaque "rate-limited". The patterns are *extraction* regexes,
