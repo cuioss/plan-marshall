@@ -639,6 +639,32 @@ def test_get_executor_path_plan_base_dir_override(tmp_path, plan_base_dir_at_tmp
     assert result == tmp_path / 'execute-script.py'
 
 
+def test_get_executor_path_tracked_config_override_from_raw_worktree(tmp_path, monkeypatch):
+    """The WorktreeEscapeWarning remedy actually works: from a raw worktree cwd,
+    PLAN_TRACKED_CONFIG_DIR pins the executor to the worktree's own .plan —
+    no warning, no escape to the main checkout."""
+    main = tmp_path / 'main'
+    (main / '.plan' / 'local').mkdir(parents=True)
+    worktree = main / '.plan' / 'local' / 'worktrees' / 'plan-x'
+    worktree.mkdir(parents=True)
+    monkeypatch.chdir(worktree)
+    monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
+    monkeypatch.setenv('PLAN_TRACKED_CONFIG_DIR', str(worktree / '.plan'))
+    with warnings.catch_warnings(record=True) as caught:
+        result = get_executor_path()
+    assert not [w for w in caught if issubclass(w.category, WorktreeEscapeWarning)]
+    assert result == (worktree / '.plan' / 'execute-script.py').resolve()
+
+
+def test_get_executor_path_tracked_config_override_wins_over_plan_base_dir(tmp_path, monkeypatch):
+    """PLAN_TRACKED_CONFIG_DIR is the fine-grained tracked-config override and
+    precedes PLAN_BASE_DIR, matching get_tracked_config_dir's precedence."""
+    monkeypatch.setenv('PLAN_TRACKED_CONFIG_DIR', str(tmp_path / 'tracked' / '.plan'))
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path / 'base'))
+    result = get_executor_path()
+    assert result == (tmp_path / 'tracked' / '.plan' / 'execute-script.py').resolve()
+
+
 def test_get_executor_path_cwd_walk_up(tmp_path, no_plan_base_dir, in_tmp_cwd):
     """In production, the executor anchors at <plan-root>/.plan/execute-script.py."""
     (tmp_path / '.plan' / 'local').mkdir(parents=True)

@@ -400,6 +400,13 @@ def get_executor_path() -> Path:
         Path to ``<plan-root>/.plan/execute-script.py`` where ``<plan-root>`` is
         resolved by the uniform cwd rule.
 
+    Resolution honours the overrides in the same precedence as
+    :func:`get_tracked_config_dir`: ``set_base_dir()`` override, then the
+    fine-grained ``PLAN_TRACKED_CONFIG_DIR`` environment override (which pins
+    the executor to a specific ``.plan`` dir — the remedy the
+    :class:`WorktreeEscapeWarning` message advertises), then ``PLAN_BASE_DIR``,
+    then the uniform cwd walk-up.
+
     Raises:
         RuntimeError: when the base directory cannot be resolved (no override,
             no ``PLAN_BASE_DIR``, no ``.plan/local`` ancestor of cwd, AND the
@@ -418,6 +425,9 @@ def get_executor_path() -> Path:
     # regenerate-on-main path.
     if _BASE_DIR_OVERRIDE is not None:
         return Path(_BASE_DIR_OVERRIDE) / 'execute-script.py'
+    env_tracked = os.environ.get('PLAN_TRACKED_CONFIG_DIR')
+    if env_tracked:
+        return Path(env_tracked) / 'execute-script.py'
     env_dir = os.environ.get('PLAN_BASE_DIR')
     if env_dir:
         return Path(env_dir) / 'execute-script.py'
