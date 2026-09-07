@@ -705,7 +705,7 @@ tree dirty.
 **Uniform firing point.** The hook fires at the natural END of every steward
 mode:
 
-- **Menu mode** — on the "Quit" path (Main Menu option 5), AFTER "Good bye!" is
+- **Menu mode** — on the "Quit" path (Main Menu option 6), AFTER "Good bye!" is
   emitted and BEFORE the skill stops.
 - **Wizard mode** — at the end of the wizard flow (see
   [`references/wizard-flow.md`](references/wizard-flow.md)), after the final

@@ -315,8 +315,8 @@ When the batched decision for a group would imply a fix outside the **plan's sco
 
 1. **Hold (recommended)** — the finding is written down for a later plan and this plan's boundary is left exactly where it was. Nothing in the code changes and nothing ships differently. Record `taken_into_account` with the deferral rationale.
 2. **Accept with rationale** — the finding is recorded as a known, accepted gap and will not be re-raised in this plan. Nothing in the code changes; unlike Hold, nothing is carried forward either. Record it as an `accepted` finding, log a `(scope-deviation:accept)` decision via `manage-logging decision`, and do NOT create a fix task.
-3. **Split** — the work is done, but as its own plan rather than inside this one. This plan ships unchanged and the operator files the sub-plan; the fix task is allocated in that separate deliverable.
-4. **Fix it here anyway** — this plan grows to cover the finding and ships the change with the rest of its work. Proceed with the standard FIX action body; the operator has accepted the scope deviation explicitly.
+3. **Split into a fix task** — a task to make this change is added to this plan, and the plan re-enters execute to carry it out. The change ships with the rest of the work rather than being deferred. Allocate it via the standard FIX action body in Step 3c and record the finding `fixed`.
+4. **Fix it here anyway** — the change is made now, in this pass, rather than routed through a separate task. This plan grows to cover the finding and ships the change with the rest of its work; the operator has accepted the scope deviation explicitly. Record the finding `fixed`.
 
 Scope-deviation detection signals (the LLM checks these against the loaded plan context):
 - The finding's `file_path` is not under any `modules[]` entry that this plan's deliverables claim.

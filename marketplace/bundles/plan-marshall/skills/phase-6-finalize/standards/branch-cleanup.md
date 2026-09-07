@@ -1725,22 +1725,23 @@ Get branch information from references context (already available from Step 2 co
 ```text
 AskUserQuestion:
   questions:
-    - question: "The work is finished and committed on {head_branch}. This project opens and merges its own pull requests, so nothing here will do that — all that is left is tidying up your local checkout. Do that now?"
+    - question: "The work is finished and committed on {head_branch}. This project opens and merges its own pull requests, so nothing here will do that — all that is left is tidying up your local checkout. Tidying deletes the local copy of {head_branch}: that is safe once the branch is pushed, and loses the work if it is not. Is {head_branch} pushed?"
       header: "Tidy up"
       description: |
         **Branch**: {head_branch} → {base_branch}
 
-        **What happens if you say yes**:
+        **What happens if you tidy up**:
         - Your checkout moves back to {base_branch}
         - {base_branch} is brought up to date from the remote
         - The local copy of {head_branch} is deleted
 
-        The branch on the remote is untouched either way.
+        Nothing is pushed either way, and no branch on the remote is created,
+        changed, or deleted.
       options:
-        - label: "Yes, proceed (recommended)"
-          description: "Right once the branch is pushed. Moves you back to {base_branch}, brings it up to date, and deletes the local copy of {head_branch}"
+        - label: "Yes, it is pushed"
+          description: "Moves you back to {base_branch}, brings it up to date, and deletes the local copy of {head_branch}; the pushed branch keeps the work"
         - label: "No, skip"
-          description: "Leaves you on {head_branch} with everything as it stands. Choose this if the branch is not pushed yet, or if you still have work to do on it"
+          description: "Leaves you on {head_branch} with everything as it stands and deletes nothing. Choose this if the branch is not pushed yet, or if you still have work to do on it"
       multiSelect: false
 ```
 
