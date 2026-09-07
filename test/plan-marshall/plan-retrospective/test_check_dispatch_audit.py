@@ -1079,6 +1079,36 @@ def test_document_contract_detects_the_pre_fix_and_reordered_shapes():
             'step that carries none, which is the region reading text it does not own'
         )
 
+    # FOUR-SPACE INDENT — the arm that bounds the indent dimension from ABOVE. The
+    # four arms above are all ADMIT arms, so they pin ` {0,3}` only from below:
+    # widening it to ` {0,4}` or ` *` leaves every one of them green, leaves the
+    # level-4 subsection arm green, and leaves the live-document assertion green
+    # (the shipped SKILL.md carries no indented ATX heading, so the widening is
+    # unobservable there). The docstring states the CommonMark rule the pattern
+    # implements — up to three leading spaces — and without this arm the stated rule
+    # and the enforced rule can diverge in silence.
+    #
+    # Four spaces is an indented code block in CommonMark, not a heading, so it must
+    # NOT terminate the region: the reconcile step's own prohibition lies beneath it
+    # and must still be reached. This is the same control the sibling fix for finding
+    # 85a302 adopted in test_finalize_step_sync_baseline.py for the identical
+    # archetype; this occurrence is the unclosed half of that class.
+    code_block_marker = _reconcile_step(
+        '### Step 2.5: Reconcile the phase accumulators',
+        '    ### not a heading — four spaces makes this an indented code block\n\n'
+        '**Live modes only.** Archived mode is read-only and MUST NOT write to the '
+        'archived plan directory.',
+    )
+    assert _prohibits_the_archived_write(
+        _reconcile_conditions(code_block_marker + aspect_table)
+    ), (
+        'a four-space-indented `###` line terminated the region, so the step\'s OWN '
+        'bound was cut out of it. Four spaces is an indented code block in CommonMark, '
+        'not an ATX heading — a terminator that treats it as one has widened past the '
+        'rule its own docstring states, and every ADMIT arm above stays green while it '
+        'does so'
+    )
+
     # A level-4 heading is NOT a terminator: it is a subsection of the step being
     # read, so the region must still reach the step's own prohibition beneath it.
     subsection = _reconcile_step(
