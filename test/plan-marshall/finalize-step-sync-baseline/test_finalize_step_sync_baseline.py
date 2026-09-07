@@ -15,13 +15,9 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-# Repo root resolved from this test file:
-# test/plan-marshall/finalize-step-sync-baseline/test_*.py -> repo root is 4 parents up (index 3).
-_REPO_ROOT = Path(__file__).resolve().parents[3]
-_PHASE6_STANDARDS = (
-    _REPO_ROOT
-    / 'marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards'
-)
+from conftest import get_skill_dir
+
+_PHASE6_STANDARDS = get_skill_dir('plan-marshall', 'phase-6-finalize') / 'standards'
 _SYNC_BASELINE_DOC = _PHASE6_STANDARDS / 'finalize-step-sync-baseline.md'
 _PRE_PUSH_QUALITY_GATE_DOC = _PHASE6_STANDARDS / 'pre-push-quality-gate.md'
 

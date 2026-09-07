@@ -23,13 +23,12 @@ fault the test injects.
 
 from __future__ import annotations
 
-import importlib.util
 import json
 from argparse import Namespace
 from pathlib import Path
 from typing import Any
 
-from conftest import PROJECT_ROOT
+from conftest import load_script_module
 
 #: A real repository file, used as BOTH the declared path and the step target
 #: in every fixture that is not deliberately injecting a fault. Declaring one
@@ -60,28 +59,23 @@ _ALL_CHECKS = (
 )
 
 
-# Load the cmd module via importlib (mirrors the batch-add test bootstrap).
-_SCRIPTS_DIR = (
-    PROJECT_ROOT
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-tasks'
-    / 'scripts'
-)
-
-
 def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    assert spec is not None
-    mod = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(mod)
-    return mod
+    """Load a ``manage-tasks`` script under an explicit, caller-chosen name.
+
+    Resolution is by ``(bundle, skill, filename)``. Nothing is registered: the
+    callers need only the returned object, and not registering keeps these
+    copies from displacing a module another suite holds.
+    """
+    return load_script_module('plan-marshall', 'manage-tasks', filename, name, register=False)
 
 
-_qgate_mod = _load_module('_cmd_qgate_mechanical_under_test', '_cmd_qgate_mechanical.py')
+_qgate_mod = load_script_module(
+    'plan-marshall',
+    'manage-tasks',
+    '_cmd_qgate_mechanical.py',
+    '_cmd_qgate_mechanical_under_test',
+    register=False,
+)
 
 
 cmd_qgate_mechanical = _qgate_mod.cmd_qgate_mechanical

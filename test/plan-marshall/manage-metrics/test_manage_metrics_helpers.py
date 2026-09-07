@@ -19,15 +19,13 @@ helpers directly, covering the branches the integration paths skip:
   paths, and ``write_metrics``'s lossless round-trip of extra top-level keys.
 """
 
-import importlib.util
+from conftest import load_script_module
 
-from _manage_metrics_fixtures import SCRIPT_PATH
-
-# kebab-case filename — load via importlib under a unique module name.
-_spec = importlib.util.spec_from_file_location('manage_metrics_helpers', SCRIPT_PATH)
-assert _spec is not None and _spec.loader is not None
-manage_metrics = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(manage_metrics)
+# kebab-case filename — resolved by (bundle, skill, file) under a unique module
+# name, unregistered so this copy cannot displace one another suite holds.
+manage_metrics = load_script_module(
+    'plan-marshall', 'manage-metrics', 'manage-metrics.py', 'manage_metrics_helpers', register=False
+)
 
 _coerce_numeric = manage_metrics._coerce_numeric
 _wall_clock_ms = manage_metrics._wall_clock_ms

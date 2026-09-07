@@ -62,10 +62,12 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import NamedTuple
 
-# repo_root/test/pm-plugin-development/cloud-plan-lane/test_build_gate_lockstep.py
-#                                                     ^ parents[3] == repo root
-_REPO_ROOT = Path(__file__).resolve().parents[3]
-_SKILL_PATH = _REPO_ROOT / '.claude' / 'skills' / 'cloud-plan-lane' / 'SKILL.md'
+from conftest import PROJECT_ROOT
+
+# Annotated because ``conftest`` is deliberately untyped to mypy (see pyproject's
+# ``ignore_missing_imports`` override for it), so ``PROJECT_ROOT`` would otherwise
+# be ``Any`` and ``_read_live_document`` would return ``Any`` as ``str``.
+_SKILL_PATH: Path = PROJECT_ROOT / '.claude' / 'skills' / 'cloud-plan-lane' / 'SKILL.md'
 
 _STEP5_HEADING_PREFIX = '## Step 5'
 _REPORT_HEADING = '## Report'

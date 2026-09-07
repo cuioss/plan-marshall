@@ -20,23 +20,17 @@ the CLI surface contract (the retired ``comments-stage`` / ``triage`` /
 ``triage-batch`` subcommands MUST be gone).
 """
 
-import importlib.util
-import sys
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
-from conftest import get_script_path, run_script
+from conftest import get_script_path, load_script_module, run_script
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'workflow-integration-gitlab', 'gitlab_pr.py')
 
-_pr_path = Path(SCRIPT_PATH)
-_spec = importlib.util.spec_from_file_location('gitlab_pr', _pr_path)
-assert _spec is not None and _spec.loader is not None
-gitlab_pr = importlib.util.module_from_spec(_spec)
-sys.modules['gitlab_pr'] = gitlab_pr
-_spec.loader.exec_module(gitlab_pr)
+# Resolved by (bundle, skill, file), which is what keeps this distinct from the
+# github sibling despite the two scripts sharing a role.
+gitlab_pr = load_script_module('plan-marshall', 'workflow-integration-gitlab', 'gitlab_pr.py')
 
 fetch_comments = gitlab_pr.fetch_comments
 get_current_pr_number = gitlab_pr.get_current_pr_number

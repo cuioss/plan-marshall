@@ -43,7 +43,7 @@ from pathlib import Path
 import _corpus_index as corpus_index
 import pytest
 
-from conftest import get_script_path, get_scripts_dir, load_script_module
+from conftest import PROJECT_ROOT, get_script_path, get_scripts_dir, load_script_module
 
 SCRIPTS_DIR = get_scripts_dir('pm-plugin-development', 'tools-corpus-language-server')
 
@@ -560,7 +560,7 @@ def test_the_running_server_withholds_the_unverified_site_and_says_how_many(tmp_
 
 _STALENESS_SURFACES = (
     SCRIPTS_DIR.parent / 'SKILL.md',
-    Path(__file__).resolve().parents[3] / 'doc' / 'user' / 'corpus-language-server.adoc',
+    PROJECT_ROOT / 'doc' / 'user' / 'corpus-language-server.adoc',
     SCRIPTS_DIR / 'corpus_lsp.py',
 )
 

@@ -12,7 +12,6 @@ Tests that each extension:
 These are behavioral tests, not just structural validation.
 """
 
-import importlib.util
 import shutil
 import tempfile
 from pathlib import Path
@@ -21,7 +20,7 @@ import pytest
 from extension_base import ExtensionBase
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import MARKETPLACE_ROOT
+from conftest import MARKETPLACE_ROOT, load_skill_module
 
 # Every bundle that registers an Axis-A domain extension — the population
 # ``discover_all_extensions()`` reaches, and therefore the population every
@@ -57,18 +56,18 @@ VALID_PROFILE_CATEGORIES = [
 
 
 def load_extension(bundle_name: str):
-    """Load an extension.py module and return Extension instance."""
+    """Load a bundle's extension.py and return an Extension instance.
 
-    extension_path = MARKETPLACE_ROOT / bundle_name / 'skills' / 'plan-marshall-plugin' / 'extension.py'
+    ``extension.py`` sits at the skill root rather than under ``scripts/``, so
+    ``load_skill_module`` is the accessor that addresses it.
 
-    if not extension_path.exists():
-        raise FileNotFoundError(f'Extension not found: {extension_path}')
-
-    spec = importlib.util.spec_from_file_location(f'extension_{bundle_name}', extension_path)
-    if spec is None or spec.loader is None:
-        raise ImportError(f'Could not load module from {extension_path}')
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    Nothing is published to ``sys.modules``. Every bundle ships this same
+    filename, so a registering load would need a per-bundle name — and the name
+    this helper would use is COMPUTED from its argument, which no registration
+    guard can enumerate statically. These tests need only the returned object,
+    so ``register=False`` is the correct escape.
+    """
+    module = load_skill_module(bundle_name, 'plan-marshall-plugin', 'extension.py', register=False)
 
     # Return Extension instance
     if hasattr(module, 'Extension'):

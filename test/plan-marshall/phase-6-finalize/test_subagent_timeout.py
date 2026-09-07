@@ -21,37 +21,32 @@ These tests pin the timeout contract:
     manifest — even after a prior timeout failure.
 """
 
-import importlib.util
 from argparse import Namespace
 
 import pytest
 
-from conftest import MARKETPLACE_ROOT
+from conftest import MARKETPLACE_ROOT, load_script_module
 
 # ---------------------------------------------------------------------------
-# Manifest module (Tier 2 direct import via importlib because of the hyphen)
+# Manifest module (Tier 2 direct load — the filename is hyphenated, so it is
+# resolved by (bundle, skill, file) rather than imported. Unregistered, so this
+# copy cannot displace one another suite holds.)
 # ---------------------------------------------------------------------------
 
-_MANIFEST_SCRIPT = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-execution-manifest'
-    / 'scripts'
-    / 'manage-execution-manifest.py'
+_mem = load_script_module(
+    'plan-marshall',
+    'manage-execution-manifest',
+    'manage-execution-manifest.py',
+    'mem_for_timeout',
+    register=False,
 )
-_spec = importlib.util.spec_from_file_location('mem_for_timeout', str(_MANIFEST_SCRIPT))
-assert _spec is not None
-_mem = importlib.util.module_from_spec(_spec)
-assert _spec.loader is not None
-_spec.loader.exec_module(_mem)
 
 cmd_compose = _mem.cmd_compose
 read_manifest = _mem.read_manifest
 DEFAULT_PHASE_5_STEPS = _mem.DEFAULT_PHASE_5_STEPS
 DEFAULT_PHASE_6_STEPS = _mem.DEFAULT_PHASE_6_STEPS
 
-_mem._log_decision = lambda *a, **kw: None  # type: ignore[attr-defined]
+_mem._log_decision = lambda *a, **kw: None
 
 
 # ---------------------------------------------------------------------------

@@ -19,29 +19,23 @@ and the CLI surface contract (the retired ``triage`` / ``triage-batch`` /
 ``comments-stage`` subcommands MUST be gone).
 """
 
-import importlib.util
 import io
 import sys
 from contextlib import redirect_stdout
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 from _resolve_project_dir_fixtures import worktree_query_result
 
-from conftest import get_script_path, run_script
+from conftest import get_script_path, load_script_module, run_script
 
 # Script under test (for subprocess CLI plumbing tests)
 SCRIPT_PATH = get_script_path('plan-marshall', 'workflow-integration-github', 'github_pr.py')
 
-# Tier 2 direct imports — use explicit path to avoid module name collision
-# with workflow-integration-gitlab/scripts/gitlab_pr.py
-_pr_path = Path(SCRIPT_PATH)
-_spec = importlib.util.spec_from_file_location('github_pr', _pr_path)
-assert _spec is not None and _spec.loader is not None
-github_pr = importlib.util.module_from_spec(_spec)
-sys.modules['github_pr'] = github_pr
-_spec.loader.exec_module(github_pr)
+# Tier 2 direct load — resolved by (bundle, skill, file), which is what keeps
+# this distinct from the workflow-integration-gitlab sibling despite the two
+# scripts sharing a role. Registered under its own stem, as before.
+github_pr = load_script_module('plan-marshall', 'workflow-integration-github', 'github_pr.py')
 
 fetch_comments = github_pr.fetch_comments
 get_current_pr_number = github_pr.get_current_pr_number

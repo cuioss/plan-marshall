@@ -63,7 +63,7 @@ import extension_discovery
 from _step_key_canonical import canonicalize_step_key
 from extension_discovery import find_implementors
 
-from conftest import get_scripts_dir, load_script_module
+from conftest import PROJECT_ROOT, get_scripts_dir, get_skill_dir, load_script_module
 _SCRIPTS_DIR = get_scripts_dir('plan-marshall', 'phase-6-finalize')
 
 
@@ -519,11 +519,6 @@ def test_no_declared_glob_uses_recursive_double_star():
             assert '**' not in glob, f'{step} declares a recursive glob {glob!r}'
 
 
-#: The repository root — the base every declared glob is resolved against. Derived
-#: from this module's own position in the tree (``test/{bundle}/{skill}/``), so it
-#: is a property of the checkout layout rather than of the machine.
-_REPO_ROOT = Path(__file__).parents[3]
-
 #: The glob metacharacters whose presence means a declaration legitimately names a
 #: FAMILY of paths rather than one path. A declaration carrying neither names a
 #: single literal path, which can therefore be required to exist.
@@ -538,7 +533,7 @@ def _is_wildcard_free(glob: str) -> bool:
 def _tracked_paths() -> frozenset[str]:
     """Every git-tracked path in the repository, repo-relative and slash-separated."""
     result = subprocess.run(
-        ['git', '-C', str(_REPO_ROOT), 'ls-files', '-z'],
+        ['git', '-C', str(PROJECT_ROOT), 'ls-files', '-z'],
         capture_output=True,
         text=True,
         check=True,
@@ -561,7 +556,7 @@ def test_wildcard_free_discriminator_separates_a_literal_from_a_family():
 def _wildcard_free_offenders(
     surfaces: dict[str, tuple[list[str], bool]],
     tracked: frozenset[str],
-    repo_root: Path = _REPO_ROOT,
+    repo_root: Path = PROJECT_ROOT,
 ) -> tuple[list[str], int]:
     """Offenders, AND the number of wildcard-free globs actually examined.
 
@@ -717,14 +712,7 @@ def test_a_wholly_wildcard_bearing_declaration_examines_nothing():
 # ---------------------------------------------------------------------------
 
 _VERDICT_CURRENCY_DOC = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'phase-6-finalize'
-    / 'standards'
-    / 'verdict-currency.md'
+    get_skill_dir('plan-marshall', 'phase-6-finalize') / 'standards' / 'verdict-currency.md'
 )
 
 #: The heading each refusing step's own doc must carry.

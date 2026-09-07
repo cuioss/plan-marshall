@@ -34,7 +34,7 @@ contamination (per MEMORY.md "Test Isolation Pattern").
 from argparse import Namespace
 from pathlib import Path
 
-from conftest import load_script_module
+from conftest import get_skill_dir, load_script_module
 
 # =============================================================================
 # Module loading (mirrors test_mark_step_done.py / test_manage_status.py)
@@ -50,21 +50,14 @@ cmd_mark_step_done = _mark_step.cmd_mark_step_done
 read_status = _status_core.read_status
 
 # =============================================================================
-# Standards file paths (resolved relative to this test file's repo root).
+# Standards file paths, resolved through the shipped skill-directory accessor.
 # =============================================================================
 
-_REPO_ROOT = Path(__file__).parent.parent.parent.parent
-_PHASE_6_SKILL_MD = (
-    _REPO_ROOT / 'marketplace' / 'bundles' / 'plan-marshall'
-    / 'skills' / 'phase-6-finalize' / 'SKILL.md'
-)
-_AUTOMATED_REVIEW_MD = (
-    _REPO_ROOT / 'marketplace' / 'bundles' / 'plan-marshall'
-    / 'skills' / 'automatic-review' / 'SKILL.md'
-)
+_PHASE_6_DIR = get_skill_dir('plan-marshall', 'phase-6-finalize')
+_PHASE_6_SKILL_MD = _PHASE_6_DIR / 'SKILL.md'
+_AUTOMATED_REVIEW_MD = get_skill_dir('plan-marshall', 'automatic-review') / 'SKILL.md'
 _PRE_SUBMISSION_SELF_REVIEW_MD = (
-    _REPO_ROOT / 'marketplace' / 'bundles' / 'plan-marshall'
-    / 'skills' / 'phase-6-finalize' / 'workflow' / 'pre-submission-self-review.md'
+    _PHASE_6_DIR / 'workflow' / 'pre-submission-self-review.md'
 )
 
 #: The removed hand-maintained literal. Its ABSENCE from SKILL.md is what makes
@@ -227,16 +220,7 @@ def test_dispatcher_re_fires_on_loop_back(plan_context):
 # =============================================================================
 
 
-_TRIAGE_MD = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'plan-marshall'
-    / 'workflow'
-    / 'triage.md'
-)
+_TRIAGE_MD = get_skill_dir('plan-marshall', 'plan-marshall') / 'workflow' / 'triage.md'
 
 
 def test_fix_path_posts_thread_reply_before_terminal_done():

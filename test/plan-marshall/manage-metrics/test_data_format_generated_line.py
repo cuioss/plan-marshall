@@ -19,12 +19,16 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-# test/plan-marshall/manage-metrics/<this file>
-REPO_ROOT = Path(__file__).resolve().parents[3]
-SKILL_ROOT = REPO_ROOT / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills'
-DATA_FORMAT = SKILL_ROOT / 'manage-metrics' / 'standards' / 'data-format.md'
-EMITTER = SKILL_ROOT / 'manage-metrics' / 'scripts' / 'manage-metrics.py'
-RUN_CONFIG_STANDARD = SKILL_ROOT / 'manage-run-config' / 'standards' / 'run-config-standard.md'
+from conftest import get_script_path, get_skill_dir
+
+# Annotated because ``conftest`` is deliberately untyped to mypy (see pyproject's
+# ``ignore_missing_imports`` override for it), so the accessors' returns would
+# otherwise be ``Any`` and the readers below would return ``Any`` as ``str``.
+DATA_FORMAT: Path = get_skill_dir('plan-marshall', 'manage-metrics') / 'standards' / 'data-format.md'
+EMITTER: Path = get_script_path('plan-marshall', 'manage-metrics', 'manage-metrics.py')
+RUN_CONFIG_STANDARD: Path = (
+    get_skill_dir('plan-marshall', 'manage-run-config') / 'standards' / 'run-config-standard.md'
+)
 
 #: The rendered shape the emitter produces: the strftime pattern
 #: ``%Y-%m-%d %H:%M:%S`` followed by the default ``" UTC"`` suffix.

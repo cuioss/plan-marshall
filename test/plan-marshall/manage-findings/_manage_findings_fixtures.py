@@ -11,11 +11,9 @@ Tier 2 (direct import) tests with 2-3 subprocess tests for CLI plumbing.
 """
 
 
-import importlib.util
 from argparse import Namespace
-from pathlib import Path
 
-from conftest import get_script_path
+from conftest import get_script_path, load_script_module
 
 # Script path for remaining subprocess (CLI plumbing) tests
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-findings', 'manage-findings.py')
@@ -23,29 +21,11 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'manage-findings', 'manage-findin
 
 # Import toon_parser - conftest sets up PYTHONPATH
 
-# Tier 2 direct imports - load hyphenated module via importlib
-_MANAGE_FINDINGS_SCRIPT = str(
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-findings'
-    / 'scripts'
-    / 'manage-findings.py'
+# Tier 2 direct import — the hyphenated script, loaded unregistered so the copy
+# staged here cannot displace one another suite holds under the same name.
+_mod = load_script_module(
+    'plan-marshall', 'manage-findings', 'manage-findings.py', 'manage_findings', register=False
 )
-
-
-_spec = importlib.util.spec_from_file_location('manage_findings', _MANAGE_FINDINGS_SCRIPT)
-
-
-assert _spec is not None and _spec.loader is not None
-
-
-_mod = importlib.util.module_from_spec(_spec)
-
-
-_spec.loader.exec_module(_mod)
 
 
 cmd_add = _mod.cmd_add

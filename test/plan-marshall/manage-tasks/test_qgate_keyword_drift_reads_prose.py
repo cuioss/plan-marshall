@@ -19,34 +19,19 @@ prose reaches the opposite verdict on every one of them.
 
 from __future__ import annotations
 
-import importlib.util
 import json
 from argparse import Namespace
 from pathlib import Path
 
-from conftest import PROJECT_ROOT
+from conftest import load_script_module
 
-_SCRIPTS_DIR = (
-    PROJECT_ROOT
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-tasks'
-    / 'scripts'
+_qgate_mod = load_script_module(
+    'plan-marshall',
+    'manage-tasks',
+    '_cmd_qgate_mechanical.py',
+    '_cmd_qgate_mechanical_prose_haystack',
+    register=False,
 )
-
-
-def _load_module(name: str, filename: str):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    assert spec is not None
-    mod = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_qgate_mod = _load_module('_cmd_qgate_mechanical_prose_haystack', '_cmd_qgate_mechanical.py')
 cmd_qgate_mechanical = _qgate_mod.cmd_qgate_mechanical
 _build_haystack = _qgate_mod._build_haystack
 

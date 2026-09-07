@@ -16,24 +16,21 @@ Both verbs FAIL LOUD when no Sonar credential is configured — a typed
 ``unconfigured`` status, never a silent success.
 """
 
-import importlib.util
 import json
-import sys
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
-from conftest import get_script_path, run_script
+from conftest import get_script_path, load_script_module, run_script
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'workflow-integration-sonar', 'sonar.py')
 
-_path = Path(SCRIPT_PATH)
-_spec = importlib.util.spec_from_file_location('sonar_mod', _path)
-assert _spec is not None and _spec.loader is not None
-sonar_mod = importlib.util.module_from_spec(_spec)
-sys.modules['sonar_mod'] = sonar_mod
-_spec.loader.exec_module(sonar_mod)
+# Resolved by (bundle, skill, file) and REGISTERED under ``sonar_mod``: the
+# ``patch('sonar_mod....')` targets throughout this module are string targets, so
+# they resolve the name through ``sys.modules`` and the registration is what makes
+# them reachable. Nothing imports the name plainly, so the registration displaces
+# nothing.
+sonar_mod = load_script_module('plan-marshall', 'workflow-integration-sonar', 'sonar.py', 'sonar_mod')
 
 _is_suppressable = sonar_mod._is_suppressable
 _map_severity = sonar_mod._map_severity
@@ -206,7 +203,10 @@ class TestFetchFindings:
         # Take a rule from the live SUPPRESSABLE_RULES dict so the test exercises
         # real configuration. An empty dict would make the counter assertion
         # vacuous, so the precondition is asserted rather than skipped.
-        from sonar_mod import SUPPRESSABLE_RULES  # type: ignore[import-not-found]
+        # Read off the loaded module object rather than importing the registered
+        # name plainly: a name that is both file-loaded and plainly imported is a
+        # live displacement hazard, and the loader-contract guard reports it.
+        SUPPRESSABLE_RULES = sonar_mod.SUPPRESSABLE_RULES
 
         assert SUPPRESSABLE_RULES, 'No suppressable rules configured in sonar-rules.json'
         rule = next(iter(SUPPRESSABLE_RULES.keys()))

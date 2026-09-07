@@ -21,6 +21,7 @@ from pathlib import Path
 
 import pytest
 
+from conftest import MARKETPLACE_ROOT
 from marketplace.targets.claude.variant_emitter import (
     LEVEL_TABLE,
     emit_variants_for_agent,
@@ -34,15 +35,8 @@ EXTENSION_POINT = (
     'plan-marshall:extension-api/standards/ext-point-dynamic-level-executor'
 )
 
-# Repo root: test/plan-marshall/targets-claude/<file> → up three to repo root.
-_REPO_ROOT = Path(__file__).resolve().parents[3]
 READER_CANONICAL = (
-    _REPO_ROOT
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'agents'
-    / 'execution-context-reader.md'
+    MARKETPLACE_ROOT / 'plan-marshall' / 'agents' / 'execution-context-reader.md'
 )
 
 RESTRICTED_TOOLS = {'WebSearch', 'WebFetch', 'Read', 'Grep'}

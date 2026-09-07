@@ -858,27 +858,25 @@ _STANDARDS_PATH = _SKILL_DIR / 'standards' / 'ci-verify.md'
 _REQUIRED_STEPS_PATH = _SKILL_DIR / 'standards' / 'required-steps.md'
 _SKILL_PATH = _SKILL_DIR / 'SKILL.md'
 _CI_VERIFY_SCRIPT = _SCRIPTS_DIR / 'ci_verify.py'
-_MANIFEST_SCRIPT = (
-    _SKILL_DIR.parent / 'manage-execution-manifest' / 'scripts' / 'manage-execution-manifest.py'
-)
 
 _precond = _load_module('ci_complete_precondition_test', 'ci_complete_precondition.py')
 resolve = _precond.resolve
 
 
 def _load_manifest_module(name: str):
-    """Load the manage-execution-manifest entry script by absolute path.
+    """Load the manage-execution-manifest entry script.
 
     A sibling skill, so the module-local ``_load_module`` (which resolves
-    against phase-6-finalize/scripts) cannot serve it.
+    against phase-6-finalize/scripts) cannot serve it — this one addresses the
+    script by ``(bundle, skill, file)`` instead.
+
+    Nothing is registered: the callers read only the returned object, and the
+    name they pass is a variable, which no static guard can enumerate. Leaving
+    it unregistered keeps the loader-contract guard's blind spot from widening.
     """
-    spec = importlib.util.spec_from_file_location(name, _MANIFEST_SCRIPT)
-    assert spec is not None
-    assert spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
+    return load_script_module(
+        'plan-marshall', 'manage-execution-manifest', 'manage-execution-manifest.py', name, register=False
+    )
 
 
 class _StubCiWait:

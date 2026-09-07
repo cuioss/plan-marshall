@@ -9,14 +9,12 @@ the module itself carries the import and not the preamble.
 
 from pathlib import Path
 
-_BUNDLE_ROOT = (
-    Path(__file__).parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'phase-6-finalize'
-)
+from conftest import get_skill_dir
+
+# Annotated because ``conftest`` is deliberately untyped to mypy (see pyproject's
+# ``ignore_missing_imports`` override for it), so the accessor's return would
+# otherwise be ``Any`` and every reader below would return ``Any`` as ``str``.
+_BUNDLE_ROOT: Path = get_skill_dir('plan-marshall', 'phase-6-finalize')
 
 
 _WORKFLOW_PATH = _BUNDLE_ROOT / 'workflow' / 'lessons-capture.md'

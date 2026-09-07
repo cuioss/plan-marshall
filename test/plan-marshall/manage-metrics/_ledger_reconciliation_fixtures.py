@@ -22,7 +22,6 @@ reconciliation that fires on agreement is worse than none.
 """
 
 
-import importlib.util
 from datetime import datetime
 
 import pytest
@@ -33,18 +32,9 @@ from toon_parser import serialize_toon
 
 from conftest import get_script_path, load_script_module
 
-_spec = importlib.util.spec_from_file_location(
-    'manage_metrics_reconcile', get_script_path('plan-marshall', 'manage-metrics', 'manage-metrics.py')
+manage_metrics = load_script_module(
+    'plan-marshall', 'manage-metrics', 'manage-metrics.py', 'manage_metrics_reconcile', register=False
 )
-
-
-assert _spec is not None and _spec.loader is not None
-
-
-manage_metrics = importlib.util.module_from_spec(_spec)
-
-
-_spec.loader.exec_module(manage_metrics)
 
 
 cmd_start_phase = manage_metrics.cmd_start_phase

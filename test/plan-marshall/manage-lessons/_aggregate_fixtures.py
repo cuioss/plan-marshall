@@ -37,27 +37,20 @@ test).
 """
 
 
-import importlib.util
 from argparse import Namespace
 from pathlib import Path
 from unittest.mock import patch
 
-from conftest import MARKETPLACE_ROOT
+from conftest import MARKETPLACE_ROOT, load_script_module
 
-# Tier 2 direct import — load hyphenated module via importlib.
 SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'manage-lessons' / 'scripts' / 'manage-lessons.py'
 
 
-_spec = importlib.util.spec_from_file_location('manage_lessons_aggregate', str(SCRIPT_PATH))
-
-
-assert _spec is not None and _spec.loader is not None
-
-
-_mod = importlib.util.module_from_spec(_spec)
-
-
-_spec.loader.exec_module(_mod)
+# Tier 2 direct import. Loaded unregistered under a name of this module's own
+# choosing, so the copy staged here cannot displace one another suite holds.
+_mod = load_script_module(
+    'plan-marshall', 'manage-lessons', 'manage-lessons.py', 'manage_lessons_aggregate', register=False
+)
 
 
 cmd_aggregate = _mod.cmd_aggregate

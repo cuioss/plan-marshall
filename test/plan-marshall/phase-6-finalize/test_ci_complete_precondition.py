@@ -61,7 +61,7 @@ def _strip_ansi(text: str) -> str:
 # :func:`test_executor_invocation_with_scrubbed_pythonpath` below.
 # ---------------------------------------------------------------------------
 
-from conftest import get_scripts_dir, load_script_module
+from conftest import PROJECT_ROOT, get_scripts_dir, load_script_module
 _SCRIPTS_DIR = get_scripts_dir('plan-marshall', 'phase-6-finalize')
 
 
@@ -89,8 +89,7 @@ _read_cache = _resolver_mod._read_cache
 # does NOT depend on the parent process's cwd or PYTHONPATH.
 # ---------------------------------------------------------------------------
 
-_REPO_ROOT = Path(__file__).parent.parent.parent.parent
-_EXECUTOR_PATH = _REPO_ROOT / '.plan' / 'execute-script.py'
+_EXECUTOR_PATH = PROJECT_ROOT / '.plan' / 'execute-script.py'
 _SOURCE_SCRIPT_PATH = _SCRIPTS_DIR / 'ci_complete_precondition.py'
 
 
@@ -589,7 +588,7 @@ def test_executor_invocation_with_scrubbed_pythonpath():
         capture_output=True,
         text=True,
         env=scrubbed_env,
-        cwd=str(_REPO_ROOT),
+        cwd=str(PROJECT_ROOT),
         timeout=30,
         check=False,
     )
@@ -879,7 +878,7 @@ def test_run_ci_wait_uses_checks_wait_subcommand_vector(monkeypatch):
         plan_id='ci-precond-vector-check',
         pr_number=_PR,
         timeout_seconds=DEFAULT_CI_WAIT_TIMEOUT_SECONDS,
-        worktree_path=str(_REPO_ROOT),
+        worktree_path=str(PROJECT_ROOT),
     )
 
     assert capturing.captured_cmd is not None
@@ -918,7 +917,7 @@ def test_run_ci_wait_success_envelope_yields_wait_succeeded(plan_context, monkey
     plan_id = 'ci-precond-vector-end-to-end'
     result = resolve(
         plan_id=plan_id,
-        worktree_path=str(_REPO_ROOT),
+        worktree_path=str(PROJECT_ROOT),
         pr_number=_PR,
         git_head_resolver=_StubGitHead(_SHA_A),
     )
@@ -965,7 +964,7 @@ def test_run_ci_wait_returns_timeout_envelope_on_subprocess_timeout(monkeypatch)
         plan_id='ci-precond-subprocess-timeout',
         pr_number=_PR,
         timeout_seconds=DEFAULT_CI_WAIT_TIMEOUT_SECONDS,
-        worktree_path=str(_REPO_ROOT),
+        worktree_path=str(PROJECT_ROOT),
     )
 
     # The envelope is a dict (no exception escaped) with the timeout markers.
@@ -1000,7 +999,7 @@ def test_resolve_routes_subprocess_timeout_to_wait_failed_timeout(
     plan_id = 'ci-precond-subprocess-timeout-end-to-end'
     result = resolve(
         plan_id=plan_id,
-        worktree_path=str(_REPO_ROOT),
+        worktree_path=str(PROJECT_ROOT),
         pr_number=_PR,
         git_head_resolver=_StubGitHead(_SHA_A),
     )
@@ -1355,7 +1354,7 @@ def test_resolve_skips_writeback_when_duration_absent(plan_context):
 
 
 _FIXTURE_DIR = (
-    _REPO_ROOT
+    PROJECT_ROOT
     / 'test'
     / 'plan-marshall'
     / 'phase-6-finalize'
@@ -1365,24 +1364,15 @@ _FIXTURE_DIR = (
 
 
 def _load_parse_toon():
-    """Import parse_toon from the ref-toon-format scripts directory."""
-    parser_dir = (
-        _REPO_ROOT
-        / 'marketplace'
-        / 'bundles'
-        / 'plan-marshall'
-        / 'skills'
-        / 'ref-toon-format'
-        / 'scripts'
-    )
-    spec = importlib.util.spec_from_file_location(
-        'toon_parser', parser_dir / 'toon_parser.py'
-    )
-    assert spec is not None
-    assert spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod.parse_toon
+    """Import parse_toon from the ref-toon-format skill.
+
+    Deliberately UNREGISTERED: ``toon_parser`` is imported plainly across the
+    test tree, so publishing this copy under that name would displace the module
+    those imports already hold.
+    """
+    return load_script_module(
+        'plan-marshall', 'ref-toon-format', 'toon_parser.py', register=False
+    ).parse_toon
 
 
 _parse_toon = _load_parse_toon()
@@ -2333,7 +2323,7 @@ def test_outer_subprocess_timeout_is_strictly_below_the_harness_ceiling(
 
     result = resolve(
         plan_id='ci-precond-clamp-outer-deadline',
-        worktree_path=str(_REPO_ROOT),
+        worktree_path=str(PROJECT_ROOT),
         pr_number=_PR,
         git_head_resolver=_StubGitHead(_SHA_A),
         timeout_get_runner=_StubTimeoutGetSeeded(seeded_value=5000),

@@ -22,29 +22,22 @@ cannot be read is absent from the record, never a guessed ``0``.
 """
 
 
-import importlib.util
 import json
 import re
 from argparse import Namespace
 from pathlib import Path
 
-from conftest import get_script_path, parse_ns
+from conftest import get_script_path, load_script_module, parse_ns
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-metrics', 'manage-metrics.py')
 
 
-# The entrypoint filename is kebab-case (manage-metrics.py), which is not a
-# valid Python module identifier — load it via importlib instead of `import`.
-_spec = importlib.util.spec_from_file_location('manage_metrics_denominators', SCRIPT_PATH)
-
-
-assert _spec is not None and _spec.loader is not None
-
-
-manage_metrics = importlib.util.module_from_spec(_spec)
-
-
-_spec.loader.exec_module(manage_metrics)
+# The entrypoint filename is kebab-case (manage-metrics.py), which is not a valid
+# Python module identifier — resolved by (bundle, skill, file) instead of imported.
+# Unregistered, so the copy staged here cannot displace one another suite holds.
+manage_metrics = load_script_module(
+    'plan-marshall', 'manage-metrics', 'manage-metrics.py', 'manage_metrics_denominators', register=False
+)
 
 
 cmd_generate = manage_metrics.cmd_generate
@@ -54,19 +47,13 @@ cmd_generate = manage_metrics.cmd_generate
 # the agreement test exercises `manage-solution-outline list-deliverables`
 # end-to-end (`extract_deliverables` → `split_deliverable_blocks`) rather than
 # re-evaluating the metrics side's own expression.
-_OUTLINE_SCRIPT_PATH = get_script_path('plan-marshall', 'manage-solution-outline', 'manage-solution-outline.py')
-
-
-_outline_spec = importlib.util.spec_from_file_location('manage_solution_outline_denominators', _OUTLINE_SCRIPT_PATH)
-
-
-assert _outline_spec is not None and _outline_spec.loader is not None
-
-
-manage_solution_outline = importlib.util.module_from_spec(_outline_spec)
-
-
-_outline_spec.loader.exec_module(manage_solution_outline)
+manage_solution_outline = load_script_module(
+    'plan-marshall',
+    'manage-solution-outline',
+    'manage-solution-outline.py',
+    'manage_solution_outline_denominators',
+    register=False,
+)
 
 
 cmd_list_deliverables = manage_solution_outline.cmd_list_deliverables

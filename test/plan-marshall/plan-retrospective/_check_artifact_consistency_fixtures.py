@@ -10,7 +10,6 @@ Tests for ``check-artifact-consistency.py``.
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import subprocess
 import sys
@@ -20,7 +19,7 @@ from _plan_retrospective_fixtures import (
     build_happy_plan_dir,
 )
 
-from conftest import MARKETPLACE_ROOT, run_script
+from conftest import MARKETPLACE_ROOT, load_script_module, run_script
 
 SCRIPT_PATH = (
     MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'scripts' / 'check-artifact-consistency.py'
@@ -228,11 +227,13 @@ def _run_archived(plan_dir: Path):
 # =============================================================================
 
 def _load_check_module():
-    spec = importlib.util.spec_from_file_location('_check_artifact_under_test', SCRIPT_PATH)
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+    return load_script_module(
+        'plan-marshall',
+        'plan-retrospective',
+        'check-artifact-consistency.py',
+        '_check_artifact_under_test',
+        register=False,
+    )
 
 
 _check_mod = _load_check_module()

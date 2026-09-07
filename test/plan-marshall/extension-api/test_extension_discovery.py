@@ -46,6 +46,7 @@ from conftest import (
     MARKETPLACE_ROOT,
     PROJECT_ROOT,
     get_script_path,
+    load_skill_module,
     run_script,
 )
 
@@ -445,26 +446,17 @@ def _load_plan_marshall_plugin_extension():
 
     The plan-marshall-plugin extension lives at
     ``skills/plan-marshall-plugin/extension.py`` (skill root), NOT under a
-    ``scripts/`` subdirectory — so the conftest ``load_script_module`` helper
-    (which resolves ``.../skills/<skill>/scripts/<file>``) cannot load it.
-    This mirrors the proven ``load_extension`` helper in
-    ``test_extension_implementations.py``.
-    """
-    import importlib.util
+    ``scripts/`` subdirectory — so ``load_script_module``, which resolves
+    ``.../skills/<skill>/scripts/<file>``, cannot address it. ``load_skill_module``
+    is the accessor for that shape: it anchors at the skill root instead.
 
-    extension_path = (
-        MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-marshall-plugin' / 'extension.py'
+    The explicit module name is what keeps this load distinct — every bundle
+    ships an ``extension.py``, so the default stem (``extension``) is shared by
+    all of them and a second load would displace the first.
+    """
+    return load_skill_module(
+        'plan-marshall', 'plan-marshall-plugin', 'extension.py', 'plan_marshall_plugin_extension'
     )
-    if not extension_path.is_file():
-        raise FileNotFoundError(f'Extension not found: {extension_path}')
-    spec = importlib.util.spec_from_file_location(
-        'plan_marshall_plugin_extension', extension_path
-    )
-    if spec is None or spec.loader is None:
-        raise ImportError(f'Could not load module from {extension_path}')
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 _PLAN_MARSHALL_PLUGIN_EXTENSION = _load_plan_marshall_plugin_extension()

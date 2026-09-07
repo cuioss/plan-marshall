@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: I001
 """Tests for the manage-ci-artifacts persistence layer.
 
 The persistence contract pinned by this file:
@@ -23,20 +23,13 @@ from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
 
 # ---------------------------------------------------------------------------
 # Module loading — load the script via importlib so we can call
 # ``persist()`` / ``read_manifest()`` / ``list_runs()`` directly without
 # spawning a subprocess.
-#
-# This test file lives at test/plan-marshall/manage-ci-artifacts/ — three
-# path segments below the repo root — so the repo anchor walks four
-# parents of ``__file__`` (file → manage-ci-artifacts → plan-marshall →
-# test → repo root).
 # ---------------------------------------------------------------------------
 
-_REPO_ROOT = Path(__file__).parent.parent.parent.parent
 from conftest import get_scripts_dir, load_script_module
 _SCRIPTS_DIR = get_scripts_dir('plan-marshall', 'manage-ci-artifacts')
 

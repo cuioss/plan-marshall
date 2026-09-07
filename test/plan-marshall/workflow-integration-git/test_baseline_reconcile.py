@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import argparse
 import ast
-import importlib.util
 import json
 import re
 import subprocess
@@ -27,29 +26,15 @@ from pathlib import Path
 import file_ops
 from _resolve_project_dir_fixtures import patch_query_worktree_path
 
-from conftest import PROJECT_ROOT
+from conftest import PROJECT_ROOT, get_script_path, load_script_module
 
-_SCRIPTS_DIR = (
-    PROJECT_ROOT
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'workflow-integration-git'
-    / 'scripts'
+_mod = load_script_module(
+    'plan-marshall',
+    'workflow-integration-git',
+    '_cmd_baseline_reconcile.py',
+    '_cmd_baseline_reconcile_under_test',
+    register=False,
 )
-
-
-def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    assert spec is not None
-    mod = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_mod = _load_module('_cmd_baseline_reconcile_under_test', '_cmd_baseline_reconcile.py')
 cmd_baseline_reconcile = _mod.cmd_baseline_reconcile
 
 
@@ -563,7 +548,9 @@ def test_default_base_branch_is_main(plan_context):
 
 def test_baseline_reconcile_registered_in_git_workflow_cli():
     """argparse subparser routes 'baseline-reconcile' to cmd_baseline_reconcile."""
-    git_workflow = _load_module('_git_workflow_dispatch_check', 'git-workflow.py')
+    git_workflow = load_script_module(
+        'plan-marshall', 'workflow-integration-git', 'git-workflow.py', '_git_workflow_dispatch_check', register=False
+    )
     assert git_workflow.cmd_baseline_reconcile is cmd_baseline_reconcile or callable(
         git_workflow.cmd_baseline_reconcile
     )
@@ -1286,7 +1273,7 @@ _SKILL_DOC = (
     / 'SKILL.md'
 )
 
-_RECONCILE_SOURCE = _SCRIPTS_DIR / '_cmd_baseline_reconcile.py'
+_RECONCILE_SOURCE = get_script_path('plan-marshall', 'workflow-integration-git', '_cmd_baseline_reconcile.py')
 
 #: The function whose ``return None, '<token>'`` tuples ARE the worktree-resolution
 #: skip reasons. Six of the eleven documented reasons reach the payload only

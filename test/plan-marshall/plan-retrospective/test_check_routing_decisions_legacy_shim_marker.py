@@ -30,9 +30,8 @@ provenance is recorded beside it so a later reader can re-verify it the same way
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
-from conftest import load_script_module
+from conftest import MARKETPLACE_ROOT, get_script_path, load_script_module
 
 _crd = load_script_module(
     'plan-marshall', 'plan-retrospective', 'check-routing-decisions.py', 'crd_legacy_shim_mod'
@@ -41,12 +40,8 @@ _shim = load_script_module(
     'pm-plugin-development', 'plugin-doctor', '_analyze_shim_marker.py', 'shim_marker_for_crd'
 )
 
-# test/plan-marshall/plan-retrospective/<this file>
-REPO_ROOT = Path(__file__).resolve().parents[3]
-BUNDLES_ROOT = REPO_ROOT / 'marketplace' / 'bundles'
-CRD_PATH = (
-    BUNDLES_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'scripts'
-    / 'check-routing-decisions.py'
+CRD_PATH = get_script_path(
+    'plan-marshall', 'plan-retrospective', 'check-routing-decisions.py'
 )
 
 #: The cause token whose entry carries the shim.
@@ -168,8 +163,8 @@ def test_shim_marker_rule_reports_no_finding_for_this_script(capsys):
     # findings and therefore no `population_size` on any finding, so reading the
     # figure off the findings would give nothing back in exactly the state this
     # test expects to be in.
-    findings, population_size = _shim.analyze_shim_marker_with_population(BUNDLES_ROOT)
-    scanned = _shim.enumerate_script_files(BUNDLES_ROOT)
+    findings, population_size = _shim.analyze_shim_marker_with_population(MARKETPLACE_ROOT)
+    scanned = _shim.enumerate_script_files(MARKETPLACE_ROOT)
 
     with capsys.disabled():
         print(

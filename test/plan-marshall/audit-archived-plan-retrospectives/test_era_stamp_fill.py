@@ -17,8 +17,10 @@ import importlib.util
 import sys
 from pathlib import Path
 
+from conftest import PROJECT_ROOT
+
 _SCRIPT_PATH = (
-    Path(__file__).parent.parent.parent.parent
+    PROJECT_ROOT
     / '.claude'
     / 'skills'
     / 'finalize-step-era-stamp-fill'
@@ -55,7 +57,7 @@ _TEST_REL = era.TEST_REL
 # still pass. The suite therefore also needs an oracle it derives INDEPENDENTLY —
 # the era mirror is this module's own sibling, so its repository-relative path is
 # computable from `__file__` without consulting the step at all.
-_REPO_ROOT = Path(__file__).resolve().parents[3]
+_REPO_ROOT = PROJECT_ROOT.resolve()
 _EXPECTED_TEST_REL = (
     (Path(__file__).resolve().parent / 'test_audit_check_era_model.py')
     .relative_to(_REPO_ROOT)

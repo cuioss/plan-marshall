@@ -5,9 +5,7 @@
 Tier 2 (direct import) tests with 2-3 subprocess tests for CLI plumbing.
 """
 
-import importlib.util
 from argparse import Namespace
-from pathlib import Path
 
 from _manage_findings_fixtures import SCRIPT_PATH
 
@@ -15,7 +13,7 @@ from _manage_findings_fixtures import SCRIPT_PATH
 # Import toon_parser - conftest sets up PYTHONPATH
 from toon_parser import parse_toon
 
-from conftest import run_script
+from conftest import load_script_module, run_script
 
 # Plan ids this module's tests file findings against — seeded by the autouse
 # ``_materialize_declared_plan_dirs`` fixture in ``test/conftest.py``.
@@ -23,21 +21,11 @@ PLAN_IDS = (
     'test-plan',
 )
 
-# Tier 2 direct imports - load hyphenated module via importlib
-_MANAGE_FINDINGS_SCRIPT = str(
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-findings'
-    / 'scripts'
-    / 'manage-findings.py'
+# Tier 2 direct import — the hyphenated script, loaded unregistered so the copy
+# staged here cannot displace one another suite holds under the same name.
+_mod = load_script_module(
+    'plan-marshall', 'manage-findings', 'manage-findings.py', 'manage_findings', register=False
 )
-_spec = importlib.util.spec_from_file_location('manage_findings', _MANAGE_FINDINGS_SCRIPT)
-assert _spec is not None and _spec.loader is not None
-_mod = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(_mod)
 
 cmd_assessment_add = _mod.cmd_assessment_add
 cmd_assessment_query = _mod.cmd_assessment_query

@@ -49,9 +49,8 @@ import json
 import re
 from pathlib import Path
 
-# repo_root/test/plan-marshall/manage-run-config/<this file>
-REPO_ROOT = Path(__file__).resolve().parents[3]
-BUNDLES_ROOT = REPO_ROOT / 'marketplace' / 'bundles'
+from conftest import MARKETPLACE_ROOT, PROJECT_ROOT
+
 CLASSIFICATION_PATH = Path(__file__).parent / 'timestamp_render_classification.json'
 
 
@@ -61,11 +60,11 @@ def _load_classification() -> dict:
 
 
 def _bundle_py_files() -> list[Path]:
-    return sorted(BUNDLES_ROOT.rglob('*.py'))
+    return sorted(MARKETPLACE_ROOT.rglob('*.py'))
 
 
 def _repo_rel(path: Path) -> str:
-    return path.relative_to(REPO_ROOT).as_posix()
+    return path.relative_to(PROJECT_ROOT).as_posix()
 
 
 def _scan_time_files(scan_regex: str) -> set[str]:
@@ -336,7 +335,7 @@ def test_render_routing_is_live(capsys):
     classification = _load_classification()
     del capsys
     for rel in classification['render_files']:
-        text = (REPO_ROOT / rel).read_text(encoding='utf-8')
+        text = (PROJECT_ROOT / rel).read_text(encoding='utf-8')
         assert 'render_timestamp(' in text, (
             f'Declared RENDER file {rel!r} does not call render_timestamp(...) — '
             'its render site is not routed through the labelling helper.'
@@ -375,7 +374,7 @@ def test_each_budgeted_render_call_feeds_its_declared_subject(capsys):
         rel = site['file']
         anchor = site['renders_anchor']
         binding = site['render_binding']
-        lines = (REPO_ROOT / rel).read_text(encoding='utf-8').splitlines()
+        lines = (PROJECT_ROOT / rel).read_text(encoding='utf-8').splitlines()
 
         anchor_lines = [ln for ln in lines if anchor in ln]
         assert len(anchor_lines) == 1, (
@@ -486,7 +485,7 @@ def test_knob_symbols_never_reach_a_store_or_compare_site():
     )
 
     for rel, budget in sorted(budgets.items()):
-        actual = (REPO_ROOT / rel).read_text(encoding='utf-8').count('render_timestamp(')
+        actual = (PROJECT_ROOT / rel).read_text(encoding='utf-8').count('render_timestamp(')
         assert actual == budget, (
             f'RENDER file {rel!r} makes {actual} render_timestamp(...) call(s) but is '
             f'budgeted for {budget}. A RENDER file is not wholly a render surface: an '
@@ -524,7 +523,7 @@ def test_knob_symbols_never_reach_a_store_or_compare_site():
 
     direct_touches = {}
     for rel in render_only:
-        text = (REPO_ROOT / rel).read_text(encoding='utf-8')
+        text = (PROJECT_ROOT / rel).read_text(encoding='utf-8')
         hits = [sym for sym in direct_symbols if sym in text]
         if hits:
             direct_touches[rel] = hits

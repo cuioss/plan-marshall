@@ -648,8 +648,8 @@ def test_every_build_class_subcommand_defaults_plan_id_to_the_sentinel(monkeypat
     unresolved: list[str] = []
     driven = 0
     with patch_main_checkout_root():
-        for _bundle, _skill, script_path in _iter_wrapper_scripts():
-            module = _load_wrapper_module(script_path)
+        for bundle, skill, script_path in _iter_wrapper_scripts():
+            module = _load_wrapper_module(bundle, skill, script_path)
             parser = _capture_parser(module)
             for action in parser._actions:
                 if not isinstance(action, argparse._SubParsersAction):

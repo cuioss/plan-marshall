@@ -11,19 +11,11 @@ This test asserts the guard's documented contract by inspecting the workflow
 doc (``SKILL.md``) where the guard logic lives.
 """
 
-from pathlib import Path
-
 import pytest
 
-SKILL_PATH = (
-    Path(__file__).resolve().parents[3]
-    / "marketplace"
-    / "bundles"
-    / "plan-marshall"
-    / "skills"
-    / "phase-4-plan"
-    / "SKILL.md"
-)
+from conftest import get_skill_dir
+
+SKILL_PATH = get_skill_dir("plan-marshall", "phase-4-plan") / "SKILL.md"
 
 
 @pytest.fixture(scope="module")
