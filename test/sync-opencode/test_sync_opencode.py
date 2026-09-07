@@ -19,11 +19,9 @@ tooling that does not ship to consumers of plan-marshall.
 
 from __future__ import annotations
 
-import subprocess
-import sys
 from pathlib import Path
 
-from conftest import PROJECT_ROOT
+from conftest import PROJECT_ROOT, ScriptResult, run_script
 from toon_parser import parse_toon
 
 _SYNC_OP_XPY = PROJECT_ROOT / '.claude' / 'skills' / 'sync-opencode' / 'scripts' / 'sync_opencode.py'
@@ -55,14 +53,8 @@ def _make_source(target_root: Path, *, with_agent: bool = True) -> None:
     _write(target_root / 'opencode.json', '{"skills": {"paths": ["./skill"]}}\n')
 
 
-def _run(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [sys.executable, str(_SYNC_OP_XPY), *args],
-        capture_output=True,
-        text=True,
-        timeout=60,
-        cwd=cwd,
-    )
+def _run(*args: str, cwd: Path | None = None) -> ScriptResult:
+    return run_script(_SYNC_OP_XPY, *args, cwd=cwd, timeout=60)
 
 
 # ---------------------------------------------------------------------------

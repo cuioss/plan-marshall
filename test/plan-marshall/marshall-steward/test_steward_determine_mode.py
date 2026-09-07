@@ -20,11 +20,14 @@ This suite pins that contract:
 from __future__ import annotations
 
 import json
-import subprocess
-import sys
 from pathlib import Path
 
-from conftest import add_skill_scripts_to_path, get_script_path, load_script_module
+from conftest import (
+    add_skill_scripts_to_path,
+    get_script_path,
+    load_script_module,
+    run_script,
+)
 
 _DETERMINE_MODE = get_script_path('plan-marshall', 'marshall-steward', 'determine_mode.py')
 
@@ -131,15 +134,14 @@ def test_worktree_without_plan_local_scaffolds(tmp_path: Path):
 
 
 def _run_cli(repo_root: Path, *extra: str) -> str:
-    proc = subprocess.run(
-        [sys.executable, str(_DETERMINE_MODE), 'check-worktree-plan-local',
-         '--repo-root', str(repo_root), *extra],
-        capture_output=True,
-        text=True,
-        check=False,
+    proc = run_script(
+        _DETERMINE_MODE, 'check-worktree-plan-local', '--repo-root', str(repo_root), *extra
     )
     assert proc.returncode == 0, proc.stderr
-    return proc.stdout
+    # Annotated because ``conftest`` is deliberately untyped to mypy, so the
+    # captured stream would otherwise be returned as ``Any`` from a ``-> str``.
+    stdout: str = proc.stdout
+    return stdout
 
 
 def test_cli_refuse_on_worktree_without_plan_local(tmp_path: Path):
@@ -267,15 +269,13 @@ def test_missing_marshal_yields_empty_project_missing(tmp_path: Path):
 
 
 def _run_finalize_cli(plan_dir: Path, project_root: Path) -> str:
-    proc = subprocess.run(
-        [sys.executable, str(_DETERMINE_MODE), 'check-missing-finalize-steps',
-         '--plan-dir', str(plan_dir), '--project-root', str(project_root)],
-        capture_output=True,
-        text=True,
-        check=False,
+    proc = run_script(
+        _DETERMINE_MODE, 'check-missing-finalize-steps',
+        '--plan-dir', str(plan_dir), '--project-root', str(project_root),
     )
     assert proc.returncode == 0, proc.stderr
-    return proc.stdout
+    stdout: str = proc.stdout
+    return stdout
 
 
 def test_cli_reports_missing_project_steps(tmp_path: Path):

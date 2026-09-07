@@ -25,14 +25,18 @@ from __future__ import annotations
 
 import json
 import re
-import subprocess
-import sys
 from pathlib import Path
 
 import pytest
 from _documented_example_scan import DEFECTIVE_GENERATOR_CALL
 
-from conftest import MARKETPLACE_ROOT, PROJECT_ROOT, load_script_module
+from conftest import (
+    MARKETPLACE_ROOT,
+    PROJECT_ROOT,
+    ScriptResult,
+    load_script_module,
+    run_script,
+)
 
 cd = load_script_module('plan-marshall', 'manage-config', '_config_defaults.py')
 
@@ -226,14 +230,9 @@ _EXIT_OK = 0
 _EXIT_ERROR = 2
 
 
-def _run_generator(*args: str) -> subprocess.CompletedProcess[str]:
+def _run_generator(*args: str) -> ScriptResult:
     """Invoke the live generator with ``args`` and capture both streams."""
-    return subprocess.run(
-        [sys.executable, str(_GENERATE_PY), *args],
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
+    return run_script(_GENERATE_PY, *args, timeout=60)
 
 
 def test_generator_success_exits_zero_and_prints_a_nonzero_produced_count(
@@ -312,16 +311,11 @@ def test_emit_marker_carries_file_hash_manifest(fixture_marketplace: Path, tmp_p
     emitted regular files minus ``.emit-marker.json``.
     """
     output_dir = tmp_path / 'out'
-    result = subprocess.run(
-        [
-            sys.executable,
-            str(_GENERATE_PY),
-            '--target', 'claude',
-            '--output', str(output_dir),
-            '--marketplace-dir', str(fixture_marketplace),
-        ],
-        capture_output=True,
-        text=True,
+    result = run_script(
+        _GENERATE_PY,
+        '--target', 'claude',
+        '--output', str(output_dir),
+        '--marketplace-dir', str(fixture_marketplace),
         timeout=60,
     )
     assert result.returncode == 0, f'generator exit={result.returncode}, stderr={result.stderr}'

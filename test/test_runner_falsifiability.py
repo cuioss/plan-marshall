@@ -22,9 +22,12 @@ the ``outside_repo_dir`` fixture) so the subprocess pytest inherits none of this
 suite's own config or conftest — it probes bare pytest's verdict mechanism.
 """
 
+import os
 import subprocess
 import sys
 from pathlib import Path
+
+from conftest import _MARKETPLACE_SCRIPT_DIRS
 
 # A test file with a failing test and NO ``__main__`` block — the exact shape the
 # retired script-runner reported green.
@@ -38,13 +41,31 @@ _PASSING_TEST = 'def test_deliberately_passes():\n    assert True\n'
 
 
 def _run_pytest(target: Path) -> subprocess.CompletedProcess:
-    """Run bare pytest against a single file, isolated from this suite's config."""
+    """Run bare pytest against a single file, isolated from this suite's config.
+
+    The environment carries the cross-skill ``PYTHONPATH`` explicitly, mirroring
+    what :func:`conftest.run_script` builds — that helper takes a script PATH and
+    cannot serve a ``-m`` module invocation, so the mapping is spelled here.
+
+    Propagating it does NOT weaken the isolation this control rests on. What the
+    module docstring calls isolation is pytest's CONFIG discovery: rootdir, ini
+    and ``conftest.py`` are resolved from the target path and ``cwd``, both of
+    which stay outside the repository. ``PYTHONPATH`` only makes modules
+    importable, and the child imports none of them — so the child still probes
+    bare pytest's verdict mechanism, exactly as before.
+    """
+    env = os.environ.copy()
+    pythonpath = os.pathsep.join(_MARKETPLACE_SCRIPT_DIRS)
+    if 'PYTHONPATH' in env:
+        pythonpath = pythonpath + os.pathsep + env['PYTHONPATH']
+    env['PYTHONPATH'] = pythonpath
     return subprocess.run(
         [sys.executable, '-m', 'pytest', str(target), '-p', 'no:cacheprovider', '-q'],
         capture_output=True,
         text=True,
         cwd=str(target.parent),
         timeout=120,
+        env=env,
     )
 
 

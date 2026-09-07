@@ -16,11 +16,9 @@ The script lives at
 from __future__ import annotations
 
 import json
-import subprocess
-import sys
 from pathlib import Path
 
-from conftest import PROJECT_ROOT
+from conftest import PROJECT_ROOT, ScriptResult, run_script
 from toon_parser import parse_toon
 
 _HELPER = (
@@ -41,14 +39,8 @@ def _write(path: Path, content: str | bytes = '') -> None:
         path.write_text(content, encoding='utf-8')
 
 
-def _run(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [sys.executable, str(_HELPER), *args],
-        capture_output=True,
-        text=True,
-        timeout=30,
-        cwd=cwd,
-    )
+def _run(*args: str, cwd: Path | None = None) -> ScriptResult:
+    return run_script(_HELPER, *args, cwd=cwd, timeout=30)
 
 
 def test_default_source_root_is_target_claude(tmp_path: Path):

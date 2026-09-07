@@ -53,6 +53,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 import textwrap
@@ -68,7 +69,7 @@ from marketplace.targets.claude.source_fingerprint import (
 )
 from toon_parser import parse_toon
 
-from conftest import PROJECT_ROOT
+from conftest import _MARKETPLACE_SCRIPT_DIRS, PROJECT_ROOT, ScriptResult, run_script
 
 _SYNC_PY = PROJECT_ROOT / '.claude' / 'skills' / 'sync-plugin-cache' / 'scripts' / 'sync.py'
 _SENTINEL_NAME = '.emit-marker.json'
@@ -84,14 +85,8 @@ def _write(path: Path, content: str = '') -> None:
     path.write_text(content, encoding='utf-8')
 
 
-def _run(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [sys.executable, str(_SYNC_PY), *args],
-        capture_output=True,
-        text=True,
-        timeout=60,
-        cwd=cwd,
-    )
+def _run(*args: str, cwd: Path | None = None) -> ScriptResult:
+    return run_script(_SYNC_PY, *args, cwd=cwd, timeout=60)
 
 
 def _make_marketplace(cwd: Path, bundles: dict[str, str]) -> None:
@@ -702,12 +697,25 @@ def _run_python(program: str, *args: str) -> subprocess.CompletedProcess[str]:
     subject code — failing every assertion for a reason that has nothing to do
     with the behaviour under test. Callers dedent each indented fragment at its
     own site, where the text is still uniformly indented.
+
+    The environment carries the cross-skill ``PYTHONPATH`` explicitly, mirroring
+    what :func:`conftest.run_script` builds: that helper takes a script PATH and
+    cannot serve a ``-c`` program, so the mapping is spelled here instead. The
+    entries are the marketplace ``skills/*/scripts`` directories only — never the
+    repository root — so the ``marketplace.targets`` package route that both
+    callers rely on being unreachable stays unreachable.
     """
+    env = os.environ.copy()
+    pythonpath = os.pathsep.join(_MARKETPLACE_SCRIPT_DIRS)
+    if 'PYTHONPATH' in env:
+        pythonpath = pythonpath + os.pathsep + env['PYTHONPATH']
+    env['PYTHONPATH'] = pythonpath
     return subprocess.run(
         [sys.executable, '-c', program, *args],
         capture_output=True,
         text=True,
         timeout=60,
+        env=env,
     )
 
 
