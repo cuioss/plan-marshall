@@ -436,12 +436,36 @@ def test_no_exception_escapes_when_the_log_sink_raises(monkeypatch):
     assert len(calls) == 2, 'both messages must have reached the raising sink'
 
 
-def test_no_exception_escapes_when_the_log_module_is_unimportable(monkeypatch):
-    """An unimportable ``plan_logging`` is swallowed too — the read path still returns."""
-    monkeypatch.setitem(sys.modules, 'plan_logging', None)
+def test_no_exception_escapes_when_the_log_entry_import_fails(monkeypatch):
+    """A failing ``from plan_logging import log_entry`` is swallowed and the emitter returns None.
+
+    The ``attempts`` assertion is what keeps the verdict non-vacuous, and it must
+    be measured at the SINK: the recording module makes the emitter's failed
+    resolution of ``log_entry`` observable, so an emitter that short-circuited
+    before generating any warning records zero attempts and fails here. Re-deriving
+    the condition from the pure detector could not establish that — the detector
+    runs on the map independently of whether the emitter ever reached the sink.
+    """
+    attempts: list[str] = []
+
+    def record_then_fail(name: str):
+        # The import machinery probes dunders (``__path__``) on the module object
+        # itself; only a named sink lookup counts as an attempt to reach the sink.
+        if not name.startswith('__'):
+            attempts.append(name)
+        raise AttributeError(f'module plan_logging has no attribute {name!r}')
+
+    # A module whose attribute lookups are recorded and then fail. A bare
+    # ``sys.modules['plan_logging'] = None`` fails earlier, inside the import
+    # machinery, leaving the emitter's attempt to reach the sink unobservable.
+    fake = types.ModuleType('plan_logging')
+    fake.__getattr__ = record_then_fail
+    monkeypatch.setitem(sys.modules, 'plan_logging', fake)
     _install_registry(monkeypatch, live={_LIVE_NOTATION})
     sbp = _map_with_empty_profile(declared_minimal=False)
 
     assert _emit_staleness_warning('mod-h', {'skills_by_profile': sbp}) is None
-    # The message existed — the swallowed failure was the sink, not an empty run.
-    assert _module_testing_condition_fired(sbp)
+    assert attempts == ['log_entry'], (
+        'the emitter must have attempted to resolve the sink once per generated '
+        'message — the swallowed failure was the sink, not an empty run'
+    )
