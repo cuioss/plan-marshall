@@ -252,18 +252,27 @@ class TestEnabledCliVerbPayloads:
         rests on ("do not read an empty ``references[]`` as 'the corpus contains
         no reference'"). Nothing asserted it was emitted, so the bound could be
         dropped from the payload while the prose kept promising it.
+
+        The documented triple and ``known`` are asserted alongside it, matching
+        the ``definition`` sibling above. Without them the three readings below
+        say nothing about whether the query SUCCEEDED: they are self-consistent
+        within the payload, so an ``ok``-shaped answer for a notation the index
+        does not know (``known: False``, an empty ``references[]``, ``0 == 0``,
+        the same note) satisfies every one of them.
         """
         _project(tmp_path, ENABLED)
         payload = corpus_lsp.cmd_query(
             self._args(tmp_path, kind='references', notation='alpha:target-skill')
         )
 
+        assert (payload['state'], payload['provider_count'], payload['status']) == ('ok', 1, 'success')
         assert set(payload) == self._QUERY_COMMON_KEYS | {
             'references',
             'reference_count',
             'verified_count',
             'completeness_note',
         }
+        assert payload['known'] is True
         assert payload['reference_count'] == len(payload['references'])
         assert payload['verified_count'] <= payload['reference_count']
         assert 'index coverage' in payload['completeness_note']

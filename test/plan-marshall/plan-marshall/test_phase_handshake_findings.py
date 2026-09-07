@@ -628,26 +628,38 @@ def test_capture_routes_only_qgate_via_aggregator(
     assert 'pr-comment' in type_query_types
 
 
-# --- (f) the refusal names its type, and a repeat capture clears ---------
+# --- (f) which field of the refusal identifies the offender, and a repeat
+# --- capture clears -------------------------------------------------------
 #
 # These do not exercise any step-to-step boundary — see the module docstring for
-# why there is none to exercise. What they add over section (b) is the
-# blocking_types MEMBERSHIP assertion (section (b) asserts the count and the
-# per-type row, not that the refusal names the offending type) and the repeat
-# call that shows a capture is not one-shot.
+# why there is none to exercise. What they add over section (b) is the per_type
+# SET reading: section (b) asserts ONE per_type row plus the blocking_types
+# whole-vocabulary equality, and neither says the offending type is the only one
+# counted.
+#
+# ⛔ ``blocking_types`` cannot carry that claim at all. The raise site
+# (``_invariants._capture_pending_findings_blocking_count``) passes
+# ``blocking_types=list(_ACTIONABLE_FINDING_TYPES)`` unconditionally, so it is
+# the FIXED actionable vocabulary on every refusal and is identical whichever
+# type is pending. A membership check on it therefore holds for any pending
+# actionable type and cannot fail. The offender-dependent field is ``per_type``,
+# and it is the one read here. The repeat call below shows a capture is not
+# one-shot.
 
 
-def test_the_refusal_names_pr_comment_among_the_blocking_types(
+def test_the_refusal_counts_pr_comment_and_no_other_type(
     plan_context,
     only_pending_findings_invariants,
     stub_metadata,
     stub_query_counts,
     stub_qgate_count,
 ) -> None:
-    """The refusal payload NAMES the offending type, not only its count.
+    """``per_type`` is what tells a caller WHICH surface to go and clear.
 
-    A caller reading only ``blocking_count`` learns that something blocks; the
-    ``blocking_types`` membership is what tells it WHICH surface to go and clear.
+    ``blocking_types`` is asserted for what it actually is — the fixed actionable
+    vocabulary, the same list on every refusal — while the set of ``per_type``
+    entries carrying a non-zero count is what varies with the offender, and is
+    therefore the reading that discriminates.
     """
     stub_query_counts['pr-comment'] = 2
 
@@ -656,19 +668,20 @@ def test_the_refusal_names_pr_comment_among_the_blocking_types(
     assert result['status'] == 'error'
     assert result['error'] == 'blocking_findings_present'
     assert result['blocking_count'] == 2
-    assert 'pr-comment' in result['blocking_types']
+    assert result['blocking_types'] == list(inv._ACTIONABLE_FINDING_TYPES)
+    assert {t for t, n in result['per_type'].items() if n} == {'pr-comment'}, result['per_type']
     assert result['per_type']['pr-comment'] == 2
     assert store.get_row('pf-names-pr-comment', '6-finalize') is None
 
 
-def test_the_refusal_names_sonar_issue_among_the_blocking_types(
+def test_the_refusal_counts_sonar_issue_and_no_other_type(
     plan_context,
     only_pending_findings_invariants,
     stub_metadata,
     stub_query_counts,
     stub_qgate_count,
 ) -> None:
-    """The same membership property for the other externally-filed type."""
+    """The same offender-dependent reading for the other externally-filed type."""
     stub_query_counts['sonar-issue'] = 1
 
     result = cmds.cmd_capture(_ns(plan_id='pf-names-sonar-issue', phase='6-finalize'))
@@ -676,7 +689,8 @@ def test_the_refusal_names_sonar_issue_among_the_blocking_types(
     assert result['status'] == 'error'
     assert result['error'] == 'blocking_findings_present'
     assert result['blocking_count'] == 1
-    assert 'sonar-issue' in result['blocking_types']
+    assert result['blocking_types'] == list(inv._ACTIONABLE_FINDING_TYPES)
+    assert {t for t, n in result['per_type'].items() if n} == {'sonar-issue'}, result['per_type']
     assert result['per_type']['sonar-issue'] == 1
     assert store.get_row('pf-names-sonar-issue', '6-finalize') is None
 

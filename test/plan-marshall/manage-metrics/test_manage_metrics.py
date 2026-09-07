@@ -3,6 +3,7 @@
 """Tests for manage-metrics.py CLI script."""
 
 
+import re
 from pathlib import Path
 
 import pytest
@@ -48,8 +49,6 @@ def test_script_source_uses_canonical_local_plans_path():
     legacy bare ``.plan/plans/`` form is incorrect since runtime state moved
     under ``.plan/local``.
     """
-    import re
-
     source = Path(SCRIPT_PATH).read_text(encoding='utf-8')
     assert '.plan/local/plans/' in source
     legacy = re.findall(r'(?<!local/)\.plan/plans/', source)
@@ -344,6 +343,32 @@ def test_repeated_enrich_keeps_a_genuinely_mixed_row_labelled_mixed(plan_context
     assert row['inline_main_context_tokens'] == _INLINE_SUM
 
 
+#: The Phase Details bullet label BOTH cache_read residual renderings carry, so
+#: selecting on it isolates the one bullet this row produced without presuming
+#: which branch of the guard rendered it.
+_UNATTRIBUTED_CACHE_READ_LABEL = '**Unattributed cache_read tokens**'
+
+#: The DENOMINATOR-PRESENT rendering of that bullet — ``{residual} of
+#: {denominator} {field}``. Pinned as a SHAPE rather than as a denominator value:
+#: the missing-denominator fixture supplies no denominator at all, so any literal
+#: naming one can never appear and cannot fail for the reason it is written.
+_UNATTRIBUTED_CACHE_READ_DENOMINATOR_FORM = re.compile(
+    r'^- \*\*Unattributed cache_read tokens\*\*: [\d,]+ of [\d,]+ cache_read_input_tokens\b'
+)
+
+
+def _unattributed_cache_read_bullet(md: str) -> str:
+    """The single rendered cache_read residual bullet, or an assertion failure.
+
+    Both branches of the guard emit exactly one bullet under this label, so a
+    count other than one means the render moved and every reading taken off the
+    line below would be over the wrong population.
+    """
+    bullets = [line for line in md.splitlines() if _UNATTRIBUTED_CACHE_READ_LABEL in line]
+    assert len(bullets) == 1, bullets
+    return bullets[0]
+
+
 def test_unattributed_residual_missing_its_denominator_field_discloses_it(plan_context):
     """D6-S12: a residual present without its denominator field renders a
     named disclosure, never a crash and never a silently-dropped bullet.
@@ -372,9 +397,46 @@ def test_unattributed_residual_missing_its_denominator_field_discloses_it(plan_c
     assert result['status'] == 'success', result
 
     md = plan_context.plan_dir_for(plan_id).joinpath('metrics.md').read_text(encoding='utf-8')
-    assert '- **Unattributed cache_read tokens**: 1,000 (' in md, md
-    assert 'denominator cache_read_input_tokens not recorded on this row' in md, md
-    # Matched negative control: the numerator-with-denominator form (the "X of
-    # Y {field}" shape) must NOT also appear for this row — the two renderings
-    # are mutually exclusive branches of the same guard.
-    assert 'of 1,000 cache_read_input_tokens' not in md, md
+    bullet = _unattributed_cache_read_bullet(md)
+    assert bullet.startswith('- **Unattributed cache_read tokens**: 1,000 ('), bullet
+    assert 'denominator cache_read_input_tokens not recorded on this row' in bullet, bullet
+    # Matched negative control, pinned on the SHAPE. The two renderings are
+    # mutually exclusive branches of one guard, and BOTH name
+    # ``cache_read_input_tokens`` — the disclosure branch names it as the field
+    # that is missing — so no substring check on the field name separates them.
+    # What separates them is the ``{residual} of {denominator} {field}`` form,
+    # asserted against the one bullet this row rendered rather than against the
+    # whole report.
+    # ``test_denominator_present_row_renders_the_form_this_control_rejects`` is
+    # the matched positive arm: it drives the same renderer with the denominator
+    # present and shows this pattern DOES match, so the control is known to be
+    # capable of firing rather than merely never having fired.
+    assert _UNATTRIBUTED_CACHE_READ_DENOMINATOR_FORM.match(bullet) is None, bullet
+
+
+def test_denominator_present_row_renders_the_form_this_control_rejects(plan_context):
+    """Matched positive arm for the missing-denominator control above.
+
+    Same renderer, same residual, one difference: the denominator field IS on the
+    row. The bullet must then take the ``{residual} of {denominator} {field}``
+    branch — which is exactly the pattern the control above asserts absent, so
+    this test is what demonstrates that control discriminates between the two
+    branches instead of asserting a string no fixture could ever produce.
+    """
+    plan_id = 'denom-field-present-control-arm'
+    phases = {
+        '5-execute': {
+            **_recorded_phase_row(),
+            'cache_read_input_tokens': 4000,
+            'cache_read_unattributed': 1000,
+        }
+    }
+    manage_metrics.write_metrics(plan_id, {'phases': phases})
+
+    result = cmd_generate(ns_generate(plan_id))
+    assert result['status'] == 'success', result
+
+    md = plan_context.plan_dir_for(plan_id).joinpath('metrics.md').read_text(encoding='utf-8')
+    bullet = _unattributed_cache_read_bullet(md)
+    assert _UNATTRIBUTED_CACHE_READ_DENOMINATOR_FORM.match(bullet) is not None, bullet
+    assert 'not recorded on this row' not in bullet, bullet
