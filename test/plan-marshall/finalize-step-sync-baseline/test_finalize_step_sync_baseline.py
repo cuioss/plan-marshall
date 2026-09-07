@@ -65,6 +65,47 @@ def _doc_body(doc: Path) -> str:
     return after[1] if len(after) == 2 else ''
 
 
+_HEADING_RE = re.compile(r'^(#{1,6})\s+(.*)$')
+
+
+def _markdown_sections(body: str) -> list[tuple[int, str, str]]:
+    """Return ``(level, title, text)`` for every markdown heading section in ``body``.
+
+    ``text`` spans the heading line through the line before the next heading of
+    the same or a higher level, so a subsection's text nests inside its parent's.
+    """
+    lines = body.splitlines()
+    heads = [
+        (idx, len(m.group(1)), m.group(2).strip())
+        for idx, line in enumerate(lines)
+        if (m := _HEADING_RE.match(line))
+    ]
+    sections = []
+    for pos, (idx, level, title) in enumerate(heads):
+        end = len(lines)
+        for next_idx, next_level, _ in heads[pos + 1:]:
+            if next_level <= level:
+                end = next_idx
+                break
+        sections.append((level, title, '\n'.join(lines[idx:end])))
+    return sections
+
+
+def _section_containing(body: str, anchor: str) -> tuple[str, str]:
+    """Return ``(title, text)`` of the innermost heading section citing ``anchor``.
+
+    Binds a body assertion to the section that actually carries the mechanism,
+    so the same phrase appearing anywhere else in the document cannot satisfy it.
+    """
+    matches = [section for section in _markdown_sections(body) if anchor in section[2]]
+    assert matches, (
+        f'no markdown section cites {anchor!r} — the seam this assertion is '
+        f'anchored on is gone, so the contract it guards cannot be located'
+    )
+    _level, title, text = max(matches, key=lambda section: section[0])
+    return title, text
+
+
 # ---------------------------------------------------------------------------
 # Frontmatter contract
 # ---------------------------------------------------------------------------
@@ -214,10 +255,18 @@ class TestSyncBaselineBodyContract:
         # contract must NOT convert either outcome into a sync-baseline step
         # failure — the rebase already succeeded and moved HEAD by the time
         # the refresh runs.
+        # The assertion is SECTION-BOUND, not document-wide: it locates the
+        # section that actually cites the refresh seam's `executor_regenerated`
+        # return field and requires the non-fatal declaration THERE. A
+        # document-wide `in body` check would stay green on any unrelated later
+        # use of the phrase, and would keep certifying this contract after the
+        # executor-refresh seam was removed or inverted.
         body = _doc_body(_SYNC_BASELINE_DOC)
-        assert 'non-fatal by contract' in body, (
-            'the body must document that a degraded or raised executor '
-            'refresh is a reported degradation, never a sync-baseline step '
-            'failure — see workflow-integration-git/standards/'
-            'worktree-handling.md § "Post-Rebase Executor Refresh"'
+        title, section = _section_containing(body, 'executor_regenerated')
+        assert 'non-fatal by contract' in section, (
+            f'the executor-refresh section ({title!r}) must document that a '
+            'degraded or raised executor refresh is a reported degradation, '
+            'never a sync-baseline step failure — see '
+            'workflow-integration-git/standards/worktree-handling.md '
+            '§ "Post-Rebase Executor Refresh"'
         )
