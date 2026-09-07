@@ -677,7 +677,8 @@ _METRICS_RECONCILE_COMMAND = 'plan-marshall:manage-metrics:manage-metrics genera
 #: Backticked, so the row's ``references/plan-efficiency.md`` cell is not matched.
 _CONSUMING_ASPECT_KEY = '`plan-efficiency`'
 
-#: The archived-mode bound, as ONE normative prohibition on the WRITE.
+#: The archived-mode bound, as ONE normative prohibition on the WRITE whose TARGET
+#: is the archived plan directory.
 #:
 #: ⛔ Deliberately not two independent substring checks. Testing ``'archived' in
 #: conditions`` and ``'MUST NOT' in conditions`` separately is satisfied by a region
@@ -687,11 +688,39 @@ _CONSUMING_ASPECT_KEY = '`plan-efficiency`'
 #: prohibition, the write, and the archived target inside a single sentence, which
 #: is what ``[^.]`` enforces (a sentence boundary breaks the span).
 #:
-#: Both orderings are accepted because either reads naturally — "Archived mode …
-#: MUST NOT write to the archived plan directory" and "MUST NOT write to the
-#: archived plan directory" are the same bound, and pinning one word order would
-#: make an ordinary rewording look like a removed prohibition.
+#: ⛔ Co-occurrence inside one sentence is still not the property, and that is the
+#: same archetype recurring one level in. "Archived mode may write to the archived
+#: plan directory, but the caller MUST NOT write the execution summary after
+#: archived sync" chains ``MUST NOT`` → ``write`` → ``archived`` within a single
+#: sentence while EXPRESSLY PERMITTING the archived write: the prohibition governs
+#: the execution summary, and ``archived`` is merely a later co-occurring noun. The
+#: destination preposition is therefore required between the verb and the target —
+#: it is what makes the archived directory the thing being written TO rather than a
+#: word that happens to follow ``write``.
+#:
+#: The word-order-agnostic alternative (``archived`` … ``MUST NOT`` … ``write``) was
+#: REMOVED rather than kept alongside this one. The shipped wording puts the target
+#: after the verb, so the reversed order bought no coverage for the real document
+#: while admitting exactly the permissive shape above.
+#:
+#: ⛔ Removing that alternative is NOT on its own sufficient, and the measurement
+#: says so: with the reversed alternative deleted and the preposition absent, the
+#: permissive sentence still matches, because "MUST NOT write the execution summary
+#: after archived sync" chains the three tokens in the accepted order. The
+#: preposition is the part that actually closes the hole.
 _ARCHIVED_WRITE_PROHIBITION = re.compile(
+    r'\bMUST NOT\b[^.]{0,160}?\bwrite\b[^.]{0,40}?\b(?:to|into)\b[^.]{0,40}?\barchived\b',
+    re.IGNORECASE,
+)
+
+#: The pre-fix two-alternative pattern, kept ONLY as the fixture-sanity oracle for
+#: the permissive-write arm below.
+#:
+#: That arm must be ADMITTED here and REJECTED by the shipped pattern above. Without
+#: the admission half the arm could go green because the fixture drifted into some
+#: unrelated shape the pattern was never going to match — which is precisely the
+#: "passes for the wrong reason" defect this whole section exists to remove.
+_PRE_FIX_ARCHIVED_WRITE_PROHIBITION = re.compile(
     r'\bMUST NOT\b[^.]{0,160}?\bwrite\b[^.]{0,160}?\barchived\b'
     r'|\barchived\b[^.]{0,160}?\bMUST NOT\b[^.]{0,160}?\bwrite\b',
     re.IGNORECASE,
@@ -708,11 +737,56 @@ def _consumer_offset(text: str) -> int:
     return text.find(_CONSUMING_ASPECT_KEY)
 
 
+#: A next-step level-3 ATX heading — the reconcile region's TERMINATOR.
+#:
+#: ⛔ Deliberately not ``text.find('\n### ')``. That literal recognises only an
+#: UNINDENTED marker followed by EXACTLY ONE SPACE, while CommonMark admits up to
+#: three leading spaces on an ATX heading and admits a tab — or the end of the line
+#: — after the marker. A next step written ``  ### Step 2.6: …`` was therefore not
+#: seen as a terminator at all: the region ran past the end of the reconcile step,
+#: and an archived-write prohibition belonging to some LATER step satisfied the
+#: bound for a reconcile step that carries none. The extracted span was derived
+#: from a narrower rule than the one this region's own docstring states, which is
+#: this section's own archetype turned on the section itself.
+#:
+#: ⛔ ``re.MULTILINE`` is load-bearing, not decorative. Without it ``$`` anchors to
+#: the end of the whole document, so a bare ``###`` heading in the middle of one
+#: would terminate nothing and the end-of-line marker form would go unrecognised.
+#:
+#: A level-4 ``####`` heading is correctly NOT a terminator: it is a subsection of
+#: the step the region is reading, and the character after the third ``#`` is
+#: neither whitespace nor an end of line.
+_NEXT_STEP_HEADING = re.compile(r'\n {0,3}###(?:[ \t]+|$)', re.MULTILINE)
+
+
 def _reconcile_conditions(text: str) -> str:
-    """The prose from the reconcile invocation to the next ``### `` step heading.
+    """The prose from the reconcile invocation to the next level-3 step heading.
+
+    "Next level-3 heading" means every form CommonMark admits — see
+    :data:`_NEXT_STEP_HEADING` for the accepted indents and marker terminators. The
+    docstring names the same rule the pattern implements, deliberately: the defect
+    this helper carried was a span derived from a NARROWER rule than the one stated
+    here, so the two are kept in step rather than left to drift apart again.
 
     The heading is used as a TERMINATOR only — the region is entered at the
     command string, so a renamed or renumbered step heading does not move it.
+    """
+    start = _reconcile_offset(text)
+    if start < 0:
+        return ''
+    next_step = _NEXT_STEP_HEADING.search(text, start)
+    return text[start:] if next_step is None else text[start:next_step.start()]
+
+
+def _pre_fix_reconcile_conditions(text: str) -> str:
+    """The region as the PRE-FIX literal terminator bounded it.
+
+    Kept ONLY as the fixture-sanity oracle for the widened-heading arms below. Each
+    of those arms must be ADMITTED here — the region overrunning the indented or
+    tab-marked heading and reaching the LATER step's prohibition — and terminated
+    by the shipped pattern. Without the admission half an arm could go green
+    because its fixture drifted into some shape carrying no prohibition anywhere,
+    proving nothing about the indentation gap it names.
     """
     start = _reconcile_offset(text)
     if start < 0:
@@ -770,6 +844,24 @@ def test_metrics_reconcile_keeps_its_live_modes_only_bound():
     )
 
 
+def _reconcile_step(heading: str, body: str) -> str:
+    """A reconcile-step fixture: ``heading``, the invocation, then ``body`` prose.
+
+    Every arm below differs only in its heading and its conditions prose, so the
+    invocation block — the literal the region is ENTERED at — is built here once.
+    An arm that hand-rolled the block could drift from the anchor and then pass by
+    extracting an empty region rather than by the property it names.
+    """
+    return (
+        f'{heading}\n\n'
+        '```bash\n'
+        f'python3 .plan/execute-script.py {_METRICS_RECONCILE_COMMAND} \\\n'
+        '  --plan-id {plan_id}\n'
+        '```\n\n'
+        f'{body}\n\n'
+    )
+
+
 def test_document_contract_detects_the_pre_fix_and_reordered_shapes():
     """Mutation guard: the three assertions above must fire on the shapes they name.
 
@@ -777,14 +869,10 @@ def test_document_contract_detects_the_pre_fix_and_reordered_shapes():
     against any document — which is the exact failure mode this section exists to
     remove, reproduced one level up.
     """
-    step = (
-        '### Step 2.5: Reconcile the phase accumulators (live modes only)\n\n'
-        '```bash\n'
-        f'python3 .plan/execute-script.py {_METRICS_RECONCILE_COMMAND} \\\n'
-        '  --plan-id {plan_id}\n'
-        '```\n\n'
+    step = _reconcile_step(
+        '### Step 2.5: Reconcile the phase accumulators (live modes only)',
         '**Live modes only.** Archived mode is read-only and MUST NOT write to the '
-        'archived plan directory.\n\n'
+        'archived plan directory.',
     )
     aspect_table = (
         '### Step 3: Dispatch Aspects (in order)\n\n'
@@ -829,15 +917,11 @@ def test_document_contract_detects_the_pre_fix_and_reordered_shapes():
     # archived write is expressly PERMITTED. Two separate `in` checks pass here;
     # the property they claim to test ("the archived-mode exclusion is normative")
     # is false. Without this arm nothing proves the conjunction discriminates.
-    permissive_archive = (
-        '### Step 2.5: Reconcile the phase accumulators\n\n'
-        '```bash\n'
-        f'python3 .plan/execute-script.py {_METRICS_RECONCILE_COMMAND} \\\n'
-        '  --plan-id {plan_id}\n'
-        '```\n\n'
+    permissive_archive = _reconcile_step(
+        '### Step 2.5: Reconcile the phase accumulators',
         '**All modes.** Archived mode may write the reconciled `metrics.md` back '
         'into the archived plan directory.\n'
-        'The caller MUST NOT re-run invariant capture.\n\n'
+        'The caller MUST NOT re-run invariant capture.',
     )
     permissive_conditions = _reconcile_conditions(permissive_archive + aspect_table)
 
@@ -856,4 +940,95 @@ def test_document_contract_detects_the_pre_fix_and_reordered_shapes():
         'the archived-write bound fired on a region that PERMITS the archived write '
         'and forbids something else entirely — the prohibition is not bound to the '
         'write, so the check is weaker than the property its failure message names'
+    )
+
+    # PERMISSIVE-WRITE shape — the same archetype one level in, and the arm that
+    # discriminates "the archived directory is the write's TARGET" from "archived is
+    # a noun that co-occurs with the write inside one sentence". This region chains
+    # `MUST NOT` → `write` → `archived` in a single sentence — so the pre-fix pattern
+    # admits it — while EXPRESSLY PERMITTING the archived write; the prohibition it
+    # carries governs the execution summary instead.
+    permissive_write = _reconcile_step(
+        '### Step 2.5: Reconcile the phase accumulators',
+        'Archived mode may write to the archived plan directory, but the caller '
+        'MUST NOT write the execution summary after archived sync',
+    )
+    permissive_write_conditions = _reconcile_conditions(permissive_write + aspect_table)
+
+    # Fixture sanity — the arm must be the shape the loosened pattern accepted, or
+    # it discriminates nothing.
+    assert 'archived' in permissive_write_conditions.lower(), (
+        'Fixture sanity: the permissive-write arm must NAME archived mode'
+    )
+    assert 'MUST NOT' in permissive_write_conditions, (
+        'Fixture sanity: the permissive-write arm must carry a `MUST NOT`'
+    )
+    assert _PRE_FIX_ARCHIVED_WRITE_PROHIBITION.search(permissive_write_conditions), (
+        'Fixture sanity: the permissive-write arm must be ADMITTED by the pre-fix '
+        'pattern. This is the discriminator — without it the arm could go green '
+        'because the fixture drifted into some shape the tightened pattern was never '
+        'going to match, proving nothing about the loosening that was closed'
+    )
+
+    assert not _prohibits_the_archived_write(permissive_write_conditions), (
+        'the archived-write bound fired on a region whose sentence chains MUST NOT, '
+        'write and archived while EXPRESSLY PERMITTING the archived write — the '
+        'archived directory is a co-occurring noun there, not the write\'s target, '
+        'so the check is still weaker than the property its failure message names'
+    )
+
+    # WIDENED NEXT-STEP HEADING shapes — the region must stop at any level-3 ATX
+    # heading CommonMark admits, not only at an unindented marker followed by
+    # exactly one space. In each arm the reconcile step carries NO prohibition and
+    # a LATER step does; a terminator that fails to recognise the heading lets the
+    # later step's prohibition satisfy the bound for a step that has none.
+    #
+    # The `condition stripped` arm above is silent on this dimension — its fixture's
+    # heading is unindented — which is why these arms exist as a separate battery.
+    reconcile_without_bound = _reconcile_step(
+        '### Step 2.5: Reconcile the phase accumulators',
+        'Reconcile the open phase accumulators before the aspect reads the file.',
+    )
+    later_step_body = (
+        'Re-read `handshakes.toon` rather than re-capturing it.\n\n'
+        '**Live modes only.** Archived mode is read-only and MUST NOT write to the '
+        'archived plan directory.\n\n'
+    )
+    for label, heading in (
+        ('two-space indent', '  ### Step 2.6: Summarize invariants'),
+        ('three-space indent', '   ### Step 2.6: Summarize invariants'),
+        ('tab after the marker', '###\tStep 2.6: Summarize invariants'),
+        ('bare marker at end of line', '###'),
+    ):
+        widened = reconcile_without_bound + heading + '\n\n' + later_step_body + aspect_table
+
+        # Fixture sanity (the discriminator) — under the PRE-FIX literal terminator
+        # this same fixture overruns the heading and reaches the later step's
+        # prohibition. Without this half, an arm could pass merely because its
+        # fixture carries no prohibition anywhere and would prove nothing about the
+        # heading form it names.
+        assert _prohibits_the_archived_write(_pre_fix_reconcile_conditions(widened)), (
+            f'Fixture sanity ({label}): the pre-fix literal terminator must OVERRUN '
+            'this heading and reach the later step\'s prohibition, or the arm does '
+            'not exercise the gap it claims to'
+        )
+
+        assert not _prohibits_the_archived_write(_reconcile_conditions(widened)), (
+            f'the region ran past a level-3 heading with a {label} — an archived-write '
+            'prohibition belonging to a LATER step satisfied the bound for a reconcile '
+            'step that carries none, which is the region reading text it does not own'
+        )
+
+    # A level-4 heading is NOT a terminator: it is a subsection of the step being
+    # read, so the region must still reach the step's own prohibition beneath it.
+    subsection = _reconcile_step(
+        '### Step 2.5: Reconcile the phase accumulators',
+        '#### Mode bound\n\n'
+        '**Live modes only.** Archived mode is read-only and MUST NOT write to the '
+        'archived plan directory.',
+    )
+    assert _prohibits_the_archived_write(_reconcile_conditions(subsection + aspect_table)), (
+        'a `####` subsection heading terminated the region, so the step\'s OWN bound '
+        'was cut out of it — the terminator widened past level-3 headings into the '
+        'deeper ones that belong to the step being read'
     )
