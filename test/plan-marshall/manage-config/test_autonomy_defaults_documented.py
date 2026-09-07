@@ -35,6 +35,17 @@ merge by showing a user-set value surviving the opposite default, so flipping th
 would turn the illustration into a tautology. The one in ``manage-config/SKILL.md``
 is cut out by the region assertion below; the one in ``test_sync_defaults.py`` is
 out by construction, because no test module is under a documentation root.
+
+A second subject sits alongside the family: the **pause-gate census**, the
+maintained table in :data:`_ANCHOR_DOC` listing every gate that can halt a plan
+run. Its rows reach past the six booleans — enums, thresholds and timeouts — so
+the family derivation above cannot cover them, and they are checked on their own
+terms rather than by widening it. Each row names its owning config path in its
+third column, so that column is the key: the row is compared against the value
+that path declares, with no parallel list of gates to maintain. Only the DEFAULT
+column is guarded. Census MEMBERSHIP is not derivable — the inclusion predicate
+is "halts the run for operator input", which no declaring source encodes — so the
+table's row set stays a maintained judgement.
 """
 
 from __future__ import annotations
@@ -42,6 +53,7 @@ from __future__ import annotations
 import re
 from functools import cache
 from pathlib import Path
+from typing import NamedTuple
 
 import pytest
 
@@ -153,9 +165,26 @@ def _table_row_re(knob: str) -> re.Pattern[str]:
 
 
 def _prose_default_re(knob: str) -> re.Pattern[str]:
-    """A knob followed on the same line by a sentence naming its default."""
+    """A knob and its default named on the same line, in either word order.
+
+    Both orders occur in the prose and both are restatements: ``knob … default …
+    `true` `` and ``knob … true … (default)``. Matching only the first costs more
+    than one missed value — :func:`_derive_documents` keeps a document only when
+    some extractor matched it, so an unrecognised word order drops that whole
+    document out of the guarded population and leaves every restatement in it
+    unchecked.
+
+    The two orders are two branches, each with its own capture, which is why
+    :func:`_documented_values` reads the branch that matched rather than group 1.
+    The bool-first branch guards the value on word boundaries instead of
+    backticks: that order is written ``\\`knob == true\\` (default)``, where the
+    boolean sits inside the knob's own code span and carries no delimiter of its
+    own.
+    """
+    stem = rf'(?<![a-z_]){re.escape(knob)}'
     return re.compile(
-        rf'(?<![a-z_]){re.escape(knob)}[^\n]{{0,80}}?default[^\n]{{0,20}}?`(true|false)`'
+        rf'{stem}[^\n]{{0,80}}?default[^\n]{{0,20}}?`(true|false)`'
+        rf'|{stem}[^\n]{{0,80}}?(?<!\w)(true|false)(?!\w)[^\n]{{0,20}}?default'
     )
 
 
@@ -167,11 +196,17 @@ _EXTRACTORS = (
 
 
 def _documented_values(document: str, knob: str) -> list[tuple[str, str]]:
-    """Return every ``(shape, value)`` this document states for ``knob``."""
+    """Return every ``(shape, value)`` this document states for ``knob``.
+
+    The value is read off the branch that matched rather than off group 1, because
+    an extractor may express alternative phrasings as alternative branches — each
+    carrying its own capture, of which only one is ever populated per match.
+    """
     text = _parseable_text(document)
     found: list[tuple[str, str]] = []
     for shape, build in _EXTRACTORS:
-        found.extend((shape, value) for value in build(knob).findall(text))
+        for match in build(knob).finditer(text):
+            found.append((shape, next(g for g in match.groups() if g is not None)))
     return found
 
 
@@ -322,3 +357,140 @@ def test_the_documented_population_is_documentation_only():
         assert not document.startswith('test/'), f'{document} is a test path'
         assert document.endswith(('.md', '.adoc')), f'{document} is not a document'
         assert document.startswith(roots), f'{document} is outside {list(roots)}'
+
+
+# ---------------------------------------------------------------------------
+# The pause-gate census
+#
+# A second, wider subject in the same file, deliberately kept alongside the
+# autonomy-family parity above rather than folded into it: the family is six
+# booleans discovered from the seeded config, while the census is a maintained
+# table whose rows carry enums, thresholds and timeouts as well. Each row names
+# its own owning config path, so the census needs no parallel knob list — the
+# path IS the declaring source the row must agree with.
+# ---------------------------------------------------------------------------
+
+#: The census table inside :data:`_ANCHOR_DOC`, delimited by its own section
+#: heading and the AsciiDoc table that heading opens, so the row parse cannot
+#: drift onto one of the document's other tables.
+_CENSUS_TABLE_RE = re.compile(
+    r'^=== Pause-gate census$.*?^\|===$(?P<rows>.*?)^\|===$',
+    re.DOTALL | re.MULTILINE,
+)
+
+#: One census row: its Gate cell, its backticked Default cell, and its backticked
+#: owning config path. The header row carries no backticks, so it does not match.
+_CENSUS_ROW_RE = re.compile(
+    r'^\|\s*(?P<gate>[^|\n]+?)\s*'
+    r'\|\s*`(?P<default>[^`\n]+)`\s*'
+    r'\|\s*`(?P<path>[^`\n]+)`\s*\|',
+    re.MULTILINE,
+)
+
+#: One segment of a config path: a bracketed step id, or a plain dotted key.
+_PATH_SEGMENT_RE = re.compile(r"\['([^']+)'\]|([^.\[\]]+)")
+
+#: A step-owned path, split into the step that owns it and the parameter name.
+_STEP_PARAM_RE = re.compile(r"\.steps\['(?P<step_id>[^']+)'\]\.(?P<param>\w+)$")
+
+#: Floor on the census population. The row parity is parametrized over the parsed
+#: rows, so a table rewrite that stops matching would parametrize zero cases and
+#: report green over nothing. Deliberately well below the current row count: this
+#: pins that the parse still works, not that the table has a particular size.
+_CENSUS_MIN_ROWS = 20
+
+#: Distinguishes "the walk reached the end of the path" from "the path names a key
+#: the seeded config does not carry", which ``None`` cannot — ``None`` is itself a
+#: legitimate declared value.
+_UNRESOLVED = object()
+
+
+class _CensusRow(NamedTuple):
+    """One census row: what it calls the gate, what it states, and what owns it."""
+
+    gate: str
+    stated: str
+    path: str
+
+
+def _path_segments(path: str) -> list[str]:
+    """Return the ordered lookup keys of a census config path."""
+    return [bracketed or plain for bracketed, plain in _PATH_SEGMENT_RE.findall(path)]
+
+
+def _declared_at(path: str):
+    """Return the value a census row's owning config path declares.
+
+    Resolved against the seeded default config first. A step-owned parameter the
+    seed does not carry is declared in its step's ``configurable:`` frontmatter
+    instead, and is read through the parser that owns that contract — the same
+    second source :func:`_declared_defaults` reaches for the merge gate.
+    """
+    node: object = _config_defaults_mod.get_default_config()
+    for segment in _path_segments(path):
+        if not isinstance(node, dict) or segment not in node:
+            node = _UNRESOLVED
+            break
+        node = node[segment]
+    if node is not _UNRESOLVED:
+        return node
+
+    from configurable_contract import resolve_step_defaults_optional
+
+    step = _STEP_PARAM_RE.search(path)
+    assert step is not None, f'{path} names no key in the seeded config and owns no step'
+    return (resolve_step_defaults_optional(step['step_id']) or {})[step['param']]
+
+
+def _as_stated(value: object) -> str:
+    """Render a declared value the way the census Default column writes it."""
+    if isinstance(value, bool):
+        return 'true' if value else 'false'
+    return str(value)
+
+
+def _census_rows() -> tuple[_CensusRow, ...]:
+    """Return every parsed row of the pause-gate census."""
+    table = _CENSUS_TABLE_RE.search(_read(_ANCHOR_DOC))
+    if table is None:
+        return ()
+    return tuple(
+        _CensusRow(match['gate'], match['default'], match['path'])
+        for match in _CENSUS_ROW_RE.finditer(table['rows'])
+    )
+
+
+_CENSUS_ROWS = _census_rows()
+
+
+def test_the_census_parse_is_not_vacuous():
+    """The census table still parses, so the row parity below covers real rows.
+
+    That parity is parametrized over the parsed rows, so a table rewrite that stops
+    matching — a renamed heading, a Default cell that loses its backticks, a column
+    reordered — would parametrize zero cases and report green over nothing. The two
+    assertions are the two ways that happens: a population that collapsed, and one
+    that still has rows but no longer carries the anchor.
+    """
+    assert len(_CENSUS_ROWS) >= _CENSUS_MIN_ROWS, (
+        f'the pause-gate census in {_ANCHOR_DOC} parsed {len(_CENSUS_ROWS)} row(s); '
+        'its table shape has probably changed — re-anchor _CENSUS_TABLE_RE / _CENSUS_ROW_RE'
+    )
+    assert any(row.path.endswith(f'.{_ANCHOR_KNOB}') for row in _CENSUS_ROWS)
+
+
+@pytest.mark.parametrize('row', _CENSUS_ROWS, ids=[row.path for row in _CENSUS_ROWS])
+def test_census_default_equals_declared_default(row):
+    """Every census Default cell states the value its owning config path declares.
+
+    The column is a copy like every other restatement this module guards — an
+    operator reads it to learn what a freshly initialised project ships — and a
+    copy that disagrees with its source sends them configuring against a default
+    the code does not have.
+    """
+    declared = _as_stated(_declared_at(row.path))
+
+    assert row.stated == declared, (
+        f'{_ANCHOR_DOC} states the {row.gate} default as `{row.stated}`, '
+        f'but {row.path} declares `{declared}`'
+    )
