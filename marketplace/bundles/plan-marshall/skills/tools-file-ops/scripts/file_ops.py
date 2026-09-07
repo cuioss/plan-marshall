@@ -296,7 +296,10 @@ def _worktree_escape_origin(root: Path) -> Path | None:
     cannot lie inside that root's ``worktrees/`` subtree — nor for a clean
     checkout / CI / fresh clone with no ``.plan/local`` ancestor (the git
     toplevel fallback resolves the checkout root, never a ``worktrees/``
-    subtree of it).
+    subtree of it). It also returns ``None`` when cwd IS the ``worktrees/``
+    container itself (no named worktree below it): the container is not a
+    worktree, so there is no originating-worktree escape to name, and a warning
+    would invent an invalid ``PLAN_TRACKED_CONFIG_DIR`` override for it.
     """
     cwd = Path.cwd().resolve()
     worktrees_root = (root / PLAN_DIR_NAME / 'local' / 'worktrees').resolve()
@@ -304,7 +307,7 @@ def _worktree_escape_origin(root: Path) -> Path | None:
         return None
     relative = cwd.relative_to(worktrees_root)
     if not relative.parts:
-        return worktrees_root
+        return None
     return worktrees_root / relative.parts[0]
 
 

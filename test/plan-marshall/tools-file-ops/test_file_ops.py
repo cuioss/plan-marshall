@@ -713,6 +713,20 @@ def test_get_executor_path_unaffected_from_cwd_under_plan_local_plans(tmp_path, 
     assert result == main.resolve() / '.plan' / 'execute-script.py'
 
 
+def test_get_executor_path_unaffected_from_cwd_at_worktrees_container(tmp_path, monkeypatch, no_plan_base_dir):
+    """cwd exactly at the {root}/.plan/local/worktrees container (no named
+    worktree below it) is not an escape: the container is not a worktree, so
+    there is no originating worktree to name and no PLAN_TRACKED_CONFIG_DIR to
+    invent for it. Resolution keeps resolving main without warning."""
+    main = tmp_path / 'main'
+    (main / '.plan' / 'local' / 'worktrees').mkdir(parents=True)
+    monkeypatch.chdir(main / '.plan' / 'local' / 'worktrees')
+    with warnings.catch_warnings(record=True) as caught:
+        result = get_executor_path()
+    assert not [w for w in caught if issubclass(w.category, WorktreeEscapeWarning)]
+    assert result == main.resolve() / '.plan' / 'execute-script.py'
+
+
 def test_get_executor_path_without_plan_root_raises(outside_repo_dir, monkeypatch, no_plan_base_dir):
     """When no .plan/local ancestor of cwd resolves AND cwd is not inside a git
     repository, get_executor_path raises."""
