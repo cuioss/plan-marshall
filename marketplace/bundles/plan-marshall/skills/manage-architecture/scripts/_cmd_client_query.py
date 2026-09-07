@@ -537,23 +537,35 @@ def _emit_skills_by_profile_staleness_warning(module_name: str, merged: dict[str
 
     "Unresolved" is a present-but-empty profile block that resolves no skills and
     is not declared minimal — see :func:`detect_stale_skills_by_profile`.
+
+    An unresolvable registry root NARROWS the guard, it does not silence it. Only
+    the stale-notation check consults the registry, so an unresolvable root leaves
+    ``bundles_root`` unset and ``is_live`` answers ``True`` for every notation —
+    suppressing that one message and nothing else. The missing/empty and
+    unresolved-profile conditions need no registry data and still reach the sink.
+    Returning early instead would let a registry failure blank two conditions that
+    never depended on it.
     """
     skills_by_profile = merged.get('skills_by_profile', {})
 
+    bundles_root: Path | None = None
     if skills_by_profile:
         try:
             from marketplace_bundles import resolve_bundles_root
 
             bundles_root = resolve_bundles_root(Path(__file__))
         except Exception:
-            return  # registry root unresolvable — skip the stale-notation check (fail-safe)
+            # Fail-safe: leave the root unset so only the registry-dependent
+            # stale-notation check is skipped.
+            bundles_root = None
 
-        def is_live(notation: str) -> bool:
-            return _skill_notation_is_live(notation, bundles_root)
-    else:
-
-        def is_live(notation: str) -> bool:
-            return True  # unused: an empty map warns without a registry lookup
+    def is_live(notation: str) -> bool:
+        # No registry to consult — either the root was unresolvable, or the map is
+        # empty and warns without a lookup. Either way every notation counts as
+        # live, which drops the stale-notation message and leaves the other two.
+        if bundles_root is None:
+            return True
+        return _skill_notation_is_live(notation, bundles_root)
 
     for message in detect_stale_skills_by_profile(module_name, skills_by_profile, is_live):
         try:
