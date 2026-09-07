@@ -228,7 +228,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 Display current gate values, then ask user which transitions should auto-continue (multi-select):
 - "Plan without asking" → outline to planning
 - "Execute without asking" → planning to execution
-- "Auto-continue plan lifecycle (both directions)" → the symmetric `finalize_without_asking` + `loop_back_without_asking` pair. Forward: execution to finalize. Reverse: finalize `loop_back` → execute inline (bounded by `phase-6-finalize.max_iterations`). Both default to `true` — a finalize-side fix is corrective work inside a plan the user already approved, so both directions auto-continue and `max_iterations` is what terminates the cycle. The "apply defaults" branch persists the pair in a single pass; setting either to `false` to be asked at that boundary is an explicit user choice.
+- "Auto-continue plan lifecycle (both directions)" → the symmetric `finalize_without_asking` + `loop_back_without_asking` pair. Forward: execution to finalize. Reverse: a finalize `loop_back`, which re-enters execute inline on a `5-execute` target and replays the loop-back-marked finalize step in place on a `6-finalize` one (both bounded by `phase-6-finalize.max_iterations`). Both default to `true` — a finalize-side fix is corrective work inside a plan the user already approved, so both directions auto-continue and `max_iterations` is what terminates the cycle. The "apply defaults" branch persists the pair in a single pass; setting either to `false` to be asked at that boundary is an explicit user choice.
 
 Apply each selection via manage-config:
 ```bash

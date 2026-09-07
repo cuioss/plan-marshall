@@ -112,7 +112,7 @@ See the canonical per-key reference in link:../../marketplace/bundles/plan-marsh
 Two `max_iterations` caps bound the retry loops so a stuck plan cannot spin indefinitely:
 
 * `plan.phase-5-execute.max_iterations` (default `5`) — the maximum verify → execute → verify loops in the execute phase.
-* `plan.phase-6-finalize.max_iterations` (default `3`) — the maximum finalize → verify → finalize loops, including the `loop_back` re-entries into execute (see <<review-gates>>).
+* `plan.phase-6-finalize.max_iterations` (default `3`) — the maximum finalize → verify → finalize loops, counting every `loop_back` re-entry across both tiers — the ones that re-enter execute and the ones that replay a finalize step in place (see <<review-gates>>).
 
 [#review-gates]
 === Review gates
