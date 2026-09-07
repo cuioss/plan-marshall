@@ -708,8 +708,22 @@ _CONSUMING_ASPECT_KEY = '`plan-efficiency`'
 #: permissive sentence still matches, because "MUST NOT write the execution summary
 #: after archived sync" chains the three tokens in the accepted order. The
 #: preposition is the part that actually closes the hole.
+#:
+#: ⛔ The preposition alone is STILL not the property — the same archetype, one noun
+#: further in. Binding ``to|into`` to the bare token ``archived`` makes ANY
+#: archived-named destination satisfy the prohibition, so this region matches while
+#: expressly permitting the write the docstring above names:
+#:
+#:     "Archived mode may write the reconciled metrics back into the archived plan
+#:      directory, but the caller MUST NOT write to the archived handshakes ledger"
+#:
+#: The prohibition there governs the handshakes ledger; the archived plan directory
+#: is the thing being written to, permissively. The target NOUN is therefore matched,
+#: not just the adjective: the property is a prohibition on the write whose target is
+#: the archived plan directory, and nothing weaker.
 _ARCHIVED_WRITE_PROHIBITION = re.compile(
-    r'\bMUST NOT\b[^.]{0,160}?\bwrite\b[^.]{0,40}?\b(?:to|into)\b[^.]{0,40}?\barchived\b',
+    r'\bMUST NOT\b[^.]{0,160}?\bwrite\b[^.]{0,40}?\b(?:to|into)\b[^.]{0,40}?'
+    r'\barchived plan director(?:y|ies)\b',
     re.IGNORECASE,
 )
 
@@ -975,6 +989,52 @@ def test_document_contract_detects_the_pre_fix_and_reordered_shapes():
         'write and archived while EXPRESSLY PERMITTING the archived write — the '
         'archived directory is a co-occurring noun there, not the write\'s target, '
         'so the check is still weaker than the property its failure message names'
+    )
+
+    # PERMISSIVE-DESTINATION shape — the same archetype ONE NOUN further in, and the
+    # arm that discriminates "the target is the archived plan DIRECTORY" from "the
+    # target is any archived-named thing". This region satisfies the destination
+    # preposition — `MUST NOT` → `write` → `to` → `archived` — but the thing forbidden
+    # is the archived HANDSHAKES LEDGER, while the archived plan directory write the
+    # bound exists to forbid is expressly PERMITTED in the same sentence.
+    #
+    # A preposition-only pattern admits this. Verified by probe before the fix, which
+    # is how the hole was found rather than reasoned about.
+    permissive_destination = _reconcile_step(
+        '### Step 2.5: Reconcile the phase accumulators',
+        'Archived mode may write the reconciled metrics back into the archived plan '
+        'directory, but the caller MUST NOT write to the archived handshakes ledger',
+    )
+    permissive_destination_conditions = _reconcile_conditions(
+        permissive_destination + aspect_table
+    )
+
+    # Fixture sanity — the arm must be the shape the preposition-only pattern
+    # accepted. `_PRE_FIX_ARCHIVED_WRITE_PROHIBITION` is the TWO-ALTERNATIVE oracle
+    # and is too weak to discriminate here, so the admission half is asserted against
+    # the preposition-only form explicitly: without it this arm could go green because
+    # the fixture drifted into a shape no pattern was ever going to match.
+    _PREPOSITION_ONLY = re.compile(
+        r'\bMUST NOT\b[^.]{0,160}?\bwrite\b[^.]{0,40}?\b(?:to|into)\b[^.]{0,40}?\barchived\b',
+        re.IGNORECASE,
+    )
+    assert _PREPOSITION_ONLY.search(permissive_destination_conditions), (
+        'Fixture sanity: the permissive-destination arm must be ADMITTED by the '
+        'preposition-only pattern. That is the discriminator — it proves the arm '
+        'exercises the target-noun gap rather than passing for an unrelated reason'
+    )
+    assert 'archived plan directory' in permissive_destination_conditions.lower(), (
+        'Fixture sanity: the arm must NAME the archived plan directory, so its '
+        'rejection is attributable to the write TARGET rather than to the phrase '
+        'being absent altogether'
+    )
+
+    assert not _prohibits_the_archived_write(permissive_destination_conditions), (
+        'the archived-write bound fired on a region that forbids writing to the '
+        'archived handshakes ledger while EXPRESSLY PERMITTING the write to the '
+        'archived plan directory — binding the preposition to the bare adjective '
+        '`archived` makes any archived-named destination satisfy a prohibition that '
+        'is supposed to govern the archived plan directory specifically'
     )
 
     # WIDENED NEXT-STEP HEADING shapes — the region must stop at any level-3 ATX
