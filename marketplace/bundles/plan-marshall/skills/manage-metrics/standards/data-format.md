@@ -344,14 +344,21 @@ The reconciliation is **generate-side / render-time**:
 `enrich` samples as `subagent_samples`, never the whole of it. The classes that
 register no boundary are named in the source-derived
 `DISPATCH_BOUNDARY_EXCLUDED_CLASSES` constant (derived from the call graph in
-`ref-workflow-architecture/standards/call-graph.md`, not from any single run):
-of the 9 dispatch classes, 3 register a boundary (phase-4-plan, phase-5-execute,
-phase-6-finalize) and 6 do not (phase-2-refine, phase-3-outline, q-gate-validation,
-verification-feedback, research, enrich-module). Whenever the report carries a
-boundary numerator or a `subagent_samples` denominator, a declaration line names
-those excluded classes so a `dispatch_boundary_rows_recorded < subagent_samples`
-shortfall reads as a **declared** exclusion rather than as missing data — silent
-exclusion is the defect the ledger exists to avoid.
+`ref-workflow-architecture/standards/call-graph.md`, not from any single run).
+
+Neither half of that derivation is restated here — not its members, and not its
+size. Both halves are PRODUCED, by two scans in `scripts/manage-metrics.py`:
+`scan_dispatch_classes` reads the call graph for the full dispatch-class
+population, `scan_boundary_registrations` reads the workflow docs for the subset
+that registers, and the constant is exactly the difference. Ask the two scans. A
+membership list or a count copied into this document is read by nothing, so it
+goes stale the moment either set moves.
+
+Whenever the report carries a boundary numerator or a `subagent_samples`
+denominator, a declaration line names those excluded classes so a
+`dispatch_boundary_rows_recorded < subagent_samples` shortfall reads as a
+**declared** exclusion rather than as missing data — silent exclusion is the
+defect the ledger exists to avoid.
 
 The `#812` `end_time`-presence check (`any_phase_missing_end_time` /
 `phases_missing_end_time`) is untouched by this reconciliation.
