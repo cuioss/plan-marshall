@@ -429,15 +429,33 @@ def swallows_canonical_import(source: str) -> bool:
     the error, and installs nothing in its place; flagging it would report a
     diagnostic as a second implementation.
 
-    **Only an unconditional top-level ``raise`` clears a handler.** The clearing
-    clause reads ``handler.body``, not the handler subtree, because "a ``raise``
-    appears somewhere below this handler" does not imply "the failed import
-    propagates". A ``raise`` guarded by an ``if``, or one sitting in a nested
-    function defined inside the handler, leaves the ordinary path falling through
-    to the substitute — which is the lookalike shape itself, and the subtree
-    reading cleared it. A conditional or nested raise is therefore deliberately
-    read as NOT propagating: the narrow, fail-closed reading, matching the one
+    **Only a ``raise`` in FIRST position clears a handler.** "Does this handler
+    propagate the failure?" is a reachability question, and reachability is not
+    decidable from an AST shape test — so a clause that tried to answer it was
+    answered back, every round, by one more statement form that reaches the
+    substitute anyway: a ``raise`` guarded by an ``if``, a ``raise`` in a
+    function merely DEFINED inside the handler, a ``return substitute`` leaving
+    the ``raise`` below it dead. This clause asks a positional question instead —
+    is ``handler.body[0]`` a ``raise``? A handler's first statement always
+    executes on handler entry, so a position-0 ``raise`` propagates
+    unconditionally, and that is decidable by position alone. The reading is
+    sound (it never clears a handler that swallows) and deliberately incomplete
+    (it flags some handlers that do propagate): the narrow, fail-closed reading
     ``_is_provably_not_stdout`` and ``_local_literal_assignments`` already take.
+
+    **Position, not bareness, is what carries the decidability.** The raise need
+    not be bare: ``raise RuntimeError(...) from err`` as the first statement
+    propagates just as unconditionally as a bare ``raise``, and is arguably the
+    better practice, so requiring bareness would flag good code and buy no
+    soundness.
+
+    **The accepted cost, named rather than engineered around.** A handler that
+    does cleanup and THEN re-raises is flagged even though it propagates,
+    because something executes before the ``raise``. That is the deliberate
+    price of a decidable clause, and it is pinned by a control below rather than
+    treated as a defect: every evasion of a positional test must put a statement
+    BEFORE the ``raise``, and ``raise`` is a statement keyword that cannot be
+    shadowed, so there is no position-0 escape left to find.
     """
     tree = ast.parse(source)
     if not _defines_substitute_serializer(tree):
@@ -454,7 +472,7 @@ def swallows_canonical_import(source: str) -> bool:
         for handler in node.handlers:
             if not _catches_import_failure(handler):
                 continue
-            if not any(isinstance(stmt, ast.Raise) for stmt in handler.body):
+            if not (handler.body and isinstance(handler.body[0], ast.Raise)):
                 return True
     return False
 
@@ -829,11 +847,68 @@ def serialize_toon_simple(data):
     return '\\n'.join(f'{k}: {v}' for k, v in data.items())
 '''
 
-#: Matched positive for the narrowing above: the handler re-raises at its own top
-#: level, so the failure really does propagate and the substitute below is never
-#: reached through it. Without this fixture the narrowed clause could degenerate
-#: into "every guarded import is a swallow" and nothing would say so.
-_UNCONDITIONAL_RAISE_MODULE = '''
+#: Matched positive for the positional clause: the handler's FIRST statement is a
+#: ``raise``, so the failure propagates on handler entry and the substitute below
+#: is never reached through it. Without this fixture the clause could degenerate
+#: into "every guarded import is a swallow" and nothing would say so — a clearing
+#: clause with no matched positive is a constant, not a predicate.
+_RAISE_FIRST_MODULE = '''
+try:
+    from toon_parser import serialize_toon
+
+    HAS_TOON_PARSER = True
+except ImportError:
+    raise
+
+
+def serialize_toon_simple(data):
+    return '\\n'.join(f'{k}: {v}' for k, v in data.items())
+'''
+
+#: Matched positive for the position-not-bareness decision. The first statement
+#: raises a NEW exception chained from the caught one; it propagates exactly as
+#: unconditionally as a bare ``raise``, and is arguably the better practice. A
+#: narrowing to bare-only would report this as a swallow for no gain in
+#: soundness, and this fixture is what makes that narrowing fail rather than pass.
+_RAISE_FROM_FIRST_MODULE = '''
+try:
+    from toon_parser import serialize_toon
+
+    HAS_TOON_PARSER = True
+except ImportError as err:
+    raise RuntimeError('toon_parser is missing') from err
+
+
+def serialize_toon_simple(data):
+    return '\\n'.join(f'{k}: {v}' for k, v in data.items())
+'''
+
+#: The evasion the positional clause exists to close: the handler hands the
+#: substitute back with a ``return`` and leaves a ``raise`` below it that can
+#: never execute. Any clause asking whether a ``raise`` appears ANYWHERE in
+#: ``handler.body`` reads the dead statement as propagation and clears a module
+#: that routes around the serializer on every path through the handler.
+_RETURN_BEFORE_RAISE_SWALLOWING_MODULE = '''
+def resolve_serializer():
+    try:
+        from toon_parser import serialize_toon
+
+        return serialize_toon
+    except ImportError:
+        return serialize_toon_simple
+        raise
+
+
+def serialize_toon_simple(data):
+    return '\\n'.join(f'{k}: {v}' for k, v in data.items())
+'''
+
+#: The ACCEPTED COST of the positional clause, kept as a control so the cost stays
+#: a known price instead of being rediscovered as a defect. This handler records
+#: the failure and THEN re-raises, so it genuinely propagates — and it is flagged
+#: anyway, because a statement executes before the ``raise``. Pinning it here is
+#: what stops a later round reintroducing a reachability test to clear it.
+_CLEANUP_THEN_RAISE_MODULE = '''
 try:
     from toon_parser import serialize_toon
 
@@ -1061,15 +1136,50 @@ def test_detector_flags_a_swallow_whose_raise_sits_in_a_nested_function():
     assert swallows_canonical_import(_NESTED_RAISE_SWALLOWING_MODULE) is True
 
 
-def test_detector_clears_a_handler_that_re_raises_unconditionally():
-    """Matched positive for the narrowing: a top-level ``raise`` still clears.
+def test_detector_clears_a_handler_whose_first_statement_is_a_raise():
+    """Matched positive for the positional clause: a position-0 ``raise`` clears.
 
-    Without this control the narrowed clause could tighten into "every guarded
-    canonical import is a swallow" and every assertion built on it would keep
-    passing — a clearing clause with no matched positive is not a predicate, it is
-    a constant.
+    Without this control the clause could tighten into "every guarded canonical
+    import is a swallow" and every assertion built on it would keep passing — a
+    clearing clause with no matched positive is not a predicate, it is a
+    constant.
     """
-    assert swallows_canonical_import(_UNCONDITIONAL_RAISE_MODULE) is False
+    assert swallows_canonical_import(_RAISE_FIRST_MODULE) is False
+
+
+def test_detector_clears_a_handler_that_raises_a_chained_error_first():
+    """Position is the decidable property, not bareness.
+
+    ``raise RuntimeError(...) from err`` in position 0 propagates as
+    unconditionally as a bare ``raise`` does, so the clause deliberately does not
+    inspect ``exc``. This control pins that decision: narrowing to bare-only
+    would report arguably the better practice as a swallow, and it fails here
+    rather than passing silently.
+    """
+    assert swallows_canonical_import(_RAISE_FROM_FIRST_MODULE) is False
+
+
+def test_detector_flags_a_handler_that_returns_before_its_raise():
+    """A ``raise`` the handler can never reach propagates nothing.
+
+    The handler returns the substitute and leaves the ``raise`` below it dead, so
+    a clause asking whether a ``raise`` appears anywhere in ``handler.body`` read
+    the dead statement as propagation and cleared a module that hands over its own
+    writer on every path.
+    """
+    assert swallows_canonical_import(_RETURN_BEFORE_RAISE_SWALLOWING_MODULE) is True
+
+
+def test_detector_flags_a_handler_that_cleans_up_before_re_raising():
+    """The accepted cost of the positional clause, pinned as a control.
+
+    This handler propagates — the ``raise`` runs on every path through it — and is
+    flagged anyway, because a statement executes before it. That is the deliberate
+    price of asking a question an AST shape test can decide, not a defect. Stating
+    it as a control is what keeps it a known cost and stops a later round
+    reintroducing a reachability test to clear it.
+    """
+    assert swallows_canonical_import(_CLEANUP_THEN_RAISE_MODULE) is True
 
 
 #: A canonical emitter whose nested helper happens to bind a TOON-shaped literal
