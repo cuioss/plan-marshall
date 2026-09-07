@@ -42,9 +42,16 @@ def build_corpus(root: Path) -> Path:
     )
     # A sub-document edge source: the index attributes this edge to `beta:caller`
     # while the line it cites lives in this file, not in SKILL.md.
+    #
+    # The SECOND citation is load-bearing for the per-owner-not-per-edge walk
+    # test: it gives `beta:caller` two inbound edges to `alpha:target-skill`, so
+    # the edge count EXCEEDS the owner count. At one edge per owner the two
+    # walking strategies produce identical numbers and that test cannot tell
+    # them apart — see `test_the_walk_runs_once_per_owner_not_once_per_edge`.
     _write(
         base / 'beta' / 'skills' / 'caller' / 'workflow' / 'step.md',
-        '# Step\n\nfiller\nfiller\nRun `alpha:target-skill:target_script` here.\n',
+        '# Step\n\nfiller\nfiller\nRun `alpha:target-skill:target_script` here.\n'
+        'See Skill: alpha:target-skill for details.\n',
     )
     # A relative-path edge: its citing line carries a PATH, never the notation.
     _write(
@@ -269,14 +276,21 @@ class TestCandidateFilesAreCached:
         """One walk per distinct owner, however many edges that owner contributes.
 
         ``resolve_reference_site`` runs once per reverse edge, so the population
-        this is graded against is the edge count — published here rather than
-        assumed, because an edge count of one would make the inequality hold on
-        an uncached implementation too.
+        this is graded against is the edge count, and it must strictly EXCEED the
+        owner count. At one edge per owner the two walking strategies produce the
+        same number, so the equality below holds on an uncached implementation
+        too and the test stops measuring the property in its own name. Both
+        counts are published so a fixture drifting back to one-edge-per-owner
+        fails here, visibly, rather than passing vacuously below.
         """
         index = corpus_index.CorpusIndex(build_corpus(tmp_path))
         edges = index.index.get_reverse_deps('alpha:target-skill')
         owners = {dep.source.to_notation() for dep in edges}
-        assert len(edges) >= 2, f'precondition: fixture must yield >=2 inbound edges, got {len(edges)}'
+        assert len(edges) > len(owners), (
+            f'precondition: some owner must contribute more than one inbound edge, '
+            f'otherwise per-owner and per-edge walking are indistinguishable; got '
+            f'{len(edges)} edge(s) across {len(owners)} owner(s)'
+        )
 
         walks = self._count_walks(monkeypatch)
         index.references('alpha:target-skill')
