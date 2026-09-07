@@ -387,30 +387,59 @@ def test_emitter_is_silent_on_a_clean_map(recorded_log, monkeypatch):
     assert recorded_log.calls == []
 
 
-def test_unresolvable_registry_suppresses_every_condition_on_a_non_empty_map(recorded_log, monkeypatch):
-    """⚠ Documented DIVERGENCE between the guard's prose and its code.
+# =============================================================================
+# An unresolvable registry NARROWS the guard — it does not silence it
+# =============================================================================
+#
+# Only the stale-notation check consults the registry. When the bundle root
+# cannot be resolved that one message must drop, and the two conditions that
+# never needed registry data must still reach the sink. The arms below are a
+# matched pair and neither is sufficient alone: the positive arm on its own is
+# satisfied by an emitter that warns unconditionally, and the negative arm on its
+# own is satisfied by an emitter that never warns at all. Together they pin the
+# narrowing to exactly the registry-dependent check.
 
-    The module comment above ``_iter_skill_notations`` states that when the
-    bundle root cannot be located "the stale-notation check is skipped, but the
-    missing/empty and unresolved-profile checks still fire because they need no
-    registry". The code does NOT do that: for a NON-empty map the emitter returns
-    from inside the ``resolve_bundles_root`` guard before
-    ``detect_stale_skills_by_profile`` is ever called, so the unresolved-profile
-    condition is suppressed along with the stale-notation one.
 
-    This test pins the OBSERVED behaviour and names the divergence rather than
-    asserting the documented behaviour, because closing the gap is a production
-    change this test-only task does not own. The divergence is reported as a
-    finding; do not read this test as an endorsement of the current arm.
+def test_unresolvable_registry_still_reports_the_unresolved_profile(recorded_log, monkeypatch):
+    """An unresolvable registry drops the stale-notation message and keeps the rest.
+
+    The map carries BOTH conditions: an undeclared-empty ``module_testing`` block
+    and a notation no registry resolves. With the root unresolvable exactly one
+    message reaches the sink — the unresolved-profile one. Asserting the
+    stale-notation message ABSENT is what proves the guard still SKIPS the
+    registry-dependent check rather than running it against a root it never
+    obtained.
     """
     _install_registry(monkeypatch, root_raises=True)
     sbp = _map_with_empty_profile(declared_minimal=False)
+    sbp['implementation']['defaults'].append({'skill': _STALE_NOTATION})
 
     _emit_staleness_warning('mod-f', {'skills_by_profile': sbp})
 
-    assert recorded_log.calls == []
-    # The condition itself is real — the pure core surfaces it for the same map.
+    assert len(recorded_log.calls) == 1, recorded_log.messages
+    message = recorded_log.messages[0]
+    assert "profile 'module_testing'" in message
+    assert 'not declared minimal' in message
+    assert not any('absent from the live registry' in m for m in recorded_log.messages)
+    # The condition is real independently of the emitter — the pure core surfaces
+    # it for the same map.
     assert _module_testing_condition_fired(sbp)
+
+
+def test_unresolvable_registry_is_silent_on_a_clean_map(recorded_log, monkeypatch):
+    """An unresolvable registry over a clean map reaches the sink zero times.
+
+    The negative control for the arm above, and the arm that does the work: that
+    arm's "it warns" verdict is equally satisfied by an emitter warning on every
+    map, and by one whose unresolvable-registry path treats every notation as
+    ABSENT — under which this map's live notation would be reported stale. Both
+    inversions produce a message here and fail.
+    """
+    _install_registry(monkeypatch, root_raises=True)
+
+    _emit_staleness_warning('mod-i', {'skills_by_profile': _profile_map(_LIVE_NOTATION)})
+
+    assert recorded_log.calls == []
 
 
 def test_no_exception_escapes_when_the_log_sink_raises(monkeypatch):
