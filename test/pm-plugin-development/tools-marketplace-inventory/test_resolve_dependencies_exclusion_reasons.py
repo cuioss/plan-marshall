@@ -146,6 +146,17 @@ def test_lsp_dependency_kind_has_no_file_scan_detector(tmp_path):
     Before this member existed there was no real enum value with no detector to
     assert this against; it is the concrete regression the enum's own docstring
     names as the gap declaring ``LSP`` here closes.
+
+    MATCHED POSITIVE CONTROL. The emptiness assertion alone is evidence about the
+    filter only while the fixture really does carry something a detector finds,
+    and nothing used to establish that: the claim that "SCRIPT_NOTATION alone
+    would have caught this" lived in this docstring. If the fixture stopped
+    matching ``detect_script_notations``, or script-notation detection stopped
+    producing rows at all, the empty LSP index would still be empty and this test
+    would pass for the wrong reason with the filter never exercised. The same tree
+    is therefore indexed under ``{DependencyType.SCRIPT_NOTATION}`` FIRST and the
+    detected row asserted, so the second assertion is a comparison between two
+    runs rather than an absence with nothing to contrast against.
     """
     # Arrange — a bundle whose skill.md carries a real, otherwise-detectable
     # script notation.
@@ -159,11 +170,23 @@ def test_lsp_dependency_kind_has_no_file_scan_detector(tmp_path):
         script_source='def main() -> int:\n    return 0\n',
     )
 
+    # Control — the SAME tree under the kind that DOES have a detector.
+    detected = build_dependency_index(bundles, {DependencyType.SCRIPT_NOTATION})
+    detected_rows = [
+        (dep.target.to_notation(), dep.resolved)
+        for deps in detected.forward_deps.values()
+        for dep in deps
+    ]
+    assert detected_rows == [('demo-bundle:alpha:alpha', True)], (
+        'the fixture no longer carries a notation SCRIPT_NOTATION detects, so the '
+        f'LSP-only emptiness below would say nothing about the filter: {detected_rows}'
+    )
+
     # Act — request ONLY the lsp kind.
     index = build_dependency_index(bundles, {DependencyType.LSP})
 
-    # Assert — no dependency at all, not even the real notation this skill.md
-    # carries (which SCRIPT_NOTATION alone would have caught).
+    # Assert — no dependency at all, not even the notation the control just
+    # proved SCRIPT_NOTATION finds in this very tree.
     rows = [dep for deps in index.forward_deps.values() for dep in deps]
     assert rows == []
 
