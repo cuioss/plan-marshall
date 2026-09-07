@@ -90,19 +90,27 @@ _rmw_json = _orch.rmw_json
 
 FIXED_TIMESTAMP = '2020-01-01T00:00:00Z'
 
-#: The number of writers each arm races. Both arms assert they actually ran this
-#: many, so neither can report success over a race that never happened.
-WRITER_COUNT = 2
+#: The ids the racing writers each try to add — the raced POPULATION, and the
+#: single source of truth for how many writers there are. Distinct by
+#: construction: the subject is a LOST UPDATE, not a duplicate-id collision, so
+#: no two writers may compete for the same row.
+RACED_PLAN_IDS = ('PLAN-02', 'PLAN-03')
+
+#: The number of writers each arm races, DERIVED from the population above
+#: rather than declared beside it. The two are required to be equal by
+#: construction — :func:`_race` sizes its barrier and its pool from this count
+#: while its worker indexes ``RACED_PLAN_IDS[index]`` — and a hand-written
+#: literal enforced nothing: one SMALLER than the tuple silently races fewer
+#: writers, and both arms still pass, because every assertion is written against
+#: this count rather than against the population. Deriving it makes adding a
+#: third id raise the writer count with it. Both arms assert they actually ran
+#: this many, so neither can report success over a race that never happened.
+WRITER_COUNT = len(RACED_PLAN_IDS)
 
 #: Seconds a writer will wait at the barrier for its peers. Generous enough that
 #: a loaded CI machine never trips it, and finite so a serialized harness fails
 #: with ``BrokenBarrierError`` instead of hanging the suite.
 BARRIER_TIMEOUT_SECONDS = 30
-
-#: The ids the two racing writers each try to add. Distinct by construction: the
-#: subject is a LOST UPDATE, not a duplicate-id collision, so the two writers
-#: must never be competing for the same row.
-RACED_PLAN_IDS = ('PLAN-02', 'PLAN-03')
 
 #: The row already in the queue when each race starts. The positive control
 #: asserts it comes through unmutated, which is what separates "both appends
