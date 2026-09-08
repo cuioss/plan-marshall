@@ -81,8 +81,8 @@ class TestOrchestratorStore:
 #: cannot show. The ids are therefore stated, and drawn from this mapping's own
 #: keys so a reorder carries each name along with its value.
 _UNKNOWN_STORE_VALUES = {
-    'an-unregistered-store-name': 'archive',
-    'another-unregistered-store-name': 'lessons',
+    'an-unregistered-store-name-archive': 'archive',
+    'an-unregistered-store-name-lessons': 'lessons',
     'the-empty-string': '',
     'a-registered-name-in-the-wrong-case': 'PLANS',
     'a-registered-name-with-trailing-whitespace': 'orchestrator ',
