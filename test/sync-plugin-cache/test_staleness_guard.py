@@ -56,6 +56,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import textwrap
 from pathlib import Path
 
@@ -687,36 +688,56 @@ sys.meta_path.insert(0, _Blocker())
 
 
 def _run_python(program: str, *args: str) -> subprocess.CompletedProcess[str]:
-    """Run ``program`` in a child interpreter. It must already be flat.
+    """Run ``program`` in a child interpreter isolated from the repository.
 
-    Dedenting here would be a silent no-op for any caller that concatenates a
-    column-0 fragment (such as :data:`_BLOCK_YAML`) with an indented
-    triple-quoted body: the common leading-whitespace prefix across the joined
-    text is then the empty string, so the indented half survives verbatim and
-    the child dies with ``IndentationError`` before running a line of the
-    subject code — failing every assertion for a reason that has nothing to do
-    with the behaviour under test. Callers dedent each indented fragment at its
-    own site, where the text is still uniformly indented.
+    ``program`` must already be flat. Dedenting here would be a silent no-op for
+    any caller that concatenates a column-0 fragment (such as
+    :data:`_BLOCK_YAML`) with an indented triple-quoted body: the common leading
+    whitespace prefix across the joined text is then the empty string, so the
+    indented half survives verbatim and the child dies with ``IndentationError``
+    before running a line of the subject code — failing every assertion for a
+    reason that has nothing to do with the behaviour under test. Callers dedent
+    each indented fragment at its own site, where the text is still uniformly
+    indented.
 
-    The environment carries the cross-skill ``PYTHONPATH`` explicitly, mirroring
-    what :func:`conftest.run_script` builds: that helper takes a script PATH and
-    cannot serve a ``-c`` program, so the mapping is spelled here instead. The
-    entries are the marketplace ``skills/*/scripts`` directories only — never the
-    repository root — so the ``marketplace.targets`` package route that both
-    callers rely on being unreachable stays unreachable.
+    The child is held off the repository on both routes a ``python -c`` launch
+    would otherwise reach it by. It runs from a temporary directory, so the
+    implicit ``sys.path[0]`` entry — the working directory, for ``-c`` — is not
+    the repository root; and its ``PYTHONPATH`` is rebuilt from
+    :data:`conftest._MARKETPLACE_SCRIPT_DIRS` plus only those inherited entries
+    that are non-empty and resolve outside ``PROJECT_ROOT``. The environment is
+    spelled out here rather than delegated because :func:`conftest.run_script`,
+    which builds the same cross-skill mapping, takes a script PATH and cannot
+    carry a ``-c`` program.
+
+    The ``marketplace.targets`` package route is therefore reachable only by a
+    caller that puts it on ``sys.path`` itself, and the two callers want
+    opposite things from that. The helper-load test needs the route absent, so
+    that a walk into the package surfaces as a failure instead of passing
+    unnoticed. The negative control inserts ``PROJECT_ROOT`` deliberately to
+    reach the package, so that what stops the import is the ``yaml`` blocker
+    rather than a missing ``marketplace``.
     """
     env = os.environ.copy()
-    pythonpath = os.pathsep.join(_MARKETPLACE_SCRIPT_DIRS)
-    if 'PYTHONPATH' in env:
-        pythonpath = pythonpath + os.pathsep + env['PYTHONPATH']
-    env['PYTHONPATH'] = pythonpath
-    return subprocess.run(
-        [sys.executable, '-c', program, *args],
-        capture_output=True,
-        text=True,
-        timeout=60,
-        env=env,
-    )
+    project_root = PROJECT_ROOT.resolve()
+    entries = [
+        *_MARKETPLACE_SCRIPT_DIRS,
+        *(
+            entry
+            for entry in env.get('PYTHONPATH', '').split(os.pathsep)
+            if entry and not Path(entry).resolve().is_relative_to(project_root)
+        ),
+    ]
+    env['PYTHONPATH'] = os.pathsep.join(entries)
+    with tempfile.TemporaryDirectory() as outside_the_repository:
+        return subprocess.run(
+            [sys.executable, '-c', program, *args],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            env=env,
+            cwd=outside_the_repository,
+        )
 
 
 def test_fingerprint_helper_loads_without_the_marketplace_package() -> None:
@@ -764,6 +785,12 @@ def test_marketplace_package_route_is_blocked_under_the_same_conditions() -> Non
     previous test would pass without proving anything. This asserts the
     blocker is effective: under the SAME blocker, the package route that
     sync.py deliberately avoids does still fail.
+
+    The explicit ``sys.path`` insert is what makes that route reachable at all,
+    since :func:`_run_python` runs the child outside the repository. It is load
+    bearing, not redundant: without it the import would fail for want of
+    ``marketplace`` and prove nothing about ``yaml``, which is why the assertion
+    names ``blocked=yaml`` rather than merely requiring some failure.
     """
     result = _run_python(
         _BLOCK_YAML
