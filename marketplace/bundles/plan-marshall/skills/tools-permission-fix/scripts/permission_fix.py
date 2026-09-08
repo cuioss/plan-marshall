@@ -49,6 +49,7 @@ from permission_common import (  # noqa: E402
     ensure_default_permissions,
     get_project_settings_path_for_write,
     get_settings_path,
+    is_claude_target,
     load_settings,
     load_settings_path,
     resolve_scope_to_paths,
@@ -81,6 +82,24 @@ OVERLY_BROAD_PYTHON = 'Bash(python3:*)'
 # Timestamp patterns for consolidation
 TIMESTAMP_PATTERN = re.compile(r'^(\w+)\((.*/)?(.+)-(\d{4}-\d{2}-\d{2}-\d{6})\.(\w+)\)$')
 DATE_PATTERN = re.compile(r'^(\w+)\((.*/)?(.+)-(\d{4}-\d{2}-\d{2})\.(\w+)\)$')
+
+
+def _decline_non_claude(operation: str) -> dict:
+    """Return the honest no-op for a permission-DSL-emitting subcommand on a non-Claude target.
+
+    The residue this module holds (``EXECUTOR_PERMISSION``, ``OVERLY_BROAD_PYTHON``,
+    the ``Skill(...)``/``SlashCommand(...)`` wildcard generators, the timestamp
+    patterns, path normalization, individual-script detection) renders and parses
+    the **Claude** permission grammar. On a non-Claude target that grammar does not
+    apply, so emitting it would present foreign DSL as the target's own — a no-op
+    names the decline instead, per the no-op policy.
+    """
+    return {
+        'status': 'no-op',
+        'operation': operation,
+        'reason': 'The Claude permission grammar does not apply to this target; '
+        'no permission-DSL output was produced',
+    }
 
 
 # =============================================================================
@@ -149,6 +168,9 @@ def resolve_settings_arg(args: argparse.Namespace) -> str:
 
 def cmd_apply_fixes(args: argparse.Namespace) -> dict:
     """Handle apply-fixes subcommand."""
+    if not is_claude_target():
+        return _decline_non_claude('apply-fixes')
+
     settings_path = resolve_settings_arg(args)
     settings, error = load_settings(settings_path)
     if error:
@@ -369,6 +391,9 @@ def generate_wildcard(parsed_permissions: list[dict]) -> str:
 
 def cmd_consolidate(args: argparse.Namespace) -> dict:
     """Handle consolidate subcommand."""
+    if not is_claude_target():
+        return _decline_non_claude('consolidate')
+
     settings_path = resolve_settings_arg(args)
     settings, error = load_settings(settings_path)
     if error:
@@ -500,6 +525,9 @@ def generate_required_wildcards(marketplace: dict) -> list[str]:
 
 def cmd_ensure_wildcards(args: argparse.Namespace) -> dict:
     """Handle ensure-wildcards subcommand."""
+    if not is_claude_target():
+        return _decline_non_claude('ensure-wildcards')
+
     settings, error = load_settings(args.settings)
     if error:
         return {'status': 'error', 'error': error}
@@ -912,6 +940,9 @@ def scan_marketplace_dir(marketplace_dir: str) -> dict:
 
 def cmd_generate_wildcards(args: argparse.Namespace) -> dict:
     """Handle generate-wildcards subcommand."""
+    if not is_claude_target():
+        return _decline_non_claude('generate-wildcards')
+
     if args.marketplace_dir:
         inventory = scan_marketplace_dir(args.marketplace_dir)
         if inventory.get('status') == 'error':
@@ -991,6 +1022,9 @@ def cmd_generate_wildcards(args: argparse.Namespace) -> dict:
 
 def cmd_ensure_executor(args: argparse.Namespace) -> dict:
     """Handle ensure-executor subcommand."""
+    if not is_claude_target():
+        return _decline_non_claude('ensure-executor')
+
     settings_path = get_settings_path(args.target)
     settings = load_settings_path(settings_path)
     allow_list = settings['permissions']['allow']
@@ -1032,6 +1066,9 @@ def is_individual_script_permission(permission: str) -> bool:
 
 def cmd_cleanup_scripts(args: argparse.Namespace) -> dict:
     """Handle cleanup-scripts subcommand."""
+    if not is_claude_target():
+        return _decline_non_claude('cleanup-scripts')
+
     settings_path = get_settings_path(args.target)
     settings = load_settings_path(settings_path)
     allow_list = settings['permissions']['allow']
@@ -1087,6 +1124,9 @@ def cmd_cleanup_scripts(args: argparse.Namespace) -> dict:
 
 def cmd_migrate_executor(args: argparse.Namespace) -> dict:
     """Handle migrate-executor subcommand."""
+    if not is_claude_target():
+        return _decline_non_claude('migrate-executor')
+
     settings_path = get_settings_path(args.target)
     settings = load_settings_path(settings_path)
     allow_list = settings['permissions']['allow']
