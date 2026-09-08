@@ -86,22 +86,22 @@ def _reset_base_dir_override():
 # =============================================================================
 
 
-def test_get_temp_dir_default(tmp_path, plan_base_dir_at_tmp):
-    """Test get_temp_dir returns .plan/temp by default."""
-    result = get_temp_dir()
-    assert result == tmp_path / 'temp'
-
-
-def test_get_temp_dir_with_subdir(tmp_path, plan_base_dir_at_tmp):
-    """Test get_temp_dir with subdirectory appends correctly."""
-    result = get_temp_dir('tools-marketplace-inventory')
-    assert result == tmp_path / 'temp' / 'tools-marketplace-inventory'
-
-
-def test_get_temp_dir_without_subdir_is_none(tmp_path, plan_base_dir_at_tmp):
-    """Test get_temp_dir with None subdir returns temp root."""
-    result = get_temp_dir(None)
-    assert result == tmp_path / 'temp'
+@pytest.mark.parametrize(
+    ('args', 'expected_tail'),
+    [
+        ((), ()),
+        ((None,), ()),
+        (('tools-marketplace-inventory',), ('tools-marketplace-inventory',)),
+    ],
+    ids=[
+        'no-argument-yields-the-temp-root',
+        'an-explicit-none-yields-the-same-temp-root',
+        'a-named-subdir-is-appended-to-the-temp-root',
+    ],
+)
+def test_get_temp_dir_appends_only_a_named_subdir(tmp_path, plan_base_dir_at_tmp, args, expected_tail):
+    """The temp root is ``{base}/temp``; a named subdir is the only thing appended."""
+    assert get_temp_dir(*args) == tmp_path.joinpath('temp', *expected_tail)
 
 
 # =============================================================================
@@ -109,36 +109,28 @@ def test_get_temp_dir_without_subdir_is_none(tmp_path, plan_base_dir_at_tmp):
 # =============================================================================
 
 
-def test_atomic_write_file_creates_file(tmp_path):
-    """Test atomic_write_file creates file with content."""
-    path = tmp_path / 'test.txt'
-    content = 'Hello, World!'
+@pytest.mark.parametrize(
+    ('relative_path', 'content', 'expected_text'),
+    [
+        ('test.txt', 'Hello, World!', 'Hello, World!\n'),
+        ('nested/dir/test.txt', 'Nested content', 'Nested content\n'),
+        ('test.txt', 'Content with newline\n', 'Content with newline\n'),
+    ],
+    ids=[
+        'the-content-lands-with-a-terminating-newline',
+        'a-missing-parent-directory-is-created-on-the-way',
+        'an-already-terminated-content-is-not-double-newlined',
+    ],
+)
+def test_atomic_write_file_writes_exactly_one_terminating_newline(
+    tmp_path, relative_path, content, expected_text
+):
+    """The file holds the content plus exactly one terminating newline."""
+    path = tmp_path / relative_path
 
     atomic_write_file(path, content)
 
-    assert path.exists()
-    assert path.read_text() == content + '\n'
-
-
-def test_atomic_write_file_creates_parent_dirs(tmp_path):
-    """Test atomic_write_file creates parent directories."""
-    path = tmp_path / 'nested' / 'dir' / 'test.txt'
-    content = 'Nested content'
-
-    atomic_write_file(path, content)
-
-    assert path.exists()
-    assert path.read_text() == content + '\n'
-
-
-def test_atomic_write_file_preserves_trailing_newline(tmp_path):
-    """Test atomic_write_file doesn't double newlines."""
-    path = tmp_path / 'test.txt'
-    content = 'Content with newline\n'
-
-    atomic_write_file(path, content)
-
-    assert path.read_text() == content
+    assert path.read_text() == expected_text
 
 
 # =============================================================================
@@ -277,9 +269,7 @@ def test_safe_main_success_path_exits_zero(capsys):
 # =============================================================================
 
 
-def test_parse_markdown_metadata_basic():
-    """Test parse_markdown_metadata with basic content."""
-    content = """id=2025-11-28-001
+_METADATA_BLOCK_WITH_BODY = """id=2025-11-28-001
 component.type=command
 applied=false
 
@@ -287,41 +277,37 @@ applied=false
 
 Content here..."""
 
-    result = parse_markdown_metadata(content)
-
-    assert result['id'] == '2025-11-28-001'
-    assert result['component.type'] == 'command'
-    assert result['applied'] == 'false'
-    assert len(result) == 3
-
-
-def test_parse_markdown_metadata_empty_content():
-    """Test parse_markdown_metadata with empty content."""
-    result = parse_markdown_metadata('')
-    assert result == {}
-
-
-def test_parse_markdown_metadata_no_metadata():
-    """Test parse_markdown_metadata with only content."""
-    content = """# Title
+_BODY_WITHOUT_METADATA = """# Title
 
 Just content, no metadata."""
 
-    result = parse_markdown_metadata(content)
-    assert result == {}
-
-
-def test_parse_markdown_metadata_with_equals_in_value():
-    """Test parse_markdown_metadata handles = in values."""
-    content = """key=value=with=equals
+_METADATA_WITH_EQUALS_IN_VALUE = """key=value=with=equals
 other=normal
 
 # Title"""
 
-    result = parse_markdown_metadata(content)
 
-    assert result['key'] == 'value=with=equals'
-    assert result['other'] == 'normal'
+@pytest.mark.parametrize(
+    ('content', 'expected'),
+    [
+        (
+            _METADATA_BLOCK_WITH_BODY,
+            {'id': '2025-11-28-001', 'component.type': 'command', 'applied': 'false'},
+        ),
+        ('', {}),
+        (_BODY_WITHOUT_METADATA, {}),
+        (_METADATA_WITH_EQUALS_IN_VALUE, {'key': 'value=with=equals', 'other': 'normal'}),
+    ],
+    ids=[
+        'every-key-of-a-leading-metadata-block-is-parsed',
+        'empty-content-carries-no-metadata',
+        'a-body-with-no-leading-block-carries-no-metadata',
+        'only-the-first-equals-splits-key-from-value',
+    ],
+)
+def test_parse_markdown_metadata_returns_exactly_the_declared_keys(content, expected):
+    """Each ``key=value`` line ahead of the body becomes one entry, and nothing else does."""
+    assert parse_markdown_metadata(content) == expected
 
 
 # =============================================================================
@@ -523,25 +509,24 @@ def test_set_base_dir_accepts_string():
 # =============================================================================
 
 
-def test_base_path_basic():
-    """Test base_path constructs path within base directory."""
+@pytest.mark.parametrize(
+    ('parts', 'expected'),
+    [
+        (('plans', 'my-task', 'plan.md'), Path('.plan/plans/my-task/plan.md')),
+        (('config.json',), Path('.plan/config.json')),
+        ((), Path('.plan')),
+    ],
+    ids=[
+        'several-parts-are-joined-under-the-base',
+        'a-single-part-is-joined-under-the-base',
+        'no-parts-yields-the-base-itself',
+    ],
+)
+def test_base_path_joins_its_parts_under_the_base_directory(parts, expected):
+    """Every part is joined under the configured base, and no part yields the base."""
     set_base_dir('.plan')
-    result = base_path('plans', 'my-task', 'plan.md')
-    assert result == Path('.plan/plans/my-task/plan.md')
 
-
-def test_base_path_single_part():
-    """Test base_path with single path part."""
-    set_base_dir('.plan')
-    result = base_path('config.json')
-    assert result == Path('.plan/config.json')
-
-
-def test_base_path_no_parts():
-    """Test base_path with no parts returns base directory."""
-    set_base_dir('.plan')
-    result = base_path()
-    assert result == Path('.plan')
+    assert base_path(*parts) == expected
 
 
 def test_base_path_respects_custom_base():

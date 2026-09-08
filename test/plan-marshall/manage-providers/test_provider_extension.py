@@ -6,6 +6,8 @@
 from argparse import Namespace
 from typing import Any
 
+import pytest
+
 from _providers_core import load_declared_providers
 from _providers_fixtures import stage_marshal
 from toon_parser import parse_toon
@@ -43,13 +45,38 @@ _GITHUB_PROVIDER = {
 class TestProviderLoadingFromMarshalJson:
     """Tests for loading provider declarations from marshal.json."""
 
-    def test_loads_sonar_provider(self, tmp_path, monkeypatch):
-        """Should load Sonar provider from marshal.json."""
-        stage_marshal(tmp_path, monkeypatch, _SONAR_PROVIDER_CONFIG)
+    @pytest.mark.parametrize(
+        ('config', 'expected_skill_names'),
+        [
+            (_SONAR_PROVIDER_CONFIG, ['workflow-integration-sonar']),
+            ({'providers': []}, []),
+            (None, []),
+            (
+                {
+                    'providers': [
+                        {'skill_name': 'provider-a', 'auth_type': 'token'},
+                        {'skill_name': 'provider-b', 'auth_type': 'system'},
+                    ],
+                },
+                ['provider-a', 'provider-b'],
+            ),
+        ],
+        ids=[
+            'a-declared-provider-is-loaded',
+            'an-empty-providers-list-loads-nothing',
+            'a-missing-marshal-json-loads-nothing',
+            'every-declared-provider-is-loaded-in-declaration-order',
+        ],
+    )
+    def test_declared_providers_are_loaded_from_marshal_json(
+        self, tmp_path, monkeypatch, config, expected_skill_names
+    ):
+        """The loader yields one entry per declaration, always as a list."""
+        stage_marshal(tmp_path, monkeypatch, config)
 
         providers = load_declared_providers()
-        names = [p['skill_name'] for p in providers]
-        assert 'workflow-integration-sonar' in names
+
+        assert [p['skill_name'] for p in providers] == expected_skill_names
 
     def test_sonar_provider_fields(self, tmp_path, monkeypatch):
         """Sonar provider must have correct configuration."""
@@ -64,38 +91,6 @@ class TestProviderLoadingFromMarshalJson:
         assert sonar['verify_method'] == 'GET'
         assert sonar['header_name'] == 'Authorization'
         assert 'Bearer' in sonar['header_value_template']
-
-    def test_returns_list(self, tmp_path, monkeypatch):
-        """load_declared_providers always returns a list."""
-        stage_marshal(tmp_path, monkeypatch, {'providers': []})
-
-        providers = load_declared_providers()
-        assert isinstance(providers, list)
-
-    def test_returns_empty_when_no_marshal_json(self, tmp_path, monkeypatch):
-        """Should return empty list when marshal.json does not exist."""
-        stage_marshal(tmp_path, monkeypatch, config=None)
-        providers = load_declared_providers()
-        assert providers == []
-
-    def test_multiple_providers(self, tmp_path, monkeypatch):
-        """Should load multiple providers from marshal.json."""
-        stage_marshal(
-            tmp_path,
-            monkeypatch,
-            {
-                'providers': [
-                    {'skill_name': 'provider-a', 'auth_type': 'token'},
-                    {'skill_name': 'provider-b', 'auth_type': 'system'},
-                ],
-            },
-        )
-
-        providers = load_declared_providers()
-        assert len(providers) == 2
-        names = [p['skill_name'] for p in providers]
-        assert 'provider-a' in names
-        assert 'provider-b' in names
 
 
 class TestCIProviderFromMarshalJson:

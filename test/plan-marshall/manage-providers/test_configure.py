@@ -7,6 +7,7 @@ and the check command for credential completeness.
 """
 
 import pytest
+from _providers_core import SECRET_PLACEHOLDERS
 from _providers_fixtures import stage_marshal
 
 from conftest import get_script_path, run_script
@@ -28,22 +29,6 @@ _SONAR_PROVIDER = {
         {'key': 'project_key', 'label': 'SonarCloud Project Key', 'required': True},
     ],
 }
-
-
-def assert_no_mismatch_reported(result) -> None:
-    """Assert the configure result reported no pom-mismatch warning.
-
-    Scoped to the parsed result fields rather than to raw stdout. ``configure``
-    emits ``warnings`` and ``mismatches`` only when a supplied value disagrees
-    with the pom, so their absence IS the contract — while the same payload also
-    carries a ``path`` key holding an absolute credential-file path. A
-    whole-stdout substring check for 'warning' or 'mismatch' therefore matches
-    whatever the enclosing directory names happen to contain, and fails on a
-    machine whose checkout path contains either word.
-    """
-    parsed = result.toon()
-    assert 'warnings' not in parsed
-    assert 'mismatches' not in parsed
 
 
 class TestConfigureCLI:
@@ -194,8 +179,23 @@ class TestCheckCompleteness:
         assert 'path' in result
         assert 'placeholders' in result
 
-    def test_complete_credential(self, tmp_path, monkeypatch):
-        """Returns complete=True when no placeholders present."""
+    @pytest.mark.parametrize(
+        ('secret_fields', 'expected_complete', 'expected_placeholders'),
+        [
+            ({'auth_type': 'token', 'token': 'real-secret-value'}, True, []),
+            ({'auth_type': 'token', 'token': SECRET_PLACEHOLDERS['token']}, False, ['token']),
+            ({'auth_type': 'none'}, True, []),
+        ],
+        ids=[
+            'a-token-holding-a-real-value-is-complete',
+            'a-token-left-at-its-placeholder-is-incomplete-and-names-the-field',
+            'auth-none-needs-no-secret-so-it-is-complete',
+        ],
+    )
+    def test_completeness_is_decided_by_the_stored_secret_fields(
+        self, tmp_path, monkeypatch, secret_fields, expected_complete, expected_placeholders
+    ):
+        """A saved credential is complete iff no stored secret is still a placeholder."""
         from _providers_core import (
             check_credential_completeness,
             save_credential,
@@ -205,66 +205,14 @@ class TestCheckCompleteness:
         creds_dir.mkdir()
         monkeypatch.setattr('_providers_core.CREDENTIALS_DIR', creds_dir)
 
-        skill = 'test-check-complete'
-        data = {
-            'skill': skill,
-            'url': 'https://example.com',
-            'auth_type': 'token',
-            'token': 'real-secret-value',
-        }
-        save_credential(skill, data, 'global')
+        skill = 'test-check-completeness'
+        save_credential(skill, {'skill': skill, 'url': 'https://example.com', **secret_fields}, 'global')
+
         result = check_credential_completeness(skill, 'global')
+
         assert result['exists'] is True
-        assert result['complete'] is True
-        assert result['placeholders'] == []
-
-    def test_incomplete_credential(self, tmp_path, monkeypatch):
-        """Returns complete=False when placeholders present."""
-        from _providers_core import (
-            SECRET_PLACEHOLDERS,
-            check_credential_completeness,
-            save_credential,
-        )
-
-        creds_dir = tmp_path / 'creds'
-        creds_dir.mkdir()
-        monkeypatch.setattr('_providers_core.CREDENTIALS_DIR', creds_dir)
-
-        skill = 'test-check-incomplete'
-        data = {
-            'skill': skill,
-            'url': 'https://example.com',
-            'auth_type': 'token',
-            'token': SECRET_PLACEHOLDERS['token'],
-        }
-        save_credential(skill, data, 'global')
-        result = check_credential_completeness(skill, 'global')
-        assert result['exists'] is True
-        assert result['complete'] is False
-        assert 'token' in result['placeholders']
-
-    def test_auth_none_reports_complete(self, tmp_path, monkeypatch):
-        """auth_type=none with no secret fields reports complete."""
-        from _providers_core import (
-            check_credential_completeness,
-            save_credential,
-        )
-
-        creds_dir = tmp_path / 'creds'
-        creds_dir.mkdir()
-        monkeypatch.setattr('_providers_core.CREDENTIALS_DIR', creds_dir)
-
-        skill = 'test-check-auth-none'
-        data = {
-            'skill': skill,
-            'url': 'https://example.com',
-            'auth_type': 'none',
-        }
-        save_credential(skill, data, 'global')
-        result = check_credential_completeness(skill, 'global')
-        assert result['exists'] is True
-        assert result['complete'] is True
-        assert result['placeholders'] == []
+        assert result['complete'] is expected_complete
+        assert result['placeholders'] == expected_placeholders
 
 
 class TestConfigureAuthTypeValidation:
@@ -292,45 +240,27 @@ class TestConfigureAuthTypeValidation:
         self._creds_env = {'PLAN_MARSHALL_CREDENTIALS_DIR': str(creds_dir)}
         yield
 
-    def test_configure_accepts_any_auth_type_without_declared(self):
-        """Configure accepts any auth_type when provider has no declared auth_type."""
+    @pytest.mark.parametrize(
+        'auth_type',
+        ['none', 'token', 'basic'],
+        ids=[
+            'none-is-accepted-against-an-undeclared-auth-type',
+            'token-is-accepted-and-matches-the-declaration',
+            'basic-is-accepted-against-an-undeclared-auth-type',
+        ],
+    )
+    def test_configure_accepts_the_auth_type_it_was_given(self, auth_type):
+        """A provider declaring no auth_type accepts every auth_type offered to it."""
         result = run_script(
             SCRIPT_PATH,
             'configure',
             '--skill',
             'plan-marshall:workflow-integration-sonar',
             '--auth-type',
-            'none',
+            auth_type,
             env_overrides=self._creds_env,
         )
-        assert result.returncode == 0
-        assert 'incompatible' not in result.stdout.lower()
 
-    def test_configure_accepts_matching_auth_type(self):
-        """Configure accepts auth_type that matches provider's declared auth_type."""
-        skill = 'plan-marshall:workflow-integration-sonar'
-        result = run_script(
-            SCRIPT_PATH,
-            'configure',
-            '--skill',
-            skill,
-            '--auth-type',
-            'token',
-            env_overrides=self._creds_env,
-        )
-        assert result.returncode == 0
-
-    def test_configure_accepts_basic_without_declared_auth(self):
-        """Configure accepts basic auth when provider has no declared auth_type."""
-        result = run_script(
-            SCRIPT_PATH,
-            'configure',
-            '--skill',
-            'plan-marshall:workflow-integration-sonar',
-            '--auth-type',
-            'basic',
-            env_overrides=self._creds_env,
-        )
         assert result.returncode == 0
         assert 'incompatible' not in result.stdout.lower()
 
@@ -445,6 +375,32 @@ _POM_WITHOUT_SONAR = """<?xml version="1.0" encoding="UTF-8"?>
 </project>
 """
 
+_POM_DERIVED_ORGANIZATION = 'cuioss-pom-org'
+_POM_DERIVED_PROJECT_KEY = 'de.cuioss:example-pom-key'
+
+#: ``(pom_content, extra_args, expects_warning, organization, project_key)`` per case.
+#: ``pom_content=None`` stages no pom at all; a ``None`` coordinate means the key is
+#: absent from the resulting provider config rather than present and empty.
+_POM_DERIVATION_CASES = [
+    (_POM_WITH_SONAR, (), False, _POM_DERIVED_ORGANIZATION, _POM_DERIVED_PROJECT_KEY),
+    (
+        _POM_WITH_SONAR,
+        ('--extra', f'organization={_POM_DERIVED_ORGANIZATION}'),
+        False,
+        _POM_DERIVED_ORGANIZATION,
+        _POM_DERIVED_PROJECT_KEY,
+    ),
+    (
+        _POM_WITH_SONAR,
+        ('--extra', 'organization=user-supplied-org'),
+        True,
+        'user-supplied-org',
+        _POM_DERIVED_PROJECT_KEY,
+    ),
+    (None, ('--extra', 'organization=user-org'), False, 'user-org', None),
+    (_POM_WITHOUT_SONAR, (), False, None, None),
+]
+
 
 class TestConfigureSonarPomDerive:
     """Tests for auto-deriving Sonar organization/project_key from pom.xml.
@@ -471,12 +427,47 @@ class TestConfigureSonarPomDerive:
             (tmp_path / 'pom.xml').write_text(pom_content)
         return {'PLAN_MARSHALL_CREDENTIALS_DIR': str(creds_dir)}
 
-    def test_auto_derives_org_and_project_key_from_pom(self, tmp_path, monkeypatch):
-        """Maven-detected Sonar configure auto-derives org/project_key from pom.xml."""
+    @pytest.mark.parametrize(
+        (
+            'pom_content',
+            'extra_args',
+            'expects_warning',
+            'expected_organization',
+            'expected_project_key',
+        ),
+        _POM_DERIVATION_CASES,
+        ids=[
+            'a-sonar-pom-supplies-both-coordinates-when-none-is-given',
+            'a-supplied-value-agreeing-with-the-pom-is-accepted-silently',
+            'a-supplied-value-disagreeing-with-the-pom-warns-and-still-wins',
+            'no-pom-keeps-the-supplied-value-and-derives-nothing-else',
+            'a-pom-without-sonar-properties-derives-nothing',
+        ],
+    )
+    def test_pom_derivation_fills_only_the_coordinates_the_caller_left_open(
+        self,
+        tmp_path,
+        monkeypatch,
+        pom_content,
+        extra_args,
+        expects_warning,
+        expected_organization,
+        expected_project_key,
+    ):
+        """A Sonar-bearing pom supplies the coordinates ``--extra`` did not.
+
+        A supplied value always wins; the pom is consulted only for a coordinate
+        the caller left open, and a disagreement is reported rather than resolved
+        silently. ``warnings`` and ``mismatches`` are emitted as a pair, so both
+        are asserted against the same expectation — and against the PARSED
+        payload, never raw stdout, which also carries an absolute credential path
+        whose directory names may themselves contain either word.
+        """
         from _providers_core import read_provider_config
 
-        creds_env = self._stage(tmp_path, monkeypatch, _POM_WITH_SONAR)
+        creds_env = self._stage(tmp_path, monkeypatch, pom_content)
         skill = 'plan-marshall:workflow-integration-sonar'
+
         result = run_script(
             SCRIPT_PATH,
             'configure',
@@ -484,109 +475,18 @@ class TestConfigureSonarPomDerive:
             skill,
             '--auth-type',
             'token',
+            *extra_args,
             env_overrides=creds_env,
         )
+
         assert result.returncode == 0
+        parsed = result.toon()
+        assert ('warnings' in parsed) is expects_warning
+        assert ('mismatches' in parsed) is expects_warning
 
         provider_config = read_provider_config(skill)
-        assert provider_config.get('organization') == 'cuioss-pom-org'
-        assert provider_config.get('project_key') == 'de.cuioss:example-pom-key'
-
-    def test_supplied_matching_value_no_warning(self, tmp_path, monkeypatch):
-        """A supplied --extra value matching the pom value succeeds with no warning."""
-        from _providers_core import read_provider_config
-
-        creds_env = self._stage(tmp_path, monkeypatch, _POM_WITH_SONAR)
-        skill = 'plan-marshall:workflow-integration-sonar'
-        result = run_script(
-            SCRIPT_PATH,
-            'configure',
-            '--skill',
-            skill,
-            '--auth-type',
-            'token',
-            '--extra',
-            'organization=cuioss-pom-org',
-            env_overrides=creds_env,
-        )
-        assert result.returncode == 0
-        assert_no_mismatch_reported(result)
-
-        provider_config = read_provider_config(skill)
-        assert provider_config.get('organization') == 'cuioss-pom-org'
-        # project_key was not supplied → still auto-derived from pom.
-        assert provider_config.get('project_key') == 'de.cuioss:example-pom-key'
-
-    def test_supplied_mismatch_warns_and_preserves_user_value(self, tmp_path, monkeypatch):
-        """A supplied value disagreeing with the pom value warns but keeps the user's value."""
-        from _providers_core import read_provider_config
-
-        creds_env = self._stage(tmp_path, monkeypatch, _POM_WITH_SONAR)
-        skill = 'plan-marshall:workflow-integration-sonar'
-        result = run_script(
-            SCRIPT_PATH,
-            'configure',
-            '--skill',
-            skill,
-            '--auth-type',
-            'token',
-            '--extra',
-            'organization=user-supplied-org',
-            env_overrides=creds_env,
-        )
-        assert result.returncode == 0
-        assert 'warnings' in result.toon()
-
-        provider_config = read_provider_config(skill)
-        # User's explicit value is preserved, NOT overwritten by the pom value.
-        assert provider_config.get('organization') == 'user-supplied-org'
-
-    def test_non_maven_project_unchanged(self, tmp_path, monkeypatch):
-        """Without a pom.xml, configure behavior is unchanged — no derivation, no warning."""
-        from _providers_core import read_provider_config
-
-        creds_env = self._stage(tmp_path, monkeypatch, pom_content=None)
-        skill = 'plan-marshall:workflow-integration-sonar'
-        result = run_script(
-            SCRIPT_PATH,
-            'configure',
-            '--skill',
-            skill,
-            '--auth-type',
-            'token',
-            '--extra',
-            'organization=user-org',
-            env_overrides=creds_env,
-        )
-        assert result.returncode == 0
-        assert_no_mismatch_reported(result)
-
-        provider_config = read_provider_config(skill)
-        assert provider_config.get('organization') == 'user-org'
-        # No pom → project_key is not auto-derived.
-        assert 'project_key' not in provider_config
-
-    def test_pom_without_sonar_properties_unchanged(self, tmp_path, monkeypatch):
-        """A pom.xml without Sonar properties leaves behavior unchanged."""
-        from _providers_core import read_provider_config
-
-        creds_env = self._stage(tmp_path, monkeypatch, _POM_WITHOUT_SONAR)
-        skill = 'plan-marshall:workflow-integration-sonar'
-        result = run_script(
-            SCRIPT_PATH,
-            'configure',
-            '--skill',
-            skill,
-            '--auth-type',
-            'token',
-            env_overrides=creds_env,
-        )
-        assert result.returncode == 0
-        assert_no_mismatch_reported(result)
-
-        provider_config = read_provider_config(skill)
-        assert 'organization' not in provider_config
-        assert 'project_key' not in provider_config
+        assert provider_config.get('organization') == expected_organization
+        assert provider_config.get('project_key') == expected_project_key
 
     def test_non_sonar_provider_skips_derivation(self, tmp_path, monkeypatch):
         """A non-Sonar provider is unaffected even when a Sonar-bearing pom.xml is present."""

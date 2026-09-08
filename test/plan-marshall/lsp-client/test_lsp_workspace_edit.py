@@ -350,37 +350,44 @@ def test_edit_verdict_passes_when_no_file_gained_an_error():
 # -- diagnostic set delta -----------------------------------------------------
 
 
-def test_delta_sees_a_swapped_error_that_a_count_cannot():
-    """[A] -> [B] is one error out, one in: the count is unchanged, the set is not."""
-    added, removed = we.diagnostic_delta([_error('A')], [_error('B')])
-    assert [diag['message'] for diag in added] == ['B']
-    assert [diag['message'] for diag in removed] == ['A']
+_WARNING = {'severity': 2, 'message': 'style', 'range': {'start': {'line': 0, 'character': 0}}}
 
 
-def test_delta_reports_only_the_new_error_not_the_pre_existing_one():
-    added, removed = we.diagnostic_delta([_error('A')], [_error('A'), _error('B', line=4)])
-    assert [diag['message'] for diag in added] == ['B']
-    assert removed == []
+def _by_message_and_line(diagnostics):
+    """Project a diagnostic list onto ``(message, line)`` — the identity the delta keys on."""
+    return [(diag['message'], diag['range']['start']['line']) for diag in diagnostics]
 
 
-def test_delta_is_a_multiset_so_a_repeated_error_gaining_one_is_visible():
-    before = [_error('dup'), _error('dup')]
-    after = [_error('dup'), _error('dup'), _error('dup')]
+@pytest.mark.parametrize(
+    ('before', 'after', 'expected_added', 'expected_removed'),
+    [
+        ([_error('A')], [_error('B')], [('B', 0)], [('A', 0)]),
+        ([_error('A')], [_error('A'), _error('B', line=4)], [('B', 4)], []),
+        (
+            [_error('dup'), _error('dup')],
+            [_error('dup'), _error('dup'), _error('dup')],
+            [('dup', 0)],
+            [],
+        ),
+        ([], [_WARNING], [], []),
+        ([_error('A', line=1)], [_error('A', line=1), _error('A', line=9)], [('A', 9)], []),
+    ],
+    ids=[
+        'a-swapped-error-is-one-out-and-one-in-where-a-count-nets-to-zero',
+        'a-pre-existing-error-is-not-reported-as-added',
+        'a-repeated-error-gaining-one-more-is-visible-because-the-delta-is-a-multiset',
+        'a-non-error-severity-is-outside-the-delta-entirely',
+        'the-same-message-at-a-different-line-is-a-different-diagnostic',
+    ],
+)
+def test_diagnostic_delta_reports_the_added_and_removed_sets(
+    before, after, expected_added, expected_removed
+):
+    """The delta is a multiset difference over ``(message, line)``, errors only."""
     added, removed = we.diagnostic_delta(before, after)
-    assert len(added) == 1
-    assert removed == []
 
-
-def test_delta_ignores_non_error_severities():
-    warning = {'severity': 2, 'message': 'style', 'range': {'start': {'line': 0, 'character': 0}}}
-    added, removed = we.diagnostic_delta([], [warning])
-    assert added == []
-    assert removed == []
-
-
-def test_delta_distinguishes_same_message_at_a_different_line():
-    added, _removed = we.diagnostic_delta([_error('A', line=1)], [_error('A', line=1), _error('A', line=9)])
-    assert [diag['range']['start']['line'] for diag in added] == [9]
+    assert _by_message_and_line(added) == expected_added
+    assert _by_message_and_line(removed) == expected_removed
 
 
 # -- D6-S06: a real edit spanning two MODULES, and the rollback mirrored purely --
