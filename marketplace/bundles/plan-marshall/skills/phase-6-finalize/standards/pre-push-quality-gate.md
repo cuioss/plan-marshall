@@ -5,7 +5,7 @@ lane:
 name: default:pre-push-quality-gate
 description: Run quality-gate per affected bundle then one whole-tree quality-gate, then whole-tree test-compile, then gate whole-tree module-tests on scoped-vs-whole-tree divergence risk, as the last gate before push
 order: 5
-mutates_source: false
+mutates_source: true
 head_dependent: true
 reads:
   - worktree
@@ -556,6 +556,16 @@ run, under the governing rule, and size it the same way. The variants above are 
 that rule, not an enumeration of the paths that can reach Branch A.
 
 The persisted `head_at_completion` field is consumed by phase-6-finalize Step 3's resumable re-entry check: when the worktree HEAD has advanced past `{sha}` (typically because `automated-review` or `sonar-roundtrip` opened a loop-back fix-task that produced a new commit), the dispatcher re-fires this gate against the newer HEAD. See § "Verdict-input surface — deliberately undeclared" above for why the verdict-currency classifier never narrows that re-fire for THIS gate.
+
+Return a `commit_message` element in this step's return TOON so the dispatcher's item-5f commit instrumentation uses it when committing whatever this gate's own `quality-gate` arms auto-fixed in the worktree (when nothing was fixed the porcelain check is empty and the dispatcher commits nothing, so the returned message is simply unused):
+
+```toon
+status: done
+display_detail: "{the Branch A default string, or whichever detail variant above applies}"
+commit_message: "chore(quality-gate): apply pre-push auto-fixes in {plan_id}"
+```
+
+**The `commit_message` is authored on Branch A only, and that is deliberate.** Item 5f fires only after the step has recorded a terminal `done`/`skipped` outcome (see [`../SKILL.md`](../SKILL.md) Step 3 item 5f), and Branch B below records `outcome=failed`, so 5f never runs on that path and a `commit_message` there would be an unreachable return. The scoping is convergent, not lossy: a red gate that had already auto-fixed leaves the tree dirty and halts finalize, the dispatcher retries the `failed` record on re-entry, the gate re-runs green against the already-fixed tree, and 5f commits the fixes then — carrying this same message off Branch A.
 
 **Branch B — at least one arm returned `status: error`: a bundle's quality-gate, the whole-tree quality-gate, test-compile, or the module-tests gate**:
 
