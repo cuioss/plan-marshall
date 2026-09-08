@@ -565,7 +565,9 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 - **Propose** — when `auto_route_recipe == false`, OR `top_match.confidence < auto_route_recipe_threshold` (a match exists but does not clear the auto-route floor): fire an `AskUserQuestion` natively at this site, enumerating each ranked match (`key`, `name`, `confidence`) as a selectable option plus a "No recipe" option:
 
-  Each option renders one ranked match by its `name`, which is a display string. Carry that match's `key` alongside the label as the option's bound value, so the selection resolves back to the identifier the persist call needs:
+  Each option renders one ranked match by its `name`, which is a display string. Carry that match's `key` alongside the label as the option's bound value, so the selection resolves back to the identifier the persist call needs.
+
+  `recipe-match` caps `matches[]` at nothing, so the ranked matches plus the always-present "No recipe" option can exceed the `AskUserQuestion` 4-option cap. When they do, paginate across successive calls — carrying the still-unoffered matches, and "No recipe", into the next call — and never drop a ranked match to fit. The code block below renders two matches only as an illustration of the enumeration above; it is not the option count.
 
   ```text
   AskUserQuestion:

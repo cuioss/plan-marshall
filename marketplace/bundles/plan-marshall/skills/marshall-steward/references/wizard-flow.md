@@ -394,7 +394,7 @@ AskUserQuestion:
   multiSelect: false
 ```
 
-On a preset choice (`local`, `standard`, or `full`), apply it and skip the per-step multi-select:
+On a preset choice — whichever `{name}` the operator selected from the options `all_names()` produced — apply that name and skip the per-step multi-select. The registry is the authority for which names are selectable here, exactly as it is for the options above; do not re-derive the set from a literal list:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
