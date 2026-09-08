@@ -21,14 +21,16 @@ repositories:
 * **Arm 3 — the matched control** (the same dirty tree, ``mutates_source: false``).
   Item 5f skips (a)-(d) entirely and the file stays uncommitted. Without this arm,
   arm 2 is satisfied by a harness that would commit under either declaration.
-* **Arm 4 — the constructed-argv pin.** Whether this repository's gate leaves a
-  dirty tree is a property of ``build.py``, settled by asserting the argv the gate
-  constructs rather than by running it. The claim is bounded by the invocation's
+* **Arm 4 — the constructed-argv pin, plus the configuration that argv resolves
+  against.** Whether this repository's gate leaves a dirty tree is a property of
+  ``build.py`` and of the resolved ruff configuration, settled by asserting both
+  rather than by running the gate. The argv claim is bounded by the invocation's
   own scope, and that bound is DERIVED at run time from
   ``build._quality_gate_could_run`` against ``build._QUALITY_GATE_DIMENSIONS``
   rather than restated here — arm 4 runs module-scoped, so a dimension that scope
   does not reach never enters the recorded argv and is outside what the sweep can
-  speak to.
+  speak to. The argv half alone would be half the contract: ``ruff check`` with no
+  write flag still rewrites source when the configuration turns writing on.
 
 Plus the declaration assertions: the two frontmatter facts resolve truthy
 post-flip, and — jointly — ``mutates_source: true`` together with an order below
@@ -46,6 +48,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+import tomllib
 from pathlib import Path
 
 import build
@@ -70,9 +73,23 @@ _GATE_TOUCHED = 'marketplace/bundles/demo/scripts/demo.py'
 #: The bundle arm 4 scopes the gate to, so the sweep stays module-scoped and cheap.
 _ARM4_MODULE = 'plan-marshall'
 
-#: Argv tokens that would make ruff a source mutator. ``check --fix`` and
-#: ``format`` are the two spellings that write; both must be absent.
-_MUTATING_RUFF_TOKENS = ('--fix', '--unsafe-fixes', 'format')
+#: Argv tokens that would make ruff a source mutator: the write-enabling flags of
+#: ``check`` (``--fix-only`` implies ``--fix``, so both spellings write, and
+#: ``--unsafe-fixes`` widens what a write may change) and the ``format`` subcommand,
+#: which writes unconditionally. Every one of them must be absent. Membership is by
+#: exact token, so the negating ``--no-fix`` / ``--no-fix-only`` spellings do not
+#: match.
+_MUTATING_RUFF_TOKENS = ('--fix', '--fix-only', '--unsafe-fixes', 'format')
+
+#: The ruff CONFIGURATION keys that turn writing on without any argv flag. Same
+#: contract as the token denylist above, on the other half of the surface.
+_MUTATING_RUFF_SETTINGS = ('fix', 'fix-only', 'unsafe-fixes')
+
+#: The ruff configuration files ruff resolves at the repository ROOT — the ones
+#: governing the gate's own invocation. Ruff also honours a config beside a linted
+#: file; this tuple deliberately does not walk for those (see the assertion's
+#: docstring for the bound and why it is drawn there).
+_ROOT_RUFF_CONFIG_NAMES = ('pyproject.toml', 'ruff.toml', '.ruff.toml')
 
 
 # ---------------------------------------------------------------------------
@@ -314,6 +331,45 @@ def test_quality_gate_invokes_ruff_check_with_no_fix_flag(recorded_argv, monkeyp
             'the gate must construct no source-rewriting argv within the '
             f'dimensions this invocation reaches ({sorted(reached)}); '
             f'{offenders!r} in {cmd!r}'
+        )
+
+
+def test_the_resolved_ruff_configuration_enables_no_write_mode():
+    """The other half of the contract: the CONFIG the gate's argv resolves against.
+
+    The token denylist above pins the argv, and an argv-only assertion is half a
+    guard — ``ruff check`` with no write flag still rewrites source when the
+    resolved configuration sets ``fix`` or ``fix-only``. The gate would then be a
+    source mutator in this repository without a single argv changing, which the
+    argv sweep could never see.
+
+    **The bound is stated rather than claimed away.** This reads the ruff
+    configuration ruff resolves at the repository ROOT, which is what governs the
+    gate's own invocation. Ruff additionally honours a config beside a linted
+    file, and this arm does NOT walk for those: the only nested candidates in this
+    tree are build-system fixtures, and a whole-tree walk would also sweep
+    ``.plan/temp/`` pytest residue, so the arm's verdict would depend on what a
+    previous run happened to leave behind. The population it did read is named in
+    every failure message, so a silence here is never mistaken for a wider sweep.
+    """
+    # Arrange — the root candidates that actually exist. An empty population is a
+    # failure, not a vacuous pass: an arm that read nothing proves nothing.
+    present = [name for name in _ROOT_RUFF_CONFIG_NAMES if (_REPO_ROOT / name).is_file()]
+    assert present, (
+        f'no root ruff configuration exists among {list(_ROOT_RUFF_CONFIG_NAMES)!r}, '
+        'so this arm read nothing and its silence is not evidence'
+    )
+
+    # Act + Assert — a `pyproject.toml` nests the settings under [tool.ruff]; a
+    # dedicated ruff config carries them at the top level.
+    for name in present:
+        parsed = tomllib.loads((_REPO_ROOT / name).read_text(encoding='utf-8'))
+        settings = parsed.get('tool', {}).get('ruff', {}) if name == 'pyproject.toml' else parsed
+        enabled = [key for key in _MUTATING_RUFF_SETTINGS if settings.get(key)]
+        assert not enabled, (
+            f'{name} enables ruff write mode via {enabled!r}, so `ruff check` rewrites '
+            'source whatever argv the gate constructs; population read for this arm: '
+            f'{present!r}'
         )
 
 
