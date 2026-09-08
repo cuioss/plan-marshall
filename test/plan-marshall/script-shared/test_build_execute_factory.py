@@ -191,22 +191,14 @@ class TestAddProjectDirArg:
         assert not hasattr(ns, 'project-dir')
 
 
-def _register_run(subs) -> None:
-    add_run_subparser(subs).set_defaults(func=_noop)
-
-
-def _register_coverage(subs) -> None:
-    add_coverage_subparser(subs).set_defaults(func=_noop)
-
-
 #: ``(registration function, the argv that reaches that subcommand)`` — one row
 #: per subparser the shared CLI registers individually. Each is built ALONE, so a
 #: subcommand that only gets the flag through the declarative helper is not
 #: credited here.
 _SUBPARSER_REGISTRATIONS = [
-    (_register_run, ['run', '--command-args', 'verify']),
+    (lambda subs: add_run_subparser(subs).set_defaults(func=_noop), ['run', '--command-args', 'verify']),
     (lambda subs: add_parse_subparser(subs, _parse_log_stub), ['parse', '--log', '/tmp/build.log']),
-    (_register_coverage, ['coverage-report']),
+    (lambda subs: add_coverage_subparser(subs).set_defaults(func=_noop), ['coverage-report']),
     (lambda subs: add_check_warnings_subparser(subs, _noop), ['check-warnings']),
 ]
 
