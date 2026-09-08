@@ -54,7 +54,9 @@ logger = logging.getLogger(__name__)
 #   timeout into an opaque outer kill.
 # * UPPER bound — once ``OUTER_TIMEOUT_BUFFER`` (30 s) is added, the resulting
 #   stamped ``bash_timeout_seconds`` must stay at or below
-#   ``HARNESS_BASH_CEILING_SECONDS`` (600 s). The stamp is the number a leaf is
+#   ``HARNESS_BASH_CEILING_SECONDS`` (600 s on the Claude target; resolved per
+#   active target via the platform-runtime seam). The stamp is the number a leaf
+#   is
 #   instructed to pass on its Bash call, so a floor that pushes it past the
 #   ceiling makes the instruction unfollowable and forces every pyprojectx
 #   canonical to the orchestrator tier before any measurement is consulted.

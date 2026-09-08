@@ -14,11 +14,12 @@ import shlex
 from pathlib import Path
 from typing import Any
 
-from constants import HARNESS_BASH_CEILING_SECONDS
 from marketplace_bundles import (
     resolve_bundle_path,
     resolve_bundles_root,
 )
+from platform_runtime import _runtime_for_target
+from toon_parser import parse_toon
 
 # =============================================================================
 # Build-executable classification (for resolve TOON augmentation)
@@ -80,12 +81,26 @@ _BUILD_NOTATIONS: dict[str, str] = {
     'plan-marshall:build-pyproject:pyproject_build': 'python',
 }
 
-# The host platform's per-call Bash ceiling is declared ONCE in
-# ``tools-file-ops/scripts/constants.py`` as ``HARNESS_BASH_CEILING_SECONDS``
-# and imported above. Anything above that ceiling cannot be invoked
-# synchronously from a sub-agent's Bash call without auto-backgrounding; the
-# manifest composer routes such commands to phase_5.verification_steps
-# (orchestrator tier) instead of emitting them as per-task verification.
+# The host platform's per-call Bash ceiling is resolved once through the
+# platform-runtime seam (``harness bash-timeout-ceiling``) and bound here as
+# ``HARNESS_BASH_CEILING_SECONDS``, so the flag can differ per active target.
+# Anything above that ceiling cannot be invoked synchronously from a
+# sub-agent's Bash call without auto-backgrounding; the manifest composer
+# routes such commands to phase_5.verification_steps (orchestrator tier)
+# instead of emitting them as per-task verification.
+
+
+def _resolve_harness_bash_ceiling() -> int:
+    """Resolve the active target's Bash-tool timeout ceiling via the runtime seam.
+
+    The value is fixed for the lifetime of a process (the target is fixed by
+    ``marshal.json``), so it is resolved once at import time.
+    """
+    parsed = parse_toon(_runtime_for_target().harness_bash_timeout_ceiling())
+    return int(parsed['ceiling_seconds'])
+
+
+HARNESS_BASH_CEILING_SECONDS = _resolve_harness_bash_ceiling()
 
 # Pinned recognition phrases — the numeric value the LLM needs is in
 # ``bash_timeout_seconds``; the hint is a recognition token, not human prose.

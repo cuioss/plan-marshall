@@ -48,8 +48,9 @@ Harness-ceiling clamp:
 
 The resolver's *consumed* inner ceiling is clamped so that
 ``inner + CI_WAIT_OUTER_BUFFER_SECONDS`` stays STRICTLY below
-``HARNESS_BASH_CEILING_SECONDS`` (declared once in the shared ``constants``
-module), whatever the inner value's origin — an explicit ``--timeout``, the
+``HARNESS_BASH_CEILING_SECONDS`` (resolved through the platform-runtime
+``harness bash-timeout-ceiling`` seam for the active target), whatever the
+inner value's origin — an explicit ``--timeout``, the
 persisted ``ci:wait`` learned value, or
 :data:`DEFAULT_CI_WAIT_TIMEOUT_SECONDS`. The script-side ceiling is therefore
 NOT unconditionally the binding one: a CI run genuinely longer than the
@@ -140,8 +141,8 @@ import sys
 import time
 from pathlib import Path
 
-from constants import HARNESS_BASH_CEILING_SECONDS
 from file_ops import get_executor_path, get_plan_dir
+from platform_runtime import _runtime_for_target
 from toon_parser import parse_toon, serialize_toon
 
 # ---------------------------------------------------------------------------
@@ -164,9 +165,22 @@ DEFAULT_CI_WAIT_TIMEOUT_SECONDS: int = 600
 #: and return its envelope before the outer ``subprocess.run`` deadline fires.
 CI_WAIT_OUTER_BUFFER_SECONDS: int = 30
 
+
+def _resolve_harness_bash_ceiling() -> int:
+    """Resolve the active target's Bash-tool timeout ceiling via the runtime seam.
+
+    The value is fixed for the lifetime of a process (the target is fixed by
+    ``marshal.json``), so it is resolved once at import time.
+    """
+    parsed = parse_toon(_runtime_for_target().harness_bash_timeout_ceiling())
+    return int(parsed['ceiling_seconds'])
+
+
+HARNESS_BASH_CEILING_SECONDS = _resolve_harness_bash_ceiling()
+
 #: The largest inner ceiling for which ``inner + CI_WAIT_OUTER_BUFFER_SECONDS``
-#: is still STRICTLY below the host platform's per-call Bash ceiling. Derived,
-#: never hard-coded, so it tracks both source constants.
+#: is still STRICTLY below the active target's per-call Bash ceiling.
+#: Derived, never hard-coded, so it tracks the runtime-provided value.
 _MAX_INNER_WAIT_SECONDS: int = (
     HARNESS_BASH_CEILING_SECONDS - CI_WAIT_OUTER_BUFFER_SECONDS - 1
 )

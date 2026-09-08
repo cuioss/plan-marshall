@@ -8,7 +8,7 @@ Covers:
   - _resolve_target: runtime.target extraction from marshal data
   - _make_runtime: registry lookup and unknown target handling
   - _parse_json_list / _parse_context: JSON helpers
-  - _dispatch: correct routing and argparse for all 25 operations
+  - _dispatch: correct routing and argparse for all 26 operations
   - main: full integration — no args, missing marshal, unknown target, dispatch
 """
 from __future__ import annotations
@@ -120,6 +120,7 @@ def _mock_runtime() -> MagicMock:
     rt.subagent_dispatch.return_value = toon_success("subagent dispatch")
     rt.wait_for.return_value = toon_success("wait for")
     rt.health_check.return_value = toon_success("health-check")
+    rt.harness_bash_timeout_ceiling.return_value = toon_success("harness bash-timeout-ceiling")
     return rt
 
 
@@ -903,6 +904,22 @@ class TestDispatch:
         """health-check forwards specific comma-separated checks to runtime."""
         _dispatch(rt, "health-check", ["--checks", "permissions,display"])
         rt.health_check.assert_called_once_with("permissions,display")
+
+    # ---- harness bash-timeout-ceiling ------------------------------------------
+
+    def test_dispatch_harness_bash_timeout_ceiling(self, rt):
+        """harness bash-timeout-ceiling rejects stray args and forwards to runtime."""
+        result = _dispatch(rt, "harness bash-timeout-ceiling", [])
+        parsed = _parsed(result)
+        assert parsed["operation"] == "harness bash-timeout-ceiling"
+        assert parsed["status"] == "success"
+        rt.harness_bash_timeout_ceiling.assert_called_once_with()
+
+    def test_dispatch_harness_bash_timeout_ceiling_rejects_args(self, rt):
+        """harness bash-timeout-ceiling takes no arguments."""
+        with pytest.raises(SystemExit):
+            _dispatch(rt, "harness bash-timeout-ceiling", ["--ceiling", "999"])
+        rt.harness_bash_timeout_ceiling.assert_not_called()
 
     # ---- unknown operation ----------------------------------------------------
 

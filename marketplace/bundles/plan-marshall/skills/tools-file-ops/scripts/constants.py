@@ -13,28 +13,6 @@ STATUS_SUCCESS = 'success'
 STATUS_ERROR = 'error'
 
 # ---------------------------------------------------------------------------
-# Host-platform harness limits
-# ---------------------------------------------------------------------------
-# The host platform caps a single Bash tool call's ``timeout`` parameter at 600
-# seconds (10 minutes). A command whose resolved outer bound exceeds this
-# ceiling cannot be invoked synchronously from a dispatched agent's Bash call —
-# the platform auto-backgrounds it, and a leaf cannot reap a backgrounded build.
-#
-# This is the SINGLE canonical declaration of that ceiling. Two surfaces read it
-# from here and MUST NOT re-declare it:
-#
-# * ``manage-architecture/scripts/_cmd_client_build.py`` — sets the resolve-stamp
-#   ``exceeds_bash_ceiling`` flag by comparing ``bash_timeout_seconds`` against
-#   this ceiling. The ceiling bounds that flag ONLY; ``execution_tier`` follows
-#   the MEASUREMENT, and an unmeasured command fails closed to ``orchestrator``
-#   regardless of how the ceiling comparison lands.
-# * ``phase-6-finalize/scripts/ci_complete_precondition.py`` — clamps its
-#   bounded CI wait so ``inner + CI_WAIT_OUTER_BUFFER_SECONDS`` stays STRICTLY
-#   below this ceiling, so the wait always returns a structured result instead
-#   of being killed mid-call.
-HARNESS_BASH_CEILING_SECONDS = 600
-
-# ---------------------------------------------------------------------------
 # Phase names (ordered)
 # ---------------------------------------------------------------------------
 PHASES = (

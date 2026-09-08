@@ -81,7 +81,7 @@ def _chat_signal_transcript_not_found() -> str:
 
 
 class ClaudeRuntime(Runtime):
-    """Claude Code implementation of all 25 platform-runtime operations."""
+    """Claude Code implementation of every platform-runtime operation."""
 
     # ------------------------------------------------------------------
     # Project lifecycle
@@ -378,6 +378,24 @@ class ClaudeRuntime(Runtime):
         return toon_success(
             "layout bundle-cache-root",
             {"target": "claude", "roots": [str(claude_runtime._claude_bundle_cache_root())]},
+        )
+
+    # ------------------------------------------------------------------
+    # Harness operations
+    # ------------------------------------------------------------------
+
+    def harness_bash_timeout_ceiling(self) -> str:
+        """Resolve Claude's Bash-tool timeout ceiling.
+
+        Returns 600 seconds — the ceiling Claude's harness enforces on a
+        single Bash invocation. The value is declared on the entry module
+        (``claude_runtime.HARNESS_BASH_TIMEOUT_CEILING_SECONDS``) and read by
+        attribute access, so a test can monkeypatch the ceiling independently
+        of this method.
+        """
+        return toon_success(
+            "harness bash-timeout-ceiling",
+            {"target": "claude", "ceiling_seconds": claude_runtime.HARNESS_BASH_TIMEOUT_CEILING_SECONDS},
         )
 
     # ------------------------------------------------------------------

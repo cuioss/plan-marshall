@@ -1,6 +1,6 @@
 # Platform Runtime TOON Contract
 
-Per-operation TOON schemas for all 25 `platform-runtime` operations. Almost every operation returns one of three status variants: `success`, `error`, or `no-op`. The single exception is `session render-title` on a target that renders the title itself — it owns stdout and returns the empty string, documented in its own section below. Parser: `from toon_parser import parse_toon, serialize_toon` from `plan-marshall:ref-toon-format`.
+Per-operation TOON schemas for all 26 `platform-runtime` operations. Almost every operation returns one of three status variants: `success`, `error`, or `no-op`. The single exception is `session render-title` on a target that renders the title itself — it owns stdout and returns the empty string, documented in its own section below. Parser: `from toon_parser import parse_toon, serialize_toon` from `plan-marshall:ref-toon-format`.
 
 **Invocation pattern**:
 ```bash
@@ -293,6 +293,24 @@ roots[1]:
 ```
 
 **Declining.** A target that cannot resolve its deployed-bundle cache root returns a `no-op` with a `reason` and an `alternative` rather than fabricating a cache location.
+
+---
+
+### `harness bash-timeout-ceiling`
+
+Resolve the maximum Bash-tool `timeout` seconds this target's harness honours.
+
+**Arguments**: _(none)_
+
+**Success**:
+```toon
+status: success
+operation: harness bash-timeout-ceiling
+target: claude
+ceiling_seconds: 600
+```
+
+**Declining.** A target whose host harness enforces no bash-timeout ceiling at all returns a `no-op` with a `reason` and an `alternative` rather than fabricating a number; consumers then fall back to an unclamped bound.
 
 ---
 

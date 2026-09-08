@@ -39,6 +39,7 @@ Twenty-five operations covering the full platform lifecycle:
 | `project install-hook` | Install the terminal-title hook bundle; with the orthogonal `--enforcement` opt-in, install ONLY the PreToolUse enforcement hook entry without touching the terminal-title wiring |
 | `layout skill-roots` | Resolve the ordered project-local skill root directories for the active target |
 | `layout bundle-cache-root` | Resolve the deployed-bundle cache root directories for the active target |
+| `harness bash-timeout-ceiling` | Resolve the maximum Bash-tool `timeout` seconds this target's harness honours |
 | `session capture` | APPEND current session id to `status.metadata.session_ids` via `manage-status` |
 | `permission configure` | Write raw permission list to platform settings |
 | `permission analyze` | Read-only audit of permission hygiene, redundancy, and missing-steps |

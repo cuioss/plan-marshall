@@ -3,7 +3,7 @@
 """
 Abstract base class and shared TOON helpers for platform-runtime.
 
-Defines the Runtime ABC with all 25 platform operations. Each concrete subclass
+Defines the Runtime ABC with every platform operation. Each concrete subclass
 implements every operation for one target, or declines it via the no-op policy.
 
 TOON helpers delegate to the canonical toon_parser from ref-toon-format — no
@@ -356,6 +356,32 @@ class Runtime(ABC):
             carry one root or several; callers ``~``-expand each entry before
             probing it. A target that cannot resolve them returns a ``no-op``
             instead.
+        """
+
+    # ------------------------------------------------------------------
+    # Harness operations
+    # ------------------------------------------------------------------
+
+    @abstractmethod
+    def harness_bash_timeout_ceiling(self) -> str:
+        """Resolve the maximum Bash-tool ``timeout`` seconds this target's harness honours.
+
+        The value is the host-harness ceiling a single Bash tool call may carry
+        on THIS target — not a scheduling hint. A consumer that stamps or clamps
+        a command's Bash ``timeout`` (a resolve-execution flag, a bounded wait
+        loop) MUST read the ceiling through this seam, so a non-Claude target is
+        not bound by a Claude harness ceiling. The value is a per-target
+        constant for the lifetime of a process (the target is fixed by
+        ``marshal.json``), so callers may memoise it per process.
+
+        A target whose host harness enforces no bash-timeout ceiling at all
+        returns ``no-op`` with a ``reason`` and an ``alternative`` rather than
+        fabricating a number; consumers then fall back to an unclamped bound.
+
+        Returns:
+            Serialized TOON string carrying ``ceiling_seconds`` — the maximum
+            seconds a single Bash invocation may run on this target. A target
+            with no harness ceiling returns a ``no-op`` instead.
         """
 
     # ------------------------------------------------------------------
