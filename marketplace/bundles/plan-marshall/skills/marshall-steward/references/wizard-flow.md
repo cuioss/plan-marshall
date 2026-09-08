@@ -278,28 +278,32 @@ Treat a non-zero exit as the unset case — silently fall through to `main`.
 ```text
 AskUserQuestion:
   questions:
-    - question: "What is this project's default base branch?"
-      header: "Project Default Base Branch"
+    - question: "Every plan branches off one long-lived branch and merges back into it. Asking your git host which branch that is gave {detected_default}. Is that the one to use?"
+      header: "Base branch"
       description: |
-        `phase-1-init` will seed `references.base_branch` for every new plan from this value. Per-plan overrides remain available via `manage-references set --field base_branch` after init.
+        Each new plan starts from this branch, and you can still point an individual plan somewhere else afterwards.
 
-        **Detected default** (from `git symbolic-ref refs/remotes/origin/HEAD`): {detected_default}
+        **Detected** (from `git symbolic-ref refs/remotes/origin/HEAD`): {detected_default}
       options:
-        - label: "{detected_default}"
-          description: "Use the detected default"
+        - label: "{detected_default} (recommended)"
+          description: "Plans branch off {detected_default} and merge back into it — this is what your git host reports as the main line"
         - label: "main"
-          description: "Use main"
+          description: "Plans branch off main instead, for a repository whose git host has not been told which branch is the main line"
         - label: "Custom"
-          description: "Enter a custom branch name"
+          description: "Plans branch off a branch you name next, for a repository that develops on something other than these two"
       multiSelect: false
 ```
 
-When the operator selects `Custom`, follow up with a free-text `AskUserQuestion` for the branch name. Persist the chosen value:
+When the operator selects `Custom`, follow up with a free-text `AskUserQuestion` for the branch name.
+
+**Every option persists** — the detected default and `main` exactly as much as a `Custom` answer. Resolve the selection to `{branch_name}`, the canonical branch name, before writing: `{detected_default}` for the first option, `main` for the second, and the free-text answer for `Custom`. The ` (recommended)` suffix on the first label is a **display marker**, not part of the branch name, so strip it — persisting the label verbatim writes a branch that does not exist. Then persist:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  project set --field default_base_branch --value {answer}
+  project set --field default_base_branch --value {branch_name}
 ```
+
+Persisting on every option is what makes the answer stick: `phase-1-init` reads `default_base_branch` and falls back to the checked-out branch when the key is unset, so an option that writes nothing silently discards the operator's choice.
 
 ---
 
@@ -375,23 +379,22 @@ The `verification_steps` list feeds the whole-tree end-of-phase-5 sweep; the mod
 
 Optionally detect the current preset first — deep-equality of `plan.phase-6-finalize.steps` against `FinalizeStepPresets.get(name)` for each name in `FinalizeStepPresets.all_names()` — and surface it as `Current: {name} preset` / `Current: custom (manually edited)`. This comparison is performed here, in the wizard: unlike the effort menu's Step 1, which delegates to the deterministic `manage-config effort identify` recogniser, `finalize-steps` exposes no equivalent verb, so there is nothing to hand the deep-equality walk to.
 
+Both halves of each preset option are **derived from the registry** — the label from `FinalizeStepPresets.all_names()`, the description from `FinalizeStepPresets.describe(name)`. Do not hard-code the preset names here: a hand-written option set drifts the moment a preset is added, renamed or removed, and the descriptions are already sourced this way, so a hardcoded label is the only half that can disagree with the registry. Render one option per name, labelled `Apply {name} preset`, ordering `standard` first and appending ` (recommended)` to its label alone. `Custom` is always the final option. Should `all_names()` ever return enough presets that the options exceed the `AskUserQuestion` 4-option cap, paginate across successive calls — never drop a registered preset to fit.
+
 ```text
 AskUserQuestion:
-  question: "Finalize-step pipeline — pick a preset"
-  header: "Finalize Steps"
+  question: "Finished work goes through a fixed sequence of shipping steps — committing, pushing, opening a pull request, reviewing, merging. A few ready-made sequences cover the usual cases. Which one fits this project?"
+  header: "Shipping"
   options:
-    - label: "Apply local preset"
-      description: <FinalizeStepPresets.describe("local")>
-    - label: "Apply standard preset"
-      description: <FinalizeStepPresets.describe("standard")>
-    - label: "Apply full preset"
-      description: <FinalizeStepPresets.describe("full")>
+    # One option per name in FinalizeStepPresets.all_names(), standard first:
+    - label: "Apply {name} preset"          # + " (recommended)" on the standard entry
+      description: <FinalizeStepPresets.describe(name)>
     - label: "Custom"
-      description: "Pick individual steps via the per-step multi-select"
+      description: "None of the ready-made sequences fits — you pick the individual steps yourself on the next screen"
   multiSelect: false
 ```
 
-On a preset choice (`local`, `standard`, or `full`), apply it and skip the per-step multi-select:
+On a preset choice — whichever `{name}` the operator selected from the options `all_names()` produced — apply that name and skip the per-step multi-select. The registry is the authority for which names are selectable here, exactly as it is for the options above; do not re-derive the set from a literal list:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
@@ -448,26 +451,34 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 The verb returns `ask_steps` (the finalize step ids whose lane override is still
 `ask`). For **EACH** id in `ask_steps`, prompt the operator and persist the
-answer — one `AskUserQuestion` and one `set-lane` write per element. Map the
-element id to a human label: `plan-marshall:automatic-review` → "PR-review bots
-(CodeRabbit / Sourcery / …)"; `default:sonar-roundtrip` → "Sonar new-code
-roundtrip".
+answer — one `AskUserQuestion` and one `set-lane` write per element.
+
+Each id needs a human label for its prompt. Two ids have a hand-written one:
+`plan-marshall:automatic-review` → "PR-review bots (CodeRabbit / Sourcery / …)";
+`default:sonar-roundtrip` → "Sonar new-code roundtrip". That pair is a wording
+convenience for the elements shipping today — it is **not** the population, which
+is whatever `ask_steps` returns. For any id it does not carry, **derive** a label
+rather than skipping the element or rendering it blank: take the step doc's own
+`description` frontmatter when it has one, otherwise humanise the id itself (drop
+the `default:` / `{bundle}:` prefix and turn hyphens into spaces). Every id in
+`ask_steps` is prompted, with a readable label, whether or not it is in the pair
+above.
 
 ```text
 AskUserQuestion:
-  question: "Does this project use {human label for the element}?"
-  header: "Adversarial Infra: {element id}"
+  question: "Nothing in this project's setup says whether it has {human label for the element}, and guessing wrong either wastes a wait or skips a real check. Does it?"
+  header: "Reviewers"
   description: |
-    This finalize element is gated on external infrastructure. Answer for THIS
-    project so the finalize pipeline includes it only when you actually have the
-    provider configured.
+    This one depends on a service outside this repository, so it can only be
+    answered per project. Answering keeps finished work from waiting on
+    something you do not have.
   options:
-    - label: "No"
-      description: "Not used — exclude this element (lane: off)"
     - label: "Yes"
-      description: "Used — include at the default posture (lane: standard)"
+      description: "Plans wait for it and act on what it reports, except on the quickest runs"
     - label: "Yes, always"
-      description: "Used and always run regardless of posture (lane: full)"
+      description: "Plans wait for it and act on what it reports on every run, however small"
+    - label: "No"
+      description: "Plans never wait for it; nothing here is checked against it"
   multiSelect: false
 ```
 
@@ -547,14 +558,16 @@ See [merge-queue-setup.md](merge-queue-setup.md) for the full provisioning flow.
 
 ```text
 AskUserQuestion:
-  question: "Configure permissions now?"
+  question: "Setup is otherwise done. Without a few standing approvals, routine commands will stop and ask you to confirm them one at a time. Grant those approvals now?"
+  header: "Permissions"
   options:
-    - label: "Yes"
-      description: "Set up global and project permissions"
+    - label: "Yes (recommended)"
+      description: "Approves the routine commands once, so later runs proceed without interrupting you"
       value: "yes"
     - label: "Later"
-      description: "Skip permission setup for now"
+      description: "Approves nothing now; you confirm each command as it comes up, and can grant them from the maintenance menu"
       value: "no"
+  multiSelect: false
 ```
 
 If yes, run these two commands sequentially — the first applies project-scope fixes; the second installs a narrow global allow rule for the `TERM_PROGRAM` detection pattern used by workflow auto-open / IDE hand-off steps (eliminates the `simple_expansion` permission prompt):

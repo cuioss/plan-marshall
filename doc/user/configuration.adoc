@@ -22,7 +22,7 @@ Survey of every configuration surface a project author touches when running Plan
 
 | `.plan/run-configuration.json`
 | ❌ ignored
-| Per-developer command-execution state: adaptive build-command timeouts, acceptable-warning patterns, the `architecture_refresh` tier knobs, the `language_servers` and `derivation_resolvers` machine-local bindings, and last-execution metadata. Never committed. See <<derivation-resolvers>>.
+| Per-developer command-execution state: adaptive build-command timeouts, acceptable-warning patterns, the `architecture_refresh` tier settings, the `language_servers` and `derivation_resolvers` machine-local bindings, and last-execution metadata. Never committed. See <<derivation-resolvers>>.
 
 | `CLAUDE.md`, `AGENTS.md`
 | project decision (usually ✅)
@@ -46,7 +46,7 @@ Survey of every configuration surface a project author touches when running Plan
 
 The bulk of project configuration. Canonical schema and field reference: link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`].
 
-`marshal.json` is organised by phase under `plan.phase-1-init` … `plan.phase-6-finalize`, plus the top-level `providers`, `project`, `orchestrator`, `skill_domains`, and `system` sections. Each phase block holds fields specific to that phase, including the run-at-all gates and the flat auto-continuation knobs, each homed under the phase whose decision it governs. The phase-5/6 `verification_steps` / `steps` are id-keyed maps; step-owned parameters nest under their owning step's value (see <<step-configuration>>). The sections below survey the fields project authors tune regularly, each named with its default and cross-referenced to the canonical per-key reference in link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`] — which is the single, exhaustive enumeration of every field and its validator. This page never restates that enumeration, so it cannot drift out of step with it.
+`marshal.json` is organised by phase under `plan.phase-1-init` … `plan.phase-6-finalize`, plus the top-level `providers`, `project`, `orchestrator`, `skill_domains`, and `system` sections. Each phase block holds fields specific to that phase, including the run-at-all gates and the flat auto-continuation settings, each homed under the phase whose decision it governs. The phase-5/6 `verification_steps` / `steps` are id-keyed maps; step-owned parameters nest under their owning step's value (see <<step-configuration>>). The sections below survey the fields project authors tune regularly, each named with its default and cross-referenced to the canonical per-key reference in link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`] — which is the single, exhaustive enumeration of every field and its validator. This page never restates that enumeration, so it cannot drift out of step with it.
 
 [#effort-and-models]
 === Effort and model selection
@@ -54,16 +54,16 @@ The bulk of project configuration. Canonical schema and field reference: link:..
 Effort tuning has its own dedicated user-facing page — wizard walkthrough, presets, polymorphic `marshal.json` shape, worked example, research-tier note, troubleshooting. See xref:efforts.adoc[Efforts]. For the conceptual three-layer overview see xref:../concepts/execution-context.adoc#per-role-model-selection[Concepts › Execution Context › Per-Role Model Selection].
 
 [#orchestrator-knobs]
-=== Orchestrator (epic-tier) knobs
+=== Orchestrator settings — running several plans as one larger piece of work
 
-The top-level `orchestrator` block — a sibling of `plan`, not a child of it — governs the epic orchestrator (`plan-orchestrator`). `init` seeds the block, and every knob it supports is materialised with its effective default so you can discover it by reading your own `marshal.json`; a seeded default resolves exactly as leaving the key unset did, so surfacing a knob never changes behaviour. `sync-defaults` back-fills the block non-destructively into projects that predate a knob. The two knobs below are the ones tuned directly; the block also carries the `auto_emit` autonomy knob (its full reference, and the `effort` sub-key mechanics, live in link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`]).
+The top-level `orchestrator` block — a sibling of `plan`, not a child of it — governs the orchestrator that runs several plans together as one larger piece of work (`plan-orchestrator`). `init` seeds the block, and every setting it supports is materialised with its effective default so you can discover it by reading your own `marshal.json`; a seeded default resolves exactly as leaving the key unset did, so surfacing a setting never changes behaviour. `sync-defaults` back-fills the block non-destructively into projects that predate a setting. The two settings below are the ones tuned directly; the block also carries the `auto_emit` autonomy setting (its full reference, and the `effort` sub-key mechanics, live in link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`]).
 
 [cols="1,1,3", options="header"]
 |===
 | Config key | Default | Description
 
-| `orchestrator.parallelization_scope` | `1` | Project-level default that pre-fills the per-epic parallelization-scope question `plan-orchestrator` init asks — the maximum number of plans the orchestrator may have launched concurrently, `1` being strictly sequential. It supplies only the initial suggestion for a new epic's first ask and stays fully overridable per epic; the seeded `1` pre-fills the ask exactly as the unset key's hard-coded `1` did. Must be an integer `>= 1`.
-| `orchestrator.effort` | `{}` (empty) | Per-surface effort of the orchestrator's three read-only dispatch surfaces (`analyze` / `decompose` / `reader`), plus a `default` fallback slot and a `max` uplift ceiling. Seeded empty so the sub-block is discoverable; while empty, every surface falls through to `plan.effort` and the `max` ceiling is a no-op — identical to leaving it unset. Populate a leaf to override one surface. It is a string (one level for every surface) or an object over those keys, mirroring `plan.<phase>.effort`.
+| `orchestrator.parallelization_scope` | `1` | Project-level default that pre-fills the parallelization-scope question `plan-orchestrator` init asks for each larger piece of work — the maximum number of plans the orchestrator may have launched concurrently, `1` being strictly sequential. It supplies only the initial suggestion for the first ask and stays fully overridable each time; the seeded `1` pre-fills the ask exactly as the unset key's hard-coded `1` did. Must be an integer `>= 1`.
+| `orchestrator.effort` | `{}` (empty) | Per-surface effort of the orchestrator's three read-only surfaces (`analyze` / `decompose` / `reader`), plus a `default` fallback slot and a `max` uplift ceiling. Seeded empty so the sub-block is discoverable; while empty, every surface falls through to `plan.effort` and the `max` ceiling is a no-op — identical to leaving it unset. Populate a leaf to override one surface. It is a string (one level for every surface) or an object over those keys, mirroring `plan.<phase>.effort`.
 |===
 
 Set the scalar with the `orchestrator` verb; set the effort surfaces with the `effort` verb's `orchestrator` scope:
@@ -80,14 +80,14 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 [#refine-behaviour]
 === Refinement behaviour (phase-2-refine)
 
-Three `plan.phase-2-refine` knobs tune how the refinement phase converges and how aggressively the plan scopes the implementation:
+Three `plan.phase-2-refine` settings tune how the refinement phase converges and how aggressively the plan scopes the implementation:
 
 [cols="1,1,3", options="header"]
 |===
 | Config key | Default | What it controls
 
 | `plan.phase-2-refine.confidence_threshold` | `95` | The confidence floor (int 0–100) refinement must reach before it completes. A lower value ends refinement sooner; a higher one demands more certainty.
-| `plan.phase-2-refine.compatibility` | `breaking` | Backward-compatibility posture — `breaking`, `deprecation`, or `smart_and_ask` — governing how the plan treats API / behaviour changes.
+| `plan.phase-2-refine.compatibility` | `breaking` | Backward-compatibility policy — `breaking`, `deprecation`, or `smart_and_ask` — governing how the plan treats API / behaviour changes.
 | `plan.phase-2-refine.simplicity` | `lean` | How aggressively the implementation favours the minimum viable surface over speculative structure — `lean` (strict minimum), `pragmatic` (keep low-risk readability structure), or `defensive` (retain belt-and-suspenders guards where uncertain).
 |===
 
@@ -135,7 +135,7 @@ Boolean fields under each phase that decide whether the next-phase transition pa
 The post-CI merge gate is **not** a flat `plan.phase-6-finalize` field. It is `final_merge_without_asking` (default `true`), a step-owned parameter under the `default:branch-cleanup` finalize step — read and set via the step-params path (see <<step-configuration>>), not the flat phase `set` verb. When `true` (default) the merge to the base branch proceeds unattended once CI is green, serialised across concurrent plans by the cross-plan merge-lock; `false` opts into being prompted with an inline pre-merge `AskUserQuestion` before the irreversible merge.
 ====
 
-Every gate lives under the phase block whose outbound transition it governs; the two auto-continuation knobs (`finalize_without_asking`, `loop_back_without_asking`) are flat fields under `plan.phase-6-finalize` (the post-CI merge gate is a step-owned param — see the note above). Set a flat gate via `/marshall-steward` → Configuration → Review Gates, or directly with the standard phase `set` verb:
+Every gate lives under the phase block whose outbound transition it governs; the two auto-continuation settings (`finalize_without_asking`, `loop_back_without_asking`) are flat fields under `plan.phase-6-finalize` (the post-CI merge gate is a step-owned param — see the note above). Set a flat gate via `/marshall-steward` → Configuration → Review Gates, or directly with the standard phase `set` verb:
 
 [source,bash]
 ----
@@ -149,11 +149,11 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 [#pause-gate-census]
 === Pause-gate census
 
-Every gate that can still stop a *plan run*, with its default, the config path that owns it, and how it halts. The closure is over the plan tier alone — the epic-tier `orchestrator.auto_emit` gate is a knob of the epic orchestrator, not of a plan run, and is documented in <<orchestrator-knobs>>.
+Every gate that can still stop a *plan run*, with its default, the config path that owns it, and how it halts. The closure is over a single plan run alone — the `orchestrator.auto_emit` gate belongs to the orchestrator that runs several plans together, not to a plan run, and is documented in <<orchestrator-knobs>>.
 
-The inclusion predicate is **"halts the run for operator input"** — deliberately not "fires an `AskUserQuestion`". Two knobs halt with a `Display` + `STOP` and no prompt at all (`execute_without_asking` and `loop_back_without_asking`), so a census built from prompt sites alone would omit both. The predicate also reaches the orchestrator workflows, not only the phase skills: a dispatched phase leaf cannot prompt — it returns a prompt-required envelope and the orchestrator fires it — so phases 2–5 raise no prompts of their own.
+The inclusion predicate is **"halts the run for operator input"** — deliberately not "fires an `AskUserQuestion`". Two settings halt with a `Display` + `STOP` and no prompt at all (`execute_without_asking` and `loop_back_without_asking`), so a census built from prompt sites alone would omit both. The predicate also reaches the orchestrator workflows, not only the phase skills: a phase that has been handed off to a sub-agent cannot reach you directly — it hands the question back and the orchestrator asks it — so phases 2–5 raise no prompts of their own.
 
-A timeout budget is in the census only when its own exhaustion reaches the operator — `merge_queue_wait_budget_seconds`, `merge_hold_budget_seconds` and `review_rate_window_timeout_seconds` each do. A budget that expires into a separate policy knob is not: `re_review_await_timeout_seconds` expires into `re_review_on_timeout`, and that knob is the row carrying the halt.
+A timeout budget is in the census only when its own exhaustion reaches the operator — `merge_queue_wait_budget_seconds`, `merge_hold_budget_seconds` and `review_rate_window_timeout_seconds` each do. A budget that expires into a separate policy setting is not: `re_review_await_timeout_seconds` expires into `re_review_on_timeout`, and that setting is the row carrying the halt.
 
 [cols="2,1,2,2", options="header"]
 |===
@@ -188,11 +188,11 @@ A timeout budget is in the census only when its own exhaustion reaches the opera
 
 [NOTE]
 ====
-**What the Default column states.** Every value above is the **shipped default** — what a freshly initialised project's `marshal.json` carries — never the value in any particular project's config. Read your own with `manage-config plan <phase> get --field <knob>`, or `manage-config plan phase-6-finalize step get --step-id <step-id>` for a step-owned one; a configured project routinely differs.
+**What the Default column states.** Every value above is the **shipped default** — what a freshly initialised project's `marshal.json` carries — never the value in any particular project's config. Read your own with `manage-config plan <phase> get --field <setting>`, or `manage-config plan phase-6-finalize step get --step-id <step-id>` for a step-owned one; a configured project routinely differs.
 
 The two infra-lane rows are where the two readings diverge most visibly. Their `ask` is the seed `_LANE_ASK_INFRA_STEPS` applies in `manage-config`'s `_config_defaults.py` — not a value either step's own `lane:` frontmatter declares, since both declare `class: adversarial` with no `tier` and would otherwise resolve at that class's `standard` default. `ask` means "`/marshall-steward` asks about this element at setup"; the operator's persisted answer (`off`, `standard`, or `full`) replaces it, so a project that has been through setup never reads `ask` back for either step.
 
-These two are also **not** ceremony gates. The ceremony set is closed at four — `qgate`, `self_review`, `simplify`, `security_audit` — with four named owning steps, none of them these; see <<run-at-all-gates>>. They share only the `steps.<step-id>.lane` channel, which every lane-participating element uses.
+These two are also **not** one of the four optional finalize checks. That set is closed at four — `qgate`, `self_review`, `simplify`, `security_audit` — with four named owning steps, none of them these; see <<run-at-all-gates>>. They share only the `steps.<step-id>.lane` channel, which every lane-participating element uses.
 ====
 
 [IMPORTANT]
@@ -203,23 +203,25 @@ These two are also **not** ceremony gates. The ceremony set is closed at four �
 * The cross-plan merge mutex is still acquired and held across the staleness window. The widened hold runs on the auto path exactly as on the interactive one, so concurrent plans cannot race on the merge-to-main critical section. See xref:parallelism-and-locking.adoc[Parallelism and locking].
 ====
 
-==== Prompts with no knob
+==== Prompts with no setting
 
 Seven pause points are evidence-triggered rather than configured — there is nothing to flip, because each fires only when a specific condition is detected:
 
 * Plan-directory collision, lesson-source obsolescence, sibling collision, and build-server daemon-down (all in `phase-1-init`).
-* The sync-baseline prompt, the branch-cleanup re-review prompt, and the branch-cleanup user-confirmation gate.
+* The sync-baseline prompt, the branch-cleanup re-review prompt, and the branch-cleanup local tidy-up confirmation.
 
-They are listed here so that an absent knob reads as deliberate rather than as an omission from the table above.
+They are listed here so that an absent setting reads as deliberate rather than as an omission from the table above.
 
-The sync-baseline prompt appears here *and* carries an `auto_rebase_threshold` row in the table above without contradiction: the knob decides only whether the **auto-proceed** arm bypasses the prompt, while a genuine content conflict prompts unconditionally at every threshold. That unconditional arm is the pause point listed here.
+The sync-baseline prompt appears here *and* carries an `auto_rebase_threshold` row in the table above without contradiction: the setting decides only whether the **auto-proceed** arm bypasses the prompt, while a genuine content conflict prompts unconditionally at every threshold. That unconditional arm is the pause point listed here.
+
+The branch-cleanup entry is the *local tidy-up* confirmation — the question asking whether your feature branch has been pushed, raised before the local copy of that branch is deleted, and only on projects that open and merge their own pull requests so finalize has no merge of its own to make. It is **not** the pre-merge merge confirmation, which is configured by `final_merge_without_asking` and carries its own row in the table above.
 
 The skill-domain detector is adjacent to this family but out of scope for this census: it is owned separately and is not a run-halting gate.
 
 [#run-at-all-gates]
 === Run-at-all gates
 
-Separate from the auto-continuation knobs above (which decide *whether to pause* once a gate has run), the per-phase run-at-all gates decide *whether each gate runs at all*. Each gate is a tri-state enum — `auto` (default), `always`, or `never`:
+Separate from the auto-continuation settings above (which decide *whether to pause* once a gate has run), the per-phase run-at-all gates decide *whether each gate runs at all*. Each gate is a tri-state enum — `auto` (default), `always`, or `never`:
 
 * `auto` — defer to the existing decision machinery (the phase-1-init lane router for the planning gates, the manifest composer for the finalize gates). This is the historical behaviour.
 * `always` — force the gate in, overriding the machinery that would otherwise skip it. For the finalize gates this overrides the manifest composer's `scope_gated_finalize` drop on surgical / single-module plans.
@@ -258,7 +260,7 @@ The `--plan-id` form exists so an answer you give about one plan does not silent
 | `plan.phase-2-refine.revalidation` | `auto` | Whether the premise / narrative-vs-code safety check runs.
 |===
 
-**The four finalize ceremony gates are not run-at-all keys.** `qgate`, `self_review`, `simplify` and `security_audit` are each set through their owning step's `lane` override, using `step set --step-id <owning-step> --param lane --value <value>`. The manifest ceremony transform maps that lane onto the same tri-state the table above uses: `off` → `never`, `minimal` → `always`, and **every other accepted value — `standard`, `full`, `ask`, or an absent override — → `auto`**. So `minimal` is the value that forces a gate in; `full` does not, despite reading like the strongest setting.
+**The four optional finalize checks are not run-at-all keys.** `qgate`, `self_review`, `simplify` and `security_audit` are each set through their owning step's `lane` override, using `step set --step-id <owning-step> --param lane --value <value>`. The manifest transform that resolves these four maps that lane onto the same tri-state the table above uses: `off` → `never`, `minimal` → `always`, and **every other accepted value — `standard`, `full`, `ask`, or an absent override — → `auto`**. So `minimal` is the value that forces a gate in; `full` does not, despite reading like the strongest setting.
 
 The owning steps are `default:pre-push-quality-gate` (`qgate`), `default:pre-submission-self-review` (`self_review`), `default:finalize-step-simplify` (`simplify`) and `default:finalize-step-security-audit` (`security_audit`) — the `default:` prefix is part of the key as seeded, and `step set` rejects the bare name with `Step '<name>' not found in phase-6-finalize`. The per-element override row is documented in <<execution-profile-lane-selection>>.
 
@@ -271,9 +273,9 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   --step-id default:pre-submission-self-review --param lane --value off
 ----
 
-`step set` is named here rather than `set-lane` because it is the only one of the two that reaches `minimal`, the value that forces a gate *in*. For the three values both verbs accept — `off`, `standard`, `full` — they are interchangeable: both write the same `plan.phase-6-finalize.steps.<step-id>.lane` key, so `finalize-steps set-lane --step-id default:pre-submission-self-review --lane off` produces the identical result. They differ only when the step is absent from the phase step map, which `set-lane` materialises and `step set` refuses; all four owning steps above are seeded, so that difference does not arise for a ceremony gate.
+`step set` is named here rather than `set-lane` because it is the only one of the two that reaches `minimal`, the value that forces a gate *in*. For the three values both verbs accept — `off`, `standard`, `full` — they are interchangeable: both write the same `plan.phase-6-finalize.steps.<step-id>.lane` key, so `finalize-steps set-lane --step-id default:pre-submission-self-review --lane off` produces the identical result. They differ only when the step is absent from the phase step map, which `set-lane` materialises and `step set` refuses; all four owning steps above are seeded, so that difference does not arise for one of these four checks.
 
-Read or set a run-at-all gate with the standard phase `get`/`set` verb against the owning phase block — all three live on `phase-1-init` / `phase-2-refine`, per the table above; `phase-6-finalize` carries none. Read a ceremony gate through its owning step instead:
+Read or set a run-at-all gate with the standard phase `get`/`set` verb against the owning phase block — all three live on `phase-1-init` / `phase-2-refine`, per the table above; `phase-6-finalize` carries none. Read one of the four optional finalize checks through its owning step instead:
 
 [source,bash]
 ----
@@ -281,29 +283,29 @@ Read or set a run-at-all gate with the standard phase `get`/`set` verb against t
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-1-init set --field deep_lane --value always
 
-# A ceremony gate: through its owning step, never a flat --field
+# One of the four optional finalize checks: through its owning step, never a flat --field
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-6-finalize step get --step-id default:pre-submission-self-review
 ----
 
 See the canonical per-key reference in link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`] for the full per-phase gate catalogue.
 
-NOTE: The planning-time Q-Gate validation on `plan.phase-3-outline` / `plan.phase-4-plan` is *not* a run-at-all gate. It is governed by the separate `q_gate_validation` re-run knob (`off` \| `once` \| `until_clean`) documented in <<q-gate-validation>> below. The finalize `qgate` gate above is a different gate — the pre-push-quality-gate — and is unrelated.
+NOTE: The planning-time Q-Gate validation on `plan.phase-3-outline` / `plan.phase-4-plan` is *not* a run-at-all gate. It is governed by the separate `q_gate_validation` re-run setting (`off` \| `once` \| `until_clean`) documented in <<q-gate-validation>> below. The finalize `qgate` gate above is a different gate — the pre-push-quality-gate — and is unrelated.
 
 [#q-gate-validation]
 === Planning-time Q-Gate validation
 
-`plan.phase-3-outline.q_gate_validation` and `plan.phase-4-plan.q_gate_validation` control how much the planning-time Q-Gate validation re-runs over the emerging outline (phase-3) and task plan (phase-4). Each is a three-value re-run knob — *not* the `auto`\|`always`\|`never` run-at-all enum — tuned independently per phase:
+`plan.phase-3-outline.q_gate_validation` and `plan.phase-4-plan.q_gate_validation` control how much the planning-time Q-Gate validation re-runs over the emerging outline (phase-3) and task plan (phase-4). Each is a three-value re-run setting — *not* the `auto`\|`always`\|`never` run-at-all enum — tuned independently per phase:
 
 [cols="1,1,3", options="header"]
 |===
 | Config key | Default | What it controls
 
 | `plan.phase-3-outline.q_gate_validation` | `once` | How the outline Q-Gate re-runs. `off` skips Q-Gate validation entirely; `once` (default) runs a single validation pass and does not re-loop on findings; `until_clean` re-validates until the outline reports no blocking findings. The first pass always runs; re-runs fire only when the outline content changed since the last pass.
-| `plan.phase-4-plan.q_gate_validation` | `once` | How the task-plan Q-Gate re-runs. Same `off`\|`once`\|`until_clean` semantics as the outline knob, tuned independently over the emerging task plan.
+| `plan.phase-4-plan.q_gate_validation` | `once` | How the task-plan Q-Gate re-runs. Same `off`\|`once`\|`until_clean` semantics as the outline setting, tuned independently over the emerging task plan.
 |===
 
-The first validation pass always runs unconditionally (it is never gated by confidence); a re-validation is skipped when the outline/plan content is unchanged since the prior pass, so an already-clean outline does not trigger a fresh Q-Gate dispatch. Set either knob via the standard phase `set` verb:
+The first validation pass always runs unconditionally (it is never gated by confidence); a re-validation is skipped when the outline/plan content is unchanged since the prior pass, so an already-clean outline does not trigger a fresh quality-check run. Set either setting via the standard phase `set` verb:
 
 [source,bash]
 ----
@@ -316,7 +318,7 @@ See the canonical per-key reference in link:../../marketplace/bundles/plan-marsh
 [#recipe-routing]
 === Recipe-match routing
 
-Tier 1 routing scores an informal request against the registered recipe set and may auto-route it into a matching recipe's known-shape path (see xref:../concepts/recipes.adoc[Concepts › Recipes]). Two flat `phase-1-init` knobs govern the auto-route gate:
+Tier 1 routing scores an informal request against the registered recipe set and may auto-route it into a matching recipe's known-shape path (see xref:../concepts/recipes.adoc[Concepts › Recipes]). Two flat `phase-1-init` settings govern the auto-route gate:
 
 [cols="1,1,3", options="header"]
 |===
@@ -326,7 +328,7 @@ Tier 1 routing scores an informal request against the registered recipe set and 
 | `plan.phase-1-init.auto_route_recipe_threshold` | `0.6` | The confidence floor a top recipe match must clear to auto-route. Below the floor the matches are proposed rather than auto-selected.
 |===
 
-Set either knob via the standard phase `set` verb:
+Set either setting via the standard phase `set` verb:
 
 [source,bash]
 ----
@@ -342,47 +344,47 @@ The companion `aspect-classify` step labels a request as analysis, planning, or 
 [#micro-lane-fast-path]
 ==== Micro-lane fast path (surgical-fix recipe)
 
-The `surgical-fix` recipe is a pre-diagnosed **micro-lane**: a request whose root cause and exact change are already known, bounded to a single module (≤~2 files / ~50 LOC, no cross-module behavioral delta), composed as a deterministic `scope_estimate: surgical` outline that skips the discovery pass and Q-Gate. It introduces no new config knob — it composes entirely from the two surfaces documented on this page:
+The `surgical-fix` recipe is a pre-diagnosed **micro-lane**: a request whose root cause and exact change are already known, bounded to a single module (≤~2 files / ~50 LOC, no cross-module behavioral delta), composed as a deterministic `scope_estimate: surgical` outline that skips the discovery pass and the planning-time quality check. It introduces no new setting — it composes entirely from the two surfaces documented on this page:
 
 * **Recipe-match auto-route (<<recipe-routing>>)** — a strong request match auto-routes into the recipe when `plan.phase-1-init.auto_route_recipe` is `true` and the top match clears `auto_route_recipe_threshold`; below the floor the match is proposed rather than auto-selected, exactly like any other recipe.
-* **Lane seed (<<execution-profile-lane-selection>>)** — the recipe declares a `lane:` seed of `profile: minimal` with `plan-marshall:automatic-review` force-kept at `minimal`, so structural PR review stays in the loop even on the leanest posture. The `surgical` scope estimate also scores the *planning* lane `light` through the `phase-1-init` router (see <<run-at-all-gates,`deep_lane`>> for the separate planning-depth axis). The seed is the **lowest-precedence** posture input (recipe seed < operator posture < coverage-cell adversarial floor): when `lane_selection: ask`, the seed is surfaced as the pre-selected `minimal` recommendation and any explicit operator posture overrides it; when `lane_selection: auto`, the projection is taken silently.
+* **Lane seed (<<execution-profile-lane-selection>>)** — the recipe declares a `lane:` seed of `profile: minimal` with `plan-marshall:automatic-review` force-kept at `minimal`, so structural PR review stays in the loop even on the leanest profile. The `surgical` scope estimate also scores the *planning* lane `light` through the `phase-1-init` router (see <<run-at-all-gates,`deep_lane`>> for the separate planning-depth axis). The seed is the **lowest-precedence** input to that choice (recipe seed < the profile you choose < coverage-cell adversarial floor): when `lane_selection: ask`, the seed is surfaced as the pre-selected `minimal` recommendation and any profile you choose explicitly overrides it; when `lane_selection: auto`, the projection is taken silently.
 
 The net effect is light planning plus a minimal execution profile with the bot-review safety net retained — the shortest safe path for a mechanical, pre-diagnosed change. The user-facing when-to-use / when-NOT-to-use contract lives in xref:recipes.adoc[User Guide → Recipes]; the recipe `lane:` seed contract is owned by link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-recipe.md[`ext-point-recipe.md`].
 
 [#execution-profile-lane-selection]
 === Execution-profile lane selection
 
-The **execution profile** is an operator-facing, cost-visible posture — `minimal`, `standard`, or `full` — chosen at plan init that decides how much ceremony (phase-6 finalize steps, adversarial validators, retrospectives) a plan runs. It is a separate axis from the `deep_lane` planning-depth gate above: `deep_lane: always` forces a deep *planning* lane without forcing a `full` *profile*. Every phase / finalize-step element self-declares its lane membership through a `lane:` frontmatter block (`class` / `tier` / `cost_size`); the postures are cutoffs over that lattice, so the posture→steps mapping stays derived, never a maintained list. The `manage-execution-manifest lanes preview` verb resolves all three postures (kept step set + summed token cost) for the init dialogue.
+The **execution profile** is an operator-facing, cost-visible choice — `minimal`, `standard`, or `full` — made at plan init that decides how many optional checks (phase-6 finalize steps, adversarial validators, retrospectives) a plan runs. It is a separate axis from the `deep_lane` planning-depth gate above: `deep_lane: always` forces a deep *planning* lane without forcing a `full` *profile*. Every phase / finalize-step element self-declares its lane membership through a `lane:` frontmatter block (`class` / `tier` / `cost_size`); the three profiles are cutoffs over that lattice, so the profile→steps mapping stays derived, never a maintained list. The `manage-execution-manifest lanes preview` verb resolves all three profiles (kept step set + summed token cost) for the init dialogue.
 
 [NOTE]
 ====
-**Two unrelated "lane" concepts.** The **planning lane** (`light` / `deep`, governed by `deep_lane` — see <<run-at-all-gates>>) is the planning-*depth* axis: how much discovery and Q-Gate validation a plan does before it starts. The **execution-profile lane** documented here (`minimal` / `standard` / `full`, plus the per-element `steps.<step>.lane` override) is the finalize-*ceremony* axis: how many finalize steps and validators a plan runs. They share only the word "lane" and do not interact.
+**Two unrelated "lane" concepts.** The **planning lane** (`light` / `deep`, governed by `deep_lane` — see <<run-at-all-gates>>) is the planning-*depth* axis: how much discovery and Q-Gate validation a plan does before it starts. The **execution-profile lane** documented here (`minimal` / `standard` / `full`, plus the per-element `steps.<step>.lane` override) is the finalize-*checks* axis: how many finalize steps and validators a plan runs. They share only the word "lane" and do not interact.
 ====
 
-The three postures:
+The three profiles:
 
 * **`minimal`** — only the tier-`minimal` floor (push, create-pr, ci-verify, branch-cleanup, record-metrics, archive, lessons capture). No adversarial validators, no security audit, no retrospectives — appropriate for docs / mechanical changes.
 * **`standard`** (the projection) — keeps the adversarial validators and prunes the structurally-empty prunable steps (e.g. sonar when there is no code delta); drops the `full`-only steps (security-audit, plan-retrospective).
 * **`full`** — every configured step.
 
-Four `marshal.json` knobs govern the mechanism:
+Four `marshal.json` settings govern the mechanism:
 
 [cols="1,1,3", options="header"]
 |===
 | Config key | Default | What it controls
 
-| `plan.phase-1-init.lane_selection` | `ask` | Whether init PROMPTS for the posture (`ask`) or takes the computed projection silently (`auto`). Mirrors the `deep_lane` / `finalize_without_asking` ask/auto family.
-| `plan.phase-<phase>.steps.<step>.lane` | _(per element)_ | Per-element override pinning any single lane element, value ∈ `off` \| `minimal` \| `standard` \| `full` \| `ask` (`off` = never run; `minimal` = force-keep in every posture; `ask` = always prompt). Nested under the owning step in the keyed map, like other step-owned params. The shipped default lives in each element's frontmatter `lane:` block; this override is the project-level pin.
+| `plan.phase-1-init.lane_selection` | `ask` | Whether init PROMPTS for the profile (`ask`) or takes the computed projection silently (`auto`). Mirrors the `deep_lane` / `finalize_without_asking` ask/auto family.
+| `plan.phase-<phase>.steps.<step>.lane` | _(per element)_ | Per-element override pinning any single lane element, value ∈ `off` \| `minimal` \| `standard` \| `full` \| `ask` (`off` = never run; `minimal` = force-keep in every profile; `ask` = always prompt). Nested under the owning step in the keyed map, like other step-owned params. The shipped default lives in each element's frontmatter `lane:` block; this override is the project-level pin.
 | `plan.phase-1-init.lane_prune_thresholds` | `{confidence_complete: 95, linear_change_max_deliverables: 1}` | The tunable bounds for `standard`'s numeric prune predicates — `confidence_complete` (prune `refine` when the post-init confidence proxy is ≥ this value, int 0–100, matching the refine `confidence_threshold`) and `linear_change_max_deliverables` (treat the plan as a linear change, pruning 4-plan decomposition, when the deliverable count is ≤ this value). Tighten to prune more aggressively, loosen to keep more steps.
-| `plan.phase-5-execute.cost_size_token_table` | `{XS: 5K, …, XXL: 520K}` | The six-size token table the dialogue sums for the per-posture cost preview — see <<per-envelope-packing-budget,the cost-size token table below>> (shared with the task bin-packer).
+| `plan.phase-5-execute.cost_size_token_table` | `{XS: 5K, …, XXL: 520K}` | The six-size token table the dialogue sums for the per-profile cost preview — see <<per-envelope-packing-budget,the cost-size token table below>> (shared with the task bin-packer).
 |===
 
 [NOTE]
 ====
-**Independent of `init_without_asking`.** `lane_selection` and `plan.phase-1-init.init_without_asking` (see <<review-gates>>) are two independent `phase-1-init` gates that govern different decisions and do not interact. `lane_selection` gates only whether init *prompts* for the execution-profile posture; `init_without_asking` gates only the `phase-1-init` → `phase-2-refine` auto-continue. Concretely: `init_without_asking: true` does **not** suppress the `lane_selection: ask` posture dialogue — the posture prompt fires *within* init, before the transition the auto-continue governs — and `lane_selection: auto` does **not** change the init→refine auto-continue, since it only skips the posture dialogue and leaves the transition gate untouched.
+**Independent of `init_without_asking`.** `lane_selection` and `plan.phase-1-init.init_without_asking` (see <<review-gates>>) are two independent `phase-1-init` gates that govern different decisions and do not interact. `lane_selection` gates only whether init *prompts* for the execution profile; `init_without_asking` gates only the `phase-1-init` → `phase-2-refine` auto-continue. Concretely: `init_without_asking: true` does **not** suppress the `lane_selection: ask` profile dialogue — the profile prompt fires *within* init, before the transition the auto-continue governs — and `lane_selection: auto` does **not** change the init→refine auto-continue, since it only skips the profile dialogue and leaves the transition gate untouched.
 ====
 
-Set a knob via the standard phase `set` verb (the per-element override goes through the step-param channel):
+Set a setting via the standard phase `set` verb (the per-element override goes through the step-param channel):
 
 [source,bash]
 ----
@@ -390,7 +392,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-1-init set --field lane_selection --value auto
 ----
 
-The closed `lane.class` enum, the class→default-tier table, the resolution lattice, and the named prune predicates are owned by link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-lane-element.md[`ext-point-lane-element.md`]; the per-key knob contracts (validators, defaults) live in link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`].
+The closed `lane.class` enum, the class→default-tier table, the resolution lattice, and the named prune predicates are owned by link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-lane-element.md[`ext-point-lane-element.md`]; the per-key contracts (validators, defaults) live in link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`].
 
 [#step-configuration]
 === Step configuration (verify + finalize pipelines)
@@ -419,7 +421,7 @@ A step key therefore carries one of three forms, distinguished by prefix:
 
 [NOTE]
 ====
-*Retired-key migration.* `manage-config sync-defaults` migrates *retired* step keys in the two keyed-map step containers (`plan.phase-5-execute.verification_steps` and `plan.phase-6-finalize.steps`) to their canonical ids via an explicit, extensible rename table. Its first (and currently only) entry maps both the built-in-prefixed and the bare legacy review-step forms — `default:automated-review` and `automated-review` — to the canonical `plan-marshall:automatic-review`, preserving the step's nested knob block byte-identically. The migration is idempotent and drops a retired duplicate when the canonical is already present, so a stale-key `marshal.json` never yields a double review step. Future renames extend the same table. See link:../../marketplace/bundles/plan-marshall/skills/manage-config/SKILL.md[`manage-config` § Workflow: Sync Defaults].
+*Retired-key migration.* `manage-config sync-defaults` migrates *retired* step keys in the two keyed-map step containers (`plan.phase-5-execute.verification_steps` and `plan.phase-6-finalize.steps`) to their canonical ids via an explicit, extensible rename table. Its first (and currently only) entry maps both the built-in-prefixed and the bare legacy review-step forms — `default:automated-review` and `automated-review` — to the canonical `plan-marshall:automatic-review`, preserving the step's nested settings block byte-identically. The migration is idempotent and drops a retired duplicate when the canonical is already present, so a stale-key `marshal.json` never yields a double review step. Future renames extend the same table. See link:../../marketplace/bundles/plan-marshall/skills/manage-config/SKILL.md[`manage-config` § Workflow: Sync Defaults].
 ====
 
 Order is significant — phase-5 runs verify steps in key order until one fails; phase-6 runs finalize steps in key order until the pipeline completes or a `loop_back` outcome resets it. Configure the step list via `/marshall-steward` → Configuration, or the step-list verbs `manage-config plan phase-N set-steps --steps …` / `add-step` / `remove-step` (these operate on the keyed map's keys, preserving insertion order and any existing per-step params, persisting under `verification_steps` for phase-5-execute and `steps` for phase-6-finalize).
@@ -434,13 +436,13 @@ Step-owned parameters live in a two-tier source model:
 Reference: `data-model.md` §§ phase-5-execute / phase-6-finalize; link:../../marketplace/bundles/plan-marshall/skills/manage-execution-manifest/standards/manifest-schema.md[`manifest-schema.md`] § `step_params`.
 
 [#per-envelope-packing-budget]
-=== Per-envelope packing budget and the cost-size token table
+=== Task-batch packing budget and the cost-size token table
 
-The `phase-5-execute` dispatch model is **budget-bounded**, neither per-task nor per-deliverable. The continue-vs-yield decision is **pre-computed at plan time**: phase-4-plan derives each task's T-shirt `cost_size` and `predicted_cost_tokens`, then a deterministic bin-packer groups dependency-ordered tasks into execution envelopes. The executor runs only the tasks in its assigned envelope and yields when the group is exhausted — it performs no runtime cost measurement. Two knobs feed the plan-time packing:
+The execute phase runs its tasks in **batches sized against a token budget**, neither one task at a time nor one deliverable at a time. Where each batch ends is **decided at plan time**: phase-4-plan derives each task's T-shirt `cost_size` and `predicted_cost_tokens`, then a deterministic bin-packer groups dependency-ordered tasks into batches. Execute runs only the tasks in its assigned batch and hands control back when that batch is finished — it measures no cost while running. Two settings feed the plan-time packing:
 
-`plan.phase-5-execute.per_envelope_budget_tokens` (default `"400K"`) is the per-envelope packing budget — the token ceiling the bin-packer accumulates `predicted_cost_tokens` against before opening a new envelope group. It is consumed at PLAN time by the bin-packer (`manage-tasks pack-envelopes`), NOT a runtime comparand. The `_tokens` suffix names the unit; the human-friendly value form (`"400K"`) is parsed to an integer by `sensible_number.parse_sensible_int`. Raise it to pack more tasks into each envelope (fewer, larger dispatches), lower it to yield earlier (smaller dispatches). The 400K default leaves headroom below a typical context window.
+`plan.phase-5-execute.per_envelope_budget_tokens` (default `"400K"`) is the per-batch packing budget — the token ceiling the bin-packer accumulates `predicted_cost_tokens` against before opening a new batch. It is consumed at PLAN time by the bin-packer (`manage-tasks pack-envelopes`), never compared against anything while the phase runs. The `_tokens` suffix names the unit; the human-friendly value form (`"400K"`) is parsed to an integer by `sensible_number.parse_sensible_int`. Raise it to pack more tasks into each batch (fewer, larger runs), lower it to hand control back earlier (smaller runs). The 400K default leaves headroom below a typical context window.
 
-`plan.phase-5-execute.cost_size_token_table` (default `{XS: 5K, S: 25K, M: 60K, L: 130K, XL: 260K, XXL: 520K}`) maps each T-shirt `cost_size` to a predicted-token magnitude. The bin-packer reads it to map a task's derived `cost_size` to its `predicted_cost_tokens`, and the execution-profile lane dialogue (see <<execution-profile-lane-selection>>) sums each resolved lane element's `cost_size` through the same table to produce its per-posture cost preview. Keys must be exactly the six-size scale `XS`/`S`/`M`/`L`/`XL`/`XXL`; each value parses via `sensible_number.parse_sensible_int`. `XS` (deterministic ≈0-token bookkeeping) and `XXL` (the largest elements) are the two ends added so lane elements and tasks share one scale; the four middle magnitudes are calibrated to the forensic 134K–392K per-dispatch range. Tune them to recalibrate the cost model from observed post-return `<usage>`.
+`plan.phase-5-execute.cost_size_token_table` (default `{XS: 5K, S: 25K, M: 60K, L: 130K, XL: 260K, XXL: 520K}`) maps each T-shirt `cost_size` to a predicted-token magnitude. The bin-packer reads it to map a task's derived `cost_size` to its `predicted_cost_tokens`, and the execution-profile lane dialogue (see <<execution-profile-lane-selection>>) sums each resolved lane element's `cost_size` through the same table to produce its per-profile cost preview. Keys must be exactly the six-size scale `XS`/`S`/`M`/`L`/`XL`/`XXL`; each value parses via `sensible_number.parse_sensible_int`. `XS` (deterministic ≈0-token bookkeeping) and `XXL` (the largest elements) are the two ends added so lane elements and tasks share one scale; the four middle magnitudes are calibrated to the observed 134K–392K per-run range. Tune them to recalibrate the cost model from the token counts each finished run reports.
 
 Set via:
 
@@ -450,12 +452,12 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-5-execute set --field per_envelope_budget_tokens --value 400K
 ----
 
-For the conceptual home of per-dispatch context isolation see xref:../concepts/token-management.adoc[Concepts › Token Management]. Canonical schema: link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`].
+For the conceptual home of per-run context isolation see xref:../concepts/token-management.adoc[Concepts › Token Management]. Canonical schema: link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`].
 
 [#commit-and-build-depth]
 === Commit strategy and per-deliverable build depth
 
-Two `plan.phase-5-execute` knobs govern how often the execute phase commits and how deeply it builds at each deliverable boundary:
+Two `plan.phase-5-execute` settings govern how often the execute phase commits and how deeply it builds at each deliverable boundary:
 
 [cols="1,1,3", options="header"]
 |===
@@ -476,14 +478,14 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 [#merge-strategy]
 === PR merge strategy and auto-rebase
 
-The `default:branch-cleanup` merge knobs — the merge method, the post-CI auto-merge gate, the pre-merge rebase threshold, the merge-mutex hold window and budget, the fail-closed pre-merge review-completeness barrier, and the stuck-state admin fallback — govern how a plan crosses the shared merge-to-`main` boundary. Because that boundary is what concurrent plans serialize against, they are documented with the concurrent-plan operator guide: see xref:parallelism-and-locking.adoc#merge-strategy[Parallelism and Locking → PR merge strategy and auto-rebase].
+The `default:branch-cleanup` merge settings — the merge method, the post-CI auto-merge gate, the pre-merge rebase threshold, the merge-mutex hold window and budget, the fail-closed pre-merge review-completeness barrier, and the stuck-state admin fallback — govern how a plan crosses the shared merge-to-`main` boundary. Because that boundary is what concurrent plans serialize against, they are documented with the concurrent-plan operator guide: see xref:parallelism-and-locking.adoc#merge-strategy[Parallelism and Locking → PR merge strategy and auto-rebase].
 
 NOTE: The `default:pre-push-quality-gate` finalize step has no dedicated activation key. Its activation is *derived from* `build.map` (see <<build-map>>): the step activates whenever a changed path matches a glob registered in the build_map.
 
 [#merge-queue]
 === Platform merge queue (both providers)
 
-The `use_merge_queue` opt-in, its `/marshall-steward` provisioning, live-eligibility probing, and the per-provider verification posture are documented with the concurrent-plan operator guide: see xref:parallelism-and-locking.adoc#merge-queue[Parallelism and Locking → Platform merge queue].
+The `use_merge_queue` opt-in, its `/marshall-steward` provisioning, live-eligibility probing, and how each provider path is verified are documented with the concurrent-plan operator guide: see xref:parallelism-and-locking.adoc#merge-queue[Parallelism and Locking → Platform merge queue].
 
 [#automated-review]
 === Automated PR review and post-branch-update re-review
@@ -525,17 +527,17 @@ Two `default:sonar-roundtrip` step-owned params tune the Sonar finalize roundtri
 [#preference-learning]
 === Preference-learning thresholds
 
-Recurring user gate-dispositions (`suppressed`/`accepted`/`taken_into_account`) are promoted into durable architecture hints by two distinct surfaces, each with its OWN threshold gate. They govern two different scopes, so the knob you can edit depends on which surface you mean — both are documented here side by side so a consumer reader sees the one available to them next to the one that is not.
+Recurring user gate-dispositions (`suppressed`/`accepted`/`taken_into_account`) are promoted into durable architecture hints by two distinct surfaces, each with its OWN threshold gate. They govern two different scopes, so the setting you can edit depends on which surface you mean — both are documented here side by side so a consumer reader sees the one available to them next to the one that is not.
 
 [cols="1,1,3", options="header"]
 |===
 | Threshold surface | Default | What it controls
 
 | `THRESHOLDS["preference_disposition_occurrences"]` (script constant in `.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py`) | `3` | The cross-plan auditor's gate: a `(module, finding-class, disposition)` tuple must recur across at least this many *distinct archived plans* to surface as a candidate preference. **Meta-project-only** — it lives in the auditor's `THRESHOLDS` table, which consumer projects do not ship and cannot edit. Mirrors the recurring-pattern detector's `systemic_occurrences` band.
-| `steps['default:finalize-step-preference-emitter'].preference_min_recurrence` (marshal.json config knob) | `2` | The per-plan emitter's gate: a disposition pattern must recur at least this many times *within the single just-finished plan* to be promoted at finalize. **Consumer-editable** — it is a step-owned param of the `default:finalize-step-preference-emitter` finalize step, declared via that step's `configurable:` block, so any consumer project can tune it in `marshal.json`.
+| `steps['default:finalize-step-preference-emitter'].preference_min_recurrence` (marshal.json setting) | `2` | The per-plan emitter's gate: a disposition pattern must recur at least this many times *within the single just-finished plan* to be promoted at finalize. **Consumer-editable** — it is a step-owned param of the `default:finalize-step-preference-emitter` finalize step, declared via that step's `configurable:` block, so any consumer project can tune it in `marshal.json`.
 |===
 
-Both thresholds mirror the lessons-capture signal thresholds (a recurrence count gates promotion), and both feed the SAME `architecture enrich` sink (no new store). They govern two distinct surfaces — corpus-wide vs single-plan — so they are tuned independently. The per-plan knob is nested under its owning step in the `plan.phase-6-finalize.steps` keyed map: read it with `manage-config plan phase-6-finalize step get --step-id default:finalize-step-preference-emitter`; write it with `manage-config plan phase-6-finalize step set --step-id default:finalize-step-preference-emitter --param preference_min_recurrence --value 3`. See xref:../concepts/audit-trail.adoc#_from_dispositions_to_durable_preferences[Concepts → Audit Trail → From dispositions to durable preferences] for the dual-surface learning path.
+Both thresholds mirror the lessons-capture signal thresholds (a recurrence count gates promotion), and both feed the SAME `architecture enrich` sink (no new store). They govern two distinct surfaces — corpus-wide vs single-plan — so they are tuned independently. The per-plan setting is nested under its owning step in the `plan.phase-6-finalize.steps` keyed map: read it with `manage-config plan phase-6-finalize step get --step-id default:finalize-step-preference-emitter`; write it with `manage-config plan phase-6-finalize step set --step-id default:finalize-step-preference-emitter --param preference_min_recurrence --value 3`. See xref:../concepts/audit-trail.adoc#_from_dispositions_to_durable_preferences[Concepts → Audit Trail → From dispositions to durable preferences] for the dual-surface learning path.
 
 [#open-in-ide]
 === Open in IDE
@@ -549,7 +551,7 @@ Both thresholds mirror the lessons-capture signal thresholds (a recurrence count
 [#retention-and-ci]
 === Retention and CI wait-policy
 
-Top-level `system.retention` knobs plus the finalize CI-wait policy that project authors tune occasionally:
+Top-level `system.retention` settings plus the finalize CI-wait policy that project authors tune occasionally:
 
 [cols="1,1,3", options="header"]
 |===
@@ -578,7 +580,7 @@ The top-level `project` section holds the project's base branch and the closed b
 
 | `project.default_base_branch` | `main` | The project's canonical base branch. `phase-1-init` seeds `references.base_branch` from it; per-plan overrides via `manage-references set --field base_branch`.
 | `project.working_prefixes` | `["feature/", "fix/", "chore/"]` | The closed set of allowed working-branch prefixes. `manage-status create` validates `--worktree-branch` against this set. A structural test asserts every prefix is covered by a `.github/workflows/python-verify.yml` push trigger, so a dropped prefix that would make a PR unmergeable fails CI.
-| `project.pr_strategy` | `compact` | PR-consolidation policy (`compact` or `distinct`). Under `compact`, follow-up / config-migration / ad-hoc changes ride an already-pending related PR when the changed-file count stays within `project.pr_compact_max_changed_files`; under `distinct`, every such change opens its own separate PR. The `manage-config project pr-decision --changed-files N` verb applies this knob (with `pr_compact_max_changed_files`) and returns a `ride|split` decision — it is the consult surface every PR-opening flow uses. See link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`] for the canonical per-key reference.
+| `project.pr_strategy` | `compact` | PR-consolidation policy (`compact` or `distinct`). Under `compact`, follow-up / config-migration / ad-hoc changes ride an already-pending related PR when the changed-file count stays within `project.pr_compact_max_changed_files`; under `distinct`, every such change opens its own separate PR. The `manage-config project pr-decision --changed-files N` verb applies this setting (with `pr_compact_max_changed_files`) and returns a `ride|split` decision — it is the consult surface every PR-opening flow uses. See link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`] for the canonical per-key reference.
 | `project.pr_compact_max_changed_files` | `150` | The compact-strategy ceiling (int). Under `project.pr_strategy: compact`, a change riding an existing PR splits into its own PR once the changed-file count exceeds this value. Resolved together with `pr_strategy` by the `manage-config project pr-decision --changed-files N` consult verb.
 | `project.merge_queue_managed_externally` | `false` | Declares the repository's merge queue is owned by an org- or externally-managed ruleset rather than by Plan Marshall. When `true`, `marshall-steward` never creates, enables, or reconciles a queue, and the probe-backed set-time validation of `use_merge_queue` (see xref:parallelism-and-locking.adoc#merge-queue[Parallelism and Locking → Platform merge queue]) is short-circuited.
 |===
@@ -586,7 +588,7 @@ The top-level `project` section holds the project's base branch and the closed b
 [#user-facing-language]
 === User-facing language
 
-The language Plan Marshall answers you in is a `project` knob of its own — it is not branch naming, so it sits in its own section rather than in the table above.
+The language Plan Marshall answers you in is a `project` setting of its own — it is not branch naming, so it sits in its own section rather than in the table above.
 
 [cols="1,1,3", options="header"]
 |===
@@ -617,7 +619,7 @@ Tune via `/marshall-steward` → Configuration → Build Systems. Canonical cont
 
 `marshal.json` carries a `skill_domains` block that maps each project module to the bundles whose skills apply to it. Domains are detected automatically by the wizard from each bundle's `plan-marshall-plugin` manifest, then assigned per module either by detection (e.g. Java files → `pm-dev-java`) or by user confirmation.
 
-A plan's applicable domains land in `references.domains` as a **multi-valued set**, not a single winner. On a genuinely ambiguous multi-match the detector surfaces its candidates for a multiSelect prompt, so a plan that spans several domains keeps all of them; refine may *widen* the set (re-evaluating `file_globs` against the real affected files) but never narrows it. A request that names no domain at all is not prompted for either — see the `domain-detect` contract in `manage-config/standards/skill-domains.md` for how such a request resolves.
+A plan's applicable domains land in `references.domains` as a **multi-valued set**, not a single winner. When several domains match and none of them clearly wins, the detector lists its candidates and asks you to choose — and you can pick more than one. Every domain you pick has its standards applied to the plan; a domain you leave out is never consulted, so the recommended answer is to keep every domain the plan genuinely touches rather than narrowing to the closest single fit. Refine may later *widen* the set (re-evaluating `file_globs` against the real affected files) but never narrows it. A request that names no domain at all is not asked about either — see the `domain-detect` contract in `manage-config/standards/skill-domains.md` for how such a request resolves.
 
 ==== Per-domain inclusion keys (`always_on` / `file_globs`)
 
@@ -690,7 +692,7 @@ The canonical schema (the field table, the build-class enum source of truth, the
 [#build-queue]
 === Build queue
 
-`marshal.json` also carries a top-level `build.queue` block — the cross-session build-queue concurrency knobs (`build.queue.max_slots`, `build.queue.max_retries`, and the adaptive `build.queue.upper_limit_seconds` stale-slot threshold) that govern how concurrent builds share the machine. Because they matter only when several plans build at once, they are documented with the concurrent-plan operator guide: see xref:parallelism-and-locking.adoc#knobs[Parallelism and Locking → Knobs].
+`marshal.json` also carries a top-level `build.queue` block — the cross-session build-queue concurrency settings (`build.queue.max_slots`, `build.queue.max_retries`, and the adaptive `build.queue.upper_limit_seconds` stale-slot threshold) that govern how concurrent builds share the machine. Because they matter only when several plans build at once, they are documented with the concurrent-plan operator guide: see xref:parallelism-and-locking.adoc#build-concurrency[Parallelism and Locking → Build-concurrency settings].
 
 [#worktrees]
 === Branch strategy and worktrees
@@ -700,7 +702,7 @@ How a plan decides whether to allocate a feature branch + isolated worktree, whe
 * `feature` (default for new plans) — the orchestrator allocates a feature branch named `feature/{plan-id}` and an isolated worktree at `<project_root>/.plan/local/worktrees/{plan-id}/`. `status.metadata.use_worktree` is set to `true`.
 * `main` — the plan runs against the main checkout without a worktree (intended for docs-only patches that do not need isolation).
 
-`phase-1-init` records only `use_worktree`. The feature branch (`feature/{plan-id}`) and the worktree directory are created together during `phase-5-execute` Step 2.5, immediately before the first task dispatch. Phases 2-4 (refine, outline, plan) run against the main checkout because they only produce `.plan/` artifacts and have no source-code changes to isolate.
+`phase-1-init` records only `use_worktree`. The feature branch (`feature/{plan-id}`) and the worktree directory are created together during `phase-5-execute` Step 2.5, immediately before the first task runs. Phases 2-4 (refine, outline, plan) run against the main checkout because they only produce `.plan/` artifacts and have no source-code changes to isolate.
 
 The `.plan/*` exclusion in `.gitignore` covers `.plan/local/worktrees/{plan-id}/` automatically — no per-worktree carve-out is needed. The conceptual overview (why each plan runs in plan-bound isolation, and how the post-execute shipping flow lands the work on `main`) lives in xref:../concepts/branches-and-worktrees.adoc[Concepts › Branches and Worktrees]; the canonical contract (path resolution, dispatch protocol, cleanup ordering) lives in link:../../marketplace/bundles/plan-marshall/skills/workflow-integration-git/standards/worktree-handling.md[`workflow-integration-git/standards/worktree-handling.md`].
 
@@ -769,12 +771,12 @@ Three paths, in increasing order of automation:
 
 1. **Wizard (recommended)** — `/marshall-steward` opens an interactive menu covering every section above. Inputs are validated at save time and conflicts are surfaced before writing.
 2. **`manage-config` CLI** — script-driven, useful for automation or for fields the wizard does not surface. Full command reference: link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/api-reference.md[`api-reference.md`].
-3. **Direct file edit** — `marshal.json` is JSON; edit it in any editor. The resolver reads it fresh on every dispatch, so changes take effect on the next call without a Claude Code restart, no plugin reinstall.
+3. **Direct file edit** — `marshal.json` is JSON; edit it in any editor. The resolver reads it fresh every time it hands work to a sub-agent, so changes take effect on the next call without a Claude Code restart, no plugin reinstall.
 
 == Related
 
 * xref:../concepts/execution-context.adoc#per-role-model-selection[Concepts › Execution Context › Per-Role Model Selection] — three-layer overview (levels, roles, variants)
-* xref:../concepts/execution-context.adoc[Concepts › Execution Context] — why edits take effect on the next dispatch
+* xref:../concepts/execution-context.adoc[Concepts › Execution Context] — why edits take effect the next time work is handed off
 * xref:../concepts/branches-and-worktrees.adoc[Concepts › Branches and Worktrees] — plan-bound isolation while a plan is in flight, and the post-execute shipping flow that lands it on `main`
 * link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`] — canonical marshal.json schema
 * link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/api-reference.md[`api-reference.md`] — `manage-config` CLI reference

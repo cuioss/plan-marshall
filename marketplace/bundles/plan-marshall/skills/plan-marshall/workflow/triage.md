@@ -248,7 +248,21 @@ Findings flagged `ASK_USER_QUESTION` in a batched decision are NOT acted on imme
 
 ## Step 4: Raise deferred AskUserQuestions after every group has run its batched decision
 
-After all groups have completed their batched decisions and their non-AskUserQuestion actions, walk the deferred-questions list and raise one `AskUserQuestion` per finding. Per-question shape: four canonical options (Hold / Accept-with-rationale / Split-into-fix-task / FIX-here). Act on the user's answer using the matching action body from Step 3c. Batching the *decision* call does NOT batch the user-prompt UX.
+After all groups have completed their batched decisions and their non-AskUserQuestion actions, walk the deferred-questions list and raise one `AskUserQuestion` per finding. Batching the *decision* call does NOT batch the user-prompt UX. Act on the user's answer using the matching action body from Step 3c.
+
+**Open the question with what triage already established, then what it needs from the reader.** A deferral reaches this step precisely because triage examined the finding and could not settle it on its own, so the question says what it found and where it stopped — never a bare "how should I handle this?". The three deferral sources each supply that opening: the reconciliation guard (Step 3b-pre) found a standing decision that *may* be contradicted, the self-consistency gate (Step 3b-post) found an equivalent change already declined this run, and the Sonar fall-through (Step 3c) found a rule with no in-code suppression form and no standing permission to dismiss it on the server. Carry the finding's `rationale` verbatim into the question body.
+
+**Three canonical options, each stating what happens when it is chosen.** ⛔ A bare option name is a contract violation here — obligation 1 of [`pm-plugin-development:plugin-architecture` askuserquestion-patterns.md](../../../../pm-plugin-development/skills/plugin-architecture/references/askuserquestion-patterns.md). Render the consequence, not the label:
+
+| Option | What happens when it is chosen |
+|--------|--------------------------------|
+| **Hold** | The finding is recorded as considered and deliberately not acted on in this plan, with your reason. Nothing in the code changes, and the plan ships as it stands. Resolved `taken_into_account`. |
+| **Accept with rationale** | The finding is recorded as a known, accepted gap, with your reason. Nothing in the code changes, and nothing re-raises it later in this plan. Resolved `accepted`. |
+| **Split into a fix task** | A task to make this change is added to the plan, and the plan re-enters execute to carry it out. The change ships with the rest of the work rather than being deferred. Resolved `fixed`. |
+
+**There is deliberately no "fix it here" option.** Step 3c defines exactly one body that produces a fix — FIX — and its STOP contract forbids executing that fix inline or leaving uncommitted fix edits in the worktree. An inline-edit disposition would therefore have no action body to be acted on with, and it would produce a source change that the Output contract cannot report (`fix_tasks_created` / `overflow_deferred` are the only work counters, and Step 7 keys `loop_back_target` on exactly those two). Every change this prompt can authorise ships through a fix task.
+
+**Mark the recommended option and order it first** — obligation 3 of the same document. The recommendation is the one the finding's own `rationale` points to; when the rationale names none, mark **Hold**, because it is the only one of the three that changes nothing and can be revisited at no cost. A prompt raised because triage could not decide MUST NOT present three unmarked options and hand the whole judgement back — triage got far enough to have a leaning, and withholding it makes the reader re-derive work already done.
 
 After acting:
 
@@ -294,12 +308,21 @@ The overflow path counts against the calling step's iteration cap (3) — at cap
 
 ## Step 6: Scope-Deviation Escalation guard
 
-When the batched decision for a group would imply a fix outside the **plan's scope** (touching a module the plan does not own, opening a refactor task that is not in any deliverable, expanding the plan's domain set), the LLM MUST NOT silently produce a FIX. Instead, emit a deferred AskUserQuestion (Step 3d) with the canonical four options:
+⚠ **This guard shares its name with a different one, and the two are not the same decision.** This Step 6 governs a finding whose fix would **expand** the plan's scope — work the plan was never asked to do, reached by a fix task allocated inside *this* plan. The canonical [`ref-workflow-architecture/standards/scope-deviation-escalation.md`](../../ref-workflow-architecture/standards/scope-deviation-escalation.md) governs the opposite move: **softening** a request-level hard requirement the plan already committed to, at execute time. That standard names its callers exhaustively — `execute-task`, `phase-5-execute` Step 11, and `plan-marshall/workflow/execution.md` — and this workflow is not among them. Nothing here emits an `escalate_ask` envelope or `prompt_options[]`, and that standard's successor lesson does not fire on this path.
 
-1. **Accept with rationale** — record the scope deviation as an `accepted` finding, log a `(scope-deviation:accept)` decision via `manage-logging decision`, do NOT create a fix task.
-2. **Hold** — defer this finding to a follow-up plan; record `taken_into_account` with the deferral rationale.
-3. **Split** — allocate a fix task in a separate deliverable that the user explicitly creates (asks the orchestrator to file a sub-plan).
-4. **FIX-here anyway** — proceed with the standard FIX action body, with the user accepting the scope deviation explicitly.
+The resemblance is real and is why the distinction is stated: three options with similar names. Their side effects do not coincide. **"Split into a fix task" here allocates a fix task in the CURRENT plan** — Step 7's `loop_back_target` computation and this workflow's `fix_tasks_created` counter both key on that allocation — whereas the canonical contract's "Split into follow-up plan" seeds a *successor* plan and increments nothing here. Read the option bodies below, not the labels, when acting.
+
+When the batched decision for a group would imply a fix outside the **plan's scope** (touching a module the plan does not own, opening a refactor task that is not in any deliverable, expanding the plan's domain set), the LLM MUST NOT silently produce a FIX. Instead, emit a deferred AskUserQuestion (Step 3d).
+
+**Open the question with what is already settled and what is not.** The finding is real and the plan's scope is real; what is unsettled is only whether this plan is the one that should grow to cover it. Say both, then ask.
+
+**The three canonical options, ordered recommendation-first and marked.** The order below IS the presentation order — obligation 3 of [`pm-plugin-development:plugin-architecture` askuserquestion-patterns.md](../../../../pm-plugin-development/skills/plugin-architecture/references/askuserquestion-patterns.md). **Hold is the recommendation in the common case** and leads the list: a scope deviation is by construction work this plan was not asked to do, so leaving the plan's boundary where the operator drew it is the answer that is right by default and the only one that is free to revisit later. The other two each widen the plan or close the finding, and are the deliberate exceptions:
+
+1. **Hold (recommended)** — the finding is written down for a later plan and this plan's boundary is left exactly where it was. Nothing in the code changes and nothing ships differently. Record `taken_into_account` with the deferral rationale.
+2. **Accept with rationale** — the finding is recorded as a known, accepted gap and will not be re-raised in this plan. Nothing in the code changes; unlike Hold, nothing is carried forward either. Record it as an `accepted` finding, log a `(scope-deviation:accept)` decision via `manage-logging decision`, and do NOT create a fix task.
+3. **Split into a fix task** — a task to make this change is added to this plan, and the plan re-enters execute to carry it out. This plan grows to cover the finding and ships the change with the rest of its work; the operator has accepted the scope deviation explicitly. Allocate it via the standard FIX action body in Step 3c and record the finding `fixed`.
+
+The choice this prompt offers is therefore between **growing the plan now** (option 3 — the only option that reaches a code change, and it reaches it by allocating a fix task) and **leaving the code untouched** (options 1 and 2, which differ only in whether the finding is carried forward to a later plan or closed here). There is no "fix it here" alternative to option 3: Step 3c defines no action body that executes a fix inline, and the FIX body's STOP contract forbids one, so a fix task is the only route from an authorised scope deviation to a landed change.
 
 Scope-deviation detection signals (the LLM checks these against the loaded plan context):
 - The finding's `file_path` is not under any `modules[]` entry that this plan's deliverables claim.

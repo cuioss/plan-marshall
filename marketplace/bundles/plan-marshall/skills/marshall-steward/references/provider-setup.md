@@ -73,14 +73,14 @@ Present CI-category providers with a "Skip" option for projects that do not use 
 ```text
 AskUserQuestion:
   questions:
-    - question: "Which CI provider should be activated?"
+    - question: "Looking at this repository's remote and its build files did not clearly identify where its builds and pull requests live, so it cannot be picked for you. Which one does this project use?"
       header: "CI Provider"
       options:
         # Dynamic from ci-category providers:
         - label: "{display_name}"
-          description: "{skill_name} — {description}"
+          description: "Builds, pull requests, and review comments are read from and written to {display_name}"
         - label: "Skip"
-          description: "No CI provider for this project"
+          description: "No build service is wired up, so nothing is read from or written to one — no build results, no pull requests, no review comments"
       multiSelect: false
 ```
 
@@ -97,15 +97,15 @@ This is a binary activation gate: it MUST always present **≥2 options** — th
 ```text
 AskUserQuestion:
   questions:
-    - question: "Which additional providers should be activated?"
-      header: "Other"
+    - question: "Besides your build service, plan-marshall can also talk to the outside services below. It cannot tell from the repository which of them you actually use. Which should it connect to?"
+      header: "Services"
       options:
         # Dynamic from other-category providers:
         - label: "{display_name}"
-          description: "{skill_name} — {description}"
+          description: "What {display_name} reports is pulled in and acted on before a change is allowed to ship"
         # Canonical fixed option, always present:
         - label: "Skip"
-          description: "Activate no additional providers"
+          description: "No further services are contacted; you can add one later without redoing any of this"
       multiSelect: true
 ```
 
@@ -230,13 +230,13 @@ Do **not** discard the full mapping: Step 13h still needs it. Two fields the lat
 ```text
 AskUserQuestion:
   questions:
-    - question: "Configure credentials for external tools?"
-      header: "Credentials"
+    - question: "The services you picked need a login before they can be reached, and none is stored yet. Setting one up means pasting a secret into a file, which is easier away from this wizard. Do it now or later?"
+      header: "Logins"
       options:
-        - label: "Skip (Recommended)"
-          description: "Configure credentials later via /marshall-steward menu"
+        - label: "Skip (recommended)"
+          description: "Finishes setup now; those services stay unreachable until you add a login from the maintenance menu"
         - label: "Configure now"
-          description: "Set up credentials for SonarCloud or other external tools"
+          description: "Walks you through each service's address and sign-in method, then pauses while you paste in the secret"
       multiSelect: false
 ```
 
@@ -253,13 +253,13 @@ If user selects "Configure now", collect non-secret values step by step.
 ```text
 AskUserQuestion:
   questions:
-    - question: "Credential scope?"
+    - question: "The login you are about to enter can be stored once for everything you work on, or kept to this project alone. Where should it be kept?"
       header: "Scope"
       options:
-        - label: "Global (Recommended)"
-          description: "Shared across all projects using plan-marshall"
+        - label: "Global (recommended)"
+          description: "Stored once on this machine and reused by every project, so you enter it only this once"
         - label: "Project"
-          description: "Specific to this project only"
+          description: "Stored with this project only; another project asks you for its own login"
       multiSelect: false
 ```
 
@@ -270,13 +270,13 @@ Map selection to `--scope global` or `--scope project` for Step 13i.
 ```text
 AskUserQuestion:
   questions:
-    - question: "Which credential provider?"
-      header: "Provider"
+    - question: "More than one of the services you picked needs its own login, and they are set up one at a time. Which one do you want to do first?"
+      header: "Service"
       options:
         # Dynamic from the Step 13e filtered (REST-lane) provider list.
         # Use the fields list-providers actually emits: skill_name and description.
         - label: "{skill_name}"
-          description: "{description}"
+          description: "Sets up the login for {skill_name}: {description}"
       multiSelect: false
 ```
 
@@ -285,19 +285,19 @@ AskUserQuestion:
 ```text
 AskUserQuestion:
   questions:
-    - question: "Base URL for {skill_name}?"
+    - question: "{skill_name} is normally reached at the address below. Self-hosted installations sit somewhere else — if yours does, type its address instead."
       header: "URL"
       options:
-        - label: "{url} (Recommended)"
-          description: "Default URL for this provider"
+        - label: "{url} (recommended)"
+          description: "Uses the service's own hosted address, which is right unless you run your own copy"
       multiSelect: false
-    - question: "Authentication type?"
-      header: "Auth"
+    - question: "The address is set; what remains is how you prove who you are to it. {skill_name} normally expects the first option. How should it sign in?"
+      header: "Sign-in"
       options:
-        - label: "{provider_auth_type} (Recommended)"
-          description: "Default auth type for this provider"
+        - label: "{provider_auth_type} (recommended)"
+          description: "Signs in the way {skill_name} expects; you paste the secret in a moment"
         - label: "none"
-          description: "No authentication needed"
+          description: "Sends no credential at all — only right for a service left open to anyone who can reach it"
       multiSelect: false
 ```
 
@@ -320,17 +320,17 @@ Parse the output and locate the entry with `category == "version-control"`; its 
 ```text
 AskUserQuestion:
   questions:
-    - question: "SonarCloud organization?"
-      header: "Organization"
+    - question: "SonarCloud groups projects under an organization name. Reading this repository's address suggests the one below — correct it if your SonarCloud account uses a different name."
+      header: "Org"
       options:
-        - label: "{detected_org} (Recommended)"
-          description: "Detected from repository URL"
+        - label: "{detected_org} (recommended)"
+          description: "Taken from this repository's address, which usually matches the SonarCloud organization"
       multiSelect: false
-    - question: "SonarCloud project key?"
+    - question: "SonarCloud also needs the name it files this particular project under. That is normally the organization and repository joined together, as below."
       header: "Project"
       options:
-        - label: "{detected_project_key} (Recommended)"
-          description: "Detected as org_repo from repository URL"
+        - label: "{detected_project_key} (recommended)"
+          description: "Built from this repository's address in the shape SonarCloud creates by default"
       multiSelect: false
 ```
 

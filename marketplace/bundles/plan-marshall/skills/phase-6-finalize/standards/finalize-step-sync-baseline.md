@@ -147,21 +147,21 @@ Fire an `AskUserQuestion` before any destructive rebase. The rebase is local-onl
 ```yaml
 AskUserQuestion:
   questions:
-    - question: "Rebase the feature branch onto origin/{base_branch} before the finalize quality gates run?"
-      header: "Sync Baseline — Pre-rebase"
+    - question: "{base_branch} has moved on since this work started, so the checks about to run would be testing a combination that will never exist. Bringing your branch up to date first fixes that, and changes nothing outside this machine. Do it?"
+      header: "Update"
       description: |
         **Branch**: {head_branch} → {base_branch}
-        **Classifier**: classification={classification}, auto_reconcilable={auto_reconcilable}, upstream_commits={upstream_commit_count}
+        **Overlap check**: classification={classification}, auto_reconcilable={auto_reconcilable}, upstream commits={upstream_commit_count}
 
-        origin/{base_branch} advanced since this plan's baseline. Rebasing now
-        makes the downstream local quality gates and CI validate the actual
-        to-be-landed tree. This is a LOCAL rebase only — no force-push and no
-        CI wait happen at this step (the branch is not yet pushed).
+        Replaying your commits on top of the current {base_branch} means the
+        checks that follow — and the build on your pull request — test the
+        combination that will actually land. Nothing is pushed, and nothing is
+        merged, at this point.
       options:
-        - label: "Yes, rebase"
-          description: "Rebase the worktree branch onto origin/{base_branch} now"
+        - label: "Yes, rebase (recommended)"
+          description: "Your commits are replayed on top of the current {base_branch}, so everything from here on tests what will really land"
         - label: "No, skip"
-          description: "Leave the branch as-is; the late branch-cleanup rebase remains the backstop"
+          description: "Your branch stays where it is and the checks run against the older combination. Something updates it before it lands — either the same rebase attempted again just before the merge, or, on a project that merges through its host's merge queue, the queue doing it for you and re-testing the result"
       multiSelect: false
 ```
 

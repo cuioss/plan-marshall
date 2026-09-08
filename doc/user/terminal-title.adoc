@@ -50,7 +50,7 @@ If you have Settings Sync enabled, the change propagates across all your VS Code
 
 * **Tab still shows the process name** — the user-settings edit didn't stick. Verify the key is present in `~/Library/Application Support/Code/User/settings.json` and no workspace override is masking it (`Cmd+Shift+P` → "Preferences: Open Workspace Settings (JSON)").
 * **Tab shows `2.1.114` intermittently** — `env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE` is missing or set to a non-`"1"` value in `./.claude/settings.local.json`. Re-run `/marshall-steward` → Configuration → Terminal title, or add the key manually under the `env` block.
-* **Tab label is blank inside Claude Code** — no render-hook entry is installed, so nothing composes a title. The tab title is delivered exclusively by the hook `terminalSequence` envelope, which Claude Code writes on the render-trigger events the wizard installs; re-run `/marshall-steward` → Configuration → Terminal title and confirm the `hooks` block in `./.claude/settings.local.json` carries the render entries.
+* **Tab label is blank inside Claude Code** — no render-hook entry is installed, so nothing composes a title. The tab title reaches the terminal only as the title the hook hands to Claude Code in its `terminalSequence` field, which Claude Code writes on the render-trigger events the wizard installs; re-run `/marshall-steward` → Configuration → Terminal title and confirm the `hooks` block in `./.claude/settings.local.json` carries the render entries.
 
 == JetBrains IDEs (IntelliJ IDEA, PyCharm, GoLand, WebStorm, RustRover, Rider, …)
 
@@ -73,4 +73,4 @@ The `statusLine` entry the wizard writes into `./.claude/settings.local.json` is
 === Troubleshooting
 
 * **Statusline missing inside Claude Code** — confirm `settings["statusLine"]` exists in `./.claude/settings.local.json` and points at the script with the `--statusline` flag. Re-run `/marshall-steward` → Configuration → Terminal title if absent.
-* **OSC bytes leak as visible text in the terminal** (e.g. `]0;➤ claude` appearing as output) — the renderer composed the title correctly and handed the escape sequence to Claude Code in the `terminalSequence` envelope; the IDE then rendered those bytes literally instead of consuming them as an in-band escape sequence. This is cosmetic and harmless — the tab title couldn't update anyway (see "Why it cannot be fixed from our side" above). Run `claude` in an external terminal emulator to avoid it.
+* **OSC bytes leak as visible text in the terminal** (e.g. `]0;➤ claude` appearing as output) — the renderer composed the title correctly and handed the escape sequence to Claude Code in its `terminalSequence` field; the IDE then rendered those bytes literally instead of consuming them as an in-band escape sequence. This is cosmetic and harmless — the tab title couldn't update anyway (see "Why it cannot be fixed from our side" above). Run `claude` in an external terminal emulator to avoid it.

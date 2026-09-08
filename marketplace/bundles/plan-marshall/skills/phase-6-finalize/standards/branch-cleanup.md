@@ -300,10 +300,10 @@ AskUserQuestion:
         - Pull latest
         - Delete local branch {head_branch}
       options:
-        - label: "Yes, proceed"
-          description: "Execute the pre-merge preparation above; merge will be confirmed separately"
+        - label: "Yes, proceed (recommended)"
+          description: "Runs the preparation listed above and stops there — you are asked again before anything is merged, so nothing lands on {base_branch} on the strength of this answer alone"
         - label: "No, skip"
-          description: "Leave branch as-is"
+          description: "Nothing is prepared and nothing is merged. Your branch, the pull request and the local checkout are all left exactly as they stand, and finalize can be re-run later"
       multiSelect: false
 ```
 
@@ -601,23 +601,21 @@ Only when the FIFO poll loop exhausts `{wait_budget}` without admission does the
 ```yaml
 AskUserQuestion:
   questions:
-    - question: "Another plan ({blocking_plan_id}) is at the front of the merge queue. Keep waiting, or skip this merge?"
-      header: "Branch Cleanup — Merge-queue wait budget exhausted"
+    - question: "Only one plan may merge at a time, and another one ({blocking_plan_id}) has been ahead of this one for {wait_budget} seconds without finishing. Nothing has gone wrong — it is simply taking longer than the wait allows. Keep waiting, or leave this merge for later?"
+      header: "Merge queue"
       description: |
-        **Front-of-queue plan**: {blocking_plan_id}
+        **Ahead of this plan**: {blocking_plan_id}
         **This plan**: {plan_id}
-        **Wait budget**: {wait_budget}s (exhausted)
+        **Waited so far**: {wait_budget}s
 
-        The unified merge-lock serializes the merge-to-main critical
-        section behind a FIFO admission queue. {blocking_plan_id} is ahead
-        of this plan (or holds the lock) and has not yet released. The
-        {wait_budget}-second FIFO poll budget elapsed without this plan
-        reaching the front.
+        Merges are taken strictly in the order plans joined the queue. This
+        plan has not been overtaken and it has not failed — it is simply
+        behind one that is slow.
       options:
-        - label: "Wait and retry"
-          description: "Re-enter the FIFO poll loop for another {wait_budget}-second budget"
+        - label: "Wait and retry (recommended)"
+          description: "Keeps this plan's place in line and waits another {wait_budget} seconds; usually the plan ahead finishes and this one merges next"
         - label: "Skip merge"
-          description: "Defer merge; exit cleanly so finalize can be re-entered later"
+          description: "Stops here without merging. Your branch and pull request are untouched, but this plan gives up its place in line — re-running finalize later joins the back of whatever queue exists then"
       multiSelect: false
 ```
 
@@ -663,10 +661,10 @@ AskUserQuestion:
         - Workflow exits cleanly; the branch is left in place as it stands
         - Re-enter finalize later to merge (state == merged short-circuits this prompt if you merged manually)
       options:
-        - label: "Yes, merge"
-          description: "Authorize the merge — routed by use_merge_queue: safe-merge --delete-branch (+ admin fallback) on false; pr merge-queue enqueue on true"
+        - label: "Yes, merge (recommended)"
+          description: "{The checks above have already passed. The change lands on {base_branch} now and the branch is deleted; this is the point of no easy return | The change joins the merge queue. The queue re-tests it against the latest {base_branch} and, if that passes, merges it and deletes the branch itself — so it lands shortly rather than now, and a red re-test stops it} (routed by use_merge_queue, as the description block above is)"
         - label: "No, skip merge"
-          description: "Defer merge; exit cleanly so finalize can be re-entered later"
+          description: "Nothing is merged and nothing is deleted. Your pull request stays open exactly as it is, and re-running finalize picks up from here"
       multiSelect: false
 ```
 
@@ -1025,10 +1023,10 @@ AskUserQuestion:
         cannot be described, so it cannot be authorized past — merging is
         not on offer here.
       options:
-        - label: "Retry the barrier now"
-          description: "Loop back into finalize so the failed call is re-observed"
+        - label: "Retry the barrier now (recommended)"
+          description: "Runs the check again straight away; a call that failed once usually succeeds on a second attempt and the merge then proceeds normally"
         - label: "Defer merge"
-          description: "Skip the merge; re-enter finalize later"
+          description: "Stops here without merging and without retrying. Your pull request is left open and untouched; re-run finalize when you want another attempt"
       multiSelect: false
 ```
 
@@ -1229,11 +1227,11 @@ AskUserQuestion:
         might still have answered on a later pass.
       options:
         - label: "Split the PR into diffs under the cap"
-          description: "Defer this merge; land the change as smaller PRs the reviewer will read"
+          description: "Nothing merges now. You break the change into smaller pull requests, each under the ceiling, which the reviewer will then read"
         - label: "Accept the coverage gap (record reason)"
-          description: "Merge with EVERY unproven bot's non-participation recorded as one HEAD-bound authorization"
+          description: "The change lands unreviewed by EVERY reviewer listed above, not just the size-capped one. Your reason is written down against this exact version"
         - label: "Disable this reviewer for this PR"
-          description: "Move the bot to optional_bots for THIS PLAN only; it stays required elsewhere"
+          description: "This reviewer stops being required, for this plan only. It stays required on every other plan and every future pull request"
       multiSelect: false
 ```
 
@@ -1304,12 +1302,12 @@ AskUserQuestion:
         were never handled. Merging now would land the PR with open
         bot feedback.
       options:
-        - label: "Re-triage now"
-          description: "Loop back into automatic-review triage before merging"
+        - label: "Re-triage now (recommended)"
+          description: "Works through the outstanding comments first — fixing, dismissing or accepting each — and then comes back here to merge"
         - label: "Merge anyway (record reason)"
-          description: "Proceed to merge despite unhandled comments; a reason is recorded"
+          description: "{The change lands on {base_branch} with those comments still unanswered | The change joins the merge queue with those comments still unanswered, and the queue merges it into {base_branch} once its own re-test passes} (routed by use_merge_queue, the same value that routes the pre-merge prompt). Your reason is written down against this exact version, so a later reader can see what was accepted and why"
         - label: "Defer merge"
-          description: "Skip the merge; re-enter finalize later"
+          description: "Stops here without merging and without triaging. The comments stay outstanding and your pull request stays open; re-run finalize when you are ready"
       multiSelect: false
 ```
 
@@ -1727,20 +1725,23 @@ Get branch information from references context (already available from Step 2 co
 ```text
 AskUserQuestion:
   questions:
-    - question: "PR creation and merge are handled outside this workflow. Ready to switch back to base branch and clean up?"
-      header: "Branch Cleanup (local-only)"
+    - question: "The work is finished and committed on {head_branch}. This project opens and merges its own pull requests, so nothing here will do that — all that is left is tidying up your local checkout. Tidying deletes the local copy of {head_branch}: that is safe once the branch is pushed, and loses the work if it is not. Is {head_branch} pushed?"
+      header: "Tidy up"
       description: |
         **Branch**: {head_branch} → {base_branch}
 
-        **Actions**:
-        - Switch to {base_branch}
-        - Pull latest changes
-        - Delete local branch {head_branch}
+        **What happens if you tidy up**:
+        - Your checkout moves back to {base_branch}
+        - {base_branch} is brought up to date from the remote
+        - The local copy of {head_branch} is deleted
+
+        Nothing is pushed either way, and no branch on the remote is created,
+        changed, or deleted.
       options:
-        - label: "Yes, proceed"
-          description: "Switch to base branch and clean up"
+        - label: "Yes, it is pushed"
+          description: "Moves you back to {base_branch}, brings it up to date, and deletes the local copy of {head_branch}; the pushed branch keeps the work"
         - label: "No, skip"
-          description: "Stay on current branch"
+          description: "Leaves you on {head_branch} with everything as it stands and deletes nothing. Choose this if the branch is not pushed yet, or if you still have work to do on it"
       multiSelect: false
 ```
 

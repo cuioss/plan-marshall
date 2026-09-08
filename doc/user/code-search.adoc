@@ -188,18 +188,18 @@ Two things it *does* cover that are easy to assume otherwise: untracked-but-not-
 
 == Asking what the substrate can answer here
 
-A zero result from `search` is only trustworthy if the search actually ran. The same question applies one level up: *can this envelope answer graph, ownership, or content questions at all?* The `capabilities` verb answers it for the envelope you are in right now:
+A zero result from `search` is only trustworthy if the search actually ran. The same question applies one level up: *can this run answer graph, ownership, or content questions at all?* The `capabilities` verb answers it for the run you are in right now:
 
 [source,bash]
 ----
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture capabilities
 ----
 
-It reports each capability as `derivable` / `not_derivable` (module edges, path attribution) or `available` / `unavailable` (content search), so an empty answer from a *missing producer* is never mistaken for a real *found nothing*. The report is computed fresh for the executing project directory and is never cached across dispatches — so it is correct inside a dispatched subagent, not only in the main session.
+It reports each capability as `derivable` / `not_derivable` (module edges, path attribution) or `available` / `unavailable` (content search), so an empty answer from a *missing producer* is never mistaken for a real *found nothing*. The report is computed fresh for the executing project directory and is never carried over from an earlier run — so it is correct inside a sub-agent, not only in the main session.
 
 == Why this verb exists
 
-A subagent dispatched to do a piece of work does not always get the same tool set the main session has. Its `Grep` and `Glob` tools may be unavailable, and the xref:enforcement-hook.adoc[enforcement hook] refuses Bash file-search programs inside a plan context. Before this verb existed, an agent in that position had no sanctioned way to answer "which file contains X" and had to hand the question back as a coverage gap.
+A sub-agent handed a piece of work does not always get the same tool set the main session has. Its `Grep` and `Glob` tools may be unavailable, and the xref:enforcement-hook.adoc[enforcement hook] refuses Bash file-search programs inside a plan context. Before this verb existed, an agent in that position had no sanctioned way to answer "which file contains X" and had to hand the question back as a coverage gap.
 
 `architecture search --content` is that sanctioned path. It is also the better tool for the job in the main session: hits arrive already attributed to a module and category, and the response stays proportional to the number of matching files rather than to the number of matches.
 
