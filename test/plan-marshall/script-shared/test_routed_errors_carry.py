@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import _build_execute_factory as factory
 import _build_server_protocol as proto
+import pytest
 from _build_parse import Issue, UnitTestSummary
 from _build_shared import cmd_run_common
 
@@ -140,6 +141,26 @@ class TestReadLogVerdictCarriesErrors:
 # ===========================================================================
 
 
+#: Marker for the row whose job log is never written at all.
+_NO_LOG = object()
+
+#: ``(job-log content, the files the carried rows name — ``None`` when the key
+#: must be absent)``. Absence is absence: a failure whose log holds no table, and
+#: a log that cannot be read, both leave the key off so the renderer keeps its
+#: own parse rather than being handed an empty carry.
+_ROUTED_ERROR_CASES = [
+    (_ROUTED_FAILURE_LOG, ['test/test_thing.py']),
+    ('status: error\nexit_code: 1\n', None),
+    (_NO_LOG, None),
+]
+
+_ROUTED_ERROR_IDS = [
+    'a-log-carrying-the-inner-error-table',
+    'a-log-with-no-table',
+    'a-log-that-was-never-written',
+]
+
+
 class TestDaemonResultCarriesRoutedErrors:
     """``_daemon_result_to_direct`` hands the rows on under ``routed_errors``."""
 
@@ -155,26 +176,25 @@ class TestDaemonResultCarriesRoutedErrors:
             './pw module-tests plan-marshall',
         )
 
-    def test_a_routed_failure_attaches_the_inner_rows(self, tmp_path):
-        result = self._routed(_write(tmp_path, 'job.log', _ROUTED_FAILURE_LOG))
+    @pytest.mark.parametrize(
+        'log_content,expected_files', _ROUTED_ERROR_CASES, ids=_ROUTED_ERROR_IDS
+    )
+    def test_the_key_is_attached_only_when_the_log_carries_a_table(
+        self, tmp_path, log_content, expected_files
+    ):
+        log_file = (
+            str(tmp_path / 'absent.log')
+            if log_content is _NO_LOG
+            else _write(tmp_path, 'job.log', log_content)
+        )
+
+        result = self._routed(log_file)
 
         assert result['status'] == 'error'
-        assert len(result['routed_errors']) == 1
-        assert result['routed_errors'][0]['file'] == 'test/test_thing.py'
-
-    def test_a_failure_whose_log_carries_no_table_attaches_no_key(self, tmp_path):
-        """Matched negative: absence is absence, so the renderer keeps its parse."""
-        content = 'status: error\nexit_code: 1\n'
-        result = self._routed(_write(tmp_path, 'job.log', content))
-
-        assert result['status'] == 'error'
-        assert 'routed_errors' not in result
-
-    def test_an_unreadable_log_attaches_no_key(self, tmp_path):
-        result = self._routed(str(tmp_path / 'absent.log'))
-
-        assert result['status'] == 'error'
-        assert 'routed_errors' not in result
+        if expected_files is None:
+            assert 'routed_errors' not in result
+        else:
+            assert [row['file'] for row in result['routed_errors']] == expected_files
 
 
 # ===========================================================================
@@ -229,49 +249,47 @@ _CARRIED_ROWS = [
 _SYNTHETIC = 'no structured errors were parsed'
 
 
+#: ``(extra result keys, parser, fragments stdout must carry, fragments it must
+#: NOT)``. The three rows that keep the synthetic row are the matched controls,
+#: and they are what make the rest of the table mean anything: the synthetic row
+#: is the status/``errors[]`` contradiction guard, and the carry narrows WHEN it
+#: fires without removing it. An empty carry is not a carry — the routed log held
+#: no table, so the guard still applies.
+_RENDER_PREFERENCE_CASES = [
+    (
+        {'routed_errors': _CARRIED_ROWS},
+        _empty_parser,
+        ['test/test_thing.py', 'Test test_thing failed'],
+        [],
+    ),
+    ({'routed_errors': _CARRIED_ROWS}, _empty_parser, [], [_SYNTHETIC]),
+    ({'routed_errors': _CARRIED_ROWS}, _empty_parser, [], ['routed_errors']),
+    ({}, _empty_parser, [_SYNTHETIC], []),
+    ({'routed_errors': []}, _empty_parser, [_SYNTHETIC], []),
+    ({}, _in_process_parser, ['test/test_local.py'], [_SYNTHETIC]),
+]
+
+_RENDER_PREFERENCE_IDS = [
+    'the-carried-row-reaches-the-emitted-table',
+    'the-synthetic-row-is-not-published-alongside-a-carry',
+    'the-carry-key-itself-is-not-leaked-into-the-payload',
+    'without-a-carry-the-synthetic-row-still-appears',
+    'an-empty-carry-is-not-a-carry',
+    'an-in-process-build-keeps-its-own-parse',
+]
+
+
 class TestRoutedErrorsWinOverTheReparse:
     """The renderer publishes the carried rows instead of synthesising one."""
 
-    def test_the_carried_row_reaches_the_emitted_errors_table(self, capsys):
-        cmd_run_common(_failing_result(routed_errors=_CARRIED_ROWS), _empty_parser, 'python')
+    @pytest.mark.parametrize(
+        'extra,parser,present,absent', _RENDER_PREFERENCE_CASES, ids=_RENDER_PREFERENCE_IDS
+    )
+    def test_which_error_rows_the_renderer_publishes(self, capsys, extra, parser, present, absent):
+        cmd_run_common(_failing_result(**extra), parser, 'python')
+
         stdout = capsys.readouterr().out
-
-        assert 'test/test_thing.py' in stdout
-        assert 'Test test_thing failed' in stdout
-
-    def test_the_synthetic_row_is_not_published(self, capsys):
-        cmd_run_common(_failing_result(routed_errors=_CARRIED_ROWS), _empty_parser, 'python')
-
-        assert _SYNTHETIC not in capsys.readouterr().out
-
-    def test_control_without_the_carry_the_synthetic_row_still_appears(self, capsys):
-        """THE matched control, and the reason the rest of this class means anything.
-
-        The identical failing result and the identical empty parse — only the
-        carry removed. The synthetic row must still be there: it is the
-        status/``errors[]`` contradiction guard, and this fix narrows when it
-        fires without removing it.
-        """
-        cmd_run_common(_failing_result(), _empty_parser, 'python')
-
-        assert _SYNTHETIC in capsys.readouterr().out
-
-    def test_an_empty_carry_is_not_a_carry(self, capsys):
-        """An empty list means the routed log held no table — keep the guard."""
-        cmd_run_common(_failing_result(routed_errors=[]), _empty_parser, 'python')
-
-        assert _SYNTHETIC in capsys.readouterr().out
-
-    def test_an_in_process_build_keeps_its_own_parse(self, capsys):
-        """Control: a build carrying no ``routed_errors`` is untouched by the carry."""
-        cmd_run_common(_failing_result(), _in_process_parser, 'python')
-        stdout = capsys.readouterr().out
-
-        assert 'test/test_local.py' in stdout
-        assert _SYNTHETIC not in stdout
-
-    def test_the_carry_key_is_not_leaked_into_the_emitted_payload(self, capsys):
-        """``routed_errors`` is an INPUT to the renderer, like ``routed_tests_run``."""
-        cmd_run_common(_failing_result(routed_errors=_CARRIED_ROWS), _empty_parser, 'python')
-
-        assert 'routed_errors' not in capsys.readouterr().out
+        for fragment in present:
+            assert fragment in stdout, stdout
+        for fragment in absent:
+            assert fragment not in stdout, stdout

@@ -46,42 +46,48 @@ from _build_execute import CaptureStrategy
 from _build_execute_factory import default_command_key_fn
 from _resolve_project_dir_fixtures import NO_PLAN_SENTINEL
 
+#: ``(command args, key)`` for the scope-aware half of the contract: the module
+#: scope is part of the key, so a module-scoped invocation cannot inherit the
+#: full-scope one's learned timeout.
+_COMMAND_KEY_SCOPE_CASES = [
+    ('module-tests', 'module_tests'),
+    ('module-tests plan-marshall', 'module_tests_plan_marshall'),
+]
 
-class TestDefaultCommandKeyFnEmpty:
-    """Edge case: empty or missing command args fall back to 'default'."""
+_COMMAND_KEY_SCOPE_IDS = ['unscoped-uses-the-full-args', 'scoped-includes-the-module']
 
-    def test_empty_string_returns_default(self):
-        assert default_command_key_fn('') == 'default'
+#: ``(first command args, second command args)`` — pairs that must NOT share a
+#: key. Each row is a different axis two invocations could collide along: scope,
+#: module, and command.
+_COMMAND_KEY_DISTINCT_PAIRS = [
+    ('module-tests', 'module-tests plan-marshall'),
+    ('module-tests plan-marshall', 'module-tests pm-plugin-development'),
+    ('compile plan-marshall', 'module-tests plan-marshall'),
+]
+
+_COMMAND_KEY_DISTINCT_PAIR_IDS = [
+    'full-scope-versus-module-scope',
+    'two-different-modules',
+    'two-different-commands-in-one-module',
+]
 
 
 class TestDefaultCommandKeyFnScopeAware:
     """Scope-aware behavior: the full args contribute to the key so
     that module-scoped invocations don't collide with full-scope ones."""
 
-    def test_unscoped_command_uses_full_args(self):
-        assert default_command_key_fn('module-tests') == 'module_tests'
+    @pytest.mark.parametrize(
+        'command_args,expected_key', _COMMAND_KEY_SCOPE_CASES, ids=_COMMAND_KEY_SCOPE_IDS
+    )
+    def test_the_key_carries_the_whole_command_args(self, command_args, expected_key):
+        assert default_command_key_fn(command_args) == expected_key
 
-    def test_scoped_command_includes_module(self):
-        assert default_command_key_fn('module-tests plan-marshall') == 'module_tests_plan_marshall'
-
-    def test_unscoped_and_scoped_do_not_collide(self):
-        """Regression: full-scope and module-scoped must be distinct keys
-        so adaptive timeouts learn per-scope values instead of mixing."""
-        unscoped = default_command_key_fn('module-tests')
-        scoped = default_command_key_fn('module-tests plan-marshall')
-        assert unscoped != scoped
-
-    def test_different_modules_produce_different_keys(self):
-        """Two module-scoped invocations of the same command must not
-        share a key — each module gets its own dedup slot."""
-        a = default_command_key_fn('module-tests plan-marshall')
-        b = default_command_key_fn('module-tests pm-plugin-development')
-        assert a != b
-
-    def test_different_commands_same_module_are_distinct(self):
-        compile_key = default_command_key_fn('compile plan-marshall')
-        tests_key = default_command_key_fn('module-tests plan-marshall')
-        assert compile_key != tests_key
+    @pytest.mark.parametrize(
+        'first,second', _COMMAND_KEY_DISTINCT_PAIRS, ids=_COMMAND_KEY_DISTINCT_PAIR_IDS
+    )
+    def test_two_invocations_that_must_not_share_a_key(self, first, second):
+        """Distinct keys are what make adaptive timeouts learn per-scope values."""
+        assert default_command_key_fn(first) != default_command_key_fn(second)
 
     def test_isolation_across_multiple_scopes(self):
         """All four permutations (full, moduleA, moduleB, moduleC) must
@@ -95,24 +101,39 @@ class TestDefaultCommandKeyFnScopeAware:
         assert len(keys) == 4
 
 
+#: ``(command args, key)`` for the normalizing half: whitespace and hyphens
+#: become underscores, the ends are stripped, and an empty argument string falls
+#: back to the literal ``default`` rather than to an empty key.
+_COMMAND_KEY_NORMALIZATION_CASES = [
+    ('', 'default'),
+    ('compile', 'compile'),
+    ('quality-gate', 'quality_gate'),
+    ('clean verify', 'clean_verify'),
+    ('  module-tests  ', 'module_tests'),
+    ('module-tests plan-marshall', 'module_tests_plan_marshall'),
+]
+
+_COMMAND_KEY_NORMALIZATION_IDS = [
+    'empty-string-falls-back-to-default',
+    'single-word-is-unchanged',
+    'hyphen-becomes-underscore',
+    'space-becomes-underscore',
+    'surrounding-whitespace-is-stripped',
+    'spaces-and-hyphens-together',
+]
+
+
 class TestDefaultCommandKeyFnNormalization:
     """The function must normalize whitespace and hyphens to underscores
     so the resulting key is safe for use as a config/dedup identifier."""
 
-    def test_hyphens_replaced_with_underscores(self):
-        assert default_command_key_fn('quality-gate') == 'quality_gate'
-
-    def test_spaces_replaced_with_underscores(self):
-        assert default_command_key_fn('clean verify') == 'clean_verify'
-
-    def test_leading_and_trailing_whitespace_stripped(self):
-        assert default_command_key_fn('  module-tests  ') == 'module_tests'
-
-    def test_mixed_spaces_and_hyphens(self):
-        assert default_command_key_fn('module-tests plan-marshall') == 'module_tests_plan_marshall'
-
-    def test_simple_single_word(self):
-        assert default_command_key_fn('compile') == 'compile'
+    @pytest.mark.parametrize(
+        'command_args,expected_key',
+        _COMMAND_KEY_NORMALIZATION_CASES,
+        ids=_COMMAND_KEY_NORMALIZATION_IDS,
+    )
+    def test_the_key_is_a_safe_identifier(self, command_args, expected_key):
+        assert default_command_key_fn(command_args) == expected_key
 
 
 def _noop(_args):
@@ -157,86 +178,92 @@ class TestAddProjectDirArg:
         assert not hasattr(ns, 'project-dir')
 
 
-class TestRunSubparserProjectDir:
-    """run subparser must expose --project-dir with default '.'."""
+def _register_run(subs) -> None:
+    add_run_subparser(subs).set_defaults(func=_noop)
 
-    def _build(self) -> argparse.ArgumentParser:
+
+def _register_coverage(subs) -> None:
+    add_coverage_subparser(subs).set_defaults(func=_noop)
+
+
+#: ``(registration function, the argv that reaches that subcommand)`` — one row
+#: per subparser the shared CLI registers individually. Each is built ALONE, so a
+#: subcommand that only gets the flag through the declarative helper is not
+#: credited here.
+_SUBPARSER_REGISTRATIONS = [
+    (_register_run, ['run', '--command-args', 'verify']),
+    (lambda subs: add_parse_subparser(subs, _parse_log_stub), ['parse', '--log', '/tmp/build.log']),
+    (_register_coverage, ['coverage-report']),
+    (lambda subs: add_check_warnings_subparser(subs, _noop), ['check-warnings']),
+]
+
+_SUBPARSER_REGISTRATION_IDS = ['run', 'parse', 'coverage-report', 'check-warnings']
+
+#: ``(extra argv, expected project_dir)`` — the flag left at its default, and the
+#: flag supplied. Crossed with the registrations above, so every subparser is
+#: checked on both.
+_PROJECT_DIR_ARGV_CASES = [([], '.'), (['--project-dir', '/wt'], '/wt')]
+
+_PROJECT_DIR_ARGV_IDS = ['default-is-dot', 'override-is-honoured']
+
+
+class TestSubparserProjectDir:
+    """Every individually-registered subparser exposes --project-dir."""
+
+    @pytest.mark.parametrize(
+        'extra_argv,expected', _PROJECT_DIR_ARGV_CASES, ids=_PROJECT_DIR_ARGV_IDS
+    )
+    @pytest.mark.parametrize(
+        'register_fn,base_argv', _SUBPARSER_REGISTRATIONS, ids=_SUBPARSER_REGISTRATION_IDS
+    )
+    def test_subparser_carries_project_dir(self, register_fn, base_argv, extra_argv, expected):
         parser = argparse.ArgumentParser()
         subs = parser.add_subparsers(dest='command', required=True)
-        run_parser = add_run_subparser(subs)
-        run_parser.set_defaults(func=_noop)
-        return parser
+        register_fn(subs)
 
-    def test_run_default_project_dir_is_dot(self):
-        parser = self._build()
-        ns = _parse(parser, ['run', '--command-args', 'verify'])
-        assert ns.project_dir == '.'
+        ns = _parse(parser, [*base_argv, *extra_argv])
 
-    def test_run_accepts_project_dir_override(self):
-        parser = self._build()
-        ns = _parse(parser, ['run', '--command-args', 'verify', '--project-dir', '/work/tree'])
-        assert ns.project_dir == '/work/tree'
+        assert ns.project_dir == expected
 
 
-class TestParseSubparserProjectDir:
-    """parse subparser must expose --project-dir with default '.'."""
+#: The plan id every ``--plan-id`` row supplies.
+_CANONICAL_PLAN_ID = 'task-routing-canonical'
 
-    def _build(self) -> argparse.ArgumentParser:
-        parser = argparse.ArgumentParser()
-        subs = parser.add_subparsers(dest='command', required=True)
-        add_parse_subparser(subs, _parse_log_stub)
-        return parser
+#: ``(argv, expected project_dir)`` against the parser the declarative helper
+#: builds. The first four rows leave the flag at its default; the last two supply
+#: it, so both halves are checked end-to-end rather than only the default.
+_STANDARD_PROJECT_DIR_CASES = [
+    (['run', '--command-args', 'verify'], '.'),
+    (['parse', '--log', '/tmp/log'], '.'),
+    (['coverage-report'], '.'),
+    (['check-warnings'], '.'),
+    (['run', '--command-args', 'verify', '--project-dir', '/plan/wt'], '/plan/wt'),
+    (['parse', '--log', '/tmp/log', '--project-dir', '/plan/wt'], '/plan/wt'),
+]
 
-    def test_parse_default_project_dir_is_dot(self):
-        parser = self._build()
-        ns = _parse(parser, ['parse', '--log', '/tmp/build.log'])
-        assert ns.project_dir == '.'
-
-    def test_parse_accepts_project_dir_override(self):
-        parser = self._build()
-        ns = _parse(parser, ['parse', '--log', '/tmp/build.log', '--project-dir', '/wt'])
-        assert ns.project_dir == '/wt'
-
-
-class TestCoverageSubparserProjectDir:
-    """coverage-report subparser must expose --project-dir with default '.'."""
-
-    def _build(self) -> argparse.ArgumentParser:
-        parser = argparse.ArgumentParser()
-        subs = parser.add_subparsers(dest='command', required=True)
-        cov = add_coverage_subparser(subs)
-        cov.set_defaults(func=_noop)
-        return parser
-
-    def test_coverage_default_project_dir_is_dot(self):
-        parser = self._build()
-        ns = _parse(parser, ['coverage-report'])
-        assert ns.project_dir == '.'
-
-    def test_coverage_accepts_project_dir_override(self):
-        parser = self._build()
-        ns = _parse(parser, ['coverage-report', '--project-dir', '/wt'])
-        assert ns.project_dir == '/wt'
+_STANDARD_PROJECT_DIR_IDS = [
+    'run-default',
+    'parse-default',
+    'coverage-report-default',
+    'check-warnings-default',
+    'run-override',
+    'parse-override',
+]
 
 
-class TestCheckWarningsSubparserProjectDir:
-    """check-warnings subparser must expose --project-dir with default '.'."""
-
-    def _build(self) -> argparse.ArgumentParser:
-        parser = argparse.ArgumentParser()
-        subs = parser.add_subparsers(dest='command', required=True)
-        add_check_warnings_subparser(subs, _noop)
-        return parser
-
-    def test_check_warnings_default_project_dir_is_dot(self):
-        parser = self._build()
-        ns = _parse(parser, ['check-warnings'])
-        assert ns.project_dir == '.'
-
-    def test_check_warnings_accepts_project_dir_override(self):
-        parser = self._build()
-        ns = _parse(parser, ['check-warnings', '--project-dir', '/wt'])
-        assert ns.project_dir == '/wt'
+def _build_full_parser() -> argparse.ArgumentParser:
+    """The parser ``register_standard_subparsers`` produces with every slot filled."""
+    fns = register_standard_subparsers(
+        run_handler=_noop,
+        parse_handler=_parse_log_stub,
+        coverage_handler=_noop,
+        check_warnings_handler=_noop,
+    )
+    parser = argparse.ArgumentParser()
+    subs = parser.add_subparsers(dest='command', required=True)
+    for fn in fns:
+        fn(subs)
+    return parser
 
 
 class TestRegisterStandardSubparsersPropagation:
@@ -244,48 +271,33 @@ class TestRegisterStandardSubparsersPropagation:
     standard subparser it produces. This is the end-to-end regression: if a
     new subparser is added without add_project_dir_arg, these tests catch it."""
 
-    def _build_full_parser(self) -> argparse.ArgumentParser:
-        fns = register_standard_subparsers(
-            run_handler=_noop,
-            parse_handler=_parse_log_stub,
-            coverage_handler=_noop,
-            check_warnings_handler=_noop,
-        )
-        parser = argparse.ArgumentParser()
-        subs = parser.add_subparsers(dest='command', required=True)
-        for fn in fns:
-            fn(subs)
-        return parser
+    @pytest.mark.parametrize(
+        'argv,expected', _STANDARD_PROJECT_DIR_CASES, ids=_STANDARD_PROJECT_DIR_IDS
+    )
+    def test_every_standard_subcommand_carries_project_dir(self, argv, expected):
+        assert _parse(_build_full_parser(), argv).project_dir == expected
 
-    def test_run_has_project_dir(self):
-        parser = self._build_full_parser()
-        ns = _parse(parser, ['run', '--command-args', 'verify'])
-        assert ns.project_dir == '.'
 
-    def test_parse_has_project_dir(self):
-        parser = self._build_full_parser()
-        ns = _parse(parser, ['parse', '--log', '/tmp/log'])
-        assert ns.project_dir == '.'
+#: ``(argv, expected plan_id)``. The ``None`` rows are what fails when a
+#: subparser is registered without ``add_project_dir_arg``: the flag falls off
+#: silently and auto-routing stops working for that subcommand alone.
+_STANDARD_PLAN_ID_CASES = [
+    (['run', '--command-args', 'verify'], None),
+    (['run', '--command-args', 'verify', '--plan-id', _CANONICAL_PLAN_ID], _CANONICAL_PLAN_ID),
+    (['parse', '--log', '/tmp/log'], None),
+    (['parse', '--log', '/tmp/log', '--plan-id', _CANONICAL_PLAN_ID], _CANONICAL_PLAN_ID),
+    (['coverage-report', '--plan-id', _CANONICAL_PLAN_ID], _CANONICAL_PLAN_ID),
+    (['check-warnings', '--plan-id', _CANONICAL_PLAN_ID], _CANONICAL_PLAN_ID),
+]
 
-    def test_coverage_has_project_dir(self):
-        parser = self._build_full_parser()
-        ns = _parse(parser, ['coverage-report'])
-        assert ns.project_dir == '.'
-
-    def test_check_warnings_has_project_dir(self):
-        parser = self._build_full_parser()
-        ns = _parse(parser, ['check-warnings'])
-        assert ns.project_dir == '.'
-
-    def test_run_override_end_to_end(self):
-        parser = self._build_full_parser()
-        ns = _parse(parser, ['run', '--command-args', 'verify', '--project-dir', '/plan/wt'])
-        assert ns.project_dir == '/plan/wt'
-
-    def test_parse_override_end_to_end(self):
-        parser = self._build_full_parser()
-        ns = _parse(parser, ['parse', '--log', '/tmp/log', '--project-dir', '/plan/wt'])
-        assert ns.project_dir == '/plan/wt'
+_STANDARD_PLAN_ID_IDS = [
+    'run-default-is-none',
+    'run-override',
+    'parse-default-is-none',
+    'parse-override',
+    'coverage-report-override',
+    'check-warnings-override',
+]
 
 
 class TestRegisterStandardSubparsersPlanIdPropagation:
@@ -299,65 +311,27 @@ class TestRegisterStandardSubparsersPlanIdPropagation:
     ``--project-dir`` tests above continue to cover the escape-hatch path.
     """
 
-    def _build_full_parser(self) -> argparse.ArgumentParser:
-        fns = register_standard_subparsers(
-            run_handler=_noop,
-            parse_handler=_parse_log_stub,
-            coverage_handler=_noop,
-            check_warnings_handler=_noop,
-        )
-        parser = argparse.ArgumentParser()
-        subs = parser.add_subparsers(dest='command', required=True)
-        for fn in fns:
-            fn(subs)
-        return parser
-
-    def test_run_default_plan_id_is_none(self):
-        parser = self._build_full_parser()
-        ns = _parse(parser, ['run', '--command-args', 'verify'])
-        assert ns.plan_id is None
-
-    def test_run_accepts_plan_id_override(self):
-        parser = self._build_full_parser()
-        ns = _parse(parser, ['run', '--command-args', 'verify', '--plan-id', 'task-routing-canonical'])
-        assert ns.plan_id == 'task-routing-canonical'
-
-    def test_parse_default_plan_id_is_none(self):
-        parser = self._build_full_parser()
-        ns = _parse(parser, ['parse', '--log', '/tmp/log'])
-        assert ns.plan_id is None
-
-    def test_parse_accepts_plan_id_override(self):
-        parser = self._build_full_parser()
-        ns = _parse(parser, ['parse', '--log', '/tmp/log', '--plan-id', 'task-routing-canonical'])
-        assert ns.plan_id == 'task-routing-canonical'
-
-    def test_coverage_accepts_plan_id_override(self):
-        parser = self._build_full_parser()
-        ns = _parse(parser, ['coverage-report', '--plan-id', 'task-routing-canonical'])
-        assert ns.plan_id == 'task-routing-canonical'
-
-    def test_check_warnings_accepts_plan_id_override(self):
-        parser = self._build_full_parser()
-        ns = _parse(parser, ['check-warnings', '--plan-id', 'task-routing-canonical'])
-        assert ns.plan_id == 'task-routing-canonical'
+    @pytest.mark.parametrize(
+        'argv,expected', _STANDARD_PLAN_ID_CASES, ids=_STANDARD_PLAN_ID_IDS
+    )
+    def test_every_standard_subcommand_carries_plan_id(self, argv, expected):
+        assert _parse(_build_full_parser(), argv).plan_id == expected
 
     def test_run_accepts_both_flags_at_argparse_level(self):
         """Argparse accepts both flags; the resolver enforces mutual exclusion later."""
-        parser = self._build_full_parser()
         ns = _parse(
-            parser,
+            _build_full_parser(),
             [
                 'run',
                 '--command-args',
                 'verify',
                 '--plan-id',
-                'task-routing-canonical',
+                _CANONICAL_PLAN_ID,
                 '--project-dir',
                 '/plan/wt',
             ],
         )
-        assert ns.plan_id == 'task-routing-canonical'
+        assert ns.plan_id == _CANONICAL_PLAN_ID
         assert ns.project_dir == '/plan/wt'
 
 
@@ -769,75 +743,53 @@ class TestResolveWrapperAutoDetect:
 # disagrees, so a lying / lagging daemon can never launder a failure into a green.
 
 
+#: ``(daemon job_status, job-log text, command, rendered status, rendered
+#: exit_code)``. A ``None`` log text means the log file is never written, so the
+#: cross-check has nothing to read; a ``None`` exit_code means the row does not
+#: pin one. The first two rows are the regression anchors — the daemon claims
+#: success over a log that says otherwise — and the rest are what keeps the
+#: cross-check from simply distrusting every success it is handed.
+_DAEMON_CROSS_CHECK_CASES = [
+    ('success', '[EXEC] ./pw verify\nstatus: error\nexit_code: 5\n', 'pw verify', 'error', 5),
+    ('success', 'status: error\n', 'pw verify', 'error', 1),
+    ('success', 'status: success\nexit_code: 0\n', 'pw verify', 'success', None),
+    ('success', 'plain chatter with no build TOON at all\n', 'echo hi', 'success', None),
+    ('success', None, 'echo hi', 'success', None),
+    ('timeout', 'status: success\nexit_code: 0\n', 'pw verify', 'timeout', None),
+]
+
+_DAEMON_CROSS_CHECK_IDS = [
+    'lying-success-over-an-error-log',
+    'error-verdict-with-no-parseable-exit-code',
+    'agreeing-success-verdict',
+    'non-wrapper-log-yields-no-verdict',
+    'log-file-was-never-written',
+    'timeout-leg-ignores-a-contradicting-log',
+]
+
+
 class TestDaemonResultCrossCheck:
     """Unit coverage of the ``_daemon_result_to_direct`` verdict cross-check."""
 
-    def test_lying_success_over_error_log_fails_closed(self, tmp_path):
-        # The regression anchor: the daemon reports success, but the job log's own
-        # build TOON says error — the client must render error, not success.
+    @pytest.mark.parametrize(
+        'job_status,log_text,command,expected_status,expected_exit_code',
+        _DAEMON_CROSS_CHECK_CASES,
+        ids=_DAEMON_CROSS_CHECK_IDS,
+    )
+    def test_the_rendered_verdict_follows_the_job_log(
+        self, tmp_path, job_status, log_text, command, expected_status, expected_exit_code
+    ):
         log = tmp_path / 'job.log'
-        log.write_text('[EXEC] ./pw verify\nstatus: error\nexit_code: 5\n')
+        if log_text is not None:
+            log.write_text(log_text)
 
         result = factory._daemon_result_to_direct(
-            {'job_status': 'success', 'log_file': str(log), 'duration_seconds': 4}, 'pw verify'
+            {'job_status': job_status, 'log_file': str(log), 'duration_seconds': 4}, command
         )
 
-        assert result['status'] == 'error'
-        assert result['exit_code'] == 5
-
-    def test_error_verdict_without_exit_code_falls_back_to_one(self, tmp_path):
-        # A disagreeing verdict carrying no parseable exit_code fails closed with
-        # a synthetic exit_code of 1 (``verdict.exit_code or 1``).
-        log = tmp_path / 'job.log'
-        log.write_text('status: error\n')
-
-        result = factory._daemon_result_to_direct(
-            {'job_status': 'success', 'log_file': str(log)}, 'pw verify'
-        )
-
-        assert result['status'] == 'error'
-        assert result['exit_code'] == 1
-
-    def test_agreeing_success_verdict_stays_success(self, tmp_path):
-        log = tmp_path / 'job.log'
-        log.write_text('status: success\nexit_code: 0\n')
-
-        result = factory._daemon_result_to_direct(
-            {'job_status': 'success', 'log_file': str(log), 'duration_seconds': 3}, 'pw verify'
-        )
-
-        assert result['status'] == 'success'
-
-    def test_none_verdict_non_wrapper_log_stays_success(self, tmp_path):
-        # A non-wrapper command emits no build TOON; a None verdict keeps success,
-        # mirroring the daemon's own None-keeps-verdict rule.
-        log = tmp_path / 'job.log'
-        log.write_text('plain chatter with no build TOON at all\n')
-
-        result = factory._daemon_result_to_direct(
-            {'job_status': 'success', 'log_file': str(log)}, 'echo hi'
-        )
-
-        assert result['status'] == 'success'
-
-    def test_missing_log_stays_success(self, tmp_path):
-        result = factory._daemon_result_to_direct(
-            {'job_status': 'success', 'log_file': str(tmp_path / 'absent.log')}, 'echo hi'
-        )
-
-        assert result['status'] == 'success'
-
-    def test_timeout_leg_ignores_a_contradicting_log(self, tmp_path):
-        # The timeout leg never reads the log — a supervisor timeout outranks any
-        # log content, exactly as on the daemon side.
-        log = tmp_path / 'job.log'
-        log.write_text('status: success\nexit_code: 0\n')
-
-        result = factory._daemon_result_to_direct(
-            {'job_status': 'timeout', 'log_file': str(log), 'duration_seconds': 9}, 'pw verify'
-        )
-
-        assert result['status'] == 'timeout'
+        assert result['status'] == expected_status
+        if expected_exit_code is not None:
+            assert result['exit_code'] == expected_exit_code
 
     def test_killed_leg_ignores_a_contradicting_log(self, tmp_path):
         log = tmp_path / 'job.log'

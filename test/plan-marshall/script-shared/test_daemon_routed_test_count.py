@@ -21,6 +21,7 @@ from contextlib import redirect_stdout
 
 import _build_execute_factory as factory
 import _build_shared as build_shared
+import pytest
 
 
 def _write_wrapper_toon(path, *, status='success', exit_code=0, tests_run=None):
@@ -65,35 +66,46 @@ def _noop_parser(_log_file):
     return [], None, 'success'
 
 
+#: Marker for "the key must not be attached at all". The ABSENCE is what makes
+#: the count read as unknown downstream; attaching a zero instead would be the
+#: original defect relocated one function earlier.
+_ABSENT = object()
+
+#: ``(count written into the job log, the command that produced it, the value
+#: ``routed_tests_run`` must carry)``. The measured-zero row is the one that
+#: makes the absent row meaningful: a non-test gate genuinely executed none, and
+#: that is a different fact from a count nobody measured.
+_ROUTED_COUNT_CASES = [
+    (2750, './pw module-tests plan-marshall', 2750),
+    (None, './pw module-tests plan-marshall', _ABSENT),
+    (0, './pw quality-gate plan-marshall', 0),
+]
+
+_ROUTED_COUNT_IDS = [
+    'a-measured-non-zero-count',
+    'no-count-in-the-job-log',
+    'a-measured-zero',
+]
+
+
 class TestRoutedResultCarriesTheInnerCount:
     """``_daemon_result_to_direct`` attaches the count the inner build measured."""
 
-    def test_measured_count_is_attached_to_the_routed_result(self, tmp_path):
-        log = _write_wrapper_toon(tmp_path / 'job.log', tests_run=2750)
+    @pytest.mark.parametrize(
+        'tests_run,command,expected', _ROUTED_COUNT_CASES, ids=_ROUTED_COUNT_IDS
+    )
+    def test_the_inner_count_reaches_the_routed_result(
+        self, tmp_path, tests_run, command, expected
+    ):
+        log = _write_wrapper_toon(tmp_path / 'job.log', tests_run=tests_run)
 
-        result = factory._daemon_result_to_direct(_waited(log), './pw module-tests plan-marshall')
-
-        assert result['status'] == 'success'
-        assert result['routed_tests_run'] == 2750
-
-    def test_absent_count_attaches_no_key_at_all(self, tmp_path):
-        # The matched negative. The key's ABSENCE is what makes the count read as
-        # unknown downstream; attaching a zero here would be the original defect
-        # relocated one function earlier.
-        log = _write_wrapper_toon(tmp_path / 'job.log', tests_run=None)
-
-        result = factory._daemon_result_to_direct(_waited(log), './pw module-tests plan-marshall')
+        result = factory._daemon_result_to_direct(_waited(log), command)
 
         assert result['status'] == 'success'
-        assert 'routed_tests_run' not in result
-
-    def test_measured_zero_is_carried_as_a_zero(self, tmp_path):
-        # A non-test gate genuinely executed none: distinct from the absent case.
-        log = _write_wrapper_toon(tmp_path / 'job.log', tests_run=0)
-
-        result = factory._daemon_result_to_direct(_waited(log), './pw quality-gate plan-marshall')
-
-        assert result['routed_tests_run'] == 0
+        if expected is _ABSENT:
+            assert 'routed_tests_run' not in result
+        else:
+            assert result['routed_tests_run'] == expected
 
 
 class TestOuterResultPublishesTheRoutedCount:

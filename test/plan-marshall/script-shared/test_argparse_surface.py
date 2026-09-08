@@ -474,6 +474,32 @@ class TestPositiveControls:
 # ---------------------------------------------------------------------------
 
 
+_TIMEOUT_CONFIG = surf.DerivationConfig(use_disk_cache=False, timeout_seconds=1.0)
+#: A budget too small for even the root probe abandons the whole script.
+_NO_NODE_BUDGET_CONFIG = surf.DerivationConfig(use_disk_cache=False, max_nodes=0)
+
+#: One row per uncertainty path: ``(source builder, derivation config, expected
+#: reason)``. The config column is what lets the timeout and budget paths share
+#: the table with the three that need no configuration — every row is still the
+#: one ``_derive`` call and the one two-part assertion, varying only in the
+#: script probed and the reason the marker must carry.
+_NOT_DERIVABLE_CASES = [
+    (_nonzero_exit_source, NO_CACHE, surf.REASON_HELP_FAILED),
+    (_silent_source, NO_CACHE, surf.REASON_HELP_FAILED),
+    (_slow_source, _TIMEOUT_CONFIG, surf.REASON_HELP_FAILED),
+    (_no_structure_source, NO_CACHE, surf.REASON_NO_STRUCTURE),
+    (_alias_source, _NO_NODE_BUDGET_CONFIG, surf.REASON_BUDGET_EXHAUSTED),
+]
+
+_NOT_DERIVABLE_IDS = [
+    'nonzero-help-exit',
+    'empty-help-output',
+    'help-probe-times-out',
+    'usage-line-but-no-argparse-section-header',
+    'node-budget-exhausted-before-the-root-probe',
+]
+
+
 class TestNegativeControls:
     """Every uncertainty path yields an explicit marker, not an empty surface.
 
@@ -483,36 +509,25 @@ class TestNegativeControls:
     empty-but-confident surface these controls exist to forbid.
     """
 
-    def test_nonzero_help_exit_is_not_derivable(self, tmp_path: Path):
-        result = _derive(tmp_path, _nonzero_exit_source())
-        assert isinstance(result, surf.NotDerivable)
-        assert result.reason == surf.REASON_HELP_FAILED
+    @pytest.mark.parametrize(
+        'source_builder,config,expected_reason',
+        _NOT_DERIVABLE_CASES,
+        ids=_NOT_DERIVABLE_IDS,
+    )
+    def test_an_uncertain_derivation_names_the_reason_it_gave_up(
+        self,
+        tmp_path: Path,
+        source_builder,
+        config: surf.DerivationConfig,
+        expected_reason: str,
+    ):
+        result = _derive(tmp_path, source_builder(), config=config)
 
-    def test_empty_help_output_is_not_derivable(self, tmp_path: Path):
-        result = _derive(tmp_path, _silent_source())
-        assert isinstance(result, surf.NotDerivable)
-        assert result.reason == surf.REASON_HELP_FAILED
-
-    def test_timeout_is_not_derivable(self, tmp_path: Path):
-        config = surf.DerivationConfig(use_disk_cache=False, timeout_seconds=1.0)
-        result = _derive(tmp_path, _slow_source(), config=config)
-        assert isinstance(result, surf.NotDerivable)
-        assert result.reason == surf.REASON_HELP_FAILED
-
-    def test_output_without_argparse_structure_is_not_derivable(self, tmp_path: Path):
-        result = _derive(tmp_path, _no_structure_source())
-        assert isinstance(result, surf.NotDerivable)
-        assert result.reason == surf.REASON_NO_STRUCTURE, (
-            'help with a usage: line but no section header must be rejected as '
-            'unstructured, not read as a parser that declares nothing'
+        assert isinstance(result, surf.NotDerivable), (
+            'an uncertain derivation must yield an explicit marker — an empty '
+            f'surface reads as "this script accepts nothing": {result!r}'
         )
-
-    def test_exhausted_node_budget_is_not_derivable(self, tmp_path: Path):
-        """A budget too small for even the root probe abandons the whole script."""
-        config = surf.DerivationConfig(use_disk_cache=False, max_nodes=0)
-        result = _derive(tmp_path, _alias_source(), config=config)
-        assert isinstance(result, surf.NotDerivable)
-        assert result.reason == surf.REASON_BUDGET_EXHAUSTED
+        assert result.reason == expected_reason
 
     def test_suppressed_choice_list_yields_unconfident_children(self, tmp_path: Path):
         """``metavar=`` with no grouping lines: the child listing is UNKNOWN.

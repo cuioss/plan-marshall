@@ -291,37 +291,36 @@ def test_release_failure_is_logged_not_raised(monkeypatch):
         pass
 
 
+#: ``(the marshal.json body ``read_json`` returns, resolved max_retries)``. Only
+#: one row configures a usable value; every other shape — a missing block, a
+#: non-positive count, a bool (an int SUBCLASS, so it would pass a naive
+#: isinstance check), and two non-mapping bodies — must resolve to the default
+#: rather than to whatever the malformed value happens to coerce to.
+_MAX_RETRIES_CASES = [
+    ({}, bqs._DEFAULT_MAX_RETRIES),
+    ({'build': {'queue': {'max_retries': 7}}}, 7),
+    ({'build': {'queue': {'max_retries': 0}}}, bqs._DEFAULT_MAX_RETRIES),
+    ({'build': {'queue': {'max_retries': True}}}, bqs._DEFAULT_MAX_RETRIES),
+    (['not', 'a', 'dict'], bqs._DEFAULT_MAX_RETRIES),
+    ({'build': 'not-a-dict'}, bqs._DEFAULT_MAX_RETRIES),
+]
+
+_MAX_RETRIES_IDS = [
+    'no-build-block-at-all',
+    'configured-positive-count',
+    'non-positive-count',
+    'bool-is-not-a-count',
+    'config-body-is-not-a-mapping',
+    'build-block-is-not-a-mapping',
+]
+
+
 class TestResolveMaxRetries:
-    def test_default_when_block_absent(self, monkeypatch):
-        monkeypatch.setattr(bqs, 'read_json', lambda *a, **k: {})
-        assert bqs._resolve_max_retries() == bqs._DEFAULT_MAX_RETRIES
+    @pytest.mark.parametrize('config,expected', _MAX_RETRIES_CASES, ids=_MAX_RETRIES_IDS)
+    def test_max_retries_resolution(self, monkeypatch, config, expected):
+        monkeypatch.setattr(bqs, 'read_json', lambda *_a, **_k: config)
 
-    def test_honors_configured_value(self, monkeypatch):
-        monkeypatch.setattr(
-            bqs, 'read_json', lambda *a, **k: {'build': {'queue': {'max_retries': 7}}}
-        )
-        assert bqs._resolve_max_retries() == 7
-
-    def test_non_positive_falls_back(self, monkeypatch):
-        monkeypatch.setattr(
-            bqs, 'read_json', lambda *a, **k: {'build': {'queue': {'max_retries': 0}}}
-        )
-        assert bqs._resolve_max_retries() == bqs._DEFAULT_MAX_RETRIES
-
-    def test_bool_value_falls_back(self, monkeypatch):
-        # bool is an int subclass — must NOT be accepted as a retry count.
-        monkeypatch.setattr(
-            bqs, 'read_json', lambda *a, **k: {'build': {'queue': {'max_retries': True}}}
-        )
-        assert bqs._resolve_max_retries() == bqs._DEFAULT_MAX_RETRIES
-
-    def test_non_dict_config_falls_back(self, monkeypatch):
-        monkeypatch.setattr(bqs, 'read_json', lambda *a, **k: ['not', 'a', 'dict'])
-        assert bqs._resolve_max_retries() == bqs._DEFAULT_MAX_RETRIES
-
-    def test_non_dict_build_block_falls_back(self, monkeypatch):
-        monkeypatch.setattr(bqs, 'read_json', lambda *a, **k: {'build': 'not-a-dict'})
-        assert bqs._resolve_max_retries() == bqs._DEFAULT_MAX_RETRIES
+        assert bqs._resolve_max_retries() == expected
 
 
 def test_emit_queue_timeout_renders_structured_error(capsys):

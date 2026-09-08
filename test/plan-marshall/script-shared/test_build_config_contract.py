@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Cross-build-system contract tests (H48).
+"""Cross-build-system contract tests.
 
 Verifies that all four build skill ExecuteConfig objects conform to the
 shared contract documented in build-api-reference.md. Ensures the unified
@@ -59,19 +59,16 @@ def test_config_has_capture_strategy(name, config):
     assert isinstance(config.capture_strategy, CaptureStrategy), f'{name} has invalid capture_strategy'
 
 
+#: The hook attributes every ExecuteConfig must supply as a callable. Each is a
+#: seam the shared execute path invokes, so a non-callable is a crash at build
+#: time rather than a contract note.
+_CALLABLE_CONFIG_HOOKS = ['scope_fn', 'command_key_fn', 'build_command_fn']
+
+
+@pytest.mark.parametrize('hook', _CALLABLE_CONFIG_HOOKS, ids=_CALLABLE_CONFIG_HOOKS)
 @pytest.mark.parametrize('name,config', CONFIG_PARAMS, ids=CONFIG_IDS)
-def test_config_has_callable_scope_fn(name, config):
-    assert callable(config.scope_fn), f'{name} scope_fn not callable'
-
-
-@pytest.mark.parametrize('name,config', CONFIG_PARAMS, ids=CONFIG_IDS)
-def test_config_has_callable_command_key_fn(name, config):
-    assert callable(config.command_key_fn), f'{name} command_key_fn not callable'
-
-
-@pytest.mark.parametrize('name,config', CONFIG_PARAMS, ids=CONFIG_IDS)
-def test_config_has_callable_build_command_fn(name, config):
-    assert callable(config.build_command_fn), f'{name} build_command_fn not callable'
+def test_config_hook_is_callable(name, config, hook):
+    assert callable(getattr(config, hook)), f'{name} {hook} not callable'
 
 
 _SIMPLE_ARGS = {
