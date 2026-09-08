@@ -16,15 +16,18 @@ per-finding attribution needed. That is why the signal arrives free on every PR
 rather than needing a bespoke corpus.
 
 **But "the gates passed" is not the same claim as "the gates saw this tree", and
-the difference is not hypothetical here.** Two ``mutates_source: true`` steps run
-BETWEEN the gates and review — ``finalize-step-simplify`` (``order: 8``) and
-``finalize-step-security-audit`` (``order: 9``) — and the dispatcher's re-entry
-check (``phase-6-finalize/SKILL.md`` Step 3 item 1) only re-fires a step the loop
-REACHES. A forward pass runs 5 → 7 → 8 → 9 → 11 → 20 → 30 monotonically and never
-returns to order 5, so lines those two steps introduce reach the reviewer having
-never been gated. Counting a finding on such a line as a gate escape would
-attribute to the gates a miss they were never given the chance to make, and would
-bias the share in an unknown direction.
+the difference is not hypothetical here.** Source-mutating steps run BETWEEN the
+gates and review — ``finalize-step-simplify`` (``order: 8``) and
+``finalize-step-security-audit`` (``order: 9``), and the gate itself (``order: 5``),
+whose own item-5f commit lands after the tree it just certified — and the
+dispatcher's re-entry check (``phase-6-finalize/SKILL.md`` Step 3 item 1) only
+re-fires a step the loop REACHES. A forward pass runs 5 → 7 → 8 → 9 → 11 → 20 → 30
+monotonically and never returns to order 5, so lines those steps introduce reach
+the reviewer having never been gated. No count is pinned here: membership is
+whatever each step's declared ``mutates_source`` makes it, so a step that declares
+the fact later is covered by its own declaration. Counting a finding on such a line
+as a gate escape would attribute to the gates a miss they were never given the
+chance to make, and would bias the share in an unknown direction.
 
 The escape claim therefore rests on THREE inputs, each of which fails closed:
 

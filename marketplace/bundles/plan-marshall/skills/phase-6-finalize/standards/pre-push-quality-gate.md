@@ -557,7 +557,7 @@ that rule, not an enumeration of the paths that can reach Branch A.
 
 The persisted `head_at_completion` field is consumed by phase-6-finalize Step 3's resumable re-entry check: when the worktree HEAD has advanced past `{sha}` (typically because `automated-review` or `sonar-roundtrip` opened a loop-back fix-task that produced a new commit), the dispatcher re-fires this gate against the newer HEAD. See § "Verdict-input surface — deliberately undeclared" above for why the verdict-currency classifier never narrows that re-fire for THIS gate.
 
-Return a `commit_message` element in this step's return TOON so the dispatcher's item-5f commit instrumentation uses it when committing whatever this gate's own `quality-gate` arms auto-fixed in the worktree (when nothing was fixed the porcelain check is empty and the dispatcher commits nothing, so the returned message is simply unused):
+Return a `commit_message` element in this step's return TOON so the dispatcher's item-5f commit instrumentation uses it when committing whatever this gate's own `quality-gate` arms auto-fixed in the worktree. The condition under which that commit fires, and what it sweeps into it, is owned by [`../SKILL.md`](../SKILL.md) Step 3 item 5f(a)-(c) — read it there; it is not restated here:
 
 ```toon
 status: done

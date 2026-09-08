@@ -857,12 +857,15 @@ against `automatic-review` at `order: 30`. That is what makes the signal free ra
 study.
 
 ⚠ **"The gates passed" is not the same claim as "the gates saw this tree", and the gap is real on an
-ordinary forward pass.** Two `mutates_source: true` steps run BETWEEN the gates and review —
-`finalize-step-simplify` (`order: 8`) and `finalize-step-security-audit` (`order: 9`) — and the
+ordinary forward pass.** Source-mutating steps run BETWEEN the gates and review —
+`finalize-step-simplify` (`order: 8`) and `finalize-step-security-audit` (`order: 9`), and the gate
+itself (`order: 5`), whose own item-5f commit lands after the tree it just certified — and the
 dispatcher's re-entry check only re-fires a step the loop REACHES. A forward pass runs
-5 → 7 → 8 → 9 → 11 → 20 → 30 monotonically and never returns to order 5, so lines those two steps
-introduce reach the reviewer having never been gated. Counting a finding on such a line as a gate
-escape attributes to the gates a miss they were never given the chance to make.
+5 → 7 → 8 → 9 → 11 → 20 → 30 monotonically and never returns to order 5, so lines those steps
+introduce reach the reviewer having never been gated. No count is pinned here: membership is whatever
+each step's declared `mutates_source` makes it, so a step that declares the fact later is covered by
+its own declaration. Counting a finding on such a line as a gate escape attributes to the gates a miss
+they were never given the chance to make.
 
 The escape claim therefore rests on three inputs, each failing closed: the gate **verdict** (a red gate
 escaped nothing; an absent signal is unsubstantiated), the **gate-certified tree** (`head_at_completion`

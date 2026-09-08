@@ -21,11 +21,14 @@ repositories:
 * **Arm 3 — the matched control** (the same dirty tree, ``mutates_source: false``).
   Item 5f skips (a)-(d) entirely and the file stays uncommitted. Without this arm,
   arm 2 is satisfied by a harness that would commit under either declaration.
-* **Arm 4 — the constructed-argv pin.** Whether THIS repository's gate can leave a
-  dirty tree at all is a property of ``build.py``, and it is settled by asserting
-  the argv the gate constructs rather than by running it: ``ruff check`` carries no
-  ``--fix``, the SPDX check reports offenders instead of inserting headers, and the
-  executor bootstrap's only write target is git-ignored.
+* **Arm 4 — the constructed-argv pin.** Whether this repository's gate leaves a
+  dirty tree is a property of ``build.py``, settled by asserting the argv the gate
+  constructs rather than by running it. The claim is bounded by the invocation's
+  own scope, and that bound is DERIVED at run time from
+  ``build._quality_gate_could_run`` against ``build._QUALITY_GATE_DIMENSIONS``
+  rather than restated here — arm 4 runs module-scoped, so a dimension that scope
+  does not reach never enters the recorded argv and is outside what the sweep can
+  speak to.
 
 Plus the declaration assertions: the two frontmatter facts resolve truthy
 post-flip, and — jointly — ``mutates_source: true`` together with an order below
@@ -281,9 +284,20 @@ def test_quality_gate_invokes_ruff_check_with_no_fix_flag(recorded_argv, monkeyp
     Asserted against the constructed argv rather than by running the gate: a real
     run costs minutes, and its outcome would depend on the tree it happened to
     run against.
+
+    The sweep below is bounded by the dimensions this invocation reaches, and the
+    bound is READ from ``build`` rather than written down here, so a dimension
+    added there moves it instead of leaving the assertion's claim wider than the
+    scope it searched.
     """
     # Arrange — module-scoped, so the whole-tree-only arms stay out of scope.
     monkeypatch.setattr(build, 'check_spdx_headers', lambda paths: [])
+    reached = build._quality_gate_could_run(_ARM4_MODULE)
+    assert reached < build._QUALITY_GATE_DIMENSIONS, (
+        'this arm is module-scoped, so its argv sweep covers only part of the '
+        'gate; were _quality_gate_could_run to report the whole set at module '
+        'scope, this bound and the docstring above would be stale'
+    )
 
     # Act
     exit_code = build.cmd_quality_gate(_ARM4_MODULE)
@@ -297,7 +311,9 @@ def test_quality_gate_invokes_ruff_check_with_no_fix_flag(recorded_argv, monkeyp
     for cmd in recorded_argv:
         offenders = [token for token in cmd if token in _MUTATING_RUFF_TOKENS]
         assert not offenders, (
-            f'the gate must construct no source-rewriting argv; {offenders!r} in {cmd!r}'
+            'the gate must construct no source-rewriting argv within the '
+            f'dimensions this invocation reaches ({sorted(reached)}); '
+            f'{offenders!r} in {cmd!r}'
         )
 
 
