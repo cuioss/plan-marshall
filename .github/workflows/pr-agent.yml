@@ -41,7 +41,7 @@ permissions:
 
 jobs:
   review:
-    uses: cuioss/cuioss-organization/.github/workflows/reusable-pr-agent-review.yml@f27afe4e6667a4f7b466b2b9858acc25e5281665 # v0.24.0
+    uses: cuioss/cuioss-organization/.github/workflows/reusable-pr-agent-review.yml@566e3462391e26b13957e0c0bbf3628e28afe81a # v0.25.0
     with:
       # PILOT, repository-scoped. `/review` is not the surface that finds defects here, and
       # that is a measured result rather than a hypothesis. Across 223 findings stores and
