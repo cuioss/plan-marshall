@@ -284,7 +284,7 @@
     "pr_strategy": "compact",
     "pr_compact_max_changed_files": 150,
     "merge_queue_managed_externally": true,
-    "user_language": "auto"
+    "user_language": "english"
   },
   "providers": [
     {
@@ -353,7 +353,7 @@
       "no_plan_body_days": 7,
       "build_results_days": 5
     },
-    "provisioned_version": "0.1.1592",
-    "config_seed_fingerprint": "cf572469"
+    "provisioned_version": "0.1.1624",
+    "config_seed_fingerprint": "4d9d904a"
   }
 }
