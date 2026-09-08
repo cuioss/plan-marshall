@@ -746,7 +746,7 @@ def cmd_quality_gate(args) -> dict:
                                     constructs" hard rule)
       - analyze_skill_relative_temp_path (relative ``.plan/temp/...`` path
                                     consumed by ``git -C ... commit -F`` in
-                                    plan-marshall skill markdown — the harness
+                                    plan-marshall skill markdown — the host
                                     ``Write`` resolves the relative path against
                                     the main checkout while ``git -C`` resolves
                                     it against the worktree, so the round-trip

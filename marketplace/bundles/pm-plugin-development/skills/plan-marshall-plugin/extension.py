@@ -157,7 +157,7 @@ class Extension(ExtensionBase, DerivationResolverBase, PathAttributionBase):
         The project-local ``.claude`` tree this extension claims through Axis-D
         ``claim_paths`` is deliberately absent: that claim settles which module a
         path is attributed to, while this one decides whether a plan loads the
-        plugin-development skills, and a change to a project's own harness
+        plugin-development skills, and a change to a project's own target
         configuration is not marketplace-component development.
         """
         return ['marketplace/bundles/**']
@@ -319,7 +319,7 @@ class Extension(ExtensionBase, DerivationResolverBase, PathAttributionBase):
         **The ownership decision, made explicitly.** The ``.claude`` tree holds
         the project-local Claude Code plugin artifacts — skills under
         ``.claude/skills``, slash commands under ``.claude/commands``, and the
-        ``.claude/settings.json`` harness configuration. Every one of them is a
+        ``.claude/settings.json`` target configuration. Every one of them is a
         Claude Code plugin artifact, and the plugin-development domain is the one
         that understands that content: it owns the plugin doctor, the marketplace
         inventory, and the plugin architecture standards. **Owner = who

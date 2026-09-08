@@ -83,6 +83,13 @@ Resolved absolute path:
 
 ## Permission Pattern
 
+> **Claude target material.** The `Bash(...)` permission-wildcard grammar below is the Claude
+> settings-DSL form; it is a twin of the canonical grammar in
+> `plugin-architecture/references/frontmatter-standards.md` (Permission Patterns), which is also
+> marked Claude target material. An author on another registered target expresses the same
+> permission intent through the platform-runtime `permission configure` op, which renders the
+> target's own settings grammar.
+
 Each skill with scripts generates ONE permission wildcard per script type:
 
 ```text

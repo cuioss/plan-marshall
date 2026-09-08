@@ -106,7 +106,7 @@ Configuration in `extension.py` implements the Extension API contract:
 The plugin-development domain owns the `.claude` project-local tree through the
 Axis-D path-attribution seam. The tree holds Claude Code plugin artifacts — the
 project-local skills under `.claude/skills`, the slash commands under
-`.claude/commands`, and the `.claude/settings.json` harness configuration — and
+`.claude/commands`, and the `.claude/settings.json` target configuration — and
 this domain is the one that understands that content (it owns the plugin doctor,
 the marketplace inventory, and the plugin architecture standards). **Owner = who
 understands the content.**
