@@ -53,7 +53,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from _doctor_shared import Finding
+from _doctor_shared import Finding, resolve_project_skill_trees
 from _rule_registry import RuleDescriptor
 
 RULE_ID = 'skill-missing-mode'
@@ -154,10 +154,10 @@ def _skill_md_files(marketplace_root: Path) -> list[Path]:
             if skill_md.is_file():
                 files.append(skill_md)
 
-    # .claude/skills lives at the repo root: marketplace_root is
-    # <repo>/marketplace/bundles, so repo_root = marketplace_root.parent.parent.
-    claude_skills = marketplace_root.parent.parent / '.claude' / 'skills'
-    if claude_skills.is_dir():
+    # Project-local skills are resolved through the platform-runtime layout op
+    # (the Claude ``.claude/skills`` tree or the OpenCode layout), so no
+    # segment-wise ``.claude/skills`` anchor is hardcoded.
+    for claude_skills in resolve_project_skill_trees(marketplace_root):
         try:
             claude_skill_dirs = sorted(claude_skills.iterdir())
         except OSError:

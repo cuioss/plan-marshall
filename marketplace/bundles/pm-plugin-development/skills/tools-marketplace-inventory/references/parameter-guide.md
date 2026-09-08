@@ -12,11 +12,11 @@ Directory scope to scan. Default: `auto`
 
 | Value | Description |
 |-------|-------------|
-| `auto` | **Default**. Tries `marketplace/bundles/` first, falls back to `plugin-cache` |
+| `auto` | **Default**. Tries `marketplace/bundles/` first, falls back to the deployed-bundle cache |
 | `marketplace` | Explicit: scans marketplace/bundles/ directory only |
-| `plugin-cache` | Explicit: scans ~/.claude/plugins/cache/plan-marshall/ only |
-| `global` | Scans ~/.claude directory |
-| `project` | Scans .claude directory in current working directory |
+| `plugin-cache` | Explicit: scans the deployed-bundle cache only (resolved target-aware via the `layout bundle-cache-root` op; the Claude deployment lives under `~/.claude/plugins/cache/plan-marshall/`) |
+| `global` | Scans the user-global deployment directory (Claude: `~/.claude`) |
+| `project` | Scans the project-local skill tree (resolved target-aware via the `layout skill-roots` op; Claude: `.claude/skills`) |
 
 The `auto` default makes the script work in both the marketplace repo and other projects without specifying a scope.
 

@@ -117,7 +117,7 @@ from _analyze_shared import (
     load_default_suppression_config,
     read_frontmatter_disable_list,
 )
-from _doctor_shared import Finding
+from _doctor_shared import Finding, resolve_project_skill_trees
 from _rule_registry import RuleDescriptor
 
 RULE_ID = 'no-lesson-id-in-skill-prose'
@@ -425,36 +425,27 @@ def _skill_source_targets(marketplace_root: Path) -> list[tuple[Path, str | None
     return results
 
 
-def _claude_skills_root(marketplace_root: Path) -> Path:
-    """Resolve the project-local ``.claude/skills`` tree from ``marketplace_root``.
-
-    ``marketplace_root`` is ``<repo>/marketplace/bundles``; the project-local
-    skills tree is ``<repo>/.claude/skills`` — two levels up, then
-    ``.claude/skills``.
-    """
-    return marketplace_root.parent.parent / '.claude' / 'skills'
-
-
 def _claude_skill_source_targets(marketplace_root: Path) -> list[tuple[Path, str | None, str]]:
-    """Return ``(absolute_path, None, kind)`` for every ``.claude/skills/**`` file.
+    """Return ``(absolute_path, None, kind)`` for every project-local skill file.
 
-    Scope: ``<repo>/.claude/skills/**`` — both ``*.md`` (kind ``'markdown'``)
-    and ``*.py`` (kind ``'python'``). The ``rel_to_bundles`` slot is ``None``
-    because these files live outside ``marketplace/bundles/`` and have no
-    allowlisted members — the project-local tree is scanned in full.
+    Scope: the project-local skill trees (``<repo>/.claude/skills/**`` on
+    Claude, the OpenCode layout on OpenCode), resolved through the
+    platform-runtime layout op (``_doctor_shared.resolve_project_skill_trees``)
+    — both ``*.md`` (kind ``'markdown'``) and ``*.py`` (kind ``'python'``).
+    The ``rel_to_bundles`` slot is ``None`` because these files live outside
+    ``marketplace/bundles/`` and have no allowlisted members — the project-local
+    tree is scanned in full.
     """
-    skills_root = _claude_skills_root(marketplace_root)
-    if not skills_root.is_dir():
-        return []
     results: list[tuple[Path, str | None, str]] = []
-    for glob, kind in _KIND_BY_GLOB:
-        try:
-            sources = sorted(skills_root.rglob(glob))
-        except OSError:
-            continue
-        for src in sources:
-            if src.is_file():
-                results.append((src, None, kind))
+    for skills_root in resolve_project_skill_trees(marketplace_root):
+        for glob, kind in _KIND_BY_GLOB:
+            try:
+                sources = sorted(skills_root.rglob(glob))
+            except OSError:
+                continue
+            for src in sources:
+                if src.is_file():
+                    results.append((src, None, kind))
     return results
 
 

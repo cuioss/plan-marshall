@@ -93,7 +93,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from _doctor_shared import Finding
+from _doctor_shared import Finding, resolve_project_skill_trees
 from _rule_registry import RuleDescriptor
 
 RULE_ID = 'mutates-source-step-post-merge-order'
@@ -237,9 +237,13 @@ def _candidate_paths(marketplace_root: Path) -> list[Path]:
                 continue
             candidates.extend(sorted(skills_dir.glob('*/SKILL.md')))
 
-    project_skills = marketplace_root.parent.parent / '.claude' / 'skills'
-    if project_skills.is_dir():
-        candidates.extend(sorted(project_skills.glob('finalize-step-*/SKILL.md')))
+    # Project-local finalize steps are resolved through the platform-runtime
+    # layout op (the Claude ``.claude/skills`` tree or the OpenCode layout).
+    for skills_root in resolve_project_skill_trees(marketplace_root):
+        try:
+            candidates.extend(sorted(skills_root.glob('finalize-step-*/SKILL.md')))
+        except OSError:
+            continue
 
     return candidates
 

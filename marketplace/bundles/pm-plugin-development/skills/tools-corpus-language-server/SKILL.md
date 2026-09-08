@@ -210,6 +210,12 @@ the placeholders are **plugin-scoped**: `${CLAUDE_PLUGIN_ROOT}` and `${CLAUDE_PR
 substituted for a plugin's own declared servers, so they carry no meaning in a general-purpose editor
 config. Use the form that matches where the declaration lives.
 
+> **Claude target material.** The `lspServers` declaration below is a Claude Code plugin-manifest
+> mechanism: the `${CLAUDE_PLUGIN_ROOT}` / `${CLAUDE_PROJECT_DIR}` placeholders and the
+> `.claude-plugin/plugin.json` inline form are Claude-target vocabulary. An author on another
+> registered target does not write an `lspServers` block in a Claude plugin manifest; the corpus
+> server is still spawned by a client, but the declaration grammar is the target's own.
+
 **Form 1 — this bundle's own manifest, in a checkout or fork you maintain.** Goes in
 `marketplace/bundles/pm-plugin-development/.claude-plugin/plugin.json` (inline) or a `.lsp.json` at
 that bundle's root:

@@ -82,7 +82,7 @@ If command > 100 lines, logic should move to a skill.
 | Pattern | Use Case | Key Behavior |
 |---------|----------|-------------|
 | Single Component | Analyze one component by name | Glob for specific file, verify 1 match |
-| Scope-Based Discovery | Analyze by scope param | marketplace (inventory), global (~/.claude), project (.claude) |
+| Scope-Based Discovery | Analyze by scope param | marketplace (inventory), global (user-global deployment root; Claude `~/.claude`), project (project-local skill roots via the `layout skill-roots` op; Claude `.claude`) |
 | Bundle-by-Bundle | Process multiple components | Group by bundle, sequential processing, completion checks |
 | Parallel Within Bundle | Analyze multiple components in same bundle | Launch agents in parallel within bundle, sequential between bundles |
 | Two-Phase Fix | Categorize then apply fixes | Safe fixes auto-applied, risky fixes prompt via AskUserQuestion |

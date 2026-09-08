@@ -118,8 +118,8 @@ All 9 workflows follow the same pattern:
 
 3. **Discover Components** (based on scope parameter)
    - marketplace scope: Use marketplace-inventory
-   - global scope: Glob ~/.claude/{component}/
-   - project scope: Glob .claude/{component}/
+   - global scope: Glob the active target's user-global deployment root (Claude: `~/.claude/{component}/`)
+   - project scope: Glob the active target's project-local skill roots (resolved via the platform-runtime `layout skill-roots` op; Claude: `.claude/{component}/`)
 
 4. **Analyze Components** (using doctor-marketplace)
 

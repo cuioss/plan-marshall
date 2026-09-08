@@ -113,7 +113,7 @@ In file mode (default), a summary is printed and full inventory is written to `.
 | `--include-descriptions` | off | Extract description fields from YAML frontmatter |
 | `--full` | off | Include frontmatter fields and skill subdirectory contents |
 | `--include-tests` | off | Include test files from `test/{bundle-name}/` directories |
-| `--include-project-skills` | off | Include project-level skills from `.claude/skills/` |
+| `--include-project-skills` | off | Include project-level skills from the active target's project-local skill roots (resolved via the `layout skill-roots` op; Claude: `.claude/skills/`) |
 | `--direct-result` | off | Output full TOON to stdout instead of writing to file |
 | `--format` | `toon` | Output format: `toon` or `json` |
 

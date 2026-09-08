@@ -91,7 +91,7 @@ import sys
 from pathlib import Path
 from types import ModuleType
 
-from _doctor_shared import Finding
+from _doctor_shared import Finding, resolve_project_skill_trees
 from _rule_registry import RuleDescriptor
 
 RULE_ID = 'step-configurable-contract'
@@ -280,31 +280,25 @@ def _builtin_step_docs(marketplace_root: Path) -> list[Path]:
     return docs
 
 
-def _claude_skills_root(marketplace_root: Path) -> Path:
-    """Resolve the project-local ``.claude/skills`` tree from ``marketplace_root``.
-
-    ``marketplace_root`` is ``<repo>/marketplace/bundles``; the project-local
-    skills tree is ``<repo>/.claude/skills`` — two levels up, then
-    ``.claude/skills``.
-    """
-    return marketplace_root.parent.parent / '.claude' / 'skills'
-
-
 def _project_local_step_docs(marketplace_root: Path) -> list[Path]:
-    """Return project-local ``finalize-step-*/SKILL.md`` body docs."""
-    skills_root = _claude_skills_root(marketplace_root)
-    if not skills_root.is_dir():
-        return []
+    """Return project-local ``finalize-step-*/SKILL.md`` body docs.
+
+    The project-local trees are resolved through the platform-runtime layout op
+    (``_doctor_shared.resolve_project_skill_trees``), covering the Claude
+    ``.claude/skills`` tree and the OpenCode layout.
+    """
     docs: list[Path] = []
-    try:
-        for skill_dir in sorted(skills_root.glob('finalize-step-*')):
+    for skills_root in resolve_project_skill_trees(marketplace_root):
+        try:
+            step_dirs = sorted(skills_root.glob('finalize-step-*'))
+        except OSError:
+            continue
+        for skill_dir in step_dirs:
             if not skill_dir.is_dir():
                 continue
             skill_md = skill_dir / 'SKILL.md'
             if skill_md.is_file():
                 docs.append(skill_md)
-    except OSError:
-        pass
     return docs
 
 

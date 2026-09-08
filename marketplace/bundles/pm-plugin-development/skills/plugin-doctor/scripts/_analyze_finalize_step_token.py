@@ -83,7 +83,7 @@ import re
 import sys
 from pathlib import Path
 
-from _doctor_shared import Finding
+from _doctor_shared import Finding, resolve_project_skill_trees
 from _rule_registry import RuleDescriptor
 
 RULE_ID = 'finalize-step-token-mismatch'
@@ -277,16 +277,18 @@ def _bundle_targets(
 def _project_local_targets(marketplace_root: Path) -> list[tuple[Path, str]]:
     """Return ``(SKILL.md path, expected_step_id)`` for project-local steps.
 
-    Scope: ``<repo>/.claude/skills/finalize-step-*/SKILL.md``. The expected
-    step_id is ``project:{name}`` where ``{name}`` is the skill directory
-    basename.
+    Scope: the project-local skill trees (``<repo>/.claude/skills/finalize-step-*/SKILL.md``
+    on Claude, the OpenCode layout on OpenCode), resolved through the
+    platform-runtime layout op. The expected step_id is ``project:{name}`` where
+    ``{name}`` is the skill directory basename.
     """
-    skills_root = marketplace_root.parent.parent / '.claude' / 'skills'
-    if not skills_root.is_dir():
-        return []
     results: list[tuple[Path, str]] = []
-    try:
-        for skill_dir in sorted(skills_root.glob('finalize-step-*')):
+    for skills_root in resolve_project_skill_trees(marketplace_root):
+        try:
+            step_dirs = sorted(skills_root.glob('finalize-step-*'))
+        except OSError:
+            continue
+        for skill_dir in step_dirs:
             if not skill_dir.is_dir():
                 continue
             skill_md = skill_dir / 'SKILL.md'
@@ -294,8 +296,6 @@ def _project_local_targets(marketplace_root: Path) -> list[tuple[Path, str]]:
                 continue
             expected = f'project:{skill_dir.name}'
             results.append((skill_md, expected))
-    except OSError:
-        pass
     return results
 
 
