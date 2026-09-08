@@ -98,26 +98,19 @@ def test_canonical_commands_expected_keys():
     assert set(CANONICAL_COMMANDS.keys()) == expected
 
 
-#: ``(the aliases a canonical answers to, that canonical)``. An alias the table
-#: does not carry silently routes its profile nowhere, so the whole alias set of
-#: each canonical is stated rather than sampled. The rows prove alias ->
-#: canonical; ``test_the_alias_table_states_every_live_alias`` closes the other
-#: direction, so "whole" is asserted rather than merely claimed here.
-_PROFILE_ALIAS_CASES = [
-    (['integration-tests', 'integration-test', 'integrationTest', 'it'], CMD_INTEGRATION_TESTS),
-    (['e2e', 'e2e-tests', 'acceptance', 'end-to-end'], CMD_E2E),
-    (['pre-commit', 'precommit', 'sonar', 'lint', 'check', 'quality'], CMD_QUALITY_GATE),
-    (['coverage', 'jacoco'], CMD_COVERAGE),
-    (['benchmark', 'performance', 'benchmarks', 'jmh', 'perf', 'load'], CMD_BENCHMARK),
-]
+#: ``(the aliases a canonical answers to, that canonical)``, one row per key of
+#: ``CANONICAL_COMMANDS`` — the authoritative alias declaration. The subject under
+#: test is ``PROFILE_PATTERNS``, which ``_build_profile_patterns()`` flattens out of
+#: that declaration; deriving the rows from the declaration one level up rather than
+#: from the flattening is what keeps the assertions falsifiable. The rows prove every
+#: declared alias reaches ``PROFILE_PATTERNS`` under its own canonical (catching a
+#: dropped alias, a wrong canonical, or a key collision between two canonicals);
+#: ``test_the_alias_table_states_every_live_alias`` closes the other direction, so
+#: together they assert the flattening is total and carries nothing else.
+_PROFILE_ALIAS_CASES = [(meta['aliases'], cmd) for cmd, meta in CANONICAL_COMMANDS.items()]
 
-_PROFILE_ALIAS_IDS = [
-    'integration-tests',
-    'e2e',
-    'quality-gate',
-    'coverage',
-    'benchmark',
-]
+#: Ids derived from the same canonical keys, so they stay in lock-step with the rows.
+_PROFILE_ALIAS_IDS = list(CANONICAL_COMMANDS)
 
 
 @pytest.mark.parametrize('aliases,canonical', _PROFILE_ALIAS_CASES, ids=_PROFILE_ALIAS_IDS)
@@ -128,12 +121,12 @@ def test_profile_patterns_map_every_alias_to_its_canonical(aliases: list[str], c
 
 
 def test_the_alias_table_states_every_live_alias():
-    """The stated alias set equals the live one, quantified over the mapping.
+    """The declared alias set equals the flattened one, quantified over the mapping.
 
-    The rows above run alias -> canonical only for the aliases they list, so on
-    their own they stay green when an alias is added to ``CANONICAL_COMMANDS``
-    and never stated here — leaving the table's "whole alias set" claim true by
-    assertion of nobody. This is the closing direction.
+    The rows above only reach aliases ``CANONICAL_COMMANDS`` declares, so on their
+    own they stay green when ``_build_profile_patterns()`` invents a key no canonical
+    declared. This is the closing direction: ``PROFILE_PATTERNS`` carries the declared
+    aliases and nothing besides.
     """
     # Non-vacuity first: an empty mapping makes both sides equal and asserts nothing.
     assert PROFILE_PATTERNS, 'PROFILE_PATTERNS is empty — this guard would pass vacuously'
