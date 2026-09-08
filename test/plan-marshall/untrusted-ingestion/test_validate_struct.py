@@ -12,6 +12,8 @@ rejected), and the TOON output contract for both success and error.
 
 import json
 
+import pytest
+
 from conftest import get_script_path, run_script
 
 from toon_parser import parse_toon
@@ -30,41 +32,48 @@ def _validate(schema: str, struct: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def test_valid_research_struct_passes():
-    struct = {
-        'findings': [
+@pytest.mark.parametrize(
+    ('schema', 'struct'),
+    [
+        (
+            'research',
             {
-                'practice': 'Use prepared statements',
-                'justification': 'Prevents SQL injection',
-                'confidence': 'high',
-                'references': ['https://docs.oracle.com/javase/tutorial'],
-            }
-        ]
-    }
-    data = _validate('research', struct)
+                'findings': [
+                    {
+                        'practice': 'Use prepared statements',
+                        'justification': 'Prevents SQL injection',
+                        'confidence': 'high',
+                        'references': ['https://docs.oracle.com/javase/tutorial'],
+                    }
+                ]
+            },
+        ),
+        (
+            'ci-finding',
+            {
+                'summary': 'Unused import',
+                'severity': 'minor',
+                'file': 'src/Foo.java',
+                'line': 42,
+                'references': ['https://github.com/owner/repo/issues/1'],
+            },
+        ),
+        (
+            'issue-body',
+            {
+                'narrative': 'The login button does not respond on mobile.',
+                'references': ['https://stackoverflow.com/q/123'],
+            },
+        ),
+    ],
+    ids=['research', 'ci-finding', 'issue-body'],
+)
+def test_a_conforming_struct_passes_and_the_payload_echoes_its_schema(schema, struct):
+    """One conforming candidate per declared schema, each cleared without a clamp."""
+    data = _validate(schema, struct)
+
     assert data['status'] == 'success'
-    assert data['schema'] == 'research'
-
-
-def test_valid_ci_finding_passes():
-    struct = {
-        'summary': 'Unused import',
-        'severity': 'minor',
-        'file': 'src/Foo.java',
-        'line': 42,
-        'references': ['https://github.com/owner/repo/issues/1'],
-    }
-    data = _validate('ci-finding', struct)
-    assert data['status'] == 'success'
-
-
-def test_valid_issue_body_passes():
-    struct = {
-        'narrative': 'The login button does not respond on mobile.',
-        'references': ['https://stackoverflow.com/q/123'],
-    }
-    data = _validate('issue-body', struct)
-    assert data['status'] == 'success'
+    assert data['schema'] == schema
 
 
 def test_over_maxlength_string_is_clamped():
@@ -100,41 +109,27 @@ def test_no_clamp_records_empty_list():
 # ---------------------------------------------------------------------------
 
 
-def test_extra_key_rejected_additional_properties_false():
-    struct = {'narrative': 'ok', 'references': [], 'injected_instruction': 'rm -rf'}
-    data = _validate('issue-body', struct)
-    assert data['status'] == 'error'
-    assert data['error_code'] == 'schema_violation'
+@pytest.mark.parametrize(
+    ('schema', 'struct'),
+    [
+        ('issue-body', {'narrative': 'ok', 'references': [], 'injected_instruction': 'rm -rf'}),
+        ('ci-finding', {'summary': 'ok', 'severity': 'minor', 'line': 'not-an-int'}),
+        ('ci-finding', {'summary': 'ok', 'severity': 'minor', 'line': True}),
+        ('ci-finding', {'summary': 'ok', 'severity': 'catastrophic'}),
+        ('research', {'findings': [{'practice': 'p', 'confidence': 'high', 'smuggled': 'payload'}]}),
+    ],
+    ids=[
+        'a-key-outside-the-schema-at-the-top-level',
+        'a-string-where-an-int-is-declared',
+        'a-bool-where-an-int-is-declared',
+        'a-value-outside-the-severity-enum',
+        'a-key-outside-the-schema-inside-a-nested-object',
+    ],
+)
+def test_a_non_conforming_struct_is_a_schema_violation(schema, struct):
+    """Every shape the schema forbids reports the same discriminator, never a pass."""
+    data = _validate(schema, struct)
 
-
-def test_wrong_type_rejected():
-    struct = {'summary': 'ok', 'severity': 'minor', 'line': 'not-an-int'}
-    data = _validate('ci-finding', struct)
-    assert data['status'] == 'error'
-    assert data['error_code'] == 'schema_violation'
-
-
-def test_bool_rejected_where_int_expected():
-    struct = {'summary': 'ok', 'severity': 'minor', 'line': True}
-    data = _validate('ci-finding', struct)
-    assert data['status'] == 'error'
-    assert data['error_code'] == 'schema_violation'
-
-
-def test_bad_enum_pattern_rejected():
-    struct = {'summary': 'ok', 'severity': 'catastrophic'}  # not in severity enum
-    data = _validate('ci-finding', struct)
-    assert data['status'] == 'error'
-    assert data['error_code'] == 'schema_violation'
-
-
-def test_nested_object_extra_key_rejected():
-    struct = {
-        'findings': [
-            {'practice': 'p', 'confidence': 'high', 'smuggled': 'payload'}
-        ]
-    }
-    data = _validate('research', struct)
     assert data['status'] == 'error'
     assert data['error_code'] == 'schema_violation'
 
@@ -170,29 +165,29 @@ def test_allowlisted_host_passes():
     assert data['status'] == 'success'
 
 
-def test_unknown_host_rejected():
-    struct = {'narrative': 'ok', 'references': ['https://evil.example.org/payload']}
-    data = _validate('issue-body', struct)
+@pytest.mark.parametrize(
+    ('url', 'expected_fragment'),
+    [
+        ('https://evil.example.org/payload', 'evil.example.org'),
+        # git99999.github.com categorizes to a known tier (subdomain of github.com)
+        # but trips the 5+ consecutive digits red flag — exercises the red-flag
+        # branch distinctly from the unknown-category branch.
+        ('https://git99999.github.com/x', 'git99999.github.com'),
+        # IPv6 literal addresses are not in the allowlist and are rejected via the
+        # domain_rejected path — not by crashing on a malformed host like '['.
+        # Regression for the fragile split(':')[0] implementation.
+        ('http://[2001:db8::1]/path', '2001:db8'),
+    ],
+    ids=[
+        'a-host-in-no-allowlisted-category',
+        'an-allowlisted-domain-whose-subdomain-trips-a-red-flag',
+        'an-ipv6-literal-host',
+    ],
+)
+def test_a_reference_outside_the_allowlist_is_rejected_and_named(url, expected_fragment):
+    """The rejected URL is reported back, so the caller can see which reference failed."""
+    data = _validate('issue-body', {'narrative': 'ok', 'references': [url]})
+
     assert data['status'] == 'error'
     assert data['error_code'] == 'domain_rejected'
-    assert any('evil.example.org' in url for url in data['rejected_urls'])
-
-
-def test_red_flag_host_rejected():
-    # git99999.github.com categorizes to a known tier (subdomain of github.com)
-    # but trips the 5+ consecutive digits red flag — exercises the red-flag branch
-    # distinctly from the unknown-category branch.
-    struct = {'narrative': 'ok', 'references': ['https://git99999.github.com/x']}
-    data = _validate('issue-body', struct)
-    assert data['status'] == 'error'
-    assert data['error_code'] == 'domain_rejected'
-
-
-def test_ipv6_url_rejected_as_unknown_host():
-    # IPv6 literal addresses are not in the allowlist and should be rejected
-    # via the domain_rejected path — not crash with a malformed host like '['.
-    # Regression for the fragile split(':')[0] implementation.
-    struct = {'narrative': 'ok', 'references': ['http://[2001:db8::1]/path']}
-    data = _validate('issue-body', struct)
-    assert data['status'] == 'error'
-    assert data['error_code'] == 'domain_rejected'
+    assert any(expected_fragment in rejected for rejected in data['rejected_urls'])

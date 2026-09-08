@@ -91,22 +91,6 @@ def test_detect_ide_macos_cursor_not_substituted_with_vscode():
     assert 'Visual Studio Code' not in result.name
 
 
-def test_detect_ide_macos_unknown_returns_none():
-    env = {'TERM_PROGRAM': 'unknown-terminal'}
-
-    result = detect_ide(env, 'darwin')
-
-    assert result is None
-
-
-def test_detect_ide_macos_empty_env_returns_none():
-    env: dict[str, str] = {}
-
-    result = detect_ide(env, 'darwin')
-
-    assert result is None
-
-
 # =============================================================================
 # detect_ide — Linux branches
 # =============================================================================
@@ -182,12 +166,32 @@ def test_detect_ide_linux_no_launchers_returns_none():
     assert result is None
 
 
-def test_detect_ide_unknown_platform_returns_none():
-    env = {'TERM_PROGRAM': 'vscode'}
+# =============================================================================
+# detect_ide — the env/platform pairs that detect nothing without probing PATH
+# =============================================================================
 
-    result = detect_ide(env, 'win32')
 
-    assert result is None
+@pytest.mark.parametrize(
+    ('env', 'platform'),
+    [
+        ({'TERM_PROGRAM': 'unknown-terminal'}, 'darwin'),
+        ({}, 'darwin'),
+        ({'TERM_PROGRAM': 'vscode'}, 'win32'),
+    ],
+    ids=[
+        'darwin-with-an-unrecognised-term-program',
+        'darwin-with-no-signal-in-the-environment',
+        'win32-is-an-unsupported-platform-even-with-a-known-signal',
+    ],
+)
+def test_detect_ide_returns_none(env: dict[str, str], platform: str):
+    """No IDE is reported for these pairs, and none of them consults PATH.
+
+    Kept apart from the Linux misses above: those reach ``shutil.which`` and so
+    depend on a stubbed PATH, while these three are decided from the env and the
+    platform alone.
+    """
+    assert detect_ide(env, platform) is None
 
 
 # =============================================================================

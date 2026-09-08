@@ -42,36 +42,28 @@ def _read_allow(path):
 class TestNormalizePathPerm:
     """Test normalize_path_perm path normalization rules."""
 
-    def test_trailing_slash_stripped_and_flagged(self):
-        """A directory permission with a trailing slash is normalized and flagged changed."""
-        # Arrange / Act
-        result, changed = pf.normalize_path_perm('Read(src/)')
+    @pytest.mark.parametrize(
+        ('permission', 'expected', 'expect_changed'),
+        [
+            ('Read(src/)', 'Read(src)', True),
+            ('Read(src)', 'Read(src)', False),
+            # The path component ends with '*', so the trailing-slash rewrite is skipped.
+            ('Read(src/*/)', 'Read(src/*/)', False),
+            ('not-a-permission', 'not-a-permission', False),
+        ],
+        ids=[
+            'a-directory-trailing-slash-is-stripped',
+            'a-path-without-a-trailing-slash-is-already-normal',
+            'a-wildcard-path-keeps-its-trailing-slash',
+            'a-string-outside-the-permission-shape-is-returned-verbatim',
+        ],
+    )
+    def test_normalize_path_perm(self, permission, expected, expect_changed):
+        """The changed flag is True exactly when the returned string differs from the input."""
+        result, changed = pf.normalize_path_perm(permission)
 
-        # Assert
-        assert result == 'Read(src)'
-        assert changed is True
-
-    def test_no_trailing_slash_unchanged(self):
-        """A permission without a trailing slash is returned unchanged."""
-        result, changed = pf.normalize_path_perm('Read(src)')
-
-        assert result == 'Read(src)'
-        assert changed is False
-
-    def test_wildcard_with_trailing_slash_unchanged(self):
-        """A wildcard path ending in '*' is left intact even with a trailing slash."""
-        # path component ends with '*', so the trailing-slash rewrite is skipped.
-        result, changed = pf.normalize_path_perm('Read(src/*/)')
-
-        assert changed is False
-        assert result == 'Read(src/*/)'
-
-    def test_non_matching_format_returned_verbatim(self):
-        """A string that does not match the permission shape is returned unchanged."""
-        result, changed = pf.normalize_path_perm('not-a-permission')
-
-        assert result == 'not-a-permission'
-        assert changed is False
+        assert result == expected
+        assert changed is expect_changed
 
 
 # =============================================================================
@@ -171,27 +163,34 @@ class TestParseTimestampedPermission:
 class TestGenerateWildcard:
     """Test generate_wildcard prefix collapsing."""
 
-    def test_empty_group_returns_empty_string(self):
-        """An empty parsed group produces no wildcard."""
-        assert pf.generate_wildcard([]) == ''
-
-    def test_single_prefix_keeps_path(self):
-        """A single shared path prefix is preserved verbatim in the wildcard."""
-        group = [
-            {'type': 'Read', 'base_name': 'build', 'extension': 'log', 'path_prefix': 'target/'},
-            {'type': 'Read', 'base_name': 'build', 'extension': 'log', 'path_prefix': 'target/'},
-        ]
-
-        assert pf.generate_wildcard(group) == 'Read(target/build-*.log)'
-
-    def test_multiple_prefixes_collapse_to_double_star(self):
-        """Differing path prefixes collapse to a '**/' recursive wildcard."""
-        group = [
-            {'type': 'Read', 'base_name': 'build', 'extension': 'log', 'path_prefix': 'a/'},
-            {'type': 'Read', 'base_name': 'build', 'extension': 'log', 'path_prefix': 'b/'},
-        ]
-
-        assert pf.generate_wildcard(group) == 'Read(**/build-*.log)'
+    @pytest.mark.parametrize(
+        ('group', 'expected'),
+        [
+            ([], ''),
+            (
+                [
+                    {'type': 'Read', 'base_name': 'build', 'extension': 'log', 'path_prefix': 'target/'},
+                    {'type': 'Read', 'base_name': 'build', 'extension': 'log', 'path_prefix': 'target/'},
+                ],
+                'Read(target/build-*.log)',
+            ),
+            (
+                [
+                    {'type': 'Read', 'base_name': 'build', 'extension': 'log', 'path_prefix': 'a/'},
+                    {'type': 'Read', 'base_name': 'build', 'extension': 'log', 'path_prefix': 'b/'},
+                ],
+                'Read(**/build-*.log)',
+            ),
+        ],
+        ids=[
+            'an-empty-group-produces-no-wildcard',
+            'one-shared-prefix-is-preserved-verbatim',
+            'differing-prefixes-collapse-to-a-recursive-double-star',
+        ],
+    )
+    def test_generate_wildcard(self, group, expected):
+        """How many distinct path prefixes the group carries decides the emitted path."""
+        assert pf.generate_wildcard(group) == expected
 
 
 class TestConsolidateApplied:

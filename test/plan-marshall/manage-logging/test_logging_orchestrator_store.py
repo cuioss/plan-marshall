@@ -16,6 +16,7 @@ Covers:
 
 import json
 
+import pytest
 from plan_logging import get_log_path, log_entry, read_decision_log, read_work_log
 
 from conftest import get_script_path, run_script
@@ -107,31 +108,30 @@ class TestOrchestratorArchivedFallback:
     instead of scaffolding an empty active-path directory.
     """
 
-    def test_should_resolve_archived_tree_when_only_archived_exists(self, plan_context):
-        slug = 'archived-only-epic'
-        (plan_context.fixture_dir / 'archived-orchestrators' / slug).mkdir(parents=True, exist_ok=True)
+    @pytest.mark.parametrize(
+        ('existing_trees', 'log_type', 'expected_tree'),
+        [
+            (('archived-orchestrators',), 'decision', 'archived-orchestrators'),
+            (('orchestrator', 'archived-orchestrators'), 'work', 'orchestrator'),
+            ((), 'work', 'orchestrator'),
+        ],
+        ids=[
+            'archived-only-resolves-under-the-archived-tree',
+            'both-present-lets-the-active-tree-win',
+            'neither-present-names-the-active-tree-anyway',
+        ],
+    )
+    def test_should_resolve_the_expected_tree(
+        self, plan_context, existing_trees, log_type, expected_tree
+    ):
+        """Which of the two trees exists on disk decides which one the path names."""
+        slug = 'fallback-epic'
+        for tree in existing_trees:
+            (plan_context.fixture_dir / tree / slug).mkdir(parents=True, exist_ok=True)
 
-        path = get_log_path(slug, 'decision', store='orchestrator')
+        path = get_log_path(slug, log_type, store='orchestrator')
 
-        assert path == _archived_orchestrator_logs_dir(plan_context, slug) / 'decision.log'
-
-    def test_should_resolve_active_tree_when_both_active_and_archived_exist(self, plan_context):
-        slug = 'both-exist-epic'
-        (plan_context.fixture_dir / 'orchestrator' / slug).mkdir(parents=True, exist_ok=True)
-        (plan_context.fixture_dir / 'archived-orchestrators' / slug).mkdir(parents=True, exist_ok=True)
-
-        path = get_log_path(slug, 'work', store='orchestrator')
-
-        # Active wins when both trees exist.
-        assert path == _orchestrator_logs_dir(plan_context, slug) / 'work.log'
-
-    def test_should_name_active_tree_when_neither_exists(self, plan_context):
-        slug = 'brand-new-epic'
-
-        path = get_log_path(slug, 'work', store='orchestrator')
-
-        # Brand-new epic before scaffold: fall back to naming the active tree.
-        assert path == _orchestrator_logs_dir(plan_context, slug) / 'work.log'
+        assert path == plan_context.fixture_dir / expected_tree / slug / 'logs' / f'{log_type}.log'
 
     def test_log_entry_appends_into_archived_tree_without_resurrecting_active(self, plan_context):
         slug = 'frozen-log-epic'

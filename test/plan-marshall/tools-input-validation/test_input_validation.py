@@ -48,66 +48,57 @@ from input_validation import (
 class TestValidatePlanId:
     """Tests for plan_id validation."""
 
-    def test_valid_simple(self):
-        assert validate_plan_id('my-plan') == 'my-plan'
+    @pytest.mark.parametrize(
+        'plan_id',
+        ['my-plan', 'plan123', 'a', 'my-long-plan-name-42'],
+        ids=[
+            'lowercase-kebab',
+            'word-with-trailing-digits',
+            'single-letter',
+            'long-kebab-ending-in-digits',
+        ],
+    )
+    def test_accepts_and_returns_a_well_formed_id(self, plan_id):
+        assert validate_plan_id(plan_id) == plan_id
 
-    def test_valid_with_digits(self):
-        assert validate_plan_id('plan123') == 'plan123'
-
-    def test_valid_single_letter(self):
-        assert validate_plan_id('a') == 'a'
-
-    def test_valid_long_kebab(self):
-        assert validate_plan_id('my-long-plan-name-42') == 'my-long-plan-name-42'
-
-    def test_invalid_empty(self):
+    @pytest.mark.parametrize(
+        'plan_id',
+        [
+            '',
+            '1plan',
+            '-plan',
+            'MyPlan',
+            'my_plan',
+            'my.plan',
+            'my/plan',
+            '../traversal',
+            'my plan',
+            'plän',
+        ],
+        ids=[
+            'empty',
+            'leading-digit',
+            'leading-hyphen',
+            'uppercase',
+            'underscore',
+            'dot',
+            'slash',
+            'traversal',
+            'space',
+            'non-ascii-letter',
+        ],
+    )
+    def test_rejects_an_id_outside_the_kebab_grammar(self, plan_id):
         with pytest.raises(ValueError, match='Invalid plan_id'):
-            validate_plan_id('')
+            validate_plan_id(plan_id)
 
-    def test_invalid_starts_with_digit(self):
-        with pytest.raises(ValueError, match='Invalid plan_id'):
-            validate_plan_id('1plan')
-
-    def test_invalid_starts_with_hyphen(self):
-        with pytest.raises(ValueError, match='Invalid plan_id'):
-            validate_plan_id('-plan')
-
-    def test_invalid_uppercase(self):
-        with pytest.raises(ValueError, match='Invalid plan_id'):
-            validate_plan_id('MyPlan')
-
-    def test_invalid_underscore(self):
-        with pytest.raises(ValueError, match='Invalid plan_id'):
-            validate_plan_id('my_plan')
-
-    def test_invalid_dot(self):
-        with pytest.raises(ValueError, match='Invalid plan_id'):
-            validate_plan_id('my.plan')
-
-    def test_invalid_slash(self):
-        with pytest.raises(ValueError, match='Invalid plan_id'):
-            validate_plan_id('my/plan')
-
-    def test_invalid_traversal(self):
-        with pytest.raises(ValueError, match='Invalid plan_id'):
-            validate_plan_id('../traversal')
-
-    def test_invalid_space(self):
-        with pytest.raises(ValueError, match='Invalid plan_id'):
-            validate_plan_id('my plan')
-
-    def test_invalid_unicode(self):
-        with pytest.raises(ValueError, match='Invalid plan_id'):
-            validate_plan_id('plän')
-
-    def test_bool_valid(self):
-        assert is_valid_plan_id('my-plan') is True
-
-    def test_bool_invalid(self):
-        assert is_valid_plan_id('../traversal') is False
-
-    def test_bool_empty(self):
-        assert is_valid_plan_id('') is False
+    @pytest.mark.parametrize(
+        ('plan_id', 'valid'),
+        [('my-plan', True), ('../traversal', False), ('', False)],
+        ids=['well-formed-id', 'traversal', 'empty'],
+    )
+    def test_bool_companion_agrees_with_the_raising_validator(self, plan_id, valid):
+        assert is_valid_plan_id(plan_id) is valid
 
 
 # =============================================================================
@@ -178,56 +169,47 @@ class TestNoPlanSentinelCarveOut:
 class TestValidateRelativePath:
     """Tests for relative path validation."""
 
-    def test_valid_simple(self):
-        assert validate_relative_path('file.txt') == 'file.txt'
+    @pytest.mark.parametrize(
+        'path',
+        ['file.txt', 'dir/subdir/file.txt', '.gitignore', './file.txt'],
+        ids=['bare-filename', 'nested-path', 'dotfile', 'explicit-current-dir-prefix'],
+    )
+    def test_accepts_and_returns_a_contained_relative_path(self, path):
+        assert validate_relative_path(path) == path
 
-    def test_valid_nested(self):
-        assert validate_relative_path('dir/subdir/file.txt') == 'dir/subdir/file.txt'
+    @pytest.mark.parametrize(
+        ('path', 'message'),
+        [
+            ('', 'must not be empty'),
+            ('/etc/passwd', 'Absolute paths not allowed'),
+            ('../secret', 'Path traversal not allowed'),
+            ('sub/../../../etc/passwd', 'Path traversal not allowed'),
+            ('a/b/../../c', 'Path traversal not allowed'),
+            ('sub\\..\\..\\etc', 'Path traversal not allowed'),
+            ('dir/../file', 'Path traversal not allowed'),
+        ],
+        ids=[
+            'empty',
+            'absolute',
+            'leading-parent-component',
+            'parent-components-after-a-descent',
+            'parent-components-in-mid-path',
+            'backslash-separated-parent-components',
+            'one-parent-component-that-merely-cancels-a-descent',
+        ],
+    )
+    def test_rejects_an_uncontained_path_and_names_why(self, path, message):
+        """A ``..`` component is rejected wherever it sits, even where it cancels out."""
+        with pytest.raises(ValueError, match=message):
+            validate_relative_path(path)
 
-    def test_valid_dotfile(self):
-        assert validate_relative_path('.gitignore') == '.gitignore'
-
-    def test_valid_current_dir(self):
-        assert validate_relative_path('./file.txt') == './file.txt'
-
-    def test_invalid_empty(self):
-        with pytest.raises(ValueError, match='must not be empty'):
-            validate_relative_path('')
-
-    def test_invalid_absolute(self):
-        with pytest.raises(ValueError, match='Absolute paths not allowed'):
-            validate_relative_path('/etc/passwd')
-
-    def test_invalid_traversal_simple(self):
-        with pytest.raises(ValueError, match='Path traversal not allowed'):
-            validate_relative_path('../secret')
-
-    def test_invalid_traversal_nested(self):
-        with pytest.raises(ValueError, match='Path traversal not allowed'):
-            validate_relative_path('sub/../../../etc/passwd')
-
-    def test_invalid_traversal_mid_path(self):
-        with pytest.raises(ValueError, match='Path traversal not allowed'):
-            validate_relative_path('a/b/../../c')
-
-    def test_invalid_traversal_backslash(self):
-        with pytest.raises(ValueError, match='Path traversal not allowed'):
-            validate_relative_path('sub\\..\\..\\etc')
-
-    def test_valid_double_dot_in_filename(self):
-        """Filenames containing '..' as part of the name (not a component) should still be caught."""
-        # '..' as a path component is always rejected
-        with pytest.raises(ValueError, match='Path traversal not allowed'):
-            validate_relative_path('dir/../file')
-
-    def test_bool_valid(self):
-        assert is_valid_relative_path('dir/file.txt') is True
-
-    def test_bool_invalid(self):
-        assert is_valid_relative_path('../traversal') is False
-
-    def test_bool_empty(self):
-        assert is_valid_relative_path('') is False
+    @pytest.mark.parametrize(
+        ('path', 'valid'),
+        [('dir/file.txt', True), ('../traversal', False), ('', False)],
+        ids=['contained-path', 'traversal', 'empty'],
+    )
+    def test_bool_companion_agrees_with_the_raising_validator(self, path, valid):
+        assert is_valid_relative_path(path) is valid
 
 
 # =============================================================================
@@ -244,17 +226,23 @@ class TestValidateEnum:
     def test_valid_last(self):
         assert validate_enum('blocked', ['pending', 'done', 'blocked'], 'status') == 'blocked'
 
-    def test_invalid(self):
-        with pytest.raises(ValueError, match='Invalid status'):
-            validate_enum('unknown', ['pending', 'done', 'blocked'], 'status')
-
-    def test_invalid_empty_value(self):
-        with pytest.raises(ValueError, match='Invalid phase'):
-            validate_enum('', ['init', 'execute'], 'phase')
-
-    def test_case_sensitive(self):
-        with pytest.raises(ValueError, match='Invalid status'):
-            validate_enum('Pending', ['pending', 'done'], 'status')
+    @pytest.mark.parametrize(
+        ('value', 'choices', 'label'),
+        [
+            ('unknown', ['pending', 'done', 'blocked'], 'status'),
+            ('', ['init', 'execute'], 'phase'),
+            ('Pending', ['pending', 'done'], 'status'),
+        ],
+        ids=[
+            'value-outside-the-choices',
+            'empty-value',
+            'right-value-in-the-wrong-case',
+        ],
+    )
+    def test_rejects_a_value_outside_the_choices(self, value, choices, label):
+        """The rejection names the caller's own label, so the message locates the flag."""
+        with pytest.raises(ValueError, match=f'Invalid {label}'):
+            validate_enum(value, choices, label)
 
 
 # =============================================================================
@@ -271,25 +259,20 @@ class TestValidateSkillNotation:
     def test_valid_plugin(self):
         assert validate_skill_notation('pm-dev-java:java-core') == 'pm-dev-java:java-core'
 
-    def test_invalid_no_colon(self):
+    @pytest.mark.parametrize(
+        'notation',
+        ['plan-marshall', '', ':manage-files', 'plan-marshall:', 'a:b:c'],
+        ids=[
+            'no-colon-at-all',
+            'empty',
+            'empty-bundle-segment',
+            'empty-skill-segment',
+            'three-segments-is-a-script-notation-not-a-skill-one',
+        ],
+    )
+    def test_rejects_anything_but_two_non_empty_segments(self, notation):
         with pytest.raises(ValueError, match='Invalid skill notation'):
-            validate_skill_notation('plan-marshall')
-
-    def test_invalid_empty(self):
-        with pytest.raises(ValueError, match='Invalid skill notation'):
-            validate_skill_notation('')
-
-    def test_invalid_empty_bundle(self):
-        with pytest.raises(ValueError, match='Invalid skill notation'):
-            validate_skill_notation(':manage-files')
-
-    def test_invalid_empty_skill(self):
-        with pytest.raises(ValueError, match='Invalid skill notation'):
-            validate_skill_notation('plan-marshall:')
-
-    def test_invalid_too_many_colons(self):
-        with pytest.raises(ValueError, match='Invalid skill notation'):
-            validate_skill_notation('a:b:c')
+            validate_skill_notation(notation)
 
 
 # =============================================================================
@@ -309,33 +292,30 @@ class TestValidateScriptNotation:
     def test_valid_different_bundle(self):
         assert validate_script_notation('pm-dev-java:build-maven:maven') == 'pm-dev-java:build-maven:maven'
 
-    def test_invalid_no_colon(self):
+    @pytest.mark.parametrize(
+        'notation',
+        [
+            'plan-marshall',
+            'plan-marshall:manage-files',
+            '',
+            ':manage-files:script',
+            'plan-marshall::script',
+            'plan-marshall:manage-files:',
+            'a:b:c:d',
+        ],
+        ids=[
+            'one-segment',
+            'two-segments-is-a-skill-notation-not-a-script-one',
+            'empty',
+            'empty-bundle-segment',
+            'empty-skill-segment',
+            'empty-script-segment',
+            'four-segments',
+        ],
+    )
+    def test_rejects_anything_but_three_non_empty_segments(self, notation):
         with pytest.raises(ValueError, match='Invalid script notation'):
-            validate_script_notation('plan-marshall')
-
-    def test_invalid_two_parts(self):
-        with pytest.raises(ValueError, match='Invalid script notation'):
-            validate_script_notation('plan-marshall:manage-files')
-
-    def test_invalid_empty(self):
-        with pytest.raises(ValueError, match='Invalid script notation'):
-            validate_script_notation('')
-
-    def test_invalid_empty_bundle(self):
-        with pytest.raises(ValueError, match='Invalid script notation'):
-            validate_script_notation(':manage-files:script')
-
-    def test_invalid_empty_skill(self):
-        with pytest.raises(ValueError, match='Invalid script notation'):
-            validate_script_notation('plan-marshall::script')
-
-    def test_invalid_empty_script(self):
-        with pytest.raises(ValueError, match='Invalid script notation'):
-            validate_script_notation('plan-marshall:manage-files:')
-
-    def test_invalid_four_parts(self):
-        with pytest.raises(ValueError, match='Invalid script notation'):
-            validate_script_notation('a:b:c:d')
+            validate_script_notation(notation)
 
 
 # =============================================================================

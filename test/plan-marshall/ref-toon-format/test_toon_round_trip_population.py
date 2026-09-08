@@ -79,6 +79,7 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
+import pytest
 from toon_parser import parse_toon, serialize_toon
 
 from conftest import PROJECT_ROOT
@@ -741,6 +742,9 @@ _UNPARSEABLE_SCRIPT = '''
 def emit_toon(payload:
 '''
 
+#: The canonical lookalike shape, and the one the guard is named after: the
+#: guarded import is caught by name, nothing re-raises, and the module carries its
+#: own TOON writer to route around the loss with.
 _SWALLOWING_MODULE = '''
 try:
     from toon_parser import serialize_toon
@@ -754,6 +758,8 @@ def serialize_toon_simple(data):
     return '\\n'.join(f'{k}: {v}' for k, v in data.items())
 '''
 
+#: Matched positive for the guard: an unguarded canonical import, free to fail
+#: loudly, with no substitute writer anywhere in the module.
 _PROPAGATING_MODULE = '''
 from toon_parser import serialize_toon
 
@@ -762,6 +768,10 @@ def emit(data):
     return serialize_toon(data)
 '''
 
+#: A health check that catches the ImportError only to REPORT it, installing
+#: nothing in its place. The substitute is the discriminator, not the swallow —
+#: without this control the guard would read every health check in the tree as a
+#: lookalike and its clean result would mean nothing.
 _PROBING_MODULE = '''
 def cmd_self_test():
     """Records whether the canonical serializer imports; substitutes nothing."""
@@ -1134,162 +1144,59 @@ def test_derivation_reports_nothing_unreadable_for_a_parseable_tree(tmp_path):
     assert derivation.scanned == 1
 
 
-def test_detector_flags_a_swallowed_canonical_import():
-    """Control for the propagation guard: the lookalike shape IS detected."""
-    assert swallows_canonical_import(_SWALLOWING_MODULE) is True
+@pytest.mark.parametrize(
+    ('source', 'swallows'),
+    [
+        (_SWALLOWING_MODULE, True),
+        (_PROPAGATING_MODULE, False),
+        (_PROBING_MODULE, False),
+        (_BARE_EXCEPT_SWALLOWING_MODULE, True),
+        (_BROAD_EXCEPT_SWALLOWING_MODULE, True),
+        (_BROAD_EXCEPT_PROBING_MODULE, False),
+        (_UNRELATED_HANDLER_MODULE, False),
+        (_MODULE_NOT_FOUND_SWALLOWING_MODULE, True),
+        (_UNRESOLVABLE_HANDLER_MODULE, True),
+        (_CONDITIONAL_RAISE_SWALLOWING_MODULE, True),
+        (_NESTED_RAISE_SWALLOWING_MODULE, True),
+        (_RAISE_FIRST_MODULE, False),
+        (_RAISE_FROM_FIRST_MODULE, False),
+        (_RETURN_BEFORE_RAISE_SWALLOWING_MODULE, True),
+        (_CLEANUP_THEN_RAISE_MODULE, True),
+    ],
+    ids=[
+        'substitute-behind-an-import-error-handler-is-a-swallow',
+        'unguarded-import-with-no-substitute-clears',
+        'health-check-that-only-probes-and-substitutes-nothing-clears',
+        'substitute-behind-a-bare-except-is-a-swallow',
+        'substitute-behind-except-exception-is-a-swallow',
+        'broad-handler-that-substitutes-nothing-clears',
+        'substitute-behind-an-unrelated-resolvable-handler-clears',
+        'substitute-behind-module-not-found-is-a-swallow',
+        'substitute-behind-an-unresolvable-handler-name-is-a-swallow',
+        'handler-raising-only-conditionally-is-a-swallow',
+        'handler-whose-raise-sits-in-a-nested-def-is-a-swallow',
+        'handler-whose-first-statement-is-a-bare-raise-clears',
+        'handler-whose-first-statement-is-a-chained-raise-clears',
+        'handler-returning-the-substitute-above-a-dead-raise-is-a-swallow',
+        'handler-cleaning-up-before-re-raising-is-the-accepted-false-positive',
+    ],
+)
+def test_swallows_canonical_import(source, swallows):
+    """The lookalike shape is detected, and each clearing route is pinned beside it.
 
+    Two axes decide every row, and each fixture above documents which one it
+    exercises: whether the handler catches the failing import at all (by name, by
+    supertype, by subtype, bare, or unresolvable — see
+    ``_name_catches_import_failure``), and whether the module installs a substitute
+    writer to route around the loss with. A handler whose FIRST statement raises
+    clears regardless, which is the one decidable propagation question; the last
+    row is the deliberate false positive that clause costs.
 
-def test_detector_clears_an_unguarded_canonical_import():
-    """Matched positive: an import that may fail loudly is not flagged."""
-    assert swallows_canonical_import(_PROPAGATING_MODULE) is False
-
-
-def test_detector_clears_a_health_check_that_only_probes_the_import():
-    """The substitute is the discriminator, not the swallow.
-
-    A self-test that catches the ImportError to REPORT it installs no second
-    implementation. Without this control the guard would read every health check
-    in the tree as a lookalike and its clean result would mean nothing.
+    Both verdicts are in one table on purpose: a detector pinned only by its
+    positives is satisfiable by a constant ``True``, and one pinned only by its
+    negatives by a constant ``False``.
     """
-    assert swallows_canonical_import(_PROBING_MODULE) is False
-
-
-def test_detector_flags_a_swallow_behind_a_bare_handler():
-    """A bare ``except:`` names nothing and catches everything, this failure included.
-
-    Recognising only a handler that NAMED ``ImportError`` read the narrowest form
-    of the scenario as the whole of it, and let the broadest form through.
-    """
-    assert swallows_canonical_import(_BARE_EXCEPT_SWALLOWING_MODULE) is True
-
-
-def test_detector_flags_a_swallow_behind_a_broad_handler():
-    """``except Exception:`` catches ``ImportError`` by inheritance, so it swallows too."""
-    assert swallows_canonical_import(_BROAD_EXCEPT_SWALLOWING_MODULE) is True
-
-
-def test_detector_clears_a_broad_handler_that_installs_no_substitute():
-    """Matched negative for the widening: the substitute is still the discriminator.
-
-    This is the ``_PROBING_MODULE`` control's sibling under the widened handler
-    set. Without it the widening could start reporting every health check that
-    catches broadly as a second implementation, and the guard's clean result would
-    stop meaning anything.
-    """
-    assert swallows_canonical_import(_BROAD_EXCEPT_PROBING_MODULE) is False
-
-
-def test_detector_clears_a_substitute_behind_an_unrelated_handler():
-    """Matched negative: the handler set covers ``ImportError``'s relatives, not all.
-
-    The module carries a substitute writer, so only the handler type clears it. A
-    widening that had dropped the type check altogether would flag this, and so
-    would a fail-closed reading applied to a name that DOES resolve — ``ValueError``
-    is a real builtin exception unrelated to ``ImportError``, which is a decided
-    answer rather than an unknown one.
-    """
-    assert swallows_canonical_import(_UNRELATED_HANDLER_MODULE) is False
-
-
-def test_detector_flags_a_swallow_behind_a_module_not_found_handler():
-    """A SUBTYPE of ``ImportError`` catches the failure that actually occurs.
-
-    ``from toon_parser import ...`` against a missing module raises
-    ``ModuleNotFoundError``, so this handler swallows the real failure while
-    naming neither ``ImportError`` nor any supertype of it. The predicate this
-    replaced was a hand-written set of the three BROADEST handler names, and
-    breadth is the wrong axis: a narrow enough type still catches, and the
-    narrowest one that does is the one a real module would write.
-
-    The remedy is the reason this is a control and not a fourth entry in that
-    set. Adding the name would have closed this instance and left the shape —
-    the next handler nobody enumerated — exactly as open. Deciding relatedness
-    with ``issubclass`` against the live hierarchy has no such next instance.
-    """
-    assert swallows_canonical_import(_MODULE_NOT_FOUND_SWALLOWING_MODULE) is True
-
-
-def test_detector_flags_a_swallow_behind_an_unresolvable_handler():
-    """The fail-closed direction, pinned: an unknown handler name is reported.
-
-    A handler naming something outside ``builtins`` cannot be decided here, and
-    the fail-OPEN reading — unknown means harmless — is the evasion the previous
-    predicate permitted by construction: any module could clear the guard by
-    catching a project exception. This costs false positives on modules that
-    guard a canonical import with an unrelated custom error AND carry a
-    substitute writer; the whole-tree guard measures that cost against the real
-    tree, and the sibling control above keeps the clause from collapsing into a
-    constant by pinning a resolvable unrelated name that still clears.
-    """
-    assert swallows_canonical_import(_UNRESOLVABLE_HANDLER_MODULE) is True
-
-
-def test_detector_flags_a_swallow_whose_handler_raises_conditionally():
-    """A guarded ``raise`` does not propagate on the path that reaches the substitute.
-
-    The clearing clause used to read the handler SUBTREE, which turns "a ``raise``
-    appears somewhere below here" into "the failed import propagates" — an inverse
-    reading that does not hold. This module absorbs the failure whenever the escape
-    hatch is unset and hands over to its own writer, which is the lookalike shape
-    the guard is about, and the subtree reading reported it clean.
-    """
-    assert swallows_canonical_import(_CONDITIONAL_RAISE_SWALLOWING_MODULE) is True
-
-
-def test_detector_flags_a_swallow_whose_raise_sits_in_a_nested_function():
-    """A ``raise`` inside a function DEFINED in the handler never runs at handler time.
-
-    The second reach the subtree walk had: defining the statement is not executing
-    it, so the handler falls through to the substitute exactly as an empty one
-    would.
-    """
-    assert swallows_canonical_import(_NESTED_RAISE_SWALLOWING_MODULE) is True
-
-
-def test_detector_clears_a_handler_whose_first_statement_is_a_raise():
-    """Matched positive for the positional clause: a position-0 ``raise`` clears.
-
-    Without this control the clause could tighten into "every guarded canonical
-    import is a swallow" and every assertion built on it would keep passing — a
-    clearing clause with no matched positive is not a predicate, it is a
-    constant.
-    """
-    assert swallows_canonical_import(_RAISE_FIRST_MODULE) is False
-
-
-def test_detector_clears_a_handler_that_raises_a_chained_error_first():
-    """Position is the decidable property, not bareness.
-
-    ``raise RuntimeError(...) from err`` in position 0 propagates as
-    unconditionally as a bare ``raise`` does, so the clause deliberately does not
-    inspect ``exc``. This control pins that decision: narrowing to bare-only
-    would report arguably the better practice as a swallow, and it fails here
-    rather than passing silently.
-    """
-    assert swallows_canonical_import(_RAISE_FROM_FIRST_MODULE) is False
-
-
-def test_detector_flags_a_handler_that_returns_before_its_raise():
-    """A ``raise`` the handler can never reach propagates nothing.
-
-    The handler returns the substitute and leaves the ``raise`` below it dead, so
-    a clause asking whether a ``raise`` appears anywhere in ``handler.body`` read
-    the dead statement as propagation and cleared a module that hands over its own
-    writer on every path.
-    """
-    assert swallows_canonical_import(_RETURN_BEFORE_RAISE_SWALLOWING_MODULE) is True
-
-
-def test_detector_flags_a_handler_that_cleans_up_before_re_raising():
-    """The accepted cost of the positional clause, pinned as a control.
-
-    This handler propagates — the ``raise`` runs on every path through it — and is
-    flagged anyway, because a statement executes before it. That is the deliberate
-    price of asking a question an AST shape test can decide, not a defect. Stating
-    it as a control is what keeps it a known cost and stops a later round
-    reintroducing a reachability test to clear it.
-    """
-    assert swallows_canonical_import(_CLEANUP_THEN_RAISE_MODULE) is True
+    assert swallows_canonical_import(source) is swallows
 
 
 #: A canonical emitter whose nested helper happens to bind a TOON-shaped literal
@@ -1411,6 +1318,8 @@ def emit_toon(payload):
     print(f'status: {payload["status"]}')
 '''
 
+#: Matched negative for the stdout discrimination: a TOON-shaped line written to
+#: stderr is a diagnostic, so it must not enter the population at all.
 _STDERR_DIAGNOSTIC = '''
 import sys
 
@@ -1420,6 +1329,9 @@ def write_summary(payload):
     print(f'status: {payload["status"]}', file=sys.stderr)
 '''
 
+#: Matched positive for the stderr control above: the exclusion is over the
+#: TARGET, so naming the default stream explicitly cannot buy an emitter its way
+#: out of the population.
 _EXPLICIT_STDOUT_EMITTER = '''
 import sys
 
@@ -1429,6 +1341,8 @@ def write_summary(payload):
     print(f'status: {payload["status"]}', file=sys.stdout)
 '''
 
+#: The same, spelled the other way a caller can name the default stream:
+#: ``file=None`` IS stdout, so it must not be excluded either.
 _NONE_FILE_EMITTER = '''
 def write_summary(payload):
     """file=None is the default stream, which is stdout."""
@@ -1504,19 +1418,6 @@ def test_name_blind_derivation_selects_an_indirect_hand_roll(tmp_path):
     assert escaped == ['write_summary']
 
 
-def test_name_blind_derivation_ignores_an_indirect_narration_line(tmp_path):
-    """Matched negative: resolving the local did not make every printed local an emitter."""
-    _synthetic_script(
-        tmp_path,
-        'fixture-bundle',
-        'fixture-skill',
-        'unnamed_narration.py',
-        _UNNAMED_ASSIGNED_NON_TOON_LINE,
-    )
-
-    assert derive_name_blind_emitters(tmp_path).records == []
-
-
 def test_name_blind_derivation_clears_an_emitter_the_naming_probe_sees(tmp_path):
     """Matched positive: an unprobed NAME is the defect here, not the hand-roll.
 
@@ -1545,40 +1446,35 @@ def test_name_blind_derivation_clears_an_emitter_the_naming_probe_sees(tmp_path)
     assert escaped == []
 
 
-def test_name_blind_derivation_ignores_a_stderr_diagnostic(tmp_path):
-    """Matched negative: stderr is diagnostics, so it must not enter the population."""
-    _synthetic_script(
-        tmp_path, 'fixture-bundle', 'fixture-skill', 'diagnostic.py', _STDERR_DIAGNOSTIC
-    )
+@pytest.mark.parametrize(
+    ('filename', 'source', 'selected'),
+    [
+        ('unnamed_narration.py', _UNNAMED_ASSIGNED_NON_TOON_LINE, []),
+        ('diagnostic.py', _STDERR_DIAGNOSTIC, []),
+        ('explicit.py', _EXPLICIT_STDOUT_EMITTER, ['write_summary']),
+        ('none_file.py', _NONE_FILE_EMITTER, ['write_summary']),
+    ],
+    ids=[
+        'a-printed-local-holding-narration-is-not-selected',
+        'a-toon-shaped-line-written-to-stderr-is-not-selected',
+        'file-sys-stdout-is-still-stdout-so-it-is-selected',
+        'file-none-is-still-stdout-so-it-is-selected',
+    ],
+)
+def test_name_blind_derivation_selects_only_toon_shaped_stdout_prints(
+    tmp_path, filename, source, selected
+):
+    """Selection turns on the printed TEXT and the printed STREAM, and on nothing else.
 
-    assert derive_name_blind_emitters(tmp_path).records == []
-
-
-def test_name_blind_derivation_selects_an_explicit_stdout_target(tmp_path):
-    """``file=sys.stdout`` writes to stdout, so it must not be excluded as a diagnostic.
-
-    Matched positive for the stderr control above: the exclusion is over the
-    TARGET, so naming the default stream explicitly cannot buy an emitter its way
-    out of the population.
+    Both directions ride in one table because either alone is satisfiable by a
+    constant: a selector that took everything would pass the two positives, and one
+    that took nothing would pass the two negatives.
     """
-    _synthetic_script(
-        tmp_path, 'fixture-bundle', 'fixture-skill', 'explicit.py', _EXPLICIT_STDOUT_EMITTER
-    )
+    _synthetic_script(tmp_path, 'fixture-bundle', 'fixture-skill', filename, source)
 
     assert [
         record.function for record in derive_name_blind_emitters(tmp_path).records
-    ] == ['write_summary']
-
-
-def test_name_blind_derivation_selects_a_none_file_target(tmp_path):
-    """``file=None`` is the default stream, so it must not be excluded either."""
-    _synthetic_script(
-        tmp_path, 'fixture-bundle', 'fixture-skill', 'none_file.py', _NONE_FILE_EMITTER
-    )
-
-    assert [
-        record.function for record in derive_name_blind_emitters(tmp_path).records
-    ] == ['write_summary']
+    ] == selected
 
 
 def test_an_added_emitter_is_picked_up_by_the_derivation(tmp_path):

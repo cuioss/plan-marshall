@@ -268,26 +268,24 @@ def test_separator_default_type(plan_context):
 # =============================================================================
 
 
-def test_cli_invalid_type(plan_context):
-    """Test that invalid type fails via argparse."""
-    result = run_script(
-        SCRIPT_PATH, 'invalid', '--plan-id', 'log-invalid-type', '--level', 'INFO', '--message', 'Test message'
-    )
-    assert not result.success, 'Expected failure for invalid type'
+@pytest.mark.parametrize(
+    'argv',
+    [
+        ('invalid', '--plan-id', 'log-invalid-type', '--level', 'INFO', '--message', 'Test message'),
+        ('work', '--plan-id', 'log-invalid-level', '--level', 'INVALID', '--message', 'Test message'),
+        ('work', '--plan-id', 'my-plan', '--level', 'INFO'),
+    ],
+    ids=[
+        'unknown-log-type-subcommand',
+        'level-outside-the-declared-choices',
+        'required-message-flag-omitted',
+    ],
+)
+def test_cli_rejects_malformed_argv(plan_context, argv):
+    """argparse rejects each of these command lines before any log is written."""
+    result = run_script(SCRIPT_PATH, *argv)
 
-
-def test_cli_invalid_level(plan_context):
-    """Test that invalid level fails via argparse."""
-    result = run_script(
-        SCRIPT_PATH, 'work', '--plan-id', 'log-invalid-level', '--level', 'INVALID', '--message', 'Test message'
-    )
-    assert not result.success, 'Expected failure for invalid level'
-
-
-def test_cli_missing_args():
-    """Test that missing args fails via argparse."""
-    result = run_script(SCRIPT_PATH, 'work', '--plan-id', 'my-plan', '--level', 'INFO')
-    assert not result.success, 'Expected failure for missing args'
+    assert not result.success
 
 
 # =============================================================================
