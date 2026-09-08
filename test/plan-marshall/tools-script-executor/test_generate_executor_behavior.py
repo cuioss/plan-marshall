@@ -222,9 +222,42 @@ def test_discover_local_scripts_skips_hidden_skill_dirs(tmp_path):
     assert mappings == {}
 
 
-# =============================================================================
-# generate_executor — template substitution (dry-run, write, missing template)
-# =============================================================================
+def test_discover_local_scripts_uses_the_active_targets_roots(monkeypatch, tmp_path):
+    """A non-Claude skill root defined by the runtime is discovered; .claude is not.
+
+    The discovery root is target-aware via ``marketplace_paths.
+    get_project_skill_roots()`` (the ``layout skill-roots`` op), so a project
+    whose active target resolves a different root must discover there instead
+    of at the hardcoded ``.claude/skills`` literal this function used to probe.
+    """
+    monkeypatch.setattr(_gen, "_shared_get_project_skill_roots", lambda: (".custom/skills",))
+    local = tmp_path / '.custom' / 'skills' / 'my-skill' / 'scripts'
+    local.mkdir(parents=True)
+    (local / 'do_thing.py').write_text('# script', encoding='utf-8')
+    claude = tmp_path / '.claude' / 'skills' / 'old-skill' / 'scripts'
+    claude.mkdir(parents=True)
+    (claude / 'old.py').write_text('# script', encoding='utf-8')
+
+    mappings = _gen.discover_local_scripts(cwd=tmp_path)
+
+    assert 'default-bundle:my-skill:do_thing' in mappings
+    assert 'default-bundle:old-skill:old' not in mappings
+
+
+def test_discover_local_scripts_empty_when_target_resolves_no_roots(monkeypatch, tmp_path):
+    """An active target with no resolvable skill roots yields an empty mapping.
+
+    The previous behaviour (probe a hardcoded root and return {} only when it
+    does not exist) would silently fall through to ``.claude/skills`` even when
+    the target declares none; the empty-roots case is the guard that keeps a
+    non-Claude target's discovery honest.
+    """
+    monkeypatch.setattr(_gen, "_shared_get_project_skill_roots", lambda: ())
+    local = tmp_path / '.claude' / 'skills' / 'my-skill' / 'scripts'
+    local.mkdir(parents=True)
+    (local / 'do_thing.py').write_text('# script', encoding='utf-8')
+
+    assert _gen.discover_local_scripts(cwd=tmp_path) == {}
 
 # The format marker is read from the generator's own constant rather than
 # written as a literal: a hard-coded version turns this fixture into a
