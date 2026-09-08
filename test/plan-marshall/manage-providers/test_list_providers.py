@@ -328,10 +328,10 @@ class TestValidateProviderSelection:
         ('providers', 'selection', 'expected_error_fragments'),
         _PROVIDER_SELECTION_CASES,
         ids=[
-            'one-provider-per-category-is-valid',
+            'version-control-plus-ci-plus-one-other-is-valid',
             'version-control-plus-ci-is-valid',
             'version-control-alone-is-valid-because-ci-is-optional',
-            'several-other-category-providers-are-valid',
+            'version-control-plus-ci-plus-two-others-is-valid',
             'a-selection-without-version-control-is-rejected',
             'a-selection-with-two-ci-providers-is-rejected',
         ],

@@ -86,7 +86,7 @@ _PARSE_IDS = [
     'json-list',
     'json-string',
     'json-number',
-    'a-non-string-argument',
+    'a-none-argument',
     'an-integer-argument',
 ]
 
@@ -285,13 +285,13 @@ _CONTEXT_GATE_CASES: list[tuple[Any, bool]] = [
 ]
 
 _CONTEXT_GATE_IDS = [
-    'signal-1-alone',
-    'signal-1-on-a-bundle-qualified-identity',
-    'signal-1-on-the-reader-variant',
+    'a-bundle-qualified-level-3-identity',
+    'a-bundle-qualified-level-4-identity',
+    'a-bundle-qualified-reader-variant-identity',
     'an-agent-type-without-the-marker',
-    'signal-2-alone',
-    'signal-2-below-the-segment',
-    'signal-2-ending-at-the-segment',
+    'a-cwd-one-level-below-the-segment',
+    'a-cwd-two-levels-below-the-segment',
+    'a-cwd-ending-at-the-segment',
     'the-segment-as-a-substring-only',
     'both-signals-firing',
     'neither-signal-firing',

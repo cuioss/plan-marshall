@@ -774,13 +774,23 @@ def test_the_oracle_rows_resolve_to_leads(
     assert [entry.shape for entry in rows] == [spec_parser.SHAPE_LEAD] * occurrences
 
 
-@pytest.mark.parametrize('plan_id', ['PLAN-130', 'PLAN-135'], ids=['plan_130', 'plan_135'])
+#: The corpus's whole-tree declarations, enumerated by spec. Both rows assert
+#: the SAME contract over DIFFERENT corpus members — the family is a roll-call of
+#: the specs the rules must leave alone, not two distinct contracts — so each id
+#: names its spec, and the ids come off this list rather than a parallel one.
+_WHOLE_TREE_DECLARATION_SPECS = ['PLAN-130', 'PLAN-135']
+
+
+@pytest.mark.parametrize(
+    'plan_id', _WHOLE_TREE_DECLARATION_SPECS, ids=_WHOLE_TREE_DECLARATION_SPECS
+)
 def test_the_whole_tree_declarations_survive_as_claims(oracle, plan_id: str) -> None:
     """The negative control both rules are measured against.
 
-    These two plans cross the whole partition by construction. Neither marker
-    matches their wording, so their ``test/`` entries stay claims and the specs
-    stay ``declarative``.
+    Every whole-tree declaration in the corpus is enumerated, not sampled: these
+    plans cross the whole partition by construction, neither marker matches their
+    wording, so their ``test/`` entries stay claims and the specs stay
+    ``declarative``.
     """
     rows = [entry for entry in oracle[plan_id].claimed if entry.path == 'test/']
 

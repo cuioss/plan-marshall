@@ -83,7 +83,19 @@ def _install_queue(monkeypatch: pytest.MonkeyPatch, double: _QueueDouble) -> Non
     monkeypatch.setattr(bqs, '_release_raw', double.release)
 
 
-@pytest.mark.parametrize('plan_id', [None, '', NO_PLAN_SENTINEL])
+#: The three shapes a plan-less build's ``plan_id`` arrives in. The ids are
+#: stated rather than left to pytest: the empty-string row generates no readable
+#: id of its own, so the report would name it only by position.
+_PLAN_LESS_PLAN_IDS = [None, '', NO_PLAN_SENTINEL]
+
+_PLAN_LESS_PLAN_ID_IDS = [
+    'no-plan-id-attribute-value-at-all',
+    'an-empty-plan-id',
+    'the-explicit-no-plan-sentinel',
+]
+
+
+@pytest.mark.parametrize('plan_id', _PLAN_LESS_PLAN_IDS, ids=_PLAN_LESS_PLAN_ID_IDS)
 def test_no_plan_id_is_pure_noop(monkeypatch, plan_id):
     """A plan-less id yields with ZERO queue interaction — plan-less builds run
     completely unchanged.

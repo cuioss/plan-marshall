@@ -459,11 +459,7 @@ def test_r1_quote_masked_views_preserve_length_across_escapes() -> None:
 # =============================================================================
 
 
-@pytest.mark.parametrize(
-    "program",
-    ["cat", "grep", "head", "tail", "find", "ls"],
-    ids=["cat", "grep", "head", "tail", "find", "ls"],
-)
+@pytest.mark.parametrize("program", ["cat", "grep", "head", "tail", "find", "ls"])
 def test_r2_denies_each_file_op(program: str) -> None:
     """Each shell file-op program denies on its own, as its own reported row."""
     payload = _signal2_payload("Bash", _bash(f"{program} something"))
@@ -519,21 +515,25 @@ _R2_GIT_GREP_DENIED = [
     "git -C. -p --bare grep foo",
 ]
 
+#: Each id names the concrete option AND the arithmetic the walk owes it, which
+#: is the only axis these rows differ on: a token named in
+#: ``_R2_GIT_VALUE_OPTIONS`` consumes the SEPARATE token behind it, while every
+#: other dash-token is self-contained and steps over as one.
 _R2_GIT_GREP_DENIED_IDS = [
     'no-options-at-all',
-    'detached-short-value',
-    'listed-long-flag',
+    'detached-value-option-dash-C',
+    'self-contained-option-no-pager',
     'absolute-path-to-git',
-    'attached-long-value-via-c',
-    'attached-long-value-via-git-dir',
-    'detached-long-value-via-work-tree',
-    'listed-long-flag-taking-no-value',
-    'attached-short-value',
-    'attached-short-value-inline-config-pair',
-    'unlisted-short-flag',
-    'unlisted-long-flag',
-    'unlisted-negated-long-flag',
-    'several-unlisted-shapes-stacked',
+    'detached-value-option-dash-c',
+    'self-contained-option-git-dir-with-inline-value',
+    'detached-value-option-work-tree',
+    'self-contained-option-literal-pathspecs',
+    'self-contained-option-dash-C-with-attached-value',
+    'self-contained-option-dash-c-with-attached-value',
+    'self-contained-option-dash-p',
+    'self-contained-option-bare',
+    'self-contained-option-no-optional-locks',
+    'three-self-contained-options-stacked',
 ]
 
 
@@ -820,8 +820,8 @@ _PROGRAM_NAME_CASES = [
 ]
 
 _PROGRAM_NAME_IDS = [
-    'absolute-path-prefix-stripped',
-    'bin-path-prefix-stripped',
+    'multi-segment-path-prefix-stripped',
+    'single-segment-path-prefix-stripped',
     'bare-name-unchanged',
     'pw-literal-kept-with-its-prefix',
     'empty-command-yields-no-program',

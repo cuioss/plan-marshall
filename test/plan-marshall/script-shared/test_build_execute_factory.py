@@ -46,6 +46,19 @@ from _build_execute import CaptureStrategy
 from _build_execute_factory import default_command_key_fn
 from _resolve_project_dir_fixtures import NO_PLAN_SENTINEL
 
+#: The three shapes a plan-less build's ``plan_id`` arrives in. Every seam below
+#: that has to treat "no plan" alike is driven over this one list, so the three
+#: shapes cannot drift apart between seams. The ids are stated rather than left
+#: to pytest: the empty-string row generates no readable id of its own, so the
+#: report would name it only by position.
+_PLAN_LESS_PLAN_IDS = [None, '', NO_PLAN_SENTINEL]
+
+_PLAN_LESS_PLAN_ID_IDS = [
+    'no-plan-id-attribute-value-at-all',
+    'an-empty-plan-id',
+    'the-explicit-no-plan-sentinel',
+]
+
 #: ``(command args, key)`` for the scope-aware half of the contract: the module
 #: scope is part of the key, so a module-scoped invocation cannot inherit the
 #: full-scope one's learned timeout.
@@ -553,7 +566,7 @@ class TestFactoryCmdRunPlanIdAbsentPassthrough:
     falsiness-only guard would silently start queueing.
     """
 
-    @pytest.mark.parametrize('plan_id', [None, '', NO_PLAN_SENTINEL])
+    @pytest.mark.parametrize('plan_id', _PLAN_LESS_PLAN_IDS, ids=_PLAN_LESS_PLAN_ID_IDS)
     def test_no_plan_id_runs_build_with_no_queue_interaction(self, monkeypatch, plan_id):
         double = _QueueDouble([])  # any acquire would record a call
         cmd_run, exec_recorder = _install(monkeypatch, double)
@@ -599,7 +612,7 @@ class TestPlanIdThreadsThroughBothFactoryLayers:
 
         assert exec_recorder.calls[0]['plan_id'] == 'owning-plan'
 
-    @pytest.mark.parametrize('plan_id', [None, '', NO_PLAN_SENTINEL])
+    @pytest.mark.parametrize('plan_id', _PLAN_LESS_PLAN_IDS, ids=_PLAN_LESS_PLAN_ID_IDS)
     def test_cmd_run_threads_a_plan_less_build_as_the_sentinel(self, monkeypatch, plan_id):
         """A plan-less build reaches the placement as NO_PLAN, never as ''.
 
@@ -865,7 +878,7 @@ class TestRecordResolutionSentinelSuppressesWorkLog:
         )
         return written
 
-    @pytest.mark.parametrize('plan_id', [None, '', NO_PLAN_SENTINEL])
+    @pytest.mark.parametrize('plan_id', _PLAN_LESS_PLAN_IDS, ids=_PLAN_LESS_PLAN_ID_IDS)
     def test_plan_less_writes_no_work_log_but_still_emits_stderr(
         self, monkeypatch, capsys, plan_id
     ):
@@ -902,7 +915,7 @@ class TestRouteToDaemonForwardsTheSentinel:
     """``_route_to_daemon``: the sentinel IS the routing value, not an empty string."""
 
     @pytest.mark.allow_daemon_routing
-    @pytest.mark.parametrize('plan_id', [None, '', NO_PLAN_SENTINEL])
+    @pytest.mark.parametrize('plan_id', _PLAN_LESS_PLAN_IDS, ids=_PLAN_LESS_PLAN_ID_IDS)
     def test_plan_less_routing_forwards_the_sentinel(self, monkeypatch, tmp_path, plan_id):
         monkeypatch.delenv(factory.MARSHALLD_JOB_ENV, raising=False)
         log = tmp_path / 'job.log'
@@ -946,7 +959,7 @@ class TestRouteToDaemonForwardsTheSentinel:
 class TestEmitDaemonRequiredReportsTheSentinel:
     """The ``daemon_required`` envelope carries NO_PLAN, never the empty string."""
 
-    @pytest.mark.parametrize('plan_id', [None, '', NO_PLAN_SENTINEL])
+    @pytest.mark.parametrize('plan_id', _PLAN_LESS_PLAN_IDS, ids=_PLAN_LESS_PLAN_ID_IDS)
     def test_plan_less_envelope_reports_the_sentinel(self, monkeypatch, capsys, plan_id):
         monkeypatch.setattr(factory, 'log_entry', lambda *_a: None)
 

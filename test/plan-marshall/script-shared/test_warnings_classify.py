@@ -170,10 +170,10 @@ _REGEX_CASES = [
 ]
 
 _REGEX_IDS = [
-    'a-simple-regex',
-    'an-anchored-regex-with-groups',
+    'an-unanchored-regex-matching-mid-message',
+    'an-anchored-regex-of-character-classes',
     'an-unparseable-regex',
-    'a-regex-that-matches-nothing',
+    'an-anchored-regex-that-matches-nothing',
 ]
 
 

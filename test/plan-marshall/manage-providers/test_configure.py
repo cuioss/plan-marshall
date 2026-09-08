@@ -240,14 +240,19 @@ class TestConfigureAuthTypeValidation:
         self._creds_env = {'PLAN_MARSHALL_CREDENTIALS_DIR': str(creds_dir)}
         yield
 
+    #: Every ``auth_type`` the wizard accepts, offered to a provider whose own
+    #: declaration names none. The rows differ only in the value, so the ids are
+    #: derived from THIS list rather than written out beside it: a parallel id
+    #: list is only correct while the two orders agree, and one of its entries had
+    #: already drifted into claiming the value ``matches the declaration`` — a
+    #: match no row here can make, because ``_SONAR_PROVIDER`` declares no
+    #: ``auth_type`` at all.
+    _ACCEPTED_AUTH_TYPES = ['none', 'token', 'basic']
+
     @pytest.mark.parametrize(
         'auth_type',
-        ['none', 'token', 'basic'],
-        ids=[
-            'none-is-accepted-against-an-undeclared-auth-type',
-            'token-is-accepted-and-matches-the-declaration',
-            'basic-is-accepted-against-an-undeclared-auth-type',
-        ],
+        _ACCEPTED_AUTH_TYPES,
+        ids=[f'offered-auth-type-{value}' for value in _ACCEPTED_AUTH_TYPES],
     )
     def test_configure_accepts_the_auth_type_it_was_given(self, auth_type):
         """A provider declaring no auth_type accepts every auth_type offered to it."""

@@ -192,10 +192,10 @@ class TestValidateRelativePath:
             'empty',
             'absolute',
             'leading-parent-component',
-            'parent-components-after-a-descent',
-            'parent-components-in-mid-path',
+            'parent-components-that-escape-the-tree',
+            'two-parent-components-that-cancel-two-descents',
             'backslash-separated-parent-components',
-            'one-parent-component-that-merely-cancels-a-descent',
+            'one-parent-component-that-cancels-one-descent',
         ],
     )
     def test_rejects_an_uncontained_path_and_names_why(self, path, message):

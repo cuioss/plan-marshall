@@ -439,7 +439,19 @@ def test_fail_open_guard_allows_zero_surfaces_against_empty_previous(tmp_path, m
     assert (plan_dir / 'execute-script.py').exists()
 
 
-@pytest.mark.parametrize('derived,reused', [(1, 0), (0, 1)])
+#: The two ways an emission can be non-empty, as ``(derived, reused)`` counts.
+#: The ids are stated rather than left to pytest: these rows are bare integers,
+#: so the generated ids would be the coordinate pairs ``1-0`` and ``0-1`` — which
+#: name the numbers rather than the emission each one stands for.
+_NON_EMPTY_EMISSIONS = [(1, 0), (0, 1)]
+
+_NON_EMPTY_EMISSION_IDS = [
+    'one-freshly-derived-surface',
+    'one-surface-reused-unchanged',
+]
+
+
+@pytest.mark.parametrize('derived,reused', _NON_EMPTY_EMISSIONS, ids=_NON_EMPTY_EMISSION_IDS)
 def test_fail_open_guard_does_not_trip_when_surfaces_are_emitted(tmp_path, monkeypatch, derived, reused, previous_surfaces):
     """Either a derived OR a reused surface is a non-empty emission → no false trip.
 

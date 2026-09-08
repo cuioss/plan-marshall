@@ -292,18 +292,31 @@ def test_is_open_in_ide_enabled_non_dict_top_level_raises_value_error(plan_conte
     assert 'JSON object' in str(exc_info.value)
 
 
+#: ``{the id naming the case: the value stored at plan.open_in_ide}``. Every
+#: entry is a non-bool the strict isinstance check must refuse.
+#:
+#: The ids come off THIS mapping's own keys rather than being left to pytest.
+#: The values are dicts, strings, ints and a list, which pytest can name only by
+#: position — so the report read ``open_in_ide_value0`` through
+#: ``open_in_ide_value7`` while a per-row name was already being carried as a
+#: first tuple element the body unpacked and threw away, putting it nowhere the
+#: report could reach.
+_NON_BOOL_OPEN_IN_IDE_VALUES = {
+    'a-legacy-wrapper-dict-that-enables': {'enabled': True},
+    'a-legacy-wrapper-dict-that-disables': {'enabled': False},
+    'an-empty-dict': {},
+    'the-string-true': 'true',
+    'the-string-false': 'false',
+    'the-integer-one': 1,
+    'the-integer-zero': 0,
+    'an-empty-list': [],
+}
+
+
 @pytest.mark.parametrize(
     'open_in_ide_value',
-    [
-        ('legacy_dict_true', {'enabled': True}),
-        ('legacy_dict_false', {'enabled': False}),
-        ('empty_dict', {}),
-        ('string_true', 'true'),
-        ('string_false', 'false'),
-        ('integer_one', 1),
-        ('integer_zero', 0),
-        ('list', []),
-    ],
+    list(_NON_BOOL_OPEN_IN_IDE_VALUES.values()),
+    ids=list(_NON_BOOL_OPEN_IN_IDE_VALUES),
 )
 def test_is_open_in_ide_enabled_non_bool_value_raises_value_error(plan_context, open_in_ide_value):
     """Non-bool value at plan.open_in_ide raises ValueError naming the file.
@@ -313,10 +326,9 @@ def test_is_open_in_ide_enabled_non_bool_value_raises_value_error(plan_context, 
     string values (`bool("false")` -> `True`). The strict isinstance check
     fails loudly instead.
     """
-    label, value = open_in_ide_value
     marshal_path = plan_context.fixture_dir / 'marshal.json'
     marshal_path.write_text(
-        json.dumps({'plan': {'open_in_ide': value}}), encoding='utf-8'
+        json.dumps({'plan': {'open_in_ide': open_in_ide_value}}), encoding='utf-8'
     )
 
     with pytest.raises(ValueError) as exc_info:

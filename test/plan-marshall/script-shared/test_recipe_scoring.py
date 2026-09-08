@@ -386,12 +386,19 @@ _REQ_TERMINAL_TITLE = (
     'current title-handling surface and refactor it toward coherence.'
 )
 
-_SURGICAL_MATCH_REQUESTS = (
-    _REQ_CHECK_ERA_STAMPS,
-    _REQ_GET_DELIVERABLE,
-    _REQ_MANIFEST_ORDER,
-    _REQ_SAFE_MERGE,
-)
+#: The real archived requests, keyed by the id each carries in the test report.
+#: Both tables below derive their ids from THIS mapping rather than zipping a
+#: parallel list on by position: the requests are multi-paragraph strings pytest
+#: cannot name on its own, and an id list drawn from anywhere else would silently
+#: relabel every row the moment this order moves.
+_SURGICAL_MATCH_REQUESTS_BY_ID = {
+    'check-era-stamps': _REQ_CHECK_ERA_STAMPS,
+    'get-deliverable': _REQ_GET_DELIVERABLE,
+    'manifest-order': _REQ_MANIFEST_ORDER,
+    'safe-merge': _REQ_SAFE_MERGE,
+}
+
+_SURGICAL_MATCH_REQUESTS = tuple(_SURGICAL_MATCH_REQUESTS_BY_ID.values())
 
 _SURGICAL_RECIPE = {
     'key': 'surgical-fix',
@@ -426,10 +433,7 @@ _SHAPE_BAND_CASES = [
 ]
 
 _SHAPE_BAND_IDS = [
-    'real-request-check-era-stamps',
-    'real-request-get-deliverable',
-    'real-request-manifest-order',
-    'real-request-safe-merge',
+    *(f'real-request-{key}' for key in _SURGICAL_MATCH_REQUESTS_BY_ID),
     'a-broad-structural-review-request-is-vetoed',
     'an-empty-narrative',
     'no-narrative-at-all',
@@ -477,7 +481,9 @@ def test_is_surgical_fix_recipe(recipe: dict, expected: bool):
 # --- score_recipe SHAPE blend (surgical-fix only) ----------------------------
 
 
-@pytest.mark.parametrize('request_text', _SURGICAL_MATCH_REQUESTS)
+@pytest.mark.parametrize(
+    'request_text', _SURGICAL_MATCH_REQUESTS, ids=list(_SURGICAL_MATCH_REQUESTS_BY_ID)
+)
 def test_score_recipe_shape_lifts_surgical_fix_above_auto_route(request_text):
     """The shape arm lifts surgical-fix confidence to the strong band for real requests.
 
