@@ -19,6 +19,7 @@ sys.path manipulation.
 from pathlib import Path
 
 import claude_runtime
+import pytest
 
 # =============================================================================
 # The credential-protection deny rules
@@ -94,9 +95,28 @@ class TestProtectPathDenyRules:
         # the absolute spelling, which names the directory rather than anything.
         assert f'Bash(python3 -c *{tmp_path}*)' in rules
 
-    def test_every_exfiltration_vector_is_covered_in_both_spellings(self) -> None:
+    def test_the_exfiltration_vector_population_is_not_empty(self) -> None:
+        """The per-vector sweep below needs a population to sweep.
+
+        Kept separate because a parametrized sweep over an EMPTY tuple collects
+        zero cases and reports green — the one failure a derived population
+        cannot report about itself.
+        """
+        assert claude_runtime._EXFILTRATION_BASH_VECTORS
+
+    @pytest.mark.parametrize(
+        'vector',
+        claude_runtime._EXFILTRATION_BASH_VECTORS,
+        ids=claude_runtime._EXFILTRATION_BASH_VECTORS,
+    )
+    def test_an_exfiltration_vector_is_covered_in_both_spellings(self, vector: str) -> None:
+        """Each vector is denied in the tilde form AND the absolute one.
+
+        The rows are the producer's own vector tuple rather than a copy, so a
+        vector added there is swept here without an edit to this file.
+        """
         protected = claude_runtime.resolve_home() / '.plan-marshall' / 'credentials'
         rules = claude_runtime._protect_path_deny_rules(str(protected))
-        for vector in claude_runtime._EXFILTRATION_BASH_VECTORS:
-            matching = [r for r in rules if r.startswith(f'Bash({vector} ')]
-            assert len(matching) == 2, f'{vector} must be guarded in tilde AND absolute form'
+
+        matching = [r for r in rules if r.startswith(f'Bash({vector} ')]
+        assert len(matching) == 2, f'{vector} must be guarded in tilde AND absolute form'

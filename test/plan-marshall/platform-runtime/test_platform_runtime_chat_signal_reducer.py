@@ -15,6 +15,7 @@ import json
 
 import _chat_provenance as _prov
 import _chat_signal_reducer as _mod
+import pytest
 from _chat_signal_fixtures import (
     SKILL_LOAD_TEXT,
 )
@@ -30,35 +31,51 @@ from _chat_signal_fixtures import (
 # ---------------------------------------------------------------------------
 
 
-class TestExtractText:
-    def test_plain_string_content_returned_verbatim(self):
-        assert _mod.extract_text('hello world') == 'hello world'
-
-    def test_text_blocks_joined_by_newline(self):
-        content = _text_blocks('first', 'second')
-        assert _mod.extract_text(content) == 'first\nsecond'
-
-    def test_non_text_blocks_skipped(self):
-        content = [
+#: ``(a turn's ``content``, the text extracted from it)``. Content arrives as a
+#: bare string or as a block list, and the rows walk what a block list may hold:
+#: text blocks joined by a newline, blocks of other types that contribute
+#: nothing, a block missing ``type`` but carrying ``text`` (a defensive
+#: shape-drift allowance), and a ``text`` value that is not a string. The last
+#: three rows are shapes the schema does not describe at all — an integer, a
+#: missing content, and a dict where a list belongs — and each extracts to
+#: nothing rather than raising.
+_EXTRACT_TEXT_CASES = [
+    ('hello world', 'hello world'),
+    (_text_blocks('first', 'second'), 'first\nsecond'),
+    (
+        [
             {'type': 'tool_use', 'name': 'Bash'},
             {'type': 'text', 'text': 'kept'},
             {'type': 'tool_result', 'content': 'ignored'},
-        ]
-        assert _mod.extract_text(content) == 'kept'
+        ],
+        'kept',
+    ),
+    ([{'text': 'recovered'}], 'recovered'),
+    ([{'type': 'text', 'text': 123}], ''),
+    (42, ''),
+    (None, ''),
+    ({'role': 'user'}, ''),
+]
 
-    def test_typeless_block_with_text_treated_as_text(self):
-        # Defensive shape drift: a block missing ``type`` but carrying ``text``.
-        content = [{'text': 'recovered'}]
-        assert _mod.extract_text(content) == 'recovered'
+_EXTRACT_TEXT_IDS = [
+    'a-bare-string-is-the-text',
+    'text-blocks-joined-by-newline',
+    'blocks-of-other-types-contribute-nothing',
+    'a-typeless-block-carrying-text-is-text',
+    'a-non-string-text-value-is-ignored',
+    'an-integer-is-not-content',
+    'none-is-not-content',
+    'a-dict-where-a-block-list-belongs',
+]
 
-    def test_unknown_shape_yields_empty_string(self):
-        assert _mod.extract_text(42) == ''
-        assert _mod.extract_text(None) == ''
-        assert _mod.extract_text({'role': 'user'}) == ''
 
-    def test_block_with_non_string_text_ignored(self):
-        content = [{'type': 'text', 'text': 123}]
-        assert _mod.extract_text(content) == ''
+class TestExtractText:
+    @pytest.mark.parametrize(
+        ('content', 'expected'), _EXTRACT_TEXT_CASES, ids=_EXTRACT_TEXT_IDS
+    )
+    def test_content_extracts_to_its_text(self, content, expected):
+        """Every content shape extracts to text, and an unknown one to nothing."""
+        assert _mod.extract_text(content) == expected
 
 
 # ---------------------------------------------------------------------------
@@ -66,20 +83,50 @@ class TestExtractText:
 # ---------------------------------------------------------------------------
 
 
+#: The decision markers, written out as an INDEPENDENT oracle rather than read
+#: back from the module under test. See
+#: ``test_the_marker_tuple_is_the_pinned_literal`` for why.
+_MARKER_ORACLE = (
+    '[STATUS]', '[ERROR]', 'AskUserQuestion', '[DECISION]', '[DISPATCH]', '[SKILL]'
+)
+
+#: ``(role, turn text, whether the turn is kept)``. The two roles are filtered by
+#: DIFFERENT rules, and the rows show both: a ``user`` turn is kept when it is
+#: operator-authored and carries content, so an empty one, a whitespace-only one
+#: (both tool-result placeholders) and an injected skill body are all dropped;
+#: an ``assistant`` turn is kept only when it carries a decision marker. The last
+#: two rows are the roles the predicate recognises at all — a marker on a
+#: non-participating role does not buy retention.
+_SIGNAL_BEARING_CASES = [
+    ('user', 'please rename the module', True),
+    ('user', '', False),
+    ('user', '   \n\t  ', False),
+    ('user', SKILL_LOAD_TEXT, False),
+    ('assistant', 'now [STATUS] running phase', True),
+    ('assistant', 'just some prose', False),
+    ('tool', '[STATUS] still dropped', False),
+    ('system', 'whatever', False),
+]
+
+_SIGNAL_BEARING_IDS = [
+    'operator-prose-is-kept',
+    'an-empty-user-turn-is-dropped',
+    'a-whitespace-only-user-turn-is-dropped',
+    'an-injected-skill-body-is-dropped',
+    'a-marked-assistant-turn-is-kept',
+    'an-unmarked-assistant-turn-is-dropped',
+    'a-marker-does-not-save-the-tool-role',
+    'the-system-role-never-participates',
+]
+
+
 class TestIsSignalBearing:
-    def test_operator_authored_user_turn_kept(self):
-        """A genuine operator utterance is kept — the predicate filters by
-        provenance and content, not by role alone."""
-        assert _mod.is_signal_bearing('user', 'please rename the module') is True
-
-    def test_user_turn_dropped_when_empty_or_whitespace(self):
-        """Empty and whitespace-only user turns are tool-result placeholders
-        carrying no operator signal, and are dropped."""
-        assert _mod.is_signal_bearing('user', '') is False
-        assert _mod.is_signal_bearing('user', '   \n\t  ') is False
-
-    def test_synthetic_skill_load_user_turn_dropped(self):
-        assert _mod.is_signal_bearing('user', SKILL_LOAD_TEXT) is False
+    @pytest.mark.parametrize(
+        ('role', 'text', 'kept'), _SIGNAL_BEARING_CASES, ids=_SIGNAL_BEARING_IDS
+    )
+    def test_the_predicate_filters_by_provenance_and_content(self, role, text, kept):
+        """Retention is decided by what the turn carries, never by its role alone."""
+        assert _mod.is_signal_bearing(role, text) is kept
 
     def test_operator_quoting_the_marker_line_is_kept(self):
         """The predicate is structural — the marker line alone is not enough.
@@ -91,27 +138,20 @@ class TestIsSignalBearing:
         assert _prov.is_synthetic_skill_load(text) is False
         assert _mod.is_signal_bearing('user', text) is True
 
-    def test_assistant_turn_kept_with_decision_marker(self):
-        assert _mod.is_signal_bearing('assistant', 'now [STATUS] running phase') is True
+    def test_the_marker_tuple_is_the_pinned_literal(self):
+        """The markers are named as literals, never read back from the constant.
 
-    def test_assistant_turn_dropped_without_marker(self):
-        assert _mod.is_signal_bearing('assistant', 'just some prose') is False
-
-    def test_each_marker_triggers_retention(self):
-        """Markers are named as literals, never read back from the constant.
-
-        Iterating ``DECISION_MARKERS`` makes the test shrink with the tuple:
+        A sweep that iterated ``DECISION_MARKERS`` would shrink with the tuple:
         deleting an entry leaves it green while marker-bearing context stops
-        reaching the Tier-1 prompt.
+        reaching the Tier-1 prompt. This equality is the oracle for the
+        per-marker sweep below, whose rows are the same literals.
         """
-        expected = ('[STATUS]', '[ERROR]', 'AskUserQuestion', '[DECISION]', '[DISPATCH]', '[SKILL]')
-        assert _mod.DECISION_MARKERS == expected
-        for marker in expected:
-            assert _mod.is_signal_bearing('assistant', f'prefix {marker} suffix') is True
+        assert _mod.DECISION_MARKERS == _MARKER_ORACLE
 
-    def test_other_roles_dropped(self):
-        assert _mod.is_signal_bearing('tool', '[STATUS] still dropped') is False
-        assert _mod.is_signal_bearing('system', 'whatever') is False
+    @pytest.mark.parametrize('marker', _MARKER_ORACLE, ids=_MARKER_ORACLE)
+    def test_each_marker_triggers_retention(self, marker: str):
+        """Each marker keeps an assistant turn that would otherwise be dropped."""
+        assert _mod.is_signal_bearing('assistant', f'prefix {marker} suffix') is True
 
 
 # ---------------------------------------------------------------------------
@@ -119,46 +159,65 @@ class TestIsSignalBearing:
 # ---------------------------------------------------------------------------
 
 
+#: ``(a transcript line, the ``(role, text)`` it parses to, or ``None``)``. Only
+#: the first two and the last row are turns. The refusals walk the ladder the
+#: parser descends: nothing to decode (blank, whitespace-only), bytes that are
+#: not JSON at all, JSON that is not an object, an object with no ``message``, a
+#: ``message`` that is not an object, and finally a message whose ``role`` is
+#: missing or empty. Each rung is its own row because each is a different place
+#: the walk can stop, and a parser that skipped one would still satisfy the rest.
+#: The last row is a real turn carrying only non-text blocks — it parses, with an
+#: empty text, which is the layering the test below states.
+_PARSE_TURN_CASES = [
+    (_turn('user', 'hello'), ('user', 'hello')),
+    (_turn('assistant', _text_blocks('[STATUS] up')), ('assistant', '[STATUS] up')),
+    ('', None),
+    ('   \t  ', None),
+    ('this is not json', None),
+    ('{ broken json', None),
+    (json.dumps([1, 2, 3]), None),
+    (json.dumps('a bare string'), None),
+    (json.dumps({'type': 'summary'}), None),
+    (json.dumps({'message': 'not-a-dict'}), None),
+    (json.dumps({'message': {'content': 'x'}}), None),
+    (json.dumps({'message': {'role': '', 'content': 'x'}}), None),
+    (_turn('user', [{'type': 'tool_result', 'content': 'r'}]), ('user', '')),
+]
+
+_PARSE_TURN_IDS = [
+    'a-user-turn-with-string-content',
+    'an-assistant-turn-with-text-blocks',
+    'a-blank-line',
+    'a-whitespace-only-line',
+    'not-json-at-all',
+    'truncated-json',
+    'json-list-instead-of-object',
+    'json-string-instead-of-object',
+    'an-event-carrying-no-message',
+    'a-message-that-is-not-an-object',
+    'a-message-with-no-role',
+    'a-message-with-an-empty-role',
+    'a-turn-carrying-only-non-text-blocks',
+]
+
+
 class TestParseTurn:
-    def test_parses_valid_user_turn(self):
-        line = _turn('user', 'hello')
-        assert _mod.parse_turn(line) == ('user', 'hello')
+    @pytest.mark.parametrize(('line', 'expected'), _PARSE_TURN_CASES, ids=_PARSE_TURN_IDS)
+    def test_a_line_parses_to_a_turn_or_to_nothing(self, line: str, expected) -> None:
+        """A line yields ``(role, text)`` only when it really is a turn."""
+        assert _mod.parse_turn(line) == expected
 
-    def test_parses_assistant_text_blocks(self):
-        line = _turn('assistant', _text_blocks('[STATUS] up'))
-        assert _mod.parse_turn(line) == ('assistant', '[STATUS] up')
+    def test_an_empty_text_is_reported_by_parsing_and_dropped_by_reduction(self):
+        """The two concerns stay separable across the layer boundary.
 
-    def test_blank_line_returns_none(self):
-        assert _mod.parse_turn('') is None
-        assert _mod.parse_turn('   \t  ') is None
-
-    def test_non_json_line_returns_none(self):
-        assert _mod.parse_turn('this is not json') is None
-        assert _mod.parse_turn('{ broken json') is None
-
-    def test_non_object_payload_returns_none(self):
-        assert _mod.parse_turn(json.dumps([1, 2, 3])) is None
-        assert _mod.parse_turn(json.dumps('a bare string')) is None
-
-    def test_event_without_message_returns_none(self):
-        assert _mod.parse_turn(json.dumps({'type': 'summary'})) is None
-
-    def test_message_not_object_returns_none(self):
-        assert _mod.parse_turn(json.dumps({'message': 'not-a-dict'})) is None
-
-    def test_missing_role_returns_none(self):
-        assert _mod.parse_turn(json.dumps({'message': {'content': 'x'}})) is None
-
-    def test_empty_role_returns_none(self):
-        assert _mod.parse_turn(json.dumps({'message': {'role': '', 'content': 'x'}})) is None
-
-    def test_turn_with_only_non_text_blocks_yields_empty_text(self):
-        """``parse_turn`` still surfaces the empty text — the DROP happens one
-        layer later, in ``is_signal_bearing``, so the two concerns stay
-        separable (parsing reports what the turn carried; reduction decides
-        whether it is signal)."""
-        line = _turn('user', [{'type': 'tool_result', 'content': 'r'}])
-        assert _mod.parse_turn(line) == ('user', '')
+        Parsing reports what the turn CARRIED — the last row of the table above
+        surfaces an empty text rather than refusing the turn — and the DROP
+        happens one layer later, in ``is_signal_bearing``.
+        """
+        assert _mod.parse_turn(_turn('user', [{'type': 'tool_result', 'content': 'r'}])) == (
+            'user',
+            '',
+        )
         assert _mod.is_signal_bearing('user', '') is False
 
 

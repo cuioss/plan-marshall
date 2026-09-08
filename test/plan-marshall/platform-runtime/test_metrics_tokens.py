@@ -534,23 +534,46 @@ def test_attribute_cache_read_emits_the_full_key_set_derived_from_bucket_names()
     assert len(claude_runtime._TOOL_BUCKET_NAMES) > 1
 
 
-def test_attribute_cache_read_reconciles_exactly_to_the_recorded_total():
+#: ``(recorded cache_read total, the observed residency weights)``. Exact
+#: reconciliation is an INVARIANT rather than a value, so the rows sweep the
+#: shapes that could break it: a zero total with and without weight; a real total
+#: with no weight at all (everything must land in the residual); one weight; two;
+#: four weights over a total none of them divides evenly, which is where the
+#: rounding crumbs appear; and a total of 1 that cannot be split at all.
+_CACHE_READ_RECONCILIATION_CASES = [
+    (0, {}),
+    (0, {"exploration": 7}),
+    (1000, {}),
+    (1000, {"exploration": 3}),
+    (1000, {"exploration": 1, "work": 2}),
+    (997, {"exploration": 13, "work": 7, "execute": 11, "orchestration": 3}),
+    (1, {"exploration": 1, "work": 1, "execute": 1}),
+]
+
+_CACHE_READ_RECONCILIATION_IDS = [
+    'zero-total-no-weight',
+    'zero-total-with-weight',
+    'total-with-no-weight-at-all',
+    'single-weight',
+    'two-weights-dividing-evenly',
+    'four-weights-none-dividing-evenly',
+    'total-of-one-cannot-be-split',
+]
+
+
+@pytest.mark.parametrize(
+    ("total", "weights"),
+    _CACHE_READ_RECONCILIATION_CASES,
+    ids=_CACHE_READ_RECONCILIATION_IDS,
+)
+def test_attribute_cache_read_reconciles_exactly_to_the_recorded_total(total, weights):
     """Named parts plus residual equal the recorded cache_read, for every weight shape."""
-    cases = [
-        (0, {}),
-        (0, {"exploration": 7}),
-        (1000, {}),
-        (1000, {"exploration": 3}),
-        (1000, {"exploration": 1, "work": 2}),
-        (997, {"exploration": 13, "work": 7, "execute": 11, "orchestration": 3}),
-        (1, {"exploration": 1, "work": 1, "execute": 1}),
-    ]
-    for total, weights in cases:
-        attributed = claude_runtime._attribute_cache_read(total, weights)
-        assert sum(attributed.values()) == total, (total, weights, attributed)
-        # A named part is never negative and never exceeds the whole.
-        for key, value in attributed.items():
-            assert 0 <= value <= total, (key, value, total, weights)
+    attributed = claude_runtime._attribute_cache_read(total, weights)
+
+    assert sum(attributed.values()) == total, (total, weights, attributed)
+    # A named part is never negative and never exceeds the whole.
+    for key, value in attributed.items():
+        assert 0 <= value <= total, (key, value, total, weights)
 
 
 def test_attribute_cache_read_floors_named_parts_and_banks_the_remainder_in_the_residual():
@@ -877,30 +900,41 @@ def test_document_targets_route_to_doc_residency(tmp_path, home_at_tmp):
     assert five["exploration_unattributed_bytes"] == 0
 
 
-def test_live_tool_use_items_carry_input_so_the_fail_open_arm_is_the_control():
-    """Census-anchored: the classifier's two fail-open arms, one live and one defensive.
+#: ``(a ``tool_use`` item's ``input`` payload, the target path it yields)``.
+#: Census-anchored: a sweep of the live transcript corpus (1999 ``tool_use``
+#: items) found ZERO items lacking ``input``, so the first two rows are the arm
+#: that actually fires in production — a tool carrying input but no path-bearing
+#: key — while the next two are the defensive no-input guard that the census
+#: never observed. The last two are the matched positive control: without them
+#: every ``None`` row above would pass on a helper that always returned ``None``.
+_TARGET_PATH_CASES = [
+    ({"url": "https://example.invalid"}, None),
+    ({"query": "how to"}, None),
+    (None, None),
+    ({}, None),
+    ({"file_path": "a/b.py"}, "a/b.py"),
+    ({"path": "a/b"}, "a/b"),
+]
 
-    A census of the live transcript corpus (1999 ``tool_use`` items) found ZERO
-    items lacking ``input`` — so "no input at all" is a defensive guard, not a
-    routine path, and the arm that actually fires in production is the
-    NON-PATH-ADDRESSED tool. Both are asserted here so neither can rot: the live
-    arm is the positive case and the defensive arm is its matched control.
-    """
-    # Live arm: WebFetch/WebSearch carry input, but no path-bearing key.
-    assert claude_runtime._extract_target_path({"url": "https://example.invalid"}) is None
-    assert claude_runtime._extract_target_path({"query": "how to"}) is None
-    # Defensive arm: an item with no input dict at all.
-    assert claude_runtime._extract_target_path(None) is None
-    assert claude_runtime._extract_target_path({}) is None
-    # Both resolve to the same fail-open sub-source rather than a named one.
+_TARGET_PATH_IDS = [
+    'live-arm-url-bearing-tool',
+    'live-arm-query-bearing-tool',
+    'defensive-arm-no-input-dict-at-all',
+    'defensive-arm-empty-input-dict',
+    'file-path-key-is-recovered',
+    'path-key-is-recovered',
+]
+
+
+@pytest.mark.parametrize(("tool_input", "expected"), _TARGET_PATH_CASES, ids=_TARGET_PATH_IDS)
+def test_extract_target_path_recovers_a_path_or_fails_open(tool_input, expected):
+    """A path-bearing key is recovered; anything else yields None rather than a guess."""
+    assert claude_runtime._extract_target_path(tool_input) == expected
+
+
+def test_a_pathless_call_classifies_as_unattributed():
+    """Both fail-open arms resolve to the same sub-source, never to a named one."""
     assert claude_runtime._classify_exploration_target(None) == "unattributed"
-    # Matched positive control — the path-bearing keys the census DID find must
-    # still be recovered, otherwise the four assertions above would pass on a
-    # helper that always returned None.
-    assert (
-        claude_runtime._extract_target_path({"file_path": "a/b.py"}) == "a/b.py"
-    )
-    assert claude_runtime._extract_target_path({"path": "a/b"}) == "a/b"
 
 
 def test_unrecognised_and_pathless_calls_land_in_exploration_unattributed(tmp_path, home_at_tmp):

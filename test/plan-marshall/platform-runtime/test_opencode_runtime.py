@@ -370,18 +370,30 @@ def test_permission_fix_is_noop(runtime: OpenCodeRuntime) -> None:
     _assert_permission_noop(result)
 
 
-def test_permission_fix_all_valid_operations_are_noop(runtime: OpenCodeRuntime) -> None:
-    """permission_fix accepts every published operation name and no-ops for each.
+def test_the_permission_fix_operation_population_is_not_empty() -> None:
+    """The derived sweep below needs a population, or it asserts nothing at all.
 
-    The population is derived from ``PERMISSION_FIX_OPERATIONS`` rather than
-    restated, so an operation added there is swept here without an edit. The
-    non-vacuity guard matters for exactly that reason: a derived sweep over an
-    empty population passes without asserting anything.
+    Kept as its own assertion because a parametrized sweep over an EMPTY tuple
+    collects zero cases and reports green — the one failure a derived population
+    cannot report about itself.
     """
     assert PERMISSION_FIX_OPERATIONS, "the operation set must not be empty"
-    for op in PERMISSION_FIX_OPERATIONS:
-        result = _parse(runtime.permission_fix("global", op, [], False))
-        assert result["status"] == "no-op", f"Expected no-op for operation {op!r}"
+
+
+@pytest.mark.parametrize(
+    "operation", sorted(PERMISSION_FIX_OPERATIONS), ids=sorted(PERMISSION_FIX_OPERATIONS)
+)
+def test_permission_fix_no_ops_for_every_published_operation(
+    runtime: OpenCodeRuntime, operation: str
+) -> None:
+    """Every published operation name is accepted and declines honestly.
+
+    The rows are the operation set itself rather than a restated copy, so an
+    operation added there is swept here without an edit to this file.
+    """
+    result = _parse(runtime.permission_fix("global", operation, [], False))
+
+    assert result["status"] == "no-op", f"Expected no-op for operation {operation!r}"
 
 
 def test_permission_fix_invalid_scope_returns_error(runtime: OpenCodeRuntime) -> None:
@@ -658,40 +670,42 @@ def test_wait_for_noop_reports_no_outcome(runtime: OpenCodeRuntime) -> None:
     assert "terminal" not in result
 
 
-def test_wait_for_reason_names_the_absent_session_id(runtime: OpenCodeRuntime) -> None:
-    """The decline is grounded in a verified fact: OpenCode provides no platform
-    session id (issue ``#9292``), so a held wait cannot be re-attached."""
-    reason = _parse(runtime.wait_for("build-job", "job-1", 60))["reason"]
-    assert "session id" in reason
-    assert "#9292" in reason
+#: ``(payload field, the fragments that field must carry)``. The decline is only
+#: honest if it says WHY, so each row pins one verified gap by name: the three
+#: ``reason`` rows are the absent platform session id (so a held wait cannot be
+#: re-attached), the absent hook channel, and the absent shared build layer
+#: (nothing to inspect an observable through) — the first two carrying their
+#: upstream issue numbers. The two ``alternative`` rows name shipped behaviour on
+#: this target: the observable's own bounded-wait verb run in-turn, and the
+#: checkpoint-and-re-dispatch path for a bound too large to hold.
+_WAIT_FOR_DECLINE_TEXT = [
+    ("reason", ["session id", "#9292"]),
+    ("reason", ["hook channel", "anomalyco/opencode#8619"]),
+    ("reason", ["shared build layer"]),
+    ("alternative", ["bounded-wait verb", "in-turn"]),
+    ("alternative", ["re-dispatch"]),
+]
+
+_WAIT_FOR_DECLINE_TEXT_IDS = [
+    'reason-names-the-absent-session-id',
+    'reason-names-the-absent-hook-channel',
+    'reason-names-the-absent-shared-build-layer',
+    'alternative-names-the-in-turn-bounded-wait',
+    'alternative-names-checkpoint-and-re-dispatch',
+]
 
 
-def test_wait_for_reason_names_the_absent_hook_channel(runtime: OpenCodeRuntime) -> None:
-    """The decline names the missing hook channel with its upstream issue."""
-    reason = _parse(runtime.wait_for("build-job", "job-1", 60))["reason"]
-    assert "hook channel" in reason
-    assert "anomalyco/opencode#8619" in reason
+@pytest.mark.parametrize(
+    ("field", "fragments"), _WAIT_FOR_DECLINE_TEXT, ids=_WAIT_FOR_DECLINE_TEXT_IDS
+)
+def test_wait_for_decline_names_its_grounds(
+    runtime: OpenCodeRuntime, field: str, fragments: list[str]
+) -> None:
+    """The decline names each verified gap, and the alternative that replaces it."""
+    text = _parse(runtime.wait_for("build-job", "job-1", 60))[field]
 
-
-def test_wait_for_reason_names_the_absent_shared_build_layer(runtime: OpenCodeRuntime) -> None:
-    """The decline names the third verified gap: the OpenCode runtime bootstraps
-    no shared build layer, so there is nothing to inspect an observable through."""
-    reason = _parse(runtime.wait_for("build-job", "job-1", 60))["reason"]
-    assert "shared build layer" in reason
-
-
-def test_wait_for_alternative_names_the_in_turn_bounded_wait(runtime: OpenCodeRuntime) -> None:
-    """The alternative is real shipped behaviour on this target — the observable's
-    own bounded-wait verb run synchronously in-turn."""
-    alternative = _parse(runtime.wait_for("build-job", "job-1", 60))["alternative"]
-    assert "bounded-wait verb" in alternative
-    assert "in-turn" in alternative
-
-
-def test_wait_for_alternative_names_checkpoint_and_re_dispatch(runtime: OpenCodeRuntime) -> None:
-    """The alternative also names the large-bound path: checkpoint, re-dispatch."""
-    alternative = _parse(runtime.wait_for("build-job", "job-1", 60))["alternative"]
-    assert "re-dispatch" in alternative
+    for fragment in fragments:
+        assert fragment in text, f"{field} does not carry {fragment!r}: {text!r}"
 
 
 @pytest.mark.parametrize(
@@ -700,6 +714,11 @@ def test_wait_for_alternative_names_checkpoint_and_re_dispatch(runtime: OpenCode
         ("build-job", "job-1", 60),
         ("ci-run", "run-9", 1),
         ("build-job", "", 100000),
+    ],
+    ids=[
+        'ordinary-input',
+        'unknown-observable-kind',
+        'empty-reference-and-outsized-bound',
     ],
 )
 def test_wait_for_declines_uniformly_for_any_input(

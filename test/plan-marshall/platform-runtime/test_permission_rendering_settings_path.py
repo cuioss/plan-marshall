@@ -20,6 +20,7 @@ import json
 from pathlib import Path
 
 import claude_runtime
+import pytest
 from toon_parser import parse_toon
 
 
@@ -32,56 +33,63 @@ def _parse(raw: str) -> dict:
 # =============================================================================
 
 
+def _materialize(path: Path, kind: str | None) -> None:
+    """Create *path* as a file, as a directory, or not at all.
+
+    ``'dir'`` is a real input rather than a curiosity: a DIRECTORY named
+    ``settings.local.json`` would load as the empty-permissions skeleton and hide
+    the shared file, so the selector tests ``is_file`` and this helper is what
+    lets the table state that case as data alongside the ordinary ones.
+    """
+    if kind == 'file':
+        path.write_text('{}', encoding='utf-8')
+    elif kind == 'dir':
+        path.mkdir()
+
+
+#: ``(what sits at settings.local.json, what sits at settings.json, the file the
+#: read selector must resolve)``. The read path prefers the operator's own local
+#: file, so the first two rows take it and the next two fall through to the
+#: shared one — including the row where NEITHER exists, which still resolves to
+#: the shared name rather than to nothing. The last row is the shape that makes
+#: the preference a real test rather than a name lookup: a directory occupying
+#: the local path is not a settings file, so the shared file wins instead of an
+#: operator's rules silently reading as empty.
+_READ_PATH_CASES = [
+    ('file', 'file', 'settings.local.json'),
+    ('file', None, 'settings.local.json'),
+    (None, 'file', 'settings.json'),
+    (None, None, 'settings.json'),
+    ('dir', 'file', 'settings.json'),
+]
+
+_READ_PATH_IDS = [
+    'both-present-local-wins',
+    'only-local-present',
+    'only-shared-present',
+    'neither-present-resolves-the-shared-name',
+    'a-directory-at-the-local-path-does-not-shadow-the-shared-file',
+]
+
+
 class TestProjectSettingsReadPath:
     """The read preference is the runtime's, and it mirrors the write preference."""
 
-    def test_prefers_settings_local_json_when_it_exists(self, tmp_path: Path) -> None:
-        claude_dir = tmp_path / '.claude'
-        claude_dir.mkdir()
-        (claude_dir / 'settings.local.json').write_text('{}', encoding='utf-8')
-        (claude_dir / 'settings.json').write_text('{}', encoding='utf-8')
-        assert claude_runtime._claude_project_settings_read_path(str(tmp_path)) == (
-            claude_dir / 'settings.local.json'
-        )
-
-    def test_reads_settings_local_json_when_it_is_the_only_one(self, tmp_path: Path) -> None:
-        claude_dir = tmp_path / '.claude'
-        claude_dir.mkdir()
-        (claude_dir / 'settings.local.json').write_text('{}', encoding='utf-8')
-        assert claude_runtime._claude_project_settings_read_path(str(tmp_path)) == (
-            claude_dir / 'settings.local.json'
-        )
-
-    def test_falls_back_to_settings_json_when_local_absent(self, tmp_path: Path) -> None:
-        claude_dir = tmp_path / '.claude'
-        claude_dir.mkdir()
-        (claude_dir / 'settings.json').write_text('{}', encoding='utf-8')
-        assert claude_runtime._claude_project_settings_read_path(str(tmp_path)) == (
-            claude_dir / 'settings.json'
-        )
-
-    def test_returns_settings_json_when_neither_exists(self, tmp_path: Path) -> None:
-        """An absent pair reads as the shared file."""
-        assert claude_runtime._claude_project_settings_read_path(str(tmp_path)) == (
-            tmp_path / '.claude' / 'settings.json'
-        )
-
-    def test_a_directory_at_the_local_path_does_not_shadow_the_shared_file(
-        self, tmp_path: Path
+    @pytest.mark.parametrize(
+        ('local', 'shared', 'expected'), _READ_PATH_CASES, ids=_READ_PATH_IDS
+    )
+    def test_the_read_selector_prefers_the_operators_own_file(
+        self, tmp_path: Path, local: str | None, shared: str | None, expected: str
     ) -> None:
-        """A DIRECTORY named settings.local.json must not be selected.
-
-        Selecting it would load as the empty-permissions skeleton and hide the
-        real shared file — an operator's rules silently absent rather than an
-        error. The selector tests ``is_file``, so the shared file wins.
-        """
+        """The read path takes ``settings.local.json`` whenever it is a real file."""
         claude_dir = tmp_path / '.claude'
         claude_dir.mkdir()
-        (claude_dir / 'settings.local.json').mkdir()
-        (claude_dir / 'settings.json').write_text('{}', encoding='utf-8')
-        assert claude_runtime._claude_project_settings_read_path(str(tmp_path)) == (
-            claude_dir / 'settings.json'
-        )
+        _materialize(claude_dir / 'settings.local.json', local)
+        _materialize(claude_dir / 'settings.json', shared)
+
+        resolved = claude_runtime._claude_project_settings_read_path(str(tmp_path))
+
+        assert resolved == claude_dir / expected
 
     def test_a_directory_at_the_shared_path_does_not_capture_the_write(
         self, tmp_path: Path

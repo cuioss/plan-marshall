@@ -23,6 +23,7 @@ from pathlib import Path
 
 import _chat_gate_decisions as _gate
 import _chat_signal_reducer as _mod
+import pytest
 from _chat_signal_fixtures import (
     OPERATOR_TEXT,
     REENTRY_NOTICE,
@@ -340,8 +341,6 @@ class TestTranscriptReading:
         into an absent transcript — widening the raise would silently turn an
         unreadable transcript into `no_signal: true` instead of surfacing it.
         """
-        import pytest
-
         with pytest.raises(FileNotFoundError):
             _reduce(tmp_path / 'absent.jsonl')
 
@@ -353,7 +352,6 @@ class TestTranscriptReading:
         absent one. The reducer lets ``OSError`` escape so the operation can
         surface it as an error rather than a no-op.
         """
-        import pytest
 
         def _raise(_path):
             raise PermissionError('locked')
@@ -396,20 +394,38 @@ class TestDecoding:
         assert '\ufffd' in result['reduced_transcript']
 
 
+#: ``(a transcript line, whether it decodes to a turn)``. The two refusing rows
+#: fail for different reasons and both matter: a NUMERIC role would otherwise be
+#: counted in ``raw_turn_count`` and in the dropped denominator, skewing both;
+#: and an integer literal past CPython's digit-conversion limit makes
+#: ``json.loads`` raise a plain ``ValueError`` rather than ``JSONDecodeError``,
+#: so catching only the subclass lets it escape and aborts the whole pre-pass.
+#: The accepting row is the matched control AND its own guard: a form feed is
+#: Python whitespace but not JSON whitespace, so without the strip a real turn is
+#: dropped — the under-counting direction.
+_PARSE_MESSAGE_CASES = [
+    (json.dumps({'type': 'turn', 'message': {'role': 1, 'content': 'hi'}}), False),
+    ('1' * 5000, False),
+    ('\x0c' + chat_turn('user', 'revert that'), True),
+]
+
+_PARSE_MESSAGE_IDS = [
+    'a-non-string-role-is-not-a-turn',
+    'a-plain-value-error-is-not-a-turn',
+    'a-form-feed-prefixed-line-still-parses',
+]
+
+
 class TestContentRobustness:
     def test_a_non_dict_content_block_is_skipped(self):
         """A stray non-dict block must not abort the extraction."""
         content = [{'type': 'text', 'text': 'please revert that change'}, 'a stray string block']
         assert _mod.extract_text(content) == 'please revert that change'
 
-    def test_a_non_string_role_is_not_a_turn(self):
-        """The role must be a string, not merely truthy.
-
-        A numeric role would otherwise be counted in `raw_turn_count` and in
-        the dropped denominator, skewing both.
-        """
-        line = json.dumps({'type': 'turn', 'message': {'role': 1, 'content': 'hi'}})
-        assert _mod.parse_message(line) is None
+    @pytest.mark.parametrize(('line', 'parses'), _PARSE_MESSAGE_CASES, ids=_PARSE_MESSAGE_IDS)
+    def test_parse_message_decides_what_is_a_turn(self, line: str, parses: bool) -> None:
+        """A line is a turn only when it decodes to a message with a string role."""
+        assert (_mod.parse_message(line) is not None) is parses
 
     def test_a_typed_block_carrying_text_is_not_treated_as_text(self):
         """Only an explicit `text` block, or a typeless one, contributes.
@@ -421,22 +437,6 @@ class TestContentRobustness:
         content = [{'type': 'tool_use', 'name': 'Bash', 'text': 'please revert that change'}]
         assert _mod.extract_text(content) == ''
 
-    def test_a_json_value_error_is_not_a_turn(self):
-        """`json.loads` raises plain `ValueError`, not only `JSONDecodeError`.
-
-        An integer literal past CPython's digit-conversion limit raises the
-        base class. Catching only the subclass lets it escape and aborts the
-        whole pre-pass, losing every operator turn in the transcript.
-        """
-        assert _mod.parse_message('1' * 5000) is None
-
-    def test_a_form_feed_prefixed_line_still_parses(self):
-        """Lines are stripped of Python whitespace before decoding.
-
-        A form feed is Python whitespace but not JSON whitespace, so without
-        the strip the turn is dropped — under-counting.
-        """
-        assert _mod.parse_message('\x0c' + chat_turn('user', 'revert that')) is not None
 
 
 class TestRoleGuards:

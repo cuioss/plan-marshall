@@ -14,6 +14,7 @@ signal, and genuine operator prose must not be refused.
 from __future__ import annotations
 
 import _chat_provenance as _mod
+import pytest
 from _chat_signal_fixtures import (
     OPERATOR_TEXT,
     REENTRY_NOTICE,
@@ -25,16 +26,26 @@ from _chat_signal_fixtures import (
     WAKE_ENVELOPE,
 )
 
+#: Short names for the harness-notice prefixes, in the tuple's own order, so the
+#: two sweeps below report per-notice rather than per-index. Derived positionally
+#: rather than from the text itself: the prefixes are long sentences, and a
+#: pytest-generated id built from one is unreadable in a report.
+_NOTICE_IDS = ['session-continued', 'local-command-caveat', 'stop-hook-feedback']
+
 
 class TestSyntheticClasses:
     def test_operator_prose_is_operator_authored(self):
         """Free-form operator text is the signal the reduction exists to keep."""
         assert _mod.is_operator_authored(OPERATOR_TEXT) is True
 
-    def test_whole_harness_envelope_is_not_operator_authored(self):
+    @pytest.mark.parametrize(
+        'injected',
+        [SYSTEM_REMINDER, TASK_NOTIFICATION, WAKE_ENVELOPE],
+        ids=['system-reminder', 'task-notification', 'wake-envelope'],
+    )
+    def test_whole_harness_envelope_is_not_operator_authored(self, injected):
         """A turn that is nothing but a harness envelope carries no operator prose."""
-        for injected in (SYSTEM_REMINDER, TASK_NOTIFICATION, WAKE_ENVELOPE):
-            assert _mod.is_operator_authored(injected) is False
+        assert _mod.is_operator_authored(injected) is False
 
     def test_unrecognised_wrapper_fails_toward_synthetic(self):
         """A wrapper nobody enumerated still classifies as synthetic.
@@ -62,7 +73,12 @@ class TestSyntheticClasses:
         assert _mod.strip_harness_envelopes('<a><a>x</a></a>').strip() == ''
         assert _mod.is_operator_authored('<a><a>x</a></a>') is False
 
-    def test_three_level_same_name_nesting_is_fully_stripped(self):
+    @pytest.mark.parametrize(
+        'text',
+        ['<a><a><a></a></a></a>', '<a><b><a></a></b></a>'],
+        ids=['three-deep-same-name', 'same-name-separated-by-another'],
+    )
+    def test_three_level_same_name_nesting_is_fully_stripped(self, text):
         """Depth two is not enough to pin the stack bookkeeping.
 
         Discarding one entry too few when unwinding leaves a stale index, so an
@@ -70,9 +86,8 @@ class TestSyntheticClasses:
         longer pairs — the whole envelope stays in the residue and a wholly
         synthetic turn scores an operator turn.
         """
-        for text in ('<a><a><a></a></a></a>', '<a><b><a></a></b></a>'):
-            assert _mod.strip_harness_envelopes(text).strip() == '', text
-            assert _mod.is_operator_authored(text) is False, text
+        assert _mod.strip_harness_envelopes(text).strip() == '', text
+        assert _mod.is_operator_authored(text) is False, text
 
     def test_a_nested_command_block_never_escapes_its_envelope(self):
         """Operator-bearing recovery is top-level only, at any nesting depth."""
@@ -242,7 +257,8 @@ class TestOperatorBearingEnvelopes:
         nested = '<system-reminder><command-args>x</command-args></system-reminder>'
         assert _mod.is_operator_authored(nested) is False
 
-    def test_a_notice_prefix_does_not_veto_a_recovered_instruction(self):
+    @pytest.mark.parametrize('notice', _mod.HARNESS_NOTICE_PREFIXES, ids=_NOTICE_IDS)
+    def test_a_notice_prefix_does_not_veto_a_recovered_instruction(self, notice):
         """A turn can open with a harness notice AND carry an operator command.
 
         The notice check runs on the residue, and the residue carries the text
@@ -251,9 +267,9 @@ class TestOperatorBearingEnvelopes:
         operator explicitly typed — and every prefix added to the backstop
         widens that window.
         """
-        for notice in _mod.HARNESS_NOTICE_PREFIXES:
-            text = f'{notice} …\n<command-args>rewrite the provenance filter</command-args>'
-            assert _mod.is_operator_authored(text) is True, notice
+        text = f'{notice} …\n<command-args>rewrite the provenance filter</command-args>'
+
+        assert _mod.is_operator_authored(text) is True, notice
 
     def test_partition_returns_only_recovered_text_in_the_second_half(self):
         """The second half is the recovered text ALONE, not the whole residue.
@@ -279,10 +295,10 @@ class TestOperatorBearingEnvelopes:
         assert 'keep this' in residue
         assert 'claudeMd' not in residue
 
-    def test_a_notice_alone_is_still_synthetic(self):
+    @pytest.mark.parametrize('notice', _mod.HARNESS_NOTICE_PREFIXES, ids=_NOTICE_IDS)
+    def test_a_notice_alone_is_still_synthetic(self, notice):
         """The notice veto still applies when nothing was recovered."""
-        for notice in _mod.HARNESS_NOTICE_PREFIXES:
-            assert _mod.is_operator_authored(f'{notice} and then some body text') is False
+        assert _mod.is_operator_authored(f'{notice} and then some body text') is False
 
     def test_a_notice_is_matched_after_envelopes_are_stripped(self):
         """The notice check reads the RESIDUE, not the raw turn.

@@ -163,6 +163,32 @@ class TestFindSkillsRoot:
 # =============================================================================
 
 
+#: Every shape the ``target`` argument takes: absent, a registered target that
+#: declares extras, a registered one that declares none, and a value the registry
+#: has never heard of. The common libs must land for all four alike — the bootstrap
+#: is what makes the shared modules importable, so a target it did not recognise
+#: must still be able to import them.
+_ANY_TARGET = [None, "claude", "opencode", "unknown-target"]
+
+_ANY_TARGET_IDS = [
+    'no-target',
+    'registered-target-with-extras',
+    'registered-target-without-extras',
+    'unregistered-target',
+]
+
+#: The subset of the above that must contribute NOTHING beyond the common libs.
+#: ``claude`` is deliberately absent — it declares extras, and its own test
+#: asserts they arrive.
+_TARGETS_WITHOUT_EXTRAS = [None, "opencode", "unknown-target"]
+
+_TARGETS_WITHOUT_EXTRAS_IDS = [
+    'no-target',
+    'registered-target-without-extras',
+    'unregistered-target',
+]
+
+
 class TestBootstrapGlobDiscover:
     """Tests for the target-aware sys.path bootstrap."""
 
@@ -204,32 +230,15 @@ class TestBootstrapGlobDiscover:
 
     # -- Common libs always added -----------------------------------------------
 
-    def test_common_libs_added_when_target_is_none(self, tmp_path):
-        """All _COMMON_BOOTSTRAP_LIBS are added to sys.path when target is None."""
-        result, skills = self._discover_with_fake_root(tmp_path, None)
+    @pytest.mark.parametrize("target", _ANY_TARGET, ids=_ANY_TARGET_IDS)
+    def test_common_libs_are_added_whatever_the_target(self, tmp_path, target):
+        """The common libs land on ``sys.path`` for every target value alike."""
+        result, skills = self._discover_with_fake_root(tmp_path, target)
         assert result is not None
 
         for lib_name in _COMMON_BOOTSTRAP_LIBS:
             expected = str(skills / lib_name / "scripts")
-            assert expected in sys.path, f"Expected {expected} in sys.path"
-
-    def test_common_libs_added_for_known_target(self, tmp_path):
-        """All _COMMON_BOOTSTRAP_LIBS are added when target is a known string ('claude')."""
-        result, skills = self._discover_with_fake_root(tmp_path, "claude")
-        assert result is not None
-
-        for lib_name in _COMMON_BOOTSTRAP_LIBS:
-            expected = str(skills / lib_name / "scripts")
-            assert expected in sys.path, f"Expected {expected} in sys.path for target 'claude'"
-
-    def test_common_libs_added_for_unknown_target(self, tmp_path):
-        """All _COMMON_BOOTSTRAP_LIBS are added even for an unrecognised target."""
-        result, skills = self._discover_with_fake_root(tmp_path, "unknown-target")
-        assert result is not None
-
-        for lib_name in _COMMON_BOOTSTRAP_LIBS:
-            expected = str(skills / lib_name / "scripts")
-            assert expected in sys.path, f"Expected {expected} in sys.path for unknown target"
+            assert expected in sys.path, f"Expected {expected} in sys.path for target {target!r}"
 
     # -- Target-specific libs ---------------------------------------------------
 
@@ -242,38 +251,23 @@ class TestBootstrapGlobDiscover:
             expected = str(skills / lib_name / "scripts")
             assert expected in sys.path, f"Expected claude-specific lib {expected} in sys.path"
 
-    def test_unknown_target_adds_no_extra_libs(self, tmp_path):
-        """An unknown target adds only the common libs — no target-specific extras."""
-        skills = _make_skills_root(tmp_path)
-        fake_file = skills / "platform-runtime" / "scripts" / "platform_runtime.py"
-        fake_file.touch()
-
-        sys_path_before_common = list(sys.path)
-
-        with _module_file_is(fake_file):
-            _bootstrap_glob_discover("unknown-target")
-
-        # Only common libs may have been added — no lib outside _COMMON_BOOTSTRAP_LIBS.
-        added = [p for p in sys.path if p not in sys_path_before_common]
-        allowed = {str(skills / lib / "scripts") for lib in _COMMON_BOOTSTRAP_LIBS}
-        unexpected = [p for p in added if p not in allowed]
-        assert unexpected == [], f"Unexpected paths added for unknown target: {unexpected}"
-
-    def test_none_target_adds_no_target_specific_libs(self, tmp_path):
-        """Passing target=None adds only the common libs."""
+    @pytest.mark.parametrize(
+        "target", _TARGETS_WITHOUT_EXTRAS, ids=_TARGETS_WITHOUT_EXTRAS_IDS
+    )
+    def test_a_target_with_no_extras_adds_only_the_common_libs(self, tmp_path, target):
+        """A target declaring no extras contributes nothing beyond the common set."""
         skills = _make_skills_root(tmp_path)
         fake_file = skills / "platform-runtime" / "scripts" / "platform_runtime.py"
         fake_file.touch()
 
         sys_path_before = list(sys.path)
-
         with _module_file_is(fake_file):
-            _bootstrap_glob_discover(None)
+            _bootstrap_glob_discover(target)
 
         added = [p for p in sys.path if p not in sys_path_before]
         allowed = {str(skills / lib / "scripts") for lib in _COMMON_BOOTSTRAP_LIBS}
         unexpected = [p for p in added if p not in allowed]
-        assert unexpected == [], f"Unexpected paths added when target=None: {unexpected}"
+        assert unexpected == [], f"Unexpected paths added for target {target!r}: {unexpected}"
 
     # -- Idempotency ------------------------------------------------------------
 
@@ -329,16 +323,14 @@ class TestBootstrapGlobDiscover:
 
     # -- opencode target --------------------------------------------------------
 
-    def test_opencode_target_adds_only_common_libs(self, tmp_path):
-        """'opencode' target has an empty _TARGET_BOOTSTRAP_LIBS entry, so only common libs are added."""
-        # Verify the assumption: opencode has an entry but it is empty.
+    def test_opencode_is_a_known_target_that_declares_no_extras(self):
+        """``opencode`` is REGISTERED with an empty extras tuple, not merely absent.
+
+        The two states behave identically at the ``sys.path`` level, so the
+        parametrized sweeps above cannot separate them — a registered target with
+        no extras and an unregistered one both add only the common libs. Pinning
+        the registration here is what keeps ``opencode`` a known target rather
+        than one that happens to fall through the unknown-target arm.
+        """
         assert "opencode" in _TARGET_BOOTSTRAP_LIBS
         assert _TARGET_BOOTSTRAP_LIBS["opencode"] == ()
-
-        result, skills = self._discover_with_fake_root(tmp_path, "opencode")
-        assert result is not None
-
-        # Common libs must be present.
-        for lib_name in _COMMON_BOOTSTRAP_LIBS:
-            expected = str(skills / lib_name / "scripts")
-            assert expected in sys.path, f"Expected {expected} in sys.path for opencode target"

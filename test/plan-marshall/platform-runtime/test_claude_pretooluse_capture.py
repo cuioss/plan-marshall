@@ -30,6 +30,7 @@ from typing import Any
 # probes need mypy to see the real module. The name must be bound the same way in
 # both suites or the loader would register a copy beside the plainly-imported one.
 import pretooluse_gate as gate
+import pytest
 
 from conftest import get_script_path, run_script
 
@@ -142,28 +143,31 @@ def test_recorded_verdict_false_outside_plan_context(tmp_path: Path) -> None:
 # =============================================================================
 
 
-def test_exits_zero_and_silent_on_empty_stdin(tmp_path: Path) -> None:
-    result = _run("", tmp_path)
+#: Stdin bodies the leaf cannot read as a hook payload: nothing was piped, the
+#: bytes are not JSON, and the bytes are JSON but decode to a list. All three
+#: reduce to the SAME recorded row — an empty payload, and therefore the same
+#: ``False`` verdict — so the rows differ only in the input that produced it.
+_UNREADABLE_STDIN = ["", "{not valid json", "[1, 2, 3]"]
+
+_UNREADABLE_STDIN_IDS = [
+    'nothing-piped',
+    'not-json-at-all',
+    'json-array-instead-of-object',
+]
+
+
+@pytest.mark.parametrize("stdin", _UNREADABLE_STDIN, ids=_UNREADABLE_STDIN_IDS)
+def test_unreadable_stdin_still_records_and_never_blocks(stdin: str, tmp_path: Path) -> None:
+    """Unreadable stdin records an empty payload, stays silent, and exits 0.
+
+    Exiting 0 is the contract that matters: this leaf observes, so a refusal on
+    bad input would block the tool call it was only supposed to watch.
+    """
+    result = _run(stdin, tmp_path)
+
     assert result.returncode == 0
     assert result.stdout == ""
-    # An empty payload still records a {} payload with a false verdict.
     records = _read_records(tmp_path)
     assert len(records) == 1
     assert records[0]["payload"] == {}
     assert records[0]["would_be_context_verdict"] is False
-
-
-def test_exits_zero_and_silent_on_malformed_json(tmp_path: Path) -> None:
-    result = _run("{not valid json", tmp_path)
-    assert result.returncode == 0
-    assert result.stdout == ""
-    records = _read_records(tmp_path)
-    assert len(records) == 1
-    assert records[0]["payload"] == {}
-
-
-def test_exits_zero_on_non_object_json(tmp_path: Path) -> None:
-    result = _run("[1, 2, 3]", tmp_path)
-    assert result.returncode == 0
-    assert result.stdout == ""
-    assert _read_records(tmp_path)[0]["payload"] == {}

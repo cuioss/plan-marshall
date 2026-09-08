@@ -183,6 +183,20 @@ class TestClaudeGetExtractSignal:
         assert result["status"] == "success"
 
 
+#: Every field a MEASURING target emits on this operation — the two counters,
+#: the verdict, the reduction and its size, and the raw turn count. A declining
+#: target must emit none of them, so each is checked as its own row rather than
+#: behind one loop whose first failure hides the rest.
+_SIGNAL_FIELDS = [
+    'operator_turn_count',
+    'gate_decision_count',
+    'no_signal',
+    'reduced_transcript',
+    'reduced_bytes',
+    'raw_turn_count',
+]
+
+
 class TestOpenCodeExtractSignal:
     def test_opencode_is_an_honest_noop(self):
         """OpenCode exposes no transcript → the op is a transcript_not_found no-op."""
@@ -191,7 +205,8 @@ class TestOpenCodeExtractSignal:
         assert result["operation"] == "chat extract-signal"
         assert result["reason"] == "transcript_not_found"
 
-    def test_opencode_signal_fields_are_absent_never_zero(self):
+    @pytest.mark.parametrize('field', _SIGNAL_FIELDS, ids=_SIGNAL_FIELDS)
+    def test_opencode_signal_fields_are_absent_never_zero(self, field: str):
         """The declinable-primitive posture: no counters, no no_signal, no reduction.
 
         A zero asserts "measured, and there was none"; OpenCode measured nothing.
@@ -200,9 +215,8 @@ class TestOpenCodeExtractSignal:
         genuinely carried no signal — polluting the corpus that reads those fields.
         """
         result = _parse(OpenCodeRuntime().chat_extract_signal("any-session"))
-        for field in ("operator_turn_count", "gate_decision_count", "no_signal",
-                      "reduced_transcript", "reduced_bytes", "raw_turn_count"):
-            assert field not in result, f"opencode must NOT emit {field}"
+
+        assert field not in result, f"opencode must NOT emit {field}"
 
 
 class TestRouterExtractSignalIntegration:
