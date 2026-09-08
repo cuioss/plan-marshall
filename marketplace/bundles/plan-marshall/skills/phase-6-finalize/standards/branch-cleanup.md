@@ -608,14 +608,14 @@ AskUserQuestion:
         **This plan**: {plan_id}
         **Waited so far**: {wait_budget}s
 
-        Merges are taken strictly in the order plans joined the queue, so
-        this plan keeps its place whichever option you choose. It has not
-        been overtaken and it has not failed.
+        Merges are taken strictly in the order plans joined the queue. This
+        plan has not been overtaken and it has not failed — it is simply
+        behind one that is slow.
       options:
         - label: "Wait and retry (recommended)"
           description: "Keeps this plan's place in line and waits another {wait_budget} seconds; usually the plan ahead finishes and this one merges next"
         - label: "Skip merge"
-          description: "Stops here without merging. Your branch and pull request are untouched, and re-running finalize later rejoins the queue"
+          description: "Stops here without merging. Your branch and pull request are untouched, but this plan gives up its place in line — re-running finalize later joins the back of whatever queue exists then"
       multiSelect: false
 ```
 
@@ -662,7 +662,7 @@ AskUserQuestion:
         - Re-enter finalize later to merge (state == merged short-circuits this prompt if you merged manually)
       options:
         - label: "Yes, merge (recommended)"
-          description: "The checks above have already passed. The change lands on {base_branch} and the branch is deleted; this is the point of no easy return"
+          description: "{The checks above have already passed. The change lands on {base_branch} now and the branch is deleted; this is the point of no easy return | The change joins the merge queue. The queue re-tests it against the latest {base_branch} and, if that passes, merges it and deletes the branch itself — so it lands shortly rather than now, and a red re-test stops it} (routed by use_merge_queue, as the description block above is)"
         - label: "No, skip merge"
           description: "Nothing is merged and nothing is deleted. Your pull request stays open exactly as it is, and re-running finalize picks up from here"
       multiSelect: false
@@ -1305,7 +1305,7 @@ AskUserQuestion:
         - label: "Re-triage now (recommended)"
           description: "Works through the outstanding comments first — fixing, dismissing or accepting each — and then comes back here to merge"
         - label: "Merge anyway (record reason)"
-          description: "The change lands on {base_branch} with those comments still unanswered. Your reason is written down against this exact version, so a later reader can see what was accepted and why"
+          description: "{The change lands on {base_branch} with those comments still unanswered | The change joins the merge queue with those comments still unanswered, and the queue merges it into {base_branch} once its own re-test passes} (routed by use_merge_queue, the same value that routes the pre-merge prompt). Your reason is written down against this exact version, so a later reader can see what was accepted and why"
         - label: "Defer merge"
           description: "Stops here without merging and without triaging. The comments stay outstanding and your pull request stays open; re-run finalize when you are ready"
       multiSelect: false

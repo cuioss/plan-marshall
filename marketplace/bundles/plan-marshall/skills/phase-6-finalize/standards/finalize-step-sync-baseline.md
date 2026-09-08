@@ -161,7 +161,7 @@ AskUserQuestion:
         - label: "Yes, rebase (recommended)"
           description: "Your commits are replayed on top of the current {base_branch}, so everything from here on tests what will really land"
         - label: "No, skip"
-          description: "Your branch stays where it is and the checks run against the older combination. The same update is attempted again later, just before the merge"
+          description: "Your branch stays where it is and the checks run against the older combination. Something updates it before it lands — either the same rebase attempted again just before the merge, or, on a project that merges through its host's merge queue, the queue doing it for you and re-testing the result"
       multiSelect: false
 ```
 

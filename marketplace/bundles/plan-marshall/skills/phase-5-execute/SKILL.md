@@ -923,6 +923,22 @@ After the test-contract task completes, the standard verification path resumes �
    - **(c) Abort the plan** — the rest of the plan rests on this deliverable, so continuing would ship something incoherent; the run stops and returns for re-planning.
 3. **Record the chosen option to `decision.log`** and act on it. Do NOT dispatch `verification-feedback` on this path — the AskUserQuestion gate is the resolution mechanism.
 
+**Acting on (a) — how the replacement task is created and linked.** "Enters the queue" names an existing mechanism, not an aspiration: the replacement is allocated through the same two-step add flow every other run-time task allocation uses, so no new verb is needed and none may be invented.
+
+1. `manage-tasks prepare-add --plan-id {plan_id}` returns a scratch path.
+2. Write the replacement task's definition to that path: the buildable, value-preserving deliverable that supersedes the infeasible one, the SAME `deliverable` id as the task it replaces, and a `depends_on` list carrying whatever the infeasible task depended on — the substitution must not lose its position in the ordering.
+3. `manage-tasks commit-add --plan-id {plan_id}` creates `TASK-NNN.json` and returns the allocated number as `{replacement_number}`.
+4. Re-point every task that depended on the infeasible one at the replacement, one call per dependant, so the edge the substitution broke is restored:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks update \
+     --plan-id {plan_id} --task-number {dependant_number} --depends-on TASK-{replacement_number}
+   ```
+
+The infeasible task itself stays `infeasible`. It is terminal and is never reset to `pending` — the replacement is what carries the work, and re-opening the original would put an unbuildable deliverable back in the queue. Nothing then has to force the loop to resume: the replacement is a pending task, so `manage-tasks loop-exit-guard` returns `status: continue` naming it in `pending_ids`, and that is the signal Step 12a already reads.
+
+Options (b) and (c) allocate nothing. **(b)** leaves the infeasible task terminal and the loop continues over whatever pending tasks remain; where a downstream task depended on the dropped one, clear that edge (`--depends-on none`) or the dependant never becomes runnable. **(c)** stops the run with no further task write at all.
+
 **For `no_changes_detected` blocks**: The implementation task produced no file changes. Triage options:
 - **RETRY** → reset task to `pending` for re-execution
 - **FAIL** → mark task `failed` with outcome `no_changes_detected`, log, continue
