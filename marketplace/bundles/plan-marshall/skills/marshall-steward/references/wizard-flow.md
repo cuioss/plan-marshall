@@ -294,12 +294,16 @@ AskUserQuestion:
       multiSelect: false
 ```
 
-When the operator selects `Custom`, follow up with a free-text `AskUserQuestion` for the branch name. Persist the chosen value:
+When the operator selects `Custom`, follow up with a free-text `AskUserQuestion` for the branch name.
+
+**Every option persists** — the detected default and `main` exactly as much as a `Custom` answer. Resolve the selection to `{branch_name}`, the canonical branch name, before writing: `{detected_default}` for the first option, `main` for the second, and the free-text answer for `Custom`. The ` (recommended)` suffix on the first label is a **display marker**, not part of the branch name, so strip it — persisting the label verbatim writes a branch that does not exist. Then persist:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  project set --field default_base_branch --value {answer}
+  project set --field default_base_branch --value {branch_name}
 ```
+
+Persisting on every option is what makes the answer stick: `phase-1-init` reads `default_base_branch` and falls back to the checked-out branch when the key is unset, so an option that writes nothing silently discards the operator's choice.
 
 ---
 
@@ -375,19 +379,18 @@ The `verification_steps` list feeds the whole-tree end-of-phase-5 sweep; the mod
 
 Optionally detect the current preset first — deep-equality of `plan.phase-6-finalize.steps` against `FinalizeStepPresets.get(name)` for each name in `FinalizeStepPresets.all_names()` — and surface it as `Current: {name} preset` / `Current: custom (manually edited)`. This comparison is performed here, in the wizard: unlike the effort menu's Step 1, which delegates to the deterministic `manage-config effort identify` recogniser, `finalize-steps` exposes no equivalent verb, so there is nothing to hand the deep-equality walk to.
 
+Both halves of each preset option are **derived from the registry** — the label from `FinalizeStepPresets.all_names()`, the description from `FinalizeStepPresets.describe(name)`. Do not hard-code the preset names here: a hand-written option set drifts the moment a preset is added, renamed or removed, and the descriptions are already sourced this way, so a hardcoded label is the only half that can disagree with the registry. Render one option per name, labelled `Apply {name} preset`, ordering `standard` first and appending ` (recommended)` to its label alone. `Custom` is always the final option. Should `all_names()` ever return enough presets that the options exceed the `AskUserQuestion` 4-option cap, paginate across successive calls — never drop a registered preset to fit.
+
 ```text
 AskUserQuestion:
-  question: "Finished work goes through a fixed sequence of shipping steps — committing, pushing, opening a pull request, reviewing, merging. Three ready-made sequences cover the usual cases. Which one fits this project?"
+  question: "Finished work goes through a fixed sequence of shipping steps — committing, pushing, opening a pull request, reviewing, merging. A few ready-made sequences cover the usual cases. Which one fits this project?"
   header: "Shipping"
   options:
-    - label: "Apply standard preset (recommended)"
-      description: <FinalizeStepPresets.describe("standard")>
-    - label: "Apply local preset"
-      description: <FinalizeStepPresets.describe("local")>
-    - label: "Apply full preset"
-      description: <FinalizeStepPresets.describe("full")>
+    # One option per name in FinalizeStepPresets.all_names(), standard first:
+    - label: "Apply {name} preset"          # + " (recommended)" on the standard entry
+      description: <FinalizeStepPresets.describe(name)>
     - label: "Custom"
-      description: "None of the three fits — you pick the individual steps yourself on the next screen"
+      description: "None of the ready-made sequences fits — you pick the individual steps yourself on the next screen"
   multiSelect: false
 ```
 
@@ -448,10 +451,18 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 The verb returns `ask_steps` (the finalize step ids whose lane override is still
 `ask`). For **EACH** id in `ask_steps`, prompt the operator and persist the
-answer — one `AskUserQuestion` and one `set-lane` write per element. Map the
-element id to a human label: `plan-marshall:automatic-review` → "PR-review bots
-(CodeRabbit / Sourcery / …)"; `default:sonar-roundtrip` → "Sonar new-code
-roundtrip".
+answer — one `AskUserQuestion` and one `set-lane` write per element.
+
+Each id needs a human label for its prompt. Two ids have a hand-written one:
+`plan-marshall:automatic-review` → "PR-review bots (CodeRabbit / Sourcery / …)";
+`default:sonar-roundtrip` → "Sonar new-code roundtrip". That pair is a wording
+convenience for the elements shipping today — it is **not** the population, which
+is whatever `ask_steps` returns. For any id it does not carry, **derive** a label
+rather than skipping the element or rendering it blank: take the step doc's own
+`description` frontmatter when it has one, otherwise humanise the id itself (drop
+the `default:` / `{bundle}:` prefix and turn hyphens into spaces). Every id in
+`ask_steps` is prompted, with a readable label, whether or not it is in the pair
+above.
 
 ```text
 AskUserQuestion:

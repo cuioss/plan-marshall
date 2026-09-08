@@ -565,18 +565,20 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 - **Propose** — when `auto_route_recipe == false`, OR `top_match.confidence < auto_route_recipe_threshold` (a match exists but does not clear the auto-route floor): fire an `AskUserQuestion` natively at this site, enumerating each ranked match (`key`, `name`, `confidence`) as a selectable option plus a "No recipe" option:
 
+  Each option renders one ranked match by its `name`, which is a display string. Carry that match's `key` alongside the label as the option's bound value, so the selection resolves back to the identifier the persist call needs:
+
   ```text
   AskUserQuestion:
     question: "Your request resembles {match_count} ready-made plan templates, but none closely enough to choose for you — so this one is yours to call. A template skips the usual clarifying questions and goes straight to a known set of steps. Use one?"
     header: "Template"
-    options:
+    options:                     # each recipe option is bound to its match's {match_N_key}
       - label: "{match_1_name}" description: "Plans this as a {match_1_name} job, using that template's fixed steps; it was the closest match, scored {match_1_confidence}"
       - label: "{match_2_name}" description: "Plans this as a {match_2_name} job instead; a weaker match, scored {match_2_confidence}"
       - label: "No recipe"      description: "Plans this request from scratch, asking you the usual clarifying questions first — slower, but it fits any request"
     multiSelect: false
   ```
 
-  Apply the choice in-context: on a recipe selection, persist `status.metadata.recipe_key = {selected_key}` (`manage-status metadata --set --plan-id {plan_id} --field recipe_key --value {selected_key}`); on "No recipe", persist nothing. Emit a decision-log entry recording the resolution:
+  `{selected_key}` is the `key` of the match whose label the operator chose — never the `name` shown on the label, which no recipe lookup resolves. Apply the choice in-context: on a recipe selection, persist `status.metadata.recipe_key = {selected_key}` (`manage-status metadata --set --plan-id {plan_id} --field recipe_key --value {selected_key}`); on "No recipe", persist nothing. Emit a decision-log entry recording the resolution:
 
   ```bash
   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -935,7 +937,7 @@ AskUserQuestion:
   multiSelect: false
 ```
 
-Persist the operator's choice in-context, overwriting Step 8b's projection:
+Persist the operator's choice in-context, overwriting Step 8b's projection. `{chosen_posture}` is the **canonical posture value** — `full`, `standard` or `minimal` — and not the label the operator clicked: the recommended option's label carries an appended ` (recommended)` display suffix per the ordering instruction above, so for that one option the two differ. Map the selected label back to its posture value before it reaches the setter; writing the label verbatim persists a value `execution_profile` does not accept:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \

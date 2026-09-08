@@ -473,7 +473,7 @@ client-side to retain only non-terminal plans. For each surviving plan, capture
 
   ```text
   AskUserQuestion:
-    question: "Exactly one plan is currently running — `<plan_id>` (<current_phase> — <short_description>). Should this terminal show that one?"
+    question: "Exactly one plan is currently active — `<plan_id>` (<current_phase> — <short_description>). Should this terminal show that one?"
     header: "Active plan"
     options:
       - label: "Confirm"

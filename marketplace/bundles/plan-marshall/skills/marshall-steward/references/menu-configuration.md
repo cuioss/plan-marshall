@@ -349,7 +349,7 @@ The `list-finalize-steps` output includes three sources: built-in (`default:*`),
 
 ```text
 AskUserQuestion:
-  question: "You chose to pick the shipping steps yourself. Every step you tick runs each time a plan finishes; every one you leave out never runs. Which should this project use?"
+  question: "You chose to pick the shipping steps yourself. Every step you tick becomes eligible each time a plan finishes — a narrowly-scoped plan or a lighter execution profile can still leave one out — and every step you do not tick never runs at all. Which should this project use?"
   header: "Shipping"
   multiSelect: true
   options:

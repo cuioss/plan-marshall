@@ -92,7 +92,7 @@ AskUserQuestion:
   header: "Build text"
   options:
     - label: "Replace existing (recommended)"
-      description: "The hand-written text is overwritten with the build commands resolved for your modules, so agents call builds by canonical name rather than by a spelling that may no longer work. This is the only edit in the whole wizard that removes something you wrote"
+      description: "The hand-written text is overwritten with the build commands resolved for your modules, so agents call builds by canonical name rather than by a spelling that may no longer work. This is the only build-command edit that removes text you wrote"
     - label: "Keep existing"
       description: "Your CLAUDE.md is left byte-for-byte as it is and no build-command section is written. Choose this if the text is deliberate; re-run the wizard later if you change your mind"
   multiSelect: false

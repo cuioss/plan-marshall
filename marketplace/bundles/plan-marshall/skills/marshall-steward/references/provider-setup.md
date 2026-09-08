@@ -80,7 +80,7 @@ AskUserQuestion:
         - label: "{display_name}"
           description: "Builds, pull requests, and review comments are read from and written to {display_name}"
         - label: "Skip"
-          description: "Nothing is read from or written to a build service; plans stop at the commit and never open a pull request"
+          description: "No build service is wired up, so nothing is read from or written to one — no build results, no pull requests, no review comments"
       multiSelect: false
 ```
 
