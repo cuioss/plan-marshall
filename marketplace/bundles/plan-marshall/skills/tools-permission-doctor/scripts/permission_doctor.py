@@ -40,6 +40,7 @@ from permission_common import (  # noqa: E402
     _active_runtime,
     get_global_settings_path,
     get_project_settings_path,
+    is_claude_target,
     load_settings,
     resolve_scope_to_paths,
 )
@@ -51,6 +52,23 @@ from toon_parser import serialize_toon  # noqa: E402
 # ``is_marketplace_permission``, ``extract_permission_parts``, and
 # ``is_covered_by_wildcard`` encode the Claude permission grammar
 # (Skill/SlashCommand/Tool types). They bind only on a Claude target.
+
+
+def _could_not_evaluate(operation: str) -> dict:
+    """Return the ADR-019 could-not-evaluate third state.
+
+    The Claude rule-pack does not apply to a non-Claude target, so running it
+    against one would walk empty allow lists and report a clean zero — an
+    unchecked negative presented as a checked one. This third state is distinct
+    from ``success`` (checked, found nothing) and ``error`` (failed to check):
+    it reports that the analysis could not be performed at all.
+    """
+    return {
+        'status': 'skipped',
+        'operation': operation,
+        'reason': 'The Claude permission rule-pack does not apply to this target; '
+        'no analysis was performed',
+    }
 
 
 def is_marketplace_permission(permission: str, project_root: Path | None = None) -> bool:
@@ -119,6 +137,9 @@ def is_covered_by_wildcard(specific: str, broader: str) -> bool:
 
 def cmd_detect_redundant(args) -> dict:
     """Handle detect-redundant subcommand."""
+    if not is_claude_target():
+        return _could_not_evaluate('detect-redundant')
+
     # Resolve paths from --scope or explicit args
     if args.scope:
         global_path, local_path = resolve_scope_to_paths(args.scope)
@@ -366,6 +387,9 @@ def check_permission(permission: str) -> dict | None:
 
 def cmd_detect_suspicious(args) -> dict:
     """Handle detect-suspicious subcommand."""
+    if not is_claude_target():
+        return _could_not_evaluate('detect-suspicious')
+
     # Resolve path from --scope or explicit --settings
     if args.scope:
         if args.scope == 'global':
@@ -474,6 +498,9 @@ def skill_permission_covered(skill: str, allow_list: list[str]) -> str | None:
 
 def cmd_detect_missing_project_step_permissions(args) -> dict:
     """Handle detect-missing-project-step-permissions subcommand."""
+    if not is_claude_target():
+        return _could_not_evaluate('detect-missing-project-step-permissions')
+
     marshal_config, marshal_error = load_marshal_config(args.marshal)
     if marshal_error:
         return {'status': 'error', 'error': marshal_error}

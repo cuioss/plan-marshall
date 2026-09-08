@@ -36,6 +36,17 @@ from runtime_base import Runtime  # noqa: E402
 EXIT_SUCCESS = 0
 
 
+def is_claude_target() -> bool:
+    """True when the active runtime is the Claude target.
+
+    Uses a lazy import to avoid pulling in the Claude bootstrap chain at
+    module load time.  By the time this is called the full script bootstrap
+    has already run and ``_claude_runtime_impl`` is on ``sys.path``.
+    """
+    from _claude_runtime_impl import ClaudeRuntime
+    return isinstance(_active_runtime(), ClaudeRuntime)
+
+
 def _active_runtime() -> Runtime:
     """Resolve the active runtime through the platform-runtime registry.
 
