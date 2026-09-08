@@ -923,12 +923,18 @@ After the test-contract task completes, the standard verification path resumes �
    - **(c) Abort the plan** — the rest of the plan rests on this deliverable, so continuing would ship something incoherent; the run stops and returns for re-planning.
 3. **Record the chosen option to `decision.log`** and act on it. Do NOT dispatch `verification-feedback` on this path — the AskUserQuestion gate is the resolution mechanism.
 
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+     decision --plan-id {plan_id} --level INFO \
+     --message "(plan-marshall:phase-5-execute) Infeasible {task_id}: operator chose ({a|b|c}) — {infeasibility_reason}"
+   ```
+
 **Acting on (a) — how the replacement task is created and linked.** "Enters the queue" names an existing mechanism, not an aspiration: the replacement is allocated through the same two-step add flow every other run-time task allocation uses, so no new verb is needed and none may be invented.
 
 1. `manage-tasks prepare-add --plan-id {plan_id}` returns a scratch path.
 2. Write the replacement task's definition to that path: the buildable, value-preserving deliverable that supersedes the infeasible one, the SAME `deliverable` id as the task it replaces, and a `depends_on` list carrying whatever the infeasible task depended on — the substitution must not lose its position in the ordering.
 3. `manage-tasks commit-add --plan-id {plan_id}` creates `TASK-NNN.json` and returns the allocated number as `{replacement_number}`.
-4. **Find the dependants before re-pointing them.** No verb answers "which tasks depend on TASK-N" — `manage-tasks list` returns `tasks_table{number,title,domain,profile,deliverable,status,progress}`, which carries no `depends_on` column, and `read` needs the task number up front. The dependant set is therefore derived by walking the plan: `list` enumerates every task number, `read` returns each one's `depends_on`, and every task whose returned `depends_on` names the infeasible task is a dependant.
+4. **Find the dependants before re-pointing them.** No verb answers "which tasks depend on TASK-N" — `manage-tasks list` emits a `tasks_table` that puts `depends_on` out of reach (the verb's own `--help` states that shape contract, and [`../manage-tasks/scripts/_tasks_query.py`](../manage-tasks/scripts/_tasks_query.py) is the producer it is derived from), and `read` needs the task number up front. The dependant set is therefore derived by walking the plan: `list` enumerates every task number, `read` returns each one's `depends_on`, and every task whose returned `depends_on` names the infeasible task is a dependant.
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks list \
@@ -961,7 +967,46 @@ After the test-contract task completes, the standard verification path resumes �
 
 The infeasible task itself stays `infeasible`. It is terminal and is never reset to `pending` — the replacement is what carries the work, and re-opening the original would put an unbuildable deliverable back in the queue. Nothing then has to force the loop to resume: the replacement is a pending task, so `manage-tasks loop-exit-guard` returns `status: continue` naming it in `pending_ids`, and that is the signal Step 12a already reads.
 
-Options (b) and (c) allocate nothing. **(b)** leaves the infeasible task terminal and the loop continues over whatever pending tasks remain; where a downstream task depended on the dropped one, that reference has to come out or the dependant never becomes runnable. Find those dependants the same way step 4 above does — walk every task number `list` returns and `read` each one's `depends_on`; there is no reverse-dependency query on this path either. The same replace-not-merge semantics apply: read the dependant's `depends_on` and pass back every reference that survives. `--depends-on none` is correct ONLY when the dropped task was that dependant's sole dependency — it clears the list outright rather than removing the one edge. **(c)** stops the run with no further task write at all.
+**Acting on (b) — how the stale edges are removed.** (b) allocates nothing: the infeasible task stays terminal and the loop continues over whatever pending tasks remain. But where a downstream task depended on the dropped one, that reference has to come OUT of the dependant's `depends_on`, and removing it is a task write the operator MUST perform. ⛔ Leaving it in place is the same deadlock step 4 of (a) above guards against, with no replacement to re-point at: the dependant waits forever on a task that is terminal and never becomes runnable, so it stays `pending`, `manage-tasks loop-exit-guard` keeps returning `status: continue` naming it, and the phase never exits.
+
+1. **Find the dependants exactly as step 4 of (a) above does.** There is no reverse-dependency query on this path either — `list` enumerates every task number, `read` returns each one's `depends_on`, and every task whose returned `depends_on` names the dropped task is a dependant. Walk **every** number `list` returned, `done` tasks included.
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks list \
+     --plan-id {plan_id}
+   ```
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks read \
+     --plan-id {plan_id} --task-number {number}
+   ```
+
+2. **Rewrite each dependant's `depends_on`, one call per dependant.** ⛔ `--depends-on` **replaces the dependant's entire `depends_on` list** here exactly as it does under (a) — it does not remove one entry from it — so each call MUST carry the dependant's full intended list. Read the current list first, so the list written back is the one on disk now:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks read \
+     --plan-id {plan_id} --task-number {dependant_number}
+   ```
+
+   Drop the dropped task's reference from the returned `task.depends_on`, keep every other one, and pass the whole remainder space-separated, where `{surviving_refs}` stands for every reference the dependant keeps:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks update \
+     --plan-id {plan_id} --task-number {dependant_number} \
+     --depends-on {surviving_refs}
+   ```
+
+   When the dropped task was that dependant's **sole** dependency, `{surviving_refs}` is empty and there is nothing to pass back — clear the list explicitly instead, which is the only case this form is correct in:
+
+   ```bash
+   python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks update \
+     --plan-id {plan_id} --task-number {dependant_number} \
+     --depends-on none
+   ```
+
+   Never reach for `--depends-on none` while other references survive: it clears EVERY edge outright rather than removing the one, making the dependant runnable ahead of tasks it still waits on.
+
+**Acting on (c).** The run stops with no further task write at all — no dependant is re-pointed and none is cleared, because the plan is going back for re-planning rather than continuing over the remaining queue.
 
 **For `no_changes_detected` blocks**: The implementation task produced no file changes. Triage options:
 - **RETRY** → reset task to `pending` for re-execution
