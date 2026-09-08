@@ -236,7 +236,7 @@ python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventor
 
 ## --include-project-skills (optional flag)
 
-When specified, includes project-level skills from `.claude/skills/` directory. Creates a `project-skills` pseudo-bundle.
+When specified, includes project-level skills from the active target's project-local skill roots (resolved via the `layout skill-roots` op; Claude: `.claude/skills/`). Creates a `project-skills` pseudo-bundle.
 
 ```bash
 python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory \
