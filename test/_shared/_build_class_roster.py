@@ -57,11 +57,10 @@ from __future__ import annotations
 
 import argparse
 import ast
-import importlib.util
 import re
 from pathlib import Path
 
-from conftest import MARKETPLACE_ROOT
+from conftest import MARKETPLACE_ROOT, load_script_module
 
 # =============================================================================
 # Canonical routing-flag names
@@ -155,21 +154,19 @@ def _iter_wrapper_scripts() -> list[tuple[str, str, Path]]:
     return found
 
 
-def _load_wrapper_module(script_path: Path):
-    """Import ``script_path`` under a private module name.
+def _load_wrapper_module(bundle: str, skill: str, script_path: Path):
+    """Import a discovered build wrapper without registering it.
 
-    The private name keeps the wrapper out of ``sys.modules`` under its own stem,
-    so loading it here cannot shadow a module another suite imports by that name.
-    Wrapper scripts reference their siblings by bare name through ``sys.path``
-    (configured by the root conftest), never through their own registration, so
-    the private name costs nothing.
+    Nothing is published to ``sys.modules``, so loading a wrapper here cannot
+    shadow a module another suite imports by that name. Wrapper scripts reference
+    their siblings by bare name through ``sys.path`` (configured by the root
+    conftest), never through their own registration, so registering costs
+    something and buys nothing.
+
+    Resolution is by ``(bundle, skill, filename)`` — the triple discovery already
+    carries — rather than by the walked path.
     """
-    spec = importlib.util.spec_from_file_location(f'_roster_{script_path.stem}', script_path)
-    if spec is None or spec.loader is None:
-        raise ImportError(f'Could not create import spec for {script_path}')
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    return load_script_module(bundle, skill, script_path.name, register=False)
 
 
 # =============================================================================
@@ -264,7 +261,7 @@ def build_class_roster() -> dict[str, dict[str, bool]]:
 
     roster: dict[str, dict[str, bool]] = {}
     for bundle, skill, script_path in _iter_wrapper_scripts():
-        module = _load_wrapper_module(script_path)
+        module = _load_wrapper_module(bundle, skill, script_path)
         if not hasattr(module, _BUILD_MAIN_ATTR) or not callable(getattr(module, 'main', None)):
             continue
         notation = f'{bundle}:{skill}:{script_path.stem}'

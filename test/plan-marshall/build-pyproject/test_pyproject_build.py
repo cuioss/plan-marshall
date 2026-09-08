@@ -7,6 +7,9 @@ Tests the Python build operations including:
 - execute_direct() - Foundation API (mocked subprocess)
 """
 
+# The root build.py is loaded by explicit path below — it lives outside
+# marketplace/bundles/, so the (bundle, skill, file) accessors cannot address it.
+import importlib.util
 import itertools
 from unittest.mock import MagicMock, patch
 
@@ -21,20 +24,6 @@ from _resolve_project_dir_fixtures import (
 
 from conftest import PROJECT_ROOT, BuildContext, load_script_module, parse_ns
 
-BUILD_SCRIPT = (
-    PROJECT_ROOT
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'build-pyproject'
-    / 'scripts'
-    / 'pyproject_build.py'
-)
-
-# Tier 2 direct imports via importlib for uniform import style
-import importlib.util  # noqa: E402
-
 #: The plan these foundation-API builds are attributed to. ``plan_id`` is
 #: keyword-only and mandatory on ``execute_direct``.
 _PLAN_ID = 'pyproject-build-test-plan'
@@ -44,11 +33,14 @@ def _load_pyproject_build():
     """Load pyproject_build module with minimal mocking.
 
     Only mocks plan_logging and run_config which are provided by the executor
-    at runtime but not available in test PYTHONPATH.
-    """
-    spec = importlib.util.spec_from_file_location('pyproject_build', BUILD_SCRIPT)
-    module = importlib.util.module_from_spec(spec)
+    at runtime but not available in test PYTHONPATH. The mocks must be in place
+    for the duration of the load, because they are resolved while the module
+    body executes.
 
+    Loaded unregistered: nothing else reaches this module through
+    ``sys.modules``, and not registering keeps the copy staged here from
+    displacing one another suite holds.
+    """
     import sys
 
     mock_modules = {
@@ -61,14 +53,17 @@ def _load_pyproject_build():
     for name, mock in mock_modules.items():
         sys.modules[name] = mock
 
-    spec.loader.exec_module(module)
-
-    # Restore original modules to avoid polluting sys.modules for other tests
-    for name, original in saved.items():
-        if original is None:
-            sys.modules.pop(name, None)
-        else:
-            sys.modules[name] = original
+    try:
+        module = load_script_module(
+            'plan-marshall', 'build-pyproject', 'pyproject_build.py', register=False
+        )
+    finally:
+        # Restore original modules to avoid polluting sys.modules for other tests
+        for name, original in saved.items():
+            if original is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = original
 
     return module
 

@@ -17,9 +17,7 @@ emits in production.
 
 from __future__ import annotations
 
-import importlib.util
-
-from conftest import MARKETPLACE_ROOT
+from conftest import MARKETPLACE_ROOT, load_script_module
 
 SCRIPT_PATH = (
     MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'scripts' / 'summarize-invariants.py'
@@ -27,12 +25,15 @@ SCRIPT_PATH = (
 
 
 def _load_summarize_module():
-    """Import ``summarize-invariants.py`` as a module for function-level tests."""
-    spec = importlib.util.spec_from_file_location('summarize_invariants_module', SCRIPT_PATH)
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+    """Load ``summarize-invariants.py`` as a module for function-level tests.
+
+    The hyphenated filename cannot be imported, so it is resolved by
+    (bundle, skill, file). Unregistered, so this copy cannot displace one
+    another suite holds.
+    """
+    return load_script_module(
+        'plan-marshall', 'plan-retrospective', 'summarize-invariants.py', 'summarize_invariants_module', register=False
+    )
 
 
 _summarize = _load_summarize_module()

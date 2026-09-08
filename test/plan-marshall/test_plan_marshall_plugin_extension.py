@@ -10,22 +10,23 @@ Tier 2 (direct import): loads the bundle extension.py and inspects the
 provides_recipes() return value directly.
 """
 
-import importlib.util
-
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import MARKETPLACE_ROOT, get_script_path, run_script
+from conftest import get_script_path, load_skill_module, run_script
 
 _MANAGE_CONFIG = get_script_path('plan-marshall', 'manage-config', 'manage-config.py')
 
 
 def _load_extension():
-    """Load the plan-marshall bundle extension.py and return an Extension instance."""
-    extension_path = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-marshall-plugin' / 'extension.py'
-    spec = importlib.util.spec_from_file_location('extension_plan_marshall', extension_path)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module.Extension()
+    """Load the plan-marshall bundle extension.py and return an Extension instance.
+
+    ``extension.py`` sits at the skill ROOT rather than under ``scripts/``, so
+    ``load_skill_module`` is the accessor that addresses it. Unregistered: every
+    bundle ships this same filename, so registering under the shared stem would
+    displace another bundle's extension.
+    """
+    return load_skill_module(
+        'plan-marshall', 'plan-marshall-plugin', 'extension.py', 'extension_plan_marshall', register=False
+    ).Extension()
 
 
 def _recipe_by_key(recipes, key):

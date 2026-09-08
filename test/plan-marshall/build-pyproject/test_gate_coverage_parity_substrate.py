@@ -27,15 +27,13 @@ from __future__ import annotations
 
 import ast
 import re
-from pathlib import Path
 
 from _gate_coverage import parity_population, structural_limits
 
-#: Repository root, from this module's own position (``test/{bundle}/{skill}/``).
-_REPO_ROOT = Path(__file__).parents[3]
+from conftest import PROJECT_ROOT, get_scripts_dir
 
 #: The build driver whose whole-tree SPDX scope the cell describes.
-_BUILD_PY = _REPO_ROOT / 'build.py'
+_BUILD_PY = PROJECT_ROOT / 'build.py'
 
 #: The cell under test.
 _CELL_DIMENSION = 'spdx-paths'
@@ -314,15 +312,7 @@ def test_the_mapping_names_only_cells_that_exist():
 # home, so the control reads that home directly.
 
 _GATE_COVERAGE_SOURCE = (
-    _REPO_ROOT
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'script-shared'
-    / 'scripts'
-    / 'build'
-    / '_gate_coverage.py'
+    get_scripts_dir('plan-marshall', 'script-shared') / 'build' / '_gate_coverage.py'
 )
 
 _DERIVED_RE = re.compile(r'deriv', re.IGNORECASE)

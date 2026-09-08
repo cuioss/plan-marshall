@@ -26,7 +26,6 @@ sections pin the subcommand's own contract:
 
 from __future__ import annotations
 
-import importlib.util
 from argparse import Namespace
 from pathlib import Path
 
@@ -34,23 +33,17 @@ from _manage_metrics_fixtures import (
     ns_record_dispatch_boundary,
 )
 
-from conftest import get_script_path
+from conftest import get_script_path, load_script_module
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-metrics', 'manage-metrics.py')
 
 
-# The entrypoint filename is kebab-case (manage-metrics.py), which is not a
-# valid Python module identifier — load it via importlib instead of `import`.
-_spec = importlib.util.spec_from_file_location('manage_metrics', SCRIPT_PATH)
-
-
-assert _spec is not None and _spec.loader is not None
-
-
-manage_metrics = importlib.util.module_from_spec(_spec)
-
-
-_spec.loader.exec_module(manage_metrics)
+# The entrypoint filename is kebab-case (manage-metrics.py), which is not a valid
+# Python module identifier — resolved by (bundle, skill, file) instead of imported.
+# Unregistered, so the copy staged here cannot displace one another suite holds.
+manage_metrics = load_script_module(
+    'plan-marshall', 'manage-metrics', 'manage-metrics.py', 'manage_metrics', register=False
+)
 
 
 DISPATCH_TERMINATION_CAUSES = manage_metrics.DISPATCH_TERMINATION_CAUSES

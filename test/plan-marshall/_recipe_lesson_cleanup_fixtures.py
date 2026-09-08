@@ -7,38 +7,23 @@ the module itself carries the import and not the preamble.
 """
 
 
-import importlib.util
 import re
-from pathlib import Path
 
-from conftest import MARKETPLACE_ROOT
+from conftest import load_script_module
 
 # =============================================================================
 # Tier 2 import — manage-execution-manifest script (used for the end-to-end
-# manifest assertions). Mirrors the loader pattern used by
-# ``test/plan-marshall/manage-execution-manifest/test_manage_execution_manifest.py``.
+# manifest assertions). Loaded unregistered under a name of this module's own
+# choosing, so the copy staged here cannot displace one another suite holds.
 # =============================================================================
 
-_MANIFEST_SCRIPT = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-execution-manifest'
-    / 'scripts'
-    / 'manage-execution-manifest.py'
+_mem = load_script_module(
+    'plan-marshall',
+    'manage-execution-manifest',
+    'manage-execution-manifest.py',
+    '_mem_recipe_lesson_cleanup',
+    register=False,
 )
-
-
-def _load_module(name: str, path: Path):
-    spec = importlib.util.spec_from_file_location(name, path)
-    assert spec is not None, f'Failed to load module spec for {path}'
-    mod = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_mem = _load_module('_mem_recipe_lesson_cleanup', _MANIFEST_SCRIPT)
 
 
 cmd_compose = _mem.cmd_compose

@@ -61,11 +61,11 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-#: The repository root, derived from this file's own location — this module sits
-#: at ``test/plan-marshall/tools-integration-ci/``, three directories below it.
-#: Derived here rather than imported from ``conftest`` so the module loads
-#: standalone, which is how the session-start population header reads it.
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
+#: The repository root, read from the shipped ``conftest`` accessor rather than
+#: re-derived by counting parents here. The session-start population header loads
+#: this module through the root ``conftest`` itself, so that module is already
+#: imported by the time this one executes and the import resolves.
+from conftest import PROJECT_ROOT
 
 #: The literal every executor invocation carries. A document with no occurrence
 #: of it invokes nothing and never enters the population.

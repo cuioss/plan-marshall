@@ -29,7 +29,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from conftest import MARKETPLACE_ROOT, run_script
+from conftest import MARKETPLACE_ROOT, load_script_module, run_script
 
 SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'scripts' / 'collect-fragments.py'
 
@@ -63,14 +63,14 @@ def _valid_fragment_body(aspect: str) -> str:
 
 
 def _load_module():
-    """Load collect-fragments.py as an importable module via importlib."""
-    import importlib.util
+    """Load collect-fragments.py by (bundle, skill, file).
 
-    spec = importlib.util.spec_from_file_location('collect_fragments', str(SCRIPT_PATH))
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    The hyphenated filename cannot be imported. Unregistered, so this copy
+    cannot displace one another suite holds.
+    """
+    return load_script_module(
+        'plan-marshall', 'plan-retrospective', 'collect-fragments.py', 'collect_fragments', register=False
+    )
 
 
 class _ArgsNS:

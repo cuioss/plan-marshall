@@ -11,11 +11,12 @@ import importlib.util
 import os
 from pathlib import Path
 
-# conftest.py puts script-shared/scripts on PYTHONPATH
 from marketplace_bundles import collect_script_dirs
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-BUNDLES_DIR = PROJECT_ROOT / 'marketplace' / 'bundles'
+# conftest.py puts script-shared/scripts on PYTHONPATH
+from conftest import MARKETPLACE_ROOT, PROJECT_ROOT
+
+BUNDLES_DIR = MARKETPLACE_ROOT
 PLAN_MARSHALL_SCRIPTS = BUNDLES_DIR / 'plan-marshall' / 'skills' / 'script-shared' / 'scripts'
 
 CANONICAL_SUBDIRS = {

@@ -14,13 +14,12 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from conftest import PROJECT_ROOT, get_skill_dir
+
 _MARKETPLACE_PATTERN = re.compile(r'marketplace/bundles/[^/]+/skills/[^/]+')
 _PROJECT_LOCAL_PATTERN = re.compile(r'\.claude/skills/[^/]+')
 
-# Repo root resolved from this test file:
-# test/plan-marshall/finalize-step-plugin-doctor/test_*.py -> repo root is 3 parents up.
-_REPO_ROOT = Path(__file__).resolve().parents[3]
-_WRAPPER_SKILL_MD = _REPO_ROOT / '.claude' / 'skills' / 'finalize-step-plugin-doctor' / 'SKILL.md'
+_WRAPPER_SKILL_MD = PROJECT_ROOT / '.claude' / 'skills' / 'finalize-step-plugin-doctor' / 'SKILL.md'
 
 # The planning-workflow docs whose documentation_only Verification citations
 # use the scopeable `quality-gate --paths ... --marketplace-root` gate.
@@ -30,9 +29,10 @@ _WRAPPER_SKILL_MD = _REPO_ROOT / '.claude' / 'skills' / 'finalize-step-plugin-do
 # skill `.md` change to `none` (zero rungs) rather than a `docs-validate` rung
 # that ran the plugin-doctor gate. phase-5-execute therefore no longer cites the
 # `quality-gate --paths ... --marketplace-root` doc gate.
+_PHASE_3_OUTLINE_DIR = get_skill_dir('plan-marshall', 'phase-3-outline')
 _PLANNING_DOCS = (
-    _REPO_ROOT / 'marketplace/bundles/plan-marshall/skills/phase-3-outline/standards/outline-workflow-detail.md',
-    _REPO_ROOT / 'marketplace/bundles/plan-marshall/skills/phase-3-outline/SKILL.md',
+    _PHASE_3_OUTLINE_DIR / 'standards' / 'outline-workflow-detail.md',
+    _PHASE_3_OUTLINE_DIR / 'SKILL.md',
 )
 
 # default:push resolves to order 11 in the phase-6-finalize seed; the

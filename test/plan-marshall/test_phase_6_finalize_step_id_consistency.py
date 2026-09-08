@@ -45,17 +45,15 @@ from pathlib import Path
 import _invariants as inv
 import pytest
 
+from conftest import PROJECT_ROOT, get_skill_dir
+
 # ---------------------------------------------------------------------------
 # Source anchors used by tests 4 and 5
 # ---------------------------------------------------------------------------
 
-_REPO_ROOT = Path(__file__).parent.parent.parent
-_PROJECT_SKILLS = _REPO_ROOT / '.claude' / 'skills'
-_BUNDLE_ROOT = _REPO_ROOT / 'marketplace' / 'bundles' / 'plan-marshall'
+_PROJECT_SKILLS = PROJECT_ROOT / '.claude' / 'skills'
 _PRE_SUBMISSION_WORKFLOW = (
-    _BUNDLE_ROOT
-    / 'skills'
-    / 'phase-6-finalize'
+    get_skill_dir('plan-marshall', 'phase-6-finalize')
     / 'workflow'
     / 'pre-submission-self-review.md'
 )

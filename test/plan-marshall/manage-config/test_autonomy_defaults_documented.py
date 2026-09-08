@@ -57,11 +57,7 @@ from typing import NamedTuple
 
 import pytest
 
-from conftest import load_script_module
-
-# repo_root/test/plan-marshall/manage-config/test_autonomy_defaults_documented.py
-#                                          ^ parents[3] == repo root
-_REPO_ROOT = Path(__file__).resolve().parents[3]
+from conftest import PROJECT_ROOT, load_script_module
 
 _config_defaults_mod = load_script_module(
     'plan-marshall',
@@ -106,7 +102,11 @@ _POLARITY_REGION_RE = re.compile(
 
 def _read(document: str) -> str:
     """Return the text of a document addressed by its repo-root-relative path."""
-    return (_REPO_ROOT / document).read_text(encoding='utf-8')
+    # Annotated because ``conftest`` is deliberately untyped to mypy (see
+    # pyproject's ``ignore_missing_imports`` override for it), so ``PROJECT_ROOT``
+    # is ``Any`` here and the read would otherwise return ``Any`` as ``str``.
+    path: Path = PROJECT_ROOT / document
+    return path.read_text(encoding='utf-8')
 
 
 @cache
@@ -221,10 +221,10 @@ def _candidate_documents() -> tuple[str, ...]:
         path
         for root, patterns in _DOC_ROOTS
         for pattern in patterns
-        for path in (_REPO_ROOT / root).glob(pattern)
+        for path in (PROJECT_ROOT / root).glob(pattern)
         if path.is_file()
     }
-    return tuple(sorted(path.relative_to(_REPO_ROOT).as_posix() for path in paths))
+    return tuple(sorted(path.relative_to(PROJECT_ROOT).as_posix() for path in paths))
 
 
 def _derive_documents() -> tuple[str, ...]:

@@ -43,11 +43,9 @@ Two consequences bind anything added to this module:
   is unchanged by sharing this resolution.
 """
 
-import importlib.util
-
 from toon_parser import parse_toon
 
-from conftest import get_script_path, get_scripts_dir, load_script_module, run_script
+from conftest import get_scripts_dir, load_script_module, run_script
 
 # =============================================================================
 # Extension-contract staging — the surface all six build-* directories share
@@ -116,12 +114,11 @@ def load_build_extension(skill, module_name):
     ``extension``, so each load is given an explicit distinct module name to
     avoid the cross-skill ``import extension`` collision.
 
-    Uses ``spec_from_file_location``, which — unlike ``load_script_module`` —
-    does NOT enter the module in ``sys.modules``. That is the point: two backends
-    loaded here stay two distinct objects with independent module-level state,
-    and neither displaces a registration another module already holds. A consumer
-    that genuinely wants the registered form calls ``load_script_module``
-    directly with its own distinct ``module_name``.
+    Passes ``register=False``, so nothing is entered in ``sys.modules``. That is
+    the point: two backends loaded here stay two distinct objects with
+    independent module-level state, and neither displaces a registration another
+    module already holds. A consumer that genuinely wants the registered form
+    calls ``load_script_module`` directly with its own distinct ``module_name``.
 
     Args:
         skill: The build skill's name, e.g. ``'build-maven'``.
@@ -132,13 +129,9 @@ def load_build_extension(skill, module_name):
     Returns:
         The skill's ``BuildExtension`` class.
     """
-    extension_path = get_script_path('plan-marshall', skill, 'extension.py')
-    spec = importlib.util.spec_from_file_location(module_name, extension_path)
-    if spec is None or spec.loader is None:
-        raise ImportError(f'Could not load module from {extension_path}')
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module.BuildExtension
+    return load_script_module(
+        'plan-marshall', skill, 'extension.py', module_name, register=False
+    ).BuildExtension
 
 
 # =============================================================================

@@ -29,8 +29,7 @@ which already renders correctly today) alongside the two regression arms
 arms do.
 """
 
-# ruff: noqa: I001, E402
-import importlib.util
+# ruff: noqa: E402
 import sys
 from collections import Counter
 from collections.abc import Callable, Iterable
@@ -51,13 +50,15 @@ _FIXTURE_DIR = Path(__file__).parent
 if str(_FIXTURE_DIR) not in sys.path:
     sys.path.insert(0, str(_FIXTURE_DIR))
 
-from _manage_metrics_fixtures import ns_generate, SCRIPT_PATH
+from _manage_metrics_fixtures import ns_generate
 
-# kebab-case filename — load via importlib under a unique module name.
-_spec = importlib.util.spec_from_file_location('manage_metrics_boundary_pop', SCRIPT_PATH)
-assert _spec is not None and _spec.loader is not None
-manage_metrics = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(manage_metrics)
+from conftest import load_script_module
+
+# kebab-case filename — resolved by (bundle, skill, file) under a unique module
+# name, unregistered so this copy cannot displace one another suite holds.
+manage_metrics = load_script_module(
+    'plan-marshall', 'manage-metrics', 'manage-metrics.py', 'manage_metrics_boundary_pop', register=False
+)
 
 cmd_generate = manage_metrics.cmd_generate
 write_metrics = manage_metrics.write_metrics

@@ -18,34 +18,15 @@ module covers the ``cmd_auto_suggest`` orchestration on top of it.
 
 from __future__ import annotations
 
-import importlib.util
 import json
 from argparse import Namespace
 from pathlib import Path
 
-from conftest import PROJECT_ROOT
+from conftest import load_script_module
 
-_SCRIPTS_DIR = (
-    PROJECT_ROOT
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-lessons'
-    / 'scripts'
+_mod = load_script_module(
+    'plan-marshall', 'manage-lessons', '_cmd_auto_suggest.py', '_cmd_auto_suggest_under_test', register=False
 )
-
-
-def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    assert spec is not None
-    mod = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_mod = _load_module('_cmd_auto_suggest_under_test', '_cmd_auto_suggest.py')
 cmd_auto_suggest = _mod.cmd_auto_suggest
 
 
@@ -194,7 +175,9 @@ def test_auto_suggest_registered_in_manage_lessons_dispatch():
     """argparse subparser routes 'auto-suggest' to cmd_auto_suggest."""
     import argparse  # local import: only this dispatch-wiring check needs it
 
-    manage_lessons = _load_module('_manage_lessons_dispatch_check', 'manage-lessons.py')
+    manage_lessons = load_script_module(
+        'plan-marshall', 'manage-lessons', 'manage-lessons.py', '_manage_lessons_dispatch_check', register=False
+    )
     assert manage_lessons.cmd_auto_suggest is cmd_auto_suggest or callable(manage_lessons.cmd_auto_suggest)
 
     parser = argparse.ArgumentParser()

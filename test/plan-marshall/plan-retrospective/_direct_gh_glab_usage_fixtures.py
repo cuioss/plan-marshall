@@ -40,11 +40,10 @@ The wrapper-tangle DETECTION behaviour itself lives in
 
 from __future__ import annotations
 
-import importlib.util
 import subprocess
 from pathlib import Path
 
-from conftest import MARKETPLACE_ROOT
+from conftest import MARKETPLACE_ROOT, load_skill_module
 
 SCRIPT_PATH = (
     MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'scripts' / 'direct-gh-glab-usage.py'
@@ -53,11 +52,6 @@ SCRIPT_PATH = (
 
 EXT_DISCOVERY_PATH = (
     MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'extension-api' / 'scripts' / 'extension_discovery.py'
-)
-
-
-_PLUGIN_DEV_EXT_PATH = (
-    MARKETPLACE_ROOT / 'pm-plugin-development' / 'skills' / 'plan-marshall-plugin' / 'extension.py'
 )
 
 
@@ -134,10 +128,14 @@ def _commit_file(repo_dir: Path, rel_path: str, content: str) -> None:
     )
 
 
-def _load_extension_module(ext_path: Path, module_name: str):
-    """Load an ``extension.py`` and return its ``Extension`` instance."""
-    spec = importlib.util.spec_from_file_location(module_name, ext_path)
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod.Extension()
+def _load_extension_module(module_name: str):
+    """Load pm-plugin-development's ``extension.py`` and return its ``Extension``.
+
+    ``extension.py`` sits at the skill ROOT rather than under ``scripts/``, so
+    ``load_skill_module`` is the accessor that addresses it. Nothing is
+    registered — every bundle ships this same filename, and each caller passes a
+    distinct name only so a failure names the call site that produced it.
+    """
+    return load_skill_module(
+        'pm-plugin-development', 'plan-marshall-plugin', 'extension.py', module_name, register=False
+    ).Extension()

@@ -10,6 +10,8 @@ import pytest
 from runtime_base import Runtime, toon_error, toon_noop, toon_success
 from toon_parser import parse_toon
 
+from conftest import get_skill_dir
+
 
 # =============================================================================
 # Test: TOON helper — toon_success
@@ -441,15 +443,7 @@ def test_every_toon_operation_documents_a_decline_path():
 
 
 def _skill_md_path():
-    return (
-        __import__("pathlib").Path(__file__).resolve().parents[3]
-        / "marketplace"
-        / "bundles"
-        / "plan-marshall"
-        / "skills"
-        / "platform-runtime"
-        / "SKILL.md"
-    )
+    return get_skill_dir("plan-marshall", "platform-runtime") / "SKILL.md"
 
 
 def test_skill_md_operations_table_has_no_per_target_restatements():

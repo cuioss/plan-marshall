@@ -15,11 +15,10 @@ deduped TOON fragment for the retrospective compile-report consumer.
 
 from __future__ import annotations
 
-import importlib.util
 import re
 from pathlib import Path
 
-from conftest import MARKETPLACE_ROOT
+from conftest import MARKETPLACE_ROOT, load_script_module
 
 SCRIPT_PATH = (
     MARKETPLACE_ROOT
@@ -44,17 +43,12 @@ EXECUTOR_TEMPLATE_PATH = (
 )
 
 
-# Direct module load so unit tests can poke the pure helpers.
-_spec = importlib.util.spec_from_file_location('script_failure_analysis', str(SCRIPT_PATH))
-
-
-assert _spec is not None and _spec.loader is not None
-
-
-_mod = importlib.util.module_from_spec(_spec)
-
-
-_spec.loader.exec_module(_mod)
+# Direct module load so unit tests can poke the pure helpers. Resolved by
+# (bundle, skill, file) and left unregistered, so this copy cannot displace one
+# another suite holds.
+_mod = load_script_module(
+    'plan-marshall', 'plan-retrospective', 'script-failure-analysis.py', 'script_failure_analysis', register=False
+)
 
 
 # ---------------------------------------------------------------------------

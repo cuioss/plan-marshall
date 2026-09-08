@@ -18,11 +18,9 @@ tooling that does not ship to consumers of plan-marshall.
 from __future__ import annotations
 
 import json
-import subprocess
-import sys
 from pathlib import Path
 
-from conftest import PROJECT_ROOT
+from conftest import PROJECT_ROOT, ScriptResult, run_script
 from toon_parser import parse_toon
 
 _SYNC_PY = PROJECT_ROOT / '.claude' / 'skills' / 'sync-plugin-cache' / 'scripts' / 'sync.py'
@@ -44,14 +42,8 @@ def _make_target(target_root: Path, bundles: dict[str, str]) -> None:
         _write(target_root / name / 'README.md', f'# {name} {version}\n')
 
 
-def _run(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [sys.executable, str(_SYNC_PY), *args],
-        capture_output=True,
-        text=True,
-        timeout=60,
-        cwd=cwd,
-    )
+def _run(*args: str, cwd: Path | None = None) -> ScriptResult:
+    return run_script(_SYNC_PY, *args, cwd=cwd, timeout=60)
 
 
 # ---------------------------------------------------------------------------

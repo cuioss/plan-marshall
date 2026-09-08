@@ -10,29 +10,23 @@ Tests for ``analyze-logs.py``.
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import subprocess
 from pathlib import Path
 
-from conftest import MARKETPLACE_ROOT
+from conftest import MARKETPLACE_ROOT, load_script_module
 
 SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'scripts' / 'analyze-logs.py'
 
 
-# Direct import of analyze-logs.py (hyphenated filename → importlib). Used by
-# the regression tests that call ``read_log`` in-process so they can
-# capture stderr WARN lines reliably without shell-level quoting noise.
-_spec = importlib.util.spec_from_file_location('analyze_logs', str(SCRIPT_PATH))
-
-
-assert _spec is not None and _spec.loader is not None
-
-
-_analyze_logs = importlib.util.module_from_spec(_spec)
-
-
-_spec.loader.exec_module(_analyze_logs)
+# Direct load of analyze-logs.py — the hyphenated filename cannot be imported,
+# so it is resolved by (bundle, skill, file). Used by the regression tests that
+# call ``read_log`` in-process so they can capture stderr WARN lines reliably
+# without shell-level quoting noise. Unregistered, so this copy cannot displace
+# one another suite holds.
+_analyze_logs = load_script_module(
+    'plan-marshall', 'plan-retrospective', 'analyze-logs.py', 'analyze_logs', register=False
+)
 
 
 read_log = _analyze_logs.read_log

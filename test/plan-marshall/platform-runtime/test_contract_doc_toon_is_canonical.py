@@ -39,15 +39,9 @@ import pytest
 # conftest.py sets up PYTHONPATH so imports resolve without manual sys.path work.
 from toon_parser import parse_toon, serialize_toon
 
-_STANDARDS = (
-    pathlib.Path(__file__).resolve().parents[3]
-    / "marketplace"
-    / "bundles"
-    / "plan-marshall"
-    / "skills"
-    / "platform-runtime"
-    / "standards"
-)
+from conftest import get_skill_dir
+
+_STANDARDS = get_skill_dir("plan-marshall", "platform-runtime") / "standards"
 
 
 def _toon_blocks(doc: pathlib.Path) -> list[tuple[int, str]]:

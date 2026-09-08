@@ -24,18 +24,9 @@ emits the field, the persistence layer validates it, and the dispatcher
 hook (covered by `test_phase_6_manifest_executor.py`) routes on it.
 """
 
-from pathlib import Path
+from conftest import get_skill_dir
 
-_TRIAGE_MD = (
-    Path(__file__).parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'plan-marshall'
-    / 'workflow'
-    / 'triage.md'
-)
+_TRIAGE_MD = get_skill_dir('plan-marshall', 'plan-marshall') / 'workflow' / 'triage.md'
 
 
 class TestTriageGranularityClassification:
@@ -160,15 +151,7 @@ class TestTriageGranularityCallSiteAlignment:
     def test_automated_review_forwards_loop_back_target(self) -> None:
         """`automatic-review.md` Branch C / "Handle findings (loop-back)"
         MUST forward `loop_back_target` to `mark-step-done --loop-back-target`."""
-        path = (
-            Path(__file__).parent.parent.parent
-            / 'marketplace'
-            / 'bundles'
-            / 'plan-marshall'
-            / 'skills'
-            / 'automatic-review'
-            / 'SKILL.md'
-        )
+        path = get_skill_dir('plan-marshall', 'automatic-review') / 'SKILL.md'
         text = path.read_text(encoding='utf-8')
         assert '--loop-back-target' in text, (
             'automatic-review.md must forward --loop-back-target to '
@@ -185,12 +168,7 @@ class TestTriageGranularityCallSiteAlignment:
         inline `verification-feedback` (producer=sonar) triage dispatch has
         crept back in."""
         path = (
-            Path(__file__).parent.parent.parent
-            / 'marketplace'
-            / 'bundles'
-            / 'plan-marshall'
-            / 'skills'
-            / 'phase-6-finalize'
+            get_skill_dir('plan-marshall', 'phase-6-finalize')
             / 'workflow'
             / 'sonar-roundtrip.md'
         )
@@ -212,15 +190,7 @@ class TestTriageGranularityCallSiteAlignment:
         """`phase-6-finalize/SKILL.md` Step 3 § 7b MUST branch on
         `loop_back_target` — `5-execute` triggers full-phase rollback,
         `6-finalize` triggers inline replay."""
-        path = (
-            Path(__file__).parent.parent.parent
-            / 'marketplace'
-            / 'bundles'
-            / 'plan-marshall'
-            / 'skills'
-            / 'phase-6-finalize'
-            / 'SKILL.md'
-        )
+        path = get_skill_dir('plan-marshall', 'phase-6-finalize') / 'SKILL.md'
         text = path.read_text(encoding='utf-8')
         assert 'loop_back_target' in text, (
             'phase-6-finalize/SKILL.md must read loop_back_target in the '
@@ -249,14 +219,7 @@ class TestTriageGranularityCallSiteAlignment:
         ELSE branch MUST display target-specific prompts — different text
         for `5-execute` vs `6-finalize`."""
         path = (
-            Path(__file__).parent.parent.parent
-            / 'marketplace'
-            / 'bundles'
-            / 'plan-marshall'
-            / 'skills'
-            / 'plan-marshall'
-            / 'workflow'
-            / 'execution.md'
+            get_skill_dir('plan-marshall', 'plan-marshall') / 'workflow' / 'execution.md'
         )
         text = path.read_text(encoding='utf-8')
         assert 'Loop-back continuation' in text, (

@@ -16,12 +16,11 @@ against silent regression of the wiring.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
-_REPO_ROOT = Path(__file__).resolve().parents[3]
-_SKILL_MD = _REPO_ROOT / '.claude' / 'skills' / 'finalize-step-sync-plugin-cache' / 'SKILL.md'
+from conftest import PROJECT_ROOT
+
+_SKILL_MD = PROJECT_ROOT / '.claude' / 'skills' / 'finalize-step-sync-plugin-cache' / 'SKILL.md'
 
 
 @pytest.fixture(scope='module')

@@ -6,18 +6,15 @@ the retrospective-aspect extension point that homes the former Surface C.
 
 from __future__ import annotations
 
-import importlib.util
-
 from _direct_gh_glab_usage_fixtures import (
     _PLUGIN_DEV_DOMAIN,
-    _PLUGIN_DEV_EXT_PATH,
     EXT_DISCOVERY_PATH,
     SCRIPT_PATH,
     _load_extension_module,
 )
 from _plan_retrospective_fixtures import setup_live_plan
 
-from conftest import run_script
+from conftest import load_script_module, run_script
 
 # ---------------------------------------------------------------------------
 # Top-level aggregate contract (generic aspect, Surfaces A+B only)
@@ -89,7 +86,7 @@ class TestSurfaceCDomainContribution:
         """The pm-plugin-development extension declares exactly the wrapper-tangle
         aspect through the retrospective-aspect hook.
         """
-        ext = _load_extension_module(_PLUGIN_DEV_EXT_PATH, 'pm_plugin_dev_ext_retro')
+        ext = _load_extension_module('pm_plugin_dev_ext_retro')
         aspects = ext.provides_retrospective_aspects()
         assert isinstance(aspects, list)
         names = {a['aspect'] for a in aspects}
@@ -100,7 +97,7 @@ class TestSurfaceCDomainContribution:
         correct fragment-producer notation — so plan-retrospective only merges
         it for plan-marshall-plugin-dev plans.
         """
-        ext = _load_extension_module(_PLUGIN_DEV_EXT_PATH, 'pm_plugin_dev_ext_gate')
+        ext = _load_extension_module('pm_plugin_dev_ext_gate')
         aspect = next(a for a in ext.provides_retrospective_aspects() if a['aspect'] == 'wrapper-tangle')
         assert aspect['domain'] == _PLUGIN_DEV_DOMAIN
         assert aspect['script'] == 'pm-plugin-development:plan-marshall-plugin:wrapper-tangle-scan'
@@ -142,11 +139,9 @@ class TestRetrospectiveAspectDiscovery:
 
     @staticmethod
     def _load_discovery():
-        spec = importlib.util.spec_from_file_location('extension_discovery_retro', EXT_DISCOVERY_PATH)
-        assert spec is not None and spec.loader is not None
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        return mod
+        return load_script_module(
+            'plan-marshall', 'extension-api', 'extension_discovery.py', 'extension_discovery_retro', register=False
+        )
 
     def test_get_retrospective_aspects_attributes_bundle(self):
         """The discovery helper returns every declared aspect across all

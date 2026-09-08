@@ -18,12 +18,10 @@ job runs when a PR is queued.
 
 import importlib.util
 import re
-from pathlib import Path
 
-# repo_root/test/plan-marshall/manage-config/test_merge_group_trigger.py
-#                                          ^ parents[3] == repo root
-_REPO_ROOT = Path(__file__).resolve().parents[3]
-_WORKFLOW_PATH = _REPO_ROOT / '.github' / 'workflows' / 'python-verify.yml'
+from conftest import PROJECT_ROOT
+
+_WORKFLOW_PATH = PROJECT_ROOT / '.github' / 'workflows' / 'python-verify.yml'
 
 
 def _parse_on_section() -> dict:

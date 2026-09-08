@@ -21,7 +21,7 @@ from typing import Any
 
 from _arch_fixtures import seed_project
 
-from conftest import load_script_module, parse_ns
+from conftest import MARKETPLACE_ROOT, PROJECT_ROOT, load_script_module, parse_ns
 
 _architecture_core = load_script_module('plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core')
 _cmd_manage = load_script_module('plan-marshall', 'manage-architecture', '_cmd_manage.py', '_cmd_manage')
@@ -34,13 +34,6 @@ _is_marketplace_bundle_module = _cmd_manage._is_marketplace_bundle_module
 FILE_CATEGORIES = _architecture_core.FILE_CATEGORIES
 cmd_which_module = _cmd_client.cmd_which_module
 resolve_module_for_path = _architecture_core.resolve_module_for_path
-
-# Repository root, derived from this file's own location
-# (``test/plan-marshall/manage-architecture/`` → three levels up). The
-# real-tree tests below walk the live ``marketplace/bundles/`` population from
-# here rather than from a hard-coded list.
-_REPO_ROOT = Path(__file__).resolve().parents[3]
-_BUNDLES_ROOT = _REPO_ROOT / 'marketplace' / 'bundles'
 
 #: The architecture script's address, as module-level string constants so the
 #: ``parse_ns`` call below stays statically resolvable.
@@ -315,7 +308,7 @@ def _iter_real_bundle_files():
     matches what ``_walk_module_root`` actually hands the classifier. There is
     deliberately NO extension filter.
     """
-    for bundle_dir in sorted(_BUNDLES_ROOT.iterdir()):
+    for bundle_dir in sorted(MARKETPLACE_ROOT.iterdir()):
         if not bundle_dir.is_dir() or bundle_dir.is_symlink():
             continue
         for path in sorted(bundle_dir.rglob('*')):
@@ -378,7 +371,7 @@ def test_live_anchor_skill_workflow_document_is_classified():
     ``skills/phase-3-outline/workflow/light-lane.md`` exists on disk and used to
     classify as ``None`` — the confident ``count: 0`` this plan removes.
     """
-    anchor = _BUNDLES_ROOT / 'plan-marshall' / 'skills' / 'phase-3-outline' / 'workflow' / 'light-lane.md'
+    anchor = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-3-outline' / 'workflow' / 'light-lane.md'
     assert anchor.is_file(), f'anchor file missing — the regression case moved: {anchor}'
 
     assert _classify_marketplace('skills/phase-3-outline/workflow/light-lane.md', 'light-lane.md') == 'skill_doc'
@@ -391,7 +384,7 @@ def test_live_anchor_generic_adoc_page_classifies_as_doc():
     invisible to the inventory because the generic peer recognised only
     ``README*`` / ``CHANGELOG*``.
     """
-    anchor = _REPO_ROOT / 'doc' / 'developer' / 'repository-layout.adoc'
+    anchor = PROJECT_ROOT / 'doc' / 'developer' / 'repository-layout.adoc'
     assert anchor.is_file(), f'anchor file missing — the regression case moved: {anchor}'
 
     assert _classify_generic('doc/developer/repository-layout.adoc', 'repository-layout.adoc') == 'doc'

@@ -46,11 +46,10 @@ Covered here:
 
 import re
 from argparse import Namespace
-from pathlib import Path
 
 from _manage_config_fixtures import SCRIPT_PATH, create_marshal_json
 
-from conftest import load_script_module, run_script
+from conftest import get_skill_dir, load_script_module, run_script
 
 _cmd_mod = load_script_module(
     'plan-marshall', 'manage-config', '_cmd_finalize_steps.py', module_name='_cmd_finalize_steps'
@@ -186,10 +185,7 @@ def test_cli_reaches_the_handler_instead_of_dying_at_argparse(plan_context):
 # ---------------------------------------------------------------------------
 
 #: The skill doc whose ``## Canonical invocations`` block documents the verb.
-_MANAGE_CONFIG_SKILL = (
-    Path(__file__).parents[3]
-    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'manage-config' / 'SKILL.md'
-)
+_MANAGE_CONFIG_SKILL = get_skill_dir('plan-marshall', 'manage-config') / 'SKILL.md'
 
 #: The documented ``--lane {a,b,c}`` enum inside the canonical ``set-lane`` block.
 _DOCUMENTED_LANE_ENUM = re.compile(r'--lane\s*\{([^}]+)\}')

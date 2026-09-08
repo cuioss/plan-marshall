@@ -265,15 +265,8 @@ class TestEnsureDeniedRendersNoGrammar:
     """The module states intent; it must not build or receive permission strings."""
 
     def test_module_source_constructs_no_permission_dsl(self) -> None:
-        source = (
-            Path(__file__).resolve().parents[3]
-            / 'marketplace'
-            / 'bundles'
-            / 'plan-marshall'
-            / 'skills'
-            / 'manage-providers'
-            / 'scripts'
-            / '_cred_ensure_denied.py'
+        source = get_script_path(
+            'plan-marshall', 'manage-providers', '_cred_ensure_denied.py'
         ).read_text(encoding='utf-8')
 
         assert 'Read(' not in source

@@ -51,7 +51,7 @@ from _resolve_project_dir_fixtures import (
 )
 from toon_parser import parse_toon
 
-from conftest import get_script_path, load_script_module, run_script
+from conftest import PROJECT_ROOT, get_script_path, load_script_module, run_script
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'workflow-integration-git', 'git-workflow.py')
 
@@ -1341,7 +1341,7 @@ class TestWorktreeListCli:
         _init_repo(repo)
 
         # Symlink the real executor so ``manage-status list`` resolves.
-        real_executor = Path(__file__).resolve().parents[3] / '.plan' / 'execute-script.py'
+        real_executor = PROJECT_ROOT / '.plan' / 'execute-script.py'
         if not real_executor.exists():
             pytest.skip('real executor not available — run /marshall-steward to bootstrap')
 

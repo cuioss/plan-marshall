@@ -19,15 +19,13 @@ inside the very scan written to make the declaration checkable. These tests asse
 over the classification itself, which is what no other test reads.
 """
 
-import importlib.util
+from conftest import load_script_module
 
-from _manage_metrics_fixtures import SCRIPT_PATH
-
-# kebab-case filename — load via importlib under a unique module name.
-_spec = importlib.util.spec_from_file_location('manage_metrics_registration_scan', SCRIPT_PATH)
-assert _spec is not None and _spec.loader is not None
-manage_metrics = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(manage_metrics)
+# kebab-case filename — resolved by (bundle, skill, file) under a unique module
+# name, unregistered so this copy cannot displace one another suite holds.
+manage_metrics = load_script_module(
+    'plan-marshall', 'manage-metrics', 'manage-metrics.py', 'manage_metrics_registration_scan', register=False
+)
 
 
 _NOTATION = 'python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics'

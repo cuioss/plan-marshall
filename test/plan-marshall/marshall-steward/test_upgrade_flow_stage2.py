@@ -25,16 +25,13 @@ from pathlib import Path
 
 import upgrade
 
-_REPO_ROOT = Path(__file__).resolve().parents[3]
-_UPGRADE_FLOW = (
-    _REPO_ROOT
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'marshall-steward'
-    / 'references'
-    / 'upgrade-flow.md'
+from conftest import get_skill_dir
+
+# Annotated because ``conftest`` is deliberately untyped to mypy (see pyproject's
+# ``ignore_missing_imports`` override for it), so the accessor's return would
+# otherwise be ``Any`` and ``_stage2_block`` would return ``Any`` as ``str``.
+_UPGRADE_FLOW: Path = (
+    get_skill_dir('plan-marshall', 'marshall-steward') / 'references' / 'upgrade-flow.md'
 )
 
 

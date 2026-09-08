@@ -43,52 +43,12 @@ tests no longer touch the real file, they rely on the autouse
 
 from __future__ import annotations
 
-import os
 import subprocess
-import sys
 from pathlib import Path
 
 # conftest.py sets MARKETPLACE_SCRIPT_DIRS and PROJECT_ROOT in sys.path
 # so the conftest-exported symbols are available for import.
-from conftest import PROJECT_ROOT, create_marshal_json
-
-
-def _build_env(plan_base_dir: Path) -> dict[str, str]:
-    """Build subprocess environment for the synthetic-repo manage-config call.
-
-    Mirrors the PYTHONPATH that the executor sets so manage-config can
-    resolve cross-skill imports (``file_ops``, ``_config_core``, etc.), and
-    points ``PLAN_BASE_DIR`` at the synthetic repo's ``.plan`` directory so
-    ``get_marshal_path()`` resolves to ``{tmp_repo}/.plan/marshal.json`` —
-    never the real checkout's tracked file.
-
-    Args:
-        plan_base_dir: The synthetic repo's ``.plan`` directory; the value
-            ``get_marshal_path()`` resolves against (it appends
-            ``marshal.json``).
-
-    Returns:
-        A copy of the current environment with PYTHONPATH and PLAN_BASE_DIR
-        set for the subprocess.
-    """
-    env = os.environ.copy()
-    # conftest._MARKETPLACE_SCRIPT_DIRS is built by _setup_marketplace_pythonpath()
-    # and injected into sys.path; we mirror it here for subprocess calls.
-    # Collect the script dirs from sys.path that live inside the marketplace
-    # bundles tree.
-    marketplace_dirs = [
-        d for d in sys.path
-        if 'marketplace' in d and 'scripts' in d
-    ]
-    if marketplace_dirs:
-        extra = os.pathsep.join(marketplace_dirs)
-        existing = env.get('PYTHONPATH', '')
-        env['PYTHONPATH'] = f'{extra}{os.pathsep}{existing}' if existing else extra
-    # Redirect marshal.json resolution into the synthetic repo. The autouse
-    # sandbox already set PLAN_BASE_DIR to a tmp dir; override it here so the
-    # write lands on the committed synthetic file we can assert against.
-    env['PLAN_BASE_DIR'] = str(plan_base_dir)
-    return env
+from conftest import PROJECT_ROOT, ScriptResult, create_marshal_json, run_script
 
 
 def _init_synthetic_repo(repo: Path) -> Path:
@@ -116,37 +76,36 @@ def _init_synthetic_repo(repo: Path) -> Path:
     return marshal_path
 
 
-def _run_manage_config_set(repo: Path) -> subprocess.CompletedProcess[str]:
+def _run_manage_config_set(repo: Path) -> ScriptResult:
     """Invoke the mutating ``manage-config plan phase-2-refine set`` verb.
 
-    Runs the real executor with ``cwd`` set to the synthetic repo and
-    ``PLAN_BASE_DIR`` redirected into ``{repo}/.plan`` so the write targets
-    the synthetic marshal.json.
+    Runs the real executor through ``conftest.run_script``, which supplies the
+    cross-skill ``PYTHONPATH`` from the same script-directory list the suite
+    itself is set up from. ``cwd`` is the synthetic repo and ``PLAN_BASE_DIR``
+    is redirected into ``{repo}/.plan`` so the write targets the synthetic
+    marshal.json rather than the real checkout's tracked file. The autouse
+    sandbox already points ``PLAN_BASE_DIR`` at a tmp dir; the override here is
+    what lands the write on the committed synthetic file assertions read back.
 
     Args:
         repo: The synthetic git repo root.
 
     Returns:
-        The completed subprocess for the ``set`` invocation.
+        The captured result of the ``set`` invocation.
     """
     executor = PROJECT_ROOT / '.plan' / 'execute-script.py'
-    return subprocess.run(
-        [
-            sys.executable,
-            str(executor),
-            'plan-marshall:manage-config:manage-config',
-            'plan',
-            'phase-2-refine',
-            'set',
-            '--field',
-            'simplicity',
-            '--value',
-            'lean',
-        ],
-        capture_output=True,
-        text=True,
+    return run_script(
+        executor,
+        'plan-marshall:manage-config:manage-config',
+        'plan',
+        'phase-2-refine',
+        'set',
+        '--field',
+        'simplicity',
+        '--value',
+        'lean',
         cwd=repo,
-        env=_build_env(repo / '.plan'),
+        env_overrides={'PLAN_BASE_DIR': str(repo / '.plan')},
         timeout=30,
     )
 

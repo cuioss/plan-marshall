@@ -12,10 +12,10 @@ build-pyproject:pyproject_build coverage-report dispatch.
 
 import importlib.util
 import os
-from pathlib import Path
 from unittest.mock import patch
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
+from conftest import PROJECT_ROOT
+
 BUILD_PY = PROJECT_ROOT / 'build.py'
 
 

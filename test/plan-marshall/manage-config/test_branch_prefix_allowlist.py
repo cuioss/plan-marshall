@@ -23,21 +23,14 @@ the workflow file (or the prefix set) to be updated. ``docs/`` is not a working
 prefix and is asserted absent.
 """
 
-# ruff: noqa: E402
-
 import importlib.util
 import json
 import re
-from pathlib import Path
 
-# repo_root/test/plan-marshall/manage-config/test_branch_prefix_allowlist.py
-#                                          ^ parents[3] == repo root
-_REPO_ROOT = Path(__file__).resolve().parents[3]
-_WORKFLOW_PATH = _REPO_ROOT / '.github' / 'workflows' / 'python-verify.yml'
-_MARSHAL_PATH = _REPO_ROOT / '.plan' / 'marshal.json'
+from conftest import PROJECT_ROOT, load_script_module
 
-
-from conftest import load_script_module
+_WORKFLOW_PATH = PROJECT_ROOT / '.github' / 'workflows' / 'python-verify.yml'
+_MARSHAL_PATH = PROJECT_ROOT / '.plan' / 'marshal.json'
 
 _config_defaults_mod = load_script_module(
     'plan-marshall', 'manage-config', '_config_defaults.py', module_name='_config_defaults_for_branch_prefix_allowlist_test'

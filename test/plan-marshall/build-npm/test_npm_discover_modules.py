@@ -19,24 +19,22 @@ Structure validated per build-project-structure.md:
 - commands: {} (canonical command mappings)
 """
 
-# Use importlib to avoid module naming conflicts with other Extension classes
-import importlib.util
 import json
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import PROJECT_ROOT, BuildContext
-
-EXTENSION_FILE = (
-    PROJECT_ROOT / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'plan-marshall-plugin' / 'extension.py'
-)
+from conftest import BuildContext, load_skill_module
 
 
 def _load_npm_extension():
-    """Load npm Extension class avoiding conflicts."""
-    spec = importlib.util.spec_from_file_location('npm_extension', EXTENSION_FILE)
-    npm_ext = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(npm_ext)
-    return npm_ext.Extension
+    """Load the npm Extension class under a name of this module's own choosing.
+
+    ``extension.py`` sits at the skill root rather than under ``scripts/``, so
+    ``load_skill_module`` is the accessor that addresses it by
+    ``(bundle, skill, file)``. Every bundle ships that same filename, so the
+    explicit ``'npm_extension'`` name is what keeps this load from displacing
+    another bundle's extension under the shared ``extension`` stem.
+    """
+    return load_skill_module('plan-marshall', 'plan-marshall-plugin', 'extension.py', 'npm_extension').Extension
 
 
 Extension = _load_npm_extension()

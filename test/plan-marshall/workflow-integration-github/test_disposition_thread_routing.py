@@ -23,23 +23,17 @@ as a whole:
 
 from __future__ import annotations
 
-import importlib.util
-import sys
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
-from conftest import get_script_path
+from conftest import get_script_path, load_script_module
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'workflow-integration-github', 'github_pr.py')
 
-# Explicit-path import to avoid a module-name collision with the gitlab sibling.
-_spec = importlib.util.spec_from_file_location('github_pr', Path(SCRIPT_PATH))
-assert _spec is not None and _spec.loader is not None
-github_pr = importlib.util.module_from_spec(_spec)
-sys.modules['github_pr'] = github_pr
-_spec.loader.exec_module(github_pr)
+# Resolved by (bundle, skill, file), which is what keeps this distinct from the
+# gitlab sibling despite the two scripts sharing a role.
+github_pr = load_script_module('plan-marshall', 'workflow-integration-github', 'github_pr.py')
 
 cmd_fetch_findings = github_pr.cmd_fetch_findings
 cmd_post_responses = github_pr.cmd_post_responses

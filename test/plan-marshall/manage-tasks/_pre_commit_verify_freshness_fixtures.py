@@ -50,7 +50,6 @@ ledger, and the live project footprint.
 
 from __future__ import annotations
 
-import importlib.util
 import json
 from pathlib import Path
 
@@ -58,32 +57,16 @@ import _freshness_crosscheck as _crosscheck_mod
 import pytest
 from toon_parser import serialize_toon
 
-from conftest import PROJECT_ROOT
+from conftest import load_script_module
 
-# Load the cmd module via importlib (mirrors the qgate-mechanical test bootstrap).
-_SCRIPTS_DIR = (
-    PROJECT_ROOT
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-tasks'
-    / 'scripts'
-)
-
-
-def _load_module(name: str, filename: str):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    assert spec is not None
-    mod = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_freshness_mod = _load_module(
-    '_cmd_pre_commit_verify_freshness_under_test',
+# Resolved by (bundle, skill, file); unregistered so this copy cannot displace
+# one another suite holds.
+_freshness_mod = load_script_module(
+    'plan-marshall',
+    'manage-tasks',
     '_cmd_pre_commit_verify_freshness.py',
+    '_cmd_pre_commit_verify_freshness_under_test',
+    register=False,
 )
 
 

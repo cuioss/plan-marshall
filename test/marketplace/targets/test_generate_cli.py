@@ -2,19 +2,16 @@
 """CLI smoke tests for marketplace/targets/generate.py."""
 
 import json
-import subprocess
-import sys
 
-from conftest import PROJECT_ROOT
+from conftest import PROJECT_ROOT, ScriptResult, run_script
 
 GENERATE_SCRIPT = PROJECT_ROOT / 'marketplace' / 'targets' / 'generate.py'
 
 
-def _run_cli(*args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [sys.executable, str(GENERATE_SCRIPT), *args],
-        capture_output=True,
-        text=True,
+def _run_cli(*args: str) -> ScriptResult:
+    return run_script(
+        GENERATE_SCRIPT,
+        *args,
         cwd=PROJECT_ROOT,
         # A full --output run now discovers scripts and materializes the default
         # config to compute the dist-manifest fingerprints, so the emit path does

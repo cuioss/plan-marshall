@@ -16,21 +16,18 @@ coverage living in ``test/plan-marshall/manage-lessons/test_manage_lessons.py``.
 This suite is scoped strictly to the phase-1-init contract.
 """
 
-import importlib.util
 from unittest.mock import patch
 
 import pytest
 
-from conftest import MARKETPLACE_ROOT, parse_ns
+from conftest import MARKETPLACE_ROOT, load_script_module, parse_ns
 
-# Tier 2 direct import — load the hyphenated manage-lessons module via importlib
-_MANAGE_LESSONS_SCRIPT = str(
-    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'manage-lessons' / 'scripts' / 'manage-lessons.py'
+# Tier 2 direct import — the hyphenated manage-lessons module, resolved by
+# (bundle, skill, file) and left unregistered so this copy cannot displace one
+# another suite holds.
+_mod = load_script_module(
+    'plan-marshall', 'manage-lessons', 'manage-lessons.py', 'manage_lessons', register=False
 )
-_spec = importlib.util.spec_from_file_location('manage_lessons', _MANAGE_LESSONS_SCRIPT)
-assert _spec is not None and _spec.loader is not None
-_mod = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(_mod)
 
 cmd_convert_to_plan = _mod.cmd_convert_to_plan
 
