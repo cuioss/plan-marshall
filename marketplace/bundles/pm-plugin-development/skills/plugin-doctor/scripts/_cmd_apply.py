@@ -18,7 +18,9 @@ from _doctor_shared import read_json_input, resolve_runtime_target
 # active target is resolved through the platform-runtime layout op (via
 # ``_doctor_shared.resolve_runtime_target``), so the fix handler emits the
 # shape the active target's loader understands instead of hardcoding the
-# Claude form.
+# Claude form. The per-target agent templates live in ``fix-templates.json``
+# (``templates.missing-frontmatter.agent.{target}``) as data; these constants
+# are the fallback used when the assets file is absent.
 _OPENCODE_AGENT_FRONTMATTER = 'tools: Read, Write, Edit\nmode: subagent\nmodel: anthropic/claude-sonnet-4\n'
 _CLAUDE_AGENT_FRONTMATTER = 'tools: Read, Write, Edit\nmodel: sonnet\n'
 
@@ -31,6 +33,29 @@ def load_templates(script_dir: Path) -> dict:
             result: dict = json.load(f)
             return result
     return {}
+
+
+def _agent_frontmatter_block(templates: dict) -> str:
+    """Resolve the target-aware agent-frontmatter block from the fix templates.
+
+    The templates declare the per-target agent frontmatter block as
+    ``templates.missing-frontmatter.agent.{target}``. The active target is
+    resolved through ``resolve_runtime_target``; an unrecognised target falls
+    back to the Claude block (every runtime-less environment is a Claude
+    checkout), and an absent assets file falls back to the module constants.
+    """
+    target = resolve_runtime_target()
+    templates_root = templates.get('templates', {})
+    entry = templates_root.get('missing-frontmatter', {})
+    agent_templates = entry.get('agent', {}) if isinstance(entry, dict) else {}
+    if isinstance(agent_templates, dict):
+        block = agent_templates.get(target)
+        if block is not None:
+            return str(block)
+        if target == 'opencode':
+            return _OPENCODE_AGENT_FRONTMATTER
+        return _CLAUDE_AGENT_FRONTMATTER
+    return _OPENCODE_AGENT_FRONTMATTER if target == 'opencode' else _CLAUDE_AGENT_FRONTMATTER
 
 
 def apply_missing_frontmatter(file_path: Path, fix: dict, templates: dict) -> dict:
@@ -57,10 +82,7 @@ name: {name}
 description: [Description needed]
 """
     if component_type == 'agent':
-        if resolve_runtime_target() == 'opencode':
-            frontmatter += _OPENCODE_AGENT_FRONTMATTER
-        else:
-            frontmatter += _CLAUDE_AGENT_FRONTMATTER
+        frontmatter += _agent_frontmatter_block(templates)
     frontmatter += '---\n\n'
 
     new_content = frontmatter + content
@@ -72,7 +94,21 @@ description: [Description needed]
 
 
 def apply_array_syntax_fix(file_path: Path, fix: dict, templates: dict) -> dict:
-    """Convert array syntax tools: [A, B] to comma-separated tools: A, B."""
+    """Convert array syntax tools: [A, B] to comma-separated tools: A, B.
+
+    The comma-separated ``tools:`` form is a Claude rule-pack concern
+    (``array-syntax-tools``): the OpenCode target maps tools to a
+    ``permission:`` block at build time and never consumes a comma-separated
+    ``tools:`` line, so the fix is gated on the resolved target and declines
+    on OpenCode.
+    """
+    if resolve_runtime_target() != 'claude':
+        return {
+            'success': False,
+            'error': 'array-syntax-tools is a Claude rule-pack fix; the active target does not use '
+            'comma-separated tools frontmatter',
+        }
+
     with open(file_path, encoding='utf-8') as f:
         content = f.read()
 

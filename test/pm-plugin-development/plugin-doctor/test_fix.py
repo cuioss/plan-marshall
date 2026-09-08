@@ -204,7 +204,8 @@ def test_apply_rule_11_fix_already_present():
 # apply_missing_frontmatter emits agent frontmatter target-aware: on Claude an
 # agent pins `model: sonnet`; on OpenCode it declares `mode: subagent` plus a
 # provider-qualified `model: anthropic/...`. The active target is resolved via
-# _doctor_shared.resolve_runtime_target (re-exported into _cmd_apply).
+# _doctor_shared.resolve_runtime_target (re-exported into _cmd_apply), and the
+# per-target agent template is consumed from assets/fix-templates.json.
 
 
 def _apply_missing_frontmatter(tmp_dir, agent_rel_path):
@@ -252,6 +253,60 @@ def test_missing_frontmatter_skill_is_target_agnostic(monkeypatch):
         assert data['success'] is True, f'Fix should succeed: {data}'
         assert 'model:' not in content, 'Skill frontmatter carries no model pin'
         assert 'mode: subagent' not in content, 'Skill frontmatter carries no subagent mode'
+
+
+def test_missing_frontmatter_consumes_target_keyed_template(monkeypatch, tmp_path):
+    """The agent frontmatter block is read from fix-templates.json's target-keyed payload.
+
+    A template file declaring a custom target block wins over the module
+    constants, proving the live payload is the JSON data, not the fallback.
+    """
+    monkeypatch.setattr(_cmd_apply_mod, 'resolve_runtime_target', lambda: 'opencode')
+    templates = {
+        'templates': {
+            'missing-frontmatter': {
+                'agent': {
+                    'claude': 'tools: Read\nmodel: sonnet\n',
+                    'opencode': 'tools: Read\nmode: subagent\nmodel: anthropic/custom-model\n',
+                }
+            }
+        }
+    }
+    path = tmp_path / 'agents' / 'a.md'
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text('# A\n')
+    result = _cmd_apply_mod.apply_missing_frontmatter(path, {}, templates)
+    assert result['success'] is True
+    assert 'model: anthropic/custom-model' in path.read_text(), (
+        f'Custom target-keyed template should win over the constant, got:\n{path.read_text()}'
+    )
+
+
+def test_array_syntax_fix_gates_on_target(monkeypatch):
+    """apply_array_syntax_fix is Claude-only: it declines on OpenCode."""
+    monkeypatch.setattr(_cmd_apply_mod, 'resolve_runtime_target', lambda: 'opencode')
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        agent_file = Path(tmp_dir) / 'a.md'
+        agent_file.write_text('---\ntools: [Read, Write]\n---\n\n# A\n')
+        result = _cmd_apply_mod.apply_array_syntax_fix(agent_file, {}, {})
+        assert result['success'] is False, f'OpenCode must decline the Claude rule-pack fix: {result}'
+        assert 'Claude rule-pack' in result['error'], (
+            f"Decline should name the Claude rule-pack: {result.get('error')}"
+        )
+        assert '[Read, Write]' in agent_file.read_text(), 'OpenCode must not rewrite the tools declaration'
+
+
+def test_array_syntax_fix_applies_on_claude(monkeypatch):
+    """apply_array_syntax_fix converts array syntax on the Claude target."""
+    monkeypatch.setattr(_cmd_apply_mod, 'resolve_runtime_target', lambda: 'claude')
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        agent_file = Path(tmp_dir) / 'a.md'
+        agent_file.write_text('---\ntools: [Read, Write]\n---\n\n# A\n')
+        result = _cmd_apply_mod.apply_array_syntax_fix(agent_file, {}, {})
+        assert result['success'] is True, f'Claude should apply the fix: {result}'
+        assert 'tools: Read, Write' in agent_file.read_text(), (
+            f'Claude should rewrite to comma-separated, got:\n{agent_file.read_text()}'
+        )
 
 
 # =============================================================================

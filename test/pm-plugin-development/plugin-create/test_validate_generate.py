@@ -7,6 +7,7 @@ Covers edge cases and error handling not present in test_component.py:
 - generate: invalid JSON, missing required fields, type validation
 """
 
+import json
 import tempfile
 from argparse import Namespace
 from pathlib import Path
@@ -34,6 +35,7 @@ def _ns(template: Namespace, **overrides) -> Namespace:
 FIXTURES_DIR = Path(__file__).parent / 'fixtures'
 
 # Direct imports for Tier 2 testing
+import cmd_generate as _cmd_generate_mod  # noqa: E402
 from cmd_generate import cmd_generate  # noqa: E402
 from cmd_validate import cmd_validate  # noqa: E402
 
@@ -339,6 +341,72 @@ def test_generate_special_chars_in_description():
     assert data.get('status') == 'success'
     content = data.get('frontmatter', '')
     assert 'description:' in content
+
+
+# =============================================================================
+# Target-aware agent generation (D1)
+# =============================================================================
+# ``cmd_generate`` resolves the active runtime target the way the doctor's
+# fixer does: on Claude an agent keeps the bare model alias (``model: sonnet``);
+# on OpenCode it declares ``mode: subagent`` and a provider-qualified model id
+# (``model: anthropic/...``). The active target is resolved via
+# ``_doctor_shared.resolve_runtime_target`` (re-exported into cmd_generate).
+
+
+def _generate_agent_with_model(monkeypatch, target, model='opus', tools=('Read',)):
+    """Run agent generation under a fixed resolved target and return the frontmatter."""
+    monkeypatch.setattr(_cmd_generate_mod, 'resolve_runtime_target', lambda: target)
+    config = json.dumps({'name': 'a', 'description': 'b', 'tools': list(tools), 'model': model})
+    args = _ns(_GENERATE_NS, type='agent', config=config)
+    data = cmd_generate(args)
+    return data.get('frontmatter', '')
+
+
+def test_generate_agent_claude_keeps_bare_model_alias(monkeypatch):
+    """On Claude, generated agent frontmatter keeps the bare model alias."""
+    content = _generate_agent_with_model(monkeypatch, 'claude')
+    assert 'mode: subagent' not in content, 'Claude agent must not declare OpenCode mode: subagent'
+    assert 'model: opus' in content, f'Claude agent keeps the bare alias, got:\n{content}'
+    assert 'anthropic/' not in content, 'Claude agent must not use a provider-qualified model id'
+
+
+def test_generate_agent_opencode_declares_subagent_and_qualified_model(monkeypatch):
+    """On OpenCode, generated agent frontmatter declares mode: subagent + a qualified model."""
+    content = _generate_agent_with_model(monkeypatch, 'opencode')
+    assert 'mode: subagent' in content, f'OpenCode agent should declare mode: subagent, got:\n{content}'
+    assert 'model: anthropic/opus' in content, f'OpenCode agent should qualify the model, got:\n{content}'
+
+
+def test_generate_agent_opencode_keeps_existing_qualified_model(monkeypatch):
+    """An already provider-qualified model is not double-prefixed on OpenCode."""
+    content = _generate_agent_with_model(monkeypatch, 'opencode', model='anthropic/claude-opus-4-8')
+    assert 'model: anthropic/claude-opus-4-8' in content, f'Qualified model must pass through, got:\n{content}'
+
+
+def test_generate_agent_opencode_without_model_still_declares_subagent(monkeypatch):
+    """On OpenCode the subagent mode is declared even when no model is supplied."""
+    monkeypatch.setattr(_cmd_generate_mod, 'resolve_runtime_target', lambda: 'opencode')
+    args = _ns(
+        _GENERATE_NS,
+        type='agent',
+        config='{"name": "a", "description": "b", "tools": ["Read"]}',
+    )
+    data = cmd_generate(args)
+    content = data.get('frontmatter', '')
+    assert 'mode: subagent' in content, f'OpenCode agent should declare mode: subagent, got:\n{content}'
+    assert 'model:' not in content, f'No model supplied -> no model line, got:\n{content}'
+
+
+def test_generate_command_and_skill_are_target_agnostic(monkeypatch):
+    """Only agent generation is target-aware; command and skill output is target-neutral."""
+    monkeypatch.setattr(_cmd_generate_mod, 'resolve_runtime_target', lambda: 'opencode')
+    cmd_args = _ns(_GENERATE_NS, type='command', config='{"name": "c", "description": "d"}')
+    cmd_content = cmd_generate(cmd_args).get('frontmatter', '')
+    assert 'mode:' not in cmd_content, f'Command frontmatter carries no mode, got:\n{cmd_content}'
+
+    skill_args = _ns(_GENERATE_NS, type='skill', config='{"name": "s", "description": "d"}')
+    skill_content = cmd_generate(skill_args).get('frontmatter', '')
+    assert 'mode:' not in skill_content, f'Skill frontmatter carries no mode, got:\n{skill_content}'
 
 
 # =============================================================================

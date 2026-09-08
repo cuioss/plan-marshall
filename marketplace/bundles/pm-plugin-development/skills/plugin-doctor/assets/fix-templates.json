@@ -1,18 +1,16 @@
 {
   "templates": {
     "missing-frontmatter": {
-      "agent": "---\nname: {name}\ndescription: {description}\ntools: Read, Write, Edit\nmodel: sonnet\n---\n\n",
+      "agent": {
+        "claude": "tools: Read, Write, Edit\nmodel: sonnet\n",
+        "opencode": "tools: Read, Write, Edit\nmode: subagent\nmodel: anthropic/claude-sonnet-4\n"
+      },
       "command": "---\nname: {name}\ndescription: {description}\n---\n\n",
-      "skill": "---\nname: {name}\ndescription: {description}\nallowed-tools: Read, Glob, Grep\n---\n\n",
+      "skill": "---\nname: {name}\ndescription: {description}\n---\n\n",
       "defaults": {
         "name": "{filename}",
         "description": "[Description needed]"
       }
-    },
-    "array-syntax-tools": {
-      "pattern": "^tools:\\s*\\[([^\\]]+)\\]",
-      "replacement": "tools: $1",
-      "description": "Convert array syntax [A, B] to comma-separated A, B"
     },
     "missing-name-field": {
       "template": "name: {value}\n",
