@@ -828,3 +828,14 @@ class TestPermissionDslDeclinesOnNonClaude:
 
         assert result.get('status') == 'skipped'
         assert 'redundant' not in result
+
+    def test_remove_redundant_scope_both_skipped_on_opencode(self, monkeypatch, tmp_path, in_tmp_cwd):
+        """remove-redundant --scope both on a non-Claude target returns skipped, not a scope-resolution error."""
+        self._force_opencode(monkeypatch)
+
+        result = pf.cmd_remove_redundant(
+            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'remove-redundant', '--scope', 'both')
+        )
+
+        assert result.get('status') == 'skipped'
+        assert 'Could not resolve' not in str(result)

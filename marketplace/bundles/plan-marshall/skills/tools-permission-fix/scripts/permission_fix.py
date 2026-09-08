@@ -601,6 +601,12 @@ def cmd_remove_redundant(args: argparse.Namespace) -> dict:
     Detects issues via permission_doctor.cmd_detect_redundant, then applies
     the requested fixes.
     """
+    if not is_claude_target():
+        detect_args = argparse.Namespace(
+            scope=args.scope, global_settings=args.global_settings, local_settings=args.local_settings
+        )
+        return cmd_detect_redundant(detect_args)
+
     # Resolve paths
     if args.scope:
         global_path_or_none, local_path_or_none = resolve_scope_to_paths(args.scope)
