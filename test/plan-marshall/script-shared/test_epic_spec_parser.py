@@ -26,6 +26,7 @@ live corpus's wording rather than reading it.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -184,7 +185,10 @@ def _shape_of(plans: Path, repo: Path, plan_id: str, bullet: str, path: str) -> 
     """
     body = f'# {plan_id}\n\n## Expected Surface\n\n{bullet}'
     claim = claim_for(plans, repo, f'{plan_id}.md', body)
-    return next(entry for entry in claim.claimed if entry.path == path).shape
+    # The subject is loaded dynamically, so its entries are untyped to the
+    # checker; the cast states the shape's real type rather than widening this
+    # helper's own return annotation to ``Any``.
+    return cast(str, next(entry for entry in claim.claimed if entry.path == path).shape)
 
 
 #: ``(spec id, bullet, path, resolved shape)`` for rule (a). The two LEAD rows

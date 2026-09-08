@@ -92,7 +92,7 @@ class _ClassifyingExtension(_MinimalExtension):
 #: The shape the base default returns for ANY input: the four canonical role
 #: keys, each empty. A domain that does not override ``classify_paths`` claims
 #: nothing at all.
-_EMPTY_FOUR_ROLE_CLAIMS = {
+_EMPTY_FOUR_ROLE_CLAIMS: dict[str, list[str]] = {
     'production': [],
     'test': [],
     'documentation': [],

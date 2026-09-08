@@ -39,7 +39,13 @@ def test_detect_wrapper_returns_the_windows_wrapper_on_windows(
     (tmp_path / windows).write_text('@echo off')
 
     with patch('_build_execute.IS_WINDOWS', True):
-        assert windows in detect_wrapper(str(tmp_path), unix, windows, system)
+        resolved = detect_wrapper(str(tmp_path), unix, windows, system)
+
+    # Asserted in two steps rather than one containment check: the resolver may
+    # answer ``None``, and ``windows in None`` would raise rather than fail, so a
+    # no-wrapper regression would surface as an error instead of a red assertion.
+    assert resolved is not None
+    assert windows in resolved
 
 
 #: ``(the wrapper file present, whether the run is on Windows)`` — the three
