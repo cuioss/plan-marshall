@@ -35,6 +35,8 @@ passthrough.
 
 from typing import Any
 
+import pytest
+
 from conftest import load_script_module
 
 _merge = load_script_module(
@@ -191,37 +193,30 @@ def test_duplicate_pair_within_one_resolver_counts_once():
 # =============================================================================
 
 
-def test_self_edges_are_dropped():
+@pytest.mark.parametrize(
+    'emitted_edges',
+    [
+        [('core', 'core'), ('core', 'util')],
+        [('core', 'ghost'), ('ghost', 'core'), ('core', 'util')],
+        [('core',), ('core', 'util', 'extra'), (1, 2), 'core-util', ('core', 'util')],
+    ],
+    ids=[
+        'self-edge-alongside-a-valid-one',
+        'unknown-endpoint-either-side',
+        'malformed-pairs-of-every-shape',
+    ],
+)
+def test_invalid_candidate_edges_are_dropped_and_the_valid_one_survives(emitted_edges):
+    """Each validity filter discards its candidates without taking the sibling.
+
+    A module does not depend on itself, a resolver cannot invent a node, and a
+    candidate that is not a two-element pair of known names is not an edge. Every
+    case pairs its invalid candidates with ``('core', 'util')``, so a filter that
+    dropped the whole set rather than the offending entries fails here instead of
+    passing against an empty expectation.
+    """
     # Arrange
-    resolver = _StubResolver(edges=[('core', 'core'), ('core', 'util')])
-
-    # Act
-    edges, reports = _merge_with(('maven', resolver))
-
-    # Assert
-    assert edges == [{'from': 'core', 'to': 'util', 'producers': ['maven']}]
-    assert reports[0]['edge_count'] == 1
-
-
-def test_edges_with_unknown_endpoints_are_dropped():
-    # Arrange — 'ghost' is absent from the known-module universe
-    resolver = _StubResolver(
-        edges=[('core', 'ghost'), ('ghost', 'core'), ('core', 'util')]
-    )
-
-    # Act
-    edges, reports = _merge_with(('maven', resolver))
-
-    # Assert — a resolver cannot invent a node
-    assert edges == [{'from': 'core', 'to': 'util', 'producers': ['maven']}]
-    assert reports[0]['edge_count'] == 1
-
-
-def test_malformed_pairs_are_dropped():
-    # Arrange — wrong arity, wrong types, and a bare string
-    resolver = _StubResolver(
-        edges=[('core',), ('core', 'util', 'extra'), (1, 2), 'core-util', ('core', 'util')]
-    )
+    resolver = _StubResolver(edges=emitted_edges)
 
     # Act
     edges, reports = _merge_with(('maven', resolver))
@@ -370,44 +365,39 @@ def _merge_notes(report: dict) -> list[str]:
     return [note for note in report['notes'] if note.startswith('merge: ')]
 
 
-def test_dropped_self_edge_is_reported_in_notes():
+@pytest.mark.parametrize(
+    ('dropped_edge', 'expected_note_fragments'),
+    [
+        (('core', 'core'), ('self-edge', 'core')),
+        (('core', 'ghost'), ('ghost',)),
+        (('ghost', 'phantom'), ('ghost', 'phantom')),
+    ],
+    ids=[
+        'self-edge-names-the-node',
+        'unknown-endpoint-names-it',
+        'both-endpoints-unknown-names-both',
+    ],
+)
+def test_a_single_dropped_edge_is_reported_in_one_naming_note(
+    dropped_edge, expected_note_fragments
+):
+    """One discarded candidate yields one note that NAMES what was discarded.
+
+    A note that merely records "an edge was dropped" would leave the resolver
+    author unable to find it, so each case asserts the note carries the endpoints
+    the merge actually rejected — both of them when neither is a known module.
+    """
     # Arrange
-    resolver = _StubResolver(edges=[('core', 'core')])
-
-    # Act
-    _, reports = _merge_with(('maven', resolver))
-
-    # Assert — the drop is visible, and names the edge that was dropped
-    notes = _merge_notes(reports[0])
-    assert len(notes) == 1
-    assert 'self-edge' in notes[0]
-    assert 'core' in notes[0]
-
-
-def test_dropped_unknown_endpoint_edge_is_reported_in_notes():
-    # Arrange — 'ghost' is absent from the known-module universe
-    resolver = _StubResolver(edges=[('core', 'ghost')])
-
-    # Act
-    _, reports = _merge_with(('maven', resolver))
-
-    # Assert — the note names the endpoint that was not known
-    notes = _merge_notes(reports[0])
-    assert len(notes) == 1
-    assert 'ghost' in notes[0]
-
-
-def test_note_for_unknown_endpoints_names_both_when_both_are_unknown():
-    # Arrange
-    resolver = _StubResolver(edges=[('ghost', 'phantom')])
+    resolver = _StubResolver(edges=[dropped_edge])
 
     # Act
     _, reports = _merge_with(('maven', resolver))
 
     # Assert
-    note = _merge_notes(reports[0])[0]
-    assert 'ghost' in note
-    assert 'phantom' in note
+    notes = _merge_notes(reports[0])
+    assert len(notes) == 1
+    for fragment in expected_note_fragments:
+        assert fragment in notes[0]
 
 
 def test_dropped_malformed_pair_is_reported_in_notes():

@@ -45,6 +45,8 @@ properties pinned here:
 
 from typing import Any
 
+import pytest
+
 from conftest import PROJECT_ROOT, load_script_module
 
 _merge = load_script_module(
@@ -280,70 +282,50 @@ def test_three_way_collision_names_every_contending_module():
 # =============================================================================
 
 
-def test_malformed_candidate_is_dropped_with_a_merge_note():
-    # Arrange — not a two-element pair of strings
-    attributor = _StubAttributor(claims=['.plan'])
+@pytest.mark.parametrize(
+    ('candidate', 'expected_note_fragments'),
+    [
+        ('.plan', ('malformed',)),
+        (('', 'plan-marshall'), ('root-ish',)),
+        (('/', 'plan-marshall'), ('root-ish',)),
+        (('.', 'plan-marshall'), ('root-ish',)),
+        (('.plan', 'no-such-module'), ('unknown module',)),
+        (('../sibling', 'plan-marshall'), ('root-ish', '../sibling')),
+    ],
+    ids=[
+        'malformed-candidate',
+        'blank-prefix',
+        'root-slash-prefix',
+        'dot-prefix',
+        'unknown-module',
+        'traversing-prefix',
+    ],
+)
+def test_invalid_candidate_is_dropped_with_an_explaining_merge_note(
+    candidate, expected_note_fragments
+):
+    """Each merge-side validity filter drops its candidate AND says why.
+
+    A bare string is not a ``(prefix, module)`` pair; a blank, ``/``, ``.`` or
+    ``..``-rooted prefix bounds no subtree inside the repository; and a module
+    absent from the known set is an owner the attributor tried to invent. A drop
+    with an empty ``notes[]`` is the silent suppression this seam forbids, so the
+    note is asserted to name the reason and not merely to exist.
+    """
+    # Arrange
+    attributor = _StubAttributor(claims=[candidate])
 
     # Act
     claims, reports = _merge_with(('alpha', attributor))
+    report = _report_for(reports, 'alpha')
 
-    # Assert
+    # Assert — dropped, counted as zero, and explained
     assert claims == []
-    notes = _merge_notes(_report_for(reports, 'alpha'))
+    assert report['claim_count'] == 0
+    notes = _merge_notes(report)
     assert len(notes) == 1
-    assert 'malformed' in notes[0]
-
-
-def test_blank_prefix_is_dropped_with_a_merge_note():
-    # Arrange — a prefix that would claim the whole tree
-    attributor = _StubAttributor(claims=[('', 'plan-marshall')])
-
-    # Act
-    claims, reports = _merge_with(('alpha', attributor))
-
-    # Assert
-    assert claims == []
-    notes = _merge_notes(_report_for(reports, 'alpha'))
-    assert len(notes) == 1
-    assert 'root-ish' in notes[0]
-
-
-def test_root_slash_prefix_is_dropped_with_a_merge_note():
-    # Arrange — ``/`` normalizes to the empty prefix
-    attributor = _StubAttributor(claims=[('/', 'plan-marshall')])
-
-    # Act
-    claims, reports = _merge_with(('alpha', attributor))
-
-    # Assert
-    assert claims == []
-    assert len(_merge_notes(_report_for(reports, 'alpha'))) == 1
-
-
-def test_dot_prefix_is_dropped_with_a_merge_note():
-    # Arrange — ``.`` is the repo root, not a bounded subtree
-    attributor = _StubAttributor(claims=[('.', 'plan-marshall')])
-
-    # Act
-    claims, reports = _merge_with(('alpha', attributor))
-
-    # Assert
-    assert claims == []
-    assert len(_merge_notes(_report_for(reports, 'alpha'))) == 1
-
-
-def test_unknown_module_claim_is_dropped_with_a_merge_note():
-    # Arrange — an attributor cannot invent an owner
-    attributor = _StubAttributor(claims=[('.plan', 'no-such-module')])
-
-    # Act
-    claims, reports = _merge_with(('alpha', attributor))
-
-    # Assert
-    assert claims == []
-    notes = _merge_notes(_report_for(reports, 'alpha'))
-    assert len(notes) == 1
-    assert 'unknown module' in notes[0]
+    for fragment in expected_note_fragments:
+        assert fragment in notes[0]
 
 
 def test_attributor_whose_every_candidate_was_dropped_is_not_a_silent_zero():
@@ -391,25 +373,6 @@ def test_dot_relative_claim_prefix_is_normalized_not_dropped():
     # Assert — one real claim keyed on the canonical spelling
     assert claims == [{'prefix': 'doc', 'module': 'documentation', 'producers': ['alpha']}]
     assert _report_for(reports, 'alpha')['claim_count'] == 1
-
-
-def test_traversing_claim_prefix_is_dropped_with_a_merge_note():
-    # Arrange — a '..'-rooted prefix names a location outside the repository root,
-    # so no repo-relative candidate path can fall inside it. Admitting it would
-    # raise claim_count for a claim that can never match.
-    attributor = _StubAttributor(claims=[('../sibling', 'plan-marshall')])
-
-    # Act
-    claims, reports = _merge_with(('alpha', attributor))
-    report = _report_for(reports, 'alpha')
-
-    # Assert — dropped AND reported; a silent drop is the failure this seam prevents
-    assert claims == []
-    assert report['claim_count'] == 0
-    notes = _merge_notes(report)
-    assert len(notes) == 1
-    assert notes[0] != ''
-    assert '../sibling' in notes[0]
 
 
 def test_a_valid_claim_survives_alongside_a_dropped_sibling():
@@ -543,36 +506,52 @@ def test_reports_follow_the_supplied_attributor_order():
 # =============================================================================
 
 
-def test_lookup_claim_matches_a_bare_root_segment_claim():
-    # Arrange — the boundary case a fnmatch ``**/`` shape would miss
-    claims = [{'prefix': '.plan', 'module': 'plan-marshall', 'producers': ['alpha']}]
-
-    # Act / Assert
-    assert _merge.lookup_claim('.plan/execute-script.py', claims) == 'plan-marshall'
+#: The one-claim universe every single-claim containment case below resolves
+#: against. Hoisted so the table varies in the CANDIDATE PATH alone — the axis
+#: those cases actually exercise.
+_ONE_PLAN_CLAIM = [{'prefix': '.plan', 'module': 'plan-marshall', 'producers': ['alpha']}]
 
 
-def test_lookup_claim_matches_the_claimed_directory_itself():
-    # Arrange
-    claims = [{'prefix': '.plan', 'module': 'plan-marshall', 'producers': ['alpha']}]
+@pytest.mark.parametrize(
+    ('candidate_path', 'expected_module'),
+    [
+        ('.plan/execute-script.py', 'plan-marshall'),
+        ('.plan', 'plan-marshall'),
+        ('.plan/local/plans/x/status.json', 'plan-marshall'),
+        ('.plan/', 'plan-marshall'),
+        ('.plan/local/', 'plan-marshall'),
+        ('./.plan/local', 'plan-marshall'),
+        (r'.plan\local', 'plan-marshall'),
+        ('.plans/x', None),
+        ('./.plans/x', None),
+        ('marketplace/bundles/x.py', None),
+    ],
+    ids=[
+        'file-under-the-bare-root-segment',
+        'the-claimed-directory-itself',
+        'deeply-nested-path',
+        'trailing-slash-on-the-claimed-directory',
+        'trailing-slash-on-a-nested-path',
+        'dot-relative-candidate-normalized',
+        'backslash-candidate-normalized',
+        'sibling-sharing-the-string-prefix-rejected',
+        'sibling-still-rejected-after-normalization',
+        'path-no-claim-contains',
+    ],
+)
+def test_lookup_claim_resolves_containment_against_a_single_claim(
+    candidate_path, expected_module
+):
+    """Containment is prefix NESTING, in the shared canonical spelling.
 
-    # Act / Assert — ``path == prefix`` is the first half of the predicate
-    assert _merge.lookup_claim('.plan', claims) == 'plan-marshall'
-
-
-def test_lookup_claim_matches_a_deeply_nested_path():
-    # Arrange
-    claims = [{'prefix': '.plan', 'module': 'plan-marshall', 'producers': ['alpha']}]
-
-    # Act / Assert
-    assert _merge.lookup_claim('.plan/local/plans/x/status.json', claims) == 'plan-marshall'
-
-
-def test_lookup_claim_does_not_match_a_sibling_sharing_the_string_prefix():
-    # Arrange — the nest-inside guard: ``.plans`` is NOT inside ``.plan``
-    claims = [{'prefix': '.plan', 'module': 'plan-marshall', 'producers': ['alpha']}]
-
-    # Act / Assert
-    assert _merge.lookup_claim('.plans/x', claims) is None
+    The positive cases cover the bare root segment an fnmatch ``**/`` shape would
+    miss, the claimed directory itself, a deep descendant, and the three spellings
+    (trailing slash, dot-relative, backslash) the candidate side normalizes. The
+    ``None`` cases are their matched controls: ``.plans/x`` shares the string
+    prefix without nesting inside it, and it must STILL be rejected after
+    normalization — spelling normalization may not weaken the nest-inside guard.
+    """
+    assert _merge.lookup_claim(candidate_path, _ONE_PLAN_CLAIM) == expected_module
 
 
 def test_lookup_claim_resolves_the_longest_containing_prefix():
@@ -600,58 +579,9 @@ def test_lookup_claim_longest_prefix_wins_regardless_of_claim_order():
     assert _merge.lookup_claim('.plan/local/x', claims) == 'other'
 
 
-def test_lookup_claim_returns_none_when_no_claim_contains_the_path():
-    # Arrange
-    claims = [{'prefix': '.plan', 'module': 'plan-marshall', 'producers': ['alpha']}]
-
-    # Act / Assert
-    assert _merge.lookup_claim('marketplace/bundles/x.py', claims) is None
-
-
 def test_lookup_claim_returns_none_against_an_empty_claim_list():
     # Act / Assert — the null-on-absent outcome at the lookup site
     assert _merge.lookup_claim('.plan/execute-script.py', []) is None
-
-
-def test_lookup_claim_normalizes_a_dot_relative_candidate():
-    # Arrange — which-module is the mandated structured-query surface, so callers
-    # hand it whatever spelling they already hold. A leading './' on a COVERED path
-    # must not produce a confident None.
-    claims = [{'prefix': '.plan', 'module': 'plan-marshall', 'producers': ['alpha']}]
-
-    # Act / Assert
-    assert _merge.lookup_claim('./.plan/local', claims) == 'plan-marshall'
-
-
-def test_lookup_claim_normalizes_a_backslash_candidate():
-    # Arrange — a backslash separator is the same spelling difference seen from the
-    # other platform convention; the claim side already folds it, so the candidate
-    # side must too or the two sides disagree on what one path is.
-    claims = [{'prefix': '.plan', 'module': 'plan-marshall', 'producers': ['alpha']}]
-
-    # Act / Assert
-    assert _merge.lookup_claim(r'.plan\local', claims) == 'plan-marshall'
-
-
-def test_lookup_claim_tolerates_a_trailing_slash_candidate():
-    # Arrange — regression pin: a trailing slash is already absorbed by the
-    # ``prefix + '/'`` half of the containment predicate, and it must keep working
-    # once the candidate is normalized first.
-    claims = [{'prefix': '.plan', 'module': 'plan-marshall', 'producers': ['alpha']}]
-
-    # Act / Assert
-    assert _merge.lookup_claim('.plan/', claims) == 'plan-marshall'
-    assert _merge.lookup_claim('.plan/local/', claims) == 'plan-marshall'
-
-
-def test_lookup_claim_still_rejects_a_sibling_after_normalization():
-    # Arrange — normalization is spelling-only, so it must not weaken the
-    # nest-inside guard: './.plans/x' becomes '.plans/x', which is still NOT inside
-    # a '.plan' claim.
-    claims = [{'prefix': '.plan', 'module': 'plan-marshall', 'producers': ['alpha']}]
-
-    # Act / Assert
-    assert _merge.lookup_claim('./.plans/x', claims) is None
 
 
 def test_lookup_claim_consumes_the_merge_output_of_stub_records():

@@ -215,56 +215,54 @@ def test_pm_marketplace_root_unset_uses_embedded_tree(two_marketplace_trees, no_
     )
 
 
-def test_pm_marketplace_root_set_rewrites_to_env_tree(two_marketplace_trees, monkeypatch):
-    """
-    With PM_MARKETPLACE_ROOT pointing at tree B, the executor invokes the
-    script under tree B even though tree A's path is embedded in SCRIPTS.
+@pytest.mark.parametrize(
+    ('env_root_key', 'trailing_slash', 'expected_tree'),
+    [
+        ('tree_b_root', False, 'B'),
+        ('tree_a_root', False, 'A'),
+        ('tree_b_root', True, 'B'),
+    ],
+    ids=[
+        'redirects-to-the-other-tree',
+        'matching-the-embedded-root-is-a-noop',
+        'trailing-slash-redirects-identically',
+    ],
+)
+def test_pm_marketplace_root_set_selects_the_env_rooted_tree(
+    two_marketplace_trees, monkeypatch, env_root_key, trailing_slash, expected_tree
+):
+    """A set PM_MARKETPLACE_ROOT decides which tree's copy of the script runs.
+
+    Pointing it at tree B rewrites the embedded tree-A path; pointing it at the
+    embedded tree A short-circuits the rewrite and is therefore a no-op; and a
+    trailing slash must behave identically to the bare form, because the helper
+    rstrips it. Each case asserts the OTHER tree's sentinel is absent, so a
+    rewrite that invoked both would fail rather than pass on the first match.
 
     Note: monkeypatch.setenv is the canonical way to set the env var — never
     use the inline ``VAR=val cmd`` shape, which is forbidden by
     persona-plan-marshall-agent Hard Rules.
     """
-    monkeypatch.setenv('PM_MARKETPLACE_ROOT', str(two_marketplace_trees['tree_b_root']))
+    env_value = str(two_marketplace_trees[env_root_key]) + ('/' if trailing_slash else '')
+    monkeypatch.setenv('PM_MARKETPLACE_ROOT', env_value)
+    other_tree = 'A' if expected_tree == 'B' else 'B'
 
     result = _run_executor(
         two_marketplace_trees['executor'],
         two_marketplace_trees['plan_dir'],
         TEST_NOTATION,
-        env_overrides={'PM_MARKETPLACE_ROOT': str(two_marketplace_trees['tree_b_root'])},
+        env_overrides={'PM_MARKETPLACE_ROOT': env_value},
     )
 
     assert result.returncode == 0, (
-        f'Executor failed with PM_MARKETPLACE_ROOT set.\nstdout: {result.stdout}\nstderr: {result.stderr}'
+        f'Executor failed with PM_MARKETPLACE_ROOT={env_value}.\n'
+        f'stdout: {result.stdout}\nstderr: {result.stderr}'
     )
-    assert 'SENTINEL:B' in result.stdout, (
-        f'Expected env-rooted tree B to be invoked, got stdout:\n{result.stdout}'
+    assert f'SENTINEL:{expected_tree}' in result.stdout, (
+        f'Expected tree {expected_tree} to be invoked, got stdout:\n{result.stdout}'
     )
-    assert 'SENTINEL:A' not in result.stdout, (
-        f'Tree A should NOT have been invoked when PM_MARKETPLACE_ROOT redirects to tree B. stdout:\n{result.stdout}'
-    )
-
-
-def test_pm_marketplace_root_matching_embedded_root_is_noop(two_marketplace_trees, monkeypatch):
-    """
-    When PM_MARKETPLACE_ROOT points at the same tree as the embedded one, the
-    rewrite helper short-circuits (embedded_root == new_root path) and the
-    executor still invokes the embedded script.
-    """
-    # Tree A is the embedded tree; pointing the env var at it should be a no-op.
-    monkeypatch.setenv('PM_MARKETPLACE_ROOT', str(two_marketplace_trees['tree_a_root']))
-
-    result = _run_executor(
-        two_marketplace_trees['executor'],
-        two_marketplace_trees['plan_dir'],
-        TEST_NOTATION,
-        env_overrides={'PM_MARKETPLACE_ROOT': str(two_marketplace_trees['tree_a_root'])},
-    )
-
-    assert result.returncode == 0, (
-        f'Executor failed with PM_MARKETPLACE_ROOT=embedded_root.\nstdout: {result.stdout}\nstderr: {result.stderr}'
-    )
-    assert 'SENTINEL:A' in result.stdout, (
-        f'Expected tree A to remain invoked when PM_MARKETPLACE_ROOT matches embedded root. stdout:\n{result.stdout}'
+    assert f'SENTINEL:{other_tree}' not in result.stdout, (
+        f'Tree {other_tree} must not run for PM_MARKETPLACE_ROOT={env_value}. stdout:\n{result.stdout}'
     )
 
 
@@ -569,29 +567,6 @@ def test_valid_embedded_path_returned_directly(tmp_path, no_pm_marketplace_root)
     )
 
 
-def test_pm_marketplace_root_with_trailing_slash_rewrites(two_marketplace_trees, monkeypatch):
-    """
-    The rewrite helper rstrips trailing slashes — a trailing-slash form of
-    PM_MARKETPLACE_ROOT must produce identical behaviour to the bare form.
-    """
-    env_value = str(two_marketplace_trees['tree_b_root']) + '/'
-    monkeypatch.setenv('PM_MARKETPLACE_ROOT', env_value)
-
-    result = _run_executor(
-        two_marketplace_trees['executor'],
-        two_marketplace_trees['plan_dir'],
-        TEST_NOTATION,
-        env_overrides={'PM_MARKETPLACE_ROOT': env_value},
-    )
-
-    assert result.returncode == 0, (
-        f'Executor failed with trailing-slash PM_MARKETPLACE_ROOT.\nstdout: {result.stdout}\nstderr: {result.stderr}'
-    )
-    assert 'SENTINEL:B' in result.stdout, (
-        f'Expected env-rooted tree B to be invoked with trailing-slash root. stdout:\n{result.stdout}'
-    )
-
-
 # Truthful build-status stamping: after every build-EXECUTING dispatch (a
 # build-* notation dispatched with the `run` subcommand — the conjunction the
 # boundary predicate requires) the boundary
@@ -741,6 +716,19 @@ def _run_build_dispatch(tmp_path: Path, script_body: str) -> list[dict]:
         # exactly why the wrapper's name is not the boundary's — pinned here so
         # nobody "fixes" it by adding `indeterminate` to the claimable set.
         ('status: indeterminate\n', 0, 'unknown'),
+    ],
+    ids=[
+        'clean-success-exit-0',
+        'wrapper-claims-timeout-at-exit-0',
+        'wrapper-claims-error-at-exit-1',
+        'unparseable-stdout-at-exit-0',
+        'empty-stdout-at-exit-0',
+        'empty-stdout-at-exit-1',
+        'success-claim-contradicted-by-exit-1',
+        'wrapper-claims-killed-at-exit-0',
+        'wrapper-claims-the-derived-only-unknown',
+        'wrapper-claims-a-value-outside-its-vocabulary',
+        'wrapper-claims-indeterminate',
     ],
 )
 def test_build_boundary_stamps_derived_status(tmp_path, stdout, exit_code, expected_status, no_pm_marketplace_root):

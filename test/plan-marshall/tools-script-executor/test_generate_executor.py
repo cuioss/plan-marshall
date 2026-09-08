@@ -213,15 +213,27 @@ def test_module_has_no_legacy_shim_symbols():
         assert not hasattr(module, symbol), f'Legacy symbol {symbol!r} must be removed'
 
 
-def test_generate_help():
-    """Generate subcommand has help."""
+@pytest.mark.parametrize(
+    ('subcommand', 'expected_fragments'),
+    [
+        ('generate', ('--force', '--dry-run')),
+        ('drift', ('drift',)),
+        ('paths', ('paths',)),
+    ],
+    ids=['generate', 'drift', 'paths'],
+)
+def test_subcommand_help(subcommand, expected_fragments):
+    """Each subcommand's ``--help`` exits 0 and names what it declares."""
     result = subprocess.run(
-        ['python3', str(GENERATE_SCRIPT), 'generate', '--help'], capture_output=True, text=True, env=_subprocess_env()
+        ['python3', str(GENERATE_SCRIPT), subcommand, '--help'],
+        capture_output=True,
+        text=True,
+        env=_subprocess_env(),
     )
 
     assert result.returncode == 0, f'Script failed: {result.stderr}'
-    assert '--force' in result.stdout, "Missing '--force' in help"
-    assert '--dry-run' in result.stdout, "Missing '--dry-run' in help"
+    for fragment in expected_fragments:
+        assert fragment in result.stdout.lower(), f'Missing {fragment!r} in {subcommand} help'
 
 
 def test_verify_requires_executor():
@@ -261,79 +273,39 @@ def test_paths_requires_executor():
         assert 'Could not read executor mappings' in result.stdout
 
 
-def test_drift_help():
-    """Drift subcommand has help."""
-    result = subprocess.run(
-        ['python3', str(GENERATE_SCRIPT), 'drift', '--help'], capture_output=True, text=True, env=_subprocess_env()
-    )
+@pytest.mark.parametrize(
+    ('version_dir', 'subpath', 'expected_fragment'),
+    [
+        ('0.1-BETA', 'skills/test-skill/scripts/test.py', '0.1-BETA'),
+        ('2.5.0-RC1', 'skills/my-skill/SKILL.md', '2.5.0-RC1'),
+        (None, 'skills/test-skill/SKILL.md', 'skills/test-skill/SKILL.md'),
+    ],
+    ids=[
+        'versioned-cache-layout',
+        'arbitrary-version-string',
+        'non-versioned-marketplace-layout',
+    ],
+)
+def test_resolve_plan_marshall_path(version_dir, subpath, expected_fragment):
+    """The subpath resolves under a version dir when there is one, else directly.
 
-    assert result.returncode == 0, f'Script failed: {result.stderr}'
-    assert 'drift' in result.stdout.lower(), "Missing 'drift' in help"
-
-
-def test_paths_help():
-    """Paths subcommand has help."""
-    result = subprocess.run(
-        ['python3', str(GENERATE_SCRIPT), 'paths', '--help'], capture_output=True, text=True, env=_subprocess_env()
-    )
-
-    assert result.returncode == 0, f'Script failed: {result.stderr}'
-    assert 'paths' in result.stdout.lower(), "Missing 'paths' in help"
-
-
-def test_resolve_finds_versioned_path():
-    """Resolves path in versioned cache structure (any version)."""
+    The version segment is not pattern-matched — ``0.1-BETA`` and ``2.5.0-RC1``
+    resolve alike — and a tree carrying no version dir at all falls back to the
+    version-less marketplace layout.
+    """
     module = load_module()
 
     with tempfile.TemporaryDirectory() as tmp:
         base = Path(tmp)
+        bundle_root = base / 'plan-marshall'
+        target = (bundle_root / version_dir / subpath) if version_dir else (bundle_root / subpath)
+        target.parent.mkdir(parents=True)
+        target.write_text('# fixture')
 
-        # Create versioned structure: plan-marshall/0.1-BETA/skills/...
-        versioned_path = base / 'plan-marshall' / '0.1-BETA' / 'skills' / 'test-skill' / 'scripts'
-        versioned_path.mkdir(parents=True)
-        script = versioned_path / 'test.py'
-        script.write_text('# test')
+        result = module._resolve_plan_marshall_path(base, subpath)
 
-        result = module._resolve_plan_marshall_path(base, 'skills/test-skill/scripts/test.py')
-
-        assert result.exists(), f'Should find versioned path, got {result}'
-        assert '0.1-BETA' in str(result), f'Should include version dir, got {result}'
-
-
-def test_resolve_finds_any_version():
-    """Resolves path regardless of version string (1.0.0, 0.1-BETA, etc)."""
-    module = load_module()
-
-    with tempfile.TemporaryDirectory() as tmp:
-        base = Path(tmp)
-
-        # Create structure with arbitrary version
-        versioned_path = base / 'plan-marshall' / '2.5.0-RC1' / 'skills' / 'my-skill'
-        versioned_path.mkdir(parents=True)
-        (versioned_path / 'SKILL.md').write_text('# skill')
-
-        result = module._resolve_plan_marshall_path(base, 'skills/my-skill/SKILL.md')
-
-        assert result.exists(), f'Should find path with any version, got {result}'
-        assert '2.5.0-RC1' in str(result)
-
-
-def test_resolve_falls_back_to_non_versioned():
-    """Falls back to non-versioned path (marketplace structure)."""
-    module = load_module()
-
-    with tempfile.TemporaryDirectory() as tmp:
-        base = Path(tmp)
-
-        # Create non-versioned structure: plan-marshall/skills/...
-        non_versioned = base / 'plan-marshall' / 'skills' / 'test-skill'
-        non_versioned.mkdir(parents=True)
-        (non_versioned / 'SKILL.md').write_text('# skill')
-
-        result = module._resolve_plan_marshall_path(base, 'skills/test-skill/SKILL.md')
-
-        assert result.exists(), f'Should find non-versioned path, got {result}'
-        assert 'skills/test-skill/SKILL.md' in str(result)
+        assert result.exists(), f'Should resolve the seeded path, got {result}'
+        assert expected_fragment in str(result), f'Expected {expected_fragment!r} in {result}'
 
 
 def test_resolve_skips_hidden_dirs():
@@ -2176,52 +2148,46 @@ def test_guard4_allows_different_version_dirs_across_different_bundles(tmp_path,
 # and silently misses a genuine version split — a vacuous guard inside the guard.
 
 
-def test_split_bundle_version_anchors_on_base_path_for_digit_prefixed_bundle():
-    """(b) A bundle whose NAME is version-shaped still splits into
-    (bundle, version dir) — never (cache root, bundle name)."""
+@pytest.mark.parametrize(
+    ('emitted_path', 'base_path', 'expected_split'),
+    [
+        (
+            '/cache/1.0-my-bundle/0.1.1194/skills/skill-x/scripts/x.py',
+            '/cache',
+            ('1.0-my-bundle', '0.1.1194'),
+        ),
+        (
+            '/srv/1.0-workspace/cache/my-bundle/0.1.1194/skills/skill-x/scripts/x.py',
+            '/srv/1.0-workspace/cache',
+            ('my-bundle', '0.1.1194'),
+        ),
+        ('/repo/.claude/skills/s/scripts/x.py', '/cache', None),
+        (
+            '/repo/marketplace/bundles/my-bundle/skills/skill-x/scripts/x.py',
+            '/repo/marketplace/bundles',
+            None,
+        ),
+    ],
+    ids=[
+        'digit-prefixed-bundle-name',
+        'version-shaped-ancestor-above-the-root',
+        'path-outside-the-base-path',
+        'version-less-marketplace-layout',
+    ],
+)
+def test_split_bundle_version(emitted_path, base_path, expected_split):
+    """The split is taken by relativizing against ``base_path``, never by scanning.
+
+    Selecting the first version-shaped segment anywhere in the path mis-splits on
+    both of the first two rows: a bundle whose own NAME is version-shaped would
+    yield ``(cache root, bundle name)``, and a version-shaped ANCESTOR above the
+    root would be read as the version dir for every path. The two ``None`` rows
+    are the no-provenance cases — a path outside the root, and the version-less
+    marketplace layout — where the guard has nothing comparable to compare.
+    """
     module = load_module()
 
-    split = module._split_bundle_version(
-        '/cache/1.0-my-bundle/0.1.1194/skills/skill-x/scripts/x.py', Path('/cache')
-    )
-
-    assert split == ('1.0-my-bundle', '0.1.1194'), (
-        f'the version dir is the segment AFTER the bundle segment, got {split}'
-    )
-
-
-def test_split_bundle_version_ignores_version_shaped_ancestor_directory():
-    """(a) A version-shaped ANCESTOR above the cache root is not the version dir."""
-    module = load_module()
-
-    split = module._split_bundle_version(
-        '/srv/1.0-workspace/cache/my-bundle/0.1.1194/skills/skill-x/scripts/x.py',
-        Path('/srv/1.0-workspace/cache'),
-    )
-
-    assert split == ('my-bundle', '0.1.1194'), (
-        f'the ancestor segment must not be mistaken for the cache version dir, got {split}'
-    )
-
-
-def test_split_bundle_version_returns_none_outside_base_path():
-    """A path that is not under the cache root carries no comparable provenance
-    (e.g. a project-local .claude/skills script)."""
-    module = load_module()
-
-    assert module._split_bundle_version('/repo/.claude/skills/s/scripts/x.py', Path('/cache')) is None
-
-
-def test_split_bundle_version_returns_none_for_marketplace_layout():
-    """The version-less marketplace layout has nothing for the guard to compare."""
-    module = load_module()
-
-    split = module._split_bundle_version(
-        '/repo/marketplace/bundles/my-bundle/skills/skill-x/scripts/x.py',
-        Path('/repo/marketplace/bundles'),
-    )
-
-    assert split is None, f'marketplace-layout paths carry no version dir, got {split}'
+    assert module._split_bundle_version(emitted_path, Path(base_path)) == expected_split
 
 
 def test_guard4_detects_split_for_digit_prefixed_bundle_name(tmp_path, no_pm_dist_manifest, plan_base_dir_at_tmp):

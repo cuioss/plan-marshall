@@ -23,8 +23,10 @@ exemption explicitly.
 
 from __future__ import annotations
 
+import pytest
+
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import get_script_path
+from conftest import get_script_path, run_script
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'extension-api', 'extension_discovery.py')
 
@@ -156,45 +158,51 @@ def test_extension_discovery_does_not_use_input_validation_helpers() -> None:
 # These tests pin that wiring so a future regression that drops one of
 # the routing flags fails loudly.
 
-from conftest import run_script  # noqa: E402
+@pytest.mark.parametrize(
+    ('required_source_token', 'why_it_is_required'),
+    [
+        (
+            'import resolve_project_dir',
+            'import resolve_project_dir to enforce the two-state '
+            '--plan-id / --project-dir routing contract',
+        ),
+        (
+            'resolve_project_dir(',
+            'invoke resolve_project_dir(...) to apply the two-state routing contract',
+        ),
+        (
+            'emit_mutually_exclusive_error',
+            'call emit_mutually_exclusive_error to surface the canonical TOON error '
+            'payload when both routing flags are set',
+        ),
+        (
+            'emit_worktree_error',
+            'call emit_worktree_error to surface the canonical TOON error payload '
+            'when --plan-id resolution fails',
+        ),
+    ],
+    ids=[
+        'imports-resolve-project-dir',
+        'calls-resolve-project-dir',
+        'emits-mutually-exclusive-error',
+        'emits-worktree-resolution-error',
+    ],
+)
+def test_extension_discovery_source_carries_the_routing_wiring(
+    required_source_token: str, why_it_is_required: str
+) -> None:
+    """Each token of the two-state routing wiring is present in the source.
 
-
-def test_extension_discovery_imports_routing_helpers() -> None:
-    """The script MUST import ``resolve_project_dir`` to enforce the two-state contract."""
+    Read as source text rather than exercised, because these pin that the wiring
+    EXISTS: the end-to-end pair below drives the behaviour, and a regression that
+    deletes one of these tokens would make that pair fail far from its cause. The
+    ``resolve_project_dir(`` token is matched in its bare call form so the
+    assertion is not coupled to the ``_routing.`` alias the script happens to use.
+    """
     source = SCRIPT_PATH.read_text(encoding='utf-8')
-    # The canonical wiring imports the helper module under a known alias.
-    assert 'import resolve_project_dir' in source, (
-        'extension_discovery.py must import resolve_project_dir to enforce '
-        'the two-state --plan-id / --project-dir routing contract.'
-    )
 
-
-def test_extension_discovery_calls_resolve_project_dir() -> None:
-    """The script MUST call ``resolve_project_dir`` before any handler reads project_dir."""
-    source = SCRIPT_PATH.read_text(encoding='utf-8')
-    # The TASK-10 wiring uses the alias ``_routing.resolve_project_dir(...)``
-    # — accept either form to avoid coupling tests to the exact alias.
-    assert 'resolve_project_dir(' in source, (
-        'extension_discovery.py must invoke resolve_project_dir(...) to '
-        'apply the two-state routing contract.'
-    )
-
-
-def test_extension_discovery_emits_mutually_exclusive_error_payload() -> None:
-    """The script MUST surface ``mutually_exclusive_args`` via emit_mutually_exclusive_error."""
-    source = SCRIPT_PATH.read_text(encoding='utf-8')
-    assert 'emit_mutually_exclusive_error' in source, (
-        'extension_discovery.py must call emit_mutually_exclusive_error to '
-        'surface the canonical TOON error payload when both routing flags are set.'
-    )
-
-
-def test_extension_discovery_emits_worktree_resolution_error_payload() -> None:
-    """The script MUST surface ``worktree_resolution_failed`` via emit_worktree_error."""
-    source = SCRIPT_PATH.read_text(encoding='utf-8')
-    assert 'emit_worktree_error' in source, (
-        'extension_discovery.py must call emit_worktree_error to surface '
-        'the canonical TOON error payload when --plan-id resolution fails.'
+    assert required_source_token in source, (
+        f'extension_discovery.py must {why_it_is_required}.'
     )
 
 

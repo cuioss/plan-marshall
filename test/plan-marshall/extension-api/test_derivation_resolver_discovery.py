@@ -27,6 +27,7 @@ Covered:
   resolver's edges to another.
 """
 
+import pytest
 from extension_base import (
     BuildExtensionBase,
     DerivationResolverBase,
@@ -224,36 +225,55 @@ def test_results_are_sorted_by_resolver_id(monkeypatch):
 
 
 # =============================================================================
-# Guarded-call skip paths
+# The four skip conditions — the unusable resolver is dropped, not the run
 # =============================================================================
+#
+# One table, because all four conditions share one call and one assertion and
+# differ only in WHICH resolver is unusable. Each case pairs the bad resolver
+# with a healthy sibling, so a condition that dropped the whole discovery rather
+# than the offending record would fail here rather than pass vacuously against
+# an empty expectation.
 
 
-def test_resolver_whose_id_accessor_raises_is_skipped(monkeypatch):
-    # Arrange — a raising resolver alongside a healthy sibling
+@pytest.mark.parametrize(
+    'unusable_resolver',
+    [
+        _RaisingResolver(),
+        _EmptyIdResolver(),
+        _BuildSideResolver('   '),
+        _NonStringIdResolver(1),
+    ],
+    ids=[
+        'id-accessor-raises',
+        'empty-id',
+        'whitespace-only-id',
+        'non-string-id',
+    ],
+)
+def test_unusable_resolver_is_skipped_and_its_sibling_survives(monkeypatch, unusable_resolver):
+    """A resolver with no usable identity is dropped; the sibling survives.
+
+    A raising id accessor must not be fatal; a resolver that cannot identify
+    itself would produce producer-less edges; and a truthy non-string id would
+    raise on the mixed-type sort, aborting every graph-family query, so it is
+    rejected before the sort runs.
+    """
+    # Arrange — the unusable resolver alongside a healthy sibling
     _patch_collectors(
         monkeypatch,
-        build_modules=(_RaisingResolver(), _BuildSideResolver('maven')),
+        build_modules=(unusable_resolver, _BuildSideResolver('maven')),
     )
 
-    # Act — discovery must not crash
+    # Act — discovery must neither admit the bad record nor crash
     resolvers = _disc.discover_derivation_resolvers()
 
-    # Assert — the broken resolver is dropped, the sibling survives
+    # Assert
     assert [rec['id'] for rec in resolvers] == ['maven']
 
 
-def test_resolver_with_empty_id_is_skipped(monkeypatch):
-    # Arrange
-    _patch_collectors(
-        monkeypatch,
-        build_modules=(_EmptyIdResolver(), _BuildSideResolver('maven')),
-    )
-
-    # Act
-    resolvers = _disc.discover_derivation_resolvers()
-
-    # Assert — an unidentifiable resolver would produce producer-less edges
-    assert [rec['id'] for rec in resolvers] == ['maven']
+# =============================================================================
+# Identity normalization and the aggregate empty outcome
+# =============================================================================
 
 
 def test_all_resolvers_unidentifiable_yields_empty_list(monkeypatch):
@@ -265,20 +285,6 @@ def test_all_resolvers_unidentifiable_yields_empty_list(monkeypatch):
 
     # Assert
     assert resolvers == []
-
-
-def test_resolver_with_whitespace_only_id_is_skipped(monkeypatch):
-    # Arrange — truthy, but carries no identity
-    _patch_collectors(
-        monkeypatch,
-        build_modules=(_BuildSideResolver('   '), _BuildSideResolver('maven')),
-    )
-
-    # Act
-    resolvers = _disc.discover_derivation_resolvers()
-
-    # Assert
-    assert [rec['id'] for rec in resolvers] == ['maven']
 
 
 def test_resolver_id_is_normalized_by_stripping_surrounding_whitespace(monkeypatch):
@@ -293,22 +299,8 @@ def test_resolver_id_is_normalized_by_stripping_surrounding_whitespace(monkeypat
 
 
 # =============================================================================
-# Non-string id — truthy, but would raise on the mixed-type sort
+# A rejected non-string id must not disturb the sort of what survives
 # =============================================================================
-
-
-def test_resolver_with_non_string_id_is_skipped(monkeypatch):
-    # Arrange — the int 1 passes a falsiness check but is not a usable producer id
-    _patch_collectors(
-        monkeypatch,
-        build_modules=(_NonStringIdResolver(1), _BuildSideResolver('maven')),
-    )
-
-    # Act — discovery must neither admit it nor raise while sorting
-    resolvers = _disc.discover_derivation_resolvers()
-
-    # Assert
-    assert [rec['id'] for rec in resolvers] == ['maven']
 
 
 def test_non_string_id_does_not_break_the_sort_of_surviving_resolvers(monkeypatch):

@@ -25,6 +25,7 @@ import json
 import re
 from pathlib import Path
 
+import pytest
 from marketplace_bundles import find_bundles, select_live_version_dir
 
 from conftest import load_script_module
@@ -163,37 +164,35 @@ def _leg_versions(cache_root: Path) -> tuple[str, str, str]:
     return found[0].name, shared_versions.pop(), script_versions.pop()
 
 
-def test_all_legs_agree_none_marked(tmp_path):
-    cache_root = _build_cache(tmp_path)
-    mappings_version, shared_version, scripts_version = _leg_versions(cache_root)
-    assert mappings_version == shared_version == scripts_version == NEWEST
-
-
-def test_all_legs_agree_newest_marked(tmp_path):
-    cache_root = _build_cache(tmp_path, newest_marked=True)
-    mappings_version, shared_version, scripts_version = _leg_versions(cache_root)
-    assert mappings_version == shared_version == scripts_version
-
-
-def test_all_legs_agree_all_marked(tmp_path):
-    """Saturation: every candidate is marked, and all three legs still agree on
-    NEWEST — because the marker is never consulted at all.
+@pytest.mark.parametrize(
+    ('newest_marked', 'older_marked'),
+    [
+        (False, False),
+        (True, False),
+        (True, True),
+    ],
+    ids=['none-marked', 'newest-marked', 'all-marked'],
+)
+def test_all_three_legs_agree_on_newest_whatever_the_marker_state(
+    tmp_path, newest_marked, older_marked
+):
+    """Every marker state selects NEWEST, because the marker is never consulted.
 
     Nothing in the code pins a version dir against the marker; no such mechanism
-    exists. Selection is eligibility plus version ordering, and the marker is
-    never read, so "every candidate is marked" is not a degraded state the legs
-    fall back from — it is indistinguishable from no candidate being marked. The
-    saturated fixture is kept because it is the state observed on real machines,
-    not because it exercises a fallback.
+    exists. Selection is eligibility plus version ordering, so a marked dir and
+    an unmarked one are the same input to it — which is why the saturated
+    ``all-marked`` row is not a degraded state the legs fall back from. That row
+    is kept because it is the state observed on real machines, not because it
+    exercises a fallback.
 
-    The assertion pins WHICH dir they agree on, not merely that they agree — a
-    bare cross-leg comparison also passes when all three regress together to
-    OLDER, so it cannot fail in the direction that matters. The tuple form still
-    proves agreement as a side effect.
+    The assertion pins WHICH dir the three legs agree on, not merely that they
+    agree: a bare cross-leg comparison also passes when all three regress
+    together to OLDER, so it cannot fail in the direction that matters. The
+    tuple form still proves agreement as a side effect.
     """
-    cache_root = _build_cache(tmp_path, newest_marked=True, older_marked=True)
-    mappings_version, shared_version, scripts_version = _leg_versions(cache_root)
-    assert (mappings_version, shared_version, scripts_version) == (NEWEST, NEWEST, NEWEST)
+    cache_root = _build_cache(tmp_path, newest_marked=newest_marked, older_marked=older_marked)
+
+    assert _leg_versions(cache_root) == (NEWEST, NEWEST, NEWEST)
 
 
 # ============================================================================
@@ -283,7 +282,23 @@ def _seed_runtime_cache(home: Path, marked: tuple[str, ...] = ()) -> Path:
     return cache_root
 
 
-def _assert_generated_resolver_agrees(tmp_path, monkeypatch, marked: tuple[str, ...]) -> None:
+@pytest.mark.parametrize(
+    'marked',
+    [(), (NEWEST,), (OLDER, NEWEST)],
+    ids=['none-marked', 'newest-marked', 'all-marked'],
+)
+def test_generated_runtime_resolver_agrees_with_the_generation_time_selector(
+    tmp_path, monkeypatch, marked
+):
+    """A SCRIPTS-miss resolves to the same version dir the write-time selector chose.
+
+    The generated executor re-derives a version dir at RUNTIME for any notation
+    missing from its baked-in ``SCRIPTS`` dict, and it is bootstrap-free so it
+    cannot import the shared selector — the policy is duplicated there on purpose.
+    Each marker state is driven through both paths and the two must land on the
+    same dir, so a runtime miss cannot re-split an executor the write-time guard
+    already certified.
+    """
     cache_root = _build_cache(tmp_path)
     result = _generate(tmp_path, cache_root, monkeypatch)
     assert result['status'] == 'success', f'fixture generation must succeed, got {result}'
@@ -304,15 +319,3 @@ def _assert_generated_resolver_agrees(tmp_path, monkeypatch, marked: tuple[str, 
     assert Path(resolved).parents[3] == expected.resolve(), (
         f'generated resolver chose {Path(resolved).parents[3]}, generation-time selector chose {expected.resolve()}'
     )
-
-
-def test_generated_resolver_agrees_none_marked(tmp_path, monkeypatch):
-    _assert_generated_resolver_agrees(tmp_path, monkeypatch, marked=())
-
-
-def test_generated_resolver_agrees_newest_marked(tmp_path, monkeypatch):
-    _assert_generated_resolver_agrees(tmp_path, monkeypatch, marked=(NEWEST,))
-
-
-def test_generated_resolver_agrees_all_marked(tmp_path, monkeypatch):
-    _assert_generated_resolver_agrees(tmp_path, monkeypatch, marked=(OLDER, NEWEST))

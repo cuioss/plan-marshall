@@ -4,10 +4,56 @@
 
 from pathlib import Path
 
+import pytest
+
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from _coverage_parse import find_report, parse_coverage_report
 
 FIXTURES_DIR = Path(__file__).parent / 'fixtures' / 'coverage'
+
+
+# =============================================================================
+# Threshold verdict across every XML/JSON format
+# =============================================================================
+
+
+class TestThresholdVerdictAcrossFormats:
+    """One threshold, every format: the high fixture passes and the low one fails.
+
+    The three format-specific classes below own what each parser reads OUT of its
+    own report shape. This one owns the verdict every format shares, so the
+    high/low fixture pair stays a matched positive/negative control at each
+    format — visible as two separately named cases rather than one merged case.
+    """
+
+    @pytest.mark.parametrize(
+        ('fixture_name', 'fmt', 'expected_passed', 'expected_message_fragment'),
+        [
+            ('jacoco-high.xml', 'jacoco', True, 'meets threshold'),
+            ('jacoco-low.xml', 'jacoco', False, 'below threshold'),
+            ('cobertura-high.xml', 'cobertura', True, 'meets threshold'),
+            ('cobertura-low.xml', 'cobertura', False, 'below threshold'),
+            ('jest-high.json', 'jest_json', True, 'meets threshold'),
+            ('jest-low.json', 'jest_json', False, 'below threshold'),
+        ],
+        ids=[
+            'jacoco-high-passes',
+            'jacoco-low-fails',
+            'cobertura-high-passes',
+            'cobertura-low-fails',
+            'jest-high-passes',
+            'jest-low-fails',
+        ],
+    )
+    def test_threshold_verdict(
+        self, fixture_name, fmt, expected_passed, expected_message_fragment
+    ):
+        """A report parses cleanly and its verdict matches its coverage level."""
+        result = parse_coverage_report(FIXTURES_DIR / fixture_name, fmt, threshold=80)
+        assert result['status'] == 'success'
+        assert result['passed'] is expected_passed
+        assert result['threshold'] == 80
+        assert expected_message_fragment in result['message']
 
 
 # =============================================================================
@@ -18,14 +64,6 @@ FIXTURES_DIR = Path(__file__).parent / 'fixtures' / 'coverage'
 class TestJacocoFormat:
     """Tests for JaCoCo XML format parsing."""
 
-    def test_high_coverage_passes_threshold(self):
-        """JaCoCo report with high coverage passes threshold check."""
-        result = parse_coverage_report(FIXTURES_DIR / 'jacoco-high.xml', 'jacoco', threshold=80)
-        assert result['status'] == 'success'
-        assert result['passed'] is True
-        assert result['threshold'] == 80
-        assert 'meets threshold' in result['message']
-
     def test_high_coverage_overall_metrics(self):
         """JaCoCo report returns correct overall metrics."""
         result = parse_coverage_report(FIXTURES_DIR / 'jacoco-high.xml', 'jacoco')
@@ -34,13 +72,6 @@ class TestJacocoFormat:
         assert overall['branch'] == 100.0  # 0 missed, 2 covered
         assert overall['instruction'] > 0
         assert overall['method'] > 0
-
-    def test_low_coverage_fails_threshold(self):
-        """JaCoCo report with low coverage fails threshold check."""
-        result = parse_coverage_report(FIXTURES_DIR / 'jacoco-low.xml', 'jacoco', threshold=80)
-        assert result['status'] == 'success'
-        assert result['passed'] is False
-        assert 'below threshold' in result['message']
 
     def test_low_coverage_detects_classes(self):
         """JaCoCo low-coverage report identifies classes below threshold."""
@@ -72,26 +103,12 @@ class TestJacocoFormat:
 class TestCoberturaFormat:
     """Tests for Cobertura XML format parsing."""
 
-    def test_high_coverage_passes_threshold(self):
-        """Cobertura report with high coverage passes threshold check."""
-        result = parse_coverage_report(FIXTURES_DIR / 'cobertura-high.xml', 'cobertura', threshold=80)
-        assert result['status'] == 'success'
-        assert result['passed'] is True
-        assert 'meets threshold' in result['message']
-
     def test_high_coverage_overall_metrics(self):
         """Cobertura report returns correct overall metrics."""
         result = parse_coverage_report(FIXTURES_DIR / 'cobertura-high.xml', 'cobertura')
         overall = result['overall']
         assert overall['line'] == 90.0  # line-rate="0.90"
         assert overall['branch'] == 87.5  # branch-rate="0.875"
-
-    def test_low_coverage_fails_threshold(self):
-        """Cobertura report with low coverage fails threshold check."""
-        result = parse_coverage_report(FIXTURES_DIR / 'cobertura-low.xml', 'cobertura', threshold=80)
-        assert result['status'] == 'success'
-        assert result['passed'] is False
-        assert 'below threshold' in result['message']
 
     def test_low_coverage_detects_classes(self):
         """Cobertura low-coverage report identifies classes below threshold."""
@@ -122,13 +139,6 @@ class TestCoberturaFormat:
 class TestJestJsonFormat:
     """Tests for Jest/Istanbul JSON format parsing."""
 
-    def test_high_coverage_passes_threshold(self):
-        """Jest JSON report with high coverage passes threshold check."""
-        result = parse_coverage_report(FIXTURES_DIR / 'jest-high.json', 'jest_json', threshold=80)
-        assert result['status'] == 'success'
-        assert result['passed'] is True
-        assert 'meets threshold' in result['message']
-
     def test_high_coverage_overall_metrics(self):
         """Jest JSON report returns correct overall metrics."""
         result = parse_coverage_report(FIXTURES_DIR / 'jest-high.json', 'jest_json')
@@ -137,13 +147,6 @@ class TestJestJsonFormat:
         assert overall['branch'] == 84
         assert overall['function'] == 90
         assert overall['statement'] == 90
-
-    def test_low_coverage_fails_threshold(self):
-        """Jest JSON report with low coverage fails threshold check."""
-        result = parse_coverage_report(FIXTURES_DIR / 'jest-low.json', 'jest_json', threshold=80)
-        assert result['status'] == 'success'
-        assert result['passed'] is False
-        assert 'below threshold' in result['message']
 
     def test_low_coverage_detects_files(self):
         """Jest JSON low-coverage report identifies files below threshold."""
@@ -212,18 +215,29 @@ class TestLcovFormat:
 class TestFindReport:
     """Tests for find_report() path resolution."""
 
-    def test_explicit_path_found(self):
-        """find_report returns explicit path when file exists."""
-        path, fmt = find_report([], explicit_path=str(FIXTURES_DIR / 'jacoco-high.xml'))
-        assert path is not None
-        assert path.name == 'jacoco-high.xml'
-        assert fmt == 'jacoco'
+    @pytest.mark.parametrize(
+        ('report_name', 'expected_fmt'),
+        [
+            ('jacoco-high.xml', 'jacoco'),
+            ('cobertura-high.xml', 'cobertura'),
+            ('jest-high.json', 'jest_json'),
+        ],
+        ids=['jacoco-xml', 'cobertura-xml', 'jest-json'],
+    )
+    def test_explicit_path_resolves_and_auto_detects_its_format(
+        self, report_name, expected_fmt
+    ):
+        """An existing explicit path is returned with its format auto-detected.
 
-    def test_explicit_path_json_format(self):
-        """find_report auto-detects JSON format from explicit path."""
-        path, fmt = find_report([], explicit_path=str(FIXTURES_DIR / 'jest-high.json'))
+        The three cases enumerate every format ``find_report`` detects from a
+        path — two of them sharing the ``.xml`` extension, so detection cannot be
+        passing on the extension alone. ``test_explicit_path_not_found`` below is
+        the matched negative control for the resolution half.
+        """
+        path, fmt = find_report([], explicit_path=str(FIXTURES_DIR / report_name))
         assert path is not None
-        assert fmt == 'jest_json'
+        assert path.name == report_name
+        assert fmt == expected_fmt
 
     def test_explicit_path_not_found(self):
         """find_report returns None for missing explicit path."""
@@ -259,12 +273,6 @@ class TestFindReport:
         path, fmt = find_report([('nonexistent.xml', 'jacoco')])
         assert path is None
 
-    def test_explicit_cobertura_xml_detection(self):
-        """find_report auto-detects Cobertura XML format."""
-        path, fmt = find_report([], explicit_path=str(FIXTURES_DIR / 'cobertura-high.xml'))
-        assert path is not None
-        assert fmt == 'cobertura'
-
 
 # =============================================================================
 # Threshold Checking Tests
@@ -274,22 +282,31 @@ class TestFindReport:
 class TestThresholdChecking:
     """Tests for threshold pass/fail logic."""
 
-    def test_exact_threshold_passes(self):
-        """Coverage exactly at threshold passes."""
-        # jacoco-high.xml has 100% line coverage
-        result = parse_coverage_report(FIXTURES_DIR / 'jacoco-high.xml', 'jacoco', threshold=100)
-        assert result['passed'] is True
+    @pytest.mark.parametrize(
+        ('fixture_name', 'fmt', 'threshold', 'expected_passed'),
+        [
+            ('jacoco-high.xml', 'jacoco', 100, True),
+            ('jest-high.json', 'jest_json', 91, False),
+            ('jacoco-low.xml', 'jacoco', 0, True),
+        ],
+        ids=[
+            'coverage-exactly-at-threshold-passes',
+            'coverage-one-point-below-threshold-fails',
+            'zero-threshold-passes-any-coverage',
+        ],
+    )
+    def test_threshold_comparison_at_the_boundary(
+        self, fixture_name, fmt, threshold, expected_passed
+    ):
+        """The comparison is ``>=``, pinned from both sides of the boundary.
 
-    def test_one_below_threshold_fails(self):
-        """Coverage one below threshold fails."""
-        # jest-high.json has 90% line coverage, threshold 91 should fail
-        result = parse_coverage_report(FIXTURES_DIR / 'jest-high.json', 'jest_json', threshold=91)
-        assert result['passed'] is False
-
-    def test_zero_threshold_always_passes(self):
-        """Zero threshold always passes."""
-        result = parse_coverage_report(FIXTURES_DIR / 'jacoco-low.xml', 'jacoco', threshold=0)
-        assert result['passed'] is True
+        ``jacoco-high.xml`` is 100% line coverage against a threshold of 100, so
+        equality must pass; ``jest-high.json`` is 90% against 91, the smallest
+        integer step below, so it must fail. A threshold of 0 passes the lowest
+        fixture in the set.
+        """
+        result = parse_coverage_report(FIXTURES_DIR / fixture_name, fmt, threshold=threshold)
+        assert result['passed'] is expected_passed
 
     def test_default_threshold_is_80(self):
         """Default threshold is 80%."""

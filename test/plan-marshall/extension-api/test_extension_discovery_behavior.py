@@ -81,31 +81,34 @@ class _NoConfigDefaultsModule:
 # =============================================================================
 
 
-def test_load_extension_module_returns_instance(tmp_path):
-    """A loadable extension.py exposing an Extension class returns an instance."""
+def _loaded_class_name(instance) -> str | None:
+    """The loaded instance's class name, or ``None`` when nothing was loaded."""
+    return None if instance is None else type(instance).__name__
+
+
+@pytest.mark.parametrize(
+    ('module_source', 'expected_class_name'),
+    [
+        ('class Extension:\n    pass\n', 'Extension'),
+        ('VALUE = 1\n', None),
+        ('raise RuntimeError("explode at import")\n', None),
+    ],
+    ids=['exposes-extension-class', 'no-extension-class', 'raises-during-exec'],
+)
+def test_load_extension_module(tmp_path, module_source, expected_class_name):
+    """An Axis-A extension loads to an ``Extension`` instance, or to ``None``.
+
+    Both failure rows return ``None`` rather than propagating: a bundle whose
+    ``extension.py`` exposes no ``Extension`` class, and one that raises while
+    executing. The positive row is their matched control, so a loader that had
+    collapsed to always returning ``None`` fails here rather than satisfying both.
+    """
     ext = tmp_path / 'extension.py'
-    ext.write_text('class Extension:\n    pass\n', encoding='utf-8')
+    ext.write_text(module_source, encoding='utf-8')
 
     instance = _disc.load_extension_module(ext, 'my-bundle')
 
-    assert instance is not None
-    assert type(instance).__name__ == 'Extension'
-
-
-def test_load_extension_module_none_when_no_extension_class(tmp_path):
-    """A module without an Extension class yields None (and logs a warning)."""
-    ext = tmp_path / 'extension.py'
-    ext.write_text('VALUE = 1\n', encoding='utf-8')
-
-    assert _disc.load_extension_module(ext, 'my-bundle') is None
-
-
-def test_load_extension_module_none_on_exec_error(tmp_path):
-    """A module that raises during exec is caught and yields None."""
-    ext = tmp_path / 'extension.py'
-    ext.write_text('raise RuntimeError("explode at import")\n', encoding='utf-8')
-
-    assert _disc.load_extension_module(ext, 'my-bundle') is None
+    assert _loaded_class_name(instance) == expected_class_name
 
 
 # =============================================================================
@@ -113,31 +116,28 @@ def test_load_extension_module_none_on_exec_error(tmp_path):
 # =============================================================================
 
 
-def test_load_build_extension_module_returns_instance(tmp_path):
-    """A build extension.py with a BuildExtension class returns an instance."""
+@pytest.mark.parametrize(
+    ('module_source', 'expected_class_name'),
+    [
+        ('class BuildExtension:\n    pass\n', 'BuildExtension'),
+        ('class NotIt:\n    pass\n', None),
+        ('1 / 0\n', None),
+    ],
+    ids=['exposes-build-extension-class', 'no-build-extension-class', 'raises-during-exec'],
+)
+def test_load_build_extension_module(tmp_path, module_source, expected_class_name):
+    """An Axis-B extension loads to a ``BuildExtension`` instance, or to ``None``.
+
+    The same three outcomes as the Axis-A loader above, against the class name
+    that hierarchy requires — a module exposing some OTHER class is as unusable
+    here as one exposing none.
+    """
     ext = tmp_path / 'extension.py'
-    ext.write_text('class BuildExtension:\n    pass\n', encoding='utf-8')
+    ext.write_text(module_source, encoding='utf-8')
 
     instance = _disc.load_build_extension_module(ext, 'build-foo')
 
-    assert instance is not None
-    assert type(instance).__name__ == 'BuildExtension'
-
-
-def test_load_build_extension_module_none_when_no_class(tmp_path):
-    """A build module without a BuildExtension class yields None."""
-    ext = tmp_path / 'extension.py'
-    ext.write_text('class NotIt:\n    pass\n', encoding='utf-8')
-
-    assert _disc.load_build_extension_module(ext, 'build-foo') is None
-
-
-def test_load_build_extension_module_none_on_exec_error(tmp_path):
-    """A build module raising during exec is caught and yields None."""
-    ext = tmp_path / 'extension.py'
-    ext.write_text('1 / 0\n', encoding='utf-8')
-
-    assert _disc.load_build_extension_module(ext, 'build-foo') is None
+    assert _loaded_class_name(instance) == expected_class_name
 
 
 # =============================================================================
