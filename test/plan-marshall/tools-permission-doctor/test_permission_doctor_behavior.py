@@ -14,6 +14,8 @@ no real ``~/.claude`` or project settings are read.
 
 import json
 
+import permission_common
+
 from conftest import load_script_module, parse_ns
 
 pd = load_script_module('plan-marshall', 'tools-permission-doctor', 'permission_doctor.py', 'pd_behavior')
@@ -245,3 +247,98 @@ def test_detect_missing_settings_load_error(tmp_path):
     )
 
     assert result['status'] == 'error'
+
+
+# =============================================================================
+# Non-Claude target: detect-* route must not report a FALSE ZERO
+# =============================================================================
+# These tests pin the ADR-019 obligation: the Claude rule-pack analysis does
+# not apply to a non-Claude target, so the direct-script detect-* route must
+# return a ``skipped`` third state rather than walking empty allow lists and
+# reporting a clean zero.  Red-first: each assertion fails against current HEAD.
+
+
+class TestDetectNonClaudeSkipped:
+    """On a non-Claude target the direct detect-* route returns 'skipped'."""
+
+    @staticmethod
+    def _make_opencode_runtime():
+        from opencode_runtime import OpenCodeRuntime
+        return OpenCodeRuntime()
+
+    @staticmethod
+    def _force_opencode(monkeypatch):
+        """Point the runtime-resolution seam at the OpenCode runtime.
+
+        Both ``permission_common.is_claude_target`` and ``permission_common.load_settings``
+        resolve the active runtime through ``permission_common._runtime_for_target``,
+        so patching that seam makes the whole route behave as a non-Claude target.
+        """
+        monkeypatch.setattr(permission_common, '_runtime_for_target', TestDetectNonClaudeSkipped._make_opencode_runtime)
+
+    def test_detect_suspicious_skipped_on_opencode(self, monkeypatch, tmp_path):
+        """detect-suspicious on a non-Claude target: 'skipped', not 'success' with zero."""
+        settings_file = tmp_path / 'settings.json'
+        _write_settings(settings_file, ['Read(**)'])
+
+        self._force_opencode(monkeypatch)
+
+        result = pd.cmd_detect_suspicious(
+            parse_ns('plan-marshall', 'tools-permission-doctor', 'permission_doctor.py',
+                     'detect-suspicious', '--settings', str(settings_file))
+        )
+
+        assert result['status'] == 'skipped'
+        assert 'suspicious' not in result or result.get('summary', {}).get('total_suspicious', -1) == -1
+
+    def test_detect_redundant_skipped_on_opencode(self, monkeypatch, tmp_path):
+        """detect-redundant on a non-Claude target: 'skipped', not 'success' with zero."""
+        global_file = tmp_path / 'global.json'
+        local_file = tmp_path / 'local.json'
+        _write_settings(global_file, ['Read(src/**)'])
+        _write_settings(local_file, ['Read(src/**)'])
+
+        self._force_opencode(monkeypatch)
+
+        result = pd.cmd_detect_redundant(
+            parse_ns('plan-marshall', 'tools-permission-doctor', 'permission_doctor.py',
+                     'detect-redundant', '--global-settings', str(global_file),
+                     '--local-settings', str(local_file))
+        )
+
+        assert result['status'] == 'skipped'
+
+    def test_detect_missing_steps_skipped_on_opencode(self, monkeypatch, tmp_path):
+        """detect-missing-project-step-permissions on non-Claude: 'skipped'."""
+        marshal_file = tmp_path / 'marshal.json'
+        marshal_file.write_text(
+            json.dumps({'plan': {'phase-6-finalize': {'steps': ['project:finalize-step-plugin-doctor']}}})
+        )
+        settings_file = tmp_path / 'settings.json'
+        _write_settings(settings_file, [])
+
+        self._force_opencode(monkeypatch)
+
+        result = pd.cmd_detect_missing_project_step_permissions(
+            parse_ns('plan-marshall', 'tools-permission-doctor', 'permission_doctor.py',
+                     'detect-missing-project-step-permissions',
+                     '--marshal', str(marshal_file),
+                     '--settings', str(settings_file))
+        )
+
+        assert result['status'] == 'skipped'
+
+    def test_detect_suspicious_genuine_zero_on_claude(self, monkeypatch, tmp_path):
+        """On a Claude target with empty allow list: 'success' with zero (genuine zero)."""
+        settings_file = tmp_path / 'settings.json'
+        _write_settings(settings_file, [])
+
+        # No monkeypatch — _active_runtime resolves to the default (Claude) target.
+
+        result = pd.cmd_detect_suspicious(
+            parse_ns('plan-marshall', 'tools-permission-doctor', 'permission_doctor.py',
+                     'detect-suspicious', '--settings', str(settings_file))
+        )
+
+        assert result['status'] == 'success'
+        assert result['summary']['total_suspicious'] == 0

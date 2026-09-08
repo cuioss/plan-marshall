@@ -675,3 +675,167 @@ class TestApplyProjectStepPermissionsErrors:
         )
 
         assert result['status'] == 'error'
+
+
+# =============================================================================
+# Non-Claude target: permission-DSL-emitting subcommands decline (D1)
+# =============================================================================
+# The Claude permission-DSL residue (EXECUTOR_PERMISSION, OVERLY_BROAD_PYTHON,
+# the Skill(...)/SlashCommand(...) wildcard generators, the timestamp patterns,
+# path normalization, individual-script detection) renders Claude grammar inside
+# a general script. On a non-Claude target each emitting subcommand must return
+# an honest no-op rather than render. Red-first: each assertion fails against
+# current HEAD.
+
+
+class TestPermissionDslDeclinesOnNonClaude:
+    """The permission-DSL-emitting direct subcommands decline on a non-Claude target."""
+
+    @pytest.fixture()
+    def in_tmp_cwd(self, tmp_path, monkeypatch):
+        """Run with the process working directory inside an isolated tmp_path."""
+        monkeypatch.chdir(tmp_path)
+
+    @staticmethod
+    def _force_opencode(monkeypatch):
+        """Point the runtime-resolution seam at the OpenCode runtime."""
+        import permission_common
+        from opencode_runtime import OpenCodeRuntime
+
+        monkeypatch.setattr(permission_common, '_runtime_for_target', lambda: OpenCodeRuntime())
+
+    @staticmethod
+    def _assert_declines(result):
+        assert result.get('status') == 'no-op'
+        assert 'reason' in result
+        # No Claude permission-DSL output may be produced.
+        serialized = str(result)
+        assert 'Bash(' not in serialized
+        assert 'Skill(' not in serialized
+        assert 'SlashCommand(' not in serialized
+
+    def test_apply_fixes_declines_on_opencode(self, monkeypatch, tmp_path):
+        """apply-fixes on a non-Claude target returns a no-op, not a normalized render."""
+        settings_file = tmp_path / 'settings.json'
+        _write_settings(settings_file, ['Read(target/build-2025-11-20-174411.log)', 'Read(target/build-2025-11-20-174411.log)'])
+
+        self._force_opencode(monkeypatch)
+
+        result = pf.cmd_apply_fixes(
+            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'apply-fixes', '--settings', str(settings_file), '--dry-run')
+        )
+
+        self._assert_declines(result)
+
+    def test_consolidate_declines_on_opencode(self, monkeypatch, tmp_path):
+        """consolidate on a non-Claude target returns a no-op, not timestamp wildcards."""
+        settings_file = tmp_path / 'settings.json'
+        _write_settings(settings_file, ['Read(target/build-2025-11-20-174411.log)', 'Read(target/build-2025-11-20-174412.log)'])
+
+        self._force_opencode(monkeypatch)
+
+        result = pf.cmd_consolidate(
+            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'consolidate', '--settings', str(settings_file), '--dry-run')
+        )
+
+        self._assert_declines(result)
+
+    def test_ensure_wildcards_declines_on_opencode(self, monkeypatch, tmp_path):
+        """ensure-wildcards on a non-Claude target returns a no-op, not Skill(...) rules."""
+        settings_file = tmp_path / 'settings.json'
+        _write_settings(settings_file, [])
+        marketplace_file = tmp_path / 'marketplace.json'
+        marketplace_file.write_text(json.dumps({'bundles': {'plan-marshall': {'skills': {'manage-files': {}}}}}))
+
+        self._force_opencode(monkeypatch)
+
+        result = pf.cmd_ensure_wildcards(
+            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'ensure-wildcards', '--settings', str(settings_file), '--marketplace-json', str(marketplace_file), '--dry-run')
+        )
+
+        self._assert_declines(result)
+
+    def test_generate_wildcards_declines_on_opencode(self, monkeypatch, tmp_path):
+        """generate-wildcards on a non-Claude target returns a no-op, not wildcard lists."""
+        inventory_file = tmp_path / 'inventory.json'
+        inventory_file.write_text(json.dumps({'bundles': [{'name': 'plan-marshall', 'skills': [{'name': 'manage-files'}]}], 'statistics': {'total_bundles': 1, 'total_skills': 1, 'total_commands': 0}}))
+
+        self._force_opencode(monkeypatch)
+
+        result = pf.cmd_generate_wildcards(
+            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'generate-wildcards', '--input', str(inventory_file))
+        )
+
+        self._assert_declines(result)
+
+    def test_ensure_executor_declines_on_opencode(self, monkeypatch, tmp_path, in_tmp_cwd):
+        """ensure-executor on a non-Claude target returns a no-op, not the executor permission."""
+        self._force_opencode(monkeypatch)
+
+        result = pf.cmd_ensure_executor(
+            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'ensure-executor', '--target', 'project', '--dry-run')
+        )
+
+        self._assert_declines(result)
+
+    def test_cleanup_scripts_declines_on_opencode(self, monkeypatch, tmp_path, in_tmp_cwd):
+        """cleanup-scripts on a non-Claude target returns a no-op, not removal lists."""
+        self._force_opencode(monkeypatch)
+
+        result = pf.cmd_cleanup_scripts(
+            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'cleanup-scripts', '--target', 'project')
+        )
+
+        self._assert_declines(result)
+
+    def test_migrate_executor_declines_on_opencode(self, monkeypatch, tmp_path, in_tmp_cwd):
+        """migrate-executor on a non-Claude target returns a no-op, not executor migration."""
+        self._force_opencode(monkeypatch)
+
+        result = pf.cmd_migrate_executor(
+            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'migrate-executor', '--target', 'project', '--dry-run')
+        )
+
+        self._assert_declines(result)
+
+    def test_apply_project_step_permissions_declines_on_opencode(self, monkeypatch, tmp_path):
+        """apply-project-step-permissions on a non-Claude target returns a no-op, not Skill(...) rules."""
+        marshal_file = tmp_path / 'marshal.json'
+        marshal_file.write_text(json.dumps({'plan': {'phase-6-finalize': {'steps': ['project:finalize-step-plugin-doctor']}}}))
+        settings_file = tmp_path / 'settings.json'
+        _write_settings(settings_file, [])
+
+        self._force_opencode(monkeypatch)
+
+        result = pf.cmd_apply_project_step_permissions(
+            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'apply-project-step-permissions', '--marshal', str(marshal_file), '--settings', str(settings_file), '--dry-run')
+        )
+
+        self._assert_declines(result)
+
+    def test_remove_redundant_propagates_skipped_on_opencode(self, monkeypatch, tmp_path):
+        """remove-redundant on a non-Claude target propagates the skipped third state, not success."""
+        global_file = tmp_path / 'global.json'
+        local_file = tmp_path / 'local.json'
+        _write_settings(global_file, ['Read(src/**)'])
+        _write_settings(local_file, ['Read(src/**)'])
+
+        self._force_opencode(monkeypatch)
+
+        result = pf.cmd_remove_redundant(
+            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'remove-redundant', '--global-settings', str(global_file), '--local-settings', str(local_file))
+        )
+
+        assert result.get('status') == 'skipped'
+        assert 'redundant' not in result
+
+    def test_remove_redundant_scope_both_skipped_on_opencode(self, monkeypatch, tmp_path, in_tmp_cwd):
+        """remove-redundant --scope both on a non-Claude target returns skipped, not a scope-resolution error."""
+        self._force_opencode(monkeypatch)
+
+        result = pf.cmd_remove_redundant(
+            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'remove-redundant', '--scope', 'both')
+        )
+
+        assert result.get('status') == 'skipped'
+        assert 'Could not resolve' not in str(result)

@@ -36,6 +36,20 @@ from runtime_base import Runtime  # noqa: E402
 EXIT_SUCCESS = 0
 
 
+def is_claude_target() -> bool:
+    """True when the active runtime is the Claude target.
+
+    The import is function-local because ``platform_runtime`` already pulls the
+    Claude implementation in at module load, and a module-level ``from
+    _claude_runtime_impl import ClaudeRuntime`` here would recurse into a not-yet
+    initialised import graph; the call-time import stays ordered. By the time
+    this is called the full script bootstrap has already run and
+    ``_claude_runtime_impl`` is on ``sys.path``.
+    """
+    from _claude_runtime_impl import ClaudeRuntime
+    return isinstance(_active_runtime(), ClaudeRuntime)
+
+
 def _active_runtime() -> Runtime:
     """Resolve the active runtime through the platform-runtime registry.
 
