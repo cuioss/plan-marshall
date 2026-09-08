@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 
 from _dep_detection import extract_frontmatter
+from _doctor_shared import resolve_runtime_target
 
 
 def verify_frontmatter_fix(file_path: Path) -> dict:
@@ -34,7 +35,19 @@ def verify_frontmatter_fix(file_path: Path) -> dict:
 
 
 def verify_array_syntax_fix(file_path: Path) -> dict:
-    """Verify tools no longer uses array syntax."""
+    """Verify tools no longer uses array syntax.
+
+    Mirrors ``apply_array_syntax_fix``'s target gate: ``array-syntax-tools`` is
+    a Claude rule-pack rule, so on a non-Claude target the verify declines
+    rather than reporting on a rule that does not bind there.
+    """
+    if resolve_runtime_target() != 'claude':
+        return {
+            'verified': True,
+            'issue_resolved': None,
+            'details': 'array-syntax-tools is a Claude rule-pack rule; it does not bind on the active target',
+        }
+
     try:
         content = file_path.read_text(encoding='utf-8', errors='replace')
     except OSError as e:

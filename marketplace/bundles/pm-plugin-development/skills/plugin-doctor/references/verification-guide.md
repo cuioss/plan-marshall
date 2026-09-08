@@ -34,7 +34,7 @@ scripts/verify-fix.sh {fix_type} {component_path}
 
 ### Frontmatter Fixes
 
-**Verifies**: missing-frontmatter, missing-*-field, invalid-yaml, array-syntax-tools
+**Verifies**: missing-frontmatter, missing-*-field, invalid-yaml, array-syntax-tools (Claude rule-pack gate: the verify declines on a non-Claude target)
 
 **Strategy**: Check frontmatter structure
 

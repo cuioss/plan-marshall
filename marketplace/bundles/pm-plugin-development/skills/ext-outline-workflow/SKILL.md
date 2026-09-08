@@ -174,9 +174,11 @@ A one-line note in the deliverable's "Change per file" or "Verification" block i
 
 This rule prevents the recurring failure mode where structural-rule sweeps catch only the family named in the source lesson and miss adjacent families that trip the same target shapes.
 
-## Human-Gated Config Classification
+## Human-Gated Harness-Config Classification
 
-This is a domain-specific classification dimension for the `plan-marshall-plugin-dev` domain — it fires whenever a deliverable being authored touches the active target's settings/permission surface, which requires a human action to take effect. It is **track-agnostic**: phase-3-outline's thin special-deliverable-class trigger (the "Human-gated config deliverable class") fires on both the Simple Track (Step 7) and the Complex Track (Step 10) and routes here for the substance. Apply the predicate to every deliverable's `**Affected files:**` (or the writes its narrative describes), regardless of change type.
+This is a domain-specific classification dimension for the `plan-marshall-plugin-dev` domain — it fires whenever a deliverable being authored touches the active target's settings/permission surface, which requires a human action to take effect. It is **track-agnostic**: phase-3-outline's thin special-deliverable-class trigger (the "Human-gated harness-config deliverable class") fires on both the Simple Track (Step 7) and the Complex Track (Step 10) and routes here for the substance. Apply the predicate to every deliverable's `**Affected files:**` (or the writes its narrative describes), regardless of change type.
+
+> The section heading keeps the `Harness-Config` name because it is a cross-bundle anchor contract: `plan-marshall:phase-3-outline` links to `#human-gated-harness-config-classification`, and that surface belongs to another plan. The classification's substance is target-normalized — see the predicate and the Claude-target note below.
 
 ### Predicate
 

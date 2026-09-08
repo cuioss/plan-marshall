@@ -788,10 +788,10 @@ def get_base_path(scope: str) -> Path:
         )
 
     if scope == 'global':
-        # User-global deployment layout — routed through the shared layout
-        # helper, which resolves the active target's global deployment root
-        # (``~/.claude`` on Claude; the OpenCode user-global layout on
-        # OpenCode) rather than hardcoding a Claude literal here.
+        # User-global deployment layout — delegated to the shared layout
+        # helper, which resolves the global deployment root (the shared helper
+        # resolves ``~/.claude``; a target's global deployment layout is a
+        # plan-marshall-surface concern). The scope no longer crashes here.
         from marketplace_paths import get_base_path as _shared_get_base_path
 
         return _shared_get_base_path('global')

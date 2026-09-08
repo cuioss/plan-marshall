@@ -57,7 +57,7 @@ for fix in fixes:
 1. missing-frontmatter (required for others)
 2. invalid-yaml
 3. missing-*-field (name, description, user-invocable, tools)
-4. array-syntax-tools
+4. array-syntax-tools (Claude rule-pack gate: the fix/verify decline on a non-Claude target)
 5. agent-skill-tool-visibility
 6. trailing-whitespace
 7. improper-indentation

@@ -309,6 +309,30 @@ def test_array_syntax_fix_applies_on_claude(monkeypatch):
         )
 
 
+def test_array_syntax_verify_gates_on_target(monkeypatch):
+    """verify_array_syntax_fix mirrors the fix's gate: it declines on OpenCode."""
+    monkeypatch.setattr(_cmd_verify_mod, 'resolve_runtime_target', lambda: 'opencode')
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
+        f.write('---\ntools: [Read, Write]\n---\n\n# A\n')
+        f.flush()
+        result = _cmd_verify_mod.verify_array_syntax_fix(Path(f.name))
+        assert result['issue_resolved'] is None, (
+            f'OpenCode verify must decline (issue_resolved None), got: {result}'
+        )
+        Path(f.name).unlink()
+
+
+def test_array_syntax_verify_reports_on_claude(monkeypatch):
+    """verify_array_syntax_fix reports array syntax on the Claude target."""
+    monkeypatch.setattr(_cmd_verify_mod, 'resolve_runtime_target', lambda: 'claude')
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
+        f.write('---\ntools: [Read, Write]\n---\n\n# A\n')
+        f.flush()
+        result = _cmd_verify_mod.verify_array_syntax_fix(Path(f.name))
+        assert result['issue_resolved'] is False, f'Claude verify should report array syntax: {result}'
+        Path(f.name).unlink()
+
+
 # =============================================================================
 # Rule 11 Verify Tests (Tier 2 - direct import)
 # =============================================================================

@@ -96,17 +96,19 @@ description: [Description needed]
 def apply_array_syntax_fix(file_path: Path, fix: dict, templates: dict) -> dict:
     """Convert array syntax tools: [A, B] to comma-separated tools: A, B.
 
-    The comma-separated ``tools:`` form is a Claude rule-pack concern
-    (``array-syntax-tools``): the OpenCode target maps tools to a
-    ``permission:`` block at build time and never consumes a comma-separated
-    ``tools:`` line, so the fix is gated on the resolved target and declines
-    on OpenCode.
+    The array-vs-comma ``tools:`` check is a Claude rule-pack concern
+    (``array-syntax-tools``): the rule-pack declares the comma-separated form
+    as the Claude-parser rule, and the fix is gated on the resolved target so
+    it only applies when the Claude rule-pack is active. On OpenCode the fix
+    declines (the ``array-syntax-tools`` rule does not bind there); the
+    comma-separated agent ``tools:`` lines this bundle emits for OpenCode are
+    the SOURCE form the build maps to a ``permission:`` block at emit time, not
+    a comma-format rule the fixer enforces.
     """
     if resolve_runtime_target() != 'claude':
         return {
             'success': False,
-            'error': 'array-syntax-tools is a Claude rule-pack fix; the active target does not use '
-            'comma-separated tools frontmatter',
+            'error': 'array-syntax-tools is a Claude rule-pack fix; it does not bind on the active target',
         }
 
     with open(file_path, encoding='utf-8') as f:
