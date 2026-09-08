@@ -18,11 +18,16 @@ subprocesses. No per-test monkeypatching of those paths is required.
 
 import argparse
 
+import _providers_core
 import pytest
 
 from conftest import get_script_path, run_script
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-providers', 'credentials.py')
+
+#: The secret-named keys ``apply_extra_passthrough`` refuses, read off the live
+#: constant so the sweep below covers a key added to it without an edit here.
+SECRET_PLACEHOLDERS = _providers_core.SECRET_PLACEHOLDERS
 
 _SKILL = 'plan-marshall:workflow-integration-sonar'
 _TOKEN = 'super-secret-token-value'
@@ -177,6 +182,39 @@ class TestUpsertExtraFieldsValidation:
         # Assert
         assert upserted == expected_keys
         assert read_provider_config(_SKILL) == expected_config
+
+    def test_the_secret_placeholder_set_is_not_empty(self):
+        """``SECRET_PLACEHOLDERS`` carries at least one key.
+
+        The sweep below is parametrized over that constant, so an emptied
+        constant would collect zero rows and report green without having
+        rejected anything. This is what makes the zero-row state a failure.
+        """
+        assert SECRET_PLACEHOLDERS, 'SECRET_PLACEHOLDERS is empty — the sweep below collects no rows'
+
+    @pytest.mark.parametrize(
+        'secret_key', sorted(SECRET_PLACEHOLDERS), ids=sorted(SECRET_PLACEHOLDERS)
+    )
+    def test_every_secret_placeholder_key_is_rejected(self, secret_key):
+        """No key ``SECRET_PLACEHOLDERS`` names reaches ``marshal.json``.
+
+        ``_upsert_extra_fields`` delegates the denylist to
+        ``apply_extra_passthrough``, which checks that constant — so the rejected
+        set is whatever the constant holds, not the three keys the literal rows
+        above happen to name. Quantifying over it is what covers a secret key
+        added later. The benign neighbour keeps the row from passing on an
+        ``_upsert_extra_fields`` that rejected everything indiscriminately.
+        """
+        # Arrange
+        from _cred_edit import _upsert_extra_fields
+        from _providers_core import read_provider_config
+
+        # Act
+        upserted = _upsert_extra_fields(_SKILL, [f'{secret_key}=value', 'organization=my-org'])
+
+        # Assert
+        assert upserted == ['organization']
+        assert read_provider_config(_SKILL) == {'organization': 'my-org'}
 
 
 class TestRunEditPreservesToken:

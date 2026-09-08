@@ -1321,8 +1321,13 @@ class TestInstallTerminalTitleHooks:
         assert "hooks" not in json.loads(shared_before)
 
     @pytest.mark.parametrize(
-        "invalid",
-        ["opencode", "settings.local.json", "./settings.json", "/tmp/no-extension"],
+        "invalid,absolute",
+        [
+            ("opencode", False),
+            ("settings.local.json", False),
+            ("./settings.json", False),
+            ("no-extension", True),
+        ],
         ids=[
             'another-platform-identifier',
             'bare-file-name',
@@ -1331,20 +1336,27 @@ class TestInstallTerminalTitleHooks:
         ],
     )
     def test_target_relative_path_or_bare_identifier_rejected(
-        self, rt, tmp_path, monkeypatch, invalid
+        self, rt, tmp_path, monkeypatch, invalid, absolute
     ):
         """A target that is neither ``claude`` nor an absolute ``.json`` path is refused.
 
         Each row is a different way of being neither, and all four must refuse
         without leaving a stray file behind — a target taken literally would
         create one where it stood.
+
+        ``absolute`` says whether the row's spelling is made absolute before the
+        call. The absolute row carries only its bare name so both the argument
+        and the stray-file assertion resolve under ``tmp_path``; spelling an
+        absolute path in the table would make the assertion about host state
+        rather than about the fixture tree, where it would pass vacuously.
         """
         monkeypatch.chdir(tmp_path)
+        target = str(tmp_path / invalid) if absolute else invalid
 
-        result = _parsed(rt.project_install_hook(invalid))
+        result = _parsed(rt.project_install_hook(target))
 
-        assert result["status"] == "error", f"expected error for target={invalid!r}, got {result}"
-        assert result["error"] == "unknown_target", f"target={invalid!r}: {result}"
+        assert result["status"] == "error", f"expected error for target={target!r}, got {result}"
+        assert result["error"] == "unknown_target", f"target={target!r}: {result}"
         assert not (tmp_path / invalid).exists()
 
     @pytest.mark.parametrize(

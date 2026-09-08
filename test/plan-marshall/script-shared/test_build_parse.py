@@ -264,6 +264,17 @@ def test_load_acceptable_warnings(monkeypatch, tmp_path: Path, config_text, expe
 #: with ``^`` is treated as a regex and anything else as a substring, and both
 #: match case-insensitively — so each spelling carries a matching row, a
 #: differently-cased row, and a non-matching row.
+#:
+#:
+#: The unparseable pattern ``^(invalid`` carries two rows because the substring
+#: check runs BEFORE the regex attempt, so one row cannot state both halves. The
+#: ``False`` row's message omits the pattern text, which is what lets it reach
+#: the regex attempt at all — that is the row pinning that a ``re.error`` is
+#: swallowed rather than propagated out of the filter. The ``True`` row's
+#: message carries the pattern text verbatim and never reaches the regex,
+#: pinning that the substring check wins first. Giving the ``False`` row a
+#: message containing the pattern text would collapse it onto the ``True`` row's
+#: path and delete the swallow coverage entirely.
 _WARNING_ACCEPTANCE_CASES = [
     ('some warning', [], False),
     ('uses unchecked or unsafe operations', ['unchecked'], True),
@@ -273,6 +284,7 @@ _WARNING_ACCEPTANCE_CASES = [
     ('RAW TYPE usage', ['^.*raw type.*$'], True),
     ('some warning', ['^.*unchecked.*$'], False),
     ('some warning', ['^(invalid'], False),
+    ('a warning mentioning ^(invalid verbatim', ['^(invalid'], True),
     ('deprecated API', ['unchecked', 'deprecated', 'raw type'], True),
 ]
 
@@ -284,7 +296,8 @@ _WARNING_ACCEPTANCE_IDS = [
     'regex-match',
     'regex-match-is-case-insensitive',
     'regex-that-does-not-match',
-    'unparseable-regex-is-skipped',
+    'unparseable-regex-is-swallowed-not-raised',
+    'unparseable-regex-still-substring-matches',
     'any-one-of-several-patterns-matching-is-enough',
 ]
 

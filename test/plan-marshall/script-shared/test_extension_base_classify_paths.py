@@ -402,10 +402,16 @@ class _BadRoleExtension(_MinimalExtension):
         return [('scripts/*.py', 'not-a-real-role')]
 
 
-#: Extension sets that contribute nothing WITHOUT the tree being consulted at
-#: all — no registrations, no declared routes, no domain key to file them under,
-#: and a role outside the closed vocabulary. Each is rejected before any
-#: tree-presence filter runs, which is why the root below is never read.
+#: Extension sets that contribute no routes — no registrations, no declared
+#: routes, no domain key to file them under, and a role outside the closed
+#: vocabulary. Each is rejected while the extensions are processed, so the result
+#: is already empty when the tree-presence filter runs.
+#:
+#: The root below IS read: ``derive_globs_from_tree`` calls ``_list_tracked_files``
+#: unconditionally once the extension loop finishes. It names no repository, so
+#: the listing comes back empty — and an empty listing cannot revive a route that
+#: was already dropped. The root is a non-tree because nothing it could contain
+#: would change the answer, not because it goes unqueried.
 _NO_ROUTE_EXTENSION_SETS = [
     [],
     [_MinimalExtension()],

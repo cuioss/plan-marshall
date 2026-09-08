@@ -234,28 +234,6 @@ class TestSubparserProjectDir:
 #: The plan id every ``--plan-id`` row supplies.
 _CANONICAL_PLAN_ID = 'task-routing-canonical'
 
-#: ``(argv, expected project_dir)`` against the parser the declarative helper
-#: builds. The first four rows leave the flag at its default; the last two supply
-#: it, so both halves are checked end-to-end rather than only the default.
-_STANDARD_PROJECT_DIR_CASES = [
-    (['run', '--command-args', 'verify'], '.'),
-    (['parse', '--log', '/tmp/log'], '.'),
-    (['coverage-report'], '.'),
-    (['check-warnings'], '.'),
-    (['run', '--command-args', 'verify', '--project-dir', '/plan/wt'], '/plan/wt'),
-    (['parse', '--log', '/tmp/log', '--project-dir', '/plan/wt'], '/plan/wt'),
-]
-
-_STANDARD_PROJECT_DIR_IDS = [
-    'run-default',
-    'parse-default',
-    'coverage-report-default',
-    'check-warnings-default',
-    'run-override',
-    'parse-override',
-]
-
-
 def _build_full_parser() -> argparse.ArgumentParser:
     """The parser ``register_standard_subparsers`` produces with every slot filled."""
     fns = register_standard_subparsers(
@@ -269,6 +247,72 @@ def _build_full_parser() -> argparse.ArgumentParser:
     for fn in fns:
         fn(subs)
     return parser
+
+
+def _registered_subcommands(parser: argparse.ArgumentParser) -> list[str]:
+    """The subcommand names ``parser`` actually registered, sorted.
+
+    Read off the live subparsers action rather than restated, so the sweeps
+    below cover whatever ``register_standard_subparsers`` produces today.
+    ``argparse`` exposes the registered choices only through the action object,
+    hence the private class reference; sorting makes the row order stable.
+    """
+    for action in parser._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            return sorted(action.choices)
+    raise AssertionError('the full parser registered no subparsers action')
+
+
+#: The minimal argv each standard subcommand needs in order to parse at all,
+#: keyed by subcommand name — a subcommand with no required flag maps to an
+#: empty tuple. This is the one place a newly-registered subcommand has to be
+#: named; the sweeps derive their rows from the live parser and look the argv up
+#: here, and ``test_minimal_argv_covers_every_registered_subcommand`` fails
+#: naming the omission when a subcommand is registered without an entry.
+_STANDARD_MINIMAL_ARGV: dict[str, tuple[str, ...]] = {
+    'run': ('--command-args', 'verify'),
+    'parse': ('--log', '/tmp/log'),
+    'coverage-report': (),
+    'check-warnings': (),
+}
+
+_STANDARD_SUBCOMMANDS = _registered_subcommands(_build_full_parser())
+
+#: ``(argv, expected project_dir)`` against the parser the declarative helper
+#: builds. The default rows are derived one-per-registered-subcommand, so a
+#: subparser added without ``add_project_dir_arg`` gets a row and fails; a
+#: hand-written table could not fail for a subcommand it did not name. The two
+#: override rows stay literal — they assert the flag is honoured when supplied,
+#: which is a property of the flag and not of the subcommand set.
+_STANDARD_PROJECT_DIR_CASES = [
+    ([name, *_STANDARD_MINIMAL_ARGV[name]], '.')
+    for name in _STANDARD_SUBCOMMANDS
+    if name in _STANDARD_MINIMAL_ARGV
+] + [
+    (['run', '--command-args', 'verify', '--project-dir', '/plan/wt'], '/plan/wt'),
+    (['parse', '--log', '/tmp/log', '--project-dir', '/plan/wt'], '/plan/wt'),
+]
+
+_STANDARD_PROJECT_DIR_IDS = [
+    f'{name}-default' for name in _STANDARD_SUBCOMMANDS if name in _STANDARD_MINIMAL_ARGV
+] + [
+    'run-override',
+    'parse-override',
+]
+
+
+def test_minimal_argv_covers_every_registered_subcommand():
+    """Every subcommand the full parser registers has a minimal-argv entry.
+
+    The default-value sweep is derived from the live subcommand set but can only
+    build a row for a subcommand whose minimal argv is known, so this is what
+    turns a newly-registered subcommand into a named failure here rather than a
+    row that silently never gets swept. The non-emptiness guard stops a parser
+    that registered nothing from reducing the sweep to zero rows that pass by
+    collecting nothing.
+    """
+    assert _STANDARD_SUBCOMMANDS, 'the full parser registered no subcommands'
+    assert set(_STANDARD_SUBCOMMANDS) == set(_STANDARD_MINIMAL_ARGV)
 
 
 class TestRegisterStandardSubparsersPropagation:

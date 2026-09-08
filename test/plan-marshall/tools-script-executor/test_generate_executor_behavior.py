@@ -108,7 +108,7 @@ def _load_template_module() -> types.ModuleType:
         (None, 'claude'),
         ('{not valid json', 'claude'),
         ('{"other": {"target": "opencode"}}', 'claude'),
-        ('{"runtime": "claude"}', 'claude'),
+        ('{"runtime": "opencode"}', 'claude'),
     ],
     ids=[
         'declared-target-is-returned-verbatim',
@@ -127,6 +127,10 @@ def test_read_marshal_target(tmp_path, marshal_body, expected_target):
     ``runtime`` key, and a ``runtime`` that is a scalar rather than a mapping.
     The first row is their matched control — a reader that always answered
     'claude' would fail on it rather than satisfy every defaulting row.
+
+    The scalar row's value is deliberately NOT 'claude': a scalar equal to the
+    fallback would let a reader that dropped the mapping check and returned the
+    scalar verbatim pass anyway.
     """
     if marshal_body is not None:
         plan_dir = tmp_path / '.plan'

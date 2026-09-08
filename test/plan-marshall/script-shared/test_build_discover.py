@@ -124,16 +124,43 @@ def test_discover_descriptors_depth_ordering(tmp_path: Path):
     assert depths == sorted(depths)
 
 
-#: ``(directory the walk must not enter, descriptor filename)``. The excluded
-#: directory is given with its nesting so the npm row keeps the package-inside-
-#: node_modules shape it exercises; the first path segment is the excluded name.
+#: Excluded names whose row needs a shape other than the default flat ``{name}``
+#: holding a ``pom.xml``, keyed by the excluded name:
+#: ``(directory the walk must not enter, descriptor filename)``. ``node_modules``
+#: keeps the package-inside-node_modules shape a real npm tree has, which a flat
+#: row would not exercise.
+_EXCLUDED_DIR_SHAPES = {
+    'node_modules': ('node_modules/some-package', 'package.json'),
+}
+
+#: ``(directory the walk must not enter, descriptor filename)``, one row per
+#: member of ``EXCLUDE_DIRS``. Derived from that set rather than restated, so a
+#: name added to it is swept here without an edit — a hand-written table cannot
+#: fail for a member it does not happen to name. Sorted because ``EXCLUDE_DIRS``
+#: is a set and the row order would otherwise vary between runs. The first path
+#: segment of each row is the excluded name.
 _EXCLUDED_DIR_CASES = [
-    ('.git', 'pom.xml'),
-    ('node_modules/some-package', 'package.json'),
-    ('target', 'pom.xml'),
+    _EXCLUDED_DIR_SHAPES.get(name, (name, 'pom.xml')) for name in sorted(EXCLUDE_DIRS)
 ]
 
-_EXCLUDED_DIR_IDS = ['dot-git', 'node-modules', 'target']
+_EXCLUDED_DIR_IDS = [
+    relative_dir.split('/', 1)[0].strip('._').replace('_', '-')
+    for relative_dir, _ in _EXCLUDED_DIR_CASES
+]
+
+
+def test_excluded_dir_sweep_covers_every_exclude_dir():
+    """The excluded-directory sweep states every member of ``EXCLUDE_DIRS``.
+
+    The sweep is derived from that set, so this asserts the derivation did not
+    silently drop or duplicate a member — and the non-emptiness guard is what
+    stops an ``EXCLUDE_DIRS`` emptied by a refactor from turning the sweep into
+    zero rows that pass by collecting nothing.
+    """
+    assert EXCLUDE_DIRS, 'EXCLUDE_DIRS is empty — the sweep below would collect no rows'
+    swept = {relative_dir.split('/', 1)[0] for relative_dir, _ in _EXCLUDED_DIR_CASES}
+    assert swept == set(EXCLUDE_DIRS)
+    assert len(_EXCLUDED_DIR_IDS) == len(set(_EXCLUDED_DIR_IDS)), 'row ids must be unique'
 
 
 @pytest.mark.parametrize(
@@ -142,14 +169,18 @@ _EXCLUDED_DIR_IDS = ['dot-git', 'node-modules', 'target']
 def test_discover_descriptors_skips_excluded_directories(
     tmp_path: Path, excluded_relative_dir: str, descriptor: str
 ):
-    """A descriptor inside an excluded directory is never reported."""
+    """A descriptor inside an excluded directory is never reported.
+
+    The result is compared RELATIVE to the fixture root. The absolute path runs
+    through the repository's own basetemp, which itself sits under a directory
+    named in ``EXCLUDE_DIRS`` — so a substring check against the absolute path
+    would match an ancestor rather than anything the walk returned.
+    """
     _touch_descriptors(tmp_path, [excluded_relative_dir, ''], descriptor)
-    excluded_name = excluded_relative_dir.split('/', 1)[0]
 
     result = discover_descriptors(str(tmp_path), descriptor)
 
-    assert len(result) == 1
-    assert excluded_name not in str(result[0])
+    assert [path.relative_to(tmp_path.resolve()) for path in result] == [Path(descriptor)]
 
 
 def test_discover_descriptors_nonexistent():

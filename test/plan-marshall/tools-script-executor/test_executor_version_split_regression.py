@@ -169,9 +169,10 @@ def _leg_versions(cache_root: Path) -> tuple[str, str, str]:
     [
         (False, False),
         (True, False),
+        (False, True),
         (True, True),
     ],
-    ids=['none-marked', 'newest-marked', 'all-marked'],
+    ids=['none-marked', 'newest-marked', 'older-marked', 'all-marked'],
 )
 def test_all_three_legs_agree_on_newest_whatever_the_marker_state(
     tmp_path, newest_marked, older_marked
@@ -184,6 +185,11 @@ def test_all_three_legs_agree_on_newest_whatever_the_marker_state(
     ``all-marked`` row is not a degraded state the legs fall back from. That row
     is kept because it is the state observed on real machines, not because it
     exercises a fallback.
+
+    All four marker combinations are stated, not three. ``older-marked`` is the
+    one that discriminates: it is the only state in which a regression reading
+    the marker as a positive preference would select OLDER, so a table that
+    omitted it could not fail against the very reading it exists to exclude.
 
     The assertion pins WHICH dir the three legs agree on, not merely that they
     agree: a bare cross-leg comparison also passes when all three regress
@@ -284,8 +290,8 @@ def _seed_runtime_cache(home: Path, marked: tuple[str, ...] = ()) -> Path:
 
 @pytest.mark.parametrize(
     'marked',
-    [(), (NEWEST,), (OLDER, NEWEST)],
-    ids=['none-marked', 'newest-marked', 'all-marked'],
+    [(), (NEWEST,), (OLDER,), (OLDER, NEWEST)],
+    ids=['none-marked', 'newest-marked', 'older-marked', 'all-marked'],
 )
 def test_generated_runtime_resolver_agrees_with_the_generation_time_selector(
     tmp_path, monkeypatch, marked
@@ -295,9 +301,11 @@ def test_generated_runtime_resolver_agrees_with_the_generation_time_selector(
     The generated executor re-derives a version dir at RUNTIME for any notation
     missing from its baked-in ``SCRIPTS`` dict, and it is bootstrap-free so it
     cannot import the shared selector — the policy is duplicated there on purpose.
-    Each marker state is driven through both paths and the two must land on the
-    same dir, so a runtime miss cannot re-split an executor the write-time guard
-    already certified.
+    Each of the four marker states is driven through both paths and the two must
+    land on the same dir, so a runtime miss cannot re-split an executor the
+    write-time guard already certified. ``older-marked`` is the discriminating
+    state: it is the only one in which a resolver reading the marker as a
+    positive preference would land on OLDER.
     """
     cache_root = _build_cache(tmp_path)
     result = _generate(tmp_path, cache_root, monkeypatch)

@@ -100,9 +100,11 @@ def test_canonical_commands_expected_keys():
 
 #: ``(the aliases a canonical answers to, that canonical)``. An alias the table
 #: does not carry silently routes its profile nowhere, so the whole alias set of
-#: each canonical is stated rather than sampled.
+#: each canonical is stated rather than sampled. The rows prove alias ->
+#: canonical; ``test_the_alias_table_states_every_live_alias`` closes the other
+#: direction, so "whole" is asserted rather than merely claimed here.
 _PROFILE_ALIAS_CASES = [
-    (['integration-tests', 'integration-test', 'it'], CMD_INTEGRATION_TESTS),
+    (['integration-tests', 'integration-test', 'integrationTest', 'it'], CMD_INTEGRATION_TESTS),
     (['e2e', 'e2e-tests', 'acceptance', 'end-to-end'], CMD_E2E),
     (['pre-commit', 'precommit', 'sonar', 'lint', 'check', 'quality'], CMD_QUALITY_GATE),
     (['coverage', 'jacoco'], CMD_COVERAGE),
@@ -123,6 +125,20 @@ def test_profile_patterns_map_every_alias_to_its_canonical(aliases: list[str], c
     for alias in aliases:
         assert alias in PROFILE_PATTERNS, f"'{alias}' should be in PROFILE_PATTERNS"
         assert PROFILE_PATTERNS[alias] == canonical
+
+
+def test_the_alias_table_states_every_live_alias():
+    """The stated alias set equals the live one, quantified over the mapping.
+
+    The rows above run alias -> canonical only for the aliases they list, so on
+    their own they stay green when an alias is added to ``CANONICAL_COMMANDS``
+    and never stated here — leaving the table's "whole alias set" claim true by
+    assertion of nobody. This is the closing direction.
+    """
+    # Non-vacuity first: an empty mapping makes both sides equal and asserts nothing.
+    assert PROFILE_PATTERNS, 'PROFILE_PATTERNS is empty — this guard would pass vacuously'
+    stated = {alias for aliases, _ in _PROFILE_ALIAS_CASES for alias in aliases}
+    assert stated == set(PROFILE_PATTERNS)
 
 
 class ConcreteExtension(ExtensionBase):
