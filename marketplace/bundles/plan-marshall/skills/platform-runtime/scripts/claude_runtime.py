@@ -62,6 +62,12 @@ from toon_parser import parse_toon  # noqa: E402
 _PLAN_DIR_NAME = os.environ.get("PLAN_DIR_NAME", ".plan")
 _CLAUDE_PROJECTS_DIR = Path.home() / ".claude" / "projects"
 
+# Harness bash-timeout ceiling: the maximum seconds a single Bash tool
+# invocation may run on this harness. Consumers read it through the runtime
+# seam (``harness bash-timeout-ceiling``) rather than importing it, so a
+# non-Claude target is never bound by this value.
+HARNESS_BASH_TIMEOUT_CEILING_SECONDS = 600
+
 # Pattern: assistant messages in JSONL with usage data
 _USAGE_FIELD_RE = re.compile(
     r"^\s*(total_tokens|input_tokens|output_tokens)\s*:\s*(\d+)",

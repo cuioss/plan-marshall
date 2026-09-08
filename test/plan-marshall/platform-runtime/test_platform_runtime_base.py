@@ -128,7 +128,7 @@ def test_toon_noop_distinct_from_error():
 
 
 class _ConcreteRuntime(Runtime):
-    """Minimal concrete subclass that implements all 25 abstract methods."""
+    """Minimal concrete subclass that implements every abstract method."""
 
     def project_initial_setup(self, project_dir: str, target: str) -> str:
         return toon_success("project initial-setup")
@@ -138,6 +138,9 @@ class _ConcreteRuntime(Runtime):
 
     def layout_bundle_cache_root(self) -> str:
         return toon_success("layout bundle-cache-root")
+
+    def harness_bash_timeout_ceiling(self) -> str:
+        return toon_success("harness bash-timeout-ceiling")
 
     def project_install_hook(
         self,
@@ -253,6 +256,7 @@ ALL_ABSTRACT_METHODS = [
     "project_install_hook",
     "layout_skill_roots",
     "layout_bundle_cache_root",
+    "harness_bash_timeout_ceiling",
     "session_capture",
     "session_render_title",
     "session_push_title_token",
@@ -284,16 +288,16 @@ ALL_ABSTRACT_METHODS = [
 ]
 
 
-def test_runtime_has_32_abstract_methods():
-    """Runtime ABC exposes exactly 32 abstract methods."""
+def test_runtime_has_33_abstract_methods():
+    """Runtime ABC exposes exactly 33 abstract methods."""
     abstract_methods = getattr(Runtime, "__abstractmethods__", frozenset())
-    assert len(abstract_methods) == 32, (
-        f"Expected 32 abstract methods, found {len(abstract_methods)}: {sorted(abstract_methods)}"
+    assert len(abstract_methods) == 33, (
+        f"Expected 33 abstract methods, found {len(abstract_methods)}: {sorted(abstract_methods)}"
     )
 
 
 def test_all_expected_methods_are_abstract():
-    """Each of the 32 documented operations is abstract on Runtime."""
+    """Each of the documented operations is abstract on Runtime."""
     abstract_methods = getattr(Runtime, "__abstractmethods__", frozenset())
     for method in ALL_ABSTRACT_METHODS:
         assert method in abstract_methods, (
@@ -319,7 +323,7 @@ def test_subclass_missing_one_method_raises(missing_method: str):
 
 
 def test_concrete_subclass_can_be_instantiated():
-    """A subclass implementing all 25 methods can be instantiated without error."""
+    """A subclass implementing every abstract method can be instantiated without error."""
     runtime = _ConcreteRuntime()
     assert isinstance(runtime, Runtime)
 
@@ -338,6 +342,7 @@ def test_concrete_returns_valid_toon_for_each_method():
         runtime.project_install_hook("claude"),
         runtime.layout_skill_roots(),
         runtime.layout_bundle_cache_root(),
+        runtime.harness_bash_timeout_ceiling(),
         runtime.session_capture("my-plan"),
         runtime.session_render_title(),
         runtime.session_push_title_token("my-plan", "⏳"),
@@ -361,7 +366,7 @@ def test_concrete_returns_valid_toon_for_each_method():
         runtime.health_check("all"),
     ]
 
-    assert len(outputs) == 25, "Expected output for each of the 25 TOON-returning operations"
+    assert len(outputs) == 26, "Expected output for each of the 26 TOON-returning operations"
     for output in outputs:
         result = parse_toon(output)
         assert result.get("status") == "success", (
@@ -389,11 +394,11 @@ def test_every_toon_operation_documents_a_decline_path():
 
     The non-vacuity guards below prove the population did not collapse: the
     ABC still exposes the full method set, the operation subset is exactly the
-    dispatchable 25, and the helper subset is exactly the 7 that never return
+    dispatchable 26, and the helper subset is exactly the 7 that never return
     TOON outcomes.
     """
     abstract = set(getattr(Runtime, "__abstractmethods__", frozenset()))
-    assert len(abstract) == 32, f"Runtime method population collapsed: {len(abstract)}"
+    assert len(abstract) == 33, f"Runtime method population collapsed: {len(abstract)}"
 
     def _doc(name: str) -> str:
         return getattr(Runtime, name).__doc__ or ""
@@ -409,9 +414,9 @@ def test_every_toon_operation_documents_a_decline_path():
         )
         (toon_operations if is_operation else helpers).append(name)
 
-    # Non-vacuity: 25 dispatchable operations and 7 non-TOON helper methods.
-    assert len(toon_operations) == 25, (
-        f"Expected 25 TOON-returning operations, found {len(toon_operations)}: "
+    # Non-vacuity: 26 dispatchable operations and 7 non-TOON helper methods.
+    assert len(toon_operations) == 26, (
+        f"Expected 26 TOON-returning operations, found {len(toon_operations)}: "
         f"{toon_operations}"
     )
     assert len(helpers) == 7, f"Expected 7 non-TOON helpers, found {len(helpers)}: {helpers}"

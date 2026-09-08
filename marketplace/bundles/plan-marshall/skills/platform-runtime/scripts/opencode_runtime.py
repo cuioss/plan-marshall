@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """
-OpenCode implementation of all 25 platform-runtime operations.
+OpenCode implementation of every platform-runtime operation.
 
 OpenCode-specific behaviour:
 - Operations requiring a platform session id (session capture, session
@@ -215,6 +215,23 @@ class OpenCodeRuntime(Runtime):
         return toon_success(
             "layout bundle-cache-root",
             {"target": "opencode", "roots": roots},
+        )
+
+    # ------------------------------------------------------------------
+    # Harness operations
+    # ------------------------------------------------------------------
+
+    def harness_bash_timeout_ceiling(self) -> str:
+        """Resolve OpenCode's Bash-tool timeout ceiling.
+
+        Returns 120 seconds — the ceiling OpenCode's harness enforces on a
+        single Bash invocation (its tool-harness default). This deliberately
+        differs from the Claude ceiling: a consumer that stamps a Bash
+        ``timeout`` must be bound by the target it actually runs on.
+        """
+        return toon_success(
+            "harness bash-timeout-ceiling",
+            {"target": "opencode", "ceiling_seconds": 120},
         )
 
     # ------------------------------------------------------------------

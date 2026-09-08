@@ -61,17 +61,17 @@ Context Detection:
     wrong marketplace tree.
 
 Runtime Side-effects:
-    The generated executor writes the resolved plan_id (from ``--plan-id`` or
-    ``--audit-plan-id``) to the per-session active-plan cache at
-    ``~/.cache/plan-marshall/sessions/{session_id}/active-plan`` on every
-    invocation carrying one of those flags. The cache feeds the per-target
-    terminal-title reader (cluster-01 ``session render-title``) so the main
-    orchestration tab (cwd = repo root) renders ``pm:{phase}[:{short_description}]``
-    instead of falling through to the active-command segment. The write is
-    fire-and-forget — any
-    I/O error is silently swallowed and the executor's exit code, stdout, and
-    stderr are unaffected. The helper (``_write_active_plan``) lives entirely
-    in the template; no generator-time substitution is required.
+    The generated executor performs NO session-to-plan binding write. The
+    per-session active-plan cache at
+    ``~/.cache/plan-marshall/sessions/{session_id}/active-plan`` is owned by
+    platform-runtime: ``session_binding`` hosts the pure read/write/GC policy,
+    the ``session bind`` operation dispatches it, and the manage-status
+    phase-state-write drive seam fires it. This is the runtime home D3 was told
+    to find; the executor instead consumes the binding through the
+    platform-runtime terminal-title reader (cluster-01 ``session render-title``)
+    so the main orchestration tab (cwd = repo root) renders
+    ``pm:{phase}[:{short_description}]`` instead of falling through to the
+    active-command segment. No generator-time substitution is required.
 
 Executor-guard backstop decision (ADR-002):
     Under the move-based, cwd-pinned hermetic worktree model (ADR-002), the
@@ -147,6 +147,7 @@ from marketplace_bundles import (  # noqa: E402, I001
     resolve_bundle_path,
 )
 from marketplace_paths import get_base_path as _shared_get_base_path  # noqa: E402
+from marketplace_paths import get_project_skill_roots as _shared_get_project_skill_roots  # noqa: E402
 from file_ops import get_base_dir as _get_plan_base_dir  # noqa: E402
 from file_ops import get_tracked_config_dir as _get_tracked_config_dir  # noqa: E402
 
@@ -404,7 +405,14 @@ def discover_scripts_fallback(base_path: Path) -> dict[str, str]:
 
 def discover_local_scripts(cwd: Path | None = None) -> dict[str, str]:
     """
-    Discover scripts from .claude/skills/*/scripts/ in project root.
+    Discover project-local scripts from the active target's skill roots.
+
+    The roots come from ``marketplace_paths.get_project_skill_roots()`` — the
+    platform-runtime ``layout skill-roots`` op — rather than a hardcoded
+    ``.claude/skills`` literal, so a non-Claude target discovers from its own
+    roots. Roots are probed in list order against ``cwd`` (``~``-anchored
+    roots are expanded); the first existing root that data is consumed from
+    wins, and a target with no resolvable roots yields an empty mapping.
 
     Uses 'default-bundle:{skill}:{script}' notation — an internal key
     for collision avoidance in the SCRIPTS dict. This is not user-facing;
@@ -419,30 +427,35 @@ def discover_local_scripts(cwd: Path | None = None) -> dict[str, str]:
     if cwd is None:
         cwd = Path.cwd()
 
-    local_skills = cwd / '.claude' / 'skills'
-    if not local_skills.is_dir():
+    roots = _shared_get_project_skill_roots()
+    if not roots:
         return {}
 
     mappings: dict[str, str] = {}
 
-    for skill_dir in local_skills.iterdir():
-        if not skill_dir.is_dir() or skill_dir.name.startswith('.'):
+    for root in roots:
+        local_skills = Path(root).expanduser() if root.startswith('~') else cwd / root
+        if not local_skills.is_dir():
             continue
 
-        skill_name = skill_dir.name
-        scripts_dir = skill_dir / 'scripts'
-
-        if not scripts_dir.exists():
-            continue
-
-        # Find .py files (skip private modules starting with _)
-        for script_file in scripts_dir.glob('*.py'):
-            if script_file.name.startswith('_'):
+        for skill_dir in local_skills.iterdir():
+            if not skill_dir.is_dir() or skill_dir.name.startswith('.'):
                 continue
-            if script_file.is_file():
-                notation = f'default-bundle:{skill_name}:{script_file.stem}'
-                abs_path = str(script_file.resolve())
-                mappings[notation] = abs_path
+
+            skill_name = skill_dir.name
+            scripts_dir = skill_dir / 'scripts'
+
+            if not scripts_dir.exists():
+                continue
+
+            # Find .py files (skip private modules starting with _)
+            for script_file in scripts_dir.glob('*.py'):
+                if script_file.name.startswith('_'):
+                    continue
+                if script_file.is_file():
+                    notation = f'default-bundle:{skill_name}:{script_file.stem}'
+                    if notation not in mappings:
+                        mappings[notation] = str(script_file.resolve())
 
     return mappings
 

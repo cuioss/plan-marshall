@@ -78,14 +78,14 @@ Three independent bounds constrain a pyprojectx test run, and the pyproject oute
 
 | Bound | Where | Value | Role |
 |-------|-------|-------|------|
-| Harness Bash ceiling | `tools-file-ops/scripts/constants.HARNESS_BASH_CEILING_SECONDS` | 600 s | Hard cap on any `timeout` a Bash tool call may carry — the buffered stamp must fit under it to be passable at all |
+| Harness Bash ceiling | platform-runtime `harness bash-timeout-ceiling` op, bound per consumer as `HARNESS_BASH_CEILING_SECONDS` | 600 s on the Claude target | Hard cap on any `timeout` a Bash tool call may carry on the active target — the buffered stamp must fit under it to be passable at all |
 | Outer wrapper floor | `_pyproject_execute.PYTEST_OUTER_FLOOR_SECONDS` (fed to `ExecuteConfig.min_timeout`) | 330 s | Floor under the adaptive/learned timeout applied to the whole `./pw` subprocess |
 | Inner backstop | `pyproject.toml` `[tool.pytest.ini_options]` `timeout` | 300 s | Per-test watchdog that fails the hanging test with a traceback at the hang point |
 
 **Invariant (both halves required)**:
 
 1. `PYTEST_OUTER_FLOOR_SECONDS` (330 s) > `[tool.pytest.ini_options]` `timeout` (300 s).
-2. `PYTEST_OUTER_FLOOR_SECONDS + OUTER_TIMEOUT_BUFFER` (330 + 30 = 360 s) <= `HARNESS_BASH_CEILING_SECONDS` (600 s).
+2. `PYTEST_OUTER_FLOOR_SECONDS + OUTER_TIMEOUT_BUFFER` (330 + 30 = 360 s) <= `HARNESS_BASH_CEILING_SECONDS` (600 s on the Claude target).
 
 Half 1 protects attribution. The inner backstop is the diagnosable bound — it names the test that hung and prints its stack; the outer bound only kills the process. If the outer bound can expire first, the inner backstop is dead: every hang surfaces as an opaque outer kill with no attribution, which is exactly the failure the backstop exists to prevent. Because the outer value is adaptive (learned per command key, then floored), the floor is what guarantees the ordering — the learned value can only move the outer bound up, never below the floor.
 
@@ -104,7 +104,7 @@ Changing any of the three values requires re-checking BOTH halves. Raising the i
 | gradle | `_gradle_execute.GRADLE_OUTER_FLOOR_SECONDS` | 300 s | A cold-daemon start-up plus configuration phase being killed before the first task runs |
 | npm | `_npm_execute.NPM_OUTER_FLOOR_SECONDS` | 300 s | A cold-cache install (or an `npx` tool fetch) being killed mid-fetch |
 
-Only pyproject's floor is set by an inner-vs-outer ordering invariant; the other three are set by cold-start cost. Every one of the four additionally satisfies the shared upper bound (`floor + OUTER_TIMEOUT_BUFFER <= HARNESS_BASH_CEILING_SECONDS`), so no engine's floor alone can make its stamped bound un-passable. The shared property is that each is *declared* rather than inherited, so the floor a run enforces is readable at the engine.
+Only pyproject's floor is set by an inner-vs-outer ordering invariant; the other three are set by cold-start cost. On the Claude target, every one of the four additionally satisfies the shared upper bound (`floor + OUTER_TIMEOUT_BUFFER <= HARNESS_BASH_CEILING_SECONDS`, resolved per active target through the runtime seam), so no engine's floor alone can make its stamped bound un-passable there. That passability is TARGET-SPECIFIC, not absolute: on a target whose harness ceiling sits below `floor + OUTER_TIMEOUT_BUFFER` (the OpenCode ceiling of 120 s is below every declared floor), the same order-independent `HARNESS_BASH_CEILING_SECONDS` comparison marks the stamp `exceeds_bash_ceiling`, and the manifest routes the command to the orchestrator tier rather than emitting an un-invocable per-task verification — the fail-closed behaviour of the augmented fields, not a floor defect. The shared property is that each floor is *declared* rather than inherited, so the floor a run enforces is readable at the engine.
 
 **Resolve-stamp parity.** `architecture resolve` computes its `bash_timeout_seconds` stamp from the SAME declared floor the run enforces — `max(timeout_get(command_key, DEFAULT_BUILD_TIMEOUT), config.min_timeout) + OUTER_TIMEOUT_BUFFER` — so the recommended bound can never fall below what `execute_direct_base` will measure against. One declaration, two consumers, zero re-derivation. The derived `execution_tier` does NOT follow that floored value: it follows the MEASUREMENT, with an unmeasured command failing closed to `orchestrator`. The floor's job is to keep the stamp truthful and passable, not to decide the tier. See [`manage-architecture/standards/resolve-command.md`](../../manage-architecture/standards/resolve-command.md) § Augmented Fields for the stamp contract.
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """
-Platform router for plan-marshall — dispatches 25 operations to the correct
+Platform router for plan-marshall — dispatches 26 operations to the correct
 target implementation based on ``runtime.target`` in ``.plan/marshal.json``.
 
 Usage:
@@ -13,6 +13,7 @@ Operations:
     project install-hook    --target <target-id>  [--overwrite <key>]  [--enforcement]
     layout skill-roots      (no arguments)
     layout bundle-cache-root (no arguments)
+    harness bash-timeout-ceiling  (no arguments)
     session capture         --plan-id <id>
     session render-title    (no arguments)
     session push-title-token --plan-id <id>  [--icon <glyph>]  [--store plans|orchestrator]  [--slug <slug>]
@@ -387,6 +388,16 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
         return runtime.layout_bundle_cache_root()
 
     # ------------------------------------------------------------------
+    # harness bash-timeout-ceiling
+    # ------------------------------------------------------------------
+    if operation == "harness bash-timeout-ceiling":
+        p = argparse.ArgumentParser(
+            allow_abbrev=False, prog="platform_runtime harness bash-timeout-ceiling"
+        )
+        p.parse_args(remaining)
+        return runtime.harness_bash_timeout_ceiling()
+
+    # ------------------------------------------------------------------
     # session capture
     # ------------------------------------------------------------------
     if operation == "session capture":
@@ -696,7 +707,7 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
         "unknown_operation",
         f"Unknown operation {operation!r}; "
         "valid operations: project initial-setup, project install-hook, "
-        "layout skill-roots, layout bundle-cache-root, "
+        "layout skill-roots, layout bundle-cache-root, harness bash-timeout-ceiling, "
         "session capture, session render-title, session push-title-token, "
         "session bind, session resolve-plan, session doctor, session teardown, "
         "session reload-directive, "
@@ -720,7 +731,7 @@ def _build_operation(argv: list[str]) -> tuple[str, list[str]]:
     Operations are two-word identifiers (e.g. ``project initial-setup``).
     Some are single-hyphenated second words (``health-check``).
 
-    Supported prefix tokens: project, layout, session, permission, metrics, chat, subagent, wait, health-check.
+    Supported prefix tokens: project, layout, harness, session, permission, metrics, chat, subagent, wait, health-check.
     """
     if not argv:
         return ("", [])
