@@ -26,7 +26,7 @@ The rule fires hard errors in two branches:
 1. **`missing_implements`**: Agent has `model:` or `effort:` AND lacks `implements: plan-marshall:extension-api/standards/ext-point-dynamic-level-executor`. Either remove the hardcoded pin, or add the `implements:` declaration to opt into role-based variant emission.
 2. **`shadowing_with_implements`**: Agent declares `implements: <ext-point>` AND has `model:` or `effort:`. The build target sets these on emitted variants; the canonical must not duplicate them.
 
-**Only exception**: variant frontmatter written by the build target into `target/claude/{bundle}/agents/{name}-{level}.md`. The doctor's source-of-truth scan path is rooted at `marketplace/bundles/`; the rule's file-path check exempts anything under `target/claude/`.
+**Only exception**: variant frontmatter written by the build target into the active target's build-output directory (`target/{target}/` — e.g. `target/claude/{bundle}/agents/{name}-{level}.md`). The doctor's source-of-truth scan path is rooted at `marketplace/bundles/`; the rule's file-path check exempts anything under the active target's build-output prefix.
 
 **Bloat thresholds** (component-type specific):
 

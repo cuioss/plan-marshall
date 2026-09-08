@@ -30,7 +30,7 @@ Each hit carries its `module`, `category` and `path`, so the sweep reports which
 
 ### Step 2: Identify actual tool invocations
 
-Pattern table — these are the canonical invocation signals to recognise:
+Pattern table — these are the canonical invocation signals to recognise. The tool **vocabulary** is the Claude tool set declared as data in `_analyze_allowed_tools_drift.py::_KNOWN_TOOLS` (the single source the doctor's analyzers share); the table below adds the workflow-level invocation signals (`SlashCommand`, `WebSearch`, `TodoWrite`) that semantic coverage analysis recognises beyond the body-invocation detection set.
 
 | Tool | Invocation patterns |
 |------|---------------------|
