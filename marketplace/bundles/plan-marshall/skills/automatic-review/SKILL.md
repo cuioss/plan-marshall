@@ -1322,9 +1322,10 @@ Five inputs decide whether the PR is evidence at all, and every absent one fails
   (`gate_state_unsubstantiated`). A red gate excludes too, as `gates_not_green`: nothing escaped a
   gate that had not passed.
 - `--gate-head-sha` and `--reviewed-head-sha` — the tree the gates CERTIFIED and the tree review
-  REVIEWED. They must be supplied and must MATCH. ⚠ They routinely will not: `finalize-step-simplify`
-  (`order: 8`) and `finalize-step-security-audit` (`order: 9`) are `mutates_source: true` and run
-  between the gates and review, and a forward pass never returns to order 5 to re-gate their edits. A
+  REVIEWED. They must be supplied and must MATCH. ⚠ They routinely will not, because source-mutating
+  steps run between the gates and review and a forward pass never returns to re-gate their edits.
+  WHICH steps those are, and on what declared fact their membership rests, is stated once in the
+  governing contract cited above — § "The review-versus-gate delta" — and is not restated here. A
   mismatch is `gates_did_not_cover_reviewed_tree` and an absent SHA is `gate_tree_unsubstantiated` —
   both honest exclusions, not failures of the caller.
 - `--enabled-bots` — the coverage DENOMINATOR (`required_bots ∪ optional_bots`). An empty roster is

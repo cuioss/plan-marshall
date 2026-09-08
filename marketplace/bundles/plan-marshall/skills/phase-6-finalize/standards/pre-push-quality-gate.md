@@ -5,7 +5,7 @@ lane:
 name: default:pre-push-quality-gate
 description: Run quality-gate per affected bundle then one whole-tree quality-gate, then whole-tree test-compile, then gate whole-tree module-tests on scoped-vs-whole-tree divergence risk, as the last gate before push
 order: 5
-mutates_source: false
+mutates_source: true
 head_dependent: true
 reads:
   - worktree
@@ -17,7 +17,7 @@ implements: plan-marshall:extension-api/standards/ext-point-finalize-step
 
 # Pre-Push Quality Gate
 
-Pure executor for the `pre-push-quality-gate` finalize step. Runs three guards once per plan, immediately before `default:push` (`order: 11`): (1) `quality-gate` (mypy + ruff over production sources) once per unique bundle derived from the plan's live footprint (the `compute-footprint` query against the worktree), **followed by one whole-tree `quality-gate`**, (2) a whole-tree **`test-compile`** (mypy over `test/`), and (3) a whole-tree **module-tests (pytest) gate** that escalates to a whole-tree run only when the footprint risks a scoped-green / whole-tree-red divergence. This is the deterministic last-line guard against type/lint AND cross-module test regressions reaching remote CI — converting soft "consider quality-gate" guidance into a hard precondition for push.
+Pure executor for the `pre-push-quality-gate` finalize step — *pure* in this contract's sense of carrying no LLM judgment and running only the project's own resolved commands, **not** in the sense of leaving the worktree untouched. The step declares `mutates_source: true`: a project whose resolved `quality-gate` auto-fixes tracked files leaves those edits behind when the step returns, and the dispatcher's item-5f commit instrumentation is what commits them — owned by [`../SKILL.md`](../SKILL.md) Step 3 item 5f, and reached through the `commit_message` this step returns on Branch A. `default:finalize-step-sync-baseline` (`order: 3`) is a pure executor of the same shape. Runs three guards once per plan, immediately before `default:push` (`order: 11`): (1) `quality-gate` (mypy + ruff over production sources) once per unique bundle derived from the plan's live footprint (the `compute-footprint` query against the worktree), **followed by one whole-tree `quality-gate`**, (2) a whole-tree **`test-compile`** (mypy over `test/`), and (3) a whole-tree **module-tests (pytest) gate** that escalates to a whole-tree run only when the footprint risks a scoped-green / whole-tree-red divergence. This is the deterministic last-line guard against type/lint AND cross-module test regressions reaching remote CI — converting soft "consider quality-gate" guidance into a hard precondition for push.
 
 The three-guard order — quality-gate (per-bundle, then whole-tree) → test-compile → module-tests — is the order `build.py:cmd_verify` uses on the CI path. Matching it is the point: the gate is only a useful pre-push proxy for CI if it runs the same checks in the same sequence.
 
@@ -556,6 +556,16 @@ run, under the governing rule, and size it the same way. The variants above are 
 that rule, not an enumeration of the paths that can reach Branch A.
 
 The persisted `head_at_completion` field is consumed by phase-6-finalize Step 3's resumable re-entry check: when the worktree HEAD has advanced past `{sha}` (typically because `automated-review` or `sonar-roundtrip` opened a loop-back fix-task that produced a new commit), the dispatcher re-fires this gate against the newer HEAD. See § "Verdict-input surface — deliberately undeclared" above for why the verdict-currency classifier never narrows that re-fire for THIS gate.
+
+Return a `commit_message` element in this step's return TOON so the dispatcher's item-5f commit instrumentation uses it when committing whatever this gate's own `quality-gate` arms auto-fixed in the worktree. The condition under which that commit fires, and what it sweeps into it, is owned by [`../SKILL.md`](../SKILL.md) Step 3 item 5f(a)-(c) — read it there; it is not restated here:
+
+```toon
+status: done
+display_detail: "{the Branch A default string, or whichever detail variant above applies}"
+commit_message: "chore(quality-gate): apply pre-push auto-fixes in {plan_id}"
+```
+
+**The `commit_message` is authored on Branch A only, and that is deliberate.** Item 5f fires only after the step has recorded a terminal `done`/`skipped` outcome (see [`../SKILL.md`](../SKILL.md) Step 3 item 5f), and Branch B below records `outcome=failed`, so 5f never runs on that path and a `commit_message` there would be an unreachable return. The scoping is convergent, not lossy: a red gate that had already auto-fixed leaves the tree dirty and halts finalize, the dispatcher retries the `failed` record on re-entry, the gate re-runs green against the already-fixed tree, and 5f commits the fixes then — carrying this same message off Branch A.
 
 **Branch B — at least one arm returned `status: error`: a bundle's quality-gate, the whole-tree quality-gate, test-compile, or the module-tests gate**:
 

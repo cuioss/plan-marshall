@@ -16,15 +16,18 @@ per-finding attribution needed. That is why the signal arrives free on every PR
 rather than needing a bespoke corpus.
 
 **But "the gates passed" is not the same claim as "the gates saw this tree", and
-the difference is not hypothetical here.** Two ``mutates_source: true`` steps run
-BETWEEN the gates and review — ``finalize-step-simplify`` (``order: 8``) and
-``finalize-step-security-audit`` (``order: 9``) — and the dispatcher's re-entry
-check (``phase-6-finalize/SKILL.md`` Step 3 item 1) only re-fires a step the loop
-REACHES. A forward pass runs 5 → 7 → 8 → 9 → 11 → 20 → 30 monotonically and never
-returns to order 5, so lines those two steps introduce reach the reviewer having
-never been gated. Counting a finding on such a line as a gate escape would
-attribute to the gates a miss they were never given the chance to make, and would
-bias the share in an unknown direction.
+the difference is not hypothetical here.** Source-mutating steps run BETWEEN the
+gates and review — ``finalize-step-simplify`` (``order: 8``) and
+``finalize-step-security-audit`` (``order: 9``), and the gate itself (``order: 5``),
+whose own item-5f commit lands after the tree it just certified — and the
+dispatcher's re-entry check (``phase-6-finalize/SKILL.md`` Step 3 item 1) only
+re-fires a step the loop REACHES. A forward pass runs 5 → 7 → 8 → 9 → 11 → 20 → 30
+monotonically and never returns to order 5, so lines those steps introduce reach
+the reviewer having never been gated. No count is pinned here: membership is
+whatever each step's declared ``mutates_source`` makes it, so a step that declares
+the fact later is covered by its own declaration. Counting a finding on such a line
+as a gate escape would attribute to the gates a miss they were never given the
+chance to make, and would bias the share in an unknown direction.
 
 The escape claim therefore rests on THREE inputs, each of which fails closed:
 
@@ -166,10 +169,13 @@ _PROVENANCE = (
     'reviewed_head_sha — counted per the counting rule in '
     'automatic-review/standards/bot-participation-contract.md; the reviewed-at-all '
     'set is review_completeness\'s _REVIEWED_STATES, supplied by the caller. '
-    'SELECTION EFFECT: on the current finalize step ordering, finalize-step-simplify '
-    '(order 8) and finalize-step-security-audit (order 9) mutate source after the '
-    'gates (5, 7) and a forward pass never re-gates their edits, so the ONLY '
-    'measurable PRs are those where neither step committed anything. That is a '
+    'SELECTION EFFECT: on the current finalize step ordering, any step a forward '
+    'pass reaches at or after the gates whose declaration says mutates_source can '
+    'land commits the gates never re-ran over — the gate step\'s own item-5f commit '
+    'included, since it lands after the tree it just certified — so the ONLY '
+    'measurable PRs are those where no such step committed anything. Membership is '
+    'whatever those declarations make it and is deliberately not enumerated here, so '
+    'a step that declares the fact later is covered by its own declaration. That is a '
     'biased population, not a random sample, and few measurements will accumulate '
     'until the gate re-fires after those steps'
 )
@@ -569,11 +575,11 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             'The tree the gates CERTIFIED — the head_at_completion the '
             'pre-push-quality-gate step recorded. Must equal --reviewed-head-sha: '
-            'two mutates_source steps (finalize-step-simplify order 8, '
-            'finalize-step-security-audit order 9) run between the gates and review '
-            'on an ordinary forward pass, so a differing SHA means the reviewer saw '
-            'lines the gates never did. Omitting it excludes the PR — an absent SHA '
-            'is not evidence of sameness.'
+            'every step declaring mutates_source that a forward pass reaches at or '
+            'after the gates can commit between certification and review — the gate '
+            'step\'s own item-5f commit included — so a differing SHA means the '
+            'reviewer saw lines the gates never did. Omitting it excludes the PR — an '
+            'absent SHA is not evidence of sameness.'
         ),
     )
     assess.add_argument(
