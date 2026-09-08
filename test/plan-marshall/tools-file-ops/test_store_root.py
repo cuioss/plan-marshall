@@ -75,11 +75,11 @@ class TestOrchestratorStore:
 
 #: ``{the id naming the case: the rejected store value}``. Two of these rows are
 #: unreadable as pytest names them: the empty string renders as nothing at all,
-#: and the trailing space on ``'orchestrator '`` is invisible in a report — so the
-#: two rows that carry the sharpest distinctions (a registered name in the wrong
-#: case, and one with stray whitespace) are exactly the two the generated ids
-#: cannot show. The ids are therefore stated, and drawn from this mapping's own
-#: keys so a reorder carries each name along with its value.
+#: and the trailing space on ``'orchestrator '`` is invisible in a report — so
+#: those two rows, whose whole distinction is a character a report swallows, are
+#: exactly the ones the generated ids cannot show. The ids are therefore stated,
+#: and drawn from this mapping's own keys so a reorder carries each name along
+#: with its value.
 _UNKNOWN_STORE_VALUES = {
     'an-unregistered-store-name-archive': 'archive',
     'an-unregistered-store-name-lessons': 'lessons',

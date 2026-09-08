@@ -250,7 +250,7 @@ _SYNTHETIC = 'no structured errors were parsed'
 
 
 #: ``(extra result keys, parser, fragments stdout must carry, fragments it must
-#: NOT)``. The three rows that keep the synthetic row are the matched controls,
+#: NOT)``. The two rows that keep the synthetic row are the matched controls,
 #: and they are what make the rest of the table mean anything: the synthetic row
 #: is the status/``errors[]`` contradiction guard, and the carry narrows WHEN it
 #: fires without removing it. An empty carry is not a carry — the routed log held

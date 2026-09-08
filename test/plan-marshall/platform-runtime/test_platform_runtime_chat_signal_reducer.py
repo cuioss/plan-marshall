@@ -95,7 +95,7 @@ _MARKER_ORACLE = (
 #: operator-authored and carries content, so an empty one, a whitespace-only one
 #: (both tool-result placeholders) and an injected skill body are all dropped;
 #: an ``assistant`` turn is kept only when it carries a decision marker. The last
-#: two rows are the roles the predicate recognises at all — a marker on a
+#: two rows are roles the predicate does not recognise at all — a marker on a
 #: non-participating role does not buy retention.
 _SIGNAL_BEARING_CASES = [
     ('user', 'please rename the module', True),
