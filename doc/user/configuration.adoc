@@ -208,11 +208,13 @@ These two are also **not** one of the four optional finalize checks. That set is
 Seven pause points are evidence-triggered rather than configured — there is nothing to flip, because each fires only when a specific condition is detected:
 
 * Plan-directory collision, lesson-source obsolescence, sibling collision, and build-server daemon-down (all in `phase-1-init`).
-* The sync-baseline prompt, the branch-cleanup re-review prompt, and the branch-cleanup user-confirmation gate.
+* The sync-baseline prompt, the branch-cleanup re-review prompt, and the branch-cleanup local tidy-up confirmation.
 
 They are listed here so that an absent setting reads as deliberate rather than as an omission from the table above.
 
 The sync-baseline prompt appears here *and* carries an `auto_rebase_threshold` row in the table above without contradiction: the setting decides only whether the **auto-proceed** arm bypasses the prompt, while a genuine content conflict prompts unconditionally at every threshold. That unconditional arm is the pause point listed here.
+
+The branch-cleanup entry is the *local tidy-up* confirmation — the question asking whether your feature branch has been pushed, raised before the local copy of that branch is deleted, and only on projects that open and merge their own pull requests so finalize has no merge of its own to make. It is **not** the pre-merge merge confirmation, which is configured by `final_merge_without_asking` and carries its own row in the table above.
 
 The skill-domain detector is adjacent to this family but out of scope for this census: it is owned separately and is not a run-halting gate.
 
