@@ -36,6 +36,7 @@ FIXTURES_DIR = Path(__file__).parent / 'fixtures'
 
 # Direct imports for Tier 2 testing
 import cmd_generate as _cmd_generate_mod  # noqa: E402
+import cmd_validate as _cmd_validate_mod  # noqa: E402
 from cmd_generate import cmd_generate  # noqa: E402
 from cmd_validate import cmd_validate  # noqa: E402
 
@@ -117,6 +118,34 @@ def test_validate_agent_missing_tools():
         data = cmd_validate(args)
         assert data['valid'] is False
         assert any(e['field'] == 'tools' for e in data['errors'])
+        Path(f.name).unlink()
+
+
+def test_validate_agent_task_prohibition_binds_on_claude(monkeypatch):
+    """On Claude the Task-tool prohibition is an error (agent-task-tool-prohibited)."""
+    monkeypatch.setattr(_cmd_validate_mod, 'resolve_runtime_target', lambda: 'claude')
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
+        f.write('---\nname: task-agent\ndescription: Uses Task\ntools: Read, Task\n---\n\n# Task Agent\n')
+        f.flush()
+        args = _ns(_VALIDATE_NS, file=f.name, type='agent')
+        data = cmd_validate(args)
+        assert any(e['type'] == 'prohibited_tool' for e in data['errors']), (
+            f'Claude must flag the Task tool, got: {data["errors"]}'
+        )
+        Path(f.name).unlink()
+
+
+def test_validate_agent_task_prohibition_does_not_bind_on_opencode(monkeypatch):
+    """On OpenCode the task tool exists, so the Claude rule-pack prohibition is silent."""
+    monkeypatch.setattr(_cmd_validate_mod, 'resolve_runtime_target', lambda: 'opencode')
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
+        f.write('---\nname: task-agent\ndescription: Uses Task\ntools: Read, Task\n---\n\n# Task Agent\n')
+        f.flush()
+        args = _ns(_VALIDATE_NS, file=f.name, type='agent')
+        data = cmd_validate(args)
+        assert not any(e['type'] == 'prohibited_tool' for e in data['errors']), (
+            f'OpenCode must not flag the Task tool, got: {data["errors"]}'
+        )
         Path(f.name).unlink()
 
 
