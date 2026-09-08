@@ -797,3 +797,34 @@ class TestPermissionDslDeclinesOnNonClaude:
         )
 
         self._assert_declines(result)
+
+    def test_apply_project_step_permissions_declines_on_opencode(self, monkeypatch, tmp_path):
+        """apply-project-step-permissions on a non-Claude target returns a no-op, not Skill(...) rules."""
+        marshal_file = tmp_path / 'marshal.json'
+        marshal_file.write_text(json.dumps({'plan': {'phase-6-finalize': {'steps': ['project:finalize-step-plugin-doctor']}}}))
+        settings_file = tmp_path / 'settings.json'
+        _write_settings(settings_file, [])
+
+        self._force_opencode(monkeypatch)
+
+        result = pf.cmd_apply_project_step_permissions(
+            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'apply-project-step-permissions', '--marshal', str(marshal_file), '--settings', str(settings_file), '--dry-run')
+        )
+
+        self._assert_declines(result)
+
+    def test_remove_redundant_propagates_skipped_on_opencode(self, monkeypatch, tmp_path):
+        """remove-redundant on a non-Claude target propagates the skipped third state, not success."""
+        global_file = tmp_path / 'global.json'
+        local_file = tmp_path / 'local.json'
+        _write_settings(global_file, ['Read(src/**)'])
+        _write_settings(local_file, ['Read(src/**)'])
+
+        self._force_opencode(monkeypatch)
+
+        result = pf.cmd_remove_redundant(
+            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'remove-redundant', '--global-settings', str(global_file), '--local-settings', str(local_file))
+        )
+
+        assert result.get('status') == 'skipped'
+        assert 'redundant' not in result

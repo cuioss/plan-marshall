@@ -616,7 +616,7 @@ def cmd_remove_redundant(args: argparse.Namespace) -> dict:
     detect_args = argparse.Namespace(scope=None, global_settings=global_path, local_settings=local_path)
     detection = cmd_detect_redundant(detect_args)
 
-    if detection.get('status') == 'error':
+    if detection.get('status') in ('error', 'skipped'):
         return detection
 
     redundant = detection.get('redundant', [])
@@ -715,6 +715,9 @@ def cmd_apply_project_step_permissions(args: argparse.Namespace) -> dict:
     Skill({skill}) allow rules, then appends the missing entries to the allow
     list (sorted). Supports --dry-run to preview without writing.
     """
+    if not is_claude_target():
+        return _decline_non_claude('apply-project-step-permissions')
+
     marshal_config, marshal_error = load_marshal_config(args.marshal)
     if marshal_error:
         return {'status': 'error', 'error': marshal_error}

@@ -66,7 +66,7 @@ On a platform with no validated permission backend (e.g. OpenCode), each op retu
 
 These operations have no `platform-runtime` permission op; they run on `permission_fix` directly, addressed by `--scope` / `--target` so no literal settings path appears in the call.
 
-⚠️ **The platform-routed ops in the table above honour the active target; the executor-pattern ops below do not route through a `platform-runtime` permission op.** They run on `permission_fix` directly and address a concrete settings file by `--settings` / `--scope`. Settings-path resolution flows through `permission_common`, which now routes via the runtime registry (`_active_runtime` → `_runtime_for_target`): on a platform without a validated permission backend the path resolution declines rather than silently writing a Claude-shaped file.
+⚠️ **The platform-routed ops in the table above honour the active target; the executor-pattern ops below do not route through a `platform-runtime` permission op.** They run on `permission_fix` directly and address a concrete settings file by `--settings` / `--scope`. Each op that renders or parses the Claude permission DSL (`apply-project-step-permissions`, `apply-fixes`, `consolidate`, `ensure-wildcards`, `generate-wildcards`, `ensure-executor`, `cleanup-scripts`, `migrate-executor`) resolves the active target at the subcommand boundary and, on a platform without a validated permission backend (e.g. OpenCode), returns an honest `no-op` naming that the Claude permission grammar does not apply — never Claude-shaped DSL or a fabricated success.
 
 ### apply-project-step-permissions — Add Skill() rules for project: steps
 
