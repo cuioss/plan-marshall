@@ -7,7 +7,7 @@ mode: script-executor
 
 # Platform Runtime Skill
 
-Script-based platform abstraction that routes 25 goal-based operations to the correct target implementation. Follows the `tools-integration-ci` pattern: one router script, target-specific provider classes, static routing via `marshal.json`.
+Script-based platform abstraction that routes 26 goal-based operations to the correct target implementation. Follows the `tools-integration-ci` pattern: one router script, target-specific provider classes, static routing via `marshal.json`.
 
 ## Enforcement
 
@@ -31,7 +31,7 @@ The exit-code contract for every `python3 .plan/execute-script.py` call in this 
 
 ## What This Skill Provides
 
-Twenty-five operations covering the full platform lifecycle:
+Twenty-six operations covering the full platform lifecycle:
 
 | Operation | Purpose |
 |-----------|---------|

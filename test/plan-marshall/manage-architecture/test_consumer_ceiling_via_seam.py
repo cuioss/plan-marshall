@@ -18,6 +18,10 @@ Both MUST follow the ACTIVE TARGET: patching ``_runtime_for_target`` to yield
 the OpenCode runtime (ceiling 120 s) and re-importing must make each module
 observe 120 — not the Claude default 600. These tests would turn red the moment
 a consumer hard-codes the number instead of going through the seam.
+
+The op's allowed ``status: no-op`` response (a target enforcing no ceiling) must
+also be honoured: the bound name becomes ``None``, no stamp ever exceeds it, and
+the CI-wait clamp loses its upper bound.
 """
 
 from __future__ import annotations
@@ -25,7 +29,7 @@ from __future__ import annotations
 import platform_runtime
 import pytest
 from platform_runtime import ClaudeRuntime, OpenCodeRuntime
-from toon_parser import parse_toon
+from toon_parser import parse_toon, serialize_toon
 
 from conftest import load_script_module
 
@@ -110,3 +114,44 @@ def test_ci_wait_clamp_tracks_opencode_via_seam(monkeypatch):
     )
     assert mod.HARNESS_BASH_CEILING_SECONDS == 120
     assert mod._MAX_INNER_WAIT_SECONDS == 120 - 30 - 1
+
+
+# ---------------------------------------------------------------------------
+# no-ceiling target — the op's allowed ``status: no-op`` response
+# ---------------------------------------------------------------------------
+
+
+class _NoCeilingRuntime:
+    """Stub runtime whose ceiling op honours the allowed no-op response."""
+
+    def harness_bash_timeout_ceiling(self) -> str:
+        return serialize_toon({
+            'status': 'no-op',
+            'operation': 'harness bash-timeout-ceiling',
+            'reason': 'Target enforces no harness time ceiling',
+            'alternative': 'Use the stamped timeout unchanged',
+        })
+
+
+def test_arch_never_exceeds_a_nonexistent_ceiling(monkeypatch):
+    """A ``no-op`` ceiling is ``None``: no stamp can exceed it."""
+    mod = _patched_module(
+        monkeypatch, 'plan-marshall', 'manage-architecture', '_cmd_client_build.py',
+        '_cmd_client_build_seam_noop', _NoCeilingRuntime(),
+    )
+    assert mod.HARNESS_BASH_CEILING_SECONDS is None
+    fields = mod._compute_execution_tier_fields(999999, measured=True)
+    assert fields['exceeds_bash_ceiling'] is False
+    assert fields['execution_tier'] == 'per_task'
+
+
+def test_ci_wait_clamp_disabled_when_target_has_no_ceiling(monkeypatch):
+    """A ``no-op`` ceiling disables the upper clamp; the lower bound stays."""
+    mod = _patched_module(
+        monkeypatch, 'plan-marshall', 'phase-6-finalize', 'ci_complete_precondition.py',
+        '_ci_complete_precondition_seam_noop', _NoCeilingRuntime(),
+    )
+    assert mod.HARNESS_BASH_CEILING_SECONDS is None
+    assert mod._MAX_INNER_WAIT_SECONDS is None
+    assert mod._clamp_wait_ceiling(999999) == 999999
+    assert mod._clamp_wait_ceiling(0) == 1

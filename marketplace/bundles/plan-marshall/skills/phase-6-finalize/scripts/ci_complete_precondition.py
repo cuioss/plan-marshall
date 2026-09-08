@@ -166,23 +166,31 @@ DEFAULT_CI_WAIT_TIMEOUT_SECONDS: int = 600
 CI_WAIT_OUTER_BUFFER_SECONDS: int = 30
 
 
-def _resolve_harness_bash_ceiling() -> int:
+def _resolve_harness_bash_ceiling() -> int | None:
     """Resolve the active target's Bash-tool timeout ceiling via the runtime seam.
 
     The value is fixed for the lifetime of a process (the target is fixed by
-    ``marshal.json``), so it is resolved once at import time.
+    ``marshal.json``), so it is resolved once at import time. A target whose
+    op reports ``status: no-op`` imposes NO ceiling; ``None`` marks that state
+    so the upper clamp is disabled.
     """
     parsed = parse_toon(_runtime_for_target().harness_bash_timeout_ceiling())
+    if parsed.get('status') == 'no-op':
+        return None
     return int(parsed['ceiling_seconds'])
 
 
-HARNESS_BASH_CEILING_SECONDS = _resolve_harness_bash_ceiling()
+#: The active target's ceiling; ``None`` means the target imposes none.
+HARNESS_BASH_CEILING_SECONDS: int | None = _resolve_harness_bash_ceiling()
 
 #: The largest inner ceiling for which ``inner + CI_WAIT_OUTER_BUFFER_SECONDS``
-#: is still STRICTLY below the active target's per-call Bash ceiling.
+#: is still STRICTLY below the active target's per-call Bash ceiling; ``None``
+#: when the target imposes no ceiling (clamp disabled above).
 #: Derived, never hard-coded, so it tracks the runtime-provided value.
-_MAX_INNER_WAIT_SECONDS: int = (
-    HARNESS_BASH_CEILING_SECONDS - CI_WAIT_OUTER_BUFFER_SECONDS - 1
+_MAX_INNER_WAIT_SECONDS: int | None = (
+    None
+    if HARNESS_BASH_CEILING_SECONDS is None
+    else HARNESS_BASH_CEILING_SECONDS - CI_WAIT_OUTER_BUFFER_SECONDS - 1
 )
 
 #: Cache file path relative to the plan directory.
@@ -224,6 +232,10 @@ def _clamp_wait_ceiling(inner_seconds: int) -> int:
     explicit ``--timeout 0`` or a corrupt negative persisted ``ci:wait`` value
     would crash the resolution instead of degrading to a bounded wait.
 
+    When the active target imposes NO ceiling (``_MAX_INNER_WAIT_SECONDS`` is
+    ``None``), the upper clamp is disabled: the requested value is bounded from
+    below only, per the contract's allowed ``no-op`` response.
+
     Args:
         inner_seconds: The requested inner ceiling, from any origin — an
             explicit ``--timeout``, the persisted ``ci:wait`` learned value, or
@@ -233,6 +245,8 @@ def _clamp_wait_ceiling(inner_seconds: int) -> int:
         The requested value when it already fits within both bounds, otherwise
         the nearest inner ceiling that does.
     """
+    if _MAX_INNER_WAIT_SECONDS is None:
+        return max(1, inner_seconds)
     return max(1, min(inner_seconds, _MAX_INNER_WAIT_SECONDS))
 
 

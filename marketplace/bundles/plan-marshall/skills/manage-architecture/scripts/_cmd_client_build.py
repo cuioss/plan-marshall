@@ -90,17 +90,22 @@ _BUILD_NOTATIONS: dict[str, str] = {
 # instead of emitting them as per-task verification.
 
 
-def _resolve_harness_bash_ceiling() -> int:
+def _resolve_harness_bash_ceiling() -> int | None:
     """Resolve the active target's Bash-tool timeout ceiling via the runtime seam.
 
     The value is fixed for the lifetime of a process (the target is fixed by
-    ``marshal.json``), so it is resolved once at import time.
+    ``marshal.json``), so it is resolved once at import time. A target whose
+    op reports ``status: no-op`` imposes NO ceiling; ``None`` marks that state
+    so a nonexistent ceiling is never exceeded.
     """
     parsed = parse_toon(_runtime_for_target().harness_bash_timeout_ceiling())
+    if parsed.get('status') == 'no-op':
+        return None
     return int(parsed['ceiling_seconds'])
 
 
-HARNESS_BASH_CEILING_SECONDS = _resolve_harness_bash_ceiling()
+#: The active target's ceiling; ``None`` means the target imposes none.
+HARNESS_BASH_CEILING_SECONDS: int | None = _resolve_harness_bash_ceiling()
 
 # Pinned recognition phrases — the numeric value the LLM needs is in
 # ``bash_timeout_seconds``; the hint is a recognition token, not human prose.
@@ -392,7 +397,10 @@ def _compute_execution_tier_fields(bash_timeout_seconds: int, measured: bool) ->
     that contradicts its own tier. Hint strings are pinned recognition tokens
     consumers match on; see module docstring.
     """
-    exceeds = bash_timeout_seconds > HARNESS_BASH_CEILING_SECONDS
+    exceeds = (
+        HARNESS_BASH_CEILING_SECONDS is not None
+        and bash_timeout_seconds > HARNESS_BASH_CEILING_SECONDS
+    )
     tier = 'per_task' if (measured and not exceeds) else 'orchestrator'
     if exceeds:
         hint = _HINT_ORCHESTRATOR
