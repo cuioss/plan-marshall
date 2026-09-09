@@ -361,6 +361,18 @@ known-first-party = ["marketplace"]
 
 [tool.ruff.format]
 quote-style = "single"
+# Markdown is EXCLUDED from the formatter deliberately. Current ruff formats
+# Python code blocks embedded in `.md`, and this corpus's documentation aligns
+# trailing comments into columns for readability:
+#
+#     tool_name: str           # e.g., "maven", "gradle"
+#     wrapper_names: list      # e.g., ["mvnw", "./mvnw"]
+#
+# The formatter collapses that to a single space before each `#`, which is a
+# readability regression in prose, not a normalisation of source. Measured on
+# the full tree: 36 markdown files, +593/-494, none of it source code. Lint
+# still covers the Python paths; only the formatter is scoped away from docs.
+exclude = ["*.md"]
 
 [tool.mypy]
 python_version = "3.12"
