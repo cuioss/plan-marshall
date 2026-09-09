@@ -19,6 +19,7 @@ from _config_core import (
 from _config_defaults import get_default_config, stamp_provisioning_fields
 from _manifest_lanes import LANE_TIERS, _effective_lane_tier, _read_frontmatter_lane
 from _manifest_validation import _REPO_ROOT, _is_external_step, _resolve_standards_path
+from command_forms import STEWARD_COMMAND
 from marketplace_paths import resolve_project_skill_path
 
 # Retired step keys and their canonical replacements. Each entry maps a step id
@@ -434,7 +435,7 @@ def cmd_sync_defaults(args) -> dict:
     ``build.map`` untouched.
     """
     if not is_initialized():
-        return error_exit('marshal.json not found. Run command /marshall-steward first')
+        return error_exit(f'marshal.json not found. Run command {STEWARD_COMMAND} first')
 
     live = load_config()
     defaults = get_default_config()

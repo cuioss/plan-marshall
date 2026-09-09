@@ -56,6 +56,8 @@ from typing import Any
 
 import pretooluse_gate as gate
 
+from command_forms import STEWARD_COMMAND, SYNC_PLUGIN_CACHE_COMMAND
+
 # =============================================================================
 # Rule-matcher constants — enforcement-only knowledge that lives in this leaf.
 # (Payload-field knowledge lives in pretooluse_gate; these constants describe
@@ -170,7 +172,7 @@ _R2_REASON = (
 )
 _R3_REASON = (
     "plan-marshall: never edit the generated .plan/execute-script.py — "
-    "regenerate it via /sync-plugin-cache + /marshall-steward."
+    f"regenerate it via {SYNC_PLUGIN_CACHE_COMMAND} + {STEWARD_COMMAND}."
 )
 _R4_REASON = (
     "plan-marshall: never hard-code build commands (./pw, mvn, npm, gradle) — "

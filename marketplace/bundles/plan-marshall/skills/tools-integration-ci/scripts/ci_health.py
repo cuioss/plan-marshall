@@ -25,6 +25,7 @@ from pathlib import Path
 
 from _providers_core import _system_auth_succeeded, combine_auth_output
 from ci_base import run_cli, safe_main, serialize_toon
+from command_forms import STEWARD_COMMAND
 
 # Tool definitions: {tool: requires_auth}
 # Note: python3 not checked - if it wasn't available, this script couldn't run
@@ -364,7 +365,7 @@ def cmd_verify_all(args: argparse.Namespace) -> dict:
 
     marshal_path = get_marshal_path()
     if not marshal_path.exists():
-        return {'status': 'error', 'error': f'marshal.json not found at {marshal_path}. Run /marshall-steward first.'}
+        return {'status': 'error', 'error': f'marshal.json not found at {marshal_path}. Run {STEWARD_COMMAND} first.'}
 
     provider_result = detect_provider()
 

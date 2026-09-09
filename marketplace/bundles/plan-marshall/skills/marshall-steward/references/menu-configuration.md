@@ -310,7 +310,7 @@ If yes, apply fixes:
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fix apply-project-step-permissions \
   --marshal .plan/marshal.json \
-  --settings .claude/settings.json
+  --scope project
 ```
 
 **Finalize steps** (phase-6-finalize): preset-first, with a Custom escape hatch. Present the finalize-step preset picker BEFORE the per-step `list-finalize-steps` / `set-steps` multi-select, mirroring the single-AskUserQuestion preset-picker pattern documented in [effort-menu.md](../standards/effort-menu.md) (do not inline-copy that flow — the normative contract lives there). The three preset descriptions are sourced verbatim from `FinalizeStepPresets.describe(name)` (`finalize_step_presets.py`), and the Custom option falls through to the existing per-step multi-select.

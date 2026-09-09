@@ -39,6 +39,7 @@ from file_ops import (
     get_temp_dir,
     output_toon,
 )
+from command_forms import STEWARD_COMMAND
 from marketplace_paths import NO_PLAN_SENTINEL
 
 # Configuration — delegate to file_ops for consistent path resolution.
@@ -84,7 +85,7 @@ def get_retention_settings() -> dict[str, Any] | None:
             {
                 'status': 'error',
                 'error': 'file_not_found',
-                'message': 'marshal.json not found. Run command /marshall-steward first',
+                'message': f'marshal.json not found. Run command {STEWARD_COMMAND} first',
             }
         )
         return None
@@ -100,7 +101,7 @@ def get_retention_settings() -> dict[str, Any] | None:
             {
                 'status': 'error',
                 'error': 'missing_config',
-                'message': 'system.retention not configured. Run command /marshall-steward first',
+                'message': f'system.retention not configured. Run command {STEWARD_COMMAND} first',
             }
         )
         return None

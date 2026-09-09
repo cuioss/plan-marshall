@@ -46,6 +46,7 @@ from ci_base import (
     safe_main,
     set_default_cwd,
 )
+from command_forms import STEWARD_COMMAND
 
 # ``extract_project_dir`` is kept as a re-export for backward compatibility
 # with tests and external callers that imported it from ``ci`` directly.
@@ -131,7 +132,7 @@ def main() -> int:
 
     provider = get_provider()
     if not provider:
-        return output_error('router', 'CI provider not configured. Run /marshall-steward first.')
+        return output_error('router', f'CI provider not configured. Run {STEWARD_COMMAND} first.')
 
     # Dynamic import via executor PYTHONPATH — provider scripts use
     # {provider}_ops.py naming convention to avoid module collisions

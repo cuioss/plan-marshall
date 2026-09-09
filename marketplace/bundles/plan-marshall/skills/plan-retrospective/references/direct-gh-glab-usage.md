@@ -1,6 +1,6 @@
 # Aspect: Direct gh/glab Usage (Surfaces A+B)
 
-Detect CI-abstraction leaks where the GitHub CLI (`gh`) or GitLab CLI (`glab`) is invoked directly — bypassing the `plan-marshall:tools-integration-ci:ci` abstraction — across the plan's logs and the plan's diff. Direct usage is a hard-rule violation documented in `CLAUDE.md` under *Workflow Discipline → CI operations: use abstraction layer*.
+Detect CI-abstraction leaks where the GitHub CLI (`gh`) or GitLab CLI (`glab`) is invoked directly — bypassing the `plan-marshall:tools-integration-ci:ci` abstraction — across the plan's logs and the plan's diff. Direct usage is a hard-rule violation owned by `tools-integration-ci/standards/architecture.md` (the CI-abstraction contract; also stated in the repository's Workflow Discipline under "CI operations: use abstraction layer").
 
 **Domain-invariant**: this aspect runs for every plan, regardless of domain. The former **Surface C** (CI-wrapper source scan for tangled gh/glab + local-git mutations) was a meta-only check that scanned plan-marshall's own CI-abstraction sources; it moved to the `plan-marshall-plugin-dev` domain retrospective aspect `pm-plugin-development:plan-marshall-plugin:wrapper-tangle-scan`, contributed via the `provides_retrospective_aspects()` extension point. See [`../../extension-api/standards/ext-point-retrospective.md`](../../extension-api/standards/ext-point-retrospective.md) and the home reference `pm-plugin-development:plan-marshall-plugin/references/wrapper-tangle.md`.
 

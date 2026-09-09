@@ -35,6 +35,7 @@ from _config_defaults import (
     validate_domain_invariants,
 )
 from _config_detection import detect_domains
+from command_forms import STEWARD_COMMAND
 
 # Direct imports - PYTHONPATH set by executor
 from extension_discovery import (
@@ -578,7 +579,7 @@ def cmd_skill_domains(args) -> dict:
     # Verbs that work without skill_domains existing
     if args.verb not in ('get-available', 'configure'):
         if 'skill_domains' not in config:
-            return error_exit('skill_domains not configured. Run command /marshall-steward first')
+            return error_exit(f'skill_domains not configured. Run command {STEWARD_COMMAND} first')
 
     skill_domains = config.get('skill_domains', {})
 

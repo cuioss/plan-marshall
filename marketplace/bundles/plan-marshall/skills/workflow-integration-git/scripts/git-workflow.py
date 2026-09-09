@@ -89,6 +89,7 @@ from _plan_state_exemption import _observe_z
 # The archived-plans directory name is shared state between the archiving verb
 # (manage-status) and this guard, so it is imported from the one constants
 # module both sides already read rather than re-spelled as a third literal.
+from command_forms import STEWARD_COMMAND
 from constants import DIR_ARCHIVED
 from file_ops import (
     WorktreeResolutionError,
@@ -1058,7 +1059,7 @@ def _refresh_worktree_executor(worktree_path: Path) -> dict[str, Any]:
             'executor_detail': (
                 f'script set drifted but regeneration failed (rc={gen_rc}): '
                 f'{(gen_err or gen_out).strip()[:200] or "no output"} — '
-                'run /marshall-steward to repair the executor'
+                f'run {STEWARD_COMMAND} to repair the executor'
             ),
         }
     # The verdict is derived from ON-DISK reality, never from generation intent.
@@ -1074,7 +1075,7 @@ def _refresh_worktree_executor(worktree_path: Path) -> dict[str, Any]:
             'executor_detail': (
                 'script set drifted and regeneration exited 0, but no executor '
                 f'landed at {worktree_executor_path(worktree_path)} — '
-                'run /marshall-steward to repair the executor'
+                f'run {STEWARD_COMMAND} to repair the executor'
             ),
         }
     return {

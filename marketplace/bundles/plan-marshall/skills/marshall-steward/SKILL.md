@@ -455,7 +455,7 @@ existing `marshal.json` by `sync-defaults`. The default value is:
 
 The `docs/` prefix is explicitly retired and must not be re-admitted — it is not
 CI-triggered, so a `docs/`-prefixed branch makes its PR structurally unmergeable
-(see CLAUDE.md "Branch Naming"). The CI push-trigger allowlist is owned by
+(see the "Branch Naming" rule, owned by the CI push-trigger allowlist). The CI push-trigger allowlist is owned by
 `.github/workflows/python-verify.yml` (not mirrored here); a structural test
 (`test_branch_prefix_allowlist.py`) asserts every `working_prefix` is covered by
 a workflow push trigger.

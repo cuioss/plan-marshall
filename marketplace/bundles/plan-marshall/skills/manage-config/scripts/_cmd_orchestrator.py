@@ -37,6 +37,7 @@ from _config_core import (
     success_exit,
 )
 from _config_defaults import DEFAULT_ORCHESTRATOR
+from command_forms import STEWARD_COMMAND
 
 # The orchestrator block's known scalar (non-effort) fields — the fail-closed
 # whitelist consulted by every scalar read/write.
@@ -86,7 +87,7 @@ def cmd_orchestrator_get(args) -> dict:
     apply their own default.
     """
     if not is_initialized():
-        return error_exit('marshal.json not initialized; run /marshall-steward first')
+        return error_exit(f'marshal.json not initialized; run {STEWARD_COMMAND} first')
 
     field = getattr(args, 'field', None)
     if not field:
@@ -123,7 +124,7 @@ def cmd_orchestrator_set(args) -> dict:
     value per-field before persisting it into ``config['orchestrator']``.
     """
     if not is_initialized():
-        return error_exit('marshal.json not initialized; run /marshall-steward first')
+        return error_exit(f'marshal.json not initialized; run {STEWARD_COMMAND} first')
 
     field = getattr(args, 'field', None)
     if not field:

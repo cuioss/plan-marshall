@@ -337,6 +337,20 @@ def _first_existing_bundle_cache_root() -> Path | None:
     return None
 
 
+def agent_instructions_filename() -> str:
+    """Return the agent-instructions filename for the active target.
+
+    The project agent-instructions file is a per-target runtime fact: Claude
+    Code reads ``CLAUDE.md``, OpenCode reads ``AGENTS.md`` — the same mapping
+    the runtime classes' doc-residency classification carries. Resolved per
+    process like the layout ops; falls back to the Claude default when no
+    runtime target resolves. Single source for the filename, consumed by
+    ``determine_mode``'s rule-file lists and the steward's architecture-setup
+    wizard.
+    """
+    return 'AGENTS.md' if _read_runtime_target() == 'opencode' else 'CLAUDE.md'
+
+
 def _resolve_skill_root(root: str, base: Path) -> Path:
     """Resolve a single layout-op root string against ``base``.
 

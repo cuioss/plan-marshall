@@ -528,7 +528,7 @@ def cmd_ensure_wildcards(args: argparse.Namespace) -> dict:
     if not is_claude_target():
         return _decline_non_claude('ensure-wildcards')
 
-    settings, error = load_settings(args.settings)
+    settings, error = load_settings(resolve_settings_arg(args))
     if error:
         return {'status': 'error', 'error': error}
 
@@ -728,7 +728,7 @@ def cmd_apply_project_step_permissions(args: argparse.Namespace) -> dict:
     if marshal_error:
         return {'status': 'error', 'error': marshal_error}
 
-    settings_path = args.settings
+    settings_path = resolve_settings_arg(args)
     settings, settings_error = load_settings(settings_path)
     if settings_error:
         return {'status': 'error', 'error': settings_error}
@@ -1246,7 +1246,11 @@ def main() -> int:
     p_ewc = subparsers.add_parser(
         'ensure-wildcards', help='Ensure marketplace wildcards exist in settings', allow_abbrev=False
     )
-    p_ewc.add_argument('--settings', required=True, help='Path to settings file to update')
+    p_ewc_settings = p_ewc.add_mutually_exclusive_group(required=True)
+    p_ewc_settings.add_argument('--settings', help='Path to settings file to update')
+    p_ewc_settings.add_argument(
+        '--scope', choices=['global', 'project'], help='Resolve the settings path via the permission ops'
+    )
     p_ewc.add_argument('--marketplace-json', required=True, help='Path to marketplace.json file')
     p_ewc.add_argument('--dry-run', action='store_true', help='Preview changes without modifying files')
     p_ewc.set_defaults(func=cmd_ensure_wildcards)
@@ -1285,7 +1289,11 @@ def main() -> int:
         allow_abbrev=False,
     )
     p_apps.add_argument('--marshal', required=True, help='Path to marshal.json')
-    p_apps.add_argument('--settings', required=True, help='Path to settings file to update')
+    p_apps_settings = p_apps.add_mutually_exclusive_group(required=True)
+    p_apps_settings.add_argument('--settings', help='Path to settings file to update')
+    p_apps_settings.add_argument(
+        '--scope', choices=['global', 'project'], help='Resolve the settings path via the permission ops'
+    )
     p_apps.add_argument('--dry-run', action='store_true', help='Preview changes without modifying files')
     p_apps.set_defaults(func=cmd_apply_project_step_permissions)
 

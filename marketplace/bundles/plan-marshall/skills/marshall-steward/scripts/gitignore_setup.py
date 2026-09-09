@@ -59,7 +59,9 @@ from toon_parser import serialize_toon  # noqa: E402
 
 # Lines to add to .gitignore
 # Use .plan/* (not .plan/) to allow exceptions - .plan/ ignores entire directory
-GITIGNORE_COMMENT = '# Planning system (managed by /marshall-steward)'
+# The comment names the planning system neutrally (no host-specific command
+# form) so the persisted file reads the same on every target.
+GITIGNORE_COMMENT = '# Planning system (managed by plan-marshall)'
 GITIGNORE_LOCAL_COMMENT = (
     '# Runtime state (plans, run-configuration, lessons-learned, memory, logs — managed by plan-marshall)'
 )

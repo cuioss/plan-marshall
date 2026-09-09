@@ -50,6 +50,7 @@ from _config_core import (
     save_config,
     success_exit,
 )
+from command_forms import STEWARD_COMMAND
 from effort_presets import EffortPresets
 from marketplace_paths import names_real_plan
 from plan_logging import log_entry
@@ -347,7 +348,7 @@ def _compute_target(level: str) -> str:
 def cmd_effort(args) -> dict:
     """Handle ``effort read`` subcommand (role lookup or --default fetch)."""
     if not is_initialized():
-        return error_exit('marshal.json not initialized; run /marshall-steward first')
+        return error_exit(f'marshal.json not initialized; run {STEWARD_COMMAND} first')
 
     config = load_config()
     plan_block = config.get('plan', {})
@@ -725,7 +726,7 @@ def cmd_effort_set(args) -> dict:
     mirroring :func:`_resolve_level`'s messages.
     """
     if not is_initialized():
-        return error_exit('marshal.json not initialized; run /marshall-steward first')
+        return error_exit(f'marshal.json not initialized; run {STEWARD_COMMAND} first')
 
     scope = getattr(args, 'scope', None)
     if not scope:
@@ -846,7 +847,7 @@ def cmd_effort_apply_preset(args) -> dict:
        set the top-level ``effort`` string, and save.
     """
     if not is_initialized():
-        return error_exit('marshal.json not initialized; run /marshall-steward first')
+        return error_exit(f'marshal.json not initialized; run {STEWARD_COMMAND} first')
 
     try:
         preset = EffortPresets.get(args.preset)
@@ -992,7 +993,7 @@ def cmd_effort_identify(args) -> dict:
     ready-to-print ``message``. Reads only; writes nothing.
     """
     if not is_initialized():
-        return error_exit('marshal.json not initialized; run /marshall-steward first')
+        return error_exit(f'marshal.json not initialized; run {STEWARD_COMMAND} first')
 
     config = load_config()
     plan_block = config.get('plan', {})

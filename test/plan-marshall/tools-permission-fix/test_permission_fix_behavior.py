@@ -344,6 +344,26 @@ class TestEnsureWildcardsApplied:
         assert result['status'] == 'error'
         assert 'Invalid JSON' in result['error']
 
+    def test_scope_project_resolves_settings_via_ops(self, tmp_path, monkeypatch):
+        """ensure-wildcards accepts --scope and resolves the path through the
+        permission ops — the steward surfaces carry no settings-path literal."""
+        import permission_common as pc_mod
+
+        settings_file = tmp_path / 'settings.json'
+        _write_settings(settings_file, [])
+        marketplace_file = tmp_path / 'marketplace.json'
+        marketplace_file.write_text(json.dumps({'bundles': {'foo': {'skills': ['s'], 'commands': ['c']}}}))
+        monkeypatch.setattr(
+            pc_mod, 'get_project_settings_path_for_write', lambda: settings_file
+        )
+
+        result = pf.cmd_ensure_wildcards(
+            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'ensure-wildcards', '--scope', 'project', '--marketplace-json', str(marketplace_file), '--dry-run')
+        )
+
+        assert result['status'] == 'success'
+        assert result['applied'] is False
+
 
 # =============================================================================
 # prefix extraction — single-token branch

@@ -40,7 +40,7 @@ entries_added	4
 The generated block looks like:
 
 ```text
-# Planning system (managed by /marshall-steward)
+# Planning system (managed by plan-marshall)
 # Runtime state (plans, run-configuration, lessons-learned, memory, logs — managed by plan-marshall)
 .plan/*
 !.plan/marshal.json

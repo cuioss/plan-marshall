@@ -50,7 +50,7 @@ Check that enabled plugins have corresponding Skill/SlashCommand wildcards:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fix ensure-wildcards \
-  --settings ~/.claude/settings.json \
+  --scope global \
   --marketplace-json marketplace/.claude-plugin/marketplace.json \
   --dry-run
 ```
@@ -93,7 +93,7 @@ If yes:
   ```bash
   python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fix apply-project-step-permissions \
     --marshal .plan/marshal.json \
-    --settings .claude/settings.json
+    --scope project
   ```
 
 Include `project_step_permissions` alongside `wildcards` in the Step 7 summary TOON (e.g., `project_step_permissions: {total: 2, missing: 0}`).

@@ -141,6 +141,7 @@ PLAN_DIR_NAME = os.environ.get('PLAN_DIR_NAME', '.plan')
 SCRIPT_DIR = Path(__file__).parent.resolve()
 
 # Shared path resolution (from script-shared)
+from command_forms import SYNC_PLUGIN_CACHE_COMMAND  # noqa: E402
 from marketplace_bundles import (  # noqa: E402, I001
     build_pythonpath,
     collect_script_dirs,
@@ -1340,7 +1341,7 @@ def generate_executor(
                 f'Template format skew: {executor_template} declares '
                 f'TEMPLATE_FORMAT_VERSION={template_version!r} but this generator supports '
                 f'{_SUPPORTED_TEMPLATE_FORMAT_VERSION}. Re-sync so the template and generator '
-                f'are the same version (run /sync-plugin-cache, then regenerate) before '
+                f'are the same version (run {SYNC_PLUGIN_CACHE_COMMAND}, then regenerate) before '
                 f'regenerating the executor. Existing executor left untouched.'
             ),
         }

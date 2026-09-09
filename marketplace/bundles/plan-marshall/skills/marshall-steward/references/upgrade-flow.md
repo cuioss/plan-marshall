@@ -301,8 +301,9 @@ The Stage 1 asymmetry is exactly one entry wide, and it is deliberate:
 **Why the freshness gate is consumer-only.** The meta project keeps its own
 plugin cache current through `project:finalize-step-sync-plugin-cache`, which
 runs at the end of every plan's finalize phase and mirrors the freshly-generated
-`target/claude/` tree into the cache. That step is **meta-project-only** (see the
-repository `CLAUDE.md` § "Plugin Cache Sync"): it is a project-local skill under
+`target/claude/` tree into the cache. That step is **meta-project-only** (the
+meta project's `sync-plugin-cache` surface — a project-local skill under
+`.claude/skills/`, not bundle content): it is a project-local skill under
 `.claude/skills/`, registered in the meta project's own `marshal.json`, and
 consumer projects neither ship it nor have it seeded. So the mechanism that keeps
 the meta cache fresh is invisible to — and does not cover — a consumer, whose
