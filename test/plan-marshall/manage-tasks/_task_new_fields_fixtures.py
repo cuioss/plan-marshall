@@ -10,7 +10,6 @@ Tests for manage-tasks.py new fields: domain, profile, skills, origin.
 Tier 2 (direct import) tests with 2 subprocess tests for CLI plumbing.
 """
 
-
 from argparse import Namespace
 from pathlib import Path
 

@@ -40,7 +40,6 @@ the property holds for this project; the controlled one proves the mechanism
 itself, independent of whatever the tree happens to contain.
 """
 
-
 import plugin_discover
 from plugin_discover import _is_plan_marshall_marketplace, discover_plugin_modules
 
@@ -49,12 +48,8 @@ from conftest import PROJECT_ROOT, load_script_module
 _discovery = load_script_module(
     'plan-marshall', 'extension-api', 'extension_discovery.py', 'extension_discovery_graph_e2e'
 )
-_merge = load_script_module(
-    'plan-marshall', 'extension-api', '_derivation_merge.py', 'derivation_merge_graph_e2e'
-)
-_cmd_client = load_script_module(
-    'plan-marshall', 'manage-architecture', '_cmd_client.py', 'cmd_client_graph_e2e'
-)
+_merge = load_script_module('plan-marshall', 'extension-api', '_derivation_merge.py', 'derivation_merge_graph_e2e')
+_cmd_client = load_script_module('plan-marshall', 'manage-architecture', '_cmd_client.py', 'cmd_client_graph_e2e')
 
 EXPECTED_RESOLVER_IDS = ['documentation', 'lsp', 'markdown', 'maven', 'npm', 'pyproject', 'python']
 """The shipped resolver roster: three Axis-B implementors and four Axis-A ones.
@@ -224,9 +219,7 @@ def test_every_shipped_resolver_declares_its_file_patterns():
     "forgot to".
     """
     undeclared = [
-        record['id']
-        for record in _pipeline()['resolvers']
-        if not record['module'].derivation_file_patterns()
+        record['id'] for record in _pipeline()['resolvers'] if not record['module'].derivation_file_patterns()
     ]
 
     assert undeclared == [], f'shipped resolvers declaring no file patterns: {undeclared}'
@@ -296,10 +289,9 @@ def test_empty_enriched_declaration_does_not_blank_the_graph():
     """
     pipeline = _pipeline()
 
-    assert all(
-        overlay['internal_dependencies'] == []
-        for overlay in pipeline['enriched_by_name'].values()
-    ), 'fixture drift: the overlay no longer carries the empty-declaration condition'
+    assert all(overlay['internal_dependencies'] == [] for overlay in pipeline['enriched_by_name'].values()), (
+        'fixture drift: the overlay no longer carries the empty-declaration condition'
+    )
     assert pipeline['graph']['graph']['edge_count'] > 0
 
 
@@ -322,9 +314,7 @@ def test_at_least_one_graph_edge_is_stamped_by_a_resolver_not_declared():
     pipeline = _pipeline()
     resolver_ids = {record['id'] for record in pipeline['resolvers']}
 
-    resolver_stamped = [
-        edge for edge in pipeline['graph']['edges'] if set(edge['producers']) & resolver_ids
-    ]
+    resolver_stamped = [edge for edge in pipeline['graph']['edges'] if set(edge['producers']) & resolver_ids]
 
     assert resolver_stamped, (
         'no edge in the merged graph is stamped by a resolver — every surviving '
@@ -364,9 +354,7 @@ def test_graph_response_names_every_discovered_resolver():
     # disabling every shipped resolver is fully green. Asserting the equivalence
     # would therefore pin a harness artefact, so the count is checked against the
     # dispatched population it actually describes.
-    dispatched_ids = [
-        report['id'] for report in graph['resolvers'] if report.get('status') != 'not_dispatched'
-    ]
+    dispatched_ids = [report['id'] for report in graph['resolvers'] if report.get('status') != 'not_dispatched']
     assert graph['resolver_count'] == len(dispatched_ids)
 
 
@@ -489,9 +477,7 @@ def test_edge_list_is_sorted_by_endpoint_pair():
 def test_component_refs_materialization_is_deterministic():
     """Re-running discovery yields an identical component_refs field."""
     first = _pipeline()['derived_by_name']
-    second = {
-        module['name']: module for module in discover_plugin_modules(str(PROJECT_ROOT))
-    }
+    second = {module['name']: module for module in discover_plugin_modules(str(PROJECT_ROOT))}
 
     assert {name: data['component_refs'] for name, data in first.items()} == {
         name: data['component_refs'] for name, data in second.items()
@@ -554,9 +540,7 @@ def test_collapse_mechanism_holds_over_a_controlled_module_map():
         },
         'beta': {'component_refs': []},
     }
-    resolvers = [
-        record for record in _pipeline()['resolvers'] if record['id'] in AXIS_A_RESOLVER_IDS
-    ]
+    resolvers = [record for record in _pipeline()['resolvers'] if record['id'] in AXIS_A_RESOLVER_IDS]
 
     edges, reports = _merge.merge_resolver_edges(resolvers, derived_by_name, {})
 

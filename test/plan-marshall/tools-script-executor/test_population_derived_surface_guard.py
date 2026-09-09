@@ -257,8 +257,7 @@ def live_validator():
     # that drops an attribute therefore diverges the two, and the validator's
     # refusal of a call the truth built is caught.
     validator.SCRIPT_SURFACES = {
-        notation: {'digest': 'live-population', 'surface': result.to_dict()}
-        for notation, result in derivable.items()
+        notation: {'digest': 'live-population', 'surface': result.to_dict()} for notation, result in derivable.items()
     }
     yield validator, derivable
 

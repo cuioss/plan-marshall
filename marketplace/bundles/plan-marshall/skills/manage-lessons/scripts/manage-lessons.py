@@ -165,11 +165,7 @@ def get_next_id() -> str:
 
     plans_dir = resolve_main_anchored_path('plans')
     if plans_dir.exists():
-        existing_ids.update(
-            f.stem[len('lesson-'):]
-            for f in plans_dir.glob(f'*/lesson-{prefix}-*.md')
-            if f.is_file()
-        )
+        existing_ids.update(f.stem[len('lesson-') :] for f in plans_dir.glob(f'*/lesson-{prefix}-*.md') if f.is_file())
 
     if not existing_ids:
         return f'{prefix}-001'
@@ -792,9 +788,7 @@ def cmd_aggregate(args: argparse.Namespace) -> dict:
 
         # Headline ordering: signal-tier index ASC, absorb_count DESC, key ASC.
         tier_index = SIGNAL_PRIORITY.index(signal)
-        headline_records.append(
-            (tier_index, -len(absorbed_ids), group_key, primary_id)
-        )
+        headline_records.append((tier_index, -len(absorbed_ids), group_key, primary_id))
 
     headline_records.sort()
     top_n_commands = [
@@ -890,8 +884,7 @@ def cmd_remove(args: argparse.Namespace) -> dict:
             'id': args.lesson_id,
             'error': 'missing_coverage_verdict',
             'message': (
-                f'--coverage-verdict is required and must be one of {list(COVERAGE_VERDICTS)}; '
-                f'got {coverage_verdict!r}'
+                f'--coverage-verdict is required and must be one of {list(COVERAGE_VERDICTS)}; got {coverage_verdict!r}'
             ),
             'valid_verdicts': list(COVERAGE_VERDICTS),
         }
@@ -1208,9 +1201,7 @@ def main() -> int:
         allow_abbrev=False,
     )
     add_component_arg(add_parser)
-    add_parser.add_argument(
-        '--category', required=True, choices=list(VALID_CATEGORIES), help='Lesson category'
-    )
+    add_parser.add_argument('--category', required=True, choices=list(VALID_CATEGORIES), help='Lesson category')
     add_parser.add_argument('--title', required=True, help='Lesson title')
     add_parser.add_argument('--bundle', help='Optional bundle reference')
     add_parser.add_argument(
@@ -1478,13 +1469,13 @@ def main() -> int:
         'auto-suggest',
         help='Recipe-registry matcher for phase-1-init Step 5c (no LLM dispatch)',
         description=(
-            "Scan the marketplace recipe registry (manage-config list-recipes) and "
-            "return up to --max-suggestions recipes ordered by deterministic "
-            "confidence. The score blends keyword overlap (request narrative vs "
-            "recipe description), domain alignment, and scope alignment. With "
-            "--emit (default), each suggestion is also written as an info-severity "
-            "Q-Gate finding so the orchestrator can surface the list. Use "
-            "--no-emit to inspect suggestions without writing findings."
+            'Scan the marketplace recipe registry (manage-config list-recipes) and '
+            'return up to --max-suggestions recipes ordered by deterministic '
+            'confidence. The score blends keyword overlap (request narrative vs '
+            'recipe description), domain alignment, and scope alignment. With '
+            '--emit (default), each suggestion is also written as an info-severity '
+            'Q-Gate finding so the orchestrator can surface the list. Use '
+            '--no-emit to inspect suggestions without writing findings.'
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         allow_abbrev=False,

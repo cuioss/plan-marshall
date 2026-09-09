@@ -6,12 +6,10 @@ Holds the module-level loads, constants and helpers it uses, so
 the module itself carries the import and not the preamble.
 """
 
-
 import json
 
 
-def _write_lesson_plan(tmp_path, plan_id, lesson_ids, plan_source,
-                       current_phase, phase_status):
+def _write_lesson_plan(tmp_path, plan_id, lesson_ids, plan_source, current_phase, phase_status):
     """Create a plan dir holding relocated lesson files plus a status.json.
 
     ``plan_source`` is written verbatim into ``metadata.plan_source`` so tests
@@ -26,8 +24,7 @@ def _write_lesson_plan(tmp_path, plan_id, lesson_ids, plan_source,
 
     for lesson_id in lesson_ids:
         (plan_dir / f'lesson-{lesson_id}.md').write_text(
-            f'id={lesson_id}\ncomponent=test\ncategory=bug\ncreated=2025-01-01\n\n'
-            f'# Lesson {lesson_id}\n\nBody.\n'
+            f'id={lesson_id}\ncomponent=test\ncategory=bug\ncreated=2025-01-01\n\n# Lesson {lesson_id}\n\nBody.\n'
         )
 
     status = {

@@ -537,9 +537,7 @@ def test_full_mode_toon_parses_back_into_component_rows(scan):
     opaque scalar, so every per-component field was silently unrecoverable. This
     asserts the fields come back as fields.
     """
-    result = scan(
-        '--direct-result', '--full', '--bundles', 'alpha-bundle', '--resource-types', 'skills'
-    )
+    result = scan('--direct-result', '--full', '--bundles', 'alpha-bundle', '--resource-types', 'skills')
     assert result.returncode == 0, f'Script returned error: {result.stdout}'
 
     bundles = get_bundles(parse_toon(result.stdout))
@@ -764,9 +762,7 @@ def test_bundles_filter_multiple(scan):
     data = parse_toon(result.stdout)
     bundles = get_bundles(data)
     bundle_names = {b['name'] for b in bundles}
-    assert bundle_names == {'alpha-bundle', 'beta-bundle'}, (
-        f'Expected alpha-bundle and beta-bundle, got {bundle_names}'
-    )
+    assert bundle_names == {'alpha-bundle', 'beta-bundle'}, f'Expected alpha-bundle and beta-bundle, got {bundle_names}'
 
 
 def test_bundles_filter_nonexistent(scan):
@@ -1079,9 +1075,7 @@ def test_content_exclude_single_pattern(scan):
     data_with = parse_toon(result_with.stdout)
     count_with = data_with.get('statistics', {}).get('total_skills', 0)
 
-    assert count_with < count_without, (
-        f'Exclude pattern should reduce count: {count_with} should be < {count_without}'
-    )
+    assert count_with < count_without, f'Exclude pattern should reduce count: {count_with} should be < {count_without}'
 
 
 def test_content_include_and_exclude_combined(scan):
@@ -1216,9 +1210,7 @@ def test_include_tests_maps_to_bundles(scan, synthetic_marketplace):
     root = synthetic_marketplace.parent.parent  # tmp_path
     _write(root / 'test' / 'alpha-bundle' / 'test_alpha.py', 'def test_alpha():\n    assert True\n')
 
-    result = scan(
-        '--direct-result', '--include-tests', '--full', '--format', 'json', '--bundles', 'alpha-bundle'
-    )
+    result = scan('--direct-result', '--include-tests', '--full', '--format', 'json', '--bundles', 'alpha-bundle')
     assert result.returncode == 0, f'Script returned error: {result.stdout}'
 
     import json
@@ -1228,9 +1220,7 @@ def test_include_tests_maps_to_bundles(scan, synthetic_marketplace):
     bundle = bundles_dict.get('alpha-bundle', {})
     for test in bundle.get('tests', []):
         if isinstance(test, dict) and 'path' in test:
-            assert 'test/alpha-bundle' in test['path'], (
-                f'Test path should be in test/alpha-bundle: {test["path"]}'
-            )
+            assert 'test/alpha-bundle' in test['path'], f'Test path should be in test/alpha-bundle: {test["path"]}'
 
 
 def test_include_tests_updates_statistics(scan, synthetic_marketplace):
@@ -1485,7 +1475,7 @@ def test_full_with_content_pattern_filters_subdocs(scan):
                     if subdoc_file.exists():
                         content = subdoc_file.read_text()
                         assert '```json' in content, (
-                            f"Subdoc {subdoc_path} should contain ```json when filtered with --content-pattern"
+                            f'Subdoc {subdoc_path} should contain ```json when filtered with --content-pattern'
                         )
 
 
@@ -1564,9 +1554,7 @@ def test_full_content_pattern_excludes_non_matching_subdocs(scan):
 
     # plan-alpha/standards/ has guide.md (```json) + plain.md (no fence); filtering
     # to ```json must drop plain.md, so the filtered count is strictly smaller.
-    assert total_filtered < total_all, (
-        f'Content-filtered subdocs ({total_filtered}) should be < total ({total_all})'
-    )
+    assert total_filtered < total_all, f'Content-filtered subdocs ({total_filtered}) should be < total ({total_all})'
 
 
 # =============================================================================
@@ -1598,9 +1586,7 @@ def test_find_marketplace_path_returns_none_outside_any_repo(outside_repo_dir, m
     monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
     monkeypatch.chdir(outside_repo_dir)
     result = find_marketplace_path()
-    assert result is None, (
-        f'Resolution from outside any git repo with no anchor should return None, got {result}'
-    )
+    assert result is None, f'Resolution from outside any git repo with no anchor should return None, got {result}'
 
 
 def test_find_marketplace_path_explicit_override_wins(tmp_path, monkeypatch):
@@ -1663,9 +1649,7 @@ def test_runtime_mount_prefix_takes_the_highest_priority_root(monkeypatch):
     so this is the only case that pins the docstring's "highest-priority" claim.
     """
     module = _scan_module()
-    monkeypatch.setattr(
-        module, 'get_project_skill_roots', lambda: ('first/skills', 'second/skills')
-    )
+    monkeypatch.setattr(module, 'get_project_skill_roots', lambda: ('first/skills', 'second/skills'))
     assert module.runtime_mount_prefix() == './first/skills'
 
 
@@ -1700,9 +1684,7 @@ def test_discovered_scripts_carry_the_claude_runtime_mount(scan):
     assert _emitted_mounts(scan) == ['./.claude/skills/plan-alpha/scripts/run-alpha.py']
 
 
-def test_discovered_scripts_follow_a_relocated_skill_root(
-    synthetic_marketplace, monkeypatch, capsys
-):
+def test_discovered_scripts_follow_a_relocated_skill_root(synthetic_marketplace, monkeypatch, capsys):
     """The emitted mount is WIRED to the derivation, not merely equal to it.
 
     On the default target the derived prefix and the literal ``./.claude/skills``

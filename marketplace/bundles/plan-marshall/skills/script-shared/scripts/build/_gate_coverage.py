@@ -560,13 +560,11 @@ def render_coverage_summary(
         return '\n'.join(lines)
     if boundary.complete:
         lines = [
-            f'>>> coverage: COMPLETE over the dimensions below — checked over full '
-            f'scope: {", ".join(boundary.checked)}'
+            f'>>> coverage: COMPLETE over the dimensions below — checked over full scope: {", ".join(boundary.checked)}'
         ]
     else:
         lines = [
-            '>>> coverage: PARTIAL — this pass does NOT certify the whole tree. '
-            'The gate did NOT fully check:',
+            '>>> coverage: PARTIAL — this pass does NOT certify the whole tree. The gate did NOT fully check:',
         ]
         for dimension, reason in boundary.degraded:
             lines.append(f'      - {dimension}: {reason}')
@@ -641,8 +639,12 @@ def parity_population() -> tuple[ParityCell, ...]:
         ParityCell('mypy-test', 'equal', 'unconditional whole-tree test-compile == cmd_test_compile(None)'),
         ParityCell('spdx-paths', 'equal', 'SPDX over [bundles, test, .claude, targets, build.py] on both'),
         ParityCell('plugin-doctor', 'equal', 'whole-tree quality-gate arm runs the marketplace-wide pass'),
-        ParityCell('pytest-scope', 'subset', 'divergence heuristic ignores reverse cross-module coupling (sibling territory)'),
-        ParityCell('freshness', 'closed', 'gate runs mypy cold (cache disabled) + duration sanity check, matching cold CI'),
+        ParityCell(
+            'pytest-scope', 'subset', 'divergence heuristic ignores reverse cross-module coupling (sibling territory)'
+        ),
+        ParityCell(
+            'freshness', 'closed', 'gate runs mypy cold (cache disabled) + duration sanity check, matching cold CI'
+        ),
         ParityCell('coverage-boundary', 'closed', 'gate output names its coverage boundary (partial vs full verdict)'),
         # The two SHARED-BLIND cells. A parity table that lists only the dimensions
         # somebody checks reads as though the unlisted ones do not exist; recording
@@ -651,12 +653,14 @@ def parity_population() -> tuple[ParityCell, ...]:
         # CI runs this same build.py — so the verdict is 'equal' and the note has
         # to carry the zero, or the cell overstates.
         ParityCell(
-            'ruff-mypy-build-py', 'equal',
+            'ruff-mypy-build-py',
+            'equal',
             'build.py is in no ruff path list and in no mypy scope on either side '
             '(SPDX headers do cover it) — coverage is equal and zero',
         ),
         ParityCell(
-            'ruff-mypy-targets', 'equal',
+            'ruff-mypy-targets',
+            'equal',
             'marketplace/targets is in a ruff path list but in no mypy scope on '
             'either side (SPDX headers do cover it) — ruff coverage is no longer '
             'zero, mypy coverage is equal and zero',

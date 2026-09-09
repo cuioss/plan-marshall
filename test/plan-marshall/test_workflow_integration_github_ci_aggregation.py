@@ -343,7 +343,9 @@ def _make_run_gh_returning(checks_json: str):
 
 def test_ci_status_returns_success_for_all_passing(monkeypatch):
     monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
-    stub, _ = _make_run_gh_returning('[{"name":"build","state":"SUCCESS","bucket":"pass","link":"","startedAt":"","completedAt":"","workflow":""}]')
+    stub, _ = _make_run_gh_returning(
+        '[{"name":"build","state":"SUCCESS","bucket":"pass","link":"","startedAt":"","completedAt":"","workflow":""}]'
+    )
     monkeypatch.setattr(github_ops, 'run_gh', stub)
 
     result = github_ops.cmd_ci_status(_ci_status_args())
@@ -493,7 +495,11 @@ def test_ci_wait_final_status_none_when_zero_checks(monkeypatch):
             call['n'] += 1
             if call['n'] == 1:
                 return 0, '[]', ''
-            return 0, '[{"name":"x","state":"SUCCESS","bucket":"pass","link":"","startedAt":"","completedAt":"","workflow":""}]', ''
+            return (
+                0,
+                '[{"name":"x","state":"SUCCESS","bucket":"pass","link":"","startedAt":"","completedAt":"","workflow":""}]',
+                '',
+            )
         if args[:2] == ['pr', 'view']:
             return 0, '{"headRefOid": "deadbeef"}', ''
         return 0, '', ''
@@ -555,9 +561,7 @@ def test_fetch_pr_overall_returns_failure_for_one_cancelled(monkeypatch):
 
 def test_fetch_pr_overall_returns_pending_for_in_progress(monkeypatch):
     payload = (
-        '['
-        '{"name":"build","state":"IN_PROGRESS","bucket":"","link":"","startedAt":"","completedAt":"","workflow":""}'
-        ']'
+        '[{"name":"build","state":"IN_PROGRESS","bucket":"","link":"","startedAt":"","completedAt":"","workflow":""}]'
     )
 
     def run_gh_stub(args, capture_json=False, timeout=60):

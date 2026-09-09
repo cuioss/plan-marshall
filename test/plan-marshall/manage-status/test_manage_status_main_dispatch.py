@@ -2,16 +2,13 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """In-process tests for the manage-status.py CLI dispatcher (``main``)."""
 
-
 import json
 
 import pytest
 from _manage_status_main_dispatch_fixtures import _PHASES, _ms, _parse, _pin_stale_snapshot, _run
 
 
-def test_main_phase_write_preserves_a_title_token_set_after_its_snapshot_read(
-    plan_context, monkeypatch, capsys
-):
+def test_main_phase_write_preserves_a_title_token_set_after_its_snapshot_read(plan_context, monkeypatch, capsys):
     """A ``title-token set`` landing inside a phase write's read→write window survives.
 
     ``set-phase`` commits a WHOLE document assembled from a snapshot read, so a
@@ -46,9 +43,7 @@ def test_main_phase_write_preserves_a_title_token_set_after_its_snapshot_read(
     assert persisted['title_token']['owner'] == 'build-hook'
 
 
-def test_main_transition_preserves_a_title_token_set_after_its_snapshot_read(
-    plan_context, monkeypatch, capsys
-):
+def test_main_transition_preserves_a_title_token_set_after_its_snapshot_read(plan_context, monkeypatch, capsys):
     """``transition`` shares the same read→write window and the same protection.
 
     Covered alongside ``set-phase`` because a per-call-site guard is the failure
@@ -114,6 +109,7 @@ def test_main_transition_invalid_phase_exits_zero_with_error(plan_context, monke
 # =============================================================================
 # metadata / title-token / update-phase / progress
 # =============================================================================
+
 
 def test_main_archive_still_drops_the_title_token(plan_context, monkeypatch, capsys):
     """``archive`` opts OUT of the preserve rule — its owner-agnostic pop must stick.
@@ -199,11 +195,16 @@ def test_main_mark_step_done_loop_back_records_target(plan_context, monkeypatch,
         capsys,
         [
             'mark-step-done',
-            '--plan-id', 'ms-disp-ms',
-            '--phase', '5-execute',
-            '--step', 'discovery',
-            '--outcome', 'loop_back',
-            '--loop-back-target', '5-execute',
+            '--plan-id',
+            'ms-disp-ms',
+            '--phase',
+            '5-execute',
+            '--step',
+            'discovery',
+            '--outcome',
+            'loop_back',
+            '--loop-back-target',
+            '5-execute',
         ],
     )
 
@@ -223,10 +224,14 @@ def test_main_mark_step_done_loop_back_missing_target_errors(plan_context, monke
         capsys,
         [
             'mark-step-done',
-            '--plan-id', 'ms-disp-msx',
-            '--phase', '5-execute',
-            '--step', 'discovery',
-            '--outcome', 'loop_back',
+            '--plan-id',
+            'ms-disp-msx',
+            '--phase',
+            '5-execute',
+            '--step',
+            'discovery',
+            '--outcome',
+            'loop_back',
         ],
     )
 

@@ -93,13 +93,9 @@ _SUBSTRING_ACCEPTED_IDS = [
 class TestSubstringMatcher:
     """categorize_warnings with matcher='substring'."""
 
-    @pytest.mark.parametrize(
-        'message,patterns', _SUBSTRING_ACCEPTED_CASES, ids=_SUBSTRING_ACCEPTED_IDS
-    )
+    @pytest.mark.parametrize('message,patterns', _SUBSTRING_ACCEPTED_CASES, ids=_SUBSTRING_ACCEPTED_IDS)
     def test_an_accepted_warning_lands_in_acceptable(self, message: str, patterns: list[str]):
-        result = _wc.categorize_warnings(
-            [_warn(message)], patterns=patterns, matcher='substring'
-        )
+        result = _wc.categorize_warnings([_warn(message)], patterns=patterns, matcher='substring')
 
         assert len(result['acceptable']) == 1
 
@@ -152,9 +148,7 @@ class TestWildcardMatcher:
 
     @pytest.mark.parametrize('message,patterns,accepted', _WILDCARD_CASES, ids=_WILDCARD_IDS)
     def test_wildcard_acceptance(self, message: str, patterns: list[str], accepted: int):
-        result = _wc.categorize_warnings(
-            [_warn(message)], patterns=patterns, matcher='wildcard'
-        )
+        result = _wc.categorize_warnings([_warn(message)], patterns=patterns, matcher='wildcard')
 
         assert len(result['acceptable']) == accepted
 
@@ -317,9 +311,7 @@ _EMPTY_INPUT_IDS = [
 class TestEmptyInputs:
     """Edge cases with empty warnings or patterns."""
 
-    @pytest.mark.parametrize(
-        'warnings,patterns,expected', _EMPTY_INPUT_CASES, ids=_EMPTY_INPUT_IDS
-    )
+    @pytest.mark.parametrize('warnings,patterns,expected', _EMPTY_INPUT_CASES, ids=_EMPTY_INPUT_IDS)
     def test_bucket_sizes(self, warnings: list[dict], patterns, expected: tuple[int, int, int]):
         result = _wc.categorize_warnings(warnings, patterns=patterns)
 

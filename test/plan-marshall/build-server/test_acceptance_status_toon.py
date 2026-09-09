@@ -28,7 +28,9 @@ from conftest import load_script_module, parse_ns
 #: that import it plainly, and a plain importer then reaches whichever copy was
 #: registered last rather than the one this module loaded.
 client = load_script_module(
-    'plan-marshall', 'build-server-client', 'build_server.py',
+    'plan-marshall',
+    'build-server-client',
+    'build_server.py',
     register=False,
 )
 
@@ -37,8 +39,16 @@ client = load_script_module(
 #: because ``parse_ns`` re-executes the script module on every call, and
 #: ``register=False`` for the same reason the loader above passes it.
 _WAIT_ARGS = parse_ns(
-    'plan-marshall', 'build-server-client', 'build_server.py',
-    'wait', '--job-id', 'J', '--plan-id', '', '--bound', '1',
+    'plan-marshall',
+    'build-server-client',
+    'build_server.py',
+    'wait',
+    '--job-id',
+    'J',
+    '--plan-id',
+    '',
+    '--bound',
+    '1',
     register=False,
 )
 
@@ -58,8 +68,10 @@ def test_bound_expiry_wait_is_a_live_running_status(home, tmp_path):
         )
         spec = JobSpec(
             command=[sys.executable, '-c', 'import time; time.sleep(0.5)'],
-            exec_path=str(tmp_path), project_path=str(tmp_path),
-            plan_id='p', fingerprint='fp',
+            exec_path=str(tmp_path),
+            project_path=str(tmp_path),
+            plan_id='p',
+            fingerprint='fp',
         )
         result = daemon._scheduler.submit(spec, 'root')
         daemon._journal.record_spec(result.job_id, spec.to_dict())
@@ -83,7 +95,8 @@ def test_client_renders_killed_with_no_blind_retry_message(home, monkeypatch):
     # the do-not-blind-retry message — never folded into failure.
     monkeypatch.setattr(client, '_handshake', lambda _p: ({'version': '1'}, None))
     monkeypatch.setattr(
-        client, '_call_daemon',
+        client,
+        '_call_daemon',
         lambda _req, timeout: {'status': STATUS_KILLED, 'job_id': 'J', 'exit_code': -9},
     )
 

@@ -180,6 +180,7 @@ def validate_solution_structure(content: str) -> tuple[list[str], list[str], dic
 #: The bucket value asserting a deliverable changes no code.
 _DOCUMENTATION_ONLY_BUCKET = 'documentation_only'
 
+
 def _declared_bucket_vocabulary() -> tuple[str, ...] | None:
     """The file-type bucket vocabulary, READ from its one authority.
 
@@ -233,9 +234,7 @@ def _write_set_is_all_documentation(write_set: list[str]) -> bool | None:
     return all(_is_documentation_path(path) for path in write_set)
 
 
-def _check_declared_bucket(
-    num: int, deliverable: dict[str, Any], write_set: list[str]
-) -> tuple[list[str], list[str]]:
+def _check_declared_bucket(num: int, deliverable: dict[str, Any], write_set: list[str]) -> tuple[list[str], list[str]]:
     """Check the recorded ``<!-- bucket: X -->`` against the declared write-set.
 
     Returns ``(errors, warnings)``. Only the one PROVABLE contradiction below is
@@ -431,9 +430,7 @@ def validate_deliverable_contract(deliverable: dict[str, Any]) -> tuple[list[str
     write_set = deliverable_write_set(deliverable)
     if 'module_testing' in profiles:
         test_indicators = ('test/', 'Test.', '_test.', 'test_', '.test.', 'spec/', '/tests/')
-        has_test_files = any(
-            any(indicator in path for indicator in test_indicators) for path in write_set
-        )
+        has_test_files = any(any(indicator in path for indicator in test_indicators) for path in write_set)
         if not has_test_files:
             warnings.append(
                 f'D{num}: module_testing profile but no test files detected in the declared '
@@ -493,8 +490,7 @@ def validate_deliverable_contract(deliverable: dict[str, Any]) -> tuple[list[str
             # Check 3b: every entry MUST carry a valid intent marker.
             if intent is None:
                 errors.append(
-                    f"D{num}: Affected file '{path}' missing intent marker "
-                    f'(read|write-new|write-replace|delete)'
+                    f"D{num}: Affected file '{path}' missing intent marker (read|write-new|write-replace|delete)"
                 )
             elif intent not in VALID_STEP_INTENTS:
                 errors.append(
@@ -647,9 +643,7 @@ def _annotate_foreign(deliverables: list[dict[str, Any]]) -> None:
             for entry in deliverable.get(field, []) or []:
                 if not isinstance(entry, dict):
                     continue
-                is_foreign = project_root is not None and is_foreign_path(
-                    entry.get('path', ''), project_root
-                )
+                is_foreign = project_root is not None and is_foreign_path(entry.get('path', ''), project_root)
                 entry['foreign'] = is_foreign
                 any_foreign = any_foreign or is_foreign
         deliverable['foreign'] = any_foreign
@@ -1209,7 +1203,9 @@ def main() -> int:
     # their original argument shape unchanged.
     if hasattr(args, 'project_dir'):
         try:
-            args.project_dir = _routing.resolve_project_dir(getattr(args, 'plan_id', None), args.project_dir, default='.')
+            args.project_dir = _routing.resolve_project_dir(
+                getattr(args, 'plan_id', None), args.project_dir, default='.'
+            )
         except _routing.MutuallyExclusiveArgsError:
             output_toon(_routing.emit_mutually_exclusive_error(getattr(args, 'plan_id', None), args.project_dir))
             return 2

@@ -16,14 +16,7 @@ from conftest import (
 
 import pytest
 
-_CREATE_PR_DOC = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'phase-6-finalize'
-    / 'workflow'
-    / 'create-pr.md'
-)
+_CREATE_PR_DOC = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'workflow' / 'create-pr.md'
 
 
 class TestCreatePrTitleAndBodyGrounding:
@@ -60,8 +53,7 @@ class TestCreatePrTitleAndBodyGrounding:
             'create-pr.md body generation must read --section clarified_request.'
         )
         assert '--section summary' not in text, (
-            'create-pr.md must not read the dead --section summary (request.md has '
-            'no Summary section).'
+            'create-pr.md must not read the dead --section summary (request.md has no Summary section).'
         )
 
 

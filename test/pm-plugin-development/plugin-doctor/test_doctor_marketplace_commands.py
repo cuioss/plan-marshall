@@ -186,9 +186,7 @@ def test_cmd_analyze_detects_task_tool_defect(tmp_path):
     result = _doctor.cmd_analyze(args)
 
     assert result['total_issues'] >= 1
-    all_issues = (
-        result['categorized_safe'] + result['categorized_risky'] + result['categorized_unfixable']
-    )
+    all_issues = result['categorized_safe'] + result['categorized_risky'] + result['categorized_unfixable']
     types_found = {i.get('type') for i in all_issues}
     assert 'agent-task-tool-prohibited' in types_found
 

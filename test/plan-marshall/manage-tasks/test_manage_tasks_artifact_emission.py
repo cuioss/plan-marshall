@@ -22,7 +22,6 @@ object-id validation and its REPORTED refusal — as distinct from the silent sk
 an absent baseline produces — are pinned in their own classes below.
 """
 
-
 from __future__ import annotations
 
 import subprocess
@@ -104,10 +103,7 @@ class TestStatusCodeMapping:
 
         messages = _artifacts.artifact_messages(7, base, root=git_repo)
 
-        assert messages == [
-            '[ARTIFACT] (plan-marshall:phase-5-execute:7) '
-            'Renamed renamed-from.txt -> renamed-to.txt'
-        ]
+        assert messages == ['[ARTIFACT] (plan-marshall:phase-5-execute:7) Renamed renamed-from.txt -> renamed-to.txt']
 
     def test_an_untracked_new_file_is_reported(self, git_repo):
         """⛔ A created file is in NO ``git diff`` output until it is staged.
@@ -265,9 +261,7 @@ class TestAMalformedBaselineIsRefusedNotSkipped:
         with pytest.raises(ValueError, match='not a well-formed git object id'):
             _artifacts.artifact_messages(7, '--output=/tmp/whatever', root=git_repo)
 
-    def test_the_refusal_precedes_the_git_call_that_would_have_redirected(
-        self, git_repo, tmp_path
-    ):
+    def test_the_refusal_precedes_the_git_call_that_would_have_redirected(self, git_repo, tmp_path):
         """The injection's own side effect is the observable.
 
         ``git diff --output=FILE`` writes the diff to FILE, so had the value
@@ -325,9 +319,7 @@ class TestAMalformedBaselineIsRefusedNotSkipped:
         assert _artifacts.emit_artifact_lines('some-plan', 7, {}) == []
         assert emitted == []
 
-    def test_a_malformed_existing_baseline_is_neither_returned_nor_overwritten(
-        self, git_repo, monkeypatch
-    ):
+    def test_a_malformed_existing_baseline_is_neither_returned_nor_overwritten(self, git_repo, monkeypatch):
         """Overwriting would move the base forward and shrink the artifact list."""
         monkeypatch.setattr(_artifacts, 'cwd_checkout_root', lambda: str(git_repo))
         task = {_artifacts.TASK_START_SHA_FIELD: '--output=/tmp/whatever'}

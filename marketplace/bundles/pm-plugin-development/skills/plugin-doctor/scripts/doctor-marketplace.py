@@ -124,8 +124,7 @@ def _parse_rules_flag(rules_value: str | None) -> frozenset[str]:
         accepted = ', '.join(sorted(_OPTIN_RULE_NAMES))
         rejected = ', '.join(unknown)
         print(
-            f'WARNING: unknown --rules token(s) ignored: {rejected}. '
-            f'Accepted opt-in rules: {accepted}.',
+            f'WARNING: unknown --rules token(s) ignored: {rejected}. Accepted opt-in rules: {accepted}.',
             file=sys.stderr,
         )
     return frozenset(tokens & _OPTIN_RULE_NAMES)
@@ -490,9 +489,9 @@ def cmd_analyze(args) -> dict:
     # emission order and the two opt-in active_rules gates (script_call_drift,
     # argument_naming). The per-component analyze_component loop above, the
     # suppression filter, and the categorize step below stay in this command.
-    marketplace_issues = RuleRunner(
-        CorpusContext.build(marketplace_root)
-    ).run_analyze_marketplace_rules(active_rules=active_rules)
+    marketplace_issues = RuleRunner(CorpusContext.build(marketplace_root)).run_analyze_marketplace_rules(
+        active_rules=active_rules
+    )
     all_issues.extend(marketplace_issues)
     total_issues += len(marketplace_issues)
 
@@ -598,10 +597,7 @@ def _finding_in_scope(finding: dict, scope_dirs: list[Path]) -> bool:
         finding_path = Path(file_value).resolve()
     except (OSError, ValueError):
         return False
-    return any(
-        finding_path == scope_dir or scope_dir in finding_path.parents
-        for scope_dir in scope_dirs
-    )
+    return any(finding_path == scope_dir or scope_dir in finding_path.parents for scope_dir in scope_dirs)
 
 
 def _finding_is_tree_wide(finding: dict, marketplace_root: Path) -> bool:
@@ -635,9 +631,7 @@ def _finding_is_tree_wide(finding: dict, marketplace_root: Path) -> bool:
         return False
 
 
-def _scoped_manage_invocation(
-    marketplace_root: Path, scope_dirs: list[Path]
-) -> list[dict]:
+def _scoped_manage_invocation(marketplace_root: Path, scope_dirs: list[Path]) -> list[dict]:
     """Run the manage-invocation cluster scoped to `scope_dirs`.
 
     Unlike the marketplace-wide `scan_manage_invocation`, this NEVER calls
@@ -687,9 +681,7 @@ def _scoped_manage_invocation(
         for line in content.splitlines():
             match = _NOTATION_RE.search(line)
             if match:
-                referenced.add(
-                    f"{match.group('bundle')}:{match.group('skill')}:{match.group('script')}"
-                )
+                referenced.add(f'{match.group("bundle")}:{match.group("skill")}:{match.group("script")}')
 
     # Derive only the referenced notations' surfaces (never the whole index).
     script_index: dict = {}
@@ -701,9 +693,7 @@ def _scoped_manage_invocation(
     findings: list[dict] = []
     if script_index:
         for md, content in file_contents:
-            findings.extend(
-                analyze_manage_invocation_markdown(content, str(md), script_index)
-            )
+            findings.extend(analyze_manage_invocation_markdown(content, str(md), script_index))
 
     # missing-canonical-block for scoped SKILL.md files only. The whole-tree
     # `check_missing_canonical_blocks` is filtered down to the scope dirs so a
@@ -848,12 +838,7 @@ def cmd_quality_gate(args) -> dict:
     def _scoped(findings: list[dict]) -> list[dict]:
         if not scope_dirs:
             return findings
-        return [
-            f
-            for f in findings
-            if _finding_in_scope(f, scope_dirs)
-            or _finding_is_tree_wide(f, marketplace_root)
-        ]
+        return [f for f in findings if _finding_in_scope(f, scope_dirs) or _finding_is_tree_wide(f, marketplace_root)]
 
     # Granularity-2 driver integration: load the suppression configs once, then
     # drop suppressed findings from the suppressible content scanners. `_scoped`

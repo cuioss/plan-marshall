@@ -43,7 +43,9 @@ supervisor = load_script_module('plan-marshall', 'manage-build-server', '_marsha
 #: ``build_server`` into ``sys.modules`` would collide with the sibling modules
 #: that import it plainly.
 client = load_script_module(
-    'plan-marshall', 'build-server-client', 'build_server.py',
+    'plan-marshall',
+    'build-server-client',
+    'build_server.py',
     register=False,
 )
 control = load_script_module('plan-marshall', 'manage-build-server', 'manage_build_server.py')
@@ -127,7 +129,10 @@ def _spec(root: str, *, notation=_NOTATION, executor=None, exec_path=None):
     executor = executor if executor is not None else f'{exec_path}/.plan/execute-script.py'
     return JobSpec(
         command=['python3', executor, notation, 'run'],
-        exec_path=exec_path, project_path=exec_path, plan_id='p', fingerprint='fp',
+        exec_path=exec_path,
+        project_path=exec_path,
+        plan_id='p',
+        fingerprint='fp',
     )
 
 
@@ -212,8 +217,10 @@ def test_fresh_post_registration_worktree_is_accepted(tmp_path):
     spec = _spec(root, exec_path=worktree)
     # A live linked worktree whose git-common-dir resolves to the registered root.
     outcome = verify_submit(
-        spec, _registry(root, containers=[container]),
-        baseline_interpreter='python3', common_dir_resolver=lambda _p: root,
+        spec,
+        _registry(root, containers=[container]),
+        baseline_interpreter='python3',
+        common_dir_resolver=lambda _p: root,
     )
     assert outcome.accepted
 

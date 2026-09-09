@@ -79,9 +79,16 @@ def _make_args(plan_id, project='com.example:proj', pr=None, severities=None, ty
     return a
 
 
-def _issue(key='ISSUE-1', type_='BUG', severity='MAJOR', file='src/Main.java', line=42,
-           rule='java:S99999', message='Possible null dereference',
-           component='com.example:proj:src/Main.java'):
+def _issue(
+    key='ISSUE-1',
+    type_='BUG',
+    severity='MAJOR',
+    file='src/Main.java',
+    line=42,
+    rule='java:S99999',
+    message='Possible null dereference',
+    component='com.example:proj:src/Main.java',
+):
     """Build one Sonar issue payload dict, overriding only the fields a test cares about."""
     return {
         'key': key,
@@ -173,8 +180,7 @@ class TestFetchFindings:
         issues_payload = [_issue()]
         plan_context.plan_dir_for('sonar-stage-1')
 
-        with patch('sonar_mod._wait_for_ce_ready') as mock_wait, \
-                patch('sonar_mod._fetch_issues') as mock_fetch:
+        with patch('sonar_mod._wait_for_ce_ready') as mock_wait, patch('sonar_mod._fetch_issues') as mock_fetch:
             mock_wait.return_value = {'count_status': 'confirmed'}
             mock_fetch.return_value = {'status': 'success', 'issues': issues_payload}
             result = cmd_fetch_findings(_make_args('sonar-stage-1'))
@@ -214,8 +220,7 @@ class TestFetchFindings:
         issues_payload = [_issue(type_='CODE_SMELL', severity='MINOR', line=1, rule=rule, message='m')]
         plan_context.plan_dir_for('sonar-stage-skip')
 
-        with patch('sonar_mod._wait_for_ce_ready') as mock_wait, \
-                patch('sonar_mod._fetch_issues') as mock_fetch:
+        with patch('sonar_mod._wait_for_ce_ready') as mock_wait, patch('sonar_mod._fetch_issues') as mock_fetch:
             mock_wait.return_value = {'count_status': 'confirmed'}
             mock_fetch.return_value = {'status': 'success', 'issues': issues_payload}
             result = cmd_fetch_findings(_make_args('sonar-stage-skip'))
@@ -227,8 +232,7 @@ class TestFetchFindings:
     def test_fetch_findings_propagates_provider_error(self, plan_context):
         plan_context.plan_dir_for('sonar-stage-err')
 
-        with patch('sonar_mod._wait_for_ce_ready') as mock_wait, \
-                patch('sonar_mod._fetch_issues') as mock_fetch:
+        with patch('sonar_mod._wait_for_ce_ready') as mock_wait, patch('sonar_mod._fetch_issues') as mock_fetch:
             mock_wait.return_value = {'count_status': 'confirmed'}
             mock_fetch.return_value = {'status': 'error', 'message': 'HTTP 401'}
             result = cmd_fetch_findings(_make_args('sonar-stage-err'))
@@ -252,11 +256,11 @@ class TestFetchFindings:
         ]
         plan_context.plan_dir_for('sonar-stage-mismatch')
 
-        with patch('sonar_mod._wait_for_ce_ready') as mock_wait, \
-                patch('sonar_mod._fetch_issues') as mock_fetch:
+        with patch('sonar_mod._wait_for_ce_ready') as mock_wait, patch('sonar_mod._fetch_issues') as mock_fetch:
             mock_wait.return_value = {'count_status': 'confirmed'}
             mock_fetch.return_value = {'status': 'success', 'issues': issues_payload}
             with patch('_findings_core.add_finding') as mock_add:
+
                 def _side_effect(**kwargs):
                     if mock_add.call_count == 1:
                         return {'status': 'error', 'message': 'simulated store failure'}
@@ -321,8 +325,7 @@ class TestPostResponses:
 
     def _stage_one_issue(self, plan_id, issue):
         """File one sonar-issue finding via fetch_findings and return its hash_id."""
-        with patch('sonar_mod._wait_for_ce_ready') as mock_wait, \
-                patch('sonar_mod._fetch_issues') as mock_fetch:
+        with patch('sonar_mod._wait_for_ce_ready') as mock_wait, patch('sonar_mod._fetch_issues') as mock_fetch:
             mock_wait.return_value = {'count_status': 'confirmed'}
             mock_fetch.return_value = {'status': 'success', 'issues': [issue]}
             result = cmd_fetch_findings(_make_args(plan_id))
@@ -645,8 +648,7 @@ class TestVerifiedCount:
         plan_context.plan_dir_for('sonar-count-confirmed')
         issues_payload = [_issue(), _issue(key='ISSUE-2', file='src/Other.java')]
 
-        with patch('sonar_mod._wait_for_ce_ready') as mock_wait, \
-                patch('sonar_mod._fetch_issues') as mock_fetch:
+        with patch('sonar_mod._wait_for_ce_ready') as mock_wait, patch('sonar_mod._fetch_issues') as mock_fetch:
             mock_wait.return_value = {'count_status': 'confirmed'}
             mock_fetch.return_value = {'status': 'success', 'issues': issues_payload}
             result = cmd_fetch_findings(_make_args('sonar-count-confirmed'))
@@ -659,8 +661,7 @@ class TestVerifiedCount:
         # zero, never undecidable — the core defect this contract guards against.
         plan_context.plan_dir_for('sonar-count-zero')
 
-        with patch('sonar_mod._wait_for_ce_ready') as mock_wait, \
-                patch('sonar_mod._fetch_issues') as mock_fetch:
+        with patch('sonar_mod._wait_for_ce_ready') as mock_wait, patch('sonar_mod._fetch_issues') as mock_fetch:
             mock_wait.return_value = {'count_status': 'confirmed'}
             mock_fetch.return_value = {'status': 'success', 'issues': []}
             result = cmd_fetch_findings(_make_args('sonar-count-zero'))
@@ -673,8 +674,7 @@ class TestVerifiedCount:
         # is a positive on-disk fact (an absent file means "not checked").
         plan_context.plan_dir_for('sonar-marker-zero')
 
-        with patch('sonar_mod._wait_for_ce_ready') as mock_wait, \
-                patch('sonar_mod._fetch_issues') as mock_fetch:
+        with patch('sonar_mod._wait_for_ce_ready') as mock_wait, patch('sonar_mod._fetch_issues') as mock_fetch:
             mock_wait.return_value = {'count_status': 'confirmed'}
             mock_fetch.return_value = {'status': 'success', 'issues': []}
             result = cmd_fetch_findings(_make_args('sonar-marker-zero'))
@@ -691,8 +691,7 @@ class TestVerifiedCount:
         # undecidable marker row is still written.
         plan_context.plan_dir_for('sonar-undecidable-timeout')
 
-        with patch('sonar_mod._wait_for_ce_ready') as mock_wait, \
-                patch('sonar_mod._fetch_issues') as mock_fetch:
+        with patch('sonar_mod._wait_for_ce_ready') as mock_wait, patch('sonar_mod._fetch_issues') as mock_fetch:
             mock_wait.return_value = {
                 'count_status': 'undecidable',
                 'count_status_reason': 'CE analysis not DONE within 600s',
@@ -715,8 +714,7 @@ class TestVerifiedCount:
         # undecidable with a null count, never a false 0, and writes a marker.
         plan_context.plan_dir_for('sonar-undecidable-fetch')
 
-        with patch('sonar_mod._wait_for_ce_ready') as mock_wait, \
-                patch('sonar_mod._fetch_issues') as mock_fetch:
+        with patch('sonar_mod._wait_for_ce_ready') as mock_wait, patch('sonar_mod._fetch_issues') as mock_fetch:
             mock_wait.return_value = {'count_status': 'confirmed'}
             mock_fetch.return_value = {'status': 'error', 'message': 'Sonar API error: HTTP 401'}
             result = cmd_fetch_findings(_make_args('sonar-undecidable-fetch'))
@@ -734,8 +732,7 @@ class TestVerifiedCount:
         # A confirmed non-zero run records the real count in the marker row.
         plan_context.plan_dir_for('sonar-marker-count')
 
-        with patch('sonar_mod._wait_for_ce_ready') as mock_wait, \
-                patch('sonar_mod._fetch_issues') as mock_fetch:
+        with patch('sonar_mod._wait_for_ce_ready') as mock_wait, patch('sonar_mod._fetch_issues') as mock_fetch:
             mock_wait.return_value = {'count_status': 'confirmed'}
             mock_fetch.return_value = {'status': 'success', 'issues': [_issue()]}
             cmd_fetch_findings(_make_args('sonar-marker-count'))
@@ -759,8 +756,7 @@ class TestPrScoping:
     def test_pr_forwarded_to_ce_wait_and_issue_query(self, plan_context):
         plan_context.plan_dir_for('sonar-pr-scope')
 
-        with patch('sonar_mod._wait_for_ce_ready') as mock_wait, \
-                patch('sonar_mod._fetch_issues') as mock_fetch:
+        with patch('sonar_mod._wait_for_ce_ready') as mock_wait, patch('sonar_mod._fetch_issues') as mock_fetch:
             mock_wait.return_value = {'count_status': 'confirmed'}
             mock_fetch.return_value = {'status': 'success', 'issues': []}
             result = cmd_fetch_findings(_make_args('sonar-pr-scope', pr='123'))
@@ -774,8 +770,7 @@ class TestPrScoping:
     def test_pr_recorded_on_marker_row(self, plan_context):
         plan_context.plan_dir_for('sonar-pr-marker')
 
-        with patch('sonar_mod._wait_for_ce_ready') as mock_wait, \
-                patch('sonar_mod._fetch_issues') as mock_fetch:
+        with patch('sonar_mod._wait_for_ce_ready') as mock_wait, patch('sonar_mod._fetch_issues') as mock_fetch:
             mock_wait.return_value = {'count_status': 'confirmed'}
             mock_fetch.return_value = {'status': 'success', 'issues': []}
             cmd_fetch_findings(_make_args('sonar-pr-marker', pr='456'))
@@ -802,8 +797,7 @@ class TestPrScoping:
     def test_no_pr_reports_none(self, plan_context):
         plan_context.plan_dir_for('sonar-no-pr')
 
-        with patch('sonar_mod._wait_for_ce_ready') as mock_wait, \
-                patch('sonar_mod._fetch_issues') as mock_fetch:
+        with patch('sonar_mod._wait_for_ce_ready') as mock_wait, patch('sonar_mod._fetch_issues') as mock_fetch:
             mock_wait.return_value = {'count_status': 'confirmed'}
             mock_fetch.return_value = {'status': 'success', 'issues': []}
             result = cmd_fetch_findings(_make_args('sonar-no-pr'))
@@ -882,10 +876,14 @@ class TestFetchFindingsRouting:
         # must reach the subparser intact, not just --plan-id.
         argv = [
             'fetch_findings',
-            '--plan-id', 'P-456',
-            '--project', 'com.example:proj',
-            '--pr', '99',
-            '--severities', 'BLOCKER,CRITICAL',
+            '--plan-id',
+            'P-456',
+            '--project',
+            'com.example:proj',
+            '--pr',
+            '99',
+            '--severities',
+            'BLOCKER,CRITICAL',
         ]
         _resolved, remaining = extract_routing_args(argv)
 
@@ -905,8 +903,7 @@ class TestFetchFindingsRouting:
 
 def _fetch_one_issue(plan_id):
     """Run ``fetch_findings`` over a single-issue fixture with CE settled."""
-    with patch('sonar_mod._wait_for_ce_ready') as mock_wait, \
-            patch('sonar_mod._fetch_issues') as mock_fetch:
+    with patch('sonar_mod._wait_for_ce_ready') as mock_wait, patch('sonar_mod._fetch_issues') as mock_fetch:
         mock_wait.return_value = {'count_status': 'confirmed'}
         mock_fetch.return_value = {'status': 'success', 'issues': [_issue()]}
         return cmd_fetch_findings(_make_args(plan_id))

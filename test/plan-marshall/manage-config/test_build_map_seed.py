@@ -121,7 +121,9 @@ def test_merge_build_map_fails_closed_when_build_block_lacks_map():
         _config_core_mod.merge_build_map({'build': {'other': {}}})
 
 
-@pytest.mark.parametrize('corrupt_build_map', [[], ['glob'], 'a string', 42, {'python': None}, {'python': 'not a list'}])
+@pytest.mark.parametrize(
+    'corrupt_build_map', [[], ['glob'], 'a string', 42, {'python': None}, {'python': 'not a list'}]
+)
 def test_merge_build_map_fails_closed_when_build_map_is_non_dict(corrupt_build_map):
     """A present-but-corrupt build.map raises BuildMapMissingError.
 
@@ -413,12 +415,8 @@ def _wire_real_aggregator(
     """
     fake_build_entries = [{'skill': 'fake', 'path': 'fake/extension.py', 'module': extension}]
     fake_lang_entries = [{'bundle': 'fake', 'path': 'fake/extension.py', 'module': extension}]
-    monkeypatch.setattr(
-        _extension_discovery_mod, 'discover_build_extensions', lambda: fake_build_entries
-    )
-    monkeypatch.setattr(
-        _extension_discovery_mod, 'discover_all_extensions', lambda: fake_lang_entries
-    )
+    monkeypatch.setattr(_extension_discovery_mod, 'discover_build_extensions', lambda: fake_build_entries)
+    monkeypatch.setattr(_extension_discovery_mod, 'discover_all_extensions', lambda: fake_lang_entries)
     monkeypatch.setattr(
         _extension_discovery_mod,
         'discover_project_modules',
@@ -449,9 +447,7 @@ def test_aggregate_build_map_collects_route_matching_out_of_scripts_production_p
     # a production-role route in the python domain matches the
     # out-of-scripts file.
     assert 'python' in aggregated
-    prod_globs = [
-        entry['glob'] for entry in aggregated['python'] if entry['role'] == 'production'
-    ]
+    prod_globs = [entry['glob'] for entry in aggregated['python'] if entry['role'] == 'production']
     import fnmatch
 
     assert any(fnmatch.fnmatchcase('marketplace/targets/generate.py', g) for g in prod_globs), (
@@ -967,16 +963,12 @@ def test_e2e_multi_module_subdir_only_config_seeds_and_builds(plan_context, monk
     monkeypatch.delenv('PLAN_TRACKED_CONFIG_DIR', raising=False)
     # Only the footprint helper is redirected; _read_build_map_globs reads the
     # seeded build.map back from the persisted marshal.json for real.
-    monkeypatch.setattr(
-        extension_base, '_resolve_plan_footprint', lambda _plan: ['module-a/package.json']
-    )
+    monkeypatch.setattr(extension_base, '_resolve_plan_footprint', lambda _plan: ['module-a/package.json'])
     verdict = extension_base.should_execute_build('verify', plan_context.plan_id)
 
     # Assert 2 — the seeded subdir-only config route matches the subdir footprint
     # and forces a build (not_necessary would be the unfixed regression).
-    assert verdict['decision'] == 'build', (
-        f'subdir-only config change did not trigger a build; verdict={verdict}'
-    )
+    assert verdict['decision'] == 'build', f'subdir-only config change did not trigger a build; verdict={verdict}'
     assert verdict['canonical_command'] == 'verify'
 
 
@@ -1060,9 +1052,7 @@ def test_drift_surfaces_added_globs(plan_context, monkeypatch):
     _seed_with(monkeypatch, _FAKE_AGGREGATED)
 
     # Re-point the derivation at the richer aggregation (one extra production glob).
-    monkeypatch.setattr(
-        _config_core_mod, 'aggregate_build_map', lambda: _FAKE_AGGREGATED_WITH_ADDED
-    )
+    monkeypatch.setattr(_config_core_mod, 'aggregate_build_map', lambda: _FAKE_AGGREGATED_WITH_ADDED)
 
     # Act
     result = _cmd_build_map_mod.cmd_build_map_drift(Namespace(verb='drift'))
@@ -1086,9 +1076,7 @@ def test_drift_surfaces_removed_globs(plan_context, monkeypatch):
     _seed_with(monkeypatch, _FAKE_AGGREGATED)
 
     # Re-point the derivation at the thinner aggregation (test route dropped).
-    monkeypatch.setattr(
-        _config_core_mod, 'aggregate_build_map', lambda: _FAKE_AGGREGATED_WITH_REMOVED
-    )
+    monkeypatch.setattr(_config_core_mod, 'aggregate_build_map', lambda: _FAKE_AGGREGATED_WITH_REMOVED)
 
     # Act
     result = _cmd_build_map_mod.cmd_build_map_drift(Namespace(verb='drift'))
@@ -1114,9 +1102,7 @@ def test_drift_is_read_only_marshal_json_byte_identical(plan_context, monkeypatc
 
     # Re-point the derivation at a divergent aggregation so drift is non-empty
     # (proving the byte-identity holds even when there IS drift to report).
-    monkeypatch.setattr(
-        _config_core_mod, 'aggregate_build_map', lambda: _FAKE_AGGREGATED_WITH_ADDED
-    )
+    monkeypatch.setattr(_config_core_mod, 'aggregate_build_map', lambda: _FAKE_AGGREGATED_WITH_ADDED)
 
     # Act
     result = _cmd_build_map_mod.cmd_build_map_drift(Namespace(verb='drift'))

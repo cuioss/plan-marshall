@@ -24,7 +24,9 @@ _npm_parse_errors_mod = load_script_module('plan-marshall', 'build-npm', '_npm_p
 _npm_parse_eslint_mod = load_script_module('plan-marshall', 'build-npm', '_npm_parse_eslint.py', '_npm_parse_eslint')
 _npm_parse_jest_mod = load_script_module('plan-marshall', 'build-npm', '_npm_parse_jest.py', '_npm_parse_jest')
 _npm_parse_tap_mod = load_script_module('plan-marshall', 'build-npm', '_npm_parse_tap.py', '_npm_parse_tap')
-_npm_parse_typescript_mod = load_script_module('plan-marshall', 'build-npm', '_npm_parse_typescript.py', '_npm_parse_typescript')
+_npm_parse_typescript_mod = load_script_module(
+    'plan-marshall', 'build-npm', '_npm_parse_typescript.py', '_npm_parse_typescript'
+)
 
 parse_errors = _npm_parse_errors_mod.parse_log
 parse_eslint = _npm_parse_eslint_mod.parse_log

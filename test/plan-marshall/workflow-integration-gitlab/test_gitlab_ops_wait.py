@@ -100,10 +100,20 @@ def _two_failing_jobs():
     >=2 failing checks produce >=2 distinctly-named filtered files.
     """
     return [
-        {'name': 'quality-gate', 'status': 'failed', 'stage': 'test', 'pipeline_id': 5005,
-         'web_url': 'https://gitlab.example.com/o/r/-/jobs/8001'},
-        {'name': 'verify', 'status': 'failed', 'stage': 'test', 'pipeline_id': 5005,
-         'web_url': 'https://gitlab.example.com/o/r/-/jobs/8002'},
+        {
+            'name': 'quality-gate',
+            'status': 'failed',
+            'stage': 'test',
+            'pipeline_id': 5005,
+            'web_url': 'https://gitlab.example.com/o/r/-/jobs/8001',
+        },
+        {
+            'name': 'verify',
+            'status': 'failed',
+            'stage': 'test',
+            'pipeline_id': 5005,
+            'web_url': 'https://gitlab.example.com/o/r/-/jobs/8002',
+        },
     ]
 
 

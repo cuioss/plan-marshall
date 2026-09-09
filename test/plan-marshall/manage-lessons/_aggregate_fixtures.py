@@ -36,7 +36,6 @@ The tests use Tier 2 (direct import) invocation. Lessons are seeded under
 test).
 """
 
-
 from argparse import Namespace
 from pathlib import Path
 from unittest.mock import patch
@@ -83,13 +82,7 @@ def _seed_lesson(
     the body content.
     """
     path = lessons_dir / f'{lesson_id}.md'
-    frontmatter = (
-        f'id={lesson_id}\n'
-        f'component={component}\n'
-        'category=improvement\n'
-        'created=2025-01-01\n'
-        f'status={status}\n'
-    )
+    frontmatter = f'id={lesson_id}\ncomponent={component}\ncategory=improvement\ncreated=2025-01-01\nstatus={status}\n'
     if extra_metadata:
         frontmatter += extra_metadata
     content = f'{frontmatter}\n# {title}\n\n{body}'

@@ -138,15 +138,10 @@ class FinalizeStepPresets:
                 :meth:`all_names` so callers can surface a useful error.
         """
         if not isinstance(name, str):
-            raise ValueError(
-                f'preset name must be a string; got {type(name).__name__}. '
-                f'Valid names: {cls.all_names()}'
-            )
+            raise ValueError(f'preset name must be a string; got {type(name).__name__}. Valid names: {cls.all_names()}')
         canonical = name.strip().lower()
         if canonical not in _PRESET_NAMES:
-            raise ValueError(
-                f"unknown preset '{name}'; valid names: {cls.all_names()}"
-            )
+            raise ValueError(f"unknown preset '{name}'; valid names: {cls.all_names()}")
         return copy.deepcopy(_discover_presets()[canonical])
 
     @classmethod
@@ -172,14 +167,9 @@ class FinalizeStepPresets:
             ValueError: When ``name`` does not match any known preset.
         """
         if not isinstance(name, str):
-            raise ValueError(
-                f'preset name must be a string; got {type(name).__name__}. '
-                f'Valid names: {cls.all_names()}'
-            )
+            raise ValueError(f'preset name must be a string; got {type(name).__name__}. Valid names: {cls.all_names()}')
         canonical = name.strip().lower()
         description = cls._DESCRIPTIONS.get(canonical)
         if description is None:
-            raise ValueError(
-                f"unknown preset '{name}'; valid names: {cls.all_names()}"
-            )
+            raise ValueError(f"unknown preset '{name}'; valid names: {cls.all_names()}")
         return description

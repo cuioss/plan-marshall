@@ -14,7 +14,6 @@ excluded, and everything else — including an unannotated declaration, which
 states no intent and must not be assumed read-only — still counts.
 """
 
-
 from __future__ import annotations
 
 import json
@@ -42,9 +41,7 @@ class TestReadIntentExcludedFromDenominator:
         )
         plan_dir = _plan_dir(tmp_path, ['src/written_a.py', 'src/written_b.py'])
 
-        status, message, details = _cac.check_affected_files_recall(
-            outline, plan_dir, _ONE_DELIVERABLE
-        )
+        status, message, details = _cac.check_affected_files_recall(outline, plan_dir, _ONE_DELIVERABLE)
 
         assert status == 'pass', message
         assert details['declared'] == 2
@@ -67,9 +64,7 @@ class TestReadIntentExcludedFromDenominator:
         )
         plan_dir = _plan_dir(tmp_path, ['src/new.py'])
 
-        status, _message, details = _cac.check_affected_files_recall(
-            outline, plan_dir, _ONE_DELIVERABLE
-        )
+        status, _message, details = _cac.check_affected_files_recall(outline, plan_dir, _ONE_DELIVERABLE)
 
         assert details['declared'] == 3
         assert details['found'] == 1
@@ -86,9 +81,7 @@ class TestReadIntentExcludedFromDenominator:
         outline = _outline([('src/a.py', None), ('src/b.py', None)])
         plan_dir = _plan_dir(tmp_path, ['src/a.py'])
 
-        _status, _message, details = _cac.check_affected_files_recall(
-            outline, plan_dir, _ONE_DELIVERABLE
-        )
+        _status, _message, details = _cac.check_affected_files_recall(outline, plan_dir, _ONE_DELIVERABLE)
 
         assert details['declared'] == 2
         assert details['read_intent_excluded'] == 0
@@ -101,9 +94,7 @@ class TestReadIntentExcludedFromDenominator:
         )
         plan_dir = _plan_dir(tmp_path, ['src/written.py'])
 
-        status, message, details = _cac.check_affected_files_recall(
-            outline, plan_dir, _ONE_DELIVERABLE
-        )
+        status, message, details = _cac.check_affected_files_recall(outline, plan_dir, _ONE_DELIVERABLE)
 
         assert details['declared'] == 1
         assert details['read_intent_excluded'] == 1
@@ -131,9 +122,7 @@ class TestReadIntentExcludedIsPublishedOnEveryBranch:
         plan_dir.mkdir()
         (plan_dir / 'references.json').write_text(json.dumps({'domains': []}), encoding='utf-8')
 
-        status, _message, details = _cac.check_affected_files_recall(
-            outline, plan_dir, _ONE_DELIVERABLE
-        )
+        status, _message, details = _cac.check_affected_files_recall(outline, plan_dir, _ONE_DELIVERABLE)
 
         assert status == 'inconclusive'
         assert details['read_intent_excluded'] == 1
@@ -152,9 +141,7 @@ class TestReadIntentExcludedIsPublishedOnEveryBranch:
         )
         plan_dir = _plan_dir(tmp_path, ['src/w.py'])
 
-        status, _message, details = _cac.check_affected_files_recall(
-            outline, plan_dir, _ONE_DELIVERABLE
-        )
+        status, _message, details = _cac.check_affected_files_recall(outline, plan_dir, _ONE_DELIVERABLE)
 
         assert status == 'fail'
         assert details['declared'] == 0
@@ -168,24 +155,17 @@ class TestReadIntentExcludedIsPublishedOnEveryBranch:
         plan_dir.mkdir()
         (plan_dir / 'references.json').write_text('{not json', encoding='utf-8')
 
-        status, message, details = _cac.check_affected_files_recall(
-            outline, plan_dir, _ONE_DELIVERABLE
-        )
+        status, message, details = _cac.check_affected_files_recall(outline, plan_dir, _ONE_DELIVERABLE)
 
         assert status == 'fail'
         assert 'references.json unreadable' in message
         assert details['read_intent_excluded'] == 1
 
     def test_published_on_the_no_declaration_skip_branch(self, tmp_path):
-        outline = (
-            '# Solution\n\n## Summary\n\ns\n\n## Overview\n\no\n\n'
-            '## Deliverables\n\n### 1. One\n\nNo files.\n'
-        )
+        outline = '# Solution\n\n## Summary\n\ns\n\n## Overview\n\no\n\n## Deliverables\n\n### 1. One\n\nNo files.\n'
         plan_dir = _plan_dir(tmp_path, ['src/a.py'])
 
-        status, _message, details = _cac.check_affected_files_recall(
-            outline, plan_dir, _ONE_DELIVERABLE
-        )
+        status, _message, details = _cac.check_affected_files_recall(outline, plan_dir, _ONE_DELIVERABLE)
 
         assert status == 'skip'
         assert details['read_intent_excluded'] == 0
@@ -208,9 +188,7 @@ class TestReadIntentExcludedIsPublishedOnEveryBranch:
         )
         plan_dir = _plan_dir(tmp_path, ['src/w.py'])
 
-        _status, _message, details = _cac.check_affected_files_recall(
-            outline, plan_dir, _ONE_DELIVERABLE
-        )
+        _status, _message, details = _cac.check_affected_files_recall(outline, plan_dir, _ONE_DELIVERABLE)
 
         assert len(_cac.extract_affected_files_per_deliverable(outline)) == 3, 'three bullets'
         assert details['declared'] + details['read_intent_excluded'] == 2, (
@@ -244,13 +222,9 @@ class TestIntentCaptureNeverBreaksParsing:
             '# Solution\n\n## Summary\n\ns\n\n## Overview\n\no\n\n## Deliverables\n\n'
             '### 1. One\n\n**Affected files:**\n- src/a.py (read) - trailing prose\n'
         )
-        assert _cac.extract_affected_files_per_deliverable(content) == [
-            'src/a.py (read) - trailing prose'
-        ]
+        assert _cac.extract_affected_files_per_deliverable(content) == ['src/a.py (read) - trailing prose']
         # No intent was read, so it is NOT filtered out as a read declaration.
-        assert _cac.extract_modification_intent_files(content) == [
-            'src/a.py (read) - trailing prose'
-        ]
+        assert _cac.extract_modification_intent_files(content) == ['src/a.py (read) - trailing prose']
 
     def test_uppercase_parenthetical_after_a_backticked_path_yields_no_intent(self):
         outline = _outline([('src/a.py', 'New file')])
@@ -306,9 +280,7 @@ class TestAllReadIntentIsSkippedNotFailed:
         outline = _outline([('src/r1.py', 'read'), ('src/r2.py', 'read')])
         plan_dir = _plan_dir(tmp_path, ['src/other.py'])
 
-        status, message, details = _cac.check_affected_files_recall(
-            outline, plan_dir, _ONE_DELIVERABLE
-        )
+        status, message, details = _cac.check_affected_files_recall(outline, plan_dir, _ONE_DELIVERABLE)
 
         assert status == 'skip'
         assert 'read intent' in message
@@ -324,9 +296,7 @@ class TestAllReadIntentIsSkippedNotFailed:
         outline = _outline([('src/r1.py', 'read')])
         plan_dir = _plan_dir(tmp_path, [])
 
-        status, message, _details = _cac.check_affected_files_recall(
-            outline, plan_dir, _ONE_DELIVERABLE
-        )
+        status, message, _details = _cac.check_affected_files_recall(outline, plan_dir, _ONE_DELIVERABLE)
 
         assert status == 'skip'
         assert 'no bullet parsed' not in message
@@ -339,9 +309,7 @@ class TestAllReadIntentIsSkippedNotFailed:
         )
         plan_dir = _plan_dir(tmp_path, ['src/a.py'])
 
-        status, message, _details = _cac.check_affected_files_recall(
-            outline, plan_dir, _ONE_DELIVERABLE
-        )
+        status, message, _details = _cac.check_affected_files_recall(outline, plan_dir, _ONE_DELIVERABLE)
 
         assert status == 'skip'
         assert 'No deliverable declares a file surface' in message

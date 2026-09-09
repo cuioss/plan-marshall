@@ -657,8 +657,7 @@ class TestParametrizedIdentifierIsFound:
         # Arrange — a log carrying only per-case nodeids, as pytest writes them.
         log_path = tmp_path / 'module-tests.log'
         log_path.write_text(
-            'test/foo/test_thing.py::test_shapes[alias] PASSED\n'
-            'test/foo/test_thing.py::test_shapes[constant] PASSED\n',
+            'test/foo/test_thing.py::test_shapes[alias] PASSED\ntest/foo/test_thing.py::test_shapes[constant] PASSED\n',
             encoding='utf-8',
         )
 
@@ -744,15 +743,11 @@ class TestTheLeftBoundaryIsAnchoredToo:
         assert result.passed is False
         assert result.missing == ('test/foo/test_thing.py::test_login',)
 
-    def test_a_longer_path_prefix_does_not_false_match_a_parametrized_stem(
-        self, tmp_path: Path
-    ) -> None:
+    def test_a_longer_path_prefix_does_not_false_match_a_parametrized_stem(self, tmp_path: Path) -> None:
         """The bracket alternative needs the same left anchor as the exact form."""
         # Arrange
         log_path = tmp_path / 'module-tests.log'
-        log_path.write_text(
-            'other/test/foo/test_thing.py::test_shapes[alias] PASSED\n', encoding='utf-8'
-        )
+        log_path.write_text('other/test/foo/test_thing.py::test_shapes[alias] PASSED\n', encoding='utf-8')
 
         # Act
         result = assert_identifiers_in_log(['test/foo/test_thing.py::test_shapes'], log_path)

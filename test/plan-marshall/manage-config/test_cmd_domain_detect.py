@@ -19,9 +19,7 @@ from conftest import load_script_module, parse_ns
 _MANAGE_CONFIG = ('plan-marshall', 'manage-config')
 _SCRIPT = (*_MANAGE_CONFIG, 'manage-config.py')
 
-_mod = load_script_module(
-    *_MANAGE_CONFIG, '_cmd_domain_detect.py', module_name='_cmd_domain_detect_under_test'
-)
+_mod = load_script_module(*_MANAGE_CONFIG, '_cmd_domain_detect.py', module_name='_cmd_domain_detect_under_test')
 cmd_domain_detect = _mod.cmd_domain_detect
 _glob_to_regex = _mod._glob_to_regex
 _extract_narrative_paths = _mod._extract_narrative_paths
@@ -542,12 +540,8 @@ def test_lesson_body_preferred_over_request_md(plan_context):
 
 def test_domain_detect_registered_in_manage_config_dispatch():
     """argparse routes 'domain-detect' to cmd_domain_detect."""
-    manage_config = load_script_module(
-        *_MANAGE_CONFIG, 'manage-config.py', module_name='_manage_config_dispatch_check'
-    )
-    assert manage_config.cmd_domain_detect is cmd_domain_detect or callable(
-        manage_config.cmd_domain_detect
-    )
+    manage_config = load_script_module(*_MANAGE_CONFIG, 'manage-config.py', module_name='_manage_config_dispatch_check')
+    assert manage_config.cmd_domain_detect is cmd_domain_detect or callable(manage_config.cmd_domain_detect)
 
     # The REAL parser accepts the verb, rather than a stand-in parser assembled
     # here: a stand-in that registers the subcommand itself can only prove that

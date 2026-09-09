@@ -280,9 +280,7 @@ def test_resolve_outline_skill_competing_domains(plan_context):
     """Two domains declaring DIFFERENT skills suppress both and name the contention."""
     create_marshal_json(
         plan_context.fixture_dir,
-        _config_with_outline_skills(
-            {'plan-marshall-plugin-dev': _PLUGIN_OUTLINE, 'java': _JAVA_OUTLINE}
-        ),
+        _config_with_outline_skills({'plan-marshall-plugin-dev': _PLUGIN_OUTLINE, 'java': _JAVA_OUTLINE}),
     )
 
     result = cmd_resolve_outline_skill(Namespace(domain=['plan-marshall-plugin-dev', 'java']))
@@ -423,8 +421,7 @@ def test_removed_verb_rejected_by_manage_config(verb, plan_context):
     result = run_script(SCRIPT_PATH, verb, cwd=plan_context.fixture_dir)
 
     assert result.returncode == 2, (
-        f'manage-config must reject removed verb {verb!r} with exit code 2 '
-        f'(got {result.returncode})'
+        f'manage-config must reject removed verb {verb!r} with exit code 2 (got {result.returncode})'
     )
     assert 'invalid choice' in result.stderr, (
         f'expected an argparse invalid-choice rejection for {verb!r}, got: {result.stderr!r}'
@@ -441,8 +438,7 @@ def test_removed_verb_rejected_by_query_config(verb, plan_context):
     result = run_script(query_script, verb, cwd=plan_context.fixture_dir)
 
     assert result.returncode == 2, (
-        f'query-config must reject removed verb {verb!r} with exit code 2 '
-        f'(got {result.returncode})'
+        f'query-config must reject removed verb {verb!r} with exit code 2 (got {result.returncode})'
     )
     assert 'invalid choice' in result.stderr, (
         f'expected an argparse invalid-choice rejection for {verb!r}, got: {result.stderr!r}'
@@ -490,12 +486,8 @@ def test_list_finalize_steps_surfaces_finalize_step_simplify(plan_context, monke
         (s for s in result['steps'] if s['name'] == 'default:finalize-step-simplify'),
         None,
     )
-    assert simplify is not None, (
-        'default:finalize-step-simplify must be surfaced by list-finalize-steps'
-    )
-    assert simplify['description'], (
-        'default:finalize-step-simplify must carry a non-empty description'
-    )
+    assert simplify is not None, 'default:finalize-step-simplify must be surfaced by list-finalize-steps'
+    assert simplify['description'], 'default:finalize-step-simplify must carry a non-empty description'
 
 
 def test_list_finalize_steps_discovers_project_skills(plan_context):
@@ -599,9 +591,7 @@ def test_list_finalize_steps_ordered_ascending_by_order(tmp_path):
     steps = _run_discovery_in_cwd(tmp_path)
 
     orders = [s['order'] for s in steps if s['order'] is not None]
-    assert orders == sorted(orders), (
-        f'discovered finalize steps must be ascending by order: {orders}'
-    )
+    assert orders == sorted(orders), f'discovered finalize steps must be ascending by order: {orders}'
 
 
 # =============================================================================
@@ -692,9 +682,7 @@ def test_list_finalize_steps_project_skill_order_defaults_to_zero_when_absent():
 
     from extension_discovery import _build_implementor_record
 
-    handle = tempfile.NamedTemporaryFile(
-        mode='w', suffix='.md', delete=False, encoding='utf-8'
-    )
+    handle = tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False, encoding='utf-8')
     handle.write('---\nname: finalize-step-bare\ndescription: Bare\n---\n\n# Bare\n')
     handle.close()
     bare_doc = Path(handle.name)
@@ -791,8 +779,7 @@ def test_list_finalize_steps_optional_bundle_description_populated():
     )
     # Sanity check: description is meaningfully longer than the bare notation.
     assert len(description) > len('plan-marshall:plan-retrospective'), (
-        f'Description {description!r} is suspiciously short — expected the '
-        f'frontmatter description'
+        f'Description {description!r} is suspiciously short — expected the frontmatter description'
     )
 
 
@@ -822,9 +809,7 @@ def test_discover_finalize_steps_builtins_resolve_concrete_order(tmp_path):
     built_ins = {s['name']: s for s in steps if s['source'] == 'built-in'}
     assert built_ins, 'Expected discovered built-in finalize steps'
     for step_name, rec in built_ins.items():
-        assert isinstance(rec['order'], int), (
-            f'{step_name} must resolve a concrete integer order, got {rec["order"]!r}'
-        )
+        assert isinstance(rec['order'], int), f'{step_name} must resolve a concrete integer order, got {rec["order"]!r}'
 
 
 # =============================================================================
@@ -889,13 +874,7 @@ def test_discover_recipes_skips_recipe_with_domain_only_in_body(tmp_path):
     skill_dir = _make_recipe_skill(
         tmp_path,
         'recipe-body-only',
-        '---\n'
-        'description: No recipe_domain in frontmatter\n'
-        '---\n'
-        '\n'
-        '# Body\n'
-        '\n'
-        'recipe_domain: java\n',
+        '---\ndescription: No recipe_domain in frontmatter\n---\n\n# Body\n\nrecipe_domain: java\n',
     )
 
     with (

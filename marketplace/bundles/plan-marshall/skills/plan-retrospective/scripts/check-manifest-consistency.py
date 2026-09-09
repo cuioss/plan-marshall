@@ -163,9 +163,7 @@ def load_decision_log_entries(plan_dir: Path) -> list[str]:
     return matches
 
 
-def load_diff_files(
-    diff_file: str | None, base_ref: str | None, plan_dir: Path
-) -> tuple[list[str], str, bool]:
+def load_diff_files(diff_file: str | None, base_ref: str | None, plan_dir: Path) -> tuple[list[str], str, bool]:
     """Return ``(file_paths, base_label, evidence_available)``.
 
     ``evidence_available`` says whether the rules received a diff observation AT
@@ -698,10 +696,7 @@ def apply_input_reduction(checks: list[dict[str, str]], reduction: dict[str, Any
     if not diff_available:
         return _withhold_on_absent_evidence(checks)
 
-    note = (
-        f'{dropped} of {reduction["supplied"]} supplied paths were filtered as '
-        f'bookkeeping before evaluation'
-    )
+    note = f'{dropped} of {reduction["supplied"]} supplied paths were filtered as bookkeeping before evaluation'
     if not reduction['oracle_available']:
         note += (
             ' (build_map oracle unavailable — no path could be classified BY THE ORACLE; '
@@ -778,11 +773,7 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     diff_evaluators: tuple[
         Callable[[dict[str, Any], list[str]], tuple[dict[str, str], dict[str, Any] | None]],
         ...,
-    ] = tuple(
-        globals()[symbol]
-        for name, symbol in _DIFF_FED_RULES.items()
-        if name != _BRANCH_CLEANUP_CHECK
-    )
+    ] = tuple(globals()[symbol] for name, symbol in _DIFF_FED_RULES.items() if name != _BRANCH_CLEANUP_CHECK)
     for evaluator in diff_evaluators:
         check, finding = evaluator(manifest, kept_files)
         checks.append(check)
@@ -792,9 +783,7 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     # evaluate_branch_cleanup takes the loader's evidence signal itself, so it can
     # skip (instead of false-positive failing) when no diff was observed, and can
     # still EVALUATE a resolved-empty footprint that was.
-    cleanup_check, cleanup_finding = evaluate_branch_cleanup(
-        manifest, kept_files, len(raw_files), evidence_available
-    )
+    cleanup_check, cleanup_finding = evaluate_branch_cleanup(manifest, kept_files, len(raw_files), evidence_available)
     checks.append(cleanup_check)
     if cleanup_finding is not None:
         findings.append(cleanup_finding)

@@ -193,9 +193,7 @@ def _scan_file(path: Path, rel: str) -> list[dict]:
 
 def _script_targets(marketplace_root: Path) -> list[Path]:
     """Return every ``*.py`` under any bundle's ``skills/*/scripts/`` tree."""
-    return sorted(
-        p for p in marketplace_root.glob('*/skills/*/scripts/**/*.py') if p.is_file()
-    )
+    return sorted(p for p in marketplace_root.glob('*/skills/*/scripts/**/*.py') if p.is_file())
 
 
 def analyze_sys_path_bootstrap(marketplace_root: Path) -> list[dict]:

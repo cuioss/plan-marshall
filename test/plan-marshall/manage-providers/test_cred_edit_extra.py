@@ -56,8 +56,11 @@ class TestUpsertExtraFieldsIdempotent:
         ('pairs', 'expected_keys', 'expected_config'),
         [
             (['organization=my-org'], ['organization'], {'organization': 'my-org'}),
-            (['project_key=pk', 'organization=org'], ['project_key', 'organization'],
-             {'project_key': 'pk', 'organization': 'org'}),
+            (
+                ['project_key=pk', 'organization=org'],
+                ['project_key', 'organization'],
+                {'project_key': 'pk', 'organization': 'org'},
+            ),
             (['no-equals-here'], [], {}),
             ([], [], {}),
         ],
@@ -68,9 +71,7 @@ class TestUpsertExtraFieldsIdempotent:
             'an-empty-pair-list-is-a-no-op',
         ],
     )
-    def test_a_single_upsert_reports_its_keys_and_persists_exactly_them(
-        self, pairs, expected_keys, expected_config
-    ):
+    def test_a_single_upsert_reports_its_keys_and_persists_exactly_them(self, pairs, expected_keys, expected_config):
         """One call reports the keys it accepted, and the config holds those keys alone."""
         # Arrange
         from _cred_edit import _upsert_extra_fields
@@ -149,8 +150,7 @@ class TestUpsertExtraFieldsValidation:
                 ['organization', 'project_key'],
                 {'organization': 'my-org', 'project_key': 'pk'},
             ),
-            (['organization=first', 'organization=second'], ['organization'],
-             {'organization': 'second'}),
+            (['organization=first', 'organization=second'], ['organization'], {'organization': 'second'}),
         ],
         ids=[
             'an-empty-key-persists-no-blank-entry',
@@ -163,9 +163,7 @@ class TestUpsertExtraFieldsValidation:
             'a-key-supplied-twice-is-reported-once-and-the-last-value-wins',
         ],
     )
-    def test_only_validated_keys_reach_the_provider_config(
-        self, pairs, expected_keys, expected_config
-    ):
+    def test_only_validated_keys_reach_the_provider_config(self, pairs, expected_keys, expected_config):
         """Empty and secret-named keys never reach ``marshal.json``; the rest do.
 
         The config is asserted by exact equality rather than by key absence: the
@@ -192,9 +190,7 @@ class TestUpsertExtraFieldsValidation:
         """
         assert SECRET_PLACEHOLDERS, 'SECRET_PLACEHOLDERS is empty — the sweep below collects no rows'
 
-    @pytest.mark.parametrize(
-        'secret_key', sorted(SECRET_PLACEHOLDERS), ids=sorted(SECRET_PLACEHOLDERS)
-    )
+    @pytest.mark.parametrize('secret_key', sorted(SECRET_PLACEHOLDERS), ids=sorted(SECRET_PLACEHOLDERS))
     def test_every_secret_placeholder_key_is_rejected(self, secret_key):
         """No key ``SECRET_PLACEHOLDERS`` names reaches ``marshal.json``.
 

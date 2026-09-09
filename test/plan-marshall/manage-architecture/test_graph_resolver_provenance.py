@@ -132,9 +132,7 @@ class _StubResolver:
 
 def _register(monkeypatch, *resolvers: _StubResolver) -> None:
     """Point the discovery seam at the supplied stub resolvers."""
-    records = [
-        {'origin': f'stub-{r.resolver_id}', 'id': r.resolver_id, 'module': r} for r in resolvers
-    ]
+    records = [{'origin': f'stub-{r.resolver_id}', 'id': r.resolver_id, 'module': r} for r in resolvers]
     monkeypatch.setattr(extension_discovery, 'discover_derivation_resolvers', lambda: records)
 
 
@@ -207,9 +205,7 @@ def test_graph_with_one_empty_resolver_is_distinguishable_from_zero(monkeypatch)
         # positive meaning, and the response says so.
         assert result['edges'] == []
         assert result['resolver_count'] == 1
-        assert result['resolvers'] == [
-            {'id': 'maven', 'edge_count': 0, 'status': 'ok', 'notes': []}
-        ]
+        assert result['resolvers'] == [{'id': 'maven', 'edge_count': 0, 'status': 'ok', 'notes': []}]
 
 
 def test_path_with_one_empty_resolver_is_distinguishable_from_zero(monkeypatch):

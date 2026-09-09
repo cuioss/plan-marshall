@@ -253,9 +253,7 @@ def resolve_findings_store(plan_id: str, any_checkout: bool = False) -> Findings
         foreign_plan_dir = holder / PLAN_DIR_NAME / 'local' / 'plans' / plan_id
         if foreign_plan_dir.is_dir():
             store = _classify(foreign_plan_dir, resolution)
-            return store._replace(
-                detail=f'{store.detail}; adopted from the checkout {holder} via --any-checkout'
-            )
+            return store._replace(detail=f'{store.detail}; adopted from the checkout {holder} via --any-checkout')
 
     detail = (
         f'plan directory {plan_dir} is absent under the resolved root {root}, so the findings '

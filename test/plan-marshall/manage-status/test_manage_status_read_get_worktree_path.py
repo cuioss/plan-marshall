@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for manage-status.py read: worktree-path resolution."""
 
-
 import json
 from argparse import Namespace
 
@@ -58,8 +57,7 @@ def test_get_worktree_path_resolved_when_use_worktree_true(plan_context):
     assert result['status'] == 'success'
     assert result['use_worktree'] is True
     assert result['worktree_state'] == 'materialized', (
-        f'Expected worktree_state=materialized, got '
-        f'{result.get("worktree_state")!r}.'
+        f'Expected worktree_state=materialized, got {result.get("worktree_state")!r}.'
     )
     assert result['worktree_path'] == abs_path, (
         f'Expected resolved worktree_path={abs_path!r}, got '
@@ -90,8 +88,7 @@ def test_get_worktree_path_empty_when_use_worktree_false(plan_context):
     assert result['status'] == 'success'
     assert result['use_worktree'] is False
     assert result['worktree_state'] == 'disabled', (
-        f'Expected worktree_state=disabled, got '
-        f'{result.get("worktree_state")!r}.'
+        f'Expected worktree_state=disabled, got {result.get("worktree_state")!r}.'
     )
     assert result['worktree_path'] == '', (
         f"Expected empty worktree_path '', got "
@@ -128,14 +125,10 @@ def test_get_worktree_path_pending_when_not_yet_materialized(plan_context):
     status_path.write_text(json.dumps(status), encoding='utf-8')
 
     result = cmd_get_worktree_path(Namespace(plan_id=plan_id))
-    assert result['status'] == 'success', (
-        f'Pre-materialization must succeed (tri-state contract), got '
-        f'{result!r}.'
-    )
+    assert result['status'] == 'success', f'Pre-materialization must succeed (tri-state contract), got {result!r}.'
     assert result['use_worktree'] is True
     assert result['worktree_state'] == 'pending', (
-        f'Expected worktree_state=pending, got '
-        f'{result.get("worktree_state")!r}.'
+        f'Expected worktree_state=pending, got {result.get("worktree_state")!r}.'
     )
     assert result['worktree_path'] == ''
     assert result['not_yet_materialized'] is True
@@ -301,12 +294,12 @@ class TestGetWorktreePathPreMaterialization:
 # Test: cmd_get_worktree_path verb
 # =============================================================================
 
+
 def test_cli_get_worktree_path_help(plan_context):
     """get-worktree-path --help must succeed (subparser registration check)."""
     result = run_script(SCRIPT_PATH, 'get-worktree-path', '--help')
     assert result.success, (
-        f'get-worktree-path --help failed: {result.stderr!r}. '
-        f'Subparser is missing from manage-status.py.'
+        f'get-worktree-path --help failed: {result.stderr!r}. Subparser is missing from manage-status.py.'
     )
 
 
@@ -365,9 +358,7 @@ class TestCliGetAlias:
 
     def test_cli_get_alias_succeeds(self, plan_context):
         """``manage-status get`` succeeds via the CLI for an existing plan."""
-        cmd_create(
-            Namespace(plan_id='get-alias', title='Get Alias', phases='1-init,2-refine', force=False)
-        )
+        cmd_create(Namespace(plan_id='get-alias', title='Get Alias', phases='1-init,2-refine', force=False))
 
         result = run_script(SCRIPT_PATH, 'get', '--plan-id', 'get-alias')
 
@@ -377,9 +368,7 @@ class TestCliGetAlias:
 
     def test_cli_get_alias_matches_read(self, plan_context):
         """``get`` and ``read`` produce identical payloads for the same plan."""
-        cmd_create(
-            Namespace(plan_id='get-alias-match', title='Get Alias Match', phases='1-init,2-refine', force=False)
-        )
+        cmd_create(Namespace(plan_id='get-alias-match', title='Get Alias Match', phases='1-init,2-refine', force=False))
 
         get_result = run_script(SCRIPT_PATH, 'get', '--plan-id', 'get-alias-match')
         read_result = run_script(SCRIPT_PATH, 'read', '--plan-id', 'get-alias-match')

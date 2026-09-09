@@ -184,10 +184,7 @@ def is_open_in_ide_enabled() -> bool:
         return True
     data = json.loads(marshal_path.read_text(encoding='utf-8'))
     if not isinstance(data, dict):
-        raise ValueError(
-            f"{marshal_path}: expected a JSON object at the top level, "
-            f"got {type(data).__name__}"
-        )
+        raise ValueError(f'{marshal_path}: expected a JSON object at the top level, got {type(data).__name__}')
     plan_ns = data.get('plan')
     if not isinstance(plan_ns, dict):
         return True
@@ -195,10 +192,7 @@ def is_open_in_ide_enabled() -> bool:
     if open_in_ide is None:
         return True
     if not isinstance(open_in_ide, bool):
-        raise ValueError(
-            f"{marshal_path}: expected a boolean at plan.open_in_ide, "
-            f"got {type(open_in_ide).__name__}"
-        )
+        raise ValueError(f'{marshal_path}: expected a boolean at plan.open_in_ide, got {type(open_in_ide).__name__}')
     return open_in_ide
 
 
@@ -238,7 +232,7 @@ def _resolve_document_path(plan_id: str, document: str) -> tuple[Path | None, st
     for line in proc.stdout.splitlines():
         stripped = line.strip()
         if stripped.startswith('path:'):
-            value = stripped[len('path:'):].strip().strip('"')
+            value = stripped[len('path:') :].strip().strip('"')
             if value:
                 return Path(value), None
     return None, 'resolver did not emit a path field'

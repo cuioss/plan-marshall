@@ -7,7 +7,6 @@ Its sections, in order:
 * The summary must be total over what was emitted
 """
 
-
 from __future__ import annotations
 
 import json
@@ -48,9 +47,7 @@ class TestTestRecognitionSurvivesAnOracleWithNoTestRoute:
     @staticmethod
     def _write_production_only_marshal(base: Path) -> None:
         (base / 'marshal.json').write_text(
-            json.dumps(
-                {'build': {'map': {'python': [{'glob': 'src/*.py', 'role': 'production'}]}}}
-            ),
+            json.dumps({'build': {'map': {'python': [{'glob': 'src/*.py', 'role': 'production'}]}}}),
             encoding='utf-8',
         )
 
@@ -75,13 +72,9 @@ class TestTestRecognitionSurvivesAnOracleWithNoTestRoute:
         plan_id = self._setup_routing(tmp_path, monkeypatch)
         diff = _write_diff(tmp_path, ['test/plan-marshall/plan-retrospective/test_check_routing_decisions.py'])
 
-        result = run_script(
-            ROUTING_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live', '--diff-file', str(diff)
-        )
+        result = run_script(ROUTING_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live', '--diff-file', str(diff))
         assert result.success, result.stderr
-        simplify = [
-            c for c in result.toon()['mis_prune_checks'] if c['check'] == 'mis_prune:finalize-step-simplify'
-        ]
+        simplify = [c for c in result.toon()['mis_prune_checks'] if c['check'] == 'mis_prune:finalize-step-simplify']
         assert simplify[0]['status'] == 'pass', simplify[0]
 
     def test_a_production_file_in_the_same_footprint_still_fails(self, tmp_path, monkeypatch):
@@ -92,13 +85,9 @@ class TestTestRecognitionSurvivesAnOracleWithNoTestRoute:
             ['test/plan-marshall/plan-retrospective/test_check_routing_decisions.py', 'src/module.py'],
         )
 
-        result = run_script(
-            ROUTING_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live', '--diff-file', str(diff)
-        )
+        result = run_script(ROUTING_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live', '--diff-file', str(diff))
         assert result.success, result.stderr
-        simplify = [
-            c for c in result.toon()['mis_prune_checks'] if c['check'] == 'mis_prune:finalize-step-simplify'
-        ]
+        simplify = [c for c in result.toon()['mis_prune_checks'] if c['check'] == 'mis_prune:finalize-step-simplify']
         assert simplify[0]['status'] == 'fail', simplify[0]
 
     def test_the_shared_convention_recognises_the_documented_test_shapes(self):
@@ -178,9 +167,7 @@ class TestTestRecognitionSurvivesAnOracleWithNoTestRoute:
 
         assert classify_path('doc/references/x.md', []) == CATEGORY_DOCUMENTATION
 
-    def test_an_unrouted_source_file_under_references_still_counts_as_production(
-        self, tmp_path, monkeypatch
-    ):
+    def test_an_unrouted_source_file_under_references_still_counts_as_production(self, tmp_path, monkeypatch):
         """The consumer-level consequence of the rung above."""
         plan_id, plan_dir = _setup(
             tmp_path,
@@ -197,13 +184,9 @@ class TestTestRecognitionSurvivesAnOracleWithNoTestRoute:
         (logs / 'decision.log').write_text('[2026-04-17T10:00:00Z] [INFO] [aaaaaa] nothing\n', encoding='utf-8')
         diff = _write_diff(tmp_path, ['src/references/helper.py'])
 
-        result = run_script(
-            ROUTING_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live', '--diff-file', str(diff)
-        )
+        result = run_script(ROUTING_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live', '--diff-file', str(diff))
         assert result.success, result.stderr
-        simplify = [
-            c for c in result.toon()['mis_prune_checks'] if c['check'] == 'mis_prune:finalize-step-simplify'
-        ]
+        simplify = [c for c in result.toon()['mis_prune_checks'] if c['check'] == 'mis_prune:finalize-step-simplify']
         assert simplify[0]['status'] == 'fail', simplify[0]
 
 
@@ -226,9 +209,7 @@ class TestBranchCleanupRuleDoesNotClaimAnEmptyDiff:
             ['.plan/plans/oracle-plan/status.json', '.plan/plans/oracle-plan/execution.toon'],
         )
 
-        result = run_script(
-            MANIFEST_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live', '--diff-file', str(diff)
-        )
+        result = run_script(MANIFEST_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live', '--diff-file', str(diff))
         assert result.success, result.stderr
         data = result.toon()
 

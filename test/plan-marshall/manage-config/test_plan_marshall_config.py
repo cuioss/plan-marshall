@@ -25,9 +25,7 @@ from conftest import load_script_module, run_script
 _cmd_ext_defaults = load_script_module(
     'plan-marshall', 'manage-config', '_cmd_ext_defaults.py', module_name='_cmd_ext_defaults'
 )
-_cmd_init_mod = load_script_module(
-    'plan-marshall', 'manage-config', '_cmd_init.py', module_name='_cmd_init'
-)
+_cmd_init_mod = load_script_module('plan-marshall', 'manage-config', '_cmd_init.py', module_name='_cmd_init')
 _cmd_skill_domains = load_script_module(
     'plan-marshall', 'manage-config', '_cmd_skill_domains.py', module_name='_cmd_skill_domains'
 )
@@ -369,7 +367,10 @@ def test_validate_domain_invariants_no_overlap():
 
 def test_validate_domain_invariants_overlap_raises():
     """Validation raises ValueError when defaults and optionals overlap."""
-    domain = {'defaults': ['plan-marshall:persona-plan-marshall-agent'], 'optionals': ['plan-marshall:persona-plan-marshall-agent']}
+    domain = {
+        'defaults': ['plan-marshall:persona-plan-marshall-agent'],
+        'optionals': ['plan-marshall:persona-plan-marshall-agent'],
+    }
     import pytest
 
     with pytest.raises(ValueError, match='must not appear in both defaults and optionals'):

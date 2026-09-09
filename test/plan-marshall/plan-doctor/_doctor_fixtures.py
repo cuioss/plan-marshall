@@ -140,10 +140,7 @@ def make_status_json(
     """
     plan_dir.mkdir(parents=True, exist_ok=True)
     overrides = dict(phase_statuses or {})
-    phases = [
-        {'name': name, 'status': overrides.get(name, 'pending')}
-        for name in CANONICAL_PHASES
-    ]
+    phases = [{'name': name, 'status': overrides.get(name, 'pending')} for name in CANONICAL_PHASES]
     metadata: dict[str, Any] = {}
     if confidence is not None:
         metadata['confidence'] = confidence

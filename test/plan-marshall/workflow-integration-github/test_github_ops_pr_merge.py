@@ -196,9 +196,7 @@ def _install_merge_preconditions(monkeypatch, *, view_payload: dict | None = Non
     exercising the preflight's fail-closed path rather than the merge wiring it
     means to assert. Returns the probe capture dict.
     """
-    monkeypatch.setattr(
-        github_ops, 'view_pr_data', lambda head=None: view_payload or _pr_view_success_payload()
-    )
+    monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: view_payload or _pr_view_success_payload())
     return _install_probe(monkeypatch)
 
 
@@ -345,9 +343,7 @@ def test_pr_merge_merge_failure_skips_branch_delete(monkeypatch):
     assert corroboration_calls == [], corroboration_calls
     # Exactly ONE view_pr_data call: the base-branch preflight before the merge.
     # The head-branch resolution for the delete is never reached.
-    assert pr_view_calls['count'] == 1, (
-        'only the merge-queue preflight may consult pr view when the merge itself fails'
-    )
+    assert pr_view_calls['count'] == 1, 'only the merge-queue preflight may consult pr view when the merge itself fails'
 
     _assert_no_delete_branch_flag(captured)
 
@@ -513,9 +509,7 @@ def test_pr_merge_preflight_probe_error_fails_closed(monkeypatch):
     assert captured == [], captured
 
 
-@pytest.mark.parametrize(
-    'post_merge_state', ['closed', 'open', 'merged_without_timestamp', 'unreadable']
-)
+@pytest.mark.parametrize('post_merge_state', ['closed', 'open', 'merged_without_timestamp', 'unreadable'])
 def test_pr_merge_uncorroborated_merge_refuses_and_skips_branch_delete(monkeypatch, post_merge_state):
     """An uncorroborated merge reports error and deletes NOTHING.
 
@@ -527,9 +521,7 @@ def test_pr_merge_uncorroborated_merge_refuses_and_skips_branch_delete(monkeypat
     """
     _install_common(monkeypatch)
     _install_merge_preconditions(monkeypatch)
-    run_gh_stub, captured = _capture_run_gh(
-        merge_ok=True, delete_mode='ok', corroborate=post_merge_state
-    )
+    run_gh_stub, captured = _capture_run_gh(merge_ok=True, delete_mode='ok', corroborate=post_merge_state)
     monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
 
     result = github_ops.cmd_pr_merge(_merge_ns(delete_branch=True))
@@ -648,10 +640,10 @@ def test_pr_merge_ancestry_arm_reads_compare_status(monkeypatch, compare_status)
 @pytest.mark.parametrize(
     'raw',
     [
-        '2026-01-01T00:00:00Z',          # GitHub's own Z-suffixed UTC
-        '2026-01-01T00:00:00+00:00',     # explicit UTC offset
-        '2026-01-01T02:00:00+02:00',     # non-UTC offset
-        '2026-01-01T00:00:00',           # NAIVE — must be normalized, never returned naive
+        '2026-01-01T00:00:00Z',  # GitHub's own Z-suffixed UTC
+        '2026-01-01T00:00:00+00:00',  # explicit UTC offset
+        '2026-01-01T02:00:00+02:00',  # non-UTC offset
+        '2026-01-01T00:00:00',  # NAIVE — must be normalized, never returned naive
     ],
 )
 def test_parse_merged_at_always_returns_aware(raw):
@@ -852,9 +844,7 @@ def test_safe_merge_clean_on_first_poll(monkeypatch):
     # A single payload serves all three view_pr_data calls: preflight reads
     # base_branch, the poll reads merge_state='clean', and the post-merge
     # re-fetch reads state='merged'.
-    monkeypatch.setattr(
-        github_ops, 'view_pr_data', lambda head=None: _pr_view_payload('clean', state='merged')
-    )
+    monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: _pr_view_payload('clean', state='merged'))
 
     result = github_ops.cmd_pr_safe_merge(_safe_merge_ns())
 
@@ -1038,9 +1028,7 @@ def test_safe_merge_admin_fallback_deletes_branch(monkeypatch):
     monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: _pr_view_success_payload())
     _install_probe(monkeypatch)
 
-    result = github_ops.cmd_pr_safe_merge(
-        _safe_merge_ns(admin_merge_on_stuck_state=True, delete_branch=True)
-    )
+    result = github_ops.cmd_pr_safe_merge(_safe_merge_ns(admin_merge_on_stuck_state=True, delete_branch=True))
 
     assert result['status'] == 'success', result
     assert result['merge_path'] == 'admin_fallback'
@@ -1170,9 +1158,7 @@ def test_safe_merge_preflight_proceeds_for_non_configured(monkeypatch, discrimin
     _install_probe(monkeypatch, discriminator=discriminator)
     run_gh_stub, captured = _capture_run_gh(merge_ok=True, delete_mode='ok')
     monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
-    monkeypatch.setattr(
-        github_ops, 'view_pr_data', lambda head=None: _pr_view_payload('clean', state='merged')
-    )
+    monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: _pr_view_payload('clean', state='merged'))
 
     result = github_ops.cmd_pr_safe_merge(_safe_merge_ns())
 
@@ -1249,9 +1235,7 @@ def test_safe_merge_polled_clean_closed_without_merge_is_error(monkeypatch, post
     """
     _install_common(monkeypatch)
     _install_probe(monkeypatch)
-    run_gh_stub, captured = _capture_run_gh(
-        merge_ok=True, delete_mode='ok', corroborate=post_merge_state
-    )
+    run_gh_stub, captured = _capture_run_gh(merge_ok=True, delete_mode='ok', corroborate=post_merge_state)
     monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
     monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: _pr_view_payload('clean'))
 
@@ -1271,9 +1255,7 @@ def test_safe_merge_polled_clean_merged_refetch_succeeds(monkeypatch):
     _install_probe(monkeypatch)
     run_gh_stub, captured = _capture_run_gh(merge_ok=True, delete_mode='ok')
     monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
-    monkeypatch.setattr(
-        github_ops, 'view_pr_data', lambda head=None: _pr_view_payload('clean', state='merged')
-    )
+    monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: _pr_view_payload('clean', state='merged'))
 
     result = github_ops.cmd_pr_safe_merge(_safe_merge_ns())
 
@@ -1442,13 +1424,16 @@ def test_stuck_state_gate_all_requirements_met(monkeypatch):
         github_ops,
         'run_gh',
         _gate_run_gh(
-            view=(0, {
-                'reviewDecision': 'APPROVED',
-                'statusCheckRollup': [{'name': 'verify', 'conclusion': 'SUCCESS'}],
-                'mergeable': 'MERGEABLE',
-                'mergeStateStatus': 'BLOCKED',
-                'headRefOid': 'abc123',
-            }),
+            view=(
+                0,
+                {
+                    'reviewDecision': 'APPROVED',
+                    'statusCheckRollup': [{'name': 'verify', 'conclusion': 'SUCCESS'}],
+                    'mergeable': 'MERGEABLE',
+                    'mergeStateStatus': 'BLOCKED',
+                    'headRefOid': 'abc123',
+                },
+            ),
             compare=(0, {'behind_by': 0}),
         ),
     )
@@ -1467,11 +1452,14 @@ def test_stuck_state_gate_review_not_approved(monkeypatch):
         github_ops,
         'run_gh',
         _gate_run_gh(
-            view=(0, {
-                'reviewDecision': 'REVIEW_REQUIRED',
-                'statusCheckRollup': [{'name': 'verify', 'conclusion': 'SUCCESS'}],
-                'headRefOid': 'abc123',
-            }),
+            view=(
+                0,
+                {
+                    'reviewDecision': 'REVIEW_REQUIRED',
+                    'statusCheckRollup': [{'name': 'verify', 'conclusion': 'SUCCESS'}],
+                    'headRefOid': 'abc123',
+                },
+            ),
             compare=(0, {'behind_by': 0}),
         ),
     )
@@ -1490,11 +1478,14 @@ def test_stuck_state_gate_failing_required_check(monkeypatch):
         github_ops,
         'run_gh',
         _gate_run_gh(
-            view=(0, {
-                'reviewDecision': 'APPROVED',
-                'statusCheckRollup': [{'name': 'verify', 'conclusion': 'FAILURE'}],
-                'headRefOid': 'abc123',
-            }),
+            view=(
+                0,
+                {
+                    'reviewDecision': 'APPROVED',
+                    'statusCheckRollup': [{'name': 'verify', 'conclusion': 'FAILURE'}],
+                    'headRefOid': 'abc123',
+                },
+            ),
             compare=(0, {'behind_by': 0}),
         ),
     )
@@ -1513,11 +1504,14 @@ def test_stuck_state_gate_check_not_concluded(monkeypatch):
         github_ops,
         'run_gh',
         _gate_run_gh(
-            view=(0, {
-                'reviewDecision': 'APPROVED',
-                'statusCheckRollup': [{'name': 'verify', 'status': 'IN_PROGRESS'}],
-                'headRefOid': 'abc123',
-            }),
+            view=(
+                0,
+                {
+                    'reviewDecision': 'APPROVED',
+                    'statusCheckRollup': [{'name': 'verify', 'status': 'IN_PROGRESS'}],
+                    'headRefOid': 'abc123',
+                },
+            ),
             compare=(0, {'behind_by': 0}),
         ),
     )
@@ -1536,11 +1530,14 @@ def test_stuck_state_gate_behind_base(monkeypatch):
         github_ops,
         'run_gh',
         _gate_run_gh(
-            view=(0, {
-                'reviewDecision': 'APPROVED',
-                'statusCheckRollup': [{'name': 'verify', 'conclusion': 'SUCCESS'}],
-                'headRefOid': 'abc123',
-            }),
+            view=(
+                0,
+                {
+                    'reviewDecision': 'APPROVED',
+                    'statusCheckRollup': [{'name': 'verify', 'conclusion': 'SUCCESS'}],
+                    'headRefOid': 'abc123',
+                },
+            ),
             compare=(0, {'behind_by': 3}),
         ),
     )
@@ -1607,11 +1604,14 @@ def test_stuck_state_gate_non_list_rollup_fails_closed(monkeypatch):
         github_ops,
         'run_gh',
         _gate_run_gh(
-            view=(0, {
-                'reviewDecision': 'APPROVED',
-                'statusCheckRollup': {'not': 'a list'},
-                'headRefOid': 'abc123',
-            }),
+            view=(
+                0,
+                {
+                    'reviewDecision': 'APPROVED',
+                    'statusCheckRollup': {'not': 'a list'},
+                    'headRefOid': 'abc123',
+                },
+            ),
             compare=(0, {'behind_by': 0}),
         ),
     )
@@ -1775,9 +1775,7 @@ def test_pr_merge_queue_head_identifier(monkeypatch):
         github_ops.MERGE_QUEUE_UNSUPPORTED,
     ],
 )
-def test_cmd_pr_merge_queue_returns_error_when_base_has_no_configured_queue(
-    monkeypatch, discriminator
-):
+def test_cmd_pr_merge_queue_returns_error_when_base_has_no_configured_queue(monkeypatch, discriminator):
     """No configured queue on the base branch → error, and NO gh call at all.
 
     This is the defect the corroboration closes: ``gh pr merge --auto`` exits
@@ -1788,9 +1786,7 @@ def test_cmd_pr_merge_queue_returns_error_when_base_has_no_configured_queue(
     """
     _install_common(monkeypatch)
     monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: _pr_view_success_payload())
-    probe = _install_probe(
-        monkeypatch, discriminator=discriminator, detail='no merge_queue rule on branch'
-    )
+    probe = _install_probe(monkeypatch, discriminator=discriminator, detail='no merge_queue rule on branch')
     captured: list[list[str]] = []
 
     def run_gh_stub(args, capture_json=False, timeout=60):

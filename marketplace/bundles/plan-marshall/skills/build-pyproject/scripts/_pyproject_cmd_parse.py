@@ -124,7 +124,7 @@ _PYTEST_FRAME_PATTERN = re.compile(r'(\S+\.py):(\d+):')
 # Signature-normalization: collapse run-specific literals so failures sharing a
 # root cause map to ONE signature (hex addresses, quoted values, digit runs).
 _PYTEST_HEX_ADDR = re.compile(r'0x[0-9a-fA-F]+')
-_PYTEST_QUOTED = re.compile(r'''(['"]).*?\1''')
+_PYTEST_QUOTED = re.compile(r"""(['"]).*?\1""")
 _PYTEST_DIGIT_RUN = re.compile(r'\d+')
 _PYTEST_IDENTIFIER = re.compile(r'[A-Za-z_][A-Za-z0-9_.]*')
 # Upper bound on a single captured detail block; keeps a pathological log from
@@ -476,10 +476,7 @@ def _pytest_exception_message(block: str) -> str | None:
         ``None`` when the block carries no gutter (a `--tb=no` run, or the
         terse-message fallback standing in for an absent block).
     """
-    gutter = [
-        (len(match.group(1)), match.group(2))
-        for match in _PYTEST_EXCEPTION_LINE.finditer(block)
-    ]
+    gutter = [(len(match.group(1)), match.group(2)) for match in _PYTEST_EXCEPTION_LINE.finditer(block)]
     if not gutter:
         return None
     base_indent = min(indent for indent, _text in gutter)
@@ -601,9 +598,7 @@ def _collect_pytest_failure_records(content: str) -> list[dict]:
         test_name = match.group(2)
         message = match.group(3) if match.group(3) else f'Test {test_name} failed'
 
-        block = _consume_pytest_block(
-            _pytest_block_key(test_name), failure_blocks, block_cursors, message
-        )
+        block = _consume_pytest_block(_pytest_block_key(test_name), failure_blocks, block_cursors, message)
         records.append(
             _build_pytest_record(
                 test=test_name,

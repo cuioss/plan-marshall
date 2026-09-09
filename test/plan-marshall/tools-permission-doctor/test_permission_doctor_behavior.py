@@ -149,7 +149,16 @@ class TestDetectRedundantBranches:
         _write_settings(local_file, ['Read(src/lib/file.txt)'])
 
         result = pd.cmd_detect_redundant(
-            parse_ns('plan-marshall', 'tools-permission-doctor', 'permission_doctor.py', 'detect-redundant', '--global-settings', str(global_file), '--local-settings', str(local_file))
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-doctor',
+                'permission_doctor.py',
+                'detect-redundant',
+                '--global-settings',
+                str(global_file),
+                '--local-settings',
+                str(local_file),
+            )
         )
 
         assert result['status'] == 'success'
@@ -163,7 +172,16 @@ class TestDetectRedundantBranches:
         _write_settings(local_file, [])
 
         result = pd.cmd_detect_redundant(
-            parse_ns('plan-marshall', 'tools-permission-doctor', 'permission_doctor.py', 'detect-redundant', '--global-settings', str(tmp_path / 'missing.json'), '--local-settings', str(local_file))
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-doctor',
+                'permission_doctor.py',
+                'detect-redundant',
+                '--global-settings',
+                str(tmp_path / 'missing.json'),
+                '--local-settings',
+                str(local_file),
+            )
         )
 
         assert result['status'] == 'error'
@@ -175,7 +193,16 @@ class TestDetectRedundantBranches:
         _write_settings(global_file, [])
 
         result = pd.cmd_detect_redundant(
-            parse_ns('plan-marshall', 'tools-permission-doctor', 'permission_doctor.py', 'detect-redundant', '--global-settings', str(global_file), '--local-settings', str(tmp_path / 'missing.json'))
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-doctor',
+                'permission_doctor.py',
+                'detect-redundant',
+                '--global-settings',
+                str(global_file),
+                '--local-settings',
+                str(tmp_path / 'missing.json'),
+            )
         )
 
         assert result['status'] == 'error'
@@ -196,13 +223,20 @@ class TestDetectSuspiciousBranches:
         _write_settings(settings_file, ['Bash(sudo:*)'])
         approved = tmp_path / 'run-config.json'
         approved.write_text(
-            json.dumps(
-                {'commands': {'setup-project-permissions': {'user_approved_permissions': ['Bash(sudo:*)']}}}
-            )
+            json.dumps({'commands': {'setup-project-permissions': {'user_approved_permissions': ['Bash(sudo:*)']}}})
         )
 
         result = pd.cmd_detect_suspicious(
-            parse_ns('plan-marshall', 'tools-permission-doctor', 'permission_doctor.py', 'detect-suspicious', '--settings', str(settings_file), '--approved-file', str(approved))
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-doctor',
+                'permission_doctor.py',
+                'detect-suspicious',
+                '--settings',
+                str(settings_file),
+                '--approved-file',
+                str(approved),
+            )
         )
 
         assert result['status'] == 'success'
@@ -214,7 +248,14 @@ class TestDetectSuspiciousBranches:
     def test_error_on_missing_settings(self, tmp_path):
         """A missing settings file surfaces a structured error."""
         result = pd.cmd_detect_suspicious(
-            parse_ns('plan-marshall', 'tools-permission-doctor', 'permission_doctor.py', 'detect-suspicious', '--settings', str(tmp_path / 'missing.json'))
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-doctor',
+                'permission_doctor.py',
+                'detect-suspicious',
+                '--settings',
+                str(tmp_path / 'missing.json'),
+            )
         )
 
         assert result['status'] == 'error'
@@ -226,7 +267,14 @@ class TestDetectSuspiciousBranches:
         _write_settings(settings_file, ['Bash(sudo:*)', 'Bash(curl:*)', 'Bash(git:*)'])
 
         result = pd.cmd_detect_suspicious(
-            parse_ns('plan-marshall', 'tools-permission-doctor', 'permission_doctor.py', 'detect-suspicious', '--settings', str(settings_file))
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-doctor',
+                'permission_doctor.py',
+                'detect-suspicious',
+                '--settings',
+                str(settings_file),
+            )
         )
 
         assert result['status'] == 'success'
@@ -248,7 +296,16 @@ def test_detect_missing_settings_load_error(tmp_path):
     )
 
     result = pd.cmd_detect_missing_project_step_permissions(
-        parse_ns('plan-marshall', 'tools-permission-doctor', 'permission_doctor.py', 'detect-missing-project-step-permissions', '--marshal', str(marshal_file), '--settings', str(tmp_path / 'missing.json'))
+        parse_ns(
+            'plan-marshall',
+            'tools-permission-doctor',
+            'permission_doctor.py',
+            'detect-missing-project-step-permissions',
+            '--marshal',
+            str(marshal_file),
+            '--settings',
+            str(tmp_path / 'missing.json'),
+        )
     )
 
     assert result['status'] == 'error'
@@ -269,6 +326,7 @@ class TestDetectNonClaudeSkipped:
     @staticmethod
     def _make_opencode_runtime():
         from opencode_runtime import OpenCodeRuntime
+
         return OpenCodeRuntime()
 
     @staticmethod
@@ -289,8 +347,14 @@ class TestDetectNonClaudeSkipped:
         self._force_opencode(monkeypatch)
 
         result = pd.cmd_detect_suspicious(
-            parse_ns('plan-marshall', 'tools-permission-doctor', 'permission_doctor.py',
-                     'detect-suspicious', '--settings', str(settings_file))
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-doctor',
+                'permission_doctor.py',
+                'detect-suspicious',
+                '--settings',
+                str(settings_file),
+            )
         )
 
         assert result['status'] == 'skipped'
@@ -306,9 +370,16 @@ class TestDetectNonClaudeSkipped:
         self._force_opencode(monkeypatch)
 
         result = pd.cmd_detect_redundant(
-            parse_ns('plan-marshall', 'tools-permission-doctor', 'permission_doctor.py',
-                     'detect-redundant', '--global-settings', str(global_file),
-                     '--local-settings', str(local_file))
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-doctor',
+                'permission_doctor.py',
+                'detect-redundant',
+                '--global-settings',
+                str(global_file),
+                '--local-settings',
+                str(local_file),
+            )
         )
 
         assert result['status'] == 'skipped'
@@ -325,10 +396,16 @@ class TestDetectNonClaudeSkipped:
         self._force_opencode(monkeypatch)
 
         result = pd.cmd_detect_missing_project_step_permissions(
-            parse_ns('plan-marshall', 'tools-permission-doctor', 'permission_doctor.py',
-                     'detect-missing-project-step-permissions',
-                     '--marshal', str(marshal_file),
-                     '--settings', str(settings_file))
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-doctor',
+                'permission_doctor.py',
+                'detect-missing-project-step-permissions',
+                '--marshal',
+                str(marshal_file),
+                '--settings',
+                str(settings_file),
+            )
         )
 
         assert result['status'] == 'skipped'
@@ -341,8 +418,14 @@ class TestDetectNonClaudeSkipped:
         # No monkeypatch — _active_runtime resolves to the default (Claude) target.
 
         result = pd.cmd_detect_suspicious(
-            parse_ns('plan-marshall', 'tools-permission-doctor', 'permission_doctor.py',
-                     'detect-suspicious', '--settings', str(settings_file))
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-doctor',
+                'permission_doctor.py',
+                'detect-suspicious',
+                '--settings',
+                str(settings_file),
+            )
         )
 
         assert result['status'] == 'success'

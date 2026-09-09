@@ -20,9 +20,7 @@ from _plan_retrospective_fixtures import _run_args, write_handshakes
 
 from conftest import load_script_module
 
-_si = load_script_module(
-    'plan-marshall', 'plan-retrospective', 'summarize-invariants.py', 'si_behavior_mod'
-)
+_si = load_script_module('plan-marshall', 'plan-retrospective', 'summarize-invariants.py', 'si_behavior_mod')
 
 
 def _full_row(phase: str, **overrides) -> dict:
@@ -116,9 +114,7 @@ class TestPlanIsWorktreeRouted:
         assert _si.plan_is_worktree_routed(tmp_path) is False
 
     def test_recorded_use_worktree_flag_returns_true(self, tmp_path):
-        (tmp_path / 'status.json').write_text(
-            json.dumps({'metadata': {'use_worktree': True}}), encoding='utf-8'
-        )
+        (tmp_path / 'status.json').write_text(json.dumps({'metadata': {'use_worktree': True}}), encoding='utf-8')
         assert _si.plan_is_worktree_routed(tmp_path) is True
 
     def test_recorded_worktree_path_alone_returns_false(self, tmp_path):
@@ -128,14 +124,10 @@ class TestPlanIsWorktreeRouted:
         recorded path — the path names a directory finalize has removed, so
         trusting it was the hand-rolled re-derivation the migration eliminated.
         """
-        (tmp_path / 'status.json').write_text(
-            json.dumps({'metadata': {'worktree_path': '/wt'}}), encoding='utf-8'
-        )
+        (tmp_path / 'status.json').write_text(json.dumps({'metadata': {'worktree_path': '/wt'}}), encoding='utf-8')
         assert _si.plan_is_worktree_routed(tmp_path) is False
 
-    def test_archived_mode_forwards_none_and_falls_back_to_the_flag(
-        self, tmp_path, monkeypatch
-    ):
+    def test_archived_mode_forwards_none_and_falls_back_to_the_flag(self, tmp_path, monkeypatch):
         """Archived mode forwards ``plan_id=None``, so the resolver tier misses.
 
         The recorded observation is what the resolver is ASKED, not merely the
@@ -149,9 +141,7 @@ class TestPlanIsWorktreeRouted:
             return None
 
         monkeypatch.setattr(_si, 'resolve_live_worktree', _record)
-        (tmp_path / 'status.json').write_text(
-            json.dumps({'metadata': {'use_worktree': True}}), encoding='utf-8'
-        )
+        (tmp_path / 'status.json').write_text(json.dumps({'metadata': {'use_worktree': True}}), encoding='utf-8')
         assert _si.plan_is_worktree_routed(tmp_path, None) is True
         assert asked == [None]
 
@@ -163,9 +153,7 @@ class TestPlanIsWorktreeRouted:
         from the recorded flag.
         """
         monkeypatch.setattr(_si, 'resolve_live_worktree', lambda plan_id: tmp_path)
-        (tmp_path / 'status.json').write_text(
-            json.dumps({'metadata': {'use_worktree': False}}), encoding='utf-8'
-        )
+        (tmp_path / 'status.json').write_text(json.dumps({'metadata': {'use_worktree': False}}), encoding='utf-8')
         assert _si.plan_is_worktree_routed(tmp_path, 'live-plan') is True
 
 
@@ -179,9 +167,7 @@ class TestLoadHandshakeRows:
 
     def test_scalar_handshakes_value_returns_empty_list(self, tmp_path):
         # A non-list ``handshakes`` value is defensively coerced to [].
-        (tmp_path / 'handshakes.toon').write_text(
-            'plan_id: demo\nhandshakes: notalist\n', encoding='utf-8'
-        )
+        (tmp_path / 'handshakes.toon').write_text('plan_id: demo\nhandshakes: notalist\n', encoding='utf-8')
         assert _si.load_handshake_rows(tmp_path) == []
 
     def test_valid_rows_parsed(self, tmp_path):
@@ -271,10 +257,7 @@ class TestCmdRunInProcess:
 
         refine = next(p for p in result['phases'] if p['phase'] == '2-refine')
         assert 'config_hash' in refine['invariants_missing']
-        assert any(
-            f['invariant'] == 'config_hash' and f['severity'] == 'error'
-            for f in result['findings']
-        )
+        assert any(f['invariant'] == 'config_hash' and f['severity'] == 'error' for f in result['findings'])
 
     def test_drift_surfaced_as_warning_finding(self, tmp_path):
         plan_dir = tmp_path / 'plan'
@@ -288,10 +271,7 @@ class TestCmdRunInProcess:
         result = _si.cmd_run(_run_args(plan_dir))
 
         assert any(d['invariant'] == 'main_sha' for d in result['drift'])
-        assert any(
-            f['severity'] == 'warning' and 'drift' in f['message']
-            for f in result['findings']
-        )
+        assert any(f['severity'] == 'warning' and 'drift' in f['message'] for f in result['findings'])
 
     def test_fully_populated_plan_has_no_missing_findings(self, tmp_path):
         plan_dir = tmp_path / 'plan'

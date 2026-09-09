@@ -212,9 +212,7 @@ def get_log_path(plan_id: str | None, log_type: str = 'script', store: str = 'pl
             kebab-case test.
     """
     if store not in VALID_STORES:
-        raise ValueError(
-            f'unknown store {store!r}: expected one of {list(VALID_STORES)}'
-        )
+        raise ValueError(f'unknown store {store!r}: expected one of {list(VALID_STORES)}')
 
     if plan_id is not None and not is_valid_plan_id(plan_id):
         raise ValueError(

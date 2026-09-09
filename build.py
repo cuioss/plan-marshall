@@ -669,7 +669,24 @@ def cmd_quality_gate(module: str | None, boundary: CoverageBoundary | None = Non
         # Include .claude/ scripts when running full quality-gate
         paths = [str(BUNDLES_DIR), str(TARGETS_DIR), str(TEST_DIR), str(CLAUDE_DIR)]
 
-    exit_code = run(['uv', 'run', 'ruff', 'check'] + paths, f'quality-gate: ruff check {" ".join(paths)}')
+    # The quality gate AUTO-FIXES by default, in every language. On the Maven side
+    # the canonical quality-gate resolves `verify -Ppre-commit`, which rewrites
+    # tracked files in place via license:format and rewrite:run. The two ruff halves
+    # mirror that: `check --fix` is the lint half, `format` the formatting half.
+    # Review what it changed and commit it.
+    #
+    # Violations ruff cannot fix automatically are still reported and still fail the
+    # gate, so this stays a gate rather than a formatter that always passes.
+    exit_code = run(
+        ['uv', 'run', 'ruff', 'check', '--fix'] + paths,
+        f'quality-gate: ruff check --fix {" ".join(paths)}',
+    )
+    if exit_code != 0:
+        return exit_code
+    exit_code = run(
+        ['uv', 'run', 'ruff', 'format'] + paths,
+        f'quality-gate: ruff format {" ".join(paths)}',
+    )
     if exit_code != 0:
         return exit_code
     boundary.record_checked(f'ruff [{", ".join(paths)}]')

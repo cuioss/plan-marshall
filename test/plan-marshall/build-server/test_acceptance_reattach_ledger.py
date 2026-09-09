@@ -36,17 +36,29 @@ client = load_script_module(_BUNDLE, _SKILL, _SCRIPT, register=False)
 #: input that forces the ledger re-attach this test is about. ``register=False``
 #: so neither publishes a second ``build_server`` in ``sys.modules``.
 _SUBMIT_ARGS = parse_ns(
-    _BUNDLE, _SKILL, _SCRIPT, 'submit',
-    '--command', json.dumps(['python3', '/tree/.plan/execute-script.py', 'nt:sk:s', 'run']),
-    '--exec-path', '/tree',
-    '--project-path', '/tree',
-    '--plan-id', 'plan-x',
+    _BUNDLE,
+    _SKILL,
+    _SCRIPT,
+    'submit',
+    '--command',
+    json.dumps(['python3', '/tree/.plan/execute-script.py', 'nt:sk:s', 'run']),
+    '--exec-path',
+    '/tree',
+    '--project-path',
+    '/tree',
+    '--plan-id',
+    'plan-x',
     register=False,
 )
 _WAIT_ARGS = parse_ns(
-    _BUNDLE, _SKILL, _SCRIPT, 'wait',
-    '--plan-id', 'plan-x',
-    '--bound', '1',
+    _BUNDLE,
+    _SKILL,
+    _SCRIPT,
+    'wait',
+    '--plan-id',
+    'plan-x',
+    '--bound',
+    '1',
     register=False,
 )
 
@@ -64,7 +76,8 @@ def test_wait_reattaches_via_the_ledger_job_id(isolated, monkeypatch):
     # First "session": submit records the daemon job_id to the ledger.
     monkeypatch.setattr(client, '_handshake', lambda _p: ({'version': '1'}, None))
     monkeypatch.setattr(
-        client, '_call_daemon',
+        client,
+        '_call_daemon',
         lambda _req, timeout: {'status': STATUS_QUEUED, 'job_id': 'JOB-77', 'attached': False},
     )
     submit = client.run_submit(_SUBMIT_ARGS)

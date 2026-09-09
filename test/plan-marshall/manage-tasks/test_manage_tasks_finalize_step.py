@@ -336,10 +336,7 @@ def test_emits_outcome_with_overrides(plan_context):
     cmd_finalize_step(ns)
 
     log_text = _read_work_log(plan_context.plan_dir_for('outcome-overrides'))
-    assert (
-        '[OUTCOME] (custom-bundle:custom-skill) Completed TASK-001: Overridden Title (42 steps)'
-        in log_text
-    )
+    assert '[OUTCOME] (custom-bundle:custom-skill) Completed TASK-001: Overridden Title (42 steps)' in log_text
     # Scope the leak assertions to the [OUTCOME] LINE, which is what they claim
     # to be about. Splitting on the marker and keeping the whole tail also swept
     # in the [ARTIFACT] lines that follow it — those legitimately carry the
@@ -348,9 +345,7 @@ def test_emits_outcome_with_overrides(plan_context):
     assert 'plan-marshall:phase-5-execute' not in outcome_line, (
         'Default caller leaked into [OUTCOME] line despite override'
     )
-    assert 'Original Disk Title' not in outcome_line, (
-        'Default title leaked into [OUTCOME] line despite override'
-    )
+    assert 'Original Disk Title' not in outcome_line, 'Default title leaked into [OUTCOME] line despite override'
 
 
 def test_no_outcome_on_intermediate_done_step(plan_context):
@@ -371,9 +366,7 @@ def test_no_outcome_on_intermediate_done_step(plan_context):
     cmd_finalize_step(_finalize_step_ns(plan_id='outcome-intermediate', task=1, step=2, outcome='done'))
 
     log_text = _read_work_log(plan_context.plan_dir_for('outcome-intermediate'))
-    assert '[OUTCOME]' not in log_text, (
-        'No [OUTCOME] line should be emitted while the task is still in_progress'
-    )
+    assert '[OUTCOME]' not in log_text, 'No [OUTCOME] line should be emitted while the task is still in_progress'
 
 
 def test_no_outcome_on_failed_close(plan_context):
@@ -398,9 +391,7 @@ def test_no_outcome_on_failed_close(plan_context):
     )
 
     log_text = _read_work_log(plan_context.plan_dir_for('outcome-failed'))
-    assert '[OUTCOME]' not in log_text, (
-        '[OUTCOME] must not be emitted on a failed-status closing finalize'
-    )
+    assert '[OUTCOME]' not in log_text, '[OUTCOME] must not be emitted on a failed-status closing finalize'
 
 
 # =============================================================================
@@ -428,9 +419,7 @@ def _artifact_repo(tmp_path, monkeypatch):
         subprocess.run(['git', '-C', str(root), *argv], check=True, capture_output=True, text=True)
     (root / 'seed.txt').write_text('seed\n', encoding='utf-8')
     subprocess.run(['git', '-C', str(root), 'add', '-A'], check=True, capture_output=True, text=True)
-    subprocess.run(
-        ['git', '-C', str(root), 'commit', '-q', '-m', 'seed'], check=True, capture_output=True, text=True
-    )
+    subprocess.run(['git', '-C', str(root), 'commit', '-q', '-m', 'seed'], check=True, capture_output=True, text=True)
     monkeypatch.setattr(_artifacts, 'cwd_checkout_root', lambda: str(root))
     return root
 
@@ -461,9 +450,7 @@ def test_task_close_emits_artifact_lines_from_the_script(plan_context, _artifact
     cmd_finalize_step(_finalize_step_ns(plan_id='outcome-default', task=1, step=1, outcome='done'))
     (_artifact_repo / 'seed.txt').write_text('touched by the task\n', encoding='utf-8')
 
-    result = cmd_finalize_step(
-        _finalize_step_ns(plan_id='outcome-default', task=1, step=2, outcome='done')
-    )
+    result = cmd_finalize_step(_finalize_step_ns(plan_id='outcome-default', task=1, step=2, outcome='done'))
 
     assert result['artifact_lines'] == 1
     assert '[ARTIFACT] (plan-marshall:phase-5-execute:1) Wrote seed.txt' in _read_work_log(plan_dir)
@@ -478,9 +465,7 @@ def test_task_close_with_an_empty_diff_emits_no_artifact_line(plan_context, _art
         steps=['src/main/java/A.java'],
     )
 
-    result = cmd_finalize_step(
-        _finalize_step_ns(plan_id='outcome-default', task=1, step=1, outcome='done')
-    )
+    result = cmd_finalize_step(_finalize_step_ns(plan_id='outcome-default', task=1, step=1, outcome='done'))
 
     assert result['artifact_lines'] == 0
     assert '[ARTIFACT]' not in _read_work_log(plan_context.plan_dir_for('outcome-default'))
@@ -566,9 +551,7 @@ def _write_persisted_task(plan_context, plan_id: str, record: dict, number: int 
 # baseline AFTER that task's earlier edits had landed.
 
 
-def test_a_repeated_closing_finalize_emits_exactly_one_outcome_and_one_artifact_set(
-    plan_context, _artifact_repo
-):
+def test_a_repeated_closing_finalize_emits_exactly_one_outcome_and_one_artifact_set(plan_context, _artifact_repo):
     """⛔ The retry path is reachable in normal operation.
 
     A re-dispatch after a lost context is exactly the scenario the script-level
@@ -619,9 +602,7 @@ def test_the_first_closing_finalize_still_emits_both_channels(plan_context, _art
     assert log_text.count('[ARTIFACT]') == 1
 
 
-def test_a_finalize_on_an_already_open_baseline_less_task_stamps_no_late_baseline(
-    plan_context, _artifact_repo
-):
+def test_a_finalize_on_an_already_open_baseline_less_task_stamps_no_late_baseline(plan_context, _artifact_repo):
     """A late capture would be taken AFTER the task's earlier edits landed.
 
     The diff would then silently omit them — defeating `emit_artifact_lines`'
@@ -757,15 +738,10 @@ def test_a_repeated_update_to_in_progress_does_not_move_the_baseline(plan_contex
     cmd_update(_update_ns(plan_id='outcome-default', number=1, status='in_progress'))
 
     assert _head(_artifact_repo) != first_baseline
-    assert (
-        _persisted_task(plan_context, 'outcome-default')[_artifacts.TASK_START_SHA_FIELD]
-        == first_baseline
-    )
+    assert _persisted_task(plan_context, 'outcome-default')[_artifacts.TASK_START_SHA_FIELD] == first_baseline
 
 
-def test_an_update_reopening_a_baseline_less_task_stamps_no_late_baseline(
-    plan_context, _artifact_repo
-):
+def test_an_update_reopening_a_baseline_less_task_stamps_no_late_baseline(plan_context, _artifact_repo):
     """The `update` half of the already-open case, matching its finalize sibling."""
     add_basic_task(
         plan_id='outcome-default',
@@ -783,9 +759,7 @@ def test_an_update_reopening_a_baseline_less_task_stamps_no_late_baseline(
     assert _artifacts.TASK_START_SHA_FIELD not in _persisted_task(plan_context, 'outcome-default')
 
 
-def test_a_file_created_after_the_first_finalize_is_reported_as_an_artifact(
-    plan_context, _artifact_repo
-):
+def test_a_file_created_after_the_first_finalize_is_reported_as_an_artifact(plan_context, _artifact_repo):
     """⛔ A created file is in NO ``git diff`` output until it is staged.
 
     The end-to-end pair only exercised the tracked-MODIFY path (``seed.txt``), so
@@ -807,6 +781,4 @@ def test_a_file_created_after_the_first_finalize_is_reported_as_an_artifact(
     result = cmd_finalize_step(_finalize_step_ns(plan_id='outcome-default', task=1, step=2, outcome='done'))
 
     assert result['artifact_lines'] == 1
-    assert '[ARTIFACT] (plan-marshall:phase-5-execute:1) Wrote created-by-the-task.txt' in (
-        _read_work_log(plan_dir)
-    )
+    assert '[ARTIFACT] (plan-marshall:phase-5-execute:1) Wrote created-by-the-task.txt' in (_read_work_log(plan_dir))

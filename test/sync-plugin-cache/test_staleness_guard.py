@@ -299,7 +299,8 @@ def test_skip_staleness_guard_bypasses_missing_sentinel(tmp_path: Path) -> None:
 
     result = _run(
         '--skip-staleness-guard',
-        '--cache-root', str(cache),
+        '--cache-root',
+        str(cache),
         cwd=cwd,
     )
     # No bundles to sync → exit 1 with a different message (proves the
@@ -408,9 +409,7 @@ def test_fingerprint_changes_when_tracked_worktree_file_mutates(tmp_path: Path) 
     baseline = compute_source_tree_fingerprint(cwd)
 
     # Mutate the worktree only — do NOT commit or stage.
-    (cwd / 'marketplace' / 'bundles' / 'demo' / 'README.md').write_text(
-        '# demo MUTATED\n', encoding='utf-8'
-    )
+    (cwd / 'marketplace' / 'bundles' / 'demo' / 'README.md').write_text('# demo MUTATED\n', encoding='utf-8')
     drifted = compute_source_tree_fingerprint(cwd)
     assert drifted != baseline
 
@@ -431,7 +430,9 @@ def test_hash_objects_matches_git_native_invocation(tmp_path: Path) -> None:
     helper_sha = hash_objects(cwd, [path])[0]
     native = subprocess.run(
         ['git', '-C', str(cwd), 'hash-object', path],
-        capture_output=True, text=True, check=True,
+        capture_output=True,
+        text=True,
+        check=True,
     ).stdout.strip()
     assert helper_sha == native
 
@@ -894,9 +895,7 @@ def test_fingerprint_recompute_failure_is_reported_as_probe_failed(
     def _raiser(_repo_root):
         raise FingerprintError('git binary not found on PATH')
 
-    monkeypatch.setattr(
-        sync_module, '_import_source_fingerprint', lambda: (_raiser, FingerprintError)
-    )
+    monkeypatch.setattr(sync_module, '_import_source_fingerprint', lambda: (_raiser, FingerprintError))
 
     refusal = sync_module._staleness_guard(source_root, marketplace_root)
 
@@ -906,9 +905,7 @@ def test_fingerprint_recompute_failure_is_reported_as_probe_failed(
     assert sync_module._regenerate_hint() not in refusal.message
 
 
-def test_genuine_staleness_is_still_reported_as_stale_with_the_remedy(
-    tmp_path: Path, sync_module
-) -> None:
+def test_genuine_staleness_is_still_reported_as_stale_with_the_remedy(tmp_path: Path, sync_module) -> None:
     """Matched positive control: a probe that RAN and saw drift still says stale.
 
     Without this the tests above could pass against a guard that had simply
@@ -982,9 +979,7 @@ def test_file_level_hashing_failure_refuses_instead_of_returning_none(
     assert 'git hash-object exited 128' in drift.message
 
 
-def test_file_level_check_still_returns_none_on_an_intact_tree(
-    tmp_path: Path, sync_module
-) -> None:
+def test_file_level_check_still_returns_none_on_an_intact_tree(tmp_path: Path, sync_module) -> None:
     """Matched negative control for the two refusals above.
 
     A check that RAN and found nothing still returns ``None`` — so the

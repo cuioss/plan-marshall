@@ -25,8 +25,13 @@ SCRIPT_PATH = get_script_path('pm-dev-frontend', 'javascript', 'jsdoc.py')
 # author remembered. Parsed once at module scope: parse_ns re-executes the script
 # module on every call.
 _ANALYZE_NS = parse_ns(
-    'pm-dev-frontend', 'javascript', 'jsdoc.py',
-    'analyze', '--file', 'placeholder.js', register=False,
+    'pm-dev-frontend',
+    'javascript',
+    'jsdoc.py',
+    'analyze',
+    '--file',
+    'placeholder.js',
+    register=False,
 )
 
 

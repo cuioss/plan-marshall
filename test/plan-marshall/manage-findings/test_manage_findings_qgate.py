@@ -9,7 +9,6 @@ Its sections, in order:
 * Q-Gate Query Command
 """
 
-
 from _manage_findings_fixtures import (
     SCRIPT_PATH,
     _qgate_add_ns,

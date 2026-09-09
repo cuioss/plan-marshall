@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """In-process behavioral tests for ``check-artifact-consistency.py``."""
 
-
 from __future__ import annotations
 
 import json
@@ -29,18 +28,14 @@ class TestFootprintResolvedPredicate:
 
 class TestExactMatch:
     def test_pass_on_identical_non_empty_sets(self):
-        status, _msg, outline_only, references_only = _cac.check_affected_files_exact_match(
-            {'a', 'b'}, {'a', 'b'}
-        )
+        status, _msg, outline_only, references_only = _cac.check_affected_files_exact_match({'a', 'b'}, {'a', 'b'})
         assert status == 'pass'
         assert outline_only == []
         assert references_only == []
 
     def test_inconclusive_on_both_empty(self):
         """Two empty sets are trivially equal and substantiate no verdict."""
-        status, message, outline_only, references_only = _cac.check_affected_files_exact_match(
-            set(), set()
-        )
+        status, message, outline_only, references_only = _cac.check_affected_files_exact_match(set(), set())
         assert status == 'inconclusive'
         assert 'substantiates no verdict' in message
         assert outline_only == []
@@ -48,17 +43,13 @@ class TestExactMatch:
 
     def test_warn_when_only_one_side_empty(self):
         """A one-sided empty set is real drift, not an inconclusive comparison."""
-        status, _msg, outline_only, references_only = _cac.check_affected_files_exact_match(
-            {'a'}, set()
-        )
+        status, _msg, outline_only, references_only = _cac.check_affected_files_exact_match({'a'}, set())
         assert status == 'warn'
         assert outline_only == ['a']
         assert references_only == []
 
     def test_warn_and_surface_both_sides(self):
-        status, _msg, outline_only, references_only = _cac.check_affected_files_exact_match(
-            {'a', 'b'}, {'b', 'c'}
-        )
+        status, _msg, outline_only, references_only = _cac.check_affected_files_exact_match({'a', 'b'}, {'b', 'c'})
         assert status == 'warn'
         assert outline_only == ['a']
         assert references_only == ['c']

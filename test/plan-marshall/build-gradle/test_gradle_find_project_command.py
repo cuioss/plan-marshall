@@ -21,9 +21,7 @@ from toon_parser import parse_toon
 
 from conftest import load_script_module
 
-_mod = load_script_module(
-    'plan-marshall', 'build-gradle', '_gradle_cmd_find_project.py', 'gfp_command_mod'
-)
+_mod = load_script_module('plan-marshall', 'build-gradle', '_gradle_cmd_find_project.py', 'gfp_command_mod')
 
 #: The wrapper script itself — ``find-project``'s subparser is registered there,
 #: inline, outside ``register_standard_subparsers``. The routing-pair and
@@ -43,9 +41,7 @@ def _run(capsys, root, project_name=None, project_path=None):
 
 def _make_multi_project(tmp_path):
     """Create a root + core + web Gradle project with a settings file."""
-    (tmp_path / 'settings.gradle.kts').write_text(
-        'rootProject.name = "my-app"\ninclude("core", "web")\n'
-    )
+    (tmp_path / 'settings.gradle.kts').write_text('rootProject.name = "my-app"\ninclude("core", "web")\n')
     (tmp_path / 'build.gradle.kts').write_text('// root')
     for name in ('core', 'web'):
         sub = tmp_path / name
@@ -251,9 +247,7 @@ def _run_find_project_cli(monkeypatch, capsys, argv_tail):
 
 def test_find_project_declares_the_routing_pair():
     """``find-project`` accepts both halves of the canonical routing pair."""
-    args = _find_project_parser().parse_args(
-        ['find-project', '--project-name', 'core', '--plan-id', CANONICAL_PLAN_ID]
-    )
+    args = _find_project_parser().parse_args(['find-project', '--project-name', 'core', '--plan-id', CANONICAL_PLAN_ID])
 
     assert args.plan_id == CANONICAL_PLAN_ID
     # --project-dir keeps the canonical '.' default so the resolver detects absence.
@@ -289,9 +283,7 @@ def test_find_project_without_root_falls_back_to_resolved_project_dir(tmp_path, 
     _make_multi_project(tmp_path)
 
     # Act
-    rc, data = _run_find_project_cli(
-        monkeypatch, capsys, ['--project-name', 'web', '--project-dir', str(tmp_path)]
-    )
+    rc, data = _run_find_project_cli(monkeypatch, capsys, ['--project-name', 'web', '--project-dir', str(tmp_path)])
 
     # Assert
     assert rc == 0

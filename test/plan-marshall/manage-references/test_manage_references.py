@@ -487,8 +487,7 @@ def test_cli_every_file_not_found_path_exits_zero_with_toon_error(tmp_path, monk
         result = run_script(SCRIPT_PATH, *argv)
         if result.returncode != 0:
             failures.append(
-                f'{label}: exit_code={result.returncode} (expected 0 for operation failure); '
-                f'stdout={result.stdout!r}'
+                f'{label}: exit_code={result.returncode} (expected 0 for operation failure); stdout={result.stdout!r}'
             )
             continue
         if 'status: error' not in result.stdout:
@@ -674,12 +673,10 @@ def test_cli_falsy_non_dict_references_is_operation_failure_exit0(payload, tmp_p
         f'stdout={result.stdout!r} stderr={result.stderr!r}'
     )
     assert 'status: error' in result.stdout, (
-        f'Expected structured error TOON on stdout for payload {payload!r}; '
-        f'stdout={result.stdout!r}'
+        f'Expected structured error TOON on stdout for payload {payload!r}; stdout={result.stdout!r}'
     )
     assert 'file_not_found' in result.stdout, (
-        f'Expected file_not_found error on stdout for payload {payload!r}; '
-        f'stdout={result.stdout!r}'
+        f'Expected file_not_found error on stdout for payload {payload!r}; stdout={result.stdout!r}'
     )
 
 
@@ -979,9 +976,7 @@ def test_sync_does_not_write_when_it_refuses(plan_context):
     ],
     ids=['outline-removed', 'outline-yields-no-deliverables'],
 )
-def test_a_failed_refresh_exits_zero_and_leaves_a_stale_footprint(
-    plan_context, broken_outline, expected_error
-):
+def test_a_failed_refresh_exits_zero_and_leaves_a_stale_footprint(plan_context, broken_outline, expected_error):
     """A failed refresh signals only through ``status`` and leaves the old list intact.
 
     This is the hazard the outline lanes' status branch exists for. The exit code is

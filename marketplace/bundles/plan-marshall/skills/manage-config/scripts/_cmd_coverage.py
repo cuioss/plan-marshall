@@ -151,9 +151,9 @@ def _validate_coupling(thoroughness: object, scope: object) -> tuple[bool, str |
             False,
             f"coverage coupling violation: thoroughness '{thoroughness}' (>= T4) "
             f"requires scope >= 'component', but scope is '{scope}'. "
-            f"Relation-tracing thoroughness lower-bounds scope (see "
-            f"persona-plan-marshall-agent/standards/thoroughness.md § Coupling Constraint: "
-            f"reject thoroughness >= T4 AND scope < component).",
+            f'Relation-tracing thoroughness lower-bounds scope (see '
+            f'persona-plan-marshall-agent/standards/thoroughness.md § Coupling Constraint: '
+            f'reject thoroughness >= T4 AND scope < component).',
         )
     return True, None
 
@@ -252,7 +252,9 @@ def _resolve_cell(args) -> dict:
             scope = plan_wide.get('scope')
             thoroughness = thoroughness if isinstance(thoroughness, str) else 'inherit'
             scope = scope if isinstance(scope, str) else 'inherit'
-            t_source = 'plan.coverage.thoroughness' if isinstance(plan_wide.get('thoroughness'), str) else 'implicit_default'
+            t_source = (
+                'plan.coverage.thoroughness' if isinstance(plan_wide.get('thoroughness'), str) else 'implicit_default'
+            )
             s_source = 'plan.coverage.scope' if isinstance(plan_wide.get('scope'), str) else 'implicit_default'
         else:
             thoroughness, scope = 'inherit', 'inherit'
@@ -264,10 +266,7 @@ def _resolve_cell(args) -> dict:
             return error_exit(err)
         assert group is not None
         if group not in KNOWN_COVERAGE_GROUPS:
-            return error_exit(
-                f"coverage group '{group}' is not a known phase "
-                f"(valid: {list(KNOWN_COVERAGE_GROUPS)})"
-            )
+            return error_exit(f"coverage group '{group}' is not a known phase (valid: {list(KNOWN_COVERAGE_GROUPS)})")
         thoroughness, t_source = _resolve_field(plan_block, plan_wide, group, 'thoroughness')
         scope, s_source = _resolve_field(plan_block, plan_wide, group, 'scope')
 

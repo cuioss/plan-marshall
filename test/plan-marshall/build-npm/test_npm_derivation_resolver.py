@@ -39,9 +39,7 @@ from conftest import load_script_module
 
 FIXTURE = Path(__file__).parent / 'fixtures' / 'workspace-monorepo'
 
-_npm_cmd_discover = load_script_module(
-    'plan-marshall', 'build-npm', '_npm_cmd_discover.py', '_npm_cmd_discover'
-)
+_npm_cmd_discover = load_script_module('plan-marshall', 'build-npm', '_npm_cmd_discover.py', '_npm_cmd_discover')
 _extension = load_script_module('plan-marshall', 'build-npm', 'extension.py', '_npm_extension')
 
 discover_npm_modules = _npm_cmd_discover.discover_npm_modules

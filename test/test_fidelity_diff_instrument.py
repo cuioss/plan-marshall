@@ -18,7 +18,7 @@ import subprocess
 import pytest
 from _fidelity_diff import FACET_DEFINITIONS, compare_refs, format_report, has_loss, main
 
-BEFORE_MODULE = '''\
+BEFORE_MODULE = """\
 # a comment that survives
 class TestKept:
     def test_kept(self):
@@ -26,9 +26,9 @@ class TestKept:
 
     def test_removed(self):
         assert True
-'''
+"""
 
-AFTER_MODULE = '''\
+AFTER_MODULE = """\
 # a comment that survives
 class TestKept:
     def test_kept(self):
@@ -36,7 +36,7 @@ class TestKept:
 
     def test_added(self):
         assert True
-'''
+"""
 
 
 def _run(repo, *args: str) -> None:

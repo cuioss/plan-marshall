@@ -15,7 +15,9 @@ from _arch_fixtures import setup_test_project
 
 from conftest import load_script_module
 
-_architecture_core = load_script_module('plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core')
+_architecture_core = load_script_module(
+    'plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core'
+)
 _cmd_suggest = load_script_module('plan-marshall', 'manage-architecture', '_cmd_suggest.py', '_cmd_suggest')
 
 ModuleNotFoundInProjectError = _architecture_core.ModuleNotFoundInProjectError

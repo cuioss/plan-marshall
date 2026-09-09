@@ -100,9 +100,7 @@ import extension_discovery
 from conftest import get_script_path, load_script_module, run_script
 from extension_discovery import find_implementors
 
-_guard = load_script_module(
-    'plan-marshall', 'phase-6-finalize', 'post_run_source_guard.py'
-)
+_guard = load_script_module('plan-marshall', 'phase-6-finalize', 'post_run_source_guard.py')
 check_tracked_source = _guard.check_tracked_source
 
 #: The canonical ext-point value whose implementors carry the fact.
@@ -154,11 +152,7 @@ def _declares_post_run_review(doc_path: Path) -> bool:
 
 def _post_run_review_records() -> list[dict]:
     """Derive the post-run-review implementor records from discovery."""
-    return [
-        rec
-        for rec in find_implementors(_EXT_POINT)
-        if _declares_post_run_review(Path(rec['path']))
-    ]
+    return [rec for rec in find_implementors(_EXT_POINT) if _declares_post_run_review(Path(rec['path']))]
 
 
 def _post_run_review_names() -> set[str]:
@@ -275,12 +269,10 @@ def test_no_member_is_ordered_before_the_merge_gate():
     edit here.
     """
     merge_gate_order = _merge_gate_order()
-    assert merge_gate_order is not None, (
-        'Precondition failed — see test_merge_gate_is_discoverable.'
-    )
+    assert merge_gate_order is not None, 'Precondition failed — see test_merge_gate_is_discoverable.'
 
     offenders = [
-        f"{rec['name']} (order {rec.get('order')})"
+        f'{rec["name"]} (order {rec.get("order")})'
         for rec in _post_run_review_records()
         if not isinstance(rec.get('order'), int) or rec['order'] <= merge_gate_order
     ]
@@ -305,13 +297,9 @@ def test_no_step_declares_both_post_run_review_and_mutates_source():
     offenders = []
     for record in find_implementors(_EXT_POINT):
         doc_path = Path(record['path'])
-        fields = extension_discovery._read_frontmatter_fields(
-            doc_path, (_FACT_KEY, _MUTATES_SOURCE_KEY)
-        )
-        if bool(fields.get(_FACT_KEY, False)) and bool(
-            fields.get(_MUTATES_SOURCE_KEY, False)
-        ):
-            offenders.append(f"{record['name']} ({doc_path})")
+        fields = extension_discovery._read_frontmatter_fields(doc_path, (_FACT_KEY, _MUTATES_SOURCE_KEY))
+        if bool(fields.get(_FACT_KEY, False)) and bool(fields.get(_MUTATES_SOURCE_KEY, False)):
+            offenders.append(f'{record["name"]} ({doc_path})')
 
     assert not offenders, (
         f'These steps declare both {_FACT_KEY}: true and {_MUTATES_SOURCE_KEY}: '
@@ -337,11 +325,9 @@ def test_every_member_declares_mutates_source_explicitly():
     offenders = []
     for record in _post_run_review_records():
         doc_path = Path(record['path'])
-        fields = extension_discovery._read_frontmatter_fields(
-            doc_path, (_MUTATES_SOURCE_KEY,)
-        )
+        fields = extension_discovery._read_frontmatter_fields(doc_path, (_MUTATES_SOURCE_KEY,))
         if _MUTATES_SOURCE_KEY not in fields:
-            offenders.append(f"{record['name']} ({doc_path})")
+            offenders.append(f'{record["name"]} ({doc_path})')
 
     assert not offenders, (
         f'These {_FACT_KEY} steps declare no {_MUTATES_SOURCE_KEY} key at all. '

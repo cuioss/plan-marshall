@@ -74,9 +74,7 @@ from conftest import get_script_path, load_script_module, run_script
 # ``register=False``: only the returned module is needed, and a sibling suite
 # imports ``review_completeness`` plainly. Registering under that name would put two
 # copies in play, reachable by different routes and differing by collection order.
-rc = load_script_module(
-    'plan-marshall', 'automatic-review', 'review_completeness.py', register=False
-)
+rc = load_script_module('plan-marshall', 'automatic-review', 'review_completeness.py', register=False)
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'automatic-review', 'review_completeness.py')
 
@@ -208,9 +206,7 @@ class TestEvidenceTyping:
         assert rc.parse_participation('coderabbit:review_body') == {'coderabbit': 'review_body'}
         # CodeRabbit's standalone summary comment is a declared shape, so it is
         # admitted POSITIVELY rather than covered only by the absence of a failure.
-        assert rc.parse_participation('coderabbit:issue_comment') == {
-            'coderabbit': 'issue_comment'
-        }
+        assert rc.parse_participation('coderabbit:issue_comment') == {'coderabbit': 'issue_comment'}
         assert rc.parse_participation('sourcery:review_body') == SOURCERY_EVIDENCE
         assert rc.parse_participation('cuioss-review-bot:issue_comment') == PR_AGENT_EVIDENCE
 
@@ -317,9 +313,7 @@ class TestPRAgentParticipation:
         plan_id = 'rc-cuioss-review-bot-guide'
         plan_context.plan_dir_for(plan_id)
 
-        result = rc.check_completeness(
-            plan_id, ['cuioss-review-bot'], participated_bots=PR_AGENT_EVIDENCE
-        )
+        result = rc.check_completeness(plan_id, ['cuioss-review-bot'], participated_bots=PR_AGENT_EVIDENCE)
 
         assert result['participation_complete'] is True
         assert _state_of(result, 'cuioss-review-bot') == rc.STATE_PARTICIPATED_BUT_EMPTY
@@ -388,9 +382,7 @@ class TestPRAgentParticipation:
         plan_id = 'rc-cuioss-review-bot-check'
         plan_context.plan_dir_for(plan_id)
 
-        result = rc.check_completeness(
-            plan_id, ['cuioss-review-bot'], in_progress_bots=['cuioss-review-bot']
-        )
+        result = rc.check_completeness(plan_id, ['cuioss-review-bot'], in_progress_bots=['cuioss-review-bot'])
 
         assert result['participation_complete'] is False
         assert _state_of(result, 'cuioss-review-bot') == rc.STATE_IN_PROGRESS
@@ -447,9 +439,7 @@ class TestQuorumIsRequiredOnly:
         plan_context.plan_dir_for(plan_id)
         _seed(plan_id, 'coderabbit', resolution='fixed')
 
-        result = rc.check_completeness(
-            plan_id, ['coderabbit', 'sourcery'], participated_bots=CODERABBIT_EVIDENCE
-        )
+        result = rc.check_completeness(plan_id, ['coderabbit', 'sourcery'], participated_bots=CODERABBIT_EVIDENCE)
 
         assert result['participation_complete'] is False
         assert result['unproven_bots'] == ['sourcery']
@@ -512,9 +502,7 @@ class TestStateTaxonomy:
         plan_context.plan_dir_for(plan_id)
         _seed(plan_id, 'coderabbit', resolution='fixed')
 
-        result = rc.check_completeness(
-            plan_id, ['coderabbit'], participated_bots=CODERABBIT_EVIDENCE
-        )
+        result = rc.check_completeness(plan_id, ['coderabbit'], participated_bots=CODERABBIT_EVIDENCE)
 
         assert _state_of(result, 'coderabbit') == rc.STATE_PARTICIPATED
         assert result['participation_complete'] is True
@@ -529,9 +517,7 @@ class TestStateTaxonomy:
         plan_id = 'rc-state-empty'
         plan_context.plan_dir_for(plan_id)
 
-        result = rc.check_completeness(
-            plan_id, ['coderabbit'], participated_bots=CODERABBIT_EVIDENCE
-        )
+        result = rc.check_completeness(plan_id, ['coderabbit'], participated_bots=CODERABBIT_EVIDENCE)
 
         assert _state_of(result, 'coderabbit') == rc.STATE_PARTICIPATED_BUT_EMPTY
         assert result['participation_complete'] is True
@@ -547,9 +533,7 @@ class TestStateTaxonomy:
         plan_id = 'rc-state-refused'
         plan_context.plan_dir_for(plan_id)
 
-        result = rc.check_completeness(
-            plan_id, ['coderabbit', 'sourcery'], refused_bots=['coderabbit', 'sourcery']
-        )
+        result = rc.check_completeness(plan_id, ['coderabbit', 'sourcery'], refused_bots=['coderabbit', 'sourcery'])
 
         assert _state_of(result, 'coderabbit') == rc.STATE_REFUSED_AWAITABLE
         assert _state_of(result, 'sourcery') == rc.STATE_REFUSED_HARD
@@ -642,9 +626,7 @@ class TestStateTaxonomy:
         plan_id = 'rc-state-stale'
         plan_context.plan_dir_for(plan_id)
 
-        result = rc.check_completeness(
-            plan_id, ['coderabbit'], stale_participation_bots=['coderabbit']
-        )
+        result = rc.check_completeness(plan_id, ['coderabbit'], stale_participation_bots=['coderabbit'])
 
         assert _state_of(result, 'coderabbit') == rc.STATE_PARTICIPATED_STALE
         assert result['unproven_bots'] == ['coderabbit']
@@ -1017,9 +999,7 @@ class TestStateTaxonomy:
         # the omission could never fail — a stale enumeration that reported green
         # precisely because it was incomplete. A derived population cannot drift.
         known_states = {
-            value
-            for name, value in vars(rc).items()
-            if name.startswith('STATE_') and isinstance(value, str)
+            value for name, value in vars(rc).items() if name.startswith('STATE_') and isinstance(value, str)
         }
         assert known_states, 'no STATE_ constants derived — the membership check is vacuous'
         assert {r['state'] for r in result['bot_states']} <= known_states
@@ -1043,12 +1023,9 @@ class TestStateTaxonomy:
 #: registered population rather than hand-listed. Guarded non-empty because every
 #: sweep below would otherwise cover nothing, and its size is published in the
 #: assertion messages so a shrunken population is visible rather than silent.
-_DECLARED_RATE_LIMIT_CLASSES = sorted(
-    {rc.bot_registry.rate_limit_class(bot) for bot in _REGISTERED_BOTS}
-)
+_DECLARED_RATE_LIMIT_CLASSES = sorted({rc.bot_registry.rate_limit_class(bot) for bot in _REGISTERED_BOTS})
 assert _DECLARED_RATE_LIMIT_CLASSES, (
-    'no rate_limit_class value is declared by any registered bot — the override '
-    'sweep below would cover nothing'
+    'no rate_limit_class value is declared by any registered bot — the override sweep below would cover nothing'
 )
 
 
@@ -1067,8 +1044,7 @@ class TestUnrecognisedRefusalOverride:
         # The class population is derived FROM the bot population, so it can never be
         # larger; asserting the relation makes an empty or collapsed derivation visible.
         assert len(_DECLARED_RATE_LIMIT_CLASSES) <= len(_REGISTERED_BOTS), (
-            f'{len(_DECLARED_RATE_LIMIT_CLASSES)} classes derived from '
-            f'{len(_REGISTERED_BOTS)} bots'
+            f'{len(_DECLARED_RATE_LIMIT_CLASSES)} classes derived from {len(_REGISTERED_BOTS)} bots'
         )
 
     @pytest.mark.parametrize('bot_kind', _REGISTERED_BOTS)
@@ -1121,10 +1097,7 @@ class TestUnrecognisedRefusalOverride:
         class rather than named, and the selection is guarded so this cannot pass
         vacuously if no such bot exists.
         """
-        awaitable = [
-            b for b in _REGISTERED_BOTS
-            if rc.bot_registry.rate_limit_class(b) == 'awaitable_window'
-        ]
+        awaitable = [b for b in _REGISTERED_BOTS if rc.bot_registry.rate_limit_class(b) == 'awaitable_window']
         assert awaitable, 'no registered bot declares awaitable_window — case is vacuous'
         bot_kind = awaitable[0]
 
@@ -1148,9 +1121,7 @@ class TestUnrecognisedRefusalOverride:
         size is reported in the failure message.
         """
         for rate_limit_class in _DECLARED_RATE_LIMIT_CLASSES:
-            assert (
-                rc._refusal_state(rate_limit_class, None, True) == rc.STATE_REFUSED_UNKNOWN
-            ), (
+            assert rc._refusal_state(rate_limit_class, None, True) == rc.STATE_REFUSED_UNKNOWN, (
                 f'{rate_limit_class!r} did not take the override '
                 f'(over {len(_DECLARED_RATE_LIMIT_CLASSES)} declared class values)'
             )
@@ -1170,17 +1141,11 @@ class TestUnrecognisedRefusalOverride:
         actually extracted, leaving the operator without the one remedy already in
         hand.
         """
-        assert (
-            rc._refusal_state('hard_quota', rc.CAUSE_SIZE, True)
-            == rc.STATE_REFUSED_STRUCTURAL
-        )
+        assert rc._refusal_state('hard_quota', rc.CAUSE_SIZE, True) == rc.STATE_REFUSED_STRUCTURAL
         # The override still decides when NO cause was read — it is displaced, not retired.
         assert rc._refusal_state('hard_quota', None, True) == rc.STATE_REFUSED_UNKNOWN
         # ...and the cause still resolves structural without the override present.
-        assert (
-            rc._refusal_state('hard_quota', rc.CAUSE_SIZE, False)
-            == rc.STATE_REFUSED_STRUCTURAL
-        )
+        assert rc._refusal_state('hard_quota', rc.CAUSE_SIZE, False) == rc.STATE_REFUSED_STRUCTURAL
 
     def test_the_ordering_never_costs_awaitability(self):
         """The safety property that makes the ordering conservative, not merely richer.
@@ -1217,9 +1182,7 @@ class TestUnrecognisedRefusalOverride:
         assert _state_of(with_empty, 'coderabbit') == rc.STATE_REFUSED_AWAITABLE
 
     @pytest.mark.parametrize('bot_kind', _REGISTERED_BOTS)
-    def test_the_override_is_reachable_on_the_producers_real_output_shape(
-        self, bot_kind, plan_context
-    ):
+    def test_the_override_is_reachable_on_the_producers_real_output_shape(self, bot_kind, plan_context):
         """⭐ The override's OWN motivating case, staged as the producer really emits it.
 
         The producer reports the two sets DISJOINTLY: ``unrecognised_refusal[]`` names a
@@ -1287,9 +1250,7 @@ class TestUnrecognisedRefusalOverride:
         check = rc.check_completeness(plan_id, ['coderabbit'], **shared)
         deficit = rc.check_deficit(plan_id, ['coderabbit'], **shared)
 
-        deficit_state = next(
-            r['state'] for r in deficit['reviewers'] if r['bot_kind'] == 'coderabbit'
-        )
+        deficit_state = next(r['state'] for r in deficit['reviewers'] if r['bot_kind'] == 'coderabbit')
         assert deficit_state == _state_of(check, 'coderabbit') == rc.STATE_REFUSED_UNKNOWN
 
     def test_the_cli_accepts_the_flag_and_drives_the_verdict(self, plan_context):
@@ -1352,9 +1313,7 @@ class TestTriageStateAwareness:
         plan_context.plan_dir_for(plan_id)
         _seed(plan_id, 'coderabbit', resolution='pending')
 
-        result = rc.check_completeness(
-            plan_id, ['coderabbit'], participated_bots=CODERABBIT_EVIDENCE
-        )
+        result = rc.check_completeness(plan_id, ['coderabbit'], participated_bots=CODERABBIT_EVIDENCE)
 
         assert result['participation_complete'] is True
         assert result['pending_bots'] == ['coderabbit']
@@ -1366,9 +1325,7 @@ class TestTriageStateAwareness:
         plan_context.plan_dir_for(plan_id)
         _seed(plan_id, 'coderabbit', resolution='pending')
 
-        result = rc.check_completeness(
-            plan_id, ['coderabbit'], triage_ran=True, participated_bots=CODERABBIT_EVIDENCE
-        )
+        result = rc.check_completeness(plan_id, ['coderabbit'], triage_ran=True, participated_bots=CODERABBIT_EVIDENCE)
 
         assert result['participation_complete'] is False
         assert result['pending_bots'] == ['coderabbit']
@@ -1380,15 +1337,11 @@ class TestTriageStateAwareness:
         _seed(plan_id, 'coderabbit', resolution='fixed')
         _seed(plan_id, 'coderabbit', resolution='pending')
 
-        pre = rc.check_completeness(
-            plan_id, ['coderabbit'], participated_bots=CODERABBIT_EVIDENCE
-        )
+        pre = rc.check_completeness(plan_id, ['coderabbit'], participated_bots=CODERABBIT_EVIDENCE)
         assert pre['participation_complete'] is True
         assert pre['pending_bots'] == ['coderabbit']
 
-        post = rc.check_completeness(
-            plan_id, ['coderabbit'], triage_ran=True, participated_bots=CODERABBIT_EVIDENCE
-        )
+        post = rc.check_completeness(plan_id, ['coderabbit'], triage_ran=True, participated_bots=CODERABBIT_EVIDENCE)
         assert post['participation_complete'] is False
 
     def test_unproven_bot_blocks_in_both_triage_modes(self, plan_context):
@@ -1443,9 +1396,7 @@ class TestParticipationIsNotReviewQuality:
         plan_context.plan_dir_for(plan_id)
         _seed(plan_id, 'coderabbit', resolution='fixed')
 
-        result = rc.check_completeness(
-            plan_id, ['coderabbit'], participated_bots=CODERABBIT_EVIDENCE
-        )
+        result = rc.check_completeness(plan_id, ['coderabbit'], participated_bots=CODERABBIT_EVIDENCE)
 
         assert result['participation_complete'] is True
         assert result['proves'] == 'participation_only'
@@ -1462,9 +1413,7 @@ class TestParticipationIsNotReviewQuality:
         plan_context.plan_dir_for(plan_id)
         # The intent-echo review produced no actionable finding.
 
-        result = rc.check_completeness(
-            plan_id, ['coderabbit'], participated_bots=CODERABBIT_EVIDENCE
-        )
+        result = rc.check_completeness(plan_id, ['coderabbit'], participated_bots=CODERABBIT_EVIDENCE)
 
         assert _state_of(result, 'coderabbit') == rc.STATE_PARTICIPATED_BUT_EMPTY
         assert _state_of(result, 'coderabbit') != rc.STATE_PARTICIPATED
@@ -1625,9 +1574,7 @@ class TestCLI:
         plan_id = 'rc-cli-participated'
         plan_context.plan_dir_for(plan_id)
 
-        without = run_script(
-            SCRIPT_PATH, 'check', '--plan-id', plan_id, '--required-bots', 'coderabbit,sourcery'
-        )
+        without = run_script(SCRIPT_PATH, 'check', '--plan-id', plan_id, '--required-bots', 'coderabbit,sourcery')
         assert without.success, without.stderr
         assert 'participation_complete: false' in without.stdout
         assert 'unproven_bots[2]' in without.stdout
@@ -1696,9 +1643,7 @@ class TestCLI:
         plan_id = 'rc-cli-not-triggered-omitted'
         plan_context.plan_dir_for(plan_id)
 
-        result = run_script(
-            SCRIPT_PATH, 'check', '--plan-id', plan_id, '--required-bots', 'coderabbit'
-        )
+        result = run_script(SCRIPT_PATH, 'check', '--plan-id', plan_id, '--required-bots', 'coderabbit')
 
         assert result.success, result.stderr
         assert 'coderabbit,absent' in result.stdout
@@ -2181,9 +2126,7 @@ class TestBareListFlags:
         Pairs with the bare-form cases so the relaxation is shown to ADD a form
         rather than replace one.
         """
-        args = _parsed_check_args(
-            monkeypatch, ['check', '--plan-id', 'rc-value-form', flag, 'coderabbit']
-        )
+        args = _parsed_check_args(monkeypatch, ['check', '--plan-id', 'rc-value-form', flag, 'coderabbit'])
 
         assert getattr(args, dest) == 'coderabbit'
 
@@ -2247,9 +2190,7 @@ class TestUnknownVerdictEmitsNoParticipationField:
         plan_id = 'rc-unknown-argparse'
         plan_context.plan_dir_for(plan_id)
 
-        result = run_script(
-            SCRIPT_PATH, 'check', '--plan-id', plan_id, '--not-a-real-flag', 'x'
-        )
+        result = run_script(SCRIPT_PATH, 'check', '--plan-id', plan_id, '--not-a-real-flag', 'x')
 
         assert result.returncode == 2
         assert 'participation_complete' not in result.stdout
@@ -2291,11 +2232,7 @@ def _declared_state_values() -> set[str]:
     real one, so the totality check below would pass exactly when it was meant to
     fail.
     """
-    return {
-        value
-        for name, value in vars(rc).items()
-        if name.startswith('STATE_') and isinstance(value, str)
-    }
+    return {value for name, value in vars(rc).items() if name.startswith('STATE_') and isinstance(value, str)}
 
 
 def _bucketed_state_values() -> list[str]:
@@ -2318,35 +2255,43 @@ class TestReviewStateSummary:
 
     def test_nobody_reviewed_and_reviewed_clean_render_differently(self):
         """The load-bearing distinction: three refusals is NOT three clean reviews."""
-        nobody = rc.compose_review_state_summary([
-            {'bot_kind': 'coderabbit', 'state': rc.STATE_REFUSED_AWAITABLE},
-            {'bot_kind': 'sourcery', 'state': rc.STATE_REFUSED_HARD},
-            {'bot_kind': 'cuioss-review-bot', 'state': rc.STATE_REFUSED_UNKNOWN},
-        ])
-        reviewed_clean = rc.compose_review_state_summary([
-            {'bot_kind': 'coderabbit', 'state': rc.STATE_PARTICIPATED_BUT_EMPTY},
-            {'bot_kind': 'sourcery', 'state': rc.STATE_PARTICIPATED_BUT_EMPTY},
-            {'bot_kind': 'cuioss-review-bot', 'state': rc.STATE_PARTICIPATED_BUT_EMPTY},
-        ])
+        nobody = rc.compose_review_state_summary(
+            [
+                {'bot_kind': 'coderabbit', 'state': rc.STATE_REFUSED_AWAITABLE},
+                {'bot_kind': 'sourcery', 'state': rc.STATE_REFUSED_HARD},
+                {'bot_kind': 'cuioss-review-bot', 'state': rc.STATE_REFUSED_UNKNOWN},
+            ]
+        )
+        reviewed_clean = rc.compose_review_state_summary(
+            [
+                {'bot_kind': 'coderabbit', 'state': rc.STATE_PARTICIPATED_BUT_EMPTY},
+                {'bot_kind': 'sourcery', 'state': rc.STATE_PARTICIPATED_BUT_EMPTY},
+                {'bot_kind': 'cuioss-review-bot', 'state': rc.STATE_PARTICIPATED_BUT_EMPTY},
+            ]
+        )
         assert nobody == '3 refused'
         assert reviewed_clean == '3 empty'
         # The two facts MUST NOT share a rendering — this is the whole deliverable.
         assert nobody != reviewed_clean
 
     def test_all_three_refusal_members_share_the_refused_bucket(self):
-        summary = rc.compose_review_state_summary([
-            {'bot_kind': 'a', 'state': rc.STATE_REFUSED_AWAITABLE},
-            {'bot_kind': 'b', 'state': rc.STATE_REFUSED_HARD},
-            {'bot_kind': 'c', 'state': rc.STATE_REFUSED_UNKNOWN},
-        ])
+        summary = rc.compose_review_state_summary(
+            [
+                {'bot_kind': 'a', 'state': rc.STATE_REFUSED_AWAITABLE},
+                {'bot_kind': 'b', 'state': rc.STATE_REFUSED_HARD},
+                {'bot_kind': 'c', 'state': rc.STATE_REFUSED_UNKNOWN},
+            ]
+        )
         assert summary == '3 refused'
 
     def test_mixed_distribution_lists_each_nonzero_bucket_in_order(self):
-        summary = rc.compose_review_state_summary([
-            {'bot_kind': 'a', 'state': rc.STATE_PARTICIPATED},
-            {'bot_kind': 'b', 'state': rc.STATE_PARTICIPATED_BUT_EMPTY},
-            {'bot_kind': 'c', 'state': rc.STATE_REFUSED_HARD},
-        ])
+        summary = rc.compose_review_state_summary(
+            [
+                {'bot_kind': 'a', 'state': rc.STATE_PARTICIPATED},
+                {'bot_kind': 'b', 'state': rc.STATE_PARTICIPATED_BUT_EMPTY},
+                {'bot_kind': 'c', 'state': rc.STATE_REFUSED_HARD},
+            ]
+        )
         assert summary == '1 reviewed, 1 empty, 1 refused'
 
     def test_empty_roster_produces_no_summary(self):
@@ -2358,7 +2303,8 @@ class TestReviewStateSummary:
         plan_id = 'rc-summary-in-output'
         plan_context.plan_dir_for(plan_id)
         result = rc.check_completeness(
-            plan_id, ['coderabbit', 'sourcery', 'cuioss-review-bot'],
+            plan_id,
+            ['coderabbit', 'sourcery', 'cuioss-review-bot'],
             refused_bots=['coderabbit', 'sourcery', 'cuioss-review-bot'],
         )
         assert result['review_state_summary'] == '3 refused'
@@ -2515,9 +2461,7 @@ class TestUnregisteredKind:
         plan_id = 'rc-unregistered-observed'
         plan_context.plan_dir_for(plan_id)
 
-        in_progress = rc.check_completeness(
-            plan_id, [_UNREGISTERED_TOKEN], in_progress_bots=[_UNREGISTERED_TOKEN]
-        )
+        in_progress = rc.check_completeness(plan_id, [_UNREGISTERED_TOKEN], in_progress_bots=[_UNREGISTERED_TOKEN])
         assert _state_of(in_progress, _UNREGISTERED_TOKEN) == rc.STATE_IN_PROGRESS
 
         # Passed as a dict directly: ``parse_participation`` admits a pair only when
@@ -2528,9 +2472,7 @@ class TestUnregisteredKind:
         participating = rc.check_completeness(
             plan_id, [_UNREGISTERED_TOKEN], participated_bots={_UNREGISTERED_TOKEN: 'inline'}
         )
-        assert (
-            _state_of(participating, _UNREGISTERED_TOKEN) == rc.STATE_PARTICIPATED_BUT_EMPTY
-        )
+        assert _state_of(participating, _UNREGISTERED_TOKEN) == rc.STATE_PARTICIPATED_BUT_EMPTY
 
     def test_the_payload_names_the_live_kind_set_it_checked_against(self, plan_context):
         """ADR-019: the verdict carries the POPULATION the token was checked against.
@@ -2553,10 +2495,12 @@ class TestUnregisteredKind:
         Collapsing it there would undo, at the summary line a reader actually sees,
         exactly the distinction the member was added to carry.
         """
-        summary = rc.compose_review_state_summary([
-            {'bot_kind': _UNREGISTERED_TOKEN, 'state': rc.STATE_UNREGISTERED_KIND},
-            {'bot_kind': _VALID_TOKEN, 'state': rc.STATE_ABSENT},
-        ])
+        summary = rc.compose_review_state_summary(
+            [
+                {'bot_kind': _UNREGISTERED_TOKEN, 'state': rc.STATE_UNREGISTERED_KIND},
+                {'bot_kind': _VALID_TOKEN, 'state': rc.STATE_ABSENT},
+            ]
+        )
 
         assert summary == '1 unregistered, 1 absent'
 
@@ -2570,9 +2514,7 @@ class TestUnregisteredKind:
         plan_id = 'rc-cli-unregistered'
         plan_context.plan_dir_for(plan_id)
 
-        result = run_script(
-            SCRIPT_PATH, 'check', '--plan-id', plan_id, '--required-bots', _UNREGISTERED_TOKEN
-        )
+        result = run_script(SCRIPT_PATH, 'check', '--plan-id', plan_id, '--required-bots', _UNREGISTERED_TOKEN)
 
         assert result.success, result.stderr
         assert result.returncode != 2, result.stderr
@@ -2593,9 +2535,7 @@ class TestUnregisteredKind:
         plan_id = 'rc-cli-unregistered-omitted'
         plan_context.plan_dir_for(plan_id)
 
-        result = run_script(
-            SCRIPT_PATH, 'check', '--plan-id', plan_id, '--required-bots', _VALID_TOKEN
-        )
+        result = run_script(SCRIPT_PATH, 'check', '--plan-id', plan_id, '--required-bots', _VALID_TOKEN)
 
         assert result.success, result.stderr
         assert f'{_VALID_TOKEN},absent' in result.stdout
@@ -2628,26 +2568,20 @@ class TestDeficitSignal:
     def test_row_a_deficit_four_to_zero(self):
         # Row A: a baseline reviewer produced 4 findings; the required reviewer
         # reviewed and produced 0. 4 : 0 is a deficit.
-        result = rc.assess_deficit(
-            [self._required(0), self._baseline(4)], required_bots=['cuioss-review-bot']
-        )
+        result = rc.assess_deficit([self._required(0), self._baseline(4)], required_bots=['cuioss-review-bot'])
         assert result['verdict'] == rc.DEFICIT_DEFICIT
         assert result['deficit_reviewers'] == [{'bot_kind': 'cuioss-review-bot', 'findings': 0, 'deficit': 4}]
         assert result['baseline_max'] == 4
 
     def test_row_b_deficit_two_to_zero(self):
-        result = rc.assess_deficit(
-            [self._required(0), self._baseline(2)], required_bots=['cuioss-review-bot']
-        )
+        result = rc.assess_deficit([self._required(0), self._baseline(2)], required_bots=['cuioss-review-bot'])
         assert result['verdict'] == rc.DEFICIT_DEFICIT
 
     def test_row_e_clean_zero_to_zero_with_a_real_baseline(self):
         # Row E — the necessary counter-example. A baseline reviewer REVIEWED and
         # found nothing; the required reviewer found nothing. 0 : 0 against a real
         # baseline is CLEAN, never a deficit. The detector MUST NOT fire here.
-        result = rc.assess_deficit(
-            [self._required(0), self._baseline(0)], required_bots=['cuioss-review-bot']
-        )
+        result = rc.assess_deficit([self._required(0), self._baseline(0)], required_bots=['cuioss-review-bot'])
         assert result['verdict'] == rc.DEFICIT_CLEAN
         assert result['deficit_reviewers'] == []
 
@@ -2675,6 +2609,7 @@ class TestDeficitSignal:
         alone would label all rows identically. Only the baseline separates deficit
         from clean from unassessable.
         """
+
         def verdict(baseline):
             return rc.assess_deficit(
                 [{'bot_kind': 'cuioss-review-bot', 'reviewed': True, 'finding_count': 0}, *baseline],
@@ -2695,9 +2630,7 @@ class TestDeficitSignal:
 
     def test_signal_never_gates_the_merge(self):
         """Every deficit envelope declares itself non-gating — the cold-read requirement."""
-        result = rc.assess_deficit(
-            [self._required(0), self._baseline(4)], required_bots=['cuioss-review-bot']
-        )
+        result = rc.assess_deficit([self._required(0), self._baseline(4)], required_bots=['cuioss-review-bot'])
         assert result['gates_merge'] is False
         assert result['proves'] == 'reviewer_quality_only'
 
@@ -2728,10 +2661,16 @@ class TestDeficitSignal:
         plan_id = 'rc-deficit-cli'
         plan_context.plan_dir_for(plan_id)
         result = run_script(
-            SCRIPT_PATH, 'deficit', '--plan-id', plan_id,
-            '--required-bots', 'cuioss-review-bot',
-            '--optional-bots', 'coderabbit,sourcery',
-            '--refused-bots', 'coderabbit,sourcery',
+            SCRIPT_PATH,
+            'deficit',
+            '--plan-id',
+            plan_id,
+            '--required-bots',
+            'cuioss-review-bot',
+            '--optional-bots',
+            'coderabbit,sourcery',
+            '--refused-bots',
+            'coderabbit,sourcery',
         )
         assert result.returncode == 0
         assert 'gates_merge: false' in result.stdout
@@ -2786,16 +2725,16 @@ class TestRefusalCauseOverlay:
         plan_id = 'rc-cause-refused'
         plan_context.plan_dir_for(plan_id)
         result = rc.check_completeness(
-            plan_id, ['sourcery'], refused_bots=['sourcery'],
+            plan_id,
+            ['sourcery'],
+            refused_bots=['sourcery'],
             refused_causes={'sourcery': 'size'},
         )
         # A size cause resolves the STRUCTURAL member, not sourcery's hard_quota
         # awaitability member — and the row carries a cap column (unknown here, since
         # no cap was supplied).
         assert _state_of(result, 'sourcery') == rc.STATE_REFUSED_STRUCTURAL
-        assert result['refusal_causes'] == [
-            {'bot_kind': 'sourcery', 'cause': 'size', 'cap': ''}
-        ]
+        assert result['refusal_causes'] == [{'bot_kind': 'sourcery', 'cause': 'size', 'cap': ''}]
 
     def test_cause_for_a_non_refused_bot_is_dropped(self, plan_context):
         # A cause supplied for a bot that did NOT resolve to a refusal state is not
@@ -2804,7 +2743,8 @@ class TestRefusalCauseOverlay:
         plan_context.plan_dir_for(plan_id)
         _seed(plan_id, 'coderabbit', resolution='fixed')
         result = rc.check_completeness(
-            plan_id, ['coderabbit'],
+            plan_id,
+            ['coderabbit'],
             participated_bots=CODERABBIT_EVIDENCE,
             refused_causes={'coderabbit': 'size'},
         )
@@ -2817,13 +2757,13 @@ class TestRefusalCauseOverlay:
         plan_id = 'rc-cause-advisory'
         plan_context.plan_dir_for(plan_id)
         result = rc.check_completeness(
-            plan_id, ['coderabbit'], refused_bots=['coderabbit'],
+            plan_id,
+            ['coderabbit'],
+            refused_bots=['coderabbit'],
             refused_causes={'coderabbit': 'quota'},
         )
         assert _state_of(result, 'coderabbit') == rc.STATE_REFUSED_AWAITABLE
-        assert result['refusal_causes'] == [
-            {'bot_kind': 'coderabbit', 'cause': 'quota', 'cap': ''}
-        ]
+        assert result['refusal_causes'] == [{'bot_kind': 'coderabbit', 'cause': 'quota', 'cap': ''}]
 
     def test_no_causes_emits_no_refusal_causes(self, plan_context):
         plan_id = 'rc-cause-none'
@@ -2835,9 +2775,16 @@ class TestRefusalCauseOverlay:
         plan_id = 'rc-cause-cli'
         plan_context.plan_dir_for(plan_id)
         result = run_script(
-            SCRIPT_PATH, 'check', '--plan-id', plan_id,
-            '--required-bots', 'sourcery', '--refused-bots', 'sourcery',
-            '--refused-causes', 'sourcery:size',
+            SCRIPT_PATH,
+            'check',
+            '--plan-id',
+            plan_id,
+            '--required-bots',
+            'sourcery',
+            '--refused-bots',
+            'sourcery',
+            '--refused-causes',
+            'sourcery:size',
         )
         assert result.returncode == 0
         assert 'refusal_causes[1]{bot_kind,cause,cap}:' in result.stdout
@@ -2851,8 +2798,14 @@ class TestRefusalCauseOverlay:
         plan_id = 'rc-cause-malformed'
         plan_context.plan_dir_for(plan_id)
         result = run_script(
-            SCRIPT_PATH, 'check', '--plan-id', plan_id,
-            '--required-bots', 'sourcery', '--refused-causes', 'sourcery',
+            SCRIPT_PATH,
+            'check',
+            '--plan-id',
+            plan_id,
+            '--required-bots',
+            'sourcery',
+            '--refused-causes',
+            'sourcery',
         )
         assert result.returncode == 1
         assert 'participation_complete' not in result.stdout
@@ -2861,8 +2814,14 @@ class TestRefusalCauseOverlay:
         plan_id = 'rc-cause-bare'
         plan_context.plan_dir_for(plan_id)
         result = run_script(
-            SCRIPT_PATH, 'check', '--plan-id', plan_id,
-            '--required-bots', 'sourcery', '--refused-bots', 'sourcery',
+            SCRIPT_PATH,
+            'check',
+            '--plan-id',
+            plan_id,
+            '--required-bots',
+            'sourcery',
+            '--refused-bots',
+            'sourcery',
             '--refused-causes',
         )
         assert result.returncode == 0
@@ -2881,7 +2840,9 @@ class TestRefusalCauseOverlay:
         plan_context.plan_dir_for(plan_id)
         without = rc.check_completeness(plan_id, ['sourcery'], refused_bots=['sourcery'])
         with_cause = rc.check_completeness(
-            plan_id, ['sourcery'], refused_bots=['sourcery'],
+            plan_id,
+            ['sourcery'],
+            refused_bots=['sourcery'],
             refused_causes={'sourcery': 'size'},
         )
         assert without['participation_complete'] == with_cause['participation_complete']
@@ -2892,9 +2853,7 @@ class TestRefusalCauseOverlay:
         assert _state_of(without, 'sourcery') == rc.STATE_REFUSED_HARD
         assert _state_of(with_cause, 'sourcery') == rc.STATE_REFUSED_STRUCTURAL
         assert without['refusal_causes'] == []
-        assert with_cause['refusal_causes'] == [
-            {'bot_kind': 'sourcery', 'cause': 'size', 'cap': ''}
-        ]
+        assert with_cause['refusal_causes'] == [{'bot_kind': 'sourcery', 'cause': 'size', 'cap': ''}]
 
 
 class TestAbsentVersusInProgressDistinction:
@@ -2928,9 +2887,7 @@ class TestAbsentVersusInProgressDistinction:
         plan_context.plan_dir_for(plan_id)
 
         absent = rc.check_completeness(plan_id, ['coderabbit'])
-        in_flight = rc.check_completeness(
-            plan_id, ['coderabbit'], in_progress_bots=['coderabbit']
-        )
+        in_flight = rc.check_completeness(plan_id, ['coderabbit'], in_progress_bots=['coderabbit'])
 
         # Same gating outcome — which is why the verdict alone cannot separate them.
         assert absent['participation_complete'] is False
@@ -2946,12 +2903,16 @@ class TestAbsentVersusInProgressDistinction:
         The classification being distinct buys nothing if both collapse into one
         display bucket, since the summary is what an operator actually reads.
         """
-        absent = rc.compose_review_state_summary([
-            {'bot_kind': 'coderabbit', 'state': rc.STATE_ABSENT},
-        ])
-        in_flight = rc.compose_review_state_summary([
-            {'bot_kind': 'coderabbit', 'state': rc.STATE_IN_PROGRESS},
-        ])
+        absent = rc.compose_review_state_summary(
+            [
+                {'bot_kind': 'coderabbit', 'state': rc.STATE_ABSENT},
+            ]
+        )
+        in_flight = rc.compose_review_state_summary(
+            [
+                {'bot_kind': 'coderabbit', 'state': rc.STATE_IN_PROGRESS},
+            ]
+        )
 
         assert absent == '1 absent'
         assert in_flight == '1 in-progress'
@@ -3022,9 +2983,7 @@ class TestEmittedToonRoundTrips:
         ]
         assert emitted['measured_diff_size'] == '4,200 lines'
         # An unstated cap still renders as the literal ``unknown``.
-        assert emitted['refusal_causes'] == [
-            {'bot_kind': 'sourcery', 'cause': 'size', 'cap': 'unknown'}
-        ]
+        assert emitted['refusal_causes'] == [{'bot_kind': 'sourcery', 'cause': 'size', 'cap': 'unknown'}]
 
     def test_deficit_block_round_trips(self, capsys):
         from toon_parser import parse_toon
@@ -3053,9 +3012,7 @@ class TestEmittedToonRoundTrips:
         emitted = parse_toon(capsys.readouterr().out)
         assert emitted['gates_merge'] is False
         assert emitted['baseline_max'] == 7
-        assert emitted['deficit_reviewers'] == [
-            {'bot_kind': 'sourcery', 'findings': 0, 'deficit': 7}
-        ]
+        assert emitted['deficit_reviewers'] == [{'bot_kind': 'sourcery', 'findings': 0, 'deficit': 7}]
         assert emitted['reviewers'] == [
             {
                 'bot_kind': 'sourcery',
@@ -3075,9 +3032,7 @@ class TestEmittedToonRoundTrips:
         rc._emit_size_caps_toon({'status': 'success', 'size_capped_reviewers': declared})
 
         emitted = parse_toon(capsys.readouterr().out)
-        assert [row['bot_kind'] for row in emitted['size_capped_reviewers']] == [
-            row['bot_kind'] for row in declared
-        ]
+        assert [row['bot_kind'] for row in emitted['size_capped_reviewers']] == [row['bot_kind'] for row in declared]
         assert [row['structural_cap'] for row in emitted['size_capped_reviewers']] == [
             bool(row['structural_cap']) for row in declared
         ]

@@ -17,7 +17,6 @@ exact-match edge cases, and the ``resolve_plan_dir`` error paths that the
 subprocess suite never reaches in-process.
 """
 
-
 from __future__ import annotations
 
 import json
@@ -29,9 +28,7 @@ from conftest import load_script_module
 
 # Unique module name so this in-process load never collides with the
 # ``_check_artifact_under_test`` instance the sibling subprocess suite loads.
-_cac = load_script_module(
-    'plan-marshall', 'plan-retrospective', 'check-artifact-consistency.py', 'cac_behavior_mod'
-)
+_cac = load_script_module('plan-marshall', 'plan-retrospective', 'check-artifact-consistency.py', 'cac_behavior_mod')
 
 
 # The FOOTPRINT_UNRESOLVED sentinel now lives in the shared ``_footprint_resolver``
@@ -112,9 +109,7 @@ def _build_consistent_plan(plan_dir: Path, affected: list[str]) -> None:
     """Write a structurally-complete plan directory whose checks all pass."""
     plan_dir.mkdir(parents=True, exist_ok=True)
     (plan_dir / 'solution_outline.md').write_text(_outline(affected=affected), encoding='utf-8')
-    (plan_dir / 'references.json').write_text(
-        json.dumps({'modified_files': affected}), encoding='utf-8'
-    )
+    (plan_dir / 'references.json').write_text(json.dumps({'modified_files': affected}), encoding='utf-8')
     (plan_dir / 'metrics.md').write_text('# Metrics\n', encoding='utf-8')
     tasks = plan_dir / 'tasks'
     tasks.mkdir()

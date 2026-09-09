@@ -85,32 +85,26 @@ class TestBillingCompositionUnderCounts:
         # outright, so the plan is floored.
         assert row['label'] == 'floor'
 
-    def test_persisted_missing_end_time_marker_is_an_omitted_row(
-        self, tmp_path: Path
-    ):
+    def test_persisted_missing_end_time_marker_is_an_omitted_row(self, tmp_path: Path):
         # A phase that HAS a section but which the recorder itself marked as
         # never closed is an omitted row too — the marker is consulted, not just
         # structural absence.
-        body = (
-            'any_phase_missing_end_time: true\n'
-            'phases_missing_end_time: 6-finalize\n'
-            + ''.join(
-                _phase_block(
-                    phase,
-                    total_tokens=100,
-                    **(
-                        {
-                            'input_tokens': 1000,
-                            'output_tokens': 500,
-                            'cache_read_input_tokens': 200_000,
-                            'cache_creation_input_tokens': 8_000,
-                        }
-                        if phase == _EXECUTE_PHASE
-                        else {}
-                    ),
-                )
-                for phase in audit._TE_PHASES
+        body = 'any_phase_missing_end_time: true\nphases_missing_end_time: 6-finalize\n' + ''.join(
+            _phase_block(
+                phase,
+                total_tokens=100,
+                **(
+                    {
+                        'input_tokens': 1000,
+                        'output_tokens': 500,
+                        'cache_read_input_tokens': 200_000,
+                        'cache_creation_input_tokens': 8_000,
+                    }
+                    if phase == _EXECUTE_PHASE
+                    else {}
+                ),
             )
+            for phase in audit._TE_PHASES
         )
         inputs = _write_billing_plan(tmp_path, 'marked', body)
 
@@ -121,9 +115,7 @@ class TestBillingCompositionUnderCounts:
         assert '6-finalize' in row['omitted_row']
         assert row['label'] == 'floor'
 
-    def test_old_schema_marker_floors_the_plan_without_being_read(
-        self, tmp_path: Path
-    ):
+    def test_old_schema_marker_floors_the_plan_without_being_read(self, tmp_path: Path):
         """A retired-key record floors the plan and is NEVER read for its value.
 
         Same six present sections as the test above and the same phase named —
@@ -133,26 +125,22 @@ class TestBillingCompositionUnderCounts:
         refuses to do. Asserting only the floor would not distinguish "refused to
         read" from "read it and agreed".
         """
-        body = (
-            'partial: true\n'
-            'unrecorded_phases: 6-finalize\n'
-            + ''.join(
-                _phase_block(
-                    phase,
-                    total_tokens=100,
-                    **(
-                        {
-                            'input_tokens': 1000,
-                            'output_tokens': 500,
-                            'cache_read_input_tokens': 200_000,
-                            'cache_creation_input_tokens': 8_000,
-                        }
-                        if phase == _EXECUTE_PHASE
-                        else {}
-                    ),
-                )
-                for phase in audit._TE_PHASES
+        body = 'partial: true\nunrecorded_phases: 6-finalize\n' + ''.join(
+            _phase_block(
+                phase,
+                total_tokens=100,
+                **(
+                    {
+                        'input_tokens': 1000,
+                        'output_tokens': 500,
+                        'cache_read_input_tokens': 200_000,
+                        'cache_creation_input_tokens': 8_000,
+                    }
+                    if phase == _EXECUTE_PHASE
+                    else {}
+                ),
             )
+            for phase in audit._TE_PHASES
         )
         inputs = _write_billing_plan(tmp_path, 'old-schema-billing', body)
 
@@ -173,9 +161,7 @@ class TestBillingCompositionUnderCounts:
         could still recover — so a single merged "unreadable" count would lose
         that.
         """
-        body = ''.join(
-            _phase_block(phase, total_tokens=100) for phase in audit._TE_PHASES
-        )
+        body = ''.join(_phase_block(phase, total_tokens=100) for phase in audit._TE_PHASES)
         # 5-execute needs the billing fields or the plan is excluded outright.
         body = body.replace(
             f'[{_EXECUTE_PHASE}]\n  total_tokens: 100\n',
@@ -242,13 +228,9 @@ class TestBillingCompositionUnderCounts:
         assert result['undercounted_plans'] <= result['plans_in_corpus']
         # Negative control on the superseded formula: naively summing the two
         # tallies would have reported 2 for a single plan.
-        assert (
-            result['unabsorbed_loop_back_plans'] + result['omitted_row_plans']
-        ) == 2
+        assert (result['unabsorbed_loop_back_plans'] + result['omitted_row_plans']) == 2
 
-    def test_undercounted_plans_is_load_bearing_for_disjoint_plans(
-        self, tmp_path: Path
-    ):
+    def test_undercounted_plans_is_load_bearing_for_disjoint_plans(self, tmp_path: Path):
         """Matched control: two DIFFERENT plans each tripping one under-count sum to 2."""
         loopback_body = _clean_metrics_body(
             input_tokens=1000,

@@ -6,7 +6,6 @@
 Its one section: D2 — Finalize completion boundary asserts the blocking-findings STATE.
 """
 
-
 import json
 from argparse import Namespace
 
@@ -115,12 +114,8 @@ def test_transition_last_phase_sets_complete(plan_context):
     result = cmd_transition(Namespace(plan_id=plan_id, completed='6-finalize'))
 
     assert result['status'] == 'success'
-    assert result.get('message') == 'All phases completed', (
-        f'expected terminal message, got {result}'
-    )
-    assert 'next_phase' not in result, (
-        f'cmd_transition on the last phase must not return next_phase: {result}'
-    )
+    assert result.get('message') == 'All phases completed', f'expected terminal message, got {result}'
+    assert 'next_phase' not in result, f'cmd_transition on the last phase must not return next_phase: {result}'
 
     live_status = json.loads((plan_context.plan_dir_for(plan_id) / 'status.json').read_text(encoding='utf-8'))
     assert live_status['current_phase'] == 'complete', (
@@ -130,8 +125,7 @@ def test_transition_last_phase_sets_complete(plan_context):
         f'the post-finalize sentinel for the last phase.'
     )
     assert live_status['phases'][-1]['status'] == 'done', (
-        f"Expected phases[-1].status='done', got "
-        f'{live_status["phases"][-1]["status"]!r}.'
+        f"Expected phases[-1].status='done', got {live_status['phases'][-1]['status']!r}."
     )
 
 
@@ -158,8 +152,7 @@ def test_transition_5_execute_refuses_on_handshake_drift(plan_context, _stubbed_
 
     status_after = json.loads((plan_dir / 'status.json').read_text(encoding='utf-8'))
     assert status_after['current_phase'] == status_before['current_phase'] == '5-execute', (
-        'cmd_transition wrote status despite drift — the guard is not '
-        'short-circuiting before write_status.'
+        'cmd_transition wrote status despite drift — the guard is not short-circuiting before write_status.'
     )
     assert status_after['phases'] == status_before['phases'], (
         'Phase status list mutated despite drift refusal — write_status fired.'
@@ -173,9 +166,7 @@ def test_transition_5_execute_drift_toon_byte_equivalent(plan_context, _stubbed_
     _stubbed_invariants['main_sha'] = 'drifted-sha-equiv'
 
     transition_result = cmd_transition(Namespace(plan_id=plan_id, completed='5-execute'))
-    verify_result = _cmds.cmd_verify(
-        Namespace(plan_id=plan_id, phase='5-execute', strict=True)
-    )
+    verify_result = _cmds.cmd_verify(Namespace(plan_id=plan_id, phase='5-execute', strict=True))
 
     assert transition_result == verify_result, (
         'cmd_transition drift dict diverges from cmd_verify dict. '
@@ -197,15 +188,14 @@ def test_transition_4_plan_skips_handshake_verify_on_drift(plan_context, _stubbe
     assert result['status'] == 'success', (
         f'cmd_transition refused a non-guarded transition (4-plan -> '
         f'5-execute) despite drift, got {result!r}. The boundary set '
-        f"_BLOCKING_BOUNDARIES MUST gate the verify call — non-guarded "
+        f'_BLOCKING_BOUNDARIES MUST gate the verify call — non-guarded '
         f'transitions stay drift-blind.'
     )
     assert result['next_phase'] == '5-execute'
 
     status_after = json.loads((plan_context.plan_dir_for(plan_id) / 'status.json').read_text(encoding='utf-8'))
     assert status_after['current_phase'] == '5-execute', (
-        'Non-guarded transition failed to advance current_phase despite '
-        'returning success — write_status did not fire.'
+        'Non-guarded transition failed to advance current_phase despite returning success — write_status did not fire.'
     )
 
 

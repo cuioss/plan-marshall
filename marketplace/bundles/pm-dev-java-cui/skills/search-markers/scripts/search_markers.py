@@ -182,9 +182,7 @@ def main() -> int:
         'search', help='Search OpenRewrite TODO markers in source files', allow_abbrev=False
     )
     search_parser.add_argument('--source-dir', default='src', help='Directory to search (default: src)')
-    search_parser.add_argument(
-        '--extensions', default='.java', help='Comma-separated file extensions (default: .java)'
-    )
+    search_parser.add_argument('--extensions', default='.java', help='Comma-separated file extensions (default: .java)')
     search_parser.add_argument(
         '--skip-patterns',
         default=None,

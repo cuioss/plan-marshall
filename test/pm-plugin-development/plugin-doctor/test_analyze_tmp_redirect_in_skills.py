@@ -13,6 +13,7 @@ Covers:
 - Multiple findings on the same line (two redirects)
 - Clean baseline: markdown with no tmp redirects produces no findings
 """
+
 from pathlib import Path
 
 from conftest import load_script_module
@@ -67,32 +68,19 @@ def _make_agent_md(tmp_path: Path, content: str) -> Path:
 
 class TestOverwriteTmpRedirect:
     def test_overwrite_tmp_detected(self, tmp_path):
-        content = (
-            'Some prose.\n'
-            '```bash\n'
-            'python3 script.py > /tmp/output.json\n'
-            '```\n'
-        )
+        content = 'Some prose.\n```bash\npython3 script.py > /tmp/output.json\n```\n'
         _make_skill_md(tmp_path, content)
         findings = assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [RULE_ID])
         assert findings[0]['redirect_type'] == 'overwrite'
 
     def test_overwrite_var_tmp_detected(self, tmp_path):
-        content = (
-            '```bash\n'
-            'cat input > /var/tmp/scratch.txt\n'
-            '```\n'
-        )
+        content = '```bash\ncat input > /var/tmp/scratch.txt\n```\n'
         _make_skill_md(tmp_path, content)
         findings = assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [RULE_ID])
         assert findings[0]['target_prefix'] == '/var/tmp/'
 
     def test_overwrite_tmp_in_sh_fence(self, tmp_path):
-        content = (
-            '```sh\n'
-            'echo hello > /tmp/hello.txt\n'
-            '```\n'
-        )
+        content = '```sh\necho hello > /tmp/hello.txt\n```\n'
         _make_skill_md(tmp_path, content)
         findings = assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [RULE_ID])
         assert findings[0]['redirect_type'] == 'overwrite'
@@ -105,21 +93,13 @@ class TestOverwriteTmpRedirect:
 
 class TestAppendTmpRedirect:
     def test_append_tmp_detected(self, tmp_path):
-        content = (
-            '```bash\n'
-            'echo line >> /tmp/log.txt\n'
-            '```\n'
-        )
+        content = '```bash\necho line >> /tmp/log.txt\n```\n'
         _make_skill_md(tmp_path, content)
         findings = assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [RULE_ID])
         assert findings[0]['redirect_type'] == 'append'
 
     def test_append_var_tmp_detected(self, tmp_path):
-        content = (
-            '```bash\n'
-            'python3 tool.py >> /var/tmp/result.txt\n'
-            '```\n'
-        )
+        content = '```bash\npython3 tool.py >> /var/tmp/result.txt\n```\n'
         _make_skill_md(tmp_path, content)
         findings = assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [RULE_ID])
         assert findings[0]['redirect_type'] == 'append'
@@ -133,29 +113,17 @@ class TestAppendTmpRedirect:
 
 class TestProseNotScanned:
     def test_prose_redirect_not_flagged(self, tmp_path):
-        content = (
-            'Use ``> /tmp/output.json`` as a redirect target.\n'
-            'Another line with > /tmp/data.txt mention.\n'
-        )
+        content = 'Use ``> /tmp/output.json`` as a redirect target.\nAnother line with > /tmp/data.txt mention.\n'
         _make_skill_md(tmp_path, content)
         assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [])
 
     def test_non_bash_fence_not_scanned(self, tmp_path):
-        content = (
-            '```python\n'
-            '# redirect\n'
-            'open("/tmp/out.txt", "w")\n'
-            '```\n'
-        )
+        content = '```python\n# redirect\nopen("/tmp/out.txt", "w")\n```\n'
         _make_skill_md(tmp_path, content)
         assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [])
 
     def test_text_fence_not_scanned(self, tmp_path):
-        content = (
-            '```text\n'
-            'cmd > /tmp/out.txt\n'
-            '```\n'
-        )
+        content = '```text\ncmd > /tmp/out.txt\n```\n'
         _make_skill_md(tmp_path, content)
         assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [])
 
@@ -167,20 +135,12 @@ class TestProseNotScanned:
 
 class TestCommentLinesExempt:
     def test_comment_line_not_flagged(self, tmp_path):
-        content = (
-            '```bash\n'
-            '# cmd > /tmp/output.txt\n'
-            '```\n'
-        )
+        content = '```bash\n# cmd > /tmp/output.txt\n```\n'
         _make_skill_md(tmp_path, content)
         assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [])
 
     def test_indented_comment_line_not_flagged(self, tmp_path):
-        content = (
-            '```bash\n'
-            '  # echo data >> /tmp/log.txt\n'
-            '```\n'
-        )
+        content = '```bash\n  # echo data >> /tmp/log.txt\n```\n'
         _make_skill_md(tmp_path, content)
         assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [])
 
@@ -198,21 +158,13 @@ class TestBacktickSpanInBashFence:
 
     def test_redirect_inside_backtick_span_is_flagged(self, tmp_path):
         """A /tmp/ redirect inside a backtick command substitution IS flagged."""
-        content = (
-            '```bash\n'
-            'echo `> /tmp/data.txt`\n'
-            '```\n'
-        )
+        content = '```bash\necho `> /tmp/data.txt`\n```\n'
         _make_skill_md(tmp_path, content)
         assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [RULE_ID])
 
     def test_redirect_outside_backtick_span_flagged(self, tmp_path):
         """A /tmp/ redirect outside a backtick span on the same line is also flagged."""
-        content = (
-            '```bash\n'
-            'cmd `note` > /tmp/out.txt\n'
-            '```\n'
-        )
+        content = '```bash\ncmd `note` > /tmp/out.txt\n```\n'
         _make_skill_md(tmp_path, content)
         assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [RULE_ID])
 
@@ -224,11 +176,7 @@ class TestBacktickSpanInBashFence:
 
 class TestFindingShape:
     def test_required_fields_present(self, tmp_path):
-        content = (
-            '```bash\n'
-            'python3 script.py > /tmp/out.json\n'
-            '```\n'
-        )
+        content = '```bash\npython3 script.py > /tmp/out.json\n```\n'
         _make_skill_md(tmp_path, content)
         findings = assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [RULE_ID])
         f = findings[0]
@@ -244,23 +192,13 @@ class TestFindingShape:
         assert isinstance(f['description'], str)
 
     def test_line_number_correct(self, tmp_path):
-        content = (
-            'Some intro text.\n'
-            '\n'
-            '```bash\n'
-            'echo data > /tmp/file.txt\n'
-            '```\n'
-        )
+        content = 'Some intro text.\n\n```bash\necho data > /tmp/file.txt\n```\n'
         _make_skill_md(tmp_path, content)
         findings = assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [RULE_ID])
         assert findings[0]['line'] == 4
 
     def test_file_path_is_absolute(self, tmp_path):
-        content = (
-            '```bash\n'
-            'cmd >> /tmp/log.txt\n'
-            '```\n'
-        )
+        content = '```bash\ncmd >> /tmp/log.txt\n```\n'
         _make_skill_md(tmp_path, content)
         findings = assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [RULE_ID])
         assert Path(findings[0]['file']).is_absolute()
@@ -273,21 +211,13 @@ class TestFindingShape:
 
 class TestMultipleFindingsPerLine:
     def test_two_redirects_on_one_line(self, tmp_path):
-        content = (
-            '```bash\n'
-            'cmd1 > /tmp/a.txt; cmd2 > /tmp/b.txt\n'
-            '```\n'
-        )
+        content = '```bash\ncmd1 > /tmp/a.txt; cmd2 > /tmp/b.txt\n```\n'
         _make_skill_md(tmp_path, content)
         findings = assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [RULE_ID] * 2)
         assert all(f['redirect_type'] == 'overwrite' for f in findings)
 
     def test_mixed_append_and_overwrite_on_one_line(self, tmp_path):
-        content = (
-            '```bash\n'
-            'cmd > /tmp/a.txt && cmd2 >> /tmp/b.txt\n'
-            '```\n'
-        )
+        content = '```bash\ncmd > /tmp/a.txt && cmd2 >> /tmp/b.txt\n```\n'
         _make_skill_md(tmp_path, content)
         findings = assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [RULE_ID] * 2)
         types = {f['redirect_type'] for f in findings}
@@ -301,20 +231,12 @@ class TestMultipleFindingsPerLine:
 
 class TestAgentMarkdownScanned:
     def test_agent_md_is_scanned(self, tmp_path):
-        content = (
-            '```bash\n'
-            'python3 agent.py > /tmp/result.json\n'
-            '```\n'
-        )
+        content = '```bash\npython3 agent.py > /tmp/result.json\n```\n'
         _make_agent_md(tmp_path, content)
         assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [RULE_ID])
 
     def test_agent_md_clean_no_findings(self, tmp_path):
-        content = (
-            '```bash\n'
-            'python3 agent.py --output .plan/temp/plan_id-result.json\n'
-            '```\n'
-        )
+        content = '```bash\npython3 agent.py --output .plan/temp/plan_id-result.json\n```\n'
         _make_agent_md(tmp_path, content)
         assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [])
 
@@ -326,31 +248,17 @@ class TestAgentMarkdownScanned:
 
 class TestCleanBaseline:
     def test_no_bash_fences_no_findings(self, tmp_path):
-        content = (
-            '# My Skill\n'
-            '\n'
-            'This skill does things.\n'
-            '\n'
-            'Reference: use `.plan/temp/plan_id-output.txt`\n'
-        )
+        content = '# My Skill\n\nThis skill does things.\n\nReference: use `.plan/temp/plan_id-output.txt`\n'
         _make_skill_md(tmp_path, content)
         assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [])
 
     def test_bash_fence_plan_temp_no_findings(self, tmp_path):
-        content = (
-            '```bash\n'
-            'python3 script.py --output .plan/temp/plan_id-result.json\n'
-            '```\n'
-        )
+        content = '```bash\npython3 script.py --output .plan/temp/plan_id-result.json\n```\n'
         _make_skill_md(tmp_path, content)
         assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [])
 
     def test_bash_fence_pipe_no_findings(self, tmp_path):
-        content = (
-            '```bash\n'
-            'python3 script.py | grep pattern\n'
-            '```\n'
-        )
+        content = '```bash\npython3 script.py | grep pattern\n```\n'
         _make_skill_md(tmp_path, content)
         assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [])
 

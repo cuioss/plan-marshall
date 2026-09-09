@@ -438,9 +438,7 @@ def is_nested_domain(domain_config: dict) -> bool:
     - 'project_skills' key (project-level skills attached to a domain)
     """
     return (
-        'bundle' in domain_config
-        or 'workflow_skill_extensions' in domain_config
-        or 'project_skills' in domain_config
+        'bundle' in domain_config or 'workflow_skill_extensions' in domain_config or 'project_skills' in domain_config
     )
 
 
@@ -808,8 +806,7 @@ def merge_build_map(config: dict) -> dict[str, list[dict[str, str]]]:
         return {domain: [dict(entry) for entry in entries] for domain, entries in seed.items()}
     except (TypeError, ValueError) as exc:
         raise BuildMapMissingError(
-            'build.map is corrupt. Run `manage-config build-map seed` '
-            f'or re-run {STEWARD_COMMAND} to seed it.'
+            f'build.map is corrupt. Run `manage-config build-map seed` or re-run {STEWARD_COMMAND} to seed it.'
         ) from exc
 
 

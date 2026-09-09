@@ -80,9 +80,7 @@ class TestDormatePlans:
         _archived_plan_dir(tmp_path, '2026-06-01-plan-a')
         _archived_plan_dir(tmp_path, '2026-06-02-plan-b')
 
-        result = audit.dormate_plans(
-            tmp_path, ['2026-06-01-plan-a', '2026-06-02-plan-b'], confirmed=True
-        )
+        result = audit.dormate_plans(tmp_path, ['2026-06-01-plan-a', '2026-06-02-plan-b'], confirmed=True)
 
         # both moved, sources gone, destinations present
         assert result['status'] == 'success'
@@ -126,9 +124,7 @@ class TestDormatePlans:
         # a valid archived plan that must NOT move
         _archived_plan_dir(tmp_path, '2026-06-01-plan-a')
 
-        result = audit.dormate_plans(
-            tmp_path, ['2026-06-01-plan-a'], confirmed=False
-        )
+        result = audit.dormate_plans(tmp_path, ['2026-06-01-plan-a'], confirmed=False)
 
         # refused, nothing moved, source still on disk
         assert result['status'] == 'refused'
@@ -146,9 +142,7 @@ class TestDormatePlans:
         clash = _dormated_plan_dir(tmp_path, '2026-06-02-plan-b')
         clash.mkdir(parents=True, exist_ok=True)
 
-        result = audit.dormate_plans(
-            tmp_path, ['2026-06-01-plan-a', '2026-06-02-plan-b'], confirmed=True
-        )
+        result = audit.dormate_plans(tmp_path, ['2026-06-01-plan-a', '2026-06-02-plan-b'], confirmed=True)
 
         # error, nothing moved, BOTH sources still present
         assert result['status'] == 'error'

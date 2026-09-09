@@ -7,7 +7,6 @@ header, where the section ends, and the artifact the command writes, including t
 rejection of an absolute output path.
 """
 
-
 import io
 from contextlib import redirect_stdout
 
@@ -43,9 +42,7 @@ class TestExtractedSectionCarriesBillingColumn:
         write_metrics('metrics-billing-column', data)
         cmd_generate(ns_generate('metrics-billing-column'))
 
-        content = (
-            plan_context.plan_dir_for('metrics-billing-column') / 'metrics.md'
-        ).read_text(encoding='utf-8')
+        content = (plan_context.plan_dir_for('metrics-billing-column') / 'metrics.md').read_text(encoding='utf-8')
         section = _extract_phase_breakdown_section(content)
 
         assert section is not None
@@ -69,9 +66,7 @@ class TestExtractedSectionCarriesPopulationQualifiedHeader:
     def test_extracted_section_header_names_the_default_population(self, plan_context):
         _seed_metrics_md('metrics-population-header')
 
-        content = (
-            plan_context.plan_dir_for('metrics-population-header') / 'metrics.md'
-        ).read_text(encoding='utf-8')
+        content = (plan_context.plan_dir_for('metrics-population-header') / 'metrics.md').read_text(encoding='utf-8')
         section = _extract_phase_breakdown_section(content)
 
         assert section is not None
@@ -173,9 +168,7 @@ class TestCmdPrintPhaseBreakdown:
         plan_dir = plan_context.plan_dir_for('metrics-print-stdout')
         buf = io.StringIO()
         with redirect_stdout(buf):
-            result = cmd_print_phase_breakdown(
-                ns_print_phase_breakdown('metrics-print-stdout', output_file='-')
-            )
+            result = cmd_print_phase_breakdown(ns_print_phase_breakdown('metrics-print-stdout', output_file='-'))
         assert result['status'] == 'success'
         assert result['_print_only'] is True
         assert 'file' not in result

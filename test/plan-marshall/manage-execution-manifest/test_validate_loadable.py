@@ -85,17 +85,13 @@ class TestSingleStepForm:
         assert 'message' not in result
 
     def test_default_prefix_is_stripped(self, plan_context):
-        result = cmd_validate_loadable(
-            _validate_loadable_ns('vl-prefix', step_id='default:push')
-        )
+        result = cmd_validate_loadable(_validate_loadable_ns('vl-prefix', step_id='default:push'))
         assert result is not None
         assert result['loadable'] is True
         assert result['step_id'] == 'push', 'default: prefix must be stripped from echoed step_id'
 
     def test_missing_standards_file_returns_actionable_message(self, plan_context):
-        result = cmd_validate_loadable(
-            _validate_loadable_ns('vl-missing', step_id='ghost-step-that-does-not-exist')
-        )
+        result = cmd_validate_loadable(_validate_loadable_ns('vl-missing', step_id='ghost-step-that-does-not-exist'))
         assert result is not None
         assert result['status'] == 'success'
         assert result['loadable'] is False
@@ -118,9 +114,7 @@ class TestSingleStepForm:
 
     def test_skill_step_short_circuits_to_loadable(self, plan_context):
         """Fully-qualified skill steps short-circuit the same way as project: steps."""
-        result = cmd_validate_loadable(
-            _validate_loadable_ns('vl-skill', step_id='plan-marshall:plan-retrospective')
-        )
+        result = cmd_validate_loadable(_validate_loadable_ns('vl-skill', step_id='plan-marshall:plan-retrospective'))
         assert result is not None
         assert result['loadable'] is True
         assert result['standards_path'] == ''
@@ -139,9 +133,7 @@ class TestArgumentValidation:
         assert result['error'] == 'invalid_arguments'
 
     def test_both_step_id_and_all_returns_invalid_arguments(self, plan_context):
-        result = cmd_validate_loadable(
-            _validate_loadable_ns('vl-both', step_id='push', use_all=True)
-        )
+        result = cmd_validate_loadable(_validate_loadable_ns('vl-both', step_id='push', use_all=True))
         assert result is not None
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_arguments'
@@ -522,18 +514,14 @@ class TestCheckSeedMode:
 
     def test_check_seed_is_mutually_exclusive_with_step_id(self, plan_context):
         """Supplying both --step-id and --check-seed is an invalid_arguments error."""
-        result = cmd_validate_loadable(
-            _validate_loadable_ns('vl-seed-both', step_id='push', check_seed=True)
-        )
+        result = cmd_validate_loadable(_validate_loadable_ns('vl-seed-both', step_id='push', check_seed=True))
         assert result is not None
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_arguments'
 
     def test_check_seed_is_mutually_exclusive_with_all(self, plan_context):
         """Supplying both --all and --check-seed is an invalid_arguments error."""
-        result = cmd_validate_loadable(
-            _validate_loadable_ns('vl-seed-all', use_all=True, check_seed=True)
-        )
+        result = cmd_validate_loadable(_validate_loadable_ns('vl-seed-all', use_all=True, check_seed=True))
         assert result is not None
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_arguments'
@@ -642,9 +630,10 @@ class TestCheckEmittedStepsAscendingOrder:
 
     def test_bundle_skill_step_is_skipped_without_complaint(self):
         # Orderless by design — it neither breaks nor satisfies ascending order.
-        assert _mem.check_emitted_steps_ascending_order(
-            ['push', 'plan-marshall:plan-retrospective', 'archive-plan']
-        ) is None
+        assert (
+            _mem.check_emitted_steps_ascending_order(['push', 'plan-marshall:plan-retrospective', 'archive-plan'])
+            is None
+        )
 
     def test_non_string_entries_are_left_to_the_schema_checks(self):
         assert _mem.check_emitted_steps_ascending_order(['push', 42, 'archive-plan']) is None
@@ -685,9 +674,7 @@ class TestCheckEmittedStepsAscendingOrder:
         assert 'source file could not be resolved' in offender['message']
 
     def test_first_offender_wins_in_list_order(self):
-        offender = _mem.check_emitted_steps_ascending_order(
-            ['archive-plan', 'push', 'ghost-step-that-does-not-exist']
-        )
+        offender = _mem.check_emitted_steps_ascending_order(['archive-plan', 'push', 'ghost-step-that-does-not-exist'])
         assert offender is not None
         # The inversion at index 1 precedes the unresolvable entry at index 2.
         assert offender['reason'] == 'order_inversion'
@@ -770,8 +757,7 @@ class TestComposeAscendingOrderGateWiring:
         assert result is not None and result['status'] == 'success'
         steps = _mem.read_manifest('order-gate-emitter')['phase_6']['steps']
         assert steps.index(_EMITTER) > steps.index('branch-cleanup'), (
-            f'{_EMITTER} (order {emitter_order}) must compose after branch-cleanup '
-            f'(order {gate_order}); got {steps!r}'
+            f'{_EMITTER} (order {emitter_order}) must compose after branch-cleanup (order {gate_order}); got {steps!r}'
         )
 
 
@@ -787,9 +773,7 @@ class TestRecordMetricsOrderAfterTokenConsumingSteps:
 
         for step in _TOKEN_CONSUMING_FINALIZE_STEPS:
             step_order = _mem._resolve_step_order(step)
-            assert step_order is not None, (
-                f'token-consuming step {step!r} has no resolvable frontmatter order'
-            )
+            assert step_order is not None, f'token-consuming step {step!r} has no resolvable frontmatter order'
             assert record_metrics_order > step_order, (
                 f'record-metrics order ({record_metrics_order}) must be strictly '
                 f'greater than {step!r} order ({step_order}) — record-metrics must '

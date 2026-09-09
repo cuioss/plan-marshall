@@ -10,7 +10,6 @@ Its sections, in order:
 * QGATE_PERSIST_OK — the published persist-outcome partition
 """
 
-
 from _findings_store_fixtures import (
     QGATE_PERSIST_OK,
     _findings_core,
@@ -55,6 +54,7 @@ PLAN_IDS = (
 # =============================================================================
 # Test: Q-Gate findings
 # =============================================================================
+
 
 def test_resolve_qgate_finding(plan_context):
     """Test resolving a Q-Gate finding."""
@@ -169,12 +169,8 @@ def test_rejected_qgate_finding_is_non_pending_in_unified_read(plan_context):
     unified gate read and so does not block the gate.
     """
     pid = 'store-qgate-rejected-nonpending'
-    pending = add_qgate_finding(
-        pid, '5-execute', 'qgate', 'test-failure', 'Stays pending', 'Detail'
-    )
-    refuted = add_qgate_finding(
-        pid, '5-execute', 'qgate', 'test-failure', 'Gets rejected', 'Detail'
-    )
+    pending = add_qgate_finding(pid, '5-execute', 'qgate', 'test-failure', 'Stays pending', 'Detail')
+    refuted = add_qgate_finding(pid, '5-execute', 'qgate', 'test-failure', 'Gets rejected', 'Detail')
     resolve_qgate_finding(pid, '5-execute', refuted['hash_id'], 'rejected')
 
     unified = query_findings_unified(pid)
@@ -194,17 +190,21 @@ def test_rejected_qgate_finding_is_non_pending_in_unified_read(plan_context):
 # its file is strictly worse than one left `pending`.
 # =============================================================================
 
+
 def test_resolve_evidenced_transitions_finding_whose_file_changed(plan_context):
     """A pending finding whose file_path IS in the landed-fix set is resolved `fixed`."""
     pid = 'ev-resolve-changed'
     r = add_qgate_finding(
-        pid, '6-finalize', 'qgate', 'bug', 'contract_drift at src/a.py:10', 'Detail',
+        pid,
+        '6-finalize',
+        'qgate',
+        'bug',
+        'contract_drift at src/a.py:10',
+        'Detail',
         file_path='src/a.py',
     )
 
-    result = resolve_qgate_findings_by_evidence(
-        pid, '6-finalize', ['src/a.py'], evidence_sha='deadbeef'
-    )
+    result = resolve_qgate_findings_by_evidence(pid, '6-finalize', ['src/a.py'], evidence_sha='deadbeef')
 
     assert result['status'] == 'success'
     assert [e['hash_id'] for e in result['resolved']] == [r['hash_id']]
@@ -223,7 +223,12 @@ def test_resolve_evidenced_leaves_finding_whose_file_unchanged(plan_context):
     landed-fix set is left `pending` — an unevidenced fix never auto-resolves."""
     pid = 'ev-resolve-unchanged'
     r = add_qgate_finding(
-        pid, '6-finalize', 'qgate', 'bug', 'contract_drift at src/b.py:20', 'Detail',
+        pid,
+        '6-finalize',
+        'qgate',
+        'bug',
+        'contract_drift at src/b.py:20',
+        'Detail',
         file_path='src/b.py',
     )
 
@@ -256,11 +261,21 @@ def test_resolve_evidenced_mixed_batch_partitions_by_evidence(plan_context):
     """A batch resolves only the file-matched findings; the rest stay pending."""
     pid = 'ev-resolve-mixed'
     fixed_finding = add_qgate_finding(
-        pid, '6-finalize', 'qgate', 'bug', 'defect at src/fixed.py:1', 'Detail',
+        pid,
+        '6-finalize',
+        'qgate',
+        'bug',
+        'defect at src/fixed.py:1',
+        'Detail',
         file_path='src/fixed.py',
     )
     kept_finding = add_qgate_finding(
-        pid, '6-finalize', 'qgate', 'bug', 'defect at src/kept.py:1', 'Detail',
+        pid,
+        '6-finalize',
+        'qgate',
+        'bug',
+        'defect at src/kept.py:1',
+        'Detail',
         file_path='src/kept.py',
     )
 
@@ -274,7 +289,12 @@ def test_resolve_evidenced_ignores_already_resolved_findings(plan_context):
     """A finding already resolved is neither re-resolved nor reported as pending."""
     pid = 'ev-resolve-already'
     r = add_qgate_finding(
-        pid, '6-finalize', 'qgate', 'bug', 'defect at src/done.py:1', 'Detail',
+        pid,
+        '6-finalize',
+        'qgate',
+        'bug',
+        'defect at src/done.py:1',
+        'Detail',
         file_path='src/done.py',
     )
     resolve_qgate_finding(pid, '6-finalize', r['hash_id'], 'accepted')
@@ -293,7 +313,12 @@ def test_resolve_evidenced_premature_resolution_is_self_correcting(plan_context)
     re-detecting the same (title, discriminator) REOPENS the record to pending."""
     pid = 'ev-resolve-reopen'
     add_qgate_finding(
-        pid, '6-finalize', 'qgate', 'bug', 'defect at src/c.py:5', 'Detail',
+        pid,
+        '6-finalize',
+        'qgate',
+        'bug',
+        'defect at src/c.py:5',
+        'Detail',
         file_path='src/c.py',
     )
     # The fix touched src/c.py, so evidence resolves it...
@@ -302,7 +327,12 @@ def test_resolve_evidenced_premature_resolution_is_self_correcting(plan_context)
 
     # ...but the defect persisted, so the next round re-detects it → reopened.
     reopened = add_qgate_finding(
-        pid, '6-finalize', 'qgate', 'bug', 'defect at src/c.py:5', 'Detail',
+        pid,
+        '6-finalize',
+        'qgate',
+        'bug',
+        'defect at src/c.py:5',
+        'Detail',
         file_path='src/c.py',
     )
     assert reopened['status'] == 'reopened'
@@ -322,7 +352,12 @@ def test_resolve_evidenced_failed_write_reported_as_pending_not_resolved(plan_co
     store never recorded is the fail-open this evidence gate exists to prevent."""
     pid = 'ev-resolve-write-fail'
     r = add_qgate_finding(
-        pid, '6-finalize', 'qgate', 'bug', 'defect at src/z.py:1', 'Detail',
+        pid,
+        '6-finalize',
+        'qgate',
+        'bug',
+        'defect at src/z.py:1',
+        'Detail',
         file_path='src/z.py',
     )
     # Simulate the record vanishing between the read and the update write.
@@ -332,8 +367,7 @@ def test_resolve_evidenced_failed_write_reported_as_pending_not_resolved(plan_co
 
     assert result['status'] == 'success'
     assert result['resolved'] == [], (
-        'A failed write must not be reported as a resolution — the finding is '
-        'still pending.'
+        'A failed write must not be reported as a resolution — the finding is still pending.'
     )
     assert [e['hash_id'] for e in result['left_pending']] == [r['hash_id']]
 
@@ -376,6 +410,7 @@ def test_clear_qgate_findings_empty(plan_context):
 # Test: promote_finding
 # =============================================================================
 
+
 def test_promote_finding_success(plan_context):
     """Test promoting a finding."""
     r = add_finding('store-promote', 'bug', 'Bug', 'Detail')
@@ -392,6 +427,7 @@ def test_promote_finding_success(plan_context):
 # =============================================================================
 # Test: QGATE_PERSIST_OK — the published persist-outcome partition
 # =============================================================================
+
 
 def test_qgate_persist_ok_admits_every_in_store_outcome(plan_context):
     """The three outcomes that leave the record IN the store are all members."""

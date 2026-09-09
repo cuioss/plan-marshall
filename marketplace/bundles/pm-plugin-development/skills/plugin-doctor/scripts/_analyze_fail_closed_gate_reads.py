@@ -128,7 +128,7 @@ def is_whitelisted(file_path: Path) -> bool:
     """
     parts = file_path.parts
     for suffix in _WHITELIST_SUFFIXES:
-        if len(parts) >= len(suffix) and parts[-len(suffix):] == suffix:
+        if len(parts) >= len(suffix) and parts[-len(suffix) :] == suffix:
             return True
     return False
 
@@ -187,9 +187,7 @@ def _walk_local(node: ast.AST) -> Iterator[ast.AST]:
     while stack:
         current = stack.pop()
         yield current
-        if current is not node and isinstance(
-            current, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
-        ):
+        if current is not node and isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             continue
         stack.extend(ast.iter_child_nodes(current))
 
@@ -299,9 +297,7 @@ def _node_lines(node: ast.AST) -> set[int]:
     return lines
 
 
-def _scan_form_a(
-    func: ast.FunctionDef | ast.AsyncFunctionDef, file_path: Path, lines: list[str]
-) -> list[dict]:
+def _scan_form_a(func: ast.FunctionDef | ast.AsyncFunctionDef, file_path: Path, lines: list[str]) -> list[dict]:
     """Collect Form-A findings for unguarded file reads inside a gate verb."""
     if not _is_gate_verb(func):
         return []
@@ -378,9 +374,7 @@ def _contract_typed_params(
     return mapping
 
 
-def _scan_form_b(
-    func: ast.FunctionDef | ast.AsyncFunctionDef, file_path: Path, lines: list[str]
-) -> list[dict]:
+def _scan_form_b(func: ast.FunctionDef | ast.AsyncFunctionDef, file_path: Path, lines: list[str]) -> list[dict]:
     """Collect Form-B findings for redundant isinstance guards on contract params."""
     contract_params = _contract_typed_params(func)
     if not contract_params:

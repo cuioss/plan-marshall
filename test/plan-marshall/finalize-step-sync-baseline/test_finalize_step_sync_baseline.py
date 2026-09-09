@@ -80,14 +80,12 @@ def _markdown_sections(body: str) -> list[tuple[int, str, str]]:
     """
     lines = body.splitlines()
     heads = [
-        (idx, len(m.group(1)), m.group(2).strip())
-        for idx, line in enumerate(lines)
-        if (m := _HEADING_RE.match(line))
+        (idx, len(m.group(1)), m.group(2).strip()) for idx, line in enumerate(lines) if (m := _HEADING_RE.match(line))
     ]
     sections = []
     for pos, (idx, level, title) in enumerate(heads):
         end = len(lines)
-        for next_idx, next_level, _ in heads[pos + 1:]:
+        for next_idx, next_level, _ in heads[pos + 1 :]:
             if next_level <= level:
                 end = next_idx
                 break
@@ -119,9 +117,7 @@ class TestSyncBaselineFrontmatterContract:
     """The standards doc declares the full finalize-step frontmatter contract."""
 
     def test_doc_exists(self):
-        assert _SYNC_BASELINE_DOC.is_file(), (
-            f'sync-baseline standards doc missing at {_SYNC_BASELINE_DOC}'
-        )
+        assert _SYNC_BASELINE_DOC.is_file(), f'sync-baseline standards doc missing at {_SYNC_BASELINE_DOC}'
 
     def test_name_is_default_finalize_step_sync_baseline(self):
         name = _read_frontmatter_scalar(_SYNC_BASELINE_DOC, 'name')
@@ -135,8 +131,7 @@ class TestSyncBaselineFrontmatterContract:
     def test_mutates_source_is_true(self):
         value = _read_frontmatter_scalar(_SYNC_BASELINE_DOC, 'mutates_source')
         assert value == 'true', (
-            f'sync-baseline rebases the worktree HEAD, so mutates_source must be '
-            f'true, got {value!r}'
+            f'sync-baseline rebases the worktree HEAD, so mutates_source must be true, got {value!r}'
         )
 
     def test_default_on_is_true(self):
@@ -146,8 +141,7 @@ class TestSyncBaselineFrontmatterContract:
     def test_implements_includes_finalize_step_ext_point(self):
         block = _frontmatter_block(_SYNC_BASELINE_DOC)
         assert _FINALIZE_STEP_EXT_POINT in block, (
-            'frontmatter must declare implements: '
-            f'{_FINALIZE_STEP_EXT_POINT} for finalize-step discovery'
+            f'frontmatter must declare implements: {_FINALIZE_STEP_EXT_POINT} for finalize-step discovery'
         )
 
     def test_presets_member_of_full(self):
@@ -155,16 +149,11 @@ class TestSyncBaselineFrontmatterContract:
         presets_match = re.search(r'^presets:\s*\n((?:\s*-\s*\w+\s*\n?)+)', block, re.MULTILINE)
         assert presets_match, 'frontmatter must declare a presets: block'
         members = re.findall(r'-\s*(\w+)', presets_match.group(1))
-        assert 'full' in members, (
-            f'sync-baseline is a quality-narrowing gate; presets must include '
-            f'full, got {members}'
-        )
+        assert 'full' in members, f'sync-baseline is a quality-narrowing gate; presets must include full, got {members}'
 
     def test_configurable_declares_auto_rebase_threshold_default_no_overlap_only(self):
         block = _frontmatter_block(_SYNC_BASELINE_DOC)
-        assert 'auto_rebase_threshold' in block, (
-            'frontmatter must declare a configurable auto_rebase_threshold knob'
-        )
+        assert 'auto_rebase_threshold' in block, 'frontmatter must declare a configurable auto_rebase_threshold knob'
         # The key/default pair appears in the configurable: list as
         #   - key: auto_rebase_threshold
         #     default: no_overlap_only
@@ -172,13 +161,9 @@ class TestSyncBaselineFrontmatterContract:
             r'key:\s*auto_rebase_threshold\s*\n\s*default:\s*(\S+)',
             block,
         )
-        assert pair_match, (
-            'auto_rebase_threshold must declare an explicit default in the '
-            'configurable: block'
-        )
+        assert pair_match, 'auto_rebase_threshold must declare an explicit default in the configurable: block'
         assert pair_match.group(1) == 'no_overlap_only', (
-            f'auto_rebase_threshold default must be no_overlap_only, got '
-            f'{pair_match.group(1)!r}'
+            f'auto_rebase_threshold default must be no_overlap_only, got {pair_match.group(1)!r}'
         )
 
 
@@ -211,15 +196,13 @@ class TestSyncBaselineBodyContract:
     def test_body_cites_baseline_reconcile(self):
         body = _doc_body(_SYNC_BASELINE_DOC)
         assert 'baseline-reconcile' in body, (
-            'sync-baseline must classify the rebase via the existing '
-            'baseline-reconcile verb'
+            'sync-baseline must classify the rebase via the existing baseline-reconcile verb'
         )
 
     def test_body_cites_worktree_rebase_to(self):
         body = _doc_body(_SYNC_BASELINE_DOC)
         assert 'worktree-rebase-to' in body, (
-            'sync-baseline must perform the rebase via the existing '
-            'worktree-rebase-to verb'
+            'sync-baseline must perform the rebase via the existing worktree-rebase-to verb'
         )
 
     def test_body_invokes_no_force_push_command(self):
@@ -228,8 +211,7 @@ class TestSyncBaselineBodyContract:
         # invocation is the verb dispatched via the git-workflow executor.
         body = _doc_body(_SYNC_BASELINE_DOC)
         invocation_lines = [
-            line for line in body.splitlines()
-            if 'force-push-with-lease' in line and 'git-workflow' in line
+            line for line in body.splitlines() if 'force-push-with-lease' in line and 'git-workflow' in line
         ]
         assert not invocation_lines, (
             'at order 3 the branch is not yet pushed — sync-baseline must NOT '
@@ -240,13 +222,9 @@ class TestSyncBaselineBodyContract:
         # Guard against an executable `ci ... checks wait` INVOCATION, not the
         # prose word (the body legitimately documents the ABSENCE of a CI wait).
         body = _doc_body(_SYNC_BASELINE_DOC)
-        invocation_lines = [
-            line for line in body.splitlines()
-            if 'checks wait' in line and ':ci ' in line
-        ]
+        invocation_lines = [line for line in body.splitlines() if 'checks wait' in line and ':ci ' in line]
         assert not invocation_lines, (
-            'at order 3 no PR exists — sync-baseline must NOT invoke a CI wait, '
-            f'found: {invocation_lines}'
+            f'at order 3 no PR exists — sync-baseline must NOT invoke a CI wait, found: {invocation_lines}'
         )
 
     def test_body_documents_executor_refresh_as_non_fatal(self):
@@ -299,15 +277,17 @@ class TestHeadingRecognitionBoundsTheSectionBinding:
     _ANCHOR = 'executor_regenerated'
 
     def _body_with_indent(self, indent: str) -> str:
-        return '\n'.join([
-            '## Parent section',
-            '',
-            'non-fatal by contract',
-            '',
-            f'{indent}### Nested subsection',
-            '',
-            f'The refresh returns {self._ANCHOR} on success.',
-        ])
+        return '\n'.join(
+            [
+                '## Parent section',
+                '',
+                'non-fatal by contract',
+                '',
+                f'{indent}### Nested subsection',
+                '',
+                f'The refresh returns {self._ANCHOR} on success.',
+            ]
+        )
 
     @pytest.mark.parametrize('indent', ['', ' ', '  ', '   '])
     def test_an_atx_heading_indented_up_to_three_spaces_opens_its_own_section(self, indent):
@@ -321,7 +301,7 @@ class TestHeadingRecognitionBoundsTheSectionBinding:
             f'so the binding silently widened to the enclosing section'
         )
         assert 'non-fatal by contract' not in section, (
-            'the nested section must NOT inherit the parent\'s prose; it doing so '
+            "the nested section must NOT inherit the parent's prose; it doing so "
             'is exactly how a missed heading lets an unrelated occurrence satisfy '
             'a section-bound assertion'
         )

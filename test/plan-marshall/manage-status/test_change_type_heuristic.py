@@ -34,19 +34,9 @@ def _write_request(plan_dir: Path, body: str, section: str = 'clarified_request'
     """Write a minimal request.md with the narrative in the chosen section."""
     plan_dir.mkdir(parents=True, exist_ok=True)
     if section == 'original_input':
-        content = (
-            '# Request\n\n'
-            '## Original Input\n\n'
-            f'{body}\n'
-        )
+        content = f'# Request\n\n## Original Input\n\n{body}\n'
     else:
-        content = (
-            '# Request\n\n'
-            '## Original Input\n\n'
-            '(unused)\n\n'
-            '## Clarified Request\n\n'
-            f'{body}\n'
-        )
+        content = f'# Request\n\n## Original Input\n\n(unused)\n\n## Clarified Request\n\n{body}\n'
     (plan_dir / 'request.md').write_text(content, encoding='utf-8')
 
 
@@ -56,7 +46,9 @@ def _write_request(plan_dir: Path, body: str, section: str = 'clarified_request'
 
 
 def test_feature_resolves_on_add_create(plan_context):
-    _write_request(plan_context.plan_dir_for('cth-feature'), 'Add a new authentication module that creates session tokens.')
+    _write_request(
+        plan_context.plan_dir_for('cth-feature'), 'Add a new authentication module that creates session tokens.'
+    )
     result = cmd_change_type_heuristic(_ns('cth-feature'))
     assert result['change_type'] == 'feature'
     assert result['ambiguous'] is False
@@ -77,7 +69,10 @@ def test_bug_fix_resolves_on_fix_plus_bug_object(plan_context):
 
 
 def test_tech_debt_resolves_on_refactor_cleanup(plan_context):
-    _write_request(plan_context.plan_dir_for('cth-techdebt'), 'Refactor the module to remove legacy patterns and migrate cleanup helpers.')
+    _write_request(
+        plan_context.plan_dir_for('cth-techdebt'),
+        'Refactor the module to remove legacy patterns and migrate cleanup helpers.',
+    )
     result = cmd_change_type_heuristic(_ns('cth-techdebt'))
     assert result['change_type'] == 'tech_debt'
     assert result['ambiguous'] is False
@@ -92,14 +87,19 @@ def test_tech_debt_resolves_on_fix_plus_tech_debt_object(plan_context):
 
 
 def test_verification_resolves_on_verify_audit(plan_context):
-    _write_request(plan_context.plan_dir_for('cth-verify'), 'Verify and audit the deployment to confirm the rollout invariants.')
+    _write_request(
+        plan_context.plan_dir_for('cth-verify'), 'Verify and audit the deployment to confirm the rollout invariants.'
+    )
     result = cmd_change_type_heuristic(_ns('cth-verify'))
     assert result['change_type'] == 'verification'
     assert result['ambiguous'] is False
 
 
 def test_analysis_resolves_on_investigate_research(plan_context):
-    _write_request(plan_context.plan_dir_for('cth-analysis'), 'Investigate and research the recent latency anomaly to understand the root cause.')
+    _write_request(
+        plan_context.plan_dir_for('cth-analysis'),
+        'Investigate and research the recent latency anomaly to understand the root cause.',
+    )
     result = cmd_change_type_heuristic(_ns('cth-analysis'))
     assert result['change_type'] == 'analysis'
     assert result['ambiguous'] is False
@@ -120,7 +120,10 @@ def test_compound_intent_demotes_analysis_when_action_verb_present(plan_context)
 
 
 def test_compound_intent_routes_analyze_and_refactor_to_tech_debt(plan_context):
-    _write_request(plan_context.plan_dir_for('cth-compound-td'), 'Analyze and refactor the legacy migration scripts to remove deprecations.')
+    _write_request(
+        plan_context.plan_dir_for('cth-compound-td'),
+        'Analyze and refactor the legacy migration scripts to remove deprecations.',
+    )
     result = cmd_change_type_heuristic(_ns('cth-compound-td'))
     assert result['change_type'] == 'tech_debt'
 

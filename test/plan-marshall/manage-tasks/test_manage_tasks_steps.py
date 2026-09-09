@@ -217,9 +217,7 @@ def test_update_step_rejects_unknown_step(plan_context):
     """An unknown --step-number is rejected."""
     add_basic_task(plan_id='upd-bad-step', title='Task', deliverable=1, steps=['src/main/java/A.java'])
 
-    result = cmd_update_step(
-        _update_step_ns(plan_id='upd-bad-step', task=1, step_number=99, intent='read', reason='x')
-    )
+    result = cmd_update_step(_update_step_ns(plan_id='upd-bad-step', task=1, step_number=99, intent='read', reason='x'))
     assert result['status'] == 'error'
     assert 'not found' in result.get('message', '').lower()
 

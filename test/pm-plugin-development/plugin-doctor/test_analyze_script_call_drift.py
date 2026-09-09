@@ -65,9 +65,7 @@ def test_extract_invocations_finds_simple_verb():
 
 def test_extract_invocations_skips_placeholder_verbs():
     """A verb that is a template placeholder (`{value}`) is not extracted."""
-    content = (
-        'python3 .plan/execute-script.py plan-marshall:manage-status:manage-status {verb} --plan-id foo\n'
-    )
+    content = 'python3 .plan/execute-script.py plan-marshall:manage-status:manage-status {verb} --plan-id foo\n'
     invocations = _extract_invocations(content)
     assert len(invocations) == 1
     _, _, verbs, flags = invocations[0]

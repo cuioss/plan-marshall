@@ -29,11 +29,15 @@ from pathlib import Path
 from conftest import load_script_module
 
 _config_defaults = load_script_module(
-    'plan-marshall', 'manage-config', '_config_defaults.py',
+    'plan-marshall',
+    'manage-config',
+    '_config_defaults.py',
     '_config_defaults_for_preference_emitter_test',
 )
 _configurable_contract = load_script_module(
-    'plan-marshall', 'extension-api', 'configurable_contract.py',
+    'plan-marshall',
+    'extension-api',
+    'configurable_contract.py',
     '_configurable_contract_for_preference_emitter_test',
 )
 
@@ -50,11 +54,7 @@ def _discovered_seed_step_ids() -> list:
     from extension_discovery import find_implementors
 
     seed_records = sorted(
-        (
-            rec
-            for rec in find_implementors(_config_defaults.FINALIZE_STEP_EXT_POINT)
-            if rec.get('default_on')
-        ),
+        (rec for rec in find_implementors(_config_defaults.FINALIZE_STEP_EXT_POINT) if rec.get('default_on')),
         key=lambda rec: (rec.get('order', 0), rec.get('name', '')),
     )
     return [rec['name'] for rec in seed_records if rec.get('name')]
@@ -92,8 +92,7 @@ class TestPreferenceEmitterSeedWiring:
 
     def test_step_registered_in_built_in_finalize_steps(self):
         assert _STEP_ID in _discovered_seed_step_ids(), (
-            f'{_STEP_ID} must be a discovered default-on built-in step so a fresh '
-            'consumer marshal.json discovers it'
+            f'{_STEP_ID} must be a discovered default-on built-in step so a fresh consumer marshal.json discovers it'
         )
 
     def test_step_ordered_after_merge_gate(self):
@@ -120,8 +119,7 @@ class TestPreferenceEmitterSeedWiring:
         assert _STEP_ID in steps
         assert 'default:lessons-capture' in steps
         assert steps.index(_STEP_ID) > steps.index('default:lessons-capture'), (
-            'preference-emitter learns from settled dispositions, so it must run '
-            'after default:lessons-capture'
+            'preference-emitter learns from settled dispositions, so it must run after default:lessons-capture'
         )
 
     def test_step_declares_post_run_review(self):
@@ -129,14 +127,12 @@ class TestPreferenceEmitterSeedWiring:
         # not an undeclared convention — it is what obliges the post-merge
         # placement asserted above and what the derivation guard reads.
         record = _discovered_record(_STEP_ID)
-        assert record, (
-            f'{_STEP_ID} must be a discovered finalize-step implementor'
-        )
+        assert record, f'{_STEP_ID} must be a discovered finalize-step implementor'
         from extension_discovery import _read_frontmatter_fields
 
         fields = _read_frontmatter_fields(Path(record['path']), ('post_run_review',))
         assert fields.get('post_run_review') is True, (
-            f"{_STEP_ID} output is an assessment of the just-finished run (P1) and "
+            f'{_STEP_ID} output is an assessment of the just-finished run (P1) and '
             'reads dispositions only determined at or after the merge gate (P2), so '
             'its frontmatter must declare post_run_review: true'
         )
@@ -148,9 +144,7 @@ class TestPreferenceEmitterSeedWiring:
         # a step ordered at or after the merge gate that declares no
         # mutates_source key is the mutates_source_declaration_missing error.
         record = _discovered_record(_STEP_ID)
-        assert record, (
-            f'{_STEP_ID} must be a discovered finalize-step implementor'
-        )
+        assert record, f'{_STEP_ID} must be a discovered finalize-step implementor'
         from extension_discovery import _read_frontmatter_fields
 
         fields = _read_frontmatter_fields(Path(record['path']), ('mutates_source',))
@@ -169,9 +163,7 @@ class TestPreferenceEmitterSeedWiring:
 
     def test_description_entry_present_and_non_empty(self):
         description = _discovered_description(_STEP_ID)
-        assert description, (
-            f'{_STEP_ID} discovered description must be non-empty'
-        )
+        assert description, f'{_STEP_ID} discovered description must be non-empty'
 
 
 class TestPreferenceEmitterConfigurableContract:
@@ -180,12 +172,9 @@ class TestPreferenceEmitterConfigurableContract:
     def test_preference_min_recurrence_default_resolves_to_two(self):
         resolved = _configurable_contract.resolve_step_defaults_optional(_STEP_ID)
         assert resolved is not None, (
-            f'{_STEP_ID} owns a configurable param, so it must resolve to a '
-            'non-None default map'
+            f'{_STEP_ID} owns a configurable param, so it must resolve to a non-None default map'
         )
-        assert resolved['preference_min_recurrence'] == 2, (
-            'preference_min_recurrence default must be 2'
-        )
+        assert resolved['preference_min_recurrence'] == 2, 'preference_min_recurrence default must be 2'
 
 
 class TestPreferenceEmitterSeededIntoDefaultConfig:
@@ -194,9 +183,7 @@ class TestPreferenceEmitterSeededIntoDefaultConfig:
     def test_default_plan_finalize_steps_carry_the_step(self):
         config = _config_defaults.get_default_config()
         steps = config['plan']['phase-6-finalize']['steps']
-        assert _STEP_ID in steps, (
-            f'{_STEP_ID} must appear in the seeded DEFAULT_PLAN_FINALIZE steps'
-        )
+        assert _STEP_ID in steps, f'{_STEP_ID} must appear in the seeded DEFAULT_PLAN_FINALIZE steps'
         assert steps[_STEP_ID]['preference_min_recurrence'] == 2, (
             'the seeded step must carry the preference_min_recurrence default of 2'
         )

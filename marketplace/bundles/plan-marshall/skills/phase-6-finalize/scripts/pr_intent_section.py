@@ -78,8 +78,7 @@ _HEADING = '## Intent'
 # Emitted verbatim when the draft exceeds the budget. ``{shown}`` / ``{total}``
 # make the loss quantified rather than merely flagged.
 _TRUNCATION_MARKER = (
-    '\n\n_[Intent truncated — {shown} of {total} characters shown; '
-    'full outline in the plan workspace]_'
+    '\n\n_[Intent truncated — {shown} of {total} characters shown; full outline in the plan workspace]_'
 )
 
 

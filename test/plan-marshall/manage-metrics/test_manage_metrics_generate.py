@@ -8,7 +8,6 @@ Its sections, in order:
 * enrich delegates to the platform-runtime normalized-tokens op
 """
 
-
 from _manage_metrics_fixtures import (
     ns_accumulate,
     ns_end_phase,
@@ -197,9 +196,7 @@ class TestGenerateReconcilesAccumulator:
         """An unclosed 6-finalize row surfaces its accumulator totals after generate."""
         # Producer: seed the durable accumulator (subagent returns during finalize).
         cmd_accumulate_agent_usage(
-            ns_accumulate(
-                'recon-gen-unclosed', '6-finalize', total_tokens=12345, tool_uses=7, duration_ms=60000
-            )
+            ns_accumulate('recon-gen-unclosed', '6-finalize', total_tokens=12345, tool_uses=7, duration_ms=60000)
         )
         # The phase row exists (wall span recorded) but was never token-closed.
         manage_metrics.write_metrics(
@@ -221,9 +218,7 @@ class TestGenerateReconcilesAccumulator:
     def test_generate_preserves_explicit_row_over_divergent_accumulator(self, plan_context):
         """A token-closed row wins over a divergent accumulator (explicit-wins)."""
         cmd_accumulate_agent_usage(
-            ns_accumulate(
-                'recon-gen-explicit', '6-finalize', total_tokens=999, tool_uses=9, duration_ms=99999
-            )
+            ns_accumulate('recon-gen-explicit', '6-finalize', total_tokens=999, tool_uses=9, duration_ms=99999)
         )
         manage_metrics.write_metrics(
             'recon-gen-explicit',
@@ -250,9 +245,7 @@ class TestGenerateReconcilesAccumulator:
     def test_generate_partial_row_folds_only_absent_fields(self, plan_context):
         """A row with an explicit total_tokens folds only the missing fields from the accumulator."""
         cmd_accumulate_agent_usage(
-            ns_accumulate(
-                'recon-gen-partial', '6-finalize', total_tokens=999, tool_uses=7, duration_ms=60000
-            )
+            ns_accumulate('recon-gen-partial', '6-finalize', total_tokens=999, tool_uses=7, duration_ms=60000)
         )
         manage_metrics.write_metrics(
             'recon-gen-partial',
@@ -271,6 +264,7 @@ class TestGenerateReconcilesAccumulator:
 # =============================================================================
 # Test: enrich delegates to the platform-runtime normalized-tokens op
 # =============================================================================
+
 
 class TestGenerateRendersFourFieldUsage:
     """cmd_generate renders the four usage fields and the billing-weighted total."""

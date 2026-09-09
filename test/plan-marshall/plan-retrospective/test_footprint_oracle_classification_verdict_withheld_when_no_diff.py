@@ -4,7 +4,6 @@
 Its one section: A verdict over no evidence is not a clean result.
 """
 
-
 from __future__ import annotations
 
 from _footprint_oracle_classification_fixtures import MANIFEST_SCRIPT, _check, _setup, _write_diff
@@ -54,9 +53,7 @@ class TestVerdictWithheldWhenNoDiffEvidenceExists:
         plan_id, _ = _setup(tmp_path, monkeypatch, self._MANIFEST)
         diff = _write_diff(tmp_path, [])
 
-        result = run_script(
-            MANIFEST_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live', '--diff-file', str(diff)
-        )
+        result = run_script(MANIFEST_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live', '--diff-file', str(diff))
         assert result.success, result.stderr
         data = result.toon()
 

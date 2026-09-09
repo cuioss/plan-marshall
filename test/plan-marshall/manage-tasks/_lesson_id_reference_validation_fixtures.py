@@ -29,7 +29,6 @@ inventory state. Real-ID fixtures are copy-pasted from live
 ``test/plan-marshall/tools-input-validation/test_lesson_id_scanner.py``).
 """
 
-
 import sys
 from argparse import Namespace
 
@@ -120,9 +119,7 @@ def _entry(
         depends_on = []
     if skills is None:
         skills = []
-    normalized_steps = [
-        s if isinstance(s, dict) else {'target': s, 'intent': 'write-replace'} for s in steps
-    ]
+    normalized_steps = [s if isinstance(s, dict) else {'target': s, 'intent': 'write-replace'} for s in steps]
     return {
         'title': title,
         'deliverable': deliverable,

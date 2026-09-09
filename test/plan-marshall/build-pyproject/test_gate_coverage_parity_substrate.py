@@ -80,19 +80,14 @@ def _whole_tree_spdx_path_expressions() -> list[str]:
     )
     whole_tree = candidates[0]
 
-    extra = re.search(
-        r'^\s*spdx_paths \+= \[(.+?)\]\s*$', source, re.MULTILINE
-    )
+    extra = re.search(r'^\s*spdx_paths \+= \[(.+?)\]\s*$', source, re.MULTILINE)
     assert extra, (
         'build.py no longer widens `spdx_paths` with a literal list on the '
         'whole-tree branch. Re-read cmd_quality_gate and re-anchor the extraction.'
     )
 
     return [
-        token.strip()
-        for group in (whole_tree.group(1), extra.group(1))
-        for token in group.split(',')
-        if token.strip()
+        token.strip() for group in (whole_tree.group(1), extra.group(1)) for token in group.split(',') if token.strip()
     ]
 
 
@@ -270,9 +265,7 @@ def test_the_mapping_names_only_cells_that_exist():
     mapped = {name for names in _DIMENSION_TO_CELLS.values() for name in names}
 
     missing = mapped - cell_names
-    assert not missing, (
-        f'the dimension→cell map names cells absent from parity_population(): {sorted(missing)}'
-    )
+    assert not missing, f'the dimension→cell map names cells absent from parity_population(): {sorted(missing)}'
 
 
 # ---------------------------------------------------------------------------
@@ -311,9 +304,7 @@ def test_the_mapping_names_only_cells_that_exist():
 # question is instead dissolved by not asking it: the earned claim has one known
 # home, so the control reads that home directly.
 
-_GATE_COVERAGE_SOURCE = (
-    get_scripts_dir('plan-marshall', 'script-shared') / 'build' / '_gate_coverage.py'
-)
+_GATE_COVERAGE_SOURCE = get_scripts_dir('plan-marshall', 'script-shared') / 'build' / '_gate_coverage.py'
 
 _DERIVED_RE = re.compile(r'deriv', re.IGNORECASE)
 _PARITY_RE = re.compile(r'parity', re.IGNORECASE)
@@ -509,11 +500,9 @@ def test_structural_limits_is_still_described_as_derived_and_still_derives():
         'structural_limits invented limits for a run that recorded no dimension, so '
         'its output is not derived from the recorded dimensions after all'
     )
-    assert structural_limits(['ruff [3 files]']) != structural_limits(
-        ['ruff [3 files]', 'module-tests [12 files]']
-    ), (
+    assert structural_limits(['ruff [3 files]']) != structural_limits(['ruff [3 files]', 'module-tests [12 files]']), (
         'structural_limits returned the same limits for two different recorded '
-        'dimension sets, so it is a fixed boilerplate block and its docstring\'s '
+        "dimension sets, so it is a fixed boilerplate block and its docstring's "
         '"Derived from the dimensions the run ACTUALLY recorded" is false'
     )
 

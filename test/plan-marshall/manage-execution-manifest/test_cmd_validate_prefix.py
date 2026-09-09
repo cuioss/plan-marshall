@@ -107,9 +107,7 @@ def _write_full_marshal(
     marshal_path = fixture_dir / 'marshal.json'
     plan_block: dict = {'phase-6-finalize': {'steps': {step_id: {} for step_id in phase_6_steps}}}
     if phase_5_steps is not None:
-        plan_block['phase-5-execute'] = {
-            'verification_steps': {step_id: {} for step_id in phase_5_steps}
-        }
+        plan_block['phase-5-execute'] = {'verification_steps': {step_id: {} for step_id in phase_5_steps}}
     marshal_path.write_text(json.dumps({'plan': plan_block}), encoding='utf-8')
 
 
@@ -225,9 +223,7 @@ def test_validate_non_string_step_element_reports_error_not_crash(plan_context, 
     }
     monkeypatch.setattr(_val, 'read_manifest', lambda _pid: fake_manifest)
 
-    result = _val.cmd_validate(
-        _validate_ns(plan_id=plan_id, phase_5_steps='verify:quality-gate', phase_6_steps='push')
-    )
+    result = _val.cmd_validate(_validate_ns(plan_id=plan_id, phase_5_steps='verify:quality-gate', phase_6_steps='push'))
 
     assert result is not None
     assert result['status'] == 'error'

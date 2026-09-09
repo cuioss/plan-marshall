@@ -32,7 +32,6 @@ unclassifiable-plan surfacing, the canonical ``restore_command`` shape,
 multi-lesson consolidation, and the read-only invariant.
 """
 
-
 from argparse import Namespace
 from unittest.mock import patch
 
@@ -46,9 +45,12 @@ class TestCmdListStalled:
     def test_stalled_in_5_execute_is_reported(self, tmp_path):
         """A lesson-sourced plan stalled in 5-execute is reported."""
         _write_lesson_plan(
-            tmp_path, 'stalled-exec', ['2025-01-01-12-001'],
+            tmp_path,
+            'stalled-exec',
+            ['2025-01-01-12-001'],
             plan_source='2025-01-01-12-001',
-            current_phase='5-execute', phase_status='in_progress',
+            current_phase='5-execute',
+            phase_status='in_progress',
         )
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
@@ -66,9 +68,12 @@ class TestCmdListStalled:
     def test_stalled_in_6_finalize_is_reported(self, tmp_path):
         """A lesson-sourced plan stalled in 6-finalize is reported."""
         _write_lesson_plan(
-            tmp_path, 'stalled-final', ['2025-02-02-09-002'],
+            tmp_path,
+            'stalled-final',
+            ['2025-02-02-09-002'],
             plan_source='2025-02-02-09-002',
-            current_phase='6-finalize', phase_status='in_progress',
+            current_phase='6-finalize',
+            phase_status='in_progress',
         )
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
@@ -83,9 +88,12 @@ class TestCmdListStalled:
     def test_completed_lesson_sourced_plan_is_not_reported(self, tmp_path):
         """A lesson-sourced plan whose current phase is done is NOT reported."""
         _write_lesson_plan(
-            tmp_path, 'done-plan', ['2025-03-03-10-003'],
+            tmp_path,
+            'done-plan',
+            ['2025-03-03-10-003'],
             plan_source='2025-03-03-10-003',
-            current_phase='6-finalize', phase_status='done',
+            current_phase='6-finalize',
+            phase_status='done',
         )
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
@@ -105,9 +113,12 @@ class TestCmdListStalled:
         derived from the observable file instead.
         """
         _write_lesson_plan(
-            tmp_path, 'feature-plan', ['2025-04-04-11-004'],
+            tmp_path,
+            'feature-plan',
+            ['2025-04-04-11-004'],
             plan_source='',
-            current_phase='5-execute', phase_status='in_progress',
+            current_phase='5-execute',
+            phase_status='in_progress',
         )
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
@@ -124,9 +135,12 @@ class TestCmdListStalled:
     def test_non_lesson_id_plan_source_is_still_reported(self, tmp_path):
         """A non-lesson-id-shaped plan_source does not exclude a carried lesson."""
         _write_lesson_plan(
-            tmp_path, 'request-plan', ['2025-04-04-11-005'],
+            tmp_path,
+            'request-plan',
+            ['2025-04-04-11-005'],
             plan_source='some-feature-request',
-            current_phase='5-execute', phase_status='in_progress',
+            current_phase='5-execute',
+            phase_status='in_progress',
         )
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
@@ -173,9 +187,7 @@ class TestCmdListStalled:
         assert result['store_resolution'] == 'override'
         assert result['unresolved_store'] == ''
 
-    def test_unresolved_lessons_corpus_is_not_reported_as_a_resolved_store(
-        self, tmp_path, monkeypatch
-    ):
+    def test_unresolved_lessons_corpus_is_not_reported_as_a_resolved_store(self, tmp_path, monkeypatch):
         """The discriminator names the store that FAILED, not the one that resolved.
 
         The verb needs both stores, and here the plans root resolves while the
@@ -204,9 +216,7 @@ class TestCmdListStalled:
         def _only_plans_resolves(subpath=DIR_LESSONS):
             if str(subpath) == 'plans':
                 return real_resolve(subpath)
-            return _lessons_query.LessonStore(
-                None, 'unresolved', 'cannot resolve the lessons corpus (test stub)'
-            )
+            return _lessons_query.LessonStore(None, 'unresolved', 'cannot resolve the lessons corpus (test stub)')
 
         monkeypatch.setattr(_lessons_query, 'resolve_lesson_store', _only_plans_resolves)
         monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
@@ -242,9 +252,7 @@ class TestCmdListStalled:
         # mislabelling it — the constant is load-bearing here.
         def _only_lessons_resolves(subpath=DIR_LESSONS):
             if str(subpath) == 'plans':
-                return _lessons_query.LessonStore(
-                    None, 'unresolved', 'cannot resolve the plans root (test stub)'
-                )
+                return _lessons_query.LessonStore(None, 'unresolved', 'cannot resolve the plans root (test stub)')
             return real_resolve(subpath)
 
         monkeypatch.setattr(_lessons_query, 'resolve_lesson_store', _only_lessons_resolves)
@@ -270,9 +278,12 @@ class TestCmdListStalled:
         (lessons_dir / '2025-11-11-19-015.md').write_text('id=2025-11-11-19-015\n\n# L\n\nB.\n')
 
         _write_lesson_plan(
-            tmp_path, 'dup-plan', ['2025-11-11-19-015'],
+            tmp_path,
+            'dup-plan',
+            ['2025-11-11-19-015'],
             plan_source='2025-11-11-19-015',
-            current_phase='5-execute', phase_status='in_progress',
+            current_phase='5-execute',
+            phase_status='in_progress',
         )
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
@@ -289,9 +300,12 @@ class TestCmdListStalled:
     def test_restore_command_is_canonical_invocation(self, tmp_path):
         """restore_command is the exact restore-from-plan invocation."""
         _write_lesson_plan(
-            tmp_path, 'cmd-plan', ['2025-05-05-13-005'],
+            tmp_path,
+            'cmd-plan',
+            ['2025-05-05-13-005'],
             plan_source='2025-05-05-13-005',
-            current_phase='5-execute', phase_status='in_progress',
+            current_phase='5-execute',
+            phase_status='in_progress',
         )
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
@@ -406,9 +420,12 @@ class TestCmdListStalled:
         """A plan consolidating several lesson-*.md reports all ids sorted."""
         ids = ['2025-08-08-16-008', '2025-08-08-16-009', '2025-08-08-16-010']
         _write_lesson_plan(
-            tmp_path, 'multi-lesson', ids,
+            tmp_path,
+            'multi-lesson',
+            ids,
             plan_source='2025-08-08-16-008',
-            current_phase='5-execute', phase_status='in_progress',
+            current_phase='5-execute',
+            phase_status='in_progress',
         )
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
@@ -420,9 +437,12 @@ class TestCmdListStalled:
     def test_read_only_does_not_mutate_lesson_or_plan(self, tmp_path):
         """The scan never moves, deletes, or rewrites lesson files or plan dirs."""
         plan_dir = _write_lesson_plan(
-            tmp_path, 'readonly-plan', ['2025-09-09-17-011'],
+            tmp_path,
+            'readonly-plan',
+            ['2025-09-09-17-011'],
             plan_source='2025-09-09-17-011',
-            current_phase='5-execute', phase_status='in_progress',
+            current_phase='5-execute',
+            phase_status='in_progress',
         )
         lesson_file = plan_dir / 'lesson-2025-09-09-17-011.md'
         before = lesson_file.read_text()
@@ -442,19 +462,28 @@ class TestCmdListStalled:
         anything, so only the phase guard narrows the set.
         """
         _write_lesson_plan(
-            tmp_path, 'a-stalled', ['2025-10-10-18-012'],
+            tmp_path,
+            'a-stalled',
+            ['2025-10-10-18-012'],
             plan_source='2025-10-10-18-012',
-            current_phase='5-execute', phase_status='in_progress',
+            current_phase='5-execute',
+            phase_status='in_progress',
         )
         _write_lesson_plan(
-            tmp_path, 'b-done', ['2025-10-10-18-013'],
+            tmp_path,
+            'b-done',
+            ['2025-10-10-18-013'],
             plan_source='2025-10-10-18-013',
-            current_phase='6-finalize', phase_status='done',
+            current_phase='6-finalize',
+            phase_status='done',
         )
         _write_lesson_plan(
-            tmp_path, 'c-feature', ['2025-10-10-18-014'],
+            tmp_path,
+            'c-feature',
+            ['2025-10-10-18-014'],
             plan_source='not-a-lesson-id',
-            current_phase='5-execute', phase_status='in_progress',
+            current_phase='5-execute',
+            phase_status='in_progress',
         )
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):

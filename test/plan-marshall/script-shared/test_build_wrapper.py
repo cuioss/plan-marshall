@@ -21,9 +21,7 @@ _WRAPPER_FAMILY_IDS = ['pyprojectx', 'maven', 'gradle']
 
 
 @pytest.mark.parametrize('unix,windows,system', _WRAPPER_FAMILIES, ids=_WRAPPER_FAMILY_IDS)
-def test_detect_wrapper_returns_the_unix_wrapper_on_unix(
-    tmp_path: Path, unix: str, windows: str, system: str | None
-):
+def test_detect_wrapper_returns_the_unix_wrapper_on_unix(tmp_path: Path, unix: str, windows: str, system: str | None):
     """On Unix, detect_wrapper returns the project-relative Unix wrapper."""
     (tmp_path / unix).write_text('#!/bin/bash')
 

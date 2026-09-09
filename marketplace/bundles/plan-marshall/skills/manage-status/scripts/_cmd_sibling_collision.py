@@ -53,9 +53,7 @@ _NULL_SOURCE_ID_VALUES = frozenset({'', 'none'})
 # trailing ``.ext`` so bare words and section anchors are never mistaken for
 # files. The leading negative lookbehind keeps the match anchored at a path
 # start (whitespace, backtick, parenthesis, line start), never mid-token.
-_PATH_RE = re.compile(
-    r'(?<![\w./-])([A-Za-z0-9_.\-]+(?:/[A-Za-z0-9_.\-]+)+\.[A-Za-z0-9]+)'
-)
+_PATH_RE = re.compile(r'(?<![\w./-])([A-Za-z0-9_.\-]+(?:/[A-Za-z0-9_.\-]+)+\.[A-Za-z0-9]+)')
 
 # Within-row join separator for the ``overlapping_files`` column. The TOON
 # uniform-array table separator is ``,``; joining the per-row file list with

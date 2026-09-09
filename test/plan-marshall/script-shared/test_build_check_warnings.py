@@ -84,9 +84,7 @@ _EXIT_CODE_IDS = [
 class TestExitCodes:
     """Exit code 0 means no fixable/unknown, 1 otherwise."""
 
-    @pytest.mark.parametrize(
-        'warnings,acceptable,expected_exit_code', _EXIT_CODE_CASES, ids=_EXIT_CODE_IDS
-    )
+    @pytest.mark.parametrize('warnings,acceptable,expected_exit_code', _EXIT_CODE_CASES, ids=_EXIT_CODE_IDS)
     def test_the_exit_code_reports_whether_anything_is_actionable(
         self, warnings: list[dict], acceptable: dict | None, expected_exit_code: int
     ):

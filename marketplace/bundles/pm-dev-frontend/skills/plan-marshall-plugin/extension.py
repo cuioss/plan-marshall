@@ -97,9 +97,7 @@ class Extension(ExtensionBase):
             }
 
         signals = ['build_systems=npm']
-        return self._build_applicable_result(
-            'high', signals, module_data=module_data, active_profiles=active_profiles
-        )
+        return self._build_applicable_result('high', signals, module_data=module_data, active_profiles=active_profiles)
 
     def provides_triage(self) -> str | None:
         """Return triage skill reference."""

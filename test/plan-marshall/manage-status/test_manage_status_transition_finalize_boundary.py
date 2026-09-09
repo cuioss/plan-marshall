@@ -4,7 +4,6 @@
 """Tests for manage-status.py transition at the 5-execute -> 6-finalize boundary:
 which pending findings block completion, and how the finalize executor is run."""
 
-
 from argparse import Namespace
 
 import _handshake_commands as _cmds
@@ -94,6 +93,7 @@ def test_finalize_boundary_pending_actionable_finding_blocks(
 # is still admitted, and the abandonment exemption confirms the gate discriminates
 # on the completion intent rather than blocking unconditionally.
 # =============================================================================
+
 
 def test_run_executor_skips_when_executor_absent(monkeypatch, tmp_path):
     """_run_executor is a no-op (no subprocess) when the executor is not on disk."""

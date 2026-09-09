@@ -15,16 +15,10 @@ class TestQualityChainMechanism:
         assert audit._qc_mechanism('build-error.jsonl', {}) == 'build'
 
     def test_bot_pr_comment_is_auto_review(self):
-        assert (
-            audit._qc_mechanism('pr-comment.jsonl', {'detail': 'gemini-code-assist says'})
-            == 'auto-review'
-        )
+        assert audit._qc_mechanism('pr-comment.jsonl', {'detail': 'gemini-code-assist says'}) == 'auto-review'
 
     def test_human_pr_comment_is_human_review(self):
-        assert (
-            audit._qc_mechanism('pr-comment.jsonl', {'detail': 'reviewer asks to rename'})
-            == 'human-review'
-        )
+        assert audit._qc_mechanism('pr-comment.jsonl', {'detail': 'reviewer asks to rename'}) == 'human-review'
 
     def test_qgate_and_assessments_are_self_review(self):
         assert audit._qc_mechanism('qgate-phase-6.jsonl', {}) == 'self-review'
@@ -56,9 +50,7 @@ class TestQualityChainResolution:
 
     def test_taken_into_account_with_task_detail_is_loop_back(self):
         assert (
-            audit._qc_resolution(
-                {'resolution': 'taken_into_account', 'resolution_detail': 'addressed by TASK-012'}
-            )
+            audit._qc_resolution({'resolution': 'taken_into_account', 'resolution_detail': 'addressed by TASK-012'})
             == 'loop_back'
         )
 

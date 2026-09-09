@@ -47,9 +47,7 @@ _ORCH_SCRIPT = 'orchestrator.py'
 
 SCRIPT_PATH = get_script_path(_ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT)
 
-_orch = load_script_module(
-    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT, 'orchestrator_script'
-)
+_orch = load_script_module(_ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT, 'orchestrator_script')
 
 cmd_cleanup_restart_check = _orch.cmd_cleanup_restart_check
 readiness_floor = _orch._readiness_floor
@@ -99,8 +97,13 @@ def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
 
 
 _RESTART_CHECK_ARGS = parse_ns(
-    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
-    'cleanup', 'restart-check', '--slug', SLUG,
+    _ORCH_BUNDLE,
+    _ORCH_SKILL,
+    _ORCH_SCRIPT,
+    'cleanup',
+    'restart-check',
+    '--slug',
+    SLUG,
     register=False,
 )
 
@@ -245,14 +248,10 @@ class TestRestartCheckShape:
 
         assert result['status'] == 'success'
         assert result['operation'] == 'cleanup-restart-check'
-        assert sorted(row['signal'] for row in result['signals']) == sorted(
-            [*OWNED_SIGNALS, UNOWNED_SIGNAL]
-        )
+        assert sorted(row['signal'] for row in result['signals']) == sorted([*OWNED_SIGNALS, UNOWNED_SIGNAL])
         assert result['signals_total'] == len(result['signals']) == len(OWNED_SIGNALS) + 1
 
-    def test_every_signal_carries_a_verdict_evidence_and_a_population(
-        self, plan_context, monkeypatch
-    ):
+    def test_every_signal_carries_a_verdict_evidence_and_a_population(self, plan_context, monkeypatch):
         _ready_epic(plan_context, monkeypatch)
 
         result = _run()
@@ -274,10 +273,7 @@ class TestRestartCheckShape:
         result = _run()
 
         assert 'plans[]: 1 row(s) scanned' == _signal_row(result, 'running_plans')['population']
-        assert (
-            '1 queue row(s) and 1 spec file(s)'
-            == _signal_row(result, 'corpus_reconciliation')['population']
-        )
+        assert '1 queue row(s) and 1 spec file(s)' == _signal_row(result, 'corpus_reconciliation')['population']
         assert 'inbox/: 0 queued and 3 archived' == _signal_row(result, 'inbox')['population']
         assert CLEAN_SHA in _signal_row(result, 'worktree')['population']
 
@@ -392,9 +388,7 @@ class TestCorpusSignal:
         assert row['verdict'] == NOT_READY
         assert '1 row(s) without a spec' in row['evidence']
 
-    def test_an_unreadable_spec_is_indeterminate_and_outranks_the_orphan(
-        self, plan_context, monkeypatch
-    ):
+    def test_an_unreadable_spec_is_indeterminate_and_outranks_the_orphan(self, plan_context, monkeypatch):
         # The corpus could not be read in full, so the orphan finding computed
         # over the readable part is not a verdict this signal may assert.
         _write_status(plan_context, [_row('PLAN-01'), _row('PLAN-02'), _row('PLAN-03')])
@@ -431,9 +425,7 @@ class TestInboxSignal:
         assert row['verdict'] == NOT_READY
         assert '2 message(s) still queued' in row['evidence']
 
-    def test_an_absent_inbox_is_indeterminate_never_a_confident_zero(
-        self, plan_context, monkeypatch
-    ):
+    def test_an_absent_inbox_is_indeterminate_never_a_confident_zero(self, plan_context, monkeypatch):
         # The two zeros are told apart by the payload: an absent inbox/ is
         # *could not look*, and reporting it as "0 queued — ready" would be the
         # confident zero this whole seam refuses to emit.
@@ -461,9 +453,7 @@ class TestWorktreeSignal:
         _write_status(plan_context, [_row('PLAN-01')])
         _write_spec(plan_context, 'PLAN-01-alpha.md')
         _make_inbox(plan_context)
-        monkeypatch.setattr(
-            _orch, '_git_read', _git_stub(porcelain=' M a/b.py\n?? c/d.py\n')
-        )
+        monkeypatch.setattr(_orch, '_git_read', _git_stub(porcelain=' M a/b.py\n?? c/d.py\n'))
 
         row = _signal_row(_run(), 'worktree')
 
@@ -482,9 +472,7 @@ class TestWorktreeSignal:
         assert row['verdict'] != NOT_READY
         assert row['population'] == 'git: not readable'
 
-    def test_an_unreadable_status_is_indeterminate_even_when_head_resolves(
-        self, plan_context, monkeypatch
-    ):
+    def test_an_unreadable_status_is_indeterminate_even_when_head_resolves(self, plan_context, monkeypatch):
         # Half an observation is not an observation: knowing the sha without
         # knowing whether the tree is clean cannot support a ready verdict.
         _write_status(plan_context, [_row('PLAN-01')])
@@ -541,9 +529,7 @@ class TestGitSeamIsReadOnlyByConstruction:
         operations = _orch._GIT_READ_OPERATIONS
 
         offenders = {
-            name: argv
-            for name, argv in operations.items()
-            if not argv or argv[0] not in READ_ONLY_GIT_SUBCOMMANDS
+            name: argv for name, argv in operations.items() if not argv or argv[0] not in READ_ONLY_GIT_SUBCOMMANDS
         }
 
         assert offenders == {}, (
@@ -611,9 +597,7 @@ class TestRegistryParityArm:
         assert READINESS_ORDER == (NOT_READY, INDETERMINATE, READY)
         assert NOT_AVAILABLE not in READINESS_ORDER
 
-    def test_a_not_available_arm_does_not_degrade_a_fully_ready_report(
-        self, plan_context, monkeypatch
-    ):
+    def test_a_not_available_arm_does_not_degrade_a_fully_ready_report(self, plan_context, monkeypatch):
         # The behavioural half: every OWNED signal is ready, the unowned arm is
         # present, and the report is ready rather than degraded by it.
         _ready_epic(plan_context, monkeypatch)
@@ -642,9 +626,7 @@ class TestRegistryParityArm:
 
 
 class TestReadinessFloor:
-    def test_one_indeterminate_signal_floors_an_otherwise_ready_report(
-        self, plan_context, monkeypatch
-    ):
+    def test_one_indeterminate_signal_floors_an_otherwise_ready_report(self, plan_context, monkeypatch):
         # Exactly one signal is degraded — the absent inbox/ — and it is the
         # unobservable kind, so the report may not claim ready.
         _write_status(plan_context, [_row('PLAN-01')])
@@ -715,9 +697,7 @@ class TestRestartCheckCli:
         _write_spec(plan_context, 'PLAN-01-alpha.md')
         _make_inbox(plan_context)
 
-        result = run_script(
-            SCRIPT_PATH, 'cleanup', 'restart-check', '--slug', SLUG, env_overrides=env
-        )
+        result = run_script(SCRIPT_PATH, 'cleanup', 'restart-check', '--slug', SLUG, env_overrides=env)
 
         assert result.returncode == 0
         assert 'status: success' in result.stdout

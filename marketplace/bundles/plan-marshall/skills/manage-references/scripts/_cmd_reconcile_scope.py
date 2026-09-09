@@ -112,9 +112,7 @@ SIDE_SOURCES: dict[str, str] = {
 #: Every unordered pair over :data:`SIDES`, in reporting order. DERIVED from the
 #: sides rather than enumerated independently, so the two cannot drift.
 PAIRS: tuple[tuple[str, str], ...] = tuple(
-    (left, right)
-    for index, left in enumerate(SIDES)
-    for right in SIDES[index + 1 :]
+    (left, right) for index, left in enumerate(SIDES) for right in SIDES[index + 1 :]
 )
 
 #: The pair the request names as the primary validated comparison: the recorded

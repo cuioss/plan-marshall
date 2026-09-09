@@ -117,9 +117,7 @@ def test_skill_design_references_provenance_contract():
         'rule-provenance.md',
     ]
     found = [p for p in canonical_phrases if p in content]
-    assert found, (
-        f'skill-design.md must reference the provenance contract via one of {canonical_phrases}'
-    )
+    assert found, f'skill-design.md must reference the provenance contract via one of {canonical_phrases}'
 
 
 def test_skill_design_explains_rationale():

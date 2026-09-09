@@ -168,9 +168,7 @@ _BRANCH = f'feature/{_PLAN_ID}'
 # module on each call. ``cmd_worktree_remove`` never mutates its namespace, so one
 # instance per flag combination is safe to share across tests.
 _NS_PLAIN = parse_ns(*_GIT_WF, 'worktree-remove', '--plan-id', _PLAN_ID, register=False)
-_NS_FORCE = parse_ns(
-    *_GIT_WF, 'worktree-remove', '--plan-id', _PLAN_ID, '--force', register=False
-)
+_NS_FORCE = parse_ns(*_GIT_WF, 'worktree-remove', '--plan-id', _PLAN_ID, '--force', register=False)
 
 
 def _init_main_repo(main: Path) -> None:
@@ -187,9 +185,7 @@ def _init_main_repo(main: Path) -> None:
     (main / '.gitignore').write_text('.plan/\n')
     (main / 'file.txt').write_text('one\n')
     subprocess.run(['git', '-C', str(main), 'add', '.'], check=True, capture_output=True)
-    subprocess.run(
-        ['git', '-C', str(main), 'commit', '-q', '-m', 'init'], check=True, capture_output=True
-    )
+    subprocess.run(['git', '-C', str(main), 'commit', '-q', '-m', 'init'], check=True, capture_output=True)
 
 
 @pytest.fixture
@@ -373,9 +369,7 @@ def _remove_unresolvable(geometry: dict[str, Path], *, force: bool = False) -> d
 def _assert_refused(result: dict, geometry: dict[str, Path], expected_error: str) -> None:
     """Assert a refusal by its typed error AND by what the refusal protected."""
     assert result['status'] == 'error', result
-    assert result['error'] == expected_error, (
-        f'Expected the {expected_error} refusal, got {result!r}.'
-    )
+    assert result['error'] == expected_error, f'Expected the {expected_error} refusal, got {result!r}.'
     assert result['worktree_path'] == str(geometry['worktree'])
     assert geometry['worktree'].is_dir(), 'The refusal must leave the worktree on disk.'
     assert _worktree_status_json(geometry).is_file(), (
@@ -449,9 +443,7 @@ class TestCwdGeometryMatrix:
         assert result['error'] == 'cwd_inside_removal_target', result
         assert Path(result['cwd']) == geometry['worktree']
         assert 'change directory out of the worktree' in result['message']
-        assert 'Pass --force' not in result['message'], (
-            'The message must name the remedy, not offer --force as one.'
-        )
+        assert 'Pass --force' not in result['message'], 'The message must name the remedy, not offer --force as one.'
 
 
 class TestContainmentIsNotAStringPrefixTest:
@@ -489,9 +481,7 @@ class TestContainmentIsNotAStringPrefixTest:
 
         result = _remove(geometry)
 
-        assert result['status'] == 'success', (
-            f'A sibling path is not inside the removal target, got {result!r}.'
-        )
+        assert result['status'] == 'success', f'A sibling path is not inside the removal target, got {result!r}.'
         assert result['action'] == 'removed'
         assert not geometry['worktree'].exists()
 
@@ -523,9 +513,7 @@ class TestNeitherRefusalIsForceOverridable:
 
         _assert_refused(result, geometry, expected_error)
 
-    def test_force_still_removes_from_a_cwd_outside_the_target(
-        self, geometry: dict[str, Path]
-    ) -> None:
+    def test_force_still_removes_from_a_cwd_outside_the_target(self, geometry: dict[str, Path]) -> None:
         """Matched control: ``--force`` is not being neutered, only not being a bypass.
 
         Without this, the two refusals above would be equally consistent with
@@ -549,9 +537,7 @@ class TestArchivedPlanReachability:
     predicate accepts.
     """
 
-    def test_an_archived_plan_is_removable_through_the_structural_probe(
-        self, geometry: dict[str, Path]
-    ) -> None:
+    def test_an_archived_plan_is_removable_through_the_structural_probe(self, geometry: dict[str, Path]) -> None:
         """Positive: archived record on main, worktree present ⇒ removal proceeds.
 
         Before the fallback existed the resolver's refusal ended the verb here, so the
@@ -581,8 +567,7 @@ class TestArchivedPlanReachability:
             'The archived record lives on main and must be untouched by the removal.'
         )
         assert result['branch'] == _BRANCH, (
-            'The archived route must resolve the branch name, not fall through to an '
-            f'empty one; got {result!r}.'
+            f'The archived route must resolve the branch name, not fall through to an empty one; got {result!r}.'
         )
         assert 'branch_warning' not in result, (
             f'The branch was deletable here, so nothing should be warned about: {result!r}.'
@@ -593,9 +578,7 @@ class TestArchivedPlanReachability:
             'is why the archived route shipped skipping the delete in silence.'
         )
 
-    def test_a_plan_still_resident_in_its_worktree_is_still_refused(
-        self, geometry: dict[str, Path]
-    ) -> None:
+    def test_a_plan_still_resident_in_its_worktree_is_still_refused(self, geometry: dict[str, Path]) -> None:
         """Negative control: the probe hits, and the guard still refuses.
 
         The load-bearing half of the pair. The probe reaches the SAME worktree as the
@@ -611,9 +594,7 @@ class TestArchivedPlanReachability:
 
         _assert_refused(result, geometry, 'plan_dir_not_moved_back')
 
-    def test_the_probe_path_refusal_is_not_force_overridable(
-        self, geometry: dict[str, Path]
-    ) -> None:
+    def test_the_probe_path_refusal_is_not_force_overridable(self, geometry: dict[str, Path]) -> None:
         """``--force`` buys no way past the guard on the probe path either.
 
         Force-independence was established for the metadata resolution path; the probe
@@ -682,9 +663,7 @@ class TestBranchCleanupIsDoneOrReported:
     two different claims, and only the second one is about the defect.
     """
 
-    def test_the_metadata_route_still_deletes_the_branch(
-        self, geometry: dict[str, Path]
-    ) -> None:
+    def test_the_metadata_route_still_deletes_the_branch(self, geometry: dict[str, Path]) -> None:
         """Matched control: the ordinary route is not what the archived fix repaired.
 
         Without it, the archived cell in ``TestArchivedPlanReachability`` is equally
@@ -709,9 +688,7 @@ class TestBranchCleanupIsDoneOrReported:
         assert 'branch_warning' not in result, result
         assert _BRANCH not in _local_branches(geometry['main'])
 
-    def test_an_unresolvable_branch_name_is_reported_not_silently_skipped(
-        self, geometry: dict[str, Path]
-    ) -> None:
+    def test_an_unresolvable_branch_name_is_reported_not_silently_skipped(self, geometry: dict[str, Path]) -> None:
         """The floor: a skip the verb cannot avoid must still be a skip it declares.
 
         The archived record carries no ``worktree_branch`` and the canonical channel
@@ -725,9 +702,7 @@ class TestBranchCleanupIsDoneOrReported:
 
         assert result['status'] == 'success', result
         assert result['action'] == 'removed'
-        assert 'branch' not in result, (
-            f'No name was resolved, so none may be reported as deleted: {result!r}.'
-        )
+        assert 'branch' not in result, f'No name was resolved, so none may be reported as deleted: {result!r}.'
         warning = result.get('branch_warning')
         assert warning, (
             'A success payload that mentions the branch nowhere is indistinguishable '
@@ -759,8 +734,7 @@ def external_base(
     """
     base = (tmp_path / 'external-plan-store').resolve()
     assert base != geometry['main_local'] and not base.is_relative_to(geometry['main']), (
-        'The override base must lie outside the main checkout for the two resolvers '
-        'to name different trees.'
+        'The override base must lie outside the main checkout for the two resolvers to name different trees.'
     )
     base.mkdir()
     monkeypatch.setenv('PLAN_BASE_DIR', str(base))

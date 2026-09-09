@@ -350,9 +350,7 @@ def _strip_cell(value: str) -> str:
     return value.strip().strip('`').strip('*').strip()
 
 
-def _scan_extension_points_table(
-    skill_md: Path, ast_counts: dict[str, int], provider_count: int
-) -> list[dict]:
+def _scan_extension_points_table(skill_md: Path, ast_counts: dict[str, int], provider_count: int) -> list[dict]:
     """Scan the Extension Points table in ``skill_md`` for stale Implementations counts."""
     try:
         text = skill_md.read_text(encoding='utf-8')

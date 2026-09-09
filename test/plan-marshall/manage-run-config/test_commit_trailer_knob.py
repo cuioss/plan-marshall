@@ -170,9 +170,7 @@ def test_set_round_trips_both_halves(plan_context):
     """set persists both halves and a subsequent get reads them back."""
     plan_context.fixture_dir.mkdir(parents=True, exist_ok=True)
 
-    written = run_script(
-        SCRIPT_PATH, 'commit-trailer', 'set', '--name', 'my system', '--email', 'bot@example.org'
-    )
+    written = run_script(SCRIPT_PATH, 'commit-trailer', 'set', '--name', 'my system', '--email', 'bot@example.org')
 
     assert written.success, f'Should succeed: {written.stderr}'
     data = run_script(SCRIPT_PATH, 'commit-trailer', 'get').toon()

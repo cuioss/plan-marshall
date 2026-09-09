@@ -3,7 +3,6 @@
 # ruff: noqa: I001
 """End-to-end regression over a re-entered, multiply-fired, partly-unmeasured, denominated plan."""
 
-
 from __future__ import annotations
 from pathlib import Path
 from typing import Any
@@ -101,10 +100,7 @@ def test_re_entered_row_declares_its_cumulative_vs_last_close_split(plan_context
     # The rendered report reads the row's OWN declaration rather than restating
     # the split from render-site knowledge.
     assert '**Closes**: 2' in scenario['metrics_md']
-    assert (
-        'Cumulative across closes: close_count,duration_seconds,total_tokens,tool_uses.'
-        in scenario['metrics_md']
-    )
+    assert 'Cumulative across closes: close_count,duration_seconds,total_tokens,tool_uses.' in scenario['metrics_md']
     assert 'Latest close only: start_time,end_time.' in scenario['metrics_md']
 
 
@@ -415,12 +411,7 @@ def _measured_context(parsed: dict[str, Any]) -> dict[str, int]:
     Presence-keyed, because that reader signals "not measured" by OMITTING the
     key — for an unmeasured, an unrecognised and an indeterminate cell alike.
     """
-    return {
-        column: row[column]
-        for row in parsed['rows']
-        for column in _CONTEXT_COLUMNS
-        if column in row
-    }
+    return {column: row[column] for row in parsed['rows'] for column in _CONTEXT_COLUMNS if column in row}
 
 
 def _assert_same_measured_context(parsed: dict[str, Any], totals: dict[str, int]) -> None:

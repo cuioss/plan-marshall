@@ -36,9 +36,7 @@ from extension_base import (
 
 from conftest import load_script_module
 
-_disc = load_script_module(
-    'plan-marshall', 'extension-api', 'extension_discovery.py', 'extension_discovery_derivation'
-)
+_disc = load_script_module('plan-marshall', 'extension-api', 'extension_discovery.py', 'extension_discovery_derivation')
 
 
 # =============================================================================

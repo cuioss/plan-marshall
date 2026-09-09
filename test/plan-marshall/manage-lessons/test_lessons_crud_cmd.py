@@ -10,7 +10,6 @@ Its sections, in order:
 * cmd_list --status filter
 """
 
-
 from argparse import Namespace
 from pathlib import Path
 from unittest.mock import patch
@@ -209,6 +208,7 @@ Body content here.
 # =============================================================================
 # Tier 2: cmd_list --status filter
 # =============================================================================
+
 
 class TestCmdListStatusFilter:
     """``cmd_list --status`` filter behaviour."""

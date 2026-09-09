@@ -34,9 +34,7 @@ _BUNDLE = 'plan-marshall'
 _SKILL = 'manage-config'
 _SCRIPT_NAME = 'manage-config.py'
 
-_mod = load_script_module(
-    _BUNDLE, _SKILL, '_cmd_domain_narrow.py', module_name='_cmd_domain_narrow_under_test'
-)
+_mod = load_script_module(_BUNDLE, _SKILL, '_cmd_domain_narrow.py', module_name='_cmd_domain_narrow_under_test')
 cmd_domain_narrow = _mod.cmd_domain_narrow
 
 _mc = load_script_module(_BUNDLE, _SKILL, _SCRIPT_NAME, 'mc_domain_narrow_under_test')
@@ -98,9 +96,7 @@ def _seed(plan_context, plan_id: str, domains: list[str], *, config: dict | None
     plan_dir: Path = plan_context.fixture_dir / 'plans' / plan_id
     plan_dir.mkdir(parents=True, exist_ok=True)
     create_marshal_json(plan_context.fixture_dir, config or _DOMAINS_CONFIG)
-    (plan_dir / 'references.json').write_text(
-        json.dumps({'base_branch': 'main', 'domains': domains}), encoding='utf-8'
-    )
+    (plan_dir / 'references.json').write_text(json.dumps({'base_branch': 'main', 'domains': domains}), encoding='utf-8')
     return plan_dir
 
 
@@ -255,9 +251,7 @@ def test_a_retained_domain_never_carries_an_empty_claimed_by(plan_context):
     retained = set(result['retained'])
     assert 'system' in retained
     assert all(e['claimed_by'] for e in result['provenance'] if e['domain'] in retained)
-    assert {e['domain'] for e in result['provenance'] if not e['claimed_by']} == set(
-        result['dropped']
-    )
+    assert {e['domain'] for e in result['provenance'] if not e['claimed_by']} == set(result['dropped'])
 
 
 # =============================================================================
@@ -265,9 +259,7 @@ def test_a_retained_domain_never_carries_an_empty_claimed_by(plan_context):
 # =============================================================================
 
 
-@pytest.mark.parametrize(
-    'footprint', [_PY_FOOTPRINT, _MD_FOOTPRINT], ids=['glob-hit', 'no-glob-hit']
-)
+@pytest.mark.parametrize('footprint', [_PY_FOOTPRINT, _MD_FOOTPRINT], ids=['glob-hit', 'no-glob-hit'])
 def test_narrowing_is_a_strict_subset(plan_context, footprint):
     """Retained is a subset of the pre-narrowing set, and partitions it with dropped."""
     _seed(plan_context, 'dn-subset', _CONFIGURED_DOMAINS)
@@ -360,9 +352,7 @@ def test_report_line_is_emitted_on_both_outcomes(plan_context, domains, footprin
     ],
     ids=['absent', 'malformed', 'key-missing', 'key-not-a-list'],
 )
-def test_could_not_evaluate_returns_error_not_an_empty_narrowing(
-    plan_context, references_body, expected_error
-):
+def test_could_not_evaluate_returns_error_not_an_empty_narrowing(plan_context, references_body, expected_error):
     """An unreadable domain set is an error, never a success with nothing dropped."""
     plan_dir: Path = plan_context.fixture_dir / 'plans' / 'dn-unreadable'
     plan_dir.mkdir(parents=True, exist_ok=True)
@@ -592,9 +582,7 @@ def test_an_all_blank_persisted_footprint_still_refuses_to_narrow(plan_context):
     non-empty enough to pass the ``footprint_empty`` guard while matching no glob,
     which would drop every glob-only domain on evidence that matches nothing.
     """
-    _seed_with_footprint(
-        plan_context, 'dn-blank-footprint', _CONFIGURED_DOMAINS, ['   ', '\t', '\n', '']
-    )
+    _seed_with_footprint(plan_context, 'dn-blank-footprint', _CONFIGURED_DOMAINS, ['   ', '\t', '\n', ''])
 
     result = cmd_domain_narrow(_ns_without_flag('dn-blank-footprint'))
 

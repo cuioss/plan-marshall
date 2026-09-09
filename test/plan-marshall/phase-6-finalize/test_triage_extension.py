@@ -93,9 +93,7 @@ def test_resolve_triage_extension_javascript(plan_context):
         },
     )
 
-    result = run_script(
-        SCRIPT_PATH, 'resolve-workflow-skill-extension', '--domain', 'javascript', '--type', 'triage'
-    )
+    result = run_script(SCRIPT_PATH, 'resolve-workflow-skill-extension', '--domain', 'javascript', '--type', 'triage')
     assert result.success, f'Script failed: {result.stderr}'
     data = parse_toon(result.stdout)
     assert data['status'] == 'success'

@@ -45,9 +45,7 @@ class TestThresholdVerdictAcrossFormats:
             'jest-low-fails',
         ],
     )
-    def test_threshold_verdict(
-        self, fixture_name, fmt, expected_passed, expected_message_fragment
-    ):
+    def test_threshold_verdict(self, fixture_name, fmt, expected_passed, expected_message_fragment):
         """A report parses cleanly and its verdict matches its coverage level."""
         result = parse_coverage_report(FIXTURES_DIR / fixture_name, fmt, threshold=80)
         assert result['status'] == 'success'
@@ -224,9 +222,7 @@ class TestFindReport:
         ],
         ids=['jacoco-xml', 'cobertura-xml', 'jest-json'],
     )
-    def test_explicit_path_resolves_and_auto_detects_its_format(
-        self, report_name, expected_fmt
-    ):
+    def test_explicit_path_resolves_and_auto_detects_its_format(self, report_name, expected_fmt):
         """An existing explicit path is returned with its format auto-detected.
 
         The three cases enumerate every format ``find_report`` detects from a
@@ -295,9 +291,7 @@ class TestThresholdChecking:
             'zero-threshold-passes-any-coverage',
         ],
     )
-    def test_threshold_comparison_at_the_boundary(
-        self, fixture_name, fmt, threshold, expected_passed
-    ):
+    def test_threshold_comparison_at_the_boundary(self, fixture_name, fmt, threshold, expected_passed):
         """The comparison is ``>=``, pinned from both sides of the boundary.
 
         ``jacoco-high.xml`` is 100% line coverage against a threshold of 100, so

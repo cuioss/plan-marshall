@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the manifest-aware forward in ``check-artifact-consistency.py``."""
 
-
 from __future__ import annotations
 
 from _plan_retrospective_fixtures import build_happy_plan_dir

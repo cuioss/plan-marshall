@@ -82,8 +82,14 @@ def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
 #: to module scope because ``parse_ns`` re-executes the script module on every
 #: call, and ``register=False`` because only the namespace is wanted here.
 _WHICH_MODULE_ARGS = parse_ns(
-    _ARCH_BUNDLE, _ARCH_SKILL, _ARCH_SCRIPT,
-    '--project-dir', '.', 'which-module', '--path', '.',
+    _ARCH_BUNDLE,
+    _ARCH_SKILL,
+    _ARCH_SCRIPT,
+    '--project-dir',
+    '.',
+    'which-module',
+    '--path',
+    '.',
     register=False,
 )
 

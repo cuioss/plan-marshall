@@ -47,9 +47,7 @@ from _gate_coverage import (
 #: Every analysis kind the limit registry characterises. Several tests need to
 #: declare a scope that covers all of them (so no clause fires) or all-but-one (so
 #: exactly one does); spelling the set out per test would let the two drift.
-ALL_DIMENSIONS = frozenset(
-    {'mypy(production)', 'mypy(test)', 'ruff', 'SPDX headers', 'plugin-doctor', 'module-tests'}
-)
+ALL_DIMENSIONS = frozenset({'mypy(production)', 'mypy(test)', 'ruff', 'SPDX headers', 'plugin-doctor', 'module-tests'})
 
 # ---------------------------------------------------------------------------
 # Freshness — classify_check_duration (D4, both directions)
@@ -297,9 +295,7 @@ def test_structural_limits_are_derived_from_the_dimensions_actually_checked():
     limit block.
     """
     narrow = structural_limits(['ruff [marketplace/bundles]'])
-    wide = structural_limits(
-        ['ruff [marketplace/bundles]', 'module-tests [whole-tree pytest]']
-    )
+    wide = structural_limits(['ruff [marketplace/bundles]', 'module-tests [whole-tree pytest]'])
 
     assert [stem for stem, _ in narrow] == ['ruff']
     assert [stem for stem, _ in wide] == ['ruff', 'module-tests']
@@ -419,9 +415,7 @@ def test_the_three_uncovered_clauses_are_distinct_and_imply_different_remedies()
     boundary = CoverageBoundary()
     boundary.record_checked('ruff [marketplace/bundles/thin]')
     boundary.record_checked('SPDX headers [marketplace/bundles/thin]')
-    boundary.record_empty_scope(
-        'mypy(production)', 'marketplace/bundles/thin — nothing survives the excludes'
-    )
+    boundary.record_empty_scope('mypy(production)', 'marketplace/bundles/thin — nothing survives the excludes')
 
     summary = render_coverage_summary(
         boundary,
@@ -559,9 +553,7 @@ def test_an_empty_scope_record_is_not_an_affirmative_coverage_signal():
     boundary.record_empty_scope('mypy(production)', 'thin-bundle — nothing survives the excludes')
 
     assert boundary.complete is False
-    summary = render_coverage_summary(
-        boundary, frozenset({'mypy(production)'}), frozenset({'mypy(production)'})
-    )
+    summary = render_coverage_summary(boundary, frozenset({'mypy(production)'}), frozenset({'mypy(production)'}))
 
     assert 'UNKNOWN' in summary
     assert 'COMPLETE' not in summary

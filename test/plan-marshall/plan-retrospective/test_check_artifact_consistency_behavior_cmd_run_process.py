@@ -6,7 +6,6 @@ how the presence of a manifest downgrades a warning without forwarding an
 inconclusive one.
 """
 
-
 from __future__ import annotations
 
 import json
@@ -64,9 +63,7 @@ class TestCmdRunInProcess:
         plan_dir = tmp_path / 'plan'
         plan_dir.mkdir()
         (plan_dir / 'solution_outline.md').write_text(_outline(), encoding='utf-8')
-        (plan_dir / 'references.json').write_text(
-            json.dumps({'modified_files': []}), encoding='utf-8'
-        )
+        (plan_dir / 'references.json').write_text(json.dumps({'modified_files': []}), encoding='utf-8')
         (plan_dir / 'metrics.md').write_text('# Metrics\n', encoding='utf-8')
         tasks = plan_dir / 'tasks'
         tasks.mkdir()
@@ -80,8 +77,7 @@ class TestCmdRunInProcess:
         assert exact['status'] == 'inconclusive'
         assert result['affected_files_exact_match']['status'] == 'inconclusive'
         assert any(
-            f['severity'] == 'warning' and 'substantiates no verdict' in f['message']
-            for f in result['findings']
+            f['severity'] == 'warning' and 'substantiates no verdict' in f['message'] for f in result['findings']
         )
 
     def test_manifest_present_does_not_forward_inconclusive(self, tmp_path):
@@ -91,9 +87,7 @@ class TestCmdRunInProcess:
         plan_dir = tmp_path / 'plan'
         plan_dir.mkdir()
         (plan_dir / 'solution_outline.md').write_text(_outline(), encoding='utf-8')
-        (plan_dir / 'references.json').write_text(
-            json.dumps({'modified_files': []}), encoding='utf-8'
-        )
+        (plan_dir / 'references.json').write_text(json.dumps({'modified_files': []}), encoding='utf-8')
         (plan_dir / 'metrics.md').write_text('# Metrics\n', encoding='utf-8')
         tasks = plan_dir / 'tasks'
         tasks.mkdir()
@@ -110,9 +104,7 @@ class TestCmdRunInProcess:
     def test_exact_match_warn_drives_warning_finding_without_manifest(self, tmp_path):
         plan_dir = tmp_path / 'plan'
         plan_dir.mkdir()
-        (plan_dir / 'solution_outline.md').write_text(
-            _outline(affected=['src/a.py', 'src/b.py']), encoding='utf-8'
-        )
+        (plan_dir / 'solution_outline.md').write_text(_outline(affected=['src/a.py', 'src/b.py']), encoding='utf-8')
         # References list a different file → exact-match drift (warn).
         (plan_dir / 'references.json').write_text(
             json.dumps({'modified_files': ['src/a.py', 'src/c.py']}), encoding='utf-8'
@@ -127,10 +119,7 @@ class TestCmdRunInProcess:
         exact = _check(result['checks'], 'affected_files_exact_match')
         assert exact['status'] == 'warn'
         assert result['affected_files_exact_match']['forwarded_to_manifest'] is False
-        assert any(
-            f['severity'] == 'warning' and 'mismatch' in f['message'].lower()
-            for f in result['findings']
-        )
+        assert any(f['severity'] == 'warning' and 'mismatch' in f['message'].lower() for f in result['findings'])
 
     def test_unresolvable_footprint_yields_inconclusive_from_both_peers(self, tmp_path):
         """The deleted-worktree shape: no footprint resolves, so neither peer measures.
@@ -141,9 +130,7 @@ class TestCmdRunInProcess:
         """
         plan_dir = tmp_path / 'plan'
         plan_dir.mkdir()
-        (plan_dir / 'solution_outline.md').write_text(
-            _outline(affected=['src/a.py', 'src/b.py']), encoding='utf-8'
-        )
+        (plan_dir / 'solution_outline.md').write_text(_outline(affected=['src/a.py', 'src/b.py']), encoding='utf-8')
         # No references.json at all → no resolution tier answers (unresolvable).
         (plan_dir / 'metrics.md').write_text('# Metrics\n', encoding='utf-8')
         tasks = plan_dir / 'tasks'
@@ -156,9 +143,7 @@ class TestCmdRunInProcess:
         assert _check(result['checks'], 'affected_files_exact_match')['status'] == 'inconclusive'
 
         unresolvable = [
-            f
-            for f in result['findings']
-            if f['severity'] == 'warning' and 'could not be resolved' in f['message']
+            f for f in result['findings'] if f['severity'] == 'warning' and 'could not be resolved' in f['message']
         ]
         assert len(unresolvable) == 2, (
             f'Expected one warning finding per affected_files_* peer, got {result["findings"]}'
@@ -171,9 +156,7 @@ class TestCmdRunInProcess:
         """``warn`` is counted too — the repaired map covers every emitted status."""
         plan_dir = tmp_path / 'plan'
         plan_dir.mkdir()
-        (plan_dir / 'solution_outline.md').write_text(
-            _outline(affected=['src/a.py', 'src/b.py']), encoding='utf-8'
-        )
+        (plan_dir / 'solution_outline.md').write_text(_outline(affected=['src/a.py', 'src/b.py']), encoding='utf-8')
         (plan_dir / 'references.json').write_text(
             json.dumps({'modified_files': ['src/a.py', 'src/c.py']}), encoding='utf-8'
         )
@@ -190,9 +173,7 @@ class TestCmdRunInProcess:
     def test_manifest_present_downgrades_warn_to_info(self, tmp_path):
         plan_dir = tmp_path / 'plan'
         plan_dir.mkdir()
-        (plan_dir / 'solution_outline.md').write_text(
-            _outline(affected=['src/a.py', 'src/b.py']), encoding='utf-8'
-        )
+        (plan_dir / 'solution_outline.md').write_text(_outline(affected=['src/a.py', 'src/b.py']), encoding='utf-8')
         (plan_dir / 'references.json').write_text(
             json.dumps({'modified_files': ['src/a.py', 'src/c.py']}), encoding='utf-8'
         )
@@ -246,9 +227,7 @@ class TestRecallFindingSeveritySplit:
     def _measured_failure_plan(cls, plan_dir: Path) -> None:
         """Resolved footprint covering 1 of 3 declared files → measured 33% fail."""
         cls._scaffold(plan_dir, _outline(affected=['src/a.py', 'src/b.py', 'src/c.py']))
-        (plan_dir / 'references.json').write_text(
-            json.dumps({'modified_files': ['src/a.py']}), encoding='utf-8'
-        )
+        (plan_dir / 'references.json').write_text(json.dumps({'modified_files': ['src/a.py']}), encoding='utf-8')
 
     @classmethod
     def _unmeasurable_plan(cls, plan_dir: Path) -> None:
@@ -298,13 +277,10 @@ class TestRecallFindingSeveritySplit:
         self._unmeasurable_plan(unmeasurable_dir)
 
         measured_status, measured_severity = _recall_verdict(_cac.cmd_run(_run_args(measured_dir)))
-        unmeasurable_status, unmeasurable_severity = _recall_verdict(
-            _cac.cmd_run(_run_args(unmeasurable_dir))
-        )
+        unmeasurable_status, unmeasurable_severity = _recall_verdict(_cac.cmd_run(_run_args(unmeasurable_dir)))
 
         assert measured_status != unmeasurable_status, (
-            'The two plans must reach DIFFERENT recall statuses, or the severity '
-            'comparison below asserts nothing'
+            'The two plans must reach DIFFERENT recall statuses, or the severity comparison below asserts nothing'
         )
         assert measured_severity != unmeasurable_severity, (
             f'A measured recall {measured_status!r} and an unmeasurable '

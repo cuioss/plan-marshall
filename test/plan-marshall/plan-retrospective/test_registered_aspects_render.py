@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Registered ⇒ rendered completeness guard for the retrospective report pipeline."""
 
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -143,8 +142,12 @@ class TestConditionalFragmentActuallyRenders:
             'posture': 'standard',
             'planning_lane': 'deep',
             'mis_prune_checks': [
-                {'check': 'mis_prune:sonar-roundtrip', 'status': 'pass',
-                 'predicate': 'no_code_delta', 'detail': 'step ran'},
+                {
+                    'check': 'mis_prune:sonar-roundtrip',
+                    'status': 'pass',
+                    'predicate': 'no_code_delta',
+                    'detail': 'step ran',
+                },
             ],
             'cost_preview': {
                 'execution_log_tokens': 123,
@@ -163,23 +166,19 @@ class TestConditionalFragmentActuallyRenders:
         # fragment MUST be judged renderable. Without the carve-out this returns
         # False and the section is silently dropped despite its SECTION_SPEC row.
         fragment = self._routing_decisions_fragment()
-        assert _cr.should_emit('routing-decisions', 'routing-decisions',
-                               {'routing-decisions': fragment}) is True
+        assert _cr.should_emit('routing-decisions', 'routing-decisions', {'routing-decisions': fragment}) is True
 
     def test_routing_decisions_section_renders_in_document(self):
         # End-to-end: build a document from the real fragment shape and assert the
         # "Routing Decisions" section actually appears in the compiled report.
         heading = next(
-            (h for h, fragment_key, _trigger in _rs.SECTION_SPEC
-             if fragment_key == 'routing-decisions'),
+            (h for h, fragment_key, _trigger in _rs.SECTION_SPEC if fragment_key == 'routing-decisions'),
             None,
         )
         assert heading is not None, 'routing-decisions must have a SECTION_SPEC row (D1)'
 
-        fragments = {'_meta': {'mode': 'live'},
-                     'routing-decisions': self._routing_decisions_fragment()}
-        content, _written, _omitted, _dropped = _cr.build_document(
-            'p', 'live', Path('/tmp/plan'), None, fragments)
+        fragments = {'_meta': {'mode': 'live'}, 'routing-decisions': self._routing_decisions_fragment()}
+        content, _written, _omitted, _dropped = _cr.build_document('p', 'live', Path('/tmp/plan'), None, fragments)
         assert f'## {heading}' in content, (
             'routing-decisions has a SECTION_SPEC row but its real (findings-less) '
             'fragment shape is rejected by should_emit — the section never renders'
@@ -239,8 +238,7 @@ class TestChatHistoryAnalysisRenders:
 
     def test_tier1_fragment_renders_section(self):
         fragments = {'_meta': {'mode': 'live'}, _CHAT_HISTORY_KEY: self._tier1_fragment()}
-        content, _written, _omitted, _dropped = _cr.build_document(
-            'p', 'live', Path('/tmp/plan'), None, fragments)
+        content, _written, _omitted, _dropped = _cr.build_document('p', 'live', Path('/tmp/plan'), None, fragments)
         assert f'## {_CHAT_HISTORY_HEADING}' in content
 
     def test_tier2_skipped_fragment_renders_section_and_warning(self):
@@ -253,8 +251,7 @@ class TestChatHistoryAnalysisRenders:
         before the guard.
         """
         fragments = {'_meta': {'mode': 'live'}, _CHAT_HISTORY_KEY: self._tier2_fragment()}
-        content, _written, _omitted, _dropped = _cr.build_document(
-            'p', 'live', Path('/tmp/plan'), None, fragments)
+        content, _written, _omitted, _dropped = _cr.build_document('p', 'live', Path('/tmp/plan'), None, fragments)
         assert f'## {_CHAT_HISTORY_HEADING}' in content, (
             'The Tier-2 status:skipped chat-history fragment must still render — its '
             'warning finding is required to be visible in the compiled report. A '
@@ -265,9 +262,7 @@ class TestChatHistoryAnalysisRenders:
     def test_should_emit_true_for_skipped_fragment(self):
         """Function-level pin on the pre-guard placement."""
         fragment = self._tier2_fragment()
-        assert _cr.should_emit(
-            _CHAT_HISTORY_HEADING, _CHAT_HISTORY_KEY, {_CHAT_HISTORY_KEY: fragment}
-        ) is True
+        assert _cr.should_emit(_CHAT_HISTORY_HEADING, _CHAT_HISTORY_KEY, {_CHAT_HISTORY_KEY: fragment}) is True
 
     def test_should_emit_false_for_skipped_fragment_without_findings(self):
         """The carve-out is bounded — it does not blanket-admit every skip.
@@ -276,13 +271,12 @@ class TestChatHistoryAnalysisRenders:
         surface, so it falls through to the ordinary status guard.
         """
         fragment = {'status': 'skipped', 'aspect': 'chat_history_analysis', 'findings': []}
-        assert _cr.should_emit(
-            _CHAT_HISTORY_HEADING, _CHAT_HISTORY_KEY, {_CHAT_HISTORY_KEY: fragment}
-        ) is False
+        assert _cr.should_emit(_CHAT_HISTORY_HEADING, _CHAT_HISTORY_KEY, {_CHAT_HISTORY_KEY: fragment}) is False
 
     def test_other_sections_gating_is_unchanged(self):
         """The branch keys on its own trigger_key — no other section is affected."""
         skipped_other = {'status': 'skipped', 'findings': [{'severity': 'warning', 'message': 'x'}]}
-        assert _cr.should_emit(
-            'Artifact Consistency', 'artifact-consistency', {'artifact-consistency': skipped_other}
-        ) is False
+        assert (
+            _cr.should_emit('Artifact Consistency', 'artifact-consistency', {'artifact-consistency': skipped_other})
+            is False
+        )

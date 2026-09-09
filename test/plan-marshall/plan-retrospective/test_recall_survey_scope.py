@@ -25,12 +25,7 @@ from _plan_retrospective_fixtures import build_happy_plan_dir
 from conftest import MARKETPLACE_ROOT, run_script
 
 SCRIPT_PATH = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'plan-retrospective'
-    / 'scripts'
-    / 'check-artifact-consistency.py'
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'scripts' / 'check-artifact-consistency.py'
 )
 
 _SURVEY_OUTLINE = """# Solution: Demo
@@ -60,8 +55,8 @@ Overview text goes here.
 #: The same form, plus ONE survey bullet carrying an explicit non-read marker.
 #: The heading supplies ``read`` as a DEFAULT; an explicit annotation must win.
 _MARKED_SURVEY_OUTLINE = _SURVEY_OUTLINE.replace(
-    "- `src/surveyed_only.py`\n",
-    "- `src/surveyed_only.py`\n- `src/marked.py` (write-replace)\n",
+    '- `src/surveyed_only.py`\n',
+    '- `src/surveyed_only.py`\n- `src/marked.py` (write-replace)\n',
 )
 
 
@@ -192,9 +187,7 @@ def test_an_unparseable_survey_declaration_fails_loudly_not_silently(tmp_path, m
     assert 'no bullet parsed' in check['message']
 
 
-def test_an_explicitly_marked_survey_bullet_reaches_the_recall_denominator(
-    tmp_path, monkeypatch
-):
+def test_an_explicitly_marked_survey_bullet_reaches_the_recall_denominator(tmp_path, monkeypatch):
     """The heading supplies a DEFAULT intent; it never overrides a stated one.
 
     ``references/artifact-consistency.md`` states this as the design ("the

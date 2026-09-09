@@ -82,9 +82,7 @@ def test_pr_prepare_body_malformed_plan_id_caught_by_subcommand_validator(axis, 
         bad_value,
         cwd=tmp_path,
     )
-    assert 'invalid_plan_id' in result.stdout, (
-        f'Expected invalid_plan_id in TOON output, got: {result.stdout!r}'
-    )
+    assert 'invalid_plan_id' in result.stdout, f'Expected invalid_plan_id in TOON output, got: {result.stdout!r}'
     assert 'routing_flag_after_subcommand' not in result.stdout, (
         f'Routing guard MUST NOT fire on subcommand-level --plan-id: {result.stdout!r}'
     )
@@ -135,9 +133,7 @@ def test_pr_prepare_body_with_router_project_dir_and_subcommand_plan_id_caught_b
         'BAD!ID',
         cwd=tmp_path,
     )
-    assert 'invalid_plan_id' in result.stdout, (
-        f'Expected invalid_plan_id in TOON output, got: {result.stdout!r}'
-    )
+    assert 'invalid_plan_id' in result.stdout, f'Expected invalid_plan_id in TOON output, got: {result.stdout!r}'
     assert 'routing_flag_after_subcommand' not in result.stdout, (
         f'Routing guard MUST NOT fire on subcommand-level --plan-id: {result.stdout!r}'
     )

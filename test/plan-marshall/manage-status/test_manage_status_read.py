@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for manage-status.py read: status, phase set/update, and progress."""
 
-
 from argparse import Namespace
 
 from _manage_status_read_fixtures import cmd_create, cmd_progress, cmd_read, cmd_set_phase, cmd_update_phase

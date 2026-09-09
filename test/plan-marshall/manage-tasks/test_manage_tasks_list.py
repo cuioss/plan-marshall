@@ -132,9 +132,7 @@ def test_list_filter_ready(plan_context):
 def test_list_surfaces_failed_count(plan_context):
     """List command includes failed count in counts."""
     add_basic_task(plan_id='list-fail-count', title='Task', deliverable=1, steps=['src/main/java/File.java'])
-    cmd_finalize_step(
-        _finalize_step_ns(plan_id='list-fail-count', task=1, step=1, outcome='failed', reason='Broke')
-    )
+    cmd_finalize_step(_finalize_step_ns(plan_id='list-fail-count', task=1, step=1, outcome='failed', reason='Broke'))
 
     result = cmd_list(Namespace(plan_id='list-fail-count', status='all', deliverable=None, ready=False))
 

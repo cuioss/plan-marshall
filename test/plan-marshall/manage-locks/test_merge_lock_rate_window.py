@@ -7,7 +7,6 @@ ONE review bot's rate window, co-tenanting the merge-lock store — and for the
 window elapses.
 """
 
-
 from __future__ import annotations
 
 import json
@@ -168,9 +167,7 @@ class TestStoreIsolationFromTheMergeMutex:
 class TestDegradedState:
     @pytest.mark.parametrize('junk', ['not-a-mapping', 42, ['a', 'b']])
     def test_corrupt_rate_windows_value_is_rebuilt(self, isolated_base: dict, junk: object) -> None:
-        isolated_base['queue_path'].write_text(
-            json.dumps({'waiting': [], 'rate_windows': junk}), encoding='utf-8'
-        )
+        isolated_base['queue_path'].write_text(json.dumps({'waiting': [], 'rate_windows': junk}), encoding='utf-8')
 
         result = _claim('plan-a')
 
@@ -234,8 +231,15 @@ class TestRateWindowCli:
         the shipped value and would agree with any number at all.
         """
         result = run_script(
-            SCRIPT_PATH, 'rate-window', 'claim',
-            '--plan-id', 'plan-a', '--bot-kind', 'coderabbit', '--pr-number', '42',
+            SCRIPT_PATH,
+            'rate-window',
+            'claim',
+            '--plan-id',
+            'plan-a',
+            '--bot-kind',
+            'coderabbit',
+            '--pr-number',
+            '42',
             env_overrides={'PLAN_BASE_DIR': str(isolated_base['base'])},
         )
 
@@ -264,8 +268,13 @@ class TestRateWindowCli:
         against a counter that belonged to nothing.
         """
         result = run_script(
-            SCRIPT_PATH, 'rate-window', 'claim',
-            '--plan-id', 'plan-a', '--bot-kind', 'coderabbit',
+            SCRIPT_PATH,
+            'rate-window',
+            'claim',
+            '--plan-id',
+            'plan-a',
+            '--bot-kind',
+            'coderabbit',
             env_overrides={'PLAN_BASE_DIR': str(isolated_base['base'])},
         )
 
@@ -279,8 +288,13 @@ class TestRateWindowCli:
     def test_check_refuses_a_missing_pr_number(self, isolated_base: dict) -> None:
         """``check`` counts against the caller's PR too, so it refuses identically."""
         result = run_script(
-            SCRIPT_PATH, 'rate-window', 'check',
-            '--plan-id', 'plan-a', '--bot-kind', 'coderabbit',
+            SCRIPT_PATH,
+            'rate-window',
+            'check',
+            '--plan-id',
+            'plan-a',
+            '--bot-kind',
+            'coderabbit',
             env_overrides={'PLAN_BASE_DIR': str(isolated_base['base'])},
         )
 
@@ -298,8 +312,13 @@ class TestRateWindowCli:
         RETAINING whatever count is stored and so has no PR to count against.
         """
         result = run_script(
-            SCRIPT_PATH, 'rate-window', 'release',
-            '--plan-id', 'plan-a', '--bot-kind', 'coderabbit',
+            SCRIPT_PATH,
+            'rate-window',
+            'release',
+            '--plan-id',
+            'plan-a',
+            '--bot-kind',
+            'coderabbit',
             env_overrides={'PLAN_BASE_DIR': str(isolated_base['base'])},
         )
 
@@ -349,9 +368,7 @@ def _poll_delay(min_seconds: float = 300.0, max_seconds: float = 1200.0) -> dict
     — never the ones the SHIPPED command line supplies when a caller omits the
     flags. Those are asserted in :class:`TestPollDelayCli`.
     """
-    result: dict = merge_lock.run_poll_delay(
-        Namespace(min_seconds=min_seconds, max_seconds=max_seconds)
-    )
+    result: dict = merge_lock.run_poll_delay(Namespace(min_seconds=min_seconds, max_seconds=max_seconds))
     return result
 
 
@@ -394,9 +411,7 @@ class TestPollDelayInjectionSeam:
 
         assert seen == [(45.0, 90.0)]
 
-    def test_the_default_draw_delegates_to_random_uniform(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_the_default_draw_delegates_to_random_uniform(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """``rng=None`` means ``random.uniform``, over the caller's own bounds.
 
         Asserted deterministically rather than inferred from the sample below: the
@@ -463,16 +478,14 @@ class TestPollDelayBoundsRefusals:
     @pytest.mark.parametrize(
         ('min_seconds', 'max_seconds'),
         [
-            (float('nan'), 1200.0),   # NaN floor — neither negative nor inverted
-            (300.0, float('nan')),    # NaN ceiling — the same hole, from the other side
-            (300.0, float('inf')),    # +inf ceiling — a perfectly well-ordered pair
-            (float('inf'), 1200.0),   # +inf floor — inverted, but caught here first
+            (float('nan'), 1200.0),  # NaN floor — neither negative nor inverted
+            (300.0, float('nan')),  # NaN ceiling — the same hole, from the other side
+            (300.0, float('inf')),  # +inf ceiling — a perfectly well-ordered pair
+            (float('inf'), 1200.0),  # +inf floor — inverted, but caught here first
             (float('-inf'), 1200.0),  # -inf floor — negative, but caught here first
         ],
     )
-    def test_non_finite_bounds_are_refused(
-        self, min_seconds: float, max_seconds: float
-    ) -> None:
+    def test_non_finite_bounds_are_refused(self, min_seconds: float, max_seconds: float) -> None:
         """Neither sibling refusal below can see the first two cases.
 
         ``nan`` compares False against every bound, so it is neither negative nor
@@ -564,9 +577,7 @@ class TestPollDelayBoundsRefusals:
 
 
 class TestPollDelayCli:
-    def test_shipped_default_bounds_are_five_to_twenty_minutes(
-        self, tmp_path: Path
-    ) -> None:
+    def test_shipped_default_bounds_are_five_to_twenty_minutes(self, tmp_path: Path) -> None:
         """Omitting both flags must yield the 300-1200 second range.
 
         The literals are the assertion. Every sibling test derives its bounds from
@@ -574,7 +585,8 @@ class TestPollDelayCli:
         test that names the numbers can fail when the numbers are wrong.
         """
         result = run_script(
-            SCRIPT_PATH, 'poll-delay',
+            SCRIPT_PATH,
+            'poll-delay',
             env_overrides={'PLAN_BASE_DIR': str(tmp_path)},
         )
 
@@ -606,7 +618,9 @@ class TestPollDelayCli:
         is a property of the parser's option set rather than of this verb.
         """
         result = run_script(
-            SCRIPT_PATH, 'poll-delay', '--min-seconds=-300',
+            SCRIPT_PATH,
+            'poll-delay',
+            '--min-seconds=-300',
             env_overrides={'PLAN_BASE_DIR': str(tmp_path)},
         )
 
@@ -624,7 +638,10 @@ class TestPollDelayCli:
         place the flag set is real.
         """
         result = run_script(
-            SCRIPT_PATH, 'poll-delay', '--plan-id', 'plan-a',
+            SCRIPT_PATH,
+            'poll-delay',
+            '--plan-id',
+            'plan-a',
             env_overrides={'PLAN_BASE_DIR': str(tmp_path)},
         )
 

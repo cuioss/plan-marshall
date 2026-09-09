@@ -7,16 +7,13 @@ python domain's arch-gate verify-step append fires. Tier 2 (direct import):
 loads the bundle extension.py and inspects provides_arch_gate() directly.
 """
 
-
 # Import shared infrastructure (conftest.py sets up PYTHONPATH for extension_base).
 from conftest import load_skill_module
 
 
 def _load_extension():
     """Load the pm-dev-python bundle extension.py and return an Extension instance."""
-    module = load_skill_module(
-        'pm-dev-python', 'plan-marshall-plugin', 'extension.py', 'extension_pm_dev_python'
-    )
+    module = load_skill_module('pm-dev-python', 'plan-marshall-plugin', 'extension.py', 'extension_pm_dev_python')
     return module.Extension()
 
 

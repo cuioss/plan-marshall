@@ -52,7 +52,7 @@ def _parse_wait_record(message: str) -> dict[str, str]:
     """Parse a ``[WAIT] k=v k=v ...`` message into its field map."""
     assert message.startswith('[WAIT] '), message
     fields: dict[str, str] = {}
-    for token in message[len('[WAIT] '):].split(' '):
+    for token in message[len('[WAIT] ') :].split(' '):
         key, _sep, value = token.partition('=')
         fields[key] = value
     return fields

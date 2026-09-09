@@ -353,8 +353,8 @@ _REVIEWED_STATES = frozenset({STATE_PARTICIPATED, STATE_PARTICIPATED_BUT_EMPTY})
 
 # Deficit-signal verdicts (D2). A REVIEWER-QUALITY observation about a required
 # reviewer's YIELD, never a merge verdict and never a participation verdict.
-DEFICIT_DEFICIT = 'deficit'            # a required reviewer under-produced vs a baseline
-DEFICIT_CLEAN = 'clean'                # a baseline exists and no required reviewer under-produced
+DEFICIT_DEFICIT = 'deficit'  # a required reviewer under-produced vs a baseline
+DEFICIT_CLEAN = 'clean'  # a baseline exists and no required reviewer under-produced
 DEFICIT_UNASSESSABLE = 'unassessable'  # no baseline reviewer reviewed the diff — evidence neither way
 
 # The compact display buckets for the reviewer-state distribution, in canonical
@@ -468,9 +468,7 @@ def parse_participation(raw: str | None, flag: str = '--participated-bots') -> d
     return proven
 
 
-def parse_stale_participation(
-    raw: str | None, flag: str = '--stale-participation-bots'
-) -> dict[str, str]:
+def parse_stale_participation(raw: str | None, flag: str = '--stale-participation-bots') -> dict[str, str]:
     """Parse the STALE-participation pairs: same shape as participation, no filter.
 
     Pair-form like :func:`parse_participation`, and it enforces the pair SHAPE the
@@ -574,9 +572,7 @@ def parse_causes(raw: str | None, flag: str = '--refused-causes') -> dict[str, s
     return causes
 
 
-def _refusal_state(
-    rate_limit_class: str, cause: str | None = None, unrecognised: bool = False
-) -> str:
+def _refusal_state(rate_limit_class: str, cause: str | None = None, unrecognised: bool = False) -> str:
     """Map a refusal's observed ``cause`` and the bot's ``rate_limit_class`` to its STATE.
 
     The bot's declared ``rate_limit_class`` is the DEFAULT mapping, and TWO overrides
@@ -685,7 +681,7 @@ def recover_causes_from_caps(
     added to prevent a different one.
     """
     recovered = dict(refused_causes or {})
-    for bot in (refusal_size_caps or {}):
+    for bot in refusal_size_caps or {}:
         recovered.setdefault(bot, CAUSE_SIZE)
     return recovered
 
@@ -893,15 +889,9 @@ def assess_deficit(
       best. Reported as a reviewer-quality bug about that required reviewer.
     """
     required_set = set(required_bots)
-    baseline = [
-        r for r in reviewers
-        if r.get('bot_kind') not in required_set and r.get('reviewed')
-    ]
+    baseline = [r for r in reviewers if r.get('bot_kind') not in required_set and r.get('reviewed')]
     baseline_max = max((int(r.get('finding_count') or 0) for r in baseline), default=0)
-    required_reviewed = [
-        r for r in reviewers
-        if r.get('bot_kind') in required_set and r.get('reviewed')
-    ]
+    required_reviewed = [r for r in reviewers if r.get('bot_kind') in required_set and r.get('reviewed')]
 
     deficit_reviewers: list[dict] = []
     if not baseline:
@@ -911,9 +901,7 @@ def assess_deficit(
             count = int(r.get('finding_count') or 0)
             gap = baseline_max - count
             if gap >= min_deficit:
-                deficit_reviewers.append(
-                    {'bot_kind': r.get('bot_kind'), 'findings': count, 'deficit': gap}
-                )
+                deficit_reviewers.append({'bot_kind': r.get('bot_kind'), 'findings': count, 'deficit': gap})
         verdict = DEFICIT_DEFICIT if deficit_reviewers else DEFICIT_CLEAN
 
     return {
@@ -1360,9 +1348,7 @@ def _emit_toon(payload: dict) -> None:
         emitted['unproven_bots'] = list(unproven)
     states = payload['bot_states']
     if states:
-        emitted['bot_states'] = [
-            {'bot_kind': record['bot_kind'], 'state': record['state']} for record in states
-        ]
+        emitted['bot_states'] = [{'bot_kind': record['bot_kind'], 'state': record['state']} for record in states]
     # The ADR-019 coverage discriminator for the registry-membership test, emitted
     # ONLY when at least one configured token actually failed it. The condition is
     # DERIVED from the states just rendered rather than from a second flag, so the
@@ -1593,9 +1579,7 @@ def _parse_bot_observations(args: argparse.Namespace) -> dict:
         # parse_stale_participation for the full rationale and the rejected
         # raise-instead alternative.
         'stale_participation_bots': list(
-            parse_stale_participation(
-                args.stale_participation_bots, '--stale-participation-bots'
-            )
+            parse_stale_participation(args.stale_participation_bots, '--stale-participation-bots')
         ),
         'declined_bots': _split_bots(args.declined_bots, '--declined-bots'),
         # Shared by BOTH subcommands: the cause is state-determining for ``size``, and
@@ -1609,9 +1593,7 @@ def _parse_bot_observations(args: argparse.Namespace) -> dict:
         # classifier needs only the bot_kind — the layer and excerpt are the operator's
         # remedy, not an input to the member. Shared by both commands because it
         # OVERRIDES the member, exactly as the cause does.
-        'unrecognised_refusal_bots': _split_bots(
-            args.unrecognised_refusal_bots, '--unrecognised-refusal-bots'
-        ),
+        'unrecognised_refusal_bots': _split_bots(args.unrecognised_refusal_bots, '--unrecognised-refusal-bots'),
     }
 
 
@@ -1825,7 +1807,7 @@ def _add_bot_observation_flags(sub: argparse.ArgumentParser) -> None:
         default='',
         help=(
             'Comma-separated bot_kind:cap pairs — the shape github_pr fetch_findings '
-            "emits in refused_size_caps[], forwarded verbatim. cap is the diff-size "
+            'emits in refused_size_caps[], forwarded verbatim. cap is the diff-size '
             "ceiling the bot's OWN refusal notice stated, so a recorded coverage gap "
             'can be reconciled against the diff that was actually refused instead of '
             'being asserted. Sparse by design: a quota refusal states no ceiling and a '
@@ -1844,9 +1826,9 @@ def _add_bot_observation_flags(sub: argparse.ArgumentParser) -> None:
         default='',
         help=(
             'Comma-separated review-bot kinds whose refusal NO arm of the recognition '
-            'stack could read — the bot_kinds from github_pr fetch_findings\' '
+            "stack could read — the bot_kinds from github_pr fetch_findings' "
             'unrecognised_refusal[] records. Supply the bot kinds only; the layer and '
-            'excerpt on those records are the operator\'s remedy, not an input to the '
+            "excerpt on those records are the operator's remedy, not an input to the "
             'member. A bot here resolves to refused_unknown REGARDLESS of its declared '
             'rate_limit_class: an unparsed notice supports no claim about its own '
             'awaitability, so a bot declaring awaitable_window must not be offered a '

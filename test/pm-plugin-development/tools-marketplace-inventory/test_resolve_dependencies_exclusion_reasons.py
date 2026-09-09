@@ -118,6 +118,7 @@ def test_canonical_command_prefixes_mirror_the_manage_config_declaration():
         'The second is the owning declaration; update the mirror to match it.'
     )
 
+
 cmd_validate = _resolve_mod.cmd_validate
 
 
@@ -163,9 +164,7 @@ def test_lsp_dependency_kind_has_no_file_scan_detector(tmp_path):
     bundles = _build_tree(
         tmp_path,
         skill_md=(
-            '---\nname: alpha\ndescription: Alpha skill\n---\n'
-            '# Alpha\n\n'
-            'Run demo-bundle:alpha:alpha to build it.\n'
+            '---\nname: alpha\ndescription: Alpha skill\n---\n# Alpha\n\nRun demo-bundle:alpha:alpha to build it.\n'
         ),
         script_source='def main() -> int:\n    return 0\n',
     )
@@ -173,9 +172,7 @@ def test_lsp_dependency_kind_has_no_file_scan_detector(tmp_path):
     # Control — the SAME tree under the kind that DOES have a detector.
     detected = build_dependency_index(bundles, {DependencyType.SCRIPT_NOTATION})
     detected_rows = [
-        (dep.target.to_notation(), dep.resolved)
-        for deps in detected.forward_deps.values()
-        for dep in deps
+        (dep.target.to_notation(), dep.resolved) for deps in detected.forward_deps.values() for dep in deps
     ]
     assert detected_rows == [('demo-bundle:alpha:alpha', True)], (
         'the fixture no longer carries a notation SCRIPT_NOTATION detects, so the '
@@ -279,12 +276,7 @@ class TestExcludedShapeStillReachesTheIndex:
         )
         index = build_dependency_index(bundles, {DependencyType.SCRIPT_NOTATION})
 
-        targets = {
-            dep.target.to_notation()
-            for deps in index.forward_deps.values()
-            for dep in deps
-            if dep.resolved
-        }
+        targets = {dep.target.to_notation() for deps in index.forward_deps.values() for dep in deps if dep.resolved}
         assert 'demo-bundle:alpha:alpha' in targets
 
     def test_excluded_shape_naming_nothing_is_still_dropped(self, tmp_path):
@@ -305,11 +297,7 @@ class TestExcludedShapeStillReachesTheIndex:
         )
         index = build_dependency_index(bundles, {DependencyType.SCRIPT_NOTATION})
 
-        recorded = {
-            dep.target.to_notation()
-            for deps in index.forward_deps.values()
-            for dep in deps
-        }
+        recorded = {dep.target.to_notation() for deps in index.forward_deps.values() for dep in deps}
         assert 'hostname:8080:api' not in recorded
         assert '1v:beta:gamma' not in recorded
 
@@ -326,9 +314,7 @@ class TestUnresolvedReasonPartition:
     def _dep(bundle: str, *, verb_unregistered: bool = False):
         return Dependency(
             source=_SOURCE,
-            target=ComponentId(
-                bundle=bundle, component_type='script', name='thing', parent_skill='sk'
-            ),
+            target=ComponentId(bundle=bundle, component_type='script', name='thing', parent_skill='sk'),
             dep_type=DependencyType.SCRIPT_NOTATION,
             context='line:1',
             resolved=False,
@@ -365,9 +351,7 @@ class TestUnresolvedReasonPartition:
         produced = {
             unresolved_reason(self._dep('known-bundle'), {'known-bundle'}),
             unresolved_reason(self._dep('other'), {'known-bundle'}),
-            unresolved_reason(
-                self._dep('known-bundle', verb_unregistered=True), {'known-bundle'}
-            ),
+            unresolved_reason(self._dep('known-bundle', verb_unregistered=True), {'known-bundle'}),
         }
         assert produced <= set(UNRESOLVED_REASONS)
         assert set(UNRESOLVED_REASONS) == produced
@@ -385,11 +369,7 @@ class TestValidateEmitsTheFullReasonSet:
         """
         bundles = _build_tree(
             tmp_path,
-            skill_md=(
-                '---\nname: alpha\ndescription: Alpha skill\n---\n'
-                '# Alpha\n\n'
-                'Skill: demo-bundle:no-such-skill\n'
-            ),
+            skill_md=('---\nname: alpha\ndescription: Alpha skill\n---\n# Alpha\n\nSkill: demo-bundle:no-such-skill\n'),
             script_source='def main() -> int:\n    return 0\n',
         )
         index = build_dependency_index(bundles, set(DependencyType))
@@ -451,12 +431,8 @@ def registered_verbs(monkeypatch):
     """
 
     def _install(verbs):
-        monkeypatch.setattr(
-            _dep_index_mod, 'resolve_executor', lambda _root: Path('/nonexistent/executor.py')
-        )
-        monkeypatch.setattr(
-            _dep_index_mod, 'derive_surface', lambda _notation, _executor: _FakeSurface(verbs)
-        )
+        monkeypatch.setattr(_dep_index_mod, 'resolve_executor', lambda _root: Path('/nonexistent/executor.py'))
+        monkeypatch.setattr(_dep_index_mod, 'derive_surface', lambda _notation, _executor: _FakeSurface(verbs))
         monkeypatch.setattr(_dep_index_mod, 'is_derivable', lambda _surface: True)
 
     return _install
@@ -480,9 +456,7 @@ class TestRetargetVerbValidation:
         index = build_dependency_index(bundles, {DependencyType.SCRIPT_NOTATION})
 
         rows = [dep for deps in index.forward_deps.values() for dep in deps]
-        assert [(d.target.to_notation(), d.resolved) for d in rows] == [
-            ('demo-bundle:alpha:alpha', True)
-        ]
+        assert [(d.target.to_notation(), d.resolved) for d in rows] == [('demo-bundle:alpha:alpha', True)]
 
     def test_unregistered_verb_stays_unresolved_and_disclosed(self, tmp_path, registered_verbs):
         """A verb the script does not register is a broken reference, and is kept.
@@ -507,10 +481,7 @@ class TestRetargetVerbValidation:
         assert len(rows) == 1
         assert rows[0].resolved is False
         assert rows[0].verb_unregistered is True
-        assert (
-            unresolved_reason(rows[0], indexed_bundles(index))
-            == UNRESOLVED_REASON_UNREGISTERED_VERB
-        )
+        assert unresolved_reason(rows[0], indexed_bundles(index)) == UNRESOLVED_REASON_UNREGISTERED_VERB
 
     def test_a_non_derivable_surface_abstains(self, tmp_path, monkeypatch):
         """No derivable surface means no evidence, so no finding is manufactured.
@@ -519,12 +490,8 @@ class TestRetargetVerbValidation:
         reporting an unresolved row from a failed probe would name a broken
         reference that is not broken.
         """
-        monkeypatch.setattr(
-            _dep_index_mod, 'resolve_executor', lambda _root: Path('/nonexistent/executor.py')
-        )
-        monkeypatch.setattr(
-            _dep_index_mod, 'derive_surface', lambda _notation, _executor: _FakeSurface(())
-        )
+        monkeypatch.setattr(_dep_index_mod, 'resolve_executor', lambda _root: Path('/nonexistent/executor.py'))
+        monkeypatch.setattr(_dep_index_mod, 'derive_surface', lambda _notation, _executor: _FakeSurface(()))
         monkeypatch.setattr(_dep_index_mod, 'is_derivable', lambda _surface: False)
         bundles = _build_tree(
             tmp_path,
@@ -538,9 +505,7 @@ class TestRetargetVerbValidation:
         index = build_dependency_index(bundles, {DependencyType.SCRIPT_NOTATION})
 
         rows = [dep for deps in index.forward_deps.values() for dep in deps]
-        assert [(d.target.to_notation(), d.resolved) for d in rows] == [
-            ('demo-bundle:alpha:alpha', True)
-        ]
+        assert [(d.target.to_notation(), d.resolved) for d in rows] == [('demo-bundle:alpha:alpha', True)]
 
 
 # =============================================================================

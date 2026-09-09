@@ -512,16 +512,9 @@ def pair_rows(
         _augment(execution_index, set())
 
     matched_execution = {ex: bd for bd, ex in matched_boundary.items()}
-    pairs = [
-        (execution_rows[ex], boundary_rows[bd])
-        for ex, bd in sorted(matched_execution.items())
-    ]
-    unpaired_execution = [
-        row for index, row in enumerate(execution_rows) if index not in matched_execution
-    ]
-    unpaired_boundary = [
-        row for index, row in enumerate(boundary_rows) if index not in matched_boundary
-    ]
+    pairs = [(execution_rows[ex], boundary_rows[bd]) for ex, bd in sorted(matched_execution.items())]
+    unpaired_execution = [row for index, row in enumerate(execution_rows) if index not in matched_execution]
+    unpaired_boundary = [row for index, row in enumerate(boundary_rows) if index not in matched_boundary]
     return pairs, unpaired_execution, unpaired_boundary
 
 
@@ -612,9 +605,7 @@ def reconcile_phase(
             'findings': [],
         }
 
-    pairs, unpaired_execution, unpaired_boundary = pair_rows(
-        execution_rows, boundary_rows, window_seconds
-    )
+    pairs, unpaired_execution, unpaired_boundary = pair_rows(execution_rows, boundary_rows, window_seconds)
     findings = _phase_findings(phase, unpaired_execution, unpaired_boundary, structurally_excluded)
 
     # The two partiality shapes, labelled distinctly from an absent row.

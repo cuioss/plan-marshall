@@ -26,9 +26,7 @@ from argparse import Namespace
 
 from conftest import load_script_module
 
-_lifecycle = load_script_module(
-    'plan-marshall', 'manage-status', '_cmd_lifecycle.py', '_ttrs_lifecycle'
-)
+_lifecycle = load_script_module('plan-marshall', 'manage-status', '_cmd_lifecycle.py', '_ttrs_lifecycle')
 _query = load_script_module('plan-marshall', 'manage-status', '_status_query.py', '_ttrs_query')
 _core = load_script_module('plan-marshall', 'manage-status', '_status_core.py', '_ttrs_core')
 
@@ -64,9 +62,7 @@ def _plan(plan_id):
 
 
 def _set(plan_id, state, owner='build-hook'):
-    return cmd_title_token(
-        Namespace(plan_id=plan_id, token_verb='set', state=state, owner=owner)
-    )
+    return cmd_title_token(Namespace(plan_id=plan_id, token_verb='set', state=state, owner=owner))
 
 
 def _clear(plan_id, owner='build-hook'):
@@ -123,9 +119,7 @@ class TestRepeatSuppression:
         assert result['changed'] is True
         assert len(spy.title_token_lines) == 2
 
-    def test_set_after_the_token_aged_out_emits_a_line_again(
-        self, plan_context, monkeypatch
-    ):
+    def test_set_after_the_token_aged_out_emits_a_line_again(self, plan_context, monkeypatch):
         """An aged token READS as absent, so re-asserting it is a real change.
 
         Staleness is a read-side rule: a record past the threshold is invisible
@@ -164,9 +158,7 @@ class TestSuppressionDoesNotWeakenTheRecord:
 
         result = _set(plan_id, 'build-busy')
         assert result['changed'] is False, 'same pair — the log line is suppressed'
-        assert _read_token(plan_context, plan_id)['set_at'] != aged, (
-            'a suppressed set must still refresh set_at'
-        )
+        assert _read_token(plan_context, plan_id)['set_at'] != aged, 'a suppressed set must still refresh set_at'
 
     def test_suppressed_set_still_returns_the_record(self, plan_context):
         plan_id = _plan('tt-payload')

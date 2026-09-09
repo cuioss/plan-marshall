@@ -153,9 +153,7 @@ def run_verb(tmp_path: Path, monkeypatch) -> Callable[[str], dict[str, Any]]:
     baseline.write_text('\n'.join(BASELINE_FINDINGS) + '\n', encoding='utf-8')
 
     def run(verb: str) -> dict[str, Any]:
-        args = argparse.Namespace(
-            epic=EPIC, budget=BUDGET, tests_before=None, baseline_findings=str(baseline)
-        )
+        args = argparse.Namespace(epic=EPIC, budget=BUDGET, tests_before=None, baseline_findings=str(baseline))
         handler: Any = getattr(entry, f'cmd_{verb}')
         payload: dict[str, Any] = handler(args)
         return payload
@@ -178,11 +176,7 @@ def cited_verb(command: str) -> str:
 
 def declared_tests(source: str) -> set[str]:
     """Every test function declared at module level in ``source``."""
-    return {
-        line[len('def ') :].split('(', 1)[0]
-        for line in source.splitlines()
-        if line.startswith(_TEST_DEF)
-    }
+    return {line[len('def ') :].split('(', 1)[0] for line in source.splitlines() if line.startswith(_TEST_DEF)}
 
 
 def control_groups(source: str) -> dict[str, list[str]]:
@@ -316,9 +310,7 @@ def test_the_control_group_scan_sees_every_test_the_module_declares(controls_sou
     assert scanned == declared
 
 
-def test_every_shipped_control_group_is_named_in_the_injected_controls_section(
-    run_verb, controls_source
-) -> None:
+def test_every_shipped_control_group_is_named_in_the_injected_controls_section(run_verb, controls_source) -> None:
     """The section names every shipped demonstration, not a subset of them.
 
     The forward guard above walks section -> test, so it catches a RENAME or a
@@ -326,10 +318,7 @@ def test_every_shipped_control_group_is_named_in_the_injected_controls_section(
     section does not name. This is the other direction: a control group shipped
     and unnamed makes the section present a partial set as the complete one.
     """
-    named = {
-        row['demonstrated_by'].partition('::')[2]
-        for row in run_verb('report')['injected_controls']
-    }
+    named = {row['demonstrated_by'].partition('::')[2] for row in run_verb('report')['injected_controls']}
 
     groups = control_groups(controls_source)
 
@@ -360,11 +349,7 @@ def test_the_after_figure_is_the_static_count_its_method_names(tmp_path: Path, m
     )
     bind(monkeypatch, epic_dir, repo)
 
-    report = entry.cmd_report(
-        argparse.Namespace(
-            epic=EPIC, budget=BUDGET, tests_before=None, baseline_findings=None
-        )
-    )
+    report = entry.cmd_report(argparse.Namespace(epic=EPIC, budget=BUDGET, tests_before=None, baseline_findings=None))
 
     assert report['test_count']['after'] == expected_after
     assert report['test_count']['method'] == TEST_COUNT_METHOD

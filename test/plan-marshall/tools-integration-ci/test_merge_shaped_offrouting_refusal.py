@@ -193,7 +193,10 @@ _SIDE_EFFECT_SAMPLES: dict[tuple[str, str], list[str]] = {
     ('github', _REFUSE_UNCONFIGURED): ['pr', 'merge', '42', '--auto'],
     ('gitlab', _REFUSE_IMMEDIATE): ['mr', 'merge', '42'],
     ('gitlab', _REFUSE_UNCONFIGURED): [
-        'api', '-X', 'POST', 'projects/octo%2Frepo/merge_trains/merge_requests/42',
+        'api',
+        '-X',
+        'POST',
+        'projects/octo%2Frepo/merge_trains/merge_requests/42',
     ],
 }
 
@@ -223,26 +226,43 @@ def _ok_auth() -> tuple[bool, str]:
 # The GitLab payload carries ``state: merged`` because the same view feeds the
 # GitLab post-merge corroboration re-read.
 _GH_VIEW_PAYLOAD = {
-    'status': 'success', 'operation': 'pr_view', 'pr_number': 42,
-    'pr_url': 'https://github.com/octo/repo/pull/42', 'state': 'open', 'title': 'T',
-    'head_branch': 'feature/x', 'base_branch': 'main', 'is_draft': 'false',
-    'mergeable': 'mergeable', 'merge_state': 'clean',
+    'status': 'success',
+    'operation': 'pr_view',
+    'pr_number': 42,
+    'pr_url': 'https://github.com/octo/repo/pull/42',
+    'state': 'open',
+    'title': 'T',
+    'head_branch': 'feature/x',
+    'base_branch': 'main',
+    'is_draft': 'false',
+    'mergeable': 'mergeable',
+    'merge_state': 'clean',
 }
 _GL_VIEW_PAYLOAD = {
-    'status': 'success', 'operation': 'pr_view', 'pr_number': 42,
-    'pr_url': 'https://gitlab.com/octo/repo/-/merge_requests/42', 'state': 'merged', 'title': 'T',
-    'head_branch': 'feature/x', 'base_branch': 'main', 'is_draft': 'false',
-    'mergeable': 'mergeable', 'merge_state': 'can_be_merged',
+    'status': 'success',
+    'operation': 'pr_view',
+    'pr_number': 42,
+    'pr_url': 'https://gitlab.com/octo/repo/-/merge_requests/42',
+    'state': 'merged',
+    'title': 'T',
+    'head_branch': 'feature/x',
+    'base_branch': 'main',
+    'is_draft': 'false',
+    'mergeable': 'mergeable',
+    'merge_state': 'can_be_merged',
 }
 # The post-merge re-read GitHub corroborates a landed merge from.
 _GH_MERGED_PAYLOAD = {
-    'state': 'MERGED', 'mergedAt': '2026-01-01T00:00:00Z',
-    'baseRefName': 'main', 'headRefOid': 'abc123',
+    'state': 'MERGED',
+    'mergedAt': '2026-01-01T00:00:00Z',
+    'baseRefName': 'main',
+    'headRefOid': 'abc123',
 }
 
 
 def _gh_run_stub(captured: list[list[str]]):
     """A ``run_gh`` stub: merge/auto-merge accepted, post-merge re-read = MERGED."""
+
     def stub(args, capture_json=False, timeout=60):
         captured.append(list(args))
         if args[:2] == ['pr', 'view']:
@@ -262,6 +282,7 @@ def _gl_run_stub(captured: list[list[str]]):
     that still posted would report a successful enqueue, so the refusal cannot
     come from the transport.
     """
+
     def stub(args, capture_json=False, timeout=60):
         captured.append(list(args))
         if args[:3] == ['api', '-X', 'POST']:
@@ -293,8 +314,13 @@ def _namespace_for(verb: str) -> argparse.Namespace:
     """The argparse.Namespace each merge-shaped handler reads, by verb."""
     if verb == 'safe-merge':
         return argparse.Namespace(
-            pr_number=42, head=None, strategy='merge', delete_branch=False,
-            poll_timeout=30, poll_interval=1, admin_merge_on_stuck_state=False,
+            pr_number=42,
+            head=None,
+            strategy='merge',
+            delete_branch=False,
+            poll_timeout=30,
+            poll_interval=1,
+            admin_merge_on_stuck_state=False,
         )
     if verb == 'merge-queue':
         return argparse.Namespace(pr_number=42, head=None)
@@ -320,7 +346,8 @@ def _dispatch(monkeypatch, provider: str, verb: str, handler: str, mode: str) ->
         monkeypatch.setattr(mod, 'get_repo_info', lambda: ('octo', 'repo'))
         monkeypatch.setattr(mod, 'view_pr_data', lambda head=None: dict(_GH_VIEW_PAYLOAD))
         monkeypatch.setattr(
-            mod, '_probe_merge_queue_state',
+            mod,
+            '_probe_merge_queue_state',
             lambda owner, repo, branch: (discriminator, 'probe detail', None, None),
         )
         monkeypatch.setattr(mod, 'run_gh', _gh_run_stub(captured))
@@ -328,7 +355,8 @@ def _dispatch(monkeypatch, provider: str, verb: str, handler: str, mode: str) ->
         monkeypatch.setattr(mod, 'get_project_path', lambda: 'octo/repo')
         monkeypatch.setattr(mod, 'view_pr_data', lambda head=None: dict(_GL_VIEW_PAYLOAD))
         monkeypatch.setattr(
-            mod, '_probe_merge_train_state',
+            mod,
+            '_probe_merge_train_state',
             lambda: (discriminator, 'probe detail', None),
         )
         monkeypatch.setattr(mod, 'run_glab', _gl_run_stub(captured))
@@ -392,7 +420,7 @@ def test_derived_population_is_behaviour_shaped_and_covers_every_provider():
         assert by_provider.get(provider), (
             f'{provider} contributes ZERO merge-shaped members, while the population as a '
             f'whole has {len(_MEMBERS)} ({by_provider}). Both providers register the '
-            'merge-shaped surface, so an empty side means this provider\'s registry or '
+            "merge-shaped surface, so an empty side means this provider's registry or "
             'handler sources stopped resolving — and every parametrized arm below silently '
             'stopped covering it.'
         )
@@ -515,9 +543,7 @@ def test_every_refusal_cell_has_a_side_effect_matcher():
     )
 
 
-@pytest.mark.parametrize(
-    'cell', sorted(_SIDE_EFFECT_ARGV), ids=lambda cell: f'{cell[0]}:{cell[1]}'
-)
+@pytest.mark.parametrize('cell', sorted(_SIDE_EFFECT_ARGV), ids=lambda cell: f'{cell[0]}:{cell[1]}')
 def test_side_effect_matcher_is_falsifiable_and_discriminating(cell):
     """Matched control: each matcher SEES its own side effect and no other cell's.
 
@@ -544,7 +570,7 @@ def test_side_effect_matcher_is_falsifiable_and_discriminating(cell):
         if other_cell == cell:
             continue
         assert not matcher(sample), (
-            f'{cell} matcher also matches {other_cell}\'s argv {sample}. A probe that '
+            f"{cell} matcher also matches {other_cell}'s argv {sample}. A probe that "
             'matches every shape is imprecise rather than vacuous — it would pass an '
             'enqueue verb that performed an immediate merge.'
         )
@@ -603,9 +629,7 @@ def test_offrouting_dispatch_is_refused_at_the_callee(monkeypatch, provider, ver
         f'as the way forward. A refusal that names no routed alternative is a wall: the caller '
         f'learns the dispatch was wrong and not what to dispatch instead. Result: {result}'
     )
-    wrong_verb = _ALTERNATIVE_VERB[
-        _REFUSE_UNCONFIGURED if scenario == _REFUSE_IMMEDIATE else _REFUSE_IMMEDIATE
-    ]
+    wrong_verb = _ALTERNATIVE_VERB[_REFUSE_UNCONFIGURED if scenario == _REFUSE_IMMEDIATE else _REFUSE_IMMEDIATE]
     assert wrong_verb not in message, (
         f'{provider}:{verb} refused an off-routing dispatch but named {wrong_verb!r} as the way '
         f'forward. That routes the caller back into the state just refused. Result: {result}'
@@ -642,8 +666,7 @@ def test_compliant_route_succeeds(monkeypatch, provider, verb, handler):
     """
     result, _captured = _dispatch(monkeypatch, provider, verb, handler, 'compliant')
     assert result.get('status') == 'success', (
-        f'{provider}:{verb} compliant route did not succeed — the guard blocks a sanctioned '
-        f'dispatch. Result: {result}'
+        f'{provider}:{verb} compliant route did not succeed — the guard blocks a sanctioned dispatch. Result: {result}'
     )
     scenario = _SCENARIOS[verb]
     if scenario == _REFUSE_IMMEDIATE:

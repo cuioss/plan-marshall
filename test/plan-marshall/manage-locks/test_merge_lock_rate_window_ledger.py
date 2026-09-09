@@ -16,7 +16,6 @@ Its sections, in order:
 * Migration from the pre-ledger record shape
 """
 
-
 from __future__ import annotations
 
 import json
@@ -37,9 +36,7 @@ from _merge_lock_rate_window_fixtures import (
 # =============================================================================
 
 
-def _write_pre_ledger_record(
-    queue_path: Path, *, pr_number: object, attempts: int, holder: str = ''
-) -> None:
+def _write_pre_ledger_record(queue_path: Path, *, pr_number: object, attempts: int, holder: str = '') -> None:
     """Persist a rate-window record in the shape written BEFORE the ledger existed.
 
     Hand-built rather than produced by the code under test, and that is the point: a
@@ -89,9 +86,7 @@ def _spend_the_cap(base: Path, plan_id: str, pr_number: int) -> int:
 
 
 class TestCapSurvivesAWindowTakeover:
-    def test_an_exhausted_pr_stays_refused_after_another_pr_claims_the_window(
-        self, isolated_base: dict
-    ) -> None:
+    def test_an_exhausted_pr_stays_refused_after_another_pr_claims_the_window(self, isolated_base: dict) -> None:
         """The regression this ledger exists for.
 
         With one counter per ``bot_kind``, the second PR's claim OVERWRITES the first
@@ -115,9 +110,7 @@ class TestCapSurvivesAWindowTakeover:
         assert refused['reason'] == 'recovery_cap_exhausted'
         assert refused['attempts'] == cap
 
-    def test_check_still_reports_the_displaced_prs_spent_budget(
-        self, isolated_base: dict
-    ) -> None:
+    def test_check_still_reports_the_displaced_prs_spent_budget(self, isolated_base: dict) -> None:
         """``check`` agrees with the ``claim`` above — the read-before-act invariant.
 
         A consumer polls ``check`` before deciding to recover. Were the takeover to
@@ -134,9 +127,7 @@ class TestCapSurvivesAWindowTakeover:
         assert displaced['attempts_for_pr'] == cap, displaced
         assert displaced['attempts_remaining'] == 0
 
-    def test_a_pr_that_never_claimed_still_gets_a_full_budget(
-        self, isolated_base: dict
-    ) -> None:
+    def test_a_pr_that_never_claimed_still_gets_a_full_budget(self, isolated_base: dict) -> None:
         """Matched positive control: the ledger PRESERVES counts, it does not invent them.
 
         A fix that merely stopped resetting — carrying the previous PR's count forward
@@ -154,9 +145,7 @@ class TestCapSurvivesAWindowTakeover:
         assert fresh['attempts'] == 1
         assert fresh['attempts_remaining'] == fresh['attempt_cap'] - 1
 
-    def test_every_claimed_prs_count_is_persisted_beside_the_record(
-        self, isolated_base: dict
-    ) -> None:
+    def test_every_claimed_prs_count_is_persisted_beside_the_record(self, isolated_base: dict) -> None:
         """The survival above is a STORED fact, not an in-memory one.
 
         Every verb reads the store fresh, so a count that survived only within one
@@ -194,17 +183,13 @@ class TestCapSurvivesAWindowTakeover:
 
 
 class TestPreLedgerRecordMigration:
-    def test_a_pre_ledger_record_keeps_its_attempts_for_its_own_pr(
-        self, isolated_base: dict
-    ) -> None:
+    def test_a_pre_ledger_record_keeps_its_attempts_for_its_own_pr(self, isolated_base: dict) -> None:
         """An upgrade must not hand an already-exhausted PR a fresh budget.
 
         The count in a pre-ledger record belongs to that record's own ``pr_number``,
         so it is seeded into the ledger under that key rather than discarded.
         """
-        _write_pre_ledger_record(
-            isolated_base['queue_path'], pr_number=101, attempts=_LEGACY_SPENT
-        )
+        _write_pre_ledger_record(isolated_base['queue_path'], pr_number=101, attempts=_LEGACY_SPENT)
 
         observed = _check('plan-a', pr_number=101, attempt_cap=_LEGACY_SPENT)
 
@@ -212,33 +197,25 @@ class TestPreLedgerRecordMigration:
         assert observed['attempts_remaining'] == 0
         assert _claim('plan-a', pr_number=101, attempt_cap=_LEGACY_SPENT)['status'] == 'refused'
 
-    def test_a_pre_ledger_record_grants_a_different_pr_a_fresh_budget(
-        self, isolated_base: dict
-    ) -> None:
+    def test_a_pre_ledger_record_grants_a_different_pr_a_fresh_budget(self, isolated_base: dict) -> None:
         """Matched negative control: the seeding is scoped to the record's own PR.
 
         Seeding the legacy count under every PR would refuse a PR that never claimed.
         """
-        _write_pre_ledger_record(
-            isolated_base['queue_path'], pr_number=101, attempts=_LEGACY_SPENT
-        )
+        _write_pre_ledger_record(isolated_base['queue_path'], pr_number=101, attempts=_LEGACY_SPENT)
 
         fresh = _claim('plan-a', pr_number=202, attempt_cap=_LEGACY_SPENT)
 
         assert fresh['status'] == 'success', fresh
         assert fresh['attempts'] == 1
 
-    def test_the_seeded_count_then_survives_a_takeover_like_any_other(
-        self, isolated_base: dict
-    ) -> None:
+    def test_the_seeded_count_then_survives_a_takeover_like_any_other(self, isolated_base: dict) -> None:
         """Migration and the takeover fix have to hold TOGETHER.
 
         Seeding alone is not enough: a seeded count that the next PR's claim then
         overwrote would reopen the same bypass one claim later.
         """
-        _write_pre_ledger_record(
-            isolated_base['queue_path'], pr_number=101, attempts=_LEGACY_SPENT
-        )
+        _write_pre_ledger_record(isolated_base['queue_path'], pr_number=101, attempts=_LEGACY_SPENT)
         _claim('plan-a', pr_number=202, attempt_cap=_LEGACY_SPENT)
         _release('plan-a')
 
@@ -247,26 +224,20 @@ class TestPreLedgerRecordMigration:
         assert refused['status'] == 'refused', refused
         assert refused['reason'] == 'recovery_cap_exhausted'
 
-    def test_an_unattributable_count_blocks_nobody_and_is_still_published(
-        self, isolated_base: dict
-    ) -> None:
+    def test_an_unattributable_count_blocks_nobody_and_is_still_published(self, isolated_base: dict) -> None:
         """A record with no readable ``pr_number`` has no PR to charge its count to.
 
         There is nothing to seed, so the count constrains no caller — but it is still
         surfaced as the raw stored ``attempts`` rather than silently zeroed, because a
         reader inspecting a degraded store needs to see what is actually in it.
         """
-        _write_pre_ledger_record(
-            isolated_base['queue_path'], pr_number='not-an-int', attempts=_LEGACY_SPENT
-        )
+        _write_pre_ledger_record(isolated_base['queue_path'], pr_number='not-an-int', attempts=_LEGACY_SPENT)
 
         observed = _check('plan-a', pr_number=101, attempt_cap=_LEGACY_SPENT)
 
         assert observed['attempts'] == _LEGACY_SPENT, observed
         assert observed['attempts_for_pr'] == 0
-        assert (
-            _claim('plan-a', pr_number=101, attempt_cap=_LEGACY_SPENT)['status'] == 'success'
-        )
+        assert _claim('plan-a', pr_number=101, attempt_cap=_LEGACY_SPENT)['status'] == 'success'
 
     @pytest.mark.parametrize(
         'junk',

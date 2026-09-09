@@ -22,7 +22,6 @@ that ran and legitimately found nothing — the confident empty answer this
 substrate exists to eliminate.
 """
 
-
 from extension_base import DerivationResolverBase, ExtensionBase
 
 from conftest import load_script_module, load_skill_module
@@ -41,9 +40,7 @@ def _load_extension():
     ``extension``, so a distinct ``module_name`` is passed to avoid the
     cross-bundle ``import extension`` collision.
     """
-    module = load_skill_module(
-        'plan-marshall', 'plan-marshall-plugin', 'extension.py', 'extension_plan_marshall_lsp'
-    )
+    module = load_skill_module('plan-marshall', 'plan-marshall-plugin', 'extension.py', 'extension_plan_marshall_lsp')
     return module.Extension()
 
 
@@ -70,9 +67,7 @@ def test_host_still_declares_only_the_general_dev_domain():
     opposite one: the domain list is exactly what it was before the fold, and
     multiple inheritance did not disturb it.
     """
-    assert [entry['domain']['key'] for entry in _load_extension().get_skill_domains()] == [
-        'general-dev'
-    ]
+    assert [entry['domain']['key'] for entry in _load_extension().get_skill_domains()] == ['general-dev']
 
 
 def test_derives_edge_from_lsp_reference():
@@ -398,9 +393,7 @@ def _patch_domain_extensions(monkeypatch, *modules):
     monkeypatch.setattr(
         _discovery,
         'discover_all_extensions',
-        lambda: [
-            {'bundle': f'bundle-{i}', 'path': '', 'module': m} for i, m in enumerate(modules)
-        ],
+        lambda: [{'bundle': f'bundle-{i}', 'path': '', 'module': m} for i, m in enumerate(modules)],
     )
     monkeypatch.setattr(_discovery, 'discover_build_extensions', lambda: [])
 

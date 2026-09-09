@@ -8,7 +8,6 @@ flags are covered in the operation-level tests; this module pins the pure
 reduction mechanics.
 """
 
-
 from __future__ import annotations
 
 import json
@@ -70,9 +69,7 @@ _EXTRACT_TEXT_IDS = [
 
 
 class TestExtractText:
-    @pytest.mark.parametrize(
-        ('content', 'expected'), _EXTRACT_TEXT_CASES, ids=_EXTRACT_TEXT_IDS
-    )
+    @pytest.mark.parametrize(('content', 'expected'), _EXTRACT_TEXT_CASES, ids=_EXTRACT_TEXT_IDS)
     def test_content_extracts_to_its_text(self, content, expected):
         """Every content shape extracts to text, and an unknown one to nothing."""
         assert _mod.extract_text(content) == expected
@@ -86,9 +83,7 @@ class TestExtractText:
 #: The decision markers, written out as an INDEPENDENT oracle rather than read
 #: back from the module under test. See
 #: ``test_the_marker_tuple_is_the_pinned_literal`` for why.
-_MARKER_ORACLE = (
-    '[STATUS]', '[ERROR]', 'AskUserQuestion', '[DECISION]', '[DISPATCH]', '[SKILL]'
-)
+_MARKER_ORACLE = ('[STATUS]', '[ERROR]', 'AskUserQuestion', '[DECISION]', '[DISPATCH]', '[SKILL]')
 
 #: ``(role, turn text, whether the turn is kept)``. The two roles are filtered by
 #: DIFFERENT rules, and the rows show both: a ``user`` turn is kept when it is
@@ -121,9 +116,7 @@ _SIGNAL_BEARING_IDS = [
 
 
 class TestIsSignalBearing:
-    @pytest.mark.parametrize(
-        ('role', 'text', 'kept'), _SIGNAL_BEARING_CASES, ids=_SIGNAL_BEARING_IDS
-    )
+    @pytest.mark.parametrize(('role', 'text', 'kept'), _SIGNAL_BEARING_CASES, ids=_SIGNAL_BEARING_IDS)
     def test_the_predicate_filters_by_provenance_and_content(self, role, text, kept):
         """Retention is decided by what the turn carries, never by its role alone."""
         assert _mod.is_signal_bearing(role, text) is kept

@@ -50,7 +50,7 @@ def test_default_skill_roots_match_what_the_default_target_resolves() -> None:
     """
     resolved = marketplace_paths._invoke_layout_op(marketplace_paths._default_runtime_target())
 
-    assert resolved is not None, "the layout op must be reachable from the checkout"
+    assert resolved is not None, 'the layout op must be reachable from the checkout'
     assert resolved == marketplace_paths._DEFAULT_SKILL_ROOTS
 
 
@@ -77,10 +77,10 @@ def test_default_bundle_cache_roots_match_what_the_default_target_resolves() -> 
         pytest.skip("no resolvable home directory; the op's raw Path.home() cannot run")
 
     resolved = marketplace_paths._invoke_layout_op(
-        marketplace_paths._default_runtime_target(), "layout_bundle_cache_root"
+        marketplace_paths._default_runtime_target(), 'layout_bundle_cache_root'
     )
 
-    assert resolved is not None, "the layout op must be reachable from the checkout"
+    assert resolved is not None, 'the layout op must be reachable from the checkout'
     assert resolved == marketplace_paths._DEFAULT_BUNDLE_CACHE_ROOTS
 
 
@@ -100,7 +100,7 @@ def test_the_registry_is_not_empty() -> None:
     assert _REGISTERED_TARGETS
 
 
-@pytest.mark.parametrize("target", _REGISTERED_TARGETS, ids=_REGISTERED_TARGETS)
+@pytest.mark.parametrize('target', _REGISTERED_TARGETS, ids=_REGISTERED_TARGETS)
 def test_every_registered_target_resolves_a_bundle_cache_root(target: str) -> None:
     """``layout_bundle_cache_root`` resolves for every registered target, not just the default.
 
@@ -109,9 +109,9 @@ def test_every_registered_target_resolves_a_bundle_cache_root(target: str) -> No
     remembering, and a target whose implementation raised is caught here rather
     than only wherever else it happens to be exercised.
     """
-    roots = marketplace_paths._invoke_layout_op(target, "layout_bundle_cache_root")
+    roots = marketplace_paths._invoke_layout_op(target, 'layout_bundle_cache_root')
 
-    assert roots, f"{target}: layout_bundle_cache_root resolved nothing ({roots!r})"
+    assert roots, f'{target}: layout_bundle_cache_root resolved nothing ({roots!r})'
 
 
 def test_layout_op_resolves_each_registered_target_distinctly() -> None:
@@ -131,14 +131,11 @@ def test_layout_op_resolves_each_registered_target_distinctly() -> None:
     present. It fires visibly at target-add time, which is the right moment to
     replace distinctness with a per-target assertion.
     """
-    resolved = {
-        target: marketplace_paths._invoke_layout_op(target)
-        for target in platform_runtime._REGISTRY
-    }
+    resolved = {target: marketplace_paths._invoke_layout_op(target) for target in platform_runtime._REGISTRY}
 
     assert all(roots is not None for roots in resolved.values()), resolved
     assert len(set(resolved.values())) == len(resolved), (
-        f"two registered targets resolved to identical roots: {resolved}"
+        f'two registered targets resolved to identical roots: {resolved}'
     )
 
 
@@ -150,9 +147,9 @@ def test_unregistered_target_resolves_to_the_default_targets_roots() -> None:
     channel, so it answers with the default rather than failing. The answer is
     the same one the module's own fallback constant carries.
     """
-    assert "no-such-target" not in platform_runtime._REGISTRY
+    assert 'no-such-target' not in platform_runtime._REGISTRY
 
-    resolved = marketplace_paths._invoke_layout_op("no-such-target")
+    resolved = marketplace_paths._invoke_layout_op('no-such-target')
 
     assert resolved == marketplace_paths._DEFAULT_SKILL_ROOTS
 
@@ -167,45 +164,27 @@ def test_d4_fake_target_derives_through_all_three_dicts() -> None:
     """
     _saved = dict(platform_runtime._TARGET_RECORDS)
     try:
-        platform_runtime._TARGET_RECORDS["__red_fake"] = {
-            "runtime_class": object,
-            "bootstrap_libs": ("fake-lib",),
-            "default": False,
+        platform_runtime._TARGET_RECORDS['__red_fake'] = {
+            'runtime_class': object,
+            'bootstrap_libs': ('fake-lib',),
+            'default': False,
         }
-        reg = {
-            name: rec["runtime_class"]
-            for name, rec in platform_runtime._TARGET_RECORDS.items()
-        }
-        libs = {
-            name: rec["bootstrap_libs"]
-            for name, rec in platform_runtime._TARGET_RECORDS.items()
-        }
-        default = next(
-            name for name, rec in platform_runtime._TARGET_RECORDS.items()
-            if rec.get("default")
-        )
-        assert "__red_fake" in reg
-        assert reg["__red_fake"] is object
-        assert libs["__red_fake"] == ("fake-lib",)
-        assert default == "claude"  # default unchanged
+        reg = {name: rec['runtime_class'] for name, rec in platform_runtime._TARGET_RECORDS.items()}
+        libs = {name: rec['bootstrap_libs'] for name, rec in platform_runtime._TARGET_RECORDS.items()}
+        default = next(name for name, rec in platform_runtime._TARGET_RECORDS.items() if rec.get('default'))
+        assert '__red_fake' in reg
+        assert reg['__red_fake'] is object
+        assert libs['__red_fake'] == ('fake-lib',)
+        assert default == 'claude'  # default unchanged
     finally:
         platform_runtime._TARGET_RECORDS.clear()
         platform_runtime._TARGET_RECORDS.update(_saved)
 
     # Also verify production values match the derivation from _TARGET_RECORDS
     # (not independently maintained).
-    prod_reg = {
-        name: rec["runtime_class"]
-        for name, rec in platform_runtime._TARGET_RECORDS.items()
-    }
-    prod_libs = {
-        name: rec["bootstrap_libs"]
-        for name, rec in platform_runtime._TARGET_RECORDS.items()
-    }
-    prod_default = next(
-        name for name, rec in platform_runtime._TARGET_RECORDS.items()
-        if rec.get("default")
-    )
+    prod_reg = {name: rec['runtime_class'] for name, rec in platform_runtime._TARGET_RECORDS.items()}
+    prod_libs = {name: rec['bootstrap_libs'] for name, rec in platform_runtime._TARGET_RECORDS.items()}
+    prod_default = next(name for name, rec in platform_runtime._TARGET_RECORDS.items() if rec.get('default'))
     assert prod_reg == dict(platform_runtime._REGISTRY)
     assert prod_libs == dict(platform_runtime._TARGET_BOOTSTRAP_LIBS)
     assert prod_default == platform_runtime._DEFAULT_TARGET
@@ -219,13 +198,13 @@ def test_d3_fake_target_appears_in_unknown_target_message() -> None:
     """
     _saved = dict(platform_runtime._REGISTRY)
     try:
-        platform_runtime._REGISTRY["__red_fake_d3"] = object  # type: ignore[assignment]
+        platform_runtime._REGISTRY['__red_fake_d3'] = object  # type: ignore[assignment]
         from claude_runtime import ClaudeRuntime
 
         rt = ClaudeRuntime()
-        result = rt.project_initial_setup("/nonexistent", "__red_fake_d3")
-        assert "__red_fake_d3" in result
-        assert "valid targets are:" in result
+        result = rt.project_initial_setup('/nonexistent', '__red_fake_d3')
+        assert '__red_fake_d3' in result
+        assert 'valid targets are:' in result
     finally:
         platform_runtime._REGISTRY.clear()
         platform_runtime._REGISTRY.update(_saved)

@@ -247,11 +247,7 @@ def _list_finding_files_in(store: FindingsStore) -> list[Path]:
     findings_dir = store.path
     if findings_dir is None or not findings_dir.is_dir():
         return []
-    return [
-        findings_dir / f'{t}.jsonl'
-        for t in FINDING_TYPES
-        if (findings_dir / f'{t}.jsonl').exists()
-    ]
+    return [findings_dir / f'{t}.jsonl' for t in FINDING_TYPES if (findings_dir / f'{t}.jsonl').exists()]
 
 
 def _update_in_finding_files(store: FindingsStore, hash_id: str, updates: dict[str, Any]) -> bool:
@@ -333,8 +329,8 @@ def _not_found(
             'use_verb': elsewhere['verb'],
             'message': (
                 f'{label} not found in the plan-findings store: {hash_id} exists in '
-                f"{elsewhere['store']}, which this verb does not own — use "
-                f"`{elsewhere['verb']}` instead"
+                f'{elsewhere["store"]}, which this verb does not own — use '
+                f'`{elsewhere["verb"]}` instead'
             ),
             **store_state_fields(store),
         }
@@ -440,9 +436,7 @@ def _resolve_preference_admissibility(enabled: bool) -> PreferenceAdmissibility:
     if not enabled:
         return PreferenceAdmissibility(enabled=False, recognized=None, basis=None)
     recognized = _recognized_bot_kinds()
-    basis = (
-        PREFERENCE_BASIS_PRESENCE_ONLY if recognized is None else PREFERENCE_BASIS_RECOGNIZED
-    )
+    basis = PREFERENCE_BASIS_PRESENCE_ONLY if recognized is None else PREFERENCE_BASIS_RECOGNIZED
     return PreferenceAdmissibility(enabled=True, recognized=recognized, basis=basis)
 
 
@@ -751,9 +745,7 @@ def query_findings_unified(
     qgate_findings: list[dict[str, Any]] = []
     qgate_total = 0
     for phase in QGATE_PHASES:
-        records = query_qgate_findings(
-            plan_id, phase, resolution='pending', any_checkout=any_checkout
-        )['findings']
+        records = query_qgate_findings(plan_id, phase, resolution='pending', any_checkout=any_checkout)['findings']
         qgate_total += len(records)
         qgate_findings.extend(
             _narrow_to_preference_admissible(
@@ -900,10 +892,7 @@ def resolve_findings_by_type(
 
     type_set = set(finding_types)
     records = query_findings(plan_id)['findings']
-    matched = [
-        r for r in records
-        if r.get('type') in type_set and r.get('resolution') == from_resolution
-    ]
+    matched = [r for r in records if r.get('type') in type_set and r.get('resolution') == from_resolution]
 
     base_updates: dict[str, Any] = {'resolution': to_resolution}
     if detail:
@@ -1164,9 +1153,7 @@ def add_qgate_finding_checked(
     :data:`QGATE_PERSIST_OK` — so the refusal arrives here through the existing
     rejection path with the store's own message attached.
     """
-    result = add_qgate_finding(
-        plan_id, phase, source, finding_type, title, detail, **kwargs
-    )
+    result = add_qgate_finding(plan_id, phase, source, finding_type, title, detail, **kwargs)
     if result.get('status') not in QGATE_PERSIST_OK:
         return None, {'title': title, 'detail': detail, 'message': str(result.get('message', ''))}
     return result.get('hash_id'), None

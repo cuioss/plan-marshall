@@ -165,9 +165,7 @@ def test_every_derived_member_carries_a_disposition_row():
     )
 
     undispositioned = [
-        member
-        for member in population
-        if not any(member.endswith(heading) for heading in dispositioned)
+        member for member in population if not any(member.endswith(heading) for heading in dispositioned)
     ]
     assert not undispositioned, (
         f'{len(undispositioned)} of {len(population)} derived store-resolution '

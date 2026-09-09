@@ -42,9 +42,7 @@ from toon_parser import parse_toon
 
 from conftest import load_script_module
 
-_findings_core = load_script_module(
-    'plan-marshall', 'manage-findings', '_findings_core.py', '_findings_core'
-)
+_findings_core = load_script_module('plan-marshall', 'manage-findings', '_findings_core.py', '_findings_core')
 add_qgate_finding = _findings_core.add_qgate_finding
 query_qgate_findings = _findings_core.query_qgate_findings
 QGATE_PERSIST_OK = _findings_core.QGATE_PERSIST_OK
@@ -147,9 +145,7 @@ def _pre_fix_emit_finding(plan_id: str, residual: list[str], threshold: int) -> 
     return False
 
 
-def test_pre_fix_return_contract_cannot_distinguish_a_rejection_from_no_creep(
-    plan_context, monkeypatch, capsys
-):
+def test_pre_fix_return_contract_cannot_distinguish_a_rejection_from_no_creep(plan_context, monkeypatch, capsys):
     """The pre-fix emitter collapsed a lost finding into the no-creep shape.
 
     Contract (b), pinned at the seam that actually carried the defect: the

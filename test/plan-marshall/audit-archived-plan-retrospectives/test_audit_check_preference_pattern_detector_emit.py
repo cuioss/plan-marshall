@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""The ``preference-pattern-detector`` emitted block — its columns and severity.
-"""
+"""The ``preference-pattern-detector`` emitted block — its columns and severity."""
 
 from _audit_fixtures import audit
 
@@ -33,10 +32,7 @@ class TestEmitPreferencePatternBlock:
         assert 'threshold: 3' in block
         assert 'candidate_count: 1' in block
         assert 'genuine_signal_count: 1' in block
-        assert (
-            'rows[1]{module,finding_class,disposition,occurrence_count,plan_ids,severity}:'
-            in block
-        )
+        assert 'rows[1]{module,finding_class,disposition,occurrence_count,plan_ids,severity}:' in block
 
     def test_surfaced_row_is_genuine(self):
         result = {
@@ -55,9 +51,7 @@ class TestEmitPreferencePatternBlock:
 
         block = audit.emit_preference_pattern_block(result)
         row_line = next(
-            ln.strip()
-            for ln in block.splitlines()
-            if ln.strip().startswith('python,magic number,accepted,')
+            ln.strip() for ln in block.splitlines() if ln.strip().startswith('python,magic number,accepted,')
         )
 
         # plan_ids are ;-joined and the row ends in the genuine severity cell

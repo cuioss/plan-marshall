@@ -13,7 +13,6 @@ same rule as it reaches the returned TOON — including that a drop, and ONLY a
 drop, raises the run status to ``warning``.
 """
 
-
 from __future__ import annotations
 
 from _compile_report_fixtures import (

@@ -40,7 +40,6 @@ forbidden needles are additionally assembled from parts rather than written
 verbatim, so this module would pass its own rules even without the exclusion.
 """
 
-
 from __future__ import annotations
 
 import re
@@ -130,16 +129,12 @@ def _verified_return(plan_context, monkeypatch, tmp_path) -> dict:
     _stub_verdict(monkeypatch, {'decision': 'build'})
     _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
     _stub_expected_notations(monkeypatch, _RESOLVED_NOTATIONS)
-    _stub_ledger_path(
-        monkeypatch, _write_ledger(tmp_path, [_build_entry(worktree_sha=_CURRENT_SHA)])
-    )
+    _stub_ledger_path(monkeypatch, _write_ledger(tmp_path, [_build_entry(worktree_sha=_CURRENT_SHA)]))
     verdict: dict = cmd_pre_commit_verify_freshness(Namespace(plan_id=plan_id))
     return verdict
 
 
-def test_the_two_routes_differ_on_the_field_a_consumer_branches_on(
-    plan_context, monkeypatch, tmp_path
-) -> None:
+def test_the_two_routes_differ_on_the_field_a_consumer_branches_on(plan_context, monkeypatch, tmp_path) -> None:
     """The discriminating field is ``status`` — the one every consumer reads.
 
     Asserting only that the two dicts are unequal would pass on an incidental key
@@ -154,9 +149,7 @@ def test_the_two_routes_differ_on_the_field_a_consumer_branches_on(
     assert verified['status'] == 'fresh', verified
 
 
-def test_both_permitting_members_are_reachable_and_are_the_only_ones(
-    plan_context, monkeypatch, tmp_path
-) -> None:
+def test_both_permitting_members_are_reachable_and_are_the_only_ones(plan_context, monkeypatch, tmp_path) -> None:
     """Non-vacuity: both permitting members are REACHED, not merely declared.
 
     A proof that the two differ says nothing if one of them can never be produced.
@@ -176,9 +169,7 @@ def test_both_permitting_members_are_reachable_and_are_the_only_ones(
     )
 
 
-def test_the_exempt_return_carries_no_evidence_it_never_gathered(
-    plan_context, monkeypatch, tmp_path
-) -> None:
+def test_the_exempt_return_carries_no_evidence_it_never_gathered(plan_context, monkeypatch, tmp_path) -> None:
     """The exempt route omits every key the ledger scan would have produced.
 
     The absence is the record: it returns before the sha is computed and before a
@@ -229,8 +220,7 @@ _CODE_BRANCHING_CONSUMERS = (
     'test/plan-marshall/manage-tasks/test_pre_commit_verify_freshness.py',
     'test/plan-marshall/manage-tasks/test_pre_commit_verify_freshness_verdict_and_reason.py',
     'test/plan-marshall/manage-tasks/test_pre_commit_verify_freshness_killed_row.py',
-    'test/plan-marshall/manage-tasks/'
-    'test_pre_commit_verify_freshness_unresolvable_worktree_falls_back_to_cwd.py',
+    'test/plan-marshall/manage-tasks/test_pre_commit_verify_freshness_unresolvable_worktree_falls_back_to_cwd.py',
     'test/plan-marshall/manage-tasks/test_freshness_notation_crosscheck.py',
     'test/plan-marshall/manage-tasks/test_freshness_notation_crosscheck_unrelated_notation.py',
     'test/plan-marshall/manage-execution-manifest/test_plan31_docs_only_deadlock_regression.py',
@@ -253,9 +243,7 @@ _GATE_REFERENCES = ('pre-commit-verify-freshness', 'pre_commit_verify_freshness'
 #: what keeps unrelated ``fresh`` vocabularies out — the merge lock's holder
 #: staleness, the executor's ``marshal_status``, the steward's cache freshness all
 #: compare against ``'fresh'`` and none of them names this gate.
-_STATUS_COMPARISON = re.compile(
-    r"""(?:==|!=|\bin\b)\s*[\(\{\[]?\s*['"](?:exempt|fresh|stale|undecidable)['"]"""
-)
+_STATUS_COMPARISON = re.compile(r"""(?:==|!=|\bin\b)\s*[\(\{\[]?\s*['"](?:exempt|fresh|stale|undecidable)['"]""")
 
 #: Assembled from parts rather than written verbatim so this module satisfies the
 #: rules it enforces, independently of the self-exclusion above.
@@ -445,9 +433,7 @@ def test_an_unobtainable_verdict_degrades_to_build(monkeypatch, label, payload) 
     """Each degradation input yields ``{'decision': 'build'}``, not an exemption."""
     import extension_base
 
-    monkeypatch.setattr(
-        _freshness_mod, '_build_necessity_verdict', _REAL_BUILD_NECESSITY_VERDICT
-    )
+    monkeypatch.setattr(_freshness_mod, '_build_necessity_verdict', _REAL_BUILD_NECESSITY_VERDICT)
 
     def _degrade(*_args, **_kwargs):
         if isinstance(payload, BaseException):
@@ -477,8 +463,7 @@ def test_every_degradation_input_is_exercised() -> None:
     """
     inputs = _degradation_inputs()
     assert len(inputs) == 2, (
-        f'{len(inputs)} degradation input(s) declared; both the raising and the '
-        f'non-dict routes must be exercised'
+        f'{len(inputs)} degradation input(s) declared; both the raising and the non-dict routes must be exercised'
     )
 
 
@@ -516,8 +501,7 @@ def test_the_stale_reason_vocabulary_still_has_exactly_nine_members() -> None:
         f'expectation of 9: {sorted(reasons)}'
     )
     assert 'exempt' not in reasons, (
-        f'the new status member leaked into the stale reason vocabulary of '
-        f'{len(reasons)} member(s)'
+        f'the new status member leaked into the stale reason vocabulary of {len(reasons)} member(s)'
     )
 
 
@@ -534,9 +518,7 @@ def _exercise_undecidable_reasons(plan_context, monkeypatch, tmp_path) -> set[st
     _write_status(plan_context.plan_dir_for(plan_id))
     _stub_verdict(monkeypatch, {'decision': 'build'})
     _stub_worktree_sha(monkeypatch, None)
-    _stub_ledger_path(
-        monkeypatch, _write_ledger(tmp_path, [_build_entry(worktree_sha=_CURRENT_SHA)])
-    )
+    _stub_ledger_path(monkeypatch, _write_ledger(tmp_path, [_build_entry(worktree_sha=_CURRENT_SHA)]))
     verdict = cmd_pre_commit_verify_freshness(Namespace(plan_id=plan_id))
     assert verdict['status'] == 'undecidable', verdict
     observed.add(verdict['reason'])
@@ -552,9 +534,7 @@ def _exercise_undecidable_reasons(plan_context, monkeypatch, tmp_path) -> set[st
     return observed
 
 
-def test_the_undecidable_reason_vocabulary_still_has_exactly_two_members(
-    plan_context, monkeypatch, tmp_path
-) -> None:
+def test_the_undecidable_reason_vocabulary_still_has_exactly_two_members(plan_context, monkeypatch, tmp_path) -> None:
     """Both ``undecidable`` routes are reached, and they report distinct reasons."""
     reasons = _exercise_undecidable_reasons(plan_context, monkeypatch, tmp_path)
 

@@ -6,7 +6,6 @@ precedence between them — and recording each drop against the gate that caused
 with prefixed step keys normalised to bare.
 """
 
-
 from __future__ import annotations
 
 import json
@@ -47,9 +46,7 @@ class TestFootprintResolverFallback:
 
     def test_diff_file_absent_recovers_footprint_from_capture(self, tmp_path):
         """No diff-file + realized_footprint present → the predicate re-evaluates."""
-        plan_dir = _build_plan(
-            tmp_path / 'plan', steps=_STEPS_WITHOUT_SONAR, decision_lines=['unrelated line']
-        )
+        plan_dir = _build_plan(tmp_path / 'plan', steps=_STEPS_WITHOUT_SONAR, decision_lines=['unrelated line'])
         self._write_refs(plan_dir, {'realized_footprint': [PRODUCTION_PATH]})
 
         result = _crd.cmd_run(_run_args(plan_dir, None))
@@ -62,9 +59,7 @@ class TestFootprintResolverFallback:
 
     def test_diff_file_absent_and_unresolvable_footprint_skips(self, tmp_path):
         """Negative control: nothing resolvable → SKIP, never a fabricated fail."""
-        plan_dir = _build_plan(
-            tmp_path / 'plan', steps=_STEPS_WITHOUT_SONAR, decision_lines=['unrelated line']
-        )
+        plan_dir = _build_plan(tmp_path / 'plan', steps=_STEPS_WITHOUT_SONAR, decision_lines=['unrelated line'])
         self._write_refs(plan_dir, {'base_branch': 'main'})
 
         result = _crd.cmd_run(_run_args(plan_dir, None))
@@ -76,9 +71,7 @@ class TestFootprintResolverFallback:
 
     def test_diff_file_present_takes_precedence_over_capture(self, tmp_path):
         """An explicit --diff-file wins over the recorded capture."""
-        plan_dir = _build_plan(
-            tmp_path / 'plan', steps=_STEPS_WITHOUT_SONAR, decision_lines=['unrelated line']
-        )
+        plan_dir = _build_plan(tmp_path / 'plan', steps=_STEPS_WITHOUT_SONAR, decision_lines=['unrelated line'])
         # The capture is doc-only (no production) — if it were consulted the predicate
         # would still hold and the check would PASS. The production diff-file must win.
         self._write_refs(plan_dir, {'realized_footprint': ['doc/only.md']})
@@ -115,9 +108,7 @@ class TestResolveRemovalCauses:
 
     def test_lane_resolution_drop_is_recorded_against_its_gate(self):
         """The posture-cutoff drop the reader could previously never see."""
-        causes = _crd.resolve_removal_causes(
-            [LANE_RESOLUTION_LINE, LANE_RESOLUTION_SECOND_STEP_LINE]
-        )
+        causes = _crd.resolve_removal_causes([LANE_RESOLUTION_LINE, LANE_RESOLUTION_SECOND_STEP_LINE])
         assert causes['sonar-roundtrip'] == 'lane_resolution'
         assert causes['plan-retrospective'] == 'lane_resolution'
 
@@ -183,8 +174,7 @@ class TestResolveRemovalCauses:
 
         # Uniqueness: the shared shape cannot capture one (its capture is `\\S+`).
         assert not _crd._DROPPED_RECORD_RE.search(
-            '[STATUS] lane_resolution — dropped '
-            f'{legacy_capture} from phase_6.steps: a reason'
+            f'[STATUS] lane_resolution — dropped {legacy_capture} from phase_6.steps: a reason'
         )
 
     def test_unknown_future_gate_in_the_shared_shape_is_still_a_cause(self):
@@ -229,9 +219,7 @@ class TestResolveRemovalCauses:
         caller tag, so a reconcile line rendered under the compose prefix would be
         reported as a composer decision it never was.
         """
-        line = format_dropped_record(
-            'frozen_manifest_stale', 'sonar-roundtrip', 'a reason', caller=RECONCILE_CALLER
-        )
+        line = format_dropped_record('frozen_manifest_stale', 'sonar-roundtrip', 'a reason', caller=RECONCILE_CALLER)
 
         assert line.startswith(RECONCILE_CALLER)
         assert 'manage-execution-manifest:compose' not in line
@@ -271,9 +259,7 @@ class TestResolveRemovalCauses:
             caller=RECONCILE_CALLER,
         )
 
-        matching = [
-            cause for cause, pattern in _crd._REMOVAL_CAUSE_PATTERNS if pattern.search(live)
-        ]
+        matching = [cause for cause, pattern in _crd._REMOVAL_CAUSE_PATTERNS if pattern.search(live)]
         assert matching == []
         assert _crd._DROPPED_RECORD_RE.search(live) is not None
 

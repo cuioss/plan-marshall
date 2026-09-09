@@ -44,9 +44,7 @@ from _manage_locks_fixtures import _write_lock
 
 from conftest import load_script_module
 
-merge_lock = load_script_module(
-    'plan-marshall', 'manage-locks', 'merge_lock.py', 'merge_lock_sibling_wt_under_test'
-)
+merge_lock = load_script_module('plan-marshall', 'manage-locks', 'merge_lock.py', 'merge_lock_sibling_wt_under_test')
 
 
 @pytest.fixture

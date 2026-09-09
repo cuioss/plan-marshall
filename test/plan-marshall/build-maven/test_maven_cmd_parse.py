@@ -212,9 +212,7 @@ def test_parse_cli_testfailureignore_reports_error_status():
     result = run_script(SCRIPT_PATH, 'parse', '--log', str(log_file))
 
     data = result.toon()
-    assert data.get('status') == 'error', (
-        f'BUILD SUCCESS with errored tests must report error, not success: {data}'
-    )
+    assert data.get('status') == 'error', f'BUILD SUCCESS with errored tests must report error, not success: {data}'
 
 
 # =============================================================================
@@ -277,12 +275,7 @@ def _emit_maven_success(capsys, parser, **result_extra) -> dict:
         'command': './mvnw verify',
         **result_extra,
     }
-    assert (
-        _build_shared.cmd_run_common(
-            cast(DirectCommandResult, result), parser, 'maven', output_format='json'
-        )
-        == 0
-    )
+    assert _build_shared.cmd_run_common(cast(DirectCommandResult, result), parser, 'maven', output_format='json') == 0
     emitted: dict = json.loads(capsys.readouterr().out)
     return emitted
 

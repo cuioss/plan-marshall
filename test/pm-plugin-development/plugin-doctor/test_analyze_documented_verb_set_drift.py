@@ -121,9 +121,7 @@ _GUARD_UNRELATED = "\n\nif __name__ == '__not_main__':\n    main()\n"
 
 #: A guard nested inside a function body. Never executes at import, and says
 #: nothing about how the file is invoked.
-_GUARD_FUNCTION_LOCAL = (
-    "\n\ndef _run() -> None:\n    if __name__ == '__main__':\n        main()\n"
-)
+_GUARD_FUNCTION_LOCAL = "\n\ndef _run() -> None:\n    if __name__ == '__main__':\n        main()\n"
 
 
 def _aliases_script(aliases_expr: str) -> str:
@@ -494,9 +492,9 @@ def test_population_excludes_a_skill_without_a_canonical_block(tmp_path):
         documented=('compose',),
     )
     base = 'plan-marshall/skills/fixture-out-of-scope'
-    files[f'{base}/SKILL.md'] = documented_verb_drift_skill_md(
-        'fixture-out-of-scope', ('classify',)
-    ).replace('## Canonical invocations\n\n', '')
+    files[f'{base}/SKILL.md'] = documented_verb_drift_skill_md('fixture-out-of-scope', ('classify',)).replace(
+        '## Canonical invocations\n\n', ''
+    )
     files[f'{base}/scripts/fixture-out-of-scope.py'] = (
         'import argparse\n\n\n'
         'def main() -> int:\n'
@@ -517,9 +515,7 @@ def test_empty_population_over_a_non_empty_tree_fires(tmp_path):
     Reporting it as zero findings would be a vacuous pass over an unread
     population.
     """
-    skill_md = documented_verb_drift_skill_md('fixture-skill', ()).replace(
-        '## Canonical invocations\n\n', ''
-    )
+    skill_md = documented_verb_drift_skill_md('fixture-skill', ()).replace('## Canonical invocations\n\n', '')
     _materialize(tmp_path, {'plan-marshall/skills/fixture-skill/SKILL.md': skill_md})
 
     findings = analyze(tmp_path)
@@ -555,9 +551,7 @@ def test_empty_population_over_an_empty_tree_is_clean(tmp_path):
 
 
 def _entry_script_files(guard: str) -> dict[str, str]:
-    return documented_verb_drift_files(
-        documented=(), script_source=_script_under_guard(guard)
-    )
+    return documented_verb_drift_files(documented=(), script_source=_script_under_guard(guard))
 
 
 def test_a_not_equal_main_compare_is_not_an_entry_script(tmp_path):
@@ -574,8 +568,7 @@ def test_a_not_equal_main_compare_is_not_an_entry_script(tmp_path):
     _materialize(tmp_path, _entry_script_files(_GUARD_NOT_EQUAL))
 
     assert analyze(tmp_path) == [], (
-        'a module guarded by __name__ != "__main__" is not an entry script and '
-        'must not enter the candidate population'
+        'a module guarded by __name__ != "__main__" is not an entry script and must not enter the candidate population'
     )
 
 
@@ -606,9 +599,7 @@ def test_a_function_local_guard_is_not_an_entry_script(tmp_path):
     """
     _materialize(tmp_path, _entry_script_files(_GUARD_FUNCTION_LOCAL))
 
-    assert analyze(tmp_path) == [], (
-        'a guard nested in a function body is not a module entry point'
-    )
+    assert analyze(tmp_path) == [], 'a guard nested in a function body is not a module entry point'
 
 
 def test_the_reversed_operand_order_is_an_entry_script(tmp_path):
@@ -626,8 +617,7 @@ def test_the_reversed_operand_order_is_an_entry_script(tmp_path):
     findings = analyze(tmp_path)
 
     assert _types(findings) == [TYPE_MISSING_FROM_DOCS], (
-        "'__main__' == __name__ is an entry-point guard and the script must be "
-        f'compared; got {_types(findings)}'
+        f"'__main__' == __name__ is an entry-point guard and the script must be compared; got {_types(findings)}"
     )
     assert _detail(findings, TYPE_MISSING_FROM_DOCS, 'verb') == 'compose'
 
@@ -671,9 +661,7 @@ def test_an_explicitly_registered_and_documented_help_verb_is_not_a_phantom(tmp_
         ),
     )
 
-    assert analyze(tmp_path) == [], (
-        'a registered, documented help subcommand is not a phantom'
-    )
+    assert analyze(tmp_path) == [], 'a registered, documented help subcommand is not a phantom'
 
 
 def test_an_explicitly_registered_undocumented_help_verb_is_reported(tmp_path):

@@ -12,7 +12,6 @@ Its sections, in order:
 * responded-marker lifecycle (the RESPOND idempotency key)
 """
 
-
 from _findings_store_fixtures import (
     add_finding,
     add_qgate_finding,
@@ -115,6 +114,7 @@ def test_query_findings_by_file_pattern(plan_context):
 # Test: pr-comment author / kind first-class fields
 # =============================================================================
 
+
 def test_query_findings_by_author(plan_context):
     """query_findings filters by exact author match."""
     add_finding('store-prc-byauthor', 'pr-comment', 'C1', 'd', author='alice', kind='inline')
@@ -174,8 +174,12 @@ def test_query_findings_unified_filters_qgate_by_author(plan_context):
     """The unified read excludes Q-Gate findings that do not match the author filter."""
     # Q-Gate findings do not carry author; author filter must exclude them from the result.
     add_qgate_finding(
-        'store-qgate-auth-filter', '2-refine', 'qgate', 'pr-comment',
-        'Q-Gate finding without author', 'detail',
+        'store-qgate-auth-filter',
+        '2-refine',
+        'qgate',
+        'pr-comment',
+        'Q-Gate finding without author',
+        'detail',
     )
     add_finding('store-qgate-auth-filter', 'pr-comment', 'Plan finding alice', 'd', author='alice')
 
@@ -191,10 +195,13 @@ def test_query_findings_unified_filters_qgate_by_author(plan_context):
 # Test: pr-comment reviewed_commit_sha / bot_kind first-class fields
 # =============================================================================
 
+
 def test_query_findings_by_bot_kind(plan_context):
     """query_findings filters by exact bot_kind match."""
     add_finding('store-prc-bybotkind', 'pr-comment', 'C1', 'd', author='coderabbitai[bot]', bot_kind='coderabbit')
-    add_finding('store-prc-bybotkind', 'pr-comment', 'C2', 'd', author='cuioss-review-bot[bot]', bot_kind='cuioss-review-bot')
+    add_finding(
+        'store-prc-bybotkind', 'pr-comment', 'C2', 'd', author='cuioss-review-bot[bot]', bot_kind='cuioss-review-bot'
+    )
     add_finding('store-prc-bybotkind', 'pr-comment', 'C3', 'd', author='coderabbitai[bot]', bot_kind='coderabbit')
 
     result = query_findings('store-prc-bybotkind', bot_kind='coderabbit')
@@ -245,6 +252,7 @@ def test_query_findings_unified_filters_by_bot_kind(plan_context):
 # =============================================================================
 # Test: Q-Gate findings
 # =============================================================================
+
 
 def test_query_qgate_findings(plan_context):
     """Test querying Q-Gate findings."""
@@ -314,9 +322,7 @@ def test_resolve_finding_rejected_is_valid(plan_context):
     """
     r = add_finding('store-resolve-rejected', 'sonar-issue', 'Refuted finding', 'Detail')
 
-    result = resolve_finding(
-        'store-resolve-rejected', r['hash_id'], 'rejected', detail='Adversarially refuted'
-    )
+    result = resolve_finding('store-resolve-rejected', r['hash_id'], 'rejected', detail='Adversarially refuted')
 
     assert result['status'] == 'success'
     assert result['resolution'] == 'rejected'

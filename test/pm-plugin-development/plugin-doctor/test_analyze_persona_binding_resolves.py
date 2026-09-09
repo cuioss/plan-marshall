@@ -178,9 +178,7 @@ def test_composition_cycle_triggers_finding(tmp_path):
         root,
         'plan-marshall',
         'persona-x',
-        _persona_body(
-            'persona-x', profiles=['implementation'], composes=['plan-marshall:persona-y']
-        ),
+        _persona_body('persona-x', profiles=['implementation'], composes=['plan-marshall:persona-y']),
     )
     _write_skill(
         root,
@@ -253,12 +251,7 @@ def test_empty_tree_yields_no_findings(tmp_path):
 def test_rule_id_present_in_rule_provenance_table():
     # Arrange
     provenance = (
-        MARKETPLACE_ROOT
-        / 'pm-plugin-development'
-        / 'skills'
-        / 'plugin-doctor'
-        / 'references'
-        / 'rule-provenance.md'
+        MARKETPLACE_ROOT / 'pm-plugin-development' / 'skills' / 'plugin-doctor' / 'references' / 'rule-provenance.md'
     )
 
     # Act

@@ -13,7 +13,6 @@ Its sections, in order:
 * pack_envelopes — determinism
 """
 
-
 from itertools import pairwise
 
 import pytest
@@ -251,9 +250,7 @@ def test_pack_envelope_summary_totals_match_assignments():
     assignments, envelopes = pack_envelopes(tasks, per_envelope_budget_tokens=100)
 
     for env in envelopes:
-        members = [
-            _task_cost(task) for task, eid in assignments if eid == env['envelope_id']
-        ]
+        members = [_task_cost(task) for task, eid in assignments if eid == env['envelope_id']]
         assert env['task_count'] == len(members)
         assert env['total_cost_tokens'] == sum(members)
 

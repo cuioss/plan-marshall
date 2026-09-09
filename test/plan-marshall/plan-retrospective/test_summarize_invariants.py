@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for ``summarize-invariants.py``."""
 
-
 from __future__ import annotations
 
 import json

@@ -6,7 +6,6 @@
 Scope: that ``restore-from-plan --help`` names every restore action.
 """
 
-
 import sys
 import pytest
 from conftest import load_script_module

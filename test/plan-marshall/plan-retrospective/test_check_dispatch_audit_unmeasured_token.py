@@ -14,14 +14,11 @@ plan directory: the classification is a property of the token record alone, and
 the surrounding plan state is not what is under test.
 """
 
-
 from __future__ import annotations
 
 from conftest import load_script_module
 
-_cda = load_script_module(
-    'plan-marshall', 'plan-retrospective', 'check-dispatch-audit.py', 'cda_token_state_mod'
-)
+_cda = load_script_module('plan-marshall', 'plan-retrospective', 'check-dispatch-audit.py', 'cda_token_state_mod')
 
 _core = load_script_module(
     'plan-marshall',
@@ -47,9 +44,7 @@ class TestTokenRecordReading:
     """``finalize_token_records`` maps each cell to a value or to ``None``."""
 
     def test_the_unmeasured_token_reads_as_no_record(self):
-        records = _cda.finalize_token_records(
-            _manifest(('push', _core.UNMEASURED_COLUMN_TOKEN))
-        )
+        records = _cda.finalize_token_records(_manifest(('push', _core.UNMEASURED_COLUMN_TOKEN)))
 
         assert records['push'] is None
 

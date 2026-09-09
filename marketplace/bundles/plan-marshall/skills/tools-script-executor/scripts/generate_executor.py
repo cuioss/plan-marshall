@@ -797,7 +797,7 @@ def _check_emitted_path_provenance(emitted_paths: list[str], base_path: Path) ->
                     f'from more than one version dir ({conflicting}). The generated executor would '
                     f'carry script mappings and import paths from different versions of the same '
                     f'bundle. No executor was written and any pre-existing executor was left '
-                    f'untouched. Remedy: run the marshall-steward upgrade flow\'s '
+                    f"untouched. Remedy: run the marshall-steward upgrade flow's "
                     f'cache-retention-sweep sub-step '
                     f'(plan-marshall:marshall-steward:cache_retention sweep) to prune the '
                     f'superseded version dirs, then regenerate.'
@@ -861,6 +861,7 @@ def _surface_derivation_config() -> surface_api.DerivationConfig:
         total_budget_seconds=budget,
     )
 
+
 # The four counts every ``generate`` result carries, zeroed. Published even on
 # the paths that derive nothing (a dry run, a probe-write failure) so the shape
 # of the result never depends on which branch produced it — a caller reading
@@ -909,6 +910,7 @@ def format_surface_stats_line(stats: dict[str, int]) -> str:
         f'surfaces_reused={stats["surfaces_reused"]} '
         f'surfaces_not_derivable={stats["surfaces_not_derivable"]}'
     )
+
 
 # Locates the ``SCRIPT_SURFACES = {`` … ``}`` literal in a previously generated
 # executor so its entries can be reused by digest. Text-scanned rather than
@@ -1029,7 +1031,7 @@ def read_previous_surfaces(executor: Path) -> dict[str, dict]:
     end = text.find('\n}', open_brace)
     if end < 0:
         return {}
-    literal = text[open_brace:end + 2]
+    literal = text[open_brace : end + 2]
     try:
         parsed = ast.literal_eval(literal)
     except (ValueError, SyntaxError):
@@ -1037,9 +1039,7 @@ def read_previous_surfaces(executor: Path) -> dict[str, dict]:
     if not isinstance(parsed, dict):
         return {}
     return {
-        notation: entry
-        for notation, entry in parsed.items()
-        if isinstance(notation, str) and isinstance(entry, dict)
+        notation: entry for notation, entry in parsed.items() if isinstance(notation, str) and isinstance(entry, dict)
     }
 
 
@@ -1276,9 +1276,7 @@ def generate_executor(
         # repr() (not manual quotes) so a root path containing a quote cannot
         # emit invalid generated Python and trip the unsubstituted-placeholder
         # guard on regeneration.
-        '\n'.join(f'    {root!r},' for root in recovery_roots)
-        if recovery_roots
-        else '    # (no cache roots resolved)'
+        '\n'.join(f'    {root!r},' for root in recovery_roots) if recovery_roots else '    # (no cache roots resolved)'
     )
 
     # Collect ALL script directories (including subdirectories of skills like script-shared
@@ -1797,7 +1795,7 @@ def find_installed_manifest_path(base_path: Path | None = None, target: str = 'c
         cache_idx = base_str.find(cache_marker)
         if cache_idx >= 0:
             prefix = base_str[:cache_idx]
-            remainder = base_str[cache_idx + len(cache_marker):]
+            remainder = base_str[cache_idx + len(cache_marker) :]
             marketplace_name = remainder.split('/', 1)[0]
             # Defense in depth: a segment of '.'/'..' (or one carrying a path
             # separator) would let the mapped path climb outside
@@ -1812,9 +1810,7 @@ def find_installed_manifest_path(base_path: Path | None = None, target: str = 'c
                 and '\\' not in marketplace_name
             )
             if is_safe_segment:
-                candidates.append(
-                    Path(prefix) / 'plugins' / 'marketplaces' / marketplace_name / 'dist-manifest.json'
-                )
+                candidates.append(Path(prefix) / 'plugins' / 'marketplaces' / marketplace_name / 'dist-manifest.json')
 
     # Highest-version-wins selection over the existing candidates: a stale
     # cache-root manifest must never shadow a newer clone-root manifest just
@@ -2082,9 +2078,7 @@ def _flip_notation_separators(segment: str) -> str:
     third segment differs from the registered (filename-derived) form only
     in hyphen/underscore separators.
     """
-    return ''.join(
-        '_' if ch == '-' else '-' if ch == '_' else ch for ch in segment
-    )
+    return ''.join('_' if ch == '-' else '-' if ch == '_' else ch for ch in segment)
 
 
 _NOTATION_REFERENCE_RE = re.compile(

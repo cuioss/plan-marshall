@@ -564,9 +564,7 @@ def measure_diff_size(pr_number: int) -> str:
     UNKNOWN, never a zero. A zero would read as "an empty diff was refused for being
     too big", which is a claim this function has no evidence for.
     """
-    returncode, stdout, _stderr = github_ops.run_gh(
-        ['pr', 'view', str(pr_number), '--json', 'additions,deletions']
-    )
+    returncode, stdout, _stderr = github_ops.run_gh(['pr', 'view', str(pr_number), '--json', 'additions,deletions'])
     if returncode != 0 or not stdout.strip():
         return ''
     try:
@@ -1070,9 +1068,16 @@ def cmd_pr_landing_state(args: argparse.Namespace) -> dict:
 
     rc, stdout, stderr = github_ops.run_gh(
         [
-            'pr', 'list', '--head', branch, '--state', 'all',
-            '--limit', str(_PR_LIST_LIMIT),
-            '--json', 'number,state,url,headRefName,headRefOid',
+            'pr',
+            'list',
+            '--head',
+            branch,
+            '--state',
+            'all',
+            '--limit',
+            str(_PR_LIST_LIMIT),
+            '--json',
+            'number,state,url,headRefName,headRefOid',
         ]
     )
     if rc != 0:
@@ -1664,8 +1669,7 @@ def _head_is_ancestor_of_base(head_sha: str, base_branch: str) -> tuple[bool, st
     if compare_status in _BASE_CONTAINS_HEAD_COMPARE_STATES:
         return True, f'base {base_branch} contains head {head_sha} (compare status={compare_status})'
     return False, (
-        f'base {base_branch} does not contain head {head_sha} '
-        f'(compare status={compare_status or "unknown"})'
+        f'base {base_branch} does not contain head {head_sha} (compare status={compare_status or "unknown"})'
     )
 
 
@@ -2063,7 +2067,9 @@ def cmd_pr_safe_merge(args: argparse.Namespace) -> dict:
         merge_result['duration_sec'] = duration_sec
         # Prefer the integer PR number resolved during polling over the branch
         # name cmd_pr_merge echoes back when --head was used.
-        merge_result['pr_number'] = (poll_result.get('last_data') or {}).get('pr_number') or merge_result.get('pr_number')
+        merge_result['pr_number'] = (poll_result.get('last_data') or {}).get('pr_number') or merge_result.get(
+            'pr_number'
+        )
         return merge_result
 
     # Timed out while not ready. Layer 2 admin fallback is GitHub-only and
@@ -2111,7 +2117,8 @@ def cmd_pr_safe_merge(args: argparse.Namespace) -> dict:
     result: dict = {
         'status': 'success',
         'operation': 'pr_safe_merge',
-        'pr_number': (poll_result.get('last_data') or {}).get('pr_number') or (args.pr_number if args.pr_number else identifier),
+        'pr_number': (poll_result.get('last_data') or {}).get('pr_number')
+        or (args.pr_number if args.pr_number else identifier),
         'strategy': args.strategy,
         'merge_path': 'admin_fallback',
         'polls': polls,
@@ -2214,7 +2221,7 @@ def cmd_pr_merge_queue(args: argparse.Namespace) -> dict:
             f'PR {identifier} targets base branch {base_branch!r}, which has NO platform merge queue '
             f'configured — enqueuing would silently enable plain auto-merge instead. Remedies: '
             f'(a) run "{STEWARD_COMMAND} -> Configuration -> Merge Queue" to provision the merge '
-            f'queue on that branch, or (b) disable the plan\'s use_merge_queue step param to merge '
+            f"queue on that branch, or (b) disable the plan's use_merge_queue step param to merge "
             f'immediately via "ci pr safe-merge".',
             detail,
         )
@@ -2407,7 +2414,9 @@ def fetch_pr_reviews_with_commits(pr_number: int | str) -> dict:
     endpoint = f'repos/{owner}/{repo}/pulls/{pr_number}/reviews'
     returncode, stdout, stderr = github_ops.run_gh(['api', endpoint, '--paginate', '--slurp'])
     if returncode != 0:
-        return make_error('fetch_pr_reviews_with_commits', f'Failed to fetch reviews for PR {pr_number}', stderr.strip())
+        return make_error(
+            'fetch_pr_reviews_with_commits', f'Failed to fetch reviews for PR {pr_number}', stderr.strip()
+        )
 
     try:
         raw_pages = json.loads(stdout)

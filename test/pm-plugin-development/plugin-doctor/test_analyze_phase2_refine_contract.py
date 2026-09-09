@@ -65,9 +65,7 @@ RULE_ID = REFINE_RULE_ID
 # ---------------------------------------------------------------------------
 
 
-def _make_phase_file(
-    tmp_path: Path, phase_dir: str, content: str, filename: str = 'SKILL.md'
-) -> Path:
+def _make_phase_file(tmp_path: Path, phase_dir: str, content: str, filename: str = 'SKILL.md') -> Path:
     """Create ``<tmp>/<phase_dir>/<filename>`` with the given content.
 
     ``phase_dir`` is one of the three planning-phase directory names
@@ -139,11 +137,7 @@ def test_edit_to_marketplace_emits_finding(tmp_path: Path) -> None:
 
 def test_write_to_src_emits_finding(tmp_path: Path) -> None:
     """A Write call targeting src/ must produce a finding."""
-    content = (
-        '# Refine\n'
-        '\n'
-        'Write(file_path="src/main/foo.py", content="...")\n'
-    )
+    content = '# Refine\n\nWrite(file_path="src/main/foo.py", content="...")\n'
     file_path = _make_refine_file(tmp_path, content)
 
     findings = analyze_phase2_refine_contract([file_path])
@@ -155,11 +149,7 @@ def test_write_to_src_emits_finding(tmp_path: Path) -> None:
 
 def test_plan_local_path_is_allowed(tmp_path: Path) -> None:
     """An Edit targeting .plan/local/ must produce no finding."""
-    content = (
-        '# Refine\n'
-        '\n'
-        'Edit(".plan/local/plans/my-plan/request.md")\n'
-    )
+    content = '# Refine\n\nEdit(".plan/local/plans/my-plan/request.md")\n'
     file_path = _make_refine_file(tmp_path, content)
 
     assert_analyzer_findings(analyze_phase2_refine_contract, [file_path], [])
@@ -167,11 +157,7 @@ def test_plan_local_path_is_allowed(tmp_path: Path) -> None:
 
 def test_worktree_prefix_uppercase_placeholder_is_allowed(tmp_path: Path) -> None:
     """{WORKTREE}/.plan/local/... is the worktree-substituted form — allowed."""
-    content = (
-        '# Refine\n'
-        '\n'
-        'Edit("{WORKTREE}/.plan/local/plans/my-plan/clarifications.md")\n'
-    )
+    content = '# Refine\n\nEdit("{WORKTREE}/.plan/local/plans/my-plan/clarifications.md")\n'
     file_path = _make_refine_file(tmp_path, content)
 
     assert_analyzer_findings(analyze_phase2_refine_contract, [file_path], [])
@@ -179,11 +165,7 @@ def test_worktree_prefix_uppercase_placeholder_is_allowed(tmp_path: Path) -> Non
 
 def test_worktree_path_placeholder_is_allowed(tmp_path: Path) -> None:
     """{worktree_path}/.plan/local/... is also a valid substitution form."""
-    content = (
-        '# Refine\n'
-        '\n'
-        'Write(file_path="{worktree_path}/.plan/local/plans/p/request.md", content="...")\n'
-    )
+    content = '# Refine\n\nWrite(file_path="{worktree_path}/.plan/local/plans/p/request.md", content="...")\n'
     file_path = _make_refine_file(tmp_path, content)
 
     assert_analyzer_findings(analyze_phase2_refine_contract, [file_path], [])
@@ -192,11 +174,7 @@ def test_worktree_path_placeholder_is_allowed(tmp_path: Path) -> None:
 def test_read_calls_are_ignored(tmp_path: Path) -> None:
     """Read is allowed against any path — must produce no finding."""
     content = (
-        '# Refine\n'
-        '\n'
-        'Read("marketplace/bundles/some/file.md")\n'
-        'Read("src/main/java/Foo.java")\n'
-        'Read("/etc/passwd")\n'
+        '# Refine\n\nRead("marketplace/bundles/some/file.md")\nRead("src/main/java/Foo.java")\nRead("/etc/passwd")\n'
     )
     file_path = _make_refine_file(tmp_path, content)
 
@@ -205,10 +183,7 @@ def test_read_calls_are_ignored(tmp_path: Path) -> None:
 
 def test_rules_filter_excludes_rule(tmp_path: Path) -> None:
     """When the rule is not in rules_filter, the analyzer returns no findings."""
-    content = (
-        '# Refine\n'
-        'Edit("marketplace/foo.md")\n'
-    )
+    content = '# Refine\nEdit("marketplace/foo.md")\n'
     file_path = _make_refine_file(tmp_path, content)
 
     # supply a filter that excludes this rule
@@ -219,10 +194,7 @@ def test_rules_filter_excludes_rule(tmp_path: Path) -> None:
 
 def test_rules_filter_includes_rule(tmp_path: Path) -> None:
     """When the rule IS in rules_filter, findings are emitted normally."""
-    content = (
-        '# Refine\n'
-        'Edit("marketplace/foo.md")\n'
-    )
+    content = '# Refine\nEdit("marketplace/foo.md")\n'
     file_path = _make_refine_file(tmp_path, content)
 
     findings = analyze_phase2_refine_contract(
@@ -236,10 +208,7 @@ def test_rules_filter_includes_rule(tmp_path: Path) -> None:
 
 def test_file_outside_phase2_refine_is_out_of_scope(tmp_path: Path) -> None:
     """Files outside phase-2-refine/ are not scanned even when passed directly."""
-    content = (
-        '# Phase 5 Execute\n'
-        'Edit("marketplace/foo.md")\n'
-    )
+    content = '# Phase 5 Execute\nEdit("marketplace/foo.md")\n'
     outside_file = _make_outside_file(tmp_path, content)
 
     assert_analyzer_findings(analyze_phase2_refine_contract, [outside_file], [])
@@ -247,10 +216,7 @@ def test_file_outside_phase2_refine_is_out_of_scope(tmp_path: Path) -> None:
 
 def test_directory_input_recurses(tmp_path: Path) -> None:
     """When a directory is passed, the analyzer recurses to find phase-2-refine files."""
-    content = (
-        '# Refine\n'
-        'Edit("marketplace/foo.md")\n'
-    )
+    content = '# Refine\nEdit("marketplace/foo.md")\n'
     _make_refine_file(tmp_path, content, filename='SKILL.md')
 
     # pass the parent directory instead of the file
@@ -262,10 +228,7 @@ def test_directory_input_recurses(tmp_path: Path) -> None:
 
 def test_suggested_fix_present_in_finding(tmp_path: Path) -> None:
     """Every finding includes a suggested_fix remediation hint."""
-    content = (
-        '# Refine\n'
-        'Write("build.gradle")\n'
-    )
+    content = '# Refine\nWrite("build.gradle")\n'
     file_path = _make_refine_file(tmp_path, content)
 
     findings = analyze_phase2_refine_contract([file_path])
@@ -283,11 +246,7 @@ def test_finding_shape_contract(tmp_path: Path) -> None:
     ``description``) at the top level and the three rule-specific keys
     (``tool``/``path``/``suggested_fix``) inside the nested ``details`` dict.
     """
-    content = (
-        '# Refine Step\n'
-        '\n'
-        'Edit("marketplace/bundles/pm-dev-java/skills/java-core/SKILL.md")\n'
-    )
+    content = '# Refine Step\n\nEdit("marketplace/bundles/pm-dev-java/skills/java-core/SKILL.md")\n'
     file_path = _make_refine_file(tmp_path, content)
 
     findings = analyze_phase2_refine_contract([file_path])
@@ -329,11 +288,7 @@ def test_finding_is_byte_identical_to_pre_refactor_baseline(tmp_path: Path) -> N
     the exact baseline shape (same key set AND values) so a future ``Finding``
     change cannot silently drift the refine-contract output.
     """
-    content = (
-        '# Refine Step\n'
-        '\n'
-        'Edit("marketplace/bundles/pm-dev-java/skills/java-core/SKILL.md")\n'
-    )
+    content = '# Refine Step\n\nEdit("marketplace/bundles/pm-dev-java/skills/java-core/SKILL.md")\n'
     file_path = _make_refine_file(tmp_path, content)
 
     findings = analyze_phase2_refine_contract([file_path])
@@ -374,11 +329,7 @@ def test_finding_is_byte_identical_to_pre_refactor_baseline(tmp_path: Path) -> N
 
 def test_edit_in_phase3_outline_emits_outline_rule(tmp_path: Path) -> None:
     """(a) A non-.plan/local Edit inside phase-3-outline/ → outline-contract-violation."""
-    content = (
-        '# Outline Step\n'
-        '\n'
-        'Edit("marketplace/bundles/pm-dev-java/skills/java-core/SKILL.md")\n'
-    )
+    content = '# Outline Step\n\nEdit("marketplace/bundles/pm-dev-java/skills/java-core/SKILL.md")\n'
     file_path = _make_phase_file(tmp_path, 'phase-3-outline', content)
 
     findings = assert_analyzer_findings(analyze_phase2_refine_contract, [file_path], [OUTLINE_RULE_ID])
@@ -393,11 +344,7 @@ def test_edit_in_phase3_outline_emits_outline_rule(tmp_path: Path) -> None:
 
 def test_write_in_phase3_outline_emits_outline_rule(tmp_path: Path) -> None:
     """(a) A non-.plan/local Write inside phase-3-outline/ → outline-contract-violation."""
-    content = (
-        '# Outline\n'
-        '\n'
-        'Write(file_path="src/main/foo.py", content="...")\n'
-    )
+    content = '# Outline\n\nWrite(file_path="src/main/foo.py", content="...")\n'
     file_path = _make_phase_file(tmp_path, 'phase-3-outline', content)
 
     findings = assert_analyzer_findings(analyze_phase2_refine_contract, [file_path], [OUTLINE_RULE_ID])
@@ -407,11 +354,7 @@ def test_write_in_phase3_outline_emits_outline_rule(tmp_path: Path) -> None:
 
 def test_edit_in_phase4_plan_emits_plan_rule(tmp_path: Path) -> None:
     """(b) A non-.plan/local Edit inside phase-4-plan/ → plan-contract-violation."""
-    content = (
-        '# Plan Step\n'
-        '\n'
-        'Edit("marketplace/bundles/pm-dev-java/skills/java-core/SKILL.md")\n'
-    )
+    content = '# Plan Step\n\nEdit("marketplace/bundles/pm-dev-java/skills/java-core/SKILL.md")\n'
     file_path = _make_phase_file(tmp_path, 'phase-4-plan', content)
 
     findings = assert_analyzer_findings(analyze_phase2_refine_contract, [file_path], [PLAN_RULE_ID])
@@ -424,11 +367,7 @@ def test_edit_in_phase4_plan_emits_plan_rule(tmp_path: Path) -> None:
 
 def test_write_in_phase4_plan_emits_plan_rule(tmp_path: Path) -> None:
     """(b) A non-.plan/local Write inside phase-4-plan/ → plan-contract-violation."""
-    content = (
-        '# Plan\n'
-        '\n'
-        'Write("build.gradle")\n'
-    )
+    content = '# Plan\n\nWrite("build.gradle")\n'
     file_path = _make_phase_file(tmp_path, 'phase-4-plan', content)
 
     findings = assert_analyzer_findings(analyze_phase2_refine_contract, [file_path], [PLAN_RULE_ID])
@@ -437,11 +376,7 @@ def test_write_in_phase4_plan_emits_plan_rule(tmp_path: Path) -> None:
 
 def test_plan_local_path_allowed_in_phase3_outline(tmp_path: Path) -> None:
     """(c) A .plan/local plan-workspace write inside phase-3-outline/ is NOT flagged."""
-    content = (
-        '# Outline\n'
-        '\n'
-        'Edit(".plan/local/plans/my-plan/solution_outline.md")\n'
-    )
+    content = '# Outline\n\nEdit(".plan/local/plans/my-plan/solution_outline.md")\n'
     file_path = _make_phase_file(tmp_path, 'phase-3-outline', content)
 
     assert_analyzer_findings(analyze_phase2_refine_contract, [file_path], [])
@@ -449,11 +384,7 @@ def test_plan_local_path_allowed_in_phase3_outline(tmp_path: Path) -> None:
 
 def test_plan_local_path_allowed_in_phase4_plan(tmp_path: Path) -> None:
     """(c) A .plan/local plan-workspace write inside phase-4-plan/ is NOT flagged."""
-    content = (
-        '# Plan\n'
-        '\n'
-        'Write(file_path="{worktree_path}/.plan/local/plans/p/TASK-001.json", content="...")\n'
-    )
+    content = '# Plan\n\nWrite(file_path="{worktree_path}/.plan/local/plans/p/TASK-001.json", content="...")\n'
     file_path = _make_phase_file(tmp_path, 'phase-4-plan', content)
 
     assert_analyzer_findings(analyze_phase2_refine_contract, [file_path], [])
@@ -461,11 +392,7 @@ def test_plan_local_path_allowed_in_phase4_plan(tmp_path: Path) -> None:
 
 def test_phase2_refine_behavior_unchanged(tmp_path: Path) -> None:
     """(d) The existing phase-2-refine path still emits refine-contract-violation."""
-    content = (
-        '# Refine Step\n'
-        '\n'
-        'Edit("marketplace/bundles/pm-dev-java/skills/java-core/SKILL.md")\n'
-    )
+    content = '# Refine Step\n\nEdit("marketplace/bundles/pm-dev-java/skills/java-core/SKILL.md")\n'
     file_path = _make_phase_file(tmp_path, 'phase-2-refine', content)
 
     findings = assert_analyzer_findings(analyze_phase2_refine_contract, [file_path], [REFINE_RULE_ID])

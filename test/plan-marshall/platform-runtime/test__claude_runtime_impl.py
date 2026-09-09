@@ -18,6 +18,7 @@ Covers:
 All filesystem writes are redirected to tmp_path via monkeypatching so no
 real settings files are mutated.
 """
+
 from __future__ import annotations  # noqa: I001
 
 import json
@@ -51,9 +52,9 @@ def rt(tmp_path, monkeypatch):
     """
     import claude_runtime as _cr
 
-    monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
-    monkeypatch.setattr(_cr, "_CLAUDE_PROJECTS_DIR", tmp_path / "projects")
-    monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
+    monkeypatch.setattr(session_binding, '_SESSION_CACHE_BASE', tmp_path / 'sessions')
+    monkeypatch.setattr(_cr, '_CLAUDE_PROJECTS_DIR', tmp_path / 'projects')
+    monkeypatch.setattr(_cr, '_PLAN_DIR_NAME', '.plan')
     return ClaudeRuntime()
 
 
@@ -68,7 +69,7 @@ def rt(tmp_path, monkeypatch):
 # title_token, the composed title is ``{icon} pm:X:Y`` (no glyph).
 
 
-def _title_token(state: str, owner: str = "cli") -> dict[str, str]:
+def _title_token(state: str, owner: str = 'cli') -> dict[str, str]:
     """Build a ``{owner, state, set_at}`` title-token record stamped now.
 
     ``status.title_token`` is a structured record, not a bare state string, so
@@ -77,9 +78,9 @@ def _title_token(state: str, owner: str = "cli") -> dict[str, str]:
     from datetime import UTC, datetime
 
     return {
-        "owner": owner,
-        "state": state,
-        "set_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        'owner': owner,
+        'state': state,
+        'set_at': datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ'),
     }
 
 
@@ -88,11 +89,11 @@ def _write_status_json(
     *,
     session_id: str,
     plan_id: str,
-    current_phase: str | None = "5-execute",
-    short_description: str | None = "my-task",
+    current_phase: str | None = '5-execute',
+    short_description: str | None = 'my-task',
     title_token: dict[str, str] | None = None,
     archived: bool = False,
-    date_prefix: str = "2026-05-29",
+    date_prefix: str = '2026-05-29',
 ) -> None:
     """Materialize the session-cache pointer + a plan ``status.json`` on disk.
 
@@ -102,35 +103,33 @@ def _write_status_json(
     otherwise under the live ``plans/{plan_id}/`` dir. A ``None`` field is
     omitted from the JSON so the absent-field paths can be exercised.
     """
-    cache_dir = tmp_path / "sessions" / session_id
+    cache_dir = tmp_path / 'sessions' / session_id
     cache_dir.mkdir(parents=True, exist_ok=True)
-    (cache_dir / "active-plan").write_text(plan_id, encoding="utf-8")
+    (cache_dir / 'active-plan').write_text(plan_id, encoding='utf-8')
 
     status: dict[str, Any] = {}
     if current_phase is not None:
-        status["current_phase"] = current_phase
+        status['current_phase'] = current_phase
     if short_description is not None:
-        status["short_description"] = short_description
+        status['short_description'] = short_description
     if title_token is not None:
-        status["title_token"] = title_token
+        status['title_token'] = title_token
 
     if archived:
-        status_dir = (
-            tmp_path / ".plan" / "local" / "archived-plans" / f"{date_prefix}-{plan_id}"
-        )
+        status_dir = tmp_path / '.plan' / 'local' / 'archived-plans' / f'{date_prefix}-{plan_id}'
     else:
-        status_dir = tmp_path / ".plan" / "local" / "plans" / plan_id
+        status_dir = tmp_path / '.plan' / 'local' / 'plans' / plan_id
     status_dir.mkdir(parents=True, exist_ok=True)
-    (status_dir / "status.json").write_text(json.dumps(status), encoding="utf-8")
+    (status_dir / 'status.json').write_text(json.dumps(status), encoding='utf-8')
 
 
 def _redirect_render_env(tmp_path: Path, monkeypatch, session_id: str) -> None:
     """Redirect the renderer's module constants + env at *session_id*."""
     import claude_runtime as _cr
 
-    monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
-    monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
-    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", session_id)
+    monkeypatch.setattr(session_binding, '_SESSION_CACHE_BASE', tmp_path / 'sessions')
+    monkeypatch.setattr(_cr, '_PLAN_DIR_NAME', '.plan')
+    monkeypatch.setenv('CLAUDE_CODE_SESSION_ID', session_id)
     monkeypatch.chdir(tmp_path)
 
 
@@ -140,11 +139,11 @@ def _activate_terminal_title(tmp_path: Path) -> None:
     A configured ``statusLine`` command alone is enough — the predicate reports
     active when EITHER a render-hook entry or a statusLine command is present.
     """
-    settings = tmp_path / ".claude" / "settings.local.json"
+    settings = tmp_path / '.claude' / 'settings.local.json'
     settings.parent.mkdir(parents=True, exist_ok=True)
     settings.write_text(
-        json.dumps({"statusLine": {"type": "command", "command": "render"}}),
-        encoding="utf-8",
+        json.dumps({'statusLine': {'type': 'command', 'command': 'render'}}),
+        encoding='utf-8',
     )
 
 
@@ -168,13 +167,13 @@ def _patch_dev_tty(monkeypatch, *, openable: bool) -> list[str]:
             super().close()
 
     def _fake_open(file, *args, **kwargs):
-        if file == "/dev/tty":
+        if file == '/dev/tty':
             if not openable:
-                raise OSError(6, "Device not configured")
+                raise OSError(6, 'Device not configured')
             return _CapturingTty()
         return real_open(file, *args, **kwargs)
 
-    monkeypatch.setattr(builtins, "open", _fake_open)
+    monkeypatch.setattr(builtins, 'open', _fake_open)
     return writes
 
 
@@ -182,7 +181,7 @@ def _stub_hook_stdin(monkeypatch, payload: dict[str, Any]) -> None:
     """Feed *payload* to the renderer's hook-mode ``sys.stdin.read()``."""
     import io
 
-    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(payload)))
+    monkeypatch.setattr('sys.stdin', io.StringIO(json.dumps(payload)))
 
 
 #: The renderer's two delivery channels, as ``statusline=`` values. They reach
@@ -198,7 +197,7 @@ _RENDER_MODE_IDS = ['statusline-mode', 'hook-mode']
 #: the distinct ways the payload can fail to be a hook event: nothing was piped,
 #: only whitespace was, the bytes are not JSON at all, and the bytes ARE valid
 #: JSON but decode to a list rather than the object the parse indexes into.
-_BAD_STDIN = ["", "   ", "not-json{", "[1, 2, 3]"]
+_BAD_STDIN = ['', '   ', 'not-json{', '[1, 2, 3]']
 
 _BAD_STDIN_IDS = [
     'nothing-piped',
@@ -219,30 +218,30 @@ class TestSessionTeardown:
 
     def test_inactive_feature_touches_nothing(self, rt, tmp_path, monkeypatch):
         """With the feature inactive: no unbind, no write, reason feature_inactive."""
-        _redirect_render_env(tmp_path, monkeypatch, "sess-teardown-inactive")
-        session_binding.bind("sess-teardown-inactive", "some-plan")
+        _redirect_render_env(tmp_path, monkeypatch, 'sess-teardown-inactive')
+        session_binding.bind('sess-teardown-inactive', 'some-plan')
         writes = _patch_dev_tty(monkeypatch, openable=True)
 
         unbind_calls: list[str] = []
         real_unbind = session_binding.unbind
         monkeypatch.setattr(
             session_binding,
-            "unbind",
+            'unbind',
             lambda sid: (unbind_calls.append(sid), real_unbind(sid))[1],
         )
 
         result = parse_toon(rt.session_teardown())
 
-        assert result["status"] == "success"
-        assert result["active"] is False
-        assert result["unbound"] is False
-        assert result["reason"] == "feature_inactive"
+        assert result['status'] == 'success'
+        assert result['active'] is False
+        assert result['unbound'] is False
+        assert result['reason'] == 'feature_inactive'
         # The retired ``reset`` half is gone from the contract entirely.
-        assert "reset" not in result
+        assert 'reset' not in result
         # Nothing was written and no binding was mutated.
         assert writes == []
         assert unbind_calls == []
-        assert session_binding.resolve_plan("sess-teardown-inactive") == "some-plan"
+        assert session_binding.resolve_plan('sess-teardown-inactive') == 'some-plan'
 
     def test_active_feature_unbinds_and_writes_no_escape(self, rt, tmp_path, monkeypatch):
         """With the feature active: the slot is dropped and NO escape is written.
@@ -251,18 +250,18 @@ class TestSessionTeardown:
         reset write would be captured. The empty capture is the assertion: the
         teardown does not paint, even when it could.
         """
-        _redirect_render_env(tmp_path, monkeypatch, "sess-teardown-active")
+        _redirect_render_env(tmp_path, monkeypatch, 'sess-teardown-active')
         _activate_terminal_title(tmp_path)
-        session_binding.bind("sess-teardown-active", "some-plan")
+        session_binding.bind('sess-teardown-active', 'some-plan')
         writes = _patch_dev_tty(monkeypatch, openable=True)
 
         result = parse_toon(rt.session_teardown())
 
-        assert result["active"] is True
-        assert result["unbound"] is True
-        assert "reset" not in result
+        assert result['active'] is True
+        assert result['unbound'] is True
+        assert 'reset' not in result
         assert writes == []
-        assert session_binding.resolve_plan("sess-teardown-active") is None
+        assert session_binding.resolve_plan('sess-teardown-active') is None
 
 
 class TestSessionStartClearTeardown:
@@ -273,39 +272,37 @@ class TestSessionStartClearTeardown:
     writes nothing to stdout, while ``"startup"`` renders normally.
     """
 
-    def test_source_clear_tears_down_and_writes_nothing(
-        self, rt, tmp_path, monkeypatch, capsys
-    ):
+    def test_source_clear_tears_down_and_writes_nothing(self, rt, tmp_path, monkeypatch, capsys):
         """A SessionStart payload with source: clear emits no stdout and unbinds."""
-        session_id = "sess-clear-teardown"
-        _write_status_json(tmp_path, session_id=session_id, plan_id="active-plan")
+        session_id = 'sess-clear-teardown'
+        _write_status_json(tmp_path, session_id=session_id, plan_id='active-plan')
         _redirect_render_env(tmp_path, monkeypatch, session_id)
         _activate_terminal_title(tmp_path)
         _patch_dev_tty(monkeypatch, openable=True)
-        _stub_hook_stdin(monkeypatch, {"hook_event_name": "SessionStart", "source": "clear"})
+        _stub_hook_stdin(monkeypatch, {'hook_event_name': 'SessionStart', 'source': 'clear'})
 
         capsys.readouterr()
-        assert rt.session_render_title() == ""
+        assert rt.session_render_title() == ''
 
-        assert capsys.readouterr().out == ""
+        assert capsys.readouterr().out == ''
         assert session_binding.resolve_plan(session_id) is None
 
     def test_source_startup_still_renders(self, rt, tmp_path, monkeypatch, capsys):
         """A SessionStart payload with source: startup renders with sessionTitle intact."""
-        session_id = "sess-startup-render"
-        _write_status_json(tmp_path, session_id=session_id, plan_id="active-plan")
+        session_id = 'sess-startup-render'
+        _write_status_json(tmp_path, session_id=session_id, plan_id='active-plan')
         _redirect_render_env(tmp_path, monkeypatch, session_id)
         _activate_terminal_title(tmp_path)
-        _stub_hook_stdin(monkeypatch, {"hook_event_name": "SessionStart", "source": "startup"})
+        _stub_hook_stdin(monkeypatch, {'hook_event_name': 'SessionStart', 'source': 'startup'})
 
         capsys.readouterr()
-        assert rt.session_render_title() == ""
+        assert rt.session_render_title() == ''
 
         envelope = json.loads(capsys.readouterr().out)
-        assert "terminalSequence" in envelope
-        assert envelope["hookSpecificOutput"]["sessionTitle"] == "pm:5-execute:my-task"
+        assert 'terminalSequence' in envelope
+        assert envelope['hookSpecificOutput']['sessionTitle'] == 'pm:5-execute:my-task'
         # The binding survives — a startup render is not a teardown.
-        assert session_binding.resolve_plan(session_id) == "active-plan"
+        assert session_binding.resolve_plan(session_id) == 'active-plan'
 
 
 class TestTerminalStateDeliveryOrdering:
@@ -318,31 +315,29 @@ class TestTerminalStateDeliveryOrdering:
     that the release can never be observed BEFORE the emit.
     """
 
-    def test_archived_terminal_state_is_delivered_then_becomes_collectable(
-        self, rt, tmp_path, monkeypatch, capsys
-    ):
+    def test_archived_terminal_state_is_delivered_then_becomes_collectable(self, rt, tmp_path, monkeypatch, capsys):
         """Before the render the slot is exempt; the render emits ✅ and marks it delivered."""
-        session_id = "sess-terminal-delivery"
-        plan_id = "finished-plan"
+        session_id = 'sess-terminal-delivery'
+        plan_id = 'finished-plan'
         _write_status_json(
             tmp_path,
             session_id=session_id,
             plan_id=plan_id,
-            current_phase="complete",
+            current_phase='complete',
             archived=True,
         )
         _redirect_render_env(tmp_path, monkeypatch, session_id)
         _activate_terminal_title(tmp_path)
-        _stub_hook_stdin(monkeypatch, {"hook_event_name": "UserPromptSubmit"})
+        _stub_hook_stdin(monkeypatch, {'hook_event_name': 'UserPromptSubmit'})
 
         # The terminal state is still OWED, so the slot must not be collectable.
         assert session_binding._plan_is_live(plan_id) is True
 
         capsys.readouterr()
-        assert rt.session_render_title() == ""
+        assert rt.session_render_title() == ''
 
         envelope = json.loads(capsys.readouterr().out)
-        assert "pm:Completed" in envelope["terminalSequence"]
+        assert 'pm:Completed' in envelope['terminalSequence']
         # The binding was never released by the render itself.
         assert session_binding.resolve_plan(session_id) == plan_id
         # Delivery discharged the obligation, so the slot is now collectable.
@@ -350,21 +345,21 @@ class TestTerminalStateDeliveryOrdering:
 
     def test_undelivered_archived_slot_survives_a_doctor_fix_sweep(self, rt, tmp_path, monkeypatch):
         """A doctor --fix sweep must not collect a slot whose terminal state is owed."""
-        session_id = "sess-terminal-exempt"
-        plan_id = "owed-plan"
+        session_id = 'sess-terminal-exempt'
+        plan_id = 'owed-plan'
         _write_status_json(
             tmp_path,
             session_id=session_id,
             plan_id=plan_id,
-            current_phase="complete",
+            current_phase='complete',
             archived=True,
         )
         _redirect_render_env(tmp_path, monkeypatch, session_id)
 
         report = session_binding.doctor(fix=True)
 
-        assert report["stale"] == []
-        assert report["gc_removed"] == 0
+        assert report['stale'] == []
+        assert report['gc_removed'] == 0
         assert session_binding.resolve_plan(session_id) == plan_id
 
 
@@ -384,30 +379,30 @@ class TestSessionPushTitleTokenBindAndPersist:
         ``openable=True`` deliberately makes a tty AVAILABLE, so a surviving
         write would be captured. The empty capture is the assertion.
         """
-        plan_id = "push-ok"
-        _write_status_json(tmp_path, session_id="sess-push-ok", plan_id=plan_id)
-        _redirect_render_env(tmp_path, monkeypatch, "sess-push-ok")
+        plan_id = 'push-ok'
+        _write_status_json(tmp_path, session_id='sess-push-ok', plan_id=plan_id)
+        _redirect_render_env(tmp_path, monkeypatch, 'sess-push-ok')
         writes = _patch_dev_tty(monkeypatch, openable=True)
 
         result = parse_toon(rt.session_push_title_token(plan_id))
-        assert result["status"] == "success"
-        assert result["plan_id"] == plan_id
+        assert result['status'] == 'success'
+        assert result['plan_id'] == plan_id
         assert writes == []
         # The retired repaint-reporting fields are gone from the contract.
-        assert "pushed" not in result
-        assert "delivery" not in result
-        assert "reason" not in result
+        assert 'pushed' not in result
+        assert 'delivery' not in result
+        assert 'reason' not in result
 
     def test_absent_title_state_reports_no_title_state(self, rt, tmp_path, monkeypatch):
         """A plan with no status.json reports reason: no_title_state and names no channel."""
-        _redirect_render_env(tmp_path, monkeypatch, "sess-push-absent")
+        _redirect_render_env(tmp_path, monkeypatch, 'sess-push-absent')
         _patch_dev_tty(monkeypatch, openable=True)
 
-        result = parse_toon(rt.session_push_title_token("no-such-plan"))
-        assert result["status"] == "success"
-        assert result["reason"] == "no_title_state"
-        assert "pushed" not in result
-        assert "delivery" not in result
+        result = parse_toon(rt.session_push_title_token('no-such-plan'))
+        assert result['status'] == 'success'
+        assert result['reason'] == 'no_title_state'
+        assert 'pushed' not in result
+        assert 'delivery' not in result
 
 
 class TestSessionRenderTitleStatusline:
@@ -422,15 +417,18 @@ class TestSessionRenderTitleStatusline:
     @pytest.fixture()
     def session_cache_base(self, tmp_path, monkeypatch):
         """Redirect the session cache root to an isolated tmp_path."""
-        monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
+        monkeypatch.setattr(session_binding, '_SESSION_CACHE_BASE', tmp_path / 'sessions')
 
     def test_statusline_emits_plain_text_on_success(self, rt, tmp_path, monkeypatch, capsys):
         """In statusline mode, success branch writes plain ``{composed}`` — no JSON envelope, no OSC, no TOON tail."""
-        session_id = "sess-statusline-ok"
-        plan_id = "active-plan"
+        session_id = 'sess-statusline-ok'
+        plan_id = 'active-plan'
         _write_status_json(
-            tmp_path, session_id=session_id, plan_id=plan_id,
-            current_phase="5-execute", short_description="my-task",
+            tmp_path,
+            session_id=session_id,
+            plan_id=plan_id,
+            current_phase='5-execute',
+            short_description='my-task',
         )
         _redirect_render_env(tmp_path, monkeypatch, session_id)
 
@@ -438,23 +436,26 @@ class TestSessionRenderTitleStatusline:
         # Function MUST return empty string in statusline mode so the caller's
         # print(result) does not append a TOON envelope after the title.
         returned = rt.session_render_title(statusline=True)
-        assert returned == ""
+        assert returned == ''
 
         captured = capsys.readouterr().out
         # Plain text — composer output (active icon, no glyph) — no JSON
         # envelope, no OSC escape sequence, no TOON.
-        assert captured == "➤ pm:5-execute:my-task"
-        assert "terminalSequence" not in captured
-        assert "\x1b]0;" not in captured
-        assert "status:" not in captured
+        assert captured == '➤ pm:5-execute:my-task'
+        assert 'terminalSequence' not in captured
+        assert '\x1b]0;' not in captured
+        assert 'status:' not in captured
 
     def test_default_mode_emits_only_json_envelope(self, rt, tmp_path, monkeypatch, capsys):
         """Hook mode (statusline=False) success: stdout contains ONLY the JSON envelope — no TOON tail, function returns ""."""
-        session_id = "sess-envelope-mode"
-        plan_id = "active-plan"
+        session_id = 'sess-envelope-mode'
+        plan_id = 'active-plan'
         _write_status_json(
-            tmp_path, session_id=session_id, plan_id=plan_id,
-            current_phase="1-init", short_description="foo",
+            tmp_path,
+            session_id=session_id,
+            plan_id=plan_id,
+            current_phase='1-init',
+            short_description='foo',
         )
         _redirect_render_env(tmp_path, monkeypatch, session_id)
 
@@ -463,34 +464,37 @@ class TestSessionRenderTitleStatusline:
         # append a TOON tail to the JSON envelope. Mixed-content stdout breaks
         # Claude Code's host parser (see hook-authoring-guide.md).
         returned = rt.session_render_title(statusline=False)
-        assert returned == ""
+        assert returned == ''
 
         captured = capsys.readouterr().out
         # Stdout MUST be parseable as a single JSON object with no trailing bytes.
         payload = json.loads(captured)
-        assert payload["terminalSequence"] == "\x1b]0;➤ pm:1-init:foo\x07"
+        assert payload['terminalSequence'] == '\x1b]0;➤ pm:1-init:foo\x07'
         # No TOON success/noop row glued to the envelope.
-        assert "status:" not in captured
+        assert 'status:' not in captured
 
     def test_title_token_glyph_prepended_in_composed_title(self, rt, tmp_path, monkeypatch, capsys):
         """A status.json title_token renders its glyph between the icon and body via the composer."""
-        session_id = "sess-glyph"
-        plan_id = "glyph-plan"
+        session_id = 'sess-glyph'
+        plan_id = 'glyph-plan'
         _write_status_json(
-            tmp_path, session_id=session_id, plan_id=plan_id,
-            current_phase="5-execute", short_description="locked-task",
-            title_token=_title_token("lock-owned", owner="merge-lock"),
+            tmp_path,
+            session_id=session_id,
+            plan_id=plan_id,
+            current_phase='5-execute',
+            short_description='locked-task',
+            title_token=_title_token('lock-owned', owner='merge-lock'),
         )
         _redirect_render_env(tmp_path, monkeypatch, session_id)
 
         capsys.readouterr()
         returned = rt.session_render_title(statusline=True)
-        assert returned == ""
+        assert returned == ''
         captured = capsys.readouterr().out
         # 🔒 is the lock-owned glyph (owned by the D12 composer).
-        assert captured == "➤ \U0001f512 pm:5-execute:locked-task"
+        assert captured == '➤ \U0001f512 pm:5-execute:locked-task'
 
-    @pytest.mark.parametrize("statusline", _RENDER_MODES, ids=_RENDER_MODE_IDS)
+    @pytest.mark.parametrize('statusline', _RENDER_MODES, ids=_RENDER_MODE_IDS)
     def test_missing_session_id_writes_nothing(self, statusline, rt, monkeypatch, capsys):
         """An absent ``$CLAUDE_CODE_SESSION_ID`` is a silent no-op on both channels.
 
@@ -499,57 +503,58 @@ class TestSessionRenderTitleStatusline:
         painted into the statusLine slot itself. On the hook channel the same
         empty return keeps a TOON tail off the host-parsed stdout.
         """
-        monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
+        monkeypatch.delenv('CLAUDE_CODE_SESSION_ID', raising=False)
         capsys.readouterr()
 
-        assert rt.session_render_title(statusline=statusline) == ""
-        assert capsys.readouterr().out == ""
+        assert rt.session_render_title(statusline=statusline) == ''
+        assert capsys.readouterr().out == ''
 
-    @pytest.mark.parametrize("statusline", _RENDER_MODES, ids=_RENDER_MODE_IDS)
-    def test_no_active_plan_writes_nothing(
-        self, statusline, rt, monkeypatch, capsys, session_cache_base
-    ):
+    @pytest.mark.parametrize('statusline', _RENDER_MODES, ids=_RENDER_MODE_IDS)
+    def test_no_active_plan_writes_nothing(self, statusline, rt, monkeypatch, capsys, session_cache_base):
         """A session that maps to no plan is a silent no-op on both channels."""
-        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-without-plan")
+        monkeypatch.setenv('CLAUDE_CODE_SESSION_ID', 'sess-without-plan')
         capsys.readouterr()
 
-        assert rt.session_render_title(statusline=statusline) == ""
-        assert capsys.readouterr().out == ""
+        assert rt.session_render_title(statusline=statusline) == ''
+        assert capsys.readouterr().out == ''
 
-    @pytest.mark.parametrize("statusline", _RENDER_MODES, ids=_RENDER_MODE_IDS)
+    @pytest.mark.parametrize('statusline', _RENDER_MODES, ids=_RENDER_MODE_IDS)
     def test_missing_status_json_writes_nothing(
         self, statusline, rt, tmp_path, monkeypatch, capsys, session_cache_base
     ):
         """A resolved plan whose ``status.json`` is absent is a no-op on both channels."""
         import claude_runtime as _cr
 
-        session_id = "sess-no-status"
-        plan_id = "plan-no-status"
-        cache_dir = tmp_path / "sessions" / session_id
+        session_id = 'sess-no-status'
+        plan_id = 'plan-no-status'
+        cache_dir = tmp_path / 'sessions' / session_id
         cache_dir.mkdir(parents=True)
-        (cache_dir / "active-plan").write_text(plan_id, encoding="utf-8")
+        (cache_dir / 'active-plan').write_text(plan_id, encoding='utf-8')
 
-        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
-        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", session_id)
+        monkeypatch.setattr(_cr, '_PLAN_DIR_NAME', '.plan')
+        monkeypatch.setenv('CLAUDE_CODE_SESSION_ID', session_id)
         monkeypatch.chdir(tmp_path)
 
         capsys.readouterr()
-        assert rt.session_render_title(statusline=statusline) == ""
-        assert capsys.readouterr().out == ""
+        assert rt.session_render_title(statusline=statusline) == ''
+        assert capsys.readouterr().out == ''
 
     def test_hook_mode_empty_current_phase_writes_nothing(self, rt, tmp_path, monkeypatch, capsys):
         """status.json without current_phase → composer returns None → no-op (empty stdout)."""
-        session_id = "sess-no-phase"
-        plan_id = "plan-no-phase"
+        session_id = 'sess-no-phase'
+        plan_id = 'plan-no-phase'
         _write_status_json(
-            tmp_path, session_id=session_id, plan_id=plan_id,
-            current_phase=None, short_description="orphan",
+            tmp_path,
+            session_id=session_id,
+            plan_id=plan_id,
+            current_phase=None,
+            short_description='orphan',
         )
         _redirect_render_env(tmp_path, monkeypatch, session_id)
 
         capsys.readouterr()
-        assert rt.session_render_title(statusline=False) == ""
-        assert capsys.readouterr().out == ""
+        assert rt.session_render_title(statusline=False) == ''
+        assert capsys.readouterr().out == ''
 
 
 # =============================================================================
@@ -613,71 +618,71 @@ class TestSessionRenderTitleStatusline:
 _RENDER_MATRIX = [
     # ─── Tier 1: plan_id-only ────────────────────────────────────────────
     {
-        "id": "plan_id-only-hit",
-        "tier": "plan_id-only",
-        "outcome": "hit",
-        "session_id": "sess-tier1-hit",
-        "plan_id": "tier1-hit-plan",
-        "current_phase": "5-execute",
-        "short_desc": "t1-hit",
-        "expected_body": "pm:5-execute:t1-hit",
-        "emits_stdout": True,
+        'id': 'plan_id-only-hit',
+        'tier': 'plan_id-only',
+        'outcome': 'hit',
+        'session_id': 'sess-tier1-hit',
+        'plan_id': 'tier1-hit-plan',
+        'current_phase': '5-execute',
+        'short_desc': 't1-hit',
+        'expected_body': 'pm:5-execute:t1-hit',
+        'emits_stdout': True,
     },
     {
-        "id": "plan_id-only-miss",
-        "tier": "plan_id-only",
-        "outcome": "miss",
-        "session_id": None,  # env unset
-        "plan_id": None,
-        "current_phase": None,
-        "short_desc": None,
-        "expected_body": None,
-        "emits_stdout": False,
+        'id': 'plan_id-only-miss',
+        'tier': 'plan_id-only',
+        'outcome': 'miss',
+        'session_id': None,  # env unset
+        'plan_id': None,
+        'current_phase': None,
+        'short_desc': None,
+        'expected_body': None,
+        'emits_stdout': False,
     },
     {
-        "id": "plan_id-only-stale",
-        "tier": "plan_id-only",
-        "outcome": "stale",
-        "session_id": "",  # env present but empty
-        "plan_id": None,
-        "current_phase": None,
-        "short_desc": None,
-        "expected_body": None,
-        "emits_stdout": False,
+        'id': 'plan_id-only-stale',
+        'tier': 'plan_id-only',
+        'outcome': 'stale',
+        'session_id': '',  # env present but empty
+        'plan_id': None,
+        'current_phase': None,
+        'short_desc': None,
+        'expected_body': None,
+        'emits_stdout': False,
     },
     # ─── Tier 2: title-from-status ───────────────────────────────────────
     {
-        "id": "title-from-status-hit",
-        "tier": "title-from-status",
-        "outcome": "hit",
-        "session_id": "sess-tier2-hit",
-        "plan_id": "tier2-hit-plan",
-        "current_phase": "3-outline",
-        "short_desc": "t2-hit",
-        "expected_body": "pm:3-outline:t2-hit",
-        "emits_stdout": True,
+        'id': 'title-from-status-hit',
+        'tier': 'title-from-status',
+        'outcome': 'hit',
+        'session_id': 'sess-tier2-hit',
+        'plan_id': 'tier2-hit-plan',
+        'current_phase': '3-outline',
+        'short_desc': 't2-hit',
+        'expected_body': 'pm:3-outline:t2-hit',
+        'emits_stdout': True,
     },
     {
-        "id": "title-from-status-miss",
-        "tier": "title-from-status",
-        "outcome": "miss",
-        "session_id": "sess-tier2-miss",
-        "plan_id": None,  # no active-plan pointer
-        "current_phase": None,
-        "short_desc": None,
-        "expected_body": None,
-        "emits_stdout": False,
+        'id': 'title-from-status-miss',
+        'tier': 'title-from-status',
+        'outcome': 'miss',
+        'session_id': 'sess-tier2-miss',
+        'plan_id': None,  # no active-plan pointer
+        'current_phase': None,
+        'short_desc': None,
+        'expected_body': None,
+        'emits_stdout': False,
     },
     {
-        "id": "title-from-status-stale",
-        "tier": "title-from-status",
-        "outcome": "stale",
-        "session_id": "sess-tier2-stale",
-        "plan_id": "",  # empty pointer file
-        "current_phase": None,
-        "short_desc": None,
-        "expected_body": None,
-        "emits_stdout": False,
+        'id': 'title-from-status-stale',
+        'tier': 'title-from-status',
+        'outcome': 'stale',
+        'session_id': 'sess-tier2-stale',
+        'plan_id': '',  # empty pointer file
+        'current_phase': None,
+        'short_desc': None,
+        'expected_body': None,
+        'emits_stdout': False,
     },
     # ─── Tier 3: status-from-plan ────────────────────────────────────────
     # PRODUCTION-DOMINANT CELL — main session at repo root + worktree active +
@@ -686,55 +691,53 @@ _RENDER_MATRIX = [
     # execution. Do NOT remove or rename without auditing every other test that
     # references this naming.
     {
-        "id": "status-from-plan-hit-session-A",  # PRODUCTION-DOMINANT (session A)
-        "tier": "status-from-plan",
-        "outcome": "hit",
-        "session_id": "sess-tab-A",
-        "plan_id": "plan-tab-A",
-        "current_phase": "5-execute",
-        "short_desc": "session-A-task",
-        "expected_body": "pm:5-execute:session-A-task",
-        "emits_stdout": True,
+        'id': 'status-from-plan-hit-session-A',  # PRODUCTION-DOMINANT (session A)
+        'tier': 'status-from-plan',
+        'outcome': 'hit',
+        'session_id': 'sess-tab-A',
+        'plan_id': 'plan-tab-A',
+        'current_phase': '5-execute',
+        'short_desc': 'session-A-task',
+        'expected_body': 'pm:5-execute:session-A-task',
+        'emits_stdout': True,
     },
     {
-        "id": "status-from-plan-hit-session-B",  # cross-tab isolation partner
-        "tier": "status-from-plan",
-        "outcome": "hit",
-        "session_id": "sess-tab-B",
-        "plan_id": "plan-tab-B",
-        "current_phase": "3-outline",
-        "short_desc": "session-B-task",
-        "expected_body": "pm:3-outline:session-B-task",
-        "emits_stdout": True,
+        'id': 'status-from-plan-hit-session-B',  # cross-tab isolation partner
+        'tier': 'status-from-plan',
+        'outcome': 'hit',
+        'session_id': 'sess-tab-B',
+        'plan_id': 'plan-tab-B',
+        'current_phase': '3-outline',
+        'short_desc': 'session-B-task',
+        'expected_body': 'pm:3-outline:session-B-task',
+        'emits_stdout': True,
     },
     {
-        "id": "status-from-plan-miss",
-        "tier": "status-from-plan",
-        "outcome": "miss",
-        "session_id": "sess-tier3-miss",
-        "plan_id": "tier3-miss-plan",
-        "current_phase": None,  # no status.json
-        "short_desc": None,
-        "expected_body": None,
-        "emits_stdout": False,
+        'id': 'status-from-plan-miss',
+        'tier': 'status-from-plan',
+        'outcome': 'miss',
+        'session_id': 'sess-tier3-miss',
+        'plan_id': 'tier3-miss-plan',
+        'current_phase': None,  # no status.json
+        'short_desc': None,
+        'expected_body': None,
+        'emits_stdout': False,
     },
     {
-        "id": "status-from-plan-stale",
-        "tier": "status-from-plan",
-        "outcome": "stale",
-        "session_id": "sess-tier3-stale",
-        "plan_id": "tier3-stale-plan",
-        "current_phase": "",  # status.json present but no current_phase
-        "short_desc": "orphan",
-        "expected_body": None,
-        "emits_stdout": False,
+        'id': 'status-from-plan-stale',
+        'tier': 'status-from-plan',
+        'outcome': 'stale',
+        'session_id': 'sess-tier3-stale',
+        'plan_id': 'tier3-stale-plan',
+        'current_phase': '',  # status.json present but no current_phase
+        'short_desc': 'orphan',
+        'expected_body': None,
+        'emits_stdout': False,
     },
 ]
 
 
-def _arrange_render_cell(
-    cell: dict[str, Any], tmp_path: Path, monkeypatch
-) -> None:
+def _arrange_render_cell(cell: dict[str, Any], tmp_path: Path, monkeypatch) -> None:
     """Materialize the on-disk + env state for one matrix cell.
 
     Writes the session cache pointer + plan ``status.json`` according to the
@@ -743,39 +746,39 @@ def _arrange_render_cell(
     """
     import claude_runtime as _cr
 
-    monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
-    monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
+    monkeypatch.setattr(session_binding, '_SESSION_CACHE_BASE', tmp_path / 'sessions')
+    monkeypatch.setattr(_cr, '_PLAN_DIR_NAME', '.plan')
     monkeypatch.chdir(tmp_path)
 
-    session_id = cell["session_id"]
+    session_id = cell['session_id']
     if session_id is None:
-        monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
+        monkeypatch.delenv('CLAUDE_CODE_SESSION_ID', raising=False)
     else:
-        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", session_id)
+        monkeypatch.setenv('CLAUDE_CODE_SESSION_ID', session_id)
 
     # Skip on-disk arrangement when the env var is unusable.
     if not session_id:
         return
 
-    plan_pointer = cell["plan_id"]
+    plan_pointer = cell['plan_id']
     if plan_pointer is not None:
-        cache_dir = tmp_path / "sessions" / session_id
+        cache_dir = tmp_path / 'sessions' / session_id
         cache_dir.mkdir(parents=True, exist_ok=True)
-        (cache_dir / "active-plan").write_text(plan_pointer, encoding="utf-8")
+        (cache_dir / 'active-plan').write_text(plan_pointer, encoding='utf-8')
 
-    current_phase = cell["current_phase"]
+    current_phase = cell['current_phase']
     # Only materialize status.json when we have a non-empty plan pointer to
     # anchor the path. ``current_phase is None`` means "no status.json"; an
     # empty-string current_phase means "status.json present but unrenderable".
     if current_phase is not None and plan_pointer:
-        plan_dir = tmp_path / ".plan" / "local" / "plans" / plan_pointer
+        plan_dir = tmp_path / '.plan' / 'local' / 'plans' / plan_pointer
         plan_dir.mkdir(parents=True, exist_ok=True)
         status: dict[str, Any] = {}
         if current_phase:
-            status["current_phase"] = current_phase
-        if cell["short_desc"] is not None:
-            status["short_description"] = cell["short_desc"]
-        (plan_dir / "status.json").write_text(json.dumps(status), encoding="utf-8")
+            status['current_phase'] = current_phase
+        if cell['short_desc'] is not None:
+            status['short_description'] = cell['short_desc']
+        (plan_dir / 'status.json').write_text(json.dumps(status), encoding='utf-8')
 
 
 class TestSessionRenderTitle:
@@ -796,9 +799,9 @@ class TestSessionRenderTitle:
     """
 
     @pytest.mark.parametrize(
-        "cell",
+        'cell',
         _RENDER_MATRIX,
-        ids=[cast(dict, c)["id"] for c in _RENDER_MATRIX],
+        ids=[cast(dict, c)['id'] for c in _RENDER_MATRIX],
     )
     def test_resolver_matrix(self, cell, rt, tmp_path, monkeypatch, capsys):
         """Every {tier × outcome} cell asserts the function returns "" and stdout matches the hook contract.
@@ -816,31 +819,21 @@ class TestSessionRenderTitle:
         # Function always returns "" — TOON observability has been removed
         # from the hook channel because the host parser drops mixed-content
         # stdout (see hook-authoring-guide.md).
-        assert returned == "", (
-            f"cell {cell['id']!r}: expected empty return, got {returned!r}"
-        )
+        assert returned == '', f'cell {cell["id"]!r}: expected empty return, got {returned!r}'
 
-        if cell["emits_stdout"]:
+        if cell['emits_stdout']:
             # Success branch emits the JSON envelope; assert the OSC payload
             # carries the composer output (active icon, no glyph) for this cell.
             payload = json.loads(captured)
-            expected_osc = f"\x1b]0;➤ {cell['expected_body']}\x07"
-            assert payload["terminalSequence"] == expected_osc, (
-                f"cell {cell['id']!r}: OSC payload mismatch"
-            )
+            expected_osc = f'\x1b]0;➤ {cell["expected_body"]}\x07'
+            assert payload['terminalSequence'] == expected_osc, f'cell {cell["id"]!r}: OSC payload mismatch'
             # No TOON success row glued to the envelope.
-            assert "status:" not in captured, (
-                f"cell {cell['id']!r}: TOON tail leaked into stdout: {captured!r}"
-            )
+            assert 'status:' not in captured, f'cell {cell["id"]!r}: TOON tail leaked into stdout: {captured!r}'
         else:
             # No-op branches must write nothing to stdout.
-            assert captured == "", (
-                f"cell {cell['id']!r}: expected no stdout, got {captured!r}"
-            )
+            assert captured == '', f'cell {cell["id"]!r}: expected no stdout, got {captured!r}'
 
-    def test_cross_tab_isolation_session_A_does_not_leak_into_session_B(
-        self, rt, tmp_path, monkeypatch, capsys
-    ):
+    def test_cross_tab_isolation_session_A_does_not_leak_into_session_B(self, rt, tmp_path, monkeypatch, capsys):
         """The two production-dominant cells (session A and session B) must
         resolve to distinct composed bodies — proving per-session state
         isolation across the resolver chain.
@@ -851,49 +844,49 @@ class TestSessionRenderTitle:
         """
         import claude_runtime as _cr
 
-        cell_a = next(c for c in _RENDER_MATRIX if c["id"] == "status-from-plan-hit-session-A")
-        cell_b = next(c for c in _RENDER_MATRIX if c["id"] == "status-from-plan-hit-session-B")
+        cell_a = next(c for c in _RENDER_MATRIX if c['id'] == 'status-from-plan-hit-session-A')
+        cell_b = next(c for c in _RENDER_MATRIX if c['id'] == 'status-from-plan-hit-session-B')
 
-        monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
-        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
+        monkeypatch.setattr(session_binding, '_SESSION_CACHE_BASE', tmp_path / 'sessions')
+        monkeypatch.setattr(_cr, '_PLAN_DIR_NAME', '.plan')
         monkeypatch.chdir(tmp_path)
 
         # Materialize BOTH sessions' on-disk state side by side.
         for cell in (cell_a, cell_b):
-            cache_dir = tmp_path / "sessions" / cell["session_id"]
+            cache_dir = tmp_path / 'sessions' / cell['session_id']
             cache_dir.mkdir(parents=True)
-            (cache_dir / "active-plan").write_text(cell["plan_id"], encoding="utf-8")
-            plan_dir = tmp_path / ".plan" / "local" / "plans" / cell["plan_id"]
+            (cache_dir / 'active-plan').write_text(cell['plan_id'], encoding='utf-8')
+            plan_dir = tmp_path / '.plan' / 'local' / 'plans' / cell['plan_id']
             plan_dir.mkdir(parents=True)
-            (plan_dir / "status.json").write_text(
+            (plan_dir / 'status.json').write_text(
                 json.dumps(
                     {
-                        "current_phase": cell["current_phase"],
-                        "short_description": cell["short_desc"],
+                        'current_phase': cell['current_phase'],
+                        'short_description': cell['short_desc'],
                     }
                 ),
-                encoding="utf-8",
+                encoding='utf-8',
             )
 
         # Session A invocation — must see session A's composed body only.
-        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", cell_a["session_id"])
+        monkeypatch.setenv('CLAUDE_CODE_SESSION_ID', cell_a['session_id'])
         capsys.readouterr()
         returned_a = rt.session_render_title()
         captured_a = capsys.readouterr().out
-        assert returned_a == ""
+        assert returned_a == ''
         payload_a = json.loads(captured_a)
-        assert cell_a["expected_body"] in payload_a["terminalSequence"]
-        assert cell_b["expected_body"] not in captured_a
+        assert cell_a['expected_body'] in payload_a['terminalSequence']
+        assert cell_b['expected_body'] not in captured_a
 
         # Session B invocation — must see session B's composed body only.
-        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", cell_b["session_id"])
+        monkeypatch.setenv('CLAUDE_CODE_SESSION_ID', cell_b['session_id'])
         capsys.readouterr()
         returned_b = rt.session_render_title()
         captured_b = capsys.readouterr().out
-        assert returned_b == ""
+        assert returned_b == ''
         payload_b = json.loads(captured_b)
-        assert cell_b["expected_body"] in payload_b["terminalSequence"]
-        assert cell_a["expected_body"] not in captured_b
+        assert cell_b['expected_body'] in payload_b['terminalSequence']
+        assert cell_a['expected_body'] not in captured_b
 
 
 # =============================================================================
@@ -909,14 +902,14 @@ class TestSessionRenderTitle:
 #: matters only on the way IN. ``Notification`` asks like a question does,
 #: ``Stop`` is the one done state, and ``SessionStart`` opens on active.
 _ICON_CASES = [
-    ({"hook_event_name": "UserPromptSubmit"}, "➤"),
-    ({"hook_event_name": "Notification"}, "?"),
-    ({"hook_event_name": "PreToolUse", "tool_name": "AskUserQuestion"}, "?"),
-    ({"hook_event_name": "PreToolUse", "tool_name": "Bash"}, "⚙"),
-    ({"hook_event_name": "PostToolUse", "tool_name": "AskUserQuestion"}, "➤"),
-    ({"hook_event_name": "PostToolUse", "tool_name": "Bash"}, "➤"),
-    ({"hook_event_name": "Stop"}, "✓"),
-    ({"hook_event_name": "SessionStart"}, "➤"),
+    ({'hook_event_name': 'UserPromptSubmit'}, '➤'),
+    ({'hook_event_name': 'Notification'}, '?'),
+    ({'hook_event_name': 'PreToolUse', 'tool_name': 'AskUserQuestion'}, '?'),
+    ({'hook_event_name': 'PreToolUse', 'tool_name': 'Bash'}, '⚙'),
+    ({'hook_event_name': 'PostToolUse', 'tool_name': 'AskUserQuestion'}, '➤'),
+    ({'hook_event_name': 'PostToolUse', 'tool_name': 'Bash'}, '➤'),
+    ({'hook_event_name': 'Stop'}, '✓'),
+    ({'hook_event_name': 'SessionStart'}, '➤'),
 ]
 
 _ICON_IDS = [
@@ -941,70 +934,72 @@ class TestSessionRenderTitleStateAwareIcon:
     """
 
     @staticmethod
-    def _arrange(tmp_path, monkeypatch, *, session_id="sess-icon", plan_id="icon-plan",
-                 current_phase="5-execute", short_description="icon-task"):
+    def _arrange(
+        tmp_path,
+        monkeypatch,
+        *,
+        session_id='sess-icon',
+        plan_id='icon-plan',
+        current_phase='5-execute',
+        short_description='icon-task',
+    ):
         _write_status_json(
-            tmp_path, session_id=session_id, plan_id=plan_id,
-            current_phase=current_phase, short_description=short_description,
+            tmp_path,
+            session_id=session_id,
+            plan_id=plan_id,
+            current_phase=current_phase,
+            short_description=short_description,
         )
         _redirect_render_env(tmp_path, monkeypatch, session_id)
         # The composed body the renderer emits for this fixture.
-        return f"pm:{current_phase}:{short_description}"
+        return f'pm:{current_phase}:{short_description}'
 
-    @pytest.mark.parametrize(
-        ("payload", "expected_icon"), _ICON_CASES, ids=_ICON_IDS
-    )
-    def test_hook_mode_icon_from_stdin_payload(
-        self, payload, expected_icon, rt, tmp_path, monkeypatch, capsys
-    ):
+    @pytest.mark.parametrize(('payload', 'expected_icon'), _ICON_CASES, ids=_ICON_IDS)
+    def test_hook_mode_icon_from_stdin_payload(self, payload, expected_icon, rt, tmp_path, monkeypatch, capsys):
         """The OSC envelope embeds the icon the composer resolves from the stdin hook event."""
         from io import StringIO
 
         body = self._arrange(tmp_path, monkeypatch)
-        monkeypatch.setattr("sys.stdin", StringIO(json.dumps(payload)))
+        monkeypatch.setattr('sys.stdin', StringIO(json.dumps(payload)))
 
         capsys.readouterr()
         returned = rt.session_render_title(statusline=False)
         captured = capsys.readouterr().out
 
-        assert returned == ""
+        assert returned == ''
         envelope = json.loads(captured)
-        assert envelope["terminalSequence"] == f"\x1b]0;{expected_icon} {body}\x07"
+        assert envelope['terminalSequence'] == f'\x1b]0;{expected_icon} {body}\x07'
 
-    @pytest.mark.parametrize("stdin_text", _BAD_STDIN, ids=_BAD_STDIN_IDS)
-    def test_hook_mode_defensive_default_on_bad_stdin(
-        self, stdin_text, rt, tmp_path, monkeypatch, capsys
-    ):
+    @pytest.mark.parametrize('stdin_text', _BAD_STDIN, ids=_BAD_STDIN_IDS)
+    def test_hook_mode_defensive_default_on_bad_stdin(self, stdin_text, rt, tmp_path, monkeypatch, capsys):
         """Empty / whitespace / malformed / non-dict stdin defaults to ➤ and never raises."""
         from io import StringIO
 
         body = self._arrange(tmp_path, monkeypatch)
-        monkeypatch.setattr("sys.stdin", StringIO(stdin_text))
+        monkeypatch.setattr('sys.stdin', StringIO(stdin_text))
 
         capsys.readouterr()
         returned = rt.session_render_title(statusline=False)
         captured = capsys.readouterr().out
 
-        assert returned == ""
+        assert returned == ''
         envelope = json.loads(captured)
-        assert envelope["terminalSequence"] == f"\x1b]0;➤ {body}\x07"
+        assert envelope['terminalSequence'] == f'\x1b]0;➤ {body}\x07'
 
-    def test_statusline_mode_keeps_active_icon_without_reading_stdin(
-        self, rt, tmp_path, monkeypatch, capsys
-    ):
+    def test_statusline_mode_keeps_active_icon_without_reading_stdin(self, rt, tmp_path, monkeypatch, capsys):
         """statusLine mode never consults stdin — it always emits the active icon."""
         from io import StringIO
 
         body = self._arrange(tmp_path, monkeypatch)
         # Even with a Stop payload on stdin, statusLine mode keeps ➤.
-        monkeypatch.setattr("sys.stdin", StringIO(json.dumps({"hook_event_name": "Stop"})))
+        monkeypatch.setattr('sys.stdin', StringIO(json.dumps({'hook_event_name': 'Stop'})))
 
         capsys.readouterr()
         returned = rt.session_render_title(statusline=True)
         captured = capsys.readouterr().out
 
-        assert returned == ""
-        assert captured == f"➤ {body}"
+        assert returned == ''
+        assert captured == f'➤ {body}'
 
 
 # =============================================================================
@@ -1025,12 +1020,12 @@ class TestBuildBracketClearOwnerScoping:
     """
 
     _BUILD_COMMAND = (
-        "python3 .plan/execute-script.py "
-        "plan-marshall:build-pyproject:pyproject_build run "
+        'python3 .plan/execute-script.py '
+        'plan-marshall:build-pyproject:pyproject_build run '
         '--command-args "verify plan-marshall"'
     )
-    _GLYPH_LOCK_OWNED = "\U0001f512"  # 🔒
-    _GLYPH_BUILD_BUSY = "\U0001f528"  # 🔨
+    _GLYPH_LOCK_OWNED = '\U0001f512'  # 🔒
+    _GLYPH_BUILD_BUSY = '\U0001f528'  # 🔨
 
     @staticmethod
     def _arrange(tmp_path, monkeypatch, *, token, session_id, plan_id):
@@ -1046,74 +1041,68 @@ class TestBuildBracketClearOwnerScoping:
             tmp_path,
             session_id=session_id,
             plan_id=plan_id,
-            current_phase="5-execute",
-            short_description="clear-task",
+            current_phase='5-execute',
+            short_description='clear-task',
             title_token=token,
         )
         _redirect_render_env(tmp_path, monkeypatch, session_id)
         _stub_hook_stdin(
             monkeypatch,
             {
-                "hook_event_name": "PostToolUse",
-                "tool_name": "Bash",
-                "tool_input": {"command": TestBuildBracketClearOwnerScoping._BUILD_COMMAND},
+                'hook_event_name': 'PostToolUse',
+                'tool_name': 'Bash',
+                'tool_input': {'command': TestBuildBracketClearOwnerScoping._BUILD_COMMAND},
             },
         )
 
         cleared: list[str] = []
         monkeypatch.setattr(
             _cr,
-            "_manage_status_clear_title_token",
+            '_manage_status_clear_title_token',
             lambda plan_id: (cleared.append(plan_id), True)[1],
         )
         return cleared
 
-    def test_foreign_owned_token_survives_the_in_memory_clear(
-        self, rt, tmp_path, monkeypatch, capsys
-    ):
+    def test_foreign_owned_token_survives_the_in_memory_clear(self, rt, tmp_path, monkeypatch, capsys):
         """A merge-lock-owned token keeps painting its 🔒 through a build-hook clear."""
         cleared = self._arrange(
             tmp_path,
             monkeypatch,
-            token=_title_token("lock-owned", owner="merge-lock"),
-            session_id="sess-foreign-clear",
-            plan_id="foreign-clear-plan",
+            token=_title_token('lock-owned', owner='merge-lock'),
+            session_id='sess-foreign-clear',
+            plan_id='foreign-clear-plan',
         )
 
         capsys.readouterr()
         returned = rt.session_render_title(statusline=False)
         captured = capsys.readouterr().out
 
-        assert returned == ""
+        assert returned == ''
         envelope = json.loads(captured)
-        assert envelope["terminalSequence"] == (
-            f"\x1b]0;➤ {self._GLYPH_LOCK_OWNED} pm:5-execute:clear-task\x07"
-        )
+        assert envelope['terminalSequence'] == (f'\x1b]0;➤ {self._GLYPH_LOCK_OWNED} pm:5-execute:clear-task\x07')
         # The persisted half still fires — it is owner-scoped on its own side
         # (``--owner build-hook``), so it leaves the merge-lock record alone.
-        assert cleared == ["foreign-clear-plan"]
+        assert cleared == ['foreign-clear-plan']
 
-    def test_build_hook_owned_token_is_dropped_by_the_in_memory_clear(
-        self, rt, tmp_path, monkeypatch, capsys
-    ):
+    def test_build_hook_owned_token_is_dropped_by_the_in_memory_clear(self, rt, tmp_path, monkeypatch, capsys):
         """The hook's OWN build-busy token is popped, so 🔨 stops painting at once."""
         cleared = self._arrange(
             tmp_path,
             monkeypatch,
-            token=_title_token("build-busy", owner="build-hook"),
-            session_id="sess-own-clear",
-            plan_id="own-clear-plan",
+            token=_title_token('build-busy', owner='build-hook'),
+            session_id='sess-own-clear',
+            plan_id='own-clear-plan',
         )
 
         capsys.readouterr()
         returned = rt.session_render_title(statusline=False)
         captured = capsys.readouterr().out
 
-        assert returned == ""
+        assert returned == ''
         envelope = json.loads(captured)
-        assert envelope["terminalSequence"] == "\x1b]0;➤ pm:5-execute:clear-task\x07"
-        assert self._GLYPH_BUILD_BUSY not in envelope["terminalSequence"]
-        assert cleared == ["own-clear-plan"]
+        assert envelope['terminalSequence'] == '\x1b]0;➤ pm:5-execute:clear-task\x07'
+        assert self._GLYPH_BUILD_BUSY not in envelope['terminalSequence']
+        assert cleared == ['own-clear-plan']
 
 
 # =============================================================================
@@ -1140,67 +1129,71 @@ class TestSessionRenderTitleSessionTitleEmit:
     """
 
     @staticmethod
-    def _arrange(tmp_path, monkeypatch, *, session_id="sess-title", plan_id="title-plan",
-                 current_phase="5-execute", short_description="title-task"):
+    def _arrange(
+        tmp_path,
+        monkeypatch,
+        *,
+        session_id='sess-title',
+        plan_id='title-plan',
+        current_phase='5-execute',
+        short_description='title-task',
+    ):
         _write_status_json(
-            tmp_path, session_id=session_id, plan_id=plan_id,
-            current_phase=current_phase, short_description=short_description,
+            tmp_path,
+            session_id=session_id,
+            plan_id=plan_id,
+            current_phase=current_phase,
+            short_description=short_description,
         )
         _redirect_render_env(tmp_path, monkeypatch, session_id)
         # The composed (bare) body the sessionTitle channel carries.
-        return f"pm:{current_phase}:{short_description}"
+        return f'pm:{current_phase}:{short_description}'
 
-    def test_user_prompt_submit_emits_session_title(
-        self, rt, tmp_path, monkeypatch, capsys
-    ):
+    def test_user_prompt_submit_emits_session_title(self, rt, tmp_path, monkeypatch, capsys):
         """(a) UserPromptSubmit emits both terminalSequence and the icon-free sessionTitle."""
 
         title_body = self._arrange(tmp_path, monkeypatch)
-        _stub_hook_stdin(monkeypatch, {"hook_event_name": "UserPromptSubmit"})
+        _stub_hook_stdin(monkeypatch, {'hook_event_name': 'UserPromptSubmit'})
 
         capsys.readouterr()
         returned = rt.session_render_title(statusline=False)
         captured = capsys.readouterr().out
 
-        assert returned == ""
+        assert returned == ''
         envelope = json.loads(captured)
         # terminalSequence carries the live icon, unchanged.
-        assert envelope["terminalSequence"] == f"\x1b]0;➤ {title_body}\x07"
+        assert envelope['terminalSequence'] == f'\x1b]0;➤ {title_body}\x07'
         # sessionTitle is the bare body — NO icon glyph.
-        assert envelope["hookSpecificOutput"]["sessionTitle"] == title_body
-        assert "➤" not in envelope["hookSpecificOutput"]["sessionTitle"]
-        assert envelope["hookSpecificOutput"]["hookEventName"] == "UserPromptSubmit"
+        assert envelope['hookSpecificOutput']['sessionTitle'] == title_body
+        assert '➤' not in envelope['hookSpecificOutput']['sessionTitle']
+        assert envelope['hookSpecificOutput']['hookEventName'] == 'UserPromptSubmit'
 
     @pytest.mark.parametrize(
-        "source",
-        ["startup", "resume"],
+        'source',
+        ['startup', 'resume'],
         ids=['session-start-startup', 'session-start-resume'],
     )
-    def test_session_start_startup_or_resume_emits_session_title(
-        self, source, rt, tmp_path, monkeypatch, capsys
-    ):
+    def test_session_start_startup_or_resume_emits_session_title(self, source, rt, tmp_path, monkeypatch, capsys):
         """(b) SessionStart with source startup/resume emits sessionTitle."""
         from io import StringIO
 
         title_body = self._arrange(tmp_path, monkeypatch)
         monkeypatch.setattr(
-            "sys.stdin",
-            StringIO(json.dumps({"hook_event_name": "SessionStart", "source": source})),
+            'sys.stdin',
+            StringIO(json.dumps({'hook_event_name': 'SessionStart', 'source': source})),
         )
 
         capsys.readouterr()
         returned = rt.session_render_title(statusline=False)
         captured = capsys.readouterr().out
 
-        assert returned == ""
+        assert returned == ''
         envelope = json.loads(captured)
-        assert envelope["terminalSequence"] == f"\x1b]0;➤ {title_body}\x07"
-        assert envelope["hookSpecificOutput"]["sessionTitle"] == title_body
-        assert envelope["hookSpecificOutput"]["hookEventName"] == "SessionStart"
+        assert envelope['terminalSequence'] == f'\x1b]0;➤ {title_body}\x07'
+        assert envelope['hookSpecificOutput']['sessionTitle'] == title_body
+        assert envelope['hookSpecificOutput']['hookEventName'] == 'SessionStart'
 
-    def test_session_start_compact_omits_session_title(
-        self, rt, tmp_path, monkeypatch, capsys
-    ):
+    def test_session_start_compact_omits_session_title(self, rt, tmp_path, monkeypatch, capsys):
         """(c) SessionStart with source compact emits ONLY terminalSequence.
 
         ``clear`` is deliberately NOT covered here: that source is a session
@@ -1211,26 +1204,26 @@ class TestSessionRenderTitleSessionTitleEmit:
 
         title_body = self._arrange(tmp_path, monkeypatch)
         monkeypatch.setattr(
-            "sys.stdin",
-            StringIO(json.dumps({"hook_event_name": "SessionStart", "source": "compact"})),
+            'sys.stdin',
+            StringIO(json.dumps({'hook_event_name': 'SessionStart', 'source': 'compact'})),
         )
 
         capsys.readouterr()
         returned = rt.session_render_title(statusline=False)
         captured = capsys.readouterr().out
 
-        assert returned == ""
+        assert returned == ''
         envelope = json.loads(captured)
-        assert envelope["terminalSequence"] == f"\x1b]0;➤ {title_body}\x07"
-        assert "hookSpecificOutput" not in envelope
+        assert envelope['terminalSequence'] == f'\x1b]0;➤ {title_body}\x07'
+        assert 'hookSpecificOutput' not in envelope
 
     @pytest.mark.parametrize(
-        "payload",
+        'payload',
         [
-            {"hook_event_name": "Notification"},
-            {"hook_event_name": "Stop"},
-            {"hook_event_name": "PostToolUse", "tool_name": "Bash"},
-            {"hook_event_name": "SessionStart"},
+            {'hook_event_name': 'Notification'},
+            {'hook_event_name': 'Stop'},
+            {'hook_event_name': 'PostToolUse', 'tool_name': 'Bash'},
+            {'hook_event_name': 'SessionStart'},
         ],
         ids=[
             'notification',
@@ -1239,27 +1232,25 @@ class TestSessionRenderTitleSessionTitleEmit:
             'session-start-carrying-no-source',
         ],
     )
-    def test_non_supporting_events_omit_session_title(
-        self, payload, rt, tmp_path, monkeypatch, capsys
-    ):
+    def test_non_supporting_events_omit_session_title(self, payload, rt, tmp_path, monkeypatch, capsys):
         """(d) Non-supporting events (and SessionStart without a source) emit ONLY terminalSequence."""
         from io import StringIO
 
         self._arrange(tmp_path, monkeypatch)
-        monkeypatch.setattr("sys.stdin", StringIO(json.dumps(payload)))
+        monkeypatch.setattr('sys.stdin', StringIO(json.dumps(payload)))
 
         capsys.readouterr()
         returned = rt.session_render_title(statusline=False)
         captured = capsys.readouterr().out
 
-        assert returned == ""
+        assert returned == ''
         envelope = json.loads(captured)
         # terminalSequence still present (with the event's icon).
-        assert "terminalSequence" in envelope
+        assert 'terminalSequence' in envelope
         # No stray sessionTitle.
-        assert "hookSpecificOutput" not in envelope
+        assert 'hookSpecificOutput' not in envelope
 
-    @pytest.mark.parametrize("stdin_text", _BAD_STDIN, ids=_BAD_STDIN_IDS)
+    @pytest.mark.parametrize('stdin_text', _BAD_STDIN, ids=_BAD_STDIN_IDS)
     def test_malformed_stdin_omits_session_title_but_still_emits_terminal_sequence(
         self, stdin_text, rt, tmp_path, monkeypatch, capsys
     ):
@@ -1267,34 +1258,32 @@ class TestSessionRenderTitleSessionTitleEmit:
         from io import StringIO
 
         title_body = self._arrange(tmp_path, monkeypatch)
-        monkeypatch.setattr("sys.stdin", StringIO(stdin_text))
+        monkeypatch.setattr('sys.stdin', StringIO(stdin_text))
 
         capsys.readouterr()
         returned = rt.session_render_title(statusline=False)
         captured = capsys.readouterr().out
 
-        assert returned == ""
+        assert returned == ''
         envelope = json.loads(captured)
-        assert envelope["terminalSequence"] == f"\x1b]0;➤ {title_body}\x07"
-        assert "hookSpecificOutput" not in envelope
+        assert envelope['terminalSequence'] == f'\x1b]0;➤ {title_body}\x07'
+        assert 'hookSpecificOutput' not in envelope
 
-    def test_statusline_mode_never_emits_session_title(
-        self, rt, tmp_path, monkeypatch, capsys
-    ):
+    def test_statusline_mode_never_emits_session_title(self, rt, tmp_path, monkeypatch, capsys):
         """(e) statusLine mode is unchanged — plain text, no JSON, no sessionTitle channel."""
 
         title_body = self._arrange(tmp_path, monkeypatch)
         # Even a UserPromptSubmit payload on stdin yields plain text in statusLine mode.
-        _stub_hook_stdin(monkeypatch, {"hook_event_name": "UserPromptSubmit"})
+        _stub_hook_stdin(monkeypatch, {'hook_event_name': 'UserPromptSubmit'})
 
         capsys.readouterr()
         returned = rt.session_render_title(statusline=True)
         captured = capsys.readouterr().out
 
-        assert returned == ""
-        assert captured == f"➤ {title_body}"
-        assert "sessionTitle" not in captured
-        assert "{" not in captured  # no JSON envelope
+        assert returned == ''
+        assert captured == f'➤ {title_body}'
+        assert 'sessionTitle' not in captured
+        assert '{' not in captured  # no JSON envelope
 
     def test_empty_title_body_emits_nothing(self, rt, tmp_path, monkeypatch, capsys):
         """(f) Empty/unrenderable state is a no-op even for a supporting event — nothing on stdout."""
@@ -1302,20 +1291,20 @@ class TestSessionRenderTitleSessionTitleEmit:
         # status.json present but with no current_phase → composer returns None.
         _write_status_json(
             tmp_path,
-            session_id="sess-empty-title",
-            plan_id="empty-title-plan",
+            session_id='sess-empty-title',
+            plan_id='empty-title-plan',
             current_phase=None,
             short_description=None,
         )
-        _redirect_render_env(tmp_path, monkeypatch, "sess-empty-title")
-        _stub_hook_stdin(monkeypatch, {"hook_event_name": "UserPromptSubmit"})
+        _redirect_render_env(tmp_path, monkeypatch, 'sess-empty-title')
+        _stub_hook_stdin(monkeypatch, {'hook_event_name': 'UserPromptSubmit'})
 
         capsys.readouterr()
         returned = rt.session_render_title(statusline=False)
         captured = capsys.readouterr().out
 
-        assert returned == ""
-        assert captured == ""
+        assert returned == ''
+        assert captured == ''
 
 
 # =============================================================================
@@ -1341,111 +1330,111 @@ class TestSessionBindResolveDoctor:
     @pytest.fixture()
     def plan_dir_name(self, monkeypatch):
         """Pin the plan directory name the session binder resolves against."""
-        monkeypatch.setattr(session_binding, "_PLAN_DIR_NAME", ".plan")
+        monkeypatch.setattr(session_binding, '_PLAN_DIR_NAME', '.plan')
 
     def test_bind_writes_slot_from_env_session(self, rt, tmp_path, monkeypatch):
         """session bind resolves session id from $CLAUDE_CODE_SESSION_ID and writes the slot."""
         from toon_parser import parse_toon
 
-        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-bind-env")
-        parsed = parse_toon(rt.session_bind("plan-1"))
-        assert parsed["status"] == "success"
-        assert parsed["bound"] is True
-        assert session_binding.resolve_plan("sess-bind-env") == "plan-1"
+        monkeypatch.setenv('CLAUDE_CODE_SESSION_ID', 'sess-bind-env')
+        parsed = parse_toon(rt.session_bind('plan-1'))
+        assert parsed['status'] == 'success'
+        assert parsed['bound'] is True
+        assert session_binding.resolve_plan('sess-bind-env') == 'plan-1'
 
     def test_bind_uses_explicit_session_id_over_env(self, rt, tmp_path, monkeypatch):
         """An explicit session_id argument takes precedence over the env var."""
         from toon_parser import parse_toon
 
-        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-env")
-        parsed = parse_toon(rt.session_bind("plan-2", "sess-explicit"))
-        assert parsed["bound"] is True
-        assert session_binding.resolve_plan("sess-explicit") == "plan-2"
-        assert session_binding.resolve_plan("sess-env") is None
+        monkeypatch.setenv('CLAUDE_CODE_SESSION_ID', 'sess-env')
+        parsed = parse_toon(rt.session_bind('plan-2', 'sess-explicit'))
+        assert parsed['bound'] is True
+        assert session_binding.resolve_plan('sess-explicit') == 'plan-2'
+        assert session_binding.resolve_plan('sess-env') is None
 
     def test_bind_last_driven_wins(self, rt, tmp_path, monkeypatch):
         """A second bind to a different plan overwrites — never protects the prior binding."""
-        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-ldw")
-        rt.session_bind("plan-old")
-        rt.session_bind("plan-new")
-        assert session_binding.resolve_plan("sess-ldw") == "plan-new"
+        monkeypatch.setenv('CLAUDE_CODE_SESSION_ID', 'sess-ldw')
+        rt.session_bind('plan-old')
+        rt.session_bind('plan-new')
+        assert session_binding.resolve_plan('sess-ldw') == 'plan-new'
 
     def test_bind_no_session_id_reports_unbound(self, rt, monkeypatch):
         """Without a session id, bind reports bound=False with a reason and writes nothing."""
         from toon_parser import parse_toon
 
-        monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
-        parsed = parse_toon(rt.session_bind("plan-1"))
-        assert parsed["bound"] is False
-        assert parsed["reason"] == "no_session_id"
+        monkeypatch.delenv('CLAUDE_CODE_SESSION_ID', raising=False)
+        parsed = parse_toon(rt.session_bind('plan-1'))
+        assert parsed['bound'] is False
+        assert parsed['reason'] == 'no_session_id'
 
     def test_resolve_plan_returns_bound(self, rt, tmp_path, monkeypatch):
         """session resolve-plan returns the plan bound to the session."""
         from toon_parser import parse_toon
 
-        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-resolve")
-        rt.session_bind("plan-r")
+        monkeypatch.setenv('CLAUDE_CODE_SESSION_ID', 'sess-resolve')
+        rt.session_bind('plan-r')
         parsed = parse_toon(rt.session_resolve_plan())
-        assert parsed["resolved"] is True
-        assert parsed["plan_id"] == "plan-r"
+        assert parsed['resolved'] is True
+        assert parsed['plan_id'] == 'plan-r'
 
     def test_resolve_plan_unbound_returns_empty(self, rt, monkeypatch):
         """An unbound session resolves to an empty plan id."""
         from toon_parser import parse_toon
 
-        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-unbound")
+        monkeypatch.setenv('CLAUDE_CODE_SESSION_ID', 'sess-unbound')
         parsed = parse_toon(rt.session_resolve_plan())
-        assert parsed["resolved"] is False
-        assert parsed["plan_id"] == ""
+        assert parsed['resolved'] is False
+        assert parsed['plan_id'] == ''
 
     def test_doctor_reports_conflict(self, rt, tmp_path, plan_dir_name, in_tmp_cwd):
         """session doctor reports a two-sessions-one-plan conflict."""
         from toon_parser import parse_toon
 
-        (tmp_path / ".plan" / "local" / "plans" / "shared-plan").mkdir(parents=True)
-        session_binding.bind("sess-d-a", "shared-plan")
-        session_binding.bind("sess-d-b", "shared-plan")
+        (tmp_path / '.plan' / 'local' / 'plans' / 'shared-plan').mkdir(parents=True)
+        session_binding.bind('sess-d-a', 'shared-plan')
+        session_binding.bind('sess-d-b', 'shared-plan')
         parsed = parse_toon(rt.session_doctor())
-        assert parsed["conflict_count"] == 1
-        assert "shared-plan=" in parsed["conflicts"][0]
+        assert parsed['conflict_count'] == 1
+        assert 'shared-plan=' in parsed['conflicts'][0]
 
     def test_doctor_fix_gcs_stale_slot(self, rt, tmp_path, plan_dir_name, in_tmp_cwd):
         """session doctor --fix removes a stale slot whose plan is archived/deleted."""
         from toon_parser import parse_toon
 
-        (tmp_path / ".plan" / "local" / "plans" / "live-plan").mkdir(parents=True)
-        session_binding.bind("sess-live", "live-plan")
-        session_binding.bind("sess-gone", "gone-plan")
+        (tmp_path / '.plan' / 'local' / 'plans' / 'live-plan').mkdir(parents=True)
+        session_binding.bind('sess-live', 'live-plan')
+        session_binding.bind('sess-gone', 'gone-plan')
         parsed = parse_toon(rt.session_doctor(fix=True))
-        assert parsed["gc_removed"] == 1
-        assert session_binding.resolve_plan("sess-gone") is None
-        assert session_binding.resolve_plan("sess-live") == "live-plan"
+        assert parsed['gc_removed'] == 1
+        assert session_binding.resolve_plan('sess-gone') is None
+        assert session_binding.resolve_plan('sess-live') == 'live-plan'
 
     def test_doctor_renders_orphan_rows_on_a_plain_scan(self, rt, tmp_path, plan_dir_name, in_tmp_cwd):
         """An orphan directory surfaces as a bare session-id row with a zero removal count."""
-        (tmp_path / "sessions" / "sess-orphan").mkdir(parents=True)
+        (tmp_path / 'sessions' / 'sess-orphan').mkdir(parents=True)
 
         parsed = parse_toon(rt.session_doctor())
 
-        assert parsed["orphan_count"] == 1
-        assert parsed["orphans"] == ["sess-orphan"]
-        assert parsed["orphans_removed"] == 0
+        assert parsed['orphan_count'] == 1
+        assert parsed['orphans'] == ['sess-orphan']
+        assert parsed['orphans_removed'] == 0
         # A plain scan reports without mutating.
-        assert (tmp_path / "sessions" / "sess-orphan").is_dir()
+        assert (tmp_path / 'sessions' / 'sess-orphan').is_dir()
 
     def test_doctor_fix_prunes_orphan_directory(self, rt, tmp_path, plan_dir_name, in_tmp_cwd):
         """session doctor --fix prunes the orphan directory and counts it separately."""
-        (tmp_path / ".plan" / "local" / "plans" / "live-plan").mkdir(parents=True)
-        session_binding.bind("sess-live", "live-plan")
-        (tmp_path / "sessions" / "sess-orphan").mkdir(parents=True)
+        (tmp_path / '.plan' / 'local' / 'plans' / 'live-plan').mkdir(parents=True)
+        session_binding.bind('sess-live', 'live-plan')
+        (tmp_path / 'sessions' / 'sess-orphan').mkdir(parents=True)
 
         parsed = parse_toon(rt.session_doctor(fix=True))
 
-        assert parsed["orphans"] == ["sess-orphan"]
-        assert parsed["orphans_removed"] == 1
-        assert parsed["gc_removed"] == 0  # orphans are not stale slots
-        assert not (tmp_path / "sessions" / "sess-orphan").exists()
-        assert session_binding.resolve_plan("sess-live") == "live-plan"
+        assert parsed['orphans'] == ['sess-orphan']
+        assert parsed['orphans_removed'] == 1
+        assert parsed['gc_removed'] == 0  # orphans are not stale slots
+        assert not (tmp_path / 'sessions' / 'sess-orphan').exists()
+        assert session_binding.resolve_plan('sess-live') == 'live-plan'
 
 
 # =============================================================================
@@ -1461,12 +1450,15 @@ class TestSessionPushTitleTokenOptionalIcon:
     with the default active icon).
     """
 
-    def _arrange(self, tmp_path, monkeypatch, plan_id="push-plan"):
+    def _arrange(self, tmp_path, monkeypatch, plan_id='push-plan'):
         _write_status_json(
-            tmp_path, session_id="sess-push", plan_id=plan_id,
-            current_phase="5-execute", short_description="push-task",
+            tmp_path,
+            session_id='sess-push',
+            plan_id=plan_id,
+            current_phase='5-execute',
+            short_description='push-task',
         )
-        monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
+        monkeypatch.setattr(session_binding, '_SESSION_CACHE_BASE', tmp_path / 'sessions')
         monkeypatch.chdir(tmp_path)
 
     def test_icon_override_passed_to_composer(self, rt, tmp_path, monkeypatch):
@@ -1477,12 +1469,12 @@ class TestSessionPushTitleTokenOptionalIcon:
         captured: dict[str, Any] = {}
 
         def fake_compose(state, process_state, icon_override=None):
-            captured["icon_override"] = icon_override
-            return "TITLE"
+            captured['icon_override'] = icon_override
+            return 'TITLE'
 
-        monkeypatch.setattr(_claude_runtime_impl, "compose", fake_compose)
-        rt.session_push_title_token("push-plan", "⏳")
-        assert captured["icon_override"] == "⏳"
+        monkeypatch.setattr(_claude_runtime_impl, 'compose', fake_compose)
+        rt.session_push_title_token('push-plan', '⏳')
+        assert captured['icon_override'] == '⏳'
 
     def test_no_icon_passes_none_to_composer(self, rt, tmp_path, monkeypatch):
         """Omitting --icon forwards icon_override=None (plain repaint)."""
@@ -1492,12 +1484,12 @@ class TestSessionPushTitleTokenOptionalIcon:
         captured: dict[str, Any] = {}
 
         def fake_compose(state, process_state, icon_override=None):
-            captured["icon_override"] = icon_override
-            return "TITLE"
+            captured['icon_override'] = icon_override
+            return 'TITLE'
 
-        monkeypatch.setattr(_claude_runtime_impl, "compose", fake_compose)
-        rt.session_push_title_token("push-plan")
-        assert captured["icon_override"] is None
+        monkeypatch.setattr(_claude_runtime_impl, 'compose', fake_compose)
+        rt.session_push_title_token('push-plan')
+        assert captured['icon_override'] is None
 
     def test_no_title_state_reports_the_reason_and_no_pushed_flag(self, rt, tmp_path, monkeypatch):
         """Missing state is a best-effort no-op reported as ``reason: no_title_state``.
@@ -1508,11 +1500,11 @@ class TestSessionPushTitleTokenOptionalIcon:
         """
         from toon_parser import parse_toon
 
-        monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
+        monkeypatch.setattr(session_binding, '_SESSION_CACHE_BASE', tmp_path / 'sessions')
         monkeypatch.chdir(tmp_path)
-        parsed = parse_toon(rt.session_push_title_token("no-such-plan"))
-        assert parsed["reason"] == "no_title_state"
-        assert "pushed" not in parsed
+        parsed = parse_toon(rt.session_push_title_token('no-such-plan'))
+        assert parsed['reason'] == 'no_title_state'
+        assert 'pushed' not in parsed
 
 
 # =============================================================================
@@ -1528,15 +1520,13 @@ class TestSessionRenderTitleOrchestratorFallback:
     slot is empty.
     """
 
-    def test_epic_bound_no_tty_renders_orchestrator_terminal_sequence(
-        self, rt, tmp_path, monkeypatch, capsys
-    ):
+    def test_epic_bound_no_tty_renders_orchestrator_terminal_sequence(self, rt, tmp_path, monkeypatch, capsys):
         """An epic-bound session with NO plan renders a non-empty orchestrator
         terminalSequence from the hook path (stdout) — no /dev/tty involved."""
         import claude_runtime as _cr
 
-        session_id = "sess-orch-render"
-        slug = "my-epic"
+        session_id = 'sess-orch-render'
+        slug = 'my-epic'
         _redirect_render_env(tmp_path, monkeypatch, session_id)
         # Bind the session to the EPIC (orchestrator slot), not a plan.
         session_binding.bind_orchestrator(session_id, slug)
@@ -1545,41 +1535,40 @@ class TestSessionRenderTitleOrchestratorFallback:
         # the session binding flows into compose + emit.
         monkeypatch.setattr(
             _cr,
-            "_read_orchestrator_title_state",
-            lambda s: {"kind": "orchestrator", "slug": s} if s == slug else None,
+            '_read_orchestrator_title_state',
+            lambda s: {'kind': 'orchestrator', 'slug': s} if s == slug else None,
         )
 
         capsys.readouterr()
         returned = rt.session_render_title(statusline=False)
         captured = capsys.readouterr().out
 
-        assert returned == ""
+        assert returned == ''
         envelope = json.loads(captured)
         # PRIMARY hook channel: a non-empty orchestrator terminalSequence.
-        assert envelope["terminalSequence"] == "\x1b]0;➤ Orchestrator-my-epic\x07"
+        assert envelope['terminalSequence'] == '\x1b]0;➤ Orchestrator-my-epic\x07'
 
-    def test_no_plan_and_no_epic_binding_renders_nothing(
-        self, rt, tmp_path, monkeypatch, capsys
-    ):
+    def test_no_plan_and_no_epic_binding_renders_nothing(self, rt, tmp_path, monkeypatch, capsys):
         """With neither a plan nor an epic bound, render is a no-op (empty stdout)."""
-        session_id = "sess-neither"
+        session_id = 'sess-neither'
         _redirect_render_env(tmp_path, monkeypatch, session_id)
 
         capsys.readouterr()
-        assert rt.session_render_title(statusline=False) == ""
-        assert capsys.readouterr().out == ""
+        assert rt.session_render_title(statusline=False) == ''
+        assert capsys.readouterr().out == ''
 
-    def test_plan_binding_takes_precedence_over_epic(
-        self, rt, tmp_path, monkeypatch, capsys
-    ):
+    def test_plan_binding_takes_precedence_over_epic(self, rt, tmp_path, monkeypatch, capsys):
         """A plan binding wins: the plan-bound render path is unchanged (D5(c)) —
         the orchestrator fallback is never consulted when a plan is bound."""
         import claude_runtime as _cr
 
-        session_id = "sess-plan-wins"
+        session_id = 'sess-plan-wins'
         _write_status_json(
-            tmp_path, session_id=session_id, plan_id="the-plan",
-            current_phase="5-execute", short_description="plan-task",
+            tmp_path,
+            session_id=session_id,
+            plan_id='the-plan',
+            current_phase='5-execute',
+            short_description='plan-task',
         )
         _redirect_render_env(tmp_path, monkeypatch, session_id)
         # Tripwire: if the orchestrator fallback is wrongly consulted it records
@@ -1587,17 +1576,17 @@ class TestSessionRenderTitleOrchestratorFallback:
         orch_calls: list[str] = []
         monkeypatch.setattr(
             _cr,
-            "_read_orchestrator_title_state",
-            lambda s: (orch_calls.append(s), {"kind": "orchestrator", "slug": s})[1],
+            '_read_orchestrator_title_state',
+            lambda s: (orch_calls.append(s), {'kind': 'orchestrator', 'slug': s})[1],
         )
 
         capsys.readouterr()
         returned = rt.session_render_title(statusline=False)
         captured = capsys.readouterr().out
 
-        assert returned == ""
+        assert returned == ''
         envelope = json.loads(captured)
-        assert envelope["terminalSequence"] == "\x1b]0;➤ pm:5-execute:plan-task\x07"
+        assert envelope['terminalSequence'] == '\x1b]0;➤ pm:5-execute:plan-task\x07'
         assert orch_calls == []
 
 
@@ -1622,7 +1611,7 @@ class TestSessionPushTitleTokenOrchestrator:
     @pytest.fixture()
     def session_cache_base(self, tmp_path, monkeypatch):
         """Redirect the session cache root to an isolated tmp_path."""
-        monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
+        monkeypatch.setattr(session_binding, '_SESSION_CACHE_BASE', tmp_path / 'sessions')
 
     @staticmethod
     def _stub_orch_state(monkeypatch):
@@ -1630,68 +1619,70 @@ class TestSessionPushTitleTokenOrchestrator:
 
         monkeypatch.setattr(
             _cr,
-            "_read_orchestrator_title_state",
-            lambda s: {"kind": "orchestrator", "slug": s},
+            '_read_orchestrator_title_state',
+            lambda s: {'kind': 'orchestrator', 'slug': s},
         )
 
     def test_orchestrator_push_binds_the_epic(self, rt, tmp_path, monkeypatch, session_cache_base, in_tmp_cwd):
         """The orchestrator push establishes the session→epic binding so the
         PRIMARY hook channel resolves the epic on the next render."""
-        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-orch-push")
+        monkeypatch.setenv('CLAUDE_CODE_SESSION_ID', 'sess-orch-push')
         _activate_terminal_title(tmp_path)
         self._stub_orch_state(monkeypatch)
         _patch_dev_tty(monkeypatch, openable=True)
 
-        rt.session_push_title_token("", store="orchestrator", slug="my-epic")
+        rt.session_push_title_token('', store='orchestrator', slug='my-epic')
 
-        assert session_binding.resolve_orchestrator("sess-orch-push") == "my-epic"
+        assert session_binding.resolve_orchestrator('sess-orch-push') == 'my-epic'
 
     def test_orchestrator_push_reports_feature_inactive_when_off(self, rt, monkeypatch, session_cache_base, in_tmp_cwd):
         """With the terminal-title feature configured OFF, the orchestrator call
         reports reason: feature_inactive — the one no-op outcome it can produce."""
         from toon_parser import parse_toon
 
-        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-orch-inactive")
+        monkeypatch.setenv('CLAUDE_CODE_SESSION_ID', 'sess-orch-inactive')
         # NO _activate_terminal_title → _terminal_title_active() is False.
         self._stub_orch_state(monkeypatch)
         _patch_dev_tty(monkeypatch, openable=True)
 
-        result = parse_toon(rt.session_push_title_token("", store="orchestrator", slug="my-epic"))
+        result = parse_toon(rt.session_push_title_token('', store='orchestrator', slug='my-epic'))
 
-        assert result["reason"] == "feature_inactive"
-        assert "pushed" not in result
-        assert "delivery" not in result
+        assert result['reason'] == 'feature_inactive'
+        assert 'pushed' not in result
+        assert 'delivery' not in result
 
-    def test_orchestrator_push_writes_no_escape_when_active(self, rt, tmp_path, monkeypatch, session_cache_base, in_tmp_cwd):
+    def test_orchestrator_push_writes_no_escape_when_active(
+        self, rt, tmp_path, monkeypatch, session_cache_base, in_tmp_cwd
+    ):
         """With the feature ACTIVE the call settles state and still writes nothing.
 
         A tty is deliberately available, so a surviving write would be captured.
         """
         from toon_parser import parse_toon
 
-        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-orch-active")
+        monkeypatch.setenv('CLAUDE_CODE_SESSION_ID', 'sess-orch-active')
         _activate_terminal_title(tmp_path)
         self._stub_orch_state(monkeypatch)
         writes = _patch_dev_tty(monkeypatch, openable=True)
 
-        result = parse_toon(rt.session_push_title_token("", store="orchestrator", slug="my-epic"))
+        result = parse_toon(rt.session_push_title_token('', store='orchestrator', slug='my-epic'))
 
-        assert result["status"] == "success"
-        assert result["slug"] == "my-epic"
+        assert result['status'] == 'success'
+        assert result['slug'] == 'my-epic'
         assert writes == []
-        assert "reason" not in result
+        assert 'reason' not in result
 
     def test_orchestrator_push_binds_even_when_feature_inactive(self, rt, monkeypatch, session_cache_base, in_tmp_cwd):
         """The epic binding is established BEFORE the feature gate, so it lands
         even when the push itself reports feature_inactive — the PRIMARY channel
         can then deliver once the feature is turned on."""
-        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-orch-bind-inactive")
+        monkeypatch.setenv('CLAUDE_CODE_SESSION_ID', 'sess-orch-bind-inactive')
         self._stub_orch_state(monkeypatch)
         _patch_dev_tty(monkeypatch, openable=True)
 
-        rt.session_push_title_token("", store="orchestrator", slug="my-epic")
+        rt.session_push_title_token('', store='orchestrator', slug='my-epic')
 
-        assert session_binding.resolve_orchestrator("sess-orch-bind-inactive") == "my-epic"
+        assert session_binding.resolve_orchestrator('sess-orch-bind-inactive') == 'my-epic'
 
 
 # =============================================================================
@@ -1709,17 +1700,17 @@ class _RaisingStdout:
     """
 
     def write(self, _text: str) -> int:
-        raise OSError("stdout is closed")
+        raise OSError('stdout is closed')
 
     def flush(self) -> None:
-        raise OSError("stdout is closed")
+        raise OSError('stdout is closed')
 
 
 def _outcome_name(capsys) -> str:
     """Read and parse the named-outcome TOON row from STDERR."""
     err = capsys.readouterr().err
-    assert err.strip(), "the render wrote no named outcome to stderr"
-    return cast(str, cast(dict[str, Any], parse_toon(err))["outcome"])
+    assert err.strip(), 'the render wrote no named outcome to stderr'
+    return cast(str, cast(dict[str, Any], parse_toon(err))['outcome'])
 
 
 class TestSessionRenderTitleNamedOutcomes:
@@ -1739,25 +1730,25 @@ class TestSessionRenderTitleNamedOutcomes:
     """
 
     def test_no_session_id_is_named_and_writes_no_stdout(self, rt, monkeypatch, capsys):
-        monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
+        monkeypatch.delenv('CLAUDE_CODE_SESSION_ID', raising=False)
         capsys.readouterr()
 
-        assert rt.session_render_title(statusline=False) == ""
+        assert rt.session_render_title(statusline=False) == ''
 
         captured = capsys.readouterr()
-        assert captured.out == ""
-        assert parse_toon(captured.err)["outcome"] == "no_session_id"
+        assert captured.out == ''
+        assert parse_toon(captured.err)['outcome'] == 'no_session_id'
 
     def test_no_binding_is_named(self, rt, tmp_path, monkeypatch, capsys):
         """A session bound to neither a plan nor an epic names ``no_binding``."""
-        _redirect_render_env(tmp_path, monkeypatch, "sess-unbound")
+        _redirect_render_env(tmp_path, monkeypatch, 'sess-unbound')
         capsys.readouterr()
 
-        assert rt.session_render_title(statusline=False) == ""
+        assert rt.session_render_title(statusline=False) == ''
 
         captured = capsys.readouterr()
-        assert captured.out == ""
-        assert parse_toon(captured.err)["outcome"] == "no_binding"
+        assert captured.out == ''
+        assert parse_toon(captured.err)['outcome'] == 'no_binding'
 
     def test_no_title_state_is_named(self, rt, tmp_path, monkeypatch, capsys):
         """A resolved binding whose status.json is absent names ``no_title_state``.
@@ -1766,39 +1757,39 @@ class TestSessionRenderTitleNamedOutcomes:
         two failures point at different broken things (an unbound session vs a
         missing plan directory) and must not share a name.
         """
-        cache_dir = tmp_path / "sessions" / "sess-ghost"
+        cache_dir = tmp_path / 'sessions' / 'sess-ghost'
         cache_dir.mkdir(parents=True)
-        (cache_dir / "active-plan").write_text("ghost-plan", encoding="utf-8")
-        _redirect_render_env(tmp_path, monkeypatch, "sess-ghost")
+        (cache_dir / 'active-plan').write_text('ghost-plan', encoding='utf-8')
+        _redirect_render_env(tmp_path, monkeypatch, 'sess-ghost')
         capsys.readouterr()
 
-        assert rt.session_render_title(statusline=False) == ""
+        assert rt.session_render_title(statusline=False) == ''
 
         captured = capsys.readouterr()
-        assert captured.out == ""
+        assert captured.out == ''
         outcome = parse_toon(captured.err)
-        assert outcome["outcome"] == "no_title_state"
-        assert outcome["plan_id"] == "ghost-plan"
+        assert outcome['outcome'] == 'no_title_state'
+        assert outcome['plan_id'] == 'ghost-plan'
 
     def test_session_teardown_is_named_as_a_deliberate_noop(self, rt, tmp_path, monkeypatch, capsys):
         """``SessionStart:clear`` names ``session_teardown`` — writing no title is
         CORRECT here, and the name is what distinguishes it from a failure."""
         from io import StringIO
 
-        session_id = "sess-clear-named"
-        _write_status_json(tmp_path, session_id=session_id, plan_id="clear-plan")
+        session_id = 'sess-clear-named'
+        _write_status_json(tmp_path, session_id=session_id, plan_id='clear-plan')
         _redirect_render_env(tmp_path, monkeypatch, session_id)
         monkeypatch.setattr(
-            "sys.stdin",
-            StringIO(json.dumps({"hook_event_name": "SessionStart", "source": "clear"})),
+            'sys.stdin',
+            StringIO(json.dumps({'hook_event_name': 'SessionStart', 'source': 'clear'})),
         )
         capsys.readouterr()
 
-        assert rt.session_render_title(statusline=False) == ""
+        assert rt.session_render_title(statusline=False) == ''
 
         captured = capsys.readouterr()
-        assert captured.out == ""
-        assert parse_toon(captured.err)["outcome"] == "session_teardown"
+        assert captured.out == ''
+        assert parse_toon(captured.err)['outcome'] == 'session_teardown'
 
     def test_unrenderable_state_is_named(self, rt, tmp_path, monkeypatch, capsys):
         """State that reads but does not compose names ``unrenderable_state``.
@@ -1806,19 +1797,22 @@ class TestSessionRenderTitleNamedOutcomes:
         Distinct from ``no_title_state``: the file WAS read, so the fault is in
         its contents (no ``current_phase``) rather than its absence.
         """
-        session_id = "sess-unrenderable"
+        session_id = 'sess-unrenderable'
         _write_status_json(
-            tmp_path, session_id=session_id, plan_id="phaseless-plan",
-            current_phase=None, short_description="orphan",
+            tmp_path,
+            session_id=session_id,
+            plan_id='phaseless-plan',
+            current_phase=None,
+            short_description='orphan',
         )
         _redirect_render_env(tmp_path, monkeypatch, session_id)
         capsys.readouterr()
 
-        assert rt.session_render_title(statusline=False) == ""
+        assert rt.session_render_title(statusline=False) == ''
 
         captured = capsys.readouterr()
-        assert captured.out == ""
-        assert parse_toon(captured.err)["outcome"] == "unrenderable_state"
+        assert captured.out == ''
+        assert parse_toon(captured.err)['outcome'] == 'unrenderable_state'
 
     def test_hook_envelope_success_is_named_distinctly(self, rt, tmp_path, monkeypatch, capsys):
         """A SUCCESSFUL hook render names ``hook_envelope_written``.
@@ -1827,36 +1821,34 @@ class TestSessionRenderTitleNamedOutcomes:
         no-ops, which is exactly what made the observability vacuous. Asserting
         the success name here is what proves success is distinguishable.
         """
-        session_id = "sess-hook-ok"
-        _write_status_json(tmp_path, session_id=session_id, plan_id="ok-plan")
+        session_id = 'sess-hook-ok'
+        _write_status_json(tmp_path, session_id=session_id, plan_id='ok-plan')
         _redirect_render_env(tmp_path, monkeypatch, session_id)
         capsys.readouterr()
 
-        assert rt.session_render_title(statusline=False) == ""
+        assert rt.session_render_title(statusline=False) == ''
 
         captured = capsys.readouterr()
         # stdout still carries EXACTLY the host envelope and nothing else.
-        assert json.loads(captured.out)["terminalSequence"]
-        assert parse_toon(captured.err)["outcome"] == "hook_envelope_written"
+        assert json.loads(captured.out)['terminalSequence']
+        assert parse_toon(captured.err)['outcome'] == 'hook_envelope_written'
 
     def test_statusline_success_is_named_distinctly(self, rt, tmp_path, monkeypatch, capsys):
         """A SUCCESSFUL statusLine render names ``statusline_written`` — its own
         name, not the hook channel's, so the two delivering channels stay
         separable in the record."""
-        session_id = "sess-sl-ok"
-        _write_status_json(tmp_path, session_id=session_id, plan_id="sl-plan")
+        session_id = 'sess-sl-ok'
+        _write_status_json(tmp_path, session_id=session_id, plan_id='sl-plan')
         _redirect_render_env(tmp_path, monkeypatch, session_id)
         capsys.readouterr()
 
-        assert rt.session_render_title(statusline=True) == ""
+        assert rt.session_render_title(statusline=True) == ''
 
         captured = capsys.readouterr()
-        assert captured.out == "➤ pm:5-execute:my-task"
-        assert parse_toon(captured.err)["outcome"] == "statusline_written"
+        assert captured.out == '➤ pm:5-execute:my-task'
+        assert parse_toon(captured.err)['outcome'] == 'statusline_written'
 
-    def test_swallowed_write_failure_on_the_delivering_channel_is_named(
-        self, rt, tmp_path, monkeypatch, capsys
-    ):
+    def test_swallowed_write_failure_on_the_delivering_channel_is_named(self, rt, tmp_path, monkeypatch, capsys):
         """THE regression this deliverable exists for.
 
         A failed stdout write on the hook envelope — the delivering channel —
@@ -1865,23 +1857,21 @@ class TestSessionRenderTitleNamedOutcomes:
         SAME value as a successful render. It must now report ``write_failed``,
         naming the channel.
         """
-        session_id = "sess-write-fail"
-        _write_status_json(tmp_path, session_id=session_id, plan_id="fail-plan")
+        session_id = 'sess-write-fail'
+        _write_status_json(tmp_path, session_id=session_id, plan_id='fail-plan')
         _redirect_render_env(tmp_path, monkeypatch, session_id)
 
         capsys.readouterr()
-        monkeypatch.setattr("sys.stdout", _RaisingStdout())
+        monkeypatch.setattr('sys.stdout', _RaisingStdout())
 
-        assert rt.session_render_title(statusline=False) == ""
+        assert rt.session_render_title(statusline=False) == ''
 
         monkeypatch.undo()
         outcome = cast(dict[str, Any], parse_toon(capsys.readouterr().err))
-        assert outcome["outcome"] == "write_failed"
-        assert outcome["channel"] == "hook_envelope"
+        assert outcome['outcome'] == 'write_failed'
+        assert outcome['channel'] == 'hook_envelope'
 
-    def test_write_failure_does_not_mark_terminal_state_delivered(
-        self, rt, tmp_path, monkeypatch, capsys
-    ):
+    def test_write_failure_does_not_mark_terminal_state_delivered(self, rt, tmp_path, monkeypatch, capsys):
         """A failed write must NOT discharge the terminal-delivery obligation.
 
         The mark releases an archived plan's session slot to the GC. Firing it
@@ -1890,42 +1880,38 @@ class TestSessionRenderTitleNamedOutcomes:
         """
         import claude_runtime as _cr
 
-        session_id = "sess-write-fail-terminal"
-        _write_status_json(
-            tmp_path, session_id=session_id, plan_id="terminal-plan", current_phase="complete"
-        )
+        session_id = 'sess-write-fail-terminal'
+        _write_status_json(tmp_path, session_id=session_id, plan_id='terminal-plan', current_phase='complete')
         _redirect_render_env(tmp_path, monkeypatch, session_id)
 
         marked: list[str] = []
-        monkeypatch.setattr(_cr, "_mark_terminal_delivered", lambda pid: marked.append(pid))
+        monkeypatch.setattr(_cr, '_mark_terminal_delivered', lambda pid: marked.append(pid))
 
         capsys.readouterr()
-        monkeypatch.setattr("sys.stdout", _RaisingStdout())
+        monkeypatch.setattr('sys.stdout', _RaisingStdout())
 
         rt.session_render_title(statusline=False)
 
         monkeypatch.undo()
-        assert _outcome_name(capsys) == "write_failed"
+        assert _outcome_name(capsys) == 'write_failed'
         assert marked == []
 
-    def test_statusline_write_failure_names_its_own_channel(
-        self, rt, tmp_path, monkeypatch, capsys
-    ):
+    def test_statusline_write_failure_names_its_own_channel(self, rt, tmp_path, monkeypatch, capsys):
         """The statusLine write failure is named too, and names ITS channel — so
         a broken footer is not mistaken for a broken tab title."""
-        session_id = "sess-sl-write-fail"
-        _write_status_json(tmp_path, session_id=session_id, plan_id="sl-fail-plan")
+        session_id = 'sess-sl-write-fail'
+        _write_status_json(tmp_path, session_id=session_id, plan_id='sl-fail-plan')
         _redirect_render_env(tmp_path, monkeypatch, session_id)
 
         capsys.readouterr()
-        monkeypatch.setattr("sys.stdout", _RaisingStdout())
+        monkeypatch.setattr('sys.stdout', _RaisingStdout())
 
-        assert rt.session_render_title(statusline=True) == ""
+        assert rt.session_render_title(statusline=True) == ''
 
         monkeypatch.undo()
         outcome = cast(dict[str, Any], parse_toon(capsys.readouterr().err))
-        assert outcome["outcome"] == "write_failed"
-        assert outcome["channel"] == "statusline"
+        assert outcome['outcome'] == 'write_failed'
+        assert outcome['channel'] == 'statusline'
 
     def test_statusline_noop_substitutes_no_rendered_state(self, rt, tmp_path, monkeypatch, capsys):
         """DEFERRAL guard: a statusLine no-op writes NOTHING to stdout.
@@ -1936,17 +1922,17 @@ class TestSessionRenderTitleNamedOutcomes:
         here on an assumption, which is the failure mode the deferral exists to
         prevent.
         """
-        cache_dir = tmp_path / "sessions" / "sess-sl-noop"
+        cache_dir = tmp_path / 'sessions' / 'sess-sl-noop'
         cache_dir.mkdir(parents=True)
-        (cache_dir / "active-plan").write_text("ghost-sl", encoding="utf-8")
-        _redirect_render_env(tmp_path, monkeypatch, "sess-sl-noop")
+        (cache_dir / 'active-plan').write_text('ghost-sl', encoding='utf-8')
+        _redirect_render_env(tmp_path, monkeypatch, 'sess-sl-noop')
         capsys.readouterr()
 
-        assert rt.session_render_title(statusline=True) == ""
+        assert rt.session_render_title(statusline=True) == ''
 
         captured = capsys.readouterr()
-        assert captured.out == ""
-        assert parse_toon(captured.err)["outcome"] == "no_title_state"
+        assert captured.out == ''
+        assert parse_toon(captured.err)['outcome'] == 'no_title_state'
 
     def test_the_eight_outcome_names_are_pairwise_distinct(self, rt, tmp_path, monkeypatch, capsys):
         """The whole point, asserted directly: no two paths share a name.
@@ -1966,38 +1952,41 @@ class TestSessionRenderTitleNamedOutcomes:
             names.append(_outcome_name(capsys))
 
         # no_session_id
-        monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
+        monkeypatch.delenv('CLAUDE_CODE_SESSION_ID', raising=False)
         _record(lambda: rt.session_render_title(statusline=False))
 
         # no_binding
-        _redirect_render_env(tmp_path, monkeypatch, "sess-distinct-unbound")
+        _redirect_render_env(tmp_path, monkeypatch, 'sess-distinct-unbound')
         _record(lambda: rt.session_render_title(statusline=False))
 
         # no_title_state
-        cache_dir = tmp_path / "sessions" / "sess-distinct-ghost"
+        cache_dir = tmp_path / 'sessions' / 'sess-distinct-ghost'
         cache_dir.mkdir(parents=True)
-        (cache_dir / "active-plan").write_text("ghost", encoding="utf-8")
-        _redirect_render_env(tmp_path, monkeypatch, "sess-distinct-ghost")
+        (cache_dir / 'active-plan').write_text('ghost', encoding='utf-8')
+        _redirect_render_env(tmp_path, monkeypatch, 'sess-distinct-ghost')
         _record(lambda: rt.session_render_title(statusline=False))
 
         # unrenderable_state
         _write_status_json(
-            tmp_path, session_id="sess-distinct-phaseless", plan_id="phaseless",
-            current_phase=None, short_description="x",
+            tmp_path,
+            session_id='sess-distinct-phaseless',
+            plan_id='phaseless',
+            current_phase=None,
+            short_description='x',
         )
-        _redirect_render_env(tmp_path, monkeypatch, "sess-distinct-phaseless")
+        _redirect_render_env(tmp_path, monkeypatch, 'sess-distinct-phaseless')
         _record(lambda: rt.session_render_title(statusline=False))
 
         # hook_envelope_written + statusline_written
-        _write_status_json(tmp_path, session_id="sess-distinct-ok", plan_id="ok")
-        _redirect_render_env(tmp_path, monkeypatch, "sess-distinct-ok")
+        _write_status_json(tmp_path, session_id='sess-distinct-ok', plan_id='ok')
+        _redirect_render_env(tmp_path, monkeypatch, 'sess-distinct-ok')
         _record(lambda: rt.session_render_title(statusline=False))
         _record(lambda: rt.session_render_title(statusline=True))
 
         # session_teardown
         monkeypatch.setattr(
-            "sys.stdin",
-            StringIO(json.dumps({"hook_event_name": "SessionStart", "source": "clear"})),
+            'sys.stdin',
+            StringIO(json.dumps({'hook_event_name': 'SessionStart', 'source': 'clear'})),
         )
         _record(lambda: rt.session_render_title(statusline=False))
 
@@ -2009,15 +1998,15 @@ class TestSessionRenderTitleNamedOutcomes:
         # render (monkeypatch.undo() runs AFTER this leg, not before it). Any
         # change to buffering or a re-seek of that StringIO would silently flip
         # this leg to report session_teardown and collapse the outcome set.
-        monkeypatch.setattr("sys.stdin", StringIO(""))
-        _write_status_json(tmp_path, session_id="sess-distinct-boom", plan_id="boom")
-        _redirect_render_env(tmp_path, monkeypatch, "sess-distinct-boom")
+        monkeypatch.setattr('sys.stdin', StringIO(''))
+        _write_status_json(tmp_path, session_id='sess-distinct-boom', plan_id='boom')
+        _redirect_render_env(tmp_path, monkeypatch, 'sess-distinct-boom')
 
         capsys.readouterr()
-        monkeypatch.setattr("sys.stdout", _RaisingStdout())
+        monkeypatch.setattr('sys.stdout', _RaisingStdout())
         rt.session_render_title(statusline=False)
         monkeypatch.undo()
         names.append(_outcome_name(capsys))
 
         assert len(names) == 8
-        assert len(set(names)) == 8, f"outcome names collapsed: {names}"
+        assert len(set(names)) == 8, f'outcome names collapsed: {names}'

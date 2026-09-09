@@ -6,7 +6,6 @@ merge-to-main serializer fronted by a FIFO admission queue.
 Its one section: Live-worktree reclaim guard — orphaned shell auto-reclaims, genuine.
 """
 
-
 from __future__ import annotations
 
 import json
@@ -113,9 +112,7 @@ class TestLiveWorktreeReclaimGuard:
         self._hold_dead_lock_then_dequeue('mid-rec')
         worktree = base / 'worktrees' / 'mid-rec'
         worktree.mkdir(parents=True, exist_ok=True)
-        (worktree / '.git').write_text(
-            'gitdir: /main/.git/worktrees/mid-rec\n', encoding='utf-8'
-        )
+        (worktree / '.git').write_text('gitdir: /main/.git/worktrees/mid-rec\n', encoding='utf-8')
 
         result = merge_lock.run_acquire(Namespace(plan_id='plan-b', timeout=5.0))
         assert result['status'] == 'blocked', result
@@ -135,10 +132,14 @@ class TestLiveWorktreeReclaimGuard:
         for name in ('front', 'behind'):
             _make_live_plan(base, name)
         isolated_base['queue_path'].write_text(
-            json.dumps({'waiting': [
-                {'plan_id': 'front', 'ts': 1.0},
-                {'plan_id': 'behind', 'ts': 2.0},
-            ]}),
+            json.dumps(
+                {
+                    'waiting': [
+                        {'plan_id': 'front', 'ts': 1.0},
+                        {'plan_id': 'behind', 'ts': 2.0},
+                    ]
+                }
+            ),
             encoding='utf-8',
         )
         _stub_title_tokens.set_states.clear()
@@ -187,10 +188,14 @@ class TestLiveWorktreeReclaimGuard:
         for name in ('front', 'behind'):
             _make_live_plan(base, name)
         isolated_base['queue_path'].write_text(
-            json.dumps({'waiting': [
-                {'plan_id': 'front', 'ts': 1.0},
-                {'plan_id': 'behind', 'ts': 2.0},
-            ]}),
+            json.dumps(
+                {
+                    'waiting': [
+                        {'plan_id': 'front', 'ts': 1.0},
+                        {'plan_id': 'behind', 'ts': 2.0},
+                    ]
+                }
+            ),
             encoding='utf-8',
         )
         # `behind` blocks as a non-front waiter, surfacing `lock-waiting` (⏳).
@@ -318,9 +323,7 @@ class TestLiveWorktreeReclaimGuard:
             return ok
 
         monkeypatch.setattr(merge_lock, '_try_atomic_create', _recording_atomic_create)
-        monkeypatch.setattr(
-            merge_lock, '_set_title_token', lambda _p, state: events.append(f'set:{state}')
-        )
+        monkeypatch.setattr(merge_lock, '_set_title_token', lambda _p, state: events.append(f'set:{state}'))
         monkeypatch.setattr(merge_lock, '_push_title_token', lambda _p, icon: events.append('push'))
 
         result = merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
@@ -332,9 +335,7 @@ class TestLiveWorktreeReclaimGuard:
         assert 'set:lock-owned' in events
         assert events.index('atomic_create:ok') < events.index('set:lock-owned'), events
         # No token of any kind precedes the successful atomic create.
-        first_token_idx = next(
-            (i for i, e in enumerate(events) if e.startswith(('set:', 'push'))), len(events)
-        )
+        first_token_idx = next((i for i, e in enumerate(events) if e.startswith(('set:', 'push'))), len(events))
         assert events.index('atomic_create:ok') < first_token_idx, events
 
     def test_release_repaint_via_surface_lock_cleared_default(
@@ -374,7 +375,12 @@ class TestLiveWorktreeReclaimGuard:
         )
         assert '--icon' not in calls[0][1]
         assert calls[1][1] == (
-            'session', 'push-title-token', '--plan-id', 'plan-b', '--icon', merge_lock._ICON_LOCK_OWNED
+            'session',
+            'push-title-token',
+            '--plan-id',
+            'plan-b',
+            '--icon',
+            merge_lock._ICON_LOCK_OWNED,
         ), 'a glyph push must include --icon <glyph>'
 
     def test_lock_owned_state_maps_to_lock_icon(self) -> None:

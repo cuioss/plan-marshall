@@ -43,22 +43,39 @@ cmd_structure = _analyze_structure_mod.cmd_structure
 # never produce. Parsed once at module scope: parse_ns re-executes the script
 # module on every call.
 _MARKDOWN_NS = parse_ns(
-    'pm-plugin-development', 'plugin-doctor', '_analyze.py',
-    'markdown', '--file', 'placeholder.md', register=False,
+    'pm-plugin-development',
+    'plugin-doctor',
+    '_analyze.py',
+    'markdown',
+    '--file',
+    'placeholder.md',
+    register=False,
 )
 _STRUCTURE_NS = parse_ns(
-    'pm-plugin-development', 'plugin-doctor', '_analyze.py',
-    'structure', '--directory', '.', register=False,
+    'pm-plugin-development',
+    'plugin-doctor',
+    '_analyze.py',
+    'structure',
+    '--directory',
+    '.',
+    register=False,
 )
 _CROSSFILE_NS = parse_ns(
-    'pm-plugin-development', 'plugin-doctor', '_analyze.py',
-    'cross-file', '--skill-path', '.', register=False,
+    'pm-plugin-development',
+    'plugin-doctor',
+    '_analyze.py',
+    'cross-file',
+    '--skill-path',
+    '.',
+    register=False,
 )
 
 
 def _ns(template: Namespace, **overrides) -> Namespace:
     """A parser-produced namespace with this test's values overlaid."""
     return Namespace(**{**vars(template), **overrides})
+
+
 analyze_subdocuments = _doctor_analysis_mod.analyze_subdocuments
 extract_issues_from_subdoc_analysis = _doctor_analysis_mod.extract_issues_from_subdoc_analysis
 analyze_argument_naming = _analyze_argument_naming_mod.analyze_argument_naming
@@ -1653,24 +1670,17 @@ def test_argument_naming_documented_alias_is_not_reported_unknown(tmp_path):
     marketplace_root = _build_fixture_root(tmp_path)
     notation = 'plan-marshall:manage-tasks:manage-tasks'
     write_dispatching_executor(tmp_path / '.plan', [notation])
-    _write_alias_script(
-        marketplace_root, notation, canonical='read', alias='get', flags=['plan-id']
-    )
+    _write_alias_script(marketplace_root, notation, canonical='read', alias='get', flags=['plan-id'])
     _write_skill_md(
         marketplace_root,
         'plan-marshall',
         'manage-tasks',
-        '# Manage tasks\n\n'
-        '```bash\n'
-        f'python3 .plan/execute-script.py {notation} get --plan-id foo\n'
-        '```\n',
+        f'# Manage tasks\n\n```bash\npython3 .plan/execute-script.py {notation} get --plan-id foo\n```\n',
     )
 
     findings = analyze_argument_naming(marketplace_root)
     subcmd_findings = _findings_by_rule(findings, 'ARGUMENT_NAMING_SUBCOMMAND_UNKNOWN')
-    assert subcmd_findings == [], (
-        f'documented alias invocation reported as unknown subcommand: {subcmd_findings!r}'
-    )
+    assert subcmd_findings == [], f'documented alias invocation reported as unknown subcommand: {subcmd_findings!r}'
 
 
 def test_argument_naming_canonical_spelling_still_accepted_alongside_alias(tmp_path):
@@ -1678,17 +1688,12 @@ def test_argument_naming_canonical_spelling_still_accepted_alongside_alias(tmp_p
     marketplace_root = _build_fixture_root(tmp_path)
     notation = 'plan-marshall:manage-tasks:manage-tasks'
     write_dispatching_executor(tmp_path / '.plan', [notation])
-    _write_alias_script(
-        marketplace_root, notation, canonical='read', alias='get', flags=['plan-id']
-    )
+    _write_alias_script(marketplace_root, notation, canonical='read', alias='get', flags=['plan-id'])
     _write_skill_md(
         marketplace_root,
         'plan-marshall',
         'manage-tasks',
-        '# Manage tasks\n\n'
-        '```bash\n'
-        f'python3 .plan/execute-script.py {notation} read --plan-id foo\n'
-        '```\n',
+        f'# Manage tasks\n\n```bash\npython3 .plan/execute-script.py {notation} read --plan-id foo\n```\n',
     )
 
     findings = analyze_argument_naming(marketplace_root)
@@ -1705,17 +1710,12 @@ def test_argument_naming_undeclared_verb_still_reported_with_aliases_present(tmp
     marketplace_root = _build_fixture_root(tmp_path)
     notation = 'plan-marshall:manage-tasks:manage-tasks'
     write_dispatching_executor(tmp_path / '.plan', [notation])
-    _write_alias_script(
-        marketplace_root, notation, canonical='read', alias='get', flags=['plan-id']
-    )
+    _write_alias_script(marketplace_root, notation, canonical='read', alias='get', flags=['plan-id'])
     _write_skill_md(
         marketplace_root,
         'plan-marshall',
         'manage-tasks',
-        '# Manage tasks\n\n'
-        '```bash\n'
-        f'python3 .plan/execute-script.py {notation} fetch --plan-id foo\n'
-        '```\n',
+        f'# Manage tasks\n\n```bash\npython3 .plan/execute-script.py {notation} fetch --plan-id foo\n```\n',
     )
 
     findings = analyze_argument_naming(marketplace_root)
@@ -1749,17 +1749,12 @@ def test_recurrence_signature_verb_paraphrase_is_caught(tmp_path):
     marketplace_root = _build_fixture_root(tmp_path)
     notation = 'plan-marshall:manage-findings:manage-findings'
     write_dispatching_executor(tmp_path / '.plan', [notation])
-    _write_fake_script(
-        marketplace_root, notation, subcommands={'list': ['plan-id'], 'add': ['plan-id']}
-    )
+    _write_fake_script(marketplace_root, notation, subcommands={'list': ['plan-id'], 'add': ['plan-id']})
     _write_skill_md(
         marketplace_root,
         'plan-marshall',
         'manage-findings',
-        '# Findings\n\n'
-        '```bash\n'
-        f'python3 .plan/execute-script.py {notation} query --plan-id foo\n'
-        '```\n',
+        f'# Findings\n\n```bash\npython3 .plan/execute-script.py {notation} query --plan-id foo\n```\n',
     )
 
     findings = analyze_argument_naming(marketplace_root)
@@ -1773,17 +1768,12 @@ def test_recurrence_signature_doubled_bundle_prefix_is_caught(tmp_path):
     marketplace_root = _build_fixture_root(tmp_path)
     notation = 'plan-marshall:tools-integration-ci:ci'
     write_dispatching_executor(tmp_path / '.plan', [notation])
-    _write_fake_script(
-        marketplace_root, notation, subcommands={'pr': ['plan-id'], 'checks': ['pr-number']}
-    )
+    _write_fake_script(marketplace_root, notation, subcommands={'pr': ['plan-id'], 'checks': ['pr-number']})
     _write_skill_md(
         marketplace_root,
         'plan-marshall',
         'tools-integration-ci',
-        '# CI\n\n'
-        '```bash\n'
-        f'python3 .plan/execute-script.py {notation} ci pr create --plan-id foo\n'
-        '```\n',
+        f'# CI\n\n```bash\npython3 .plan/execute-script.py {notation} ci pr create --plan-id foo\n```\n',
     )
 
     findings = analyze_argument_naming(marketplace_root)
@@ -1812,9 +1802,7 @@ def test_recurrence_signature_verb_scoped_flag_at_top_level_is_caught(tmp_path):
     marketplace_root = _build_fixture_root(tmp_path)
     notation = 'plan-marshall:manage-architecture:architecture'
     write_dispatching_executor(tmp_path / '.plan', [notation])
-    _write_fake_script(
-        marketplace_root, notation, subcommands={'resolve': ['command', 'module']}
-    )
+    _write_fake_script(marketplace_root, notation, subcommands={'resolve': ['command', 'module']})
     _write_skill_md(
         marketplace_root,
         'plan-marshall',
@@ -1888,11 +1876,7 @@ scan_canonical_forms = _analyze_argument_naming_mod.scan_canonical_forms
 
 def _surface(root_flags=(), children=None, **root_markers) -> object:
     """Build a ``ScriptSurface`` whose root carries ``root_flags`` and ``children``."""
-    return _ScriptSurface(
-        root=_ParserNode(
-            flags=set(root_flags), children=dict(children or {}), **root_markers
-        )
-    )
+    return _ScriptSurface(root=_ParserNode(flags=set(root_flags), children=dict(children or {}), **root_markers))
 
 
 def test_unconfident_child_keeps_its_name_but_withdraws_its_flag_set():
@@ -1910,9 +1894,7 @@ def test_unconfident_child_keeps_its_name_but_withdraws_its_flag_set():
             root_flags=['plan-id'],
             children={
                 'probed': _ParserNode(flags={'field'}),
-                'unprobeable': _ParserNode(
-                    flags_confident=False, children_confident=False
-                ),
+                'unprobeable': _ParserNode(flags_confident=False, children_confident=False),
             },
         )
     )
@@ -1959,9 +1941,7 @@ def test_unconfident_root_flag_surface_withdraws_every_scope():
     deserialization path — ``_node_from_dict`` rehydrates the markers verbatim
     from a cached entry.
     """
-    entry = _entry_from_surface(
-        _surface(children={'read': _ParserNode(flags={'plan-id'})}, flags_confident=False)
-    )
+    entry = _entry_from_surface(_surface(children={'read': _ParserNode(flags={'plan-id'})}, flags_confident=False))
 
     assert entry.root_flags is None
     assert entry.subcommands['read'] is None
@@ -1980,9 +1960,7 @@ def test_confident_surface_still_yields_concrete_accept_sets():
     would stop pinning that ``root_flags`` is NOT widened, which is the property
     ``scan_router_flag_placement`` depends on.
     """
-    entry = _entry_from_surface(
-        _surface(root_flags=['config'], children={'read': _ParserNode(flags={'task'})})
-    )
+    entry = _entry_from_surface(_surface(root_flags=['config'], children={'read': _ParserNode(flags={'task'})}))
 
     assert entry.root_flags == {'config'}, 'the placement surface must stay derived-only'
     assert {'config', 'task'} <= entry.subcommands['read']
@@ -1990,9 +1968,7 @@ def test_confident_surface_still_yields_concrete_accept_sets():
     assert 'audit-plan-id' in entry.root_accept_flags, (
         'the executor-consumed accept-set is absent from the root acceptance surface'
     )
-    assert 'audit-plan-id' not in entry.root_flags, (
-        'an executor-consumed flag leaked into the placement surface'
-    )
+    assert 'audit-plan-id' not in entry.root_flags, 'an executor-consumed flag leaked into the placement surface'
     assert entry.subcommands_confident is True
 
 
@@ -2011,11 +1987,7 @@ def test_unconfident_child_listing_suppresses_subcommand_unknown(tmp_path):
     marketplace_root = _build_fixture_root(tmp_path)
     notation = 'plan-marshall:manage-tasks:manage-tasks'
     _write_invocation_md(marketplace_root, notation, 'unlisted --plan-id X')
-    index = {
-        notation: _entry_from_surface(
-            _surface(children={'read': _ParserNode()}, children_confident=False)
-        )
-    }
+    index = {notation: _entry_from_surface(_surface(children={'read': _ParserNode()}, children_confident=False))}
 
     assert scan_subcommand(marketplace_root, index) == []
 
@@ -2037,11 +2009,7 @@ def test_unconfident_child_suppresses_flag_unknown(tmp_path):
     marketplace_root = _build_fixture_root(tmp_path)
     notation = 'plan-marshall:manage-tasks:manage-tasks'
     _write_invocation_md(marketplace_root, notation, 'unprobeable --invented X')
-    index = {
-        notation: _entry_from_surface(
-            _surface(children={'unprobeable': _ParserNode(flags_confident=False)})
-        )
-    }
+    index = {notation: _entry_from_surface(_surface(children={'unprobeable': _ParserNode(flags_confident=False)}))}
 
     assert scan_flag(marketplace_root, index) == []
 
@@ -2107,11 +2075,7 @@ def test_canonical_forms_row_unjudgeable_against_unconfident_surface(tmp_path):
         marketplace_root,
         ['| `manage-tasks` | Read | `manage-tasks unprobeable --plan-id {id}` |'],
     )
-    index = {
-        notation: _entry_from_surface(
-            _surface(children={'unprobeable': _ParserNode(flags_confident=False)})
-        )
-    }
+    index = {notation: _entry_from_surface(_surface(children={'unprobeable': _ParserNode(flags_confident=False)}))}
 
     assert scan_canonical_forms(marketplace_root, index) == []
 
@@ -2161,11 +2125,7 @@ def test_the_analyzer_reports_both_defects_because_scoping_is_not_its_job(tmp_pa
     notation = 'plan-marshall:manage-tasks:manage-tasks'
     write_dispatching_executor(tmp_path / '.plan', [notation])
     _write_fake_script(marketplace_root, notation, subcommands={'read': ['plan-id']})
-    body = (
-        '# Fixture\n\n```bash\n'
-        f'python3 .plan/execute-script.py {notation} read --invented X\n'
-        '```\n'
-    )
+    body = f'# Fixture\n\n```bash\npython3 .plan/execute-script.py {notation} read --invented X\n```\n'
     inside = _write_skill_md(marketplace_root, 'plan-marshall', 'inside-skill', body)
     outside = _write_skill_md(marketplace_root, 'plan-marshall', 'outside-skill', body)
 
@@ -2300,13 +2260,7 @@ def test_simplicity_backward_compat_reexport_no_false_positive(tmp_path):
 
 def test_simplicity_defensive_catchall_detects_tagged_handler(tmp_path):
     """An ``except Exception`` tagged ``# defensive only`` triggers SIMPLICITY_DEFENSIVE_CATCHALL."""
-    body = (
-        'def f():\n'
-        '    try:\n'
-        '        do()\n'
-        '    except Exception:  # defensive only\n'
-        '        pass\n'
-    )
+    body = 'def f():\n    try:\n        do()\n    except Exception:  # defensive only\n        pass\n'
     _write_simplicity_script(tmp_path, body)
     findings = analyze_defensive_catchall(tmp_path / 'marketplace')
     assert len(findings) == 1, f'Expected one defensive-catchall finding, got {findings!r}'
@@ -2439,9 +2393,7 @@ def test_simplicity_classification_other_four_not_safe():
 # via ``resolve_runtime_target`` so the literal is no longer hardcoded.
 
 _AGENT_ROLE_FRONTMATTER = (
-    f'name: my-agent\n'
-    f'implements: {_analyze_markdown_mod.DYNAMIC_LEVEL_EXECUTOR_REF}\n'
-    f'model: sonnet\n'
+    f'name: my-agent\nimplements: {_analyze_markdown_mod.DYNAMIC_LEVEL_EXECUTOR_REF}\nmodel: sonnet\n'
 )
 
 
@@ -2520,10 +2472,7 @@ def _write_router_flag_fixture(tmp_path: Path, invocation: str) -> Path:
         marketplace_root,
         'plan-marshall',
         'manage-tasks',
-        '# Manage tasks\n\n'
-        '```bash\n'
-        f'python3 .plan/execute-script.py {_ROUTER_FLAG_NOTATION} {invocation}\n'
-        '```\n',
+        f'# Manage tasks\n\n```bash\npython3 .plan/execute-script.py {_ROUTER_FLAG_NOTATION} {invocation}\n```\n',
     )
     return marketplace_root
 
@@ -2537,9 +2486,7 @@ def test_router_flag_after_the_verb_is_reported_as_misplaced(tmp_path):
     """
     marketplace_root = _write_router_flag_fixture(tmp_path, 'list --plan-id foo')
 
-    findings = _findings_by_rule(
-        analyze_argument_naming(marketplace_root), 'ARGUMENT_NAMING_ROUTER_FLAG_MISPLACED'
-    )
+    findings = _findings_by_rule(analyze_argument_naming(marketplace_root), 'ARGUMENT_NAMING_ROUTER_FLAG_MISPLACED')
 
     assert len(findings) == 1
     assert findings[0]['details']['flag'] == 'plan-id'
@@ -2555,9 +2502,7 @@ def test_router_flag_before_the_verb_is_not_reported(tmp_path):
     """
     marketplace_root = _write_router_flag_fixture(tmp_path, '--plan-id foo list')
 
-    assert _findings_by_rule(
-        analyze_argument_naming(marketplace_root), 'ARGUMENT_NAMING_ROUTER_FLAG_MISPLACED'
-    ) == []
+    assert _findings_by_rule(analyze_argument_naming(marketplace_root), 'ARGUMENT_NAMING_ROUTER_FLAG_MISPLACED') == []
 
 
 def test_router_flag_first_invocation_resolves_its_verbs_own_flags(tmp_path):
@@ -2627,12 +2572,7 @@ def test_router_flag_placement_stays_silent_on_an_underived_subcommand(tmp_path)
         marketplace_root,
         'plan-marshall',
         'manage-tasks',
-        '# Manage tasks\n\n'
-        '```bash\n'
-        f'python3 .plan/execute-script.py {_ROUTER_FLAG_NOTATION} list --plan-id foo\n'
-        '```\n',
+        f'# Manage tasks\n\n```bash\npython3 .plan/execute-script.py {_ROUTER_FLAG_NOTATION} list --plan-id foo\n```\n',
     )
 
-    assert _analyze_argument_naming_mod.scan_router_flag_placement(
-        marketplace_root, script_index
-    ) == []
+    assert _analyze_argument_naming_mod.scan_router_flag_placement(marketplace_root, script_index) == []

@@ -62,30 +62,42 @@ def _resolve_project_dir_and_head(args) -> tuple[Path | None, str | None, dict |
                 resolve_plan_context,
             )
         except ImportError as exc:
-            return None, None, {
-                **envelope,
-                'status': 'error',
-                'error_type': 'plan_not_found',
-                'message': f'file_ops module unavailable: {exc}',
-            }
+            return (
+                None,
+                None,
+                {
+                    **envelope,
+                    'status': 'error',
+                    'error_type': 'plan_not_found',
+                    'message': f'file_ops module unavailable: {exc}',
+                },
+            )
 
         try:
             head_branch = resolve_plan_context(plan_id, ensure=False).worktree_branch
         except WorktreeResolutionError as exc:
-            return None, None, {
-                **envelope,
-                'status': 'error',
-                'error_type': 'plan_not_found',
-                'message': str(exc),
-            }
+            return (
+                None,
+                None,
+                {
+                    **envelope,
+                    'status': 'error',
+                    'error_type': 'plan_not_found',
+                    'message': str(exc),
+                },
+            )
 
         if not head_branch:
-            return None, None, {
-                **envelope,
-                'status': 'error',
-                'error_type': 'worktree_not_materialized',
-                'message': 'plan has no recorded feature branch to prune',
-            }
+            return (
+                None,
+                None,
+                {
+                    **envelope,
+                    'status': 'error',
+                    'error_type': 'worktree_not_materialized',
+                    'message': 'plan has no recorded feature branch to prune',
+                },
+            )
 
         # For prune-local-and-remote-ref, we operate on the checkout the working
         # directory is in — NOT on the plan's worktree, which this verb is
@@ -96,21 +108,29 @@ def _resolve_project_dir_and_head(args) -> tuple[Path | None, str | None, dict |
 
     elif project_dir_arg:
         if not head_arg:
-            return None, None, {
-                **envelope,
-                'status': 'error',
-                'error_type': 'missing_required_arg',
-                'message': '--head is required when --project-dir is supplied',
-            }
+            return (
+                None,
+                None,
+                {
+                    **envelope,
+                    'status': 'error',
+                    'error_type': 'missing_required_arg',
+                    'message': '--head is required when --project-dir is supplied',
+                },
+            )
         return Path(project_dir_arg), head_arg, None
 
     else:
-        return None, None, {
-            **envelope,
-            'status': 'error',
-            'error_type': 'missing_required_arg',
-            'message': 'one of --plan-id or --project-dir is required',
-        }
+        return (
+            None,
+            None,
+            {
+                **envelope,
+                'status': 'error',
+                'error_type': 'missing_required_arg',
+                'message': 'one of --plan-id or --project-dir is required',
+            },
+        )
 
 
 def _verify_git_repo(path: Path) -> str | None:
@@ -165,9 +185,7 @@ def cmd_prune_ref(args) -> dict:
             }
 
     # Invariant §5.3.1 — guard: never delete the currently checked-out branch.
-    rc, current_branch_out, _err = run_git(
-        ['-C', str(project_path), 'rev-parse', '--abbrev-ref', 'HEAD']
-    )
+    rc, current_branch_out, _err = run_git(['-C', str(project_path), 'rev-parse', '--abbrev-ref', 'HEAD'])
     current_branch = current_branch_out.strip() if rc == 0 else ''
     if current_branch == head_branch:
         return {
@@ -200,9 +218,7 @@ def cmd_prune_ref(args) -> dict:
 
     # Invariant §5.3.3 — show-ref guard before update-ref -d.
     ref_path = f'refs/remotes/origin/{head_branch}'
-    rc_sr, _sr_out, _sr_err = run_git(
-        ['-C', str(project_path), 'show-ref', '--quiet', ref_path]
-    )
+    rc_sr, _sr_out, _sr_err = run_git(['-C', str(project_path), 'show-ref', '--quiet', ref_path])
 
     if rc_sr != 0:
         # Remote-tracking ref is already absent — graceful no-op.
@@ -211,15 +227,11 @@ def cmd_prune_ref(args) -> dict:
             'status': 'partial',
             'local_deleted': True,
             'remote_ref_deleted': False,
-            'remote_ref_warning': (
-                f'remote-tracking ref {ref_path} was already absent — no-op'
-            ),
+            'remote_ref_warning': (f'remote-tracking ref {ref_path} was already absent — no-op'),
         }
 
     # Invariant §5.3.4 — targeted ref deletion only.
-    rc_ud, _ud_out, ud_err = run_git(
-        ['-C', str(project_path), 'update-ref', '-d', ref_path]
-    )
+    rc_ud, _ud_out, ud_err = run_git(['-C', str(project_path), 'update-ref', '-d', ref_path])
     if rc_ud != 0:
         return {
             **envelope,

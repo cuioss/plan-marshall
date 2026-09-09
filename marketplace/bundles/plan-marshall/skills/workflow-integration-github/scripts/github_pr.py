@@ -119,9 +119,7 @@ from triage_helpers import (
 # Register this script's top-level subcommand tokens so that extract_routing_args
 # correctly identifies the subcommand boundary when github_pr.py is the entry
 # point (i.e., does not consume a subcommand-level --plan-id as a router flag).
-register_subcommands(
-    {'fetch-comments', 'fetch_findings', 'post_responses', 'bot_completion', 'pull_request_runs'}
-)
+register_subcommands({'fetch-comments', 'fetch_findings', 'post_responses', 'bot_completion', 'pull_request_runs'})
 
 # Resolutions that are terminal triage dispositions — a pr-comment finding in one
 # of these states has been decided by the triage pass and is eligible for a
@@ -790,9 +788,7 @@ def _recorded_currency_records(plan_id: str) -> dict[tuple[str, str], CurrencyRe
     return records
 
 
-def _record_currency_records(
-    plan_id: str, records: dict[tuple[str, str], tuple[str, str]]
-) -> None:
+def _record_currency_records(plan_id: str, records: dict[tuple[str, str], tuple[str, str]]) -> None:
     """Append currency records whose ``(sha, updated_at)`` changed since the last fetch.
 
     Callers pass only records that DIFFER from the current ledger value (a new key,
@@ -1249,9 +1245,7 @@ def cmd_fetch_findings(args):
     findings_payload = _read_pr_comment_findings(query_findings, plan_id)
     if findings_payload.get('status') == 'error':
         return findings_payload
-    existing_comment_keys, legacy_comment_keys = _existing_pr_comment_keys(
-        findings_payload.get('findings') or []
-    )
+    existing_comment_keys, legacy_comment_keys = _existing_pr_comment_keys(findings_payload.get('findings') or [])
 
     # The MERGE CANDIDATE SHA — the current PR HEAD — is fetched up front (before the
     # participation loop, not only for the ingestion stamp below) because the currency
@@ -1530,9 +1524,7 @@ def cmd_fetch_findings(args):
                         _key = (bot_kind, REFUSAL_LAYER_STRUCTURAL)
                         if _key not in _drift_seen:
                             _drift_seen.add(_key)
-                            refusal_pattern_drift.append(
-                                {'bot_kind': bot_kind, 'layer': REFUSAL_LAYER_STRUCTURAL}
-                            )
+                            refusal_pattern_drift.append({'bot_kind': bot_kind, 'layer': REFUSAL_LAYER_STRUCTURAL})
             continue
 
         # Pre-filter 3: SELF-AUTHORED RESPONSE — the batched disposition comment
@@ -1725,8 +1717,7 @@ def cmd_fetch_findings(args):
             and not _is_obvious_noise(str(_c.get('body') or ''), _credited_bot)
         ]
         if _evidence_comments and all(
-            _is_unrecognised_refusal(str(_c.get('body') or ''), _credited_bot)
-            for _c in _evidence_comments
+            _is_unrecognised_refusal(str(_c.get('body') or ''), _credited_bot) for _c in _evidence_comments
         ):
             unrecognised_only_bots.add(_credited_bot)
 
@@ -1738,9 +1729,7 @@ def cmd_fetch_findings(args):
     # self response would spuriously trip the producer-mismatch Q-Gate. An
     # unclassified bot's comments are NOT subtracted: under the warn-but-ingest
     # rule they are stored like any other, so they belong in expected_stored.
-    expected_stored = (
-        count_fetched - skipped_noise - skipped_duplicate - skipped_refusal - skipped_self_response
-    )
+    expected_stored = count_fetched - skipped_noise - skipped_duplicate - skipped_refusal - skipped_self_response
 
     # Measure the diff ONLY when a size refusal was actually seen. A recorded cap
     # without the size that hit it is a claim the reader must take on trust, so the
@@ -1816,7 +1805,7 @@ def cmd_fetch_findings(args):
             detail=(
                 f'count_self_response_current_cycle={current_cycle_self_response} reached '
                 f'_SELF_RESPONSE_LOOP_BOUND={_SELF_RESPONSE_LOOP_BOUND} on PR #{pr_number} '
-                f'(count_skipped_self_response={skipped_self_response} over the PR\'s full history). '
+                f"(count_skipped_self_response={skipped_self_response} over the PR's full history). "
                 'The respond -> re-fetch cycle is not converging: every pass leaves another '
                 'self-authored response comment on the PR, with no reviewer activity in between. '
                 'Operator decision required.'
@@ -1899,18 +1888,14 @@ def cmd_fetch_findings(args):
         # cause in {size, quota}. Distinct from rate_limit_class's awaitability: it
         # names the remedy (a smaller diff vs backoff). Forwarded to
         # ``review_completeness check --refused-causes``.
-        'refused_causes': [
-            {'bot_kind': bot, 'cause': refused_causes[bot]} for bot in sorted(refused_causes)
-        ],
+        'refused_causes': [{'bot_kind': bot, 'cause': refused_causes[bot]} for bot in sorted(refused_causes)],
         # The CAP each SIZE-refusing bot's own notice stated — {bot_kind, cap}, sparse.
         # A bot is absent here when it refused for quota, or when its size notice
         # stated no figure; an absent entry is an UNKNOWN cap the consumer reports as
         # such, never a zero and never a default. Forwarded to
         # ``review_completeness check --refusal-size-caps``, which reports it alongside
         # the cause so a recorded gap can be reconciled against the real diff size.
-        'refused_size_caps': [
-            {'bot_kind': bot, 'cap': refused_size_caps[bot]} for bot in sorted(refused_size_caps)
-        ],
+        'refused_size_caps': [{'bot_kind': bot, 'cap': refused_size_caps[bot]} for bot in sorted(refused_size_caps)],
         # The OTHER half of an auditable gap: how big the refused diff actually was.
         # Measured only when a size refusal was seen (see above) — one cheap metadata
         # call on a path that fires rarely, and none at all on the common path — and

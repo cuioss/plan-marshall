@@ -89,15 +89,11 @@ class TestDefaultCommandKeyFnScopeAware:
     """Scope-aware behavior: the full args contribute to the key so
     that module-scoped invocations don't collide with full-scope ones."""
 
-    @pytest.mark.parametrize(
-        'command_args,expected_key', _COMMAND_KEY_SCOPE_CASES, ids=_COMMAND_KEY_SCOPE_IDS
-    )
+    @pytest.mark.parametrize('command_args,expected_key', _COMMAND_KEY_SCOPE_CASES, ids=_COMMAND_KEY_SCOPE_IDS)
     def test_the_key_carries_the_whole_command_args(self, command_args, expected_key):
         assert default_command_key_fn(command_args) == expected_key
 
-    @pytest.mark.parametrize(
-        'first,second', _COMMAND_KEY_DISTINCT_PAIRS, ids=_COMMAND_KEY_DISTINCT_PAIR_IDS
-    )
+    @pytest.mark.parametrize('first,second', _COMMAND_KEY_DISTINCT_PAIRS, ids=_COMMAND_KEY_DISTINCT_PAIR_IDS)
     def test_two_invocations_that_must_not_share_a_key(self, first, second):
         """Distinct keys are what make adaptive timeouts learn per-scope values."""
         assert default_command_key_fn(first) != default_command_key_fn(second)
@@ -215,12 +211,8 @@ _PROJECT_DIR_ARGV_IDS = ['default-is-dot', 'override-is-honoured']
 class TestSubparserProjectDir:
     """Every individually-registered subparser exposes --project-dir."""
 
-    @pytest.mark.parametrize(
-        'extra_argv,expected', _PROJECT_DIR_ARGV_CASES, ids=_PROJECT_DIR_ARGV_IDS
-    )
-    @pytest.mark.parametrize(
-        'register_fn,base_argv', _SUBPARSER_REGISTRATIONS, ids=_SUBPARSER_REGISTRATION_IDS
-    )
+    @pytest.mark.parametrize('extra_argv,expected', _PROJECT_DIR_ARGV_CASES, ids=_PROJECT_DIR_ARGV_IDS)
+    @pytest.mark.parametrize('register_fn,base_argv', _SUBPARSER_REGISTRATIONS, ids=_SUBPARSER_REGISTRATION_IDS)
     def test_subparser_carries_project_dir(self, register_fn, base_argv, extra_argv, expected):
         parser = argparse.ArgumentParser()
         subs = parser.add_subparsers(dest='command', required=True)
@@ -233,6 +225,7 @@ class TestSubparserProjectDir:
 
 #: The plan id every ``--plan-id`` row supplies.
 _CANONICAL_PLAN_ID = 'task-routing-canonical'
+
 
 def _build_full_parser() -> argparse.ArgumentParser:
     """The parser ``register_standard_subparsers`` produces with every slot filled."""
@@ -285,17 +278,13 @@ _STANDARD_SUBCOMMANDS = _registered_subcommands(_build_full_parser())
 #: override rows stay literal — they assert the flag is honoured when supplied,
 #: which is a property of the flag and not of the subcommand set.
 _STANDARD_PROJECT_DIR_CASES = [
-    ([name, *_STANDARD_MINIMAL_ARGV[name]], '.')
-    for name in _STANDARD_SUBCOMMANDS
-    if name in _STANDARD_MINIMAL_ARGV
+    ([name, *_STANDARD_MINIMAL_ARGV[name]], '.') for name in _STANDARD_SUBCOMMANDS if name in _STANDARD_MINIMAL_ARGV
 ] + [
     (['run', '--command-args', 'verify', '--project-dir', '/plan/wt'], '/plan/wt'),
     (['parse', '--log', '/tmp/log', '--project-dir', '/plan/wt'], '/plan/wt'),
 ]
 
-_STANDARD_PROJECT_DIR_IDS = [
-    f'{name}-default' for name in _STANDARD_SUBCOMMANDS if name in _STANDARD_MINIMAL_ARGV
-] + [
+_STANDARD_PROJECT_DIR_IDS = [f'{name}-default' for name in _STANDARD_SUBCOMMANDS if name in _STANDARD_MINIMAL_ARGV] + [
     'run-override',
     'parse-override',
 ]
@@ -320,9 +309,7 @@ class TestRegisterStandardSubparsersPropagation:
     standard subparser it produces. This is the end-to-end regression: if a
     new subparser is added without add_project_dir_arg, these tests catch it."""
 
-    @pytest.mark.parametrize(
-        'argv,expected', _STANDARD_PROJECT_DIR_CASES, ids=_STANDARD_PROJECT_DIR_IDS
-    )
+    @pytest.mark.parametrize('argv,expected', _STANDARD_PROJECT_DIR_CASES, ids=_STANDARD_PROJECT_DIR_IDS)
     def test_every_standard_subcommand_carries_project_dir(self, argv, expected):
         assert _parse(_build_full_parser(), argv).project_dir == expected
 
@@ -360,9 +347,7 @@ class TestRegisterStandardSubparsersPlanIdPropagation:
     ``--project-dir`` tests above continue to cover the escape-hatch path.
     """
 
-    @pytest.mark.parametrize(
-        'argv,expected', _STANDARD_PLAN_ID_CASES, ids=_STANDARD_PLAN_ID_IDS
-    )
+    @pytest.mark.parametrize('argv,expected', _STANDARD_PLAN_ID_CASES, ids=_STANDARD_PLAN_ID_IDS)
     def test_every_standard_subcommand_carries_plan_id(self, argv, expected):
         assert _parse(_build_full_parser(), argv).plan_id == expected
 
@@ -666,9 +651,7 @@ class TestPlanIdThreadsThroughBothFactoryLayers:
         """The second seam in isolation: the closure forwards what it was given."""
         recorder = _ExecRecorder()
         monkeypatch.setattr(factory, 'execute_direct_base', recorder)
-        execute_direct, _ = factory.create_execute_handlers(
-            _make_config(), lambda *_a, **_k: ([], None, 'SUCCESS')
-        )
+        execute_direct, _ = factory.create_execute_handlers(_make_config(), lambda *_a, **_k: ([], None, 'SUCCESS'))
 
         execute_direct(
             args='verify',
@@ -683,9 +666,7 @@ class TestPlanIdThreadsThroughBothFactoryLayers:
         """``plan_id`` is keyword-only and mandatory on the generated closure."""
         recorder = _ExecRecorder()
         monkeypatch.setattr(factory, 'execute_direct_base', recorder)
-        execute_direct, _ = factory.create_execute_handlers(
-            _make_config(), lambda *_a, **_k: ([], None, 'SUCCESS')
-        )
+        execute_direct, _ = factory.create_execute_handlers(_make_config(), lambda *_a, **_k: ([], None, 'SUCCESS'))
 
         with pytest.raises(TypeError):
             execute_direct(args='verify', command_key='python:verify', project_dir=str(tmp_path))
@@ -909,15 +890,11 @@ class TestRecordResolutionSentinelSuppressesWorkLog:
 
     def _capture_log_entries(self, monkeypatch) -> list[tuple]:
         written: list[tuple] = []
-        monkeypatch.setattr(
-            factory, 'log_entry', lambda *args: written.append(args)
-        )
+        monkeypatch.setattr(factory, 'log_entry', lambda *args: written.append(args))
         return written
 
     @pytest.mark.parametrize('plan_id', _PLAN_LESS_PLAN_IDS, ids=_PLAN_LESS_PLAN_ID_IDS)
-    def test_plan_less_writes_no_work_log_but_still_emits_stderr(
-        self, monkeypatch, capsys, plan_id
-    ):
+    def test_plan_less_writes_no_work_log_but_still_emits_stderr(self, monkeypatch, capsys, plan_id):
         written = self._capture_log_entries(monkeypatch)
 
         factory._record_resolution('auto', 'in_process', 'socket_absent', 'n', plan_id)
@@ -928,8 +905,7 @@ class TestRecordResolutionSentinelSuppressesWorkLog:
         )
         err = capsys.readouterr().err
         assert '[BUILD-SERVER] resolved build' in err, (
-            'the stderr emission is the ONLY sink a plan-less build has and '
-            'must fire unconditionally'
+            'the stderr emission is the ONLY sink a plan-less build has and must fire unconditionally'
         )
 
     def test_a_real_plan_id_still_writes_the_work_log(self, monkeypatch):
@@ -956,9 +932,7 @@ class TestRouteToDaemonForwardsTheSentinel:
         monkeypatch.delenv(factory.MARSHALLD_JOB_ENV, raising=False)
         log = tmp_path / 'job.log'
         log.write_text('status: success\nexit_code: 0\n')
-        client = _FakeBuildServerClient(
-            {'job_status': 'success', 'log_file': str(log), 'duration_seconds': 1}
-        )
+        client = _FakeBuildServerClient({'job_status': 'success', 'log_file': str(log), 'duration_seconds': 1})
         monkeypatch.setattr(factory, '_load_build_server', lambda: client)
 
         routed, reason = factory._route_to_daemon(_make_config(), str(tmp_path), plan_id)
@@ -979,9 +953,7 @@ class TestRouteToDaemonForwardsTheSentinel:
         monkeypatch.delenv(factory.MARSHALLD_JOB_ENV, raising=False)
         log = tmp_path / 'job.log'
         log.write_text('status: success\nexit_code: 0\n')
-        client = _FakeBuildServerClient(
-            {'job_status': 'success', 'log_file': str(log), 'duration_seconds': 1}
-        )
+        client = _FakeBuildServerClient({'job_status': 'success', 'log_file': str(log), 'duration_seconds': 1})
         monkeypatch.setattr(factory, '_load_build_server', lambda: client)
 
         factory._route_to_daemon(_make_config(), str(tmp_path), 'a-real-plan')
@@ -1028,9 +1000,7 @@ class TestCmdRunExecutionModeVerdict:
         monkeypatch.setattr(factory, 'cmd_run_common', capture)
         _ed, cmd_run = self._handlers()
 
-        rc = cmd_run(
-            argparse.Namespace(command_args='verify', plan_id='', format='toon', execution_mode='in_process')
-        )
+        rc = cmd_run(argparse.Namespace(command_args='verify', plan_id='', format='toon', execution_mode='in_process'))
 
         assert rc == 0
         assert capture.result is not None
@@ -1043,17 +1013,13 @@ class TestCmdRunExecutionModeVerdict:
         monkeypatch.delenv(factory.MARSHALLD_JOB_ENV, raising=False)
         log = tmp_path / 'job.log'
         log.write_text('status: error\nexit_code: 5\n')
-        client = _FakeBuildServerClient(
-            {'job_status': 'success', 'log_file': str(log), 'duration_seconds': 4}
-        )
+        client = _FakeBuildServerClient({'job_status': 'success', 'log_file': str(log), 'duration_seconds': 4})
         monkeypatch.setattr(factory, '_load_build_server', lambda: client)
         capture = _ResultCapture()
         monkeypatch.setattr(factory, 'cmd_run_common', capture)
         _ed, cmd_run = self._handlers()
 
-        rc = cmd_run(
-            argparse.Namespace(command_args='verify', plan_id='', format='toon', execution_mode='daemon')
-        )
+        rc = cmd_run(argparse.Namespace(command_args='verify', plan_id='', format='toon', execution_mode='daemon'))
 
         assert rc == 0
         assert capture.result is not None
@@ -1065,17 +1031,13 @@ class TestCmdRunExecutionModeVerdict:
         monkeypatch.delenv(factory.MARSHALLD_JOB_ENV, raising=False)
         log = tmp_path / 'job.log'
         log.write_text('status: success\nexit_code: 0\n')
-        client = _FakeBuildServerClient(
-            {'job_status': 'success', 'log_file': str(log), 'duration_seconds': 3}
-        )
+        client = _FakeBuildServerClient({'job_status': 'success', 'log_file': str(log), 'duration_seconds': 3})
         monkeypatch.setattr(factory, '_load_build_server', lambda: client)
         capture = _ResultCapture()
         monkeypatch.setattr(factory, 'cmd_run_common', capture)
         _ed, cmd_run = self._handlers()
 
-        rc = cmd_run(
-            argparse.Namespace(command_args='verify', plan_id='', format='toon', execution_mode='daemon')
-        )
+        rc = cmd_run(argparse.Namespace(command_args='verify', plan_id='', format='toon', execution_mode='daemon'))
 
         assert rc == 0
         assert capture.result is not None

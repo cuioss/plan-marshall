@@ -8,7 +8,6 @@ import. Below, verbatim, is the docstring of the module they were split from:
 Unit tests for _findings_core.py - the storage engine for findings and Q-Gate findings.
 """
 
-
 from conftest import get_scripts_dir, load_script_module
 
 # Retained for the source-introspection test that reads _findings_core.py text.

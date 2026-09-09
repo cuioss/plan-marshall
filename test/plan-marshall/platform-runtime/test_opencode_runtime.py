@@ -39,7 +39,7 @@ def runtime() -> OpenCodeRuntime:
 def _parse(toon_str: str) -> dict:
     """Parse a TOON string and assert it is non-empty."""
     result = parse_toon(toon_str)
-    assert isinstance(result, dict), f"parse_toon returned non-dict: {toon_str!r}"
+    assert isinstance(result, dict), f'parse_toon returned non-dict: {toon_str!r}'
     return result
 
 
@@ -57,11 +57,11 @@ def test_session_teardown_returns_honest_noop(runtime: OpenCodeRuntime) -> None:
     why the verb cannot act.
     """
     result = _parse(runtime.session_teardown())
-    assert result["status"] == "no-op"
-    assert result["operation"] == "session teardown"
-    assert "session" in result["reason"]
-    assert "binding to release" in result["reason"]
-    assert result["alternative"]
+    assert result['status'] == 'no-op'
+    assert result['operation'] == 'session teardown'
+    assert 'session' in result['reason']
+    assert 'binding to release' in result['reason']
+    assert result['alternative']
 
 
 # =============================================================================
@@ -71,46 +71,46 @@ def test_session_teardown_returns_honest_noop(runtime: OpenCodeRuntime) -> None:
 
 def test_project_initial_setup_creates_plan_dir(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
     """project_initial_setup creates .plan/ and .plan/temp/ under project_dir."""
-    result = _parse(runtime.project_initial_setup(str(tmp_path), "opencode"))
-    assert result["status"] == "success"
-    assert result["operation"] == "project initial-setup"
-    assert result["target"] == "opencode"
-    assert result["marshal_written"] is True
-    assert result["hook_installed"] is False
-    assert (tmp_path / ".plan").is_dir()
-    assert (tmp_path / ".plan" / "temp").is_dir()
+    result = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
+    assert result['status'] == 'success'
+    assert result['operation'] == 'project initial-setup'
+    assert result['target'] == 'opencode'
+    assert result['marshal_written'] is True
+    assert result['hook_installed'] is False
+    assert (tmp_path / '.plan').is_dir()
+    assert (tmp_path / '.plan' / 'temp').is_dir()
 
 
 def test_project_initial_setup_writes_marshal_json(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
     """project_initial_setup writes runtime.target into marshal.json."""
-    runtime.project_initial_setup(str(tmp_path), "opencode")
-    marshal_path = tmp_path / ".plan" / "marshal.json"
+    runtime.project_initial_setup(str(tmp_path), 'opencode')
+    marshal_path = tmp_path / '.plan' / 'marshal.json'
     assert marshal_path.exists()
-    data = json.loads(marshal_path.read_text(encoding="utf-8"))
-    assert data["runtime"]["target"] == "opencode"
+    data = json.loads(marshal_path.read_text(encoding='utf-8'))
+    assert data['runtime']['target'] == 'opencode'
 
 
 def test_project_initial_setup_preserves_existing_marshal_fields(
     runtime: OpenCodeRuntime, tmp_path: pathlib.Path
 ) -> None:
     """project_initial_setup merges into an existing marshal.json without discarding other fields."""
-    plan_dir = tmp_path / ".plan"
+    plan_dir = tmp_path / '.plan'
     plan_dir.mkdir()
-    marshal_path = plan_dir / "marshal.json"
-    marshal_path.write_text(json.dumps({"existing_key": "existing_value"}), encoding="utf-8")
+    marshal_path = plan_dir / 'marshal.json'
+    marshal_path.write_text(json.dumps({'existing_key': 'existing_value'}), encoding='utf-8')
 
-    runtime.project_initial_setup(str(tmp_path), "opencode")
+    runtime.project_initial_setup(str(tmp_path), 'opencode')
 
-    data = json.loads(marshal_path.read_text(encoding="utf-8"))
-    assert data["existing_key"] == "existing_value"
-    assert data["runtime"]["target"] == "opencode"
+    data = json.loads(marshal_path.read_text(encoding='utf-8'))
+    assert data['existing_key'] == 'existing_value'
+    assert data['runtime']['target'] == 'opencode'
 
 
 @pytest.mark.parametrize(
-    "raw",
+    'raw',
     [
-        pytest.param("[]", id="top-level-list"),
-        pytest.param('{"runtime": null}', id="null-runtime-block"),
+        pytest.param('[]', id='top-level-list'),
+        pytest.param('{"runtime": null}', id='null-runtime-block'),
     ],
 )
 def test_project_initial_setup_wrong_shape_yields_io_error_and_leaves_file_intact(
@@ -124,16 +124,16 @@ def test_project_initial_setup_wrong_shape_yields_io_error_and_leaves_file_intac
     handler; before the shared shape guard each reached the seeding assignments
     and raised an uncaught ``TypeError``.
     """
-    plan_dir = tmp_path / ".plan"
+    plan_dir = tmp_path / '.plan'
     plan_dir.mkdir()
-    marshal_path = plan_dir / "marshal.json"
-    marshal_path.write_text(raw, encoding="utf-8")
+    marshal_path = plan_dir / 'marshal.json'
+    marshal_path.write_text(raw, encoding='utf-8')
 
-    result = _parse(runtime.project_initial_setup(str(tmp_path), "opencode"))
+    result = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
 
-    assert result["status"] == "error"
-    assert result["error"] == "io_error"
-    assert marshal_path.read_text(encoding="utf-8") == raw
+    assert result['status'] == 'error'
+    assert result['error'] == 'io_error'
+    assert marshal_path.read_text(encoding='utf-8') == raw
 
 
 def test_project_initial_setup_absent_runtime_key_still_initializes(
@@ -145,31 +145,27 @@ def test_project_initial_setup_absent_runtime_key_still_initializes(
     is corrupt; a guard that conflated them would reject every first-run
     initialization while still passing the two rejection cases above.
     """
-    plan_dir = tmp_path / ".plan"
+    plan_dir = tmp_path / '.plan'
     plan_dir.mkdir()
-    marshal_path = plan_dir / "marshal.json"
-    marshal_path.write_text(json.dumps({"existing_key": "existing_value"}), encoding="utf-8")
+    marshal_path = plan_dir / 'marshal.json'
+    marshal_path.write_text(json.dumps({'existing_key': 'existing_value'}), encoding='utf-8')
 
-    result = _parse(runtime.project_initial_setup(str(tmp_path), "opencode"))
+    result = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
 
-    assert result["status"] == "success"
-    data = json.loads(marshal_path.read_text(encoding="utf-8"))
-    assert data["runtime"]["target"] == "opencode"
-    assert data["existing_key"] == "existing_value"
+    assert result['status'] == 'success'
+    data = json.loads(marshal_path.read_text(encoding='utf-8'))
+    assert data['runtime']['target'] == 'opencode'
+    assert data['existing_key'] == 'existing_value'
 
 
-def test_project_initial_setup_hook_skip_reason_present(
-    runtime: OpenCodeRuntime, tmp_path: pathlib.Path
-) -> None:
+def test_project_initial_setup_hook_skip_reason_present(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
     """project_initial_setup reports hook_skip_reason explaining no SessionStart hook."""
-    result = _parse(runtime.project_initial_setup(str(tmp_path), "opencode"))
-    assert "hook_skip_reason" in result
-    assert "OpenCode" in result["hook_skip_reason"]
+    result = _parse(runtime.project_initial_setup(str(tmp_path), 'opencode'))
+    assert 'hook_skip_reason' in result
+    assert 'OpenCode' in result['hook_skip_reason']
 
 
-def test_project_initial_setup_invalid_dir_returns_error(
-    runtime: OpenCodeRuntime, unwritable_dir: str
-) -> None:
+def test_project_initial_setup_invalid_dir_returns_error(runtime: OpenCodeRuntime, unwritable_dir: str) -> None:
     """project_initial_setup returns io_error when ``.plan`` cannot be created.
 
     ``unwritable_dir`` is a path under ``/dev/null`` — a character device, so
@@ -183,9 +179,9 @@ def test_project_initial_setup_invalid_dir_returns_error(
     ``/dev/null`` path exercises the ``io_error`` branch identically on an
     unprivileged host and on a root sandbox.
     """
-    result = _parse(runtime.project_initial_setup(unwritable_dir, "opencode"))
-    assert result["status"] == "error"
-    assert result["error"] == "io_error"
+    result = _parse(runtime.project_initial_setup(unwritable_dir, 'opencode'))
+    assert result['status'] == 'error'
+    assert result['error'] == 'io_error'
 
 
 # =============================================================================
@@ -195,11 +191,11 @@ def test_project_initial_setup_invalid_dir_returns_error(
 
 def test_project_install_hook_is_noop(runtime: OpenCodeRuntime) -> None:
     """project_install_hook returns no-op — OpenCode exposes no hook channel to wire."""
-    result = _parse(runtime.project_install_hook("opencode"))
-    assert result["status"] == "no-op"
-    assert result["operation"] == "project install-hook"
-    assert "reason" in result
-    assert "alternative" in result
+    result = _parse(runtime.project_install_hook('opencode'))
+    assert result['status'] == 'no-op'
+    assert result['operation'] == 'project install-hook'
+    assert 'reason' in result
+    assert 'alternative' in result
 
 
 # =============================================================================
@@ -209,17 +205,17 @@ def test_project_install_hook_is_noop(runtime: OpenCodeRuntime) -> None:
 
 def test_session_capture_is_noop(runtime: OpenCodeRuntime) -> None:
     """session_capture returns no-op because OpenCode does not expose a session id."""
-    result = _parse(runtime.session_capture("my-plan"))
-    assert result["status"] == "no-op"
-    assert result["operation"] == "session capture"
+    result = _parse(runtime.session_capture('my-plan'))
+    assert result['status'] == 'no-op'
+    assert result['operation'] == 'session capture'
 
 
 def test_session_capture_noop_has_reason_and_alternative(runtime: OpenCodeRuntime) -> None:
     """session_capture no-op includes reason and alternative fields."""
-    result = _parse(runtime.session_capture("my-plan"))
-    assert "reason" in result
-    assert "alternative" in result
-    assert "OpenCode" in result["reason"]
+    result = _parse(runtime.session_capture('my-plan'))
+    assert 'reason' in result
+    assert 'alternative' in result
+    assert 'OpenCode' in result['reason']
 
 
 # =============================================================================
@@ -230,15 +226,15 @@ def test_session_capture_noop_has_reason_and_alternative(runtime: OpenCodeRuntim
 def test_session_render_title_is_noop(runtime: OpenCodeRuntime) -> None:
     """session_render_title returns no-op because OpenCode has no plugin-driven hook."""
     result = _parse(runtime.session_render_title())
-    assert result["status"] == "no-op"
-    assert result["operation"] == "session render-title"
+    assert result['status'] == 'no-op'
+    assert result['operation'] == 'session render-title'
 
 
 def test_session_render_title_noop_fields(runtime: OpenCodeRuntime) -> None:
     """session_render_title no-op includes reason and alternative."""
     result = _parse(runtime.session_render_title())
-    assert "reason" in result
-    assert "alternative" in result
+    assert 'reason' in result
+    assert 'alternative' in result
 
 
 # =============================================================================
@@ -248,16 +244,16 @@ def test_session_render_title_noop_fields(runtime: OpenCodeRuntime) -> None:
 
 def test_session_push_title_token_is_noop(runtime: OpenCodeRuntime) -> None:
     """session_push_title_token returns no-op because OpenCode has no push channel."""
-    result = _parse(runtime.session_push_title_token("my-plan", "⏳"))
-    assert result["status"] == "no-op"
-    assert result["operation"] == "session push-title-token"
+    result = _parse(runtime.session_push_title_token('my-plan', '⏳'))
+    assert result['status'] == 'no-op'
+    assert result['operation'] == 'session push-title-token'
 
 
 def test_session_push_title_token_noop_fields(runtime: OpenCodeRuntime) -> None:
     """session_push_title_token no-op includes reason and alternative."""
-    result = _parse(runtime.session_push_title_token("my-plan", "⏳"))
-    assert "reason" in result
-    assert "alternative" in result
+    result = _parse(runtime.session_push_title_token('my-plan', '⏳'))
+    assert 'reason' in result
+    assert 'alternative' in result
 
 
 # =============================================================================
@@ -269,16 +265,16 @@ def test_session_reload_directive_is_noop(runtime: OpenCodeRuntime) -> None:
     """session_reload_directive returns no-op — OpenCode has no live plugin-reload
     command equivalent to Claude's /reload-plugins."""
     result = _parse(runtime.session_reload_directive())
-    assert result["status"] == "no-op"
-    assert result["operation"] == "session reload-directive"
+    assert result['status'] == 'no-op'
+    assert result['operation'] == 'session reload-directive'
 
 
 def test_session_reload_directive_noop_names_restart_alternative(runtime: OpenCodeRuntime) -> None:
     """The no-op carries reason + alternative, and the alternative is a full
     session restart (the OpenCode fallback for picking up regenerated artifacts)."""
     result = _parse(runtime.session_reload_directive())
-    assert "reason" in result
-    assert "restart" in result["alternative"].lower()
+    assert 'reason' in result
+    assert 'restart' in result['alternative'].lower()
 
 
 # =============================================================================
@@ -294,15 +290,15 @@ def test_session_reload_directive_noop_names_restart_alternative(runtime: OpenCo
 
 def _assert_permission_noop(result: dict) -> None:
     """Assert *result* is an honest no-op with reason + alternative naming OpenCode."""
-    assert result["status"] == "no-op"
-    assert "reason" in result
-    assert "alternative" in result
-    assert "OpenCode" in result["reason"]
+    assert result['status'] == 'no-op'
+    assert 'reason' in result
+    assert 'alternative' in result
+    assert 'OpenCode' in result['reason']
     # An honest no-op never claims a write happened.
-    assert "permissions_written" not in result
-    assert "changes_applied" not in result
-    assert "domains_added" not in result
-    assert "domains_removed" not in result
+    assert 'permissions_written' not in result
+    assert 'changes_applied' not in result
+    assert 'domains_added' not in result
+    assert 'domains_removed' not in result
 
 
 # 5. permission_configure
@@ -311,25 +307,25 @@ def _assert_permission_noop(result: dict) -> None:
 def test_permission_configure_is_noop(runtime: OpenCodeRuntime) -> None:
     """permission_configure returns an honest no-op (no fake permissions_written count)."""
     grants = [
-        {"kind": "path", "tool": "Read", "path": "**"},
-        {"kind": "path", "tool": "Write", "path": "**"},
+        {'kind': 'path', 'tool': 'Read', 'path': '**'},
+        {'kind': 'path', 'tool': 'Write', 'path': '**'},
     ]
-    result = _parse(runtime.permission_configure("project", grants))
-    assert result["operation"] == "permission configure"
+    result = _parse(runtime.permission_configure('project', grants))
+    assert result['operation'] == 'permission configure'
     _assert_permission_noop(result)
 
 
 def test_permission_configure_global_scope_is_noop(runtime: OpenCodeRuntime) -> None:
     """permission_configure with global scope is also an honest no-op."""
-    result = _parse(runtime.permission_configure("global", [{"kind": "path", "tool": "Read", "path": "**"}]))
+    result = _parse(runtime.permission_configure('global', [{'kind': 'path', 'tool': 'Read', 'path': '**'}]))
     _assert_permission_noop(result)
 
 
 def test_permission_configure_invalid_scope_returns_error(runtime: OpenCodeRuntime) -> None:
     """permission_configure with invalid scope returns error before the no-op path."""
-    result = _parse(runtime.permission_configure("workspace", [{"kind": "path", "tool": "Read", "path": "**"}]))
-    assert result["status"] == "error"
-    assert result["error"] == "invalid_scope"
+    result = _parse(runtime.permission_configure('workspace', [{'kind': 'path', 'tool': 'Read', 'path': '**'}]))
+    assert result['status'] == 'error'
+    assert result['error'] == 'invalid_scope'
 
 
 # 6. permission_analyze
@@ -337,23 +333,23 @@ def test_permission_configure_invalid_scope_returns_error(runtime: OpenCodeRunti
 
 def test_permission_analyze_is_noop(runtime: OpenCodeRuntime) -> None:
     """permission_analyze returns an honest no-op (no Claude-grammar audit on OpenCode)."""
-    result = _parse(runtime.permission_analyze("both", ["all"], None))
-    assert result["operation"] == "permission analyze"
+    result = _parse(runtime.permission_analyze('both', ['all'], None))
+    assert result['operation'] == 'permission analyze'
     _assert_permission_noop(result)
 
 
 def test_permission_analyze_invalid_scope_returns_error(runtime: OpenCodeRuntime) -> None:
     """permission_analyze with invalid scope returns error before the no-op path."""
-    result = _parse(runtime.permission_analyze("workspace", ["all"], None))
-    assert result["status"] == "error"
-    assert result["error"] == "invalid_scope"
+    result = _parse(runtime.permission_analyze('workspace', ['all'], None))
+    assert result['status'] == 'error'
+    assert result['error'] == 'invalid_scope'
 
 
 def test_permission_analyze_invalid_check_returns_error(runtime: OpenCodeRuntime) -> None:
     """permission_analyze with an unknown check name returns error before the no-op path."""
-    result = _parse(runtime.permission_analyze("global", ["nonexistent-check"], None))
-    assert result["status"] == "error"
-    assert result["error"] == "invalid_check"
+    result = _parse(runtime.permission_analyze('global', ['nonexistent-check'], None))
+    assert result['status'] == 'error'
+    assert result['error'] == 'invalid_check'
 
 
 # 7. permission_fix
@@ -362,11 +358,11 @@ def test_permission_analyze_invalid_check_returns_error(runtime: OpenCodeRuntime
 def test_permission_fix_is_noop(runtime: OpenCodeRuntime) -> None:
     """permission_fix returns an honest no-op (no fake changes_applied count)."""
     args = [
-        {"kind": "path", "tool": "Read", "path": "**"},
-        {"kind": "path", "tool": "Write", "path": ".plan/**"},
+        {'kind': 'path', 'tool': 'Read', 'path': '**'},
+        {'kind': 'path', 'tool': 'Write', 'path': '.plan/**'},
     ]
-    result = _parse(runtime.permission_fix("project", "add", args, False))
-    assert result["operation"] == "permission fix"
+    result = _parse(runtime.permission_fix('project', 'add', args, False))
+    assert result['operation'] == 'permission fix'
     _assert_permission_noop(result)
 
 
@@ -377,37 +373,33 @@ def test_the_permission_fix_operation_population_is_not_empty() -> None:
     collects zero cases and reports green — the one failure a derived population
     cannot report about itself.
     """
-    assert PERMISSION_FIX_OPERATIONS, "the operation set must not be empty"
+    assert PERMISSION_FIX_OPERATIONS, 'the operation set must not be empty'
 
 
-@pytest.mark.parametrize(
-    "operation", sorted(PERMISSION_FIX_OPERATIONS), ids=sorted(PERMISSION_FIX_OPERATIONS)
-)
-def test_permission_fix_no_ops_for_every_published_operation(
-    runtime: OpenCodeRuntime, operation: str
-) -> None:
+@pytest.mark.parametrize('operation', sorted(PERMISSION_FIX_OPERATIONS), ids=sorted(PERMISSION_FIX_OPERATIONS))
+def test_permission_fix_no_ops_for_every_published_operation(runtime: OpenCodeRuntime, operation: str) -> None:
     """Every published operation name is accepted and declines honestly.
 
     The rows are the operation set itself rather than a restated copy, so an
     operation added there is swept here without an edit to this file.
     """
-    result = _parse(runtime.permission_fix("global", operation, [], False))
+    result = _parse(runtime.permission_fix('global', operation, [], False))
 
-    assert result["status"] == "no-op", f"Expected no-op for operation {operation!r}"
+    assert result['status'] == 'no-op', f'Expected no-op for operation {operation!r}'
 
 
 def test_permission_fix_invalid_scope_returns_error(runtime: OpenCodeRuntime) -> None:
     """permission_fix with invalid scope returns error before the no-op path."""
-    result = _parse(runtime.permission_fix("unknown", "normalize", [], False))
-    assert result["status"] == "error"
-    assert result["error"] == "invalid_scope"
+    result = _parse(runtime.permission_fix('unknown', 'normalize', [], False))
+    assert result['status'] == 'error'
+    assert result['error'] == 'invalid_scope'
 
 
 def test_permission_fix_invalid_operation_returns_error(runtime: OpenCodeRuntime) -> None:
     """permission_fix with unknown operation name returns error before the no-op path."""
-    result = _parse(runtime.permission_fix("project", "delete-all", [], False))
-    assert result["status"] == "error"
-    assert result["error"] == "invalid_operation"
+    result = _parse(runtime.permission_fix('project', 'delete-all', [], False))
+    assert result['status'] == 'error'
+    assert result['error'] == 'invalid_operation'
 
 
 # 8. permission_ensure_wildcards
@@ -415,67 +407,61 @@ def test_permission_fix_invalid_operation_returns_error(runtime: OpenCodeRuntime
 
 def test_permission_ensure_wildcards_is_noop(runtime: OpenCodeRuntime) -> None:
     """permission_ensure_wildcards returns an honest no-op (no fake wildcards_added count)."""
-    result = _parse(runtime.permission_ensure_wildcards("project", "marketplace/", False))
-    assert result["operation"] == "permission ensure-wildcards"
+    result = _parse(runtime.permission_ensure_wildcards('project', 'marketplace/', False))
+    assert result['operation'] == 'permission ensure-wildcards'
     _assert_permission_noop(result)
-    assert "wildcards_added" not in result
+    assert 'wildcards_added' not in result
 
 
 def test_permission_ensure_wildcards_invalid_scope_returns_error(runtime: OpenCodeRuntime) -> None:
     """permission_ensure_wildcards with invalid scope returns error before the no-op path."""
-    result = _parse(runtime.permission_ensure_wildcards("workspace", "marketplace/", False))
-    assert result["status"] == "error"
-    assert result["error"] == "invalid_scope"
+    result = _parse(runtime.permission_ensure_wildcards('workspace', 'marketplace/', False))
+    assert result['status'] == 'error'
+    assert result['error'] == 'invalid_scope'
 
 
 # 9. permission_ensure_steps
 
 
-def test_permission_ensure_steps_is_noop(
-    runtime: OpenCodeRuntime, tmp_path: pathlib.Path
-) -> None:
+def test_permission_ensure_steps_is_noop(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
     """permission_ensure_steps returns an honest no-op when marshal.json exists."""
-    marshal_path = tmp_path / "marshal.json"
-    marshal_path.write_text(json.dumps({"runtime": {"target": "opencode"}}), encoding="utf-8")
+    marshal_path = tmp_path / 'marshal.json'
+    marshal_path.write_text(json.dumps({'runtime': {'target': 'opencode'}}), encoding='utf-8')
 
-    result = _parse(runtime.permission_ensure_steps(str(marshal_path), "project", False))
-    assert result["operation"] == "permission ensure-steps"
+    result = _parse(runtime.permission_ensure_steps(str(marshal_path), 'project', False))
+    assert result['operation'] == 'permission ensure-steps'
     _assert_permission_noop(result)
-    assert "permissions_added" not in result
+    assert 'permissions_added' not in result
 
 
 def test_permission_ensure_steps_missing_marshal_returns_error(
     runtime: OpenCodeRuntime, tmp_path: pathlib.Path
 ) -> None:
     """permission_ensure_steps returns error when marshal.json does not exist."""
-    missing_path = str(tmp_path / "nonexistent" / "marshal.json")
-    result = _parse(runtime.permission_ensure_steps(missing_path, "project", False))
-    assert result["status"] == "error"
-    assert result["error"] == "marshal_not_found"
+    missing_path = str(tmp_path / 'nonexistent' / 'marshal.json')
+    result = _parse(runtime.permission_ensure_steps(missing_path, 'project', False))
+    assert result['status'] == 'error'
+    assert result['error'] == 'marshal_not_found'
 
 
-def test_permission_ensure_steps_invalid_scope_returns_error(
-    runtime: OpenCodeRuntime, tmp_path: pathlib.Path
-) -> None:
+def test_permission_ensure_steps_invalid_scope_returns_error(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
     """permission_ensure_steps with invalid scope returns error before the no-op path."""
-    marshal_path = tmp_path / "marshal.json"
-    marshal_path.write_text("{}", encoding="utf-8")
+    marshal_path = tmp_path / 'marshal.json'
+    marshal_path.write_text('{}', encoding='utf-8')
 
-    result = _parse(runtime.permission_ensure_steps(str(marshal_path), "workspace", False))
-    assert result["status"] == "error"
-    assert result["error"] == "invalid_scope"
+    result = _parse(runtime.permission_ensure_steps(str(marshal_path), 'workspace', False))
+    assert result['status'] == 'error'
+    assert result['error'] == 'invalid_scope'
 
 
-def test_load_marshal_config_invalid_utf8_returns_error(
-    runtime: OpenCodeRuntime, tmp_path: pathlib.Path
-) -> None:
+def test_load_marshal_config_invalid_utf8_returns_error(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
     """Invalid UTF-8 in marshal.json is a load error, not an uncaught exception."""
-    marshal_path = tmp_path / "marshal.json"
-    marshal_path.write_bytes(b"\xff\xfe\x00\x01")
+    marshal_path = tmp_path / 'marshal.json'
+    marshal_path.write_bytes(b'\xff\xfe\x00\x01')
 
     result = runtime.permission_load_marshal_config(str(marshal_path))
-    assert "error" in result
-    assert "marshal.json" in result["error"]
+    assert 'error' in result
+    assert 'marshal.json' in result['error']
 
 
 def test_extract_project_steps_rejects_empty_project_prefix(
@@ -483,9 +469,9 @@ def test_extract_project_steps_rejects_empty_project_prefix(
 ) -> None:
     """A bare 'project:' entry yields no step record (empty skill is rejected)."""
     steps = runtime.permission_extract_project_steps(
-        {"plan": {"phase-5-execute": {"steps": ["project:", "project:real-skill"]}}}
+        {'plan': {'phase-5-execute': {'steps': ['project:', 'project:real-skill']}}}
     )
-    assert steps == [{"skill": "real-skill", "step": "project:real-skill", "phase": "phase-5-execute"}]
+    assert steps == [{'skill': 'real-skill', 'step': 'project:real-skill', 'phase': 'phase-5-execute'}]
 
 
 # 10. permission_web_analyze
@@ -493,16 +479,16 @@ def test_extract_project_steps_rejects_empty_project_prefix(
 
 def test_permission_web_analyze_is_noop(runtime: OpenCodeRuntime) -> None:
     """permission_web_analyze returns an honest no-op (no Claude WebFetch audit on OpenCode)."""
-    result = _parse(runtime.permission_web_analyze("global"))
-    assert result["operation"] == "permission web-analyze"
+    result = _parse(runtime.permission_web_analyze('global'))
+    assert result['operation'] == 'permission web-analyze'
     _assert_permission_noop(result)
 
 
 def test_permission_web_analyze_invalid_scope_returns_error(runtime: OpenCodeRuntime) -> None:
     """permission_web_analyze with invalid scope returns error before the no-op path."""
-    result = _parse(runtime.permission_web_analyze("local"))
-    assert result["status"] == "error"
-    assert result["error"] == "invalid_scope"
+    result = _parse(runtime.permission_web_analyze('local'))
+    assert result['status'] == 'error'
+    assert result['error'] == 'invalid_scope'
 
 
 # 11. permission_web_apply
@@ -510,17 +496,17 @@ def test_permission_web_analyze_invalid_scope_returns_error(runtime: OpenCodeRun
 
 def test_permission_web_apply_is_noop(runtime: OpenCodeRuntime) -> None:
     """permission_web_apply returns an honest no-op (no fake domains_added/removed count)."""
-    domains = ["example.com", "api.github.com"]
-    result = _parse(runtime.permission_web_apply("project", add=domains, remove=[], dry_run=False))
-    assert result["operation"] == "permission web-apply"
+    domains = ['example.com', 'api.github.com']
+    result = _parse(runtime.permission_web_apply('project', add=domains, remove=[], dry_run=False))
+    assert result['operation'] == 'permission web-apply'
     _assert_permission_noop(result)
 
 
 def test_permission_web_apply_invalid_scope_returns_error(runtime: OpenCodeRuntime) -> None:
     """permission_web_apply with invalid scope returns error before the no-op path."""
-    result = _parse(runtime.permission_web_apply("workspace", add=[], remove=[], dry_run=False))
-    assert result["status"] == "error"
-    assert result["error"] == "invalid_scope"
+    result = _parse(runtime.permission_web_apply('workspace', add=[], remove=[], dry_run=False))
+    assert result['status'] == 'error'
+    assert result['error'] == 'invalid_scope'
 
 
 # =============================================================================
@@ -536,29 +522,29 @@ def test_metrics_capture_with_total_tokens_is_honest_noop(runtime: OpenCodeRunti
     stored one — a silently lost measurement. The op returns an honest ``no-op``
     with a reason and the alternative.
     """
-    result = _parse(runtime.metrics_capture("my-plan", "phase-1-init", total_tokens=42000))
-    assert result["status"] == "no-op"
-    assert result["operation"] == "metrics capture"
-    assert result["reason"]
-    assert "alternative" in result
-    assert result.get("tokens_captured") is None
+    result = _parse(runtime.metrics_capture('my-plan', 'phase-1-init', total_tokens=42000))
+    assert result['status'] == 'no-op'
+    assert result['operation'] == 'metrics capture'
+    assert result['reason']
+    assert 'alternative' in result
+    assert result.get('tokens_captured') is None
 
 
 def test_metrics_capture_without_tokens_is_noop(runtime: OpenCodeRuntime) -> None:
     """metrics_capture without total_tokens is no-op (no session transcript on OpenCode)."""
-    result = _parse(runtime.metrics_capture("my-plan", "phase-2-refine", total_tokens=None))
-    assert result["status"] == "no-op"
-    assert result["operation"] == "metrics capture"
-    assert "OpenCode" in result["reason"]
-    assert "alternative" in result
+    result = _parse(runtime.metrics_capture('my-plan', 'phase-2-refine', total_tokens=None))
+    assert result['status'] == 'no-op'
+    assert result['operation'] == 'metrics capture'
+    assert 'OpenCode' in result['reason']
+    assert 'alternative' in result
 
 
 def test_metrics_capture_zero_tokens_is_honest_noop(runtime: OpenCodeRuntime) -> None:
     """metrics_capture with total_tokens=0 is still a no-op — even zero needs persisting."""
-    result = _parse(runtime.metrics_capture("my-plan", "phase-3-outline", total_tokens=0))
-    assert result["status"] == "no-op"
-    assert result["operation"] == "metrics capture"
-    assert "alternative" in result
+    result = _parse(runtime.metrics_capture('my-plan', 'phase-3-outline', total_tokens=0))
+    assert result['status'] == 'no-op'
+    assert result['operation'] == 'metrics capture'
+    assert 'alternative' in result
 
 
 # =============================================================================
@@ -568,68 +554,60 @@ def test_metrics_capture_zero_tokens_is_honest_noop(runtime: OpenCodeRuntime) ->
 
 def test_subagent_dispatch_without_prompt_file(runtime: OpenCodeRuntime) -> None:
     """subagent_dispatch without prompt_file succeeds and uses 'task' as OpenCode tool."""
-    result = _parse(runtime.subagent_dispatch("execution-context-level-3", None, None))
-    assert result["status"] == "success"
-    assert result["operation"] == "subagent dispatch"
-    assert result["invocation"]["tool"] == "task"
-    assert result["platform"] == "opencode"
+    result = _parse(runtime.subagent_dispatch('execution-context-level-3', None, None))
+    assert result['status'] == 'success'
+    assert result['operation'] == 'subagent dispatch'
+    assert result['invocation']['tool'] == 'task'
+    assert result['platform'] == 'opencode'
 
 
-def test_subagent_dispatch_with_prompt_file(
-    runtime: OpenCodeRuntime, tmp_path: pathlib.Path
-) -> None:
+def test_subagent_dispatch_with_prompt_file(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
     """subagent_dispatch with an existing prompt_file reads and uses its content."""
-    prompt_file = tmp_path / "prompt.md"
-    prompt_file.write_text("Execute the plan for {plan_id}", encoding="utf-8")
+    prompt_file = tmp_path / 'prompt.md'
+    prompt_file.write_text('Execute the plan for {plan_id}', encoding='utf-8')
 
     result = _parse(
         runtime.subagent_dispatch(
-            "execution-context-level-3",
+            'execution-context-level-3',
             str(prompt_file),
-            {"plan_id": "my-plan"},
+            {'plan_id': 'my-plan'},
         )
     )
-    assert result["status"] == "success"
-    assert "my-plan" in result["invocation"]["prompt"]
+    assert result['status'] == 'success'
+    assert 'my-plan' in result['invocation']['prompt']
 
 
-def test_subagent_dispatch_context_substitution(
-    runtime: OpenCodeRuntime, tmp_path: pathlib.Path
-) -> None:
+def test_subagent_dispatch_context_substitution(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
     """subagent_dispatch substitutes context keys into prompt template."""
-    prompt_file = tmp_path / "prompt.md"
-    prompt_file.write_text("Plan: {plan_id}, Task: {task_number}", encoding="utf-8")
+    prompt_file = tmp_path / 'prompt.md'
+    prompt_file.write_text('Plan: {plan_id}, Task: {task_number}', encoding='utf-8')
 
     result = _parse(
         runtime.subagent_dispatch(
-            "execution-context-level-3",
+            'execution-context-level-3',
             str(prompt_file),
-            {"plan_id": "my-plan", "task_number": "7"},
+            {'plan_id': 'my-plan', 'task_number': '7'},
         )
     )
-    assert result["status"] == "success"
-    assert "my-plan" in result["invocation"]["prompt"]
-    assert "7" in result["invocation"]["prompt"]
+    assert result['status'] == 'success'
+    assert 'my-plan' in result['invocation']['prompt']
+    assert '7' in result['invocation']['prompt']
 
 
-def test_subagent_dispatch_missing_prompt_file_returns_error(
-    runtime: OpenCodeRuntime, tmp_path: pathlib.Path
-) -> None:
+def test_subagent_dispatch_missing_prompt_file_returns_error(runtime: OpenCodeRuntime, tmp_path: pathlib.Path) -> None:
     """subagent_dispatch with a non-existent prompt_file returns error."""
-    missing = str(tmp_path / "nonexistent_prompt.md")
-    result = _parse(runtime.subagent_dispatch("execution-context-level-3", missing, None))
-    assert result["status"] == "error"
-    assert result["error"] == "prompt_not_found"
+    missing = str(tmp_path / 'nonexistent_prompt.md')
+    result = _parse(runtime.subagent_dispatch('execution-context-level-3', missing, None))
+    assert result['status'] == 'error'
+    assert result['error'] == 'prompt_not_found'
 
 
 @pytest.mark.parametrize(
-    "agent",
-    ["execution-context-level-2", "execution-context-level-5"],
-    ids=["level-2", "level-5"],
+    'agent',
+    ['execution-context-level-2', 'execution-context-level-5'],
+    ids=['level-2', 'level-5'],
 )
-def test_subagent_dispatch_echoes_requested_agent(
-    runtime: OpenCodeRuntime, agent: str
-) -> None:
+def test_subagent_dispatch_echoes_requested_agent(runtime: OpenCodeRuntime, agent: str) -> None:
     """subagent_dispatch returns the REQUESTED agent as subagent_type.
 
     The caller's level selection reaches the payload rather than being
@@ -637,8 +615,8 @@ def test_subagent_dispatch_echoes_requested_agent(
     """
     result = _parse(runtime.subagent_dispatch(agent, None, None))
 
-    assert result["status"] == "success"
-    assert result["invocation"]["subagent_type"] == agent
+    assert result['status'] == 'success'
+    assert result['invocation']['subagent_type'] == agent
 
 
 # =============================================================================
@@ -648,26 +626,26 @@ def test_subagent_dispatch_echoes_requested_agent(
 
 def test_wait_for_returns_honest_noop(runtime: OpenCodeRuntime) -> None:
     """wait_for declines with a no-op rather than a stub success or an error."""
-    result = _parse(runtime.wait_for("build-job", "job-1", 60))
-    assert result["status"] == "no-op"
-    assert result["operation"] == "wait for"
-    assert result["reason"]
-    assert result["alternative"]
+    result = _parse(runtime.wait_for('build-job', 'job-1', 60))
+    assert result['status'] == 'no-op'
+    assert result['operation'] == 'wait for'
+    assert result['reason']
+    assert result['alternative']
 
 
 def test_wait_for_noop_is_not_an_error(runtime: OpenCodeRuntime) -> None:
     """A declined capability is a no-op, so no error/message keys are present."""
-    result = _parse(runtime.wait_for("build-job", "job-1", 60))
-    assert "error" not in result
-    assert "message" not in result
+    result = _parse(runtime.wait_for('build-job', 'job-1', 60))
+    assert 'error' not in result
+    assert 'message' not in result
 
 
 def test_wait_for_noop_reports_no_outcome(runtime: OpenCodeRuntime) -> None:
     """Declining is not a verdict — the payload carries no outcome at all, so a
     caller cannot mistake the decline for a pass or for continued waiting."""
-    result = _parse(runtime.wait_for("build-job", "job-1", 60))
-    assert "outcome" not in result
-    assert "terminal" not in result
+    result = _parse(runtime.wait_for('build-job', 'job-1', 60))
+    assert 'outcome' not in result
+    assert 'terminal' not in result
 
 
 #: ``(payload field, the fragments that field must carry)``. The decline is only
@@ -679,11 +657,11 @@ def test_wait_for_noop_reports_no_outcome(runtime: OpenCodeRuntime) -> None:
 #: this target: the observable's own bounded-wait verb run in-turn, and the
 #: checkpoint-and-re-dispatch path for a bound too large to hold.
 _WAIT_FOR_DECLINE_TEXT = [
-    ("reason", ["session id", "#9292"]),
-    ("reason", ["hook channel", "anomalyco/opencode#8619"]),
-    ("reason", ["shared build layer"]),
-    ("alternative", ["bounded-wait verb", "in-turn"]),
-    ("alternative", ["re-dispatch"]),
+    ('reason', ['session id', '#9292']),
+    ('reason', ['hook channel', 'anomalyco/opencode#8619']),
+    ('reason', ['shared build layer']),
+    ('alternative', ['bounded-wait verb', 'in-turn']),
+    ('alternative', ['re-dispatch']),
 ]
 
 _WAIT_FOR_DECLINE_TEXT_IDS = [
@@ -695,25 +673,21 @@ _WAIT_FOR_DECLINE_TEXT_IDS = [
 ]
 
 
-@pytest.mark.parametrize(
-    ("field", "fragments"), _WAIT_FOR_DECLINE_TEXT, ids=_WAIT_FOR_DECLINE_TEXT_IDS
-)
-def test_wait_for_decline_names_its_grounds(
-    runtime: OpenCodeRuntime, field: str, fragments: list[str]
-) -> None:
+@pytest.mark.parametrize(('field', 'fragments'), _WAIT_FOR_DECLINE_TEXT, ids=_WAIT_FOR_DECLINE_TEXT_IDS)
+def test_wait_for_decline_names_its_grounds(runtime: OpenCodeRuntime, field: str, fragments: list[str]) -> None:
     """The decline names each verified gap, and the alternative that replaces it."""
-    text = _parse(runtime.wait_for("build-job", "job-1", 60))[field]
+    text = _parse(runtime.wait_for('build-job', 'job-1', 60))[field]
 
     for fragment in fragments:
-        assert fragment in text, f"{field} does not carry {fragment!r}: {text!r}"
+        assert fragment in text, f'{field} does not carry {fragment!r}: {text!r}'
 
 
 @pytest.mark.parametrize(
-    ("observable", "reference", "bound"),
+    ('observable', 'reference', 'bound'),
     [
-        ("build-job", "job-1", 60),
-        ("ci-run", "run-9", 1),
-        ("build-job", "", 100000),
+        ('build-job', 'job-1', 60),
+        ('ci-run', 'run-9', 1),
+        ('build-job', '', 100000),
     ],
     ids=[
         'ordinary-input',
@@ -728,7 +702,7 @@ def test_wait_for_declines_uniformly_for_any_input(
     the observable kind, the reference, or the bound — no input validation path
     can turn the decline into an outcome."""
     result = _parse(runtime.wait_for(observable, reference, bound))
-    assert result["status"] == "no-op"
+    assert result['status'] == 'no-op'
 
 
 # =============================================================================
@@ -738,56 +712,56 @@ def test_wait_for_declines_uniformly_for_any_input(
 
 def test_health_check_display_always_unhealthy(runtime: OpenCodeRuntime) -> None:
     """health_check display check always reports unhealthy on OpenCode (no hook)."""
-    result = _parse(runtime.health_check("display"))
-    assert result["status"] == "success"
-    assert result["all_healthy"] is False
-    display_result = next(r for r in result["results"] if r["check"] == "display")
-    assert display_result["healthy"] is False
+    result = _parse(runtime.health_check('display'))
+    assert result['status'] == 'success'
+    assert result['all_healthy'] is False
+    display_result = next(r for r in result['results'] if r['check'] == 'display')
+    assert display_result['healthy'] is False
 
 
 def test_health_check_hook_always_unhealthy(runtime: OpenCodeRuntime) -> None:
     """health_check hook check always reports unhealthy (no SessionStart hook on OpenCode)."""
-    result = _parse(runtime.health_check("hook"))
-    assert result["status"] == "success"
-    hook_result = next(r for r in result["results"] if r["check"] == "hook")
-    assert hook_result["healthy"] is False
+    result = _parse(runtime.health_check('hook'))
+    assert result['status'] == 'success'
+    hook_result = next(r for r in result['results'] if r['check'] == 'hook')
+    assert hook_result['healthy'] is False
 
 
 def test_health_check_all_includes_four_checks(runtime: OpenCodeRuntime) -> None:
     """health_check with 'all' runs permissions, display, mcp-diagnostics, and hook."""
-    result = _parse(runtime.health_check("all"))
-    assert result["status"] == "success"
-    checks_run = result["checks_run"]
-    assert "permissions" in checks_run
-    assert "display" in checks_run
-    assert "mcp-diagnostics" in checks_run
-    assert "hook" in checks_run
-    assert len(result["results"]) == 4
+    result = _parse(runtime.health_check('all'))
+    assert result['status'] == 'success'
+    checks_run = result['checks_run']
+    assert 'permissions' in checks_run
+    assert 'display' in checks_run
+    assert 'mcp-diagnostics' in checks_run
+    assert 'hook' in checks_run
+    assert len(result['results']) == 4
 
 
 def test_health_check_permissions_check_present(runtime: OpenCodeRuntime) -> None:
     """health_check permissions check returns a result dict with healthy and detail."""
-    result = _parse(runtime.health_check("permissions"))
-    assert result["status"] == "success"
-    perm_result = next(r for r in result["results"] if r["check"] == "permissions")
-    assert "healthy" in perm_result
-    assert "detail" in perm_result
+    result = _parse(runtime.health_check('permissions'))
+    assert result['status'] == 'success'
+    perm_result = next(r for r in result['results'] if r['check'] == 'permissions')
+    assert 'healthy' in perm_result
+    assert 'detail' in perm_result
 
 
 def test_health_check_comma_separated_checks(runtime: OpenCodeRuntime) -> None:
     """health_check accepts comma-separated check names and processes each."""
-    result = _parse(runtime.health_check("display,hook"))
-    assert result["status"] == "success"
-    checks_run = result["checks_run"]
-    assert "display" in checks_run
-    assert "hook" in checks_run
-    assert len(result["results"]) == 2
+    result = _parse(runtime.health_check('display,hook'))
+    assert result['status'] == 'success'
+    checks_run = result['checks_run']
+    assert 'display' in checks_run
+    assert 'hook' in checks_run
+    assert len(result['results']) == 2
 
 
 def test_health_check_all_healthy_false_when_display_or_hook(runtime: OpenCodeRuntime) -> None:
     """health_check all_healthy is False whenever display or hook is included."""
-    result = _parse(runtime.health_check("display"))
-    assert result["all_healthy"] is False
+    result = _parse(runtime.health_check('display'))
+    assert result['all_healthy'] is False
 
-    result2 = _parse(runtime.health_check("hook"))
-    assert result2["all_healthy"] is False
+    result2 = _parse(runtime.health_check('hook'))
+    assert result2['all_healthy'] is False

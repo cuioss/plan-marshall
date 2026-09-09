@@ -161,9 +161,7 @@ class TestEmittedCountBasis:
     """
 
     def test_a_resolved_zero_and_an_unresolved_zero_are_distinguishable(self):
-        resolved_empty = audit.check_scope_estimate(
-            _scope_inputs(scope_estimate='surgical', realized=0, declared=0)
-        )
+        resolved_empty = audit.check_scope_estimate(_scope_inputs(scope_estimate='surgical', realized=0, declared=0))
         nothing_resolved = audit.check_scope_estimate(
             _scope_inputs(scope_estimate='surgical', realized=None, declared=0)
         )
@@ -177,18 +175,14 @@ class TestEmittedCountBasis:
         assert resolved_empty['count_basis'] != nothing_resolved['count_basis']
 
     def test_the_basis_travels_into_the_mismatch_string(self):
-        result = audit.check_scope_estimate(
-            _scope_inputs(scope_estimate='surgical', realized=None, declared=0)
-        )
+        result = audit.check_scope_estimate(_scope_inputs(scope_estimate='surgical', realized=None, declared=0))
 
         # a flagged row explains which source its count came from
         assert 'actual=0' in result['mismatch']
         assert f'basis={audit.COUNT_BASIS_DECLARED}' in result['mismatch']
 
     def test_the_basis_names_the_answering_tier_when_one_resolves(self):
-        result = audit.check_scope_estimate(
-            _scope_inputs(scope_estimate='surgical', realized=2, declared=99)
-        )
+        result = audit.check_scope_estimate(_scope_inputs(scope_estimate='surgical', realized=2, declared=99))
 
         assert result['count_basis'] == 'modified_files'
         assert result['count_basis'] in audit.FOOTPRINT_TIERS

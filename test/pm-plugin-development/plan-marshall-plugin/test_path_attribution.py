@@ -31,7 +31,6 @@ SOLE resolution route for it; ``project_local_module_for_path`` IS that route (r
 See ``plan-marshall:extension-api/standards/ext-point-path-attribution.md`` for the contract.
 """
 
-
 import subprocess
 
 from extension_base import ExtensionBase, PathAttributionBase
@@ -45,9 +44,7 @@ def _load_pm_plugin_dev_extension():
     Every bundle shares the ``extension`` basename, so a bare import would collide;
     the pm-documents attributor test loads its Extension the same way.
     """
-    return load_skill_module(
-        'pm-plugin-development', 'plan-marshall-plugin', 'extension.py', 'pm_plugin_dev_extension'
-    )
+    return load_skill_module('pm-plugin-development', 'plan-marshall-plugin', 'extension.py', 'pm_plugin_dev_extension')
 
 
 Extension = _load_pm_plugin_dev_extension().Extension

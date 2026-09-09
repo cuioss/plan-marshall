@@ -70,7 +70,11 @@ def ns_end_phase(
 ) -> Namespace:
     """``end-phase`` — close a phase, optionally carrying the agent's usage figures."""
     return ns(
-        'end-phase', '--plan-id', plan_id, '--phase', phase,
+        'end-phase',
+        '--plan-id',
+        plan_id,
+        '--phase',
+        phase,
         *_usage_flags(total_tokens, tool_uses, duration_ms, retrospective_tokens),
     )
 
@@ -96,7 +100,11 @@ def ns_accumulate(
 ) -> Namespace:
     """``accumulate-agent-usage`` — add a subagent's usage to the running total."""
     return ns(
-        'accumulate-agent-usage', '--plan-id', plan_id, '--phase', phase,
+        'accumulate-agent-usage',
+        '--plan-id',
+        plan_id,
+        '--phase',
+        phase,
         *_usage_flags(total_tokens, tool_uses, duration_ms, retrospective_tokens),
     )
 
@@ -113,18 +121,25 @@ def ns_phase_boundary(
 ) -> Namespace:
     """``phase-boundary`` — close one phase and enter the next in a single call."""
     return ns(
-        'phase-boundary', '--plan-id', plan_id,
-        '--prev-phase', prev_phase, '--next-phase', next_phase,
+        'phase-boundary',
+        '--plan-id',
+        plan_id,
+        '--prev-phase',
+        prev_phase,
+        '--next-phase',
+        next_phase,
         *_usage_flags(total_tokens, tool_uses, duration_ms, retrospective_tokens),
     )
 
 
-def ns_boundary_status(
-    plan_id: str, next_phase: str, *, prev_phase: str | None = None
-) -> Namespace:
+def ns_boundary_status(plan_id: str, next_phase: str, *, prev_phase: str | None = None) -> Namespace:
     """``boundary-status`` — report the boundary state when resuming into a phase."""
     return ns(
-        'boundary-status', '--plan-id', plan_id, '--next-phase', next_phase,
+        'boundary-status',
+        '--plan-id',
+        plan_id,
+        '--next-phase',
+        next_phase,
         *_opt('--prev-phase', prev_phase),
     )
 
@@ -150,8 +165,13 @@ def ns_record_dispatch_boundary(
     never a ``0``.
     """
     return ns(
-        'record-dispatch-boundary', '--plan-id', plan_id, '--phase', phase,
-        '--termination-cause', termination_cause,
+        'record-dispatch-boundary',
+        '--plan-id',
+        plan_id,
+        '--phase',
+        phase,
+        '--termination-cause',
+        termination_cause,
         *_opt('--total-tokens', total_tokens),
         *_opt('--tool-uses', tool_uses),
         *_opt('--duration-ms', duration_ms),
@@ -165,7 +185,9 @@ def ns_record_dispatch_boundary(
 def ns_print_phase_breakdown(plan_id: str, output_file: str | None = None) -> Namespace:
     """``print-phase-breakdown`` — render the per-phase breakdown table."""
     return ns(
-        'print-phase-breakdown', '--plan-id', plan_id,
+        'print-phase-breakdown',
+        '--plan-id',
+        plan_id,
         *_opt('--output-file', output_file),
     )
 

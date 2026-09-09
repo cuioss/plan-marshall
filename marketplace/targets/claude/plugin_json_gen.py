@@ -95,10 +95,7 @@ def _list_md_files(directory: Path, target_name: str) -> list[str]:
     return sorted(
         p.name
         for p in directory.iterdir()
-        if p.is_file()
-        and p.suffix == '.md'
-        and not p.name.startswith('.')
-        and emits_to(p, target_name)
+        if p.is_file() and p.suffix == '.md' and not p.name.startswith('.') and emits_to(p, target_name)
     )
 
 
@@ -173,9 +170,7 @@ def discover_components(
     entry to drop.
     """
     agents = _expanded_agent_entries(bundle_dir / 'agents', target_name)
-    commands = [
-        f'./commands/{name}' for name in _list_md_files(bundle_dir / 'commands', target_name)
-    ]
+    commands = [f'./commands/{name}' for name in _list_md_files(bundle_dir / 'commands', target_name)]
     return {
         'agents': sorted(agents),
         'commands': sorted(commands),

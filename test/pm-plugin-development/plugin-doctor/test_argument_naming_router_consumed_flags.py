@@ -151,14 +151,10 @@ def test_router_consumed_flag_is_not_reported_unknown(tmp_path):
     script's argparse runs, so it is declared by no node and accepted by every
     one. Reporting it is a finding against an invocation that demonstrably works.
     """
-    marketplace_root = _fixture(
-        tmp_path, f'{NOTATION} resolve --command compile --{ROUTER_CONSUMED_FLAG} X'
-    )
+    marketplace_root = _fixture(tmp_path, f'{NOTATION} resolve --command compile --{ROUTER_CONSUMED_FLAG} X')
 
     findings = _flag_findings(marketplace_root)
-    assert findings == [], (
-        f'router-consumed --{ROUTER_CONSUMED_FLAG} reported as an invented flag: {findings!r}'
-    )
+    assert findings == [], f'router-consumed --{ROUTER_CONSUMED_FLAG} reported as an invented flag: {findings!r}'
 
 
 def test_genuinely_unknown_flag_on_the_same_invocation_is_still_reported(tmp_path):
@@ -168,9 +164,7 @@ def test_genuinely_unknown_flag_on_the_same_invocation_is_still_reported(tmp_pat
     control, the assertion above is satisfied by a cluster that stopped reporting
     anything at all, which is the failure mode the fix is most at risk of.
     """
-    marketplace_root = _fixture(
-        tmp_path, f'{NOTATION} resolve --command compile --{GENUINELY_UNKNOWN_FLAG} X'
-    )
+    marketplace_root = _fixture(tmp_path, f'{NOTATION} resolve --command compile --{GENUINELY_UNKNOWN_FLAG} X')
 
     findings = _flag_findings(marketplace_root)
     assert len(findings) == 1, findings
@@ -187,8 +181,7 @@ def test_both_flags_on_one_line_split_correctly(tmp_path):
     """
     marketplace_root = _fixture(
         tmp_path,
-        f'{NOTATION} resolve --command compile '
-        f'--{ROUTER_CONSUMED_FLAG} X --{GENUINELY_UNKNOWN_FLAG} Y',
+        f'{NOTATION} resolve --command compile --{ROUTER_CONSUMED_FLAG} X --{GENUINELY_UNKNOWN_FLAG} Y',
     )
 
     findings = _flag_findings(marketplace_root)
@@ -212,9 +205,7 @@ def test_executor_consumed_flag_after_the_verb_is_not_a_placement_finding(tmp_pa
     with no global exemption list.
     """
     marketplace_root = tmp_path / 'marketplace'
-    _write_invocation(
-        marketplace_root, f'{NOTATION} resolve --command compile --{ROUTER_CONSUMED_FLAG} X'
-    )
+    _write_invocation(marketplace_root, f'{NOTATION} resolve --command compile --{ROUTER_CONSUMED_FLAG} X')
     index = {
         NOTATION: _ScriptEntry(
             subcommands={'resolve': {'command', 'module'}},
@@ -303,9 +294,7 @@ def _run(marketplace_root: Path) -> tuple[list[dict], int, int]:
     findings: list[dict]
     population: int
     blind_spots: int
-    findings, population, blind_spots = analyze_argument_naming_with_population(
-        marketplace_root
-    )
+    findings, population, blind_spots = analyze_argument_naming_with_population(marketplace_root)
     return findings, population, blind_spots
 
 
@@ -332,22 +321,14 @@ def test_a_router_verb_is_counted_as_a_blind_spot(tmp_path):
     ``subcommands`` map that both flag rules look it up in. Counting the site is
     what keeps the coverage figure from overstating what the cluster ruled on.
     """
-    marketplace_root = _router_fixture(
-        tmp_path, f'{ROUTER_NOTATION} {ROUTER_VERB} --settled-head abc123 --signal ci'
-    )
+    marketplace_root = _router_fixture(tmp_path, f'{ROUTER_NOTATION} {ROUTER_VERB} --settled-head abc123 --signal ci')
 
     findings, population, blind = _run(marketplace_root)
 
     assert population == 1, population
-    assert blind == 1, (
-        f'a router verb whose flag verdict was withheld was filed as decided: {blind}'
-    )
-    subcommand_findings = [
-        f for f in findings if f.get('rule_id') == 'ARGUMENT_NAMING_SUBCOMMAND_UNKNOWN'
-    ]
-    assert subcommand_findings == [], (
-        f'the router verb was reported as an invented subcommand: {subcommand_findings!r}'
-    )
+    assert blind == 1, f'a router verb whose flag verdict was withheld was filed as decided: {blind}'
+    subcommand_findings = [f for f in findings if f.get('rule_id') == 'ARGUMENT_NAMING_SUBCOMMAND_UNKNOWN']
+    assert subcommand_findings == [], f'the router verb was reported as an invented subcommand: {subcommand_findings!r}'
 
 
 def test_a_declared_verb_with_a_derived_flag_set_is_not_a_blind_spot(tmp_path):
@@ -359,9 +340,7 @@ def test_a_declared_verb_with_a_derived_flag_set_is_not_a_blind_spot(tmp_path):
     returned ``True`` unconditionally at the same branch passes the test above and
     fails here.
     """
-    marketplace_root = _router_fixture(
-        tmp_path, f'{ROUTER_NOTATION} {CI_DECLARED_VERB} --{CI_DECLARED_FLAG} X'
-    )
+    marketplace_root = _router_fixture(tmp_path, f'{ROUTER_NOTATION} {CI_DECLARED_VERB} --{CI_DECLARED_FLAG} X')
 
     _findings, population, blind = _run(marketplace_root)
 
@@ -428,16 +407,13 @@ def test_a_positional_on_a_subparser_less_script_is_counted_as_a_blind_spot(tmp_
     It was introduced alongside that fix and survived the commit that closed four
     sibling over-claims, which is why it is pinned rather than trusted.
     """
-    marketplace_root = _flat_fixture(
-        tmp_path, f'{FLAT_NOTATION} scan --{FLAT_ROOT_FLAG} summary'
-    )
+    marketplace_root = _flat_fixture(tmp_path, f'{FLAT_NOTATION} scan --{FLAT_ROOT_FLAG} summary')
 
     _findings, population, blind = _run(marketplace_root)
 
     assert population == 1, population
     assert blind == 1, (
-        f'a subparser-less script addressed with a positional drew no flag verdict '
-        f'and was filed as decided: {blind}'
+        f'a subparser-less script addressed with a positional drew no flag verdict and was filed as decided: {blind}'
     )
 
 
@@ -458,6 +434,4 @@ def test_the_same_script_addressed_at_root_is_not_a_blind_spot(tmp_path):
     assert population == 1, population
     assert blind == 0, f'a root-addressed call the root surface judged was counted: {blind}'
     flag_findings = [f for f in findings if f.get('rule_id') == 'ARGUMENT_NAMING_FLAG_UNKNOWN']
-    assert flag_findings == [], (
-        f'a declared root flag was reported as invented: {flag_findings!r}'
-    )
+    assert flag_findings == [], f'a declared root flag was reported as invented: {flag_findings!r}'

@@ -215,7 +215,9 @@ def apply_text_edits(text: str, edits: list[dict[str, Any]]) -> str:
 
     for edit in sorted(edits, key=_start_key, reverse=True):
         edit_range = edit['range']
-        start = _position_to_offset(line_starts, text_length, edit_range['start']['line'], edit_range['start']['character'])
+        start = _position_to_offset(
+            line_starts, text_length, edit_range['start']['line'], edit_range['start']['character']
+        )
         end = _position_to_offset(line_starts, text_length, edit_range['end']['line'], edit_range['end']['character'])
         text = text[:start] + edit.get('newText', '') + text[end:]
     return text

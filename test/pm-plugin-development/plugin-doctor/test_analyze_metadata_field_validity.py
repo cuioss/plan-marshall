@@ -86,7 +86,10 @@ class TestBuildAuthoritativeFieldSet:
         """A ``set-metadata --key my_custom_field`` write is captured."""
         mp = _make_marketplace(tmp_path)
         _add_bundle_markdown(
-            mp, 'my-bundle', 'my-skill', 'SKILL.md',
+            mp,
+            'my-bundle',
+            'my-skill',
+            'SKILL.md',
             'python3 .plan/execute-script.py foo:bar:baz set-metadata --key my_custom_field --value x\n',
         )
         result = build_authoritative_field_set(mp)
@@ -96,7 +99,10 @@ class TestBuildAuthoritativeFieldSet:
         """Two calls on the same marketplace state produce identical sets."""
         mp = _make_marketplace(tmp_path)
         _add_bundle_markdown(
-            mp, 'b1', 's1', 'SKILL.md',
+            mp,
+            'b1',
+            's1',
+            'SKILL.md',
             'set-metadata --key alpha_field --value x\n',
         )
         first = build_authoritative_field_set(mp)
@@ -227,7 +233,10 @@ class TestAnalyzeMetadataFieldValidity:
         mp = _make_marketplace(tmp_path)
         # Register the field
         _add_bundle_markdown(
-            mp, 'b1', 's1', 'SKILL.md',
+            mp,
+            'b1',
+            's1',
+            'SKILL.md',
             'set-metadata --key my_registered_field --value x\n'
             'The metadata field `my_registered_field` controls something.\n',
         )
@@ -238,7 +247,10 @@ class TestAnalyzeMetadataFieldValidity:
         """A skill that references an undefined field emits a finding."""
         mp = _make_marketplace(tmp_path)
         _add_bundle_markdown(
-            mp, 'b1', 's1', 'SKILL.md',
+            mp,
+            'b1',
+            's1',
+            'SKILL.md',
             'The metadata field `absolutely_unknown_xyz` is used here.\n',
         )
         findings = analyze_metadata_field_validity(mp)

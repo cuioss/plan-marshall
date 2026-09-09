@@ -67,10 +67,12 @@ class _DualRegimeExtension(BuildExtensionBase):
     """
 
     def get_skill_domains(self) -> list[dict]:
-        return [{
-            'domain': {'key': 'dual', 'name': 'Dual', 'description': 'Test only'},
-            'profiles': {},
-        }]
+        return [
+            {
+                'domain': {'key': 'dual', 'name': 'Dual', 'description': 'Test only'},
+                'profiles': {},
+            }
+        ]
 
     def classify_globs(self) -> list[tuple[str, str]]:
         return [
@@ -84,9 +86,9 @@ class _DualRegimeExtension(BuildExtensionBase):
 # (bare-basename match) and a deeply-nested production file (path-bearing,
 # single-star-spans-slash match), plus files that match no route.
 _FIXTURE_TREE: list[str] = [
-    'nifi-cuioss-ui/package.json',          # bare-basename match (subdir only)
-    'marketplace/targets/generate.py',      # path-bearing, * spans /
-    'README.md',                            # matches nothing
+    'nifi-cuioss-ui/package.json',  # bare-basename match (subdir only)
+    'marketplace/targets/generate.py',  # path-bearing, * spans /
+    'README.md',  # matches nothing
 ]
 
 
@@ -148,15 +150,8 @@ def test_derive_globs_prune_matches_per_element_oracle(tmp_path):
     kept = set(derived.get('dual', []))
 
     # Independently recompute the oracle verdict against the same tracked corpus.
-    expected_kept = {
-        (pattern, role)
-        for pattern, role in declared
-        if _loop_matches_any(pattern, _FIXTURE_TREE)
-    }
+    expected_kept = {(pattern, role) for pattern, role in declared if _loop_matches_any(pattern, _FIXTURE_TREE)}
 
     assert kept == expected_kept, (
-        f'deriver prune verdict diverged from per-element oracle: '
-        f'kept={sorted(kept)} expected={sorted(expected_kept)}'
+        f'deriver prune verdict diverged from per-element oracle: kept={sorted(kept)} expected={sorted(expected_kept)}'
     )
-
-

@@ -126,9 +126,7 @@ def _detect_corpus_width() -> int:
         return 4
 
     widths = [
-        len(match.group(1))
-        for filepath in ADR_DIR.glob('*.adoc')
-        if (match := re.match(r'^(\d+)-', filepath.name))
+        len(match.group(1)) for filepath in ADR_DIR.glob('*.adoc') if (match := re.match(r'^(\d+)-', filepath.name))
     ]
     return max(widths) if widths else 4
 

@@ -34,6 +34,4 @@ def test_planning_scan_from_repo_categorizes_core_and_derived():
 
     derived = data.get('derived', [])
     bundle_names = [d['bundle'] for d in derived]
-    assert 'pm-plugin-development' in bundle_names, (
-        f'Derived should include pm-plugin-development, got {bundle_names}'
-    )
+    assert 'pm-plugin-development' in bundle_names, f'Derived should include pm-plugin-development, got {bundle_names}'

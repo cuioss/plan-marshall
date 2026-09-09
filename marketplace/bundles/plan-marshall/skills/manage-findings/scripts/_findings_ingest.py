@@ -119,9 +119,7 @@ def ingest_findings(plan_id: str, schema: str = FINDING_SCHEMA) -> dict[str, Any
         outcome, payload, record_clamped = _classify(record, schema)
         if outcome == 'promoted':
             if payload:
-                update_jsonl(
-                    _store_findings_path(store, record['type']), record['hash_id'], payload
-                )
+                update_jsonl(_store_findings_path(store, record['type']), record['hash_id'], payload)
             promoted += 1
         elif outcome == 'rejected':
             resolve_finding(plan_id, record['hash_id'], REJECTED_RESOLUTION, payload)

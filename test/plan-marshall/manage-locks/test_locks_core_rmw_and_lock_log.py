@@ -9,7 +9,6 @@ Its sections, in order:
 * [LOCK] event emission — log_lock_event + _resolve_lock_log_path
 """
 
-
 from __future__ import annotations
 
 import json
@@ -110,7 +109,7 @@ def test_rmw_json_returns_committed_state(tmp_path):
 # =============================================================================
 
 
-@pytest.mark.xdist_group(name="manage_locks_contention")
+@pytest.mark.xdist_group(name='manage_locks_contention')
 def test_rmw_json_serializes_concurrent_increments(tmp_path):
     # Two threads each run N increment mutations against the same file. If the
     # read-modify-write were not serialized by the guard, lost updates would
@@ -191,6 +190,7 @@ def test_rmw_json_blocks_until_guard_released(tmp_path, monkeypatch):
 # =============================================================================
 # [LOCK] event emission — log_lock_event + _resolve_lock_log_path
 # =============================================================================
+
 
 def test_resolve_lock_log_path_is_main_anchored(tmp_path, monkeypatch):
     # The lock-event log lives under the MAIN-anchored .plan/logs dir, derived

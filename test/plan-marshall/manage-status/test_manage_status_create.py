@@ -58,9 +58,7 @@ def test_create_status_custom_phases(plan_context):
 def test_create_status_force_overwrite(plan_context):
     """Test force overwrite of existing status.json."""
     # Create first plan
-    cmd_create(
-        Namespace(plan_id='force-plan', title='Original Plan', phases='1-init,2-refine,3-outline', force=False)
-    )
+    cmd_create(Namespace(plan_id='force-plan', title='Original Plan', phases='1-init,2-refine,3-outline', force=False))
     # Create again with --force
     result = cmd_create(
         Namespace(plan_id='force-plan', title='Replaced Plan', phases='1-init,2-refine,3-outline', force=True)
@@ -74,9 +72,7 @@ def test_create_status_already_exists(plan_context):
     # Create first plan
     cmd_create(Namespace(plan_id='exists-plan', title='First Plan', phases='1-init,2-refine', force=False))
     # Try to create again without --force
-    result = cmd_create(
-        Namespace(plan_id='exists-plan', title='Second Plan', phases='1-init,2-refine', force=False)
-    )
+    result = cmd_create(Namespace(plan_id='exists-plan', title='Second Plan', phases='1-init,2-refine', force=False))
     assert result['status'] == 'error'
     assert result['error'] == 'file_exists'
 
@@ -110,9 +106,7 @@ def test_json_storage_format(plan_context):
 
 def test_json_phases_structure(plan_context):
     """Test that phases are stored with correct structure."""
-    cmd_create(
-        Namespace(plan_id='phases-plan', title='Phases Test', phases='1-init,2-refine,3-outline', force=False)
-    )
+    cmd_create(Namespace(plan_id='phases-plan', title='Phases Test', phases='1-init,2-refine,3-outline', force=False))
     status_file = plan_context.plan_dir_for('phases-plan') / 'status.json'
     content = json.loads(status_file.read_text(encoding='utf-8'))
 
@@ -271,8 +265,7 @@ def test_cli_create_with_use_worktree(plan_context):
 
     status = json.loads((plan_context.plan_dir_for(plan_id) / 'status.json').read_text(encoding='utf-8'))
     assert status['metadata'] == {'use_worktree': True}, (
-        f'CLI create --use-worktree must persist only {{use_worktree: True}}, '
-        f'got {status["metadata"]!r}.'
+        f'CLI create --use-worktree must persist only {{use_worktree: True}}, got {status["metadata"]!r}.'
     )
 
 
@@ -318,9 +311,7 @@ def test_cmd_create_fires_drive_seam_after_write(plan_context, monkeypatch):
     )
 
     assert result['status'] == 'success'
-    assert calls == ['create-drive-seam'], (
-        f'cmd_create must fire the drive seam once with the plan_id, got {calls!r}.'
-    )
+    assert calls == ['create-drive-seam'], f'cmd_create must fire the drive seam once with the plan_id, got {calls!r}.'
 
 
 def test_cmd_create_swallows_delegation_failure_and_succeeds(plan_context, monkeypatch, tmp_path):
@@ -335,9 +326,7 @@ def test_cmd_create_swallows_delegation_failure_and_succeeds(plan_context, monke
 
     monkeypatch.setattr(_core.subprocess, 'run', _explode)
 
-    result = cmd_create(
-        Namespace(plan_id='create-swallow', title='Create Swallow', phases='1-init', force=False)
-    )
+    result = cmd_create(Namespace(plan_id='create-swallow', title='Create Swallow', phases='1-init', force=False))
 
     assert result['status'] == 'success', (
         f'A delegation failure must be swallowed — create must still succeed, got {result!r}.'

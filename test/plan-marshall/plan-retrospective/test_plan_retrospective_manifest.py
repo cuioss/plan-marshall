@@ -3,7 +3,6 @@
 forward in ``check-artifact-consistency.py``.
 """
 
-
 from __future__ import annotations
 
 from _plan_retrospective_manifest_fixtures import (
@@ -304,8 +303,7 @@ class TestGateVerbReadFailClosed:
         # decision_log_entries proves the OSError fail-closed path took over
         # rather than the read silently succeeding.
         decision_lines = [
-            '[2026-04-17T10:00:00Z] [INFO] [aaaa] '
-            '(plan-marshall:manage-execution-manifest:compose) Rule default fired',
+            '[2026-04-17T10:00:00Z] [INFO] [aaaa] (plan-marshall:manage-execution-manifest:compose) Rule default fired',
         ]
         plan_id, plan_dir = _setup_plan_with_manifest(
             tmp_path,

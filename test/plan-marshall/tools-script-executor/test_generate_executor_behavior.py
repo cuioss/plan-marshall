@@ -28,10 +28,12 @@ def derived_surfaces(monkeypatch):
     """Pin the surface-derivation result the generator consumes."""
     monkeypatch.setattr(_gen, 'derive_script_surfaces', lambda *a, **k: ({}, _stats(1, 0, 0)))
 
+
 @pytest.fixture()
 def previous_surfaces(monkeypatch):
     """Pin the previously-generated surface set the generator reads."""
     monkeypatch.setattr(_gen, 'read_previous_surfaces', lambda executor: {'a:b:c': _surface_literal()})
+
 
 @pytest.fixture()
 def plan_base_dir_at_tmp(tmp_path, monkeypatch):
@@ -39,20 +41,18 @@ def plan_base_dir_at_tmp(tmp_path, monkeypatch):
     monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
     return tmp_path
 
+
 # Unique module_name so the in-process load is distinct from the existing
 # test module's ``load_module()`` exec-based load (which traces as <string>
 # and does NOT count for coverage).
-_gen = load_script_module(
-    'plan-marshall', 'tools-script-executor', 'generate_executor.py', 'gen_executor_behavior'
-)
+_gen = load_script_module('plan-marshall', 'tools-script-executor', 'generate_executor.py', 'gen_executor_behavior')
 
 # The build-class change-ledger boundary lives in the executor TEMPLATE (the
 # generated executor), not in generate_executor.py. Rendering the template into
 # an importable module is the established pattern for unit-testing its dispatch
 # boundary helpers (mirrors ``_load_template_module`` in test_generate_executor.py).
 _TEMPLATE_PATH = (
-    PROJECT_ROOT
-    / 'marketplace/bundles/plan-marshall/skills/tools-script-executor/templates/execute-script.py.template'
+    PROJECT_ROOT / 'marketplace/bundles/plan-marshall/skills/tools-script-executor/templates/execute-script.py.template'
 )
 
 
@@ -68,10 +68,7 @@ def _load_template_module() -> types.ModuleType:
     ``__name__ == '__main__'`` so exec does not dispatch anything.
     """
     source = _TEMPLATE_PATH.read_text(encoding='utf-8')
-    logging_dir = str(
-        PROJECT_ROOT
-        / 'marketplace/bundles/plan-marshall/skills/manage-logging/scripts'
-    )
+    logging_dir = str(PROJECT_ROOT / 'marketplace/bundles/plan-marshall/skills/manage-logging/scripts')
     source = source.replace('{{SCRIPT_MAPPINGS}}', '')
     source = source.replace('{{SCRIPT_SURFACES}}', '').replace('{{SUBCOMMAND_MAPPINGS}}', '')
     source = source.replace('{{LOGGING_DIR}}', logging_dir)
@@ -227,7 +224,7 @@ def test_discover_local_scripts_uses_the_active_targets_roots(monkeypatch, tmp_p
     whose active target resolves a different root must discover there instead
     of at the hardcoded ``.claude/skills`` literal this function used to probe.
     """
-    monkeypatch.setattr(_gen, "_shared_get_project_skill_roots", lambda: (".custom/skills",))
+    monkeypatch.setattr(_gen, '_shared_get_project_skill_roots', lambda: ('.custom/skills',))
     local = tmp_path / '.custom' / 'skills' / 'my-skill' / 'scripts'
     local.mkdir(parents=True)
     (local / 'do_thing.py').write_text('# script', encoding='utf-8')
@@ -249,12 +246,13 @@ def test_discover_local_scripts_empty_when_target_resolves_no_roots(monkeypatch,
     the target declares none; the empty-roots case is the guard that keeps a
     non-Claude target's discovery honest.
     """
-    monkeypatch.setattr(_gen, "_shared_get_project_skill_roots", lambda: ())
+    monkeypatch.setattr(_gen, '_shared_get_project_skill_roots', lambda: ())
     local = tmp_path / '.claude' / 'skills' / 'my-skill' / 'scripts'
     local.mkdir(parents=True)
     (local / 'do_thing.py').write_text('# script', encoding='utf-8')
 
     assert _gen.discover_local_scripts(cwd=tmp_path) == {}
+
 
 # The format marker is read from the generator's own constant rather than
 # written as a literal: a hard-coded version turns this fixture into a
@@ -286,9 +284,7 @@ def _build_synthetic_base(tmp_path: Path) -> Path:
     is required for the writer to run; the logging/shared dirs resolve to
     non-existent paths and degrade gracefully.
     """
-    templates = (
-        tmp_path / 'base' / 'plan-marshall' / 'skills' / 'tools-script-executor' / 'templates'
-    )
+    templates = tmp_path / 'base' / 'plan-marshall' / 'skills' / 'tools-script-executor' / 'templates'
     templates.mkdir(parents=True)
     (templates / 'execute-script.py.template').write_text(_TEMPLATE_BODY, encoding='utf-8')
     return tmp_path / 'base'
@@ -401,7 +397,9 @@ def _surface_literal() -> dict:
     return {'digest': 'd', 'surface': {'root': {'flags': []}}}
 
 
-def test_fail_open_guard_refuses_zero_surfaces_against_nonempty_previous(tmp_path, monkeypatch, previous_surfaces, derived_surfaces):
+def test_fail_open_guard_refuses_zero_surfaces_against_nonempty_previous(
+    tmp_path, monkeypatch, previous_surfaces, derived_surfaces
+):
     """Previous executor had surfaces, this generation emits ZERO → status: error.
 
     This is the adversarial core of D1: a positive-only test (a normal
@@ -457,7 +455,9 @@ _NON_EMPTY_EMISSION_IDS = [
 
 
 @pytest.mark.parametrize('derived,reused', _NON_EMPTY_EMISSIONS, ids=_NON_EMPTY_EMISSION_IDS)
-def test_fail_open_guard_does_not_trip_when_surfaces_are_emitted(tmp_path, monkeypatch, derived, reused, previous_surfaces):
+def test_fail_open_guard_does_not_trip_when_surfaces_are_emitted(
+    tmp_path, monkeypatch, derived, reused, previous_surfaces
+):
     """Either a derived OR a reused surface is a non-empty emission → no false trip.
 
     The guard keys on emitting ZERO (neither derived nor reused). A regeneration
@@ -476,7 +476,9 @@ def test_fail_open_guard_does_not_trip_when_surfaces_are_emitted(tmp_path, monke
     assert (plan_dir / 'execute-script.py').exists()
 
 
-def test_surface_stats_line_emitted_on_both_fail_open_and_success(tmp_path, monkeypatch, capsys, previous_surfaces, derived_surfaces):
+def test_surface_stats_line_emitted_on_both_fail_open_and_success(
+    tmp_path, monkeypatch, capsys, previous_surfaces, derived_surfaces
+):
     """The surface-stats line is present in BOTH the zero and the non-zero case.
 
     This is the assertion that would fail if the line were emitted only when the
@@ -523,8 +525,7 @@ def test_surface_stats_line_emitted_on_both_fail_open_and_success(tmp_path, monk
 
 
 _GENERATOR_PATH = (
-    PROJECT_ROOT
-    / 'marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py'
+    PROJECT_ROOT / 'marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py'
 )
 
 #: A previously generated executor carrying exactly ONE surfaces entry. The
@@ -552,10 +553,7 @@ def _synthetic_marketplace_root(tmp_path: Path) -> Path:
     ``get_templates_dir`` deliberately resolves the REAL script-relative
     template regardless of ``base_path``.
     """
-    scripts = (
-        tmp_path / 'mkt' / 'marketplace' / 'bundles' / 'probe-bundle'
-        / 'skills' / 'probe-skill' / 'scripts'
-    )
+    scripts = tmp_path / 'mkt' / 'marketplace' / 'bundles' / 'probe-bundle' / 'skills' / 'probe-skill' / 'scripts'
     scripts.mkdir(parents=True)
     (scripts / 'probe_script.py').write_text('# probe\n', encoding='utf-8')
     return tmp_path / 'mkt'
@@ -772,9 +770,7 @@ def test_collect_referenced_notations_empty_for_non_directory(tmp_path):
 def test_detect_notation_drift_flags_separator_rename(tmp_path):
     """A caller referencing the underscore form when only the hyphen form is
     registered is flagged as drift (and vice versa)."""
-    (tmp_path / 'caller.md').write_text(
-        'python3 .plan/execute-script.py b:s:manage_status read\n', encoding='utf-8'
-    )
+    (tmp_path / 'caller.md').write_text('python3 .plan/execute-script.py b:s:manage_status read\n', encoding='utf-8')
     registered = {'b:s:manage-status': '/path/manage-status.py'}
 
     drift = _gen._detect_notation_drift(registered, tmp_path)
@@ -784,9 +780,7 @@ def test_detect_notation_drift_flags_separator_rename(tmp_path):
 
 def test_detect_notation_drift_empty_when_reference_registered(tmp_path):
     """A reference that IS registered produces no drift entry."""
-    (tmp_path / 'caller.md').write_text(
-        'python3 .plan/execute-script.py b:s:manage-status read\n', encoding='utf-8'
-    )
+    (tmp_path / 'caller.md').write_text('python3 .plan/execute-script.py b:s:manage-status read\n', encoding='utf-8')
     registered = {'b:s:manage-status': '/path/manage-status.py'}
 
     assert _gen._detect_notation_drift(registered, tmp_path) == []
@@ -821,8 +815,7 @@ def test_notation_drift_zero_against_clean_marketplace_source():
     drift = _gen._detect_notation_drift(registered, base)
 
     assert drift == [], (
-        'caller-notation drift detected in marketplace source — '
-        f'offending (referenced, registered) pairs: {drift}'
+        f'caller-notation drift detected in marketplace source — offending (referenced, registered) pairs: {drift}'
     )
 
 
@@ -980,7 +973,4 @@ def test_build_class_notation_gate_scopes_the_ledger_boundary():
     assert module._is_build_class_notation('plan-marshall:build-gradle:gradle', 'run') is True
     assert module._is_build_class_notation('plan-marshall:build-npm:npm', 'run') is True
     assert module._is_build_class_notation('plan-marshall:manage-status:manage-status', 'run') is False
-    assert (
-        module._is_build_class_notation('plan-marshall:manage-change-ledger:manage-change-ledger', 'run')
-        is False
-    )
+    assert module._is_build_class_notation('plan-marshall:manage-change-ledger:manage-change-ledger', 'run') is False

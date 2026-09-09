@@ -6,7 +6,6 @@ Holds the module-level loads, constants and helpers it uses, so
 the module itself carries the import and not the preamble.
 """
 
-
 import pytest
 from _manage_metrics_fixtures import (
     ns_end_phase,
@@ -108,7 +107,7 @@ def _run_inline_enrich(plan_id: str, monkeypatch, buckets: dict | None = None) -
 def _phase_block(content: str, phase: str) -> str:
     """Return the metrics.toon text block for a single [phase] section."""
     start = content.index(f'[{phase}]')
-    rest = content[start + len(f'[{phase}]'):]
+    rest = content[start + len(f'[{phase}]') :]
     nxt = rest.find('\n[')
     return rest if nxt == -1 else rest[:nxt]
 

@@ -13,7 +13,6 @@ Covers:
   contract rather than be split across files.
 """
 
-
 import json
 import time
 from argparse import Namespace

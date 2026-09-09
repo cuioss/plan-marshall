@@ -89,10 +89,7 @@ def paths(entries) -> set[str]:
 _SURFACE_CASES = [
     (
         'PLAN-121',
-        '- Adds `test/theta/test_a.py`\n\n'
-        '```text\n'
-        '- Adds `test/never/test_b.py`\n'
-        '```\n',
+        '- Adds `test/theta/test_a.py`\n\n```text\n- Adds `test/never/test_b.py`\n```\n',
         {'test/theta/test_a.py'},
     ),
     # CommonMark closes only on a run AT LEAST AS LONG as the opener. A mask
@@ -130,10 +127,7 @@ _SURFACE_CASES = [
     # the rest of every document.
     (
         'PLAN-172',
-        '```text\n'
-        '- Adds `test/never/test_b.py`\n'
-        '```\n'
-        '- Adds `test/alpha/test_one.py`\n',
+        '```text\n- Adds `test/never/test_b.py`\n```\n- Adds `test/alpha/test_one.py`\n',
         {'test/alpha/test_one.py'},
     ),
     # A backtick fence's info string may not itself contain a backtick, so this
@@ -193,16 +187,8 @@ def test_only_the_declared_entries_resolve(
     assert claim.spec_class == spec_parser.CLASS_DECLARATIVE
 
 
-def test_fenced_derived_sample_does_not_override_the_declarative_verdict(
-    repo: Path, plans: Path
-) -> None:
-    body = (
-        '# PLAN-160\n\n## Expected Surface\n\n'
-        '- Adds `test/alpha/test_one.py`\n\n'
-        '```toon\n'
-        'spec_class: DERIVED\n'
-        '```\n'
-    )
+def test_fenced_derived_sample_does_not_override_the_declarative_verdict(repo: Path, plans: Path) -> None:
+    body = '# PLAN-160\n\n## Expected Surface\n\n- Adds `test/alpha/test_one.py`\n\n```toon\nspec_class: DERIVED\n```\n'
 
     claim = claim_for(plans, repo, 'PLAN-160.md', body)
 
@@ -210,9 +196,7 @@ def test_fenced_derived_sample_does_not_override_the_declarative_verdict(
     assert 'DERIVED' not in claim.evidence
 
 
-def test_indented_derived_sample_does_not_override_the_declarative_verdict(
-    repo: Path, plans: Path
-) -> None:
+def test_indented_derived_sample_does_not_override_the_declarative_verdict(repo: Path, plans: Path) -> None:
     body = (
         '# PLAN-162\n\n## Expected Surface\n\n'
         '- Adds `test/alpha/test_one.py`\n\n'
@@ -229,9 +213,7 @@ def test_indented_derived_sample_does_not_override_the_declarative_verdict(
 
 
 @pytest.mark.parametrize('marker', ['-', '*', '+'], ids=['dash', 'asterisk', 'plus'])
-def test_every_commonmark_bullet_marker_contributes_its_entry(
-    repo: Path, plans: Path, marker: str
-) -> None:
+def test_every_commonmark_bullet_marker_contributes_its_entry(repo: Path, plans: Path, marker: str) -> None:
     """A marker the scanner does not admit silently under-classes the spec as prose."""
     body = f'# PLAN-124\n\n## Expected Surface\n\n{marker} Adds `test/lambda/test_a.py`\n'
 
@@ -271,9 +253,7 @@ def test_label_prefix_is_stripped_before_resolution(repo: Path, plans: Path, bul
     ],
     ids=['observed', 'hypothesis', 'observed_qualified', 'unlabelled'],
 )
-def test_the_label_survives_the_strip_as_the_entrys_shape(
-    repo: Path, plans: Path, bullet: str, shape: str
-) -> None:
+def test_the_label_survives_the_strip_as_the_entrys_shape(repo: Path, plans: Path, bullet: str, shape: str) -> None:
     """Stripping the prefix from the BODY must not destroy WHICH label it was.
 
     The parametrisation is the same fixture set as the strip test above, read for
@@ -296,9 +276,7 @@ def test_the_label_survives_the_strip_as_the_entrys_shape(
     ['## Expected Surface', '## expected surface', '## EXPECTED SURFACE'],
     ids=['template', 'lower', 'upper'],
 )
-def test_expected_surface_heading_is_matched_case_insensitively(
-    repo: Path, plans: Path, heading: str
-) -> None:
+def test_expected_surface_heading_is_matched_case_insensitively(repo: Path, plans: Path, heading: str) -> None:
     """A case variant is a spelling of the same heading, not a different section.
 
     Treating it as absent would report a confident empty surface for a document

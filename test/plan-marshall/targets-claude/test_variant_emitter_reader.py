@@ -31,13 +31,9 @@ from marketplace.targets.claude.variant_emitter import (
     validate_canonical,
 )
 
-EXTENSION_POINT = (
-    'plan-marshall:extension-api/standards/ext-point-dynamic-level-executor'
-)
+EXTENSION_POINT = 'plan-marshall:extension-api/standards/ext-point-dynamic-level-executor'
 
-READER_CANONICAL = (
-    MARKETPLACE_ROOT / 'plan-marshall' / 'agents' / 'execution-context-reader.md'
-)
+READER_CANONICAL = MARKETPLACE_ROOT / 'plan-marshall' / 'agents' / 'execution-context-reader.md'
 
 RESTRICTED_TOOLS = {'WebSearch', 'WebFetch', 'Read', 'Grep'}
 FORBIDDEN_TOOLS = {'Write', 'Edit', 'Bash', 'Skill', 'AskUserQuestion', 'Task'}
@@ -138,7 +134,7 @@ def test_emitted_variants_carry_restricted_tool_surface(tmp_path: Path, mapping_
         frontmatter = _read_frontmatter(variant_text)
         assert frontmatter is not None, level
         declared = _tools_set(frontmatter)
-        assert declared == RESTRICTED_TOOLS, f"{level}: {declared}"
+        assert declared == RESTRICTED_TOOLS, f'{level}: {declared}'
         assert not (declared & FORBIDDEN_TOOLS), level
 
 

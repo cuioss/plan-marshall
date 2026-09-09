@@ -107,9 +107,7 @@ _COMPONENT: str = 'plan-marshall:phase-6-finalize'
 #: (row b); everything else is a policy failure (row c). The match rule is
 #: single-sourced here per ``standards/ci-verify.md``; projects whose CI labels
 #: diverge override it via the architecture skill's config, not here.
-_BUILD_PROFILE_NAMES: frozenset[str] = frozenset(
-    {'verify', 'quality-gate', 'module-tests', 'coverage'}
-)
+_BUILD_PROFILE_NAMES: frozenset[str] = frozenset({'verify', 'quality-gate', 'module-tests', 'coverage'})
 
 #: The seven distinct producer strings the taxonomy classifier emits.
 _PRODUCER_MISSING: str = 'ci-verify-missing'
@@ -211,7 +209,7 @@ def _extract_run_id_from_url(url: str | None) -> str:
     idx = url.find(_RUN_ID_MARKER)
     if idx == -1:
         return ''
-    tail = url[idx + len(_RUN_ID_MARKER):]
+    tail = url[idx + len(_RUN_ID_MARKER) :]
     segment = tail.split('/', 1)[0]
     return segment if re.match(r'^\d+$', segment) else ''
 
@@ -233,13 +231,7 @@ def _normalize_check_entry(check: dict) -> dict:
     ``job_name``, ``started_at``, ``completed_at``, ``run_url``, ``run_id``.
     """
     name = check.get('name') or check.get('job_name') or 'unknown'
-    conclusion = (
-        check.get('conclusion')
-        or check.get('status')
-        or check.get('state')
-        or check.get('result')
-        or ''
-    )
+    conclusion = check.get('conclusion') or check.get('status') or check.get('state') or check.get('result') or ''
     workflow_name = check.get('workflow_name') or check.get('workflow') or ''
     run_url = check.get('run_url') or check.get('url') or check.get('link') or ''
     run_id = check.get('run_id') or _extract_run_id_from_url(run_url)
@@ -296,8 +288,7 @@ def _run_proxy(cmd: list[str], worktree_path: str, *, timeout: int = 120) -> dic
         return {
             'status': 'error',
             'error': (
-                f'no output (exit_code={completed.returncode}): '
-                f'{(completed.stderr or "").strip() or "no stderr"}'
+                f'no output (exit_code={completed.returncode}): {(completed.stderr or "").strip() or "no stderr"}'
             ),
         }
     try:
@@ -470,9 +461,7 @@ def _write_jobs_file(
     temp_dir.mkdir(parents=True, exist_ok=True)
     suffix = run_id or 'no-run-id'
     jobs_path = temp_dir / f'{plan_id}-ci-jobs-{suffix}.json'
-    jobs_path.write_text(
-        json.dumps(normalized_checks, indent=2), encoding='utf-8'
-    )
+    jobs_path.write_text(json.dumps(normalized_checks, indent=2), encoding='utf-8')
     return str(jobs_path)
 
 
@@ -653,8 +642,7 @@ def verify(
             'run_id': run_id,
             'head_sha': head_sha,
             'persisted': persisted,
-            **({'persist_skipped_reason': persist_skipped_reason}
-               if persist_skipped_reason else {}),
+            **({'persist_skipped_reason': persist_skipped_reason} if persist_skipped_reason else {}),
             'findings_filed': 0,
             'step_marked_done': True,
         }
@@ -666,10 +654,7 @@ def verify(
         findings_fn(
             plan_id=plan_id,
             title='[ci_no_checks] CI run produced zero checks',
-            detail=(
-                f'[ci_no_checks] CI run produced zero checks for PR '
-                f'{pr_number} at HEAD {head_sha}'
-            ),
+            detail=(f'[ci_no_checks] CI run produced zero checks for PR {pr_number} at HEAD {head_sha}'),
             file_path=f'artifacts/ci-runs/{run_id}/manifest.toon',
             worktree_path=worktree_path,
         )
@@ -683,8 +668,7 @@ def verify(
             'run_id': run_id,
             'head_sha': head_sha,
             'persisted': persisted,
-            **({'persist_skipped_reason': persist_skipped_reason}
-               if persist_skipped_reason else {}),
+            **({'persist_skipped_reason': persist_skipped_reason} if persist_skipped_reason else {}),
             'findings_filed': findings_filed,
             'producers': producers,
             'step_marked_done': False,
@@ -706,10 +690,7 @@ def verify(
         findings_fn(
             plan_id=plan_id,
             title=f'[{subtype}] {check_name} failed',
-            detail=(
-                f'[{subtype}] {check_name} failed on PR {pr_number} '
-                f'at HEAD {head_sha}'
-            ),
+            detail=(f'[{subtype}] {check_name} failed on PR {pr_number} at HEAD {head_sha}'),
             file_path=f'artifacts/ci-runs/{run_id}/{job_name}.log',
             worktree_path=worktree_path,
         )
@@ -725,8 +706,7 @@ def verify(
         'run_id': run_id,
         'head_sha': head_sha,
         'persisted': persisted,
-        **({'persist_skipped_reason': persist_skipped_reason}
-           if persist_skipped_reason else {}),
+        **({'persist_skipped_reason': persist_skipped_reason} if persist_skipped_reason else {}),
         'findings_filed': findings_filed,
         'producers': seen_producers,
         'step_marked_done': False,
@@ -792,10 +772,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 serialize_toon(
                     {
                         'status': 'error',
-                        'error': (
-                            f'failing-checks-file unreadable '
-                            f'({args.failing_checks_file}): {exc}'
-                        ),
+                        'error': (f'failing-checks-file unreadable ({args.failing_checks_file}): {exc}'),
                     }
                 )
             )
@@ -849,15 +826,9 @@ def build_parser() -> argparse.ArgumentParser:
         allow_abbrev=False,
     )
     run_parser.add_argument('--plan-id', required=True, dest='plan_id')
-    run_parser.add_argument(
-        '--pr-number', required=True, dest='pr_number', type=int
-    )
-    run_parser.add_argument(
-        '--worktree-path', required=True, dest='worktree_path'
-    )
-    run_parser.add_argument(
-        '--provider', required=True, choices=('github', 'gitlab')
-    )
+    run_parser.add_argument('--pr-number', required=True, dest='pr_number', type=int)
+    run_parser.add_argument('--worktree-path', required=True, dest='worktree_path')
+    run_parser.add_argument('--provider', required=True, choices=('github', 'gitlab'))
     run_parser.add_argument(
         '--final-status',
         required=True,
@@ -873,10 +844,7 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
         dest='wait_outcome',
         choices=('completed', 'deadline_exceeded'),
-        help=(
-            'Wait outcome threaded from the precondition. NEVER derived from '
-            '--final-status.'
-        ),
+        help=('Wait outcome threaded from the precondition. NEVER derived from --final-status.'),
     )
     run_parser.add_argument(
         '--head-sha',

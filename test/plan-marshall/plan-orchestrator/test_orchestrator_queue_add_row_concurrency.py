@@ -57,7 +57,6 @@ leave the first writer waiting at the barrier until it times out, and the
 resulting :class:`threading.BrokenBarrierError` fails the test.
 """
 
-
 from __future__ import annotations
 
 import json
@@ -81,9 +80,7 @@ _ORCH_SCRIPT = 'orchestrator.py'
 #: to release both writers from one barrier at the read/commit boundary, and a
 #: subprocess cannot be held there. Registered under its own name so it never
 #: displaces the registration ``test_orchestrator.py`` publishes.
-_orch = load_script_module(
-    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT, 'orchestrator_concurrency_script'
-)
+_orch = load_script_module(_ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT, 'orchestrator_concurrency_script')
 
 _append_plan_row = _orch._append_plan_row
 _rmw_json = _orch.rmw_json
@@ -180,9 +177,7 @@ def _commit_stale_array(status_path: Path, stale: list[dict], row: dict) -> None
     _rmw_json(status_path, _mutate)
 
 
-def _race(
-    status_path: Path, commit: Callable[[Path, list[dict], dict], None]
-) -> list[str]:
+def _race(status_path: Path, commit: Callable[[Path, list[dict], dict], None]) -> list[str]:
     """Race :data:`WRITER_COUNT` writers with the read/commit boundary FORCED.
 
     Every writer takes its own pre-lock read, then blocks on the shared barrier
@@ -206,7 +201,7 @@ def _race(
         return list(pool.map(_worker, range(WRITER_COUNT)))
 
 
-@pytest.mark.xdist_group(name="orchestrator_add_row_contention")
+@pytest.mark.xdist_group(name='orchestrator_add_row_contention')
 class TestAddRowSharesTheCriticalSection:
     def test_concurrent_appends_both_survive(self, plan_context):
         """Positive control: both barrier-released ``--add-row`` writers land.

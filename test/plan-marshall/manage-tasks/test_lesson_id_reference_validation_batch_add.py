@@ -10,7 +10,6 @@ Its sections, in order:
 * Case (f) — plan-dir converted-lesson artifact is the tier-2 exemption.
 """
 
-
 import json
 
 from _lesson_id_reference_validation_fixtures import (
@@ -101,6 +100,7 @@ def test_batch_add_all_real_succeeds(plan_context, patch_inventory):
 # Case (e) — lesson IDs cited in the TITLE only are still scanned
 # =============================================================================
 
+
 def test_batch_add_phantom_in_title_only_aborts(plan_context, patch_inventory):
     """The batch path also scans title text — a phantom ID cited only in
     one entry's title aborts the entire batch."""
@@ -141,6 +141,7 @@ def test_batch_add_phantom_in_title_only_aborts(plan_context, patch_inventory):
 # ``_scan_unresolved_lesson_ids``.)
 # =============================================================================
 
+
 def test_batch_add_plan_dir_artifact_exempts_inventory_miss(plan_context, patch_inventory):
     """The batch path honours the same tier-2 exemption: an entry citing an
     inventory-absent id whose plan-dir artifact exists does NOT abort the
@@ -168,7 +169,5 @@ def test_batch_add_plan_dir_artifact_exempts_inventory_miss(plan_context, patch_
 
     assert result['status'] == 'success'
     assert result['tasks_created'] == 2
-    files = sorted(
-        (plan_context.plan_dir_for('lesson-ref-batch-plandir-exempt') / 'tasks').glob('TASK-*.json')
-    )
+    files = sorted((plan_context.plan_dir_for('lesson-ref-batch-plandir-exempt') / 'tasks').glob('TASK-*.json'))
     assert [f.name for f in files] == ['TASK-001.json', 'TASK-002.json']

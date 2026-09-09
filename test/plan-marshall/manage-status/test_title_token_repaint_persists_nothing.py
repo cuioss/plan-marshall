@@ -5,7 +5,6 @@
 Its one section: drive seam: the archive-time teardown seam is GONE.
 """
 
-
 from argparse import Namespace
 
 from _title_token_fixtures import (
@@ -90,9 +89,7 @@ def test_teardown_drive_seam_is_removed():
     explaining why archive must not release.
     """
     for removed in ('_drive_teardown', '_teardown_non_delivery_reason', '_parse_drive_reply'):
-        assert not hasattr(_core, removed), (
-            f'{removed} is back — archive must release no session binding'
-        )
+        assert not hasattr(_core, removed), f'{removed} is back — archive must release no session binding'
 
 
 def test_crashing_delegate_leaves_transition_outcome_unchanged(plan_context, monkeypatch):

@@ -12,21 +12,13 @@ The executor is stdlib-only and directly invocable, so the module is loaded by p
 (no executor PYTHONPATH needed) and the filesystem cases use pytest's tmp_path.
 """
 
-
 import importlib.util
 import sys
 from pathlib import Path
 
 from conftest import PROJECT_ROOT
 
-_SCRIPT_PATH = (
-    PROJECT_ROOT
-    / '.claude'
-    / 'skills'
-    / 'finalize-step-era-stamp-fill'
-    / 'scripts'
-    / 'era_stamp_fill.py'
-)
+_SCRIPT_PATH = PROJECT_ROOT / '.claude' / 'skills' / 'finalize-step-era-stamp-fill' / 'scripts' / 'era_stamp_fill.py'
 
 
 def _load_era_module():
@@ -59,13 +51,9 @@ _TEST_REL = era.TEST_REL
 # computable from `__file__` without consulting the step at all.
 _REPO_ROOT = PROJECT_ROOT.resolve()
 _EXPECTED_TEST_REL = (
-    (Path(__file__).resolve().parent / 'test_audit_check_era_model.py')
-    .relative_to(_REPO_ROOT)
-    .as_posix()
+    (Path(__file__).resolve().parent / 'test_audit_check_era_model.py').relative_to(_REPO_ROOT).as_posix()
 )
-_EXPECTED_AUDIT_REL = (
-    '.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py'
-)
+_EXPECTED_AUDIT_REL = '.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py'
 
 # A realistic CHECK_ERA snippet: the PR-PENDING sentinel on one check, a concrete
 # #NNN on another, and a PR-PENDING mention in a COMMENT (must NOT be rewritten).
@@ -76,10 +64,7 @@ _AUDIT_WITH_PENDING = (
     '    "merge-window-accounting": "#877",\n'
     '}\n'
 )
-_TEST_WITH_PENDING = (
-    'def test_era():\n'
-    '    assert audit.CHECK_ERA["execution-context-manifest"] == "PR-PENDING"\n'
-)
+_TEST_WITH_PENDING = 'def test_era():\n    assert audit.CHECK_ERA["execution-context-manifest"] == "PR-PENDING"\n'
 
 
 def test_step_targets_resolve_against_the_real_repository():

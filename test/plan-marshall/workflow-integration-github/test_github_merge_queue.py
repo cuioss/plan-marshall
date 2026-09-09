@@ -82,9 +82,7 @@ def _install(
         discriminator = github_ops.MERGE_QUEUE_ELIGIBLE_CONFIGURED
     monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
     monkeypatch.setattr(github_ops, 'run_gh', run_gh_stub)
-    monkeypatch.setattr(
-        github_ops, '_resolve_pr_identifier', lambda args, op: ('42', None)
-    )
+    monkeypatch.setattr(github_ops, '_resolve_pr_identifier', lambda args, op: ('42', None))
     monkeypatch.setattr(github_ops, 'view_pr_data', lambda head=None: _base_view_payload())
     monkeypatch.setattr(github_ops, 'get_repo_info', lambda: ('octo', 'repo'))
 

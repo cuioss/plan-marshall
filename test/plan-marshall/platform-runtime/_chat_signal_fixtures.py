@@ -70,8 +70,7 @@ REENTRY_NOTICE = (
 )
 
 STOP_HOOK_NOTICE = (
-    'Stop hook feedback:\n'
-    '[~/.claude/stop-hook-git-check.sh]: There are uncommitted changes in the repository.'
+    'Stop hook feedback:\n[~/.claude/stop-hook-git-check.sh]: There are uncommitted changes in the repository.'
 )
 
 OPERATOR_TEXT = 'stop using the ratio as the check — validate by classification instead'

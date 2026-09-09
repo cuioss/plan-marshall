@@ -42,17 +42,49 @@ MIN_CONFIDENCE = 0.35
 # Stop-words removed from token sets before scoring. Keeps the score
 # meaningful on short descriptions where filler words dominate the
 # overlap.
-_STOP_WORDS: frozenset[str] = frozenset({
-    'a', 'an', 'and', 'are', 'as', 'at', 'be', 'by', 'for', 'from',
-    'has', 'have', 'in', 'is', 'it', 'its', 'of', 'on', 'or', 'that',
-    'the', 'this', 'to', 'was', 'were', 'will', 'with',
-    # plan-marshall vocabulary that adds noise without distinguishing
-    # one recipe from another
-    'plan', 'plans', 'recipe', 'recipes', 'workflow', 'workflows',
-    'standards', 'standard',
-})
+_STOP_WORDS: frozenset[str] = frozenset(
+    {
+        'a',
+        'an',
+        'and',
+        'are',
+        'as',
+        'at',
+        'be',
+        'by',
+        'for',
+        'from',
+        'has',
+        'have',
+        'in',
+        'is',
+        'it',
+        'its',
+        'of',
+        'on',
+        'or',
+        'that',
+        'the',
+        'this',
+        'to',
+        'was',
+        'were',
+        'will',
+        'with',
+        # plan-marshall vocabulary that adds noise without distinguishing
+        # one recipe from another
+        'plan',
+        'plans',
+        'recipe',
+        'recipes',
+        'workflow',
+        'workflows',
+        'standards',
+        'standard',
+    }
+)
 
-_TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z_-]+")
+_TOKEN_RE = re.compile(r'[A-Za-z][A-Za-z_-]+')
 
 # =============================================================================
 # Pre-diagnosed-change SHAPE signal (surgical-fix recipe only)
@@ -262,9 +294,7 @@ def _normalize_recipe_lane_seed(block: dict[str, Any] | None) -> dict[str, Any] 
     raw_steps = block.get('steps')
     if isinstance(raw_steps, dict):
         steps = {
-            str(step): str(override)
-            for step, override in raw_steps.items()
-            if str(override) in _VALID_LANE_OVERRIDES
+            str(step): str(override) for step, override in raw_steps.items() if str(override) in _VALID_LANE_OVERRIDES
         }
         if steps:
             seed['steps'] = steps

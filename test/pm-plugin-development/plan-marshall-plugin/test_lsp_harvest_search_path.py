@@ -38,7 +38,7 @@ from conftest import PROJECT_ROOT
 
 PYTHON = sys.executable
 
-_FAKE_SERVER = r'''
+_FAKE_SERVER = r"""
 import json, sys
 
 CONFIG = json.loads(open(sys.argv[1]).read())
@@ -84,7 +84,7 @@ while True:
         break
     elif "id" in message:
         write_frame({"jsonrpc": "2.0", "id": message["id"], "result": None})
-'''
+"""
 
 
 def _workspace(tmp_path):
@@ -193,7 +193,9 @@ def test_a_reference_to_an_ambiguous_module_name_is_dropped_and_counted(tmp_path
         directory.mkdir()
         (directory / 'extension.py').write_text('VALUE = 1\n', encoding='utf-8')
     (first / 'caller.py').write_text('import extension\n', encoding='utf-8')
-    server_cmd, _record = _fake_server(tmp_path / 'server', definition={'uri': _uri(second / 'extension.py'), 'range': {}})
+    server_cmd, _record = _fake_server(
+        tmp_path / 'server', definition={'uri': _uri(second / 'extension.py'), 'range': {}}
+    )
 
     outcome = harvest_workspace(root, server_cmd=server_cmd, timeout_s=20.0, request_timeout_s=5.0)
 
@@ -216,7 +218,9 @@ def test_a_definition_resolving_into_a_venv_produces_no_reference(tmp_path):
     source = root / 'component_a'
     source.mkdir()
     (source / 'caller.py').write_text('import pkg\n', encoding='utf-8')
-    server_cmd, _record = _fake_server(tmp_path / 'server', definition={'uri': _uri(vendored / '__init__.py'), 'range': {}})
+    server_cmd, _record = _fake_server(
+        tmp_path / 'server', definition={'uri': _uri(vendored / '__init__.py'), 'range': {}}
+    )
 
     outcome = harvest_workspace(root, server_cmd=server_cmd, timeout_s=20.0, request_timeout_s=5.0)
 
@@ -234,7 +238,9 @@ def test_a_vendored_target_is_counted_apart_from_an_out_of_workspace_one(tmp_pat
     source = root / 'component_a'
     source.mkdir()
     (source / 'caller.py').write_text('import pkg\n', encoding='utf-8')
-    server_cmd, _record = _fake_server(tmp_path / 'server', definition={'uri': _uri(vendored / '__init__.py'), 'range': {}})
+    server_cmd, _record = _fake_server(
+        tmp_path / 'server', definition={'uri': _uri(vendored / '__init__.py'), 'range': {}}
+    )
 
     outcome = harvest_workspace(root, server_cmd=server_cmd, timeout_s=20.0, request_timeout_s=5.0)
 
@@ -310,7 +316,9 @@ def test_the_same_constant_governs_both_the_source_sweep_and_the_target_refusal(
     source = root / 'alpha'
     source.mkdir()
     (source / 'caller.py').write_text('import mod\n', encoding='utf-8')
-    server_cmd, _record = _fake_server(tmp_path / 'server', definition={'uri': _uri(quarantined / 'mod.py'), 'range': {}})
+    server_cmd, _record = _fake_server(
+        tmp_path / 'server', definition={'uri': _uri(quarantined / 'mod.py'), 'range': {}}
+    )
 
     outcome = harvest_workspace(root, server_cmd=server_cmd, timeout_s=20.0, request_timeout_s=5.0)
 
@@ -334,7 +342,9 @@ def test_the_harvest_never_hands_the_lift_a_vendored_target(tmp_path):
     source = root / 'alpha'
     source.mkdir()
     (source / 'caller.py').write_text('import pkg\n', encoding='utf-8')
-    server_cmd, _record = _fake_server(tmp_path / 'server', definition={'uri': _uri(vendored / '__init__.py'), 'range': {}})
+    server_cmd, _record = _fake_server(
+        tmp_path / 'server', definition={'uri': _uri(vendored / '__init__.py'), 'range': {}}
+    )
 
     outcome = harvest_workspace(root, server_cmd=server_cmd, timeout_s=20.0, request_timeout_s=5.0)
     attribute = make_prefix_attributor({'alpha': 'alpha', 'rootmod': '.'})
@@ -417,9 +427,7 @@ def test_a_real_cross_bundle_import_becomes_a_named_module_edge(tmp_path):
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, destination)
 
-    outcome = harvest_workspace(
-        tmp_path, server_cmd=[_PYRIGHT, '--stdio'], timeout_s=180.0, request_timeout_s=30.0
-    )
+    outcome = harvest_workspace(tmp_path, server_cmd=[_PYRIGHT, '--stdio'], timeout_s=180.0, request_timeout_s=30.0)
 
     assert outcome.ran is True, outcome.reason
     assert (_IMPORTER, _IMPORTED) in outcome.references, (
@@ -430,7 +438,5 @@ def test_a_real_cross_bundle_import_becomes_a_named_module_edge(tmp_path):
         'pm-dev-python': 'marketplace/bundles/pm-dev-python',
         'plan-marshall': 'marketplace/bundles/plan-marshall',
     }
-    edges, _notes = lift_to_modules(
-        outcome.references, make_prefix_attributor(module_paths), list(module_paths)
-    )
+    edges, _notes = lift_to_modules(outcome.references, make_prefix_attributor(module_paths), list(module_paths))
     assert ('pm-dev-python', 'plan-marshall') in edges

@@ -28,7 +28,6 @@ inventory output — never hand-typed — per the live-anchoring discipline the
 lesson-ID scanner enforces.
 """
 
-
 from argparse import Namespace
 from unittest.mock import patch
 
@@ -60,9 +59,7 @@ SOLUTION_OUTLINE_COMPONENT = 'plan-marshall:manage-solution-outline'
 OUTLINE_SKILL_PATH = 'marketplace/bundles/plan-marshall/skills/phase-3-outline/SKILL.md'
 
 
-SOLUTION_OUTLINE_SKILL_PATH = (
-    'marketplace/bundles/plan-marshall/skills/manage-solution-outline/SKILL.md'
-)
+SOLUTION_OUTLINE_SKILL_PATH = 'marketplace/bundles/plan-marshall/skills/manage-solution-outline/SKILL.md'
 
 
 TEST_PATH = 'test/plan-marshall/manage-lessons/test_consult.py'

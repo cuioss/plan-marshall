@@ -282,7 +282,7 @@ def read_implements_field(skill_md_path: Path) -> list[str]:
 
         # Block-sequence form: collect the following ``- value`` item lines.
         values: list[str] = []
-        for seq_raw in fm_lines[index + 1:]:
+        for seq_raw in fm_lines[index + 1 :]:
             seq = seq_raw.strip()
             if not seq or seq.startswith('#'):
                 continue
@@ -992,9 +992,7 @@ def _read_frontmatter_fields(doc_path: Path, keys: tuple[str, ...]) -> dict[str,
                     continue
                 meta_inline = meta_value.strip()
                 if meta_inline:
-                    metadata_fields[meta_key] = (
-                        [] if meta_inline == '[]' else _coerce_scalar(meta_inline)
-                    )
+                    metadata_fields[meta_key] = [] if meta_inline == '[]' else _coerce_scalar(meta_inline)
             continue
 
         if key not in keys:
@@ -1187,9 +1185,7 @@ def _scan_skills_roots_for_implementors(ext_point: str) -> list[dict[str, Any]]:
                 if ext_point not in read_implements_field(skill_md):
                     continue
                 seen_step_ids.add(step_id)
-                record = _build_implementor_record(
-                    skill_md, 'bundle-optional', name_override=step_id
-                )
+                record = _build_implementor_record(skill_md, 'bundle-optional', name_override=step_id)
                 # A bundle finalize-step skill that declares ``default_on: true``
                 # is a promoted built-in-equivalent: it seeds into the default
                 # finalize set exactly like a phase-6 built-in step doc. Classify
@@ -1562,8 +1558,7 @@ def main() -> int:
     implementors_parser.add_argument(
         '--ext-point',
         required=True,
-        help='Canonical extension-point value (e.g. '
-        'plan-marshall:extension-api/standards/ext-point-finalize-step)',
+        help='Canonical extension-point value (e.g. plan-marshall:extension-api/standards/ext-point-finalize-step)',
     )
     implementors_parser.set_defaults(func=cmd_implementors)
 
@@ -1582,9 +1577,7 @@ def main() -> int:
             )
         except _routing.MutuallyExclusiveArgsError:
             print(
-                serialize_toon(
-                    _routing.emit_mutually_exclusive_error(getattr(args, 'plan_id', None), args.project_dir)
-                )
+                serialize_toon(_routing.emit_mutually_exclusive_error(getattr(args, 'plan_id', None), args.project_dir))
             )
             return 2
         except _routing.WorktreeResolutionError as exc:

@@ -67,13 +67,7 @@ _BLOAT_BODY = 'line\n' * 800
 
 def _bloated_agent_content(frontmatter_extra: str = '') -> str:
     """Create a minimal agent markdown that is BLOATED (800 lines)."""
-    fm = (
-        '---\n'
-        'name: test-agent\n'
-        'description: A test agent for bloat testing.\n'
-        'tools:\n'
-        '  - Read\n'
-    )
+    fm = '---\nname: test-agent\ndescription: A test agent for bloat testing.\ntools:\n  - Read\n'
     if frontmatter_extra:
         fm += frontmatter_extra
     fm += '---\n'
@@ -122,28 +116,14 @@ class TestAckHelpers:
 
     def test_valid_ack_nested(self) -> None:
         """Nested quality block with valid ack tag returns True + tag."""
-        content = (
-            '---\n'
-            'name: foo\n'
-            'quality:\n'
-            '  file-bloat: ack-validator-registry\n'
-            '---\n'
-            'body\n'
-        )
+        content = '---\nname: foo\nquality:\n  file-bloat: ack-validator-registry\n---\nbody\n'
         ack_present, tag = _has_file_bloat_ack(content)
         assert ack_present is True
         assert tag == 'validator-registry'
 
     def test_malformed_ack_value(self) -> None:
         """Malformed ack value (e.g. 'yes') does not suppress."""
-        content = (
-            '---\n'
-            'name: foo\n'
-            'quality:\n'
-            '  file-bloat: yes\n'
-            '---\n'
-            'body\n'
-        )
+        content = '---\nname: foo\nquality:\n  file-bloat: yes\n---\nbody\n'
         ack_present, tag = _has_file_bloat_ack(content)
         assert ack_present is False
         assert tag is None
@@ -164,9 +144,7 @@ class TestAckHelpers:
 
     def test_ack_tag_with_numbers(self) -> None:
         """Ack tag with numbers is valid."""
-        content = (
-            '---\nname: foo\nquality:\n  file-bloat: ack-large-doc-v2\n---\nbody\n'
-        )
+        content = '---\nname: foo\nquality:\n  file-bloat: ack-large-doc-v2\n---\nbody\n'
         ack_present, tag = _has_file_bloat_ack(content)
         assert ack_present is True
         assert tag == 'large-doc-v2'
@@ -221,9 +199,7 @@ class TestBloatWithValidAck:
 
     def test_valid_ack_suppresses_finding(self, tmp_path: Path) -> None:
         """File with valid ack produces no file-bloat finding."""
-        content = _bloated_agent_content(
-            frontmatter_extra='quality:\n  file-bloat: ack-validator-registry\n'
-        )
+        content = _bloated_agent_content(frontmatter_extra='quality:\n  file-bloat: ack-validator-registry\n')
         md_file = tmp_path / 'agent.md'
         md_file.write_text(content, encoding='utf-8')
 
@@ -234,9 +210,7 @@ class TestBloatWithValidAck:
 
     def test_ack_tag_surfaced_in_analysis(self, tmp_path: Path) -> None:
         """After suppression, the ack tag is stored in the analysis dict."""
-        content = _bloated_agent_content(
-            frontmatter_extra='quality:\n  file-bloat: ack-validator-registry\n'
-        )
+        content = _bloated_agent_content(frontmatter_extra='quality:\n  file-bloat: ack-validator-registry\n')
         md_file = tmp_path / 'agent.md'
         md_file.write_text(content, encoding='utf-8')
 
@@ -246,9 +220,7 @@ class TestBloatWithValidAck:
 
     def test_critical_with_valid_ack_also_suppressed(self, tmp_path: Path) -> None:
         """CRITICAL bloat is also suppressed by a valid ack."""
-        content = _bloated_agent_content(
-            frontmatter_extra='quality:\n  file-bloat: ack-huge-legacy\n'
-        )
+        content = _bloated_agent_content(frontmatter_extra='quality:\n  file-bloat: ack-huge-legacy\n')
         md_file = tmp_path / 'agent.md'
         md_file.write_text(content, encoding='utf-8')
 
@@ -268,9 +240,7 @@ class TestBloatWithMalformedAck:
 
     def test_malformed_ack_yes_does_not_suppress(self, tmp_path: Path) -> None:
         """``quality.file-bloat: yes`` is not a valid ack — finding still emitted."""
-        content = _bloated_agent_content(
-            frontmatter_extra='quality:\n  file-bloat: yes\n'
-        )
+        content = _bloated_agent_content(frontmatter_extra='quality:\n  file-bloat: yes\n')
         md_file = tmp_path / 'agent.md'
         md_file.write_text(content, encoding='utf-8')
 
@@ -281,9 +251,7 @@ class TestBloatWithMalformedAck:
 
     def test_malformed_ack_true_does_not_suppress(self, tmp_path: Path) -> None:
         """``quality.file-bloat: true`` is not a valid ack — finding still emitted."""
-        content = _bloated_agent_content(
-            frontmatter_extra='quality:\n  file-bloat: true\n'
-        )
+        content = _bloated_agent_content(frontmatter_extra='quality:\n  file-bloat: true\n')
         md_file = tmp_path / 'agent.md'
         md_file.write_text(content, encoding='utf-8')
 
@@ -294,9 +262,7 @@ class TestBloatWithMalformedAck:
 
     def test_malformed_bare_ack_does_not_suppress(self, tmp_path: Path) -> None:
         """``quality.file-bloat: ack-`` (no rationale slug) is not valid."""
-        content = _bloated_agent_content(
-            frontmatter_extra='quality:\n  file-bloat: ack-\n'
-        )
+        content = _bloated_agent_content(frontmatter_extra='quality:\n  file-bloat: ack-\n')
         md_file = tmp_path / 'agent.md'
         md_file.write_text(content, encoding='utf-8')
 

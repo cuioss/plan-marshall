@@ -17,7 +17,9 @@ from _arch_fixtures import setup_test_project
 
 from conftest import load_script_module
 
-_architecture_core = load_script_module('plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core')
+_architecture_core = load_script_module(
+    'plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core'
+)
 _cmd_enrich = load_script_module('plan-marshall', 'manage-architecture', '_cmd_enrich.py', '_cmd_enrich')
 
 DataNotFoundError = _architecture_core.DataNotFoundError
@@ -776,9 +778,7 @@ def test_enrich_all_memoizes_module_discovery_to_single_crawl(monkeypatch):
     D) — once per ``iter_modules`` + ``load_module_derived`` inside every
     ``_load_module_or_raise`` call.
     """
-    fake_ext = _FakeExtensionApplicable(
-        domain_key='memo-domain', bundle='memo-bundle', skill_name='memo-skill'
-    )
+    fake_ext = _FakeExtensionApplicable(domain_key='memo-domain', bundle='memo-bundle', skill_name='memo-skill')
     _patch_extensions(monkeypatch, [{'bundle': 'memo-bundle', 'path': '/fake/path', 'module': fake_ext}])
 
     call_count = 0

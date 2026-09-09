@@ -320,9 +320,7 @@ class TestBoundaryConditions:
         # An "Extension Points" section with NO table — only prose mentioning a
         # count. Nothing is checkable.
         (skill_dir / 'SKILL.md').write_text(
-            '# Extension API\n\n## Extension Points\n\n'
-            'There are 7 implementations of provides_triage().\n\n'
-            '## Next\n',
+            '# Extension API\n\n## Extension Points\n\nThere are 7 implementations of provides_triage().\n\n## Next\n',
             encoding='utf-8',
         )
 
@@ -382,9 +380,7 @@ class TestPersonaSecurityExpertIndex:
 
         assert_analyzer_findings(analyze_literal_count, tmp_path, [])
 
-    def test_ordinary_prose_naming_the_standards_dir_is_not_a_count_claim(
-        self, tmp_path: Path
-    ) -> None:
+    def test_ordinary_prose_naming_the_standards_dir_is_not_a_count_claim(self, tmp_path: Path) -> None:
         # The anchor phrase alone is not the discriminator: the token in front of
         # it must be a digit or a number word. Ordinary prose that merely names
         # the standards/ directory would otherwise be read as a count claim whose
@@ -423,9 +419,7 @@ class TestPersonaSecurityExpertIndex:
             assert finding['details']['population_size'] == 3
 
     def test_load_table_missing_a_document_is_flagged(self, tmp_path: Path) -> None:
-        _write_persona_security_expert(
-            tmp_path, self._POPULATION, load_listed=['alpha.md', 'beta.md']
-        )
+        _write_persona_security_expert(tmp_path, self._POPULATION, load_listed=['alpha.md', 'beta.md'])
 
         findings = assert_analyzer_findings(analyze_literal_count, tmp_path, [RULE_ID])
         details = findings[0]['details']
@@ -435,9 +429,7 @@ class TestPersonaSecurityExpertIndex:
         assert details['population_size'] == 3
 
     def test_reference_table_listing_an_absent_document_is_flagged(self, tmp_path: Path) -> None:
-        _write_persona_security_expert(
-            tmp_path, self._POPULATION, reference_listed=[*self._POPULATION, 'ghost.md']
-        )
+        _write_persona_security_expert(tmp_path, self._POPULATION, reference_listed=[*self._POPULATION, 'ghost.md'])
 
         findings = assert_analyzer_findings(analyze_literal_count, tmp_path, [RULE_ID])
         details = findings[0]['details']
@@ -474,9 +466,7 @@ class TestPersonaSecurityExpertFailsClosed:
         assert findings[0]['details'] == {'surface': 'population', 'population_size': 0}
 
     def test_missing_index_section_is_flagged(self, tmp_path: Path) -> None:
-        _write_persona_security_expert(
-            tmp_path, ['alpha.md', 'beta.md'], prose='two', include_reference_section=False
-        )
+        _write_persona_security_expert(tmp_path, ['alpha.md', 'beta.md'], prose='two', include_reference_section=False)
 
         findings = assert_analyzer_findings(analyze_literal_count, tmp_path, [RULE_ID])
         details = findings[0]['details']
@@ -484,9 +474,7 @@ class TestPersonaSecurityExpertFailsClosed:
         assert details['missing'] == ['alpha.md', 'beta.md']
         assert details['population_size'] == 2
 
-    def test_prose_link_outside_the_table_does_not_mask_a_missing_row(
-        self, tmp_path: Path
-    ) -> None:
+    def test_prose_link_outside_the_table_does_not_mask_a_missing_row(self, tmp_path: Path) -> None:
         # The "Available Standards" set is collected from TABLE ROWS only. A
         # prose link to standards/gamma.md that sits in the section but outside
         # the table is not an index entry: counting it would complete the set
@@ -496,9 +484,7 @@ class TestPersonaSecurityExpertFailsClosed:
             ['alpha.md', 'beta.md', 'gamma.md'],
             prose='three',
             load_listed=['alpha.md', 'beta.md'],
-            load_section_prose=(
-                'See also [`standards/gamma.md`](standards/gamma.md) for the deep dive.'
-            ),
+            load_section_prose=('See also [`standards/gamma.md`](standards/gamma.md) for the deep dive.'),
         )
 
         findings = analyze_literal_count(tmp_path)

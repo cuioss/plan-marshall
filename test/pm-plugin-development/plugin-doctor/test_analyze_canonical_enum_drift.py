@@ -35,7 +35,9 @@ from conftest import MARKETPLACE_ROOT, load_script_module
 from _plugin_doctor_fixtures import assert_analyzer_findings
 
 _mod = load_script_module(
-    'pm-plugin-development', 'plugin-doctor', '_analyze_canonical_enum_drift.py',
+    'pm-plugin-development',
+    'plugin-doctor',
+    '_analyze_canonical_enum_drift.py',
     '_analyze_canonical_enum_drift',
 )
 analyze_canonical_enum_drift = _mod.analyze_canonical_enum_drift
@@ -80,7 +82,7 @@ def _write_bundle(
     return skill_md
 
 
-_SCRIPT_LITERAL_CHOICES = '''\
+_SCRIPT_LITERAL_CHOICES = """\
 import argparse
 
 
@@ -93,7 +95,7 @@ def main():
 
 if __name__ == '__main__':
     main()
-'''
+"""
 
 
 def test_flags_truncated_enum(tmp_path):
@@ -152,7 +154,7 @@ def test_description_hand_list_is_not_the_authority(tmp_path):
     a stale subset. Reading description= would manufacture a false positive; the
     guard must read choices= only, so a doc that matches choices= is clean.
     """
-    script = '''\
+    script = """\
 import argparse
 
 KINDS = ('x', 'y', 'z')
@@ -171,7 +173,7 @@ def main():
 
 if __name__ == '__main__':
     main()
-'''
+"""
     _write_bundle(tmp_path, doc_enum='x|y|z', script_body=script)
     assert_analyzer_findings(analyze_canonical_enum_drift, tmp_path, [])
 
@@ -183,7 +185,7 @@ def test_free_form_flag_in_documented_subcommand_not_flagged(tmp_path):
     ``list --status`` is choices-constrained. A block documenting ``update
     --status {a|b}`` must NOT be compared against ``list``'s choices.
     """
-    script = '''\
+    script = """\
 import argparse
 
 
@@ -198,16 +200,14 @@ def main():
 
 if __name__ == '__main__':
     main()
-'''
-    _write_bundle(
-        tmp_path, doc_enum='a|b', script_body=script, subcommand='update', flag='status'
-    )
+"""
+    _write_bundle(tmp_path, doc_enum='a|b', script_body=script, subcommand='update', flag='status')
     assert_analyzer_findings(analyze_canonical_enum_drift, tmp_path, [])
 
 
 def test_flag_without_choices_skipped(tmp_path):
     """A documented enum on a flag that has no choices= anywhere is skipped."""
-    script = '''\
+    script = """\
 import argparse
 
 
@@ -220,14 +220,14 @@ def main():
 
 if __name__ == '__main__':
     main()
-'''
+"""
     _write_bundle(tmp_path, doc_enum='x|y', script_body=script)
     assert_analyzer_findings(analyze_canonical_enum_drift, tmp_path, [])
 
 
 def test_unresolvable_choices_fails_closed(tmp_path):
     """A choices= expression that cannot be resolved to a concrete set emits nothing."""
-    script = '''\
+    script = """\
 import argparse
 
 
@@ -244,14 +244,14 @@ def main():
 
 if __name__ == '__main__':
     main()
-'''
+"""
     _write_bundle(tmp_path, doc_enum='x|y', script_body=script)
     assert_analyzer_findings(analyze_canonical_enum_drift, tmp_path, [])
 
 
 def test_resolves_constant_choices(tmp_path):
     """choices=CONST resolves to the constant's members; a truncated doc is flagged."""
-    script = '''\
+    script = """\
 import argparse
 
 KINDS = ('x', 'y', 'z')
@@ -266,7 +266,7 @@ def main():
 
 if __name__ == '__main__':
     main()
-'''
+"""
     _write_bundle(tmp_path, doc_enum='x|y', script_body=script)
     findings = assert_analyzer_findings(analyze_canonical_enum_drift, tmp_path, [RULE_ID])
     assert findings[0]['details']['missing_from_doc'] == ['z']
@@ -275,7 +275,7 @@ if __name__ == '__main__':
 # ---------------------------------------------------------------------------
 # Shared fence: every enum is scoped to the invocation ABOVE it, not the first.
 # ---------------------------------------------------------------------------
-_SHARED_FENCE_SCRIPT = '''\
+_SHARED_FENCE_SCRIPT = """\
 import argparse
 
 
@@ -290,7 +290,7 @@ def main():
 
 if __name__ == '__main__':
     main()
-'''
+"""
 
 
 def _write_shared_fence_bundle(root: Path, *, add_enum: str, remove_enum: str) -> Path:
@@ -342,9 +342,7 @@ def test_shared_fence_sites_carry_their_own_subcommand_path(tmp_path):
     """
     _write_shared_fence_bundle(tmp_path, add_enum='x|y', remove_enum='p|q')
 
-    by_subcommand = {
-        site.subcommand: sorted(site.documented) for site in derive_population(tmp_path)
-    }
+    by_subcommand = {site.subcommand: sorted(site.documented) for site in derive_population(tmp_path)}
 
     assert by_subcommand == {('add',): ['x', 'y'], ('remove',): ['p', 'q']}
 
@@ -473,7 +471,7 @@ def test_a_mutually_exclusive_flag_list_is_not_read_as_an_enum(tmp_path):
 # ---------------------------------------------------------------------------
 # The declarative dict-spec parser form.
 # ---------------------------------------------------------------------------
-_SCRIPT_DICT_SPEC = '''\
+_SCRIPT_DICT_SPEC = """\
 import argparse
 
 KINDS = ['x', 'y', 'z']
@@ -500,7 +498,7 @@ def main():
 
 if __name__ == '__main__':
     main()
-'''
+"""
 
 
 def test_declarative_dict_spec_choices_resolve(tmp_path):
@@ -613,7 +611,7 @@ def test_a_flag_with_no_choices_is_a_different_cause_from_an_unresolvable_one(tm
     value and names the four it accepts. What the bucket licenses is "this rule
     has no oracle here", never "nothing constrains this flag".
     """
-    script = '''\
+    script = """\
 import argparse
 
 from somewhere_else import KINDS
@@ -629,7 +627,7 @@ def main():
 
 if __name__ == '__main__':
     main()
-'''
+"""
     skill_dir = tmp_path / 'mybundle' / 'skills' / 'myskill'
     (skill_dir / 'scripts').mkdir(parents=True)
     (skill_dir / 'scripts' / 'myscript.py').write_text(script, encoding='utf-8')
@@ -780,7 +778,7 @@ def test_a_dict_spec_subcommand_with_no_choices_is_not_a_blind_spot(tmp_path):
         '\n'
         'def main():\n'
         '    return build(\n'
-        "        subcommands=[\n"
+        '        subcommands=[\n'
         "            {'name': 'validate', 'args': [\n"
         "                {'flags': ['--schema'], 'help': 'a|b'},\n"
         '            ]},\n'
@@ -848,7 +846,7 @@ def test_choices_on_a_mutually_exclusive_group_resolve(tmp_path):
     flag", which is the census's only non-blind-spot cause. Four live sites were
     reported that way.
     """
-    script = '''\
+    script = """\
 import argparse
 
 
@@ -863,7 +861,7 @@ def main():
 
 if __name__ == '__main__':
     main()
-'''
+"""
     _write_bundle(tmp_path, doc_enum='x|y', script_body=script)
 
     population = derive_population(tmp_path)
@@ -890,7 +888,7 @@ def test_a_parser_rebound_by_a_helper_parameter_is_not_attributed_to_the_root(tm
     fixture assigns it before passing it, as the live subject does), so the cause
     is the incomplete authority rather than an underived surface.
     """
-    script = '''\
+    script = """\
 import argparse
 
 
@@ -907,7 +905,7 @@ def main():
 
 if __name__ == '__main__':
     main()
-'''
+"""
     _write_bundle(tmp_path, doc_enum='live|archived', script_body=script, flag='mode')
 
     population = derive_population(tmp_path)
@@ -950,7 +948,7 @@ def test_a_parser_handed_to_an_unmodelled_call_makes_that_path_incomplete(tmp_pa
     exclusion list of argparse call names stood here instead for one round; it
     was inert, and naming it described a discriminator the code did not have.
     """
-    script = '''\
+    script = """\
 import argparse
 
 from _shared_args import add_mode_arg
@@ -965,7 +963,7 @@ def main():
 
 if __name__ == '__main__':
     main()
-'''
+"""
     _write_bundle(tmp_path, doc_enum='live|archived', script_body=script, flag='mode')
 
     population = derive_population(tmp_path)
@@ -1001,7 +999,7 @@ def test_a_parser_in_receiver_position_does_not_make_a_path_incomplete(tmp_path)
     receiver must yield no incomplete path, and that assertion cannot be
     satisfied by a skip list.
     """
-    script = '''\
+    script = """\
 import argparse
 
 
@@ -1018,7 +1016,7 @@ def main():
 
 if __name__ == '__main__':
     main()
-'''
+"""
     _write_bundle(tmp_path, doc_enum='live|archived', script_body=script, flag='mode')
     script_path = tmp_path / 'mybundle' / 'skills' / 'myskill' / 'scripts' / 'myscript.py'
     tree = ast.parse(script_path.read_text(encoding='utf-8'))
@@ -1031,7 +1029,7 @@ if __name__ == '__main__':
     # The discriminator, stated directly: the SAME parser moved into an argument
     # position DOES mark its path. Without this the assertions above would also
     # hold for a scan that inspects nothing at all.
-    handed_off = script.replace("    parser.parse_args()", "    _configure(p_add)")
+    handed_off = script.replace('    parser.parse_args()', '    _configure(p_add)')
     _write_bundle(tmp_path, doc_enum='live|archived', script_body=handed_off, flag='mode')
     handed_tree = ast.parse(script_path.read_text(encoding='utf-8'))
 
@@ -1061,7 +1059,7 @@ def test_a_group_built_off_a_shadowed_parser_is_not_attributed_to_the_root(tmp_p
     not the guard, and deleting the gate leaves the suite green — which is what
     the first draft of this test did.
     """
-    script = '''\
+    script = """\
 import argparse
 
 parser = argparse.ArgumentParser()
@@ -1075,7 +1073,7 @@ def _extra(parser):
 
 
 _extra(p_add)
-'''
+"""
     _write_bundle(tmp_path, doc_enum='live|archived', script_body=script, flag='mode')
     script_path = tmp_path / 'mybundle' / 'skills' / 'myskill' / 'scripts' / 'myscript.py'
     tree = ast.parse(script_path.read_text(encoding='utf-8'))
@@ -1098,7 +1096,7 @@ def test_choices_on_an_argument_group_resolve(tmp_path):
     the set left the suite green while every ``choices=`` declared on a named
     group went unread.
     """
-    script = '''\
+    script = """\
 import argparse
 
 
@@ -1112,7 +1110,7 @@ def main():
 
 if __name__ == '__main__':
     main()
-'''
+"""
     _write_bundle(tmp_path, doc_enum='x|y|z', script_body=script)
 
     population = derive_population(tmp_path)
@@ -1175,7 +1173,7 @@ def test_a_truncated_one_member_enum_is_a_declared_gap_not_a_clean_pass(tmp_path
     this fixture refutes. It is admissible only because the census names it, so
     what is pinned here is the census entry, not the silence.
     """
-    script = '''\
+    script = """\
 import argparse
 
 
@@ -1188,7 +1186,7 @@ def main():
 
 if __name__ == '__main__':
     main()
-'''
+"""
     _write_bundle(tmp_path, doc_enum='bug', script_body=script)
 
     coverage = _mod.derive_coverage(derive_population(tmp_path))
@@ -1220,7 +1218,7 @@ def test_a_laundered_group_name_does_not_poison_the_same_name_elsewhere(tmp_path
     parameter of the laundered owner's name, and the laundered group itself
     still fails closed.
     """
-    script = '''\
+    script = """\
 import argparse
 
 parser = argparse.ArgumentParser()
@@ -1233,15 +1231,13 @@ grp.add_argument('--kind', choices=['x', 'y', 'z'])
 def _extra(parser):
     grp = parser.add_mutually_exclusive_group()
     grp.add_argument('--other')
-'''
+"""
     _write_bundle(tmp_path, doc_enum='x|y|z', script_body=script)
     script_path = tmp_path / 'mybundle' / 'skills' / 'myskill' / 'scripts' / 'myscript.py'
     tree = ast.parse(script_path.read_text(encoding='utf-8'))
     population = derive_population(tmp_path)
 
-    laundered = _mod._group_vars_off_shadowed_owner(
-        tree, _mod._enclosing_params(tree), _mod._enclosing_functions(tree)
-    )
+    laundered = _mod._group_vars_off_shadowed_owner(tree, _mod._enclosing_params(tree), _mod._enclosing_functions(tree))
 
     assert [name for name, _func in laundered] == ['grp']
     assert _mod._has_unattributed_choices(tree) is False
@@ -1252,15 +1248,18 @@ def _extra(parser):
     # ``grp`` is used inside a function whose parameter happens to be spelled
     # like the laundered binding's owner. Nothing about that changes which group
     # ``grp`` names here.
-    cross = script.replace(
-        "grp.add_argument('--kind', choices=['x', 'y', 'z'])\n",
-        '',
-    ).rstrip() + '''
+    cross = (
+        script.replace(
+            "grp.add_argument('--kind', choices=['x', 'y', 'z'])\n",
+            '',
+        ).rstrip()
+        + """
 
 
 def _read(parser):
     grp.add_argument('--kind', choices=['x', 'y', 'z'])
-'''
+"""
+    )
     _write_bundle(tmp_path, doc_enum='x|y|z', script_body=cross)
     cross_tree = ast.parse(script_path.read_text(encoding='utf-8'))
     cross_population = derive_population(tmp_path)
@@ -1280,7 +1279,7 @@ def test_a_script_mixing_both_declaration_forms_with_different_sets_fails_closed
     the conflict branch, resolving the key to ``None``. Both arms are asserted,
     because the claim is vacuous in the agreeing case and only testable here.
     """
-    spec = '''\
+    spec = """\
 import argparse
 
 from script_shared import create_workflow_cli
@@ -1298,13 +1297,11 @@ parser = argparse.ArgumentParser()
 sub = parser.add_subparsers(dest='cmd')
 p = sub.add_parser('add')
 p.add_argument('--kind', choices=%s)
-'''
+"""
     resolver = _mod._Resolver(tmp_path, lambda path: ast.parse(path.read_text(encoding='utf-8')))
 
     agreeing = _mod._authority_by_subcommand_flag(ast.parse(spec % "['a', 'b']"), resolver)
-    differing = _mod._authority_by_subcommand_flag(
-        ast.parse(spec % "['a', 'b', 'c']"), resolver
-    )
+    differing = _mod._authority_by_subcommand_flag(ast.parse(spec % "['a', 'b', 'c']"), resolver)
 
     assert agreeing[(('add',), 'kind')] == frozenset({'a', 'b'})
     assert differing[(('add',), 'kind')] is None
@@ -1327,9 +1324,7 @@ def test_the_two_entry_points_agree_on_findings_over_the_real_tree():
     the ones the gate reports. One derivation feeds both.
     """
     plain = analyze_canonical_enum_drift(MARKETPLACE_ROOT)
-    paired, population_size = _mod.analyze_canonical_enum_drift_with_population(
-        MARKETPLACE_ROOT
-    )
+    paired, population_size = _mod.analyze_canonical_enum_drift_with_population(MARKETPLACE_ROOT)
 
     assert paired == plain
     assert population_size == len(derive_population(MARKETPLACE_ROOT))

@@ -93,9 +93,7 @@ def cmd_orchestrator_get(args) -> dict:
     if not field:
         return error_exit('--field is required')
 
-    rejection = reject_unknown_provisioning_field(
-        field, ORCHESTRATOR_SCALAR_FIELDS, 'orchestrator'
-    )
+    rejection = reject_unknown_provisioning_field(field, ORCHESTRATOR_SCALAR_FIELDS, 'orchestrator')
     if rejection is not None:
         return rejection
 
@@ -133,9 +131,7 @@ def cmd_orchestrator_set(args) -> dict:
     if raw_value is None:
         return error_exit('--value is required')
 
-    rejection = reject_unknown_provisioning_field(
-        field, ORCHESTRATOR_SCALAR_FIELDS, 'orchestrator'
-    )
+    rejection = reject_unknown_provisioning_field(field, ORCHESTRATOR_SCALAR_FIELDS, 'orchestrator')
     if rejection is not None:
         return rejection
 
@@ -165,6 +161,4 @@ def cmd_orchestrator_set(args) -> dict:
     orch_block[field] = coerced
     save_config(config)
 
-    return success_exit(
-        {'field': field, 'value': coerced, 'target': f'orchestrator.{field}'}
-    )
+    return success_exit({'field': field, 'value': coerced, 'target': f'orchestrator.{field}'})

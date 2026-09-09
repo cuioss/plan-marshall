@@ -51,12 +51,7 @@ _BUNDLES = SCRIPT_PATH.parents[4]
 _PRODUCER_DOC = SCRIPT_PATH.parents[1] / 'SKILL.md'
 _AR_SKILL = _BUNDLES / 'plan-marshall' / 'skills' / 'automatic-review' / 'SKILL.md'
 _BRANCH_CLEANUP_REREVIEW = (
-    _BUNDLES
-    / 'plan-marshall'
-    / 'skills'
-    / 'phase-6-finalize'
-    / 'standards'
-    / 'branch-cleanup-rereview.md'
+    _BUNDLES / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'standards' / 'branch-cleanup-rereview.md'
 )
 
 #: The envelope field whose contract the predicate decides. A document that talks
@@ -98,15 +93,9 @@ def _doc_population() -> list[Path]:
 def _head_sha_predicate_name() -> str:
     """Derive, by AST, the helper ``_match_review`` hands ``head_sha`` to."""
     tree = ast.parse(SCRIPT_PATH.read_text(encoding='utf-8'))
-    module_functions = {
-        node.name for node in tree.body if isinstance(node, ast.FunctionDef)
-    }
+    module_functions = {node.name for node in tree.body if isinstance(node, ast.FunctionDef)}
     matcher = next(
-        (
-            node
-            for node in ast.walk(tree)
-            if isinstance(node, ast.FunctionDef) and node.name == '_match_review'
-        ),
+        (node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef) and node.name == '_match_review'),
         None,
     )
     assert matcher is not None, '_match_review not found — the derivation anchor moved'

@@ -218,24 +218,18 @@ def test_section_snapshot_is_reusable_across_resolvers(plan_context):
 
 
 def test_set_rejects_both_flags(plan_context):
-    result = run_config.cmd_derivation_resolver_set(
-        argparse.Namespace(resolver='lsp', enabled=True, disabled=True)
-    )
+    result = run_config.cmd_derivation_resolver_set(argparse.Namespace(resolver='lsp', enabled=True, disabled=True))
     assert result['status'] == 'error'
 
 
 def test_set_rejects_neither_flag(plan_context):
     """The verb's value proposition is the flag pair, so the empty case is pinned."""
-    result = run_config.cmd_derivation_resolver_set(
-        argparse.Namespace(resolver='lsp', enabled=False, disabled=False)
-    )
+    result = run_config.cmd_derivation_resolver_set(argparse.Namespace(resolver='lsp', enabled=False, disabled=False))
     assert result['status'] == 'error'
 
 
 def test_rejecting_a_bad_flag_pair_persists_nothing(plan_context):
-    result = run_config.cmd_derivation_resolver_set(
-        argparse.Namespace(resolver='lsp', enabled=True, disabled=True)
-    )
+    result = run_config.cmd_derivation_resolver_set(argparse.Namespace(resolver='lsp', enabled=True, disabled=True))
     assert result['status'] == 'error'
     assert run_config.read_derivation_resolvers_section() == {}
 
@@ -346,9 +340,7 @@ def test_get_reports_a_non_dict_entry_as_not_configured(plan_context):
     """
     _write_raw_section({'markdown': 'yes'})
 
-    got = run_config.cmd_derivation_resolver_get(
-        argparse.Namespace(resolver='markdown')
-    )
+    got = run_config.cmd_derivation_resolver_get(argparse.Namespace(resolver='markdown'))
 
     assert got['configured'] is False
 

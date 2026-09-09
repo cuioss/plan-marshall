@@ -137,9 +137,7 @@ def _real_gradle_module(tmp_path, gradle_data: dict) -> dict:
     module_dir = tmp_path / 'core'
     module_dir.mkdir()
     (module_dir / _gradle_cmd_discover.BUILD_GRADLE).write_text('', encoding='utf-8')
-    module: dict = _gradle_cmd_discover._extract_gradle_module(
-        module_dir, tmp_path, 'core', gradle_data, []
-    )
+    module: dict = _gradle_cmd_discover._extract_gradle_module(module_dir, tmp_path, 'core', gradle_data, [])
     return module
 
 

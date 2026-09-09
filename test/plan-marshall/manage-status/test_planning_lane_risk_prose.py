@@ -44,9 +44,7 @@ import pytest
 
 from conftest import load_script_module
 
-_mod = load_script_module(
-    'plan-marshall', 'manage-status', '_cmd_planning_lane.py', '_cmd_planning_lane_risk_prose'
-)
+_mod = load_script_module('plan-marshall', 'manage-status', '_cmd_planning_lane.py', '_cmd_planning_lane_risk_prose')
 evaluate_signals_pure = _mod.evaluate_signals_pure
 cmd_planning_lane_route = _mod.cmd_planning_lane_route
 
@@ -210,9 +208,7 @@ def test_s7_does_not_change_the_posture_projection():
 
 def _write_request(plan_dir: Path, body: str) -> None:
     plan_dir.mkdir(parents=True, exist_ok=True)
-    (plan_dir / 'request.md').write_text(
-        f'# Request: risk prose\n\nsource: description\n\n{body}\n', encoding='utf-8'
-    )
+    (plan_dir / 'request.md').write_text(f'# Request: risk prose\n\nsource: description\n\n{body}\n', encoding='utf-8')
 
 
 def _write_status(plan_dir: Path) -> None:
@@ -312,9 +308,7 @@ def test_epic_metadata_key_does_not_fire_s7():
     alternative that matches chrome rather than content fires vacuously. The
     ``(?!\\s*:)`` lookahead is the fix, and this is its regression.
     """
-    assert (
-        _mod._request_has_risk_prose('epic: truthful-signals\nworkstream: WS-01\n') is False
-    )
+    assert _mod._request_has_risk_prose('epic: truthful-signals\nworkstream: WS-01\n') is False
 
 
 def test_epic_in_prose_still_fires_s7():

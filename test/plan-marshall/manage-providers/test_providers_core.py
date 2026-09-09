@@ -651,9 +651,7 @@ class TestLoadDeclaredProviders:
             'a-declared-provider-comes-back-verbatim',
         ],
     )
-    def test_the_providers_key_is_returned_as_declared(
-        self, tmp_path, monkeypatch, config, expected_providers
-    ):
+    def test_the_providers_key_is_returned_as_declared(self, tmp_path, monkeypatch, config, expected_providers):
         """The loader hands back the ``providers`` list, or an empty one when absent."""
         stage_marshal(tmp_path, monkeypatch, config)
 

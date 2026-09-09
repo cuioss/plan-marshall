@@ -30,9 +30,7 @@ def _write_qv_plan(
     plan_dir = repo_root / '.plan' / 'temp' / 'qv-corpus' / plan_id
     plan_dir.mkdir(parents=True, exist_ok=True)
     if report_md is not None:
-        (plan_dir / 'quality-verification-report.md').write_text(
-            report_md, encoding='utf-8'
-        )
+        (plan_dir / 'quality-verification-report.md').write_text(report_md, encoding='utf-8')
     if findings_by_file is not None:
         findings_dir = plan_dir / 'artifacts' / 'findings'
         findings_dir.mkdir(parents=True, exist_ok=True)
@@ -69,17 +67,11 @@ class TestCheckQualityVerification:
     def test_filed_lesson_excluded_from_unfiled(self, tmp_path: Path):
         # the proposed lesson title matches a corpus signature
         # (substring match is enough per ``_signature_filed``).
-        report = (
-            '```json\n'
-            '{"proposed_lessons": [{"title": "Argparse Rejection Drift"}]}\n'
-            '```\n'
-        )
+        report = '```json\n{"proposed_lessons": [{"title": "Argparse Rejection Drift"}]}\n```\n'
         inputs = _write_qv_plan(tmp_path, 'filed', report_md=report)
 
         # corpus already carries a covering signature
-        result = audit.check_quality_verification(
-            inputs, ['argparse rejection drift across phase skills']
-        )
+        result = audit.check_quality_verification(inputs, ['argparse rejection drift across phase skills'])
 
         # proposed but filed → zero unfiled
         assert result['proposed_lessons'] == 1
@@ -122,11 +114,7 @@ class TestCheckQualityVerification:
     def test_lessons_key_alias_and_bare_string_lessons(self, tmp_path: Path):
         # the alternate ``lessons`` key plus a bare-string lesson entry
         # (both supported by the proposed-lesson extraction).
-        report = (
-            '```json\n'
-            '{"lessons": ["Bare String Lesson", {"signature": "Dict Lesson"}]}\n'
-            '```\n'
-        )
+        report = '```json\n{"lessons": ["Bare String Lesson", {"signature": "Dict Lesson"}]}\n```\n'
         inputs = _write_qv_plan(tmp_path, 'alias', report_md=report)
 
         result = audit.check_quality_verification(inputs, [])

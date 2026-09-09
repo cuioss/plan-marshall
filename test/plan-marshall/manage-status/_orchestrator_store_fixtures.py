@@ -19,7 +19,6 @@ Covers:
   without the explicit ``--store plans`` flag.
 """
 
-
 from argparse import Namespace
 
 from conftest import get_script_path, load_script_module

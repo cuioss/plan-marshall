@@ -38,9 +38,7 @@ def _row_cell(block: str, plan_id: str, column: str) -> str:
     """
     header = next(ln for ln in block.splitlines() if ln.startswith('rows['))
     columns = header.split('{', 1)[1].rsplit('}', 1)[0].split(',')
-    row_line = next(
-        ln.strip() for ln in block.splitlines() if ln.strip().startswith(f'{plan_id},')
-    )
+    row_line = next(ln.strip() for ln in block.splitlines() if ln.strip().startswith(f'{plan_id},'))
     return row_line.split(',')[columns.index(column)]
 
 
@@ -67,7 +65,8 @@ class TestSequenceBuildMinimalityLedgerFacets:
         # field at all (build state came only from a log duration), so no status
         # ratio existed and this row's four columns did not exist — red.
         inputs = _write_sbm_plan(
-            tmp_path, 'ledger-status',
+            tmp_path,
+            'ledger-status',
             modified_files=['a.py'],
             ledger_builds=[
                 {'dur': 10.0, 'status': 'success'},
@@ -81,16 +80,17 @@ class TestSequenceBuildMinimalityLedgerFacets:
         row = audit._sequence_build_minimality_plan(inputs, _sbm_index(tmp_path))
 
         assert row['build_success'] == 1
-        assert row['build_error'] == 1          # killed is NOT counted here
+        assert row['build_error'] == 1  # killed is NOT counted here
         assert row['build_timeout'] == 1
-        assert row['build_killed'] == 2         # counted on its own axis
+        assert row['build_killed'] == 2  # counted on its own axis
 
     def test_status_ratio_visibly_separate_in_emitted_block(self, tmp_path: Path):
         # `killed` must be VISIBLY separate in the output, not merely in the code:
         # the block carries a distinct corpus_build_killed line and a `killed`
         # column. Pre-fix the block had neither line nor column — red.
         inputs = _write_sbm_plan(
-            tmp_path, 'ledger-killed',
+            tmp_path,
+            'ledger-killed',
             modified_files=['a.py'],
             ledger_builds=[{'dur': 10.0, 'status': 'killed'}],
         )
@@ -99,7 +99,7 @@ class TestSequenceBuildMinimalityLedgerFacets:
         block = audit.emit_sequence_build_minimality_block(result)
 
         assert 'corpus_build_killed: 1' in block
-        assert 'corpus_build_error: 0' in block   # the kill did not read as an error
+        assert 'corpus_build_error: 0' in block  # the kill did not read as an error
         assert ',pass,error,timeout,killed,' in block
 
     def test_status_unknown_reconciles_corpus_build_count(self, tmp_path: Path):
@@ -108,7 +108,8 @@ class TestSequenceBuildMinimalityLedgerFacets:
         # pass + error + timeout + killed + status_unknown == corpus_builds. Pre-fix
         # the field was computed but emitted nowhere, so the sum silently fell short.
         inputs = _write_sbm_plan(
-            tmp_path, 'status-unknown',
+            tmp_path,
+            'status-unknown',
             modified_files=['a.py'],
             ledger_builds=[
                 {'dur': 10.0, 'status': 'success'},
@@ -122,13 +123,10 @@ class TestSequenceBuildMinimalityLedgerFacets:
         assert corpus['status_unknown'] == 1
         assert 'corpus_build_status_unknown: 1' in block
         assert (
-            corpus['success'] + corpus['error'] + corpus['timeout']
-            + corpus['killed'] + corpus['status_unknown']
+            corpus['success'] + corpus['error'] + corpus['timeout'] + corpus['killed'] + corpus['status_unknown']
         ) == corpus['builds']
 
-    def test_status_unknown_is_a_row_column_that_partitions_that_row_builds(
-        self, tmp_path: Path
-    ):
+    def test_status_unknown_is_a_row_column_that_partitions_that_row_builds(self, tmp_path: Path):
         # THE ROW-SCOPE HALF of the same defect the corpus test above covers. The
         # corpus totals named the undetermined build; the per-plan row did not —
         # its emitted columns ran pass,error,timeout,killed straight into
@@ -140,14 +138,14 @@ class TestSequenceBuildMinimalityLedgerFacets:
         # dropped it. Pre-fix `_row_cell(..., 'status_unknown')` raises ValueError
         # because the column is absent from the emitted rows[N]{...} header.
         inputs = _write_sbm_plan(
-            tmp_path, 'row-status-unknown',
+            tmp_path,
+            'row-status-unknown',
             modified_files=['a.py'],
             ledger_builds=[
                 {'dur': 10.0, 'status': 'success', 'ts': '2026-06-01T10:00:00Z'},
                 {'dur': 10.0, 'status': 'error', 'ts': '2026-06-01T11:00:00Z'},
                 # Outside the recognised vocabulary — the outcome is UNDETERMINED.
-                {'dur': 10.0, 'status': 'weird-unrecognized-status',
-                 'ts': '2026-06-01T12:00:00Z'},
+                {'dur': 10.0, 'status': 'weird-unrecognized-status', 'ts': '2026-06-01T12:00:00Z'},
             ],
         )
         result = audit.cross_sequence_build_minimality([inputs], _sbm_index(tmp_path))
@@ -165,7 +163,8 @@ class TestSequenceBuildMinimalityLedgerFacets:
         # recording defect (a duration plumbed through wrongly). Pre-fix there was
         # no wall-clock denominator and no such invariant, so nothing flagged — red.
         inputs = _write_sbm_plan(
-            tmp_path, 'inv-violate',
+            tmp_path,
+            'inv-violate',
             modified_files=['a.py'],
             ledger_builds=[{'dur': 500.0}],
             metrics_phases={'5-execute': 100.0},
@@ -180,7 +179,8 @@ class TestSequenceBuildMinimalityLedgerFacets:
         # Negative control: a build well inside wall-clock must NOT trip the
         # invariant (else the flag would fire on every plan).
         inputs = _write_sbm_plan(
-            tmp_path, 'inv-ok',
+            tmp_path,
+            'inv-ok',
             modified_files=['a.py'],
             ledger_builds=[{'dur': 50.0}],
             metrics_phases={'5-execute': 500.0},
@@ -197,20 +197,23 @@ class TestSequenceBuildMinimalityLedgerFacets:
         # invisible. The ledger records `command` per build system, so its duration
         # now lands in the totals. Pre-fix: builds==0, total==0 — red.
         inputs = _write_sbm_plan(
-            tmp_path, 'maven-plan',
+            tmp_path,
+            'maven-plan',
             modified_files=['a.py'],
-            ledger_builds=[{
-                'dur': 250.0,
-                'notation': _LEDGER_NOTATION_MAVEN,
-                'command': 'mvn -q verify',
-            }],
+            ledger_builds=[
+                {
+                    'dur': 250.0,
+                    'notation': _LEDGER_NOTATION_MAVEN,
+                    'command': 'mvn -q verify',
+                }
+            ],
         )
 
         row = audit._sequence_build_minimality_plan(inputs, _sbm_index(tmp_path))
 
         assert row['builds'] == 1
-        assert row['total_build_seconds'] == 250      # the Maven build's time
-        assert row['build_scoped'] == 1               # 250s ⇒ scoped band
+        assert row['total_build_seconds'] == 250  # the Maven build's time
+        assert row['build_scoped'] == 1  # 250s ⇒ scoped band
         # and it is NOT invisible to the corpus total either
         result = audit.cross_sequence_build_minimality([inputs], _sbm_index(tmp_path))
         assert result['corpus']['build_seconds'] == 250
@@ -222,19 +225,20 @@ class TestSequenceBuildMinimalityLedgerFacets:
         # still summed (adding 0) with no suspect flag — the defect this closes is
         # that a 0 could not be told from a real measurement.
         inputs = _write_sbm_plan(
-            tmp_path, 'suspect-zero',
+            tmp_path,
+            'suspect-zero',
             modified_files=['a.py'],
             ledger_builds=[
                 {'dur': 300.0, 'ts': '2026-06-01T10:00:00Z'},
-                {'dur': 0.0, 'ts': '2026-06-01T11:00:00Z'},   # killed-as-0 / cache-hit shape
+                {'dur': 0.0, 'ts': '2026-06-01T11:00:00Z'},  # killed-as-0 / cache-hit shape
                 {'dur': None, 'ts': '2026-06-01T12:00:00Z'},  # absent duration
             ],
         )
 
         row = audit._sequence_build_minimality_plan(inputs, _sbm_index(tmp_path))
 
-        assert row['total_build_seconds'] == 300       # the two suspects added nothing
-        assert row['build_unknown'] == 2               # counted on the suspect axis
+        assert row['total_build_seconds'] == 300  # the two suspects added nothing
+        assert row['build_unknown'] == 2  # counted on the suspect axis
         assert any(f.startswith('suspect_build_duration(2') for f in row['flags'])
 
     def test_wallclock_denominator_derivation_is_non_empty(self, tmp_path: Path):
@@ -243,7 +247,8 @@ class TestSequenceBuildMinimalityLedgerFacets:
         # present the wall-clock is non-empty and the build-vs-wall-clock share
         # computes. Pre-fix there was no denominator derivation at all — red.
         inputs = _write_sbm_plan(
-            tmp_path, 'denominator',
+            tmp_path,
+            'denominator',
             modified_files=['a.py'],
             ledger_builds=[{'dur': 120.0}],
             metrics_phases={'4-plan': 100.0, '5-execute': 300.0, '6-finalize': 100.0},
@@ -251,9 +256,9 @@ class TestSequenceBuildMinimalityLedgerFacets:
 
         row = audit._sequence_build_minimality_plan(inputs, _sbm_index(tmp_path))
 
-        assert row['wall_clock_seconds'] == 500        # 100 + 300 + 100, summable
-        assert row['wall_clock_seconds'] > 0           # the denominator is non-empty
-        assert row['build_share'] is not None          # so the share is computed
+        assert row['wall_clock_seconds'] == 500  # 100 + 300 + 100, summable
+        assert row['wall_clock_seconds'] > 0  # the denominator is non-empty
+        assert row['build_share'] is not None  # so the share is computed
         assert abs(row['build_share'] - (120 / 500)) < 1e-9
 
     def test_build_share_withheld_when_metrics_absent(self, tmp_path: Path):
@@ -261,7 +266,8 @@ class TestSequenceBuildMinimalityLedgerFacets:
         # metrics.toon the share is WITHHELD (None → `n/a`), never a fabricated
         # ratio over a zero denominator.
         inputs = _write_sbm_plan(
-            tmp_path, 'no-metrics',
+            tmp_path,
+            'no-metrics',
             modified_files=['a.py'],
             ledger_builds=[{'dur': 120.0}],
         )
@@ -272,7 +278,7 @@ class TestSequenceBuildMinimalityLedgerFacets:
 
         assert row['wall_clock_seconds'] == 0
         assert row['build_share'] is None
-        assert _share_cell(block, 'no-metrics') == 'n/a'   # rendered as n/a, not 0%
+        assert _share_cell(block, 'no-metrics') == 'n/a'  # rendered as n/a, not 0%
 
     def test_build_share_withheld_when_the_ledger_is_absent(self, tmp_path: Path):
         # The NUMERATOR's absent-ledger hole — the mirror of the denominator case
@@ -284,7 +290,8 @@ class TestSequenceBuildMinimalityLedgerFacets:
         # "this plan spent no time building" one column away from the
         # `has_ledger: false` cell saying the build time was never measured.
         inputs = _write_sbm_plan(
-            tmp_path, 'no-ledger',
+            tmp_path,
+            'no-ledger',
             modified_files=['a.py'],
             metrics_phases={'5-execute': 500.0},
         )
@@ -293,9 +300,9 @@ class TestSequenceBuildMinimalityLedgerFacets:
         result = audit.cross_sequence_build_minimality([inputs], _sbm_index(tmp_path))
         block = audit.emit_sequence_build_minimality_block(result)
 
-        assert row['has_ledger'] is False              # the numerator is UNAVAILABLE
-        assert row['wall_clock_seconds'] == 500        # while the denominator is not
-        assert row['build_share'] is None              # so the share is withheld
+        assert row['has_ledger'] is False  # the numerator is UNAVAILABLE
+        assert row['wall_clock_seconds'] == 500  # while the denominator is not
+        assert row['build_share'] is None  # so the share is withheld
         assert _share_cell(block, 'no-ledger') == 'n/a'
 
     def test_ledger_delta_over_ledger_bearing_population(self, tmp_path: Path):
@@ -305,13 +312,18 @@ class TestSequenceBuildMinimalityLedgerFacets:
         # adds. A plan with no ledger rows is UNAVAILABLE (absent is not zero) and
         # named separately, never folded into the delta.
         logged = _write_sbm_plan(
-            tmp_path, 'logged',
+            tmp_path,
+            'logged',
             modified_files=['a.py'],
             sel_lines=[_sbm_call('2026-06-01T10:00:00', _BUILD, 'run', 40.0)],
             ledger_builds=[
-                {'dur': 40.0, 'ts': '2026-06-01T10:00:00Z'},                       # the same pyproject build
-                {'dur': 200.0, 'ts': '2026-06-01T11:00:00Z',                       # a maven build the log never saw
-                 'notation': _LEDGER_NOTATION_MAVEN, 'command': 'mvn verify'},
+                {'dur': 40.0, 'ts': '2026-06-01T10:00:00Z'},  # the same pyproject build
+                {
+                    'dur': 200.0,
+                    'ts': '2026-06-01T11:00:00Z',  # a maven build the log never saw
+                    'notation': _LEDGER_NOTATION_MAVEN,
+                    'command': 'mvn verify',
+                },
             ],
         )
         absent = _write_sbm_plan(tmp_path, 'absent', modified_files=['a.py'])
@@ -319,9 +331,9 @@ class TestSequenceBuildMinimalityLedgerFacets:
         result = audit.cross_sequence_build_minimality([logged, absent], _sbm_index(tmp_path))
         corpus = result['corpus']
 
-        assert corpus['build_seconds'] == 240                      # ledger: 40 + 200
-        assert corpus['build_seconds_log_derived'] == 40           # log saw only pyproject
-        assert corpus['build_seconds_delta'] == 200                # what the re-base now sees
+        assert corpus['build_seconds'] == 240  # ledger: 40 + 200
+        assert corpus['build_seconds_log_derived'] == 40  # log saw only pyproject
+        assert corpus['build_seconds_delta'] == 200  # what the re-base now sees
         assert result['plans_without_ledger'] == 1
         assert result['plans_without_ledger_ids'] == ['absent']
 
@@ -370,15 +382,9 @@ class TestCheckProseMatchesTheLedgerRebase:
         Anywhere else it is a claim that the check classifies builds by parsing
         pyproject calls out of a log — which is what the re-base replaced.
         """
-        hits = [
-            ln.strip()
-            for ln in self._source().splitlines()
-            if 'pyproject_build run' in ln
-        ]
+        hits = [ln.strip() for ln in self._source().splitlines() if 'pyproject_build run' in ln]
 
-        assert hits == [
-            '# A pyproject_build run call in the plan-scoped log — the OLD build derivation,'
-        ]
+        assert hits == ['# A pyproject_build run call in the plan-scoped log — the OLD build derivation,']
 
     def test_the_machine_local_prototype_paths_are_gone(self):
         """Both named `.plan/temp/` prototypes are absent from this clone.
@@ -391,7 +397,7 @@ class TestCheckProseMatchesTheLedgerRebase:
 
         assert '.plan/temp/build_minimality' not in source
         assert '.plan/temp/sequence_analysis' not in source
-        assert 'build-time ORACLE' in source          # the pointer that replaced them
+        assert 'build-time ORACLE' in source  # the pointer that replaced them
 
     def test_the_two_ledger_derived_flags_are_catalogued(self):
         """The MODULE DOCSTRING's flag list names both ledger-derived flags.

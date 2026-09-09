@@ -3,7 +3,6 @@
 
 """Tests for manage-adr.py script."""
 
-
 from argparse import Namespace
 from pathlib import Path
 
@@ -66,11 +65,7 @@ def test_parse_metadata_block_all_fields_present(adr_dir):
 
 def test_parse_metadata_block_fields_absent(adr_dir):
     """A block whose fields are blank yields empty scalar/list defaults."""
-    content = (
-        '= ADR-002: Empty\n\n'
-        + _build_metadata_block()
-        + '\n== Status\n\nProposed\n'
-    )
+    content = '= ADR-002: Empty\n\n' + _build_metadata_block() + '\n== Status\n\nProposed\n'
 
     metadata = parse_metadata_block(content)
 
@@ -114,11 +109,7 @@ def test_parse_metadata_block_malformed_lines_ignored(adr_dir):
 
 def test_parse_metadata_block_extra_whitespace_in_list(adr_dir):
     """Comma-split list fields strip surrounding whitespace and empties."""
-    content = (
-        '= ADR-005: Whitespace\n\n'
-        + _build_metadata_block(tags=' a ,  b ,, c ')
-        + '\n== Status\n\nProposed\n'
-    )
+    content = '= ADR-005: Whitespace\n\n' + _build_metadata_block(tags=' a ,  b ,, c ') + '\n== Status\n\nProposed\n'
 
     metadata = parse_metadata_block(content)
 
@@ -153,6 +144,7 @@ def test_parse_adr_file_surfaces_metadata(adr_dir):
 # =========================================================================
 # Tier 2: Width-agnostic numeric-prefix parsing and numbering
 # =========================================================================
+
 
 def test_parse_adr_file_three_digit_prefix(adr_dir):
     """parse_adr_file extracts the number from a 3-digit prefixed filename."""
@@ -244,6 +236,7 @@ def test_scan_filter_no_match(adr_dir):
 # =========================================================================
 # Tier 2: Width-agnostic numeric-prefix parsing and numbering
 # =========================================================================
+
 
 def test_detect_corpus_width_empty_defaults_to_four(adr_dir):
     """An empty corpus yields the default prefix width of 4."""

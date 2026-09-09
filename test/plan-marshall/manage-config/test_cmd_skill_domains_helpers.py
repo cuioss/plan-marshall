@@ -20,7 +20,9 @@ from conftest import load_script_module
 
 # Loaded under a unique module name to avoid clashing with the canonical
 # ``_cmd_skill_domains`` module other test files register.
-_sd = load_script_module('plan-marshall', 'manage-config', '_cmd_skill_domains.py', 'cmd_skill_domains_helpers_under_test')
+_sd = load_script_module(
+    'plan-marshall', 'manage-config', '_cmd_skill_domains.py', 'cmd_skill_domains_helpers_under_test'
+)
 
 
 # =============================================================================

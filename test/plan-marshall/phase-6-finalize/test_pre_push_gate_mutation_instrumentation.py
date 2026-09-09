@@ -24,13 +24,18 @@ repositories:
 * **Arm 4 — the constructed-argv pin, plus the configuration that argv resolves
   against.** Whether this repository's gate leaves a dirty tree is a property of
   ``build.py`` and of the resolved ruff configuration, settled by asserting both
-  rather than by running the gate. The argv claim is bounded by the invocation's
-  own scope, and that bound is DERIVED at run time from
-  ``build._quality_gate_could_run`` against ``build._QUALITY_GATE_DIMENSIONS``
-  rather than restated here — arm 4 runs module-scoped, so a dimension that scope
-  does not reach never enters the recorded argv and is outside what the sweep can
-  speak to. The argv half alone would be half the contract: ``ruff check`` with no
-  write flag still rewrites source when the configuration turns writing on.
+  rather than by running the gate. THIS REPOSITORY'S GATE AUTO-FIXES: the argv arm
+  pins that both halves (``ruff check --fix`` and ``ruff format``) are constructed,
+  which is the org norm rather than a local exception — the Maven side's canonical
+  ``quality-gate`` resolves ``verify -Ppre-commit`` and rewrites tracked files the
+  same way. The claim is bounded by the invocation's own scope, and that bound is
+  DERIVED at run time from ``build._quality_gate_could_run`` against
+  ``build._QUALITY_GATE_DIMENSIONS`` rather than restated here — arm 4 runs
+  module-scoped, so a dimension that scope does not reach never enters the recorded
+  argv and is outside what the sweep can speak to. The configuration half is the
+  complement, and it did NOT flip: write mode must stay OUT of configuration so
+  that mutation is explicit per invocation, and read-only invocations (the ``lint``
+  alias, any ad-hoc ``ruff check``) keep reporting instead of silently rewriting.
 
 Plus the declaration assertions: the two frontmatter facts resolve truthy
 post-flip, and — jointly — ``mutates_source: true`` together with an order below
@@ -295,12 +300,21 @@ def recorded_argv(monkeypatch) -> list[list[str]]:
     return calls
 
 
-def test_quality_gate_invokes_ruff_check_with_no_fix_flag(recorded_argv, monkeypatch):
-    """The gate lints; it does not rewrite. No argv it builds carries a write flag.
+def test_quality_gate_invokes_ruff_in_write_mode(recorded_argv, monkeypatch):
+    """The gate AUTO-FIXES: the argv it builds carries ruff's write flags.
 
-    Asserted against the constructed argv rather than by running the gate: a real
-    run costs minutes, and its outcome would depend on the tree it happened to
-    run against.
+    This arm previously asserted the opposite — that no constructed argv carried a
+    write token. That pinned a real fact about this repository at the time, but the
+    org decision is that the quality gate auto-fixes in every language, mirroring
+    the Maven side where the canonical ``quality-gate`` resolves ``verify
+    -Ppre-commit`` and rewrites tracked files via ``license:format`` and
+    ``rewrite:run``. This repository is no longer the exception, so the arm now
+    pins the write mode rather than its absence.
+
+    The arm keeps its shape deliberately: it is still the CONSTRUCTED-ARGV pin, so
+    a wrapper that rewrote the command could not hide behind it, and it is still
+    asserted without running the gate (a real run costs minutes and its outcome
+    would depend on the tree it happened to meet).
 
     The sweep below is bounded by the dimensions this invocation reaches, and the
     bound is READ from ``build`` rather than written down here, so a dimension
@@ -319,29 +333,50 @@ def test_quality_gate_invokes_ruff_check_with_no_fix_flag(recorded_argv, monkeyp
     # Act
     exit_code = build.cmd_quality_gate(_ARM4_MODULE)
 
-    # Assert — ruff ran, and nothing that ran could write.
+    # Assert — ruff ran, in both halves, and both halves can write.
     assert exit_code == 0
     ruff_calls = [cmd for cmd in recorded_argv if 'ruff' in cmd]
     assert ruff_calls, f'the gate must invoke ruff; recorded {recorded_argv!r}'
-    for cmd in ruff_calls:
-        assert 'check' in cmd, f'ruff must be invoked in check mode; got {cmd!r}'
-    for cmd in recorded_argv:
-        offenders = [token for token in cmd if token in _MUTATING_RUFF_TOKENS]
-        assert not offenders, (
-            'the gate must construct no source-rewriting argv within the '
-            f'dimensions this invocation reaches ({sorted(reached)}); '
-            f'{offenders!r} in {cmd!r}'
+
+    # The lint half: `check` carrying an explicit fix flag.
+    check_calls = [cmd for cmd in ruff_calls if 'check' in cmd]
+    assert check_calls, f'the gate must invoke `ruff check`; got {ruff_calls!r}'
+    for cmd in check_calls:
+        assert '--fix' in cmd, (
+            'the lint half must auto-fix within the dimensions this invocation '
+            f'reaches ({sorted(reached)}); got {cmd!r}'
         )
+
+    # The formatting half.
+    assert any('format' in cmd for cmd in ruff_calls), (
+        f'the gate must invoke `ruff format` as the formatting half; got {ruff_calls!r}'
+    )
+
+    # Negative control: the write mode is EXPLICIT in the argv, never implied by a
+    # bare `ruff check`. A bare check among the calls would mean one dimension of
+    # the gate silently stopped auto-fixing while the others kept doing so.
+    bare_checks = [cmd for cmd in check_calls if not any(t in cmd for t in _MUTATING_RUFF_TOKENS)]
+    assert not bare_checks, (
+        f'these `ruff check` argv carry no write flag, so the gate would report '
+        f'rather than fix within {sorted(reached)}: {bare_checks!r}'
+    )
 
 
 def test_the_resolved_ruff_configuration_enables_no_write_mode():
     """The other half of the contract: the CONFIG the gate's argv resolves against.
 
-    The token denylist above pins the argv, and an argv-only assertion is half a
-    guard — ``ruff check`` with no write flag still rewrites source when the
-    resolved configuration sets ``fix`` or ``fix-only``. The gate would then be a
-    source mutator in this repository without a single argv changing, which the
-    argv sweep could never see.
+    The gate auto-fixes, and the arm above pins that it does so through EXPLICIT
+    argv flags. This arm holds the complement: the write mode must not ALSO be
+    turned on in configuration. The invariant survives the flip to auto-fixing —
+    only its rationale changes, and it is now the more useful of the two.
+
+    Configuration-level ``fix``/``fix-only`` applies to every ruff invocation in
+    the repository, not only the gate's. The ``lint`` alias (``ruff check`` with no
+    flag) and any ad-hoc ``ruff check`` a contributor runs would silently start
+    rewriting the tree, with no argv anywhere recording that it could. Keeping the
+    write mode explicit at the call site is what makes "which invocations mutate"
+    readable from the invocation itself — the gate's two halves do, everything
+    else does not.
 
     **The bound is stated rather than claimed away.** This reads the ruff
     configuration ruff resolves at the repository ROOT, which is what governs the
@@ -395,9 +430,7 @@ def test_spdx_check_reports_the_offender_without_editing_it(tmp_path: Path):
     )
 
 
-def test_quality_gate_fails_on_an_spdx_offender_rather_than_fixing_it(
-    recorded_argv, monkeypatch
-):
+def test_quality_gate_fails_on_an_spdx_offender_rather_than_fixing_it(recorded_argv, monkeypatch):
     """An SPDX offender turns the gate red; it is never repaired into a pass."""
     # Arrange — one offender reported by the check.
     monkeypatch.setattr(build, 'check_spdx_headers', lambda paths: ['some/file.py'])
@@ -430,9 +463,7 @@ def test_executor_bootstrap_writes_nothing_itself(monkeypatch, tmp_path: Path):
     )
 
 
-def test_executor_bootstrap_target_is_the_git_ignored_executor_path(
-    monkeypatch, tmp_path: Path
-):
+def test_executor_bootstrap_target_is_the_git_ignored_executor_path(monkeypatch, tmp_path: Path):
     """The sole conditional write target is ``.plan/execute-script.py``, and it is ignored.
 
     The path is DERIVED, not asserted: the bootstrap's own post-check accepts the
@@ -515,9 +546,7 @@ def test_gate_is_a_re_stale_trigger_member_by_the_full_conjunction():
     bound = _settle_band_order_bound()
 
     assert fields.get('mutates_source') is True
-    assert isinstance(fields.get('order'), int), (
-        f'the gate must declare an integer order; got {fields.get("order")!r}'
-    )
+    assert isinstance(fields.get('order'), int), f'the gate must declare an integer order; got {fields.get("order")!r}'
     assert fields['order'] < bound, (
         f'the gate is order {fields["order"]}, which must sit below the settle-band '
         f'bound {bound} for the re-stale enrolment to hold'

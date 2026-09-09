@@ -110,10 +110,7 @@ class TestReadLogVerdictCarriesErrors:
     def test_the_scalar_keys_after_the_table_are_still_read(self, tmp_path):
         """A column-0 key closes the table and is itself parsed, not swallowed."""
         content = (
-            'errors[1]{file,line,message,category}:\n'
-            '  test/a.py,1,boom,test_failure\n'
-            'status: error\n'
-            'exit_code: 3\n'
+            'errors[1]{file,line,message,category}:\n  test/a.py,1,boom,test_failure\nstatus: error\nexit_code: 3\n'
         )
         verdict = proto.read_log_verdict(_write(tmp_path, 'job.log', content))
 
@@ -128,7 +125,9 @@ class TestReadLogVerdictCarriesErrors:
         failure silently; no rows at all leaves the caller on its own pre-existing
         path, which is the honest outcome.
         """
-        content = 'status: error\nexit_code: 1\nerrors[4]{file,line,message,category}:\n  test/a.py,1,boom,test_failure\n'
+        content = (
+            'status: error\nexit_code: 1\nerrors[4]{file,line,message,category}:\n  test/a.py,1,boom,test_failure\n'
+        )
         verdict = proto.read_log_verdict(_write(tmp_path, 'job.log', content))
 
         assert verdict is not None
@@ -176,17 +175,9 @@ class TestDaemonResultCarriesRoutedErrors:
             './pw module-tests plan-marshall',
         )
 
-    @pytest.mark.parametrize(
-        'log_content,expected_files', _ROUTED_ERROR_CASES, ids=_ROUTED_ERROR_IDS
-    )
-    def test_the_key_is_attached_only_when_the_log_carries_a_table(
-        self, tmp_path, log_content, expected_files
-    ):
-        log_file = (
-            str(tmp_path / 'absent.log')
-            if log_content is _NO_LOG
-            else _write(tmp_path, 'job.log', log_content)
-        )
+    @pytest.mark.parametrize('log_content,expected_files', _ROUTED_ERROR_CASES, ids=_ROUTED_ERROR_IDS)
+    def test_the_key_is_attached_only_when_the_log_carries_a_table(self, tmp_path, log_content, expected_files):
+        log_file = str(tmp_path / 'absent.log') if log_content is _NO_LOG else _write(tmp_path, 'job.log', log_content)
 
         result = self._routed(log_file)
 
@@ -282,9 +273,7 @@ _RENDER_PREFERENCE_IDS = [
 class TestRoutedErrorsWinOverTheReparse:
     """The renderer publishes the carried rows instead of synthesising one."""
 
-    @pytest.mark.parametrize(
-        'extra,parser,present,absent', _RENDER_PREFERENCE_CASES, ids=_RENDER_PREFERENCE_IDS
-    )
+    @pytest.mark.parametrize('extra,parser,present,absent', _RENDER_PREFERENCE_CASES, ids=_RENDER_PREFERENCE_IDS)
     def test_which_error_rows_the_renderer_publishes(self, capsys, extra, parser, present, absent):
         cmd_run_common(_failing_result(**extra), parser, 'python')
 

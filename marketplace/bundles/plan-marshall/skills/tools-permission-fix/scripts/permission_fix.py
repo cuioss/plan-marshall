@@ -97,8 +97,7 @@ def _decline_non_claude(operation: str) -> dict:
     return {
         'status': 'no-op',
         'operation': operation,
-        'reason': 'The Claude permission grammar does not apply to this target; '
-        'no permission-DSL output was produced',
+        'reason': 'The Claude permission grammar does not apply to this target; no permission-DSL output was produced',
     }
 
 

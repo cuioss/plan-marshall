@@ -11,7 +11,6 @@ Its sections, in order:
 * Stale reclamation (liveness via the shared _locks_core.holder_is_dead)
 """
 
-
 from __future__ import annotations
 
 import json
@@ -134,10 +133,14 @@ class TestStaleReclamation:
         # 'live' is enqueued behind it and IS live.
         _make_live_plan(base, 'live')
         isolated_base['queue_path'].write_text(
-            json.dumps({'waiting': [
-                {'plan_id': 'crashed', 'ts': 1.0},
-                {'plan_id': 'live', 'ts': 2.0},
-            ]}),
+            json.dumps(
+                {
+                    'waiting': [
+                        {'plan_id': 'crashed', 'ts': 1.0},
+                        {'plan_id': 'live', 'ts': 2.0},
+                    ]
+                }
+            ),
             encoding='utf-8',
         )
 

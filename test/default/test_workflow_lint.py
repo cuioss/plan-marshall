@@ -127,9 +127,7 @@ def _run_block_context_violations(text: str) -> list[str]:
 #: dropped line reads as no grant rather than as an unexamined one — so both
 #: allowlist guards would report clean over a write nobody reviewed. A whole-line
 #: comment is still excluded, by the ``#``-prefix skip in :func:`_permission_scopes`.
-_SCOPE_LINE = re.compile(
-    r'^\s+(?P<scope>[A-Za-z][A-Za-z-]*):\s*(?P<value>\S+?)\s*(?:#.*)?$'
-)
+_SCOPE_LINE = re.compile(r'^\s+(?P<scope>[A-Za-z][A-Za-z-]*):\s*(?P<value>\S+?)\s*(?:#.*)?$')
 #: The permission values that grant nothing. Anything else is a write grant.
 _READ_ONLY_VALUES = frozenset({'read', 'none'})
 #: The key an inline shorthand is recorded under — it stands for EVERY scope, so
@@ -184,7 +182,7 @@ def _inline_permissions(value: str) -> dict[str, str] | None:
 def _permission_scopes(lines: list[str], header: int, header_indent: int) -> dict[str, str]:
     """The ``scope: value`` mapping under the permissions header at ``lines[header]``."""
     scopes: dict[str, str] = {}
-    for line in lines[header + 1:]:
+    for line in lines[header + 1 :]:
         if not line.strip() or line.lstrip().startswith('#'):
             continue
         if len(line) - len(line.lstrip()) <= header_indent:
@@ -205,7 +203,7 @@ def _top_level_permissions(text: str) -> dict[str, str] | None:
     lines = text.splitlines()
     for i, line in enumerate(lines):
         if line.startswith('permissions:'):
-            inline = _inline_permissions(line[len('permissions:'):].strip())
+            inline = _inline_permissions(line[len('permissions:') :].strip())
             return inline if inline is not None else _permission_scopes(lines, i, 0)
     return None
 
@@ -246,10 +244,8 @@ def _job_level_permissions(text: str) -> dict[str, str]:
         indent = len(line) - len(line.lstrip())
         stripped = line.lstrip()
         if indent > 0 and stripped.startswith('permissions:'):
-            inline = _inline_permissions(stripped[len('permissions:'):].strip())
-            _merge_write_preserving(
-                scopes, inline if inline is not None else _permission_scopes(lines, i, indent)
-            )
+            inline = _inline_permissions(stripped[len('permissions:') :].strip())
+            _merge_write_preserving(scopes, inline if inline is not None else _permission_scopes(lines, i, indent))
     return scopes
 
 
@@ -269,14 +265,11 @@ def _write_scopes(scopes: dict[str, str]) -> set[str]:
 #: `pull-requests: read` beside `contents: read`, still a read scope).
 #: pr-agent.yml is the sole top-level write-bearing workflow, with these three.
 _TOP_LEVEL_WRITE_ALLOWLIST = {
-    ('pr-agent.yml', 'pull-requests'):
-        'The reviewer publishes its review as a PR review body and inline comments.',
-    ('pr-agent.yml', 'issues'):
-        'On-demand commands (/review, /ask, /improve) arrive as issue_comment events '
-        'and are answered on the issue/PR thread.',
-    ('pr-agent.yml', 'id-token'):
-        'Mints the OIDC token Workload Identity Federation exchanges for the '
-        'short-lived GCP credentials the reviewer uses to reach Gemini on Vertex AI.',
+    ('pr-agent.yml', 'pull-requests'): 'The reviewer publishes its review as a PR review body and inline comments.',
+    ('pr-agent.yml', 'issues'): 'On-demand commands (/review, /ask, /improve) arrive as issue_comment events '
+    'and are answered on the issue/PR thread.',
+    ('pr-agent.yml', 'id-token'): 'Mints the OIDC token Workload Identity Federation exchanges for the '
+    'short-lived GCP credentials the reviewer uses to reach Gemini on Vertex AI.',
 }
 
 #: JOB-LEVEL write scopes. Kept in a SEPARATE allowlist from the top-level one on
@@ -285,16 +278,14 @@ _TOP_LEVEL_WRITE_ALLOWLIST = {
 #: grant hands the scope to every job in the file. Merging the two lists would
 #: also make the top-level count meaningless — see the strict-subset test below.
 _JOB_LEVEL_WRITE_ALLOWLIST = {
-    ('dependabot-auto-merge.yml', 'contents'):
-        'The auto-merge job merges the dependabot PR.',
-    ('dependabot-auto-merge.yml', 'pull-requests'):
-        'The auto-merge job approves the dependabot PR and enables auto-merge on it.',
-    ('dependency-review.yml', 'pull-requests'):
-        'The review job posts its dependency-diff summary as a PR comment.',
-    ('scorecards.yml', 'security-events'):
-        'The analysis job uploads its SARIF result to the code-scanning API.',
-    ('scorecards.yml', 'id-token'):
-        'The analysis job mints the OIDC token the Scorecard publish step exchanges.',
+    ('dependabot-auto-merge.yml', 'contents'): 'The auto-merge job merges the dependabot PR.',
+    (
+        'dependabot-auto-merge.yml',
+        'pull-requests',
+    ): 'The auto-merge job approves the dependabot PR and enables auto-merge on it.',
+    ('dependency-review.yml', 'pull-requests'): 'The review job posts its dependency-diff summary as a PR comment.',
+    ('scorecards.yml', 'security-events'): 'The analysis job uploads its SARIF result to the code-scanning API.',
+    ('scorecards.yml', 'id-token'): 'The analysis job mints the OIDC token the Scorecard publish step exchanges.',
 }
 
 
@@ -352,9 +343,7 @@ def test_every_top_level_permission_scope_is_read_only_or_allowlisted() -> None:
     which grants exactly what the block exists to withhold. Every top-level scope
     must therefore be read or none, unless it is allowlisted with a stated reason.
     """
-    unreviewed = sorted(
-        _observed_write_scopes(_top_level_permissions) - set(_TOP_LEVEL_WRITE_ALLOWLIST)
-    )
+    unreviewed = sorted(_observed_write_scopes(_top_level_permissions) - set(_TOP_LEVEL_WRITE_ALLOWLIST))
 
     assert not unreviewed, (
         'Top-level write scope(s) with no allowlist entry. A top-level grant is '
@@ -386,9 +375,7 @@ def test_the_top_level_allowlist_holds_exactly_the_three_pr_agent_scopes() -> No
     ],
     ids=['top-level', 'job-level'],
 )
-def test_every_allowlist_entry_matches_a_real_declared_write_scope(
-    allowlist, reader, label
-) -> None:
+def test_every_allowlist_entry_matches_a_real_declared_write_scope(allowlist, reader, label) -> None:
     """Each entry earns its place: a stale or invented one fails here.
 
     Without this direction the guard above passes for the wrong reason — an
@@ -406,13 +393,9 @@ def test_every_allowlist_entry_matches_a_real_declared_write_scope(
 
 def test_every_job_level_write_scope_is_allowlisted() -> None:
     """Job-level grants are reviewed too — the top-level check does not see them."""
-    unreviewed = sorted(
-        _observed_write_scopes(_job_level_permissions) - set(_JOB_LEVEL_WRITE_ALLOWLIST)
-    )
+    unreviewed = sorted(_observed_write_scopes(_job_level_permissions) - set(_JOB_LEVEL_WRITE_ALLOWLIST))
 
-    assert not unreviewed, (
-        f'Job-level write scope(s) with no allowlist entry:\n  {unreviewed}'
-    )
+    assert not unreviewed, f'Job-level write scope(s) with no allowlist entry:\n  {unreviewed}'
 
 
 def test_a_top_level_read_only_block_is_not_a_whole_workflow_claim() -> None:
@@ -439,8 +422,7 @@ def test_a_top_level_read_only_block_is_not_a_whole_workflow_claim() -> None:
 def test_the_permission_scan_is_not_vacuous() -> None:
     """Anti-vacuity: a parser that read nothing would make every check above pass."""
     parsed = {
-        workflow.name: _top_level_permissions(workflow.read_text(encoding='utf-8'))
-        for workflow in _workflow_files()
+        workflow.name: _top_level_permissions(workflow.read_text(encoding='utf-8')) for workflow in _workflow_files()
     }
 
     assert len(parsed) >= 7, f'expected at least seven workflows, parsed {sorted(parsed)}'
@@ -453,10 +435,7 @@ def test_the_permission_scan_is_not_vacuous() -> None:
 
 def test_workflow_tree_is_non_empty() -> None:
     """Guard the guard: a mislocated workflows dir must not make the checks vacuous."""
-    assert _workflow_files(), (
-        f'no workflow files found under {_WORKFLOWS_DIR}; the guards would '
-        'pass vacuously'
-    )
+    assert _workflow_files(), f'no workflow files found under {_WORKFLOWS_DIR}; the guards would pass vacuously'
 
 
 # --- concurrency: the verify gate must not be cancellable across event classes ---
@@ -478,7 +457,7 @@ def _concurrency_field(field: str) -> str:
     """The raw value of ``concurrency.<field>`` in python-verify.yml."""
     lines = _VERIFY_WORKFLOW.read_text(encoding='utf-8').splitlines()
     start = next(i for i, line in enumerate(lines) if line.startswith('concurrency:'))
-    for line in lines[start + 1:]:
+    for line in lines[start + 1 :]:
         if not line.strip() or line.lstrip().startswith('#'):
             continue
         if len(line) - len(line.lstrip()) == 0:
@@ -506,6 +485,7 @@ def _resolve(template: str, context: dict) -> str:
     would land in, which is the property under test — the alternative, asserting
     the template's text, cannot tell two events apart.
     """
+
     def _one(match: re.Match) -> str:
         body = match.group('body').strip()
         if '==' in body:
@@ -539,8 +519,7 @@ def test_the_verify_concurrency_group_is_keyed_on_the_event_name() -> None:
     group = _concurrency_field('group')
 
     assert 'github.event_name' in group, (
-        f'concurrency.group must include github.event_name. {_CANCELLED_GATE_REASON}\n'
-        f'  group: {group}'
+        f'concurrency.group must include github.event_name. {_CANCELLED_GATE_REASON}\n  group: {group}'
     )
 
 
@@ -638,22 +617,11 @@ jobs:
 
 #: A wide step dash. YAML accepts any run of whitespace after the dash, and the
 #: two-character spelling is a convention, not a rule.
-_WIDE_DASH_INLINE_WF = (
-    'jobs:\n  j:\n    steps:\n'
-    '      -   run: echo "${{ github.event.issue.title }}"\n'
-)
-_WIDE_DASH_BLOCK_WF = (
-    'jobs:\n  j:\n    steps:\n'
-    '      -   run: |\n'
-    '            echo "${{ github.event.issue.title }}"\n'
-)
+_WIDE_DASH_INLINE_WF = 'jobs:\n  j:\n    steps:\n      -   run: echo "${{ github.event.issue.title }}"\n'
+_WIDE_DASH_BLOCK_WF = 'jobs:\n  j:\n    steps:\n      -   run: |\n            echo "${{ github.event.issue.title }}"\n'
 #: A multi-line PLAIN scalar: no `|`, no `>`, the command simply continues on the
 #: following deeper-indented lines. YAML folds them into one command string.
-_PLAIN_CONTINUATION_WF = (
-    'jobs:\n  j:\n    steps:\n'
-    '      - run: echo\n'
-    '          "${{ github.event.issue.title }}"\n'
-)
+_PLAIN_CONTINUATION_WF = 'jobs:\n  j:\n    steps:\n      - run: echo\n          "${{ github.event.issue.title }}"\n'
 #: The negative control for the plain-scalar body walk: a SIBLING mapping at the
 #: same indent as the run: key, legitimately carrying a context expression.
 _SIBLING_MAPPING_WF = (
@@ -706,10 +674,7 @@ def test_linter_passes_declared_permissions() -> None:
 
 def test_the_scope_reader_separates_top_level_from_job_level_grants() -> None:
     """The two readers must not see each other's blocks, or the split is fiction."""
-    workflow = (
-        'permissions:\n  contents: read\n'
-        'jobs:\n  j:\n    permissions:\n      contents: write\n'
-    )
+    workflow = 'permissions:\n  contents: read\njobs:\n  j:\n    permissions:\n      contents: write\n'
 
     assert _top_level_permissions(workflow) == {'contents': 'read'}
     assert _job_level_permissions(workflow) == {'contents': 'write'}
@@ -740,10 +705,7 @@ def test_an_inline_header_carrying_a_trailing_comment_is_still_normalized() -> N
     declaration that grants nothing. Routing both readers through one helper
     made them agree with each other while both disagreed with ``_SCOPE_LINE``.
     """
-    workflow = (
-        'permissions: read-all  # least privilege\n'
-        'jobs:\n  j:\n    permissions: read-all   # least privilege\n'
-    )
+    workflow = 'permissions: read-all  # least privilege\njobs:\n  j:\n    permissions: read-all   # least privilege\n'
 
     assert _top_level_permissions(workflow) == {'*': 'read'}
     assert _job_level_permissions(workflow) == {'*': 'read'}
@@ -760,8 +722,7 @@ def test_a_commented_write_all_header_is_still_seen_as_a_write() -> None:
     is the broadest grant the syntax allows and must stay visible as one.
     """
     workflow = (
-        'permissions: write-all  # needs everything\n'
-        'jobs:\n  j:\n    permissions: write-all  # needs everything\n'
+        'permissions: write-all  # needs everything\njobs:\n  j:\n    permissions: write-all  # needs everything\n'
     )
 
     assert _write_scopes(_top_level_permissions(workflow) or {}) == {'*'}
@@ -804,11 +765,7 @@ def test_a_later_job_declaring_read_never_erases_an_earlier_job_s_write() -> Non
     reader, not by the workflow. The union must answer "did ANY job ask for this
     scope at write level", which is the question the allowlist is checked against.
     """
-    workflow = (
-        'jobs:\n'
-        '  a:\n    permissions:\n      contents: write\n'
-        '  b:\n    permissions:\n      contents: read\n'
-    )
+    workflow = 'jobs:\n  a:\n    permissions:\n      contents: write\n  b:\n    permissions:\n      contents: read\n'
 
     assert _write_scopes(_job_level_permissions(workflow)) == {'contents'}
 
@@ -822,11 +779,7 @@ def test_a_later_job_declaring_read_all_never_erases_an_earlier_write_all() -> N
     :func:`test_the_scope_reader_sees_the_inline_write_all_shorthand` above,
     which only ever exercises one job.
     """
-    workflow = (
-        'jobs:\n'
-        '  a:\n    permissions: write-all\n'
-        '  b:\n    permissions: read-all\n'
-    )
+    workflow = 'jobs:\n  a:\n    permissions: write-all\n  b:\n    permissions: read-all\n'
 
     assert _write_scopes(_job_level_permissions(workflow)) == {'*'}
 

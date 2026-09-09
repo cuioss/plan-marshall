@@ -81,9 +81,7 @@ def _resolve_detection_func(name):
     """Return the function ``name`` refers to, searched across both path modules."""
     for module in _DETECTION_MODULES:
         candidate = getattr(module, name, None)
-        if inspect.isfunction(candidate) and candidate.__module__ in {
-            m.__name__ for m in _DETECTION_MODULES
-        }:
+        if inspect.isfunction(candidate) and candidate.__module__ in {m.__name__ for m in _DETECTION_MODULES}:
             return candidate
     return None
 
@@ -139,9 +137,7 @@ def _detection_path_functions():
             if callee in callers and callee != caller:
                 callers[callee].add(caller)
 
-    return tuple(
-        sorted(name for name in reachable if callers[name] <= reachable)
-    )
+    return tuple(sorted(name for name in reachable if callers[name] <= reachable))
 
 
 def _run(event, conclusion='success'):
@@ -307,9 +303,7 @@ def test_the_detection_path_derivation_is_not_vacuous():
     # The two helpers the PR-boundary fix introduced must be reachable, or the
     # walk is not actually following the path it claims to follow.
     for helper in ('_pull_request_event_runs_for_pr', '_run_names_a_different_pr'):
-        assert helper in _DETECTION_PATH_FUNCS, (
-            f'{helper} is on the detection path but the derivation missed it'
-        )
+        assert helper in _DETECTION_PATH_FUNCS, f'{helper} is on the detection path but the derivation missed it'
 
 
 @pytest.mark.parametrize('func', _DETECTION_PATH_FUNCS)
@@ -385,9 +379,7 @@ def test_an_unparseable_response_is_an_error_not_a_confident_answer(monkeypatch)
         'view_pr_data',
         lambda selector=None: {'status': 'success', 'head_branch': _HEAD_BRANCH},
     )
-    monkeypatch.setattr(
-        github_ops, 'run_gh', lambda args, capture_json=False, timeout=60: (0, 'not json at all', '')
-    )
+    monkeypatch.setattr(github_ops, 'run_gh', lambda args, capture_json=False, timeout=60: (0, 'not json at all', ''))
 
     result = github_ops.pull_request_runs_result(42)
 
@@ -404,9 +396,7 @@ def test_a_failed_fetch_is_an_error_not_a_confident_answer(monkeypatch):
         'view_pr_data',
         lambda selector=None: {'status': 'success', 'head_branch': _HEAD_BRANCH},
     )
-    monkeypatch.setattr(
-        github_ops, 'run_gh', lambda args, capture_json=False, timeout=60: (1, '', 'api rate limited')
-    )
+    monkeypatch.setattr(github_ops, 'run_gh', lambda args, capture_json=False, timeout=60: (1, '', 'api rate limited'))
 
     result = github_ops.pull_request_runs_result(42)
 
@@ -482,9 +472,7 @@ def _patch_envelope(monkeypatch, raw_stdout):
     already serialized (some shapes are not expressible as a page list).
     """
     monkeypatch.setattr(github_ops, 'get_repo_info', lambda: ('cuioss', 'plan-marshall'))
-    monkeypatch.setattr(
-        github_ops, 'run_gh', lambda args, capture_json=False, timeout=60: (0, raw_stdout, '')
-    )
+    monkeypatch.setattr(github_ops, 'run_gh', lambda args, capture_json=False, timeout=60: (0, raw_stdout, ''))
 
 
 @pytest.mark.parametrize(
@@ -671,9 +659,7 @@ def test_a_run_listing_several_prs_including_this_one_is_kept(monkeypatch):
         'number-not-an-int',
     ],
 )
-def test_an_unreliable_association_never_fabricates_not_triggered(
-    label, association, monkeypatch
-):
+def test_an_unreliable_association_never_fabricates_not_triggered(label, association, monkeypatch):
     """The safety direction: no usable association means KEEP the run.
 
     Each shape is one way GitHub's ``pull_requests`` array actually arrives
@@ -701,9 +687,7 @@ def test_a_skipped_run_for_this_pr_still_counts_as_triggered(monkeypatch):
     The exclusion is about ATTRIBUTION, not about outcome, so composing it with
     the event predicate must not quietly reintroduce a ``conclusion`` check.
     """
-    _patch_provider(
-        monkeypatch, [_page([_run_for_pr('pull_request', [42], conclusion='skipped')])]
-    )
+    _patch_provider(monkeypatch, [_page([_run_for_pr('pull_request', [42], conclusion='skipped')])])
 
     result = github_ops.pull_request_runs_result(42)
 
@@ -730,9 +714,7 @@ def test_a_push_run_attributed_to_this_pr_is_still_not_a_pull_request_run(monkey
     [('int', 42), ('numeric-string', '42')],
     ids=['int', 'numeric-string'],
 )
-def test_the_requested_pr_is_matched_across_its_argument_spellings(
-    label, pr_number, monkeypatch
-):
+def test_the_requested_pr_is_matched_across_its_argument_spellings(label, pr_number, monkeypatch):
     """The verb accepts ``int | str``, so the comparison must not be identity-typed.
 
     A string-vs-int mismatch would silently exclude the PR's OWN run and report

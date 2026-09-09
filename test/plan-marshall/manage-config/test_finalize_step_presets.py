@@ -50,11 +50,7 @@ def _discovered_preset_members(preset_name: str) -> list[str]:
         find_implementors(cfg.FINALIZE_STEP_EXT_POINT),
         key=lambda rec: (rec.get('order', 0), rec.get('name', '')),
     )
-    return [
-        rec['name']
-        for rec in records
-        if preset_name in (rec.get('presets') or []) and rec.get('name')
-    ]
+    return [rec['name'] for rec in records if preset_name in (rec.get('presets') or []) and rec.get('name')]
 
 
 def _all_discovered_step_ids() -> set[str]:
@@ -111,10 +107,7 @@ def test_preset_steps_are_subset_of_discovered_finalize_steps(preset_name: str) 
     known = _all_discovered_step_ids()
     preset = fp.FinalizeStepPresets.get(preset_name)
     for step in preset:
-        assert step in known, (
-            f"preset '{preset_name}' step '{step}' is not a discovered "
-            f'finalize-step implementor'
-        )
+        assert step in known, f"preset '{preset_name}' step '{step}' is not a discovered finalize-step implementor"
 
 
 def test_known_finalize_steps_constant_is_removed() -> None:
@@ -131,8 +124,7 @@ def test_preset_class_attribute_literals_are_removed() -> None:
     # membership is discovery-driven via get().
     for attr in ('LOCAL', 'STANDARD', 'FULL'):
         assert not hasattr(fp.FinalizeStepPresets, attr), (
-            f'FinalizeStepPresets.{attr} literal must be deleted — preset '
-            f'membership is now discovery-driven'
+            f'FinalizeStepPresets.{attr} literal must be deleted — preset membership is now discovery-driven'
         )
 
 

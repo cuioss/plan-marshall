@@ -68,10 +68,8 @@ _RESTATEMENT_PATTERNS = (
 #: The exact pre-fix sentences the delegation replaced. The mutation guard feeds
 #: these to the detector to prove it is not vacuous.
 _PRE_FIX_SAMPLES = (
-    'Single TOON summary — no other text output. All analysis detail is '
-    'persisted to assessments.jsonl.',
-    '1. **No text output** except the final TOON summary — all reasoning goes '
-    'to assessments.jsonl',
+    'Single TOON summary — no other text output. All analysis detail is persisted to assessments.jsonl.',
+    '1. **No text output** except the final TOON summary — all reasoning goes to assessments.jsonl',
 )
 
 
@@ -104,9 +102,7 @@ class TestAppliesToRoster:
         # A roster row names a repo-relative path; a typo must fail loudly here
         # rather than silently shrinking the conformance population.
         missing = [
-            rel
-            for rel in _rostered_paths(_STANDARD.read_text(encoding='utf-8'))
-            if not (PROJECT_ROOT / rel).is_file()
+            rel for rel in _rostered_paths(_STANDARD.read_text(encoding='utf-8')) if not (PROJECT_ROOT / rel).is_file()
         ]
 
         assert missing == [], f'Rostered entries that do not resolve: {missing}'
@@ -132,9 +128,7 @@ class TestRosteredDocsDelegate:
             if not _delegates((PROJECT_ROOT / rel).read_text(encoding='utf-8'))
         ]
 
-        assert offenders == [], (
-            f'Rostered docs that never reference {_STANDARD_FILENAME}: {offenders}'
-        )
+        assert offenders == [], f'Rostered docs that never reference {_STANDARD_FILENAME}: {offenders}'
 
     def test_no_rostered_doc_restates_the_rule_inline(self):
         offenders: dict[str, list[str]] = {}
@@ -173,19 +167,12 @@ class TestPopulationIsDerived:
     """Adding a conforming site to the roster is picked up with no detector edit
     — the prohibited shape is a hand-maintained site list inside this module."""
 
-    def test_added_roster_entry_is_picked_up_without_editing_the_detector(
-        self, tmp_path: Path
-    ):
+    def test_added_roster_entry_is_picked_up_without_editing_the_detector(self, tmp_path: Path):
         # Arrange: a synthetic standard whose roster carries one MORE entry than
         # the shipped one — a real, conforming doc that is not rostered today.
         shipped = _STANDARD.read_text(encoding='utf-8')
-        extra = (
-            'marketplace/bundles/pm-plugin-development/skills/ext-outline-workflow'
-            '/workflow/component-analysis.md'
-        )
-        assert extra not in _rostered_paths(shipped), (
-            'fixture stale: the extra entry is already rostered'
-        )
+        extra = 'marketplace/bundles/pm-plugin-development/skills/ext-outline-workflow/workflow/component-analysis.md'
+        assert extra not in _rostered_paths(shipped), 'fixture stale: the extra entry is already rostered'
         augmented = shipped.replace(
             '\n\n## Out of scope',
             f'\n- `{extra}` — synthetic fixture entry.\n\n## Out of scope',
@@ -210,8 +197,6 @@ class TestPopulationIsDerived:
         roster_section_start = source.index('class TestAppliesToRoster')
 
         # Paths named before the first test class are the module's constants.
-        literal_docs = re.findall(
-            r"'(marketplace/bundles/[^']+\.md)'", source[:roster_section_start]
-        )
+        literal_docs = re.findall(r"'(marketplace/bundles/[^']+\.md)'", source[:roster_section_start])
 
         assert literal_docs == [], f'Hardcoded site list in the detector: {literal_docs}'

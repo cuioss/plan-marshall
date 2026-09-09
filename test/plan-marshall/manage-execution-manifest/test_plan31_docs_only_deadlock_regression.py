@@ -182,9 +182,7 @@ def _forbid_builds(monkeypatch, invoked: list) -> None:
     monkeypatch.setattr(subprocess, 'Popen', _boom)
 
 
-def test_plan31_docs_only_footprint_reaches_the_exemption(
-    plan_context, monkeypatch, tmp_path
-) -> None:
+def test_plan31_docs_only_footprint_reaches_the_exemption(plan_context, monkeypatch, tmp_path) -> None:
     """THE regression: PLAN-31's manifest + a markdown-only footprint reaches ``exempt``.
 
     Asserted positively — the gate arrives at the permitted state and names the
@@ -225,11 +223,7 @@ def test_the_manifest_shape_matched_no_retired_exemption(plan_context) -> None:
     deadlocked. This keeps the fixture honest about what it reproduces.
     """
     assert _PLAN_31_VERIFICATION_STEPS, 'empty list would have matched documentation_only'
-    non_lint = [
-        step
-        for step in _PLAN_31_VERIFICATION_STEPS
-        if step.rsplit(':', 1)[-1] != 'quality-gate'
-    ]
+    non_lint = [step for step in _PLAN_31_VERIFICATION_STEPS if step.rsplit(':', 1)[-1] != 'quality-gate']
     assert non_lint, 'all-quality-gate list would have matched lint_only'
 
 
@@ -251,7 +245,7 @@ def test_no_build_is_invoked_on_the_freshness_path(plan_context, monkeypatch, tm
 
 
 def test_the_authority_is_consulted_command_free(plan_context, monkeypatch, tmp_path) -> None:
-    """"Did this plan need a build at all?" is plan-wide — no command is nominated.
+    """ "Did this plan need a build at all?" is plan-wide — no command is nominated.
 
     Nominating a representative canonical (the retired ``'quality-gate'``) would
     reintroduce the premise that build necessity varies by command, which is
@@ -269,9 +263,7 @@ def test_the_authority_is_consulted_command_free(plan_context, monkeypatch, tmp_
     assert calls == [(None, plan_id)]
 
 
-def test_a_buildable_footprint_with_the_same_manifest_still_blocks(
-    plan_context, monkeypatch, tmp_path
-) -> None:
+def test_a_buildable_footprint_with_the_same_manifest_still_blocks(plan_context, monkeypatch, tmp_path) -> None:
     """Non-vacuity: the SAME manifest still blocks when a build genuinely was needed.
 
     Identical PLAN-31 step list, identical missing ledger entry — only the
@@ -292,9 +284,7 @@ def test_a_buildable_footprint_with_the_same_manifest_still_blocks(
     assert result.get('reason') != _NOT_NECESSARY_VERDICT['reason']
 
 
-def test_an_unknown_verdict_reaches_neither_permitting_status(
-    plan_context, monkeypatch, tmp_path
-) -> None:
+def test_an_unknown_verdict_reaches_neither_permitting_status(plan_context, monkeypatch, tmp_path) -> None:
     """The third verdict FAILS CLOSED — ``unknown`` never grants the exemption.
 
     Same PLAN-31 manifest, same missing ledger entry; only the verdict differs
@@ -323,9 +313,7 @@ def test_an_unknown_verdict_reaches_neither_permitting_status(
     assert result.get('reason') != _UNKNOWN_VERDICT['reason']
 
 
-def test_not_necessary_and_unknown_diverge_on_identical_inputs(
-    plan_context, monkeypatch, tmp_path
-) -> None:
+def test_not_necessary_and_unknown_diverge_on_identical_inputs(plan_context, monkeypatch, tmp_path) -> None:
     """The paired opposite: only the decision differs, and only one reaches ``exempt``.
 
     Comparing the two outcomes against each other — rather than asserting each
@@ -339,9 +327,7 @@ def test_not_necessary_and_unknown_diverge_on_identical_inputs(
 
     _seed_plan(plan_context, 'plan31-diverge-not-necessary')
     _stub_authority(monkeypatch, _NOT_NECESSARY_VERDICT, [])
-    not_necessary = cmd_pre_commit_verify_freshness(
-        Namespace(plan_id='plan31-diverge-not-necessary')
-    )
+    not_necessary = cmd_pre_commit_verify_freshness(Namespace(plan_id='plan31-diverge-not-necessary'))
 
     _seed_plan(plan_context, 'plan31-diverge-unknown')
     _stub_authority(monkeypatch, _UNKNOWN_VERDICT, [])

@@ -27,9 +27,7 @@ from _step_key_canonical import PROMOTED_BUILTIN_STEP_IDS, canonicalize_step_key
 
 from conftest import load_script_module
 
-_core = load_script_module(
-    'plan-marshall', 'manage-execution-manifest', '_manifest_core.py', module_name='_mig_core'
-)
+_core = load_script_module('plan-marshall', 'manage-execution-manifest', '_manifest_core.py', module_name='_mig_core')
 _lanes = load_script_module(
     'plan-marshall', 'manage-execution-manifest', '_manifest_lanes.py', module_name='_mig_lanes'
 )
@@ -95,12 +93,8 @@ def test_owner_of_project_prefixed_classifies_as_bare():
 
 def test_owner_classification_key_strips_default_then_project():
     """The classification key reduces ``default:`` and ``project:`` to the bare name."""
-    assert _core._owner_classification_key('default:pre-submission-self-review') == (
-        'pre-submission-self-review'
-    )
-    assert _core._owner_classification_key('project:finalize-step-plugin-doctor') == (
-        'finalize-step-plugin-doctor'
-    )
+    assert _core._owner_classification_key('default:pre-submission-self-review') == ('pre-submission-self-review')
+    assert _core._owner_classification_key('project:finalize-step-plugin-doctor') == ('finalize-step-plugin-doctor')
 
 
 def test_owner_classification_key_maps_promoted_alias():

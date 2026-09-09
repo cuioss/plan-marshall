@@ -10,7 +10,6 @@ Its sections, in order:
 * first-class partiality fields (Tier 2 - direct import)
 """
 
-
 from _manage_metrics_fixtures import (
     ns_accumulate,
     ns_generate,
@@ -92,9 +91,7 @@ class TestReconcileAccumulatorIntoPhase:
     def test_partial_backfill_only_absent_fields(self):
         """Only the absent fields are folded; present fields win."""
         phase_data = {'duration_seconds': 600, 'total_tokens': 50000}
-        manage_metrics._reconcile_accumulator_into_phase(
-            phase_data, {'total_tokens': 999, 'tool_uses': 7}
-        )
+        manage_metrics._reconcile_accumulator_into_phase(phase_data, {'total_tokens': 999, 'tool_uses': 7})
         assert phase_data['total_tokens'] == 50000  # explicit wins
         assert phase_data['tool_uses'] == 7  # absent → folded
 
@@ -116,6 +113,7 @@ class TestReconcileAccumulatorIntoPhase:
 # =============================================================================
 # Test: cmd_generate reconciles each phase against its accumulator
 # =============================================================================
+
 
 class TestReconcileFloorKeepsPartiality:
     """The reconcile `plan-marshall:plan-retrospective` performs before reading
@@ -142,9 +140,7 @@ class TestReconcileFloorKeepsPartiality:
         phases['6-finalize'] = {'duration_seconds': 600}
         manage_metrics.write_metrics('d3-reconcile-floor', {'phases': phases})
         cmd_accumulate_agent_usage(
-            ns_accumulate(
-                'd3-reconcile-floor', '6-finalize', total_tokens=54321, tool_uses=11, duration_ms=120000
-            )
+            ns_accumulate('d3-reconcile-floor', '6-finalize', total_tokens=54321, tool_uses=11, duration_ms=120000)
         )
 
         # The reconcile the retrospective performs before aspect 4 reads metrics.md.
@@ -172,6 +168,7 @@ class TestReconcileFloorKeepsPartiality:
 # Test: dispatch-boundary reconciliation (D1) — _read_dispatch_boundary_totals
 # and the cmd_generate same-population max reconciliation
 # =============================================================================
+
 
 class TestReadDispatchBoundaryTotals:
     """Direct coverage of the _read_dispatch_boundary_totals reader.
@@ -219,6 +216,7 @@ class TestReadDispatchBoundaryTotals:
 # =============================================================================
 # Test: first-class partiality fields (Tier 2 - direct import)
 # =============================================================================
+
 
 class TestReadCostDecomposition:
     """Plan 030 D3: the read cost is published as its two factors — the
@@ -280,9 +278,7 @@ class TestReadCostDecomposition:
         assert 'cache_read_per_tool_use' not in phases['3-outline']
         assert 'cache_read_per_tool_use' not in phases['5-execute']
 
-    def test_render_states_the_decomposition_and_discloses_the_population_span(
-        self, plan_context
-    ):
+    def test_render_states_the_decomposition_and_discloses_the_population_span(self, plan_context):
         """The rendered bullet states the identity and, per D4, names that the ratio
         spans two populations rather than reading as a single-population measure."""
         manage_metrics.write_metrics(

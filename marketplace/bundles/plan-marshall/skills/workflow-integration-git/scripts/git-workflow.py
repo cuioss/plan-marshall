@@ -594,9 +594,7 @@ def get_gitignored_files(root: Path) -> set[str] | None:
     spelling never equals the ``rel`` :func:`scan_artifacts` computes — so the
     exclusion silently misses exactly those paths.
     """
-    return _observe_z(
-        root, ['ls-files', '--others', '--ignored', '--exclude-standard', '--directory', '-z']
-    )
+    return _observe_z(root, ['ls-files', '--others', '--ignored', '--exclude-standard', '--directory', '-z'])
 
 
 def get_tracked_files(root: Path) -> set[str] | None:
@@ -803,9 +801,7 @@ def scan_artifacts(root: Path, respect_gitignore: bool = True) -> dict:
         # Never descend into a nested git repository/worktree/submodule — its
         # contents belong to a separate checkout and a running plan's live
         # worktree lives at such a boundary (see _is_nested_git_boundary).
-        dirnames[:] = [
-            d for d in dirnames if not _is_nested_git_boundary(os.path.join(dirpath_str, d))
-        ]
+        dirnames[:] = [d for d in dirnames if not _is_nested_git_boundary(os.path.join(dirpath_str, d))]
 
         for filename in filenames:
             # Normalised ONCE, here, so every consumer below sees the same
@@ -815,9 +811,7 @@ def scan_artifacts(root: Path, respect_gitignore: bool = True) -> dict:
             # match and the `rel in tracked` demotion still spoke '\', so on a
             # '\'-separator platform a nested tracked artifact missed the
             # demotion and reached the auto-deletable bucket.
-            rel = os.path.relpath(os.path.join(dirpath_str, filename), root_str).replace(
-                os.sep, '/'
-            )
+            rel = os.path.relpath(os.path.join(dirpath_str, filename), root_str).replace(os.sep, '/')
             # The scan root's OWN plan state is dropped first and
             # unconditionally, so no ignore-mechanism outcome can admit it.
             if _is_plan_state(rel):
@@ -941,10 +935,7 @@ def _executor_path() -> Path | None:
 # NEW caller inherits the refresh without having to know it exists.
 
 _GENERATE_EXECUTOR_PATH = (
-    Path(__file__).resolve().parent.parent.parent
-    / 'tools-script-executor'
-    / 'scripts'
-    / 'generate_executor.py'
+    Path(__file__).resolve().parent.parent.parent / 'tools-script-executor' / 'scripts' / 'generate_executor.py'
 )
 
 _EXECUTOR_REFRESH_TIMEOUT_SECONDS = 120
@@ -1040,8 +1031,7 @@ def _refresh_worktree_executor(worktree_path: Path) -> dict[str, Any]:
             'executor_drift': 'unknown',
             'executor_regenerated': False,
             'executor_detail': (
-                f'drift probe returned no usable verdict (rc={rc}): '
-                f'{(stderr or stdout).strip()[:200] or "no output"}'
+                f'drift probe returned no usable verdict (rc={rc}): {(stderr or stdout).strip()[:200] or "no output"}'
             ),
         }
     if drift_status == 'ok':
@@ -1128,9 +1118,7 @@ def _read_metadata_field(plan_id: str, field: str) -> str:
     ``worktree-list`` where missing metadata is a soft signal, not a
     hard error.
     """
-    rc, stdout, _stderr = _manage_status_call(
-        'metadata', '--plan-id', plan_id, '--get', '--field', field
-    )
+    rc, stdout, _stderr = _manage_status_call('metadata', '--plan-id', plan_id, '--get', '--field', field)
     if rc != 0:
         return ''
     try:
@@ -1174,8 +1162,7 @@ def _resolve_worktree_path_for_plan(plan_id: str) -> tuple[Path | None, dict | N
             'plan_id': plan_id,
             'error': 'plan_resolution_failed',
             'message': (
-                'No worktree configured for this plan — '
-                'status.metadata.use_worktree is false or worktree_path is unset'
+                'No worktree configured for this plan — status.metadata.use_worktree is false or worktree_path is unset'
             ),
         }
 
@@ -1335,9 +1322,7 @@ def _head_contained_in_base(worktree, head_sha: str, base_branch: str) -> bool:
     be established, which is why the caller declines rather than asserting
     "never pushed" on a False.
     """
-    rc, _, _ = run_git(
-        ['-C', str(worktree), 'merge-base', '--is-ancestor', head_sha, f'origin/{base_branch}']
-    )
+    rc, _, _ = run_git(['-C', str(worktree), 'merge-base', '--is-ancestor', head_sha, f'origin/{base_branch}'])
     return rc == 0
 
 
@@ -1439,9 +1424,7 @@ def cmd_branch_sync_state(args):
             'message': stderr or 'git rev-parse HEAD failed',
         }
 
-    rc, remote_sha, _stderr = run_git(
-        ['-C', str(worktree), 'rev-parse', '--verify', '--quiet', f'origin/{branch}']
-    )
+    rc, remote_sha, _stderr = run_git(['-C', str(worktree), 'rev-parse', '--verify', '--quiet', f'origin/{branch}'])
     if rc == 0:
         state = 'synced' if head_sha == remote_sha else 'ahead'
         return {
@@ -2113,9 +2096,7 @@ def cmd_worktree_remove(args):
     # than against a fixed constant. Both refusals above have already passed, so
     # this is the first point at which the removal is going to happen — clearing
     # scratch is a side effect and must never precede a refusal.
-    scratch_cleared, scratch_entries_removed, scratch_note = _clear_regenerable_scratch(
-        target, resolved_target
-    )
+    scratch_cleared, scratch_entries_removed, scratch_note = _clear_regenerable_scratch(target, resolved_target)
     measured_entries, budget_basis = _count_tree_entries(target)
     timeout_seconds = _derive_removal_timeout(measured_entries, budget_basis)
     budget: dict[str, Any] = {
@@ -2172,7 +2153,7 @@ def cmd_worktree_remove(args):
             'message': f'git worktree remove failed: {err}',
             'worktree_path': str(target),
             'hint': (
-                'Read message first — it carries git\'s own stderr, and this code is '
+                "Read message first — it carries git's own stderr, and this code is "
                 'the catch-all for any non-timeout failure rather than a dirtiness '
                 'verdict. --force addresses a dirty worktree and nothing else: on that '
                 'cause salvage the uncommitted work, then force deliberately. On any '
@@ -2261,9 +2242,7 @@ def _detect_worktree_state(
     if rc != 0:
         return 'missing-base', {'base': base, 'message': err.strip() or 'base ref not found'}
 
-    rc, head_branch_out, _err = run_git(
-        ['-C', str(worktree), 'symbolic-ref', '--quiet', '--short', 'HEAD']
-    )
+    rc, head_branch_out, _err = run_git(['-C', str(worktree), 'symbolic-ref', '--quiet', '--short', 'HEAD'])
     if rc != 0:
         return 'detached', {'message': 'HEAD is detached; rebase requires a checked-out branch'}
     head_branch = head_branch_out.strip()
@@ -2276,9 +2255,7 @@ def _detect_worktree_state(
         }
 
     # Compute ahead/behind counts relative to the resolved base commit.
-    rc, counts_out, _err = run_git(
-        ['-C', str(worktree), 'rev-list', '--left-right', '--count', f'{base}...HEAD']
-    )
+    rc, counts_out, _err = run_git(['-C', str(worktree), 'rev-list', '--left-right', '--count', f'{base}...HEAD'])
     ahead = behind = 0
     if rc == 0 and counts_out.strip():
         parts = counts_out.split()
@@ -2413,10 +2390,7 @@ def cmd_worktree_rebase_to(args):
             **base_payload,
             'status': 'error',
             'error': 'dirty_worktree',
-            'message': (
-                'worktree has uncommitted changes; stash, commit, '
-                'or discard before rebasing'
-            ),
+            'message': ('worktree has uncommitted changes; stash, commit, or discard before rebasing'),
         }
 
     # ``clean`` — already up-to-date relative to base. No-op rebase.
@@ -2450,9 +2424,7 @@ def cmd_worktree_rebase_to(args):
         # Only a rebase that actually replayed commits can have brought upstream
         # script changes into the tree, so a ``noop`` skips the probe entirely
         # rather than paying for it on every finalize entry.
-        executor_refresh = (
-            _refresh_worktree_executor(target) if replayed else _EXECUTOR_REFRESH_NOT_REPLAYED
-        )
+        executor_refresh = _refresh_worktree_executor(target) if replayed else _EXECUTOR_REFRESH_NOT_REPLAYED
         return {
             **base_payload,
             'status': 'success',
@@ -2463,10 +2435,7 @@ def cmd_worktree_rebase_to(args):
             'message': (
                 f'rebased {evidence.get("head_branch", "HEAD")} onto {rebase_base}'
                 if replayed
-                else (
-                    f'branch already contained {rebase_base}; '
-                    'the rebase replayed no commits and HEAD is unchanged'
-                )
+                else (f'branch already contained {rebase_base}; the rebase replayed no commits and HEAD is unchanged')
             ),
         }
 
@@ -2480,14 +2449,8 @@ def cmd_worktree_rebase_to(args):
 
     if in_progress:
         # Enumerate conflicting paths via ``git diff --name-only --diff-filter=U``.
-        rc_d, conflicts_out, _err = run_git(
-            ['-C', str(target), 'diff', '--name-only', '--diff-filter=U']
-        )
-        conflicts = (
-            [line for line in conflicts_out.splitlines() if line.strip()]
-            if rc_d == 0
-            else []
-        )
+        rc_d, conflicts_out, _err = run_git(['-C', str(target), 'diff', '--name-only', '--diff-filter=U'])
+        conflicts = [line for line in conflicts_out.splitlines() if line.strip()] if rc_d == 0 else []
         return {
             **base_payload,
             'status': 'conflict',
@@ -2822,10 +2785,7 @@ Examples:
                     {
                         'flags': ['--project-dir'],
                         'dest': 'project_dir',
-                        'help': (
-                            'Explicit main checkout path (escape hatch; '
-                            'mutually exclusive with --plan-id)'
-                        ),
+                        'help': ('Explicit main checkout path (escape hatch; mutually exclusive with --plan-id)'),
                     },
                     {
                         'flags': ['--base'],
@@ -3032,8 +2992,7 @@ Examples:
                         'dest': 'no_emit',
                         'action': 'store_true',
                         'help': (
-                            'Run the checks and return the result TOON without writing '
-                            'any Q-Gate findings (dry-run).'
+                            'Run the checks and return the result TOON without writing any Q-Gate findings (dry-run).'
                         ),
                     },
                 ],

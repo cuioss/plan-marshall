@@ -10,7 +10,6 @@ Its sections, in order:
 * [LOCK] event emission (best-effort, OUTSIDE the O_EXCL window)
 """
 
-
 from __future__ import annotations
 
 from argparse import Namespace
@@ -73,9 +72,7 @@ class TestLockEventEmission:
         # The reclaimed-from holder is carried as a correlation field.
         assert 'reclaimed_from: plan-dead' in content
 
-    def test_blocked_acquire_emits_lock_blocked_with_holder_and_waiter(
-        self, isolated_base: dict
-    ) -> None:
+    def test_blocked_acquire_emits_lock_blocked_with_holder_and_waiter(self, isolated_base: dict) -> None:
         """A blocked admission against a LIVE holder emits ``blocked`` carrying the
         blocking holder and the waiter."""
         merge_lock.run_acquire(Namespace(plan_id='plan-live', timeout=5.0))
@@ -146,9 +143,7 @@ class TestLockEventEmission:
         # No lock-event log under the worktree-relative .plan/logs.
         assert not (worktree / '.plan' / 'logs').exists()
 
-    def test_log_failure_never_breaks_acquire(
-        self, isolated_base: dict, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_log_failure_never_breaks_acquire(self, isolated_base: dict, monkeypatch: pytest.MonkeyPatch) -> None:
         """A [LOCK]-emission failure NEVER aborts the lock acquire — the emission
         is best-effort, with the swallow try/except INSIDE ``log_lock_event``
         itself. Make the REAL ``log_lock_event``'s internal resolver raise (the
@@ -157,6 +152,7 @@ class TestLockEventEmission:
         created. Patching the bare ``log_lock_event`` name would (correctly) NOT
         be swallowed — the call sites invoke it directly — so the realistic
         failure is one inside the helper's own try/except."""
+
         def _raising_resolver() -> object:
             raise OSError('log dir gone')
 
@@ -168,9 +164,7 @@ class TestLockEventEmission:
         assert result['action'] == 'acquired'
         assert isolated_base['lock_path'].is_file()
 
-    def test_log_failure_never_breaks_release(
-        self, isolated_base: dict, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_log_failure_never_breaks_release(self, isolated_base: dict, monkeypatch: pytest.MonkeyPatch) -> None:
         """Symmetric on the RELEASE side: a [LOCK]-emission failure (the real
         helper's internal resolver raising, swallowed by its own try/except)
         NEVER aborts the lock release — the lock file is still removed."""

@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Cross-ledger reconciliation: a disagreement becomes a finding, not a silent choice."""
 
-
 from datetime import UTC, datetime, timedelta
 
 from _ledger_reconciliation_fixtures import (
@@ -33,9 +32,7 @@ class TestDeclaredAndUndecidableStates:
         """4-plan boundary rows are absent from execution_log BY CONSTRUCTION."""
         plan_id = 'recon-structural'
         cmd_start_phase(ns_start_phase(plan_id, '4-plan'))
-        cmd_record_dispatch_boundary(
-            ns_record_dispatch_boundary(plan_id, '4-plan', 'step_complete', total_tokens=7000)
-        )
+        cmd_record_dispatch_boundary(ns_record_dispatch_boundary(plan_id, '4-plan', 'step_complete', total_tokens=7000))
         cmd_end_phase(ns_end_phase(plan_id, '4-plan', total_tokens=7000))
         _write_execution_log(plan_context, plan_id, [])
 
@@ -77,7 +74,8 @@ class TestDeclaredAndUndecidableStates:
                 ns_record_dispatch_boundary(plan_id, '6-finalize', 'step_complete', total_tokens=tokens)
             )
         _write_execution_log(
-            plan_context, plan_id,
+            plan_context,
+            plan_id,
             [('push', '6-finalize', '2020-01-01T00:00:00+00:00', 4000)],
         )
 
@@ -99,19 +97,11 @@ class TestDeclaredAndUndecidableStates:
         cmd_end_phase(ns_end_phase(plan_id, '6-finalize', total_tokens=8000))
         _write_execution_log(plan_context, plan_id, [])
         plan_dir = plan_context.plan_dir_for(plan_id)
-        before = {
-            path: path.read_bytes()
-            for path in sorted(plan_dir.rglob('*'))
-            if path.is_file()
-        }
+        before = {path: path.read_bytes() for path in sorted(plan_dir.rglob('*')) if path.is_file()}
 
         cmd_reconcile_ledgers(_ns_reconcile(plan_id))
 
-        after = {
-            path: path.read_bytes()
-            for path in sorted(plan_dir.rglob('*'))
-            if path.is_file()
-        }
+        after = {path: path.read_bytes() for path in sorted(plan_dir.rglob('*')) if path.is_file()}
         assert after == before
 
 
@@ -124,9 +114,7 @@ def test_reconciliation_execution_log_phases_match_writer():
     declaring phases structurally excluded that the ledger had started covering —
     suppressing real findings under a stale declaration.
     """
-    core = load_script_module(
-        'plan-marshall', 'manage-execution-manifest', '_manifest_core.py', 'mc_reconcile_drift'
-    )
+    core = load_script_module('plan-marshall', 'manage-execution-manifest', '_manifest_core.py', 'mc_reconcile_drift')
 
     assert tuple(_ledger.EXECUTION_LOG_PHASES) == tuple(core.VALID_RECORD_PHASES)
 
@@ -158,9 +146,7 @@ class TestPairingIsMaximal:
         execution_rows = [self._row(240, 'e'), self._row(500, 'e')]
         boundary_rows = [self._row(0, 'b'), self._row(250, 'b')]
 
-        pairs, unpaired_execution, unpaired_boundary = _ledger.pair_rows(
-            execution_rows, boundary_rows, 300
-        )
+        pairs, unpaired_execution, unpaired_boundary = _ledger.pair_rows(execution_rows, boundary_rows, 300)
 
         assert len(pairs) == 2
         assert unpaired_execution == []
@@ -175,9 +161,7 @@ class TestPairingIsMaximal:
         execution_rows = [self._row(0, 'e'), self._row(10000, 'e')]
         boundary_rows = [self._row(0, 'b')]
 
-        pairs, unpaired_execution, unpaired_boundary = _ledger.pair_rows(
-            execution_rows, boundary_rows, 300
-        )
+        pairs, unpaired_execution, unpaired_boundary = _ledger.pair_rows(execution_rows, boundary_rows, 300)
 
         assert len(pairs) == 1
         assert [row['step_id'] for row in unpaired_execution] == ['e10000']
@@ -256,9 +240,7 @@ class TestMixedTimezoneAwarenessDoesNotCrash:
         execution_rows = [self._row('2026-01-01T10:00:00', 'e-naive')]
         boundary_rows = [self._row('2026-01-01T10:00:10Z', 'b-aware')]
 
-        pairs, unpaired_execution, unpaired_boundary = _ledger.pair_rows(
-            execution_rows, boundary_rows, 300
-        )
+        pairs, unpaired_execution, unpaired_boundary = _ledger.pair_rows(execution_rows, boundary_rows, 300)
 
         assert len(pairs) == 1
         assert unpaired_execution == []

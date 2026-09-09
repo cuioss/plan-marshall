@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001
 """Tests for the ``resolver-matrix-coverage`` rule analyzer.
 
 The analyzer scans
@@ -30,7 +29,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from conftest import PROJECT_ROOT, load_script_module
-
 
 
 def _load_module(name: str, filename: str):
@@ -83,7 +81,7 @@ def _make_synth_marketplace(
 # Source for a 3-tier skip-on-miss resolver: 3 guarded returns + a final
 # fallback return. Mirrors the post-Deliverable-2 ``session_render_title``
 # control-flow shape but kept minimal for unit testing.
-_THREE_TIER_RESOLVER_SOURCE = '''
+_THREE_TIER_RESOLVER_SOURCE = """
 def resolve_title(session_id, plan_id, body_path):
     if not session_id:
         return None
@@ -92,10 +90,10 @@ def resolve_title(session_id, plan_id, body_path):
     if not body_path:
         return None
     return "ok"
-'''
+"""
 
 # 4-tier variant — one more guarded return tier.
-_FOUR_TIER_RESOLVER_SOURCE = '''
+_FOUR_TIER_RESOLVER_SOURCE = """
 def resolve_title(session_id, plan_id, body_path, phase):
     if not session_id:
         return None
@@ -106,23 +104,23 @@ def resolve_title(session_id, plan_id, body_path, phase):
     if not phase:
         return None
     return "ok"
-'''
+"""
 
 # 2-tier resolver — must be ignored by the analyzer (below MIN_TIER_COUNT).
-_TWO_TIER_RESOLVER_SOURCE = '''
+_TWO_TIER_RESOLVER_SOURCE = """
 def resolve_title(session_id, plan_id):
     if not session_id:
         return None
     if not plan_id:
         return None
     return "ok"
-'''
+"""
 
 
 def _matrix_test_source(function_name: str, cells: int) -> str:
     """Build a test module declaring a parametrize matrix with ``cells`` rows."""
     rows = ',\n        '.join([f"('val{i}', 'expected{i}')" for i in range(cells)])
-    return f'''
+    return f"""
 import pytest
 
 
@@ -137,7 +135,7 @@ def test_{function_name}_matrix(input_value, expected):
     # this test as direct coverage. The +1 contribution is intentional and
     # is accounted for by the test cases below.
     assert {function_name} or True  # noqa: F821 - synthetic fixture only
-'''
+"""
 
 
 # ===========================================================================
@@ -204,9 +202,7 @@ class TestSessionRenderTitleZeroFindings:
         marketplace_root = PROJECT_ROOT / 'marketplace' / 'bundles'
         findings = analyze_resolver_matrix_coverage(marketplace_root, PROJECT_ROOT)
         # Filter to findings against session_render_title specifically.
-        srt_findings = [
-            f for f in findings if f['details'].get('function_name') == 'session_render_title'
-        ]
+        srt_findings = [f for f in findings if f['details'].get('function_name') == 'session_render_title']
         # The analyzer MUST locate the production test file (no
         # test_file_missing finding regardless of matrix coverage state).
         for finding in srt_findings:

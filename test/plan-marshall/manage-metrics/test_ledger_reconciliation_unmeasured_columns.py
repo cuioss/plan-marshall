@@ -22,7 +22,6 @@ boundary reader's per-row state, the DERIVED (never stamped) aggregate state of 
 sum taken over those rows, and the population coverage published beside it.
 """
 
-
 from pathlib import Path
 
 from _ledger_reconciliation_fixtures import (  # a fixture is used by NAME, not by reference
@@ -175,9 +174,7 @@ class TestTheSiblingCoercionSharesThePredicate:
 class TestNormalisedRowsCarryTheState:
     """The reader's OWN output separates the two zero-shaped rows."""
 
-    def test_a_measured_zero_and_an_unmeasured_column_differ_in_the_reader_output(
-        self, plan_context
-    ):
+    def test_a_measured_zero_and_an_unmeasured_column_differ_in_the_reader_output(self, plan_context):
         """Both rows read ``total_tokens == 0``; only the state tells them apart.
 
         Asserting the number alone would pass against the coercing predecessor,
@@ -192,9 +189,7 @@ class TestNormalisedRowsCarryTheState:
 
         assert reason == ''
         assert rows is not None
-        by_step = {
-            row['step_id']: row for row in _ledger.execution_rows_for_phase(rows, PHASE)
-        }
+        by_step = {row['step_id']: row for row in _ledger.execution_rows_for_phase(rows, PHASE)}
         assert by_step['measured']['total_tokens'] == 0
         assert by_step['omitted']['total_tokens'] == 0
         assert by_step['measured']['total_tokens_state'] == _ledger.COLUMN_MEASURED
@@ -246,11 +241,7 @@ def _write_boundary_rows(plan_context, plan_id: str, cells: list[object]) -> Pat
     The header is the same three lines the writer emits, so the reader's own
     header-skip is exercised rather than bypassed.
     """
-    path: Path = (
-        Path(plan_context.plan_dir_for(plan_id))
-        / 'work'
-        / f'metrics-dispatch-boundaries-{PHASE}.toon'
-    )
+    path: Path = Path(plan_context.plan_dir_for(plan_id)) / 'work' / f'metrics-dispatch-boundaries-{PHASE}.toon'
     path.parent.mkdir(parents=True, exist_ok=True)
     header = (
         f'plan_id: {plan_id}\n'
@@ -295,9 +286,7 @@ class TestBoundaryRowsCarryTheStateToo:
         assert rows[0]['total_tokens_state'] == _ledger.COLUMN_MEASURED
 
     def test_the_writer_token_is_not_coerced_to_a_measured_zero(self, plan_context):
-        path = _write_boundary_rows(
-            plan_context, 'recon-bnd-unmeasured', [_ledger.UNMEASURED_COLUMN_TOKEN]
-        )
+        path = _write_boundary_rows(plan_context, 'recon-bnd-unmeasured', [_ledger.UNMEASURED_COLUMN_TOKEN])
 
         rows = _ledger.load_boundary_rows(path)
 
@@ -421,9 +410,7 @@ class TestBoundaryDerivedFindingsPublishTheState:
         """The size of the gap, not merely its existence."""
         plan_id = 'recon-bnd-unclosed-coverage'
         cmd_start_phase(ns_start_phase(plan_id, PHASE))
-        _write_boundary_rows(
-            plan_context, plan_id, [4000, _ledger.UNMEASURED_COLUMN_TOKEN, '12x']
-        )
+        _write_boundary_rows(plan_context, plan_id, [4000, _ledger.UNMEASURED_COLUMN_TOKEN, '12x'])
         _write_rows(plan_context, plan_id, [])
 
         result = cmd_reconcile_ledgers(_ns_reconcile(plan_id))

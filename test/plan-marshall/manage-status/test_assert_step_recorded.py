@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the assert-step-recorded subcommand of manage-status."""
 
-
 import pytest
 from _assert_step_recorded_fixtures import (
     _assert_args,
@@ -152,6 +151,7 @@ def test_canonical_exact_match_wins_over_stale_legacy_prefixed_key(plan_context)
 # Near-miss orphan key -> step_record_mismatched_key
 # =============================================================================
 
+
 def test_only_bare_orphan_present_returns_mismatched_key(plan_context):
     """(2) When only a bare/mis-keyed orphan terminal record is present under a
     different key, --require-terminal returns step_record_mismatched_key carrying
@@ -243,9 +243,7 @@ def test_typo_near_miss_token_returns_mismatched_key(plan_context):
     }
     write_status(plan_id, status)
 
-    result = cmd_assert_step_recorded(
-        _assert_args(plan_id, '6-finalize', 'plan-retrospective', require_terminal=True)
-    )
+    result = cmd_assert_step_recorded(_assert_args(plan_id, '6-finalize', 'plan-retrospective', require_terminal=True))
 
     assert result['status'] == 'error'
     assert result['error'] == 'step_record_mismatched_key'
@@ -343,9 +341,7 @@ def test_promoted_alias_record_matches_bare_query(plan_context):
         head_at_completion='d' * 40,
     )
 
-    result = cmd_assert_step_recorded(
-        _assert_args(plan_id, '6-finalize', 'automatic-review', require_terminal=True)
-    )
+    result = cmd_assert_step_recorded(_assert_args(plan_id, '6-finalize', 'automatic-review', require_terminal=True))
 
     assert result['status'] == 'success'
     assert result['recorded'] is True

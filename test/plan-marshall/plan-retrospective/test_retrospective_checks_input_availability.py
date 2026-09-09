@@ -23,7 +23,6 @@ The three surfaces:
 Every test here fails against the pre-fix code.
 """
 
-
 from __future__ import annotations
 
 import json
@@ -75,9 +74,7 @@ class TestBranchCleanupRuleReadsTheEvidenceFlag:
         plan_id, _ = _setup(tmp_path, monkeypatch, _BRANCH_CLEANUP_MANIFEST)
         diff = _write_diff(tmp_path, [])
 
-        result = run_script(
-            MANIFEST_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live', '--diff-file', str(diff)
-        )
+        result = run_script(MANIFEST_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live', '--diff-file', str(diff))
         assert result.success, result.stderr
         data = result.toon()
 
@@ -121,9 +118,7 @@ class TestBranchCleanupRuleReadsTheEvidenceFlag:
         plan_id, _ = _setup(tmp_path, monkeypatch, _BRANCH_CLEANUP_MANIFEST)
         diff = _write_diff(tmp_path, ['pyproject.toml'])
 
-        result = run_script(
-            MANIFEST_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live', '--diff-file', str(diff)
-        )
+        result = run_script(MANIFEST_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live', '--diff-file', str(diff))
         assert result.success, result.stderr
         data = result.toon()
 
@@ -244,19 +239,14 @@ def _stage_emission_plan(
         record: dict = {'number': num, 'deliverable': 1, 'status': 'done'}
         if record_changed_files:
             record['changed_files'] = changed
-        (tasks_dir / f'TASK-{num:03d}.json').write_text(
-            json.dumps(record), encoding='utf-8'
-        )
+        (tasks_dir / f'TASK-{num:03d}.json').write_text(json.dumps(record), encoding='utf-8')
 
     for num in done_tasks:
         _write_task(num, [f'src/f{num}.py'])
     for num in noop_tasks or []:
         _write_task(num, [])
 
-    lines = [
-        '[2026-04-17T10:00:00Z] [INFO] [aaaaaa] [ARTIFACT] '
-        '(plan-marshall:phase-1-init) Wrote request.md'
-    ]
+    lines = ['[2026-04-17T10:00:00Z] [INFO] [aaaaaa] [ARTIFACT] (plan-marshall:phase-1-init) Wrote request.md']
     for num in artifact_task_nums:
         lines.append(
             f'[2026-04-17T10:0{num}:00Z] [INFO] [bbbbbb] [ARTIFACT] '
@@ -273,11 +263,7 @@ def _stage_emission_plan(
 
 
 def _emission_findings(data: dict) -> list[str]:
-    return [
-        f.get('message', '')
-        for f in (data.get('findings') or [])
-        if 'ARTIFACT_EMISSION' in f.get('message', '')
-    ]
+    return [f.get('message', '') for f in (data.get('findings') or []) if 'ARTIFACT_EMISSION' in f.get('message', '')]
 
 
 class TestTotalAbsenceOfPerTaskEmissionIsGraded:
@@ -437,9 +423,7 @@ class TestTheEmissionPopulationIsChangeQualified:
             'nothing by design and must not be charged as a gap'
         )
 
-    def test_a_no_op_task_beside_a_real_gap_still_reports_the_real_gap(
-        self, tmp_path, monkeypatch
-    ):
+    def test_a_no_op_task_beside_a_real_gap_still_reports_the_real_gap(self, tmp_path, monkeypatch):
         """⛔ The over-correction control: qualification must not MUTE a real gap.
 
         Same no-op tasks, but now one change-qualified task emitted and another
@@ -470,9 +454,7 @@ class TestTheEmissionPopulationIsChangeQualified:
         # The population the message quotes is the eligible one, not the raw 4.
         assert any('1 of 2 change-qualified' in m for m in messages), messages
 
-    def test_unavailable_attribution_emits_nothing_and_omits_the_population(
-        self, tmp_path, monkeypatch
-    ):
+    def test_unavailable_attribution_emits_nothing_and_omits_the_population(self, tmp_path, monkeypatch):
         """⛔ An unrecordable population is an UNKNOWN, never a measured zero.
 
         Byte-for-byte the fixture of

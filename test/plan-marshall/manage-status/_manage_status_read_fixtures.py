@@ -12,7 +12,6 @@ cmd_update_phase, cmd_progress, cmd_get_worktree_path (incl.
 pre-materialization edge cases), and CLI plumbing/regression entry points.
 """
 
-
 from conftest import get_script_path, load_script_module
 
 # Script path for CLI plumbing tests

@@ -36,9 +36,7 @@ from conftest import load_script_module
 
 # Loaded under a unique module name so it does not clash with the other
 # manage-config test modules that load the same source file.
-_mc = load_script_module(
-    'plan-marshall', 'manage-config', 'manage-config.py', 'mc_user_language_under_test'
-)
+_mc = load_script_module('plan-marshall', 'manage-config', 'manage-config.py', 'mc_user_language_under_test')
 
 #: The knob's shipped default: follow the language the user is writing in.
 _AUTO = 'auto'
@@ -115,9 +113,7 @@ def test_project_set_then_get_round_trips_a_pinned_language(plan_context, monkey
     """`project set --field user_language --value de` persists and round-trips through get."""
     _init(plan_context, monkeypatch, capsys)
 
-    set_code, set_data = _drive(
-        monkeypatch, capsys, 'project', 'set', '--field', 'user_language', '--value', _PIN
-    )
+    set_code, set_data = _drive(monkeypatch, capsys, 'project', 'set', '--field', 'user_language', '--value', _PIN)
 
     assert set_code == 0
     assert set_data['status'] == 'success'
@@ -130,9 +126,7 @@ def test_project_set_then_get_round_trips_a_pinned_language(plan_context, monkey
     assert get_data['value'] == _PIN
 
 
-def test_sync_defaults_backfills_user_language_into_an_older_config(
-    plan_context, monkeypatch, capsys
-):
+def test_sync_defaults_backfills_user_language_into_an_older_config(plan_context, monkeypatch, capsys):
     """`sync-defaults` back-fills the key into a config that predates the knob.
 
     Existing projects never re-run `init`, so the non-destructive deep-merge is
@@ -170,9 +164,7 @@ _REJECTED_VALUES = ['false', 'true', '0', '1', '', '   ']
 
 
 @pytest.mark.parametrize('value', _REJECTED_VALUES, ids=[f'value={v!r}' for v in _REJECTED_VALUES])
-def test_project_set_user_language_rejects_a_non_string_or_empty_value(
-    plan_context, monkeypatch, capsys, value
-):
+def test_project_set_user_language_rejects_a_non_string_or_empty_value(plan_context, monkeypatch, capsys, value):
     """A coerced non-string (or an empty value) is rejected and never reaches disk.
 
     Both halves matter: the rejection is reported as `invalid_value`, AND the
@@ -181,9 +173,7 @@ def test_project_set_user_language_rejects_a_non_string_or_empty_value(
     """
     _init(plan_context, monkeypatch, capsys)
 
-    code, data = _drive(
-        monkeypatch, capsys, 'project', 'set', '--field', 'user_language', '--value', value
-    )
+    code, data = _drive(monkeypatch, capsys, 'project', 'set', '--field', 'user_language', '--value', value)
 
     assert code == 0
     assert data['status'] == 'error'
@@ -206,9 +196,7 @@ _PERSISTED_INVALID_VALUES: list[object] = [True, 42, 3.5, None, [], {}, '', '   
     _PERSISTED_INVALID_VALUES,
     ids=[f'persisted={v!r}' for v in _PERSISTED_INVALID_VALUES],
 )
-def test_project_get_user_language_refuses_a_persisted_invalid_value(
-    plan_context, monkeypatch, capsys, value
-):
+def test_project_get_user_language_refuses_a_persisted_invalid_value(plan_context, monkeypatch, capsys, value):
     """A persisted non-string or empty user_language is refused by `get`, not returned.
 
     Refusing is the point: the rule treats anything other than `auto` as a pin, so
@@ -272,9 +260,7 @@ def test_project_set_unknown_field_is_still_rejected(plan_context, monkeypatch, 
     """
     _init(plan_context, monkeypatch, capsys)
 
-    code, data = _drive(
-        monkeypatch, capsys, 'project', 'set', '--field', 'user_langauge', '--value', _PIN
-    )
+    code, data = _drive(monkeypatch, capsys, 'project', 'set', '--field', 'user_langauge', '--value', _PIN)
 
     assert code == 0
     assert data['status'] == 'error'

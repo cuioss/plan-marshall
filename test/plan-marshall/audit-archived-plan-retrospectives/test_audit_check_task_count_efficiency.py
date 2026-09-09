@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""``task-count`` efficiency — the per-plan task-count verdict and its thresholds.
-"""
+"""``task-count`` efficiency — the per-plan task-count verdict and its thresholds."""
 
 from pathlib import Path
 from typing import Any
@@ -33,9 +32,7 @@ def _write_task_count_plan(
         body: dict[str, Any] = {}
         if task_deliverable_ids is not None and n - 1 < len(task_deliverable_ids):
             body['deliverable'] = task_deliverable_ids[n - 1]
-        (tasks_dir / f'TASK-{n:03d}.json').write_text(
-            _json.dumps(body), encoding='utf-8'
-        )
+        (tasks_dir / f'TASK-{n:03d}.json').write_text(_json.dumps(body), encoding='utf-8')
     refs: dict[str, Any] = {}
     if deliverables is not None:
         refs['deliverables'] = deliverables
@@ -50,9 +47,7 @@ class TestCheckTaskCount:
 
     def test_balanced_ratio_not_flagged(self, tmp_path: Path):
         # 4 tasks over 2 deliverables → ratio 2.0, inside [0.5, 4.0].
-        inputs = _write_task_count_plan(
-            tmp_path, 'balanced', task_count=4, deliverables=['d1', 'd2']
-        )
+        inputs = _write_task_count_plan(tmp_path, 'balanced', task_count=4, deliverables=['d1', 'd2'])
 
         result = audit.check_task_count(inputs)
 
@@ -76,18 +71,14 @@ class TestCheckTaskCount:
 
     def test_over_decomposition_flagged(self, tmp_path: Path):
         # 10 tasks over 2 deliverables → ratio 5.0 > 4.0.
-        inputs = _write_task_count_plan(
-            tmp_path, 'over', task_count=10, deliverables=['d1', 'd2']
-        )
+        inputs = _write_task_count_plan(tmp_path, 'over', task_count=10, deliverables=['d1', 'd2'])
 
         result = audit.check_task_count(inputs)
 
         assert 'over_decomposed' in result['outlier']
         assert 'ratio=5.00' in result['outlier']
 
-    def test_deliverables_derived_from_tasks_when_absent_in_references(
-        self, tmp_path: Path
-    ):
+    def test_deliverables_derived_from_tasks_when_absent_in_references(self, tmp_path: Path):
         # references.json has no deliverables list; the per-task
         # ``deliverable`` ids supply the distinct-count fallback (2 distinct ids).
         inputs = _write_task_count_plan(
@@ -126,9 +117,7 @@ class TestCheckTaskCount:
 
         plan_dir = tmp_path / '.plan' / 'temp' / 'tc-corpus' / 'no-tasks'
         plan_dir.mkdir(parents=True, exist_ok=True)
-        (plan_dir / 'references.json').write_text(
-            _json.dumps({'deliverables': ['d1']}), encoding='utf-8'
-        )
+        (plan_dir / 'references.json').write_text(_json.dumps({'deliverables': ['d1']}), encoding='utf-8')
         inputs = audit.collect_inputs(plan_dir)
 
         result = audit.check_task_count(inputs)

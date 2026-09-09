@@ -22,8 +22,7 @@ def _seed_cli_lesson(tmp_path: Path, lesson_id: str, title: str, status: str = '
     lessons_dir = tmp_path / 'lessons-learned'
     lessons_dir.mkdir(parents=True, exist_ok=True)
     (lessons_dir / f'{lesson_id}.md').write_text(
-        f'id={lesson_id}\ncomponent=test\ncategory=bug\nstatus={status}\n'
-        f'created=2025-01-01\n\n# {title}\n\nBody.\n',
+        f'id={lesson_id}\ncomponent=test\ncategory=bug\nstatus={status}\ncreated=2025-01-01\n\n# {title}\n\nBody.\n',
         encoding='utf-8',
     )
 

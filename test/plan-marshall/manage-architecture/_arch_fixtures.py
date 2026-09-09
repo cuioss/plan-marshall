@@ -225,8 +225,7 @@ def create_test_project(tmpdir: str, *, shape: str) -> dict[str, dict]:
         modules = {name: dict(data) for name, data in _CREATE_PROJECT_METADATA_RICH.items()}
     else:
         raise ValueError(
-            f"Unknown create_test_project shape: {shape!r}. "
-            f"Expected one of: 'command_variety', 'metadata_rich'."
+            f"Unknown create_test_project shape: {shape!r}. Expected one of: 'command_variety', 'metadata_rich'."
         )
 
     seed_project(tmpdir, modules)

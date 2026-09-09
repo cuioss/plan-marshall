@@ -42,7 +42,9 @@ from _arch_fixtures import seed_project as _seed_project
 
 from conftest import load_script_module, parse_ns
 
-_architecture_core = load_script_module('plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core')
+_architecture_core = load_script_module(
+    'plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core'
+)
 _cmd_client = load_script_module('plan-marshall', 'manage-architecture', '_cmd_client.py', '_cmd_client')
 
 cmd_modules = _cmd_client.cmd_modules
@@ -568,9 +570,7 @@ def test_cmd_resolve_unknown_command_returns_error():
     with tempfile.TemporaryDirectory() as tmpdir:
         create_test_project_with_root(tmpdir)
 
-        args = _variant(
-            _RESOLVE_ARGS, project_dir=tmpdir, resolve_command='nonexistent-command', module='module-a'
-        )
+        args = _variant(_RESOLVE_ARGS, project_dir=tmpdir, resolve_command='nonexistent-command', module='module-a')
         result = cmd_resolve(args)
 
         assert result['status'] == 'error'
@@ -1310,7 +1310,9 @@ def test_build_internal_deps_map_honours_preloaded_kwargs(monkeypatch):
         )
 
         assert load_derived_calls == [], 'load_module_derived must not be called when derived_by_name is supplied'
-        assert load_enriched_calls == [], 'load_module_enriched_or_empty must not be called when enriched_by_name is supplied'
+        assert load_enriched_calls == [], (
+            'load_module_enriched_or_empty must not be called when enriched_by_name is supplied'
+        )
         assert set(module_names) == {'api', 'core'}
         assert deps_map['core'] == ['api']
 
@@ -1357,7 +1359,9 @@ def test_get_module_graph_honours_preloaded_kwargs(monkeypatch):
         )
 
         assert load_derived_calls == [], 'load_module_derived must not be called when derived_by_name is supplied'
-        assert load_enriched_calls == [], 'load_module_enriched_or_empty must not be called when enriched_by_name is supplied'
+        assert load_enriched_calls == [], (
+            'load_module_enriched_or_empty must not be called when enriched_by_name is supplied'
+        )
         assert result['graph']['node_count'] == 2
         node_names = {n['name'] for n in result['nodes']}
         assert node_names == {'api', 'core'}
@@ -1806,9 +1810,7 @@ def test_derive_edges_reaches_the_merge_when_discovery_succeeds(monkeypatch):
     monkeypatch.setitem(
         sys.modules,
         'extension_discovery',
-        _stub_extension_discovery(
-            lambda: [{'origin': 'stub-origin', 'id': 'stub', 'module': resolver}]
-        ),
+        _stub_extension_discovery(lambda: [{'origin': 'stub-origin', 'id': 'stub', 'module': resolver}]),
     )
 
     # Act
@@ -1821,13 +1823,12 @@ def test_derive_edges_reaches_the_merge_when_discovery_succeeds(monkeypatch):
 
 def test_derive_edges_returns_zero_resolvers_when_discovery_raises_import_error(monkeypatch):
     """The documented fallback holds when the CALL — not the import — raises."""
+
     # Arrange — mimics extension_discovery's own deferred import failing
     def _raising_discovery():
         raise ImportError("No module named 'extension_base'")
 
-    monkeypatch.setitem(
-        sys.modules, 'extension_discovery', _stub_extension_discovery(_raising_discovery)
-    )
+    monkeypatch.setitem(sys.modules, 'extension_discovery', _stub_extension_discovery(_raising_discovery))
 
     # Act — must not propagate
     edges, reports = _derive_edges(_resolver_input_modules(), {}, '/nonexistent')
@@ -1856,13 +1857,12 @@ def test_derive_edges_does_not_swallow_a_non_import_error(monkeypatch):
     A resolver-discovery bug that raises something else is a real fault and must
     stay visible rather than masquerading as an empty registry.
     """
+
     # Arrange
     def _broken_discovery():
         raise RuntimeError('boom-discovery')
 
-    monkeypatch.setitem(
-        sys.modules, 'extension_discovery', _stub_extension_discovery(_broken_discovery)
-    )
+    monkeypatch.setitem(sys.modules, 'extension_discovery', _stub_extension_discovery(_broken_discovery))
 
     # Act / Assert
     import pytest

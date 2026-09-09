@@ -515,6 +515,4 @@ def test_the_unspaced_fixtures_parse_identically_after_the_widening():
     assert [(i.file, i.line, i.message) for i in collection] == [
         (_BROKEN_MODULE, 7, 'AssertionError: deliberate module-import assertion')
     ]
-    assert [(i.file, i.line, i.message) for i in setup] == [
-        ('test/test_widget.py', 4, 'RuntimeError: fixture blew up')
-    ]
+    assert [(i.file, i.line, i.message) for i in setup] == [('test/test_widget.py', 4, 'RuntimeError: fixture blew up')]

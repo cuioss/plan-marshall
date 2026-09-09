@@ -12,7 +12,6 @@ Its sections, in order:
 * holder_staleness — main-anchored three-valued verdict
 """
 
-
 from __future__ import annotations
 
 import pytest
@@ -205,9 +204,7 @@ def test_holder_has_live_worktree_true_when_git_worktree_marker_present(plan_con
     base = plan_context.fixture_dir
     worktree = base / 'worktrees' / 'lc-git-marker'
     worktree.mkdir(parents=True, exist_ok=True)
-    (worktree / '.git').write_text(
-        'gitdir: /main/.git/worktrees/lc-git-marker\n', encoding='utf-8'
-    )
+    (worktree / '.git').write_text('gitdir: /main/.git/worktrees/lc-git-marker\n', encoding='utf-8')
 
     assert holder_has_live_worktree('lc-git-marker') is True
 
@@ -228,9 +225,7 @@ def test_holder_has_live_worktree_true_when_live_plan_dir_present(plan_context):
     # executing or mid-finalize — is the second live-worktree marker → True, even
     # with no `.git` marker staged.
     base = plan_context.fixture_dir
-    live_plan = (
-        base / 'worktrees' / 'lc-live-plan' / '.plan' / 'local' / 'plans' / 'lc-live-plan'
-    )
+    live_plan = base / 'worktrees' / 'lc-live-plan' / '.plan' / 'local' / 'plans' / 'lc-live-plan'
     live_plan.mkdir(parents=True, exist_ok=True)
 
     assert holder_has_live_worktree('lc-live-plan') is True
@@ -324,9 +319,7 @@ def test_holder_staleness_fresh_when_mid_recovery_live_worktree(plan_context):
     base = plan_context.fixture_dir
     worktree = base / 'worktrees' / 'lc-midrec'
     worktree.mkdir(parents=True, exist_ok=True)
-    (worktree / '.git').write_text(
-        'gitdir: /main/.git/worktrees/lc-midrec\n', encoding='utf-8'
-    )
+    (worktree / '.git').write_text('gitdir: /main/.git/worktrees/lc-midrec\n', encoding='utf-8')
 
     # Precondition: dead by plan-dir absence, yet a live worktree marker exists.
     assert holder_is_dead('lc-midrec') is True

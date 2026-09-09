@@ -69,7 +69,7 @@ def _validate_score(name: str, value: Any) -> float:
     try:
         score = float(value)
     except (TypeError, ValueError) as e:
-        raise ValueError(f"Dimension {name!r} score is not numeric: {value!r}") from e
+        raise ValueError(f'Dimension {name!r} score is not numeric: {value!r}') from e
     if score < 0:
         return 0.0
     if score > 100:

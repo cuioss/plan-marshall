@@ -249,9 +249,7 @@ _ACCEPTABLE_WARNINGS_IDS = [
 ]
 
 
-@pytest.mark.parametrize(
-    'config_text,expected', _ACCEPTABLE_WARNINGS_CASES, ids=_ACCEPTABLE_WARNINGS_IDS
-)
+@pytest.mark.parametrize('config_text,expected', _ACCEPTABLE_WARNINGS_CASES, ids=_ACCEPTABLE_WARNINGS_IDS)
 def test_load_acceptable_warnings(monkeypatch, tmp_path: Path, config_text, expected):
     _use_plan_base_dir(monkeypatch, str(tmp_path))
     if config_text is not None:
@@ -302,9 +300,7 @@ _WARNING_ACCEPTANCE_IDS = [
 ]
 
 
-@pytest.mark.parametrize(
-    'message,patterns,expected', _WARNING_ACCEPTANCE_CASES, ids=_WARNING_ACCEPTANCE_IDS
-)
+@pytest.mark.parametrize('message,patterns,expected', _WARNING_ACCEPTANCE_CASES, ids=_WARNING_ACCEPTANCE_IDS)
 def test_is_warning_accepted(message: str, patterns: list[str], expected: bool):
     warning = Issue(None, None, message, SEVERITY_WARNING)
 
@@ -400,14 +396,9 @@ _PARTITION_CASES = [
 _PARTITION_IDS = ['no-issues', 'errors-only', 'warnings-only', 'mixed']
 
 
-@pytest.mark.parametrize(
-    'severities,expected_errors,expected_warnings', _PARTITION_CASES, ids=_PARTITION_IDS
-)
+@pytest.mark.parametrize('severities,expected_errors,expected_warnings', _PARTITION_CASES, ids=_PARTITION_IDS)
 def test_partition_issues(severities: list[str], expected_errors: int, expected_warnings: int):
-    issues = [
-        Issue(None, None, f'issue {index}', severity)
-        for index, severity in enumerate(severities)
-    ]
+    issues = [Issue(None, None, f'issue {index}', severity) for index, severity in enumerate(severities)]
 
     errors, warnings = partition_issues(issues)
 

@@ -40,9 +40,7 @@ class TestResolveRepoRoot:
     ``repo_root = Path.cwd()`` instead of passing against a mock.
     """
 
-    def test_cwd_is_the_marker_bearing_root_returns_cwd(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ):
+    def test_cwd_is_the_marker_bearing_root_returns_cwd(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         # branch (a): cwd IS the root
         (tmp_path / '.plan' / 'local').mkdir(parents=True)
         monkeypatch.chdir(tmp_path)
@@ -52,9 +50,7 @@ class TestResolveRepoRoot:
         assert resolved == Path.cwd()
         assert (resolved / '.plan' / 'local').is_dir()
 
-    def test_nested_cwd_walks_up_to_the_marker_bearing_ancestor(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ):
+    def test_nested_cwd_walks_up_to_the_marker_bearing_ancestor(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         # branch (b): cwd is BELOW the root — the branch a Path.cwd() derivation fails
         (tmp_path / '.plan' / 'local').mkdir(parents=True)
         nested = tmp_path / 'marketplace' / 'bundles' / 'plan-marshall'
@@ -66,9 +62,7 @@ class TestResolveRepoRoot:
         assert resolved == tmp_path.resolve()
         assert resolved != Path.cwd()
 
-    def test_no_marker_bearing_ancestor_falls_back_to_cwd(
-        self, monkeypatch: pytest.MonkeyPatch
-    ):
+    def test_no_marker_bearing_ancestor_falls_back_to_cwd(self, monkeypatch: pytest.MonkeyPatch):
         # branch (c): nothing qualifies — stay anchored where we were invoked, which
         # is what keeps an out-of-project invocation inside its own sandbox.
         #
@@ -81,10 +75,9 @@ class TestResolveRepoRoot:
         with tempfile.TemporaryDirectory() as raw:
             bare = Path(raw).resolve() / 'outside-any-project'
             bare.mkdir()
-            assert not any(
-                (ancestor / '.plan' / 'local').is_dir()
-                for ancestor in (bare, *bare.parents)
-            ), 'system temp dir sits inside a .plan/local tree — branch (c) unconstructible'
+            assert not any((ancestor / '.plan' / 'local').is_dir() for ancestor in (bare, *bare.parents)), (
+                'system temp dir sits inside a .plan/local tree — branch (c) unconstructible'
+            )
             monkeypatch.chdir(bare)
 
             resolved = audit._resolve_repo_root()
@@ -136,9 +129,7 @@ class TestResolveMainRoot:
         (worktree / '.plan' / 'local').mkdir(parents=True)
         return main.resolve(), worktree.resolve()
 
-    def test_from_a_linked_worktree_resolves_the_main_checkout(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ):
+    def test_from_a_linked_worktree_resolves_the_main_checkout(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         # THE criterion: from a cwd inside a linked worktree, the resolved corpus
         # root is main's — not the worktree's partial `.plan/local`.
         main, worktree = self._repo_with_worktree(tmp_path)
@@ -146,9 +137,7 @@ class TestResolveMainRoot:
 
         assert audit._resolve_main_root() == main
 
-    def test_the_two_resolvers_disagree_inside_a_linked_worktree(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ):
+    def test_the_two_resolvers_disagree_inside_a_linked_worktree(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         """The partition, asserted as a partition.
 
         This is the discriminating assertion: inside a linked worktree the
@@ -164,9 +153,7 @@ class TestResolveMainRoot:
         assert audit._resolve_main_root() == main
         assert audit._resolve_repo_root() != audit._resolve_main_root()
 
-    def test_from_the_main_checkout_both_resolvers_agree(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ):
+    def test_from_the_main_checkout_both_resolvers_agree(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         # The positive control: the partition must not invent a difference where
         # there is none. Asked from main, both answer main.
         main, _worktree = self._repo_with_worktree(tmp_path)
@@ -175,9 +162,7 @@ class TestResolveMainRoot:
         assert audit._resolve_main_root() == main
         assert audit._resolve_repo_root() == main
 
-    def test_outside_any_repository_falls_back_to_the_cwd_walk_up(
-        self, monkeypatch: pytest.MonkeyPatch
-    ):
+    def test_outside_any_repository_falls_back_to_the_cwd_walk_up(self, monkeypatch: pytest.MonkeyPatch):
         """`None` from git means "no repository answered", never "use main anyway".
 
         Deliberately NOT `tmp_path`: pytest's basetemp sits inside this project, so
@@ -195,8 +180,7 @@ class TestResolveMainRoot:
                 check=False,
             )
             assert probe.returncode != 0, (
-                'system temp dir is inside a git repository — the no-repo branch '
-                'is unconstructible here'
+                'system temp dir is inside a git repository — the no-repo branch is unconstructible here'
             )
             monkeypatch.chdir(bare)
 
@@ -241,9 +225,7 @@ class TestRunChecksTwoRootBinding:
         main_root.mkdir()
         return repo_root, main_root
 
-    def test_an_explicit_main_root_is_not_overwritten_by_the_repo_root(
-        self, tmp_path: Path
-    ):
+    def test_an_explicit_main_root_is_not_overwritten_by_the_repo_root(self, tmp_path: Path):
         """A supplied ``main_root`` must SURVIVE — the default fires only on ``None``.
 
         This is the branch every other caller in the suite leaves untouched, and it
@@ -270,9 +252,7 @@ class TestRunChecksTwoRootBinding:
             'only reachable by reading the log staged under it'
         )
 
-    def test_the_same_corpus_is_invisible_when_main_root_is_omitted(
-        self, tmp_path: Path
-    ):
+    def test_the_same_corpus_is_invisible_when_main_root_is_omitted(self, tmp_path: Path):
         """The matched negative control for the guard above.
 
         Byte-identical fixture — the same single log under the same ``main_root``

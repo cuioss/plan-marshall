@@ -21,13 +21,16 @@ from _manage_status_fixtures import SCRIPT_PATH
 from conftest import run_script
 
 
-@pytest.mark.parametrize('args', [
-    ('merge-lock',),
-    ('merge-lock', '--plan-id', 'plan-a'),
-    ('merge-lock', 'acquire', '--plan-id', 'plan-a'),
-    ('merge-lock', 'release', '--plan-id', 'plan-a'),
-    ('merge-lock', 'check', '--plan-id', 'plan-a'),
-])
+@pytest.mark.parametrize(
+    'args',
+    [
+        ('merge-lock',),
+        ('merge-lock', '--plan-id', 'plan-a'),
+        ('merge-lock', 'acquire', '--plan-id', 'plan-a'),
+        ('merge-lock', 'release', '--plan-id', 'plan-a'),
+        ('merge-lock', 'check', '--plan-id', 'plan-a'),
+    ],
+)
 def test_merge_lock_subcommand_rejected(args):
     """``manage-status merge-lock ...`` is no longer a valid subcommand.
 

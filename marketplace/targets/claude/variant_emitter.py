@@ -68,6 +68,7 @@ LEVEL_TABLE: dict[str, dict[str, str | None]] = {
 # tier) are universally available and never gated.
 ALIAS_GATED_EFFORTS: frozenset[str] = frozenset({'xhigh', 'max'})
 
+
 @dataclass(frozen=True)
 class Frontmatter:
     """Parsed YAML frontmatter for an agent file.
@@ -241,10 +242,7 @@ def strip_role_fields(raw_lines: list[str]) -> list[str]:
     files (variants declare neither field).
     """
     return [
-        line
-        for line in raw_lines
-        if not _starts_with_key(line, 'implements')
-        and not _starts_with_key(line, 'levels')
+        line for line in raw_lines if not _starts_with_key(line, 'implements') and not _starts_with_key(line, 'levels')
     ]
 
 

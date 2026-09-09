@@ -55,9 +55,7 @@ class TestDispatchBoundaryZeroProvenance:
         path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
         return path
 
-    def test_fingerprint_free_all_zero_ledger_omits_the_context_columns(
-        self, tmp_path: Path
-    ):
+    def test_fingerprint_free_all_zero_ledger_omits_the_context_columns(self, tmp_path: Path):
         """The affected case: an undatable `0` is not reported as a measured zero.
 
         Every row's four context-load cells are a literal `0` and nothing dates
@@ -102,9 +100,7 @@ class TestDispatchBoundaryZeroProvenance:
         assert totals['cache_read_input_tokens'] == 0
         assert totals['cache_creation_input_tokens'] == 0
 
-    def test_unmeasured_token_fingerprint_keeps_sibling_measured_zeros(
-        self, tmp_path: Path
-    ):
+    def test_unmeasured_token_fingerprint_keeps_sibling_measured_zeros(self, tmp_path: Path):
         """Negative control: the token dates the row without measuring anything.
 
         Only the current writer emits `unmeasured`, so a row carrying it was
@@ -125,9 +121,7 @@ class TestDispatchBoundaryZeroProvenance:
         assert totals['cache_creation_input_tokens'] == 0
 
     @pytest.mark.parametrize('dated_first', [False, True], ids=['undated-first', 'dated-first'])
-    def test_a_fingerprinted_row_does_not_date_its_neighbour(
-        self, tmp_path: Path, dated_first: bool
-    ):
+    def test_a_fingerprinted_row_does_not_date_its_neighbour(self, tmp_path: Path, dated_first: bool):
         """The gate is per ROW, never per file: one dated row dates only itself.
 
         A file-level fingerprint would let one current-writer row promote every

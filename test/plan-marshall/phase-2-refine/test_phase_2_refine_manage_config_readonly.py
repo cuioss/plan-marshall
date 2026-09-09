@@ -134,9 +134,7 @@ def test_manage_config_set_dirties_marshal_json(tmp_path) -> None:
     marshal_path = _init_synthetic_repo(tmp_path)
 
     # pre-condition: the file must be tracked and clean.
-    assert marshal_path.is_file(), (
-        f'synthetic marshal.json not found at {marshal_path}'
-    )
+    assert marshal_path.is_file(), f'synthetic marshal.json not found at {marshal_path}'
     pre_status = subprocess.run(
         ['git', 'status', '--porcelain', '.plan/marshal.json'],
         capture_output=True,
@@ -153,8 +151,7 @@ def test_manage_config_set_dirties_marshal_json(tmp_path) -> None:
     # invoke the mutating manage-config verb against the synthetic repo.
     result = _run_manage_config_set(tmp_path)
     assert result.returncode == 0, (
-        f'manage-config set exited with code {result.returncode}.\n'
-        f'stdout: {result.stdout}\nstderr: {result.stderr}'
+        f'manage-config set exited with code {result.returncode}.\nstdout: {result.stdout}\nstderr: {result.stderr}'
     )
 
     # the tracked file must now be dirty.
@@ -174,8 +171,7 @@ def test_manage_config_set_dirties_marshal_json(tmp_path) -> None:
         'at the synthetic repo.'
     )
     assert '.plan/marshal.json' in dirty_output, (
-        f'git status --porcelain output did not reference .plan/marshal.json: '
-        f'{dirty_output!r}'
+        f'git status --porcelain output did not reference .plan/marshal.json: {dirty_output!r}'
     )
 
 

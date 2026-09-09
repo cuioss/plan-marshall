@@ -7,7 +7,6 @@ import. Below, verbatim, is the docstring of the module they were split from:
 Tests for ``compile-report.py``.
 """
 
-
 from __future__ import annotations
 
 from argparse import Namespace
@@ -56,9 +55,7 @@ SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospectiv
 # file — which is what the shared loader resolves. The cleanup tests reach
 # ``cmd_run`` and ``Path.unlink`` through the SAME namespace the script uses, so
 # monkeypatching affects the production code.
-_compile_report = load_script_module(
-    'plan-marshall', 'plan-retrospective', 'compile-report.py', 'compile_report'
-)
+_compile_report = load_script_module('plan-marshall', 'plan-retrospective', 'compile-report.py', 'compile_report')
 
 
 cmd_run = _compile_report.cmd_run

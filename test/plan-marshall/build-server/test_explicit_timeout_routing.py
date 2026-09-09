@@ -172,9 +172,7 @@ def _routing_cmd_run(monkeypatch, client):
 def _submit_args(project_path: str, **overrides) -> Namespace:
     """The client ``submit`` Namespace, shaped as ``_route_to_daemon`` builds it."""
     base = {
-        'command': json.dumps(
-            ['python3', f'{project_path}/.plan/execute-script.py', 'a:b:c', 'run']
-        ),
+        'command': json.dumps(['python3', f'{project_path}/.plan/execute-script.py', 'a:b:c', 'run']),
         'exec_path': project_path,
         'project_path': project_path,
         'plan_id': 'p1',
@@ -293,15 +291,11 @@ def _wrapper_run_parser() -> argparse.ArgumentParser:
     """A wrapper CLI carrying the shared ``run`` subparser every build skill uses."""
     parser = argparse.ArgumentParser(prog='wrapper', allow_abbrev=False)
     sub = parser.add_subparsers(dest='command', required=True)
-    build_cli.add_run_subparser(
-        sub, command_args_help='build command args', default_timeout=1800
-    )
+    build_cli.add_run_subparser(sub, command_args_help='build command args', default_timeout=1800)
     return parser
 
 
-@pytest.mark.parametrize(
-    'bad', ['0', '-1', 'abc'], ids=['zero', 'negative', 'not_a_number']
-)
+@pytest.mark.parametrize('bad', ['0', '-1', 'abc'], ids=['zero', 'negative', 'not_a_number'])
 def test_both_timeout_parsers_reject_the_same_values(bad, capsys):
     """The client's ``submit`` and the wrapper's ``run`` agree on what --timeout admits.
 
@@ -329,12 +323,8 @@ def test_both_timeout_parsers_accept_a_positive_bound():
 
     Without it the test above is satisfied by a parser that rejects everything.
     """
-    client = _client_submit_parser().parse_args(
-        ['submit', '--command', '["x"]', '--timeout', str(REQUESTED_TIMEOUT)]
-    )
-    wrapper = _wrapper_run_parser().parse_args(
-        ['run', '--command-args', 'x', '--timeout', str(REQUESTED_TIMEOUT)]
-    )
+    client = _client_submit_parser().parse_args(['submit', '--command', '["x"]', '--timeout', str(REQUESTED_TIMEOUT)])
+    wrapper = _wrapper_run_parser().parse_args(['run', '--command-args', 'x', '--timeout', str(REQUESTED_TIMEOUT)])
 
     assert client.timeout == REQUESTED_TIMEOUT
     assert wrapper.timeout == REQUESTED_TIMEOUT
@@ -441,9 +431,7 @@ def test_direct_submits_with_different_bounds_do_not_attach(first, second):
     two = scheduler.submit(_direct_spec(second), '/tree')
 
     assert one.attached is False
-    assert two.attached is False, (
-        'the second submit attached to the first and silently inherited its bound'
-    )
+    assert two.attached is False, 'the second submit attached to the first and silently inherited its bound'
     assert one.job_id != two.job_id
 
 
@@ -483,9 +471,7 @@ def test_an_unbounded_submit_does_not_attach_to_a_bounded_one():
 # =============================================================================
 
 
-def test_the_requested_bound_survives_from_cmd_run_to_the_supervisor(
-    home, tmp_path, monkeypatch, wire_frames
-):
+def test_the_requested_bound_survives_from_cmd_run_to_the_supervisor(home, tmp_path, monkeypatch, wire_frames):
     """END TO END: the value ``cmd_run`` was handed is the one that bounds the child.
 
     Every test above is one link; this asserts the chain. Only the socket and the
@@ -501,9 +487,7 @@ def test_the_requested_bound_survives_from_cmd_run_to_the_supervisor(
     assert cmd_run(_run_args(project_dir=str(project), timeout=REQUESTED_TIMEOUT)) == 0
 
     # The frame the daemon would have received, handed to the real daemon.
-    received = _bound_run_job_received(
-        tmp_path, JobSpec.from_dict(wire_frames[0]['job']), monkeypatch
-    )
+    received = _bound_run_job_received(tmp_path, JobSpec.from_dict(wire_frames[0]['job']), monkeypatch)
 
     assert received == REQUESTED_TIMEOUT + marshalld._JOB_TIMEOUT_MARGIN_SECONDS, (
         f'the caller asked for {REQUESTED_TIMEOUT}s and the supervisor was bounded by '

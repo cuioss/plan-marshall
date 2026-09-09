@@ -99,9 +99,9 @@ _UNKNOWN_KIND = 'unknown'
 # `reviewed_reviewers`. Absent that signal on a non-empty roster the grade fails
 # CLOSED to `indeterminate`: the instrument must not mark a comparison complete it
 # could not substantiate.
-COMPARISON_MEASURED = 'measured'          # findings exist — the comparison was performed
-COMPARISON_CLEAN = 'clean'                # 0 findings, but an ENABLED reviewer reviewed and found nothing
-COMPARISON_VACUOUS = 'vacuous'            # 0 findings and NO reviewer roster configured — nothing to compare
+COMPARISON_MEASURED = 'measured'  # findings exist — the comparison was performed
+COMPARISON_CLEAN = 'clean'  # 0 findings, but an ENABLED reviewer reviewed and found nothing
+COMPARISON_VACUOUS = 'vacuous'  # 0 findings and NO reviewer roster configured — nothing to compare
 COMPARISON_INDETERMINATE = 'indeterminate'  # 0 findings, roster configured, but no enabled reviewer produced content
 
 
@@ -321,36 +321,33 @@ def aggregate(
         raw_total = bucket['raw_total']
         resolved_actionable = bucket['resolved_actionable_count']
         # `None` — never 0.0 — when nothing resolved-and-actionable was measured.
-        pct = (
-            round(100.0 * bucket['actionable_fixed_count'] / resolved_actionable, 1)
-            if resolved_actionable
-            else None
-        )
+        pct = round(100.0 * bucket['actionable_fixed_count'] / resolved_actionable, 1) if resolved_actionable else None
         # A row with at least one attributed record is `measured`; an enabled
         # reviewer the store is silent on is `unmeasurable` — named, never scored.
         participation = 'measured' if raw_total > 0 else 'unmeasurable'
-        reviewers.append({
-            'author': author,
-            'participation': participation,
-            'raw_total': raw_total,
-            'actionable_count': bucket['actionable_count'],
-            'meta_count': bucket['meta_count'],
-            'fixed': bucket['fixed'],
-            'accepted': bucket['accepted'],
-            'taken_into_account': bucket['taken_into_account'],
-            'rejected': bucket['rejected'],
-            'suppressed': bucket['suppressed'],
-            'pending': bucket['pending'],
-            'positives_count': bucket['positives_count'],
-            'false_positives_count': bucket['false_positives_count'],
-            'resolved_actionable_count': resolved_actionable,
-            'actionable_fixed_count': bucket['actionable_fixed_count'],
-            'pct_resolved_as_fixed': pct,
-        })
+        reviewers.append(
+            {
+                'author': author,
+                'participation': participation,
+                'raw_total': raw_total,
+                'actionable_count': bucket['actionable_count'],
+                'meta_count': bucket['meta_count'],
+                'fixed': bucket['fixed'],
+                'accepted': bucket['accepted'],
+                'taken_into_account': bucket['taken_into_account'],
+                'rejected': bucket['rejected'],
+                'suppressed': bucket['suppressed'],
+                'pending': bucket['pending'],
+                'positives_count': bucket['positives_count'],
+                'false_positives_count': bucket['false_positives_count'],
+                'resolved_actionable_count': resolved_actionable,
+                'actionable_fixed_count': bucket['actionable_fixed_count'],
+                'pct_resolved_as_fixed': pct,
+            }
+        )
 
     by_author_kind = [
-        {'author': author, 'kind': kind, 'count': count}
-        for (author, kind), count in sorted(per_author_kind.items())
+        {'author': author, 'kind': kind, 'count': count} for (author, kind), count in sorted(per_author_kind.items())
     ]
 
     # Grade whether the comparison could be performed at all — so a zero-findings
@@ -425,7 +422,7 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
         description=(
             "Deterministic per-reviewer review-quality aggregator over a plan's "
-            "pr-comment findings. Emits TOON. No LLM logic."
+            'pr-comment findings. Emits TOON. No LLM logic.'
         ),
         allow_abbrev=False,
     )

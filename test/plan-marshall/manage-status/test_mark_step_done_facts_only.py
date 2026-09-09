@@ -7,7 +7,6 @@ previously factless record, and that the phase-steps-complete capture is unaffec
 by which keys fired.
 """
 
-
 import pytest
 from _mark_step_done_fixtures import _args, _make_plan, cmd_mark_step_done, read_status
 
@@ -80,9 +79,7 @@ def test_mark_step_adding_facts_to_a_factless_record_reports_changed_true(plan_c
     assert second['previous_facts'] is None
 
     persisted = read_status(plan_id)
-    assert persisted['metadata']['phase_steps']['6-finalize']['push']['facts'] == {
-        'work_performed': 'true'
-    }
+    assert persisted['metadata']['phase_steps']['6-finalize']['push']['facts'] == {'work_performed': 'true'}
 
 
 def test_phase_steps_complete_capture_is_unaffected_by_the_firing_keys(
@@ -96,20 +93,14 @@ def test_phase_steps_complete_capture_is_unaffected_by_the_firing_keys(
     produce the SAME hash — asserted here against the REAL capture, not asserted
     of the design.
     """
-    invariants = load_script_module(
-        'plan-marshall', 'plan-marshall', '_invariants.py', '_mark_step_invariants'
-    )
+    invariants = load_script_module('plan-marshall', 'plan-marshall', '_invariants.py', '_mark_step_invariants')
     # Pin a one-step required set so the capture reaches its hash rather than
     # short-circuiting on an unrelated phase roster.
     monkeypatch.setattr(invariants, '_resolve_required_steps_path', lambda _phase: 'stub')
     monkeypatch.setattr(invariants, '_parse_required_steps', lambda _path: ['step-a'])
     monkeypatch.setattr(invariants, '_read_manifest_steps', lambda _pid, _phase: {'step-a'})
 
-    plain = {
-        'phase_steps': {
-            '6-finalize': {'step-a': {'outcome': 'done', 'display_detail': 'x'}}
-        }
-    }
+    plain = {'phase_steps': {'6-finalize': {'step-a': {'outcome': 'done', 'display_detail': 'x'}}}}
     with_history = {
         'phase_steps': {
             '6-finalize': {

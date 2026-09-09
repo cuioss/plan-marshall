@@ -23,7 +23,8 @@ class TestArchitectureLookupRatio:
         # 2 info (find, which-module) + 4 build (resolve x3 + derive-verification)
         # + 1 discovery (enrich, excluded from the ratio)
         inputs = _write_sbm_plan(
-            tmp_path, 'p-mix',
+            tmp_path,
+            'p-mix',
             sel_lines=[
                 _sbm_call('2026-06-01T10:00:00', _ARCH, 'find'),
                 _sbm_call('2026-06-01T10:00:01', _ARCH, 'which-module'),
@@ -46,7 +47,8 @@ class TestArchitectureLookupRatio:
     def test_ratio_is_none_when_no_build_lookup(self, tmp_path: Path):
         # only information lookups -> ratio undefined (n/a), never build-dominated
         inputs = _write_sbm_plan(
-            tmp_path, 'p-info-only',
+            tmp_path,
+            'p-info-only',
             sel_lines=[
                 _sbm_call('2026-06-01T10:00:00', _ARCH, 'find'),
                 _sbm_call('2026-06-01T10:00:01', _ARCH, 'files'),
@@ -61,14 +63,14 @@ class TestArchitectureLookupRatio:
     def test_build_dominated_flag_fires_on_low_ratio_high_build(self, tmp_path: Path):
         # a build-heavy low-ratio plan vs two balanced higher-ratio plans
         lo = _write_sbm_plan(
-            tmp_path, 'p-build-heavy',
-            sel_lines=[
-                _sbm_call(f'2026-06-01T10:00:{i:02d}', _ARCH, 'resolve')
-                for i in range(20)
-            ] + [_sbm_call('2026-06-01T10:01:00', _ARCH, 'find')],  # 1/20 = 0.05
+            tmp_path,
+            'p-build-heavy',
+            sel_lines=[_sbm_call(f'2026-06-01T10:00:{i:02d}', _ARCH, 'resolve') for i in range(20)]
+            + [_sbm_call('2026-06-01T10:01:00', _ARCH, 'find')],  # 1/20 = 0.05
         )
         hi1 = _write_sbm_plan(
-            tmp_path, 'p-balanced-1',
+            tmp_path,
+            'p-balanced-1',
             sel_lines=[
                 _sbm_call('2026-06-01T10:00:00', _ARCH, 'resolve'),
                 _sbm_call('2026-06-01T10:00:01', _ARCH, 'resolve'),
@@ -77,7 +79,8 @@ class TestArchitectureLookupRatio:
             ],  # 2/2 = 1.0
         )
         hi2 = _write_sbm_plan(
-            tmp_path, 'p-balanced-2',
+            tmp_path,
+            'p-balanced-2',
             sel_lines=[
                 _sbm_call('2026-06-01T10:00:00', _ARCH, 'resolve'),
                 _sbm_call('2026-06-01T10:00:01', _ARCH, 'find'),
@@ -100,7 +103,8 @@ class TestArchitectureLookupRatio:
         # the spread guard suppresses the flag for all
         plans = [
             _write_sbm_plan(
-                tmp_path, f'p-uniform-{i}',
+                tmp_path,
+                f'p-uniform-{i}',
                 sel_lines=[
                     _sbm_call('2026-06-01T10:00:00', _ARCH, 'resolve'),
                     _sbm_call('2026-06-01T10:00:01', _ARCH, 'resolve'),
@@ -118,13 +122,12 @@ class TestArchitectureLookupRatio:
     def test_in_check_registry_and_emits_block(self, tmp_path: Path):
         assert 'architecture-lookup-ratio' in audit.CHECK_NAMES
         inputs = _write_sbm_plan(
-            tmp_path, 'p-x',
+            tmp_path,
+            'p-x',
             sel_lines=[_sbm_call('2026-06-01T10:00:00', _ARCH, 'resolve')],
         )
 
-        block = audit.emit_architecture_lookup_ratio_block(
-            audit.cross_architecture_lookup_ratio([inputs])
-        )
+        block = audit.emit_architecture_lookup_ratio_block(audit.cross_architecture_lookup_ratio([inputs]))
 
         assert 'check: architecture-lookup-ratio' in block
         assert 'corpus_info_lookups: 0' in block
@@ -135,7 +138,8 @@ class TestArchitectureLookupRatio:
         # discovery (setup-time) calls are broken out per verb: discover / enrich /
         # crawl / other. `derived` is not info/build/discover/enrich/crawl -> other.
         inputs = _write_sbm_plan(
-            tmp_path, 'p-disc',
+            tmp_path,
+            'p-disc',
             sel_lines=[
                 _sbm_call('2026-06-01T10:00:00', _ARCH, 'discover'),
                 _sbm_call('2026-06-01T10:00:01', _ARCH, 'enrich'),
@@ -154,9 +158,7 @@ class TestArchitectureLookupRatio:
         assert row['build_lookups'] == 0
 
         result = audit.cross_architecture_lookup_ratio([inputs])
-        assert result['corpus_discovery'] == {
-            'discover': 1, 'enrich': 2, 'crawl': 2, 'other': 1
-        }
+        assert result['corpus_discovery'] == {'discover': 1, 'enrich': 2, 'crawl': 2, 'other': 1}
 
         block = audit.emit_architecture_lookup_ratio_block(result)
         assert 'corpus_discovery: discover=1;enrich=2;crawl=2;other=1' in block

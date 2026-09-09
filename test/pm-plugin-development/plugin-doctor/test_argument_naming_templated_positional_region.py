@@ -94,9 +94,7 @@ def _run(marketplace_root: Path) -> tuple[list[dict], int, int]:
     findings: list[dict]
     population: int
     blind_spots: int
-    findings, population, blind_spots = analyze_argument_naming_with_population(
-        marketplace_root
-    )
+    findings, population, blind_spots = analyze_argument_naming_with_population(marketplace_root)
     return findings, population, blind_spots
 
 
@@ -111,14 +109,10 @@ def _flag_findings(findings: list[dict]) -> list[dict]:
 
 def test_templated_verb_slot_yields_no_flag_finding(tmp_path):
     """``{type} create --summary X`` is a usage string; its flags are illustrative."""
-    marketplace_root = _fixture(
-        tmp_path, f'{NOTATION} {{type}} {CONCRETE_VERB} --{UNDECLARED_FLAG} X'
-    )
+    marketplace_root = _fixture(tmp_path, f'{NOTATION} {{type}} {CONCRETE_VERB} --{UNDECLARED_FLAG} X')
 
     findings, _population, _blind = _run(marketplace_root)
-    assert _flag_findings(findings) == [], (
-        f'a usage string was judged as a call: {findings!r}'
-    )
+    assert _flag_findings(findings) == [], f'a usage string was judged as a call: {findings!r}'
 
 
 def test_the_same_flag_on_a_concrete_invocation_is_still_reported(tmp_path):
@@ -128,9 +122,7 @@ def test_the_same_flag_on_a_concrete_invocation_is_still_reported(tmp_path):
     that the verb slot holds a real verb instead of a ``{type}`` placeholder, so
     the invocation resolves and the flag is judged.
     """
-    marketplace_root = _fixture(
-        tmp_path, f'{NOTATION} {CONCRETE_VERB} --{UNDECLARED_FLAG} X'
-    )
+    marketplace_root = _fixture(tmp_path, f'{NOTATION} {CONCRETE_VERB} --{UNDECLARED_FLAG} X')
 
     findings, _population, _blind = _run(marketplace_root)
     flag_findings = _flag_findings(findings)
@@ -171,12 +163,8 @@ def test_a_skipped_usage_string_raises_blind_spots(tmp_path):
     concrete call. Asserting the DELTA rather than an absolute keeps the test
     honest if the fixture ever grows a second invocation.
     """
-    templated = _fixture(
-        tmp_path / 'templated', f'{NOTATION} {{type}} {CONCRETE_VERB} --{UNDECLARED_FLAG} X'
-    )
-    concrete = _fixture(
-        tmp_path / 'concrete', f'{NOTATION} {CONCRETE_VERB} --{UNDECLARED_FLAG} X'
-    )
+    templated = _fixture(tmp_path / 'templated', f'{NOTATION} {{type}} {CONCRETE_VERB} --{UNDECLARED_FLAG} X')
+    concrete = _fixture(tmp_path / 'concrete', f'{NOTATION} {CONCRETE_VERB} --{UNDECLARED_FLAG} X')
 
     _t_findings, t_population, t_blind = _run(templated)
     _c_findings, c_population, c_blind = _run(concrete)
@@ -206,9 +194,7 @@ def test_an_unregistered_notation_on_a_usage_string_is_decided_not_blind(tmp_pat
     )
 
     findings, population, blind = _run(marketplace_root)
-    notation_findings = [
-        f for f in findings if f.get('rule_id') == 'ARGUMENT_NAMING_NOTATION_INVALID'
-    ]
+    notation_findings = [f for f in findings if f.get('rule_id') == 'ARGUMENT_NAMING_NOTATION_INVALID']
     assert len(notation_findings) == 1, findings
     assert population == 1, population
     assert blind == 0, (

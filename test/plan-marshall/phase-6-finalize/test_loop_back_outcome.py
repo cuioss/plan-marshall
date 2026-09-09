@@ -56,9 +56,7 @@ read_status = _status_core.read_status
 _PHASE_6_DIR = get_skill_dir('plan-marshall', 'phase-6-finalize')
 _PHASE_6_SKILL_MD = _PHASE_6_DIR / 'SKILL.md'
 _AUTOMATED_REVIEW_MD = get_skill_dir('plan-marshall', 'automatic-review') / 'SKILL.md'
-_PRE_SUBMISSION_SELF_REVIEW_MD = (
-    _PHASE_6_DIR / 'workflow' / 'pre-submission-self-review.md'
-)
+_PRE_SUBMISSION_SELF_REVIEW_MD = _PHASE_6_DIR / 'workflow' / 'pre-submission-self-review.md'
 
 #: The removed hand-maintained literal. Its ABSENCE from SKILL.md is what makes
 #: membership derived rather than listed, so it is asserted absent by name.
@@ -148,9 +146,7 @@ def test_iteration_1_fix_records_loop_back_outcome(plan_context):
     entry = persisted['metadata']['phase_steps']['6-finalize']['automatic-review']
     # On-disk contract: outcome is loop_back, NOT done; loop_back_target is
     # persisted alongside outcome and display_detail.
-    assert entry['outcome'] == 'loop_back', (
-        f"FIX disposition must record outcome=loop_back; got {entry['outcome']!r}"
-    )
+    assert entry['outcome'] == 'loop_back', f'FIX disposition must record outcome=loop_back; got {entry["outcome"]!r}'
     assert entry['outcome'] != 'done'
     assert entry['display_detail'] == 'loop-back iteration 1 (target=5-execute)'
     assert entry['loop_back_target'] == '5-execute', (
@@ -202,15 +198,10 @@ def test_dispatcher_re_fires_on_loop_back(plan_context):
     # re-fire action. We assert against the exact wording used in the file so
     # accidental rewordings that break the contract are caught.
     skill_text = _PHASE_6_SKILL_MD.read_text(encoding='utf-8')
-    assert '`loop_back`' in skill_text, (
-        'Resumability table must list `loop_back` outcome — re-fire row missing.'
-    )
+    assert '`loop_back`' in skill_text, 'Resumability table must list `loop_back` outcome — re-fire row missing.'
     # The documented action wording from SKILL.md.
-    assert (
-        'Re-fire (treat as no record — dispatch as fresh run)' in skill_text
-    ), (
-        'Resumability table action text for loop_back must read '
-        '"Re-fire (treat as no record — dispatch as fresh run)".'
+    assert 'Re-fire (treat as no record — dispatch as fresh run)' in skill_text, (
+        'Resumability table action text for loop_back must read "Re-fire (treat as no record — dispatch as fresh run)".'
     )
 
 
@@ -266,10 +257,7 @@ def test_fix_path_posts_thread_reply_before_terminal_done():
     cursor = 0
     for token in expected_chain:
         idx = fix_block.find(token, cursor)
-        assert idx != -1, (
-            f'FIX action block missing required token {token!r}; '
-            f'expected ordered chain: {expected_chain}'
-        )
+        assert idx != -1, f'FIX action block missing required token {token!r}; expected ordered chain: {expected_chain}'
         cursor = idx + len(token)
 
     # The calling site's Branch C is in automatic-review.md. It must use
@@ -279,12 +267,10 @@ def test_fix_path_posts_thread_reply_before_terminal_done():
     branch_c_start = auto_body.find(branch_c_marker)
     assert branch_c_start != -1, 'Branch C section not found in automatic-review.md'
     branch_c_block = auto_body[branch_c_start:]
-    assert '--outcome loop_back' in branch_c_block, (
-        'Branch C must record `--outcome loop_back` (not `done`).'
-    )
+    assert '--outcome loop_back' in branch_c_block, 'Branch C must record `--outcome loop_back` (not `done`).'
     next_mark = branch_c_block.find('mark-step-done')
     assert next_mark != -1, 'Branch C does not invoke mark-step-done'
-    window = branch_c_block[next_mark:next_mark + 400]
+    window = branch_c_block[next_mark : next_mark + 400]
     assert '--outcome done' not in window, (
         'Branch C mark-step-done must not use --outcome done — that is the '
         'terminal Branch A outcome and would cause the dispatcher to skip the '
@@ -337,9 +323,7 @@ def test_pre_push_quality_gate_head_compare_unchanged():
         '"Skip dispatch entirely (steady-state — gate already validated this exact tree).".'
     )
     # Mismatched HEAD row: done + differs → re-fire.
-    assert 'differs from live HEAD' in skill_text, (
-        'Resumability table missing the "differs from live HEAD" row.'
-    )
+    assert 'differs from live HEAD' in skill_text, 'Resumability table missing the "differs from live HEAD" row.'
     assert 'Consult the verdict-currency classifier' in skill_text, (
         'Mismatched-HEAD row must DEFER to the verdict-currency classifier rather than '
         'prescribing an action of its own — Step 3 owns that decision, and a second '

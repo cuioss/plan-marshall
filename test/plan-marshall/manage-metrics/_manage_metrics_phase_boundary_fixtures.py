@@ -15,7 +15,6 @@ Covers:
   - boundary works even when the previous phase had no start_time
 """
 
-
 import json
 
 import pytest
@@ -84,7 +83,7 @@ def _register_unseeded(plan_id: str) -> str:
 def _phase_block(content: str, phase: str) -> str:
     """Return the metrics.toon text block for a single [phase] section."""
     start = content.index(f'[{phase}]')
-    rest = content[start + len(f'[{phase}]'):]
+    rest = content[start + len(f'[{phase}]') :]
     nxt = rest.find('\n[')
     return rest if nxt == -1 else rest[:nxt]
 

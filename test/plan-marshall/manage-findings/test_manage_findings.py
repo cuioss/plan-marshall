@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for manage-findings.py script."""
 
-
 from _manage_findings_fixtures import (
     _add_ns,
     _parse_raw_input,

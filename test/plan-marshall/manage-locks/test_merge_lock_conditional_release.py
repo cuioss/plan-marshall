@@ -41,9 +41,7 @@ from _manage_locks_fixtures import _make_live_plan, _write_lock
 
 from conftest import load_script_module
 
-merge_lock = load_script_module(
-    'plan-marshall', 'manage-locks', 'merge_lock.py', 'merge_lock_conditional_under_test'
-)
+merge_lock = load_script_module('plan-marshall', 'manage-locks', 'merge_lock.py', 'merge_lock_conditional_under_test')
 
 # The shared core owns holder_staleness / _main_plan_local_base; recover the SAME
 # _locks_core instance merge_lock imported (not a fresh load_script_module copy)

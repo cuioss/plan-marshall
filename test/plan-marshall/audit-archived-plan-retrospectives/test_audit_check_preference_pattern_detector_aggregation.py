@@ -44,7 +44,8 @@ class TestCrossPreferencePattern:
         # the tuple appears in only 2 plans — below the N>=3 threshold.
         all_inputs = [
             _write_preference_plan(
-                tmp_path, p,
+                tmp_path,
+                p,
                 [{'title': 'Magic number', 'resolution': 'accepted', 'module': 'python'}],
             )
             for p in ('plan-a', 'plan-b')
@@ -59,7 +60,8 @@ class TestCrossPreferencePattern:
         # ``fixed`` and ``pending`` are NOT user-gate dispositions — excluded.
         all_inputs = [
             _write_preference_plan(
-                tmp_path, f'plan-{i}',
+                tmp_path,
+                f'plan-{i}',
                 [{'title': 'Some finding', 'resolution': 'fixed', 'module': 'python'}],
             )
             for i in range(3)
@@ -73,7 +75,8 @@ class TestCrossPreferencePattern:
         # a promoted (lesson) finding is never a preference even with a disposition.
         all_inputs = [
             _write_preference_plan(
-                tmp_path, f'plan-{i}',
+                tmp_path,
+                f'plan-{i}',
                 [{'title': 'X', 'resolution': 'suppressed', 'module': 'python', 'promoted': True}],
             )
             for i in range(3)
@@ -90,14 +93,16 @@ class TestCrossPreferencePattern:
         for i in range(2):
             all_inputs.append(
                 _write_preference_plan(
-                    tmp_path, f'sup-{i}',
+                    tmp_path,
+                    f'sup-{i}',
                     [{'title': 'Dup code', 'resolution': 'suppressed', 'module': 'python'}],
                 )
             )
         for i in range(2):
             all_inputs.append(
                 _write_preference_plan(
-                    tmp_path, f'acc-{i}',
+                    tmp_path,
+                    f'acc-{i}',
                     [{'title': 'Dup code', 'resolution': 'accepted', 'module': 'python'}],
                 )
             )
@@ -111,15 +116,18 @@ class TestCrossPreferencePattern:
         # no ``module``: falls back to ``component``, then ``default``.
         all_inputs = [
             _write_preference_plan(
-                tmp_path, 'comp-0',
+                tmp_path,
+                'comp-0',
                 [{'title': 'C', 'resolution': 'accepted', 'component': 'cli'}],
             ),
             _write_preference_plan(
-                tmp_path, 'comp-1',
+                tmp_path,
+                'comp-1',
                 [{'title': 'C', 'resolution': 'accepted', 'component': 'cli'}],
             ),
             _write_preference_plan(
-                tmp_path, 'comp-2',
+                tmp_path,
+                'comp-2',
                 [{'title': 'C', 'resolution': 'accepted', 'component': 'cli'}],
             ),
         ]
@@ -135,7 +143,8 @@ class TestCrossPreferencePattern:
         # promotable. The tuple is counted for visibility, never surfaced.
         all_inputs = [
             _write_preference_plan(
-                tmp_path, f'd-{i}',
+                tmp_path,
+                f'd-{i}',
                 [{'title': 'Cross', 'resolution': 'taken_into_account'}],
             )
             for i in range(3)
@@ -151,18 +160,21 @@ class TestCrossPreferencePattern:
         # one plan repeats the tuple; two others carry it once → 3 distinct plans.
         all_inputs = [
             _write_preference_plan(
-                tmp_path, 'dup',
+                tmp_path,
+                'dup',
                 [
                     {'title': 'Naming: a', 'resolution': 'suppressed', 'module': 'python'},
                     {'title': 'Naming: b', 'resolution': 'suppressed', 'module': 'python'},
                 ],
             ),
             _write_preference_plan(
-                tmp_path, 'p2',
+                tmp_path,
+                'p2',
                 [{'title': 'Naming: c', 'resolution': 'suppressed', 'module': 'python'}],
             ),
             _write_preference_plan(
-                tmp_path, 'p3',
+                tmp_path,
+                'p3',
                 [{'title': 'Naming: d', 'resolution': 'suppressed', 'module': 'python'}],
             ),
         ]
@@ -178,14 +190,16 @@ class TestCrossPreferencePattern:
         for i in range(4):
             all_inputs.append(
                 _write_preference_plan(
-                    tmp_path, f'a-{i}',
+                    tmp_path,
+                    f'a-{i}',
                     [{'title': 'Alpha', 'resolution': 'suppressed', 'module': 'python'}],
                 )
             )
         for i in range(3):
             all_inputs.append(
                 _write_preference_plan(
-                    tmp_path, f'b-{i}',
+                    tmp_path,
+                    f'b-{i}',
                     [{'title': 'Beta', 'resolution': 'accepted', 'module': 'python'}],
                 )
             )

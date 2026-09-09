@@ -60,7 +60,8 @@ class TestSequenceBuildMinimalityPhaseBucketing:
     def test_calls_before_first_dispatch_bucket_to_one_init(self, tmp_path: Path):
         # a single call before any dispatch marker
         inputs = _write_sbm_plan(
-            tmp_path, 'phase-default',
+            tmp_path,
+            'phase-default',
             sel_lines=[_sbm_call('2026-06-01T10:00:00', _BUILD, 'run', 30.0)],
             work_lines=[_sbm_dispatch('2026-06-01T11:00:00', 'phase-5-execute')],
         )
@@ -74,7 +75,8 @@ class TestSequenceBuildMinimalityPhaseBucketing:
     def test_call_after_dispatch_buckets_to_normalized_role(self, tmp_path: Path):
         # a call after a phase-5-execute dispatch marker + a ledger build in-phase
         inputs = _write_sbm_plan(
-            tmp_path, 'phase-exec',
+            tmp_path,
+            'phase-exec',
             sel_lines=[_sbm_call('2026-06-01T12:00:00', _BUILD, 'run', 30.0)],
             work_lines=[_sbm_dispatch('2026-06-01T11:00:00', 'phase-5-execute')],
             ledger_builds=[{'dur': 30.0, 'ts': '2026-06-01T12:00:00Z'}],
@@ -88,7 +90,8 @@ class TestSequenceBuildMinimalityPhaseBucketing:
     def test_arch_call_annotates_phase_with_arch_count(self, tmp_path: Path):
         # an architecture call after a dispatch contributes the ``a=`` tag
         inputs = _write_sbm_plan(
-            tmp_path, 'phase-arch',
+            tmp_path,
+            'phase-arch',
             sel_lines=[_sbm_call('2026-06-01T12:00:00', _ARCH, 'resolve', 0.5)],
             work_lines=[_sbm_dispatch('2026-06-01T11:00:00', 'phase-4-plan')],
         )
@@ -107,7 +110,8 @@ class TestSequenceBuildMinimalityBuildClass:
     def test_three_bands_counted_independently(self, tmp_path: Path):
         # one minimal (<120), one scoped (120..400), one heavy (>400) ledger build
         inputs = _write_sbm_plan(
-            tmp_path, 'three-bands',
+            tmp_path,
+            'three-bands',
             ledger_builds=[
                 {'dur': 30.0, 'ts': '2026-06-01T10:00:00Z'},
                 {'dur': 250.0, 'ts': '2026-06-01T11:00:00Z'},
@@ -128,7 +132,8 @@ class TestSequenceBuildMinimalityBuildClass:
     def test_non_build_calls_are_not_classified_as_builds(self, tmp_path: Path):
         # an architecture call and a manage-* call, neither a build
         inputs = _write_sbm_plan(
-            tmp_path, 'no-builds',
+            tmp_path,
+            'no-builds',
             sel_lines=[
                 _sbm_call('2026-06-01T10:00:00', _ARCH, 'resolve', 0.5),
                 _sbm_call('2026-06-01T10:01:00', 'pm:manage-tasks:manage-tasks', 'read'),
@@ -150,7 +155,8 @@ class TestSequenceBuildMinimalityVerbMining:
     def test_scoped_vs_all_module_tests(self, tmp_path: Path):
         # one scoped (known module) and one all-modules (no arg) run
         inputs = _write_sbm_plan(
-            tmp_path, 'verb-mt',
+            tmp_path,
+            'verb-mt',
             work_lines=[
                 'ran module-tests plan-marshall and it passed',
                 'then ran module-tests across the whole tree',
@@ -166,7 +172,8 @@ class TestSequenceBuildMinimalityVerbMining:
     def test_unknown_module_arg_counts_as_all(self, tmp_path: Path):
         # a module-tests arg that is NOT a known buildable module
         inputs = _write_sbm_plan(
-            tmp_path, 'verb-unknown',
+            tmp_path,
+            'verb-unknown',
             work_lines=['ran module-tests not-a-real-module here'],
         )
 
@@ -179,7 +186,8 @@ class TestSequenceBuildMinimalityVerbMining:
     def test_other_build_verbs_counted(self, tmp_path: Path):
         # one each of quality-gate, verify, coverage, compile
         inputs = _write_sbm_plan(
-            tmp_path, 'verb-others',
+            tmp_path,
+            'verb-others',
             work_lines=[
                 'invoked quality-gate plan-marshall',
                 'invoked verify plan-marshall',

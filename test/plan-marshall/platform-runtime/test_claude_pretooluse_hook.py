@@ -37,9 +37,7 @@ import pytest
 
 from conftest import get_script_path, load_script_module, run_script
 
-SCRIPT_PATH = get_script_path(
-    "plan-marshall", "platform-runtime", "claude_pretooluse_hook.py"
-)
+SCRIPT_PATH = get_script_path('plan-marshall', 'platform-runtime', 'claude_pretooluse_hook.py')
 
 hook = load_script_module('plan-marshall', 'platform-runtime', 'claude_pretooluse_hook.py')
 
@@ -50,20 +48,20 @@ hook = load_script_module('plan-marshall', 'platform-runtime', 'claude_pretoolus
 
 #: A realistic bundle-qualified sub-agent identity that carries the
 #: execution-context marker (Signal 1), as confirmed against real payloads.
-_SUB_AGENT_IDENTITY = "plan-marshall:execution-context-level-4"
+_SUB_AGENT_IDENTITY = 'plan-marshall:execution-context-level-4'
 
 
 def _worktree_cwd() -> str:
     """A cwd resolving under the plan-worktree path segment (Signal 2)."""
-    return f"/home/dev/project/{gate.WORKTREE_PATH_SEGMENT}/my-plan"
+    return f'/home/dev/project/{gate.WORKTREE_PATH_SEGMENT}/my-plan'
 
 
 def _signal1_payload(tool_name: str, tool_input: dict) -> dict:
     """Payload satisfying the gate via Signal 1 only (sub-agent identity)."""
     return {
         gate.SUB_AGENT_IDENTITY_FIELD: _SUB_AGENT_IDENTITY,
-        "tool_name": tool_name,
-        "tool_input": tool_input,
+        'tool_name': tool_name,
+        'tool_input': tool_input,
     }
 
 
@@ -71,13 +69,13 @@ def _signal2_payload(tool_name: str, tool_input: dict) -> dict:
     """Payload satisfying the gate via Signal 2 only (worktree cwd)."""
     return {
         gate.CWD_FIELD: _worktree_cwd(),
-        "tool_name": tool_name,
-        "tool_input": tool_input,
+        'tool_name': tool_name,
+        'tool_input': tool_input,
     }
 
 
 def _bash(command: str) -> dict:
-    return {"command": command}
+    return {'command': command}
 
 
 def _run(payload_json: str):
@@ -87,7 +85,7 @@ def _run(payload_json: str):
 
 def _decision(stdout: str) -> dict:
     """Parse the deny envelope's hookSpecificOutput from leaf stdout."""
-    output: dict = json.loads(stdout)["hookSpecificOutput"]
+    output: dict = json.loads(stdout)['hookSpecificOutput']
     return output
 
 
@@ -97,16 +95,16 @@ def _decision(stdout: str) -> dict:
 
 
 def test_emits_nothing_when_neither_signal_fires() -> None:
-    payload = {"tool_name": "Bash", "tool_input": _bash("cat foo"), "cwd": "/tmp"}
+    payload = {'tool_name': 'Bash', 'tool_input': _bash('cat foo'), 'cwd': '/tmp'}
     result = _run(json.dumps(payload))
 
     assert result.returncode == 0
-    assert result.stdout == ""
+    assert result.stdout == ''
 
 
 def test_evaluate_none_when_gate_unsatisfied_even_on_violation() -> None:
     # A clear R2 violation but no signal -> fail OPEN, no deny.
-    payload = {"tool_name": "Bash", "tool_input": _bash("grep x file")}
+    payload = {'tool_name': 'Bash', 'tool_input': _bash('grep x file')}
     assert hook.evaluate(payload) is None
 
 
@@ -116,24 +114,24 @@ def test_evaluate_none_when_gate_unsatisfied_even_on_violation() -> None:
 
 
 def test_signal1_only_enforces() -> None:
-    payload = _signal1_payload("Bash", _bash("cat foo"))
+    payload = _signal1_payload('Bash', _bash('cat foo'))
     result = _run(json.dumps(payload))
 
     assert result.returncode == 0
-    assert _decision(result.stdout)["permissionDecision"] == "deny"
+    assert _decision(result.stdout)['permissionDecision'] == 'deny'
 
 
 def test_signal2_only_enforces() -> None:
-    payload = _signal2_payload("Bash", _bash("cat foo"))
+    payload = _signal2_payload('Bash', _bash('cat foo'))
     assert hook.evaluate(payload) == hook._R2_REASON
 
 
 def test_absent_signal1_falls_back_to_signal2() -> None:
     # No sub-agent identity field at all; Signal 2 alone satisfies the gate.
     payload = {
-        "cwd": _worktree_cwd(),
-        "tool_name": "Bash",
-        "tool_input": _bash("ls -la"),
+        'cwd': _worktree_cwd(),
+        'tool_name': 'Bash',
+        'tool_input': _bash('ls -la'),
     }
     assert hook.evaluate(payload) == hook._R2_REASON
 
@@ -150,7 +148,7 @@ def test_r1_denies_a_compound_reached_through_signal_1() -> None:
     pins rule matching as independent of WHICH signal opened the gate — the
     gate is consulted once, and the matcher never sees which arm answered.
     """
-    assert hook.evaluate(_signal1_payload("Bash", _bash("a && b"))) == hook._R1_REASON
+    assert hook.evaluate(_signal1_payload('Bash', _bash('a && b'))) == hook._R1_REASON
 
 
 def test_r1_denies_the_while_spelling_of_the_loop_family() -> None:
@@ -160,16 +158,13 @@ def test_r1_denies_the_while_spelling_of_the_loop_family() -> None:
     the loop family's second keyword has no row to live in. It is asserted here
     instead of being left to the assumption that one keyword implies the other.
     """
-    assert (
-        hook.evaluate(_signal2_payload("Bash", _bash("while true; do echo x; done")))
-        == hook._R1_REASON
-    )
+    assert hook.evaluate(_signal2_payload('Bash', _bash('while true; do echo x; done'))) == hook._R1_REASON
 
 
 def test_r1_not_fired_on_plain_command() -> None:
     # A single command with no shell construct does not trip R1 (and is not a
     # file-op or hard-coded build, so no rule fires).
-    assert hook.evaluate(_signal2_payload("Bash", _bash("python3 script.py"))) is None
+    assert hook.evaluate(_signal2_payload('Bash', _bash('python3 script.py'))) is None
 
 
 # -----------------------------------------------------------------------------
@@ -192,14 +187,14 @@ def test_r1_not_fired_on_plain_command() -> None:
 #: unquoted forms of a family look like — but the POPULATION they must cover is
 #: derived, which is the half that used to drift.
 _R1_QUOTING_CONTROLS = (
-    ("and_chain", "a && b", 'git commit -m "fix && polish"'),
-    ("semicolon", "a; b", 'git commit -m "fix: a; then b"'),
-    ("background", "server &", 'echo "tom & jerry"'),
-    ("newline", "a\nb", 'printf "line one\nline two"'),
-    ("substitution", "echo $(date)", "echo 'cost is $(x)'"),
-    ("backtick", "echo `date`", "echo 'a `literal` word'"),
-    ("loop_keyword", "for f in *; do echo $f; done", 'echo "for each item"'),
-    ("leading_assignment", "FOO=bar python3 x.py", 'echo "FOO=bar python3 x.py"'),
+    ('and_chain', 'a && b', 'git commit -m "fix && polish"'),
+    ('semicolon', 'a; b', 'git commit -m "fix: a; then b"'),
+    ('background', 'server &', 'echo "tom & jerry"'),
+    ('newline', 'a\nb', 'printf "line one\nline two"'),
+    ('substitution', 'echo $(date)', "echo 'cost is $(x)'"),
+    ('backtick', 'echo `date`', "echo 'a `literal` word'"),
+    ('loop_keyword', 'for f in *; do echo $f; done', 'echo "for each item"'),
+    ('leading_assignment', 'FOO=bar python3 x.py', 'echo "FOO=bar python3 x.py"'),
 )
 
 #: Parametrize ids for the two per-family control legs below, read off the table
@@ -225,13 +220,13 @@ def test_r1_quoting_control_population_is_derived_from_the_matcher_registry() ->
     registry = [family for family, _view, _predicate in hook._R1_FAMILIES]
     controls = [family for family, _denied, _allowed in _R1_QUOTING_CONTROLS]
 
-    assert registry, "R1 family registry is empty — the comparison below is vacuous"
-    assert len(registry) == len(set(registry)), f"duplicate family in registry {registry}"
-    assert len(controls) == len(set(controls)), f"duplicate family in controls {controls}"
+    assert registry, 'R1 family registry is empty — the comparison below is vacuous'
+    assert len(registry) == len(set(registry)), f'duplicate family in registry {registry}'
+    assert len(controls) == len(set(controls)), f'duplicate family in controls {controls}'
     assert set(controls) == set(registry), (
-        f"{len(controls)} control rows for {len(registry)} matcher families; "
-        f"uncovered={sorted(set(registry) - set(controls))}, "
-        f"unknown={sorted(set(controls) - set(registry))}"
+        f'{len(controls)} control rows for {len(registry)} matcher families; '
+        f'uncovered={sorted(set(registry) - set(controls))}, '
+        f'unknown={sorted(set(controls) - set(registry))}'
     )
 
 
@@ -248,30 +243,26 @@ def test_r1_every_registry_family_predicate_fires_on_its_own_denied_control() ->
     for family, view_name, predicate in hook._R1_FAMILIES:
         command = denied_by_family[family]
         views = hook._quote_masked_views(command)
-        assert views is not None, f"{family}: {command!r} yielded no masked views"
+        assert views is not None, f'{family}: {command!r} yielded no masked views'
         operator_view, substitution_view = views
-        view = (
-            operator_view
-            if view_name == hook._R1_OPERATOR_VIEW
-            else substitution_view
-        )
-        assert predicate(view), f"{family}: predicate did not fire on {command!r}"
+        view = operator_view if view_name == hook._R1_OPERATOR_VIEW else substitution_view
+        assert predicate(view), f'{family}: predicate did not fire on {command!r}'
 
 
 @pytest.mark.parametrize(
-    ("family", "denied"),
+    ('family', 'denied'),
     [(family, denied) for family, denied, _allowed in _R1_QUOTING_CONTROLS],
     ids=_R1_FAMILY_IDS,
 )
 def test_r1_still_denies_the_unquoted_form_of_each_family(family: str, denied: str) -> None:
     """No bypass was opened: each family's unquoted compound still denies."""
-    payload = _signal2_payload("Bash", _bash(denied))
+    payload = _signal2_payload('Bash', _bash(denied))
 
-    assert hook.evaluate(payload) == hook._R1_REASON, f"{family}: {denied!r}"
+    assert hook.evaluate(payload) == hook._R1_REASON, f'{family}: {denied!r}'
 
 
 @pytest.mark.parametrize(
-    ("family", "allowed"),
+    ('family', 'allowed'),
     [(family, allowed) for family, _denied, allowed in _R1_QUOTING_CONTROLS],
     ids=_R1_FAMILY_IDS,
 )
@@ -281,9 +272,9 @@ def test_r1_allows_the_quoted_form_of_each_family(family: str, allowed: str) -> 
     Fails against the pre-fix matcher, which scanned the raw command string and
     denied every one of these legitimate single commands.
     """
-    payload = _signal2_payload("Bash", _bash(allowed))
+    payload = _signal2_payload('Bash', _bash(allowed))
 
-    assert hook.evaluate(payload) is None, f"{family}: {allowed!r}"
+    assert hook.evaluate(payload) is None, f'{family}: {allowed!r}'
 
 
 #: Substitution markers that are LIVE inside double quotes. This is the
@@ -298,25 +289,23 @@ _R1_LIVE_INSIDE_DOUBLE_QUOTES_IDS = [
 ]
 
 
-@pytest.mark.parametrize(
-    "command", _R1_LIVE_INSIDE_DOUBLE_QUOTES, ids=_R1_LIVE_INSIDE_DOUBLE_QUOTES_IDS
-)
+@pytest.mark.parametrize('command', _R1_LIVE_INSIDE_DOUBLE_QUOTES, ids=_R1_LIVE_INSIDE_DOUBLE_QUOTES_IDS)
 def test_r1_denies_substitution_inside_double_quotes(command: str) -> None:
     """A substitution the shell would still run denies even though it is quoted."""
-    payload = _signal2_payload("Bash", _bash(command))
+    payload = _signal2_payload('Bash', _bash(command))
 
     assert hook.evaluate(payload) == hook._R1_REASON, command
 
 
 def test_r1_malformed_quoting_falls_back_to_detection() -> None:
     """An unterminated quote degrades to the pre-existing scan, never to a bypass."""
-    payload = _signal2_payload("Bash", _bash('echo "unterminated ; still denied'))
+    payload = _signal2_payload('Bash', _bash('echo "unterminated ; still denied'))
     assert hook.evaluate(payload) == hook._R1_REASON
 
 
 def test_r1_malformed_quoting_without_a_metacharacter_still_passes() -> None:
     """The fallback is a re-scan, not a blanket denial of malformed quoting."""
-    payload = _signal2_payload("Bash", _bash('python3 x.py "unterminated'))
+    payload = _signal2_payload('Bash', _bash('python3 x.py "unterminated'))
     assert hook.evaluate(payload) is None
 
 
@@ -327,7 +316,7 @@ def test_r1_allows_the_real_world_commit_message_shape() -> None:
     was denied before the fix while being a legitimate one-command call.
     """
     command = 'git commit -m "fix(x): correct a thing; refs #1"'
-    assert hook.evaluate(_signal2_payload("Bash", _bash(command))) is None
+    assert hook.evaluate(_signal2_payload('Bash', _bash(command))) is None
 
 
 def test_r1_quote_masked_views_preserve_length() -> None:
@@ -339,7 +328,7 @@ def test_r1_quote_masked_views_preserve_length() -> None:
     """
     command = 'echo "a; b" \'c && d\' e'
     views = hook._quote_masked_views(command)
-    assert views is not None, "well-formed quoting must yield masked views, not the malformed-quoting None"
+    assert views is not None, 'well-formed quoting must yield masked views, not the malformed-quoting None'
     operator_view, substitution_view = views
     assert len(operator_view) == len(command)
     assert len(substitution_view) == len(command)
@@ -363,7 +352,7 @@ def test_r1_quote_masked_views_report_malformed_quoting() -> None:
 
 
 @pytest.mark.parametrize(
-    "command",
+    'command',
     ["echo \\'a; b\\'", 'echo \\"a; b\\"'],
     ids=['escaped-single-quote', 'escaped-double-quote'],
 )
@@ -381,13 +370,13 @@ def test_r1_denies_escaped_quote_that_must_not_open_a_span(command: str) -> None
     form reached the same verdict only by accident, via the unterminated-span
     fallback to the raw command.
     """
-    payload = _signal2_payload("Bash", _bash(command))
+    payload = _signal2_payload('Bash', _bash(command))
 
     assert hook.evaluate(payload) == hook._R1_REASON, command
 
 
 @pytest.mark.parametrize(
-    "command",
+    'command',
     ['echo "\\`date\\`"', 'echo "\\$(date)"'],
     ids=['escaped-backtick-is-literal', 'escaped-dollar-is-literal'],
 )
@@ -403,7 +392,7 @@ def test_r1_allows_escaped_substitution_marker_inside_double_quotes(command: str
     ``test_r1_denies_substitution_inside_double_quotes``: an UNescaped
     substitution in the same position still executes, and still denies.
     """
-    payload = _signal2_payload("Bash", _bash(command))
+    payload = _signal2_payload('Bash', _bash(command))
 
     assert hook.evaluate(payload) is None, command
 
@@ -421,7 +410,7 @@ def test_r1_single_quoted_span_treats_backslash_as_a_literal() -> None:
     """
     command = "echo 'a\\'"
     assert hook._quote_masked_views(command) is not None
-    assert hook.evaluate(_signal2_payload("Bash", _bash(command))) is None
+    assert hook.evaluate(_signal2_payload('Bash', _bash(command))) is None
 
 
 def test_r1_allows_escaped_newline_line_continuation() -> None:
@@ -433,8 +422,8 @@ def test_r1_allows_escaped_newline_line_continuation() -> None:
     negative is ``test_r1_denies_newline`` — a BARE unquoted newline is a real
     command separator and still denies.
     """
-    command = "python3 x.py \\\n  --flag value"
-    assert hook.evaluate(_signal2_payload("Bash", _bash(command))) is None
+    command = 'python3 x.py \\\n  --flag value'
+    assert hook.evaluate(_signal2_payload('Bash', _bash(command))) is None
 
 
 def test_r1_quote_masked_views_preserve_length_across_escapes() -> None:
@@ -448,7 +437,7 @@ def test_r1_quote_masked_views_preserve_length_across_escapes() -> None:
     """
     command = 'echo \\;a "b\\`c" \\$d'
     views = hook._quote_masked_views(command)
-    assert views is not None, "well-formed quoting must yield masked views"
+    assert views is not None, 'well-formed quoting must yield masked views'
     operator_view, substitution_view = views
     assert len(operator_view) == len(command)
     assert len(substitution_view) == len(command)
@@ -459,17 +448,17 @@ def test_r1_quote_masked_views_preserve_length_across_escapes() -> None:
 # =============================================================================
 
 
-@pytest.mark.parametrize("program", ["cat", "grep", "head", "tail", "find", "ls"])
+@pytest.mark.parametrize('program', ['cat', 'grep', 'head', 'tail', 'find', 'ls'])
 def test_r2_denies_each_file_op(program: str) -> None:
     """Each shell file-op program denies on its own, as its own reported row."""
-    payload = _signal2_payload("Bash", _bash(f"{program} something"))
+    payload = _signal2_payload('Bash', _bash(f'{program} something'))
 
     assert hook.evaluate(payload) == hook._R2_REASON
 
 
 def test_r2_not_fired_on_substring_program() -> None:
     # A program whose name merely contains a file-op substring is not a file-op.
-    assert hook.evaluate(_signal2_payload("Bash", _bash("category --help"))) is None
+    assert hook.evaluate(_signal2_payload('Bash', _bash('category --help'))) is None
 
 
 # -----------------------------------------------------------------------------
@@ -499,20 +488,20 @@ def test_r2_not_fired_on_substring_program() -> None:
 #:   through. None of them appears in ``_R2_GIT_VALUE_OPTIONS``, which is
 #:   precisely why a table drawn from that tuple could not have found the gap.
 _R2_GIT_GREP_DENIED = [
-    "git grep foo",
-    "git -C . grep foo",
-    "git --no-pager grep foo",
-    "/usr/bin/git grep foo",
-    "git -c core.pager=cat grep foo",
-    "git --git-dir=/repo/.git grep foo",
-    "git --work-tree /repo grep foo",
-    "git --literal-pathspecs grep foo",
-    "git -C. grep foo",
-    "git -cvar=val grep foo",
-    "git -p grep foo",
-    "git --bare grep foo",
-    "git --no-optional-locks grep foo",
-    "git -C. -p --bare grep foo",
+    'git grep foo',
+    'git -C . grep foo',
+    'git --no-pager grep foo',
+    '/usr/bin/git grep foo',
+    'git -c core.pager=cat grep foo',
+    'git --git-dir=/repo/.git grep foo',
+    'git --work-tree /repo grep foo',
+    'git --literal-pathspecs grep foo',
+    'git -C. grep foo',
+    'git -cvar=val grep foo',
+    'git -p grep foo',
+    'git --bare grep foo',
+    'git --no-optional-locks grep foo',
+    'git -C. -p --bare grep foo',
 ]
 
 #: Each id names the concrete option AND the arithmetic the walk owes it, which
@@ -537,10 +526,10 @@ _R2_GIT_GREP_DENIED_IDS = [
 ]
 
 
-@pytest.mark.parametrize("command", _R2_GIT_GREP_DENIED, ids=_R2_GIT_GREP_DENIED_IDS)
+@pytest.mark.parametrize('command', _R2_GIT_GREP_DENIED, ids=_R2_GIT_GREP_DENIED_IDS)
 def test_r2_denies_git_grep_behind_every_option_shape(command: str) -> None:
     """The subcommand still resolves to ``grep``, so the file-op still denies."""
-    payload = _signal2_payload("Bash", _bash(command))
+    payload = _signal2_payload('Bash', _bash(command))
 
     assert hook.evaluate(payload) == hook._R2_REASON, command
 
@@ -553,8 +542,8 @@ def test_r2_git_option_skip_is_structural_not_an_allowlist() -> None:
     real subcommand. A future edit that narrows the walk back to a membership
     test fails this even if it re-adds every spelling the suite above names.
     """
-    assert hook._git_subcommand("git --a-flag-nobody-listed grep foo") == "grep"
-    assert hook._git_subcommand("git -Zqx grep foo") == "grep"
+    assert hook._git_subcommand('git --a-flag-nobody-listed grep foo') == 'grep'
+    assert hook._git_subcommand('git -Zqx grep foo') == 'grep'
 
 
 #: The matched negative controls for the deny table above. Without them an
@@ -565,14 +554,14 @@ def test_r2_git_option_skip_is_structural_not_an_allowlist() -> None:
 #: skipping every dash-token structurally is shown not to swallow the
 #: subcommand slot along with the options.
 _R2_GIT_ALLOWED = [
-    "git status",
-    "git log --oneline -5",
-    "git diff --name-only HEAD",
-    "git rev-parse HEAD",
-    "git -C. status",
-    "git -p log --oneline",
-    "git --bare rev-parse HEAD",
-    "git -cvar=val diff --name-only",
+    'git status',
+    'git log --oneline -5',
+    'git diff --name-only HEAD',
+    'git rev-parse HEAD',
+    'git -C. status',
+    'git -p log --oneline',
+    'git --bare rev-parse HEAD',
+    'git -cvar=val diff --name-only',
 ]
 
 _R2_GIT_ALLOWED_IDS = [
@@ -587,10 +576,10 @@ _R2_GIT_ALLOWED_IDS = [
 ]
 
 
-@pytest.mark.parametrize("command", _R2_GIT_ALLOWED, ids=_R2_GIT_ALLOWED_IDS)
+@pytest.mark.parametrize('command', _R2_GIT_ALLOWED, ids=_R2_GIT_ALLOWED_IDS)
 def test_r2_not_fired_on_non_grep_git_subcommands(command: str) -> None:
     """Ordinary git usage keeps working — these resolve to no file-op."""
-    payload = _signal2_payload("Bash", _bash(command))
+    payload = _signal2_payload('Bash', _bash(command))
 
     assert hook.evaluate(payload) is None, command
 
@@ -602,12 +591,12 @@ def test_r2_detached_value_option_does_not_mistake_its_value_for_grep() -> None:
     This is the trap the structural dash-skip alone would not catch, and it is
     why the detached value options still need naming.
     """
-    assert hook._git_subcommand("git -C grep status") == "status"
-    assert hook.evaluate(_signal2_payload("Bash", _bash("git -C grep status"))) is None
+    assert hook._git_subcommand('git -C grep status') == 'status'
+    assert hook.evaluate(_signal2_payload('Bash', _bash('git -C grep status'))) is None
 
 
 @pytest.mark.parametrize(
-    "command",
+    'command',
     ['git -C "repo dir" grep needle', "git -C 'repo dir' grep needle"],
     ids=['double-quoted-path-value', 'single-quoted-path-value'],
 )
@@ -620,9 +609,9 @@ def test_r2_denies_git_grep_behind_a_quoted_detached_value(command: str) -> None
     file-op entirely. Shell-lexical splitting keeps the value one token. Both
     quote styles are covered because either spelling is valid shell.
     """
-    assert hook._git_subcommand(command) == "grep", command
+    assert hook._git_subcommand(command) == 'grep', command
 
-    payload = _signal2_payload("Bash", _bash(command))
+    payload = _signal2_payload('Bash', _bash(command))
     assert hook.evaluate(payload) == hook._R2_REASON, command
 
 
@@ -634,8 +623,8 @@ def test_r2_quoted_detached_value_still_allows_non_grep_subcommand() -> None:
     command carrying a quoted token.
     """
     command = 'git -C "repo dir" status'
-    assert hook._git_subcommand(command) == "status"
-    assert hook.evaluate(_signal2_payload("Bash", _bash(command))) is None
+    assert hook._git_subcommand(command) == 'status'
+    assert hook.evaluate(_signal2_payload('Bash', _bash(command))) is None
 
 
 def test_git_subcommand_falls_back_to_whitespace_split_on_bad_quoting() -> None:
@@ -645,7 +634,7 @@ def test_git_subcommand_falls_back_to_whitespace_split_on_bad_quoting() -> None:
     a lexer error into a silent R2 bypass, so the fallback preserves the
     pre-existing whitespace-split detection instead.
     """
-    assert hook._git_subcommand('git -C "unbalanced grep needle') == "grep"
+    assert hook._git_subcommand('git -C "unbalanced grep needle') == 'grep'
 
 
 def test_r2_not_fired_on_git_log_grep_option() -> None:
@@ -656,13 +645,13 @@ def test_r2_not_fired_on_git_log_grep_option() -> None:
     commit messages is not a file-content operation. This is the single most
     discriminating negative control in the arm.
     """
-    payload = _signal2_payload("Bash", _bash("git log --grep=fix"))
+    payload = _signal2_payload('Bash', _bash('git log --grep=fix'))
     assert hook.evaluate(payload) is None
 
 
 def test_r2_not_fired_on_bare_git() -> None:
     """A `git` call with no subcommand resolves to no subcommand, so it passes."""
-    assert hook.evaluate(_signal2_payload("Bash", _bash("git"))) is None
+    assert hook.evaluate(_signal2_payload('Bash', _bash('git'))) is None
 
 
 def test_r2_reason_names_the_sanctioned_content_search_replacement() -> None:
@@ -671,7 +660,7 @@ def test_r2_reason_names_the_sanctioned_content_search_replacement() -> None:
     Blocking `git grep` is only legitimate because a sanctioned content-search
     path exists; the reason string is where the caller learns it.
     """
-    assert "architecture search --content" in hook._R2_REASON
+    assert 'architecture search --content' in hook._R2_REASON
 
 
 # =============================================================================
@@ -686,9 +675,9 @@ def test_r2_reason_names_the_sanctioned_content_search_replacement() -> None:
 #: ordinary source path stays allowed, so R3 is proven to name the generated
 #: executor rather than to refuse writes at large.
 _R3_CASES = [
-    ("Edit", ".plan/execute-script.py", hook._R3_REASON),
-    ("Write", "/home/dev/project/.plan/execute-script.py", hook._R3_REASON),
-    ("Edit", "marketplace/bundles/plan-marshall/foo.py", None),
+    ('Edit', '.plan/execute-script.py', hook._R3_REASON),
+    ('Write', '/home/dev/project/.plan/execute-script.py', hook._R3_REASON),
+    ('Edit', 'marketplace/bundles/plan-marshall/foo.py', None),
 ]
 
 _R3_IDS = [
@@ -698,15 +687,13 @@ _R3_IDS = [
 ]
 
 
-@pytest.mark.parametrize(("tool_name", "file_path", "expected"), _R3_CASES, ids=_R3_IDS)
-def test_r3_guards_the_generated_executor(
-    tool_name: str, file_path: str, expected: str | None
-) -> None:
+@pytest.mark.parametrize(('tool_name', 'file_path', 'expected'), _R3_CASES, ids=_R3_IDS)
+def test_r3_guards_the_generated_executor(tool_name: str, file_path: str, expected: str | None) -> None:
     """A write aimed at the generated executor denies; any other path does not."""
     payload = {
         gate.CWD_FIELD: _worktree_cwd(),
-        "tool_name": tool_name,
-        "tool_input": {"file_path": file_path},
+        'tool_name': tool_name,
+        'tool_input': {'file_path': file_path},
     }
 
     assert hook.evaluate(payload) == expected
@@ -720,15 +707,15 @@ def test_r3_guards_the_generated_executor(
 #: Hard-coded build invocations R4 refuses. ``./pw`` is matched as a literal
 #: (its ``./`` prefix is part of the name), the other three as bare program
 #: names — two spellings of one rule, so both are represented.
-_R4_DENIED_COMMANDS = ["./pw verify", "mvn build", "npm build", "gradle build"]
+_R4_DENIED_COMMANDS = ['./pw verify', 'mvn build', 'npm build', 'gradle build']
 
 _R4_DENIED_IDS = ['pw-wrapper-literal', 'mvn', 'npm', 'gradle']
 
 
-@pytest.mark.parametrize("command", _R4_DENIED_COMMANDS, ids=_R4_DENIED_IDS)
+@pytest.mark.parametrize('command', _R4_DENIED_COMMANDS, ids=_R4_DENIED_IDS)
 def test_r4_denies_hard_coded_build_invocations(command: str) -> None:
     """Each hard-coded build program denies, as its own reported row."""
-    payload = _signal2_payload("Bash", _bash(command))
+    payload = _signal2_payload('Bash', _bash(command))
 
     assert hook.evaluate(payload) == hook._R4_REASON
 
@@ -736,8 +723,8 @@ def test_r4_denies_hard_coded_build_invocations(command: str) -> None:
 def test_r4_not_fired_on_resolved_build() -> None:
     # The architecture-resolved executor call is a plain python3 invocation and
     # trips no rule.
-    cmd = "python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run"
-    assert hook.evaluate(_signal2_payload("Bash", _bash(cmd))) is None
+    cmd = 'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run'
+    assert hook.evaluate(_signal2_payload('Bash', _bash(cmd))) is None
 
 
 # =============================================================================
@@ -746,15 +733,15 @@ def test_r4_not_fired_on_resolved_build() -> None:
 
 
 def test_deny_envelope_shape() -> None:
-    payload = _signal2_payload("Bash", _bash("cat foo"))
+    payload = _signal2_payload('Bash', _bash('cat foo'))
     result = _run(json.dumps(payload))
 
     assert result.returncode == 0
     decision = _decision(result.stdout)
-    assert decision["hookEventName"] == "PreToolUse"
-    assert decision["permissionDecision"] == "deny"
-    assert isinstance(decision["permissionDecisionReason"], str)
-    assert decision["permissionDecisionReason"]
+    assert decision['hookEventName'] == 'PreToolUse'
+    assert decision['permissionDecision'] == 'deny'
+    assert isinstance(decision['permissionDecisionReason'], str)
+    assert decision['permissionDecisionReason']
 
 
 # =============================================================================
@@ -763,15 +750,15 @@ def test_deny_envelope_shape() -> None:
 
 
 def test_exits_zero_and_silent_on_empty_stdin() -> None:
-    result = _run("")
+    result = _run('')
     assert result.returncode == 0
-    assert result.stdout == ""
+    assert result.stdout == ''
 
 
 def test_exits_zero_and_silent_on_malformed_stdin() -> None:
-    result = _run("not json {{{")
+    result = _run('not json {{{')
     assert result.returncode == 0
-    assert result.stdout == ""
+    assert result.stdout == ''
 
 
 def test_evaluate_never_raises_on_non_dict_payload() -> None:
@@ -788,7 +775,7 @@ def test_evaluate_never_raises_on_non_dict_payload() -> None:
 def test_gate_decision_matches_shared_module() -> None:
     # A payload the shared gate rules out-of-context must NOT enforce, even with
     # an otherwise-matching violation -> proves the hook calls context_gate.
-    payload = {"tool_name": "Bash", "tool_input": _bash("cat foo"), "cwd": "/tmp"}
+    payload = {'tool_name': 'Bash', 'tool_input': _bash('cat foo'), 'cwd': '/tmp'}
     assert gate.context_gate(payload) is False
     assert hook.evaluate(payload) is None
 
@@ -796,7 +783,7 @@ def test_gate_decision_matches_shared_module() -> None:
 def test_marker_value_satisfies_signal1() -> None:
     # The bundle-qualified identity carries the gate's execution-context marker.
     assert gate.EXECUTION_CONTEXT_MARKER in _SUB_AGENT_IDENTITY
-    payload = _signal1_payload("Read", {"file_path": "x"})
+    payload = _signal1_payload('Read', {'file_path': 'x'})
     # Read is a benign non-matching tool: gate satisfied, but no rule fires.
     assert hook.evaluate(payload) is None
 
@@ -812,11 +799,11 @@ def test_marker_value_satisfies_signal1() -> None:
 #: normalized; ``./pw`` is matched as a literal by R4, so stripping its prefix
 #: would disarm that rule; and an empty command has no program to name.
 _PROGRAM_NAME_CASES = [
-    ("/usr/bin/cat", "cat"),
-    ("/bin/grep", "grep"),
-    ("cat", "cat"),
-    ("./pw", "./pw"),
-    ("", ""),
+    ('/usr/bin/cat', 'cat'),
+    ('/bin/grep', 'grep'),
+    ('cat', 'cat'),
+    ('./pw', './pw'),
+    ('', ''),
 ]
 
 _PROGRAM_NAME_IDS = [
@@ -828,7 +815,7 @@ _PROGRAM_NAME_IDS = [
 ]
 
 
-@pytest.mark.parametrize(("command", "expected"), _PROGRAM_NAME_CASES, ids=_PROGRAM_NAME_IDS)
+@pytest.mark.parametrize(('command', 'expected'), _PROGRAM_NAME_CASES, ids=_PROGRAM_NAME_IDS)
 def test_program_name_normalization(command: str, expected: str) -> None:
     """A command normalizes to the program name the rules match against."""
     assert hook._program_name(command) == expected
@@ -843,10 +830,10 @@ def test_program_name_normalization(command: str, expected: str) -> None:
 #: program by its absolute path is the obvious way to walk past a rule that
 #: names it bare, so both rules that match on a program name carry rows here.
 _PATH_PREFIXED_BYPASS_CASES = [
-    ("/usr/bin/cat file.txt", hook._R2_REASON),
-    ("/bin/grep pattern file", hook._R2_REASON),
-    ("/usr/local/bin/mvn verify", hook._R4_REASON),
-    ("/usr/bin/npm install", hook._R4_REASON),
+    ('/usr/bin/cat file.txt', hook._R2_REASON),
+    ('/bin/grep pattern file', hook._R2_REASON),
+    ('/usr/local/bin/mvn verify', hook._R4_REASON),
+    ('/usr/bin/npm install', hook._R4_REASON),
 ]
 
 _PATH_PREFIXED_BYPASS_IDS = [
@@ -858,12 +845,10 @@ _PATH_PREFIXED_BYPASS_IDS = [
 
 
 @pytest.mark.parametrize(
-    ("command", "expected_reason"),
+    ('command', 'expected_reason'),
     _PATH_PREFIXED_BYPASS_CASES,
     ids=_PATH_PREFIXED_BYPASS_IDS,
 )
-def test_a_path_prefixed_program_does_not_bypass_its_rule(
-    command: str, expected_reason: str
-) -> None:
+def test_a_path_prefixed_program_does_not_bypass_its_rule(command: str, expected_reason: str) -> None:
     """An absolute path in front of the program leaves the rule's verdict intact."""
-    assert hook.evaluate(_signal2_payload("Bash", _bash(command))) == expected_reason
+    assert hook.evaluate(_signal2_payload('Bash', _bash(command))) == expected_reason

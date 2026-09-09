@@ -76,15 +76,14 @@ def _fm_of(path: Path) -> dict[str, str]:
 # End-to-end emit through emit_bundles
 # --------------------------------------------------------------------------
 
+
 def test_emit_writes_canonical_plus_seven_variants(role_bundle: Path, tmp_path: Path) -> None:
     out = tmp_path / 'out'
     emit_bundles(role_bundle, out, CONFIG_DIR)
     agent_dir = out / 'agent'
     assert (agent_dir / 'execution-context.md').is_file()
     for level in ALL_LEVELS:
-        assert (agent_dir / f'execution-context-{level}.md').is_file(), (
-            f'missing variant for {level}'
-        )
+        assert (agent_dir / f'execution-context-{level}.md').is_file(), f'missing variant for {level}'
 
 
 def test_canonical_carries_no_model_or_effort(role_bundle: Path, tmp_path: Path) -> None:
@@ -151,12 +150,8 @@ def test_variant_body_matches_canonical_body(role_bundle: Path, tmp_path: Path) 
     out = tmp_path / 'out'
     emit_bundles(role_bundle, out, CONFIG_DIR)
     agent_dir = out / 'agent'
-    _, canon_body = parse_frontmatter(
-        (agent_dir / 'execution-context.md').read_text(encoding='utf-8')
-    )
-    _, var_body = parse_frontmatter(
-        (agent_dir / 'execution-context-level-4.md').read_text(encoding='utf-8')
-    )
+    _, canon_body = parse_frontmatter((agent_dir / 'execution-context.md').read_text(encoding='utf-8'))
+    _, var_body = parse_frontmatter((agent_dir / 'execution-context-level-4.md').read_text(encoding='utf-8'))
     assert canon_body == var_body
 
 
@@ -193,6 +188,7 @@ def test_levels_subset_limits_emitted_variants(tmp_path: Path) -> None:
 # --------------------------------------------------------------------------
 # Unit-level behaviour
 # --------------------------------------------------------------------------
+
 
 def test_non_eligible_agent_emits_no_variants(tmp_path: Path) -> None:
     marketplace = tmp_path / 'bundles'
@@ -236,8 +232,7 @@ def test_validate_canonical_rejects_model(tmp_path: Path) -> None:
     )
     _write(
         bundle / 'agents' / 'bad.md',
-        '---\nname: bad\ndescription: x\ntools: Read\n'
-        f'implements: {EXTENSION_POINT}\nmodel: opus\n---\nbody\n',
+        f'---\nname: bad\ndescription: x\ntools: Read\nimplements: {EXTENSION_POINT}\nmodel: opus\n---\nbody\n',
     )
     out = tmp_path / 'out'
     with pytest.raises(OpenCodeCanonicalValidationError):

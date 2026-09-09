@@ -54,9 +54,7 @@ _MERGE_GATE_ORDER = 70
 # ---------------------------------------------------------------------------
 
 
-def _step_doc_text(
-    name: str, order: int, *, mutates_source: bool | None = None
-) -> str:
+def _step_doc_text(name: str, order: int, *, mutates_source: bool | None = None) -> str:
     """Render a finalize-step doc's frontmatter + body.
 
     ``mutates_source=None`` omits the key entirely — the "makes no
@@ -96,9 +94,7 @@ def _write_merge_gate(bundles_root: Path, order: int = _MERGE_GATE_ORDER) -> Pat
     would flag the gate's own doc. The explicit negative keeps the gate clean
     while each fixture exercises the real step under test.
     """
-    standards = (
-        bundles_root / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'standards'
-    )
+    standards = bundles_root / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'standards'
     standards.mkdir(parents=True, exist_ok=True)
     target = standards / 'branch-cleanup.md'
     target.write_text(
@@ -134,20 +130,14 @@ def _write_bundle_step(
 class TestSettleBandOrdering:
     """A source-mutating step ordered before the merge gate is not flagged."""
 
-    def test_mutating_step_before_merge_gate_produces_no_finding(
-        self, tmp_path: Path
-    ) -> None:
+    def test_mutating_step_before_merge_gate_produces_no_finding(self, tmp_path: Path) -> None:
         """Arrange a mutating step at order 4; act; assert zero findings."""
         _write_merge_gate(tmp_path)
-        _write_bundle_step(
-            tmp_path, 'test-bundle:test-step', 4, mutates_source=True
-        )
+        _write_bundle_step(tmp_path, 'test-bundle:test-step', 4, mutates_source=True)
 
         assert_analyzer_findings(analyze_mutates_source_order, tmp_path, [])
 
-    def test_mutating_step_just_below_merge_gate_produces_no_finding(
-        self, tmp_path: Path
-    ) -> None:
+    def test_mutating_step_just_below_merge_gate_produces_no_finding(self, tmp_path: Path) -> None:
         """The boundary is exclusive below: ``order == merge_gate - 1`` is clean."""
         _write_merge_gate(tmp_path)
         _write_bundle_step(
@@ -168,14 +158,10 @@ class TestSettleBandOrdering:
 class TestPostMergeOrdering:
     """A source-mutating step ordered at/after the merge gate is flagged."""
 
-    def test_mutating_step_after_merge_gate_produces_one_finding(
-        self, tmp_path: Path
-    ) -> None:
+    def test_mutating_step_after_merge_gate_produces_one_finding(self, tmp_path: Path) -> None:
         """A post-merge mutating step yields exactly one correctly-shaped finding."""
         _write_merge_gate(tmp_path)
-        step_path, content = _write_bundle_step(
-            tmp_path, 'test-bundle:test-step', 996, mutates_source=True
-        )
+        step_path, content = _write_bundle_step(tmp_path, 'test-bundle:test-step', 996, mutates_source=True)
 
         findings = assert_analyzer_findings(analyze_mutates_source_order, tmp_path, [RULE_ID])
         finding = findings[0]
@@ -189,9 +175,7 @@ class TestPostMergeOrdering:
         assert finding['details']['step_order'] == 996
         assert finding['details']['merge_gate_order'] == _MERGE_GATE_ORDER
 
-    def test_mutating_step_at_merge_gate_order_produces_finding(
-        self, tmp_path: Path
-    ) -> None:
+    def test_mutating_step_at_merge_gate_order_produces_finding(self, tmp_path: Path) -> None:
         """The boundary is inclusive at the gate: ``order == merge_gate`` is flagged.
 
         A step sharing the merge gate's order has no guaranteed ordering
@@ -216,9 +200,7 @@ class TestPostMergeOrdering:
         threshold would miss it.
         """
         _write_merge_gate(tmp_path, order=20)
-        _write_bundle_step(
-            tmp_path, 'test-bundle:test-step', 30, mutates_source=True
-        )
+        _write_bundle_step(tmp_path, 'test-bundle:test-step', 30, mutates_source=True)
 
         findings = assert_analyzer_findings(analyze_mutates_source_order, tmp_path, [RULE_ID])
         assert findings[0]['details']['merge_gate_order'] == 20
@@ -235,9 +217,7 @@ class TestPostMergeOrdering:
         _write_merge_gate(bundles_root)
         step_dir = tmp_path / '.claude' / 'skills' / 'finalize-step-demo'
         step_dir.mkdir(parents=True)
-        content = _step_doc_text(
-            'project:finalize-step-demo', 996, mutates_source=True
-        )
+        content = _step_doc_text('project:finalize-step-demo', 996, mutates_source=True)
         (step_dir / 'SKILL.md').write_text(content, encoding='utf-8')
 
         findings = assert_analyzer_findings(analyze_mutates_source_order, bundles_root, [RULE_ID])
@@ -253,9 +233,7 @@ class TestNoMutatesSourceClaim:
     """Mutates-source-claim handling: an explicit ``false`` (or a pre-merge
     omission) is clean, while a post-merge omission is itself flagged."""
 
-    def test_post_merge_step_without_mutates_source_key_is_flagged(
-        self, tmp_path: Path
-    ) -> None:
+    def test_post_merge_step_without_mutates_source_key_is_flagged(self, tmp_path: Path) -> None:
         """A post-merge step that declares NO ``mutates_source`` key is flagged.
 
         The merge/post-merge band requires the pushability claim be settled
@@ -264,9 +242,7 @@ class TestNoMutatesSourceClaim:
         carries the shared rule_id under the distinct declaration-missing type.
         """
         _write_merge_gate(tmp_path)
-        step_path, content = _write_bundle_step(
-            tmp_path, 'test-bundle:test-step', 996
-        )
+        step_path, content = _write_bundle_step(tmp_path, 'test-bundle:test-step', 996)
 
         findings = assert_analyzer_findings(analyze_mutates_source_order, tmp_path, [RULE_ID])
         finding = findings[0]
@@ -280,9 +256,7 @@ class TestNoMutatesSourceClaim:
         assert finding['details']['step_order'] == 996
         assert finding['details']['merge_gate_order'] == _MERGE_GATE_ORDER
 
-    def test_pre_merge_step_without_mutates_source_key_produces_no_finding(
-        self, tmp_path: Path
-    ) -> None:
+    def test_pre_merge_step_without_mutates_source_key_produces_no_finding(self, tmp_path: Path) -> None:
         """Below the merge gate an absent ``mutates_source`` key stays out of scope.
 
         The missing-declaration flag is deliberately narrow: only steps AT OR
@@ -290,43 +264,31 @@ class TestNoMutatesSourceClaim:
         source-mutation claim and cannot evade the gate, so it is never flagged.
         """
         _write_merge_gate(tmp_path)
-        _write_bundle_step(
-            tmp_path, 'test-bundle:test-step', _MERGE_GATE_ORDER - 1
-        )
+        _write_bundle_step(tmp_path, 'test-bundle:test-step', _MERGE_GATE_ORDER - 1)
 
         assert_analyzer_findings(analyze_mutates_source_order, tmp_path, [])
 
-    def test_missing_key_at_merge_gate_order_is_flagged(
-        self, tmp_path: Path
-    ) -> None:
+    def test_missing_key_at_merge_gate_order_is_flagged(self, tmp_path: Path) -> None:
         """The missing-declaration boundary is inclusive at the gate order.
 
         A step sharing the merge gate's order has no guaranteed ordering against
         it, so an absent claim at exactly the gate order is flagged.
         """
         _write_merge_gate(tmp_path)
-        _write_bundle_step(
-            tmp_path, 'test-bundle:test-step', _MERGE_GATE_ORDER
-        )
+        _write_bundle_step(tmp_path, 'test-bundle:test-step', _MERGE_GATE_ORDER)
 
         findings = assert_analyzer_findings(analyze_mutates_source_order, tmp_path, [RULE_ID])
         assert findings[0]['type'] == FINDING_TYPE_DECLARATION_MISSING
         assert findings[0]['details']['merge_gate_order'] == _MERGE_GATE_ORDER
 
-    def test_explicitly_false_mutates_source_produces_no_finding(
-        self, tmp_path: Path
-    ) -> None:
+    def test_explicitly_false_mutates_source_produces_no_finding(self, tmp_path: Path) -> None:
         """``mutates_source: false`` is a negative claim and is not flagged."""
         _write_merge_gate(tmp_path)
-        _write_bundle_step(
-            tmp_path, 'test-bundle:test-step', 996, mutates_source=False
-        )
+        _write_bundle_step(tmp_path, 'test-bundle:test-step', 996, mutates_source=False)
 
         assert_analyzer_findings(analyze_mutates_source_order, tmp_path, [])
 
-    def test_doc_without_ext_point_declaration_is_not_scanned(
-        self, tmp_path: Path
-    ) -> None:
+    def test_doc_without_ext_point_declaration_is_not_scanned(self, tmp_path: Path) -> None:
         """Membership is declared: a doc omitting the ext-point is out of scope."""
         _write_merge_gate(tmp_path)
         skill_dir = tmp_path / 'test-bundle' / 'skills' / 'not-a-step'
@@ -338,9 +300,7 @@ class TestNoMutatesSourceClaim:
 
         assert_analyzer_findings(analyze_mutates_source_order, tmp_path, [])
 
-    def test_commented_out_ext_point_declaration_is_not_scanned(
-        self, tmp_path: Path
-    ) -> None:
+    def test_commented_out_ext_point_declaration_is_not_scanned(self, tmp_path: Path) -> None:
         """A commented-out ``implements:`` line does not pull the doc into scope.
 
         The membership test joins the frontmatter block before searching for the
@@ -354,9 +314,7 @@ class TestNoMutatesSourceClaim:
         skill_dir.mkdir(parents=True)
         target = skill_dir / 'SKILL.md'
         live = _step_doc_text('test-bundle:commented-step', 996, mutates_source=True)
-        commented = live.replace(
-            f'implements: {_EXT_POINT}', f'# implements: {_EXT_POINT}'
-        )
+        commented = live.replace(f'implements: {_EXT_POINT}', f'# implements: {_EXT_POINT}')
         target.write_text(commented, encoding='utf-8')
 
         assert_analyzer_findings(analyze_mutates_source_order, tmp_path, [])
@@ -374,13 +332,9 @@ class TestNoMutatesSourceClaim:
 class TestUndiscoverableMergeGate:
     """Without a discoverable merge gate the rule skips rather than guessing."""
 
-    def test_absent_branch_cleanup_record_yields_no_findings(
-        self, tmp_path: Path
-    ) -> None:
+    def test_absent_branch_cleanup_record_yields_no_findings(self, tmp_path: Path) -> None:
         """A synthetic marketplace with no merge gate returns [] and does not raise."""
-        _write_bundle_step(
-            tmp_path, 'test-bundle:test-step', 996, mutates_source=True
-        )
+        _write_bundle_step(tmp_path, 'test-bundle:test-step', 996, mutates_source=True)
 
         assert_analyzer_findings(analyze_mutates_source_order, tmp_path, [])
 
@@ -422,10 +376,7 @@ def test_real_marketplace_merge_gate_is_discoverable() -> None:
         '_analyze_mutates_source_order.py',
     ).parents[4]
 
-    steps = [
-        _amso._parse_step_doc(path)
-        for path in _amso._candidate_paths(bundles_root)
-    ]
+    steps = [_amso._parse_step_doc(path) for path in _amso._candidate_paths(bundles_root)]
     merge_order = _amso._merge_gate_order([s for s in steps if s is not None])
 
     assert merge_order is not None, 'live tree merge gate must be discoverable'

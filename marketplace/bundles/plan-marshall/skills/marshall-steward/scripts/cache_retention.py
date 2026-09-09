@@ -159,11 +159,11 @@ def resolve_knobs(project_root: Path | None = None) -> tuple[int, int, str]:
     keep_versions = retention.get('plugin_cache_keep_versions')
     keep_days = retention.get('plugin_cache_keep_days')
     resolved_versions = (
-        keep_versions if isinstance(keep_versions, int) and not isinstance(keep_versions, bool) else DEFAULT_KEEP_VERSIONS
+        keep_versions
+        if isinstance(keep_versions, int) and not isinstance(keep_versions, bool)
+        else DEFAULT_KEEP_VERSIONS
     )
-    resolved_days = (
-        keep_days if isinstance(keep_days, int) and not isinstance(keep_days, bool) else DEFAULT_KEEP_DAYS
-    )
+    resolved_days = keep_days if isinstance(keep_days, int) and not isinstance(keep_days, bool) else DEFAULT_KEEP_DAYS
     return resolved_versions, resolved_days, str(candidate)
 
 

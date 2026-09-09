@@ -16,10 +16,7 @@ _HEAVY_BUILD_CMD = (
 )
 
 
-_LIGHT_CMD = (
-    'python3 .plan/execute-script.py '
-    'plan-marshall:manage-tasks:manage-tasks list --plan-id p'
-)
+_LIGHT_CMD = 'python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks list --plan-id p'
 
 
 def _write_task_graph_plan(
@@ -42,9 +39,7 @@ def _write_task_graph_plan(
     tasks_dir.mkdir(parents=True, exist_ok=True)
     for t in tasks:
         number = int(t['number'])
-        (tasks_dir / f'TASK-{number:03d}.json').write_text(
-            _json.dumps(t), encoding='utf-8'
-        )
+        (tasks_dir / f'TASK-{number:03d}.json').write_text(_json.dumps(t), encoding='utf-8')
     return audit.PlanInputs(plan_id=plan_id, plan_dir=plan_dir)
 
 
@@ -164,14 +159,10 @@ class TestTaskGraphRedundancy:
         # (1 task/deliverable) so the threshold is max(3, 1*2)=3; the busy plan's
         # single deliverable carries 4 tasks (>=3 → flagged).
         lean_a = audit.check_task_graph_redundancy(
-            _write_task_graph_plan(
-                tmp_path, 'lean-a', [_task(1, deliverable=1, targets=['a.py'])]
-            )
+            _write_task_graph_plan(tmp_path, 'lean-a', [_task(1, deliverable=1, targets=['a.py'])])
         )
         lean_b = audit.check_task_graph_redundancy(
-            _write_task_graph_plan(
-                tmp_path, 'lean-b', [_task(1, deliverable=1, targets=['b.py'])]
-            )
+            _write_task_graph_plan(tmp_path, 'lean-b', [_task(1, deliverable=1, targets=['b.py'])])
         )
         busy = audit.check_task_graph_redundancy(
             _write_task_graph_plan(
@@ -200,9 +191,7 @@ class TestTaskGraphRedundancy:
         # Heavy: a build runner + a HEAVY token
         assert audit.is_heavy_build_cmd(_HEAVY_BUILD_CMD) is True
         # Heavy: full-suite verify verb
-        assert audit.is_heavy_build_cmd(
-            'pyproject_build run --command-args "verify plan-marshall"'
-        ) is True
+        assert audit.is_heavy_build_cmd('pyproject_build run --command-args "verify plan-marshall"') is True
         # Light: a manage-* call is never a heavy build
         assert audit.is_heavy_build_cmd(_LIGHT_CMD) is False
 
@@ -224,9 +213,7 @@ class TestTaskGraphRedundancy:
             )
         )
         clean = audit.check_task_graph_redundancy(
-            _write_task_graph_plan(
-                tmp_path, 'c', [_task(1, deliverable=1, targets=['src/solo.py'])]
-            )
+            _write_task_graph_plan(tmp_path, 'c', [_task(1, deliverable=1, targets=['src/solo.py'])])
         )
         rows = [genuine, clean]
         threshold = audit._finalize_deliverable_fanout(rows)

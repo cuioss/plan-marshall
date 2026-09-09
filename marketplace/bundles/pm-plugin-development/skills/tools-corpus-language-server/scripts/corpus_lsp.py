@@ -148,6 +148,8 @@ def _bootstrap_sys_path() -> None:
                 if resolved not in sys.path:
                     sys.path.insert(0, resolved)
                 break
+
+
 _bootstrap_sys_path()
 
 from _corpus_index import CorpusIndex, notation_at  # noqa: E402
@@ -440,14 +442,17 @@ class CorpusLanguageServer:
         """Tell the client that sites were withheld, so an empty list is not read as none."""
         if self.notify is None:
             return
-        self.notify('window/logMessage', {
-            'type': LOG_MESSAGE_INFO,
-            'message': (
-                f'{omitted} of {total} reference site(s) for {notation} could not be confirmed against the '
-                f'cited line and were omitted; run `corpus_lsp query --kind references` to see them with '
-                f'their verified flag'
-            ),
-        })
+        self.notify(
+            'window/logMessage',
+            {
+                'type': LOG_MESSAGE_INFO,
+                'message': (
+                    f'{omitted} of {total} reference site(s) for {notation} could not be confirmed against the '
+                    f'cited line and were omitted; run `corpus_lsp query --kind references` to see them with '
+                    f'their verified flag'
+                ),
+            },
+        )
 
     def on_hover(self, params: dict[str, Any]) -> Any:
         index = self.index
@@ -667,7 +672,9 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     p_query = subparsers.add_parser('query', help='Answer one lookup without an LSP client', allow_abbrev=False)
     _add_project_path(p_query)
     p_query.add_argument('--kind', required=True, choices=['definition', 'references', 'hover'])
-    p_query.add_argument('--notation', required=True, help='Component notation, e.g. bundle:skill or bundle:skill:script')
+    p_query.add_argument(
+        '--notation', required=True, help='Component notation, e.g. bundle:skill or bundle:skill:script'
+    )
     p_query.set_defaults(func=cmd_query)
 
     p_serve = subparsers.add_parser('serve', help='Run the LSP server on stdio', allow_abbrev=False)

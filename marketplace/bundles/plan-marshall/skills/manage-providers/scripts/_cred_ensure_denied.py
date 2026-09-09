@@ -87,9 +87,7 @@ def run_ensure_denied(args: argparse.Namespace) -> int:
         )
         return 0
 
-    payload = parse_toon(
-        runtime.permission_fix(target, 'protect-path', [str(CREDENTIALS_DIR)], False)
-    )
+    payload = parse_toon(runtime.permission_fix(target, 'protect-path', [str(CREDENTIALS_DIR)], False))
     status = payload.get('status')
 
     if status == 'no-op':

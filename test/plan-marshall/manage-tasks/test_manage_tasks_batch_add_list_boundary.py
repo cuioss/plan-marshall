@@ -18,7 +18,6 @@ rather than rejecting everything it now reaches, and the agreement test states t
 invariant itself — equal row counts from both readers — rather than sampling shapes.
 """
 
-
 import pytest
 from _manage_tasks_batch_add_fixtures import normalize_list_headers, parse_stdin_task
 from toon_parser import parse_toon

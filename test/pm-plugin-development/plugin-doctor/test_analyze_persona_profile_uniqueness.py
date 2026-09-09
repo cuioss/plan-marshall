@@ -28,9 +28,7 @@ def _load_module(name: str, filename: str):
     return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
 
 
-_appu = _load_module(
-    '_analyze_persona_profile_uniqueness', '_analyze_persona_profile_uniqueness.py'
-)
+_appu = _load_module('_analyze_persona_profile_uniqueness', '_analyze_persona_profile_uniqueness.py')
 
 analyze_persona_profile_uniqueness = _appu.analyze_persona_profile_uniqueness
 RULE_ID = _appu.RULE_ID
@@ -89,12 +87,8 @@ def _persona_body(
 def test_two_personas_with_identical_primary_profile_trigger_finding(tmp_path):
     # Arrange — bundle dirs sort alphabetically; persona-a is declared first.
     root = _bundles_root(tmp_path)
-    _write_skill(
-        root, 'plan-marshall', 'persona-a', _persona_body('persona-a', profiles=['implementation'])
-    )
-    _write_skill(
-        root, 'plan-marshall', 'persona-b', _persona_body('persona-b', profiles=['implementation'])
-    )
+    _write_skill(root, 'plan-marshall', 'persona-a', _persona_body('persona-a', profiles=['implementation']))
+    _write_skill(root, 'plan-marshall', 'persona-b', _persona_body('persona-b', profiles=['implementation']))
 
     # Act
     # Assert
@@ -159,12 +153,8 @@ def test_block_form_profiles_collide_same_as_inline(tmp_path):
 def test_two_personas_with_different_primary_profiles_are_clean(tmp_path):
     # Arrange
     root = _bundles_root(tmp_path)
-    _write_skill(
-        root, 'plan-marshall', 'persona-a', _persona_body('persona-a', profiles=['implementation'])
-    )
-    _write_skill(
-        root, 'plan-marshall', 'persona-b', _persona_body('persona-b', profiles=['module_testing'])
-    )
+    _write_skill(root, 'plan-marshall', 'persona-a', _persona_body('persona-a', profiles=['implementation']))
+    _write_skill(root, 'plan-marshall', 'persona-b', _persona_body('persona-b', profiles=['module_testing']))
 
     # Act
     assert_analyzer_findings(analyze_persona_profile_uniqueness, root, [])
@@ -174,9 +164,7 @@ def test_non_persona_skill_with_duplicate_profiles_is_ignored(tmp_path):
     # Arrange — a persona owns 'implementation'; a NON-persona skill also
     # declares profiles: [implementation], which must NOT collide.
     root = _bundles_root(tmp_path)
-    _write_skill(
-        root, 'plan-marshall', 'persona-a', _persona_body('persona-a', profiles=['implementation'])
-    )
+    _write_skill(root, 'plan-marshall', 'persona-a', _persona_body('persona-a', profiles=['implementation']))
     _write_skill(
         root,
         'plan-marshall',
@@ -214,12 +202,7 @@ def test_empty_tree_yields_no_findings(tmp_path):
 def test_rule_id_present_in_rule_provenance_table():
     # Arrange
     provenance = (
-        MARKETPLACE_ROOT
-        / 'pm-plugin-development'
-        / 'skills'
-        / 'plugin-doctor'
-        / 'references'
-        / 'rule-provenance.md'
+        MARKETPLACE_ROOT / 'pm-plugin-development' / 'skills' / 'plugin-doctor' / 'references' / 'rule-provenance.md'
     )
 
     # Act

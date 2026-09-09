@@ -32,8 +32,7 @@ from conftest import _MARKETPLACE_SCRIPT_DIRS
 # A test file with a failing test and NO ``__main__`` block — the exact shape the
 # retired script-runner reported green.
 _FAILING_TEST = (
-    'def test_deliberately_fails():\n'
-    '    assert False, "D7 control: this must redden the canonical runner"\n'
+    'def test_deliberately_fails():\n    assert False, "D7 control: this must redden the canonical runner"\n'
 )
 # The matched-pair positive: a passing file, so that a red result is a real
 # verdict and not an unconditionally-red runner.
@@ -93,8 +92,7 @@ def test_passing_test_stays_green_under_the_canonical_runner(outside_repo_dir):
     result = _run_pytest(target)
 
     assert result.returncode == 0, (
-        'A passing test did not exit 0 under the canonical runner.\n'
-        f'stdout:\n{result.stdout}\nstderr:\n{result.stderr}'
+        f'A passing test did not exit 0 under the canonical runner.\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}'
     )
 
 

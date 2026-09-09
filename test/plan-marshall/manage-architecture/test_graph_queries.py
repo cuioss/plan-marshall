@@ -16,7 +16,9 @@ import pytest
 
 from conftest import get_script_path, load_script_module, parse_ns, run_script
 
-_architecture_core = load_script_module('plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core')
+_architecture_core = load_script_module(
+    'plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core'
+)
 _cmd_client = load_script_module('plan-marshall', 'manage-architecture', '_cmd_client.py', '_cmd_client')
 
 save_project_meta = _architecture_core.save_project_meta
@@ -61,20 +63,38 @@ def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
 #: script module on every call, and ``register=False`` because only the
 #: namespace is wanted here.
 _PATH_ARGS = parse_ns(
-    _ARCH_BUNDLE, _ARCH_SKILL, _ARCH_SCRIPT,
-    '--project-dir', '.', 'path', 'source', 'target',
+    _ARCH_BUNDLE,
+    _ARCH_SKILL,
+    _ARCH_SCRIPT,
+    '--project-dir',
+    '.',
+    'path',
+    'source',
+    'target',
     register=False,
 )
 
 _NEIGHBORS_ARGS = parse_ns(
-    _ARCH_BUNDLE, _ARCH_SKILL, _ARCH_SCRIPT,
-    '--project-dir', '.', 'neighbors', '--module', 'module',
+    _ARCH_BUNDLE,
+    _ARCH_SKILL,
+    _ARCH_SCRIPT,
+    '--project-dir',
+    '.',
+    'neighbors',
+    '--module',
+    'module',
     register=False,
 )
 
 _IMPACT_ARGS = parse_ns(
-    _ARCH_BUNDLE, _ARCH_SKILL, _ARCH_SCRIPT,
-    '--project-dir', '.', 'impact', '--module', 'module',
+    _ARCH_BUNDLE,
+    _ARCH_SKILL,
+    _ARCH_SCRIPT,
+    '--project-dir',
+    '.',
+    'impact',
+    '--module',
+    'module',
     register=False,
 )
 
@@ -639,6 +659,4 @@ def test_architecture_accepts_project_dir_only(tmp_path):
         'overview',
     )
     # No argparse errors → routing parser surface accepted the flag.
-    assert 'unrecognized arguments' not in result.stderr, (
-        f'--project-dir was rejected by argparse: {result.stderr!r}'
-    )
+    assert 'unrecognized arguments' not in result.stderr, f'--project-dir was rejected by argparse: {result.stderr!r}'

@@ -83,9 +83,7 @@ def _registry() -> Any:
     analyzer modules the collector imports resolve their own ``from
     _rule_registry import RuleDescriptor`` against this instance.
     """
-    return load_script_module(
-        'pm-plugin-development', 'plugin-doctor', '_rule_registry.py', '_rule_registry'
-    )
+    return load_script_module('pm-plugin-development', 'plugin-doctor', '_rule_registry.py', '_rule_registry')
 
 
 @lru_cache(maxsize=1)
@@ -126,11 +124,7 @@ def _escaping_substrates(source: str) -> tuple[str, ...]:
     module docstring for the three shapes this deliberately does not reach.
     """
     tree = ast.parse(source)
-    joins = [
-        node
-        for node in ast.walk(tree)
-        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div)
-    ]
+    joins = [node for node in ast.walk(tree) if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div)]
     # Only the OUTERMOST join of a chain describes the whole path; an inner one
     # would additionally report every truncated prefix of it.
     nested = {id(node.left) for node in joins}
@@ -179,11 +173,7 @@ def _census() -> tuple[tuple[str, str, tuple[str, ...]], ...]:
             # An unreadable analyzer is a coverage gap, not an absence — fail
             # loudly rather than silently shrinking the examined population.
             raise AssertionError(f'Could not read registered analyzer: {path}') from None
-        absent = tuple(
-            substrate
-            for substrate in _escaping_substrates(source)
-            if not _ships_in_a_clone(substrate)
-        )
+        absent = tuple(substrate for substrate in _escaping_substrates(source) if not _ships_in_a_clone(substrate))
         rows.append((rule_id, module_name, absent))
     return tuple(rows)
 
@@ -278,6 +268,5 @@ def test_every_reported_substrate_is_really_untracked():
     assert reported, f'no absent substrate was derived at all:\n{census_report()}'
     shipping = [substrate for substrate in reported if _ships_in_a_clone(substrate)]
     assert not shipping, (
-        f'{len(shipping)} reported substrate(s) are tracked by git and therefore '
-        f'present in a fresh clone: {shipping}'
+        f'{len(shipping)} reported substrate(s) are tracked by git and therefore present in a fresh clone: {shipping}'
     )

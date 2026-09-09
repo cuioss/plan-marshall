@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for manage-metrics.py `print-phase-breakdown` subcommand."""
 
-
 from _manage_metrics_fixtures import (
     ns_generate,
     ns_print_phase_breakdown,
@@ -31,9 +30,7 @@ class TestCliPlumbing:
         """Default invocation writes the artifact and emits a TOON envelope on stdout."""
         _seed_metrics_md('metrics-print-cli-01')
         plan_dir = plan_context.plan_dir_for('metrics-print-cli-01')
-        result = run_script(
-            SCRIPT_PATH, 'print-phase-breakdown', '--plan-id', 'metrics-print-cli-01'
-        )
+        result = run_script(SCRIPT_PATH, 'print-phase-breakdown', '--plan-id', 'metrics-print-cli-01')
         assert result.returncode == 0, f'stderr: {result.stderr}'
         payload = parse_toon(result.stdout)
         assert payload['status'] == 'success'
@@ -63,9 +60,7 @@ class TestCliPlumbing:
         assert 'status: error' not in stdout
 
     def test_cli_error_emits_toon_when_metrics_missing(self, plan_context):
-        result = run_script(
-            SCRIPT_PATH, 'print-phase-breakdown', '--plan-id', 'metrics-print-cli-02'
-        )
+        result = run_script(SCRIPT_PATH, 'print-phase-breakdown', '--plan-id', 'metrics-print-cli-02')
         assert result.returncode == 0
         payload = parse_toon(result.stdout)
         assert payload['status'] == 'error'
@@ -249,6 +244,7 @@ class TestEndToEndPhaseBreakdownRendering:
         assert print_result['status'] == 'success'
         assert print_result['file'] == 'work/phase-breakdown-output.txt'
         from file_ops import get_plan_dir
+
         section = (get_plan_dir('metrics-e2e-01') / print_result['file']).read_text(encoding='utf-8')
 
         # The captured section begins with the heading and carries the three
@@ -306,6 +302,7 @@ class TestEndToEndPhaseBreakdownRendering:
         print_result = cmd_print_phase_breakdown(ns_print_phase_breakdown('metrics-e2e-02'))
         assert print_result['status'] == 'success'
         from file_ops import get_plan_dir
+
         section = (get_plan_dir('metrics-e2e-02') / print_result['file']).read_text(encoding='utf-8')
 
         exec_line = next(ln for ln in section.splitlines() if ln.startswith('| 5-execute'))
@@ -344,6 +341,7 @@ class TestEndToEndPhaseBreakdownRendering:
         print_result = cmd_print_phase_breakdown(ns_print_phase_breakdown('metrics-e2e-03'))
         assert print_result['status'] == 'success'
         from file_ops import get_plan_dir
+
         section = (get_plan_dir('metrics-e2e-03') / print_result['file']).read_text(encoding='utf-8')
 
         total_line = next(ln for ln in section.splitlines() if '**Total**' in ln)
@@ -356,6 +354,6 @@ class TestEndToEndPhaseBreakdownRendering:
         # idle total   = (180-120) + (600-240) = 60 + 360 = 420 s = '7m0s'.
         # Only two of the canonical six phases are present, so the completeness
         # denominator is six → every time-column Total carries the (n=2/6) marker.
-        assert total_cells[1] == '**6m0s (n=2/6)**'   # Worked
+        assert total_cells[1] == '**6m0s (n=2/6)**'  # Worked
         assert total_cells[2] == '**13m0s (n=2/6)**'  # Reported (wall)
-        assert total_cells[3] == '**7m0s (n=2/6)**'   # Idle
+        assert total_cells[3] == '**7m0s (n=2/6)**'  # Idle

@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for manage-status.py transition: delete-plan claim writes and carry-back vocabulary."""
 
-
 import os
 from argparse import Namespace
 from pathlib import Path
@@ -12,9 +11,7 @@ from _manage_status_transition_fixtures import SCRIPT_PATH, _lifecycle, cmd_dele
 from conftest import load_script_module, run_script
 
 
-def test_delete_plan_destination_claim_does_not_rely_on_an_exists_probe(
-    plan_context, monkeypatch
-):
+def test_delete_plan_destination_claim_does_not_rely_on_an_exists_probe(plan_context, monkeypatch):
     """The incumbent survives even when an ``exists()`` probe reports absence.
 
     ``destination.exists()`` and the move were a TOCTOU pair: a destination
@@ -48,9 +45,7 @@ def test_delete_plan_destination_claim_does_not_rely_on_an_exists_probe(
 
     assert result['status'] == 'error'
     assert result['error'] == 'lesson_carry_back_incomplete'
-    assert result['skipped_lessons'] == [
-        {'lesson_id': '2025-08-08-008', 'reason': 'destination_exists'}
-    ]
+    assert result['skipped_lessons'] == [{'lesson_id': '2025-08-08-008', 'reason': 'destination_exists'}]
     assert result['restored_lesson_ids'] == []
 
     monkeypatch.undo()
@@ -64,9 +59,7 @@ def test_delete_plan_destination_claim_does_not_rely_on_an_exists_probe(
     assert (plan_dir / 'lesson-2025-08-08-008.md').exists()
 
 
-def test_delete_plan_writes_through_the_claim_instead_of_reopening_by_path(
-    plan_context, monkeypatch
-):
+def test_delete_plan_writes_through_the_claim_instead_of_reopening_by_path(plan_context, monkeypatch):
     """The claimed destination is written THROUGH its fd, never reopened by path.
 
     ``O_EXCL`` buys an atomic collision test, and closing the claim fd to hand
@@ -103,10 +96,7 @@ def test_delete_plan_writes_through_the_claim_instead_of_reopening_by_path(
         # swap is reachable only by an implementation that closes the claim
         # before writing. Every unrelated close falls through untouched.
         try:
-            claimed = (
-                not destination.is_symlink()
-                and os.fstat(fd).st_ino == destination.stat().st_ino
-            )
+            claimed = not destination.is_symlink() and os.fstat(fd).st_ino == destination.stat().st_ino
         except OSError:
             claimed = False
         if claimed:
@@ -167,9 +157,7 @@ def test_carry_back_vocabulary_agrees_with_restore_from_plan(plan_context):
     assert 'restore_incomplete' in _lifecycle.CARRY_BACK_ACTIONS
 
 
-def test_unresolvable_store_over_an_empty_plan_dir_is_still_the_benign_zero(
-    plan_context, monkeypatch
-):
+def test_unresolvable_store_over_an_empty_plan_dir_is_still_the_benign_zero(plan_context, monkeypatch):
     """Store-unresolved does NOT force ``plan_dir_unresolved`` unconditionally.
 
     The mirror of the carried-lesson case above. The directory WAS scanned and
@@ -195,9 +183,7 @@ def test_unresolvable_store_over_an_empty_plan_dir_is_still_the_benign_zero(
     plan_dir = plan_context.plan_dir_for('unresolved-store-empty-plan')
     (plan_dir / 'request.md').write_text('# Request')
 
-    result = cmd_delete_plan(
-        Namespace(plan_id='unresolved-store-empty-plan', no_restore_lessons=False)
-    )
+    result = cmd_delete_plan(Namespace(plan_id='unresolved-store-empty-plan', no_restore_lessons=False))
 
     # No lesson was at risk, so the veto does not fire and the delete proceeds.
     assert result['status'] == 'success'

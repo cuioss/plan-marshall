@@ -233,9 +233,7 @@ class Extension(ExtensionBase, PathAttributionBase, DerivationResolverBase):
             doc_dir = root / doc_dir_name
             if not doc_dir.is_dir():
                 continue
-            has_doc_file = any(
-                next(doc_dir.rglob(f'*{suffix}'), None) is not None for suffix in ('.adoc', '.md')
-            )
+            has_doc_file = any(next(doc_dir.rglob(f'*{suffix}'), None) is not None for suffix in ('.adoc', '.md'))
             if has_doc_file:
                 found_doc_dir = doc_dir_name
                 break

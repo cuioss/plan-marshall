@@ -245,9 +245,7 @@ def test_results_are_sorted_by_attributor_id(monkeypatch):
         'non-string-id',
     ],
 )
-def test_unusable_attributor_is_skipped_and_its_sibling_survives(
-    monkeypatch, unusable_attributor
-):
+def test_unusable_attributor_is_skipped_and_its_sibling_survives(monkeypatch, unusable_attributor):
     """An attributor with no usable identity is dropped; the sibling survives.
 
     A raising id accessor must not be fatal; an attributor that cannot identify

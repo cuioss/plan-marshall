@@ -7,7 +7,6 @@ shared contract documented in build-api-reference.md. Ensures the unified
 API is actually consistent across Maven, Gradle, npm, and Python.
 """
 
-
 import dataclasses
 import typing
 from collections.abc import Callable

@@ -24,9 +24,7 @@ control = load_script_module('plan-marshall', 'manage-build-server', 'manage_bui
 #: to module scope because ``parse_ns`` re-executes the script module on every
 #: call. ``register=False`` so it never publishes a second ``manage_build_server``
 #: in ``sys.modules`` alongside the one the loader published above.
-_STATUS_ARGS = parse_ns(
-    'plan-marshall', 'manage-build-server', 'manage_build_server.py', 'status', register=False
-)
+_STATUS_ARGS = parse_ns('plan-marshall', 'manage-build-server', 'manage_build_server.py', 'status', register=False)
 
 
 @pytest.fixture

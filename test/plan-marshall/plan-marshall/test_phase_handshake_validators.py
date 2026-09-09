@@ -239,10 +239,7 @@ def test_check_main_dirty_drift_gated_to_planning_phases():
         cmds._check_main_dirty_drift('p', '4-plan', captured_row, observed, metadata)
 
     # Phase-5 boundary → relaxed → no raise.
-    assert (
-        cmds._check_main_dirty_drift('p', '5-execute', captured_row, observed, metadata)
-        is None
-    )
+    assert cmds._check_main_dirty_drift('p', '5-execute', captured_row, observed, metadata) is None
 
 
 def test_cwd_unchanged_invariant_guard_holds_when_cwd_is_worktree(tmp_path, monkeypatch):

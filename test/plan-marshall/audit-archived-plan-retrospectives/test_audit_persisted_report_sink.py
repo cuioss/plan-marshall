@@ -77,12 +77,8 @@ class TestPersistedReportSink:
         reports_dir.mkdir(parents=True)
         older = reports_dir / '20260101T000000Z.toon'
         newer = reports_dir / '20260601T120000Z.toon'
-        older.write_text(
-            'report: audit\nsummary_metrics:\n  plans_scanned: 1\n', encoding='utf-8'
-        )
-        newer.write_text(
-            'report: audit\nsummary_metrics:\n  plans_scanned: 9\n', encoding='utf-8'
-        )
+        older.write_text('report: audit\nsummary_metrics:\n  plans_scanned: 1\n', encoding='utf-8')
+        newer.write_text('report: audit\nsummary_metrics:\n  plans_scanned: 9\n', encoding='utf-8')
 
         loaded = audit.load_latest_prior_report(tmp_path)
 

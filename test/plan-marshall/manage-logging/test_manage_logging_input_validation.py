@@ -35,9 +35,7 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'manage-logging', 'manage-logging
 @pytest.mark.parametrize('axis,bad_value', MALFORMED_AXES['plan_id'])
 def test_work_rejects_invalid_plan_id(axis, bad_value):
     """``manage-logging work --plan-id <bad> --level INFO --message m`` → invalid_plan_id TOON."""
-    assert_plan_id_axis_rejected(
-        SCRIPT_PATH, 'work', bad_value, extra_args=('--level', 'INFO', '--message', 'msg')
-    )
+    assert_plan_id_axis_rejected(SCRIPT_PATH, 'work', bad_value, extra_args=('--level', 'INFO', '--message', 'msg'))
 
 
 @pytest.mark.parametrize('axis,bad_value', MALFORMED_AXES['plan_id'])
@@ -97,9 +95,7 @@ class TestGetLogPathPlanIdContainment:
         with pytest.raises(ValueError) as excinfo:
             plan_logging.get_log_path(bad_plan_id, 'work')
 
-        assert 'invalid plan_id' in str(excinfo.value), (
-            f'guard must name the rejected identifier, got: {excinfo.value}'
-        )
+        assert 'invalid plan_id' in str(excinfo.value), f'guard must name the rejected identifier, got: {excinfo.value}'
 
     def test_none_plan_id_still_resolves_to_the_global_log(self, plan_base):
         """No-regression guard: the legitimate global-fallback path is unaffected."""
@@ -127,6 +123,4 @@ class TestGetLogPathPlanIdContainment:
         assert [p.name for p in tmp_path.iterdir()] == ['base'], (
             f'a malformed plan_id created a path outside PLAN_BASE_DIR: {list(tmp_path.iterdir())}'
         )
-        assert list(plan_base.rglob('*.log')) == [], (
-            'the entry must be dropped, not written to the global log'
-        )
+        assert list(plan_base.rglob('*.log')) == [], 'the entry must be dropped, not written to the global log'

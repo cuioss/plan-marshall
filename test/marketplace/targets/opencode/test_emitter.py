@@ -43,17 +43,20 @@ def fixture_bundle(tmp_path: Path) -> Path:
     """Build a single complete bundle that exercises every emit path."""
     marketplace = tmp_path / 'bundles'
     bundle = marketplace / 'demo'
-    plugin_doc = json.dumps(
-        {
-            'name': 'demo',
-            'version': '0.0.1',
-            'description': 'Demo bundle',
-            'agents': ['./agents/demo-agent.md'],
-            'commands': ['./commands/demo-cmd.md'],
-            'skills': ['./skills/demo-skill'],
-        },
-        indent=2,
-    ) + '\n'
+    plugin_doc = (
+        json.dumps(
+            {
+                'name': 'demo',
+                'version': '0.0.1',
+                'description': 'Demo bundle',
+                'agents': ['./agents/demo-agent.md'],
+                'commands': ['./commands/demo-cmd.md'],
+                'skills': ['./skills/demo-skill'],
+            },
+            indent=2,
+        )
+        + '\n'
+    )
     _write(bundle / '.claude-plugin' / 'plugin.json', plugin_doc)
     _write(
         bundle / 'skills' / 'demo-skill' / 'SKILL.md',
@@ -127,9 +130,7 @@ def test_emit_bundles_passes_body_transformer(fixture_bundle: Path, tmp_path: Pa
     assert '[skill]' in skill_md
 
 
-def test_missing_description_in_skill_raises_unmapped_frontmatter(
-    tmp_path: Path, opencode_config_dir: Path
-):
+def test_missing_description_in_skill_raises_unmapped_frontmatter(tmp_path: Path, opencode_config_dir: Path):
     """When SKILL.md omits the required ``description`` field, emit raises (CLI exits 2)."""
     marketplace = tmp_path / 'bundles'
     bundle = marketplace / 'demo'
@@ -314,9 +315,7 @@ def test_resolvers_preserve_a_leading_dot_directory_reference(tmp_path: Path):
 # a refusal that also refused legitimate emits would be worse than the gap.
 
 
-def test_emit_bundles_refuses_an_output_dir_inside_the_source_tree(
-    fixture_bundle: Path, opencode_config_dir: Path
-):
+def test_emit_bundles_refuses_an_output_dir_inside_the_source_tree(fixture_bundle: Path, opencode_config_dir: Path):
     """Negative half: the overlap is refused and the source survives intact."""
     source_skill = fixture_bundle / 'demo' / 'skills' / 'demo-skill' / 'SKILL.md'
     source_bytes = source_skill.read_bytes()
@@ -329,9 +328,7 @@ def test_emit_bundles_refuses_an_output_dir_inside_the_source_tree(
     assert standards_file.is_file()
 
 
-def test_emit_bundles_refuses_before_writing_or_unlinking_anything(
-    fixture_bundle: Path, opencode_config_dir: Path
-):
+def test_emit_bundles_refuses_before_writing_or_unlinking_anything(fixture_bundle: Path, opencode_config_dir: Path):
     """The refusal precedes every side effect — no partial emit is left behind.
 
     Asserting only that it raises would not distinguish "refused up front" from

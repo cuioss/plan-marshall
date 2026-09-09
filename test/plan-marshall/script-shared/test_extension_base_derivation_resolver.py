@@ -191,9 +191,7 @@ _DISJOINT_HIERARCHY_IDS = [
 ]
 
 
-@pytest.mark.parametrize(
-    'candidate,hierarchy', _DISJOINT_HIERARCHY_PAIRS, ids=_DISJOINT_HIERARCHY_IDS
-)
+@pytest.mark.parametrize('candidate,hierarchy', _DISJOINT_HIERARCHY_PAIRS, ids=_DISJOINT_HIERARCHY_IDS)
 def test_the_three_abc_hierarchies_are_pairwise_disjoint(candidate, hierarchy):
     assert candidate not in hierarchy.__mro__
 
@@ -229,15 +227,17 @@ def test_multiple_inheritance_from_axis_a_side_is_also_valid():
     # Arrange — a language/content domain bundle may opt in from the Axis-A side
     class _DomainAndResolver(ExtensionBase, DerivationResolverBase):
         def get_skill_domains(self) -> list[dict]:
-            return [{
-                'domain': {'key': 'fixture', 'name': 'Fixture', 'description': 'Test only'},
-                'profiles': {
-                    'core': {'defaults': [], 'optionals': []},
-                    'implementation': {'defaults': [], 'optionals': []},
-                    'module_testing': {'defaults': [], 'optionals': []},
-                    'quality': {'defaults': [], 'optionals': []},
-                },
-            }]
+            return [
+                {
+                    'domain': {'key': 'fixture', 'name': 'Fixture', 'description': 'Test only'},
+                    'profiles': {
+                        'core': {'defaults': [], 'optionals': []},
+                        'implementation': {'defaults': [], 'optionals': []},
+                        'module_testing': {'defaults': [], 'optionals': []},
+                        'quality': {'defaults': [], 'optionals': []},
+                    },
+                }
+            ]
 
         def derivation_resolver_id(self) -> str:
             return 'fixture-domain'

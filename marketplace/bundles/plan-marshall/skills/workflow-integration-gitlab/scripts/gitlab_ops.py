@@ -1223,7 +1223,11 @@ def _build_failing_check_entry(job: dict) -> dict:
         'job_name': job.get('name', '') or '',
         'started_at': job.get('started_at') or job.get('created_at') or '',
         'completed_at': job.get('finished_at') or '',
-        'run_id': str(job.get('pipeline_id') or job.get('pipeline', {}).get('id', '') if isinstance(job.get('pipeline'), dict) else (job.get('pipeline_id') or '')),
+        'run_id': str(
+            job.get('pipeline_id') or job.get('pipeline', {}).get('id', '')
+            if isinstance(job.get('pipeline'), dict)
+            else (job.get('pipeline_id') or '')
+        ),
         'run_url': job.get('web_url') or '',
     }
     return entry
@@ -2458,7 +2462,9 @@ def cmd_pr_safe_merge(args: argparse.Namespace) -> dict:
         merge_result['duration_sec'] = duration_sec
         # Prefer the integer MR IID resolved during polling over the branch
         # name cmd_pr_merge echoes back when --head was used.
-        merge_result['pr_number'] = (poll_result.get('last_data') or {}).get('pr_number') or merge_result.get('pr_number')
+        merge_result['pr_number'] = (poll_result.get('last_data') or {}).get('pr_number') or merge_result.get(
+            'pr_number'
+        )
         return merge_result
 
     # Timed out while not ready. GitLab has no admin fallback — the

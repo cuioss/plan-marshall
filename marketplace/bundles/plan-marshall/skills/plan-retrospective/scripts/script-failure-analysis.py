@@ -473,11 +473,7 @@ def dedupe_mirrored_failures(
     was built to catch) is retained.
     """
     exec_keys = {(f.get('notation'), f.get('timestamp')) for f in exec_failures}
-    return [
-        f
-        for f in work_failures
-        if (f.get('notation'), f.get('timestamp')) not in exec_keys
-    ]
+    return [f for f in work_failures if (f.get('notation'), f.get('timestamp')) not in exec_keys]
 
 
 def cmd_run(args: argparse.Namespace) -> dict[str, Any]:

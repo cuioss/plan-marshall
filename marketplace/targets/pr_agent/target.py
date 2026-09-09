@@ -248,10 +248,10 @@ def _classify_skill(skill_name: str) -> tuple[str, str] | None:
         per-domain standards skill.
     """
     if skill_name.startswith(_ARCH_GATE_PREFIX):
-        token = skill_name[len(_ARCH_GATE_PREFIX):]
+        token = skill_name[len(_ARCH_GATE_PREFIX) :]
         return (KIND_ARCH_GATE, token) if token else None
     if skill_name.startswith(_TRIAGE_PREFIX):
-        token = skill_name[len(_TRIAGE_PREFIX):]
+        token = skill_name[len(_TRIAGE_PREFIX) :]
         return (KIND_TRIAGE, token) if token else None
     if skill_name.endswith(_SECURITY_SUFFIX):
         token = skill_name[: -len(_SECURITY_SUFFIX)]
@@ -420,8 +420,7 @@ def _domain_category_bullet(contribution: DomainContribution) -> str:
     """
     if contribution.rules:
         clause = (
-            f'the rules this organisation enforces for {contribution.domain} code are listed under '
-            f'"Domain rules" below'
+            f'the rules this organisation enforces for {contribution.domain} code are listed under "Domain rules" below'
         )
     else:
         labels = _join_terms([_KIND_LABELS[kind] for kind in contribution.kinds])
@@ -456,9 +455,7 @@ def compose_spine(spine_topics: tuple[str, ...]) -> str:
 
     if spine_topics:
         lines.append('')
-        lines.append(
-            'Cross-cutting foundations to apply in every review: ' + ', '.join(spine_topics) + '.'
-        )
+        lines.append('Cross-cutting foundations to apply in every review: ' + ', '.join(spine_topics) + '.')
 
     for clause in (SUBSTANTIATION_CLAUSE, INTENT_CLAUSE, SEVERITY_CLAUSE, ANTI_FABRICATION_CLAUSE):
         lines.append('')
@@ -480,8 +477,7 @@ def compose_domain_pack(contribution: DomainContribution) -> str:
         contribution: The derived domain this artifact carries.
     """
     lines: list[str] = [
-        f'Prioritise security and correctness over style. This pack is scoped to the '
-        f'{contribution.domain} domain.',
+        f'Prioritise security and correctness over style. This pack is scoped to the {contribution.domain} domain.',
         '',
         f'- {_domain_category_bullet(contribution)}',
     ]
@@ -489,7 +485,7 @@ def compose_domain_pack(contribution: DomainContribution) -> str:
     if contribution.rules:
         lines.append('')
         lines.append(
-            f'Domain rules — this organisation\'s own standards for {contribution.domain} code. A diff '
+            f"Domain rules — this organisation's own standards for {contribution.domain} code. A diff "
             f'that breaks one of these is a finding, and the rule already names the mechanism:'
         )
         lines.extend(f'- {rule}' for rule in contribution.rules)
@@ -557,8 +553,7 @@ def compose_packs(marketplace_dir: Path) -> dict[str, str]:
     gets the whole derived set, so no call site can publish a narrowed one.
     """
     return {
-        domain: compose_domain_pack(contribution)
-        for domain, contribution in discover_domains(marketplace_dir).items()
+        domain: compose_domain_pack(contribution) for domain, contribution in discover_domains(marketplace_dir).items()
     }
 
 

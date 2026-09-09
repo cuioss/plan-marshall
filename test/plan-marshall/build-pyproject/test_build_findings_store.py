@@ -180,8 +180,10 @@ class TestCmdRunCommonPlanIdGuard:
         log_file = plan_context.fixture_dir / 'fake.log'
         log_file.write_text('failed\n')
 
-        with patch('_build_shared._store_build_findings') as mock_store, \
-                patch('_build_shared._record_producer_mismatch') as mock_qgate:
+        with (
+            patch('_build_shared._store_build_findings') as mock_store,
+            patch('_build_shared._record_producer_mismatch') as mock_qgate,
+        ):
             # Suppress noisy stdout/stderr
             buf = io.StringIO()
             with redirect_stdout(buf):
@@ -205,8 +207,10 @@ class TestCmdRunCommonPlanIdGuard:
         log_file = plan_context.fixture_dir / 'fake.log'
         log_file.write_text('failed\n')
 
-        with patch('_build_shared._store_build_findings') as mock_store, \
-                patch('_build_shared._record_producer_mismatch') as mock_qgate:
+        with (
+            patch('_build_shared._store_build_findings') as mock_store,
+            patch('_build_shared._record_producer_mismatch') as mock_qgate,
+        ):
             mock_store.return_value = (1, 1, [])
             buf = io.StringIO()
             with redirect_stdout(buf):
@@ -821,9 +825,7 @@ class TestPublishedCountIsTheExecutedCount:
         with redirect_stdout(buf):
             cmd_run_common(
                 result=self._make_success_result(log_file),
-                parser_fn=self._parser_for(
-                    UnitTestSummary(passed=2, failed=0, skipped=9, total=11)
-                ),
+                parser_fn=self._parser_for(UnitTestSummary(passed=2, failed=0, skipped=9, total=11)),
                 tool_name='python',
                 plan_id=plan_context.plan_id,
             )

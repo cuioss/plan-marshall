@@ -73,9 +73,7 @@ _real_run_config = load_script_module(
     'plan-marshall', 'manage-run-config', 'run_config.py', '_real_run_config_for_truthfulness'
 )
 
-_arch_build = load_script_module(
-    'plan-marshall', 'manage-architecture', '_cmd_client_build.py', '_cmd_client_build'
-)
+_arch_build = load_script_module('plan-marshall', 'manage-architecture', '_cmd_client_build.py', '_cmd_client_build')
 _lookup_bash_timeout = _arch_build._lookup_bash_timeout
 _compute_execution_tier_fields = _arch_build._compute_execution_tier_fields
 _load_build_config = _arch_build._load_build_config
@@ -171,15 +169,12 @@ def test_every_engine_declares_its_floor_explicitly(tool_name, skill, script_fil
     """No engine may inherit the dataclass ``MIN_TIMEOUT`` default silently."""
     config = _engine_config(tool_name)
     assert config.min_timeout == expected_floor, (
-        f'{tool_name} must declare min_timeout={expected_floor}, got '
-        f'{config.min_timeout}'
+        f'{tool_name} must declare min_timeout={expected_floor}, got {config.min_timeout}'
     )
 
 
 @pytest.mark.parametrize(('tool_name', 'skill', 'script_file', 'expected_floor'), _ENGINES, ids=_ENGINE_IDS)
-def test_every_engine_floor_leaves_the_buffered_stamp_passable(
-    tool_name, skill, script_file, expected_floor
-):
+def test_every_engine_floor_leaves_the_buffered_stamp_passable(tool_name, skill, script_file, expected_floor):
     """A declared floor must never push the stamped bound past the Bash ceiling.
 
     The floor is bounded on BOTH sides. The lower half (floor > the engine's
@@ -207,9 +202,7 @@ def test_every_engine_floor_leaves_the_buffered_stamp_passable(
 
 
 @pytest.mark.parametrize(('tool_name', 'skill', 'script_file', 'expected_floor'), _ENGINES, ids=_ENGINE_IDS)
-def test_passing_near_learned_value_build_reports_success_not_timeout(
-    tool_name, skill, script_file, expected_floor
-):
+def test_passing_near_learned_value_build_reports_success_not_timeout(tool_name, skill, script_file, expected_floor):
     """A build finishing just under the learned value resolves to success.
 
     The bound the subprocess is measured against must be at least the floored
@@ -241,8 +234,7 @@ def test_passing_near_learned_value_build_reports_success_not_timeout(
             )
 
     assert result['status'] == 'success', (
-        f'{tool_name}: a build finishing under its bound must not report '
-        f'{result["status"]!r}'
+        f'{tool_name}: a build finishing under its bound must not report {result["status"]!r}'
     )
     assert result['timeout_used_seconds'] == expected_bound, (
         f'{tool_name}: the consumed bound must be max(learned={learned}, '
@@ -299,7 +291,7 @@ def test_explicit_timeout_binds_end_to_end_through_cmd_run(
     assert mock_run.call_args[1]['timeout'] == explicit, (
         f'{tool_name}: the explicit --timeout {explicit} must bind end-to-end; '
         f'the subprocess was bounded by {mock_run.call_args[1]["timeout"]} '
-        'instead — a learned value discarded the caller\'s override'
+        "instead — a learned value discarded the caller's override"
     )
 
 

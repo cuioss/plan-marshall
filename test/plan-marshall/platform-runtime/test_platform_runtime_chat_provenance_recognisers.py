@@ -122,10 +122,7 @@ class TestRecogniserBoundaries:
         Searching from the last occurrence lets an injected body whose heading
         sits between two marker lines escape recognition.
         """
-        text = (
-            'Base directory for this skill: /a\n\n# Demo Skill\n\nbody body body\n'
-            'Base directory for this skill: /b'
-        )
+        text = 'Base directory for this skill: /a\n\n# Demo Skill\n\nbody body body\nBase directory for this skill: /b'
         assert _mod.is_synthetic_skill_load(text) is True
 
     def test_a_heading_needs_hashes_at_line_start(self):
@@ -145,9 +142,7 @@ class TestRecogniserBoundaries:
         [(1, True), (2, True), (3, True), (4, True), (5, True), (6, True), (7, False)],
         ids=['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'seven-hashes-is-not-a-heading'],
     )
-    def test_only_atx_levels_one_through_six_open_an_injected_body(
-        self, level: int, expected: bool
-    ) -> None:
+    def test_only_atx_levels_one_through_six_open_an_injected_body(self, level: int, expected: bool) -> None:
         """Every ATX level opens an injected body; a seventh hash does not.
 
         Six is the whole ladder, so the seventh row is what makes the sweep a
@@ -164,9 +159,7 @@ class TestRecogniserBoundaries:
         text = 'Base directory for this skill: /x\n\n#  Demo Skill\n\nbody'
         assert _mod.is_synthetic_skill_load(text) is True
 
-    @pytest.mark.parametrize(
-        ('text', 'expected'), _TAG_GRAMMAR_CASES, ids=_TAG_GRAMMAR_IDS
-    )
+    @pytest.mark.parametrize(('text', 'expected'), _TAG_GRAMMAR_CASES, ids=_TAG_GRAMMAR_IDS)
     def test_the_tag_grammar_decides_what_is_an_envelope(self, text: str, expected: bool) -> None:
         """A shape the grammar does not accept as a tag leaves its prose standing.
 
@@ -187,4 +180,3 @@ class TestRecogniserBoundaries:
         """
         assert _mod.strip_harness_envelopes('Stop hook <a/>feedback:') == 'Stop hook feedback:'
         assert _mod.is_operator_authored('Stop hook <a/>feedback:') is False
-

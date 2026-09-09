@@ -306,9 +306,7 @@ def _render_user_invocable_template(description: str, model: str | None, skill_i
     keep the dependency surface minimal.
     """
     if not _USER_INVOCABLE_TEMPLATE.is_file():
-        raise FileNotFoundError(
-            f'OpenCode user-invocable template not found: {_USER_INVOCABLE_TEMPLATE}'
-        )
+        raise FileNotFoundError(f'OpenCode user-invocable template not found: {_USER_INVOCABLE_TEMPLATE}')
     text = _USER_INVOCABLE_TEMPLATE.read_text(encoding='utf-8')
     if model:
         text = text.replace('{{#model}}model: {{model}}{{/model}}', f'model: {model}')
@@ -456,7 +454,9 @@ def _resolve_md_components(bundle_dir: Path, plugin_config: dict, key: str, fall
         return paths
     fallback = bundle_dir / fallback_subdir
     if fallback.exists():
-        paths = sorted(p for p in fallback.iterdir() if p.is_file() and p.suffix == '.md' and not p.name.startswith('.'))
+        paths = sorted(
+            p for p in fallback.iterdir() if p.is_file() and p.suffix == '.md' and not p.name.startswith('.')
+        )
     return paths
 
 
@@ -483,9 +483,7 @@ def _generate_opencode_json(
         },
     }
     if agent_index:
-        config['agent'] = {
-            agent_id: {} for agent_id in sorted(agent_index)
-        }
+        config['agent'] = {agent_id: {} for agent_id in sorted(agent_index)}
     config_path = output_dir / 'opencode.json'
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(json.dumps(config, indent=2) + '\n', encoding='utf-8')

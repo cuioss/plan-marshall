@@ -369,7 +369,9 @@ def add_discover_subparser(subparsers, discover_fn, *, help_text: str = 'Discove
     return discover_parser
 
 
-def add_run_config_key_subparser(subparsers, config, *, help_text: str = 'Compute canonical run-config key for a given command args string'):
+def add_run_config_key_subparser(
+    subparsers, config, *, help_text: str = 'Compute canonical run-config key for a given command args string'
+):
     """Add a 'run-config-key' subparser that prints the canonical run-config key.
 
     Returns TOON with three fields:

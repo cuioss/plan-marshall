@@ -98,9 +98,7 @@ from triage_helpers import (
 # load path resolves a sibling skill's scripts dir, not this skill's own.
 
 _THIS_DIR = Path(__file__).resolve().parent
-_MERGE_LOCK_PATH = (
-    _THIS_DIR.parent.parent / 'manage-locks' / 'scripts' / 'merge_lock.py'
-)
+_MERGE_LOCK_PATH = _THIS_DIR.parent.parent / 'manage-locks' / 'scripts' / 'merge_lock.py'
 
 
 def _load_module_by_path(name: str, path: Path) -> Any:
@@ -181,8 +179,7 @@ def _resolve_worktree_path_via_status_channel(
 
     if not has_worktree:
         return None, make_error(
-            'No worktree configured for this plan — '
-            'status.metadata.use_worktree is false or worktree_path is unset',
+            'No worktree configured for this plan — status.metadata.use_worktree is false or worktree_path is unset',
             code=ErrorCode.NOT_FOUND,
             plan_id=plan_id,
         )
@@ -191,8 +188,7 @@ def _resolve_worktree_path_via_status_channel(
         return Path(context.worktree_path), None
     except WorktreeResolutionError:
         return None, make_error(
-            'No worktree configured for this plan — '
-            'status.metadata.use_worktree is false or worktree_path is unset',
+            'No worktree configured for this plan — status.metadata.use_worktree is false or worktree_path is unset',
             code=ErrorCode.NOT_FOUND,
             plan_id=plan_id,
         )
@@ -479,9 +475,7 @@ def run_integrate_into_main(args: Namespace) -> dict[str, Any]:
     # flashing a lock glyph into the title is spurious noise the user never needs
     # to see. The token is a display affordance, not a correctness primitive.
     merge_lock = _load_merge_lock()
-    acquire_result = merge_lock.run_acquire(
-        Namespace(plan_id=plan_id, timeout=None, set_title_token=False)
-    )
+    acquire_result = merge_lock.run_acquire(Namespace(plan_id=plan_id, timeout=None, set_title_token=False))
     if acquire_result.get('status') != 'success':
         # Could not acquire (timeout / resolution failure) — surface verbatim.
         # No lock was acquired, so there is nothing to release.
@@ -514,8 +508,7 @@ def run_integrate_into_main(args: Namespace) -> dict[str, Any]:
         _restore_to_worktree(wt_plan_dir, main_plan_dir)
         return _release_and(
             make_error(
-                f'move-back failed for {wt_plan_dir} -> {main_plan_dir}: {exc}; '
-                f'rolled back to worktree',
+                f'move-back failed for {wt_plan_dir} -> {main_plan_dir}: {exc}; rolled back to worktree',
                 code=ErrorCode.INVALID_INPUT,
                 plan_id=plan_id,
             )
@@ -544,10 +537,7 @@ def run_integrate_into_main(args: Namespace) -> dict[str, Any]:
 def main() -> int:
     """Entry point — single ``integrate`` action."""
     parser = create_workflow_cli(
-        description=(
-            'Atomic finalize move-back: acquire lock, fold logs, move plan dir to '
-            'main, release lock'
-        ),
+        description=('Atomic finalize move-back: acquire lock, fold logs, move plan dir to main, release lock'),
         epilog="""
 Examples:
   integrate_into_main.py integrate --plan-id EXAMPLE-PLAN
@@ -556,8 +546,7 @@ Examples:
             {
                 'name': 'integrate',
                 'help': (
-                    'Atomically integrate the worktree-resident plan into main '
-                    '(lock → fold-logs → move-back → release)'
+                    'Atomically integrate the worktree-resident plan into main (lock → fold-logs → move-back → release)'
                 ),
                 'handler': run_integrate_into_main,
                 'args': [

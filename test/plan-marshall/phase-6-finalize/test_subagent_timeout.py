@@ -54,9 +54,7 @@ _mem._log_decision = lambda *a, **kw: None
 # ---------------------------------------------------------------------------
 
 _PHASE_6_SKILL_MD = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'SKILL.md'
-_AUTOMATED_REVIEW_MD = (
-    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'automatic-review' / 'SKILL.md'
-)
+_AUTOMATED_REVIEW_MD = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'automatic-review' / 'SKILL.md'
 _SONAR_ROUNDTRIP_MD = (
     MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'workflow' / 'sonar-roundtrip.md'
 )

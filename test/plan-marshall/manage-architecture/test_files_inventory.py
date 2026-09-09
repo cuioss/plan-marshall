@@ -23,7 +23,9 @@ from _arch_fixtures import seed_project
 
 from conftest import MARKETPLACE_ROOT, PROJECT_ROOT, load_script_module, parse_ns
 
-_architecture_core = load_script_module('plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core')
+_architecture_core = load_script_module(
+    'plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core'
+)
 _cmd_manage = load_script_module('plan-marshall', 'manage-architecture', '_cmd_manage.py', '_cmd_manage')
 _cmd_client = load_script_module('plan-marshall', 'manage-architecture', '_cmd_client.py', '_cmd_client')
 
@@ -63,8 +65,14 @@ def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
 #: to module scope because ``parse_ns`` re-executes the script module on every
 #: call, and ``register=False`` because only the namespace is wanted here.
 _WHICH_MODULE_ARGS = parse_ns(
-    _ARCH_BUNDLE, _ARCH_SKILL, _ARCH_SCRIPT,
-    '--project-dir', '.', 'which-module', '--path', '.',
+    _ARCH_BUNDLE,
+    _ARCH_SKILL,
+    _ARCH_SCRIPT,
+    '--project-dir',
+    '.',
+    'which-module',
+    '--path',
+    '.',
     register=False,
 )
 
@@ -326,9 +334,7 @@ def test_every_real_skill_file_is_classified():
     The population is every file — not only markdown — so the assertion covers
     the residual rule on both its axes.
     """
-    population = [
-        (rel, basename) for rel, basename in _iter_real_bundle_files() if rel.startswith('skills/')
-    ]
+    population = [(rel, basename) for rel, basename in _iter_real_bundle_files() if rel.startswith('skills/')]
     assert population, 'population is empty — the bundle walk found no skill files'
 
     unclassified = [rel for rel, basename in population if _classify_marketplace(rel, basename) is None]
@@ -568,9 +574,7 @@ def test_category_cap_replaces_list_with_elision_shape():
         assert skills['sample'] == sorted(skills['sample'])
 
         # Distributed, not contiguous: the sample spans the full sorted range.
-        expected_sorted = sorted(
-            f'marketplace/bundles/pm-x/skills/s{i:05d}/SKILL.md' for i in range(count)
-        )
+        expected_sorted = sorted(f'marketplace/bundles/pm-x/skills/s{i:05d}/SKILL.md' for i in range(count))
         # First sample entry is the head of the sorted list...
         assert skills['sample'][0] == expected_sorted[0]
         # ...and the last is drawn from the TAIL, never the first sample_size
@@ -787,10 +791,7 @@ def test_bare_claude_claim_covers_the_former_unclaimed_sibling():
     inside ``.claude``, so it resolves to no claim.
     """
     known = ['pm-plugin-development']
-    assert (
-        _architecture_core.project_local_module_for_path('.claude/settings.json', known)
-        == 'pm-plugin-development'
-    )
+    assert _architecture_core.project_local_module_for_path('.claude/settings.json', known) == 'pm-plugin-development'
     assert _architecture_core.project_local_module_for_path('.claudex/thing', known) is None
 
 

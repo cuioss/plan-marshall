@@ -82,10 +82,7 @@ class TestShippedPromptCorpusStaysClean:
             f'{len(findings)} askuserquestion-prompt-quality finding(s) in the shipped '
             f'bundles under {MARKETPLACE_ROOT}. Each names the obligation it violates '
             f'and the file:line that carries it:\n'
-            + '\n'.join(
-                f'  {finding["file"]}:{finding["line"]}: {finding["description"]}'
-                for finding in findings
-            )
+            + '\n'.join(f'  {finding["file"]}:{finding["line"]}: {finding["description"]}' for finding in findings)
         )
 
     def test_the_shipped_corpus_was_actually_examined(self) -> None:

@@ -57,15 +57,9 @@ from extension_discovery import find_implementors
 from _step_key_canonical import canonicalize_step_key
 from conftest import load_script_module
 
-_lifecycle = load_script_module(
-    'plan-marshall', 'manage-status', '_cmd_lifecycle.py', '_head_anchor_lifecycle'
-)
-_mark_step = load_script_module(
-    'plan-marshall', 'manage-status', '_cmd_mark_step.py', '_head_anchor_mark_step'
-)
-_status_core = load_script_module(
-    'plan-marshall', 'manage-status', '_status_core.py', '_head_anchor_core'
-)
+_lifecycle = load_script_module('plan-marshall', 'manage-status', '_cmd_lifecycle.py', '_head_anchor_lifecycle')
+_mark_step = load_script_module('plan-marshall', 'manage-status', '_cmd_mark_step.py', '_head_anchor_mark_step')
+_status_core = load_script_module('plan-marshall', 'manage-status', '_status_core.py', '_head_anchor_core')
 
 cmd_create = _lifecycle.cmd_create
 cmd_mark_step_done = _mark_step.cmd_mark_step_done
@@ -95,9 +89,7 @@ def _partition_steps() -> tuple[list[str], list[str]]:
     head_dependent: list[str] = []
     non_head_dependent: list[str] = []
     for record in find_implementors(_EXT_POINT):
-        fields = extension_discovery._read_frontmatter_fields(
-            Path(str(record.get('path', ''))), (_FACT_KEY,)
-        )
+        fields = extension_discovery._read_frontmatter_fields(Path(str(record.get('path', ''))), (_FACT_KEY,))
         step_id = canonicalize_step_key(str(record.get('name', '')))
         if not step_id:
             continue
@@ -198,8 +190,7 @@ def test_both_populations_are_non_empty_and_published():
     # The partition is over ONE discovered population, so the two halves must be
     # disjoint — an id in both would mean the fact was read two different ways.
     assert not set(head_dependent) & set(non_head_dependent), (
-        f'A step id landed in BOTH halves of the partition: '
-        f'{sorted(set(head_dependent) & set(non_head_dependent))}'
+        f'A step id landed in BOTH halves of the partition: {sorted(set(head_dependent) & set(non_head_dependent))}'
     )
 
 
@@ -250,9 +241,7 @@ def test_head_dependent_done_with_anchor_is_written(plan_context):
     _make_plan(plan_id)
     step = _a_head_dependent_step()
 
-    result = cmd_mark_step_done(
-        _args(plan_id, step, 'done', head_at_completion=_ANCHOR)
-    )
+    result = cmd_mark_step_done(_args(plan_id, step, 'done', head_at_completion=_ANCHOR))
 
     assert result['status'] == 'success'
     assert result['head_at_completion'] == _ANCHOR
@@ -302,9 +291,7 @@ def test_step_outside_the_finalize_population_is_written(plan_context):
 
 
 @pytest.mark.parametrize('outcome', ['failed', 'skipped'])
-def test_head_dependent_non_done_outcome_without_anchor_is_written(
-    plan_context, outcome
-):
+def test_head_dependent_non_done_outcome_without_anchor_is_written(plan_context, outcome):
     """Only a terminal ``done`` carries the obligation.
 
     A ``failed`` record in particular MUST stay writable without an anchor:
@@ -360,9 +347,7 @@ def test_ordinary_success_carries_no_warning_key(plan_context):
     _make_plan(plan_id)
     step = _a_head_dependent_step()
 
-    result = cmd_mark_step_done(
-        _args(plan_id, step, 'done', head_at_completion=_ANCHOR)
-    )
+    result = cmd_mark_step_done(_args(plan_id, step, 'done', head_at_completion=_ANCHOR))
 
     assert result['status'] == 'success'
     assert 'warning' not in result

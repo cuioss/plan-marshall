@@ -195,9 +195,7 @@ class ClaudeTarget(TargetBase):
             # through a validate-only run that an emit rejects.
             for bundle_dir in bundle_dirs:
                 validate_component_scopes(bundle_dir)
-            equality = run_equality_check(
-                DEFAULT_VALIDATE_TARGET_DIR, bundle_dirs, target_name=self.name
-            )
+            equality = run_equality_check(DEFAULT_VALIDATE_TARGET_DIR, bundle_dirs, target_name=self.name)
             self._last_run = {
                 'status': 'success' if equality.passed else 'error',
                 'emitted_count': 0,
@@ -257,9 +255,7 @@ class ClaudeTarget(TargetBase):
         marketplace_src = marketplace_dir.parent
         target_marketplace_json = output_dir / '.claude-plugin' / 'marketplace.json'
         target_marketplace_json.parent.mkdir(parents=True, exist_ok=True)
-        target_marketplace_json.write_text(
-            generate_marketplace_json(marketplace_src), encoding='utf-8'
-        )
+        target_marketplace_json.write_text(generate_marketplace_json(marketplace_src), encoding='utf-8')
         emitted.append(target_marketplace_json)
 
         # Run equality check after emit so emit_count reflects bytes written
@@ -356,7 +352,5 @@ class ClaudeTarget(TargetBase):
             'file_hashes': file_hashes,
         }
         marker_path = output_dir / EMIT_MARKER_FILENAME
-        marker_path.write_text(
-            json.dumps(marker_payload, indent=2) + '\n', encoding='utf-8'
-        )
+        marker_path.write_text(json.dumps(marker_payload, indent=2) + '\n', encoding='utf-8')
         return marker_path

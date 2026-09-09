@@ -19,7 +19,9 @@ from _build_parse import Issue, UnitTestSummary, read_log_text
 
 from conftest import load_script_module
 
-_pyproject_cmd_parse_mod = load_script_module('plan-marshall', 'build-pyproject', '_pyproject_cmd_parse.py', '_pyproject_cmd_parse')
+_pyproject_cmd_parse_mod = load_script_module(
+    'plan-marshall', 'build-pyproject', '_pyproject_cmd_parse.py', '_pyproject_cmd_parse'
+)
 
 parse_log = _pyproject_cmd_parse_mod.parse_log
 _REGISTRY = _pyproject_cmd_parse_mod._REGISTRY
@@ -273,10 +275,7 @@ def test_registry_read_site_strips_colour_before_detection():
     result therefore proves the registry read site itself applied the strip.
     """
     # Arrange: a coloured FAILED line only — no pytest summary line.
-    colored = (
-        f'{_RED}FAILED{_RESET} test/test_foo.py::test_bar - '
-        'AssertionError: assert 1 == 2\n'
-    )
+    colored = f'{_RED}FAILED{_RESET} test/test_foo.py::test_bar - AssertionError: assert 1 == 2\n'
 
     # Assert the raw coloured content defeats the naive content-check, so the
     # end-to-end result can only succeed if the registry read stripped colour.
@@ -545,11 +544,7 @@ def test_failing_frame_ignores_captured_output_section():
 
 def test_failing_frame_returns_deepest_traceback_frame():
     """Without captured output, the last traceback frame is returned unchanged."""
-    block = (
-        'test/test_a.py:10: in test_thing\n'
-        '    assert compute(3) == 0\n'
-        'src/real.py:42: AssertionError\n'
-    )
+    block = 'test/test_a.py:10: in test_thing\n    assert compute(3) == 0\nsrc/real.py:42: AssertionError\n'
     assert _pytest_failing_frame(block) == 'src/real.py:42'
 
 

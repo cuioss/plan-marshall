@@ -10,7 +10,6 @@ Its sections, in order:
 * Rule M2: early_terminate
 """
 
-
 from __future__ import annotations
 
 from _plan_retrospective_manifest_fixtures import (

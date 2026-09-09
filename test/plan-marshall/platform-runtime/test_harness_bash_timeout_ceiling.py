@@ -28,27 +28,23 @@ def _parse(output: str) -> dict[str, Any]:
 def test_claude_resolves_its_own_ceiling() -> None:
     """ClaudeRuntime returns the Claude harness ceiling."""
     result = _parse(ClaudeRuntime().harness_bash_timeout_ceiling())
-    assert result["operation"] == "harness bash-timeout-ceiling"
-    assert result["target"] == "claude"
-    assert result["ceiling_seconds"] == 600
+    assert result['operation'] == 'harness bash-timeout-ceiling'
+    assert result['target'] == 'claude'
+    assert result['ceiling_seconds'] == 600
 
 
 def test_opencode_resolves_its_own_ceiling() -> None:
     """OpenCodeRuntime returns the OpenCode harness ceiling."""
     result = _parse(OpenCodeRuntime().harness_bash_timeout_ceiling())
-    assert result["operation"] == "harness bash-timeout-ceiling"
-    assert result["target"] == "opencode"
-    assert result["ceiling_seconds"] == 120
+    assert result['operation'] == 'harness bash-timeout-ceiling'
+    assert result['target'] == 'opencode'
+    assert result['ceiling_seconds'] == 120
 
 
 def test_targets_carry_distinct_ceilings() -> None:
     """The two registered targets are not bound by a shared harness ceiling."""
-    claude_ceiling = _parse(ClaudeRuntime().harness_bash_timeout_ceiling())[
-        "ceiling_seconds"
-    ]
-    opencode_ceiling = _parse(OpenCodeRuntime().harness_bash_timeout_ceiling())[
-        "ceiling_seconds"
-    ]
+    claude_ceiling = _parse(ClaudeRuntime().harness_bash_timeout_ceiling())['ceiling_seconds']
+    opencode_ceiling = _parse(OpenCodeRuntime().harness_bash_timeout_ceiling())['ceiling_seconds']
     assert claude_ceiling != opencode_ceiling
 
 
@@ -61,6 +57,6 @@ def test_claude_ceiling_is_monkeypatchable_via_attribute_access(
     HARNESS_BASH_TIMEOUT_CEILING_SECONDS`` and observe a different ceiling
     through the seam, exactly as it must for the cross-target comparison.
     """
-    monkeypatch.setattr(claude_runtime, "HARNESS_BASH_TIMEOUT_CEILING_SECONDS", 42)
+    monkeypatch.setattr(claude_runtime, 'HARNESS_BASH_TIMEOUT_CEILING_SECONDS', 42)
     result = _parse(ClaudeRuntime().harness_bash_timeout_ceiling())
-    assert result["ceiling_seconds"] == 42
+    assert result['ceiling_seconds'] == 42

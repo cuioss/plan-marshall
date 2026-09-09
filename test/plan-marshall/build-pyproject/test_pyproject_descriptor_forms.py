@@ -142,13 +142,16 @@ def test_setup_cfg_metadata_is_published():
     assert metadata['default']['description'].startswith('Fixture root')
 
 
-@pytest.mark.parametrize(('label', 'body'), [
-    ('project-is-a-string', 'project = "invalid"\n'),
-    ('tool-is-a-string', 'tool = "invalid"\n'),
-    ('poetry-is-a-string', '[tool]\npoetry = "nope"\n'),
-    ('optional-dependencies-is-a-string', '[project]\nname = "x"\noptional-dependencies = "nope"\n'),
-    ('poetry-group-is-a-string', '[tool.poetry]\nname = "x"\n[tool.poetry.group]\ndev = "notatable"\n'),
-])
+@pytest.mark.parametrize(
+    ('label', 'body'),
+    [
+        ('project-is-a-string', 'project = "invalid"\n'),
+        ('tool-is-a-string', 'tool = "invalid"\n'),
+        ('poetry-is-a-string', '[tool]\npoetry = "nope"\n'),
+        ('optional-dependencies-is-a-string', '[project]\nname = "x"\noptional-dependencies = "nope"\n'),
+        ('poetry-group-is-a-string', '[tool.poetry]\nname = "x"\n[tool.poetry.group]\ndev = "notatable"\n'),
+    ],
+)
 def test_a_WRONGLY_SHAPED_descriptor_costs_only_that_module(tmp_path, label, body):
     """Well-formed TOML can still be wrongly shaped, and that must not kill the crawl.
 
@@ -166,7 +169,8 @@ def test_a_WRONGLY_SHAPED_descriptor_costs_only_that_module(tmp_path, label, bod
     good = tmp_path / 'good'
     (good / 'tests').mkdir(parents=True)
     (good / 'pyproject.toml').write_text(
-        '[project]\nname = "good-one"\ndependencies = ["requests"]\n', encoding='utf-8')
+        '[project]\nname = "good-one"\ndependencies = ["requests"]\n', encoding='utf-8'
+    )
     bad = tmp_path / 'bad'
     (bad / 'tests').mkdir(parents=True)
     (bad / 'pyproject.toml').write_text(body, encoding='utf-8')
@@ -187,8 +191,7 @@ def test_a_STRING_dependency_list_fabricates_no_per_character_edges(tmp_path):
     """
     module = tmp_path / 'pkg'
     (module / 'tests').mkdir(parents=True)
-    (module / 'pyproject.toml').write_text(
-        '[project]\nname = "x"\ndependencies = "core"\n', encoding='utf-8')
+    (module / 'pyproject.toml').write_text('[project]\nname = "x"\ndependencies = "core"\n', encoding='utf-8')
 
     modules = {m['name']: m for m in discover_python_modules(str(tmp_path))}
 
@@ -267,19 +270,27 @@ def test_a_setup_py_only_module_still_publishes_no_name(tmp_path):
 # =============================================================================
 
 
-@pytest.mark.parametrize('spelling', [
-    'sample-core>=1.0.0',
-    'sample-core @ file:///./sample_core',
-    'sample-core@file:///./sample_core',
-    'sample-core@ file:///./sample_core',
-    'sample-core; python_version >= "3.11"',
-    'sample-core>=1.0.0; python_version >= "3.11"',
-    'sample-core[extra]>=1.0.0',
-], ids=[
-    'plain-specifier', 'direct-reference-spaced', 'direct-reference-bare',
-    'direct-reference-trailing-space', 'environment-marker',
-    'marker-and-specifier', 'extras',
-])
+@pytest.mark.parametrize(
+    'spelling',
+    [
+        'sample-core>=1.0.0',
+        'sample-core @ file:///./sample_core',
+        'sample-core@file:///./sample_core',
+        'sample-core@ file:///./sample_core',
+        'sample-core; python_version >= "3.11"',
+        'sample-core>=1.0.0; python_version >= "3.11"',
+        'sample-core[extra]>=1.0.0',
+    ],
+    ids=[
+        'plain-specifier',
+        'direct-reference-spaced',
+        'direct-reference-bare',
+        'direct-reference-trailing-space',
+        'environment-marker',
+        'marker-and-specifier',
+        'extras',
+    ],
+)
 def test_every_pep508_spelling_yields_the_same_edge(tmp_path, spelling):
     """One requirement, seven legal spellings, one edge — or the spelling alone destroys it.
 
@@ -300,21 +311,24 @@ def test_every_pep508_spelling_yields_the_same_edge(tmp_path, spelling):
     assert _edges_for(tmp_path) == [('dependent', 'sample_core')]
 
 
-@pytest.mark.parametrize('requirement,expected', [
-    ('sample-core', 'sample-core'),
-    ('sample-core>=1.0.0', 'sample-core'),
-    ('sample-core@file:///./x', 'sample-core'),
-    ('sample-core ; python_version >= "3.11"', 'sample-core'),
-    ('sample-core[a,b]~=1.0 ; extra == "dev"', 'sample-core'),
-    # PEP 508 permits the specifier in parentheses. Splitting on `>` alone left
-    # `sample-core (`, which survives PEP 503 normalisation and joins against
-    # nothing — a mangled key, not a missing one. Reported by CodeRabbit.
-    ('sample-core (>=1.0)', 'sample-core'),
-    ('sample-core(>=1.0)', 'sample-core'),
-    ('sample-core (==1.0) ; python_version >= "3.11"', 'sample-core'),
-    ('', ''),
-    ('   ', ''),
-])
+@pytest.mark.parametrize(
+    'requirement,expected',
+    [
+        ('sample-core', 'sample-core'),
+        ('sample-core>=1.0.0', 'sample-core'),
+        ('sample-core@file:///./x', 'sample-core'),
+        ('sample-core ; python_version >= "3.11"', 'sample-core'),
+        ('sample-core[a,b]~=1.0 ; extra == "dev"', 'sample-core'),
+        # PEP 508 permits the specifier in parentheses. Splitting on `>` alone left
+        # `sample-core (`, which survives PEP 503 normalisation and joins against
+        # nothing — a mangled key, not a missing one. Reported by CodeRabbit.
+        ('sample-core (>=1.0)', 'sample-core'),
+        ('sample-core(>=1.0)', 'sample-core'),
+        ('sample-core (==1.0) ; python_version >= "3.11"', 'sample-core'),
+        ('', ''),
+        ('   ', ''),
+    ],
+)
 def test_requirement_name_extracts_the_bare_distribution_name(requirement, expected):
     assert requirement_name(requirement) == expected
 
@@ -328,7 +342,8 @@ def test_a_malformed_descriptor_emits_a_warning_naming_the_file(tmp_path, monkey
     """Silence made "declares nothing" and "cannot be parsed" indistinguishable."""
     logged: list[tuple[str, str, str, str]] = []
     monkeypatch.setattr(
-        _pyproject_cmd_discover, 'log_entry',
+        _pyproject_cmd_discover,
+        'log_entry',
         lambda *args: logged.append(args),
     )
     module = tmp_path / 'broken'
@@ -361,7 +376,8 @@ def test_a_malformed_target_descriptor_is_visible_rather_than_killing_the_edge_s
     """The dependent's edge is still lost — but the WARNING says why."""
     logged: list[tuple[str, str, str, str]] = []
     monkeypatch.setattr(
-        _pyproject_cmd_discover, 'log_entry',
+        _pyproject_cmd_discover,
+        'log_entry',
         lambda *args: logged.append(args),
     )
     for name, descriptor in (

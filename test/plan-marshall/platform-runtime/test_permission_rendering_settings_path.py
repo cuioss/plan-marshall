@@ -16,6 +16,7 @@ machine.
 conftest.py sets up PYTHONPATH so the cross-skill imports resolve without manual
 sys.path manipulation.
 """
+
 import json
 from pathlib import Path
 
@@ -27,6 +28,7 @@ from toon_parser import parse_toon
 def _parse(raw: str) -> dict:
     """Parse a runtime's TOON response."""
     return parse_toon(raw)
+
 
 # =============================================================================
 # The settings read path
@@ -75,9 +77,7 @@ _READ_PATH_IDS = [
 class TestProjectSettingsReadPath:
     """The read preference is the runtime's, and it mirrors the write preference."""
 
-    @pytest.mark.parametrize(
-        ('local', 'shared', 'expected'), _READ_PATH_CASES, ids=_READ_PATH_IDS
-    )
+    @pytest.mark.parametrize(('local', 'shared', 'expected'), _READ_PATH_CASES, ids=_READ_PATH_IDS)
     def test_the_read_selector_prefers_the_operators_own_file(
         self, tmp_path: Path, local: str | None, shared: str | None, expected: str
     ) -> None:
@@ -91,16 +91,12 @@ class TestProjectSettingsReadPath:
 
         assert resolved == claude_dir / expected
 
-    def test_a_directory_at_the_shared_path_does_not_capture_the_write(
-        self, tmp_path: Path
-    ) -> None:
+    def test_a_directory_at_the_shared_path_does_not_capture_the_write(self, tmp_path: Path) -> None:
         """The write selector makes the same distinction, in the other direction."""
         claude_dir = tmp_path / '.claude'
         claude_dir.mkdir()
         (claude_dir / 'settings.json').mkdir()
-        assert claude_runtime._claude_project_settings_path(str(tmp_path)) == (
-            claude_dir / 'settings.local.json'
-        )
+        assert claude_runtime._claude_project_settings_path(str(tmp_path)) == (claude_dir / 'settings.local.json')
 
     def test_read_and_write_preferences_are_opposites(self, tmp_path: Path) -> None:
         """Both files present: the read path takes local, the write path takes shared."""
@@ -108,9 +104,7 @@ class TestProjectSettingsReadPath:
         claude_dir.mkdir()
         (claude_dir / 'settings.local.json').write_text('{}', encoding='utf-8')
         (claude_dir / 'settings.json').write_text('{}', encoding='utf-8')
-        assert claude_runtime._claude_project_settings_read_path(str(tmp_path)).name == (
-            'settings.local.json'
-        )
+        assert claude_runtime._claude_project_settings_read_path(str(tmp_path)).name == ('settings.local.json')
         assert claude_runtime._claude_project_settings_path(str(tmp_path)).name == 'settings.json'
 
 
@@ -122,9 +116,7 @@ class TestSettingsShapeIsMalformedToo:
         settings.write_text(payload, encoding='utf-8')
         return claude_runtime._load_settings(settings)
 
-    def test_a_non_object_permissions_value_is_an_error_not_a_traceback(
-        self, tmp_path: Path
-    ) -> None:
+    def test_a_non_object_permissions_value_is_an_error_not_a_traceback(self, tmp_path: Path) -> None:
         """Seeding the three lists into a string raised TypeError out of the loader.
 
         Every caller branches on the ``error`` key, so a raise here reaches the
@@ -138,9 +130,7 @@ class TestSettingsShapeIsMalformedToo:
         loaded = self._load(tmp_path, '["not", "settings"]')
         assert 'must be an object' in loaded['error']
 
-    def test_the_operators_malformed_value_is_never_carried_forward(
-        self, tmp_path: Path
-    ) -> None:
+    def test_the_operators_malformed_value_is_never_carried_forward(self, tmp_path: Path) -> None:
         """The error skeleton is empty, so a save can never write it back.
 
         Replacing the bad value with an empty object in place would let a
@@ -150,9 +140,7 @@ class TestSettingsShapeIsMalformedToo:
         assert loaded['permissions'] == {'allow': [], 'deny': [], 'ask': []}
         assert 'other' not in loaded
 
-    def test_a_well_formed_file_missing_a_list_is_still_seeded(
-        self, tmp_path: Path
-    ) -> None:
+    def test_a_well_formed_file_missing_a_list_is_still_seeded(self, tmp_path: Path) -> None:
         """The shape guard must not reject the file it exists to normalize."""
         loaded = self._load(tmp_path, '{"permissions": {"allow": ["Read(a)"]}}')
         assert 'error' not in loaded
@@ -182,16 +170,12 @@ class TestReadOnlyOperationsUseTheReadSelector:
         )
         return tmp_path
 
-    def test_analyze_reads_the_effective_file_not_the_shared_one(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
+    def test_analyze_reads_the_effective_file_not_the_shared_one(self, tmp_path: Path, monkeypatch) -> None:
         """`Bash(*)` lives only in the LOCAL file, so only a read-side audit sees it."""
         project = self._project(tmp_path, shared=['Read(.plan/**)'], local=['Bash(*)'])
         monkeypatch.chdir(project)
 
-        result = _parse(
-            claude_runtime.ClaudeRuntime().permission_analyze('project', ['suspicious'], None)
-        )
+        result = _parse(claude_runtime.ClaudeRuntime().permission_analyze('project', ['suspicious'], None))
 
         assert result['status'] == 'success'
         findings = [f for f in result.get('findings', []) if f['check'] == 'suspicious']
@@ -199,9 +183,7 @@ class TestReadOnlyOperationsUseTheReadSelector:
             'the audit read the shared file and missed the local rule'
         )
 
-    def test_web_analyze_reads_the_effective_file_too(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
+    def test_web_analyze_reads_the_effective_file_too(self, tmp_path: Path, monkeypatch) -> None:
         """The same rule holds for the WebFetch-domain audit."""
         project = self._project(
             tmp_path,

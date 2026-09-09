@@ -29,6 +29,7 @@ def _with_intent(step, default_intent='write-replace'):
         return text
     return f'{text} ({default_intent})'
 
+
 # Script path for subprocess (CLI plumbing) tests
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-tasks', 'manage-tasks.py')
 
@@ -218,7 +219,9 @@ def _remove_step_ns(plan_id='test-plan', task=1, step=1):
     return Namespace(plan_id=plan_id, task_number=task, step=step)
 
 
-def _update_step_ns(plan_id='test-plan', task=1, step_number=1, intent='write-replace', reason='because', finding_id=None):
+def _update_step_ns(
+    plan_id='test-plan', task=1, step_number=1, intent='write-replace', reason='because', finding_id=None
+):
     return Namespace(
         plan_id=plan_id,
         task_number=task,

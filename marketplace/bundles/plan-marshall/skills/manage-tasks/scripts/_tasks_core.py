@@ -158,14 +158,10 @@ def validate_step_intent(intent: str | None) -> str:
     Returns the normalized (stripped) value on success.
     """
     if intent is None or not str(intent).strip():
-        raise ValueError(
-            'Step intent is required. Must be one of: ' + ', '.join(VALID_STEP_INTENTS)
-        )
+        raise ValueError('Step intent is required. Must be one of: ' + ', '.join(VALID_STEP_INTENTS))
     normalized = str(intent).strip()
     if normalized not in VALID_STEP_INTENTS:
-        raise ValueError(
-            f'Invalid step intent: {normalized}. Must be one of: ' + ', '.join(VALID_STEP_INTENTS)
-        )
+        raise ValueError(f'Invalid step intent: {normalized}. Must be one of: ' + ', '.join(VALID_STEP_INTENTS))
     return normalized
 
 
@@ -199,7 +195,7 @@ def validate_steps_are_file_paths(steps: list[str]) -> tuple[list[str], list[str
         if not has_path_separator and not has_valid_extension:
             errors.append(
                 f"Step {i}: '{step[:50]}...' is not a file path. "
-                f"Steps MUST be file paths the deliverable declares (Affected files, Files expected to mutate, or Files to survey)."
+                f'Steps MUST be file paths the deliverable declares (Affected files, Files expected to mutate, or Files to survey).'
             )
             continue
 

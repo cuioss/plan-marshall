@@ -46,14 +46,7 @@ _DASH_LEADING_VALUE_BLOCK = (
 )
 
 #: The well-formed control: the same fields with no dash-leading line.
-_PLAIN_BLOCK = (
-    '---\n'
-    'name: demo-skill\n'
-    'description: nothing unusual\n'
-    'user-invocable: true\n'
-    '---\n'
-    '# Body\n'
-)
+_PLAIN_BLOCK = '---\nname: demo-skill\ndescription: nothing unusual\nuser-invocable: true\n---\n# Body\n'
 
 
 def test_a_field_after_a_dash_leading_value_line_is_still_read():
@@ -82,12 +75,7 @@ def test_a_leading_horizontal_rule_is_not_read_as_a_frontmatter_fence():
     declaration of it — a false positive, the opposite failure from the one
     above and equally silent.
     """
-    prose = (
-        '----\n'
-        'This document has no frontmatter at all.\n'
-        'user-invocable: true\n'
-        '---\n'
-    )
+    prose = '----\nThis document has no frontmatter at all.\nuser-invocable: true\n---\n'
 
     assert _frontmatter_field(prose, 'user-invocable') == ''
 
@@ -143,16 +131,12 @@ def _architecture_tree() -> str:
     heading = text.index('## Architecture')
     open_fence = text.index('```', heading)
     close_fence = text.index('```', open_fence + 3)
-    return text[open_fence + 3:close_fence]
+    return text[open_fence + 3 : close_fence]
 
 
 def _source_modules() -> list[Path]:
     """Every Python module in the package, relative to ``marketplace/targets``."""
-    return sorted(
-        p.relative_to(_TARGETS_DIR)
-        for p in _TARGETS_DIR.rglob('*.py')
-        if '__pycache__' not in p.parts
-    )
+    return sorted(p.relative_to(_TARGETS_DIR) for p in _TARGETS_DIR.rglob('*.py') if '__pycache__' not in p.parts)
 
 
 def _tree_module_keys(tree_text: str) -> Counter[str]:
@@ -196,9 +180,7 @@ def _module_shortfall(tree_text: str) -> dict[str, tuple[int, int]]:
     """
     tree = _tree_module_keys(tree_text)
     return {
-        name: (count, tree.get(name, 0))
-        for name, count in _source_module_keys().items()
-        if tree.get(name, 0) < count
+        name: (count, tree.get(name, 0)) for name, count in _source_module_keys().items() if tree.get(name, 0) < count
     }
 
 

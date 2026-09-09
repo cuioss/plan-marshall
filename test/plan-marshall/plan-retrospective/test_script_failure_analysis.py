@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for ``script-failure-analysis.py``."""
 
-
 from __future__ import annotations
 
 from _plan_retrospective_fixtures import (
@@ -58,10 +57,15 @@ class TestCmdRunLiveMode:
         plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch, plan_id='retro-script-fail')
         log = (
             _failure(
-                '01', 'plan-marshall:manage-tasks:manage-tasks', 'nuke', 2,
+                '01',
+                'plan-marshall:manage-tasks:manage-tasks',
+                'nuke',
+                2,
                 "argparse: invalid choice: 'nuke' (choose from 'add', 'read', 'list')",
-            ) + '\n'
-            + _success('05', 'plan-marshall:manage-files:manage-files', 'read') + '\n'
+            )
+            + '\n'
+            + _success('05', 'plan-marshall:manage-files:manage-files', 'read')
+            + '\n'
         )
         _write_log(plan_dir, log)
         result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
@@ -104,15 +108,22 @@ class TestCmdRunArchivedMode:
         archived = setup_archived_plan(tmp_path)
         log = (
             _failure(
-                '01', 'plan-marshall:manage-tasks:manage-tasks', 'nuke', 2,
+                '01',
+                'plan-marshall:manage-tasks:manage-tasks',
+                'nuke',
+                2,
                 "argparse: error: invalid choice: 'nuke'",
-            ) + '\n'
+            )
+            + '\n'
         )
         _write_log(archived, log)
         result = run_script(
-            SCRIPT_PATH, 'run',
-            '--archived-plan-path', str(archived),
-            '--mode', 'archived',
+            SCRIPT_PATH,
+            'run',
+            '--archived-plan-path',
+            str(archived),
+            '--mode',
+            'archived',
         )
         assert result.success, result.stderr
         data = result.toon()
@@ -145,16 +156,14 @@ class TestRegressionRealLogShape:
         # The captured log carries three continuation-block failures; the
         # pre-fix inline-exit_code= parser would report zero.
         assert int(data['total_failures']) > 0, (
-            'parser regressed to inline exit_code= coupling — real-shape '
-            'continuation-line failures were dropped'
+            'parser regressed to inline exit_code= coupling — real-shape continuation-line failures were dropped'
         )
         assert int(data['unique_failures']) > 0
 
         findings = data['findings']
         subtypes = {f['subtype'] for f in findings}
         assert 'invented_subcommand' in subtypes, (
-            "captured 'invalid choice:' rejection not classified as "
-            'invented_subcommand'
+            "captured 'invalid choice:' rejection not classified as invented_subcommand"
         )
 
     def test_captured_real_log_emits_seed_lessons(self, tmp_path, monkeypatch):
@@ -189,9 +198,13 @@ class TestWorkLogSinkIntegration:
         _write_work_log(
             plan_dir,
             _work_failure(
-                '30', 'plan-marshall:manage-status:manage-status', 2, 'argparse_rejection',
-                "manage-status.py: error: unrecognized arguments: --field metadata",
-            ) + '\n',
+                '30',
+                'plan-marshall:manage-status:manage-status',
+                2,
+                'argparse_rejection',
+                'manage-status.py: error: unrecognized arguments: --field metadata',
+            )
+            + '\n',
         )
         result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
         assert result.success, result.stderr
@@ -209,17 +222,25 @@ class TestWorkLogSinkIntegration:
         _write_log(
             plan_dir,
             _failure(
-                '01', 'plan-marshall:manage-tasks:manage-tasks', 'nuke', 2,
+                '01',
+                'plan-marshall:manage-tasks:manage-tasks',
+                'nuke',
+                2,
                 "argparse: invalid choice: 'nuke' (choose from 'add', 'read')",
-            ) + '\n',
+            )
+            + '\n',
         )
         # work.log: SAME notation + SAME subtype (invented_subcommand).
         _write_work_log(
             plan_dir,
             _work_failure(
-                '30', 'plan-marshall:manage-tasks:manage-tasks', 2, 'argparse_rejection',
+                '30',
+                'plan-marshall:manage-tasks:manage-tasks',
+                2,
+                'argparse_rejection',
                 "manage-tasks: error: invalid choice: 'start' (choose from 'add', 'read')",
-            ) + '\n',
+            )
+            + '\n',
         )
         result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
         assert result.success, result.stderr
@@ -237,24 +258,38 @@ class TestWorkLogSinkIntegration:
         # script-execution.log carries only successes.
         _write_log(
             plan_dir,
-            _success('01', 'plan-marshall:manage-files:manage-files', 'read') + '\n'
-            + _success('02', 'plan-marshall:manage-tasks:manage-tasks', 'list') + '\n',
+            _success('01', 'plan-marshall:manage-files:manage-files', 'read')
+            + '\n'
+            + _success('02', 'plan-marshall:manage-tasks:manage-tasks', 'list')
+            + '\n',
         )
         # work.log carries three DISTINCT argparse-rejection clusters.
         _write_work_log(
             plan_dir,
             _work_failure(
-                '10', 'plan-marshall:manage-status:manage-status', 2, 'argparse_rejection',
-                "manage-status.py: error: unrecognized arguments: --field metadata",
-            ) + '\n'
+                '10',
+                'plan-marshall:manage-status:manage-status',
+                2,
+                'argparse_rejection',
+                'manage-status.py: error: unrecognized arguments: --field metadata',
+            )
+            + '\n'
             + _work_failure(
-                '20', 'plan-marshall:manage-findings:manage-findings', 2, 'argparse_rejection',
+                '20',
+                'plan-marshall:manage-findings:manage-findings',
+                2,
+                'argparse_rejection',
                 "manage-findings: error: invalid choice: 'query' (choose from 'add', 'list')",
-            ) + '\n'
+            )
+            + '\n'
             + _work_failure(
-                '30', 'plan-marshall:manage-tasks:manage-tasks', 2, 'argparse_rejection',
-                "manage-tasks: error: the following arguments are required: --title",
-            ) + '\n',
+                '30',
+                'plan-marshall:manage-tasks:manage-tasks',
+                2,
+                'argparse_rejection',
+                'manage-tasks: error: the following arguments are required: --title',
+            )
+            + '\n',
         )
         result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
         assert result.success, result.stderr
@@ -270,9 +305,13 @@ class TestWorkLogSinkIntegration:
         _write_log(
             plan_dir,
             _failure(
-                '01', 'plan-marshall:manage-tasks:manage-tasks', 'nuke', 2,
+                '01',
+                'plan-marshall:manage-tasks:manage-tasks',
+                'nuke',
+                2,
                 "argparse: invalid choice: 'nuke' (choose from 'add', 'read')",
-            ) + '\n',
+            )
+            + '\n',
         )
         # work.log retains only the fixture's STATUS/ARTIFACT lines (no failures).
         result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
@@ -297,8 +336,7 @@ class TestUnrecognizedWorkLogLineSignal:
         _write_log(plan_dir, _success('01', 'plan-marshall:manage-files:manage-files', 'read') + '\n')
         _write_work_log(
             plan_dir,
-            _work_status('01', 'Starting execute phase') + '\n'
-            + _work_status('02', 'Active worktree set') + '\n',
+            _work_status('01', 'Starting execute phase') + '\n' + _work_status('02', 'Active worktree set') + '\n',
         )
         result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
         assert result.success, result.stderr
@@ -313,8 +351,12 @@ class TestUnrecognizedWorkLogLineSignal:
         _write_work_log(
             plan_dir,
             _legacy_work_failure(
-                '30', 'plan-marshall:manage-status:manage-status', 2, 'argparse_rejection',
-            ) + '\n',
+                '30',
+                'plan-marshall:manage-status:manage-status',
+                2,
+                'argparse_rejection',
+            )
+            + '\n',
         )
         result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
         assert result.success, result.stderr
@@ -341,9 +383,13 @@ class TestExitOneTwoOnlyCriterion:
         _write_log(
             plan_dir,
             _failure(
-                '01', 'plan-marshall:manage-references:manage-references', 'get', 0,
+                '01',
+                'plan-marshall:manage-references:manage-references',
+                'get',
+                0,
                 'status: error\nerror: field_not_found',
-            ) + '\n',
+            )
+            + '\n',
         )
         result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
         assert result.success, result.stderr
@@ -358,9 +404,13 @@ class TestExitOneTwoOnlyCriterion:
         _write_work_log(
             plan_dir,
             _work_failure(
-                '30', 'plan-marshall:manage-references:manage-references', 0,
-                'operation_failure', 'field_not_found',
-            ) + '\n',
+                '30',
+                'plan-marshall:manage-references:manage-references',
+                0,
+                'operation_failure',
+                'field_not_found',
+            )
+            + '\n',
         )
         result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
         assert result.success, result.stderr
@@ -372,18 +422,20 @@ class TestExitOneTwoOnlyCriterion:
         """classify_failure assigns subtypes only for exit 1 and exit 2."""
         # exit 2 → anti-pattern subtypes
         assert _mod.classify_failure({'exit_code': 2, 'stderr': "invalid choice: 'x'"}) == (
-            'anti-pattern', 'invented_subcommand'
+            'anti-pattern',
+            'invented_subcommand',
         )
         # exit 1 → script_internal_error
-        assert _mod.classify_failure({'exit_code': 1, 'stderr': 'boom'}) == (
-            'bug', 'script_internal_error'
-        )
+        assert _mod.classify_failure({'exit_code': 1, 'stderr': 'boom'}) == ('bug', 'script_internal_error')
         # parse layer drops exit 0, so classify is never reached for exit-0
         # entries; the parser-level guard is the authoritative gate.
-        assert _mod.parse_failures(
-            [
-                _header('01', 'plan-marshall:manage-references:manage-references', 'get', level='ERROR'),
-                '  exit_code: 0',
-                '  stderr: status: error',
-            ]
-        ) == []
+        assert (
+            _mod.parse_failures(
+                [
+                    _header('01', 'plan-marshall:manage-references:manage-references', 'get', level='ERROR'),
+                    '  exit_code: 0',
+                    '  stderr: status: error',
+                ]
+            )
+            == []
+        )

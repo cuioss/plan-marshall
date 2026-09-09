@@ -107,7 +107,9 @@ class TestPositiveDetection:
 
     def test_term_of_art_with_hyphenated_qualifier_fires(self, tmp_path: Path) -> None:
         """``the #948 sibling-worktree shape`` (qualifier between ref and noun) fires."""
-        content = 'An absent plan under this scope is unknown, not authoritative absence — the #948 sibling-worktree shape.\n'
+        content = (
+            'An absent plan under this scope is unknown, not authoritative absence — the #948 sibling-worktree shape.\n'
+        )
         root, _ = _make_skill_file(tmp_path, content)
         assert_analyzer_findings(analyze_incident_reference_in_docs, root, [RULE_ID])
 
@@ -120,9 +122,7 @@ class TestPositiveDetection:
         """
         content = 'This is the failure mode #866 that closed the PR unmerged.\n'
         root, _ = _make_skill_file(tmp_path, content)
-        findings = assert_analyzer_findings(
-            analyze_incident_reference_in_docs, root, [RULE_ID]
-        )
+        findings = assert_analyzer_findings(analyze_incident_reference_in_docs, root, [RULE_ID])
         assert findings[0]['pattern_family'] == 'incident_term_of_art_reversed'
 
     def test_reversed_term_of_art_with_hyphenated_qualifier_fires(self, tmp_path: Path) -> None:
@@ -140,9 +140,7 @@ class TestPositiveDetection:
         """
         content = 'As of 2025-10-27:\n- universal git access is provided.\n'
         root, _ = _make_skill_file(tmp_path, content)
-        findings = assert_analyzer_findings(
-            analyze_incident_reference_in_docs, root, [RULE_ID]
-        )
+        findings = assert_analyzer_findings(analyze_incident_reference_in_docs, root, [RULE_ID])
         assert findings[0]['pattern_family'] == 'dated_narration'
 
     def test_version_pinned_narration_fires(self, tmp_path: Path) -> None:
@@ -257,7 +255,9 @@ class TestCorrectedMechanismProseNotFlagged:
         assert_analyzer_findings(analyze_incident_reference_in_docs, root, [])
 
     def test_sibling_worktree_shape_not_flagged(self, tmp_path: Path) -> None:
-        content = 'An absent plan under this scope is unknown, not authoritative absence (the sibling-worktree shape).\n'
+        content = (
+            'An absent plan under this scope is unknown, not authoritative absence (the sibling-worktree shape).\n'
+        )
         root, _ = _make_skill_file(tmp_path, content)
         assert_analyzer_findings(analyze_incident_reference_in_docs, root, [])
 
@@ -369,13 +369,7 @@ class TestSkipContextExemption:
     """Incident references in structured contexts produce no findings."""
 
     def test_yaml_frontmatter_is_exempt(self, tmp_path: Path) -> None:
-        content = (
-            '---\n'
-            'name: test\n'
-            'note: the #866 failure mode\n'
-            '---\n'
-            'Normal body content.\n'
-        )
+        content = '---\nname: test\nnote: the #866 failure mode\n---\nNormal body content.\n'
         root, _ = _make_skill_file(tmp_path, content)
         assert_analyzer_findings(analyze_incident_reference_in_docs, root, [])
 
@@ -412,9 +406,7 @@ class TestSkipContextExemption:
         """
         content = 'The #812 failure mode is documented elsewhere.\n'
         root, _ = _make_skill_file(tmp_path, content)
-        findings = assert_analyzer_findings(
-            analyze_incident_reference_in_docs, root, [RULE_ID]
-        )
+        findings = assert_analyzer_findings(analyze_incident_reference_in_docs, root, [RULE_ID])
         assert findings[0]['pattern_family'] == 'incident_term_of_art'
         assert findings[0]['snippet'] == '#812 failure mode'
 
@@ -495,9 +487,7 @@ def test_real_marketplace_has_zero_findings() -> None:
 
 def test_analyzer_is_registered_in_runner() -> None:
     """The analyzer is wired into the runner's quality-gate and analyze passes."""
-    runner_source = get_script_path(
-        'pm-plugin-development', 'plugin-doctor', '_runner.py'
-    ).read_text(encoding='utf-8')
+    runner_source = get_script_path('pm-plugin-development', 'plugin-doctor', '_runner.py').read_text(encoding='utf-8')
     assert 'analyze_incident_reference_in_docs' in runner_source
 
 
@@ -529,9 +519,7 @@ class TestBacktickExemptionIsTestedAtTheReference:
         """The control: the exemption widened, it did not disable the family."""
         content = 'Observed on the run log: #812 was the culprit.\n'
         root, _ = _make_skill_file(tmp_path, content)
-        findings = assert_analyzer_findings(
-            analyze_incident_reference_in_docs, root, [RULE_ID]
-        )
+        findings = assert_analyzer_findings(analyze_incident_reference_in_docs, root, [RULE_ID])
         assert findings[0]['pattern_family'] == 'observed_on'
 
 

@@ -176,10 +176,7 @@ def _path_within_registration(
     # git-common-dir resolves to the registered root AND which sits under a
     # registered container.
     containers = [Path(canonicalize_root(c)) for c in record.get('worktree_containers', []) or []]
-    under_container = any(
-        canonical == container or container in canonical.parents
-        for container in containers
-    )
+    under_container = any(canonical == container or container in canonical.parents for container in containers)
     if not under_container:
         return escape_reason
 

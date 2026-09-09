@@ -13,7 +13,6 @@ Its sections, in order:
 * Title-token suppression contract (set_title_token=False)
 """
 
-
 from __future__ import annotations
 
 from argparse import Namespace
@@ -141,6 +140,7 @@ class TestTitleTokenSurface:
 # mid-recovery worktree stays protected (strengthened holder_has_live_worktree)
 # =============================================================================
 
+
 class TestTitleTokenOwnerScoping:
     """The lock title surface writes and clears under the ``merge-lock`` owner.
 
@@ -153,24 +153,24 @@ class TestTitleTokenOwnerScoping:
     (``_run_executor``) rather than against a higher-level stub.
     """
 
-    def test_set_stamps_the_merge_lock_owner_on_the_wire(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_set_stamps_the_merge_lock_owner_on_the_wire(self, monkeypatch: pytest.MonkeyPatch) -> None:
         calls: list[tuple] = []
-        monkeypatch.setattr(
-            merge_lock, '_run_executor', lambda notation, *args: calls.append((notation, args))
-        )
+        monkeypatch.setattr(merge_lock, '_run_executor', lambda notation, *args: calls.append((notation, args)))
 
         _REAL_SET_TITLE_TOKEN('plan-a', merge_lock._STATE_LOCK_OWNED)
 
         assert calls[0][1] == (
-            'title-token', 'set', '--plan-id', 'plan-a',
-            '--state', 'lock-owned', '--owner', 'merge-lock',
+            'title-token',
+            'set',
+            '--plan-id',
+            'plan-a',
+            '--state',
+            'lock-owned',
+            '--owner',
+            'merge-lock',
         )
 
-    def test_clear_is_scoped_to_the_merge_lock_owner_on_the_wire(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_clear_is_scoped_to_the_merge_lock_owner_on_the_wire(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """The clear carries ``--owner merge-lock``, so manage-status refuses it
         against a live ``build-hook``-owned token.
 
@@ -179,23 +179,24 @@ class TestTitleTokenOwnerScoping:
         flag's presence is the whole mechanism, so it is asserted explicitly.
         """
         calls: list[tuple] = []
-        monkeypatch.setattr(
-            merge_lock, '_run_executor', lambda notation, *args: calls.append((notation, args))
-        )
+        monkeypatch.setattr(merge_lock, '_run_executor', lambda notation, *args: calls.append((notation, args)))
 
         _REAL_CLEAR_TITLE_TOKEN('plan-a')
 
         assert calls[0][1] == (
-            'title-token', 'clear', '--plan-id', 'plan-a', '--owner', 'merge-lock',
+            'title-token',
+            'clear',
+            '--plan-id',
+            'plan-a',
+            '--owner',
+            'merge-lock',
         )
 
     def test_owner_constant_is_in_the_manage_status_vocabulary(self) -> None:
         """The owner this surface stamps must be a member of the closed
         ``TITLE_TOKEN_OWNERS`` vocabulary manage-status validates against — an
         out-of-vocabulary owner would be argparse-rejected at every write."""
-        core = load_script_module(
-            'plan-marshall', 'manage-status', '_status_core.py', '_status_core_for_lock_owner'
-        )
+        core = load_script_module('plan-marshall', 'manage-status', '_status_core.py', '_status_core_for_lock_owner')
         assert merge_lock._TITLE_TOKEN_OWNER in core.TITLE_TOKEN_OWNERS
 
 
@@ -218,9 +219,7 @@ class TestTitleTokenSuppression:
     ) -> None:
         """A fresh acquire with ``set_title_token=False`` surfaces NO token — the
         🔒 ``lock-owned`` glyph never reaches the title even though the lock is held."""
-        result = merge_lock.run_acquire(
-            Namespace(plan_id='plan-a', timeout=5.0, set_title_token=False)
-        )
+        result = merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0, set_title_token=False))
         assert result['status'] == 'success'
         assert result['action'] == 'acquired'
         # No state set, no icon pushed — the title surface is fully suppressed.
@@ -237,9 +236,7 @@ class TestTitleTokenSuppression:
         _stub_title_tokens.set_states.clear()
         _stub_title_tokens.pushed_icons.clear()
 
-        result = merge_lock.run_acquire(
-            Namespace(plan_id='plan-b', timeout=5.0, set_title_token=False)
-        )
+        result = merge_lock.run_acquire(Namespace(plan_id='plan-b', timeout=5.0, set_title_token=False))
         assert result['reclaimed'] is True
         assert _stub_title_tokens.set_states == []
         assert _stub_title_tokens.pushed_icons == []
@@ -254,9 +251,7 @@ class TestTitleTokenSuppression:
         _stub_title_tokens.set_states.clear()
         _stub_title_tokens.pushed_icons.clear()
 
-        result = merge_lock.run_acquire(
-            Namespace(plan_id='plan-b', timeout=0.6, set_title_token=False)
-        )
+        result = merge_lock.run_acquire(Namespace(plan_id='plan-b', timeout=0.6, set_title_token=False))
         assert result['status'] == 'blocked'
         assert _stub_title_tokens.set_states == []
         assert _stub_title_tokens.pushed_icons == []
@@ -266,14 +261,10 @@ class TestTitleTokenSuppression:
     ) -> None:
         """A release with ``set_title_token=False`` clears NO token — there was never
         a token set by the suppressed acquire, so there is nothing to clear."""
-        merge_lock.run_acquire(
-            Namespace(plan_id='plan-a', timeout=5.0, set_title_token=False)
-        )
+        merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0, set_title_token=False))
         _stub_title_tokens.cleared.clear()
 
-        result = merge_lock.run_release(
-            Namespace(plan_id='plan-a', set_title_token=False)
-        )
+        result = merge_lock.run_release(Namespace(plan_id='plan-a', set_title_token=False))
         assert result['action'] == 'released'
         assert _stub_title_tokens.cleared == []
 
@@ -282,9 +273,7 @@ class TestTitleTokenSuppression:
     ) -> None:
         """The already-free / foreign-holder noop release paths also honor
         suppression — ``set_title_token=False`` clears no token on the noop path."""
-        result = merge_lock.run_release(
-            Namespace(plan_id='plan-a', set_title_token=False)
-        )
+        result = merge_lock.run_release(Namespace(plan_id='plan-a', set_title_token=False))
         assert result['action'] == 'noop'
         assert _stub_title_tokens.cleared == []
 
@@ -298,9 +287,7 @@ class TestTitleTokenSuppression:
         assert _stub_title_tokens.set_states == ['lock-owned']
         assert _stub_title_tokens.pushed_icons == [merge_lock._ICON_LOCK_OWNED]
 
-    def test_release_default_still_clears_token(
-        self, isolated_base: dict, _stub_title_tokens: _TokenRecorder
-    ) -> None:
+    def test_release_default_still_clears_token(self, isolated_base: dict, _stub_title_tokens: _TokenRecorder) -> None:
         """The default (``set_title_token`` absent → True) preserves the release
         clear — a default release still clears the title token."""
         merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))

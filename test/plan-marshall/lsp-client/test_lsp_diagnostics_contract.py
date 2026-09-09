@@ -49,20 +49,30 @@ TIMEOUT = 6.0
 
 
 def _error(message: str, line: int = 0) -> dict[str, Any]:
-    return {'severity': 1, 'code': 'E1', 'message': message,
-            'range': {'start': {'line': line, 'character': 0}, 'end': {'line': line, 'character': 3}}}
+    return {
+        'severity': 1,
+        'code': 'E1',
+        'message': message,
+        'range': {'start': {'line': line, 'character': 0}, 'end': {'line': line, 'character': 3}},
+    }
 
 
 def _rename_edit(*targets: Path) -> dict[str, Any]:
     """A WorkspaceEdit replacing the first three characters of each target."""
-    return {'documentChanges': [
-        {
-            'textDocument': {'uri': path_to_uri(target), 'version': 2},
-            'edits': [{'range': {'start': {'line': 0, 'character': 0}, 'end': {'line': 0, 'character': 3}},
-                       'newText': 'bar'}],
-        }
-        for target in targets
-    ]}
+    return {
+        'documentChanges': [
+            {
+                'textDocument': {'uri': path_to_uri(target), 'version': 2},
+                'edits': [
+                    {
+                        'range': {'start': {'line': 0, 'character': 0}, 'end': {'line': 0, 'character': 3}},
+                        'newText': 'bar',
+                    }
+                ],
+            }
+            for target in targets
+        ]
+    }
 
 
 def _session(tmp_path: Path, config: dict[str, Any], timeout: float = TIMEOUT) -> LspSession:
@@ -164,9 +174,11 @@ def test_a_CROSS_FILE_rename_is_not_rolled_back_by_a_half_applied_workspace(tmp_
     notification can never reach that quorum. Reported by CodeRabbit.
     """
     targets = [_module(tmp_path, name) for name in ('a.py', 'b.py', 'c.py')]
-    config = {'rename_edit': _rename_edit(*targets), 'change_quorum': len(targets), 'files': {
-        name: {'open': []} for name in ('a.py', 'b.py', 'c.py')
-    }}
+    config = {
+        'rename_edit': _rename_edit(*targets),
+        'change_quorum': len(targets),
+        'files': {name: {'open': []} for name in ('a.py', 'b.py', 'c.py')},
+    }
     session = _session(tmp_path, config)
     try:
         result = client._run_edit(session, 'python', str(targets[0]), 0, 0, 'bar')
@@ -174,8 +186,7 @@ def test_a_CROSS_FILE_rename_is_not_rolled_back_by_a_half_applied_workspace(tmp_
         session.close()
 
     assert result['status'] == 'success', (
-        f"a valid cross-file rename was rejected: {result.get('reason')} "
-        f"{result.get('new_diagnostics')}"
+        f'a valid cross-file rename was rejected: {result.get("reason")} {result.get("new_diagnostics")}'
     )
     assert result['applied'] is True
     assert result['file_count'] == 3

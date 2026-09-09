@@ -314,7 +314,7 @@ def _unlaunchable_server(tmp_path):
     return [str(launcher)]
 
 
-_REJECTING_SERVER = r'''
+_REJECTING_SERVER = r"""
 import json, sys
 
 def read_message():
@@ -339,7 +339,7 @@ sys.stdout.buffer.write(b"Content-Length: %d\r\n\r\n" % len(body) + body)
 sys.stdout.buffer.flush()
 import time
 time.sleep(5.0)
-'''
+"""
 
 
 def _rejecting_server(tmp_path):
@@ -423,9 +423,7 @@ def test_a_server_that_refuses_the_handshake_is_not_reported_as_a_timeout(tmp_pa
     (tmp_path / 'x.py').write_text('import os\n')
 
     # Act
-    outcome = harvest_workspace(
-        tmp_path, server_cmd=_rejecting_server(tmp_path), timeout_s=20.0, request_timeout_s=5.0
-    )
+    outcome = harvest_workspace(tmp_path, server_cmd=_rejecting_server(tmp_path), timeout_s=20.0, request_timeout_s=5.0)
 
     # Assert
     assert outcome.ran is False
@@ -616,9 +614,7 @@ def test_every_failure_mode_states_a_distinct_reason(tmp_path, record_property):
     # completes the handshake then fails a per-file request.
     outcomes = [
         harvest_workspace(sourced, server_cmd=['definitely-not-a-real-language-server-xyz']),
-        harvest_workspace(
-            sourced, server_cmd=_unlaunchable_server(tmp_path), timeout_s=20.0, request_timeout_s=5.0
-        ),
+        harvest_workspace(sourced, server_cmd=_unlaunchable_server(tmp_path), timeout_s=20.0, request_timeout_s=5.0),
         harvest_workspace(
             sourced,
             server_cmd=[PYTHON, '-c', 'import sys; sys.stdin.read()'],
@@ -642,14 +638,10 @@ def test_every_failure_mode_states_a_distinct_reason(tmp_path, record_property):
 
     # Assert — membership first: an undeclared prefix is a mode reporting under a
     # name no reader can classify.
-    assert set(observed) <= declared, (
-        f'reason prefixes not declared by lsp_harvest: {sorted(set(observed) - declared)}'
-    )
+    assert set(observed) <= declared, f'reason prefixes not declared by lsp_harvest: {sorted(set(observed) - declared)}'
     # Then injectivity: as many distinct prefixes as calls means no two modes
     # collapsed onto one.
-    assert len(set(observed)) == len(outcomes), (
-        f'two failure modes share a reason prefix: {observed}'
-    )
+    assert len(set(observed)) == len(outcomes), f'two failure modes share a reason prefix: {observed}'
 
 
 def test_no_failure_mode_reports_a_zero_edge_success(tmp_path):

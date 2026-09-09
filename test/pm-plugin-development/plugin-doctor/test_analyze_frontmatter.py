@@ -177,9 +177,7 @@ class TestImplementsDivergent:
 
     def test_divergent_implements_flagged(self, tmp_path: Path) -> None:
         root = _bundles_root(tmp_path)
-        md = _write_recipe_skill(
-            root, 'my-bundle', 'recipe-foo', _frontmatter('plan-marshall:wrong/notation')
-        )
+        md = _write_recipe_skill(root, 'my-bundle', 'recipe-foo', _frontmatter('plan-marshall:wrong/notation'))
 
         findings = assert_analyzer_findings(analyze_frontmatter, root, [RULE_ID])
         details = findings[0]['details']

@@ -216,8 +216,7 @@ def _error_verdict_text(row: dict[str, Any]) -> tuple[str, str]:
     log_file = row.get('log_file')
     if log_file:
         return (
-            f'{preamble}, log_file={log_file}); '
-            'the reported failures are in that log',
+            f'{preamble}, log_file={log_file}); the reported failures are in that log',
             _ERROR_DISPLAY_DETAIL,
         )
     return (
@@ -268,11 +267,7 @@ def run_classify_outcome(args: Namespace) -> dict[str, Any]:
         reported"; a reported failure has its own arm at (c) and reaching this
         one would misreport a read verdict as an unread one.
     """
-    entries = [
-        e
-        for e in read_entries()
-        if e.get('kind') == KIND_BUILD and e.get('worktree_sha') == args.worktree_sha
-    ]
+    entries = [e for e in read_entries() if e.get('kind') == KIND_BUILD and e.get('worktree_sha') == args.worktree_sha]
     matching_row = entries[-1] if entries else None
     error_display_detail = ''
 
@@ -384,7 +379,7 @@ Examples:
                         'flags': ['--plan-id'],
                         'dest': 'plan_id',
                         'help': 'build/job: the plan_id (never null — an omitted flag is recorded '
-                                'as the NO_PLAN sentinel, the plan-less orchestrator global-tier value)',
+                        'as the NO_PLAN sentinel, the plan-less orchestrator global-tier value)',
                     },
                     {
                         'flags': ['--args'],

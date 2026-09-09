@@ -16,7 +16,9 @@ from _arch_fixtures import create_test_project
 
 from conftest import load_script_module
 
-_architecture_core = load_script_module('plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core')
+_architecture_core = load_script_module(
+    'plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core'
+)
 _cmd_manage = load_script_module('plan-marshall', 'manage-architecture', '_cmd_manage.py', '_cmd_manage')
 
 DataNotFoundError = _architecture_core.DataNotFoundError

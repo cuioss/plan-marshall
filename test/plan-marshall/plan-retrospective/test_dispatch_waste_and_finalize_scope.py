@@ -45,9 +45,7 @@ from _plan_retrospective_fixtures import ANALYZE_LOGS
 
 from conftest import MARKETPLACE_ROOT, load_script_module, run_script
 
-analyze_logs = load_script_module(
-    'plan-marshall', 'plan-retrospective', 'analyze-logs.py', 'analyze_logs_waste'
-)
+analyze_logs = load_script_module('plan-marshall', 'plan-retrospective', 'analyze-logs.py', 'analyze_logs_waste')
 
 # A finalize boundary file exercising every class the split cares about: two
 # productive loop-backs, two genuine terminal errors, one session-restart block
@@ -216,9 +214,7 @@ def test_analyze_logs_surfaces_the_finalize_boundary_file(tmp_path, monkeypatch)
     (plan_dir / 'logs' / 'work.log').write_text('', encoding='utf-8')
     (plan_dir / 'logs' / 'decision.log').write_text('', encoding='utf-8')
     (plan_dir / 'logs' / 'script-execution.log').write_text('', encoding='utf-8')
-    (plan_dir / 'references.json').write_text(
-        json.dumps({'modified_files': []}), encoding='utf-8'
-    )
+    (plan_dir / 'references.json').write_text(json.dumps({'modified_files': []}), encoding='utf-8')
     monkeypatch.setenv('PLAN_BASE_DIR', str(base))
 
     result = run_script(ANALYZE_LOGS, 'run', '--plan-id', plan_id, '--mode', 'live')
@@ -239,12 +235,7 @@ def test_analyze_logs_surfaces_the_finalize_boundary_file(tmp_path, monkeypatch)
 
 
 _LOGGING_GAP_ANALYSIS_MD = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'plan-retrospective'
-    / 'references'
-    / 'logging-gap-analysis.md'
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'references' / 'logging-gap-analysis.md'
 )
 
 
@@ -259,9 +250,6 @@ def test_logging_gap_analysis_rule_scope_names_the_finalize_boundary_file():
     content = _LOGGING_GAP_ANALYSIS_MD.read_text(encoding='utf-8')
 
     assert 'metrics-dispatch-boundaries-{phase}.toon' in content, (
-        'the rule doc must name the per-phase boundary artifact, not the '
-        'execute file alone'
+        'the rule doc must name the per-phase boundary artifact, not the execute file alone'
     )
-    assert '6-finalize' in content, (
-        'the rule doc must name the finalize phase as an audited dispatching phase'
-    )
+    assert '6-finalize' in content, 'the rule doc must name the finalize phase as an audited dispatching phase'

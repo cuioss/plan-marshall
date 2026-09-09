@@ -93,16 +93,12 @@ _SUCCESS_RESULT_FIELD_IDS = [key for key, _expected in _SUCCESS_RESULT_FIELDS]
 class TestStdoutRedirectSuccess:
     """Tests for successful execution with STDOUT_REDIRECT strategy."""
 
-    @pytest.mark.parametrize(
-        'key,expected', _SUCCESS_RESULT_FIELDS, ids=_SUCCESS_RESULT_FIELD_IDS
-    )
+    @pytest.mark.parametrize('key,expected', _SUCCESS_RESULT_FIELDS, ids=_SUCCESS_RESULT_FIELD_IDS)
     @patch('_build_execute.timeout_set')
     @patch('_build_execute.subprocess.run')
     @patch('_build_execute.timeout_get', return_value=300)
     @patch('_build_execute.create_log_file')
-    def test_success_result_carries_the_field(
-        self, mock_log_file, mock_tget, mock_run, mock_tset, key, expected
-    ):
+    def test_success_result_carries_the_field(self, mock_log_file, mock_tget, mock_run, mock_tset, key, expected):
         mock_log_file.return_value = _LOG_FILE
         mock_run.return_value = MagicMock(returncode=0)
 
@@ -386,9 +382,7 @@ _LOG_FILE_FAILURE_RESULT_FIELDS = [
     ('command', ''),
 ]
 
-_LOG_FILE_FAILURE_RESULT_FIELD_IDS = [
-    key for key, _expected in _LOG_FILE_FAILURE_RESULT_FIELDS
-]
+_LOG_FILE_FAILURE_RESULT_FIELD_IDS = [key for key, _expected in _LOG_FILE_FAILURE_RESULT_FIELDS]
 
 
 class TestLogFileFailure:
@@ -401,9 +395,7 @@ class TestLogFileFailure:
     )
     @patch('_build_execute.timeout_get', return_value=300)
     @patch('_build_execute.create_log_file', return_value=None)
-    def test_log_file_failure_result_carries_the_field(
-        self, mock_log_file, mock_tget, key, expected
-    ):
+    def test_log_file_failure_result_carries_the_field(self, mock_log_file, mock_tget, key, expected):
         result = _call_execute()
 
         assert result[key] == expected
@@ -584,9 +576,7 @@ class TestExplicitTimeoutOverride:
     @patch('_build_execute.subprocess.run')
     @patch('_build_execute.timeout_get', return_value=1800)
     @patch('_build_execute.create_log_file')
-    def test_explicit_override_is_forwarded_to_timeout_get(
-        self, mock_log_file, mock_tget, mock_run, mock_tset
-    ):
+    def test_explicit_override_is_forwarded_to_timeout_get(self, mock_log_file, mock_tget, mock_run, mock_tset):
         """The explicit bound is handed to timeout_get as the override argument."""
         mock_log_file.return_value = '/tmp/test.log'
         mock_run.return_value = MagicMock(returncode=0)
@@ -618,9 +608,7 @@ class TestExplicitTimeoutOverride:
     @patch('_build_execute.subprocess.run')
     @patch('_build_execute.timeout_get', return_value=300)
     @patch('_build_execute.create_log_file')
-    def test_absent_override_still_consults_timeout_get(
-        self, mock_log_file, mock_tget, mock_run, mock_tset
-    ):
+    def test_absent_override_still_consults_timeout_get(self, mock_log_file, mock_tget, mock_run, mock_tset):
         """Without an override the learned path is unchanged (explicit stays None)."""
         mock_log_file.return_value = '/tmp/test.log'
         mock_run.return_value = MagicMock(returncode=0)
@@ -793,9 +781,7 @@ _CAPTURE_STRATEGY_IDS = ['stdout-redirect', 'tool-log-flag']
 class TestCaptureStrategyEnum:
     """Tests for CaptureStrategy enum values."""
 
-    @pytest.mark.parametrize(
-        'member,expected_value', _CAPTURE_STRATEGY_VALUES, ids=_CAPTURE_STRATEGY_IDS
-    )
+    @pytest.mark.parametrize('member,expected_value', _CAPTURE_STRATEGY_VALUES, ids=_CAPTURE_STRATEGY_IDS)
     def test_member_carries_its_wire_value(self, member, expected_value):
         assert member.value == expected_value
 
@@ -979,8 +965,7 @@ def test_execute_direct_base_honours_resolved_worktree_path(monkeypatch):
 
             call_kwargs = mock_run.call_args[1]
             assert call_kwargs['cwd'] == resolved, (
-                f'subprocess cwd must match the resolver output {resolved!r}, '
-                f'got {call_kwargs["cwd"]!r}'
+                f'subprocess cwd must match the resolver output {resolved!r}, got {call_kwargs["cwd"]!r}'
             )
 
 

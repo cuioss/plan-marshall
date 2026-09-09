@@ -304,9 +304,7 @@ def check_command_self_containment(content: str) -> dict:
     }
 
 
-DYNAMIC_LEVEL_EXECUTOR_REF = (
-    'plan-marshall:extension-api/standards/ext-point-dynamic-level-executor'
-)
+DYNAMIC_LEVEL_EXECUTOR_REF = 'plan-marshall:extension-api/standards/ext-point-dynamic-level-executor'
 
 # Per-target build-output directory prefix. Variants emitted by the build
 # target live under ``target/{target}/`` (e.g. ``target/claude/`` for the
@@ -379,7 +377,7 @@ def check_hardcoded_model_on_canonical(frontmatter: str, file_path: str) -> list
                 'branch': 'missing_implements',
                 'code': 'HARDCODED_MODEL_ON_CANONICAL',
                 'message': (
-                    f"Canonical agent declares {offenders} without "
+                    f'Canonical agent declares {offenders} without '
                     f"'implements: {DYNAMIC_LEVEL_EXECUTOR_REF}'. "
                     'Either remove the hardcoded pin or add the implements declaration '
                     'to opt into role-based variant emission.'
@@ -814,9 +812,7 @@ def derive_link_boundary(file_path: str) -> 'Path':
     return base_dir
 
 
-def check_broken_relative_link(
-    content: str, file_path: str, boundary_dir: 'Path | None' = None
-) -> list:
+def check_broken_relative_link(content: str, file_path: str, boundary_dir: 'Path | None' = None) -> list:
     """Check broken-relative-link: a relative markdown link with no on-disk target.
 
     Resolves every ``[text](relative/path.md)`` link target against the linking
@@ -855,11 +851,7 @@ def check_broken_relative_link(
     if '/templates/' in file_path or Path(file_path).name.endswith('-template.md'):
         return findings
     base_dir = Path(file_path).parent
-    scan_boundary = (
-        boundary_dir.resolve()
-        if boundary_dir is not None
-        else derive_link_boundary(file_path)
-    )
+    scan_boundary = boundary_dir.resolve() if boundary_dir is not None else derive_link_boundary(file_path)
     fence_map = _fenced_line_indices(content)
     lines = content.split('\n')
     for idx, line in enumerate(lines):
@@ -894,8 +886,7 @@ def check_broken_relative_link(
                     'line': idx + 1,
                     'target': target,
                     'message': (
-                        f'relative link target `{target}` does not resolve to a file on disk '
-                        f'(broken-relative-link)'
+                        f'relative link target `{target}` does not resolve to a file on disk (broken-relative-link)'
                     ),
                 }
             )
@@ -954,8 +945,7 @@ def check_fenced_code_no_language(content: str) -> list:
                         {
                             'line': idx + 1,
                             'message': (
-                                'fenced code block opens with no language info-string '
-                                '(fenced-code-no-language)'
+                                'fenced code block opens with no language info-string (fenced-code-no-language)'
                             ),
                         }
                     )

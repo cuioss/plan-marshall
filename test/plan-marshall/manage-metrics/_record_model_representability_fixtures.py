@@ -52,7 +52,6 @@ separate trees, so a change that moved only one of them fails in the modules thi
   floor survived the representation change.
 """
 
-
 from __future__ import annotations
 
 import importlib
@@ -102,19 +101,13 @@ cmd_generate = manage_metrics.cmd_generate
 cmd_record_dispatch_boundary = manage_metrics.cmd_record_dispatch_boundary
 
 
-_lifecycle = load_script_module(
-    'plan-marshall', 'manage-status', '_cmd_lifecycle.py', '_representability_lifecycle'
-)
+_lifecycle = load_script_module('plan-marshall', 'manage-status', '_cmd_lifecycle.py', '_representability_lifecycle')
 
 
-_mark_step = load_script_module(
-    'plan-marshall', 'manage-status', '_cmd_mark_step.py', '_representability_mark_step'
-)
+_mark_step = load_script_module('plan-marshall', 'manage-status', '_cmd_mark_step.py', '_representability_mark_step')
 
 
-_status_core = load_script_module(
-    'plan-marshall', 'manage-status', '_status_core.py', '_representability_status_core'
-)
+_status_core = load_script_module('plan-marshall', 'manage-status', '_status_core.py', '_representability_status_core')
 
 
 cmd_create = _lifecycle.cmd_create
@@ -255,8 +248,15 @@ def _ns_mark_step(
 ) -> Namespace:
     """A `mark-step-done` namespace from manage-status.py's own parser."""
     argv = [
-        'mark-step-done', '--plan-id', plan_id, '--phase', '6-finalize',
-        '--step', _STEP, '--outcome', outcome,
+        'mark-step-done',
+        '--plan-id',
+        plan_id,
+        '--phase',
+        '6-finalize',
+        '--step',
+        _STEP,
+        '--outcome',
+        outcome,
     ]
     if force:
         argv.append('--force')
@@ -323,18 +323,16 @@ def _drive_scenario(plan_id: str) -> dict[str, Any]:
     ):
         assert cmd_phase_boundary(ns_phase_boundary(plan_id, prev_phase, next_phase))['status'] == 'success'
     assert (
-        cmd_phase_boundary(
-            ns_phase_boundary(plan_id, '4-plan', '5-execute', total_tokens=52000, tool_uses=18)
-        )['status']
+        cmd_phase_boundary(ns_phase_boundary(plan_id, '4-plan', '5-execute', total_tokens=52000, tool_uses=18))[
+            'status'
+        ]
         == 'success'
     )
 
     # Three phase-5 dispatch terminations: fully measured, wholly unmeasured, and
     # a per-column mix carrying two measured zeros.
     dispatch_results = [
-        cmd_record_dispatch_boundary(
-            _ns_dispatch(plan_id, 'budget_yield', 60000, 25, 300000, _DISPATCH_MEASURED)
-        ),
+        cmd_record_dispatch_boundary(_ns_dispatch(plan_id, 'budget_yield', 60000, 25, 300000, _DISPATCH_MEASURED)),
         cmd_record_dispatch_boundary(_ns_dispatch(plan_id, 'budget_yield', 20000, 9, 90000, {})),
         cmd_record_dispatch_boundary(
             _ns_dispatch(plan_id, 'clean_exit_queue_empty', 45000, 16, 150000, _DISPATCH_MIXED)
@@ -347,9 +345,7 @@ def _drive_scenario(plan_id: str) -> dict[str, Any]:
     # non-zero token total — the row shape the old `partial: false` certified.
     assert (
         cmd_phase_boundary(
-            ns_phase_boundary(
-                plan_id, '5-execute', '6-finalize', total_tokens=_EXEC_CLOSE_ONE_TOKENS, tool_uses=0
-            )
+            ns_phase_boundary(plan_id, '5-execute', '6-finalize', total_tokens=_EXEC_CLOSE_ONE_TOKENS, tool_uses=0)
         )['status']
         == 'success'
     )
@@ -369,9 +365,7 @@ def _drive_scenario(plan_id: str) -> dict[str, Any]:
     assert cmd_start_phase(ns_start_phase(plan_id, '5-execute'))['status'] == 'success'
     assert (
         cmd_phase_boundary(
-            ns_phase_boundary(
-                plan_id, '5-execute', '6-finalize', total_tokens=_EXEC_CLOSE_TWO_TOKENS, tool_uses=0
-            )
+            ns_phase_boundary(plan_id, '5-execute', '6-finalize', total_tokens=_EXEC_CLOSE_TWO_TOKENS, tool_uses=0)
         )['status']
         == 'success'
     )
@@ -400,10 +394,7 @@ def _drive_scenario(plan_id: str) -> dict[str, Any]:
         == 'success'
     )
 
-    assert (
-        cmd_end_phase(ns_end_phase(plan_id, '6-finalize', total_tokens=31000, tool_uses=12))['status']
-        == 'success'
-    )
+    assert cmd_end_phase(ns_end_phase(plan_id, '6-finalize', total_tokens=31000, tool_uses=12))['status'] == 'success'
 
     generated = cmd_generate(ns_generate(plan_id))
     assert generated['status'] == 'success', generated
@@ -425,10 +416,16 @@ def _drive_scenario(plan_id: str) -> dict[str, Any]:
 def _make_plan(plan_id: str) -> None:
     result = cmd_create(
         parse_ns(
-            'plan-marshall', 'manage-status', 'manage-status.py', 'create',
-            '--plan-id', plan_id,
-            '--title', 'Record model representability',
-            '--phases', '1-init,2-refine,3-outline,4-plan,5-execute,6-finalize',
+            'plan-marshall',
+            'manage-status',
+            'manage-status.py',
+            'create',
+            '--plan-id',
+            plan_id,
+            '--title',
+            'Record model representability',
+            '--phases',
+            '1-init,2-refine,3-outline,4-plan,5-execute,6-finalize',
         )
     )
     assert result['status'] == 'success', result
@@ -436,11 +433,7 @@ def _make_plan(plan_id: str) -> None:
 
 def _data_rows(content: str) -> list[str]:
     """Return only the dispatch-boundary data rows, skipping the TOON header."""
-    return [
-        line
-        for line in content.splitlines()
-        if line and not line.startswith(('plan_id:', 'phase:', 'rows[]'))
-    ]
+    return [line for line in content.splitlines() if line and not line.startswith(('plan_id:', 'phase:', 'rows[]'))]
 
 
 # =============================================================================
@@ -469,9 +462,7 @@ def _archived_plan(repo_root: Path, body: str) -> Any:
     plan_dir = repo_root / '.plan' / 'local' / 'archived-plans' / 'sample-plan'
     (plan_dir / 'work').mkdir(parents=True, exist_ok=True)
     (plan_dir / 'references.json').write_text('{"scope_estimate": "surgical"}', encoding='utf-8')
-    (plan_dir / 'status.json').write_text(
-        '{"metadata": {"change_type": "bug_fix"}}', encoding='utf-8'
-    )
+    (plan_dir / 'status.json').write_text('{"metadata": {"change_type": "bug_fix"}}', encoding='utf-8')
     (plan_dir / 'work' / 'metrics.toon').write_text(body, encoding='utf-8')
     return audit.collect_inputs(plan_dir)
 
@@ -487,9 +478,7 @@ def _write_metrics(tmp_path: Path, name: str, body: str) -> Path:
 # Fixtures: one file carrying both representations, and the legacy floor
 # =============================================================================
 
-_FIXTURES_DIR = (
-    PROJECT_ROOT / 'test' / 'plan-marshall' / 'plan-retrospective' / 'fixtures' / 'dispatch-loop-replay'
-)
+_FIXTURES_DIR = PROJECT_ROOT / 'test' / 'plan-marshall' / 'plan-retrospective' / 'fixtures' / 'dispatch-loop-replay'
 
 
 _UNMEASURED_FIXTURE = _FIXTURES_DIR / 'unmeasured' / 'work' / 'metrics-dispatch-boundaries-5-execute.toon'
@@ -514,9 +503,7 @@ _LEGACY_FIXTURE_BYTES = (
 # The undatable-zero fixture: one artifact, both readers, one provenance gate
 # =============================================================================
 
-_UNDATABLE_FIXTURE = (
-    _FIXTURES_DIR / 'undatable' / 'work' / 'metrics-dispatch-boundaries-5-execute.toon'
-)
+_UNDATABLE_FIXTURE = _FIXTURES_DIR / 'undatable' / 'work' / 'metrics-dispatch-boundaries-5-execute.toon'
 
 
 #: The undatable fixture's exact bytes — the pre-token writer's row shape, which

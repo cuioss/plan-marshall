@@ -79,9 +79,7 @@ def _load_registry():
     holds for every collected descriptor. ``load_script_module`` re-execs the
     module, resetting the lazy ``_REGISTRY`` cache to ``None``.
     """
-    return load_script_module(
-        'pm-plugin-development', 'plugin-doctor', '_rule_registry.py', '_rule_registry'
-    )
+    return load_script_module('pm-plugin-development', 'plugin-doctor', '_rule_registry.py', '_rule_registry')
 
 
 def _load_doctor_marketplace():
@@ -159,8 +157,7 @@ def test_every_descriptor_has_a_valid_schema():
             f'{descriptor.rule_id}: unknown category {descriptor.category!r}'
         )
         assert descriptor.scope in VALID_SCOPES, (
-            f'{descriptor.rule_id}: scope must be file-local or corpus-relational, '
-            f'got {descriptor.scope!r}'
+            f'{descriptor.rule_id}: scope must be file-local or corpus-relational, got {descriptor.scope!r}'
         )
         assert isinstance(descriptor.opt_in, bool)
         assert isinstance(descriptor.default_on, bool)
@@ -204,12 +201,8 @@ def test_build_registry_rejects_duplicate_rule_id(monkeypatch):
 def test_every_descriptor_module_contributes_at_least_one():
     """Each module in ``_DESCRIPTOR_MODULES`` declares at least one descriptor."""
     reg = _load_registry()
-    missing = [
-        name for name in reg._DESCRIPTOR_MODULES if not reg._descriptors_for_module(name)
-    ]
-    assert not missing, (
-        f'rule-bearing modules exposing no RULE_DESCRIPTOR(S): {missing}'
-    )
+    missing = [name for name in reg._DESCRIPTOR_MODULES if not reg._descriptors_for_module(name)]
+    assert not missing, f'rule-bearing modules exposing no RULE_DESCRIPTOR(S): {missing}'
 
 
 def test_descriptor_modules_are_unique_and_sorted():
@@ -233,13 +226,10 @@ def test_askuserquestion_prompt_quality_rule_registered_non_gating():
     """
     reg = _load_registry()
     matches = [
-        descriptor
-        for descriptor in reg.get_registry()
-        if descriptor.rule_id == 'askuserquestion-prompt-quality'
+        descriptor for descriptor in reg.get_registry() if descriptor.rule_id == 'askuserquestion-prompt-quality'
     ]
     assert len(matches) == 1, (
-        'askuserquestion-prompt-quality must be registered exactly once '
-        f'in the rule registry; found {len(matches)}'
+        f'askuserquestion-prompt-quality must be registered exactly once in the rule registry; found {len(matches)}'
     )
     descriptor = matches[0]
     assert descriptor.severity == 'warning'

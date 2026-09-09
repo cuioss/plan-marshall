@@ -39,7 +39,9 @@ import pytest
 
 from conftest import load_script_module, parse_ns
 
-_pyproject_execute_mod = load_script_module('plan-marshall', 'build-pyproject', '_pyproject_execute.py', '_pyproject_execute')
+_pyproject_execute_mod = load_script_module(
+    'plan-marshall', 'build-pyproject', '_pyproject_execute.py', '_pyproject_execute'
+)
 
 _CONFIG = _pyproject_execute_mod._CONFIG
 execute_direct = _pyproject_execute_mod.execute_direct
@@ -75,8 +77,14 @@ def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
 #: ``--working-dir``, none of which the hand-built namespaces it replaces had.
 #: ``register=False`` so it never publishes ``pyproject_build`` in ``sys.modules``.
 _RUN_ARGS = parse_ns(
-    'plan-marshall', 'build-pyproject', 'pyproject_build.py',
-    'run', '--command-args', 'verify', '--plan-id', 'P',
+    'plan-marshall',
+    'build-pyproject',
+    'pyproject_build.py',
+    'run',
+    '--command-args',
+    'verify',
+    '--plan-id',
+    'P',
     register=False,
 )
 
@@ -169,11 +177,11 @@ def test_execute_direct_absent_wrapper_resolves_system_binary(tmp_path, monkeypa
     monkeypatch.setattr(_factory, 'execute_direct_base', _recorder)
 
     result = execute_direct(
-            args='verify',
-            command_key='python:verify',
-            project_dir=str(tmp_path),
-            plan_id=_PLAN_ID,
-        )
+        args='verify',
+        command_key='python:verify',
+        project_dir=str(tmp_path),
+        plan_id=_PLAN_ID,
+    )
     assert result['status'] == 'success'
     assert calls[0]['wrapper'] == 'pwx'
 
@@ -192,11 +200,11 @@ def test_execute_direct_resolves_present_wrapper(tmp_path, monkeypatch):
     monkeypatch.setattr(_factory, 'execute_direct_base', _recorder)
 
     result = execute_direct(
-            args='verify',
-            command_key='python:verify',
-            project_dir=str(tmp_path),
-            plan_id=_PLAN_ID,
-        )
+        args='verify',
+        command_key='python:verify',
+        project_dir=str(tmp_path),
+        plan_id=_PLAN_ID,
+    )
     assert result['status'] == 'success'
     assert calls[0]['wrapper'] == './pw'
 
@@ -540,9 +548,7 @@ class TestPyprojectCmdRunQueueAdmitted:
         double = _QueueDouble([{'status': 'success', 'admission': 'admitted', 'id': 'P:uuid-1'}])
         exec_recorder = _install_queue(monkeypatch, double)
 
-        rc = cmd_run(
-            _variant(_RUN_ARGS, execution_mode='in_process')
-        )
+        rc = cmd_run(_variant(_RUN_ARGS, execution_mode='in_process'))
 
         assert rc == 0
         assert exec_recorder.ran is True
@@ -563,9 +569,7 @@ class TestPyprojectCmdRunQueueBlockedThenAdmitted:
         )
         exec_recorder = _install_queue(monkeypatch, double)
 
-        rc = cmd_run(
-            _variant(_RUN_ARGS, execution_mode='in_process')
-        )
+        rc = cmd_run(_variant(_RUN_ARGS, execution_mode='in_process'))
 
         assert rc == 0
         assert len(exec_recorder.calls) == 1
@@ -587,9 +591,7 @@ class TestPyprojectCmdRunQueueBlockedThenAdmitted:
         )
         exec_recorder = _install_queue(monkeypatch, double)
 
-        cmd_run(
-            _variant(_RUN_ARGS, execution_mode='in_process')
-        )
+        cmd_run(_variant(_RUN_ARGS, execution_mode='in_process'))
 
         assert sleeps == [bqs._WAIT_SECONDS, bqs._WAIT_SECONDS]
         assert len(exec_recorder.calls) == 1
@@ -605,9 +607,7 @@ class TestPyprojectCmdRunQueueSaturated:
         double = _QueueDouble([{'status': 'success', 'admission': 'blocked', 'id': 'P:uuid-X'}])
         exec_recorder = _install_queue(monkeypatch, double)
 
-        rc = cmd_run(
-            _variant(_RUN_ARGS, execution_mode='in_process')
-        )
+        rc = cmd_run(_variant(_RUN_ARGS, execution_mode='in_process'))
 
         assert rc == 1
         assert exec_recorder.ran is False
@@ -628,9 +628,7 @@ class TestPyprojectCmdRunPlanIdAbsentPassthrough:
         double = _QueueDouble([])
         exec_recorder = _install_queue(monkeypatch, double)
 
-        rc = cmd_run(
-            _variant(_RUN_ARGS, plan_id=plan_id, execution_mode='in_process')
-        )
+        rc = cmd_run(_variant(_RUN_ARGS, plan_id=plan_id, execution_mode='in_process'))
 
         assert rc == 0
         assert len(exec_recorder.calls) == 1

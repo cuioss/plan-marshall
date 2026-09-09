@@ -104,8 +104,7 @@ def _discover_mirror_docs() -> list[str]:
     return sorted(
         str(path.relative_to(MARKETPLACE_ROOT))
         for path in MARKETPLACE_ROOT.rglob('*.md')
-        if len(declared & set(_BACKTICKED_TOKEN_RE.findall(path.read_text(encoding='utf-8'))))
-        >= _MIRROR_THRESHOLD
+        if len(declared & set(_BACKTICKED_TOKEN_RE.findall(path.read_text(encoding='utf-8')))) >= _MIRROR_THRESHOLD
     )
 
 

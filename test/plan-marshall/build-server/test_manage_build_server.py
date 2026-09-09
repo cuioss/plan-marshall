@@ -134,9 +134,7 @@ def test_register_no_flags_populates_default_scope(home):
     # than storing empty scope (which left a registered project inert). Full
     # default-population / backfill coverage lives in test_register_defaults.py.
     assert result['notation_allowlist']
-    assert result['worktree_containers'] == [
-        str(Path(result['canonical_root']) / '.plan' / 'local' / 'worktrees')
-    ]
+    assert result['worktree_containers'] == [str(Path(result['canonical_root']) / '.plan' / 'local' / 'worktrees')]
 
 
 def test_unregister_round_trip_and_audit(home):

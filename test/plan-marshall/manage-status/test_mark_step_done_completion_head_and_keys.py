@@ -9,7 +9,6 @@ Its sections, in order:
 * Stale legacy-key duplicate migration
 """
 
-
 import pytest
 from _mark_step_done_fixtures import _args, _make_plan, cmd_mark_step_done, read_status, write_status
 
@@ -27,9 +26,7 @@ def test_mark_step_failed_then_done_with_force(plan_context):
     plan_id = 'mark-step-failed-then-done'
     _make_plan(plan_id)
     sha = 'b' * 40
-    cmd_mark_step_done(
-        _args(plan_id, '6-finalize', 'automatic-review', 'failed', display_detail='timeout')
-    )
+    cmd_mark_step_done(_args(plan_id, '6-finalize', 'automatic-review', 'failed', display_detail='timeout'))
 
     # Without --force, a different outcome on an existing step is a conflict.
     conflict = cmd_mark_step_done(

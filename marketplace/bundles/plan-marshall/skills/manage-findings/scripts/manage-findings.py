@@ -390,9 +390,7 @@ def main() -> int:
     query_parser.add_argument('--file-pattern', help='Glob pattern for file_path')
     query_parser.add_argument('--author', help='Filter by comment-author login')
     query_parser.add_argument('--kind', choices=PR_COMMENT_KINDS, help='Filter by pr-comment kind')
-    query_parser.add_argument(
-        '--bot-kind', dest='bot_kind', choices=BOT_KINDS, help='Filter by reviewer-bot identity'
-    )
+    query_parser.add_argument('--bot-kind', dest='bot_kind', choices=BOT_KINDS, help='Filter by reviewer-bot identity')
     query_parser.add_argument(
         '--preference-admissible',
         action='store_true',

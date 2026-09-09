@@ -6,7 +6,6 @@ Scope: re-entered phases — the marker, bullet and key each renders, their cano
 order, and the weighted billing total ``generate`` returns.
 """
 
-
 from _manage_metrics_fixtures import (
     ns_end_phase,
     ns_generate,
@@ -56,9 +55,7 @@ class TestGenerateReEntryMarker:
                     '5-execute': self._closed_row(
                         '2026-05-08T14:00:00+00:00', '2026-05-08T14:03:20+00:00', 300.0, 2, tokens=3000
                     ),
-                    '6-finalize': self._closed_row(
-                        '2026-05-08T15:00:00+00:00', '2026-05-08T15:10:00+00:00', 600.0, 1
-                    ),
+                    '6-finalize': self._closed_row('2026-05-08T15:00:00+00:00', '2026-05-08T15:10:00+00:00', 600.0, 1),
                 },
             },
         )
@@ -91,9 +88,7 @@ class TestGenerateReEntryMarker:
             'reentry-none',
             {
                 'phases': {
-                    '5-execute': self._closed_row(
-                        '2026-05-08T14:00:00+00:00', '2026-05-08T14:03:20+00:00', 200.0, 1
-                    ),
+                    '5-execute': self._closed_row('2026-05-08T14:00:00+00:00', '2026-05-08T14:03:20+00:00', 200.0, 1),
                 },
             },
         )
@@ -116,12 +111,8 @@ class TestGenerateReEntryMarker:
             {
                 'phases': {
                     # Inserted 5-execute first so insertion order differs from canonical.
-                    '5-execute': self._closed_row(
-                        '2026-05-08T14:00:00+00:00', '2026-05-08T14:10:00+00:00', 600.0, 3
-                    ),
-                    '2-refine': self._closed_row(
-                        '2026-05-08T12:00:00+00:00', '2026-05-08T12:10:00+00:00', 600.0, 2
-                    ),
+                    '5-execute': self._closed_row('2026-05-08T14:00:00+00:00', '2026-05-08T14:10:00+00:00', 600.0, 3),
+                    '2-refine': self._closed_row('2026-05-08T12:00:00+00:00', '2026-05-08T12:10:00+00:00', 600.0, 2),
                 },
             },
         )
@@ -188,9 +179,7 @@ def test_tokens_column_header_names_a_default_not_a_single_population(plan_conte
     cmd_end_phase(ns_end_phase('metrics-header-default', '1-init', total_tokens=1000))
     cmd_generate(ns_generate('metrics-header-default'))
 
-    header = _phase_breakdown_header(
-        (plan_context.plan_dir_for('metrics-header-default') / 'metrics.md').read_text()
-    )
+    header = _phase_breakdown_header((plan_context.plan_dir_for('metrics-header-default') / 'metrics.md').read_text())
     tokens_col = [c.strip() for c in header.strip('|').split('|')][4]
     assert tokens_col == 'Tokens (dispatched unless marked)'
     # The population is named, and it is named as a default rather than as an
@@ -247,6 +236,4 @@ def test_worked_le_wall_invariant_holds_for_subagent_dispatching_phases(plan_con
     # Total worked never exceeds total wall.
     assert result['total_worked_seconds'] <= result['total_wall_seconds']
     # Total idle is the residual.
-    assert result['total_idle_seconds'] == (
-        result['total_wall_seconds'] - result['total_worked_seconds']
-    )
+    assert result['total_idle_seconds'] == (result['total_wall_seconds'] - result['total_worked_seconds'])

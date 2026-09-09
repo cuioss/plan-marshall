@@ -100,11 +100,7 @@ class TestGateDecisionRecovery:
         synthetic input raising an operator-signal counter, exactly the defect
         the reduction exists to remove. The notice must BE the payload.
         """
-        quoted = (
-            'OPERATOR_REFUSAL_MARKERS = (\n'
-            "    \"The user doesn't want to proceed with this tool use\",\n"
-            ')\n'
-        )
+        quoted = 'OPERATOR_REFUSAL_MARKERS = (\n    "The user doesn\'t want to proceed with this tool use",\n)\n'
         path = _write(tmp_path, chat_tool_use('Read', 'tu_5'), chat_tool_result('tu_5', quoted))
         result = _reduce(path)
         assert result['gate_decision_count'] == 0
@@ -438,18 +434,23 @@ class TestContentRobustness:
         assert _mod.extract_text(content) == ''
 
 
-
 class TestRoleGuards:
     def test_a_tool_result_on_an_assistant_turn_is_not_a_gate_decision(self, tmp_path):
         """Only a `user` turn carries the operator's side of the channel."""
         path = _write(
             tmp_path,
-            chat_turn('assistant', [
-                {'type': 'tool_use', 'name': _gate.OPERATOR_DECISION_TOOL, 'id': 'tu_1'},
-            ]),
-            chat_turn('assistant', [
-                {'type': 'tool_result', 'tool_use_id': 'tu_1', 'content': 'Option A'},
-            ]),
+            chat_turn(
+                'assistant',
+                [
+                    {'type': 'tool_use', 'name': _gate.OPERATOR_DECISION_TOOL, 'id': 'tu_1'},
+                ],
+            ),
+            chat_turn(
+                'assistant',
+                [
+                    {'type': 'tool_result', 'tool_use_id': 'tu_1', 'content': 'Option A'},
+                ],
+            ),
         )
         result = _reduce(path)
         assert result['gate_decision_count'] == 0
@@ -460,10 +461,13 @@ class TestRoleGuards:
         Scanning both roles for prompts would let a single crafted turn supply
         the id and answer it — a synthetic input raising an operator counter.
         """
-        line = chat_turn('user', [
-            {'type': 'tool_use', 'name': _gate.OPERATOR_DECISION_TOOL, 'id': 'tu_2'},
-            {'type': 'tool_result', 'tool_use_id': 'tu_2', 'content': 'Option B'},
-        ])
+        line = chat_turn(
+            'user',
+            [
+                {'type': 'tool_use', 'name': _gate.OPERATOR_DECISION_TOOL, 'id': 'tu_2'},
+                {'type': 'tool_result', 'tool_use_id': 'tu_2', 'content': 'Option B'},
+            ],
+        )
         result = _reduce(_write(tmp_path, line))
         assert result['gate_decision_count'] == 0
         assert result['no_signal'] is True

@@ -46,14 +46,8 @@ class TestGlobalLogCostRollup:
     def test_ranks_by_time_owned_not_by_call_count(self, tmp_path: Path):
         # `pm:hot:hot run`  — 60 calls x 0.5s = 30.0s   (most CALLS)
         # `pm:heavy:heavy run` — 4 calls x 20.0s = 80.0s (most TIME)
-        lines = [
-            _line(f'2026-06-01T10:00:{i % 60:02d}Z', 'INFO', 'pm:hot:hot run (0.5s)')
-            for i in range(60)
-        ]
-        lines += [
-            _line(f'2026-06-01T11:0{i}:00Z', 'INFO', 'pm:heavy:heavy run (20.0s)')
-            for i in range(4)
-        ]
+        lines = [_line(f'2026-06-01T10:00:{i % 60:02d}Z', 'INFO', 'pm:hot:hot run (0.5s)') for i in range(60)]
+        lines += [_line(f'2026-06-01T11:0{i}:00Z', 'INFO', 'pm:heavy:heavy run (20.0s)') for i in range(4)]
         _write_log(tmp_path, 'script-execution-2026-06-01.log', lines)
 
         result = audit.cross_global_log_analysis(tmp_path)
@@ -71,10 +65,7 @@ class TestGlobalLogCostRollup:
     def test_dominant_fast_caller_is_visible_though_no_call_is_slow(self, tmp_path: Path):
         # 100 calls at 0.2s own 20s of wall-clock while NO single call comes
         # anywhere near the 30s ceiling.
-        lines = [
-            _line(f'2026-06-01T10:00:{i % 60:02d}Z', 'INFO', 'pm:hot:hot run (0.2s)')
-            for i in range(100)
-        ]
+        lines = [_line(f'2026-06-01T10:00:{i % 60:02d}Z', 'INFO', 'pm:hot:hot run (0.2s)') for i in range(100)]
         lines.append(_line('2026-06-01T11:00:00Z', 'INFO', 'pm:rare:rare run (5.0s)'))
         _write_log(tmp_path, 'script-execution-2026-06-01.log', lines)
 
@@ -143,10 +134,7 @@ class TestGlobalLogCostRollup:
         # The writer formats `%.2f`, so a sub-5ms call is logged as `0.00s`. It
         # contributes nothing to the total, making the total a FLOOR — so the
         # calls are counted rather than silently summed as measured zeros.
-        lines = [
-            _line(f'2026-06-01T10:00:{i % 60:02d}Z', 'INFO', 'pm:tiny:tiny run (0.00s)')
-            for i in range(50)
-        ]
+        lines = [_line(f'2026-06-01T10:00:{i % 60:02d}Z', 'INFO', 'pm:tiny:tiny run (0.00s)') for i in range(50)]
         lines.append(_line('2026-06-01T11:00:00Z', 'INFO', 'pm:real:real run (2.00s)'))
         _write_log(tmp_path, 'script-execution-2026-06-01.log', lines)
 
@@ -174,10 +162,7 @@ class TestGlobalLogCostRollup:
         assert result['distinct_timed_call_keys'] == 0
 
     def test_rollup_rows_and_denominator_reach_the_emitted_block(self, tmp_path: Path):
-        lines = [
-            _line(f'2026-06-01T10:00:{i % 60:02d}Z', 'INFO', 'pm:hot:hot run (0.2s)')
-            for i in range(100)
-        ]
+        lines = [_line(f'2026-06-01T10:00:{i % 60:02d}Z', 'INFO', 'pm:hot:hot run (0.2s)') for i in range(100)]
         _write_log(tmp_path, 'script-execution-2026-06-01.log', lines)
 
         output = audit.run_checks([], ['global-log-analysis'], tmp_path)

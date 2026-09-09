@@ -49,12 +49,7 @@ def _leading_ws(line: str) -> str:
 def is_top_rule(line: str) -> bool:
     """True when ``line`` (ignoring indent) is a box top rule ``┌─…─┐``."""
     body = line.strip()
-    return (
-        len(body) >= 2
-        and body[0] == TOP_LEFT
-        and body[-1] == TOP_RIGHT
-        and all(c == HORIZONTAL for c in body[1:-1])
-    )
+    return len(body) >= 2 and body[0] == TOP_LEFT and body[-1] == TOP_RIGHT and all(c == HORIZONTAL for c in body[1:-1])
 
 
 def is_bottom_rule(line: str) -> bool:
@@ -132,9 +127,7 @@ def _target_inner_width(lines: list[str], top_index: int, bottom_index: int) -> 
         # Only lines at the box's own indent that carry both borders contribute
         # to the target width; deeper-indented content does not force the
         # enclosing box wider than its own border lines already require.
-        if _leading_ws(line) == indent and (
-            is_top_rule(line) or is_bottom_rule(line) or is_box_line(line)
-        ):
+        if _leading_ws(line) == indent and (is_top_rule(line) or is_bottom_rule(line) or is_box_line(line)):
             body = line[indent_len:].rstrip('\n')
             # Inner width = total body length minus the two border characters.
             inner = len(body) - 2
@@ -179,7 +172,7 @@ def rebuild_box(lines: list[str], top_index: int, bottom_index: int) -> list[str
         elif j == bottom_index:
             rebuilt.append(_rebuild_rule(indent, BOTTOM_LEFT, BOTTOM_RIGHT, inner_width))
         elif _leading_ws(line) == indent and is_box_line(line):
-            rebuilt.append(_rebuild_box_line(indent, line[len(indent):], inner_width))
+            rebuilt.append(_rebuild_box_line(indent, line[len(indent) :], inner_width))
         else:
             # Nested box / deeper interior content — verbatim.
             rebuilt.append(line)
@@ -238,9 +231,7 @@ def _iter_block_regions(lines: list[str], suffix: str) -> list[tuple[int, int]]:
                     block_start = idx + 1
                     break
         else:
-            is_close = stripped == open_delim or (
-                open_delim == MD_FENCE and stripped.startswith(MD_FENCE)
-            )
+            is_close = stripped == open_delim or (open_delim == MD_FENCE and stripped.startswith(MD_FENCE))
             if is_close:
                 regions.append((block_start, idx))
                 in_block = False
@@ -352,15 +343,11 @@ def main() -> int:
     )
     subparsers = parser.add_subparsers(dest='command', required=True)
 
-    check_parser = subparsers.add_parser(
-        'check', help='Detect misaligned boxes (non-mutating)', allow_abbrev=False
-    )
+    check_parser = subparsers.add_parser('check', help='Detect misaligned boxes (non-mutating)', allow_abbrev=False)
     check_parser.add_argument('--path', default='.', help='File or directory to check')
     check_parser.set_defaults(func=cmd_check)
 
-    fix_parser = subparsers.add_parser(
-        'fix', help='Repair misaligned boxes (mutating, idempotent)', allow_abbrev=False
-    )
+    fix_parser = subparsers.add_parser('fix', help='Repair misaligned boxes (mutating, idempotent)', allow_abbrev=False)
     fix_parser.add_argument('--path', default='.', help='File or directory to fix')
     fix_parser.set_defaults(func=cmd_fix)
 

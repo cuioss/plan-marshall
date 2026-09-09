@@ -57,16 +57,10 @@ from conftest import MARKETPLACE_ROOT, get_script_path, run_script
 SCRIPT_PATH = get_script_path('plan-marshall', 'plan-orchestrator', 'orchestrator.py')
 
 _PLAN_MARSHALL = MARKETPLACE_ROOT / 'plan-marshall' / 'skills'
-_ORCHESTRATION_MODEL = (
-    _PLAN_MARSHALL / 'persona-plan-orchestrator' / 'standards' / 'orchestration-model.md'
-)
-_PLAN_SPEC_TEMPLATE = (
-    _PLAN_MARSHALL / 'plan-orchestrator' / 'templates' / 'plan-spec.md'
-)
+_ORCHESTRATION_MODEL = _PLAN_MARSHALL / 'persona-plan-orchestrator' / 'standards' / 'orchestration-model.md'
+_PLAN_SPEC_TEMPLATE = _PLAN_MARSHALL / 'plan-orchestrator' / 'templates' / 'plan-spec.md'
 _ORCHESTRATOR_SKILL = _PLAN_MARSHALL / 'plan-orchestrator' / 'SKILL.md'
-_INBOX_ENVELOPE = (
-    _PLAN_MARSHALL / 'plan-orchestrator' / 'standards' / 'inbox-envelope.md'
-)
+_INBOX_ENVELOPE = _PLAN_MARSHALL / 'plan-orchestrator' / 'standards' / 'inbox-envelope.md'
 
 EPIC = 'contract-epic'
 SENDER = 'contract-plan'
@@ -139,9 +133,7 @@ def _write_status(plan_context, plans: list[dict], slug: str = EPIC) -> None:
     The machine authority the deliverability guard reads to decide whether a
     named target plan is currently running.
     """
-    (_epic_dir(plan_context, slug) / 'status.json').write_text(
-        json.dumps({'plans': plans}), encoding='utf-8'
-    )
+    (_epic_dir(plan_context, slug) / 'status.json').write_text(json.dumps({'plans': plans}), encoding='utf-8')
 
 
 def _list(plan_context, slug: str = EPIC):
@@ -255,9 +247,7 @@ class TestWellFormedMessage:
         _scaffold(plan_context)
         _write(plan_context, _payload(tmp_path))
 
-        text = (_epic_dir(plan_context) / 'inbox' / f'{SENDER}-001.md').read_text(
-            encoding='utf-8'
-        )
+        text = (_epic_dir(plan_context) / 'inbox' / f'{SENDER}-001.md').read_text(encoding='utf-8')
 
         for field in (
             'envelope_version=1',
@@ -269,18 +259,14 @@ class TestWellFormedMessage:
             assert field in text, field
         assert 'created=' in text
 
-    def test_should_land_a_second_write_at_002_without_clobbering(
-        self, plan_context, tmp_path
-    ):
+    def test_should_land_a_second_write_at_002_without_clobbering(self, plan_context, tmp_path):
         _scaffold(plan_context)
         _write(plan_context, _payload(tmp_path, 'first body', 'a.md'))
 
         second = _write(plan_context, _payload(tmp_path, 'second body', 'b.md'))
 
         assert f'message: {SENDER}-002.md' in second.stdout
-        first_text = (_epic_dir(plan_context) / 'inbox' / f'{SENDER}-001.md').read_text(
-            encoding='utf-8'
-        )
+        first_text = (_epic_dir(plan_context) / 'inbox' / f'{SENDER}-001.md').read_text(encoding='utf-8')
         assert 'first body' in first_text
         assert 'second body' not in first_text
 
@@ -305,15 +291,11 @@ class TestTargetPlanDeliverability:
     build a mid-run delivery channel.
     """
 
-    def test_naming_a_running_plan_is_refused_as_undeliverable(
-        self, plan_context, tmp_path
-    ):
+    def test_naming_a_running_plan_is_refused_as_undeliverable(self, plan_context, tmp_path):
         _scaffold(plan_context)
         _write_status(plan_context, [{'id': 'plan-alpha', 'status': 'running'}])
 
-        result = _write(
-            plan_context, _payload(tmp_path), kind='finding', target_plan='plan-alpha'
-        )
+        result = _write(plan_context, _payload(tmp_path), kind='finding', target_plan='plan-alpha')
         data = result.toon()
 
         assert data['status'] == 'error'
@@ -329,16 +311,12 @@ class TestTargetPlanDeliverability:
         _scaffold(plan_context)
         _write_status(plan_context, [{'id': 'plan-alpha', 'status': 'landed'}])
 
-        result = _write(
-            plan_context, _payload(tmp_path), kind='finding', target_plan='plan-alpha'
-        )
+        result = _write(plan_context, _payload(tmp_path), kind='finding', target_plan='plan-alpha')
 
         assert 'status: success' in result.stdout
         assert (_epic_dir(plan_context) / 'inbox' / f'{SENDER}-001.md').is_file()
 
-    def test_untargeted_write_is_unaffected_by_a_running_plan(
-        self, plan_context, tmp_path
-    ):
+    def test_untargeted_write_is_unaffected_by_a_running_plan(self, plan_context, tmp_path):
         # The guard fires ONLY on --target-plan. An ordinary epic-addressed
         # write (a plan's own OUTBOX message) is never blocked by another plan
         # being in flight — that is the primary, unbroken use case.
@@ -353,9 +331,7 @@ class TestTargetPlanDeliverability:
     def test_malformed_target_plan_is_rejected(self, plan_context, tmp_path):
         _scaffold(plan_context)
 
-        result = _write(
-            plan_context, _payload(tmp_path), target_plan='Not A Valid Id!'
-        )
+        result = _write(plan_context, _payload(tmp_path), target_plan='Not A Valid Id!')
         data = result.toon()
 
         assert data['status'] == 'error'
@@ -368,13 +344,9 @@ class TestTargetPlanDeliverability:
 
 
 class TestCliCarriesRejection:
-    def test_should_reject_an_unknown_envelope_version_through_the_cli(
-        self, plan_context
-    ):
+    def test_should_reject_an_unknown_envelope_version_through_the_cli(self, plan_context):
         _scaffold(plan_context)
-        (_epic_dir(plan_context) / 'inbox' / f'{SENDER}-001.md').write_text(
-            _malformed(SENDER), encoding='utf-8'
-        )
+        (_epic_dir(plan_context) / 'inbox' / f'{SENDER}-001.md').write_text(_malformed(SENDER), encoding='utf-8')
 
         result = _validate(plan_context, f'{SENDER}-001.md')
 
@@ -397,9 +369,7 @@ class TestCliCarriesRejection:
 
 
 class TestInboxValidateResolution:
-    def test_should_report_the_queued_location_for_a_live_message(
-        self, plan_context, tmp_path
-    ):
+    def test_should_report_the_queued_location_for_a_live_message(self, plan_context, tmp_path):
         _scaffold(plan_context)
         _write(plan_context, _payload(tmp_path))
 
@@ -409,9 +379,7 @@ class TestInboxValidateResolution:
         assert parsed['location'] == 'queued'
         assert parsed['archive_path'] == ''
 
-    def test_should_resolve_a_consumed_message_out_of_the_archive(
-        self, plan_context, tmp_path
-    ):
+    def test_should_resolve_a_consumed_message_out_of_the_archive(self, plan_context, tmp_path):
         # The end-to-end proof that a DRAINED message no longer answers
         # file_not_found: archival is the consume marker, and this is its
         # read-side counterpart surviving the subprocess boundary.
@@ -427,9 +395,7 @@ class TestInboxValidateResolution:
         assert parsed['location'] == 'archived'
         assert parsed['archive_path'] == str(inbox / 'archive' / SENDER / f'{SENDER}-001.md')
 
-    def test_should_report_file_not_found_only_when_present_at_neither_path(
-        self, plan_context
-    ):
+    def test_should_report_file_not_found_only_when_present_at_neither_path(self, plan_context):
         _scaffold(plan_context)
         inbox = _epic_dir(plan_context) / 'inbox'
         assert not (inbox / f'{SENDER}-404.md').exists()
@@ -446,9 +412,7 @@ class TestInboxValidateResolution:
 
 
 class TestInboxList:
-    def test_should_return_messages_in_sender_then_sequence_order(
-        self, plan_context, tmp_path
-    ):
+    def test_should_return_messages_in_sender_then_sequence_order(self, plan_context, tmp_path):
         _scaffold(plan_context)
         _write(plan_context, _payload(tmp_path, 'first', 'a.md'), kind='landing')
         _write(plan_context, _payload(tmp_path, 'second', 'b.md'), kind='finding')
@@ -473,14 +437,10 @@ class TestInboxList:
         assert all(row['valid'] is True for row in rows)
         assert all(row['created'] for row in rows)
 
-    def test_should_report_a_malformed_message_alongside_the_valid_ones(
-        self, plan_context, tmp_path
-    ):
+    def test_should_report_a_malformed_message_alongside_the_valid_ones(self, plan_context, tmp_path):
         _scaffold(plan_context)
         _write(plan_context, _payload(tmp_path))
-        (_epic_dir(plan_context) / 'inbox' / f'{OTHER_SENDER}-001.md').write_text(
-            _malformed(), encoding='utf-8'
-        )
+        (_epic_dir(plan_context) / 'inbox' / f'{OTHER_SENDER}-001.md').write_text(_malformed(), encoding='utf-8')
 
         parsed = _list(plan_context).toon()
 
@@ -492,9 +452,7 @@ class TestInboxList:
         assert rows[f'{OTHER_SENDER}-001.md']['valid'] is False
         assert rows[f'{OTHER_SENDER}-001.md']['error'] == 'unknown_envelope_version'
 
-    def test_should_not_enumerate_anything_under_the_archive_subdirectory(
-        self, plan_context, tmp_path
-    ):
+    def test_should_not_enumerate_anything_under_the_archive_subdirectory(self, plan_context, tmp_path):
         _scaffold(plan_context)
         _write(plan_context, _payload(tmp_path))
         archive_dir = _epic_dir(plan_context) / 'inbox' / 'archive'
@@ -506,14 +464,10 @@ class TestInboxList:
         assert [row['name'] for row in parsed['messages']] == [f'{SENDER}-001.md']
         assert parsed['count'] == 1
 
-    def test_should_report_an_unreadable_message_and_still_return_the_rest(
-        self, plan_context, tmp_path
-    ):
+    def test_should_report_an_unreadable_message_and_still_return_the_rest(self, plan_context, tmp_path):
         _scaffold(plan_context)
         _write(plan_context, _payload(tmp_path, 'first', 'a.md'), kind='landing')
-        (_epic_dir(plan_context) / 'inbox' / f'{OTHER_SENDER}-001.md').write_bytes(
-            b'\xff\xfe not valid utf-8 \xff'
-        )
+        (_epic_dir(plan_context) / 'inbox' / f'{OTHER_SENDER}-001.md').write_bytes(b'\xff\xfe not valid utf-8 \xff')
         _write(
             plan_context,
             _payload(tmp_path, 'third', 'c.md'),
@@ -551,9 +505,7 @@ class TestInboxList:
 
 
 class TestInboxArchive:
-    def test_should_relocate_the_message_and_drop_it_from_the_next_list(
-        self, plan_context, tmp_path
-    ):
+    def test_should_relocate_the_message_and_drop_it_from_the_next_list(self, plan_context, tmp_path):
         _scaffold(plan_context)
         _write(plan_context, _payload(tmp_path, 'first', 'a.md'))
         _write(plan_context, _payload(tmp_path, 'second', 'b.md'))
@@ -564,9 +516,7 @@ class TestInboxArchive:
         assert 'already_archived: false' in archived.stdout
         inbox = _epic_dir(plan_context) / 'inbox'
         assert not (inbox / f'{SENDER}-001.md').exists()
-        assert (inbox / 'archive' / SENDER / f'{SENDER}-001.md').read_text(
-            encoding='utf-8'
-        ).endswith('first\n')
+        assert (inbox / 'archive' / SENDER / f'{SENDER}-001.md').read_text(encoding='utf-8').endswith('first\n')
         remaining = _list(plan_context).toon()['messages']
         assert [row['name'] for row in remaining] == [f'{SENDER}-002.md']
 
@@ -589,9 +539,7 @@ class TestInboxArchive:
         assert 'error: invalid_message_name' in result.stdout
         assert (_epic_dir(plan_context) / 'inbox' / f'{SENDER}-001.md').is_file()
 
-    def test_should_refuse_to_clobber_an_existing_archived_copy(
-        self, plan_context, tmp_path
-    ):
+    def test_should_refuse_to_clobber_an_existing_archived_copy(self, plan_context, tmp_path):
         _scaffold(plan_context)
         _write(plan_context, _payload(tmp_path, 'original body', 'a.md'))
         _archive(plan_context, f'{SENDER}-001.md')
@@ -601,9 +549,7 @@ class TestInboxArchive:
         result = _archive(plan_context, f'{SENDER}-001.md')
 
         assert 'error: archive_conflict' in result.stdout
-        assert 'original body' in (
-            inbox / 'archive' / SENDER / f'{SENDER}-001.md'
-        ).read_text(encoding='utf-8')
+        assert 'original body' in (inbox / 'archive' / SENDER / f'{SENDER}-001.md').read_text(encoding='utf-8')
 
     def test_should_report_a_message_present_at_neither_path(self, plan_context):
         _scaffold(plan_context)
@@ -669,9 +615,7 @@ class TestArchiveAwareAllocationCli:
         assert (inbox / f'{SENDER}-002.md').is_file()
         assert (inbox / 'archive' / SENDER / f'{SENDER}-001.md').is_file()
 
-    def test_should_archive_the_second_write_without_a_conflict(
-        self, plan_context, tmp_path
-    ):
+    def test_should_archive_the_second_write_without_a_conflict(self, plan_context, tmp_path):
         _scaffold(plan_context)
         _write(plan_context, _payload(tmp_path, 'first body', 'a.md'))
         _archive(plan_context, f'{SENDER}-001.md')
@@ -697,9 +641,7 @@ class TestInboxArchiveAsNameCli:
         _write(plan_context, _payload(tmp_path, 'stranded body', 'a.md'))
         sender_archive = _epic_dir(plan_context) / 'inbox' / 'archive' / SENDER
         sender_archive.mkdir(parents=True, exist_ok=True)
-        (sender_archive / f'{SENDER}-001.md').write_text(
-            'the earlier audit record\n', encoding='utf-8'
-        )
+        (sender_archive / f'{SENDER}-001.md').write_text('the earlier audit record\n', encoding='utf-8')
         return sender_archive
 
     def test_should_strand_the_message_without_the_override(self, plan_context, tmp_path):
@@ -711,9 +653,7 @@ class TestInboxArchiveAsNameCli:
 
         assert 'error: archive_conflict' in result.stdout
 
-    def test_should_recover_a_stranded_message_under_a_sender_preserving_name(
-        self, plan_context, tmp_path
-    ):
+    def test_should_recover_a_stranded_message_under_a_sender_preserving_name(self, plan_context, tmp_path):
         """(ii) The recovery round trip, through constructed argv."""
         archive_dir = self._strand(plan_context, tmp_path)
         recovery_name = f'{SENDER}-001.dup1.md'
@@ -722,21 +662,15 @@ class TestInboxArchiveAsNameCli:
 
         assert 'status: success' in result.stdout
         assert result.toon()['archived_to'] == str(archive_dir / recovery_name)
-        assert (archive_dir / recovery_name).read_text(encoding='utf-8').endswith(
-            'stranded body\n'
-        )
-        assert (archive_dir / f'{SENDER}-001.md').read_text(
-            encoding='utf-8'
-        ) == 'the earlier audit record\n'
+        assert (archive_dir / recovery_name).read_text(encoding='utf-8').endswith('stranded body\n')
+        assert (archive_dir / f'{SENDER}-001.md').read_text(encoding='utf-8') == 'the earlier audit record\n'
         assert not (_epic_dir(plan_context) / 'inbox' / f'{SENDER}-001.md').exists()
 
     def test_should_refuse_a_path_shaped_override(self, plan_context, tmp_path):
         """(iii) The retained bare-filename guard survives the CLI boundary."""
         archive_dir = self._strand(plan_context, tmp_path)
 
-        result = _archive(
-            plan_context, f'{SENDER}-001.md', as_name=f'../{SENDER}-001.dup1.md'
-        )
+        result = _archive(plan_context, f'{SENDER}-001.md', as_name=f'../{SENDER}-001.dup1.md')
 
         assert 'error: invalid_message_name' in result.stdout
         assert (_epic_dir(plan_context) / 'inbox' / f'{SENDER}-001.md').is_file()
@@ -760,9 +694,7 @@ class TestInboxArchiveAsNameCli:
 
 
 class TestWriteBoundary:
-    def test_should_leave_every_non_inbox_path_byte_identical(
-        self, plan_context, tmp_path
-    ):
+    def test_should_leave_every_non_inbox_path_byte_identical(self, plan_context, tmp_path):
         _scaffold(plan_context)
         root = _epic_dir(plan_context)
         seeded = {
@@ -780,9 +712,7 @@ class TestWriteBoundary:
         for rel, content in seeded.items():
             assert (root / rel).read_text(encoding='utf-8') == content, rel
 
-    def test_should_leave_every_non_inbox_path_byte_identical_after_a_drain(
-        self, plan_context, tmp_path
-    ):
+    def test_should_leave_every_non_inbox_path_byte_identical_after_a_drain(self, plan_context, tmp_path):
         _scaffold(plan_context)
         root = _epic_dir(plan_context)
         seeded = {
@@ -837,57 +767,43 @@ class TestWriteBoundary:
 
 class TestDocContract:
     def test_ledger_write_boundary_still_names_all_five_forbidden_paths(self):
-        section = _section(
-            _ORCHESTRATION_MODEL.read_text(encoding='utf-8'), '## Ledger Write-Boundary'
-        )
+        section = _section(_ORCHESTRATION_MODEL.read_text(encoding='utf-8'), '## Ledger Write-Boundary')
 
         for forbidden in FORBIDDEN_PATHS:
             assert forbidden in section, forbidden
 
     def test_ledger_write_boundary_names_inbox_as_the_sole_exception(self):
-        section = _section(
-            _ORCHESTRATION_MODEL.read_text(encoding='utf-8'), '## Ledger Write-Boundary'
-        )
+        section = _section(_ORCHESTRATION_MODEL.read_text(encoding='utf-8'), '## Ledger Write-Boundary')
 
         assert 'The one sanctioned exception' in section
         assert 'inbox/{sender}-{seq}' in section
 
     def test_ledger_write_boundary_carries_all_three_qualifiers(self):
-        section = _section(
-            _ORCHESTRATION_MODEL.read_text(encoding='utf-8'), '## Ledger Write-Boundary'
-        )
+        section = _section(_ORCHESTRATION_MODEL.read_text(encoding='utf-8'), '## Ledger Write-Boundary')
 
         for qualifier in ('Append-only', 'Own-file-only', 'One-way'):
             assert qualifier in section, qualifier
 
     def test_ledger_write_boundary_points_at_the_envelope_standard(self):
-        section = _section(
-            _ORCHESTRATION_MODEL.read_text(encoding='utf-8'), '## Ledger Write-Boundary'
-        )
+        section = _section(_ORCHESTRATION_MODEL.read_text(encoding='utf-8'), '## Ledger Write-Boundary')
 
         assert 'inbox-envelope.md' in section
         assert 'orchestrator inbox write' in section
 
     def test_directory_layout_includes_inbox(self):
-        section = _section(
-            _ORCHESTRATION_MODEL.read_text(encoding='utf-8'), '## Directory Layout'
-        )
+        section = _section(_ORCHESTRATION_MODEL.read_text(encoding='utf-8'), '## Directory Layout')
 
         assert 'inbox/' in section
 
     def test_dispatch_rule_s2_names_the_leaf_class_it_governs(self):
-        section = _section(
-            _ORCHESTRATION_MODEL.read_text(encoding='utf-8'), '## Dispatch Decision Rule'
-        )
+        section = _section(_ORCHESTRATION_MODEL.read_text(encoding='utf-8'), '## Dispatch Decision Rule')
         s2 = _line(section, '- **S2')
 
         assert 'dispatched by an orchestrator verb' in s2
         assert 'Ledger Write-Boundary' in s2
 
     def test_dispatch_rule_s2_no_longer_states_the_unqualified_absolute(self):
-        section = _section(
-            _ORCHESTRATION_MODEL.read_text(encoding='utf-8'), '## Dispatch Decision Rule'
-        )
+        section = _section(_ORCHESTRATION_MODEL.read_text(encoding='utf-8'), '## Dispatch Decision Rule')
         s2 = _line(section, '- **S2')
 
         assert 'No dispatched leaf writes inside' not in s2
@@ -899,25 +815,19 @@ class TestDocContract:
         assert 'other than its own' in _section(text, '## Write-Boundary')
 
     def test_plan_spec_template_names_both_report_channels(self):
-        section = _section(
-            _PLAN_SPEC_TEMPLATE.read_text(encoding='utf-8'), '## Write-Boundary'
-        )
+        section = _section(_PLAN_SPEC_TEMPLATE.read_text(encoding='utf-8'), '## Write-Boundary')
 
         assert 'its PR and its inbox message' in section
         assert 'Ledger Write-Boundary' in section
 
     def test_inbox_validate_documents_both_success_branches(self):
-        section = _section(
-            _ORCHESTRATOR_SKILL.read_text(encoding='utf-8'), '### inbox validate'
-        )
+        section = _section(_ORCHESTRATOR_SKILL.read_text(encoding='utf-8'), '### inbox validate')
 
         for token in ('location: queued', 'location: archived', 'archive_path'):
             assert token in section, token
 
     def test_inbox_validate_documents_the_narrowed_file_not_found(self):
-        section = _section(
-            _ORCHESTRATOR_SKILL.read_text(encoding='utf-8'), '### inbox validate'
-        )
+        section = _section(_ORCHESTRATOR_SKILL.read_text(encoding='utf-8'), '### inbox validate')
 
         assert 'file_not_found' in section
         assert 'inbox/archive/' in section
@@ -928,9 +838,7 @@ class TestDocContract:
         # pre-resolution and resolution codes, `validate_envelope`'s base sweep,
         # and `_validate_state_fields`' four state checks — so a code that stops
         # being documented fails here rather than going quietly missing.
-        section = _section(
-            _ORCHESTRATOR_SKILL.read_text(encoding='utf-8'), '### inbox validate'
-        )
+        section = _section(_ORCHESTRATOR_SKILL.read_text(encoding='utf-8'), '### inbox validate')
 
         for code in (
             'invalid_slug',
@@ -957,9 +865,7 @@ class TestDocContract:
         assert 'inbox validate` resolves the archive' in section
 
     def test_validator_error_code_table_is_not_read_as_exhaustive(self):
-        section = _section(
-            _INBOX_ENVELOPE.read_text(encoding='utf-8'), '## Validator error codes'
-        )
+        section = _section(_INBOX_ENVELOPE.read_text(encoding='utf-8'), '## Validator error codes')
 
         assert 'resolution' in section
         assert 'location' in section

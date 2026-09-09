@@ -49,9 +49,7 @@ import pytest
 
 from conftest import PROJECT_ROOT, load_script_module
 
-_merge = load_script_module(
-    'plan-marshall', 'extension-api', '_path_attribution_merge.py', 'path_attribution_merge'
-)
+_merge = load_script_module('plan-marshall', 'extension-api', '_path_attribution_merge.py', 'path_attribution_merge')
 
 _architecture_core = load_script_module(
     'plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core'
@@ -159,9 +157,7 @@ def test_same_prefix_same_module_collapses_to_one_claim_with_both_producers():
     claims, reports = _merge_with(('zeta', first), ('alpha', second))
 
     # Assert — ONE claim, both producers, sorted
-    assert claims == [
-        {'prefix': '.plan', 'module': 'plan-marshall', 'producers': ['alpha', 'zeta']}
-    ]
+    assert claims == [{'prefix': '.plan', 'module': 'plan-marshall', 'producers': ['alpha', 'zeta']}]
     assert _report_for(reports, 'zeta')['claim_count'] == 1
     assert _report_for(reports, 'alpha')['claim_count'] == 1
 
@@ -175,9 +171,7 @@ def test_corroboration_is_detected_after_prefix_normalization():
     claims, _ = _merge_with(('alpha', first), ('zeta', second))
 
     # Assert — one identity, not two claims that both happen to match
-    assert claims == [
-        {'prefix': '.plan', 'module': 'plan-marshall', 'producers': ['alpha', 'zeta']}
-    ]
+    assert claims == [{'prefix': '.plan', 'module': 'plan-marshall', 'producers': ['alpha', 'zeta']}]
 
 
 def test_disjoint_claims_from_two_attributors_union_to_the_sum():
@@ -301,9 +295,7 @@ def test_three_way_collision_names_every_contending_module():
         'traversing-prefix',
     ],
 )
-def test_invalid_candidate_is_dropped_with_an_explaining_merge_note(
-    candidate, expected_note_fragments
-):
+def test_invalid_candidate_is_dropped_with_an_explaining_merge_note(candidate, expected_note_fragments):
     """Each merge-side validity filter drops its candidate AND says why.
 
     A bare string is not a ``(prefix, module)`` pair; a blank, ``/``, ``.`` or
@@ -330,9 +322,7 @@ def test_invalid_candidate_is_dropped_with_an_explaining_merge_note(
 
 def test_attributor_whose_every_candidate_was_dropped_is_not_a_silent_zero():
     # Arrange — the headline anti-vacuity property: three drops, three notes
-    attributor = _StubAttributor(
-        claims=['.plan', ('', 'plan-marshall'), ('.plan', 'no-such-module')]
-    )
+    attributor = _StubAttributor(claims=['.plan', ('', 'plan-marshall'), ('.plan', 'no-such-module')])
 
     # Act
     claims, reports = _merge_with(('alpha', attributor))
@@ -347,9 +337,7 @@ def test_attributor_whose_every_candidate_was_dropped_is_not_a_silent_zero():
 
 def test_attributor_own_notes_are_preserved_alongside_merge_notes():
     # Arrange
-    attributor = _StubAttributor(
-        claims=[('', 'plan-marshall')], notes=['attributor-side suppression']
-    )
+    attributor = _StubAttributor(claims=[('', 'plan-marshall')], notes=['attributor-side suppression'])
 
     # Act
     _, reports = _merge_with(('alpha', attributor))
@@ -479,9 +467,7 @@ def test_record_missing_its_module_key_reports_error_rather_than_raising():
 
 def test_claims_are_sorted_by_prefix_then_module():
     # Arrange — supplied deliberately out of order
-    attributor = _StubAttributor(
-        claims=[('other', 'other'), ('.plan', 'plan-marshall'), ('doc', 'documentation')]
-    )
+    attributor = _StubAttributor(claims=[('other', 'other'), ('.plan', 'plan-marshall'), ('doc', 'documentation')])
 
     # Act
     claims, _ = _merge_with(('alpha', attributor))
@@ -492,9 +478,7 @@ def test_claims_are_sorted_by_prefix_then_module():
 
 def test_reports_follow_the_supplied_attributor_order():
     # Arrange
-    claims, reports = _merge_with(
-        ('zeta', _StubAttributor()), ('alpha', _StubAttributor())
-    )
+    claims, reports = _merge_with(('zeta', _StubAttributor()), ('alpha', _StubAttributor()))
 
     # Assert — report order mirrors the input, not an alphabetical re-sort
     assert claims == []
@@ -539,9 +523,7 @@ _ONE_PLAN_CLAIM = [{'prefix': '.plan', 'module': 'plan-marshall', 'producers': [
         'path-no-claim-contains',
     ],
 )
-def test_lookup_claim_resolves_containment_against_a_single_claim(
-    candidate_path, expected_module
-):
+def test_lookup_claim_resolves_containment_against_a_single_claim(candidate_path, expected_module):
     """Containment is prefix NESTING, in the shared canonical spelling.
 
     The positive cases cover the bare root segment an fnmatch ``**/`` shape would

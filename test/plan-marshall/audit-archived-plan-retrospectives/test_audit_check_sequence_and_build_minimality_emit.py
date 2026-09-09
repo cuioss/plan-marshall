@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""The ``sequence-and-build-minimality`` emitted block — its columns and severity.
-"""
+"""The ``sequence-and-build-minimality`` emitted block — its columns and severity."""
 
 from pathlib import Path
 
@@ -31,7 +30,8 @@ class TestSequenceBuildMinimalityEmitBlock:
     def test_block_carries_thresholds_and_corpus_totals(self, tmp_path: Path):
         # one plan with a single minimal build
         inputs = _write_sbm_plan(
-            tmp_path, 'emit-thresholds',
+            tmp_path,
+            'emit-thresholds',
             ledger_builds=[{'dur': 30.0}],
             modified_files=['scripts/audit.py'],
         )
@@ -52,18 +52,15 @@ class TestSequenceBuildMinimalityEmitBlock:
         # a heavy build raises non_minimal_build, the only flag, so the
         # per-plan row must stamp the genuine severity cell.
         inputs = _write_sbm_plan(
-            tmp_path, 'emit-genuine',
+            tmp_path,
+            'emit-genuine',
             ledger_builds=[{'dur': 600.0}],
             modified_files=['scripts/audit.py'],
         )
         result = audit.cross_sequence_build_minimality([inputs], _sbm_index(tmp_path))
 
         block = audit.emit_sequence_build_minimality_block(result)
-        row_line = next(
-            ln.strip()
-            for ln in block.splitlines()
-            if ln.strip().startswith('emit-genuine,')
-        )
+        row_line = next(ln.strip() for ln in block.splitlines() if ln.strip().startswith('emit-genuine,'))
 
         # the flagged row ends on the genuine cell, and the count reflects it
         assert row_line.endswith(',genuine')
@@ -72,18 +69,15 @@ class TestSequenceBuildMinimalityEmitBlock:
     def test_clean_row_renders_informational_severity_cell(self, tmp_path: Path):
         # a minimal-only plan with no redundancy primitive: informational
         inputs = _write_sbm_plan(
-            tmp_path, 'emit-clean',
+            tmp_path,
+            'emit-clean',
             ledger_builds=[{'dur': 30.0}],
             modified_files=['scripts/audit.py'],
         )
         result = audit.cross_sequence_build_minimality([inputs], _sbm_index(tmp_path))
 
         block = audit.emit_sequence_build_minimality_block(result)
-        row_line = next(
-            ln.strip()
-            for ln in block.splitlines()
-            if ln.strip().startswith('emit-clean,')
-        )
+        row_line = next(ln.strip() for ln in block.splitlines() if ln.strip().startswith('emit-clean,'))
 
         # the clean row stamps informational and the genuine count is zero
         assert row_line.endswith(',informational')
@@ -92,12 +86,14 @@ class TestSequenceBuildMinimalityEmitBlock:
     def test_rows_sorted_descending_by_total_build_seconds(self, tmp_path: Path):
         # two plans; the heavier total must sort first
         light = _write_sbm_plan(
-            tmp_path, 'sort-light',
+            tmp_path,
+            'sort-light',
             ledger_builds=[{'dur': 30.0}],
             modified_files=['scripts/audit.py'],
         )
         heavy = _write_sbm_plan(
-            tmp_path, 'sort-heavy',
+            tmp_path,
+            'sort-heavy',
             ledger_builds=[{'dur': 600.0}],
             modified_files=['scripts/audit.py'],
         )

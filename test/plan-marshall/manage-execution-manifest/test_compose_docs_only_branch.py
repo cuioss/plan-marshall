@@ -28,7 +28,10 @@ from pathlib import Path
 from conftest import load_script_module
 
 _mem = load_script_module(
-    'plan-marshall', 'manage-execution-manifest', 'manage-execution-manifest.py', module_name='_mem_script_compose_docs_only'
+    'plan-marshall',
+    'manage-execution-manifest',
+    'manage-execution-manifest.py',
+    module_name='_mem_script_compose_docs_only',
 )
 cmd_compose = _mem.cmd_compose
 read_manifest = _mem.read_manifest
@@ -149,9 +152,7 @@ def test_cmd_classify_affected_files_handler_removed():
 def test_classify_affected_files_subcommand_removed():
     """The ``classify-affected-files`` subcommand is no longer registered."""
     parser = _mem._build_parser()
-    subparsers_action = next(
-        action for action in parser._actions if hasattr(action, 'choices') and action.choices
-    )
+    subparsers_action = next(action for action in parser._actions if hasattr(action, 'choices') and action.choices)
     assert 'classify-affected-files' not in subparsers_action.choices
 
 

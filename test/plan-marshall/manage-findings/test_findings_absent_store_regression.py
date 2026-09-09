@@ -123,9 +123,7 @@ def test_every_read_verb_refuses_a_plan_absent_from_the_resolved_root(verb):
     assert payload.get('error') == 'findings_store_unresolved'
     assert payload.get('findings_store_state') == 'plan_absent'
     assert payload.get('unresolved_store') is True
-    assert str(_root()) in str(payload.get('message', '')), (
-        f'{verb} refused without naming the resolved root'
-    )
+    assert str(_root()) in str(payload.get('message', '')), f'{verb} refused without naming the resolved root'
 
 
 # =============================================================================
@@ -170,9 +168,7 @@ def test_a_populated_store_reports_present_and_the_unchanged_counts():
     plan_id = 'regression-populated'
     _seed_plan_dir(plan_id)
 
-    code, added = _cli(
-        'add', '--plan-id', plan_id, '--type', 'bug', '--title', 'T', '--detail', 'D'
-    )
+    code, added = _cli('add', '--plan-id', plan_id, '--type', 'bug', '--title', 'T', '--detail', 'D')
     assert code == 0 and added['status'] == 'success', added
 
     _code, payload = _cli('list', '--plan-id', plan_id)
@@ -217,8 +213,15 @@ def _materialize_worktree_resident_plan(plan_id: str) -> Path:
     (worktree_local / 'plans' / plan_id).mkdir(parents=True)
 
     code, added = _cli(
-        'add', '--plan-id', plan_id, '--type', 'bug',
-        '--title', 'Worktree-resident finding', '--detail', 'D',
+        'add',
+        '--plan-id',
+        plan_id,
+        '--type',
+        'bug',
+        '--title',
+        'Worktree-resident finding',
+        '--detail',
+        'D',
         env_overrides={'PLAN_BASE_DIR': str(worktree_local)},
     )
     assert code == 0 and added['status'] == 'success', added
@@ -266,9 +269,7 @@ def test_no_write_verb_accepts_any_checkout(verb):
     2, so copying the flag onto one later fails a test rather than passing
     review.
     """
-    result = run_script(
-        SCRIPT_PATH, *WRITE_VERBS[verb], '--plan-id', 'regression-flag-set', '--any-checkout'
-    )
+    result = run_script(SCRIPT_PATH, *WRITE_VERBS[verb], '--plan-id', 'regression-flag-set', '--any-checkout')
     assert result.returncode == 2, (
         f'{verb} accepted --any-checkout (exit {result.returncode}); '
         'the flag is read-only and must be rejected on every write verb'
@@ -298,16 +299,34 @@ def test_every_read_verb_accepts_any_checkout(verb):
 def _seed_cross_store(plan_id: str) -> tuple[str, str, str, Path]:
     """Seed one plan finding, one Q-Gate finding and one assessment via the CLI."""
     _seed_plan_dir(plan_id)
-    _code, finding = _cli(
-        'add', '--plan-id', plan_id, '--type', 'bug', '--title', 'Plan', '--detail', 'D'
-    )
+    _code, finding = _cli('add', '--plan-id', plan_id, '--type', 'bug', '--title', 'Plan', '--detail', 'D')
     _code, qgate = _cli(
-        'qgate', 'add', '--plan-id', plan_id, '--phase', '5-execute',
-        '--source', 'qgate', '--type', 'bug', '--title', 'QGate', '--detail', 'D',
+        'qgate',
+        'add',
+        '--plan-id',
+        plan_id,
+        '--phase',
+        '5-execute',
+        '--source',
+        'qgate',
+        '--type',
+        'bug',
+        '--title',
+        'QGate',
+        '--detail',
+        'D',
     )
     _code, assessment = _cli(
-        'assessment', 'add', '--plan-id', plan_id,
-        '--file-path', 'src/a.py', '--certainty', 'UNCERTAIN', '--confidence', '50',
+        'assessment',
+        'add',
+        '--plan-id',
+        plan_id,
+        '--file-path',
+        'src/a.py',
+        '--certainty',
+        'UNCERTAIN',
+        '--confidence',
+        '50',
     )
     findings_dir = _root() / 'plans' / plan_id / 'artifacts' / 'findings'
     return finding['hash_id'], qgate['hash_id'], assessment['hash_id'], findings_dir
@@ -371,12 +390,28 @@ def test_the_same_write_verb_still_writes_a_genuine_plan_finding(verb):
 ADD_VERBS = {
     'add': ('add', '--type', 'bug', '--title', 'T', '--detail', 'D'),
     'qgate add': (
-        'qgate', 'add', '--phase', '5-execute', '--source', 'qgate',
-        '--type', 'bug', '--title', 'T', '--detail', 'D',
+        'qgate',
+        'add',
+        '--phase',
+        '5-execute',
+        '--source',
+        'qgate',
+        '--type',
+        'bug',
+        '--title',
+        'T',
+        '--detail',
+        'D',
     ),
     'assessment add': (
-        'assessment', 'add', '--file-path', 'src/a.py',
-        '--certainty', 'UNCERTAIN', '--confidence', '50',
+        'assessment',
+        'add',
+        '--file-path',
+        'src/a.py',
+        '--certainty',
+        'UNCERTAIN',
+        '--confidence',
+        '50',
     ),
 }
 
@@ -459,14 +494,11 @@ def test_ingest_refuses_a_plan_absent_from_the_resolved_root():
 
     assert payload.get('status') == 'error', f'ingest did not refuse: {payload}'
     assert payload.get('error') == 'findings_store_unresolved', (
-        'ingest must return the shared refusal code, not a bespoke one and not an '
-        f'unnamed crash: {payload}'
+        f'ingest must return the shared refusal code, not a bespoke one and not an unnamed crash: {payload}'
     )
     assert payload.get('findings_store_state') == 'plan_absent'
     assert payload.get('unresolved_store') is True
-    assert str(_root()) in str(payload.get('message', '')), (
-        'the refusal must name the resolved root it looked under'
-    )
+    assert str(_root()) in str(payload.get('message', '')), 'the refusal must name the resolved root it looked under'
     # The two answers this replaces, excluded explicitly. `internal_error` was the
     # KeyError('findings') regression; a `success` with zero counts was the
     # original clean-zero defect.
@@ -542,9 +574,17 @@ def test_ingest_still_promotes_against_a_resolved_populated_store():
     _seed_plan_dir(plan_id)
 
     code, added = _cli(
-        'add', '--plan-id', plan_id, '--type', 'pr-comment',
-        '--title', 'T', '--detail', 'placeholder',
-        '--raw-input', 'detail=promoted detail text',
+        'add',
+        '--plan-id',
+        plan_id,
+        '--type',
+        'pr-comment',
+        '--title',
+        'T',
+        '--detail',
+        'placeholder',
+        '--raw-input',
+        'detail=promoted detail text',
     )
     assert code == 0 and added['status'] == 'success', added
 
@@ -559,7 +599,6 @@ def test_ingest_still_promotes_against_a_resolved_populated_store():
     record_path = _root() / 'plans' / plan_id / 'artifacts' / 'findings' / 'pr-comment.jsonl'
     record = json.loads(record_path.read_text(encoding='utf-8').splitlines()[0])
     assert record['detail'] == 'promoted detail text', (
-        'ingest reported a promotion without writing it — the write path must '
-        'address the same store the read resolved'
+        'ingest reported a promotion without writing it — the write path must address the same store the read resolved'
     )
     assert listed['status'] == 'success'

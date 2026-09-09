@@ -518,9 +518,7 @@ def summarize_script_cost(
                 # Computed from the ROUNDED figures this fragment publishes, so a
                 # reader recomputing the share from the printed columns gets the
                 # printed share back rather than a near-miss.
-                'share_pct': (
-                    round(script_ms / total_duration_ms * 100.0, 3) if total_duration_ms > 0 else 0.0
-                ),
+                'share_pct': (round(script_ms / total_duration_ms * 100.0, 3) if total_duration_ms > 0 else 0.0),
                 'max_ms': round(maxima[notation], 3),
             }
         )
@@ -773,20 +771,14 @@ _OUTCOME_TASK_RE = re.compile(r'\[OUTCOME\]\s*\([^)]*\)\s*Completed\s+(TASK-\d+)
 _MANAGE_TASKS_COMPLETED_RE = re.compile(r'\[MANAGE-TASKS\]\s+Completed\s+(TASK-\d+)')
 
 # Bracketed marker for the new "Re-entering execute phase" status line (D2).
-_RE_ENTERING_RE = re.compile(
-    r'\[STATUS\]\s*\(plan-marshall:phase-5-execute\)\s*Re-entering execute phase'
-)
+_RE_ENTERING_RE = re.compile(r'\[STATUS\]\s*\(plan-marshall:phase-5-execute\)\s*Re-entering execute phase')
 
 # Bracketed marker for the standard "Starting execute phase" status line.
-_STARTING_RE = re.compile(
-    r'\[STATUS\]\s*\(plan-marshall:phase-5-execute\)\s*Starting execute phase'
-)
+_STARTING_RE = re.compile(r'\[STATUS\]\s*\(plan-marshall:phase-5-execute\)\s*Starting execute phase')
 
 # `[ARTIFACT] (plan-marshall:phase-5-execute:{N})` — the three-segment caller
 # is the documented exception for per-task artifact emission.
-_ARTIFACT_TASK_RE = re.compile(
-    r'\[ARTIFACT\]\s*\(plan-marshall:phase-5-execute:(\d+)\)'
-)
+_ARTIFACT_TASK_RE = re.compile(r'\[ARTIFACT\]\s*\(plan-marshall:phase-5-execute:(\d+)\)')
 
 # Production work-log lines start with an ISO-8601 timestamp inside square
 # brackets, e.g. `[2026-05-08T14:23:11.123Z] [INFO] [hash] [STATUS] ...`.
@@ -915,9 +907,7 @@ def cluster_dispatches(
     }
 
 
-def detect_outcome_for_diffed_tasks(
-    work_log_lines: list[str], plan_dir: Path
-) -> dict[str, Any]:
+def detect_outcome_for_diffed_tasks(work_log_lines: list[str], plan_dir: Path) -> dict[str, Any]:
     """For each task whose status is `done` in the persisted task files,
     decide whether an `[OUTCOME]` line was emitted. Pure counting — no
     judgement on whether absence is a defect.
@@ -955,9 +945,7 @@ def detect_outcome_for_diffed_tasks(
     return {'tasks_with_diff_no_outcome': missing}
 
 
-def artifact_emission_population(
-    work_log_lines: list[str], plan_dir: Path
-) -> dict[str, Any]:
+def artifact_emission_population(work_log_lines: list[str], plan_dir: Path) -> dict[str, Any]:
     """Publish per-task ARTIFACT emission as a POPULATION, not a non-zero floor.
 
     Per-task ``[ARTIFACT] (plan-marshall:phase-5-execute:{N}) Wrote {path}`` lines
@@ -1097,9 +1085,7 @@ def artifact_emission_population(
     population['change_attribution'] = 'measured'
     population['eligible_tasks'] = len(changed_task_nums)
     population['eligible_tasks_with_artifacts'] = len(changed_task_nums & artifact_task_nums)
-    population['eligible_tasks_without_artifacts'] = [
-        f'TASK-{num:03d}' for num in eligible_missing
-    ]
+    population['eligible_tasks_without_artifacts'] = [f'TASK-{num:03d}' for num in eligible_missing]
     return population
 
 
@@ -1375,9 +1361,7 @@ def _parse_dispatch_boundary_file(artifact: Path) -> dict[str, Any]:
             continue
         header = _DISPATCH_BOUNDARY_HEADER_RE.match(stripped)
         if header is not None:
-            declared = tuple(
-                name.strip() for name in header.group('columns').split(',') if name.strip()
-            )
+            declared = tuple(name.strip() for name in header.group('columns').split(',') if name.strip())
             if declared:
                 columns = declared
             in_rows = True
@@ -1488,24 +1472,16 @@ def _parse_dispatch_boundary_file(artifact: Path) -> dict[str, Any]:
         rows.append(row)
 
     unknown_count = sum(1 for row in rows if row['termination_cause'] == 'unknown')
-    clean_exit_queue_empty_count = sum(
-        1 for row in rows if row['termination_cause'] == 'clean_exit_queue_empty'
-    )
+    clean_exit_queue_empty_count = sum(1 for row in rows if row['termination_cause'] == 'clean_exit_queue_empty')
     # The productive-loop-back population: dispatches that returned findings and
     # looped back. Counted so a reader can tell the productive dispatches apart
     # from the genuinely-wasted ones rather than reconstructing it from the rows.
-    returned_with_findings_count = sum(
-        1 for row in rows if row['termination_cause'] == _RETURNED_WITH_FINDINGS_CAUSE
-    )
+    returned_with_findings_count = sum(1 for row in rows if row['termination_cause'] == _RETURNED_WITH_FINDINGS_CAUSE)
     # Genuinely-wasted (terminal) vs retryable (infrastructure) dispatch spend,
     # summed by cause-class and reported DISTINCTLY (never folded into one
     # "failure" figure) so the two, which need different remedies, stay separable.
-    error_total_tokens = sum(
-        row['total_tokens'] for row in rows if row['termination_cause'] in _TERMINAL_WASTE_CAUSES
-    )
-    retryable_total_tokens = sum(
-        row['total_tokens'] for row in rows if row['termination_cause'] in _RETRYABLE_CAUSES
-    )
+    error_total_tokens = sum(row['total_tokens'] for row in rows if row['termination_cause'] in _TERMINAL_WASTE_CAUSES)
+    retryable_total_tokens = sum(row['total_tokens'] for row in rows if row['termination_cause'] in _RETRYABLE_CAUSES)
     return {
         'present': True,
         'rows': rows,
@@ -1638,7 +1614,7 @@ def read_dispatch_boundaries_per_phase(plan_dir: Path) -> dict[str, dict[str, An
         prefix = 'metrics-dispatch-boundaries-'
         if not stem.startswith(prefix):
             continue
-        phase = stem[len(prefix):]
+        phase = stem[len(prefix) :]
         if not phase:
             continue
         per_phase[phase] = _parse_dispatch_boundary_file(artifact)
@@ -1855,9 +1831,7 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     # substantiates a bypass claim. The size is taken once here, inside the one
     # place both states are excluded, so the message below cannot re-measure a
     # footprint that may be the sentinel.
-    footprint_path_count = (
-        len(footprint) if footprint is not FOOTPRINT_UNRESOLVED and footprint else 0
-    )
+    footprint_path_count = len(footprint) if footprint is not FOOTPRINT_UNRESOLVED and footprint else 0
     footprint_non_empty = footprint_path_count > 0
     attribution_measured = artifact_emission.get('change_attribution') == 'measured'
     if attribution_measured and tasks_with_artifacts < completed_tasks:
@@ -1904,17 +1878,14 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     }
 
     # Surface a warning finding when the precondition is met and polling pairs exist.
-    if (
-        voluntary_checkpoint_polling['precondition_met']
-        and voluntary_checkpoint_polling['polling_pairs_count'] > 0
-    ):
+    if voluntary_checkpoint_polling['precondition_met'] and voluntary_checkpoint_polling['polling_pairs_count'] > 0:
         findings.append(
             {
                 'severity': 'warning',
                 'message': (
-                    f"VOLUNTARY_CHECKPOINT_POLLING: {voluntary_checkpoint_polling['polling_pairs_count']} "
-                    f"candidate [ATTEMPT]+polling-language pair(s) detected in work.log "
-                    f"(lines: {voluntary_checkpoint_polling['candidate_line_numbers']}) — "
+                    f'VOLUNTARY_CHECKPOINT_POLLING: {voluntary_checkpoint_polling["polling_pairs_count"]} '
+                    f'candidate [ATTEMPT]+polling-language pair(s) detected in work.log '
+                    f'(lines: {voluntary_checkpoint_polling["candidate_line_numbers"]}) — '
                     'agent may have dispatched a subagent then polled rather than running '
                     'synchronously. See logging-gap-analysis.md § VOLUNTARY_CHECKPOINT_POLLING.'
                 ),
@@ -1939,9 +1910,9 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
             {
                 'severity': 'warning',
                 'message': (
-                    f"GLOBAL_LOG_ERRORS: {global_log_signals['error_count']} error/non-INFO "
+                    f'GLOBAL_LOG_ERRORS: {global_log_signals["error_count"]} error/non-INFO '
                     f"line(s) in the plan's folded-in global logs "
-                    f"({global_log_signals['folded_log_files']} file(s)). "
+                    f'({global_log_signals["folded_log_files"]} file(s)). '
                     'See log-analysis.md § Folded-in global logs.'
                 ),
             }
@@ -1951,9 +1922,9 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
             {
                 'severity': 'error',
                 'message': (
-                    f"GLOBAL_LOG_FIXTURE_LEAK: {global_log_signals['fixture_leak_count']} synthetic "
+                    f'GLOBAL_LOG_FIXTURE_LEAK: {global_log_signals["fixture_leak_count"]} synthetic '
                     f"test-fixture signature(s) leaked into the plan's folded-in global logs "
-                    f"({';'.join(global_log_signals['fixture_leak_signatures'])}) — a test run wrote "
+                    f'({";".join(global_log_signals["fixture_leak_signatures"])}) — a test run wrote '
                     'to the real logs instead of an isolated PLAN_BASE_DIR.'
                 ),
             }
@@ -1965,9 +1936,7 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     # status_unknown published so the five terms sum to build_count) and the
     # suspect-zero rule applied. The plan_efficiency aspect READS
     # `total_build_seconds` from this block into its `totals`.
-    plan_ledger_key = _LEDGER_DATE_PREFIX_RE.sub(
-        '', args.plan_id or Path(args.archived_plan_path or '').name
-    )
+    plan_ledger_key = _LEDGER_DATE_PREFIX_RE.sub('', args.plan_id or Path(args.archived_plan_path or '').name)
     build_time = summarize_build_ledger(plan_ledger_key)
 
     return {

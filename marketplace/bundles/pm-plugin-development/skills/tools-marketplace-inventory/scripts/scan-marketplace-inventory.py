@@ -667,9 +667,7 @@ def serialize_inventory_toon(data: dict[str, Any], full: bool = False) -> str:
         for resource_type in VALID_RESOURCE_TYPES:
             items = bundle.get(resource_type, [])
             if items:
-                block[resource_type] = (
-                    [_full_row(item) for item in items] if full else [item['name'] for item in items]
-                )
+                block[resource_type] = [_full_row(item) for item in items] if full else [item['name'] for item in items]
         payload[bundle['name']] = block
 
     payload['statistics'] = dict(data['statistics'])

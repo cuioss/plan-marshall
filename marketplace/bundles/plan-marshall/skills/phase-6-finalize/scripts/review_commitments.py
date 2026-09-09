@@ -190,8 +190,7 @@ def count_unanchored(findings: list[dict]) -> int:
     return sum(
         1
         for record in findings
-        if str(record.get('resolution') or 'pending') not in RELEASED_RESOLUTIONS
-        and not record.get('file_path')
+        if str(record.get('resolution') or 'pending') not in RELEASED_RESOLUTIONS and not record.get('file_path')
     )
 
 
@@ -292,7 +291,7 @@ def _strip_diff_prefix(path: str) -> str:
     """Drop git's ``a/`` / ``b/`` diff prefix, leaving a repo-relative path."""
     for prefix in ('a/', 'b/'):
         if path.startswith(prefix):
-            return path[len(prefix):]
+            return path[len(prefix) :]
     return path
 
 
@@ -422,7 +421,7 @@ def build_parser() -> argparse.ArgumentParser:
     """Build the argparse parser with a single ``reconcile`` subcommand."""
     parser = argparse.ArgumentParser(
         description=(
-            'Reconcile a simplify pass\'s deletions against the review commitments '
+            "Reconcile a simplify pass's deletions against the review commitments "
             'made earlier in the SAME finalize run. Reports conflicts; gates '
             'nothing.'
         ),
@@ -441,7 +440,7 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
         dest='diff_file',
         help=(
-            'Path to a unified diff of the simplify pass\'s own edits (git diff over '
+            "Path to a unified diff of the simplify pass's own edits (git diff over "
             'the worktree, before the dispatcher commits them). Read from a file '
             'rather than stdin so the invocation stays one Bash call.'
         ),

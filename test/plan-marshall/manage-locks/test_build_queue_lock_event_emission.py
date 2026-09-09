@@ -10,7 +10,6 @@ Its sections, in order:
 * [LOCK] event emission (best-effort, AFTER rmw_json commits)
 """
 
-
 from __future__ import annotations
 
 from argparse import Namespace
@@ -102,9 +101,7 @@ class TestLockEventEmission:
         content = _read_lock_log()
         assert f'[LOCK] (build:released) {acq["id"]}' in content
 
-    def test_release_with_fifo_promote_emits_released_and_promoted_acquired(
-        self, isolated_base: dict
-    ) -> None:
+    def test_release_with_fifo_promote_emits_released_and_promoted_acquired(self, isolated_base: dict) -> None:
         """A release that frees a slot AND FIFO-promotes a waiter emits BOTH a
         ``released`` for the released id and an ``acquired`` for the promoted id —
         the promotion is recorded in the same main-anchored timeline."""
@@ -157,9 +154,7 @@ class TestLockEventEmission:
         assert f'[LOCK] (build:acquired) {acq["id"]}' in content
         assert not (worktree / '.plan' / 'logs').exists()
 
-    def test_log_failure_never_breaks_acquire(
-        self, isolated_base: dict, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_log_failure_never_breaks_acquire(self, isolated_base: dict, monkeypatch: pytest.MonkeyPatch) -> None:
         """A [LOCK]-emission failure NEVER aborts the slot acquire — the emission
         is best-effort, with the swallow try/except INSIDE ``log_lock_event``
         itself, and fires AFTER rmw_json commits. Make the REAL helper's internal
@@ -168,6 +163,7 @@ class TestLockEventEmission:
         persisted. Patching the bare ``log_lock_event`` name would (correctly) NOT
         be swallowed — the call site invokes it directly — so the realistic
         failure is one inside the helper's own try/except."""
+
         def _raising_resolver() -> object:
             raise OSError('log dir gone')
 
@@ -181,9 +177,7 @@ class TestLockEventEmission:
         state = _read_queue(isolated_base['queue_path'])
         assert [e['id'] for e in state['active']] == [result['id']]
 
-    def test_log_failure_never_breaks_release(
-        self, isolated_base: dict, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_log_failure_never_breaks_release(self, isolated_base: dict, monkeypatch: pytest.MonkeyPatch) -> None:
         """Symmetric on the RELEASE side: a [LOCK]-emission failure (the real
         helper's internal resolver raising, swallowed by its own try/except)
         NEVER aborts the slot release — the slot is still freed."""

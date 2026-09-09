@@ -199,10 +199,7 @@ def _stdout_print_calls(node: ast.AST) -> Iterator[ast.Call]:
             continue
         if not (isinstance(child.func, ast.Name) and child.func.id == 'print'):
             continue
-        if any(
-            keyword.arg == 'file' and _is_provably_not_stdout(keyword.value)
-            for keyword in child.keywords
-        ):
+        if any(keyword.arg == 'file' and _is_provably_not_stdout(keyword.value) for keyword in child.keywords):
             continue
         yield child
 
@@ -495,8 +492,7 @@ def swallows_canonical_import(source: str) -> bool:
         if not isinstance(node, ast.Try):
             continue
         imports_canonical = any(
-            isinstance(stmt, ast.ImportFrom) and stmt.module == 'toon_parser'
-            for stmt in ast.walk(node)
+            isinstance(stmt, ast.ImportFrom) and stmt.module == 'toon_parser' for stmt in ast.walk(node)
         )
         if not imports_canonical:
             continue
@@ -550,10 +546,7 @@ def test_every_emitter_reaches_the_canonical_serializer():
         if record.bypasses_canonical
     ]
 
-    assert not offenders, (
-        'these functions emit TOON without reaching the canonical serializer: '
-        + ', '.join(offenders)
-    )
+    assert not offenders, 'these functions emit TOON without reaching the canonical serializer: ' + ', '.join(offenders)
 
 
 def test_the_name_probe_misses_no_uncanonical_emitter(capsys):
@@ -581,10 +574,7 @@ def test_the_name_probe_misses_no_uncanonical_emitter(capsys):
     That the detector fires at all is proved by its fixture controls below, over
     a synthetic tree, where it does not depend on the state of this one.
     """
-    named = {
-        (record.path, record.function)
-        for record in derive_toon_population(PROJECT_ROOT).records
-    }
+    named = {(record.path, record.function) for record in derive_toon_population(PROJECT_ROOT).records}
     behavioural = derive_name_blind_emitters(PROJECT_ROOT)
     escaped = [
         f'{record.path}:{record.line} {record.function}'
@@ -600,9 +590,7 @@ def test_the_name_probe_misses_no_uncanonical_emitter(capsys):
             f'{len(behavioural.unreadable)} script(s) unreadable'
         )
 
-    assert behavioural.scanned, (
-        'the name-blind derivation parsed no scripts at all — the cross-check would be vacuous'
-    )
+    assert behavioural.scanned, 'the name-blind derivation parsed no scripts at all — the cross-check would be vacuous'
     assert not behavioural.unreadable, (
         'these scripts could not be parsed, so the cross-check covers less of the '
         'tree than it claims: ' + ', '.join(behavioural.unreadable)
@@ -738,14 +726,14 @@ def emit_toon(payload):
 
 #: A file the AST parser cannot read. Its ``def`` is deliberately unterminated so
 #: the failure is a ``SyntaxError`` rather than anything importable.
-_UNPARSEABLE_SCRIPT = '''
+_UNPARSEABLE_SCRIPT = """
 def emit_toon(payload:
-'''
+"""
 
 #: The canonical lookalike shape, and the one the guard is named after: the
 #: guarded import is caught by name, nothing re-raises, and the module carries its
 #: own TOON writer to route around the loss with.
-_SWALLOWING_MODULE = '''
+_SWALLOWING_MODULE = """
 try:
     from toon_parser import serialize_toon
 
@@ -756,17 +744,17 @@ except ImportError:
 
 def serialize_toon_simple(data):
     return '\\n'.join(f'{k}: {v}' for k, v in data.items())
-'''
+"""
 
 #: Matched positive for the guard: an unguarded canonical import, free to fail
 #: loudly, with no substitute writer anywhere in the module.
-_PROPAGATING_MODULE = '''
+_PROPAGATING_MODULE = """
 from toon_parser import serialize_toon
 
 
 def emit(data):
     return serialize_toon(data)
-'''
+"""
 
 #: A health check that catches the ImportError only to REPORT it, installing
 #: nothing in its place. The substitute is the discriminator, not the swallow —
@@ -786,7 +774,7 @@ def cmd_self_test():
 #: The swallowing shape behind a BARE handler. It names no exception type at all,
 #: which is the broadest catch Python has, so the narrow ``ImportError``-by-name
 #: reading skipped it while it swallowed exactly the failure the guard is about.
-_BARE_EXCEPT_SWALLOWING_MODULE = '''
+_BARE_EXCEPT_SWALLOWING_MODULE = """
 try:
     from toon_parser import serialize_toon
 
@@ -797,11 +785,11 @@ except:  # noqa: E722
 
 def serialize_toon_simple(data):
     return '\\n'.join(f'{k}: {v}' for k, v in data.items())
-'''
+"""
 
 #: The swallowing shape behind ``except Exception:``. ``ImportError`` is a
 #: subclass, so this catches the failed import as surely as naming it would.
-_BROAD_EXCEPT_SWALLOWING_MODULE = '''
+_BROAD_EXCEPT_SWALLOWING_MODULE = """
 try:
     from toon_parser import serialize_toon
 
@@ -812,7 +800,7 @@ except Exception:
 
 def serialize_toon_simple(data):
     return '\\n'.join(f'{k}: {v}' for k, v in data.items())
-'''
+"""
 
 #: The probing module's sibling under the widened handler set: it catches the
 #: broadest thing there is and still installs no substitute. This is the fixture
@@ -835,7 +823,7 @@ def cmd_self_test():
 #: so: ``ValueError`` resolves to a real builtin exception that is neither a
 #: subtype nor a supertype of ``ImportError``, so it is decided — not guessed —
 #: and it clears.
-_UNRELATED_HANDLER_MODULE = '''
+_UNRELATED_HANDLER_MODULE = """
 try:
     from toon_parser import serialize_toon
 
@@ -846,7 +834,7 @@ except ValueError:
 
 def serialize_toon_simple(data):
     return '\\n'.join(f'{k}: {v}' for k, v in data.items())
-'''
+"""
 
 #: The swallowing shape behind ``except ModuleNotFoundError:`` — a SUBTYPE of
 #: ``ImportError``, and the exception a genuinely missing ``toon_parser``
@@ -856,7 +844,7 @@ def serialize_toon_simple(data):
 #: straight through it. That is the enumeration failure mode in one fixture:
 #: reasoning about which names are broad enough silently assumed breadth was the
 #: only way to catch.
-_MODULE_NOT_FOUND_SWALLOWING_MODULE = '''
+_MODULE_NOT_FOUND_SWALLOWING_MODULE = """
 try:
     from toon_parser import serialize_toon
 
@@ -867,14 +855,14 @@ except ModuleNotFoundError:
 
 def serialize_toon_simple(data):
     return '\\n'.join(f'{k}: {v}' for k, v in data.items())
-'''
+"""
 
 #: A substitute-carrying module whose handler names something this module cannot
 #: resolve — a project exception reached through an attribute path. Nothing here
 #: can decide whether it catches the import failure, and the fail-OPEN reading
 #: (unknown ⇒ harmless) is exactly the evasion route the enumeration left open:
 #: name your handler something the predicate has never heard of. It is reported.
-_UNRESOLVABLE_HANDLER_MODULE = '''
+_UNRESOLVABLE_HANDLER_MODULE = """
 import toon_errors
 
 try:
@@ -887,7 +875,7 @@ except toon_errors.MissingParser:
 
 def serialize_toon_simple(data):
     return '\\n'.join(f'{k}: {v}' for k, v in data.items())
-'''
+"""
 
 
 #: The swallowing shape behind a handler that raises only CONDITIONALLY. On the
@@ -895,7 +883,7 @@ def serialize_toon_simple(data):
 #: failure is absorbed and the substitute takes over, so this is a lookalike. A
 #: clearing clause reading the handler SUBTREE sees the guarded ``raise`` and
 #: reports it clean.
-_CONDITIONAL_RAISE_SWALLOWING_MODULE = '''
+_CONDITIONAL_RAISE_SWALLOWING_MODULE = """
 import os
 
 try:
@@ -910,12 +898,12 @@ except ImportError:
 
 def serialize_toon_simple(data):
     return '\\n'.join(f'{k}: {v}' for k, v in data.items())
-'''
+"""
 
 #: The same shape with the ``raise`` moved into a nested function defined inside
 #: the handler. It never executes at handler time at all, which is the second
 #: reach ``ast.walk`` had over the handler and the first has no bearing on.
-_NESTED_RAISE_SWALLOWING_MODULE = '''
+_NESTED_RAISE_SWALLOWING_MODULE = """
 try:
     from toon_parser import serialize_toon
 
@@ -929,14 +917,14 @@ except ImportError:
 
 def serialize_toon_simple(data):
     return '\\n'.join(f'{k}: {v}' for k, v in data.items())
-'''
+"""
 
 #: Matched positive for the positional clause: the handler's FIRST statement is a
 #: ``raise``, so the failure propagates on handler entry and the substitute below
 #: is never reached through it. Without this fixture the clause could degenerate
 #: into "every guarded import is a swallow" and nothing would say so — a clearing
 #: clause with no matched positive is a constant, not a predicate.
-_RAISE_FIRST_MODULE = '''
+_RAISE_FIRST_MODULE = """
 try:
     from toon_parser import serialize_toon
 
@@ -947,14 +935,14 @@ except ImportError:
 
 def serialize_toon_simple(data):
     return '\\n'.join(f'{k}: {v}' for k, v in data.items())
-'''
+"""
 
 #: Matched positive for the position-not-bareness decision. The first statement
 #: raises a NEW exception chained from the caught one; it propagates exactly as
 #: unconditionally as a bare ``raise``, and is arguably the better practice. A
 #: narrowing to bare-only would report this as a swallow for no gain in
 #: soundness, and this fixture is what makes that narrowing fail rather than pass.
-_RAISE_FROM_FIRST_MODULE = '''
+_RAISE_FROM_FIRST_MODULE = """
 try:
     from toon_parser import serialize_toon
 
@@ -965,14 +953,14 @@ except ImportError as err:
 
 def serialize_toon_simple(data):
     return '\\n'.join(f'{k}: {v}' for k, v in data.items())
-'''
+"""
 
 #: The evasion the positional clause exists to close: the handler hands the
 #: substitute back with a ``return`` and leaves a ``raise`` below it that can
 #: never execute. Any clause asking whether a ``raise`` appears ANYWHERE in
 #: ``handler.body`` reads the dead statement as propagation and clears a module
 #: that routes around the serializer on every path through the handler.
-_RETURN_BEFORE_RAISE_SWALLOWING_MODULE = '''
+_RETURN_BEFORE_RAISE_SWALLOWING_MODULE = """
 def resolve_serializer():
     try:
         from toon_parser import serialize_toon
@@ -985,14 +973,14 @@ def resolve_serializer():
 
 def serialize_toon_simple(data):
     return '\\n'.join(f'{k}: {v}' for k, v in data.items())
-'''
+"""
 
 #: The ACCEPTED COST of the positional clause, kept as a control so the cost stays
 #: a known price instead of being rediscovered as a defect. This handler records
 #: the failure and THEN re-raises, so it genuinely propagates — and it is flagged
 #: anyway, because a statement executes before the ``raise``. Pinning it here is
 #: what stops a later round reintroducing a reachability test to clear it.
-_CLEANUP_THEN_RAISE_MODULE = '''
+_CLEANUP_THEN_RAISE_MODULE = """
 try:
     from toon_parser import serialize_toon
 
@@ -1004,7 +992,7 @@ except ImportError:
 
 def serialize_toon_simple(data):
     return '\\n'.join(f'{k}: {v}' for k, v in data.items())
-'''
+"""
 
 
 def _synthetic_script(root: Path, bundle: str, skill: str, name: str, source: str) -> Path:
@@ -1019,9 +1007,7 @@ def test_detector_flags_an_emitter_that_bypasses_the_serializer(tmp_path):
     """Control: the clean result above is a measurement, not a detector that never fires."""
     _synthetic_script(tmp_path, 'fixture-bundle', 'fixture-skill', 'hand_rolled.py', _UNCANONICAL_EMITTER)
 
-    flagged = [
-        record for record in derive_toon_population(tmp_path).records if record.bypasses_canonical
-    ]
+    flagged = [record for record in derive_toon_population(tmp_path).records if record.bypasses_canonical]
 
     assert [record.function for record in flagged] == ['emit_toon']
 
@@ -1033,9 +1019,7 @@ def test_detector_flags_a_hand_roll_that_also_calls_the_serializer(tmp_path):
     present, so the weaker predicate cleared the function while it still printed
     a TOON line the canonical writer never produced.
     """
-    _synthetic_script(
-        tmp_path, 'fixture-bundle', 'fixture-skill', 'partial.py', _PARTIAL_HAND_ROLL
-    )
+    _synthetic_script(tmp_path, 'fixture-bundle', 'fixture-skill', 'partial.py', _PARTIAL_HAND_ROLL)
 
     population = derive_toon_population(tmp_path).records
 
@@ -1063,9 +1047,7 @@ def test_detector_flags_a_hand_roll_composed_into_a_local(tmp_path):
     ``bypasses_canonical`` fall back to ``not reaches_canonical``, the exact
     laundering the ``hand_rolls_toon`` disjunct exists to stop.
     """
-    _synthetic_script(
-        tmp_path, 'fixture-bundle', 'fixture-skill', 'assigned.py', _ASSIGNED_LINE_HAND_ROLL
-    )
+    _synthetic_script(tmp_path, 'fixture-bundle', 'fixture-skill', 'assigned.py', _ASSIGNED_LINE_HAND_ROLL)
 
     population = derive_toon_population(tmp_path).records
 
@@ -1076,9 +1058,7 @@ def test_detector_flags_a_hand_roll_composed_into_a_local(tmp_path):
 
 def test_detector_flags_a_local_that_ever_holds_a_toon_line(tmp_path):
     """A re-assignment does not clear the name: the fail-closed reading wins."""
-    _synthetic_script(
-        tmp_path, 'fixture-bundle', 'fixture-skill', 'reassigned.py', _REASSIGNED_LINE_HAND_ROLL
-    )
+    _synthetic_script(tmp_path, 'fixture-bundle', 'fixture-skill', 'reassigned.py', _REASSIGNED_LINE_HAND_ROLL)
 
     population = derive_toon_population(tmp_path).records
 
@@ -1088,9 +1068,7 @@ def test_detector_flags_a_local_that_ever_holds_a_toon_line(tmp_path):
 
 def test_detector_clears_a_local_that_is_not_toon_shaped(tmp_path):
     """Matched negative: the assigned TEXT is judged, not the indirection."""
-    _synthetic_script(
-        tmp_path, 'fixture-bundle', 'fixture-skill', 'narration.py', _ASSIGNED_NON_TOON_LINE
-    )
+    _synthetic_script(tmp_path, 'fixture-bundle', 'fixture-skill', 'narration.py', _ASSIGNED_NON_TOON_LINE)
 
     population = derive_toon_population(tmp_path).records
 
@@ -1104,9 +1082,7 @@ def test_detector_clears_a_printed_name_it_knows_nothing_about(tmp_path):
     Without this the resolution could degenerate into "any printed variable is a
     hand-roll", which would flag every canonical emitter that prints a value.
     """
-    _synthetic_script(
-        tmp_path, 'fixture-bundle', 'fixture-skill', 'unassigned.py', _PRINTS_AN_UNASSIGNED_NAME
-    )
+    _synthetic_script(tmp_path, 'fixture-bundle', 'fixture-skill', 'unassigned.py', _PRINTS_AN_UNASSIGNED_NAME)
 
     population = derive_toon_population(tmp_path).records
 
@@ -1238,9 +1214,7 @@ def test_detector_clears_a_literal_bound_in_a_nested_scope(tmp_path):
     parent's map and paired with the parent's unrelated ``print(line)`` — marking
     a function that emits through the canonical serializer as a hand-roll.
     """
-    _synthetic_script(
-        tmp_path, 'fixture-bundle', 'fixture-skill', 'nested_scope.py', _NESTED_SCOPE_ASSIGNMENT
-    )
+    _synthetic_script(tmp_path, 'fixture-bundle', 'fixture-skill', 'nested_scope.py', _NESTED_SCOPE_ASSIGNMENT)
 
     population = derive_toon_population(tmp_path).records
 
@@ -1257,9 +1231,7 @@ def test_a_nested_helper_is_still_flagged_as_its_own_population_member(tmp_path)
     asserted, because the coverage claim and the false-positive fix are the same
     change and either one alone would leave the other unproven.
     """
-    _synthetic_script(
-        tmp_path, 'fixture-bundle', 'fixture-skill', 'nested_emitter.py', _NESTED_HELPER_EMITTER
-    )
+    _synthetic_script(tmp_path, 'fixture-bundle', 'fixture-skill', 'nested_emitter.py', _NESTED_HELPER_EMITTER)
 
     by_name = {record.function: record for record in derive_toon_population(tmp_path).records}
 
@@ -1352,9 +1324,7 @@ def write_summary(payload):
 
 def test_name_blind_derivation_flags_an_emitter_the_naming_probe_misses(tmp_path):
     """Control: the cross-check above is a measurement, not a detector that never fires."""
-    _synthetic_script(
-        tmp_path, 'fixture-bundle', 'fixture-skill', 'unnamed.py', _UNNAMED_UNCANONICAL_EMITTER
-    )
+    _synthetic_script(tmp_path, 'fixture-bundle', 'fixture-skill', 'unnamed.py', _UNNAMED_UNCANONICAL_EMITTER)
 
     named = {(record.path, record.function) for record in derive_toon_population(tmp_path).records}
     escaped = [
@@ -1374,17 +1344,11 @@ def test_name_blind_derivation_flags_an_unprobed_partial_hand_roll(tmp_path):
     clearing clause; it is now a negative control, because the line it prints by
     hand is output the canonical writer never produced.
     """
-    _synthetic_script(
-        tmp_path, 'fixture-bundle', 'fixture-skill', 'unnamed_partial.py', _UNNAMED_PARTIAL_HAND_ROLL
-    )
+    _synthetic_script(tmp_path, 'fixture-bundle', 'fixture-skill', 'unnamed_partial.py', _UNNAMED_PARTIAL_HAND_ROLL)
 
     named = {(record.path, record.function) for record in derive_toon_population(tmp_path).records}
     behavioural = derive_name_blind_emitters(tmp_path).records
-    escaped = [
-        record.function
-        for record in behavioural
-        if (record.path, record.function) not in named
-    ]
+    escaped = [record.function for record in behavioural if (record.path, record.function) not in named]
 
     assert named == set(), 'the naming probe is expected to miss this function entirely'
     assert [record.reaches_canonical for record in behavioural] == [True]
@@ -1429,17 +1393,11 @@ def test_name_blind_derivation_clears_an_emitter_the_naming_probe_sees(tmp_path)
     membership first is what stops the test passing on absence, the way the
     absent-literal case would.
     """
-    _synthetic_script(
-        tmp_path, 'fixture-bundle', 'fixture-skill', 'probed.py', _PROBED_HAND_ROLLED_EMITTER
-    )
+    _synthetic_script(tmp_path, 'fixture-bundle', 'fixture-skill', 'probed.py', _PROBED_HAND_ROLLED_EMITTER)
 
     named = {(record.path, record.function) for record in derive_toon_population(tmp_path).records}
     behavioural = derive_name_blind_emitters(tmp_path).records
-    escaped = [
-        record.function
-        for record in behavioural
-        if (record.path, record.function) not in named
-    ]
+    escaped = [record.function for record in behavioural if (record.path, record.function) not in named]
 
     assert [record.function for record in behavioural] == ['emit_toon']
     assert named != set(), 'the naming probe is expected to see this function'
@@ -1461,9 +1419,7 @@ def test_name_blind_derivation_clears_an_emitter_the_naming_probe_sees(tmp_path)
         'file-none-is-still-stdout-so-it-is-selected',
     ],
 )
-def test_name_blind_derivation_selects_only_toon_shaped_stdout_prints(
-    tmp_path, filename, source, selected
-):
+def test_name_blind_derivation_selects_only_toon_shaped_stdout_prints(tmp_path, filename, source, selected):
     """Selection turns on the printed TEXT and the printed STREAM, and on nothing else.
 
     Both directions ride in one table because either alone is satisfiable by a
@@ -1472,9 +1428,7 @@ def test_name_blind_derivation_selects_only_toon_shaped_stdout_prints(
     """
     _synthetic_script(tmp_path, 'fixture-bundle', 'fixture-skill', filename, source)
 
-    assert [
-        record.function for record in derive_name_blind_emitters(tmp_path).records
-    ] == selected
+    assert [record.function for record in derive_name_blind_emitters(tmp_path).records] == selected
 
 
 def test_an_added_emitter_is_picked_up_by_the_derivation(tmp_path):

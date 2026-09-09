@@ -40,8 +40,7 @@ def test_opencode_reuses_claude_level_tables() -> None:
         'not copy it — a copy would let the two tables drift silently'
     )
     assert opencode_ve.ALIAS_GATED_EFFORTS is claude_ve.ALIAS_GATED_EFFORTS, (
-        'OpenCode variant emitter must import ALIAS_GATED_EFFORTS from the Claude '
-        'target, not copy it'
+        'OpenCode variant emitter must import ALIAS_GATED_EFFORTS from the Claude target, not copy it'
     )
 
 
@@ -50,17 +49,11 @@ def test_level_table_aliases_resolve_to_anthropic_ids() -> None:
     model_map = _model_map()
     for level, binding in opencode_ve.LEVEL_TABLE.items():
         alias = binding['model']
-        assert alias in model_map, (
-            f'{level}: alias {alias!r} missing from mapping.json model_map'
-        )
+        assert alias in model_map, f'{level}: alias {alias!r} missing from mapping.json model_map'
         entry = model_map[alias]
-        assert 'id' in entry and entry['id'], (
-            f'{level}: model_map[{alias!r}] has no non-empty id'
-        )
+        assert 'id' in entry and entry['id'], f'{level}: model_map[{alias!r}] has no non-empty id'
         expected = f'{OPENCODE_MODEL_PREFIX}{entry["id"]}'
-        assert expected.startswith('anthropic/'), (
-            f'{level}: resolved model {expected!r} is not anthropic/-prefixed'
-        )
+        assert expected.startswith('anthropic/'), f'{level}: resolved model {expected!r} is not anthropic/-prefixed'
 
 
 def test_gated_efforts_are_advertised_by_their_alias() -> None:

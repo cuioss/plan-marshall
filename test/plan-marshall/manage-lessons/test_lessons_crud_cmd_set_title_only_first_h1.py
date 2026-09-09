@@ -9,7 +9,6 @@ Its sections, in order:
 * cmd_set_title — malformed lesson (no H1)
 """
 
-
 from argparse import Namespace
 from unittest.mock import patch
 from _lessons_crud_fixtures import _seed_active_lesson, cmd_set_title
@@ -46,9 +45,7 @@ class TestCmdSetTitleOnlyFirstH1:
         )
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
-            result = cmd_set_title(
-                Namespace(lesson_id='2025-01-01-01-005', title='Rewritten First')
-            )
+            result = cmd_set_title(Namespace(lesson_id='2025-01-01-01-005', title='Rewritten First'))
 
         assert result['status'] == 'success'
         assert result['old_title'] == 'First Title'
@@ -90,9 +87,7 @@ class TestCmdSetTitleOnlyFirstH1:
         path.write_text(content, encoding='utf-8')
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
-            result = cmd_set_title(
-                Namespace(lesson_id='2025-01-01-01-006', title='Real Rewritten')
-            )
+            result = cmd_set_title(Namespace(lesson_id='2025-01-01-01-006', title='Real Rewritten'))
 
         assert result['status'] == 'success'
         assert result['old_title'] == 'Real H1 Title'
@@ -136,9 +131,7 @@ class TestCmdSetTitleOnlyFirstH1:
         path.write_text(content, encoding='utf-8')
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
-            result = cmd_set_title(
-                Namespace(lesson_id='2025-01-01-01-007', title='Rewritten')
-            )
+            result = cmd_set_title(Namespace(lesson_id='2025-01-01-01-007', title='Rewritten'))
 
         assert result['status'] == 'success'
         assert result['old_title'] == 'Outside H1'
@@ -172,20 +165,13 @@ class TestCmdSetTitleMalformed:
         path = lessons_dir / '2025-01-01-01-008.md'
         # No H1 anywhere — only frontmatter and a body paragraph.
         path.write_text(
-            'id=2025-01-01-01-008\n'
-            'component=test-component\n'
-            'category=bug\n'
-            'created=2025-01-01\n'
-            '\n'
-            'Body without title.\n',
+            'id=2025-01-01-01-008\ncomponent=test-component\ncategory=bug\ncreated=2025-01-01\n\nBody without title.\n',
             encoding='utf-8',
         )
         original_content = path.read_text(encoding='utf-8')
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
-            result = cmd_set_title(
-                Namespace(lesson_id='2025-01-01-01-008', title='New Title')
-            )
+            result = cmd_set_title(Namespace(lesson_id='2025-01-01-01-008', title='New Title'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'malformed_lesson'

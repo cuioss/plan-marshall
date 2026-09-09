@@ -3,7 +3,6 @@
 
 """Unit tests for the ``append`` verb of the unified ``manage-change-ledger`` CLI."""
 
-
 from __future__ import annotations
 
 import pytest
@@ -90,6 +89,7 @@ def test_append_build_records_nonzero_exit(env) -> None:
 # The three wrapper-reported build fields: command / duration_seconds / outcome
 # ---------------------------------------------------------------------------
 
+
 def test_append_verb_row_carries_the_three_fields_as_null(env) -> None:
     """The CLI second writer emits the KEYS, with null values.
 
@@ -134,10 +134,14 @@ def test_append_verb_row_carries_the_three_fields_as_null(env) -> None:
 @pytest.mark.parametrize(
     'kind,extra',
     [
-        ('build', ('--notation', 'plan-marshall:build-pyproject:pyproject_build',
-                   '--exit-code', '0', '--status', 'success')),
-        ('job', ('--job-id', 'J-1', '--fingerprint', 'fp-1',
-                 '--notation', 'plan-marshall:build-pyproject:pyproject_build')),
+        (
+            'build',
+            ('--notation', 'plan-marshall:build-pyproject:pyproject_build', '--exit-code', '0', '--status', 'success'),
+        ),
+        (
+            'job',
+            ('--job-id', 'J-1', '--fingerprint', 'fp-1', '--notation', 'plan-marshall:build-pyproject:pyproject_build'),
+        ),
     ],
 )
 def test_append_without_plan_id_records_the_sentinel_never_null(env, kind, extra) -> None:
@@ -160,9 +164,17 @@ def test_append_without_plan_id_records_the_sentinel_never_null(env, kind, extra
 @pytest.mark.parametrize(
     'kind,extra',
     [
-        ('build', ('--notation', 'plan-marshall:build-pyproject:pyproject_build',
-                   '--exit-code', '0', '--status', 'success')),
-        ('job', ('--job-id', 'J-2',)),
+        (
+            'build',
+            ('--notation', 'plan-marshall:build-pyproject:pyproject_build', '--exit-code', '0', '--status', 'success'),
+        ),
+        (
+            'job',
+            (
+                '--job-id',
+                'J-2',
+            ),
+        ),
     ],
 )
 def test_append_with_a_real_plan_id_stores_it_verbatim(env, kind, extra) -> None:
@@ -196,9 +208,7 @@ def test_append_build_stores_each_status_vocabulary_value(env, build_status: str
 
 def test_append_build_requires_notation(env) -> None:
     # --notation is mandatory for kind=build.
-    result = env.run(
-        'append', '--kind', 'build', '--exit-code', '0', '--status', 'success'
-    )
+    result = env.run('append', '--kind', 'build', '--exit-code', '0', '--status', 'success')
 
     # error TOON, no ledger line written.
     data = result.toon()
@@ -209,8 +219,13 @@ def test_append_build_requires_notation(env) -> None:
 def test_append_build_requires_exit_code(env) -> None:
     # --exit-code is mandatory for kind=build.
     result = env.run(
-        'append', '--kind', 'build', '--notation', 'plan-marshall:x:y',
-        '--status', 'success',
+        'append',
+        '--kind',
+        'build',
+        '--notation',
+        'plan-marshall:x:y',
+        '--status',
+        'success',
     )
 
     data = result.toon()
@@ -221,8 +236,13 @@ def test_append_build_requires_exit_code(env) -> None:
 def test_append_build_requires_status(env) -> None:
     # --status is mandatory for kind=build (the truthful outcome of record).
     result = env.run(
-        'append', '--kind', 'build', '--notation', 'plan-marshall:x:y',
-        '--exit-code', '0',
+        'append',
+        '--kind',
+        'build',
+        '--notation',
+        'plan-marshall:x:y',
+        '--exit-code',
+        '0',
     )
 
     data = result.toon()
@@ -233,8 +253,15 @@ def test_append_build_requires_status(env) -> None:
 def test_append_build_rejects_unknown_status(env) -> None:
     # --status is choices-validated at the argparse boundary.
     result = env.run(
-        'append', '--kind', 'build', '--notation', 'plan-marshall:x:y',
-        '--exit-code', '0', '--status', 'flaky',
+        'append',
+        '--kind',
+        'build',
+        '--notation',
+        'plan-marshall:x:y',
+        '--exit-code',
+        '0',
+        '--status',
+        'flaky',
     )
 
     assert not result.success

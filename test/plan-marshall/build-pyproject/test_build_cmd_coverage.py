@@ -68,7 +68,8 @@ def _capture_coverage_cmd(build_module) -> tuple[list[str], int]:
             with patch.object(build_module.Path, 'mkdir', return_value=None):
                 with patch.object(build_module, 'get_test_path', return_value='test/plan-marshall'):
                     with patch.object(
-                        build_module, 'get_bundle_path',
+                        build_module,
+                        'get_bundle_path',
                         return_value='marketplace/bundles/plan-marshall',
                     ):
                         exit_code = build_module.cmd_coverage('plan-marshall')
@@ -84,9 +85,7 @@ def test_cmd_coverage_emits_cov_fail_under_flag() -> None:
 
     assert exit_code == 0
     expected_flag = f'--cov-fail-under={build_module.COVERAGE_THRESHOLD}'
-    assert expected_flag in cmd, (
-        f'cmd_coverage must emit {expected_flag!r}; got cmd={cmd!r}'
-    )
+    assert expected_flag in cmd, f'cmd_coverage must emit {expected_flag!r}; got cmd={cmd!r}'
 
 
 def test_cmd_coverage_emits_xml_report_flag() -> None:
@@ -113,12 +112,10 @@ def test_cmd_coverage_emits_xdist_parallel_flags() -> None:
 
     cmd, _ = _capture_coverage_cmd(build_module)
 
-    assert '-n' in cmd and 'auto' in cmd[cmd.index('-n') + 1:cmd.index('-n') + 2], (
+    assert '-n' in cmd and 'auto' in cmd[cmd.index('-n') + 1 : cmd.index('-n') + 2], (
         f'cmd_coverage must emit "-n auto" for parallel coverage; got cmd={cmd!r}'
     )
-    assert '--dist=loadgroup' in cmd, (
-        f'cmd_coverage must emit --dist=loadgroup alongside -n; got cmd={cmd!r}'
-    )
+    assert '--dist=loadgroup' in cmd, f'cmd_coverage must emit --dist=loadgroup alongside -n; got cmd={cmd!r}'
 
 
 def test_cmd_coverage_retains_existing_cov_and_html_report_flags() -> None:
@@ -139,7 +136,7 @@ def _extract_basetemp(cmd: list[str]) -> str:
     """Return the value of the single --basetemp=<path> flag in ``cmd`` (asserts exactly one)."""
     matches = [a for a in cmd if a.startswith('--basetemp=')]
     assert len(matches) == 1, f'expected exactly one --basetemp flag; got {matches!r} in {cmd!r}'
-    return matches[0][len('--basetemp='):]
+    return matches[0][len('--basetemp=') :]
 
 
 def test_cmd_coverage_emits_per_session_basetemp_flag() -> None:
@@ -157,9 +154,7 @@ def test_cmd_coverage_two_invocations_yield_distinct_basetemp() -> None:
     build_module = _load_build_module()
     first = _extract_basetemp(_capture_coverage_cmd(build_module)[0])
     second = _extract_basetemp(_capture_coverage_cmd(build_module)[0])
-    assert first != second, (
-        f'two cmd_coverage invocations must yield distinct basetemp roots; got {first!r} twice'
-    )
+    assert first != second, f'two cmd_coverage invocations must yield distinct basetemp roots; got {first!r} twice'
 
 
 def test_prune_basetemp_roots_bounds_retained_dir_count(tmp_path) -> None:

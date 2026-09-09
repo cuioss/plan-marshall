@@ -72,9 +72,7 @@ _ORCH_BUNDLE = 'plan-marshall'
 _ORCH_SKILL = 'plan-orchestrator'
 _ORCH_SCRIPT = 'orchestrator.py'
 
-_orch = load_script_module(
-    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT, 'orchestrator_script'
-)
+_orch = load_script_module(_ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT, 'orchestrator_script')
 
 cmd_corpus_set_verdict = _orch.cmd_corpus_set_verdict
 cmd_corpus_verdicts = _orch.cmd_corpus_verdicts
@@ -88,12 +86,7 @@ SKILL_MD: Path = _SKILL_DIR / 'SKILL.md'
 WORKFLOW_DIR: Path = _SKILL_DIR / 'workflow'
 PLAN_SPEC_TEMPLATE: Path = _SKILL_DIR / 'templates' / 'plan-spec.md'
 STANDARD_MD: Path = (
-    _MARKETPLACE
-    / 'plan-marshall'
-    / 'skills'
-    / 'persona-plan-orchestrator'
-    / 'standards'
-    / 'orchestration-model.md'
+    _MARKETPLACE / 'plan-marshall' / 'skills' / 'persona-plan-orchestrator' / 'standards' / 'orchestration-model.md'
 )
 CONCEPTS_ADOC: Path = Path(PROJECT_ROOT) / 'doc' / 'concepts' / 'orchestration.adoc'
 
@@ -120,9 +113,7 @@ CONSUMING_SURFACES = (
 
 _ROUTING_ROW_RE = re.compile(r'^\|\s*`(?P<verb>[a-z][a-z-]*)`\s*\|\s*`(?P<doc>workflow/[a-z-]+\.md)`\s*\|')
 _USAGE_VERB_RE = re.compile(r'^/plan-orchestrator\s+(?P<verb>[a-z][a-z-]*)', re.MULTILINE)
-_TITLE_ENUMERATION_RE = re.compile(
-    r'All (?P<count_word>[a-z]+) verbs — (?P<list>.+?) — carry the obligation'
-)
+_TITLE_ENUMERATION_RE = re.compile(r'All (?P<count_word>[a-z]+) verbs — (?P<list>.+?) — carry the obligation')
 _BACKTICKED_RE = re.compile(r'`([a-z][a-z-]*)`')
 
 #: A RUN of backticked lowercase tokens joined only by list separators (` / `,
@@ -213,10 +204,7 @@ def _wrap_enumeration(verbs: list[str], per_line: int) -> list[str]:
     """
     chunks = [verbs[start : start + per_line] for start in range(0, len(verbs), per_line)]
     rendered = [' / '.join(f'`{verb}`' for verb in chunk) for chunk in chunks]
-    return [
-        f'  {text} /' if index < len(rendered) - 1 else f'  {text}'
-        for index, text in enumerate(rendered)
-    ]
+    return [f'  {text} /' if index < len(rendered) - 1 else f'  {text}' for index, text in enumerate(rendered)]
 
 
 def _subparser_action(parser: argparse.ArgumentParser) -> Any:
@@ -279,9 +267,7 @@ class TestRouterClosure:
         assert len(rows) > 0, 'the Verb Routing table yielded no rows'
         assert len(referenced) > 0, 'no workflow doc is referenced by any row'
         assert len(on_disk) > 0, f'no workflow doc found on disk under {WORKFLOW_DIR}'
-        assert len(rows) >= len(referenced), (
-            'the row→doc mapping is many-to-one, so rows can never be FEWER than docs'
-        )
+        assert len(rows) >= len(referenced), 'the row→doc mapping is many-to-one, so rows can never be FEWER than docs'
 
     def test_every_referenced_doc_exists_on_disk(self):
         referenced = {doc for _, doc in _routing_rows()}
@@ -347,9 +333,7 @@ class TestVerbEnumerationAgreement:
             f'the standard enumerates a different verb set — only there: {sorted(listed - routed)}, '
             f'only routed: {sorted(routed - listed)}'
         )
-        assert stated_count == len(routed), (
-            f'the standard states {stated_count} verbs but enumerates {len(routed)}'
-        )
+        assert stated_count == len(routed), f'the standard states {stated_count} verbs but enumerates {len(routed)}'
 
     def test_the_concepts_document_agrees(self):
         # The surface that carried the pre-existing `archive` omission.
@@ -425,10 +409,9 @@ class TestVerbEnumerationAgreement:
         found = _verb_enumerations(wrapped, routed)
 
         assert len(wrapped) > 1, 'the control did not actually wrap'
-        assert all(
-            len(set(_BACKTICKED_RE.findall(line)) & routed) < _ENUMERATION_MIN_VERBS
-            for line in wrapped
-        ), f'a seeded line is detectable on its own, so the wrap proves nothing: {wrapped}'
+        assert all(len(set(_BACKTICKED_RE.findall(line)) & routed) < _ENUMERATION_MIN_VERBS for line in wrapped), (
+            f'a seeded line is detectable on its own, so the wrap proves nothing: {wrapped}'
+        )
         assert len(found) == 1, f'a wrapped enumeration was not read as ONE enumeration: {found}'
         assert found[0][1] == routed - {dropped}
         assert found[0][1] != routed, f'a wrapped list omitting {dropped!r} was read as agreeing'
@@ -513,22 +496,38 @@ def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
 #: ``register=False`` so neither displaces the explicitly-named registration
 #: above.
 _SET_VERDICT_ARGS = parse_ns(
-    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
-    'corpus', 'set-verdict',
-    '--slug', SLUG,
-    '--plan', 'PLAN-01',
-    '--claim-index', '0',
-    '--verdict', 'corroborated',
-    '--checked-at', SHA,
-    '--by', PRODUCER,
-    '--rescoped', 'n/a',
-    '--evidence', 'holds at this sha',
+    _ORCH_BUNDLE,
+    _ORCH_SKILL,
+    _ORCH_SCRIPT,
+    'corpus',
+    'set-verdict',
+    '--slug',
+    SLUG,
+    '--plan',
+    'PLAN-01',
+    '--claim-index',
+    '0',
+    '--verdict',
+    'corroborated',
+    '--checked-at',
+    SHA,
+    '--by',
+    PRODUCER,
+    '--rescoped',
+    'n/a',
+    '--evidence',
+    'holds at this sha',
     register=False,
 )
 
 _VERDICTS_ARGS = parse_ns(
-    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
-    'corpus', 'verdicts', '--slug', SLUG,
+    _ORCH_BUNDLE,
+    _ORCH_SKILL,
+    _ORCH_SCRIPT,
+    'corpus',
+    'verdicts',
+    '--slug',
+    SLUG,
     register=False,
 )
 
@@ -626,11 +625,7 @@ class TestVerdictFieldSingleDefinition:
         )
 
     def test_every_consuming_surface_xrefs_the_anchor(self):
-        missing = [
-            str(path)
-            for path in CONSUMING_SURFACES
-            if VERDICT_ANCHOR not in path.read_text(encoding='utf-8')
-        ]
+        missing = [str(path) for path in CONSUMING_SURFACES if VERDICT_ANCHOR not in path.read_text(encoding='utf-8')]
 
         assert len(CONSUMING_SURFACES) == 4, 'the consuming-surface population changed'
         assert missing == [], f'consuming surfaces that do not xref the anchor: {missing}'

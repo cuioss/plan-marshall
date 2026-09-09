@@ -240,9 +240,9 @@ def test_shape6_is_classified_distinctly_from_shape1():
 # ---------------------------------------------------------------------------
 def test_negative_control_two_agree_third_disagrees_must_fail():
     obs = _obs(
-        executor_version='0.1.200',   # agrees with installPath
+        executor_version='0.1.200',  # agrees with installPath
         install_path_version='0.1.200',
-        registry_version='0.1.050',   # the third — disagrees
+        registry_version='0.1.050',  # the third — disagrees
     )
     verdict = _verdict(obs)
     assert verdict.outcome == FAIL, 'a pairwise executor==installPath oracle would wrongly pass this'
@@ -251,7 +251,7 @@ def test_negative_control_two_agree_third_disagrees_must_fail():
 
 def test_negative_control_other_orientation_executor_is_the_odd_one():
     obs = _obs(
-        executor_version='0.1.050',   # the odd one out
+        executor_version='0.1.050',  # the odd one out
         install_path_version='0.1.200',
         registry_version='0.1.200',
     )
@@ -340,10 +340,7 @@ def test_every_operator_repair_step_names_an_invocable_surface():
     # describes a repair that does not happen and reports no error while not
     # happening — the false-clean shape this whole module exists to prevent,
     # committed by its own remedy text.
-    assert (
-        'python3 .plan/execute-script.py '
-        'plan-marshall:marshall-steward:cache_retention sweep --apply' in remedy
-    )
+    assert 'python3 .plan/execute-script.py plan-marshall:marshall-steward:cache_retention sweep --apply' in remedy
 
 
 # ---------------------------------------------------------------------------
@@ -727,9 +724,7 @@ def test_version_split_executor_fails_naming_the_conflicting_versions():
     that as "could not read the executor" would report a demonstrated
     disagreement as an absence of evidence.
     """
-    split = _ppt.ExecutorAnchor(
-        status=_ppt.EXECUTOR_SPLIT, version=None, versions=('0.1.100', '0.1.200')
-    )
+    split = _ppt.ExecutorAnchor(status=_ppt.EXECUTOR_SPLIT, version=None, versions=('0.1.100', '0.1.200'))
 
     verdict = _verdict(_obs(executor_version=None, executor_anchor=split))
 

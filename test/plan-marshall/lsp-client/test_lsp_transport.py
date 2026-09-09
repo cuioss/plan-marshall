@@ -17,7 +17,7 @@ from _lsp_jsonrpc import StdioTransport
 # A minimal fake LSP server: read one framed request, echo its id in a reply —
 # but first emit a length-0 junk frame, the exact case that used to make
 # json.loads('') kill the reader thread.
-_FAKE_SERVER = r'''
+_FAKE_SERVER = r"""
 import json, sys
 
 def read_message():
@@ -46,7 +46,7 @@ write_frame({'jsonrpc': '2.0', 'id': req['id'], 'result': {'capabilities': {}}})
 # Stay alive so the client reads the response before EOF.
 import time
 time.sleep(1.0)
-'''
+"""
 
 
 def test_reader_survives_length_zero_junk_frame(tmp_path):

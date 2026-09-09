@@ -11,7 +11,6 @@ Its sections, in order:
 * add_qgate_finding_checked — the centralized persist+partition helper
 """
 
-
 from _findings_store_fixtures import (
     add_finding,
     add_qgate_finding,
@@ -299,12 +298,22 @@ def test_add_qgate_finding_checked_deduplicated_yields_hash_id_no_failure(plan_c
     the existing hash_id and no failure descriptor."""
     pid = 'store-qgate-checked-dedup'
     first_hash, first_failure = add_qgate_finding_checked(
-        pid, '5-execute', 'qgate', 'build-error', 'Dup probe', 'Detail',
+        pid,
+        '5-execute',
+        'qgate',
+        'build-error',
+        'Dup probe',
+        'Detail',
     )
     assert first_failure is None
 
     second_hash, second_failure = add_qgate_finding_checked(
-        pid, '5-execute', 'qgate', 'build-error', 'Dup probe', 'Detail',
+        pid,
+        '5-execute',
+        'qgate',
+        'build-error',
+        'Dup probe',
+        'Detail',
     )
 
     assert second_hash == first_hash
@@ -316,12 +325,22 @@ def test_add_qgate_finding_checked_reopened_yields_hash_id_no_failure(plan_conte
     yields the reopened hash_id and no failure descriptor."""
     pid = 'store-qgate-checked-reopen'
     first_hash, _ = add_qgate_finding_checked(
-        pid, '5-execute', 'qgate', 'build-error', 'Reopen probe', 'Detail',
+        pid,
+        '5-execute',
+        'qgate',
+        'build-error',
+        'Reopen probe',
+        'Detail',
     )
     resolve_qgate_finding(pid, '5-execute', first_hash, 'fixed')
 
     second_hash, second_failure = add_qgate_finding_checked(
-        pid, '5-execute', 'qgate', 'build-error', 'Reopen probe', 'Detail',
+        pid,
+        '5-execute',
+        'qgate',
+        'build-error',
+        'Reopen probe',
+        'Detail',
     )
 
     assert second_hash == first_hash

@@ -115,11 +115,7 @@ _REMOVED_VACUOUS_RESULT_KEY = 'pre_submission_self_review_omitted'
 
 def _derive_apply_sites(module: Any) -> set[str]:
     """Return every ``_apply_*`` narrowing callable exposed by ``module``."""
-    return {
-        name
-        for name in dir(module)
-        if name.startswith('_apply_') and callable(getattr(module, name))
-    }
+    return {name for name in dir(module) if name.startswith('_apply_') and callable(getattr(module, name))}
 
 
 #: Disjoint candidate lists for the matrix drive. Phase-5 and phase-6 share no
@@ -212,9 +208,7 @@ def _run_commit_push_disabled(monkeypatch) -> SiteRun:
 
 def _run_code_step_inactive(monkeypatch) -> SiteRun:
     before = ['finalize-step-simplify', 'archive-plan']
-    kept, fired = _mem._apply_code_step_inactive(
-        list(before), 'finalize-step-simplify', 'analysis', 0
-    )
+    kept, fired = _mem._apply_code_step_inactive(list(before), 'finalize-step-simplify', 'analysis', 0)
     return SiteRun(before, kept, 'flag', fired, single_step='finalize-step-simplify')
 
 
@@ -226,9 +220,7 @@ def _run_simplify_inactive(monkeypatch) -> SiteRun:
 
 def _run_security_class_inactive(monkeypatch) -> SiteRun:
     before = ['finalize-step-security-audit', 'archive-plan']
-    kept, records = _mem._apply_security_class_inactive(
-        list(before), frozenset({'finalize-step-security-audit'}), 0, 0
-    )
+    kept, records = _mem._apply_security_class_inactive(list(before), frozenset({'finalize-step-security-audit'}), 0, 0)
     return SiteRun(before, kept, 'records', records)
 
 
@@ -269,9 +261,7 @@ def _run_pre_push_quality_gate_inactive(monkeypatch) -> SiteRun:
     )
     before = ['pre-push-quality-gate', 'archive-plan']
     kept, decision, reason = _mem._apply_pre_push_quality_gate_inactive(list(before), 'a-plan')
-    return SiteRun(
-        before, kept, 'verdict', (decision, reason), single_step='pre-push-quality-gate'
-    )
+    return SiteRun(before, kept, 'verdict', (decision, reason), single_step='pre-push-quality-gate')
 
 
 def _run_canonical_verify_inactive(monkeypatch) -> SiteRun:
@@ -282,9 +272,7 @@ def _run_canonical_verify_inactive(monkeypatch) -> SiteRun:
 
 
 def _run_domain_seeded_step_resolvability(monkeypatch) -> SiteRun:
-    monkeypatch.setattr(
-        _manifest_validation, '_domain_appended_canonicals', lambda: frozenset({'arch-gate'})
-    )
+    monkeypatch.setattr(_manifest_validation, '_domain_appended_canonicals', lambda: frozenset({'arch-gate'}))
     monkeypatch.setattr(_mem, '_invoke_architecture_resolve', lambda *a, **kw: None)
     before = ['verify:arch-gate', 'verify:quality-gate']
     kept, dropped = _mem._apply_domain_seeded_step_resolvability(list(before), 'a-plan')
@@ -459,9 +447,7 @@ class TestEverySiteReportsItsSubtraction:
             assert all(set(r) == {'step', 'reason'} for r in run.report), (
                 f'{site_name} emitted a malformed subtraction record: {run.report}'
             )
-            assert all(r['reason'] for r in run.report), (
-                f'{site_name} emitted a record with no reason: {run.report}'
-            )
+            assert all(r['reason'] for r in run.report), f'{site_name} emitted a record with no reason: {run.report}'
             assert {r['step'] for r in run.report} == set(run.removed)
         elif run.kind == 'ids':
             assert set(run.report) == set(run.removed)
@@ -527,9 +513,7 @@ class TestDecisionMatrixRowsReportTheirNarrowing:
             assert all(set(r) == {'step', 'reason'} for r in records), (
                 f"decide rule '{rule}' emitted a malformed record: {records}"
             )
-            assert all(r['reason'] for r in records), (
-                f"decide rule '{rule}' emitted a record with no reason: {records}"
-            )
+            assert all(r['reason'] for r in records), f"decide rule '{rule}' emitted a record with no reason: {records}"
 
     def test_every_narrowing_row_names_exactly_the_steps_it_removed(self):
         for rule, removed, records in _drive_decision_matrix():

@@ -151,8 +151,7 @@ def test_residual_at_threshold_no_finding(plan_with_refs, monkeypatch, capsys):
     # Declared: a, b, c. Add 5 extras → residual=5 == default threshold 5.
     _patch_diff(
         monkeypatch,
-        ['src/a.py', 'src/b.py', 'src/c.py']
-        + [f'extra/{i}.py' for i in range(5)],
+        ['src/a.py', 'src/b.py', 'src/c.py'] + [f'extra/{i}.py' for i in range(5)],
     )
     _patch_resolve(monkeypatch, plan_with_refs.plan_dir)
     stub = _PersistStub()
@@ -244,6 +243,7 @@ def test_threshold_zero_disables_guard(plan_with_refs, monkeypatch, capsys):
     ``residual_count: 0``, which a consumer gating on that field reads as "no
     scope creep" — the finding-5ebd40 defect on the disabled path.
     """
+
     # Patch _git_diff_files to raise; if the script touched it, the test fails.
     def _raise(*_a, **_k):
         raise AssertionError('diff should not be invoked when threshold=0')

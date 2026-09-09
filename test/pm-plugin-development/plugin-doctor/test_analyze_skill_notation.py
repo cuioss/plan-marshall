@@ -158,9 +158,7 @@ class TestDirectiveUnresolved:
         bundle = _make_bundle(tmp_path, 'my-bundle')
         agents_dir = bundle / 'agents'
         agents_dir.mkdir(parents=True)
-        (agents_dir / 'my-agent.md').write_text(
-            'Skill: my-bundle:ghost-skill\n', encoding='utf-8'
-        )
+        (agents_dir / 'my-agent.md').write_text('Skill: my-bundle:ghost-skill\n', encoding='utf-8')
 
         findings = assert_analyzer_findings(analyze_skill_notation, tmp_path, [RULE_ID])
         assert findings[0]['details']['notation'] == 'my-bundle:ghost-skill'
@@ -171,9 +169,7 @@ class TestDirectiveUnresolved:
         _write_skill_md(
             bundle,
             'host-skill',
-            'Skill: my-bundle:real-skill\n'
-            'Skill: my-bundle:ghost-one\n'
-            'Skill: my-bundle:ghost-two\n',
+            'Skill: my-bundle:real-skill\nSkill: my-bundle:ghost-one\nSkill: my-bundle:ghost-two\n',
         )
 
         findings = assert_analyzer_findings(analyze_skill_notation, tmp_path, [RULE_ID] * 2)
@@ -194,8 +190,6 @@ class TestScanScope:
         # No .claude-plugin/plugin.json — this is not a real bundle.
         stray = tmp_path / 'not-a-bundle' / 'skills' / 'host'
         stray.mkdir(parents=True)
-        (stray / 'SKILL.md').write_text(
-            'Skill: not-a-bundle:ghost-skill\n', encoding='utf-8'
-        )
+        (stray / 'SKILL.md').write_text('Skill: not-a-bundle:ghost-skill\n', encoding='utf-8')
 
         assert_analyzer_findings(analyze_skill_notation, tmp_path, [])

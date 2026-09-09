@@ -62,9 +62,7 @@ def _load_extension(bundle: str) -> Any:
     # statically and would count this as a blind spot. Opting out of registration
     # keeps the guard's view complete and matches the previous behaviour exactly —
     # the preamble this replaces never touched ``sys.modules``.
-    module = load_skill_module(
-        bundle, 'plan-marshall-plugin', 'extension.py', register=False
-    )
+    module = load_skill_module(bundle, 'plan-marshall-plugin', 'extension.py', register=False)
     return module.Extension()
 
 

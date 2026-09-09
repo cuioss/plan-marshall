@@ -11,9 +11,7 @@ import pytest
 
 from conftest import load_script_module
 
-protocol = load_script_module(
-    'pm-plugin-development', 'tools-corpus-language-server', '_corpus_lsp_protocol.py'
-)
+protocol = load_script_module('pm-plugin-development', 'tools-corpus-language-server', '_corpus_lsp_protocol.py')
 
 
 def framed(payload: dict) -> bytes:

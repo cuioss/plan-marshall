@@ -148,9 +148,7 @@ def test_current_repo_root_still_follows_pinned_worktree_cwd(
     assert inv._current_repo_root().resolve() != main_and_worktree['main'].resolve()
 
 
-def test_main_repo_root_honours_base_dir_override(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_main_repo_root_honours_base_dir_override(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """An active ``PLAN_BASE_DIR`` override wins over the git resolution.
 
     Keeps every override-based consumer test meaningful: the override directory
@@ -240,9 +238,7 @@ def test_capture_main_sha_leaves_column_empty_when_main_unresolvable(
 ) -> None:
     """Unresolvable main → ``None`` (empty column), never the ambient tree."""
     monkeypatch.setattr(inv, '_main_repo_root', lambda: None)
-    monkeypatch.setattr(
-        inv, 'git_head', lambda _root: pytest.fail('git must not be probed at all')
-    )
+    monkeypatch.setattr(inv, 'git_head', lambda _root: pytest.fail('git must not be probed at all'))
 
     assert inv._capture_main_sha('p', {}, '5-execute') is None
 
@@ -252,9 +248,7 @@ def test_capture_main_dirty_files_leaves_column_empty_when_main_unresolvable(
 ) -> None:
     """Same contract for the layer-D path list."""
     monkeypatch.setattr(inv, '_main_repo_root', lambda: None)
-    monkeypatch.setattr(
-        inv, 'git_dirty_files', lambda _root: pytest.fail('git must not be probed at all')
-    )
+    monkeypatch.setattr(inv, 'git_dirty_files', lambda _root: pytest.fail('git must not be probed at all'))
 
     assert inv._capture_main_dirty_files('p', {}, '5-execute') is None
 
@@ -280,9 +274,7 @@ def test_a_commit_less_feature_branch_is_captured_not_refused(
     worktree = tmp_path / 'wt'
     _git(main_repo, 'worktree', 'add', '-q', '-b', 'feature/analysis-only', str(worktree))
     monkeypatch.chdir(worktree)
-    monkeypatch.setattr(
-        inv, 'INVARIANTS', [e for e in inv.INVARIANTS if e[0] in ('main_sha', 'worktree_sha')]
-    )
+    monkeypatch.setattr(inv, 'INVARIANTS', [e for e in inv.INVARIANTS if e[0] in ('main_sha', 'worktree_sha')])
     metadata = {'use_worktree': True, 'worktree_path': str(worktree)}
 
     captured = inv.capture_all('p', metadata, '5-execute')
@@ -309,9 +301,7 @@ def test_summariser_sees_no_main_sha_drift_across_the_execute_boundary(
     feature-branch commit and the summariser reported ``main_sha`` drift on
     every worktree-backed plan while main had not moved.
     """
-    summarize = load_script_module(
-        'plan-marshall', 'plan-retrospective', 'summarize-invariants.py', 'si_drift_mod'
-    )
+    summarize = load_script_module('plan-marshall', 'plan-retrospective', 'summarize-invariants.py', 'si_drift_mod')
     main_repo = main_and_worktree['main']
     worktree = main_and_worktree['worktree']
     metadata = {'use_worktree': True, 'worktree_path': str(worktree)}

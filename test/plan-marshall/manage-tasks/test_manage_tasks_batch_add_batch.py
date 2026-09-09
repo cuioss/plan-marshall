@@ -10,7 +10,6 @@ Its sections, in order:
 * --tasks-file PATH input (parity with --tasks-json)
 """
 
-
 import json
 
 import pytest
@@ -53,9 +52,7 @@ def test_batch_add_three_tasks_sequential_numbering(plan_context):
     first = json.loads(files[0].read_text())
     assert first['number'] == 1
     assert first['title'] == 'First'
-    assert first['steps'] == [
-        {'number': 1, 'target': 'src/A.java', 'status': 'pending', 'intent': 'write-replace'}
-    ]
+    assert first['steps'] == [{'number': 1, 'target': 'src/A.java', 'status': 'pending', 'intent': 'write-replace'}]
 
 
 def test_batch_add_empty_array_is_noop(plan_context):
@@ -283,9 +280,7 @@ def test_batch_add_reads_tasks_from_file(plan_context, tmp_path):
     assert [f.name for f in files] == ['TASK-001.json', 'TASK-002.json']
     first = json.loads(files[0].read_text())
     assert first['title'] == 'From File 1'
-    assert first['steps'] == [
-        {'number': 1, 'target': 'src/A.java', 'status': 'pending', 'intent': 'write-replace'}
-    ]
+    assert first['steps'] == [{'number': 1, 'target': 'src/A.java', 'status': 'pending', 'intent': 'write-replace'}]
 
 
 def test_batch_add_tasks_file_and_tasks_json_are_mutually_exclusive(plan_context, tmp_path):

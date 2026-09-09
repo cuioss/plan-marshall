@@ -112,9 +112,7 @@ def _stub_providers_path(monkeypatch, report: str, stream: str = 'stdout') -> No
 
     def _fake_run(argv, **kwargs):
         assert argv == ['gh', 'auth', 'status']
-        return subprocess.CompletedProcess(
-            argv, _GH_EXIT_CODE_WITH_A_FAILED_ACCOUNT, stdout=stdout, stderr=stderr
-        )
+        return subprocess.CompletedProcess(argv, _GH_EXIT_CODE_WITH_A_FAILED_ACCOUNT, stdout=stdout, stderr=stderr)
 
     monkeypatch.setattr('_providers_core.subprocess.run', _fake_run)
 

@@ -59,10 +59,12 @@ HANDSHAKE_FIELDS = [
 # via :func:`_handshake_commands._coerce_path_list`. New list-typed
 # columns should be added here AND to ``HANDSHAKE_FIELDS``; the order in
 # ``HANDSHAKE_FIELDS`` controls on-disk column order.
-HANDSHAKE_LIST_FIELDS: frozenset[str] = frozenset({
-    'main_dirty_files',
-    'main_dirty_exempted',
-})
+HANDSHAKE_LIST_FIELDS: frozenset[str] = frozenset(
+    {
+        'main_dirty_files',
+        'main_dirty_exempted',
+    }
+)
 
 
 def handshake_path(plan_id: str) -> Path:

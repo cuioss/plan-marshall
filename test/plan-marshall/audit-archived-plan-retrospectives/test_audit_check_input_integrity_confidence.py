@@ -41,9 +41,7 @@ class TestInputIntegrityDataConfidence:
         assert row['metrics_marker_schema'] == audit.METRICS_SCHEMA_OLD
         assert row['data_confidence'] == 'partial'
 
-    def test_pre_812_marker_record_is_distinguishable_from_old_schema(
-        self, tmp_path: Path
-    ):
+    def test_pre_812_marker_record_is_distinguishable_from_old_schema(self, tmp_path: Path):
         """A record carrying NEITHER pair reports `pre-#812`, not `old-schema`.
 
         Both bar `fully-recorded`, but they are different facts: an `old-schema`
@@ -58,9 +56,7 @@ class TestInputIntegrityDataConfidence:
         assert row['metrics_marker_schema'] != audit.METRICS_SCHEMA_OLD
         assert row['data_confidence'] == 'partial'
 
-    def test_old_schema_zero_token_execute_is_blind_not_marker_explained(
-        self, tmp_path: Path
-    ):
+    def test_old_schema_zero_token_execute_is_blind_not_marker_explained(self, tmp_path: Path):
         """An unreadable marker record explains NO zero-token phase.
 
         The pre-rename reader degraded an absent key to `(False, set())`, so
@@ -107,7 +103,8 @@ class TestInputIntegrityDataConfidence:
     def test_zero_token_execute_is_blind(self, tmp_path: Path):
         # the load-bearing zero-token 5-execute
         inputs = _write_ii_plan(
-            tmp_path, 'blind',
+            tmp_path,
+            'blind',
             phase_tokens={'5-execute': 0, '6-finalize': 5_000},
         )
 
@@ -128,7 +125,8 @@ class TestInputIntegrityDataConfidence:
     def test_defect_without_blind_execute_is_partial(self, tmp_path: Path):
         # incomplete lifecycle (no 6-finalize) but 5-execute recorded
         inputs = _write_ii_plan(
-            tmp_path, 'partial-defect',
+            tmp_path,
+            'partial-defect',
             phase_tokens={'5-execute': 10_000},
         )
 
@@ -137,9 +135,7 @@ class TestInputIntegrityDataConfidence:
         # partial, not blind: 5-execute carries tokens
         assert row['data_confidence'] == 'partial'
 
-    def test_missing_optional_findings_alone_stays_fully_recorded(
-        self, tmp_path: Path
-    ):
+    def test_missing_optional_findings_alone_stays_fully_recorded(self, tmp_path: Path):
         # only the OPTIONAL findings artefact absent, no flag fired
         inputs = _write_ii_plan(tmp_path, 'opt-findings', has_findings=False)
 
@@ -157,26 +153,30 @@ class TestInputIntegrityGenuinePredicate:
 
     def test_any_flag_is_genuine(self):
         # each flag alone makes the row genuine
-        assert audit._input_integrity_genuine(
-            {'metrics_blind': '5-execute',
-             'incomplete_lifecycle': '',
-             'missing_dispatch_markers': ''}
-        ) is True
-        assert audit._input_integrity_genuine(
-            {'metrics_blind': '',
-             'incomplete_lifecycle': '6-finalize',
-             'missing_dispatch_markers': ''}
-        ) is True
-        assert audit._input_integrity_genuine(
-            {'metrics_blind': '',
-             'incomplete_lifecycle': '',
-             'missing_dispatch_markers': 'true'}
-        ) is True
+        assert (
+            audit._input_integrity_genuine(
+                {'metrics_blind': '5-execute', 'incomplete_lifecycle': '', 'missing_dispatch_markers': ''}
+            )
+            is True
+        )
+        assert (
+            audit._input_integrity_genuine(
+                {'metrics_blind': '', 'incomplete_lifecycle': '6-finalize', 'missing_dispatch_markers': ''}
+            )
+            is True
+        )
+        assert (
+            audit._input_integrity_genuine(
+                {'metrics_blind': '', 'incomplete_lifecycle': '', 'missing_dispatch_markers': 'true'}
+            )
+            is True
+        )
 
     def test_no_flag_is_informational(self):
         # all flags empty => not genuine
-        assert audit._input_integrity_genuine(
-            {'metrics_blind': '',
-             'incomplete_lifecycle': '',
-             'missing_dispatch_markers': ''}
-        ) is False
+        assert (
+            audit._input_integrity_genuine(
+                {'metrics_blind': '', 'incomplete_lifecycle': '', 'missing_dispatch_markers': ''}
+            )
+            is False
+        )

@@ -21,10 +21,11 @@ Two properties get particular attention:
   project-wide while the record still reported a pass.
 """
 
-
 from conftest import PROJECT_ROOT, load_script_module
 
-_cmd_client_build = load_script_module('plan-marshall', 'manage-architecture', '_cmd_client_build.py', '_cmd_client_build')
+_cmd_client_build = load_script_module(
+    'plan-marshall', 'manage-architecture', '_cmd_client_build.py', '_cmd_client_build'
+)
 # ⛔ ``register=False`` is load-bearing, not tidiness. Publishing this module in
 # ``sys.modules`` under ``_cmd_client_query`` satisfies the BY-NAME import that
 # ``_freshness_crosscheck.resolve_expected_notations`` performs, so the sibling
@@ -93,7 +94,12 @@ def test_non_build_executables_resolve_to_none() -> None:
     """Anything outside the canonical build shape is not a build notation."""
     assert build_notation_for_executable('') is None
     assert build_notation_for_executable('./pw verify') is None
-    assert build_notation_for_executable('python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks list --plan-id p') is None
+    assert (
+        build_notation_for_executable(
+            'python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks list --plan-id p'
+        )
+        is None
+    )
     # A build skill reached by a QUERY verb is not a build executable.
     assert build_notation_for_executable(f'python3 .plan/execute-script.py {_PYPROJECT} discover --x y') is None
     # ``run`` with no ``--command-args`` is not the canonical shape either.

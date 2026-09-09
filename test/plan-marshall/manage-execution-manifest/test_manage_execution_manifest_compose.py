@@ -51,6 +51,7 @@ _sum_lane_cost = _mem._sum_lane_cost
 # already silent, but we replace it with a no-op for clarity and speed.
 _mem._log_decision = lambda *a, **kw: None
 
+
 @contextlib.contextmanager
 def _capture_decision_log():
     """Capture ``_emit_decision_log`` calls; yield the (plan_id, message) list."""
@@ -144,9 +145,7 @@ def test_early_terminate_analysis_falls_through_when_task_queue_pending(plan_con
     plan_id = 'matrix-analysis-pending-task'
     tasks_dir = plan_context.plan_dir_for(plan_id) / 'tasks'
     tasks_dir.mkdir(parents=True, exist_ok=True)
-    (tasks_dir / 'TASK-001.json').write_text(
-        json.dumps({'number': 1, 'status': 'pending', 'steps': []}, indent=2)
-    )
+    (tasks_dir / 'TASK-001.json').write_text(json.dumps({'number': 1, 'status': 'pending', 'steps': []}, indent=2))
     result = cmd_compose(
         _compose_ns(
             plan_id=plan_id,
@@ -653,9 +652,7 @@ def test_boundary_normalization_strips_prefix_for_all_downstream_consumers(plan_
         'branch-cleanup',
         'archive-plan',
     ):
-        assert bare_default in phase_6_steps, (
-            f'expected bare {bare_default!r} in phase_6 but got: {phase_6_steps!r}'
-        )
+        assert bare_default in phase_6_steps, f'expected bare {bare_default!r} in phase_6 but got: {phase_6_steps!r}'
 
     # The non-default-namespace `project:` prefix is preserved verbatim —
     # boundary normalization strips ONLY the `default:` namespace.
@@ -743,13 +740,13 @@ def test_adr_propose_in_default_phase_6_steps():
     # the merge gate and lessons-capture behind it. The tuple sequence asserted
     # afterwards is only the consequence of these two facts.
     assert orders['sonar-roundtrip'] < orders['adr-propose'] < orders['branch-cleanup'], (
-        f"adr-propose ({orders['adr-propose']}) must sit between sonar-roundtrip "
-        f"({orders['sonar-roundtrip']}) and the merge gate branch-cleanup "
-        f"({orders['branch-cleanup']})"
+        f'adr-propose ({orders["adr-propose"]}) must sit between sonar-roundtrip '
+        f'({orders["sonar-roundtrip"]}) and the merge gate branch-cleanup '
+        f'({orders["branch-cleanup"]})'
     )
     assert orders['branch-cleanup'] < orders['lessons-capture'], (
-        f"lessons-capture ({orders['lessons-capture']}) declares post_run_review, so it "
-        f"must compose after the merge gate branch-cleanup ({orders['branch-cleanup']})"
+        f'lessons-capture ({orders["lessons-capture"]}) declares post_run_review, so it '
+        f'must compose after the merge gate branch-cleanup ({orders["branch-cleanup"]})'
     )
 
     # Consequence: DEFAULT_PHASE_6_STEPS is written in ascending order, so the
@@ -966,9 +963,7 @@ _RECIPE_PROVENANCE_CASES = [
         'an-explicit-recipe-key-fires-the-recipe-row-without-status-json',
     ],
 )
-def test_compose_reads_recipe_provenance(
-    plan_context, request, metadata, overrides, expected_rule
-):
+def test_compose_reads_recipe_provenance(plan_context, request, metadata, overrides, expected_rule):
     """The composer reads recipe provenance from status metadata, not only from --recipe-key.
 
     A lesson-derived plan carries its provenance in `status.metadata` even when the
@@ -1436,11 +1431,9 @@ def test_commit_and_push_false_decision_log_message_matches_contract(plan_contex
     prefix = '(plan-marshall:manage-execution-manifest:compose) [STATUS] commit_push_disabled — dropped '
     omission_entries = [(pid, msg) for pid, msg in captured if msg.startswith(prefix)]
     # One line per dropped step — three, not one aggregate.
-    assert len(omission_entries) == len(_COMMIT_PUSH_DROP_SET), (
-        f'expected one line per dropped step, got {captured!r}'
-    )
+    assert len(omission_entries) == len(_COMMIT_PUSH_DROP_SET), f'expected one line per dropped step, got {captured!r}'
     assert {pid for pid, _msg in omission_entries} == {'matrix-cap-msg'}
-    named_steps = {msg[len(prefix):].split(' from phase_6.steps: ')[0] for _pid, msg in omission_entries}
+    named_steps = {msg[len(prefix) :].split(' from phase_6.steps: ')[0] for _pid, msg in omission_entries}
     assert named_steps == _COMMIT_PUSH_DROP_SET
     # Each line carries a non-empty reason after the separator.
     for _pid, msg in omission_entries:
@@ -1708,9 +1701,7 @@ def _write_marshal(
     data: dict = {'plan': {'phase-6-finalize': {}}, 'build': {}}
     if include_pre_push_key:
         globs = activation_globs if activation_globs is not None else []
-        entries = [
-            {'glob': glob, 'role': 'production', 'build_class': 'compile'} for glob in globs
-        ]
+        entries = [{'glob': glob, 'role': 'production', 'build_class': 'compile'} for glob in globs]
         data['build']['map'] = {'python': entries}
     marshal_path.write_text(json.dumps(data), encoding='utf-8')
 
@@ -1903,7 +1894,7 @@ class TestPrePushQualityGatePreFilter:
         assert result is not None and result['pre_push_quality_gate_omitted'] is True
         omit_entries = self._omit_entries(captured)
         assert len(omit_entries) == 1
-        reason = omit_entries[0][1][len(self._OMIT_PREFIX):]
+        reason = omit_entries[0][1][len(self._OMIT_PREFIX) :]
         # The verdict's own wording for the footprint-touches-no-glob branch.
         assert 'touches no build_map glob' in reason
         # And emphatically NOT the retired invented disjunction.
@@ -2103,7 +2094,7 @@ class TestPrePushQualityGatePreFilter:
         assert len(kept_entries) == 1
         assert kept_entries[0][0] == plan_id
         # The line forwards the verdict's own reason, not an invented one.
-        assert kept_entries[0][1][len(self._KEPT_UNKNOWN_PREFIX):]
+        assert kept_entries[0][1][len(self._KEPT_UNKNOWN_PREFIX) :]
 
     def test_unresolvable_and_resolvable_empty_diverge(self, plan_context):
         """The paired opposite: identical marshal, only the footprint state differs.
@@ -2342,9 +2333,7 @@ class TestPrePushQualityGatePreFilter:
         assert 'default:pre-push-quality-gate' not in steps
 
         # Output is fully bare.
-        assert not any(s.startswith('default:') for s in steps), (
-            f'phase_6 leaked `default:`-prefixed entry: {steps!r}'
-        )
+        assert not any(s.startswith('default:') for s in steps), f'phase_6 leaked `default:`-prefixed entry: {steps!r}'
 
         # Other steps from the input survive as bare strings.
         for kept in ('push', 'create-pr', 'archive-plan'):
@@ -2464,9 +2453,7 @@ class TestPrePushQualityGatePreFilter:
         ('enhancement', 0, False, True),
     ],
 )
-def test_simplify_inactive_gate(
-    plan_context, change_type, affected_files_count, expect_present, expect_omitted
-):
+def test_simplify_inactive_gate(plan_context, change_type, affected_files_count, expect_present, expect_omitted):
     """finalize-step-simplify lands only when change_type ∈ {feature, bug_fix, tech_debt, enhancement} AND files > 0."""
     slug = f'{change_type}-{affected_files_count}'.replace('_', '-')
     plan_id = f'matrix-simplify-{slug}'
@@ -2658,9 +2645,7 @@ def test_security_class_inactive_gate(
 
 def test_security_class_inactive_noop_when_step_absent_from_candidates(plan_context):
     """When no security-class step is a candidate, the pre-filter is a no-op even on a failing gate."""
-    candidates_without_secaudit = [
-        s for s in DEFAULT_PHASE_6_STEPS if s != 'finalize-step-security-audit'
-    ]
+    candidates_without_secaudit = [s for s in DEFAULT_PHASE_6_STEPS if s != 'finalize-step-security-audit']
     with _pinned_footprint([]):
         result = cmd_compose(
             _compose_ns(
@@ -2969,18 +2954,14 @@ def _write_full_marshal(
     reads. Prefixes are preserved. No CI provider is declared for these fixtures.
     """
     marshal_path = fixture_dir / 'marshal.json'
-    plan_block: dict = {
-        'phase-6-finalize': {'steps': {step_id: {} for step_id in phase_6_steps}}
-    }
+    plan_block: dict = {'phase-6-finalize': {'steps': {step_id: {} for step_id in phase_6_steps}}}
     if phase_5_steps is not None:
         # phase-5-execute stores its verification step map under the
         # ``verification_steps`` key (the keyed-map schema);
         # ``_read_marshal_phase_steps`` reads ``verification_steps`` for the
         # phase-5 block. Writing the keyed map here matches the live composer
         # contract.
-        plan_block['phase-5-execute'] = {
-            'verification_steps': {step_id: {} for step_id in phase_5_steps}
-        }
+        plan_block['phase-5-execute'] = {'verification_steps': {step_id: {} for step_id in phase_5_steps}}
     data = {'plan': plan_block}
     marshal_path.write_text(json.dumps(data), encoding='utf-8')
 
@@ -3168,9 +3149,7 @@ def test_compose_reads_keyed_map_marshal_preserves_prefixes(plan_context):
     ]
     phase_5 = ['verify:quality-gate', 'verify:module-tests']
 
-    _write_full_marshal(
-        plan_context.fixture_dir, phase_6_steps=phase_6, phase_5_steps=phase_5
-    )
+    _write_full_marshal(plan_context.fixture_dir, phase_6_steps=phase_6, phase_5_steps=phase_5)
     cmd_compose(
         _compose_ns(
             plan_id='keyed-map-marshal',
@@ -3822,9 +3801,7 @@ def test_task_command_survives_when_compose_fails_unresolvable_step(plan_context
     # The non-canonical verb resolves to the orchestrator tier, so routing maps
     # it to the bare ``verify:bogus-canonical`` step and stages dropping the
     # command from the task.
-    monkeypatch.setattr(
-        _mem, '_resolve_command_tier', _make_tier_stub(orchestrator_verbs={'bogus-canonical'})
-    )
+    monkeypatch.setattr(_mem, '_resolve_command_tier', _make_tier_stub(orchestrator_verbs={'bogus-canonical'}))
 
     result = cmd_compose(
         _compose_ns(
@@ -4113,9 +4090,7 @@ class TestScopeGatedFinalizePreFilter:
         finally:
             _mem._emit_decision_log = original
 
-        subtraction_entries = [
-            (pid, msg) for pid, msg in captured if 'scope_gated_finalize subtraction' in msg
-        ]
+        subtraction_entries = [(pid, msg) for pid, msg in captured if 'scope_gated_finalize subtraction' in msg]
         # All three non-guarded steps (plan-retrospective + plugin-doctor +
         # pre-submission-self-review) reach the surgical scope gate and are dropped
         # there → three decision-log lines. pre-submission-self-review now survives
@@ -4357,15 +4332,15 @@ def _patch_element_lane(monkeypatch, blocks=None):
 @pytest.mark.parametrize(
     'lane,override,expected',
     [
-        ({'class': 'core'}, None, ('minimal', False)),         # class default
+        ({'class': 'core'}, None, ('minimal', False)),  # class default
         ({'class': 'adversarial'}, None, ('standard', False)),  # class default
         ({'class': 'adversarial', 'tier': 'full'}, None, ('full', False)),  # declared tier
-        ({'class': 'core'}, 'full', ('full', False)),          # override wins
-        ({'class': 'core'}, 'off', ('minimal', False)),        # immune floor: off ignored → class default
+        ({'class': 'core'}, 'full', ('full', False)),  # override wins
+        ({'class': 'core'}, 'off', ('minimal', False)),  # immune floor: off ignored → class default
         ({'class': 'derived-state'}, 'off', ('minimal', False)),  # immune floor: off ignored → class default
-        ({'class': 'adversarial'}, 'off', (None, True)),       # non-floor off drops (real opt-out)
-        ({'class': 'prunable'}, 'off', (None, True)),          # non-floor off drops (real opt-out)
-        ({'class': 'prunable'}, 'ask', ('ask', False)),        # ask sentinel
+        ({'class': 'adversarial'}, 'off', (None, True)),  # non-floor off drops (real opt-out)
+        ({'class': 'prunable'}, 'off', (None, True)),  # non-floor off drops (real opt-out)
+        ({'class': 'prunable'}, 'ask', ('ask', False)),  # ask sentinel
     ],
 )
 def test_effective_lane_tier_precedence(lane, override, expected):
@@ -4380,11 +4355,11 @@ def test_effective_lane_tier_precedence(lane, override, expected):
 @pytest.mark.parametrize(
     'lane,posture,expected_keep',
     [
-        ({'class': 'core', 'tier': 'minimal'}, 'minimal', True),     # floor runs everywhere
+        ({'class': 'core', 'tier': 'minimal'}, 'minimal', True),  # floor runs everywhere
         ({'class': 'prunable', 'tier': 'standard'}, 'minimal', False),  # standard tier above minimal
         ({'class': 'prunable', 'tier': 'standard'}, 'standard', True),  # standard tier at standard
         ({'class': 'adversarial', 'tier': 'full'}, 'standard', False),  # full tier above standard
-        ({'class': 'adversarial', 'tier': 'full'}, 'full', True),   # full tier at full
+        ({'class': 'adversarial', 'tier': 'full'}, 'full', True),  # full tier at full
     ],
 )
 def test_lane_keep_decision_cutoff(lane, posture, expected_keep):
@@ -4418,9 +4393,7 @@ _LANE_OVERRIDE_DECISIONS = [
         'minimal-override-force-keeps-a-full-tier-element',
     ],
 )
-def test_lane_keep_decision_honours_override(
-    lane, override, posture, expected_keep, warning_fragments
-):
+def test_lane_keep_decision_honours_override(lane, override, posture, expected_keep, warning_fragments):
     """An operator lane override is honoured unless the element sits on the floor.
 
     A floor element (derived-state or core at tier minimal) is immune to `off`:
@@ -4551,10 +4524,7 @@ def test_apply_lane_resolution_derived_state_off_override_is_immune(monkeypatch)
     assert 'project:finalize-step-deploy-target' in kept
     assert kept == ['push', 'archive-plan', 'project:finalize-step-deploy-target']
     assert 'project:finalize-step-deploy-target' not in _dropped_steps(dropped)
-    assert any(
-        step == 'project:finalize-step-deploy-target' and 'immune' in warning
-        for step, warning in warnings
-    )
+    assert any(step == 'project:finalize-step-deploy-target' and 'immune' in warning for step, warning in warnings)
 
 
 def test_apply_lane_resolution_adversarial_off_override_drops_cleanly(monkeypatch):
@@ -4572,9 +4542,7 @@ def test_apply_lane_resolution_adversarial_off_override_drops_cleanly(monkeypatc
 def test_meta_project_minimal_keeps_derived_state_without_override(monkeypatch):
     """Meta-project invariant: a minimal posture keeps derived-state by default (never SILENTLY dropped)."""
     _patch_element_lane(monkeypatch)
-    kept, dropped, warnings = _apply_lane_resolution(
-        ['project:finalize-step-deploy-target'], 'minimal', None, 'p'
-    )
+    kept, dropped, warnings = _apply_lane_resolution(['project:finalize-step-deploy-target'], 'minimal', None, 'p')
 
     assert kept == ['project:finalize-step-deploy-target']
     assert dropped == []
@@ -4600,10 +4568,15 @@ def test_lanes_preview_resolves_all_three_postures(plan_context, monkeypatch):
     # sequence is the sorted one, not the candidate-list sequence.
     assert set(lanes['full']['phase_6_steps']) == set(_LANE_STEPS)
     assert set(lanes['minimal']['phase_6_steps']) == {
-        'push', 'archive-plan', 'project:finalize-step-deploy-target',
+        'push',
+        'archive-plan',
+        'project:finalize-step-deploy-target',
     }
     assert set(lanes['standard']['phase_6_steps']) == {
-        'push', 'archive-plan', 'sonar-roundtrip', 'project:finalize-step-deploy-target',
+        'push',
+        'archive-plan',
+        'sonar-roundtrip',
+        'project:finalize-step-deploy-target',
     }
     # Cost sums are order-independent: XS=5K, L=130K → full=405K, standard=145K, minimal=15K.
     assert lanes['full']['cost_sum_tokens'] == 405000
@@ -4678,9 +4651,7 @@ def test_lanes_preview_names_plan_input_dependent_steps(plan_context, monkeypatc
     assert 'sonar-roundtrip' not in result['plan_input_dependent_steps']
 
 
-def test_lanes_preview_reports_empty_advisory_when_nothing_is_plan_input_dependent(
-    plan_context, monkeypatch
-):
+def test_lanes_preview_reports_empty_advisory_when_nothing_is_plan_input_dependent(plan_context, monkeypatch):
     """An empty ``plan_input_dependent_steps`` means preview and compose agree outright.
 
     The fixture deliberately excludes ``push``: its membership IS plan-input
@@ -4731,7 +4702,9 @@ def test_compose_minimal_profile_prunes_phase_6_to_floor(plan_context, monkeypat
     # the order-resolvable steps, so it now trails deploy-target.
     assert manifest['phase_6']['steps'] == ['push', 'project:finalize-step-deploy-target', 'archive-plan']
     assert _dropped_steps(result['lane_dropped']) == {
-        'sonar-roundtrip', 'finalize-step-security-audit', 'plan-marshall:plan-retrospective',
+        'sonar-roundtrip',
+        'finalize-step-security-audit',
+        'plan-marshall:plan-retrospective',
     }
     # Each surfaced record carries its own reason — the compose result is where an
     # operator reads WHY a lane element was pruned.
@@ -5071,13 +5044,9 @@ def _seed_marshal_with_finalize_steps(
 
     providers: list[dict] = []
     if ci_provider:
-        providers.append(
-            {'skill_name': f'plan-marshall:workflow-integration-{ci_provider}', 'category': 'ci'}
-        )
+        providers.append({'skill_name': f'plan-marshall:workflow-integration-{ci_provider}', 'category': 'ci'})
     if sonar_provider:
-        providers.append(
-            {'skill_name': 'plan-marshall:workflow-integration-sonar', 'category': 'sonar'}
-        )
+        providers.append({'skill_name': 'plan-marshall:workflow-integration-sonar', 'category': 'sonar'})
     marshal: dict = {'plan': {'phase-6-finalize': {'steps': steps_map}}}
     if providers:
         marshal['providers'] = providers

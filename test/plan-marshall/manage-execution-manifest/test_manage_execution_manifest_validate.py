@@ -32,9 +32,7 @@ DEFAULT_PHASE_6_STEPS = _mem.DEFAULT_PHASE_6_STEPS
 # Step-owner schema primitives live in _manifest_core (loaded directly; the
 # hyphenated entry does not re-export them). See _manifest_core.py § "Step
 # ownership".
-_core = load_script_module(
-    'plan-marshall', 'manage-execution-manifest', '_manifest_core.py', module_name='_mem_core'
-)
+_core = load_script_module('plan-marshall', 'manage-execution-manifest', '_manifest_core.py', module_name='_mem_core')
 VALID_STEP_OWNERS = _core.VALID_STEP_OWNERS
 validate_step_owner = _core.validate_step_owner
 owner_of = _core.owner_of
@@ -317,9 +315,7 @@ def test_step_params_get_resolves_dict_snapshot_from_keyed_map_marshal(plan_cont
     _seed_keyed_map_marshal(plan_context.fixture_dir)
     cmd_compose(_compose_ns(plan_id='val-keyed-sp-get'))
 
-    result = cmd_step_params_get(
-        Namespace(plan_id='val-keyed-sp-get', phase='6-finalize', step_id='branch-cleanup')
-    )
+    result = cmd_step_params_get(Namespace(plan_id='val-keyed-sp-get', phase='6-finalize', step_id='branch-cleanup'))
 
     assert result is not None and result['status'] == 'success'
     assert result['params'] == {
@@ -516,18 +512,14 @@ def test_composed_phase_6_steps_hold_ascending_order_barrier_for_every_seed(plan
 
         plan_id = f'order-barrier-seed-{seed_index}'
         result = cmd_compose(_compose_ns(plan_id=plan_id, phase_6_steps=','.join(seed)))
-        assert result is not None and result['status'] == 'success', (
-            f'compose failed for seed {seed_index}: {result}'
-        )
+        assert result is not None and result['status'] == 'success', f'compose failed for seed {seed_index}: {result}'
 
         manifest = read_manifest(plan_id)
         assert manifest is not None
         composed = manifest['phase_6']['steps']
 
         # (a) No inversion survives — the resolvable subsequence is non-decreasing.
-        assert _check_ascending_order(composed) is None, (
-            f'inversion survived for seed {seed_index}: {composed}'
-        )
+        assert _check_ascending_order(composed) is None, f'inversion survived for seed {seed_index}: {composed}'
 
         # (b) No order-resolvable step below archive-plan's order appears after it.
         archive_idx = composed.index('archive-plan')

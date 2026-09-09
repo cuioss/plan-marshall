@@ -53,9 +53,7 @@ def calculate_similarity(text1: str, text2: str) -> float:
     return SequenceMatcher(None, normalized1, normalized2).ratio()
 
 
-def find_duplicate_sections(
-    new_sections: dict[str, str], existing_sections: dict[str, str]
-) -> list[dict[str, Any]]:
+def find_duplicate_sections(new_sections: dict[str, str], existing_sections: dict[str, str]) -> list[dict[str, Any]]:
     """Find sections that have high overlap."""
     duplicates: list[dict[str, Any]] = []
 

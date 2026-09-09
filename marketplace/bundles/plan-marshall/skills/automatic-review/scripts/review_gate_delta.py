@@ -168,10 +168,10 @@ _PROVENANCE = (
     'in-house gates had already passed — gate verdict green AND gate_head_sha == '
     'reviewed_head_sha — counted per the counting rule in '
     'automatic-review/standards/bot-participation-contract.md; the reviewed-at-all '
-    'set is review_completeness\'s _REVIEWED_STATES, supplied by the caller. '
+    "set is review_completeness's _REVIEWED_STATES, supplied by the caller. "
     'SELECTION EFFECT: on the current finalize step ordering, any step a forward '
     'pass reaches at or after the gates whose declaration says mutates_source can '
-    'land commits the gates never re-ran over — the gate step\'s own item-5f commit '
+    "land commits the gates never re-ran over — the gate step's own item-5f commit "
     'included, since it lands after the tree it just certified — so the ONLY '
     'measurable PRs are those where no such step committed anything. Membership is '
     'whatever those declarations make it and is deliberately not enumerated here, so '
@@ -246,11 +246,7 @@ def is_status_summary(record: dict) -> bool:
     opening = body.lstrip().lstrip('*_# ').lower()
     if not opening:
         return False
-    return any(
-        opening.startswith(cleaned)
-        for cleaned in (p.strip().lower() for p in patterns)
-        if cleaned
-    )
+    return any(opening.startswith(cleaned) for cleaned in (p.strip().lower() for p in patterns) if cleaned)
 
 
 def _is_actionable(record: dict) -> bool:
@@ -332,15 +328,9 @@ def assess_delta(
         if _is_actionable(record)
     ]
     by_partition = {
-        PARTITION_GATE_ADDRESSABLE: sum(
-            1 for e in escapes if e['partition'] == PARTITION_GATE_ADDRESSABLE
-        ),
-        PARTITION_GATE_STRUCTURAL: sum(
-            1 for e in escapes if e['partition'] == PARTITION_GATE_STRUCTURAL
-        ),
-        PARTITION_UNPARTITIONED: sum(
-            1 for e in escapes if e['partition'] == PARTITION_UNPARTITIONED
-        ),
+        PARTITION_GATE_ADDRESSABLE: sum(1 for e in escapes if e['partition'] == PARTITION_GATE_ADDRESSABLE),
+        PARTITION_GATE_STRUCTURAL: sum(1 for e in escapes if e['partition'] == PARTITION_GATE_STRUCTURAL),
+        PARTITION_UNPARTITIONED: sum(1 for e in escapes if e['partition'] == PARTITION_UNPARTITIONED),
     }
 
     payload: dict = {
@@ -539,7 +529,7 @@ def build_parser() -> argparse.ArgumentParser:
         default='',
         help=(
             'Comma-separated bot_kinds positively substantiated as having REVIEWED '
-            'the diff — review_completeness\'s reviewed-at-all set (participated / '
+            "the diff — review_completeness's reviewed-at-all set (participated / "
             'participated_but_empty). Coverage is the intersection with the roster, '
             'so an off-roster reviewer cannot complete it. May be supplied bare (no '
             'value), which reads as nobody reviewed — an excluded PR, never a clean '
@@ -577,7 +567,7 @@ def build_parser() -> argparse.ArgumentParser:
             'pre-push-quality-gate step recorded. Must equal --reviewed-head-sha: '
             'every step declaring mutates_source that a forward pass reaches at or '
             'after the gates can commit between certification and review — the gate '
-            'step\'s own item-5f commit included — so a differing SHA means the '
+            "step's own item-5f commit included — so a differing SHA means the "
             'reviewer saw lines the gates never did. Omitting it excludes the PR — an '
             'absent SHA is not evidence of sameness.'
         ),

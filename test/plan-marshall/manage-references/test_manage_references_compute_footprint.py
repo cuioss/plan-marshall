@@ -196,17 +196,13 @@ def test_compute_footprint_requires_worktree_path():
 def test_diff_files_verb_no_longer_registered():
     """The old ``diff-files`` verb must be gone — argparse rejects it (exit 2)."""
     result = run_script(SCRIPT_PATH, 'diff-files', '--help')
-    assert result.returncode == 2, (
-        f'diff-files must no longer be a registered subcommand; got {result.returncode}'
-    )
+    assert result.returncode == 2, f'diff-files must no longer be a registered subcommand; got {result.returncode}'
 
 
 def test_reconcile_files_verb_no_longer_registered():
     """The old ``reconcile-files`` verb must be gone — argparse rejects it (exit 2)."""
     result = run_script(SCRIPT_PATH, 'reconcile-files', '--help')
-    assert result.returncode == 2, (
-        f'reconcile-files must no longer be a registered subcommand; got {result.returncode}'
-    )
+    assert result.returncode == 2, f'reconcile-files must no longer be a registered subcommand; got {result.returncode}'
 
 
 # =============================================================================

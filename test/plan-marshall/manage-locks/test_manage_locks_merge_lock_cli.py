@@ -11,7 +11,6 @@ Its sections, in order:
 * CLI argparse plumbing
 """
 
-
 from __future__ import annotations
 
 import json
@@ -66,9 +65,7 @@ class TestLiveWorktreeGuard:
         merge_lock._dequeue_fifo('mid-recovery')
         worktree = base / 'worktrees' / 'mid-recovery'
         worktree.mkdir(parents=True, exist_ok=True)
-        (worktree / '.git').write_text(
-            'gitdir: /main/.git/worktrees/mid-recovery\n', encoding='utf-8'
-        )
+        (worktree / '.git').write_text('gitdir: /main/.git/worktrees/mid-recovery\n', encoding='utf-8')
 
         result = merge_lock.run_acquire(Namespace(plan_id='plan-b', timeout=5.0))
 
@@ -119,9 +116,7 @@ class TestLiveWorktreeGuard:
         # → a real mid-recovery worktree that must be retained.
         _mid_recovery = base / 'worktrees' / 'mid-recovery'
         _mid_recovery.mkdir(parents=True, exist_ok=True)
-        (_mid_recovery / '.git').write_text(
-            'gitdir: /main/.git/worktrees/mid-recovery\n', encoding='utf-8'
-        )
+        (_mid_recovery / '.git').write_text('gitdir: /main/.git/worktrees/mid-recovery\n', encoding='utf-8')
 
         waiting = [
             {'plan_id': 'live', 'ts': 1.0},
@@ -146,15 +141,17 @@ class TestLiveWorktreeGuard:
         # (real mid-recovery worktree) → retained at the FIFO front.
         _mid_recovery = base / 'worktrees' / 'mid-recovery'
         _mid_recovery.mkdir(parents=True, exist_ok=True)
-        (_mid_recovery / '.git').write_text(
-            'gitdir: /main/.git/worktrees/mid-recovery\n', encoding='utf-8'
-        )
+        (_mid_recovery / '.git').write_text('gitdir: /main/.git/worktrees/mid-recovery\n', encoding='utf-8')
         _make_live_plan(base, 'behind')
         isolated_base['queue_path'].write_text(
-            json.dumps({'waiting': [
-                {'plan_id': 'mid-recovery', 'ts': 1.0},
-                {'plan_id': 'behind', 'ts': 2.0},
-            ]}),
+            json.dumps(
+                {
+                    'waiting': [
+                        {'plan_id': 'mid-recovery', 'ts': 1.0},
+                        {'plan_id': 'behind', 'ts': 2.0},
+                    ]
+                }
+            ),
             encoding='utf-8',
         )
 
@@ -191,7 +188,11 @@ class TestCli:
         ``set_title_token=False``) — argparse accepts it and the acquire succeeds."""
         env_overrides = {'PLAN_BASE_DIR': str(isolated_base['base'])}
         result = run_script(
-            SCRIPT_PATH, 'acquire', '--plan-id', 'plan-a', '--no-title-token',
+            SCRIPT_PATH,
+            'acquire',
+            '--plan-id',
+            'plan-a',
+            '--no-title-token',
             env_overrides=env_overrides,
         )
         assert result.returncode == 0, result.stderr
@@ -204,11 +205,19 @@ class TestCli:
         ``--no-title-token`` acquire — argparse accepts it and the release succeeds."""
         env_overrides = {'PLAN_BASE_DIR': str(isolated_base['base'])}
         run_script(
-            SCRIPT_PATH, 'acquire', '--plan-id', 'plan-a', '--no-title-token',
+            SCRIPT_PATH,
+            'acquire',
+            '--plan-id',
+            'plan-a',
+            '--no-title-token',
             env_overrides=env_overrides,
         )
         result = run_script(
-            SCRIPT_PATH, 'release', '--plan-id', 'plan-a', '--no-title-token',
+            SCRIPT_PATH,
+            'release',
+            '--plan-id',
+            'plan-a',
+            '--no-title-token',
             env_overrides=env_overrides,
         )
         assert result.returncode == 0, result.stderr
@@ -221,7 +230,12 @@ class TestCli:
         compatibility (acquire no longer waits internally, but the flag must parse)."""
         env_overrides = {'PLAN_BASE_DIR': str(isolated_base['base'])}
         result = run_script(
-            SCRIPT_PATH, 'acquire', '--plan-id', 'plan-a', '--timeout', '0',
+            SCRIPT_PATH,
+            'acquire',
+            '--plan-id',
+            'plan-a',
+            '--timeout',
+            '0',
             env_overrides=env_overrides,
         )
         assert result.returncode == 0, result.stderr

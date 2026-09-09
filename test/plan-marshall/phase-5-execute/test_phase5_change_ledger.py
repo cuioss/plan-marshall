@@ -76,9 +76,7 @@ def _diff_tree_paths(repo: Path, commit_sha: str) -> list[str]:
     Mirrors ``git diff-tree --no-commit-id --name-only -r {commit_sha}`` exactly
     as documented in the SKILL.md flow.
     """
-    out = _git(
-        repo, 'diff-tree', '--no-commit-id', '--name-only', '-r', commit_sha
-    ).stdout
+    out = _git(repo, 'diff-tree', '--no-commit-id', '--name-only', '-r', commit_sha).stdout
     return [line for line in out.splitlines() if line.strip()]
 
 

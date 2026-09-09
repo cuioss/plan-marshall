@@ -154,9 +154,7 @@ def _partition_divergence(
     """
     sizes = {name: len(records) for name, records in buckets.items()}
     truth_counts = Counter(truth_identities)
-    bucket_counts = Counter(
-        identity(record) for records in buckets.values() for record in records
-    )
+    bucket_counts = Counter(identity(record) for records in buckets.values() for record in records)
     independent_total = sum(truth_counts.values())
     return {
         'independent_total': independent_total,
@@ -204,11 +202,7 @@ def _independent_glyph_line_identities(source: str) -> list[int]:
     those buckets must partition.
     """
     lines = Path(source).read_text(encoding='utf-8').splitlines()
-    return [
-        index + 1
-        for index, line in enumerate(lines)
-        if manage_metrics._DISPATCH_EDGE.search(line)
-    ]
+    return [index + 1 for index, line in enumerate(lines) if manage_metrics._DISPATCH_EDGE.search(line)]
 
 
 def _independent_verb_line_identities(scan_root: str) -> list[tuple[str, int]]:
@@ -283,10 +277,7 @@ def _render_report(plan_context, plan_id: str, phases: dict) -> str:
 
 
 def _boundary_bullet(report: str) -> str:
-    return next(
-        line for line in report.splitlines()
-        if line.startswith('- **Dispatch-boundary total**:')
-    )
+    return next(line for line in report.splitlines() if line.startswith('- **Dispatch-boundary total**:'))
 
 
 # =============================================================================
@@ -421,9 +412,7 @@ class TestDeclaredExclusionList:
             f'Population from {scan["source"]}: {list(population)}'
         )
 
-        divergence = _exclusion_divergence(
-            population, registering, manage_metrics.DISPATCH_BOUNDARY_EXCLUDED_CLASSES
-        )
+        divergence = _exclusion_divergence(population, registering, manage_metrics.DISPATCH_BOUNDARY_EXCLUDED_CLASSES)
         assert divergence == {'missing_from_declaration': [], 'absent_from_population': []}, (
             'DISPATCH_BOUNDARY_EXCLUDED_CLASSES is not the non-registering half of '
             'the derived population. Dispatch classes the call graph names that '
@@ -495,11 +484,7 @@ class TestDeclaredExclusionList:
             # count, not a report.
             assert set(record) >= {'line', 'reason', 'text'}, record
 
-        unreadable = [
-            record
-            for record in scan['unparsed']
-            if record['reason'] != manage_metrics._UNPARSED_NO_ROLE_KEY
-        ]
+        unreadable = [record for record in scan['unparsed'] if record['reason'] != manage_metrics._UNPARSED_NO_ROLE_KEY]
         assert unreadable == [], (
             'the call-graph scan found dispatch edges it could not resolve into a '
             'class, so its derived population is narrower than the real one: '
@@ -750,10 +735,7 @@ class TestComparatorThreeWayDistinction:
     """Equal is not smaller: the annotation reflects the true value-vs-total relation."""
 
     def _annotation_line(self, report: str) -> str:
-        return next(
-            line for line in report.splitlines()
-            if 'Tokens reconciled across the competing measures' in line
-        )
+        return next(line for line in report.splitlines() if 'Tokens reconciled across the competing measures' in line)
 
     def test_equal_boundary_and_total_annotated_as_agreement(self, plan_context):
         """value == total_tokens → agreement, NOT a strict "> total_tokens" claim.

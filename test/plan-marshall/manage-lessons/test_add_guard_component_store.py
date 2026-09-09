@@ -6,7 +6,6 @@
 Its one section: cross-repo wrong-store refusal guard.
 """
 
-
 import _lessons_io
 import file_ops
 import marketplace_paths

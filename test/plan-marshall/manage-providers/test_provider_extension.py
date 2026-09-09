@@ -68,9 +68,7 @@ class TestProviderLoadingFromMarshalJson:
             'every-declared-provider-is-loaded-in-declaration-order',
         ],
     )
-    def test_declared_providers_are_loaded_from_marshal_json(
-        self, tmp_path, monkeypatch, config, expected_skill_names
-    ):
+    def test_declared_providers_are_loaded_from_marshal_json(self, tmp_path, monkeypatch, config, expected_skill_names):
         """The loader yields one entry per declaration, always as a list."""
         stage_marshal(tmp_path, monkeypatch, config)
 
@@ -334,9 +332,7 @@ class TestDiscoverAndPersistRoundTrip:
         assert 'url' not in rendered['workflow-integration-github']
         assert rendered['workflow-integration-sonar']['url'] == 'https://sonarcloud.io'
 
-    def test_list_providers_renders_no_verify_command_field_for_the_rest_lane(
-        self, tmp_path, monkeypatch, capsys
-    ):
+    def test_list_providers_renders_no_verify_command_field_for_the_rest_lane(self, tmp_path, monkeypatch, capsys):
         """The rendered output carries no verify_command field for the REST lane.
 
         ``verify_command`` is the CLI lane's selector, so rendering an empty one

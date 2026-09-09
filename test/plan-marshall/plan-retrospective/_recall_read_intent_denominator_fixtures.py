@@ -5,7 +5,6 @@ Holds the module-level loads, constants and helpers it uses, so
 the module itself carries the import and not the preamble.
 """
 
-
 from __future__ import annotations
 
 import json
@@ -13,9 +12,7 @@ from pathlib import Path
 
 from conftest import load_script_module
 
-_cac = load_script_module(
-    'plan-marshall', 'plan-retrospective', 'check-artifact-consistency.py', 'cac_read_intent_mod'
-)
+_cac = load_script_module('plan-marshall', 'plan-retrospective', 'check-artifact-consistency.py', 'cac_read_intent_mod')
 
 
 #: The check passes at or above this recall. Restated from the module under test
@@ -57,7 +54,5 @@ def _plan_dir(tmp_path: Path, footprint: list[str]) -> Path:
     """
     plan_dir = tmp_path / 'plan'
     plan_dir.mkdir()
-    (plan_dir / 'references.json').write_text(
-        json.dumps({'realized_footprint': footprint}), encoding='utf-8'
-    )
+    (plan_dir / 'references.json').write_text(json.dumps({'realized_footprint': footprint}), encoding='utf-8')
     return plan_dir

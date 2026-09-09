@@ -12,7 +12,6 @@ Its sections, in order:
 * Case (f) — plan-dir converted-lesson artifact is the tier-2 exemption.
 """
 
-
 from _lesson_id_reference_validation_fixtures import (
     PHANTOM_IDS,
     REAL_LESSON_IDS,

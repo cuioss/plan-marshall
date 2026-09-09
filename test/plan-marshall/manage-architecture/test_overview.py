@@ -11,7 +11,9 @@ import pytest
 
 from conftest import get_script_path, load_script_module, parse_ns, run_script
 
-_architecture_core = load_script_module('plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core')
+_architecture_core = load_script_module(
+    'plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core'
+)
 _cmd_client = load_script_module('plan-marshall', 'manage-architecture', '_cmd_client.py', '_cmd_client')
 
 save_project_meta = _architecture_core.save_project_meta
@@ -54,14 +56,24 @@ def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
 #: ``parse_ns`` re-executes the script module on every call, and
 #: ``register=False`` because only the namespace is wanted here.
 _OVERVIEW_ARGS = parse_ns(
-    _ARCH_BUNDLE, _ARCH_SKILL, _ARCH_SCRIPT,
-    '--project-dir', '.', 'overview',
+    _ARCH_BUNDLE,
+    _ARCH_SKILL,
+    _ARCH_SCRIPT,
+    '--project-dir',
+    '.',
+    'overview',
     register=False,
 )
 
 _MODULE_ARGS = parse_ns(
-    _ARCH_BUNDLE, _ARCH_SKILL, _ARCH_SCRIPT,
-    '--project-dir', '.', 'module', '--module', 'module',
+    _ARCH_BUNDLE,
+    _ARCH_SKILL,
+    _ARCH_SCRIPT,
+    '--project-dir',
+    '.',
+    'module',
+    '--module',
+    'module',
     register=False,
 )
 

@@ -285,9 +285,7 @@ def test_aggregated_note_bounds_its_sample_and_reports_the_overflow():
 
 def test_all_three_categories_report_side_by_side():
     """Each suppression category contributes its own aggregated note."""
-    derived = {
-        'alpha': _module([_ref('ghost', resolved=False), _ref('delta'), _ref('alpha')])
-    }
+    derived = {'alpha': _module([_ref('ghost', resolved=False), _ref('delta'), _ref('alpha')])}
 
     edges, notes = _derive(derived)
 

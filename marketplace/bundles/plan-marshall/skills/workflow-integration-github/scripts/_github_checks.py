@@ -81,7 +81,7 @@ def _extract_segment_from_link(link: str | None, marker: str, *, numeric_only: b
     idx = link.find(marker)
     if idx == -1:
         return ''
-    tail = link[idx + len(marker):]
+    tail = link[idx + len(marker) :]
     segment = tail.split('/', 1)[0]
     if numeric_only and not re.match(r'^\d+$', segment):
         return ''
@@ -257,11 +257,7 @@ def _pull_request_event_runs_for_pr(runs: Any, pr_number: Any) -> list:
     """
     if not isinstance(runs, list):
         return []
-    return [
-        run
-        for run in runs
-        if _is_pull_request_event_run(run) and not _run_names_a_different_pr(run, pr_number)
-    ]
+    return [run for run in runs if _is_pull_request_event_run(run) and not _run_names_a_different_pr(run, pr_number)]
 
 
 def _derive_overall_status(checks: list[dict]) -> tuple[str, list[dict], list[dict]]:

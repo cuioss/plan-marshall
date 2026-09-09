@@ -391,9 +391,7 @@ def _reemit(
         'jobs_source': existing.get('jobs_source') or ('enumerated' if existing_jobs else 'empty'),
         'manifest_path': _relative_str(manifest_path),
         'log_paths': [j.get('log_path', '') for j in existing_jobs if j.get('log_path')],
-        'filtered_log_paths': [
-            j.get('filtered_log_path', '') for j in existing_jobs if j.get('filtered_log_path')
-        ],
+        'filtered_log_paths': [j.get('filtered_log_path', '') for j in existing_jobs if j.get('filtered_log_path')],
     }
 
 
@@ -483,11 +481,7 @@ def read_manifest(*, plan_id: str, run_id: str) -> dict:
         'plan_id': plan_id,
         'run_id': run_id,
         'manifest': manifest,
-        'log_paths': sorted(
-            j.get('log_path', '')
-            for j in (manifest.get('jobs') or [])
-            if j.get('log_path')
-        ),
+        'log_paths': sorted(j.get('log_path', '') for j in (manifest.get('jobs') or []) if j.get('log_path')),
     }
 
 

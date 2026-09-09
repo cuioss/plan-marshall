@@ -52,11 +52,7 @@ def _expected_verify_step_ids() -> list[str]:
         (rec for rec in find_implementors(_BUILD_VERIFY_STEP_EXT_POINT) if rec.get('source') == 'built-in'),
         key=lambda rec: (rec.get('order', 0), rec.get('name', '')),
     )
-    return [
-        f'default:verify:{canonical}'
-        for rec in built_in
-        for canonical in rec.get('canonicals', [])
-    ]
+    return [f'default:verify:{canonical}' for rec in built_in for canonical in rec.get('canonicals', [])]
 
 
 # =============================================================================
@@ -1514,8 +1510,8 @@ def test_discover_all_verify_steps_empty_implementors_yields_no_built_ins(tmp_pa
 def test_seed_verify_steps_empty_implementors_yields_empty_map(tmp_path):
     """_seed_verify_steps with no implementors yields an empty keyed map (fallback path)."""
     config_defaults = load_script_module(
-    'plan-marshall', 'manage-config', '_config_defaults.py', module_name='_config_defaults'
-)
+        'plan-marshall', 'manage-config', '_config_defaults.py', module_name='_config_defaults'
+    )
     with patch('extension_discovery.find_implementors', return_value=[]):
         seeded = config_defaults._seed_verify_steps()
 
@@ -1644,9 +1640,7 @@ def test_set_inclusion_only_file_globs_leaves_always_on_untouched(plan_context, 
     create_nested_marshal_json(plan_context.fixture_dir)
 
     cmd_skill_domains(Namespace(verb='set-inclusion', domain='java', always_on=True, file_globs=None))
-    result = cmd_skill_domains(
-        Namespace(verb='set-inclusion', domain='java', always_on=None, file_globs='**/*.md')
-    )
+    result = cmd_skill_domains(Namespace(verb='set-inclusion', domain='java', always_on=None, file_globs='**/*.md'))
 
     assert result['status'] == 'success'
     assert result['always_on'] is True
@@ -1657,9 +1651,7 @@ def test_set_inclusion_unknown_domain_errors(plan_context, monkeypatch):
     """set-inclusion on an unknown domain returns an error."""
     create_nested_marshal_json(plan_context.fixture_dir)
 
-    result = cmd_skill_domains(
-        Namespace(verb='set-inclusion', domain='nonexistent', always_on=True, file_globs=None)
-    )
+    result = cmd_skill_domains(Namespace(verb='set-inclusion', domain='nonexistent', always_on=True, file_globs=None))
 
     assert result['status'] == 'error'
 
@@ -1668,9 +1660,7 @@ def test_set_inclusion_rejects_non_bool_always_on(plan_context, monkeypatch):
     """set-inclusion routes a non-bool always_on through the validator and errors."""
     create_nested_marshal_json(plan_context.fixture_dir)
 
-    result = cmd_skill_domains(
-        Namespace(verb='set-inclusion', domain='java', always_on=1, file_globs=None)
-    )
+    result = cmd_skill_domains(Namespace(verb='set-inclusion', domain='java', always_on=1, file_globs=None))
 
     assert result['status'] == 'error'
 

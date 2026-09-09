@@ -101,9 +101,7 @@ def _corpus() -> dict:
     # The population-returning entry point rather than the plain one: it is the
     # SAME derivation the findings come from, so ``blind_spots`` cannot disagree
     # with the finding list the way a second pass could.
-    findings, invocations, blind_spots = _aan.analyze_argument_naming_with_population(
-        MARKETPLACE
-    )
+    findings, invocations, blind_spots = _aan.analyze_argument_naming_with_population(MARKETPLACE)
     targets = _aan._markdown_targets(MARKETPLACE)
     index = _aan.build_script_index(set(registry.notations), MARKETPLACE)
     registered = len(registry.notations)
@@ -189,16 +187,14 @@ def test_the_derived_population_is_non_empty():
     corpus = _require_judged_corpus()
 
     assert corpus['markdown_targets'] > 0, (
-        f'The markdown corpus is EMPTY, so every count below would be a zero '
-        f'over nothing.\n{corpus_report()}'
+        f'The markdown corpus is EMPTY, so every count below would be a zero over nothing.\n{corpus_report()}'
     )
     assert corpus['invocations'] > 0, (
         f'The corpus carries NO executor invocation, so the cluster judged '
         f'nothing regardless of how many files it opened.\n{corpus_report()}'
     )
     assert corpus['registered_notations'] > 0, (
-        f'The accept-set is EMPTY, so no invocation could have been judged '
-        f'against anything.\n{corpus_report()}'
+        f'The accept-set is EMPTY, so no invocation could have been judged against anything.\n{corpus_report()}'
     )
 
 
@@ -218,9 +214,7 @@ def test_the_report_publishes_every_population_figure():
     print(report)
 
     for key in POPULATION_KEYS:
-        assert f'{key}: {corpus[key]}' in report, (
-            f'{key} is absent from the published report.\n{report}'
-        )
+        assert f'{key}: {corpus[key]}' in report, f'{key} is absent from the published report.\n{report}'
     assert f'findings: {len(corpus["findings"])}' in report, report
 
 
@@ -246,9 +240,7 @@ def test_the_report_splits_the_findings_by_rule_not_only_by_file():
         f'the per-rule census header is absent from the report.\n{report}'
     )
     for rule, count in per_rule.items():
-        assert f'  {rule}: {count}' in report, (
-            f'rule {rule} ({count}) is absent from the per-rule census.\n{report}'
-        )
+        assert f'  {rule}: {count}' in report, f'rule {rule} ({count}) is absent from the per-rule census.\n{report}'
     assert sum(per_rule.values()) == len(corpus['findings']), (
         f'the per-rule census does not reconcile to the finding total.\n{report}'
     )

@@ -68,10 +68,7 @@ FINDING_TYPE = _asdrc.FINDING_TYPE
 # ---------------------------------------------------------------------------
 
 # A body passage that declares the flat-numbering / no-sub-numbering rule.
-_DECLARATION = (
-    'Skill workflows must use flat-numbering for steps — sub-numbering like '
-    '`2b` is prohibited.\n'
-)
+_DECLARATION = 'Skill workflows must use flat-numbering for steps — sub-numbering like `2b` is prohibited.\n'
 
 
 def _make_skill_md(
@@ -136,11 +133,7 @@ def _doc_disable(body: str, disable: str, declaration: str = _DECLARATION) -> st
     ``disable`` is the raw value placed after ``plugin-doctor-disable:`` (inline
     list form, e.g. ``[skill-self-declared-rule-violation]``).
     """
-    return (
-        f'---\nname: test-skill\n'
-        f'plugin-doctor-disable: {disable}\n'
-        f'---\n{declaration}{body}'
-    )
+    return f'---\nname: test-skill\nplugin-doctor-disable: {disable}\n---\n{declaration}{body}'
 
 
 # ===========================================================================
@@ -165,9 +158,7 @@ class TestPositiveViolation:
         findings = assert_analyzer_findings(analyze_self_declared_rule_compliance, marketplace_root, [RULE_ID])
         assert '3b' in findings[0]['snippet']
 
-    def test_multiple_violating_headings_produce_multiple_findings(
-        self, tmp_path: Path
-    ) -> None:
+    def test_multiple_violating_headings_produce_multiple_findings(self, tmp_path: Path) -> None:
         """Two sub-numbered headings yield two findings."""
         content = _doc('### Step 1a First\n\nbody\n\n### Step 5a Second\n')
         marketplace_root, _ = _make_skill_md(tmp_path, content)
@@ -205,9 +196,7 @@ class TestNoViolation:
         marketplace_root, _ = _make_skill_md(tmp_path, content)
         assert_analyzer_findings(analyze_self_declared_rule_compliance, marketplace_root, [])
 
-    def test_sub_numbering_without_declaration_is_not_flagged(
-        self, tmp_path: Path
-    ) -> None:
+    def test_sub_numbering_without_declaration_is_not_flagged(self, tmp_path: Path) -> None:
         """Sub-numbering WITHOUT a declared rule is not flagged (self-referential)."""
         content = _doc('### Step 1a Initialize\n', declaration='')
         marketplace_root, _ = _make_skill_md(tmp_path, content)
@@ -219,9 +208,7 @@ class TestNoViolation:
         marketplace_root, _ = _make_skill_md(tmp_path, content)
         assert_analyzer_findings(analyze_self_declared_rule_compliance, marketplace_root, [])
 
-    def test_flat_heading_with_trailing_letter_word_is_not_a_violation(
-        self, tmp_path: Path
-    ) -> None:
+    def test_flat_heading_with_trailing_letter_word_is_not_a_violation(self, tmp_path: Path) -> None:
         """`### Step 1 Apply` (digit then space then word) is flat, not sub-numbered."""
         content = _doc('### Step 1 Apply the migration\n')
         marketplace_root, _ = _make_skill_md(tmp_path, content)
@@ -236,17 +223,13 @@ class TestNoViolation:
 class TestExemptions:
     """Frontmatter, fenced blocks, and per-file frontmatter disable exempt matches."""
 
-    def test_violating_heading_inside_fenced_block_is_exempt(
-        self, tmp_path: Path
-    ) -> None:
+    def test_violating_heading_inside_fenced_block_is_exempt(self, tmp_path: Path) -> None:
         """A `### Step 1a` line inside a fence is an example, not a live heading."""
         content = _doc('```markdown\n### Step 1a example inside a fence\n```\n')
         marketplace_root, _ = _make_skill_md(tmp_path, content)
         assert_analyzer_findings(analyze_self_declared_rule_compliance, marketplace_root, [])
 
-    def test_declaration_only_inside_fence_does_not_arm_rule(
-        self, tmp_path: Path
-    ) -> None:
+    def test_declaration_only_inside_fence_does_not_arm_rule(self, tmp_path: Path) -> None:
         """A declaration phrase only inside a fence is not an authored rule.
 
         With the declaration confined to a fenced example, the file does not
@@ -282,9 +265,7 @@ class TestExemptions:
         marketplace_root, _ = _make_skill_md(tmp_path, content)
         assert_analyzer_findings(analyze_self_declared_rule_compliance, marketplace_root, [])
 
-    def test_frontmatter_disable_for_other_rule_does_not_suppress(
-        self, tmp_path: Path
-    ) -> None:
+    def test_frontmatter_disable_for_other_rule_does_not_suppress(self, tmp_path: Path) -> None:
         """A disable list naming a DIFFERENT rule leaves the violation flagged."""
         content = _doc_disable(
             '### Step 1a Initialize\n',
@@ -296,9 +277,7 @@ class TestExemptions:
 
     def test_retired_inline_marker_no_longer_suppresses(self, tmp_path: Path) -> None:
         """The retired ``<!-- doctor-ignore: self-declared-rule -->`` marker is ignored."""
-        content = _doc(
-            '### Step 1a Initialize <!-- doctor-ignore: self-declared-rule -->\n'
-        )
+        content = _doc('### Step 1a Initialize <!-- doctor-ignore: self-declared-rule -->\n')
         marketplace_root, _ = _make_skill_md(tmp_path, content)
         findings = assert_analyzer_findings(analyze_self_declared_rule_compliance, marketplace_root, [RULE_ID])
         assert 'Step 1a' in findings[0]['snippet']
@@ -333,9 +312,7 @@ class TestDetectionShape:
         marketplace_root, _ = _make_skill_md(tmp_path, content)
         assert_analyzer_findings(analyze_self_declared_rule_compliance, marketplace_root, [])
 
-    def test_prose_mention_of_sub_numbered_label_is_not_a_heading(
-        self, tmp_path: Path
-    ) -> None:
+    def test_prose_mention_of_sub_numbered_label_is_not_a_heading(self, tmp_path: Path) -> None:
         """A `2b`-shaped token in prose (not a heading) is not flagged."""
         content = _doc('See step 1a above for the prerequisite detail.\n')
         marketplace_root, _ = _make_skill_md(tmp_path, content)
@@ -365,18 +342,14 @@ class TestScope:
     def test_non_skill_md_file_is_not_scanned(self, tmp_path: Path) -> None:
         """A non-`SKILL.md` markdown file is out of scope (only SKILL.md scans)."""
         content = _doc('### Step 1a Initialize\n')
-        marketplace_root, _ = _make_skill_md(
-            tmp_path, content, filename='standards.md'
-        )
+        marketplace_root, _ = _make_skill_md(tmp_path, content, filename='standards.md')
         assert_analyzer_findings(analyze_self_declared_rule_compliance, marketplace_root, [])
 
     def test_out_of_scope_path_not_scanned(self, tmp_path: Path) -> None:
         """A `SKILL.md` under the bundle root but not in a scanned sub is ignored."""
         bundle_dir = tmp_path / 'some-bundle'
         bundle_dir.mkdir(parents=True)
-        (bundle_dir / 'SKILL.md').write_text(
-            _doc('### Step 1a Initialize\n'), encoding='utf-8'
-        )
+        (bundle_dir / 'SKILL.md').write_text(_doc('### Step 1a Initialize\n'), encoding='utf-8')
         assert_analyzer_findings(analyze_self_declared_rule_compliance, tmp_path, [])
 
 
@@ -406,14 +379,10 @@ class TestClaudeSkillsTree:
         bundles_root = tmp_path / 'marketplace' / 'bundles'
         skill_dir = bundles_root / 'test-bundle' / 'skills' / 'test-skill'
         skill_dir.mkdir(parents=True)
-        skill_dir.joinpath('SKILL.md').write_text(
-            _doc('### Step 1a Bundle step\n'), encoding='utf-8'
-        )
+        skill_dir.joinpath('SKILL.md').write_text(_doc('### Step 1a Bundle step\n'), encoding='utf-8')
         claude_dir = tmp_path / '.claude' / 'skills' / 'audit-skill'
         claude_dir.mkdir(parents=True)
-        claude_dir.joinpath('SKILL.md').write_text(
-            _doc('### Step 3a Project-local step\n'), encoding='utf-8'
-        )
+        claude_dir.joinpath('SKILL.md').write_text(_doc('### Step 3a Project-local step\n'), encoding='utf-8')
         assert_analyzer_findings(analyze_self_declared_rule_compliance, bundles_root, [RULE_ID] * 2)
 
 
@@ -457,6 +426,4 @@ def test_analyzer_source_has_no_inline_marker_references() -> None:
         '_analyze_self_declared_rule_compliance.py',
     ).read_text(encoding='utf-8')
     for marker in ('_SUPPRESS_MARKER', '_IGNORE_MARKER', 'doctor-ignore'):
-        assert marker not in source, (
-            f'Retired inline marker {marker!r} still present in analyzer source'
-        )
+        assert marker not in source, f'Retired inline marker {marker!r} still present in analyzer source'

@@ -26,18 +26,14 @@ import pytest
 
 from conftest import load_script_module
 
-_doctor = load_script_module(
-    'pm-plugin-development', 'plugin-doctor', 'doctor-marketplace.py', 'doctor_marketplace'
-)
+_doctor = load_script_module('pm-plugin-development', 'plugin-doctor', 'doctor-marketplace.py', 'doctor_marketplace')
 _thinking = load_script_module(
     'pm-plugin-development',
     'plugin-doctor',
     '_analyze_thinking_directive_in_workflow_docs.py',
     '_analyze_thinking_directive_in_workflow_docs',
 )
-_shim = load_script_module(
-    'pm-plugin-development', 'plugin-doctor', '_analyze_shim_marker.py', '_analyze_shim_marker'
-)
+_shim = load_script_module('pm-plugin-development', 'plugin-doctor', '_analyze_shim_marker.py', '_analyze_shim_marker')
 _incident = load_script_module(
     'pm-plugin-development',
     'plugin-doctor',
@@ -120,9 +116,7 @@ def _empty_population_tree(tmp_path: Path) -> tuple[Path, Path]:
     ],
     ids=['thinking-directive', 'shim-marker'],
 )
-def test_empty_population_finding_survives_scoped_run(
-    tmp_path: Path, rule: str, finding_type: str
-) -> None:
+def test_empty_population_finding_survives_scoped_run(tmp_path: Path, rule: str, finding_type: str) -> None:
     """The root-anchored guard is reported under ``--paths``, not filtered away.
 
     The rule's summary count is non-zero and the finding itself is present in
@@ -131,9 +125,7 @@ def test_empty_population_finding_survives_scoped_run(
     """
     root, bundles = _empty_population_tree(tmp_path)
 
-    result = _doctor.cmd_quality_gate(
-        _Args(marketplace_root=str(root), paths=[str(_scope_dir(bundles))])
-    )
+    result = _doctor.cmd_quality_gate(_Args(marketplace_root=str(root), paths=[str(_scope_dir(bundles))]))
 
     assert _summary(result, rule)['findings'] > 0
     findings = _findings_of_type(result, finding_type)
@@ -205,17 +197,12 @@ def test_per_file_findings_still_obey_the_scope_filter(tmp_path: Path) -> None:
         'Observed on #812 the run failed.\n',
     )
 
-    result = _doctor.cmd_quality_gate(
-        _Args(marketplace_root=str(root), paths=[str(inside.parent)])
-    )
+    result = _doctor.cmd_quality_gate(_Args(marketplace_root=str(root), paths=[str(inside.parent)]))
 
     # The out-of-scope file carries a real, file-anchored violation. It must be
     # absent from a run scoped elsewhere — the assertion that actually fails if
     # ``_scoped`` stops filtering.
-    anchored = [
-        i for i in result['issues']
-        if Path(i.get('file', '')).resolve() == outside.resolve()
-    ]
+    anchored = [i for i in result['issues'] if Path(i.get('file', '')).resolve() == outside.resolve()]
     assert anchored == []
 
     # Supporting unit check on the predicates the gate composes.

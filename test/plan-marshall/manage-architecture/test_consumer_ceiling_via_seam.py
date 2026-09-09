@@ -58,7 +58,9 @@ def _patched_module(monkeypatch, bundle, skill, script_file, module_name, runtim
 def test_arch_ceiling_follows_default_target_via_seam():
     """Default target -> module binding equals the op the seam reports."""
     mod = load_script_module(
-        'plan-marshall', 'manage-architecture', '_cmd_client_build.py',
+        'plan-marshall',
+        'manage-architecture',
+        '_cmd_client_build.py',
         '_cmd_client_build_seam_default',
     )
     assert mod.HARNESS_BASH_CEILING_SECONDS == _ceiling_seconds(ClaudeRuntime())
@@ -67,8 +69,12 @@ def test_arch_ceiling_follows_default_target_via_seam():
 def test_arch_ceiling_follows_opencode_via_seam(monkeypatch):
     """OpenCode target -> module binding tracks the seam, not a hard-coded 600."""
     mod = _patched_module(
-        monkeypatch, 'plan-marshall', 'manage-architecture', '_cmd_client_build.py',
-        '_cmd_client_build_seam_opencode', OpenCodeRuntime(),
+        monkeypatch,
+        'plan-marshall',
+        'manage-architecture',
+        '_cmd_client_build.py',
+        '_cmd_client_build_seam_opencode',
+        OpenCodeRuntime(),
     )
     opencode_ceiling = _ceiling_seconds(OpenCodeRuntime())
     assert opencode_ceiling != _ceiling_seconds(ClaudeRuntime())
@@ -79,8 +85,12 @@ def test_arch_ceiling_follows_opencode_via_seam(monkeypatch):
 def test_arch_exceeds_flag_tracks_the_seam_bound(monkeypatch):
     """The ``exceeds_bash_ceiling`` flag is computed against the seam-bound name."""
     mod = _patched_module(
-        monkeypatch, 'plan-marshall', 'manage-architecture', '_cmd_client_build.py',
-        '_cmd_client_build_seam_exceeds', OpenCodeRuntime(),
+        monkeypatch,
+        'plan-marshall',
+        'manage-architecture',
+        '_cmd_client_build.py',
+        '_cmd_client_build_seam_exceeds',
+        OpenCodeRuntime(),
     )
     beyond = mod._compute_execution_tier_fields(200, measured=True)
     within = mod._compute_execution_tier_fields(100, measured=True)
@@ -98,7 +108,9 @@ def test_arch_exceeds_flag_tracks_the_seam_bound(monkeypatch):
 def test_ci_wait_clamp_tracks_default_target_via_seam():
     """Default target -> clamp derives from the seam-reported ceiling."""
     mod = load_script_module(
-        'plan-marshall', 'phase-6-finalize', 'ci_complete_precondition.py',
+        'plan-marshall',
+        'phase-6-finalize',
+        'ci_complete_precondition.py',
         '_ci_complete_precondition_seam_default',
     )
     claude_ceiling = _ceiling_seconds(ClaudeRuntime())
@@ -109,8 +121,12 @@ def test_ci_wait_clamp_tracks_default_target_via_seam():
 def test_ci_wait_clamp_tracks_opencode_via_seam(monkeypatch):
     """OpenCode target -> the clamp tightens with the seam, never hard-codes 600."""
     mod = _patched_module(
-        monkeypatch, 'plan-marshall', 'phase-6-finalize', 'ci_complete_precondition.py',
-        '_ci_complete_precondition_seam_opencode', OpenCodeRuntime(),
+        monkeypatch,
+        'plan-marshall',
+        'phase-6-finalize',
+        'ci_complete_precondition.py',
+        '_ci_complete_precondition_seam_opencode',
+        OpenCodeRuntime(),
     )
     assert mod.HARNESS_BASH_CEILING_SECONDS == 120
     assert mod._MAX_INNER_WAIT_SECONDS == 120 - 30 - 1
@@ -125,19 +141,25 @@ class _NoCeilingRuntime:
     """Stub runtime whose ceiling op honours the allowed no-op response."""
 
     def harness_bash_timeout_ceiling(self) -> str:
-        return serialize_toon({
-            'status': 'no-op',
-            'operation': 'harness bash-timeout-ceiling',
-            'reason': 'Target enforces no harness time ceiling',
-            'alternative': 'Use the stamped timeout unchanged',
-        })
+        return serialize_toon(
+            {
+                'status': 'no-op',
+                'operation': 'harness bash-timeout-ceiling',
+                'reason': 'Target enforces no harness time ceiling',
+                'alternative': 'Use the stamped timeout unchanged',
+            }
+        )
 
 
 def test_arch_never_exceeds_a_nonexistent_ceiling(monkeypatch):
     """A ``no-op`` ceiling is ``None``: no stamp can exceed it."""
     mod = _patched_module(
-        monkeypatch, 'plan-marshall', 'manage-architecture', '_cmd_client_build.py',
-        '_cmd_client_build_seam_noop', _NoCeilingRuntime(),
+        monkeypatch,
+        'plan-marshall',
+        'manage-architecture',
+        '_cmd_client_build.py',
+        '_cmd_client_build_seam_noop',
+        _NoCeilingRuntime(),
     )
     assert mod.HARNESS_BASH_CEILING_SECONDS is None
     fields = mod._compute_execution_tier_fields(999999, measured=True)
@@ -148,8 +170,12 @@ def test_arch_never_exceeds_a_nonexistent_ceiling(monkeypatch):
 def test_ci_wait_clamp_disabled_when_target_has_no_ceiling(monkeypatch):
     """A ``no-op`` ceiling disables the upper clamp; the lower bound stays."""
     mod = _patched_module(
-        monkeypatch, 'plan-marshall', 'phase-6-finalize', 'ci_complete_precondition.py',
-        '_ci_complete_precondition_seam_noop', _NoCeilingRuntime(),
+        monkeypatch,
+        'plan-marshall',
+        'phase-6-finalize',
+        'ci_complete_precondition.py',
+        '_ci_complete_precondition_seam_noop',
+        _NoCeilingRuntime(),
     )
     assert mod.HARNESS_BASH_CEILING_SECONDS is None
     assert mod._MAX_INNER_WAIT_SECONDS is None

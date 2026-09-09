@@ -77,7 +77,7 @@ def main() -> int:
     sync_affected_files_parser = subparsers.add_parser(
         'sync-affected-files',
         help=(
-            'Re-derive references.affected_files from the solution outline\'s structured '
+            "Re-derive references.affected_files from the solution outline's structured "
             'deliverable data (set union — never removes an already-recorded path)'
         ),
         allow_abbrev=False,

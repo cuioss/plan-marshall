@@ -15,7 +15,6 @@ the two body renderers, ``build_header``/``build_document``, ``resolve_output_pa
 ``cmd_run`` that the subprocess suite reaches only out-of-process.
 """
 
-
 from __future__ import annotations
 
 from conftest import load_script_module

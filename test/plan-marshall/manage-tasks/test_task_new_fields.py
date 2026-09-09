@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for manage-tasks.py new fields: get, list and update across domain, profile, skills and origin."""
 
-
 import json
 import os
 from pathlib import Path
@@ -266,6 +265,7 @@ def test_update_fails_with_invalid_skills(plan_context):
 # =============================================================================
 # Tests: arbitrary domains (config-driven, not hardcoded)
 # =============================================================================
+
 
 def test_update_with_arbitrary_domain(plan_context):
     """Update accepts any domain value."""

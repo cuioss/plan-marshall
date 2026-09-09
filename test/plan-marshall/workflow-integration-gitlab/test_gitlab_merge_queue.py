@@ -26,9 +26,7 @@ from _ci_wait_contract import _ok_auth
 
 
 def _mq_ns(*, pr_number=42, head=None, strategy='merge', delete_branch=False):
-    return argparse.Namespace(
-        pr_number=pr_number, head=head, strategy=strategy, delete_branch=delete_branch
-    )
+    return argparse.Namespace(pr_number=pr_number, head=head, strategy=strategy, delete_branch=delete_branch)
 
 
 def _install_common(monkeypatch):
@@ -89,9 +87,7 @@ def test_cmd_pr_merge_queue_enqueues_via_merge_train(monkeypatch):
     assert result['provider'] == 'gitlab'
     assert result['enqueued'] is True
     assert result['merge_train_car_id'] == '7'
-    assert captured == [
-        ['api', '-X', 'POST', 'projects/group%2Frepo/merge_trains/merge_requests/42']
-    ]
+    assert captured == [['api', '-X', 'POST', 'projects/group%2Frepo/merge_trains/merge_requests/42']]
 
 
 # --- Off-routing: the probe refuses BEFORE the POST --------------------------
@@ -219,9 +215,7 @@ def test_cmd_pr_merge_queue_generic_error_is_not_ineligible(monkeypatch):
     _install_common(monkeypatch)
     monkeypatch.setattr(gitlab_ops, '_resolve_mr_iid', lambda args, op: ('42', None))
     _stub_probe(monkeypatch, gitlab_ops.MERGE_QUEUE_ELIGIBLE_CONFIGURED)
-    monkeypatch.setattr(
-        gitlab_ops, 'run_glab', lambda args: (1, '', 'HTTP 500 Internal Server Error')
-    )
+    monkeypatch.setattr(gitlab_ops, 'run_glab', lambda args: (1, '', 'HTTP 500 Internal Server Error'))
 
     result = gitlab_ops.cmd_pr_merge_queue(_mq_ns())
     assert result['status'] == 'error'
@@ -245,9 +239,7 @@ def test_cmd_pr_merge_queue_auth_failure(monkeypatch):
 
 def test_repo_merge_queue_probe_configured(monkeypatch):
     _install_common(monkeypatch)
-    monkeypatch.setattr(
-        gitlab_ops, 'run_api', lambda ep: (0, {'merge_trains_enabled': True}, '')
-    )
+    monkeypatch.setattr(gitlab_ops, 'run_api', lambda ep: (0, {'merge_trains_enabled': True}, ''))
 
     result = gitlab_ops.cmd_repo_merge_queue_probe(argparse.Namespace())
     assert result['status'] == 'success'
@@ -258,9 +250,7 @@ def test_repo_merge_queue_probe_configured(monkeypatch):
 
 def test_repo_merge_queue_probe_unconfigured(monkeypatch):
     _install_common(monkeypatch)
-    monkeypatch.setattr(
-        gitlab_ops, 'run_api', lambda ep: (0, {'merge_trains_enabled': False}, '')
-    )
+    monkeypatch.setattr(gitlab_ops, 'run_api', lambda ep: (0, {'merge_trains_enabled': False}, ''))
 
     result = gitlab_ops.cmd_repo_merge_queue_probe(argparse.Namespace())
     assert result['eligibility'] == 'eligible_unconfigured'
@@ -315,9 +305,7 @@ def test_repo_merge_queue_probe_generic_api_error_is_error_not_ineligible(monkey
     # error result — NOT be folded into the 'ineligible' discriminator, which
     # would wrongly tell the operator the platform lacks the feature.
     _install_common(monkeypatch)
-    monkeypatch.setattr(
-        gitlab_ops, 'run_api', lambda ep: (1, None, 'HTTP 500 Internal Server Error')
-    )
+    monkeypatch.setattr(gitlab_ops, 'run_api', lambda ep: (1, None, 'HTTP 500 Internal Server Error'))
 
     result = gitlab_ops.cmd_repo_merge_queue_probe(argparse.Namespace())
     assert result['status'] == 'error'
@@ -361,9 +349,7 @@ def test_repo_merge_queue_probe_auth_failure(monkeypatch):
 def test_probe_non_boolean_merge_trains_enabled_is_unsupported_with_error(monkeypatch, value):
     # Arrange — the field IS present, so the absent-field branch does not apply.
     _install_common(monkeypatch)
-    monkeypatch.setattr(
-        gitlab_ops, 'run_api', lambda ep: (0, {'merge_trains_enabled': value}, '')
-    )
+    monkeypatch.setattr(gitlab_ops, 'run_api', lambda ep: (0, {'merge_trains_enabled': value}, ''))
 
     # Act
     discriminator, detail, error = gitlab_ops._probe_merge_train_state()
@@ -383,9 +369,7 @@ def test_probe_non_boolean_merge_trains_enabled_is_unsupported_with_error(monkey
     ],
     ids=['true', 'false'],
 )
-def test_probe_boolean_merge_trains_enabled_still_establishes_support(
-    monkeypatch, value, expected
-):
+def test_probe_boolean_merge_trains_enabled_still_establishes_support(monkeypatch, value, expected):
     """Matched negative control: the two real booleans keep their error-free verdicts.
 
     Without this arm, a non-boolean guard that rejected everything — including
@@ -393,9 +377,7 @@ def test_probe_boolean_merge_trains_enabled_still_establishes_support(
     probe.
     """
     _install_common(monkeypatch)
-    monkeypatch.setattr(
-        gitlab_ops, 'run_api', lambda ep: (0, {'merge_trains_enabled': value}, '')
-    )
+    monkeypatch.setattr(gitlab_ops, 'run_api', lambda ep: (0, {'merge_trains_enabled': value}, ''))
 
     discriminator, _detail, error = gitlab_ops._probe_merge_train_state()
 
@@ -434,9 +416,7 @@ def test_refuse_on_required_merge_train_refuses_on_non_boolean(monkeypatch, valu
     pinned here.
     """
     _install_common(monkeypatch)
-    monkeypatch.setattr(
-        gitlab_ops, 'run_api', lambda ep: (0, {'merge_trains_enabled': value}, '')
-    )
+    monkeypatch.setattr(gitlab_ops, 'run_api', lambda ep: (0, {'merge_trains_enabled': value}, ''))
 
     refusal = gitlab_ops._refuse_on_required_merge_train('pr_merge')
 
@@ -453,9 +433,7 @@ def test_refuse_on_required_merge_train_refuses_on_non_boolean(monkeypatch, valu
 
 def test_repo_merge_queue_enable_idempotent_when_configured(monkeypatch):
     _install_common(monkeypatch)
-    monkeypatch.setattr(
-        gitlab_ops, 'run_api', lambda ep: (0, {'merge_trains_enabled': True}, '')
-    )
+    monkeypatch.setattr(gitlab_ops, 'run_api', lambda ep: (0, {'merge_trains_enabled': True}, ''))
 
     def _boom(args):
         raise AssertionError('enable must not mutate an already-configured project')
@@ -470,9 +448,7 @@ def test_repo_merge_queue_enable_idempotent_when_configured(monkeypatch):
 
 def test_repo_merge_queue_enable_sets_flag_when_unconfigured(monkeypatch):
     _install_common(monkeypatch)
-    monkeypatch.setattr(
-        gitlab_ops, 'run_api', lambda ep: (0, {'merge_trains_enabled': False}, '')
-    )
+    monkeypatch.setattr(gitlab_ops, 'run_api', lambda ep: (0, {'merge_trains_enabled': False}, ''))
     captured: list[list[str]] = []
 
     def run_glab_stub(args):
@@ -485,9 +461,7 @@ def test_repo_merge_queue_enable_sets_flag_when_unconfigured(monkeypatch):
     assert result['status'] == 'success'
     assert result['changed'] is True
     assert result['eligibility'] == 'eligible_configured'
-    assert captured == [
-        ['api', '-X', 'PUT', 'projects/group%2Frepo', '-f', 'merge_trains_enabled=true']
-    ]
+    assert captured == [['api', '-X', 'PUT', 'projects/group%2Frepo', '-f', 'merge_trains_enabled=true']]
 
 
 def test_repo_merge_queue_enable_refuses_when_ineligible(monkeypatch):

@@ -42,9 +42,7 @@ from pathlib import Path
 
 from conftest import MARKETPLACE_ROOT, get_script_path, load_script_module, run_script
 
-_inbox = load_script_module(
-    'plan-marshall', 'plan-orchestrator', '_orchestrator_inbox.py', 'orchestrator_inbox'
-)
+_inbox = load_script_module('plan-marshall', 'plan-orchestrator', '_orchestrator_inbox.py', 'orchestrator_inbox')
 check_landing_completeness = _inbox.check_landing_completeness
 parse_landing_facts = _inbox.parse_landing_facts
 LANDING_REQUIRED_KEYS = _inbox.LANDING_REQUIRED_KEYS
@@ -348,9 +346,7 @@ class TestDegradedSentinelFacts:
         exactness holds on both branches of the predicate rather than only on the
         one a single sample would have exercised.
         """
-        landing = _facts_landing(
-            merge_state='unknown_at_dequeue', deliverables_done='3 unknown-to-spec'
-        )
+        landing = _facts_landing(merge_state='unknown_at_dequeue', deliverables_done='3 unknown-to-spec')
 
         complete, missing = check_landing_completeness(landing)
 
@@ -424,8 +420,7 @@ _FACT_KEY = re.compile(r'^([a-z][a-z0-9_]*)(?:=.*)?$')
 #: still yields ``merge_state``, because such a span names a key whatever its
 #: sample value is.
 _SENTINEL_TOKENS = frozenset(
-    token.casefold()
-    for token in (_inbox.LANDING_ANSWERED_SENTINELS | _inbox.LANDING_COULD_NOT_READ_SENTINELS)
+    token.casefold() for token in (_inbox.LANDING_ANSWERED_SENTINELS | _inbox.LANDING_COULD_NOT_READ_SENTINELS)
 )
 
 
@@ -514,9 +509,7 @@ class TestDocumentedEnumerationsMatchTheConstant:
     def test_the_extractors_are_not_vacuous(self):
         """Both parsers must find something, or the equalities below prove nothing."""
         assert _spec_table_keys(), 'the payload-spec table parser extracted no keys'
-        assert _emit_landing_enumeration_keys(), (
-            'the emit-landing Step 2 enumeration parser extracted no keys'
-        )
+        assert _emit_landing_enumeration_keys(), 'the emit-landing Step 2 enumeration parser extracted no keys'
 
     def test_a_bare_sentinel_is_not_harvested_as_a_fact_key(self):
         """A degraded VALUE in a code span is not a fact key.
@@ -531,9 +524,7 @@ class TestDocumentedEnumerationsMatchTheConstant:
         future enumeration written ``merge_state=unknown`` would lose a real key
         and the equality would fail in the other direction.
         """
-        assert _SENTINEL_TOKENS, (
-            'the sentinel vocabularies are empty, so the loop below asserts nothing'
-        )
+        assert _SENTINEL_TOKENS, 'the sentinel vocabularies are empty, so the loop below asserts nothing'
         assert any(_FACT_KEY.match(token) for token in _SENTINEL_TOKENS), (
             'no sentinel is spelled like a fact key any more, so `_FACT_KEY` already rejects '
             'every token and the membership test in `_keys_from_code_spans` is never reached: '
@@ -541,9 +532,7 @@ class TestDocumentedEnumerationsMatchTheConstant:
         )
         for token in sorted(_SENTINEL_TOKENS):
             assert _keys_from_code_spans(f'written `{token}`') == set(), token
-            assert _keys_from_code_spans(f'written `merge_state={token}`') == {'merge_state'}, (
-                token
-            )
+            assert _keys_from_code_spans(f'written `merge_state={token}`') == {'merge_state'}, token
 
     def test_payload_spec_table_names_exactly_the_required_keys(self):
         assert _spec_table_keys() == set(LANDING_REQUIRED_KEYS), (
@@ -572,24 +561,20 @@ class TestDocumentedEnumerationsMatchTheConstant:
         transcribed, so a key entering or leaving the rejecting set is checked
         here without a second edit.
         """
-        exempt = sorted(
-            set(LANDING_REQUIRED_KEYS) - set(_inbox.LANDING_SENTINEL_REJECTING_KEYS) - {'schema'}
-        )
-        assert exempt, (
-            'no required key is sentinel-exempt, so the loop below would assert nothing'
-        )
+        exempt = sorted(set(LANDING_REQUIRED_KEYS) - set(_inbox.LANDING_SENTINEL_REJECTING_KEYS) - {'schema'})
+        assert exempt, 'no required key is sentinel-exempt, so the loop below would assert nothing'
         assert _SENTINEL_TOKENS, 'the sentinel vocabularies are empty, so the loop asserts nothing'
 
         cells = _spec_table_value_cells()
         for key in exempt:
             assert key in cells, (
-                f'`{key}` is sentinel-exempt but has no row in the payload spec\'s '
+                f"`{key}` is sentinel-exempt but has no row in the payload spec's "
                 f'required-fact-keys table. Rows found: {sorted(cells)}.'
             )
             cell = cells[key].casefold()
             for token in sorted(_SENTINEL_TOKENS):
                 assert f'`{token}`' in cell, (
-                    f'the `{key}` row\'s Value column does not name `{token}` as a legal value. '
+                    f"the `{key}` row's Value column does not name `{token}` as a legal value. "
                     f'`{key}` is outside `LANDING_SENTINEL_REJECTING_KEYS`, so BOTH degraded '
                     'tokens can reach it and they mean different things: `n/a` is an answer the '
                     'drain accepts, `unknown` is a gap it rejects. A row naming only one leaves '
@@ -647,13 +632,15 @@ _PRODUCER_DOCS: dict[str, Path] = {
 #: obtain and could not. Deliberately does NOT cover "its step did not run",
 #: which is an OBSERVED ABSENCE and whose ``n/a`` routing is correct.
 _FAILED_READ_CONDITION = re.compile(
-    '|'.join((
-        r'could not (?:be )?read',
-        r'a read that fail\w*',
-        r'a read genuinely fail\w*',
-        r'a failed read',
-        r'returns an error',
-    )),
+    '|'.join(
+        (
+            r'could not (?:be )?read',
+            r'a read that fail\w*',
+            r'a read genuinely fail\w*',
+            r'a failed read',
+            r'returns an error',
+        )
+    ),
     re.IGNORECASE,
 )
 
@@ -812,9 +799,7 @@ class TestProducerRoutesConditionsToTokens:
         """
         for name, path in _PRODUCER_DOCS.items():
             conditions = [
-                unit
-                for unit in _prose_units(path.read_text(encoding='utf-8'))
-                if _FAILED_READ_CONDITION.search(unit)
+                unit for unit in _prose_units(path.read_text(encoding='utf-8')) if _FAILED_READ_CONDITION.search(unit)
             ]
             assert conditions, (
                 f'{name} names no failed-read condition anywhere, so the rejection guard '
@@ -841,8 +826,7 @@ class TestProducerRoutesConditionsToTokens:
         """
         pre_fix_units = (
             # emit-landing.md § Step 1 — the read-failure routing sentence.
-            'A read that fails degrades its field to `n/a` (Error Handling), never the '
-            'whole message.',
+            'A read that fails degrades its field to `n/a` (Error Handling), never the whole message.',
             # emit-landing.md § Step 2 — the fenced-block enumeration.
             'A value that could not be read is written as `n/a` (its key still present).',
             # emit-landing.md § Step 2 — the follow-up that sanctioned it.
@@ -907,10 +891,7 @@ class TestProducerRoutesConditionsToTokens:
             and _WRITE_THE_ANSWERED_TOKEN.search(prohibition)
             and not _COULD_NOT_READ_TOKEN.search(prohibition)
         )
-        assert not flagged, (
-            'the scan reads a PROHIBITION of the defect as an INSTRUCTION to commit it: '
-            f'{prohibition}'
-        )
+        assert not flagged, f'the scan reads a PROHIBITION of the defect as an INSTRUCTION to commit it: {prohibition}'
 
     def test_an_abbreviation_does_not_split_a_condition_from_its_action(self):
         """An offender must not escape by carrying an abbreviation mid-sentence.
@@ -954,12 +935,18 @@ def _write_landing(plan_context, tmp_path: Path, body: str, name: str) -> str:
     payload.write_text(body, encoding='utf-8')
     run_script(
         SCRIPT_PATH,
-        'inbox', 'write',
-        '--slug', EPIC,
-        '--sender-type', 'plan',
-        '--sender-id', SENDER,
-        '--kind', 'landing',
-        '--payload-file', str(payload),
+        'inbox',
+        'write',
+        '--slug',
+        EPIC,
+        '--sender-type',
+        'plan',
+        '--sender-id',
+        SENDER,
+        '--kind',
+        'landing',
+        '--payload-file',
+        str(payload),
         env_overrides=_env(plan_context),
     )
     return f'{SENDER}-001.md'
@@ -968,9 +955,12 @@ def _write_landing(plan_context, tmp_path: Path, body: str, name: str) -> str:
 def _landing_check(plan_context, message: str):
     return run_script(
         SCRIPT_PATH,
-        'inbox', 'landing-check',
-        '--slug', EPIC,
-        '--message', message,
+        'inbox',
+        'landing-check',
+        '--slug',
+        EPIC,
+        '--message',
+        message,
         env_overrides=_env(plan_context),
     )
 

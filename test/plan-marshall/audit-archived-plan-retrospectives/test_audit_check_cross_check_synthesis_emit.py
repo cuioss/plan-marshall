@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""``cross-check-synthesis`` genuine-signal predicate and emitted block.
-"""
+"""``cross-check-synthesis`` genuine-signal predicate and emitted block."""
 
 from _audit_fixtures import audit
 
@@ -64,11 +63,7 @@ class TestCrossCheckSynthesisEmitBlock:
         result = audit.cross_check_synthesis(all_results)
 
         block = audit.emit_cross_check_synthesis_block(result)
-        row_line = next(
-            ln.strip()
-            for ln in block.splitlines()
-            if ln.strip().startswith('trend_empty_untrustworthy,')
-        )
+        row_line = next(ln.strip() for ln in block.splitlines() if ln.strip().startswith('trend_empty_untrustworthy,'))
 
         # fired row carries true + a trailing genuine severity cell
         assert row_line.startswith('trend_empty_untrustworthy,true,')
@@ -79,11 +74,7 @@ class TestCrossCheckSynthesisEmitBlock:
         result = audit.cross_check_synthesis({})
 
         block = audit.emit_cross_check_synthesis_block(result)
-        row_line = next(
-            ln.strip()
-            for ln in block.splitlines()
-            if ln.strip().startswith('trend_empty_untrustworthy,')
-        )
+        row_line = next(ln.strip() for ln in block.splitlines() if ln.strip().startswith('trend_empty_untrustworthy,'))
 
         # unfired row carries false + a trailing informational cell
         assert row_line.startswith('trend_empty_untrustworthy,false,')

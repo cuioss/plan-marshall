@@ -312,9 +312,7 @@ class TestResolveStepExecutionTierDefaultsPerTask:
 
     def test_nonzero_exit_defaults_per_task(self, monkeypatch):
         monkeypatch.setattr(_mem, '_resolve_executor', lambda: Path('/dev/null'))
-        monkeypatch.setattr(
-            _mem.subprocess, 'run', lambda *a, **k: SimpleNamespace(returncode=1, stdout='')
-        )
+        monkeypatch.setattr(_mem.subprocess, 'run', lambda *a, **k: SimpleNamespace(returncode=1, stdout=''))
         assert _resolve_step_execution_tier('module-tests', 'X') == 'per_task'
 
     def test_subprocess_error_defaults_per_task(self, monkeypatch):
@@ -329,41 +327,31 @@ class TestResolveStepExecutionTierDefaultsPerTask:
     def test_non_success_status_defaults_per_task(self, monkeypatch):
         monkeypatch.setattr(_mem, '_resolve_executor', lambda: Path('/dev/null'))
         toon = 'status: error\nexecution_tier: orchestrator\n'
-        monkeypatch.setattr(
-            _mem.subprocess, 'run', lambda *a, **k: SimpleNamespace(returncode=0, stdout=toon)
-        )
+        monkeypatch.setattr(_mem.subprocess, 'run', lambda *a, **k: SimpleNamespace(returncode=0, stdout=toon))
         assert _resolve_step_execution_tier('module-tests', 'X') == 'per_task'
 
     def test_unknown_tier_value_defaults_per_task(self, monkeypatch):
         monkeypatch.setattr(_mem, '_resolve_executor', lambda: Path('/dev/null'))
         toon = 'status: success\nexecution_tier: something-else\n'
-        monkeypatch.setattr(
-            _mem.subprocess, 'run', lambda *a, **k: SimpleNamespace(returncode=0, stdout=toon)
-        )
+        monkeypatch.setattr(_mem.subprocess, 'run', lambda *a, **k: SimpleNamespace(returncode=0, stdout=toon))
         assert _resolve_step_execution_tier('module-tests', 'X') == 'per_task'
 
     def test_absent_tier_field_defaults_per_task(self, monkeypatch):
         monkeypatch.setattr(_mem, '_resolve_executor', lambda: Path('/dev/null'))
         toon = 'status: success\nmodule: default\n'
-        monkeypatch.setattr(
-            _mem.subprocess, 'run', lambda *a, **k: SimpleNamespace(returncode=0, stdout=toon)
-        )
+        monkeypatch.setattr(_mem.subprocess, 'run', lambda *a, **k: SimpleNamespace(returncode=0, stdout=toon))
         assert _resolve_step_execution_tier('quality-gate', 'X') == 'per_task'
 
     def test_orchestrator_tier_is_read_from_resolve_toon(self, monkeypatch):
         monkeypatch.setattr(_mem, '_resolve_executor', lambda: Path('/dev/null'))
         toon = 'status: success\nexecution_tier: orchestrator\nbash_timeout_seconds: 2065\n'
-        monkeypatch.setattr(
-            _mem.subprocess, 'run', lambda *a, **k: SimpleNamespace(returncode=0, stdout=toon)
-        )
+        monkeypatch.setattr(_mem.subprocess, 'run', lambda *a, **k: SimpleNamespace(returncode=0, stdout=toon))
         assert _resolve_step_execution_tier('verify', 'X') == 'orchestrator'
 
     def test_per_task_tier_is_read_from_resolve_toon(self, monkeypatch):
         monkeypatch.setattr(_mem, '_resolve_executor', lambda: Path('/dev/null'))
         toon = 'status: success\nexecution_tier: per_task\nbash_timeout_seconds: 150\n'
-        monkeypatch.setattr(
-            _mem.subprocess, 'run', lambda *a, **k: SimpleNamespace(returncode=0, stdout=toon)
-        )
+        monkeypatch.setattr(_mem.subprocess, 'run', lambda *a, **k: SimpleNamespace(returncode=0, stdout=toon))
         assert _resolve_step_execution_tier('quality-gate', 'X') == 'per_task'
 
 
@@ -385,8 +373,7 @@ class TestStampReflectsALiveResolvedCeilingVerdict:
     # repo's whole-tree coverage canonical. Fed to the production classifier rather
     # than being decomposed by hand.
     _RESOLVED_EXECUTABLE = (
-        'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build '
-        'run --command-args "coverage"'
+        'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "coverage"'
     )
 
     # A MAVEN executable for the crossing test below. The engine is incidental
@@ -394,8 +381,7 @@ class TestStampReflectsALiveResolvedCeilingVerdict:
     # crossing is seeded on a MEASURED low value and re-seeded on a MEASURED
     # high one, which is the honest crossing and works for any engine.
     _MAVEN_RESOLVED_EXECUTABLE = (
-        'python3 .plan/execute-script.py plan-marshall:build-maven:maven '
-        'run --command-args "test -pl core"'
+        'python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "test -pl core"'
     )
 
     # A cheap learned duration whose buffered bound stays well inside the
@@ -438,9 +424,7 @@ class TestStampReflectsALiveResolvedCeilingVerdict:
     @staticmethod
     def _patch_resolve_with(monkeypatch, toon: str) -> None:
         monkeypatch.setattr(_mem, '_resolve_executor', lambda: Path('/dev/null'))
-        monkeypatch.setattr(
-            _mem.subprocess, 'run', lambda *a, **k: SimpleNamespace(returncode=0, stdout=toon)
-        )
+        monkeypatch.setattr(_mem.subprocess, 'run', lambda *a, **k: SimpleNamespace(returncode=0, stdout=toon))
 
     def test_production_producers_emit_the_four_field_envelope(self):
         """The producer chain yields exactly the four fields the composer consumes.
@@ -465,9 +449,7 @@ class TestStampReflectsALiveResolvedCeilingVerdict:
         assert fields['execution_tier'] in ('per_task', 'orchestrator')
         expected_exceeds = fields['bash_timeout_seconds'] > _arch_build.HARNESS_BASH_CEILING_SECONDS
         assert fields['exceeds_bash_ceiling'] is expected_exceeds
-        assert fields['execution_tier'] == (
-            'per_task' if (measured and not expected_exceeds) else 'orchestrator'
-        )
+        assert fields['execution_tier'] == ('per_task' if (measured and not expected_exceeds) else 'orchestrator')
 
     def test_ceiling_boundary_is_strictly_above(self):
         """At the ceiling → per_task; one second above it → orchestrator.
@@ -512,9 +494,7 @@ class TestStampReflectsALiveResolvedCeilingVerdict:
 
     def test_above_ceiling_resolve_is_never_stamped_per_task(self, monkeypatch):
         """THE regression: an orchestrator-tier resolve stamps orchestrator, never per_task."""
-        fields = _arch_build._compute_execution_tier_fields(
-            _arch_build.HARNESS_BASH_CEILING_SECONDS + 1, True
-        )
+        fields = _arch_build._compute_execution_tier_fields(_arch_build.HARNESS_BASH_CEILING_SECONDS + 1, True)
         assert fields['execution_tier'] == 'orchestrator'
         self._patch_resolve_with(monkeypatch, self._resolve_toon_for(fields))
 
@@ -524,9 +504,7 @@ class TestStampReflectsALiveResolvedCeilingVerdict:
 
     def test_at_ceiling_resolve_stamps_per_task(self, monkeypatch):
         """The other side of the boundary, through the same production envelope."""
-        fields = _arch_build._compute_execution_tier_fields(
-            _arch_build.HARNESS_BASH_CEILING_SECONDS, True
-        )
+        fields = _arch_build._compute_execution_tier_fields(_arch_build.HARNESS_BASH_CEILING_SECONDS, True)
         assert fields['execution_tier'] == 'per_task'
         self._patch_resolve_with(monkeypatch, self._resolve_toon_for(fields))
 
@@ -567,8 +545,7 @@ class TestStampReflectsALiveResolvedCeilingVerdict:
         assert measured is True, 'the cheap seed must make the key read as measured'
         before = _arch_build._compute_execution_tier_fields(stamp, measured)
         assert before['execution_tier'] == 'per_task', (
-            'a cheap MEASURED command must start inside the Bash ceiling so the '
-            'crossing stays observable'
+            'a cheap MEASURED command must start inside the Bash ceiling so the crossing stays observable'
         )
 
         run_config.timeout_set(command_key, self._WELL_ABOVE_CEILING_SECONDS)
@@ -619,15 +596,11 @@ class TestRouteUnmappedOrchestratorVerbs:
         """Point the routing pass at ``tmp_path`` with an all-orchestrator classifier."""
         captured: list[str] = []
         monkeypatch.setattr(_mem, 'get_plan_dir', lambda pid: tmp_path)
-        monkeypatch.setattr(
-            _mem, '_resolve_command_tier', lambda cmd, pid: {'execution_tier': 'orchestrator'}
-        )
+        monkeypatch.setattr(_mem, '_resolve_command_tier', lambda cmd, pid: {'execution_tier': 'orchestrator'})
         monkeypatch.setattr(_mem, '_emit_decision_log', lambda pid, msg: captured.append(msg))
         return captured
 
-    def test_unmapped_verb_routes_to_verify_verb_and_leaves_no_inline_command(
-        self, monkeypatch, tmp_path
-    ):
+    def test_unmapped_verb_routes_to_verify_verb_and_leaves_no_inline_command(self, monkeypatch, tmp_path):
         """(i) The custom-verb command lands as ``verify:{verb}`` and is dropped per-task."""
         task_path = self._write_task(tmp_path / 'tasks', 1, [self._CUSTOM_VERB_CMD])
         captured = self._patch_routing(monkeypatch, tmp_path)
@@ -909,9 +882,7 @@ class TestBuildPhaseCanonicalCarveOut:
         """All commands classify ``orchestrator``; real ``_check_step_resolvable`` runs."""
         captured: list[str] = []
         monkeypatch.setattr(_mem, 'get_plan_dir', lambda pid: tmp_path)
-        monkeypatch.setattr(
-            _mem, '_resolve_command_tier', lambda cmd, pid: {'execution_tier': 'orchestrator'}
-        )
+        monkeypatch.setattr(_mem, '_resolve_command_tier', lambda cmd, pid: {'execution_tier': 'orchestrator'})
         monkeypatch.setattr(_mem, '_emit_decision_log', lambda pid, msg: captured.append(msg))
         return captured
 
@@ -930,9 +901,7 @@ class TestBuildPhaseCanonicalCarveOut:
         kept = json.loads(task_path.read_text(encoding='utf-8'))
         assert kept['verification']['commands'] == [self._COMPILE_CMD]
         # Provenance: the keep decision names the verb and the absent gate.
-        assert any(
-            "'compile'" in msg and 'no phase-5 verify gate' in msg for msg in captured
-        )
+        assert any("'compile'" in msg and 'no phase-5 verify gate' in msg for msg in captured)
 
     def test_test_compile_kept_with_task_not_routed(self, monkeypatch, tmp_path):
         """An orchestrator-tier ``test-compile`` command stays in the task; no phase-5 step."""
@@ -947,9 +916,7 @@ class TestBuildPhaseCanonicalCarveOut:
         assert body['phase_5']['verification_steps'] == []
         kept = json.loads(task_path.read_text(encoding='utf-8'))
         assert kept['verification']['commands'] == [self._TEST_COMPILE_CMD]
-        assert any(
-            "'test-compile'" in msg and 'no phase-5 verify gate' in msg for msg in captured
-        )
+        assert any("'test-compile'" in msg and 'no phase-5 verify gate' in msg for msg in captured)
 
     def test_module_tests_still_routes(self, monkeypatch, tmp_path):
         """Routable control: ``module-tests`` still hoists to ``verify:module-tests``."""
@@ -998,9 +965,7 @@ class TestBuildPhaseCanonicalCarveOut:
         phase_5_steps = body['phase_5']['verification_steps']
         assert phase_5_steps == ['verify:module-tests']
         # The FINAL emitted phase-5 list resolves — no unresolvable_step.
-        assert (
-            _mem.check_emitted_steps_resolvable(phase_5_steps, [], {}, None) is None
-        )
+        assert _mem.check_emitted_steps_resolvable(phase_5_steps, [], {}, None) is None
 
 
 class TestUnresolvableStepProvenance:
@@ -1051,7 +1016,7 @@ class TestUnresolvableStepProvenance:
 
         assert result is not None
         message = result['message']
-        assert "origin (authored vs routed) could not be determined" in message
+        assert 'origin (authored vs routed) could not be determined' in message
         # It is an indeterminacy, not a marshal.json origin claim.
         assert 'in marshal.json is unresolvable' not in message
         assert 'NOT authored in marshal.json' not in message
@@ -1144,8 +1109,7 @@ class TestUnresolvableStepProvenance:
             f'below would pass for the wrong reason — message: {message!r}'
         )
         assert case['marker'] in message, (
-            f'{case_id}: expected the not-authored provenance marker '
-            f'{case["marker"]!r} — message: {message!r}'
+            f'{case_id}: expected the not-authored provenance marker {case["marker"]!r} — message: {message!r}'
         )
         # ...and makes no origin claim inside that reason.
         assert self._ORIGIN_CLAIM not in message, (
@@ -1176,9 +1140,7 @@ class TestUnresolvableStepProvenance:
             f'would pass for the wrong reason — message: {message!r}'
         )
         # ...and claims no marshal.json origin, in the reason OR the wrapper phrasing.
-        assert self._ORIGIN_CLAIM not in message, (
-            f'the reason claims a marshal.json origin — message: {message!r}'
-        )
+        assert self._ORIGIN_CLAIM not in message, f'the reason claims a marshal.json origin — message: {message!r}'
         assert 'in marshal.json is unresolvable' not in message, (
             f'the wrapper asserts a marshal.json origin on the one branch that holds '
             f'no marshal.json key map — message: {message!r}'
@@ -1191,9 +1153,7 @@ class TestUnresolvableStepProvenance:
         ``in marshal.json is unresolvable`` phrasing still names marshal.json, while
         the reason embedded after the colon no longer does.
         """
-        result = _mem.check_emitted_steps_resolvable(
-            [], ['bogus-finalize-step'], None, {'bogus-finalize-step': {}}
-        )
+        result = _mem.check_emitted_steps_resolvable([], ['bogus-finalize-step'], None, {'bogus-finalize-step': {}})
 
         assert result is not None
         message = result['message']

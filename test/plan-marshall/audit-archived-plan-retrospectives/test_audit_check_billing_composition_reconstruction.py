@@ -73,9 +73,7 @@ class TestBillingCompositionReconstruction:
         assert row['cache_creation_share'] == '31.7%'
         assert row['output_share'] == '1.6%'
 
-    def test_zero_reconstruction_reports_na_rather_than_a_fabricated_share(
-        self, tmp_path: Path
-    ):
+    def test_zero_reconstruction_reports_na_rather_than_a_fabricated_share(self, tmp_path: Path):
         # A plan whose four-field view is present but all-zero has no denominator;
         # the share is `n/a`, never a 0% that would read as a measured composition.
         inputs = _write_billing_plan(
@@ -99,9 +97,7 @@ class TestBillingCompositionReconstruction:
 class TestBillingCompositionReconciliation:
     """The same-population `max(row, ledger)` dispatch-boundary reconciliation."""
 
-    def test_ledger_recovers_an_under_counted_row_without_summing(
-        self, tmp_path: Path
-    ):
+    def test_ledger_recovers_an_under_counted_row_without_summing(self, tmp_path: Path):
         # The ledger's two dispatch rows SUM per column (4000/1000/300000/12000)
         # and the phase row is lower on every field, so the reconciled value is the
         # ledger's — recovered, not added.
@@ -177,9 +173,7 @@ class TestBillingCompositionReconciliation:
         assert row['billing_total'] == 31_500
         assert row['reconciled_phases'] == ''
 
-    def test_legacy_five_column_row_reports_context_columns_unmeasured(
-        self, tmp_path: Path
-    ):
+    def test_legacy_five_column_row_reports_context_columns_unmeasured(self, tmp_path: Path):
         # A ledger written before the four context-load columns existed keeps its
         # columns 1-5 readable; the appended columns are OMITTED from the totals
         # rather than summed as 0, and the whole row is not dropped.
@@ -199,9 +193,7 @@ class TestBillingCompositionReconciliation:
         assert 'input_tokens' not in totals
         assert 'cache_read_input_tokens' not in totals
 
-    def test_unmeasured_cells_are_omitted_while_measured_zeros_are_kept(
-        self, tmp_path: Path
-    ):
+    def test_unmeasured_cells_are_omitted_while_measured_zeros_are_kept(self, tmp_path: Path):
         """A measured zero and an unmeasured column stay distinguishable.
 
         One row measures zero on `input_tokens` and declines to measure

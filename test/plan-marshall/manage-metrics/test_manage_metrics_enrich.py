@@ -11,7 +11,6 @@ Its sections, in order:
 * CLI Plumbing Tests (Tier 3 - subprocess, retained for end-to-end coverage)
 """
 
-
 from _manage_metrics_fixtures import (
     ns_end_phase,
     ns_enrich,
@@ -59,6 +58,7 @@ def test_enrich_with_unknown_session(plan_context):
 # =============================================================================
 # Test: enrich delegates to the platform-runtime normalized-tokens op
 # =============================================================================
+
 
 class TestEnrichDelegatesToRuntimeOp:
     """cmd_enrich consumes the runtime op's normalized per-phase numbers."""
@@ -194,6 +194,7 @@ class TestEnrichDelegatesToRuntimeOp:
 # total_tokens population labelling
 # =============================================================================
 
+
 def test_enrich_labels_a_zero_dispatch_phase_as_inline(plan_context, monkeypatch):
     """The inline fold still happens — and the row says so, twice.
 
@@ -240,9 +241,7 @@ def test_enrich_labels_a_dispatch_only_phase_as_dispatched(plan_context, monkeyp
     cmd_start_phase(ns_start_phase(plan_id, '5-execute'))
     cmd_end_phase(ns_end_phase(plan_id, '5-execute', total_tokens=42000))
 
-    _run_enrich_with_buckets(
-        plan_id, monkeypatch, {'5-execute': {'cache_read_input_tokens': 250000}}
-    )
+    _run_enrich_with_buckets(plan_id, monkeypatch, {'5-execute': {'cache_read_input_tokens': 250000}})
 
     row = _phase_row(plan_id, '5-execute')
     assert row['total_tokens'] == 42000

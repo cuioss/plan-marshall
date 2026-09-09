@@ -6,7 +6,6 @@ is registerable with a section-spec row, that the scanner reaches both dispatch
 shapes, and that the guard bites when a row is missing.
 """
 
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -97,8 +96,7 @@ class TestDispatchedAspectsHaveStaticRow:
 
         for key in ('direct-gh-glab-usage', 'execution-context-dispatch-audit'):
             assert key in dispatched, (
-                f'{key} is dispatched from its reference document and MUST be '
-                f'enumerated by the producer scan'
+                f'{key} is dispatched from its reference document and MUST be enumerated by the producer scan'
             )
             assert key not in skill_only, (
                 f'{key} is expected to be dispatched from its reference document, '

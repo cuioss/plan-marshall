@@ -7,7 +7,6 @@ import. Below, verbatim, is the docstring of the module they were split from:
 Tests for ``analyze-logs.py``.
 """
 
-
 from __future__ import annotations
 
 import json
@@ -142,9 +141,6 @@ def _hot_and_slow_log_lines() -> list[str]:
     for this corpus while ``pm:hot:hot`` owns 80% of all recorded time. That is
     the plan's thesis expressed as a fixture.
     """
-    lines = [
-        _line(f'2026-06-01T10:00:{i % 60:02d}Z', 'INFO', 'pm:hot:hot run (0.2s)')
-        for i in range(100)
-    ]
+    lines = [_line(f'2026-06-01T10:00:{i % 60:02d}Z', 'INFO', 'pm:hot:hot run (0.2s)') for i in range(100)]
     lines.append(_line('2026-06-01T10:05:00Z', 'INFO', 'pm:slow:slow run (5.0s)'))
     return lines

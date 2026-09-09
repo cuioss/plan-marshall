@@ -158,21 +158,13 @@ _NEGATIVE_BODIES = [
     '    # missing file, malformed JSON, missing key, non-string value all return None\n'
     '    return None\n',
     # write-side guard that REJECTS a retired key (a breaking refusal, not a shim)
-    'def check(cfg):\n'
-    "    # a typo'd or retired key is rejected rather than silently ignored\n"
-    '    raise KeyError\n',
+    "def check(cfg):\n    # a typo'd or retired key is rejected rather than silently ignored\n    raise KeyError\n",
     # a caller that merely TRIGGERS a migration (not the shim definition itself)
-    'def scan():\n'
-    '    # lazily migrate the pre-home-root credentials dir before scanning\n'
-    '    return 1\n',
+    'def scan():\n    # lazily migrate the pre-home-root credentials dir before scanning\n    return 1\n',
     # env-var / CLI compatibility (not persisted-data shape)
-    'def base():\n'
-    '    # PLAN_BASE_DIR is honoured for backward compatibility for tests\n'
-    '    return None\n',
+    'def base():\n    # PLAN_BASE_DIR is honoured for backward compatibility for tests\n    return None\n',
     # external-system shape variance (not our own version boundary)
-    'def login(name):\n'
-    '    # tolerate GitHub login-casing drift across the contents API\n'
-    '    return name.lower()\n',
+    'def login(name):\n    # tolerate GitHub login-casing drift across the contents API\n    return name.lower()\n',
 ]
 
 
@@ -185,11 +177,7 @@ def test_negative_boundary_does_not_fire(tmp_path, body):
 
 def test_well_marked_shim_is_suppressed(tmp_path):
     """A shim indicator covered by a conforming marker in its function is clean."""
-    body = (
-        'def read_state(data):\n'
-        f'{_marker("B")}'
-        '    return data.get("old")\n'
-    )
+    body = f'def read_state(data):\n{_marker("B")}    return data.get("old")\n'
     _write_script(tmp_path, body)
     assert_analyzer_findings(analyze, tmp_path, [])
 
@@ -340,9 +328,7 @@ def test_real_marketplace_population_is_non_empty():
     make the whole sweep vacuous.
     """
     population = enumerate_scripts(MARKETPLACE_ROOT)
-    assert len(population) >= 100, (
-        f'expected the real script population to exceed 100, got {len(population)}'
-    )
+    assert len(population) >= 100, f'expected the real script population to exceed 100, got {len(population)}'
 
 
 def test_real_marketplace_tree_produces_zero_findings():
@@ -402,9 +388,7 @@ def _measure_marker_recall(population: list[Path]) -> tuple[int, int]:
         if not comments:
             continue
         markers = [
-            mk
-            for mk in _mod._parse_markers(comments, _mod._function_spans(text))
-            if mk.malformed_reason is None
+            mk for mk in _mod._parse_markers(comments, _mod._function_spans(text)) if mk.malformed_reason is None
         ]
         lines = text.splitlines(keepends=True)
         for marker in markers:

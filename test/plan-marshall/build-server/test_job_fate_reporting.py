@@ -59,9 +59,7 @@ mbs = load_script_module('plan-marshall', 'manage-build-server', 'manage_build_s
 #: call. Only ``--root`` varies per test, so the parser supplies ``--limit``'s real
 #: default rather than a value repeated at the call site. ``register=False`` so it
 #: never publishes a second ``manage_build_server`` in ``sys.modules``.
-_LOGS_ARGS = parse_ns(
-    'plan-marshall', 'manage-build-server', 'manage_build_server.py', 'logs', register=False
-)
+_LOGS_ARGS = parse_ns('plan-marshall', 'manage-build-server', 'manage_build_server.py', 'logs', register=False)
 
 
 @pytest.fixture
@@ -158,11 +156,7 @@ def _logs(project_root: Path) -> list[dict]:
 
 
 def _fate_by_job(records: list[dict]) -> dict[str, str]:
-    return {
-        record['job_id']: record['fate']
-        for record in records
-        if record['kind'] == audit_mod.KIND_INTERACTION
-    }
+    return {record['job_id']: record['fate'] for record in records if record['kind'] == audit_mod.KIND_INTERACTION}
 
 
 # =============================================================================
@@ -310,11 +304,7 @@ def test_gcd_journal_entry_renders_unknown(project, tmp_path):
     assert journal.get(job_id) is None
 
     # The interaction row survives; with no emitted fate record it renders unknown.
-    audit_only = [
-        record
-        for record in audit.read_all()
-        if record.get('kind') == audit_mod.KIND_JOB_FATE
-    ]
+    audit_only = [record for record in audit.read_all() if record.get('kind') == audit_mod.KIND_JOB_FATE]
     assert audit_only == []
     assert _fate_by_job(_logs(project))[job_id] == 'unknown'
 

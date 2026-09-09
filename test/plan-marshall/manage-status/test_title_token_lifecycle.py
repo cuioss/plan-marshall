@@ -3,7 +3,6 @@
 """Tests for how a ``title-token`` record behaves across a plan's lifecycle:
 phase writes, age-based staleness, archival, and the state-settle drive seam."""
 
-
 from argparse import Namespace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -29,6 +28,7 @@ from _title_token_fixtures import (
 # =============================================================================
 # phase writers: NO title-token sweep — staleness is resolved read-side
 # =============================================================================
+
 
 def test_lock_tokens_preserved_across_transition_and_set_phase(plan_context):
     """A live lock token survives both phase writers untouched — the live
@@ -96,14 +96,14 @@ def test_killed_detached_build_busy_token_ages_out_without_any_phase_change(plan
 
     stranded = _read_status(plan_context, plan_id)
     assert read_title_token(stranded) is None, (
-        'A killed detached build left build-busy armed and the aged-token read '
-        'predicate failed to retire it.'
+        'A killed detached build left build-busy armed and the aged-token read predicate failed to retire it.'
     )
 
 
 # =============================================================================
 # staleness: read-side, age-based, clearable by ANY owner
 # =============================================================================
+
 
 def test_read_title_token_hides_a_stale_record_without_mutating_it():
     """``read_title_token`` is the read-side accessor: a stale record reads as
@@ -151,6 +151,7 @@ def test_a_fresh_foreign_token_is_still_protected(plan_context):
 # archive: cmd_archive pops title_token before writing the archived status.json
 # =============================================================================
 
+
 def test_archive_pops_merge_lock_title_token(plan_context):
     """cmd_archive must pop a pre-set merge-lock title_token before archiving."""
     plan_id = 'tt-archive-merge-token'
@@ -164,10 +165,10 @@ def test_archive_pops_merge_lock_title_token(plan_context):
     assert result['status'] == 'success', f'archive failed: {result}'
     archived_status = _read_archived_status(result)
     assert 'title_token' not in archived_status, (
-        f"Expected title_token absent from archived status.json after archiving "
-        f"with a pre-set merge token, but found "
-        f"{archived_status.get('title_token')!r}. cmd_archive must pop "
-        f"title_token before write_status/shutil.move."
+        f'Expected title_token absent from archived status.json after archiving '
+        f'with a pre-set merge token, but found '
+        f'{archived_status.get("title_token")!r}. cmd_archive must pop '
+        f'title_token before write_status/shutil.move.'
     )
 
 
@@ -193,16 +194,17 @@ def test_archive_pops_build_busy_title_token(plan_context):
     assert result['status'] == 'success', f'archive failed: {result}'
     archived_status = _read_archived_status(result)
     assert 'title_token' not in archived_status, (
-        f"Expected title_token absent from archived status.json after archiving "
-        f"with a pre-set build-busy token, but found "
-        f"{archived_status.get('title_token')!r}. cmd_archive must pop "
-        f"title_token before write_status/shutil.move."
+        f'Expected title_token absent from archived status.json after archiving '
+        f'with a pre-set build-busy token, but found '
+        f'{archived_status.get("title_token")!r}. cmd_archive must pop '
+        f'title_token before write_status/shutil.move.'
     )
 
 
 # =============================================================================
 # drive seam: the state settle reports no delivery, because it delivers nothing
 # =============================================================================
+
 
 def test_archive_releases_no_session_binding(plan_context, monkeypatch):
     """``cmd_archive`` fires NO teardown delegation at all.
@@ -233,8 +235,7 @@ def test_archive_releases_no_session_binding(plan_context, monkeypatch):
     assert result['status'] == 'success'
     teardown_calls = [c for c in calls if c[1:] == ('session', 'teardown')]
     assert teardown_calls == [], (
-        'archive released a session binding — the terminal state it just '
-        'persisted can no longer be delivered'
+        'archive released a session binding — the terminal state it just persisted can no longer be delivered'
     )
     # The plan directory really moved.
     assert Path(result['archived_to']).is_dir()

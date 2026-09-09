@@ -729,9 +729,7 @@ def cmd_update(args) -> dict:
         task['cost_size'] = args.cost_size
     if getattr(args, 'predicted_cost_tokens', None) is not None:
         if args.predicted_cost_tokens < 0:
-            return output_error(
-                f'predicted-cost-tokens must be non-negative, got {args.predicted_cost_tokens}'
-            )
+            return output_error(f'predicted-cost-tokens must be non-negative, got {args.predicted_cost_tokens}')
         task['predicted_cost_tokens'] = args.predicted_cost_tokens
     if getattr(args, 'envelope_id', None) is not None:
         if args.envelope_id < 1:

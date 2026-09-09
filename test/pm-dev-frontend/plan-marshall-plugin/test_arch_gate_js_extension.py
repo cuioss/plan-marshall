@@ -7,16 +7,13 @@ the javascript domain's arch-gate verify-step append fires. Tier 2 (direct
 import): loads the bundle extension.py and inspects provides_arch_gate() directly.
 """
 
-
 # Import shared infrastructure (conftest.py sets up PYTHONPATH for extension_base).
 from conftest import load_skill_module
 
 
 def _load_extension():
     """Load the pm-dev-frontend bundle extension.py and return an Extension instance."""
-    module = load_skill_module(
-        'pm-dev-frontend', 'plan-marshall-plugin', 'extension.py', 'extension_pm_dev_frontend'
-    )
+    module = load_skill_module('pm-dev-frontend', 'plan-marshall-plugin', 'extension.py', 'extension_pm_dev_frontend')
     return module.Extension()
 
 
@@ -89,9 +86,7 @@ def test_get_skill_domains_security_profile_defaults_to_javascript_security():
 
 def test_applies_to_module_is_not_applicable_without_npm():
     """A module not built by npm is not a javascript module."""
-    result = _load_extension().applies_to_module(
-        {'build_systems': ['maven'], 'packages': {}, 'test_packages': {}}
-    )
+    result = _load_extension().applies_to_module({'build_systems': ['maven'], 'packages': {}, 'test_packages': {}})
 
     assert result['applicable'] is False
     assert result['confidence'] == 'none'
@@ -100,9 +95,7 @@ def test_applies_to_module_is_not_applicable_without_npm():
 
 def test_applies_to_module_is_applicable_for_an_npm_module():
     """An npm module is a javascript module, surfaced with its build-system signal."""
-    result = _load_extension().applies_to_module(
-        {'build_systems': ['npm'], 'packages': {}, 'test_packages': {}}
-    )
+    result = _load_extension().applies_to_module({'build_systems': ['npm'], 'packages': {}, 'test_packages': {}})
 
     assert result['applicable'] is True
     assert 'build_systems=npm' in result['signals']

@@ -33,7 +33,6 @@ the dispatcher narrative and the workflow body's behavioural contract
 without re-implementing the gate logic in Python.
 """
 
-
 from _lessons_capture_workflow_fixtures import _read_dispatcher, _read_workflow
 
 
@@ -46,9 +45,7 @@ class TestDispatcherSignalGateStructure:
         sub-step so the manifest-driven FOR loop locates it."""
         body = _read_dispatcher()
         assert 'Lessons-capture Signal Gate' in body, (
-            'phase-6-finalize/SKILL.md must declare a '
-            '"Lessons-capture Signal Gate" sub-step inside Step 3 '
-            'item 4b'
+            'phase-6-finalize/SKILL.md must declare a "Lessons-capture Signal Gate" sub-step inside Step 3 item 4b'
         )
 
     def test_dispatcher_gate_runs_before_dispatch(self) -> None:
@@ -64,8 +61,7 @@ class TestDispatcherSignalGateStructure:
             'dispatch wrapper'
         )
         assert gate_idx < dispatch_idx, (
-            'Lessons-capture Signal Gate must precede item 5 '
-            'so the dispatch is skipped when all three signals are zero'
+            'Lessons-capture Signal Gate must precede item 5 so the dispatch is skipped when all three signals are zero'
         )
 
 
@@ -88,12 +84,10 @@ class TestDispatcherGateSourcesNamed:
         body = _read_dispatcher()
         for phase in ('2-refine', '3-outline', '4-plan', '5-execute', '6-finalize'):
             assert phase in body, (
-                f'Dispatcher Signal Gate must enumerate phase {phase} '
-                f'in its per-phase Q-Gate findings loop'
+                f'Dispatcher Signal Gate must enumerate phase {phase} in its per-phase Q-Gate findings loop'
             )
         assert 'qgate list' in body and '--resolution pending' in body, (
-            'Dispatcher Signal Gate must invoke '
-            '"manage-findings qgate list --resolution pending"'
+            'Dispatcher Signal Gate must invoke "manage-findings qgate list --resolution pending"'
         )
         assert 'filtered_count' in body, (
             'Dispatcher Signal Gate must read the "filtered_count" field '
@@ -124,12 +118,10 @@ class TestDispatcherGateSourcesNamed:
         ``manage-status read``."""
         body = _read_dispatcher()
         assert 'automatic-review' in body, (
-            'Dispatcher Signal Gate must name the "automatic-review" '
-            'step as a signal source'
+            'Dispatcher Signal Gate must name the "automatic-review" step as a signal source'
         )
         assert 'manage-status' in body and 'read' in body, (
-            'Dispatcher Signal Gate must read the automatic-review '
-            'step outcome via manage-status read'
+            'Dispatcher Signal Gate must read the automatic-review step outcome via manage-status read'
         )
 
     def test_script_failure_clusters_signal_named(self) -> None:
@@ -137,8 +129,7 @@ class TestDispatcherGateSourcesNamed:
         ``manage-logging read --type work`` scanning ``[FAILED]``."""
         body = _read_dispatcher()
         assert 'manage-logging' in body and '--type work' in body, (
-            'Dispatcher Signal Gate must read the work log via '
-            'manage-logging read --type work'
+            'Dispatcher Signal Gate must read the work log via manage-logging read --type work'
         )
         assert '[FAILED]' in body, (
             'Dispatcher Signal Gate must scan for "[FAILED]" markers '
@@ -158,8 +149,7 @@ class TestDispatcherSkipBranch:
         ``--outcome skipped`` on the three-zero branch."""
         body = _read_dispatcher()
         assert '--outcome skipped' in body, (
-            'Dispatcher Signal Gate skip branch must invoke '
-            'mark-step-done with "--outcome skipped"'
+            'Dispatcher Signal Gate skip branch must invoke mark-step-done with "--outcome skipped"'
         )
 
     def test_skip_branch_uses_canonical_display_detail(self) -> None:
@@ -180,8 +170,7 @@ class TestDispatcherSkipBranch:
         body = _read_dispatcher()
         marker = '(plan-marshall:phase-6-finalize:lessons-capture)'
         assert marker in body, (
-            'Dispatcher Signal Gate skip branch must emit a decision '
-            'log line under the caller prefix ' + repr(marker)
+            'Dispatcher Signal Gate skip branch must emit a decision log line under the caller prefix ' + repr(marker)
         )
 
 
@@ -218,15 +207,11 @@ class TestRemediatedInRunSignalsNamed:
         --resolution fixed``."""
         body = _read_dispatcher()
         assert 'manage-findings' in body and 'list' in body, (
-            'Signal-2 prose must name a manage-findings list invocation '
-            'to count fixed-in-run review-bot findings'
+            'Signal-2 prose must name a manage-findings list invocation to count fixed-in-run review-bot findings'
         )
-        assert '--type pr-comment' in body, (
-            'Signal-2 prose must name the pr-comment finding type token'
-        )
+        assert '--type pr-comment' in body, 'Signal-2 prose must name the pr-comment finding type token'
         assert '--resolution fixed' in body, (
-            'Signal-2 prose must name "--resolution fixed" so the '
-            'remediated-in-run review-bot findings fire the signal'
+            'Signal-2 prose must name "--resolution fixed" so the remediated-in-run review-bot findings fire the signal'
         )
 
     def test_signal_3_names_all_three_marker_classes(self) -> None:
@@ -234,9 +219,7 @@ class TestRemediatedInRunSignalsNamed:
         — ``[FAILED]``, ``[ERROR] ... script_failure``, and
         ``voluntary_checkpoint → error`` — by distinct failing notation."""
         body = _read_dispatcher()
-        assert '[FAILED]' in body, (
-            'Signal-3 prose must preserve the "[FAILED]" marker class'
-        )
+        assert '[FAILED]' in body, 'Signal-3 prose must preserve the "[FAILED]" marker class'
         assert 'script_failure' in body, (
             'Signal-3 prose must name the "[ERROR] ... script_failure" '
             'marker class so argparse-rejection / internal-error lines '
@@ -310,7 +293,7 @@ class TestBodyNoLongerCarriesGate:
                     msg = (
                         'lessons-capture.md must NOT carry a bash '
                         'invocation of "mark-step-done --outcome skipped" — '
-                        f'the skipped recording is now the dispatcher\'s '
+                        f"the skipped recording is now the dispatcher's "
                         f'responsibility (offending line: {line!r})'
                     )
                     raise AssertionError(msg)
@@ -318,7 +301,7 @@ class TestBodyNoLongerCarriesGate:
         assert 'NOT emitted by this body' in body, (
             'lessons-capture.md Branch C must explicitly state "NOT '
             'emitted by this body" so future readers know the skipped '
-            'outcome is the dispatcher\'s responsibility'
+            "outcome is the dispatcher's responsibility"
         )
 
 
@@ -332,10 +315,7 @@ class TestBodyIntroNamesDispatcherMove:
         body = _read_workflow()
         assert 'Dispatcher-level Signal Gate precondition' in body or (
             'Dispatcher' in body and 'Signal Gate' in body
-        ), (
-            'lessons-capture.md intro must reference the '
-            'dispatcher-level Signal Gate precondition (B4)'
-        )
+        ), 'lessons-capture.md intro must reference the dispatcher-level Signal Gate precondition (B4)'
 
     def test_intro_names_runtime_input_fields(self) -> None:
         """The body MUST document the three runtime-input field names
@@ -346,10 +326,7 @@ class TestBodyIntroNamesDispatcherMove:
             'signal_automated_review_count',
             'signal_script_failure_clusters_count',
         ):
-            assert field in body, (
-                f'lessons-capture.md intro must document the runtime '
-                f'input field {field!r}'
-            )
+            assert field in body, f'lessons-capture.md intro must document the runtime input field {field!r}'
 
     def test_signal_automated_review_field_documents_remediated_trigger(self) -> None:
         """The ``signal_automated_review_count`` field description MUST

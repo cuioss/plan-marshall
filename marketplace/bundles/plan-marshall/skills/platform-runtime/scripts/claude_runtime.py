@@ -11,6 +11,7 @@ TOON output is consumed by manage-* skills and by platform_runtime.py (the route
 Follows the tools-script-executor / ref-toon-format compliance contract documented
 in SKILL.md.
 """
+
 from __future__ import annotations
 
 import json
@@ -27,20 +28,20 @@ from typing import Any
 # Bootstrap sys.path so sibling skill libraries resolve without the executor.
 # Walk up from this script to the skills/ root, then append each library dir.
 for _ancestor in Path(__file__).resolve().parents:
-    if _ancestor.name == "skills" and (_ancestor.parent / ".claude-plugin" / "plugin.json").is_file():
+    if _ancestor.name == 'skills' and (_ancestor.parent / '.claude-plugin' / 'plugin.json').is_file():
         for _lib in (
-            "ref-toon-format",
-            "manage-terminal-title",
-            "tools-file-ops",
-            "script-shared",
+            'ref-toon-format',
+            'manage-terminal-title',
+            'tools-file-ops',
+            'script-shared',
         ):
-            _lib_path = str(_ancestor / _lib / "scripts")
+            _lib_path = str(_ancestor / _lib / 'scripts')
             if _lib_path not in sys.path:
                 sys.path.append(_lib_path)
         # script-shared organises its modules into subdirectories; the
         # build-server wire protocol the ``wait for`` observable is inspected
         # through lives one level down.
-        _build_lib_path = str(_ancestor / "script-shared" / "scripts" / "build")
+        _build_lib_path = str(_ancestor / 'script-shared' / 'scripts' / 'build')
         if _build_lib_path not in sys.path:
             sys.path.append(_build_lib_path)
         break
@@ -59,8 +60,8 @@ from toon_parser import parse_toon  # noqa: E402
 # it (single home). This module keeps only the transcript-engine roots.
 # ---------------------------------------------------------------------------
 
-_PLAN_DIR_NAME = os.environ.get("PLAN_DIR_NAME", ".plan")
-_CLAUDE_PROJECTS_DIR = Path.home() / ".claude" / "projects"
+_PLAN_DIR_NAME = os.environ.get('PLAN_DIR_NAME', '.plan')
+_CLAUDE_PROJECTS_DIR = Path.home() / '.claude' / 'projects'
 
 # Harness bash-timeout ceiling: the maximum seconds a single Bash tool
 # invocation may run on this harness. Consumers read it through the runtime
@@ -70,7 +71,7 @@ HARNESS_BASH_TIMEOUT_CEILING_SECONDS = 600
 
 # Pattern: assistant messages in JSONL with usage data
 _USAGE_FIELD_RE = re.compile(
-    r"^\s*(total_tokens|input_tokens|output_tokens)\s*:\s*(\d+)",
+    r'^\s*(total_tokens|input_tokens|output_tokens)\s*:\s*(\d+)',
     re.MULTILINE,
 )
 
@@ -79,9 +80,7 @@ _USAGE_FIELD_RE = re.compile(
 # paths and glob patterns, so it MUST be validated against this strict
 # format before any filesystem use to prevent path traversal and glob
 # injection.
-_SESSION_ID_RE = re.compile(
-    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
-)
+_SESSION_ID_RE = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
 
 # ---------------------------------------------------------------------------
 # Transcript engine — Claude-shaped normalized-token computation.
@@ -95,32 +94,30 @@ _SESSION_ID_RE = re.compile(
 # ---------------------------------------------------------------------------
 
 # Matches an embedded ``<usage>...</usage>`` block in subagent tool-result text.
-_USAGE_TAG_RE = re.compile(r"<usage>([\s\S]*?)</usage>", re.MULTILINE)
+_USAGE_TAG_RE = re.compile(r'<usage>([\s\S]*?)</usage>', re.MULTILINE)
 
 # Matches the single-figure fields inside a ``<usage>`` tag body. The subagent
 # return tag carries a single token figure with no input/output split and no
 # cache fields, so these are the only keys it ever contains.
 _USAGE_TAG_FIELD_RE = re.compile(
-    r"^\s*(total_tokens|subagent_tokens|tool_uses|duration_ms)\s*:\s*(\d+)",
+    r'^\s*(total_tokens|subagent_tokens|tool_uses|duration_ms)\s*:\s*(\d+)',
     re.MULTILINE,
 )
 
 # Session-id match used by the subagent-transcript discovery (unanchored, to
 # match the legacy manage-metrics ``re.fullmatch`` semantics over the same
 # canonical UUID shape).
-_TRANSCRIPT_SESSION_ID_RE = re.compile(
-    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
-)
+_TRANSCRIPT_SESSION_ID_RE = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
 
 # The four distinct Claude API usage fields. These live only in the raw
 # subagent-transcript ``message.usage`` dicts — the subagent ``<usage>`` return
 # tag carries a single token figure with no input/output split and no cache
 # fields.
 _USAGE_FOUR_FIELDS = (
-    "input_tokens",
-    "output_tokens",
-    "cache_read_input_tokens",
-    "cache_creation_input_tokens",
+    'input_tokens',
+    'output_tokens',
+    'cache_read_input_tokens',
+    'cache_creation_input_tokens',
 )
 
 # Billing weights (request-stated approximations): a cached read is ~0.1x the
@@ -141,50 +138,50 @@ _BILLING_WEIGHT_CACHE_CREATION = 1.25
 # been observed in a transcript.
 _TOOL_BUCKETS: dict[str, str] = {
     # exploration — locate or inspect existing state, no repo mutation
-    "read": "exploration",
-    "grep": "exploration",
-    "glob": "exploration",
-    "webfetch": "exploration",
-    "websearch": "exploration",
-    "toolsearch": "exploration",
-    "explore": "exploration",
-    "mcp__sonarqube__search_sonar_issues_in_projects": "exploration",
-    "mcp__sonarqube__get_project_quality_gate_status": "exploration",
-    "mcp__sonarqube__get_component_measures": "exploration",
-    "mcp__sonarqube__show_rule": "exploration",
-    "mcp__sonarqube__search_my_sonarqube_projects": "exploration",
-    "mcp__claude-in-chrome__read_page": "exploration",
-    "mcp__claude-in-chrome__find": "exploration",
-    "mcp__claude-in-chrome__tabs_context_mcp": "exploration",
-    "mcp__claude-in-chrome__navigate": "exploration",
-    "mcp__jetbrains__open_file_in_editor": "exploration",
+    'read': 'exploration',
+    'grep': 'exploration',
+    'glob': 'exploration',
+    'webfetch': 'exploration',
+    'websearch': 'exploration',
+    'toolsearch': 'exploration',
+    'explore': 'exploration',
+    'mcp__sonarqube__search_sonar_issues_in_projects': 'exploration',
+    'mcp__sonarqube__get_project_quality_gate_status': 'exploration',
+    'mcp__sonarqube__get_component_measures': 'exploration',
+    'mcp__sonarqube__show_rule': 'exploration',
+    'mcp__sonarqube__search_my_sonarqube_projects': 'exploration',
+    'mcp__claude-in-chrome__read_page': 'exploration',
+    'mcp__claude-in-chrome__find': 'exploration',
+    'mcp__claude-in-chrome__tabs_context_mcp': 'exploration',
+    'mcp__claude-in-chrome__navigate': 'exploration',
+    'mcp__jetbrains__open_file_in_editor': 'exploration',
     # work — produce or mutate state
-    "write": "work",
-    "edit": "work",
-    "mcp__claude-in-chrome__form_input": "work",
-    "mcp__claude-in-chrome__computer": "work",
+    'write': 'work',
+    'edit': 'work',
+    'mcp__claude-in-chrome__form_input': 'work',
+    'mcp__claude-in-chrome__computer': 'work',
     # execute — shell invocation; the intent is not recoverable from the name
     # alone (``git status`` explores, ``pytest`` works), so it stays its own
     # bucket rather than inflating either side of the ratio.
-    "bash": "execute",
+    'bash': 'execute',
     # orchestration — control plane, scales with the workflow not the change
-    "skill": "orchestration",
-    "agent": "orchestration",
-    "task": "orchestration",
-    "taskcreate": "orchestration",
-    "taskupdate": "orchestration",
-    "tasklist": "orchestration",
-    "taskget": "orchestration",
-    "taskstop": "orchestration",
-    "taskoutput": "orchestration",
-    "askuserquestion": "orchestration",
-    "sendmessage": "orchestration",
-    "pushnotification": "orchestration",
-    "schedulewakeup": "orchestration",
-    "monitor": "orchestration",
-    "exitplanmode": "orchestration",
-    "workflow": "orchestration",
-    "reportfindings": "orchestration",
+    'skill': 'orchestration',
+    'agent': 'orchestration',
+    'task': 'orchestration',
+    'taskcreate': 'orchestration',
+    'taskupdate': 'orchestration',
+    'tasklist': 'orchestration',
+    'taskget': 'orchestration',
+    'taskstop': 'orchestration',
+    'taskoutput': 'orchestration',
+    'askuserquestion': 'orchestration',
+    'sendmessage': 'orchestration',
+    'pushnotification': 'orchestration',
+    'schedulewakeup': 'orchestration',
+    'monitor': 'orchestration',
+    'exitplanmode': 'orchestration',
+    'workflow': 'orchestration',
+    'reportfindings': 'orchestration',
 }
 
 # Every bucket the per-phase counters carry. ``exploration`` / ``work`` /
@@ -196,7 +193,7 @@ _TOOL_BUCKETS: dict[str, str] = {
 # plus the fail-open ``unclassified`` bucket ``_classify_tool_name`` returns for a
 # name outside that domain — so adding a bucket to the map cannot leave this
 # tuple behind.
-_TOOL_BUCKET_NAMES = tuple(dict.fromkeys([*_TOOL_BUCKETS.values(), "unclassified"]))
+_TOOL_BUCKET_NAMES = tuple(dict.fromkeys([*_TOOL_BUCKETS.values(), 'unclassified']))
 
 
 # Exploration sub-sources, in report order. Exploration is not one activity: a
@@ -204,7 +201,7 @@ _TOOL_BUCKET_NAMES = tuple(dict.fromkeys([*_TOOL_BUCKETS.values(), "unclassified
 # workflow or standard document is context that has to be RESIDENT to be useful.
 # ``unattributed`` is the fail-open member, mirroring ``unclassified`` in the tool
 # -name classifier — an unrecognised shape is counted and surfaced, never guessed.
-_EXPLORATION_SUBSOURCES = ("index_answerable", "doc_residency", "unattributed")
+_EXPLORATION_SUBSOURCES = ('index_answerable', 'doc_residency', 'unattributed')
 
 # ``tool_use.input`` keys that carry a filesystem target, in preference order.
 # POPULATION-DERIVED, like ``_TOOL_BUCKETS`` above: a census of 1999 live
@@ -216,18 +213,18 @@ _EXPLORATION_SUBSOURCES = ("index_answerable", "doc_residency", "unattributed")
 # It also found ZERO items lacking ``input`` altogether, so the missing-input arm
 # of ``_extract_target_path`` is a defensive guard against a shape not currently
 # observed, not a routine path.
-_TARGET_PATH_KEYS = ("file_path", "path")
+_TARGET_PATH_KEYS = ('file_path', 'path')
 
 # Source/test-code suffixes read as index-answerable. Population-derived from the
 # language domains this marketplace actually ships bundles for (pm-dev-python,
 # pm-dev-java, pm-dev-frontend) rather than guessed wide: an unlisted suffix fails
 # OPEN into ``unattributed``, where it stays disclosed and countable, so
 # under-listing costs visibility — never a wrong named attribution.
-_CODE_SUFFIXES = (".py", ".java", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".kt")
+_CODE_SUFFIXES = ('.py', '.java', '.js', '.mjs', '.cjs', '.ts', '.tsx', '.jsx', '.kt')
 
 # Path segments whose markdown bodies are workflow/standard documents rather than
 # code: a skill body (``skills/**/SKILL.md``) and a standard (``standards/*.md``).
-_DOC_MARKDOWN_SEGMENTS = frozenset({"skills", "standards"})
+_DOC_MARKDOWN_SEGMENTS = frozenset({'skills', 'standards'})
 
 
 def _empty_exploration_subsources() -> dict[str, int]:
@@ -238,7 +235,7 @@ def _empty_exploration_subsources() -> dict[str, int]:
     members of the ``{bucket}_{measure}`` counter family, and folding them into
     that dict would break the family's published key-set contract.
     """
-    return {f"exploration_{sub}_bytes": 0 for sub in _EXPLORATION_SUBSOURCES}
+    return {f'exploration_{sub}_bytes': 0 for sub in _EXPLORATION_SUBSOURCES}
 
 
 def _extract_target_path(tool_input: object) -> str | None:
@@ -266,20 +263,20 @@ def _classify_exploration_target(target_path: str | None) -> str:
     dropped and never attributed to a named sub-source on a guess.
     """
     if not target_path:
-        return "unattributed"
-    normalized = target_path.replace("\\", "/").casefold()
-    segments = normalized.split("/")
+        return 'unattributed'
+    normalized = target_path.replace('\\', '/').casefold()
+    segments = normalized.split('/')
     basename = segments[-1]
     parents = set(segments[:-1])
-    if basename == "claude.md" or basename.endswith(".adoc"):
-        return "doc_residency"
-    if "doc" in parents:
-        return "doc_residency"
-    if basename.endswith(".md") and (_DOC_MARKDOWN_SEGMENTS & parents):
-        return "doc_residency"
+    if basename == 'claude.md' or basename.endswith('.adoc'):
+        return 'doc_residency'
+    if 'doc' in parents:
+        return 'doc_residency'
+    if basename.endswith('.md') and (_DOC_MARKDOWN_SEGMENTS & parents):
+        return 'doc_residency'
     if basename.endswith(_CODE_SUFFIXES):
-        return "index_answerable"
-    return "unattributed"
+        return 'index_answerable'
+    return 'unattributed'
 
 
 def _classify_tool_name(name: object) -> str:
@@ -290,8 +287,8 @@ def _classify_tool_name(name: object) -> str:
     counter instead of vanishing from the totals.
     """
     if not isinstance(name, str):
-        return "unclassified"
-    return _TOOL_BUCKETS.get(name.strip().casefold(), "unclassified")
+        return 'unclassified'
+    return _TOOL_BUCKETS.get(name.strip().casefold(), 'unclassified')
 
 
 def _empty_tool_counters() -> dict[str, int]:
@@ -304,9 +301,10 @@ def _empty_tool_counters() -> dict[str, int]:
     """
     counters: dict[str, int] = {}
     for bucket in _TOOL_BUCKET_NAMES:
-        counters[f"{bucket}_tool_calls"] = 0
-        counters[f"{bucket}_result_bytes"] = 0
+        counters[f'{bucket}_tool_calls'] = 0
+        counters[f'{bucket}_result_bytes'] = 0
     return counters
+
 
 # Missing-executor guard. While a worktree-backed plan sits mid-phase-5 the
 # executor can be absent from the main checkout's cwd. Each executor-invoking
@@ -317,16 +315,16 @@ def _empty_tool_counters() -> dict[str, int]:
 # the cosmetic terminal-title hook fail-soft on ANY command error — a
 # title-render failure must never block the user's prompt. These wrap the command
 # constants at their single source, so every install site inherits the guard.
-_EXECUTOR_GUARD_PREFIX = "[ -f .plan/execute-script.py ] && "
-_EXECUTOR_GUARD_SUFFIX = " || true"
+_EXECUTOR_GUARD_PREFIX = '[ -f .plan/execute-script.py ] && '
+_EXECUTOR_GUARD_SUFFIX = ' || true'
 
 # Hook command installed by project initial-setup. Captures $CLAUDE_CODE_SESSION_ID
 # and stores it via manage-status; the renderer reads this cache to resolve the
 # active plan for the current session.
 _HOOK_COMMAND = (
-    f"{_EXECUTOR_GUARD_PREFIX}"
-    "python3 .plan/execute-script.py plan-marshall:platform-runtime:claude_hook"
-    f"{_EXECUTOR_GUARD_SUFFIX}"
+    f'{_EXECUTOR_GUARD_PREFIX}'
+    'python3 .plan/execute-script.py plan-marshall:platform-runtime:claude_hook'
+    f'{_EXECUTOR_GUARD_SUFFIX}'
 )
 
 # Render-title hook command installed across all nine render-trigger entries
@@ -346,16 +344,16 @@ _HOOK_COMMAND = (
 # built explicitly (not by appending to the guarded render command) so
 # ``--statusline`` lands on the python3 invocation, not after ``|| true``.
 _RENDER_HOOK_COMMAND = (
-    f"{_EXECUTOR_GUARD_PREFIX}"
-    "python3 .plan/execute-script.py "
-    "plan-marshall:platform-runtime:platform_runtime session render-title"
-    f"{_EXECUTOR_GUARD_SUFFIX}"
+    f'{_EXECUTOR_GUARD_PREFIX}'
+    'python3 .plan/execute-script.py '
+    'plan-marshall:platform-runtime:platform_runtime session render-title'
+    f'{_EXECUTOR_GUARD_SUFFIX}'
 )
 _STATUSLINE_COMMAND = (
-    f"{_EXECUTOR_GUARD_PREFIX}"
-    "python3 .plan/execute-script.py "
-    "plan-marshall:platform-runtime:platform_runtime session render-title --statusline"
-    f"{_EXECUTOR_GUARD_SUFFIX}"
+    f'{_EXECUTOR_GUARD_PREFIX}'
+    'python3 .plan/execute-script.py '
+    'plan-marshall:platform-runtime:platform_runtime session render-title --statusline'
+    f'{_EXECUTOR_GUARD_SUFFIX}'
 )
 
 # Conditional PreToolUse enforcement hook command. Installed (opt-in) as a
@@ -365,10 +363,10 @@ _STATUSLINE_COMMAND = (
 # else). Keyed on its own command string so its present/divergence/MISSING
 # detection is independent of the render-entry detection.
 _ENFORCEMENT_HOOK_COMMAND = (
-    f"{_EXECUTOR_GUARD_PREFIX}"
-    "python3 .plan/execute-script.py "
-    "plan-marshall:platform-runtime:claude_pretooluse_hook"
-    f"{_EXECUTOR_GUARD_SUFFIX}"
+    f'{_EXECUTOR_GUARD_PREFIX}'
+    'python3 .plan/execute-script.py '
+    'plan-marshall:platform-runtime:claude_pretooluse_hook'
+    f'{_EXECUTOR_GUARD_SUFFIX}'
 )
 
 # Render-trigger hook events that each receive a single matcher-less entry
@@ -376,9 +374,9 @@ _ENFORCEMENT_HOOK_COMMAND = (
 # matcher-less one plus the ``matcher: "clear"`` one) and must coexist with the
 # session-capture entry, so it is handled separately below.
 _RENDER_TRIGGER_EVENTS: tuple[str, ...] = (
-    "UserPromptSubmit",
-    "Notification",
-    "Stop",
+    'UserPromptSubmit',
+    'Notification',
+    'Stop',
 )
 
 # The terminal-title icon palette and body-format logic now live in the
@@ -391,9 +389,7 @@ _RENDER_TRIGGER_EVENTS: tuple[str, ...] = (
 # runtime), and the resolved neutral state is what gets passed to ``compose``.
 
 
-def _claude_event_to_process_state(
-    hook_event_name: str | None, tool_name: str | None
-) -> str | None:
+def _claude_event_to_process_state(hook_event_name: str | None, tool_name: str | None) -> str | None:
     """Map a Claude hook event (+ optional tool name) to a neutral process state.
 
     Returns one of the ``manage_terminal_title.PROCESS_STATES`` values, or
@@ -411,21 +407,21 @@ def _claude_event_to_process_state(
     """
     if hook_event_name is None:
         return None
-    if hook_event_name == "Stop":
-        return "done"
-    if hook_event_name == "Notification":
-        return "waiting"
-    if hook_event_name == "PreToolUse" and tool_name == "AskUserQuestion":
-        return "waiting"
-    if hook_event_name == "PreToolUse" and tool_name == "Bash":
-        return "busy"
-    return "active"
+    if hook_event_name == 'Stop':
+        return 'done'
+    if hook_event_name == 'Notification':
+        return 'waiting'
+    if hook_event_name == 'PreToolUse' and tool_name == 'AskUserQuestion':
+        return 'waiting'
+    if hook_event_name == 'PreToolUse' and tool_name == 'Bash':
+        return 'busy'
+    return 'active'
 
 
 # Owner recorded on every title-token the render-hook build bracket writes. Must
 # stay in the ``TITLE_TOKEN_OWNERS`` vocabulary owned by
 # ``manage-status/scripts/_status_core.py``.
-_TITLE_TOKEN_OWNER_BUILD_HOOK = "build-hook"
+_TITLE_TOKEN_OWNER_BUILD_HOOK = 'build-hook'
 
 # The four build-wrapper skills whose scripts route a long-running
 # build/orchestration command through the executor, as ``{bundle}:{skill}``
@@ -438,16 +434,16 @@ _TITLE_TOKEN_OWNER_BUILD_HOOK = "build-hook"
 # already covers them without matching a bare verb word.
 _BUILD_WRAPPER_NOTATIONS: frozenset[str] = frozenset(
     {
-        "plan-marshall:build-pyproject",
-        "plan-marshall:build-maven",
-        "plan-marshall:build-gradle",
-        "plan-marshall:build-npm",
+        'plan-marshall:build-pyproject',
+        'plan-marshall:build-maven',
+        'plan-marshall:build-gradle',
+        'plan-marshall:build-npm',
     }
 )
 
 # The executor entry point. A build invocation names its wrapper notation in the
 # argument position immediately following it.
-_EXECUTOR_SCRIPT_PATH = ".plan/execute-script.py"
+_EXECUTOR_SCRIPT_PATH = '.plan/execute-script.py'
 
 
 def _command_is_build(command: str | None) -> bool:
@@ -483,14 +479,14 @@ def _command_is_build(command: str | None) -> bool:
         # demonstrably a build invocation.
         return False
     for index, token in enumerate(argv):
-        if token != _EXECUTOR_SCRIPT_PATH and not token.endswith(f"/{_EXECUTOR_SCRIPT_PATH}"):
+        if token != _EXECUTOR_SCRIPT_PATH and not token.endswith(f'/{_EXECUTOR_SCRIPT_PATH}'):
             continue
         if index + 1 >= len(argv):
             return False
-        segments = argv[index + 1].split(":")
+        segments = argv[index + 1].split(':')
         if len(segments) < 2:
             return False
-        return f"{segments[0]}:{segments[1]}" in _BUILD_WRAPPER_NOTATIONS
+        return f'{segments[0]}:{segments[1]}' in _BUILD_WRAPPER_NOTATIONS
     return False
 
 
@@ -515,22 +511,22 @@ def _command_is_build(command: str | None) -> bool:
 #     teardown) but was absent from the expected set, so its removal would have
 #     gone unreported.
 _DISPLAY_RENDER_ENTRIES: tuple[tuple[str, str, str], ...] = (
-    ("SessionStart:matcher-less", "SessionStart", ""),
-    ("SessionStart:clear", "SessionStart", "clear"),
-    ("UserPromptSubmit", "UserPromptSubmit", ""),
-    ("Notification", "Notification", ""),
-    ("Stop", "Stop", ""),
-    ("PreToolUse:AskUserQuestion", "PreToolUse", "AskUserQuestion"),
-    ("PreToolUse:Bash", "PreToolUse", "Bash"),
-    ("PostToolUse:AskUserQuestion", "PostToolUse", "AskUserQuestion"),
-    ("PostToolUse:Bash", "PostToolUse", "Bash"),
+    ('SessionStart:matcher-less', 'SessionStart', ''),
+    ('SessionStart:clear', 'SessionStart', 'clear'),
+    ('UserPromptSubmit', 'UserPromptSubmit', ''),
+    ('Notification', 'Notification', ''),
+    ('Stop', 'Stop', ''),
+    ('PreToolUse:AskUserQuestion', 'PreToolUse', 'AskUserQuestion'),
+    ('PreToolUse:Bash', 'PreToolUse', 'Bash'),
+    ('PostToolUse:AskUserQuestion', 'PostToolUse', 'AskUserQuestion'),
+    ('PostToolUse:Bash', 'PostToolUse', 'Bash'),
 )
 
 # Label of the enforcement-hook row in the ``display`` report. Named once here
 # because two surfaces must agree on it: the renderer below prints it, and
 # ``_dual_homed_labels`` returns it — a second spelling would make a divergence
 # on that row silently unreportable.
-_ENFORCEMENT_LABEL = "PreToolUse:enforcement"
+_ENFORCEMENT_LABEL = 'PreToolUse:enforcement'
 
 # The third per-label state of the ``display`` and ``hook`` reports, beside
 # ``present`` and ``MISSING``: the surface is installed in BOTH
@@ -543,7 +539,7 @@ _ENFORCEMENT_LABEL = "PreToolUse:enforcement"
 # verdict and the marshall-steward menus route on that status, so a divergence
 # that flipped the verdict would send an already-installed project into the
 # install prompt. One definition, read by both checks and by the tests.
-_DIVERGENCE_TOKEN = "divergence"
+_DIVERGENCE_TOKEN = 'divergence'
 
 
 def _dual_homed_labels(shared: dict[str, Any], local: dict[str, Any]) -> set[str]:
@@ -567,7 +563,7 @@ def _dual_homed_labels(shared: dict[str, Any], local: dict[str, Any]) -> set[str
     def _installed(settings_data: dict[str, Any]) -> set[str]:
         if not isinstance(settings_data, dict):
             return set()
-        hooks_block = settings_data.get("hooks", {})
+        hooks_block = settings_data.get('hooks', {})
         if not isinstance(hooks_block, dict):
             return set()
         labels: set[str] = set()
@@ -575,10 +571,8 @@ def _dual_homed_labels(shared: dict[str, Any], local: dict[str, Any]) -> set[str
             entries = hooks_block.get(block_key, [])
             if isinstance(entries, list) and _has_render_entry(entries, matcher=matcher):
                 labels.add(label)
-        pre_tool_use = hooks_block.get("PreToolUse", [])
-        if isinstance(pre_tool_use, list) and _has_enforcement_entry(
-            pre_tool_use, matcher=""
-        ):
+        pre_tool_use = hooks_block.get('PreToolUse', [])
+        if isinstance(pre_tool_use, list) and _has_enforcement_entry(pre_tool_use, matcher=''):
             labels.add(_ENFORCEMENT_LABEL)
         return labels
 
@@ -606,7 +600,7 @@ def _diagnose_display_entries(
     Returns ``(lines, healthy)`` where ``healthy`` is True iff every required
     entry is present.
     """
-    hooks_block = settings_data.get("hooks", {})
+    hooks_block = settings_data.get('hooks', {})
     if not isinstance(hooks_block, dict):
         hooks_block = {}
 
@@ -615,13 +609,13 @@ def _diagnose_display_entries(
 
     def _state(label: str, present: bool) -> str:
         if not present:
-            return "MISSING"
-        return _DIVERGENCE_TOKEN if label in divergent_labels else "present"
+            return 'MISSING'
+        return _DIVERGENCE_TOKEN if label in divergent_labels else 'present'
 
     for label, block_key, matcher in _DISPLAY_RENDER_ENTRIES:
         entries = hooks_block.get(block_key, [])
         present = isinstance(entries, list) and _has_render_entry(entries, matcher=matcher)
-        lines.append(f"{label}: {_state(label, present)}")
+        lines.append(f'{label}: {_state(label, present)}')
         if not present:
             healthy = False
 
@@ -632,28 +626,19 @@ def _diagnose_display_entries(
     # the label reports enforcement that is not running. The opt-in enforcement
     # install is orthogonal to the terminal-title bundle: its absence does NOT
     # mark the display unhealthy (a user may enable terminal-title without it).
-    pre_tool_use = hooks_block.get("PreToolUse", [])
-    enforcement_present = isinstance(pre_tool_use, list) and _has_enforcement_entry(
-        pre_tool_use, matcher=""
-    )
-    lines.append(
-        f"{_ENFORCEMENT_LABEL}: {_state(_ENFORCEMENT_LABEL, enforcement_present)}"
-    )
+    pre_tool_use = hooks_block.get('PreToolUse', [])
+    enforcement_present = isinstance(pre_tool_use, list) and _has_enforcement_entry(pre_tool_use, matcher='')
+    lines.append(f'{_ENFORCEMENT_LABEL}: {_state(_ENFORCEMENT_LABEL, enforcement_present)}')
 
-    statusline = settings_data.get("statusLine")
-    statusline_present = isinstance(statusline, dict) and bool(statusline.get("command"))
-    lines.append(f"statusLine: {'present' if statusline_present else 'MISSING'}")
+    statusline = settings_data.get('statusLine')
+    statusline_present = isinstance(statusline, dict) and bool(statusline.get('command'))
+    lines.append(f'statusLine: {"present" if statusline_present else "MISSING"}')
     if not statusline_present:
         healthy = False
 
-    env_block = settings_data.get("env", {})
-    env_present = (
-        isinstance(env_block, dict)
-        and env_block.get("CLAUDE_CODE_DISABLE_TERMINAL_TITLE") is not None
-    )
-    lines.append(
-        f"env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE: {'present' if env_present else 'MISSING'}"
-    )
+    env_block = settings_data.get('env', {})
+    env_present = isinstance(env_block, dict) and env_block.get('CLAUDE_CODE_DISABLE_TERMINAL_TITLE') is not None
+    lines.append(f'env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE: {"present" if env_present else "MISSING"}')
     if not env_present:
         healthy = False
 
@@ -677,20 +662,20 @@ def _terminal_title_active() -> bool:
     Best-effort: any read/parse failure yields False (inactive), so an
     unreadable settings file makes the teardown a no-op rather than a guess.
     """
-    project_dir = Path(".")
-    shared = _read_json(project_dir / ".claude" / "settings.json") or {}
-    local = _read_json(project_dir / ".claude" / "settings.local.json") or {}
+    project_dir = Path('.')
+    shared = _read_json(project_dir / '.claude' / 'settings.json') or {}
+    local = _read_json(project_dir / '.claude' / 'settings.local.json') or {}
     merged = _merge_display_settings(shared, local)
 
-    hooks_block = merged.get("hooks", {})
+    hooks_block = merged.get('hooks', {})
     if isinstance(hooks_block, dict):
         for _label, block_key, matcher in _DISPLAY_RENDER_ENTRIES:
             entries = hooks_block.get(block_key, [])
             if isinstance(entries, list) and _has_render_entry(entries, matcher=matcher):
                 return True
 
-    statusline = merged.get("statusLine")
-    return isinstance(statusline, dict) and bool(statusline.get("command"))
+    statusline = merged.get('statusLine')
+    return isinstance(statusline, dict) and bool(statusline.get('command'))
 
 
 def _merge_display_settings(*sources: dict[str, Any]) -> dict[str, Any]:
@@ -711,25 +696,21 @@ def _merge_display_settings(*sources: dict[str, Any]) -> dict[str, Any]:
     for source in sources:
         if not isinstance(source, dict):
             continue
-        hooks = source.get("hooks", {})
+        hooks = source.get('hooks', {})
         if isinstance(hooks, dict):
             for event, entries in hooks.items():
                 if isinstance(entries, list):
                     merged_hooks.setdefault(event, []).extend(entries)
-        statusline = source.get("statusLine")
-        if (
-            merged_statusline is None
-            and isinstance(statusline, dict)
-            and statusline.get("command")
-        ):
+        statusline = source.get('statusLine')
+        if merged_statusline is None and isinstance(statusline, dict) and statusline.get('command'):
             merged_statusline = statusline
-        env_block = source.get("env", {})
+        env_block = source.get('env', {})
         if isinstance(env_block, dict):
             for key, value in env_block.items():
                 merged_env.setdefault(key, value)
-    merged: dict[str, Any] = {"hooks": merged_hooks, "env": merged_env}
+    merged: dict[str, Any] = {'hooks': merged_hooks, 'env': merged_env}
     if merged_statusline is not None:
-        merged["statusLine"] = merged_statusline
+        merged['statusLine'] = merged_statusline
     return merged
 
 
@@ -744,13 +725,13 @@ def _has_render_entry(entries: list[Any], matcher: str | None = None) -> bool:
     for entry in entries:
         if not isinstance(entry, dict):
             continue
-        if matcher is not None and entry.get("matcher", "") != matcher:
+        if matcher is not None and entry.get('matcher', '') != matcher:
             continue
-        hooks = entry.get("hooks", [])
+        hooks = entry.get('hooks', [])
         if not isinstance(hooks, list):
             continue
         for h in hooks:
-            if isinstance(h, dict) and h.get("command") == _RENDER_HOOK_COMMAND:
+            if isinstance(h, dict) and h.get('command') == _RENDER_HOOK_COMMAND:
                 return True
     return False
 
@@ -760,11 +741,11 @@ def _has_capture_entry(entries: list[Any]) -> bool:
     for entry in entries:
         if not isinstance(entry, dict):
             continue
-        hooks = entry.get("hooks", [])
+        hooks = entry.get('hooks', [])
         if not isinstance(hooks, list):
             continue
         for h in hooks:
-            if isinstance(h, dict) and h.get("command") == _HOOK_COMMAND:
+            if isinstance(h, dict) and h.get('command') == _HOOK_COMMAND:
                 return True
     return False
 
@@ -788,13 +769,13 @@ def _has_enforcement_entry(entries: list[Any], matcher: str | None = None) -> bo
     for entry in entries:
         if not isinstance(entry, dict):
             continue
-        if matcher is not None and entry.get("matcher", "") != matcher:
+        if matcher is not None and entry.get('matcher', '') != matcher:
             continue
-        hooks = entry.get("hooks", [])
+        hooks = entry.get('hooks', [])
         if not isinstance(hooks, list):
             continue
         for h in hooks:
-            if isinstance(h, dict) and h.get("command") == _ENFORCEMENT_HOOK_COMMAND:
+            if isinstance(h, dict) and h.get('command') == _ENFORCEMENT_HOOK_COMMAND:
                 return True
     return False
 
@@ -844,9 +825,7 @@ def _hook_timeout_is_stale(timeout: object) -> bool:
     return not (1 <= timeout <= _HOOK_TIMEOUT_PLAUSIBLE_MAX_SECONDS)
 
 
-def _migrate_hook_timeout(
-    entries: list[Any], command: str, matcher: str | None = None
-) -> bool:
+def _migrate_hook_timeout(entries: list[Any], command: str, matcher: str | None = None) -> bool:
     """Converge a stale ``timeout`` on the already-present entry for *command*.
 
     Traverses *entries* exactly as the ``_has_*_entry`` probes do — optionally
@@ -862,29 +841,29 @@ def _migrate_hook_timeout(
     for entry in entries:
         if not isinstance(entry, dict):
             continue
-        if matcher is not None and entry.get("matcher", "") != matcher:
+        if matcher is not None and entry.get('matcher', '') != matcher:
             continue
-        hooks = entry.get("hooks", [])
+        hooks = entry.get('hooks', [])
         if not isinstance(hooks, list):
             continue
         for hook in hooks:
-            if not isinstance(hook, dict) or hook.get("command") != command:
+            if not isinstance(hook, dict) or hook.get('command') != command:
                 continue
-            if _hook_timeout_is_stale(hook.get("timeout")):
-                hook["timeout"] = _HOOK_TIMEOUT_SECONDS
+            if _hook_timeout_is_stale(hook.get('timeout')):
+                hook['timeout'] = _HOOK_TIMEOUT_SECONDS
                 migrated = True
     return migrated
 
 
-def _render_entry(matcher: str = "") -> dict[str, Any]:
+def _render_entry(matcher: str = '') -> dict[str, Any]:
     """Build a render-hook entry with the given matcher."""
     return {
-        "matcher": matcher,
-        "hooks": [
+        'matcher': matcher,
+        'hooks': [
             {
-                "type": "command",
-                "command": _RENDER_HOOK_COMMAND,
-                "timeout": _HOOK_TIMEOUT_SECONDS,
+                'type': 'command',
+                'command': _RENDER_HOOK_COMMAND,
+                'timeout': _HOOK_TIMEOUT_SECONDS,
             }
         ],
     }
@@ -893,12 +872,12 @@ def _render_entry(matcher: str = "") -> dict[str, Any]:
 def _capture_entry() -> dict[str, Any]:
     """Build the session-id-capture SessionStart entry."""
     return {
-        "matcher": "",
-        "hooks": [
+        'matcher': '',
+        'hooks': [
             {
-                "type": "command",
-                "command": _HOOK_COMMAND,
-                "timeout": _HOOK_TIMEOUT_SECONDS,
+                'type': 'command',
+                'command': _HOOK_COMMAND,
+                'timeout': _HOOK_TIMEOUT_SECONDS,
             }
         ],
     }
@@ -907,12 +886,12 @@ def _capture_entry() -> dict[str, Any]:
 def _enforcement_entry() -> dict[str, Any]:
     """Build the matcher-less PreToolUse enforcement entry."""
     return {
-        "matcher": "",
-        "hooks": [
+        'matcher': '',
+        'hooks': [
             {
-                "type": "command",
-                "command": _ENFORCEMENT_HOOK_COMMAND,
-                "timeout": _HOOK_TIMEOUT_SECONDS,
+                'type': 'command',
+                'command': _ENFORCEMENT_HOOK_COMMAND,
+                'timeout': _HOOK_TIMEOUT_SECONDS,
             }
         ],
     }
@@ -971,36 +950,34 @@ def _install_enforcement_hook(settings_path: Path) -> dict[str, Any]:
         Returns ``io_ok: False`` with ``enforcement_status: error`` on any I/O
         failure.
     """
-    failure: dict[str, Any] = {"io_ok": False, "enforcement_status": "error"}
+    failure: dict[str, Any] = {'io_ok': False, 'enforcement_status': 'error'}
 
     try:
         settings_path.parent.mkdir(parents=True, exist_ok=True)
         settings_data = _read_json(settings_path) or {}
 
-        hooks_block = settings_data.setdefault("hooks", {})
+        hooks_block = settings_data.setdefault('hooks', {})
         if not isinstance(hooks_block, dict):
             hooks_block = {}
-            settings_data["hooks"] = hooks_block
+            settings_data['hooks'] = hooks_block
 
-        pre_tool_use = hooks_block.setdefault("PreToolUse", [])
+        pre_tool_use = hooks_block.setdefault('PreToolUse', [])
         if not isinstance(pre_tool_use, list):
             pre_tool_use = []
-            hooks_block["PreToolUse"] = pre_tool_use
+            hooks_block['PreToolUse'] = pre_tool_use
 
-        if _has_enforcement_entry(pre_tool_use, matcher=""):
-            if not _migrate_hook_timeout(
-                pre_tool_use, _ENFORCEMENT_HOOK_COMMAND, matcher=""
-            ):
-                return {"io_ok": True, "enforcement_status": "already_present"}
+        if _has_enforcement_entry(pre_tool_use, matcher=''):
+            if not _migrate_hook_timeout(pre_tool_use, _ENFORCEMENT_HOOK_COMMAND, matcher=''):
+                return {'io_ok': True, 'enforcement_status': 'already_present'}
             if not _write_json(settings_path, settings_data):
                 return failure
-            return {"io_ok": True, "enforcement_status": "migrated"}
+            return {'io_ok': True, 'enforcement_status': 'migrated'}
 
         pre_tool_use.append(_enforcement_entry())
         if not _write_json(settings_path, settings_data):
             return failure
 
-        return {"io_ok": True, "enforcement_status": "installed"}
+        return {'io_ok': True, 'enforcement_status': 'installed'}
     except (OSError, ValueError):
         return failure
 
@@ -1097,31 +1074,29 @@ def _install_terminal_title_hooks(
         statuses set to ``error``) on any I/O failure.
     """
     failure: dict[str, Any] = {
-        "io_ok": False,
-        "installed_events": [],
-        "already_present_events": [],
-        "migrated_events": [],
-        "capture_status": "error",
-        "statusLine_status": "error",
-        "env_status": "error",
+        'io_ok': False,
+        'installed_events': [],
+        'already_present_events': [],
+        'migrated_events': [],
+        'capture_status': 'error',
+        'statusLine_status': 'error',
+        'env_status': 'error',
     }
 
     try:
         settings_path.parent.mkdir(parents=True, exist_ok=True)
         settings_data = _read_json(settings_path) or {}
 
-        hooks_block = settings_data.setdefault("hooks", {})
+        hooks_block = settings_data.setdefault('hooks', {})
         if not isinstance(hooks_block, dict):
             hooks_block = {}
-            settings_data["hooks"] = hooks_block
+            settings_data['hooks'] = hooks_block
 
         installed_events: list[str] = []
         already_present_events: list[str] = []
         migrated_events: list[str] = []
 
-        def _record_render_entry(
-            entries: list[Any], label: str, matcher: str
-        ) -> None:
+        def _record_render_entry(entries: list[Any], label: str, matcher: str) -> None:
             """Install-or-converge one render entry and record its single outcome.
 
             The three lists are appended to from HERE only, which is what keeps
@@ -1137,10 +1112,10 @@ def _install_terminal_title_hooks(
                 already_present_events.append(label)
 
         # --- SessionStart: capture entry + ONE matcher-less render entry. ---
-        session_start = hooks_block.setdefault("SessionStart", [])
+        session_start = hooks_block.setdefault('SessionStart', [])
         if not isinstance(session_start, list):
             session_start = []
-            hooks_block["SessionStart"] = session_start
+            hooks_block['SessionStart'] = session_start
 
         # Capture entry: insert when absent, converge when present. This is the
         # existing claude_hook session-id-capture entry; it must coexist with the
@@ -1149,13 +1124,13 @@ def _install_terminal_title_hooks(
         # Returns section for why that report is load-bearing.
         if not _has_capture_entry(session_start):
             session_start.append(_capture_entry())
-            capture_status = "installed"
+            capture_status = 'installed'
         elif _migrate_hook_timeout(session_start, _HOOK_COMMAND):
-            capture_status = "migrated"
+            capture_status = 'migrated'
         else:
-            capture_status = "already_present"
+            capture_status = 'already_present'
 
-        _record_render_entry(session_start, "SessionStart:matcher-less", "")
+        _record_render_entry(session_start, 'SessionStart:matcher-less', '')
 
         # The matcher:"clear" variant is installed as its OWN entry: it is the
         # trigger that routes a cleared session into the teardown, and the
@@ -1163,7 +1138,7 @@ def _install_terminal_title_hooks(
         # keeps the expected and installed sets in agreement — an expectation
         # the installer never satisfies would make every fresh install report
         # unhealthy.
-        _record_render_entry(session_start, "SessionStart:clear", "clear")
+        _record_render_entry(session_start, 'SessionStart:clear', 'clear')
 
         # --- Single matcher-less render-trigger events. ---
         for event_name in _RENDER_TRIGGER_EVENTS:
@@ -1171,17 +1146,17 @@ def _install_terminal_title_hooks(
             if not isinstance(event_entries, list):
                 event_entries = []
                 hooks_block[event_name] = event_entries
-            _record_render_entry(event_entries, event_name, "")
+            _record_render_entry(event_entries, event_name, '')
 
         # --- PreToolUse with matcher:"AskUserQuestion" and matcher:"Bash". ---
         # AskUserQuestion flips the "?" icon before the prompt is answered; Bash
         # flips the ⚙ busy icon before a long-running shell command runs.
-        pre_tool_use = hooks_block.setdefault("PreToolUse", [])
+        pre_tool_use = hooks_block.setdefault('PreToolUse', [])
         if not isinstance(pre_tool_use, list):
             pre_tool_use = []
-            hooks_block["PreToolUse"] = pre_tool_use
-        _record_render_entry(pre_tool_use, "PreToolUse:AskUserQuestion", "AskUserQuestion")
-        _record_render_entry(pre_tool_use, "PreToolUse:Bash", "Bash")
+            hooks_block['PreToolUse'] = pre_tool_use
+        _record_render_entry(pre_tool_use, 'PreToolUse:AskUserQuestion', 'AskUserQuestion')
+        _record_render_entry(pre_tool_use, 'PreToolUse:Bash', 'Bash')
 
         # --- PostToolUse: TWO matcher-scoped render entries. ---
         # Deliberately NOT widened to a matcher-less entry, and nothing is
@@ -1190,62 +1165,59 @@ def _install_terminal_title_hooks(
         # clear depends on. Keeping the cadence narrow is also the cheaper
         # shape — the render command is among the largest recurring script
         # costs in this project.
-        post_tool_use = hooks_block.setdefault("PostToolUse", [])
+        post_tool_use = hooks_block.setdefault('PostToolUse', [])
         if not isinstance(post_tool_use, list):
             post_tool_use = []
-            hooks_block["PostToolUse"] = post_tool_use
-        for matcher in ("AskUserQuestion", "Bash"):
-            _record_render_entry(post_tool_use, f"PostToolUse:{matcher}", matcher)
+            hooks_block['PostToolUse'] = post_tool_use
+        for matcher in ('AskUserQuestion', 'Bash'):
+            _record_render_entry(post_tool_use, f'PostToolUse:{matcher}', matcher)
 
         # --- statusLine: command entry with overwrite-on-request semantics. ---
         statusline_block: dict[str, Any] = {
-            "type": "command",
-            "command": _STATUSLINE_COMMAND,
+            'type': 'command',
+            'command': _STATUSLINE_COMMAND,
         }
-        existing_statusline = settings_data.get("statusLine")
+        existing_statusline = settings_data.get('statusLine')
         if existing_statusline is None:
-            settings_data["statusLine"] = statusline_block
-            statusline_status = "installed"
-        elif (
-            isinstance(existing_statusline, dict)
-            and existing_statusline.get("command") == _STATUSLINE_COMMAND
-        ):
-            statusline_status = "already_present"
+            settings_data['statusLine'] = statusline_block
+            statusline_status = 'installed'
+        elif isinstance(existing_statusline, dict) and existing_statusline.get('command') == _STATUSLINE_COMMAND:
+            statusline_status = 'already_present'
         elif overwrite_statusline:
-            settings_data["statusLine"] = statusline_block
-            statusline_status = "overwritten"
+            settings_data['statusLine'] = statusline_block
+            statusline_status = 'overwritten'
         else:
-            statusline_status = "already_present_other"
+            statusline_status = 'already_present_other'
 
         # --- env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE: "1" with overwrite-on-request. ---
-        env_block = settings_data.setdefault("env", {})
+        env_block = settings_data.setdefault('env', {})
         if not isinstance(env_block, dict):
             env_block = {}
-            settings_data["env"] = env_block
-        existing_env = env_block.get("CLAUDE_CODE_DISABLE_TERMINAL_TITLE")
+            settings_data['env'] = env_block
+        existing_env = env_block.get('CLAUDE_CODE_DISABLE_TERMINAL_TITLE')
         if existing_env is None:
-            env_block["CLAUDE_CODE_DISABLE_TERMINAL_TITLE"] = "1"
-            env_status = "installed"
-        elif existing_env == "1":
-            env_status = "already_present"
+            env_block['CLAUDE_CODE_DISABLE_TERMINAL_TITLE'] = '1'
+            env_status = 'installed'
+        elif existing_env == '1':
+            env_status = 'already_present'
         elif overwrite_env_disable:
-            env_block["CLAUDE_CODE_DISABLE_TERMINAL_TITLE"] = "1"
-            env_status = "overwritten"
+            env_block['CLAUDE_CODE_DISABLE_TERMINAL_TITLE'] = '1'
+            env_status = 'overwritten'
         else:
-            env_status = "already_present_other"
+            env_status = 'already_present_other'
 
         write_ok = _write_json(settings_path, settings_data)
         if not write_ok:
             return failure
 
         return {
-            "io_ok": True,
-            "installed_events": installed_events,
-            "already_present_events": already_present_events,
-            "migrated_events": migrated_events,
-            "capture_status": capture_status,
-            "statusLine_status": statusline_status,
-            "env_status": env_status,
+            'io_ok': True,
+            'installed_events': installed_events,
+            'already_present_events': already_present_events,
+            'migrated_events': migrated_events,
+            'capture_status': capture_status,
+            'statusLine_status': statusline_status,
+            'env_status': env_status,
         }
     except (OSError, ValueError):
         return failure
@@ -1256,11 +1228,11 @@ def _project_dir_path(project_dir: str) -> Path:
 
 
 def _marshal_json_path(project_dir: str) -> Path:
-    return _project_dir_path(project_dir) / _PLAN_DIR_NAME / "marshal.json"
+    return _project_dir_path(project_dir) / _PLAN_DIR_NAME / 'marshal.json'
 
 
 def _claude_settings_path(project_dir: str) -> Path:
-    return _project_dir_path(project_dir) / ".claude" / "settings.json"
+    return _project_dir_path(project_dir) / '.claude' / 'settings.json'
 
 
 def _plan_dir(project_dir: str) -> Path:
@@ -1268,13 +1240,13 @@ def _plan_dir(project_dir: str) -> Path:
 
 
 def _local_plans_dir(project_dir: str) -> Path:
-    return _plan_dir(project_dir) / "local" / "plans"
+    return _plan_dir(project_dir) / 'local' / 'plans'
 
 
 def _read_json(path: Path) -> dict[str, Any] | None:
     """Read a JSON file, returning None on failure."""
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding='utf-8'))
         if not isinstance(data, dict):
             return None
         return data
@@ -1286,8 +1258,8 @@ def _write_json(path: Path, data: dict[str, Any]) -> bool:
     """Write a JSON file atomically via a temp file, returning True on success."""
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        tmp = path.with_suffix('.tmp')
+        tmp.write_text(json.dumps(data, indent=2), encoding='utf-8')
         tmp.replace(path)
         return True
     except OSError:
@@ -1296,7 +1268,7 @@ def _write_json(path: Path, data: dict[str, Any]) -> bool:
 
 def _cwd_to_slug(cwd: str) -> str:
     """Convert an absolute cwd path to a Claude-style project slug (slashes → dashes)."""
-    return cwd.replace("/", "-")
+    return cwd.replace('/', '-')
 
 
 def _find_transcript(session_id: str) -> Path | None:
@@ -1314,11 +1286,11 @@ def _find_transcript(session_id: str) -> Path | None:
     # Try the canonical cwd-slug path first.
     cwd = _resolve_cwd()
     slug = _cwd_to_slug(cwd)
-    direct = _CLAUDE_PROJECTS_DIR / slug / f"{session_id}.jsonl"
+    direct = _CLAUDE_PROJECTS_DIR / slug / f'{session_id}.jsonl'
     if direct.is_file():
         return direct
     # Fall back: scan all project dirs.
-    for candidate in _CLAUDE_PROJECTS_DIR.glob(f"*/{session_id}.jsonl"):
+    for candidate in _CLAUDE_PROJECTS_DIR.glob(f'*/{session_id}.jsonl'):
         if candidate.is_file():
             return candidate
     return None
@@ -1328,7 +1300,7 @@ def _resolve_cwd() -> str:
     """Return the git repository root, falling back to os.getcwd()."""
     try:
         result = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
+            ['git', 'rev-parse', '--show-toplevel'],
             capture_output=True,
             text=True,
             timeout=3,
@@ -1383,12 +1355,12 @@ def _resolve_archived_status_json(plan_id: str) -> Path | None:
     end with the exact ``-{plan_id}`` suffix to avoid a prefix collision between
     similarly named plans.
     """
-    archived_base = Path(_PLAN_DIR_NAME) / "local" / "archived-plans"
+    archived_base = Path(_PLAN_DIR_NAME) / 'local' / 'archived-plans'
     if not archived_base.is_dir():
         return None
-    suffix = f"-{plan_id}"
+    suffix = f'-{plan_id}'
     try:
-        for candidate in sorted(archived_base.glob(f"*-{plan_id}/status.json"), reverse=True):
+        for candidate in sorted(archived_base.glob(f'*-{plan_id}/status.json'), reverse=True):
             if candidate.is_file() and candidate.parent.name.endswith(suffix):
                 return candidate
     except OSError:
@@ -1412,14 +1384,14 @@ def _resolve_worktree_status_json(plan_id: str) -> Path | None:
     """
     worktree_path = (
         Path(_PLAN_DIR_NAME)
-        / "local"
-        / "worktrees"
+        / 'local'
+        / 'worktrees'
         / plan_id
         / _PLAN_DIR_NAME
-        / "local"
-        / "plans"
+        / 'local'
+        / 'plans'
         / plan_id
-        / "status.json"
+        / 'status.json'
     )
     try:
         if worktree_path.is_file():
@@ -1440,10 +1412,10 @@ def _live_title_token(status_data: dict[str, Any]) -> dict[str, Any] | None:
     it as absent and a stranded token self-heals without any writer sweeping for
     it.
     """
-    record = status_data.get("title_token")
+    record = status_data.get('title_token')
     if not isinstance(record, dict):
         return None
-    if title_token_state({"title_token": record}, now=datetime.now(UTC)) is None:
+    if title_token_state({'title_token': record}, now=datetime.now(UTC)) is None:
         return None
     return record
 
@@ -1470,7 +1442,7 @@ def _read_title_state(plan_id: str) -> dict[str, Any] | None:
     lacking them yields a state dict with those keys absent, which the composer
     handles).
     """
-    live_path = Path(_PLAN_DIR_NAME) / "local" / "plans" / plan_id / "status.json"
+    live_path = Path(_PLAN_DIR_NAME) / 'local' / 'plans' / plan_id / 'status.json'
     if live_path.is_file():
         status_path: Path | None = live_path
     else:
@@ -1485,15 +1457,15 @@ def _read_title_state(plan_id: str) -> dict[str, Any] | None:
         return None
 
     state: dict[str, Any] = {}
-    current_phase = status_data.get("current_phase")
+    current_phase = status_data.get('current_phase')
     if isinstance(current_phase, str):
-        state["current_phase"] = current_phase
-    short_description = status_data.get("short_description")
+        state['current_phase'] = current_phase
+    short_description = status_data.get('short_description')
     if isinstance(short_description, str):
-        state["short_description"] = short_description
+        state['short_description'] = short_description
     title_token = _live_title_token(status_data)
     if title_token is not None:
-        state["title_token"] = title_token
+        state['title_token'] = title_token
     return state
 
 
@@ -1522,7 +1494,7 @@ def _mark_terminal_delivered(plan_id: str) -> bool:
         return True
     status_data[session_binding._DELIVERED_MARKER] = True
     try:
-        status_path.write_text(json.dumps(status_data, indent=2), encoding="utf-8")
+        status_path.write_text(json.dumps(status_data, indent=2), encoding='utf-8')
     except OSError:
         return False
     return True
@@ -1546,7 +1518,7 @@ def _read_orchestrator_title_state(slug: str) -> dict[str, Any] | None:
     try:
         from file_ops import get_store_dir
 
-        status_path = get_store_dir("orchestrator", slug) / "status.json"
+        status_path = get_store_dir('orchestrator', slug) / 'status.json'
     except (ImportError, RuntimeError, ValueError):
         return None
     try:
@@ -1557,15 +1529,15 @@ def _read_orchestrator_title_state(slug: str) -> dict[str, Any] | None:
     status_data = _read_json(status_path)
     if status_data is None:
         return None
-    state: dict[str, Any] = {"kind": "orchestrator", "slug": slug}
+    state: dict[str, Any] = {'kind': 'orchestrator', 'slug': slug}
     title_token = _live_title_token(status_data)
     if title_token is not None:
-        state["title_token"] = title_token
+        state['title_token'] = title_token
     return state
 
 
-SESSION_IDS_FIELD = "session_ids"
-LEGACY_SESSION_ID_FIELD = "session_id"
+SESSION_IDS_FIELD = 'session_ids'
+LEGACY_SESSION_ID_FIELD = 'session_id'
 
 
 def _manage_status_store_session(plan_id: str, session_id: str) -> bool:
@@ -1594,16 +1566,16 @@ def _manage_status_store_session(plan_id: str, session_id: str) -> bool:
         result = subprocess.run(
             [
                 sys.executable,
-                ".plan/execute-script.py",
-                "plan-marshall:manage-status:manage-status",
-                "metadata",
-                "--plan-id",
+                '.plan/execute-script.py',
+                'plan-marshall:manage-status:manage-status',
+                'metadata',
+                '--plan-id',
                 plan_id,
-                "--set",
-                "--append",
-                "--field",
+                '--set',
+                '--append',
+                '--field',
                 SESSION_IDS_FIELD,
-                "--value",
+                '--value',
                 session_id,
             ],
             capture_output=True,
@@ -1625,13 +1597,13 @@ def _read_metadata_field(plan_id: str, field: str) -> Any:
         result = subprocess.run(
             [
                 sys.executable,
-                ".plan/execute-script.py",
-                "plan-marshall:manage-status:manage-status",
-                "metadata",
-                "--plan-id",
+                '.plan/execute-script.py',
+                'plan-marshall:manage-status:manage-status',
+                'metadata',
+                '--plan-id',
                 plan_id,
-                "--get",
-                "--field",
+                '--get',
+                '--field',
                 field,
             ],
             capture_output=True,
@@ -1640,7 +1612,7 @@ def _read_metadata_field(plan_id: str, field: str) -> Any:
         )
         if result.returncode != 0:
             return None
-        return parse_toon(result.stdout).get("value")
+        return parse_toon(result.stdout).get('value')
     except (OSError, subprocess.SubprocessError):
         return None
 
@@ -1687,7 +1659,7 @@ def _manage_status_set_title_token(plan_id: str, state: str) -> bool:
     passed; the render path never hard-codes a glyph. The timeout stays inside the
     render hook's own budget.
     """
-    return _manage_status_title_token(plan_id, "set", "--state", state)
+    return _manage_status_title_token(plan_id, 'set', '--state', state)
 
 
 def _manage_status_clear_title_token(plan_id: str) -> bool:
@@ -1699,7 +1671,7 @@ def _manage_status_clear_title_token(plan_id: str) -> bool:
     ``merge-lock`` glyph intact. Best-effort: returns False on any failure and
     never raises.
     """
-    return _manage_status_title_token(plan_id, "clear")
+    return _manage_status_title_token(plan_id, 'clear')
 
 
 def _manage_status_title_token(plan_id: str, verb: str, *extra: str) -> bool:
@@ -1708,13 +1680,13 @@ def _manage_status_title_token(plan_id: str, verb: str, *extra: str) -> bool:
         result = subprocess.run(
             [
                 sys.executable,
-                ".plan/execute-script.py",
-                "plan-marshall:manage-status:manage-status",
-                "title-token",
+                '.plan/execute-script.py',
+                'plan-marshall:manage-status:manage-status',
+                'title-token',
                 verb,
-                "--plan-id",
+                '--plan-id',
                 plan_id,
-                "--owner",
+                '--owner',
                 _TITLE_TOKEN_OWNER_BUILD_HOOK,
                 *extra,
             ],
@@ -1733,14 +1705,14 @@ def _manage_metrics_end_phase(plan_id: str, phase: str, total_tokens: int) -> bo
         result = subprocess.run(
             [
                 sys.executable,
-                ".plan/execute-script.py",
-                "plan-marshall:manage-metrics:manage-metrics",
-                "end-phase",
-                "--plan-id",
+                '.plan/execute-script.py',
+                'plan-marshall:manage-metrics:manage-metrics',
+                'end-phase',
+                '--plan-id',
                 plan_id,
-                "--phase",
+                '--phase',
                 phase,
-                "--total-tokens",
+                '--total-tokens',
                 str(total_tokens),
             ],
             capture_output=True,
@@ -1763,19 +1735,12 @@ def _read_token_cursor(plan_id: str, phase: str) -> int:
     Returns 0 when no prior capture exists.  Cursor is stored at
     ``.plan/local/plans/{plan_id}/work/metrics-cursor-{phase}.toon``.
     """
-    cursor_file = (
-        Path(_PLAN_DIR_NAME)
-        / "local"
-        / "plans"
-        / plan_id
-        / "work"
-        / f"metrics-cursor-{phase}.toon"
-    )
+    cursor_file = Path(_PLAN_DIR_NAME) / 'local' / 'plans' / plan_id / 'work' / f'metrics-cursor-{phase}.toon'
     try:
-        for line in cursor_file.read_text(encoding="utf-8").splitlines():
+        for line in cursor_file.read_text(encoding='utf-8').splitlines():
             stripped = line.strip()
-            if stripped.startswith("total_tokens:"):
-                _, _, raw = stripped.partition(":")
+            if stripped.startswith('total_tokens:'):
+                _, _, raw = stripped.partition(':')
                 return int(raw.strip())
     except (OSError, ValueError):
         pass
@@ -1784,17 +1749,10 @@ def _read_token_cursor(plan_id: str, phase: str) -> int:
 
 def _write_token_cursor(plan_id: str, phase: str, total: int) -> None:
     """Persist the running token total for a plan+phase cursor."""
-    cursor_file = (
-        Path(_PLAN_DIR_NAME)
-        / "local"
-        / "plans"
-        / plan_id
-        / "work"
-        / f"metrics-cursor-{phase}.toon"
-    )
+    cursor_file = Path(_PLAN_DIR_NAME) / 'local' / 'plans' / plan_id / 'work' / f'metrics-cursor-{phase}.toon'
     try:
         cursor_file.parent.mkdir(parents=True, exist_ok=True)
-        cursor_file.write_text(f"plan_id: {plan_id}\nphase: {phase}\ntotal_tokens: {total}\n", encoding="utf-8")
+        cursor_file.write_text(f'plan_id: {plan_id}\nphase: {phase}\ntotal_tokens: {total}\n', encoding='utf-8')
     except OSError:
         pass
 
@@ -1803,7 +1761,7 @@ def _sum_tokens_from_jsonl(transcript_path: Path) -> int:
     """Sum input_tokens + output_tokens from all assistant messages in a JSONL transcript."""
     total = 0
     try:
-        with open(transcript_path, encoding="utf-8") as fh:
+        with open(transcript_path, encoding='utf-8') as fh:
             for raw_line in fh:
                 raw_line = raw_line.strip()
                 if not raw_line:
@@ -1814,16 +1772,16 @@ def _sum_tokens_from_jsonl(transcript_path: Path) -> int:
                     continue
                 if not isinstance(entry, dict):
                     continue
-                msg = entry.get("message", {})
+                msg = entry.get('message', {})
                 if not isinstance(msg, dict):
                     continue
-                usage = msg.get("usage", {})
+                usage = msg.get('usage', {})
                 if not isinstance(usage, dict):
                     continue
                 # Sum whichever fields are present.
-                input_tok = usage.get("input_tokens", 0) or 0
-                output_tok = usage.get("output_tokens", 0) or 0
-                total_tok = usage.get("total_tokens", 0) or 0
+                input_tok = usage.get('input_tokens', 0) or 0
+                output_tok = usage.get('output_tokens', 0) or 0
+                total_tok = usage.get('total_tokens', 0) or 0
                 if total_tok:
                     total += total_tok
                 elif input_tok or output_tok:
@@ -1861,20 +1819,20 @@ def _resolve_subagent_transcripts(
         return []
 
     if parent_transcript_path is not None:
-        subagents_dir = parent_transcript_path.parent / session_id / "subagents"
+        subagents_dir = parent_transcript_path.parent / session_id / 'subagents'
     else:
         try:
             home = Path.home()
         except (OSError, RuntimeError):
             return []
-        projects = home / ".claude" / "projects"
-        cwd_slug = _resolve_cwd().replace("/", "-")
-        subagents_dir = projects / cwd_slug / session_id / "subagents"
+        projects = home / '.claude' / 'projects'
+        cwd_slug = _resolve_cwd().replace('/', '-')
+        subagents_dir = projects / cwd_slug / session_id / 'subagents'
 
     try:
         if not subagents_dir.is_dir():
             return []
-        return sorted(p for p in subagents_dir.glob("agent-*.jsonl") if p.is_file())
+        return sorted(p for p in subagents_dir.glob('agent-*.jsonl') if p.is_file())
     except OSError:
         return []
 
@@ -1891,7 +1849,7 @@ def _add_usage_four_fields(usage: dict[str, Any], bucket: dict[str, int]) -> Non
 
 # Phase key used while walking a subagent transcript, whose entries all attribute
 # to the single phase the caller resolves from the transcript's first timestamp.
-_PENDING_PHASE = ""
+_PENDING_PHASE = ''
 
 
 def _count_tool_use(
@@ -1909,12 +1867,12 @@ def _count_tool_use(
     resolved HERE because the target path lives on the call's ``input`` — the
     result item carries no path of its own.
     """
-    bucket = _classify_tool_name(item.get("name"))
+    bucket = _classify_tool_name(item.get('name'))
     counters = per_phase_counters.setdefault(phase, _empty_tool_counters())
-    counters[f"{bucket}_tool_calls"] += 1
-    tool_id = item.get("id")
+    counters[f'{bucket}_tool_calls'] += 1
+    tool_id = item.get('id')
     if isinstance(tool_id, str) and tool_id:
-        subsource = _classify_exploration_target(_extract_target_path(item.get("input")))
+        subsource = _classify_exploration_target(_extract_target_path(item.get('input')))
         call_index[tool_id] = (phase, bucket, subsource)
 
 
@@ -1940,12 +1898,12 @@ def _count_tool_result_bytes(
     if located is None:
         return
     phase, bucket, subsource = located
-    payload_bytes = len(payload_text.encode("utf-8", "replace"))
+    payload_bytes = len(payload_text.encode('utf-8', 'replace'))
     counters = per_phase_counters.setdefault(phase, _empty_tool_counters())
-    counters[f"{bucket}_result_bytes"] += payload_bytes
-    if bucket == "exploration":
+    counters[f'{bucket}_result_bytes'] += payload_bytes
+    if bucket == 'exploration':
         subsources = per_phase_subsources.setdefault(phase, _empty_exploration_subsources())
-        subsources[f"exploration_{subsource}_bytes"] += payload_bytes
+        subsources[f'exploration_{subsource}_bytes'] += payload_bytes
 
 
 def _fold_turn_residency(
@@ -1966,7 +1924,7 @@ def _fold_turn_residency(
     resident = per_phase_counters.get(phase) or {}
     weights = per_phase_residency.setdefault(phase, dict.fromkeys(_TOOL_BUCKET_NAMES, 0))
     for bucket in _TOOL_BUCKET_NAMES:
-        weights[bucket] += resident.get(f"{bucket}_result_bytes", 0)
+        weights[bucket] += resident.get(f'{bucket}_result_bytes', 0)
 
 
 def _attribute_cache_read(
@@ -2000,17 +1958,15 @@ def _attribute_cache_read(
     Emission is unconditional: a phase recording ``cache_read == 0`` gets every
     key at a measured zero, never an absent key.
     """
-    attributed = {f"cache_read_attributed_{bucket}": 0 for bucket in _TOOL_BUCKET_NAMES}
+    attributed = {f'cache_read_attributed_{bucket}': 0 for bucket in _TOOL_BUCKET_NAMES}
     total_weight = sum(weights.get(bucket, 0) for bucket in _TOOL_BUCKET_NAMES)
     # Clamped at zero so a subagent figure exceeding the phase total can only
     # empty the split, never invert it into negative named shares.
     attributable = max(0, cache_read_total - max(0, subagent_cache_read))
     if attributable > 0 and total_weight > 0:
         for bucket in _TOOL_BUCKET_NAMES:
-            attributed[f"cache_read_attributed_{bucket}"] = (
-                attributable * weights.get(bucket, 0) // total_weight
-            )
-    attributed["cache_read_unattributed"] = cache_read_total - sum(attributed.values())
+            attributed[f'cache_read_attributed_{bucket}'] = attributable * weights.get(bucket, 0) // total_weight
+    attributed['cache_read_unattributed'] = cache_read_total - sum(attributed.values())
     return attributed
 
 
@@ -2041,7 +1997,7 @@ def _sum_subagent_transcript(
     call_index: dict[str, tuple[str, str, str]] = {}
     first_timestamp: str | None = None
     try:
-        with open(path, encoding="utf-8", errors="replace") as f:
+        with open(path, encoding='utf-8', errors='replace') as f:
             for line in f:
                 line = line.strip()
                 if not line:
@@ -2053,25 +2009,25 @@ def _sum_subagent_transcript(
                 if not isinstance(entry, dict):
                     continue
                 if first_timestamp is None:
-                    ts = entry.get("timestamp")
+                    ts = entry.get('timestamp')
                     if isinstance(ts, str) and ts:
                         first_timestamp = ts
-                msg = entry.get("message", {})
-                usage = msg.get("usage", {}) if isinstance(msg, dict) else {}
+                msg = entry.get('message', {})
+                usage = msg.get('usage', {}) if isinstance(msg, dict) else {}
                 if isinstance(usage, dict) and usage:
                     _add_usage_four_fields(usage, bucket)
-                content = msg.get("content") if isinstance(msg, dict) else None
+                content = msg.get('content') if isinstance(msg, dict) else None
                 if not isinstance(content, list):
                     continue
                 for item in content:
                     if not isinstance(item, dict):
                         continue
-                    if item.get("type") == "tool_use":
+                    if item.get('type') == 'tool_use':
                         _count_tool_use(item, _PENDING_PHASE, per_phase_tools, call_index)
-                    elif item.get("type") == "tool_result":
+                    elif item.get('type') == 'tool_result':
                         _count_tool_result_bytes(
-                            item.get("tool_use_id"),
-                            _extract_text_payload(item.get("content")),
+                            item.get('tool_use_id'),
+                            _extract_text_payload(item.get('content')),
                             per_phase_tools,
                             call_index,
                             per_phase_subsources,
@@ -2096,7 +2052,7 @@ def _window_for_timestamp(
     if not timestamp_iso:
         return None
     try:
-        ts = datetime.fromisoformat(timestamp_iso.replace("Z", "+00:00"))
+        ts = datetime.fromisoformat(timestamp_iso.replace('Z', '+00:00'))
     except (ValueError, TypeError):
         return None
     for phase_name, start_dt, end_dt in reversed(windows):
@@ -2123,15 +2079,15 @@ def _attribute_subagent_usage(
     fields = {m.group(1): int(m.group(2)) for m in _USAGE_TAG_FIELD_RE.finditer(body)}
     bucket = per_phase.setdefault(
         matching_phase,
-        {"total_tokens": 0, "tool_uses": 0, "duration_ms": 0, "samples": 0},
+        {'total_tokens': 0, 'tool_uses': 0, 'duration_ms': 0, 'samples': 0},
     )
     # The harness sometimes emits the sub-agent token figure under the
     # ``subagent_tokens`` key instead of the canonical ``total_tokens``; accept
     # either so the token bucket is never silently dropped to zero.
-    bucket["total_tokens"] += fields.get("total_tokens", fields.get("subagent_tokens", 0))
-    bucket["tool_uses"] += fields.get("tool_uses", 0)
-    bucket["duration_ms"] += fields.get("duration_ms", 0)
-    bucket["samples"] += 1
+    bucket['total_tokens'] += fields.get('total_tokens', fields.get('subagent_tokens', 0))
+    bucket['tool_uses'] += fields.get('tool_uses', 0)
+    bucket['duration_ms'] += fields.get('duration_ms', 0)
+    bucket['samples'] += 1
     return True
 
 
@@ -2142,10 +2098,10 @@ def _billing_weighted_total(four_fields: dict[str, int]) -> int:
     A billing-cost figure, NOT a work-comparable measure.
     """
     return (
-        four_fields.get("input_tokens", 0)
-        + four_fields.get("output_tokens", 0)
-        + round(four_fields.get("cache_read_input_tokens", 0) * _BILLING_WEIGHT_CACHE_READ)
-        + round(four_fields.get("cache_creation_input_tokens", 0) * _BILLING_WEIGHT_CACHE_CREATION)
+        four_fields.get('input_tokens', 0)
+        + four_fields.get('output_tokens', 0)
+        + round(four_fields.get('cache_read_input_tokens', 0) * _BILLING_WEIGHT_CACHE_READ)
+        + round(four_fields.get('cache_creation_input_tokens', 0) * _BILLING_WEIGHT_CACHE_CREATION)
     )
 
 
@@ -2157,11 +2113,11 @@ def _extract_text_payload(content: object) -> str:
         chunks: list[str] = []
         for item in content:
             if isinstance(item, dict):
-                text = item.get("text") or item.get("content")
+                text = item.get('text') or item.get('content')
                 if isinstance(text, str):
                     chunks.append(text)
-        return "\n".join(chunks)
-    return ""
+        return '\n'.join(chunks)
+    return ''
 
 
 def _find_enrich_transcript(session_id: str) -> Path | None:
@@ -2172,19 +2128,19 @@ def _find_enrich_transcript(session_id: str) -> Path | None:
     ``{session_id}.jsonl`` file pattern. Returns ``None`` when no transcript is
     found.
     """
-    projects_dir = Path.home() / ".claude" / "projects"
+    projects_dir = Path.home() / '.claude' / 'projects'
     if not projects_dir.exists():
         return None
 
     try:
-        for session_dir in projects_dir.rglob("*"):
+        for session_dir in projects_dir.rglob('*'):
             if session_dir.is_dir() and session_id in session_dir.name:
-                for jsonl_file in session_dir.glob("*.jsonl"):
+                for jsonl_file in session_dir.glob('*.jsonl'):
                     return jsonl_file
 
         for project_dir in projects_dir.iterdir():
             if project_dir.is_dir():
-                candidate = project_dir / f"{session_id}.jsonl"
+                candidate = project_dir / f'{session_id}.jsonl'
                 if candidate.exists():
                     return candidate
     except OSError:
@@ -2274,7 +2230,7 @@ def _compute_normalized_tokens(
         return per_phase_four_fields.setdefault(phase_name, dict.fromkeys(_USAGE_FOUR_FIELDS, 0))
 
     try:
-        with open(transcript_path, encoding="utf-8", errors="replace") as f:
+        with open(transcript_path, encoding='utf-8', errors='replace') as f:
             for line in f:
                 line = line.strip()
                 if not line:
@@ -2284,16 +2240,16 @@ def _compute_normalized_tokens(
                 except (json.JSONDecodeError, AttributeError):
                     continue
 
-                msg = entry.get("message", {}) if isinstance(entry, dict) else {}
-                timestamp = entry.get("timestamp") if isinstance(entry, dict) else None
-                usage = msg.get("usage", {}) if isinstance(msg, dict) else {}
+                msg = entry.get('message', {}) if isinstance(entry, dict) else {}
+                timestamp = entry.get('timestamp') if isinstance(entry, dict) else None
+                usage = msg.get('usage', {}) if isinstance(msg, dict) else {}
                 # The phase this entry's context read is billed to, when it is a
                 # usage-bearing entry at all. Captured here and consumed at the
                 # END of the loop body so the residency fold sees every payload
                 # this entry contributed.
                 turn_phase: str | None = None
                 if isinstance(usage, dict) and usage:
-                    if usage.get("total_tokens") or usage.get("input_tokens") or usage.get("output_tokens"):
+                    if usage.get('total_tokens') or usage.get('input_tokens') or usage.get('output_tokens'):
                         message_count += 1
                         if parsed_windows and isinstance(timestamp, str):
                             parent_phase = _window_for_timestamp(timestamp, parsed_windows)
@@ -2303,39 +2259,37 @@ def _compute_normalized_tokens(
 
                 if not parsed_windows:
                     continue
-                content = msg.get("content") if isinstance(msg, dict) else None
+                content = msg.get('content') if isinstance(msg, dict) else None
                 payloads: list[str] = []
                 if isinstance(content, list):
                     entry_phase = _window_for_timestamp(timestamp, parsed_windows)
                     for item in content:
                         if not isinstance(item, dict):
                             continue
-                        if item.get("type") == "tool_result":
-                            payload_text = _extract_text_payload(item.get("content"))
+                        if item.get('type') == 'tool_result':
+                            payload_text = _extract_text_payload(item.get('content'))
                             payloads.append(payload_text)
                             _count_tool_result_bytes(
-                                item.get("tool_use_id"),
+                                item.get('tool_use_id'),
                                 payload_text,
                                 per_phase_tools,
                                 call_index,
                                 per_phase_subsources,
                             )
-                        elif item.get("type") == "text":
-                            text = item.get("text")
+                        elif item.get('type') == 'text':
+                            text = item.get('text')
                             if isinstance(text, str):
                                 payloads.append(text)
-                        elif item.get("type") == "tool_use" and entry_phase is not None:
+                        elif item.get('type') == 'tool_use' and entry_phase is not None:
                             _count_tool_use(item, entry_phase, per_phase_tools, call_index)
                 elif isinstance(content, str):
                     payloads.append(content)
 
                 for payload in payloads:
-                    if not payload or "<usage>" not in payload:
+                    if not payload or '<usage>' not in payload:
                         continue
                     for tag_match in _USAGE_TAG_RE.finditer(payload):
-                        if _attribute_subagent_usage(
-                            timestamp, parsed_windows, tag_match.group(1), per_phase_subagent
-                        ):
+                        if _attribute_subagent_usage(timestamp, parsed_windows, tag_match.group(1), per_phase_subagent):
                             subagent_calls_attributed += 1
 
                 # One fold per billed context read, at the END of the entry so
@@ -2357,17 +2311,15 @@ def _compute_normalized_tokens(
             bucket = _four_field_bucket(sub_phase)
             for field in _USAGE_FOUR_FIELDS:
                 bucket[field] += sub_fields.get(field, 0)
-            per_phase_subagent_cache_read[sub_phase] = per_phase_subagent_cache_read.get(
-                sub_phase, 0
-            ) + sub_fields.get("cache_read_input_tokens", 0)
+            per_phase_subagent_cache_read[sub_phase] = per_phase_subagent_cache_read.get(sub_phase, 0) + sub_fields.get(
+                'cache_read_input_tokens', 0
+            )
             sub_counters = per_phase_tools.setdefault(sub_phase, _empty_tool_counters())
             for key, value in sub_tools.items():
                 sub_counters[key] += value
             # Folded in lock-step with the parent counters above so the
             # sub-sources keep partitioning ``exploration_result_bytes`` exactly.
-            phase_subsources = per_phase_subsources.setdefault(
-                sub_phase, _empty_exploration_subsources()
-            )
+            phase_subsources = per_phase_subsources.setdefault(sub_phase, _empty_exploration_subsources())
             for key, value in sub_subsources.items():
                 phase_subsources[key] += value
 
@@ -2380,31 +2332,31 @@ def _compute_normalized_tokens(
         four = per_phase_four_fields.get(phase_name, dict.fromkeys(_USAGE_FOUR_FIELDS, 0))
         sub = per_phase_subagent.get(phase_name)
         phase_bucket: dict[str, int] = {
-            "input": four.get("input_tokens", 0),
-            "output": four.get("output_tokens", 0),
-            "cache_read": four.get("cache_read_input_tokens", 0),
-            "cache_creation": four.get("cache_creation_input_tokens", 0),
-            "input_tokens": four.get("input_tokens", 0),
-            "output_tokens": four.get("output_tokens", 0),
-            "cache_read_input_tokens": four.get("cache_read_input_tokens", 0),
-            "cache_creation_input_tokens": four.get("cache_creation_input_tokens", 0),
-            "billing_weighted_total": _billing_weighted_total(four),
-            "subagent_total_tokens": 0,
-            "subagent_tool_uses": 0,
-            "subagent_duration_ms": 0,
-            "subagent_samples": 0,
+            'input': four.get('input_tokens', 0),
+            'output': four.get('output_tokens', 0),
+            'cache_read': four.get('cache_read_input_tokens', 0),
+            'cache_creation': four.get('cache_creation_input_tokens', 0),
+            'input_tokens': four.get('input_tokens', 0),
+            'output_tokens': four.get('output_tokens', 0),
+            'cache_read_input_tokens': four.get('cache_read_input_tokens', 0),
+            'cache_creation_input_tokens': four.get('cache_creation_input_tokens', 0),
+            'billing_weighted_total': _billing_weighted_total(four),
+            'subagent_total_tokens': 0,
+            'subagent_tool_uses': 0,
+            'subagent_duration_ms': 0,
+            'subagent_samples': 0,
         }
-        phase_bucket["total"] = (
-            four.get("input_tokens", 0)
-            + four.get("output_tokens", 0)
-            + four.get("cache_read_input_tokens", 0)
-            + four.get("cache_creation_input_tokens", 0)
+        phase_bucket['total'] = (
+            four.get('input_tokens', 0)
+            + four.get('output_tokens', 0)
+            + four.get('cache_read_input_tokens', 0)
+            + four.get('cache_creation_input_tokens', 0)
         )
         if sub is not None:
-            phase_bucket["subagent_total_tokens"] = sub["total_tokens"]
-            phase_bucket["subagent_tool_uses"] = sub["tool_uses"]
-            phase_bucket["subagent_duration_ms"] = sub["duration_ms"]
-            phase_bucket["subagent_samples"] = sub["samples"]
+            phase_bucket['subagent_total_tokens'] = sub['total_tokens']
+            phase_bucket['subagent_tool_uses'] = sub['tool_uses']
+            phase_bucket['subagent_duration_ms'] = sub['duration_ms']
+            phase_bucket['subagent_samples'] = sub['samples']
         # The walk always ran, so every composed phase carries the full counter
         # key set: a phase with no tool calls reports a MEASURED zero rather than
         # an absent counter.
@@ -2412,9 +2364,7 @@ def _compute_normalized_tokens(
         # Exploration sub-sources: the same exploration bytes re-cut by what the
         # call targeted. Unconditional for the same absent-is-not-zero reason —
         # a phase that ran no exploration call reports three measured zeros.
-        phase_bucket.update(
-            per_phase_subsources.get(phase_name) or _empty_exploration_subsources()
-        )
+        phase_bucket.update(per_phase_subsources.get(phase_name) or _empty_exploration_subsources())
         # Cache-read attribution: split the phase's recorded cache_read across the
         # byte sources that put those bytes into context, in proportion to how
         # long each source's payloads stayed resident. Unconditional for the same
@@ -2422,7 +2372,7 @@ def _compute_normalized_tokens(
         # it is zero.
         phase_bucket.update(
             _attribute_cache_read(
-                four.get("cache_read_input_tokens", 0),
+                four.get('cache_read_input_tokens', 0),
                 per_phase_residency.get(phase_name) or {},
                 per_phase_subagent_cache_read.get(phase_name, 0),
             )
@@ -2430,17 +2380,15 @@ def _compute_normalized_tokens(
         per_phase[phase_name] = phase_bucket
 
     counters = {
-        "message_count": message_count,
-        "subagent_phases_attributed": len(per_phase_subagent),
-        "subagent_calls_attributed": subagent_calls_attributed,
-        "subagent_transcripts_walked": subagent_transcripts_walked,
-        "four_field_phases_attributed": len(per_phase_four_fields),
+        'message_count': message_count,
+        'subagent_phases_attributed': len(per_phase_subagent),
+        'subagent_calls_attributed': subagent_calls_attributed,
+        'subagent_transcripts_walked': subagent_transcripts_walked,
+        'four_field_phases_attributed': len(per_phase_four_fields),
         # Run-level surfacing of tool names outside the population-derived
         # domain. A non-zero value means the classifier met a name it has never
         # seen — the signal that _TOOL_BUCKETS needs extending.
-        "unclassified_tool_calls": sum(
-            phase.get("unclassified_tool_calls", 0) for phase in per_phase_tools.values()
-        ),
+        'unclassified_tool_calls': sum(phase.get('unclassified_tool_calls', 0) for phase in per_phase_tools.values()),
     }
     return per_phase, counters
 
@@ -2461,7 +2409,7 @@ def _claude_shared_settings_path(project_dir: str | None = None) -> Path:
     segments below.)
     """
     base = Path(project_dir) if project_dir else Path.cwd()
-    return base / ".claude" / "settings.json"
+    return base / '.claude' / 'settings.json'
 
 
 def _claude_project_settings_path(project_dir: str | None = None) -> Path:
@@ -2516,15 +2464,15 @@ def _claude_local_settings_path(project_dir: str | None = None) -> Path:
     a shared ``settings.json`` already exists.
     """
     base = Path(project_dir) if project_dir else Path.cwd()
-    return base / ".claude" / "settings.local.json"
+    return base / '.claude' / 'settings.local.json'
 
 
 def _claude_global_settings_path() -> Path:
-    return Path.home() / ".claude" / "settings.json"
+    return Path.home() / '.claude' / 'settings.json'
 
 
 def _settings_path_for_scope(scope: str) -> Path:
-    if scope == "global":
+    if scope == 'global':
         return _claude_global_settings_path()
     return _claude_project_settings_path()
 
@@ -2546,39 +2494,36 @@ def _load_settings(path: Path) -> dict[str, Any]:
     discard whatever the operator actually had there.
     """
     if not path.exists():
-        return {"permissions": {"allow": [], "deny": [], "ask": []}}
+        return {'permissions': {'allow': [], 'deny': [], 'ask': []}}
     try:
-        data: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
+        data: dict[str, Any] = json.loads(path.read_text(encoding='utf-8'))
         if not isinstance(data, dict):
             return {
-                "error": f"Settings root must be an object; found {type(data).__name__}",
-                "permissions": {"allow": [], "deny": [], "ask": []},
+                'error': f'Settings root must be an object; found {type(data).__name__}',
+                'permissions': {'allow': [], 'deny': [], 'ask': []},
             }
-        if "permissions" not in data:
-            data["permissions"] = {}
-        if not isinstance(data["permissions"], dict):
+        if 'permissions' not in data:
+            data['permissions'] = {}
+        if not isinstance(data['permissions'], dict):
             return {
-                "error": (
-                    "permissions must be an object; found "
-                    f"{type(data['permissions']).__name__}"
-                ),
-                "permissions": {"allow": [], "deny": [], "ask": []},
+                'error': (f'permissions must be an object; found {type(data["permissions"]).__name__}'),
+                'permissions': {'allow': [], 'deny': [], 'ask': []},
             }
-        for key in ("allow", "deny", "ask"):
-            if key not in data["permissions"]:
-                data["permissions"][key] = []
+        for key in ('allow', 'deny', 'ask'):
+            if key not in data['permissions']:
+                data['permissions'][key] = []
         return data
     except json.JSONDecodeError as exc:
-        return {"error": f"Invalid JSON: {exc}", "permissions": {"allow": [], "deny": [], "ask": []}}
+        return {'error': f'Invalid JSON: {exc}', 'permissions': {'allow': [], 'deny': [], 'ask': []}}
     except OSError:
-        return {"permissions": {"allow": [], "deny": [], "ask": []}}
+        return {'permissions': {'allow': [], 'deny': [], 'ask': []}}
 
 
 def _save_settings(path: Path, settings: dict[str, Any]) -> bool:
     """Write Claude settings JSON. Single home for the save logic."""
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(settings, indent=2), encoding="utf-8")
+        path.write_text(json.dumps(settings, indent=2), encoding='utf-8')
         return True
     except OSError:
         return False
@@ -2599,13 +2544,13 @@ def _save_settings(path: Path, settings: dict[str, Any]) -> bool:
 # — they load, mutate and save it throughout.
 # ---------------------------------------------------------------------------
 
-_CLAUDE_PLUGIN_CACHE_SEGMENTS = (".claude", "plugins", "cache")
-_BUNDLE_CACHE_DIR_NAME = "plan-marshall"
+_CLAUDE_PLUGIN_CACHE_SEGMENTS = ('.claude', 'plugins', 'cache')
+_BUNDLE_CACHE_DIR_NAME = 'plan-marshall'
 
 # Bash binaries that can exfiltrate a file's contents. Guarded in BOTH the tilde
 # and the absolute spelling of a protected directory, because either can appear
 # in a command line.
-_EXFILTRATION_BASH_VECTORS = ("cat", "head", "tail", "less", "more", "cp", "grep", "base64")
+_EXFILTRATION_BASH_VECTORS = ('cat', 'head', 'tail', 'less', 'more', 'cp', 'grep', 'base64')
 
 
 def _claude_plugin_cache_dir() -> Path:
@@ -2646,7 +2591,7 @@ def _tilde_form(path: Path) -> str:
         relative = path.relative_to(resolve_home())
     except ValueError:
         return str(path)
-    return "~" if str(relative) == "." else "~/" + str(relative)
+    return '~' if str(relative) == '.' else '~/' + str(relative)
 
 
 def _default_permission_rules() -> tuple[tuple[str, str], ...]:
@@ -2660,12 +2605,12 @@ def _default_permission_rules() -> tuple[tuple[str, str], ...]:
     ``Edit(.plan/**)`` is the only write-side rule, and the absent ``Write(...)``
     twin is deliberate — see ``_RETIRED_DEFAULT_RULES`` below.
     """
-    cache_glob = f"{_tilde_form(_claude_plugin_cache_dir())}/**"
+    cache_glob = f'{_tilde_form(_claude_plugin_cache_dir())}/**'
     return (
-        ("plan-dir-edit", "Edit(.plan/**)"),
+        ('plan-dir-edit', 'Edit(.plan/**)'),
         # Skills reference files via relative paths, so the deployed bundle tree
         # must be readable.
-        ("bundle-cache-read", f"Read({cache_glob})"),
+        ('bundle-cache-read', f'Read({cache_glob})'),
     )
 
 
@@ -2685,12 +2630,10 @@ def _default_permission_rules() -> tuple[tuple[str, str], ...]:
 #: this rule grants nothing by construction. A rule that still guards a real
 #: tool call does not belong here however obsolete it looks: deprecate it where
 #: the operator can see it, rather than silently revoking a live grant.
-_RETIRED_DEFAULT_RULES: tuple[tuple[str, str], ...] = (("plan-dir-write", "Write(.plan/**)"),)
+_RETIRED_DEFAULT_RULES: tuple[tuple[str, str], ...] = (('plan-dir-write', 'Write(.plan/**)'),)
 
 
-def ensure_default_permissions(
-    settings: dict[str, Any], settings_path: Path, dry_run: bool = False
-) -> dict[str, Any]:
+def ensure_default_permissions(settings: dict[str, Any], settings_path: Path, dry_run: bool = False) -> dict[str, Any]:
     """Ensure the default permission set is present in *settings*, and write it.
 
     The goal-based entry point behind ``permission_fix.apply-fixes``: the caller
@@ -2714,7 +2657,7 @@ def ensure_default_permissions(
         'defaults_removed': [semantic ids], 'defaults_removed_count': int,
         'applied': bool}`` — normalized status only.
     """
-    allow: list[str] = settings.setdefault("permissions", {}).setdefault("allow", [])
+    allow: list[str] = settings.setdefault('permissions', {}).setdefault('allow', [])
     added_ids: list[str] = []
     for rule_id, rule in _default_permission_rules():
         if rule not in allow:
@@ -2731,16 +2674,16 @@ def ensure_default_permissions(
             removed_ids.append(rule_id)
 
     if added_ids or removed_ids:
-        settings["permissions"]["allow"] = sorted(allow)
+        settings['permissions']['allow'] = sorted(allow)
 
     changed = bool(added_ids or removed_ids)
     applied = changed and not dry_run and _save_settings(settings_path, settings)
     return {
-        "defaults_added": added_ids,
-        "defaults_added_count": len(added_ids),
-        "defaults_removed": removed_ids,
-        "defaults_removed_count": len(removed_ids),
-        "applied": applied,
+        'defaults_added': added_ids,
+        'defaults_added_count': len(added_ids),
+        'defaults_removed': removed_ids,
+        'defaults_removed_count': len(removed_ids),
+        'applied': applied,
     }
 
 
@@ -2748,7 +2691,7 @@ def ensure_default_permissions(
 #: ``)`` delimit a rule, and ``*`` is the glob metacharacter, so a path carrying
 #: one does not merely render badly — it renders as a DIFFERENT rule. The DSL
 #: has no escape, so the only fail-closed answer is to refuse.
-_PATH_CHARS_THE_DSL_CANNOT_CARRY = ("(", ")", "*")
+_PATH_CHARS_THE_DSL_CANNOT_CARRY = ('(', ')', '*')
 
 
 def _reject_unprotectable_path(protected_dir: str) -> str | None:
@@ -2778,22 +2721,22 @@ def _reject_unprotectable_path(protected_dir: str) -> str | None:
     Whitespace and ``..`` are refused for the reasons given at each check.
     """
     if not protected_dir or not protected_dir.strip():
-        return "path is empty"
+        return 'path is empty'
     for char in _PATH_CHARS_THE_DSL_CANNOT_CARRY:
         if char in protected_dir:
-            return f"path contains {char!r}, which the permission grammar cannot carry"
+            return f'path contains {char!r}, which the permission grammar cannot carry'
     if any(ord(char) < 0x20 or ord(char) == 0x7F for char in protected_dir):
-        return "path contains a control character"
+        return 'path contains a control character'
     if any(char.isspace() for char in protected_dir):
         # A `Bash(...)` rule is matched as a command prefix, so a space inside
         # the path moves the argument boundary: `Bash(cat ~/my creds/*)` is not
         # a rule about `~/my creds`. Refusing is fail-closed; rendering it would
         # report a protection that does not hold.
-        return "path contains whitespace, which moves the argument boundary in a Bash rule"
+        return 'path contains whitespace, which moves the argument boundary in a Bash rule'
     path = Path(protected_dir)
     if not path.is_absolute():
-        return "path is not absolute"
-    if ".." in path.parts:
+        return 'path is not absolute'
+    if '..' in path.parts:
         # Collapsing `..` lexically renames the directory whenever a parent
         # segment is a symlink, so the caller would get rules for somewhere
         # else while being told it succeeded.
@@ -2801,7 +2744,7 @@ def _reject_unprotectable_path(protected_dir: str) -> str | None:
     if path == path.parent:
         # `/` renders `Bash(python3 -c */*)` — the distinctive tail becomes
         # `*/*`, matching any inline script carrying a slash.
-        return "path is the filesystem root"
+        return 'path is the filesystem root'
     return None
 
 
@@ -2836,16 +2779,16 @@ def _protect_path_deny_rules(protected_dir: str) -> list[str]:
     normalized = Path(protected_dir)
     absolute = str(normalized)
     tilde = _tilde_form(normalized)
-    distinctive = tilde[2:] if tilde.startswith("~/") else absolute
+    distinctive = tilde[2:] if tilde.startswith('~/') else absolute
 
     rules = [
-        f"Read({tilde}/**)",
-        f"Read({absolute}/**)",
+        f'Read({tilde}/**)',
+        f'Read({absolute}/**)',
     ]
     for vector in _EXFILTRATION_BASH_VECTORS:
-        rules.append(f"Bash({vector} {tilde}/*)")
-        rules.append(f"Bash({vector} {absolute}/*)")
-    rules.append(f"Bash(python3 -c *{distinctive}*)")
+        rules.append(f'Bash({vector} {tilde}/*)')
+        rules.append(f'Bash({vector} {absolute}/*)')
+    rules.append(f'Bash(python3 -c *{distinctive}*)')
     return list(dict.fromkeys(rules))
 
 
@@ -2856,8 +2799,8 @@ def _skill_permission_covered(skill: str, allow_list: list[str]) -> str | None:
     wildcard. This is the single home for the skill-coverage check — relocated
     from ``permission_doctor`` so the runtime owns it with no back-import.
     """
-    exact = f"Skill({skill})"
-    wildcard = f"Skill({skill}:*)"
+    exact = f'Skill({skill})'
+    wildcard = f'Skill({skill}:*)'
     for rule in allow_list:
         if rule == exact or rule == wildcard:
             return rule
@@ -2865,7 +2808,7 @@ def _skill_permission_covered(skill: str, allow_list: list[str]) -> str | None:
 
 
 # Accepted semantic permission-intent kinds across the permission ops.
-_PERMISSION_INTENT_KINDS = ("web-domain", "executor", "bundle", "skill", "path", "macro")
+_PERMISSION_INTENT_KINDS = ('web-domain', 'executor', 'bundle', 'skill', 'path', 'macro')
 
 
 def _render_permission_intent(intent: Any) -> tuple[list[str] | None, str | None]:
@@ -2884,50 +2827,50 @@ def _render_permission_intent(intent: Any) -> tuple[list[str] | None, str | None
         intent: A semantic intent record with a ``kind`` key.
     """
     if not isinstance(intent, dict):
-        return None, "permission intent must be an object"
-    kind = intent.get("kind")
-    if kind == "web-domain":
-        domain = intent.get("domain")
+        return None, 'permission intent must be an object'
+    kind = intent.get('kind')
+    if kind == 'web-domain':
+        domain = intent.get('domain')
         if not isinstance(domain, str) or not domain:
             return None, "web-domain intent requires a non-empty 'domain' string"
-        return [f"WebFetch({domain})"], None
-    if kind == "executor":
-        runtime = intent.get("runtime", "python3")
+        return [f'WebFetch({domain})'], None
+    if kind == 'executor':
+        runtime = intent.get('runtime', 'python3')
         if not isinstance(runtime, str) or not runtime:
             return None, "executor intent requires a non-empty 'runtime' string"
-        return [f"Bash({runtime} .plan/execute-script.py *)"], None
-    if kind == "bundle":
-        name = intent.get("name")
+        return [f'Bash({runtime} .plan/execute-script.py *)'], None
+    if kind == 'bundle':
+        name = intent.get('name')
         if not isinstance(name, str) or not name:
             return None, "bundle intent requires a non-empty 'name' string"
-        return [f"Skill({name}:*)", f"SlashCommand(/{name}:*)"], None
-    if kind == "skill":
-        name = intent.get("name")
+        return [f'Skill({name}:*)', f'SlashCommand(/{name}:*)'], None
+    if kind == 'skill':
+        name = intent.get('name')
         if not isinstance(name, str) or not name:
             return None, "skill intent requires a non-empty 'name' string"
-        return [f"Skill({name})"], None
-    if kind == "path":
-        tool = intent.get("tool")
-        path = intent.get("path")
+        return [f'Skill({name})'], None
+    if kind == 'path':
+        tool = intent.get('tool')
+        path = intent.get('path')
         if not isinstance(tool, str) or not tool:
             return None, "path intent requires a non-empty 'tool' string"
         if not isinstance(path, str) or not path:
             return None, "path intent requires a non-empty 'path' string"
-        return [f"{tool}({path})"], None
-    if kind == "macro":
-        mac_id = intent.get("id")
+        return [f'{tool}({path})'], None
+    if kind == 'macro':
+        mac_id = intent.get('id')
         if not isinstance(mac_id, str) or not mac_id:
             return None, "macro intent requires a non-empty 'id' string"
         candidates = [*_default_permission_rules(), *_RETIRED_DEFAULT_RULES]
         for rule_id, rule in candidates:
             if rule_id == mac_id:
                 return [rule], None
-        return None, f"unknown macro id: {mac_id!r}"
-    return None, f"unknown permission intent kind: {kind!r}"
+        return None, f'unknown macro id: {mac_id!r}'
+    return None, f'unknown permission intent kind: {kind!r}'
 
 
 # Phases in marshal.json that may carry ``project:{skill}`` step references.
-_PROJECT_STEP_PHASES = ("phase-5-execute", "phase-6-finalize")
+_PROJECT_STEP_PHASES = ('phase-5-execute', 'phase-6-finalize')
 
 
 def _load_marshal_config(path: str) -> tuple[dict[str, Any], str | None]:
@@ -2938,16 +2881,16 @@ def _load_marshal_config(path: str) -> tuple[dict[str, Any], str | None]:
     """
     marshal_path = Path(path)
     if not marshal_path.exists():
-        return {}, f"marshal.json not found: {path}"
+        return {}, f'marshal.json not found: {path}'
     try:
-        data = json.loads(marshal_path.read_text(encoding="utf-8"))
+        data = json.loads(marshal_path.read_text(encoding='utf-8'))
         if not isinstance(data, dict):
-            return {}, f"Invalid marshal.json (expected object) in {path}"
+            return {}, f'Invalid marshal.json (expected object) in {path}'
         return data, None
     except json.JSONDecodeError as exc:
-        return {}, f"Invalid JSON in {path}: {exc}"
+        return {}, f'Invalid JSON in {path}: {exc}'
     except OSError as exc:
-        return {}, f"Could not read {path}: {exc}"
+        return {}, f'Could not read {path}: {exc}'
 
 
 def _extract_project_steps(marshal_config: dict[str, Any]) -> list[dict[str, str]]:
@@ -2957,7 +2900,7 @@ def _extract_project_steps(marshal_config: dict[str, Any]) -> list[dict[str, str
     returns one ``{skill, step, phase}`` dict per ``project:``-prefixed entry.
     Relocated from ``permission_doctor`` (single home in the runtime).
     """
-    plan = marshal_config.get("plan", {})
+    plan = marshal_config.get('plan', {})
     if not isinstance(plan, dict):
         return []
     project_steps: list[dict[str, str]] = []
@@ -2965,13 +2908,13 @@ def _extract_project_steps(marshal_config: dict[str, Any]) -> list[dict[str, str
         phase_config = plan.get(phase, {})
         if not isinstance(phase_config, dict):
             continue
-        steps = phase_config.get("steps", [])
+        steps = phase_config.get('steps', [])
         if not isinstance(steps, list):
             continue
         for step in steps:
-            if isinstance(step, str) and step.startswith("project:"):
-                skill = step[len("project:") :]
-                project_steps.append({"skill": skill, "step": step, "phase": phase})
+            if isinstance(step, str) and step.startswith('project:'):
+                skill = step[len('project:') :]
+                project_steps.append({'skill': skill, 'step': step, 'phase': phase})
     return project_steps
 
 
@@ -2989,17 +2932,17 @@ def _find_agent_file(agent_name: str) -> Path | None:
         search_roots.append(cache_base)
     # Script-relative walk to find marketplace.
     for ancestor in Path(__file__).resolve().parents:
-        candidate = ancestor / "marketplace" / "bundles"
+        candidate = ancestor / 'marketplace' / 'bundles'
         if candidate.is_dir():
             search_roots.append(candidate)
             break
-        candidate2 = ancestor / "bundles"
+        candidate2 = ancestor / 'bundles'
         if candidate2.is_dir():
             search_roots.append(candidate2)
             break
 
     for root in search_roots:
-        for match in root.glob(f"*/agents/{agent_name}.md"):
+        for match in root.glob(f'*/agents/{agent_name}.md'):
             if match.is_file():
                 return match
     return None
@@ -3011,55 +2954,55 @@ def _parse_agent_frontmatter(agent_path: Path) -> dict[str, Any]:
     Returns a dict with at minimum 'name', 'description', and 'tools' keys.
     Tools are returned as a list of strings.
     """
-    result: dict[str, Any] = {"name": "", "description": "", "tools": []}
+    result: dict[str, Any] = {'name': '', 'description': '', 'tools': []}
     try:
-        content = agent_path.read_text(encoding="utf-8")
+        content = agent_path.read_text(encoding='utf-8')
     except OSError:
         return result
 
-    if not content.startswith("---"):
+    if not content.startswith('---'):
         return result
 
-    end = content.find("---", 3)
+    end = content.find('---', 3)
     if end == -1:
         return result
 
     frontmatter = content[3:end].strip()
     for line in frontmatter.splitlines():
         stripped = line.strip()
-        if not stripped or ":" not in stripped:
+        if not stripped or ':' not in stripped:
             continue
-        key, _, value = stripped.partition(":")
+        key, _, value = stripped.partition(':')
         key = key.strip()
         value = value.strip()
-        if key == "tools":
+        if key == 'tools':
             # May be inline: tools: [Read, Write] or listed below as - items.
-            if value.startswith("["):
+            if value.startswith('['):
                 try:
                     parsed = json.loads(value)
-                    result["tools"] = [str(t) for t in parsed]
+                    result['tools'] = [str(t) for t in parsed]
                 except (json.JSONDecodeError, ValueError):
                     # Try stripping brackets and splitting by comma.
-                    inner = value.strip("[]")
-                    result["tools"] = [t.strip().strip('"\'') for t in inner.split(",") if t.strip()]
+                    inner = value.strip('[]')
+                    result['tools'] = [t.strip().strip('"\'') for t in inner.split(',') if t.strip()]
             elif value:
-                result["tools"] = [value]
-        elif key in ("name", "description"):
+                result['tools'] = [value]
+        elif key in ('name', 'description'):
             result[key] = value
 
     # Handle tools as a YAML list (- item per line) if not yet found inline.
-    if not result["tools"]:
+    if not result['tools']:
         in_tools = False
         for line in frontmatter.splitlines():
             stripped = line.strip()
-            if stripped.startswith("tools:"):
+            if stripped.startswith('tools:'):
                 in_tools = True
                 inline = stripped[6:].strip()
                 if inline:
                     in_tools = False
             elif in_tools:
-                if stripped.startswith("- "):
-                    result["tools"].append(stripped[2:].strip())
+                if stripped.startswith('- '):
+                    result['tools'].append(stripped[2:].strip())
                 else:
                     in_tools = False
 
@@ -3071,32 +3014,32 @@ def _short_description_from_agent(description: str) -> str:
     words = description.strip().split()
     if len(words) <= 5:
         return description.strip()
-    return " ".join(words[:5])
+    return ' '.join(words[:5])
 
 
 # TOOLS that are mapped on both Claude and OpenCode (not unmapped).
 _MAPPED_TOOLS: frozenset[str] = frozenset(
     {
-        "Read",
-        "Write",
-        "Edit",
-        "Bash",
-        "Glob",
-        "Grep",
-        "Task",
-        "Skill",
-        "WebFetch",
-        "WebSearch",
-        "TodoRead",
-        "TodoWrite",
-        "NotebookRead",
-        "NotebookEdit",
-        "AskUserQuestion",
+        'Read',
+        'Write',
+        'Edit',
+        'Bash',
+        'Glob',
+        'Grep',
+        'Task',
+        'Skill',
+        'WebFetch',
+        'WebSearch',
+        'TodoRead',
+        'TodoWrite',
+        'NotebookRead',
+        'NotebookEdit',
+        'AskUserQuestion',
     }
 )
 
 # Tools that have no platform equivalent — cause no-op for subagent dispatch.
-_UNMAPPED_TOOLS: frozenset[str] = frozenset({"SendMessage", "TaskCreate"})
+_UNMAPPED_TOOLS: frozenset[str] = frozenset({'SendMessage', 'TaskCreate'})
 
 
 # ---------------------------------------------------------------------------
@@ -3116,29 +3059,27 @@ _UNMAPPED_TOOLS: frozenset[str] = frozenset({"SendMessage", "TaskCreate"})
 # silence-is-not-success coverage rule needs. Adding a second kind is additive.
 # ---------------------------------------------------------------------------
 
-OBSERVABLE_BUILD_JOB = "build-job"
+OBSERVABLE_BUILD_JOB = 'build-job'
 """Observable kind: a marshalld build-server job, referenced by its ``job_id``."""
 
 WAIT_OBSERVABLES: tuple[str, ...] = (OBSERVABLE_BUILD_JOB,)
 """The closed set of observable kinds ``wait for`` accepts."""
 
-OUTCOME_SUCCEEDED = "succeeded"
-OUTCOME_FAILED = "failed"
-OUTCOME_TIMED_OUT = "timed_out"
-OUTCOME_KILLED = "killed"
-OUTCOME_PENDING = "pending"
+OUTCOME_SUCCEEDED = 'succeeded'
+OUTCOME_FAILED = 'failed'
+OUTCOME_TIMED_OUT = 'timed_out'
+OUTCOME_KILLED = 'killed'
+OUTCOME_PENDING = 'pending'
 
-TERMINAL_OUTCOMES: frozenset[str] = frozenset(
-    {OUTCOME_SUCCEEDED, OUTCOME_FAILED, OUTCOME_TIMED_OUT, OUTCOME_KILLED}
-)
+TERMINAL_OUTCOMES: frozenset[str] = frozenset({OUTCOME_SUCCEEDED, OUTCOME_FAILED, OUTCOME_TIMED_OUT, OUTCOME_KILLED})
 """The terminal outcomes. ``OUTCOME_PENDING`` is deliberately absent — bound
 exhaustion is an explicit unknown, never a terminal verdict."""
 
 _BUILD_JOB_STATUS_TO_OUTCOME: dict[str, str] = {
-    "success": OUTCOME_SUCCEEDED,
-    "failure": OUTCOME_FAILED,
-    "timeout": OUTCOME_TIMED_OUT,
-    "killed": OUTCOME_KILLED,
+    'success': OUTCOME_SUCCEEDED,
+    'failure': OUTCOME_FAILED,
+    'timeout': OUTCOME_TIMED_OUT,
+    'killed': OUTCOME_KILLED,
 }
 """Daemon wire status -> normalised outcome. ``killed`` keeps its own outcome
 rather than folding into ``failed``: an externally reaped job is not a flaky
@@ -3152,12 +3093,12 @@ hook-timeout emit-site population is exactly the three entry builders
 over emit sites must be anchored on those symbols rather than on a ``"timeout":``
 text scan, which would fold this status name into the count."""
 
-_BUILD_JOB_NON_TERMINAL_STATUSES: frozenset[str] = frozenset({"queued", "running"})
+_BUILD_JOB_NON_TERMINAL_STATUSES: frozenset[str] = frozenset({'queued', 'running'})
 """Wire statuses that mean "keep waiting" — never a verdict either way."""
 
-_BUILD_JOB_NOT_FOUND_STATUS = "not_found"
+_BUILD_JOB_NOT_FOUND_STATUS = 'not_found'
 
-_BUILD_JOB_UNREACHABLE_STATUS = "unreachable"
+_BUILD_JOB_UNREACHABLE_STATUS = 'unreachable'
 """Synthetic status :func:`build_job_poll` returns when the channel is down."""
 
 _BUILD_JOB_POLL_BOUND_SECONDS = 300
@@ -3188,7 +3129,7 @@ def _build_job_socket_path() -> Any | None:
     if modules is None:
         return None
     _protocol, registry = modules
-    return registry.registry_dir() / "socket"
+    return registry.registry_dir() / 'socket'
 
 
 def _build_job_call(request: dict[str, Any], timeout: float) -> dict[str, Any] | None:
@@ -3238,20 +3179,20 @@ def build_job_verify_channel() -> str | None:
     """
     modules = _build_job_modules()
     if modules is None:
-        return "shared_build_layer_unavailable"
+        return 'shared_build_layer_unavailable'
     protocol, _registry = modules
 
     sock_path = _build_job_socket_path()
     if sock_path is None or not sock_path.exists():
-        return "socket_absent"
+        return 'socket_absent'
 
-    response = _build_job_call({"op": "ping"}, _BUILD_JOB_CONNECT_TIMEOUT_SECONDS)
+    response = _build_job_call({'op': 'ping'}, _BUILD_JOB_CONNECT_TIMEOUT_SECONDS)
     if response is None:
-        return "unreachable"
-    if response.get("status") != "ok":
-        return "handshake_failed"
-    if str(response.get("version", "")) != protocol.PROTOCOL_VERSION:
-        return "version_mismatch"
+        return 'unreachable'
+    if response.get('status') != 'ok':
+        return 'handshake_failed'
+    if str(response.get('version', '')) != protocol.PROTOCOL_VERSION:
+        return 'version_mismatch'
     return None
 
 
@@ -3271,13 +3212,12 @@ def build_job_poll(reference: str, bound_seconds: int) -> dict[str, Any]:
         could not be reached. Never raises.
     """
     response = _build_job_call(
-        {"op": "wait", "job_id": reference, "bound": int(bound_seconds)},
+        {'op': 'wait', 'job_id': reference, 'bound': int(bound_seconds)},
         float(bound_seconds) + _BUILD_JOB_READ_MARGIN_SECONDS,
     )
     if response is None:
-        return {"status": _BUILD_JOB_UNREACHABLE_STATUS, "reason": "unreachable"}
+        return {'status': _BUILD_JOB_UNREACHABLE_STATUS, 'reason': 'unreachable'}
     return response
-
 
 
 # ---------------------------------------------------------------------------
@@ -3293,6 +3233,6 @@ def build_job_poll(reference: str, bound_seconds: int) -> dict[str, Any]:
 # submodule's ``import claude_runtime`` resolves to it instead of re-loading.
 # ---------------------------------------------------------------------------
 
-sys.modules.setdefault("claude_runtime", sys.modules[__name__])
+sys.modules.setdefault('claude_runtime', sys.modules[__name__])
 
 from _claude_runtime_impl import ClaudeRuntime  # noqa: E402,F401

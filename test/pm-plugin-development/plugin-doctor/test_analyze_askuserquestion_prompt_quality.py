@@ -17,6 +17,7 @@ Covers the askuserquestion-prompt-quality analyzer:
 - Clean baseline: an empty tree produces no findings
 - The rule appears in the doctor-marketplace rule registry (provenance table)
 """
+
 from pathlib import Path
 
 from conftest import PROJECT_ROOT, load_script_module
@@ -53,18 +54,12 @@ PROVENANCE_PATH = (
 # checked-in literals, never resolved from a git object at test time. Options 1-3
 # of that prompt are not part of the record and are deliberately not invented.
 _API_SHERIFF_PREAMBLE = (
-    'Domain detection returned ambiguous (no narrative match). '
-    'Per Step 7 this requires an operator multiSelect'
+    'Domain detection returned ambiguous (no narrative match). Per Step 7 this requires an operator multiSelect'
 )
-_API_SHERIFF_OPTION_4 = (
-    'pick this only if you want the plan to avoid loading the Java/CUI standard sets'
-)
+_API_SHERIFF_OPTION_4 = 'pick this only if you want the plan to avoid loading the Java/CUI standard sets'
 
 _API_SHERIFF_BLOCK = (
-    'AskUserQuestion:\n'
-    f'  question: "{_API_SHERIFF_PREAMBLE}"\n'
-    '  options:\n'
-    f'    - label: "{_API_SHERIFF_OPTION_4}"\n'
+    f'AskUserQuestion:\n  question: "{_API_SHERIFF_PREAMBLE}"\n  options:\n    - label: "{_API_SHERIFF_OPTION_4}"\n'
 )
 
 # The conformant rewrite of the same decision: the reader still picks the review
@@ -150,9 +145,7 @@ class TestVocabularyCheck:
             '    - label: "Go"\n'
             '      description: "Runs the change against your working copy."\n',
         )
-        assert_analyzer_findings(
-            analyze_askuserquestion_prompt_quality, tmp_path, [RULE_ID]
-        )
+        assert_analyzer_findings(analyze_askuserquestion_prompt_quality, tmp_path, [RULE_ID])
 
     def test_internal_noun_in_option_description_flagged(self, tmp_path):
         _make_skill_doc(
@@ -165,9 +158,7 @@ class TestVocabularyCheck:
             '    - label: "In place"\n'
             '      description: "Applies the change to the files you have open."\n',
         )
-        assert_analyzer_findings(
-            analyze_askuserquestion_prompt_quality, tmp_path, [RULE_ID]
-        )
+        assert_analyzer_findings(analyze_askuserquestion_prompt_quality, tmp_path, [RULE_ID])
 
 
 # ---------------------------------------------------------------------------
@@ -187,9 +178,7 @@ class TestConsequenceCheck:
             '    - label: "Rebase"\n'
             '      description: "Each commit lands separately and history is kept."\n',
         )
-        assert_analyzer_findings(
-            analyze_askuserquestion_prompt_quality, tmp_path, [RULE_ID]
-        )
+        assert_analyzer_findings(analyze_askuserquestion_prompt_quality, tmp_path, [RULE_ID])
 
     def test_flow_style_option_with_description_is_not_flagged(self, tmp_path):
         # ``- label: "X"  description: "Y"`` on one line is a described option;
@@ -253,8 +242,7 @@ class TestInvocationShape:
         # vocabulary, is what keeps prose out of scope.
         _make_skill_doc(
             tmp_path,
-            '# Fixture\n\n'
-            'Per Step 7 the orchestrator fires an AskUserQuestion multiSelect here.\n',
+            '# Fixture\n\nPer Step 7 the orchestrator fires an AskUserQuestion multiSelect here.\n',
         )
         assert_analyzer_findings(analyze_askuserquestion_prompt_quality, tmp_path, [])
 
@@ -336,14 +324,7 @@ class TestRuleRegistry:
 
     def test_rule_id_appears_in_a_table_row(self):
         content = PROVENANCE_PATH.read_text(encoding='utf-8')
-        rows = [
-            line
-            for line in content.splitlines()
-            if line.startswith('|') and RULE_ID in line
-        ]
-        assert rows, (
-            f'{RULE_ID} must appear in a pipe-delimited table row in '
-            f'rule-provenance.md, not only in prose.'
-        )
+        rows = [line for line in content.splitlines() if line.startswith('|') and RULE_ID in line]
+        assert rows, f'{RULE_ID} must appear in a pipe-delimited table row in rule-provenance.md, not only in prose.'
         first_cell = rows[0].split('|')[1].strip().strip('`')
         assert first_cell == RULE_ID

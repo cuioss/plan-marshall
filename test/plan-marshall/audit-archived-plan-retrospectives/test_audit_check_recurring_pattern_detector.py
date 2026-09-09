@@ -38,10 +38,7 @@ class TestCrossRecurringPattern:
 
     def test_signature_in_three_plans_is_systemic(self, tmp_path: Path):
         # the same signature appears in exactly 3 plans (threshold).
-        all_inputs = [
-            _write_recurring_plan(tmp_path, f'plan-{i}', ['Argparse rejection: phase-5'])
-            for i in range(3)
-        ]
+        all_inputs = [_write_recurring_plan(tmp_path, f'plan-{i}', ['Argparse rejection: phase-5']) for i in range(3)]
 
         result = audit.cross_recurring_pattern(all_inputs)
 
@@ -69,9 +66,7 @@ class TestCrossRecurringPattern:
     def test_duplicate_signature_within_plan_counts_once(self, tmp_path: Path):
         # one plan repeats a signature; two other plans carry it once.
         all_inputs = [
-            _write_recurring_plan(
-                tmp_path, 'dup', ['Flaky test: foo', 'Flaky test: bar']
-            ),
+            _write_recurring_plan(tmp_path, 'dup', ['Flaky test: foo', 'Flaky test: bar']),
             _write_recurring_plan(tmp_path, 'p2', ['Flaky test: baz']),
             _write_recurring_plan(tmp_path, 'p3', ['Flaky test: qux']),
         ]
@@ -88,13 +83,9 @@ class TestCrossRecurringPattern:
         # signature A in 4 plans, signature B in 3 plans.
         all_inputs = []
         for i in range(4):
-            all_inputs.append(
-                _write_recurring_plan(tmp_path, f'a-{i}', ['Alpha sig'])
-            )
+            all_inputs.append(_write_recurring_plan(tmp_path, f'a-{i}', ['Alpha sig']))
         for i in range(3):
-            all_inputs.append(
-                _write_recurring_plan(tmp_path, f'b-{i}', ['Beta sig'])
-            )
+            all_inputs.append(_write_recurring_plan(tmp_path, f'b-{i}', ['Beta sig']))
 
         result = audit.cross_recurring_pattern(all_inputs)
 
@@ -113,9 +104,7 @@ class TestCrossRecurringPattern:
             plan_dir = tmp_path / '.plan' / 'temp' / 'rp-corpus' / f't-{i}'
             findings_dir = plan_dir / 'artifacts' / 'findings'
             findings_dir.mkdir(parents=True, exist_ok=True)
-            (findings_dir / 'f.jsonl').write_text(
-                _json.dumps({'type': 'lint-issue'}) + '\n', encoding='utf-8'
-            )
+            (findings_dir / 'f.jsonl').write_text(_json.dumps({'type': 'lint-issue'}) + '\n', encoding='utf-8')
             all_inputs.append(audit.collect_inputs(plan_dir))
 
         result = audit.cross_recurring_pattern(all_inputs)

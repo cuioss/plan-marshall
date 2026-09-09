@@ -141,9 +141,7 @@ def test_sentinel_passes_label_through(monkeypatch):
     store_calls: list = []
     _patch_create(monkeypatch, captured, store_calls)
 
-    result = _github_pr.cmd_pr_create(
-        _make_args(plan_id=NO_PLAN_SENTINEL, label=['skip-bot-review'])
-    )
+    result = _github_pr.cmd_pr_create(_make_args(plan_id=NO_PLAN_SENTINEL, label=['skip-bot-review']))
 
     assert result['status'] == 'success'
     labels = [captured[0][i + 1] for i, tok in enumerate(captured[0]) if tok == '--label']
@@ -152,9 +150,7 @@ def test_sentinel_passes_label_through(monkeypatch):
 
 def test_sentinel_is_accepted_by_the_real_parser():
     """``--plan-id NO_PLAN`` parses — the sentinel needs no special declaration."""
-    args = _pr_create_parser().parse_args(
-        ['create', '--title', 'T', '--plan-id', NO_PLAN_SENTINEL]
-    )
+    args = _pr_create_parser().parse_args(['create', '--title', 'T', '--plan-id', NO_PLAN_SENTINEL])
 
     assert args.plan_id == NO_PLAN_SENTINEL
 
@@ -174,9 +170,7 @@ def test_body_file_is_rejected_as_an_unknown_argument():
     parser = _pr_create_parser()
 
     with pytest.raises(SystemExit) as exc:
-        parser.parse_args(
-            ['create', '--title', 'T', '--plan-id', NO_PLAN_SENTINEL, '--body-file', '/tmp/b.md']
-        )
+        parser.parse_args(['create', '--title', 'T', '--plan-id', NO_PLAN_SENTINEL, '--body-file', '/tmp/b.md'])
 
     assert exc.value.code == 2
 
@@ -251,9 +245,7 @@ def test_body_is_not_deleted_when_create_fails(monkeypatch):
     captured: list = []
     store_calls: list = []
     _patch_create(monkeypatch, captured, store_calls)
-    monkeypatch.setattr(
-        _github_pr.github_ops, 'run_gh', lambda gh_args: (1, '', 'boom')
-    )
+    monkeypatch.setattr(_github_pr.github_ops, 'run_gh', lambda gh_args: (1, '', 'boom'))
 
     result = _github_pr.cmd_pr_create(_make_args(plan_id='plan-x'))
 

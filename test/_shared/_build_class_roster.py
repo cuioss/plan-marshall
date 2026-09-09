@@ -86,12 +86,7 @@ _CANDIDATE_TOKENS = (_BUILD_MAIN_ATTR, '_build_cli')
 #: The generated ``.plan/execute-script.py`` is a build artifact, so the template
 #: is what a test may read.
 _EXECUTOR_TEMPLATE = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'tools-script-executor'
-    / 'templates'
-    / 'execute-script.py.template'
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'tools-script-executor' / 'templates' / 'execute-script.py.template'
 )
 
 #: The template carries ``{{PLACEHOLDER}}`` tokens, so it is not parseable as a
@@ -107,12 +102,7 @@ _PREFIXES_LITERAL = re.compile(
 #: ``_BUILD_CLASS_PREFIXES`` must stay equal to. It is an ordinary module, so it
 #: is read by ``ast.parse`` rather than by the template's regex-extract shape.
 _CLIENT_BUILD_MODULE = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-architecture'
-    / 'scripts'
-    / '_cmd_client_build.py'
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'manage-architecture' / 'scripts' / '_cmd_client_build.py'
 )
 
 #: The constant naming that registry inside the module above.
@@ -418,9 +408,7 @@ def build_notation_prefixes() -> frozenset[str]:
         for target in targets:
             if isinstance(target, ast.Name) and target.id == _BUILD_NOTATIONS_NAME:
                 mapping = ast.literal_eval(value)
-                return frozenset(
-                    f'{notation.rsplit(":", 1)[0]}:' for notation in mapping
-                )
+                return frozenset(f'{notation.rsplit(":", 1)[0]}:' for notation in mapping)
     raise AssertionError(
         f'{_BUILD_NOTATIONS_NAME} not found in {_CLIENT_BUILD_MODULE} — the '
         'build-notation registry moved and this reader must follow it.'

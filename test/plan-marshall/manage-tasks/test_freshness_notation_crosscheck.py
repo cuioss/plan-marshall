@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the notation cross-check on ``pre-commit-verify-freshness``."""
 
-
 from __future__ import annotations
 
 import json
@@ -79,9 +78,7 @@ def test_fresh_record_names_the_matched_row(plan_context, monkeypatch, tmp_path)
     assert result['expected_notations'] == [_PYPROJECT]
 
 
-def test_matched_index_addresses_the_parsed_row_not_the_file_line(
-    plan_context, monkeypatch, tmp_path
-) -> None:
+def test_matched_index_addresses_the_parsed_row_not_the_file_line(plan_context, monkeypatch, tmp_path) -> None:
     """``matched_entry_index`` indexes PARSED entries, which malformed lines shift.
 
     ``read_entries`` skips unparseable lines, so the parsed index and the
@@ -111,9 +108,7 @@ def test_matched_index_addresses_the_parsed_row_not_the_file_line(
 # =============================================================================
 
 
-def test_mutated_worktree_stays_stale_with_its_own_reason(
-    plan_context, monkeypatch, tmp_path
-) -> None:
+def test_mutated_worktree_stays_stale_with_its_own_reason(plan_context, monkeypatch, tmp_path) -> None:
     """A tree mutated after its build is still ``worktree_mutated``, not a notation refusal.
 
     This verdict is structural and CORRECT: the chain verifies and stamps, a
@@ -136,9 +131,7 @@ def test_mutated_worktree_stays_stale_with_its_own_reason(
     assert 'notation_cross_check' not in result
 
 
-def test_failed_build_for_current_sha_keeps_its_build_status_reason(
-    plan_context, monkeypatch, tmp_path
-) -> None:
+def test_failed_build_for_current_sha_keeps_its_build_status_reason(plan_context, monkeypatch, tmp_path) -> None:
     """A red build against the current tree still reports ``build_error``.
 
     The cross-check runs only on rows that already passed ``status == 'success'``,
@@ -212,9 +205,7 @@ def test_resolver_reports_an_empty_set_as_an_inability(monkeypatch) -> None:
     resolves nothing, and treating that as 'this project builds with nothing'
     would refuse every real build row it holds.
     """
-    monkeypatch.setitem(
-        __import__('sys').modules, '_cmd_client_query', _FakeQueryModule(frozenset())
-    )
+    monkeypatch.setitem(__import__('sys').modules, '_cmd_client_query', _FakeQueryModule(frozenset()))
     notations, reason = crosscheck.resolve_expected_notations('.')
 
     assert notations == frozenset()
@@ -223,9 +214,7 @@ def test_resolver_reports_an_empty_set_as_an_inability(monkeypatch) -> None:
 
 def test_resolver_reports_a_raising_crawl_as_an_inability(monkeypatch) -> None:
     """A resolver that raises is an inability, never a refutation."""
-    monkeypatch.setitem(
-        __import__('sys').modules, '_cmd_client_query', _FakeQueryModule(RuntimeError('crawl blew up'))
-    )
+    monkeypatch.setitem(__import__('sys').modules, '_cmd_client_query', _FakeQueryModule(RuntimeError('crawl blew up')))
     notations, reason = crosscheck.resolve_expected_notations('.')
 
     assert notations == frozenset()
@@ -274,9 +263,7 @@ def test_resolver_reports_a_non_container_return_as_a_resolution_failure(monkeyp
     shape that would slip past a bare ``if not notations`` check were the
     ``isinstance`` guard removed.
     """
-    monkeypatch.setitem(
-        __import__('sys').modules, '_cmd_client_query', _FakeQueryModule(['not', 'a', 'set'])
-    )
+    monkeypatch.setitem(__import__('sys').modules, '_cmd_client_query', _FakeQueryModule(['not', 'a', 'set']))
     notations, reason = crosscheck.resolve_expected_notations('.')
 
     assert notations == frozenset()
@@ -312,9 +299,7 @@ def test_gate_never_raises_when_the_resolver_import_faults_with_a_non_import_err
     monkeypatch.delitem(__import__('sys').modules, '_cmd_client_query', raising=False)
     monkeypatch.setattr(builtins, '__import__', _misconfigured_import)
 
-    result = _run(
-        plan_context, monkeypatch, tmp_path, [_build_entry()], 'crosscheck-nonimporterror'
-    )
+    result = _run(plan_context, monkeypatch, tmp_path, [_build_entry()], 'crosscheck-nonimporterror')
 
     assert result['status'] == 'fresh', result
     assert result['notation_cross_check'] == crosscheck.UNVERIFIED
@@ -405,9 +390,7 @@ def test_the_real_resolution_path_refuses_and_corroborates_against_this_reposito
     refused = cmd_pre_commit_verify_freshness(Namespace(plan_id='crosscheck-live'))
 
     related = tmp_path / 'related.jsonl'
-    related.write_text(
-        json.dumps(_build_entry(notation=_PYPROJECT), sort_keys=True) + '\n', encoding='utf-8'
-    )
+    related.write_text(json.dumps(_build_entry(notation=_PYPROJECT), sort_keys=True) + '\n', encoding='utf-8')
     monkeypatch.setattr(_freshness_mod, 'resolve_ledger_path', lambda: related)
     permitted = cmd_pre_commit_verify_freshness(Namespace(plan_id='crosscheck-live'))
 
@@ -463,13 +446,10 @@ def test_the_observed_three_row_ledger_no_longer_certifies_a_whole_tree_change(
     assert result['reason'] == crosscheck.REASON_SCOPE_NARROW
     assert result['scope_cross_check'] == crosscheck.NARROW
     # The refusal names WHAT the row ran, not merely that something was narrow.
-    assert result['row_scopes'] == ['module-tests plan-marshall/manage-findings: '
-                                    + crosscheck.ROW_CANONICAL_TOO_WEAK]
+    assert result['row_scopes'] == ['module-tests plan-marshall/manage-findings: ' + crosscheck.ROW_CANONICAL_TOO_WEAK]
 
 
-def test_a_whole_tree_verify_row_still_certifies_the_same_change(
-    plan_context, monkeypatch, tmp_path
-) -> None:
+def test_a_whole_tree_verify_row_still_certifies_the_same_change(plan_context, monkeypatch, tmp_path) -> None:
     """MATCHED POSITIVE CONTROL for the case above — load-bearing, not optional.
 
     Same sha, same requirement, same ledger shape; only the surviving row's
@@ -515,9 +495,7 @@ def test_a_module_scoped_verify_covers_its_own_module_but_not_a_tree_wide_change
     confined = crosscheck.cross_check_candidates(
         [row], '/nonexistent-project-dir', _required(whole_tree=False, modules={'plan-marshall'})
     )
-    tree_wide = crosscheck.cross_check_candidates(
-        [row], '/nonexistent-project-dir', _required(whole_tree=True)
-    )
+    tree_wide = crosscheck.cross_check_candidates([row], '/nonexistent-project-dir', _required(whole_tree=True))
 
     assert confined['scope_verdict'] == crosscheck.COVERED, confined
     assert confined['chosen'] == 0
@@ -644,9 +622,7 @@ def test_the_notation_property_survives_the_scope_widening(monkeypatch) -> None:
 # =============================================================================
 
 
-def test_an_unreadable_row_scope_passes_and_names_the_inability(
-    plan_context, monkeypatch, tmp_path
-) -> None:
+def test_an_unreadable_row_scope_passes_and_names_the_inability(plan_context, monkeypatch, tmp_path) -> None:
     """A row whose ``args`` carries no ``--command-args`` is undetermined, not narrow.
 
     ⛔ The fail direction here is the whole point: an unreadable row must NOT be
@@ -656,18 +632,14 @@ def test_an_unreadable_row_scope_passes_and_names_the_inability(
     """
     _stub_expected(monkeypatch, {_PYPROJECT})
     _stub_required(monkeypatch, _required())
-    result = _run(
-        plan_context, monkeypatch, tmp_path, [_build_entry(args='run')], 'scope-unreadable'
-    )
+    result = _run(plan_context, monkeypatch, tmp_path, [_build_entry(args='run')], 'scope-unreadable')
 
     assert result['status'] == 'fresh', result
     assert result['scope_cross_check'] == crosscheck.UNDETERMINED
     assert result['scope_cross_check_reason'] == crosscheck.REASON_SCOPE_UNREADABLE
 
 
-def test_an_underivable_requirement_passes_and_names_the_inability(
-    plan_context, monkeypatch, tmp_path
-) -> None:
+def test_an_underivable_requirement_passes_and_names_the_inability(plan_context, monkeypatch, tmp_path) -> None:
     """An unresolvable footprint is an inability, never an empty requirement.
 
     Rendering it as "the change requires nothing" would make every row cover it
@@ -782,8 +754,6 @@ def test_required_coverage_is_derived_from_the_footprint_not_fixed() -> None:
     assert docs_only.analyses == frozenset({vocabulary.test})
     assert docs_only.whole_tree is False
     assert docs_only.modules == frozenset({'plan-marshall'})
-    assert with_source.analyses == frozenset(
-        {vocabulary.compile, vocabulary.lint, vocabulary.test}
-    )
+    assert with_source.analyses == frozenset({vocabulary.compile, vocabulary.lint, vocabulary.test})
     # ``divergence_possible`` is taken verbatim — this dimension does not re-derive it.
     assert with_source.whole_tree is True

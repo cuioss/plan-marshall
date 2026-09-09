@@ -50,10 +50,6 @@ def executor_landed(executor_path: Path) -> bool:
     a real generation having landed.
     """
     try:
-        return (
-            executor_path.is_file()
-            and not executor_path.is_symlink()
-            and executor_path.stat().st_size > 0
-        )
+        return executor_path.is_file() and not executor_path.is_symlink() and executor_path.stat().st_size > 0
     except OSError:
         return False

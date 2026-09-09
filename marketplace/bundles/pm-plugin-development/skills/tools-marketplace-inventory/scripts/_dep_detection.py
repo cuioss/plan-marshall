@@ -173,7 +173,6 @@ class Dependency:
 # Letting those retarget manufactured five false edges onto ``manage-lessons``.
 
 
-
 # ---------------------------------------------------------------------------
 # Non-reference colon-triples
 #
@@ -439,11 +438,7 @@ def detect_skill_references(content: str, frontmatter: dict[str, Any], source: C
                             target=target,
                             dep_type=DependencyType.SKILL_REFERENCE,
                             context='frontmatter:skills',
-                            exclusion=(
-                                Exclusion.PLACEHOLDER
-                                if _has_placeholder_segment(bundle, name)
-                                else None
-                            ),
+                            exclusion=(Exclusion.PLACEHOLDER if _has_placeholder_segment(bundle, name) else None),
                         )
                     )
 
@@ -459,9 +454,7 @@ def detect_skill_references(content: str, frontmatter: dict[str, Any], source: C
                     target=target,
                     dep_type=DependencyType.SKILL_REFERENCE,
                     context=f'line:{line_num}',
-                    exclusion=(
-                        Exclusion.PLACEHOLDER if _has_placeholder_segment(bundle, name) else None
-                    ),
+                    exclusion=(Exclusion.PLACEHOLDER if _has_placeholder_segment(bundle, name) else None),
                 )
             )
 

@@ -12,7 +12,6 @@ Its sections, in order:
 * Release
 """
 
-
 from __future__ import annotations
 
 import json
@@ -79,9 +78,7 @@ class TestIdempotentRepoll:
         assert waiting.count('waiter') == 1
         assert waiting == ['front', 'waiter']
 
-    def test_front_repoll_against_foreign_live_holder_keeps_front_position(
-        self, isolated_base: dict
-    ) -> None:
+    def test_front_repoll_against_foreign_live_holder_keeps_front_position(self, isolated_base: dict) -> None:
         """The FIFO FRONT itself can be blocked when a FOREIGN live holder holds
         the lock (e.g. a reentrant holder that pre-existed the queue). The front's
         re-poll keeps its front position so it is first in line on release."""

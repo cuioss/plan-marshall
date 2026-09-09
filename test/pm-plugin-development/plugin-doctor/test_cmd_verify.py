@@ -14,9 +14,7 @@ from pathlib import Path
 
 from conftest import load_script_module
 
-_verify = load_script_module(
-    'pm-plugin-development', 'plugin-doctor', '_cmd_verify.py', '_cmd_verify_under_test'
-)
+_verify = load_script_module('pm-plugin-development', 'plugin-doctor', '_cmd_verify.py', '_cmd_verify_under_test')
 
 
 def _file(tmp_path: Path, content: str, name: str = 'comp.md') -> Path:

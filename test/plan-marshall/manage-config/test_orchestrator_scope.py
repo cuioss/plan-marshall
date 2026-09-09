@@ -28,7 +28,10 @@ _cmd_effort_mod = load_script_module(
     'plan-marshall', 'manage-config', '_cmd_effort.py', module_name='_cmd_effort_for_orchestrator_scope_test'
 )
 _cmd_orchestrator_mod = load_script_module(
-    'plan-marshall', 'manage-config', '_cmd_orchestrator.py', module_name='_cmd_orchestrator_for_orchestrator_scope_test'
+    'plan-marshall',
+    'manage-config',
+    '_cmd_orchestrator.py',
+    module_name='_cmd_orchestrator_for_orchestrator_scope_test',
 )
 _config_defaults_mod = load_script_module(
     'plan-marshall', 'manage-config', '_config_defaults.py', module_name='_config_defaults_for_orchestrator_scope_test'
@@ -68,8 +71,7 @@ def test_surface_override_wins_over_default(plan_context):
     """A per-surface override wins over the in-block ``default`` slot."""
     _write_marshal(
         plan_context.fixture_dir,
-        {'orchestrator': {'effort': {'analyze': 'level-6', 'default': 'level-4'}},
-         'plan': {'effort': 'level-2'}},
+        {'orchestrator': {'effort': {'analyze': 'level-6', 'default': 'level-4'}}, 'plan': {'effort': 'level-2'}},
     )
 
     result = _read_role('orchestrator.analyze')
@@ -84,8 +86,7 @@ def test_surface_absent_walks_to_default_slot(plan_context):
     """A surface with no override walks to the ``default`` slot."""
     _write_marshal(
         plan_context.fixture_dir,
-        {'orchestrator': {'effort': {'analyze': 'level-6', 'default': 'level-4'}},
-         'plan': {'effort': 'level-2'}},
+        {'orchestrator': {'effort': {'analyze': 'level-6', 'default': 'level-4'}}, 'plan': {'effort': 'level-2'}},
     )
 
     for surface in ('decompose', 'reader'):
@@ -325,9 +326,7 @@ def test_materialised_scope_resolves_identically_to_unset(plan_context):
         assert result['status'] == 'success'
         return result['value'] if result['set'] else 1
 
-    _write_marshal(
-        plan_context.fixture_dir, {'orchestrator': get_default_config()['orchestrator']}
-    )
+    _write_marshal(plan_context.fixture_dir, {'orchestrator': get_default_config()['orchestrator']})
     seeded_prefill = _effective_prefill()
 
     _write_marshal(plan_context.fixture_dir, {'orchestrator': {'auto_emit': False}})
@@ -348,9 +347,7 @@ def test_resolve_target_returns_variant_name(plan_context):
         {'orchestrator': {'effort': {'analyze': 'level-5'}}},
     )
 
-    result = cmd_effort_resolve_target(
-        Namespace(role='orchestrator.analyze', phase=None, default=False)
-    )
+    result = cmd_effort_resolve_target(Namespace(role='orchestrator.analyze', phase=None, default=False))
 
     assert result['status'] == 'success'
     assert result['level'] == 'level-5'
@@ -361,9 +358,7 @@ def test_resolve_target_inherit_returns_canonical(plan_context):
     """A surface resolving to inherit maps to the canonical execution-context."""
     _write_marshal(plan_context.fixture_dir, {})
 
-    result = cmd_effort_resolve_target(
-        Namespace(role='orchestrator.decompose', phase=None, default=False)
-    )
+    result = cmd_effort_resolve_target(Namespace(role='orchestrator.decompose', phase=None, default=False))
 
     assert result['status'] == 'success'
     assert result['level'] == 'inherit'
@@ -486,9 +481,7 @@ def test_orchestrator_set_parallelization_scope_round_trips(plan_context):
     """``orchestrator set --field parallelization_scope`` persists an int >= 1."""
     _write_marshal(plan_context.fixture_dir, {})
 
-    set_result = cmd_orchestrator_set(
-        Namespace(field='parallelization_scope', value='3')
-    )
+    set_result = cmd_orchestrator_set(Namespace(field='parallelization_scope', value='3'))
 
     assert set_result['status'] == 'success'
     assert set_result['value'] == 3

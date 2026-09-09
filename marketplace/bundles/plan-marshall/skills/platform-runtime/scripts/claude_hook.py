@@ -30,23 +30,23 @@ def main() -> int:
     # Read and parse stdin
     raw = sys.stdin.read()
     if not raw.strip():
-        print("claude_hook: stdin is empty — no session payload received", file=sys.stderr)
+        print('claude_hook: stdin is empty — no session payload received', file=sys.stderr)
         return 1
 
     try:
         payload = json.loads(raw)
     except json.JSONDecodeError as exc:
-        print(f"claude_hook: malformed JSON on stdin: {exc}", file=sys.stderr)
+        print(f'claude_hook: malformed JSON on stdin: {exc}', file=sys.stderr)
         return 1
 
     if not isinstance(payload, dict):
         print(
-            f"claude_hook: expected JSON object, got {type(payload).__name__}",
+            f'claude_hook: expected JSON object, got {type(payload).__name__}',
             file=sys.stderr,
         )
         return 1
 
-    session_id = payload.get("session_id")
+    session_id = payload.get('session_id')
     if not session_id:
         print(
             "claude_hook: 'session_id' field missing or empty in hook payload",
@@ -62,23 +62,23 @@ def main() -> int:
         return 1
 
     # Write to CLAUDE_ENV_FILE so the session id propagates into the environment
-    env_file = os.environ.get("CLAUDE_ENV_FILE")
+    env_file = os.environ.get('CLAUDE_ENV_FILE')
     if not env_file:
         print(
-            "claude_hook: CLAUDE_ENV_FILE is not set — cannot write session id",
+            'claude_hook: CLAUDE_ENV_FILE is not set — cannot write session id',
             file=sys.stderr,
         )
         return 2
 
     try:
-        with open(env_file, "a", encoding="utf-8") as fh:
-            fh.write(f"CLAUDE_CODE_SESSION_ID={session_id}\n")
+        with open(env_file, 'a', encoding='utf-8') as fh:
+            fh.write(f'CLAUDE_CODE_SESSION_ID={session_id}\n')
     except OSError as exc:
-        print(f"claude_hook: failed to write to CLAUDE_ENV_FILE ({env_file}): {exc}", file=sys.stderr)
+        print(f'claude_hook: failed to write to CLAUDE_ENV_FILE ({env_file}): {exc}', file=sys.stderr)
         return 2
 
     return 0
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     sys.exit(main())

@@ -1342,9 +1342,9 @@ _BUNDLE_SKILLS = _LEAF_COMMAND_REFERENCE.parents[2]
 #: roster declares — iterated rather than re-typed, so a third provider joins this
 #: guard by being added there.
 _PROVIDER_OPS_TEXT: dict[str, str] = {
-    provider: (
-        _BUNDLE_SKILLS / f'workflow-integration-{provider}' / 'scripts' / f'{provider}_ops.py'
-    ).read_text(encoding='utf-8')
+    provider: (_BUNDLE_SKILLS / f'workflow-integration-{provider}' / 'scripts' / f'{provider}_ops.py').read_text(
+        encoding='utf-8'
+    )
     for provider in PROVIDERS
 }
 
@@ -1460,12 +1460,10 @@ def test_every_registered_pr_verb_has_an_api_contract_row():
 
     undocumented = registered - documented - set(_API_CONTRACT_PR_EXEMPT)
     assert not undocumented, (
-        f'registered pr verbs with no {_API_CONTRACT.name} row and no recorded '
-        f'exemption: {sorted(undocumented)}'
+        f'registered pr verbs with no {_API_CONTRACT.name} row and no recorded exemption: {sorted(undocumented)}'
     )
     assert not documented - registered, (
-        f'{_API_CONTRACT.name} documents pr verbs no provider registry registers: '
-        f'{sorted(documented - registered)}'
+        f'{_API_CONTRACT.name} documents pr verbs no provider registry registers: {sorted(documented - registered)}'
     )
 
 
@@ -1969,9 +1967,7 @@ def test_split_at_subcommand_uses_registry(_reset_subcommand_cache):
 def test_error_style_registered_on_checks_subparsers(checks_command):
     """``--error-style`` must be accepted on both checks wait and checks status."""
     parser, _, _, _, _ = build_parser('test')
-    args = parser.parse_args(
-        ['checks', checks_command, '--pr-number', '42', '--error-style', 'maven']
-    )
+    args = parser.parse_args(['checks', checks_command, '--pr-number', '42', '--error-style', 'maven'])
     assert args.error_style == 'maven'
 
 
@@ -1988,9 +1984,7 @@ def test_error_style_defaults_to_generic(checks_command):
 def test_error_style_accepts_every_valid_choice(checks_command, style):
     """Every member of the maven|gradle|npm|generic choice set is accepted."""
     parser, _, _, _, _ = build_parser('test')
-    args = parser.parse_args(
-        ['checks', checks_command, '--pr-number', '42', '--error-style', style]
-    )
+    args = parser.parse_args(['checks', checks_command, '--pr-number', '42', '--error-style', style])
     assert args.error_style == style
 
 
@@ -1999,9 +1993,7 @@ def test_error_style_rejects_unknown_value(checks_command):
     """An out-of-choice ``--error-style`` value must exit (argparse error)."""
     parser, _, _, _, _ = build_parser('test')
     with pytest.raises(SystemExit):
-        parser.parse_args(
-            ['checks', checks_command, '--pr-number', '42', '--error-style', 'sbt']
-        )
+        parser.parse_args(['checks', checks_command, '--pr-number', '42', '--error-style', 'sbt'])
 
 
 def test_add_error_style_arg_registers_default_generic():
@@ -2106,9 +2098,7 @@ def test_enrich_no_collision_when_two_checks_share_run_id(plan_context):
     # The defining assertion: same run_id, but the slug disambiguates so the two
     # entries never write to the same on-disk path.
     assert log_files[0] != log_files[1], f'shared run_id collided: {log_files}'
-    assert filtered_files[0] != filtered_files[1], (
-        f'shared run_id filtered paths collided: {filtered_files}'
-    )
+    assert filtered_files[0] != filtered_files[1], f'shared run_id filtered paths collided: {filtered_files}'
     # Both raw files actually exist on disk (no overwrite of one by the other).
     # persist() expresses paths relative to the anchor (get_base_dir().parent);
     # in fixture mode get_base_dir() == fixture_dir, so the anchor is its parent.
@@ -2391,9 +2381,7 @@ def test_merge_queue_eligibility_vocabulary_constants():
 
 def test_merge_queue_eligible_states_set():
     """MERGE_QUEUE_ELIGIBLE_STATES is exactly the two eligible-to-enable discriminators."""
-    assert ci_base.MERGE_QUEUE_ELIGIBLE_STATES == frozenset(
-        {'eligible_configured', 'eligible_unconfigured'}
-    )
+    assert ci_base.MERGE_QUEUE_ELIGIBLE_STATES == frozenset({'eligible_configured', 'eligible_unconfigured'})
     # The ineligible / unsupported values are NOT eligible-to-enable.
     assert ci_base.MERGE_QUEUE_INELIGIBLE not in ci_base.MERGE_QUEUE_ELIGIBLE_STATES
     assert ci_base.MERGE_QUEUE_UNSUPPORTED not in ci_base.MERGE_QUEUE_ELIGIBLE_STATES
@@ -2644,9 +2632,7 @@ def test_adaptive_wait_timeout_set_delegates_to_run_config(monkeypatch):
     import run_config
 
     seen: list[tuple[str, int]] = []
-    monkeypatch.setattr(
-        run_config, 'timeout_set', lambda command_key, duration: seen.append((command_key, duration))
-    )
+    monkeypatch.setattr(run_config, 'timeout_set', lambda command_key, duration: seen.append((command_key, duration)))
 
     ci_base._adaptive_wait_timeout_set(415)
 

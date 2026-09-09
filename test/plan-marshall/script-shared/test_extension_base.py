@@ -240,8 +240,8 @@ def test_extension_base_no_longer_exposes_axis_b_methods():
         'classify_path_specificity',
         'classify_build_class',
     ):
-        assert not hasattr(ext, axis_b), f"ExtensionBase still exposes {axis_b}"
-        assert not hasattr(ExtensionBase, axis_b), f"ExtensionBase still declares {axis_b}"
+        assert not hasattr(ext, axis_b), f'ExtensionBase still exposes {axis_b}'
+        assert not hasattr(ExtensionBase, axis_b), f'ExtensionBase still declares {axis_b}'
 
 
 def test_extension_base_default_applies_to_module():
@@ -536,10 +536,12 @@ class _DeriverRouteExtension(BuildExtensionBase):
     """A build extension declaring one route per resolved role under domain 'minimal'."""
 
     def get_skill_domains(self) -> list[dict]:
-        return [{
-            'domain': {'key': 'minimal', 'name': 'Minimal', 'description': 'Test only'},
-            'profiles': {},
-        }]
+        return [
+            {
+                'domain': {'key': 'minimal', 'name': 'Minimal', 'description': 'Test only'},
+                'profiles': {},
+            }
+        ]
 
     def classify_globs(self) -> list[tuple[str, str]]:
         return [
@@ -599,10 +601,12 @@ def test_filter_live_and_dead_route_same_domain_yields_only_live(tmp_path):
 
     class _MixedExtension(BuildExtensionBase):
         def get_skill_domains(self) -> list[dict]:
-            return [{
-                'domain': {'key': 'minimal', 'name': 'Minimal', 'description': 'Test only'},
-                'profiles': {},
-            }]
+            return [
+                {
+                    'domain': {'key': 'minimal', 'name': 'Minimal', 'description': 'Test only'},
+                    'profiles': {},
+                }
+            ]
 
         def classify_globs(self) -> list[tuple[str, str]]:
             return [
@@ -672,10 +676,12 @@ def test_derive_globs_retains_bare_basename_subdir_only_config(tmp_path):
 
     class _SubdirConfigExtension(BuildExtensionBase):
         def get_skill_domains(self) -> list[dict]:
-            return [{
-                'domain': {'key': 'frontend', 'name': 'Frontend', 'description': 'Test only'},
-                'profiles': {},
-            }]
+            return [
+                {
+                    'domain': {'key': 'frontend', 'name': 'Frontend', 'description': 'Test only'},
+                    'profiles': {},
+                }
+            ]
 
         def classify_globs(self) -> list[tuple[str, str]]:
             return [('package.json', ROLE_CONFIG)]
@@ -732,9 +738,7 @@ _PATTERN_MATCHES_ANY_IDS = [
 ]
 
 
-@pytest.mark.parametrize(
-    'pattern,tracked,expected', _PATTERN_MATCHES_ANY_CASES, ids=_PATTERN_MATCHES_ANY_IDS
-)
+@pytest.mark.parametrize('pattern,tracked,expected', _PATTERN_MATCHES_ANY_CASES, ids=_PATTERN_MATCHES_ANY_IDS)
 def test_pattern_matches_any(pattern: str, tracked: list[str], expected: bool):
     assert _pattern_matches_any(pattern, tracked) is expected
 
@@ -756,12 +760,12 @@ def test_pattern_matches_any_equivalent_to_per_element_loop():
         'README.md',
     ]
     patterns = [
-        'package.json',            # bare-basename, matches root + subdir
-        '*.tsx',                   # bare-basename glob, matches nothing
-        'scripts/*.py',            # path-bearing, anchored
-        'marketplace/*.py',        # path-bearing, single-star spans /
-        'vendor/*.py',             # path-bearing, matches vendor only
-        'nonexistent.toml',        # bare-basename, dead route
+        'package.json',  # bare-basename, matches root + subdir
+        '*.tsx',  # bare-basename glob, matches nothing
+        'scripts/*.py',  # path-bearing, anchored
+        'marketplace/*.py',  # path-bearing, single-star spans /
+        'vendor/*.py',  # path-bearing, matches vendor only
+        'nonexistent.toml',  # bare-basename, dead route
     ]
     for pattern in patterns:
         assert _pattern_matches_any(pattern, corpus) == _loop_matches_any(pattern, corpus), (
@@ -891,8 +895,7 @@ def test_command_is_a_label_not_an_input_to_the_verdict(monkeypatch):
     # Act
     command_free = should_execute_build(None, 'my-plan')
     per_command = {
-        cmd: should_execute_build(cmd, 'my-plan')
-        for cmd in ('quality-gate', 'verify', 'coverage', 'module-tests')
+        cmd: should_execute_build(cmd, 'my-plan') for cmd in ('quality-gate', 'verify', 'coverage', 'module-tests')
     }
 
     # Assert — decision/reason identical everywhere; only the label differs.
@@ -1067,9 +1070,7 @@ _REAL_RESOLVE_PLAN_FOOTPRINT = extension_base._resolve_plan_footprint
 @pytest.fixture
 def real_footprint_resolver(monkeypatch):
     """Pin ``_resolve_plan_footprint`` to the genuine implementation for one test."""
-    monkeypatch.setattr(
-        extension_base, '_resolve_plan_footprint', _REAL_RESOLVE_PLAN_FOOTPRINT
-    )
+    monkeypatch.setattr(extension_base, '_resolve_plan_footprint', _REAL_RESOLVE_PLAN_FOOTPRINT)
 
 
 def _write_status(plan_dir, metadata):
@@ -1094,9 +1095,7 @@ def test_resolve_plan_footprint_unresolvable_when_no_status(plan_context, real_f
     assert extension_base._resolve_plan_footprint('no-status') is None
 
 
-def test_resolve_plan_footprint_unresolvable_when_status_is_not_an_object(
-    plan_context, real_footprint_resolver
-):
+def test_resolve_plan_footprint_unresolvable_when_status_is_not_an_object(plan_context, real_footprint_resolver):
     """A malformed (non-object) ``status.json`` is unresolvable, not empty."""
     # Arrange
     plan_dir = plan_context.plan_dir_for('bad-status')
@@ -1106,9 +1105,7 @@ def test_resolve_plan_footprint_unresolvable_when_status_is_not_an_object(
     assert extension_base._resolve_plan_footprint('bad-status') is None
 
 
-def test_resolve_plan_footprint_unresolvable_when_metadata_is_not_a_dict(
-    plan_context, real_footprint_resolver
-):
+def test_resolve_plan_footprint_unresolvable_when_metadata_is_not_a_dict(plan_context, real_footprint_resolver):
     """A non-dict ``metadata`` block is unresolvable, not empty."""
     # Arrange
     plan_dir = plan_context.plan_dir_for('bad-metadata')
@@ -1118,9 +1115,7 @@ def test_resolve_plan_footprint_unresolvable_when_metadata_is_not_a_dict(
     assert extension_base._resolve_plan_footprint('bad-metadata') is None
 
 
-def test_resolve_plan_footprint_unresolvable_when_worktree_path_absent(
-    plan_context, real_footprint_resolver
-):
+def test_resolve_plan_footprint_unresolvable_when_worktree_path_absent(plan_context, real_footprint_resolver):
     """An absent/empty ``worktree_path`` is the early-compose state — ``None``.
 
     This is the load-bearing case: at phase-4-plan the worktree has not been
@@ -1284,11 +1279,7 @@ def test_no_build_extension_declares_an_infrastructure_config_route():
     extensions = _real_build_extensions()
     assert extensions, 'discover_build_extensions() returned no build extensions'
 
-    declared = [
-        route
-        for ext in extensions
-        for route in (ext.classify_globs() or [])
-    ]
+    declared = [route for ext in extensions for route in (ext.classify_globs() or [])]
     assert declared, 'the real build extensions declared no routes at all'
 
     for path in _INFRA_CONFIG_PATHS:
@@ -1325,6 +1316,7 @@ def test_completeness_denominator_is_unaffected_by_infra_config_files(tmp_path):
     denominator. The uncovered list is also asserted non-empty, so the equality
     cannot be satisfied by two empty lists.
     """
+
     class _NarrowRouteExtension(BuildExtensionBase):
         """Declares a production route narrower than its own buildable root.
 
@@ -1336,10 +1328,12 @@ def test_completeness_denominator_is_unaffected_by_infra_config_files(tmp_path):
         """
 
         def get_skill_domains(self) -> list[dict]:
-            return [{
-                'domain': {'key': 'minimal', 'name': 'Minimal', 'description': 'Test only'},
-                'profiles': {},
-            }]
+            return [
+                {
+                    'domain': {'key': 'minimal', 'name': 'Minimal', 'description': 'Test only'},
+                    'profiles': {},
+                }
+            ]
 
         def classify_globs(self) -> list[tuple[str, str]]:
             return [('scripts/*/generated.py', ROLE_PRODUCTION)]
@@ -1372,9 +1366,7 @@ class TestReadBuildMapRoutes:
 
     @staticmethod
     def _write_marshal(tmp_path, monkeypatch, build_map):
-        (tmp_path / 'marshal.json').write_text(
-            json.dumps({'build': {'map': build_map}}), encoding='utf-8'
-        )
+        (tmp_path / 'marshal.json').write_text(json.dumps({'build': {'map': build_map}}), encoding='utf-8')
         monkeypatch.setenv('PLAN_TRACKED_CONFIG_DIR', str(tmp_path))
 
     def test_routes_carry_the_role_alongside_the_glob(self, tmp_path, monkeypatch):
@@ -1461,9 +1453,7 @@ _RESOLVE_ROUTE_ROLE_IDS = [
 class TestResolveRouteRole:
     """The per-path lookup, including its precedence and its ``None`` contract."""
 
-    @pytest.mark.parametrize(
-        'path,routes,expected', _RESOLVE_ROUTE_ROLE_CASES, ids=_RESOLVE_ROUTE_ROLE_IDS
-    )
+    @pytest.mark.parametrize('path,routes,expected', _RESOLVE_ROUTE_ROLE_CASES, ids=_RESOLVE_ROUTE_ROLE_IDS)
     def test_resolve_route_role(self, path, routes, expected):
         assert resolve_route_role(path, routes) == expected
 

@@ -43,15 +43,18 @@ def _make_bundle(
     ``user_invocable`` (bool), ``description`` (str), ``model`` (str).
     """
     skill_refs = [f'./skills/{skill_name}' for skill_name in skills]
-    plugin_doc = json.dumps(
-        {
-            'name': bundle,
-            'version': '0.0.1',
-            'description': f'{bundle} bundle',
-            'skills': skill_refs,
-        },
-        indent=2,
-    ) + '\n'
+    plugin_doc = (
+        json.dumps(
+            {
+                'name': bundle,
+                'version': '0.0.1',
+                'description': f'{bundle} bundle',
+                'skills': skill_refs,
+            },
+            indent=2,
+        )
+        + '\n'
+    )
     _write(marketplace / bundle / '.claude-plugin' / 'plugin.json', plugin_doc)
     for skill_name, attrs in skills.items():
         fm_lines = [
@@ -76,9 +79,7 @@ def _make_bundle(
 # ---------------------------------------------------------------------------
 
 
-def test_user_invocable_skill_emits_skill_md_and_command_wrapper(
-    tmp_path: Path, opencode_config_dir: Path
-):
+def test_user_invocable_skill_emits_skill_md_and_command_wrapper(tmp_path: Path, opencode_config_dir: Path):
     marketplace = tmp_path / 'bundles'
     _make_bundle(
         marketplace,
@@ -94,9 +95,7 @@ def test_user_invocable_skill_emits_skill_md_and_command_wrapper(
     assert 'command/demo-helper.md' in rels
 
 
-def test_non_user_invocable_skill_does_not_emit_wrapper(
-    tmp_path: Path, opencode_config_dir: Path
-):
+def test_non_user_invocable_skill_does_not_emit_wrapper(tmp_path: Path, opencode_config_dir: Path):
     marketplace = tmp_path / 'bundles'
     _make_bundle(
         marketplace,
@@ -197,9 +196,7 @@ def test_wrapper_strips_model_block_when_absent(tmp_path: Path, opencode_config_
     assert 'model:' not in wrapper
 
 
-def test_wrapper_takes_first_line_of_multiline_description(
-    tmp_path: Path, opencode_config_dir: Path
-):
+def test_wrapper_takes_first_line_of_multiline_description(tmp_path: Path, opencode_config_dir: Path):
     marketplace = tmp_path / 'bundles'
     multi = 'first-line summary that fits in frontmatter'
     _make_bundle(

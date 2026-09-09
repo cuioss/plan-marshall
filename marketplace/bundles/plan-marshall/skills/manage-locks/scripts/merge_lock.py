@@ -433,9 +433,7 @@ def _prune_dead_waiting(waiting: list[dict[str, Any]]) -> list[dict[str, Any]]:
     genuinely gone and dropped.
     """
     return [
-        e
-        for e in waiting
-        if not holder_is_dead(e.get('plan_id', '')) or holder_has_live_worktree(e.get('plan_id', ''))
+        e for e in waiting if not holder_is_dead(e.get('plan_id', '')) or holder_has_live_worktree(e.get('plan_id', ''))
     ]
 
 
@@ -721,9 +719,7 @@ def _claim_rate_window(
             )
             return state
 
-        reclaimed_from = (
-            record['holder'] if record is not None and record['holder'] not in ('', plan_id) else None
-        )
+        reclaimed_from = record['holder'] if record is not None and record['holder'] not in ('', plan_id) else None
         # The cap is per (bot_kind, PR): a record for a DIFFERENT PR starts fresh.
         attempts_before = _attempts_for_pr(record, pr_number)
         next_attempts = attempts_before + 1
@@ -1135,9 +1131,7 @@ def _surface_lock_waiting(plan_id: str, set_title_token: bool = True) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _admitted_result(
-    plan_id: str, action: str, lock_path: Path, reclaimed: bool, waiting_count: int
-) -> dict[str, Any]:
+def _admitted_result(plan_id: str, action: str, lock_path: Path, reclaimed: bool, waiting_count: int) -> dict[str, Any]:
     """Build the ``admission: admitted`` success payload (acquired / reclaimed / already_held)."""
     return {
         'status': 'success',
@@ -1257,8 +1251,13 @@ def run_acquire(args: Namespace) -> dict[str, Any]:
         holder = _read_holder(lock_path) if lock_path.exists() else ''
         _surface_lock_waiting(plan_id, set_title_token)
         log_lock_event(
-            'merge', 'blocked', lock_id=plan_id, lock_file=_LOCK_FILENAME,
-            holder=holder or None, waiter=plan_id, waiting_count=waiting_count,
+            'merge',
+            'blocked',
+            lock_id=plan_id,
+            lock_file=_LOCK_FILENAME,
+            holder=holder or None,
+            waiter=plan_id,
+            waiting_count=waiting_count,
         )
         return _blocked_result(plan_id, holder or None, lock_path, waiting_count)
 
@@ -1269,9 +1268,7 @@ def run_acquire(args: Namespace) -> dict[str, Any]:
         # Lock held — surface 🔒 (best-effort, AFTER the atomic create, OUTSIDE
         # the O_EXCL window), emit [LOCK] acquired.
         _surface_lock_owned(plan_id, set_title_token)
-        log_lock_event(
-            'merge', 'acquired', lock_id=plan_id, lock_file=_LOCK_FILENAME, waiting_count=waiting_count
-        )
+        log_lock_event('merge', 'acquired', lock_id=plan_id, lock_file=_LOCK_FILENAME, waiting_count=waiting_count)
         return _admitted_result(plan_id, 'acquired', lock_path, reclaimed=False, waiting_count=waiting_count)
 
     # The lock exists — inspect the holder. A dead holder is reclaimed atomically
@@ -1290,21 +1287,28 @@ def run_acquire(args: Namespace) -> dict[str, Any]:
     if holder_is_dead(holder) and holder_has_live_worktree(holder):
         _surface_lock_waiting(plan_id, set_title_token)
         log_lock_event(
-            'merge', 'blocked', lock_id=plan_id, lock_file=_LOCK_FILENAME,
-            holder=holder or None, waiter=plan_id, waiting_count=waiting_count,
+            'merge',
+            'blocked',
+            lock_id=plan_id,
+            lock_file=_LOCK_FILENAME,
+            holder=holder or None,
+            waiter=plan_id,
+            waiting_count=waiting_count,
             stale_holder_live_worktree=True,
         )
-        return _blocked_result(
-            plan_id, holder or None, lock_path, waiting_count, stale_holder_live_worktree=True
-        )
+        return _blocked_result(plan_id, holder or None, lock_path, waiting_count, stale_holder_live_worktree=True)
 
     if holder_is_dead(holder):
         reclaimed_from = holder
         if _reclaim_stale_lock(lock_path, reclaimed_from, plan_id):
             _surface_lock_owned(plan_id, set_title_token)
             log_lock_event(
-                'merge', 'reclaimed', lock_id=plan_id, lock_file=_LOCK_FILENAME,
-                reclaimed_from=reclaimed_from or None, waiting_count=waiting_count,
+                'merge',
+                'reclaimed',
+                lock_id=plan_id,
+                lock_file=_LOCK_FILENAME,
+                reclaimed_from=reclaimed_from or None,
+                waiting_count=waiting_count,
             )
             return _admitted_result(plan_id, 'acquired', lock_path, reclaimed=True, waiting_count=waiting_count)
         # Reclaim lost (a concurrent reclaimer won, or a live holder was installed
@@ -1316,8 +1320,13 @@ def run_acquire(args: Namespace) -> dict[str, Any]:
     # front position, so it is first in line when the holder releases.
     _surface_lock_waiting(plan_id, set_title_token)
     log_lock_event(
-        'merge', 'blocked', lock_id=plan_id, lock_file=_LOCK_FILENAME,
-        holder=holder or None, waiter=plan_id, waiting_count=waiting_count,
+        'merge',
+        'blocked',
+        lock_id=plan_id,
+        lock_file=_LOCK_FILENAME,
+        holder=holder or None,
+        waiter=plan_id,
+        waiting_count=waiting_count,
     )
     return _blocked_result(plan_id, holder or None, lock_path, waiting_count)
 
@@ -1359,9 +1368,7 @@ def run_check(args: Namespace) -> dict[str, Any]:
     }
 
 
-def _run_conditional_release(
-    plan_id: str, lock_path: Path, set_title_token: bool
-) -> dict[str, Any]:
+def _run_conditional_release(plan_id: str, lock_path: Path, set_title_token: bool) -> dict[str, Any]:
     """Fail-closed ``release --require-stale`` — remove the lock ONLY when provably stale.
 
     The manual-release recovery path (release a foreign holder's lock under its
@@ -1420,8 +1427,12 @@ def _run_conditional_release(
             waiting_count = 0
         _surface_lock_cleared(plan_id, set_title_token)
         log_lock_event(
-            'merge', 'released', lock_id=plan_id, lock_file=_LOCK_FILENAME,
-            reclaimed_from=holder or None, waiting_count=waiting_count,
+            'merge',
+            'released',
+            lock_id=plan_id,
+            lock_file=_LOCK_FILENAME,
+            reclaimed_from=holder or None,
+            waiting_count=waiting_count,
         )
         return {
             'status': 'success',
@@ -1538,9 +1549,7 @@ def run_release(args: Namespace) -> dict[str, Any]:
     # [LOCK] `released` — best-effort, after the real os.unlink; this is the only
     # release branch that changed ownership (the noop/foreign branches above do
     # not emit, since they removed no lock this caller held).
-    log_lock_event(
-        'merge', 'released', lock_id=plan_id, lock_file=_LOCK_FILENAME, waiting_count=waiting_count
-    )
+    log_lock_event('merge', 'released', lock_id=plan_id, lock_file=_LOCK_FILENAME, waiting_count=waiting_count)
     return {
         'status': 'success',
         'plan_id': plan_id,
@@ -1563,8 +1572,7 @@ def _missing_pr_number(args: Namespace) -> dict[str, Any] | None:
     if args.pr_number is not None:
         return None
     return make_error(
-        f'rate-window {args.action} requires --pr-number: '
-        'recovery attempts are counted per (bot_kind, pr_number)',
+        f'rate-window {args.action} requires --pr-number: recovery attempts are counted per (bot_kind, pr_number)',
         code=ErrorCode.INVALID_INPUT,
         plan_id=args.plan_id,
         bot_kind=args.bot_kind,
@@ -1590,8 +1598,13 @@ def _run_rate_window_claim(args: Namespace) -> dict[str, Any]:
 
     if verdict == 'blocked':
         log_lock_event(
-            'rate-window', 'blocked', lock_id=plan_id, bot_kind=bot_kind,
-            holder=outcome['holder'], waiter=plan_id, pr_number=outcome['pr_number'],
+            'rate-window',
+            'blocked',
+            lock_id=plan_id,
+            bot_kind=bot_kind,
+            holder=outcome['holder'],
+            waiter=plan_id,
+            pr_number=outcome['pr_number'],
         )
         return {
             'status': 'blocked',
@@ -1608,8 +1621,13 @@ def _run_rate_window_claim(args: Namespace) -> dict[str, Any]:
 
     if verdict == 'exhausted':
         log_lock_event(
-            'rate-window', 'exhausted', lock_id=plan_id, bot_kind=bot_kind,
-            pr_number=pr_number, attempts=outcome['attempts'], attempt_cap=attempt_cap,
+            'rate-window',
+            'exhausted',
+            lock_id=plan_id,
+            bot_kind=bot_kind,
+            pr_number=pr_number,
+            attempts=outcome['attempts'],
+            attempt_cap=attempt_cap,
         )
         return {
             'status': 'refused',
@@ -1622,9 +1640,13 @@ def _run_rate_window_claim(args: Namespace) -> dict[str, Any]:
         }
 
     log_lock_event(
-        'rate-window', 'reclaimed' if verdict == 'reclaimed' else 'claimed',
-        lock_id=plan_id, bot_kind=bot_kind, pr_number=pr_number,
-        expires_at=outcome['expires_at'], attempts=outcome['attempts'],
+        'rate-window',
+        'reclaimed' if verdict == 'reclaimed' else 'claimed',
+        lock_id=plan_id,
+        bot_kind=bot_kind,
+        pr_number=pr_number,
+        expires_at=outcome['expires_at'],
+        attempts=outcome['attempts'],
         reclaimed_from=outcome.get('reclaimed_from'),
     )
     return {
@@ -1722,7 +1744,10 @@ def _run_rate_window_release(args: Namespace) -> dict[str, Any]:
     outcome = _release_rate_window(plan_id, bot_kind)
     if outcome['action'] == 'released':
         log_lock_event(
-            'rate-window', 'released', lock_id=plan_id, bot_kind=bot_kind,
+            'rate-window',
+            'released',
+            lock_id=plan_id,
+            bot_kind=bot_kind,
             attempts=outcome['attempts'],
         )
     return {
@@ -1807,8 +1832,7 @@ def run_poll_delay(args: Namespace) -> dict[str, Any]:
 
     if not math.isfinite(min_seconds) or not math.isfinite(max_seconds):
         return make_error(
-            f'poll-delay requires finite bounds: '
-            f'got min_seconds={min_seconds}, max_seconds={max_seconds}',
+            f'poll-delay requires finite bounds: got min_seconds={min_seconds}, max_seconds={max_seconds}',
             code=ErrorCode.INVALID_INPUT,
             min_seconds=min_seconds,
             max_seconds=max_seconds,
@@ -1816,8 +1840,7 @@ def run_poll_delay(args: Namespace) -> dict[str, Any]:
 
     if min_seconds < 0 or max_seconds < 0:
         return make_error(
-            f'poll-delay requires non-negative bounds: '
-            f'got min_seconds={min_seconds}, max_seconds={max_seconds}',
+            f'poll-delay requires non-negative bounds: got min_seconds={min_seconds}, max_seconds={max_seconds}',
             code=ErrorCode.INVALID_INPUT,
             min_seconds=min_seconds,
             max_seconds=max_seconds,
@@ -1942,7 +1965,7 @@ Examples:
             },
             {
                 'name': 'rate-window',
-                'help': 'Claim / check / release one review bot\'s rate window (shares the merge-lock STORE, never the merge MUTEX)',
+                'help': "Claim / check / release one review bot's rate window (shares the merge-lock STORE, never the merge MUTEX)",
                 'handler': run_rate_window,
                 'args': [
                     {

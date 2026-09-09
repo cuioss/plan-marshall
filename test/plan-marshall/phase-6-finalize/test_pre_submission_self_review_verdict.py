@@ -70,12 +70,7 @@ from _dispatch_roster import section_lines
 from conftest import MARKETPLACE_ROOT
 
 _WORKFLOW_DOC = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'phase-6-finalize'
-    / 'workflow'
-    / 'pre-submission-self-review.md'
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'workflow' / 'pre-submission-self-review.md'
 )
 
 _OUTPUT_HEADING = '### Dispatched-envelope output (returned from Steps 2–3 to Step 4)'
@@ -183,11 +178,7 @@ def _non_finding_verdicts(text: str) -> list[str]:
     the not-run member reports that no analysis ran at all, which is a
     non-finding outcome without being a clean one.
     """
-    return [
-        literal
-        for literal in _verdict_literals(text)
-        if _FINDINGS_VERDICT_MARKER not in literal
-    ]
+    return [literal for literal in _verdict_literals(text) if _FINDINGS_VERDICT_MARKER not in literal]
 
 
 def _partition_non_finding_verdicts(non_finding: list[str]) -> dict[str, list[str]]:
@@ -208,9 +199,7 @@ def _unclaimed_non_finding_verdicts(non_finding: list[str]) -> list[str]:
     return [
         literal
         for literal in non_finding
-        if not any(
-            marker in literal for marker in _NON_FINDING_VERDICT_MARKERS.values()
-        )
+        if not any(marker in literal for marker in _NON_FINDING_VERDICT_MARKERS.values())
     ]
 
 
@@ -234,18 +223,14 @@ def _prefix_collisions(literals: list[str]) -> list[tuple[str, str]]:
 def test_output_section_is_present_and_non_empty():
     section = _section(_OUTPUT_HEADING)
 
-    assert section.strip(), (
-        f'{_OUTPUT_HEADING!r} section is empty — every assertion below would be '
-        f'vacuous'
-    )
+    assert section.strip(), f'{_OUTPUT_HEADING!r} section is empty — every assertion below would be vacuous'
 
 
 def test_surface_section_is_present_and_non_empty():
     section = _section(_SURFACE_HEADING)
 
     assert section.strip(), (
-        f'{_SURFACE_HEADING!r} section is empty — the zero-generator fallback '
-        f'assertion would be vacuous'
+        f'{_SURFACE_HEADING!r} section is empty — the zero-generator fallback assertion would be vacuous'
     )
 
 
@@ -335,10 +320,7 @@ def test_no_check_matched_verdict_carries_the_candidate_count():
 
     claimed = _partition_non_finding_verdicts(non_finding)['no-check-matched']
 
-    assert len(claimed) == 1, (
-        f'The no-check-matched label must claim exactly one verdict literal. '
-        f'Got: {claimed}'
-    )
+    assert len(claimed) == 1, f'The no-check-matched label must claim exactly one verdict literal. Got: {claimed}'
 
 
 def test_every_verdict_fits_the_display_detail_budget():
@@ -353,8 +335,7 @@ def test_every_verdict_fits_the_display_detail_budget():
         )
         assert rendered.isascii(), f'Verdict {literal!r} is not ASCII'
         assert not rendered.endswith('.'), (
-            f'Verdict {literal!r} carries a trailing period, which the '
-            f'agent-return-shape contract forbids'
+            f'Verdict {literal!r} carries a trailing period, which the agent-return-shape contract forbids'
         )
 
 
@@ -375,12 +356,7 @@ def test_every_verdict_placeholder_is_covered_by_the_widening_list():
     assert literals, 'No verdicts parsed — the assertion would be vacuous'
 
     uncovered = sorted(
-        {
-            found
-            for literal in literals
-            for found in placeholder_re.findall(literal)
-            if found not in _COUNT_PLACEHOLDERS
-        }
+        {found for literal in literals for found in placeholder_re.findall(literal) if found not in _COUNT_PLACEHOLDERS}
     )
 
     assert not uncovered, (
@@ -414,9 +390,7 @@ def test_no_verdict_at_all_is_a_prefix_of_another():
 
     collisions = _prefix_collisions(literals)
 
-    assert not collisions, (
-        f'Verdict prefix collision across the full verdict set: {collisions}'
-    )
+    assert not collisions, f'Verdict prefix collision across the full verdict set: {collisions}'
 
 
 # ---------------------------------------------------------------------------
@@ -426,9 +400,7 @@ def test_no_verdict_at_all_is_a_prefix_of_another():
 
 def test_zero_generator_fallback_reports_the_not_run_verdict():
     surface = _section(_SURFACE_HEADING)
-    partition = _partition_non_finding_verdicts(
-        _non_finding_verdicts(_section(_OUTPUT_HEADING))
-    )
+    partition = _partition_non_finding_verdicts(_non_finding_verdicts(_section(_OUTPUT_HEADING)))
 
     claimed = partition[_ZERO_GENERATOR_LABEL]
     assert len(claimed) == 1, (
@@ -452,20 +424,12 @@ def test_zero_generator_fallback_reports_no_other_non_finding_verdict():
     nothing-to-check verdict, which is the near-miss this guards.
     """
     surface = _section(_SURFACE_HEADING)
-    partition = _partition_non_finding_verdicts(
-        _non_finding_verdicts(_section(_OUTPUT_HEADING))
-    )
+    partition = _partition_non_finding_verdicts(_non_finding_verdicts(_section(_OUTPUT_HEADING)))
 
-    others = {
-        label: hits[0]
-        for label, hits in partition.items()
-        if label != _ZERO_GENERATOR_LABEL and len(hits) == 1
-    }
+    others = {label: hits[0] for label, hits in partition.items() if label != _ZERO_GENERATOR_LABEL and len(hits) == 1}
     assert others, 'No sibling non-finding verdicts resolvable — assertion vacuous'
 
-    leaked = {
-        label: literal for label, literal in others.items() if literal in surface
-    }
+    leaked = {label: literal for label, literal in others.items() if literal in surface}
 
     assert not leaked, (
         f'The zero-generator fallback path performed no analysis, so it must '
@@ -477,8 +441,7 @@ def test_zero_generator_fallback_does_not_report_the_old_undifferentiated_form()
     surface = _section(_SURFACE_HEADING)
 
     assert f'"{_OLD_CLEAN_FORM}"' not in surface, (
-        'The zero-generator fallback still reports the pre-fix undifferentiated '
-        'clean verdict'
+        'The zero-generator fallback still reports the pre-fix undifferentiated clean verdict'
     )
     # The literal pre-fix zero-count rendering is the exact string the fallback
     # used to emit.
@@ -530,9 +493,7 @@ def test_return_shape_invariant_names_every_non_finding_verdict():
     # Re-derived over the FULL non-finding set: the pre-split form asserted
     # ``len(...) == 2`` and would have skipped every verdict beyond the
     # second, letting a new verdict enter the vocabulary un-checked.
-    assert len(non_finding) == len(_NON_FINDING_VERDICT_MARKERS), (
-        'Non-finding verdicts not resolvable'
-    )
+    assert len(non_finding) == len(_NON_FINDING_VERDICT_MARKERS), 'Non-finding verdicts not resolvable'
 
     missing = [literal for literal in non_finding if literal not in gate]
 
@@ -560,9 +521,7 @@ def test_only_the_ran_verdicts_are_clean_and_the_not_run_one_is_not():
     carry the clean prefix, and every other one MUST, so the property cannot be
     satisfied by a document that dropped the prefix everywhere.
     """
-    partition = _partition_non_finding_verdicts(
-        _non_finding_verdicts(_section(_OUTPUT_HEADING))
-    )
+    partition = _partition_non_finding_verdicts(_non_finding_verdicts(_section(_OUTPUT_HEADING)))
 
     not_run = partition[_ZERO_GENERATOR_LABEL]
     assert len(not_run) == 1, (
@@ -575,12 +534,7 @@ def test_only_the_ran_verdicts_are_clean_and_the_not_run_one_is_not():
         f'ext-point-self-review-surfacing.md forbids outright'
     )
 
-    ran = [
-        literal
-        for label, hits in partition.items()
-        if label != _ZERO_GENERATOR_LABEL
-        for literal in hits
-    ]
+    ran = [literal for label, hits in partition.items() if label != _ZERO_GENERATOR_LABEL for literal in hits]
     assert len(ran) == len(_NON_FINDING_VERDICT_MARKERS) - 1, (
         f'The verdicts reported by a round that RAN are not all resolvable, so '
         f'the second half of this assertion would sweep a short set. Got: {ran}'
@@ -603,7 +557,7 @@ def test_verdict_parser_reads_the_pre_fix_single_clean_verdict():
     pre_fix = (
         '`display_detail` shape:\n'
         '- Empty `findings` → `"self-review clean: {N} candidates examined"` '
-        'where `{N}` is the surfacer\'s `counts.total`.\n'
+        "where `{N}` is the surfacer's `counts.total`.\n"
         '- Non-empty `findings` → `"self-review found {K} issues"`.\n'
     )
 
@@ -615,8 +569,7 @@ def test_verdict_parser_reads_the_pre_fix_single_clean_verdict():
         f'(a), (b) and (d) would be vacuous. Got: {literals}'
     )
     assert non_finding == [_OLD_CLEAN_FORM], (
-        f'Non-finding filter failed to separate the no-finding verdict from the '
-        f'findings verdict. Got: {non_finding}'
+        f'Non-finding filter failed to separate the no-finding verdict from the findings verdict. Got: {non_finding}'
     )
 
 
@@ -675,10 +628,7 @@ def test_partition_detector_fires_on_an_unclaimed_and_on_a_doubly_claimed_litera
         'self-review clean: no observation drawn from the files searched',
     ]
     assert not _unclaimed_non_finding_verdicts(well_formed)
-    assert all(
-        len(hits) == 1
-        for hits in _partition_non_finding_verdicts(well_formed).values()
-    )
+    assert all(len(hits) == 1 for hits in _partition_non_finding_verdicts(well_formed).values())
 
 
 def test_clean_prefix_detector_separates_the_not_run_verdict_from_its_siblings():
@@ -735,6 +685,5 @@ def test_budget_detector_fires_on_an_over_long_verdict():
     assert len(literals) == 1, 'Verdict parser failed on the synthetic over-long form'
     rendered = _render(literals[0])
     assert len(rendered) > _DISPLAY_DETAIL_MAX, (
-        'Budget detector would not fire on an over-long verdict — the budget '
-        'assertion would be vacuous'
+        'Budget detector would not fire on an over-long verdict — the budget assertion would be vacuous'
     )

@@ -42,9 +42,7 @@ _ORCH_SCRIPT = 'orchestrator.py'
 
 SCRIPT_PATH = get_script_path(_ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT)
 
-_orch = load_script_module(
-    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT, 'orchestrator_script'
-)
+_orch = load_script_module(_ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT, 'orchestrator_script')
 
 cmd_resume_summary = _orch.cmd_resume_summary
 
@@ -79,8 +77,12 @@ def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
 
 
 _RESUME_SUMMARY_ARGS = parse_ns(
-    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
-    'resume-summary', '--slug', SLUG,
+    _ORCH_BUNDLE,
+    _ORCH_SKILL,
+    _ORCH_SCRIPT,
+    'resume-summary',
+    '--slug',
+    SLUG,
     register=False,
 )
 
@@ -221,16 +223,13 @@ class TestCountDivergenceDetector:
     def test_should_not_report_two_counts_over_different_populations(self, plan_context):
         # The DENOMINATOR TRAP near-miss: a scoped count is correctly different
         # from the whole-epic count, and flagging it would be a false positive.
-        _write_status(
-            plan_context, THREE_ROWS, 'Epic total: 3 rows. WS-01 holds 2 rows in that set.'
-        )
+        _write_status(plan_context, THREE_ROWS, 'Epic total: 3 rows. WS-01 holds 2 rows in that set.')
 
         result = _run()
 
         assert result['count_divergences'] == []
         assert result['count_claims_scanned'] == 1, (
-            'the scoped claim must be EXCLUDED from the scan rather than compared '
-            'against the whole-epic derivation'
+            'the scoped claim must be EXCLUDED from the scan rather than compared against the whole-epic derivation'
         )
 
     def test_should_report_a_per_status_claim_against_its_own_tally(self, plan_context):
@@ -270,9 +269,7 @@ class TestContradictionDetector:
 
     def test_should_stay_silent_when_the_repeated_claim_agrees_with_itself(self, plan_context):
         # Negative control over a REAL claim population.
-        _write_status(
-            plan_context, THREE_ROWS, 'Capacity: R = 2 of 3 today. Re-checked: R = 2 of 3.'
-        )
+        _write_status(plan_context, THREE_ROWS, 'Capacity: R = 2 of 3 today. Re-checked: R = 2 of 3.')
 
         result = _run()
 
@@ -283,9 +280,7 @@ class TestContradictionDetector:
     def test_should_not_report_claims_over_different_denominators(self, plan_context):
         # Near-miss: two capacity claims about DIFFERENT sets are not in
         # conflict, however different their numerators look side by side.
-        _write_status(
-            plan_context, THREE_ROWS, 'Capacity: R = 3 of 3 for WS-01. R = 0 of 5 for WS-02.'
-        )
+        _write_status(plan_context, THREE_ROWS, 'Capacity: R = 3 of 3 for WS-01. R = 0 of 5 for WS-02.')
 
         result = _run()
 

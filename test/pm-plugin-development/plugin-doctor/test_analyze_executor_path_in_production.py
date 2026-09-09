@@ -25,9 +25,7 @@ def _load_module(name: str, filename: str):
     return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
 
 
-_aepip = _load_module(
-    '_analyze_executor_path_in_production', '_analyze_executor_path_in_production.py'
-)
+_aepip = _load_module('_analyze_executor_path_in_production', '_analyze_executor_path_in_production.py')
 
 analyze_executor_path_in_production = _aepip.analyze_executor_path_in_production
 is_whitelisted = _aepip.is_whitelisted
@@ -100,7 +98,15 @@ class TestWhitelistedLintAnalyzer:
 
     def test_no_finding_from_verb_chain_analyzer(self, tmp_path: Path) -> None:
         mp = _make_marketplace(tmp_path)
-        py = mp / 'bundles' / 'pm-plugin-development' / 'skills' / 'plugin-doctor' / 'scripts' / '_analyze_verb_chains.py'
+        py = (
+            mp
+            / 'bundles'
+            / 'pm-plugin-development'
+            / 'skills'
+            / 'plugin-doctor'
+            / 'scripts'
+            / '_analyze_verb_chains.py'
+        )
         _write_py(
             py,
             '# Verb chain scanner\nINVOCATION_RE = r"python3 .plan/execute-script.py"\n',

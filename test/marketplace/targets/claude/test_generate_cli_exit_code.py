@@ -83,9 +83,7 @@ def test_validate_mode_exits_2_when_target_missing(fake_marketplace: tuple[Path,
 def test_emit_mode_exit_0_when_clean(fake_marketplace: tuple[Path, Path]):
     """Emit mode exits 0 when source ↔ target/claude agree post-emit."""
     marketplace, target = fake_marketplace
-    result = _run_generate(
-        ['--target', 'claude', '--output', str(target), '--marketplace-dir', str(marketplace)]
-    )
+    result = _run_generate(['--target', 'claude', '--output', str(target), '--marketplace-dir', str(marketplace)])
     assert result.returncode == 0, result.stderr
     assert (target / 'demo' / '.claude-plugin' / 'plugin.json').exists()
 
@@ -94,9 +92,7 @@ def test_emit_mode_exits_2_after_corrupting_target(fake_marketplace: tuple[Path,
     """After a clean emit, mutating target's plugin.json forces exit 2 on re-validate."""
     marketplace, target = fake_marketplace
     # Fresh emit
-    emit = _run_generate(
-        ['--target', 'claude', '--output', str(target), '--marketplace-dir', str(marketplace)]
-    )
+    emit = _run_generate(['--target', 'claude', '--output', str(target), '--marketplace-dir', str(marketplace)])
     assert emit.returncode == 0
 
     # Corrupt the emitted plugin.json so source vs target disagree

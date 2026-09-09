@@ -203,9 +203,7 @@ def analyze_persona_binding_resolves(marketplace_root: Path) -> list[dict]:
             continue
         frontmatter = _leading_frontmatter(text)
         implements = re.search(r'^implements:\s*(.+)$', frontmatter, re.MULTILINE)
-        is_persona = (
-            implements is not None and implements.group(1).strip().strip('\'"') == 'persona'
-        )
+        is_persona = implements is not None and implements.group(1).strip().strip('\'"') == 'persona'
         if not is_persona:
             continue
         profiles = _parse_yaml_list(frontmatter, 'profiles')
@@ -229,7 +227,7 @@ def analyze_persona_binding_resolves(marketplace_root: Path) -> list[dict]:
                     f'persona declares `profiles:` {profiles} but its composition '
                     f'DAG does not resolve (`{err}`) — `manage-personas resolve` '
                     'would return an error instead of a non-empty skills[], so the '
-                    "profile binding is not backed by a resolvable persona. Fix the "
+                    'profile binding is not backed by a resolvable persona. Fix the '
                     'broken composition edge (a missing composed persona or a '
                     'composition cycle).'
                 ),

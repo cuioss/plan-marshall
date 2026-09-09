@@ -117,7 +117,7 @@ def resolve_project_dir(
 
     if plan_id_supplied and project_dir_supplied:
         raise MutuallyExclusiveArgsError(
-            "Both --plan-id and --project-dir were supplied. Pick exactly one: "
+            'Both --plan-id and --project-dir were supplied. Pick exactly one: '
             '--plan-id auto-resolves the worktree path; --project-dir is the explicit override.'
         )
 
@@ -224,7 +224,7 @@ def emit_mutually_exclusive_error(plan_id: str | None, project_dir: str | None) 
         'status': 'error',
         'error': 'mutually_exclusive_args',
         'message': (
-            "--plan-id and --project-dir are mutually exclusive. "
+            '--plan-id and --project-dir are mutually exclusive. '
             'Pick one: --plan-id auto-resolves via manage-status; --project-dir is the explicit override.'
         ),
         'plan_id': plan_id,

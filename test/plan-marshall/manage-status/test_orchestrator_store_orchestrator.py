@@ -10,7 +10,6 @@ Its sections, in order:
 * Metadata
 """
 
-
 import json
 from argparse import Namespace
 
@@ -96,9 +95,7 @@ class TestOrchestratorUpdateField:
         cmd_orchestrator_create(_create_args('phase-epic'))
 
         for phase in ('orchestrating', 'closed'):
-            result = cmd_orchestrator_update_field(
-                Namespace(plan_id='phase-epic', field='phase', value=phase)
-            )
+            result = cmd_orchestrator_update_field(Namespace(plan_id='phase-epic', field='phase', value=phase))
             assert result['status'] == 'success'
 
         content = json.loads(_orchestrator_status_file(plan_context, 'phase-epic').read_text(encoding='utf-8'))
@@ -107,9 +104,7 @@ class TestOrchestratorUpdateField:
     def test_should_reject_invalid_phase_value(self, plan_context):
         cmd_orchestrator_create(_create_args('bad-phase-epic'))
 
-        result = cmd_orchestrator_update_field(
-            Namespace(plan_id='bad-phase-epic', field='phase', value='running')
-        )
+        result = cmd_orchestrator_update_field(Namespace(plan_id='bad-phase-epic', field='phase', value='running'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_value'
@@ -117,9 +112,7 @@ class TestOrchestratorUpdateField:
     def test_should_reject_unknown_field(self, plan_context):
         cmd_orchestrator_create(_create_args('bad-field-epic'))
 
-        result = cmd_orchestrator_update_field(
-            Namespace(plan_id='bad-field-epic', field='kind', value='plan')
-        )
+        result = cmd_orchestrator_update_field(Namespace(plan_id='bad-field-epic', field='kind', value='plan'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_field'
@@ -149,9 +142,7 @@ class TestOrchestratorUpdateField:
             }
         ]
 
-        result = cmd_orchestrator_update_field(
-            Namespace(plan_id='queue-epic', field='plans', value=json.dumps(plans))
-        )
+        result = cmd_orchestrator_update_field(Namespace(plan_id='queue-epic', field='plans', value=json.dumps(plans)))
 
         assert result['status'] == 'success'
         content = json.loads(_orchestrator_status_file(plan_context, 'queue-epic').read_text(encoding='utf-8'))
@@ -171,9 +162,7 @@ class TestOrchestratorUpdateField:
     def test_should_reject_non_json_array_for_list_field(self, plan_context):
         cmd_orchestrator_create(_create_args('bad-list-epic'))
 
-        result = cmd_orchestrator_update_field(
-            Namespace(plan_id='bad-list-epic', field='plans', value='not-json')
-        )
+        result = cmd_orchestrator_update_field(Namespace(plan_id='bad-list-epic', field='plans', value='not-json'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_value'
@@ -207,21 +196,20 @@ class TestOrchestratorMetadata:
         """
         cmd_orchestrator_create(_create_args('meta-append-epic'))
         cmd_orchestrator_metadata(
-            Namespace(plan_id='meta-append-epic', set=True, get=False, append=False,
-                      field='session_ids', value='sess-A')
+            Namespace(
+                plan_id='meta-append-epic', set=True, get=False, append=False, field='session_ids', value='sess-A'
+            )
         )
 
         result = cmd_orchestrator_metadata(
-            Namespace(plan_id='meta-append-epic', set=True, get=False, append=True,
-                      field='session_ids', value='sess-B')
+            Namespace(plan_id='meta-append-epic', set=True, get=False, append=True, field='session_ids', value='sess-B')
         )
 
         assert result['status'] == 'error'
         assert result['error'] == 'append_unsupported_for_store'
         # The earlier value SURVIVES — the refusal wrote nothing.
         get_result = cmd_orchestrator_metadata(
-            Namespace(plan_id='meta-append-epic', set=False, get=True, append=False,
-                      field='session_ids', value=None)
+            Namespace(plan_id='meta-append-epic', set=False, get=True, append=False, field='session_ids', value=None)
         )
         assert get_result['value'] == 'sess-A'
 
@@ -281,9 +269,7 @@ class TestOrchestratorMetadata:
             encoding='utf-8',
         )
 
-        result = cmd_orchestrator_metadata(
-            Namespace(plan_id=slug, set=True, get=True, field='owner', value='operator')
-        )
+        result = cmd_orchestrator_metadata(Namespace(plan_id=slug, set=True, get=True, field='owner', value='operator'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'wrong_parameters'

@@ -75,25 +75,27 @@ UNRESOLVED_RATIO_UPPER_BOUND = 0.14
 #: a red build pass — pass ``register=False`` to the loader (or ``parse_ns``) at the
 #: new call site instead, which is what the escape exists for. Remove a name when
 #: its collision is genuinely gone; a stale entry fails its own test below.
-KNOWN_REGISTRATION_COLLISIONS = frozenset({
-    '_architecture_core',
-    '_build_execute_factory',
-    '_config_defaults',
-    '_cred_edit',
-    '_findings_core',
-    '_github_pr',
-    '_gradle_cmd_discover',
-    '_gradle_execute',
-    '_maven_execute',
-    '_pyproject_execute',
-    'permission_doctor',
-    'permission_fix',
-    'github_pr',
-    'manage_terminal_title',
-    'plan_logging',
-    'recipe_scoring',
-    'run_config',
-})
+KNOWN_REGISTRATION_COLLISIONS = frozenset(
+    {
+        '_architecture_core',
+        '_build_execute_factory',
+        '_config_defaults',
+        '_cred_edit',
+        '_findings_core',
+        '_github_pr',
+        '_gradle_cmd_discover',
+        '_gradle_execute',
+        '_maven_execute',
+        '_pyproject_execute',
+        'permission_doctor',
+        'permission_fix',
+        'github_pr',
+        'manage_terminal_title',
+        'plan_logging',
+        'recipe_scoring',
+        'run_config',
+    }
+)
 
 
 @pytest.fixture(scope='module')
@@ -109,10 +111,7 @@ def tree_scan():
 
 def _bundles_with_a_root_extension() -> list[str]:
     """Return every bundle shipping ``skills/plan-marshall-plugin/extension.py``."""
-    return sorted(
-        path.parents[2].name
-        for path in MARKETPLACE_ROOT.glob(f'*/skills/{EXTENSION_SKILL}/extension.py')
-    )
+    return sorted(path.parents[2].name for path in MARKETPLACE_ROOT.glob(f'*/skills/{EXTENSION_SKILL}/extension.py'))
 
 
 def test_the_root_extension_shape_is_present():
@@ -220,9 +219,7 @@ def test_register_false_reaches_parse_ns():
     about a quarter of all loader call sites, so an opt-out that stopped at the
     loaders would leave a large minority of callers unable to reach it.
     """
-    namespace = parse_ns(
-        PROBE_BUNDLE, PROBE_SKILL, PROBE_SCRIPT, 'list-providers', register=False
-    )
+    namespace = parse_ns(PROBE_BUNDLE, PROBE_SKILL, PROBE_SCRIPT, 'list-providers', register=False)
 
     assert namespace.command == 'list-providers'
     assert PROBE_NAME not in sys.modules
@@ -428,16 +425,12 @@ def test_a_publisher_with_no_row_is_reported_as_drift(monkeypatch):
     detection breaks rather than only when the tree happens to drift.
     """
     monkeypatch.setattr(conftest, '_ROUTING_GUARD_MODULES', (('listed', 'listed.py'),))
-    monkeypatch.setattr(
-        conftest, '_discover_guard_publishers', lambda: ['listed.py', 'unlisted.py']
-    )
+    monkeypatch.setattr(conftest, '_discover_guard_publishers', lambda: ['listed.py', 'unlisted.py'])
 
     entries, discrepancies = _guard_roster()
 
     assert ('UNLISTED:unlisted', 'unlisted.py') in entries
-    assert discrepancies == [
-        '1 publisher(s) with no _ROUTING_GUARD_MODULES row: unlisted.py'
-    ]
+    assert discrepancies == ['1 publisher(s) with no _ROUTING_GUARD_MODULES row: unlisted.py']
 
 
 def test_a_row_whose_module_stopped_publishing_is_reported_as_drift(monkeypatch):
@@ -447,13 +440,9 @@ def test_a_row_whose_module_stopped_publishing_is_reported_as_drift(monkeypatch)
     rather than add one — so a detector that collapsed the two directions into a
     single "something is off" would still pass the case above.
     """
-    monkeypatch.setattr(
-        conftest, '_ROUTING_GUARD_MODULES', (('listed', 'listed.py'), ('gone', 'gone.py'))
-    )
+    monkeypatch.setattr(conftest, '_ROUTING_GUARD_MODULES', (('listed', 'listed.py'), ('gone', 'gone.py')))
     monkeypatch.setattr(conftest, '_discover_guard_publishers', lambda: ['listed.py'])
 
     _entries, discrepancies = _guard_roster()
 
-    assert discrepancies == [
-        '1 row(s) whose module no longer publishes GUARD_POPULATION_LABEL: gone.py'
-    ]
+    assert discrepancies == ['1 row(s) whose module no longer publishes GUARD_POPULATION_LABEL: gone.py']

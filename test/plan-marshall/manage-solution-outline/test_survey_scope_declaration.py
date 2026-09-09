@@ -106,9 +106,7 @@ def test_mutation_scope_bullets_are_parsed_with_no_defaulted_intent():
     :func:`deliverable_write_set` count it as a write conservatively while the
     parsed record still reports what the author actually wrote.
     """
-    assert extract_mutation_scope(_SURVEY_DELIVERABLE) == [
-        {'path': 'src/mutated.py', 'intent': None}
-    ]
+    assert extract_mutation_scope(_SURVEY_DELIVERABLE) == [{'path': 'src/mutated.py', 'intent': None}]
 
 
 def test_the_mutation_scope_is_the_write_set_and_the_survey_pool_is_not():

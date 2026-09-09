@@ -95,9 +95,7 @@ class TestListQgateTopLevelSubcommand:
         assert 'qgate list' in f['details']['canonical_hint']
 
     def test_list_qgate_known_subcommands_in_payload(self) -> None:
-        content = (
-            'python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings list-qgate\n'
-        )
+        content = 'python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings list-qgate\n'
         findings = analyze_manage_findings_invocation(content, '/fake/SKILL.md')
         assert findings
         known = findings[0]['details']['known_subcommands']
@@ -125,9 +123,7 @@ class TestQgateQuerySubVerb:
         assert 'qgate list' in f['details']['canonical_hint']
 
     def test_qgate_query_known_sub_verbs_in_payload(self) -> None:
-        content = (
-            'python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate query\n'
-        )
+        content = 'python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate query\n'
         findings = analyze_manage_findings_invocation(content, '/fake/SKILL.md')
         assert findings
         known = findings[0]['details']['known_sub_verbs']
@@ -143,23 +139,17 @@ class TestValidQgateList:
     """``qgate list`` is registered — must not produce a finding."""
 
     def test_qgate_list_clean(self) -> None:
-        content = (
-            'python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate list --plan-id foo --phase phase-5-execute\n'
-        )
+        content = 'python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate list --plan-id foo --phase phase-5-execute\n'
         findings = analyze_manage_findings_invocation(content, '/fake/SKILL.md')
         assert findings == []
 
     def test_qgate_add_clean(self) -> None:
-        content = (
-            'python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate add --plan-id foo --phase phase-5-execute --source qgate --type build-error --title t --detail d\n'
-        )
+        content = 'python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate add --plan-id foo --phase phase-5-execute --source qgate --type build-error --title t --detail d\n'
         findings = analyze_manage_findings_invocation(content, '/fake/SKILL.md')
         assert findings == []
 
     def test_qgate_resolve_clean(self) -> None:
-        content = (
-            'python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate resolve --plan-id foo --phase phase-5-execute --id 1 --resolution fixed\n'
-        )
+        content = 'python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate resolve --plan-id foo --phase phase-5-execute --id 1 --resolution fixed\n'
         findings = analyze_manage_findings_invocation(content, '/fake/SKILL.md')
         assert findings == []
 
@@ -173,24 +163,18 @@ class TestValidAssessmentAdd:
     """``assessment add`` is registered — must not produce a finding."""
 
     def test_assessment_add_clean(self) -> None:
-        content = (
-            'python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings assessment add --plan-id foo --file-path src/Foo.java --certainty high --confidence 90\n'
-        )
+        content = 'python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings assessment add --plan-id foo --file-path src/Foo.java --certainty high --confidence 90\n'
         findings = analyze_manage_findings_invocation(content, '/fake/SKILL.md')
         assert findings == []
 
     def test_assessment_list_clean(self) -> None:
-        content = (
-            'python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings assessment list --plan-id foo\n'
-        )
+        content = 'python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings assessment list --plan-id foo\n'
         findings = analyze_manage_findings_invocation(content, '/fake/SKILL.md')
         assert findings == []
 
     def test_assessment_invalid_sub_verb_flagged(self) -> None:
         # Defence-in-depth — invented sub-verbs under assessment are caught.
-        content = (
-            'python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings assessment promote --plan-id foo\n'
-        )
+        content = 'python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings assessment promote --plan-id foo\n'
         findings = analyze_manage_findings_invocation(content, '/fake/SKILL.md')
         assert len(findings) == 1
         f = findings[0]
@@ -207,23 +191,17 @@ class TestUnrelatedNotation:
     """Invocations against other notations must not trigger the rule."""
 
     def test_manage_tasks_invocation_clean(self) -> None:
-        content = (
-            'python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks list --plan-id foo --status pending\n'
-        )
+        content = 'python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks list --plan-id foo --status pending\n'
         findings = analyze_manage_findings_invocation(content, '/fake/SKILL.md')
         assert findings == []
 
     def test_manage_status_invocation_clean(self) -> None:
-        content = (
-            'python3 .plan/execute-script.py plan-marshall:manage-status:manage_status read --plan-id foo\n'
-        )
+        content = 'python3 .plan/execute-script.py plan-marshall:manage-status:manage_status read --plan-id foo\n'
         findings = analyze_manage_findings_invocation(content, '/fake/SKILL.md')
         assert findings == []
 
     def test_manage_logging_invocation_clean(self) -> None:
-        content = (
-            'python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging work --plan-id foo --level INFO --message "[STATUS] testing"\n'
-        )
+        content = 'python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging work --plan-id foo --level INFO --message "[STATUS] testing"\n'
         findings = analyze_manage_findings_invocation(content, '/fake/SKILL.md')
         assert findings == []
 
@@ -254,9 +232,7 @@ class TestFindingPayloadShape:
         assert f['fixable'] is False
 
     def test_canonical_hint_present_in_details(self) -> None:
-        content = (
-            'python3 .plan/execute-script.py plan-marshall:manage-findings:manage_findings list --plan-id foo\n'
-        )
+        content = 'python3 .plan/execute-script.py plan-marshall:manage-findings:manage_findings list --plan-id foo\n'
         findings = analyze_manage_findings_invocation(content, '/fake/SKILL.md')
         assert findings
         details = findings[0]['details']
@@ -265,10 +241,7 @@ class TestFindingPayloadShape:
 
     def test_line_number_anchored(self) -> None:
         content = (
-            '# Title\n'
-            '\n'
-            '\n'
-            'python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings list-qgate\n'
+            '# Title\n\n\npython3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings list-qgate\n'
         )
         findings = analyze_manage_findings_invocation(content, '/fake/SKILL.md')
         assert findings
@@ -289,8 +262,7 @@ class TestSkillScanner:
         skill_dir.mkdir()
         skill_md = skill_dir / 'SKILL.md'
         skill_md.write_text(
-            '# My Skill\n'
-            'python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings list-qgate\n',
+            '# My Skill\npython3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings list-qgate\n',
             encoding='utf-8',
         )
         findings = scan_skill_for_manage_findings_invocation(skill_dir)

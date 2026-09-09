@@ -212,10 +212,7 @@ def _lifecycle_payload(lifecycle: PlanLifecycle) -> dict[str, Any]:
 
 def _lifecycle_rows(lifecycle: PlanLifecycle) -> list[dict[str, Any]]:
     """Every ledger row, so the partition it drove is readable from the output."""
-    return [
-        {'plan_id': row.plan_id, 'status': row.status, 'lifecycle': row.lifecycle}
-        for row in lifecycle.rows
-    ]
+    return [{'plan_id': row.plan_id, 'status': row.status, 'lifecycle': row.lifecycle} for row in lifecycle.rows]
 
 
 def _contested_rows(partition: Partition) -> list[dict[str, Any]]:
@@ -314,9 +311,7 @@ def cmd_classify(args: argparse.Namespace) -> dict[str, Any]:
             for claim in claims
             for entry in claim.excluded
         ],
-        'unresolved': [
-            {'plan_id': claim.plan_id, 'raw': raw} for claim in claims for raw in claim.unresolved
-        ],
+        'unresolved': [{'plan_id': claim.plan_id, 'raw': raw} for claim in claims for raw in claim.unresolved],
     }
 
 
@@ -345,16 +340,12 @@ def cmd_partition(args: argparse.Namespace) -> dict[str, Any]:
         'plans_dir': str(plans_dir),
         'test_root': str(test_root),
         'modules_total': len(modules),
-        'verdict_tally': [
-            {'verdict': verdict, 'count': tally[verdict]} for verdict in VERDICT_ORDER
-        ],
+        'verdict_tally': [{'verdict': verdict, 'count': tally[verdict]} for verdict in VERDICT_ORDER],
         'sweep_plans': sorted(sweeps),
         'lifecycle': _lifecycle_payload(lifecycle),
         'lifecycle_plans': _lifecycle_rows(lifecycle),
         'lifecycle_resolved': _lifecycle_resolved_rows(partition),
-        'root_claims': [
-            {'plan_id': root.plan_id, 'path': root.path} for root in partition.root_claims
-        ],
+        'root_claims': [{'plan_id': root.plan_id, 'path': root.path} for root in partition.root_claims],
         'contested': _contested_rows(partition),
         'sweep_crossings': _sweep_crossing_rows(partition),
         'modules': [
@@ -397,10 +388,7 @@ def cmd_attribution(args: argparse.Namespace) -> dict[str, Any]:
         'lifecycle': _lifecycle_payload(lifecycle),
         'contested': _contested_rows(partition),
         'sweep_crossings': _sweep_crossing_rows(partition),
-        'buckets': [
-            {'owner': bucket.owner, 'count': len(bucket.findings)}
-            for bucket in attribution.buckets
-        ],
+        'buckets': [{'owner': bucket.owner, 'count': len(bucket.findings)} for bucket in attribution.buckets],
         'findings': [
             {'owner': bucket.owner, 'path': finding.path, 'line_count': finding.line_count}
             for bucket in attribution.buckets
@@ -464,8 +452,7 @@ _INJECTED_CONTROLS = (
     (
         'injected_unclaimed_directory',
         'a fixture directory no spec claims is reported by name as unclaimed',
-        'test_epic_partition_injected_failures.py::'
-        'test_injected_unclaimed_directory_is_reported_by_name',
+        'test_epic_partition_injected_failures.py::test_injected_unclaimed_directory_is_reported_by_name',
     ),
     (
         'injected_double_claim',
@@ -485,20 +472,17 @@ _INJECTED_CONTROLS = (
     (
         'injected_root_span',
         'a root span does not mask a module no plan claims',
-        'test_epic_partition_injected_failures.py::'
-        'test_injected_root_span_does_not_hide_an_unclaimed_module',
+        'test_epic_partition_injected_failures.py::test_injected_root_span_does_not_hide_an_unclaimed_module',
     ),
     (
         'injected_container_span',
         'a directory-shaped unresolved span reports not_derivable, never unclaimed',
-        'test_epic_partition_injected_failures.py::'
-        'test_container_span_marks_the_module_beneath_it_not_derivable',
+        'test_epic_partition_injected_failures.py::test_container_span_marks_the_module_beneath_it_not_derivable',
     ),
     (
         'injected_cross_plan_citation',
         "a bullet citing another plan's surface does not contest the slice it cites",
-        'test_epic_partition_injected_failures.py::'
-        'test_injected_cross_plan_citation_does_not_contest_the_cited_slice',
+        'test_epic_partition_injected_failures.py::test_injected_cross_plan_citation_does_not_contest_the_cited_slice',
     ),
     (
         'injected_terminal_claim_retired',
@@ -509,8 +493,7 @@ _INJECTED_CONTROLS = (
     (
         'injected_active_versus_active',
         'a module contested between two live plans stays contested, with no winner picked',
-        'test_epic_partition_injected_failures.py::'
-        'test_injected_active_versus_active_module_stays_contested',
+        'test_epic_partition_injected_failures.py::test_injected_active_versus_active_module_stays_contested',
     ),
 )
 
@@ -625,11 +608,7 @@ def cmd_report(args: argparse.Namespace) -> dict[str, Any]:
     attribution = derive_attribution(partition, findings, args.budget)
     tally = partition.tally()
 
-    disagreements = [
-        module
-        for module in partition.modules
-        if module.verdict in (VERDICT_UNCLAIMED, VERDICT_CONTESTED)
-    ]
+    disagreements = [module for module in partition.modules if module.verdict in (VERDICT_UNCLAIMED, VERDICT_CONTESTED)]
     contested = partition.with_verdict(VERDICT_CONTESTED)
     crossings = [module for module in partition.modules if module.sweeps]
     not_derivable = partition.with_verdict(VERDICT_NOT_DERIVABLE)
@@ -660,14 +639,9 @@ def cmd_report(args: argparse.Namespace) -> dict[str, Any]:
             f'live plans in the ledger; {len(lifecycle_resolved)} modules attributed by '
             'retiring a finished claim'
             if lifecycle.available
-            else (
-                f'ledger unavailable ({lifecycle.degradation}); every plan treated as live '
-                'and no claim retired'
-            )
+            else (f'ledger unavailable ({lifecycle.degradation}); every plan treated as live and no claim retired')
         ),
-        'swept': (
-            f'{len(crossings)} modules crossed by {len(sweeps)} self-declared sweep plan(s)'
-        ),
+        'swept': (f'{len(crossings)} modules crossed by {len(sweeps)} self-declared sweep plan(s)'),
         'not_derivable': f'{len(not_derivable)} modules, {len(unresolvable_specs)} specs',
         'injected_controls': f'{len(_INJECTED_CONTROLS)} demonstrations',
         'test_count': f'before and after, both as a {_TEST_COUNT_METHOD}',
@@ -676,9 +650,7 @@ def cmd_report(args: argparse.Namespace) -> dict[str, Any]:
             if baseline_supplied
             else 'no baseline supplied; nothing compared'
         ),
-        'provenance': (
-            f'{len(_PLACEMENT_CLAIMS)} placement claims, {len(overlaps)} overlapping entries'
-        ),
+        'provenance': (f'{len(_PLACEMENT_CLAIMS)} placement claims, {len(overlaps)} overlapping entries'),
     }
     commands = {
         'partition': _verb_command('partition', args.epic),
@@ -717,15 +689,11 @@ def cmd_report(args: argparse.Namespace) -> dict[str, Any]:
         'report_only': True,
         'gates_build': False,
         'sections': [
-            {'section': name, 'command': commands[name], 'summary': summaries[name]}
-            for name in _SECTION_ORDER
+            {'section': name, 'command': commands[name], 'summary': summaries[name]} for name in _SECTION_ORDER
         ],
-        'partition_tally': [
-            {'verdict': verdict, 'count': tally[verdict]} for verdict in VERDICT_ORDER
-        ],
+        'partition_tally': [{'verdict': verdict, 'count': tally[verdict]} for verdict in VERDICT_ORDER],
         'attribution_buckets': [
-            {'owner': bucket.owner, 'count': len(bucket.findings)}
-            for bucket in attribution.buckets
+            {'owner': bucket.owner, 'count': len(bucket.findings)} for bucket in attribution.buckets
         ],
         'disagreements': [
             {
@@ -753,9 +721,7 @@ def cmd_report(args: argparse.Namespace) -> dict[str, Any]:
             [{'path': path, 'drift': 'added'} for path in drift_added]
             + [{'path': path, 'drift': 'removed'} for path in drift_removed]
         ),
-        'not_derivable_modules': [
-            {'path': module.path, 'plans': ','.join(module.plans)} for module in not_derivable
-        ],
+        'not_derivable_modules': [{'path': module.path, 'plans': ','.join(module.plans)} for module in not_derivable],
         'not_derivable_specs': [
             {
                 'plan_id': claim.plan_id,
@@ -779,13 +745,10 @@ def cmd_report(args: argparse.Namespace) -> dict[str, Any]:
             'overlap_count': len(overlaps),
         },
         'provenance_placement': [
-            {'claim': name, 'value': value, 'citation': citation}
-            for name, value, citation in _PLACEMENT_CLAIMS
+            {'claim': name, 'value': value, 'citation': citation} for name, value, citation in _PLACEMENT_CLAIMS
         ],
         'provenance_overlaps': overlaps,
-        'root_claims': [
-            {'plan_id': root.plan_id, 'path': root.path} for root in partition.root_claims
-        ],
+        'root_claims': [{'plan_id': root.plan_id, 'path': root.path} for root in partition.root_claims],
     }
 
 
@@ -810,9 +773,7 @@ def build_parser() -> argparse.ArgumentParser:
         help='Map every test module to the plan(s) claiming it',
         allow_abbrev=False,
     )
-    partition.add_argument(
-        '--epic', required=True, help='Epic slug naming the orchestrator store entry'
-    )
+    partition.add_argument('--epic', required=True, help='Epic slug naming the orchestrator store entry')
     partition.set_defaults(handler=cmd_partition)
 
     attribution = subparsers.add_parser(
@@ -820,9 +781,7 @@ def build_parser() -> argparse.ArgumentParser:
         help='Group test-module line-budget findings by owning plan',
         allow_abbrev=False,
     )
-    attribution.add_argument(
-        '--epic', required=True, help='Epic slug naming the orchestrator store entry'
-    )
+    attribution.add_argument('--epic', required=True, help='Epic slug naming the orchestrator store entry')
     attribution.add_argument(
         '--budget',
         type=int,
@@ -836,9 +795,7 @@ def build_parser() -> argparse.ArgumentParser:
         help='Render the full derivation report, every section carrying its producing command',
         allow_abbrev=False,
     )
-    report.add_argument(
-        '--epic', required=True, help='Epic slug naming the orchestrator store entry'
-    )
+    report.add_argument('--epic', required=True, help='Epic slug naming the orchestrator store entry')
     report.add_argument(
         '--budget',
         type=int,

@@ -79,9 +79,7 @@ def load_mapping(config_dir: Path) -> dict[str, dict]:
     if not isinstance(data, dict):
         raise ValueError(f'mapping.json must be a JSON object, got {type(data).__name__}')
     if 'tool_permissions' not in data or 'model_map' not in data:
-        raise ValueError(
-            f'mapping.json missing required keys (tool_permissions, model_map): {mapping_path}'
-        )
+        raise ValueError(f'mapping.json missing required keys (tool_permissions, model_map): {mapping_path}')
     return data
 
 
@@ -122,10 +120,10 @@ def parse_frontmatter(content: str) -> tuple[dict[str, str], str]:
     end = content.find('\n---\n', 4)
     if end != -1:
         fm_text = content[4:end].strip()
-        body = content[end + len('\n---\n'):].lstrip('\n')
+        body = content[end + len('\n---\n') :].lstrip('\n')
     elif content.endswith('\n---'):
         # Tolerate a closing fence at end-of-file with no trailing newline.
-        fm_text = content[4:len(content) - len('\n---')].strip()
+        fm_text = content[4 : len(content) - len('\n---')].strip()
         body = ''
     else:
         return {}, content
@@ -193,9 +191,7 @@ def parse_frontmatter(content: str) -> tuple[dict[str, str], str]:
 def _ensure_required(fm: dict[str, str], rules: dict[str, list[str]], source: str) -> None:
     missing = [field for field in rules.get('required_fields', []) if not fm.get(field)]
     if missing:
-        raise UnmappedFrontmatterError(
-            f'{source}: missing required frontmatter field(s): {", ".join(missing)}'
-        )
+        raise UnmappedFrontmatterError(f'{source}: missing required frontmatter field(s): {", ".join(missing)}')
 
 
 def _resolve_model(value: str, model_map: dict[str, dict]) -> str | None:
@@ -293,9 +289,7 @@ def transform_agent_frontmatter(
             seen.add(mapped)
             permissions.append(mapped)
         if unknown:
-            raise UnmappedToolError(
-                f'{source_label}: unmapped tool(s) in frontmatter: {", ".join(unknown)}'
-            )
+            raise UnmappedToolError(f'{source_label}: unmapped tool(s) in frontmatter: {", ".join(unknown)}')
         if permissions:
             lines.append('permission:')
             for perm in sorted(permissions):

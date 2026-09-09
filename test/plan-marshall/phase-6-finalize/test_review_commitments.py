@@ -468,9 +468,7 @@ class TestCLI:
             ' tail\n'
         )
 
-        result = run_script(
-            self._script(), 'reconcile', '--plan-id', plan_id, '--diff-file', str(diff)
-        )
+        result = run_script(self._script(), 'reconcile', '--plan-id', plan_id, '--diff-file', str(diff))
 
         assert result.success, result.stderr
         assert 'verdict: clear' in result.stdout
@@ -478,9 +476,7 @@ class TestCLI:
         assert 'proves: removal_conflict_only' in result.stdout
         assert 'deletions_considered: 1' in result.stdout
 
-    def test_an_unreached_store_is_refused_with_the_stores_own_code_and_detail(
-        self, tmp_path, plan_context
-    ):
+    def test_an_unreached_store_is_refused_with_the_stores_own_code_and_detail(self, tmp_path, plan_context):
         """A plan directory absent under the resolved root refuses, and aliases ``detail``.
 
         Two properties, and the second is the one a bare status check loses. The
@@ -515,9 +511,7 @@ class TestCLI:
             '-surplus\n'
         )
 
-        result = run_script(
-            self._script(), 'reconcile', '--plan-id', plan_id, '--diff-file', str(diff)
-        )
+        result = run_script(self._script(), 'reconcile', '--plan-id', plan_id, '--diff-file', str(diff))
 
         assert not result.success
         assert 'findings_store_unresolved' in result.stdout

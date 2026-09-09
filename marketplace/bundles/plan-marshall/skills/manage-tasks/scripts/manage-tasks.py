@@ -349,7 +349,9 @@ def build_parser() -> argparse.ArgumentParser:
         choices=list(VALID_STEP_INTENTS),
         help='New per-step intent (read|write-new|write-replace|delete)',
     )
-    p_update_step.add_argument('--reason', required=True, help='Mandatory rationale for the intent override (persisted)')
+    p_update_step.add_argument(
+        '--reason', required=True, help='Mandatory rationale for the intent override (persisted)'
+    )
     p_update_step.add_argument(
         '--finding-id', help='Optional manage-findings finding id linking a triage-driven override'
     )
@@ -387,7 +389,7 @@ def build_parser() -> argparse.ArgumentParser:
             'ask whether the declared SET is COMPLETE, which the others cannot '
             'see — they check that each declared thing is well-formed and '
             'resolves. Each failure is '
-            'emitted as a Q-Gate finding under --source qgate so phase-4-plan\'s '
+            "emitted as a Q-Gate finding under --source qgate so phase-4-plan's "
             'existing aggregate loop consumes it without modification. Pure regex '
             '+ graph + filesystem; no LLM dispatch. Use --no-emit to inspect the '
             'check results without writing findings.'
@@ -437,7 +439,7 @@ def build_parser() -> argparse.ArgumentParser:
             'global-tier build recorded under the ``NO_PLAN`` sentinel satisfies '
             'the gate exactly as a plan-scoped build does. Each matching row is '
             'then CROSS-CHECKED: its ``notation`` is compared against the build '
-            'notations this project\'s architecture resolves, so a row naming a '
+            "notations this project's architecture resolves, so a row naming a "
             'build this project never runs cannot prove freshness. The '
             'cross-check stays build-tool-agnostic — a Maven/Gradle/npm build '
             'passes whenever the architecture resolves that notation here — and '
@@ -474,7 +476,7 @@ def build_parser() -> argparse.ArgumentParser:
         'derive-cost-size',
         help='Derive a task cost_size (S/M/L/XL) and predicted_cost_tokens from plan-time signals',
         description=(
-            'Deterministically derive a task\'s T-shirt cost size and predicted '
+            "Deterministically derive a task's T-shirt cost size and predicted "
             'token cost from the plan-time signals already present on the task '
             'record: --step-count (dominant), --profile, --skills-count, and '
             '--target-file-count. Build count is excluded (builds are '
@@ -507,13 +509,13 @@ def build_parser() -> argparse.ArgumentParser:
     # pack-envelopes
     p_envelope = subparsers.add_parser(
         'pack-envelopes',
-        help='Pack the plan\'s sized tasks into budget-bounded execution envelope groups',
+        help="Pack the plan's sized tasks into budget-bounded execution envelope groups",
         description=(
-            'Deterministically pack the plan\'s tasks (number order) into '
+            "Deterministically pack the plan's tasks (number order) into "
             'execution envelope groups bounded by --per-envelope-budget-tokens. '
             'Each task must already carry a predicted_cost_tokens magnitude '
             '(stamped by derive-cost-size); the packer sums those values via '
-            'Next-Fit in task order and never re-derives a task\'s cost. A task '
+            "Next-Fit in task order and never re-derives a task's cost. A task "
             'whose cost alone exceeds the budget lands alone in its envelope. '
             'Emits {status, per_envelope_budget_tokens, envelope_count, '
             'assignments_table, envelopes_table}. The size->token mapping is '

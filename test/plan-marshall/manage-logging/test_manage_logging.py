@@ -95,7 +95,18 @@ def test_script_success(plan_context):
 
     plan_dir = plan_context.plan_dir_for('log-script-success')
     result = handle_write(
-        parse_ns('plan-marshall', 'manage-logging', 'manage-logging.py', 'script', '--plan-id', 'log-script-success', '--level', 'INFO', '--message', 'test:skill:script add (0.15s)')
+        parse_ns(
+            'plan-marshall',
+            'manage-logging',
+            'manage-logging.py',
+            'script',
+            '--plan-id',
+            'log-script-success',
+            '--level',
+            'INFO',
+            '--message',
+            'test:skill:script add (0.15s)',
+        )
     )
     assert result is None, 'handle_write returns None on success'
 
@@ -110,7 +121,18 @@ def test_script_error(plan_context):
     """Test script type logs ERROR entry."""
     plan_dir = plan_context.plan_dir_for('log-script-error')
     result = handle_write(
-        parse_ns('plan-marshall', 'manage-logging', 'manage-logging.py', 'script', '--plan-id', 'log-script-error', '--level', 'ERROR', '--message', 'test:skill:script add failed')
+        parse_ns(
+            'plan-marshall',
+            'manage-logging',
+            'manage-logging.py',
+            'script',
+            '--plan-id',
+            'log-script-error',
+            '--level',
+            'ERROR',
+            '--message',
+            'test:skill:script add failed',
+        )
     )
     assert result is None, 'handle_write returns None on success'
 
@@ -127,7 +149,18 @@ def test_work_info(plan_context):
     """Test work type logs INFO entry."""
     plan_dir = plan_context.plan_dir_for('log-work-info')
     result = handle_write(
-        parse_ns('plan-marshall', 'manage-logging', 'manage-logging.py', 'work', '--plan-id', 'log-work-info', '--level', 'INFO', '--message', 'Created deliverable: auth module')
+        parse_ns(
+            'plan-marshall',
+            'manage-logging',
+            'manage-logging.py',
+            'work',
+            '--plan-id',
+            'log-work-info',
+            '--level',
+            'INFO',
+            '--message',
+            'Created deliverable: auth module',
+        )
     )
     assert result is None, 'handle_write returns None on success'
 
@@ -140,7 +173,18 @@ def test_work_warn(plan_context):
     """Test work type logs WARNING entry."""
     plan_dir = plan_context.plan_dir_for('log-work-warn')
     result = handle_write(
-        parse_ns('plan-marshall', 'manage-logging', 'manage-logging.py', 'work', '--plan-id', 'log-work-warn', '--level', 'WARNING', '--message', 'Skipped validation step')
+        parse_ns(
+            'plan-marshall',
+            'manage-logging',
+            'manage-logging.py',
+            'work',
+            '--plan-id',
+            'log-work-warn',
+            '--level',
+            'WARNING',
+            '--message',
+            'Skipped validation step',
+        )
     )
     assert result is None, 'handle_write returns None on success'
 
@@ -156,9 +200,48 @@ def test_work_warn(plan_context):
 def test_multiple_entries(plan_context):
     """Test multiple log entries append correctly."""
     plan_dir = plan_context.plan_dir_for('log-multiple')
-    handle_write(parse_ns('plan-marshall', 'manage-logging', 'manage-logging.py', 'work', '--plan-id', 'log-multiple', '--level', 'INFO', '--message', 'First entry'))
-    handle_write(parse_ns('plan-marshall', 'manage-logging', 'manage-logging.py', 'work', '--plan-id', 'log-multiple', '--level', 'INFO', '--message', 'Second entry'))
-    handle_write(parse_ns('plan-marshall', 'manage-logging', 'manage-logging.py', 'work', '--plan-id', 'log-multiple', '--level', 'WARNING', '--message', 'Third entry'))
+    handle_write(
+        parse_ns(
+            'plan-marshall',
+            'manage-logging',
+            'manage-logging.py',
+            'work',
+            '--plan-id',
+            'log-multiple',
+            '--level',
+            'INFO',
+            '--message',
+            'First entry',
+        )
+    )
+    handle_write(
+        parse_ns(
+            'plan-marshall',
+            'manage-logging',
+            'manage-logging.py',
+            'work',
+            '--plan-id',
+            'log-multiple',
+            '--level',
+            'INFO',
+            '--message',
+            'Second entry',
+        )
+    )
+    handle_write(
+        parse_ns(
+            'plan-marshall',
+            'manage-logging',
+            'manage-logging.py',
+            'work',
+            '--plan-id',
+            'log-multiple',
+            '--level',
+            'WARNING',
+            '--message',
+            'Third entry',
+        )
+    )
 
     log_content = read_log_file(plan_dir, 'work')
     assert 'First entry' in log_content
@@ -174,11 +257,48 @@ def test_multiple_entries(plan_context):
 def test_read_work_log(plan_context):
     """Test read subcommand returns work log entries."""
     # Write some entries first
-    handle_write(parse_ns('plan-marshall', 'manage-logging', 'manage-logging.py', 'work', '--plan-id', 'log-read-work', '--level', 'INFO', '--message', 'Test entry one'))
-    handle_write(parse_ns('plan-marshall', 'manage-logging', 'manage-logging.py', 'work', '--plan-id', 'log-read-work', '--level', 'INFO', '--message', 'Test entry two'))
+    handle_write(
+        parse_ns(
+            'plan-marshall',
+            'manage-logging',
+            'manage-logging.py',
+            'work',
+            '--plan-id',
+            'log-read-work',
+            '--level',
+            'INFO',
+            '--message',
+            'Test entry one',
+        )
+    )
+    handle_write(
+        parse_ns(
+            'plan-marshall',
+            'manage-logging',
+            'manage-logging.py',
+            'work',
+            '--plan-id',
+            'log-read-work',
+            '--level',
+            'INFO',
+            '--message',
+            'Test entry two',
+        )
+    )
 
     # Read them back
-    result = handle_read(parse_ns('plan-marshall', 'manage-logging', 'manage-logging.py', 'read', '--plan-id', 'log-read-work', '--type', 'work'))
+    result = handle_read(
+        parse_ns(
+            'plan-marshall',
+            'manage-logging',
+            'manage-logging.py',
+            'read',
+            '--plan-id',
+            'log-read-work',
+            '--type',
+            'work',
+        )
+    )
     assert result['status'] == 'success'
     assert result['total_entries'] == 2
     # Verify hash_id is present in parsed entries
@@ -188,13 +308,78 @@ def test_read_work_log(plan_context):
 def test_read_work_log_with_limit(plan_context):
     """Test read subcommand with --limit returns limited entries."""
     # Write multiple entries
-    handle_write(parse_ns('plan-marshall', 'manage-logging', 'manage-logging.py', 'work', '--plan-id', 'log-read-limit', '--level', 'INFO', '--message', 'Entry 1'))
-    handle_write(parse_ns('plan-marshall', 'manage-logging', 'manage-logging.py', 'work', '--plan-id', 'log-read-limit', '--level', 'INFO', '--message', 'Entry 2'))
-    handle_write(parse_ns('plan-marshall', 'manage-logging', 'manage-logging.py', 'work', '--plan-id', 'log-read-limit', '--level', 'INFO', '--message', 'Entry 3'))
-    handle_write(parse_ns('plan-marshall', 'manage-logging', 'manage-logging.py', 'work', '--plan-id', 'log-read-limit', '--level', 'INFO', '--message', 'Entry 4'))
+    handle_write(
+        parse_ns(
+            'plan-marshall',
+            'manage-logging',
+            'manage-logging.py',
+            'work',
+            '--plan-id',
+            'log-read-limit',
+            '--level',
+            'INFO',
+            '--message',
+            'Entry 1',
+        )
+    )
+    handle_write(
+        parse_ns(
+            'plan-marshall',
+            'manage-logging',
+            'manage-logging.py',
+            'work',
+            '--plan-id',
+            'log-read-limit',
+            '--level',
+            'INFO',
+            '--message',
+            'Entry 2',
+        )
+    )
+    handle_write(
+        parse_ns(
+            'plan-marshall',
+            'manage-logging',
+            'manage-logging.py',
+            'work',
+            '--plan-id',
+            'log-read-limit',
+            '--level',
+            'INFO',
+            '--message',
+            'Entry 3',
+        )
+    )
+    handle_write(
+        parse_ns(
+            'plan-marshall',
+            'manage-logging',
+            'manage-logging.py',
+            'work',
+            '--plan-id',
+            'log-read-limit',
+            '--level',
+            'INFO',
+            '--message',
+            'Entry 4',
+        )
+    )
 
     # Read with limit
-    result = handle_read(parse_ns('plan-marshall', 'manage-logging', 'manage-logging.py', 'read', '--plan-id', 'log-read-limit', '--type', 'work', '--limit', '2'))
+    result = handle_read(
+        parse_ns(
+            'plan-marshall',
+            'manage-logging',
+            'manage-logging.py',
+            'read',
+            '--plan-id',
+            'log-read-limit',
+            '--type',
+            'work',
+            '--limit',
+            '2',
+        )
+    )
     assert result['status'] == 'success'
     assert result['total_entries'] == 4
     assert result['showing'] == 2
@@ -202,7 +387,18 @@ def test_read_work_log_with_limit(plan_context):
 
 def test_read_empty_log(plan_context):
     """Test read subcommand on plan with no log entries."""
-    result = handle_read(parse_ns('plan-marshall', 'manage-logging', 'manage-logging.py', 'read', '--plan-id', 'log-read-empty', '--type', 'work'))
+    result = handle_read(
+        parse_ns(
+            'plan-marshall',
+            'manage-logging',
+            'manage-logging.py',
+            'read',
+            '--plan-id',
+            'log-read-empty',
+            '--type',
+            'work',
+        )
+    )
     assert result['status'] == 'success'
     assert result['total_entries'] == 0
 
@@ -211,11 +407,33 @@ def test_read_script_log(plan_context):
     """Test read subcommand for script type logs."""
     # Write script log entry
     handle_write(
-        parse_ns('plan-marshall', 'manage-logging', 'manage-logging.py', 'script', '--plan-id', 'log-read-script', '--level', 'INFO', '--message', 'test:skill:script (0.1s)')
+        parse_ns(
+            'plan-marshall',
+            'manage-logging',
+            'manage-logging.py',
+            'script',
+            '--plan-id',
+            'log-read-script',
+            '--level',
+            'INFO',
+            '--message',
+            'test:skill:script (0.1s)',
+        )
     )
 
     # Read it back
-    result = handle_read(parse_ns('plan-marshall', 'manage-logging', 'manage-logging.py', 'read', '--plan-id', 'log-read-script', '--type', 'script'))
+    result = handle_read(
+        parse_ns(
+            'plan-marshall',
+            'manage-logging',
+            'manage-logging.py',
+            'read',
+            '--plan-id',
+            'log-read-script',
+            '--type',
+            'script',
+        )
+    )
     assert result['status'] == 'success'
     assert result['log_type'] == 'script'
 
@@ -229,14 +447,51 @@ def test_separator_writes_blank_line(plan_context):
     """Test separator subcommand appends a blank line to the log."""
     plan_dir = plan_context.plan_dir_for('log-separator')
     # Write an entry first
-    handle_write(parse_ns('plan-marshall', 'manage-logging', 'manage-logging.py', 'work', '--plan-id', 'log-separator', '--level', 'INFO', '--message', 'Before separator'))
+    handle_write(
+        parse_ns(
+            'plan-marshall',
+            'manage-logging',
+            'manage-logging.py',
+            'work',
+            '--plan-id',
+            'log-separator',
+            '--level',
+            'INFO',
+            '--message',
+            'Before separator',
+        )
+    )
 
     # Add separator
-    result = handle_separator(parse_ns('plan-marshall', 'manage-logging', 'manage-logging.py', 'separator', '--type', 'work', '--plan-id', 'log-separator'))
+    result = handle_separator(
+        parse_ns(
+            'plan-marshall',
+            'manage-logging',
+            'manage-logging.py',
+            'separator',
+            '--type',
+            'work',
+            '--plan-id',
+            'log-separator',
+        )
+    )
     assert result is None, 'handle_separator returns None'
 
     # Write another entry after
-    handle_write(parse_ns('plan-marshall', 'manage-logging', 'manage-logging.py', 'work', '--plan-id', 'log-separator', '--level', 'INFO', '--message', 'After separator'))
+    handle_write(
+        parse_ns(
+            'plan-marshall',
+            'manage-logging',
+            'manage-logging.py',
+            'work',
+            '--plan-id',
+            'log-separator',
+            '--level',
+            'INFO',
+            '--message',
+            'After separator',
+        )
+    )
 
     # Verify blank line exists between entries
     log_content = read_log_file(plan_dir, 'work')
@@ -250,11 +505,28 @@ def test_separator_default_type(plan_context):
     """Test separator defaults to work log type."""
     plan_dir = plan_context.plan_dir_for('log-separator-default')
     # Write an entry
-    handle_write(parse_ns('plan-marshall', 'manage-logging', 'manage-logging.py', 'work', '--plan-id', 'log-separator-default', '--level', 'INFO', '--message', 'Test entry'))
+    handle_write(
+        parse_ns(
+            'plan-marshall',
+            'manage-logging',
+            'manage-logging.py',
+            'work',
+            '--plan-id',
+            'log-separator-default',
+            '--level',
+            'INFO',
+            '--message',
+            'Test entry',
+        )
+    )
 
     # Omit --type so the parser's own default selects the log, which is the
     # contract this test pins.
-    result = handle_separator(parse_ns('plan-marshall', 'manage-logging', 'manage-logging.py', 'separator', '--plan-id', 'log-separator-default'))
+    result = handle_separator(
+        parse_ns(
+            'plan-marshall', 'manage-logging', 'manage-logging.py', 'separator', '--plan-id', 'log-separator-default'
+        )
+    )
     assert result is None, 'handle_separator returns None'
 
     log_content = read_log_file(plan_dir, 'work')
@@ -320,7 +592,16 @@ def test_write_without_plan_id_targets_global_decision_log(plan_context):
 
     # plan-less decision write under the STEWARD namespace
     result = handle_write(
-        parse_ns('plan-marshall', 'manage-logging', 'manage-logging.py', 'decision', '--level', 'INFO', '--message', str(steward_msg))
+        parse_ns(
+            'plan-marshall',
+            'manage-logging',
+            'manage-logging.py',
+            'decision',
+            '--level',
+            'INFO',
+            '--message',
+            str(steward_msg),
+        )
     )
 
     # fire-and-forget (None) and the entry landed in the global log
@@ -337,7 +618,16 @@ def test_write_without_plan_id_targets_global_work_log(plan_context):
 
     # plan-less work write
     result = handle_write(
-        parse_ns('plan-marshall', 'manage-logging', 'manage-logging.py', 'work', '--level', 'INFO', '--message', str(steward_msg))
+        parse_ns(
+            'plan-marshall',
+            'manage-logging',
+            'manage-logging.py',
+            'work',
+            '--level',
+            'INFO',
+            '--message',
+            str(steward_msg),
+        )
     )
 
     assert result is None
@@ -395,6 +685,5 @@ def test_cli_write_with_invalid_plan_id_still_rejected(plan_context):
     data = result.toon()
     assert data.get('status') == 'error', f'expected status=error, got {data.get("status")!r}'
     assert data.get('error') == 'invalid_plan_id', (
-        f'a malformed --plan-id must still be rejected with invalid_plan_id, '
-        f'got error={data.get("error")!r}'
+        f'a malformed --plan-id must still be rejected with invalid_plan_id, got error={data.get("error")!r}'
     )

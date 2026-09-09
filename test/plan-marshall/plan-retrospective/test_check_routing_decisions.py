@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """In-process behavioral tests for ``check-routing-decisions.py``."""
 
-
 from __future__ import annotations
 
 import pytest
@@ -179,9 +178,7 @@ class TestMisPruneRecordedCauses:
             ),
         ],
     )
-    def test_recorded_cause_skips_instead_of_failing(
-        self, tmp_path, line, steps, step, expected_cause
-    ):
+    def test_recorded_cause_skips_instead_of_failing(self, tmp_path, line, steps, step, expected_cause):
         plan_dir = _build_plan(tmp_path / 'plan', steps=steps, decision_lines=[line])
         result = _crd.cmd_run(_run_args(plan_dir, _diff_file(tmp_path, [PRODUCTION_PATH])))
 
@@ -194,9 +191,7 @@ class TestMisPruneRecordedCauses:
 
     def test_added_direction_does_not_suppress_a_genuine_mis_prune(self, tmp_path):
         """A ``ceremony_finalize selection ... added`` line is not a removal cause."""
-        plan_dir = _build_plan(
-            tmp_path / 'plan', steps=_STEPS_WITHOUT_SIMPLIFY, decision_lines=[CEREMONY_ADDED_LINE]
-        )
+        plan_dir = _build_plan(tmp_path / 'plan', steps=_STEPS_WITHOUT_SIMPLIFY, decision_lines=[CEREMONY_ADDED_LINE])
         result = _crd.cmd_run(_run_args(plan_dir, _diff_file(tmp_path, [PRODUCTION_PATH])))
 
         row = _check(result['mis_prune_checks'], 'mis_prune:finalize-step-simplify')
@@ -209,9 +204,7 @@ class TestMisPruneVerdictDiscriminators:
 
     def test_readable_log_naming_no_cause_still_fails(self, tmp_path):
         """The fix narrows the false positive without disabling the check."""
-        plan_dir = _build_plan(
-            tmp_path / 'plan', steps=_STEPS_WITHOUT_SONAR, decision_lines=['unrelated decision']
-        )
+        plan_dir = _build_plan(tmp_path / 'plan', steps=_STEPS_WITHOUT_SONAR, decision_lines=['unrelated decision'])
         result = _crd.cmd_run(_run_args(plan_dir, _diff_file(tmp_path, [PRODUCTION_PATH])))
 
         row = _check(result['mis_prune_checks'], 'mis_prune:sonar-roundtrip')
@@ -220,9 +213,7 @@ class TestMisPruneVerdictDiscriminators:
         assert result['summary']['failed'] == 1
 
     def test_missing_decision_log_is_inconclusive(self, tmp_path):
-        plan_dir = _build_plan(
-            tmp_path / 'plan', steps=_STEPS_WITHOUT_SONAR, write_decision_log=False
-        )
+        plan_dir = _build_plan(tmp_path / 'plan', steps=_STEPS_WITHOUT_SONAR, write_decision_log=False)
         result = _crd.cmd_run(_run_args(plan_dir, _diff_file(tmp_path, [PRODUCTION_PATH])))
 
         row = _check(result['mis_prune_checks'], 'mis_prune:sonar-roundtrip')
@@ -238,9 +229,7 @@ class TestMisPruneVerdictDiscriminators:
         assert result['summary']['inconclusive'] == 1
 
     def test_unreadable_decision_log_is_inconclusive(self, tmp_path):
-        plan_dir = _build_plan(
-            tmp_path / 'plan', steps=_STEPS_WITHOUT_SONAR, write_decision_log=False
-        )
+        plan_dir = _build_plan(tmp_path / 'plan', steps=_STEPS_WITHOUT_SONAR, write_decision_log=False)
         logs = plan_dir / 'logs'
         logs.mkdir(exist_ok=True)
         (logs / 'decision.log').mkdir()
@@ -252,9 +241,7 @@ class TestMisPruneVerdictDiscriminators:
         assert row['removal_cause'] == 'unestablishable'
 
     def test_absent_step_without_footprint_skips(self, tmp_path):
-        plan_dir = _build_plan(
-            tmp_path / 'plan', steps=_STEPS_WITHOUT_SONAR, decision_lines=['unrelated decision']
-        )
+        plan_dir = _build_plan(tmp_path / 'plan', steps=_STEPS_WITHOUT_SONAR, decision_lines=['unrelated decision'])
         result = _crd.cmd_run(_run_args(plan_dir, None))
 
         row = _check(result['mis_prune_checks'], 'mis_prune:sonar-roundtrip')
@@ -263,9 +250,7 @@ class TestMisPruneVerdictDiscriminators:
         assert row['removal_cause'] == 'not_evaluated'
 
     def test_present_step_passes(self, tmp_path):
-        plan_dir = _build_plan(
-            tmp_path / 'plan', steps=_STEPS_WITH_BOTH, decision_lines=['unrelated decision']
-        )
+        plan_dir = _build_plan(tmp_path / 'plan', steps=_STEPS_WITH_BOTH, decision_lines=['unrelated decision'])
         result = _crd.cmd_run(_run_args(plan_dir, _diff_file(tmp_path, [PRODUCTION_PATH])))
 
         for step in ('sonar-roundtrip', 'finalize-step-simplify'):
@@ -275,9 +260,7 @@ class TestMisPruneVerdictDiscriminators:
             assert row['removal_cause'] == 'not_removed'
 
     def test_docs_only_footprint_leaves_predicate_holding(self, tmp_path):
-        plan_dir = _build_plan(
-            tmp_path / 'plan', steps=_STEPS_WITHOUT_SONAR, decision_lines=['unrelated decision']
-        )
+        plan_dir = _build_plan(tmp_path / 'plan', steps=_STEPS_WITHOUT_SONAR, decision_lines=['unrelated decision'])
         result = _crd.cmd_run(_run_args(plan_dir, _diff_file(tmp_path, ['doc/readme.md'])))
 
         row = _check(result['mis_prune_checks'], 'mis_prune:sonar-roundtrip')
@@ -286,9 +269,7 @@ class TestMisPruneVerdictDiscriminators:
         assert row['removal_cause'] == 'predicate_evaluated'
 
     def test_every_row_carries_a_removal_cause(self, tmp_path):
-        plan_dir = _build_plan(
-            tmp_path / 'plan', steps=_STEPS_WITHOUT_SONAR, decision_lines=[SIMPLIFY_INACTIVE_LINE]
-        )
+        plan_dir = _build_plan(tmp_path / 'plan', steps=_STEPS_WITHOUT_SONAR, decision_lines=[SIMPLIFY_INACTIVE_LINE])
         result = _crd.cmd_run(_run_args(plan_dir, _diff_file(tmp_path, [PRODUCTION_PATH])))
 
         assert len(result['mis_prune_checks']) == len(_crd._PRUNABLE_PREDICATES)
@@ -433,9 +414,7 @@ class TestExecutionLogPopulation:
         redundant and the refusal gate dead code — so the asymmetry is pinned
         rather than assumed.
         """
-        constants = load_script_module(
-            'plan-marshall', 'tools-file-ops', 'constants.py', 'constants_population_drift'
-        )
+        constants = load_script_module('plan-marshall', 'tools-file-ops', 'constants.py', 'constants_population_drift')
 
         ledger = set(_crd.EXECUTION_LOG_PHASES)
         canonical = set(constants.PHASES)

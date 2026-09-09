@@ -372,9 +372,7 @@ class TestMainAnchoredStoreOwnsBundle:
     ]
 
     @pytest.mark.parametrize('bundle', REJECTED_BUNDLES, ids=REJECTED_BUNDLE_IDS)
-    def test_rejected_bundle_returns_false_even_under_override(
-        self, plan_base_dir_at_tmp, bundle: str
-    ):
+    def test_rejected_bundle_returns_false_even_under_override(self, plan_base_dir_at_tmp, bundle: str):
         assert main_anchored_store_owns_bundle(bundle) is False
 
     def test_parent_dir_bundle_returns_false_in_production(self, tmp_path, monkeypatch):
@@ -456,7 +454,9 @@ class TestGetBasePath:
         result = get_base_path('auto')
         assert result == bundles
 
-    def test_auto_falls_back_to_cache_without_marketplace(self, tmp_path, outside_repo_dir, monkeypatch, home_at_tmp, no_pm_marketplace_root):
+    def test_auto_falls_back_to_cache_without_marketplace(
+        self, tmp_path, outside_repo_dir, monkeypatch, home_at_tmp, no_pm_marketplace_root
+    ):
         """auto scope falls back to the plugin cache when no marketplace resolves.
 
         With no explicit anchor and no ``marketplace/bundles`` discoverable by the
@@ -475,7 +475,9 @@ class TestGetBasePath:
         result = get_base_path('auto')
         assert result == cache
 
-    def test_auto_explicit_param_raises_without_cache_fallback(self, tmp_path, monkeypatch, home_at_tmp, no_pm_marketplace_root):
+    def test_auto_explicit_param_raises_without_cache_fallback(
+        self, tmp_path, monkeypatch, home_at_tmp, no_pm_marketplace_root
+    ):
         """An explicit anchor that does not resolve raises WITHOUT cache fallback.
 
         The explicit-anchor contract is preserved: passing ``marketplace_root``
@@ -562,17 +564,13 @@ class TestGetBasePathGlobalProjectRuntimeRouted:
     def test_global_scope_returns_runtime_settings_base(self, tmp_path, monkeypatch):
         """A non-default global settings base supplied by the runtime wins."""
         runtime_base = tmp_path / 'non-default' / 'global-settings'
-        monkeypatch.setattr(
-            marketplace_paths, '_invoke_settings_op', lambda scope: runtime_base
-        )
+        monkeypatch.setattr(marketplace_paths, '_invoke_settings_op', lambda scope: runtime_base)
         assert get_base_path('global') == runtime_base
 
     def test_project_scope_returns_runtime_settings_base(self, tmp_path, monkeypatch):
         """A non-default project settings base supplied by the runtime wins."""
         runtime_base = tmp_path / 'non-default' / 'project-settings'
-        monkeypatch.setattr(
-            marketplace_paths, '_invoke_settings_op', lambda scope: runtime_base
-        )
+        monkeypatch.setattr(marketplace_paths, '_invoke_settings_op', lambda scope: runtime_base)
         assert get_base_path('project') == runtime_base
 
     def test_global_scope_falls_back_when_runtime_unresolvable(self, tmp_path, monkeypatch):
@@ -654,7 +652,9 @@ class TestResolveMainAnchoredPath:
         assert resolved == main_base / 'build-queue.json'
         assert resolved != worktree / '.plan' / 'local' / 'build-queue.json'
 
-    def test_resolve_main_anchored_path_resolves_to_main_from_worktree_cwd(self, tmp_path, monkeypatch, no_plan_base_dir) -> None:
+    def test_resolve_main_anchored_path_resolves_to_main_from_worktree_cwd(
+        self, tmp_path, monkeypatch, no_plan_base_dir
+    ) -> None:
         # A REAL git repo with a REAL linked worktree; no override set, so the
         # production git-common-dir branch is exercised with cwd pinned into the
         # worktree.
@@ -678,7 +678,9 @@ class TestResolveMainAnchoredPath:
         assert resolved.resolve() == expected
         assert resolved.resolve() != (worktree.resolve() / PLAN_DIR_NAME / 'local' / 'merge.lock')
 
-    def test_resolve_main_anchored_path_resolves_from_main_checkout_cwd(self, tmp_path, monkeypatch, no_plan_base_dir) -> None:
+    def test_resolve_main_anchored_path_resolves_from_main_checkout_cwd(
+        self, tmp_path, monkeypatch, no_plan_base_dir
+    ) -> None:
         # A REAL git repo, no override, cwd pinned at the main checkout itself
         # (not a linked worktree) — the production branch must anchor at the same
         # main root.
@@ -717,7 +719,9 @@ class TestResolveMainAnchoredPath:
         module_top = src.split('def ', 1)[0]
         assert 'import file_ops' not in module_top
 
-    def test_resolve_main_anchored_path_raises_when_not_a_repo(self, outside_repo_dir, monkeypatch, no_plan_base_dir) -> None:
+    def test_resolve_main_anchored_path_raises_when_not_a_repo(
+        self, outside_repo_dir, monkeypatch, no_plan_base_dir
+    ) -> None:
         # Outside any git repo, no override — the production branch must raise
         # RuntimeError (identical contract to merge_lock). ``bare`` must be
         # OUTSIDE the repo: pytest's tmp_path now roots under the repo-local
@@ -776,9 +780,7 @@ class TestResolveHome:
     ``Path.home()`` raises (minimal containers, CI without ``HOME`` set).
     """
 
-    def test_returns_path_home_when_resolvable(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_returns_path_home_when_resolvable(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         # The happy path: Path.home() resolves normally → returned verbatim.
         monkeypatch.setattr(Path, 'home', lambda: tmp_path)
 
@@ -797,9 +799,7 @@ class TestResolveHome:
 
         assert resolve_home() == fallback
 
-    def test_falls_back_to_tmp_when_path_home_raises_and_no_home_env(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_falls_back_to_tmp_when_path_home_raises_and_no_home_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # Path.home() raises AND $HOME is unset → last-resort /tmp.
         def _raise() -> Path:
             raise RuntimeError('home directory undeterminable')
@@ -813,9 +813,7 @@ class TestResolveHome:
 class TestEnsureHomeRoot:
     """First-touch creation of the home root must be 0o700, never umask-default."""
 
-    def test_creates_home_root_with_0700(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_creates_home_root_with_0700(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         custom = tmp_path / 'ensure-home'
         monkeypatch.setenv('PLAN_MARSHALL_HOME', str(custom))
 
@@ -825,9 +823,7 @@ class TestEnsureHomeRoot:
         assert custom.is_dir()
         assert (custom.stat().st_mode & 0o777) == 0o700
 
-    def test_repairs_wider_mode_on_existing_root(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_repairs_wider_mode_on_existing_root(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         custom = tmp_path / 'wide-home'
         custom.mkdir(mode=0o755)
         os.chmod(custom, 0o755)
@@ -837,9 +833,7 @@ class TestEnsureHomeRoot:
 
         assert (custom.stat().st_mode & 0o777) == 0o700
 
-    def test_idempotent_on_correct_mode(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_idempotent_on_correct_mode(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         custom = tmp_path / 'ok-home'
         monkeypatch.setenv('PLAN_MARSHALL_HOME', str(custom))
         marketplace_paths.ensure_home_root()
@@ -853,9 +847,7 @@ class TestEnsureHomeRoot:
 class TestMainCheckoutRoot:
     """The public thin wrapper over the private ``_main_checkout_root``."""
 
-    def test_delegates_to_private_resolver(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_delegates_to_private_resolver(self, monkeypatch: pytest.MonkeyPatch) -> None:
         sentinel = Path('/sentinel/main-checkout')
         monkeypatch.setattr(marketplace_paths, '_main_checkout_root', lambda: sentinel)
 

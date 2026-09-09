@@ -144,14 +144,14 @@ _UNMARKED_DERIVED_NOTE = (
     'and marks every other, so it lags the registry. Its ONLY use here is the '
     'GC-EXPOSURE axis — which dirs the foreign collector has scheduled for '
     'deletion. It is never corroboration of installPath, and it says nothing about '
-    'which dir the loader follows: this repository\'s version selection does not '
+    "which dir the loader follows: this repository's version selection does not "
     'consult the marker at all.'
 )
 
 _SESSION_SEATING_NOTE = (
-    'This store triad does NOT measure the session\'s own seating (the body loaded '
+    "This store triad does NOT measure the session's own seating (the body loaded "
     'at session start). That value appears in neither the registry, the executor, '
-    'nor the marker set; use assert_loaded_version() against the loader\'s announced '
+    "nor the marker set; use assert_loaded_version() against the loader's announced "
     'base directory to check the in-run loaded body.'
 )
 
@@ -192,7 +192,7 @@ REMEDY_NO_RESTART = (
 )
 REMEDY_IN_RUN_TEMPLATE = (
     'In-run remedy: read the pinned skill file DIRECTLY from the registry installPath '
-    '({install_path}) rather than trusting the loader\'s resolved body.'
+    "({install_path}) rather than trusting the loader's resolved body."
 )
 REMEDY_RESAMPLE = (
     'Indeterminate is not a pass: re-sample (the stores were mid-write, or a store '
@@ -278,10 +278,7 @@ class ContentComparison:
         if self.unusable_reason is not None:
             return self.unusable_reason
         if self.total == 0:
-            return (
-                'empty_comparison: the comparison walked ZERO paths, so it is '
-                'evidence about nothing'
-            )
+            return 'empty_comparison: the comparison walked ZERO paths, so it is evidence about nothing'
         if self.scanned_count == 0:
             return (
                 f'nothing_scanned: all {self.total} paths in the union failed to '
@@ -528,9 +525,7 @@ def evaluate(
                 'read_during_write: the two samples disagreed, so the stores were '
                 'mid-write. No verdict is issued over an inconsistent snapshot.'
             ),
-            loader_selected_version=loader_selected_version(
-                sample_a.version_dirs, sample_a.eligible_versions
-            ),
+            loader_selected_version=loader_selected_version(sample_a.version_dirs, sample_a.eligible_versions),
             sampling_instant=sampling_instant,
             population_size=population,
             newest_marker_age_seconds=sample_a.newest_marker_age_seconds,
@@ -578,8 +573,7 @@ def _evaluate_single(obs: StoreObservation, sampling_instant: str) -> Verdict:
     # on the could-not-look list.
     if executor_anchor is not None and executor_anchor.status == EXECUTOR_SPLIT:
         divergences.append(
-            'executor is version-SPLIT across its embedded paths: '
-            + ', '.join(executor_anchor.versions)
+            'executor is version-SPLIT across its embedded paths: ' + ', '.join(executor_anchor.versions)
         )
 
     # --- GC-exposure axis (a load-bearing dir is orphan-marked, or saturation) ---
@@ -606,13 +600,7 @@ def _evaluate_single(obs: StoreObservation, sampling_instant: str) -> Verdict:
         shapes.append(SHAPE_3_LOADER_FOLLOWS_NON_PIN_DIR)
 
     # --- Shape 4: the ONLY unmarked dir IS the pin, yet the pin diverges from source ---
-    if (
-        ipv is not None
-        and unmarked_names == {ipv}
-        and content is not None
-        and content.usable
-        and content.diverged > 0
-    ):
+    if ipv is not None and unmarked_names == {ipv} and content is not None and content.usable and content.diverged > 0:
         shapes.append(SHAPE_4_PIN_DIVERGES_FROM_SOURCE)
 
     # --- Shape 6: a cache-selection divergence with NO GC exposure ("repair when
@@ -626,9 +614,7 @@ def _evaluate_single(obs: StoreObservation, sampling_instant: str) -> Verdict:
         or (loader is not None and ipv is not None and loader != ipv)
         or (content is not None and content.usable and content.diverged > 0)
     )
-    already_specific = any(
-        s in shapes for s in (SHAPE_3_LOADER_FOLLOWS_NON_PIN_DIR, SHAPE_4_PIN_DIVERGES_FROM_SOURCE)
-    )
+    already_specific = any(s in shapes for s in (SHAPE_3_LOADER_FOLLOWS_NON_PIN_DIR, SHAPE_4_PIN_DIVERGES_FROM_SOURCE))
     if cache_divergence and not gc_exposures and not already_specific:
         shapes.append(SHAPE_6_DIVERGENCE_NO_GC)
 
@@ -949,9 +935,7 @@ def compare_pin_content(pin_dir: Path, source_dir: Path) -> ContentComparison:
             total=0,
             diverged=0,
             scanned=0,
-            unusable_reason=(
-                f'source_unreadable: {source_dir} is absent or could not be enumerated'
-            ),
+            unusable_reason=(f'source_unreadable: {source_dir} is absent or could not be enumerated'),
         )
     pin_rels = _relative_file_set(pin_dir)
     if pin_rels is None:
@@ -960,9 +944,7 @@ def compare_pin_content(pin_dir: Path, source_dir: Path) -> ContentComparison:
             total=0,
             diverged=0,
             scanned=0,
-            unusable_reason=(
-                f'pin_unreadable: {pin_dir} is absent or could not be enumerated'
-            ),
+            unusable_reason=(f'pin_unreadable: {pin_dir} is absent or could not be enumerated'),
         )
 
     union = sorted(source_rels | pin_rels)
@@ -1044,9 +1026,7 @@ def observe(
     version_dirs, marker_age = observe_cache_version_dirs(cache_bundle_dir, now=now)
     eligible: frozenset[str] | None = None
     if subpath is not None:
-        eligible = frozenset(
-            d.name for d in version_dirs if (cache_bundle_dir / d.name / subpath).exists()
-        )
+        eligible = frozenset(d.name for d in version_dirs if (cache_bundle_dir / d.name / subpath).exists())
     install_version, registry_version = read_registry_entry(registry_path, plugin_name)
     executor_anchor = read_executor_anchored_version(executor_path)
     executor_version = executor_anchor.version

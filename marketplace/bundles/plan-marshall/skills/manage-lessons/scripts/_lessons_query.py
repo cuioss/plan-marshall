@@ -234,9 +234,7 @@ def cmd_consult(args: argparse.Namespace) -> dict:
             'status': 'error',
             'plan_id': args.plan_id,
             'error': 'invalid_cap',
-            'message': (
-                f'--max-per-component must be >= 0, got {args.max_per_component}'
-            ),
+            'message': (f'--max-per-component must be >= 0, got {args.max_per_component}'),
         }
 
     plan_dir = resolve_main_anchored_path('plans') / args.plan_id
@@ -314,9 +312,7 @@ def cmd_consult(args: argparse.Namespace) -> dict:
 #: callers to do rather than re-listing literals — concluded at least one
 #: lesson had landed when none had. ``restored`` now means exactly what it
 #: says, and never rides with an error status.
-RESTORE_ACTIONS = frozenset(
-    {'restored', 'restore_incomplete', 'no_lesson_file', 'plan_dir_unresolved'}
-)
+RESTORE_ACTIONS = frozenset({'restored', 'restore_incomplete', 'no_lesson_file', 'plan_dir_unresolved'})
 
 
 def _restore_payload(
@@ -504,7 +500,7 @@ def cmd_restore_from_plan(args: argparse.Namespace) -> dict:
         # read off the resolved path names the link's TARGET rather than the file
         # the plan actually carries — and every guard below would then be
         # inspecting the wrong name entirely.
-        lesson_id = match.stem[len('lesson-'):]
+        lesson_id = match.stem[len('lesson-') :]
 
         if any(sep in lesson_id for sep in ('/', '\\', '..')):
             return _restore_payload(
@@ -565,15 +561,15 @@ def cmd_restore_from_plan(args: argparse.Namespace) -> dict:
             )
 
         shutil.move(match, destination)
-        restored_lessons.append({
-            'lesson_id': lesson_id,
-            'source': str(match),
-            'destination': str(destination),
-        })
+        restored_lessons.append(
+            {
+                'lesson_id': lesson_id,
+                'source': str(match),
+                'destination': str(destination),
+            }
+        )
 
-    return _restore_payload(
-        args.plan_id, 'restored', plans_store, restored=restored_lessons
-    )
+    return _restore_payload(args.plan_id, 'restored', plans_store, restored=restored_lessons)
 
 
 #: The closed vocabulary :func:`cmd_list_stalled` reports as ``plans_root_state``.
@@ -668,9 +664,7 @@ def _stalled_payload(
 #: returns beside a successful read is the success sentinel, not a member of
 #: this set: it never reaches a row. Consumers assert against this set rather
 #: than re-listing the literals.
-UNCLASSIFIABLE_REASONS = frozenset(
-    {'status_json_missing', 'status_json_unreadable', 'status_json_not_an_object'}
-)
+UNCLASSIFIABLE_REASONS = frozenset({'status_json_missing', 'status_json_unreadable', 'status_json_not_an_object'})
 
 
 def _read_plan_status(status_path: Path) -> tuple[dict | None, str]:
@@ -781,7 +775,7 @@ def cmd_list_stalled(args: argparse.Namespace) -> dict:  # args unused: the unif
         if not lesson_file.is_file():
             continue
         plan_dir = lesson_file.parent
-        lesson_id = lesson_file.stem[len('lesson-'):]
+        lesson_id = lesson_file.stem[len('lesson-') :]
         by_plan.setdefault(plan_dir, []).append(lesson_id)
 
     stalled_plans: list[dict] = []
@@ -799,22 +793,26 @@ def cmd_list_stalled(args: argparse.Namespace) -> dict:  # args unused: the unif
         for lesson_id in lesson_ids:
             corpus_path = lessons_dir / f'{lesson_id}.md'
             if corpus_path.exists():
-                duplicate_lessons.append({
-                    'plan_id': plan_id,
-                    'lesson_id': lesson_id,
-                    'corpus_path': str(corpus_path),
-                })
+                duplicate_lessons.append(
+                    {
+                        'plan_id': plan_id,
+                        'lesson_id': lesson_id,
+                        'corpus_path': str(corpus_path),
+                    }
+                )
 
         status, unreadable_reason = _read_plan_status(plan_dir / 'status.json')
         if status is None:
             # Cannot classify this plan. Surface it rather than dropping it —
             # a silently-skipped row is a stalled plan the caller never hears
             # about, which is the same fail-open at row granularity.
-            unclassifiable_plans.append({
-                'plan_id': plan_id,
-                'lesson_ids': lesson_ids,
-                'reason': unreadable_reason,
-            })
+            unclassifiable_plans.append(
+                {
+                    'plan_id': plan_id,
+                    'lesson_ids': lesson_ids,
+                    'reason': unreadable_reason,
+                }
+            )
             continue
 
         metadata = status.get('metadata', {})
@@ -843,18 +841,20 @@ def cmd_list_stalled(args: argparse.Namespace) -> dict:  # args unused: the unif
         if not is_stalled:
             continue
 
-        stalled_plans.append({
-            'plan_id': plan_id,
-            'plan_source': plan_source,
-            'current_phase': current_phase,
-            'phase_status': phase_status,
-            'lesson_ids': lesson_ids,
-            'restore_command': (
-                'python3 .plan/execute-script.py '
-                'plan-marshall:manage-lessons:manage-lessons '
-                f'restore-from-plan --plan-id {plan_id}'
-            ),
-        })
+        stalled_plans.append(
+            {
+                'plan_id': plan_id,
+                'plan_source': plan_source,
+                'current_phase': current_phase,
+                'phase_status': phase_status,
+                'lesson_ids': lesson_ids,
+                'restore_command': (
+                    'python3 .plan/execute-script.py '
+                    'plan-marshall:manage-lessons:manage-lessons '
+                    f'restore-from-plan --plan-id {plan_id}'
+                ),
+            }
+        )
 
     return _stalled_payload(
         plans_store,
@@ -931,9 +931,7 @@ def cmd_set_title(args: argparse.Namespace) -> dict:
             'status': 'error',
             'lesson_id': args.lesson_id,
             'error': 'malformed_lesson',
-            'message': (
-                f'Lesson {args.lesson_id} has no H1 title line; cannot rewrite title'
-            ),
+            'message': (f'Lesson {args.lesson_id} has no H1 title line; cannot rewrite title'),
         }
 
     old_title = lines[h1_index][2:].strip()

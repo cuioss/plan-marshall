@@ -43,6 +43,7 @@ mutual-exclusion clear touches only the caller's own sibling slot.
 per-file scan-then-GC is idempotent. No new shared-file TOCTOU hazard is
 introduced. Every path is best-effort / no-raise.
 """
+
 from __future__ import annotations
 
 import json
@@ -61,11 +62,11 @@ from typing import Any
 try:
     _CACHE_HOME = Path.home()
 except (RuntimeError, OSError):
-    _CACHE_HOME = Path(os.environ.get("HOME") or "/tmp")
-_SESSION_CACHE_BASE = _CACHE_HOME / ".cache" / "plan-marshall" / "sessions"
+    _CACHE_HOME = Path(os.environ.get('HOME') or '/tmp')
+_SESSION_CACHE_BASE = _CACHE_HOME / '.cache' / 'plan-marshall' / 'sessions'
 
 # Tracked plan-directory name (mirrors the executor / claude_runtime resolution).
-_PLAN_DIR_NAME = os.environ.get("PLAN_DIR_NAME", ".plan")
+_PLAN_DIR_NAME = os.environ.get('PLAN_DIR_NAME', '.plan')
 
 # Single-segment cap for the session-id and plan-id cache values. Both are
 # written / read as one path segment under the cache root, so the security
@@ -79,12 +80,12 @@ _SEGMENT_MAX_LEN = 120
 # these still owes a DELIVERED repaint, because the hook render channel is
 # event-driven rather than callable on demand — so its binding must outlive the
 # archive. Mirrors the composer's terminal-phase vocabulary.
-_TERMINAL_PHASES: frozenset[str] = frozenset({"complete", "archived"})
+_TERMINAL_PHASES: frozenset[str] = frozenset({'complete', 'archived'})
 
 # Marker the renderer writes into an archived ``status.json`` once it has emitted
 # that plan's terminal title. Its PRESENCE is the delivery predicate — the
 # exemption below is state-driven and must never be expressed as elapsed time.
-_DELIVERED_MARKER = "title_delivered"
+_DELIVERED_MARKER = 'title_delivered'
 
 
 # ---------------------------------------------------------------------------
@@ -104,11 +105,11 @@ def _valid_segment(value: str) -> bool:
         return False
     if not value or len(value) > _SEGMENT_MAX_LEN:
         return False
-    if "\x00" in value:
+    if '\x00' in value:
         return False
-    if "/" in value or "\\" in value:
+    if '/' in value or '\\' in value:
         return False
-    if value in (".", ".."):
+    if value in ('.', '..'):
         return False
     return True
 
@@ -125,7 +126,7 @@ def _valid_plan_id(plan_id: str) -> bool:
 
 def _active_plan_path(session_id: str) -> Path:
     """Return the ``active-plan`` cache file path for ``session_id``."""
-    return _SESSION_CACHE_BASE / session_id / "active-plan"
+    return _SESSION_CACHE_BASE / session_id / 'active-plan'
 
 
 def _active_orchestrator_path(session_id: str) -> Path:
@@ -136,7 +137,7 @@ def _active_orchestrator_path(session_id: str) -> Path:
     the same per-session directory so a single :func:`unbind` prunes the
     directory once both slots are gone.
     """
-    return _SESSION_CACHE_BASE / session_id / "active-orchestrator"
+    return _SESSION_CACHE_BASE / session_id / 'active-orchestrator'
 
 
 def _clear_slot(path: Path) -> None:
@@ -170,7 +171,7 @@ def resolve_plan(session_id: str) -> str | None:
     if not _valid_session_id(session_id):
         return None
     try:
-        raw = _active_plan_path(session_id).read_text(encoding="utf-8").strip()
+        raw = _active_plan_path(session_id).read_text(encoding='utf-8').strip()
         return raw or None
     except OSError:
         return None
@@ -187,7 +188,7 @@ def resolve_orchestrator(session_id: str) -> str | None:
     if not _valid_session_id(session_id):
         return None
     try:
-        raw = _active_orchestrator_path(session_id).read_text(encoding="utf-8").strip()
+        raw = _active_orchestrator_path(session_id).read_text(encoding='utf-8').strip()
         return raw or None
     except OSError:
         return None
@@ -211,7 +212,7 @@ def bind(session_id: str, plan_id: str) -> bool:
     try:
         target = _active_plan_path(session_id)
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(plan_id, encoding="utf-8")
+        target.write_text(plan_id, encoding='utf-8')
     except OSError:
         return False
     # Mutual exclusion: a plan binding retires any orchestrator binding on the
@@ -240,7 +241,7 @@ def bind_orchestrator(session_id: str, slug: str) -> bool:
     try:
         target = _active_orchestrator_path(session_id)
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(slug, encoding="utf-8")
+        target.write_text(slug, encoding='utf-8')
     except OSError:
         return False
     # Mutual exclusion: an orchestrator binding retires any plan binding on the
@@ -313,11 +314,11 @@ def _archived_status_json(plan_id: str) -> Path | None:
     error yields ``None``.
     """
     try:
-        archived_base = Path(_PLAN_DIR_NAME) / "local" / "archived-plans"
+        archived_base = Path(_PLAN_DIR_NAME) / 'local' / 'archived-plans'
         if not archived_base.is_dir():
             return None
-        suffix = f"-{plan_id}"
-        for candidate in sorted(archived_base.glob(f"*-{plan_id}/status.json"), reverse=True):
+        suffix = f'-{plan_id}'
+        for candidate in sorted(archived_base.glob(f'*-{plan_id}/status.json'), reverse=True):
             if candidate.is_file() and candidate.parent.name.endswith(suffix):
                 return candidate
     except (OSError, ValueError):
@@ -343,14 +344,14 @@ def _terminal_delivery_pending(plan_id: str) -> bool:
     if status_path is None:
         return False
     try:
-        status_data = json.loads(status_path.read_text(encoding="utf-8"))
+        status_data = json.loads(status_path.read_text(encoding='utf-8'))
     except (OSError, ValueError):
         return False
     if not isinstance(status_data, dict):
         return False
     if status_data.get(_DELIVERED_MARKER) is True:
         return False
-    current_phase = status_data.get("current_phase")
+    current_phase = status_data.get('current_phase')
     return isinstance(current_phase, str) and current_phase in _TERMINAL_PHASES
 
 
@@ -379,12 +380,10 @@ def _plan_is_live(plan_id: str) -> bool:
     if not _valid_plan_id(plan_id):
         return False
     try:
-        base = Path(_PLAN_DIR_NAME) / "local"
-        if (base / "plans" / plan_id).is_dir():
+        base = Path(_PLAN_DIR_NAME) / 'local'
+        if (base / 'plans' / plan_id).is_dir():
             return True
-        worktree = (
-            base / "worktrees" / plan_id / _PLAN_DIR_NAME / "local" / "plans" / plan_id
-        )
+        worktree = base / 'worktrees' / plan_id / _PLAN_DIR_NAME / 'local' / 'plans' / plan_id
         if worktree.is_dir():
             return True
     except (OSError, ValueError):
@@ -497,30 +496,26 @@ def doctor(fix: bool = False) -> dict[str, Any]:
     for session_id, plan_id in slots:
         reverse.setdefault(plan_id, []).append(session_id)
         if not _plan_is_live(plan_id):
-            stale.append({"session_id": session_id, "plan_id": plan_id})
+            stale.append({'session_id': session_id, 'plan_id': plan_id})
 
-    conflicts = [
-        {"plan_id": pid, "sessions": sorted(sids)}
-        for pid, sids in sorted(reverse.items())
-        if len(sids) > 1
-    ]
+    conflicts = [{'plan_id': pid, 'sessions': sorted(sids)} for pid, sids in sorted(reverse.items()) if len(sids) > 1]
 
     gc_removed = 0
     orphans_removed = 0
     if fix:
         for slot in stale:
-            if _gc_slot(slot["session_id"]):
+            if _gc_slot(slot['session_id']):
                 gc_removed += 1
         for orphan_id in orphans:
             if _remove_slot_and_prune(_active_plan_path(orphan_id)):
                 orphans_removed += 1
 
     return {
-        "scanned": sum(len(sids) for sids in reverse.values()),
-        "conflicts": conflicts,
-        "stale": stale,
-        "gc_removed": gc_removed,
-        "orphans": orphans,
-        "orphans_removed": orphans_removed,
-        "fix": fix,
+        'scanned': sum(len(sids) for sids in reverse.values()),
+        'conflicts': conflicts,
+        'stale': stale,
+        'gc_removed': gc_removed,
+        'orphans': orphans,
+        'orphans_removed': orphans_removed,
+        'fix': fix,
     }

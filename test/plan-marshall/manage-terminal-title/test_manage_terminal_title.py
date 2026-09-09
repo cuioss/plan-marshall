@@ -35,9 +35,7 @@ from datetime import UTC, datetime, timedelta
 
 from conftest import load_script_module
 
-_mtt = load_script_module(
-    "plan-marshall", "manage-terminal-title", "manage_terminal_title.py"
-)
+_mtt = load_script_module('plan-marshall', 'manage-terminal-title', 'manage_terminal_title.py')
 
 compose = _mtt.compose
 resolve_icon = _mtt.resolve_icon
@@ -45,28 +43,28 @@ TITLE_TOKEN_GLYPHS = _mtt.TITLE_TOKEN_GLYPHS
 PROCESS_STATES = _mtt.PROCESS_STATES
 
 # Target-neutral process states the composer consumes.
-STATE_ACTIVE = "active"
-STATE_WAITING = "waiting"
-STATE_BUSY = "busy"
-STATE_DONE = "done"
+STATE_ACTIVE = 'active'
+STATE_WAITING = 'waiting'
+STATE_BUSY = 'busy'
+STATE_DONE = 'done'
 
 # Icon literals mirrored from the module under test (kept local so a silent
 # change to the module's palette is caught as a test failure rather than
 # masked by importing the same constant).
-ICON_ACTIVE = "➤"  # ➤
-ICON_WAITING = "?"
-ICON_DONE = "✓"  # ✓
-ICON_TERMINAL = "✅"  # ✅
-ICON_BUSY = "⚙"  # ⚙
-ICON_BUILD = "\U0001f528"  # 🔨
+ICON_ACTIVE = '➤'  # ➤
+ICON_WAITING = '?'
+ICON_DONE = '✓'  # ✓
+ICON_TERMINAL = '✅'  # ✅
+ICON_BUSY = '⚙'  # ⚙
+ICON_BUILD = '\U0001f528'  # 🔨
 
-GLYPH_LOCK_WAITING = "⏳"  # ⏳
-GLYPH_LOCK_OWNED = "\U0001f512"  # 🔒
+GLYPH_LOCK_WAITING = '⏳'  # ⏳
+GLYPH_LOCK_OWNED = '\U0001f512'  # 🔒
 
 # The orchestration-busy title-token. Rendered as an icon-slot override (🔨),
 # NOT a prepended glyph — kept local so a silent rename in the module is caught
 # as a test failure rather than masked by importing the same constant.
-TOKEN_BUILD_BUSY = "build-busy"
+TOKEN_BUILD_BUSY = 'build-busy'
 
 title_token_state = _mtt.title_token_state
 TITLE_TOKEN_STALE_AFTER_SECONDS = _mtt.TITLE_TOKEN_STALE_AFTER_SECONDS
@@ -77,10 +75,10 @@ TITLE_TOKEN_STALE_AFTER_SECONDS = _mtt.TITLE_TOKEN_STALE_AFTER_SECONDS
 FIXED_NOW = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
 
 
-def _token(state, owner="cli", age_seconds=0):
+def _token(state, owner='cli', age_seconds=0):
     """Build a ``{owner, state, set_at}`` record aged ``age_seconds`` before FIXED_NOW."""
     set_at = FIXED_NOW - timedelta(seconds=age_seconds)
-    return {"owner": owner, "state": state, "set_at": set_at.strftime("%Y-%m-%dT%H:%M:%SZ")}
+    return {'owner': owner, 'state': state, 'set_at': set_at.strftime('%Y-%m-%dT%H:%M:%SZ')}
 
 
 # =============================================================================
@@ -96,7 +94,7 @@ class TestProcessStatesVocabulary:
 
     def test_no_claude_event_names_in_vocabulary(self):
         # The neutral vocabulary must NOT carry Claude hook-event names.
-        for claude_event in ("UserPromptSubmit", "Notification", "Stop", "PreToolUse", "PostToolUse"):
+        for claude_event in ('UserPromptSubmit', 'Notification', 'Stop', 'PreToolUse', 'PostToolUse'):
             assert claude_event not in PROCESS_STATES
 
 
@@ -109,17 +107,17 @@ class TestTitleTokenGlyphMap:
     """The two lock-state → glyph mappings are exact."""
 
     def test_lock_waiting_glyph(self):
-        assert TITLE_TOKEN_GLYPHS["lock-waiting"] == GLYPH_LOCK_WAITING
+        assert TITLE_TOKEN_GLYPHS['lock-waiting'] == GLYPH_LOCK_WAITING
 
     def test_lock_owned_glyph(self):
-        assert TITLE_TOKEN_GLYPHS["lock-owned"] == GLYPH_LOCK_OWNED
+        assert TITLE_TOKEN_GLYPHS['lock-owned'] == GLYPH_LOCK_OWNED
 
     def test_exactly_two_states(self):
         # The vocabulary is closed at two states — guard against silent
         # additions/removals.
         assert set(TITLE_TOKEN_GLYPHS) == {
-            "lock-waiting",
-            "lock-owned",
+            'lock-waiting',
+            'lock-owned',
         }
 
     def test_build_busy_token_absent_from_glyph_map(self):
@@ -154,7 +152,7 @@ class TestResolveIcon:
         assert resolve_icon(STATE_DONE) == ICON_DONE
 
     def test_unknown_state_defaults_active(self):
-        assert resolve_icon("something-unmapped") == ICON_ACTIVE
+        assert resolve_icon('something-unmapped') == ICON_ACTIVE
 
     def test_none_state_defaults_active(self):
         # Defensive default — never raises on a missing state.
@@ -202,30 +200,30 @@ class TestComposeBodyFormat:
     """Active-phase body renders as ``pm:{phase}`` or ``pm:{phase}:{short}``."""
 
     def test_phase_only(self):
-        result = compose({"current_phase": "5-execute"}, STATE_ACTIVE)
-        assert result == f"{ICON_ACTIVE} pm:5-execute"
+        result = compose({'current_phase': '5-execute'}, STATE_ACTIVE)
+        assert result == f'{ICON_ACTIVE} pm:5-execute'
 
     def test_phase_and_short_description(self):
         result = compose(
-            {"current_phase": "5-execute", "short_description": "wire glyph"},
+            {'current_phase': '5-execute', 'short_description': 'wire glyph'},
             STATE_ACTIVE,
         )
-        assert result == f"{ICON_ACTIVE} pm:5-execute:wire glyph"
+        assert result == f'{ICON_ACTIVE} pm:5-execute:wire glyph'
 
     def test_short_description_whitespace_only_omitted(self):
         # A whitespace-only short_description is treated as empty (no :short).
         result = compose(
-            {"current_phase": "3-outline", "short_description": "   "},
+            {'current_phase': '3-outline', 'short_description': '   '},
             STATE_ACTIVE,
         )
-        assert result == f"{ICON_ACTIVE} pm:3-outline"
+        assert result == f'{ICON_ACTIVE} pm:3-outline'
 
     def test_short_description_is_stripped(self):
         result = compose(
-            {"current_phase": "3-outline", "short_description": "  trim me  "},
+            {'current_phase': '3-outline', 'short_description': '  trim me  '},
             STATE_ACTIVE,
         )
-        assert result == f"{ICON_ACTIVE} pm:3-outline:trim me"
+        assert result == f'{ICON_ACTIVE} pm:3-outline:trim me'
 
 
 # =============================================================================
@@ -238,60 +236,60 @@ class TestComposeGlyph:
 
     def test_lock_waiting_token(self):
         result = compose(
-            {"current_phase": "5-execute", "title_token": _token("lock-waiting")},
+            {'current_phase': '5-execute', 'title_token': _token('lock-waiting')},
             STATE_ACTIVE,
         )
-        assert result == f"{ICON_ACTIVE} {GLYPH_LOCK_WAITING} pm:5-execute"
+        assert result == f'{ICON_ACTIVE} {GLYPH_LOCK_WAITING} pm:5-execute'
 
     def test_lock_owned_token(self):
         result = compose(
-            {"current_phase": "5-execute", "title_token": _token("lock-owned")},
+            {'current_phase': '5-execute', 'title_token': _token('lock-owned')},
             STATE_ACTIVE,
         )
-        assert result == f"{ICON_ACTIVE} {GLYPH_LOCK_OWNED} pm:5-execute"
+        assert result == f'{ICON_ACTIVE} {GLYPH_LOCK_OWNED} pm:5-execute'
 
     def test_no_token_omits_glyph(self):
-        result = compose({"current_phase": "5-execute"}, STATE_ACTIVE)
+        result = compose({'current_phase': '5-execute'}, STATE_ACTIVE)
         # Exactly two space-separated parts: icon + body, no glyph segment.
-        assert result == f"{ICON_ACTIVE} pm:5-execute"
-        assert result.count(" ") == 1
+        assert result == f'{ICON_ACTIVE} pm:5-execute'
+        assert result.count(' ') == 1
 
     def test_unknown_token_omits_glyph(self):
         # A title_token not in the vocabulary maps to no glyph (None lookup).
         result = compose(
-            {"current_phase": "5-execute", "title_token": _token("not-a-state")},
+            {'current_phase': '5-execute', 'title_token': _token('not-a-state')},
             STATE_ACTIVE,
         )
-        assert result == f"{ICON_ACTIVE} pm:5-execute"
+        assert result == f'{ICON_ACTIVE} pm:5-execute'
 
     def test_token_combines_with_short_description(self):
         result = compose(
             {
-                "current_phase": "5-execute",
-                "short_description": "do thing",
-                "title_token": _token("lock-owned"),
+                'current_phase': '5-execute',
+                'short_description': 'do thing',
+                'title_token': _token('lock-owned'),
             },
             STATE_DONE,
         )
-        assert result == f"{ICON_DONE} {GLYPH_LOCK_OWNED} pm:5-execute:do thing"
+        assert result == f'{ICON_DONE} {GLYPH_LOCK_OWNED} pm:5-execute:do thing'
 
     def test_bare_string_token_is_not_a_record_and_yields_no_glyph(self):
         """A bare state STRING is no longer a title_token — the field is a
         ``{owner, state, set_at}`` record, so the legacy shape reads as absent
         rather than silently still rendering its glyph."""
         result = compose(
-            {"current_phase": "5-execute", "title_token": "lock-owned"},
+            {'current_phase': '5-execute', 'title_token': 'lock-owned'},
             STATE_ACTIVE,
         )
-        assert result == f"{ICON_ACTIVE} pm:5-execute"
+        assert result == f'{ICON_ACTIVE} pm:5-execute'
 
     def test_record_missing_state_yields_no_glyph(self):
         """A malformed record (no ``state``) is tolerated as absent, never raised."""
         result = compose(
-            {"current_phase": "5-execute", "title_token": {"owner": "cli", "set_at": "x"}},
+            {'current_phase': '5-execute', 'title_token': {'owner': 'cli', 'set_at': 'x'}},
             STATE_ACTIVE,
         )
-        assert result == f"{ICON_ACTIVE} pm:5-execute"
+        assert result == f'{ICON_ACTIVE} pm:5-execute'
 
 
 # =============================================================================
@@ -310,32 +308,32 @@ class TestTitleTokenState:
     """
 
     def test_reads_the_state_marker_from_the_record(self):
-        assert title_token_state({"title_token": _token("lock-owned")}) == "lock-owned"
+        assert title_token_state({'title_token': _token('lock-owned')}) == 'lock-owned'
 
     def test_absent_field_reads_as_none(self):
         assert title_token_state({}) is None
 
     def test_non_record_shapes_read_as_none(self):
-        assert title_token_state({"title_token": "lock-owned"}) is None
-        assert title_token_state({"title_token": ["lock-owned"]}) is None
-        assert title_token_state({"title_token": {"owner": "cli"}}) is None
+        assert title_token_state({'title_token': 'lock-owned'}) is None
+        assert title_token_state({'title_token': ['lock-owned']}) is None
+        assert title_token_state({'title_token': {'owner': 'cli'}}) is None
 
     def test_without_now_the_age_is_not_evaluated(self):
         """Purity guard: with no injected clock an ancient record still reads,
         because evaluating its age would require reading the clock."""
-        ancient = _token("build-busy", age_seconds=TITLE_TOKEN_STALE_AFTER_SECONDS * 10)
-        assert title_token_state({"title_token": ancient}) == "build-busy"
+        ancient = _token('build-busy', age_seconds=TITLE_TOKEN_STALE_AFTER_SECONDS * 10)
+        assert title_token_state({'title_token': ancient}) == 'build-busy'
 
     def test_with_now_a_fresh_record_reads_and_an_aged_one_does_not(self):
-        fresh = _token("build-busy", age_seconds=TITLE_TOKEN_STALE_AFTER_SECONDS - 60)
-        aged = _token("build-busy", age_seconds=TITLE_TOKEN_STALE_AFTER_SECONDS + 60)
+        fresh = _token('build-busy', age_seconds=TITLE_TOKEN_STALE_AFTER_SECONDS - 60)
+        aged = _token('build-busy', age_seconds=TITLE_TOKEN_STALE_AFTER_SECONDS + 60)
 
-        assert title_token_state({"title_token": fresh}, now=FIXED_NOW) == "build-busy"
-        assert title_token_state({"title_token": aged}, now=FIXED_NOW) is None
+        assert title_token_state({'title_token': fresh}, now=FIXED_NOW) == 'build-busy'
+        assert title_token_state({'title_token': aged}, now=FIXED_NOW) is None
 
     def test_with_now_an_unparseable_set_at_reads_as_absent(self):
-        broken = {"owner": "cli", "state": "build-busy", "set_at": "not-a-date"}
-        assert title_token_state({"title_token": broken}, now=FIXED_NOW) is None
+        broken = {'owner': 'cli', 'state': 'build-busy', 'set_at': 'not-a-date'}
+        assert title_token_state({'title_token': broken}, now=FIXED_NOW) is None
 
 
 # =============================================================================
@@ -347,30 +345,30 @@ class TestComposeIconResolution:
     """compose uses resolve_icon for non-terminal phases."""
 
     def test_active_state(self):
-        result = compose({"current_phase": "2-refine"}, STATE_ACTIVE)
-        assert result.startswith(f"{ICON_ACTIVE} ")
+        result = compose({'current_phase': '2-refine'}, STATE_ACTIVE)
+        assert result.startswith(f'{ICON_ACTIVE} ')
 
     def test_waiting_state(self):
-        result = compose({"current_phase": "2-refine"}, STATE_WAITING)
-        assert result.startswith(f"{ICON_WAITING} ")
+        result = compose({'current_phase': '2-refine'}, STATE_WAITING)
+        assert result.startswith(f'{ICON_WAITING} ')
 
     def test_done_state(self):
-        result = compose({"current_phase": "2-refine"}, STATE_DONE)
-        assert result.startswith(f"{ICON_DONE} ")
+        result = compose({'current_phase': '2-refine'}, STATE_DONE)
+        assert result.startswith(f'{ICON_DONE} ')
 
     def test_busy_state(self):
-        result = compose({"current_phase": "2-refine"}, STATE_BUSY)
-        assert result.startswith(f"{ICON_BUSY} ")
+        result = compose({'current_phase': '2-refine'}, STATE_BUSY)
+        assert result.startswith(f'{ICON_BUSY} ')
 
     def test_none_state_defaults_active(self):
-        result = compose({"current_phase": "2-refine"}, None)
-        assert result.startswith(f"{ICON_ACTIVE} ")
+        result = compose({'current_phase': '2-refine'}, None)
+        assert result.startswith(f'{ICON_ACTIVE} ')
 
     def test_icon_override_supersedes_state(self):
         # Push-mode icon_override wins over the state-resolved icon for a
         # non-terminal phase.
-        result = compose({"current_phase": "2-refine"}, None, icon_override="⚑")
-        assert result == "⚑ pm:2-refine"
+        result = compose({'current_phase': '2-refine'}, None, icon_override='⚑')
+        assert result == '⚑ pm:2-refine'
 
 
 # =============================================================================
@@ -382,40 +380,40 @@ class TestComposeTerminalOverride:
     """A finished plan forces ✅ regardless of process state; ➤/? never appear."""
 
     def test_complete_phase_forces_terminal_icon(self):
-        result = compose({"current_phase": "complete"}, STATE_ACTIVE)
-        assert result == f"{ICON_TERMINAL} pm:Completed"
+        result = compose({'current_phase': 'complete'}, STATE_ACTIVE)
+        assert result == f'{ICON_TERMINAL} pm:Completed'
 
     def test_archived_phase_forces_terminal_icon(self):
-        result = compose({"current_phase": "archived"}, STATE_ACTIVE)
-        assert result == f"{ICON_TERMINAL} pm:Completed"
+        result = compose({'current_phase': 'archived'}, STATE_ACTIVE)
+        assert result == f'{ICON_TERMINAL} pm:Completed'
 
     def test_terminal_override_ignores_waiting(self):
         # Even a waiting state (would otherwise be ?) yields ✅, not ?.
-        result = compose({"current_phase": "complete"}, STATE_WAITING)
-        assert result.startswith(f"{ICON_TERMINAL} ")
-        assert ICON_WAITING not in result.split(" ")[0]
+        result = compose({'current_phase': 'complete'}, STATE_WAITING)
+        assert result.startswith(f'{ICON_TERMINAL} ')
+        assert ICON_WAITING not in result.split(' ')[0]
 
     def test_terminal_override_ignores_done(self):
-        result = compose({"current_phase": "archived"}, STATE_DONE)
-        assert result.startswith(f"{ICON_TERMINAL} ")
+        result = compose({'current_phase': 'archived'}, STATE_DONE)
+        assert result.startswith(f'{ICON_TERMINAL} ')
 
     def test_terminal_override_beats_icon_override(self):
         # The ✅ terminal override wins even over an explicit icon_override.
-        result = compose({"current_phase": "complete"}, None, icon_override="⚑")
-        assert result == f"{ICON_TERMINAL} pm:Completed"
+        result = compose({'current_phase': 'complete'}, None, icon_override='⚑')
+        assert result == f'{ICON_TERMINAL} pm:Completed'
 
     def test_completed_body_with_short_description(self):
         result = compose(
-            {"current_phase": "complete", "short_description": "all done"},
+            {'current_phase': 'complete', 'short_description': 'all done'},
             STATE_ACTIVE,
         )
-        assert result == f"{ICON_TERMINAL} pm:Completed:all done"
+        assert result == f'{ICON_TERMINAL} pm:Completed:all done'
 
     def test_process_icons_never_appear_for_terminal(self):
         # Neither ➤ nor ? ever leads a terminal-phase title.
         for state in (STATE_ACTIVE, STATE_WAITING, STATE_BUSY, STATE_DONE):
-            result = compose({"current_phase": "complete"}, state)
-            leading_icon = result.split(" ", 1)[0]
+            result = compose({'current_phase': 'complete'}, state)
+            leading_icon = result.split(' ', 1)[0]
             assert leading_icon == ICON_TERMINAL
             assert leading_icon not in (ICON_ACTIVE, ICON_WAITING, ICON_DONE)
 
@@ -429,10 +427,10 @@ class TestComposeTerminalOverride:
 # caught (cross-checked against the map below). The two terminal phases that
 # force the ✅ icon and the Completed body.
 _ALL_TOKEN_STATES = [
-    ("lock-waiting", GLYPH_LOCK_WAITING),
-    ("lock-owned", GLYPH_LOCK_OWNED),
+    ('lock-waiting', GLYPH_LOCK_WAITING),
+    ('lock-owned', GLYPH_LOCK_OWNED),
 ]
-_TERMINAL_PHASES = ["complete", "archived"]
+_TERMINAL_PHASES = ['complete', 'archived']
 
 
 class TestComposeTerminalGlyphSuppression:
@@ -454,14 +452,14 @@ class TestComposeTerminalGlyphSuppression:
         for phase in _TERMINAL_PHASES:
             for token, glyph in _ALL_TOKEN_STATES:
                 result = compose(
-                    {"current_phase": phase, "title_token": _token(token)},
+                    {'current_phase': phase, 'title_token': _token(token)},
                     STATE_DONE,
                 )
                 # No glyph segment: icon + body only; glyph never appears.
-                assert result == f"{ICON_TERMINAL} pm:Completed", (phase, token)
+                assert result == f'{ICON_TERMINAL} pm:Completed', (phase, token)
                 assert glyph not in result, (phase, token)
                 # Exactly one space — two parts (icon + body), no glyph segment.
-                assert result.count(" ") == 1, (phase, token)
+                assert result.count(' ') == 1, (phase, token)
 
     def test_glyph_suppressed_with_short_description(self):
         # Suppression holds even when a short_description widens the body.
@@ -469,13 +467,13 @@ class TestComposeTerminalGlyphSuppression:
             for token, glyph in _ALL_TOKEN_STATES:
                 result = compose(
                     {
-                        "current_phase": phase,
-                        "short_description": "wrap up",
-                        "title_token": _token(token),
+                        'current_phase': phase,
+                        'short_description': 'wrap up',
+                        'title_token': _token(token),
                     },
                     STATE_ACTIVE,
                 )
-                assert result == f"{ICON_TERMINAL} pm:Completed:wrap up", (phase, token)
+                assert result == f'{ICON_TERMINAL} pm:Completed:wrap up', (phase, token)
                 assert glyph not in result, (phase, token)
 
     def test_glyph_suppressed_regardless_of_process_state(self):
@@ -485,10 +483,8 @@ class TestComposeTerminalGlyphSuppression:
         for phase in _TERMINAL_PHASES:
             for token, glyph in _ALL_TOKEN_STATES:
                 for state in states:
-                    result = compose(
-                        {"current_phase": phase, "title_token": _token(token)}, state
-                    )
-                    assert result == f"{ICON_TERMINAL} pm:Completed", (
+                    result = compose({'current_phase': phase, 'title_token': _token(token)}, state)
+                    assert result == f'{ICON_TERMINAL} pm:Completed', (
                         phase,
                         token,
                         state,
@@ -506,10 +502,10 @@ class TestComposeActiveGlyphStillRenders:
     def test_active_phase_glyph_renders(self):
         for token, glyph in _ALL_TOKEN_STATES:
             result = compose(
-                {"current_phase": "5-execute", "title_token": _token(token)},
+                {'current_phase': '5-execute', 'title_token': _token(token)},
                 STATE_ACTIVE,
             )
-            assert result == f"{ICON_ACTIVE} {glyph} pm:5-execute", token
+            assert result == f'{ICON_ACTIVE} {glyph} pm:5-execute', token
             assert glyph in result, token
 
 
@@ -531,19 +527,19 @@ class TestComposeBuildBusyIconOverride:
     def test_build_busy_active_phase_forces_build_icon(self):
         # Active phase + build-busy token → 🔨 in the icon slot, plain body.
         result = compose(
-            {"current_phase": "5-execute", "title_token": _token(TOKEN_BUILD_BUSY)},
+            {'current_phase': '5-execute', 'title_token': _token(TOKEN_BUILD_BUSY)},
             STATE_ACTIVE,
         )
-        assert result == f"{ICON_BUILD} pm:5-execute"
+        assert result == f'{ICON_BUILD} pm:5-execute'
 
     def test_build_busy_emits_no_glyph_segment(self):
         # The override adds NO prepended glyph: exactly icon + body, one space.
         result = compose(
-            {"current_phase": "5-execute", "title_token": _token(TOKEN_BUILD_BUSY)},
+            {'current_phase': '5-execute', 'title_token': _token(TOKEN_BUILD_BUSY)},
             STATE_ACTIVE,
         )
-        assert result == f"{ICON_BUILD} pm:5-execute"
-        assert result.count(" ") == 1
+        assert result == f'{ICON_BUILD} pm:5-execute'
+        assert result.count(' ') == 1
         # Neither lock glyph leaks into a build-busy title.
         assert GLYPH_LOCK_WAITING not in result
         assert GLYPH_LOCK_OWNED not in result
@@ -551,25 +547,25 @@ class TestComposeBuildBusyIconOverride:
     def test_build_busy_combines_with_short_description(self):
         result = compose(
             {
-                "current_phase": "5-execute",
-                "short_description": "run verify",
-                "title_token": _token(TOKEN_BUILD_BUSY),
+                'current_phase': '5-execute',
+                'short_description': 'run verify',
+                'title_token': _token(TOKEN_BUILD_BUSY),
             },
             STATE_ACTIVE,
         )
-        assert result == f"{ICON_BUILD} pm:5-execute:run verify"
+        assert result == f'{ICON_BUILD} pm:5-execute:run verify'
 
     def test_build_busy_supersedes_process_state_icon(self):
         # 🔨 wins over the process-state icon for every process state — the
         # build override is state-agnostic on an active phase.
         for state in (STATE_ACTIVE, STATE_WAITING, STATE_BUSY, STATE_DONE, None):
             result = compose(
-                {"current_phase": "2-refine", "title_token": _token(TOKEN_BUILD_BUSY)},
+                {'current_phase': '2-refine', 'title_token': _token(TOKEN_BUILD_BUSY)},
                 state,
             )
-            assert result == f"{ICON_BUILD} pm:2-refine", state
+            assert result == f'{ICON_BUILD} pm:2-refine', state
             # The process icons never lead a build-busy title.
-            leading_icon = result.split(" ", 1)[0]
+            leading_icon = result.split(' ', 1)[0]
             assert leading_icon == ICON_BUILD, state
             assert leading_icon not in (
                 ICON_ACTIVE,
@@ -582,42 +578,39 @@ class TestComposeBuildBusyIconOverride:
         # Precedence build-busy 🔨 > icon_override: the explicit push-mode icon
         # is overridden by the build-busy token on an active phase.
         result = compose(
-            {"current_phase": "2-refine", "title_token": _token(TOKEN_BUILD_BUSY)},
+            {'current_phase': '2-refine', 'title_token': _token(TOKEN_BUILD_BUSY)},
             None,
-            icon_override="⚑",
+            icon_override='⚑',
         )
-        assert result == f"{ICON_BUILD} pm:2-refine"
+        assert result == f'{ICON_BUILD} pm:2-refine'
 
     def test_terminal_phase_suppresses_build_busy_override(self):
         # Precedence terminal ✅ > build-busy 🔨: a finished plan forces ✅ even
         # when the persisted token is build-busy — the 🔨 override is suppressed
         # and the Completed body renders.
-        for phase in ("complete", "archived"):
+        for phase in ('complete', 'archived'):
             result = compose(
-                {"current_phase": phase, "title_token": _token(TOKEN_BUILD_BUSY)},
+                {'current_phase': phase, 'title_token': _token(TOKEN_BUILD_BUSY)},
                 STATE_ACTIVE,
             )
-            assert result == f"{ICON_TERMINAL} pm:Completed", phase
+            assert result == f'{ICON_TERMINAL} pm:Completed', phase
             assert ICON_BUILD not in result, phase
 
     def test_terminal_phase_suppresses_build_busy_with_short_description(self):
         result = compose(
             {
-                "current_phase": "complete",
-                "short_description": "wrap up",
-                "title_token": _token(TOKEN_BUILD_BUSY),
+                'current_phase': 'complete',
+                'short_description': 'wrap up',
+                'title_token': _token(TOKEN_BUILD_BUSY),
             },
             STATE_BUSY,
         )
-        assert result == f"{ICON_TERMINAL} pm:Completed:wrap up"
+        assert result == f'{ICON_TERMINAL} pm:Completed:wrap up'
         assert ICON_BUILD not in result
 
     def test_build_busy_noop_when_phase_missing(self):
         # No body → None even when build-busy is set (true no-op dominates).
-        assert (
-            compose({"current_phase": "", "title_token": _token(TOKEN_BUILD_BUSY)}, STATE_ACTIVE)
-            is None
-        )
+        assert compose({'current_phase': '', 'title_token': _token(TOKEN_BUILD_BUSY)}, STATE_ACTIVE) is None
 
 
 # =============================================================================
@@ -632,19 +625,19 @@ class TestComposeNoOp:
         assert compose({}, STATE_ACTIVE) is None
 
     def test_empty_phase_returns_none(self):
-        assert compose({"current_phase": ""}, STATE_ACTIVE) is None
+        assert compose({'current_phase': ''}, STATE_ACTIVE) is None
 
     def test_none_phase_returns_none(self):
-        assert compose({"current_phase": None}, STATE_ACTIVE) is None
+        assert compose({'current_phase': None}, STATE_ACTIVE) is None
 
     def test_non_string_phase_returns_none(self):
-        assert compose({"current_phase": 5}, STATE_ACTIVE) is None
+        assert compose({'current_phase': 5}, STATE_ACTIVE) is None
 
     def test_noop_ignores_token_and_state(self):
         # No body → None even when a token and a done state are present.
         assert (
             compose(
-                {"current_phase": "", "title_token": _token("lock-owned")},
+                {'current_phase': '', 'title_token': _token('lock-owned')},
                 STATE_DONE,
             )
             is None
@@ -661,9 +654,9 @@ class TestPurity:
 
     def test_deterministic_repeated_calls(self):
         state = {
-            "current_phase": "5-execute",
-            "short_description": "stable",
-            "title_token": _token("lock-waiting"),
+            'current_phase': '5-execute',
+            'short_description': 'stable',
+            'title_token': _token('lock-waiting'),
         }
         first = compose(state, STATE_ACTIVE)
         second = compose(state, STATE_ACTIVE)
@@ -672,9 +665,9 @@ class TestPurity:
 
     def test_input_dict_not_mutated(self):
         state = {
-            "current_phase": "5-execute",
-            "short_description": "keep me",
-            "title_token": _token("lock-owned"),
+            'current_phase': '5-execute',
+            'short_description': 'keep me',
+            'title_token': _token('lock-owned'),
         }
         snapshot = dict(state)
         compose(state, STATE_DONE)

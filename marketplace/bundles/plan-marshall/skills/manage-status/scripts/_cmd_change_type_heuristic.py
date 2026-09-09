@@ -35,50 +35,129 @@ _CONFIDENCE_FLOOR = 0.70
 # Keyword tables — taken from detect-change-type.md § Change-Type Vocabulary.
 # All keywords are lowercased; matching is case-insensitive word-boundary.
 _KEYWORDS: dict[str, frozenset[str]] = {
-    'analysis': frozenset({
-        'analyze', 'analyse', 'investigate', 'understand', 'research',
-        'examine', 'study', 'review',
-    }),
-    'feature': frozenset({
-        'add', 'create', 'new', 'implement', 'build', 'introduce',
-    }),
-    'enhancement': frozenset({
-        'improve', 'enhance', 'extend', 'update', 'upgrade',
-    }),
-    'bug_fix': frozenset({
-        'bug', 'error', 'crash', 'exception', 'failure', 'broken',
-        'incorrect', 'regression',
-    }),
-    'tech_debt': frozenset({
-        'refactor', 'restructure', 'cleanup', 'migrate', 'deprecation',
-        'deprecated', 'outdated', 'modernize', 'obsolete', 'warnings',
-        'legacy',
-    }),
-    'verification': frozenset({
-        'verify', 'validate', 'confirm', 'ensure', 'audit',
-    }),
+    'analysis': frozenset(
+        {
+            'analyze',
+            'analyse',
+            'investigate',
+            'understand',
+            'research',
+            'examine',
+            'study',
+            'review',
+        }
+    ),
+    'feature': frozenset(
+        {
+            'add',
+            'create',
+            'new',
+            'implement',
+            'build',
+            'introduce',
+        }
+    ),
+    'enhancement': frozenset(
+        {
+            'improve',
+            'enhance',
+            'extend',
+            'update',
+            'upgrade',
+        }
+    ),
+    'bug_fix': frozenset(
+        {
+            'bug',
+            'error',
+            'crash',
+            'exception',
+            'failure',
+            'broken',
+            'incorrect',
+            'regression',
+        }
+    ),
+    'tech_debt': frozenset(
+        {
+            'refactor',
+            'restructure',
+            'cleanup',
+            'migrate',
+            'deprecation',
+            'deprecated',
+            'outdated',
+            'modernize',
+            'obsolete',
+            'warnings',
+            'legacy',
+        }
+    ),
+    'verification': frozenset(
+        {
+            'verify',
+            'validate',
+            'confirm',
+            'ensure',
+            'audit',
+        }
+    ),
 }
 
 # Tech-debt object disambiguation for the ``fix`` verb.
 # ``fix`` + bug objects → bug_fix; ``fix`` + tech_debt objects → tech_debt.
-_TECH_DEBT_OBJECTS: frozenset[str] = frozenset({
-    'deprecation', 'deprecations', 'deprecated', 'outdated',
-    'warnings', 'warning', 'obsolete', 'legacy', 'cleanup',
-})
-_BUG_OBJECTS: frozenset[str] = frozenset({
-    'bug', 'bugs', 'error', 'errors', 'crash', 'crashes', 'exception',
-    'exceptions', 'failure', 'failures', 'broken', 'incorrect',
-    'regression', 'regressions',
-})
+_TECH_DEBT_OBJECTS: frozenset[str] = frozenset(
+    {
+        'deprecation',
+        'deprecations',
+        'deprecated',
+        'outdated',
+        'warnings',
+        'warning',
+        'obsolete',
+        'legacy',
+        'cleanup',
+    }
+)
+_BUG_OBJECTS: frozenset[str] = frozenset(
+    {
+        'bug',
+        'bugs',
+        'error',
+        'errors',
+        'crash',
+        'crashes',
+        'exception',
+        'exceptions',
+        'failure',
+        'failures',
+        'broken',
+        'incorrect',
+        'regression',
+        'regressions',
+    }
+)
 
 # Action verbs that flip ``analysis`` to its implementation cousin under
 # the compound-intent guard (see detect-change-type.md § Step 4).
-_COMPOUND_INTENT_VERBS: frozenset[str] = frozenset({
-    'fix', 'implement', 'improve', 'update', 'create', 'refactor',
-    'migrate', 'remove', 'restructure', 'add', 'extend', 'introduce',
-})
+_COMPOUND_INTENT_VERBS: frozenset[str] = frozenset(
+    {
+        'fix',
+        'implement',
+        'improve',
+        'update',
+        'create',
+        'refactor',
+        'migrate',
+        'remove',
+        'restructure',
+        'add',
+        'extend',
+        'introduce',
+    }
+)
 
-_TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z_-]+")
+_TOKEN_RE = re.compile(r'[A-Za-z][A-Za-z_-]+')
 
 
 def _tokenize(text: str) -> list[str]:

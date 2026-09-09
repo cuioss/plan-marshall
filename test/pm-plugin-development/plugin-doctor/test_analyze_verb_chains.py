@@ -918,6 +918,4 @@ def test_analyzer_source_has_no_inline_marker_references():
         '_analyze_verb_chains.py',
     ).read_text(encoding='utf-8')
     for marker in ('_SUPPRESS_MARKER', '_IGNORE_MARKER', 'doctor-ignore'):
-        assert marker not in source, (
-            f'Retired inline marker {marker!r} still present in analyzer source'
-        )
+        assert marker not in source, f'Retired inline marker {marker!r} still present in analyzer source'

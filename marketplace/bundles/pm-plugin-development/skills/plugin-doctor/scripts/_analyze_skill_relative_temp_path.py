@@ -106,9 +106,7 @@ _BASH_FENCE_INFO_STRINGS = frozenset({'bash', 'sh'})
 # to the next whitespace). The worktree-absolute form
 # ``-F {worktree_path}/.plan/temp/...`` does NOT match because the token after
 # ``-F`` then starts with ``{worktree_path}/`` rather than ``.plan/temp/``.
-_GIT_COMMIT_RELATIVE_TEMP_RE = re.compile(
-    r'git\s+-C\s+\S+.*\bcommit\b.*\s-F\s+(\.plan/temp/\S+)'
-)
+_GIT_COMMIT_RELATIVE_TEMP_RE = re.compile(r'git\s+-C\s+\S+.*\bcommit\b.*\s-F\s+(\.plan/temp/\S+)')
 
 
 # ---------------------------------------------------------------------------

@@ -124,9 +124,7 @@ STREAM_END_KIND = 'finding'
 #: The default body a ``close-stream`` marker carries when no ``--reason`` is
 #: supplied. A non-empty body keeps the marker a fully-valid message that needs
 #: no message-class branch in :func:`validate_envelope`.
-STREAM_END_DEFAULT_NOTE = (
-    'Sender stream closed; no further messages will be filed on this stream.'
-)
+STREAM_END_DEFAULT_NOTE = 'Sender stream closed; no further messages will be filed on this stream.'
 
 #: The revision counter and amendment-timestamp header fields. Neither is an
 #: enum — they are the attributes an ``amend`` stamps on a still-``live``
@@ -189,18 +187,14 @@ _MESSAGE_NAME_RE = re.compile(r'^(?P<sender>.+?)-(?P<seq>\d{3,})\.md$')
 #: :func:`epic_spec_parser.plan_id_of` reads the same corpus through. Composing
 #: from that binding rather than carrying a second copy is what keeps this
 #: pointer grammar and the corpus parser from drifting apart.
-_SOURCE_ID_RE = re.compile(
-    r'^\.plan/local/orchestrator/(?P<slug>[^/]+)/plans/' + PLAN_ID_SEGMENT + r'[^/]*\.md$'
-)
+_SOURCE_ID_RE = re.compile(r'^\.plan/local/orchestrator/(?P<slug>[^/]+)/plans/' + PLAN_ID_SEGMENT + r'[^/]*\.md$')
 
 #: Shape-only sibling of :data:`_SOURCE_ID_RE` — any markdown file directly
 #: under an epic's ``plans/`` directory, whatever its id segment. It is the
 #: predicate that separates "not an orchestrator pointer at all" from
 #: "orchestrator pointer whose id segment matches none of the accepted forms",
 #: which is the case that previously reclassified silently.
-_ORCHESTRATOR_PLANS_RE = re.compile(
-    r'^\.plan/local/orchestrator/(?P<slug>[^/]+)/plans/[^/]+\.md$'
-)
+_ORCHESTRATOR_PLANS_RE = re.compile(r'^\.plan/local/orchestrator/(?P<slug>[^/]+)/plans/[^/]+\.md$')
 
 #: The closed vocabulary :func:`classify_source_id` reports in its ``detection``
 #: field. Consumers assert against this set rather than re-listing literals.
@@ -306,9 +300,7 @@ def _running_plan_ids(epic_root: Path) -> set[str]:
     if not isinstance(rows, list):
         return set()
     return {
-        str(row.get('id', ''))
-        for row in rows
-        if isinstance(row, dict) and str(row.get('status', '')) == RUNNING_STATUS
+        str(row.get('id', '')) for row in rows if isinstance(row, dict) and str(row.get('status', '')) == RUNNING_STATUS
     }
 
 
@@ -678,11 +670,7 @@ def _count_archived(archive_dir: Path) -> int:
             if _MESSAGE_NAME_RE.match(entry.name) is not None:
                 total += 1
         elif entry.is_dir():
-            total += sum(
-                1
-                for sub in entry.iterdir()
-                if sub.is_file() and _MESSAGE_NAME_RE.match(sub.name) is not None
-            )
+            total += sum(1 for sub in entry.iterdir() if sub.is_file() and _MESSAGE_NAME_RE.match(sub.name) is not None)
     return total
 
 
@@ -878,13 +866,15 @@ LANDING_COULD_NOT_READ_SENTINELS: frozenset[str] = frozenset({'unknown'})
 #: :func:`check_landing_completeness` fail-closes on any value other than
 #: :data:`LANDING_FACTS_SCHEMA` before the required-key sweep runs, so a sentinel
 #: of either class is already rejected there by the stricter check.
-LANDING_SENTINEL_REJECTING_KEYS: frozenset[str] = frozenset({
-    'plan_id',
-    'deliverables_total',
-    'deliverables_done',
-    'total_tokens',
-    'steps',
-})
+LANDING_SENTINEL_REJECTING_KEYS: frozenset[str] = frozenset(
+    {
+        'plan_id',
+        'deliverables_total',
+        'deliverables_done',
+        'total_tokens',
+        'steps',
+    }
+)
 
 
 def _is_unsupplied(key: str, facts: dict[str, str]) -> bool:
@@ -1124,7 +1114,7 @@ def cmd_inbox_write(args: Any) -> dict[str, Any]:
             'stream_closed',
             f'sender {args.sender_id!r} closed its stream in epic {args.slug!r} '
             f'with marker {closed_by}; a closed stream accepts no further '
-            'messages. The marker is the sender\'s own declaration that it will '
+            "messages. The marker is the sender's own declaration that it will "
             'send no more, and the drain reports it as such — writing after it '
             'would contradict a signal the orchestrator has already acted on.',
             slug=args.slug,
@@ -1174,9 +1164,7 @@ def cmd_inbox_write(args: Any) -> dict[str, Any]:
             f'--payload-file is empty: {payload_path}',
             slug=args.slug,
         )
-    text = compose_envelope(
-        args.sender_type, args.sender_id, args.slug, args.kind, payload_body
-    )
+    text = compose_envelope(args.sender_type, args.sender_id, args.slug, args.kind, payload_body)
     message_path = allocate_message_path(root / INBOX_SUBDIR, args.sender_id, text)
     return {
         'status': 'success',
@@ -1228,12 +1216,8 @@ def cmd_inbox_validate(args: Any) -> dict[str, Any]:
         )
     path, location = resolve_message_path(_inbox_dir(args.slug), name)
     if location == 'missing':
-        return _error(
-            'file_not_found', f'inbox message not found: {path}', slug=args.slug
-        )
-    ok, error_code, header = validate_envelope(
-        path.read_text(encoding='utf-8'), expected_epic=args.slug, filename=name
-    )
+        return _error('file_not_found', f'inbox message not found: {path}', slug=args.slug)
+    ok, error_code, header = validate_envelope(path.read_text(encoding='utf-8'), expected_epic=args.slug, filename=name)
     if not ok:
         return _error(
             error_code or 'invalid_envelope',
@@ -1354,16 +1338,12 @@ def cmd_inbox_list(args: Any) -> dict[str, Any]:
     # nobody has read, so reading it as empty claims a completed drain over
     # messages the drain declined. See ``standards/inbox-envelope.md`` § Drain
     # semantics, which is the same table for the drain's own reader.
-    live_count = sum(
-        1 for row in messages if row['valid'] and row['lifecycle'] == LIFECYCLE_LIVE
-    )
+    live_count = sum(1 for row in messages if row['valid'] and row['lifecycle'] == LIFECYCLE_LIVE)
     closed_senders = sorted(
         {
             row['sender_id']
             for row in messages
-            if row['valid']
-            and row['lifecycle'] == LIFECYCLE_STREAM_END
-            and row['sender_id']
+            if row['valid'] and row['lifecycle'] == LIFECYCLE_STREAM_END and row['sender_id']
         }
     )
     return {
@@ -1381,9 +1361,7 @@ def cmd_inbox_list(args: Any) -> dict[str, Any]:
     }
 
 
-def _archive_success(
-    slug: str, name: str, dest: Path, already_archived: bool
-) -> dict[str, Any]:
+def _archive_success(slug: str, name: str, dest: Path, already_archived: bool) -> dict[str, Any]:
     """Build the ``inbox-archive`` success envelope."""
     return {
         'status': 'success',
@@ -1463,8 +1441,7 @@ def cmd_inbox_archive(args: Any) -> dict[str, Any]:
         if not _is_bare_filename(dest_name):
             return _error(
                 'invalid_message_name',
-                '--as-name must be a bare filename inside inbox/archive/, '
-                f'got: {dest_name}',
+                f'--as-name must be a bare filename inside inbox/archive/, got: {dest_name}',
                 slug=args.slug,
                 message_name=name,
             )
@@ -1483,8 +1460,7 @@ def cmd_inbox_archive(args: Any) -> dict[str, Any]:
     if not root.is_dir():
         return _error(
             'epic_not_found',
-            f'epic {args.slug!r} has no active tree at {root}; '
-            'refusing to archive inside an archived epic',
+            f'epic {args.slug!r} has no active tree at {root}; refusing to archive inside an archived epic',
             slug=args.slug,
         )
     inbox_dir = root / INBOX_SUBDIR
@@ -1505,8 +1481,7 @@ def cmd_inbox_archive(args: Any) -> dict[str, Any]:
         if sender_dir is None:
             return _error(
                 'invalid_message_name',
-                f'the sender segment of {name!r} is not safe as an archive '
-                'directory name',
+                f'the sender segment of {name!r} is not safe as an archive directory name',
                 slug=args.slug,
                 message_name=name,
             )
@@ -1559,8 +1534,7 @@ def cmd_inbox_archive(args: Any) -> dict[str, Any]:
         if distinct:
             return _error(
                 'archive_conflict',
-                f'inbox message {name} is already archived at {dest}; '
-                'refusing to clobber the audit record',
+                f'inbox message {name} is already archived at {dest}; refusing to clobber the audit record',
                 slug=args.slug,
                 message_name=name,
                 archived_to=str(dest),
@@ -1609,9 +1583,7 @@ def _read_payload_body(payload_file: str) -> tuple[str | None, dict[str, Any] | 
     return body, None
 
 
-def _resolve_live_message(
-    slug: str, name: str
-) -> tuple[Path | None, dict[str, str], str, dict[str, Any] | None]:
+def _resolve_live_message(slug: str, name: str) -> tuple[Path | None, dict[str, str], str, dict[str, Any] | None]:
     """Resolve a bare message name to a QUEUED, valid message for mutation.
 
     The shared front half of ``amend`` and ``supersede``: both mutate a message
@@ -1629,31 +1601,51 @@ def _resolve_live_message(
     """
     root = _mutate_epic_root(slug)
     if not root.is_dir():
-        return None, {}, '', {
-            'error': 'epic_not_found',
-            'message': f'epic {slug!r} has no active tree at {root}',
-        }
+        return (
+            None,
+            {},
+            '',
+            {
+                'error': 'epic_not_found',
+                'message': f'epic {slug!r} has no active tree at {root}',
+            },
+        )
     path, location = resolve_message_path(root / INBOX_SUBDIR, name)
     if location == 'missing':
-        return None, {}, '', {
-            'error': 'file_not_found',
-            'message': f'inbox message not found: {path}',
-        }
+        return (
+            None,
+            {},
+            '',
+            {
+                'error': 'file_not_found',
+                'message': f'inbox message not found: {path}',
+            },
+        )
     if location != 'queued':
-        return None, {}, '', {
-            'error': 'not_live',
-            'message': (
-                f'inbox message {name} is {location}, not live; a consumed '
-                'message is past correcting through this surface'
-            ),
-        }
+        return (
+            None,
+            {},
+            '',
+            {
+                'error': 'not_live',
+                'message': (
+                    f'inbox message {name} is {location}, not live; a consumed '
+                    'message is past correcting through this surface'
+                ),
+            },
+        )
     text = path.read_text(encoding='utf-8')
     ok, error_code, header = validate_envelope(text, expected_epic=slug, filename=name)
     if not ok:
-        return None, header, '', {
-            'error': error_code or 'invalid_envelope',
-            'message': f'cannot mutate an invalid message: {error_code}',
-        }
+        return (
+            None,
+            header,
+            '',
+            {
+                'error': error_code or 'invalid_envelope',
+                'message': f'cannot mutate an invalid message: {error_code}',
+            },
+        )
     _header, body = _split_message(text)
     return path, dict(header), body, None
 
@@ -1792,8 +1784,7 @@ def cmd_inbox_supersede(args: Any) -> dict[str, Any]:
     if header.get(_LIFECYCLE_FIELD, LIFECYCLE_LIVE) == LIFECYCLE_STREAM_END:
         return _error(
             'not_supersedable',
-            f'inbox message {name} is a stream-end marker; a terminal control '
-            'marker cannot be superseded',
+            f'inbox message {name} is a stream-end marker; a terminal control marker cannot be superseded',
             slug=args.slug,
             message_name=name,
         )
@@ -2043,9 +2034,7 @@ def cmd_inbox_landing_check(args: Any) -> dict[str, Any]:
         )
     path, location = resolve_message_path(_inbox_dir(args.slug), name)
     if location == 'missing':
-        return _error(
-            'file_not_found', f'inbox message not found: {path}', slug=args.slug
-        )
+        return _error('file_not_found', f'inbox message not found: {path}', slug=args.slug)
     try:
         text = path.read_text(encoding='utf-8')
     except (OSError, UnicodeDecodeError) as exc:

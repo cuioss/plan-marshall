@@ -166,9 +166,7 @@ def test_apply_preset_preserves_sibling_phase6_knobs(plan_context):
     # The nested step param is preserved across the keyed-map rewrite (the
     # writer reads existing per-step params through `_steps_map` and carries
     # them over for steps the preset keeps).
-    assert _params_for(after['steps'], 'plan-marshall:automatic-review') == {
-        'review_bot_buffer_seconds': 300
-    }
+    assert _params_for(after['steps'], 'plan-marshall:automatic-review') == {'review_bot_buffer_seconds': 300}
 
 
 # =============================================================================
@@ -306,9 +304,7 @@ def test_apply_preset_overwrites_previous_preset(plan_context):
 def test_apply_preset_bogus_rejected_by_argparse(plan_context):
     create_marshal_json(plan_context.fixture_dir)
 
-    result = run_script(
-        SCRIPT_PATH, 'finalize-steps', 'apply-preset', '--preset', 'bogus'
-    )
+    result = run_script(SCRIPT_PATH, 'finalize-steps', 'apply-preset', '--preset', 'bogus')
 
     assert not result.success, 'argparse should reject unknown preset'
     combined = (result.stdout + result.stderr).lower()
@@ -360,18 +356,12 @@ def test_apply_preset_persists_steps_in_ascending_frontmatter_order(plan_context
     resolved, err = _resolve_step_orders(persisted_ids, 'phase-6-finalize')
     assert err is None
     orders = [order for _, order in resolved]
-    assert orders == sorted(orders), (
-        f'persisted phase-6-finalize.steps are not ascending by order: {orders}'
-    )
+    assert orders == sorted(orders), f'persisted phase-6-finalize.steps are not ascending by order: {orders}'
     # Concretely: plan-retrospective (995) precedes record-metrics (998),
     # which precedes archive-plan (1100, the terminus) — record-metrics is the last
     # token-accounting step, after retrospective and before the read-only tail.
-    assert persisted_ids.index('plan-marshall:plan-retrospective') < persisted_ids.index(
-        'default:record-metrics'
-    )
-    assert persisted_ids.index('default:record-metrics') < persisted_ids.index(
-        'default:archive-plan'
-    )
+    assert persisted_ids.index('plan-marshall:plan-retrospective') < persisted_ids.index('default:record-metrics')
+    assert persisted_ids.index('default:record-metrics') < persisted_ids.index('default:archive-plan')
 
 
 # =============================================================================
@@ -497,9 +487,7 @@ def test_set_lane_with_plan_id_writes_the_plan_local_map(plan_context):
     status_path = _seed_status(plan_context, 'plan-local-write')
 
     # Act
-    result = cmd_finalize_steps_set_lane(
-        _set_lane_args(_LANE_STEP_ID, 'full', plan_id='plan-local-write')
-    )
+    result = cmd_finalize_steps_set_lane(_set_lane_args(_LANE_STEP_ID, 'full', plan_id='plan-local-write'))
 
     # Assert
     assert result['status'] == 'success'
@@ -559,9 +547,7 @@ def test_set_lane_plan_local_preserves_sibling_params_on_the_step(plan_context):
     cmd_finalize_steps_set_lane(_set_lane_args(_LANE_STEP_ID, 'full', plan_id='sibling-params'))
 
     # Assert
-    assert _overrides(status_path) == {
-        _LANE_STEP_ID: {'review_bot_buffer_seconds': 42, 'lane': 'full'}
-    }
+    assert _overrides(status_path) == {_LANE_STEP_ID: {'review_bot_buffer_seconds': 42, 'lane': 'full'}}
 
 
 def test_set_lane_plan_local_preserves_unrelated_status_metadata(plan_context):
@@ -604,15 +590,11 @@ def test_set_lane_plan_local_refuses_to_overwrite_a_malformed_override_map(plan_
     """
     # Arrange
     create_marshal_json(plan_context.fixture_dir)
-    status_path = _seed_status(
-        plan_context, 'malformed-map', metadata={'finalize_step_overrides': ['not', 'a', 'map']}
-    )
+    status_path = _seed_status(plan_context, 'malformed-map', metadata={'finalize_step_overrides': ['not', 'a', 'map']})
     before = status_path.read_bytes()
 
     # Act
-    result = cmd_finalize_steps_set_lane(
-        _set_lane_args(_LANE_STEP_ID, 'off', plan_id='malformed-map')
-    )
+    result = cmd_finalize_steps_set_lane(_set_lane_args(_LANE_STEP_ID, 'off', plan_id='malformed-map'))
 
     # Assert — named error, and the malformed file is left exactly as found.
     assert result['status'] == 'error'
@@ -630,9 +612,7 @@ def test_set_lane_plan_local_refuses_to_overwrite_a_malformed_param_object(plan_
     before = status_path.read_bytes()
 
     # Act
-    result = cmd_finalize_steps_set_lane(
-        _set_lane_args(_LANE_STEP_ID, 'full', plan_id='malformed-params')
-    )
+    result = cmd_finalize_steps_set_lane(_set_lane_args(_LANE_STEP_ID, 'full', plan_id='malformed-params'))
 
     # Assert
     assert result['status'] == 'error'
@@ -652,9 +632,7 @@ def test_set_lane_invalid_plan_id_does_not_fall_through_to_the_project_channel(p
     before = marshal_path.read_bytes()
 
     # Act — a traversal-shaped id the plan-id validator rejects.
-    result = cmd_finalize_steps_set_lane(
-        _set_lane_args(_LANE_STEP_ID, 'off', plan_id='../../etc/passwd')
-    )
+    result = cmd_finalize_steps_set_lane(_set_lane_args(_LANE_STEP_ID, 'off', plan_id='../../etc/passwd'))
 
     # Assert
     assert result['status'] == 'error'
@@ -682,9 +660,7 @@ def test_set_lane_plan_local_still_validates_the_step_id(plan_context):
     status_path = _seed_status(plan_context, 'bad-step')
 
     # Act
-    result = cmd_finalize_steps_set_lane(
-        _set_lane_args('default:not-a-real-step', 'off', plan_id='bad-step')
-    )
+    result = cmd_finalize_steps_set_lane(_set_lane_args('default:not-a-real-step', 'off', plan_id='bad-step'))
 
     # Assert
     assert result['status'] == 'error'

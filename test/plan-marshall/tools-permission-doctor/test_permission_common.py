@@ -179,9 +179,7 @@ class TestProjectSettingsReadPreference:
             'only-the-shared-file-is-present',
         ],
     )
-    def test_read_path_prefers_settings_local_json(
-        self, tmp_path, monkeypatch, present_files, expected_name
-    ):
+    def test_read_path_prefers_settings_local_json(self, tmp_path, monkeypatch, present_files, expected_name):
         """Which files exist in .claude/ decides which one the read path names."""
         claude_dir = self._project(tmp_path, monkeypatch, *present_files)
 

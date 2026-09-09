@@ -22,7 +22,6 @@ replacing the paths with absent ones and asserting ``files_exist`` goes
 non-zero.
 """
 
-
 from __future__ import annotations
 
 import json
@@ -69,9 +68,7 @@ is_glob = _closure.is_glob
 cmd_qgate_mechanical = _qgate.cmd_qgate_mechanical
 
 
-_parsing = load_script_module(
-    'plan-marshall', 'manage-solution-outline', '_plan_parsing.py', '_plan_parsing_closure'
-)
+_parsing = load_script_module('plan-marshall', 'manage-solution-outline', '_plan_parsing.py', '_plan_parsing_closure')
 
 
 extract_deliverables = _parsing.extract_deliverables
@@ -192,9 +189,7 @@ def _task(
         'title': title,
         'profile': profile,
         'deliverable': deliverable,
-        'steps': [
-            {'number': i + 1, 'target': t, 'intent': intent} for i, t in enumerate(targets)
-        ],
+        'steps': [{'number': i + 1, 'target': t, 'intent': intent} for i, t in enumerate(targets)],
     }
 
 
@@ -219,12 +214,8 @@ def _write_task_file(task_dir: Path, task: dict[str, Any]) -> None:
         'steps': [{**s, 'status': 'pending'} for s in task['steps']],
         'verification': {'commands': [], 'criteria': '', 'manual': False},
     }
-    (task_dir / f'TASK-{task["number"]:03d}.json').write_text(
-        json.dumps(record, indent=2), encoding='utf-8'
-    )
+    (task_dir / f'TASK-{task["number"]:03d}.json').write_text(json.dumps(record, indent=2), encoding='utf-8')
 
 
 def _write_outline(plan_dir: Path, body: str) -> None:
-    (plan_dir / 'solution_outline.md').write_text(
-        '# Solution Outline\n\n## Deliverables\n\n' + body, encoding='utf-8'
-    )
+    (plan_dir / 'solution_outline.md').write_text('# Solution Outline\n\n## Deliverables\n\n' + body, encoding='utf-8')

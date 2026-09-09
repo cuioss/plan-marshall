@@ -46,7 +46,7 @@ from pathlib import Path
 FACET_DEFINITIONS: dict[str, str] = {
     'comments': 'every `#` comment token, leading marker and surrounding whitespace stripped',
     'code_lines': 'every non-blank line that is not comment-only, whitespace-stripped',
-    'test_identities': "each test as `Class::name` (or `::name` at module level), from the AST",
+    'test_identities': 'each test as `Class::name` (or `::name` at module level), from the AST',
 }
 
 
@@ -217,22 +217,22 @@ def format_report(report: dict) -> str:
     """Render the report, leading with the definition the instrument applied."""
     out: list[str] = []
     out.append('fidelity-diff: multiset comparison of two refs')
-    out.append(f"  before_ref: {report['before_ref']}")
-    out.append(f"  after_ref:  {report['after_ref']}")
-    out.append(f"  paths covered: {', '.join(report['prefixes'])}")
-    out.append(f"  modules read: {len(report['before_paths'])} before, {len(report['after_paths'])} after")
+    out.append(f'  before_ref: {report["before_ref"]}')
+    out.append(f'  after_ref:  {report["after_ref"]}')
+    out.append(f'  paths covered: {", ".join(report["prefixes"])}')
+    out.append(f'  modules read: {len(report["before_paths"])} before, {len(report["after_paths"])} after')
     if report['unparsed']:
-        out.append(f"  unparsed (identities not collected): {', '.join(report['unparsed'])}")
+        out.append(f'  unparsed (identities not collected): {", ".join(report["unparsed"])}')
     out.append('  definition applied per facet:')
     for name, definition in FACET_DEFINITIONS.items():
         out.append(f'    {name}: {definition}')
     out.append('')
     for name, facet in report['facets'].items():
-        out.append(f"{name}: {facet['before_total']} before, {facet['after_total']} after")
-        out.append(f"  lost ({len(facet['lost'])}):")
+        out.append(f'{name}: {facet["before_total"]} before, {facet["after_total"]} after')
+        out.append(f'  lost ({len(facet["lost"])}):')
         for item in facet['lost']:
             out.append(f'    - {item}')
-        out.append(f"  gained ({len(facet['gained'])}):")
+        out.append(f'  gained ({len(facet["gained"])}):')
         for item in facet['gained']:
             out.append(f'    + {item}')
     return '\n'.join(out)

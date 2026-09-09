@@ -112,9 +112,7 @@ RULE_DESCRIPTORS = [
 # bare three-segment token (sibling-script cross-call string literals).
 # The notation segments are alphanumeric plus hyphen / underscore.
 _SEGMENT = r'[A-Za-z0-9][A-Za-z0-9_-]*'
-_NOTATION_RE = re.compile(
-    rf'(?P<bundle>{_SEGMENT}):(?P<skill>{_SEGMENT}):(?P<script>{_SEGMENT})'
-)
+_NOTATION_RE = re.compile(rf'(?P<bundle>{_SEGMENT}):(?P<skill>{_SEGMENT}):(?P<script>{_SEGMENT})')
 
 # Anchored form: a three-part notation immediately following the executor
 # invocation prefix. Anything matching here is unambiguously an executor
@@ -312,10 +310,7 @@ def _scan_file(path: Path, root: Path) -> list[dict]:
             flipped = _flip_separators(script)
             canonical_hint = ''
             if flipped != script and _script_exists(root, bundle, skill, flipped):
-                canonical_hint = (
-                    f'Use the hyphen/underscore-flipped form: '
-                    f'`{bundle}:{skill}:{flipped}`'
-                )
+                canonical_hint = f'Use the hyphen/underscore-flipped form: `{bundle}:{skill}:{flipped}`'
             else:
                 canonical_hint = (
                     f'No `{script}.py` exists under '

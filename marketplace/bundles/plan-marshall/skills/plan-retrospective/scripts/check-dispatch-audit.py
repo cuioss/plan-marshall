@@ -165,9 +165,7 @@ _GENERIC_SUBAGENT_RE = re.compile(r'Task:\s*general-purpose')
 
 #: The envelope a ``[DISPATCH]`` line's ``target=`` must name. Anything else is a
 #: dispatch routed through the wrong (or a generic) target.
-_ALLOWED_TARGETS = frozenset(
-    {'execution-context'} | {f'execution-context-level-{level}' for level in range(1, 8)}
-)
+_ALLOWED_TARGETS = frozenset({'execution-context'} | {f'execution-context-level-{level}' for level in range(1, 8)})
 
 #: Confidence downgrades below this dispatch/completion ratio when the channel is
 #: not provably sparse by the token comparison. Kept as a labelled constant so the
@@ -185,7 +183,7 @@ def _canon_step(step: str) -> str:
     prefix-free token row; a ``project:`` / ``bundle:skill`` key is already
     canonical and passes through unchanged.
     """
-    return step[len('default:'):] if step.startswith('default:') else step
+    return step[len('default:') :] if step.startswith('default:') else step
 
 
 def _search_kv(line: str, key: str) -> str | None:
@@ -574,9 +572,7 @@ def evaluate_shape_violation(
         # hand-written line is not by itself a discipline failure.
         resolve_callers = resolve_callers_by_role.get(role, set())
         foreign_caller_lines = sum(
-            1
-            for caller in dispatch_callers_by_role.get(role, [])
-            if caller not in resolve_callers
+            1 for caller in dispatch_callers_by_role.get(role, []) if caller not in resolve_callers
         )
         # SIGNED. A positive delta is the finding (a resolve with no emission); a
         # NEGATIVE delta is a fact, not a finding — more `[DISPATCH]` lines than
@@ -745,11 +741,7 @@ def evaluate_channel_completeness(
     # zero as a measured one. An all-zero input set is the state in which no
     # branch below has anything to say, and the predecessor's `else` handed it
     # the healthiest grade in the vocabulary.
-    if (
-        dispatch_line_count == 0
-        and completion_count == 0
-        and dispatched_step_count == 0
-    ):
+    if dispatch_line_count == 0 and completion_count == 0 and dispatched_step_count == 0:
         confidence = 'not_evaluated'
         reason = (
             'no finalize [DISPATCH] lines, no [STEP] Completed lines and no '
@@ -810,10 +802,7 @@ def evaluate_envelope_violations(
                 {
                     'severity': 'error',
                     'category': 'envelope_violation',
-                    'message': (
-                        f'[DISPATCH] line carries target={target} — not an '
-                        f'execution-context envelope'
-                    ),
+                    'message': (f'[DISPATCH] line carries target={target} — not an execution-context envelope'),
                 }
             )
     return {
@@ -840,10 +829,7 @@ def evaluate_generic_subagent(work_lines: list[str]) -> dict[str, Any]:
                 {
                     'severity': 'error',
                     'category': 'generic_subagent_violation',
-                    'message': (
-                        f'Direct Task: general-purpose invocation in work.log: '
-                        f'{line.strip()[:200]}'
-                    ),
+                    'message': (f'Direct Task: general-purpose invocation in work.log: {line.strip()[:200]}'),
                 }
             )
     return {
@@ -912,9 +898,7 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     envelope = evaluate_envelope_violations(dispatch_lines)
     generic = evaluate_generic_subagent(work_lines)
 
-    findings = (
-        shape['findings'] + coverage['findings'] + envelope['findings'] + generic['findings']
-    )
+    findings = shape['findings'] + coverage['findings'] + envelope['findings'] + generic['findings']
     # ⛔ Every entry is a STRUCTURED value carrying its own population and status,
     # never a bare integer. A reader consulting `counts.by_category` alone used to
     # see `shape_violation: 0` whether the check had evaluated a population and
@@ -959,9 +943,7 @@ def main() -> int:
     )
     subparsers = parser.add_subparsers(dest='command', required=True)
 
-    run_parser = subparsers.add_parser(
-        'run', help='Compute the dispatch-audit facts', allow_abbrev=False
-    )
+    run_parser = subparsers.add_parser('run', help='Compute the dispatch-audit facts', allow_abbrev=False)
     add_plan_id_arg(run_parser, required=False)
     run_parser.add_argument(
         '--archived-plan-path',

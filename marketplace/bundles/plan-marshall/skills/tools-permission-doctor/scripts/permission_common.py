@@ -47,6 +47,7 @@ def is_claude_target() -> bool:
     ``_claude_runtime_impl`` is on ``sys.path``.
     """
     from _claude_runtime_impl import ClaudeRuntime
+
     return isinstance(_active_runtime(), ClaudeRuntime)
 
 
@@ -157,9 +158,7 @@ def ensure_default_permissions(
     delegation is to the registry runtime, so a non-Claude target either
     returns an honest decline or implements its own default set.
     """
-    return _active_runtime().permission_ensure_defaults(
-        settings, str(Path(settings_path)), dry_run
-    )
+    return _active_runtime().permission_ensure_defaults(settings, str(Path(settings_path)), dry_run)
 
 
 def get_settings_path(target: str) -> Path:

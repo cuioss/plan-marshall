@@ -36,9 +36,7 @@ _analyze_shared = _load_module('_analyze_shared', '_analyze_shared.py')
 check_resolver_gap = _analyze_markdown.check_resolver_gap
 check_agent_glob_resolver_workaround = _analyze_shared.check_agent_glob_resolver_workaround
 _frontmatter_declares_glob_tool = _analyze_shared._frontmatter_declares_glob_tool
-_frontmatter_declares_forwards_tool_capabilities = (
-    _analyze_shared._frontmatter_declares_forwards_tool_capabilities
-)
+_frontmatter_declares_forwards_tool_capabilities = _analyze_shared._frontmatter_declares_forwards_tool_capabilities
 
 
 # =============================================================================
@@ -106,11 +104,7 @@ def test_resolver_gap_frontmatter_disable_suppresses_whole_file():
 def test_resolver_gap_frontmatter_disable_block_list_form():
     """The YAML block-list ``plugin-doctor-disable`` form is honored."""
     content = (
-        '---\n'
-        'plugin-doctor-disable:\n'
-        '  - skill-resolver-gap\n'
-        '---\n'
-        'Use Glob: marketplace/bundles/*/skills/*/SKILL.md\n'
+        '---\nplugin-doctor-disable:\n  - skill-resolver-gap\n---\nUse Glob: marketplace/bundles/*/skills/*/SKILL.md\n'
     )
     findings = check_resolver_gap(content, '/path/SKILL.md')
     assert findings == []
@@ -118,12 +112,7 @@ def test_resolver_gap_frontmatter_disable_block_list_form():
 
 def test_resolver_gap_frontmatter_disable_for_other_rule_does_not_suppress():
     """A disable list naming a DIFFERENT rule leaves the finding flagged."""
-    content = (
-        '---\n'
-        'plugin-doctor-disable: [some-other-rule]\n'
-        '---\n'
-        'Use Glob: marketplace/bundles/*/skills/*/SKILL.md\n'
-    )
+    content = '---\nplugin-doctor-disable: [some-other-rule]\n---\nUse Glob: marketplace/bundles/*/skills/*/SKILL.md\n'
     findings = check_resolver_gap(content, '/path/SKILL.md')
     assert len(findings) == 1
 
@@ -333,13 +322,7 @@ def test_body_marker_outside_frontmatter_does_not_exempt():
     authoritative signal.
     """
     content = (
-        '---\n'
-        'name: my-agent\n'
-        'description: Test\n'
-        'tools: Read, Glob\n'
-        '---\n'
-        '\n'
-        '# resolver-glob-exempt: standalone marker\n'
+        '---\nname: my-agent\ndescription: Test\ntools: Read, Glob\n---\n\n# resolver-glob-exempt: standalone marker\n'
     )
     findings = check_agent_glob_resolver_workaround('/path/agents/my.md', content)
     assert len(findings) == 1
@@ -421,6 +404,4 @@ def test_resolver_gap_analyzer_source_has_no_inline_marker_references():
         '_analyze_markdown.py',
     ).read_text(encoding='utf-8')
     for marker in ('_SUPPRESS_MARKER', '_IGNORE_MARKER', 'doctor-ignore'):
-        assert marker not in source, (
-            f'Retired inline marker {marker!r} still present in _analyze_markdown.py'
-        )
+        assert marker not in source, f'Retired inline marker {marker!r} still present in _analyze_markdown.py'

@@ -836,8 +836,7 @@ def test_applies_to_module_null_safe(bundle: str, case_id: str, module_data: dic
         result = ext.applies_to_module(module_data)
     except (KeyError, AttributeError, TypeError) as err:
         raise AssertionError(
-            f'{bundle}: applies_to_module() raised {type(err).__name__} on malformed '
-            f'discovery case {case_id!r}: {err}'
+            f'{bundle}: applies_to_module() raised {type(err).__name__} on malformed discovery case {case_id!r}: {err}'
         ) from err
 
     # Missing/None discovered fields carry no applicability signal, so the

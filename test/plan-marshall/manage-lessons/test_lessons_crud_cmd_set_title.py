@@ -12,7 +12,6 @@ Its sections, in order:
 * cmd_set_title — frontmatter preservation (case e)
 """
 
-
 from argparse import Namespace
 from pathlib import Path
 from unittest.mock import patch
@@ -44,9 +43,7 @@ class TestCmdSetTitleActive:
         )
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
-            result = cmd_set_title(
-                Namespace(lesson_id='2025-01-01-01-001', title='New Title')
-            )
+            result = cmd_set_title(Namespace(lesson_id='2025-01-01-01-001', title='New Title'))
 
         assert result['status'] == 'success'
         assert result['lesson_id'] == '2025-01-01-01-001'
@@ -88,9 +85,7 @@ class TestCmdSetTitleSuperseded:
         )
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
-            result = cmd_set_title(
-                Namespace(lesson_id='2025-01-01-01-002', title='Renamed Stub')
-            )
+            result = cmd_set_title(Namespace(lesson_id='2025-01-01-01-002', title='Renamed Stub'))
 
         assert result['status'] == 'success'
         assert result['old_title'] == 'Old Superseded'
@@ -120,9 +115,7 @@ class TestCmdSetTitleNotFound:
         lessons_dir.mkdir(parents=True)
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
-            result = cmd_set_title(
-                Namespace(lesson_id='9999-12-31-23-999', title='Whatever')
-            )
+            result = cmd_set_title(Namespace(lesson_id='9999-12-31-23-999', title='Whatever'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'not_found'
@@ -154,9 +147,7 @@ class TestCmdSetTitleIdempotency:
         )
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
-            first = cmd_set_title(
-                Namespace(lesson_id='2025-01-01-01-003', title='Stable Title')
-            )
+            first = cmd_set_title(Namespace(lesson_id='2025-01-01-01-003', title='Stable Title'))
 
         # Capture mtime AFTER the first (no-op) call so the comparison
         # measures whether the SECOND call writes — the first call may or
@@ -165,9 +156,7 @@ class TestCmdSetTitleIdempotency:
         mtime_after_first = path.stat().st_mtime_ns
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
-            second = cmd_set_title(
-                Namespace(lesson_id='2025-01-01-01-003', title='Stable Title')
-            )
+            second = cmd_set_title(Namespace(lesson_id='2025-01-01-01-003', title='Stable Title'))
 
         assert first['status'] == 'success'
         assert first['old_title'] == 'Stable Title'
@@ -212,9 +201,7 @@ class TestCmdSetTitleFrontmatterUntouched:
         original_content = path.read_text(encoding='utf-8')
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
-            result = cmd_set_title(
-                Namespace(lesson_id='2025-01-01-01-004', title='New')
-            )
+            result = cmd_set_title(Namespace(lesson_id='2025-01-01-01-004', title='New'))
 
         assert result['status'] == 'success'
 

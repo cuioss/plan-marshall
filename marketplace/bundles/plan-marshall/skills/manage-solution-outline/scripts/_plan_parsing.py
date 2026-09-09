@@ -324,9 +324,7 @@ def _extract_profiles(content: str) -> list[str]:
     """
     profiles: list[str] = []
 
-    profiles_match = re.search(
-        r'\*\*Profiles:\*\*[^\n]*\n\s*((?:- [^\n]+\n?)+)', content, re.IGNORECASE
-    )
+    profiles_match = re.search(r'\*\*Profiles:\*\*[^\n]*\n\s*((?:- [^\n]+\n?)+)', content, re.IGNORECASE)
     if not profiles_match:
         return profiles
 
@@ -395,9 +393,7 @@ _DECLARATION_HEADINGS: tuple[tuple[str, str | None], ...] = (
 INTENT_UNANNOTATED = 'unannotated'
 
 
-def _extract_scope_field(
-    content: str, heading: str, default_intent: str | None = None
-) -> list[dict[str, Any]]:
+def _extract_scope_field(content: str, heading: str, default_intent: str | None = None) -> list[dict[str, Any]]:
     """Extract one ``**{heading}:**`` bullet list as ``{'path', 'intent'}`` entries.
 
     Shared by the three declaration headings. An entry's own parenthesized
@@ -417,9 +413,7 @@ def _extract_scope_field(
     """
     files: list[dict[str, Any]] = []
 
-    files_match = re.search(
-        rf'\*\*{re.escape(heading)}:\*\*\s*((?:- [^\n]+\n?)+)', content, re.IGNORECASE
-    )
+    files_match = re.search(rf'\*\*{re.escape(heading)}:\*\*\s*((?:- [^\n]+\n?)+)', content, re.IGNORECASE)
     if not files_match:
         return files
 

@@ -60,9 +60,7 @@ def _make_skill_md(tmp_path: Path, content: str) -> tuple[Path, Path]:
 
     Returns ``(marketplace_root, md_path)``.
     """
-    skill_dir = (
-        tmp_path / 'plan-marshall' / 'skills' / 'test-skill'
-    )
+    skill_dir = tmp_path / 'plan-marshall' / 'skills' / 'test-skill'
     skill_dir.mkdir(parents=True)
     md = skill_dir / 'SKILL.md'
     md.write_text(content, encoding='utf-8')
@@ -110,9 +108,7 @@ class TestDetectionInBashFence:
         assert 'snippet' in f
         assert 'description' in f
 
-    def test_multiple_dollar_paren_in_fence_produces_multiple_findings(
-        self, tmp_path: Path
-    ) -> None:
+    def test_multiple_dollar_paren_in_fence_produces_multiple_findings(self, tmp_path: Path) -> None:
         """Two ``$(`` on the same fenced-block line produce two findings."""
         content = '```bash\na=$(cmd1) b=$(cmd2)\n```\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
@@ -149,11 +145,7 @@ class TestDetectionInNarrativeProse:
 
     def test_clean_narrative_no_finding(self, tmp_path: Path) -> None:
         """Narrative prose without ``$(`` produces no findings."""
-        content = (
-            '# Standards document\n\n'
-            'Use the executor script to run commands.\n\n'
-            'No shell substitution here.\n'
-        )
+        content = '# Standards document\n\nUse the executor script to run commands.\n\nNo shell substitution here.\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
         assert_analyzer_findings(analyze_shell_substitution_in_skills, marketplace_root, [])
 
@@ -198,9 +190,7 @@ class TestExemptionInInlineCodeSpan:
         marketplace_root, _ = _make_skill_md(tmp_path, content)
         assert_analyzer_findings(analyze_shell_substitution_in_skills, marketplace_root, [])
 
-    def test_dollar_paren_outside_inline_code_on_same_line_is_flagged(
-        self, tmp_path: Path
-    ) -> None:
+    def test_dollar_paren_outside_inline_code_on_same_line_is_flagged(self, tmp_path: Path) -> None:
         """Only the span-internal occurrence is exempt; the bare one is flagged."""
         content = 'Use `$(cmd)` not $(cmd) directly.\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
@@ -294,20 +284,14 @@ class TestCleanBaseline:
 
         skill_a = base / 'skill-a'
         skill_a.mkdir(parents=True)
-        (skill_a / 'SKILL.md').write_text(
-            '```bash\nresult=$(cmd_a)\n```\n', encoding='utf-8'
-        )
+        (skill_a / 'SKILL.md').write_text('```bash\nresult=$(cmd_a)\n```\n', encoding='utf-8')
 
         skill_b = base / 'skill-b'
         skill_b.mkdir(parents=True)
-        (skill_b / 'SKILL.md').write_text(
-            'Clean content, no issues.\n', encoding='utf-8'
-        )
+        (skill_b / 'SKILL.md').write_text('Clean content, no issues.\n', encoding='utf-8')
 
         skill_c = base / 'skill-c'
         skill_c.mkdir(parents=True)
-        (skill_c / 'SKILL.md').write_text(
-            'Another violation: $(cmd_c) here.\n', encoding='utf-8'
-        )
+        (skill_c / 'SKILL.md').write_text('Another violation: $(cmd_c) here.\n', encoding='utf-8')
 
         assert_analyzer_findings(analyze_shell_substitution_in_skills, tmp_path, [RULE_ID] * 2)

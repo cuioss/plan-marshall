@@ -414,9 +414,7 @@ class TestPreferenceAdmissibilityBasis:
         # unrecognized `bot_kind` is excluded.
         assert _titles(result) == ['Reviewer claim', 'Unused import']
 
-    def test_degraded_registry_reports_presence_only_and_admits_more(
-        self, plan_context, monkeypatch
-    ):
+    def test_degraded_registry_reports_presence_only_and_admits_more(self, plan_context, monkeypatch):
         # Both halves in one assertion set: the basis SAYS `presence_only`, and
         # the result set DEMONSTRATES it — the unrecognized-`bot_kind` comment,
         # excluded under the full check above, is now retained. Asserting the
@@ -432,9 +430,7 @@ class TestPreferenceAdmissibilityBasis:
         assert result[BASIS_KEY] == 'presence_only'
         assert _titles(result) == ['Reviewer claim', 'Spurious claim', 'Unused import']
 
-    def test_pipeline_authored_comment_stays_excluded_under_the_degrade(
-        self, plan_context, monkeypatch
-    ):
+    def test_pipeline_authored_comment_stays_excluded_under_the_degrade(self, plan_context, monkeypatch):
         # The threat the gate actually defends against is untouched by the
         # degrade: the pipeline's own posted comment carries an ABSENT
         # `bot_kind`, and the presence check runs before the registry check, so
@@ -556,9 +552,7 @@ class TestEmptyRegistryIsTreatedAsUnresolved:
     content, so the degrade is attributable to EMPTINESS and not to the patching.
     """
 
-    def test_empty_registry_reports_presence_only_and_admits_present_bot_kinds(
-        self, plan_context, monkeypatch
-    ):
+    def test_empty_registry_reports_presence_only_and_admits_present_bot_kinds(self, plan_context, monkeypatch):
         plan_id = 'pref-adm-basis-empty-registry'
         _seed_mixed_corpus(plan_context, plan_id)
         monkeypatch.setitem(_REGISTRY_GLOBALS, 'bot_kinds', lambda: [])
@@ -575,9 +569,7 @@ class TestEmptyRegistryIsTreatedAsUnresolved:
     def test_non_empty_registry_still_reports_recognized(self, plan_context, monkeypatch):
         plan_id = 'pref-adm-basis-nonempty-registry'
         _seed_mixed_corpus(plan_context, plan_id)
-        monkeypatch.setitem(
-            _REGISTRY_GLOBALS, 'bot_kinds', lambda: [_RECOGNIZED_REVIEWER_BOT_KIND]
-        )
+        monkeypatch.setitem(_REGISTRY_GLOBALS, 'bot_kinds', lambda: [_RECOGNIZED_REVIEWER_BOT_KIND])
 
         result = cmd_query(_list_ns(plan_id, preference_admissible=True))
 
@@ -613,10 +605,7 @@ class TestPreferenceAdmissibleIsKeywordOnly:
 
         assert params[8].name == 'any_checkout'
         assert params[8].kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
-        assert (
-            inspect.signature(fn).parameters['preference_admissible'].kind
-            is inspect.Parameter.KEYWORD_ONLY
-        )
+        assert inspect.signature(fn).parameters['preference_admissible'].kind is inspect.Parameter.KEYWORD_ONLY
 
     @pytest.mark.parametrize(
         'fn',

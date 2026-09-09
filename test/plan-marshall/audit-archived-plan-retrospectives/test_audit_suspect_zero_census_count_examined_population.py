@@ -7,7 +7,6 @@ no count, a check that examined no plans is starved rather than disciplinary, an
 partial exclusion is still disciplinary.
 """
 
-
 import re
 from pathlib import Path
 
@@ -17,8 +16,8 @@ from _audit_suspect_zero_census_fixtures import _EXAMINED_POPULATION_KEYS, _MEAS
 
 class TestQuietStreaks:
     def test_streak_counts_consecutive_recorded_zeros(self):
-        runs = [{"metrics": 0}, {"metrics": 0}, {"metrics": 3}]
-        assert audit.quiet_streaks(runs)["metrics"] == 2
+        runs = [{'metrics': 0}, {'metrics': 0}, {'metrics': 3}]
+        assert audit.quiet_streaks(runs)['metrics'] == 2
 
     def test_a_missing_record_breaks_the_streak(self):
         """An absent record is not a recorded zero.
@@ -27,11 +26,11 @@ class TestQuietStreaks:
         retirement — which is also how an `unmeasured` run is kept out of the
         streak, since it publishes no genuine count.
         """
-        runs = [{"metrics": 0}, {}, {"metrics": 0}]
-        assert audit.quiet_streaks(runs)["metrics"] == 1
+        runs = [{'metrics': 0}, {}, {'metrics': 0}]
+        assert audit.quiet_streaks(runs)['metrics'] == 1
 
     def test_a_nonzero_first_run_yields_no_streak(self):
-        assert audit.quiet_streaks([{"metrics": 1}, {"metrics": 0}])["metrics"] == 0
+        assert audit.quiet_streaks([{'metrics': 1}, {'metrics': 0}])['metrics'] == 0
 
 
 class TestNoCountAndExaminedPopulation:
@@ -46,10 +45,7 @@ class TestNoCountAndExaminedPopulation:
         and reporting `disciplinary` would have the census assert "a non-empty
         corpus was examined and nothing was genuine" on the strength of a default.
         """
-        assert (
-            audit._classify_zero(_MEASURED_ZERO_BLOCK, None, corpus_size=5)
-            == audit._ZERO_NO_COUNT
-        )
+        assert audit._classify_zero(_MEASURED_ZERO_BLOCK, None, corpus_size=5) == audit._ZERO_NO_COUNT
 
     def test_per_tier_genuine_counts_are_read_and_summed(self):
         """A multi-tier block states its total across per-tier lines, not one bare one.
@@ -60,18 +56,12 @@ class TestNoCountAndExaminedPopulation:
         — including on runs where it FIRED, which is a constant rather than a
         detector.
         """
-        block = (
-            "check: quality-chain\nstatus: success\n"
-            "plan_genuine_signal_count: 1\n"
-            "finding_genuine_signal_count: 2\n"
-        )
-        assert audit._extract_per_check_genuine([block]) == {"quality-chain": 3}
+        block = 'check: quality-chain\nstatus: success\nplan_genuine_signal_count: 1\nfinding_genuine_signal_count: 2\n'
+        assert audit._extract_per_check_genuine([block]) == {'quality-chain': 3}
 
     def test_a_bare_genuine_count_is_still_read(self):
         """The negative control — the widened read must not break the common shape."""
-        assert audit._extract_per_check_genuine([_MEASURED_ZERO_BLOCK]) == {
-            "dispatch-topology": 0
-        }
+        assert audit._extract_per_check_genuine([_MEASURED_ZERO_BLOCK]) == {'dispatch-topology': 0}
 
     def test_a_firing_quality_chain_is_not_a_suspect(self, tmp_path: Path):
         """The consequence: a detector that produced positives is not suspect.
@@ -80,17 +70,13 @@ class TestNoCountAndExaminedPopulation:
         that fired must never appear in the suspect population, whatever spelling
         it used to state its count.
         """
-        block = (
-            "check: quality-chain\nstatus: success\n"
-            "plan_genuine_signal_count: 1\n"
-            "finding_genuine_signal_count: 1\n"
-        )
+        block = 'check: quality-chain\nstatus: success\nplan_genuine_signal_count: 1\nfinding_genuine_signal_count: 1\n'
         genuine = audit._extract_per_check_genuine([block])
         rows = audit.suspect_zero_census([block], genuine, {}, corpus_size=3)
 
-        row = next(r for r in rows if r["check"] == "quality-chain")
-        assert row["zero_class"] == audit._ZERO_NONE
-        assert row["suspect"] == "false"
+        row = next(r for r in rows if r['check'] == 'quality-chain')
+        assert row['zero_class'] == audit._ZERO_NONE
+        assert row['suspect'] == 'false'
 
     def test_a_check_that_examined_no_plans_is_starved_not_disciplinary(self):
         """A delivery-cost check whose shipping partition excluded every plan.
@@ -100,18 +86,18 @@ class TestNoCountAndExaminedPopulation:
         count that makes the distinction available.
         """
         block = (
-            "check: token-economics\nstatus: success\n"
-            "plans_excluded_non_shipping: 5\n"
-            "genuine_signal_count: 0\nrows[0]{a}:\n"
+            'check: token-economics\nstatus: success\n'
+            'plans_excluded_non_shipping: 5\n'
+            'genuine_signal_count: 0\nrows[0]{a}:\n'
         )
         assert audit._classify_zero(block, 0, corpus_size=5) == audit._ZERO_STARVED
 
     def test_a_partially_excluded_check_is_still_disciplinary(self):
         """The discriminating half — exclusion alone does not mean starved."""
         block = (
-            "check: token-economics\nstatus: success\n"
-            "plans_excluded_non_shipping: 2\n"
-            "genuine_signal_count: 0\nrows[3]{a}:\n"
+            'check: token-economics\nstatus: success\n'
+            'plans_excluded_non_shipping: 2\n'
+            'genuine_signal_count: 0\nrows[3]{a}:\n'
         )
         assert audit._classify_zero(block, 0, corpus_size=5) == audit._ZERO_DISCIPLINARY
 
@@ -120,7 +106,7 @@ class TestNoCountAndExaminedPopulation:
         assert audit._examined_population(_MEASURED_ZERO_BLOCK, 7) == 7
 
     def test_examined_population_never_goes_negative(self):
-        block = "check: x\nplans_excluded_non_shipping: 9\n"
+        block = 'check: x\nplans_excluded_non_shipping: 9\n'
         assert audit._examined_population(block, 5) == 0
 
 
@@ -164,10 +150,7 @@ class TestGateExclusionKeyIsRead:
         block `gated` regardless of the count.
         """
         assert audit._classify_zero(self._emitted(2), 0, corpus_size=4) == audit._ZERO_GATED
-        assert (
-            audit._classify_zero(self._emitted(0), 0, corpus_size=4)
-            == audit._ZERO_DISCIPLINARY
-        )
+        assert audit._classify_zero(self._emitted(0), 0, corpus_size=4) == audit._ZERO_DISCIPLINARY
 
 
 class TestPopulationKeyCoverage:
@@ -196,8 +179,8 @@ class TestPopulationKeyCoverage:
     #: Adding a key here is a claim; the docstring above says what the claim means.
     _NON_DENOMINATOR_KEYS = {
         # Zero means nothing was excluded — the population is FULL.
-        "plans_excluded_non_shipping": "exclusion count",
-        "plans_excluded_no_counters": "exclusion count",
+        'plans_excluded_non_shipping': 'exclusion count',
+        'plans_excluded_no_counters': 'exclusion count',
         # `emit_table_block` emits `len(rows)` AFTER narrowing, so for the three
         # delivery-cost checks it routes (scope-estimate-accuracy,
         # task-count-efficiency, pr-merge-velocity) this IS the examined count,
@@ -206,32 +189,33 @@ class TestPopulationKeyCoverage:
         # reads at precedence 2, so the population is already established. A
         # FULL_CORPUS_CHECKS member that narrowed internally and emitted through
         # `emit_table_block` would be the gap — none does today.
-        "plans_scanned": "narrowed row count; population established by the "
-        "exclusion line these blocks also carry",
+        'plans_scanned': 'narrowed row count; population established by the exclusion line these blocks also carry',
         # Numerators: how many plans landed in a result set. `plans_with_merge_events`
         # is the load-bearing case — `len(rows)`, how many plans HAD merge events.
         # Its check's substrate is the `[LOCK]` log, not the plan corpus, and an
         # absent log already reports `unmeasured`, so a readable log naming no merge
         # event is a genuine MEASURED zero and `disciplinary` is right for it.
-        "plans_with_merge_events": "result count",
-        "plans_without_ledger": "result count",
-        "plans_without_ledger_ids": "result count",
+        'plans_with_merge_events': 'result count',
+        'plans_without_ledger': 'result count',
+        'plans_without_ledger_ids': 'result count',
     }
 
     def test_every_published_population_key_is_classified(self):
-        published = set(
-            re.findall(r'f"(plans_[a-z_]+):', _audit_source())
-        )
-        assert published, "no plans_* keys found — the sweep would pass vacuously"
+        # Quote-agnostic by construction. `[tool.ruff.format] quote-style` is
+        # `single`, so the formatter rewrites `f"plans_x: ..."` into
+        # `f'plans_x: ...'`. A double-quote-only pattern then matches nothing and
+        # this guard dies on the vacuity assert below instead of reporting a real
+        # gap -- a source-text guard must not be coupled to the formatter's quote
+        # choice. The published KEY is the claim; the delimiter is not.
+        published = set(re.findall(r"""f["'](plans_[a-z_]+):""", _audit_source()))
+        assert published, 'no plans_* keys found — the sweep would pass vacuously'
 
-        unclassified = published - set(_EXAMINED_POPULATION_KEYS) - set(
-            self._NON_DENOMINATOR_KEYS
-        )
+        unclassified = published - set(_EXAMINED_POPULATION_KEYS) - set(self._NON_DENOMINATOR_KEYS)
         assert unclassified == set(), (
-            f"unclassified population key(s): {sorted(unclassified)}. Either "
-            "`_examined_population` must read it (and it joins "
-            "`_EXAMINED_POPULATION_KEYS`), or it is not a denominator and joins "
-            "`_NON_DENOMINATOR_KEYS` with its reason."
+            f'unclassified population key(s): {sorted(unclassified)}. Either '
+            '`_examined_population` must read it (and it joins '
+            '`_EXAMINED_POPULATION_KEYS`), or it is not a denominator and joins '
+            '`_NON_DENOMINATOR_KEYS` with its reason.'
         )
 
     def test_every_denominator_key_is_read_by_the_production_reader(self):
@@ -243,7 +227,7 @@ class TestPopulationKeyCoverage:
         where that mattered.
         """
         for key in _EXAMINED_POPULATION_KEYS:
-            block = f"check: x\nstatus: success\n{key}: 0\n"
+            block = f'check: x\nstatus: success\n{key}: 0\n'
             assert audit._examined_population(block, 7) == 0, key
 
 
@@ -264,9 +248,7 @@ class TestPopulationReaderIsPerKeyNotAnAlternation:
         # Derived from the key tuple, never restated: a key added to
         # `_EXAMINED_POPULATION_KEYS` without a pattern (or in a different order)
         # fails here rather than degrading precedence silently.
-        assert [key for key, _ in audit._EXAMINED_POPULATION_PATTERNS] == list(
-            audit._EXAMINED_POPULATION_KEYS
-        )
+        assert [key for key, _ in audit._EXAMINED_POPULATION_PATTERNS] == list(audit._EXAMINED_POPULATION_KEYS)
 
     def test_no_pattern_matches_a_foreign_key(self):
         """Each compiled pattern is anchored to its OWN key.
@@ -277,9 +259,8 @@ class TestPopulationReaderIsPerKeyNotAnAlternation:
         """
         for key, pattern in audit._EXAMINED_POPULATION_PATTERNS:
             for other in audit._EXAMINED_POPULATION_KEYS:
-                block = f"check: x\nstatus: success\n{other}: 4\n"
+                block = f'check: x\nstatus: success\n{other}: 4\n'
                 matched = pattern.search(block) is not None
                 assert matched == (other == key), (
-                    f"pattern for {key!r} {'matched' if matched else 'missed'} "
-                    f"a block declaring only {other!r}"
+                    f'pattern for {key!r} {"matched" if matched else "missed"} a block declaring only {other!r}'
                 )

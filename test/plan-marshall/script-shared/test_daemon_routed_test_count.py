@@ -91,12 +91,8 @@ _ROUTED_COUNT_IDS = [
 class TestRoutedResultCarriesTheInnerCount:
     """``_daemon_result_to_direct`` attaches the count the inner build measured."""
 
-    @pytest.mark.parametrize(
-        'tests_run,command,expected', _ROUTED_COUNT_CASES, ids=_ROUTED_COUNT_IDS
-    )
-    def test_the_inner_count_reaches_the_routed_result(
-        self, tmp_path, tests_run, command, expected
-    ):
+    @pytest.mark.parametrize('tests_run,command,expected', _ROUTED_COUNT_CASES, ids=_ROUTED_COUNT_IDS)
+    def test_the_inner_count_reaches_the_routed_result(self, tmp_path, tests_run, command, expected):
         log = _write_wrapper_toon(tmp_path / 'job.log', tests_run=tests_run)
 
         result = factory._daemon_result_to_direct(_waited(log), command)

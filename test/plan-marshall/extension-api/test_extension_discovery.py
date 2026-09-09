@@ -441,6 +441,7 @@ def test_real_tree_routes_cover_marketplace_targets_generate():
 # removed — get_skill_domains() now returns ONLY general-dev. Removing it also
 # dissolves the name collision with the new top-level ``build`` config block.
 
+
 def _load_plan_marshall_plugin_extension():
     """Load the plan-marshall-plugin ``extension.py`` from the skill ROOT.
 
@@ -454,9 +455,7 @@ def _load_plan_marshall_plugin_extension():
     ships an ``extension.py``, so the default stem (``extension``) is shared by
     all of them and a second load would displace the first.
     """
-    return load_skill_module(
-        'plan-marshall', 'plan-marshall-plugin', 'extension.py', 'plan_marshall_plugin_extension'
-    )
+    return load_skill_module('plan-marshall', 'plan-marshall-plugin', 'extension.py', 'plan_marshall_plugin_extension')
 
 
 _PLAN_MARSHALL_PLUGIN_EXTENSION = _load_plan_marshall_plugin_extension()
@@ -475,17 +474,13 @@ def test_plan_marshall_plugin_get_skill_domains_returns_only_general_dev():
     vestigial build skill-domain is gone.
     """
     keys = _plan_marshall_plugin_domain_keys()
-    assert keys == ['general-dev'], (
-        f'plan-marshall-plugin must declare only general-dev, got {keys}'
-    )
+    assert keys == ['general-dev'], f'plan-marshall-plugin must declare only general-dev, got {keys}'
 
 
 def test_plan_marshall_plugin_get_skill_domains_omits_build_domain():
     """The retired build skill-domain must be absent from the returned list."""
     keys = _plan_marshall_plugin_domain_keys()
-    assert 'build' not in keys, (
-        'the vestigial build skill-domain must not be declared by plan-marshall-plugin'
-    )
+    assert 'build' not in keys, 'the vestigial build skill-domain must not be declared by plan-marshall-plugin'
 
 
 # =============================================================================
@@ -541,9 +536,7 @@ def _write_manifest(skill_dir, *, implements, with_extension=True):
 #: below. Declared here rather than reused from the module-level constants
 #: further down: a ``parametrize`` decorator is evaluated where it is written, so
 #: a name bound later in the file is not yet defined at this point.
-_EXECUTION_CONTEXT_WORKFLOW = (
-    'plan-marshall:extension-api/standards/ext-point-execution-context-workflow'
-)
+_EXECUTION_CONTEXT_WORKFLOW = 'plan-marshall:extension-api/standards/ext-point-execution-context-workflow'
 _FINALIZE_STEP_ARCHETYPE = 'plan-marshall:extension-api/standards/ext-point-finalize-step'
 
 
@@ -789,9 +782,7 @@ def test_extension_discovery_plugin_cache_routes_through_layout_op(
 ) -> None:
     """extension_discovery.get_plugin_cache_path resolves via the routed roots."""
     monkeypatch.delenv('PLUGIN_CACHE_PATH', raising=False)
-    monkeypatch.setattr(
-        _discovery, 'get_bundle_cache_roots', lambda: ('/routed/cache/root',)
-    )
+    monkeypatch.setattr(_discovery, 'get_bundle_cache_roots', lambda: ('/routed/cache/root',))
     assert _discovery.get_plugin_cache_path() == pathlib.Path('/routed/cache/root')
 
 
@@ -815,20 +806,12 @@ def test_extension_discovery_plugin_cache_honours_env_override(
 _PROJECT_EXT_POINT = 'plan-marshall:extension-api/standards/ext-point-finalize-step'
 
 
-def _write_project_step(
-    root: pathlib.Path, name: str, description: str, implements: str = _PROJECT_EXT_POINT
-) -> None:
+def _write_project_step(root: pathlib.Path, name: str, description: str, implements: str = _PROJECT_EXT_POINT) -> None:
     """Create a project-local ``finalize-step-*`` skill declaring an ext-point."""
     skill_dir = root / name
     skill_dir.mkdir(parents=True, exist_ok=True)
     (skill_dir / 'SKILL.md').write_text(
-        '---\n'
-        f'name: {name}\n'
-        f'description: {description}\n'
-        f'implements: {implements}\n'
-        'order: 42\n'
-        '---\n\n'
-        '# Step\n',
+        f'---\nname: {name}\ndescription: {description}\nimplements: {implements}\norder: 42\n---\n\n# Step\n',
         encoding='utf-8',
     )
 
@@ -947,9 +930,7 @@ def test_project_scan_records_only_finalize_step_directories(
     assert [rec['name'] for rec in records] == ['project:finalize-step-real']
 
 
-def test_project_scan_survives_one_unreadable_root(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_project_scan_survives_one_unreadable_root(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """An OSError on one root skips that root, it does not abandon the scan.
 
     Returning ``[]`` would let a single unreadable directory silently empty the
@@ -1031,9 +1012,7 @@ def _finalize_implementors() -> dict[str, dict]:
     """
     records = _discovery.find_implementors(_FINALIZE_STEP_EXT_POINT)
     names = [rec['name'] for rec in records]
-    assert len(names) == len(set(names)), (
-        f'duplicate implementor step ids must not occur: {sorted(names)}'
-    )
+    assert len(names) == len(set(names)), f'duplicate implementor step ids must not occur: {sorted(names)}'
     return {rec['name']: rec for rec in records}
 
 
@@ -1045,9 +1024,7 @@ def test_find_implementors_returns_records_sorted_by_order():
     # Assert the FULL (order, name) sort contract, not just the primary key:
     # records sharing an ``order`` must be tie-broken ascending by ``name``.
     sort_keys = [(rec['order'], rec['name']) for rec in records]
-    assert sort_keys == sorted(sort_keys), (
-        f'records must be ascending by (order, name): {sort_keys}'
-    )
+    assert sort_keys == sorted(sort_keys), f'records must be ascending by (order, name): {sort_keys}'
 
 
 def test_find_implementors_record_carries_all_contract_fields():
@@ -1057,8 +1034,7 @@ def test_find_implementors_record_carries_all_contract_fields():
     expected_keys = {'name', 'order', 'default_on', 'presets', 'description', 'source', 'path'}
     for rec in records:
         assert expected_keys <= set(rec.keys()), (
-            f'record {rec.get("name")!r} missing contract fields: '
-            f'{expected_keys - set(rec.keys())}'
+            f'record {rec.get("name")!r} missing contract fields: {expected_keys - set(rec.keys())}'
         )
         assert isinstance(rec['order'], int)
         assert isinstance(rec['default_on'], bool)
@@ -1124,9 +1100,7 @@ def test_find_implementors_promoted_self_review_replaces_project_wrapper():
     """
     by_name = _finalize_implementors()
 
-    assert 'default:pre-submission-self-review' in by_name, (
-        'the promoted built-in self-review step must be discovered'
-    )
+    assert 'default:pre-submission-self-review' in by_name, 'the promoted built-in self-review step must be discovered'
     self_review = by_name['default:pre-submission-self-review']
     assert self_review['source'] == 'built-in'
     assert self_review['default_on'] is True
@@ -1157,9 +1131,7 @@ def test_find_implementors_finalize_records_carry_empty_canonicals():
     assert records, 'Expected at least one finalize-step implementor'
     for rec in records:
         assert 'canonicals' in rec, f'{rec.get("name")!r} missing canonicals key'
-        assert rec['canonicals'] == [], (
-            f'{rec.get("name")!r} finalize record must default canonicals to []'
-        )
+        assert rec['canonicals'] == [], f'{rec.get("name")!r} finalize record must default canonicals to []'
 
 
 # =============================================================================
@@ -1200,9 +1172,7 @@ def test_find_implementors_verify_record_carries_canonicals_list():
     records = _discovery.find_implementors(_BUILD_VERIFY_STEP_EXT_POINT)
     by_name = {rec['name']: rec for rec in records}
 
-    assert 'default:verify' in by_name, (
-        f'the parameterized verify step must be discovered; got {sorted(by_name)}'
-    )
+    assert 'default:verify' in by_name, f'the parameterized verify step must be discovered; got {sorted(by_name)}'
     verify = by_name['default:verify']
     assert verify['source'] == 'built-in'
     assert isinstance(verify['canonicals'], list)
@@ -1273,9 +1243,7 @@ def test_build_implementor_record_surfaces_verification_profile_when_declared(tm
 
     record = _discovery._build_implementor_record(doc, 'bundle-optional')
 
-    assert 'verification_profile' in record, (
-        'a doc declaring verification_profile must surface it in the record'
-    )
+    assert 'verification_profile' in record, 'a doc declaring verification_profile must surface it in the record'
     assert record['verification_profile'] == 'security'
 
 
@@ -1294,8 +1262,7 @@ def test_build_implementor_record_omits_verification_profile_when_absent(tmp_pat
     record = _discovery._build_implementor_record(doc, 'bundle-optional')
 
     assert 'verification_profile' not in record, (
-        'a doc omitting verification_profile must NOT carry the key — absence is '
-        'the non-participation signal'
+        'a doc omitting verification_profile must NOT carry the key — absence is the non-participation signal'
     )
     # The contract fields the record always carries are unaffected by the absence.
     assert {'name', 'order', 'default_on', 'presets', 'canonicals', 'description'} <= set(record)
@@ -1352,8 +1319,7 @@ def test_find_implementors_finalize_records_omit_verification_profile():
     assert records, 'Expected at least one finalize-step implementor'
     for rec in records:
         assert 'verification_profile' not in rec, (
-            f'{rec.get("name")!r} finalize record must not carry verification_profile '
-            '(its doc declares none)'
+            f'{rec.get("name")!r} finalize record must not carry verification_profile (its doc declares none)'
         )
 
 
@@ -1419,9 +1385,7 @@ def test_build_implementor_record_surfaces_metadata_verification_profile(tmp_pat
         'unrequested-metadata-key-is-not-surfaced',
     ],
 )
-def test_read_frontmatter_fields_reads_the_requested_key(
-    tmp_path, frontmatter_lines, expected_fields
-):
+def test_read_frontmatter_fields_reads_the_requested_key(tmp_path, frontmatter_lines, expected_fields):
     """Only the requested keys are returned, top-level first, metadata as fallback.
 
     The ``metadata:`` block carries one-level-deep declarations, and a requested
@@ -1446,20 +1410,13 @@ def test_recipe_security_audit_declares_metadata_verification_profile():
     recipe-security-audit declares ``verification_profile: security`` under its
     frontmatter ``metadata:`` block, and the implementor record must carry it.
     """
-    skill_md = (
-        MARKETPLACE_ROOT
-        / 'plan-marshall'
-        / 'skills'
-        / 'recipe-security-audit'
-        / 'SKILL.md'
-    )
+    skill_md = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'recipe-security-audit' / 'SKILL.md'
     assert skill_md.is_file(), f'recipe-security-audit SKILL.md not found: {skill_md}'
 
     record = _discovery._build_implementor_record(skill_md, 'bundle-optional')
 
     assert record.get('verification_profile') == 'security', (
-        'recipe-security-audit declares metadata.verification_profile: security; '
-        'the implementor record must surface it'
+        'recipe-security-audit declares metadata.verification_profile: security; the implementor record must surface it'
     )
 
 
@@ -1498,8 +1455,7 @@ def test_quality_profile_recipe_declares_metadata_verification_profile(bundle, r
     record = _discovery._build_implementor_record(skill_md, 'bundle-optional')
 
     assert record.get('verification_profile') == 'quality', (
-        f'{recipe} declares metadata.verification_profile: quality; '
-        'the implementor record must surface it'
+        f'{recipe} declares metadata.verification_profile: quality; the implementor record must surface it'
     )
 
 
@@ -1512,19 +1468,13 @@ def test_find_implementors_recipe_surfaces_quality_and_security_profiles():
     ``security`` — one query proving all four producers' verify-stage opt-in is
     live and each maps to the right profile.
     """
-    records = _discovery.find_implementors(
-        'plan-marshall:extension-api/standards/ext-point-recipe'
-    )
+    records = _discovery.find_implementors('plan-marshall:extension-api/standards/ext-point-recipe')
     assert records, 'Expected at least one ext-point-recipe implementor'
 
     def _profile_for(recipe_name):
-        matches = [
-            rec for rec in records
-            if pathlib.Path(rec['path']).parent.name == recipe_name
-        ]
+        matches = [rec for rec in records if pathlib.Path(rec['path']).parent.name == recipe_name]
         assert len(matches) == 1, (
-            f'expected exactly one ext-point-recipe record for {recipe_name!r}, '
-            f'got {len(matches)}'
+            f'expected exactly one ext-point-recipe record for {recipe_name!r}, got {len(matches)}'
         )
         return matches[0].get('verification_profile')
 

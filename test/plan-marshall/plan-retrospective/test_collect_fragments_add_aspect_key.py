@@ -9,7 +9,6 @@ Its sections, in order:
 * add → finalize integration: --archived-plan-path agreement
 """
 
-
 from __future__ import annotations
 
 import tempfile
@@ -145,9 +144,7 @@ class TestAddAspectKeyValidation:
         # fragment can never reach the report.
         plan_id, _plan_dir = setup_live_plan(tmp_path, monkeypatch)
         _init_bundle(plan_id)
-        fragment_path = _write_fragment(
-            tmp_path, 'frag.toon', _valid_fragment_body('chat-history-analysis')
-        )
+        fragment_path = _write_fragment(tmp_path, 'frag.toon', _valid_fragment_body('chat-history-analysis'))
 
         result = run_script(
             SCRIPT_PATH,

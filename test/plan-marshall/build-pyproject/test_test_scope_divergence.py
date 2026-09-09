@@ -57,18 +57,14 @@ _REGISTERED_MODULES = frozenset({'plan-marshall', 'pm-dev-python', 'pm-plugin-de
 
 _PROD_PLAN_MARSHALL = 'marketplace/bundles/plan-marshall/skills/foo/scripts/bar.py'
 _PROD_PM_PYTHON = 'marketplace/bundles/pm-dev-python/skills/baz/scripts/qux.py'
-_SHARED_BUILD = (
-    'marketplace/bundles/plan-marshall/skills/script-shared/scripts/build/_x.py'
-)
+_SHARED_BUILD = 'marketplace/bundles/plan-marshall/skills/script-shared/scripts/build/_x.py'
 _ROOT_CONFTEST = 'test/conftest.py'
 _NESTED_CONFTEST = 'test/plan-marshall/build-pyproject/conftest.py'
 _DOC = 'marketplace/bundles/plan-marshall/skills/foo/SKILL.md'
 #: A non-``.py`` file owned by a DIFFERENT bundle. It matches no build_map glob,
 #: so a glob-filtered module derivation drops the bundle entirely - the exact
 #: shape that under-reported this plan's own two-bundle footprint as one module.
-_CROSS_BUNDLE_DOC = (
-    'marketplace/bundles/pm-plugin-development/skills/plugin-doctor/references/rule-catalog.md'
-)
+_CROSS_BUNDLE_DOC = 'marketplace/bundles/pm-plugin-development/skills/plugin-doctor/references/rule-catalog.md'
 #: Neither build-map-matched nor module-owning: the shape that used to be
 #: silently discarded and reported as ``divergence_possible: false``.
 _UNMAPPED_DOC = 'doc/developer/build.adoc'
@@ -82,6 +78,7 @@ _UNMAPPED_TARGETS = 'marketplace/targets/generate.py'
 _SHARED_TEST_HELPER = 'test/_shared/_build_class_roster.py'
 #: A well-formed bundle path whose bundle token names no registered module.
 _UNREGISTERED_BUNDLE = 'marketplace/bundles/not-a-real-bundle/skills/foo/scripts/bar.py'
+
 
 def _load_pyproject_extension():
     """Load the build-pyproject extension module under a distinct name.
@@ -97,7 +94,9 @@ def _load_pyproject_extension():
     other module's copy; it is a distinct entry rather than a shared one.
     """
     return load_script_module(
-        'plan-marshall', 'build-pyproject', 'extension.py',
+        'plan-marshall',
+        'build-pyproject',
+        'extension.py',
         'pyproject_extension_for_root_crosscheck',
     )
 
@@ -197,9 +196,7 @@ def test_unmapped_only_footprint_fails_closed_without_a_build_relevance_prefilte
     footprint = [_UNMAPPED_DOC, _UNMAPPED_WORKFLOW]
 
     # Act - the pre-fix three-condition disjunction, reconstructed inline.
-    pre_fix_has_matching_files = any(
-        fnmatch.fnmatch(path, glob) for path in footprint for glob in _GLOBS
-    )
+    pre_fix_has_matching_files = any(fnmatch.fnmatch(path, glob) for path in footprint for glob in _GLOBS)
     pre_fix_modules: set[str] = set()  # neither path owns a module
     pre_fix_divergence = (
         len(pre_fix_modules) > 1
@@ -448,16 +445,14 @@ def test_unmappable_paths_under_either_root_still_fail_closed(path, case):
     positive cases above while reintroducing the fail-open.
     """
     assert _module_for_path(path, _REGISTERED_MODULES) is None, (
-        f'{path!r} ({case}) resolved to a module; the registered-module guard was widened '
-        'along with the root set.'
+        f'{path!r} ({case}) resolved to a module; the registered-module guard was widened along with the root set.'
     )
 
     resolution = resolve_test_scope([path], _GLOBS, _REGISTERED_MODULES)
 
     assert resolution.scoped_modules == ()
     assert resolution.unresolved_paths == (path,), (
-        'the unresolved-paths disclosure was weakened; an unmappable path must stay visible '
-        'to the consumer (ADR-014).'
+        'the unresolved-paths disclosure was weakened; an unmappable path must stay visible to the consumer (ADR-014).'
     )
     assert resolution.divergence_possible is True
     assert resolution.recommended_target is None

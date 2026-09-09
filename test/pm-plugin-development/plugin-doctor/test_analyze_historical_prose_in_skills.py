@@ -198,35 +198,21 @@ class TestAllowlistExemption:
 
     def test_plugin_doctor_rule_provenance_is_exempt(self, tmp_path: Path) -> None:
         content = 'Driving lesson: `2026-04-29-23-002` — recurrence of stale flags.\n'
-        ref_dir = (
-            tmp_path
-            / 'pm-plugin-development'
-            / 'skills'
-            / 'plugin-doctor'
-            / 'references'
-        )
+        ref_dir = tmp_path / 'pm-plugin-development' / 'skills' / 'plugin-doctor' / 'references'
         ref_dir.mkdir(parents=True)
         (ref_dir / 'rule-provenance.md').write_text(content, encoding='utf-8')
         assert_analyzer_findings(analyze_historical_prose_in_skills, tmp_path, [])
 
     def test_plugin_doctor_rule_catalog_is_exempt(self, tmp_path: Path) -> None:
         content = 'Driving lesson: rule catalog describes rule context.\n'
-        ref_dir = (
-            tmp_path
-            / 'pm-plugin-development'
-            / 'skills'
-            / 'plugin-doctor'
-            / 'references'
-        )
+        ref_dir = tmp_path / 'pm-plugin-development' / 'skills' / 'plugin-doctor' / 'references'
         ref_dir.mkdir(parents=True)
         (ref_dir / 'rule-catalog.md').write_text(content, encoding='utf-8')
         assert_analyzer_findings(analyze_historical_prose_in_skills, tmp_path, [])
 
     def test_plan_doctor_standards_is_exempt(self, tmp_path: Path) -> None:
         content = 'Back-reference: check-lesson-id-references standard.\n'
-        std_dir = (
-            tmp_path / 'plan-marshall' / 'skills' / 'plan-doctor' / 'standards'
-        )
+        std_dir = tmp_path / 'plan-marshall' / 'skills' / 'plan-doctor' / 'standards'
         std_dir.mkdir(parents=True)
         (std_dir / 'check-lesson-id-references.md').write_text(content, encoding='utf-8')
         assert_analyzer_findings(analyze_historical_prose_in_skills, tmp_path, [])
@@ -241,22 +227,12 @@ class TestSkipContextExemption:
     """Historical patterns in structured contexts produce no findings."""
 
     def test_yaml_frontmatter_is_exempt(self, tmp_path: Path) -> None:
-        content = (
-            '---\n'
-            'name: test\n'
-            'back-reference: some-plan\n'
-            '---\n'
-            'Normal body content.\n'
-        )
+        content = '---\nname: test\nback-reference: some-plan\n---\nNormal body content.\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
         assert_analyzer_findings(analyze_historical_prose_in_skills, marketplace_root, [])
 
     def test_fenced_code_block_is_exempt(self, tmp_path: Path) -> None:
-        content = (
-            '```bash\n'
-            '# Driving lesson: this is inside a code block\n'
-            '```\n'
-        )
+        content = '```bash\n# Driving lesson: this is inside a code block\n```\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
         assert_analyzer_findings(analyze_historical_prose_in_skills, marketplace_root, [])
 
@@ -321,12 +297,7 @@ class TestFrontmatterDisable:
 
     def test_no_disable_key_is_still_flagged(self, tmp_path: Path) -> None:
         """Frontmatter without ``plugin-doctor-disable`` leaves findings flagged."""
-        content = (
-            '---\n'
-            'name: test-skill\n'
-            '---\n'
-            'Driving lesson: no disable key present.\n'
-        )
+        content = '---\nname: test-skill\n---\nDriving lesson: no disable key present.\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
         assert_analyzer_findings(analyze_historical_prose_in_skills, marketplace_root, [RULE_ID])
 
@@ -336,18 +307,13 @@ class TestFrontmatterDisable:
         skill_a = tmp_path / 'bundle-a' / 'skills' / 'skill-a'
         skill_a.mkdir(parents=True)
         (skill_a / 'SKILL.md').write_text(
-            '---\n'
-            'plugin-doctor-disable: [no-historical-prose-in-skills]\n'
-            '---\n'
-            'Driving lesson: suppressed in file A.\n',
+            '---\nplugin-doctor-disable: [no-historical-prose-in-skills]\n---\nDriving lesson: suppressed in file A.\n',
             encoding='utf-8',
         )
         # File 2: no disable key — must still be flagged.
         skill_b = tmp_path / 'bundle-b' / 'skills' / 'skill-b'
         skill_b.mkdir(parents=True)
-        (skill_b / 'SKILL.md').write_text(
-            'Driving lesson: flagged in file B.\n', encoding='utf-8'
-        )
+        (skill_b / 'SKILL.md').write_text('Driving lesson: flagged in file B.\n', encoding='utf-8')
         findings = assert_analyzer_findings(analyze_historical_prose_in_skills, tmp_path, [RULE_ID])
         assert findings[0]['file'].endswith('bundle-b/skills/skill-b/SKILL.md')
 
@@ -381,9 +347,7 @@ class TestBoundaryCases:
     def test_out_of_scope_readme_not_scanned(self, tmp_path: Path) -> None:
         bundle_dir = tmp_path / 'some-bundle'
         bundle_dir.mkdir(parents=True)
-        (bundle_dir / 'README.md').write_text(
-            'Driving lesson: not in scope.\n', encoding='utf-8'
-        )
+        (bundle_dir / 'README.md').write_text('Driving lesson: not in scope.\n', encoding='utf-8')
         assert_analyzer_findings(analyze_historical_prose_in_skills, tmp_path, [])
 
     def test_word_driving_alone_no_finding(self, tmp_path: Path) -> None:
@@ -445,9 +409,7 @@ class TestSuppressionAwareAllowlist:
         unregistered = 'some-bundle/skills/some-other-skill/SKILL.md'
         assert _is_allowlisted(unregistered, config) is False
 
-    def test_previously_exempt_path_remains_suppressed(
-        self, tmp_path: Path
-    ) -> None:
+    def test_previously_exempt_path_remains_suppressed(self, tmp_path: Path) -> None:
         """A historical-prose file under an exempt prefix yields zero findings.
 
         Builds a file at ``manage-lessons/`` — a prefix the former hardcoded
@@ -457,9 +419,7 @@ class TestSuppressionAwareAllowlist:
         config = load_default_suppression_config()
         # Pick the first registered prefix that names a skill directory so the
         # constructed path lands inside the scanned {skills} sub-tree.
-        prefix = next(
-            p for p in config[RULE_ID] if '/skills/' in p and p.endswith('/')
-        )
+        prefix = next(p for p in config[RULE_ID] if '/skills/' in p and p.endswith('/'))
         target = tmp_path / prefix / 'SKILL.md'
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(
@@ -505,6 +465,4 @@ def test_analyzer_source_has_no_inline_marker_references() -> None:
         '_analyze_historical_prose_in_skills.py',
     ).read_text(encoding='utf-8')
     for marker in ('_SUPPRESS_MARKER', '_IGNORE_MARKER', 'doctor-ignore'):
-        assert marker not in source, (
-            f'Retired inline marker {marker!r} still present in analyzer source'
-        )
+        assert marker not in source, f'Retired inline marker {marker!r} still present in analyzer source'

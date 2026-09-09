@@ -881,7 +881,7 @@ def _fetch_issue_state_and_labels(issue_number: int) -> tuple[bool, Any]:
 
 # Actionable remedy surfaced on an auth-scope failure (D4) — never a stack trace.
 _MERGE_QUEUE_AUTH_SCOPE_HINT = (
-    "the gh token lacks the scope to read/write repository rulesets. Run "
+    'the gh token lacks the scope to read/write repository rulesets. Run '
     "'gh auth refresh -s repo,admin:org' (or grant the fine-grained "
     "'Administration' repository write permission), then retry."
 )
@@ -935,9 +935,7 @@ def _resolve_default_branch(owner: str, repo: str) -> tuple[str | None, str]:
     return str(branch), ''
 
 
-def _probe_merge_queue_state(
-    owner: str, repo: str, branch: str
-) -> tuple[str, str, str | None, str | None]:
+def _probe_merge_queue_state(owner: str, repo: str, branch: str) -> tuple[str, str, str | None, str | None]:
     """Probe the merge-queue configuration state for ``branch``.
 
     Returns ``(discriminator, detail, error, merge_method)`` where
@@ -1161,12 +1159,7 @@ def _resolve_bypass_actor_ids(owner: str) -> list[int]:
             continue
         slug = installation.get('app_slug')
         app = installation.get('app_id')
-        if (
-            isinstance(slug, str)
-            and slug.lower() in wanted
-            and isinstance(app, int)
-            and not isinstance(app, bool)
-        ):
+        if isinstance(slug, str) and slug.lower() in wanted and isinstance(app, int) and not isinstance(app, bool):
             matched.append(app)
     return matched
 
@@ -1224,9 +1217,7 @@ def _gh_api_json_body(method: str, endpoint: str, payload: dict) -> tuple[int, s
             pass
 
 
-def _fetch_plan_marshall_ruleset(
-    owner: str, repo: str
-) -> tuple[int | None, dict | None, dict | None]:
+def _fetch_plan_marshall_ruleset(owner: str, repo: str) -> tuple[int | None, dict | None, dict | None]:
     """Fetch the ``plan-marshall-merge-queue`` ruleset detail.
 
     Lists the repo rulesets, finds the one named ``plan-marshall-merge-queue``,
@@ -1261,7 +1252,11 @@ def _fetch_plan_marshall_ruleset(
     if returncode != 0:
         if _is_auth_scope_error(stderr):
             return None, None, make_error('repo_merge_queue_enable', _MERGE_QUEUE_AUTH_SCOPE_HINT, stderr.strip())
-        return None, None, make_error('repo_merge_queue_enable', 'Failed to read merge-queue ruleset detail', stderr.strip())
+        return (
+            None,
+            None,
+            make_error('repo_merge_queue_enable', 'Failed to read merge-queue ruleset detail', stderr.strip()),
+        )
     try:
         detail = json.loads(stdout)
     except json.JSONDecodeError:
@@ -1368,8 +1363,7 @@ def _reconcile_merge_queue_ruleset(
         heal_ids = set(missing_ids)
         retained_actors = [a for a in existing_actors if a.get('actor_id') not in heal_ids]
         update_body['bypass_actors'] = retained_actors + [
-            {'actor_id': actor_id, 'actor_type': 'Integration', 'bypass_mode': 'always'}
-            for actor_id in missing_ids
+            {'actor_id': actor_id, 'actor_type': 'Integration', 'bypass_mode': 'always'} for actor_id in missing_ids
         ]
     elif detail.get('bypass_actors') is not None:
         update_body['bypass_actors'] = existing_actors
@@ -1385,17 +1379,19 @@ def _reconcile_merge_queue_ruleset(
             corrected_rules.append(rule)
         update_body['rules'] = corrected_rules
 
-    returncode, _stdout, stderr = _gh_api_json_body(
-        'PUT', f'repos/{owner}/{repo}/rulesets/{ruleset_id}', update_body
-    )
+    returncode, _stdout, stderr = _gh_api_json_body('PUT', f'repos/{owner}/{repo}/rulesets/{ruleset_id}', update_body)
     if returncode != 0:
         if _is_auth_scope_error(stderr):
             return False, False, make_error('repo_merge_queue_enable', _MERGE_QUEUE_AUTH_SCOPE_HINT, stderr.strip())
-        return False, False, make_error('repo_merge_queue_enable', 'Failed to update merge-queue ruleset', stderr.strip())
+        return (
+            False,
+            False,
+            make_error('repo_merge_queue_enable', 'Failed to update merge-queue ruleset', stderr.strip()),
+        )
     return bool(missing_ids), method_drift, None
 
 
-_ON_KEY_RE = re.compile(r'''^(?:on|["']on["'])\s*:(.*)$''')
+_ON_KEY_RE = re.compile(r"""^(?:on|["']on["'])\s*:(.*)$""")
 _MERGE_GROUP_TOKEN_RE = re.compile(r'\bmerge_group\b')
 
 
@@ -1436,7 +1432,7 @@ def _lines_declare_merge_group_trigger(lines: list[str]) -> bool:
         # top-level key, or when the indent drops back below the direct-child
         # level (the ``on:`` block ended).
         block_indent = None
-        for child in lines[idx + 1:]:
+        for child in lines[idx + 1 :]:
             stripped = child.strip()
             if not stripped or stripped.startswith('#'):
                 continue
@@ -1447,9 +1443,7 @@ def _lines_declare_merge_group_trigger(lines: list[str]) -> bool:
                 block_indent = indent
             elif indent < block_indent:
                 break  # shallower indent — the on: block's child context ended
-            if indent == block_indent and _MERGE_GROUP_TOKEN_RE.search(
-                _strip_yaml_comment(stripped)
-            ):
+            if indent == block_indent and _MERGE_GROUP_TOKEN_RE.search(_strip_yaml_comment(stripped)):
                 return True
         return False
     return False
@@ -1497,8 +1491,8 @@ def cmd_repo_merge_queue_probe(args: argparse.Namespace) -> dict:
     if not is_auth:
         return make_error('repo_merge_queue_probe', err)
 
-    error, owner, repo, branch, discriminator, detail, merge_method = (
-        _resolve_repo_branch_and_probe('repo_merge_queue_probe')
+    error, owner, repo, branch, discriminator, detail, merge_method = _resolve_repo_branch_and_probe(
+        'repo_merge_queue_probe'
     )
     if error is not None:
         return error
@@ -1536,8 +1530,8 @@ def cmd_repo_merge_queue_enable(args: argparse.Namespace) -> dict:
     if not is_auth:
         return make_error('repo_merge_queue_enable', err)
 
-    error, owner, repo, branch, discriminator, detail, _probed_method = (
-        _resolve_repo_branch_and_probe('repo_merge_queue_enable')
+    error, owner, repo, branch, discriminator, detail, _probed_method = _resolve_repo_branch_and_probe(
+        'repo_merge_queue_enable'
     )
     if error is not None:
         return error
@@ -1640,9 +1634,7 @@ def cmd_repo_merge_queue_enable(args: argparse.Namespace) -> dict:
         )
         # gh api reads a JSON request body from a file via --input; the nested
         # ruleset structure cannot be expressed via field flags.
-        returncode, _stdout, stderr = _gh_api_json_body(
-            'POST', f'repos/{owner}/{repo}/rulesets', payload
-        )
+        returncode, _stdout, stderr = _gh_api_json_body('POST', f'repos/{owner}/{repo}/rulesets', payload)
         if returncode != 0:
             if _is_auth_scope_error(stderr):
                 return make_error('repo_merge_queue_enable', _MERGE_QUEUE_AUTH_SCOPE_HINT, stderr.strip())
@@ -1751,7 +1743,10 @@ def fetch_branch_workflow_runs(branch: str) -> tuple[list | None, str]:
             return None, f'Malformed actions/runs envelope: page {index} is {type(page).__name__}, expected an object'
         page_runs = page.get('workflow_runs')
         if not isinstance(page_runs, list):
-            return None, f'Malformed actions/runs envelope: page {index} has no list-valued workflow_runs (got {type(page_runs).__name__})'
+            return (
+                None,
+                f'Malformed actions/runs envelope: page {index} has no list-valued workflow_runs (got {type(page_runs).__name__})',
+            )
         runs.extend(page_runs)
     return runs, ''
 

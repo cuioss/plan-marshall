@@ -7,7 +7,6 @@ and delete — and which combination of operation and on-disk presence is a flag
 rather than a pass.
 """
 
-
 from __future__ import annotations
 
 from _manage_tasks_qgate_mechanical_fixtures import _EXISTING_FILE, _MISSING_FILE, _files_exist_failed

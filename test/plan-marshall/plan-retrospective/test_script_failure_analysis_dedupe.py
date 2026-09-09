@@ -6,7 +6,6 @@ the deduplication around it — recurring subtypes collapsed, distinct ones kept
 a mirrored work failure dropped.
 """
 
-
 from __future__ import annotations
 
 from _script_failure_analysis_fixtures import (
@@ -29,7 +28,7 @@ class TestRecognitionGuardIsPrefixIndependent:
     """
 
     _NOTATION = 'plan-marshall:manage-status:manage-status'
-    _DETAIL = "manage-status: error: unrecognized arguments: --field"
+    _DETAIL = 'manage-status: error: unrecognized arguments: --field'
 
     def test_record_prefix_drift_reports_unrecognized_not_clean_zero(self):
         """Reshaping ONLY the record prefix must still register as drift.
@@ -39,9 +38,7 @@ class TestRecognitionGuardIsPrefixIndependent:
         made the guard exactly as fragile as the parser.
         """
         lines = [
-            _prefix_drifted_work_failure(
-                '01', self._NOTATION, 2, 'argparse_rejection', self._DETAIL
-            ),
+            _prefix_drifted_work_failure('01', self._NOTATION, 2, 'argparse_rejection', self._DETAIL),
         ]
 
         scan = _mod.parse_work_log_failures(lines)
@@ -55,9 +52,7 @@ class TestRecognitionGuardIsPrefixIndependent:
     def test_marker_fires_with_no_record_prefix_at_all(self):
         """The guard is anchored on nothing to the LEFT of ``script_failure``."""
         lines = [
-            _unprefixed_work_failure(
-                '02', self._NOTATION, 2, 'argparse_rejection', self._DETAIL
-            ),
+            _unprefixed_work_failure('02', self._NOTATION, 2, 'argparse_rejection', self._DETAIL),
         ]
 
         scan = _mod.parse_work_log_failures(lines)
@@ -84,9 +79,7 @@ class TestRecognitionGuardIsPrefixIndependent:
         scan = _mod.parse_work_log_failures(lines)
 
         assert scan.failures == []
-        assert scan.unrecognized_lines == 0, (
-            'ordinary prose mentioning the token was counted as producer drift'
-        )
+        assert scan.unrecognized_lines == 0, 'ordinary prose mentioning the token was counted as producer drift'
 
     def test_intact_producer_line_still_parses_rather_than_counting_as_drift(self):
         """Negative control: the widened guard did not swallow the happy path."""

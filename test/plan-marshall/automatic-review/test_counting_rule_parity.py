@@ -37,9 +37,7 @@ from conftest import PROJECT_ROOT
 # it and the root conftest's marketplace ``sys.path`` setup does not reach it.
 # This bootstrap therefore stays where every marketplace one was removed, and it
 # is what the file-level ``I001, E402`` waiver above is still paying for.
-_RETRO_SCRIPTS = (
-    PROJECT_ROOT / '.claude' / 'skills' / 'finalize-step-review-retrospective' / 'scripts'
-)
+_RETRO_SCRIPTS = PROJECT_ROOT / '.claude' / 'skills' / 'finalize-step-review-retrospective' / 'scripts'
 if str(_RETRO_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_RETRO_SCRIPTS))
 
@@ -189,9 +187,8 @@ def test_both_implementations_agree_on_every_corpus_record():
         if delta._is_actionable(record) != retro._is_actionable(record)
     ]
 
-    assert not disagreements, (
-        'the two counting-rule implementations disagree: '
-        + '; '.join(f'{label}: delta={d} retro={r}' for label, d, r in disagreements)
+    assert not disagreements, 'the two counting-rule implementations disagree: ' + '; '.join(
+        f'{label}: delta={d} retro={r}' for label, d, r in disagreements
     )
 
 

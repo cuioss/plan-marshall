@@ -248,9 +248,7 @@ def _stale_reason(entries: list[dict], current_sha: str) -> tuple[str, str, str 
         distinguishes the two routes.
     """
     matching = [
-        entry
-        for entry in entries
-        if entry.get('kind') == KIND_BUILD and entry.get('worktree_sha') == current_sha
+        entry for entry in entries if entry.get('kind') == KIND_BUILD and entry.get('worktree_sha') == current_sha
     ]
     if not matching:
         reason, message = _STALE_MUTATED
@@ -478,7 +476,7 @@ def _verdict_for_candidates(
     if audited:
         result['message'] = (
             f'A successful kind=build entry matches the current working-tree sha '
-            f'({current_sha}); its notation is one this project\'s architecture resolves, '
+            f"({current_sha}); its notation is one this project's architecture resolves, "
             f'and the canonical and scope it recorded cover this change. Gate permitted '
             f'on corroborated, coverage-adequate evidence.'
         )

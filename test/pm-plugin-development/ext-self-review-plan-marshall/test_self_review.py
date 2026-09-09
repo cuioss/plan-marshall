@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 from conftest import MARKETPLACE_ROOT
+
 # The shared resolver-contract fixtures live under ``test/_shared/``, the
 # bundle-neutral home for cross-bundle test helpers (also on mypy_path), so
 # the helper is imported here rather than duplicated per bundle.
@@ -250,9 +251,7 @@ class TestDetectSymmetricPairs:
             ('start_timer', 'stop_timer'),
         ],
     )
-    def test_detects_each_pairing(
-        self, source_name: str, expected_partner: str, tmp_path: Path
-    ):
+    def test_detects_each_pairing(self, source_name: str, expected_partner: str, tmp_path: Path):
         added = [('foo.py', 1, f'def {source_name}(self):')]
         out = _detect_symmetric_pairs(added, tmp_path)
         assert len(out) == 1
@@ -285,9 +284,7 @@ class TestDetectSymmetricPairs:
             'test_present',
         }
 
-    def test_test_present_true_when_test_tree_references_name(
-        self, tmp_path: Path
-    ):
+    def test_test_present_true_when_test_tree_references_name(self, tmp_path: Path):
         # A matching test reference in the test tree -> test_present=true.
         test_dir = tmp_path / 'test'
         test_dir.mkdir()
@@ -324,9 +321,7 @@ class TestSymmetricPairHasTest:
     def test_returns_true_on_word_boundary_match(self, tmp_path: Path):
         test_dir = tmp_path / 'test'
         test_dir.mkdir()
-        (test_dir / 'test_a.py').write_text(
-            'def test_save():\n    save()\n', encoding='utf-8'
-        )
+        (test_dir / 'test_a.py').write_text('def test_save():\n    save()\n', encoding='utf-8')
         assert _symmetric_pair_has_test('save', tmp_path) is True
 
     def test_substring_does_not_satisfy_search(self, tmp_path: Path):
@@ -334,9 +329,7 @@ class TestSymmetricPairHasTest:
         # the word-boundary guard rejects the substring-only overlap.
         test_dir = tmp_path / 'test'
         test_dir.mkdir()
-        (test_dir / 'test_a.py').write_text(
-            'def test_save_state():\n    save_state()\n', encoding='utf-8'
-        )
+        (test_dir / 'test_a.py').write_text('def test_save_state():\n    save_state()\n', encoding='utf-8')
         assert _symmetric_pair_has_test('save', tmp_path) is False
 
     def test_longer_identifier_substring_does_not_match(self, tmp_path: Path):
@@ -344,9 +337,7 @@ class TestSymmetricPairHasTest:
         # not match `save_state_v2` references.
         test_dir = tmp_path / 'test'
         test_dir.mkdir()
-        (test_dir / 'test_a.py').write_text(
-            'def test_save_state_v2():\n    save_state_v2()\n', encoding='utf-8'
-        )
+        (test_dir / 'test_a.py').write_text('def test_save_state_v2():\n    save_state_v2()\n', encoding='utf-8')
         assert _symmetric_pair_has_test('save_state', tmp_path) is False
 
     def test_missing_test_dir_returns_false(self, tmp_path: Path):
@@ -355,17 +346,13 @@ class TestSymmetricPairHasTest:
     def test_no_reference_in_test_tree_returns_false(self, tmp_path: Path):
         test_dir = tmp_path / 'test'
         test_dir.mkdir()
-        (test_dir / 'test_a.py').write_text(
-            'def test_unrelated():\n    pass\n', encoding='utf-8'
-        )
+        (test_dir / 'test_a.py').write_text('def test_unrelated():\n    pass\n', encoding='utf-8')
         assert _symmetric_pair_has_test('save_state', tmp_path) is False
 
     def test_searches_nested_test_files(self, tmp_path: Path):
         nested = tmp_path / 'test' / 'sub' / 'deep'
         nested.mkdir(parents=True)
-        (nested / 'test_deep.py').write_text(
-            'def test_load_state():\n    load_state()\n', encoding='utf-8'
-        )
+        (nested / 'test_deep.py').write_text('def test_load_state():\n    load_state()\n', encoding='utf-8')
         assert _symmetric_pair_has_test('load_state', tmp_path) is True
 
     def test_ignores_non_python_test_files(self, tmp_path: Path):
@@ -449,13 +436,9 @@ class TestNameInTestBlob:
         # the perf refactor is behaviour-preserving.
         test_dir = tmp_path / 'test'
         test_dir.mkdir()
-        (test_dir / 'test_a.py').write_text(
-            'def test_load_state():\n    load_state()\n', encoding='utf-8'
-        )
+        (test_dir / 'test_a.py').write_text('def test_load_state():\n    load_state()\n', encoding='utf-8')
         blob = _load_test_tree_blob(tmp_path)
-        assert _name_in_test_blob('load_state', blob) == _symmetric_pair_has_test(
-            'load_state', tmp_path
-        )
+        assert _name_in_test_blob('load_state', blob) == _symmetric_pair_has_test('load_state', tmp_path)
         assert _name_in_test_blob('load_state', blob) is True
 
 
@@ -523,7 +506,7 @@ class TestDetectFlagGuardPairs:
         assert out == []
 
     def test_every_entry_carries_required_fields(self):
-        added = [("inject.py", 7, "    if '--flag' in args:")]
+        added = [('inject.py', 7, "    if '--flag' in args:")]
         out = _detect_flag_guard_pairs(added)
         assert len(out) == 1
         assert set(out[0].keys()) == {'file', 'line', 'flag', 'forms_covered'}
@@ -926,11 +909,7 @@ class TestDetectKeepMarkers:
         # another line. The detector should emit a keep_protected candidate
         # and the identifier should appear in protected_identifiers.
         md = tmp_path / 'doc.md'
-        md.write_text(
-            '# Doc\n'
-            '<!-- self-review: keep my_token -->\n'
-            'The token my_token must remain.\n'
-        )
+        md.write_text('# Doc\n<!-- self-review: keep my_token -->\nThe token my_token must remain.\n')
         added = [('doc.md', 2, '<!-- self-review: keep my_token -->')]
         candidates, protected = _detect_keep_markers(added, tmp_path)
         assert len(candidates) == 1
@@ -947,11 +926,7 @@ class TestDetectKeepMarkers:
         # emit a keep_violation candidate at the marker line and the
         # identifier should NOT appear in protected_identifiers.
         md = tmp_path / 'doc.md'
-        md.write_text(
-            '# Doc\n'
-            '<!-- self-review: keep dropped_token -->\n'
-            'Some prose that no longer references it.\n'
-        )
+        md.write_text('# Doc\n<!-- self-review: keep dropped_token -->\nSome prose that no longer references it.\n')
         added = [('doc.md', 2, '<!-- self-review: keep dropped_token -->')]
         candidates, protected = _detect_keep_markers(added, tmp_path)
         assert len(candidates) == 1
@@ -1063,9 +1038,7 @@ class TestDiffHunksMergeBaseAnchor:
         diff_text = _diff_hunks(repo, 'main')
         added = _iter_added_lines(diff_text)
         files = {entry[0] for entry in added}
-        assert 'new_uncommitted.py' in files, (
-            'uncommitted (staged) pre-submission change must be surfaced'
-        )
+        assert 'new_uncommitted.py' in files, 'uncommitted (staged) pre-submission change must be surfaced'
 
     def test_absorbed_base_commit_is_excluded(self, tmp_path):
         """A commit absorbed from the base branch must NOT appear in the diff."""
@@ -1078,9 +1051,7 @@ class TestDiffHunksMergeBaseAnchor:
         # The genuine plan change is present.
         assert 'plan_change.py' in files
         # The absorbed-upstream file sits at/below the merge-base and is excluded.
-        assert 'upstream_only.py' not in files, (
-            'absorbed-merge content (at/below merge-base) must be excluded'
-        )
+        assert 'upstream_only.py' not in files, 'absorbed-merge content (at/below merge-base) must be excluded'
 
     def test_merge_base_resolution_failure_falls_back_to_two_dot(self, tmp_path):
         """When merge-base resolution fails, fall back to the two-dot diff.
@@ -1346,11 +1317,7 @@ class TestDetectDescriptionVsBody:
         self._write_doc(
             tmp_path,
             rel,
-            '---\n'
-            'summary: Old model summary.\n'
-            '---\n'
-            '# Doc\n'
-            'New body content.\n',
+            '---\nsummary: Old model summary.\n---\n# Doc\nNew body content.\n',
         )
         added = [(rel, 5, 'New body content.')]
         out = _detect_description_vs_body(added, tmp_path)
@@ -1363,12 +1330,7 @@ class TestDetectDescriptionVsBody:
         self._write_doc(
             tmp_path,
             rel,
-            '---\n'
-            'name: skill\n'
-            'description: A description.\n'
-            '---\n'
-            '# Skill\n'
-            'Unchanged body.\n',
+            '---\nname: skill\ndescription: A description.\n---\n# Skill\nUnchanged body.\n',
         )
         added = [(rel, 3, 'description: A description.')]
         out = _detect_description_vs_body(added, tmp_path)
@@ -1379,11 +1341,7 @@ class TestDetectDescriptionVsBody:
         self._write_doc(
             tmp_path,
             rel,
-            '---\n'
-            'name: skill\n'
-            '---\n'
-            '# Skill\n'
-            'Body content here.\n',
+            '---\nname: skill\n---\n# Skill\nBody content here.\n',
         )
         added = [(rel, 5, 'Body content here.')]
         out = _detect_description_vs_body(added, tmp_path)
@@ -1499,12 +1457,7 @@ class TestDetectUnguardedBoundaries:
         # subprocess.run line is added.  Without post-image walking this case
         # was incorrectly flagged as unguarded.
         mod_py = tmp_path / 'mod.py'
-        mod_py.write_text(
-            'def run():\n'
-            '    try:\n'
-            '        pass\n'
-            '        subprocess.run(["ls"])\n'
-        )
+        mod_py.write_text('def run():\n    try:\n        pass\n        subprocess.run(["ls"])\n')
         added = [('mod.py', 4, '        subprocess.run(["ls"])')]
         out = _detect_unguarded_boundaries(added, tmp_path)
         assert out == []
@@ -1513,10 +1466,7 @@ class TestDetectUnguardedBoundaries:
         # Confirm that the post-image path still surfaces genuinely unguarded
         # calls when project_dir is provided.
         mod_py = tmp_path / 'mod.py'
-        mod_py.write_text(
-            'def run():\n'
-            '    subprocess.run(["ls"])\n'
-        )
+        mod_py.write_text('def run():\n    subprocess.run(["ls"])\n')
         added = [('mod.py', 2, '    subprocess.run(["ls"])')]
         out = _detect_unguarded_boundaries(added, tmp_path)
         assert len(out) == 1
@@ -1594,11 +1544,7 @@ class TestDetectCountProse:
         # over-widening the stop rule forbids. ``5 checkpoints`` additionally
         # pins the word-boundary: ``checks?`` must not match inside ``checkpoint``.
         body = (
-            '---\n'
-            'name: my-skill\n'
-            '---\n'
-            '# My Skill\n'
-            'Ship 5 deliverables and 3 modules with 5 checkpoints this cycle.\n'
+            '---\nname: my-skill\n---\n# My Skill\nShip 5 deliverables and 3 modules with 5 checkpoints this cycle.\n'
         )
         project = self._build_skill(tmp_path, body)
         rel = 'marketplace/bundles/b1/skills/my-skill/scripts/mod.py'
@@ -1606,13 +1552,7 @@ class TestDetectCountProse:
         assert out == []
 
     def test_digit_not_adjacent_to_cardinality_noun_surfaces_nothing(self, tmp_path: Path):
-        body = (
-            '---\n'
-            'name: my-skill\n'
-            '---\n'
-            '# My Skill\n'
-            'This skill is version 3 and was built in 2026.\n'
-        )
+        body = '---\nname: my-skill\n---\n# My Skill\nThis skill is version 3 and was built in 2026.\n'
         project = self._build_skill(tmp_path, body)
         rel = 'marketplace/bundles/b1/skills/my-skill/scripts/mod.py'
         out = _detect_count_prose([rel], project)
@@ -1629,13 +1569,7 @@ class TestDetectCountProse:
     def test_deduplicates_per_file_line(self, tmp_path: Path):
         # The same skill dir reached via two modified siblings yields each
         # count-prose line exactly once.
-        body = (
-            '---\n'
-            'name: my-skill\n'
-            '---\n'
-            '# My Skill\n'
-            'Nine steps in the workflow.\n'
-        )
+        body = '---\nname: my-skill\n---\n# My Skill\nNine steps in the workflow.\n'
         project = self._build_skill(tmp_path, body)
         skill = project / 'marketplace' / 'bundles' / 'b1' / 'skills' / 'my-skill'
         (skill / 'scripts' / 'other.py').write_text('')
@@ -1657,17 +1591,13 @@ class TestDetectCountProse:
         project = self._build_skill(tmp_path, body)
         skill = project / 'marketplace' / 'bundles' / 'b1' / 'skills' / 'my-skill'
         (skill / 'standards').mkdir()
-        (skill / 'standards' / 'rules.md').write_text(
-            'The gate enforces 5 rules over the parsed input.\n'
-        )
+        (skill / 'standards' / 'rules.md').write_text('The gate enforces 5 rules over the parsed input.\n')
         rel = 'marketplace/bundles/b1/skills/my-skill/scripts/mod.py'
         out = _detect_count_prose([rel], project)
         texts = [e['text'] for e in out]
         assert any('5 rules' in t for t in texts)
         files = {e['file'] for e in out}
-        assert (
-            'marketplace/bundles/b1/skills/my-skill/standards/rules.md' in files
-        )
+        assert 'marketplace/bundles/b1/skills/my-skill/standards/rules.md' in files
 
     def test_count_prose_file_set_matches_contract_sources_resolver(self, tmp_path: Path):
         # Pins the D1 agreement: the detector's scanned file set is EXACTLY the
@@ -1684,10 +1614,7 @@ class TestDetectCountProse:
         rel = 'marketplace/bundles/b1/skills/my-skill/scripts/mod.py'
         out = _detect_count_prose([rel], project)
         emitted_files = {e['file'] for e in out}
-        resolver_files = {
-            str(p.relative_to(project))
-            for p in _collect_skill_contract_sources(skill)
-        }
+        resolver_files = {str(p.relative_to(project)) for p in _collect_skill_contract_sources(skill)}
         assert emitted_files == resolver_files
 
 
@@ -1706,13 +1633,7 @@ class TestDetectOrdinalReferences:
 
     def test_item_reference_into_touched_list_surfaces_candidate(self, tmp_path: Path):
         # Post-image: an ordered list (lines 1-3) plus a reference line (line 5).
-        body = (
-            '1. First item\n'
-            '2. Second item\n'
-            '3. Third item\n'
-            '\n'
-            'See item 2 for details.\n'
-        )
+        body = '1. First item\n2. Second item\n3. Third item\n\nSee item 2 for details.\n'
         rel = self._write_md(tmp_path, body)
         # The diff touched both the reference line and a list line (line 2),
         # so the referenced block counts as touched.
@@ -1727,13 +1648,7 @@ class TestDetectOrdinalReferences:
         assert entry['list_line'] == 2
 
     def test_step_reference_form_is_recognized(self, tmp_path: Path):
-        body = (
-            '1. Configure\n'
-            '2. Build\n'
-            '3. Verify\n'
-            '\n'
-            'Re-run step 3 if it fails.\n'
-        )
+        body = '1. Configure\n2. Build\n3. Verify\n\nRe-run step 3 if it fails.\n'
         rel = self._write_md(tmp_path, body)
         added = [(rel, 3, '3. Verify'), (rel, 5, 'Re-run step 3 if it fails.')]
         out = _detect_ordinal_references(added, tmp_path)
@@ -1741,12 +1656,7 @@ class TestDetectOrdinalReferences:
         assert out[0]['list_line'] == 3
 
     def test_bare_parenthesized_ordinal_is_recognized(self, tmp_path: Path):
-        body = (
-            '1. Alpha\n'
-            '2. Beta\n'
-            '\n'
-            'The guard described in (1) runs first.\n'
-        )
+        body = '1. Alpha\n2. Beta\n\nThe guard described in (1) runs first.\n'
         rel = self._write_md(tmp_path, body)
         added = [(rel, 1, '1. Alpha'), (rel, 4, 'The guard described in (1) runs first.')]
         out = _detect_ordinal_references(added, tmp_path)
@@ -1756,12 +1666,7 @@ class TestDetectOrdinalReferences:
     def test_reference_into_untouched_list_surfaces_nothing(self, tmp_path: Path):
         # The ordered list exists in the post-image but the diff did NOT touch
         # any of its lines — only the reference line was added.
-        body = (
-            '1. First item\n'
-            '2. Second item\n'
-            '\n'
-            'See item 2 for details.\n'
-        )
+        body = '1. First item\n2. Second item\n\nSee item 2 for details.\n'
         rel = self._write_md(tmp_path, body)
         added = [(rel, 4, 'See item 2 for details.')]
         out = _detect_ordinal_references(added, tmp_path)
@@ -1769,12 +1674,7 @@ class TestDetectOrdinalReferences:
 
     def test_reference_to_nonexistent_ordinal_surfaces_nothing(self, tmp_path: Path):
         # 'item 9' points at an ordinal absent from any ordered-list block.
-        body = (
-            '1. First item\n'
-            '2. Second item\n'
-            '\n'
-            'See item 9 for details.\n'
-        )
+        body = '1. First item\n2. Second item\n\nSee item 9 for details.\n'
         rel = self._write_md(tmp_path, body)
         added = [(rel, 1, '1. First item'), (rel, 4, 'See item 9 for details.')]
         out = _detect_ordinal_references(added, tmp_path)
@@ -1783,12 +1683,7 @@ class TestDetectOrdinalReferences:
     def test_non_ordinal_numeric_token_surfaces_nothing(self, tmp_path: Path):
         # A bare digit not in an 'item/step/point N' or '(N)' shape, plus a
         # version-style number, must not fire even with a touched list present.
-        body = (
-            '1. First item\n'
-            '2. Second item\n'
-            '\n'
-            'This is version 2 built in 2026 with 2 retries.\n'
-        )
+        body = '1. First item\n2. Second item\n\nThis is version 2 built in 2026 with 2 retries.\n'
         rel = self._write_md(tmp_path, body)
         added = [
             (rel, 2, '2. Second item'),
@@ -1800,12 +1695,7 @@ class TestDetectOrdinalReferences:
     def test_word_boundary_discipline_no_false_positive(self, tmp_path: Path):
         # 'itemize' / 'stepwise' must not be read as 'item'/'step' references,
         # and a decimal like '(1.5)' must not match the bare-(N) form.
-        body = (
-            '1. First item\n'
-            '2. Second item\n'
-            '\n'
-            'The itemized list and stepwise plan tolerate (1.5) ratios.\n'
-        )
+        body = '1. First item\n2. Second item\n\nThe itemized list and stepwise plan tolerate (1.5) ratios.\n'
         rel = self._write_md(tmp_path, body)
         added = [
             (rel, 1, '1. First item'),
@@ -1822,12 +1712,7 @@ class TestDetectOrdinalReferences:
     def test_deduplicates_per_file_line_ordinal(self, tmp_path: Path):
         # The same 'item 2' reference appearing twice on one added line yields a
         # single candidate.
-        body = (
-            '1. First item\n'
-            '2. Second item\n'
-            '\n'
-            'See item 2; yes item 2 again.\n'
-        )
+        body = '1. First item\n2. Second item\n\nSee item 2; yes item 2 again.\n'
         rel = self._write_md(tmp_path, body)
         added = [(rel, 2, '2. Second item'), (rel, 4, 'See item 2; yes item 2 again.')]
         out = _detect_ordinal_references(added, tmp_path)
@@ -1838,13 +1723,13 @@ class TestDetectOrdinalReferences:
         # A reference to 'item 1' on line 10 (near the second block) must resolve
         # to the second block, not the first, even though both contain ordinal 1.
         body = (
-            '1. Alpha\n'      # line 1  — block A
-            '2. Beta\n'       # line 2  — block A
+            '1. Alpha\n'  # line 1  — block A
+            '2. Beta\n'  # line 2  — block A
             '\n'
             'Some text here.\n'  # line 4  — separator
             '\n'
-            '1. Gamma\n'      # line 6  — block B
-            '2. Delta\n'      # line 7  — block B
+            '1. Gamma\n'  # line 6  — block B
+            '2. Delta\n'  # line 7  — block B
             '\n'
             'See item 1 for details.\n'  # line 9 — reference
         )
@@ -1862,9 +1747,9 @@ class TestDetectOrdinalReferences:
         # ordinal references as candidates (the block is untouched aside from
         # the closing blank, which is not part of the block).
         body = (
-            '1. First item\n'   # line 1
+            '1. First item\n'  # line 1
             '2. Second item\n'  # line 2
-            '\n'                # line 3 — separator blank (closes block)
+            '\n'  # line 3 — separator blank (closes block)
             'Not a list item.\n'  # line 4
             '\n'
             'See item 2 for more.\n'  # line 6 — reference
@@ -1885,48 +1770,23 @@ class TestDetectOrdinalReferences:
 
 class TestIterChangedLinePairs:
     def test_yields_adjacent_removed_added_pair(self):
-        diff = (
-            '+++ b/foo.py\n'
-            '@@ -1,3 +1,3 @@\n'
-            ' kept_one\n'
-            '-old_line\n'
-            '+new_line\n'
-            ' kept_two\n'
-        )
+        diff = '+++ b/foo.py\n@@ -1,3 +1,3 @@\n kept_one\n-old_line\n+new_line\n kept_two\n'
         pairs = _iter_changed_line_pairs(diff)
         assert pairs == [('foo.py', 2, 'old_line', 'new_line')]
 
     def test_ignores_unpaired_added_line(self):
-        diff = (
-            '+++ b/foo.py\n'
-            '@@ -1,2 +1,3 @@\n'
-            ' kept_one\n'
-            '+lone_addition\n'
-            ' kept_two\n'
-        )
+        diff = '+++ b/foo.py\n@@ -1,2 +1,3 @@\n kept_one\n+lone_addition\n kept_two\n'
         pairs = _iter_changed_line_pairs(diff)
         assert pairs == []
 
     def test_ignores_unpaired_removed_line(self):
-        diff = (
-            '+++ b/foo.py\n'
-            '@@ -1,3 +1,2 @@\n'
-            ' kept_one\n'
-            '-lone_removal\n'
-            ' kept_two\n'
-        )
+        diff = '+++ b/foo.py\n@@ -1,3 +1,2 @@\n kept_one\n-lone_removal\n kept_two\n'
         pairs = _iter_changed_line_pairs(diff)
         assert pairs == []
 
     def test_context_line_breaks_pending_removal(self):
         # A removal followed by a context line (not an addition) is not a pair.
-        diff = (
-            '+++ b/foo.py\n'
-            '@@ -1,3 +1,3 @@\n'
-            '-removed_first\n'
-            ' context_between\n'
-            '+added_later\n'
-        )
+        diff = '+++ b/foo.py\n@@ -1,3 +1,3 @@\n-removed_first\n context_between\n+added_later\n'
         pairs = _iter_changed_line_pairs(diff)
         assert pairs == []
 
@@ -2069,14 +1929,14 @@ class TestDetectAdvertisedFormHelpStrings:
     # different physical lines. Only the help= line and the raw-pass line are
     # present in the diff; the ``--flag`` line is absent.
     _MULTI_LINE_SOURCE = (
-        "def build_parser(p):\n"
-        "    p.add_argument(\n"
+        'def build_parser(p):\n'
+        '    p.add_argument(\n'
         "        '--issue',\n"
         "        help='Issue number or URL',\n"
-        "    )\n"
-        "\n"
-        "def run(args):\n"
-        "    target = str(args.issue)\n"
+        '    )\n'
+        '\n'
+        'def run(args):\n'
+        '    target = str(args.issue)\n'
     )
 
     def test_multiline_diff_only_does_not_resolve_dest(self):
@@ -2110,14 +1970,14 @@ class TestDetectAdvertisedFormHelpStrings:
         # An explicit dest= on a preceding line of the multi-line call wins
         # over the flag-derived dest, resolved via the post-image walk-back.
         source = (
-            "def build_parser(p):\n"
-            "    p.add_argument(\n"
+            'def build_parser(p):\n'
+            '    p.add_argument(\n'
             "        '--issue-ref',\n"
             "        dest='issue',\n"
             "        help='ref name or URL',\n"
-            "    )\n"
-            "\n"
-            "def run(args):\n"
+            '    )\n'
+            '\n'
+            'def run(args):\n'
             "    return f'{args.issue}'\n"
         )
         (tmp_path / 'cli.py').write_text(source, encoding='utf-8')
@@ -2632,7 +2492,7 @@ class TestDetectDiscardWithoutReport:
 #: Clause (d) as it shipped BEFORE the fix. The clause requires "an affirmative
 #: success signal"; the GOOD example branches on ``outcome.applied`` — a CHANGE
 #: flag — so the worked contrast demonstrates the shape its own clause forbids.
-_PRE_FIX_CLAUSE_D = '''### (d) Require an affirmative success signal, never absence-of-change
+_PRE_FIX_CLAUSE_D = """### (d) Require an affirmative success signal, never absence-of-change
 
 "Nothing changed" is satisfied both by an operation that succeeded idempotently and by an operation that never ran. Absence-of-change is therefore not evidence of success; require the operation to report its own outcome and branch on that.
 
@@ -2647,12 +2507,12 @@ if (diff(file).isEmpty()) {
 outcome = applyFix(file)
 if (outcome.applied) markResolved() else markUnresolved(outcome.reason)
 ```
-'''
+"""
 
 #: Clause (d) as it reads on ``main`` AFTER the fix: the GOOD example branches on
 #: ``outcome.status == "success"``, which is the affirmative success signal the
 #: clause requires. ``applied`` survives as metadata, never as the predicate.
-_POST_FIX_CLAUSE_D = '''### (d) Require an affirmative success signal, never absence-of-change
+_POST_FIX_CLAUSE_D = """### (d) Require an affirmative success signal, never absence-of-change
 
 "Nothing changed" is satisfied both by an operation that succeeded idempotently and by an operation that never ran. Absence-of-change is therefore not evidence of success; require the operation to report its own outcome and branch on that. Success and change are two distinct fields: the operation reports whether it succeeded independently of whether it changed anything, so `applied` / `changed` is metadata about the edit and never the success predicate.
 
@@ -2672,13 +2532,13 @@ if (outcome.status == "success") {
     markUnresolved(outcome.reason)   // never ran (skipped), or ran and failed
 }
 ```
-'''
+"""
 
 #: Clause (f) as it shipped BEFORE the fix. Its GOOD marker comment names a
 #: "readback" mechanism the body never performs — a COMMENT-versus-body claim,
 #: not a predicate-versus-predicate disagreement. The decided disposition is
 #: silence; see the case table in the implementor SKILL.md rule 19.
-_PRE_FIX_CLAUSE_F = '''### (f) Write direction — check the persist, never refer to a store that rejected it
+_PRE_FIX_CLAUSE_F = """### (f) Write direction — check the persist, never refer to a store that rejected it
 
 The rules above cover the read direction. The write direction is symmetric and is the one most often missed: a producer that persists a finding MUST check the persist call's exit status, and MUST NOT emit a clean or referral signal on a failed persist.
 
@@ -2697,12 +2557,12 @@ if (persisted.size < findings.size) {
 }
 return { status: "triage_required" }
 ```
-'''
+"""
 
 #: Clause (c) verbatim from the same document — a pair the predicate extractor
 #: was NOT authored against. Its directive is a ``Read X first`` form (not the
 #: anaphoric ``branch on that`` of clause (d)), and its GOOD example agrees.
-_CLAUSE_C_AGREES = '''### (c) Branch on a dispatched producer's status before folding its payload
+_CLAUSE_C_AGREES = """### (c) Branch on a dispatched producer's status before folding its payload
 
 A producer that crashed, was skipped, or refused returns an empty payload — structurally identical to a producer that ran and found nothing. Read the producer's own status field first; only then fold its payload into the aggregate.
 
@@ -2718,11 +2578,11 @@ if (result.status != "success") {
 }
 findings.addAll(result.findings)
 ```
-'''
+"""
 
 #: A clause whose GOOD half branches on nothing recoverable — the example is a
 #: data table, not a control-flow demonstration.
-_NO_BRANCH_PREDICATE = '''### (a) Order specific rows before a catch-all
+_NO_BRANCH_PREDICATE = """### (a) Order specific rows before a catch-all
 
 Read the table top-down; only then act.
 
@@ -2739,11 +2599,11 @@ PATTERNS = [
     ("bundles/**",        "production"),
 ]
 ```
-'''
+"""
 
 #: A clause with a real BAD/GOOD pair but NO normative predicate directive — the
 #: prose states a rule without naming what to branch on, read, or check.
-_NO_DIRECTIVE = '''### Symmetric Diagnostic Fields Across Sibling Branches
+_NO_DIRECTIVE = """### Symmetric Diagnostic Fields Across Sibling Branches
 
 When one runtime condition drives two sibling branches, the fallback branch MUST record the SAME reason literal into the audit field.
 
@@ -2754,12 +2614,12 @@ if (mode == "strict" && incompatible) failLoud("env_set")
 // GOOD — the sibling branch mirrors the same literal into the audit field
 if (mode == "auto" && incompatible) reason = "env_set"
 ```
-'''
+"""
 
 #: A lone GOOD example with no BAD counterpart. Its predicate WOULD disagree with
 #: the clause, so a green silence here is load-bearing: it proves the pair — not
 #: the GOOD half alone — is the unit of adjudication.
-_GOOD_WITHOUT_BAD = '''### (d) Require an affirmative success signal, never absence-of-change
+_GOOD_WITHOUT_BAD = """### (d) Require an affirmative success signal, never absence-of-change
 
 Require the operation to report its own outcome and branch on that.
 
@@ -2767,11 +2627,11 @@ Require the operation to report its own outcome and branch on that.
 // GOOD — the operation reports whether it applied, and that is what is read
 if (outcome.applied) markResolved()
 ```
-'''
+"""
 
 #: One clause, one fenced block, TWO GOOD regions — the first agrees with the
 #: clause, the second does not. Each region is adjudicated independently.
-_MULTIPLE_GOOD_BLOCKS = '''### (x) Branch on the reported status, never on the change flag
+_MULTIPLE_GOOD_BLOCKS = """### (x) Branch on the reported status, never on the change flag
 
 Read the reported status field first; only then act on the outcome.
 
@@ -2785,12 +2645,12 @@ if (outcome.status == "ok") act()
 // GOOD — still branches on the change flag
 if (outcome.applied) act()
 ```
-'''
+"""
 
 #: The same disagreement as ``_PRE_FIX_CLAUSE_D`` but with ``#`` comment markers
 #: inside the fence. The ``# ...`` lines must NOT be read as markdown headings —
 #: the surfaced entry's ``clause`` proves heading detection is fence-aware.
-_HASH_MARKERS_IN_FENCE = '''### (d) Require an affirmative success signal, never absence-of-change
+_HASH_MARKERS_IN_FENCE = """### (d) Require an affirmative success signal, never absence-of-change
 
 Require the operation to report its own outcome and branch on that.
 
@@ -2803,7 +2663,7 @@ if diff(file).is_empty():
 if outcome.applied:
     mark_resolved()
 ```
-'''
+"""
 
 
 def _marker_line(fixture: str, marker_text: str) -> int:
@@ -2834,18 +2694,14 @@ class TestWorkedExamplePairsControlPair:
         records = _adjudicate(_PRE_FIX_CLAUSE_D)
         contradicting = [r for r in records if r['agrees'] is False]
 
-        assert len(contradicting) == 1, (
-            f'Expected exactly one contradicting pair. Got: {records}'
-        )
+        assert len(contradicting) == 1, f'Expected exactly one contradicting pair. Got: {records}'
         entry = contradicting[0]
         assert entry['file'] == 'error-handling.md'
         assert entry['line'] == _marker_line(
             _PRE_FIX_CLAUSE_D,
             '// GOOD — the operation reports whether it applied, and that is what is read',
         )
-        assert entry['clause'] == (
-            '(d) Require an affirmative success signal, never absence-of-change'
-        )
+        assert entry['clause'] == ('(d) Require an affirmative success signal, never absence-of-change')
         # The load-bearing half: the entry names BOTH predicates, so the
         # assertion cannot be satisfied by the class merely being registered.
         assert entry['example_predicate'] == 'outcome.applied'
@@ -2873,9 +2729,7 @@ class TestWorkedExamplePairsControlPair:
     def test_the_two_fixtures_differ_only_in_the_demonstration(self):
         # Pins the discriminator's premise: both fixtures carry the SAME clause
         # heading, so the opposite verdicts cannot be explained by the clause.
-        assert (
-            _PRE_FIX_CLAUSE_D.splitlines()[0] == _POST_FIX_CLAUSE_D.splitlines()[0]
-        )
+        assert _PRE_FIX_CLAUSE_D.splitlines()[0] == _POST_FIX_CLAUSE_D.splitlines()[0]
         assert 'outcome.applied' in _PRE_FIX_CLAUSE_D
         assert 'outcome.status' in _POST_FIX_CLAUSE_D
 
@@ -2902,9 +2756,7 @@ class TestWorkedExamplePairsGenerality:
         contradicting = [r for r in records if r['agrees'] is False]
 
         assert len(contradicting) == 1
-        assert contradicting[0]['clause'] == (
-            '(d) Require an affirmative success signal, never absence-of-change'
-        )
+        assert contradicting[0]['clause'] == ('(d) Require an affirmative success signal, never absence-of-change')
         assert contradicting[0]['example_predicate'] == 'outcome.applied'
 
 
@@ -2993,9 +2845,7 @@ class TestDetectWorkedExamplePairsDiffScope:
         # The same document, but the diff touches a line far past the clause's
         # span, so the section is out of the diff's scope.
         project_dir = self._write(tmp_path, _PRE_FIX_CLAUSE_D + '\n## Later\n\nprose\n')
-        last_line = len(
-            (_PRE_FIX_CLAUSE_D + '\n## Later\n\nprose\n').splitlines()
-        )
+        last_line = len((_PRE_FIX_CLAUSE_D + '\n## Later\n\nprose\n').splitlines())
         added = [('doc.md', last_line, 'prose')]
 
         assert _detect_worked_example_pairs(added, project_dir) == []
@@ -3014,9 +2864,7 @@ class TestScanWorkedExamplesVerb:
     def _scan(self, repo: Path, *extra: str):
         from conftest import get_script_path, run_script
 
-        script = get_script_path(
-            'pm-plugin-development', 'ext-self-review-plan-marshall', 'self_review.py'
-        )
+        script = get_script_path('pm-plugin-development', 'ext-self-review-plan-marshall', 'self_review.py')
         return run_script(
             script,
             'scan-worked-examples',
@@ -3069,9 +2917,7 @@ class TestScanWorkedExamplesVerb:
         assert int(data_without['population']['pairs_unadjudicated']) == 1
         assert 'unadjudicated_pairs' not in data_without
 
-        with_flag = self._scan(
-            repo, '--paths-glob', 'standards/*.md', '--include-unadjudicated'
-        )
+        with_flag = self._scan(repo, '--paths-glob', 'standards/*.md', '--include-unadjudicated')
         assert with_flag.success
         assert len(with_flag.toon()['unadjudicated_pairs']) == 1
 
@@ -3129,9 +2975,7 @@ class TestCountsTotalInvariant:
     #: four review-anchor lists and omitted ``protected_identifiers``, which is
     #: ALSO excluded from ``total`` — so the invariant below held only while that
     #: list happened to be empty in every fixture.
-    _EXCLUDED_FROM_TOTAL = tuple(
-        spec.key for spec in CANDIDATE_LISTS if not spec.in_total
-    )
+    _EXCLUDED_FROM_TOTAL = tuple(spec.key for spec in CANDIDATE_LISTS if not spec.in_total)
 
     #: ``counts`` keys that are NOT a per-list cardinality: the ``total`` sum and
     #: the nested ``by_family`` decomposition. Both are derived FROM the per-list
@@ -3143,9 +2987,7 @@ class TestCountsTotalInvariant:
     def _surface(self, repo: Path):
         from conftest import get_script_path, run_script
 
-        script = get_script_path(
-            'pm-plugin-development', 'ext-self-review-plan-marshall', 'self_review.py'
-        )
+        script = get_script_path('pm-plugin-development', 'ext-self-review-plan-marshall', 'self_review.py')
         result = run_script(
             script,
             'surface',
@@ -3189,8 +3031,7 @@ class TestCountsTotalInvariant:
         included_sum = sum(
             int(v)
             for k, v in counts.items()
-            if k not in self._NON_LIST_COUNT_KEYS
-            and k not in self._EXCLUDED_FROM_TOTAL
+            if k not in self._NON_LIST_COUNT_KEYS and k not in self._EXCLUDED_FROM_TOTAL
         )
         assert int(counts['total']) == included_sum
 
@@ -3211,8 +3052,7 @@ class TestCountsTotalInvariant:
         included_sum = sum(
             int(v)
             for k, v in counts.items()
-            if k not in self._NON_LIST_COUNT_KEYS
-            and k not in self._EXCLUDED_FROM_TOTAL
+            if k not in self._NON_LIST_COUNT_KEYS and k not in self._EXCLUDED_FROM_TOTAL
         )
         assert int(counts['total']) == included_sum
 
@@ -3225,11 +3065,7 @@ class TestCountsTotalInvariant:
         _commit(repo, 'base', {'base.txt': 'base\n'})
         _git(repo, 'checkout', '-b', 'feature')
         (repo / 'guide.md').write_text(
-            '1. First item\n'
-            '2. Second item\n'
-            '3. Third item\n'
-            '\n'
-            'See item 2 for the prerequisite.\n'
+            '1. First item\n2. Second item\n3. Third item\n\nSee item 2 for the prerequisite.\n'
         )
         _git(repo, 'add', 'guide.md')
 
@@ -3246,12 +3082,10 @@ class TestCountsTotalInvariant:
         included_sum = sum(
             int(v)
             for k, v in counts.items()
-            if k not in self._NON_LIST_COUNT_KEYS
-            and k not in self._EXCLUDED_FROM_TOTAL
+            if k not in self._NON_LIST_COUNT_KEYS and k not in self._EXCLUDED_FROM_TOTAL
         )
         assert int(counts['total']) == included_sum
         assert 'ordinal_references' not in self._EXCLUDED_FROM_TOTAL
-
 
     def test_scan_derived_keys_included_in_total(self, tmp_path):
         # An uncommitted .py diff carrying the scan-versus-anchor derivation
@@ -3286,8 +3120,7 @@ class TestCountsTotalInvariant:
         included_sum = sum(
             int(v)
             for k, v in counts.items()
-            if k not in self._NON_LIST_COUNT_KEYS
-            and k not in self._EXCLUDED_FROM_TOTAL
+            if k not in self._NON_LIST_COUNT_KEYS and k not in self._EXCLUDED_FROM_TOTAL
         )
         assert int(counts['total']) == included_sum
         assert 'scan_derived_keys' not in self._EXCLUDED_FROM_TOTAL
@@ -3316,8 +3149,7 @@ class TestCountsTotalInvariant:
         included_sum = sum(
             int(v)
             for k, v in counts.items()
-            if k not in self._NON_LIST_COUNT_KEYS
-            and k not in self._EXCLUDED_FROM_TOTAL
+            if k not in self._NON_LIST_COUNT_KEYS and k not in self._EXCLUDED_FROM_TOTAL
         )
         assert int(counts['total']) == included_sum
         assert 'worked_example_pairs' not in self._EXCLUDED_FROM_TOTAL
@@ -3340,8 +3172,7 @@ class TestCountsTotalInvariant:
         included_sum = sum(
             int(v)
             for k, v in counts.items()
-            if k not in self._NON_LIST_COUNT_KEYS
-            and k not in self._EXCLUDED_FROM_TOTAL
+            if k not in self._NON_LIST_COUNT_KEYS and k not in self._EXCLUDED_FROM_TOTAL
         )
         assert int(counts['total']) == included_sum
 
@@ -3361,8 +3192,7 @@ class TestCountsTotalInvariant:
         included_sum = sum(
             int(v)
             for k, v in counts.items()
-            if k not in self._NON_LIST_COUNT_KEYS
-            and k not in self._EXCLUDED_FROM_TOTAL
+            if k not in self._NON_LIST_COUNT_KEYS and k not in self._EXCLUDED_FROM_TOTAL
         )
         assert int(counts['total']) == included_sum
 
@@ -3401,9 +3231,7 @@ class TestSurfaceResolverMigration:
         """
         import self_review
 
-        assert_sentinel_accepted(
-            lambda plan_id: self_review.resolve_project_dir(plan_id, None, default=None)
-        )
+        assert_sentinel_accepted(lambda plan_id: self_review.resolve_project_dir(plan_id, None, default=None))
 
     def test_explicit_project_dir_bypasses_resolution_entirely(self, tmp_path, monkeypatch, capsys):
         """``--project-dir`` short-circuits before any worktree resolution.
@@ -3484,14 +3312,9 @@ class TestCandidateListRegistry:
         iterates an empty registry passes while proving nothing.
         """
         population = len(CANDIDATE_LISTS)
-        assert population, (
-            'CANDIDATE_LISTS is EMPTY, so every registry assertion in this class '
-            'passes vacuously.'
-        )
+        assert population, 'CANDIDATE_LISTS is EMPTY, so every registry assertion in this class passes vacuously.'
 
-        offenders = [
-            spec.key for spec in CANDIDATE_LISTS if spec.family not in CANDIDATE_FAMILIES
-        ]
+        offenders = [spec.key for spec in CANDIDATE_LISTS if spec.family not in CANDIDATE_FAMILIES]
 
         assert not offenders, (
             f'{len(offenders)} of {population} registry entries carry a family '
@@ -3544,9 +3367,7 @@ class TestCandidateListRegistry:
         # reads as "not measured"; a zero reads as "none found", and the two are
         # the distinction the block exists to preserve.
         detected: dict[str, list] = {spec.key: [] for spec in CANDIDATE_LISTS}
-        first_structural = next(
-            spec for spec in CANDIDATE_LISTS if spec.in_total and spec.family == 'structural'
-        )
+        first_structural = next(spec for spec in CANDIDATE_LISTS if spec.in_total and spec.family == 'structural')
         detected[first_structural.key] = [{'file': 'a.py', 'line': 1}]
 
         by_family = _compose_candidate_output(detected)['counts']['by_family']
@@ -3628,9 +3449,7 @@ class TestCandidateListRegistry:
 
         from conftest import get_script_path, run_script
 
-        script = get_script_path(
-            'pm-plugin-development', 'ext-self-review-plan-marshall', 'self_review.py'
-        )
+        script = get_script_path('pm-plugin-development', 'ext-self-review-plan-marshall', 'self_review.py')
         result = run_script(
             script,
             'surface',
@@ -3650,9 +3469,7 @@ class TestCandidateListRegistry:
         # not per-list cardinalities, so they are excluded before the key set is
         # compared against the registry.
         assert set(data['counts']) - {'total', 'by_family'} == registry_keys
-        assert registry_keys <= set(data), (
-            f'Payload is missing registry keys: {sorted(registry_keys - set(data))}'
-        )
+        assert registry_keys <= set(data), f'Payload is missing registry keys: {sorted(registry_keys - set(data))}'
 
 
 # =============================================================================
@@ -3710,9 +3527,7 @@ class TestSinceRefDeltaScoping:
     def _surface(repo: Path, *extra: str):
         from conftest import get_script_path, run_script
 
-        script = get_script_path(
-            'pm-plugin-development', 'ext-self-review-plan-marshall', 'self_review.py'
-        )
+        script = get_script_path('pm-plugin-development', 'ext-self-review-plan-marshall', 'self_review.py')
         return run_script(
             script,
             'surface',
@@ -3771,9 +3586,7 @@ class TestSinceRefDeltaScoping:
         # would report a full-surface verdict a caller reads as delta-scoped.
         repo, _ = self._build_two_round_repo(tmp_path)
 
-        result = self._surface(
-            repo, '--since-ref', 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef'
-        )
+        result = self._surface(repo, '--since-ref', 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef')
 
         assert not result.success
         data = result.toon()
@@ -3841,9 +3654,7 @@ class TestStructuralLimit:
     def _surface(repo: Path, *extra: str):
         from conftest import get_script_path, run_script
 
-        script = get_script_path(
-            'pm-plugin-development', 'ext-self-review-plan-marshall', 'self_review.py'
-        )
+        script = get_script_path('pm-plugin-development', 'ext-self-review-plan-marshall', 'self_review.py')
         return run_script(
             script,
             'surface',
@@ -3963,15 +3774,9 @@ class TestScopeStatementSentence:
     @pytest.mark.parametrize(
         ('files_in_scope', 'expected'),
         [
-            pytest.param(
-                0, 'searched full scope: 0 files across the whole plan diff', id='full-zero'
-            ),
-            pytest.param(
-                1, 'searched full scope: 1 file across the whole plan diff', id='full-one'
-            ),
-            pytest.param(
-                2, 'searched full scope: 2 files across the whole plan diff', id='full-two'
-            ),
+            pytest.param(0, 'searched full scope: 0 files across the whole plan diff', id='full-zero'),
+            pytest.param(1, 'searched full scope: 1 file across the whole plan diff', id='full-one'),
+            pytest.param(2, 'searched full scope: 2 files across the whole plan diff', id='full-two'),
         ],
     )
     def test_full_sentence_is_rendered_whole(self, files_in_scope, expected):
@@ -3979,9 +3784,7 @@ class TestScopeStatementSentence:
 
     def test_absent_since_ref_names_the_previous_round(self):
         """A delta round with no recorded anchor still names one in prose."""
-        assert 'changed since the previous round' in _format_scope_statement(
-            'delta', 2, None
-        )
+        assert 'changed since the previous round' in _format_scope_statement('delta', 2, None)
 
     @pytest.mark.parametrize('files_in_scope', [0, 1, 2, 3, 11])
     def test_demonstrative_and_noun_agree_in_number(self, files_in_scope):
@@ -4005,13 +3808,7 @@ class TestScopeStatementSentence:
 # =============================================================================
 
 
-_SKILL_DOC = (
-    MARKETPLACE_ROOT
-    / 'pm-plugin-development'
-    / 'skills'
-    / 'ext-self-review-plan-marshall'
-    / 'SKILL.md'
-)
+_SKILL_DOC = MARKETPLACE_ROOT / 'pm-plugin-development' / 'skills' / 'ext-self-review-plan-marshall' / 'SKILL.md'
 
 #: The documented ``by_class`` block header, capturing its declared row count.
 _BY_CLASS_HEADER_RE = re.compile(r'by_class\[(\d+)\]\{[^}]*\}:')

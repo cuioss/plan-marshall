@@ -22,15 +22,18 @@ def in_tmp_cwd(tmp_path, monkeypatch):
     """Run with the process working directory inside an isolated tmp_path."""
     monkeypatch.chdir(tmp_path)
 
+
 @pytest.fixture()
 def plan_base_dir_at_tmp(tmp_path, monkeypatch):
     """Point PLAN_BASE_DIR at an isolated tmp_path/.plan root."""
     monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path / '.plan'))
 
+
 @pytest.fixture()
 def no_pm_dist_manifest(monkeypatch):
     """Clear PM_DIST_MANIFEST so resolution falls through to its next source."""
     monkeypatch.delenv('PM_DIST_MANIFEST', raising=False)
+
 
 # Path to the script
 SCRIPTS_DIR = get_scripts_dir('plan-marshall', 'tools-script-executor')
@@ -609,9 +612,7 @@ def _read_generated_scripts(generated_executor: Path) -> dict[str, str]:
         pythonpath = pythonpath + os.pathsep + env['PYTHONPATH']
     env['PYTHONPATH'] = pythonpath
 
-    result = subprocess.run(
-        [sys.executable, '-c', code], capture_output=True, text=True, env=env, timeout=30
-    )
+    result = subprocess.run([sys.executable, '-c', code], capture_output=True, text=True, env=env, timeout=30)
     assert result.returncode == 0, (
         f'Failed to load generated executor: stdout={result.stdout!r} stderr={result.stderr!r}'
     )
@@ -682,9 +683,7 @@ def _generate_with_anchor(
     )
 
     generated_executor = plan_dir / 'execute-script.py'
-    assert generated_executor.exists(), (
-        f'Expected generated executor at {generated_executor}, stdout={result.stdout}'
-    )
+    assert generated_executor.exists(), f'Expected generated executor at {generated_executor}, stdout={result.stdout}'
 
     return _read_generated_scripts(generated_executor)
 
@@ -716,9 +715,7 @@ def test_marketplace_root_flag_anchors_discovery_to_supplied_path(outside_repo_d
     )
 
     sentinel_path = mappings[expected_notation]
-    assert sentinel_path.startswith(str(fake_ws)), (
-        f'Expected sentinel path rooted at {fake_ws}, got {sentinel_path}'
-    )
+    assert sentinel_path.startswith(str(fake_ws)), f'Expected sentinel path rooted at {fake_ws}, got {sentinel_path}'
 
     # No mapping may resolve under the real project's marketplace tree or
     # the plugin cache when --marketplace-root is supplied.
@@ -729,17 +726,13 @@ def test_marketplace_root_flag_anchors_discovery_to_supplied_path(outside_repo_d
         assert not path.startswith(real_marketplace), (
             f'{notation} resolved to real marketplace {path}, not fake {fake_ws}'
         )
-        assert not path.startswith(plugin_cache), (
-            f'{notation} resolved to plugin cache {path}, not fake {fake_ws}'
-        )
+        assert not path.startswith(plugin_cache), f'{notation} resolved to plugin cache {path}, not fake {fake_ws}'
         # Defense-in-depth: the sentinel path is the strongest signal, but
         # also verify no path leaked back to the real project root via cwd
         # discovery. Allow paths under the out-of-repo working dir which (on
         # macOS) may resolve via /private/var symlinks.
         if not path.startswith(str(outside_repo_dir.resolve())) and not path.startswith(str(outside_repo_dir)):
-            assert not path.startswith(real_cwd), (
-                f'{notation} resolved under real cwd {real_cwd}: {path}'
-            )
+            assert not path.startswith(real_cwd), f'{notation} resolved under real cwd {real_cwd}: {path}'
 
 
 def test_pm_marketplace_root_env_var_anchors_discovery(tmp_path, monkeypatch):
@@ -761,15 +754,13 @@ def test_pm_marketplace_root_env_var_anchors_discovery(tmp_path, monkeypatch):
 
     sentinel_path = mappings[expected_notation]
     assert sentinel_path.startswith(str(fake_ws)), (
-        f'Expected sentinel path rooted at {fake_ws} (via PM_MARKETPLACE_ROOT), '
-        f'got {sentinel_path}'
+        f'Expected sentinel path rooted at {fake_ws} (via PM_MARKETPLACE_ROOT), got {sentinel_path}'
     )
 
     real_marketplace = str(MARKETPLACE_ROOT.resolve())
     for notation, path in mappings.items():
         assert not path.startswith(real_marketplace), (
-            f'{notation} leaked through to real marketplace {path} despite '
-            f'PM_MARKETPLACE_ROOT={fake_ws}'
+            f'{notation} leaked through to real marketplace {path} despite PM_MARKETPLACE_ROOT={fake_ws}'
         )
 
 
@@ -784,8 +775,7 @@ def test_pm_marketplace_root_env_var_anchors_discovery(tmp_path, monkeypatch):
 # test/plan-marshall/manage-status/test_merge_lock_removed.py.
 
 TEMPLATE_PATH = (
-    PROJECT_ROOT
-    / 'marketplace/bundles/plan-marshall/skills/tools-script-executor/templates/execute-script.py.template'
+    PROJECT_ROOT / 'marketplace/bundles/plan-marshall/skills/tools-script-executor/templates/execute-script.py.template'
 )
 
 
@@ -803,10 +793,7 @@ def _load_template_module():
     # Inert substitutions: empty mappings, no shared dirs, a temp logging
     # placeholder pointing at the real logging scripts so `from plan_logging
     # import ...` succeeds at module load.
-    logging_dir = str(
-        PROJECT_ROOT
-        / 'marketplace/bundles/plan-marshall/skills/manage-logging/scripts'
-    )
+    logging_dir = str(PROJECT_ROOT / 'marketplace/bundles/plan-marshall/skills/manage-logging/scripts')
     source = source.replace('{{SCRIPT_MAPPINGS}}', '')
     source = source.replace('{{SCRIPT_SURFACES}}', '')
     source = source.replace('{{SUBCOMMAND_MAPPINGS}}', '')
@@ -853,9 +840,7 @@ def test_template_carries_no_session_binding_code():
         'CLAUDE_CODE_SESSION_ID',
         'active-plan',
     ):
-        assert needle not in source, (
-            f'removed binding artifact {needle!r} still present in the executor template'
-        )
+        assert needle not in source, f'removed binding artifact {needle!r} still present in the executor template'
 
     # The build-class change-ledger boundary's own _active_plan_id resolution is
     # PRESERVED (it is independent of the removed binder).
@@ -890,9 +875,7 @@ def test_ast_subcommand_extractor_symbols_removed():
         'generate_subcommands_code',
         'generate_subcommands_block',
     ):
-        assert not hasattr(module, symbol), (
-            f'AST extractor symbol {symbol!r} must be removed from generate_executor.py'
-        )
+        assert not hasattr(module, symbol), f'AST extractor symbol {symbol!r} must be removed from generate_executor.py'
 
 
 # Executor-guard backstop decision (ADR-002): under the
@@ -949,9 +932,7 @@ def test_no_worktree_write_refusal_guard_symbol_present():
 #: locate the SAME line — one asserting its presence, one anchoring a positional
 #: ordering check on it — and a guard edit that updated only one of them would
 #: leave the other silently searching for a string the template no longer has.
-_BUILD_LEDGER_GUARD = (
-    'if _is_build_class_notation(notation, subcommand) and not _mentions_help(script_args):'
-)
+_BUILD_LEDGER_GUARD = 'if _is_build_class_notation(notation, subcommand) and not _mentions_help(script_args):'
 
 
 def test_template_contains_build_ledger_append_at_dispatch_boundary():
@@ -959,12 +940,8 @@ def test_template_contains_build_ledger_append_at_dispatch_boundary():
     dispatch boundary, guarded by all three build-class conjuncts."""
     source = TEMPLATE_PATH.read_text(encoding='utf-8')
 
-    assert 'def _append_build_ledger_record(' in source, (
-        '_append_build_ledger_record helper missing from template'
-    )
-    assert 'def _is_build_class_notation(' in source, (
-        '_is_build_class_notation predicate missing from template'
-    )
+    assert 'def _append_build_ledger_record(' in source, '_append_build_ledger_record helper missing from template'
+    assert 'def _is_build_class_notation(' in source, '_is_build_class_notation predicate missing from template'
     # main() must guard the append behind all three conjuncts and call the
     # appender with the resolved plan_id and exit_code. The predicate covers the
     # notation and the already-computed subcommand; the third conjunct needs the
@@ -1068,9 +1045,7 @@ def test_template_build_ledger_append_fires_after_dispatch_not_before():
     # call site must also follow the exit_code assignment.
     exit_code_idx = source.find('exit_code = result.returncode')
     assert exit_code_idx != -1, 'exit_code assignment not found in template'
-    assert call_site_idx > exit_code_idx, (
-        'ledger append must fire after exit_code is bound from the dispatch result'
-    )
+    assert call_site_idx > exit_code_idx, 'ledger append must fire after exit_code is bound from the dispatch result'
 
 
 def test_template_build_ledger_helpers_loadable_and_predicate_works():
@@ -1426,8 +1401,7 @@ def test_find_installed_manifest_path_highest_version_wins_over_stale_cache_root
     resolved = module.find_installed_manifest_path(cache_base)
 
     assert resolved == newer, (
-        'a newer clone-root manifest must win over the earlier-iterated stale '
-        f'cache-root manifest; got {resolved}'
+        f'a newer clone-root manifest must win over the earlier-iterated stale cache-root manifest; got {resolved}'
     )
 
 
@@ -1899,7 +1873,9 @@ def _fake_bundles_root(tmp_path: Path) -> Path:
 
 def _fake_template_path(bundles_root: Path) -> Path:
     """Return the copied executor template inside a fake bundles tree."""
-    return bundles_root / 'plan-marshall' / 'skills' / 'tools-script-executor' / 'templates' / 'execute-script.py.template'
+    return (
+        bundles_root / 'plan-marshall' / 'skills' / 'tools-script-executor' / 'templates' / 'execute-script.py.template'
+    )
 
 
 def _seed_pre_existing_executor(tmp_path: Path) -> tuple[Path, str]:
@@ -1911,7 +1887,7 @@ def _seed_pre_existing_executor(tmp_path: Path) -> tuple[Path, str]:
     plan_dir = tmp_path / '.plan'
     plan_dir.mkdir(exist_ok=True)
     executor = plan_dir / 'execute-script.py'
-    sentinel = "# SENTINEL pre-existing executor — must survive a refused regen\nSCRIPTS = {}\n"
+    sentinel = '# SENTINEL pre-existing executor — must survive a refused regen\nSCRIPTS = {}\n'
     executor.write_text(sentinel, encoding='utf-8')
     return executor, sentinel
 
@@ -1935,7 +1911,9 @@ def test_generate_executor_wellformed_writes_compilable_and_reports_success(tmp_
     compile(generated.read_text(encoding='utf-8'), str(generated), 'exec')
 
 
-def test_generate_executor_format_skew_refuses_write_and_preserves_existing(tmp_path, monkeypatch, no_pm_dist_manifest, plan_base_dir_at_tmp):
+def test_generate_executor_format_skew_refuses_write_and_preserves_existing(
+    tmp_path, monkeypatch, no_pm_dist_manifest, plan_base_dir_at_tmp
+):
     """(b) A template whose TEMPLATE_FORMAT_VERSION marker mismatches the
     generator's supported version returns status: error, writes no executor, and
     leaves any pre-existing executor byte-identical."""
@@ -1948,9 +1926,7 @@ def test_generate_executor_format_skew_refuses_write_and_preserves_existing(tmp_
     # literal current one: hard-coding ``: 1`` here made the fixture a silent
     # no-op the moment the real format version was bumped, and a skew test that
     # writes an UNSKEWED template passes for the wrong reason.
-    skewed = re.sub(
-        r'#\s*TEMPLATE_FORMAT_VERSION:\s*\d+', '# TEMPLATE_FORMAT_VERSION: 999', body
-    )
+    skewed = re.sub(r'#\s*TEMPLATE_FORMAT_VERSION:\s*\d+', '# TEMPLATE_FORMAT_VERSION: 999', body)
     assert skewed != body, 'fixture must actually alter the format marker'
     template.write_text(skewed, encoding='utf-8')
 
@@ -1967,10 +1943,14 @@ def test_generate_executor_format_skew_refuses_write_and_preserves_existing(tmp_
 
     assert result['status'] == 'error', f'a format skew must be refused, got {result}'
     assert 'format' in result['error'].lower() or 'version' in result['error'].lower()
-    assert executor.read_text(encoding='utf-8') == sentinel, 'pre-existing executor must be byte-identical after refusal'
+    assert executor.read_text(encoding='utf-8') == sentinel, (
+        'pre-existing executor must be byte-identical after refusal'
+    )
 
 
-def test_generate_executor_placeholder_residue_refuses_write_and_preserves_existing(tmp_path, monkeypatch, no_pm_dist_manifest, plan_base_dir_at_tmp):
+def test_generate_executor_placeholder_residue_refuses_write_and_preserves_existing(
+    tmp_path, monkeypatch, no_pm_dist_manifest, plan_base_dir_at_tmp
+):
     """(c) A substituted content carrying a residual {{...}} placeholder token
     (a placeholder the generator never fills) is refused with no write and the
     pre-existing executor preserved."""
@@ -1998,10 +1978,14 @@ def test_generate_executor_placeholder_residue_refuses_write_and_preserves_exist
 
     assert result['status'] == 'error', f'placeholder residue must be refused, got {result}'
     assert 'residue' in result['error'].lower() or 'placeholder' in result['error'].lower()
-    assert executor.read_text(encoding='utf-8') == sentinel, 'pre-existing executor must be byte-identical after refusal'
+    assert executor.read_text(encoding='utf-8') == sentinel, (
+        'pre-existing executor must be byte-identical after refusal'
+    )
 
 
-def test_generate_executor_py_compile_failure_refuses_write_and_preserves_existing(tmp_path, monkeypatch, no_pm_dist_manifest, plan_base_dir_at_tmp):
+def test_generate_executor_py_compile_failure_refuses_write_and_preserves_existing(
+    tmp_path, monkeypatch, no_pm_dist_manifest, plan_base_dir_at_tmp
+):
     """(d) A substitution that produces non-compiling Python returns status: error
     and preserves the pre-existing working executor untouched — the direct Leg B
     acceptance assertion (a broken executor can never be emitted)."""
@@ -2030,7 +2014,9 @@ def test_generate_executor_py_compile_failure_refuses_write_and_preserves_existi
 
     assert result['status'] == 'error', f'a non-compiling substitution must be refused, got {result}'
     assert 'compile' in result['error'].lower() or 'syntax' in result['error'].lower()
-    assert executor.read_text(encoding='utf-8') == sentinel, 'pre-existing working executor must be preserved on a failed self-check'
+    assert executor.read_text(encoding='utf-8') == sentinel, (
+        'pre-existing working executor must be preserved on a failed self-check'
+    )
 
 
 # ============================================================================
@@ -2053,7 +2039,9 @@ def _cache_script_path(cache_root: Path, bundle: str, version: str, script: str)
     return str(cache_root / bundle / version / 'skills' / 'skill-x' / 'scripts' / f'{script}.py')
 
 
-def test_guard4_two_version_dirs_for_one_bundle_refuses_write_and_preserves_existing(tmp_path, no_pm_dist_manifest, plan_base_dir_at_tmp):
+def test_guard4_two_version_dirs_for_one_bundle_refuses_write_and_preserves_existing(
+    tmp_path, no_pm_dist_manifest, plan_base_dir_at_tmp
+):
     """A mapping set spanning two version dirs of ONE bundle is refused, and the
     pre-existing executor is left byte-identical."""
     module = load_module()
@@ -2213,7 +2201,9 @@ def test_guard4_detects_split_for_digit_prefixed_bundle_name(tmp_path, no_pm_dis
     assert executor.read_text(encoding='utf-8') == sentinel, 'pre-existing executor must survive the refusal'
 
 
-def test_guard4_digit_prefixed_bundles_in_marketplace_layout_are_not_a_split(tmp_path, monkeypatch, no_pm_dist_manifest):
+def test_guard4_digit_prefixed_bundles_in_marketplace_layout_are_not_a_split(
+    tmp_path, monkeypatch, no_pm_dist_manifest
+):
     """(b) false-positive direction: two sibling digit-prefixed bundles in the
     version-less marketplace layout are distinct bundles, not one bundle at two
     versions — generation must proceed."""
@@ -2230,13 +2220,13 @@ def test_guard4_digit_prefixed_bundles_in_marketplace_layout_are_not_a_split(tmp
     }
     result = module.generate_executor(mappings, bundles_root, dry_run=False, target='claude')
 
-    assert result['status'] == 'success', (
-        f'digit-prefixed marketplace bundles are not a version split, got {result}'
-    )
+    assert result['status'] == 'success', f'digit-prefixed marketplace bundles are not a version split, got {result}'
     assert (plan_dir / 'execute-script.py').is_file()
 
 
-def test_guard4_detects_split_under_version_shaped_ancestor_directory(tmp_path, no_pm_dist_manifest, plan_base_dir_at_tmp):
+def test_guard4_detects_split_under_version_shaped_ancestor_directory(
+    tmp_path, no_pm_dist_manifest, plan_base_dir_at_tmp
+):
     """(a) end-to-end: with a version-shaped ancestor ABOVE the cache root, a
     genuine per-bundle version split is still detected — the ancestor segment is
     relativized away instead of being read as the version dir for every path."""
@@ -2253,13 +2243,9 @@ def test_guard4_detects_split_under_version_shaped_ancestor_directory(tmp_path, 
     }
     result = module.generate_executor(mappings, bundles_root, dry_run=False, target='claude')
 
-    assert result['status'] == 'error', (
-        f'a version-shaped ancestor must not mask a genuine split, got {result}'
-    )
+    assert result['status'] == 'error', f'a version-shaped ancestor must not mask a genuine split, got {result}'
     assert 'split-bundle' in result['error'], 'the error must name the offending bundle'
-    assert '1.0-workspace' not in result['error'], (
-        'the ancestor directory must never be reported as a version dir'
-    )
+    assert '1.0-workspace' not in result['error'], 'the ancestor directory must never be reported as a version dir'
     assert executor.read_text(encoding='utf-8') == sentinel, 'pre-existing executor must survive the refusal'
 
 
@@ -2317,9 +2303,7 @@ def test_get_templates_dir_ignores_cache_newest_base_path(tmp_path):
     module = load_module()
 
     # Build a decoy cache-version tree carrying its own (wrong-version) template.
-    decoy_templates = (
-        tmp_path / 'plan-marshall' / '0.1.9999' / 'skills' / 'tools-script-executor' / 'templates'
-    )
+    decoy_templates = tmp_path / 'plan-marshall' / '0.1.9999' / 'skills' / 'tools-script-executor' / 'templates'
     decoy_templates.mkdir(parents=True)
     (decoy_templates / 'execute-script.py.template').write_text('# decoy newer-version template\n')
 
@@ -2331,9 +2315,7 @@ def test_get_templates_dir_ignores_cache_newest_base_path(tmp_path):
     assert not str(result).startswith(str(tmp_path)), (
         f'resolved templates dir must not live under the passed base_path, got {result}'
     )
-    assert (result / 'execute-script.py.template').is_file(), (
-        'resolved dir must be the real co-located templates dir'
-    )
+    assert (result / 'execute-script.py.template').is_file(), 'resolved dir must be the real co-located templates dir'
 
 
 def test_get_shared_module_dirs_stays_base_path_newest_version(tmp_path):
@@ -2402,9 +2384,7 @@ def _surface_notation(script: str) -> str:
 
 
 def _surface_scripts_dir(root: Path) -> Path:
-    return (
-        root / 'marketplace' / 'bundles' / _SURF_BUNDLE / 'skills' / _SURF_SKILL / 'scripts'
-    )
+    return root / 'marketplace' / 'bundles' / _SURF_BUNDLE / 'skills' / _SURF_SKILL / 'scripts'
 
 
 def _write_surface_script(root: Path, name: str, body: str) -> str:
@@ -2588,19 +2568,13 @@ def test_counts_partition_the_registered_population(tmp_path, monkeypatch):
     _write_surface_script(tmp_path, '_surface_parser_lib', _IMPORTED_PARSER_LIB)
     mappings = {
         _surface_notation('aliased'): _write_surface_script(tmp_path, 'aliased', _ALIAS_SCRIPT),
-        _surface_notation('imported'): _write_surface_script(
-            tmp_path, 'imported', _IMPORTED_PARSER_SCRIPT
-        ),
+        _surface_notation('imported'): _write_surface_script(tmp_path, 'imported', _IMPORTED_PARSER_SCRIPT),
         _surface_notation('broken'): _write_surface_script(tmp_path, 'broken', _BROKEN_SCRIPT),
     }
 
     result = _generate_with_surfaces(module, mappings)
     assert result['scripts_registered'] == 3
-    total = (
-        result['surfaces_derived']
-        + result['surfaces_reused']
-        + result['surfaces_not_derivable']
-    )
+    total = result['surfaces_derived'] + result['surfaces_reused'] + result['surfaces_not_derivable']
     assert total == result['scripts_registered'], result
     assert result['surfaces_derived'] == 2
     assert result['surfaces_not_derivable'] == 1
@@ -2625,13 +2599,9 @@ def test_regeneration_with_unchanged_scripts_reuses_and_is_byte_identical(tmp_pa
     first_bytes = executor.read_bytes()
 
     second = _generate_with_surfaces(module, mappings)
-    assert second['surfaces_derived'] == 0, (
-        'an unchanged script set must perform ZERO derivations on regeneration'
-    )
+    assert second['surfaces_derived'] == 0, 'an unchanged script set must perform ZERO derivations on regeneration'
     assert second['surfaces_reused'] == 1
-    assert executor.read_bytes() == first_bytes, (
-        'regeneration over an unchanged script set must be byte-stable'
-    )
+    assert executor.read_bytes() == first_bytes, 'regeneration over an unchanged script set must be byte-stable'
 
 
 def test_editing_an_imported_sibling_module_invalidates_the_cached_surface(tmp_path, monkeypatch):
@@ -2657,9 +2627,7 @@ def test_editing_an_imported_sibling_module_invalidates_the_cached_surface(tmp_p
     _write_surface_script(tmp_path, '_surface_parser_lib', _IMPORTED_PARSER_LIB_EXTENDED)
 
     second = _generate_with_surfaces(module, mappings)
-    assert second['surfaces_derived'] == 1, (
-        'a sibling-module edit must invalidate the dependent surface, not reuse it'
-    )
+    assert second['surfaces_derived'] == 1, 'a sibling-module edit must invalidate the dependent surface, not reuse it'
     assert second['surfaces_reused'] == 0
     after = module.read_previous_surfaces(executor)[notation]
     assert after['digest'] != before['digest']
@@ -2701,9 +2669,7 @@ def test_nested_shared_module_edit_changes_the_shared_dirs_digest(tmp_path):
     shared = _nested_shared_dir(tmp_path)
 
     before = module._shared_dirs_digest([shared])
-    (shared / 'build' / '_build_cli.py').write_text(
-        "FLAGS = ('--module', '--fail-fast')\n", encoding='utf-8'
-    )
+    (shared / 'build' / '_build_cli.py').write_text("FLAGS = ('--module', '--fail-fast')\n", encoding='utf-8')
     after = module._shared_dirs_digest([shared])
 
     assert after != before, (
@@ -2783,9 +2749,7 @@ def test_dir_digest_ignores_pycache_residue(tmp_path):
     assert module._dir_digest(shared) == before
 
 
-def test_failed_rederivation_drops_the_entry_rather_than_reusing_the_cached_one(
-    tmp_path, monkeypatch
-):
+def test_failed_rederivation_drops_the_entry_rather_than_reusing_the_cached_one(tmp_path, monkeypatch):
     """A stale surface is never resurrected by a derivation that failed.
 
     The very edit that broke the help may be the edit that changed the surface,
@@ -2822,15 +2786,11 @@ def test_failed_rederivation_drops_the_entry_rather_than_reusing_the_cached_one(
     assert result['surfaces_not_derivable'] == 1, result
 
     written = module.read_previous_surfaces(executor)
-    assert aliased not in written, (
-        'a failed re-derivation must DROP the entry, not fall back to the cached one'
-    )
+    assert aliased not in written, 'a failed re-derivation must DROP the entry, not fall back to the cached one'
     assert sibling in written, 'the unaffected sibling keeps its surface'
 
 
-def test_total_surface_collapse_against_a_populated_previous_fails_open(
-    tmp_path, monkeypatch
-):
+def test_total_surface_collapse_against_a_populated_previous_fails_open(tmp_path, monkeypatch):
     """A regeneration that loses its LAST surface refuses rather than shipping inert.
 
     When every registered script's surface drops to zero while the previous
@@ -2868,9 +2828,7 @@ def test_generator_and_shipped_template_declare_the_same_format_version():
     every generation fails — this test catches that at edit time instead.
     """
     module = load_module()
-    template = (module.SCRIPT_DIR.parent / 'templates' / 'execute-script.py.template').read_text(
-        encoding='utf-8'
-    )
+    template = (module.SCRIPT_DIR.parent / 'templates' / 'execute-script.py.template').read_text(encoding='utf-8')
     declared = module.parse_template_format_version(template)
     assert declared == module._SUPPORTED_TEMPLATE_FORMAT_VERSION, (
         f'shipped template declares TEMPLATE_FORMAT_VERSION={declared!r} but the '
@@ -2887,9 +2845,7 @@ def test_template_declares_the_script_surfaces_placeholder():
     not fill is caught at generation. This pins the first direction.
     """
     module = load_module()
-    template = (module.SCRIPT_DIR.parent / 'templates' / 'execute-script.py.template').read_text(
-        encoding='utf-8'
-    )
+    template = (module.SCRIPT_DIR.parent / 'templates' / 'execute-script.py.template').read_text(encoding='utf-8')
     assert 'SCRIPT_SURFACES = {' in template
     assert '{{' + 'SCRIPT_SURFACES' + '}}' in template
 
@@ -2929,15 +2885,9 @@ def test_unparseable_budget_falls_back_to_the_default(monkeypatch):
     """A malformed budget must not fail generation — it falls back."""
     module = load_module()
     monkeypatch.setenv(module._SURFACE_DERIVATION_BUDGET_ENV, 'not-a-number')
-    assert (
-        module._surface_derivation_config().total_budget_seconds
-        == module._DEFAULT_SURFACE_BUDGET_SECONDS
-    )
+    assert module._surface_derivation_config().total_budget_seconds == module._DEFAULT_SURFACE_BUDGET_SECONDS
     monkeypatch.setenv(module._SURFACE_DERIVATION_BUDGET_ENV, '-5')
-    assert (
-        module._surface_derivation_config().total_budget_seconds
-        == module._DEFAULT_SURFACE_BUDGET_SECONDS
-    )
+    assert module._surface_derivation_config().total_budget_seconds == module._DEFAULT_SURFACE_BUDGET_SECONDS
     monkeypatch.setenv(module._SURFACE_DERIVATION_BUDGET_ENV, '12.5')
     assert module._surface_derivation_config().total_budget_seconds == 12.5
 
@@ -2975,9 +2925,7 @@ def test_surfaces_code_emission_is_sorted_and_deterministic():
     assert set(parsed) == {'a:a:a', 'z:z:z'}
 
 
-def test_format_skew_refuses_before_spending_the_accept_set_derivation(
-    tmp_path, monkeypatch
-):
+def test_format_skew_refuses_before_spending_the_accept_set_derivation(tmp_path, monkeypatch):
     """The cheap refusal runs FIRST — ahead of the expensive derivation.
 
     The format handshake is a comparison against a marker already in hand and it
@@ -3007,9 +2955,7 @@ def test_format_skew_refuses_before_spending_the_accept_set_derivation(
     mappings = {notation: _write_surface_script(tmp_path, 'aliased', _ALIAS_SCRIPT)}
 
     # Positive control — supported version, derivation reached.
-    ok = module.generate_executor(
-        mappings, MARKETPLACE_ROOT, dry_run=False, target='claude'
-    )
+    ok = module.generate_executor(mappings, MARKETPLACE_ROOT, dry_run=False, target='claude')
     assert ok['status'] == 'success', ok
     assert len(calls) == 1, 'the spy never observed the derivation call site'
     unchanged = executor.read_bytes()
@@ -3018,9 +2964,7 @@ def test_format_skew_refuses_before_spending_the_accept_set_derivation(
     calls.clear()
     monkeypatch.setattr(module, '_SUPPORTED_TEMPLATE_FORMAT_VERSION', 999)
 
-    result = module.generate_executor(
-        mappings, MARKETPLACE_ROOT, dry_run=False, target='claude'
-    )
+    result = module.generate_executor(mappings, MARKETPLACE_ROOT, dry_run=False, target='claude')
 
     assert result['status'] == 'error'
     assert 'Template format skew' in result['error']
@@ -3029,12 +2973,9 @@ def test_format_skew_refuses_before_spending_the_accept_set_derivation(
         'the whole derivation budget is spent to reach a conclusion available '
         'from a string comparison'
     )
-    assert executor.read_bytes() == unchanged, (
-        'a refused generation must leave the existing executor byte-identical'
-    )
+    assert executor.read_bytes() == unchanged, 'a refused generation must leave the existing executor byte-identical'
     assert list(executor.parent.glob('*.probe.tmp')) == [], (
-        'the throwaway probe executor leaked — it is written only for the '
-        'derivation and unlinked on every exit path'
+        'the throwaway probe executor leaked — it is written only for the derivation and unlinked on every exit path'
     )
 
 
@@ -3067,6 +3008,4 @@ def test_dry_run_surface_stats_is_a_copy_of_the_shared_default(capsys):
     second = module.generate_executor({}, MARKETPLACE_ROOT, dry_run=True)
     capsys.readouterr()
 
-    assert second['surface_stats'] == baseline, (
-        'a later dry run inherited the earlier caller mutation'
-    )
+    assert second['surface_stats'] == baseline, 'a later dry run inherited the earlier caller mutation'

@@ -249,9 +249,7 @@ _COLLECTION_CONSTRAINT_RE = re.compile(r'\btestpaths\b')
 #: quoted from the corpus to show the SHAPE the rule reads; neither identifier
 #: appears in the pattern, which carries the grammar and nothing drawn from any
 #: one spec.
-_CROSS_PLAN_REFERENCE_RE = re.compile(
-    rf"(?P<cited>\b{PLAN_ID_PREFIXED_SEGMENT}|\bslice[ \t]+`?\d+`?)['’]s\b"
-)
+_CROSS_PLAN_REFERENCE_RE = re.compile(rf"(?P<cited>\b{PLAN_ID_PREFIXED_SEGMENT}|\bslice[ \t]+`?\d+`?)['’]s\b")
 
 #: Rule (d) — a HEDGED CONDITIONAL CLAIM. A bullet that names a span and then
 #: WITHDRAWS it in its own words is not claiming that span: ``the tests for this
@@ -535,10 +533,7 @@ def _spans_with_exclusion(segment: str) -> list[tuple[str, bool]]:
     """Return each backticked span with whether it follows an ``excluding``."""
     match = _EXCLUDING_RE.search(segment)
     cut = match.end() if match else None
-    return [
-        (found.group(1), cut is not None and found.start() >= cut)
-        for found in _BACKTICK_RE.finditer(segment)
-    ]
+    return [(found.group(1), cut is not None and found.start() >= cut) for found in _BACKTICK_RE.finditer(segment)]
 
 
 def _bullet_segments(body: str) -> list[str]:
@@ -567,10 +562,7 @@ def _cites_another_plan(head: str, plan_id: str) -> bool:
     ordinal is never a plan id, so it never compares equal and always reads as
     another's.
     """
-    return any(
-        match.group('cited') != plan_id
-        for match in _CROSS_PLAN_REFERENCE_RE.finditer(head)
-    )
+    return any(match.group('cited') != plan_id for match in _CROSS_PLAN_REFERENCE_RE.finditer(head))
 
 
 def _entry_shape(label: str, body: str, head: str, plan_id: str) -> str:
@@ -631,7 +623,7 @@ def _collect_bullet(
     """
     label_match = _LABEL_PREFIX_RE.match(bullet)
     label = label_match.group('label') if label_match else ''
-    body = bullet[label_match.end():] if label_match else bullet
+    body = bullet[label_match.end() :] if label_match else bullet
     negative = bool(_NEGATIVE_CLAIM_RE.match(body))
     segments = _bullet_segments(body)
     shape = _entry_shape(label, body, segments[0], plan_id)

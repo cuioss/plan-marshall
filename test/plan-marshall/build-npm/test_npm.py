@@ -50,7 +50,11 @@ def test_api_execute_direct_success():
     """Test execute_direct API with successful command."""
     with BuildContext() as ctx:
         result = execute_direct(
-            args='--version', command_key='test:version', default_timeout=10, project_dir=str(ctx.temp_dir), plan_id=_PLAN_ID
+            args='--version',
+            command_key='test:version',
+            default_timeout=10,
+            project_dir=str(ctx.temp_dir),
+            plan_id=_PLAN_ID,
         )
 
         # npm --version should succeed (npm is available in most environments)
@@ -63,7 +67,11 @@ def test_api_execute_direct_returns_log_file():
     """Test execute_direct API returns log_file (R1 compliance)."""
     with BuildContext() as ctx:
         result = execute_direct(
-            args='--version', command_key='test:log_file', default_timeout=10, project_dir=str(ctx.temp_dir), plan_id=_PLAN_ID
+            args='--version',
+            command_key='test:log_file',
+            default_timeout=10,
+            project_dir=str(ctx.temp_dir),
+            plan_id=_PLAN_ID,
         )
 
         # R1: All build output must go to a log file
@@ -79,7 +87,11 @@ def test_api_execute_direct_npx_command():
     """Test execute_direct API with npx command."""
     with BuildContext() as ctx:
         result = execute_direct(
-            args='--version', command_key='test:npx_version', default_timeout=10, project_dir=str(ctx.temp_dir), plan_id=_PLAN_ID
+            args='--version',
+            command_key='test:npx_version',
+            default_timeout=10,
+            project_dir=str(ctx.temp_dir),
+            plan_id=_PLAN_ID,
         )
 
         # --version is detected as npm not npx (starts with -)

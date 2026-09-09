@@ -54,7 +54,9 @@ assert MARKETPLACE_ROOT.is_dir() and any(MARKETPLACE_ROOT.iterdir()), (
 
 
 def _load_doctor_shared():
-    return load_script_module('pm-plugin-development', 'plugin-doctor', '_doctor_shared.py', '_doctor_shared_under_test')
+    return load_script_module(
+        'pm-plugin-development', 'plugin-doctor', '_doctor_shared.py', '_doctor_shared_under_test'
+    )
 
 
 _doctor_shared = _load_doctor_shared()
@@ -66,7 +68,9 @@ find_marketplace_root = _doctor_shared.find_marketplace_root
 # suite drives them in-process — matching the style of
 # ``test_doctor_marketplace_commands.py``. Genuine CLI/exit-code/argparse-surface
 # cases below still use ``run_script`` where in-process cannot exercise the path.
-_doctor = load_script_module('pm-plugin-development', 'plugin-doctor', 'doctor-marketplace.py', 'doctor_marketplace_cmds')
+_doctor = load_script_module(
+    'pm-plugin-development', 'plugin-doctor', 'doctor-marketplace.py', 'doctor_marketplace_cmds'
+)
 
 
 def _ns(**overrides):
@@ -312,9 +316,7 @@ def test_fixture_list_components_bundle_filter():
     temp_dir = fixture.setup_temp_marketplace()
 
     try:
-        data = _doctor.cmd_list_components(
-            _ns(marketplace_root=str(temp_dir / 'marketplace'), bundles='test-bundle')
-        )
+        data = _doctor.cmd_list_components(_ns(marketplace_root=str(temp_dir / 'marketplace'), bundles='test-bundle'))
 
         assert data['total_bundles'] == 1, 'Should have exactly one bundle'
         assert data['bundles'][0]['name'] == 'test-bundle', 'Should be test-bundle'
@@ -1044,9 +1046,7 @@ def test_analyze_scans_project_local_recipe_tree_via_layout_op(tmp_path):
         + data.get('categorized_safe', [])
         + data.get('categorized_risky', [])
     )
-    recipe_findings = [
-        i for i in issues if isinstance(i, dict) and i.get('type') == 'recipe-missing-implements'
-    ]
+    recipe_findings = [i for i in issues if isinstance(i, dict) and i.get('type') == 'recipe-missing-implements']
     assert recipe_findings, f'project-local recipe missing implements: should be flagged, got: {data}'
     assert any('recipe-local-thing' in str(i.get('file', '')) for i in recipe_findings), (
         f'finding should reference the project-local recipe SKILL.md, got: {recipe_findings}'
@@ -1156,9 +1156,7 @@ def test_quality_gate_paths_runs_extension_contracts_whole_tree(tmp_path):
     enumeration is the observable signal that the contract rule executed.
     """
     temp_root, _skill_a, skill_b = _build_two_skill_scope_fixture(tmp_path)
-    data = _doctor.cmd_quality_gate(
-        _ns(marketplace_root=str(temp_root / 'marketplace'), paths=[str(skill_b)])
-    )
+    data = _doctor.cmd_quality_gate(_ns(marketplace_root=str(temp_root / 'marketplace'), paths=[str(skill_b)]))
     rules = {entry['rule'] for entry in data['rules_run']}
     assert 'validate_extension_contracts' in rules, (
         f'validate_extension_contracts must run whole-tree even under --paths, rules_run={data["rules_run"]}'
@@ -1168,9 +1166,7 @@ def test_quality_gate_paths_runs_extension_contracts_whole_tree(tmp_path):
 def test_quality_gate_paths_scopes_to_violating_skill(tmp_path):
     """quality-gate --paths {skill-a} surfaces skill A's violation."""
     temp_root, skill_a, _skill_b = _build_two_skill_scope_fixture(tmp_path)
-    data = _doctor.cmd_quality_gate(
-        _ns(marketplace_root=str(temp_root / 'marketplace'), paths=[str(skill_a)])
-    )
+    data = _doctor.cmd_quality_gate(_ns(marketplace_root=str(temp_root / 'marketplace'), paths=[str(skill_a)]))
 
     assert data['status'] == 'fail', f'Scoped run over skill A should fail, got: {data}'
     assert data['total_issues'] >= 1, 'Scoped run over skill A should report the violation'
@@ -1182,9 +1178,7 @@ def test_quality_gate_paths_scopes_to_violating_skill(tmp_path):
 def test_quality_gate_paths_clean_skill_filters_out_violation(tmp_path):
     """quality-gate --paths {skill-b} reports pass — skill A's violation is filtered out."""
     temp_root, _skill_a, skill_b = _build_two_skill_scope_fixture(tmp_path)
-    data = _doctor.cmd_quality_gate(
-        _ns(marketplace_root=str(temp_root / 'marketplace'), paths=[str(skill_b)])
-    )
+    data = _doctor.cmd_quality_gate(_ns(marketplace_root=str(temp_root / 'marketplace'), paths=[str(skill_b)]))
 
     assert data['status'] == 'pass', f'Scoped run over clean skill B should pass, got: {data}'
     assert data['total_issues'] == 0, f'Scoped run over skill B must filter out skill A violation, got: {data}'
@@ -1524,9 +1518,7 @@ def test_quality_gate_registers_four_mirror_rules(tmp_path):
         'broken-relative-link',
         'fenced-code-no-language',
     ):
-        assert rule_id in rules, (
-            f'{rule_id} must appear in rules_run for the build gate, got: {data["rules_run"]}'
-        )
+        assert rule_id in rules, f'{rule_id} must appear in rules_run for the build gate, got: {data["rules_run"]}'
 
 
 # =============================================================================
@@ -2109,9 +2101,7 @@ def _build_historical_prose_fixture(temp_root: Path, *, disable_frontmatter: boo
     skill_dir = bundle / 'skills' / 'hist-skill'
     skill_dir.mkdir(parents=True)
 
-    disable_line = (
-        'plugin-doctor-disable: [no-historical-prose-in-skills]\n' if disable_frontmatter else ''
-    )
+    disable_line = 'plugin-doctor-disable: [no-historical-prose-in-skills]\n' if disable_frontmatter else ''
     (skill_dir / 'SKILL.md').write_text(
         '---\n'
         'name: hist-skill\n'
@@ -2175,9 +2165,7 @@ def test_suppression_fixture_prefix_outside_default_exemptions():
 
     # Act
     default_cfg = shared.load_default_suppression_config()
-    suppressed = shared._config_layer_suppresses(
-        _SUPPRESSION_RULE_ID, _SUPPRESSION_SKILL_PREFIX, default_cfg
-    )
+    suppressed = shared._config_layer_suppresses(_SUPPRESSION_RULE_ID, _SUPPRESSION_SKILL_PREFIX, default_cfg)
 
     # Assert — the fixture path is NOT exempt by default.
     assert suppressed is False, (
@@ -2254,8 +2242,7 @@ def test_analyze_project_config_other_rule_does_not_suppress(tmp_path):
     # Assert — the historical-prose finding is still present (different rule disabled).
     findings = _historical_prose_findings(data)
     assert len(findings) >= 1, (
-        f'Disabling an unrelated rule must NOT suppress {_SUPPRESSION_RULE_ID}, '
-        f'total_issues={data.get("total_issues")}'
+        f'Disabling an unrelated rule must NOT suppress {_SUPPRESSION_RULE_ID}, total_issues={data.get("total_issues")}'
     )
 
 
@@ -2277,8 +2264,7 @@ def test_analyze_frontmatter_disable_suppresses_finding(tmp_path):
     # Assert — the frontmatter disable list suppresses the finding.
     findings = _historical_prose_findings(data)
     assert findings == [], (
-        f'Per-file plugin-doctor-disable must suppress the {_SUPPRESSION_RULE_ID} finding, '
-        f'but it surfaced: {findings}'
+        f'Per-file plugin-doctor-disable must suppress the {_SUPPRESSION_RULE_ID} finding, but it surfaced: {findings}'
     )
 
 
@@ -2325,7 +2311,8 @@ def test_quality_gate_project_config_suppresses_finding(tmp_path):
         f'Project config must suppress the historical-prose finding from the gate, rules_run={data["rules_run"]}'
     )
     hist_issues = [
-        i for i in data['issues']
+        i
+        for i in data['issues']
         if i.get('rule_id') == _SUPPRESSION_RULE_ID or i.get('type') == _SUPPRESSION_FINDING_TYPE
     ]
     assert hist_issues == [], f'Suppressed finding leaked into gate issues: {hist_issues}'

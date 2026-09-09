@@ -1125,14 +1125,22 @@ def main() -> int:
     if project_dir is not None:
         set_default_cwd(project_dir)
 
-    parser = argparse.ArgumentParser(description='GitHub bot_kind-keyed re-review strategy registry', allow_abbrev=False)
+    parser = argparse.ArgumentParser(
+        description='GitHub bot_kind-keyed re-review strategy registry', allow_abbrev=False
+    )
     subparsers = parser.add_subparsers(dest='command', required=True)
 
-    re_review = subparsers.add_parser('re-review', help='Request and await a fresh bot review for the current HEAD', allow_abbrev=False)
+    re_review = subparsers.add_parser(
+        're-review', help='Request and await a fresh bot review for the current HEAD', allow_abbrev=False
+    )
     re_review.add_argument('--pr-number', type=int, required=True, help='PR number')
     re_review.add_argument('--bot-kind', choices=BOT_KINDS, required=True, help='Reviewer bot identity key')
     re_review.add_argument('--head-sha', required=True, help='Current HEAD SHA the fresh review must match')
-    re_review.add_argument('--push-time', required=True, help='ISO-8601 push time (retained for routing uniformity; every registered bot posts an explicit trigger comment)')
+    re_review.add_argument(
+        '--push-time',
+        required=True,
+        help='ISO-8601 push time (retained for routing uniformity; every registered bot posts an explicit trigger comment)',
+    )
     re_review.add_argument(
         '--timeout',
         type=int,

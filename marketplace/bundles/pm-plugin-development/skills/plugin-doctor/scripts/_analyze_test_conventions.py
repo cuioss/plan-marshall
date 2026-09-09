@@ -50,7 +50,9 @@ from _rule_registry import RuleDescriptor
 # build-failing; rules 4, 6 and 7 report at warning severity until their own
 # violation counts reach zero.
 RULE_DESCRIPTORS = [
-    RuleDescriptor(rule_id='unique-fixture-basenames', severity='error', category='structural', scope='corpus-relational'),
+    RuleDescriptor(
+        rule_id='unique-fixture-basenames', severity='error', category='structural', scope='corpus-relational'
+    ),
     RuleDescriptor(rule_id='subprocess-pythonpath', severity='error', category='structural', scope='corpus-relational'),
     RuleDescriptor(
         rule_id='identifier-validator-corpus',
@@ -60,8 +62,12 @@ RULE_DESCRIPTORS = [
     ),
     RuleDescriptor(rule_id='test-module-line-budget', severity='warning', category='structural', scope='file-local'),
     RuleDescriptor(rule_id='test-helper-module-misnamed', severity='error', category='structural', scope='file-local'),
-    RuleDescriptor(rule_id='test-module-preamble-boilerplate', severity='warning', category='structural', scope='file-local'),
-    RuleDescriptor(rule_id='test-docstring-historical-prose', severity='warning', category='content', scope='file-local'),
+    RuleDescriptor(
+        rule_id='test-module-preamble-boilerplate', severity='warning', category='structural', scope='file-local'
+    ),
+    RuleDescriptor(
+        rule_id='test-docstring-historical-prose', severity='warning', category='content', scope='file-local'
+    ),
 ]
 
 GENERIC_HELPER_BASENAMES = frozenset({'_fixtures.py', '_helpers.py', '_common.py'})
@@ -406,30 +412,42 @@ def analyze_validator_regex_vs_corpus(registry: list[dict], project_root: Path |
             validator_path = (cwd / validator_path).resolve()
 
         if not validator_path.is_file():
-            findings.append(_build_corpus_error_finding(validator_path, regex_constant, list_command, 'validator_not_found'))
+            findings.append(
+                _build_corpus_error_finding(validator_path, regex_constant, list_command, 'validator_not_found')
+            )
             continue
 
         regex_pattern = _extract_regex_pattern(validator_path, regex_constant)
         if regex_pattern is None:
-            findings.append(_build_corpus_error_finding(validator_path, regex_constant, list_command, 'regex_constant_not_found'))
+            findings.append(
+                _build_corpus_error_finding(validator_path, regex_constant, list_command, 'regex_constant_not_found')
+            )
             continue
 
         try:
             compiled = re.compile(regex_pattern)
         except re.error as exc:
-            findings.append(_build_corpus_error_finding(validator_path, regex_constant, list_command, f'regex_compile_error:{exc}'))
+            findings.append(
+                _build_corpus_error_finding(validator_path, regex_constant, list_command, f'regex_compile_error:{exc}')
+            )
             continue
 
         try:
             corpus_output = _run_list_command(list_command, cwd)
         except subprocess.CalledProcessError as exc:
             stderr = (exc.stderr or '').strip().splitlines()[-1] if exc.stderr else 'no stderr'
-            findings.append(_build_corpus_error_finding(validator_path, regex_constant, list_command, f'list_command_failed:{stderr}'))
+            findings.append(
+                _build_corpus_error_finding(
+                    validator_path, regex_constant, list_command, f'list_command_failed:{stderr}'
+                )
+            )
             continue
 
         ids = _extract_ids_from_corpus(corpus_output)
         if not ids:
-            findings.append(_build_corpus_error_finding(validator_path, regex_constant, list_command, 'no_ids_in_corpus'))
+            findings.append(
+                _build_corpus_error_finding(validator_path, regex_constant, list_command, 'no_ids_in_corpus')
+            )
             continue
 
         for identifier in ids:
@@ -506,8 +524,8 @@ def _build_corpus_finding(validator_path: Path, pattern: str, list_command: str,
 
 def _build_corpus_error_finding(validator_path: Path, regex_constant: str, list_command: str, reason: str) -> dict:
     description = (
-        f"identifier-validator-corpus check failed for {validator_path.name} "
-        f"({regex_constant} via `{list_command}`) — reason: {reason}"
+        f'identifier-validator-corpus check failed for {validator_path.name} '
+        f'({regex_constant} via `{list_command}`) — reason: {reason}'
     )
     return Finding(
         type='identifier-validator-corpus',
@@ -530,8 +548,8 @@ def _build_collision_finding(path: Path, basename: str, other_paths: list[Path])
     others_repr = ', '.join(str(other) for other in other_paths)
     description = (
         f"helper module basename '{basename}' collides with sibling test "
-        f"directories ({others_repr}) — pytest sys.modules will register "
-        f"only one; rename one or both to a domain-prefixed name"
+        f'directories ({others_repr}) — pytest sys.modules will register '
+        f'only one; rename one or both to a domain-prefixed name'
     )
     return Finding(
         type='unique-fixture-basenames',
@@ -660,9 +678,7 @@ def analyze_test_module_line_budget(test_root: Path, budget: int = TEST_MODULE_L
 #: it INTO the collection patterns -- the defect this widening must not
 #: introduce.
 _LINE_BUDGET_REMEDY = {
-    'collected': (
-        'split by behaviour cluster into test_{unit}_{cluster}.py, not in arbitrary halves'
-    ),
+    'collected': ('split by behaviour cluster into test_{unit}_{cluster}.py, not in arbitrary halves'),
     'helper': (
         'split by the surface it supplies into _{domain}_{surface}.py, keeping each '
         'module outside pytest collection patterns'
@@ -1015,10 +1031,10 @@ def analyze_test_docstring_prose(test_root: Path) -> list[dict]:
 #: Both were observed silently exempting real citations on this repository's own
 #: corpus — a false negative, the direction that matters.
 _INLINE_LITERAL_RE = re.compile(
-    r"``[^`\n]+``"
-    r"|`[^`\n]+`"
+    r'``[^`\n]+``'
+    r'|`[^`\n]+`'
     r"|(?<!\w)'[^'\n]+'(?!\w)"
-    r"|(?<!\w)\"[^\"\n]+\"(?!\w)"
+    r'|(?<!\w)\"[^\"\n]+\"(?!\w)'
 )
 
 
@@ -1027,9 +1043,7 @@ def _inline_literal_spans(text: str) -> list[tuple[int, int]]:
     return [m.span() for m in _INLINE_LITERAL_RE.finditer(text)]
 
 
-def _first_bare_match(
-    pattern: re.Pattern, text: str, literal_spans: list[tuple[int, int]]
-) -> re.Match | None:
+def _first_bare_match(pattern: re.Pattern, text: str, literal_spans: list[tuple[int, int]]) -> re.Match | None:
     """Return the first match of ``pattern`` that is not inside an inline literal.
 
     A match inside a literal is an identifier the prose is *naming* — the value

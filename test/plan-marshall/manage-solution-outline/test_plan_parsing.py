@@ -270,11 +270,7 @@ class TestExtractProfilesBucketComment:
     """
 
     def test_inline_bucket_comment_form_parses_profiles(self):
-        content = (
-            '**Profiles:** <!-- bucket: documentation_only -->\n'
-            '- implementation\n'
-            '- module_testing\n'
-        )
+        content = '**Profiles:** <!-- bucket: documentation_only -->\n- implementation\n- module_testing\n'
         result = _extract_profiles(content)
         assert result == ['implementation', 'module_testing']
 
@@ -301,8 +297,7 @@ class TestExtractProfilesBucketComment:
 
         # profiles come only from the bullet; the bucket token never leaks.
         assert result == ['implementation'], (
-            f'Widened regex must parse the inline bucket form for bucket {bucket!r}; '
-            f'got {result!r}'
+            f'Widened regex must parse the inline bucket form for bucket {bucket!r}; got {result!r}'
         )
         assert bucket not in result
 
@@ -752,19 +747,13 @@ class TestDeclaredPathsPopulation:
         which is precisely why the derivation publishes it.
         """
         no_deliverables_section = '# Solution\n\n## Summary\n\nProse only.\n'
-        declares_nothing = (
-            '## Deliverables\n\n'
-            '### 1. Declares no paths\n\n'
-            '**Profiles:**\n- verification\n'
-        )
+        declares_nothing = '## Deliverables\n\n### 1. Declares no paths\n\n**Profiles:**\n- verification\n'
 
         unread = declared_paths_population(no_deliverables_section)
         empty = declared_paths_population(declares_nothing)
 
         # matched negative control: the sets agree...
-        assert declared_paths_by_intent(no_deliverables_section) == declared_paths_by_intent(
-            declares_nothing
-        )
+        assert declared_paths_by_intent(no_deliverables_section) == declared_paths_by_intent(declares_nothing)
         # ...and only the population disagrees.
         assert unread['deliverables_scanned'] == 0
         assert empty['deliverables_scanned'] == 1

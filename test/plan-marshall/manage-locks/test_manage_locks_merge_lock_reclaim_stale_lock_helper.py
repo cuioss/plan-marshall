@@ -10,7 +10,6 @@ Its sections, in order:
 * _reclaim_stale_lock — atomic eviction of the OBSERVED stale file (deterministic
 """
 
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -65,9 +64,7 @@ class TestReclaimStaleLockHelper:
         siblings = list(lock_path.parent.glob(f'{lock_path.name}.reclaim.*'))
         assert siblings == [], siblings
 
-    def test_reclaim_aborts_and_restores_when_holder_became_live(
-        self, isolated_base: dict
-    ) -> None:
+    def test_reclaim_aborts_and_restores_when_holder_became_live(self, isolated_base: dict) -> None:
         """The abort/restore branch: the file at the path changed to a LIVE holder
         between the liveness observation and the reclaim. The helper renames it
         aside, finds the renamed-away content is NOT the observed dead holder (it
@@ -91,9 +88,7 @@ class TestReclaimStaleLockHelper:
         siblings = list(lock_path.parent.glob(f'{lock_path.name}.reclaim.*'))
         assert siblings == [], siblings
 
-    def test_reclaim_aborts_and_restores_when_holder_changed_to_other_dead(
-        self, isolated_base: dict
-    ) -> None:
+    def test_reclaim_aborts_and_restores_when_holder_changed_to_other_dead(self, isolated_base: dict) -> None:
         """The observed-file arbitration also loses when the path's content changed
         to a DIFFERENT holder (even another dead one) before the rename — the
         renamed-away content must equal the SPECIFIC observed holder. A mismatch
@@ -112,9 +107,7 @@ class TestReclaimStaleLockHelper:
         siblings = list(lock_path.parent.glob(f'{lock_path.name}.reclaim.*'))
         assert siblings == [], siblings
 
-    def test_reclaim_drops_sidecar_and_loses_when_restore_replace_raises(
-        self, isolated_base: dict
-    ) -> None:
+    def test_reclaim_drops_sidecar_and_loses_when_restore_replace_raises(self, isolated_base: dict) -> None:
         """The abort/restore branch when ``os.replace`` ITSELF raises: the helper
         observed a dead holder, renamed the file aside, then found the renamed-away
         content was NOT the observed dead holder — so it tries to restore the file

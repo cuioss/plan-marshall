@@ -30,9 +30,7 @@ from conftest import get_skill_dir
 # Annotated because ``conftest`` is deliberately untyped to mypy (see pyproject's
 # ``ignore_missing_imports`` override for it), so the accessor's return would
 # otherwise be ``Any`` and ``_stage2_block`` would return ``Any`` as ``str``.
-_UPGRADE_FLOW: Path = (
-    get_skill_dir('plan-marshall', 'marshall-steward') / 'references' / 'upgrade-flow.md'
-)
+_UPGRADE_FLOW: Path = get_skill_dir('plan-marshall', 'marshall-steward') / 'references' / 'upgrade-flow.md'
 
 
 def _stage2_block() -> str:
@@ -58,9 +56,7 @@ def _stage2_emitted_sub_steps() -> list[str]:
     """
     stage2 = next(spec for spec in upgrade._STAGE_SPECS if spec['key'] == 'reconcile-config')
     sub_steps = stage2['sub_steps']
-    assert isinstance(sub_steps, list), (
-        'Stage 2 sub_steps became kind-dependent; this check must resolve per kind'
-    )
+    assert isinstance(sub_steps, list), 'Stage 2 sub_steps became kind-dependent; this check must resolve per kind'
     return sub_steps
 
 
@@ -88,8 +84,7 @@ def test_stage2_prose_names_every_sub_step_the_planner_emits():
 
     missing = [sub_step for sub_step in emitted if sub_step not in block]
     assert missing == [], (
-        f'Stage 2 emits {emitted!r} but upgrade-flow.md § "Stage 2: reconcile-config" '
-        f'never names {missing!r}'
+        f'Stage 2 emits {emitted!r} but upgrade-flow.md § "Stage 2: reconcile-config" never names {missing!r}'
     )
 
 

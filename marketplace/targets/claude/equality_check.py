@@ -193,15 +193,11 @@ def _read_emitted_plugin_json(bundle_dir: Path, target_dir: Path) -> dict:
     try:
         raw = plugin_json.read_text(encoding='utf-8')
     except (OSError, UnicodeDecodeError) as exc:
-        raise CorruptEmittedPluginJsonError(
-            bundle_dir.name, plugin_json, f'could not be read: {exc}'
-        ) from exc
+        raise CorruptEmittedPluginJsonError(bundle_dir.name, plugin_json, f'could not be read: {exc}') from exc
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError as exc:
-        raise CorruptEmittedPluginJsonError(
-            bundle_dir.name, plugin_json, f'is not valid JSON: {exc}'
-        ) from exc
+        raise CorruptEmittedPluginJsonError(bundle_dir.name, plugin_json, f'is not valid JSON: {exc}') from exc
     if not isinstance(parsed, dict):
         raise CorruptEmittedPluginJsonError(
             bundle_dir.name,
@@ -224,8 +220,7 @@ def _read_emitted_plugin_json(bundle_dir: Path, target_dir: Path) -> dict:
             raise CorruptEmittedPluginJsonError(
                 bundle_dir.name,
                 plugin_json,
-                f'declares {field_name!r}[{index}] as {type(element).__name__}, '
-                'not a string',
+                f'declares {field_name!r}[{index}] as {type(element).__name__}, not a string',
             )
     return parsed
 
@@ -358,10 +353,7 @@ def run_equality_check(
     bundle_count = len(bundles_list)
 
     if not target_dir.exists():
-        summary = (
-            f"target/claude not generated at {target_dir} — "
-            "run './pw generate-claude' first"
-        )
+        summary = f"target/claude not generated at {target_dir} — run './pw generate-claude' first"
         return EqualityResult(
             passed=False,
             diffs=[],
@@ -390,17 +382,16 @@ def run_equality_check(
     if missing or corrupt:
         reasons: list[str] = []
         if missing:
-            reasons.append(f"missing for: {', '.join(sorted(missing))}")
+            reasons.append(f'missing for: {", ".join(sorted(missing))}')
         if corrupt:
             # Deliberately does NOT enumerate the unusable shapes. Every shape
             # has the same remedy — re-emit, which the summary already states —
             # so the list was never actionable, and it silently went stale the
             # moment a fifth shape was enforced: an operator whose agents[0]
             # was an object read four causes, none of them theirs.
-            reasons.append(f"present but unusable "
-                           f"for: {', '.join(sorted(corrupt))}")
+            reasons.append(f'present but unusable for: {", ".join(sorted(corrupt))}')
         summary = (
-            f"target/claude/{{bundle}}/.claude-plugin/plugin.json {'; '.join(reasons)} — "
+            f'target/claude/{{bundle}}/.claude-plugin/plugin.json {"; ".join(reasons)} — '
             "run './pw generate-claude' first"
         )
         return EqualityResult(
@@ -429,7 +420,7 @@ def run_equality_check(
         summary = (
             f'equality check failed: {marketplace_diagnostic}. '
             "Re-run './pw generate-claude' "
-            "to regenerate target/claude/ from current sources."
+            'to regenerate target/claude/ from current sources.'
         )
     else:
         bundles_with_drift = sorted({d.bundle for d in all_diffs})
@@ -441,8 +432,8 @@ def run_equality_check(
             f'across {len(bundles_with_drift)}/{bundle_count} bundles '
             f'({", ".join(bundles_with_drift)}).{suffix} '
             "Re-run './pw generate-claude' "
-            "to regenerate target/claude/ from current sources. "
-            "Do NOT edit the source plugin.json files — they are canonical-only."
+            'to regenerate target/claude/ from current sources. '
+            'Do NOT edit the source plugin.json files — they are canonical-only.'
         )
     return EqualityResult(
         passed=passed,

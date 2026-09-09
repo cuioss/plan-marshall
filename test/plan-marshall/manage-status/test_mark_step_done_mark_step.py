@@ -12,7 +12,6 @@ Its sections, in order:
 * Error paths
 """
 
-
 from _mark_step_done_fixtures import _args, _make_plan, cmd_mark_step_done, read_status, write_status
 
 # =============================================================================
@@ -270,9 +269,7 @@ def test_mark_step_force_migrates_legacy_bare_string_preserving_prior_outcome(pl
     write_status(plan_id, status)
 
     # Act: force the migration to the dict shape.
-    result = cmd_mark_step_done(
-        _args(plan_id, '1-init', 'step-a', 'skipped', force=True, display_detail='migrated')
-    )
+    result = cmd_mark_step_done(_args(plan_id, '1-init', 'step-a', 'skipped', force=True, display_detail='migrated'))
 
     # Assert: the migration succeeds and the superseded bare string is retained.
     assert result['status'] == 'success'
@@ -366,13 +363,9 @@ def test_mark_step_failed_idempotent(plan_context):
     """Re-marking a step 'failed' with same detail is a no-op (changed=False)."""
     plan_id = 'mark-step-failed-idempotent'
     _make_plan(plan_id)
-    cmd_mark_step_done(
-        _args(plan_id, '6-finalize', 'automatic-review', 'failed', display_detail='timeout')
-    )
+    cmd_mark_step_done(_args(plan_id, '6-finalize', 'automatic-review', 'failed', display_detail='timeout'))
 
-    second = cmd_mark_step_done(
-        _args(plan_id, '6-finalize', 'automatic-review', 'failed', display_detail='timeout')
-    )
+    second = cmd_mark_step_done(_args(plan_id, '6-finalize', 'automatic-review', 'failed', display_detail='timeout'))
 
     assert second['status'] == 'success'
     assert second['changed'] is False

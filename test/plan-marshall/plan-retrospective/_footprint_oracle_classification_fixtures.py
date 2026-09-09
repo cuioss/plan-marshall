@@ -23,7 +23,6 @@ Each of those tests pins one deliverable of the plan that introduced
   genuinely unresolvable path fails loudly rather than reporting skip.
 """
 
-
 from __future__ import annotations
 
 import json

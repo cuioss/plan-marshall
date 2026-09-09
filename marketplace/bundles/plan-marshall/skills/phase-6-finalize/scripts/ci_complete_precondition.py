@@ -188,9 +188,7 @@ HARNESS_BASH_CEILING_SECONDS: int | None = _resolve_harness_bash_ceiling()
 #: when the target imposes no ceiling (clamp disabled above).
 #: Derived, never hard-coded, so it tracks the runtime-provided value.
 _MAX_INNER_WAIT_SECONDS: int | None = (
-    None
-    if HARNESS_BASH_CEILING_SECONDS is None
-    else HARNESS_BASH_CEILING_SECONDS - CI_WAIT_OUTER_BUFFER_SECONDS - 1
+    None if HARNESS_BASH_CEILING_SECONDS is None else HARNESS_BASH_CEILING_SECONDS - CI_WAIT_OUTER_BUFFER_SECONDS - 1
 )
 
 #: Cache file path relative to the plan directory.
@@ -270,15 +268,10 @@ def _run_git_rev_parse_head(worktree_path: str) -> str:
         check=False,
     )
     if completed.returncode != 0:
-        raise RuntimeError(
-            f"git rev-parse HEAD failed in {worktree_path!r}: "
-            f"{completed.stderr.strip() or 'no stderr'}"
-        )
+        raise RuntimeError(f'git rev-parse HEAD failed in {worktree_path!r}: {completed.stderr.strip() or "no stderr"}')
     sha = completed.stdout.strip()
     if not sha:
-        raise RuntimeError(
-            f"git rev-parse HEAD returned empty output in {worktree_path!r}"
-        )
+        raise RuntimeError(f'git rev-parse HEAD returned empty output in {worktree_path!r}')
     return sha
 
 
@@ -353,7 +346,7 @@ def _run_ci_wait(
             'wait_outcome': 'deadline_exceeded',
             'error': (
                 'ci wait subprocess exceeded the '
-                f"{timeout_seconds + CI_WAIT_OUTER_BUFFER_SECONDS}s "
+                f'{timeout_seconds + CI_WAIT_OUTER_BUFFER_SECONDS}s '
                 'outer ceiling without returning'
             ),
         }
@@ -365,9 +358,9 @@ def _run_ci_wait(
         return {
             'status': 'error',
             'error': (
-                f"ci wait subprocess produced no output "
-                f"(exit_code={completed.returncode}): "
-                f"{completed.stderr.strip() or 'no stderr'}"
+                f'ci wait subprocess produced no output '
+                f'(exit_code={completed.returncode}): '
+                f'{completed.stderr.strip() or "no stderr"}'
             ),
         }
     try:
@@ -375,7 +368,7 @@ def _run_ci_wait(
     except Exception as exc:  # pragma: no cover — defensive only
         return {
             'status': 'error',
-            'error': f"ci wait output not parseable as TOON: {exc}",
+            'error': f'ci wait output not parseable as TOON: {exc}',
             'raw_stdout': stdout,
         }
 
@@ -608,8 +601,7 @@ def resolve(
 
     if mode not in ('strict', 'consume-failures'):
         raise RuntimeError(
-            f"ci_complete_precondition.resolve: invalid mode {mode!r} — "
-            "must be 'strict' or 'consume-failures'"
+            f"ci_complete_precondition.resolve: invalid mode {mode!r} — must be 'strict' or 'consume-failures'"
         )
 
     # Source the wait ceiling from run-configuration.json when the caller
@@ -638,11 +630,7 @@ def resolve(
 
     # Cache hit?
     cached = _read_cache(plan_id)
-    if (
-        cached is not None
-        and cached.get('head_sha') == head_sha
-        and cached.get('ci_final_status') == 'success'
-    ):
+    if cached is not None and cached.get('head_sha') == head_sha and cached.get('ci_final_status') == 'success':
         return {
             'status': 'satisfied',
             'head_sha': head_sha,
@@ -939,12 +927,12 @@ def build_parser() -> argparse.ArgumentParser:
         default='strict',
         dest='mode',
         help=(
-            "Precondition mode for the global ci-complete (ci-arm) path — "
+            'Precondition mode for the global ci-complete (ci-arm) path — '
             "ignored when --signal-arm names a producer arm. 'strict' "
-            "(default) short-circuits the consumer step on wait_failed. "
+            '(default) short-circuits the consumer step on wait_failed. '
             "'consume-failures' is used by ci-verify — wait_failed threads "
-            "the envelope through to the consumer body without short-"
-            "circuiting. See phase-6-finalize/standards/ci-verify.md."
+            'the envelope through to the consumer body without short-'
+            'circuiting. See phase-6-finalize/standards/ci-verify.md.'
         ),
     )
     resolve_parser.add_argument(
@@ -954,11 +942,11 @@ def build_parser() -> argparse.ArgumentParser:
         dest='signal_arm',
         help=(
             "Producer arm to gate the FIND step on. Omitted (or 'ci') "
-            "resolves the legacy global ci-complete precondition honouring "
+            'resolves the legacy global ci-complete precondition honouring '
             "--mode. 'review' / 'sonar' gate on that arm's own terminal "
-            "state (settled|failed proceed to FIND, pending waits) rather "
-            "than global CI green — a red arm STILL proceeds because its "
-            "findings exist exactly then. See the module docstring."
+            'state (settled|failed proceed to FIND, pending waits) rather '
+            'than global CI green — a red arm STILL proceeds because its '
+            'findings exist exactly then. See the module docstring.'
         ),
     )
     resolve_parser.set_defaults(func=cmd_resolve)

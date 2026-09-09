@@ -55,8 +55,7 @@ from epic_spec_parser import (
 #: PLAN-120 both claim the same directory; PLAN-130 is prose whose only span the
 #: parser cannot anchor; PLAN-140 carries a bare root span.
 SPECS = {
-    'PLAN-100.md': '# PLAN-100\n\n## Expected Surface\n\n'
-    '- Adds `test/alpha/**` excluding `test/alpha/legacy/`\n',
+    'PLAN-100.md': '# PLAN-100\n\n## Expected Surface\n\n- Adds `test/alpha/**` excluding `test/alpha/legacy/`\n',
     'PLAN-110.md': '# PLAN-110\n\n## Expected Surface\n\n- Adds `test/beta/`\n',
     'PLAN-120.md': '# PLAN-120\n\n## Expected Surface\n\n- Adds `test/beta/`\n',
     'PLAN-130.md': '# PLAN-130\n\n## Expected Surface\n\n- Touches `test_four_*.py` modules\n',
@@ -193,10 +192,7 @@ def test_module_two_slice_specs_claim_is_contested(partition) -> None:
 
 
 def test_module_named_only_by_an_unresolvable_span_is_not_derivable(partition) -> None:
-    assert (
-        verdict_of(partition, 'test/gamma/test_four_x.py')
-        == partition_mod.VERDICT_NOT_DERIVABLE
-    )
+    assert verdict_of(partition, 'test/gamma/test_four_x.py') == partition_mod.VERDICT_NOT_DERIVABLE
     assert plans_of(partition, 'test/gamma/test_four_x.py') == ('PLAN-130',)
 
 
@@ -227,9 +223,7 @@ def test_tally_reports_every_verdict_even_at_zero(repo: Path, plans: Path) -> No
 
 
 def test_exclusion_subtracts_from_the_claiming_plans_set(partition) -> None:
-    assert verdict_of(partition, 'test/alpha/legacy/test_old.py') == (
-        partition_mod.VERDICT_UNCLAIMED
-    )
+    assert verdict_of(partition, 'test/alpha/legacy/test_old.py') == (partition_mod.VERDICT_UNCLAIMED)
 
 
 def test_exclusion_does_not_subtract_from_another_plans_claim(repo: Path, plans: Path) -> None:
@@ -301,10 +295,7 @@ _SWEEP_BODY = (
 )
 
 #: The matched negative: an equally BROAD claim with no self-declaration.
-_BROAD_BODY = (
-    '# PLAN-210\n\n## Expected Surface\n\n'
-    '- OBSERVED: `test/beta/` — the directory this plan reduces\n'
-)
+_BROAD_BODY = '# PLAN-210\n\n## Expected Surface\n\n- OBSERVED: `test/beta/` — the directory this plan reduces\n'
 
 #: The SAME declaration written in the plan's own words, sharing no sentence with
 #: ``_SWEEP_BODY``. A plan that declares its crossing this way is exactly as much
@@ -322,7 +313,7 @@ _OWN_WORDS_SWEEP_BODY = (
 #: declaration while claiming an ordinary slice of its own.
 _QUOTING_BODY = (
     '# PLAN-211\n\n## Expected Surface\n\n'
-    '- OBSERVED: `test/beta/` — this plan\'s own mirror\n'
+    "- OBSERVED: `test/beta/` — this plan's own mirror\n"
     '\nThe table below records why each row was read as it was. One row reads '
     '"this plan crosses the whole partition by construction" and is a **genuine claim**.\n'
 )
@@ -386,10 +377,7 @@ _PHRASING_IDS = sorted(_SWEEP_PHRASINGS)
 
 def declaring_body(phrasing: str) -> str:
     """A spec DECLARING ``phrasing`` about itself."""
-    return (
-        '# PLAN-240\n\n## Expected Surface\n\n'
-        f'- OBSERVED: `test/beta/` — ⛔ **the whole tree.** {phrasing}\n'
-    )
+    return f'# PLAN-240\n\n## Expected Surface\n\n- OBSERVED: `test/beta/` — ⛔ **the whole tree.** {phrasing}\n'
 
 
 def quoting_body(phrasing: str) -> str:
@@ -486,9 +474,7 @@ def test_the_quotation_controls_exercise_every_sweep_alternative() -> None:
         for name, phrasing in _SWEEP_PHRASINGS.items()
     }
 
-    assert {name: len(hit) for name, hit in per_phrasing.items()} == dict.fromkeys(
-        _SWEEP_PHRASINGS, 1
-    )
+    assert {name: len(hit) for name, hit in per_phrasing.items()} == dict.fromkeys(_SWEEP_PHRASINGS, 1)
     assert {hit[0] for hit in per_phrasing.values()} == set(partition_mod._SWEEP_ALTERNATIVES)
 
 
@@ -505,9 +491,7 @@ def test_every_sweep_phrasing_declares_a_sweep_on_its_own(phrasing_id: str) -> N
 
 @pytest.mark.parametrize('form_id', _FORM_IDS)
 @pytest.mark.parametrize('phrasing_id', _PHRASING_IDS)
-def test_no_sweep_phrasing_fires_when_the_spec_reproduces_it(
-    phrasing_id: str, form_id: str
-) -> None:
+def test_no_sweep_phrasing_fires_when_the_spec_reproduces_it(phrasing_id: str, form_id: str) -> None:
     """Near-miss control per alternative AND per form: reproducing is not declaring.
 
     The analysing plan claims an ordinary slice and reproduces a sibling's
@@ -599,9 +583,7 @@ def test_stray_marks_in_two_paragraphs_do_not_pair_across_a_declaration() -> Non
     assert partition_mod.is_sweep_declaration(_STRAY_MARKS_ACROSS_PARAGRAPHS_BODY)
 
 
-def test_an_own_words_sweep_does_not_contest_a_slices_ownership(
-    repo: Path, tmp_path: Path
-) -> None:
+def test_an_own_words_sweep_does_not_contest_a_slices_ownership(repo: Path, tmp_path: Path) -> None:
     """The anti-degeneration control, carried through to the partition.
 
     The marker firing is only half the claim: the plan it marks must also stop
@@ -610,9 +592,7 @@ def test_an_own_words_sweep_does_not_contest_a_slices_ownership(
     """
     plans = tmp_path / 'own_words'
     plans.mkdir()
-    build_corpus(
-        plans, {'PLAN-110.md': SPECS['PLAN-110.md'], 'PLAN-201.md': _OWN_WORDS_SWEEP_BODY}
-    )
+    build_corpus(plans, {'PLAN-110.md': SPECS['PLAN-110.md'], 'PLAN-201.md': _OWN_WORDS_SWEEP_BODY})
     claims = classify_corpus(plans, repo)
     modules = partition_mod.iter_test_modules(repo / 'test', repo)
     sweeps = partition_mod.derive_sweep_plans(claims, plans)
@@ -704,9 +684,7 @@ def test_a_non_declaring_broad_plan_still_contests(repo: Path, tmp_path: Path) -
     assert verdict_of(result, 'test/beta/test_three.py') == partition_mod.VERDICT_CONTESTED
 
 
-def test_a_module_only_sweeps_cover_is_swept_with_no_owner_invented(
-    repo: Path, tmp_path: Path
-) -> None:
+def test_a_module_only_sweeps_cover_is_swept_with_no_owner_invented(repo: Path, tmp_path: Path) -> None:
     """Zero slices and one sweep: the crossing is reported, no owner manufactured."""
     plans = tmp_path / 'sweep_only'
     plans.mkdir()
@@ -727,10 +705,7 @@ def test_a_module_only_sweeps_cover_is_swept_with_no_owner_invented(
 
 #: The same path, claimed once as a LEAD and once as an ordinary claim. The two
 #: bodies differ only in the marker, so the control pair isolates the shape.
-_LEAD_BODY = (
-    '# PLAN-220\n\n## Expected Surface\n\n'
-    '- HYPOTHESIS: `test/beta/` — R1\'s output (verify-at-outline)\n'
-)
+_LEAD_BODY = "# PLAN-220\n\n## Expected Surface\n\n- HYPOTHESIS: `test/beta/` — R1's output (verify-at-outline)\n"
 _UNMARKED_BODY = '# PLAN-230\n\n## Expected Surface\n\n- OBSERVED: `test/beta/`\n'
 
 
@@ -767,9 +742,7 @@ def test_an_unmarked_entry_with_the_same_path_still_claims(repo: Path, tmp_path:
     assert plans_of(result, 'test/beta/test_three.py') == ('PLAN-230',)
 
 
-def test_the_demotion_happens_here_and_not_in_the_shared_reader(
-    repo: Path, tmp_path: Path
-) -> None:
+def test_the_demotion_happens_here_and_not_in_the_shared_reader(repo: Path, tmp_path: Path) -> None:
     """Stage 1 states the shape and demotes nothing; THIS stage demotes.
 
     Pins the projection half of the shared reader's contract: the lead entry is
@@ -796,9 +769,7 @@ _DERIVED_BODY = (
 )
 
 
-def test_a_derived_spec_does_not_contest_a_slices_ownership(
-    repo: Path, tmp_path: Path
-) -> None:
+def test_a_derived_spec_does_not_contest_a_slices_ownership(repo: Path, tmp_path: Path) -> None:
     """A union of other plans' surfaces restates their claims, never competes."""
     plans = tmp_path / 'derived'
     plans.mkdir()
@@ -812,9 +783,7 @@ def test_a_derived_spec_does_not_contest_a_slices_ownership(
     assert plans_of(result, 'test/beta/test_three.py') == ('PLAN-110',)
 
 
-def test_a_derived_specs_own_coverage_is_reported_not_derivable(
-    repo: Path, tmp_path: Path
-) -> None:
+def test_a_derived_specs_own_coverage_is_reported_not_derivable(repo: Path, tmp_path: Path) -> None:
     """Its coverage is real but unattributable, so it is stated rather than dropped."""
     plans = tmp_path / 'derived_only'
     plans.mkdir()
@@ -828,9 +797,7 @@ def test_a_derived_specs_own_coverage_is_reported_not_derivable(
     assert plans_of(result, 'test/beta/test_three.py') == ('PLAN-240',)
 
 
-def test_a_declarative_spec_with_the_same_entry_still_claims(
-    repo: Path, tmp_path: Path
-) -> None:
+def test_a_declarative_spec_with_the_same_entry_still_claims(repo: Path, tmp_path: Path) -> None:
     """Matched negative for rule 3: only the spec CLASS differs between the two."""
     plans = tmp_path / 'declarative'
     plans.mkdir()
@@ -891,8 +858,7 @@ _RESIDUAL_MODULES = (
 #: The ordinary slice plans the drivers were contesting. Between them they claim
 #: every module in the tree exactly once.
 _SLICE_SPECS = {
-    'PLAN-410.md': '# PLAN-410\n\n## Expected Surface\n\n'
-    '- OBSERVED: `test/plan-marshall/alpha/`\n',
+    'PLAN-410.md': '# PLAN-410\n\n## Expected Surface\n\n- OBSERVED: `test/plan-marshall/alpha/`\n',
     'PLAN-420.md': '# PLAN-420\n\n## Expected Surface\n\n'
     '- OBSERVED: `test/plan-marshall/beta/`\n'
     '- OBSERVED: `test/pm-plugin-development/`\n',
@@ -978,15 +944,10 @@ def residual_partition(
 
 
 def contests_of(result: partition_mod.Partition) -> dict[str, tuple[str, ...]]:
-    return {
-        module.path: module.plans
-        for module in result.with_verdict(partition_mod.VERDICT_CONTESTED)
-    }
+    return {module.path: module.plans for module in result.with_verdict(partition_mod.VERDICT_CONTESTED)}
 
 
-def test_every_driver_read_leaves_no_module_contested(
-    residual_repo: Path, tmp_path: Path
-) -> None:
+def test_every_driver_read_leaves_no_module_contested(residual_repo: Path, tmp_path: Path) -> None:
     """The headline outcome: each module is attributed to the slice that owns it.
 
     None of the three drivers is an ownership claim, so with all three read the
@@ -1004,9 +965,7 @@ def test_every_driver_read_leaves_no_module_contested(
 
 
 @pytest.mark.parametrize('driver', sorted(_DRIVER_SPECS), ids=sorted(_DRIVER_SPECS))
-def test_each_driver_is_resolved_by_its_own_rule(
-    residual_repo: Path, tmp_path: Path, driver: str
-) -> None:
+def test_each_driver_is_resolved_by_its_own_rule(residual_repo: Path, tmp_path: Path, driver: str) -> None:
     """Per-driver differential: substituting the near-miss returns the contest.
 
     Each pair differs only in the marker its rule reads, so this attributes the
@@ -1019,9 +978,7 @@ def test_each_driver_is_resolved_by_its_own_rule(
     assert contests_of(restored) == _NEAR_MISS_CONTESTS[driver]
 
 
-def test_a_genuine_two_slice_overlap_is_still_reported_as_contested(
-    residual_repo: Path, tmp_path: Path
-) -> None:
+def test_a_genuine_two_slice_overlap_is_still_reported_as_contested(residual_repo: Path, tmp_path: Path) -> None:
     """The residual set keeps its signal: a real overlap survives every rule.
 
     Two slice plans claiming one directory outright, neither citing the other and
@@ -1029,16 +986,11 @@ def test_a_genuine_two_slice_overlap_is_still_reported_as_contested(
     surface. Rules that resolved it too would have bought a clean report by
     deleting the finding.
     """
-    overlap = {
-        'PLAN-460.md': '# PLAN-460\n\n## Expected Surface\n\n'
-        '- OBSERVED: `test/plan-marshall/alpha/`\n'
-    }
+    overlap = {'PLAN-460.md': '# PLAN-460\n\n## Expected Surface\n\n- OBSERVED: `test/plan-marshall/alpha/`\n'}
 
     result = residual_partition(residual_repo, tmp_path, near_miss=None, extra=overlap)
 
-    assert contests_of(result) == {
-        'test/plan-marshall/alpha/test_one.py': ('PLAN-410', 'PLAN-460')
-    }
+    assert contests_of(result) == {'test/plan-marshall/alpha/test_one.py': ('PLAN-410', 'PLAN-460')}
 
 
 # --- rule 4: plan lifecycle state, the input that is not the spec corpus ------
@@ -1095,9 +1047,7 @@ def rival_partition(
     lifecycle = partition_mod.read_plan_lifecycle(epic_dir)
     claims = classify_corpus(plans, repo)
     modules = partition_mod.iter_test_modules(repo / 'test', repo)
-    result = partition_mod.derive_partition(
-        claims, modules, frozenset(), lifecycle.terminal_plans()
-    )
+    result = partition_mod.derive_partition(claims, modules, frozenset(), lifecycle.terminal_plans())
     return lifecycle, result
 
 
@@ -1123,22 +1073,15 @@ def test_the_lifecycle_partition_names_no_plan_identifier() -> None:
 def test_the_two_buckets_partition_the_known_vocabulary() -> None:
     """Every covered status falls in exactly one bucket — no overlap, no gap."""
     assert not partition_mod.TERMINAL_STATUSES & partition_mod.ACTIVE_STATUSES
-    assert (
-        partition_mod.TERMINAL_STATUSES | partition_mod.ACTIVE_STATUSES
-        == partition_mod.KNOWN_STATUSES
-    )
+    assert partition_mod.TERMINAL_STATUSES | partition_mod.ACTIVE_STATUSES == partition_mod.KNOWN_STATUSES
 
 
 #: Every covered status paired with the bucket it must fall in, derived from the
 #: shipped vocabulary so a status added there arrives here as a new case rather
 #: than as silently untested behaviour.
 _BUCKETED_STATUSES = [
-    (status, partition_mod.LIFECYCLE_TERMINAL)
-    for status in sorted(partition_mod.TERMINAL_STATUSES)
-] + [
-    (status, partition_mod.LIFECYCLE_ACTIVE)
-    for status in sorted(partition_mod.ACTIVE_STATUSES)
-]
+    (status, partition_mod.LIFECYCLE_TERMINAL) for status in sorted(partition_mod.TERMINAL_STATUSES)
+] + [(status, partition_mod.LIFECYCLE_ACTIVE) for status in sorted(partition_mod.ACTIVE_STATUSES)]
 
 
 @pytest.mark.parametrize(('status', 'bucket'), _BUCKETED_STATUSES)
@@ -1218,9 +1161,7 @@ def test_a_parked_plan_still_competes(repo: Path, tmp_path: Path) -> None:
 # --- near-miss: two finished plans are not silently attributed to either ------
 
 
-def test_a_module_only_terminal_plans_claim_stays_contested(
-    repo: Path, tmp_path: Path
-) -> None:
+def test_a_module_only_terminal_plans_claim_stays_contested(repo: Path, tmp_path: Path) -> None:
     """Narrowing to nothing would manufacture an ownerless module out of a real claim.
 
     The mirror of the refusal above: with no live claimant left standing there is
@@ -1320,9 +1261,7 @@ def test_an_unusable_ledger_states_its_degradation(unusable_ledger) -> None:
     assert lifecycle.ledger_path.endswith(_LEDGER_FILE)
 
 
-def test_an_unusable_ledger_leaves_every_plan_competing(
-    repo: Path, tmp_path: Path, unusable_ledger
-) -> None:
+def test_an_unusable_ledger_leaves_every_plan_competing(repo: Path, tmp_path: Path, unusable_ledger) -> None:
     """The degraded read reproduces the behaviour that held before this input existed.
 
     Asserted TOGETHER with the stated reason above rather than on the counts
@@ -1403,14 +1342,8 @@ def pattern_ledger() -> dict[str, str]:
 
 #: What the ten shapes must resolve to. Derived from the shape table because that
 #: table is the SPECIFICATION of the shapes, not the implementation's output.
-_PATTERN_RESOLVED = {
-    pattern_module(key): live[0] for key, (_, live) in _PATTERNS.items() if len(live) == 1
-}
-_PATTERN_CONTESTED = {
-    pattern_module(key): tuple(sorted(live))
-    for key, (_, live) in _PATTERNS.items()
-    if len(live) > 1
-}
+_PATTERN_RESOLVED = {pattern_module(key): live[0] for key, (_, live) in _PATTERNS.items() if len(live) == 1}
+_PATTERN_CONTESTED = {pattern_module(key): tuple(sorted(live)) for key, (_, live) in _PATTERNS.items() if len(live) > 1}
 
 
 @pytest.fixture
@@ -1427,17 +1360,11 @@ def pattern_world(tmp_path: Path) -> tuple[Path, Path, Path]:
     return root, plans, epic_dir
 
 
-def pattern_partition(
-    world: tuple[Path, Path, Path], with_ledger: bool
-) -> partition_mod.Partition:
+def pattern_partition(world: tuple[Path, Path, Path], with_ledger: bool) -> partition_mod.Partition:
     root, plans, epic_dir = world
     claims = classify_corpus(plans, root)
     modules = partition_mod.iter_test_modules(root / 'test', root)
-    terminal = (
-        partition_mod.read_plan_lifecycle(epic_dir).terminal_plans()
-        if with_ledger
-        else frozenset()
-    )
+    terminal = partition_mod.read_plan_lifecycle(epic_dir).terminal_plans() if with_ledger else frozenset()
     return partition_mod.derive_partition(claims, modules, frozenset(), terminal)
 
 
@@ -1495,9 +1422,9 @@ def test_module_at_the_budget_is_not_a_finding(repo: Path) -> None:
 
 def test_attribution_buckets_are_keyed_by_owning_plan(repo: Path, partition) -> None:
     write_module(repo, 'test/alpha/test_one.py', lines=12)
-    findings = partition_mod.derive_budget_findings(partition_mod.iter_test_modules(
-        repo / 'test', repo
-    ), repo, budget=10)
+    findings = partition_mod.derive_budget_findings(
+        partition_mod.iter_test_modules(repo / 'test', repo), repo, budget=10
+    )
 
     attribution = partition_mod.derive_attribution(partition, findings, budget=10)
 
@@ -1525,9 +1452,7 @@ def test_each_file_is_attributed_at_most_once(repo: Path, partition) -> None:
     ],
     ids=['unclaimed', 'contested', 'not_derivable'],
 )
-def test_ownerless_populations_get_their_own_buckets(
-    repo: Path, partition, module_path: str, owner: str
-) -> None:
+def test_ownerless_populations_get_their_own_buckets(repo: Path, partition, module_path: str, owner: str) -> None:
     write_module(repo, module_path, lines=12)
     modules = partition_mod.iter_test_modules(repo / 'test', repo)
     findings = partition_mod.derive_budget_findings(modules, repo, budget=10)

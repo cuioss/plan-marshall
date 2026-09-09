@@ -182,9 +182,12 @@ def test_explicit_flags_override_stored_and_default(home):
     result = mbs.run_register(
         _verb_args(
             'register',
-            '--root', str(root),
-            '--container', str(home / 'explicit-wts'),
-            '--notation', 'explicit:cli:notation',
+            '--root',
+            str(root),
+            '--container',
+            str(home / 'explicit-wts'),
+            '--notation',
+            'explicit:cli:notation',
         )
     )
 

@@ -39,7 +39,6 @@ the previous ``test_set_title.py`` paid a second ``spec_from_file_location``
 load of the same production module under a separate name.
 """
 
-
 from pathlib import Path
 
 
@@ -102,13 +101,7 @@ def _seed_active_lesson(
     line, the ``# {title}`` H1, then optional body content.
     """
     path = lessons_dir / f'{lesson_id}.md'
-    frontmatter = (
-        f'id={lesson_id}\n'
-        'component=test-component\n'
-        'category=bug\n'
-        'created=2025-01-01\n'
-        'status=active\n'
-    )
+    frontmatter = f'id={lesson_id}\ncomponent=test-component\ncategory=bug\ncreated=2025-01-01\nstatus=active\n'
     if extra_frontmatter:
         frontmatter += extra_frontmatter
     content = f'{frontmatter}\n# {title}\n'

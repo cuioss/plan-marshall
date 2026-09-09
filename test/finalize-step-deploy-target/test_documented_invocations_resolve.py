@@ -53,6 +53,7 @@ _SKILL_MD = PROJECT_ROOT / '.claude' / 'skills' / 'finalize-step-deploy-target' 
 #: the resolver's own table.
 _EXECUTOR_CALL = re.compile(r'\.plan/execute-script\.py\s+(?P<notation>[A-Za-z0-9_.:-]+)')
 
+
 def _skill_text() -> str:
     return _SKILL_MD.read_text(encoding='utf-8')
 
@@ -78,11 +79,7 @@ def test_every_prescribed_executor_notation_resolves():
     mode under test.
     """
     prescriptions, _ = scan_shell_prescriptions(_skill_text())
-    notations = [
-        match.group('notation')
-        for line in prescriptions
-        for match in _EXECUTOR_CALL.finditer(line)
-    ]
+    notations = [match.group('notation') for line in prescriptions for match in _EXECUTOR_CALL.finditer(line)]
 
     assert notations, (
         f'no executor notations found among {len(prescriptions)} prescribed command line(s) in '

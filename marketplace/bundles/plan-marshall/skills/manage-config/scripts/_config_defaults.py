@@ -145,9 +145,8 @@ def validate_plugin_cache_retention(value: object, field_name: str) -> None:
     """
     floor = 1 if field_name.endswith('plugin_cache_keep_versions') else 0
     if isinstance(value, bool) or not isinstance(value, int) or value < floor:
-        raise ValueError(
-            f"Invalid {field_name} {value!r}: expected an int >= {floor}."
-        )
+        raise ValueError(f'Invalid {field_name} {value!r}: expected an int >= {floor}.')
+
 
 # Project-level defaults (`project.*` in marshal.json).
 #
@@ -311,9 +310,7 @@ def validate_pr_strategy(value: object, field_name: str = 'pr_strategy') -> None
         ValueError: If ``value`` is not in :data:`VALID_PR_STRATEGY`.
     """
     if value not in VALID_PR_STRATEGY:
-        raise ValueError(
-            f"Invalid {field_name} '{value}'. Allowed: {list(VALID_PR_STRATEGY)}"
-        )
+        raise ValueError(f"Invalid {field_name} '{value}'. Allowed: {list(VALID_PR_STRATEGY)}")
 
 
 def validate_user_language(value: object, field_name: str = 'user_language') -> None:
@@ -337,14 +334,10 @@ def validate_user_language(value: object, field_name: str = 'user_language') -> 
         ValueError: If ``value`` is not a ``str``, or is empty/whitespace-only.
     """
     if not isinstance(value, str) or not value.strip():
-        raise ValueError(
-            f"Invalid {field_name} {value!r}: expected a non-empty string."
-        )
+        raise ValueError(f'Invalid {field_name} {value!r}: expected a non-empty string.')
 
 
-def validate_pr_compact_max_changed_files(
-    value: object, field_name: str = 'pr_compact_max_changed_files'
-) -> None:
+def validate_pr_compact_max_changed_files(value: object, field_name: str = 'pr_compact_max_changed_files') -> None:
     """Validate `pr_compact_max_changed_files` (int ``>= 0``).
 
     Booleans are rejected even though ``bool`` is an ``int`` subclass, mirroring
@@ -359,14 +352,10 @@ def validate_pr_compact_max_changed_files(
         ValueError: If ``value`` is a bool, is not an int, or is negative.
     """
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-        raise ValueError(
-            f"Invalid {field_name} {value!r}: expected an int >= 0."
-        )
+        raise ValueError(f'Invalid {field_name} {value!r}: expected an int >= 0.')
 
 
-def pr_compact_rides_existing_pr(
-    strategy: str, changed_file_count: int, max_changed_files: int
-) -> bool:
+def pr_compact_rides_existing_pr(strategy: str, changed_file_count: int, max_changed_files: int) -> bool:
     """Return whether a change rides an existing PR under the compact policy.
 
     This is an implementation detail backing the ``project pr-decision`` CLI verb,
@@ -383,6 +372,7 @@ def pr_compact_rides_existing_pr(
         ``True`` when the change rides the existing PR; ``False`` when it splits.
     """
     return strategy == 'compact' and changed_file_count <= max_changed_files
+
 
 # open-in-ide gate default (`plan.open_in_ide` in marshal.json — flat bool).
 # Default `true` preserves the current always-attempt-to-open behaviour.
@@ -436,9 +426,7 @@ def validate_gate_mode(value: str, field_name: str) -> None:
         ValueError: If ``value`` is not in :data:`VALID_GATE_MODE`.
     """
     if value not in VALID_GATE_MODE:
-        raise ValueError(
-            f"Invalid {field_name} '{value}'. Allowed: {list(VALID_GATE_MODE)}"
-        )
+        raise ValueError(f"Invalid {field_name} '{value}'. Allowed: {list(VALID_GATE_MODE)}")
 
 
 # Planning-time q-gate validation enum. The `q_gate_validation` knob governs how
@@ -466,9 +454,7 @@ def validate_q_gate_validation(value: str, field_name: str) -> None:
         ValueError: If ``value`` is not in :data:`VALID_Q_GATE_VALIDATION`.
     """
     if value not in VALID_Q_GATE_VALIDATION:
-        raise ValueError(
-            f"Invalid {field_name} '{value}'. Allowed: {list(VALID_Q_GATE_VALIDATION)}"
-        )
+        raise ValueError(f"Invalid {field_name} '{value}'. Allowed: {list(VALID_Q_GATE_VALIDATION)}")
 
 
 # ---------------------------------------------------------------------------
@@ -502,9 +488,7 @@ def validate_lane_selection(value: str) -> None:
         ValueError: If ``value`` is not in :data:`VALID_LANE_SELECTION`.
     """
     if value not in VALID_LANE_SELECTION:
-        raise ValueError(
-            f"Invalid lane_selection '{value}'. Allowed: {list(VALID_LANE_SELECTION)}"
-        )
+        raise ValueError(f"Invalid lane_selection '{value}'. Allowed: {list(VALID_LANE_SELECTION)}")
 
 
 # Per-element lane override value set. Pins any lane-participating element
@@ -534,9 +518,7 @@ def validate_lane_override(value: str, field_name: str = 'lane') -> None:
         ValueError: If ``value`` is not in :data:`VALID_LANE_OVERRIDE`.
     """
     if value not in VALID_LANE_OVERRIDE:
-        raise ValueError(
-            f"Invalid {field_name} '{value}'. Allowed: {list(VALID_LANE_OVERRIDE)}"
-        )
+        raise ValueError(f"Invalid {field_name} '{value}'. Allowed: {list(VALID_LANE_OVERRIDE)}")
 
 
 # Prune-predicate thresholds (`plan.phase-1-init.lane_prune_thresholds`) — the
@@ -575,29 +557,24 @@ def validate_lane_prune_thresholds(value: object) -> None:
     """
     expected = set(DEFAULT_LANE_PRUNE_THRESHOLDS.keys())
     if not isinstance(value, dict):
-        raise ValueError(
-            f"Invalid lane_prune_thresholds {value!r}: expected a dict with keys "
-            f"{sorted(expected)}."
-        )
+        raise ValueError(f'Invalid lane_prune_thresholds {value!r}: expected a dict with keys {sorted(expected)}.')
     keys = set(value.keys())
     if keys != expected:
         missing = sorted(expected - keys)
         extra = sorted(keys - expected)
         raise ValueError(
-            f"Invalid lane_prune_thresholds keys {sorted(keys)}: expected exactly "
-            f"{sorted(expected)} (missing={missing}, extra={extra})."
+            f'Invalid lane_prune_thresholds keys {sorted(keys)}: expected exactly '
+            f'{sorted(expected)} (missing={missing}, extra={extra}).'
         )
     confidence = value['confidence_complete']
     if isinstance(confidence, bool) or not isinstance(confidence, int) or not 0 <= confidence <= 100:
         raise ValueError(
-            f"Invalid lane_prune_thresholds.confidence_complete {confidence!r}: "
-            "expected an int in [0, 100]."
+            f'Invalid lane_prune_thresholds.confidence_complete {confidence!r}: expected an int in [0, 100].'
         )
     max_deliverables = value['linear_change_max_deliverables']
     if isinstance(max_deliverables, bool) or not isinstance(max_deliverables, int) or max_deliverables < 1:
         raise ValueError(
-            f"Invalid lane_prune_thresholds.linear_change_max_deliverables "
-            f"{max_deliverables!r}: expected an int >= 1."
+            f'Invalid lane_prune_thresholds.linear_change_max_deliverables {max_deliverables!r}: expected an int >= 1.'
         )
 
 
@@ -764,11 +741,7 @@ def _verify_step_ids() -> list[str]:
         (rec for rec in find_implementors(BUILD_VERIFY_STEP_EXT_POINT) if rec.get('source') == 'built-in'),
         key=lambda rec: (rec.get('order', 0), rec.get('name', '')),
     )
-    return [
-        f'{_VERIFY_STEP_PREFIX}{canonical}'
-        for rec in implementors
-        for canonical in rec.get('canonicals', [])
-    ]
+    return [f'{_VERIFY_STEP_PREFIX}{canonical}' for rec in implementors for canonical in rec.get('canonicals', [])]
 
 
 def _seed_verify_steps() -> dict:
@@ -819,11 +792,11 @@ def validate_per_deliverable_build(value: object) -> None:
             f"per_deliverable_build no longer accepts the enum value '{value}'. "
             f"It is now a list of '{_VERIFY_STEP_PREFIX}{{canonical}}' step IDs "
             "(e.g. ['default:verify:compile','default:verify:module-tests']; "
-            "use [] to disable the per-deliverable build)."
+            'use [] to disable the per-deliverable build).'
         )
     if not isinstance(value, list):
         raise ValueError(
-            f"Invalid per_deliverable_build {value!r}: expected a list of "
+            f'Invalid per_deliverable_build {value!r}: expected a list of '
             f"'{_VERIFY_STEP_PREFIX}{{canonical}}' step IDs."
         )
     retired = [e for e in value if isinstance(e, str) and e in RETIRED_PER_DELIVERABLE_BUILD_ENUM]
@@ -832,12 +805,12 @@ def validate_per_deliverable_build(value: object) -> None:
             f"per_deliverable_build no longer accepts the enum value '{retired[0]}'. "
             f"It is now a list of '{_VERIFY_STEP_PREFIX}{{canonical}}' step IDs "
             "(e.g. ['default:verify:compile','default:verify:module-tests']; "
-            "use [] to disable the per-deliverable build)."
+            'use [] to disable the per-deliverable build).'
         )
     invalid = [e for e in value if not (isinstance(e, str) and e.startswith(_VERIFY_STEP_PREFIX))]
     if invalid:
         raise ValueError(
-            f"Invalid per_deliverable_build entries {invalid!r}: every entry must be a "
+            f'Invalid per_deliverable_build entries {invalid!r}: every entry must be a '
             f"'{_VERIFY_STEP_PREFIX}{{canonical}}' step ID."
         )
 
@@ -873,8 +846,8 @@ def validate_cost_size_token_table(value: object) -> None:
 
     if not isinstance(value, dict):
         raise ValueError(
-            f"Invalid cost_size_token_table {value!r}: expected a dict mapping "
-            f"{list(COST_SIZE_LABELS)} to token magnitudes."
+            f'Invalid cost_size_token_table {value!r}: expected a dict mapping '
+            f'{list(COST_SIZE_LABELS)} to token magnitudes.'
         )
     keys = set(value.keys())
     expected = set(COST_SIZE_LABELS)
@@ -882,8 +855,8 @@ def validate_cost_size_token_table(value: object) -> None:
         missing = sorted(expected - keys)
         extra = sorted(keys - expected)
         raise ValueError(
-            f"Invalid cost_size_token_table keys {sorted(keys)}: expected exactly "
-            f"{list(COST_SIZE_LABELS)} (missing={missing}, extra={extra})."
+            f'Invalid cost_size_token_table keys {sorted(keys)}: expected exactly '
+            f'{list(COST_SIZE_LABELS)} (missing={missing}, extra={extra}).'
         )
     for size, magnitude in value.items():
         try:
@@ -891,7 +864,7 @@ def validate_cost_size_token_table(value: object) -> None:
         except ValueError as exc:
             raise ValueError(
                 f"Invalid cost_size_token_table value for '{size}': {magnitude!r} "
-                f"is not a parseable token magnitude ({exc})."
+                f'is not a parseable token magnitude ({exc}).'
             ) from exc
 
 
@@ -1001,10 +974,7 @@ def validate_sonar_touched_file_cleanup(value: str) -> None:
         ValueError: If ``value`` is not in :data:`VALID_SONAR_TOUCHED_FILE_CLEANUP`.
     """
     if value not in VALID_SONAR_TOUCHED_FILE_CLEANUP:
-        raise ValueError(
-            f"Invalid touched_file_cleanup '{value}'. "
-            f"Allowed: {list(VALID_SONAR_TOUCHED_FILE_CLEANUP)}"
-        )
+        raise ValueError(f"Invalid touched_file_cleanup '{value}'. Allowed: {list(VALID_SONAR_TOUCHED_FILE_CLEANUP)}")
 
 
 # Step-owned params are no longer held in a centralized constant. Each
@@ -1271,8 +1241,7 @@ def validate_orchestrator_block(value: object) -> None:
     unknown = sorted(set(value.keys()) - ORCHESTRATOR_KNOWN_KEYS)
     if unknown:
         raise ValueError(
-            f'Invalid orchestrator block keys {unknown}: expected a subset of '
-            f'{sorted(ORCHESTRATOR_KNOWN_KEYS)}.'
+            f'Invalid orchestrator block keys {unknown}: expected a subset of {sorted(ORCHESTRATOR_KNOWN_KEYS)}.'
         )
 
     if 'effort' in value:
@@ -1280,8 +1249,7 @@ def validate_orchestrator_block(value: object) -> None:
         if isinstance(effort, str):
             if effort not in ALLOWED_LEVELS:
                 raise ValueError(
-                    f"Invalid orchestrator.effort '{effort}': expected an effort "
-                    f'level keyword {list(ALLOWED_LEVELS)}.'
+                    f"Invalid orchestrator.effort '{effort}': expected an effort level keyword {list(ALLOWED_LEVELS)}."
                 )
         elif isinstance(effort, dict):
             bad_keys = sorted(set(effort.keys()) - set(ORCHESTRATOR_EFFORT_SET_KEYS))
@@ -1298,24 +1266,18 @@ def validate_orchestrator_block(value: object) -> None:
                     )
         else:
             raise ValueError(
-                f'Invalid orchestrator.effort {effort!r}: expected a level string '
-                'or an object of surface->level.'
+                f'Invalid orchestrator.effort {effort!r}: expected a level string or an object of surface->level.'
             )
 
     if 'parallelization_scope' in value:
         scope = value['parallelization_scope']
         if isinstance(scope, bool) or not isinstance(scope, int) or scope < 1:
-            raise ValueError(
-                f'Invalid orchestrator.parallelization_scope {scope!r}: expected an '
-                'int >= 1.'
-            )
+            raise ValueError(f'Invalid orchestrator.parallelization_scope {scope!r}: expected an int >= 1.')
 
     if 'auto_emit' in value:
         auto_emit = value['auto_emit']
         if not isinstance(auto_emit, bool):
-            raise ValueError(
-                f'Invalid orchestrator.auto_emit {auto_emit!r}: expected a bool.'
-            )
+            raise ValueError(f'Invalid orchestrator.auto_emit {auto_emit!r}: expected a bool.')
 
 
 def get_default_config() -> dict:

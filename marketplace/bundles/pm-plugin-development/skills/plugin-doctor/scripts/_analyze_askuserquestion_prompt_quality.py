@@ -94,9 +94,7 @@ _KEY_RE = re.compile(r'^([A-Za-z_][A-Za-z0-9_-]*)\s*:\s*(.*)$')
 # ``- label: "Resume"  description: "Continue with the existing plan"``. Without
 # this the trailing pairs are swallowed into the first key's value and a fully
 # described option reads as one that declares no description at all.
-_QUOTED_PAIR_RE = re.compile(
-    r'([A-Za-z_][A-Za-z0-9_-]*)\s*:\s*("[^"]*"|\'[^\']*\')'
-)
+_QUOTED_PAIR_RE = re.compile(r'([A-Za-z_][A-Za-z0-9_-]*)\s*:\s*("[^"]*"|\'[^\']*\')')
 
 # A workflow step-number token: ``Step 4``, ``Step 4b``, ``step 12``. Kept as a
 # pattern rather than a token set because the ordinal is unbounded.
@@ -184,16 +182,8 @@ def _vocabulary_hits(text: str) -> list[str]:
     step_match = _STEP_NUMBER_RE.search(text)
     if step_match:
         hits.append(f'workflow step number "{step_match.group(0)}"')
-    hits.extend(
-        f'tool-API type name "{name}"'
-        for name in sorted(_TOOL_API_TYPE_NAMES)
-        if name in lowered
-    )
-    hits.extend(
-        f'internal-mechanics noun "{noun}"'
-        for noun in sorted(_INTERNAL_MECHANICS_NOUNS)
-        if noun in lowered
-    )
+    hits.extend(f'tool-API type name "{name}"' for name in sorted(_TOOL_API_TYPE_NAMES) if name in lowered)
+    hits.extend(f'internal-mechanics noun "{noun}"' for noun in sorted(_INTERNAL_MECHANICS_NOUNS) if noun in lowered)
     return hits
 
 
@@ -226,7 +216,7 @@ def _is_invocation_block(lines: list[str], header_idx: int) -> bool:
     body — a block reported as examined that no check ever saw.
     """
     header_indent = _indent(lines[header_idx])
-    for follow in lines[header_idx + 1:]:
+    for follow in lines[header_idx + 1 :]:
         if not follow.strip():
             continue
         if _indent(follow) <= header_indent:
@@ -252,7 +242,7 @@ def _own_keys(lines: list[str], body: list[int], item_pos: int) -> dict[str, str
 
     keys: dict[str, str] = dict(_scalar_pairs(inline))
 
-    for idx in body[item_pos + 1:]:
+    for idx in body[item_pos + 1 :]:
         follow = lines[idx]
         if not follow.strip():
             continue
@@ -285,7 +275,7 @@ def _check_vocabulary(line_no: int, kind: str, text: str) -> list[_Violation]:
                 'answering the prompt cannot evaluate system-internal '
                 f'vocabulary — obligation {obligation} of '
                 'plugin-architecture/references/askuserquestion-patterns.md. '
-                'Rewrite it in terms of the reader\'s own work.'
+                "Rewrite it in terms of the reader's own work."
             ),
         )
     ]
@@ -336,9 +326,7 @@ def _scan_block(lines: list[str], header_idx: int) -> list[_Violation]:
     for idx in body:
         question = _QUESTION_RE.match(lines[idx])
         if question:
-            violations.extend(
-                _check_vocabulary(idx + 1, 'preamble', _unquote(question.group(1)))
-            )
+            violations.extend(_check_vocabulary(idx + 1, 'preamble', _unquote(question.group(1))))
 
     for item_pos, idx in enumerate(body):
         if not _ITEM_RE.match(lines[idx]):
@@ -349,11 +337,7 @@ def _scan_block(lines: list[str], header_idx: int) -> list[_Violation]:
         violations.extend(_check_consequence(idx + 1, keys))
         for field_name in ('label', 'description'):
             if field_name in keys:
-                violations.extend(
-                    _check_vocabulary(
-                        idx + 1, f'option {field_name}', _unquote(keys[field_name])
-                    )
-                )
+                violations.extend(_check_vocabulary(idx + 1, f'option {field_name}', _unquote(keys[field_name])))
 
     return sorted(violations)
 
@@ -461,7 +445,5 @@ def analyze_askuserquestion_prompt_quality(marketplace_root: Path) -> list[dict]
             per_file.append((md_path, violations))
 
     for path, violations in per_file:
-        findings.extend(
-            _make_finding(path, violation, population_size) for violation in violations
-        )
+        findings.extend(_make_finding(path, violation, population_size) for violation in violations)
     return findings

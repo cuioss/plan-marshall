@@ -141,9 +141,7 @@ class TestVersionResolution:
 
     def test_read_base_version_falls_back_when_metadata_version_missing(self, tmp_path):
         (tmp_path / '.claude-plugin').mkdir()
-        (tmp_path / '.claude-plugin' / 'marketplace.json').write_text(
-            json.dumps({'metadata': {}}), encoding='utf-8'
-        )
+        (tmp_path / '.claude-plugin' / 'marketplace.json').write_text(json.dumps({'metadata': {}}), encoding='utf-8')
         assert gen._read_base_version(tmp_path) == '0.1'
 
     def test_resolve_version_explicit_wins_verbatim(self, tmp_path):
@@ -259,9 +257,7 @@ class TestOverrideBundlePluginVersions:
         for name in ('bundle-a', 'bundle-b', 'bundle-c'):
             plugin_dir = tmp_path / name / '.claude-plugin'
             plugin_dir.mkdir(parents=True)
-            (plugin_dir / 'plugin.json').write_text(
-                json.dumps({'name': name, 'version': '0.1'}), encoding='utf-8'
-            )
+            (plugin_dir / 'plugin.json').write_text(json.dumps({'name': name, 'version': '0.1'}), encoding='utf-8')
 
         count = gen._override_bundle_plugin_versions(tmp_path, '0.1.5')
 

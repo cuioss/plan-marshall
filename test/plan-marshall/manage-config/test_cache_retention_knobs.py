@@ -54,6 +54,7 @@ def _sync_defaults_ns() -> Namespace:
     ns: Namespace = parse_ns(*_SCRIPT, 'sync-defaults')
     return ns
 
+
 cmd_system = _cmd_system_plan.cmd_system
 cmd_sync_defaults = _cmd_sync_defaults.cmd_sync_defaults
 validate_plugin_cache_retention = _config_defaults.validate_plugin_cache_retention
@@ -115,9 +116,7 @@ def test_retention_set_rejects_a_typod_neighbour(plan_context):
     silently persisted where no reader would consult it."""
     create_marshal_json(plan_context.fixture_dir)
 
-    result = cmd_system(
-        _retention_ns('set', 'plugin_cache_keep_version', '5')
-    )
+    result = cmd_system(_retention_ns('set', 'plugin_cache_keep_version', '5'))
 
     assert result['status'] == 'error'
     verify = cmd_system(_retention_ns('get'))
@@ -202,9 +201,7 @@ def test_retention_set_accepts_no_plan_body_days(plan_context):
     """The knob joins the fail-closed whitelist, so the operator can set it."""
     create_marshal_json(plan_context.fixture_dir)
 
-    result = cmd_system(
-        _retention_ns('set', _NO_PLAN_BODY_FIELD, '14')
-    )
+    result = cmd_system(_retention_ns('set', _NO_PLAN_BODY_FIELD, '14'))
 
     assert result['status'] == 'success'
     assert result['value'] == 14
@@ -274,9 +271,7 @@ def test_retention_set_accepts_build_results_days(plan_context):
     """The knob joins the fail-closed whitelist, so the operator can set it."""
     create_marshal_json(plan_context.fixture_dir)
 
-    result = cmd_system(
-        _retention_ns('set', _BUILD_RESULTS_FIELD, '21')
-    )
+    result = cmd_system(_retention_ns('set', _BUILD_RESULTS_FIELD, '21'))
 
     assert result['status'] == 'success'
     assert result['value'] == 21

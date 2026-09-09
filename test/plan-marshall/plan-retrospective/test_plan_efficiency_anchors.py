@@ -53,7 +53,6 @@ is FALSE of the built code: the inline fold was deliberately retained, so
 asserting a dispatched-only population would pin a false claim into the suite.
 """
 
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -134,8 +133,7 @@ def test_cross_product_guard_fails_when_a_pair_is_removed() -> None:
     extra, missing = _key_diff(_anchor_keys(_remove_anchor_row(content, victim)), expected)
 
     assert missing == {victim}, (
-        f'Removing the {victim} row should leave exactly that pair unanchored; the '
-        f'guard reported {sorted(missing)}.'
+        f'Removing the {victim} row should leave exactly that pair unanchored; the guard reported {sorted(missing)}.'
     )
     assert not extra, f'Removing a row must not introduce extra keys; got {sorted(extra)}.'
 
@@ -289,9 +287,7 @@ def test_lane_lever_verdict_is_unaffected_by_billing_weighted_total(tmp_path: Pa
     """
     audit = _load_audit()
     targets = audit.THRESHOLDS['checkpoint_token_targets']
-    work_only = (
-        '[1-init]\n  total_tokens: 100000\n[5-execute]\n  total_tokens: 200000\n'
-    )
+    work_only = '[1-init]\n  total_tokens: 100000\n[5-execute]\n  total_tokens: 200000\n'
     with_billing = (
         '[1-init]\n'
         '  total_tokens: 100000\n'
@@ -320,7 +316,7 @@ def test_lane_lever_verdict_is_unaffected_by_billing_weighted_total(tmp_path: Pa
         'work total the verdict scores.'
     )
     assert baseline['verdict'] == 'within', (
-        f"Expected a `within` verdict for a 300K surgical plan against target "
-        f"{targets['surgical']}; got {baseline['verdict']}. If this flipped to "
+        f'Expected a `within` verdict for a 300K surgical plan against target '
+        f'{targets["surgical"]}; got {baseline["verdict"]}. If this flipped to '
         f'`over`, a second token field is being summed into the work total.'
     )

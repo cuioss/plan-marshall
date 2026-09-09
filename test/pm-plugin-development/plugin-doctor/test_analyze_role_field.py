@@ -47,13 +47,7 @@ def _make_scoped_dir(tmp_path: Path) -> Path:
     Returns the scoped standards directory; the marketplace root is its parent
     chain ancestor (used as the ``marketplace_root`` arg to the analyzer).
     """
-    scoped = (
-        tmp_path
-        / 'plan-marshall'
-        / 'skills'
-        / 'phase-5-execute'
-        / 'standards'
-    )
+    scoped = tmp_path / 'plan-marshall' / 'skills' / 'phase-5-execute' / 'standards'
     scoped.mkdir(parents=True)
     return scoped
 
@@ -91,10 +85,7 @@ class TestRoleFieldPresent:
         scoped = _make_scoped_dir(tmp_path)
         _write(
             scoped / 'quality_check.md',
-            '---\n'
-            'name: default:quality_check\n'
-            'role: "quality-gate"\n'
-            '---\n',
+            '---\nname: default:quality_check\nrole: "quality-gate"\n---\n',
         )
         assert_analyzer_findings(analyze_role_field, tmp_path, [])
 
@@ -112,9 +103,7 @@ class TestRoleFieldPresent:
         )
         assert_analyzer_findings(analyze_role_field, tmp_path, [])
 
-    def test_helper_doc_without_default_name_prefix_is_not_required_to_declare_role(
-        self, tmp_path: Path
-    ) -> None:
+    def test_helper_doc_without_default_name_prefix_is_not_required_to_declare_role(self, tmp_path: Path) -> None:
         """Helper / narrative docs in the standards/ directory are not step files.
 
         The phase-5-execute standards/ directory hosts both step files
@@ -129,11 +118,7 @@ class TestRoleFieldPresent:
         # Helper doc — no `name: default:…`, no `order:`. Must NOT be flagged.
         _write(
             scoped / 'operations.md',
-            '---\n'
-            'description: Operational patterns for phase-5-execute\n'
-            '---\n'
-            '\n'
-            '# Operations\n',
+            '---\ndescription: Operational patterns for phase-5-execute\n---\n\n# Operations\n',
         )
         assert_analyzer_findings(analyze_role_field, tmp_path, [])
 
@@ -246,7 +231,7 @@ class TestRoleFieldEmpty:
         )
         _write(
             scoped / 'b.md',
-            '---\nname: default:b\ndescription: b\norder: 20\nrole: \'\'\n---\n',
+            "---\nname: default:b\ndescription: b\norder: 20\nrole: ''\n---\n",
         )
         assert_analyzer_findings(analyze_role_field, tmp_path, [RULE_ID] * 2)
 
@@ -261,9 +246,7 @@ class TestRoleFieldEmpty:
 class TestCanonicalVerifyExemption:
     """The ``default:verify`` / ``default:verify:`` step is exempt from role:."""
 
-    def test_canonical_verify_step_without_role_produces_no_finding(
-        self, tmp_path: Path
-    ) -> None:
+    def test_canonical_verify_step_without_role_produces_no_finding(self, tmp_path: Path) -> None:
         """The bare ``name: default:verify`` step carries no static role: and is exempt.
 
         This mirrors the on-disk
@@ -294,21 +277,13 @@ class TestCanonicalVerifyExemption:
         scoped = _make_scoped_dir(tmp_path)
         _write(
             scoped / 'malformed.md',
-            '---\n'
-            'name: 123\n'
-            'description: Malformed name field\n'
-            'order: 10\n'
-            '---\n'
-            '\n'
-            '# Malformed\n',
+            '---\nname: 123\ndescription: Malformed name field\norder: 10\n---\n\n# Malformed\n',
         )
         # A non-string name is simply not a default: step — must not raise.
         findings = analyze_role_field(tmp_path)
         assert isinstance(findings, list)
 
-    def test_canonical_verify_prefixed_step_id_without_role_produces_no_finding(
-        self, tmp_path: Path
-    ) -> None:
+    def test_canonical_verify_prefixed_step_id_without_role_produces_no_finding(self, tmp_path: Path) -> None:
         """A ``default:verify:{canonical}`` step ID is also exempt from role:."""
         scoped = _make_scoped_dir(tmp_path)
         _write(
@@ -321,9 +296,7 @@ class TestCanonicalVerifyExemption:
         )
         assert_analyzer_findings(analyze_role_field, tmp_path, [])
 
-    def test_legacy_role_less_step_still_fires_alongside_exempt_canonical_verify(
-        self, tmp_path: Path
-    ) -> None:
+    def test_legacy_role_less_step_still_fires_alongside_exempt_canonical_verify(self, tmp_path: Path) -> None:
         """The exemption is scoped: a legacy role-less step file still fires.
 
         With both an exempt canonical-verify step and a legacy-style role-less
@@ -334,20 +307,12 @@ class TestCanonicalVerifyExemption:
         # Exempt — canonical-verify step, no role:.
         _write(
             scoped / 'canonical_verify.md',
-            '---\n'
-            'name: default:verify\n'
-            'description: Parameterized canonical-verify step\n'
-            'order: 10\n'
-            '---\n',
+            '---\nname: default:verify\ndescription: Parameterized canonical-verify step\norder: 10\n---\n',
         )
         # Legacy-style role-less step — must still fire.
         legacy = _write(
             scoped / 'quality_check.md',
-            '---\n'
-            'name: default:quality_check\n'
-            'description: Run quality-gate build command\n'
-            'order: 20\n'
-            '---\n',
+            '---\nname: default:quality_check\ndescription: Run quality-gate build command\norder: 20\n---\n',
         )
         findings = assert_analyzer_findings(analyze_role_field, tmp_path, [RULE_ID])
         assert findings[0]['file'] == str(legacy)
@@ -372,13 +337,7 @@ class TestPathScope:
         )
 
         # Out-of-scope file in a sibling skill without role: — must NOT be flagged.
-        sibling = (
-            tmp_path
-            / 'plan-marshall'
-            / 'skills'
-            / 'phase-6-finalize'
-            / 'standards'
-        )
+        sibling = tmp_path / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'standards'
         sibling.mkdir(parents=True)
         _write(sibling / 'push.md', '---\nname: push\n---\n')
 
@@ -392,13 +351,7 @@ class TestPathScope:
             '---\nname: default:quality_check\nrole: quality-gate\n---\n',
         )
 
-        other = (
-            tmp_path
-            / 'pm-plugin-development'
-            / 'skills'
-            / 'plugin-doctor'
-            / 'standards'
-        )
+        other = tmp_path / 'pm-plugin-development' / 'skills' / 'plugin-doctor' / 'standards'
         other.mkdir(parents=True)
         _write(other / 'rule-catalog.md', '---\nname: rule-catalog\n---\n')
 

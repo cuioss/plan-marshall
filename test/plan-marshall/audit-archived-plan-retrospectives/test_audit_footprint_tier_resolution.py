@@ -42,13 +42,9 @@ def _plan(tmp_path: Path, plan_id: str, refs: dict, *, tokens: int = 12_000):
     (plan_dir / 'tasks').mkdir(parents=True, exist_ok=True)
     (plan_dir / 'work').mkdir(parents=True, exist_ok=True)
     (plan_dir / 'references.json').write_text(json.dumps(refs), encoding='utf-8')
-    (plan_dir / 'status.json').write_text(
-        json.dumps({'metadata': {'change_type': 'bug_fix'}}), encoding='utf-8'
-    )
+    (plan_dir / 'status.json').write_text(json.dumps({'metadata': {'change_type': 'bug_fix'}}), encoding='utf-8')
     (plan_dir / 'tasks' / 'TASK-001.json').write_text('{}', encoding='utf-8')
-    (plan_dir / 'work' / 'metrics.toon').write_text(
-        f'[5-execute]\ntotal_tokens: {tokens}\n', encoding='utf-8'
-    )
+    (plan_dir / 'work' / 'metrics.toon').write_text(f'[5-execute]\ntotal_tokens: {tokens}\n', encoding='utf-8')
     return audit.collect_inputs(plan_dir)
 
 
@@ -56,9 +52,9 @@ def _plan(tmp_path: Path, plan_id: str, refs: dict, *, tokens: int = 12_000):
 def disjoint_plan(tmp_path: Path):
     """A plan whose realized footprint is disjoint from its declared one."""
     return _plan(
-        tmp_path, 'disjoint',
-        {'realized_footprint': _REALIZED, 'affected_files': _DECLARED,
-         'scope_estimate': 'surgical'},
+        tmp_path,
+        'disjoint',
+        {'realized_footprint': _REALIZED, 'affected_files': _DECLARED, 'scope_estimate': 'surgical'},
     )
 
 
@@ -79,16 +75,12 @@ class TestTierOrder:
 
     def test_legacy_key_is_the_last_tier(self, tmp_path: Path):
         # No capture and no usable SHA: the retired key still answers, but LAST.
-        paths, tier = audit.resolve_realized_footprint(
-            tmp_path, {'modified_files': _DECLARED}
-        )
+        paths, tier = audit.resolve_realized_footprint(tmp_path, {'modified_files': _DECLARED})
 
         assert tier == 'modified_files'
         assert paths == set(_DECLARED)
 
-    def test_an_unusable_merge_sha_falls_through_rather_than_fabricating(
-        self, tmp_path: Path
-    ):
+    def test_an_unusable_merge_sha_falls_through_rather_than_fabricating(self, tmp_path: Path):
         # A SHA this clone cannot resolve must not become an empty "measurement".
         paths, tier = audit.resolve_realized_footprint(
             tmp_path,
@@ -110,9 +102,7 @@ class TestTierOrder:
         `realized_footprint: []` is a resolved, genuinely-empty footprint — the
         plan changed nothing — and is a different answer from no key at all.
         """
-        paths, tier = audit.resolve_realized_footprint(
-            tmp_path, {'realized_footprint': []}
-        )
+        paths, tier = audit.resolve_realized_footprint(tmp_path, {'realized_footprint': []})
 
         assert tier == 'realized_footprint'
         assert paths == set()
@@ -136,7 +126,8 @@ class TestGradedFileCount:
         assertion fails with 5.
         """
         inputs = _plan(
-            tmp_path, 'resolved-empty',
+            tmp_path,
+            'resolved-empty',
             {'realized_footprint': [], 'affected_files': _DECLARED},
         )
 
@@ -163,7 +154,8 @@ class TestTheFourConsumingSites:
         # shipped. Against the retired `modified_files_count > 0` it is excluded
         # from the shipping partition entirely.
         inputs = _plan(
-            tmp_path, 'shipped-by-capture',
+            tmp_path,
+            'shipped-by-capture',
             {'realized_footprint': _REALIZED, 'affected_files': _DECLARED},
         )
 
@@ -173,21 +165,18 @@ class TestTheFourConsumingSites:
         assert [i.plan_id for i in shipping] == ['shipped-by-capture']
         assert excluded == []
 
-    def test_site_1_negative_control_a_resolved_empty_footprint_did_not_ship(
-        self, tmp_path: Path
-    ):
+    def test_site_1_negative_control_a_resolved_empty_footprint_did_not_ship(self, tmp_path: Path):
         # The discriminating half: a resolved-EMPTY footprint with no PR record is
         # not delivery evidence, so the predicate must still say False.
         inputs = _plan(
-            tmp_path, 'not-shipped',
+            tmp_path,
+            'not-shipped',
             {'realized_footprint': [], 'affected_files': _DECLARED},
         )
 
         assert audit._plan_shipped(inputs) is False
 
-    def test_site_2_manifest_modified_column_reads_the_realized_footprint(
-        self, disjoint_plan, tmp_path: Path
-    ):
+    def test_site_2_manifest_modified_column_reads_the_realized_footprint(self, disjoint_plan, tmp_path: Path):
         row = audit.check_execution_manifest(disjoint_plan, tmp_path, {})
 
         assert row['modified'] == len(_REALIZED)
@@ -209,9 +198,7 @@ class TestTheFourConsumingSites:
         assert row['files'] == len(_REALIZED)
         assert row['files'] != len(_DECLARED)
 
-    def test_site_5_docs_only_classifier_reads_the_realized_PATH_SET(
-        self, tmp_path: Path
-    ):
+    def test_site_5_docs_only_classifier_reads_the_realized_PATH_SET(self, tmp_path: Path):
         """The fifth site needs the paths, not the cardinality.
 
         The realized set is all `.py`; the declared set is all `.md`. Under the
@@ -221,7 +208,8 @@ class TestTheFourConsumingSites:
         file type precisely so this inversion is visible.
         """
         _plan(
-            tmp_path, 'docs-only-probe',
+            tmp_path,
+            'docs-only-probe',
             {'realized_footprint': _REALIZED, 'affected_files': _DECLARED},
         )
         plan_dir = tmp_path / '.plan' / 'temp' / 'footprint-corpus' / 'docs-only-probe'

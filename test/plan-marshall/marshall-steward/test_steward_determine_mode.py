@@ -134,9 +134,7 @@ def test_worktree_without_plan_local_scaffolds(tmp_path: Path):
 
 
 def _run_cli(repo_root: Path, *extra: str) -> str:
-    proc = run_script(
-        _DETERMINE_MODE, 'check-worktree-plan-local', '--repo-root', str(repo_root), *extra
-    )
+    proc = run_script(_DETERMINE_MODE, 'check-worktree-plan-local', '--repo-root', str(repo_root), *extra)
     assert proc.returncode == 0, proc.stderr
     # Annotated because ``conftest`` is deliberately untyped to mypy, so the
     # captured stream would otherwise be returned as ``Any`` from a ``-> str``.
@@ -270,8 +268,12 @@ def test_missing_marshal_yields_empty_project_missing(tmp_path: Path):
 
 def _run_finalize_cli(plan_dir: Path, project_root: Path) -> str:
     proc = run_script(
-        _DETERMINE_MODE, 'check-missing-finalize-steps',
-        '--plan-dir', str(plan_dir), '--project-root', str(project_root),
+        _DETERMINE_MODE,
+        'check-missing-finalize-steps',
+        '--plan-dir',
+        str(plan_dir),
+        '--project-root',
+        str(project_root),
     )
     assert proc.returncode == 0, proc.stderr
     stdout: str = proc.stdout
@@ -311,9 +313,7 @@ def test_cli_reports_ok_when_all_project_steps_present(tmp_path: Path):
         )
         if rec.get('name')
     ]
-    steps = built_in_defaults + [
-        f'project:finalize-step-{n}' for n in _PROJECT_STEPS
-    ]
+    steps = built_in_defaults + [f'project:finalize-step-{n}' for n in _PROJECT_STEPS]
     _write_finalize_steps_marshal(plan_dir, steps)
 
     out = _run_finalize_cli(plan_dir, project_root)

@@ -8,7 +8,6 @@ Its sections, in order:
 * Unified per-plan + Q-Gate read surface (--include-qgate)
 """
 
-
 from _manage_findings_fixtures import (
     _add_ns,
     _qgate_add_ns,
@@ -112,19 +111,13 @@ def test_unified_query_spans_all_phases(plan_context):
     """(b) Per-plan unified query returns q-gate findings across every phase."""
     pid = 'unified-all-phases'
     cmd_qgate_add(
-        _qgate_add_ns(
-            plan_id=pid, phase='3-outline', source='qgate', type='triage', title='Phase 3 fd', detail='d'
-        )
+        _qgate_add_ns(plan_id=pid, phase='3-outline', source='qgate', type='triage', title='Phase 3 fd', detail='d')
     )
     cmd_qgate_add(
-        _qgate_add_ns(
-            plan_id=pid, phase='4-plan', source='qgate', type='triage', title='Phase 4 fd', detail='d'
-        )
+        _qgate_add_ns(plan_id=pid, phase='4-plan', source='qgate', type='triage', title='Phase 4 fd', detail='d')
     )
     cmd_qgate_add(
-        _qgate_add_ns(
-            plan_id=pid, phase='5-execute', source='qgate', type='triage', title='Phase 5 fd', detail='d'
-        )
+        _qgate_add_ns(plan_id=pid, phase='5-execute', source='qgate', type='triage', title='Phase 5 fd', detail='d')
     )
 
     unified = cmd_query(_query_ns(plan_id=pid, include_qgate=True))
@@ -139,14 +132,10 @@ def test_unified_query_excludes_resolved_qgate(plan_context):
     """(b) Only PENDING q-gate findings are merged; resolved ones are dropped."""
     pid = 'unified-only-pending'
     cmd_qgate_add(
-        _qgate_add_ns(
-            plan_id=pid, phase='5-execute', source='qgate', type='triage', title='Stays pending', detail='d'
-        )
+        _qgate_add_ns(plan_id=pid, phase='5-execute', source='qgate', type='triage', title='Stays pending', detail='d')
     )
     resolved = cmd_qgate_add(
-        _qgate_add_ns(
-            plan_id=pid, phase='5-execute', source='qgate', type='triage', title='Gets resolved', detail='d'
-        )
+        _qgate_add_ns(plan_id=pid, phase='5-execute', source='qgate', type='triage', title='Gets resolved', detail='d')
     )
     cmd_qgate_resolve(
         _qgate_resolve_ns(
@@ -173,14 +162,10 @@ def test_unified_query_excludes_rejected_qgate(plan_context):
     """
     pid = 'unified-rejected-nonpending'
     cmd_qgate_add(
-        _qgate_add_ns(
-            plan_id=pid, phase='5-execute', source='qgate', type='triage', title='Stays pending', detail='d'
-        )
+        _qgate_add_ns(plan_id=pid, phase='5-execute', source='qgate', type='triage', title='Stays pending', detail='d')
     )
     rejected = cmd_qgate_add(
-        _qgate_add_ns(
-            plan_id=pid, phase='5-execute', source='qgate', type='triage', title='Gets rejected', detail='d'
-        )
+        _qgate_add_ns(plan_id=pid, phase='5-execute', source='qgate', type='triage', title='Gets rejected', detail='d')
     )
     cmd_qgate_resolve(
         _qgate_resolve_ns(
@@ -203,9 +188,7 @@ def test_unified_query_type_filter_applies_to_both_slices(plan_context):
     cmd_add(_add_ns(plan_id=pid, type='bug', title='Plan bug', detail='d'))
     cmd_add(_add_ns(plan_id=pid, type='tip', title='Plan tip', detail='d'))
     cmd_qgate_add(
-        _qgate_add_ns(
-            plan_id=pid, phase='5-execute', source='qgate', type='triage', title='QG triage', detail='d'
-        )
+        _qgate_add_ns(plan_id=pid, phase='5-execute', source='qgate', type='triage', title='QG triage', detail='d')
     )
 
     unified = cmd_query(_query_ns(plan_id=pid, type='bug', include_qgate=True))
@@ -228,9 +211,7 @@ def test_unified_query_resolution_filter_scopes_plan_slice(plan_context):
     cmd_resolve(_resolve_ns(plan_id=pid, hash_id=str(fixed['hash_id']), resolution='fixed'))
     cmd_add(_add_ns(plan_id=pid, type='bug', title='Open bug', detail='d'))
     cmd_qgate_add(
-        _qgate_add_ns(
-            plan_id=pid, phase='5-execute', source='qgate', type='triage', title='QG pending', detail='d'
-        )
+        _qgate_add_ns(plan_id=pid, phase='5-execute', source='qgate', type='triage', title='QG pending', detail='d')
     )
 
     unified = cmd_query(_query_ns(plan_id=pid, resolution='fixed', include_qgate=True))
@@ -257,9 +238,7 @@ def test_unified_query_core_direct(plan_context):
     pid = 'unified-core-direct'
     cmd_add(_add_ns(plan_id=pid, type='bug', title='Core plan bug', detail='d'))
     cmd_qgate_add(
-        _qgate_add_ns(
-            plan_id=pid, phase='5-execute', source='qgate', type='triage', title='Core QG', detail='d'
-        )
+        _qgate_add_ns(plan_id=pid, phase='5-execute', source='qgate', type='triage', title='Core QG', detail='d')
     )
 
     unified = query_findings_unified(pid)
@@ -275,9 +254,7 @@ def test_backward_compat_list_without_include_qgate(plan_context):
     pid = 'compat-list'
     cmd_add(_add_ns(plan_id=pid, type='bug', title='Plan bug', detail='d'))
     cmd_qgate_add(
-        _qgate_add_ns(
-            plan_id=pid, phase='5-execute', source='qgate', type='triage', title='QG finding', detail='d'
-        )
+        _qgate_add_ns(plan_id=pid, phase='5-execute', source='qgate', type='triage', title='QG finding', detail='d')
     )
 
     plain = cmd_query(_query_ns(plan_id=pid))
@@ -293,9 +270,7 @@ def test_backward_compat_qgate_list_unaffected(plan_context):
     """(d) The narrowed qgate list call shape is unchanged by the unified surface."""
     pid = 'compat-qgate-list'
     cmd_qgate_add(
-        _qgate_add_ns(
-            plan_id=pid, phase='3-outline', source='qgate', type='triage', title='QG fd', detail='d'
-        )
+        _qgate_add_ns(plan_id=pid, phase='3-outline', source='qgate', type='triage', title='QG fd', detail='d')
     )
 
     result = cmd_qgate_query(_qgate_query_ns(plan_id=pid, phase='3-outline'))

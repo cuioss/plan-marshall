@@ -226,11 +226,7 @@ def _pick_primary(group_member_ids: list[str], by_id: dict[str, dict]) -> str:
     member_set = set(group_member_ids)
 
     def fan_in(lid: str) -> int:
-        return sum(
-            1
-            for other in member_set
-            if other != lid and lid in by_id[other]['cross_refs']
-        )
+        return sum(1 for other in member_set if other != lid and lid in by_id[other]['cross_refs'])
 
     # Sort by (-fan_in, -recurrence, id ascending) — ascending wins are first.
     ranked = sorted(
@@ -263,10 +259,7 @@ def _compose_merged_body(primary: dict, absorbed: list[dict]) -> str:
     """Compose the would-be merged body verbatim per the doc template."""
     sections = [primary['body'].rstrip()]
     for member in absorbed:
-        sections.append(
-            f'## Sub-task: {member["title"]} ({member["id"]})\n\n'
-            f'{member["body"].rstrip()}'
-        )
+        sections.append(f'## Sub-task: {member["title"]} ({member["id"]})\n\n{member["body"].rstrip()}')
     return '\n\n'.join(sections)
 
 

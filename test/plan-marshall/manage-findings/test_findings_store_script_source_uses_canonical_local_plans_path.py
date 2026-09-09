@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Unit tests for _findings_core.py - the storage engine for findings and Q-Gate findings."""
 
-
 from _findings_store_fixtures import _SCRIPTS_DIR
 
 

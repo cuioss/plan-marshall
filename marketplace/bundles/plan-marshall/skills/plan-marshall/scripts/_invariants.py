@@ -419,10 +419,12 @@ def _main_repo_root() -> Path | None:
 # empty ``worktree_path`` while one of these phases is active is the transient
 # window between phase entry and Step 2.5's backfill, so these phases are
 # treated as materialized regardless of the path value.
-_WORKTREE_MATERIALIZED_PHASES: frozenset[str] = frozenset({
-    '5-execute',
-    '6-finalize',
-})
+_WORKTREE_MATERIALIZED_PHASES: frozenset[str] = frozenset(
+    {
+        '5-execute',
+        '6-finalize',
+    }
+)
 
 
 def _worktree_materialized(metadata: dict[str, Any], phase: str | None) -> bool:
@@ -869,11 +871,13 @@ def _capture_references_valid(plan_id: str, _metadata: dict[str, Any], _phase: s
         return _hash_dict({'present': True, 'top_level_is_dict': False, 'required_field_set': []})
 
     present_required = sorted(k for k in _REFERENCES_REQUIRED_KEYS if k in refs)
-    return _hash_dict({
-        'present': True,
-        'top_level_is_dict': True,
-        'required_field_set': present_required,
-    })
+    return _hash_dict(
+        {
+            'present': True,
+            'top_level_is_dict': True,
+            'required_field_set': present_required,
+        }
+    )
 
 
 def _capture_task_state_hash(plan_id: str, _metadata: dict[str, Any], _phase: str) -> Any:
@@ -954,9 +958,7 @@ def _capture_task_state_hash(plan_id: str, _metadata: dict[str, Any], _phase: st
         if isinstance(steps, list):
             for step in steps:
                 if isinstance(step, dict):
-                    step_outcomes.append(
-                        {'s': str(step.get('status', '')), 'i': str(step.get('intent', ''))}
-                    )
+                    step_outcomes.append({'s': str(step.get('status', '')), 'i': str(step.get('intent', ''))})
         depends = task.get('depends_on') or []
         if not isinstance(depends, list):
             depends = []
@@ -1802,12 +1804,14 @@ BlockingScope = str | frozenset[str]
 # blocking at the planning-phase boundaries (1→2, 2→3, 3→4, 4→5), which still
 # run on the main checkout where a leak could legitimately occur. The
 # discriminator is the boundary phase, NOT a runtime resolver branch.
-_WORKTREE_STATE_DRIFT_BLOCKING_PHASES: frozenset[str] = frozenset({
-    '1-init',
-    '2-refine',
-    '3-outline',
-    '4-plan',
-})
+_WORKTREE_STATE_DRIFT_BLOCKING_PHASES: frozenset[str] = frozenset(
+    {
+        '1-init',
+        '2-refine',
+        '3-outline',
+        '4-plan',
+    }
+)
 
 
 INVARIANT_BLOCKING_SCOPE: dict[str, BlockingScope] = {

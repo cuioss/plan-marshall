@@ -460,10 +460,10 @@ def parse_row_scope(entry: dict[str, Any]) -> RowScope | None:
     rest: list[str] = []
     for position, token in enumerate(tokens):
         if token == _COMMAND_ARGS_FLAG:
-            rest = tokens[position + 1:]
+            rest = tokens[position + 1 :]
             break
         if token.startswith(f'{_COMMAND_ARGS_FLAG}='):
-            rest = [token.split('=', 1)[1], *tokens[position + 1:]]
+            rest = [token.split('=', 1)[1], *tokens[position + 1 :]]
             break
     else:
         return None
@@ -772,7 +772,7 @@ def cross_check_candidates(
     if not candidates:
         raise ValueError(
             'cross_check_candidates requires at least one candidate row; the '
-            'no-candidate case is the caller\'s stale route, not a cross-check verdict'
+            "no-candidate case is the caller's stale route, not a cross-check verdict"
         )
 
     expected, resolution_reason = resolve_expected_notations(project_dir)
@@ -785,11 +785,7 @@ def cross_check_candidates(
         expected_notations: list[str] = []
     else:
         expected_notations = sorted(expected)
-        attributable = [
-            position
-            for position, entry in enumerate(candidates)
-            if _candidate_notation(entry) in expected
-        ]
+        attributable = [position for position, entry in enumerate(candidates) if _candidate_notation(entry) in expected]
         if attributable:
             notation_verdict, notation_reason = CORROBORATED, None
         else:
@@ -799,9 +795,7 @@ def cross_check_candidates(
             # "this row was not written by the dispatch boundary", the other says
             # "this row is from a build this project does not perform" — so they
             # are named apart rather than folded into one message.
-            notation_reason = (
-                REASON_NOTATION_UNRELATED if candidate_notations else REASON_NOTATION_ABSENT
-            )
+            notation_reason = REASON_NOTATION_UNRELATED if candidate_notations else REASON_NOTATION_ABSENT
 
     vocabulary, vocabulary_reason = load_analysis_vocabulary()
     scope = scope_check_candidates(
@@ -815,11 +809,7 @@ def cross_check_candidates(
     # of them, and treating "could not judge" as "judged unfit" would fail closed
     # on the absence of evidence — the direction this module refuses on both
     # dimensions for the same reason.
-    coverable = (
-        set(range(len(candidates)))
-        if scope['verdict'] == UNDETERMINED
-        else set(scope['covered_positions'])
-    )
+    coverable = set(range(len(candidates))) if scope['verdict'] == UNDETERMINED else set(scope['covered_positions'])
     admissible = [position for position in attributable if position in coverable]
     refused = notation_verdict == REFUTED or scope['verdict'] == NARROW
     chosen = admissible[0] if (not refused and admissible) else None

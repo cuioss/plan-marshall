@@ -19,9 +19,7 @@ class TestCrossCheckSynthesisCouplingD:
     def test_fires_when_all_three_facets_present(self):
         # an argparse signature, a global-log error, an unfiled lesson
         all_results = {
-            'recurring-pattern-detector': {
-                'rows': [{'signature': 'argparse: invalid choice foo'}]
-            },
+            'recurring-pattern-detector': {'rows': [{'signature': 'argparse: invalid choice foo'}]},
             'global-log-analysis': {'error_count': 3},
             'quality-verification-report': [{'unfiled_lessons': 1}],
         }
@@ -36,9 +34,7 @@ class TestCrossCheckSynthesisCouplingD:
     def test_does_not_fire_without_global_errors(self):
         # argparse signature + unfiled lesson but ZERO global errors
         all_results = {
-            'recurring-pattern-detector': {
-                'rows': [{'signature': 'argparse: unrecognized argument'}]
-            },
+            'recurring-pattern-detector': {'rows': [{'signature': 'argparse: unrecognized argument'}]},
             'global-log-analysis': {'error_count': 0},
             'quality-verification-report': [{'unfiled_lessons': 2}],
         }
@@ -52,9 +48,7 @@ class TestCrossCheckSynthesisCouplingD:
     def test_does_not_fire_when_signature_not_argparse_shaped(self):
         # a non-argparse signature does not match _SYN_ARGPARSE_SIG_RE
         all_results = {
-            'recurring-pattern-detector': {
-                'rows': [{'signature': 'flaky network timeout'}]
-            },
+            'recurring-pattern-detector': {'rows': [{'signature': 'flaky network timeout'}]},
             'global-log-analysis': {'error_count': 5},
             'quality-verification-report': [{'unfiled_lessons': 1}],
         }
@@ -138,9 +132,7 @@ class TestCrossCheckSynthesisCouplingF:
             'task-graph-redundancy': [
                 {'plan_id': 'p-x', 'in_task_build': 'T2:module-tests'},
             ],
-            'sequence-and-build-minimality': _flag_result(
-                [{'plan_id': 'p-x', 'flags': ['build_churn:3']}]
-            ),
+            'sequence-and-build-minimality': _flag_result([{'plan_id': 'p-x', 'flags': ['build_churn:3']}]),
         }
 
         result = audit.cross_check_synthesis(all_results)
@@ -156,9 +148,7 @@ class TestCrossCheckSynthesisCouplingF:
             'task-graph-redundancy': [
                 {'plan_id': 'p-y', 'in_task_build': 'T1:quality-gate'},
             ],
-            'sequence-and-build-minimality': _flag_result(
-                [{'plan_id': 'p-y', 'flags': ['phase_reentry:5-execute']}]
-            ),
+            'sequence-and-build-minimality': _flag_result([{'plan_id': 'p-y', 'flags': ['phase_reentry:5-execute']}]),
         }
 
         result = audit.cross_check_synthesis(all_results)
@@ -173,9 +163,7 @@ class TestCrossCheckSynthesisCouplingF:
             'task-graph-redundancy': [
                 {'plan_id': 'p-a', 'in_task_build': 'T2:module-tests'},
             ],
-            'sequence-and-build-minimality': _flag_result(
-                [{'plan_id': 'p-b', 'flags': ['build_churn:3']}]
-            ),
+            'sequence-and-build-minimality': _flag_result([{'plan_id': 'p-b', 'flags': ['build_churn:3']}]),
         }
 
         result = audit.cross_check_synthesis(all_results)
@@ -190,9 +178,7 @@ class TestCrossCheckSynthesisCouplingF:
             'task-graph-redundancy': [
                 {'plan_id': 'p-c', 'in_task_build': ''},
             ],
-            'sequence-and-build-minimality': _flag_result(
-                [{'plan_id': 'p-c', 'flags': ['build_churn:3']}]
-            ),
+            'sequence-and-build-minimality': _flag_result([{'plan_id': 'p-c', 'flags': ['build_churn:3']}]),
         }
 
         result = audit.cross_check_synthesis(all_results)
@@ -220,9 +206,7 @@ class TestUnmeasuredCarriesIntoTheCouplings:
             'token-economics': {'rows': []},
         }
 
-        row = _coupling_row(
-            audit.cross_check_synthesis(all_results), 'merge_window_ci_rerun'
-        )
+        row = _coupling_row(audit.cross_check_synthesis(all_results), 'merge_window_ci_rerun')
 
         assert row['fired'] is False
         assert 'contended_plans=unmeasured' in row['detail']
@@ -236,9 +220,7 @@ class TestUnmeasuredCarriesIntoTheCouplings:
             'token-economics': {'rows': []},
         }
 
-        row = _coupling_row(
-            audit.cross_check_synthesis(all_results), 'merge_window_ci_rerun'
-        )
+        row = _coupling_row(audit.cross_check_synthesis(all_results), 'merge_window_ci_rerun')
 
         assert 'contended_plans=0' in row['detail']
         assert 'unmeasured' not in row['detail']
@@ -255,9 +237,7 @@ class TestUnmeasuredCarriesIntoTheCouplings:
             'token-economics': {'rows': []},
         }
 
-        row = _coupling_row(
-            audit.cross_check_synthesis(all_results), 'merge_window_ci_rerun'
-        )
+        row = _coupling_row(audit.cross_check_synthesis(all_results), 'merge_window_ci_rerun')
 
         assert 'contended_plans=0' in row['detail']
 
@@ -268,9 +248,7 @@ class TestUnmeasuredCarriesIntoTheCouplings:
             'quality-verification-report': [],
         }
 
-        row = _coupling_row(
-            audit.cross_check_synthesis(all_results), 'argparse_signature_cluster'
-        )
+        row = _coupling_row(audit.cross_check_synthesis(all_results), 'argparse_signature_cluster')
 
         assert 'global_errors=unmeasured' in row['detail']
         assert 'global_errors=0' not in row['detail']
@@ -283,9 +261,7 @@ class TestUnmeasuredCarriesIntoTheCouplings:
             'quality-verification-report': [],
         }
 
-        row = _coupling_row(
-            audit.cross_check_synthesis(all_results), 'argparse_signature_cluster'
-        )
+        row = _coupling_row(audit.cross_check_synthesis(all_results), 'argparse_signature_cluster')
 
         assert 'global_errors=0' in row['detail']
         assert 'unmeasured' not in row['detail']

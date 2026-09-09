@@ -152,8 +152,7 @@ class TestCheckDocsSubcommand:
         """Should return ok when docs have all required content."""
         claude_md = tmp_path / 'CLAUDE.md'
         claude_md.write_text(
-            '# Project\n\nUse `.plan/temp/` for temporary files.\n\n'
-            'For file operations use Glob, Read, Grep tools.\n'
+            '# Project\n\nUse `.plan/temp/` for temporary files.\n\nFor file operations use Glob, Read, Grep tools.\n'
         )
 
         result = cmd_check_docs(_variant(_CHECK_DOCS_ARGS, project_root=str(tmp_path)))
@@ -233,8 +232,7 @@ class TestCheckDocsSubcommand:
     def test_mixed_files_one_ok_one_missing(self, tmp_path):
         """Should only list files that need updating."""
         (tmp_path / 'CLAUDE.md').write_text(
-            'Use .plan/temp for temp files\n'
-            'For file operations use Glob, Read, Grep tools\n'
+            'Use .plan/temp for temp files\nFor file operations use Glob, Read, Grep tools\n'
         )
         (tmp_path / 'AGENTS.md').write_text('# Agents\n')
 
@@ -274,10 +272,7 @@ class TestFixDocsSubcommand:
     def test_ok_when_docs_already_complete(self, tmp_path):
         """Should return ok when docs already have all required content."""
         claude_md = tmp_path / 'CLAUDE.md'
-        claude_md.write_text(
-            '# Project\n\nUse `.plan/temp/` for temporary files.\n\n'
-            'use Glob, Read, Grep tools.\n'
-        )
+        claude_md.write_text('# Project\n\nUse `.plan/temp/` for temporary files.\n\nuse Glob, Read, Grep tools.\n')
         result = cmd_fix_docs(_variant(_FIX_DOCS_ARGS, project_root=str(tmp_path)))
         assert result['fix_status'] == 'ok'
         assert result['fixed_count'] == 0

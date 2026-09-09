@@ -382,9 +382,7 @@ def main() -> int:
     gate_parser.add_argument('--pr', help='Pull request ID')
 
     # ce-status
-    ce_parser = subparsers.add_parser(
-        'ce-status', help='Get Compute-Engine analysis-task status', allow_abbrev=False
-    )
+    ce_parser = subparsers.add_parser('ce-status', help='Get Compute-Engine analysis-task status', allow_abbrev=False)
     ce_parser.add_argument('--project', required=True, help='SonarQube project key')
     ce_parser.add_argument('--branch', help='Branch name')
 

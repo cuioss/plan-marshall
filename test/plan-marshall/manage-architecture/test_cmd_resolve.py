@@ -76,9 +76,13 @@ from _arch_fixtures import seed_project as _seed_project
 
 from conftest import get_scripts_dir, load_script_module, parse_ns
 
-_architecture_core = load_script_module('plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core')
+_architecture_core = load_script_module(
+    'plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core'
+)
 _cmd_client = load_script_module('plan-marshall', 'manage-architecture', '_cmd_client.py', '_cmd_client')
-_maven_cmd_discover = load_script_module('plan-marshall', 'build-maven', '_maven_cmd_discover.py', '_maven_cmd_discover')
+_maven_cmd_discover = load_script_module(
+    'plan-marshall', 'build-maven', '_maven_cmd_discover.py', '_maven_cmd_discover'
+)
 
 
 def _registered_maven_cmd_discover():
@@ -132,8 +136,14 @@ def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
 #: to module scope because ``parse_ns`` re-executes the script module on every
 #: call, and ``register=False`` because only the namespace is wanted here.
 _RESOLVE_ARGS = parse_ns(
-    _ARCH_BUNDLE, _ARCH_SKILL, _ARCH_SCRIPT,
-    '--project-dir', '.', 'resolve', '--command', 'verify',
+    _ARCH_BUNDLE,
+    _ARCH_SKILL,
+    _ARCH_SCRIPT,
+    '--project-dir',
+    '.',
+    'resolve',
+    '--command',
+    'verify',
     register=False,
 )
 
@@ -172,16 +182,13 @@ _PYPROJECT_VERIFY_EXECUTABLE = (
 # ``default_command_key_fn`` normalises the ``--command-args`` value to the
 # persisted key ``maven:test__pl_core``.
 _MAVEN_TEST_EXECUTABLE = (
-    'python3 .plan/execute-script.py plan-marshall:build-maven:maven '
-    'run --command-args "test -pl core"'
+    'python3 .plan/execute-script.py plan-marshall:build-maven:maven run --command-args "test -pl core"'
 )
 _MAVEN_TEST_COMMAND_KEY = 'maven:test__pl_core'
 
 # Bucket A manage-* notation — passes classification's filter and the four
 # augmentation fields MUST be absent from the resolve TOON.
-_BUCKET_A_MANAGE_EXECUTABLE = (
-    'python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read'
-)
+_BUCKET_A_MANAGE_EXECUTABLE = 'python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read'
 
 
 def _seed_single_module(tmpdir: str, command: str, executable: str) -> None:

@@ -196,8 +196,7 @@ def _private_worktree_helpers(tree: ast.Module) -> list[ast.FunctionDef | ast.As
     return [
         node
         for node in ast.walk(tree)
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-        and node.name.startswith(_PRIVATE_HELPER_PREFIXES)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith(_PRIVATE_HELPER_PREFIXES)
     ]
 
 
@@ -228,11 +227,7 @@ def _is_resolver_module(path: Path) -> bool:
 
 def _iter_bundle_scripts() -> list[Path]:
     """Every ``.py`` file under a bundle skill's ``scripts/`` directory."""
-    return [
-        path
-        for path in sorted(MARKETPLACE_ROOT.rglob('*.py'))
-        if path.is_file() and 'scripts' in path.parts
-    ]
+    return [path for path in sorted(MARKETPLACE_ROOT.rglob('*.py')) if path.is_file() and 'scripts' in path.parts]
 
 
 def _parse(path: Path) -> ast.Module | None:
@@ -373,19 +368,13 @@ def test_resolve_project_dir_delegates_to_resolve_plan_context():
     assert tree is not None, f'resolve_project_dir.py did not parse: {path}'
 
     target = next(
-        (
-            node
-            for node in ast.walk(tree)
-            if isinstance(node, ast.FunctionDef) and node.name == 'resolve_project_dir'
-        ),
+        (node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef) and node.name == 'resolve_project_dir'),
         None,
     )
     assert target is not None, 'resolve_project_dir() is no longer defined in the argv layer'
 
     delegates = any(
-        isinstance(sub, ast.Call)
-        and isinstance(sub.func, ast.Name)
-        and sub.func.id == 'resolve_plan_context'
+        isinstance(sub, ast.Call) and isinstance(sub.func, ast.Name) and sub.func.id == 'resolve_plan_context'
         for sub in ast.walk(target)
     )
     assert delegates, (
@@ -408,9 +397,7 @@ def test_shell_out_detector_fires_on_the_one_sanctioned_site(population):
     that it does.
     """
     resolver_hits = {
-        rel: _argv_shell_out_lines(tree)
-        for rel, (path, tree) in population.items()
-        if _is_resolver_module(path)
+        rel: _argv_shell_out_lines(tree) for rel, (path, tree) in population.items() if _is_resolver_module(path)
     }
     assert resolver_hits, 'The resolver module is not in the derived population'
     assert all(lines for lines in resolver_hits.values()), (
@@ -420,7 +407,7 @@ def test_shell_out_detector_fires_on_the_one_sanctioned_site(population):
     )
 
 
-_SYNTHETIC_SHELL_OUT = '''
+_SYNTHETIC_SHELL_OUT = """
 import subprocess
 
 def _resolve_project_dir(plan_id):
@@ -430,33 +417,33 @@ def _resolve_project_dir(plan_id):
         capture_output=True,
     )
     return out.stdout
-'''
+"""
 
-_SYNTHETIC_KEY_READ_SUBSCRIPT = '''
+_SYNTHETIC_KEY_READ_SUBSCRIPT = """
 def _resolve_worktree_path(status):
     return status['metadata']['worktree_path']
-'''
+"""
 
-_SYNTHETIC_KEY_READ_GET = '''
+_SYNTHETIC_KEY_READ_GET = """
 def _resolve_worktree_path(status):
     return status.get('metadata', {}).get('worktree_path')
-'''
+"""
 
-_SYNTHETIC_ADAPTER = '''
+_SYNTHETIC_ADAPTER = """
 from file_ops import resolve_plan_context
 
 def _resolve_project_dir(plan_id, override):
     if override:
         return override
     return resolve_plan_context(plan_id, ensure=False).worktree_path
-'''
+"""
 
-_SYNTHETIC_EMITTER = '''
+_SYNTHETIC_EMITTER = """
 def build_payload(resolved):
     payload = {'status': 'success', 'worktree_path': resolved}
     payload['worktree_path'] = resolved
     return payload
-'''
+"""
 
 
 @pytest.mark.parametrize(
@@ -492,7 +479,6 @@ def test_re_deriver_detector_stays_silent_on_sanctioned_shapes(source):
     tree = ast.parse(source)
     assert 're-deriver' not in [_classify_helper(h) for h in _private_worktree_helpers(tree)]
     assert _worktree_path_key_read_lines(tree) == [], (
-        'the detector counted a WRITE or an output-payload emit of the '
-        'worktree_path key as a re-derivation read'
+        'the detector counted a WRITE or an output-payload emit of the worktree_path key as a re-derivation read'
     )
     assert _argv_shell_out_lines(tree) == []

@@ -94,7 +94,7 @@ def _resolve_plan_relative(plan_context, rel_path):
     marker = f'plans/{plan_context.plan_id}/'
     idx = rel_path.find(marker)
     assert idx != -1, f'unexpected artifact path shape: {rel_path}'
-    return plan_context.fixture_dir / 'plans' / rel_path[idx + len('plans/'):]
+    return plan_context.fixture_dir / 'plans' / rel_path[idx + len('plans/') :]
 
 
 def _make_incrementing_clock(step=60.0):

@@ -10,7 +10,6 @@ Its sections, in order:
 * generate (Tier 2 - direct import)
 """
 
-
 import pytest
 from _manage_metrics_fixtures import (
     ns_accumulate,
@@ -53,9 +52,7 @@ def test_start_phase_records_timestamp(plan_context):
 
 def test_start_phase_invalid_phase(plan_context):
     """start-phase rejects invalid phase names."""
-    result = cmd_start_phase(
-        raw_ns('start-phase', plan_id='metrics-start-02', phase='invalid')
-    )
+    result = cmd_start_phase(raw_ns('start-phase', plan_id='metrics-start-02', phase='invalid'))
     assert result['status'] == 'error'
     assert 'Invalid phase' in str(result.get('message', ''))
 

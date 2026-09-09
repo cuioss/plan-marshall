@@ -86,14 +86,27 @@ def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
 #: because ``parse_ns`` re-executes the script module on every call, and
 #: ``register=False`` because only the namespace is wanted here.
 _SEARCH_ARGS = parse_ns(
-    _ARCH_BUNDLE, _ARCH_SKILL, _ARCH_SCRIPT,
-    '--project-dir', '.', 'search', '--content', '--pattern', '.',
+    _ARCH_BUNDLE,
+    _ARCH_SKILL,
+    _ARCH_SCRIPT,
+    '--project-dir',
+    '.',
+    'search',
+    '--content',
+    '--pattern',
+    '.',
     register=False,
 )
 
 _FIND_ARGS = parse_ns(
-    _ARCH_BUNDLE, _ARCH_SKILL, _ARCH_SCRIPT,
-    '--project-dir', '.', 'find', '--pattern', '.',
+    _ARCH_BUNDLE,
+    _ARCH_SKILL,
+    _ARCH_SCRIPT,
+    '--project-dir',
+    '.',
+    'find',
+    '--pattern',
+    '.',
     register=False,
 )
 
@@ -545,9 +558,7 @@ def test_cli_rejects_search_without_the_content_mode_flag():
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_crawled_project(tmpdir)
 
-        rejected = run_script(
-            _ARCHITECTURE_SCRIPT, '--project-dir', tmpdir, 'search', '--pattern', _BODY_ONLY_TOKEN
-        )
+        rejected = run_script(_ARCHITECTURE_SCRIPT, '--project-dir', tmpdir, 'search', '--pattern', _BODY_ONLY_TOKEN)
 
         assert not rejected.success
         assert '--content' in (rejected.stdout + rejected.stderr)

@@ -6,7 +6,6 @@ Holds the module-level loads, constants and helpers it uses, so
 the module itself carries the import and not the preamble.
 """
 
-
 import re
 
 from conftest import load_script_module

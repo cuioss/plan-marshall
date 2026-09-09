@@ -64,14 +64,10 @@ _PAIR_TOKENS: list[tuple[str, str]] = [
 # Group 1 captures the guarded `--flag` token from a quoted literal that is the
 # left operand of an `in` membership/substring test. The optional trailing `=`
 # (group 2) marks the equals-form variant.
-_FLAG_MEMBERSHIP_GUARD = re.compile(
-    r"""(['"])(--[A-Za-z][A-Za-z0-9_-]*)(=?)\1\s+in\b"""
-)
+_FLAG_MEMBERSHIP_GUARD = re.compile(r"""(['"])(--[A-Za-z][A-Za-z0-9_-]*)(=?)\1\s+in\b""")
 # Group 1 captures the guarded `--flag` token passed to a `.startswith(...)`
 # check; the optional trailing `=` (group 2) marks the equals-form variant.
-_FLAG_STARTSWITH_GUARD = re.compile(
-    r"""\.startswith\s*\(\s*(['"])(--[A-Za-z][A-Za-z0-9_-]*)(=?)\1"""
-)
+_FLAG_STARTSWITH_GUARD = re.compile(r"""\.startswith\s*\(\s*(['"])(--[A-Za-z][A-Za-z0-9_-]*)(=?)\1""")
 
 # Keep-identifier marker detection
 # Shape: <!-- self-review: keep <identifier> -->
@@ -79,9 +75,7 @@ _FLAG_STARTSWITH_GUARD = re.compile(
 # - the identifier is a single whitespace-free token; the regex stops at the
 #   first whitespace or at the closing `-->` sentinel (the `(?=...)` lookahead
 #   ensures the token boundary is the marker terminator, not part of the id)
-_KEEP_MARKER = re.compile(
-    r'<!--\s*self-review:\s*keep\s+(\S+?)\s*-->'
-)
+_KEEP_MARKER = re.compile(r'<!--\s*self-review:\s*keep\s+(\S+?)\s*-->')
 
 # Doc-prose script-contract reference detection.
 # An ``execute-script.py`` invocation that names a script via the three-part
@@ -101,42 +95,30 @@ _TOON_FIELD_TOKEN = re.compile(r'\{[A-Za-z_][A-Za-z0-9_]*\}')
 # the dominant shape is ``output['key'] = ...`` / ``output["key"] = ...`` (a
 # subscript assignment whose value is later expected to be consumed by a
 # downstream branch). Group 1 captures the produced key.
-_PRODUCER_SUBSCRIPT_ASSIGN = re.compile(
-    r"""^\s*\w+\[(['"])([A-Za-z_][A-Za-z0-9_]*)\1\]\s*="""
-)
+_PRODUCER_SUBSCRIPT_ASSIGN = re.compile(r"""^\s*\w+\[(['"])([A-Za-z_][A-Za-z0-9_]*)\1\]\s*=""")
 # A consumer reads a value back out of a dict-keyed slot — either via a
 # subscript read (``something['key']`` not on the LHS of an assignment) or via
 # ``.get('key'...)``. Both shapes name the consumed key in group 2.
-_CONSUMER_SUBSCRIPT_READ = re.compile(
-    r"""\[(['"])([A-Za-z_][A-Za-z0-9_]*)\1\]"""
-)
-_CONSUMER_GET_READ = re.compile(
-    r"""\.get\s*\(\s*(['"])([A-Za-z_][A-Za-z0-9_]*)\1"""
-)
+_CONSUMER_SUBSCRIPT_READ = re.compile(r"""\[(['"])([A-Za-z_][A-Za-z0-9_]*)\1\]""")
+_CONSUMER_GET_READ = re.compile(r"""\.get\s*\(\s*(['"])([A-Za-z_][A-Za-z0-9_]*)\1""")
 
 # Source-of-truth-consistency detection.
 # A module-level (or simply assigned) constant binding of the shape
 # ``NAME = <literal>`` where NAME is an UPPER_SNAKE_CASE identifier. Group 1
 # captures the constant name; group 2 the literal RHS (trimmed). The same
 # constant assigned a *different* literal in two diff files is a SoT drift.
-_CONSTANT_ASSIGN = re.compile(
-    r"""^\s*([A-Z][A-Z0-9_]*)\s*=\s*(.+?)\s*$"""
-)
+_CONSTANT_ASSIGN = re.compile(r"""^\s*([A-Z][A-Z0-9_]*)\s*=\s*(.+?)\s*$""")
 
 # Same-document-consistency detection.
 # A normative directive line in a ``.md`` body — a line carrying one of the
 # RFC-2119-style normative keywords. Group 1 captures the keyword that fired so
 # the cognitive review can group competing directives.
-_NORMATIVE_DIRECTIVE = re.compile(
-    r'\b(MUST NOT|MUST|SHALL NOT|SHALL|NEVER|ALWAYS|REQUIRED|FORBIDDEN)\b'
-)
+_NORMATIVE_DIRECTIVE = re.compile(r'\b(MUST NOT|MUST|SHALL NOT|SHALL|NEVER|ALWAYS|REQUIRED|FORBIDDEN)\b')
 
 # Description-vs-body-consistency detection.
 # A frontmatter ``description:`` (or ``summary:``) key at the head of a ``.md``
 # document. Group 1 names the key that fired; group 2 captures the value text.
-_FRONTMATTER_DESCRIPTION = re.compile(
-    r'^(description|summary)\s*:\s*(.+?)\s*$'
-)
+_FRONTMATTER_DESCRIPTION = re.compile(r'^(description|summary)\s*:\s*(.+?)\s*$')
 
 # Lone-unguarded-boundary detection (Facet 1).
 # Recognizes an added ``.py`` line that opens a subprocess or file-I/O boundary
@@ -144,12 +126,8 @@ _FRONTMATTER_DESCRIPTION = re.compile(
 # file-I/O calls (``open(``, ``Path.read_text``/``write_text``/``read_bytes``/
 # ``write_bytes``) are the in-scope boundaries. Network calls (``socket.``,
 # ``urllib.``, ``http.client.``) are deliberately OUT of scope and not matched.
-_SUBPROCESS_BOUNDARY = re.compile(
-    r'\bsubprocess\.(run|Popen|check_output|call|check_call)\s*\('
-)
-_FILE_IO_BOUNDARY = re.compile(
-    r'(?:\bopen\s*\(|\.(?:read_text|write_text|read_bytes|write_bytes)\s*\()'
-)
+_SUBPROCESS_BOUNDARY = re.compile(r'\bsubprocess\.(run|Popen|check_output|call|check_call)\s*\(')
+_FILE_IO_BOUNDARY = re.compile(r'(?:\bopen\s*\(|\.(?:read_text|write_text|read_bytes|write_bytes)\s*\()')
 # ``check=True`` keyword that guards a subprocess call against a silent failure.
 _CHECK_TRUE_KWARG = re.compile(r'\bcheck\s*=\s*True\b')
 # A line that opens a ``try:`` block — the enclosing-guard signal for Facet 1.
@@ -180,9 +158,7 @@ _CARDINALITY_NOUNS = 'operations?|fields?|steps?|rules?|commands?|checks?'
 # fields``, ``5 rules``, ``nine checks`` all match. A number not adjacent to a
 # noun (``version 3``), or adjacent to a noun OUTSIDE the set (``5 deliverables``,
 # ``3 modules``), does not match.
-_COUNT_PROSE = re.compile(
-    rf'(?i)\b(?:\d+|{_NUMBER_WORDS})\s+(?:{_CARDINALITY_NOUNS})\b'
-)
+_COUNT_PROSE = re.compile(rf'(?i)\b(?:\d+|{_NUMBER_WORDS})\s+(?:{_CARDINALITY_NOUNS})\b')
 
 # Same-document ordinal-reference detection.
 # An ordinal cross-reference inside a ``.md`` body — a textual pointer at a
@@ -193,18 +169,12 @@ _COUNT_PROSE = re.compile(
 # These are the references that silently go stale when a numbered list is
 # reordered or has an item inserted — the cognitive review re-checks them
 # against the enclosing ordered-list block.
-_ORDINAL_NOUN_REFERENCE = re.compile(
-    r'(?i)\b(?:item|step|point)\s+(?P<n>\d+)\b'
-)
-_ORDINAL_PAREN_REFERENCE = re.compile(
-    r'(?<![\w.])\((?P<n>\d+)\)'
-)
+_ORDINAL_NOUN_REFERENCE = re.compile(r'(?i)\b(?:item|step|point)\s+(?P<n>\d+)\b')
+_ORDINAL_PAREN_REFERENCE = re.compile(r'(?<![\w.])\((?P<n>\d+)\)')
 # An ordered-list item line in a ``.md`` body: optional leading indentation
 # followed by ``N.`` (a digit run, a literal dot, then whitespace). Group ``n``
 # captures the item's ordinal so the enclosing block can be located by number.
-_ORDERED_LIST_ITEM = re.compile(
-    r'^(?P<indent>\s*)(?P<n>\d+)\.\s'
-)
+_ORDERED_LIST_ITEM = re.compile(r'^(?P<indent>\s*)(?P<n>\d+)\.\s')
 
 # Near-identical-hunk touched-claim detection (Facet 3).
 # Tokenizer that splits a line into word/identifier/number/punctuation tokens.
@@ -225,20 +195,14 @@ _TOKENIZE = re.compile(r'\w+|[^\w\s]')
 # Group 1: the long ``--flag`` name (when the add_argument call names one).
 # Group 2: the quote char of the help string.
 # Group 3: the help string value.
-_HELP_FIELD = re.compile(
-    r"\bhelp\s*=\s*(?:r|f|rf|fr)?(['\"])(.*?)\1"
-)
+_HELP_FIELD = re.compile(r"\bhelp\s*=\s*(?:r|f|rf|fr)?(['\"])(.*?)\1")
 # The long-flag token of an add_argument call — e.g. ``'--issue'`` or
 # ``"--issue-ref"``. Group 1 captures the dest-deriving flag (dashes mapped to
 # underscores yields the argparse ``dest``).
-_ADD_ARGUMENT_FLAG = re.compile(
-    r"""['"]--([A-Za-z][A-Za-z0-9_-]*)['"]"""
-)
+_ADD_ARGUMENT_FLAG = re.compile(r"""['"]--([A-Za-z][A-Za-z0-9_-]*)['"]""")
 # An explicit ``dest='name'`` keyword on an add_argument call. Group 2 captures
 # the destination attribute name verbatim (overrides the flag-derived dest).
-_DEST_KWARG = re.compile(
-    r"""\bdest\s*=\s*(['\"])([A-Za-z_][A-Za-z0-9_]*)\1"""
-)
+_DEST_KWARG = re.compile(r"""\bdest\s*=\s*(['\"])([A-Za-z_][A-Za-z0-9_]*)\1""")
 # A multi-form advertisement marker inside a help string: a `` or `` disjunction
 # adjacent to one of the form nouns (URL/path/ref/name/identifier/id). Matched
 # case-insensitively. The presence of this marker is what distinguishes a
@@ -266,9 +230,7 @@ _NORMALIZATION_TOKENS = re.compile(
 # A sequence decomposition binding: ``NAME = <expr>.parts`` or
 # ``NAME = <expr>.split(...)``. Group ``name`` captures the bound sequence
 # variable, which the scan loop below must iterate for the shape to hold.
-_SEQUENCE_DECOMPOSITION = re.compile(
-    r'^\s*(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*.*?(?:\.parts\b|\.split\s*\()'
-)
+_SEQUENCE_DECOMPOSITION = re.compile(r'^\s*(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*.*?(?:\.parts\b|\.split\s*\()')
 # A scan loop over a decomposed sequence: ``for part in parts:`` or
 # ``for index, part in enumerate(parts):``. Group ``seq`` captures the iterated
 # sequence name so it can be matched against a decomposition binding.
@@ -280,9 +242,7 @@ _SCAN_LOOP = re.compile(
 # ``re.search``/``re.fullmatch`` or the same method on a module-level compiled
 # pattern constant (``_VERSION_DIR_NAME_RE.match(...)``). This is what makes the
 # selection a *pattern* first-match rather than an ordinary sequence search.
-_PATTERN_MATCH_TEST = re.compile(
-    r'\b(?:re|_?[A-Z][A-Z0-9_]*)\s*\.\s*(?:match|search|fullmatch)\s*\('
-)
+_PATTERN_MATCH_TEST = re.compile(r'\b(?:re|_?[A-Z][A-Z0-9_]*)\s*\.\s*(?:match|search|fullmatch)\s*\(')
 # The first-match exit: a ``return`` or ``break`` inside the loop body. Without
 # it the loop is a full traversal, not a first-match selection, and the
 # collapse-to-one-key failure mode does not arise.
@@ -292,9 +252,7 @@ _FIRST_MATCH_EXIT = re.compile(r'^\s*(?:return\b|break\b)')
 # (``setdefault``), testing the cardinality of the resulting key set (``len``),
 # or comparing it for equality. Used only to compute the ``key_consumed`` flag
 # that rides on a surfaced candidate; it never gates the candidate.
-_IDENTITY_CONSUMPTION = re.compile(
-    r'\.setdefault\s*\(|\blen\s*\(|==|!='
-)
+_IDENTITY_CONSUMPTION = re.compile(r'\.setdefault\s*\(|\blen\s*\(|==|!=')
 
 # Worked-example-vs-clause detection.
 # A clause section states a normative rule and then demonstrates it with a
@@ -433,16 +391,14 @@ _EMPTY_COLLECTION_BINDING = re.compile(
 # dict literal opens on the same line. Group ``coll`` is the collection; the
 # identity key→value mapping is extracted by ``_IDENTITY_KEY_VALUE`` over the same
 # line (single-line dict literal only — a deliberate narrowing).
-_IDENTITY_APPEND = re.compile(
-    r'^[ \t]*(?P<coll>[A-Za-z_][A-Za-z0-9_]*)\.(?:append|add)[ \t]*\([ \t]*\{'
-)
+_IDENTITY_APPEND = re.compile(r'^[ \t]*(?P<coll>[A-Za-z_][A-Za-z0-9_]*)\.(?:append|add)[ \t]*\([ \t]*\{')
 # The identity-key → bare-identifier mapping inside a dict literal. The key is one
 # of the identity nouns (``id`` / ``key`` / ``name`` / ``uid`` / ``slug`` /
 # ``*_id``); the value is a bare identifier (a caller-derived identity), NOT a
 # literal. Group ``value`` is the identity token whose duplicate disposition the
 # insertion omits.
 _IDENTITY_KEY_VALUE = re.compile(
-    r'''['"](?:id|key|name|uid|slug|[a-z][a-z0-9_]*_id)['"][ \t]*:[ \t]*'''
+    r"""['"](?:id|key|name|uid|slug|[a-z][a-z0-9_]*_id)['"][ \t]*:[ \t]*"""
     r'(?P<value>[A-Za-z_][A-Za-z0-9_]*)\b'
 )
 # A subscript claim: ``COLL[KEY] = ...`` where KEY is a bare identifier (a
@@ -465,7 +421,7 @@ _SUBSCRIPT_CLAIM = re.compile(
 # key and value identical is the narrowing signal: it fires on a genuine
 # report-channel emission, not on any variable that happens to be a report noun.
 _REPORT_CHANNEL_EMISSION = re.compile(
-    r'''['"](?P<ch>notes|reasons|warnings|skipped|dropped|suppressed|diagnostics)['"]'''
+    r"""['"](?P<ch>notes|reasons|warnings|skipped|dropped|suppressed|diagnostics)['"]"""
     r'[ \t]*:[ \t]*(?P=ch)\b'
 )
 # An ``if``/``elif`` block opener whose branch body follows on deeper-indented
@@ -536,17 +492,11 @@ CANDIDATE_LISTS: tuple[CandidateList, ...] = (
     CandidateList('symmetric_pairs', 'symmetric pairs', True, 'structural'),
     CandidateList('flag_guard_pairs', 'flag-guard pairs', True, 'structural'),
     CandidateList('contract_sources', 'contract sources', False, 'prose_contract'),
-    CandidateList(
-        'schema_bearing_files', 'schema-bearing files', False, 'prose_contract'
-    ),
+    CandidateList('schema_bearing_files', 'schema-bearing files', False, 'prose_contract'),
     CandidateList('keep_markers', 'keep markers', True, 'structural'),
-    CandidateList(
-        'protected_identifiers', 'protected identifiers', False, 'structural'
-    ),
+    CandidateList('protected_identifiers', 'protected identifiers', False, 'structural'),
     CandidateList('producer_consumer', 'producer-consumer pairs', True, 'structural'),
-    CandidateList(
-        'source_of_truth', 'source-of-truth duplicates', True, 'structural'
-    ),
+    CandidateList('source_of_truth', 'source-of-truth duplicates', True, 'structural'),
     CandidateList(
         'same_document_consistency',
         'same-document normative directives',
@@ -559,9 +509,7 @@ CANDIDATE_LISTS: tuple[CandidateList, ...] = (
         True,
         'prose_contract',
     ),
-    CandidateList(
-        'unguarded_boundaries', 'lone-unguarded-boundary calls', True, 'structural'
-    ),
+    CandidateList('unguarded_boundaries', 'lone-unguarded-boundary calls', True, 'structural'),
     CandidateList('count_prose', 'stale count-prose', False, 'prose_contract'),
     CandidateList(
         'touched_claims',
@@ -582,12 +530,8 @@ CANDIDATE_LISTS: tuple[CandidateList, ...] = (
         'prose_contract',
     ),
     CandidateList('scan_derived_keys', 'scan-derived keys', True, 'structural'),
-    CandidateList(
-        'worked_example_pairs', 'worked-example clause pairs', True, 'prose_contract'
-    ),
-    CandidateList(
-        'duplicate_claimable_keys', 'duplicate-claimable keys', True, 'structural'
-    ),
+    CandidateList('worked_example_pairs', 'worked-example clause pairs', True, 'prose_contract'),
+    CandidateList('duplicate_claimable_keys', 'duplicate-claimable keys', True, 'structural'),
     CandidateList(
         'discard_without_report',
         'discard paths without a report path',

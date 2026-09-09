@@ -56,9 +56,7 @@ from marketplace_paths import names_real_plan
 from plan_logging import log_entry
 
 # Allowed-effort-levels enum, kept in lock-step with effort-levels.md.
-ALLOWED_LEVELS = (
-    'level-1', 'level-2', 'level-3', 'level-4', 'level-5', 'level-6', 'level-7', 'inherit'
-)
+ALLOWED_LEVELS = ('level-1', 'level-2', 'level-3', 'level-4', 'level-5', 'level-6', 'level-7', 'inherit')
 
 # No levels are currently reserved. `level-7` is the current top tier
 # (binding per the effort-levels.md Level Table — the single source). Future
@@ -80,10 +78,10 @@ RESERVED_LEVELS: tuple[str, ...] = ()
 #   --phase <group> --role <subkey> (two-flag form, equivalent to dotted)
 #   --phase <group>                 (two-flag bare group; same as --role <group>)
 KNOWN_ROLES: dict[str, tuple[str, ...]] = {
-    'phase-2-refine':   ('default',),
-    'phase-3-outline':  ('default',),
-    'phase-4-plan':     ('default',),
-    'phase-5-execute':  ('default', 'verification-feedback'),
+    'phase-2-refine': ('default',),
+    'phase-3-outline': ('default',),
+    'phase-4-plan': ('default',),
+    'phase-5-execute': ('default', 'verification-feedback'),
     'phase-6-finalize': ('default', 'verification-feedback', 'post-run-review'),
 }
 
@@ -97,7 +95,6 @@ ORCHESTRATOR_SURFACES: tuple[str, ...] = ('analyze', 'decompose', 'reader')
 # The writable `orchestrator.effort` object keys: the read surfaces plus the
 # `default` fallback slot and the `max` uplift ceiling.
 ORCHESTRATOR_EFFORT_SET_KEYS: tuple[str, ...] = ORCHESTRATOR_SURFACES + ('default', 'max')
-
 
 
 def _validate_level(value: str, source: str) -> tuple[bool, str | None]:
@@ -118,8 +115,7 @@ def _validate_level(value: str, source: str) -> tuple[bool, str | None]:
     if value in RESERVED_LEVELS:
         return (
             False,
-            f"effort '{value}' at {source} is reserved (future-additive); "
-            f"use 'level-7' for the current top tier",
+            f"effort '{value}' at {source} is reserved (future-additive); use 'level-7' for the current top tier",
         )
     return (
         False,
@@ -155,8 +151,7 @@ def _split_role(args) -> tuple[str | None, str | None, str | None]:
             return (
                 None,
                 None,
-                f"--role '{role}' must be a bare subkey when used with "
-                f'--phase; do not include the group prefix',
+                f"--role '{role}' must be a bare subkey when used with --phase; do not include the group prefix",
             )
         return phase, role, None
 
@@ -512,8 +507,7 @@ def _emit_dispatch_records(
         'decision',
         route_plan_id,
         'INFO',
-        f'(plan-marshall:manage-config) effort resolve-target '
-        f'role={role_display} -> target={target} level={level}',
+        f'(plan-marshall:manage-config) effort resolve-target role={role_display} -> target={target} level={level}',
     )
     # Surface A — work-log [DISPATCH] line (observable side of the pairing).
     log_entry(
@@ -557,11 +551,7 @@ def cmd_effort_resolve_target(args) -> dict:
         # single-level role-key (`verification-feedback`, `phase-5-execute`),
         # NOT the resolver's dotted `group.subkey` payload role, so the emitted
         # `role=` field matches the form the audit already pairs and rosters on.
-        emission_role = (
-            getattr(args, 'role', None)
-            or getattr(args, 'phase', None)
-            or read_result.get('role')
-        )
+        emission_role = getattr(args, 'role', None) or getattr(args, 'phase', None) or read_result.get('role')
         _emit_dispatch_records(
             role=emission_role,
             level=level,
@@ -682,9 +672,7 @@ def _set_orchestrator_effort(scope: str, level: str) -> dict:
     if target_key is None:
         orch_block['effort'] = level
         save_config(config)
-        return success_exit(
-            {'scope': scope, 'level': level, 'target': 'orchestrator.effort'}
-        )
+        return success_exit({'scope': scope, 'level': level, 'target': 'orchestrator.effort'})
 
     # Per-key object write: normalise a scalar shorthand into an object first so
     # the sibling sub-keys survive.
@@ -743,7 +731,7 @@ def cmd_effort_set(args) -> dict:
         config = load_config()
         plan_block = config.setdefault('plan', {})
         if not isinstance(plan_block, dict):
-            return error_exit("plan block in marshal.json is not a dictionary")
+            return error_exit('plan block in marshal.json is not a dictionary')
         plan_block['effort'] = level
         save_config(config)
         return success_exit(
@@ -768,14 +756,11 @@ def cmd_effort_set(args) -> dict:
     phase, role = scope.split('.', 1)
 
     if phase not in KNOWN_ROLES:
-        return error_exit(
-            f"role group '{phase}' is not registered in effort-roles.md"
-        )
+        return error_exit(f"role group '{phase}' is not registered in effort-roles.md")
     group_schema = KNOWN_ROLES[phase]
     if role not in group_schema:
         return error_exit(
-            f"subkey '{role}' is not registered under group "
-            f"'{phase}' in effort-roles.md (valid: {list(group_schema)})"
+            f"subkey '{role}' is not registered under group '{phase}' in effort-roles.md (valid: {list(group_schema)})"
         )
 
     ok, err = _validate_level(level, f'plan.{phase}.effort.{role}')
@@ -785,13 +770,10 @@ def cmd_effort_set(args) -> dict:
     config = load_config()
     plan_block = config.setdefault('plan', {})
     if not isinstance(plan_block, dict):
-        return error_exit("plan block in marshal.json is not a dictionary")
+        return error_exit('plan block in marshal.json is not a dictionary')
     phase_entry = plan_block.setdefault(phase, {})
     if not isinstance(phase_entry, dict):
-        return error_exit(
-            f"plan['{phase}'] exists but is not a dict; "
-            f'cannot merge effort attribute'
-        )
+        return error_exit(f"plan['{phase}'] exists but is not a dict; cannot merge effort attribute")
 
     existing_effort = phase_entry.get('effort')
     if isinstance(existing_effort, dict):
@@ -856,19 +838,14 @@ def cmd_effort_apply_preset(args) -> dict:
 
     default_level = preset.get('default')
     if not isinstance(default_level, str):
-        return error_exit(
-            f"preset '{args.preset}' missing required string 'default' effort"
-        )
+        return error_exit(f"preset '{args.preset}' missing required string 'default' effort")
     ok, err = _validate_level(default_level, 'preset.default')
     if not ok:
         return error_exit(err or 'invalid effort')
 
     preset_roles = preset.get('roles', {})
     if not isinstance(preset_roles, dict):
-        return error_exit(
-            f"preset '{args.preset}' 'roles' must be a dict; "
-            f'got {type(preset_roles).__name__}'
-        )
+        return error_exit(f"preset '{args.preset}' 'roles' must be a dict; got {type(preset_roles).__name__}")
 
     # Validate every effort value in the preset before expansion.
     for group, group_value in preset_roles.items():
@@ -884,23 +861,18 @@ def cmd_effort_apply_preset(args) -> dict:
                         f"'{group}.{subkey}' effort must be a string; "
                         f'got {type(sub_value).__name__}'
                     )
-                ok, err = _validate_level(
-                    sub_value, f'preset.roles.{group}.{subkey}'
-                )
+                ok, err = _validate_level(sub_value, f'preset.roles.{group}.{subkey}')
                 if not ok:
                     return error_exit(err or 'invalid effort')
         else:
             return error_exit(
-                f"preset '{args.preset}' role '{group}' must be a string "
-                f'or dict; got {type(group_value).__name__}'
+                f"preset '{args.preset}' role '{group}' must be a string or dict; got {type(group_value).__name__}"
             )
 
     # Expand the preset into per-phase on-disk values keyed by phase.
     expanded: dict[str, object] = {}
     for phase, schema in KNOWN_ROLES.items():
-        expanded[phase] = _expand_phase_effort(
-            preset_roles.get(phase), schema, default_level
-        )
+        expanded[phase] = _expand_phase_effort(preset_roles.get(phase), schema, default_level)
 
     overrides_count = _count_overrides(expanded, default_level)
     roles_count = _count_roles(expanded)
@@ -913,10 +885,7 @@ def cmd_effort_apply_preset(args) -> dict:
     for phase, phase_effort in expanded.items():
         phase_entry = plan_block.setdefault(phase, {})
         if not isinstance(phase_entry, dict):
-            return error_exit(
-                f"plan['{phase}'] exists but is not a dict; "
-                f'cannot merge effort attribute'
-            )
+            return error_exit(f"plan['{phase}'] exists but is not a dict; cannot merge effort attribute")
         phase_entry['effort'] = phase_effort
     # Defensive cleanup: remove stray top-level `models` / `effort` keys so
     # the writer's output is canonical regardless of what the caller's

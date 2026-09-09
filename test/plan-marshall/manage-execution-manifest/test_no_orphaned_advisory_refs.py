@@ -182,13 +182,9 @@ def test_production_manifest_script_clean_of_classify_family():
     )
     text = script.read_text(encoding='utf-8')
     for needle in _SURFACE_F_CLASSIFY_SUBCOMMAND:
-        assert needle not in text, (
-            f'Surface-(f) token {needle!r} still present in {script.name}'
-        )
+        assert needle not in text, f'Surface-(f) token {needle!r} still present in {script.name}'
     for needle in _SURFACE_B_COMPOSE_SYMBOLS:
-        assert needle not in text, (
-            f'Surface-(b) token {needle!r} still present in {script.name}'
-        )
+        assert needle not in text, f'Surface-(b) token {needle!r} still present in {script.name}'
 
 
 def test_allow_list_files_exist():

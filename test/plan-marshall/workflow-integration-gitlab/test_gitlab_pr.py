@@ -228,7 +228,9 @@ class TestFailLoudUnconfigured:
 class TestPostResponses:
     """post_responses transmits each finding's disposition to its own MR discussion, keyed by hash_id."""
 
-    def _stage_one_finding(self, plan_id, thread_id, body='A substantive concern about null handling.', comment_id='C1'):
+    def _stage_one_finding(
+        self, plan_id, thread_id, body='A substantive concern about null handling.', comment_id='C1'
+    ):
         """File one pr-comment finding via fetch_findings and return its hash_id.
 
         ``comment_id`` keys the finding's identity, so staging several findings in
@@ -343,9 +345,7 @@ class TestPostResponses:
         plan_context.plan_dir_for('gl-respond-round2')
         from _findings_core import resolve_finding
 
-        r1 = [
-            self._stage_one_finding('gl-respond-round2', f'thread-{i}', comment_id=f'r1-{i}') for i in range(2)
-        ]
+        r1 = [self._stage_one_finding('gl-respond-round2', f'thread-{i}', comment_id=f'r1-{i}') for i in range(2)]
         for i, hash_id in enumerate(r1):
             resolve_finding('gl-respond-round2', hash_id, 'fixed', detail=f'Fixed round-1 {i}.')
 
@@ -584,13 +584,13 @@ def test_post_responses_refuses_a_plan_absent_from_the_resolved_root(plan_contex
 
     assert result.get('status') == 'error', result
     assert result.get('error') == 'findings_store_unresolved', (
-        'the provider must re-publish the store\'s own error code rather than mint a '
+        "the provider must re-publish the store's own error code rather than mint a "
         f'second vocabulary for the same fact: {result}'
     )
     assert result.get('findings_store_state') == 'plan_absent'
     assert result.get('unresolved_store') is True
     assert str(root) in str(result.get('message', '')), (
-        'the refusal must carry the store\'s provenance naming the resolved root'
+        "the refusal must carry the store's provenance naming the resolved root"
     )
     # The pre-guard answer, excluded explicitly: a confident all-clear report.
     assert 'count_responded' not in result

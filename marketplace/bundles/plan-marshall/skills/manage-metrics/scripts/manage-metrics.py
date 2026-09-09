@@ -394,7 +394,7 @@ _FOUR_FIELD_USAGE_LABELS = (
 _FOUR_FIELD_USAGE_FIELDS = tuple(field for field, _label in _FOUR_FIELD_USAGE_LABELS)
 
 _FOUR_FIELD_GROUP_HEADING = (
-    '- **Main-context-window usage**: raw `message.usage` summed over this phase\'s parent '
+    "- **Main-context-window usage**: raw `message.usage` summed over this phase's parent "
     'turns and the subagent transcripts attributed to the same window. Every bullet below '
     'measures that one population'
 )
@@ -403,9 +403,7 @@ _FOUR_FIELD_GROUP_HEADING = (
 # total names its own population, so the bullet stays legible without reading
 # the breakdown annotation first.
 _POPULATION_BULLET_NOTE = {
-    POPULATION_DISPATCHED: (
-        "dispatched-subagent population — summed from the dispatched leaves' `<usage>` envelopes"
-    ),
+    POPULATION_DISPATCHED: ("dispatched-subagent population — summed from the dispatched leaves' `<usage>` envelopes"),
     POPULATION_INLINE: (
         'main-context-window population — this phase dispatched nothing, so enrich folded its '
         'inline main-context spend into this field; the same figure is recorded under its own '
@@ -535,12 +533,12 @@ _DISPATCHED_MEASURE_FIELDS = (
 # Neither cardinality is restated here. A count written into this comment is read
 # by nothing, so it goes stale the moment either set moves — ask the two scans.
 DISPATCH_BOUNDARY_EXCLUDED_CLASSES = (
-    'phase-2-refine',        # main envelope dispatch; issues no record-dispatch-boundary
-    'phase-3-outline',       # main envelope dispatch; issues no record-dispatch-boundary
-    'q-gate-validation',     # shared Q-Gate dispatch (fires from 2-refine / 3-outline / 4-plan)
-    'verification-feedback', # shared triage dispatch (fires from 5-execute / 6-finalize)
-    'research',              # ad-hoc research dispatch (any phase)
-    'enrich-module',         # 6-finalize architecture-refresh parallel dispatch
+    'phase-2-refine',  # main envelope dispatch; issues no record-dispatch-boundary
+    'phase-3-outline',  # main envelope dispatch; issues no record-dispatch-boundary
+    'q-gate-validation',  # shared Q-Gate dispatch (fires from 2-refine / 3-outline / 4-plan)
+    'verification-feedback',  # shared triage dispatch (fires from 5-execute / 6-finalize)
+    'research',  # ad-hoc research dispatch (any phase)
+    'enrich-module',  # 6-finalize architecture-refresh parallel dispatch
 )
 
 # ---------------------------------------------------------------------------
@@ -612,7 +610,7 @@ def _join_continuation(lines: list[str], index: int) -> str:
     end = start
     while end + 1 < len(lines) and lines[end].rstrip().endswith('\\'):
         end += 1
-    return ' '.join(part.strip().rstrip('\\').strip() for part in lines[start:end + 1])
+    return ' '.join(part.strip().rstrip('\\').strip() for part in lines[start : end + 1])
 
 
 def scan_boundary_registrations(bundles_root: Path | None = None) -> dict[str, Any]:
@@ -671,9 +669,7 @@ def scan_boundary_registrations(bundles_root: Path | None = None) -> dict[str, A
         except OSError as exc:
             # An unreadable document is a hole in the coverage, not an absence of
             # call sites. Report it rather than letting the walk skip it silently.
-            unparsed.append(
-                {'path': str(document), 'line': 0, 'reason': f'unreadable: {exc}', 'text': ''}
-            )
+            unparsed.append({'path': str(document), 'line': 0, 'reason': f'unreadable: {exc}', 'text': ''})
             continue
         documents_scanned += 1
         for index, line in enumerate(lines):
@@ -734,9 +730,7 @@ def scan_boundary_registrations(bundles_root: Path | None = None) -> dict[str, A
 # verdict.
 #: The call graph, relative to the marketplace bundles root. It is the document
 #: that enumerates every dispatch path, so it is the population's producer.
-_CALL_GRAPH_RELATIVE_PATH = (
-    'plan-marshall/skills/ref-workflow-architecture/standards/call-graph.md'
-)
+_CALL_GRAPH_RELATIVE_PATH = 'plan-marshall/skills/ref-workflow-architecture/standards/call-graph.md'
 
 #: A dispatch class named by its PHASE key, in any of the three spellings the
 #: graph uses: ``role=phase-5-execute`` in a diagram box, ``--phase
@@ -866,9 +860,7 @@ def scan_dispatch_classes(call_graph: Path | None = None) -> dict[str, Any]:
             a silent empty scan that would read as "nothing dispatches".
     """
     path = (
-        Path(call_graph)
-        if call_graph is not None
-        else resolve_bundles_root(Path(__file__)) / _CALL_GRAPH_RELATIVE_PATH
+        Path(call_graph) if call_graph is not None else resolve_bundles_root(Path(__file__)) / _CALL_GRAPH_RELATIVE_PATH
     )
     try:
         lines = path.read_text(encoding='utf-8').splitlines()
@@ -904,11 +896,7 @@ def scan_dispatch_classes(call_graph: Path | None = None) -> dict[str, Any]:
         if on_line_phase or on_line_shared:
             resolved_edges.append({**record, 'dispatch_classes': [*on_line_phase, *on_line_shared]})
         elif _DISPATCH_TARGET.search(line):
-            reason = (
-                _UNPARSED_NO_ROLE_KEY
-                if 'execution-context' in line and '[' not in line
-                else _UNPARSED_UNREADABLE
-            )
+            reason = _UNPARSED_NO_ROLE_KEY if 'execution-context' in line and '[' not in line else _UNPARSED_UNREADABLE
             unparsed.append({**record, 'reason': reason})
         else:
             glyph_mentions.append(record)
@@ -1179,9 +1167,7 @@ def _read_dispatch_boundary_totals(plan_id: str, phase: str) -> tuple[int, int]:
     return total, rows
 
 
-def _resolve_token_field(
-    arg_value: int | None, accumulator: dict[str, int], key: str
-) -> tuple[int | None, str | None]:
+def _resolve_token_field(arg_value: int | None, accumulator: dict[str, int], key: str) -> tuple[int | None, str | None]:
     """Resolve a usage field to its value AND its provenance.
 
     Explicit flag wins; fall back to the accumulator value when the flag is
@@ -1265,9 +1251,7 @@ def _stamp_value_scope(phase_data: dict) -> None:
         phase_data['cumulative_fields'] = ','.join(
             field for field in _CUMULATIVE_ACROSS_CLOSES_FIELDS if field in phase_data
         )
-        phase_data['last_close_fields'] = ','.join(
-            field for field in _LAST_CLOSE_SCOPED_FIELDS if field in phase_data
-        )
+        phase_data['last_close_fields'] = ','.join(field for field in _LAST_CLOSE_SCOPED_FIELDS if field in phase_data)
         return
     phase_data['value_scope'] = VALUE_SCOPE_SINGLE_CLOSE
     phase_data.pop('cumulative_fields', None)
@@ -1649,9 +1633,7 @@ def _close_phase_accumulating(
         phase_data['agent_duration_seconds'] = round(worked_total / 1000.0, 1)
 
     if total_tokens is not None:
-        phase_data['total_tokens'] = _apply_provenance(
-            phase_data, 'total_tokens', total_tokens, total_tokens_source
-        )
+        phase_data['total_tokens'] = _apply_provenance(phase_data, 'total_tokens', total_tokens, total_tokens_source)
 
     if tool_uses is not None:
         phase_data['tool_uses'] = _apply_provenance(phase_data, 'tool_uses', tool_uses, tool_uses_source)
@@ -1885,9 +1867,7 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     # timestamp detector above this needs no inference and names the phase that
     # was actually re-entered, so a reader can tell which row's totals are the
     # sum across multiple closes.
-    re_entered_phases = [
-        name for name in PHASE_NAMES if name in phases and _row_int(phases[name], 'close_count') > 1
-    ]
+    re_entered_phases = [name for name in PHASE_NAMES if name in phases and _row_int(phases[name], 'close_count') > 1]
     if re_entered_phases:
         data['re_entered_phases'] = ','.join(re_entered_phases)
 
@@ -1935,11 +1915,7 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         phase = phases[phase_name]
         cache_read = phase.get('cache_read_input_tokens')
         tool_uses = phase.get('tool_uses')
-        if (
-            isinstance(cache_read, (int, float))
-            and isinstance(tool_uses, (int, float))
-            and int(tool_uses) > 0
-        ):
+        if isinstance(cache_read, (int, float)) and isinstance(tool_uses, (int, float)) and int(tool_uses) > 0:
             phase['cache_read_per_tool_use'] = round(int(cache_read) / int(tool_uses))
         else:
             phase.pop('cache_read_per_tool_use', None)
@@ -1964,9 +1940,7 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     # Persisted as top-level keys in metrics.toon (round-tripped via
     # read_metrics_raw's arbitrary-top-level-key path): the bool as a true/false
     # token and the list comma-joined.
-    phases_missing_end_time = [
-        name for name in PHASE_NAMES if not phases.get(name, {}).get('end_time')
-    ]
+    phases_missing_end_time = [name for name in PHASE_NAMES if not phases.get(name, {}).get('end_time')]
     any_phase_missing_end_time = len(phases_missing_end_time) > 0
     data['any_phase_missing_end_time'] = 'true' if any_phase_missing_end_time else 'false'
     data['phases_missing_end_time'] = ','.join(phases_missing_end_time)
@@ -2009,9 +1983,7 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         # a stale `unmeasured`. The field's non-numeric value is an invariant of
         # THIS regenerate's operands, the same rule `cache_read_per_tool_use`
         # follows above.
-        phase['inline_main_context_tokens'] = (
-            0 if phase.get('total_tokens_population') else UNMEASURED_COLUMN_TOKEN
-        )
+        phase['inline_main_context_tokens'] = 0 if phase.get('total_tokens_population') else UNMEASURED_COLUMN_TOKEN
 
     # The store write is deliberately NOT here. Every figure the Total row renders
     # is derived below and must reach the store, so the single write — and the
@@ -2201,8 +2173,7 @@ def cmd_generate(args: argparse.Namespace) -> dict:
             winning_field, winning_value = winner
             if winning_field != 'total_tokens':
                 reconciled_phases.append(
-                    (phase_name, winning_field, winning_value,
-                     int(raw_tokens) if raw_tokens is not None else None)
+                    (phase_name, winning_field, winning_value, int(raw_tokens) if raw_tokens is not None else None)
                 )
             tokens_str = f'{winning_value:,}'
             tokens_values.append(winning_value)
@@ -2305,9 +2276,7 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         if billing is not None:
             billing_values.append(int(billing))
 
-        data_rows.append(
-            (phase_name, worked_str, wall_str, idle_str, tokens_str, tool_uses_str, billing_str)
-        )
+        data_rows.append((phase_name, worked_str, wall_str, idle_str, tokens_str, tool_uses_str, billing_str))
 
     # Persist the aggregate, then render the Total row FROM the persisted values.
     #
@@ -2455,7 +2424,7 @@ def cmd_generate(args: argparse.Namespace) -> dict:
             )
         if mixed_population_phases:
             population_clauses.append(
-                'Marked `(mixed)` — the cell is the phase\'s dispatched-subagent total; the inline '
+                "Marked `(mixed)` — the cell is the phase's dispatched-subagent total; the inline "
                 'main-context spend measured in the same window is recorded separately as '
                 'inline_main_context_tokens and is excluded from both the cell and the **Total**: '
                 f'{", ".join(mixed_population_phases)}.'
@@ -2559,8 +2528,7 @@ def cmd_generate(args: argparse.Namespace) -> dict:
             )
             lines.append(
                 f'- **Closes**: {close_count} (phase re-entered; the totals below are '
-                'the sum across every close, and Start is the latest entry only).'
-                + split
+                'the sum across every close, and Start is the latest entry only).' + split
             )
 
         wall_ms = _wall_clock_ms(phase)
@@ -2579,9 +2547,7 @@ def cmd_generate(args: argparse.Namespace) -> dict:
 
         tokens = phase.get('total_tokens')
         if tokens:
-            lines.append(
-                f'- **Total tokens**: {int(tokens):,} ({_POPULATION_BULLET_NOTE[population]})'
-            )
+            lines.append(f'- **Total tokens**: {int(tokens):,} ({_POPULATION_BULLET_NOTE[population]})')
 
         boundary_total = phase.get('dispatch_boundary_total')
         if boundary_total:
@@ -2623,8 +2589,7 @@ def cmd_generate(args: argparse.Namespace) -> dict:
                     '(numerator: dispatch-boundary rows; denominator: subagent_samples from enrich)'
                 )
             won = any(
-                name == phase_name and field == 'dispatch_boundary_total'
-                for name, field, _v, _b in reconciled_phases
+                name == phase_name and field == 'dispatch_boundary_total' for name, field, _v, _b in reconciled_phases
             )
             outcome = 'won the reconciliation maximum' if won else 'did not win the maximum'
             lines.append(
@@ -2648,9 +2613,7 @@ def cmd_generate(args: argparse.Namespace) -> dict:
                     'carries, restated here under its own population-honest name'
                 )
             else:
-                relation = (
-                    'surfaced alongside the dispatched Total tokens, which does not include it'
-                )
+                relation = 'surfaced alongside the dispatched Total tokens, which does not include it'
             lines.append(
                 f'- **Inline main-context tokens**: {int(inline_main_context):,} '
                 '(main-context-window population, attributed via enrich phase-window usage — '
@@ -2756,14 +2719,9 @@ def cmd_generate(args: argparse.Namespace) -> dict:
             label, denom_field, note = unattributed
             denom = phase.get(denom_field)
             if isinstance(denom, (int, float)):
-                lines.append(
-                    f'- **{label}**: {value:,} of {int(denom):,} {denom_field} ({note})'
-                )
+                lines.append(f'- **{label}**: {value:,} of {int(denom):,} {denom_field} ({note})')
             else:
-                lines.append(
-                    f'- **{label}**: {value:,} ({note}; denominator {denom_field} '
-                    'not recorded on this row)'
-                )
+                lines.append(f'- **{label}**: {value:,} ({note}; denominator {denom_field} not recorded on this row)')
 
         lines.append('')
 
@@ -2799,9 +2757,7 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     for name in _DENOMINATOR_FIELDS:
         if name in data:
             denominators[name] = data[name]
-            denominators[f'{name}{_SAMPLING_POINT_SUFFIX}'] = data[
-                f'{name}{_SAMPLING_POINT_SUFFIX}'
-            ]
+            denominators[f'{name}{_SAMPLING_POINT_SUFFIX}'] = data[f'{name}{_SAMPLING_POINT_SUFFIX}']
     if 'denominators_sampled_at' in data:
         denominators['denominators_sampled_at'] = data['denominators_sampled_at']
 
@@ -2935,8 +2891,7 @@ def cmd_print_phase_breakdown(args: argparse.Namespace) -> dict:
             'error': 'output_file_must_be_relative',
             'plan_id': plan_id,
             'message': (
-                f'--output-file must be a plan-relative path '
-                f'(no absolute paths, no traversal): {relative_path}'
+                f'--output-file must be a plan-relative path (no absolute paths, no traversal): {relative_path}'
             ),
         }
     file_path = get_plan_dir(plan_id) / relative_path
@@ -2948,8 +2903,7 @@ def cmd_print_phase_breakdown(args: argparse.Namespace) -> dict:
             'error': 'output_file_must_be_relative',
             'plan_id': plan_id,
             'message': (
-                f'--output-file must be a plan-relative path '
-                f'(no absolute paths, no traversal): {relative_path}'
+                f'--output-file must be a plan-relative path (no absolute paths, no traversal): {relative_path}'
             ),
         }
     atomic_write_file(file_path, section)
@@ -3401,9 +3355,7 @@ def cmd_reconcile_ledgers(args: argparse.Namespace) -> dict:
         metrics_row = phases.get(phase_name) or {}
         if not boundary_rows and not metrics_row and not execution_rows:
             continue
-        phase_rows = (
-            None if execution_rows is None else execution_rows_for_phase(execution_rows, phase_name)
-        )
+        phase_rows = None if execution_rows is None else execution_rows_for_phase(execution_rows, phase_name)
         block = reconcile_phase(
             phase_name,
             phase_rows,
@@ -3412,11 +3364,7 @@ def cmd_reconcile_ledgers(args: argparse.Namespace) -> dict:
             args.window_seconds,
             execution_log_reason,
         )
-        if (
-            block['execution_log_rows'] == 0
-            and block['boundary_rows'] == 0
-            and not block['findings']
-        ):
+        if block['execution_log_rows'] == 0 and block['boundary_rows'] == 0 and not block['findings']:
             continue
         phase_blocks.append(block)
         findings.extend(block['findings'])
@@ -3561,8 +3509,7 @@ def cmd_record_dispatch_boundary(args: argparse.Namespace) -> dict:
             'status': 'error',
             'error': 'invalid_termination_cause',
             'message': (
-                f'Invalid termination_cause: {cause}. '
-                f'Must be one of: {", ".join(DISPATCH_TERMINATION_CAUSES)}'
+                f'Invalid termination_cause: {cause}. Must be one of: {", ".join(DISPATCH_TERMINATION_CAUSES)}'
             ),
         }
 
@@ -3598,10 +3545,7 @@ def cmd_record_dispatch_boundary(args: argparse.Namespace) -> dict:
     for column in _DISPATCH_CONTEXT_LOAD_COLUMNS:
         measured = context_load[column]
         context_cells.append(UNMEASURED_COLUMN_TOKEN if measured is None else str(int(measured)))
-    row = (
-        f'{timestamp},{cause},{total_tokens},{tool_uses},{duration_ms},'
-        + ','.join(context_cells)
-    )
+    row = f'{timestamp},{cause},{total_tokens},{tool_uses},{duration_ms},' + ','.join(context_cells)
 
     if path.exists():
         existing = path.read_text(encoding='utf-8')
@@ -3631,9 +3575,7 @@ def cmd_record_dispatch_boundary(args: argparse.Namespace) -> dict:
 
     # Count rows by counting the data lines (everything after the header lines).
     row_count = sum(
-        1
-        for line in new_content.splitlines()
-        if line and not line.startswith(('plan_id:', 'phase:', 'rows[]'))
+        1 for line in new_content.splitlines() if line and not line.startswith(('plan_id:', 'phase:', 'rows[]'))
     )
 
     result: dict[str, object] = {
@@ -3790,9 +3732,7 @@ _EXPLORATION_BUCKETS = ('exploration', 'work', 'execute', 'orchestration', 'uncl
 # Persisted and rendered on a PRESENCE test, never a truthiness test — see the
 # render-guard divergence note at the per-phase render.
 _EXPLORATION_COUNTER_FIELDS = tuple(
-    f'{bucket}_{measure}'
-    for bucket in _EXPLORATION_BUCKETS
-    for measure in ('tool_calls', 'result_bytes')
+    f'{bucket}_{measure}' for bucket in _EXPLORATION_BUCKETS for measure in ('tool_calls', 'result_bytes')
 )
 
 # The cache-read attribution group: one attributed field per byte source plus the
@@ -3827,9 +3767,7 @@ _EXPLORATION_SUBSOURCES = ('index_answerable', 'doc_residency', 'unattributed')
 # suffix rather than ``_result_bytes`` precisely so that family's derivation
 # cannot pick them up: they partition ONE bucket's bytes, they are not a sixth
 # bucket, and there is no ``_tool_calls`` counterpart.
-_EXPLORATION_SUBSOURCE_FIELDS = tuple(
-    f'exploration_{sub}_bytes' for sub in _EXPLORATION_SUBSOURCES
-)
+_EXPLORATION_SUBSOURCE_FIELDS = tuple(f'exploration_{sub}_bytes' for sub in _EXPLORATION_SUBSOURCES)
 
 # Every transcript-supplied per-phase field that is persisted and rendered on a
 # PRESENCE test rather than a truthiness test, in report order. The three groups
@@ -3850,9 +3788,7 @@ _PRESENCE_PERSISTED_FIELDS = (
 # member MUST carry a denominator-bearing render spec in ``_UNATTRIBUTED_RENDER``;
 # the contract-drift test ``test_unattributed_render_map_covers_every_residual``
 # fails loudly if the two ever diverge. Kept next to the derived set it guards.
-_UNATTRIBUTED_RESIDUAL_FIELDS = frozenset(
-    field for field in _PRESENCE_PERSISTED_FIELDS if 'unattributed' in field
-)
+_UNATTRIBUTED_RESIDUAL_FIELDS = frozenset(field for field in _PRESENCE_PERSISTED_FIELDS if 'unattributed' in field)
 
 
 def _inline_main_context_sum(phase_row: dict) -> int:
@@ -3868,9 +3804,7 @@ def _inline_main_context_sum(phase_row: dict) -> int:
     ``total_tokens_population`` then labels ``inline``).
     """
     return sum(
-        int(phase_row[field])
-        for field in _INLINE_MAIN_CONTEXT_FIELDS
-        if isinstance(phase_row.get(field), (int, float))
+        int(phase_row[field]) for field in _INLINE_MAIN_CONTEXT_FIELDS if isinstance(phase_row.get(field), (int, float))
     )
 
 
@@ -4061,10 +3995,10 @@ def main() -> int:
             'Read metrics.md from the live plan directory, extract only the '
             '## Phase Breakdown section (table from heading to the next ## '
             'heading or EOF), and persist it. Default behavior writes the '
-            "section verbatim to the plan-relative artifact path "
+            'section verbatim to the plan-relative artifact path '
             f"'{PHASE_BREAKDOWN_DEFAULT_OUTPUT}' and emits a TOON envelope "
             '{status, plan_id, file, bytes_written}. Pass an explicit '
-            "--output-file PATH to override the artifact path (plan-relative "
+            '--output-file PATH to override the artifact path (plan-relative '
             'only; absolute paths are rejected). Pass --output-file - to use '
             'legacy stdout-only mode: the section is written verbatim to '
             'stdout with no TOON envelope (handy for ad-hoc inspection). On '
@@ -4148,8 +4082,8 @@ def main() -> int:
         'reconcile-ledgers',
         help='Reconcile the row ledgers against each other (read-only)',
         description=(
-            'Deterministic cross-ledger reconciliation. Joins execution.toon\'s '
-            'execution_log[] against each phase\'s '
+            "Deterministic cross-ledger reconciliation. Joins execution.toon's "
+            "execution_log[] against each phase's "
             'work/metrics-dispatch-boundaries-{phase}.toon on phase and timestamp '
             'window, emitting one finding per row present in one ledger and '
             'absent from the other. The two partiality shapes are labelled '

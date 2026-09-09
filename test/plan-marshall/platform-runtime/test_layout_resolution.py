@@ -27,15 +27,17 @@ def in_tmp_cwd(tmp_path, monkeypatch):
     """Run with the process working directory inside an isolated tmp_path."""
     monkeypatch.chdir(tmp_path)
 
+
 @pytest.fixture()
 def project_skill_roots(monkeypatch):
     """Pin the project skill roots the layout resolver scans."""
-    monkeypatch.setattr(marketplace_paths, "get_project_skill_roots", lambda: (".claude/skills", ".opencode/skills"))
+    monkeypatch.setattr(marketplace_paths, 'get_project_skill_roots', lambda: ('.claude/skills', '.opencode/skills'))
+
 
 def _parse(toon_str: str) -> dict:
     """Parse a TOON string and assert it is a non-empty dict."""
     result = parse_toon(toon_str)
-    assert isinstance(result, dict), f"parse_toon returned non-dict: {toon_str!r}"
+    assert isinstance(result, dict), f'parse_toon returned non-dict: {toon_str!r}'
     return result
 
 
@@ -47,34 +49,34 @@ def _parse(toon_str: str) -> dict:
 def test_claude_layout_skill_roots_returns_dot_claude() -> None:
     """ClaudeRuntime.layout_skill_roots returns the single .claude/skills root."""
     result = _parse(ClaudeRuntime().layout_skill_roots())
-    assert result["status"] == "success"
-    assert result["operation"] == "layout skill-roots"
-    assert result["target"] == "claude"
-    assert result["roots"] == [".claude/skills"]
+    assert result['status'] == 'success'
+    assert result['operation'] == 'layout skill-roots'
+    assert result['target'] == 'claude'
+    assert result['roots'] == ['.claude/skills']
 
 
 def test_opencode_layout_skill_roots_returns_multiroot_list(monkeypatch: pytest.MonkeyPatch) -> None:
     """OpenCodeRuntime.layout_skill_roots mirrors the executor's discovery roots."""
-    monkeypatch.delenv("OPENCODE_CONFIG_DIR", raising=False)
+    monkeypatch.delenv('OPENCODE_CONFIG_DIR', raising=False)
     result = _parse(OpenCodeRuntime().layout_skill_roots())
-    assert result["status"] == "success"
-    assert result["target"] == "opencode"
-    roots = result["roots"]
+    assert result['status'] == 'success'
+    assert result['target'] == 'opencode'
+    roots = result['roots']
     assert isinstance(roots, list)
     # Project-local roots appear in priority order before the user-global ones.
-    assert roots[0] == ".opencode/skills"
-    assert ".claude/skills" in roots
-    assert ".agents/skills" in roots
+    assert roots[0] == '.opencode/skills'
+    assert '.claude/skills' in roots
+    assert '.agents/skills' in roots
     # User-global roots are ~-expanded to absolute paths.
-    assert any(r.endswith("/.config/opencode/skills") for r in roots)
-    assert any(r.endswith("/.claude/skills") for r in roots)
+    assert any(r.endswith('/.config/opencode/skills') for r in roots)
+    assert any(r.endswith('/.claude/skills') for r in roots)
 
 
 def test_opencode_layout_skill_roots_honours_config_dir_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """A set OPENCODE_CONFIG_DIR prepends its skills root at highest priority."""
-    monkeypatch.setenv("OPENCODE_CONFIG_DIR", "/custom/opencode")
+    monkeypatch.setenv('OPENCODE_CONFIG_DIR', '/custom/opencode')
     result = _parse(OpenCodeRuntime().layout_skill_roots())
-    assert result["roots"][0] == "/custom/opencode/skills"
+    assert result['roots'][0] == '/custom/opencode/skills'
 
 
 # =============================================================================
@@ -84,31 +86,31 @@ def test_opencode_layout_skill_roots_honours_config_dir_env(monkeypatch: pytest.
 
 def test_router_dispatches_layout_skill_roots(tmp_path, capsys, in_tmp_cwd) -> None:
     """The router resolves runtime.target and dispatches `layout skill-roots`."""
-    plan_dir = tmp_path / ".plan"
+    plan_dir = tmp_path / '.plan'
     plan_dir.mkdir()
-    (plan_dir / "marshal.json").write_text('{"runtime": {"target": "claude"}}', encoding="utf-8")
+    (plan_dir / 'marshal.json').write_text('{"runtime": {"target": "claude"}}', encoding='utf-8')
 
-    rc = platform_runtime.main(["layout", "skill-roots"])
+    rc = platform_runtime.main(['layout', 'skill-roots'])
     assert rc == 0
     result = _parse(capsys.readouterr().out)
-    assert result["status"] == "success"
-    assert result["operation"] == "layout skill-roots"
-    assert result["roots"] == [".claude/skills"]
+    assert result['status'] == 'success'
+    assert result['operation'] == 'layout skill-roots'
+    assert result['roots'] == ['.claude/skills']
 
 
 def test_router_dispatches_layout_skill_roots_opencode(monkeypatch, tmp_path, capsys, in_tmp_cwd) -> None:
     """The router selects the OpenCode runtime when marshal.json says so."""
-    monkeypatch.delenv("OPENCODE_CONFIG_DIR", raising=False)
-    plan_dir = tmp_path / ".plan"
+    monkeypatch.delenv('OPENCODE_CONFIG_DIR', raising=False)
+    plan_dir = tmp_path / '.plan'
     plan_dir.mkdir()
-    (plan_dir / "marshal.json").write_text('{"runtime": {"target": "opencode"}}', encoding="utf-8")
+    (plan_dir / 'marshal.json').write_text('{"runtime": {"target": "opencode"}}', encoding='utf-8')
 
-    rc = platform_runtime.main(["layout", "skill-roots"])
+    rc = platform_runtime.main(['layout', 'skill-roots'])
     assert rc == 0
     result = _parse(capsys.readouterr().out)
-    assert result["status"] == "success"
-    assert result["target"] == "opencode"
-    assert ".opencode/skills" in result["roots"]
+    assert result['status'] == 'success'
+    assert result['target'] == 'opencode'
+    assert '.opencode/skills' in result['roots']
 
 
 # =============================================================================
@@ -127,8 +129,8 @@ def _reset_skill_roots_cache():
 def test_get_project_skill_roots_falls_back_to_claude_default(monkeypatch, in_tmp_cwd) -> None:
     """With no marshal.json the helper falls back to the Claude default root."""
     # Force the layout op to be unreachable so the fallback path is exercised.
-    monkeypatch.setattr(marketplace_paths, "_invoke_layout_op", lambda target: None)
-    assert marketplace_paths.get_project_skill_roots() == (".claude/skills",)
+    monkeypatch.setattr(marketplace_paths, '_invoke_layout_op', lambda target: None)
+    assert marketplace_paths.get_project_skill_roots() == ('.claude/skills',)
 
 
 def test_get_project_skill_roots_is_memoised(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -137,40 +139,40 @@ def test_get_project_skill_roots_is_memoised(monkeypatch: pytest.MonkeyPatch) ->
 
     def _fake_invoke(target: str):
         calls.append(target)
-        return (".claude/skills",)
+        return ('.claude/skills',)
 
-    monkeypatch.setattr(marketplace_paths, "_read_runtime_target", lambda: "claude")
-    monkeypatch.setattr(marketplace_paths, "_invoke_layout_op", _fake_invoke)
+    monkeypatch.setattr(marketplace_paths, '_read_runtime_target', lambda: 'claude')
+    monkeypatch.setattr(marketplace_paths, '_invoke_layout_op', _fake_invoke)
 
     first = marketplace_paths.get_project_skill_roots()
     second = marketplace_paths.get_project_skill_roots()
-    assert first == second == (".claude/skills",)
-    assert calls == ["claude"], "layout op must be invoked exactly once (memoised)"
+    assert first == second == ('.claude/skills',)
+    assert calls == ['claude'], 'layout op must be invoked exactly once (memoised)'
 
 
 def test_resolve_project_skill_path_first_match_wins(tmp_path, project_skill_roots) -> None:
     """resolve_project_skill_path returns the first existing root's candidate."""
     # Two roots; the skill exists only under the second.
-    (tmp_path / ".opencode" / "skills" / "demo").mkdir(parents=True)
-    (tmp_path / ".opencode" / "skills" / "demo" / "SKILL.md").write_text("x", encoding="utf-8")
-    resolved = marketplace_paths.resolve_project_skill_path("demo/SKILL.md", base=tmp_path)
-    assert resolved == tmp_path / ".opencode" / "skills" / "demo" / "SKILL.md"
+    (tmp_path / '.opencode' / 'skills' / 'demo').mkdir(parents=True)
+    (tmp_path / '.opencode' / 'skills' / 'demo' / 'SKILL.md').write_text('x', encoding='utf-8')
+    resolved = marketplace_paths.resolve_project_skill_path('demo/SKILL.md', base=tmp_path)
+    assert resolved == tmp_path / '.opencode' / 'skills' / 'demo' / 'SKILL.md'
 
 
 def test_resolve_project_skill_path_no_match_returns_first_root(tmp_path, project_skill_roots) -> None:
     """When no root matches, the highest-priority candidate is returned."""
-    resolved = marketplace_paths.resolve_project_skill_path("missing/SKILL.md", base=tmp_path)
-    assert resolved == tmp_path / ".claude" / "skills" / "missing" / "SKILL.md"
+    resolved = marketplace_paths.resolve_project_skill_path('missing/SKILL.md', base=tmp_path)
+    assert resolved == tmp_path / '.claude' / 'skills' / 'missing' / 'SKILL.md'
 
 
 def test_iter_project_skill_dirs_collects_across_roots(tmp_path, project_skill_roots) -> None:
     """iter_project_skill_dirs yields child dirs from every existing root in order."""
-    (tmp_path / ".claude" / "skills" / "alpha").mkdir(parents=True)
-    (tmp_path / ".opencode" / "skills" / "beta").mkdir(parents=True)
+    (tmp_path / '.claude' / 'skills' / 'alpha').mkdir(parents=True)
+    (tmp_path / '.opencode' / 'skills' / 'beta').mkdir(parents=True)
     dirs = marketplace_paths.iter_project_skill_dirs(base=tmp_path)
     names = [d.name for d in dirs]
     # .claude/skills is the higher-priority root, so alpha precedes beta.
-    assert names == ["alpha", "beta"]
+    assert names == ['alpha', 'beta']
 
 
 def test_resolve_module_reimport_clean() -> None:

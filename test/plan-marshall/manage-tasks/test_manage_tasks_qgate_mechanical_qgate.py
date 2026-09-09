@@ -9,7 +9,6 @@ Its sections, in order:
 * Skill resolution check
 """
 
-
 from __future__ import annotations
 
 from _manage_tasks_qgate_mechanical_fixtures import (

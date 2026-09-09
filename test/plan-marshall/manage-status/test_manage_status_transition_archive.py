@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for manage-status.py transition: archive — dry-run, reason metadata and the findings gate."""
 
-
 import json
 from argparse import Namespace
 from pathlib import Path
@@ -36,13 +35,13 @@ def test_archive_marks_final_phase_done_and_sets_complete(plan_context):
     archived_status = json.loads(archived_status_path.read_text(encoding='utf-8'))
     assert archived_status['current_phase'] == 'complete', (
         f"Expected archived current_phase='complete', got "
-        f"{archived_status['current_phase']!r}. Atomic-archive fix "
+        f'{archived_status["current_phase"]!r}. Atomic-archive fix '
         f'regressed: cmd_archive is not setting the post-finalize sentinel '
         f'before shutil.move runs.'
     )
     assert archived_status['phases'][-1]['status'] == 'done', (
         f"Expected archived phases[-1].status='done', got "
-        f"{archived_status['phases'][-1]['status']!r}. Atomic-archive fix "
+        f'{archived_status["phases"][-1]["status"]!r}. Atomic-archive fix '
         f'regressed: cmd_archive is not marking the active phase done '
         f'before shutil.move runs.'
     )
@@ -61,12 +60,10 @@ def test_archive_dry_run_leaves_status_unchanged(plan_context):
     assert result['status'] == 'success'
     assert result.get('dry_run') is True, f'missing dry_run flag: {result}'
     assert 'would_archive_to' in result
-    assert 'archived_to' not in result, (
-        f'dry-run must NOT report archived_to: {result}'
-    )
+    assert 'archived_to' not in result, f'dry-run must NOT report archived_to: {result}'
 
     assert not Path(result['would_archive_to']).exists(), (
-        f"dry-run created the archive dir at {result['would_archive_to']} — "
+        f'dry-run created the archive dir at {result["would_archive_to"]} — '
         f'atomic-archive write block leaked into the dry-run path; the '
         f'`if args.dry_run:` early-return must precede the write block.'
     )
@@ -88,15 +85,11 @@ def test_archive_with_reason_persists_archived_reason_metadata(plan_context):
     """cmd_archive --reason=<value> must persist status.metadata.archived_reason."""
     plan_id = 'archive-reason-persists'
     _seed_finalize_phase_plan(plan_id)
-    result = cmd_archive(
-        Namespace(plan_id=plan_id, dry_run=False, reason='low_confidence')
-    )
+    result = cmd_archive(Namespace(plan_id=plan_id, dry_run=False, reason='low_confidence'))
 
     assert result['status'] == 'success', f'archive failed: {result}'
     archived_status_path = Path(result['archived_to']) / 'status.json'
-    assert archived_status_path.exists(), (
-        f'archived status.json missing at {archived_status_path}'
-    )
+    assert archived_status_path.exists(), f'archived status.json missing at {archived_status_path}'
 
     archived_status = json.loads(archived_status_path.read_text(encoding='utf-8'))
     assert 'metadata' in archived_status, (
@@ -105,7 +98,7 @@ def test_archive_with_reason_persists_archived_reason_metadata(plan_context):
     )
     assert archived_status['metadata'].get('archived_reason') == 'low_confidence', (
         f"Expected metadata.archived_reason='low_confidence', got "
-        f"{archived_status['metadata'].get('archived_reason')!r}. "
+        f'{archived_status["metadata"].get("archived_reason")!r}. '
         f'--reason flag did not persist via setdefault before write_status.'
     )
 
@@ -114,9 +107,7 @@ def test_archive_without_reason_omits_archived_reason_field(plan_context):
     """cmd_archive without --reason must NOT introduce an archived_reason field."""
     plan_id = 'archive-reason-omitted'
     _seed_finalize_phase_plan(plan_id)
-    result = cmd_archive(
-        Namespace(plan_id=plan_id, dry_run=False, reason=None)
-    )
+    result = cmd_archive(Namespace(plan_id=plan_id, dry_run=False, reason=None))
 
     assert result['status'] == 'success', f'archive failed: {result}'
     archived_status_path = Path(result['archived_to']) / 'status.json'
@@ -124,10 +115,10 @@ def test_archive_without_reason_omits_archived_reason_field(plan_context):
 
     metadata = archived_status.get('metadata', {})
     assert 'archived_reason' not in metadata, (
-        f"Expected archived_reason absent from metadata when --reason "
-        f"omitted, got metadata={metadata!r}. Additive-metadata contract "
-        f"violated — cmd_archive must guard the write with "
-        f"`if reason is not None:`."
+        f'Expected archived_reason absent from metadata when --reason '
+        f'omitted, got metadata={metadata!r}. Additive-metadata contract '
+        f'violated — cmd_archive must guard the write with '
+        f'`if reason is not None:`.'
     )
 
 
@@ -138,15 +129,11 @@ def test_archive_reason_attribute_missing_does_not_raise(plan_context):
     # Intentionally omit ``reason`` from Namespace to simulate legacy callers.
     result = cmd_archive(Namespace(plan_id=plan_id, dry_run=False))
 
-    assert result['status'] == 'success', (
-        f'archive raised or failed when Namespace lacked reason attr: {result}'
-    )
+    assert result['status'] == 'success', f'archive raised or failed when Namespace lacked reason attr: {result}'
     archived_status_path = Path(result['archived_to']) / 'status.json'
     archived_status = json.loads(archived_status_path.read_text(encoding='utf-8'))
     metadata = archived_status.get('metadata', {})
-    assert 'archived_reason' not in metadata, (
-        f'Legacy Namespace path leaked an archived_reason key: {metadata!r}'
-    )
+    assert 'archived_reason' not in metadata, f'Legacy Namespace path leaked an archived_reason key: {metadata!r}'
 
 
 def test_archive_dry_run_with_reason_does_not_mutate_status(plan_context):
@@ -157,15 +144,11 @@ def test_archive_dry_run_with_reason_does_not_mutate_status(plan_context):
     live_status_path = plan_context.plan_dir_for(plan_id) / 'status.json'
     before = live_status_path.read_text(encoding='utf-8')
 
-    result = cmd_archive(
-        Namespace(plan_id=plan_id, dry_run=True, reason='dangling_worktree')
-    )
+    result = cmd_archive(Namespace(plan_id=plan_id, dry_run=True, reason='dangling_worktree'))
 
     assert result['status'] == 'success'
     assert result.get('dry_run') is True, f'missing dry_run flag: {result}'
-    assert 'archived_to' not in result, (
-        f'dry-run must NOT report archived_to even with --reason: {result}'
-    )
+    assert 'archived_to' not in result, f'dry-run must NOT report archived_to even with --reason: {result}'
 
     after = live_status_path.read_text(encoding='utf-8')
     assert before == after, (
@@ -188,8 +171,7 @@ def test_archive_reason_cli_round_trip_persists_to_archive(plan_context):
         'orphan_directory',
     )
     assert result.returncode == 0, (
-        f'CLI archive --reason failed (rc={result.returncode}): '
-        f'stdout={result.stdout!r} stderr={result.stderr!r}'
+        f'CLI archive --reason failed (rc={result.returncode}): stdout={result.stdout!r} stderr={result.stderr!r}'
     )
 
     # Locate the archive by parsing the TOON output for ``archived_to``.
@@ -197,19 +179,11 @@ def test_archive_reason_cli_round_trip_persists_to_archive(plan_context):
         (line for line in result.stdout.splitlines() if 'archived_to' in line),
         None,
     )
-    assert archived_to_line is not None, (
-        f'CLI output missing archived_to: {result.stdout!r}'
-    )
+    assert archived_to_line is not None, f'CLI output missing archived_to: {result.stdout!r}'
     archived_path = Path(archived_to_line.split(':', 1)[1].strip().strip('"'))
-    archived_status = json.loads(
-        (archived_path / 'status.json').read_text(encoding='utf-8')
-    )
-    assert (
-        archived_status.get('metadata', {}).get('archived_reason')
-        == 'orphan_directory'
-    ), (
-        f'CLI --reason did not round-trip into archived status.json: '
-        f'{archived_status.get("metadata")!r}'
+    archived_status = json.loads((archived_path / 'status.json').read_text(encoding='utf-8'))
+    assert archived_status.get('metadata', {}).get('archived_reason') == 'orphan_directory', (
+        f'CLI --reason did not round-trip into archived status.json: {archived_status.get("metadata")!r}'
     )
 
 
@@ -232,6 +206,7 @@ def test_archive_reason_cli_round_trip_persists_to_archive(plan_context):
 # is still admitted, and the abandonment exemption confirms the gate discriminates
 # on the completion intent rather than blocking unconditionally.
 # =============================================================================
+
 
 def test_archive_refuses_when_actionable_finding_pending(plan_context, monkeypatch):
     """NEGATIVE control: a normal-completion archive (no --reason) is REFUSED
@@ -276,8 +251,7 @@ def test_archive_with_reason_bypasses_findings_gate(plan_context, monkeypatch):
     result = cmd_archive(Namespace(plan_id=plan_id, dry_run=False, reason='low_confidence'))
 
     assert result['status'] == 'success', (
-        'A --reason archive is a deliberate abandonment and must not be blocked '
-        'by pending findings.'
+        'A --reason archive is a deliberate abandonment and must not be blocked by pending findings.'
     )
     assert 'archived_to' in result
 

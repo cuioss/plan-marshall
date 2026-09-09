@@ -28,8 +28,18 @@ _HELP_SURFACE = [
     (
         ('pr',),
         (
-            'create', 'view', 'reply', 'resolve-thread', 'thread-reply', 'merge',
-            'auto-merge', 'close', 'ready', 'edit', 'reviews', 'list',
+            'create',
+            'view',
+            'reply',
+            'resolve-thread',
+            'thread-reply',
+            'merge',
+            'auto-merge',
+            'close',
+            'ready',
+            'edit',
+            'reviews',
+            'list',
         ),
         (),
     ),
@@ -62,10 +72,25 @@ _HELP_SURFACE = [
     ('argv', 'advertised', 'absent'),
     _HELP_SURFACE,
     ids=[
-        'root', 'pr', 'checks', 'issue', 'pr-create', 'pr-view', 'pr-reply',
-        'pr-resolve-thread', 'pr-thread-reply', 'pr-merge', 'pr-auto-merge',
-        'pr-close', 'pr-ready', 'pr-edit', 'checks-rerun', 'checks-logs',
-        'issue-close', 'pr-list', 'pr-list-state-default',
+        'root',
+        'pr',
+        'checks',
+        'issue',
+        'pr-create',
+        'pr-view',
+        'pr-reply',
+        'pr-resolve-thread',
+        'pr-thread-reply',
+        'pr-merge',
+        'pr-auto-merge',
+        'pr-close',
+        'pr-ready',
+        'pr-edit',
+        'checks-rerun',
+        'checks-logs',
+        'issue-close',
+        'pr-list',
+        'pr-list-state-default',
     ],
 )
 def test_help_advertises_the_declared_surface(argv, advertised, absent):
@@ -95,8 +120,14 @@ _MISSING_REQUIRED = [
     ('argv', 'names'),
     _MISSING_REQUIRED,
     ids=[
-        'pr-create', 'pr-reviews', 'pr-reply', 'pr-resolve-thread',
-        'pr-thread-reply', 'checks-wait', 'issue-create', 'no-subcommand',
+        'pr-create',
+        'pr-reviews',
+        'pr-reply',
+        'pr-resolve-thread',
+        'pr-thread-reply',
+        'checks-wait',
+        'issue-create',
+        'no-subcommand',
     ],
 )
 def test_missing_required_argument_is_a_nonzero_exit(argv, names):
@@ -140,9 +171,9 @@ def test_pr_create_handler_has_a_single_body_source():
 
     from conftest import get_scripts_dir  # local import: only this structural check needs it
 
-    source = (
-        get_scripts_dir('plan-marshall', 'workflow-integration-gitlab') / 'gitlab_ops.py'
-    ).read_text(encoding='utf-8')
+    source = (get_scripts_dir('plan-marshall', 'workflow-integration-gitlab') / 'gitlab_ops.py').read_text(
+        encoding='utf-8'
+    )
     handler = next(
         (
             node
@@ -154,9 +185,7 @@ def test_pr_create_handler_has_a_single_body_source():
     assert handler is not None, 'cmd_pr_create not found in gitlab_ops.py'
 
     called = {
-        node.func.id
-        for node in ast.walk(handler)
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+        node.func.id for node in ast.walk(handler) if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
     }
     assert 'read_and_consume_body' in called, (
         'gitlab_ops.py::cmd_pr_create no longer resolves the body through the store'
@@ -169,13 +198,9 @@ def test_pr_create_handler_has_a_single_body_source():
     identifiers = {node.id for node in ast.walk(handler) if isinstance(node, ast.Name)}
     identifiers |= {node.attr for node in ast.walk(handler) if isinstance(node, ast.Attribute)}
     literals = {
-        node.value
-        for node in ast.walk(handler)
-        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+        node.value for node in ast.walk(handler) if isinstance(node, ast.Constant) and isinstance(node.value, str)
     }
-    assert 'body_file' not in identifiers, (
-        'gitlab_ops.py::cmd_pr_create retains a body_file local or attribute access'
-    )
+    assert 'body_file' not in identifiers, 'gitlab_ops.py::cmd_pr_create retains a body_file local or attribute access'
     assert 'body_file' not in literals, 'gitlab_ops.py::cmd_pr_create retains a body_file lookup'
 
 

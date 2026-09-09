@@ -64,7 +64,6 @@ drives live beside it in ``_planning_lane_request_body_fixtures.py``, which
 serves this module alone — nothing is shared with ``test_planning_lane.py``.
 """
 
-
 from __future__ import annotations
 
 import json
@@ -158,9 +157,7 @@ def test_bolded_spec_with_three_paths_bands_surgical_and_routes_light(plan_conte
     # `**` alternative survived, the marker would have short-circuited the band
     # before the count was ever taken.
     assert route_result['scope_provenance']['fan_out_marker'] is False
-    assert route_result['scope_provenance']['band_rule'] == (
-        'path_count_at_or_below_surgical_max'
-    )
+    assert route_result['scope_provenance']['band_rule'] == ('path_count_at_or_below_surgical_max')
     assert route_result['planning_lane'] == 'light'
     assert route_result['fired_signals'] == []
     # The mirror guard on the posture axis: bounded work keeps its cheap posture.
@@ -198,9 +195,7 @@ def test_bolded_spec_with_ten_paths_bands_multi_module_and_routes_deep(plan_cont
     # what makes this the reproduction of the under-routed population rather than
     # an incidental pass.
     assert route_result['scope_provenance']['fan_out_marker'] is False
-    assert route_result['scope_provenance']['band_rule'] == (
-        'path_count_at_or_above_multi_module_floor'
-    )
+    assert route_result['scope_provenance']['band_rule'] == ('path_count_at_or_above_multi_module_floor')
     assert route_result['planning_lane'] == 'deep'
     assert 'S2:scope_estimate' in route_result['fired_signals']
     assert route_result['execution_profile'] != 'minimal'
@@ -263,9 +258,7 @@ def test_absent_request_declares_unknown_and_routes_deep(plan_context):
     _write_status(plan_dir)
     # No request.md is written at all.
 
-    scope_result = cmd_scope_estimate_heuristic(
-        _scope_args('plrb-absent-request', persist=True)
-    )
+    scope_result = cmd_scope_estimate_heuristic(_scope_args('plrb-absent-request', persist=True))
 
     assert scope_result['scope_estimate'] == 'none'
     assert scope_result['scope_resolved'] is False, (
@@ -304,6 +297,7 @@ def test_empty_request_file_declares_unknown(plan_context):
 # =============================================================================
 # Scenario 3 — the bare-filename exclusion is a COUNTER decision
 # =============================================================================
+
 
 def test_bare_filename_is_excluded_from_the_count_by_the_counter_not_the_reader(
     plan_context,

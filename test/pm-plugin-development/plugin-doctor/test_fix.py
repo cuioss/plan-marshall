@@ -25,26 +25,52 @@ SCRIPT_PATH = get_script_path('pm-plugin-development', 'plugin-doctor', '_fix.py
 # author remembered. Parsed once at module scope: parse_ns re-executes the script
 # module on every call.
 _APPLY_NS = parse_ns(
-    'pm-plugin-development', 'plugin-doctor', '_fix.py',
-    'apply', '--fix', 'placeholder.json', '--bundle-dir', '.', register=False,
+    'pm-plugin-development',
+    'plugin-doctor',
+    '_fix.py',
+    'apply',
+    '--fix',
+    'placeholder.json',
+    '--bundle-dir',
+    '.',
+    register=False,
 )
 _CATEGORIZE_NS = parse_ns(
-    'pm-plugin-development', 'plugin-doctor', '_fix.py',
-    'categorize', '--input', 'placeholder.json', register=False,
+    'pm-plugin-development',
+    'plugin-doctor',
+    '_fix.py',
+    'categorize',
+    '--input',
+    'placeholder.json',
+    register=False,
 )
 _EXTRACT_NS = parse_ns(
-    'pm-plugin-development', 'plugin-doctor', '_fix.py',
-    'extract', '--input', 'placeholder.json', register=False,
+    'pm-plugin-development',
+    'plugin-doctor',
+    '_fix.py',
+    'extract',
+    '--input',
+    'placeholder.json',
+    register=False,
 )
 _VERIFY_NS = parse_ns(
-    'pm-plugin-development', 'plugin-doctor', '_fix.py',
-    'verify', '--fix-type', 'placeholder', '--file', 'placeholder.md', register=False,
+    'pm-plugin-development',
+    'plugin-doctor',
+    '_fix.py',
+    'verify',
+    '--fix-type',
+    'placeholder',
+    '--file',
+    'placeholder.md',
+    register=False,
 )
 
 
 def _ns(template: Namespace, **overrides) -> Namespace:
     """A parser-produced namespace with this test's values overlaid."""
     return Namespace(**{**vars(template), **overrides})
+
+
 FIXTURES_DIR = Path(__file__).parent / 'fixtures' / 'fix'
 
 
@@ -313,9 +339,7 @@ def test_array_syntax_fix_gates_on_target(monkeypatch):
         agent_file.write_text('---\ntools: [Read, Write]\n---\n\n# A\n')
         result = _cmd_apply_mod.apply_array_syntax_fix(agent_file, {}, {})
         assert result['success'] is False, f'OpenCode must decline the Claude rule-pack fix: {result}'
-        assert 'Claude rule-pack' in result['error'], (
-            f"Decline should name the Claude rule-pack: {result.get('error')}"
-        )
+        assert 'Claude rule-pack' in result['error'], f'Decline should name the Claude rule-pack: {result.get("error")}'
         assert '[Read, Write]' in agent_file.read_text(), 'OpenCode must not rewrite the tools declaration'
 
 
@@ -339,9 +363,7 @@ def test_array_syntax_verify_gates_on_target(monkeypatch):
         f.write('---\ntools: [Read, Write]\n---\n\n# A\n')
         f.flush()
         result = _cmd_verify_mod.verify_array_syntax_fix(Path(f.name))
-        assert result['issue_resolved'] is None, (
-            f'OpenCode verify must decline (issue_resolved None), got: {result}'
-        )
+        assert result['issue_resolved'] is None, f'OpenCode verify must decline (issue_resolved None), got: {result}'
         Path(f.name).unlink()
 
 
@@ -439,14 +461,10 @@ def test_apply_unsupported_tools_field_rejected():
             Path(f.name).unlink()
 
         assert data['success'] is False, f'Fix should be rejected with no handler: {data}'
-        assert 'No handler' in data.get('error', ''), (
-            f"Error should name the missing handler: {data.get('error')}"
-        )
+        assert 'No handler' in data.get('error', ''), f'Error should name the missing handler: {data.get("error")}'
         # The original file content must be untouched — no allowed-tools removal.
         content = skill_file.read_text()
-        assert 'allowed-tools: Read, Grep' in content, (
-            f'File must not be modified when no handler exists: {content}'
-        )
+        assert 'allowed-tools: Read, Grep' in content, f'File must not be modified when no handler exists: {content}'
 
 
 def test_verify_unsupported_tools_field_falls_through_to_generic():
@@ -458,9 +476,7 @@ def test_verify_unsupported_tools_field_falls_through_to_generic():
         args = _ns(_VERIFY_NS, fix_type='unsupported-skill-tools-field', file=f.name)
         data = cmd_verify(args)
         # verify_generic returns issue_resolved: None (manual verification recommended)
-        assert data.get('issue_resolved') is None, (
-            f'Removed rule must hit verify_generic fallthrough: {data}'
-        )
+        assert data.get('issue_resolved') is None, f'Removed rule must hit verify_generic fallthrough: {data}'
 
         Path(f.name).unlink()
 
@@ -712,12 +728,7 @@ def test_apply_signature_docstring_fix_removes_restating_docstring():
     with tempfile.TemporaryDirectory() as tmp_dir:
         py_file = Path(tmp_dir) / 'sample.py'
         py_file.write_text(
-            'def f(a, b):\n'
-            '    """Args:\n'
-            '\n'
-            '    Returns:\n'
-            '    """\n'
-            '    return a + b\n',
+            'def f(a, b):\n    """Args:\n\n    Returns:\n    """\n    return a + b\n',
             encoding='utf-8',
         )
 
@@ -747,11 +758,7 @@ def test_apply_signature_docstring_fix_inserts_pass_for_sole_docstring():
     with tempfile.TemporaryDirectory() as tmp_dir:
         py_file = Path(tmp_dir) / 'sample.py'
         py_file.write_text(
-            'def f(a, b):\n'
-            '    """Args:\n'
-            '\n'
-            '    Returns:\n'
-            '    """\n',
+            'def f(a, b):\n    """Args:\n\n    Returns:\n    """\n',
             encoding='utf-8',
         )
 
@@ -828,9 +835,7 @@ def test_categorize_simplicity_signature_docstring_safe():
 def test_fenced_code_no_language_in_fix_handlers():
     """fenced-code-no-language is registered in FIX_HANDLERS."""
     handlers = _cmd_apply_mod.FIX_HANDLERS
-    assert 'fenced-code-no-language' in handlers, (
-        'fenced-code-no-language must have an auto-apply fix handler'
-    )
+    assert 'fenced-code-no-language' in handlers, 'fenced-code-no-language must have an auto-apply fix handler'
 
 
 def test_fenced_code_no_language_is_safe():

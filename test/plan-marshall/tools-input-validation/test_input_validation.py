@@ -412,9 +412,7 @@ class TestSessionIdIsOpaqueTargetAgnosticToken:
 
     def test_accepts_claude_uuid_token(self):
         """A canonical Claude UUID is also accepted — the contract spans both targets."""
-        assert validate_session_id('aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee') == (
-            'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
-        )
+        assert validate_session_id('aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee') == ('aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee')
 
     def test_docstring_and_help_carry_no_claude_reference(self):
         """The validator docstring and the --session-id help describe an opaque token."""
@@ -425,9 +423,7 @@ class TestSessionIdIsOpaqueTargetAgnosticToken:
 
         parser = argparse.ArgumentParser()
         add_session_id_arg(parser)
-        session_action = next(
-            a for a in parser._actions if '--session-id' in getattr(a, 'option_strings', [])
-        )
+        session_action = next(a for a in parser._actions if '--session-id' in getattr(a, 'option_strings', []))
         assert 'Claude' not in (session_action.help or '')
         assert 'UUID' not in (session_action.help or '')
 

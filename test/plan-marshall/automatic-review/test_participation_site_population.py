@@ -170,8 +170,7 @@ SITE_EXPECTATIONS: dict[str, SiteExpectation] = {
         'normative_text',
         'commit_sha',
         'not_applicable',
-        'The contract itself — the single source of the currency rule. It STATES the anchor '
-        'rather than evaluating it.',
+        'The contract itself — the single source of the currency rule. It STATES the anchor rather than evaluating it.',
     ),
     f'{_SKILLS}/automatic-review/standards/coderabbit.md': SiteExpectation(
         'registry_data',
@@ -184,8 +183,7 @@ SITE_EXPECTATIONS: dict[str, SiteExpectation] = {
         'registry_data',
         'none',
         'yes',
-        'Per-bot registry record. Declares participation_requires_update: true, so its credit '
-        'is currency-tested.',
+        'Per-bot registry record. Declares participation_requires_update: true, so its credit is currency-tested.',
     ),
     f'{_SKILLS}/automatic-review/standards/sourcery.md': SiteExpectation(
         'registry_data',
@@ -229,8 +227,7 @@ SITE_EXPECTATIONS: dict[str, SiteExpectation] = {
         'normative_text',
         'commit_sha',
         'not_applicable',
-        'The abstraction layer’s description of the producer’s participation and '
-        'stale-participation sets.',
+        'The abstraction layer’s description of the producer’s participation and stale-participation sets.',
     ),
     f'{_SKILLS}/workflow-integration-github/SKILL.md': SiteExpectation(
         'normative_text',
@@ -271,8 +268,7 @@ SITE_EXPECTATIONS: dict[str, SiteExpectation] = {
         'normative_text',
         'commit_sha',
         'not_applicable',
-        'The lifecycle narrative over the producer’s participation and stale-participation '
-        'sets.',
+        'The lifecycle narrative over the producer’s participation and stale-participation sets.',
     ),
 }
 
@@ -331,9 +327,7 @@ def guard_non_empty(population: tuple[str, ...], name: str, derivation: str) -> 
     return population
 
 
-def guard_every_site_recorded(
-    sites: tuple[str, ...], expectations: dict[str, SiteExpectation]
-) -> tuple[str, ...]:
+def guard_every_site_recorded(sites: tuple[str, ...], expectations: dict[str, SiteExpectation]) -> tuple[str, ...]:
     """Return ``sites``, or raise naming the sites carrying no expectation record.
 
     Raises:

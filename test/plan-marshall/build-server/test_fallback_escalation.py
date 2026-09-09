@@ -131,7 +131,8 @@ def test_state_io_failure_is_fail_open(monkeypatch):
 def captured(monkeypatch) -> list[tuple[str, str | None, str, str]]:
     calls: list[tuple[str, str | None, str, str]] = []
     monkeypatch.setattr(
-        factory, 'log_entry',
+        factory,
+        'log_entry',
         lambda log_type, plan_id, level, message: calls.append((log_type, plan_id, level, message)),
     )
     return calls

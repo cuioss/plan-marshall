@@ -100,9 +100,7 @@ def test_each_secret_placeholder_key_is_rejected():
 def test_configure_style_usage_rejects_secret_and_collects_supplied_keys():
     """Mirror configure's exact use: secret dropped, supplied keys collected."""
     provider_config: dict = {'url': 'https://sonar'}
-    supplied_keys = set(
-        apply_extra_passthrough(provider_config, ['token=leak', 'organization=acme'])
-    )
+    supplied_keys = set(apply_extra_passthrough(provider_config, ['token=leak', 'organization=acme']))
     assert supplied_keys == {'organization'}
     assert 'token' not in provider_config
     assert provider_config == {'url': 'https://sonar', 'organization': 'acme'}
@@ -115,9 +113,7 @@ def test_edit_upsert_rejects_secret_and_persists_benign(monkeypatch):
     """``_upsert_extra_fields`` drops a secret key and writes only the benign one."""
     captured: dict = {}
     monkeypatch.setattr(_cred_edit, 'read_provider_config', lambda skill: {'url': 'https://sonar'})
-    monkeypatch.setattr(
-        _cred_edit, 'write_provider_config', lambda skill, cfg: captured.update(cfg=cfg)
-    )
+    monkeypatch.setattr(_cred_edit, 'write_provider_config', lambda skill, cfg: captured.update(cfg=cfg))
 
     upserted = _cred_edit._upsert_extra_fields('skill-x', ['token=leak', 'region=eu'])
 
@@ -154,9 +150,7 @@ def test_configure_and_edit_reject_secret_keys_identically(monkeypatch):
     # edit path: run the same pairs through _upsert_extra_fields.
     captured: dict = {}
     monkeypatch.setattr(_cred_edit, 'read_provider_config', lambda skill: {'url': 'https://sonar'})
-    monkeypatch.setattr(
-        _cred_edit, 'write_provider_config', lambda skill, cfg: captured.update(cfg=cfg)
-    )
+    monkeypatch.setattr(_cred_edit, 'write_provider_config', lambda skill, cfg: captured.update(cfg=cfg))
     edit_keys = set(_cred_edit._upsert_extra_fields('skill-x', pairs))
 
     # Both commands accept exactly the non-secret keys — and reject the secrets.

@@ -45,6 +45,7 @@ Usage (invoked by Claude Code's PreToolUse hook mechanism, not directly):
            "cwd": "/repo/.plan/local/worktrees/p"}' \\
         | python3 claude_pretooluse_hook.py
 """
+
 from __future__ import annotations
 
 import json
@@ -65,14 +66,14 @@ from command_forms import STEWARD_COMMAND, SYNC_PLUGIN_CACHE_COMMAND
 
 #: Tool name whose ``command`` string the Bash-family matchers (R1/R2/R4)
 #: inspect.
-_BASH_TOOL = "Bash"
+_BASH_TOOL = 'Bash'
 
 #: Tool names whose ``file_path`` the R3 generated-executor matcher inspects.
-_FILE_EDIT_TOOLS = ("Edit", "Write")
+_FILE_EDIT_TOOLS = ('Edit', 'Write')
 
 #: Generated executor path R3 forbids editing. Matched on the path tail so an
 #: absolute or worktree-relative path both trip the rule.
-_GENERATED_EXECUTOR_TAIL = ".plan/execute-script.py"
+_GENERATED_EXECUTOR_TAIL = '.plan/execute-script.py'
 
 #: R1 — the view an individual family's marker is tested against, named because
 #: the two marker classes are neutralized by DIFFERENT quoting. A shell OPERATOR
@@ -81,8 +82,8 @@ _GENERATED_EXECUTOR_TAIL = ".plan/execute-script.py"
 #: quotes but still LIVE inside double quotes (``echo "$(rm -rf /)"`` really does
 #: substitute), so it is tested against ``substitution_view``, which masks
 #: single-quoted spans only. See :func:`_quote_masked_views`.
-_R1_OPERATOR_VIEW = "operator"
-_R1_SUBSTITUTION_VIEW = "substitution"
+_R1_OPERATOR_VIEW = 'operator'
+_R1_SUBSTITUTION_VIEW = 'substitution'
 
 #: R1 — the two shell quote characters whose spans mask their contents.
 _R1_QUOTE_CHARS = ("'", '"')
@@ -91,14 +92,14 @@ _R1_QUOTE_CHARS = ("'", '"')
 #: carry no meaning for any R1 check: it is not a shell metacharacter, not a
 #: newline, not whitespace (so it cannot manufacture the word boundary the loop
 #: or leading-assignment patterns look for), and not ``=``.
-_R1_QUOTED_PLACEHOLDER = "Q"
+_R1_QUOTED_PLACEHOLDER = 'Q'
 
 #: R1 — loop-keyword pattern (``for`` / ``while`` as a leading shell keyword).
-_R1_LOOP_RE = re.compile(r"(?:^|[;&|]|\bdo\b)\s*(?:for|while)\b")
+_R1_LOOP_RE = re.compile(r'(?:^|[;&|]|\bdo\b)\s*(?:for|while)\b')
 
 #: R1 — leading ``VAR=val cmd`` inline env-var assignment (an assignment token
 #: followed by whitespace and a command word).
-_R1_LEADING_ASSIGNMENT_RE = re.compile(r"^\s*[A-Za-z_][A-Za-z0-9_]*=\S*\s+\S")
+_R1_LEADING_ASSIGNMENT_RE = re.compile(r'^\s*[A-Za-z_][A-Za-z0-9_]*=\S*\s+\S')
 
 
 def _r1_contains(marker: str) -> Callable[[str], bool]:
@@ -123,18 +124,18 @@ def _r1_matches(pattern: re.Pattern[str]) -> Callable[[str], bool]:
 #: Order is irrelevant to behaviour: every family yields the same ``_R1_REASON``,
 #: so the first match short-circuits with a verdict no ordering can change.
 _R1_FAMILIES: tuple[tuple[str, str, Callable[[str], bool]], ...] = (
-    ("and_chain", _R1_OPERATOR_VIEW, _r1_contains("&&")),
-    ("semicolon", _R1_OPERATOR_VIEW, _r1_contains(";")),
-    ("background", _R1_OPERATOR_VIEW, _r1_contains("&")),
-    ("newline", _R1_OPERATOR_VIEW, _r1_contains("\n")),
-    ("substitution", _R1_SUBSTITUTION_VIEW, _r1_contains("$(")),
-    ("backtick", _R1_SUBSTITUTION_VIEW, _r1_contains("`")),
-    ("loop_keyword", _R1_OPERATOR_VIEW, _r1_matches(_R1_LOOP_RE)),
-    ("leading_assignment", _R1_OPERATOR_VIEW, _r1_matches(_R1_LEADING_ASSIGNMENT_RE)),
+    ('and_chain', _R1_OPERATOR_VIEW, _r1_contains('&&')),
+    ('semicolon', _R1_OPERATOR_VIEW, _r1_contains(';')),
+    ('background', _R1_OPERATOR_VIEW, _r1_contains('&')),
+    ('newline', _R1_OPERATOR_VIEW, _r1_contains('\n')),
+    ('substitution', _R1_SUBSTITUTION_VIEW, _r1_contains('$(')),
+    ('backtick', _R1_SUBSTITUTION_VIEW, _r1_contains('`')),
+    ('loop_keyword', _R1_OPERATOR_VIEW, _r1_matches(_R1_LOOP_RE)),
+    ('leading_assignment', _R1_OPERATOR_VIEW, _r1_matches(_R1_LEADING_ASSIGNMENT_RE)),
 )
 
 #: R2 — Bash file-operation programs that have dedicated Read/Glob/Grep tools.
-_R2_FILE_OPS = ("cat", "grep", "head", "tail", "find", "ls")
+_R2_FILE_OPS = ('cat', 'grep', 'head', 'tail', 'find', 'ls')
 
 #: R2 — ``git`` global options that consume a SEPARATE following token as their
 #: value. Only the detached spellings need naming: ``_git_subcommand`` skips any
@@ -142,40 +143,40 @@ _R2_FILE_OPS = ("cat", "grep", "head", "tail", "find", "ls")
 #: the one shape where the token AFTER the option must also be stepped over so
 #: the value is never mistaken for the subcommand.
 _R2_GIT_VALUE_OPTIONS = (
-    "-C",
-    "-c",
-    "--git-dir",
-    "--work-tree",
-    "--namespace",
-    "--super-prefix",
-    "--config-env",
-    "--exec-path",
-    "--attr-source",
+    '-C',
+    '-c',
+    '--git-dir',
+    '--work-tree',
+    '--namespace',
+    '--super-prefix',
+    '--config-env',
+    '--exec-path',
+    '--attr-source',
 )
 
 #: R4 — hard-coded build invocations that must be resolved via the architecture
 #: API. ``./pw`` is matched as a literal; ``mvn`` / ``npm`` / ``gradle`` as bare
 #: leading programs or path-prefixed executables (e.g. ``/usr/local/bin/mvn``).
-_R4_BUILD_PROGRAMS = ("mvn", "npm", "gradle")
+_R4_BUILD_PROGRAMS = ('mvn', 'npm', 'gradle')
 
 #: Per-rule one-line redirect reasons surfaced as ``permissionDecisionReason``.
 _R1_REASON = (
     "plan-marshall: one command per Bash call — no UNQUOTED '&&', ';', '&', "
-    "newline, for/while, $(...), or leading VAR=val; use separate Bash calls or "
-    "dedicated tools. A metacharacter inside a quoted argument is fine."
+    'newline, for/while, $(...), or leading VAR=val; use separate Bash calls or '
+    'dedicated tools. A metacharacter inside a quoted argument is fine.'
 )
 _R2_REASON = (
-    "plan-marshall: use the Read/Glob/Grep tools, not Bash, for file "
-    "operations (cat/grep/head/tail/find/ls, git grep). For a content sweep "
-    "run: architecture search --content --pattern P."
+    'plan-marshall: use the Read/Glob/Grep tools, not Bash, for file '
+    'operations (cat/grep/head/tail/find/ls, git grep). For a content sweep '
+    'run: architecture search --content --pattern P.'
 )
 _R3_REASON = (
-    "plan-marshall: never edit the generated .plan/execute-script.py — "
-    f"regenerate it via {SYNC_PLUGIN_CACHE_COMMAND} + {STEWARD_COMMAND}."
+    'plan-marshall: never edit the generated .plan/execute-script.py — '
+    f'regenerate it via {SYNC_PLUGIN_CACHE_COMMAND} + {STEWARD_COMMAND}.'
 )
 _R4_REASON = (
-    "plan-marshall: never hard-code build commands (./pw, mvn, npm, gradle) — "
-    "resolve via plan-marshall:manage-architecture:architecture resolve."
+    'plan-marshall: never hard-code build commands (./pw, mvn, npm, gradle) — '
+    'resolve via plan-marshall:manage-architecture:architecture resolve.'
 )
 
 
@@ -186,7 +187,7 @@ def _first_word(command: str) -> str:
     """
     stripped = command.strip()
     if not stripped:
-        return ""
+        return ''
     return stripped.split()[0].lower()
 
 
@@ -198,10 +199,10 @@ def _program_name(command: str) -> str:
     preserved as-is so the R4 literal check continues to work.
     """
     token = _first_word(command)
-    if not token or token == "./pw":
+    if not token or token == './pw':
         return token
     # Strip path prefix (e.g. /usr/bin/cat -> cat) but keep bare names intact.
-    return token.rsplit("/", 1)[-1]
+    return token.rsplit('/', 1)[-1]
 
 
 def _bash_command(tool_name: str | None, tool_input: dict[str, Any]) -> str | None:
@@ -212,7 +213,7 @@ def _bash_command(tool_name: str | None, tool_input: dict[str, Any]) -> str | No
     """
     if tool_name != _BASH_TOOL:
         return None
-    value = tool_input.get("command")
+    value = tool_input.get('command')
     if isinstance(value, str) and value:
         return value
     return None
@@ -281,7 +282,7 @@ def _quote_masked_views(command: str) -> tuple[str, str] | None:
     length = len(command)
     while index < length:
         char = command[index]
-        if quote != "'" and char == "\\" and index + 1 < length:
+        if quote != "'" and char == '\\' and index + 1 < length:
             # A backslash escapes the next character in UNQUOTED context and
             # inside a double-quoted span alike; only within a single-quoted
             # span is it an ordinary literal, which is what the guard excludes.
@@ -305,12 +306,10 @@ def _quote_masked_views(command: str) -> tuple[str, str] | None:
         index += 1
     if quote is not None:
         return None
-    return "".join(operator_view), "".join(substitution_view)
+    return ''.join(operator_view), ''.join(substitution_view)
 
 
-def _match_r1_shell_construct(
-    tool_name: str | None, tool_input: dict[str, Any]
-) -> str | None:
+def _match_r1_shell_construct(tool_name: str | None, tool_input: dict[str, Any]) -> str | None:
     """R1 — Bash command containing an UNQUOTED shell-construct compound marker.
 
     The family population is ``_R1_FAMILIES`` and this function does nothing but
@@ -388,16 +387,14 @@ def _git_subcommand(command: str) -> str:
         if token in _R2_GIT_VALUE_OPTIONS:
             index += 2  # the option plus the separate value token it consumes
             continue
-        if token.startswith("-"):
+        if token.startswith('-'):
             index += 1  # any other option spelling is self-contained
             continue
         return token.lower()
-    return ""
+    return ''
 
 
-def _match_r2_file_ops(
-    tool_name: str | None, tool_input: dict[str, Any]
-) -> str | None:
+def _match_r2_file_ops(tool_name: str | None, tool_input: dict[str, Any]) -> str | None:
     """R2 — Bash command whose program is a file-op with a dedicated tool.
 
     Covers both the bare file-op programs and ``git grep``, which reads file
@@ -412,37 +409,31 @@ def _match_r2_file_ops(
     program = _program_name(command)
     if program in _R2_FILE_OPS:
         return _R2_REASON
-    if program == "git" and _git_subcommand(command) == "grep":
+    if program == 'git' and _git_subcommand(command) == 'grep':
         return _R2_REASON
     return None
 
 
-def _match_r3_generated_executor(
-    tool_name: str | None, tool_input: dict[str, Any]
-) -> str | None:
+def _match_r3_generated_executor(tool_name: str | None, tool_input: dict[str, Any]) -> str | None:
     """R3 — Edit/Write whose target path is the generated executor."""
     if tool_name not in _FILE_EDIT_TOOLS:
         return None
-    path = tool_input.get("file_path")
+    path = tool_input.get('file_path')
     if not isinstance(path, str) or not path:
         return None
-    normalized = path.replace("\\", "/")
-    if normalized == _GENERATED_EXECUTOR_TAIL or normalized.endswith(
-        "/" + _GENERATED_EXECUTOR_TAIL
-    ):
+    normalized = path.replace('\\', '/')
+    if normalized == _GENERATED_EXECUTOR_TAIL or normalized.endswith('/' + _GENERATED_EXECUTOR_TAIL):
         return _R3_REASON
     return None
 
 
-def _match_r4_hardcoded_build(
-    tool_name: str | None, tool_input: dict[str, Any]
-) -> str | None:
+def _match_r4_hardcoded_build(tool_name: str | None, tool_input: dict[str, Any]) -> str | None:
     """R4 — Bash command invoking ./pw or a bare mvn/npm/gradle."""
     command = _bash_command(tool_name, tool_input)
     if command is None:
         return None
     first = _first_word(command)
-    if first == "./pw" or _program_name(command) in _R4_BUILD_PROGRAMS:
+    if first == './pw' or _program_name(command) in _R4_BUILD_PROGRAMS:
         return _R4_REASON
     return None
 
@@ -486,10 +477,10 @@ def evaluate(payload: dict[str, Any]) -> str | None:
 def _deny_envelope(reason: str) -> dict[str, Any]:
     """Build the Claude Code PreToolUse ``deny`` envelope carrying *reason*."""
     return {
-        "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "permissionDecision": "deny",
-            "permissionDecisionReason": reason,
+        'hookSpecificOutput': {
+            'hookEventName': 'PreToolUse',
+            'permissionDecision': 'deny',
+            'permissionDecisionReason': reason,
         }
     }
 
@@ -514,5 +505,5 @@ def main() -> int:
     return 0
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     sys.exit(main())

@@ -6,7 +6,6 @@ excluded from the sum, how the population is published even with no per-task
 emission, and the ranking that results.
 """
 
-
 from __future__ import annotations
 
 import json
@@ -79,10 +78,7 @@ class TestArtifactEmissionPopulation:
                 json.dumps(record),
                 encoding='utf-8',
             )
-        lines = [
-            '[2026-04-17T10:00:00Z] [INFO] [aaaaaa] [STATUS] '
-            '(plan-marshall:phase-1-init) Starting'
-        ]
+        lines = ['[2026-04-17T10:00:00Z] [INFO] [aaaaaa] [STATUS] (plan-marshall:phase-1-init) Starting']
         for num in artifact_task_nums:
             lines.append(
                 f'[2026-04-17T10:0{num}:00Z] [INFO] [bbbbbb] [ARTIFACT] '
@@ -96,7 +92,10 @@ class TestArtifactEmissionPopulation:
         # [ARTIFACT] line — every task in the population is recorded as having
         # changed a file, so the shortfall is real and the guard must BITE.
         plan_id, _ = self._setup(
-            tmp_path, monkeypatch, done_tasks=[1, 2, 3], artifact_task_nums=[1],
+            tmp_path,
+            monkeypatch,
+            done_tasks=[1, 2, 3],
+            artifact_task_nums=[1],
             plan_id='retro-artifact-partial',
         )
         result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
@@ -115,9 +114,7 @@ class TestArtifactEmissionPopulation:
         findings = data.get('findings') or []
         assert any('ARTIFACT_EMISSION_PARTIAL' in f.get('message', '') for f in findings), findings
 
-    def test_the_same_shortfall_without_attribution_is_dormant_not_a_finding(
-        self, tmp_path, monkeypatch
-    ):
+    def test_the_same_shortfall_without_attribution_is_dormant_not_a_finding(self, tmp_path, monkeypatch):
         """⛔ The matched negative: one variable flipped, and the guard goes quiet.
 
         The fixture of the test above with the ONE difference that no task record
@@ -132,7 +129,10 @@ class TestArtifactEmissionPopulation:
         indistinguishable from a measured empty population.
         """
         plan_id, _ = self._setup(
-            tmp_path, monkeypatch, done_tasks=[1, 2, 3], artifact_task_nums=[1],
+            tmp_path,
+            monkeypatch,
+            done_tasks=[1, 2, 3],
+            artifact_task_nums=[1],
             plan_id='retro-artifact-partial-unattributed',
             record_changed_files=False,
         )
@@ -157,7 +157,10 @@ class TestArtifactEmissionPopulation:
 
     def test_complete_emission_raises_no_partial_finding(self, tmp_path, monkeypatch):
         plan_id, _ = self._setup(
-            tmp_path, monkeypatch, done_tasks=[1, 2], artifact_task_nums=[1, 2],
+            tmp_path,
+            monkeypatch,
+            done_tasks=[1, 2],
+            artifact_task_nums=[1, 2],
             plan_id='retro-artifact-complete',
         )
         result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
@@ -182,7 +185,10 @@ class TestArtifactEmissionPopulation:
         # (ARTIFACT_EMISSION_ABSENT), gated on the plan's footprint and pinned with
         # both its controls in test_retrospective_checks_input_availability.py.
         plan_id, _ = self._setup(
-            tmp_path, monkeypatch, done_tasks=[1, 2], artifact_task_nums=[],
+            tmp_path,
+            monkeypatch,
+            done_tasks=[1, 2],
+            artifact_task_nums=[],
             plan_id='retro-artifact-none',
         )
         result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
@@ -211,10 +217,13 @@ class TestBuildTimeFromLedger:
 
     def test_total_build_seconds_sums_valid_durations(self, tmp_path, monkeypatch):
         plan_id, _ = setup_live_plan(tmp_path, monkeypatch)
-        _write_ledger(tmp_path / 'base', [
-            _build_row(plan_id, dur=30.0),
-            _build_row(plan_id, dur=250.0),
-        ])
+        _write_ledger(
+            tmp_path / 'base',
+            [
+                _build_row(plan_id, dur=30.0),
+                _build_row(plan_id, dur=250.0),
+            ],
+        )
         result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
         assert result.success, result.stderr
         bt = result.toon()['build_time']
@@ -223,30 +232,34 @@ class TestBuildTimeFromLedger:
 
     def test_suspect_zero_not_summed(self, tmp_path, monkeypatch):
         plan_id, _ = setup_live_plan(tmp_path, monkeypatch)
-        _write_ledger(tmp_path / 'base', [
-            _build_row(plan_id, dur=300.0),
-            _build_row(plan_id, dur=0.0),      # killed-as-0 / cache-hit shape
-        ])
+        _write_ledger(
+            tmp_path / 'base',
+            [
+                _build_row(plan_id, dur=300.0),
+                _build_row(plan_id, dur=0.0),  # killed-as-0 / cache-hit shape
+            ],
+        )
         result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
         bt = result.toon()['build_time']
-        assert float(bt['total_build_seconds']) == 300.0   # the 0 is NOT averaged in
+        assert float(bt['total_build_seconds']) == 300.0  # the 0 is NOT averaged in
         assert int(bt['suspect_count']) == 1
 
     def test_killed_separate_from_error(self, tmp_path, monkeypatch):
         plan_id, _ = setup_live_plan(tmp_path, monkeypatch)
-        _write_ledger(tmp_path / 'base', [
-            _build_row(plan_id, dur=10.0, status='error'),
-            _build_row(plan_id, dur=10.0, status='killed'),
-            _build_row(plan_id, dur=10.0, status='killed'),
-        ])
+        _write_ledger(
+            tmp_path / 'base',
+            [
+                _build_row(plan_id, dur=10.0, status='error'),
+                _build_row(plan_id, dur=10.0, status='killed'),
+                _build_row(plan_id, dur=10.0, status='killed'),
+            ],
+        )
         result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
         bt = result.toon()['build_time']
-        assert int(bt['error']) == 1     # killed is NOT folded into error
+        assert int(bt['error']) == 1  # killed is NOT folded into error
         assert int(bt['killed']) == 2
 
-    def test_status_unknown_published_so_five_terms_sum_to_build_count(
-        self, tmp_path, monkeypatch
-    ):
+    def test_status_unknown_published_so_five_terms_sum_to_build_count(self, tmp_path, monkeypatch):
         # THE DEFECT THIS OBSERVES: `summarize_build_ledger` tallied an
         # unrecognised status into its internal `unknown` bucket and then OMITTED
         # that bucket from the block it returned. A build whose outcome was never
@@ -256,35 +269,39 @@ class TestBuildTimeFromLedger:
         # Pre-fix this test fails at the `status_unknown` lookup: the key is
         # absent from the block entirely.
         plan_id, _ = setup_live_plan(tmp_path, monkeypatch)
-        _write_ledger(tmp_path / 'base', [
-            _build_row(plan_id, dur=10.0, status='success'),
-            _build_row(plan_id, dur=10.0, status='error'),
-            _build_row(plan_id, dur=10.0, status='killed'),
-            # Outside the recognised vocabulary — the outcome is UNDETERMINED.
-            _build_row(plan_id, dur=10.0, status='indeterminate'),
-        ])
+        _write_ledger(
+            tmp_path / 'base',
+            [
+                _build_row(plan_id, dur=10.0, status='success'),
+                _build_row(plan_id, dur=10.0, status='error'),
+                _build_row(plan_id, dur=10.0, status='killed'),
+                # Outside the recognised vocabulary — the outcome is UNDETERMINED.
+                _build_row(plan_id, dur=10.0, status='indeterminate'),
+            ],
+        )
         result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
         assert result.success, result.stderr
         bt = result.toon()['build_time']
         assert int(bt['status_unknown']) == 1
         five_terms = (
-            int(bt['pass'])
-            + int(bt['error'])
-            + int(bt['timeout'])
-            + int(bt['killed'])
-            + int(bt['status_unknown'])
+            int(bt['pass']) + int(bt['error']) + int(bt['timeout']) + int(bt['killed']) + int(bt['status_unknown'])
         )
         assert five_terms == int(bt['build_count']) == 4
 
     def test_non_pyproject_build_counted(self, tmp_path, monkeypatch):
         # the single-tool blindness is closed: a Maven build is counted here too.
         plan_id, _ = setup_live_plan(tmp_path, monkeypatch)
-        _write_ledger(tmp_path / 'base', [
-            _build_row(
-                plan_id, dur=200.0,
-                notation='plan-marshall:build-maven:maven_build', command='mvn verify',
-            ),
-        ])
+        _write_ledger(
+            tmp_path / 'base',
+            [
+                _build_row(
+                    plan_id,
+                    dur=200.0,
+                    notation='plan-marshall:build-maven:maven_build',
+                    command='mvn verify',
+                ),
+            ],
+        )
         result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
         bt = result.toon()['build_time']
         assert float(bt['total_build_seconds']) == 200.0
@@ -301,10 +318,13 @@ class TestBuildTimeFromLedger:
     def test_other_plan_rows_not_attributed(self, tmp_path, monkeypatch):
         # rows for a different plan_id are not summed into this plan.
         plan_id, _ = setup_live_plan(tmp_path, monkeypatch)
-        _write_ledger(tmp_path / 'base', [
-            _build_row(plan_id, dur=100.0),
-            _build_row('some-other-plan', dur=999.0),
-        ])
+        _write_ledger(
+            tmp_path / 'base',
+            [
+                _build_row(plan_id, dur=100.0),
+                _build_row('some-other-plan', dur=999.0),
+            ],
+        )
         result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
         bt = result.toon()['build_time']
         assert float(bt['total_build_seconds']) == 100.0
@@ -349,20 +369,14 @@ class TestScriptCostRollup:
         assert rollup['total_duration_ms'] == pytest.approx(25000.0)
         assert rollup['distinct_scripts'] == 2
         # Every ranked share is a share of the SAME published denominator.
-        recomputed = [
-            round(row['cumulative_ms'] / rollup['total_duration_ms'] * 100.0, 3)
-            for row in rollup['ranked']
-        ]
+        recomputed = [round(row['cumulative_ms'] / rollup['total_duration_ms'] * 100.0, 3) for row in rollup['ranked']]
         assert [row['share_pct'] for row in rollup['ranked']] == recomputed
 
     def test_truncation_is_visible_never_silent(self, tmp_path):
         # 15 distinct scripts, ranked list capped at 10: the cap must be legible
         # from the fragment (distinct_scripts > ranked_count), never silent.
         logs_dir = tmp_path / 'logs'
-        lines = [
-            _line('2026-06-01T10:00:00Z', 'INFO', f'pm:s{i:02d}:s{i:02d} run ({i + 1}.0s)')
-            for i in range(15)
-        ]
+        lines = [_line('2026-06-01T10:00:00Z', 'INFO', f'pm:s{i:02d}:s{i:02d} run ({i + 1}.0s)') for i in range(15)]
         _write_folded_log(logs_dir, 'script-execution-2026-06-01.log', lines)
 
         rollup = _analyze_logs.analyze_folded_global_logs(logs_dir)['cost_rollup']
@@ -422,10 +436,7 @@ class TestScriptCostRollup:
         # call belonging to a script the cap excluded is still counted, so the
         # count can exceed what the visible rows account for.
         logs_dir = tmp_path / 'logs'
-        lines = [
-            _line('2026-06-01T10:00:00Z', 'INFO', f'pm:s{i:02d}:s{i:02d} run (31.0s)')
-            for i in range(12)
-        ]
+        lines = [_line('2026-06-01T10:00:00Z', 'INFO', f'pm:s{i:02d}:s{i:02d} run (31.0s)') for i in range(12)]
         _write_folded_log(logs_dir, 'script-execution-2026-06-01.log', lines)
 
         rollup = _analyze_logs.analyze_folded_global_logs(logs_dir)['cost_rollup']

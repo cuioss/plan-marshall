@@ -146,9 +146,19 @@ REASON_REQUEST_FAILED = (
 # and every post-handshake failure is unaffected.
 _TIMEOUT_MESSAGE_MARKER = 'timed out waiting for response'
 
-VENDORED_TREE_DIRS = frozenset({
-    '.git', 'node_modules', 'target', '.venv', 'venv', '__pycache__', '.plan', '.pyprojectx', 'site-packages',
-})
+VENDORED_TREE_DIRS = frozenset(
+    {
+        '.git',
+        'node_modules',
+        'target',
+        '.venv',
+        'venv',
+        '__pycache__',
+        '.plan',
+        '.pyprojectx',
+        'site-packages',
+    }
+)
 """Path components marking a tree no crawl should descend into, or resolve INTO.
 
 One constant for both directions, deliberately. Applied only to the files the
@@ -509,7 +519,9 @@ def harvest_workspace(
         # this module set.
         if handshake_done:
             reason = REASON_REQUEST_FAILED.format(
-                binary=binary, elapsed=time.monotonic() - started, detail=exc,
+                binary=binary,
+                elapsed=time.monotonic() - started,
+                detail=exc,
             )
         elif _TIMEOUT_MESSAGE_MARKER not in str(exc):
             reason = REASON_SERVER_REJECTED.format(binary=binary, detail=exc)

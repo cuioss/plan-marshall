@@ -54,9 +54,7 @@ def _load_pyproject_build():
         sys.modules[name] = mock
 
     try:
-        module = load_script_module(
-            'plan-marshall', 'build-pyproject', 'pyproject_build.py', register=False
-        )
+        module = load_script_module('plan-marshall', 'build-pyproject', 'pyproject_build.py', register=False)
     finally:
         # Restore original modules to avoid polluting sys.modules for other tests
         for name, original in saved.items():
@@ -71,8 +69,12 @@ def _load_pyproject_build():
 pyproject_build = _load_pyproject_build()
 
 
-_pyproject_cmd_parse_mod = load_script_module('plan-marshall', 'build-pyproject', '_pyproject_cmd_parse.py', '_pyproject_cmd_parse')
-_pyproject_execute_mod = load_script_module('plan-marshall', 'build-pyproject', '_pyproject_execute.py', '_pyproject_execute')
+_pyproject_cmd_parse_mod = load_script_module(
+    'plan-marshall', 'build-pyproject', '_pyproject_cmd_parse.py', '_pyproject_cmd_parse'
+)
+_pyproject_execute_mod = load_script_module(
+    'plan-marshall', 'build-pyproject', '_pyproject_execute.py', '_pyproject_execute'
+)
 
 parse_log = _pyproject_cmd_parse_mod.parse_log
 execute_direct = _pyproject_execute_mod.execute_direct
@@ -343,8 +345,10 @@ def test_quality_gate_full_tree_invokes_plugin_doctor():
     # backstop; with `run` stubbed to return instantly, an unpatched clock would
     # make the whole-tree mypy look implausibly fast and fail closed before the
     # plugin-doctor step under test. Advance the clock realistically per read.
-    with patch.object(root_build, 'run', side_effect=fake_run), \
-         patch.object(root_build.time, 'monotonic', side_effect=itertools.count(0.0, 60.0)):
+    with (
+        patch.object(root_build, 'run', side_effect=fake_run),
+        patch.object(root_build.time, 'monotonic', side_effect=itertools.count(0.0, 60.0)),
+    ):
         exit_code = root_build.cmd_quality_gate(None)
 
     assert exit_code == 0
@@ -370,8 +374,10 @@ def test_quality_gate_full_tree_propagates_plugin_doctor_failure():
 
     # Plausible clock so the freshness backstop does not fire on the stubbed,
     # instant mypy (see the sibling test above).
-    with patch.object(root_build, 'run', side_effect=fake_run), \
-         patch.object(root_build.time, 'monotonic', side_effect=itertools.count(0.0, 60.0)):
+    with (
+        patch.object(root_build, 'run', side_effect=fake_run),
+        patch.object(root_build.time, 'monotonic', side_effect=itertools.count(0.0, 60.0)),
+    ):
         exit_code = root_build.cmd_quality_gate(None)
 
     assert exit_code == 1, 'cmd_quality_gate must propagate plugin-doctor exit code'
@@ -389,8 +395,10 @@ def test_quality_gate_module_scoped_skips_plugin_doctor():
 
     # Plausible clock so the freshness backstop does not fire on the stubbed,
     # instant mypy (see the full-tree tests above).
-    with patch.object(root_build, 'run', side_effect=fake_run), \
-         patch.object(root_build.time, 'monotonic', side_effect=itertools.count(0.0, 60.0)):
+    with (
+        patch.object(root_build, 'run', side_effect=fake_run),
+        patch.object(root_build.time, 'monotonic', side_effect=itertools.count(0.0, 60.0)),
+    ):
         exit_code = root_build.cmd_quality_gate('plan-marshall')
 
     assert exit_code == 0
@@ -540,8 +548,12 @@ _SCOPE_BUILD_MAP_GLOBS = ['marketplace/bundles/**', 'test/**']
 #: ``pyproject_build`` in ``sys.modules`` beside the copy ``_load_pyproject_build``
 #: installs.
 _RESOLVE_SCOPE_ARGS: argparse.Namespace = parse_ns(
-    'plan-marshall', 'build-pyproject', 'pyproject_build.py',
-    'resolve-test-scope', '--changed-paths', 'placeholder',
+    'plan-marshall',
+    'build-pyproject',
+    'pyproject_build.py',
+    'resolve-test-scope',
+    '--changed-paths',
+    'placeholder',
     register=False,
 )
 
@@ -693,9 +705,7 @@ def test_resolve_test_scope_still_resolves_a_real_plan_footprint(capsys):
         patch('extension_base._read_build_map_globs', return_value=_SCOPE_BUILD_MAP_GLOBS),
         patch(
             'extension_base._resolve_plan_footprint',
-            return_value=[
-                'marketplace/bundles/plan-marshall/skills/build-pyproject/scripts/pyproject_build.py'
-            ],
+            return_value=['marketplace/bundles/plan-marshall/skills/build-pyproject/scripts/pyproject_build.py'],
         ) as mock_plan_footprint,
     ):
         rc = pyproject_build.cmd_resolve_test_scope(args)

@@ -232,9 +232,7 @@ def test_every_other_retained_document_carries_only_a_reference():
         document
         for document in DERIVATION.widened
         if document != derivation.CANONICAL_STANDARD
-        and not derivation.references_canonical(
-            (derivation.PROJECT_ROOT / document).read_text(encoding='utf-8')
-        )
+        and not derivation.references_canonical((derivation.PROJECT_ROOT / document).read_text(encoding='utf-8'))
     ]
     assert unreferenced == [], (
         f'{len(unreferenced)} of {DERIVATION.population_size} retained document(s) are classified '

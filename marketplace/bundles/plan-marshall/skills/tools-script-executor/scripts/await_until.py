@@ -26,9 +26,7 @@ def match(parsed: dict[str, Any], pattern: str) -> bool:
     return bool(parsed.get(pattern))
 
 
-def finish(
-    status: str, start: float, polls: int, command_key: str, error: str | None = None
-) -> dict[str, Any]:
+def finish(status: str, start: float, polls: int, command_key: str, error: str | None = None) -> dict[str, Any]:
     """Save timeout and build result dict."""
     duration = int(time.time() - start)
     timeout_set(command_key, duration)

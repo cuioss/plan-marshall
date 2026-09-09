@@ -68,8 +68,14 @@ def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
 #: all. ``register=False`` so it never publishes ``pyproject_build`` in
 #: ``sys.modules``.
 _RUN_ARGS = parse_ns(
-    'plan-marshall', 'build-pyproject', 'pyproject_build.py',
-    'run', '--command-args', 'verify', '--plan-id', 'P',
+    'plan-marshall',
+    'build-pyproject',
+    'pyproject_build.py',
+    'run',
+    '--command-args',
+    'verify',
+    '--plan-id',
+    'P',
     register=False,
 )
 
@@ -226,9 +232,7 @@ class TestPyprojectRoutesToDaemon:
     """A ready daemon receives the build under the pyproject executor notation,
     and the in-process executor never runs."""
 
-    def test_ready_daemon_receives_build_under_pyproject_notation(
-        self, tmp_path, monkeypatch, resolutions
-    ):
+    def test_ready_daemon_receives_build_under_pyproject_notation(self, tmp_path, monkeypatch, resolutions):
         client = _install_client(
             monkeypatch,
             _FakeClient(
@@ -245,9 +249,7 @@ class TestPyprojectRoutesToDaemon:
         )
         exec_recorder = _install_exec(monkeypatch)
 
-        rc = cmd_run(
-            _variant(_RUN_ARGS, execution_mode='auto', project_dir=str(tmp_path))
-        )
+        rc = cmd_run(_variant(_RUN_ARGS, execution_mode='auto', project_dir=str(tmp_path)))
 
         assert rc == 0
         # Exactly one submit, carrying the pyproject executor notation the
@@ -289,9 +291,7 @@ class TestPyprojectFallbackKeepsSelfHeal:
         _install_client(monkeypatch, _FakeClient(preflight={'status': 'success', 'preflight': 'disabled'}))
         exec_recorder = _install_exec(monkeypatch, [failure, success])
 
-        rc = cmd_run(
-            _variant(_RUN_ARGS, plan_id=None, execution_mode='auto', project_dir=str(tmp_path))
-        )
+        rc = cmd_run(_variant(_RUN_ARGS, plan_id=None, execution_mode='auto', project_dir=str(tmp_path)))
 
         assert rc == 0
         # The self-heal rode the in-process leg: one rename aside, one retry.
@@ -346,17 +346,13 @@ class TestPyprojectDaemonModeFailsLoud:
         ('flag', 'value'),
         [('env', 'FOO=bar'), ('working_dir', '/tmp/elsewhere')],
     )
-    def test_daemon_incompatible_override_fails_loud(
-        self, tmp_path, monkeypatch, capsys, resolutions, flag, value
-    ):
+    def test_daemon_incompatible_override_fails_loud(self, tmp_path, monkeypatch, capsys, resolutions, flag, value):
         """--env / --working-dir can never be honoured by the daemon's clean
         baseline env, so daemon mode refuses instead of falling back."""
         client = _install_client(monkeypatch, _FakeClient(preflight={'status': 'success', 'preflight': 'ready'}))
         exec_recorder = _install_exec(monkeypatch)
 
-        namespace = _variant(
-            _RUN_ARGS, execution_mode='daemon', project_dir=str(tmp_path), **{flag: value}
-        )
+        namespace = _variant(_RUN_ARGS, execution_mode='daemon', project_dir=str(tmp_path), **{flag: value})
 
         rc = cmd_run(namespace)
 
@@ -368,9 +364,7 @@ class TestPyprojectDaemonModeFailsLoud:
         assert client.preflight_calls == []
         assert client.submit_calls == []
         assert exec_recorder.ran is False
-        assert resolutions == [
-            ('daemon', 'fail-loud', 'env_or_working_dir_set', PYPROJECT_NOTATION, 'P')
-        ]
+        assert resolutions == [('daemon', 'fail-loud', 'env_or_working_dir_set', PYPROJECT_NOTATION, 'P')]
 
     def test_genuine_unavailability_fails_loud(self, tmp_path, monkeypatch, capsys, resolutions):
         """A daemon that is down is fatal in daemon mode — the build is NOT run
@@ -381,9 +375,7 @@ class TestPyprojectDaemonModeFailsLoud:
         )
         exec_recorder = _install_exec(monkeypatch)
 
-        rc = cmd_run(
-            _variant(_RUN_ARGS, execution_mode='daemon', project_dir=str(tmp_path))
-        )
+        rc = cmd_run(_variant(_RUN_ARGS, execution_mode='daemon', project_dir=str(tmp_path)))
 
         assert rc == 1
         out = capsys.readouterr().out
@@ -393,27 +385,19 @@ class TestPyprojectDaemonModeFailsLoud:
         assert exec_recorder.ran is False
         assert resolutions == [('daemon', 'fail-loud', 'socket_absent', PYPROJECT_NOTATION, 'P')]
 
-    def test_auto_with_env_never_routes_and_records_reason(
-        self, tmp_path, monkeypatch, resolutions
-    ):
+    def test_auto_with_env_never_routes_and_records_reason(self, tmp_path, monkeypatch, resolutions):
         """The auto counterpart of the daemon-incompatible branch: same
         condition, but a recorded in-process degradation instead of a refusal."""
         client = _install_client(monkeypatch, _FakeClient(preflight={'status': 'success', 'preflight': 'ready'}))
         exec_recorder = _install_exec(monkeypatch)
 
-        rc = cmd_run(
-            _variant(
-                _RUN_ARGS, execution_mode='auto', env='FOO=bar', project_dir=str(tmp_path)
-            )
-        )
+        rc = cmd_run(_variant(_RUN_ARGS, execution_mode='auto', env='FOO=bar', project_dir=str(tmp_path)))
 
         assert rc == 0
         # Never attempted to route, and said so.
         assert client.preflight_calls == []
         assert client.submit_calls == []
         assert len(exec_recorder.calls) == 1
-        assert resolutions == [
-            ('auto', 'in_process', 'env_or_working_dir_set', PYPROJECT_NOTATION, 'P')
-        ]
+        assert resolutions == [('auto', 'in_process', 'env_or_working_dir_set', PYPROJECT_NOTATION, 'P')]
         # The env override actually reached the build body.
         assert exec_recorder.calls[0]['env_vars'] == {'FOO': 'bar'}

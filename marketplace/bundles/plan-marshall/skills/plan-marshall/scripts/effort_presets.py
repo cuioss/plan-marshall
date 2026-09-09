@@ -88,7 +88,14 @@ import copy
 # ``manage-config`` skill scripts; the test suite cross-checks the two
 # tuples for drift.
 ALLOWED_LEVELS: tuple[str, ...] = (
-    'level-1', 'level-2', 'level-3', 'level-4', 'level-5', 'level-6', 'level-7', 'inherit'
+    'level-1',
+    'level-2',
+    'level-3',
+    'level-4',
+    'level-5',
+    'level-6',
+    'level-7',
+    'inherit',
 )
 
 # RESERVED_LEVELS names keywords that are in the palette but not yet safe to
@@ -369,18 +376,13 @@ class EffortPresets:
                 :meth:`all_names` so callers can surface a useful error.
         """
         if not isinstance(name, str):
-            raise ValueError(
-                f'preset name must be a string; got {type(name).__name__}. '
-                f'Valid names: {cls.all_names()}'
-            )
+            raise ValueError(f'preset name must be a string; got {type(name).__name__}. Valid names: {cls.all_names()}')
         # Normalise: lowercase, then convert underscores to hyphens so
         # ``HIGH_END`` and ``high_end`` map to the canonical ``high-end``.
         canonical = name.strip().lower().replace('_', '-')
         preset = cls._NAME_TO_PRESET.get(canonical)
         if preset is None:
-            raise ValueError(
-                f"unknown preset '{name}'; valid names: {cls.all_names()}"
-            )
+            raise ValueError(f"unknown preset '{name}'; valid names: {cls.all_names()}")
         return copy.deepcopy(preset)
 
     @classmethod
@@ -406,16 +408,11 @@ class EffortPresets:
             ValueError: When ``name`` does not match any known preset.
         """
         if not isinstance(name, str):
-            raise ValueError(
-                f'preset name must be a string; got {type(name).__name__}. '
-                f'Valid names: {cls.all_names()}'
-            )
+            raise ValueError(f'preset name must be a string; got {type(name).__name__}. Valid names: {cls.all_names()}')
         canonical = name.strip().lower().replace('_', '-')
         description = cls._DESCRIPTIONS.get(canonical)
         if description is None:
-            raise ValueError(
-                f"unknown preset '{name}'; valid names: {cls.all_names()}"
-            )
+            raise ValueError(f"unknown preset '{name}'; valid names: {cls.all_names()}")
         return description
 
     @classmethod
@@ -484,10 +481,7 @@ def _validate_level_keyword(level: str, where: str) -> None:
             f"and 'level-7' are alias-gated and stay per-phase opt-in only"
         )
     if level not in ALLOWED_LEVELS:
-        raise ValueError(
-            f"{where} effort '{level}' is not in ALLOWED_LEVELS "
-            f'{list(ALLOWED_LEVELS)}'
-        )
+        raise ValueError(f"{where} effort '{level}' is not in ALLOWED_LEVELS {list(ALLOWED_LEVELS)}")
 
 
 def _validate_preset(name: str, preset: dict) -> None:
@@ -508,30 +502,20 @@ def _validate_preset(name: str, preset: dict) -> None:
     load rather than silently shipping into ``marshal.json``.
     """
     if not isinstance(preset, dict):
-        raise ValueError(
-            f"preset '{name}' must be a dict; got {type(preset).__name__}"
-        )
+        raise ValueError(f"preset '{name}' must be a dict; got {type(preset).__name__}")
     default = preset.get('default')
     if default is None:
         raise ValueError(f"preset '{name}' missing required 'default' key")
     if not isinstance(default, str):
-        raise ValueError(
-            f"preset '{name}' 'default' must be a string; "
-            f'got {type(default).__name__}'
-        )
+        raise ValueError(f"preset '{name}' 'default' must be a string; got {type(default).__name__}")
     _validate_level_keyword(default, f"preset '{name}' default")
 
     roles = preset.get('roles')
     if not isinstance(roles, dict):
-        raise ValueError(
-            f"preset '{name}' 'roles' must be a dict; "
-            f'got {type(roles).__name__}'
-        )
+        raise ValueError(f"preset '{name}' 'roles' must be a dict; got {type(roles).__name__}")
     for group, group_value in roles.items():
         if isinstance(group_value, str):
-            _validate_level_keyword(
-                group_value, f"preset '{name}' role '{group}'"
-            )
+            _validate_level_keyword(group_value, f"preset '{name}' role '{group}'")
         elif isinstance(group_value, dict):
             for subkey, sub_value in group_value.items():
                 if not isinstance(sub_value, str):
@@ -539,13 +523,10 @@ def _validate_preset(name: str, preset: dict) -> None:
                         f"preset '{name}' role '{group}.{subkey}' effort "
                         f'must be a string; got {type(sub_value).__name__}'
                     )
-                _validate_level_keyword(
-                    sub_value, f"preset '{name}' role '{group}.{subkey}'"
-                )
+                _validate_level_keyword(sub_value, f"preset '{name}' role '{group}.{subkey}'")
         else:
             raise ValueError(
-                f"preset '{name}' role '{group}' must be a string or dict; "
-                f'got {type(group_value).__name__}'
+                f"preset '{name}' role '{group}' must be a string or dict; got {type(group_value).__name__}"
             )
 
 

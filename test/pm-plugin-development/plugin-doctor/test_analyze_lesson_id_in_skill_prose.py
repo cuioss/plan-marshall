@@ -186,30 +186,21 @@ class TestPositiveDetection:
         marketplace_root, _ = _make_skill_md(tmp_path, content)
         assert_analyzer_findings(analyze_lesson_id_in_skill_prose, marketplace_root, [RULE_ID])
 
-    def test_lesson_dash_prefix_form_triggers_finding(
-        self, tmp_path: Path
-    ) -> None:
+    def test_lesson_dash_prefix_form_triggers_finding(self, tmp_path: Path) -> None:
         """The ``lesson-XXX`` prefix form is recognised in prose."""
         content = 'The cross-bundle sweep (lesson-2026-04-29-08-003) migrated all.\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
         assert_analyzer_findings(analyze_lesson_id_in_skill_prose, marketplace_root, [RULE_ID])
 
-    def test_lesson_space_prefix_form_triggers_finding(
-        self, tmp_path: Path
-    ) -> None:
+    def test_lesson_space_prefix_form_triggers_finding(self, tmp_path: Path) -> None:
         """The ``lesson XXX`` prefix form is recognised in prose."""
         content = 'Worked example (lesson 2026-04-18-05-002): plan-retrospective.\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
         assert_analyzer_findings(analyze_lesson_id_in_skill_prose, marketplace_root, [RULE_ID])
 
-    def test_multiple_ids_in_one_file_produce_multiple_findings(
-        self, tmp_path: Path
-    ) -> None:
+    def test_multiple_ids_in_one_file_produce_multiple_findings(self, tmp_path: Path) -> None:
         """Two ids on different lines produce two findings."""
-        content = (
-            'First match per lesson 2026-04-17-012.\n'
-            'Second match per lesson 2026-04-29-23-002.\n'
-        )
+        content = 'First match per lesson 2026-04-17-012.\nSecond match per lesson 2026-04-29-23-002.\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
         findings = assert_analyzer_findings(analyze_lesson_id_in_skill_prose, marketplace_root, [RULE_ID] * 2)
         assert findings[0]['line'] == 1
@@ -250,69 +241,34 @@ class TestAllowlistExemption:
         (skill_dir / 'SKILL.md').write_text(content, encoding='utf-8')
         assert_analyzer_findings(analyze_lesson_id_in_skill_prose, tmp_path, [])
 
-    def test_manage_lessons_standards_doc_is_exempt(
-        self, tmp_path: Path
-    ) -> None:
+    def test_manage_lessons_standards_doc_is_exempt(self, tmp_path: Path) -> None:
         """A standards doc under ``manage-lessons/`` is exempt."""
         content = 'Reference lesson 2026-04-17-012 multiple times.\n'
-        std_dir = (
-            tmp_path
-            / 'plan-marshall'
-            / 'skills'
-            / 'manage-lessons'
-            / 'standards'
-        )
+        std_dir = tmp_path / 'plan-marshall' / 'skills' / 'manage-lessons' / 'standards'
         std_dir.mkdir(parents=True)
         (std_dir / 'format.md').write_text(content, encoding='utf-8')
         assert_analyzer_findings(analyze_lesson_id_in_skill_prose, tmp_path, [])
 
-    def test_phase6_finalize_lessons_workflow_is_exempt(
-        self, tmp_path: Path
-    ) -> None:
+    def test_phase6_finalize_lessons_workflow_is_exempt(self, tmp_path: Path) -> None:
         """A ``phase-6-finalize/workflow/lessons-capture.md`` file is exempt."""
         content = 'See lesson 2026-04-29-23-002 (capture step).\n'
-        wf_dir = (
-            tmp_path
-            / 'plan-marshall'
-            / 'skills'
-            / 'phase-6-finalize'
-            / 'workflow'
-        )
+        wf_dir = tmp_path / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'workflow'
         wf_dir.mkdir(parents=True)
         (wf_dir / 'lessons-capture.md').write_text(content, encoding='utf-8')
         assert_analyzer_findings(analyze_lesson_id_in_skill_prose, tmp_path, [])
 
-    def test_phase6_finalize_lessons_standard_is_exempt(
-        self, tmp_path: Path
-    ) -> None:
+    def test_phase6_finalize_lessons_standard_is_exempt(self, tmp_path: Path) -> None:
         """A ``phase-6-finalize/standards/lessons-*.md`` file is exempt."""
         content = 'See lesson 2026-04-29-23-002 (standard).\n'
-        std_dir = (
-            tmp_path
-            / 'plan-marshall'
-            / 'skills'
-            / 'phase-6-finalize'
-            / 'standards'
-        )
+        std_dir = tmp_path / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'standards'
         std_dir.mkdir(parents=True)
         (std_dir / 'lessons-format.md').write_text(content, encoding='utf-8')
         assert_analyzer_findings(analyze_lesson_id_in_skill_prose, tmp_path, [])
 
-    def test_plugin_doctor_rule_provenance_is_exempt(
-        self, tmp_path: Path
-    ) -> None:
+    def test_plugin_doctor_rule_provenance_is_exempt(self, tmp_path: Path) -> None:
         """The plugin-doctor rule-provenance.md is exempt."""
-        content = (
-            'Sources: lesson 2026-04-17-012, lesson 2026-04-29-23-002, '
-            'lesson 2026-05-15-13-001.\n'
-        )
-        ref_dir = (
-            tmp_path
-            / 'pm-plugin-development'
-            / 'skills'
-            / 'plugin-doctor'
-            / 'references'
-        )
+        content = 'Sources: lesson 2026-04-17-012, lesson 2026-04-29-23-002, lesson 2026-05-15-13-001.\n'
+        ref_dir = tmp_path / 'pm-plugin-development' / 'skills' / 'plugin-doctor' / 'references'
         ref_dir.mkdir(parents=True)
         (ref_dir / 'rule-provenance.md').write_text(content, encoding='utf-8')
         assert_analyzer_findings(analyze_lesson_id_in_skill_prose, tmp_path, [])
@@ -328,46 +284,25 @@ class TestSkipContextExemption:
 
     def test_yaml_frontmatter_is_exempt(self, tmp_path: Path) -> None:
         """A lesson ID inside YAML frontmatter is exempt."""
-        content = (
-            '---\n'
-            'name: test-skill\n'
-            'lesson: 2026-04-17-012\n'
-            '---\n'
-            'Body content with no citations.\n'
-        )
+        content = '---\nname: test-skill\nlesson: 2026-04-17-012\n---\nBody content with no citations.\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
         assert_analyzer_findings(analyze_lesson_id_in_skill_prose, marketplace_root, [])
 
     def test_fenced_code_block_is_exempt(self, tmp_path: Path) -> None:
         """A lesson ID inside a fenced code block is exempt."""
-        content = (
-            '# Standards doc\n\n'
-            '```bash\n'
-            'echo "see lesson 2026-04-17-012"\n'
-            '```\n'
-        )
+        content = '# Standards doc\n\n```bash\necho "see lesson 2026-04-17-012"\n```\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
         assert_analyzer_findings(analyze_lesson_id_in_skill_prose, marketplace_root, [])
 
-    def test_fenced_block_with_any_info_string_is_exempt(
-        self, tmp_path: Path
-    ) -> None:
+    def test_fenced_block_with_any_info_string_is_exempt(self, tmp_path: Path) -> None:
         """A fenced block with any info-string (e.g., python) is exempt."""
-        content = (
-            '```python\n'
-            "# lesson 2026-04-29-23-002 provenance\n"
-            '```\n'
-        )
+        content = '```python\n# lesson 2026-04-29-23-002 provenance\n```\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
         assert_analyzer_findings(analyze_lesson_id_in_skill_prose, marketplace_root, [])
 
     def test_source_line_is_exempt(self, tmp_path: Path) -> None:
         """A line whose payload is a ``Source:`` provenance citation is exempt."""
-        content = (
-            '# Heading\n\n'
-            'Source: lesson 2026-04-17-012\n\n'
-            'Body text with no citations.\n'
-        )
+        content = '# Heading\n\nSource: lesson 2026-04-17-012\n\nBody text with no citations.\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
         assert_analyzer_findings(analyze_lesson_id_in_skill_prose, marketplace_root, [])
 
@@ -377,9 +312,7 @@ class TestSkipContextExemption:
         marketplace_root, _ = _make_skill_md(tmp_path, content)
         assert_analyzer_findings(analyze_lesson_id_in_skill_prose, marketplace_root, [])
 
-    def test_lesson_backtick_prefix_form_triggers_finding(
-        self, tmp_path: Path
-    ) -> None:
+    def test_lesson_backtick_prefix_form_triggers_finding(self, tmp_path: Path) -> None:
         """``lesson `YYYY-...` `` where 'lesson' is outside the backtick is flagged.
 
         This is the common prose pattern that the original rule missed because the
@@ -392,22 +325,16 @@ class TestSkipContextExemption:
         findings = analyze_lesson_id_in_skill_prose(marketplace_root)
         assert len(findings) >= 1
 
-    def test_lesson_backtick_long_format_triggers_finding(
-        self, tmp_path: Path
-    ) -> None:
+    def test_lesson_backtick_long_format_triggers_finding(self, tmp_path: Path) -> None:
         """Long format ``lesson `YYYY-MM-DD-HH-NNN` `` is also flagged."""
         content = 'Unconditionally active per lesson `2026-04-29-23-002`.\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
         findings = analyze_lesson_id_in_skill_prose(marketplace_root)
         assert len(findings) >= 1
 
-    def test_bare_id_outside_inline_code_on_same_line_is_flagged(
-        self, tmp_path: Path
-    ) -> None:
+    def test_bare_id_outside_inline_code_on_same_line_is_flagged(self, tmp_path: Path) -> None:
         """Only the span-internal id is exempt; the bare one is flagged."""
-        content = (
-            'See `2026-04-17-012` and also 2026-04-29-23-002 outside.\n'
-        )
+        content = 'See `2026-04-17-012` and also 2026-04-29-23-002 outside.\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
         assert_analyzer_findings(analyze_lesson_id_in_skill_prose, marketplace_root, [RULE_ID])
 
@@ -467,12 +394,7 @@ class TestFrontmatterDisable:
 
     def test_no_disable_key_is_still_flagged(self, tmp_path: Path) -> None:
         """Frontmatter without ``plugin-doctor-disable`` leaves findings flagged."""
-        content = (
-            '---\n'
-            'name: test-skill\n'
-            '---\n'
-            'See lesson 2026-04-17-012 — no disable key present.\n'
-        )
+        content = '---\nname: test-skill\n---\nSee lesson 2026-04-17-012 — no disable key present.\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
         assert_analyzer_findings(analyze_lesson_id_in_skill_prose, marketplace_root, [RULE_ID])
 
@@ -485,10 +407,7 @@ class TestFrontmatterDisable:
         wholly suppressed.
         """
         content = (
-            '---\n'
-            'plugin-doctor-disable: [no-lesson-id-in-skill-prose]\n'
-            '---\n'
-            '# Guard added per lesson 2026-04-17-012.\n'
+            '---\nplugin-doctor-disable: [no-lesson-id-in-skill-prose]\n---\n# Guard added per lesson 2026-04-17-012.\n'
         )
         marketplace_root, _ = _make_skill_py(tmp_path, content)
         assert_analyzer_findings(analyze_lesson_id_in_skill_prose, marketplace_root, [])
@@ -517,9 +436,7 @@ class TestFrontmatterDisable:
 
     def test_retired_inline_marker_no_longer_suppresses(self, tmp_path: Path) -> None:
         """The retired ``<!-- doctor-ignore: lesson-id-prose -->`` marker is ignored."""
-        content = (
-            'See lesson 2026-04-17-012. <!-- doctor-ignore: lesson-id-prose -->\n'
-        )
+        content = 'See lesson 2026-04-17-012. <!-- doctor-ignore: lesson-id-prose -->\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
         assert_analyzer_findings(analyze_lesson_id_in_skill_prose, marketplace_root, [RULE_ID])
 
@@ -549,27 +466,21 @@ class TestBoundaryCases:
         # File under bundle root but not in a scanned sub.
         bundle_dir = tmp_path / 'some-bundle'
         bundle_dir.mkdir(parents=True)
-        (bundle_dir / 'README.md').write_text(
-            'See lesson 2026-04-17-012.\n', encoding='utf-8'
-        )
+        (bundle_dir / 'README.md').write_text('See lesson 2026-04-17-012.\n', encoding='utf-8')
         assert_analyzer_findings(analyze_lesson_id_in_skill_prose, tmp_path, [])
 
     def test_agents_directory_is_scanned(self, tmp_path: Path) -> None:
         """A file under ``{bundle}/agents/`` is in scope."""
         agent_dir = tmp_path / 'test-bundle' / 'agents'
         agent_dir.mkdir(parents=True)
-        (agent_dir / 'agent.md').write_text(
-            'See lesson 2026-04-17-012.\n', encoding='utf-8'
-        )
+        (agent_dir / 'agent.md').write_text('See lesson 2026-04-17-012.\n', encoding='utf-8')
         assert_analyzer_findings(analyze_lesson_id_in_skill_prose, tmp_path, [RULE_ID])
 
     def test_commands_directory_is_scanned(self, tmp_path: Path) -> None:
         """A file under ``{bundle}/commands/`` is in scope."""
         cmd_dir = tmp_path / 'test-bundle' / 'commands'
         cmd_dir.mkdir(parents=True)
-        (cmd_dir / 'cmd.md').write_text(
-            'Reference lesson 2026-04-17-012.\n', encoding='utf-8'
-        )
+        (cmd_dir / 'cmd.md').write_text('Reference lesson 2026-04-17-012.\n', encoding='utf-8')
         assert_analyzer_findings(analyze_lesson_id_in_skill_prose, tmp_path, [RULE_ID])
 
 
@@ -590,17 +501,11 @@ class TestPythonSourceDetection:
 
     def test_py_docstring_citation_triggers_finding(self, tmp_path: Path) -> None:
         """A lesson-ID inside a module docstring is a finding."""
-        content = (
-            '"""Module summary.\n\n'
-            'This dedup logic was added per lesson 2026-04-29-23-002.\n'
-            '"""\n'
-        )
+        content = '"""Module summary.\n\nThis dedup logic was added per lesson 2026-04-29-23-002.\n"""\n'
         marketplace_root, _ = _make_skill_py(tmp_path, content)
         assert_analyzer_findings(analyze_lesson_id_in_skill_prose, marketplace_root, [RULE_ID])
 
-    def test_py_string_literal_citation_triggers_finding(
-        self, tmp_path: Path
-    ) -> None:
+    def test_py_string_literal_citation_triggers_finding(self, tmp_path: Path) -> None:
         """A lesson-ID inside a string literal is a finding."""
         content = "MESSAGE = 'See lesson 2026-04-17-012 for context.'\n"
         marketplace_root, _ = _make_skill_py(tmp_path, content)
@@ -612,26 +517,18 @@ class TestPythonSourceDetection:
         marketplace_root, _ = _make_skill_py(tmp_path, content)
         assert_analyzer_findings(analyze_lesson_id_in_skill_prose, marketplace_root, [RULE_ID])
 
-    def test_py_markdown_fence_exemption_does_not_apply(
-        self, tmp_path: Path
-    ) -> None:
+    def test_py_markdown_fence_exemption_does_not_apply(self, tmp_path: Path) -> None:
         """A ``` ``` ``` line in Python is NOT a fence exemption — still flagged.
 
         Markdown-only structural exemptions must not leak into Python scanning.
         A line that merely looks like a markdown fence delimiter in a ``.py``
         file does not gate the citation that follows.
         """
-        content = (
-            '# ```python\n'
-            '# Provenance: lesson 2026-04-17-012\n'
-            '# ```\n'
-        )
+        content = '# ```python\n# Provenance: lesson 2026-04-17-012\n# ```\n'
         marketplace_root, _ = _make_skill_py(tmp_path, content)
         assert_analyzer_findings(analyze_lesson_id_in_skill_prose, marketplace_root, [RULE_ID])
 
-    def test_py_source_line_exemption_does_not_apply(
-        self, tmp_path: Path
-    ) -> None:
+    def test_py_source_line_exemption_does_not_apply(self, tmp_path: Path) -> None:
         """A ``Source:`` line in Python is NOT exempt — still flagged."""
         content = '# Source: lesson 2026-04-17-012\n'
         marketplace_root, _ = _make_skill_py(tmp_path, content)
@@ -650,20 +547,12 @@ class TestPythonSourceDetection:
     def test_py_allowlisted_path_is_exempt(self, tmp_path: Path) -> None:
         """A ``.py`` under an allowlisted skill path produces zero findings."""
         content = '# Validates lesson 2026-04-17-012 references.\n'
-        scripts_dir = (
-            tmp_path
-            / 'plan-marshall'
-            / 'skills'
-            / 'manage-lessons'
-            / 'scripts'
-        )
+        scripts_dir = tmp_path / 'plan-marshall' / 'skills' / 'manage-lessons' / 'scripts'
         scripts_dir.mkdir(parents=True)
         (scripts_dir / 'manage_lessons.py').write_text(content, encoding='utf-8')
         assert_analyzer_findings(analyze_lesson_id_in_skill_prose, tmp_path, [])
 
-    def test_py_retired_inline_marker_no_longer_suppresses(
-        self, tmp_path: Path
-    ) -> None:
+    def test_py_retired_inline_marker_no_longer_suppresses(self, tmp_path: Path) -> None:
         """The retired inline marker in a ``.py`` comment is ignored — still flagged.
 
         Per-file suppression for Python sources is now carried by the
@@ -671,9 +560,7 @@ class TestPythonSourceDetection:
         ``TestFrontmatterDisable.test_py_frontmatter_disable_suppresses_whole_file``),
         not by the removed inline marker.
         """
-        content = (
-            '# See lesson 2026-04-17-012. <!-- doctor-ignore: lesson-id-prose -->\n'
-        )
+        content = '# See lesson 2026-04-17-012. <!-- doctor-ignore: lesson-id-prose -->\n'
         marketplace_root, _ = _make_skill_py(tmp_path, content)
         assert_analyzer_findings(analyze_lesson_id_in_skill_prose, marketplace_root, [RULE_ID])
 
@@ -693,35 +580,25 @@ class TestClaudeSkillsTree:
     """The project-local ``.claude/skills/**`` tree (both ``*.md`` and
     ``*.py``) is scanned in addition to the marketplace bundles tree."""
 
-    def test_claude_skill_md_citation_triggers_finding(
-        self, tmp_path: Path
-    ) -> None:
+    def test_claude_skill_md_citation_triggers_finding(self, tmp_path: Path) -> None:
         """A markdown citation under ``.claude/skills/`` is flagged."""
         content = 'Covered by lesson 2026-06-01-12-001 (Gate-1 dedup).\n'
         marketplace_root, target = _make_claude_skill_file(tmp_path, content)
         findings = assert_analyzer_findings(analyze_lesson_id_in_skill_prose, marketplace_root, [RULE_ID])
         assert findings[0]['file'] == str(target)
 
-    def test_claude_skill_py_citation_triggers_finding(
-        self, tmp_path: Path
-    ) -> None:
+    def test_claude_skill_py_citation_triggers_finding(self, tmp_path: Path) -> None:
         """A Python citation under ``.claude/skills/`` is flagged."""
         content = '# Gate-1 dedup against lesson 2026-05-31-21-001.\n'
-        marketplace_root, target = _make_claude_skill_file(
-            tmp_path, content, filename='audit.py'
-        )
+        marketplace_root, target = _make_claude_skill_file(tmp_path, content, filename='audit.py')
         findings = assert_analyzer_findings(analyze_lesson_id_in_skill_prose, marketplace_root, [RULE_ID])
         assert findings[0]['file'] == str(target)
 
-    def test_claude_skill_nested_check_doc_is_scanned(
-        self, tmp_path: Path
-    ) -> None:
+    def test_claude_skill_nested_check_doc_is_scanned(self, tmp_path: Path) -> None:
         """A nested ``.claude/skills/{skill}/checks/*.md`` file is scanned."""
         bundles_root = tmp_path / 'marketplace' / 'bundles'
         bundles_root.mkdir(parents=True)
-        checks_dir = (
-            tmp_path / '.claude' / 'skills' / 'audit-skill' / 'checks'
-        )
+        checks_dir = tmp_path / '.claude' / 'skills' / 'audit-skill' / 'checks'
         checks_dir.mkdir(parents=True)
         (checks_dir / 'quality-chain.md').write_text(
             'See lesson 2026-05-31-20-002 for the chain rule.\n',
@@ -729,17 +606,13 @@ class TestClaudeSkillsTree:
         )
         assert_analyzer_findings(analyze_lesson_id_in_skill_prose, bundles_root, [RULE_ID])
 
-    def test_claude_skill_clean_tree_produces_no_findings(
-        self, tmp_path: Path
-    ) -> None:
+    def test_claude_skill_clean_tree_produces_no_findings(self, tmp_path: Path) -> None:
         """A clean ``.claude/skills/`` tree produces zero findings."""
         content = 'This prose names the codified rule, not any lesson ID.\n'
         marketplace_root, _ = _make_claude_skill_file(tmp_path, content)
         assert_analyzer_findings(analyze_lesson_id_in_skill_prose, marketplace_root, [])
 
-    def test_missing_claude_skills_tree_is_tolerated(
-        self, tmp_path: Path
-    ) -> None:
+    def test_missing_claude_skills_tree_is_tolerated(self, tmp_path: Path) -> None:
         """When no ``.claude/skills`` tree exists, only the bundles tree scans.
 
         The bundles-only ``tmp_path`` layout used by the markdown tests has no
@@ -757,14 +630,10 @@ class TestClaudeSkillsTree:
         bundles_root = tmp_path / 'marketplace' / 'bundles'
         skill_dir = bundles_root / 'test-bundle' / 'skills' / 'test-skill'
         skill_dir.mkdir(parents=True)
-        (skill_dir / 'SKILL.md').write_text(
-            'See lesson 2026-04-17-012 here.\n', encoding='utf-8'
-        )
+        (skill_dir / 'SKILL.md').write_text('See lesson 2026-04-17-012 here.\n', encoding='utf-8')
         claude_dir = tmp_path / '.claude' / 'skills' / 'audit-skill'
         claude_dir.mkdir(parents=True)
-        (claude_dir / 'SKILL.md').write_text(
-            'Covered by lesson 2026-06-01-12-001.\n', encoding='utf-8'
-        )
+        (claude_dir / 'SKILL.md').write_text('Covered by lesson 2026-06-01-12-001.\n', encoding='utf-8')
         assert_analyzer_findings(analyze_lesson_id_in_skill_prose, bundles_root, [RULE_ID] * 2)
 
 
@@ -820,9 +689,7 @@ class TestSuppressionAwareAllowlist:
         unregistered = 'some-bundle/skills/some-other-skill/SKILL.md'
         assert _is_allowlisted(unregistered, config) is False
 
-    def test_previously_exempt_path_remains_suppressed(
-        self, tmp_path: Path
-    ) -> None:
+    def test_previously_exempt_path_remains_suppressed(self, tmp_path: Path) -> None:
         """A lesson-ID citation under an exempt prefix yields zero findings.
 
         Builds a file under a registered exempt prefix — a lesson-domain
@@ -833,9 +700,7 @@ class TestSuppressionAwareAllowlist:
         config = load_default_suppression_config()
         # Pick the first registered prefix that names a skill directory so the
         # constructed path lands inside the scanned {skills} sub-tree.
-        prefix = next(
-            p for p in config[RULE_ID] if '/skills/' in p and p.endswith('/')
-        )
+        prefix = next(p for p in config[RULE_ID] if '/skills/' in p and p.endswith('/'))
         target = tmp_path / prefix / 'SKILL.md'
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(
@@ -890,32 +755,20 @@ class TestHousekeepingPromotionForm:
         'fail-closed verdict is the only safe reading.\n'
     )
 
-    def test_housekeeping_promotion_form_produces_no_finding(
-        self, tmp_path: Path
-    ) -> None:
+    def test_housekeeping_promotion_form_produces_no_finding(self, tmp_path: Path) -> None:
         """A durable rule with tombstone-only provenance lints clean.
 
         This is the artifact shape the reconciled Step 4b procedure prescribes:
         the rule is written in the host doc's voice, and carries no lesson
         identifier anywhere in its prose.
         """
-        std_dir = (
-            tmp_path
-            / 'plan-marshall'
-            / 'skills'
-            / 'workflow-integration-git'
-            / 'standards'
-        )
+        std_dir = tmp_path / 'plan-marshall' / 'skills' / 'workflow-integration-git' / 'standards'
         std_dir.mkdir(parents=True)
-        (std_dir / 'worktree-handling.md').write_text(
-            self._PROMOTED_RULE_BODY, encoding='utf-8'
-        )
+        (std_dir / 'worktree-handling.md').write_text(self._PROMOTED_RULE_BODY, encoding='utf-8')
 
         assert_analyzer_findings(analyze_lesson_id_in_skill_prose, tmp_path, [])
 
-    def test_pre_reconciliation_citation_form_still_produces_finding(
-        self, tmp_path: Path
-    ) -> None:
+    def test_pre_reconciliation_citation_form_still_produces_finding(self, tmp_path: Path) -> None:
         """The negative companion: the retired citation form is still flagged.
 
         The pre-reconciliation procedure appended a
@@ -923,17 +776,10 @@ class TestHousekeepingPromotionForm:
         That form must still trip the rule — otherwise the positive case above
         would pass for the wrong reason.
         """
-        std_dir = (
-            tmp_path
-            / 'plan-marshall'
-            / 'skills'
-            / 'workflow-integration-git'
-            / 'standards'
-        )
+        std_dir = tmp_path / 'plan-marshall' / 'skills' / 'workflow-integration-git' / 'standards'
         std_dir.mkdir(parents=True)
         (std_dir / 'worktree-handling.md').write_text(
-            self._PROMOTED_RULE_BODY
-            + '\n(promoted from lesson 2026-07-21-10-001)\n',
+            self._PROMOTED_RULE_BODY + '\n(promoted from lesson 2026-07-21-10-001)\n',
             encoding='utf-8',
         )
 
@@ -959,6 +805,4 @@ def test_analyzer_source_has_no_inline_marker_references() -> None:
         '_analyze_lesson_id_in_skill_prose.py',
     ).read_text(encoding='utf-8')
     for marker in ('_SUPPRESS_MARKER', '_IGNORE_MARKER', 'doctor-ignore'):
-        assert marker not in source, (
-            f'Retired inline marker {marker!r} still present in analyzer source'
-        )
+        assert marker not in source, f'Retired inline marker {marker!r} still present in analyzer source'

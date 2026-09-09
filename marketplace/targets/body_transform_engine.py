@@ -178,9 +178,7 @@ class TransformRules:
     @property
     def is_verbatim(self) -> bool:
         """True when the target declares no rewrite category (verbatim output)."""
-        return not (
-            self.directive_rewrites or self.slash_rewrites or self.body_idiom_rewrites
-        )
+        return not (self.directive_rewrites or self.slash_rewrites or self.body_idiom_rewrites)
 
 
 def load_transform_rules(mapping_path: Path) -> TransformRules:
@@ -260,8 +258,7 @@ def assert_source_vocabulary_mapped(rules: TransformRules) -> None:
         for placeholder in REQUIRED_PLACEHOLDERS[idiom]:
             if placeholder not in template:
                 raise UnmappedIdiomError(
-                    f'{category_key}[{idiom!r}].template is missing required '
-                    f'placeholder {placeholder!r}'
+                    f'{category_key}[{idiom!r}].template is missing required placeholder {placeholder!r}'
                 )
 
 
@@ -315,11 +312,7 @@ def build_slash_command_re(known_names: list[str]) -> re.Pattern[str] | None:
     # Sort by length descending so longer names match before shorter prefixes
     # (avoids partial matches when one skill name is a prefix of another).
     alternatives = sorted({n for n in known_names if n}, key=lambda n: (-len(n), n))
-    pattern = (
-        r'(?<![\w-])/(?P<name>'
-        + '|'.join(re.escape(n) for n in alternatives)
-        + r')(?=\s|$|=)'
-    )
+    pattern = r'(?<![\w-])/(?P<name>' + '|'.join(re.escape(n) for n in alternatives) + r')(?=\s|$|=)'
     return re.compile(pattern, re.MULTILINE)
 
 
@@ -451,7 +444,7 @@ def _frontmatter_field(content: str, field_name: str) -> str:
     for line in block.splitlines():
         stripped = line.strip()
         if stripped.startswith(prefix):
-            return stripped[len(prefix):].strip()
+            return stripped[len(prefix) :].strip()
     return ''
 
 

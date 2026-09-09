@@ -305,9 +305,7 @@ def main() -> int:
     # Resolve --plan-id / --project-dir before the handler reads
     # ``args.project_dir`` for relative-path joining.
     try:
-        args.project_dir = resolve_project_dir(
-            getattr(args, 'plan_id', None), args.project_dir, default='.'
-        )
+        args.project_dir = resolve_project_dir(getattr(args, 'plan_id', None), args.project_dir, default='.')
     except MutuallyExclusiveArgsError:
         print(serialize_toon(emit_mutually_exclusive_error(getattr(args, 'plan_id', None), args.project_dir)))
         return 2

@@ -65,9 +65,7 @@ def cmd_recipe_match(args) -> dict[str, Any]:
         # overlap is the primary signal (pass None for both). The raw
         # request_text is forwarded so the surgical-fix recipe's pre-diagnosed
         # SHAPE arm can fire; it is inert for every other recipe.
-        confidence, breakdown = score_recipe(
-            recipe, narrative_tokens, None, None, narrative_text=request_text
-        )
+        confidence, breakdown = score_recipe(recipe, narrative_tokens, None, None, narrative_text=request_text)
         if confidence < MIN_CONFIDENCE:
             continue
         scored.append((confidence, recipe, breakdown))

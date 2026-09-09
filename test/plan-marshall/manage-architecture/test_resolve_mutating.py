@@ -13,11 +13,14 @@ that persisted shape directly and assert ``resolve_command`` surfaces it on
 both the module-level and root-cascade resolution paths.
 """
 
-
 from conftest import load_script_module
 
-_architecture_core = load_script_module('plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core')
-_cmd_client_query = load_script_module('plan-marshall', 'manage-architecture', '_cmd_client_query.py', '_cmd_client_query')
+_architecture_core = load_script_module(
+    'plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core'
+)
+_cmd_client_query = load_script_module(
+    'plan-marshall', 'manage-architecture', '_cmd_client_query.py', '_cmd_client_query'
+)
 
 save_project_meta = _architecture_core.save_project_meta
 save_module_derived = _architecture_core.save_module_derived

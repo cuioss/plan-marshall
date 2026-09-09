@@ -345,9 +345,7 @@ def _override_bundle_plugin_versions(output_dir: Path, version: str) -> int:
 def _emit_dist_manifest(output_dir: Path, manifest: dict) -> None:
     """Write the dist-manifest JSON at the target output root."""
     output_dir.mkdir(parents=True, exist_ok=True)
-    (output_dir / _DIST_MANIFEST_FILENAME).write_text(
-        json.dumps(manifest, indent=2) + '\n', encoding='utf-8'
-    )
+    (output_dir / _DIST_MANIFEST_FILENAME).write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -406,7 +404,9 @@ def main(argv: list[str] | None = None) -> int:
             return EXIT_ERROR
 
         target = target_cls()
-        per_target_output = output_dir / target_name if (output_dir is not None and args.target == 'all') else output_dir
+        per_target_output = (
+            output_dir / target_name if (output_dir is not None and args.target == 'all') else output_dir
+        )
 
         try:
             generated = target.generate(marketplace_dir, per_target_output, bundles=bundles)

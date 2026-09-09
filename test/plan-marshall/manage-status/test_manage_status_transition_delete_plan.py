@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for manage-status.py transition: delete-plan, including its lesson auto-restore."""
 
-
 from argparse import Namespace
 
 import pytest
@@ -141,9 +140,7 @@ def test_delete_plan_no_restore_lessons_does_not_claim_the_benign_zero(plan_cont
         'id=2025-05-05-005\ncomponent=foo\ncategory=bug\ncreated=2025-05-05\n\n# Lesson\n\nBody.\n'
     )
 
-    result = cmd_delete_plan(
-        Namespace(plan_id='optout-2025-05-05-005', no_restore_lessons=True)
-    )
+    result = cmd_delete_plan(Namespace(plan_id='optout-2025-05-05-005', no_restore_lessons=True))
 
     assert result['status'] == 'success'
     assert result['lesson_carry_back_action'] == 'not_attempted'
@@ -212,9 +209,7 @@ def test_delete_plan_refuses_when_carried_lesson_collides(plan_context):
     assert result['action'] == 'refused'
     assert result['lesson_carry_back_action'] == 'restore_incomplete'
     assert result['lesson_carry_back_action'] != 'restored'
-    assert result['skipped_lessons'] == [
-        {'lesson_id': '2025-03-03-003', 'reason': 'destination_exists'}
-    ]
+    assert result['skipped_lessons'] == [{'lesson_id': '2025-03-03-003', 'reason': 'destination_exists'}]
     assert result['restored_lesson_ids'] == []
 
     # The veto held: the plan directory and its only copy of the lesson survive.
@@ -224,9 +219,7 @@ def test_delete_plan_refuses_when_carried_lesson_collides(plan_context):
     assert 'Corpus copy.' in (lessons_dir / '2025-03-03-003.md').read_text()
 
 
-def test_delete_plan_reports_unresolvable_store_instead_of_nothing_to_restore(
-    plan_context, monkeypatch
-):
+def test_delete_plan_reports_unresolvable_store_instead_of_nothing_to_restore(plan_context, monkeypatch):
     """An unresolvable store reports could-not-look, and vetoes the deletion.
 
     Distinct from the collision case above: here the carry-back cannot reach the
@@ -256,9 +249,7 @@ def test_delete_plan_reports_unresolvable_store_instead_of_nothing_to_restore(
     assert result['error'] == 'lesson_carry_back_incomplete'
     assert result['lesson_carry_back_action'] == 'plan_dir_unresolved'
     assert result['lesson_store_resolution'] == 'unresolved'
-    assert result['skipped_lessons'] == [
-        {'lesson_id': '2025-04-04-004', 'reason': 'store_unresolved'}
-    ]
+    assert result['skipped_lessons'] == [{'lesson_id': '2025-04-04-004', 'reason': 'store_unresolved'}]
 
     # The plan directory holding the only copy survives the failure to look.
     assert plan_dir.exists()
@@ -287,9 +278,7 @@ def test_delete_plan_refuses_symlinked_lesson_and_spares_its_target(plan_context
     assert result['status'] == 'error'
     assert result['error'] == 'lesson_carry_back_incomplete'
     assert result['lesson_carry_back_action'] == 'restore_incomplete'
-    assert result['skipped_lessons'] == [
-        {'lesson_id': '2025-06-06-006', 'reason': 'unsafe_source'}
-    ]
+    assert result['skipped_lessons'] == [{'lesson_id': '2025-06-06-006', 'reason': 'unsafe_source'}]
     assert result['restored_lesson_ids'] == []
 
     # The external target is an ordinary file the plan has no claim on; it must
@@ -321,7 +310,5 @@ def test_delete_plan_refuses_non_regular_lesson_entry(plan_context):
 
     assert result['status'] == 'error'
     assert result['error'] == 'lesson_carry_back_incomplete'
-    assert result['skipped_lessons'] == [
-        {'lesson_id': '2025-07-07-007', 'reason': 'unsafe_source'}
-    ]
+    assert result['skipped_lessons'] == [{'lesson_id': '2025-07-07-007', 'reason': 'unsafe_source'}]
     assert plan_dir.exists()

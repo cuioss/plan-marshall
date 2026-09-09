@@ -78,18 +78,14 @@ PrAgentTarget().generate(MARKETPLACE_BUNDLES, _OUTPUT_ROOT)
 PACKS_DIR = _OUTPUT_ROOT / 'packs'
 
 #: Every emitted artifact, keyed by stem. The ONLY derived input in this module.
-ARTIFACTS: dict[str, str] = {
-    path.stem: path.read_text(encoding='utf-8') for path in sorted(PACKS_DIR.glob('*.md'))
-}
+ARTIFACTS: dict[str, str] = {path.stem: path.read_text(encoding='utf-8') for path in sorted(PACKS_DIR.glob('*.md'))}
 ARTIFACT_IDS: list[str] = sorted(ARTIFACTS)
 
 #: The population partitioned. The spine is looked up with a default rather than
 #: subscripted so a run that emitted no spine FAILS its own population test
 #: instead of erroring during collection.
 SPINE_ARTIFACT: str = ARTIFACTS.get(SPINE_STEM, '')
-DOMAIN_ARTIFACTS: dict[str, str] = {
-    stem: body for stem, body in ARTIFACTS.items() if stem != SPINE_STEM
-}
+DOMAIN_ARTIFACTS: dict[str, str] = {stem: body for stem, body in ARTIFACTS.items() if stem != SPINE_STEM}
 DOMAIN_ARTIFACT_IDS: list[str] = sorted(DOMAIN_ARTIFACTS)
 
 # ---------------------------------------------------------------------------
@@ -274,8 +270,7 @@ class TestPopulation:
         assertion that had nothing to check.
         """
         assert SPINE_STEM in ARTIFACTS, (
-            f'the emitted set carries no {SPINE_STEM!r} artifact; the charter '
-            'would be present in no artifact at all'
+            f'the emitted set carries no {SPINE_STEM!r} artifact; the charter would be present in no artifact at all'
         )
         assert SPINE_ARTIFACT, 'the spine artifact is empty'
 
@@ -340,8 +335,7 @@ class TestOrthogonalityCoverage:
         )
         assert SPINE_ONLY_TEXTS, 'no spine text is declared; Guard B would check nothing'
         assert DOMAIN_ARTIFACTS, (
-            'no domain artifact was emitted; Guard B\'s absence half would pass over '
-            'an empty population'
+            "no domain artifact was emitted; Guard B's absence half would pass over an empty population"
         )
 
 
@@ -356,7 +350,7 @@ class TestCategoryBudget:
         assert len(bullets) <= CATEGORY_CEILING - 1, (
             f'the spine carries {len(bullets)} category bullets and leaves no slot for '
             f'the domain bullet; the ceiling is {CATEGORY_CEILING}: '
-            f'{bullets[CATEGORY_CEILING - 1:]}'
+            f'{bullets[CATEGORY_CEILING - 1 :]}'
         )
 
     @pytest.mark.parametrize('domain', DOMAIN_ARTIFACT_IDS)
@@ -369,8 +363,7 @@ class TestCategoryBudget:
         bullets = category_bullets(DOMAIN_ARTIFACTS[domain])
 
         assert len(bullets) == 1, (
-            f'domain artifact {domain!r} carries {len(bullets)} category bullets, '
-            f'expected exactly one: {bullets}'
+            f'domain artifact {domain!r} carries {len(bullets)} category bullets, expected exactly one: {bullets}'
         )
 
 
@@ -380,9 +373,7 @@ class TestWithholdingLanguage:
 
     def test_carries_no_withholding_language(self, artifact_id):
         offenders = withholding_phrases_in(ARTIFACTS[artifact_id])
-        assert not offenders, (
-            f'artifact {artifact_id!r} reintroduced withholding language: {offenders!r}'
-        )
+        assert not offenders, f'artifact {artifact_id!r} reintroduced withholding language: {offenders!r}'
 
 
 class TestGuardBites:
@@ -449,9 +440,7 @@ class TestGuardBites:
         }
 
         assert domain_artifacts_carrying(ANTI_FABRICATION_CLAUSE, DOMAIN_ARTIFACTS) == []
-        assert domain_artifacts_carrying(ANTI_FABRICATION_CLAUSE, mutated_population) == [
-            sample_id
-        ]
+        assert domain_artifacts_carrying(ANTI_FABRICATION_CLAUSE, mutated_population) == [sample_id]
 
     def test_an_extra_spine_category_bullet_is_detected(self):
         """The moved successor of the eleventh-bullet control.
@@ -467,9 +456,7 @@ class TestGuardBites:
         )
 
         marker = f'- {bullets[-1]}'
-        mutated = SPINE_ARTIFACT.replace(
-            marker, f'{marker}\n- A tenth spine category nobody budgeted for.', 1
-        )
+        mutated = SPINE_ARTIFACT.replace(marker, f'{marker}\n- A tenth spine category nobody budgeted for.', 1)
 
         assert len(category_bullets(mutated)) == CATEGORY_CEILING
 

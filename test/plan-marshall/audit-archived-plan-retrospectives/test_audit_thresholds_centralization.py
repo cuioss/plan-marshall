@@ -21,10 +21,7 @@ class TestThresholdsCentralization:
         assert audit.PR_SLOW_REVIEW_HOURS == audit.THRESHOLDS['pr_slow_review_hours']
 
     def test_phase_token_share_alias_matches_table(self):
-        assert (
-            audit.PHASE_TOKEN_SHARE_THRESHOLD
-            == audit.THRESHOLDS['phase_token_share']
-        )
+        assert audit.PHASE_TOKEN_SHARE_THRESHOLD == audit.THRESHOLDS['phase_token_share']
 
     def test_scope_file_bands_alias_matches_table(self):
         # alias is the same mapping object the table owns
@@ -33,14 +30,8 @@ class TestThresholdsCentralization:
         assert audit.SCOPE_FILE_BANDS['multi_module'] == (5, None)
 
     def test_tasks_per_deliverable_aliases_match_table(self):
-        assert (
-            audit.TASKS_PER_DELIVERABLE_LOW
-            == audit.THRESHOLDS['tasks_per_deliverable_low']
-        )
-        assert (
-            audit.TASKS_PER_DELIVERABLE_HIGH
-            == audit.THRESHOLDS['tasks_per_deliverable_high']
-        )
+        assert audit.TASKS_PER_DELIVERABLE_LOW == audit.THRESHOLDS['tasks_per_deliverable_low']
+        assert audit.TASKS_PER_DELIVERABLE_HIGH == audit.THRESHOLDS['tasks_per_deliverable_high']
 
     def test_thresholds_table_carries_every_documented_constant(self):
         # every magic number the checks consume must live in the table

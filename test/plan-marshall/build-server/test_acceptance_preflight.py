@@ -61,9 +61,7 @@ def test_preflight_disabled_makes_no_daemon_round_trip(home, monkeypatch):
 
     monkeypatch.setattr(client, '_handshake', _fail)
 
-    result = client.run_preflight(
-        _variant(_PREFLIGHT_ARGS, project_path=str(home / 'unregistered'))
-    )
+    result = client.run_preflight(_variant(_PREFLIGHT_ARGS, project_path=str(home / 'unregistered')))
 
     assert result['preflight'] == 'disabled'
     assert result['registered'] is False

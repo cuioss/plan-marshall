@@ -15,7 +15,6 @@ which is where the protection against an untested row actually lives — the
 derived parametrization, not any assertion about it.
 """
 
-
 from __future__ import annotations
 
 import pytest
@@ -49,11 +48,7 @@ def _conditional_rows() -> dict[str, str]:
 
 
 def _aspect_shaped_rows() -> dict[str, str]:
-    return {
-        key: heading
-        for key, heading in _conditional_rows().items()
-        if key not in _NON_ASPECT_SHAPED_ROWS
-    }
+    return {key: heading for key, heading in _conditional_rows().items() if key not in _NON_ASPECT_SHAPED_ROWS}
 
 
 # --------------------------------------------------------------------------
@@ -158,14 +153,10 @@ def _carve_out_applies(fragment_key: str, fragment) -> bool:
 def _classify(tmp_path, fragment_key: str, fragment) -> str:
     """Compile a one-key bundle and return this row's partition membership."""
     bundle = {} if fragment is None else {fragment_key: fragment}
-    _content, written, omitted, dropped = _cr.build_document(
-        'demo', 'live', tmp_path, None, bundle
-    )
+    _content, written, omitted, dropped = _cr.build_document('demo', 'live', tmp_path, None, bundle)
     heading = _conditional_rows()[fragment_key]
     memberships = [
-        name
-        for name, bucket in (('written', written), ('omitted', omitted), ('dropped', dropped))
-        if heading in bucket
+        name for name, bucket in (('written', written), ('omitted', omitted), ('dropped', dropped)) if heading in bucket
     ]
     # The partition must place every section in exactly one bucket. A heading in
     # two buckets is a partition breach, and reporting it as one of them would
@@ -225,9 +216,7 @@ def test_partition_cell(tmp_path, fragment_key, shape):
     fragment = _shape(shape, fragment_key)
     expected = 'written' if _carve_out_applies(fragment_key, fragment) else _EXPECTED[shape]
     actual = _classify(tmp_path, fragment_key, fragment)
-    assert actual == expected, (
-        f'{fragment_key} x {shape}: expected {expected}, got {actual}'
-    )
+    assert actual == expected, f'{fragment_key} x {shape}: expected {expected}, got {actual}'
 
 
 class TestCarveOutsStillFire:
@@ -332,20 +321,12 @@ class TestRunStatusFollowsTheDroppedBucket:
     """
 
     def test_a_grid_row_of_benign_shapes_keeps_every_bucket_clean(self, tmp_path):
-        bundle = {
-            key: _shape('clean_success', key) for key in sorted(_aspect_shaped_rows())
-        }
-        _content, _written, _omitted, dropped = _cr.build_document(
-            'demo', 'live', tmp_path, None, bundle
-        )
+        bundle = {key: _shape('clean_success', key) for key in sorted(_aspect_shaped_rows())}
+        _content, _written, _omitted, dropped = _cr.build_document('demo', 'live', tmp_path, None, bundle)
         assert dropped == []
 
     def test_a_single_prose_fragment_is_enough_to_raise_the_drop_bucket(self, tmp_path):
-        bundle = {
-            key: _shape('clean_success', key) for key in sorted(_aspect_shaped_rows())
-        }
+        bundle = {key: _shape('clean_success', key) for key in sorted(_aspect_shaped_rows())}
         bundle['script-failure-analysis'] = _shape('non_dict_prose', 'script-failure-analysis')
-        _content, _written, _omitted, dropped = _cr.build_document(
-            'demo', 'live', tmp_path, None, bundle
-        )
+        _content, _written, _omitted, dropped = _cr.build_document('demo', 'live', tmp_path, None, bundle)
         assert dropped == ['Script Failure Analysis']

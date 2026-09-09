@@ -8,7 +8,6 @@ Its sections, in order:
 * Dispatch wiring — scope-estimate-heuristic
 """
 
-
 from __future__ import annotations
 
 import json
@@ -35,9 +34,7 @@ def test_scope_heuristic_declares_unknown_for_unreadable_request(plan_context):
     plan_dir.mkdir(parents=True, exist_ok=True)
     _write_references(plan_dir, scope_estimate=None)
 
-    result = cmd_scope_estimate_heuristic(
-        Namespace(plan_id='pl-scope-unknown', persist=True)
-    )
+    result = cmd_scope_estimate_heuristic(Namespace(plan_id='pl-scope-unknown', persist=True))
 
     assert result['status'] == 'success'
     assert result['scope_estimate'] == 'none'
@@ -68,13 +65,8 @@ def test_scope_heuristic_reports_scope_resolved_true_for_a_scored_body(plan_cont
     'body',
     [
         'Fix marketplace/bundles/plan-marshall/skills/x/scripts/x.py per the diagnosis.',
-        (
-            'Update marketplace/bundles/plan-marshall/skills/x/scripts/x.py and '
-            'test/plan-marshall/x/test_x.py.'
-        ),
-        (
-            'Touch a/b/one.py, c/d/two.py, and e/f/three.py — three named files, no more.'
-        ),
+        ('Update marketplace/bundles/plan-marshall/skills/x/scripts/x.py and test/plan-marshall/x/test_x.py.'),
+        ('Touch a/b/one.py, c/d/two.py, and e/f/three.py — three named files, no more.'),
     ],
 )
 def test_scope_pure_surgical_for_one_to_three_paths(body):
@@ -189,9 +181,7 @@ def test_scope_pure_single_module_for_pathless_body():
     about which the coarse verdict is "not demonstrably narrow" — it keeps its
     ``single_module`` band and must NOT drift into the unknown.
     """
-    assert scope_estimate_from_request_pure('Make the thing better, somehow, everywhere.') == (
-        'single_module'
-    )
+    assert scope_estimate_from_request_pure('Make the thing better, somehow, everywhere.') == ('single_module')
 
 
 def test_scope_unknown_is_a_deep_biasing_s2_value():

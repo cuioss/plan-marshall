@@ -80,9 +80,7 @@ ADD_ROW_SEED_FIELDS_ANCHOR = '`--add-row` seed fields (mirrors `ADD_ROW_SEED_FIE
 #: line.
 _BACKTICKED_RE = re.compile(r'`([^`]+)`')
 
-_orch = load_script_module(
-    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT, 'orchestrator_script'
-)
+_orch = load_script_module(_ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT, 'orchestrator_script')
 
 cmd_scaffold = _orch.cmd_scaffold
 cmd_queue = _orch.cmd_queue
@@ -127,26 +125,43 @@ def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
 
 
 _SCAFFOLD_ARGS = parse_ns(
-    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
-    'scaffold', '--slug', _BASE_SLUG,
+    _ORCH_BUNDLE,
+    _ORCH_SKILL,
+    _ORCH_SCRIPT,
+    'scaffold',
+    '--slug',
+    _BASE_SLUG,
     register=False,
 )
 
 _QUEUE_ARGS = parse_ns(
-    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
-    'queue', '--slug', _BASE_SLUG,
+    _ORCH_BUNDLE,
+    _ORCH_SKILL,
+    _ORCH_SCRIPT,
+    'queue',
+    '--slug',
+    _BASE_SLUG,
     register=False,
 )
 
 _RESUME_SUMMARY_ARGS = parse_ns(
-    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
-    'resume-summary', '--slug', _BASE_SLUG,
+    _ORCH_BUNDLE,
+    _ORCH_SKILL,
+    _ORCH_SCRIPT,
+    'resume-summary',
+    '--slug',
+    _BASE_SLUG,
     register=False,
 )
 
 _INBOX_LIST_ARGS = parse_ns(
-    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
-    'inbox', 'list', '--slug', _BASE_SLUG,
+    _ORCH_BUNDLE,
+    _ORCH_SKILL,
+    _ORCH_SCRIPT,
+    'inbox',
+    'list',
+    '--slug',
+    _BASE_SLUG,
     register=False,
 )
 
@@ -243,9 +258,7 @@ def _read_status_file(path: Path) -> dict:
     return dict(json.loads(path.read_text(encoding='utf-8')))
 
 
-def _seed_inbox(
-    plan_context, slug: str, queued: int = 0, archived: int = 0, extra_names: tuple = ()
-) -> Path:
+def _seed_inbox(plan_context, slug: str, queued: int = 0, archived: int = 0, extra_names: tuple = ()) -> Path:
     """Create the epic's ``inbox/`` with ``queued`` live and ``archived`` retired messages.
 
     Names follow the channel's ``{sender}-{NNN}.md`` grammar so the derivation
@@ -359,9 +372,7 @@ class TestQueueRead:
 
 class TestQueueTransition:
     def test_should_round_trip_status_transition(self, plan_context):
-        status_path = _write_status(
-            plan_context, 'flow-epic', plans=[_make_plan('PLAN-01'), _make_plan('PLAN-02')]
-        )
+        status_path = _write_status(plan_context, 'flow-epic', plans=[_make_plan('PLAN-01'), _make_plan('PLAN-02')])
 
         result = cmd_queue(_queue_args('flow-epic', transition='PLAN-01', status='running'))
 
@@ -429,13 +440,9 @@ class TestQueueTransition:
 class TestQueueSetRow:
     def test_should_set_named_row_field_and_leave_siblings_untouched(self, plan_context):
         siblings = [_make_plan('PLAN-02'), _make_plan('PLAN-03', status='running')]
-        status_path = _write_status(
-            plan_context, 'set-epic', plans=[_make_plan('PLAN-01'), *siblings]
-        )
+        status_path = _write_status(plan_context, 'set-epic', plans=[_make_plan('PLAN-01'), *siblings])
 
-        result = cmd_queue(
-            _queue_args('set-epic', set_row='PLAN-01', field='pr', value='#1001')
-        )
+        result = cmd_queue(_queue_args('set-epic', set_row='PLAN-01', field='pr', value='#1001'))
 
         assert result['status'] == 'success'
         assert result['operation'] == 'queue-set-row'
@@ -457,56 +464,40 @@ class TestQueueSetRow:
         assert set(values) == set(PLAN_ROW_FIELDS)
 
         for field, value in values.items():
-            cmd_queue(
-                _queue_args('fields-epic', set_row='PLAN-01', field=field, value=value)
-            )
+            cmd_queue(_queue_args('fields-epic', set_row='PLAN-01', field=field, value=value))
 
         row = cmd_queue(_queue_args('fields-epic'))['plans'][0]
         for field, value in values.items():
             assert row[field] == value
 
     def test_should_report_previous_value_on_overwrite(self, plan_context):
-        _write_status(
-            plan_context, 'overwrite-epic', plans=[_make_plan('PLAN-01', pr='#900')]
-        )
+        _write_status(plan_context, 'overwrite-epic', plans=[_make_plan('PLAN-01', pr='#900')])
 
-        result = cmd_queue(
-            _queue_args('overwrite-epic', set_row='PLAN-01', field='pr', value='#901')
-        )
+        result = cmd_queue(_queue_args('overwrite-epic', set_row='PLAN-01', field='pr', value='#901'))
 
         assert result['previous_value'] == '#900'
         assert result['new_value'] == '#901'
 
     def test_should_stamp_updated_on_set_row(self, plan_context):
-        status_path = _write_status(
-            plan_context, 'set-stamp-epic', plans=[_make_plan('PLAN-01')]
-        )
+        status_path = _write_status(plan_context, 'set-stamp-epic', plans=[_make_plan('PLAN-01')])
 
-        cmd_queue(
-            _queue_args('set-stamp-epic', set_row='PLAN-01', field='landing', value='x.md')
-        )
+        cmd_queue(_queue_args('set-stamp-epic', set_row='PLAN-01', field='landing', value='x.md'))
 
         assert _read_status_file(status_path)['updated'] != FIXED_TIMESTAMP
 
     def test_should_error_for_unknown_plan_id(self, plan_context):
         _write_status(plan_context, 'set-miss-epic', plans=[_make_plan('PLAN-01')])
 
-        result = cmd_queue(
-            _queue_args('set-miss-epic', set_row='PLAN-99', field='pr', value='#1')
-        )
+        result = cmd_queue(_queue_args('set-miss-epic', set_row='PLAN-99', field='pr', value='#1'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'plan_not_found'
         assert result['available_plans'] == ['PLAN-01']
 
     def test_should_error_for_unknown_field(self, plan_context):
-        status_path = _write_status(
-            plan_context, 'set-field-epic', plans=[_make_plan('PLAN-01')]
-        )
+        status_path = _write_status(plan_context, 'set-field-epic', plans=[_make_plan('PLAN-01')])
 
-        result = cmd_queue(
-            _queue_args('set-field-epic', set_row='PLAN-01', field='status', value='shipped')
-        )
+        result = cmd_queue(_queue_args('set-field-epic', set_row='PLAN-01', field='status', value='shipped'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_field'
@@ -547,9 +538,7 @@ class TestQueueSetRow:
         assert result['error'] == 'wrong_parameters'
 
     def test_should_error_when_status_json_missing(self, plan_context):
-        result = cmd_queue(
-            _queue_args('set-absent-epic', set_row='PLAN-01', field='pr', value='#1')
-        )
+        result = cmd_queue(_queue_args('set-absent-epic', set_row='PLAN-01', field='pr', value='#1'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'file_not_found'
@@ -573,14 +562,10 @@ def _documented_entries(anchor: str) -> tuple[list[str], int]:
     into a bare empty result is what would let a reworded doc pass this file
     silently.
     """
-    lines = [
-        line
-        for line in SKILL_MD_PATH.read_text(encoding='utf-8').splitlines()
-        if line.startswith(anchor)
-    ]
+    lines = [line for line in SKILL_MD_PATH.read_text(encoding='utf-8').splitlines() if line.startswith(anchor)]
     if len(lines) != 1:
         return [], len(lines)
-    return _BACKTICKED_RE.findall(lines[0][len(anchor):]), 1
+    return _BACKTICKED_RE.findall(lines[0][len(anchor) :]), 1
 
 
 def _assert_extraction_is_not_vacuous(
@@ -639,9 +624,7 @@ class TestDocumentedFieldWhitelistMatchesDeclaration:
     def test_the_whitelist_and_its_declaration_are_both_non_empty(self):
         documented, anchor_matches = _documented_entries(FIELD_WHITELIST_ANCHOR)
 
-        _assert_extraction_is_not_vacuous(
-            FIELD_WHITELIST_ANCHOR, documented, anchor_matches, PLAN_ROW_FIELDS
-        )
+        _assert_extraction_is_not_vacuous(FIELD_WHITELIST_ANCHOR, documented, anchor_matches, PLAN_ROW_FIELDS)
 
     def test_documented_whitelist_equals_plan_row_fields(self):
         documented, _ = _documented_entries(FIELD_WHITELIST_ANCHOR)
@@ -667,16 +650,12 @@ class TestDocumentedSeedFieldsMatchDeclaration:
     def test_the_seed_fields_and_their_declaration_are_both_non_empty(self):
         documented, anchor_matches = _documented_entries(ADD_ROW_SEED_FIELDS_ANCHOR)
 
-        _assert_extraction_is_not_vacuous(
-            ADD_ROW_SEED_FIELDS_ANCHOR, documented, anchor_matches, ADD_ROW_SEED_FIELDS
-        )
+        _assert_extraction_is_not_vacuous(ADD_ROW_SEED_FIELDS_ANCHOR, documented, anchor_matches, ADD_ROW_SEED_FIELDS)
 
     def test_documented_seed_fields_equal_add_row_seed_fields(self):
         documented, _ = _documented_entries(ADD_ROW_SEED_FIELDS_ANCHOR)
 
-        _assert_sets_agree(
-            ADD_ROW_SEED_FIELDS_ANCHOR, documented, ADD_ROW_SEED_FIELDS
-        )
+        _assert_sets_agree(ADD_ROW_SEED_FIELDS_ANCHOR, documented, ADD_ROW_SEED_FIELDS)
 
     def test_documented_seed_fields_are_in_declaration_order(self):
         documented, _ = _documented_entries(ADD_ROW_SEED_FIELDS_ANCHOR)
@@ -694,9 +673,7 @@ class TestDocumentedSeedFieldsMatchDeclaration:
 # =============================================================================
 
 
-def _add_row_args(
-    slug: str, plan_id: str = 'PLAN-07', **overrides: Any
-) -> argparse.Namespace:
+def _add_row_args(slug: str, plan_id: str = 'PLAN-07', **overrides: Any) -> argparse.Namespace:
     """A complete ``--add-row`` namespace, with the required triple supplied.
 
     ``overrides`` names only what a case differs in, so a test asserting the
@@ -732,13 +709,9 @@ class TestQueueAddRow:
         assert result['plan'] == 'PLAN-07'
         assert _read_status_file(status_path)['plans'] == [_make_plan('PLAN-07')]
 
-    def test_should_append_onto_a_populated_queue_leaving_siblings_untouched(
-        self, plan_context
-    ):
+    def test_should_append_onto_a_populated_queue_leaving_siblings_untouched(self, plan_context):
         existing = [_make_plan('PLAN-01', status='running'), _make_plan('PLAN-02')]
-        status_path = _write_status(
-            plan_context, 'add-populated-epic', plans=copy.deepcopy(existing)
-        )
+        status_path = _write_status(plan_context, 'add-populated-epic', plans=copy.deepcopy(existing))
 
         cmd_queue(_add_row_args('add-populated-epic'))
 
@@ -772,13 +745,9 @@ class TestQueueAddRow:
         assert result['row']['status'] == 'running'
         assert _read_status_file(status_path)['plans'][0]['status'] == 'running'
 
-    def test_should_reject_a_duplicate_plan_id_leaving_the_queue_unchanged(
-        self, plan_context
-    ):
+    def test_should_reject_a_duplicate_plan_id_leaving_the_queue_unchanged(self, plan_context):
         existing = [_make_plan('PLAN-07', status='shipped', pr='#900')]
-        status_path = _write_status(
-            plan_context, 'add-dup-epic', plans=copy.deepcopy(existing)
-        )
+        status_path = _write_status(plan_context, 'add-dup-epic', plans=copy.deepcopy(existing))
         before = _read_status_file(status_path)
 
         result = cmd_queue(_add_row_args('add-dup-epic'))
@@ -791,9 +760,7 @@ class TestQueueAddRow:
         assert _read_status_file(status_path) == before
 
     def test_should_stamp_updated_only_on_a_real_append(self, plan_context):
-        status_path = _write_status(
-            plan_context, 'add-stamp-epic', plans=[_make_plan('PLAN-07')]
-        )
+        status_path = _write_status(plan_context, 'add-stamp-epic', plans=[_make_plan('PLAN-07')])
 
         rejected = cmd_queue(_add_row_args('add-stamp-epic'))
         assert _read_status_file(status_path)['updated'] == FIXED_TIMESTAMP
@@ -890,9 +857,7 @@ class TestQueueAddRowRejections:
     def test_should_require_add_row_with_its_companions(self, plan_context):
         _write_status(plan_context, 'add-companion-epic', plans=[])
 
-        result = cmd_queue(
-            _queue_args('add-companion-epic', slug_value='plan-07', workstream='WS-01')
-        )
+        result = cmd_queue(_queue_args('add-companion-epic', slug_value='plan-07', workstream='WS-01'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'wrong_parameters'
@@ -900,9 +865,7 @@ class TestQueueAddRowRejections:
     def test_should_reject_add_row_combined_with_transition(self, plan_context):
         _write_status(plan_context, 'add-excl-tr-epic', plans=[_make_plan('PLAN-01')])
 
-        result = cmd_queue(
-            _add_row_args('add-excl-tr-epic', transition='PLAN-01', status='running')
-        )
+        result = cmd_queue(_add_row_args('add-excl-tr-epic', transition='PLAN-01', status='running'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'wrong_parameters'
@@ -910,9 +873,7 @@ class TestQueueAddRowRejections:
     def test_should_reject_add_row_combined_with_set_row(self, plan_context):
         _write_status(plan_context, 'add-excl-sr-epic', plans=[_make_plan('PLAN-01')])
 
-        result = cmd_queue(
-            _add_row_args('add-excl-sr-epic', set_row='PLAN-01', field='pr', value='#1')
-        )
+        result = cmd_queue(_add_row_args('add-excl-sr-epic', set_row='PLAN-01', field='pr', value='#1'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'wrong_parameters'
@@ -990,9 +951,7 @@ class TestQueueAddRowStatusDocumentGuard:
         # create the document it was asked to append to.
         assert not status_path.exists()
 
-    def test_should_seed_the_queue_when_the_document_is_an_empty_object(
-        self, plan_context
-    ):
+    def test_should_seed_the_queue_when_the_document_is_an_empty_object(self, plan_context):
         """An empty ``{}`` document is a valid object, so the first append lands.
 
         This is the arm a parsed-document truthiness guard fails: ``{}`` is
@@ -1017,9 +976,7 @@ class TestQueueAddRowStatusDocumentGuard:
         ],
         ids=['unparseable', 'array', 'string', 'null'],
     )
-    def test_should_refuse_a_present_non_object_document_without_writing(
-        self, plan_context, slug, body, observed_type
-    ):
+    def test_should_refuse_a_present_non_object_document_without_writing(self, plan_context, slug, body, observed_type):
         """A present-but-unusable document is refused, never reported absent.
 
         Presence alone would not be safe here: ``rmw_json``'s own read degrades
@@ -1071,12 +1028,8 @@ class TestQueueAddRowMalformedPlans:
         assert _read_status_file(status_path) == before
         assert _read_status_file(status_path)['plans'] == malformed
 
-    def test_should_still_seed_the_queue_when_the_plans_key_is_absent(
-        self, plan_context
-    ):
-        status_path = _write_status(
-            plan_context, 'add-plans-absent-epic', plans=_OMIT_PLANS
-        )
+    def test_should_still_seed_the_queue_when_the_plans_key_is_absent(self, plan_context):
+        status_path = _write_status(plan_context, 'add-plans-absent-epic', plans=_OMIT_PLANS)
         assert 'plans' not in _read_status_file(status_path)
 
         result = cmd_queue(_add_row_args('add-plans-absent-epic'))
@@ -1097,9 +1050,7 @@ class TestQueueAddRowSpecPresence:
         assert result['spec_absent_warning'] == ''
         assert result['spec_probe_error'] == ''
 
-    def test_should_report_absent_when_the_plans_dir_holds_no_matching_spec(
-        self, plan_context
-    ):
+    def test_should_report_absent_when_the_plans_dir_holds_no_matching_spec(self, plan_context):
         _write_status(plan_context, 'spec-absent-epic', plans=[])
         _write_spec(plan_context, 'spec-absent-epic', 'PLAN-99-other.md')
 
@@ -1125,9 +1076,7 @@ class TestQueueAddRowSpecPresence:
         # reach the branch a chmod-based probe cannot reach when tests run as
         # root. Nothing was observed, so the verdict must NOT read as ``absent``.
         _write_status(plan_context, 'spec-unlistable-epic', plans=[])
-        (_epic_dir(plan_context, 'spec-unlistable-epic') / 'plans').write_text(
-            'not a directory', encoding='utf-8'
-        )
+        (_epic_dir(plan_context, 'spec-unlistable-epic') / 'plans').write_text('not a directory', encoding='utf-8')
 
         result = cmd_queue(_add_row_args('spec-unlistable-epic'))
 
@@ -1201,9 +1150,7 @@ class TestResumeSummary:
         assert 'PLAN-01' not in queue
 
     def test_should_mark_terminal_row_missing_both_links(self, plan_context):
-        _write_status(
-            plan_context, 'gap-both-epic', plans=[_make_plan('PLAN-01', status='shipped')]
-        )
+        _write_status(plan_context, 'gap-both-epic', plans=[_make_plan('PLAN-01', status='shipped')])
 
         result = cmd_resume_summary(_variant(_RESUME_SUMMARY_ARGS, slug='gap-both-epic'))
 
@@ -1236,9 +1183,7 @@ class TestResumeSummary:
         _write_status(
             plan_context,
             'gap-none-epic',
-            plans=[
-                _make_plan('PLAN-01', status='shipped', pr='#901', landing='PLAN-01.md')
-            ],
+            plans=[_make_plan('PLAN-01', status='shipped', pr='#901', landing='PLAN-01.md')],
         )
 
         result = cmd_resume_summary(_variant(_RESUME_SUMMARY_ARGS, slug='gap-none-epic'))
@@ -1298,9 +1243,7 @@ class TestResumeSummaryDerivedInbox:
     and is authoritative over it.
     """
 
-    def test_should_render_the_derived_inbox_line_from_the_filesystem(
-        self, plan_context
-    ):
+    def test_should_render_the_derived_inbox_line_from_the_filesystem(self, plan_context):
         _write_status(plan_context, 'inbox-count-epic')
         _seed_inbox(plan_context, 'inbox-count-epic', queued=2, archived=3)
 
@@ -1329,9 +1272,7 @@ class TestResumeSummaryDerivedInbox:
         assert '**Inbox (derived)**: 0 queued, 0 archived' in result['summary']
         assert result['inbox_state'] == 'present'
 
-    def test_should_render_an_absent_inbox_explicitly_not_as_zero_queued(
-        self, plan_context
-    ):
+    def test_should_render_an_absent_inbox_explicitly_not_as_zero_queued(self, plan_context):
         # Could not look. Rendering "0 queued" here would be the same collapse
         # ``inbox list`` refuses to make.
         _write_status(plan_context, 'inbox-absent-epic')
@@ -1358,9 +1299,7 @@ class TestResumeSummaryDerivedInbox:
         assert looked['summary'] != could_not_look['summary']
         assert looked['inbox_state'] != could_not_look['inbox_state']
 
-    def test_should_keep_a_stale_anchor_verbatim_beside_the_derived_truth(
-        self, plan_context
-    ):
+    def test_should_keep_a_stale_anchor_verbatim_beside_the_derived_truth(self, plan_context):
         # The whole point of the deliverable: the operator's prose is NEVER
         # silently rewritten, and the live count sits visibly next to it so the
         # contradiction is readable instead of hidden.
@@ -1378,18 +1317,14 @@ class TestResumeSummaryDerivedInbox:
         assert '**Inbox (derived)**: 3 queued, 0 archived' in summary
         assert result['inbox_queued'] == 3
 
-    def test_should_render_the_derived_line_separately_from_the_anchor_line(
-        self, plan_context
-    ):
+    def test_should_render_the_derived_line_separately_from_the_anchor_line(self, plan_context):
         # Separate LINES, so neither can be mistaken for the other's authority.
         _write_status(plan_context, 'separate-lines-epic')
         _seed_inbox(plan_context, 'separate-lines-epic', queued=1)
 
         lines = cmd_resume_summary(_variant(_RESUME_SUMMARY_ARGS, slug='separate-lines-epic'))['summary']
 
-        anchor_line = next(
-            line for line in lines.split('\n') if line.startswith('**Resume anchor**')
-        )
+        anchor_line = next(line for line in lines.split('\n') if line.startswith('**Resume anchor**'))
         assert 'Inbox (derived)' not in anchor_line
 
     def test_should_agree_with_inbox_list_for_the_same_epic(self, plan_context):
@@ -1423,9 +1358,7 @@ class TestResumeSummaryDerivedInbox:
         assert summary['inbox_state'] == listed['inbox_state'] == 'missing'
         assert summary['inbox_queued'] == listed['count'] == 0
 
-    def test_should_only_count_files_matching_the_channel_filename_grammar(
-        self, plan_context
-    ):
+    def test_should_only_count_files_matching_the_channel_filename_grammar(self, plan_context):
         # The archived tally uses the SAME shape filter the channel allocates
         # with, so an unrelated file dropped into archive/ never inflates it.
         _write_status(plan_context, 'shape-filter-epic')

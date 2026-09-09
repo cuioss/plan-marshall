@@ -32,17 +32,13 @@ import pytest
 
 from conftest import load_script_module
 
-_findings_core = load_script_module(
-    'plan-marshall', 'manage-findings', '_findings_core.py', '_findings_core'
-)
+_findings_core = load_script_module('plan-marshall', 'manage-findings', '_findings_core.py', '_findings_core')
 _store_state = load_script_module(
     'plan-marshall', 'manage-findings', '_findings_store_state.py', '_findings_store_state'
 )
 # Loaded AFTER _findings_core so its `from _findings_core import ...` resolves to
 # the instance already registered in sys.modules rather than a second copy.
-_findings_ingest = load_script_module(
-    'plan-marshall', 'manage-findings', '_findings_ingest.py', '_findings_ingest'
-)
+_findings_ingest = load_script_module('plan-marshall', 'manage-findings', '_findings_ingest.py', '_findings_ingest')
 
 #: Every module that defines a findings operation surface. The roster below is
 #: the union over these, so a surface is covered by which MODULE it lives in
@@ -59,9 +55,7 @@ FINDINGS_STORE_UNRESOLVED = _store_state.FINDINGS_STORE_UNRESOLVED
 QGATE_PERSIST_OK = _findings_core.QGATE_PERSIST_OK
 
 #: The four store-state fields every operation surface must publish.
-_STORE_STATE_KEYS = frozenset(
-    {'store_resolution', 'store_path', 'findings_store_state', 'unresolved_store'}
-)
+_STORE_STATE_KEYS = frozenset({'store_resolution', 'store_path', 'findings_store_state', 'unresolved_store'})
 
 #: A hash that exists in no store, used to drive the not-found branch of the
 #: hash-keyed surfaces. Six hex chars, matching ``HASH_ID_LENGTH``.
@@ -102,9 +96,7 @@ def _operation_roster() -> dict[str, object]:
             {
                 name: fn
                 for name, fn in inspect.getmembers(module, inspect.isfunction)
-                if fn.__module__ == module.__name__
-                and not name.startswith('_')
-                and not _is_path_helper(name)
+                if fn.__module__ == module.__name__ and not name.startswith('_') and not _is_path_helper(name)
             }
         )
     return roster
@@ -134,9 +126,7 @@ _SHAPE_A_INVOCATIONS = {
     'promote_finding': lambda core, pid: core.promote_finding(pid, _ABSENT_HASH, 'architecture'),
     'mark_finding_responded': lambda core, pid: core.mark_finding_responded(pid, _ABSENT_HASH),
     'query_qgate_findings': lambda core, pid: core.query_qgate_findings(pid, '5-execute'),
-    'resolve_qgate_finding': lambda core, pid: core.resolve_qgate_finding(
-        pid, '5-execute', _ABSENT_HASH, 'fixed'
-    ),
+    'resolve_qgate_finding': lambda core, pid: core.resolve_qgate_finding(pid, '5-execute', _ABSENT_HASH, 'fixed'),
     'resolve_qgate_findings_by_evidence': lambda core, pid: core.resolve_qgate_findings_by_evidence(
         pid, '5-execute', []
     ),
@@ -157,9 +147,7 @@ _SHAPE_A_INVOCATIONS = {
 #: Shape-C assertions read the tuple form for that one member.
 _SHAPE_C_INVOCATIONS = {
     'add_finding': lambda core, pid: core.add_finding(pid, 'bug', 'Title', 'Detail'),
-    'add_qgate_finding': lambda core, pid: core.add_qgate_finding(
-        pid, '5-execute', 'qgate', 'bug', 'Title', 'Detail'
-    ),
+    'add_qgate_finding': lambda core, pid: core.add_qgate_finding(pid, '5-execute', 'qgate', 'bug', 'Title', 'Detail'),
     'add_qgate_finding_checked': lambda core, pid: core.add_qgate_finding_checked(
         pid, '5-execute', 'qgate', 'bug', 'Checked title', 'Detail'
     ),
@@ -258,9 +246,7 @@ def test_plan_absent_when_the_plan_directory_is_not_under_the_resolved_root(plan
     store = resolve_findings_store(plan_id)
 
     assert store.state == 'plan_absent'
-    assert str(plan_context.fixture_dir) in store.detail, (
-        'the refusal must name the resolved root it looked under'
-    )
+    assert str(plan_context.fixture_dir) in store.detail, 'the refusal must name the resolved root it looked under'
 
 
 def test_unknown_returns_rather_than_raises_when_the_root_cannot_be_resolved(monkeypatch):
@@ -377,9 +363,7 @@ def test_every_shape_a_surface_publishes_the_store_state_fields(plan_context, su
     result = _SHAPE_A_INVOCATIONS[surface](_findings_core, plan_id)
 
     assert isinstance(result, dict), f'{surface} returned {type(result)!r}'
-    assert _STORE_STATE_KEYS <= set(result), (
-        f'{surface} omits {sorted(_STORE_STATE_KEYS - set(result))}'
-    )
+    assert _STORE_STATE_KEYS <= set(result), f'{surface} omits {sorted(_STORE_STATE_KEYS - set(result))}'
     assert result['findings_store_state'] == 'present'
     assert result['unresolved_store'] is False
 
@@ -439,18 +423,16 @@ def _seed_cross_store(plan_context, plan_id: str):
     """
     plan_context.plan_dir_for(plan_id)
     plan_hash = _findings_core.add_finding(plan_id, 'bug', 'Plan finding', 'Detail')['hash_id']
-    qgate_hash = _findings_core.add_qgate_finding(
-        plan_id, '5-execute', 'qgate', 'bug', 'Q-Gate finding', 'Detail'
-    )['hash_id']
+    qgate_hash = _findings_core.add_qgate_finding(plan_id, '5-execute', 'qgate', 'bug', 'Q-Gate finding', 'Detail')[
+        'hash_id'
+    ]
     assessment_hash = _findings_core.add_assessment(plan_id, 'src/a.py', 'UNCERTAIN', 50)['hash_id']
     return plan_hash, qgate_hash, assessment_hash
 
 
 @pytest.mark.parametrize('verb', ['resolve_finding', 'promote_finding', 'mark_finding_responded'])
 @pytest.mark.parametrize('sibling', ['qgate', 'assessment'])
-def test_plan_findings_write_verbs_leave_a_sibling_store_byte_identical(
-    plan_context, verb, sibling
-):
+def test_plan_findings_write_verbs_leave_a_sibling_store_byte_identical(plan_context, verb, sibling):
     """A Q-Gate / assessment hash is identified and refused, never written.
 
     The assertion is on the FILE BYTES, not on the returned payload: a verb that
@@ -557,9 +539,7 @@ def test_shape_c_surfaces_refuse_an_absent_plan_directory(plan_context, surface)
         # even if ``error`` had been added to QGATE_PERSIST_OK and every rejected
         # persist started laundering into a benign no-op. The load-bearing
         # invariant is the same-vocabulary one below.
-        primitive = _findings_core.add_qgate_finding(
-            plan_id, '5-execute', 'qgate', 'bug', 'Checked title', 'Detail'
-        )
+        primitive = _findings_core.add_qgate_finding(plan_id, '5-execute', 'qgate', 'bug', 'Checked title', 'Detail')
         assert primitive['status'] == 'error'
         assert primitive['status'] not in QGATE_PERSIST_OK
         assert primitive['error'] == FINDINGS_STORE_UNRESOLVED
@@ -622,9 +602,7 @@ def test_add_qgate_finding_refusal_is_outside_the_persist_ok_partition(plan_cont
     plan_id = 'qgate-refusal-partition'
     assert not (plan_context.plans_dir / plan_id).exists()
 
-    result = _findings_core.add_qgate_finding(
-        plan_id, '5-execute', 'qgate', 'bug', 'Title', 'Detail'
-    )
+    result = _findings_core.add_qgate_finding(plan_id, '5-execute', 'qgate', 'bug', 'Title', 'Detail')
 
     assert result['status'] == 'error'
     assert result['status'] not in QGATE_PERSIST_OK

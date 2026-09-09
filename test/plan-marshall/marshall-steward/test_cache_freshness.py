@@ -334,9 +334,7 @@ def test_every_refusing_verdict_emits_the_reload_step(tmp_path: Path):
     assert fresh['remediation'] == ''
 
 
-def test_cli_stale_verdict_carries_the_reload_step_through_toon(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-):
+def test_cli_stale_verdict_carries_the_reload_step_through_toon(tmp_path: Path, capsys: pytest.CaptureFixture[str]):
     """The reload step survives TOON serialization to the CLI consumer.
 
     The remediation is a long single-line value containing quotes, an em dash and

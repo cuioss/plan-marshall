@@ -202,9 +202,7 @@ def _resolve_merge_base(worktree_path: str, base_branch: str) -> tuple[str, str]
     ancestor, or ``origin/{base}`` does not resolve) — the caller fails closed
     rather than classifying against a bogus anchor.
     """
-    rc, stdout, _ = run_git(
-        ['-C', worktree_path, 'merge-base', 'HEAD', f'origin/{base_branch}']
-    )
+    rc, stdout, _ = run_git(['-C', worktree_path, 'merge-base', 'HEAD', f'origin/{base_branch}'])
     if rc != 0 or not stdout.strip():
         return '', 'unresolved'
     return stdout.strip(), 'merge_base'
@@ -233,10 +231,10 @@ def _detect_remote_default_branch(worktree_path: str) -> str | None:
         for line in stdout.splitlines():
             if line.startswith('ref:'):
                 # Format: ``ref: refs/heads/{name}\tHEAD``
-                rest = line[len('ref:'):].strip()
+                rest = line[len('ref:') :].strip()
                 ref = rest.split('\t', 1)[0].strip() if '\t' in rest else rest.split()[0]
                 if ref.startswith('refs/heads/'):
-                    return ref[len('refs/heads/'):]
+                    return ref[len('refs/heads/') :]
 
     for fallback in ('main', 'master'):
         if _remote_branch_exists(worktree_path, fallback):
@@ -657,9 +655,7 @@ def _list_in_flight_files(worktree_path: str, merge_base_sha: str) -> set[str]:
     files the plan never touched and turning the upstream/in-flight overlap
     spuriously non-empty.
     """
-    rc, stdout, _ = run_git(
-        ['-C', worktree_path, 'diff', '--name-only', f'{merge_base_sha}..HEAD']
-    )
+    rc, stdout, _ = run_git(['-C', worktree_path, 'diff', '--name-only', f'{merge_base_sha}..HEAD'])
     if rc != 0 or not stdout:
         return set()
     return {line.strip() for line in stdout.splitlines() if line.strip()}

@@ -80,9 +80,7 @@ def fetch_pr_head_committed_at(pr_number: int | str) -> str:
     must not become an ordering claim.
     """
 
-    returncode, stdout, _stderr = github_ops.run_gh(
-        ['pr', 'view', str(pr_number), '--json', 'commits,headRefOid']
-    )
+    returncode, stdout, _stderr = github_ops.run_gh(['pr', 'view', str(pr_number), '--json', 'commits,headRefOid'])
     if returncode != 0:
         return ''
     try:
@@ -366,9 +364,7 @@ def cmd_ci_wait(args: argparse.Namespace) -> dict:
             return not waiting
 
         remaining = max(1, int(deadline - _monotonic()))
-        poll_result = github_ops.poll_until(
-            _check_fn, _is_complete_fn, timeout=remaining, interval=args.interval
-        )
+        poll_result = github_ops.poll_until(_check_fn, _is_complete_fn, timeout=remaining, interval=args.interval)
         if 'error' in poll_result:
             return make_error('ci_wait', poll_result['error'], poll_result['last_data'].get('context', ''))
         checks = poll_result['last_data'].get('checks', [])

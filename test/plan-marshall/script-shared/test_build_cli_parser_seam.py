@@ -74,11 +74,7 @@ def _wrappers_calling_build_main() -> set[tuple[str, str]]:
         except SyntaxError:  # pragma: no cover - a marketplace script that parses is the norm
             continue
         for node in ast.walk(tree):
-            if (
-                isinstance(node, ast.Call)
-                and isinstance(node.func, ast.Name)
-                and node.func.id == 'build_main'
-            ):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == 'build_main':
                 found.add((path.parents[1].name, path.name))
                 break
     return found
@@ -168,13 +164,9 @@ def test_seam_publishes_every_shared_subcommand_but_the_config_bound_one():
     """
     cli = load_script_module(BUNDLE, SKILL, CLI_SCRIPT, register=False)
 
-    shared = set.intersection(
-        *(_wrapper_subcommands(skill, script) for skill, script in WRAPPER_SCRIPTS)
-    )
+    shared = set.intersection(*(_wrapper_subcommands(skill, script) for skill, script in WRAPPER_SCRIPTS))
 
-    assert CONFIG_BOUND_SUBCOMMAND in shared, (
-        'the exclusion below is only meaningful while every wrapper registers it'
-    )
+    assert CONFIG_BOUND_SUBCOMMAND in shared, 'the exclusion below is only meaningful while every wrapper registers it'
     assert _subcommands(cli.build_parser()) == shared - {CONFIG_BOUND_SUBCOMMAND}
 
 
@@ -185,9 +177,7 @@ def test_execute_factory_seam_yields_the_shared_run_namespace(shared_run_ns):
     assert vars(factory_ns) == vars(shared_run_ns)
 
 
-@pytest.mark.parametrize(
-    ('skill', 'script'), WRAPPER_SCRIPTS, ids=[skill for skill, _ in WRAPPER_SCRIPTS]
-)
+@pytest.mark.parametrize(('skill', 'script'), WRAPPER_SCRIPTS, ids=[skill for skill, _ in WRAPPER_SCRIPTS])
 def test_shared_run_surface_is_a_restriction_of_each_wrapper(shared_run_ns, skill, script):
     """Every shared ``run`` attribute is present in each wrapper's own ``run`` namespace, with the same value.
 

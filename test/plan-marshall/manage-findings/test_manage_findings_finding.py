@@ -12,7 +12,6 @@ Its sections, in order:
 * Finding Resolve with taken_into_account (extended)
 """
 
-
 from _manage_findings_fixtures import (
     _add_ns,
     _promote_ns,

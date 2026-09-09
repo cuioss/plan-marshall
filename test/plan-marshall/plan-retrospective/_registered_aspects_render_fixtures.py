@@ -39,7 +39,6 @@ The scripts are loaded by explicit importlib path via ``conftest.load_script_mod
 depend on conftest import-name discovery order.
 """
 
-
 from __future__ import annotations
 
 import re

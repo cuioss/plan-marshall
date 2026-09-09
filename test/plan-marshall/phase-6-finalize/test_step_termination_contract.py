@@ -70,23 +70,14 @@ _SKILL_DIR = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize'
 _CONTRACT_DOC = _SKILL_DIR / 'standards' / 'external-step-contract.md'
 _SKILL_DOC = _SKILL_DIR / 'SKILL.md'
 _ROSTER_DOC = _SKILL_DIR / 'standards' / 'dispatch-inline-split.md'
-_AGENTS_DOC = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'ref-workflow-architecture'
-    / 'standards'
-    / 'agents.md'
-)
+_AGENTS_DOC = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'ref-workflow-architecture' / 'standards' / 'agents.md'
 
 _TERMINATION_HEADING = '## Required termination'
 _DISPATCHED_HEADING = '## Dispatched steps'
 
 #: The agents.md section that now OWNS the record-before-return invariant for
 #: every dispatched leaf (external steps included).
-_RECORD_COROLLARY_HEADING = (
-    '### Leaf must record its terminal outcome BEFORE composing its return'
-)
+_RECORD_COROLLARY_HEADING = '### Leaf must record its terminal outcome BEFORE composing its return'
 
 #: Corollary sections carry a ``### Leaf ...`` heading. The leaf/dispatch-topology
 #: invariant itself ("a leaf cannot spawn a subagent") is the FIRST corollary but
@@ -96,9 +87,7 @@ _COROLLARY_HEADING = re.compile(r'^###\s+Leaf\s+(?:cannot|must)\b', re.MULTILINE
 _BASE_INVARIANT_COROLLARY_COUNT = 1
 
 #: The ordinal naming the backgrounded-build corollary's position.
-_COROLLARY_ORDINAL = re.compile(
-    r'This is the (\w+) corollary of the leaf/dispatch-topology invariant'
-)
+_COROLLARY_ORDINAL = re.compile(r'This is the (\w+) corollary of the leaf/dispatch-topology invariant')
 
 #: The parenthetical enumeration in that same sentence. Items are comma
 #: separated with a trailing ``and``.
@@ -117,9 +106,7 @@ _ORDINAL_WORDS = {
 }
 
 #: Pre-fix phrasings that scoped the invariant to external steps only.
-_EXTERNAL_ONLY_SCOPING = re.compile(
-    r'\bevery\s+external\s+step\b[^.]{0,120}?\bmark-step-done\b', re.IGNORECASE
-)
+_EXTERNAL_ONLY_SCOPING = re.compile(r'\bevery\s+external\s+step\b[^.]{0,120}?\bmark-step-done\b', re.IGNORECASE)
 
 #: The two error codes the dispatcher-side guard distinguishes.
 _GUARD_ERROR_CODES = ('step_record_missing', 'step_record_mismatched_key')
@@ -138,12 +125,8 @@ _BUILTIN_REACH_POINT = re.compile(
 #: Stale key-form instructions removed by this deliverable. Each pattern matched
 #: the pre-fix sentence: "Must match the fully-qualified step name as listed in
 #: `marshal.json` (e.g. `default:push`, ...)".
-_STALE_MARSHAL_KEY_FORM = re.compile(
-    r'step\s+name\s+as\s+listed\s+in\s+`?marshal\.json`?', re.IGNORECASE
-)
-_STALE_FULLY_QUALIFIED_MUST_MATCH = re.compile(
-    r'[Mm]ust\s+match\s+the\s+fully-qualified\s+step\s+name', re.IGNORECASE
-)
+_STALE_MARSHAL_KEY_FORM = re.compile(r'step\s+name\s+as\s+listed\s+in\s+`?marshal\.json`?', re.IGNORECASE)
+_STALE_FULLY_QUALIFIED_MUST_MATCH = re.compile(r'[Mm]ust\s+match\s+the\s+fully-qualified\s+step\s+name', re.IGNORECASE)
 
 _STALE_PATTERNS = (
     ('stale-marshal-json-key-form', _STALE_MARSHAL_KEY_FORM),
@@ -187,9 +170,7 @@ def _section_body(text: str, heading: str, stop_prefixes: tuple[str, ...]) -> st
 
 def _record_corollary_section() -> str:
     """Return the agents.md record-before-return corollary body."""
-    return _section_body(
-        _agents_text(), _RECORD_COROLLARY_HEADING, ('### ', '## ', '---')
-    )
+    return _section_body(_agents_text(), _RECORD_COROLLARY_HEADING, ('### ', '## ', '---'))
 
 
 def _dispatched_roster() -> list[str]:
@@ -233,10 +214,7 @@ def _declared_enumeration_items(text: str) -> list[str] | None:
 def test_required_termination_section_is_present_and_non_empty():
     section = _termination_section()
 
-    assert section.strip(), (
-        f'{_TERMINATION_HEADING!r} section is empty — the assertions below '
-        f'would be vacuous'
-    )
+    assert section.strip(), f'{_TERMINATION_HEADING!r} section is empty — the assertions below would be vacuous'
 
 
 # ---------------------------------------------------------------------------
@@ -258,8 +236,7 @@ def test_step_argument_names_the_composed_manifest_catalog_key():
     section = _termination_section().lower()
 
     assert 'composed manifest catalog key' in section, (
-        'The --step contract must direct authors to the composed manifest '
-        'catalog key, not a marshal.json step name'
+        'The --step contract must direct authors to the composed manifest catalog key, not a marshal.json step name'
     )
 
 
@@ -285,12 +262,10 @@ def test_ordering_invariant_is_stated_explicitly():
 
     assert 'before' in section
     assert 'return toon' in section, (
-        'The ordering invariant must name the return TOON as the thing the '
-        'terminal mark-step-done call precedes'
+        'The ordering invariant must name the return TOON as the thing the terminal mark-step-done call precedes'
     )
     assert 'never as a trailing' in section, (
-        'The ordering invariant must explicitly forbid the trailing-call shape '
-        '(the omitted-call cause)'
+        'The ordering invariant must explicitly forbid the trailing-call shape (the omitted-call cause)'
     )
 
 
@@ -314,12 +289,10 @@ def test_external_step_contract_delegates_the_invariant_without_restating_it():
     section = _termination_section().lower()
 
     assert 'agents.md' in section, (
-        'external-step-contract.md must cross-reference agents.md as the '
-        'governing invariant rather than owning it'
+        'external-step-contract.md must cross-reference agents.md as the governing invariant rather than owning it'
     )
     assert 'not restated' in section or 'not owned here' in section, (
-        'The delegation must be explicit so a future author does not re-add a '
-        'second copy of the invariant'
+        'The delegation must be explicit so a future author does not re-add a second copy of the invariant'
     )
     # The mechanics it legitimately retains.
     assert 'composed manifest catalog key' in _termination_section().lower()
@@ -392,11 +365,7 @@ def test_invariant_is_reachable_from_every_dispatched_roster_entry():
     # so a dispatched row contributed by any bundle other than `plan-marshall` must
     # land here rather than in `unpartitioned` with the misleading claim that no
     # reach-point binds it.
-    external = [
-        key
-        for key in roster
-        if key.startswith('project:') or (':' in key and not key.startswith('default:'))
-    ]
+    external = [key for key in roster if key.startswith('project:') or (':' in key and not key.startswith('default:'))]
 
     # Every roster row must fall in exactly one partition, or a row shape was
     # added that neither reach-point covers.
@@ -433,9 +402,7 @@ def test_dispatcher_side_half_is_a_contract_violation_not_reconcilable():
         'The dispatcher-side half must state that a success return with a '
         'missing terminal record is NOT a reconcilable condition'
     )
-    assert 'escalate_ask' in section, (
-        'The single sanctioned non-terminal return must be cross-referenced'
-    )
+    assert 'escalate_ask' in section, 'The single sanctioned non-terminal return must be cross-referenced'
 
 
 # ---------------------------------------------------------------------------
@@ -510,8 +477,7 @@ def test_external_only_scoping_detector_fires_on_the_pre_fix_shape():
     )
 
     assert _EXTERNAL_ONLY_SCOPING.search(pre_fix), (
-        'External-only scoping detector failed to fire on the known pre-fix '
-        'phrasing — assertion (d) would be vacuous'
+        'External-only scoping detector failed to fire on the known pre-fix phrasing — assertion (d) would be vacuous'
     )
 
     # Positive control: the post-fix invariant is NOT external-only scoped.
@@ -557,9 +523,7 @@ def test_builtin_reach_point_detector_fires_only_on_a_real_binding():
         'included.** A dispatched step body MUST land its terminal '
         'mark-step-done call BEFORE it composes its return TOON.'
     )
-    assert _BUILTIN_REACH_POINT.search(post_fix), (
-        'Built-in reach-point detector failed to fire on a real binding'
-    )
+    assert _BUILTIN_REACH_POINT.search(post_fix), 'Built-in reach-point detector failed to fire on a real binding'
 
 
 def test_ordinal_enumeration_detectors_fire_on_the_pre_fix_three_item_shape():
@@ -582,9 +546,7 @@ def test_ordinal_enumeration_detectors_fire_on_the_pre_fix_three_item_shape():
 
     # The pre-fix shape would FAIL the lock-step assertions against a document
     # that now carries four corollaries — that failure is the point.
-    assert _declared_corollary_ordinal(pre_fix) != _corollary_section_count(
-        _agents_text()
-    )
+    assert _declared_corollary_ordinal(pre_fix) != _corollary_section_count(_agents_text())
 
 
 # ---------------------------------------------------------------------------

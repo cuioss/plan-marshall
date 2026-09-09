@@ -198,12 +198,16 @@ def _union_into(refs: dict, field: str, derived: set[str]) -> tuple[list[str], l
     if existing is None:
         existing = []
     elif not isinstance(existing, list):
-        return [], [], {
-            'status': 'error',
-            'field': field,
-            'error': 'not_a_list',
-            'message': f"Field '{field}' is not a list",
-        }
+        return (
+            [],
+            [],
+            {
+                'status': 'error',
+                'field': field,
+                'error': 'not_a_list',
+                'message': f"Field '{field}' is not a list",
+            },
+        )
 
     recorded = [str(value) for value in existing]
     added = sorted(derived - set(recorded))

@@ -53,17 +53,13 @@ def _patch_environment(monkeypatch, changed_files):
 
 
 def _run(threshold=None):
-    return scc.cmd_check(
-        Namespace(plan_id='scope-creep-could-not-look', threshold=threshold)
-    )
+    return scc.cmd_check(Namespace(plan_id='scope-creep-could-not-look', threshold=threshold))
 
 
 class TestMissingBaselineCannotRenderAsAMeasuredZero:
     """The named finding, and the control that proves the measured path survives."""
 
-    def test_absent_baseline_reports_could_not_look_without_a_count(
-        self, plan_context, monkeypatch, capsys
-    ):
+    def test_absent_baseline_reports_could_not_look_without_a_count(self, plan_context, monkeypatch, capsys):
         # NEGATIVE — the reproduced conditions: no plan_creation_sha.
         _seed_plan(plan_context, with_baseline=False)
         _patch_environment(monkeypatch, [])
@@ -77,9 +73,7 @@ class TestMissingBaselineCannotRenderAsAMeasuredZero:
         # The load-bearing assertion: the key a consumer gates on is ABSENT.
         assert 'residual_count' not in parsed
 
-    def test_present_baseline_with_no_drift_still_reports_a_measured_zero(
-        self, plan_context, monkeypatch, capsys
-    ):
+    def test_present_baseline_with_no_drift_still_reports_a_measured_zero(self, plan_context, monkeypatch, capsys):
         # POSITIVE — the discriminator. A genuine zero is unchanged, so the
         # negative above cannot be satisfied by dropping the field outright.
         _seed_plan(plan_context, with_baseline=True)
@@ -93,9 +87,7 @@ class TestMissingBaselineCannotRenderAsAMeasuredZero:
         assert parsed['residual_count'] == 0
         assert parsed['finding_emitted'] is False
 
-    def test_present_baseline_with_drift_reports_the_measured_count(
-        self, plan_context, monkeypatch, capsys
-    ):
+    def test_present_baseline_with_drift_reports_the_measured_count(self, plan_context, monkeypatch, capsys):
         # The second positive: a non-zero measurement also survives, so the
         # measured path is shown to report its real value rather than a constant.
         _seed_plan(plan_context, with_baseline=True)
@@ -113,9 +105,7 @@ class TestDisabledGuardCannotRenderAsAMeasuredZero:
     """``--threshold 0`` switches the guard off; a switched-off guard looked at
     nothing, so it reports the same could-not-look shape."""
 
-    def test_disabled_guard_reports_could_not_look_without_a_count(
-        self, plan_context, monkeypatch, capsys
-    ):
+    def test_disabled_guard_reports_could_not_look_without_a_count(self, plan_context, monkeypatch, capsys):
         _seed_plan(plan_context, with_baseline=True)
 
         def _must_not_run(*_a, **_k):
@@ -131,9 +121,7 @@ class TestDisabledGuardCannotRenderAsAMeasuredZero:
         assert parsed['reason'] == 'guard_disabled'
         assert 'residual_count' not in parsed
 
-    def test_enabled_guard_over_the_same_plan_does_measure(
-        self, plan_context, monkeypatch, capsys
-    ):
+    def test_enabled_guard_over_the_same_plan_does_measure(self, plan_context, monkeypatch, capsys):
         # The matched half: the SAME plan and the SAME tree, differing only in
         # whether the guard is switched on — and only then is a count published.
         _seed_plan(plan_context, with_baseline=True)
@@ -150,9 +138,7 @@ class TestDisabledGuardCannotRenderAsAMeasuredZero:
 class TestCouldNotLookNamesItsCause:
     """A refusal that cannot say why is the opaque signal this replaces."""
 
-    def test_every_could_not_look_carries_a_reason_and_a_detail(
-        self, plan_context, monkeypatch, capsys
-    ):
+    def test_every_could_not_look_carries_a_reason_and_a_detail(self, plan_context, monkeypatch, capsys):
         _seed_plan(plan_context, with_baseline=False)
         _patch_environment(monkeypatch, [])
 

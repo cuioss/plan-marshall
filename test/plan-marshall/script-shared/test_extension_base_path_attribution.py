@@ -157,9 +157,7 @@ _DISJOINT_HIERARCHY_IDS = [
 ]
 
 
-@pytest.mark.parametrize(
-    'candidate,hierarchy', _DISJOINT_HIERARCHY_PAIRS, ids=_DISJOINT_HIERARCHY_IDS
-)
+@pytest.mark.parametrize('candidate,hierarchy', _DISJOINT_HIERARCHY_PAIRS, ids=_DISJOINT_HIERARCHY_IDS)
 def test_axis_d_is_disjoint_from_every_other_abc(candidate, hierarchy):
     assert candidate not in hierarchy.__mro__
 
@@ -195,15 +193,17 @@ def test_multiple_inheritance_from_axis_a_side_is_also_valid():
     # Arrange — the shape plan-marshall-plugin uses for its two shipped claims
     class _DomainAndAttributor(ExtensionBase, PathAttributionBase):
         def get_skill_domains(self) -> list[dict]:
-            return [{
-                'domain': {'key': 'fixture', 'name': 'Fixture', 'description': 'Test only'},
-                'profiles': {
-                    'core': {'defaults': [], 'optionals': []},
-                    'implementation': {'defaults': [], 'optionals': []},
-                    'module_testing': {'defaults': [], 'optionals': []},
-                    'quality': {'defaults': [], 'optionals': []},
-                },
-            }]
+            return [
+                {
+                    'domain': {'key': 'fixture', 'name': 'Fixture', 'description': 'Test only'},
+                    'profiles': {
+                        'core': {'defaults': [], 'optionals': []},
+                        'implementation': {'defaults': [], 'optionals': []},
+                        'module_testing': {'defaults': [], 'optionals': []},
+                        'quality': {'defaults': [], 'optionals': []},
+                    },
+                }
+            ]
 
         def path_attributor_id(self) -> str:
             return 'fixture-domain'

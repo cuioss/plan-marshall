@@ -29,8 +29,7 @@ def test_duplication_rule_fires_from_verified_claim():
 
     # Assert
     assert any(f['type'] == 'duplication' for f in findings), (
-        'verify_findings did not emit a duplication finding for the crafted '
-        'true_duplicate claim'
+        'verify_findings did not emit a duplication finding for the crafted true_duplicate claim'
     )
 
 
@@ -42,8 +41,7 @@ def test_extraction_rule_fires_from_verified_claim():
 
     # Assert
     assert any(f['type'] == 'extraction' for f in findings), (
-        'verify_findings did not emit an extraction finding for the crafted '
-        'extraction claim'
+        'verify_findings did not emit an extraction finding for the crafted extraction claim'
     )
 
 
@@ -55,8 +53,7 @@ def test_terminology_rule_fires_from_verified_claim():
 
     # Assert
     assert any(f['type'] == 'terminology' for f in findings), (
-        'verify_findings did not emit a terminology finding for the crafted '
-        'terminology standardize claim'
+        'verify_findings did not emit a terminology finding for the crafted terminology standardize claim'
     )
 
 

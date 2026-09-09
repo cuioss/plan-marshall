@@ -34,9 +34,7 @@ from marketplace.targets.body_transform_engine import (
 
 # The OpenCode rewrite templates, mirrored from mapping.json for direct-applier
 # tests. Integration/composition tests load them from the real mapping.json.
-OPENCODE_DIRECTIVE_TEMPLATE = (
-    'Call the `skill` tool with `{ name: "{bundle}-{skill}" }` before continuing.'
-)
+OPENCODE_DIRECTIVE_TEMPLATE = 'Call the `skill` tool with `{ name: "{bundle}-{skill}" }` before continuing.'
 OPENCODE_READ_TEMPLATE = 'Call the `read` tool with `{ filePath: "{path}" }` before continuing.'
 OPENCODE_SLASH_TEMPLATE = '/{name}'
 
@@ -52,9 +50,7 @@ def _project_root() -> Path:
 #: a skip would silently delete all three and still report the run green.
 _REAL_MARKETPLACE_BUNDLES = Path(PROJECT_ROOT) / 'marketplace' / 'bundles'
 
-assert _REAL_MARKETPLACE_BUNDLES.is_dir(), (
-    f'Marketplace bundles tree not found at {_REAL_MARKETPLACE_BUNDLES}'
-)
+assert _REAL_MARKETPLACE_BUNDLES.is_dir(), f'Marketplace bundles tree not found at {_REAL_MARKETPLACE_BUNDLES}'
 
 
 def _opencode_mapping_path() -> Path:
@@ -89,10 +85,7 @@ def test_rewrite_skill_directives_full_line_match():
 def test_rewrite_skill_directives_full_line_with_extra_spacing():
     body = 'Skill:   plan-marshall:phase-5-execute\n'
     result = rewrite_skill_directives(body, OPENCODE_DIRECTIVE_TEMPLATE)
-    assert (
-        result
-        == 'Call the `skill` tool with `{ name: "plan-marshall-phase-5-execute" }` before continuing.'
-    )
+    assert result == 'Call the `skill` tool with `{ name: "plan-marshall-phase-5-execute" }` before continuing.'
 
 
 def test_rewrite_skill_directives_inline_backtick_left_alone():
@@ -116,11 +109,7 @@ def test_rewrite_skill_directives_idempotent():
 
 
 def test_rewrite_skill_directives_multiple_directives():
-    body = (
-        'Skill: alpha:one\n'
-        'middle prose\n'
-        'Skill: beta:two\n'
-    )
+    body = 'Skill: alpha:one\nmiddle prose\nSkill: beta:two\n'
     result = rewrite_skill_directives(body, OPENCODE_DIRECTIVE_TEMPLATE)
     assert 'Call the `skill` tool with `{ name: "alpha-one" }` before continuing.' in result
     assert 'Call the `skill` tool with `{ name: "beta-two" }` before continuing.' in result
@@ -160,27 +149,18 @@ def test_rewrite_read_directives_full_line_match():
     break."""
     body = 'Read: standards/code-organization.md\n'
     result = rewrite_read_directives(body, OPENCODE_READ_TEMPLATE)
-    assert result == (
-        'Call the `read` tool with `{ filePath: "standards/code-organization.md" }` '
-        'before continuing.\n'
-    )
+    assert result == ('Call the `read` tool with `{ filePath: "standards/code-organization.md" }` before continuing.\n')
 
 
 def test_rewrite_read_directives_full_line_with_extra_spacing():
     body = 'Read:   references/core-principles.md\n'
     result = rewrite_read_directives(body, OPENCODE_READ_TEMPLATE)
-    assert result == (
-        'Call the `read` tool with `{ filePath: "references/core-principles.md" }` '
-        'before continuing.\n'
-    )
+    assert result == ('Call the `read` tool with `{ filePath: "references/core-principles.md" }` before continuing.\n')
 
 
 def test_rewrite_read_directives_preserves_relative_and_placeholder_paths():
     """``../``/``~/``-relative paths and ``{placeholder}`` values pass through whole."""
-    body = (
-        'Read: ../python-core/standards/python-core.md\n'
-        'Read: references/{knowledge-name}.md\n'
-    )
+    body = 'Read: ../python-core/standards/python-core.md\nRead: references/{knowledge-name}.md\n'
     result = rewrite_read_directives(body, OPENCODE_READ_TEMPLATE)
     assert '{ filePath: "../python-core/standards/python-core.md" }' in result
     assert '{ filePath: "references/{knowledge-name}.md" }' in result
@@ -219,10 +199,7 @@ def test_rewrite_read_directives_crlf_ending_keeps_carriage_return_out_of_path()
     the path capture, and the line's CRLF ending survives the rewrite."""
     body = 'Read: standards/foo.md\r\n'
     result = rewrite_read_directives(body, OPENCODE_READ_TEMPLATE)
-    assert result == (
-        'Call the `read` tool with `{ filePath: "standards/foo.md" }` '
-        'before continuing.\r\n'
-    )
+    assert result == ('Call the `read` tool with `{ filePath: "standards/foo.md" }` before continuing.\r\n')
 
 
 def test_rewrite_read_directives_idempotent():
@@ -234,11 +211,7 @@ def test_rewrite_read_directives_idempotent():
 
 
 def test_rewrite_read_directives_multiple_directives():
-    body = (
-        'Read: standards/one.md\n'
-        'middle prose\n'
-        'Read: templates/two.java.tmpl\n'
-    )
+    body = 'Read: standards/one.md\nmiddle prose\nRead: templates/two.java.tmpl\n'
     result = rewrite_read_directives(body, OPENCODE_READ_TEMPLATE)
     assert '{ filePath: "standards/one.md" }' in result
     assert '{ filePath: "templates/two.java.tmpl" }' in result
@@ -359,7 +332,9 @@ def test_build_slash_command_re_drops_empty_strings():
 # ---------------------------------------------------------------------------
 
 
-def _write_skill(marketplace: Path, bundle: str, skill: str, *, user_invocable: bool, description: str = 'desc') -> None:
+def _write_skill(
+    marketplace: Path, bundle: str, skill: str, *, user_invocable: bool, description: str = 'desc'
+) -> None:
     fm_lines = [
         '---',
         f'name: {skill}',
@@ -665,10 +640,7 @@ def test_make_body_transformer_applies_read_directive_from_real_mapping():
     transform = make_body_transformer({}, _opencode_rules())
     body = 'Read: standards/demo-rules.md\n'
     result = transform(body, 'demo', 'skill')
-    assert (
-        result
-        == 'Call the `read` tool with `{ filePath: "standards/demo-rules.md" }` before continuing.\n'
-    )
+    assert result == 'Call the `read` tool with `{ filePath: "standards/demo-rules.md" }` before continuing.\n'
     assert 'Read: standards/demo-rules.md' not in result
 
 

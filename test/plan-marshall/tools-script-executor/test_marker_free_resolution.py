@@ -64,12 +64,7 @@ _KNOWN_MARKER_MENTIONING_MODULES = frozenset(
 )
 
 _GENERATE_SCRIPT = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'tools-script-executor'
-    / 'scripts'
-    / 'generate_executor.py'
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'tools-script-executor' / 'scripts' / 'generate_executor.py'
 )
 
 _SUBPATH = 'skills/skill-x/scripts/bar.py'
@@ -86,7 +81,9 @@ def _load_generate_module():
 
     module = types.ModuleType('generate_executor')
     module.__dict__['__file__'] = str(_GENERATE_SCRIPT)
-    exec(_GENERATE_SCRIPT.read_text(encoding='utf-8'), module.__dict__)  # exec of repo-owned source: loading the generator this way is the point of the fixture
+    exec(
+        _GENERATE_SCRIPT.read_text(encoding='utf-8'), module.__dict__
+    )  # exec of repo-owned source: loading the generator this way is the point of the fixture
     return module
 
 
@@ -222,12 +219,9 @@ def test_saturated_cache_resolves_to_newest_without_degraded_warning(tmp_path, c
     selected = select_live_version_dir(base / 'bundle-a', lambda d: (d / _SUBPATH).exists())
 
     assert selected == newest_eligible, (
-        f'a saturated cache must resolve to the newest eligible dir '
-        f'{newest_eligible!r}, got {selected!r}'
+        f'a saturated cache must resolve to the newest eligible dir {newest_eligible!r}, got {selected!r}'
     )
-    assert capsys.readouterr().err == '', (
-        'the marker-free selector must emit no degraded / saturation stderr line'
-    )
+    assert capsys.readouterr().err == '', 'the marker-free selector must emit no degraded / saturation stderr line'
 
 
 # --------------------------------------------------------------------------- #
@@ -247,9 +241,7 @@ def test_broken_cache_with_no_eligible_candidate_fails_loudly(tmp_path):
 
     selected = select_live_version_dir(base / 'bundle-a', lambda d: (d / _SUBPATH).exists())
 
-    assert selected is None, (
-        f'a cache with no eligible candidate must fail loudly (None), got {selected!r}'
-    )
+    assert selected is None, f'a cache with no eligible candidate must fail loudly (None), got {selected!r}'
 
 
 def test_unreadable_bundle_dir_fails_loudly(tmp_path):
@@ -447,11 +439,7 @@ def _writes_marker(source: str, label: str = '') -> list[str]:
 
 def _swept_sources() -> list[Path]:
     """The production sources the marker sweep visits, ``__pycache__`` excluded."""
-    return sorted(
-        path
-        for path in _BUNDLES_ROOT.glob(_SOURCE_GLOB)
-        if '__pycache__' not in path.parts
-    )
+    return sorted(path for path in _BUNDLES_ROOT.glob(_SOURCE_GLOB) if '__pycache__' not in path.parts)
 
 
 def _recursive_source_population() -> list[Path]:
@@ -480,49 +468,36 @@ _WRITE_SHAPES: dict[str, str] = {
     'inline': "from pathlib import Path\n(Path('d') / '.orphaned_at').write_text('x')\n",
     'inline_bytes': "from pathlib import Path\n(Path('d') / '.orphaned_at').write_bytes(b'x')\n",
     'inline_touch': "from pathlib import Path\n(Path('d') / '.orphaned_at').touch()\n",
-    'alias_write_text': (
-        "from pathlib import Path\n"
-        "marker = Path('d') / '.orphaned_at'\n"
-        "marker.write_text('x')\n"
-    ),
-    'alias_touch': (
-        "from pathlib import Path\n"
-        "marker = Path('d') / '.orphaned_at'\n"
-        "marker.touch()\n"
-    ),
+    'alias_write_text': ("from pathlib import Path\nmarker = Path('d') / '.orphaned_at'\nmarker.write_text('x')\n"),
+    'alias_touch': ("from pathlib import Path\nmarker = Path('d') / '.orphaned_at'\nmarker.touch()\n"),
     'named_constant': (
-        "from pathlib import Path\n"
+        'from pathlib import Path\n'
         "ORPHAN_MARKER_NAME = '.orphaned_at'\n"
         "(Path('d') / ORPHAN_MARKER_NAME).write_text('x')\n"
     ),
     'named_constant_alias': (
-        "from pathlib import Path\n"
+        'from pathlib import Path\n'
         "ORPHAN_MARKER_NAME = '.orphaned_at'\n"
         "marker = Path('d') / ORPHAN_MARKER_NAME\n"
-        "marker.touch()\n"
+        'marker.touch()\n'
     ),
     'builtin_open_write': (
-        "from pathlib import Path\n"
+        'from pathlib import Path\n'
         "marker = Path('d') / '.orphaned_at'\n"
         "with open(marker, 'w') as handle:\n"
         "    handle.write('x')\n"
     ),
     'builtin_open_append_kwarg': (
-        "from pathlib import Path\n"
-        "with open(Path('d') / '.orphaned_at', mode='a') as handle:\n"
-        "    handle.write('x')\n"
+        "from pathlib import Path\nwith open(Path('d') / '.orphaned_at', mode='a') as handle:\n    handle.write('x')\n"
     ),
     'path_open_write': (
-        "from pathlib import Path\n"
+        'from pathlib import Path\n'
         "marker = Path('d') / '.orphaned_at'\n"
         "with marker.open('w') as handle:\n"
         "    handle.write('x')\n"
     ),
     'template_embedded': (
-        "TEMPLATE = '''\\\n"
-        "from pathlib import Path\n"
-        "(Path('d') / '.orphaned_at').write_text('x')\n"
-        "'''\n"
+        "TEMPLATE = '''\\\nfrom pathlib import Path\n(Path('d') / '.orphaned_at').write_text('x')\n'''\n"
     ),
 }
 
@@ -533,26 +508,13 @@ _WRITE_SHAPES: dict[str, str] = {
 #: everything.
 _READ_SHAPES: dict[str, str] = {
     'inline_exists': "from pathlib import Path\n(Path('d') / '.orphaned_at').exists()\n",
-    'alias_exists': (
-        "from pathlib import Path\n"
-        "marker = Path('d') / '.orphaned_at'\n"
-        "if marker.exists():\n"
-        "    pass\n"
-    ),
-    'alias_read_text': (
-        "from pathlib import Path\n"
-        "marker = Path('d') / '.orphaned_at'\n"
-        "marker.read_text()\n"
-    ),
+    'alias_exists': ("from pathlib import Path\nmarker = Path('d') / '.orphaned_at'\nif marker.exists():\n    pass\n"),
+    'alias_read_text': ("from pathlib import Path\nmarker = Path('d') / '.orphaned_at'\nmarker.read_text()\n"),
     'builtin_open_default_mode': (
-        "from pathlib import Path\n"
-        "with open(Path('d') / '.orphaned_at') as handle:\n"
-        "    handle.read()\n"
+        "from pathlib import Path\nwith open(Path('d') / '.orphaned_at') as handle:\n    handle.read()\n"
     ),
     'builtin_open_explicit_read': (
-        "from pathlib import Path\n"
-        "with open(Path('d') / '.orphaned_at', 'r') as handle:\n"
-        "    handle.read()\n"
+        "from pathlib import Path\nwith open(Path('d') / '.orphaned_at', 'r') as handle:\n    handle.read()\n"
     ),
     'unrelated_write': "from pathlib import Path\n(Path('d') / 'other.json').write_text('x')\n",
     'prose_constant': "NOTE = 'the .orphaned_at marker is existence-only'\n",
@@ -686,10 +648,7 @@ def _sweep_marker_writes(
 
 def _marker_sweep_sources() -> list[tuple[str, str]]:
     """``(repo-relative path, text)`` for every source the marker sweep visits."""
-    return [
-        (str(path.relative_to(_REPO_ROOT)), path.read_text(encoding='utf-8'))
-        for path in _swept_sources()
-    ]
+    return [(str(path.relative_to(_REPO_ROOT)), path.read_text(encoding='utf-8')) for path in _swept_sources()]
 
 
 def test_the_sweep_reports_a_marker_mentioning_source_it_could_not_parse():

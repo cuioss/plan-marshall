@@ -98,8 +98,8 @@ def require_references(plan_id: str) -> dict[Any, Any]:
         }
     if not isinstance(refs, dict):
         raise ValueError(
-            f"references.json for plan {plan_id!r} has invalid format: "
-            f"expected a JSON object, got {type(refs).__name__}"
+            f'references.json for plan {plan_id!r} has invalid format: '
+            f'expected a JSON object, got {type(refs).__name__}'
         )
     return refs
 

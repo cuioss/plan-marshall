@@ -122,9 +122,7 @@ def test_injected_unclaimed_directory_is_reported_by_name(clean) -> None:
 
     result = partition_of(repo, plans)
 
-    assert named(result, partition_mod.VERDICT_UNCLAIMED) == {
-        'test/orphan/test_nobody_claims_me.py'
-    }
+    assert named(result, partition_mod.VERDICT_UNCLAIMED) == {'test/orphan/test_nobody_claims_me.py'}
 
 
 def test_injected_unclaimed_directory_does_not_disturb_the_claimed_set(clean) -> None:
@@ -163,9 +161,7 @@ def test_injected_double_claim_names_both_claiming_plans(clean) -> None:
 
     result = partition_of(repo, plans)
 
-    owners = next(
-        module.plans for module in result.modules if module.path == 'test/alpha/test_one.py'
-    )
+    owners = next(module.plans for module in result.modules if module.path == 'test/alpha/test_one.py')
     assert owners == ('PLAN-200', 'PLAN-220')
 
 
@@ -186,15 +182,11 @@ def test_injected_double_claim_leaves_the_other_subtree_singly_claimed(clean) ->
 def test_injected_root_span_does_not_hide_an_unclaimed_module(clean) -> None:
     repo, plans = clean
     write_module(repo, 'test/orphan/test_nobody_claims_me.py')
-    (plans / 'PLAN-230.md').write_text(
-        '# PLAN-230\n\n## Expected Surface\n\n- Sweeps `test/**`\n', encoding='utf-8'
-    )
+    (plans / 'PLAN-230.md').write_text('# PLAN-230\n\n## Expected Surface\n\n- Sweeps `test/**`\n', encoding='utf-8')
 
     result = partition_of(repo, plans)
 
-    assert named(result, partition_mod.VERDICT_UNCLAIMED) == {
-        'test/orphan/test_nobody_claims_me.py'
-    }
+    assert named(result, partition_mod.VERDICT_UNCLAIMED) == {'test/orphan/test_nobody_claims_me.py'}
     assert ('PLAN-230', 'test/**') in {(r.plan_id, r.path) for r in result.root_claims}
 
 
@@ -284,8 +276,7 @@ CITING_BODY = (
     "- OBSERVED: slice `200`'s modules under `test/alpha/**` — the fidelity check\n"
 )
 UNCITED_BODY = (
-    '# PLAN-250\n\n## Expected Surface\n\n'
-    '- OBSERVED: the modules under `test/alpha/**` — the fidelity check\n'
+    '# PLAN-250\n\n## Expected Surface\n\n- OBSERVED: the modules under `test/alpha/**` — the fidelity check\n'
 )
 
 
@@ -306,9 +297,7 @@ def test_injected_uncited_claim_over_the_cited_slice_is_reported_by_name(clean) 
 
     result = partition_of(repo, plans)
 
-    owners = next(
-        module.plans for module in result.modules if module.path == 'test/alpha/test_one.py'
-    )
+    owners = next(module.plans for module in result.modules if module.path == 'test/alpha/test_one.py')
     assert named(result, partition_mod.VERDICT_CONTESTED) == {'test/alpha/test_one.py'}
     assert owners == ('PLAN-200', 'PLAN-250')
 
@@ -324,15 +313,11 @@ DOUBLE_CLAIM_BODY = '# PLAN-220\n\n## Expected Surface\n\n- Also adds `test/alph
 DOUBLE_CLAIM_MODULE = 'test/alpha/test_one.py'
 
 
-def test_injected_terminal_claim_is_retired_in_favour_of_the_active_plan(
-    clean, tmp_path: Path
-) -> None:
+def test_injected_terminal_claim_is_retired_in_favour_of_the_active_plan(clean, tmp_path: Path) -> None:
     """A plan whose work is finished stops competing; the live plan owns the module."""
     repo, plans = clean
     (plans / 'PLAN-220.md').write_text(DOUBLE_CLAIM_BODY, encoding='utf-8')
-    terminal = terminal_from_ledger(
-        tmp_path / 'epic_retired', {'PLAN-200': 'landed', 'PLAN-220': 'staged'}
-    )
+    terminal = terminal_from_ledger(tmp_path / 'epic_retired', {'PLAN-200': 'landed', 'PLAN-220': 'staged'})
 
     result = partition_of(repo, plans, terminal)
     module = next(m for m in result.modules if m.path == DOUBLE_CLAIM_MODULE)
@@ -355,9 +340,7 @@ def test_injected_active_versus_active_module_stays_contested(clean, tmp_path: P
     """
     repo, plans = clean
     (plans / 'PLAN-220.md').write_text(DOUBLE_CLAIM_BODY, encoding='utf-8')
-    terminal = terminal_from_ledger(
-        tmp_path / 'epic_live', {'PLAN-200': 'running', 'PLAN-220': 'staged'}
-    )
+    terminal = terminal_from_ledger(tmp_path / 'epic_live', {'PLAN-200': 'running', 'PLAN-220': 'staged'})
 
     result = partition_of(repo, plans, terminal)
     module = next(m for m in result.modules if m.path == DOUBLE_CLAIM_MODULE)

@@ -151,7 +151,7 @@ def _orphan_finding(component_path: Path, bundle: str, kind: str, rel: str) -> d
         fixable=False,
         rule_id=RULE_ID,
         description=(
-            f'On-disk {kind} `{rel}` is not declared in bundle `{bundle}`\'s '
+            f"On-disk {kind} `{rel}` is not declared in bundle `{bundle}`'s "
             f'plugin.json — the component ships but is invisible to the plugin '
             f'loader (plugin-json-orphan-component)'
         ),

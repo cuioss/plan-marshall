@@ -28,8 +28,18 @@ _HELP_SURFACE = [
     (
         ('pr',),
         (
-            'create', 'view', 'reply', 'resolve-thread', 'thread-reply', 'merge',
-            'auto-merge', 'close', 'ready', 'edit', 'reviews', 'list',
+            'create',
+            'view',
+            'reply',
+            'resolve-thread',
+            'thread-reply',
+            'merge',
+            'auto-merge',
+            'close',
+            'ready',
+            'edit',
+            'reviews',
+            'list',
         ),
         (),
     ),
@@ -64,10 +74,26 @@ _HELP_SURFACE = [
     ('argv', 'advertised', 'absent'),
     _HELP_SURFACE,
     ids=[
-        'root', 'pr', 'issue', 'checks', 'pr-create', 'pr-view', 'pr-reply',
-        'pr-resolve-thread', 'pr-thread-reply', 'pr-merge', 'pr-comments',
-        'pr-auto-merge', 'pr-close', 'pr-ready', 'pr-edit', 'pr-list',
-        'pr-list-state-default', 'checks-rerun', 'checks-logs', 'issue-close',
+        'root',
+        'pr',
+        'issue',
+        'checks',
+        'pr-create',
+        'pr-view',
+        'pr-reply',
+        'pr-resolve-thread',
+        'pr-thread-reply',
+        'pr-merge',
+        'pr-comments',
+        'pr-auto-merge',
+        'pr-close',
+        'pr-ready',
+        'pr-edit',
+        'pr-list',
+        'pr-list-state-default',
+        'checks-rerun',
+        'checks-logs',
+        'issue-close',
     ],
 )
 def test_help_advertises_the_declared_surface(argv, advertised, absent):
@@ -98,8 +124,14 @@ _MISSING_REQUIRED = [
     ('argv', 'names'),
     _MISSING_REQUIRED,
     ids=[
-        'pr-create', 'pr-reviews', 'pr-reply', 'pr-resolve-thread',
-        'pr-thread-reply', 'checks-wait', 'checks-rerun', 'issue-create',
+        'pr-create',
+        'pr-reviews',
+        'pr-reply',
+        'pr-resolve-thread',
+        'pr-thread-reply',
+        'checks-wait',
+        'checks-rerun',
+        'issue-create',
         'no-subcommand',
     ],
 )
@@ -163,13 +195,9 @@ def _assert_single_body_source(bundle: str, skill: str, script: str) -> None:
     assert handler is not None, f'cmd_pr_create not found in {script}'
 
     called = {
-        node.func.id
-        for node in ast.walk(handler)
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+        node.func.id for node in ast.walk(handler) if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
     }
-    assert 'read_and_consume_body' in called, (
-        f'{script}::cmd_pr_create no longer resolves the body through the store'
-    )
+    assert 'read_and_consume_body' in called, f'{script}::cmd_pr_create no longer resolves the body through the store'
 
     # ``body_file`` can survive as an attribute/local name, as an attribute
     # access (``args.body_file`` — the dormant ``if args.body_file:`` guard
@@ -179,13 +207,9 @@ def _assert_single_body_source(bundle: str, skill: str, script: str) -> None:
     identifiers = {node.id for node in ast.walk(handler) if isinstance(node, ast.Name)}
     identifiers |= {node.attr for node in ast.walk(handler) if isinstance(node, ast.Attribute)}
     literals = {
-        node.value
-        for node in ast.walk(handler)
-        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+        node.value for node in ast.walk(handler) if isinstance(node, ast.Constant) and isinstance(node.value, str)
     }
-    assert 'body_file' not in identifiers, (
-        f'{script}::cmd_pr_create retains a body_file local or attribute access'
-    )
+    assert 'body_file' not in identifiers, f'{script}::cmd_pr_create retains a body_file local or attribute access'
     assert 'body_file' not in literals, f'{script}::cmd_pr_create retains a body_file lookup'
 
 

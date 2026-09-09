@@ -419,16 +419,13 @@ def test_sync_defaults_materializes_all_finalize_steps_as_keyed_map_form(plan_co
     ]
     built_in_names = {rec['name'] for rec in implementors}
     assert built_in_names <= set(steps), (
-        f'materialize-all seed must carry every built-in implementor; '
-        f'missing: {built_in_names - set(steps)!r}'
+        f'materialize-all seed must carry every built-in implementor; missing: {built_in_names - set(steps)!r}'
     )
 
     infra = {'default:sonar-roundtrip', 'plan-marshall:automatic-review'}
     # The two adversarial infra elements seed `lane: ask`.
     for name in infra:
-        assert steps[name].get('lane') == 'ask', (
-            f'{name} must seed lane:ask, got {steps[name]!r}'
-        )
+        assert steps[name].get('lane') == 'ask', f'{name} must seed lane:ask, got {steps[name]!r}'
 
     # Every non-infra `default_on: false` step seeds `lane: off` (exclusion as
     # lane:off, never absence); infra elements are exempt (they seed lane:ask).

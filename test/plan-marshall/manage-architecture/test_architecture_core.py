@@ -25,7 +25,9 @@ from _resolve_project_dir_fixtures import (
 
 from conftest import get_script_path, load_script_module, run_script
 
-_architecture_core = load_script_module('plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core')
+_architecture_core = load_script_module(
+    'plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core'
+)
 
 DATA_DIR = _architecture_core.DATA_DIR
 DataNotFoundError = _architecture_core.DataNotFoundError

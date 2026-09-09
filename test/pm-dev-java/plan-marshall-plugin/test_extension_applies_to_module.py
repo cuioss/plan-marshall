@@ -12,16 +12,13 @@ Tier 2 (direct import): loads the bundle extension.py and inspects the
 applies_to_module() return value directly.
 """
 
-
 # Import shared infrastructure (conftest.py sets up PYTHONPATH for extension_base).
 from conftest import load_skill_module
 
 
 def _load_extension():
     """Load the pm-dev-java bundle extension.py and return an Extension instance."""
-    module = load_skill_module(
-        'pm-dev-java', 'plan-marshall-plugin', 'extension.py', 'extension_pm_dev_java'
-    )
+    module = load_skill_module('pm-dev-java', 'plan-marshall-plugin', 'extension.py', 'extension_pm_dev_java')
     return module.Extension()
 
 

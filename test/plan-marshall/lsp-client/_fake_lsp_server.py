@@ -25,7 +25,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-_SERVER_SOURCE = r'''
+_SERVER_SOURCE = r"""
 import json, sys, time
 
 CONFIG = json.loads(open(sys.argv[1]).read())
@@ -105,7 +105,7 @@ while True:
             publish(uri, entry[phase])
     elif "id" in message:
         write_frame({"jsonrpc": "2.0", "id": message["id"], "result": None})
-'''
+"""
 
 
 def write_fake_server(directory: Path, config: dict[str, Any]) -> list[str]:

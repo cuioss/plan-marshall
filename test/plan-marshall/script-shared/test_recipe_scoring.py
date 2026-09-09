@@ -225,9 +225,7 @@ def test_score_misaligned_scope_does_not_boost():
 def test_score_confidence_stays_within_unit_interval():
     """Even a fully-aligned match keeps confidence within [0.0, 1.0]."""
     narrative = tokenize('verify documentation quality across project')
-    confidence, _ = score_recipe(
-        _DOC_RECIPE, narrative, plan_domain='documentation', plan_scope='broad'
-    )
+    confidence, _ = score_recipe(_DOC_RECIPE, narrative, plan_domain='documentation', plan_scope='broad')
     assert 0.0 <= confidence <= 1.0
 
 
@@ -235,9 +233,7 @@ def test_score_blend_weights_are_honoured():
     """Domain (0.25) + scope (0.15) contribute exactly 0.4 with a zero keyword arm."""
     # A narrative with no keyword overlap isolates the domain+scope contribution.
     narrative = tokenize('cooking pasta recipes unrelated')
-    confidence, breakdown = score_recipe(
-        _DOC_RECIPE, narrative, plan_domain='documentation', plan_scope='broad'
-    )
+    confidence, breakdown = score_recipe(_DOC_RECIPE, narrative, plan_domain='documentation', plan_scope='broad')
     assert breakdown['keyword_score'] == 0.0
     # 0.6*0 + 0.25*1 + 0.15*1 == 0.4
     assert confidence == pytest.approx(0.4)
@@ -329,9 +325,9 @@ _REQ_CHECK_ERA_STAMPS = (
     'Fix the owed CHECK_ERA era stamps in the audit skill (root cause known, '
     'exact change known, single file): in '
     '`.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py` update '
-    "the CHECK_ERA registry — `lane-lever-effectiveness` and "
+    'the CHECK_ERA registry — `lane-lever-effectiveness` and '
     "`track-selection-accuracy` from `'#854'` to `'#862'` (plan-5's "
-    "routing-order/light-lane fix boundary), `merge-window-accounting` from "
+    'routing-order/light-lane fix boundary), `merge-window-accounting` from '
     "`'#849'` to `'#863'` (plan-12's external-merge-traffic boundary) — and "
     'update the adjacent registry comments to match. The '
     '`set(CHECK_ERA) == set(CHECK_NAMES)` invariant test must stay green. '
@@ -365,9 +361,9 @@ _REQ_SAFE_MERGE = (
     'Fix pr safe-merge closing PRs without merging when the platform merge queue '
     'is required but use_merge_queue=false (observed on PR #866: safe-merge '
     'reported success, PR was closed unmerged, ~30-min manual recovery). Root '
-    'cause known, two halves: 1. safe-merge does not preflight the branch\'s '
+    "cause known, two halves: 1. safe-merge does not preflight the branch's "
     'queue-required state — it must consult the existing `ci repo merge-queue '
-    'probe` verb (shipped #863) before an immediate merge. 2. safe-merge\'s '
+    "probe` verb (shipped #863) before an immediate merge. 2. safe-merge's "
     'success detection must treat state=closed-without-merge as FAILURE, never '
     'success. Surface: workflow-integration-github/_github_pr.py safe-merge. '
     'Single bundle, bounded footprint.'
@@ -471,9 +467,7 @@ _SURGICAL_IDENTITY_IDS = [
 ]
 
 
-@pytest.mark.parametrize(
-    'recipe,expected', _SURGICAL_IDENTITY_CASES, ids=_SURGICAL_IDENTITY_IDS
-)
+@pytest.mark.parametrize('recipe,expected', _SURGICAL_IDENTITY_CASES, ids=_SURGICAL_IDENTITY_IDS)
 def test_is_surgical_fix_recipe(recipe: dict, expected: bool):
     assert bool(_is_surgical_fix_recipe(recipe)) is expected
 
@@ -481,9 +475,7 @@ def test_is_surgical_fix_recipe(recipe: dict, expected: bool):
 # --- score_recipe SHAPE blend (surgical-fix only) ----------------------------
 
 
-@pytest.mark.parametrize(
-    'request_text', _SURGICAL_MATCH_REQUESTS, ids=list(_SURGICAL_MATCH_REQUESTS_BY_ID)
-)
+@pytest.mark.parametrize('request_text', _SURGICAL_MATCH_REQUESTS, ids=list(_SURGICAL_MATCH_REQUESTS_BY_ID))
 def test_score_recipe_shape_lifts_surgical_fix_above_auto_route(request_text):
     """The shape arm lifts surgical-fix confidence to the strong band for real requests.
 
@@ -518,9 +510,11 @@ def test_score_recipe_shape_only_for_surgical_fix_recipe():
     # Byte-identical confidence and no shape_score key for a non-surgical recipe.
     assert with_text == without_text
     assert 'shape_score' not in breakdown_with
-    assert set(breakdown_with) == set(breakdown_without) == {
-        'keyword_score', 'domain_score', 'scope_score', 'matched_keywords'
-    }
+    assert (
+        set(breakdown_with)
+        == set(breakdown_without)
+        == {'keyword_score', 'domain_score', 'scope_score', 'matched_keywords'}
+    )
 
 
 def test_score_recipe_omitting_narrative_text_is_backward_compatible():
@@ -561,9 +555,7 @@ def test_resolve_recipe_skill_md_finds_bundle_recipe_in_versioned_cache(tmp_path
 
     from recipe_scoring import _resolve_recipe_skill_md
 
-    skill_md = (
-        tmp_path / 'plan-marshall' / '0.1-BETA' / 'skills' / 'recipe-zzz-cache-probe' / 'SKILL.md'
-    )
+    skill_md = tmp_path / 'plan-marshall' / '0.1-BETA' / 'skills' / 'recipe-zzz-cache-probe' / 'SKILL.md'
     skill_md.parent.mkdir(parents=True)
     skill_md.write_text('---\nname: recipe-zzz-cache-probe\n---\n# body\n', encoding='utf-8')
     # resolve_bundles_root is imported inside _resolve_recipe_skill_md, so patch the

@@ -32,9 +32,7 @@ def _write_velocity_plan(
             lines.append(f'pr_number: {pr_number}')
         if fetched_at is not None:
             lines.append(f'fetched_at: {fetched_at}')
-        (run_dir / 'manifest.toon').write_text(
-            '\n'.join(lines) + '\n', encoding='utf-8'
-        )
+        (run_dir / 'manifest.toon').write_text('\n'.join(lines) + '\n', encoding='utf-8')
     return audit.collect_inputs(plan_dir)
 
 

@@ -272,7 +272,7 @@ def analyze_script_call_drift(marketplace_root: Path) -> list[dict]:
                         fixable=False,
                         rule_id=RULE_ID,
                         description=(
-                            f'Documented verb {first_verb!r} for {notation!r} is not in the script\'s '
+                            f"Documented verb {first_verb!r} for {notation!r} is not in the script's "
                             f'declared subcommand choices: {sorted(choices)!r}'
                         ),
                         extra={
@@ -310,7 +310,7 @@ def analyze_script_call_drift(marketplace_root: Path) -> list[dict]:
                                 rule_id=RULE_ID,
                                 description=(
                                     f'Documented flag {flag!r} for {notation!r} {verb_label!r} is '
-                                    f'not in the script\'s declared options: {sorted(valid_flags)!r}'
+                                    f"not in the script's declared options: {sorted(valid_flags)!r}"
                                 ),
                                 extra={
                                     'rule': RULE_NAME,

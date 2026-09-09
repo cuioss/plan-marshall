@@ -379,9 +379,7 @@ def run_list_providers(args: argparse.Namespace) -> int:
     config = load_config()
     providers: list[dict[str, Any]] = config.get('providers', [])
 
-    formatted = {
-        canonical_credentials_key(p.get('skill_name', '')): _format_listed_provider(p) for p in providers
-    }
+    formatted = {canonical_credentials_key(p.get('skill_name', '')): _format_listed_provider(p) for p in providers}
 
     output_toon(
         {

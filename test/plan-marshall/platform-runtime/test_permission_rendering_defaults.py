@@ -16,6 +16,7 @@ machine.
 conftest.py sets up PYTHONPATH so the cross-skill imports resolve without manual
 sys.path manipulation.
 """
+
 import json
 from pathlib import Path
 from typing import Any
@@ -26,7 +27,6 @@ from toon_parser import parse_toon
 
 def _parse(output: str) -> dict[str, Any]:
     return parse_toon(output)
-
 
 
 # =============================================================================
@@ -71,9 +71,7 @@ class TestDefaultPermissionRules:
         fake_home = tmp_path / 'elsewhere'
         monkeypatch.setattr(claude_runtime, 'resolve_home', lambda: fake_home)
 
-        cache_root = Path(
-            _parse(claude_runtime.ClaudeRuntime().layout_bundle_cache_root())['roots'][0]
-        )
+        cache_root = Path(_parse(claude_runtime.ClaudeRuntime().layout_bundle_cache_root())['roots'][0])
         # The permission covers the cache root's PARENT — every bundle cache,
         # not just plan-marshall's — spelled relative to home.
         expected_dir = '~/' + str(cache_root.parent.relative_to(fake_home))
@@ -131,9 +129,7 @@ class TestEnsureDefaultPermissions:
         would report no change and write nothing here.
         """
         path = tmp_path / 'settings.json'
-        settings = self._settings(
-            ['Edit(.plan/**)', 'Read(~/.claude/plugins/cache/**)', 'Write(.plan/**)']
-        )
+        settings = self._settings(['Edit(.plan/**)', 'Read(~/.claude/plugins/cache/**)', 'Write(.plan/**)'])
         result = claude_runtime.ensure_default_permissions(settings, path)
 
         assert result['defaults_added'] == []
@@ -141,9 +137,7 @@ class TestEnsureDefaultPermissions:
         assert result['defaults_removed_count'] == 1
         assert result['applied'] is True
         written = json.loads(path.read_text(encoding='utf-8'))
-        assert written['permissions']['allow'] == sorted(
-            ['Edit(.plan/**)', 'Read(~/.claude/plugins/cache/**)']
-        )
+        assert written['permissions']['allow'] == sorted(['Edit(.plan/**)', 'Read(~/.claude/plugins/cache/**)'])
 
     def test_prunes_every_copy_of_a_duplicated_retired_rule(self, tmp_path: Path) -> None:
         """A hand-edited file can carry the rule twice; one left standing still warns."""
@@ -186,13 +180,9 @@ class TestEnsureDefaultPermissions:
         result = claude_runtime.ensure_default_permissions(settings, path)
 
         assert result['defaults_added_count'] == 2
-        assert settings['permissions']['allow'] == sorted(
-            ['Edit(.plan/**)', 'Read(~/.claude/plugins/cache/**)']
-        )
+        assert settings['permissions']['allow'] == sorted(['Edit(.plan/**)', 'Read(~/.claude/plugins/cache/**)'])
 
-    def test_a_failed_write_is_not_reported_as_applied(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
+    def test_a_failed_write_is_not_reported_as_applied(self, tmp_path: Path, monkeypatch) -> None:
         """`applied` must follow the write, not the intent to write.
 
         The protect-path sibling closes exactly this fail-open one function

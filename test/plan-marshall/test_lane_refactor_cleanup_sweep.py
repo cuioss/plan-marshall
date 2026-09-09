@@ -160,9 +160,8 @@ def _grep(pattern: re.Pattern[str], roots=_SWEEP_ROOTS) -> list[str]:
 def _assert_zero(pattern: re.Pattern[str], token_label: str, roots=_SWEEP_ROOTS) -> None:
     """Fail with a file:line list when ``pattern`` matches anywhere in ``roots``."""
     hits = _grep(pattern, roots)
-    assert not hits, (
-        f'Orphaned reference to retired token {token_label!r} '
-        f'({len(hits)} hit(s)):\n  ' + '\n  '.join(hits)
+    assert not hits, f'Orphaned reference to retired token {token_label!r} ({len(hits)} hit(s)):\n  ' + '\n  '.join(
+        hits
     )
 
 
@@ -179,9 +178,8 @@ def test_the_run_report_exclusion_is_honoured_by_the_walk():
     """
     walked = list(_iter_text_files((PROJECT_ROOT / 'doc',)))
     leaked = [str(p.relative_to(PROJECT_ROOT)) for p in walked if _is_lane_run_report(p)]
-    assert not leaked, (
-        f'{len(leaked)} lane run report(s) reached the sweep despite the '
-        f'exclusion:\n  ' + '\n  '.join(leaked[:10])
+    assert not leaked, f'{len(leaked)} lane run report(s) reached the sweep despite the exclusion:\n  ' + '\n  '.join(
+        leaked[:10]
     )
 
 
@@ -223,8 +221,7 @@ def test_the_exclusion_matches_report_files_only_not_the_tree():
 
     leaked = [str(p) for p in swept if _is_lane_run_report(p)]
     assert not leaked, (
-        f'the exclusion reaches beyond report files, so a retired token in these '
-        f'would go uncaught: {leaked}'
+        f'the exclusion reaches beyond report files, so a retired token in these would go uncaught: {leaked}'
     )
 
 
@@ -244,10 +241,7 @@ def test_the_exclusion_is_inert_on_the_tree_the_walk_actually_returns():
     assert walked, 'the walk returned no file at all, so the exclusion is untested'
 
     dropped = [str(p) for p in walked if _is_lane_run_report(p)]
-    assert not dropped, (
-        f'the run-report exclusion removed {len(dropped)} live file(s) from the '
-        f'sweep: {dropped}'
-    )
+    assert not dropped, f'the run-report exclusion removed {len(dropped)} live file(s) from the sweep: {dropped}'
 
 
 def test_the_rest_of_doc_is_still_swept():
@@ -389,7 +383,6 @@ def test_no_transitionary_prose_in_classification_gate_bodies():
         for lineno, line in enumerate(path.read_text(encoding='utf-8').splitlines(), start=1):
             if _TRANSITIONARY.search(line):
                 offenders.append(f'{rel}:{lineno}: {line.strip()}')
-    assert not offenders, (
-        'Transitionary prose introduced in a D14 classification-gate body:\n  '
-        + '\n  '.join(offenders)
+    assert not offenders, 'Transitionary prose introduced in a D14 classification-gate body:\n  ' + '\n  '.join(
+        offenders
     )

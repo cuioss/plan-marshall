@@ -96,7 +96,8 @@ class TestQualityChainCrossCheck:
     def test_plans_without_findings_dir_excluded(self, tmp_path: Path):
         # one plan with findings, one bare plan dir
         good = _write_findings_plan(
-            tmp_path, 'has-findings',
+            tmp_path,
+            'has-findings',
             {'test-failure.jsonl': [{'resolution': 'fixed', 'title': 't'}]},
         )
         bare_dir = tmp_path / '.plan' / 'temp' / 'qc-corpus' / 'no-findings'
@@ -113,11 +114,13 @@ class TestQualityChainCrossCheck:
         # two plans, each one direct-fix build finding
         inputs = [
             _write_findings_plan(
-                tmp_path, 'p1',
+                tmp_path,
+                'p1',
                 {'test-failure.jsonl': [{'resolution': 'fixed', 'title': 'a'}]},
             ),
             _write_findings_plan(
-                tmp_path, 'p2',
+                tmp_path,
+                'p2',
                 {'build-error.jsonl': [{'resolution': 'fixed', 'title': 'b'}]},
             ),
         ]
@@ -138,10 +141,13 @@ class TestQualityChainCrossCheck:
     def test_emit_block_carries_severity_and_shift_left_summary(self, tmp_path: Path):
         # an auto-review-only plan with a Tier-1 regex finding
         inputs = _write_findings_plan(
-            tmp_path, 'plan-shift',
-            {'pr-comment.jsonl': [
-                {'detail': 'gemini: regex over-fits', 'title': 'regex over-fits', 'resolution': 'fixed'}
-            ]},
+            tmp_path,
+            'plan-shift',
+            {
+                'pr-comment.jsonl': [
+                    {'detail': 'gemini: regex over-fits', 'title': 'regex over-fits', 'resolution': 'fixed'}
+                ]
+            },
         )
         result = audit.cross_quality_chain([inputs])
 
@@ -161,7 +167,8 @@ class TestQualityChainCrossCheck:
     def test_per_finding_rows_emitted_for_every_finding(self, tmp_path: Path):
         # three findings across two files
         inputs = _write_findings_plan(
-            tmp_path, 'plan-rows',
+            tmp_path,
+            'plan-rows',
             {
                 'test-failure.jsonl': [
                     {'resolution': 'fixed', 'title': 'one'},
@@ -195,40 +202,28 @@ class TestQualityChainFindingSeverity:
     def test_pending_build_finding_is_genuine(self):
         # unresolved chain debt, even though build is the
         # cheapest mechanism, is a genuine signal.
-        assert audit._qc_finding_genuine(
-            {'mechanism': 'build', 'resolution': 'pending'}
-        )
+        assert audit._qc_finding_genuine({'mechanism': 'build', 'resolution': 'pending'})
 
     def test_pending_self_review_finding_is_genuine(self):
         # a self-review finding left pending is debt too
-        assert audit._qc_finding_genuine(
-            {'mechanism': 'self-review', 'resolution': 'pending'}
-        )
+        assert audit._qc_finding_genuine({'mechanism': 'self-review', 'resolution': 'pending'})
 
     def test_auto_review_finding_is_genuine_regardless_of_resolution(self):
         # auto-review is the shift-left subject; a cleanly
         # direct-fixed auto-review row is STILL genuine (it shifted right).
-        assert audit._qc_finding_genuine(
-            {'mechanism': 'auto-review', 'resolution': 'direct_fix'}
-        )
+        assert audit._qc_finding_genuine({'mechanism': 'auto-review', 'resolution': 'direct_fix'})
 
     def test_direct_fix_build_finding_is_informational(self):
         # the expected disposition, not a signal
-        assert not audit._qc_finding_genuine(
-            {'mechanism': 'build', 'resolution': 'direct_fix'}
-        )
+        assert not audit._qc_finding_genuine({'mechanism': 'build', 'resolution': 'direct_fix'})
 
     def test_lesson_self_review_finding_is_informational(self):
         # promoted-to-lesson self-review is informational
-        assert not audit._qc_finding_genuine(
-            {'mechanism': 'self-review', 'resolution': 'lesson'}
-        )
+        assert not audit._qc_finding_genuine({'mechanism': 'self-review', 'resolution': 'lesson'})
 
     def test_human_review_direct_fix_is_informational(self):
         # a resolved human-review row is expected, not a signal
-        assert not audit._qc_finding_genuine(
-            {'mechanism': 'human-review', 'resolution': 'direct_fix'}
-        )
+        assert not audit._qc_finding_genuine({'mechanism': 'human-review', 'resolution': 'direct_fix'})
 
     def test_emit_block_renders_pending_finding_row_as_genuine(self, tmp_path: Path):
         # a single self-review finding left pending (no auto-review row,
@@ -242,9 +237,7 @@ class TestQualityChainFindingSeverity:
 
         block = audit.emit_quality_chain_block(result)
         finding_line = next(
-            ln.strip()
-            for ln in block.splitlines()
-            if ln.strip().startswith('plan-pending,self-review,pending,')
+            ln.strip() for ln in block.splitlines() if ln.strip().startswith('plan-pending,self-review,pending,')
         )
 
         # the pending self-review finding row ends on the genuine cell,
@@ -252,9 +245,7 @@ class TestQualityChainFindingSeverity:
         assert finding_line.endswith(',genuine')
         assert 'finding_genuine_signal_count: 1' in block
 
-    def test_emit_block_renders_direct_fixed_build_finding_as_informational(
-        self, tmp_path: Path
-    ):
+    def test_emit_block_renders_direct_fixed_build_finding_as_informational(self, tmp_path: Path):
         # a single cleanly direct-fixed build finding: the expected
         # disposition, so its per-finding row must stamp informational and the
         # finding-genuine count must be zero.
@@ -267,9 +258,7 @@ class TestQualityChainFindingSeverity:
 
         block = audit.emit_quality_chain_block(result)
         finding_line = next(
-            ln.strip()
-            for ln in block.splitlines()
-            if ln.strip().startswith('plan-clean,build,direct_fix,')
+            ln.strip() for ln in block.splitlines() if ln.strip().startswith('plan-clean,build,direct_fix,')
         )
 
         assert finding_line.endswith(',informational')

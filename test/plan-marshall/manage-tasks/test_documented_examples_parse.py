@@ -32,12 +32,8 @@ from conftest import MARKETPLACE_ROOT, load_script_module
 
 _SKILL_MD: Path = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'manage-tasks' / 'SKILL.md'
 
-_crud = load_script_module(
-    'plan-marshall', 'manage-tasks', '_tasks_crud.py', '_tasks_crud_documented_examples'
-)
-_core = load_script_module(
-    'plan-marshall', 'manage-tasks', '_tasks_core.py', '_tasks_core_documented_examples'
-)
+_crud = load_script_module('plan-marshall', 'manage-tasks', '_tasks_crud.py', '_tasks_crud_documented_examples')
+_core = load_script_module('plan-marshall', 'manage-tasks', '_tasks_core.py', '_tasks_core_documented_examples')
 
 _validate_batch_entry = _crud._validate_batch_entry
 _STEP_INTENT_SUFFIX_RE = _core._STEP_INTENT_SUFFIX_RE
@@ -134,9 +130,7 @@ def test_every_template_task_definition_example_carries_step_intent_markers():
             if match is None or match.group('intent') not in _VALID_STEP_INTENTS:
                 failures.append(f'line {example.line}: step {row!r} names unknown intent {marker!r}')
 
-    assert rows_checked > 0, (
-        f'{len(templates)} template example(s) yielded no step rows — nothing was checked'
-    )
+    assert rows_checked > 0, f'{len(templates)} template example(s) yielded no step rows — nothing was checked'
     assert not failures, (
         f'{len(failures)} of {rows_checked} template step row(s) in {_SKILL_MD} break the step '
         f'contract:\n  ' + '\n  '.join(failures)
@@ -170,9 +164,7 @@ def test_every_documented_batch_add_entry_validates():
             except ValueError as exc:
                 failures.append(str(exc))
 
-    assert entries_checked > 0, (
-        f'{len(arrays)} documented array(s) yielded zero entries — nothing was validated'
-    )
+    assert entries_checked > 0, f'{len(arrays)} documented array(s) yielded zero entries — nothing was validated'
     assert not failures, (
         f'{len(failures)} of {entries_checked} documented batch-add entr(ies) in {_SKILL_MD} '
         f'do not validate:\n  ' + '\n  '.join(failures)

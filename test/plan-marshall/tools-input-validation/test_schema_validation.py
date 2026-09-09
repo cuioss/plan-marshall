@@ -294,8 +294,15 @@ class TestValidateTask:
             'title': 'T',
             'status': 'pending',
             'steps': [
-                {'id': 's1', 'title': 'Step', 'number': 1, 'target': 'a.py',
-                 'status': 'pending', 'intent': 'write', 'outcome': 'done'},
+                {
+                    'id': 's1',
+                    'title': 'Step',
+                    'number': 1,
+                    'target': 'a.py',
+                    'status': 'pending',
+                    'intent': 'write',
+                    'outcome': 'done',
+                },
             ],
             'number': 1,
             'domain': 'plan-marshall',

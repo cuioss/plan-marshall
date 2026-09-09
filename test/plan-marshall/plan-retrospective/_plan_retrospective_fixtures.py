@@ -306,6 +306,7 @@ def write_captured_real_log(plan_dir: Path) -> Path:
     path.write_text(_CAPTURED_REAL_LOG, encoding='utf-8')
     return path
 
+
 def _run_args(plan_dir: Path) -> Namespace:
     """Build the archived-mode ``argparse.Namespace`` ``cmd_run`` consumes."""
     return Namespace(

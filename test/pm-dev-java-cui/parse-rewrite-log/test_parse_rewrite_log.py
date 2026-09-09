@@ -44,7 +44,7 @@ def _independent_fields(line: str) -> dict:
     separators (`` at ``, ``:line:column``, `` by ``, `` : ``).
     """
     start = line.index(PREFIX_TOKEN)
-    identifier = line[start + len(PREFIX_TOKEN): start + len(PREFIX_TOKEN) + 3]
+    identifier = line[start + len(PREFIX_TOKEN) : start + len(PREFIX_TOKEN) + 3]
     body = line[start:].split(': ', 1)[1]  # drop "CUI_REWRITE-<id>"
     after_at = body.split(' at ', 1)[1]  # "<path>:<line>:<col> by <recipe>: <message>"
     locator, after_by = after_at.split(' by ', 1)
@@ -163,9 +163,7 @@ class TestCrlfRobustness:
 
         assert findings, 'CRLF corpus must still yield findings'
         for finding in findings:
-            assert not finding['message'].endswith('\r'), (
-                f"message retained a trailing CR: {finding['message']!r}"
-            )
+            assert not finding['message'].endswith('\r'), f'message retained a trailing CR: {finding["message"]!r}'
 
     def test_crlf_and_lf_yield_identical_findings(self):
         # The same corpus lines under CRLF and LF must parse to the same messages.

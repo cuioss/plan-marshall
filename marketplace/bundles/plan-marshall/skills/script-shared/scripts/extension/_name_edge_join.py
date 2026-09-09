@@ -85,11 +85,7 @@ def scoped_modules(
         The subset of ``derived_by_name`` whose ``build_systems`` names
         ``build_system``.
     """
-    return {
-        name: data
-        for name, data in derived_by_name.items()
-        if build_system in (data.get('build_systems') or [])
-    }
+    return {name: data for name, data in derived_by_name.items() if build_system in (data.get('build_systems') or [])}
 
 
 def build_name_owners(
@@ -144,9 +140,7 @@ def build_name_owners(
         if len(claiming) == 1:
             owners[key] = next(iter(claiming))
             continue
-        notes.append(
-            f'ambiguous name {key}: claimed by {", ".join(sorted(claiming))} — no edge emitted'
-        )
+        notes.append(f'ambiguous name {key}: claimed by {", ".join(sorted(claiming))} — no edge emitted')
     return owners, notes
 
 

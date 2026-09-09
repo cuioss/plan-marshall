@@ -23,12 +23,22 @@ SCRIPT_PATH = get_script_path('pm-plugin-development', 'plugin-doctor', '_valida
 # author remembered. Parsed once at module scope: parse_ns re-executes the script
 # module on every call.
 _REFERENCES_NS = parse_ns(
-    'pm-plugin-development', 'plugin-doctor', '_validate.py',
-    'references', '--file', 'placeholder.md', register=False,
+    'pm-plugin-development',
+    'plugin-doctor',
+    '_validate.py',
+    'references',
+    '--file',
+    'placeholder.md',
+    register=False,
 )
 _INVENTORY_NS = parse_ns(
-    'pm-plugin-development', 'plugin-doctor', '_validate.py',
-    'inventory', '--skill-path', '.', register=False,
+    'pm-plugin-development',
+    'plugin-doctor',
+    '_validate.py',
+    'inventory',
+    '--skill-path',
+    '.',
+    register=False,
 )
 
 

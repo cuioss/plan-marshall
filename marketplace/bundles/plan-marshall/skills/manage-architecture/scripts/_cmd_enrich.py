@@ -197,8 +197,7 @@ def _validate_skills_by_profile_structure(skills_by_profile: dict[str, Any]) -> 
         # unresolved-profile condition on read.
         if 'minimal' in profile_data and not isinstance(profile_data['minimal'], bool):
             warnings.append(
-                f"Profile '{profile_name}.minimal' must be a boolean, "
-                f'got {type(profile_data["minimal"]).__name__}'
+                f"Profile '{profile_name}.minimal' must be a boolean, got {type(profile_data['minimal']).__name__}"
             )
         for section in ['defaults', 'optionals']:
             entries = profile_data.get(section, [])

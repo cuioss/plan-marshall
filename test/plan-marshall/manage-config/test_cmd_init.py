@@ -14,9 +14,7 @@ from _manage_config_fixtures import SCRIPT_PATH, create_marshal_json
 
 from conftest import load_script_module, run_script
 
-_cmd_init_mod = load_script_module(
-    'plan-marshall', 'manage-config', '_cmd_init.py', module_name='_cmd_init'
-)
+_cmd_init_mod = load_script_module('plan-marshall', 'manage-config', '_cmd_init.py', module_name='_cmd_init')
 _config_defaults_mod = load_script_module(
     'plan-marshall', 'manage-config', '_config_defaults.py', module_name='_config_defaults_for_init_provisioning_test'
 )
@@ -36,6 +34,7 @@ cmd_init = _cmd_init_mod.cmd_init
 def _step_ids(steps_map: dict) -> list:
     """Return the ordered step-id list from a keyed-map steps object."""
     return list(steps_map.keys())
+
 
 # =============================================================================
 # Init Command Tests (Tier 2 - direct import)

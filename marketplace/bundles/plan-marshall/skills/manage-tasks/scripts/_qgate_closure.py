@@ -157,9 +157,7 @@ def _step_targets(task: dict[str, Any]) -> list[str]:
     return targets
 
 
-def compute_projection_gaps(
-    deliverable: dict[str, Any], tasks_for_deliverable: list[dict[str, Any]]
-) -> list[str]:
+def compute_projection_gaps(deliverable: dict[str, Any], tasks_for_deliverable: list[dict[str, Any]]) -> list[str]:
     """Return declared write paths that no task of this deliverable targets.
 
     Pure and I/O-free so the closure can be exercised directly, without a plan
@@ -471,9 +469,7 @@ def check_declared_scope_reconciliation(
             directories_matched += expansion.directories_matched
             enumeration_truncated = enumeration_truncated or truncated
             # A directory-only match is an unmeasured scope, not an empty one.
-            expandable = expansion.expandable and not (
-                not matches and expansion.directories_matched
-            )
+            expandable = expansion.expandable and not (not matches and expansion.directories_matched)
             if not expandable:
                 globs_unexpandable += 1
                 gaps.append(

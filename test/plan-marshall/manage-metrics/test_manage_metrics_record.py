@@ -6,7 +6,6 @@ Scope: recording a termination cause into its per-phase artifact — the phase-4
 phase-5 and phase-6-finalize paths, and the rejection an invalid cause earns.
 """
 
-
 import pytest
 from _manage_metrics_fixtures import (
     ns_record_dispatch_boundary,
@@ -83,8 +82,7 @@ class TestRecordDispatchBoundaryAcceptsNewCauses:
         assert ',blocked_session_restart,' in content
         # Three data rows were appended into the same file.
         data_lines = [
-            line for line in content.splitlines()
-            if line and not line.startswith(('plan_id:', 'phase:', 'rows[]'))
+            line for line in content.splitlines() if line and not line.startswith(('plan_id:', 'phase:', 'rows[]'))
         ]
         assert len(data_lines) == 3
 
@@ -105,8 +103,7 @@ class TestRecordDispatchBoundaryAcceptsNewCauses:
         assert ',task_batch_complete,' in content
         assert ',agent_returned,' in content
         data_lines = [
-            line for line in content.splitlines()
-            if line and not line.startswith(('plan_id:', 'phase:', 'rows[]'))
+            line for line in content.splitlines() if line and not line.startswith(('plan_id:', 'phase:', 'rows[]'))
         ]
         assert len(data_lines) == 2
 
@@ -164,8 +161,7 @@ class TestRecordDispatchBoundaryAcceptsBudgetYield:
         assert ',budget_yield,' in content
         assert ',clean_exit_queue_empty,' in content
         data_lines = [
-            line for line in content.splitlines()
-            if line and not line.startswith(('plan_id:', 'phase:', 'rows[]'))
+            line for line in content.splitlines() if line and not line.startswith(('plan_id:', 'phase:', 'rows[]'))
         ]
         assert len(data_lines) == 2
 

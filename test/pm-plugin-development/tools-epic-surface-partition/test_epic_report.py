@@ -215,9 +215,7 @@ def test_the_sweep_populations_are_emitted_even_when_empty(clean) -> None:
     assert clean['sweep_crossings'] == []
 
 
-def test_a_declared_sweep_is_reported_as_crossing_rather_than_owning(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_a_declared_sweep_is_reported_as_crossing_rather_than_owning(tmp_path: Path, monkeypatch) -> None:
     specs = dict(CLEAN_SPECS)
     specs['PLAN-420.md'] = (
         '# PLAN-420\n\n## Expected Surface\n\n'
@@ -325,9 +323,7 @@ def test_a_read_ledger_retires_the_finished_plans_claim(tmp_path: Path, monkeypa
     ]
 
 
-def test_the_ledger_rows_are_rendered_with_the_bucket_each_falls_in(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_the_ledger_rows_are_rendered_with_the_bucket_each_falls_in(tmp_path: Path, monkeypatch) -> None:
     """The partition that drove the retirement is readable from the output itself."""
     epic_dir, repo = build_world(
         tmp_path,
@@ -346,9 +342,7 @@ def test_the_ledger_rows_are_rendered_with_the_bucket_each_falls_in(
     assert report['lifecycle']['active_count'] == 1
 
 
-def test_two_live_plans_keep_the_module_contested_in_the_report(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_two_live_plans_keep_the_module_contested_in_the_report(tmp_path: Path, monkeypatch) -> None:
     """⛔ The refusal, carried through to the rendered report."""
     epic_dir, repo = build_world(
         tmp_path,
@@ -366,9 +360,7 @@ def test_two_live_plans_keep_the_module_contested_in_the_report(
 
 
 @pytest.mark.parametrize('verb', ['partition', 'attribution', 'report'])
-def test_an_unknown_ledger_status_is_reported_as_a_structured_error(
-    tmp_path: Path, monkeypatch, verb: str
-) -> None:
+def test_an_unknown_ledger_status_is_reported_as_a_structured_error(tmp_path: Path, monkeypatch, verb: str) -> None:
     """Every verb that reads the ledger refuses loudly and names the offending value.
 
     ``classify`` is absent from this list on purpose: it reads the spec corpus
@@ -382,9 +374,7 @@ def test_an_unknown_ledger_status_is_reported_as_a_structured_error(
     )
     monkeypatch.setattr(entry, 'get_store_dir', lambda *a, **k: epic_dir)
     monkeypatch.setattr(entry, 'cwd_checkout_root', lambda: str(repo))
-    args = argparse.Namespace(
-        epic='fixture-epic', budget=400, tests_before=None, baseline_findings=None
-    )
+    args = argparse.Namespace(epic='fixture-epic', budget=400, tests_before=None, baseline_findings=None)
 
     payload = getattr(entry, f'cmd_{verb}')(args)
 
@@ -395,13 +385,9 @@ def test_an_unknown_ledger_status_is_reported_as_a_structured_error(
     assert payload['known_terminal'] and payload['known_active']
 
 
-def test_classify_is_unaffected_by_an_unreadable_ledger_status(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_classify_is_unaffected_by_an_unreadable_ledger_status(tmp_path: Path, monkeypatch) -> None:
     """Matched negative for the separation: the corpus verb never reads the ledger."""
-    epic_dir, repo = build_world(
-        tmp_path, dict(CLEAN_SPECS), CLEAN_MODULES, ledger={'PLAN-400': 'mothballed'}
-    )
+    epic_dir, repo = build_world(tmp_path, dict(CLEAN_SPECS), CLEAN_MODULES, ledger={'PLAN-400': 'mothballed'})
     monkeypatch.setattr(entry, 'get_store_dir', lambda *a, **k: epic_dir)
     monkeypatch.setattr(entry, 'cwd_checkout_root', lambda: str(repo))
 
@@ -425,9 +411,7 @@ def test_not_derivable_section_is_present_for_a_disagreeing_corpus(disagreeing) 
     assert 'not_derivable_specs' in disagreeing
 
 
-def test_unresolvable_span_is_reported_as_a_not_derivable_spec(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_unresolvable_span_is_reported_as_a_not_derivable_spec(tmp_path: Path, monkeypatch) -> None:
     specs = dict(CLEAN_SPECS)
     specs['PLAN-410.md'] = '# PLAN-410\n\n## Expected Surface\n\n- Touches `test_two_*.py`\n'
     epic_dir, repo = build_world(tmp_path, specs, ('test/alpha/test_one.py', 'test/x/test_two_a.py'))
@@ -445,10 +429,7 @@ def test_provenance_names_the_standard_given_locations(disagreeing) -> None:
     by_claim = {row['claim']: row['value'] for row in disagreeing['provenance_placement']}
 
     assert by_claim['test_mirror_location'] == 'test/{bundle}/{skill}/'
-    assert (
-        by_claim['script_directory_location']
-        == 'marketplace/bundles/{bundle}/skills/{skill}/scripts/'
-    )
+    assert by_claim['script_directory_location'] == 'marketplace/bundles/{bundle}/skills/{skill}/scripts/'
 
 
 @pytest.mark.parametrize(
@@ -461,18 +442,14 @@ def test_provenance_names_the_standard_given_locations(disagreeing) -> None:
     ids=['test_mirror', 'script_dir_cross_skill', 'script_dir_python_impl'],
 )
 def test_provenance_cites_its_source(disagreeing, claim: str, citation_fragment: str) -> None:
-    citations = {
-        row['claim']: row['citation'] for row in disagreeing['provenance_placement']
-    }
+    citations = {row['claim']: row['citation'] for row in disagreeing['provenance_placement']}
 
     assert citation_fragment in citations[claim]
 
 
 def test_provenance_reports_the_overlap_as_live_and_names_the_paths(disagreeing) -> None:
     assert disagreeing['provenance']['overlap_live'] is True
-    assert [row['path'] for row in disagreeing['provenance_overlaps']] == [
-        'marketplace/bundles/demo/**'
-    ]
+    assert [row['path'] for row in disagreeing['provenance_overlaps']] == ['marketplace/bundles/demo/**']
     assert disagreeing['provenance_overlaps'][0]['plan_id'] == 'PLAN-300'
 
 

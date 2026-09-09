@@ -31,10 +31,7 @@ def find_toon_files():
         TEST_ROOT / 'plan-marshall' / 'phase-6-finalize' / 'fixtures' / 'ci-wait',
     }
     all_files = list(TEST_ROOT.rglob('*.toon'))
-    return [
-        f for f in all_files
-        if not any(excluded in f.parents for excluded in excluded_parents)
-    ]
+    return [f for f in all_files if not any(excluded in f.parents for excluded in excluded_parents)]
 
 
 def validate_toon_file(file_path):

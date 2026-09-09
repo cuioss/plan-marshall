@@ -140,14 +140,10 @@ def _build_canonical_hint(
 ) -> str:
     """Render a canonical-form hint for an invalid invocation."""
     if notation_script == 'manage_findings':
-        return (
-            'Use kebab-case in the script position: '
-            '`plan-marshall:manage-findings:manage-findings`'
-        )
+        return 'Use kebab-case in the script position: `plan-marshall:manage-findings:manage-findings`'
     if top_token == 'list-qgate':
         return (
-            'Use `qgate list --plan-id {plan_id} --phase {phase}` '
-            '(no `list-qgate` top-level subcommand is registered)'
+            'Use `qgate list --plan-id {plan_id} --phase {phase}` (no `list-qgate` top-level subcommand is registered)'
         )
     if top_token == 'qgate' and sub_token == 'query':
         return (
@@ -156,20 +152,11 @@ def _build_canonical_hint(
             f'registered sub-verbs: {sorted(VALID_QGATE_SUBVERBS)})'
         )
     if top_token and top_token not in VALID_TOP_LEVEL_SUBCOMMANDS:
-        return (
-            f'Use a registered top-level subcommand: '
-            f'{sorted(VALID_TOP_LEVEL_SUBCOMMANDS)}'
-        )
+        return f'Use a registered top-level subcommand: {sorted(VALID_TOP_LEVEL_SUBCOMMANDS)}'
     if top_token == 'qgate' and sub_token and sub_token not in VALID_QGATE_SUBVERBS:
-        return (
-            f'Use a registered qgate sub-verb: '
-            f'{sorted(VALID_QGATE_SUBVERBS)}'
-        )
+        return f'Use a registered qgate sub-verb: {sorted(VALID_QGATE_SUBVERBS)}'
     if top_token == 'assessment' and sub_token and sub_token not in VALID_ASSESSMENT_SUBVERBS:
-        return (
-            f'Use a registered assessment sub-verb: '
-            f'{sorted(VALID_ASSESSMENT_SUBVERBS)}'
-        )
+        return f'Use a registered assessment sub-verb: {sorted(VALID_ASSESSMENT_SUBVERBS)}'
     return 'Refer to `manage-findings --help` for the registered command tree'
 
 
@@ -298,11 +285,7 @@ def analyze_manage_findings_invocation(content: str, file_path: str) -> list[dic
             continue
 
         # Failure 3b: invalid assessment sub-verb (defence in depth).
-        if (
-            top == 'assessment'
-            and sub is not None
-            and sub not in VALID_ASSESSMENT_SUBVERBS
-        ):
+        if top == 'assessment' and sub is not None and sub not in VALID_ASSESSMENT_SUBVERBS:
             findings.append(
                 Finding(
                     type=RULE_ID,

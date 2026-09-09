@@ -219,9 +219,7 @@ class RuleRunner:
                     'severity': 'error',
                 }
             )
-        rule_summaries.append(
-            {'rule': 'validate_extension_contracts', 'findings': len(contract_errors)}
-        )
+        rule_summaries.append({'rule': 'validate_extension_contracts', 'findings': len(contract_errors)})
 
         # ``root`` is the BUNDLES dir (see CorpusContext), but
         # analyze_argument_naming derives ``root/'bundles'`` for its markdown
@@ -235,9 +233,7 @@ class RuleRunner:
         # The cluster publishes BOTH coverage figures because its authority — the
         # generated executor — is git-ignored, so "judged nothing" is a state a
         # checkout can genuinely be in while the finding count still reads zero.
-        naming_findings, naming_population, naming_blind_spots = (
-            analyze_argument_naming_with_population(root.parent)
-        )
+        naming_findings, naming_population, naming_blind_spots = analyze_argument_naming_with_population(root.parent)
         emit(
             'analyze_argument_naming',
             scoped(naming_findings),
@@ -276,9 +272,7 @@ class RuleRunner:
             'analyze_incident_reference_in_docs',
             suppressed(analyze_incident_reference_in_docs(root)),
         )
-        thinking_findings, thinking_population = (
-            analyze_thinking_directive_in_workflow_docs_with_population(root)
-        )
+        thinking_findings, thinking_population = analyze_thinking_directive_in_workflow_docs_with_population(root)
         emit(
             'analyze_thinking_directive_in_workflow_docs',
             scoped(thinking_findings),
@@ -330,9 +324,7 @@ class RuleRunner:
         # argparse ``choices=`` (the same mirror-vs-derived shape as the two rules
         # above, one surface over from the flag-name check the argument-naming
         # cluster performs).
-        enum_findings, enum_population = analyze_canonical_enum_drift_with_population(
-            root, cache=cache
-        )
+        enum_findings, enum_population = analyze_canonical_enum_drift_with_population(root, cache=cache)
         emit(
             'canonical-enum-choices-drift',
             scoped(enum_findings),
@@ -353,21 +345,13 @@ class RuleRunner:
         rule_summaries.append(
             {
                 'rule': 'broken-relative-link',
-                'findings': sum(
-                    1
-                    for f in markdown_mirror_findings
-                    if f.get('rule_id') == 'broken-relative-link'
-                ),
+                'findings': sum(1 for f in markdown_mirror_findings if f.get('rule_id') == 'broken-relative-link'),
             }
         )
         rule_summaries.append(
             {
                 'rule': 'fenced-code-no-language',
-                'findings': sum(
-                    1
-                    for f in markdown_mirror_findings
-                    if f.get('rule_id') == 'fenced-code-no-language'
-                ),
+                'findings': sum(1 for f in markdown_mirror_findings if f.get('rule_id') == 'fenced-code-no-language'),
             }
         )
 
@@ -408,9 +392,7 @@ class RuleRunner:
         else:
             manage_invocation_findings = scan_manage_invocation(root.parent)
         all_issues.extend(manage_invocation_findings)
-        rule_summaries.append(
-            {'rule': 'scan_manage_invocation', 'findings': len(manage_invocation_findings)}
-        )
+        rule_summaries.append({'rule': 'scan_manage_invocation', 'findings': len(manage_invocation_findings)})
 
         return all_issues, rule_summaries
 

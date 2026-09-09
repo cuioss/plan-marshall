@@ -33,6 +33,7 @@ enforcement-only and live solely in the enforcement leaf.
 Best-effort / no-raise throughout: every accessor degrades to a safe default
 rather than raising, so a malformed payload can never break a caller.
 """
+
 from __future__ import annotations
 
 import json
@@ -52,35 +53,35 @@ from typing import Any
 #: ``agent_id``); a main-session call carries neither. The value is bundle-qualified
 #: — e.g. ``plan-marshall:execution-context-level-4`` — so it is matched by the
 #: ``:execution-context`` substring marker below, NOT by a bare prefix.
-SUB_AGENT_IDENTITY_FIELD = "agent_type"
+SUB_AGENT_IDENTITY_FIELD = 'agent_type'
 
 #: Documented fallback candidates for the Signal-1 identity field, checked in
 #: order after ``SUB_AGENT_IDENTITY_FIELD``. Kept in this one module so a capture
 #: correction is a single-line edit. The empirically-confirmed name (from the D2
 #: capture) should be promoted to ``SUB_AGENT_IDENTITY_FIELD``.
-SUB_AGENT_IDENTITY_FALLBACK_FIELDS = ("agent_id", "agent_name", "subagent_type")
+SUB_AGENT_IDENTITY_FALLBACK_FIELDS = ('agent_id', 'agent_name', 'subagent_type')
 
 #: Field carrying the working directory (Signal 2).
-CWD_FIELD = "cwd"
+CWD_FIELD = 'cwd'
 
 #: Field carrying the invoked tool's name (e.g. ``"Bash"``, ``"Edit"``).
-TOOL_NAME_FIELD = "tool_name"
+TOOL_NAME_FIELD = 'tool_name'
 
 #: Field carrying the invoked tool's input object (the per-tool argument struct
 #: the enforcement matchers inspect — e.g. ``{"command": "..."}`` for Bash,
 #: ``{"file_path": "..."}`` for Edit).
-TOOL_INPUT_FIELD = "tool_input"
+TOOL_INPUT_FIELD = 'tool_input'
 
 #: Substring marker the sub-agent identity value carries when the call originates
 #: inside a dispatched execution-context sub-agent (Signal 1). The identity is
 #: bundle-qualified (``{bundle}:execution-context[-reader]-level-N``), so the gate
 #: matches this marker as a substring rather than a prefix — confirmed against real
 #: payloads by the D2 capture run.
-EXECUTION_CONTEXT_MARKER = ":execution-context"
+EXECUTION_CONTEXT_MARKER = ':execution-context'
 
 #: Path segment that marks a plan worktree (Signal 2). A ``cwd`` resolving under
 #: this segment indicates the call runs inside a plan-marshall plan worktree.
-WORKTREE_PATH_SEGMENT = os.path.join(".plan", "local", "worktrees")
+WORKTREE_PATH_SEGMENT = os.path.join('.plan', 'local', 'worktrees')
 
 
 def parse(raw: str) -> dict[str, Any]:
@@ -203,8 +204,8 @@ def _signal_worktree_cwd(payload: dict[str, Any]) -> bool:
         return False
     # Normalize to forward-slash and ensure both sides have directory boundaries
     # so a partial substring match (e.g. "worktrees-extra") cannot trigger this.
-    normalized_cwd = current.replace("\\", "/").rstrip("/") + "/"
-    normalized_segment = "/" + WORKTREE_PATH_SEGMENT.replace("\\", "/").strip("/") + "/"
+    normalized_cwd = current.replace('\\', '/').rstrip('/') + '/'
+    normalized_segment = '/' + WORKTREE_PATH_SEGMENT.replace('\\', '/').strip('/') + '/'
     return normalized_segment in normalized_cwd
 
 

@@ -10,9 +10,7 @@ string. This guards the fix that always routes a present inline value through
 
 from conftest import load_script_module
 
-_shared = load_script_module(
-    'pm-plugin-development', 'plugin-doctor', '_analyze_shared.py', '_analyze_shared'
-)
+_shared = load_script_module('pm-plugin-development', 'plugin-doctor', '_analyze_shared.py', '_analyze_shared')
 
 parse_flat_yaml_config = _shared.parse_flat_yaml_config
 read_frontmatter_disable_list = _shared.read_frontmatter_disable_list

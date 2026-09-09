@@ -139,9 +139,7 @@ def _derive_head_dependence(step: str) -> tuple[bool, str | None]:
     for record in records:
         if canonicalize_step_key(str(record.get('name', ''))) != step:
             continue
-        fields = extension_discovery._read_frontmatter_fields(
-            Path(str(record.get('path', ''))), (_HEAD_DEPENDENT_KEY,)
-        )
+        fields = extension_discovery._read_frontmatter_fields(Path(str(record.get('path', ''))), (_HEAD_DEPENDENT_KEY,))
         return bool(fields.get(_HEAD_DEPENDENT_KEY, False)), None
 
     return False, None
@@ -180,9 +178,7 @@ def _with_warning(result: dict[str, Any], warning: str | None) -> dict[str, Any]
     return result
 
 
-def _emit_completion_marker(
-    plan_id: str, phase: str, step: str, outcome: str, suppress: bool
-) -> None:
+def _emit_completion_marker(plan_id: str, phase: str, step: str, outcome: str, suppress: bool) -> None:
     """Emit the ``[STEP] … Completed step:`` work-log line from the handshake write.
 
     Recording a finalize step's terminal outcome and emitting its completion line
@@ -275,9 +271,7 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
             'phase': phase,
             'step': step,
             'offending_token': bad_fact_token,
-            'message': (
-                f'--fact expects KEY=VALUE with a non-empty KEY, got: {bad_fact_token!r}'
-            ),
+            'message': (f'--fact expects KEY=VALUE with a non-empty KEY, got: {bad_fact_token!r}'),
         }
 
     # Loop-back target validation: required for loop_back outcomes, forbidden otherwise.
@@ -294,8 +288,8 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
                 'phase': phase,
                 'step': step,
                 'message': (
-                    "--loop-back-target is required when --outcome=loop_back. "
-                    f"Must be one of {list(VALID_LOOP_BACK_TARGETS)}. See the "
+                    '--loop-back-target is required when --outcome=loop_back. '
+                    f'Must be one of {list(VALID_LOOP_BACK_TARGETS)}. See the '
                     'phase-6-finalize "Loop-back Target Contract" subsection for '
                     'the granularity invariant.'
                 ),
@@ -308,8 +302,7 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
                 'phase': phase,
                 'step': step,
                 'message': (
-                    f'--loop-back-target must be one of '
-                    f'{list(VALID_LOOP_BACK_TARGETS)}, got: {loop_back_target}'
+                    f'--loop-back-target must be one of {list(VALID_LOOP_BACK_TARGETS)}, got: {loop_back_target}'
                 ),
             }
     elif loop_back_target is not None:
@@ -435,9 +428,7 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
             _extend_firing_history(existing, new_entry)
             phase_entry[step] = new_entry
             write_status(args.plan_id, status)
-            _emit_completion_marker(
-                args.plan_id, phase, step, outcome, getattr(args, 'no_completion_log', False)
-            )
+            _emit_completion_marker(args.plan_id, phase, step, outcome, getattr(args, 'no_completion_log', False))
             return _with_warning(
                 {
                     'status': 'success',
@@ -493,9 +484,7 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
     _extend_firing_history(existing, new_entry)
     phase_entry[step] = new_entry
     write_status(args.plan_id, status)
-    _emit_completion_marker(
-        args.plan_id, phase, step, outcome, getattr(args, 'no_completion_log', False)
-    )
+    _emit_completion_marker(args.plan_id, phase, step, outcome, getattr(args, 'no_completion_log', False))
 
     return _with_warning(
         {

@@ -265,7 +265,9 @@ def _log_frame_error(frame_error: FrameError) -> None:
     server could not parse", which is the whole reason the session must not end
     in silence.
     """
-    outcome = 'skipping the frame' if frame_error.recoverable else 'ending the session — the stream is not frame-aligned'
+    outcome = (
+        'skipping the frame' if frame_error.recoverable else 'ending the session — the stream is not frame-aligned'
+    )
     print(f'[corpus-lsp] malformed frame: {frame_error.detail}; {outcome}', file=sys.stderr)
     sys.stderr.flush()
 

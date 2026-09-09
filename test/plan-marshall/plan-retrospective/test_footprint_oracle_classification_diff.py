@@ -8,7 +8,6 @@ Its sections, in order:
 * The reduction report's membership is derived, not mirrored
 """
 
-
 from __future__ import annotations
 
 from _footprint_oracle_classification_fixtures import (
@@ -49,9 +48,7 @@ class TestTestsOnlyRuleFires:
             ['marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/check-manifest-consistency.py'],
         )
 
-        result = run_script(
-            MANIFEST_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live', '--diff-file', str(diff)
-        )
+        result = run_script(MANIFEST_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live', '--diff-file', str(diff))
         assert result.success, result.stderr
         data = result.toon()
 
@@ -74,9 +71,7 @@ class TestTestsOnlyRuleFires:
         )
         diff = _write_diff(tmp_path, ['test/plan-marshall/plan-retrospective/test_check_routing_decisions.py'])
 
-        result = run_script(
-            MANIFEST_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live', '--diff-file', str(diff)
-        )
+        result = run_script(MANIFEST_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live', '--diff-file', str(diff))
         assert result.success, result.stderr
         data = result.toon()
         assert _check(data['checks'], 'tests_only_diff')['status'] == 'pass'
@@ -98,9 +93,7 @@ class TestTestsOnlyRuleFires:
             ['marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/check-manifest-consistency.py'],
         )
 
-        result = run_script(
-            MANIFEST_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live', '--diff-file', str(diff)
-        )
+        result = run_script(MANIFEST_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live', '--diff-file', str(diff))
         assert result.success, result.stderr
         assert _check(result.toon()['checks'], 'tests_only_diff')['status'] == 'fail'
 
@@ -236,9 +229,7 @@ class TestDiffFedRuleRegistryIsTheSingleSource:
             },
         )
         diff = _write_diff(tmp_path, ['doc/a.adoc', 'src/b.py'])
-        result = run_script(
-            MANIFEST_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live', '--diff-file', str(diff)
-        )
+        result = run_script(MANIFEST_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live', '--diff-file', str(diff))
         assert result.success, result.stderr
         emitted = {c['name'] for c in result.toon()['checks']}
         mod = self._mod()

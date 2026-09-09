@@ -102,9 +102,7 @@ _NARROW_HEADING_RE = re.compile(r'^#{1,6}\s+.*exit-code convention.*manage-', re
 
 #: The one document that states the contract. Every other document reaches the
 #: contract by referring to this one.
-CANONICAL_STANDARD = (
-    'marketplace/bundles/plan-marshall/skills/tools-script-executor/standards/exit-code-convention.md'
-)
+CANONICAL_STANDARD = 'marketplace/bundles/plan-marshall/skills/tools-script-executor/standards/exit-code-convention.md'
 
 #: The tail of :data:`CANONICAL_STANDARD` that a reference must name. Matching the
 #: TAIL rather than the whole path is what makes the per-document relative prefix

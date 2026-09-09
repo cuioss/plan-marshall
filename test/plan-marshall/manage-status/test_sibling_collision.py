@@ -190,8 +190,7 @@ def test_file_path_overlap_flagged(plan_context):
     assert match['plan_id'] == 'sc-sibling'
     assert match['overlap_count'] == 1
     assert (
-        match['overlapping_files']
-        == 'marketplace/bundles/plan-marshall/skills/manage-status/scripts/manage-status.py'
+        match['overlapping_files'] == 'marketplace/bundles/plan-marshall/skills/manage-status/scripts/manage-status.py'
     )
     assert result['source_origin_match_count'] == 0
 
@@ -334,15 +333,7 @@ def test_worktree_resident_sibling_enumerated(plan_context):
     )
 
     # Worktree layout: <base>/worktrees/<wt>/.plan/local/plans/<id>/
-    wt_plan_dir = (
-        plan_context.fixture_dir
-        / 'worktrees'
-        / 'sc-wt'
-        / '.plan'
-        / 'local'
-        / 'plans'
-        / 'sc-wt'
-    )
+    wt_plan_dir = plan_context.fixture_dir / 'worktrees' / 'sc-wt' / '.plan' / 'local' / 'plans' / 'sc-wt'
     _write_status(wt_plan_dir)
     _write_request(wt_plan_dir, source='lesson', source_id='2026-06-29-23-002')
     _write_references(wt_plan_dir, affected_files=['a/b/c.py'])

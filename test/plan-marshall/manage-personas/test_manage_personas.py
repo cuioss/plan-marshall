@@ -32,9 +32,7 @@ import pytest
 from conftest import get_script_path, load_script_module
 
 # In-process module under test — coverage attributes executed lines here.
-_mp = load_script_module(
-    'plan-marshall', 'manage-personas', 'manage_personas.py', 'manage_personas_under_test'
-)
+_mp = load_script_module('plan-marshall', 'manage-personas', 'manage_personas.py', 'manage_personas_under_test')
 
 # Subprocess path for the few CLI-plumbing exit-code checks.
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-personas', 'manage_personas.py')
@@ -117,7 +115,7 @@ def test_parse_yaml_list_inline_empty_brackets():
 
 
 def test_parse_yaml_list_inline_strips_quotes():
-    assert _mp._parse_yaml_list("composes: ['x:y', \"p:q\"]", 'composes') == ['x:y', 'p:q']
+    assert _mp._parse_yaml_list('composes: [\'x:y\', "p:q"]', 'composes') == ['x:y', 'p:q']
 
 
 def test_parse_yaml_list_block_form():

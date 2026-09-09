@@ -270,9 +270,7 @@ def extract_step5_trigger_surface(document: str) -> Step5Surface:
     """
     body = _section_body(document, lambda heading: heading.startswith(_STEP5_HEADING_PREFIX))
     if body is None:
-        return Step5Surface(
-            section_found=False, trigger_glob=None, skip_phrase=None, quoted_count=0
-        )
+        return Step5Surface(section_found=False, trigger_glob=None, skip_phrase=None, quoted_count=0)
 
     trigger_glob: str | None = None
     quoted: list[str] = []
@@ -441,7 +439,7 @@ def _assert_population(step5: Step5Surface, report: ReportSurface, source: str) 
 
 # A matched negative control: same structure as the live document, with the two
 # surfaces deliberately disagreeing on BOTH couplings this guard asserts.
-_DIVERGING_DOCUMENT = '''\
+_DIVERGING_DOCUMENT = """\
 ---
 name: synthetic-negative-control
 ---
@@ -494,7 +492,7 @@ Then the stale-base re-verification: a zero count is recorded as the measurement
 ## Rules that outrank convenience
 
 - Nothing here.
-'''
+"""
 
 
 def test_both_build_gate_surfaces_are_located_in_the_live_document() -> None:
@@ -585,9 +583,7 @@ def test_every_step5_referring_site_states_the_same_trigger_glob() -> None:
         'Step 5 is normative; a prose site claiming to use "the same predicate" must state the '
         'same glob, or it silently sends a run down a different branch than the gate defines.\n'
         f'  Step 5 trigger table (NORMATIVE): "{step5.trigger_glob}"\n'
-        + '\n'.join(
-            f'  line {site.line_number} states "{site.glob}": {site.text}' for site in mismatched
-        )
+        + '\n'.join(f'  line {site.line_number} states "{site.glob}": {site.text}' for site in mismatched)
     )
 
 

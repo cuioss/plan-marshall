@@ -209,9 +209,7 @@ def test_transition_last_phase(plan_context):
     ]
     _create_status(plan_context, plan_id='lifecycle-trans-last', current_phase='6-finalize', phases=phases)
 
-    result = cmd_transition(
-        _variant(_TRANSITION_ARGS, plan_id='lifecycle-trans-last', completed='6-finalize')
-    )
+    result = cmd_transition(_variant(_TRANSITION_ARGS, plan_id='lifecycle-trans-last', completed='6-finalize'))
     assert result['status'] == 'success'
     assert result['message'] == 'All phases completed'
 

@@ -66,9 +66,7 @@ def test_update_depends_on(plan_context):
 @pytest.mark.parametrize('status', ['pending', 'in_progress', 'done', 'blocked', 'infeasible'])
 def test_update_accepts_each_valid_status(plan_context, status):
     """update --status accepts every member of the status enum, including infeasible."""
-    add_basic_task(
-        plan_id=f'upd-status-{status}', title='Task', deliverable=1, steps=['src/main/java/File.java']
-    )
+    add_basic_task(plan_id=f'upd-status-{status}', title='Task', deliverable=1, steps=['src/main/java/File.java'])
 
     result = cmd_update(_update_ns(plan_id=f'upd-status-{status}', number=1, status=status))
 

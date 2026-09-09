@@ -172,6 +172,4 @@ def test_both_routing_flags_are_mutually_exclusive():
         CANONICAL_PROJECT_DIR,
     )
     data = result.toon_or_error()
-    assert data.get('error') == 'mutually_exclusive_args', (
-        f'Expected mutually_exclusive_args, got: {data!r}'
-    )
+    assert data.get('error') == 'mutually_exclusive_args', f'Expected mutually_exclusive_args, got: {data!r}'

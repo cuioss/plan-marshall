@@ -25,7 +25,9 @@ from conftest import PROJECT_ROOT, load_script_module
 _MANAGE_CONFIG = ('plan-marshall', 'manage-config')
 
 parse_sensible_int = load_script_module(
-    'plan-marshall', 'script-shared', 'sensible_number.py',
+    'plan-marshall',
+    'script-shared',
+    'sensible_number.py',
     module_name='_sensible_number_for_config_defaults_test',
 ).parse_sensible_int
 
@@ -35,9 +37,7 @@ _config_core_mod = load_script_module(
 _config_defaults_mod = load_script_module(
     *_MANAGE_CONFIG, '_config_defaults.py', module_name='_config_defaults_for_config_defaults_test'
 )
-_cmd_init_mod = load_script_module(
-    *_MANAGE_CONFIG, '_cmd_init.py', module_name='_cmd_init_for_config_defaults_test'
-)
+_cmd_init_mod = load_script_module(*_MANAGE_CONFIG, '_cmd_init.py', module_name='_cmd_init_for_config_defaults_test')
 _cmd_system_plan_mod = load_script_module(
     *_MANAGE_CONFIG, '_cmd_system_plan.py', module_name='_cmd_system_plan_for_config_defaults_test'
 )
@@ -161,11 +161,7 @@ def _discovered_verify_step_ids() -> list:
         ),
         key=lambda rec: (rec.get('order', 0), rec.get('name', '')),
     )
-    return [
-        f'default:verify:{canonical}'
-        for rec in built_in
-        for canonical in rec.get('canonicals', [])
-    ]
+    return [f'default:verify:{canonical}' for rec in built_in for canonical in rec.get('canonicals', [])]
 
 
 def test_finalize_step_params_constant_is_deleted():
@@ -241,12 +237,8 @@ def test_branch_cleanup_step_param_seeds_its_default(param, expected):
     """
     branch_cleanup = _branch_cleanup_params()
 
-    assert param in branch_cleanup, (
-        f'{param} must nest under default:branch-cleanup in the seeded steps map'
-    )
-    assert branch_cleanup[param] == expected, (
-        f'{param} default must be {expected!r}, got {branch_cleanup[param]!r}'
-    )
+    assert param in branch_cleanup, f'{param} must nest under default:branch-cleanup in the seeded steps map'
+    assert branch_cleanup[param] == expected, f'{param} default must be {expected!r}, got {branch_cleanup[param]!r}'
     # bool is an int subclass, so equality alone would accept 0 for False.
     assert type(branch_cleanup[param]) is type(expected)
     assert param not in _config_defaults_mod.DEFAULT_PLAN_FINALIZE, (
@@ -285,21 +277,15 @@ def test_default_plan_finalize_simplify_is_config_less_after_ceremony_lane_migra
     finalize = _config_defaults_mod.DEFAULT_PLAN_FINALIZE
 
     # Never a flat sibling of `steps`, and never a step-owned param anymore.
-    assert 'simplify' not in finalize, (
-        'simplify must NOT survive as a flat phase-level field'
-    )
+    assert 'simplify' not in finalize, 'simplify must NOT survive as a flat phase-level field'
     config = _config_defaults_mod.get_default_config()
-    simplify_step = _params_for(
-        config['plan']['phase-6-finalize']['steps'], 'default:finalize-step-simplify'
-    )
+    simplify_step = _params_for(config['plan']['phase-6-finalize']['steps'], 'default:finalize-step-simplify')
     assert simplify_step == {}, (
         'default:finalize-step-simplify must be config-less after the ceremony '
         f'run-at-all → lane migration; got {simplify_step!r}'
     )
     assert 'simplify' not in simplify_step
-    assert 'lane' not in simplify_step, (
-        'a default_on:true non-infra step seeds no lane override'
-    )
+    assert 'lane' not in simplify_step, 'a default_on:true non-infra step seeds no lane override'
 
 
 def test_get_default_config_finalize_simplify_carries_no_run_at_all_param():
@@ -378,9 +364,7 @@ def test_seed_finalize_steps_materializes_every_built_in_implementor():
     assert _step_ids(seeded) == _discovered_seed_step_ids()
     # the default_on:false built-in steps are now materialized into the seed
     for step_id in _discovered_default_off_built_in_step_ids():
-        assert step_id in seeded, (
-            f'materialize-all seed must include the default_on:false step {step_id!r}'
-        )
+        assert step_id in seeded, f'materialize-all seed must include the default_on:false step {step_id!r}'
 
 
 def test_seed_finalize_steps_default_off_steps_carry_lane_off():
@@ -416,9 +400,7 @@ def test_seed_finalize_steps_default_on_non_infra_steps_have_no_lane_key():
     seeded = _config_defaults_mod._seed_finalize_steps()
 
     for step_id in ('default:finalize-step-simplify', 'default:finalize-step-security-audit'):
-        assert 'lane' not in seeded[step_id], (
-            f'default_on:true non-infra step {step_id!r} must seed no lane override'
-        )
+        assert 'lane' not in seeded[step_id], f'default_on:true non-infra step {step_id!r} must seed no lane override'
 
 
 # ---------------------------------------------------------------------------
@@ -430,9 +412,7 @@ def test_seed_finalize_steps_default_on_non_infra_steps_have_no_lane_key():
 def test_get_default_config_includes_finalize_flow_hardening_knobs():
     """get_default_config() surfaces all three finalize-flow-hardening knobs nested together."""
     config = _config_defaults_mod.get_default_config()
-    branch_cleanup = _params_for(
-        config['plan']['phase-6-finalize']['steps'], 'default:branch-cleanup'
-    )
+    branch_cleanup = _params_for(config['plan']['phase-6-finalize']['steps'], 'default:branch-cleanup')
     assert branch_cleanup['merge_hold_window'] == 'full_window_release_at_waits'
     assert branch_cleanup['merge_hold_budget_seconds'] == 3600
     assert branch_cleanup['use_merge_queue'] is False
@@ -591,9 +571,7 @@ _VALIDATOR_REJECTION_IDS = [
 ]
 
 
-@pytest.mark.parametrize(
-    ('validator', 'args', 'match'), _VALIDATOR_REJECTIONS, ids=_VALIDATOR_REJECTION_IDS
-)
+@pytest.mark.parametrize(('validator', 'args', 'match'), _VALIDATOR_REJECTIONS, ids=_VALIDATOR_REJECTION_IDS)
 def test_config_validator_rejects_invalid_value(validator, args, match):
     """Each config validator raises ValueError naming the knob for an invalid value."""
     with pytest.raises(ValueError, match=match):
@@ -629,7 +607,9 @@ def test_config_validator_accepts_every_enum_value(validator, enum_name, extra_a
 def _load_tasks_cost():
     """Load the manage-tasks ``_tasks_cost.py`` consumer module."""
     return load_script_module(
-        'plan-marshall', 'manage-tasks', '_tasks_cost.py',
+        'plan-marshall',
+        'manage-tasks',
+        '_tasks_cost.py',
         module_name='_tasks_cost_for_drift_test',
     )
 
@@ -688,36 +668,24 @@ def test_valid_lane_selection_enumerates_ask_and_auto():
     """VALID_LANE_SELECTION must enumerate exactly ('ask', 'auto')."""
     assert _config_defaults_mod.VALID_LANE_SELECTION == ('ask', 'auto')
     # the seeded default must be a member of the enum
-    assert (
-        _config_defaults_mod.DEFAULT_PLAN_INIT['lane_selection']
-        in _config_defaults_mod.VALID_LANE_SELECTION
-    )
+    assert _config_defaults_mod.DEFAULT_PLAN_INIT['lane_selection'] in _config_defaults_mod.VALID_LANE_SELECTION
 
 
 def test_valid_lane_override_enumerates_five_values():
     """VALID_LANE_OVERRIDE must enumerate exactly off|minimal|standard|full|ask."""
-    assert _config_defaults_mod.VALID_LANE_OVERRIDE == (
-        'off', 'minimal', 'standard', 'full', 'ask'
-    )
+    assert _config_defaults_mod.VALID_LANE_OVERRIDE == ('off', 'minimal', 'standard', 'full', 'ask')
 
 
 def test_default_lane_prune_thresholds_carries_expected_defaults():
     """DEFAULT_LANE_PRUNE_THRESHOLDS must map the two numeric predicate thresholds."""
-    assert (
-        _config_defaults_mod.DEFAULT_LANE_PRUNE_THRESHOLDS
-        == _EXPECTED_LANE_PRUNE_THRESHOLDS
-    )
+    assert _config_defaults_mod.DEFAULT_LANE_PRUNE_THRESHOLDS == _EXPECTED_LANE_PRUNE_THRESHOLDS
 
 
 def test_validate_lane_prune_thresholds_accepts_seeded_default():
     """validate_lane_prune_thresholds must accept the seeded default mapping."""
-    _config_defaults_mod.validate_lane_prune_thresholds(
-        _config_defaults_mod.DEFAULT_LANE_PRUNE_THRESHOLDS
-    )
+    _config_defaults_mod.validate_lane_prune_thresholds(_config_defaults_mod.DEFAULT_LANE_PRUNE_THRESHOLDS)
     # boundary in-range values are also accepted
-    _config_defaults_mod.validate_lane_prune_thresholds(
-        {'confidence_complete': 0, 'linear_change_max_deliverables': 1}
-    )
+    _config_defaults_mod.validate_lane_prune_thresholds({'confidence_complete': 0, 'linear_change_max_deliverables': 1})
     _config_defaults_mod.validate_lane_prune_thresholds(
         {'confidence_complete': 100, 'linear_change_max_deliverables': 5}
     )
@@ -786,9 +754,7 @@ _PHASE_KNOB_REGISTRATIONS = [(c, k, v) for c, k, v, _p in _PHASE_KNOB_SEEDS]
 _PHASE_KNOB_SURFACINGS = [(p, k, v) for _c, k, v, p in _PHASE_KNOB_SEEDS]
 
 
-@pytest.mark.parametrize(
-    ('constant', 'knob', 'expected'), _PHASE_KNOB_REGISTRATIONS, ids=_PHASE_KNOB_IDS
-)
+@pytest.mark.parametrize(('constant', 'knob', 'expected'), _PHASE_KNOB_REGISTRATIONS, ids=_PHASE_KNOB_IDS)
 def test_phase_defaults_constant_registers_knob(constant, knob, expected):
     """The phase's DEFAULT_PLAN_* constant schema-registers the knob at its default.
 
@@ -834,10 +800,7 @@ def test_token_magnitudes_round_trip_through_the_shared_parser():
     execute_defaults = _config_defaults_mod.DEFAULT_PLAN_EXECUTE
     execute_config = _config_defaults_mod.get_default_config()['plan']['phase-5-execute']
 
-    parsed = {
-        size: parse_sensible_int(value)
-        for size, value in execute_defaults['cost_size_token_table'].items()
-    }
+    parsed = {size: parse_sensible_int(value) for size, value in execute_defaults['cost_size_token_table'].items()}
     assert parsed == {'XS': 5000, 'S': 25000, 'M': 60000, 'L': 130000, 'XL': 260000, 'XXL': 520000}
     assert parse_sensible_int(execute_defaults['per_envelope_budget_tokens']) == 400000
     assert parse_sensible_int(execute_config['per_envelope_budget_tokens']) == 400000
@@ -860,9 +823,7 @@ def test_retired_per_deliverable_build_enum_names_the_old_vocabulary():
 def test_validate_per_deliverable_build_accepts_canonical_verify_list():
     """validate_per_deliverable_build must accept a list of default:verify:{canonical} IDs."""
     # no exception for a valid canonical-verify list
-    _config_defaults_mod.validate_per_deliverable_build(
-        ['default:verify:compile', 'default:verify:module-tests']
-    )
+    _config_defaults_mod.validate_per_deliverable_build(['default:verify:compile', 'default:verify:module-tests'])
     # the seeded default must validate
     _config_defaults_mod.validate_per_deliverable_build(
         _config_defaults_mod.DEFAULT_PLAN_EXECUTE['per_deliverable_build']
@@ -897,9 +858,7 @@ def test_remove_field_deletes_explicit_phase_key(plan_context):
     _cmd_init_mod.cmd_init(Namespace(force=False))
 
     # set an explicit override so the key is present in the persisted section
-    set_args = Namespace(
-        verb='set', field='per_deliverable_build', value='default:verify:compile'
-    )
+    set_args = Namespace(verb='set', field='per_deliverable_build', value='default:verify:compile')
     set_result = _cmd_quality_phases_mod.cmd_phase(set_args, 'phase-5-execute')
     assert set_result['status'] == 'success'
 
@@ -1038,12 +997,9 @@ def test_default_orchestrator_auto_emit_is_false():
     """DEFAULT_ORCHESTRATOR must declare auto_emit with default False."""
     orchestrator_defaults = _config_defaults_mod.DEFAULT_ORCHESTRATOR
 
-    assert 'auto_emit' in orchestrator_defaults, (
-        'auto_emit must be schema-registered in DEFAULT_ORCHESTRATOR'
-    )
+    assert 'auto_emit' in orchestrator_defaults, 'auto_emit must be schema-registered in DEFAULT_ORCHESTRATOR'
     assert orchestrator_defaults['auto_emit'] is False, (
-        'auto_emit default must be False (manual emit is the safe posture; '
-        'orchestrator-tier autonomy is opt-in)'
+        'auto_emit default must be False (manual emit is the safe posture; orchestrator-tier autonomy is opt-in)'
     )
 
 
@@ -1063,9 +1019,7 @@ def test_orchestrator_in_canonical_top_level_key_order():
     assert order.index('plan') < order.index('orchestrator') < order.index('project'), (
         "'orchestrator' must sit after plan and before project in canonical order"
     )
-    assert order.index('orchestrator') == order.index('plan') + 1, (
-        "'orchestrator' must sit immediately after 'plan'"
-    )
+    assert order.index('orchestrator') == order.index('plan') + 1, "'orchestrator' must sit immediately after 'plan'"
 
 
 def test_code_intelligence_in_canonical_top_level_key_order():
@@ -1157,9 +1111,7 @@ def test_orchestrator_set_then_get_roundtrip_auto_emit(plan_context):
     """`orchestrator set --field auto_emit --value true` must round-trip via get (bool-coerced)."""
     _cmd_init_mod.cmd_init(Namespace(force=False))
 
-    set_result = _cmd_orchestrator_mod.cmd_orchestrator_set(
-        Namespace(field='auto_emit', value='true')
-    )
+    set_result = _cmd_orchestrator_mod.cmd_orchestrator_set(Namespace(field='auto_emit', value='true'))
     assert set_result['status'] == 'success'
     assert set_result['value'] is True
 
@@ -1177,9 +1129,7 @@ def test_orchestrator_set_unknown_field_is_rejected(plan_context):
     """
     _cmd_init_mod.cmd_init(Namespace(force=False))
 
-    result = _cmd_orchestrator_mod.cmd_orchestrator_set(
-        Namespace(field='bogus_knob', value='true')
-    )
+    result = _cmd_orchestrator_mod.cmd_orchestrator_set(Namespace(field='bogus_knob', value='true'))
 
     assert result['status'] == 'error'
     assert result.get('error_type') == 'unknown_field'
@@ -1317,12 +1267,8 @@ def test_default_plan_refine_includes_simplicity_lean():
     """
     refine_defaults = _config_defaults_mod.DEFAULT_PLAN_REFINE
 
-    assert 'simplicity' in refine_defaults, (
-        'simplicity must be schema-registered in DEFAULT_PLAN_REFINE'
-    )
-    assert refine_defaults['simplicity'] == 'lean', (
-        "simplicity default must be 'lean' (implement the strict minimum)"
-    )
+    assert 'simplicity' in refine_defaults, 'simplicity must be schema-registered in DEFAULT_PLAN_REFINE'
+    assert refine_defaults['simplicity'] == 'lean', "simplicity default must be 'lean' (implement the strict minimum)"
 
 
 def test_get_default_config_phase_2_refine_includes_simplicity_lean():
@@ -1417,9 +1363,7 @@ def test_built_in_finalize_steps_places_simplify_before_push():
     assert steps.index('default:architecture-refresh') < steps.index('default:push')
     # D2 intended order: the derived-state refresh runs AFTER the source-mutating
     # security-audit, so its descriptor snapshot captures the hardening edits.
-    assert steps.index('default:finalize-step-security-audit') < steps.index(
-        'default:architecture-refresh'
-    )
+    assert steps.index('default:finalize-step-security-audit') < steps.index('default:architecture-refresh')
 
 
 def test_built_in_finalize_step_descriptions_includes_finalize_step_simplify():
@@ -1431,9 +1375,7 @@ def test_built_in_finalize_step_descriptions_includes_finalize_step_simplify():
     """
     description = _discovered_step_description('default:finalize-step-simplify')
 
-    assert description, (
-        'default:finalize-step-simplify discovered description must be non-empty'
-    )
+    assert description, 'default:finalize-step-simplify discovered description must be non-empty'
 
 
 def test_built_in_finalize_steps_orders_simplify_then_push():
@@ -1447,9 +1389,7 @@ def test_built_in_finalize_steps_orders_simplify_then_push():
     simplify_index = steps.index('default:finalize-step-simplify')
     push_index = steps.index('default:push')
     # direct mirror of the request mandate: simplify precedes push
-    assert simplify_index < push_index, (
-        'finalize-step-simplify must precede push'
-    )
+    assert simplify_index < push_index, 'finalize-step-simplify must precede push'
 
 
 # =============================================================================
@@ -1586,15 +1526,12 @@ def test_default_plan_finalize_config_less_steps_map_to_empty_dict():
         assert isinstance(params, dict), f'every step value must be a dict; got {params!r}'
         if step_id in lane_off_steps:
             assert params.get('lane') == 'off', (
-                f'default_on:false built-in step {step_id!r} must carry a lane:off '
-                f'override; got {params!r}'
+                f'default_on:false built-in step {step_id!r} must carry a lane:off override; got {params!r}'
             )
         elif step_id in param_owning:
             assert params, f'param-owning step {step_id!r} must carry a non-empty nested dict'
         else:
-            assert params == {}, (
-                f'config-less step {step_id!r} must map to {{}}, not {params!r}'
-            )
+            assert params == {}, f'config-less step {step_id!r} must map to {{}}, not {params!r}'
 
 
 def test_default_plan_finalize_drops_flat_step_owned_knobs():
@@ -1820,8 +1757,7 @@ def test_get_default_config_seeds_no_per_phase_coverage():
     for key, block in plan_config.items():
         if key.startswith('phase-') and isinstance(block, dict):
             assert 'coverage' not in block, (
-                f'per-phase block {key!r} must NOT seed a coverage key — '
-                'coverage is plan-wide only'
+                f'per-phase block {key!r} must NOT seed a coverage key — coverage is plan-wide only'
             )
 
 
@@ -1843,13 +1779,10 @@ def test_get_default_config_does_not_seed_build_map():
 
     # no build.map block, and the legacy skill_domains.build_map is absent.
     assert 'map' not in config.get('build', {}), (
-        'get_default_config() must NOT seed build.map (seeded at Step 8b '
-        'after architecture discovery)'
+        'get_default_config() must NOT seed build.map (seeded at Step 8b after architecture discovery)'
     )
     assert 'skill_domains' in config
-    assert 'build_map' not in config['skill_domains'], (
-        'the legacy skill_domains.build_map block must not be present'
-    )
+    assert 'build_map' not in config['skill_domains'], 'the legacy skill_domains.build_map block must not be present'
 
 
 def test_get_default_config_omits_retired_build_map_overrides():
@@ -2065,17 +1998,14 @@ def test_committed_marshal_json_top_level_keys_already_canonical():
     save_config enforces, otherwise the next save would reorder it and produce a
     spurious diff.
     """
-    assert _COMMITTED_MARSHAL_PATH.exists(), (
-        f'committed marshal.json must exist at {_COMMITTED_MARSHAL_PATH}'
-    )
+    assert _COMMITTED_MARSHAL_PATH.exists(), f'committed marshal.json must exist at {_COMMITTED_MARSHAL_PATH}'
     committed = json.loads(_COMMITTED_MARSHAL_PATH.read_text(encoding='utf-8'))
     committed_keys = list(committed.keys())
 
     # the committed key order equals the canonical order filtered to present keys
     expected = [k for k in _EXPECTED_CANONICAL_KEY_ORDER if k in committed]
     assert committed_keys == expected, (
-        f'committed marshal.json top-level keys {committed_keys} are not in canonical '
-        f'order {expected}'
+        f'committed marshal.json top-level keys {committed_keys} are not in canonical order {expected}'
     )
 
 
@@ -2090,25 +2020,18 @@ def test_committed_marshal_json_surfaces_every_orchestrator_knob():
     authoritative key set, never transcribed, so a key added there fails this test
     until the committed file surfaces it too.
     """
-    assert _COMMITTED_MARSHAL_PATH.exists(), (
-        f'committed marshal.json must exist at {_COMMITTED_MARSHAL_PATH}'
-    )
+    assert _COMMITTED_MARSHAL_PATH.exists(), f'committed marshal.json must exist at {_COMMITTED_MARSHAL_PATH}'
     committed = json.loads(_COMMITTED_MARSHAL_PATH.read_text(encoding='utf-8'))
 
-    assert 'orchestrator' in committed, (
-        'the committed marshal.json must carry a top-level orchestrator block'
-    )
+    assert 'orchestrator' in committed, 'the committed marshal.json must carry a top-level orchestrator block'
     block = committed['orchestrator']
     # Shape before contents: a JSON ARRAY of the key names satisfies the set
     # comparison below, so without this the guard accepts a block that is not a
     # block at all.
-    assert isinstance(block, dict), (
-        f'the committed orchestrator value must be an object, got {type(block).__name__}'
-    )
+    assert isinstance(block, dict), f'the committed orchestrator value must be an object, got {type(block).__name__}'
     known = set(_config_defaults_mod.ORCHESTRATOR_KNOWN_KEYS)
     assert set(block) == known, (
-        f'committed orchestrator block surfaces {sorted(block)}, '
-        f'expected every settable knob {sorted(known)}'
+        f'committed orchestrator block surfaces {sorted(block)}, expected every settable knob {sorted(known)}'
     )
     # The keys being present is not the claim — surfacing a knob must not CHANGE
     # its effective default, so the committed values are pinned against the seed
@@ -2116,7 +2039,7 @@ def test_committed_marshal_json_surfaces_every_orchestrator_knob():
     seeded = _config_defaults_mod.get_default_config()['orchestrator']
     assert block == seeded, (
         f'committed orchestrator block {block} must equal the seeded defaults {seeded}; '
-        'a differing value would be a tuning change wearing a surfacing change\'s clothes'
+        "a differing value would be a tuning change wearing a surfacing change's clothes"
     )
 
 
@@ -2180,18 +2103,10 @@ def test_default_build_queue_declares_max_slots_5_and_max_retries_10():
     """DEFAULT_BUILD_QUEUE must declare max_slots=5 and max_retries=10."""
     build_queue = _config_defaults_mod.DEFAULT_BUILD_QUEUE
 
-    assert 'max_slots' in build_queue, (
-        'max_slots must be schema-registered in DEFAULT_BUILD_QUEUE'
-    )
-    assert build_queue['max_slots'] == 5, (
-        'build_queue.max_slots default must be 5 (concurrent build admissions)'
-    )
-    assert 'max_retries' in build_queue, (
-        'max_retries must be schema-registered in DEFAULT_BUILD_QUEUE'
-    )
-    assert build_queue['max_retries'] == 10, (
-        'build_queue.max_retries default must be 10 (blocked-admission re-polls)'
-    )
+    assert 'max_slots' in build_queue, 'max_slots must be schema-registered in DEFAULT_BUILD_QUEUE'
+    assert build_queue['max_slots'] == 5, 'build_queue.max_slots default must be 5 (concurrent build admissions)'
+    assert 'max_retries' in build_queue, 'max_retries must be schema-registered in DEFAULT_BUILD_QUEUE'
+    assert build_queue['max_retries'] == 10, 'build_queue.max_retries default must be 10 (blocked-admission re-polls)'
 
 
 def test_default_build_queue_declares_upper_limit_seconds_600():
@@ -2203,9 +2118,7 @@ def test_default_build_queue_declares_upper_limit_seconds_600():
     """
     build_queue = _config_defaults_mod.DEFAULT_BUILD_QUEUE
 
-    assert 'upper_limit_seconds' in build_queue, (
-        'upper_limit_seconds must be schema-registered in DEFAULT_BUILD_QUEUE'
-    )
+    assert 'upper_limit_seconds' in build_queue, 'upper_limit_seconds must be schema-registered in DEFAULT_BUILD_QUEUE'
     assert build_queue['upper_limit_seconds'] == 600, (
         'build_queue.upper_limit_seconds default must be 600 (the clamp floor)'
     )
@@ -2259,15 +2172,11 @@ def test_default_config_seeds_no_require_wrapper():
 
     # No per-build-system block is seeded, so no require_wrapper key exists.
     for tool in ('maven', 'gradle', 'pyproject', 'npm'):
-        assert tool not in build, (
-            f'build.{tool} block must not be seeded — the require_wrapper knob was removed'
-        )
+        assert tool not in build, f'build.{tool} block must not be seeded — the require_wrapper knob was removed'
     # Defensive: no nested block anywhere carries a require_wrapper key.
     for key, sub in build.items():
         if isinstance(sub, dict):
-            assert 'require_wrapper' not in sub, (
-                f'build.{key} must not carry a require_wrapper key'
-            )
+            assert 'require_wrapper' not in sub, f'build.{key} must not carry a require_wrapper key'
     # The peer build.queue block is still present (additive removal only).
     assert 'queue' in build
 
@@ -2370,9 +2279,7 @@ def test_default_plan_blocks_carry_per_phase_effort():
 
     # each block carries the expected effort shape
     for phase, block in blocks.items():
-        assert 'effort' in block, (
-            f'{phase} DEFAULT_PLAN block must seed a per-phase effort key'
-        )
+        assert 'effort' in block, f'{phase} DEFAULT_PLAN block must seed a per-phase effort key'
         assert block['effort'] == _EXPECTED_PHASE_EFFORT[phase], (
             f'{phase} effort default must be {_EXPECTED_PHASE_EFFORT[phase]!r}'
         )
@@ -2407,9 +2314,7 @@ def test_get_default_config_seeds_per_phase_effort():
     # every phase block carries the expected effort
     plan_block = config['plan']
     for phase, expected in _EXPECTED_PHASE_EFFORT.items():
-        assert plan_block[phase].get('effort') == expected, (
-            f'plan.{phase}.effort must be seeded as {expected!r}'
-        )
+        assert plan_block[phase].get('effort') == expected, f'plan.{phase}.effort must be seeded as {expected!r}'
 
 
 def test_get_default_config_seeds_plan_wide_effort_fallback():
@@ -2706,13 +2611,12 @@ def test_finding_raw_input_max_bytes_matches_manage_findings_default():
     drift from the store default, else a fresh project silently changes the cap.
     """
     findings_core = load_script_module(
-        'plan-marshall', 'manage-findings', '_findings_core.py',
+        'plan-marshall',
+        'manage-findings',
+        '_findings_core.py',
         module_name='_findings_core_for_raw_input_cap_test',
     )
-    assert (
-        _config_defaults_mod.DEFAULT_FINDING_RAW_INPUT_MAX_BYTES
-        == findings_core.DEFAULT_RAW_INPUT_MAX_BYTES
-    )
+    assert _config_defaults_mod.DEFAULT_FINDING_RAW_INPUT_MAX_BYTES == findings_core.DEFAULT_RAW_INPUT_MAX_BYTES
 
 
 def test_no_per_producer_triage_effort_subkeys_remain():
@@ -2775,9 +2679,7 @@ def test_validate_user_language_accepts_the_seed_and_free_form_pins():
     are all legitimate. Over-validating would reject valid input for no reader's
     benefit.
     """
-    _config_defaults_mod.validate_user_language(
-        _config_defaults_mod.DEFAULT_PROJECT['user_language']
-    )
+    _config_defaults_mod.validate_user_language(_config_defaults_mod.DEFAULT_PROJECT['user_language'])
     for pin in ('de', 'German', 'pt-BR', 'Deutsch'):
         _config_defaults_mod.validate_user_language(pin)
 
@@ -2802,10 +2704,7 @@ def test_valid_pr_strategy_enumerates_compact_and_distinct():
     """VALID_PR_STRATEGY must enumerate exactly ('compact', 'distinct')."""
     assert _config_defaults_mod.VALID_PR_STRATEGY == ('compact', 'distinct')
     # the seeded default must be a member of the enum
-    assert (
-        _config_defaults_mod.DEFAULT_PROJECT['pr_strategy']
-        in _config_defaults_mod.VALID_PR_STRATEGY
-    )
+    assert _config_defaults_mod.DEFAULT_PROJECT['pr_strategy'] in _config_defaults_mod.VALID_PR_STRATEGY
 
 
 def test_validate_pr_compact_max_changed_files_accepts_valid_ints():
@@ -2906,9 +2805,7 @@ def test_project_pr_decision_ceiling_boundary_through_handler(plan_context):
     """
     _cmd_init_mod.cmd_init(Namespace(force=False))
 
-    ride_result = _cmd_system_plan_mod.cmd_project(
-        Namespace(verb='pr-decision', changed_files=150)
-    )
+    ride_result = _cmd_system_plan_mod.cmd_project(Namespace(verb='pr-decision', changed_files=150))
     assert ride_result['status'] == 'success'
     assert ride_result['decision'] == 'ride'
     assert ride_result['strategy'] == 'compact'
@@ -2916,9 +2813,7 @@ def test_project_pr_decision_ceiling_boundary_through_handler(plan_context):
     assert ride_result['max'] == 150
     assert ride_result['threshold'] == 151
 
-    split_result = _cmd_system_plan_mod.cmd_project(
-        Namespace(verb='pr-decision', changed_files=151)
-    )
+    split_result = _cmd_system_plan_mod.cmd_project(Namespace(verb='pr-decision', changed_files=151))
     assert split_result['status'] == 'success'
     assert split_result['decision'] == 'split'
 
@@ -2927,14 +2822,10 @@ def test_project_pr_decision_distinct_always_splits(plan_context):
     """With pr_strategy == distinct, `project pr-decision` splits for any changed-file count."""
     _cmd_init_mod.cmd_init(Namespace(force=False))
 
-    set_result = _cmd_system_plan_mod.cmd_project(
-        Namespace(verb='set', field='pr_strategy', value='distinct')
-    )
+    set_result = _cmd_system_plan_mod.cmd_project(Namespace(verb='set', field='pr_strategy', value='distinct'))
     assert set_result['status'] == 'success'
 
-    result = _cmd_system_plan_mod.cmd_project(
-        Namespace(verb='pr-decision', changed_files=1)
-    )
+    result = _cmd_system_plan_mod.cmd_project(Namespace(verb='pr-decision', changed_files=1))
     assert result['status'] == 'success'
     assert result['decision'] == 'split'
     assert result['strategy'] == 'distinct'
@@ -2944,9 +2835,7 @@ def test_project_pr_decision_rejects_negative_changed_files(plan_context):
     """`project pr-decision --changed-files -1` must return status: error."""
     _cmd_init_mod.cmd_init(Namespace(force=False))
 
-    result = _cmd_system_plan_mod.cmd_project(
-        Namespace(verb='pr-decision', changed_files=-1)
-    )
+    result = _cmd_system_plan_mod.cmd_project(Namespace(verb='pr-decision', changed_files=-1))
     assert result['status'] == 'error'
     assert result.get('error_type') == 'invalid_value'
 
@@ -2966,9 +2855,7 @@ def test_project_pr_decision_rejects_corrupt_pr_strategy(plan_context):
     config.setdefault('project', {})['pr_strategy'] = 'sloppy'
     marshal_path.write_text(json.dumps(config, indent=2), encoding='utf-8')
 
-    result = _cmd_system_plan_mod.cmd_project(
-        Namespace(verb='pr-decision', changed_files=10)
-    )
+    result = _cmd_system_plan_mod.cmd_project(Namespace(verb='pr-decision', changed_files=10))
 
     assert result['status'] == 'error'
     assert result.get('error_type') == 'invalid_value'
@@ -2988,9 +2875,7 @@ def test_project_pr_decision_rejects_corrupt_pr_compact_max_changed_files(plan_c
     config.setdefault('project', {})['pr_compact_max_changed_files'] = -5
     marshal_path.write_text(json.dumps(config, indent=2), encoding='utf-8')
 
-    result = _cmd_system_plan_mod.cmd_project(
-        Namespace(verb='pr-decision', changed_files=10)
-    )
+    result = _cmd_system_plan_mod.cmd_project(Namespace(verb='pr-decision', changed_files=10))
 
     assert result['status'] == 'error'
     assert result.get('error_type') == 'invalid_value'
@@ -3054,13 +2939,7 @@ def test_migrate_qgate_auto_omits_lane_but_removes_legacy_key():
 
 def test_migrate_step_owned_simplify_always_to_lane_minimal():
     """simplify: always (step-owned param) → lane: minimal, legacy param removed."""
-    live = {
-        'plan': {
-            'phase-6-finalize': {
-                'steps': {'default:finalize-step-simplify': {'simplify': 'always'}}
-            }
-        }
-    }
+    live = {'plan': {'phase-6-finalize': {'steps': {'default:finalize-step-simplify': {'simplify': 'always'}}}}}
     migrated: list = []
     _migrate_run_at_all_to_lane(live, migrated)
 
@@ -3109,13 +2988,7 @@ def test_migrate_all_four_gates_preserve_values():
 
 def test_migrate_bare_owner_key_form_handled():
     """A legacy config storing the owning step under the bare (unprefixed) form migrates."""
-    live = {
-        'plan': {
-            'phase-6-finalize': {
-                'steps': {'finalize-step-security-audit': {'security_audit': 'never'}}
-            }
-        }
-    }
+    live = {'plan': {'phase-6-finalize': {'steps': {'finalize-step-security-audit': {'security_audit': 'never'}}}}}
     migrated: list = []
     _migrate_run_at_all_to_lane(live, migrated)
 
@@ -3242,11 +3115,7 @@ def _discovered_default_on_seed_step_ids() -> list:
     from extension_discovery import find_implementors
 
     seed_records = sorted(
-        (
-            rec
-            for rec in find_implementors(_config_defaults_mod.FINALIZE_STEP_EXT_POINT)
-            if rec.get('default_on')
-        ),
+        (rec for rec in find_implementors(_config_defaults_mod.FINALIZE_STEP_EXT_POINT) if rec.get('default_on')),
         key=lambda rec: (rec.get('order', 0), rec.get('name', '')),
     )
     return [rec['name'] for rec in seed_records if rec.get('name')]
@@ -3280,22 +3149,15 @@ class TestLoopBackWithoutAskingDefault:
         """``get_default_config()`` MUST expose
         ``plan.phase-6-finalize.loop_back_without_asking == True``."""
         cfg = _config_defaults_mod.get_default_config()
-        assert (
-            cfg['plan']['phase-6-finalize']['loop_back_without_asking']
-            is True
-        ), (
-            'get_default_config()["plan"]["phase-6-finalize"]'
-            '["loop_back_without_asking"] must default to True'
+        assert cfg['plan']['phase-6-finalize']['loop_back_without_asking'] is True, (
+            'get_default_config()["plan"]["phase-6-finalize"]["loop_back_without_asking"] must default to True'
         )
 
     def test_finalize_block_default_matches(self) -> None:
         """The ``DEFAULT_PLAN_FINALIZE`` module constant MUST agree with the
         value exposed by ``get_default_config()`` — they are the same
         physical default and must never drift."""
-        assert (
-            _config_defaults_mod.DEFAULT_PLAN_FINALIZE['loop_back_without_asking']
-            is True
-        )
+        assert _config_defaults_mod.DEFAULT_PLAN_FINALIZE['loop_back_without_asking'] is True
 
     def test_symmetric_with_finalize_without_asking(self) -> None:
         """The two auto-continuation knobs default symmetrically —
@@ -3324,8 +3186,7 @@ class TestLoopBackWithoutAskingDefault:
         cfg = _config_defaults_mod.get_default_config()
         finalize = cfg['plan']['phase-6-finalize']
         assert 'loop_back_without_asking' in finalize, (
-            'Fresh-project bootstrap must seed loop_back_without_asking '
-            'explicitly in plan.phase-6-finalize'
+            'Fresh-project bootstrap must seed loop_back_without_asking explicitly in plan.phase-6-finalize'
         )
         # Sanity: the fresh-project value matches the module-level constant
         assert (
@@ -3350,12 +3211,7 @@ class TestFinalMergeWithoutAskingDefault:
         declaration and must never drift."""
         from configurable_contract import resolve_step_defaults
 
-        assert (
-            resolve_step_defaults('default:branch-cleanup')[
-                'final_merge_without_asking'
-            ]
-            is True
-        )
+        assert resolve_step_defaults('default:branch-cleanup')['final_merge_without_asking'] is True
 
     def test_fresh_project_seeds_true(self) -> None:
         """A fresh project bootstrap (calling ``get_default_config()``
@@ -3376,9 +3232,7 @@ class TestFinalMergeWithoutAskingDefault:
 
         assert (
             branch_cleanup['final_merge_without_asking']
-            == resolve_step_defaults('default:branch-cleanup')[
-                'final_merge_without_asking'
-            ]
+            == resolve_step_defaults('default:branch-cleanup')['final_merge_without_asking']
         )
         assert branch_cleanup['final_merge_without_asking'] is True
         # the knob is no longer a flat phase-level field
@@ -3399,9 +3253,7 @@ class TestReviewCompletionAndBarrierKnobDefaults:
         """``review_completion_poll_timeout_seconds == 600`` nests under
         ``plan-marshall:automatic-review`` in a fresh config."""
         cfg = _config_defaults_mod.get_default_config()
-        automatic_review = _params_for(
-            cfg['plan']['phase-6-finalize']['steps'], 'plan-marshall:automatic-review'
-        )
+        automatic_review = _params_for(cfg['plan']['phase-6-finalize']['steps'], 'plan-marshall:automatic-review')
         assert automatic_review['review_completion_poll_timeout_seconds'] == 600, (
             'get_default_config() steps[plan-marshall:automatic-review]'
             '["review_completion_poll_timeout_seconds"] must default to 600'
@@ -3411,9 +3263,7 @@ class TestReviewCompletionAndBarrierKnobDefaults:
         """``pre_merge_comment_barrier == 'fail_into_loopback'`` nests under
         ``default:branch-cleanup`` in a fresh config."""
         cfg = _config_defaults_mod.get_default_config()
-        branch_cleanup = _params_for(
-            cfg['plan']['phase-6-finalize']['steps'], 'default:branch-cleanup'
-        )
+        branch_cleanup = _params_for(cfg['plan']['phase-6-finalize']['steps'], 'default:branch-cleanup')
         assert branch_cleanup['pre_merge_comment_barrier'] == 'fail_into_loopback', (
             'get_default_config() steps[default:branch-cleanup]'
             '["pre_merge_comment_barrier"] must default to fail_into_loopback'
@@ -3429,18 +3279,12 @@ class TestReviewCompletionAndBarrierKnobDefaults:
         steps = cfg['plan']['phase-6-finalize']['steps']
 
         assert (
-            _params_for(steps, 'plan-marshall:automatic-review')[
-                'review_completion_poll_timeout_seconds'
-            ]
-            == resolve_step_defaults('plan-marshall:automatic-review')[
-                'review_completion_poll_timeout_seconds'
-            ]
+            _params_for(steps, 'plan-marshall:automatic-review')['review_completion_poll_timeout_seconds']
+            == resolve_step_defaults('plan-marshall:automatic-review')['review_completion_poll_timeout_seconds']
         )
         assert (
             _params_for(steps, 'default:branch-cleanup')['pre_merge_comment_barrier']
-            == resolve_step_defaults('default:branch-cleanup')[
-                'pre_merge_comment_barrier'
-            ]
+            == resolve_step_defaults('default:branch-cleanup')['pre_merge_comment_barrier']
         )
 
     def test_knobs_are_not_flat_phase_level_siblings(self) -> None:
@@ -3476,11 +3320,9 @@ class TestCiVerifyRegistration:
         settle band), so it no longer sits between ``ci-verify`` and ``automatic-review``: the
         canonical tail is now the contiguous ``ci-verify → automatic-review``."""
         steps = _discovered_default_on_seed_step_ids()
-        assert 'default:ci-verify' in steps, (
-            "the default-on seed must contain 'default:ci-verify'"
-        )
+        assert 'default:ci-verify' in steps, "the default-on seed must contain 'default:ci-verify'"
         assert 'default:architecture-refresh' in steps, (
-            "architecture-refresh is default_on:true and must appear in the seed"
+            'architecture-refresh is default_on:true and must appear in the seed'
         )
         create_pr_idx = steps.index('default:create-pr')
         ci_verify_idx = steps.index('default:ci-verify')
@@ -3488,17 +3330,15 @@ class TestCiVerifyRegistration:
         push_idx = steps.index('default:push')
         automated_review_idx = steps.index('plan-marshall:automatic-review')
         assert ci_verify_idx == create_pr_idx + 1, (
-            "'default:ci-verify' must sit immediately after "
-            "'default:create-pr' in the default-on seed"
+            "'default:ci-verify' must sit immediately after 'default:create-pr' in the default-on seed"
         )
         assert automated_review_idx == ci_verify_idx + 1, (
             "'plan-marshall:automatic-review' must sit immediately after "
             "'default:ci-verify' — architecture-refresh (order 10) moved to the "
-            "pre-push settle band and is no longer between them"
+            'pre-push settle band and is no longer between them'
         )
         assert architecture_refresh_idx < push_idx, (
-            "'default:architecture-refresh' (order 10) now sits in the pre-push "
-            "settle band, ahead of the push barrier"
+            "'default:architecture-refresh' (order 10) now sits in the pre-push settle band, ahead of the push barrier"
         )
 
     def test_ci_verify_has_description(self) -> None:
@@ -3508,12 +3348,9 @@ class TestCiVerifyRegistration:
         doc's frontmatter ``description`` field — the discovery query reads it
         directly."""
         descriptions = _discovered_descriptions()
-        assert 'default:ci-verify' in descriptions, (
-            "the discovered descriptions must register 'default:ci-verify'"
-        )
+        assert 'default:ci-verify' in descriptions, "the discovered descriptions must register 'default:ci-verify'"
         assert descriptions['default:ci-verify'], (
-            "the discovered description for 'default:ci-verify' "
-            'must be a non-empty string'
+            "the discovered description for 'default:ci-verify' must be a non-empty string"
         )
 
 
@@ -3631,11 +3468,9 @@ class TestFinalizeStepDescriptionDrift:
             'default:lessons-capture',
         ):
             text = descriptions[key]
-            bound = self._READABILITY_BOUND_OVERRIDES.get(
-                key, self._READABILITY_BOUND
-            )
+            bound = self._READABILITY_BOUND_OVERRIDES.get(key, self._READABILITY_BOUND)
             assert len(text) <= bound, (
-                f"the discovered description for {key!r} exceeds "
+                f'the discovered description for {key!r} exceeds '
                 f'{bound}-char readability bound — '
                 f'length={len(text)}, text={text!r}'
             )
@@ -3678,8 +3513,7 @@ class TestSonarConfigKnobsDefaults:
         default that anchors success on new-code issues == 0."""
         cfg = _config_defaults_mod.get_default_config()
         assert self._sonar_params(cfg)['touched_file_cleanup'] == 'new_code_only', (
-            'steps[default:sonar-roundtrip]["touched_file_cleanup"] '
-            'must default to "new_code_only"'
+            'steps[default:sonar-roundtrip]["touched_file_cleanup"] must default to "new_code_only"'
         )
 
     def test_touched_file_cleanup_finalize_block_matches(self) -> None:
@@ -3687,12 +3521,7 @@ class TestSonarConfigKnobsDefaults:
         ``get_default_config()`` — same physical default, no drift."""
         from configurable_contract import resolve_step_defaults
 
-        assert (
-            resolve_step_defaults('default:sonar-roundtrip')[
-                'touched_file_cleanup'
-            ]
-            == 'new_code_only'
-        )
+        assert resolve_step_defaults('default:sonar-roundtrip')['touched_file_cleanup'] == 'new_code_only'
 
     def test_touched_file_cleanup_default_is_a_valid_enum_value(self) -> None:
         """The default value MUST be a member of
@@ -3701,12 +3530,9 @@ class TestSonarConfigKnobsDefaults:
         can never be an out-of-enum value."""
         from configurable_contract import resolve_step_defaults
 
-        default = resolve_step_defaults('default:sonar-roundtrip')[
-            'touched_file_cleanup'
-        ]
+        default = resolve_step_defaults('default:sonar-roundtrip')['touched_file_cleanup']
         assert default in _config_defaults_mod.VALID_SONAR_TOUCHED_FILE_CLEANUP, (
-            'touched_file_cleanup default must be a member of '
-            'VALID_SONAR_TOUCHED_FILE_CLEANUP'
+            'touched_file_cleanup default must be a member of VALID_SONAR_TOUCHED_FILE_CLEANUP'
         )
         # Must not raise.
         _config_defaults_mod.validate_sonar_touched_file_cleanup(default)
@@ -3735,12 +3561,7 @@ class TestSonarConfigKnobsDefaults:
         ``get_default_config()`` — same physical default, no drift."""
         from configurable_contract import resolve_step_defaults
 
-        assert (
-            resolve_step_defaults('default:sonar-roundtrip')[
-                'do_transition'
-            ]
-            is False
-        )
+        assert resolve_step_defaults('default:sonar-roundtrip')['do_transition'] is False
 
     def test_ce_wait_timeout_default_is_600(self) -> None:
         """``get_default_config()`` MUST expose ``ce_wait_timeout_seconds ==
@@ -3748,8 +3569,7 @@ class TestSonarConfigKnobsDefaults:
         ``checks_wait_timeout_seconds`` CI-completion default."""
         cfg = _config_defaults_mod.get_default_config()
         assert self._sonar_params(cfg)['ce_wait_timeout_seconds'] == 600, (
-            'steps[default:sonar-roundtrip]["ce_wait_timeout_seconds"] '
-            'must default to 600'
+            'steps[default:sonar-roundtrip]["ce_wait_timeout_seconds"] must default to 600'
         )
 
     def test_ce_wait_timeout_finalize_block_matches(self) -> None:
@@ -3757,12 +3577,7 @@ class TestSonarConfigKnobsDefaults:
         ``get_default_config()`` — same physical default, no drift."""
         from configurable_contract import resolve_step_defaults
 
-        assert (
-            resolve_step_defaults('default:sonar-roundtrip')[
-                'ce_wait_timeout_seconds'
-            ]
-            == 600
-        )
+        assert resolve_step_defaults('default:sonar-roundtrip')['ce_wait_timeout_seconds'] == 600
 
     def test_fresh_project_seeds_all_three_knobs(self) -> None:
         """A fresh project bootstrap (calling ``get_default_config()`` without
@@ -3780,18 +3595,13 @@ class TestSonarConfigKnobsDefaults:
         expected = resolve_step_defaults('default:sonar-roundtrip')
         for key in ('touched_file_cleanup', 'do_transition', 'ce_wait_timeout_seconds'):
             assert key in sonar, (
-                f'Fresh-project bootstrap must seed {key} explicitly under '
-                'steps[default:sonar-roundtrip]'
+                f'Fresh-project bootstrap must seed {key} explicitly under steps[default:sonar-roundtrip]'
             )
-            assert sonar[key] == expected[key], (
-                f'Fresh-project {key} value must match the parser-resolved default'
-            )
+            assert sonar[key] == expected[key], f'Fresh-project {key} value must match the parser-resolved default'
         # no flat sonar_-prefixed knob survives as a sibling of steps
         for flat in (
             'sonar_touched_file_cleanup',
             'sonar_do_transition',
             'sonar_ce_wait_timeout_seconds',
         ):
-            assert flat not in finalize, (
-                f'flat step-owned knob {flat!r} must not survive at phase level'
-            )
+            assert flat not in finalize, f'flat step-owned knob {flat!r} must not survive at phase level'

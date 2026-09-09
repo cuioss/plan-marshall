@@ -21,7 +21,6 @@ is declared rather than reported. Each includes a negative control, because a
 reconciliation that fires on agreement is worse than none.
 """
 
-
 from datetime import datetime
 
 import pytest

@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the `record-dispatch-boundary` subcommand of manage_metrics."""
 
-
 from __future__ import annotations
 
 import itertools
@@ -32,6 +31,7 @@ from conftest import run_script
 # phase's five dispatches sums to a smaller-but-honest-looking figure that is
 # indistinguishable from a complete one, so the reader returns the row count
 # alongside the sum and the reconciliation refuses a PARTIAL measure the maximum.
+
 
 def test_reader_returns_the_row_count_alongside_the_sum(plan_context):
     """`_read_dispatch_boundary_totals` reports how many rows it summed."""
@@ -89,9 +89,7 @@ def test_missing_reference_count_is_undecidable_not_partial():
     every un-enriched plan and lose the accumulator-under-count recovery the
     reconciliation exists for.
     """
-    assert manage_metrics._boundary_measure_is_partial(
-        {'dispatch_boundary_rows_recorded': 3}
-    ) is None
+    assert manage_metrics._boundary_measure_is_partial({'dispatch_boundary_rows_recorded': 3}) is None
     assert manage_metrics._boundary_measure_is_partial({'subagent_samples': 5}) is None
 
 
@@ -164,10 +162,7 @@ def test_first_invocation_creates_file_with_one_row(plan_context):
     # `message.usage` figures, and a `0` would assert a measurement never taken.
     rows = _data_rows(content)
     assert len(rows) == 1
-    assert (
-        ',voluntary_checkpoint,12345,10,60000,unmeasured,unmeasured,unmeasured,unmeasured'
-        in rows[0]
-    )
+    assert ',voluntary_checkpoint,12345,10,60000,unmeasured,unmeasured,unmeasured,unmeasured' in rows[0]
     assert ',voluntary_checkpoint,12345,10,60000,0,0,0,0' not in rows[0]
     # The unmeasured columns are ABSENT from the result, and named as such.
     for column in (
@@ -187,9 +182,7 @@ def test_first_invocation_creates_file_with_one_row(plan_context):
 # =============================================================================
 
 
-def test_subsequent_invocations_append_rows_in_order_with_monotonic_timestamps(
-    plan_context, monkeypatch
-):
+def test_subsequent_invocations_append_rows_in_order_with_monotonic_timestamps(plan_context, monkeypatch):
     """Successive invocations append rows in chronological order, header preserved."""
     plan_dir = plan_context.plan_dir_for('disp-append')
     _seed_status_json(plan_dir)
@@ -207,9 +200,7 @@ def test_subsequent_invocations_append_rows_in_order_with_monotonic_timestamps(
 
     monkeypatch.setattr(manage_metrics, 'now_utc_iso', _advancing_now_utc_iso)
 
-    cmd_record_dispatch_boundary(
-        _ns('disp-append', termination_cause='voluntary_checkpoint', total_tokens=100)
-    )
+    cmd_record_dispatch_boundary(_ns('disp-append', termination_cause='voluntary_checkpoint', total_tokens=100))
     cmd_record_dispatch_boundary(
         _ns('disp-append', termination_cause='task_complete_returned_verbatim', total_tokens=200)
     )
@@ -231,6 +222,4 @@ def test_subsequent_invocations_append_rows_in_order_with_monotonic_timestamps(
 
     # Timestamps strictly non-decreasing across appended rows
     timestamps = [row.split(',', 1)[0] for row in rows]
-    assert timestamps == sorted(timestamps), (
-        f'Timestamps not monotonic across appended rows: {timestamps}'
-    )
+    assert timestamps == sorted(timestamps), f'Timestamps not monotonic across appended rows: {timestamps}'

@@ -15,17 +15,13 @@ from pathlib import Path
 
 from conftest import load_script_module
 
-_shared = load_script_module(
-    'pm-plugin-development', 'plugin-doctor', '_doctor_shared.py', '_doctor_shared_behavior'
-)
+_shared = load_script_module('pm-plugin-development', 'plugin-doctor', '_doctor_shared.py', '_doctor_shared_behavior')
 
 
 def _bundle(bundles_root: Path, name: str) -> Path:
     bundle = bundles_root / name
     (bundle / '.claude-plugin').mkdir(parents=True)
-    (bundle / '.claude-plugin' / 'plugin.json').write_text(
-        json.dumps({'name': name}), encoding='utf-8'
-    )
+    (bundle / '.claude-plugin' / 'plugin.json').write_text(json.dumps({'name': name}), encoding='utf-8')
     return bundle
 
 
@@ -483,8 +479,6 @@ def test_finding_to_dict_is_dict_equal_to_prior_handbuilt_dict():
         'fixable': True,
     }
 
-    result = _shared.Finding(
-        type='missing-frontmatter', file='x.md', severity='error', fixable=True
-    ).to_dict()
+    result = _shared.Finding(type='missing-frontmatter', file='x.md', severity='error', fixable=True).to_dict()
 
     assert result == prior_handbuilt

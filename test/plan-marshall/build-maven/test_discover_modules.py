@@ -32,7 +32,9 @@ from conftest import load_script_module
 FIXTURES_DIR = Path(__file__).parent / 'fixtures'
 
 
-_maven_cmd_discover_mod = load_script_module('plan-marshall', 'build-maven', '_maven_cmd_discover.py', '_maven_cmd_discover')
+_maven_cmd_discover_mod = load_script_module(
+    'plan-marshall', 'build-maven', '_maven_cmd_discover.py', '_maven_cmd_discover'
+)
 
 _build_commands = _maven_cmd_discover_mod._build_commands
 discover_maven_modules = _maven_cmd_discover_mod.discover_maven_modules

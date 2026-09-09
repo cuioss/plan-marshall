@@ -91,16 +91,18 @@ already GC'd past its 3600 s window and a daemon that died without restarting
 (so restart replay never ran and its on-disk entry is frozen non-terminal).
 """
 
-_FORBIDDEN_EXTRA_KEYS = frozenset({
-    'command',
-    'args',
-    'argv',
-    'spec',
-    'env',
-    'cwd',
-    'exec_path',
-    'project_path',
-})
+_FORBIDDEN_EXTRA_KEYS = frozenset(
+    {
+        'command',
+        'args',
+        'argv',
+        'spec',
+        'env',
+        'cwd',
+        'exec_path',
+        'project_path',
+    }
+)
 """``**extra`` keys :meth:`InteractionAudit.record` refuses, even from a future
 caller.
 

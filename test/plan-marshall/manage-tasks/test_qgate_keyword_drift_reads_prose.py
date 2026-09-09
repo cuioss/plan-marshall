@@ -118,8 +118,7 @@ def test_keyword_present_only_in_prose_is_not_flagged(plan_context):
     plan_dir = Path(plan_context.plan_dir_for('qgate-prose-ok'))
     _write_outline_with_prose(
         plan_dir,
-        'The gate currently re-runs on every push, so the CI pipeline is the '
-        'surface this deliverable hardens.',
+        'The gate currently re-runs on every push, so the CI pipeline is the surface this deliverable hardens.',
     )
     _write_task(plan_dir, "'Harden the gate'. Tighten the CI pipeline trigger.")
 
@@ -162,15 +161,12 @@ def test_heading_less_deliverables_section_is_unparseable(plan_context):
 
     assert deliverables == [], 'precondition: the section yields no deliverables'
     assert parseable is False, (
-        'an outline whose Deliverables section carries no `### N.` heading was '
-        'reported as parseable'
+        'an outline whose Deliverables section carries no `### N.` heading was reported as parseable'
     )
 
     result = cmd_qgate_mechanical(Namespace(plan_id='qgate-no-headings', no_emit=True))
 
-    assert result['ambiguous'] is True, (
-        'an unparseable outline was reported as an authoritative mechanical pass'
-    )
+    assert result['ambiguous'] is True, 'an unparseable outline was reported as an authoritative mechanical pass'
 
 
 def test_a_headed_deliverables_section_is_parseable(plan_context):
@@ -201,8 +197,7 @@ def test_keyword_absent_everywhere_is_still_flagged(plan_context):
     plan_dir = Path(plan_context.plan_dir_for('qgate-prose-drift'))
     _write_outline_with_prose(
         plan_dir,
-        'The gate currently re-runs on every push, so the trigger condition is '
-        'the surface this deliverable hardens.',
+        'The gate currently re-runs on every push, so the trigger condition is the surface this deliverable hardens.',
     )
     _write_task(plan_dir, "'Harden the gate'. Tighten the CI pipeline trigger.")
 

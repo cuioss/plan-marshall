@@ -340,9 +340,7 @@ class ScriptSurface:
         """Every accepted top-level spelling — canonical names and aliases alike."""
         return set(self.root.children.keys())
 
-    def get_leaf(
-        self, subcommand: str | None, sub_verb: str | None
-    ) -> ParserNode | None:
+    def get_leaf(self, subcommand: str | None, sub_verb: str | None) -> ParserNode | None:
         """Resolve a parser node by ``(subcommand, sub_verb)`` — two-level API.
 
         Returns ``None`` when the pair does not resolve. ``subcommand=None``
@@ -361,9 +359,7 @@ class ScriptSurface:
             return None
         return node.children.get(sub_verb)
 
-    def resolve_path(
-        self, positionals: list[str]
-    ) -> tuple[ParserNode | None, str | None, list[str]]:
+    def resolve_path(self, positionals: list[str]) -> tuple[ParserNode | None, str | None, list[str]]:
         """Walk the tree along ``positionals`` as far as registered children go.
 
         Returns ``(node, unknown_token, chain)``:
@@ -445,9 +441,7 @@ def _node_to_dict(node: ParserNode) -> dict:
         'alias_of': dict(sorted(node.alias_of.items())),
         'flags_confident': node.flags_confident,
         'children_confident': node.children_confident,
-        'children': {
-            name: _node_to_dict(child) for name, child in node.children.items()
-        },
+        'children': {name: _node_to_dict(child) for name, child in node.children.items()},
     }
 
 
@@ -462,17 +456,11 @@ def _node_from_dict(data: dict) -> ParserNode:
         # shim-owner: script-shared
         # shim-floor: the v4 CACHE_VERSION bump that added per-node flag_arity (see the "v4:" schema comment ~line 168), shipped with the shared argparse_surface.py module in #1127
         # shim-remove-when: no persisted parser-surface cache predating v4 remains (caches are regenerated on rebuild)
-        flag_arity={
-            str(name): int(count)
-            for name, count in (data.get('flag_arity') or {}).items()
-        },
+        flag_arity={str(name): int(count) for name, count in (data.get('flag_arity') or {}).items()},
         alias_of=dict(data.get('alias_of', {})),
         flags_confident=bool(data.get('flags_confident', True)),
         children_confident=bool(data.get('children_confident', True)),
-        children={
-            name: _node_from_dict(child)
-            for name, child in data.get('children', {}).items()
-        },
+        children={name: _node_from_dict(child) for name, child in data.get('children', {}).items()},
     )
 
 
@@ -633,7 +621,7 @@ def parse_choice_list(help_text: str) -> list[str]:
 
     dispatches = False
     for match in _CHOICES_RE.finditer(usage_block):
-        if usage_block[match.end():].lstrip().startswith('...'):
+        if usage_block[match.end() :].lstrip().startswith('...'):
             dispatches = True
             _absorb(match.group(1))
 
@@ -733,9 +721,7 @@ def parse_flag_arity(help_text: str) -> dict[str, int]:
                 continue
             observed.setdefault(name, set()).add(len(metavar.split()))
     return {
-        name: next(iter(counts))
-        for name, counts in observed.items()
-        if len(counts) == 1 and next(iter(counts)) >= 0
+        name: next(iter(counts)) for name, counts in observed.items() if len(counts) == 1 and next(iter(counts)) >= 0
     }
 
 
@@ -966,9 +952,7 @@ def _write_cache(cache_path: Path, surface: ScriptSurface) -> None:
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     tmp: Path | None = None
     try:
-        with tempfile.NamedTemporaryFile(
-            'w', dir=str(cache_path.parent), delete=False, encoding='utf-8'
-        ) as handle:
+        with tempfile.NamedTemporaryFile('w', dir=str(cache_path.parent), delete=False, encoding='utf-8') as handle:
             json.dump(surface.to_dict(), handle, sort_keys=True)
             tmp = Path(handle.name)
         os.replace(str(tmp), str(cache_path))
@@ -1117,11 +1101,7 @@ class _Deadline:
     """
 
     def __init__(self, total_budget_seconds: float | None) -> None:
-        self._at: float | None = (
-            time.monotonic() + total_budget_seconds
-            if total_budget_seconds is not None
-            else None
-        )
+        self._at: float | None = time.monotonic() + total_budget_seconds if total_budget_seconds is not None else None
 
     def expired(self) -> bool:
         """True once wall-clock has passed the cutoff. Always False when unset."""
@@ -1238,9 +1218,7 @@ def _derive_node(
                 # not be probed. Register it as a flat node whose flag set and
                 # child listing are both unknown, so validation stops at it
                 # instead of rejecting anything under it.
-                node.children[child_name] = ParserNode(
-                    flags_confident=False, children_confident=False
-                )
+                node.children[child_name] = ParserNode(flags_confident=False, children_confident=False)
                 continue
             node.children[child_name] = child_node
     return node
@@ -1269,9 +1247,7 @@ def _derive_surface_uncached(
         return NotDerivable(notation=notation, reason=REASON_HELP_FAILED)
     if not has_argparse_structure(top_help):
         return NotDerivable(notation=notation, reason=REASON_NO_STRUCTURE)
-    root = _derive_node(
-        executor, notation, [], top_help, depth=0, config=config, budget=budget
-    )
+    root = _derive_node(executor, notation, [], top_help, depth=0, config=config, budget=budget)
     return ScriptSurface(root=root)
 
 
@@ -1409,9 +1385,7 @@ def build_surface_index(
 
     def _derive(notation: str) -> tuple[str, ScriptSurface | NotDerivable]:
         key = cache_keys.get(notation) if cache_keys else None
-        return notation, derive_surface(
-            notation, executor, config=config, cache_key=key, deadline=deadline
-        )
+        return notation, derive_surface(notation, executor, config=config, cache_key=key, deadline=deadline)
 
     workers = max(1, min(len(notations), config.max_workers))
     index: dict[str, ScriptSurface | NotDerivable] = {}

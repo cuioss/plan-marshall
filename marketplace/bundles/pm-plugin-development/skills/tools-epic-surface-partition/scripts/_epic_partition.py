@@ -395,6 +395,7 @@ def _reproduction_spans(text: str) -> list[tuple[int, int]]:
     spans.extend((match.start(), match.end()) for match in _BLOCKQUOTE_RE.finditer(text))
     return spans
 
+
 #: The test-module line budget the campaign's findings are derived against.
 DEFAULT_LINE_BUDGET = 400
 
@@ -594,11 +595,7 @@ class Partition:
         lifecycle input, so the population is the input's own effect, measurable
         per instance rather than asserted as a shrunken total.
         """
-        return tuple(
-            module
-            for module in self.modules
-            if module.retired and module.verdict == VERDICT_CLAIMED
-        )
+        return tuple(module for module in self.modules if module.retired and module.verdict == VERDICT_CLAIMED)
 
 
 @dataclass(frozen=True)
@@ -636,9 +633,7 @@ def _match_segments(pattern: list[str], target: list[str]) -> bool:
     """Segment-wise glob match, so a ``*`` never spans a path separator."""
     if len(pattern) != len(target):
         return False
-    return all(
-        fnmatch.fnmatchcase(part, glob) for glob, part in zip(pattern, target, strict=True)
-    )
+    return all(fnmatch.fnmatchcase(part, glob) for glob, part in zip(pattern, target, strict=True))
 
 
 def entry_matches(entry_path: str, kind: str, module: str) -> bool:
@@ -820,10 +815,7 @@ def _raw_mentions_module(raw: str, module: str) -> bool:
         return _match_segments(pattern, target[-len(pattern) :])
     parents = target[:-1]
     width = len(pattern)
-    return any(
-        _match_segments(pattern, parents[start : start + width])
-        for start in range(len(parents) - width + 1)
-    )
+    return any(_match_segments(pattern, parents[start : start + width]) for start in range(len(parents) - width + 1))
 
 
 def _mentions_module(claim: SpecClaim, module: str) -> bool:
@@ -841,11 +833,7 @@ def iter_test_modules(test_root: Path, repo_root: Path) -> tuple[str, ...]:
     """Every test module under ``test_root``, as sorted repo-relative paths."""
     if not test_root.is_dir():
         return ()
-    found = [
-        path.relative_to(repo_root).as_posix()
-        for path in test_root.rglob(TEST_MODULE_GLOB)
-        if path.is_file()
-    ]
+    found = [path.relative_to(repo_root).as_posix() for path in test_root.rglob(TEST_MODULE_GLOB) if path.is_file()]
     return tuple(sorted(found))
 
 
@@ -969,7 +957,5 @@ def derive_attribution(
     grouped: dict[str, list[BudgetFinding]] = {}
     for finding in findings:
         grouped.setdefault(owners.get(finding.path, OWNER_UNCLAIMED), []).append(finding)
-    buckets = tuple(
-        AttributionBucket(owner=owner, findings=tuple(grouped[owner])) for owner in sorted(grouped)
-    )
+    buckets = tuple(AttributionBucket(owner=owner, findings=tuple(grouped[owner])) for owner in sorted(grouped))
     return Attribution(budget=budget, buckets=buckets)

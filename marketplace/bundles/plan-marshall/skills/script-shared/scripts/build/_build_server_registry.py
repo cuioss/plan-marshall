@@ -254,9 +254,7 @@ def get_project(registry: dict[str, Any], canonical_root: str) -> dict[str, Any]
     return record if isinstance(record, dict) else None
 
 
-def find_project_for_root(
-    registry: dict[str, Any], candidate_root: str
-) -> dict[str, Any] | None:
+def find_project_for_root(registry: dict[str, Any], candidate_root: str) -> dict[str, Any] | None:
     """Find the record whose canonical root or a container covers ``candidate_root``.
 
     Matches when ``candidate_root`` equals a project's ``canonical_root`` OR

@@ -12,7 +12,6 @@ missing_required_flag, invented_flag, script_internal_error) and emits a
 deduped TOON fragment for the retrospective compile-report consumer.
 """
 
-
 from __future__ import annotations
 
 import re
@@ -21,12 +20,7 @@ from pathlib import Path
 from conftest import MARKETPLACE_ROOT, load_script_module
 
 SCRIPT_PATH = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'plan-retrospective'
-    / 'scripts'
-    / 'script-failure-analysis.py'
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'scripts' / 'script-failure-analysis.py'
 )
 
 
@@ -34,12 +28,7 @@ SCRIPT_PATH = (
 # consumes. The executor is generated from this template, so the template is the
 # authoritative source of the emitted line shape.
 EXECUTOR_TEMPLATE_PATH = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'tools-script-executor'
-    / 'templates'
-    / 'execute-script.py.template'
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'tools-script-executor' / 'templates' / 'execute-script.py.template'
 )
 
 
@@ -54,6 +43,7 @@ _mod = load_script_module(
 # ---------------------------------------------------------------------------
 # Fixture log builders
 # ---------------------------------------------------------------------------
+
 
 def _header(ts_suffix: str, notation: str, sub: str, level: str = 'INFO') -> str:
     """Produce a script-execution.log header line matching production shape.
@@ -118,15 +108,12 @@ def _extract_emitted_message_format() -> str:
         f'dispatch-failure emitter moved and this extraction needs updating'
     )
     parts: list[str] = []
-    for line in lines[starts[0] + 1:]:
+    for line in lines[starts[0] + 1 :]:
         stripped = line.strip()
         if stripped == ')':
             break
         match = re.fullmatch(r"f'(.*)'", stripped)
-        assert match is not None, (
-            f'unexpected line inside the executor dispatch-failure message '
-            f'literal: {stripped!r}'
-        )
+        assert match is not None, f'unexpected line inside the executor dispatch-failure message literal: {stripped!r}'
         parts.append(match.group(1))
     assert parts, 'executor dispatch-failure message literal is empty'
     return ''.join(parts)
@@ -169,9 +156,7 @@ def _legacy_work_failure(ts_suffix: str, notation: str, exit_code: int, failure_
     )
 
 
-def _prefix_drifted_work_failure(
-    ts_suffix: str, notation: str, exit_code: int, failure_kind: str, detail: str
-) -> str:
+def _prefix_drifted_work_failure(ts_suffix: str, notation: str, exit_code: int, failure_kind: str, detail: str) -> str:
     """The producer's own failure line with ONLY its record prefix reshaped.
 
     Single-variable by construction: the tail is rendered from
@@ -181,9 +166,7 @@ def _prefix_drifted_work_failure(
     drift in it defeat the parser and the recognition guard together.
     """
     line = _work_failure(ts_suffix, notation, exit_code, failure_kind, detail)
-    drifted = re.sub(
-        r'\([^()]*execute-script:\d+\)', '(plan-marshall:dispatcher)', line, count=1
-    )
+    drifted = re.sub(r'\([^()]*execute-script:\d+\)', '(plan-marshall:dispatcher)', line, count=1)
     assert drifted != line, (
         'the record prefix this fixture reshapes is no longer present in the '
         f'producer format: {EMITTED_MESSAGE_FORMAT!r}'
@@ -191,9 +174,7 @@ def _prefix_drifted_work_failure(
     return drifted
 
 
-def _unprefixed_work_failure(
-    ts_suffix: str, notation: str, exit_code: int, failure_kind: str, detail: str
-) -> str:
+def _unprefixed_work_failure(ts_suffix: str, notation: str, exit_code: int, failure_kind: str, detail: str) -> str:
     """The producer's failure line with the record prefix removed entirely."""
     line = _work_failure(ts_suffix, notation, exit_code, failure_kind, detail)
     stripped = re.sub(r'\([^()]*execute-script:\d+\)\s*', '', line, count=1)

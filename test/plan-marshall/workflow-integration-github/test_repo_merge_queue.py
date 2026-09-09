@@ -35,9 +35,7 @@ def _hermetic_bypass_config(monkeypatch):
     monkeypatch.setattr(_config_core, 'load_config', lambda: {})
 
 
-def _make_run_gh(
-    *, rules=None, post_rc=0, repo_rc=0, repo_err='', rules_rc=0, rules_err='', rulesets=None
-):
+def _make_run_gh(*, rules=None, post_rc=0, repo_rc=0, repo_err='', rules_rc=0, rules_err='', rulesets=None):
     """Build a run_gh stub that routes on the gh api endpoint, plus the capture list."""
     captured: list[list[str]] = []
 
@@ -106,9 +104,7 @@ def test_probe_ineligible_on_404(monkeypatch):
 
 
 def test_probe_auth_scope_error(monkeypatch):
-    stub, _ = _make_run_gh(
-        rules_rc=1, rules_err='HTTP 403: Resource not accessible by integration'
-    )
+    stub, _ = _make_run_gh(rules_rc=1, rules_err='HTTP 403: Resource not accessible by integration')
     _install(monkeypatch, stub)
 
     result = github_ops.cmd_repo_merge_queue_probe(argparse.Namespace())
@@ -698,18 +694,14 @@ def test_resolve_merge_method_defaults_to_squash_on_malformed_value(monkeypatch)
     import _config_core
 
     # A non-string value is malformed — never raises, falls back to SQUASH.
-    monkeypatch.setattr(
-        _config_core, 'load_config', lambda: _branch_cleanup_config(['squash'])
-    )
+    monkeypatch.setattr(_config_core, 'load_config', lambda: _branch_cleanup_config(['squash']))
     assert github_ops._resolve_merge_queue_merge_method() == 'SQUASH'
 
 
 def test_resolve_merge_method_defaults_to_squash_on_unknown_value(monkeypatch):
     import _config_core
 
-    monkeypatch.setattr(
-        _config_core, 'load_config', lambda: _branch_cleanup_config('fast-forward')
-    )
+    monkeypatch.setattr(_config_core, 'load_config', lambda: _branch_cleanup_config('fast-forward'))
     assert github_ops._resolve_merge_queue_merge_method() == 'SQUASH'
 
 
@@ -817,9 +809,7 @@ def test_enable_configured_method_match_returns_unchanged_without_put(monkeypatc
 
 
 def test_probe_surfaces_merge_method_when_configured(monkeypatch):
-    stub, _ = _make_run_gh(
-        rules=[{'type': 'merge_queue', 'parameters': {'merge_method': 'SQUASH'}}]
-    )
+    stub, _ = _make_run_gh(rules=[{'type': 'merge_queue', 'parameters': {'merge_method': 'SQUASH'}}])
     _install(monkeypatch, stub)
 
     result = github_ops.cmd_repo_merge_queue_probe(argparse.Namespace())

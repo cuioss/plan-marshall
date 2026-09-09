@@ -21,7 +21,6 @@ the absent case is pinned as hard as the present one: a denominator whose source
 cannot be read is absent from the record, never a guessed ``0``.
 """
 
-
 import json
 import re
 from argparse import Namespace
@@ -63,8 +62,12 @@ def ns_list_deliverables(plan_id: str) -> Namespace:
     ``manage-metrics``, so the namespace comes from that script's parser.
     """
     parsed: Namespace = parse_ns(
-        'plan-marshall', 'manage-solution-outline', 'manage-solution-outline.py',
-        'list-deliverables', '--plan-id', plan_id,
+        'plan-marshall',
+        'manage-solution-outline',
+        'manage-solution-outline.py',
+        'list-deliverables',
+        '--plan-id',
+        plan_id,
     )
     return parsed
 
@@ -126,9 +129,7 @@ def _write_tasks(plan_dir: Path, statuses: list[str]) -> None:
     tasks = plan_dir / 'tasks'
     tasks.mkdir(parents=True, exist_ok=True)
     for index, status in enumerate(statuses, start=1):
-        (tasks / f'TASK-{index:03d}.json').write_text(
-            json.dumps({'number': index, 'status': status}), encoding='utf-8'
-        )
+        (tasks / f'TASK-{index:03d}.json').write_text(json.dumps({'number': index, 'status': status}), encoding='utf-8')
 
 
 # =============================================================================
@@ -146,11 +147,7 @@ _RETIRED_WHOLE_FILE_RE = re.compile(r'^###\s+\d+\.\s')
 # makes it non-vacuous.
 _DIVERGENT_OUTLINES = {
     'numbered-heading-under-approach': (
-        '# Solution: fixture\n\n'
-        '## Deliverables\n\n'
-        '### 1. Real deliverable\n\n'
-        '## Approach\n\n'
-        '### 2. Not a deliverable\n'
+        '# Solution: fixture\n\n## Deliverables\n\n### 1. Real deliverable\n\n## Approach\n\n### 2. Not a deliverable\n'
     ),
     'numbered-heading-inside-a-fenced-example': (
         '# Solution: fixture\n\n'
@@ -163,12 +160,7 @@ _DIVERGENT_OUTLINES = {
         '```\n'
     ),
     'degenerate-heading-with-no-title': (
-        '# Solution: fixture\n\n'
-        '## Deliverables\n\n'
-        '### 1. Real deliverable\n\n'
-        '### 2. \n'
+        '# Solution: fixture\n\n## Deliverables\n\n### 1. Real deliverable\n\n### 2. \n'
     ),
-    'headings-only-outside-the-section': (
-        '# Solution: fixture\n\n## Approach\n\n### 1. Not a deliverable\n'
-    ),
+    'headings-only-outside-the-section': ('# Solution: fixture\n\n## Approach\n\n### 1. Not a deliverable\n'),
 }

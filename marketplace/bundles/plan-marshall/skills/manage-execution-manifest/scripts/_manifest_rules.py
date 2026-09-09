@@ -200,16 +200,11 @@ def _snapshot_step_params(
         return dict.fromkeys(final_step_ids)
     # Index the marshal map by its prefix-stripped key so a bare in-manifest id
     # matches a ``default:``-prefixed marshal key.
-    bare_to_params: dict[str, dict] = {
-        canonicalize_step_key(key): params for key, params in marshal_step_map.items()
-    }
+    bare_to_params: dict[str, dict] = {canonicalize_step_key(key): params for key, params in marshal_step_map.items()}
     # A param-owning step snapshots its nested object; an ownerless step (no
     # marshal entry or an empty param object) snapshots as ``None`` so the
     # manifest carries no empty ``{}``.
-    return {
-        step_id: (dict(params) if (params := bare_to_params.get(step_id)) else None)
-        for step_id in final_step_ids
-    }
+    return {step_id: (dict(params) if (params := bare_to_params.get(step_id)) else None) for step_id in final_step_ids}
 
 
 #: The steps `commit_push_disabled` subtracts, and the single drop reason each
@@ -471,8 +466,7 @@ def _read_step_owned_knob(owner_step_id: str, knob: str, plan_id: str) -> object
             (
                 candidate
                 for key, candidate in step_map.items()
-                if isinstance(candidate, dict)
-                and canonicalize_step_key(key) == canonicalize_step_key(owner_step_id)
+                if isinstance(candidate, dict) and canonicalize_step_key(key) == canonicalize_step_key(owner_step_id)
             ),
             None,
         )

@@ -239,8 +239,7 @@ def test_duplicate_coordinate_emits_no_edge_and_reports_the_collision():
 
     assert edges == [], 'an ambiguous coordinate must yield NO edge'
     assert notes == [
-        'ambiguous coordinate com.example:auth-service: claimed by '
-        'legacy-auth, services-auth — no edge emitted'
+        'ambiguous coordinate com.example:auth-service: claimed by legacy-auth, services-auth — no edge emitted'
     ]
 
 
@@ -274,10 +273,7 @@ def test_three_way_coordinate_collision_names_every_claimant():
 
     _edges, notes = _derive(modules)
 
-    assert notes == [
-        'ambiguous coordinate com.example:shared: claimed by '
-        'alpha, beta, gamma — no edge emitted'
-    ]
+    assert notes == ['ambiguous coordinate com.example:shared: claimed by alpha, beta, gamma — no edge emitted']
 
 
 def test_one_module_claiming_a_coordinate_twice_is_not_a_collision():

@@ -36,7 +36,10 @@ would pass every footprint case here and still reject real plans on ``unknown``.
 from conftest import load_script_module
 
 _validation = load_script_module(
-    'plan-marshall', 'manage-execution-manifest', '_manifest_validation.py', module_name='_manifest_validation_for_verdict_guard'
+    'plan-marshall',
+    'manage-execution-manifest',
+    '_manifest_validation.py',
+    module_name='_manifest_validation_for_verdict_guard',
 )
 check_build_verdict_consistent = _validation.check_build_verdict_consistent
 
@@ -80,18 +83,14 @@ class TestContradictionRejected:
         assert result['step_id'] == 'verify:module-tests'
 
     def test_coverage_step_contradicts_not_necessary(self):
-        result = check_build_verdict_consistent(
-            ['verify:coverage'], [], _REAL_FOOTPRINT, _NOT_NECESSARY
-        )
+        result = check_build_verdict_consistent(['verify:coverage'], [], _REAL_FOOTPRINT, _NOT_NECESSARY)
 
         assert result is not None
         assert result['step_id'] == 'verify:coverage'
 
     def test_bare_verify_alias_contradicts_not_necessary(self):
         """The bare ``verify`` canonical derives role ``module-tests`` — also rejected."""
-        result = check_build_verdict_consistent(
-            ['verify:verify'], [], _REAL_FOOTPRINT, _NOT_NECESSARY
-        )
+        result = check_build_verdict_consistent(['verify:verify'], [], _REAL_FOOTPRINT, _NOT_NECESSARY)
 
         assert result is not None
         assert result['step_id'] == 'verify:verify'
@@ -105,18 +104,14 @@ class TestContradictionRejected:
 
     def test_default_prefixed_step_is_still_recognized(self):
         """Role derivation canonicalizes, so a ``default:``-prefixed id is not a bypass."""
-        result = check_build_verdict_consistent(
-            ['default:verify:module-tests'], [], _REAL_FOOTPRINT, _NOT_NECESSARY
-        )
+        result = check_build_verdict_consistent(['default:verify:module-tests'], [], _REAL_FOOTPRINT, _NOT_NECESSARY)
 
         assert result is not None
         assert result['step_id'] == 'default:verify:module-tests'
 
     def test_phase_6_build_evidence_gate_contradicts_not_necessary(self):
         """``pre-push-quality-gate`` demands a kind=build entry that cannot be stamped."""
-        result = check_build_verdict_consistent(
-            [], ['push', 'pre-push-quality-gate'], _REAL_FOOTPRINT, _NOT_NECESSARY
-        )
+        result = check_build_verdict_consistent([], ['push', 'pre-push-quality-gate'], _REAL_FOOTPRINT, _NOT_NECESSARY)
 
         assert result is not None
         assert result['phase'] == 'phase_6'
@@ -124,9 +119,7 @@ class TestContradictionRejected:
 
     def test_finding_forwards_the_verdict_reason(self):
         """The finding reports the authority's reason, not one the guard invented."""
-        result = check_build_verdict_consistent(
-            ['verify:module-tests'], [], _REAL_FOOTPRINT, _NOT_NECESSARY
-        )
+        result = check_build_verdict_consistent(['verify:module-tests'], [], _REAL_FOOTPRINT, _NOT_NECESSARY)
 
         assert result is not None
         assert result['reason'] == _NOT_NECESSARY['reason']
@@ -163,12 +156,7 @@ class TestConsistentManifestsPass:
         lint-only manifest beside a ``not_necessary`` verdict is a perfectly
         coherent plan, not a contradiction.
         """
-        assert (
-            check_build_verdict_consistent(
-                ['verify:quality-gate'], [], _REAL_FOOTPRINT, _NOT_NECESSARY
-            )
-            is None
-        )
+        assert check_build_verdict_consistent(['verify:quality-gate'], [], _REAL_FOOTPRINT, _NOT_NECESSARY) is None
 
     def test_not_necessary_with_external_steps_passes(self):
         """External (``project:`` / ``bundle:skill``) steps have no role — never rejected."""
@@ -196,28 +184,16 @@ class TestConsistentManifestsPass:
 
     def test_absent_verdict_passes(self):
         """An unobtainable verdict is not evidence of a contradiction."""
-        assert (
-            check_build_verdict_consistent(
-                ['verify:module-tests'], [], _REAL_FOOTPRINT, None
-            )
-            is None
-        )
+        assert check_build_verdict_consistent(['verify:module-tests'], [], _REAL_FOOTPRINT, None) is None
 
     def test_malformed_verdict_passes(self):
         """A non-dict verdict cannot establish a contradiction either."""
-        assert (
-            check_build_verdict_consistent(
-                ['verify:module-tests'], [], _REAL_FOOTPRINT, 'not-a-dict'
-            )
-            is None
-        )
+        assert check_build_verdict_consistent(['verify:module-tests'], [], _REAL_FOOTPRINT, 'not-a-dict') is None
 
     def test_non_string_steps_are_skipped(self):
         """A malformed step entry is ignored rather than crashing the compose."""
         assert (
-            check_build_verdict_consistent(
-                [None, 42, {'step': 'x'}], [None, 7], _REAL_FOOTPRINT, _NOT_NECESSARY
-            )
+            check_build_verdict_consistent([None, 42, {'step': 'x'}], [None, 7], _REAL_FOOTPRINT, _NOT_NECESSARY)
             is None
         )
 
@@ -272,18 +248,11 @@ class TestAntiVacuity:
 
     def test_empty_footprint_does_not_fire_even_on_a_phase_6_gate(self):
         """The precondition covers the phase-6 arm too, not just phase-5."""
-        assert (
-            check_build_verdict_consistent(
-                [], ['pre-push-quality-gate'], [], _EMPTY_FOOTPRINT_VERDICT
-            )
-            is None
-        )
+        assert check_build_verdict_consistent([], ['pre-push-quality-gate'], [], _EMPTY_FOOTPRINT_VERDICT) is None
 
     def test_paired_opposite_for_the_phase_6_gate(self):
         """Same phase-6 gate, real footprint — fires."""
-        result = check_build_verdict_consistent(
-            [], ['pre-push-quality-gate'], _REAL_FOOTPRINT, _NOT_NECESSARY
-        )
+        result = check_build_verdict_consistent([], ['pre-push-quality-gate'], _REAL_FOOTPRINT, _NOT_NECESSARY)
 
         assert result is not None
         assert result['phase'] == 'phase_6'
@@ -297,10 +266,7 @@ class TestAntiVacuity:
         steps = ['verify:module-tests']
 
         assert check_build_verdict_consistent(steps, [], _REAL_FOOTPRINT, _BUILD) is None
-        assert (
-            check_build_verdict_consistent(steps, [], _REAL_FOOTPRINT, _NOT_NECESSARY)
-            is not None
-        )
+        assert check_build_verdict_consistent(steps, [], _REAL_FOOTPRINT, _NOT_NECESSARY) is not None
 
 
 # =============================================================================
@@ -320,12 +286,7 @@ class TestUnknownVerdictNeverFires:
     """
 
     def test_unknown_with_module_tests_does_not_fire(self):
-        assert (
-            check_build_verdict_consistent(
-                ['verify:module-tests'], [], _REAL_FOOTPRINT, _UNKNOWN
-            )
-            is None
-        )
+        assert check_build_verdict_consistent(['verify:module-tests'], [], _REAL_FOOTPRINT, _UNKNOWN) is None
 
     def test_unknown_with_the_full_build_manifest_does_not_fire(self):
         """The whole code-plan shape passes on ``unknown`` — phase-5 and phase-6."""
@@ -341,12 +302,7 @@ class TestUnknownVerdictNeverFires:
 
     def test_unknown_with_a_phase_6_build_evidence_gate_does_not_fire(self):
         """The phase-6 arm keys on the same decision precondition."""
-        assert (
-            check_build_verdict_consistent(
-                [], ['pre-push-quality-gate'], _REAL_FOOTPRINT, _UNKNOWN
-            )
-            is None
-        )
+        assert check_build_verdict_consistent([], ['pre-push-quality-gate'], _REAL_FOOTPRINT, _UNKNOWN) is None
 
     def test_unknown_and_not_necessary_differ_on_identical_inputs(self):
         """The paired opposite: only the decision changes, and only one fires.
@@ -358,10 +314,7 @@ class TestUnknownVerdictNeverFires:
         steps = ['verify:module-tests']
 
         assert check_build_verdict_consistent(steps, [], _REAL_FOOTPRINT, _UNKNOWN) is None
-        assert (
-            check_build_verdict_consistent(steps, [], _REAL_FOOTPRINT, _NOT_NECESSARY)
-            is not None
-        )
+        assert check_build_verdict_consistent(steps, [], _REAL_FOOTPRINT, _NOT_NECESSARY) is not None
 
     def test_unknown_at_early_compose_does_not_fire(self):
         """Both preconditions disarmed at once — the realistic early-compose shape.

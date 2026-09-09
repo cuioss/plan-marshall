@@ -19,9 +19,7 @@ cmd_prepare_add = _crud.cmd_prepare_add
 cmd_commit_add = _crud.cmd_commit_add
 
 
-def _rename_ns(
-    plan_id='rename-test', old_path='old/path', new_path='new/path', include_completed=False
-):
+def _rename_ns(plan_id='rename-test', old_path='old/path', new_path='new/path', include_completed=False):
     return Namespace(
         plan_id=plan_id,
         old_path=old_path,

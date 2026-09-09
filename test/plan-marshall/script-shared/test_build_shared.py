@@ -61,8 +61,10 @@ class TestWorktreeQueryExecutorPath:
 
     def test_runtime_error_wrapped_in_worktree_resolution_error(self, monkeypatch):
         """A RuntimeError from get_executor_path becomes WorktreeResolutionError."""
+
         def _raise():
             raise RuntimeError('no git repository')
+
         monkeypatch.setattr(file_ops, 'get_executor_path', _raise)
         with pytest.raises(file_ops.WorktreeResolutionError, match='Cannot locate executor'):
             file_ops._query_worktree_path('some-plan')
@@ -316,13 +318,9 @@ class TestCmdRunCommonPlanIdGuards:
         )
         return calls
 
-    @pytest.mark.parametrize(
-        'plan_id,expected_calls', _PLAN_ID_GUARD_CASES, ids=_PLAN_ID_GUARD_IDS
-    )
+    @pytest.mark.parametrize('plan_id,expected_calls', _PLAN_ID_GUARD_CASES, ids=_PLAN_ID_GUARD_IDS)
     @pytest.mark.parametrize('result,seam', _GUARDED_SEAM_CASES, ids=_GUARDED_SEAM_IDS)
-    def test_only_a_real_plan_id_reaches_the_finding_store(
-        self, spy, capsys, result, seam, plan_id, expected_calls
-    ):
+    def test_only_a_real_plan_id_reaches_the_finding_store(self, spy, capsys, result, seam, plan_id, expected_calls):
         _build_shared.cmd_run_common(
             result,
             _no_issues_parser,

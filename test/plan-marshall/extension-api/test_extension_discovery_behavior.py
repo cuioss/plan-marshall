@@ -25,9 +25,8 @@ def plan_root_at_tmp(tmp_path, monkeypatch):
     """Resolve the plan root to an isolated tmp_path."""
     monkeypatch.setattr(file_ops, '_resolve_plan_root', lambda: tmp_path)
 
-_disc = load_script_module(
-    'plan-marshall', 'extension-api', 'extension_discovery.py', 'extension_discovery_behavior'
-)
+
+_disc = load_script_module('plan-marshall', 'extension-api', 'extension_discovery.py', 'extension_discovery_behavior')
 
 
 # =============================================================================
@@ -277,9 +276,7 @@ def test_get_retrospective_aspects_skips_entries_without_module():
 def test_apply_config_defaults_calls_each_applicable_module(tmp_path):
     """With pre_discovered extensions, config_defaults is invoked once per module."""
     module = _FullStubModule()
-    result = _disc.apply_config_defaults(
-        tmp_path, pre_discovered=[{'bundle': 'pm-x', 'module': module}]
-    )
+    result = _disc.apply_config_defaults(tmp_path, pre_discovered=[{'bundle': 'pm-x', 'module': module}])
 
     assert result['extensions_called'] == 1
     assert result['extensions_skipped'] == 0
@@ -299,9 +296,7 @@ def test_apply_config_defaults_skips_module_without_callback(tmp_path):
 
 def test_apply_config_defaults_skips_entry_without_module(tmp_path):
     """An extension entry with no module is skipped."""
-    result = _disc.apply_config_defaults(
-        tmp_path, pre_discovered=[{'bundle': 'pm-x', 'module': None}]
-    )
+    result = _disc.apply_config_defaults(tmp_path, pre_discovered=[{'bundle': 'pm-x', 'module': None}])
 
     assert result['extensions_skipped'] == 1
     assert result['extensions_called'] == 0
@@ -310,9 +305,7 @@ def test_apply_config_defaults_skips_entry_without_module(tmp_path):
 def test_apply_config_defaults_records_callback_error(tmp_path):
     """A config_defaults that raises is recorded in the errors list."""
     module = _FullStubModule(raises={'config_defaults'})
-    result = _disc.apply_config_defaults(
-        tmp_path, pre_discovered=[{'bundle': 'pm-x', 'module': module}]
-    )
+    result = _disc.apply_config_defaults(tmp_path, pre_discovered=[{'bundle': 'pm-x', 'module': module}])
 
     assert result['extensions_called'] == 0
     assert len(result['errors']) == 1
@@ -339,9 +332,7 @@ def test_cmd_apply_config_defaults_errors_on_missing_project_dir(tmp_path, capsy
 
 def test_cmd_implementors_emits_zero_count_for_unknown_ext_point(capsys):
     """cmd_implementors prints a count:0 TOON for an ext-point no doc declares."""
-    args = types.SimpleNamespace(
-        ext_point='plan-marshall:extension-api/standards/ext-point-does-not-exist'
-    )
+    args = types.SimpleNamespace(ext_point='plan-marshall:extension-api/standards/ext-point-does-not-exist')
 
     rc = _disc.cmd_implementors(args)
 
@@ -432,9 +423,7 @@ def test_scan_project_discovers_step_from_cwd_resolved_root(tmp_path, plan_root_
     it.
     """
     skills_root = tmp_path / '.claude' / 'skills'
-    _write_finalize_step(
-        skills_root, 'finalize-step-foo', implements=_FINALIZE_STEP_EXT_POINT, name='foo', order=10
-    )
+    _write_finalize_step(skills_root, 'finalize-step-foo', implements=_FINALIZE_STEP_EXT_POINT, name='foo', order=10)
 
     records = _disc._scan_project_for_implementors(_FINALIZE_STEP_EXT_POINT)
 
@@ -470,12 +459,8 @@ def test_scan_project_skips_step_not_declaring_ext_point(tmp_path, plan_root_at_
     declaring a DIFFERENT ext-point is not returned for a finalize-step query.
     """
     skills_root = tmp_path / '.claude' / 'skills'
-    _write_finalize_step(
-        skills_root, 'finalize-step-match', implements=_FINALIZE_STEP_EXT_POINT, name='match'
-    )
-    _write_finalize_step(
-        skills_root, 'finalize-step-other', implements=_VERIFY_STEP_EXT_POINT, name='other'
-    )
+    _write_finalize_step(skills_root, 'finalize-step-match', implements=_FINALIZE_STEP_EXT_POINT, name='match')
+    _write_finalize_step(skills_root, 'finalize-step-other', implements=_VERIFY_STEP_EXT_POINT, name='other')
 
     records = _disc._scan_project_for_implementors(_FINALIZE_STEP_EXT_POINT)
 
@@ -487,9 +472,7 @@ def test_scan_project_ignores_non_finalize_step_dirs(tmp_path, plan_root_at_tmp)
     declares the ext-point but is not named ``finalize-step-*`` is ignored.
     """
     skills_root = tmp_path / '.claude' / 'skills'
-    _write_finalize_step(
-        skills_root, 'some-other-skill', implements=_FINALIZE_STEP_EXT_POINT, name='nope'
-    )
+    _write_finalize_step(skills_root, 'some-other-skill', implements=_FINALIZE_STEP_EXT_POINT, name='nope')
 
     assert _disc._scan_project_for_implementors(_FINALIZE_STEP_EXT_POINT) == []
 
@@ -540,8 +523,10 @@ def test_scan_skills_roots_discovers_bundle_optional_from_versioned_cache(tmp_pa
     cache_root = tmp_path / 'cache'
     versioned_skills = cache_root / 'plan-marshall' / '0.1-BETA' / 'skills'
     _write_finalize_step(
-        versioned_skills, 'plan-retrospective',
-        implements=_FINALIZE_STEP_EXT_POINT, name='plan-retrospective',
+        versioned_skills,
+        'plan-retrospective',
+        implements=_FINALIZE_STEP_EXT_POINT,
+        name='plan-retrospective',
     )
     # Source root contributes nothing (nonexistent), so the cache root is the only
     # scannable root — forcing the versioned-layout branch.
@@ -561,8 +546,10 @@ def test_scan_skills_roots_discovers_from_flat_source(tmp_path, monkeypatch):
     source_root = tmp_path / 'src'
     flat_skills = source_root / 'plan-marshall' / 'skills'
     _write_finalize_step(
-        flat_skills, 'plan-retrospective',
-        implements=_FINALIZE_STEP_EXT_POINT, name='plan-retrospective',
+        flat_skills,
+        'plan-retrospective',
+        implements=_FINALIZE_STEP_EXT_POINT,
+        name='plan-retrospective',
     )
     monkeypatch.setattr(_disc, 'get_marketplace_bundles_path', lambda: source_root)
     monkeypatch.setattr(_disc, 'get_bundle_cache_roots', lambda: ())
@@ -578,13 +565,17 @@ def test_scan_skills_roots_dedups_bundle_seen_in_both_layouts(tmp_path, monkeypa
     """
     source_root = tmp_path / 'src'
     _write_finalize_step(
-        source_root / 'plan-marshall' / 'skills', 'plan-retrospective',
-        implements=_FINALIZE_STEP_EXT_POINT, name='plan-retrospective',
+        source_root / 'plan-marshall' / 'skills',
+        'plan-retrospective',
+        implements=_FINALIZE_STEP_EXT_POINT,
+        name='plan-retrospective',
     )
     cache_root = tmp_path / 'cache'
     _write_finalize_step(
-        cache_root / 'plan-marshall' / '0.1-BETA' / 'skills', 'plan-retrospective',
-        implements=_FINALIZE_STEP_EXT_POINT, name='plan-retrospective',
+        cache_root / 'plan-marshall' / '0.1-BETA' / 'skills',
+        'plan-retrospective',
+        implements=_FINALIZE_STEP_EXT_POINT,
+        name='plan-retrospective',
     )
     monkeypatch.setattr(_disc, 'get_marketplace_bundles_path', lambda: source_root)
     monkeypatch.setattr(_disc, 'get_bundle_cache_roots', lambda: (str(cache_root),))

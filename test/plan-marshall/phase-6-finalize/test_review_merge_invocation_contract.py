@@ -120,9 +120,8 @@ _POOL_ROOTS = (_SKILLS / 'phase-6-finalize', _SKILLS / 'automatic-review')
 #: A canonical `bundle:skill:script` executor notation.
 _NOTATION = re.compile(r'\bplan-marshall:[a-z0-9-]+:[a-z0-9_-]+\b')
 #: An `execute-script.py` invocation opening (up to and including the notation).
-_EXEC_CALL = re.compile(
-    r'python3\s+\.plan/execute-script\.py\s+(?P<notation>plan-marshall:[a-z0-9-]+:[a-z0-9_-]+)'
-)
+_EXEC_CALL = re.compile(r'python3\s+\.plan/execute-script\.py\s+(?P<notation>plan-marshall:[a-z0-9-]+:[a-z0-9_-]+)')
+
 
 #: The review-and-merge participation SURFACE D3 parses: the three (script, verb)
 #: pairs the plan names — the producer FIND (`github_pr fetch_findings`), the
@@ -144,6 +143,7 @@ def _is_review_merge_surface(command: str) -> bool:
     if 'tools-integration-ci:ci' in command and 'pull-request-runs' in command:
         return True
     return False
+
 
 #: Placeholder substitutions that keep an invocation PARSEABLE. A bot-list value's
 #: shape is irrelevant to argparse (the malformed-value rejection is a post-parse
@@ -306,10 +306,7 @@ _NARROW_HEADING = '## Exit-code convention for `manage-*` script calls'
 #: guard stays green — the failure mode this literal exists to make impossible. The cost is
 #: that a doc which LINE-WRAPS the clause fails the substring test even though its prose is
 #: correct; that is accepted, and the fix is to keep the bolded lead-in on one line.
-_NEW_CLAUSE = (
-    '- **`exit_code == 0` with a `status` other than `success`, '
-    'or with no parseable `status` at all**'
-)
+_NEW_CLAUSE = '- **`exit_code == 0` with a `status` other than `success`, or with no parseable `status` at all**'
 
 #: The disposition markers the clause BODY must carry — the part that actually prescribes
 #: something. ``_NEW_CLAUSE`` above pins only the bolded lead-in, and a doc can keep that
@@ -352,9 +349,7 @@ _SHAPE_MARKER = '**Positive shape requirement.**'
 #: It sits OUTSIDE ``_POOL_ROOTS`` (a different skill owns it), so it can never be
 #: the doc that discharges itself: the per-doc sweep below never reaches it, and the
 #: assertion that does is the one this file states in its own right.
-_CANONICAL_STANDARD = (
-    _SKILLS / 'tools-script-executor' / 'standards' / 'exit-code-convention.md'
-)
+_CANONICAL_STANDARD = _SKILLS / 'tools-script-executor' / 'standards' / 'exit-code-convention.md'
 
 #: The tail of the canonical standard's path that a reference must name. Matching
 #: the TAIL is what makes the writing doc's relative prefix (``../``, ``../../``,
@@ -445,6 +440,7 @@ def _undischarged_markers(text: str, canonical_text: str) -> list[str]:
     """
     return _missing_disposition_markers(text if _NEW_CLAUSE in text else canonical_text)
 
+
 #: Docs that invoke a non-`manage-*` script yet are deliberately exempt from the widened
 #: convention, mapped to the reason. **Empty**: the sweep below found no doc in the pool
 #: that needed one. An entry here must name a real, currently-obligated doc — a stale
@@ -473,8 +469,7 @@ class TestExitCodeConventionCoversEveryScript:
             all_notations |= _invoked_notations(doc.read_text(encoding='utf-8'))
 
         assert all_notations, (
-            f'no executor notation was scanned from {[d.name for d in _INVOCATION_DOCS]} '
-            '— the population is vacuous'
+            f'no executor notation was scanned from {[d.name for d in _INVOCATION_DOCS]} — the population is vacuous'
         )
         non_manage = {n for n in all_notations if not _is_manage_star(n)}
         assert non_manage, (
@@ -545,10 +540,7 @@ def _widening_obligated() -> list[tuple[str, list[str]]]:
     """
     obligated: list[tuple[str, list[str]]] = []
     for doc in _pool_docs():
-        non_manage = sorted(
-            n for n in _invoked_notations(doc.read_text(encoding='utf-8'))
-            if not _is_manage_star(n)
-        )
+        non_manage = sorted(n for n in _invoked_notations(doc.read_text(encoding='utf-8')) if not _is_manage_star(n))
         if non_manage:
             obligated.append((str(doc.relative_to(MARKETPLACE_ROOT)), non_manage))
     return obligated
@@ -571,9 +563,7 @@ def _ci_invocation_sections() -> list[tuple[str, str, bool]]:
     population is derived from the pool, so a `ci` call added to any finalize doc is swept
     without being listed.
     """
-    ci_call = re.compile(
-        r'python3\s+\.plan/execute-script\.py\s+plan-marshall:tools-integration-ci:ci\b'
-    )
+    ci_call = re.compile(r'python3\s+\.plan/execute-script\.py\s+plan-marshall:tools-integration-ci:ci\b')
     found: list[tuple[str, str, bool]] = []
     for doc in _pool_docs():
         text = doc.read_text(encoding='utf-8')
@@ -598,8 +588,7 @@ def _ci_invocation_sections() -> list[tuple[str, str, bool]]:
 _CI_SECTIONS = _ci_invocation_sections()
 
 assert _CI_SECTIONS, (
-    'no `ci` invocation was scanned from the finalize doc pool — the discharge sweep '
-    'would pass over an empty set'
+    'no `ci` invocation was scanned from the finalize doc pool — the discharge sweep would pass over an empty set'
 )
 
 
@@ -774,8 +763,7 @@ class TestExitZeroNonSuccessIsDisposedOf:
         # Positive — the reference arm, at a doc the sweep currently obligates.
         obligated_paths = [p for p, _ in _WIDENING_OBLIGATED if p not in _WIDENING_EXEMPTIONS]
         assert obligated_paths, (
-            'every obligated doc is exempt, so this control has no real doc to check '
-            'the positive arm against'
+            'every obligated doc is exempt, so this control has no real doc to check the positive arm against'
         )
         real = (MARKETPLACE_ROOT / obligated_paths[0]).read_text(encoding='utf-8')
         assert _reaches_the_clause(real), (
@@ -841,13 +829,10 @@ class TestExitZeroNonSuccessIsDisposedOf:
 
         # Negative — the reference is present but OUTSIDE the convention section, which is
         # the whole-document match `_convention_section` exists to reject.
-        stray = (
-            f'{_WIDE_HEADING}\n\nNothing is said here.\n\n'
-            f'## See also\n\n[the standard]({_CANONICAL_REFERENCE})\n'
-        )
+        stray = f'{_WIDE_HEADING}\n\nNothing is said here.\n\n## See also\n\n[the standard]({_CANONICAL_REFERENCE})\n'
         assert not _reaches_the_clause(stray), (
             'negative control (stray reference): a link to the canonical standard from an '
-            'unrelated section discharged the reference arm, so the doc\'s own convention '
+            "unrelated section discharged the reference arm, so the doc's own convention "
             'section may say nothing at all and still pass'
         )
 
@@ -989,9 +974,7 @@ class TestDocumentedReviewMergeInvocationsParse:
             pytest.fail(f'{doc_name}: notation {notation} vanished from {tokens}')
         args = tokens[notation_idx + 1 :]
 
-        result = run_script(
-            _script_path_for(notation), *args, env_overrides={'PATH': ''}
-        )
+        result = run_script(_script_path_for(notation), *args, env_overrides={'PATH': ''})
 
         assert result.returncode != 2, (
             f'{doc_name}: the documented invocation `{command}` is an argparse rejection '
@@ -1045,7 +1028,7 @@ _REVIEW_COMPLETENESS = _SKILLS / 'automatic-review' / 'scripts' / 'review_comple
 #: The longer alternative is placed FIRST so the shared `parse_participation` tail
 #: cannot claim the match; the anchoring `(` makes that unambiguous either way.
 _FORM_ROUTE_RE = re.compile(
-    r"(?P<fn>_split_bots|parse_stale_participation|parse_participation|parse_causes)"
+    r'(?P<fn>_split_bots|parse_stale_participation|parse_participation|parse_causes)'
     r"\(\s*args\.\w+,\s*'(?P<flag>--[a-z-]+)'"
 )
 #: A bot-list flag declared on the shared observation-flag adder, matched POSITIVELY
@@ -1084,9 +1067,7 @@ def _function_body(source: str, name: str) -> str:
 
 def _derive_form_sets() -> tuple[frozenset[str], frozenset[str]]:
     """``(pair_form, bare_form)`` read off ``_parse_bot_observations``'s routing."""
-    body = _function_body(
-        _REVIEW_COMPLETENESS.read_text(encoding='utf-8'), '_parse_bot_observations'
-    )
+    body = _function_body(_REVIEW_COMPLETENESS.read_text(encoding='utf-8'), '_parse_bot_observations')
     pair: set[str] = set()
     bare: set[str] = set()
     for match in _FORM_ROUTE_RE.finditer(body):
@@ -1104,9 +1085,7 @@ def _declared_list_flags() -> frozenset[str]:
     being named — ``--not-triggered`` is a ``store_true`` bool and ``--plan-id`` is
     a ``required=True`` scalar, and neither declares ``nargs``.
     """
-    body = _function_body(
-        _REVIEW_COMPLETENESS.read_text(encoding='utf-8'), '_add_bot_observation_flags'
-    )
+    body = _function_body(_REVIEW_COMPLETENESS.read_text(encoding='utf-8'), '_add_bot_observation_flags')
     flags = frozenset(_LIST_FLAG_RE.findall(body))
     assert flags, (
         'No list flag was derived from _add_bot_observation_flags, which declares ten. '
@@ -1139,11 +1118,7 @@ def _form_paragraph(doc) -> str:
     """The single paragraph in *doc* that enumerates the two form sets."""
     # Annotated because `conftest` is an untyped import for mypy, so every path
     # derived from it — and everything read through it — arrives as `Any`.
-    paragraphs: list[str] = [
-        block
-        for block in doc.read_text(encoding='utf-8').split('\n\n')
-        if _PAIR_MARKER in block
-    ]
+    paragraphs: list[str] = [block for block in doc.read_text(encoding='utf-8').split('\n\n') if _PAIR_MARKER in block]
     assert len(paragraphs) == 1, (
         f'{doc.name}: expected exactly ONE paragraph carrying the {_PAIR_MARKER!r} form '
         f'marker, found {len(paragraphs)}. The parity check below cannot identify which '

@@ -7,7 +7,6 @@ reports — a truncated enumeration or scanned-path list disclosed rather than s
 and a hit list that names its remainder.
 """
 
-
 from __future__ import annotations
 
 import json
@@ -89,9 +88,7 @@ def test_truncated_enumeration_is_disclosed_and_bounds_the_hit_list(monkeypatch)
     assert expansion.truncated is True
     assert len(expansion.matches) == 1
 
-    gaps, population = check_declared_scope_reconciliation(
-        [_deliverable(1, survey=[_MULTI_HIT_GLOB])], PROJECT_ROOT
-    )
+    gaps, population = check_declared_scope_reconciliation([_deliverable(1, survey=[_MULTI_HIT_GLOB])], PROJECT_ROOT)
     assert population['enumeration_truncated'] is True
     assert population['population_complete'] is False
     assert 'LOWER BOUND' in gaps[0]['detail']
@@ -108,9 +105,7 @@ def test_the_hit_list_names_a_bounded_set_and_discloses_the_remainder(monkeypatc
     hits = _independent_expansion(_MULTI_HIT_GLOB)
     assert len(hits) > 1, 'precondition: the glob must exceed the lowered naming cap'
 
-    gaps, _population = check_declared_scope_reconciliation(
-        [_deliverable(1, survey=[_MULTI_HIT_GLOB])], PROJECT_ROOT
-    )
+    gaps, _population = check_declared_scope_reconciliation([_deliverable(1, survey=[_MULTI_HIT_GLOB])], PROJECT_ROOT)
 
     assert len(gaps) == 1
     detail, title = gaps[0]['detail'], gaps[0]['title']
@@ -153,9 +148,7 @@ def test_the_finding_names_every_hit_and_states_the_true_total(monkeypatch):
     # slicing mutant, since the population is still > 2.
     monkeypatch.setattr(_closure, '_MAX_HITS_NAMED', len(hits) + 1)
 
-    gaps, _population = check_declared_scope_reconciliation(
-        [_deliverable(1, survey=[_MULTI_HIT_GLOB])], PROJECT_ROOT
-    )
+    gaps, _population = check_declared_scope_reconciliation([_deliverable(1, survey=[_MULTI_HIT_GLOB])], PROJECT_ROOT)
 
     assert len(gaps) == 1
     detail, title = gaps[0]['detail'], gaps[0]['title']
@@ -289,9 +282,7 @@ def test_closure_check_runs_under_the_surgical_scope_bypass_shape(plan_context):
     verifying nothing about the bypass at all.
     """
     plan_dir = plan_context.plan_dir_for('closure-bypass')
-    (plan_dir / 'references.json').write_text(
-        json.dumps({'scope_estimate': 'surgical'}), encoding='utf-8'
-    )
+    (plan_dir / 'references.json').write_text(json.dumps({'scope_estimate': 'surgical'}), encoding='utf-8')
     _write_outline(
         plan_dir,
         f'### 1. Surgical fix\n\n'

@@ -136,12 +136,7 @@ def _load_contract_parser(marketplace_root: Path) -> ModuleType | None:
     fail-loud behaviour.
     """
     parser_path = (
-        marketplace_root
-        / 'plan-marshall'
-        / 'skills'
-        / 'extension-api'
-        / 'scripts'
-        / 'configurable_contract.py'
+        marketplace_root / 'plan-marshall' / 'skills' / 'extension-api' / 'scripts' / 'configurable_contract.py'
     )
     if not parser_path.is_file():
         return None
@@ -153,9 +148,7 @@ def _load_contract_parser(marketplace_root: Path) -> ModuleType | None:
     if inserted:
         sys.path.insert(0, scripts_dir)
     try:
-        spec = importlib.util.spec_from_file_location(
-            'configurable_contract_for_doctor', parser_path
-        )
+        spec = importlib.util.spec_from_file_location('configurable_contract_for_doctor', parser_path)
         if spec is None or spec.loader is None:
             # Import machinery could not produce a usable spec/loader for the
             # file — treat as "not locatable" (no-op), same as a missing file.
@@ -263,12 +256,7 @@ def _builtin_step_docs(marketplace_root: Path) -> list[Path]:
     Scope: ``plan-marshall/skills/phase-6-finalize/{workflow,standards}/*.md`` —
     the body docs the contract parser resolves built-in (``default:``) steps to.
     """
-    phase6 = (
-        marketplace_root
-        / 'plan-marshall'
-        / 'skills'
-        / 'phase-6-finalize'
-    )
+    phase6 = marketplace_root / 'plan-marshall' / 'skills' / 'phase-6-finalize'
     if not phase6.is_dir():
         return []
     docs: list[Path] = []

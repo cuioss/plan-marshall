@@ -13,7 +13,6 @@ Its sections, in order:
 * phase writers: NO title-token sweep — staleness is resolved read-side
 """
 
-
 from argparse import Namespace
 from datetime import UTC, datetime, timedelta
 
@@ -65,16 +64,12 @@ def test_title_token_is_stale_predicate_boundaries():
     fresh = {
         'owner': 'cli',
         'state': 'build-busy',
-        'set_at': (now - timedelta(seconds=TITLE_TOKEN_STALE_AFTER_SECONDS - 60)).strftime(
-            '%Y-%m-%dT%H:%M:%SZ'
-        ),
+        'set_at': (now - timedelta(seconds=TITLE_TOKEN_STALE_AFTER_SECONDS - 60)).strftime('%Y-%m-%dT%H:%M:%SZ'),
     }
     aged = {
         'owner': 'cli',
         'state': 'build-busy',
-        'set_at': (now - timedelta(seconds=TITLE_TOKEN_STALE_AFTER_SECONDS + 60)).strftime(
-            '%Y-%m-%dT%H:%M:%SZ'
-        ),
+        'set_at': (now - timedelta(seconds=TITLE_TOKEN_STALE_AFTER_SECONDS + 60)).strftime('%Y-%m-%dT%H:%M:%SZ'),
     }
 
     assert title_token_is_stale(fresh, now=now) is False
@@ -268,6 +263,7 @@ def test_set_writes_no_title_body_artifact(plan_context):
 # =============================================================================
 # phase writers: NO title-token sweep — staleness is resolved read-side
 # =============================================================================
+
 
 def test_set_phase_performs_no_title_token_sweep(plan_context):
     """``cmd_set_phase`` sweeps nothing on either a forward move or a backward

@@ -22,7 +22,6 @@ that runs the per-task workflow; pinning these strings prevents silent drift
 back to the lax resolutions described above.
 """
 
-
 import pytest
 
 from conftest import MARKETPLACE_ROOT
@@ -66,15 +65,13 @@ def test_module_testing_profile_resolves_verify(skill_text: str) -> None:
         'requires mypy + ruff to run on test files at task time.'
     )
     assert 'resolve command: `module-tests`' not in section, (
-        'module_testing profile must not resolve the looser `module-tests` '
-        'target on its Step 5 line.'
+        'module_testing profile must not resolve the looser `module-tests` target on its Step 5 line.'
     )
 
 
 def test_safety_net_branch_maps_to_strict_commands(skill_text: str) -> None:
     expected = (
-        'Where `{resolve_command}` depends on profile: '
-        '`implementation` → `quality-gate`, `module_testing` → `verify`.'
+        'Where `{resolve_command}` depends on profile: `implementation` → `quality-gate`, `module_testing` → `verify`.'
     )
     assert expected in skill_text, (
         'The Common Workflow safety-net branch must map both profiles to the '
@@ -83,19 +80,15 @@ def test_safety_net_branch_maps_to_strict_commands(skill_text: str) -> None:
 
 
 def test_constraints_block_requires_strict_gate(skill_text: str) -> None:
-    constraints_section = _section_body(
-        skill_text, '**Constraints:**', next_heading_prefix='## '
-    )
+    constraints_section = _section_body(skill_text, '**Constraints:**', next_heading_prefix='## ')
 
     assert 'MUST NOT be marked `done`' in constraints_section, (
-        'Constraints block must forbid marking a task done before the strict '
-        'gate exits cleanly.'
+        'Constraints block must forbid marking a task done before the strict gate exits cleanly.'
     )
     assert '`quality-gate`' in constraints_section
     assert '`verify`' in constraints_section
     assert 'necessary but not sufficient' in constraints_section, (
-        'Constraints block must explicitly state that module-tests passing '
-        'alone is necessary but not sufficient.'
+        'Constraints block must explicitly state that module-tests passing alone is necessary but not sufficient.'
     )
 
 

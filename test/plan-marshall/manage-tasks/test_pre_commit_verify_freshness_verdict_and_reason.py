@@ -28,7 +28,6 @@ deliberately PARTIAL over the gate's reasons; a reader who took it for the
 complete set would conclude a cross-check refusal cannot happen.
 """
 
-
 from __future__ import annotations
 
 from argparse import Namespace
@@ -95,9 +94,7 @@ def test_fresh_when_matching_build_entry_present(plan_context, monkeypatch, tmp_
     assert result['matched_notation'] == 'plan-marshall:build-pyproject:pyproject_build'
 
 
-def test_a_pass_publishes_the_coverage_dimension_at_its_honest_value(
-    plan_context, monkeypatch, tmp_path
-) -> None:
+def test_a_pass_publishes_the_coverage_dimension_at_its_honest_value(plan_context, monkeypatch, tmp_path) -> None:
     """The scope dimension reaches the pass payload, and does NOT default to ``covered``.
 
     This file's rows are notation-shaped: their ``args`` carries no
@@ -150,9 +147,8 @@ def test_a_pass_publishes_the_coverage_dimension_at_its_honest_value(
 # ``_stale_reason``, and live in ``test_freshness_notation_crosscheck.py``.
 # =============================================================================
 
-def test_fresh_match_is_tier_agnostic_across_resolved_notations(
-    plan_context, monkeypatch, tmp_path
-) -> None:
+
+def test_fresh_match_is_tier_agnostic_across_resolved_notations(plan_context, monkeypatch, tmp_path) -> None:
     """A non-pyproject, plan-less (``plan_id=None``) build still satisfies the gate.
 
     The primary predicate filters on ``kind``, ``status`` and ``worktree_sha``
@@ -213,6 +209,7 @@ def test_fresh_among_mixed_entries(plan_context, monkeypatch, tmp_path) -> None:
 # Tests
 # =============================================================================
 
+
 def test_stale_when_ledger_empty(plan_context, monkeypatch, tmp_path) -> None:
     """ledger empty -> fail closed (undecidable / no_registry)."""
     plan_dir = plan_context.plan_dir_for('freshness-empty')
@@ -263,9 +260,7 @@ def test_stale_when_only_failed_build_for_current_sha(plan_context, monkeypatch,
     plan_dir = plan_context.plan_dir_for('freshness-failed-build')
     _write_status(plan_dir)
     _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
-    ledger_path = _write_ledger(
-        tmp_path, [_build_entry(worktree_sha=_CURRENT_SHA, exit_code=1, status='error')]
-    )
+    ledger_path = _write_ledger(tmp_path, [_build_entry(worktree_sha=_CURRENT_SHA, exit_code=1, status='error')])
     _stub_ledger_path(monkeypatch, ledger_path)
 
     result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-failed-build'))
@@ -273,9 +268,7 @@ def test_stale_when_only_failed_build_for_current_sha(plan_context, monkeypatch,
     assert result['status'] == 'stale', result
 
 
-def test_stale_when_timeout_build_exits_zero_for_current_sha(
-    plan_context, monkeypatch, tmp_path
-) -> None:
+def test_stale_when_timeout_build_exits_zero_for_current_sha(plan_context, monkeypatch, tmp_path) -> None:
     """THE false-fresh regression: ``exit_code: 0`` + ``status: timeout`` -> stale.
 
     The build wrapper exits 0 on timeout (the outcome is modeled in its stdout
@@ -361,6 +354,7 @@ def test_stale_when_only_change_entry_matches_sha(plan_context, monkeypatch, tmp
 # ``_stale_reason``, and live in ``test_freshness_notation_crosscheck.py``.
 # =============================================================================
 
+
 @pytest.mark.parametrize(
     ('row_status', 'expected_reason'),
     [
@@ -380,9 +374,7 @@ def test_stale_reason_names_the_observed_build_status(
     plan_id = f'freshness-reason-{row_status}'
     _write_status(plan_context.plan_dir_for(plan_id))
     _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
-    ledger_path = _write_ledger(
-        tmp_path, [_build_entry(worktree_sha=_CURRENT_SHA, exit_code=-1, status=row_status)]
-    )
+    ledger_path = _write_ledger(tmp_path, [_build_entry(worktree_sha=_CURRENT_SHA, exit_code=-1, status=row_status)])
     _stub_ledger_path(monkeypatch, ledger_path)
 
     result = cmd_pre_commit_verify_freshness(Namespace(plan_id=plan_id))
@@ -392,9 +384,7 @@ def test_stale_reason_names_the_observed_build_status(
     assert result['observed_status'] == row_status, result
 
 
-def test_stale_reason_is_mutation_only_when_no_row_carries_the_sha(
-    plan_context, monkeypatch, tmp_path
-) -> None:
+def test_stale_reason_is_mutation_only_when_no_row_carries_the_sha(plan_context, monkeypatch, tmp_path) -> None:
     """CONTROL: a genuinely-mutated tree still reports the mutation reason."""
     _write_status(plan_context.plan_dir_for('freshness-reason-mutated'))
     _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
@@ -410,9 +400,7 @@ def test_stale_reason_is_mutation_only_when_no_row_carries_the_sha(
     assert 'mutated' in result['message']
 
 
-def test_stale_reason_reads_the_most_recent_matching_row(
-    plan_context, monkeypatch, tmp_path
-) -> None:
+def test_stale_reason_reads_the_most_recent_matching_row(plan_context, monkeypatch, tmp_path) -> None:
     """Several non-green builds against one tree: the LATEST one is the reason."""
     _write_status(plan_context.plan_dir_for('freshness-latest-row'))
     _stub_worktree_sha(monkeypatch, _CURRENT_SHA)

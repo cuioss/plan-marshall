@@ -211,9 +211,7 @@ class TestLegAgreement:
         # script dir: .../bundle-a/{version}/skills/skill-x/scripts
         return found[0].name, resolved.parts[-5], Path(script_dirs[0]).parts[-4]
 
-    @pytest.mark.parametrize(
-        'full_dirs,bare_dirs', _LEG_AGREEMENT_CASES, ids=_LEG_AGREEMENT_IDS
-    )
+    @pytest.mark.parametrize('full_dirs,bare_dirs', _LEG_AGREEMENT_CASES, ids=_LEG_AGREEMENT_IDS)
     def test_every_leg_selects_the_same_version_dir(self, tmp_path, full_dirs, bare_dirs):
         for version, orphaned in full_dirs:
             _create_full_version_dir(tmp_path, 'bundle-a', version, orphaned=orphaned)
@@ -345,12 +343,8 @@ class TestCollectScriptDirs:
         result = collect_script_dirs(tmp_path)
         assert str(scripts) in result
 
-    @pytest.mark.parametrize(
-        'older,newer,subpath', _NEWEST_ONLY_SCAN_CASES, ids=_NEWEST_ONLY_SCAN_IDS
-    )
-    def test_only_the_newest_version_dir_is_scanned(
-        self, tmp_path, older: str, newer: str, subpath: str
-    ):
+    @pytest.mark.parametrize('older,newer,subpath', _NEWEST_ONLY_SCAN_CASES, ids=_NEWEST_ONLY_SCAN_IDS)
+    def test_only_the_newest_version_dir_is_scanned(self, tmp_path, older: str, newer: str, subpath: str):
         older_dir = tmp_path / 'bundle-a' / older / subpath
         newer_dir = tmp_path / 'bundle-a' / newer / subpath
         older_dir.mkdir(parents=True)

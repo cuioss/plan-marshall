@@ -40,9 +40,7 @@ from conftest import (
 
 cd = load_script_module('plan-marshall', 'manage-config', '_config_defaults.py')
 
-_SKILL_MD = (
-    PROJECT_ROOT / '.claude' / 'skills' / 'finalize-step-deploy-target' / 'SKILL.md'
-)
+_SKILL_MD = PROJECT_ROOT / '.claude' / 'skills' / 'finalize-step-deploy-target' / 'SKILL.md'
 _GENERATE_PY = PROJECT_ROOT / 'marketplace' / 'targets' / 'generate.py'
 
 #: The invocation the skill prescribes. ``uv`` is installed only into the
@@ -90,8 +88,7 @@ def test_skill_frontmatter_has_canonical_fields():
     assert fm.get('name') == 'finalize-step-deploy-target'
     assert fm.get('description'), 'description must be non-empty'
     assert fm.get('order') == '81', (
-        'deploy-target order must be 81 (post-merge: after branch-cleanup=70, '
-        'before sync-plugin-cache=85)'
+        'deploy-target order must be 81 (post-merge: after branch-cleanup=70, before sync-plugin-cache=85)'
     )
 
 
@@ -144,9 +141,7 @@ def test_deploy_target_is_not_a_built_in_default():
     """
     from extension_discovery import find_implementors
 
-    discovered_names = {
-        rec['name'] for rec in find_implementors(cd.FINALIZE_STEP_EXT_POINT) if rec.get('name')
-    }
+    discovered_names = {rec['name'] for rec in find_implementors(cd.FINALIZE_STEP_EXT_POINT) if rec.get('name')}
     assert 'default:deploy-target' not in discovered_names
     # Positive contract: the project-local step IS discovered under its
     # PATH-derived ``project:{dir}`` id — confirming the step is surfaced, not
@@ -160,14 +155,7 @@ def test_deploy_target_is_not_a_built_in_default():
 def test_no_bundled_standards_doc_for_deploy_target():
     """No bundled phase-6-finalize/standards/deploy-target.md exists — the skill
     is project-local under .claude/, not in the plan-marshall bundle."""
-    bundled = (
-        MARKETPLACE_ROOT
-        / 'plan-marshall'
-        / 'skills'
-        / 'phase-6-finalize'
-        / 'standards'
-        / 'deploy-target.md'
-    )
+    bundled = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'standards' / 'deploy-target.md'
     assert not bundled.exists(), (
         f'Unexpected bundled standards doc: {bundled}. The deploy-target step '
         f'is project-local only; no marketplace bundle should ship it.'
@@ -189,15 +177,18 @@ def fixture_marketplace(tmp_path: Path) -> Path:
     """Tiny single-bundle marketplace for smoke testing the generator."""
     marketplace = tmp_path / 'bundles'
     bundle = marketplace / 'demo'
-    plugin_doc = json.dumps(
-        {
-            'name': 'demo',
-            'version': '0.0.1',
-            'description': 'demo bundle',
-            'skills': ['./skills/demo-skill'],
-        },
-        indent=2,
-    ) + '\n'
+    plugin_doc = (
+        json.dumps(
+            {
+                'name': 'demo',
+                'version': '0.0.1',
+                'description': 'demo bundle',
+                'skills': ['./skills/demo-skill'],
+            },
+            indent=2,
+        )
+        + '\n'
+    )
     _write(bundle / '.claude-plugin' / 'plugin.json', plugin_doc)
     _write(
         bundle / 'skills' / 'demo-skill' / 'SKILL.md',
@@ -235,9 +226,7 @@ def _run_generator(*args: str) -> ScriptResult:
     return run_script(_GENERATE_PY, *args, timeout=60)
 
 
-def test_generator_success_exits_zero_and_prints_a_nonzero_produced_count(
-    fixture_marketplace: Path, tmp_path: Path
-):
+def test_generator_success_exits_zero_and_prints_a_nonzero_produced_count(fixture_marketplace: Path, tmp_path: Path):
     """The two signals the skill body is written against, asserted as such.
 
     The step reads its OUTCOME from the exit code and its ``display_detail``
@@ -254,9 +243,12 @@ def test_generator_success_exits_zero_and_prints_a_nonzero_produced_count(
     output_dir = tmp_path / 'out'
 
     result = _run_generator(
-        '--target', 'claude',
-        '--output', str(output_dir),
-        '--marketplace-dir', str(fixture_marketplace),
+        '--target',
+        'claude',
+        '--output',
+        str(output_dir),
+        '--marketplace-dir',
+        str(fixture_marketplace),
     )
 
     assert result.returncode == _EXIT_OK, f'generator exit={result.returncode}, stderr={result.stderr}'
@@ -285,9 +277,12 @@ def test_generator_failure_exits_two_and_writes_its_diagnostic_to_stderr(tmp_pat
     marketplace directory is the generator's earliest documented failure path.
     """
     result = _run_generator(
-        '--target', 'claude',
-        '--output', str(tmp_path / 'out'),
-        '--marketplace-dir', str(tmp_path / 'does-not-exist'),
+        '--target',
+        'claude',
+        '--output',
+        str(tmp_path / 'out'),
+        '--marketplace-dir',
+        str(tmp_path / 'does-not-exist'),
     )
 
     assert result.returncode == _EXIT_ERROR, (
@@ -313,9 +308,12 @@ def test_emit_marker_carries_file_hash_manifest(fixture_marketplace: Path, tmp_p
     output_dir = tmp_path / 'out'
     result = run_script(
         _GENERATE_PY,
-        '--target', 'claude',
-        '--output', str(output_dir),
-        '--marketplace-dir', str(fixture_marketplace),
+        '--target',
+        'claude',
+        '--output',
+        str(output_dir),
+        '--marketplace-dir',
+        str(fixture_marketplace),
         timeout=60,
     )
     assert result.returncode == 0, f'generator exit={result.returncode}, stderr={result.stderr}'
@@ -334,9 +332,7 @@ def test_emit_marker_carries_file_hash_manifest(fixture_marketplace: Path, tmp_p
 
     # The manifest keys are exactly the emitted regular files minus the sentinel.
     emitted_rel = {
-        p.relative_to(output_dir).as_posix()
-        for p in output_dir.rglob('*')
-        if p.is_file() and not p.is_symlink()
+        p.relative_to(output_dir).as_posix() for p in output_dir.rglob('*') if p.is_file() and not p.is_symlink()
     }
     emitted_rel.discard('.emit-marker.json')
     assert set(file_hashes) == emitted_rel

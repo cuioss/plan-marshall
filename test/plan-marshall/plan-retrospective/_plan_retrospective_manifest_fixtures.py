@@ -11,7 +11,6 @@ The cross-check matrix being exercised is documented in
 ``marketplace/bundles/plan-marshall/skills/plan-retrospective/standards/manifest-crosscheck.md``.
 """
 
-
 from __future__ import annotations
 
 from pathlib import Path

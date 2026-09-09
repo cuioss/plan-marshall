@@ -112,9 +112,7 @@ RULE_DESCRIPTOR = RuleDescriptor(
 # declared on each step doc via this ext-point; the contract lives in the central
 # standard marketplace/bundles/plan-marshall/skills/extension-api/standards/
 # ext-point-finalize-step.md. This constant is the discovery key only.
-_FINALIZE_STEP_EXT_POINT = (
-    'plan-marshall:extension-api/standards/ext-point-finalize-step'
-)
+_FINALIZE_STEP_EXT_POINT = 'plan-marshall:extension-api/standards/ext-point-finalize-step'
 
 # The merge gate whose order is the settle-band boundary. Its ORDER is resolved
 # dynamically from the discovered record; only the step's identity is a literal.
@@ -184,9 +182,7 @@ def _parse_step_doc(path: Path) -> _StepDoc | None:
     block = _frontmatter_lines(text)
     if block is None:
         return None
-    uncommented = '\n'.join(
-        line for _, line in block if not line.strip().startswith('#')
-    )
+    uncommented = '\n'.join(line for _, line in block if not line.strip().startswith('#'))
     if _FINALIZE_STEP_EXT_POINT not in uncommented:
         return None
 

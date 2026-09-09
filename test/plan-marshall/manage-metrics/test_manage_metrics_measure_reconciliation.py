@@ -8,7 +8,6 @@ Its sections, in order:
 * billing_weighted_total as a first-class cost figure
 """
 
-
 from _manage_metrics_fixtures import (
     ns_end_phase,
     ns_generate,
@@ -139,9 +138,7 @@ def test_boundary_bullet_declares_coverage_and_drops_the_false_parenthetical(pla
     cmd_generate(ns_generate(plan_id))
     report = (plan_context.plan_dir_for(plan_id) / 'metrics.md').read_text(encoding='utf-8')
 
-    bullet = next(
-        line for line in report.splitlines() if line.startswith('- **Dispatch-boundary total**:')
-    )
+    bullet = next(line for line in report.splitlines() if line.startswith('- **Dispatch-boundary total**:'))
     assert 'PARTIAL: 2 of 7 dispatch(es) recorded' in bullet
     assert 'did not win the maximum' in bullet
     # The retired claim must be gone from the whole report, not just this bullet.
@@ -151,6 +148,7 @@ def test_boundary_bullet_declares_coverage_and_drops_the_false_parenthetical(pla
 # =============================================================================
 # billing_weighted_total as a first-class cost figure
 # =============================================================================
+
 
 def test_billing_column_is_rendered_with_its_own_total(plan_context):
     """The Billing column and its Total are distinct from every work column."""
@@ -224,9 +222,7 @@ def test_billing_bullet_states_the_measure_rather_than_apologising(plan_context)
     cmd_generate(ns_generate(plan_id))
     report = (plan_context.plan_dir_for(plan_id) / 'metrics.md').read_text(encoding='utf-8')
 
-    bullet = next(
-        line for line in report.splitlines() if line.startswith('- **Billing-weighted total**:')
-    )
+    bullet = next(line for line in report.splitlines() if line.startswith('- **Billing-weighted total**:'))
     assert 'derived-cost population' in bullet
     assert '0.1 × cache_read' in bullet
     assert '1.25 × cache_creation' in bullet

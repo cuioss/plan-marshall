@@ -724,59 +724,71 @@ def evaluate_mis_prunes(
     for step, predicate in _PRUNABLE_PREDICATES.items():
         absent = step not in bare_final
         if not absent:
-            checks.append({
-                'check': f'mis_prune:{step}',
-                'status': 'pass',
-                'predicate': predicate,
-                'removal_cause': _CAUSE_NOT_REMOVED,
-                'detail': 'step ran',
-            })
+            checks.append(
+                {
+                    'check': f'mis_prune:{step}',
+                    'status': 'pass',
+                    'predicate': predicate,
+                    'removal_cause': _CAUSE_NOT_REMOVED,
+                    'detail': 'step ran',
+                }
+            )
             continue
         if not have_footprint:
-            checks.append({
-                'check': f'mis_prune:{step}',
-                'status': 'skip',
-                'predicate': predicate,
-                'removal_cause': _CAUSE_NOT_EVALUATED,
-                'detail': 'footprint unresolvable',
-            })
+            checks.append(
+                {
+                    'check': f'mis_prune:{step}',
+                    'status': 'skip',
+                    'predicate': predicate,
+                    'removal_cause': _CAUSE_NOT_EVALUATED,
+                    'detail': 'footprint unresolvable',
+                }
+            )
             continue
         recorded_cause = removal_causes.get(step)
         if recorded_cause is not None:
-            checks.append({
-                'check': f'mis_prune:{step}',
-                'status': 'skip',
-                'predicate': predicate,
-                'removal_cause': recorded_cause,
-                'detail': f'dropped by {recorded_cause}, prune predicate not evaluated',
-            })
+            checks.append(
+                {
+                    'check': f'mis_prune:{step}',
+                    'status': 'skip',
+                    'predicate': predicate,
+                    'removal_cause': recorded_cause,
+                    'detail': f'dropped by {recorded_cause}, prune predicate not evaluated',
+                }
+            )
             continue
         if not log_readable:
-            checks.append({
-                'check': f'mis_prune:{step}',
-                'status': 'inconclusive',
-                'predicate': predicate,
-                'removal_cause': _CAUSE_UNESTABLISHABLE,
-                'detail': 'removal cause unestablishable — decision log absent or unreadable',
-            })
+            checks.append(
+                {
+                    'check': f'mis_prune:{step}',
+                    'status': 'inconclusive',
+                    'predicate': predicate,
+                    'removal_cause': _CAUSE_UNESTABLISHABLE,
+                    'detail': 'removal cause unestablishable — decision log absent or unreadable',
+                }
+            )
             continue
         # no_code_delta predicate is now FALSE when the diff touched production.
         if predicate == 'no_code_delta' and has_production:
-            checks.append({
-                'check': f'mis_prune:{step}',
-                'status': 'fail',
-                'predicate': predicate,
-                'removal_cause': _CAUSE_PREDICATE_EVALUATED,
-                'detail': f'{step} skipped as no_code_delta but the realized footprint touched production code',
-            })
+            checks.append(
+                {
+                    'check': f'mis_prune:{step}',
+                    'status': 'fail',
+                    'predicate': predicate,
+                    'removal_cause': _CAUSE_PREDICATE_EVALUATED,
+                    'detail': f'{step} skipped as no_code_delta but the realized footprint touched production code',
+                }
+            )
         else:
-            checks.append({
-                'check': f'mis_prune:{step}',
-                'status': 'pass',
-                'predicate': predicate,
-                'removal_cause': _CAUSE_PREDICATE_EVALUATED,
-                'detail': 'predicate still holds',
-            })
+            checks.append(
+                {
+                    'check': f'mis_prune:{step}',
+                    'status': 'pass',
+                    'predicate': predicate,
+                    'removal_cause': _CAUSE_PREDICATE_EVALUATED,
+                    'detail': 'predicate still holds',
+                }
+            )
     return checks
 
 
@@ -898,9 +910,7 @@ def evaluate_cost_preview(manifest: dict[str, Any], metadata: dict[str, Any]) ->
 
     raw_population = metadata.get(PREDICTED_POPULATION_KEY)
     predicted_population = (
-        raw_population.strip()
-        if isinstance(raw_population, str) and raw_population.strip()
-        else POPULATION_UNSTATED
+        raw_population.strip() if isinstance(raw_population, str) and raw_population.strip() else POPULATION_UNSTATED
     )
 
     preview: dict[str, Any] = {
@@ -981,9 +991,7 @@ def evaluate_cost_preview(manifest: dict[str, Any], metadata: dict[str, Any]) ->
 
     preview['comparison'] = COMPARISON_COMPUTED
     preview['delta_tokens'] = execution_log_tokens - predicted
-    preview['delta_pct'] = (
-        round((execution_log_tokens - predicted) / predicted * 100, 1) if predicted else None
-    )
+    preview['delta_pct'] = round((execution_log_tokens - predicted) / predicted * 100, 1) if predicted else None
     return preview
 
 
@@ -1044,9 +1052,7 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
             footprint_source = 'unresolved'
             have_footprint = False
 
-    mis_prune_checks = evaluate_mis_prunes(
-        manifest, footprint, have_footprint, decision_lines, log_readable
-    )
+    mis_prune_checks = evaluate_mis_prunes(manifest, footprint, have_footprint, decision_lines, log_readable)
     cost_preview = evaluate_cost_preview(manifest, metadata)
 
     summary = summarize_checks(mis_prune_checks)

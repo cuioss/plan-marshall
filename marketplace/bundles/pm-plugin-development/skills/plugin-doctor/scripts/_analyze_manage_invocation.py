@@ -376,11 +376,7 @@ def build_script_index(marketplace_root: Path) -> dict[str, _ScriptTree]:
     if not descriptors:
         return {}
     surfaces = build_surface_index([d.notation for d in descriptors], executor)
-    return {
-        notation: surface
-        for notation, surface in surfaces.items()
-        if isinstance(surface, ScriptSurface)
-    }
+    return {notation: surface for notation, surface in surfaces.items() if isinstance(surface, ScriptSurface)}
 
 
 # =============================================================================
@@ -487,9 +483,7 @@ _LEADING_FLAG_RE = re.compile(r'\s+--(?P<name>[A-Za-z][A-Za-z0-9_\-]*)')
 _VALUE_TOKEN_RE = re.compile(r'\s+(?P<val>[^\s\-][^\s]*)')
 
 
-def _skip_leading_routing_flags(
-    rest: str, flag_arity: dict[str, int] | None = None
-) -> int:
+def _skip_leading_routing_flags(rest: str, flag_arity: dict[str, int] | None = None) -> int:
     """Return the scan offset past any leading ``--flag value`` run in ``rest``.
 
     A top-level routing/global flag (``--project-dir``, ``--plan-id``,
@@ -591,10 +585,7 @@ def _extract_flag_tokens(rest: str) -> list[str]:
     Quoted substrings are stripped first so flag-like text inside string
     argument values does not produce false positives.
     """
-    return [
-        m.group('flag')
-        for m in _FLAG_TOKEN_RE.finditer(_strip_quoted_substrings(rest))
-    ]
+    return [m.group('flag') for m in _FLAG_TOKEN_RE.finditer(_strip_quoted_substrings(rest))]
 
 
 # First flag token on a line: whitespace immediately followed by ``-``. The
@@ -676,10 +667,7 @@ def _canonical_hint_for_subcommand(
     notation: str,
     known_subcommands: set[str],
 ) -> str:
-    return (
-        f'Use a registered top-level subcommand for `{notation}`: '
-        f'{sorted(known_subcommands)}'
-    )
+    return f'Use a registered top-level subcommand for `{notation}`: {sorted(known_subcommands)}'
 
 
 def _canonical_hint_for_sub_verb(
@@ -687,10 +675,7 @@ def _canonical_hint_for_sub_verb(
     subcommand: str,
     known_sub_verbs: set[str],
 ) -> str:
-    return (
-        f'Use a registered sub-verb under `{notation} {subcommand}`: '
-        f'{sorted(known_sub_verbs)}'
-    )
+    return f'Use a registered sub-verb under `{notation} {subcommand}`: {sorted(known_sub_verbs)}'
 
 
 def _canonical_hint_for_flag(
@@ -829,9 +814,7 @@ def _validate_router_verb(
                     'sub_verb': None,
                     'flag': flag,
                     'reason': 'flag_unknown',
-                    'canonical_hint': _canonical_hint_for_flag(
-                        notation, verb, None, known_flags
-                    ),
+                    'canonical_hint': _canonical_hint_for_flag(notation, verb, None, known_flags),
                     'known_flags': sorted(known_flags),
                 },
             )
@@ -856,9 +839,7 @@ def _validate_router_verb(
                     'sub_verb': None,
                     'missing': missing_required,
                     'reason': 'required_flag_missing',
-                    'canonical_hint': _canonical_hint_for_missing_required(
-                        notation, verb, None, set(missing_required)
-                    ),
+                    'canonical_hint': _canonical_hint_for_missing_required(notation, verb, None, set(missing_required)),
                     'required_flags': sorted(spec.required_flags),
                 },
             )
@@ -948,9 +929,7 @@ def _analyze_one_invocation(
                         'notation': notation,
                         'subcommand': unknown_token,
                         'reason': 'subcommand_unknown',
-                        'canonical_hint': _canonical_hint_for_subcommand(
-                            notation, tree.known_subcommands()
-                        ),
+                        'canonical_hint': _canonical_hint_for_subcommand(notation, tree.known_subcommands()),
                         'known_subcommands': sorted(tree.known_subcommands()),
                     },
                 )
@@ -975,9 +954,7 @@ def _analyze_one_invocation(
                         'subcommand': subcommand,
                         'sub_verb': unknown_token if sub_verb is None else sub_verb,
                         'reason': 'sub_verb_unknown',
-                        'canonical_hint': _canonical_hint_for_sub_verb(
-                            notation, parent_chain, known_children
-                        ),
+                        'canonical_hint': _canonical_hint_for_sub_verb(notation, parent_chain, known_children),
                         'known_sub_verbs': sorted(known_children),
                     },
                 )
@@ -1009,9 +986,7 @@ def _analyze_one_invocation(
                     'subcommand': subcommand,
                     'sub_verb': None,
                     'reason': 'sub_verb_unknown',
-                    'canonical_hint': _canonical_hint_for_sub_verb(
-                        notation, parent_chain, known_children
-                    ),
+                    'canonical_hint': _canonical_hint_for_sub_verb(notation, parent_chain, known_children),
                     'known_sub_verbs': sorted(known_children),
                 },
             )
@@ -1029,9 +1004,7 @@ def _analyze_one_invocation(
     # executor-injected flags as unknown — the 106-false-positive failure this
     # union + allowlist fixes. ``required_flags`` (below) stays leaf-only:
     # missing-required detection MUST NOT inherit an ancestor's required flags.
-    known_flags = (
-        _ancestor_union_flags(tree, chain) | leaf.flags | _UNIVERSAL_FLAG_ALLOWLIST
-    )
+    known_flags = _ancestor_union_flags(tree, chain) | leaf.flags | _UNIVERSAL_FLAG_ALLOWLIST
     used_flags = set(declared_flags)
 
     unknown_flags = sorted(used_flags - known_flags)
@@ -1043,8 +1016,7 @@ def _analyze_one_invocation(
                 line=line,
                 severity='error',
                 description=(
-                    f'`{notation}` invocation uses unregistered flag '
-                    f'`--{flag}` (registered: {sorted(known_flags)})'
+                    f'`{notation}` invocation uses unregistered flag `--{flag}` (registered: {sorted(known_flags)})'
                 ),
                 details={
                     'notation': notation,
@@ -1052,9 +1024,7 @@ def _analyze_one_invocation(
                     'sub_verb': sub_verb,
                     'flag': flag,
                     'reason': 'flag_unknown',
-                    'canonical_hint': _canonical_hint_for_flag(
-                        notation, subcommand, sub_verb, known_flags
-                    ),
+                    'canonical_hint': _canonical_hint_for_flag(notation, subcommand, sub_verb, known_flags),
                     'known_flags': sorted(known_flags),
                 },
             )
@@ -1159,9 +1129,7 @@ def scan_skill_for_manage_invocation(
             content = md_file.read_text(encoding='utf-8')
         except (OSError, UnicodeDecodeError):
             continue
-        findings.extend(
-            analyze_manage_invocation_markdown(content, str(md_file), script_index)
-        )
+        findings.extend(analyze_manage_invocation_markdown(content, str(md_file), script_index))
     return findings
 
 
@@ -1169,9 +1137,7 @@ def scan_skill_for_manage_invocation(
 # missing-canonical-block rule
 # =============================================================================
 
-_CANONICAL_BLOCK_HEADING = re.compile(
-    r'^##\s+Canonical\s+invocations\s*$', re.IGNORECASE | re.MULTILINE
-)
+_CANONICAL_BLOCK_HEADING = re.compile(r'^##\s+Canonical\s+invocations\s*$', re.IGNORECASE | re.MULTILINE)
 
 
 def _has_canonical_block(skill_md_path: Path) -> bool:
@@ -1255,8 +1221,6 @@ def scan_manage_invocation(marketplace_root: Path) -> list[dict]:
                 content = md_file.read_text(encoding='utf-8')
             except (OSError, UnicodeDecodeError):
                 continue
-            findings.extend(
-                analyze_manage_invocation_markdown(content, str(md_file), script_index)
-            )
+            findings.extend(analyze_manage_invocation_markdown(content, str(md_file), script_index))
     findings.extend(check_missing_canonical_blocks(marketplace_root))
     return findings

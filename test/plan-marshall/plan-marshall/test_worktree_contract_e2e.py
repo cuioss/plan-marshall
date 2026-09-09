@@ -72,9 +72,7 @@ def test_a_main_dirty_drift_diff_detects_added_path(tmp_path: Path) -> None:
 
     drift = inv._main_dirty_drift_diff(baseline, observed)
 
-    assert drift == ['marketplace/bundles/foo/bar.py'], (
-        f'expected single new dirty path in drift, got {drift!r}'
-    )
+    assert drift == ['marketplace/bundles/foo/bar.py'], f'expected single new dirty path in drift, got {drift!r}'
 
 
 def test_a_main_dirty_drift_diff_clean_returns_empty(tmp_path: Path) -> None:
@@ -136,9 +134,9 @@ def test_a_main_dirty_filter_excludes_untracked_plan_paths(tmp_path: Path) -> No
 
     raw = [
         '.plan/local/plans/some-plan/work.log',  # untracked → dropped
-        '.plan/marshal.json',                    # tracked   → retained
-        'marketplace/bundles/foo/README.md',     # non-.plan → retained
-        'src/main.py',                           # non-.plan → retained
+        '.plan/marshal.json',  # tracked   → retained
+        'marketplace/bundles/foo/README.md',  # non-.plan → retained
+        'src/main.py',  # non-.plan → retained
     ]
     filtered = inv._filter_main_dirty_paths(raw, repo)
 
@@ -159,5 +157,3 @@ def test_a_main_dirty_filter_excludes_untracked_plan_paths(tmp_path: Path) -> No
 # ``test/sync-plugin-cache/test_staleness_guard.py`` next to the script
 # under test. Locking the same behavior twice would create drift if one
 # side ever rewrites; the sync-side suite is authoritative.
-
-

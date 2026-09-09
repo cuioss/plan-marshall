@@ -21,14 +21,7 @@ from pathlib import Path
 from conftest import PROJECT_ROOT, ScriptResult, run_script
 from toon_parser import parse_toon
 
-_HELPER = (
-    PROJECT_ROOT
-    / '.claude'
-    / 'skills'
-    / 'sync-plugin-cache'
-    / 'scripts'
-    / 'list_bundles_and_versions.py'
-)
+_HELPER = PROJECT_ROOT / '.claude' / 'skills' / 'sync-plugin-cache' / 'scripts' / 'list_bundles_and_versions.py'
 
 
 def _write(path: Path, content: str | bytes = '') -> None:

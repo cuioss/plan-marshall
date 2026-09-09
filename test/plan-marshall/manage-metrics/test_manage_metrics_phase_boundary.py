@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the `phase-boundary` subcommand of manage_metrics."""
 
-
 from _manage_metrics_fixtures import (
     ns_accumulate,
     ns_end_phase,

@@ -20,14 +20,14 @@ from _audit_fixtures import audit
 
 def _plan_with_metadata(repo_root: Path, metadata: str) -> audit.PlanInputs:
     """Stage an archived plan whose status.json carries ``metadata``."""
-    plan_dir = repo_root / ".plan" / "local" / "archived-plans" / "provenance-plan"
+    plan_dir = repo_root / '.plan' / 'local' / 'archived-plans' / 'provenance-plan'
     plan_dir.mkdir(parents=True, exist_ok=True)
-    (plan_dir / "references.json").write_text(
+    (plan_dir / 'references.json').write_text(
         '{"scope_estimate": "surgical", "affected_files": ["src/a.py"]}',
-        encoding="utf-8",
+        encoding='utf-8',
     )
-    (plan_dir / "status.json").write_text(
-        '{"metadata": {"change_type": "bug_fix", ' + metadata + "}}", encoding="utf-8"
+    (plan_dir / 'status.json').write_text(
+        '{"metadata": {"change_type": "bug_fix", ' + metadata + '}}', encoding='utf-8'
     )
     return audit.collect_inputs(plan_dir)
 
@@ -40,20 +40,18 @@ def test_recipe_key_metadata_field_populates_recipe_key(tmp_path):
     one-directional read dropped on the floor.
     """
     inputs = _plan_with_metadata(tmp_path, '"recipe_key": "recipe-lesson-cleanup"')
-    assert inputs.recipe_key == "recipe-lesson-cleanup"
+    assert inputs.recipe_key == 'recipe-lesson-cleanup'
 
 
 def test_plan_source_metadata_field_still_populates_recipe_key(tmp_path):
     inputs = _plan_with_metadata(tmp_path, '"plan_source": "lesson-042"')
-    assert inputs.recipe_key == "lesson-042"
+    assert inputs.recipe_key == 'lesson-042'
 
 
 def test_plan_source_wins_when_both_fields_are_present(tmp_path):
     """Precedence matches ``_read_recipe_source``'s ``('plan_source', 'recipe_key')``."""
-    inputs = _plan_with_metadata(
-        tmp_path, '"plan_source": "lesson-042", "recipe_key": "recipe-lesson-cleanup"'
-    )
-    assert inputs.recipe_key == "lesson-042"
+    inputs = _plan_with_metadata(tmp_path, '"plan_source": "lesson-042", "recipe_key": "recipe-lesson-cleanup"')
+    assert inputs.recipe_key == 'lesson-042'
 
 
 def test_neither_field_leaves_recipe_key_unset(tmp_path):
@@ -75,10 +73,10 @@ def test_row_2_recipe_fires_for_a_recipe_key_routed_plan(tmp_path):
     exercising the matrix.
     """
     inputs = _plan_with_metadata(tmp_path, '"recipe_key": "recipe-lesson-cleanup"')
-    assert audit.derive_expected_rule(inputs) == "recipe"
+    assert audit.derive_expected_rule(inputs) == 'recipe'
 
 
 def test_row_5_still_fires_without_any_recipe_provenance(tmp_path):
     """The negative control for the row above — the discriminator is the signal."""
     inputs = _plan_with_metadata(tmp_path, '"planning_lane": "light"')
-    assert audit.derive_expected_rule(inputs) == "surgical_bug_fix"
+    assert audit.derive_expected_rule(inputs) == 'surgical_bug_fix'

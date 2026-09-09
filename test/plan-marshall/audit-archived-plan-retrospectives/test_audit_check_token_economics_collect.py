@@ -43,7 +43,10 @@ class TestTokenEconomicsCollect:
     def test_zero_files_and_tasks_yield_zero_ratios(self, tmp_path: Path):
         # empty footprint must not raise ZeroDivisionError
         inputs = _write_token_plan(
-            tmp_path, 'plan-empty', files=0, task_count=0,
+            tmp_path,
+            'plan-empty',
+            files=0,
+            task_count=0,
             phase_tokens={'5-execute': 5_000},
         )
 
@@ -68,7 +71,8 @@ class TestTokenEconomicsCollect:
     def test_exec_metrics_blind_set_when_execute_phase_absent(self, tmp_path: Path):
         # planning-only metrics, no 5-execute token block
         inputs = _write_token_plan(
-            tmp_path, 'plan-blind',
+            tmp_path,
+            'plan-blind',
             phase_tokens={'2-refine': 4_000, '4-plan': 6_000},
         )
 
@@ -80,7 +84,9 @@ class TestTokenEconomicsCollect:
     def test_session_message_count_read_from_top_level_scalar(self, tmp_path: Path):
         # the scalar lives above the first [phase] section
         inputs = _write_token_plan(
-            tmp_path, 'plan-msgs', session_message_count=412,
+            tmp_path,
+            'plan-msgs',
+            session_message_count=412,
             phase_tokens={'5-execute': 8_000},
         )
 
@@ -104,12 +110,7 @@ class TestTokenEconomicsThresholds:
     def test_floor_band_is_corpus_tenth_percentile(self, tmp_path: Path):
         # ten plans with distinct totals so p10 is determinate
         rows = audit._collect_token_economics_rows(
-            [
-                _write_token_plan(
-                    tmp_path, f'p-{i}', phase_tokens={'5-execute': (i + 1) * 1_000}
-                )
-                for i in range(10)
-            ]
+            [_write_token_plan(tmp_path, f'p-{i}', phase_tokens={'5-execute': (i + 1) * 1_000}) for i in range(10)]
         )
 
         thr = audit._derive_token_economics_thresholds(rows)
@@ -137,11 +138,13 @@ class TestTokenEconomicsThresholds:
         # one measured plan (ratio 2.0) and one execute-blind plan that
         # must NOT contribute to the median ratio distribution.
         measured = _write_token_plan(
-            tmp_path, 'measured',
+            tmp_path,
+            'measured',
             phase_tokens={'2-refine': 2_000, '4-plan': 2_000, '5-execute': 2_000},
         )
         blind = _write_token_plan(
-            tmp_path, 'blind',
+            tmp_path,
+            'blind',
             phase_tokens={'2-refine': 9_000, '4-plan': 9_000},
         )
 

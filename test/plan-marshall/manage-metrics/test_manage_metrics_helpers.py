@@ -203,9 +203,7 @@ class TestReadMetricsRaw:
             },
         )
 
-        content = (
-            plan_context.plan_dir_for('helpers-roundtrip') / 'work' / 'metrics.toon'
-        ).read_text(encoding='utf-8')
+        content = (plan_context.plan_dir_for('helpers-roundtrip') / 'work' / 'metrics.toon').read_text(encoding='utf-8')
         assert 'session_message_count: 9' in content
 
         # And the extra key survives a read. Top-level (pre-block) keys are kept

@@ -49,14 +49,10 @@ from conftest import get_script_path, load_script_module, run_script
 # Load module under test
 # ---------------------------------------------------------------------------
 
-_PRUNE_REF_PATH = get_script_path(
-    'plan-marshall', 'workflow-integration-git', '_cmd_prune_ref.py'
-)
+_PRUNE_REF_PATH = get_script_path('plan-marshall', 'workflow-integration-git', '_cmd_prune_ref.py')
 _SCRIPT_PATH = get_script_path('plan-marshall', 'workflow-integration-git', 'git-workflow.py')
 
-_mod = load_script_module(
-    'plan-marshall', 'workflow-integration-git', '_cmd_prune_ref.py', '_cmd_prune_ref'
-)
+_mod = load_script_module('plan-marshall', 'workflow-integration-git', '_cmd_prune_ref.py', '_cmd_prune_ref')
 
 cmd_prune_ref = _mod.cmd_prune_ref
 _resolve_project_dir_and_head = _mod._resolve_project_dir_and_head
@@ -180,9 +176,7 @@ class TestCmdPruneRefEscapeHatch:
         assert result['local_deleted'] is False
         assert 'currently checked-out' in result['message']
 
-    def test_branch_delete_failure_returns_error(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_branch_delete_failure_returns_error(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """git branch -D failure → branch_delete_failed with local_deleted=False."""
         _init_repo(tmp_path, branch='main')
         orig = _mod.run_git
@@ -216,9 +210,7 @@ class TestCmdPruneRefEscapeHatch:
         assert result['remote_ref_deleted'] is False
         assert result['mode'] == 'local_only'
 
-    def test_show_ref_absent_returns_partial(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_show_ref_absent_returns_partial(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Remote-tracking ref already absent → partial + remote_ref_deleted=False."""
         _init_repo(tmp_path, branch='main')
         orig = _mod.run_git
@@ -270,9 +262,7 @@ class TestCmdPruneRefEscapeHatch:
         assert result['local_deleted'] is True
         assert result['remote_ref_deleted'] is False
 
-    def test_full_success_local_and_remote(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_full_success_local_and_remote(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Both local branch and remote-tracking ref deleted → status=success."""
         _init_repo(tmp_path, branch='main')
         orig = _mod.run_git
@@ -350,8 +340,7 @@ class TestResolveProjectDirAndHeadViaResolver:
         assert head == CANONICAL_WORKTREE_BRANCH
         assert branch_mock.call_count == 1, 'branch face not resolved exactly once'
         assert path_mock.call_count == 0, (
-            'the path face was consulted; this verb must target the cwd checkout, '
-            'not the plan worktree'
+            'the path face was consulted; this verb must target the cwd checkout, not the plan worktree'
         )
 
     def test_target_checkout_is_the_cwd_root_not_the_plan_worktree(self, monkeypatch) -> None:
@@ -437,8 +426,10 @@ class TestCmdPruneRefCli:
     def test_project_dir_without_head_returns_error(self, tmp_path: Path) -> None:
         """--project-dir without --head → missing_required_arg TOON error."""
         result = run_script(
-            _SCRIPT_PATH, 'prune-local-and-remote-ref',
-            '--project-dir', str(tmp_path),
+            _SCRIPT_PATH,
+            'prune-local-and-remote-ref',
+            '--project-dir',
+            str(tmp_path),
         )
 
         parsed = parse_toon(result.stdout)
@@ -450,9 +441,12 @@ class TestCmdPruneRefCli:
         # Must be OUTSIDE the repo: pytest's tmp_path now roots under the
         # repo-local --basetemp, which IS a git repo.
         result = run_script(
-            _SCRIPT_PATH, 'prune-local-and-remote-ref',
-            '--project-dir', str(outside_repo_dir),
-            '--head', 'feature/x',
+            _SCRIPT_PATH,
+            'prune-local-and-remote-ref',
+            '--project-dir',
+            str(outside_repo_dir),
+            '--head',
+            'feature/x',
         )
 
         parsed = parse_toon(result.stdout)
@@ -462,10 +456,14 @@ class TestCmdPruneRefCli:
     def test_local_only_mode_accepted(self, tmp_path: Path) -> None:
         """--mode local_only is accepted by argparse (no exit code 2)."""
         result = run_script(
-            _SCRIPT_PATH, 'prune-local-and-remote-ref',
-            '--project-dir', str(tmp_path),
-            '--head', 'feature/x',
-            '--mode', 'local_only',
+            _SCRIPT_PATH,
+            'prune-local-and-remote-ref',
+            '--project-dir',
+            str(tmp_path),
+            '--head',
+            'feature/x',
+            '--mode',
+            'local_only',
         )
 
         # Non-git dir → structured error, not argparse exit 2.

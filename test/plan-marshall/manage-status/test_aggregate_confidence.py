@@ -196,9 +196,7 @@ def test_cli_flags_override_scores_file_values(plan_context):
         encoding='utf-8',
     )
     # Override correctness via CLI to 100 — overall lifts by (100-50)*0.2 = 10.
-    result = cmd_aggregate_confidence(
-        _ns('ac-override', scores_file=str(path), correctness=100)
-    )
+    result = cmd_aggregate_confidence(_ns('ac-override', scores_file=str(path), correctness=100))
     assert result['confidence'] == 60.0
 
 

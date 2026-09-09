@@ -15,7 +15,9 @@ from _arch_fixtures import setup_test_project
 
 from conftest import load_script_module
 
-_architecture_core = load_script_module('plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core')
+_architecture_core = load_script_module(
+    'plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core'
+)
 _cmd_enrich = load_script_module('plan-marshall', 'manage-architecture', '_cmd_enrich.py', '_cmd_enrich')
 
 ModuleNotFoundInProjectError = _architecture_core.ModuleNotFoundInProjectError
@@ -95,7 +97,9 @@ def test_add_domain_additive_merge():
         }
         general_skills = [s for s in all_skills if str(s) in _GENERAL_DEV_SKILLS]
         assert len(java_skills) > 0, 'Should have java skills'
-        assert len(general_skills) > 0, 'Should have general-dev skills (persona-plan-marshall-agent, ref-code-quality, persona-module-tester)'
+        assert len(general_skills) > 0, (
+            'Should have general-dev skills (persona-plan-marshall-agent, ref-code-quality, persona-module-tester)'
+        )
 
 
 def test_add_domain_preserves_existing():

@@ -423,10 +423,7 @@ def _import_parse_toon():
     """
     script_path = Path(__file__).resolve()
     repo_root = script_path.parents[4]
-    toon_scripts = (
-        repo_root / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills'
-        / 'ref-toon-format' / 'scripts'
-    )
+    toon_scripts = repo_root / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'ref-toon-format' / 'scripts'
     if str(toon_scripts) not in sys.path:
         sys.path.insert(0, str(toon_scripts))
     try:

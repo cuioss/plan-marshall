@@ -34,9 +34,7 @@ MARKETPLACE_DIR = PROJECT_ROOT / 'marketplace'
 RETIRED_IDIOMS = ("lstrip('./')", 'lstrip("./")')
 
 #: Directory names that never hold project-owned source.
-EXCLUDED_DIR_NAMES = frozenset(
-    {'__pycache__', '.pytest_cache', '.mypy_cache', '.ruff_cache', '.venv', 'node_modules'}
-)
+EXCLUDED_DIR_NAMES = frozenset({'__pycache__', '.pytest_cache', '.mypy_cache', '.ruff_cache', '.venv', 'node_modules'})
 
 
 def scan_for_retired_idiom(root: Path) -> tuple[list[str], int]:

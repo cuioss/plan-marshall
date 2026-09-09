@@ -72,9 +72,7 @@ _dep_index = __import__('_dep_index')
 AstCache = _dep_index.AstCache
 
 _ashm_runner = _load('_analyze_shim_marker.py', '_ashm_runner_test')
-_atdw_runner = _load(
-    '_analyze_thinking_directive_in_workflow_docs.py', '_atdw_runner_test'
-)
+_atdw_runner = _load('_analyze_thinking_directive_in_workflow_docs.py', '_atdw_runner_test')
 _apmt = _load('_analyze_provides_method_table.py', '_apmt_runner_test')
 _alc = _load('_analyze_literal_count.py', '_alc_runner_test')
 _armc = _load('_analyze_resolver_matrix_coverage.py', '_armc_runner_test')
@@ -150,9 +148,7 @@ def _clean_bundles(root: Path) -> Path:
     bundles = root / 'marketplace' / 'bundles'
     bundle = bundles / 'qg-clean'
     (bundle / '.claude-plugin').mkdir(parents=True)
-    (bundle / '.claude-plugin' / 'plugin.json').write_text(
-        '{"name": "qg-clean", "version": "1.0.0"}', encoding='utf-8'
-    )
+    (bundle / '.claude-plugin' / 'plugin.json').write_text('{"name": "qg-clean", "version": "1.0.0"}', encoding='utf-8')
     skill = bundle / 'skills' / 'noop-skill'
     skill.mkdir(parents=True)
     (skill / 'SKILL.md').write_text(
@@ -297,9 +293,7 @@ def test_run_analyze_marketplace_rules_accepts_optin_clusters(tmp_path):
     bundles = _clean_bundles(tmp_path)
     runner = RuleRunner(CorpusContext.build(bundles))
 
-    issues = runner.run_analyze_marketplace_rules(
-        active_rules=frozenset({'script_call_drift', 'argument_naming'})
-    )
+    issues = runner.run_analyze_marketplace_rules(active_rules=frozenset({'script_call_drift', 'argument_naming'}))
 
     # A clean tree yields no findings whether or not the opt-in clusters run;
     # the assertion pins that the gated branches dispatch without error.
@@ -415,9 +409,7 @@ def test_population_publishing_rules_report_their_size_on_a_clean_tree():
 
     for label in POPULATION_PUBLISHING_LABELS:
         assert summaries[label]['findings'] == 0, f'{label} is not clean on the real tree'
-        assert summaries[label]['population_size'] > 0, (
-            f'{label} reported no examined population on a clean run'
-        )
+        assert summaries[label]['population_size'] > 0, f'{label} reported no examined population on a clean run'
 
 
 # Third consumer of the same shared whole-tree gate. ``_real_tree_summaries`` is
@@ -451,20 +443,13 @@ def test_published_population_matches_the_analyzer_derivation():
     one the findings came from.
     """
     summaries = _real_tree_summaries()
-    _shim_findings, shim_population = _ashm_runner.analyze_shim_marker_with_population(
+    _shim_findings, shim_population = _ashm_runner.analyze_shim_marker_with_population(MARKETPLACE_ROOT)
+    _td_findings, td_population = _atdw_runner.analyze_thinking_directive_in_workflow_docs_with_population(
         MARKETPLACE_ROOT
-    )
-    _td_findings, td_population = (
-        _atdw_runner.analyze_thinking_directive_in_workflow_docs_with_population(
-            MARKETPLACE_ROOT
-        )
     )
 
     assert summaries['analyze_shim_marker']['population_size'] == shim_population
-    assert (
-        summaries['analyze_thinking_directive_in_workflow_docs']['population_size']
-        == td_population
-    )
+    assert summaries['analyze_thinking_directive_in_workflow_docs']['population_size'] == td_population
 
 
 def test_with_population_entry_points_agree_with_the_plain_ones():
@@ -473,17 +458,10 @@ def test_with_population_entry_points_agree_with_the_plain_ones():
     Pins that the delegation did not fork the two into separate code paths.
     """
     shim_findings, _ = _ashm_runner.analyze_shim_marker_with_population(MARKETPLACE_ROOT)
-    td_findings, _ = (
-        _atdw_runner.analyze_thinking_directive_in_workflow_docs_with_population(
-            MARKETPLACE_ROOT
-        )
-    )
+    td_findings, _ = _atdw_runner.analyze_thinking_directive_in_workflow_docs_with_population(MARKETPLACE_ROOT)
 
     assert _ashm_runner.analyze_shim_marker(MARKETPLACE_ROOT) == shim_findings
-    assert (
-        _atdw_runner.analyze_thinking_directive_in_workflow_docs(MARKETPLACE_ROOT)
-        == td_findings
-    )
+    assert _atdw_runner.analyze_thinking_directive_in_workflow_docs(MARKETPLACE_ROOT) == td_findings
 
 
 # =============================================================================
@@ -572,9 +550,7 @@ def test_blind_spots_counts_only_the_sites_that_went_undecided(tmp_path):
     """
     marketplace_root = _corpus_with_one_decidable_and_one_undecidable_site(tmp_path)
 
-    findings, population_size, blind_spots = _aan.analyze_argument_naming_with_population(
-        marketplace_root
-    )
+    findings, population_size, blind_spots = _aan.analyze_argument_naming_with_population(marketplace_root)
 
     assert findings == [], f'the control tree is meant to be clean, got {findings!r}'
     assert population_size == 2, 'both invocations belong to the enumerated population'
@@ -597,20 +573,15 @@ def test_argument_naming_plain_entry_point_returns_the_with_population_findings(
     be evidence of anything.
     """
     marketplace_root = _corpus_with_one_decidable_and_one_undecidable_site(tmp_path)
-    skill_md = (
-        marketplace_root / 'bundles' / 'qg-probe' / 'skills' / 'probe-skill' / 'SKILL.md'
-    )
+    skill_md = marketplace_root / 'bundles' / 'qg-probe' / 'skills' / 'probe-skill' / 'SKILL.md'
     skill_md.write_text(
-        skill_md.read_text(encoding='utf-8')
-        + '\n```bash\n'
+        skill_md.read_text(encoding='utf-8') + '\n```bash\n'
         'python3 .plan/execute-script.py qg-probe:probe-skill:probe run --invented\n'
         '```\n',
         encoding='utf-8',
     )
 
-    findings, _population_size, _blind_spots = _aan.analyze_argument_naming_with_population(
-        marketplace_root
-    )
+    findings, _population_size, _blind_spots = _aan.analyze_argument_naming_with_population(marketplace_root)
 
     assert findings, 'the equality below is vacuous unless the tree yields a finding'
     assert _aan.analyze_argument_naming(marketplace_root) == findings
@@ -673,13 +644,7 @@ class _Args:
 #: `--invented` is absent from the probe script's accept-set, so each document
 #: earns one ARGUMENT_NAMING_FLAG_UNKNOWN. Identical bodies are what make the
 #: pair matched: the only difference between the two sites is their path.
-_DEFECTIVE_BODY = (
-    '# Probe\n'
-    '\n'
-    '```bash\n'
-    f'python3 .plan/execute-script.py {PROBE_NOTATION} run --invented\n'
-    '```\n'
-)
+_DEFECTIVE_BODY = f'# Probe\n\n```bash\npython3 .plan/execute-script.py {PROBE_NOTATION} run --invented\n```\n'
 
 
 def _two_documents_one_in_scope_one_out(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
@@ -722,9 +687,7 @@ def test_the_injected_scope_filter_reports_the_in_scope_argument_naming_defect(t
     """
     marketplace, _bundles, in_scope, _out = _two_documents_one_in_scope_one_out(tmp_path)
 
-    result = _doctor.cmd_quality_gate(
-        _Args(marketplace_root=str(marketplace), paths=[str(in_scope.parent)])
-    )
+    result = _doctor.cmd_quality_gate(_Args(marketplace_root=str(marketplace), paths=[str(in_scope.parent)]))
 
     assert _argument_naming_anchors(result['issues']) == {in_scope.resolve()}
 
@@ -740,16 +703,10 @@ def test_the_injected_scope_filter_is_what_drops_the_out_of_scope_defect(tmp_pat
     A negative control whose subject is never shown present is indistinguishable
     from one asserting a defect that was never written.
     """
-    marketplace, bundles, in_scope, out_of_scope = _two_documents_one_in_scope_one_out(
-        tmp_path
-    )
+    marketplace, bundles, in_scope, out_of_scope = _two_documents_one_in_scope_one_out(tmp_path)
 
-    scoped_result = _doctor.cmd_quality_gate(
-        _Args(marketplace_root=str(marketplace), paths=[str(in_scope.parent)])
-    )
-    neutralized_issues, _summaries = RuleRunner(
-        CorpusContext.build(bundles)
-    ).run_quality_gate(
+    scoped_result = _doctor.cmd_quality_gate(_Args(marketplace_root=str(marketplace), paths=[str(in_scope.parent)]))
+    neutralized_issues, _summaries = RuleRunner(CorpusContext.build(bundles)).run_quality_gate(
         scope_dirs=[in_scope.parent],
         scoped=_identity,
         suppressed=_identity,

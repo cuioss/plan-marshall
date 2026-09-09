@@ -200,15 +200,11 @@ class TestMapsArePopulationDerived:
         assert ALL_CANONICAL_COMMANDS, 'the authoritative population is empty'
         accounted = set(examined.CANONICAL_ANALYSES) | set(examined.NON_ANALYSIS_COMMANDS)
         unaccounted = sorted(set(ALL_CANONICAL_COMMANDS) - accounted)
-        assert not unaccounted, (
-            f'canonical command(s) neither mapped nor explained: {unaccounted}'
-        )
+        assert not unaccounted, f'canonical command(s) neither mapped nor explained: {unaccounted}'
 
     def test_no_command_is_both_mapped_and_declared_unmappable(self):
         """The two sides are a partition, not two overlapping opinions."""
-        both = sorted(
-            set(examined.CANONICAL_ANALYSES) & set(examined.NON_ANALYSIS_COMMANDS)
-        )
+        both = sorted(set(examined.CANONICAL_ANALYSES) & set(examined.NON_ANALYSIS_COMMANDS))
         assert not both, f'command(s) both mapped and declared unmappable: {both}'
 
     def test_every_explained_absence_is_still_an_authoritative_command(self):
@@ -289,9 +285,7 @@ _POPULATION_LABEL_IDS = [
 class TestPopulationLabelPublishesWhatWasExamined:
     """The label is stamped into every resolution detail, so it must be legible."""
 
-    @pytest.mark.parametrize(
-        'analyses,tests_run,fragments', _POPULATION_LABEL_CASES, ids=_POPULATION_LABEL_IDS
-    )
+    @pytest.mark.parametrize('analyses,tests_run,fragments', _POPULATION_LABEL_CASES, ids=_POPULATION_LABEL_IDS)
     def test_the_label_renders_the_population_it_was_given(self, analyses, tests_run, fragments):
         label = examined.population_label(analyses, tests_run)
 

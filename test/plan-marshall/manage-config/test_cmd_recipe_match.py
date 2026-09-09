@@ -124,7 +124,7 @@ _REQ_PREDIAGNOSED_SURGICAL = (
     'Fix the owed CHECK_ERA era stamps in the audit skill (root cause known, '
     'exact change known, single file): in '
     '`.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py` update '
-    "the CHECK_ERA registry — `lane-lever-effectiveness` and "
+    'the CHECK_ERA registry — `lane-lever-effectiveness` and '
     "`track-selection-accuracy` from `'#854'` to `'#862'`, "
     "`merge-window-accounting` from `'#849'` to `'#863'` — and update the "
     'adjacent registry comments to match. Bounded footprint, no behavior change '

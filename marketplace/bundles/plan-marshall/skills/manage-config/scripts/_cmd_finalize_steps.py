@@ -80,9 +80,7 @@ _READER_LANE_VALUES: tuple[str, ...] = ('off', 'minimal', 'standard', 'full', 'a
 #: in every such rejection, because a rejection with no route reads as "this value
 #: is unsupported" when the truth is "this verb does not write it, and another one
 #: does".
-_GENERIC_STEP_PARAM_ROUTE = (
-    'plan phase-6-finalize step set --step-id <step-id> --param lane --value <value>'
-)
+_GENERIC_STEP_PARAM_ROUTE = 'plan phase-6-finalize step set --step-id <step-id> --param lane --value <value>'
 
 
 def _reject_lane_value(lane: str) -> str:
@@ -128,9 +126,7 @@ def _known_finalize_steps() -> frozenset[str]:
     """
     from extension_discovery import find_implementors
 
-    return frozenset(
-        rec['name'] for rec in find_implementors(FINALIZE_STEP_EXT_POINT) if rec.get('name')
-    )
+    return frozenset(rec['name'] for rec in find_implementors(FINALIZE_STEP_EXT_POINT) if rec.get('name'))
 
 
 def cmd_finalize_steps_apply_preset(args) -> dict:
@@ -166,23 +162,15 @@ def cmd_finalize_steps_apply_preset(args) -> dict:
     known_steps = _known_finalize_steps()
     for step in steps:
         if step not in known_steps:
-            return error_exit(
-                f"preset '{args.preset}' references unknown finalize step "
-                f"'{step}'"
-            )
+            return error_exit(f"preset '{args.preset}' references unknown finalize step '{step}'")
 
     config = load_config()
     plan_block = config.setdefault('plan', {})
     if not isinstance(plan_block, dict):
-        return error_exit(
-            "plan block in marshal.json is not a dict; cannot merge preset steps"
-        )
+        return error_exit('plan block in marshal.json is not a dict; cannot merge preset steps')
     phase_entry = plan_block.setdefault(_PHASE_SECTION, {})
     if not isinstance(phase_entry, dict):
-        return error_exit(
-            f"plan['{_PHASE_SECTION}'] exists but is not a dict; "
-            f'cannot merge steps attribute'
-        )
+        return error_exit(f"plan['{_PHASE_SECTION}'] exists but is not a dict; cannot merge steps attribute")
 
     # Sort the preset's step list ascending by resolved frontmatter `order`
     # before persisting, reusing the same helper `set-steps`/`add-step` use.
@@ -246,9 +234,7 @@ def cmd_finalize_steps_list_ask_lane(args) -> dict:
 
     steps_map = _read_phase6_steps_raw(load_config())
     ask_steps = [
-        step_id
-        for step_id, params in steps_map.items()
-        if isinstance(params, dict) and params.get('lane') == 'ask'
+        step_id for step_id, params in steps_map.items() if isinstance(params, dict) and params.get('lane') == 'ask'
     ]
     return success_exit(
         {
@@ -286,25 +272,20 @@ def _set_lane_plan_local(plan_id: str, step_id: str, lane: str) -> dict:
         return error_exit(f"no status.json for plan '{plan_id}'; cannot set plan-local lane")
     status = read_json(status_path, default=None)
     if not isinstance(status, dict):
-        return error_exit(
-            f"status.json for plan '{plan_id}' is not a JSON object; refusing to overwrite it"
-        )
+        return error_exit(f"status.json for plan '{plan_id}' is not a JSON object; refusing to overwrite it")
     metadata = status.get('metadata')
     if metadata is None:
         metadata = {}
         status['metadata'] = metadata
     if not isinstance(metadata, dict):
-        return error_exit(
-            f"status.json metadata for plan '{plan_id}' is not a dict; refusing to overwrite it"
-        )
+        return error_exit(f"status.json metadata for plan '{plan_id}' is not a dict; refusing to overwrite it")
     overrides = metadata.get(_PLAN_LOCAL_STEP_MAP_KEY)
     if overrides is None:
         overrides = {}
         metadata[_PLAN_LOCAL_STEP_MAP_KEY] = overrides
     if not isinstance(overrides, dict):
         return error_exit(
-            f"status.metadata.{_PLAN_LOCAL_STEP_MAP_KEY} for plan '{plan_id}' is not a map; "
-            'refusing to overwrite it'
+            f"status.metadata.{_PLAN_LOCAL_STEP_MAP_KEY} for plan '{plan_id}' is not a map; refusing to overwrite it"
         )
     params = overrides.get(step_id)
     if params is None:
@@ -391,9 +372,7 @@ def cmd_finalize_steps_set_lane(args) -> dict:
         return error_exit('plan block in marshal.json is not a dict; cannot set lane')
     phase_entry = plan_block.setdefault(_PHASE_SECTION, {})
     if not isinstance(phase_entry, dict):
-        return error_exit(
-            f"plan['{_PHASE_SECTION}'] exists but is not a dict; cannot set lane"
-        )
+        return error_exit(f"plan['{_PHASE_SECTION}'] exists but is not a dict; cannot set lane")
     steps = phase_entry.get('steps')
     if not isinstance(steps, dict):
         steps = {}

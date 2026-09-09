@@ -146,9 +146,7 @@ def test_the_pair_under_control_is_declared_by_the_verb(plan_context):
 class TestLegitimateAgreementStaysSilent:
     """A plan whose sides genuinely match produces no disagreement anywhere."""
 
-    def test_the_declared_and_realized_sides_agree_rather_than_merely_not_differing(
-        self, plan_context
-    ):
+    def test_the_declared_and_realized_sides_agree_rather_than_merely_not_differing(self, plan_context):
         """Agreement is the verdict, not a zero difference read as one.
 
         ``vacuous`` carries the same zero, so asserting the count alone would pass
@@ -185,9 +183,7 @@ class TestLegitimateAgreementStaysSilent:
             assert result[f'{side}_state'] == _reconcile.SIDE_ESTABLISHED
             assert result[f'{side}_count'] == 6
 
-    def test_the_silent_run_still_publishes_the_outline_walk_behind_the_derivation(
-        self, plan_context
-    ):
+    def test_the_silent_run_still_publishes_the_outline_walk_behind_the_derivation(self, plan_context):
         """The derived side names the walk it came from even when nothing differs.
 
         A silent verdict whose derivation walked no deliverable would be silence
@@ -264,9 +260,7 @@ class TestSilenceIsNotAnUnbuiltSide:
         The matched control for the silent half: the same outline, the same
         declaration, and a verdict that must NOT be agreement.
         """
-        _write_references(
-            {'branch': 'feature/agreement-control', 'affected_files': list(_DECLARED)}
-        )
+        _write_references({'branch': 'feature/agreement-control', 'affected_files': list(_DECLARED)})
         _write_outline(_outline_declaring(_DECLARED))
 
         result = _reconcile.cmd_reconcile_scope(_ns())
@@ -278,9 +272,7 @@ class TestSilenceIsNotAnUnbuiltSide:
 
     def test_an_unmeasured_pair_publishes_no_difference_count_to_misread(self, plan_context):
         """Key absence is what stops a consumer reading the quiet pair as clean."""
-        _write_references(
-            {'branch': 'feature/agreement-control', 'affected_files': list(_DECLARED)}
-        )
+        _write_references({'branch': 'feature/agreement-control', 'affected_files': list(_DECLARED)})
         _write_outline(_outline_declaring(_DECLARED))
 
         result = _reconcile.cmd_reconcile_scope(_ns())

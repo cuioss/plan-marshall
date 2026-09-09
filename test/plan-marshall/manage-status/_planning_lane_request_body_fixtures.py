@@ -6,7 +6,6 @@ Holds the module-level loads, constants and helpers it uses, so
 the module itself carries the import and not the preamble.
 """
 
-
 from __future__ import annotations
 
 import json
@@ -15,9 +14,7 @@ from pathlib import Path
 
 from conftest import load_script_module
 
-_mod = load_script_module(
-    'plan-marshall', 'manage-status', '_cmd_planning_lane.py', '_cmd_planning_lane_request_body'
-)
+_mod = load_script_module('plan-marshall', 'manage-status', '_cmd_planning_lane.py', '_cmd_planning_lane_request_body')
 
 
 cmd_scope_estimate_heuristic = _mod.cmd_scope_estimate_heuristic
@@ -76,9 +73,7 @@ def _write_orchestrated_request(plan_dir: Path, dropped_region: str) -> None:
 
 def _write_references(plan_dir: Path) -> None:
     plan_dir.mkdir(parents=True, exist_ok=True)
-    (plan_dir / 'references.json').write_text(
-        json.dumps({'base_branch': 'main'}), encoding='utf-8'
-    )
+    (plan_dir / 'references.json').write_text(json.dumps({'base_branch': 'main'}), encoding='utf-8')
 
 
 def _write_marshal(fixture_dir: Path) -> None:
@@ -190,8 +185,7 @@ _BOLDED_TEN_PATH_REGION = (
     '**Sweep the tier value across the tree.** Ten modules are **in scope** here.\n'
     '\n'
     '## Expected Surface\n'
-    '\n'
-    + ''.join(f'- **`pkg/mod{i}/file{i}.py`** — target {i}\n' for i in range(10))
+    '\n' + ''.join(f'- **`pkg/mod{i}/file{i}.py`** — target {i}\n' for i in range(10))
 )
 
 

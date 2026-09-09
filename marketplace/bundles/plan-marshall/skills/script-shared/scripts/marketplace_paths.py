@@ -123,9 +123,11 @@ def _default_runtime_target() -> str:
     """Return ``platform_runtime._DEFAULT_TARGET``, falling back to ``'claude'``."""
     try:
         from platform_runtime import _DEFAULT_TARGET as _target
+
         return _target
     except (ImportError, ModuleNotFoundError):
         return _DEFAULT_RUNTIME_TARGET_SENTINEL
+
 
 # Fallback project-local-skill root used when the platform-runtime layout op
 # cannot be reached (no marshal.json, no marketplace tree, import failure).
@@ -192,9 +194,7 @@ def _find_skills_root() -> Path | None:
     such ancestor exists (e.g. running from the plugin cache).
     """
     for ancestor in Path(__file__).resolve().parents:
-        if ancestor.name == 'skills' and (
-            ancestor.parent / '.claude-plugin' / 'plugin.json'
-        ).is_file():
+        if ancestor.name == 'skills' and (ancestor.parent / '.claude-plugin' / 'plugin.json').is_file():
             return ancestor
     return None
 
@@ -880,9 +880,7 @@ def get_base_path(scope: str = 'auto', marketplace_root: Path | None = None) -> 
         cache = get_plugin_cache_path()
         if cache:
             return cache
-        raise FileNotFoundError(
-            f'Deployed-bundle cache not found: {", ".join(get_bundle_cache_roots())}'
-        )
+        raise FileNotFoundError(f'Deployed-bundle cache not found: {", ".join(get_bundle_cache_roots())}')
 
     if scope == 'global':
         base = _invoke_settings_op('global')

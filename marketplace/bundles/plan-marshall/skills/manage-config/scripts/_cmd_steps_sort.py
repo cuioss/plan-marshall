@@ -72,9 +72,7 @@ def cmd_steps_sort(args) -> dict:
     after = _sort_steps_by_frontmatter_order(before)
 
     if before == after:
-        return success_exit(
-            {'phase': _TARGET_PHASE, 'reordered': False, 'before': before, 'after': after}
-        )
+        return success_exit({'phase': _TARGET_PHASE, 'reordered': False, 'before': before, 'after': after})
 
     # Rebuild the keyed-map in sorted key order; per-step values are carried over
     # by reference, so each step's nested param object is preserved byte-identically.
@@ -83,6 +81,4 @@ def cmd_steps_sort(args) -> dict:
     config['plan'] = plan_config
     save_config(config)
 
-    return success_exit(
-        {'phase': _TARGET_PHASE, 'reordered': True, 'before': before, 'after': after}
-    )
+    return success_exit({'phase': _TARGET_PHASE, 'reordered': True, 'before': before, 'after': after})

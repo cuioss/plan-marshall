@@ -73,17 +73,15 @@ def _naive_has_py(directory: Path) -> bool:
 def _fully_excluded(names: list[str], root: Path) -> list[str]:
     """Return the subdirectories of ``root`` that contain .py files mypy excludes wholly."""
     return [
-        name for name in names
+        name
+        for name in names
         if _naive_has_py(root / name) and not build._mypy_collects_any(str(root.relative_to(REPO_ROOT) / name))
     ]
 
 
 def _collectable(names: list[str], root: Path) -> list[str]:
     """Return the subdirectories of ``root`` where at least one file survives mypy's excludes."""
-    return [
-        name for name in names
-        if build._mypy_collects_any(str(root.relative_to(REPO_ROOT) / name))
-    ]
+    return [name for name in names if build._mypy_collects_any(str(root.relative_to(REPO_ROOT) / name))]
 
 
 def _record(calls: list[str], label: str, rc: int):
@@ -167,7 +165,7 @@ def test_module_tests_emits_per_session_basetemp_flag(monkeypatch):
     cmd = captured['cmd']
     matches = [a for a in cmd if a.startswith('--basetemp=')]
     assert len(matches) == 1, f'expected exactly one --basetemp flag; got {matches!r} in {cmd!r}'
-    basetemp = matches[0][len('--basetemp='):]
+    basetemp = matches[0][len('--basetemp=') :]
     assert basetemp.startswith('.plan/temp/pytest-basetemp/'), (
         f'cmd_module_tests --basetemp must point under .plan/temp/pytest-basetemp/; got {basetemp!r}'
     )
@@ -178,7 +176,7 @@ def test_module_tests_distinct_invocations_do_not_collide(monkeypatch):
     seen: list[str] = []
 
     def fake_run(cmd: list[str], description: str, env: dict[str, str] | None = None) -> int:
-        seen.append(next(a[len('--basetemp='):] for a in cmd if a.startswith('--basetemp=')))
+        seen.append(next(a[len('--basetemp=') :] for a in cmd if a.startswith('--basetemp=')))
         return 0
 
     monkeypatch.setattr(build, 'run', fake_run)
@@ -449,9 +447,7 @@ def test_exclude_patterns_fail_open_when_exclude_is_neither_string_nor_list(
     is type-general rather than special-cased to the reported ``bool``.
     """
     monkeypatch.chdir(tmp_path)
-    (tmp_path / 'pyproject.toml').write_text(
-        f'[tool.mypy]\nexclude = {exclude_literal}\n', encoding='utf-8'
-    )
+    (tmp_path / 'pyproject.toml').write_text(f'[tool.mypy]\nexclude = {exclude_literal}\n', encoding='utf-8')
     package = tmp_path / 'pkg'
     package.mkdir()
     (package / 'mod.py').write_text('z = 1\n', encoding='utf-8')
@@ -484,14 +480,10 @@ def test_exclude_patterns_diagnostic_names_the_calling_command(monkeypatch, tmp_
     assert test_compile_err.startswith('test-compile: '), (
         f'the diagnostic must name the calling command; got {test_compile_err!r}'
     )
-    assert compile_err.startswith('compile: '), (
-        f'the diagnostic must name the calling command; got {compile_err!r}'
-    )
+    assert compile_err.startswith('compile: '), f'the diagnostic must name the calling command; got {compile_err!r}'
 
 
-def test_whole_tree_compile_omits_claude_dir_when_all_its_py_files_are_excluded(
-    repo_root_cwd, monkeypatch, tmp_path
-):
+def test_whole_tree_compile_omits_claude_dir_when_all_its_py_files_are_excluded(repo_root_cwd, monkeypatch, tmp_path):
     """The .claude/ guard is exclude-aware: an excluded-only .claude/ is not passed to mypy.
 
     The exclude-blind ``any(CLAUDE_DIR.rglob('*.py'))`` predicate this replaces
@@ -582,9 +574,7 @@ def _whole_tree_compile_paths() -> list[str]:
     return paths
 
 
-def test_quality_gate_fails_closed_when_whole_tree_mypy_reports_implausibly_fast(
-    repo_root_cwd, monkeypatch, capsys
-):
+def test_quality_gate_fails_closed_when_whole_tree_mypy_reports_implausibly_fast(repo_root_cwd, monkeypatch, capsys):
     """A whole-tree mypy 'success' at incident-band speed is not trusted — the gate fails closed (D4).
 
     Models the stale-cache no-op as it was actually observed: mypy exits 0 having
@@ -596,8 +586,7 @@ def test_quality_gate_fails_closed_when_whole_tree_mypy_reports_implausibly_fast
     """
     files = build._mypy_collect_count(_whole_tree_compile_paths())
     assert files >= SUSPECT_MIN_FILES, (
-        f'the whole tree must be a substantial file set for the freshness verdict to '
-        f'apply at all; collected {files}'
+        f'the whole tree must be a substantial file set for the freshness verdict to apply at all; collected {files}'
     )
     assert _INCIDENT_BAND_LOW <= _INCIDENT_BAND_THROUGHPUT <= _INCIDENT_BAND_HIGH
     assert _INCIDENT_BAND_THROUGHPUT > MAX_ANALYSIS_THROUGHPUT, (
@@ -639,9 +628,7 @@ def test_quality_gate_does_not_flag_a_plausibly_timed_whole_tree_run(repo_root_c
     assert 'coverage: COMPLETE' in out
 
 
-def test_module_scoped_quality_gate_states_an_empty_mypy_scope_and_maligns_nothing(
-    repo_root_cwd, monkeypatch, capsys
-):
+def test_module_scoped_quality_gate_states_an_empty_mypy_scope_and_maligns_nothing(repo_root_cwd, monkeypatch, capsys):
     """Two different absences meet in one invocation, and the verdict tells them apart.
 
     Over a bundle whose mypy scope is empty, ``mypy(production)`` was REACHED and
@@ -713,10 +700,7 @@ def test_verify_prints_complete_coverage_summary_on_success(monkeypatch, capsys)
 
 _EXPECTED_GENERATOR_ARGV = [
     'python3',
-    str(
-        build.BUNDLES_DIR / 'plan-marshall' / 'skills' / 'tools-script-executor'
-        / 'scripts' / 'generate_executor.py'
-    ),
+    str(build.BUNDLES_DIR / 'plan-marshall' / 'skills' / 'tools-script-executor' / 'scripts' / 'generate_executor.py'),
     'generate',
     '--marketplace',
     '--marketplace-root',
@@ -806,9 +790,7 @@ def test_executor_bootstrap_rejects_a_zero_exit_that_produced_no_file(monkeypatc
     assert 'does not exist' in capsys.readouterr().err
 
 
-def test_whole_tree_quality_gate_halts_before_plugin_doctor_when_the_bootstrap_fails(
-    repo_root_cwd, monkeypatch
-):
+def test_whole_tree_quality_gate_halts_before_plugin_doctor_when_the_bootstrap_fails(repo_root_cwd, monkeypatch):
     """The gate is composed so the bootstrap gates plugin-doctor, not merely precedes it.
 
     Asserted through the real ``cmd_quality_gate`` rather than by reading the two
@@ -829,9 +811,7 @@ def test_whole_tree_quality_gate_halts_before_plugin_doctor_when_the_bootstrap_f
     )
 
 
-def test_whole_tree_quality_gate_reaches_plugin_doctor_once_the_bootstrap_clears(
-    repo_root_cwd, monkeypatch
-):
+def test_whole_tree_quality_gate_reaches_plugin_doctor_once_the_bootstrap_clears(repo_root_cwd, monkeypatch):
     """Matched positive control: a cleared bootstrap does reach the marketplace sweep.
 
     Without it the halt test above is satisfied by a gate that never runs
@@ -858,6 +838,7 @@ def test_verify_prints_partial_coverage_when_a_step_is_freshness_suspect(monkeyp
     and asked 'is it safe to push?', a reader must read NO — mypy(test) was not
     certified — never a clean pass.
     """
+
     def _fresh_suspect_test_compile(module, boundary=None):
         boundary.record_degraded('mypy(test)', 'freshness suspect — reported success implausibly fast')
         return build._FRESHNESS_SUSPECT_RC

@@ -225,6 +225,7 @@ def test_map_declared_profiles_default_path(monkeypatch):
 
 def test_map_declared_profiles_honours_skip_and_mapping(monkeypatch):
     """Declared ids honor the config skip list and explicit canonical mapping."""
+
     # Arrange
     def _fake_ext(key, root):
         if key == _mod.EXT_KEY_PROFILES_SKIP:

@@ -148,9 +148,7 @@ def recognized_bot_kinds() -> frozenset[str] | None:
     return derived
 
 
-def preference_admissible(
-    obj: dict[str, Any], recognized_bot_kinds: frozenset[str] | None
-) -> bool:
+def preference_admissible(obj: dict[str, Any], recognized_bot_kinds: frozenset[str] | None) -> bool:
     """Return False for a finding that must not seed a preference recurrence.
 
     Args:

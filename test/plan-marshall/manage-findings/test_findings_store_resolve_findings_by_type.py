@@ -8,7 +8,6 @@ Its sections, in order:
 * responded-marker lifecycle (the RESPOND idempotency key)
 """
 
-
 from _findings_store_fixtures import (
     add_finding,
     get_finding,
@@ -83,9 +82,7 @@ def test_resolve_findings_by_type_leaves_other_types(plan_context):
     assert result['status'] == 'success'
     assert result['resolved_count'] == 2
 
-    pending_improve = query_findings(
-        'store-bulk-other', finding_type='improvement', resolution='pending'
-    )
+    pending_improve = query_findings('store-bulk-other', finding_type='improvement', resolution='pending')
     assert pending_improve['filtered_count'] == 1
 
 
@@ -145,9 +142,7 @@ def test_resolve_findings_by_type_custom_from_resolution(plan_context):
 
     resolve_finding('store-bulk-from', r1['hash_id'], 'accepted')
 
-    result = resolve_findings_by_type(
-        'store-bulk-from', ('bug',), 'fixed', from_resolution='accepted'
-    )
+    result = resolve_findings_by_type('store-bulk-from', ('bug',), 'fixed', from_resolution='accepted')
     assert result['status'] == 'success'
     assert result['resolved_count'] == 1
     assert result['hash_ids'] == [r1['hash_id']]
@@ -169,14 +164,10 @@ def test_resolve_findings_by_type_without_detail_preserves_existing_resolution_d
     populated field was overwritten with nothing.
     """
     r1 = add_finding('store-bulk-keepdetail', 'bug', 'Bug 1', 'Detail')
-    resolve_finding(
-        'store-bulk-keepdetail', r1['hash_id'], 'accepted', detail='Accepted: known trade-off'
-    )
+    resolve_finding('store-bulk-keepdetail', r1['hash_id'], 'accepted', detail='Accepted: known trade-off')
 
     # Bulk-resolve WITHOUT a detail argument.
-    result = resolve_findings_by_type(
-        'store-bulk-keepdetail', ('bug',), 'fixed', from_resolution='accepted'
-    )
+    result = resolve_findings_by_type('store-bulk-keepdetail', ('bug',), 'fixed', from_resolution='accepted')
     assert result['status'] == 'success'
     assert result['resolved_count'] == 1
 
@@ -201,7 +192,10 @@ def test_resolve_findings_by_type_with_detail_still_overwrites(plan_context):
     resolve_finding('store-bulk-setdetail', r1['hash_id'], 'accepted', detail='Original reason')
 
     result = resolve_findings_by_type(
-        'store-bulk-setdetail', ('bug',), 'fixed', detail='Superseded by bulk fix',
+        'store-bulk-setdetail',
+        ('bug',),
+        'fixed',
+        detail='Superseded by bulk fix',
         from_resolution='accepted',
     )
     assert result['status'] == 'success'
@@ -224,6 +218,7 @@ def test_resolve_findings_by_type_with_detail_still_overwrites(plan_context):
 # resolve entry points.
 # =============================================================================
 
+
 def test_resolve_findings_by_type_clears_responded_marker_on_change(plan_context):
     """The bulk resolve path clears the marker on a disposition change, like resolve_finding.
 
@@ -237,9 +232,7 @@ def test_resolve_findings_by_type_clears_responded_marker_on_change(plan_context
     mark_finding_responded('store-responded-bulk', hash_id)
     assert get_finding('store-responded-bulk', hash_id)['responded'] is True
 
-    result = resolve_findings_by_type(
-        'store-responded-bulk', ('pr-comment',), 'rejected', from_resolution='accepted'
-    )
+    result = resolve_findings_by_type('store-responded-bulk', ('pr-comment',), 'rejected', from_resolution='accepted')
     assert result['resolved_count'] == 1
     reread = get_finding('store-responded-bulk', hash_id)
     assert reread['resolution'] == 'rejected'

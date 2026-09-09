@@ -7,7 +7,6 @@ the render map's coverage of every residual, and absent versus measured zero on 
 the persisted and the rendered side.
 """
 
-
 import re
 
 from _manage_metrics_fixtures import (
@@ -35,9 +34,7 @@ class TestCacheReadAttributionRoundTrip:
     guard would make "fully explained" unreadable from "never computed".
     """
 
-    def test_absent_attribution_fields_are_not_persisted_as_zero_and_render_nothing(
-        self, plan_context, monkeypatch
-    ):
+    def test_absent_attribution_fields_are_not_persisted_as_zero_and_render_nothing(self, plan_context, monkeypatch):
         """A runtime supplying no attribution leaves the fields absent, not zeroed."""
         plan_dir = plan_context.plan_dir_for('attr-absent')
         manage_metrics.write_metrics('attr-absent', {'plan_id': 'attr-absent'})
@@ -60,9 +57,7 @@ class TestCacheReadAttributionRoundTrip:
             counters={'message_count': 1},
         )
 
-        assert cmd_enrich(ns_enrich('attr-absent', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))[
-            'status'
-        ] == 'success'
+        assert cmd_enrich(ns_enrich('attr-absent', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))['status'] == 'success'
 
         five = manage_metrics.read_metrics_raw('attr-absent')['phases']['5-execute']
         assert five['cache_read_input_tokens'] == 5000
@@ -97,9 +92,7 @@ class TestCacheReadAttributionRoundTrip:
             counters={'message_count': 1},
         )
 
-        assert cmd_enrich(ns_enrich('attr-zero', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))[
-            'status'
-        ] == 'success'
+        assert cmd_enrich(ns_enrich('attr-zero', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))['status'] == 'success'
 
         five = manage_metrics.read_metrics_raw('attr-zero')['phases']['5-execute']
         for field in manage_metrics._CACHE_READ_ATTRIBUTION_FIELDS:
@@ -110,13 +103,9 @@ class TestCacheReadAttributionRoundTrip:
         assert '- **Cache read attributed exploration**: 0' in md
         # The cache_read residual names its DENOMINATOR (cache_read_input_tokens),
         # a different quantity and denominator from the byte residual (plan 030 D1).
-        assert (
-            '- **Unattributed cache_read tokens**: 0 of 0 cache_read_input_tokens' in md
-        )
+        assert '- **Unattributed cache_read tokens**: 0 of 0 cache_read_input_tokens' in md
 
-    def test_split_round_trips_and_still_reconciles_after_persistence(
-        self, plan_context, monkeypatch
-    ):
+    def test_split_round_trips_and_still_reconciles_after_persistence(self, plan_context, monkeypatch):
         """The exact-reconciliation invariant is readable off the persisted row and the report."""
         plan_dir = plan_context.plan_dir_for('attr-split')
         manage_metrics.write_metrics('attr-split', {'plan_id': 'attr-split'})
@@ -145,28 +134,21 @@ class TestCacheReadAttributionRoundTrip:
             counters={'message_count': 1},
         )
 
-        assert cmd_enrich(ns_enrich('attr-split', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))[
-            'status'
-        ] == 'success'
+        assert cmd_enrich(ns_enrich('attr-split', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))['status'] == 'success'
 
         five = manage_metrics.read_metrics_raw('attr-split')['phases']['5-execute']
         # Every supplied value survives storage byte-for-byte...
         for field, value in supplied.items():
             assert five[field] == value, field
         # ...so the invariant the producer guarantees is still checkable here.
-        persisted_sum = sum(
-            five[field] for field in manage_metrics._CACHE_READ_ATTRIBUTION_FIELDS
-        )
+        persisted_sum = sum(five[field] for field in manage_metrics._CACHE_READ_ATTRIBUTION_FIELDS)
         assert persisted_sum == five['cache_read_input_tokens']
 
         cmd_generate(ns_generate('attr-split'))
         md = (plan_dir / 'metrics.md').read_text()
         assert '- **Cache read attributed exploration**: 800' in md
         assert '- **Cache read attributed work**: 150' in md
-        assert (
-            '- **Unattributed cache_read tokens**: 10 of 1,000 cache_read_input_tokens'
-            in md
-        )
+        assert '- **Unattributed cache_read tokens**: 10 of 1,000 cache_read_input_tokens' in md
 
 
 def test_cache_read_attribution_fields_match_platform_runtime_contract():
@@ -188,9 +170,7 @@ def test_cache_read_attribution_fields_match_platform_runtime_contract():
 #: One rendered residual bullet: ``- **{label}**: {value} of {total} {denominator}``.
 #: The denominator is captured as the FIELD NAME, which is what makes two
 #: residuals distinguishable — a value alone can coincide.
-_UNATTRIBUTED_BULLET_RE = re.compile(
-    r'^\s*-\s\*\*(?P<label>[^*]+)\*\*:\s[\d,]+\sof\s[\d,]+\s(?P<denominator>[a-z_]+)'
-)
+_UNATTRIBUTED_BULLET_RE = re.compile(r'^\s*-\s\*\*(?P<label>[^*]+)\*\*:\s[\d,]+\sof\s[\d,]+\s(?P<denominator>[a-z_]+)')
 
 
 def _unattributed_bullets(md: str) -> list[tuple[str, str]]:
@@ -222,9 +202,7 @@ class TestTwoUnattributedPopulationsAreDistinguishable:
     asserted on the field NAMES and DENOMINATORS, not on their values.
     """
 
-    def test_emission_carries_two_distinct_keys_with_distinct_denominators(
-        self, plan_context, monkeypatch
-    ):
+    def test_emission_carries_two_distinct_keys_with_distinct_denominators(self, plan_context, monkeypatch):
         """The persisted record carries both residuals as distinct keys, and their
         denominator fields are distinct — so a consumer reading metrics.toon can
         tell which residual it holds without inspecting values."""
@@ -258,9 +236,7 @@ class TestTwoUnattributedPopulationsAreDistinguishable:
             counters={'message_count': 1},
         )
 
-        assert cmd_enrich(ns_enrich('d1-emit', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))[
-            'status'
-        ] == 'success'
+        assert cmd_enrich(ns_enrich('d1-emit', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))['status'] == 'success'
 
         five = manage_metrics.read_metrics_raw('d1-emit')['phases']['5-execute']
         # Two distinct keys — neither named merely "unattributed".
@@ -272,9 +248,7 @@ class TestTwoUnattributedPopulationsAreDistinguishable:
         assert 'cache_read_input_tokens' in five
         assert five['exploration_result_bytes'] != five['cache_read_input_tokens']
 
-    def test_render_names_quantity_and_denominator_for_each_residual(
-        self, plan_context, monkeypatch, record_property
-    ):
+    def test_render_names_quantity_and_denominator_for_each_residual(self, plan_context, monkeypatch, record_property):
         """metrics.md renders each residual with its quantity (bytes vs cache_read
         tokens) AND its denominator, so the two lines are unambiguously different."""
         plan_dir = plan_context.plan_dir_for('d1-render')
@@ -310,15 +284,9 @@ class TestTwoUnattributedPopulationsAreDistinguishable:
         md = (plan_dir / 'metrics.md').read_text()
 
         # The byte residual: names its quantity (bytes) and its denominator.
-        assert (
-            '- **Unattributed exploration bytes**: 300 of 4,000 exploration_result_bytes'
-            in md
-        )
+        assert '- **Unattributed exploration bytes**: 300 of 4,000 exploration_result_bytes' in md
         # The cache_read residual: a DIFFERENT quantity over a DIFFERENT denominator.
-        assert (
-            '- **Unattributed cache_read tokens**: 1,000 of 9,000 cache_read_input_tokens'
-            in md
-        )
+        assert '- **Unattributed cache_read tokens**: 1,000 of 9,000 cache_read_input_tokens' in md
         # ⭐ Neither figure is rendered under a bare "unattributed" label — and
         # the reading is over the SETS of labels and named denominators, not
         # over the presence of the substring `' of '`. Two residuals rendering
@@ -337,9 +305,7 @@ class TestTwoUnattributedPopulationsAreDistinguishable:
         )
         labels = [label for label, _denominator in rendered]
         denominators = [denominator for _label, denominator in rendered]
-        assert len(set(labels)) == len(labels), (
-            f'two residuals rendered under the same label: {labels}'
-        )
+        assert len(set(labels)) == len(labels), f'two residuals rendered under the same label: {labels}'
         assert len(set(denominators)) == len(denominators), (
             f'two residuals rendered over the same denominator: {denominators}'
         )
@@ -347,10 +313,7 @@ class TestTwoUnattributedPopulationsAreDistinguishable:
         # than an equality, deliberately: a residual declared in the map but not
         # supplied by THIS fixture must not turn this red — that coverage is
         # `test_unattributed_render_map_covers_every_residual`'s job.
-        declared = {
-            (label, denominator)
-            for label, denominator, _note in manage_metrics._UNATTRIBUTED_RENDER.values()
-        }
+        declared = {(label, denominator) for label, denominator, _note in manage_metrics._UNATTRIBUTED_RENDER.values()}
         assert set(rendered) <= declared, (
             f'rendered pairs not declared by the render map: {sorted(set(rendered) - declared)}'
         )
@@ -361,9 +324,7 @@ def test_unattributed_render_map_covers_every_residual():
     "unattributed" residual among the presence-persisted fields MUST have a
     denominator-bearing render spec, or D1's separation silently regresses to the
     generic label. The render map's key set must equal the DERIVED residual set."""
-    assert set(manage_metrics._UNATTRIBUTED_RENDER) == set(
-        manage_metrics._UNATTRIBUTED_RESIDUAL_FIELDS
-    ), (
+    assert set(manage_metrics._UNATTRIBUTED_RENDER) == set(manage_metrics._UNATTRIBUTED_RESIDUAL_FIELDS), (
         'every unattributed residual field must map to a denominator-bearing '
         'render spec: '
         f'{set(manage_metrics._UNATTRIBUTED_RESIDUAL_FIELDS) ^ set(manage_metrics._UNATTRIBUTED_RENDER)}'

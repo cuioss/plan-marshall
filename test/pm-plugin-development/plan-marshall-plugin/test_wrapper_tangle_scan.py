@@ -24,13 +24,20 @@ from pathlib import Path
 from conftest import MARKETPLACE_ROOT, load_skill_module, run_script
 
 SCRIPT_PATH = (
-    MARKETPLACE_ROOT / 'pm-plugin-development' / 'skills' / 'plan-marshall-plugin' / 'scripts' / 'wrapper-tangle-scan.py'
+    MARKETPLACE_ROOT
+    / 'pm-plugin-development'
+    / 'skills'
+    / 'plan-marshall-plugin'
+    / 'scripts'
+    / 'wrapper-tangle-scan.py'
 )
 
 
 def _load_extension():
     mod = load_skill_module(
-        'pm-plugin-development', 'plan-marshall-plugin', 'extension.py',
+        'pm-plugin-development',
+        'plan-marshall-plugin',
+        'extension.py',
         'pm_plugin_development_extension_wt',
     )
     return mod.Extension()
@@ -260,9 +267,7 @@ class TestWrapperTangleNegatives:
         assert result.success, result.stderr
         data = result.toon()
         tangles = [f for f in data['findings'] if f['surface'] == 'wrapper_tangle']
-        assert tangles == [], (
-            f'Pure remote-only gh api call must NOT be flagged as a wrapper tangle; got: {tangles}'
-        )
+        assert tangles == [], f'Pure remote-only gh api call must NOT be flagged as a wrapper tangle; got: {tangles}'
 
 
 # ---------------------------------------------------------------------------

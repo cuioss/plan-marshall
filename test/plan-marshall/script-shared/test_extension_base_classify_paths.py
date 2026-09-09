@@ -54,15 +54,17 @@ class _MinimalExtension(BuildExtensionBase):
     """
 
     def get_skill_domains(self) -> list[dict]:
-        return [{
-            'domain': {'key': 'minimal', 'name': 'Minimal', 'description': 'Test only'},
-            'profiles': {
-                'core': {'defaults': [], 'optionals': []},
-                'implementation': {'defaults': [], 'optionals': []},
-                'module_testing': {'defaults': [], 'optionals': []},
-                'quality': {'defaults': [], 'optionals': []},
-            },
-        }]
+        return [
+            {
+                'domain': {'key': 'minimal', 'name': 'Minimal', 'description': 'Test only'},
+                'profiles': {
+                    'core': {'defaults': [], 'optionals': []},
+                    'implementation': {'defaults': [], 'optionals': []},
+                    'module_testing': {'defaults': [], 'optionals': []},
+                    'quality': {'defaults': [], 'optionals': []},
+                },
+            }
+        ]
 
 
 class _ClassifyingExtension(_MinimalExtension):
@@ -78,9 +80,7 @@ class _ClassifyingExtension(_MinimalExtension):
         for path in paths:
             if path.endswith('.py') and path.startswith('scripts/'):
                 claims['production'].append(path)
-            elif path.endswith('.py') and (
-                path.startswith('test/') or path.startswith('tests/')
-            ):
+            elif path.endswith('.py') and (path.startswith('test/') or path.startswith('tests/')):
                 claims['test'].append(path)
             elif path in ('pyproject.toml', 'uv.lock'):
                 claims['config'].append(path)
@@ -127,7 +127,7 @@ def test_default_classify_paths_all_values_are_lists():
     ext = _MinimalExtension()
     result = ext.classify_paths(['anything.txt'])
     for role, paths in result.items():
-        assert isinstance(paths, list), f"role {role!r} value is not a list"
+        assert isinstance(paths, list), f'role {role!r} value is not a list'
 
 
 def test_default_classify_path_specificity_returns_zero():
@@ -194,12 +194,14 @@ def test_build_classes_is_the_closed_four_value_set():
     classes, plus ``none``. ``docs-validate`` was retired — documentation has no
     build owner.
     """
-    assert BUILD_CLASSES == frozenset({
-        'compile',
-        'module-tests',
-        'verify',
-        'none',
-    })
+    assert BUILD_CLASSES == frozenset(
+        {
+            'compile',
+            'module-tests',
+            'verify',
+            'none',
+        }
+    )
     assert len(BUILD_CLASSES) == 4
 
 
@@ -242,9 +244,7 @@ _DEFAULT_BUILD_CLASS_IDS = [
 ]
 
 
-@pytest.mark.parametrize(
-    'path,role,expected', _DEFAULT_BUILD_CLASS_CASES, ids=_DEFAULT_BUILD_CLASS_IDS
-)
+@pytest.mark.parametrize('path,role,expected', _DEFAULT_BUILD_CLASS_CASES, ids=_DEFAULT_BUILD_CLASS_IDS)
 def test_default_classify_build_class(path: str, role: str, expected: str):
     assert _MinimalExtension().classify_build_class(path, role) == expected
 
@@ -308,11 +308,13 @@ def test_build_map_roles_is_the_closed_three_value_set():
     Documentation is not a build_map route role (no build owner for docs), so the
     ``documentation`` role is deliberately absent from the set.
     """
-    assert BUILD_MAP_ROLES == frozenset({
-        'production',
-        'test',
-        'config',
-    })
+    assert BUILD_MAP_ROLES == frozenset(
+        {
+            'production',
+            'test',
+            'config',
+        }
+    )
     assert len(BUILD_MAP_ROLES) == 3
 
 
@@ -427,9 +429,7 @@ _NO_ROUTE_EXTENSION_IDS = [
 ]
 
 
-@pytest.mark.parametrize(
-    'extensions', _NO_ROUTE_EXTENSION_SETS, ids=_NO_ROUTE_EXTENSION_IDS
-)
+@pytest.mark.parametrize('extensions', _NO_ROUTE_EXTENSION_SETS, ids=_NO_ROUTE_EXTENSION_IDS)
 def test_derive_globs_returns_empty_dict(extensions: list):
     assert derive_globs_from_tree('/irrelevant', extensions) == {}
 
@@ -453,11 +453,13 @@ def test_derive_globs_returns_declared_routes_present_in_tree(tmp_path):
     """
     _git_init_and_track(tmp_path, ['scripts/foo.py', 'test/bar.py', 'pyproject.toml'])
     derived = derive_globs_from_tree(str(tmp_path), [_RouteExtension()])
-    assert derived['minimal'] == sorted([
-        ('scripts/*.py', 'production'),
-        ('test/*.py', 'test'),
-        ('pyproject.toml', 'config'),
-    ])
+    assert derived['minimal'] == sorted(
+        [
+            ('scripts/*.py', 'production'),
+            ('test/*.py', 'test'),
+            ('pyproject.toml', 'config'),
+        ]
+    )
 
 
 def test_derive_globs_is_compact_not_per_directory(tmp_path):

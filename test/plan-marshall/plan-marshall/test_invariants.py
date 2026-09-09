@@ -458,7 +458,9 @@ def test_empty_task_list_returns_stable_zero_edge_hash(plan_context, stub_run_sc
 # =============================================================================
 
 
-def test_capture_all_surfaces_task_graph_invalid(plan_context, stub_run_script, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_capture_all_surfaces_task_graph_invalid(
+    plan_context, stub_run_script, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """capture_all must propagate TaskGraphInvalid from the broken-graph fixture.
 
     We narrow ``INVARIANTS`` to the real ``task_graph_valid`` entry so the
@@ -675,7 +677,9 @@ def test_unfinished_tasks_count_drift_across_phases(plan_context, stub_run_scrip
     )
 
 
-def test_unfinished_tasks_count_reachable_via_capture_all(plan_context, stub_run_script, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_unfinished_tasks_count_reachable_via_capture_all(
+    plan_context, stub_run_script, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """``capture_all`` must surface ``unfinished_tasks_count`` from the registry.
 
     Narrows ``INVARIANTS`` to just the pending entry so the other invariants
@@ -731,9 +735,7 @@ def test_unfinished_tasks_count_sums_pending_and_in_progress(plan_context, stub_
     result = inv._capture_unfinished_tasks_count(plan_id, {}, '5-execute')
 
     assert isinstance(result, int), f'expected int count, got {type(result).__name__}: {result!r}'
-    assert result == 2, (
-        f'unfinished_tasks_count must count pending + in_progress, expected 2, got {result}'
-    )
+    assert result == 2, f'unfinished_tasks_count must count pending + in_progress, expected 2, got {result}'
 
 
 def test_unfinished_tasks_count_zero_when_all_done(plan_context, stub_run_script) -> None:
@@ -782,9 +784,7 @@ def test_capture_qgate_open_count_short_circuits_for_1_init(monkeypatch: pytest.
     'phase',
     ['2-refine', '3-outline', '4-plan', '5-execute', '6-finalize'],
 )
-def test_capture_qgate_open_count_invokes_script_for_other_phases(
-    monkeypatch: pytest.MonkeyPatch, phase: str
-) -> None:
+def test_capture_qgate_open_count_invokes_script_for_other_phases(monkeypatch: pytest.MonkeyPatch, phase: str) -> None:
     """For phases 2-refine through 6-finalize the helper invokes _run_script."""
     calls: list[list[str]] = []
 
@@ -1161,9 +1161,7 @@ def _repo_with_quoted_committed_plan_file(root: Path) -> tuple[Path, str]:
     return repo, spelling
 
 
-def test_capture_main_dirty_files_reports_tracked_plan_state(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_capture_main_dirty_files_reports_tracked_plan_state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """(D5c POSITIVE CONTROL, site 2) A dirty TRACKED ``.plan/`` file is retained.
 
     The layer-D drift capture must observe a dirtied *tracked* ``.plan/`` file
@@ -1185,9 +1183,7 @@ def test_capture_main_dirty_files_reports_tracked_plan_state(
     )
 
 
-def test_capture_main_dirty_files_exempts_untracked_plan_state(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_capture_main_dirty_files_exempts_untracked_plan_state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """(D5c NEGATIVE CONTROL, site 2) A dirty UNTRACKED ``.plan/`` file stays exempt.
 
     Ordinary plan-state writes (logs, status, findings) are untracked and must
@@ -1635,9 +1631,7 @@ def _make_findings_stub_run_script():
         # plan list path: ['...', 'list', '--plan-id', ..., '--type', T, '--resolution', R]
         if args[1] == 'list':
             finding_type = _flag(args, '--type')
-            return serialize_toon(
-                query_findings(plan_id, finding_type=finding_type, resolution=resolution)
-            )
+            return serialize_toon(query_findings(plan_id, finding_type=finding_type, resolution=resolution))
         return None
 
     return _stub
@@ -1649,9 +1643,7 @@ def stub_findings_run_script(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(inv, '_run_script', _make_findings_stub_run_script())
 
 
-def test_rejected_plan_finding_contributes_zero_to_blocking_count(
-    plan_context, stub_findings_run_script
-) -> None:
+def test_rejected_plan_finding_contributes_zero_to_blocking_count(plan_context, stub_findings_run_script) -> None:
     """A plan finding resolved to ``rejected`` is non-pending → not counted."""
     pid = 'inv-rejected-plan-zero'
     r = add_finding(pid, 'sonar-issue', 'Refuted sonar', 'Detail')
@@ -1662,9 +1654,7 @@ def test_rejected_plan_finding_contributes_zero_to_blocking_count(
     assert count == 0, 'a rejected finding must not be returned by the pending query'
 
 
-def test_rejected_only_finding_does_not_raise_at_guarded_boundary(
-    plan_context, stub_findings_run_script
-) -> None:
+def test_rejected_only_finding_does_not_raise_at_guarded_boundary(plan_context, stub_findings_run_script) -> None:
     """A rejected finding is the only entry; the gate passes at 6-finalize.
 
     The refuted finding must NOT raise BlockingFindingsPresent — the central
@@ -1680,9 +1670,7 @@ def test_rejected_only_finding_does_not_raise_at_guarded_boundary(
     assert result == 0
 
 
-def test_rejected_qgate_finding_does_not_raise_at_guarded_boundary(
-    plan_context, stub_findings_run_script
-) -> None:
+def test_rejected_qgate_finding_does_not_raise_at_guarded_boundary(plan_context, stub_findings_run_script) -> None:
     """A Q-Gate finding resolved to ``rejected`` is excluded from the gate."""
     pid = 'inv-rejected-qgate-passes'
     r = add_qgate_finding(pid, '5-execute', 'qgate', 'test-failure', 'Refuted QG', 'Detail')
@@ -1693,9 +1681,7 @@ def test_rejected_qgate_finding_does_not_raise_at_guarded_boundary(
     assert result == 0
 
 
-def test_genuinely_pending_finding_still_blocks_at_guarded_boundary(
-    plan_context, stub_findings_run_script
-) -> None:
+def test_genuinely_pending_finding_still_blocks_at_guarded_boundary(plan_context, stub_findings_run_script) -> None:
     """Regression guard: a real pending actionable finding STILL blocks.
 
     Confirms the rejected carve-out did not weaken the gate for genuine
@@ -1710,9 +1696,7 @@ def test_genuinely_pending_finding_still_blocks_at_guarded_boundary(
     assert excinfo.value.blocking_count == 1
 
 
-def test_rejected_alongside_pending_counts_only_the_pending(
-    plan_context, stub_findings_run_script
-) -> None:
+def test_rejected_alongside_pending_counts_only_the_pending(plan_context, stub_findings_run_script) -> None:
     """A rejected finding sitting next to a pending one does not inflate the count."""
     pid = 'inv-rejected-plus-pending'
     refuted = add_finding(pid, 'sonar-issue', 'Refuted', 'Detail')
@@ -1803,9 +1787,7 @@ def test_pr_title_present_reachable_via_capture_all(monkeypatch: pytest.MonkeyPa
 
     captured = inv.capture_all('plan-x', {'pr_title': 'fix(x): y'}, '2-refine')
 
-    assert 'pr_title_present' in captured, (
-        f'capture_all must include pr_title_present, got keys: {list(captured)}'
-    )
+    assert 'pr_title_present' in captured, f'capture_all must include pr_title_present, got keys: {list(captured)}'
     assert isinstance(captured['pr_title_present'], str)
 
 

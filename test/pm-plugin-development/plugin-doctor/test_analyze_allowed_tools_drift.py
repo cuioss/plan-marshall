@@ -137,12 +137,7 @@ def _fm_disable(declared: str, disable: str, body: str) -> str:
     ``disable`` is the raw value placed after ``plugin-doctor-disable:`` (inline
     list form, e.g. ``[allowed-tools-body-drift]``).
     """
-    return (
-        f'---\nname: test-skill\n'
-        f'allowed-tools: {declared}\n'
-        f'plugin-doctor-disable: {disable}\n'
-        f'---\n{body}'
-    )
+    return f'---\nname: test-skill\nallowed-tools: {declared}\nplugin-doctor-disable: {disable}\n---\n{body}'
 
 
 # ===========================================================================
@@ -163,21 +158,13 @@ class TestPositiveDrift:
     def test_yaml_list_declaration_missing_invoked_tool(self, tmp_path: Path) -> None:
         """YAML-list declaration form is parsed; an absent invoked tool drifts."""
         content = (
-            '---\n'
-            'name: test-skill\n'
-            'allowed-tools:\n'
-            '  - Read\n'
-            '  - Edit\n'
-            '---\n'
-            'Bash: run the verification command.\n'
+            '---\nname: test-skill\nallowed-tools:\n  - Read\n  - Edit\n---\nBash: run the verification command.\n'
         )
         marketplace_root, _ = _make_skill_md(tmp_path, content)
         findings = assert_analyzer_findings(analyze_allowed_tools_drift, marketplace_root, [RULE_ID])
         assert findings[0]['snippet'] == 'Bash'
 
-    def test_multiple_drifting_tools_produce_multiple_findings(
-        self, tmp_path: Path
-    ) -> None:
+    def test_multiple_drifting_tools_produce_multiple_findings(self, tmp_path: Path) -> None:
         """Two undeclared invoked tools on different lines yield two findings."""
         content = _fm(
             'Read',
@@ -224,17 +211,9 @@ class TestNoDrift:
         marketplace_root, _ = _make_skill_md(tmp_path, content)
         assert_analyzer_findings(analyze_allowed_tools_drift, marketplace_root, [])
 
-    def test_missing_allowed_tools_field_is_not_flagged(
-        self, tmp_path: Path
-    ) -> None:
+    def test_missing_allowed_tools_field_is_not_flagged(self, tmp_path: Path) -> None:
         """Frontmatter without ``allowed-tools`` is the inherit-all default."""
-        content = (
-            '---\n'
-            'name: test-skill\n'
-            'description: a skill with no tool declaration\n'
-            '---\n'
-            'Write: emit the file.\n'
-        )
+        content = '---\nname: test-skill\ndescription: a skill with no tool declaration\n---\nWrite: emit the file.\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
         assert_analyzer_findings(analyze_allowed_tools_drift, marketplace_root, [])
 
@@ -309,9 +288,7 @@ class TestExemptions:
         marketplace_root, _ = _make_skill_md(tmp_path, content)
         assert_analyzer_findings(analyze_allowed_tools_drift, marketplace_root, [])
 
-    def test_frontmatter_disable_for_other_rule_does_not_suppress(
-        self, tmp_path: Path
-    ) -> None:
+    def test_frontmatter_disable_for_other_rule_does_not_suppress(self, tmp_path: Path) -> None:
         """A disable list naming a DIFFERENT rule leaves the drift flagged."""
         content = _fm_disable(
             'Read',
@@ -348,9 +325,7 @@ class TestDetectionShape:
         findings = assert_analyzer_findings(analyze_allowed_tools_drift, marketplace_root, [RULE_ID])
         assert findings[0]['snippet'] == 'Bash'
 
-    def test_prose_mention_without_directive_is_not_flagged(
-        self, tmp_path: Path
-    ) -> None:
+    def test_prose_mention_without_directive_is_not_flagged(self, tmp_path: Path) -> None:
         """A bullet/heading prose mention (``Use Write to …``) is not an invocation."""
         content = _fm('Read', 'Use Write to produce the output file.\n')
         marketplace_root, _ = _make_skill_md(tmp_path, content)
@@ -374,26 +349,20 @@ class TestScope:
     def test_agents_directory_is_scanned(self, tmp_path: Path) -> None:
         """A file under ``{bundle}/agents/`` is in scope."""
         content = _fm('Read', 'Write: emit the agent output.\n')
-        marketplace_root, _ = _make_skill_md(
-            tmp_path, content, sub='agents', filename='agent.md'
-        )
+        marketplace_root, _ = _make_skill_md(tmp_path, content, sub='agents', filename='agent.md')
         assert_analyzer_findings(analyze_allowed_tools_drift, marketplace_root, [RULE_ID])
 
     def test_commands_directory_is_scanned(self, tmp_path: Path) -> None:
         """A file under ``{bundle}/commands/`` is in scope."""
         content = _fm('Read', 'Bash: run the slash command body.\n')
-        marketplace_root, _ = _make_skill_md(
-            tmp_path, content, sub='commands', filename='cmd.md'
-        )
+        marketplace_root, _ = _make_skill_md(tmp_path, content, sub='commands', filename='cmd.md')
         assert_analyzer_findings(analyze_allowed_tools_drift, marketplace_root, [RULE_ID])
 
     def test_out_of_scope_path_not_scanned(self, tmp_path: Path) -> None:
         """A file under the bundle root but not in a scanned sub is ignored."""
         bundle_dir = tmp_path / 'some-bundle'
         bundle_dir.mkdir(parents=True)
-        (bundle_dir / 'README.md').write_text(
-            _fm('Read', 'Write: emit the file.\n'), encoding='utf-8'
-        )
+        (bundle_dir / 'README.md').write_text(_fm('Read', 'Write: emit the file.\n'), encoding='utf-8')
         assert_analyzer_findings(analyze_allowed_tools_drift, tmp_path, [])
 
 
@@ -428,9 +397,7 @@ class TestClaudeSkillsTree:
         bundles_root = tmp_path / 'marketplace' / 'bundles'
         skill_dir = bundles_root / 'test-bundle' / 'skills' / 'test-skill'
         skill_dir.mkdir(parents=True)
-        skill_dir.joinpath('SKILL.md').write_text(
-            _fm('Read', 'Write: emit the bundle output.\n'), encoding='utf-8'
-        )
+        skill_dir.joinpath('SKILL.md').write_text(_fm('Read', 'Write: emit the bundle output.\n'), encoding='utf-8')
         claude_dir = tmp_path / '.claude' / 'skills' / 'audit-skill'
         claude_dir.mkdir(parents=True)
         claude_dir.joinpath('SKILL.md').write_text(
@@ -479,9 +446,7 @@ def test_analyzer_source_has_no_inline_marker_references() -> None:
         '_analyze_allowed_tools_drift.py',
     ).read_text(encoding='utf-8')
     for marker in ('_SUPPRESS_MARKER', '_IGNORE_MARKER', 'doctor-ignore'):
-        assert marker not in source, (
-            f'Retired inline marker {marker!r} still present in analyzer source'
-        )
+        assert marker not in source, f'Retired inline marker {marker!r} still present in analyzer source'
 
 
 # ===========================================================================
@@ -495,9 +460,7 @@ def test_analyzer_source_has_no_inline_marker_references() -> None:
 
 _WORKFLOW_ONLY_SIGNALS = frozenset({'SlashCommand', 'WebSearch', 'TodoWrite'})
 
-_TOOL_COVERAGE_DOC = get_skill_dir(
-    'pm-plugin-development', 'plugin-doctor'
-) / 'workflow' / 'tool-coverage.md'
+_TOOL_COVERAGE_DOC = get_skill_dir('pm-plugin-development', 'plugin-doctor') / 'workflow' / 'tool-coverage.md'
 
 
 def _tool_coverage_table_rows() -> list[str]:

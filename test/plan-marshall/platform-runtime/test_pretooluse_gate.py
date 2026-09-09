@@ -34,9 +34,9 @@ import pytest
 def _worktree_cwd() -> str:
     """A cwd resolving under the plan-worktree path segment (Signal 2)."""
     return os.path.join(
-        "/home/dev/project",
+        '/home/dev/project',
         gate.WORKTREE_PATH_SEGMENT,
-        "my-plan",
+        'my-plan',
     )
 
 
@@ -46,7 +46,7 @@ def _signal1_payload() -> dict:
     Uses the real bundle-qualified ``agent_type`` value observed in live
     PreToolUse payloads (D2 capture) — NOT a bare ``execution-context-*``.
     """
-    return {gate.SUB_AGENT_IDENTITY_FIELD: "plan-marshall:execution-context-level-3"}
+    return {gate.SUB_AGENT_IDENTITY_FIELD: 'plan-marshall:execution-context-level-3'}
 
 
 def _signal2_payload() -> dict:
@@ -67,13 +67,13 @@ def _signal2_payload() -> dict:
 #: finally an argument that is not a string at all — a defensive shape the type
 #: annotation forbids but the hook boundary cannot.
 _PARSE_CASES: list[tuple[Any, dict[str, Any]]] = [
-    ('{"tool_name": "Bash"}', {"tool_name": "Bash"}),
-    ("", {}),
-    ("   \n\t ", {}),
-    ("{not valid json", {}),
-    ("[1, 2, 3]", {}),
+    ('{"tool_name": "Bash"}', {'tool_name': 'Bash'}),
+    ('', {}),
+    ('   \n\t ', {}),
+    ('{not valid json', {}),
+    ('[1, 2, 3]', {}),
     ('"a string"', {}),
-    ("42", {}),
+    ('42', {}),
     (None, {}),
     (123, {}),
 ]
@@ -93,7 +93,7 @@ _PARSE_IDS = [
 #: Raw inputs the parse must survive without raising. These are not about the
 #: RESULT — the rows above pin that — but about the parse being total: a hook
 #: that raised on a truncated payload would break the tool call it only watches.
-_NEVER_RAISES = ["", "null", "{", "}{", "\x00", '{"a":}', "[", "true"]
+_NEVER_RAISES = ['', 'null', '{', '}{', '\x00', '{"a":}', '[', 'true']
 
 _NEVER_RAISES_IDS = [
     'empty',
@@ -107,13 +107,13 @@ _NEVER_RAISES_IDS = [
 ]
 
 
-@pytest.mark.parametrize(("raw", "expected"), _PARSE_CASES, ids=_PARSE_IDS)
+@pytest.mark.parametrize(('raw', 'expected'), _PARSE_CASES, ids=_PARSE_IDS)
 def test_parse_yields_the_payload_or_an_empty_dict(raw: Any, expected: dict) -> None:
     """A hook payload parses; anything else degrades to an empty dict."""
     assert gate.parse(raw) == expected
 
 
-@pytest.mark.parametrize("raw", _NEVER_RAISES, ids=_NEVER_RAISES_IDS)
+@pytest.mark.parametrize('raw', _NEVER_RAISES, ids=_NEVER_RAISES_IDS)
 def test_parse_never_raises_on_arbitrary_input(raw: str) -> None:
     """The parse is total — every input yields a dict rather than an exception."""
     assert isinstance(gate.parse(raw), dict)
@@ -129,12 +129,12 @@ def test_parse_never_raises_on_arbitrary_input(raw: str) -> None:
 #: the three ways there is no identity: the field is absent, it is present but
 #: empty, or the payload is not a mapping at all.
 _SUB_AGENT_IDENTITY_CASES: list[tuple[Any, str | None]] = [
-    ({gate.SUB_AGENT_IDENTITY_FIELD: "execution-context-level-1"}, "execution-context-level-1"),
-    ({gate.SUB_AGENT_IDENTITY_FALLBACK_FIELDS[0]: "execution-context-level-2"}, "execution-context-level-2"),
-    ({"unrelated": "x"}, None),
-    ({gate.SUB_AGENT_IDENTITY_FIELD: ""}, None),
+    ({gate.SUB_AGENT_IDENTITY_FIELD: 'execution-context-level-1'}, 'execution-context-level-1'),
+    ({gate.SUB_AGENT_IDENTITY_FALLBACK_FIELDS[0]: 'execution-context-level-2'}, 'execution-context-level-2'),
+    ({'unrelated': 'x'}, None),
+    ({gate.SUB_AGENT_IDENTITY_FIELD: ''}, None),
     (None, None),
-    ("not a dict", None),
+    ('not a dict', None),
 ]
 
 _SUB_AGENT_IDENTITY_IDS = [
@@ -147,12 +147,8 @@ _SUB_AGENT_IDENTITY_IDS = [
 ]
 
 
-@pytest.mark.parametrize(
-    ("payload", "expected"), _SUB_AGENT_IDENTITY_CASES, ids=_SUB_AGENT_IDENTITY_IDS
-)
-def test_sub_agent_identity_reads_the_field_or_reports_none(
-    payload: Any, expected: str | None
-) -> None:
+@pytest.mark.parametrize(('payload', 'expected'), _SUB_AGENT_IDENTITY_CASES, ids=_SUB_AGENT_IDENTITY_IDS)
+def test_sub_agent_identity_reads_the_field_or_reports_none(payload: Any, expected: str | None) -> None:
     """The identity is read from either spelling, or reported absent."""
     assert gate.sub_agent_identity(payload) == expected
 
@@ -165,9 +161,9 @@ def test_sub_agent_identity_reads_the_field_or_reports_none(
 #: accessor above — absent, empty, and a payload that is not a mapping — because
 #: every accessor in this module has to survive the same malformed input.
 _CWD_CASES: list[tuple[Any, str | None]] = [
-    ({gate.CWD_FIELD: "/home/dev/project"}, "/home/dev/project"),
-    ({"unrelated": "x"}, None),
-    ({gate.CWD_FIELD: ""}, None),
+    ({gate.CWD_FIELD: '/home/dev/project'}, '/home/dev/project'),
+    ({'unrelated': 'x'}, None),
+    ({gate.CWD_FIELD: ''}, None),
     (None, None),
 ]
 
@@ -179,7 +175,7 @@ _CWD_IDS = [
 ]
 
 
-@pytest.mark.parametrize(("payload", "expected"), _CWD_CASES, ids=_CWD_IDS)
+@pytest.mark.parametrize(('payload', 'expected'), _CWD_CASES, ids=_CWD_IDS)
 def test_cwd_reads_the_field_or_reports_none(payload: Any, expected: str | None) -> None:
     """The cwd is read when present, and reported absent otherwise."""
     assert gate.cwd(payload) == expected
@@ -191,8 +187,8 @@ def test_cwd_reads_the_field_or_reports_none(payload: Any, expected: str | None)
 
 #: ``(payload, the tool name read from it)``.
 _TOOL_NAME_CASES: list[tuple[Any, str | None]] = [
-    ({gate.TOOL_NAME_FIELD: "Bash"}, "Bash"),
-    ({"unrelated": "x"}, None),
+    ({gate.TOOL_NAME_FIELD: 'Bash'}, 'Bash'),
+    ({'unrelated': 'x'}, None),
     (None, None),
 ]
 
@@ -203,10 +199,8 @@ _TOOL_NAME_IDS = [
 ]
 
 
-@pytest.mark.parametrize(("payload", "expected"), _TOOL_NAME_CASES, ids=_TOOL_NAME_IDS)
-def test_tool_name_reads_the_field_or_reports_none(
-    payload: Any, expected: str | None
-) -> None:
+@pytest.mark.parametrize(('payload', 'expected'), _TOOL_NAME_CASES, ids=_TOOL_NAME_IDS)
+def test_tool_name_reads_the_field_or_reports_none(payload: Any, expected: str | None) -> None:
     """The tool name is read when present, and reported absent otherwise."""
     assert gate.tool_name(payload) == expected
 
@@ -221,9 +215,9 @@ def test_tool_name_reads_the_field_or_reports_none(
 #: rows are the shapes that must still yield that empty dict — a non-mapping
 #: value, an explicit null, and a payload that is not a mapping at all.
 _TOOL_INPUT_CASES: list[tuple[Any, dict[str, Any]]] = [
-    ({gate.TOOL_INPUT_FIELD: {"command": "ls -la"}}, {"command": "ls -la"}),
-    ({"unrelated": "x"}, {}),
-    ({gate.TOOL_INPUT_FIELD: "a string"}, {}),
+    ({gate.TOOL_INPUT_FIELD: {'command': 'ls -la'}}, {'command': 'ls -la'}),
+    ({'unrelated': 'x'}, {}),
+    ({gate.TOOL_INPUT_FIELD: 'a string'}, {}),
     ({gate.TOOL_INPUT_FIELD: None}, {}),
     (None, {}),
 ]
@@ -237,10 +231,8 @@ _TOOL_INPUT_IDS = [
 ]
 
 
-@pytest.mark.parametrize(("payload", "expected"), _TOOL_INPUT_CASES, ids=_TOOL_INPUT_IDS)
-def test_tool_input_reads_the_field_or_yields_an_empty_dict(
-    payload: Any, expected: dict
-) -> None:
+@pytest.mark.parametrize(('payload', 'expected'), _TOOL_INPUT_CASES, ids=_TOOL_INPUT_IDS)
+def test_tool_input_reads_the_field_or_yields_an_empty_dict(payload: Any, expected: dict) -> None:
     """The tool input is read when usable, and yields an indexable empty dict otherwise."""
     assert gate.tool_input(payload) == expected
 
@@ -265,18 +257,18 @@ def test_tool_input_reads_the_field_or_yields_an_empty_dict(
 #: case, where an ordinary main-checkout call satisfies neither signal.
 _CONTEXT_GATE_CASES: list[tuple[Any, bool]] = [
     (_signal1_payload(), True),
-    ({gate.SUB_AGENT_IDENTITY_FIELD: "plan-marshall:execution-context-level-4"}, True),
-    ({gate.SUB_AGENT_IDENTITY_FIELD: "plan-marshall:execution-context-reader-level-2"}, True),
-    ({gate.SUB_AGENT_IDENTITY_FIELD: "phase-5-execute"}, False),
+    ({gate.SUB_AGENT_IDENTITY_FIELD: 'plan-marshall:execution-context-level-4'}, True),
+    ({gate.SUB_AGENT_IDENTITY_FIELD: 'plan-marshall:execution-context-reader-level-2'}, True),
+    ({gate.SUB_AGENT_IDENTITY_FIELD: 'phase-5-execute'}, False),
     (_signal2_payload(), True),
-    ({gate.CWD_FIELD: f"/home/dev/project/{gate.WORKTREE_PATH_SEGMENT}/my-plan/subdir"}, True),
-    ({gate.CWD_FIELD: f"/home/dev/project/{gate.WORKTREE_PATH_SEGMENT}"}, True),
-    ({gate.CWD_FIELD: f"/tmp/fake-{gate.WORKTREE_PATH_SEGMENT}-extra/plans"}, False),
+    ({gate.CWD_FIELD: f'/home/dev/project/{gate.WORKTREE_PATH_SEGMENT}/my-plan/subdir'}, True),
+    ({gate.CWD_FIELD: f'/home/dev/project/{gate.WORKTREE_PATH_SEGMENT}'}, True),
+    ({gate.CWD_FIELD: f'/tmp/fake-{gate.WORKTREE_PATH_SEGMENT}-extra/plans'}, False),
     ({**_signal1_payload(), **_signal2_payload()}, True),
     (
         {
-            gate.SUB_AGENT_IDENTITY_FIELD: "some-other-agent",
-            gate.CWD_FIELD: "/home/dev/project",
+            gate.SUB_AGENT_IDENTITY_FIELD: 'some-other-agent',
+            gate.CWD_FIELD: '/home/dev/project',
         },
         False,
     ),
@@ -300,7 +292,7 @@ _CONTEXT_GATE_IDS = [
 ]
 
 
-@pytest.mark.parametrize(("payload", "gated"), _CONTEXT_GATE_CASES, ids=_CONTEXT_GATE_IDS)
+@pytest.mark.parametrize(('payload', 'gated'), _CONTEXT_GATE_CASES, ids=_CONTEXT_GATE_IDS)
 def test_context_gate_is_satisfied_by_either_signal(payload: Any, gated: bool) -> None:
     """Either signal opens the gate; neither leaves it fail-open."""
     assert gate.context_gate(payload) is gated
@@ -327,6 +319,6 @@ def test_context_gate_absent_signal1_falls_back_to_signal2() -> None:
 def test_module_exposes_no_rule_matchers() -> None:
     # The shared gate owns parse + accessors + context_gate only; the R1-R4 rule
     # matchers are enforcement-only and must not leak into this module.
-    public_names = {name for name in dir(gate) if not name.startswith("_")}
-    forbidden = {"match_rules", "rule_matchers", "deny", "permission_decision"}
+    public_names = {name for name in dir(gate) if not name.startswith('_')}
+    forbidden = {'match_rules', 'rule_matchers', 'deny', 'permission_decision'}
     assert forbidden.isdisjoint(public_names)

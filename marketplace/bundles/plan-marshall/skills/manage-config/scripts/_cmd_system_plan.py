@@ -52,8 +52,7 @@ def cmd_system(args) -> dict:
     system_config = config.get('system', {})
     if not isinstance(system_config, dict):
         return error_exit(
-            f"system block in marshal.json is not a dict, got "
-            f"{type(system_config).__name__}",
+            f'system block in marshal.json is not a dict, got {type(system_config).__name__}',
             error_type='invalid_type',
         )
 
@@ -69,8 +68,7 @@ def cmd_system(args) -> dict:
 
             if not isinstance(retention, dict):
                 return error_exit(
-                    f"system.retention block in marshal.json is not a dict, got "
-                    f"{type(retention).__name__}",
+                    f'system.retention block in marshal.json is not a dict, got {type(retention).__name__}',
                     error_type='invalid_type',
                 )
             # Fail-closed provisioning-write guard (ADR-009): reject an unknown
@@ -120,8 +118,7 @@ def cmd_project(args) -> dict:
     project_config = config.get('project', {})
     if not isinstance(project_config, dict):
         return error_exit(
-            f"project block in marshal.json is not a dict, got "
-            f"{type(project_config).__name__}",
+            f'project block in marshal.json is not a dict, got {type(project_config).__name__}',
             error_type='invalid_type',
         )
 
@@ -233,7 +230,7 @@ def cmd_project(args) -> dict:
         changed_files = args.changed_files
         if changed_files < 0:
             return error_exit(
-                f"--changed-files must be an int >= 0, got {changed_files}",
+                f'--changed-files must be an int >= 0, got {changed_files}',
                 error_type='invalid_value',
             )
         strategy = project_config.get('pr_strategy', DEFAULT_PROJECT['pr_strategy'])
@@ -251,13 +248,15 @@ def cmd_project(args) -> dict:
         except ValueError as e:
             return error_exit(str(e), error_type='invalid_value')
         rides = pr_compact_rides_existing_pr(strategy, changed_files, max_changed_files)
-        return success_exit({
-            'decision': 'ride' if rides else 'split',
-            'strategy': strategy,
-            'changed_files': changed_files,
-            'max': max_changed_files,
-            'threshold': max_changed_files + 1,
-        })
+        return success_exit(
+            {
+                'decision': 'ride' if rides else 'split',
+                'strategy': strategy,
+                'changed_files': changed_files,
+                'max': max_changed_files,
+                'threshold': max_changed_files + 1,
+            }
+        )
 
     return error_exit('Unknown project verb')
 

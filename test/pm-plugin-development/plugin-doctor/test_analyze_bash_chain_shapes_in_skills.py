@@ -275,9 +275,7 @@ class TestBacktickSpanInBashFence:
         marketplace_root, _ = _make_skill_md(tmp_path, content)
         assert_analyzer_findings(analyze_bash_chain_shapes_in_skills, marketplace_root, [])
 
-    def test_and_and_bare_is_flagged_alongside_backtick_span(
-        self, tmp_path: Path
-    ) -> None:
+    def test_and_and_bare_is_flagged_alongside_backtick_span(self, tmp_path: Path) -> None:
         """Both the bare ``&&`` and any ``&&`` inside a backtick span on the same line are flagged."""
         content = '```bash\ncmd1 && cmd2  # see `a && b` doc\n```\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)

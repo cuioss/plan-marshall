@@ -317,9 +317,7 @@ class TestUndeliverableInThreadReplyIsNeverBatched:
         assert delivered[mapping['IC']] == 'batched_issue_comment'
 
     @pytest.mark.parametrize('kind', THREADLESS_KINDS)
-    def test_a_genuinely_threadless_kind_is_never_untransmitted_for_a_missing_thread(
-        self, kind, plan_context
-    ):
+    def test_a_genuinely_threadless_kind_is_never_untransmitted_for_a_missing_thread(self, kind, plan_context):
         """The complement: absence of a thread is EXPECTED for these kinds.
 
         Pairs with the missing-thread test above so the discriminator under test is
@@ -345,9 +343,7 @@ class TestUndeliverableInThreadReplyIsNeverBatched:
         mock_graphql.assert_not_called()
 
     @pytest.mark.parametrize('kind', THREAD_BEARING_KINDS)
-    def test_a_thread_bearing_kind_without_a_thread_is_always_untransmitted(
-        self, kind, plan_context
-    ):
+    def test_a_thread_bearing_kind_without_a_thread_is_always_untransmitted(self, kind, plan_context):
         """Swept over the thread-bearing vocabulary rather than pinned to one kind."""
         plan_id = f'dtr-bearing-{kind}'
         plan_context.plan_dir_for(plan_id)

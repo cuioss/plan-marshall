@@ -39,9 +39,7 @@ import pytest
 
 from conftest import load_script_module
 
-_merge = load_script_module(
-    'plan-marshall', 'extension-api', '_derivation_merge.py', 'derivation_merge'
-)
+_merge = load_script_module('plan-marshall', 'extension-api', '_derivation_merge.py', 'derivation_merge')
 
 # The known-module universe every test validates edge endpoints against.
 _DERIVED: dict[str, dict] = {'core': {}, 'util': {}, 'api': {}}
@@ -302,9 +300,7 @@ def test_notes_are_preserved_on_the_report_with_status_ok():
     edges, reports = _merge_with(('maven', resolver))
 
     # Assert — suppression is visible, and a suppressed edge is not an error
-    assert reports == [
-        {'id': 'maven', 'edge_count': 1, 'status': 'ok', 'notes': notes}
-    ]
+    assert reports == [{'id': 'maven', 'edge_count': 1, 'status': 'ok', 'notes': notes}]
     assert edges == [{'from': 'core', 'to': 'util', 'producers': ['maven']}]
 
 
@@ -378,9 +374,7 @@ def _merge_notes(report: dict) -> list[str]:
         'both-endpoints-unknown-names-both',
     ],
 )
-def test_a_single_dropped_edge_is_reported_in_one_naming_note(
-    dropped_edge, expected_note_fragments
-):
+def test_a_single_dropped_edge_is_reported_in_one_naming_note(dropped_edge, expected_note_fragments):
     """One discarded candidate yields one note that NAMES what was discarded.
 
     A note that merely records "an edge was dropped" would leave the resolver

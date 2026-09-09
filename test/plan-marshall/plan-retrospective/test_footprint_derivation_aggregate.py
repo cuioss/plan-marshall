@@ -37,9 +37,7 @@ from toon_parser import serialize_toon
 
 from conftest import load_script_module
 
-_cr = load_script_module(
-    'plan-marshall', 'plan-retrospective', 'compile-report.py', 'cr_footprint_aggregate_mod'
-)
+_cr = load_script_module('plan-marshall', 'plan-retrospective', 'compile-report.py', 'cr_footprint_aggregate_mod')
 
 _AGGREGATE_HEADING = 'Footprint Derivation Coverage'
 
@@ -69,9 +67,7 @@ def _artifact_consistency(*, degraded: bool) -> dict:
 def _log_analysis(*, degraded: bool) -> dict:
     """``analyze-logs``. Its token is embedded in a finding MESSAGE, not a value."""
     findings = (
-        [{'severity': 'warning', 'message': 'ARTIFACT_COVERAGE_UNMEASURABLE: no tier resolved it'}]
-        if degraded
-        else []
+        [{'severity': 'warning', 'message': 'ARTIFACT_COVERAGE_UNMEASURABLE: no tier resolved it'}] if degraded else []
     )
     return {
         'status': 'success',
@@ -112,9 +108,7 @@ def _outline_vs_shipped(*, degraded: bool) -> dict:
             'aspect': 'outline-vs-shipped',
             'comparison': 'inconclusive',
             'footprint_source': 'unresolved',
-            'findings': [
-                {'severity': 'info', 'message': 'outline-vs-shipped is inconclusive: no tier resolved it'}
-            ],
+            'findings': [{'severity': 'info', 'message': 'outline-vs-shipped is inconclusive: no tier resolved it'}],
         }
     return {
         'status': 'success',
@@ -124,16 +118,22 @@ def _outline_vs_shipped(*, degraded: bool) -> dict:
         'footprint_path_count': 2,
         'counts': {
             'include_unrealised': {
-                'count': 0, 'denominator': 2,
-                'population': 'certain_include_assessed_paths', 'members': [],
+                'count': 0,
+                'denominator': 2,
+                'population': 'certain_include_assessed_paths',
+                'members': [],
             },
             'touched_but_unassessed': {
-                'count': 0, 'denominator': 2,
-                'population': 'realized_footprint_paths', 'members': [],
+                'count': 0,
+                'denominator': 2,
+                'population': 'realized_footprint_paths',
+                'members': [],
             },
             'exclude_violated': {
-                'count': 0, 'denominator': 1,
-                'population': 'certain_exclude_assessed_paths', 'members': [],
+                'count': 0,
+                'denominator': 1,
+                'population': 'certain_exclude_assessed_paths',
+                'members': [],
             },
         },
         'findings': [],
@@ -155,11 +155,7 @@ def _fragments(*, degraded: bool) -> dict:
     key, so a test that EXTENDS the roster (the derivation proof below) supplies
     its own synthetic fragment instead of failing here on a missing builder.
     """
-    return {
-        key: _BUILDERS[key](degraded=degraded)
-        for key in _rs.footprint_consuming_aspect_keys()
-        if key in _BUILDERS
-    }
+    return {key: _BUILDERS[key](degraded=degraded) for key in _rs.footprint_consuming_aspect_keys() if key in _BUILDERS}
 
 
 def _plan_dir(tmp_path: Path, *, compose_degraded: bool | None) -> Path:
@@ -198,14 +194,10 @@ class TestRosterIsDerived:
 
     def test_a_declared_consumer_with_no_registry_row_contributes_nothing(self, monkeypatch):
         """It has no fragment to read, so counting it would invent an unread member."""
-        monkeypatch.setattr(
-            _rs, 'FOOTPRINT_CONSUMING_ASPECTS', (*_rs.FOOTPRINT_CONSUMING_ASPECTS, 'not-a-row')
-        )
+        monkeypatch.setattr(_rs, 'FOOTPRINT_CONSUMING_ASPECTS', (*_rs.FOOTPRINT_CONSUMING_ASPECTS, 'not-a-row'))
         assert 'not-a-row' not in _rs.footprint_consuming_aspect_keys()
 
-    def test_adding_a_consuming_aspect_to_the_registry_grows_producer_count(
-        self, tmp_path, monkeypatch
-    ):
+    def test_adding_a_consuming_aspect_to_the_registry_grows_producer_count(self, tmp_path, monkeypatch):
         """The derivation proof: the roster grows with the registry, not with an edit here.
 
         Both the registry row and the consumer declaration are extended — the two
@@ -215,12 +207,8 @@ class TestRosterIsDerived:
         plan_dir = _plan_dir(tmp_path, compose_degraded=True)
         before = _cr.footprint_derivation_record(_fragments(degraded=True), plan_dir)
 
-        monkeypatch.setattr(
-            _rs, 'SECTION_SPEC', (*_rs.SECTION_SPEC, ('New Aspect', 'new-aspect', None))
-        )
-        monkeypatch.setattr(
-            _rs, 'FOOTPRINT_CONSUMING_ASPECTS', (*_rs.FOOTPRINT_CONSUMING_ASPECTS, 'new-aspect')
-        )
+        monkeypatch.setattr(_rs, 'SECTION_SPEC', (*_rs.SECTION_SPEC, ('New Aspect', 'new-aspect', None)))
+        monkeypatch.setattr(_rs, 'FOOTPRINT_CONSUMING_ASPECTS', (*_rs.FOOTPRINT_CONSUMING_ASPECTS, 'new-aspect'))
         fragments = _fragments(degraded=True)
         # Shaped like the live producers: the token is a per-check ``status``
         # VALUE, which is where the probe's verdict arm reads it from.
@@ -251,18 +239,12 @@ class TestDegradationProbeKeyValueSplit:
 
     def test_the_same_fragment_shape_with_the_token_as_a_status_value_is_degraded(self):
         """The matched positive: same shape, the token moved into a VALUE."""
-        assert _cr._declares_degraded(
-            _artifact_consistency(degraded=True), _rs.FOOTPRINT_DEGRADED_TOKENS
-        ) is True
+        assert _cr._declares_degraded(_artifact_consistency(degraded=True), _rs.FOOTPRINT_DEGRADED_TOKENS) is True
 
     def test_a_token_embedded_in_a_finding_message_is_degraded(self):
         """``analyze-logs`` never emits its token bare — an equality probe would miss it."""
-        assert _cr._declares_degraded(
-            _log_analysis(degraded=True), _rs.FOOTPRINT_DEGRADED_TOKENS
-        ) is True
-        assert _cr._declares_degraded(
-            _log_analysis(degraded=False), _rs.FOOTPRINT_DEGRADED_TOKENS
-        ) is False
+        assert _cr._declares_degraded(_log_analysis(degraded=True), _rs.FOOTPRINT_DEGRADED_TOKENS) is True
+        assert _cr._declares_degraded(_log_analysis(degraded=False), _rs.FOOTPRINT_DEGRADED_TOKENS) is False
 
 
 # =============================================================================
@@ -293,10 +275,7 @@ def _with_producer_metadata(fragment: dict) -> dict:
 
 def _poisoned_fragments(*, degraded: bool) -> dict:
     """Every roster fragment, carrying the token-bearing plan metadata."""
-    return {
-        key: _with_producer_metadata(fragment)
-        for key, fragment in _fragments(degraded=degraded).items()
-    }
+    return {key: _with_producer_metadata(fragment) for key, fragment in _fragments(degraded=degraded).items()}
 
 
 class TestDegradationProbeIsFieldScoped:
@@ -317,14 +296,20 @@ class TestDegradationProbeIsFieldScoped:
 
     def test_the_comparison_verdict_field_is_read_as_a_verdict(self):
         """``check-outline-vs-shipped`` publishes under ``comparison``, not ``status``."""
-        assert _cr._declares_degraded(
-            _with_producer_metadata(_outline_vs_shipped(degraded=True)),
-            _rs.FOOTPRINT_DEGRADED_TOKENS,
-        ) is True
-        assert _cr._declares_degraded(
-            _with_producer_metadata(_outline_vs_shipped(degraded=False)),
-            _rs.FOOTPRINT_DEGRADED_TOKENS,
-        ) is False
+        assert (
+            _cr._declares_degraded(
+                _with_producer_metadata(_outline_vs_shipped(degraded=True)),
+                _rs.FOOTPRINT_DEGRADED_TOKENS,
+            )
+            is True
+        )
+        assert (
+            _cr._declares_degraded(
+                _with_producer_metadata(_outline_vs_shipped(degraded=False)),
+                _rs.FOOTPRINT_DEGRADED_TOKENS,
+            )
+            is False
+        )
 
     def test_narrowing_inconclusive_did_not_narrow_the_free_text_token(self):
         """The other arm is untouched — ``analyze-logs`` never emits its token bare."""
@@ -398,7 +383,8 @@ class TestAggregateStates:
         # Every count names the population behind it.
         assert (
             record['degraded_count'] + record['resolved_count'] + record['unread_count']
-            == record['producer_count'] == len(record['producers'])
+            == record['producer_count']
+            == len(record['producers'])
         )
         assert record['producer_count'] == len(_rs.footprint_consuming_aspect_keys()) + 1
         assert _rs.COMPOSE_TIME_PRODUCER in [p['producer'] for p in record['producers']]
@@ -411,9 +397,7 @@ class TestAggregateStates:
 
         by_provenance = {p['provenance'] for p in record['producers']}
         assert by_provenance == {_rs.PROVENANCE_ASPECT_REGISTRY, _rs.PROVENANCE_COMPOSE_TIME}
-        compose = [
-            p for p in record['producers'] if p['provenance'] == _rs.PROVENANCE_COMPOSE_TIME
-        ]
+        compose = [p for p in record['producers'] if p['provenance'] == _rs.PROVENANCE_COMPOSE_TIME]
         assert len(compose) == 1
         assert record['roster_source']
 
@@ -444,8 +428,11 @@ class TestAggregateStates:
         record = _cr.footprint_derivation_record(fragments, plan_dir)
 
         assert record['state'] == _rs.AGGREGATE_PARTIAL_COVERAGE
-        assert {'producer': dropped, 'verdict': _rs.PRODUCER_UNREAD,
-                'provenance': _rs.PROVENANCE_ASPECT_REGISTRY} in record['producers']
+        assert {
+            'producer': dropped,
+            'verdict': _rs.PRODUCER_UNREAD,
+            'provenance': _rs.PROVENANCE_ASPECT_REGISTRY,
+        } in record['producers']
 
     def test_a_mixed_roster_is_not_the_signal_and_emits_nothing(self, tmp_path):
         """They failed TOGETHER is the claim; one resolved member refutes it."""

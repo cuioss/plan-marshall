@@ -6,7 +6,6 @@ empty bundle, an empty or payload-free fragment, and the registry rows that alwa
 emit — with written implying payload throughout.
 """
 
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -54,9 +53,7 @@ class TestWrittenImpliesNonEmpty:
         # therefore registered successfully and was emitted as a heading over an
         # empty fenced block, counted as written, with `dropped` empty.
         fragments = {'artifact-consistency': empty}
-        content, written, omitted, dropped = _cr.build_document(
-            'demo', 'live', tmp_path, None, fragments
-        )
+        content, written, omitted, dropped = _cr.build_document('demo', 'live', tmp_path, None, fragments)
         assert 'Artifact Consistency' not in written
         assert 'Artifact Consistency' in omitted
         assert '## Artifact Consistency' not in content
@@ -70,9 +67,7 @@ class TestWrittenImpliesNonEmpty:
         # discard a measured zero, the defect the identity checks elsewhere in
         # this module exist to prevent.
         fragments = {'artifact-consistency': scalar}
-        _content, written, omitted, _dropped = _cr.build_document(
-            'demo', 'live', tmp_path, None, fragments
-        )
+        _content, written, omitted, _dropped = _cr.build_document('demo', 'live', tmp_path, None, fragments)
         assert 'Artifact Consistency' in written
         assert 'Artifact Consistency' not in omitted
 
@@ -114,9 +109,7 @@ class TestWrittenImpliesNonEmpty:
             for _h, key, _t in _rs.SECTION_SPEC
             if not key.startswith('_')
         }
-        _content, written, _omitted, _dropped = _cr.build_document(
-            'demo', 'live', tmp_path, None, fragments
-        )
+        _content, written, _omitted, _dropped = _cr.build_document('demo', 'live', tmp_path, None, fragments)
         assert written == [], f'sections written from payload-less fragments: {written}'
 
     def test_a_bare_false_fragment_is_empty(self, tmp_path):
@@ -136,9 +129,7 @@ class TestWrittenImpliesNonEmpty:
         # fallback under a heading SYNTHESIZED from the key, naming a section no
         # registry row declares.
         fragments = {'artifact-consistency': ''}
-        _content, _written, omitted, _dropped = _cr.build_document(
-            'demo', 'live', tmp_path, None, fragments
-        )
+        _content, _written, omitted, _dropped = _cr.build_document('demo', 'live', tmp_path, None, fragments)
         assert omitted.count('Artifact Consistency') == 1
         assert len(omitted) == len(_rs.SECTION_SPEC)
         spec_headings = {heading for heading, _k, _t in _rs.SECTION_SPEC}
@@ -149,9 +140,7 @@ class TestWrittenImpliesNonEmpty:
         'heading,fragment_key',
         [(h, k) for h, k, trigger in _rs.SECTION_SPEC if trigger is None and not k.startswith('_')],
     )
-    def test_an_always_emit_row_with_no_fragment_is_omitted_not_written(
-        self, tmp_path, heading, fragment_key
-    ):
+    def test_an_always_emit_row_with_no_fragment_is_omitted_not_written(self, tmp_path, heading, fragment_key):
         # There are 11 `trigger=None` rows; this parametrization covers the 10
         # that are not `_executive-summary` (that row has its own branch and
         # its own test above). Driven from the registry so the population
@@ -164,9 +153,7 @@ class TestWrittenImpliesNonEmpty:
         # The guard must not swallow a section that HAS content — the fix is
         # "no fragment ⇒ not written", never "write less".
         fragments = {'artifact-consistency': {'status': 'success', 'summary': 'all checks passed'}}
-        content, written, omitted, _dropped = _cr.build_document(
-            'demo', 'live', tmp_path, None, fragments
-        )
+        content, written, omitted, _dropped = _cr.build_document('demo', 'live', tmp_path, None, fragments)
         assert 'Artifact Consistency' in written
         assert 'Artifact Consistency' not in omitted
         assert 'all checks passed' in content
@@ -174,13 +161,10 @@ class TestWrittenImpliesNonEmpty:
     def test_a_fallback_aspect_mapped_to_none_is_omitted_not_written(self, tmp_path):
         # The invariant is a property of the partition, not of one render path.
         fragments = {'wrapper-tangle': None}
-        content, written, omitted, _dropped = _cr.build_document(
-            'demo', 'live', tmp_path, None, fragments
-        )
+        content, written, omitted, _dropped = _cr.build_document('demo', 'live', tmp_path, None, fragments)
         assert 'Wrapper Tangle' not in written
         assert 'Wrapper Tangle' in omitted
         assert '## Wrapper Tangle' not in content
-
 
     def test_payload_bearing_executive_summary_without_a_body_is_dropped(self, tmp_path):
         # The fragment carried content the renderer could not turn into a body
@@ -203,9 +187,7 @@ class TestZeroReportingSectionNamesItsCheckedSet:
 
     @staticmethod
     def _doc(fragments):
-        _content, written, _omitted, _dropped = _cr.build_document(
-            'demo', 'live', Path('/tmp/plan'), None, fragments
-        )
+        _content, written, _omitted, _dropped = _cr.build_document('demo', 'live', Path('/tmp/plan'), None, fragments)
         return written, _cr.unattributed_zero_sections(written, fragments)
 
     def test_bare_zero_is_flagged(self):
@@ -275,8 +257,7 @@ class TestZeroReportingSectionNamesItsCheckedSet:
         # would exclude every such aspect, and those are the newest and least
         # conventional producers, so they are the population MOST likely to
         # report a bare zero.
-        fragments = {'_meta': {'mode': 'live'},
-                     'wrapper-tangle': {'status': 'success', 'plan_id': 'p', 'findings': []}}
+        fragments = {'_meta': {'mode': 'live'}, 'wrapper-tangle': {'status': 'success', 'plan_id': 'p', 'findings': []}}
         written, flagged = self._doc(fragments)
         assert 'Wrapper Tangle' in written, 'precondition: the fallback must render it'
         assert 'Wrapper Tangle' in flagged
@@ -349,13 +330,23 @@ class TestZeroReportingSectionNamesItsCheckedSet:
         [
             (
                 'artifact-consistency',
-                {'status': 'success', 'aspect': 'artifact_consistency', 'findings': [],
-                 'checks': [{'name': 'metrics_generated', 'status': 'pass', 'message': 'ok'}]},
+                {
+                    'status': 'success',
+                    'aspect': 'artifact_consistency',
+                    'findings': [],
+                    'checks': [{'name': 'metrics_generated', 'status': 'pass', 'message': 'ok'}],
+                },
             ),
             (
                 'invariant-summary',
-                {'status': 'success', 'aspect': 'invariant_summary', 'findings': [],
-                 'phases': [], 'drift': {}, 'expected_invariants': ['handshake', 'blocking']},
+                {
+                    'status': 'success',
+                    'aspect': 'invariant_summary',
+                    'findings': [],
+                    'phases': [],
+                    'drift': {},
+                    'expected_invariants': ['handshake', 'blocking'],
+                },
             ),
         ],
         ids=['artifact-consistency-checks', 'summarize-invariants-expected'],

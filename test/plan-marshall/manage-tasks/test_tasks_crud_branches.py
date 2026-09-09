@@ -166,9 +166,7 @@ def test_update_comma_separated_skills_persist(plan_context):
     """Comma-separated skills are split, validated, and persisted as a list."""
     add_basic_task(plan_id='upd-skills-csv', title='Task', deliverable=1)
 
-    result = cmd_update(
-        _update_ns(plan_id='upd-skills-csv', number=1, skills='bundle:skill-a, bundle:skill-b')
-    )
+    result = cmd_update(_update_ns(plan_id='upd-skills-csv', number=1, skills='bundle:skill-a, bundle:skill-b'))
 
     assert result['status'] == 'success'
     assert result['task']['skills'] == ['bundle:skill-a', 'bundle:skill-b']

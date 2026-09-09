@@ -134,9 +134,7 @@ def write_dispatching_executor(plan_dir: Path, notations: list[str]) -> Path:
     return executor
 
 
-def seed_notation_registry(
-    temp_root: Path, notations: Sequence[str] = (FIXTURE_NOTATION,)
-) -> Path:
+def seed_notation_registry(temp_root: Path, notations: Sequence[str] = (FIXTURE_NOTATION,)) -> Path:
     """Give a fixture marketplace the notation-registry substrate a real tree has.
 
     ``temp_root`` is the directory that CONTAINS ``marketplace/`` — the anchor

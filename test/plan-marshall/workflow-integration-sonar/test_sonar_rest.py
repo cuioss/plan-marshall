@@ -17,9 +17,7 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'workflow-integration-sonar', 'so
 # Module-level importlib load — the cmd_* logic tests call into the script's
 # functions in-process, so the module is imported once here rather than inside
 # each test.
-sonar_rest = load_script_module(
-    'plan-marshall', 'workflow-integration-sonar', 'sonar_rest.py', 'sonar_rest'
-)
+sonar_rest = load_script_module('plan-marshall', 'workflow-integration-sonar', 'sonar_rest.py', 'sonar_rest')
 
 
 class TestSonarRestCLI:
@@ -137,9 +135,7 @@ class TestSonarSearchLogic:
         }
 
         with patch.object(sonar_rest, 'get_authenticated_client', return_value=mock_client):
-            result = sonar_rest.cmd_search(
-                Namespace(project='my-project', pr=None, severities=None, types=None)
-            )
+            result = sonar_rest.cmd_search(Namespace(project='my-project', pr=None, severities=None, types=None))
 
         assert result == 0
         output = capsys.readouterr().out
@@ -169,9 +165,7 @@ class TestSonarGateStatusLogic:
         }
 
         with patch.object(sonar_rest, 'get_authenticated_client', return_value=mock_client):
-            result = sonar_rest.cmd_gate_status(
-                Namespace(project='my-project', branch=None, pr=None)
-            )
+            result = sonar_rest.cmd_gate_status(Namespace(project='my-project', branch=None, pr=None))
 
         assert result == 0
         output = capsys.readouterr().out
@@ -197,9 +191,7 @@ class TestSonarGateStatusLogic:
         mock_client.get.side_effect = sonar_rest.RestClientError(500, 'boom')
 
         with patch.object(sonar_rest, 'get_authenticated_client', return_value=mock_client):
-            result = sonar_rest.cmd_gate_status(
-                Namespace(project='my-project', branch=None, pr=None)
-            )
+            result = sonar_rest.cmd_gate_status(Namespace(project='my-project', branch=None, pr=None))
 
         assert result == 0
         output = capsys.readouterr().out
@@ -236,9 +228,7 @@ class TestSonarGateStatusLogic:
         mock_client.get.return_value = {'projectStatus': {'status': 'OK', 'conditions': []}}
 
         with patch.object(sonar_rest, 'get_authenticated_client', return_value=mock_client):
-            result = sonar_rest.cmd_gate_status(
-                Namespace(project='my-project', branch=None, pr=None)
-            )
+            result = sonar_rest.cmd_gate_status(Namespace(project='my-project', branch=None, pr=None))
 
         assert result == 0
         output = capsys.readouterr().out
@@ -367,9 +357,7 @@ class TestSonarHotspotsLogic:
         }
 
         with patch.object(sonar_rest, 'get_authenticated_client', return_value=mock_client):
-            result = sonar_rest.cmd_hotspots(
-                Namespace(project='my-project', branch=None, pr=None)
-            )
+            result = sonar_rest.cmd_hotspots(Namespace(project='my-project', branch=None, pr=None))
 
         assert result == 0
         output = capsys.readouterr().out
@@ -383,9 +371,7 @@ class TestSonarHotspotsLogic:
         mock_client.get.side_effect = sonar_rest.RestClientError(404, 'not found')
 
         with patch.object(sonar_rest, 'get_authenticated_client', return_value=mock_client):
-            result = sonar_rest.cmd_hotspots(
-                Namespace(project='my-project', branch=None, pr=None)
-            )
+            result = sonar_rest.cmd_hotspots(Namespace(project='my-project', branch=None, pr=None))
 
         assert result == 0
         output = capsys.readouterr().out
@@ -452,9 +438,7 @@ class TestSonarHotspotsLogic:
         }
 
         with patch.object(sonar_rest, 'get_authenticated_client', return_value=mock_client):
-            result = sonar_rest.cmd_hotspots(
-                Namespace(project='my-project', branch=None, pr=None)
-            )
+            result = sonar_rest.cmd_hotspots(Namespace(project='my-project', branch=None, pr=None))
 
         assert result == 0
         output = capsys.readouterr().out
@@ -469,9 +453,7 @@ class TestSonarHotspotsLogic:
         mock_client.get.return_value = {'hotspots': []}
 
         with patch.object(sonar_rest, 'get_authenticated_client', return_value=mock_client):
-            result = sonar_rest.cmd_hotspots(
-                Namespace(project='my-project', branch=None, pr=None)
-            )
+            result = sonar_rest.cmd_hotspots(Namespace(project='my-project', branch=None, pr=None))
 
         assert result == 0
         output = capsys.readouterr().out

@@ -54,6 +54,7 @@ def test_load_status_metadata_uses_resolved_executor(tmp_path, monkeypatch):
 
 def test_load_status_metadata_empty_when_helper_raises(monkeypatch):
     """RuntimeError from get_executor_path → empty dict, no subprocess spawn."""
+
     def _raise() -> Path:
         raise RuntimeError('no git repository')
 

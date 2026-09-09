@@ -47,8 +47,7 @@ def test_java_implementation_surfaces_packages(plan_context, monkeypatch):
 
     assert result['status'] == 'success'
     assert result['package_source'] == 'packages', (
-        f"implementation profile must surface package_source='packages', got "
-        f"{result.get('package_source')!r}"
+        f"implementation profile must surface package_source='packages', got {result.get('package_source')!r}"
     )
 
 
@@ -61,7 +60,7 @@ def test_javascript_implementation_surfaces_packages(plan_context, monkeypatch):
     assert result['status'] == 'success'
     assert result['package_source'] == 'packages', (
         f"javascript implementation profile must surface package_source='packages', got "
-        f"{result.get('package_source')!r}"
+        f'{result.get("package_source")!r}'
     )
 
 
@@ -78,8 +77,7 @@ def test_java_module_testing_surfaces_test_packages(plan_context, monkeypatch):
 
     assert result['status'] == 'success'
     assert result['package_source'] == 'test_packages', (
-        f"module_testing profile must surface package_source='test_packages', got "
-        f"{result.get('package_source')!r}"
+        f"module_testing profile must surface package_source='test_packages', got {result.get('package_source')!r}"
     )
 
 
@@ -92,7 +90,7 @@ def test_javascript_module_testing_surfaces_test_packages(plan_context, monkeypa
     assert result['status'] == 'success'
     assert result['package_source'] == 'test_packages', (
         f"javascript module_testing profile must surface package_source='test_packages', got "
-        f"{result.get('package_source')!r}"
+        f'{result.get("package_source")!r}'
     )
 
 
@@ -109,8 +107,8 @@ def test_java_core_omits_package_source(plan_context, monkeypatch):
 
     assert result['status'] == 'success'
     assert 'package_source' not in result, (
-        f"core profile declares no package_source — the key must be omitted, got "
-        f"package_source={result.get('package_source')!r}"
+        f'core profile declares no package_source — the key must be omitted, got '
+        f'package_source={result.get("package_source")!r}'
     )
 
 
@@ -122,8 +120,8 @@ def test_java_quality_omits_package_source(plan_context, monkeypatch):
 
     assert result['status'] == 'success'
     assert 'package_source' not in result, (
-        f"quality profile declares no package_source — the key must be omitted, got "
-        f"package_source={result.get('package_source')!r}"
+        f'quality profile declares no package_source — the key must be omitted, got '
+        f'package_source={result.get("package_source")!r}'
     )
 
 
@@ -140,8 +138,8 @@ def test_javascript_core_omits_package_source(plan_context, monkeypatch):
 
     assert result['status'] == 'success'
     assert 'package_source' not in result, (
-        f"javascript core profile declares no package_source — the key must be omitted, got "
-        f"package_source={result.get('package_source')!r}"
+        f'javascript core profile declares no package_source — the key must be omitted, got '
+        f'package_source={result.get("package_source")!r}'
     )
 
 
@@ -161,7 +159,7 @@ def test_implementation_and_module_testing_package_source_differ(plan_context, m
     assert test['status'] == 'success'
     assert impl['package_source'] != test['package_source'], (
         'implementation and module_testing must surface distinct package_source values '
-        f"(impl={impl['package_source']!r}, test={test['package_source']!r})"
+        f'(impl={impl["package_source"]!r}, test={test["package_source"]!r})'
     )
 
 

@@ -6,7 +6,6 @@ reader's behaviour on a missing, malformed or non-dict file, and the section and
 deliverable-count checks built on them.
 """
 
-
 from __future__ import annotations
 
 import json
@@ -50,9 +49,7 @@ class TestLoadReferences:
         assert _cac._load_references(tmp_path) == {}
 
     def test_valid_dict_returned(self, tmp_path):
-        (tmp_path / 'references.json').write_text(
-            json.dumps({'modified_files': ['a.py']}), encoding='utf-8'
-        )
+        (tmp_path / 'references.json').write_text(json.dumps({'modified_files': ['a.py']}), encoding='utf-8')
         assert _cac._load_references(tmp_path) == {'modified_files': ['a.py']}
 
 
@@ -90,9 +87,7 @@ class TestSectionAndDeliverableChecks:
 
 class TestExtractAffectedFiles:
     def test_collects_bullets_under_affected_block(self):
-        files = _cac.extract_affected_files_per_deliverable(
-            _outline(affected=['src/a.py', 'src/b.py'])
-        )
+        files = _cac.extract_affected_files_per_deliverable(_outline(affected=['src/a.py', 'src/b.py']))
         assert files == ['src/a.py', 'src/b.py']
 
     def test_collects_annotated_canonical_bullets_with_intent_stripped(self):
@@ -129,9 +124,7 @@ class TestAffectedFilesRecall:
 
     def test_skip_when_outline_declares_no_deliverables(self, tmp_path):
         """Genuine no-deliverables outline → skip; nothing could be declared."""
-        status, message, details = _cac.check_affected_files_recall(
-            _outline(deliverables=0), tmp_path, []
-        )
+        status, message, details = _cac.check_affected_files_recall(_outline(deliverables=0), tmp_path, [])
         assert status == 'skip'
         assert int(details['declared']) == 0
         assert int(details['deliverables']) == 0
@@ -161,9 +154,7 @@ class TestAffectedFilesRecall:
         to declare files has nothing to parse, so no parse failure is
         substantiated and the aggregate empty set is a genuine ``skip``.
         """
-        status, message, details = _cac.check_affected_files_recall(
-            _outline(), tmp_path, _ONE_DELIVERABLE
-        )
+        status, message, details = _cac.check_affected_files_recall(_outline(), tmp_path, _ONE_DELIVERABLE)
         assert status == 'skip'
         assert int(details['declared']) == 0
         assert int(details['deliverables']) == 1
@@ -196,9 +187,7 @@ class TestAffectedFilesRecall:
         assert int(details['found']) == 2
 
     def test_fail_when_recall_below_threshold(self, tmp_path):
-        (tmp_path / 'references.json').write_text(
-            json.dumps({'modified_files': ['src/a.py']}), encoding='utf-8'
-        )
+        (tmp_path / 'references.json').write_text(json.dumps({'modified_files': ['src/a.py']}), encoding='utf-8')
         status, _msg, details = _cac.check_affected_files_recall(
             _outline(affected=['src/a.py', 'src/b.py', 'src/c.py']), tmp_path, _ONE_DELIVERABLE
         )
@@ -236,9 +225,7 @@ class TestAffectedFilesRecall:
         every empty footprint as unmeasurable, which would silence a genuine
         zero-coverage failure.
         """
-        (tmp_path / 'references.json').write_text(
-            json.dumps({'modified_files': []}), encoding='utf-8'
-        )
+        (tmp_path / 'references.json').write_text(json.dumps({'modified_files': []}), encoding='utf-8')
         status, _msg, details = _cac.check_affected_files_recall(
             _outline(affected=['src/a.py']), tmp_path, _ONE_DELIVERABLE
         )

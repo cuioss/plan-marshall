@@ -61,7 +61,6 @@ Coverage:
   narrow request.
 """
 
-
 from __future__ import annotations
 
 import json
@@ -70,9 +69,7 @@ from pathlib import Path
 
 from conftest import load_script_module
 
-_mod = load_script_module(
-    'plan-marshall', 'manage-status', '_cmd_planning_lane.py', '_cmd_planning_lane_under_test'
-)
+_mod = load_script_module('plan-marshall', 'manage-status', '_cmd_planning_lane.py', '_cmd_planning_lane_under_test')
 
 
 cmd_planning_lane_route = _mod.cmd_planning_lane_route
@@ -102,10 +99,7 @@ cmd_scope_estimate_heuristic = _mod.cmd_scope_estimate_heuristic
 
 # A request body that PASSES S5 concreteness (names a file path) so the S5 /
 # S1 deep-bias does not fire — lets the other signals be tested in isolation.
-_CONCRETE_BODY = (
-    'Update `marketplace/bundles/plan-marshall/skills/x/scripts/x.py` to fix '
-    'the parser.'
-)
+_CONCRETE_BODY = 'Update `marketplace/bundles/plan-marshall/skills/x/scripts/x.py` to fix the parser.'
 
 
 # A vague request body that FAILS S5 (no path, no fix signal) → S5 deep.
@@ -114,13 +108,7 @@ _VAGUE_BODY = 'The thing should do the thing per the thing, somehow.'
 
 def _write_request(plan_dir: Path, body: str) -> None:
     plan_dir.mkdir(parents=True, exist_ok=True)
-    content = (
-        '# Request\n\n'
-        '## Original Input\n\n'
-        '(unused)\n\n'
-        '## Clarified Request\n\n'
-        f'{body}\n'
-    )
+    content = f'# Request\n\n## Original Input\n\n(unused)\n\n## Clarified Request\n\n{body}\n'
     (plan_dir / 'request.md').write_text(content, encoding='utf-8')
 
 
@@ -164,9 +152,7 @@ _BOILERPLATE_CITATION = 'persona-plan-orchestrator/standards/orchestration-model
 
 # A target named in the ingested body BELOW the first nested ``## `` heading. The
 # truncating read could never reach it.
-_TARGET_BELOW_NESTED_HEADING = (
-    'marketplace/bundles/plan-marshall/skills/manage-status/scripts/_cmd_planning_lane.py'
-)
+_TARGET_BELOW_NESTED_HEADING = 'marketplace/bundles/plan-marshall/skills/manage-status/scripts/_cmd_planning_lane.py'
 
 
 def _write_ingested_request(plan_dir: Path, spec_body: str = _INGESTED_SPEC_BODY) -> None:
@@ -195,9 +181,7 @@ def _write_ingested_request(plan_dir: Path, spec_body: str = _INGESTED_SPEC_BODY
 def _write_status(plan_dir: Path, metadata: dict | None = None) -> None:
     plan_dir.mkdir(parents=True, exist_ok=True)
     (plan_dir / 'status.json').write_text(
-        json.dumps(
-            {'plan_id': plan_dir.name, 'phases': [], 'metadata': metadata or {}}
-        ),
+        json.dumps({'plan_id': plan_dir.name, 'phases': [], 'metadata': metadata or {}}),
         encoding='utf-8',
     )
 

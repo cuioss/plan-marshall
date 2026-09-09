@@ -32,7 +32,6 @@ CLI plumbing (subprocess) tests for the ``remove`` subcommand live in
 ``test_remove_supersede_cli.py``.
 """
 
-
 import json
 from argparse import Namespace
 from pathlib import Path
@@ -315,9 +314,7 @@ class TestRemoveEvidenceControlsViaRealArgparse:
 
         assert result.success, f'Script failed: {result.stderr}'
         assert not seeded.exists()
-        payload = json.loads(
-            (lessons_dir / '.tombstones' / '2025-01-01-01-004.json').read_text(encoding='utf-8')
-        )
+        payload = json.loads((lessons_dir / '.tombstones' / '2025-01-01-01-004.json').read_text(encoding='utf-8'))
         assert payload['coverage_verdict'] == verdict
 
     def test_unknown_verdict_is_rejected_and_lesson_survives(self, tmp_path):

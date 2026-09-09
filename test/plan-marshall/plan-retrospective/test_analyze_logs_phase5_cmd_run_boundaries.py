@@ -8,7 +8,6 @@ Its sections, in order:
 * Integration: cmd_run end-to-end
 """
 
-
 from __future__ import annotations
 
 import json
@@ -21,8 +20,6 @@ from conftest import run_script
 # =============================================================================
 # Phase-5 logging-gap fact extractors
 # =============================================================================
-
-
 
 
 class TestReadDispatchBoundariesPerPhase:
@@ -110,9 +107,7 @@ class TestCmdRunSurfacesPhase5Gaps:
     # Integration: cmd_run end-to-end
     # ------------------------------------------------------------------
 
-    def test_cmd_run_surfaces_phase5_logging_gaps_and_top_level_dispatch_boundaries(
-        self, tmp_path, monkeypatch
-    ):
+    def test_cmd_run_surfaces_phase5_logging_gaps_and_top_level_dispatch_boundaries(self, tmp_path, monkeypatch):
         """End-to-end: cmd_run emits phase5_logging_gaps (three extractors) and
         a top-level dispatch_boundaries per-phase dict.
 
