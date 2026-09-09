@@ -28,20 +28,20 @@ PLAN_IDS = (
 )
 
 
+#: ``(inner timeout, outer timeout)``. The outer bound is the inner one plus the
+#: 30-second buffer, so the zero row is what shows the buffer is added rather
+#: than scaled.
+_BASH_TIMEOUT_CASES = [(300, 330), (10, 40), (0, 30)]
+
+_BASH_TIMEOUT_IDS = ['ordinary-build-timeout', 'small-timeout', 'zero-timeout']
+
+
 class TestGetBashTimeout:
     """Tests for get_bash_timeout()."""
 
-    def test_adds_buffer_to_inner_timeout(self):
-        result = _build_shared.get_bash_timeout(300)
-        assert result == 330  # 300 + 30 buffer
-
-    def test_small_timeout(self):
-        result = _build_shared.get_bash_timeout(10)
-        assert result == 40  # 10 + 30 buffer
-
-    def test_zero_timeout(self):
-        result = _build_shared.get_bash_timeout(0)
-        assert result == 30  # 0 + 30 buffer
+    @pytest.mark.parametrize('inner,expected', _BASH_TIMEOUT_CASES, ids=_BASH_TIMEOUT_IDS)
+    def test_adds_buffer_to_inner_timeout(self, inner: int, expected: int):
+        assert _build_shared.get_bash_timeout(inner) == expected
 
     def test_buffer_constant_is_30(self):
         assert _build_shared.OUTER_TIMEOUT_BUFFER == 30
@@ -236,6 +236,55 @@ class TestCmdRunCommonSafetyNet:
         assert errors[0]['category'] == 'test_failure'
 
 
+_FAILING_RESULT = {
+    'status': 'error',
+    'exit_code': 1,
+    'duration_seconds': 5,
+    'log_file': '',
+    'command': './pw module-tests plan-marshall',
+}
+
+_GREEN_RESULT = {
+    'status': 'success',
+    'exit_code': 0,
+    'duration_seconds': 5,
+    'log_file': '',
+    'command': './pw module-tests plan-marshall',
+}
+
+
+def _no_issues_parser(_log_file):
+    return [], None, 'FAILURE'
+
+
+#: ``(build result, the guarded seam that result drives)``. A failing build is
+#: what reaches producer-side storage and a green one is what reaches
+#: reconciliation, so each seam is paired with the result that gets it called.
+_GUARDED_SEAM_CASES = [
+    (_FAILING_RESULT, 'store'),
+    (_GREEN_RESULT, 'reconcile'),
+]
+
+_GUARDED_SEAM_IDS = ['producer-side-finding-storage', 'green-build-reconciliation']
+
+#: ``(plan id, the ids the seam must have been called with)``. The last row is
+#: the counter-case: without it a guard that never fired at all would satisfy
+#: every suppression row while disabling the seam for real plans too.
+_PLAN_ID_GUARD_CASES = [
+    (None, []),
+    ('', []),
+    ('NO_PLAN', []),
+    ('a-real-plan', ['a-real-plan']),
+]
+
+_PLAN_ID_GUARD_IDS = [
+    'plan-id-is-none',
+    'plan-id-is-empty',
+    'plan-id-is-the-truthy-no-plan-sentinel',
+    'plan-id-names-a-real-plan',
+]
+
+
 class TestCmdRunCommonPlanIdGuards:
     """The two ``plan_id`` guards in ``cmd_run_common`` treat NO_PLAN as ABSENT.
 
@@ -250,25 +299,6 @@ class TestCmdRunCommonPlanIdGuards:
     satisfied by a guard that never fires at all, which would silently disable
     producer-side finding storage for every plan-scoped build too.
     """
-
-    _FAILING_RESULT = {
-        'status': 'error',
-        'exit_code': 1,
-        'duration_seconds': 5,
-        'log_file': '',
-        'command': './pw module-tests plan-marshall',
-    }
-    _GREEN_RESULT = {
-        'status': 'success',
-        'exit_code': 0,
-        'duration_seconds': 5,
-        'log_file': '',
-        'command': './pw module-tests plan-marshall',
-    }
-
-    @staticmethod
-    def _parser(_log_file):
-        return [], None, 'FAILURE'
 
     @pytest.fixture
     def spy(self, monkeypatch):
@@ -286,47 +316,26 @@ class TestCmdRunCommonPlanIdGuards:
         )
         return calls
 
-    @pytest.mark.parametrize('plan_id', [None, '', 'NO_PLAN'])
-    def test_sentinel_suppresses_producer_side_finding_storage(self, spy, plan_id, capsys):
+    @pytest.mark.parametrize(
+        'plan_id,expected_calls', _PLAN_ID_GUARD_CASES, ids=_PLAN_ID_GUARD_IDS
+    )
+    @pytest.mark.parametrize('result,seam', _GUARDED_SEAM_CASES, ids=_GUARDED_SEAM_IDS)
+    def test_only_a_real_plan_id_reaches_the_finding_store(
+        self, spy, capsys, result, seam, plan_id, expected_calls
+    ):
         _build_shared.cmd_run_common(
-            self._FAILING_RESULT, self._parser, tool_name='python',
-            output_format='json', plan_id=plan_id,
+            result,
+            _no_issues_parser,
+            tool_name='python',
+            output_format='json',
+            plan_id=plan_id,
         )
         capsys.readouterr()
 
-        assert spy['store'] == [], (
-            f'plan_id={plan_id!r} stored findings into a plan-less finding store'
+        assert spy[seam] == expected_calls, (
+            f'plan_id={plan_id!r} drove the {seam} seam with {spy[seam]!r}; a '
+            'plan-less build owns no per-plan finding store'
         )
-
-    @pytest.mark.parametrize('plan_id', [None, '', 'NO_PLAN'])
-    def test_sentinel_suppresses_green_build_reconciliation(self, spy, plan_id, capsys):
-        _build_shared.cmd_run_common(
-            self._GREEN_RESULT, self._parser, tool_name='python',
-            output_format='json', plan_id=plan_id,
-        )
-        capsys.readouterr()
-
-        assert spy['reconcile'] == [], (
-            f'plan_id={plan_id!r} bulk-resolved findings in a plan-less store'
-        )
-
-    def test_a_real_plan_id_engages_producer_side_finding_storage(self, spy, capsys):
-        _build_shared.cmd_run_common(
-            self._FAILING_RESULT, self._parser, tool_name='python',
-            output_format='json', plan_id='a-real-plan',
-        )
-        capsys.readouterr()
-
-        assert spy['store'] == ['a-real-plan']
-
-    def test_a_real_plan_id_engages_green_build_reconciliation(self, spy, capsys):
-        _build_shared.cmd_run_common(
-            self._GREEN_RESULT, self._parser, tool_name='python',
-            output_format='json', plan_id='a-real-plan',
-        )
-        capsys.readouterr()
-
-        assert spy['reconcile'] == ['a-real-plan']
 
 
 class TestRecordProducerMismatchPersist:

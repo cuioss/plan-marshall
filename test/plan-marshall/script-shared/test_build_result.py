@@ -253,14 +253,6 @@ def test_success_result_extra_fields():
     assert result['wrapper'] == './mvnw'
 
 
-def test_success_result_validates():
-    """Result passes validation."""
-    result = success_result(45, '/path/to/log', './mvnw clean verify')
-    valid, missing = validate_result(result)
-    assert valid
-    assert missing == []
-
-
 def test_error_result_basic():
     """Returns dict with all required fields."""
     result = error_result(ERROR_BUILD_FAILED, 1, 23, '/path/to/log', './mvnw clean verify')
@@ -294,14 +286,6 @@ def test_error_result_extra_fields():
     assert len(result['errors']) == 1
 
 
-def test_error_result_validates():
-    """Result passes validation."""
-    result = error_result(ERROR_BUILD_FAILED, 1, 23, '/path/to/log', './mvnw clean verify')
-    valid, missing = validate_result(result)
-    assert valid
-    assert missing == []
-
-
 def test_timeout_result_basic():
     """Returns dict with all required fields."""
     result = timeout_result(300, 300, '/path/to/log', './mvnw clean verify')
@@ -321,83 +305,74 @@ def test_timeout_result_extra_fields():
     assert result['wrapper'] == './mvnw'
 
 
-def test_timeout_result_validates():
-    """Result passes validation."""
-    result = timeout_result(300, 300, '/path/to/log', './mvnw clean verify')
+#: Every constructor's own output, so validation is asserted against what the
+#: module actually emits rather than against a hand-written stand-in.
+_CONSTRUCTED_RESULTS = [
+    success_result(45, '/path/to/log', './mvnw clean verify'),
+    error_result(ERROR_BUILD_FAILED, 1, 23, '/path/to/log', './mvnw clean verify'),
+    timeout_result(300, 300, '/path/to/log', './mvnw clean verify'),
+]
+
+_CONSTRUCTED_RESULT_IDS = ['success_result', 'error_result', 'timeout_result']
+
+
+@pytest.mark.parametrize('result', _CONSTRUCTED_RESULTS, ids=_CONSTRUCTED_RESULT_IDS)
+def test_every_constructor_emits_a_valid_result(result):
     valid, missing = validate_result(result)
+
     assert valid
     assert missing == []
 
 
-def test_validate_result_valid():
-    """Returns True for valid result."""
-    result = {
-        'status': 'success',
-        'exit_code': 0,
-        'duration_seconds': 45,
-        'log_file': '/path/to/log',
-        'command': './mvnw clean verify',
-    }
-    valid, missing = validate_result(result)
-    assert valid
-    assert missing == []
+#: A result carrying every required field, reused by the rows that must PASS.
+_COMPLETE_RESULT = {
+    'status': 'success',
+    'exit_code': 0,
+    'duration_seconds': 45,
+    'log_file': '/path/to/log',
+    'command': './mvnw clean verify',
+}
+
+#: ``(candidate, valid?, the fields reported missing)``. The missing list is
+#: stated in full rather than probed for membership, so a row also pins the
+#: alphabetical ordering the caller renders.
+_VALIDATE_RESULT_CASES = [
+    (_COMPLETE_RESULT, True, []),
+    ({**_COMPLETE_RESULT, 'extra': 'field'}, True, []),
+    ({key: value for key, value in _COMPLETE_RESULT.items() if key != 'command'}, False, ['command']),
+    (
+        {'status': 'success'},
+        False,
+        ['command', 'duration_seconds', 'exit_code', 'log_file'],
+    ),
+    ({}, False, ['command', 'duration_seconds', 'exit_code', 'log_file', 'status']),
+    ('not a dict', False, ['command', 'duration_seconds', 'exit_code', 'log_file', 'status']),
+]
+
+_VALIDATE_RESULT_IDS = [
+    'every-required-field-present',
+    'extra-fields-do-not-affect-validation',
+    'one-field-missing',
+    'four-fields-missing',
+    'empty-dict',
+    'not-a-dict-at-all',
+]
 
 
-def test_validate_result_missing_one():
-    """Returns False with one missing field."""
-    result = {
-        'status': 'success',
-        'exit_code': 0,
-        'duration_seconds': 45,
-        'log_file': '/path/to/log',
-    }
-    valid, missing = validate_result(result)
-    assert not valid
-    assert missing == ['command']
+@pytest.mark.parametrize(
+    'candidate,expected_valid,expected_missing',
+    _VALIDATE_RESULT_CASES,
+    ids=_VALIDATE_RESULT_IDS,
+)
+def test_validate_result(candidate, expected_valid: bool, expected_missing: list[str]):
+    valid, missing = validate_result(candidate)
 
-
-def test_validate_result_missing_multiple():
-    """Returns False with multiple missing fields."""
-    result = {'status': 'success'}
-    valid, missing = validate_result(result)
-    assert not valid
-    assert 'command' in missing
-    assert 'duration_seconds' in missing
-    assert 'exit_code' in missing
-    assert 'log_file' in missing
-
-
-def test_validate_result_empty():
-    """Returns False for empty dict."""
-    valid, missing = validate_result({})
-    assert not valid
-    assert len(missing) == 5
-
-
-def test_validate_result_non_dict():
-    """Returns False for non-dict."""
-    valid, missing = validate_result('not a dict')
-    assert not valid
-    assert len(missing) == 5
+    assert bool(valid) is expected_valid
+    assert missing == expected_missing
 
 
 def test_validate_result_missing_sorted():
     """Missing fields are sorted alphabetically."""
-    result = {'status': 'success'}
-    valid, missing = validate_result(result)
+    _valid, missing = validate_result({'status': 'success'})
+
     assert missing == sorted(missing)
-
-
-def test_validate_result_extra_fields_ok():
-    """Extra fields don't affect validation."""
-    result = {
-        'status': 'success',
-        'exit_code': 0,
-        'duration_seconds': 45,
-        'log_file': '/path/to/log',
-        'command': './mvnw clean verify',
-        'extra': 'field',
-    }
-    valid, missing = validate_result(result)
-    assert valid
-    assert missing == []

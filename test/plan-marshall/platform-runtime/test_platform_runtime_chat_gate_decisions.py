@@ -16,14 +16,22 @@ notice.
 
 from __future__ import annotations
 
+from typing import Any
+
 import _chat_gate_decisions as _mod
 import _chat_signal_reducer as _reducer
+import pytest
 
 REFUSAL = "The user doesn't want to proceed with this tool use. The tool use was rejected."
 
 
-def _result_block(use_id: str, content) -> list[dict]:
-    """One ``tool_result`` block, whose payload may be a string or a block list."""
+def _result_block(use_id: Any, content: Any) -> list[dict]:
+    """One ``tool_result`` block, whose payload may be a string or a block list.
+
+    ``use_id`` is deliberately untyped: one row below hands it an UNHASHABLE
+    value, because a malformed id must be skipped rather than raise out of the
+    membership test and take the whole transcript down with it.
+    """
     return [{'type': 'tool_result', 'tool_use_id': use_id, 'content': content}]
 
 
@@ -31,78 +39,98 @@ def _text_blocks(*texts: str) -> list[dict[str, str]]:
     return [{'type': 'text', 'text': t} for t in texts]
 
 
+#: ``(a tool_result payload, the text it flattens to)``. A payload arrives as a
+#: bare string or as a list of typed blocks, and the rows walk what the list form
+#: can contain: text blocks joined by a newline, a block carrying no text at all,
+#: an entry that is not a dict, and a ``text`` value that is not a string. The
+#: last two rows are shapes the schema does not describe — neither is a payload,
+#: and both flatten to nothing rather than raising.
+_FLATTEN_CASES = [
+    ('plain output', 'plain output'),
+    (_text_blocks('first', 'second'), 'first\nsecond'),
+    ([{'type': 'image'}, {'type': 'text', 'text': 'kept'}, 'not-a-dict'], 'kept'),
+    ([{'type': 'text', 'text': 42}], ''),
+    (None, ''),
+    (17, ''),
+]
+
+_FLATTEN_IDS = [
+    'bare-string-returned-verbatim',
+    'block-list-joined-by-newline',
+    'textless-and-non-dict-blocks-are-skipped',
+    'non-string-text-is-skipped',
+    'none-is-not-a-payload',
+    'an-integer-is-not-a-payload',
+]
+
+
 class TestFlattenToolResult:
-    def test_bare_string_payload_returned_verbatim(self):
-        assert _mod.flatten_tool_result('plain output') == 'plain output'
-
-    def test_block_list_joined_by_newline(self):
-        assert _mod.flatten_tool_result(_text_blocks('first', 'second')) == 'first\nsecond'
-
-    def test_blocks_without_text_are_skipped(self):
-        content = [{'type': 'image'}, {'type': 'text', 'text': 'kept'}, 'not-a-dict']
-        assert _mod.flatten_tool_result(content) == 'kept'
-
-    def test_non_string_text_is_skipped(self):
-        assert _mod.flatten_tool_result([{'type': 'text', 'text': 42}]) == ''
-
-    def test_unknown_shapes_yield_empty_string(self):
-        assert _mod.flatten_tool_result(None) == ''
-        assert _mod.flatten_tool_result(17) == ''
+    @pytest.mark.parametrize(('content', 'expected'), _FLATTEN_CASES, ids=_FLATTEN_IDS)
+    def test_a_payload_flattens_to_its_text(self, content, expected):
+        """Every payload shape flattens to text, and an unknown one to nothing."""
+        assert _mod.flatten_tool_result(content) == expected
 
 
-class TestDecisionToolUseIds:
-    def test_collects_ids_of_the_decision_tool_only(self):
-        content = [
+#: ``(assistant content, the decision tool-use ids it yields)``. Only the first
+#: row yields an id; every other row is a near-miss that must NOT, because a
+#: spurious id makes any later result answering it register as an operator
+#: decision — a synthetic input raising a counter of operator signal.
+#:
+#: The near-misses are: a block with no id, an empty id and a non-string id;
+#: content that is not a list at all (the witnesses are deliberately
+#: non-iterable and dict-shaped, since a bare string is iterable and would be
+#: filtered by the per-block dict check rather than by the list guard, and so
+#: could not discriminate); a NAMESPACED tool whose name merely CONTAINS the
+#: decision tool's, which a substring comparison would admit; and a
+#: differently-TYPED block carrying the right name, which pins that the type
+#: narrows the scan independently of the name.
+_DECISION_ID_CASES = [
+    (
+        [
             {'type': 'tool_use', 'name': _mod.OPERATOR_DECISION_TOOL, 'id': 'tu_ask'},
             {'type': 'tool_use', 'name': 'Bash', 'id': 'tu_bash'},
-        ]
-        assert _mod.decision_tool_use_ids(content) == {'tu_ask'}
-
-    def test_ignores_malformed_and_idless_blocks(self):
-        content = [
+        ],
+        {'tu_ask'},
+    ),
+    (
+        [
             {'type': 'tool_use', 'name': _mod.OPERATOR_DECISION_TOOL},
             {'type': 'tool_use', 'name': _mod.OPERATOR_DECISION_TOOL, 'id': ''},
             {'type': 'tool_use', 'name': _mod.OPERATOR_DECISION_TOOL, 'id': 7},
-        ]
-        assert _mod.decision_tool_use_ids(content) == set()
-
-    def test_non_list_content_yields_no_ids(self):
-        """A non-list payload has no blocks to scan.
-
-        The witnesses are deliberately non-iterable and dict-shaped: a bare
-        string is iterable, so it is filtered by the per-block dict check
-        rather than by the list guard, and cannot discriminate.
-        """
-        assert _mod.decision_tool_use_ids(None) == set()
-        assert _mod.decision_tool_use_ids({'type': 'tool_use', 'id': 'x'}) == set()
-
-    def test_the_tool_name_must_match_exactly(self):
-        """A namespaced tool merely CONTAINING the name is not the decision tool.
-
-        A substring comparison would admit `mcp__srv__AskUserQuestion`, and any
-        later result answering that id would score a gate decision — a
-        synthetic input raising an operator-signal counter.
-        """
-        content = [{
+        ],
+        set(),
+    ),
+    (None, set()),
+    ({'type': 'tool_use', 'id': 'x'}, set()),
+    (
+        [{
             'type': 'tool_use',
             'name': f'mcp__srv__{_mod.OPERATOR_DECISION_TOOL}',
             'id': 'tu_x',
-        }]
-        assert _mod.decision_tool_use_ids(content) == set()
+        }],
+        set(),
+    ),
+    (
+        [{'type': 'mcp_tool_use', 'name': _mod.OPERATOR_DECISION_TOOL, 'id': 'mcp_1'}],
+        set(),
+    ),
+]
 
-    def test_only_tool_use_blocks_are_scanned(self):
-        """The block type narrows the scan, independently of the tool name.
+_DECISION_ID_IDS = [
+    'the-decision-tools-id-only',
+    'absent-empty-and-non-string-ids',
+    'content-is-not-a-list',
+    'content-is-a-bare-block-not-a-list',
+    'a-namespaced-tool-is-not-the-decision-tool',
+    'a-differently-typed-block-is-not-scanned',
+]
 
-        A differently-typed block bearing the same name must not contribute an
-        id — a spurious id makes any later result answering it register as a
-        gate decision.
-        """
-        content = [{
-            'type': 'mcp_tool_use',
-            'name': _mod.OPERATOR_DECISION_TOOL,
-            'id': 'mcp_1',
-        }]
-        assert _mod.decision_tool_use_ids(content) == set()
+
+class TestDecisionToolUseIds:
+    @pytest.mark.parametrize(('content', 'expected'), _DECISION_ID_CASES, ids=_DECISION_ID_IDS)
+    def test_only_the_decision_tools_own_ids_are_collected(self, content, expected):
+        """An id is collected only from a ``tool_use`` block naming the decision tool."""
+        assert _mod.decision_tool_use_ids(content) == expected
 
 
 class TestPublishedConstants:
@@ -117,79 +145,65 @@ class TestPublishedConstants:
         assert _mod.OPERATOR_DECISION_ROLE != 'user'
 
 
+#: ``(blocks, the known decision tool-use ids, the decisions extracted)``. Two
+#: shapes count as a decision and everything else must not, because this counter
+#: has to fail toward NOT counting: a synthetic input that raises it flips the
+#: run's ``no_signal`` verdict on no operator signal at all.
+#:
+#: The two counting rows are an answer to the decision tool (matched by id) and a
+#: refusal notice that IS the payload. The third row is the same notice QUOTED
+#: mid-payload — the reducer runs over this project's own sessions, so a read of
+#: the module declaring these markers would otherwise score a decision. The
+#: fourth re-cases the notice, since a case-insensitive compare admits prose that
+#: merely quotes the wording.
+#:
+#: The fifth row runs the other way and is the only one that must NOT
+#: under-count: ``flatten_tool_result`` joins blocks with a newline, so a leading
+#: empty block shifts the marker off position zero, and without leading-whitespace
+#: tolerance a real refusal is lost. The rest are non-decisions: a payload that
+#: flattens to whitespace (emptiness is judged after stripping, not by bare
+#: falsiness); ordinary tool output; a differently-TYPED block that carries a
+#: ``content`` key, so it would flatten to a refusal under a missing type guard;
+#: and an unhashable id, whose membership test would raise and take down the whole
+#: transcript rather than skipping one block.
+_GATE_DECISION_CASES = [
+    (_result_block('tu_ask', 'Option B'), {'tu_ask'}, ['Option B']),
+    (_result_block('tu_1', REFUSAL), set(), [REFUSAL]),
+    (_result_block('tu_1', f'MARKERS = (\n    "{REFUSAL}",\n)\n'), set(), []),
+    (
+        _result_block(
+            't', "the user doesn't want to proceed with this tool use — quoted in a doc"
+        ),
+        set(),
+        [],
+    ),
+    (_result_block('tu_1', _text_blocks('', REFUSAL)), set(), [f'\n{REFUSAL}']),
+    (_result_block('tu_ask', _text_blocks('', ' ')), {'tu_ask'}, []),
+    (_result_block('tu_1', 'ruff: All checks passed!'), set(), []),
+    ([{'type': 'text', 'text': 'hello', 'content': REFUSAL}], set(), []),
+    (_result_block(['not', 'hashable'], 'Option A'), {'tu_ask'}, []),
+]
+
+_GATE_DECISION_IDS = [
+    'an-answer-to-the-decision-tool',
+    'a-verbatim-refusal-notice',
+    'the-notice-quoted-mid-payload',
+    'the-notice-in-another-case',
+    'a-refusal-behind-a-leading-empty-block',
+    'a-payload-that-flattens-to-whitespace',
+    'ordinary-tool-output',
+    'a-non-tool-result-block-carrying-content',
+    'an-unhashable-tool-use-id',
+]
+
+
 class TestExtractGateDecisions:
-    def test_answering_the_decision_tool_is_a_decision(self):
-        blocks = _result_block('tu_ask', 'Option B')
-        assert _mod.extract_gate_decisions(blocks, {'tu_ask'}) == ['Option B']
-
-    def test_verbatim_refusal_is_a_decision(self):
-        assert _mod.extract_gate_decisions(_result_block('tu_1', REFUSAL), set()) == [REFUSAL]
-
-    def test_refusal_quoted_mid_payload_is_not_a_decision(self):
-        """The notice must BE the payload, not appear inside it.
-
-        The reducer runs over this project's own sessions, so a read of the
-        module declaring these markers would otherwise score an operator
-        decision.
-        """
-        quoted = f'MARKERS = (\n    "{REFUSAL}",\n)\n'
-        assert _mod.extract_gate_decisions(_result_block('tu_1', quoted), set()) == []
-
-    def test_refusal_matching_is_case_sensitive(self):
-        """The notices are verbatim harness strings, matched as written.
-
-        A case-insensitive compare admits prose that merely quotes the wording
-        in another case — a synthetic input raising `gate_decision_count` and
-        flipping `no_signal`. This is the gate-side twin of the provenance
-        notice comparison.
-        """
-        quoted = "the user doesn't want to proceed with this tool use — quoted in a doc"
-        assert _mod.extract_gate_decisions(_result_block('t', quoted), set()) == []
-
-    def test_refusal_survives_a_leading_empty_block(self):
-        """A multi-block payload puts a newline in front of the notice.
-
-        `flatten_tool_result` joins blocks with a newline, so a first empty
-        block shifts the marker off position zero. Without leading-whitespace
-        tolerance the decision is lost — under-counting operator signal, which
-        drives the verdict toward a false `no_signal: true`.
-        """
-        blocks = _result_block('tu_1', _text_blocks('', REFUSAL))
-        assert _mod.extract_gate_decisions(blocks, set()) == [f'\n{REFUSAL}']
-
-    def test_whitespace_only_payload_is_not_a_decision(self):
-        """Emptiness is judged after stripping, not by bare falsiness.
-
-        A multi-block payload of empty and blank blocks flattens to whitespace,
-        which is not an operator decision. Counting it would let a synthetic
-        input raise an operator-signal counter — what this module exists to
-        prevent.
-        """
-        blocks = _result_block('tu_ask', _text_blocks('', ' '))
-        assert _mod.extract_gate_decisions(blocks, {'tu_ask'}) == []
-
-    def test_ordinary_tool_output_is_not_a_decision(self):
-        blocks = _result_block('tu_1', 'ruff: All checks passed!')
-        assert _mod.extract_gate_decisions(blocks, set()) == []
-
-    def test_non_tool_result_blocks_are_ignored(self):
-        """The block TYPE decides, not whether a payload happens to be present.
-
-        The witness carries a `content` key so it would flatten to a refusal
-        under a missing type guard; a block without one is dropped by the
-        emptiness check instead and cannot tell the two apart.
-        """
-        content = [{'type': 'text', 'text': 'hello', 'content': REFUSAL}]
-        assert _mod.extract_gate_decisions(content, set()) == []
-
-    def test_unhashable_tool_use_id_is_not_a_decision(self):
-        """A malformed id must not abort the reduction.
-
-        Membership-testing an unhashable id raises, which would take down the
-        whole transcript rather than skipping one block.
-        """
-        blocks = _result_block(['not', 'hashable'], 'Option A')
-        assert _mod.extract_gate_decisions(blocks, {'tu_ask'}) == []
+    @pytest.mark.parametrize(
+        ('blocks', 'decision_ids', 'expected'), _GATE_DECISION_CASES, ids=_GATE_DECISION_IDS
+    )
+    def test_only_a_real_operator_decision_is_extracted(self, blocks, decision_ids, expected):
+        """Two shapes count — an answer to the decision tool, and a verbatim refusal."""
+        assert _mod.extract_gate_decisions(blocks, decision_ids) == expected
 
     def test_every_refusal_marker_is_recognised(self):
         """Each marker is named as a literal, never read back from the constant.

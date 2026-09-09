@@ -9,6 +9,8 @@ import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
+
 from conftest import _MARKETPLACE_SCRIPT_DIRS, MARKETPLACE_ROOT, PROJECT_ROOT, PlanContext, get_scripts_dir
 
 
@@ -113,46 +115,57 @@ def test_resolve_all_mappings():
     assert 'test:skill' in executor.SCRIPTS
 
 
-def test_extract_audit_plan_id_space_separated():
-    """Extract --audit-plan-id with space-separated value."""
+@pytest.mark.parametrize(
+    ('argv', 'expected_plan_id', 'expected_cleaned'),
+    [
+        (
+            ['--audit-plan-id', 'my-plan', '--include-descriptions'],
+            'my-plan',
+            ['--include-descriptions'],
+        ),
+        (
+            ['--audit-plan-id=my-plan', '--bundles', 'planning'],
+            'my-plan',
+            ['--bundles', 'planning'],
+        ),
+        (
+            ['verb', '--audit-plan-id', 'test-plan', '--flag', 'value', '--other'],
+            'test-plan',
+            ['verb', '--flag', 'value', '--other'],
+        ),
+        (
+            ['--bundles', 'pm-dev-java', '--audit-plan-id', 'end-plan'],
+            'end-plan',
+            ['--bundles', 'pm-dev-java'],
+        ),
+        (
+            ['--plan-id', 'my-plan', '--flag'],
+            None,
+            ['--plan-id', 'my-plan', '--flag'],
+        ),
+    ],
+    ids=[
+        'space-separated-value',
+        'equals-joined-value',
+        'surrounding-args-are-preserved',
+        'flag-at-the-end-of-argv',
+        'flag-absent-leaves-argv-unchanged',
+    ],
+)
+def test_extract_audit_plan_id(argv, expected_plan_id, expected_cleaned):
+    """The executor's own flag is lifted out and every other token is preserved.
+
+    Both spellings (space-separated and ``=``-joined) yield the same plan id, and
+    the flag is found wherever it sits in argv. The final row is the matched
+    negative control: a DIFFERENT flag whose name contains ``plan-id`` must not be
+    consumed, so the returned id is ``None`` and argv comes back untouched.
+    """
     executor = load_executor_module()
-    plan_id, cleaned = executor.extract_audit_plan_id(['--audit-plan-id', 'my-plan', '--include-descriptions'])
-    assert plan_id == 'my-plan', f"Expected 'my-plan', got {plan_id}"
-    assert cleaned == ['--include-descriptions'], f"Expected ['--include-descriptions'], got {cleaned}"
 
+    plan_id, cleaned = executor.extract_audit_plan_id(argv)
 
-def test_extract_audit_plan_id_equals_format():
-    """Extract --audit-plan-id=value format."""
-    executor = load_executor_module()
-    plan_id, cleaned = executor.extract_audit_plan_id(['--audit-plan-id=my-plan', '--bundles', 'planning'])
-    assert plan_id == 'my-plan', f"Expected 'my-plan', got {plan_id}"
-    assert cleaned == ['--bundles', 'planning'], f"Expected ['--bundles', 'planning'], got {cleaned}"
-
-
-def test_extract_audit_plan_id_not_present():
-    """No audit-plan-id returns None and unchanged args."""
-    executor = load_executor_module()
-    plan_id, cleaned = executor.extract_audit_plan_id(['--plan-id', 'my-plan', '--flag'])
-    assert plan_id is None, f'Expected None, got {plan_id}'
-    assert cleaned == ['--plan-id', 'my-plan', '--flag'], 'Args should be unchanged'
-
-
-def test_extract_audit_plan_id_preserves_other_args():
-    """audit-plan-id extraction preserves all other arguments."""
-    executor = load_executor_module()
-    plan_id, cleaned = executor.extract_audit_plan_id(
-        ['verb', '--audit-plan-id', 'test-plan', '--flag', 'value', '--other']
-    )
-    assert plan_id == 'test-plan', f"Expected 'test-plan', got {plan_id}"
-    assert cleaned == ['verb', '--flag', 'value', '--other'], 'Other args should be preserved'
-
-
-def test_extract_audit_plan_id_at_end():
-    """audit-plan-id at end of args."""
-    executor = load_executor_module()
-    plan_id, cleaned = executor.extract_audit_plan_id(['--bundles', 'pm-dev-java', '--audit-plan-id', 'end-plan'])
-    assert plan_id == 'end-plan', f"Expected 'end-plan', got {plan_id}"
-    assert cleaned == ['--bundles', 'pm-dev-java'], f"Expected ['--bundles', 'pm-dev-java'], got {cleaned}"
+    assert plan_id == expected_plan_id
+    assert cleaned == expected_cleaned
 
 
 def test_successful_script_execution():
@@ -208,32 +221,33 @@ print(json.dumps(sys.argv[1:]))
         assert received_args == args, f'Expected {args}, got {received_args}'
 
 
-def test_skip_logging_for_manage_log_success():
-    """Skip logging for successful manage-log calls (avoids meta-logging noise)."""
+@pytest.mark.parametrize(
+    ('notation', 'exit_code', 'expected_skip'),
+    [
+        ('plan-marshall:manage-logging:manage-logging', 0, True),
+        ('plan-marshall:manage-logging:manage-logging', 1, False),
+        ('plan-marshall:manage-files', 0, False),
+        ('plan-marshall:manage-files', 1, False),
+    ],
+    ids=[
+        'manage-logging-success-is-skipped',
+        'manage-logging-failure-is-logged',
+        'normal-script-success-is-logged',
+        'normal-script-failure-is-logged',
+    ],
+)
+def test_should_skip_logging(notation, exit_code, expected_skip):
+    """Only a SUCCESSFUL manage-logging dispatch is skipped — nothing else.
+
+    The full cross-product of the two axes, because the skip is the conjunction
+    of both: skipping a successful manage-logging call avoids meta-logging noise,
+    but a FAILING one must still be logged, and an ordinary script is logged
+    whatever its exit code. Three of the four rows are the controls that stop the
+    predicate collapsing onto either axis alone.
+    """
     executor = load_executor_module()
-    result = executor.should_skip_logging('plan-marshall:manage-logging:manage-logging', exit_code=0)
-    assert result is True, 'Should skip logging for successful manage-log calls'
 
-
-def test_log_manage_log_on_error():
-    """Log manage-log calls when they fail (errors should be logged)."""
-    executor = load_executor_module()
-    result = executor.should_skip_logging('plan-marshall:manage-logging:manage-logging', exit_code=1)
-    assert result is False, 'Should log manage-log calls when they fail'
-
-
-def test_log_normal_scripts_success():
-    """Log normal scripts even on success."""
-    executor = load_executor_module()
-    result = executor.should_skip_logging('plan-marshall:manage-files', exit_code=0)
-    assert result is False, 'Should log normal script calls'
-
-
-def test_log_normal_scripts_failure():
-    """Log normal scripts on failure."""
-    executor = load_executor_module()
-    result = executor.should_skip_logging('plan-marshall:manage-files', exit_code=1)
-    assert result is False, 'Should log normal script calls on failure'
+    assert executor.should_skip_logging(notation, exit_code=exit_code) is expected_skip
 
 
 def test_generate_script_help():
@@ -275,36 +289,45 @@ def test_verify_script_help():
 # newlines collapsed so the entry stays single-line. These tests pin each
 # precedence rung; the boundary-level behaviour (recursion guard, plan-id
 # fallback) lives in test_dispatch_boundary_error.py and is not duplicated here.
-def test_derive_detail_precedence1_status_error_toon_message():
-    """Precedence (1): a status: error TOON on stdout yields its message field.
+@pytest.mark.parametrize(
+    ('stdout', 'stderr', 'expected_detail'),
+    [
+        (
+            'status: error\nmessage: plan not found: ghost-plan\nerror_type: plan_not_found',
+            '',
+            'plan not found: ghost-plan',
+        ),
+        (
+            'status: error\nmessage: structured reason from stdout',
+            'incidental noise on stderr',
+            'structured reason from stdout',
+        ),
+        ('', 'segfault: core dumped', 'segfault: core dumped'),
+        ('', '', ''),
+        ('   \n  ', '\t', ''),
+    ],
+    ids=[
+        'stdout-error-toon-message-is-the-detail',
+        'stdout-message-outranks-a-non-empty-stderr',
+        'stderr-is-the-last-resort-when-stdout-is-empty',
+        'both-streams-empty-yields-an-empty-detail',
+        'whitespace-only-streams-collapse-to-empty',
+    ],
+)
+def test_derive_failure_detail_precedence(stdout, stderr, expected_detail):
+    """The detail is the reason the script itself reported, wherever it reported it.
 
-    This is the core regression: a script that reports ``status: error`` +
-    ``message: ...`` on stdout (exiting non-zero with empty stderr) must have
-    that message surfaced as the detail, NOT a blank string.
+    Precedence (1) is the core regression: a script reporting ``status: error`` +
+    ``message:`` on stdout while exiting non-zero with EMPTY stderr must surface
+    that message, and it outranks a non-empty stderr (option-A — always prefer
+    the script's own structured reason). Precedence (3) uses stderr only when
+    stdout is empty, covering the genuine stderr-only crash. Both-empty — and
+    whitespace-only, which collapses to the same thing — is the ONLY case where a
+    blank diagnostic is legitimate.
     """
     executor = load_executor_module()
 
-    stdout = 'status: error\nmessage: plan not found: ghost-plan\nerror_type: plan_not_found'
-    detail = executor._derive_failure_detail(stdout, '')
-
-    assert detail == 'plan not found: ghost-plan', (
-        f'Expected the TOON message field as detail, got {detail!r}'
-    )
-
-
-def test_derive_detail_precedence1_prefers_stdout_message_over_stderr():
-    """Precedence (1) beats stderr: even when stderr is non-empty, a parseable
-    status: error TOON message on stdout wins (option-A — always prefer the
-    reason the script itself reported)."""
-    executor = load_executor_module()
-
-    stdout = 'status: error\nmessage: structured reason from stdout'
-    stderr = 'incidental noise on stderr'
-    detail = executor._derive_failure_detail(stdout, stderr)
-
-    assert detail == 'structured reason from stdout', (
-        f'Expected stdout TOON message to take precedence over stderr, got {detail!r}'
-    )
+    assert executor._derive_failure_detail(stdout, stderr) == expected_detail
 
 
 def test_derive_detail_precedence2_raw_stdout_when_not_structured():
@@ -333,28 +356,6 @@ def test_derive_detail_precedence2_status_ok_toon_is_raw_stdout():
 
     # The whole raw stdout is surfaced (precedence 2), not just the message field.
     assert 'status: success' in detail, f'Expected raw stdout for non-error TOON, got {detail!r}'
-
-
-def test_derive_detail_precedence3_stderr_only_when_stdout_empty():
-    """Precedence (3): stderr is the last-resort source, used ONLY when stdout is
-    empty. Covers the genuine stderr-only crash case."""
-    executor = load_executor_module()
-
-    detail = executor._derive_failure_detail('', 'segfault: core dumped')
-
-    assert detail == 'segfault: core dumped', (
-        f'Expected stderr to be used when stdout is empty, got {detail!r}'
-    )
-
-
-def test_derive_detail_empty_when_both_streams_empty():
-    """When both stdout and stderr are empty the detail is the empty string —
-    the only case where a blank diagnostic is legitimate."""
-    executor = load_executor_module()
-
-    assert executor._derive_failure_detail('', '') == '', 'Both-empty case must yield empty detail'
-    # Whitespace-only streams collapse to empty too.
-    assert executor._derive_failure_detail('   \n  ', '\t') == '', 'Whitespace-only streams must yield empty detail'
 
 
 def test_derive_detail_truncates_oversized_chosen_stream():
@@ -1292,68 +1293,43 @@ _ROUTER_SURFACE = {
 }
 
 
-def test_value_taking_top_level_flag_before_the_verb_spawns():
-    """Named positive control — the exact reported invocation shape.
+@pytest.mark.parametrize(
+    'argv',
+    [
+        ['--project-dir', '.', 'find', '--pattern', '*.md'],
+        ['--verbose', 'find', '--pattern', '*.md'],
+        ['--project-dir=.', 'find', '--pattern', '*.md'],
+        ['--coords', '3', '4', 'find', '--pattern', '*.md'],
+    ],
+    ids=[
+        'value-taking-flag-consumes-one-token',
+        'bare-switch-consumes-no-token',
+        'equals-joined-flag-consumes-no-token',
+        'two-token-flag-value-is-stepped-over',
+    ],
+)
+def test_top_level_flag_before_the_verb_does_not_desynchronise_the_walk(argv):
+    """Each root-flag shape consumes exactly its own tokens, then the verb runs.
 
-    Live form (against the real executor):
+    The ``value-taking-flag`` row is the reported invocation shape. Live form
+    (against the real executor):
       ``plan-marshall:manage-architecture:architecture --project-dir . find
       --pattern "*.template"`` — refused pre-fix with
       ``reason: unknown_flag / rejected: --pattern / accepted: content, pre``.
       The ``accepted`` set was the tell: it is the ROOT's flag set, proving the
       walk never reached the ``find`` node.
+
+    The other three rows are the shapes an implementation that assumed "every
+    leading flag takes a value" gets wrong in the opposite direction — a bare
+    switch or an ``=``-joined flag binds NO following token, and an ``nargs=2``
+    flag binds exactly two. Getting any of them wrong swallows the verb.
     """
     with tempfile.TemporaryDirectory() as tmp:
-        result, marker = _dispatch(
-            Path(tmp), _ROUTER_SURFACE, ['--project-dir', '.', 'find', '--pattern', '*.md']
-        )
+        result, marker = _dispatch(Path(tmp), _ROUTER_SURFACE, argv)
 
         assert marker.exists(), (
             f'a valid call was refused because a top-level flag preceded the '
             f'verb: {result.stdout!r}'
-        )
-
-    assert result.returncode == 0
-
-
-def test_bare_top_level_flag_before_the_verb_spawns():
-    """A zero-arity root switch must NOT swallow the verb that follows it."""
-    with tempfile.TemporaryDirectory() as tmp:
-        result, marker = _dispatch(
-            Path(tmp), _ROUTER_SURFACE, ['--verbose', 'find', '--pattern', '*.md']
-        )
-
-        assert marker.exists(), (
-            f'a bare top-level switch consumed the verb behind it: {result.stdout!r}'
-        )
-
-    assert result.returncode == 0
-
-
-def test_equals_joined_top_level_flag_before_the_verb_spawns():
-    """``--flag=value`` binds no following token, whatever its arity says."""
-    with tempfile.TemporaryDirectory() as tmp:
-        result, marker = _dispatch(
-            Path(tmp), _ROUTER_SURFACE, ['--project-dir=.', 'find', '--pattern', '*.md']
-        )
-
-        assert marker.exists(), (
-            f'the =-joined form of a routing flag was mishandled: {result.stdout!r}'
-        )
-
-    assert result.returncode == 0
-
-
-def test_multi_token_flag_value_before_the_verb_is_stepped_over():
-    """An ``nargs=2`` root flag consumes exactly two tokens, then the verb runs."""
-    with tempfile.TemporaryDirectory() as tmp:
-        result, marker = _dispatch(
-            Path(tmp),
-            _ROUTER_SURFACE,
-            ['--coords', '3', '4', 'find', '--pattern', '*.md'],
-        )
-
-        assert marker.exists(), (
-            f'a two-token flag value desynchronised the walk: {result.stdout!r}'
         )
 
     assert result.returncode == 0

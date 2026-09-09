@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 import _build_parse as _build_parse_mod
 import _build_shared as _build_shared_mod
+import pytest
 
 Issue = _build_parse_mod.Issue
 UnitTestSummary = _build_parse_mod.UnitTestSummary
@@ -69,138 +70,183 @@ def _command_parser(log_file, command):
     return issues, None, 'FAILURE'
 
 
-class TestCmdRunCommonSuccess:
-    """Tests for successful build result routing."""
-
-    def test_success_returns_zero(self):
-        result = _make_result(status='success')
-        rc = cmd_run_common(result, _noop_parser, 'maven')
-        assert rc == 0
-
-    def test_success_prints_toon_output(self, capsys):
-        result = _make_result(status='success')
-        cmd_run_common(result, _noop_parser, 'maven')
-        stdout = capsys.readouterr().out
-        assert 'success' in stdout
-
-    def test_success_prints_exec_to_stderr(self, capsys):
-        result = _make_result(status='success', command='./mvnw clean verify')
-        cmd_run_common(result, _noop_parser, 'maven')
-        stderr = capsys.readouterr().err
-        assert '[EXEC] ./mvnw clean verify' in stderr
+def _broken_parser(log_file):
+    """Parser that raises — the routing must survive it and still report."""
+    raise RuntimeError('parser crashed')
 
 
-class TestCmdRunCommonTimeout:
-    """Tests for timeout result routing."""
-
-    def test_timeout_returns_zero(self):
-        """Timeout is modeled in TOON output, not exit code."""
-        result = _make_result(status='timeout', exit_code=-1, error='timed out', timeout_used=300)
-        rc = cmd_run_common(result, _noop_parser, 'maven')
-        assert rc == 0
-
-    def test_timeout_prints_timeout_status(self, capsys):
-        result = _make_result(status='timeout', exit_code=-1, error='timed out', timeout_used=300)
-        cmd_run_common(result, _noop_parser, 'maven')
-        stdout = capsys.readouterr().out
-        assert 'timeout' in stdout
+#: The three build outcomes the routing distinguishes, built once and shared by
+#: the exit-code and stdout tables so the two read as views of the same set.
+_SUCCESS_RESULT = _make_result(status='success')
+_TIMEOUT_RESULT = _make_result(status='timeout', exit_code=-1, error='timed out', timeout_used=300)
+_WRAPPER_MISSING_RESULT = _make_result(status='error', exit_code=-1, error='Maven wrapper not found')
+_LOG_FILE_FAILED_RESULT = _make_result(status='error', exit_code=-1, error='Failed to create log file')
+_BUILD_FAILED_RESULT = _make_result(status='error', exit_code=1, error='Build failed')
 
 
-class TestCmdRunCommonExecutionError:
-    """Tests for execution error routing (wrapper not found, log file failed)."""
+#: ``(result, parser, exit code)``. Only an EXECUTION error — the build never
+#: ran — exits non-zero; a timeout and a red build are modelled in the emitted
+#: output, so the caller's exit code stays 0.
+_EXIT_CODE_CASES = [
+    (_SUCCESS_RESULT, _noop_parser, 0),
+    (_TIMEOUT_RESULT, _noop_parser, 0),
+    (_WRAPPER_MISSING_RESULT, _noop_parser, 1),
+    (_BUILD_FAILED_RESULT, _error_parser, 0),
+    (_BUILD_FAILED_RESULT, _broken_parser, 0),
+]
 
-    def test_execution_error_returns_one(self):
-        result = _make_result(status='error', exit_code=-1, error='Maven wrapper not found')
-        rc = cmd_run_common(result, _noop_parser, 'maven')
-        assert rc == 1
-
-    def test_log_file_error_detected(self, capsys):
-        result = _make_result(status='error', exit_code=-1, error='Failed to create log file')
-        cmd_run_common(result, _noop_parser, 'maven')
-        stdout = capsys.readouterr().out
-        assert 'log_file' in stdout
-
-
-class TestCmdRunCommonBuildFailure:
-    """Tests for build failure with log parsing."""
-
-    def test_build_failure_returns_zero(self):
-        """Build failure is modeled in TOON output, not exit code."""
-        result = _make_result(status='error', exit_code=1, error='Build failed')
-        rc = cmd_run_common(result, _error_parser, 'maven')
-        assert rc == 0
-
-    def test_build_failure_includes_errors_in_output(self, capsys):
-        result = _make_result(status='error', exit_code=1, error='Build failed')
-        cmd_run_common(result, _error_parser, 'maven')
-        stdout = capsys.readouterr().out
-        assert 'cannot find symbol' in stdout
-
-    def test_build_failure_includes_test_summary(self, capsys):
-        result = _make_result(status='error', exit_code=1, error='Build failed')
-        cmd_run_common(result, _error_parser, 'maven')
-        stdout = capsys.readouterr().out
-        assert 'passed' in stdout
-        assert '5' in stdout
-
-    def test_parser_exception_still_returns_zero(self):
-        """If parser raises, cmd_run_common still returns 0 — status modeled in output."""
-
-        def broken_parser(log_file):
-            raise RuntimeError('parser crashed')
-
-        result = _make_result(status='error', exit_code=1, error='Build failed')
-        rc = cmd_run_common(result, broken_parser, 'maven')
-        assert rc == 0
-
-    def test_parser_exception_prints_error_output(self, capsys):
-        """If parser raises, output still contains build_failed."""
-
-        def broken_parser(log_file):
-            raise RuntimeError('parser crashed')
-
-        result = _make_result(status='error', exit_code=1, error='Build failed')
-        cmd_run_common(result, broken_parser, 'maven')
-        stdout = capsys.readouterr().out
-        assert 'build_failed' in stdout
+_EXIT_CODE_IDS = [
+    'green-build',
+    'timed-out-build',
+    'execution-error-the-build-never-ran',
+    'red-build-with-a-parseable-log',
+    'red-build-whose-parser-raised',
+]
 
 
-class TestCmdRunCommonParserNeedsCommand:
-    """Tests for parser_needs_command=True (npm-style parsers)."""
-
-    def test_command_passed_to_parser(self, capsys):
-        result = _make_result(status='error', exit_code=1, error='Build failed', command='npm run test')
-        cmd_run_common(result, _command_parser, 'npm', parser_needs_command=True)
-        stdout = capsys.readouterr().out
-        assert 'error in npm run test' in stdout
+@pytest.mark.parametrize('result,parser,expected_rc', _EXIT_CODE_CASES, ids=_EXIT_CODE_IDS)
+def test_cmd_run_common_exit_code(result, parser, expected_rc):
+    # A copy per row: the result dicts are shared between the tables below, and
+    # the routing enriches the payload it is handed.
+    assert cmd_run_common(dict(result), parser, 'maven') == expected_rc
 
 
-class TestCmdRunCommonOutputFormat:
-    """Tests for output format selection (toon vs json)."""
+#: ``(result, parser, extra keyword arguments, fragments stdout must carry,
+#: fragments stdout must NOT carry)``. Every row is the same call and the same
+#: two-way substring check; only the build being reported and what its emitted
+#: output must say vary.
+_STDOUT_CASES = [
+    (_SUCCESS_RESULT, _noop_parser, {}, ['success'], []),
+    (_TIMEOUT_RESULT, _noop_parser, {}, ['timeout'], []),
+    (_LOG_FILE_FAILED_RESULT, _noop_parser, {}, ['log_file'], []),
+    (_BUILD_FAILED_RESULT, _error_parser, {}, ['cannot find symbol'], []),
+    (_BUILD_FAILED_RESULT, _error_parser, {}, ['passed', '5'], []),
+    (_BUILD_FAILED_RESULT, _broken_parser, {}, ['build_failed'], []),
+    (
+        _make_result(status='error', exit_code=1, error='Build failed', command='npm run test'),
+        _command_parser,
+        {'parser_needs_command': True},
+        ['error in npm run test'],
+        [],
+    ),
+    (_SUCCESS_RESULT, _noop_parser, {'output_format': 'json'}, ['"status"', '"success"'], []),
+    (_SUCCESS_RESULT, _noop_parser, {'output_format': 'toon'}, ['status: success'], []),
+    (
+        _BUILD_FAILED_RESULT,
+        _error_parser,
+        {'mode': 'errors'},
+        ['cannot find symbol'],
+        ['deprecated API'],
+    ),
+]
 
-    def test_json_format_produces_json(self, capsys):
-        result = _make_result(status='success')
-        cmd_run_common(result, _noop_parser, 'maven', output_format='json')
-        stdout = capsys.readouterr().out
-        assert '"status"' in stdout
-        assert '"success"' in stdout
+_STDOUT_IDS = [
+    'green-build-reports-success',
+    'timeout-reports-its-status',
+    'log-file-failure-names-the-field',
+    'red-build-carries-the-parsed-error',
+    'red-build-carries-the-test-summary',
+    'a-raising-parser-still-reports-build_failed',
+    'a-command-taking-parser-receives-the-command',
+    'json-format',
+    'toon-format',
+    'errors-mode-suppresses-warnings',
+]
 
-    def test_toon_format_produces_colon_space(self, capsys):
-        result = _make_result(status='success')
-        cmd_run_common(result, _noop_parser, 'maven', output_format='toon')
-        stdout = capsys.readouterr().out
-        assert 'status: success' in stdout
+
+@pytest.mark.parametrize(
+    'result,parser,kwargs,present,absent', _STDOUT_CASES, ids=_STDOUT_IDS
+)
+def test_cmd_run_common_stdout(capsys, result, parser, kwargs, present, absent):
+    cmd_run_common(dict(result), parser, 'maven', **kwargs)
+
+    stdout = capsys.readouterr().out
+    for fragment in present:
+        assert fragment in stdout, stdout
+    for fragment in absent:
+        assert fragment not in stdout, stdout
 
 
-class TestCmdRunCommonModeFiltering:
-    """Tests for mode-based warning filtering."""
+def test_success_prints_exec_to_stderr(capsys):
+    """The command line itself is echoed to stderr, not into the result payload."""
+    result = _make_result(status='success', command='./mvnw clean verify')
 
-    def test_errors_mode_suppresses_warnings(self, capsys):
-        result = _make_result(status='error', exit_code=1, error='Build failed')
-        cmd_run_common(result, _error_parser, 'maven', mode='errors')
-        stdout = capsys.readouterr().out
-        assert 'cannot find symbol' in stdout
-        assert 'deprecated API' not in stdout
+    cmd_run_common(result, _noop_parser, 'maven')
+
+    assert '[EXEC] ./mvnw clean verify' in capsys.readouterr().err
+
+
+#: ``(result, parser, cmd_run_common kwargs, the reconciler's mocked resolved
+#: count, the keyword arguments it must be called with — ``None`` meaning it must
+#: not be called at all)``. The two ``None`` rows are the guards: a red build's
+#: findings are still live, and a plan-less build has no store to reconcile.
+_RECONCILIATION_CASES = [
+    (
+        _make_result(status='success', command='./pw verify'),
+        _noop_parser,
+        {'plan_id': 'my-plan', 'command_args': 'verify'},
+        3,
+        {
+            'plan_id': 'my-plan',
+            'command_str': './pw verify',
+            'analyses': frozenset({'compile', 'lint', 'test'}),
+            'tests_run': None,
+        },
+    ),
+    (
+        _make_result(status='success', command='./pw verify'),
+        _noop_parser,
+        {'plan_id': 'my-plan'},
+        0,
+        {
+            'plan_id': 'my-plan',
+            'command_str': './pw verify',
+            'analyses': None,
+            'tests_run': None,
+        },
+    ),
+    (
+        _make_result(status='success', command='./pw compile'),
+        _noop_parser,
+        {'plan_id': 'my-plan', 'command_args': 'compile'},
+        0,
+        {
+            'plan_id': 'my-plan',
+            'command_str': './pw compile',
+            'analyses': frozenset({'compile'}),
+            'tests_run': 0,
+        },
+    ),
+    (
+        _make_result(status='success', command='./pw verify'),
+        _tests_ran_parser,
+        {'plan_id': 'my-plan', 'command_args': 'verify'},
+        1,
+        {
+            'plan_id': 'my-plan',
+            'command_str': './pw verify',
+            'analyses': frozenset({'compile', 'lint', 'test'}),
+            'tests_run': 5,
+        },
+    ),
+    (_BUILD_FAILED_RESULT, _error_parser, {'plan_id': 'my-plan'}, 0, None),
+    (
+        _make_result(status='success', command='./pw verify'),
+        _noop_parser,
+        {'plan_id': None},
+        0,
+        None,
+    ),
+]
+
+_RECONCILIATION_IDS = [
+    'test-bearing-gate-with-no-summary-reports-an-unknown-count',
+    'no-command-args-reports-an-unknown-analysis-population',
+    'non-test-gate-with-no-summary-reports-a-measured-zero',
+    'a-gate-that-ran-tests-reports-the-executed-count',
+    'a-red-build-reconciles-nothing',
+    'a-plan-less-build-reconciles-nothing',
+]
 
 
 class TestCmdRunCommonGreenBuildReconciliation:
@@ -220,106 +266,48 @@ class TestCmdRunCommonGreenBuildReconciliation:
     derivation in ``test_build_examined_population.py``.
     """
 
-    def test_green_build_with_plan_id_terminalizes_pending_findings(self):
-        """Build succeeds + pending findings present → reconciliation runs and
-        bulk-resolves the pending findings (mocked reconciler reports a non-zero
-        resolved count)."""
-        result = _make_result(status='success', command='./pw verify')
-
+    @pytest.mark.parametrize(
+        'result,parser,kwargs,reconciled_count,expected_call',
+        _RECONCILIATION_CASES,
+        ids=_RECONCILIATION_IDS,
+    )
+    def test_reconciliation_routing(
+        self, result, parser, kwargs, reconciled_count, expected_call
+    ):
         with patch.object(_build_shared_mod, '_reconcile_pending_build_findings') as mock_reconcile:
-            mock_reconcile.return_value = 3  # three stale findings terminalized
-            rc = cmd_run_common(
-                result, _noop_parser, 'python', plan_id='my-plan', command_args='verify'
-            )
+            mock_reconcile.return_value = reconciled_count
+            rc = cmd_run_common(dict(result), parser, 'python', **kwargs)
 
         assert rc == 0
-        # `verify` performs all three analyses; _noop_parser reports no test
-        # summary, so the count for a TEST-BEARING gate is unknown — not zero.
-        mock_reconcile.assert_called_once_with(
-            plan_id='my-plan',
-            command_str='./pw verify',
-            analyses=frozenset({'compile', 'lint', 'test'}),
-            tests_run=None,
-        )
+        if expected_call is None:
+            mock_reconcile.assert_not_called()
+        else:
+            mock_reconcile.assert_called_once_with(**expected_call)
 
-    def test_green_build_without_command_args_reports_an_unknown_population(self):
-        """The fail-closed default. A caller that supplies no canonical args
-        hands the reconciler an UNKNOWN population — never a silently
-        full-entitlement one — so nothing is cleared on no evidence."""
-        result = _make_result(status='success', command='./pw verify')
 
-        with patch.object(_build_shared_mod, '_reconcile_pending_build_findings') as mock_reconcile:
-            mock_reconcile.return_value = 0
-            rc = cmd_run_common(result, _noop_parser, 'python', plan_id='my-plan')
+#: ``(canonical command args, fragments stdout must carry, fragments it must
+#: NOT)``. The absent ``tests_run`` in the middle row is the load-bearing one:
+#: absence is what stops a consumer reading "tested nothing" off a run whose
+#: count was never measured.
+_POPULATION_STDOUT_CASES = [
+    (
+        'compile',
+        ['tests_population: measured', 'tests_run: 0', 'analyses_examined: compile'],
+        [],
+    ),
+    ('module-tests', ['tests_population: unmeasured'], ['tests_run']),
+    (
+        'publish',
+        ['analyses_examined: unknown', 'tests_population: unmeasured'],
+        [],
+    ),
+]
 
-        assert rc == 0
-        mock_reconcile.assert_called_once_with(
-            plan_id='my-plan', command_str='./pw verify', analyses=None, tests_run=None
-        )
-
-    def test_failing_build_does_not_terminalize_findings(self):
-        """Build fails → pending findings are NOT terminalized (the failure they
-        recorded is still live)."""
-        result = _make_result(status='error', exit_code=1, error='Build failed')
-
-        with patch.object(_build_shared_mod, '_reconcile_pending_build_findings') as mock_reconcile:
-            rc = cmd_run_common(result, _error_parser, 'python', plan_id='my-plan')
-
-        assert rc == 0
-        mock_reconcile.assert_not_called()
-
-    def test_green_build_with_no_pending_findings_is_noop(self):
-        """Build succeeds + nothing pending → reconciliation is invoked but
-        resolves zero findings (no-op), and cmd_run_common still returns 0
-        cleanly."""
-        result = _make_result(status='success', command='./pw compile')
-
-        with patch.object(_build_shared_mod, '_reconcile_pending_build_findings') as mock_reconcile:
-            mock_reconcile.return_value = 0  # nothing was pending
-            rc = cmd_run_common(
-                result, _noop_parser, 'python', plan_id='my-plan', command_args='compile'
-            )
-
-        assert rc == 0
-        # A non-test gate with no summary genuinely executed zero tests: this
-        # zero is MEASURED, and is the matched half of the unknown above.
-        mock_reconcile.assert_called_once_with(
-            plan_id='my-plan',
-            command_str='./pw compile',
-            analyses=frozenset({'compile'}),
-            tests_run=0,
-        )
-
-    def test_green_build_that_ran_tests_passes_executed_count(self):
-        """A green build whose parser reports executed tests routes the non-zero
-        executed-test count into the reconciler — the evidence that lets it clear
-        a test-failure finding (see test_build_findings_store.py for the split)."""
-        result = _make_result(status='success', command='./pw verify')
-
-        with patch.object(_build_shared_mod, '_reconcile_pending_build_findings') as mock_reconcile:
-            mock_reconcile.return_value = 1
-            rc = cmd_run_common(
-                result, _tests_ran_parser, 'python', plan_id='my-plan', command_args='verify'
-            )
-
-        assert rc == 0
-        mock_reconcile.assert_called_once_with(
-            plan_id='my-plan',
-            command_str='./pw verify',
-            analyses=frozenset({'compile', 'lint', 'test'}),
-            tests_run=5,
-        )
-
-    def test_green_build_without_plan_id_skips_reconciliation(self):
-        """No plan_id supplied → reconciliation is skipped entirely (preserves
-        the historical non-plan silent behaviour on the green path)."""
-        result = _make_result(status='success', command='./pw verify')
-
-        with patch.object(_build_shared_mod, '_reconcile_pending_build_findings') as mock_reconcile:
-            rc = cmd_run_common(result, _noop_parser, 'python', plan_id=None)
-
-        assert rc == 0
-        mock_reconcile.assert_not_called()
+_POPULATION_STDOUT_IDS = [
+    'non-test-gate-publishes-a-measured-zero',
+    'test-bearing-gate-with-no-summary-omits-the-count',
+    'unrecognised-command-publishes-an-unknown-population',
+]
 
 
 class TestCmdRunCommonPublishesItsPopulation:
@@ -327,33 +315,19 @@ class TestCmdRunCommonPublishesItsPopulation:
     executed-test count when it was never measured, so a consumer reading
     ``tests_run`` cannot read an unmeasured run as one that tested nothing."""
 
-    def test_measured_zero_publishes_the_count_and_the_discriminator(self, capsys):
-        result = _make_result(status='success', command='./pw compile')
-        cmd_run_common(result, _noop_parser, 'python', command_args='compile')
+    @pytest.mark.parametrize(
+        'command_args,present,absent', _POPULATION_STDOUT_CASES, ids=_POPULATION_STDOUT_IDS
+    )
+    def test_the_published_population(self, capsys, command_args, present, absent):
+        result = _make_result(status='success', command=f'./pw {command_args}')
+
+        cmd_run_common(result, _noop_parser, 'python', command_args=command_args)
+
         stdout = capsys.readouterr().out
-
-        assert 'tests_population: measured' in stdout
-        assert 'tests_run: 0' in stdout
-        assert 'analyses_examined: compile' in stdout
-
-    def test_unmeasured_count_omits_the_key_entirely(self, capsys):
-        # The matched negative: a TEST-bearing gate whose summary did not parse.
-        # `tests_run` must be absent, not zero — absence is what stops a consumer
-        # from reading "tested nothing" off an unmeasured run.
-        result = _make_result(status='success', command='./pw module-tests')
-        cmd_run_common(result, _noop_parser, 'python', command_args='module-tests')
-        stdout = capsys.readouterr().out
-
-        assert 'tests_population: unmeasured' in stdout
-        assert 'tests_run' not in stdout
-
-    def test_unknown_command_publishes_an_unknown_analysis_population(self, capsys):
-        result = _make_result(status='success', command='./pw publish')
-        cmd_run_common(result, _noop_parser, 'python', command_args='publish')
-        stdout = capsys.readouterr().out
-
-        assert 'analyses_examined: unknown' in stdout
-        assert 'tests_population: unmeasured' in stdout
+        for fragment in present:
+            assert fragment in stdout, stdout
+        for fragment in absent:
+            assert fragment not in stdout, stdout
 
     def test_stderr_names_the_refusal_cause_when_nothing_is_clearable(self, capsys):
         result = _make_result(status='success', command='./pw publish')

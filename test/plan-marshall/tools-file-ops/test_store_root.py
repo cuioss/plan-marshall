@@ -73,10 +73,30 @@ class TestOrchestratorStore:
         assert store_root == tmp_path / f'orchestrator/{epic_id}'
 
 
+#: ``{the id naming the case: the rejected store value}``. Two of these rows are
+#: unreadable as pytest names them: the empty string renders as nothing at all,
+#: and the trailing space on ``'orchestrator '`` is invisible in a report — so
+#: those two rows, whose whole distinction is a character a report swallows, are
+#: exactly the ones the generated ids cannot show. The ids are therefore stated,
+#: and drawn from this mapping's own keys so a reorder carries each name along
+#: with its value.
+_UNKNOWN_STORE_VALUES = {
+    'an-unregistered-store-name-archive': 'archive',
+    'an-unregistered-store-name-lessons': 'lessons',
+    'the-empty-string': '',
+    'a-registered-name-in-the-wrong-case': 'PLANS',
+    'a-registered-name-with-trailing-whitespace': 'orchestrator ',
+}
+
+
 class TestUnknownStore:
     """Unknown store values are rejected via ValueError."""
 
-    @pytest.mark.parametrize('store', ['archive', 'lessons', '', 'PLANS', 'orchestrator '])
+    @pytest.mark.parametrize(
+        'store',
+        list(_UNKNOWN_STORE_VALUES.values()),
+        ids=list(_UNKNOWN_STORE_VALUES),
+    )
     def test_should_raise_value_error_for_unknown_store(self, store):
         with pytest.raises(ValueError) as exc_info:
             get_store_dir(store, _random_id('entry'))

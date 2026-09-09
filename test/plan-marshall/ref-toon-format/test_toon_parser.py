@@ -436,39 +436,30 @@ alternatives[3]:
 # =============================================================================
 
 
-def test_serialize_simple():
-    """Test serializing simple key-value pairs."""
-    data = {'name': 'Alice', 'age': 30, 'active': True}
-    result = serialize_toon(data)
-    assert 'name: Alice' in result
-    assert 'age: 30' in result
-    assert 'active: true' in result
+@pytest.mark.parametrize(
+    ('data', 'expected_fragments'),
+    [
+        ({'name': 'Alice', 'age': 30, 'active': True}, ('name: Alice', 'age: 30', 'active: true')),
+        ({'user': {'name': 'Alice', 'role': 'admin'}}, ('user:', 'name: Alice')),
+        (
+            {'users': [{'id': 1, 'name': 'Alice'}, {'id': 2, 'name': 'Bob'}]},
+            ('users[2]{id,name}:', '1,Alice', '2,Bob'),
+        ),
+        ({'tags': ['python', 'toon']}, ('tags[2]:', '- python', '- toon')),
+    ],
+    ids=[
+        'flat-scalars-render-one-key-per-line',
+        'nested-object-renders-a-bare-header-then-its-fields',
+        'list-of-records-renders-a-uniform-array-header-and-csv-rows',
+        'list-of-scalars-renders-a-counted-header-and-dash-items',
+    ],
+)
+def test_serialize_renders_each_shape(data, expected_fragments):
+    """Each container shape reaches the document in its own TOON form."""
+    rendered = serialize_toon(data)
 
-
-def test_serialize_nested():
-    """Test serializing nested objects."""
-    data = {'user': {'name': 'Alice', 'role': 'admin'}}
-    result = serialize_toon(data)
-    assert 'user:' in result
-    assert 'name: Alice' in result
-
-
-def test_serialize_uniform_array():
-    """Test serializing uniform arrays."""
-    data = {'users': [{'id': 1, 'name': 'Alice'}, {'id': 2, 'name': 'Bob'}]}
-    result = serialize_toon(data)
-    assert 'users[2]{id,name}:' in result
-    assert '1,Alice' in result
-    assert '2,Bob' in result
-
-
-def test_serialize_simple_array():
-    """Test serializing simple arrays."""
-    data = {'tags': ['python', 'toon']}
-    result = serialize_toon(data)
-    assert 'tags[2]:' in result
-    assert '- python' in result
-    assert '- toon' in result
+    for fragment in expected_fragments:
+        assert fragment in rendered, f'missing {fragment!r} in:\n{rendered}'
 
 
 def test_roundtrip():
@@ -559,11 +550,22 @@ users[2]{id,name,role}:
     assert users[1] == {'id': 2, 'name': 'Bob', 'role': 'user'}
 
 
-def test_parse_toon_table_missing_key():
-    """Test that missing key returns empty list."""
-    toon = 'status: success\n'
-    result = parse_toon_table(toon, 'items')
-    assert result == []
+@pytest.mark.parametrize(
+    ('toon', 'key'),
+    [
+        ('status: success\n', 'items'),
+        ('items[0]{id,name}:\n', 'items'),
+        ('status: success\n', 'status'),
+    ],
+    ids=[
+        'key-absent-from-the-document',
+        'array-declared-with-zero-rows',
+        'key-present-but-holding-a-scalar',
+    ],
+)
+def test_parse_toon_table_returns_an_empty_list(toon, key):
+    """Every way of having no rows yields the same empty list, never None or a raise."""
+    assert parse_toon_table(toon, key) == []
 
 
 def test_parse_toon_table_null_markers():
@@ -578,20 +580,6 @@ items[2]{id,name,value}:
     assert items[0]['value'] is None
     assert items[1]['name'] is None
     assert items[1]['value'] == 100
-
-
-def test_parse_toon_table_empty_array():
-    """Test extracting empty table."""
-    toon = 'items[0]{id,name}:\n'
-    items = parse_toon_table(toon, 'items')
-    assert items == []
-
-
-def test_parse_toon_table_non_list_key():
-    """Test that a non-list key returns empty list."""
-    toon = 'status: success\n'
-    result = parse_toon_table(toon, 'status')
-    assert result == []
 
 
 # =============================================================================

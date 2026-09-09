@@ -161,18 +161,25 @@ class TestDeriveWorktreeState:
 # The payload reader
 # =============================================================================
 
+#: ``(published state, the path the producer publishes alongside it)``. The ids
+#: are derived from THIS table's own first column rather than from the published
+#: vocabulary constant: a foreign list zipped positionally onto a hand-ordered
+#: table relabels every row the moment either order moves, and nothing in the
+#: suite would notice.
+_PUBLISHED_STATE_CASES = [
+    (WORKTREE_STATE_DISABLED, ''),
+    (WORKTREE_STATE_PENDING, ''),
+    (WORKTREE_STATE_MATERIALIZED, STUB_WORKTREE),
+]
+
 
 class TestParseGetWorktreePathOutput:
     """The reader takes the published discriminator and never rebuilds it."""
 
     @pytest.mark.parametrize(
         ('state', 'published_path'),
-        [
-            (WORKTREE_STATE_DISABLED, ''),
-            (WORKTREE_STATE_PENDING, ''),
-            (WORKTREE_STATE_MATERIALIZED, STUB_WORKTREE),
-        ],
-        ids=list(VALID_WORKTREE_STATES),
+        _PUBLISHED_STATE_CASES,
+        ids=[case[0] for case in _PUBLISHED_STATE_CASES],
     )
     def test_published_state_is_returned_verbatim(self, state, published_path):
         """Each state is paired with the path the producer actually publishes for it.

@@ -34,33 +34,24 @@ from marketplace_paths import (
 )
 
 
-class TestNoGitMainCheckoutRoot:
-    """Regression guard for the removal of the git-common-dir resolver.
+class TestRetiredResolvers:
+    """Regression guard for the resolvers removed from the shared module."""
 
-    ``git_main_checkout_root`` / ``_resolve_git_main_checkout_root`` were the
-    sideways ``git rev-parse --git-common-dir`` resolution path that the uniform
-    cwd rule (ADR-002) replaced. This guard fails if either symbol is ever
-    reintroduced into the shared module.
-    """
+    #: Symbols removed from the shared module that must never reappear on it.
+    #: The first two were the sideways ``git rev-parse --git-common-dir``
+    #: resolution path the uniform cwd rule (ADR-002) replaced; ``get_plan_dir``
+    #: was a duplicate base resolver whose job now lives solely in
+    #: ``tools-file-ops/file_ops.py``. Reintroducing any of them re-creates the
+    #: duplication its removal closed.
+    RETIRED_ATTRIBUTES = [
+        'git_main_checkout_root',
+        '_resolve_git_main_checkout_root',
+        'get_plan_dir',
+    ]
 
-    def test_git_main_checkout_root_is_not_a_module_attribute(self):
-        assert not hasattr(marketplace_paths, 'git_main_checkout_root')
-
-    def test_resolve_git_main_checkout_root_is_not_a_module_attribute(self):
-        assert not hasattr(marketplace_paths, '_resolve_git_main_checkout_root')
-
-
-class TestNoOrphanGetPlanDir:
-    """Regression guard for the orphan-removal of ``get_plan_dir``.
-
-    ``get_plan_dir`` was a duplicate base resolver removed from
-    ``marketplace_paths``. Runtime plan-dir resolution lives
-    solely in ``tools-file-ops/file_ops.py``. This guard fails if the orphan
-    is ever reintroduced into the shared module, re-creating the duplication.
-    """
-
-    def test_get_plan_dir_is_not_a_module_attribute(self):
-        assert not hasattr(marketplace_paths, 'get_plan_dir')
+    @pytest.mark.parametrize('attribute', RETIRED_ATTRIBUTES, ids=RETIRED_ATTRIBUTES)
+    def test_retired_resolver_is_not_a_module_attribute(self, attribute: str):
+        assert not hasattr(marketplace_paths, attribute)
 
 
 class TestFindPlanRootFromCwd:
@@ -363,25 +354,28 @@ class TestMainAnchoredStoreOwnsBundle:
         monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
         return tmp_path
 
-    def test_empty_bundle_returns_false_even_under_override(self, plan_base_dir_at_tmp):
-        # The validation guard fires before the PLAN_BASE_DIR short-circuit, so
-        # an empty bundle can never be reported as owned.
-        assert main_anchored_store_owns_bundle('') is False
+    #: Bundle strings the validation guard must reject BEFORE constructing any
+    #: path. The empty string used to resolve to the bundles directory itself
+    #: (which exists, so it read as owned); the separator-bearing and absolute
+    #: forms would make pathlib discard the main root; and ``.`` carries no
+    #: separator yet still resolves to the bundles directory. The guard fires
+    #: ahead of the PLAN_BASE_DIR short-circuit, so none of them can be reported
+    #: as owned even under an active override.
+    REJECTED_BUNDLES = ['', 'a/b', '/etc', 'a\\b', '.']
 
-    def test_bundle_with_forward_slash_returns_false(self, plan_base_dir_at_tmp):
-        assert main_anchored_store_owns_bundle('a/b') is False
+    REJECTED_BUNDLE_IDS = [
+        'empty-string',
+        'forward-slash',
+        'absolute-path',
+        'backslash',
+        'current-directory',
+    ]
 
-    def test_absolute_path_bundle_returns_false(self, plan_base_dir_at_tmp):
-        # An absolute-path bundle would make pathlib discard main_root; the
-        # leading-separator hit in the guard rejects it first.
-        assert main_anchored_store_owns_bundle('/etc') is False
-
-    def test_bundle_with_backslash_returns_false(self, plan_base_dir_at_tmp):
-        assert main_anchored_store_owns_bundle('a\\b') is False
-
-    def test_current_dir_bundle_returns_false(self, plan_base_dir_at_tmp):
-        # '.' has no separator but resolves to the bundles directory itself.
-        assert main_anchored_store_owns_bundle('.') is False
+    @pytest.mark.parametrize('bundle', REJECTED_BUNDLES, ids=REJECTED_BUNDLE_IDS)
+    def test_rejected_bundle_returns_false_even_under_override(
+        self, plan_base_dir_at_tmp, bundle: str
+    ):
+        assert main_anchored_store_owns_bundle(bundle) is False
 
     def test_parent_dir_bundle_returns_false_in_production(self, tmp_path, monkeypatch):
         # '..' has no separator but {bundles}/.. resolves to marketplace/ (which

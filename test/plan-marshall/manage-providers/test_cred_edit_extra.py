@@ -18,9 +18,16 @@ subprocesses. No per-test monkeypatching of those paths is required.
 
 import argparse
 
+import _providers_core
+import pytest
+
 from conftest import get_script_path, run_script
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-providers', 'credentials.py')
+
+#: The secret-named keys ``apply_extra_passthrough`` refuses, read off the live
+#: constant so the sweep below covers a key added to it without an edit here.
+SECRET_PLACEHOLDERS = _providers_core.SECRET_PLACEHOLDERS
 
 _SKILL = 'plan-marshall:workflow-integration-sonar'
 _TOKEN = 'super-secret-token-value'
@@ -45,18 +52,36 @@ def _edit_args(skill: str = _SKILL, extra: list[str] | None = None) -> argparse.
 class TestUpsertExtraFieldsIdempotent:
     """Direct-import tests for ``_upsert_extra_fields``."""
 
-    def test_upsert_adds_new_key(self):
-        """An absent key is added to the provider config."""
+    @pytest.mark.parametrize(
+        ('pairs', 'expected_keys', 'expected_config'),
+        [
+            (['organization=my-org'], ['organization'], {'organization': 'my-org'}),
+            (['project_key=pk', 'organization=org'], ['project_key', 'organization'],
+             {'project_key': 'pk', 'organization': 'org'}),
+            (['no-equals-here'], [], {}),
+            ([], [], {}),
+        ],
+        ids=[
+            'an-absent-key-is-added',
+            'several-keys-are-reported-in-the-order-supplied',
+            'a-token-lacking-an-equals-sign-is-ignored',
+            'an-empty-pair-list-is-a-no-op',
+        ],
+    )
+    def test_a_single_upsert_reports_its_keys_and_persists_exactly_them(
+        self, pairs, expected_keys, expected_config
+    ):
+        """One call reports the keys it accepted, and the config holds those keys alone."""
         # Arrange
         from _cred_edit import _upsert_extra_fields
         from _providers_core import read_provider_config
 
         # Act
-        upserted = _upsert_extra_fields(_SKILL, ['organization=my-org'])
+        upserted = _upsert_extra_fields(_SKILL, pairs)
 
         # Assert
-        assert upserted == ['organization']
-        assert read_provider_config(_SKILL).get('organization') == 'my-org'
+        assert upserted == expected_keys
+        assert read_provider_config(_SKILL) == expected_config
 
     def test_repeated_upsert_same_key_is_idempotent(self):
         """Repeating the same pair leaves the provider config unchanged."""
@@ -106,159 +131,90 @@ class TestUpsertExtraFieldsIdempotent:
         assert config.get('organization') == 'new-org'
         assert config.get('project_key') == 'pk'
 
-    def test_pairs_without_equals_are_ignored(self):
-        """A token lacking ``=`` is skipped and triggers no write."""
-        # Arrange
-        from _cred_edit import _upsert_extra_fields
-        from _providers_core import read_provider_config
-
-        # Act
-        upserted = _upsert_extra_fields(_SKILL, ['no-equals-here'])
-
-        # Assert — nothing upserted, config stays empty.
-        assert upserted == []
-        assert read_provider_config(_SKILL) == {}
-
-    def test_empty_pairs_returns_empty(self):
-        """An empty pair list is a no-op returning no keys."""
-        # Arrange
-        from _cred_edit import _upsert_extra_fields
-        from _providers_core import read_provider_config
-
-        # Act
-        upserted = _upsert_extra_fields(_SKILL, [])
-
-        # Assert
-        assert upserted == []
-        assert read_provider_config(_SKILL) == {}
-
-    def test_upsert_returns_keys_in_supplied_order(self):
-        """Multiple pairs are reported in the order supplied."""
-        # Arrange
-        from _cred_edit import _upsert_extra_fields
-
-        # Act
-        upserted = _upsert_extra_fields(_SKILL, ['project_key=pk', 'organization=org'])
-
-        # Assert
-        assert upserted == ['project_key', 'organization']
-
 
 class TestUpsertExtraFieldsValidation:
     """Non-secret key validation guarding ``credentials_config`` writes."""
 
-    def test_empty_key_is_skipped(self):
-        """A pair whose key is empty (``=value``) is skipped, triggering no write."""
+    @pytest.mark.parametrize(
+        ('pairs', 'expected_keys', 'expected_config'),
+        [
+            (['=orphan-value'], [], {}),
+            (['   =value'], [], {}),
+            (['  organization  =my-org'], ['organization'], {'organization': 'my-org'}),
+            (['token=should-not-persist'], [], {}),
+            (['username=alice', 'password=hunter2'], [], {}),
+            (['  token  =should-not-persist'], [], {}),
+            (
+                ['organization=my-org', 'token=secret', 'project_key=pk'],
+                ['organization', 'project_key'],
+                {'organization': 'my-org', 'project_key': 'pk'},
+            ),
+            (['organization=first', 'organization=second'], ['organization'],
+             {'organization': 'second'}),
+        ],
+        ids=[
+            'an-empty-key-persists-no-blank-entry',
+            'a-whitespace-only-key-is-empty-once-stripped',
+            'a-padded-key-is-stored-in-its-stripped-form',
+            'the-secret-key-token-is-rejected',
+            'the-secret-keys-username-and-password-are-both-rejected',
+            'a-padded-secret-key-is-rejected-after-stripping',
+            'a-secret-is-dropped-while-its-benign-neighbours-still-upsert',
+            'a-key-supplied-twice-is-reported-once-and-the-last-value-wins',
+        ],
+    )
+    def test_only_validated_keys_reach_the_provider_config(
+        self, pairs, expected_keys, expected_config
+    ):
+        """Empty and secret-named keys never reach ``marshal.json``; the rest do.
+
+        The config is asserted by exact equality rather than by key absence: the
+        sandbox starts each test with an empty provider config, so equality states
+        both what was rejected and what survived in one shape.
+        """
         # Arrange
         from _cred_edit import _upsert_extra_fields
         from _providers_core import read_provider_config
 
         # Act
-        upserted = _upsert_extra_fields(_SKILL, ['=orphan-value'])
-
-        # Assert — nothing upserted, config stays empty (no "" key persisted).
-        assert upserted == []
-        assert read_provider_config(_SKILL) == {}
-
-    def test_whitespace_only_key_is_skipped(self):
-        """A pair whose key is only whitespace is skipped after stripping."""
-        # Arrange
-        from _cred_edit import _upsert_extra_fields
-        from _providers_core import read_provider_config
-
-        # Act
-        upserted = _upsert_extra_fields(_SKILL, ['   =value'])
+        upserted = _upsert_extra_fields(_SKILL, pairs)
 
         # Assert
-        assert upserted == []
-        assert read_provider_config(_SKILL) == {}
+        assert upserted == expected_keys
+        assert read_provider_config(_SKILL) == expected_config
 
-    def test_key_whitespace_is_stripped(self):
-        """Surrounding whitespace is stripped from the key before it is stored."""
+    def test_the_secret_placeholder_set_is_not_empty(self):
+        """``SECRET_PLACEHOLDERS`` carries at least one key.
+
+        The sweep below is parametrized over that constant, so an emptied
+        constant would collect zero rows and report green without having
+        rejected anything. This is what makes the zero-row state a failure.
+        """
+        assert SECRET_PLACEHOLDERS, 'SECRET_PLACEHOLDERS is empty — the sweep below collects no rows'
+
+    @pytest.mark.parametrize(
+        'secret_key', sorted(SECRET_PLACEHOLDERS), ids=sorted(SECRET_PLACEHOLDERS)
+    )
+    def test_every_secret_placeholder_key_is_rejected(self, secret_key):
+        """No key ``SECRET_PLACEHOLDERS`` names reaches ``marshal.json``.
+
+        ``_upsert_extra_fields`` delegates the denylist to
+        ``apply_extra_passthrough``, which checks that constant — so the rejected
+        set is whatever the constant holds, not the three keys the literal rows
+        above happen to name. Quantifying over it is what covers a secret key
+        added later. The benign neighbour keeps the row from passing on an
+        ``_upsert_extra_fields`` that rejected everything indiscriminately.
+        """
         # Arrange
         from _cred_edit import _upsert_extra_fields
         from _providers_core import read_provider_config
 
         # Act
-        upserted = _upsert_extra_fields(_SKILL, ['  organization  =my-org'])
+        upserted = _upsert_extra_fields(_SKILL, [f'{secret_key}=value', 'organization=my-org'])
 
-        # Assert — the stored key is the stripped form, not the padded one.
+        # Assert
         assert upserted == ['organization']
-        config = read_provider_config(_SKILL)
-        assert config.get('organization') == 'my-org'
-        assert '  organization  ' not in config
-
-    def test_secret_key_token_is_rejected(self):
-        """A key named ``token`` is rejected so no secret lands in marshal.json."""
-        # Arrange
-        from _cred_edit import _upsert_extra_fields
-        from _providers_core import read_provider_config
-
-        # Act
-        upserted = _upsert_extra_fields(_SKILL, ['token=should-not-persist'])
-
-        # Assert
-        assert upserted == []
-        assert 'token' not in read_provider_config(_SKILL)
-
-    def test_secret_keys_username_and_password_are_rejected(self):
-        """Keys named ``username`` and ``password`` are both rejected."""
-        # Arrange
-        from _cred_edit import _upsert_extra_fields
-        from _providers_core import read_provider_config
-
-        # Act
-        upserted = _upsert_extra_fields(_SKILL, ['username=alice', 'password=hunter2'])
-
-        # Assert
-        assert upserted == []
-        config = read_provider_config(_SKILL)
-        assert 'username' not in config
-        assert 'password' not in config
-
-    def test_stripped_secret_key_is_rejected(self):
-        """A padded secret key (``  token  ``) is rejected after stripping."""
-        # Arrange
-        from _cred_edit import _upsert_extra_fields
-        from _providers_core import read_provider_config
-
-        # Act
-        upserted = _upsert_extra_fields(_SKILL, ['  token  =should-not-persist'])
-
-        # Assert
-        assert upserted == []
-        assert read_provider_config(_SKILL) == {}
-
-    def test_secret_keys_rejected_alongside_valid_keys(self):
-        """Secret keys are dropped while valid keys in the same call still upsert."""
-        # Arrange
-        from _cred_edit import _upsert_extra_fields
-        from _providers_core import read_provider_config
-
-        # Act
-        upserted = _upsert_extra_fields(
-            _SKILL, ['organization=my-org', 'token=secret', 'project_key=pk']
-        )
-
-        # Assert — only the non-secret keys survive, in supplied order.
-        assert upserted == ['organization', 'project_key']
-        config = read_provider_config(_SKILL)
-        assert config.get('organization') == 'my-org'
-        assert config.get('project_key') == 'pk'
-        assert 'token' not in config
-
-    def test_duplicate_keys_are_deduplicated(self):
-        """A key supplied twice is reported once; the last value wins."""
-        # Arrange
-        from _cred_edit import _upsert_extra_fields
-        from _providers_core import read_provider_config
-
-        # Act
-        upserted = _upsert_extra_fields(_SKILL, ['organization=first', 'organization=second'])
-
-        # Assert — one entry in the returned list, last value persisted.
-        assert upserted == ['organization']
-        assert read_provider_config(_SKILL).get('organization') == 'second'
+        assert read_provider_config(_SKILL) == {'organization': 'my-org'}
 
 
 class TestRunEditPreservesToken:

@@ -14,6 +14,8 @@ fresh interpreter, exactly as Claude Code would invoke it.
 import os
 from pathlib import Path
 
+import pytest
+
 # conftest.py sets up PYTHONPATH so get_script_path resolves without manual
 # sys.path manipulation.
 from conftest import get_script_path, run_script
@@ -24,25 +26,6 @@ SCRIPT_PATH = get_script_path("plan-marshall", "platform-runtime", "claude_hook.
 # =============================================================================
 # Helpers
 # =============================================================================
-
-
-def _run_hook(
-    stdin: str,
-    env_file: str | None,
-    tmp_path: Path,
-) -> object:
-    """Run claude_hook.py with the given stdin and optional CLAUDE_ENV_FILE."""
-    # Strip CLAUDE_ENV_FILE from the inherited environment when not supplied,
-    # so tests for the "env var not set" path are reliable.
-    merged = {k: v for k, v in os.environ.items() if k != "CLAUDE_ENV_FILE"}
-    if env_file is not None:
-        merged["CLAUDE_ENV_FILE"] = env_file
-    return run_script(
-        SCRIPT_PATH,
-        input_data=stdin,
-        cwd=str(tmp_path),
-        env_overrides={k: v for k, v in merged.items() if k not in os.environ or os.environ.get(k) != v},
-    )
 
 
 def _run(
@@ -71,67 +54,46 @@ def _run(
 # =============================================================================
 
 
-def test_empty_stdin_exits_1(tmp_path):
-    """Empty stdin is exit code 1 with a descriptive stderr message."""
-    result = _run("", tmp_path)
+#: ``(stdin body, the fragment stderr must carry)``. Every row exits 1, so the
+#: fragment is the whole discrimination — it says HOW FAR the hook got before
+#: refusing. The first two never reach a parse; the next two parse but find no
+#: JSON object; the middle three reach the object and find no usable
+#: ``session_id`` (absent, empty and null are one refusal, not three); the last
+#: two find the field occupied by something that is not a string.
+_MALFORMED_STDIN_CASES = [
+    ("", "stdin is empty"),
+    ("   \n\t  ", "stdin is empty"),
+    ("not json at all", "malformed JSON"),
+    ('["session_id", "abc123"]', "expected JSON object"),
+    ('{"other_field": "value"}', "session_id"),
+    ('{"session_id": ""}', "session_id"),
+    ('{"session_id": null}', "session_id"),
+    ('{"session_id": 42}', "must be a string"),
+    ('{"session_id": ["abc"]}', "must be a string"),
+]
+
+_MALFORMED_STDIN_IDS = [
+    'nothing-piped',
+    'whitespace-only',
+    'not-json-at-all',
+    'json-array-instead-of-object',
+    'object-without-a-session-id-field',
+    'empty-string-session-id',
+    'null-session-id',
+    'integer-session-id',
+    'list-session-id',
+]
+
+
+@pytest.mark.parametrize(
+    ("stdin", "expected_stderr"), _MALFORMED_STDIN_CASES, ids=_MALFORMED_STDIN_IDS
+)
+def test_malformed_stdin_exits_1(stdin, expected_stderr, tmp_path):
+    """Each malformed stdin shape exits 1 and names its own refusal on stderr."""
+    result = _run(stdin, tmp_path)
+
     assert result.returncode == 1
-    assert "stdin is empty" in result.stderr
-
-
-def test_whitespace_only_stdin_exits_1(tmp_path):
-    """Whitespace-only stdin (no JSON) is treated as empty."""
-    result = _run("   \n\t  ", tmp_path)
-    assert result.returncode == 1
-    assert "stdin is empty" in result.stderr
-
-
-def test_non_json_stdin_exits_1(tmp_path):
-    """Non-JSON text on stdin is exit code 1."""
-    result = _run("not json at all", tmp_path)
-    assert result.returncode == 1
-    assert "malformed JSON" in result.stderr
-
-
-def test_json_array_not_object_exits_1(tmp_path):
-    """A JSON array (not an object) on stdin is exit code 1."""
-    result = _run('["session_id", "abc123"]', tmp_path)
-    assert result.returncode == 1
-    assert "expected JSON object" in result.stderr
-
-
-def test_missing_session_id_field_exits_1(tmp_path):
-    """A JSON object without a session_id field is exit code 1."""
-    result = _run('{"other_field": "value"}', tmp_path)
-    assert result.returncode == 1
-    assert "session_id" in result.stderr
-
-
-def test_empty_string_session_id_exits_1(tmp_path):
-    """An empty-string session_id is treated as missing — exit code 1."""
-    result = _run('{"session_id": ""}', tmp_path)
-    assert result.returncode == 1
-    assert "session_id" in result.stderr
-
-
-def test_null_session_id_exits_1(tmp_path):
-    """A null session_id is treated as missing — exit code 1."""
-    result = _run('{"session_id": null}', tmp_path)
-    assert result.returncode == 1
-    assert "session_id" in result.stderr
-
-
-def test_integer_session_id_exits_1(tmp_path):
-    """An integer session_id (non-string) is exit code 1."""
-    result = _run('{"session_id": 42}', tmp_path)
-    assert result.returncode == 1
-    assert "must be a string" in result.stderr
-
-
-def test_list_session_id_exits_1(tmp_path):
-    """A list session_id (non-string) is exit code 1."""
-    result = _run('{"session_id": ["abc"]}', tmp_path)
-    assert result.returncode == 1
-    assert "must be a string" in result.stderr
+    assert expected_stderr in result.stderr
 
 
 # =============================================================================
@@ -169,13 +131,37 @@ def test_env_file_in_nonexistent_directory_exits_2(tmp_path):
 # =============================================================================
 
 
-def test_success_writes_session_id(tmp_path):
-    """Happy path: session_id is written to CLAUDE_ENV_FILE as expected."""
+#: ``(hook payload, the session id the env file must end up carrying)``. Only
+#: the payload varies: a bare one, one carrying fields the hook does not read,
+#: and one whose id holds the punctuation an id may legally contain. All three
+#: must land the same ``CLAUDE_CODE_SESSION_ID=`` line, so neither a surplus
+#: field nor punctuation changes what is written.
+_SUCCESS_PAYLOAD_CASES = [
+    ('{"session_id": "sess-abc123"}', "sess-abc123"),
+    ('{"session_id": "ok-session", "transcript_path": "/tmp/t", "extra": 99}', "ok-session"),
+    ('{"session_id": "abc-123_def-456"}', "abc-123_def-456"),
+]
+
+_SUCCESS_PAYLOAD_IDS = [
+    'bare-payload',
+    'fields-the-hook-does-not-read-are-ignored',
+    'punctuated-session-id-written-verbatim',
+]
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected_session_id"),
+    _SUCCESS_PAYLOAD_CASES,
+    ids=_SUCCESS_PAYLOAD_IDS,
+)
+def test_success_writes_the_payloads_session_id(payload, expected_session_id, tmp_path):
+    """A well-formed payload exits 0 and writes its session id to CLAUDE_ENV_FILE."""
     env_file = tmp_path / "claude.env"
-    result = _run('{"session_id": "sess-abc123"}', tmp_path, env_file_path=env_file)
+
+    result = _run(payload, tmp_path, env_file_path=env_file)
+
     assert result.returncode == 0
-    content = env_file.read_text()
-    assert "CLAUDE_CODE_SESSION_ID=sess-abc123" in content
+    assert f"CLAUDE_CODE_SESSION_ID={expected_session_id}" in env_file.read_text()
 
 
 def test_success_produces_no_stdout(tmp_path):
@@ -231,24 +217,6 @@ def test_written_line_format(tmp_path):
     assert result.returncode == 0
     lines = env_file.read_text().splitlines()
     assert "CLAUDE_CODE_SESSION_ID=test-session-id" in lines
-
-
-def test_extra_payload_fields_ignored(tmp_path):
-    """Extra fields in the hook payload are silently ignored."""
-    env_file = tmp_path / "claude.env"
-    payload = '{"session_id": "ok-session", "transcript_path": "/tmp/t", "extra": 99}'
-    result = _run(payload, tmp_path, env_file_path=env_file)
-    assert result.returncode == 0
-    assert "CLAUDE_CODE_SESSION_ID=ok-session" in env_file.read_text()
-
-
-def test_session_id_with_special_characters(tmp_path):
-    """A session_id containing hyphens and underscores is written verbatim."""
-    env_file = tmp_path / "claude.env"
-    sid = "abc-123_def-456"
-    result = _run(f'{{"session_id": "{sid}"}}', tmp_path, env_file_path=env_file)
-    assert result.returncode == 0
-    assert f"CLAUDE_CODE_SESSION_ID={sid}" in env_file.read_text()
 
 
 def test_multiple_invocations_append_multiple_lines(tmp_path):

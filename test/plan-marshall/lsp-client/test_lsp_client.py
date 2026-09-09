@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+import pytest
 import run_config
 from _fake_lsp_server import write_fake_server
 from _lsp_jsonrpc import LspSession
@@ -77,25 +78,31 @@ def _text_edit(sl, sc, el, ec, new_text):
 # =============================================================================
 
 
-def test_select_language_server_enabled():
-    config = {'language_servers': {'python': {'enabled': True, 'command': ['srv', '--stdio'], 'language_id': 'python'}}}
-    resolved = client.select_language_server(config, 'python')
-    assert resolved == {'command': ['srv', '--stdio'], 'language_id': 'python'}
-
-
-def test_select_language_server_disabled_is_none():
-    config = {'language_servers': {'python': {'enabled': False, 'command': ['srv']}}}
-    assert client.select_language_server(config, 'python') is None
-
-
-def test_select_language_server_absent_is_none():
-    assert client.select_language_server({'language_servers': {}}, 'python') is None
-    assert client.select_language_server({}, 'python') is None
-
-
-def test_select_language_server_bad_command_is_none():
-    assert client.select_language_server({'language_servers': {'python': {'command': 'not-a-list'}}}, 'python') is None
-    assert client.select_language_server({'language_servers': {'python': {'command': []}}}, 'python') is None
+@pytest.mark.parametrize(
+    ('config', 'expected'),
+    [
+        (
+            {'language_servers': {'python': {'enabled': True, 'command': ['srv', '--stdio'], 'language_id': 'python'}}},
+            {'command': ['srv', '--stdio'], 'language_id': 'python'},
+        ),
+        ({'language_servers': {'python': {'enabled': False, 'command': ['srv']}}}, None),
+        ({'language_servers': {}}, None),
+        ({}, None),
+        ({'language_servers': {'python': {'command': 'not-a-list'}}}, None),
+        ({'language_servers': {'python': {'command': []}}}, None),
+    ],
+    ids=[
+        'an-enabled-entry-resolves-to-its-command-and-language-id',
+        'a-disabled-entry-resolves-to-nothing',
+        'an-empty-language-server-map-resolves-to-nothing',
+        'a-config-without-the-map-resolves-to-nothing',
+        'a-command-that-is-not-a-list-resolves-to-nothing',
+        'an-empty-command-list-resolves-to-nothing',
+    ],
+)
+def test_select_language_server_resolves_only_a_usable_entry(config, expected):
+    """A server resolves only when it is enabled AND carries a non-empty command list."""
+    assert client.select_language_server(config, 'python') == expected
 
 
 # =============================================================================

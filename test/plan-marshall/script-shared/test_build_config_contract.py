@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Cross-build-system contract tests (H48).
+"""Cross-build-system contract tests.
 
 Verifies that all four build skill ExecuteConfig objects conform to the
 shared contract documented in build-api-reference.md. Ensures the unified
@@ -8,6 +8,11 @@ API is actually consistent across Maven, Gradle, npm, and Python.
 """
 
 
+import dataclasses
+import typing
+from collections.abc import Callable
+
+import _build_execute_factory
 import pytest
 
 from conftest import MARKETPLACE_ROOT, load_script_module
@@ -59,19 +64,64 @@ def test_config_has_capture_strategy(name, config):
     assert isinstance(config.capture_strategy, CaptureStrategy), f'{name} has invalid capture_strategy'
 
 
+ExecuteConfig = _build_execute_factory.ExecuteConfig
+
+_CONFIG_FIELDS = dataclasses.fields(ExecuteConfig)
+
+
+def _required_callable_hooks() -> list[str]:
+    """The ``ExecuteConfig`` fields that are BOTH required and callable-typed.
+
+    Derived from the dataclass rather than restated, so a hook added to the
+    contract is checked on every build config without an edit here. Two
+    conditions, and both are load-bearing:
+
+    * **Required** — the field declares no default and no default factory. A
+      defaulted callable field (``wrapper_resolve_fn`` / ``extra_result_fn``) is
+      legitimately ``None`` on a config that does not use it, so demanding it be
+      callable would fail a conforming config.
+    * **Callable-typed** — the resolved annotation is a ``Callable``. Selecting
+      on an ``_fn`` name suffix instead would admit exactly those optional
+      fields, which is the discrimination this predicate exists to make.
+    """
+    hints = typing.get_type_hints(ExecuteConfig)
+    return [
+        f.name
+        for f in _CONFIG_FIELDS
+        if f.default is dataclasses.MISSING
+        and f.default_factory is dataclasses.MISSING
+        and typing.get_origin(hints[f.name]) is Callable
+    ]
+
+
+#: The hook attributes every ExecuteConfig must supply as a callable. Each is a
+#: seam the shared execute path invokes, so a non-callable is a crash at build
+#: time rather than a contract note.
+_CALLABLE_CONFIG_HOOKS = _required_callable_hooks()
+
+
+def test_the_required_callable_hook_set_is_non_empty_and_excludes_the_optional_ones():
+    """The derived hook set has members, and is narrower than the ``_fn`` fields.
+
+    The sweep below is parametrized over the derived list, so an empty list
+    would collect no rows and report green having checked nothing — the first
+    assertion is what makes that state a failure. The second pins the
+    discrimination: a predicate that degenerated into "every field named
+    ``*_fn``" would pull in the optional, legitimately-``None`` hooks and the
+    sweep would fail a conforming config.
+    """
+    assert _CALLABLE_CONFIG_HOOKS, 'no required callable hooks derived — the sweep collects no rows'
+    fn_suffixed = {f.name for f in _CONFIG_FIELDS if f.name.endswith('_fn')}
+    assert set(_CALLABLE_CONFIG_HOOKS) < fn_suffixed, (
+        'the predicate admitted every *_fn field; the optional ones carry defaults '
+        'and must stay out of the required set'
+    )
+
+
+@pytest.mark.parametrize('hook', _CALLABLE_CONFIG_HOOKS, ids=_CALLABLE_CONFIG_HOOKS)
 @pytest.mark.parametrize('name,config', CONFIG_PARAMS, ids=CONFIG_IDS)
-def test_config_has_callable_scope_fn(name, config):
-    assert callable(config.scope_fn), f'{name} scope_fn not callable'
-
-
-@pytest.mark.parametrize('name,config', CONFIG_PARAMS, ids=CONFIG_IDS)
-def test_config_has_callable_command_key_fn(name, config):
-    assert callable(config.command_key_fn), f'{name} command_key_fn not callable'
-
-
-@pytest.mark.parametrize('name,config', CONFIG_PARAMS, ids=CONFIG_IDS)
-def test_config_has_callable_build_command_fn(name, config):
-    assert callable(config.build_command_fn), f'{name} build_command_fn not callable'
+def test_config_hook_is_callable(name, config, hook):
+    assert callable(getattr(config, hook)), f'{name} {hook} not callable'
 
 
 _SIMPLE_ARGS = {

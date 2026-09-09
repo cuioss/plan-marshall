@@ -170,6 +170,27 @@ class TestSelectLiveVersionDir:
         assert select_live_version_dir(tmp_path / 'does-not-exist', self._eligible) is None
 
 
+#: ``(fully-eligible version dirs as ``(version, marked)``, version dirs that
+#: satisfy NO leg's eligibility predicate)``. Every row must resolve to
+#: ``1.0.10`` on all three legs. The marked rows show the ``.orphaned_at`` marker
+#: is ignored wherever it sits; the bare-dir row makes the newest-on-disk
+#: INELIGIBLE, so selection falls through to the newest eligible one — the shape
+#: that shows eligibility, not the marker, drives the choice.
+_LEG_AGREEMENT_CASES = [
+    ([('1.0.0', False), ('1.0.10', False)], []),
+    ([('1.0.0', False), ('1.0.10', True)], []),
+    ([('1.0.0', True), ('1.0.10', True)], []),
+    ([('1.0.0', False), ('1.0.10', True)], ['1.0.20']),
+]
+
+_LEG_AGREEMENT_IDS = [
+    'nothing-marked',
+    'the-newest-dir-is-marked',
+    'every-dir-is-marked',
+    'the-newest-dir-on-disk-is-ineligible',
+]
+
+
 class TestLegAgreement:
     """All three legs must resolve to the SAME version dir.
 
@@ -190,52 +211,41 @@ class TestLegAgreement:
         # script dir: .../bundle-a/{version}/skills/skill-x/scripts
         return found[0].name, resolved.parts[-5], Path(script_dirs[0]).parts[-4]
 
-    def test_none_marked(self, tmp_path):
-        _create_full_version_dir(tmp_path, 'bundle-a', '1.0.0')
-        _create_full_version_dir(tmp_path, 'bundle-a', '1.0.10')
+    @pytest.mark.parametrize(
+        'full_dirs,bare_dirs', _LEG_AGREEMENT_CASES, ids=_LEG_AGREEMENT_IDS
+    )
+    def test_every_leg_selects_the_same_version_dir(self, tmp_path, full_dirs, bare_dirs):
+        for version, orphaned in full_dirs:
+            _create_full_version_dir(tmp_path, 'bundle-a', version, orphaned=orphaned)
+        for version in bare_dirs:
+            _bare_version_dir(tmp_path, 'bundle-a', version)
 
         assert self._versions(tmp_path) == ('1.0.10', '1.0.10', '1.0.10')
 
-    def test_newest_marked(self, tmp_path):
-        # The mark on the newest dir is ignored, so every leg keeps it.
-        _create_full_version_dir(tmp_path, 'bundle-a', '1.0.0')
-        _create_full_version_dir(tmp_path, 'bundle-a', '1.0.10', orphaned=True)
 
-        assert self._versions(tmp_path) == ('1.0.10', '1.0.10', '1.0.10')
+#: ``(directory parts under tmp_path, the bundle name extracted from it)``. The
+#: two-part rows are the cache layout, where the leaf is a VERSION and the bundle
+#: name is its parent.
+_BUNDLE_NAME_CASES = [
+    (('plan-marshall',), 'plan-marshall'),
+    (('plan-marshall', '0.1-BETA'), 'plan-marshall'),
+    (('my-bundle', '2.0.0-rc1'), 'my-bundle'),
+]
 
-    def test_all_marked(self, tmp_path):
-        _create_full_version_dir(tmp_path, 'bundle-a', '1.0.0', orphaned=True)
-        _create_full_version_dir(tmp_path, 'bundle-a', '1.0.10', orphaned=True)
-
-        assert self._versions(tmp_path) == ('1.0.10', '1.0.10', '1.0.10')
-
-    def test_ineligible_newest_falls_through_to_newest_eligible(self, tmp_path):
-        # The newest-on-disk 1.0.20 satisfies no leg's eligibility predicate, so
-        # every leg selects the newest ELIGIBLE dir — 1.0.10 — and its
-        # .orphaned_at mark is ignored (eligibility, not the marker, drives the
-        # choice).
-        _create_full_version_dir(tmp_path, 'bundle-a', '1.0.0')
-        _create_full_version_dir(tmp_path, 'bundle-a', '1.0.10', orphaned=True)
-        _bare_version_dir(tmp_path, 'bundle-a', '1.0.20')
-
-        assert self._versions(tmp_path) == ('1.0.10', '1.0.10', '1.0.10')
+_BUNDLE_NAME_IDS = [
+    'marketplace-source-layout',
+    'versioned-cache-layout',
+    'a-numeric-version-with-a-suffix',
+]
 
 
 class TestExtractBundleName:
-    def test_marketplace_structure(self, tmp_path):
-        bundle = tmp_path / 'plan-marshall'
-        bundle.mkdir()
-        assert extract_bundle_name(bundle) == 'plan-marshall'
+    @pytest.mark.parametrize('parts,expected', _BUNDLE_NAME_CASES, ids=_BUNDLE_NAME_IDS)
+    def test_extract_bundle_name(self, tmp_path, parts: tuple[str, ...], expected: str):
+        directory = tmp_path.joinpath(*parts)
+        directory.mkdir(parents=True)
 
-    def test_versioned_cache_structure(self, tmp_path):
-        version_dir = tmp_path / 'plan-marshall' / '0.1-BETA'
-        version_dir.mkdir(parents=True)
-        assert extract_bundle_name(version_dir) == 'plan-marshall'
-
-    def test_numeric_version_pattern(self, tmp_path):
-        version_dir = tmp_path / 'my-bundle' / '2.0.0-rc1'
-        version_dir.mkdir(parents=True)
-        assert extract_bundle_name(version_dir) == 'my-bundle'
+        assert extract_bundle_name(directory) == expected
 
 
 class TestResolveBundlePath:
@@ -287,6 +297,25 @@ class TestResolveBundlePath:
         assert capsys.readouterr().err == ''
 
 
+#: ``(older version dir, newer version dir, the scripts subpath created in
+#: each)``. Only the newest version dir may be scanned, or an older copy pollutes
+#: PYTHONPATH and shadows the current one. The beta row pins the ORDERING rule
+#: (a numbered build ``0.1.5`` → ``(0, 1, 5)`` sorts newer than a bare
+#: ``0.1-BETA`` → ``(0, 1)``); the ``build`` row pins that the same selection
+#: governs the scripts/ subdir expansion, not only the scripts dir itself.
+_NEWEST_ONLY_SCAN_CASES = [
+    ('0.1.100', '0.1.200', 'skills/skill-x/scripts'),
+    ('0.1-BETA', '0.1.5', 'skills/skill-x/scripts'),
+    ('0.1.100', '0.1.200', 'skills/skill-x/scripts/build'),
+]
+
+_NEWEST_ONLY_SCAN_IDS = [
+    'two-numbered-versions',
+    'a-numbered-build-beats-a-bare-beta',
+    'the-scripts-subdir-expansion',
+]
+
+
 class TestCollectScriptDirs:
     def test_marketplace_structure(self, tmp_path):
         scripts = tmp_path / 'bundle-a' / 'skills' / 'skill-x' / 'scripts'
@@ -316,38 +345,21 @@ class TestCollectScriptDirs:
         result = collect_script_dirs(tmp_path)
         assert str(scripts) in result
 
-    def test_multi_version_selects_newest_only(self, tmp_path):
-        # Two version dirs for the same bundle: only the newest must be scanned,
-        # so an older version cannot pollute PYTHONPATH and shadow the newest.
-        old_scripts = tmp_path / 'bundle-a' / '0.1.100' / 'skills' / 'skill-x' / 'scripts'
-        new_scripts = tmp_path / 'bundle-a' / '0.1.200' / 'skills' / 'skill-x' / 'scripts'
-        old_scripts.mkdir(parents=True)
-        new_scripts.mkdir(parents=True)
-        result = collect_script_dirs(tmp_path)
-        assert str(new_scripts) in result
-        assert str(old_scripts) not in result
+    @pytest.mark.parametrize(
+        'older,newer,subpath', _NEWEST_ONLY_SCAN_CASES, ids=_NEWEST_ONLY_SCAN_IDS
+    )
+    def test_only_the_newest_version_dir_is_scanned(
+        self, tmp_path, older: str, newer: str, subpath: str
+    ):
+        older_dir = tmp_path / 'bundle-a' / older / subpath
+        newer_dir = tmp_path / 'bundle-a' / newer / subpath
+        older_dir.mkdir(parents=True)
+        newer_dir.mkdir(parents=True)
 
-    def test_multi_version_numbered_beats_beta(self, tmp_path):
-        # A numbered build (0.1.5 -> (0, 1, 5)) sorts newer than a bare beta
-        # (0.1-BETA -> (0, 1)); the numbered version dir wins.
-        beta_scripts = tmp_path / 'bundle-a' / '0.1-BETA' / 'skills' / 'skill-x' / 'scripts'
-        numbered_scripts = tmp_path / 'bundle-a' / '0.1.5' / 'skills' / 'skill-x' / 'scripts'
-        beta_scripts.mkdir(parents=True)
-        numbered_scripts.mkdir(parents=True)
         result = collect_script_dirs(tmp_path)
-        assert str(numbered_scripts) in result
-        assert str(beta_scripts) not in result
 
-    def test_multi_version_subdirs_from_newest_only(self, tmp_path):
-        # The newest-only selection also governs the scripts/ subdir expansion:
-        # an older version's scripts subdir must not appear in the result.
-        old_sub = tmp_path / 'bundle-a' / '0.1.100' / 'skills' / 'skill-x' / 'scripts' / 'build'
-        new_sub = tmp_path / 'bundle-a' / '0.1.200' / 'skills' / 'skill-x' / 'scripts' / 'build'
-        old_sub.mkdir(parents=True)
-        new_sub.mkdir(parents=True)
-        result = collect_script_dirs(tmp_path)
-        assert str(new_sub) in result
-        assert str(old_sub) not in result
+        assert str(newer_dir) in result
+        assert str(older_dir) not in result
 
     def test_mark_on_the_newest_dir_with_a_skills_tree_is_ignored(self, tmp_path):
         # The newest dir carrying a skills/ tree is scanned regardless of a mark.

@@ -201,17 +201,32 @@ def _repo_with_quoted_tracked_plan_file(root: Path, name: str) -> tuple[Path, st
 # =============================================================================
 
 
-def test_is_plan_state_path_matches_prefix() -> None:
-    assert pse.is_plan_state_path('.plan/marshal.json') is True
-    assert pse.is_plan_state_path('.plan/project-architecture/x/enriched.json') is True
+#: ``(path, is it plan state?)``. Only a LEADING ``.plan/`` qualifies: the four
+#: negatives are the near-misses a substring test would wrongly admit —
+#: ``.plan`` as a filename suffix, as a mid-path segment, absent entirely, and as
+#: the prefix of a longer directory name.
+_PLAN_STATE_PATH_CASES = [
+    ('.plan/marshal.json', True),
+    ('.plan/project-architecture/x/enriched.json', True),
+    ('my.plan/foo.py', False),
+    ('src/.plan/bar.py', False),
+    ('README.md', False),
+    ('.plans/x', False),
+]
+
+_PLAN_STATE_PATH_IDS = [
+    'a-plan-file-at-the-root',
+    'a-plan-file-several-levels-deep',
+    'dot-plan-as-a-filename-suffix',
+    'dot-plan-as-a-mid-path-segment',
+    'no-dot-plan-at-all',
+    'a-longer-directory-name-sharing-the-prefix',
+]
 
 
-def test_is_plan_state_path_is_prefix_not_substring() -> None:
-    """Only a leading ``.plan/`` qualifies — not ``.plan`` mid-path or as a suffix."""
-    assert pse.is_plan_state_path('my.plan/foo.py') is False
-    assert pse.is_plan_state_path('src/.plan/bar.py') is False
-    assert pse.is_plan_state_path('README.md') is False
-    assert pse.is_plan_state_path('.plans/x') is False
+@pytest.mark.parametrize('path,expected', _PLAN_STATE_PATH_CASES, ids=_PLAN_STATE_PATH_IDS)
+def test_is_plan_state_path(path: str, expected: bool) -> None:
+    assert pse.is_plan_state_path(path) is expected
 
 
 # =============================================================================

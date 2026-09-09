@@ -432,23 +432,19 @@ class TestCliArgparseSurface:
     """The ``resolve-skills`` subcommand requires ``--plan-id`` and
     ``--profile``; a subcommand is mandatory."""
 
-    def test_missing_profile_is_rejected(self):
+    @pytest.mark.parametrize(
+        'argv',
+        [
+            ('resolve-skills', '--plan-id', 'p'),
+            ('resolve-skills', '--profile', 'security'),
+            (),
+        ],
+        ids=['missing-profile', 'missing-plan-id', 'missing-subcommand'],
+    )
+    def test_incomplete_command_line_is_rejected(self, argv):
+        """Each way of under-specifying the command line exits non-zero."""
         # Act
-        result = run_script(SCRIPT_PATH, 'resolve-skills', '--plan-id', 'p')
-
-        # Assert
-        assert not result.success
-
-    def test_missing_plan_id_is_rejected(self):
-        # Act
-        result = run_script(SCRIPT_PATH, 'resolve-skills', '--profile', 'security')
-
-        # Assert
-        assert not result.success
-
-    def test_missing_subcommand_is_rejected(self):
-        # Act
-        result = run_script(SCRIPT_PATH)
+        result = run_script(SCRIPT_PATH, *argv)
 
         # Assert
         assert not result.success

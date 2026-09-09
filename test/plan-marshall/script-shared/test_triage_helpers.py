@@ -4,6 +4,7 @@
 
 import json
 
+import pytest
 from toon_parser import parse_toon
 from triage_helpers import (
     ErrorCode,
@@ -86,49 +87,53 @@ def test_safe_main_is_file_ops_reexport():
     assert triage_helpers.safe_main is file_ops.safe_main
 
 
-def test_parse_json_arg_success():
-    """Test valid JSON parsing."""
-    val, err = parse_json_arg('{"key": "val"}', '--data')
-    assert err is None
-    assert val == {'key': 'val'}
+#: ``(raw argument, parsed value — ``None`` when the argument is rejected)``. A
+#: rejected argument returns an error envelope AND a ``None`` value; an accepted
+#: one returns the value and no envelope.
+_PARSE_JSON_ARG_CASES = [
+    ('{"key": "val"}', {'key': 'val'}),
+    ('[1, 2, 3]', [1, 2, 3]),
+    ('not-json', None),
+]
+
+_PARSE_JSON_ARG_IDS = ['an-object', 'an-array', 'not-json-at-all']
 
 
-def test_parse_json_arg_invalid(capsys):
-    """Test invalid JSON returns error dict."""
-    val, err = parse_json_arg('not-json', '--data')
-    assert err is not None
-    assert err['status'] == 'error'
-    assert val is None
+@pytest.mark.parametrize('raw,expected', _PARSE_JSON_ARG_CASES, ids=_PARSE_JSON_ARG_IDS)
+def test_parse_json_arg(raw: str, expected):
+    val, err = parse_json_arg(raw, '--data')
+
+    assert val == expected
+    if expected is None:
+        assert err is not None
+        assert err['status'] == 'error'
+    else:
+        assert err is None
 
 
-def test_parse_json_arg_array():
-    """Test JSON array parsing."""
-    val, err = parse_json_arg('[1, 2, 3]', '--items')
-    assert err is None
-    assert val == [1, 2, 3]
+#: The config body used by the accepted row, stated once so the row and its
+#: expectation cannot drift apart.
+_VALID_CONFIG = {'key': 'value', 'count': 42}
+
+#: ``(file content — ``None`` when the file is never written, the config
+#: loaded)``. Both unusable shapes degrade to the empty dict rather than raising,
+#: so the caller always receives a mapping.
+_LOAD_CONFIG_CASES = [
+    (None, {}),
+    (json.dumps(_VALID_CONFIG), _VALID_CONFIG),
+    ('not json {{{', {}),
+]
+
+_LOAD_CONFIG_IDS = ['no-file-at-all', 'a-well-formed-config', 'a-file-that-is-not-json']
 
 
-def test_load_config_file_missing(tmp_path):
-    """Test loading a missing config file returns empty dict."""
-    result = load_config_file(tmp_path / 'nonexistent.json', 'test')
-    assert result == {}
+@pytest.mark.parametrize('content,expected', _LOAD_CONFIG_CASES, ids=_LOAD_CONFIG_IDS)
+def test_load_config_file(tmp_path, content: str | None, expected: dict):
+    config_path = tmp_path / 'config.json'
+    if content is not None:
+        config_path.write_text(content)
 
-
-def test_load_config_file_valid(tmp_path):
-    """Test loading a valid config file."""
-    config = {'key': 'value', 'count': 42}
-    config_path = tmp_path / 'test.json'
-    config_path.write_text(json.dumps(config))
-    result = load_config_file(config_path, 'test')
-    assert result == config
-
-
-def test_load_config_file_invalid_json(tmp_path):
-    """Test loading an invalid JSON file returns empty dict."""
-    config_path = tmp_path / 'bad.json'
-    config_path.write_text('not json {{{')
-    result = load_config_file(config_path, 'test')
-    assert result == {}
+    assert load_config_file(config_path, 'test') == expected
 
 
 def test_load_skill_config_resolves_path(tmp_path):
@@ -148,58 +153,82 @@ def test_load_skill_config_resolves_path(tmp_path):
     assert result == config
 
 
-def test_calculate_priority_no_boost():
-    """Test priority without boost."""
-    assert calculate_priority('low') == 'low'
-    assert calculate_priority('critical') == 'critical'
+#: ``(priority, boost — ``None`` calls WITHOUT the argument so the default is
+#: exercised, resulting priority)``. The ±5 rows are the clamps: a boost past
+#: either end of the ladder stops at that end rather than running off it.
+_PRIORITY_CASES = [
+    ('low', None, 'low'),
+    ('critical', None, 'critical'),
+    ('low', 1, 'medium'),
+    ('medium', 1, 'high'),
+    ('high', 1, 'critical'),
+    ('critical', -1, 'high'),
+    ('medium', -1, 'low'),
+    ('critical', 5, 'critical'),
+    ('low', -5, 'low'),
+]
+
+_PRIORITY_IDS = [
+    'low-unboosted',
+    'critical-unboosted',
+    'low-up-one',
+    'medium-up-one',
+    'high-up-one',
+    'critical-down-one',
+    'medium-down-one',
+    'clamped-at-the-top',
+    'clamped-at-the-bottom',
+]
 
 
-def test_calculate_priority_boost_up():
-    """Test priority escalation."""
-    assert calculate_priority('low', 1) == 'medium'
-    assert calculate_priority('medium', 1) == 'high'
-    assert calculate_priority('high', 1) == 'critical'
+@pytest.mark.parametrize('priority,boost,expected', _PRIORITY_CASES, ids=_PRIORITY_IDS)
+def test_calculate_priority(priority: str, boost: int | None, expected: str):
+    resolved = (
+        calculate_priority(priority) if boost is None else calculate_priority(priority, boost)
+    )
+
+    assert resolved == expected
 
 
-def test_calculate_priority_boost_down():
-    """Test priority de-escalation."""
-    assert calculate_priority('critical', -1) == 'high'
-    assert calculate_priority('medium', -1) == 'low'
+#: ``(path, is it a test file?)`` across the four language conventions the
+#: detector serves. Each language carries its own negative, so a detector that
+#: answered True for everything fails on four rows rather than passing.
+_TEST_FILE_CASES = [
+    ('src/test/java/com/example/FooTest.java', True),
+    ('FooTest.java', True),
+    ('FooIT.java', True),
+    ('src/main/java/com/example/Foo.java', False),
+    ('test_foo.py', True),
+    ('tests/test_bar.py', True),
+    ('foo.py', False),
+    ('Component.test.js', True),
+    ('Component.spec.tsx', True),
+    ('src/__tests__/Component.js', True),
+    ('Component.js', False),
+    ('handler_test.go', True),
+    ('handler.go', False),
+]
+
+_TEST_FILE_IDS = [
+    'java-test-under-src-test',
+    'java-test-by-suffix',
+    'java-integration-test-by-suffix',
+    'java-production-source',
+    'python-test-at-the-root',
+    'python-test-under-tests',
+    'python-production-source',
+    'javascript-dot-test',
+    'typescript-dot-spec',
+    'javascript-under-dunder-tests',
+    'javascript-production-source',
+    'go-underscore-test',
+    'go-production-source',
+]
 
 
-def test_calculate_priority_clamps():
-    """Test priority clamping at boundaries."""
-    assert calculate_priority('critical', 5) == 'critical'
-    assert calculate_priority('low', -5) == 'low'
-
-
-def test_is_test_file_java():
-    """Test Java test file detection."""
-    assert is_test_file('src/test/java/com/example/FooTest.java')
-    assert is_test_file('FooTest.java')
-    assert is_test_file('FooIT.java')
-    assert not is_test_file('src/main/java/com/example/Foo.java')
-
-
-def test_is_test_file_python():
-    """Test Python test file detection."""
-    assert is_test_file('test_foo.py')
-    assert is_test_file('tests/test_bar.py')
-    assert not is_test_file('foo.py')
-
-
-def test_is_test_file_javascript():
-    """Test JavaScript/TypeScript test file detection."""
-    assert is_test_file('Component.test.js')
-    assert is_test_file('Component.spec.tsx')
-    assert is_test_file('src/__tests__/Component.js')
-    assert not is_test_file('Component.js')
-
-
-def test_is_test_file_go():
-    """Test Go test file detection."""
-    assert is_test_file('handler_test.go')
-    assert not is_test_file('handler.go')
+@pytest.mark.parametrize('path,expected', _TEST_FILE_CASES, ids=_TEST_FILE_IDS)
+def test_is_test_file(path: str, expected: bool):
+    assert bool(is_test_file(path)) is expected
 
 
 def test_create_workflow_cli_basic():

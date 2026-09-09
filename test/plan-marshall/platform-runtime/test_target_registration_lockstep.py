@@ -84,7 +84,24 @@ def test_default_bundle_cache_roots_match_what_the_default_target_resolves() -> 
     assert resolved == marketplace_paths._DEFAULT_BUNDLE_CACHE_ROOTS
 
 
-def test_every_registered_target_resolves_a_bundle_cache_root() -> None:
+#: Parametrize rows for the per-target sweep below, read off the LIVE registry so
+#: a target added later is covered without anyone remembering. Sorted so the
+#: report order is stable across runs rather than dict-insertion dependent.
+_REGISTERED_TARGETS = sorted(platform_runtime._REGISTRY)
+
+
+def test_the_registry_is_not_empty() -> None:
+    """The per-target sweep below needs a population, or it asserts nothing.
+
+    Kept separate because a parametrized sweep over an EMPTY registry collects
+    zero cases and reports green — the one failure a derived population cannot
+    report about itself.
+    """
+    assert _REGISTERED_TARGETS
+
+
+@pytest.mark.parametrize("target", _REGISTERED_TARGETS, ids=_REGISTERED_TARGETS)
+def test_every_registered_target_resolves_a_bundle_cache_root(target: str) -> None:
     """``layout_bundle_cache_root`` resolves for every registered target, not just the default.
 
     The sibling constant test covers only the default target, so this one
@@ -92,10 +109,9 @@ def test_every_registered_target_resolves_a_bundle_cache_root() -> None:
     remembering, and a target whose implementation raised is caught here rather
     than only wherever else it happens to be exercised.
     """
-    for target in platform_runtime._REGISTRY:
-        roots = marketplace_paths._invoke_layout_op(target, "layout_bundle_cache_root")
+    roots = marketplace_paths._invoke_layout_op(target, "layout_bundle_cache_root")
 
-        assert roots, f"{target}: layout_bundle_cache_root resolved nothing ({roots!r})"
+    assert roots, f"{target}: layout_bundle_cache_root resolved nothing ({roots!r})"
 
 
 def test_layout_op_resolves_each_registered_target_distinctly() -> None:

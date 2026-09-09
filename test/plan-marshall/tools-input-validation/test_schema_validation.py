@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for schema_validation.py shared module."""
 
+import pytest
 from schema_validation import (
     MAX_MESSAGE_LENGTH,
     MAX_PHASES_ITEMS,
@@ -37,48 +38,45 @@ class TestValidateStatus:
         errors = validate_status([1, 2, 3])
         assert errors == ['status.json must be a JSON object']
 
-    def test_missing_plan_id(self):
-        data = {'current_phase': 'phase-1-init', 'phases': []}
-        errors = validate_status(data)
-        assert "Missing required field: 'plan_id'" in errors
-
-    def test_missing_current_phase(self):
-        data = {'plan_id': 'p', 'phases': []}
-        errors = validate_status(data)
-        assert "Missing required field: 'current_phase'" in errors
-
-    def test_missing_phases(self):
-        data = {'plan_id': 'p', 'current_phase': 'x'}
-        errors = validate_status(data)
-        assert "Missing required field: 'phases'" in errors
-
-    def test_wrong_type_plan_id(self):
-        data = {'plan_id': 123, 'current_phase': 'x', 'phases': []}
-        errors = validate_status(data)
-        assert "Field 'plan_id' should be str, got int" in errors
-
-    def test_wrong_type_phases(self):
-        data = {'plan_id': 'p', 'current_phase': 'x', 'phases': 'not-a-list'}
-        errors = validate_status(data)
-        assert "Field 'phases' should be list, got str" in errors
-
-    def test_invalid_phase_entry(self):
-        data = {
-            'plan_id': 'p',
-            'current_phase': 'x',
-            'phases': ['not-a-dict'],
-        }
-        errors = validate_status(data)
-        assert 'phases[0] must be a dict' in errors
-
-    def test_phase_missing_fields(self):
-        data = {
-            'plan_id': 'p',
-            'current_phase': 'x',
-            'phases': [{'name': '1-init'}],
-        }
-        errors = validate_status(data)
-        assert "Missing required field: 'status'" in errors
+    @pytest.mark.parametrize(
+        ('data', 'expected_error'),
+        [
+            (
+                {'current_phase': 'phase-1-init', 'phases': []},
+                "Missing required field: 'plan_id'",
+            ),
+            ({'plan_id': 'p', 'phases': []}, "Missing required field: 'current_phase'"),
+            ({'plan_id': 'p', 'current_phase': 'x'}, "Missing required field: 'phases'"),
+            (
+                {'plan_id': 123, 'current_phase': 'x', 'phases': []},
+                "Field 'plan_id' should be str, got int",
+            ),
+            (
+                {'plan_id': 'p', 'current_phase': 'x', 'phases': 'not-a-list'},
+                "Field 'phases' should be list, got str",
+            ),
+            (
+                {'plan_id': 'p', 'current_phase': 'x', 'phases': ['not-a-dict']},
+                'phases[0] must be a dict',
+            ),
+            (
+                {'plan_id': 'p', 'current_phase': 'x', 'phases': [{'name': '1-init'}]},
+                "Missing required field: 'status'",
+            ),
+        ],
+        ids=[
+            'plan-id-absent',
+            'current-phase-absent',
+            'phases-absent',
+            'plan-id-is-an-int',
+            'phases-is-a-string',
+            'a-phase-entry-is-not-an-object',
+            'a-phase-entry-omits-its-status',
+        ],
+    )
+    def test_reports_the_error_a_malformed_document_earns(self, data, expected_error):
+        """Absent field, wrong type, and malformed nested entry each report their own error."""
+        assert expected_error in validate_status(data)
 
     # --- New constraint coverage: additionalProperties: false ----------------
 

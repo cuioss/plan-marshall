@@ -26,6 +26,7 @@ live corpus's wording rather than reading it.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -176,56 +177,61 @@ def test_relative_entry_without_a_base_is_recorded_unresolved(repo: Path, plans:
 # rule (b)'s marker, so each assertion is about rule (a) alone.
 
 
-def test_a_hypothesis_label_resolves_its_entries_to_a_lead(repo: Path, plans: Path) -> None:
-    """Rule (a), the label half — positive control."""
-    body = (
-        '# PLAN-200\n\n## Expected Surface\n\n'
-        "- HYPOTHESIS: guards across `test/omega/**` carrying a path literal — R1's output\n"
-    )
+def _shape_of(plans: Path, repo: Path, plan_id: str, bullet: str, path: str) -> str:
+    """Resolve ONE bullet's entry and return the shape the parser gave it.
 
-    claim = claim_for(plans, repo, 'PLAN-200.md', body)
-    entry = next(entry for entry in claim.claimed if entry.path == 'test/omega/**')
-
-    assert entry.shape == spec_parser.SHAPE_LEAD
-
-
-def test_the_verify_at_outline_phrase_resolves_its_entries_to_a_lead(
-    repo: Path, plans: Path
-) -> None:
-    """Rule (a), the phrase half — positive control, and the label is OBSERVED.
-
-    The two halves are independent signals: this bullet carries no HYPOTHESIS
-    label, so a rule reading only the label would leave the entry a claim.
+    The one construction every entry-shape row below shares, so a row states only
+    the bullet it is about and the verdict it expects.
     """
-    body = (
-        '# PLAN-201\n\n## Expected Surface\n\n'
-        '- OBSERVED: `test/omega/` or a sibling the tree indicates (verify-at-outline)\n'
-    )
-
-    claim = claim_for(plans, repo, 'PLAN-201.md', body)
-    entry = next(entry for entry in claim.claimed if entry.path == 'test/omega/')
-
-    assert entry.shape == spec_parser.SHAPE_LEAD
+    body = f'# {plan_id}\n\n## Expected Surface\n\n{bullet}'
+    claim = claim_for(plans, repo, f'{plan_id}.md', body)
+    # The subject is loaded dynamically, so its entries are untyped to the
+    # checker; the cast states the shape's real type rather than widening this
+    # helper's own return annotation to ``Any``.
+    return cast(str, next(entry for entry in claim.claimed if entry.path == path).shape)
 
 
-def test_an_observed_whole_tree_declaration_stays_a_claim(repo: Path, plans: Path) -> None:
-    """Negative control, in the corpus's own whole-tree wording.
-
-    A plan that deliberately crosses the entire tree declares exactly this shape.
-    Marking it a lead would demote a real ownership claim and hand the whole
-    tree back to the contested set — the opposite of the defect the rules exist
-    to fix.
-    """
-    body = (
-        '# PLAN-202\n\n## Expected Surface\n\n'
+#: ``(spec id, bullet, path, resolved shape)`` for rule (a). The two LEAD rows
+#: are INDEPENDENT signals — a HYPOTHESIS label and the verify-at-outline phrase —
+#: so a rule reading only the label leaves the second row a claim. The CLAIM row
+#: is the negative control, in the corpus's own whole-tree wording: a plan that
+#: deliberately crosses the entire tree declares exactly this shape, and marking
+#: it a lead would demote a real ownership claim and hand the whole tree back to
+#: the contested set.
+_RULE_A_CASES = [
+    (
+        'PLAN-200',
+        "- HYPOTHESIS: guards across `test/omega/**` carrying a path literal — R1's output\n",
+        'test/omega/**',
+        spec_parser.SHAPE_LEAD,
+    ),
+    (
+        'PLAN-201',
+        '- OBSERVED: `test/omega/` or a sibling the tree indicates (verify-at-outline)\n',
+        'test/omega/',
+        spec_parser.SHAPE_LEAD,
+    ),
+    (
+        'PLAN-202',
         "- OBSERVED: `test/` — ⛔ **the whole tree.** The rule's findings do not respect "
-        "slice boundaries, so this plan's surface is the test tree entire\n"
-    )
+        "slice boundaries, so this plan's surface is the test tree entire\n",
+        'test/',
+        spec_parser.SHAPE_CLAIM,
+    ),
+]
 
-    claim = claim_for(plans, repo, 'PLAN-202.md', body)
-    entry = next(entry for entry in claim.claimed if entry.path == 'test/')
+_RULE_A_IDS = [
+    'hypothesis-label-marks-a-lead',
+    'verify-at-outline-phrase-marks-a-lead',
+    'a-whole-tree-declaration-stays-a-claim',
+]
 
-    assert entry.shape == spec_parser.SHAPE_CLAIM
+
+@pytest.mark.parametrize('plan_id,bullet,path,shape', _RULE_A_CASES, ids=_RULE_A_IDS)
+def test_rule_a_resolves_the_entry_shape(
+    repo: Path, plans: Path, plan_id: str, bullet: str, path: str, shape: str
+) -> None:
+    assert _shape_of(plans, repo, plan_id, bullet, path) == shape
 
 
 def test_a_lead_entry_keeps_its_membership_of_claimed(repo: Path, plans: Path) -> None:
@@ -393,39 +399,63 @@ def test_the_label_and_constraint_rules_fire_independently(repo: Path, plans: Pa
 # trailing commentary annotates a claim the bullet makes in its own right.
 
 
-def test_a_cross_plan_citation_in_the_claim_head_resolves_its_entries_to_a_lead(
-    repo: Path, plans: Path
+#: ``(spec id, bullet, path, resolved shape)`` for rule (c), every row a claim
+#: head. The two citation forms the corpus uses — a full identifier and the
+#: ordinal of the slice a sibling holds — are independent, so a rule reading only
+#: the identifier form leaves the ordinal row owning that slice. The
+#: absent-identifier row pins that the rule is keyed on the published plan-id
+#: GRAMMAR rather than on any list of plans. The two CLAIM rows are the negative
+#: controls: naming a sibling without the possessive is how a spec records an
+#: overlap it takes knowingly, and ``CWE-1333`` wears the bare
+#: ``{SLUG}-{DIGITS}`` shape a code-slug plan id takes, so reading a standards
+#: citation as a plan citation would demote the claim standing beside it.
+_RULE_C_CASES = [
+    (
+        'PLAN-220',
+        "- OBSERVED: run 2 → PLAN-040's sixteen entries under `test/omega/`\n",
+        'test/omega/',
+        spec_parser.SHAPE_LEAD,
+    ),
+    (
+        'PLAN-221',
+        "- OBSERVED: slice `050`'s ten directories under `test/omega/`\n",
+        'test/omega/',
+        spec_parser.SHAPE_LEAD,
+    ),
+    (
+        'PLAN-224',
+        "- OBSERVED: PLAN-ZETA-777's four directories under `test/omega/`\n",
+        'test/omega/',
+        spec_parser.SHAPE_LEAD,
+    ),
+    (
+        'PLAN-223',
+        '- OBSERVED: `test/omega/` alongside PLAN-040\n',
+        'test/omega/',
+        spec_parser.SHAPE_CLAIM,
+    ),
+    (
+        'PLAN-227',
+        "- OBSERVED: `test/omega/` bounded by CWE-1333's total budget\n",
+        'test/omega/',
+        spec_parser.SHAPE_CLAIM,
+    ),
+]
+
+_RULE_C_IDS = [
+    'full-identifier-citation-marks-a-lead',
+    'slice-ordinal-citation-marks-a-lead',
+    'an-identifier-form-absent-from-the-corpus-is-still-read',
+    'naming-a-plan-without-the-possessive-stays-a-claim',
+    'a-possessive-over-a-non-plan-token-stays-a-claim',
+]
+
+
+@pytest.mark.parametrize('plan_id,bullet,path,shape', _RULE_C_CASES, ids=_RULE_C_IDS)
+def test_rule_c_resolves_the_entry_shape(
+    repo: Path, plans: Path, plan_id: str, bullet: str, path: str, shape: str
 ) -> None:
-    """Rule (c) — positive control, the full-identifier citation form."""
-    body = (
-        '# PLAN-220\n\n## Expected Surface\n\n'
-        "- OBSERVED: run 2 → PLAN-040's sixteen entries under `test/omega/`\n"
-    )
-
-    claim = claim_for(plans, repo, 'PLAN-220.md', body)
-    entry = next(entry for entry in claim.claimed if entry.path == 'test/omega/')
-
-    assert entry.shape == spec_parser.SHAPE_LEAD
-
-
-def test_a_slice_ordinal_citation_resolves_its_entries_to_a_lead(
-    repo: Path, plans: Path
-) -> None:
-    """Rule (c) — positive control, the slice-ordinal citation form.
-
-    The corpus cites a sibling either by full identifier or by the ordinal of the
-    slice it holds. Both are references to another plan's surface, so a rule
-    reading only the identifier form would leave this one owning that slice.
-    """
-    body = (
-        '# PLAN-221\n\n## Expected Surface\n\n'
-        "- OBSERVED: slice `050`'s ten directories under `test/omega/`\n"
-    )
-
-    claim = claim_for(plans, repo, 'PLAN-221.md', body)
-    entry = next(entry for entry in claim.claimed if entry.path == 'test/omega/')
-
-    assert entry.shape == spec_parser.SHAPE_LEAD
+    assert _shape_of(plans, repo, plan_id, bullet, path) == shape
 
 
 def test_a_citation_in_the_trailing_commentary_leaves_the_claim_intact(
@@ -457,47 +487,6 @@ def test_a_citation_in_the_trailing_commentary_leaves_the_claim_intact(
     entry = next(entry for entry in claim.claimed if entry.path == 'test/omega/test_one.py')
 
     assert entry.shape == spec_parser.SHAPE_CLAIM
-
-
-def test_a_head_naming_a_plan_without_the_possessive_stays_a_claim(
-    repo: Path, plans: Path
-) -> None:
-    """Rule (c) — negative control: the identifier alone is not a citation.
-
-    Same head, same identifier, no possessive. Naming a sibling is how a spec
-    records an overlap it is taking knowingly; only the possessive says the span
-    belongs to the sibling.
-    """
-    body = (
-        '# PLAN-223\n\n## Expected Surface\n\n'
-        '- OBSERVED: `test/omega/` alongside PLAN-040\n'
-    )
-
-    claim = claim_for(plans, repo, 'PLAN-223.md', body)
-    entry = next(entry for entry in claim.claimed if entry.path == 'test/omega/')
-
-    assert entry.shape == spec_parser.SHAPE_CLAIM
-
-
-def test_a_citation_of_an_identifier_form_absent_from_the_corpus_is_read(
-    repo: Path, plans: Path
-) -> None:
-    """Rule (c) is keyed on the GRAMMAR, not on any list of plans.
-
-    A code-slug identifier no spec in the live corpus carries is still read as a
-    citation, because the pattern carries the published plan-id grammar. A rule
-    that had degenerated into a list of the identifiers it was written against
-    would leave this entry owning the span.
-    """
-    body = (
-        '# PLAN-224\n\n## Expected Surface\n\n'
-        "- OBSERVED: PLAN-ZETA-777's four directories under `test/omega/`\n"
-    )
-
-    claim = claim_for(plans, repo, 'PLAN-224.md', body)
-    entry = next(entry for entry in claim.claimed if entry.path == 'test/omega/')
-
-    assert entry.shape == spec_parser.SHAPE_LEAD
 
 
 @pytest.mark.parametrize(
@@ -534,25 +523,6 @@ def test_the_possessive_is_read_relative_to_who_is_citing(
     entry = next(entry for entry in claim.claimed if entry.path == 'test/omega/')
 
     assert entry.shape == shape
-
-
-def test_a_possessive_over_a_non_plan_token_stays_a_claim(repo: Path, plans: Path) -> None:
-    """Rule (c) — negative control over the bare code-slug shape in prose.
-
-    ``CWE-1333`` wears the bare ``{SLUG}-{DIGITS}`` shape a code-slug plan id
-    takes, which is a plan id only in a spec filename's anchored leading
-    position. Reading a standards citation as a plan citation demotes the claim
-    standing beside it, so the rule keys on the ``PLAN-`` prefix instead.
-    """
-    body = (
-        '# PLAN-227\n\n## Expected Surface\n\n'
-        "- OBSERVED: `test/omega/` bounded by CWE-1333's total budget\n"
-    )
-
-    claim = claim_for(plans, repo, 'PLAN-227.md', body)
-    entry = next(entry for entry in claim.claimed if entry.path == 'test/omega/')
-
-    assert entry.shape == spec_parser.SHAPE_CLAIM
 
 
 def test_a_cross_plan_reference_entry_keeps_its_membership_of_claimed(
@@ -804,13 +774,23 @@ def test_the_oracle_rows_resolve_to_leads(
     assert [entry.shape for entry in rows] == [spec_parser.SHAPE_LEAD] * occurrences
 
 
-@pytest.mark.parametrize('plan_id', ['PLAN-130', 'PLAN-135'], ids=['plan_130', 'plan_135'])
+#: The corpus's whole-tree declarations, enumerated by spec. Both rows assert
+#: the SAME contract over DIFFERENT corpus members — the family is a roll-call of
+#: the specs the rules must leave alone, not two distinct contracts — so each id
+#: names its spec, and the ids come off this list rather than a parallel one.
+_WHOLE_TREE_DECLARATION_SPECS = ['PLAN-130', 'PLAN-135']
+
+
+@pytest.mark.parametrize(
+    'plan_id', _WHOLE_TREE_DECLARATION_SPECS, ids=_WHOLE_TREE_DECLARATION_SPECS
+)
 def test_the_whole_tree_declarations_survive_as_claims(oracle, plan_id: str) -> None:
     """The negative control both rules are measured against.
 
-    These two plans cross the whole partition by construction. Neither marker
-    matches their wording, so their ``test/`` entries stay claims and the specs
-    stay ``declarative``.
+    Every whole-tree declaration in the corpus is enumerated, not sampled: these
+    plans cross the whole partition by construction, neither marker matches their
+    wording, so their ``test/`` entries stay claims and the specs stay
+    ``declarative``.
     """
     rows = [entry for entry in oracle[plan_id].claimed if entry.path == 'test/']
 

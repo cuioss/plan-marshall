@@ -33,6 +33,30 @@ SID_A = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
 SID_B = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
 SID_C = "cccccccc-cccc-cccc-cccc-cccccccccccc"
 
+#: Values that are not a safe single path segment. Both ids in this module are
+#: path segments under the cache root, so the same set rejects both: empty,
+#: either separator, the two traversal spellings, a value past the length cap,
+#: and one carrying a NUL byte. Held as one constant because four sweeps assert
+#: against it, and a value added to only some of them would leave a real gap.
+_UNSAFE_SEGMENTS = ["", "a/b", "a\\b", "..", ".", "x" * 121, "a\x00b"]
+
+_UNSAFE_SEGMENT_IDS = [
+    'empty',
+    'forward-slash',
+    'backslash',
+    'parent-directory',
+    'current-directory',
+    'over-the-length-cap',
+    'nul-byte',
+]
+
+#: The same set plus a full traversal path — the shape a session id is most
+#: likely to arrive as from a hostile or confused caller, and the reason the
+#: session-id sweeps carry one row the plan-id sweeps do not need.
+_UNSAFE_SESSION_IDS = ["../../etc/passwd", *_UNSAFE_SEGMENTS]
+
+_UNSAFE_SESSION_ID_IDS = ['a-traversal-path', *_UNSAFE_SEGMENT_IDS]
+
 
 @pytest.fixture()
 def cache(tmp_path, monkeypatch):
@@ -118,10 +142,7 @@ class TestUnbind:
         assert session_binding.unbind(SID_C) is True
         assert session_binding.resolve_plan(SID_C) is None
 
-    @pytest.mark.parametrize(
-        "bad",
-        ["", "../../etc/passwd", "a/b", "a\\b", "..", ".", "x" * 121, "a\x00b"],
-    )
+    @pytest.mark.parametrize("bad", _UNSAFE_SESSION_IDS, ids=_UNSAFE_SESSION_ID_IDS)
     def test_unbind_rejects_malformed_session_id(self, cache, bad):
         """A malformed session id is rejected before any filesystem touch."""
         assert session_binding.unbind(bad) is False
@@ -169,10 +190,7 @@ class TestValidators:
         """A non-UUID single segment (e.g. a test session id) is accepted — lax by design."""
         assert session_binding._valid_session_id("sess-tab-A") is True
 
-    @pytest.mark.parametrize(
-        "bad",
-        ["", "../../etc/passwd", "a/b", "a\\b", "..", ".", "x" * 121, "a\x00b"],
-    )
+    @pytest.mark.parametrize("bad", _UNSAFE_SESSION_IDS, ids=_UNSAFE_SESSION_ID_IDS)
     def test_valid_session_id_rejects_unsafe(self, bad):
         """Empty, traversal, separator, null-byte, and over-length session ids are rejected."""
         assert session_binding._valid_session_id(bad) is False
@@ -181,10 +199,7 @@ class TestValidators:
         """A simple single-segment plan id passes validation."""
         assert session_binding._valid_plan_id("my-plan-123") is True
 
-    @pytest.mark.parametrize(
-        "bad",
-        ["", "a/b", "a\\b", "..", ".", "x" * 121, "a\x00b"],
-    )
+    @pytest.mark.parametrize("bad", _UNSAFE_SEGMENTS, ids=_UNSAFE_SEGMENT_IDS)
     def test_valid_plan_id_rejects_unsafe(self, bad):
         """Empty, traversal, separator, null-byte, and over-length plan ids are rejected."""
         assert session_binding._valid_plan_id(bad) is False
@@ -586,7 +601,7 @@ class TestOrchestratorSlot:
         session_binding.bind_orchestrator(SID_A, "epic-2")
         assert session_binding.resolve_orchestrator(SID_A) == "epic-2"
 
-    @pytest.mark.parametrize("bad", ["", "a/b", "a\\b", "..", ".", "x" * 121, "a\x00b"])
+    @pytest.mark.parametrize("bad", _UNSAFE_SEGMENTS, ids=_UNSAFE_SEGMENT_IDS)
     def test_bind_orchestrator_rejects_invalid_slug(self, cache, bad):
         """bind_orchestrator rejects a traversal/over-length slug and writes nothing."""
         assert session_binding.bind_orchestrator(SID_A, bad) is False

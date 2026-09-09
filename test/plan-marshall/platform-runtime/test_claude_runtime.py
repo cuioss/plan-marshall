@@ -1320,15 +1320,44 @@ class TestInstallTerminalTitleHooks:
         assert settings_json.read_text() == shared_before
         assert "hooks" not in json.loads(shared_before)
 
-    def test_target_relative_path_or_bare_identifier_rejected(self, rt, tmp_path, monkeypatch):
-        """Any target value that is neither 'claude' nor an absolute .json path MUST be rejected with unknown_target."""
+    @pytest.mark.parametrize(
+        "invalid,absolute",
+        [
+            ("opencode", False),
+            ("settings.local.json", False),
+            ("./settings.json", False),
+            ("no-extension", True),
+        ],
+        ids=[
+            'another-platform-identifier',
+            'bare-file-name',
+            'relative-path',
+            'absolute-path-without-a-json-suffix',
+        ],
+    )
+    def test_target_relative_path_or_bare_identifier_rejected(
+        self, rt, tmp_path, monkeypatch, invalid, absolute
+    ):
+        """A target that is neither ``claude`` nor an absolute ``.json`` path is refused.
+
+        Each row is a different way of being neither, and all four must refuse
+        without leaving a stray file behind — a target taken literally would
+        create one where it stood.
+
+        ``absolute`` says whether the row's spelling is made absolute before the
+        call. The absolute row carries only its bare name so both the argument
+        and the stray-file assertion resolve under ``tmp_path``; spelling an
+        absolute path in the table would make the assertion about host state
+        rather than about the fixture tree, where it would pass vacuously.
+        """
         monkeypatch.chdir(tmp_path)
-        for invalid in ("opencode", "settings.local.json", "./settings.json", "/tmp/no-extension"):
-            result = _parsed(rt.project_install_hook(invalid))
-            assert result["status"] == "error", f"expected error for target={invalid!r}, got {result}"
-            assert result["error"] == "unknown_target", f"target={invalid!r}: {result}"
-            # No stray file ever created.
-            assert not (tmp_path / invalid).exists()
+        target = str(tmp_path / invalid) if absolute else invalid
+
+        result = _parsed(rt.project_install_hook(target))
+
+        assert result["status"] == "error", f"expected error for target={target!r}, got {result}"
+        assert result["error"] == "unknown_target", f"target={target!r}: {result}"
+        assert not (tmp_path / invalid).exists()
 
     @pytest.mark.parametrize(
         "keys",
@@ -2368,7 +2397,7 @@ class TestCommandIsBuild:
         )
         assert _command_is_build(command) is True
 
-    @pytest.mark.parametrize("command", [None, ""])
+    @pytest.mark.parametrize("command", [None, ""], ids=['no-command', 'empty-command'])
     def test_empty_or_none_command_is_false(self, command):
         """An empty or None command is never a build command."""
         assert _command_is_build(command) is False
@@ -2427,53 +2456,47 @@ class TestCommandIsBuildMentionVsInvocation:
         '--command-args "verify plan-marshall"'
     )
 
-    def test_notation_as_a_quoted_argument_to_another_command_is_not_a_build(self):
-        """(a) The notation passed as an argument to an unrelated command."""
-        assert _command_is_build("echo 'plan-marshall:build-pyproject:pyproject_build'") is False
-        assert _command_is_build(self._INVOCATION) is True
+    #: Commands that MENTION a build-wrapper notation without invoking one. Each
+    #: defeats the retired substring match for a different structural reason: the
+    #: notation sits in a quoted argument to an unrelated command; inside a file
+    #: PATH; inside a ``--file`` VALUE the executor is passing along; embedded in
+    #: a longer token that merely contains it; and — the discriminator the
+    #: predicate exists for — occupying the notation position legitimately as a
+    #: NON-build skill, which a positional-presence check would wave through.
+    _MENTIONS = [
+        "echo 'plan-marshall:build-pyproject:pyproject_build'",
+        "cat docs/plan-marshall:build-pyproject-notes.md",
+        (
+            "python3 .plan/execute-script.py plan-marshall:manage-files:manage-files "
+            "add --plan-id p --file plan-marshall:build-pyproject.md"
+        ),
+        (
+            "python3 .plan/execute-script.py "
+            "not-plan-marshall:build-pyproject-shim:thing run"
+        ),
+        (
+            "python3 .plan/execute-script.py "
+            "plan-marshall:manage-status:manage-status read --plan-id p"
+        ),
+    ]
 
-    def test_notation_in_a_file_path_or_file_content_is_not_a_build(self):
-        """(b) The shape actually observed: the notation inside a path, and
-        inside content the command reads or writes."""
-        assert _command_is_build("cat docs/plan-marshall:build-pyproject-notes.md") is False
-        assert (
-            _command_is_build(
-                "python3 .plan/execute-script.py plan-marshall:manage-files:manage-files "
-                "add --plan-id p --file plan-marshall:build-pyproject.md"
-            )
-            is False
-        )
-        assert _command_is_build(self._INVOCATION) is True
+    _MENTION_IDS = [
+        'quoted-argument-to-an-unrelated-command',
+        'inside-a-file-path',
+        'inside-a-file-argument-the-executor-forwards',
+        'embedded-in-a-longer-token',
+        'notation-position-held-by-a-non-build-skill',
+    ]
 
-    def test_notation_embedded_in_a_longer_token_is_not_a_build(self):
-        """(c) The notation as a substring of a larger token.
+    @pytest.mark.parametrize("mention", _MENTIONS, ids=_MENTION_IDS)
+    def test_a_mention_is_not_an_invocation(self, mention: str) -> None:
+        """Naming a wrapper is not calling one — and a real call still matches.
 
-        Equality on the parsed ``{bundle}:{skill}`` prefix is what rejects
-        this; a containment test cannot.
+        The positive control rides in the same row deliberately: without it a
+        predicate that simply returned False for everything would satisfy every
+        mention case here.
         """
-        assert (
-            _command_is_build(
-                "python3 .plan/execute-script.py "
-                "not-plan-marshall:build-pyproject-shim:thing run"
-            )
-            is False
-        )
-        assert _command_is_build(self._INVOCATION) is True
-
-    def test_a_non_build_wrapper_in_the_notation_position_is_not_a_build(self):
-        """A real executor invocation of a NON-build skill must not match.
-
-        This is the discriminator the predicate exists for: the notation
-        position is occupied, so a positional-presence check would pass here.
-        Only the bundle:skill equality rejects it.
-        """
-        assert (
-            _command_is_build(
-                "python3 .plan/execute-script.py "
-                "plan-marshall:manage-status:manage-status read --plan-id p"
-            )
-            is False
-        )
+        assert _command_is_build(mention) is False
         assert _command_is_build(self._INVOCATION) is True
 
     def test_an_unparseable_command_line_is_not_a_build(self):
@@ -4833,65 +4856,62 @@ def _titlestate_write_archived(tmp_path, plan_id, status, date_prefix="2026-05-2
     (d / "status.json").write_text(json.dumps(status), encoding="utf-8")
 
 
+#: The status body planted at each of the three search locations. The bodies are
+#: deliberately distinct, so the state the reader returns NAMES which location it
+#: read rather than merely proving it read something.
+_TITLE_STATE_BODIES: dict[str, dict[str, str]] = {
+    'live': {"current_phase": "3-outline", "short_description": "live"},
+    'worktree': {"current_phase": "5-execute", "short_description": "wt"},
+    'archived': {"current_phase": "6-finalize", "short_description": "arch"},
+}
+
+_TITLE_STATE_WRITERS = {
+    'live': _titlestate_write_live,
+    'worktree': _titlestate_write_worktree,
+    'archived': _titlestate_write_archived,
+}
+
+#: ``(locations to populate, the state the reader must return)``. The rows walk
+#: the search order downwards, each dropping the location above it, so the winner
+#: changes only because its predecessor is absent — which is what makes this a
+#: precedence table rather than three independent reads. The second row is the
+#: phase-5/6 freeze scenario the worktree probe was added for; the last row
+#: populates nothing and is the only way the reader answers ``None``.
+_TITLE_STATE_PRECEDENCE = [
+    (('live', 'worktree', 'archived'), _TITLE_STATE_BODIES['live']),
+    (('worktree', 'archived'), _TITLE_STATE_BODIES['worktree']),
+    (('archived',), _TITLE_STATE_BODIES['archived']),
+    ((), None),
+]
+
+_TITLE_STATE_PRECEDENCE_IDS = [
+    'live-wins-over-both-fallbacks',
+    'worktree-wins-once-live-is-absent',
+    'archive-is-the-last-resort',
+    'nothing-anywhere-reads-as-none',
+]
+
+
 class TestReadTitleStateWorktree:
     """Regression tests for the three-location ``_read_title_state`` search order
     (main-live -> worktree -> archived) and the ``_resolve_worktree_status_json``
     probe added so the title no longer freezes once the plan dir is moved into
     its worktree during phases 5-6 (ADR-002)."""
 
-    def test_live_present_resolves_live(self, tmp_path, monkeypatch):
-        """Case 1 — a present main-live status.json resolves live even when
-        worktree and archived copies also exist (live wins, unchanged)."""
+    @pytest.mark.parametrize(
+        ("populated", "expected"),
+        _TITLE_STATE_PRECEDENCE,
+        ids=_TITLE_STATE_PRECEDENCE_IDS,
+    )
+    def test_read_title_state_search_order(self, tmp_path, monkeypatch, populated, expected):
+        """The reader takes the first of main-live / worktree / archived present."""
         cr = _titlestate_reader_cwd(tmp_path, monkeypatch)
-        _titlestate_write_live(
-            tmp_path, "wt-plan", {"current_phase": "3-outline", "short_description": "live"}
-        )
-        _titlestate_write_worktree(
-            tmp_path, "wt-plan", {"current_phase": "5-execute", "short_description": "wt"}
-        )
-        _titlestate_write_archived(
-            tmp_path, "wt-plan", {"current_phase": "6-finalize", "short_description": "arch"}
-        )
+        for location in populated:
+            _TITLE_STATE_WRITERS[location](
+                tmp_path, "wt-plan", _TITLE_STATE_BODIES[location]
+            )
 
-        state = cr._read_title_state("wt-plan")
-
-        assert state == {"current_phase": "3-outline", "short_description": "live"}
-
-    def test_live_absent_worktree_present_resolves_worktree(self, tmp_path, monkeypatch):
-        """Case 2 — with the main-live path absent, the worktree status.json
-        resolves (the phase-5/6 freeze scenario), taking precedence over the
-        archived copy."""
-        cr = _titlestate_reader_cwd(tmp_path, monkeypatch)
-        _titlestate_write_worktree(
-            tmp_path, "wt-plan", {"current_phase": "5-execute", "short_description": "wt"}
-        )
-        _titlestate_write_archived(
-            tmp_path, "wt-plan", {"current_phase": "6-finalize", "short_description": "arch"}
-        )
-
-        state = cr._read_title_state("wt-plan")
-
-        assert state == {"current_phase": "5-execute", "short_description": "wt"}
-
-    def test_live_and_worktree_absent_archived_present_resolves_archived(
-        self, tmp_path, monkeypatch
-    ):
-        """Case 3 — with both live and worktree absent, the archived fallback is
-        preserved unchanged."""
-        cr = _titlestate_reader_cwd(tmp_path, monkeypatch)
-        _titlestate_write_archived(
-            tmp_path, "wt-plan", {"current_phase": "6-finalize", "short_description": "arch"}
-        )
-
-        state = cr._read_title_state("wt-plan")
-
-        assert state == {"current_phase": "6-finalize", "short_description": "arch"}
-
-    def test_none_present_returns_none(self, tmp_path, monkeypatch):
-        """Case 4 — no status.json in any of the three locations returns None."""
-        cr = _titlestate_reader_cwd(tmp_path, monkeypatch)
-
-        assert cr._read_title_state("wt-plan") is None
+        assert cr._read_title_state("wt-plan") == expected
 
     def test_resolve_worktree_status_json_present_returns_path(self, tmp_path, monkeypatch):
         """Focused probe — a present worktree status.json resolves to its path."""
@@ -5352,6 +5372,38 @@ class TestBuildJobPoll:
 # =============================================================================
 
 
+#: ``(the metadata a read sees, the identity it must resolve)``. Only the stored
+#: metadata varies. The rows cover the list carrying several entries (the newest
+#: wins), one entry (which must read exactly as the retired scalar did), an empty
+#: list and no field at all (both "no identity" — an empty list is not a
+#: half-written one), a list whose trailing entries are falsy (skipped, so a
+#: blank append cannot erase the identity), and a list present ALONGSIDE the
+#: legacy scalar, where the list wins.
+_SESSION_READ_CASES = [
+    ({claude_runtime.SESSION_IDS_FIELD: ["sess-first", "sess-second", "sess-newest"]}, "sess-newest"),
+    ({claude_runtime.SESSION_IDS_FIELD: ["sess-only"]}, "sess-only"),
+    ({claude_runtime.SESSION_IDS_FIELD: []}, None),
+    ({claude_runtime.SESSION_IDS_FIELD: ["sess-real", "", None]}, "sess-real"),
+    (
+        {
+            claude_runtime.SESSION_IDS_FIELD: ["sess-new"],
+            claude_runtime.LEGACY_SESSION_ID_FIELD: "sess-stale",
+        },
+        "sess-new",
+    ),
+    ({}, None),
+]
+
+_SESSION_READ_IDS = [
+    'several-entries-newest-wins',
+    'single-entry-reads-like-the-retired-scalar',
+    'empty-list-is-no-identity',
+    'falsy-trailing-entries-are-skipped',
+    'list-wins-over-a-stale-legacy-scalar',
+    'no-field-at-all-is-no-identity',
+]
+
+
 class TestSessionIdentityIsAList:
     """The plan's session identity is append-only, not a single overwritable slot.
 
@@ -5398,29 +5450,16 @@ class TestSessionIdentityIsAList:
         assert argv[argv.index("--field") + 1] == _cr.SESSION_IDS_FIELD
         assert argv[argv.index("--value") + 1] == "sess-9"
 
-    def test_read_returns_the_most_recent_entry(self, monkeypatch):
+    @pytest.mark.parametrize(
+        ("responses", "expected"), _SESSION_READ_CASES, ids=_SESSION_READ_IDS
+    )
+    def test_read_resolves_the_current_identity(self, monkeypatch, responses, expected):
+        """The read resolves the newest usable entry, or reports no identity."""
         import claude_runtime as _cr
 
-        self._reads(monkeypatch, {_cr.SESSION_IDS_FIELD: ["sess-first", "sess-second", "sess-newest"]})
-        assert _cr._manage_status_read_session("plan-a") == "sess-newest"
+        self._reads(monkeypatch, responses)
 
-    def test_a_single_entry_list_reads_like_a_scalar_did(self, monkeypatch):
-        import claude_runtime as _cr
-
-        self._reads(monkeypatch, {_cr.SESSION_IDS_FIELD: ["sess-only"]})
-        assert _cr._manage_status_read_session("plan-a") == "sess-only"
-
-    def test_empty_list_is_no_identity(self, monkeypatch):
-        import claude_runtime as _cr
-
-        self._reads(monkeypatch, {_cr.SESSION_IDS_FIELD: []})
-        assert _cr._manage_status_read_session("plan-a") is None
-
-    def test_falsy_trailing_entries_are_skipped(self, monkeypatch):
-        import claude_runtime as _cr
-
-        self._reads(monkeypatch, {_cr.SESSION_IDS_FIELD: ["sess-real", "", None]})
-        assert _cr._manage_status_read_session("plan-a") == "sess-real"
+        assert _cr._manage_status_read_session("plan-a") == expected
 
     def test_legacy_scalar_is_still_readable(self, monkeypatch):
         """SHIM(B): a status.json written before the list existed still resolves."""
@@ -5431,17 +5470,3 @@ class TestSessionIdentityIsAList:
         # The list field is consulted FIRST; the legacy scalar is the fallback.
         assert seen == [_cr.SESSION_IDS_FIELD, _cr.LEGACY_SESSION_ID_FIELD]
 
-    def test_the_list_wins_over_a_stale_legacy_scalar(self, monkeypatch):
-        import claude_runtime as _cr
-
-        self._reads(
-            monkeypatch,
-            {_cr.SESSION_IDS_FIELD: ["sess-new"], _cr.LEGACY_SESSION_ID_FIELD: "sess-stale"},
-        )
-        assert _cr._manage_status_read_session("plan-a") == "sess-new"
-
-    def test_no_identity_at_all_returns_none(self, monkeypatch):
-        import claude_runtime as _cr
-
-        self._reads(monkeypatch, {})
-        assert _cr._manage_status_read_session("plan-a") is None

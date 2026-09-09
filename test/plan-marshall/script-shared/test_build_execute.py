@@ -36,6 +36,9 @@ def _scope_fn(args):
 #: rather than defaulting the attribution away.
 _PLAN_ID = 'build-execute-test-plan'
 
+#: The path every mocked ``create_log_file`` hands back.
+_LOG_FILE = '/tmp/test.log'
+
 
 def _call_execute(
     args='clean verify',
@@ -73,57 +76,39 @@ def _call_execute(
         )
 
 
+#: ``(result key, expected value)`` for ONE successful STDOUT_REDIRECT run. The
+#: invocation is identical for every row — only the field of the result being
+#: read varies — so the table replaces four copies of the same call.
+_SUCCESS_RESULT_FIELDS = [
+    ('status', 'success'),
+    ('exit_code', 0),
+    ('log_file', _LOG_FILE),
+    ('command', '/usr/bin/test-tool clean verify'),
+    ('timeout_used_seconds', 300),
+]
+
+_SUCCESS_RESULT_FIELD_IDS = [key for key, _expected in _SUCCESS_RESULT_FIELDS]
+
+
 class TestStdoutRedirectSuccess:
     """Tests for successful execution with STDOUT_REDIRECT strategy."""
 
+    @pytest.mark.parametrize(
+        'key,expected', _SUCCESS_RESULT_FIELDS, ids=_SUCCESS_RESULT_FIELD_IDS
+    )
     @patch('_build_execute.timeout_set')
     @patch('_build_execute.subprocess.run')
     @patch('_build_execute.timeout_get', return_value=300)
     @patch('_build_execute.create_log_file')
-    def test_success_returns_status_success(self, mock_log_file, mock_tget, mock_run, mock_tset):
-        mock_log_file.return_value = '/tmp/test.log'
-        mock_run.return_value = MagicMock(returncode=0)
-
-        result = _call_execute()
-
-        assert result['status'] == 'success'
-        assert result['exit_code'] == 0
-
-    @patch('_build_execute.timeout_set')
-    @patch('_build_execute.subprocess.run')
-    @patch('_build_execute.timeout_get', return_value=300)
-    @patch('_build_execute.create_log_file')
-    def test_success_includes_log_file(self, mock_log_file, mock_tget, mock_run, mock_tset):
-        mock_log_file.return_value = '/tmp/test.log'
-        mock_run.return_value = MagicMock(returncode=0)
-
-        result = _call_execute()
-
-        assert result['log_file'] == '/tmp/test.log'
-
-    @patch('_build_execute.timeout_set')
-    @patch('_build_execute.subprocess.run')
-    @patch('_build_execute.timeout_get', return_value=300)
-    @patch('_build_execute.create_log_file')
-    def test_success_includes_command_string(self, mock_log_file, mock_tget, mock_run, mock_tset):
-        mock_log_file.return_value = '/tmp/test.log'
+    def test_success_result_carries_the_field(
+        self, mock_log_file, mock_tget, mock_run, mock_tset, key, expected
+    ):
+        mock_log_file.return_value = _LOG_FILE
         mock_run.return_value = MagicMock(returncode=0)
 
         result = _call_execute(args='clean verify')
 
-        assert result['command'] == '/usr/bin/test-tool clean verify'
-
-    @patch('_build_execute.timeout_set')
-    @patch('_build_execute.subprocess.run')
-    @patch('_build_execute.timeout_get', return_value=300)
-    @patch('_build_execute.create_log_file')
-    def test_success_records_timeout_used(self, mock_log_file, mock_tget, mock_run, mock_tset):
-        mock_log_file.return_value = '/tmp/test.log'
-        mock_run.return_value = MagicMock(returncode=0)
-
-        result = _call_execute()
-
-        assert result['timeout_used_seconds'] == 300
+        assert result[key] == expected
 
     @patch('_build_execute.timeout_set')
     @patch('_build_execute.subprocess.run')
@@ -390,37 +375,38 @@ class TestOSError:
         assert 'OS error' in log_args[3]
 
 
+#: ``(result key, expected value)`` for the early return taken when the log file
+#: could not be created. The empty ``log_file`` and ``command`` are the two that
+#: say the build never started, rather than started and produced nothing.
+_LOG_FILE_FAILURE_RESULT_FIELDS = [
+    ('status', 'error'),
+    ('exit_code', -1),
+    ('error', 'Failed to create log file'),
+    ('log_file', ''),
+    ('command', ''),
+]
+
+_LOG_FILE_FAILURE_RESULT_FIELD_IDS = [
+    key for key, _expected in _LOG_FILE_FAILURE_RESULT_FIELDS
+]
+
+
 class TestLogFileFailure:
     """Tests for log file creation failure."""
 
+    @pytest.mark.parametrize(
+        'key,expected',
+        _LOG_FILE_FAILURE_RESULT_FIELDS,
+        ids=_LOG_FILE_FAILURE_RESULT_FIELD_IDS,
+    )
     @patch('_build_execute.timeout_get', return_value=300)
     @patch('_build_execute.create_log_file', return_value=None)
-    def test_log_file_failure_returns_error(self, mock_log_file, mock_tget):
+    def test_log_file_failure_result_carries_the_field(
+        self, mock_log_file, mock_tget, key, expected
+    ):
         result = _call_execute()
 
-        assert result['status'] == 'error'
-        assert result['exit_code'] == -1
-
-    @patch('_build_execute.timeout_get', return_value=300)
-    @patch('_build_execute.create_log_file', return_value=None)
-    def test_log_file_failure_error_message(self, mock_log_file, mock_tget):
-        result = _call_execute()
-
-        assert result['error'] == 'Failed to create log file'
-
-    @patch('_build_execute.timeout_get', return_value=300)
-    @patch('_build_execute.create_log_file', return_value=None)
-    def test_log_file_failure_empty_log_path(self, mock_log_file, mock_tget):
-        result = _call_execute()
-
-        assert result['log_file'] == ''
-
-    @patch('_build_execute.timeout_get', return_value=300)
-    @patch('_build_execute.create_log_file', return_value=None)
-    def test_log_file_failure_empty_command(self, mock_log_file, mock_tget):
-        result = _call_execute()
-
-        assert result['command'] == ''
+        assert result[key] == expected
 
 
 class TestCustomScopeFn:
@@ -719,19 +705,64 @@ class TestExplicitOverrideAgainstRealRunConfig:
         assert result['timeout_used_seconds'] == 300
 
 
+#: ``(subprocess returncode, subprocess side effect, create_log_file return,
+#: expected status)`` — one row per result path ``execute_direct_base`` can
+#: take. Extras must survive every one of them, so the set is an ENUMERATION of
+#: the paths rather than a sample: a path added without a row here would return
+#: a result the injection was never checked against.
+_RESULT_PATHS = [
+    (0, None, _LOG_FILE, 'success'),
+    (1, None, _LOG_FILE, 'error'),
+    (None, subprocess.TimeoutExpired(cmd='test', timeout=300), _LOG_FILE, 'timeout'),
+    (None, FileNotFoundError(), _LOG_FILE, 'error'),
+    (None, OSError('denied'), _LOG_FILE, 'error'),
+    (0, None, None, 'error'),
+]
+
+_RESULT_PATH_IDS = [
+    'build-succeeded',
+    'build-exited-non-zero',
+    'build-timed-out',
+    'wrapper-executable-not-found',
+    'os-error-during-execution',
+    'log-file-could-not-be-created',
+]
+
+
 class TestExtraResultFields:
     """Tests for extra_result_fields injection into all result paths."""
 
+    @pytest.mark.parametrize(
+        'returncode,side_effect,log_file,expected_status',
+        _RESULT_PATHS,
+        ids=_RESULT_PATH_IDS,
+    )
+    @patch('_build_execute.log_entry')
     @patch('_build_execute.timeout_set')
     @patch('_build_execute.subprocess.run')
     @patch('_build_execute.timeout_get', return_value=300)
     @patch('_build_execute.create_log_file')
-    def test_extras_in_success_result(self, mock_log_file, mock_tget, mock_run, mock_tset):
-        mock_log_file.return_value = '/tmp/test.log'
-        mock_run.return_value = MagicMock(returncode=0)
+    def test_extras_reach_every_result_path(
+        self,
+        mock_log_file,
+        mock_tget,
+        mock_run,
+        mock_tset,
+        mock_log,
+        returncode,
+        side_effect,
+        log_file,
+        expected_status,
+    ):
+        mock_log_file.return_value = log_file
+        if side_effect is None:
+            mock_run.return_value = MagicMock(returncode=returncode)
+        else:
+            mock_run.side_effect = side_effect
 
         result = _call_execute(extra_result_fields={'wrapper': './mvnw', 'mode': 'full'})
 
+        assert result['status'] == expected_status
         assert result['wrapper'] == './mvnw'
         assert result['mode'] == 'full'
 
@@ -739,68 +770,9 @@ class TestExtraResultFields:
     @patch('_build_execute.subprocess.run')
     @patch('_build_execute.timeout_get', return_value=300)
     @patch('_build_execute.create_log_file')
-    def test_extras_in_error_result(self, mock_log_file, mock_tget, mock_run, mock_tset):
-        mock_log_file.return_value = '/tmp/test.log'
-        mock_run.return_value = MagicMock(returncode=1)
-
-        result = _call_execute(extra_result_fields={'wrapper': './mvnw'})
-
-        assert result['status'] == 'error'
-        assert result['wrapper'] == './mvnw'
-
-    @patch('_build_execute.log_entry')
-    @patch('_build_execute.timeout_set')
-    @patch('_build_execute.subprocess.run', side_effect=subprocess.TimeoutExpired(cmd='test', timeout=300))
-    @patch('_build_execute.timeout_get', return_value=300)
-    @patch('_build_execute.create_log_file')
-    def test_extras_in_timeout_result(self, mock_log_file, mock_tget, mock_run, mock_tset, mock_log):
-        mock_log_file.return_value = '/tmp/test.log'
-
-        result = _call_execute(extra_result_fields={'wrapper': './mvnw'})
-
-        assert result['status'] == 'timeout'
-        assert result['wrapper'] == './mvnw'
-
-    @patch('_build_execute.log_entry')
-    @patch('_build_execute.timeout_set')
-    @patch('_build_execute.subprocess.run', side_effect=FileNotFoundError())
-    @patch('_build_execute.timeout_get', return_value=300)
-    @patch('_build_execute.create_log_file')
-    def test_extras_in_file_not_found_result(self, mock_log_file, mock_tget, mock_run, mock_tset, mock_log):
-        mock_log_file.return_value = '/tmp/test.log'
-
-        result = _call_execute(extra_result_fields={'wrapper': './mvnw'})
-
-        assert result['status'] == 'error'
-        assert result['wrapper'] == './mvnw'
-
-    @patch('_build_execute.log_entry')
-    @patch('_build_execute.timeout_set')
-    @patch('_build_execute.subprocess.run', side_effect=OSError('denied'))
-    @patch('_build_execute.timeout_get', return_value=300)
-    @patch('_build_execute.create_log_file')
-    def test_extras_in_os_error_result(self, mock_log_file, mock_tget, mock_run, mock_tset, mock_log):
-        mock_log_file.return_value = '/tmp/test.log'
-
-        result = _call_execute(extra_result_fields={'wrapper': './mvnw'})
-
-        assert result['status'] == 'error'
-        assert result['wrapper'] == './mvnw'
-
-    @patch('_build_execute.timeout_get', return_value=300)
-    @patch('_build_execute.create_log_file', return_value=None)
-    def test_extras_in_log_file_failure_result(self, mock_log_file, mock_tget):
-        result = _call_execute(extra_result_fields={'wrapper': './mvnw'})
-
-        assert result['status'] == 'error'
-        assert result['wrapper'] == './mvnw'
-
-    @patch('_build_execute.timeout_set')
-    @patch('_build_execute.subprocess.run')
-    @patch('_build_execute.timeout_get', return_value=300)
-    @patch('_build_execute.create_log_file')
     def test_no_extras_omits_extra_fields(self, mock_log_file, mock_tget, mock_run, mock_tset):
-        mock_log_file.return_value = '/tmp/test.log'
+        """Matched control: the fields appear only because a caller supplied them."""
+        mock_log_file.return_value = _LOG_FILE
         mock_run.return_value = MagicMock(returncode=0)
 
         result = _call_execute(extra_result_fields=None)
@@ -808,14 +780,24 @@ class TestExtraResultFields:
         assert 'wrapper' not in result
 
 
+#: ``(member, wire value)``. The values are what a persisted result records, so
+#: they are pinned as literals rather than derived from the member names.
+_CAPTURE_STRATEGY_VALUES = [
+    (CaptureStrategy.STDOUT_REDIRECT, 'stdout_redirect'),
+    (CaptureStrategy.TOOL_LOG_FLAG, 'tool_log_flag'),
+]
+
+_CAPTURE_STRATEGY_IDS = ['stdout-redirect', 'tool-log-flag']
+
+
 class TestCaptureStrategyEnum:
     """Tests for CaptureStrategy enum values."""
 
-    def test_stdout_redirect_value(self):
-        assert CaptureStrategy.STDOUT_REDIRECT.value == 'stdout_redirect'
-
-    def test_tool_log_flag_value(self):
-        assert CaptureStrategy.TOOL_LOG_FLAG.value == 'tool_log_flag'
+    @pytest.mark.parametrize(
+        'member,expected_value', _CAPTURE_STRATEGY_VALUES, ids=_CAPTURE_STRATEGY_IDS
+    )
+    def test_member_carries_its_wire_value(self, member, expected_value):
+        assert member.value == expected_value
 
     def test_enum_has_two_members(self):
         assert len(CaptureStrategy) == 2

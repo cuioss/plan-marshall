@@ -24,6 +24,52 @@ def _parse(output: str) -> dict[str, Any]:
 
 
 
+#: ``(path, why refusing it matters)``. Every one of these renders SOMETHING —
+#: that is the danger, and the second column is the specific damage the rendered
+#: rule would do. Three families are represented: a path that is empty by some
+#: spelling, one that is not absolute (so the rule names an unrelated location or
+#: nothing), and one carrying a character the DSL reads as syntax — the two
+#: delimiters, the wildcard, a newline, a control character, a space at an
+#: argument boundary — plus the two paths that are well-formed yet still
+#: unfaithful: the filesystem root, and a path whose ``..`` renames the directory
+#: the caller asked to protect.
+_UNRENDERABLE_PATHS = [
+    ('', 'an empty argument renders Read(/**) and Bash(python3 -c **)'),
+    ('   ', 'whitespace is empty by another spelling'),
+    ('./creds', 'a relative path denies an unrelated location or nothing'),
+    ('creds', 'likewise, with no leading dot'),
+    ('/home/u/cre)ds', 'a ")" truncates the rule and frees the remainder'),
+    ('/home/u/cre(ds', 'a "(" is the other delimiter'),
+    ('/home/u/x*', 'a "*" widens the rule past what was asked for'),
+    ('/home/u/a\nb', 'a newline splits one rule into two'),
+    ('/home/u/a\x7fb', 'DEL is a control character above the 0x20 range'),
+    ('/home/u/my creds', 'a space moves the argument boundary in a Bash rule'),
+    ('/', 'the root renders Bash(python3 -c */*) — any inline script with a slash'),
+    ('/home/u/../../etc', 'a ".." silently renames the directory the caller named'),
+]
+
+#: The operation set, spelled out as an INDEPENDENT oracle rather than read from
+#: ``PERMISSION_FIX_OPERATIONS``. See
+#: ``test_the_sweep_population_matches_the_published_operation_set`` for why the
+#: duplication is deliberate here and derived in the sibling module.
+_OPERATION_ORACLE = ('normalize', 'add', 'remove', 'ensure', 'consolidate', 'protect-path')
+
+_UNRENDERABLE_PATH_IDS = [
+    'empty-string',
+    'whitespace-only',
+    'relative-with-leading-dot',
+    'relative-bare',
+    'closing-delimiter-in-path',
+    'opening-delimiter-in-path',
+    'wildcard-in-path',
+    'newline-in-path',
+    'control-character-in-path',
+    'space-in-path',
+    'filesystem-root',
+    'dot-dot-renames-the-target',
+]
+
+
 class TestPermissionFixProtectPath:
     """``permission fix --operation protect-path`` writes deny rules, goal-based."""
 
@@ -260,20 +306,8 @@ class TestPermissionFixProtectPath:
 
     @pytest.mark.parametrize(
         ('path', 'why'),
-        [
-            ('', 'an empty argument renders Read(/**) and Bash(python3 -c **)'),
-            ('   ', 'whitespace is empty by another spelling'),
-            ('./creds', 'a relative path denies an unrelated location or nothing'),
-            ('creds', 'likewise, with no leading dot'),
-            ('/home/u/cre)ds', 'a ")" truncates the rule and frees the remainder'),
-            ('/home/u/cre(ds', 'a "(" is the other delimiter'),
-            ('/home/u/x*', 'a "*" widens the rule past what was asked for'),
-            ('/home/u/a\nb', 'a newline splits one rule into two'),
-            ('/home/u/a\x7fb', 'DEL is a control character above the 0x20 range'),
-            ('/home/u/my creds', 'a space moves the argument boundary in a Bash rule'),
-            ('/', 'the root renders Bash(python3 -c */*) — any inline script with a slash'),
-            ('/home/u/../../etc', 'a ".." silently renames the directory the caller named'),
-        ],
+        _UNRENDERABLE_PATHS,
+        ids=_UNRENDERABLE_PATH_IDS,
     )
     def test_refuses_a_path_it_cannot_render_faithfully(
         self, tmp_path: Path, monkeypatch, path: str, why: str
@@ -385,58 +419,54 @@ class TestPermissionFixProtectPath:
         assert result['alternative']
         assert 'changes_applied' not in result
 
-    def test_the_two_runtimes_accept_the_same_operation_set(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
-        """A value one runtime accepts and the other rejects is a silent gap.
+    def test_the_sweep_population_matches_the_published_operation_set(self) -> None:
+        """The independent oracle and the published tuple agree, in both directions.
 
-        Both runtimes are driven, because the claim is a COMPARISON: OpenCode
-        rejecting ``protect-path`` as ``invalid_operation`` would turn its
-        honest no-op into an error the caller must special-case, and Claude
-        rejecting one OpenCode accepts would be the same gap mirrored. The
-        operation list is spelled out rather than read from either runtime's own
-        ``valid_ops``, so a value dropped from both still fails here.
+        The rows of the per-operation sweep below come from a spelled-out literal
+        rather than from ``PERMISSION_FIX_OPERATIONS``, and this assertion is why.
+        The sweep's claim is *about the set*: that both runtimes accept the same
+        operations. Derive its population from the set and a **removal** silently
+        shrinks the claim — the sweep keeps passing while covering less — and an
+        **addition** silently widens it to an operation nobody checked OpenCode
+        handles. A non-vacuity guard catches only the empty case.
 
-        Deriving it from ``PERMISSION_FIX_OPERATIONS`` instead would forfeit
-        exactly that. This sweep's claim is *about the set*: that both runtimes
-        accept the same operations. Derive the population from the set and a
-        **removal** silently shrinks the claim — the sweep keeps passing while
-        covering less — and an **addition** silently widens it to an operation
-        nobody checked OpenCode handles. A non-vacuity guard catches only the
-        empty case, a third failure the equality check already covers.
+        So the literal is the oracle AND is asserted equal to the published tuple
+        here: divergence in either direction fails loudly, and "update both
+        deliberately" is the intended cost.
 
-        So the literal stays as the independent oracle AND is asserted equal to
-        the published tuple: divergence in either direction fails loudly, and
-        "update both deliberately" is the intended cost.
-
-        The sibling in ``test_opencode_runtime.py`` derives from the published
-        set instead, with a non-vacuity guard, because it asserts a property of
+        The sibling in ``test_opencode_runtime.py`` derives from the published set
+        instead, with a non-vacuity guard, because it asserts a property of
         *whatever* the set contains rather than a property of the set. Both
         patterns are deliberate; which one fits depends on where the claim lives.
         """
-        self._pin_scope_path(monkeypatch, tmp_path / 'settings.json')
-        operations = ('normalize', 'add', 'remove', 'ensure', 'consolidate', 'protect-path')
-        assert operations == PERMISSION_FIX_OPERATIONS, (
+        assert _OPERATION_ORACLE == PERMISSION_FIX_OPERATIONS, (
             'the published operation set and this sweep have diverged; update both deliberately'
         )
 
-        for operation in operations:
-            args: list[Any] = []
-            if operation == 'protect-path':
-                args = [str(tmp_path / 'arg')]
-            elif operation in ('add', 'remove', 'ensure'):
-                args = [{'kind': 'path', 'tool': 'Read', 'path': str(tmp_path / 'arg')}]
-            claude = _parse(
-                claude_runtime.ClaudeRuntime().permission_fix(
-                    'global', operation, args, True
-                )
-            )
-            assert claude['status'] == 'success', operation
+    @pytest.mark.parametrize('operation', _OPERATION_ORACLE, ids=_OPERATION_ORACLE)
+    def test_both_runtimes_accept_the_operation(
+        self, tmp_path: Path, monkeypatch, operation: str
+    ) -> None:
+        """Claude succeeds and OpenCode declines — neither rejects the operation.
 
-            opencode = _parse(
-                OpenCodeRuntime().permission_fix('global', operation, args, True)
-            )
-            assert opencode['status'] == 'no-op', operation
+        Both runtimes are driven per row, because the claim is a COMPARISON: an
+        operation one accepts and the other rejects as ``invalid_operation`` is a
+        gap the caller must special-case, in whichever direction it appears.
+        """
+        self._pin_scope_path(monkeypatch, tmp_path / 'settings.json')
+        args: list[Any] = []
+        if operation == 'protect-path':
+            args = [str(tmp_path / 'arg')]
+        elif operation in ('add', 'remove', 'ensure'):
+            args = [{'kind': 'path', 'tool': 'Read', 'path': str(tmp_path / 'arg')}]
+
+        claude = _parse(
+            claude_runtime.ClaudeRuntime().permission_fix('global', operation, args, True)
+        )
+        opencode = _parse(OpenCodeRuntime().permission_fix('global', operation, args, True))
+
+        assert claude['status'] == 'success', operation
+        assert opencode['status'] == 'no-op', operation
 
 
 class TestEveryMutatingBranchReportsAFailedWrite:
@@ -463,6 +493,7 @@ class TestEveryMutatingBranchReportsAFailedWrite:
             ('ensure', [{'kind': 'path', 'tool': 'Read', 'path': '/tmp/x'}]),
             ('consolidate', []),
         ],
+        ids=['normalize', 'add', 'remove', 'ensure', 'consolidate'],
     )
     def test_an_unwritable_settings_file_is_an_error(
         self, tmp_path: Path, monkeypatch, operation: str, permissions: list

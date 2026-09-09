@@ -8,11 +8,14 @@ before review (`pre-push-quality-gate` at order 5, self-review at 7, against
 `automatic-review` at 30), so a finding filed against a tree the gates already
 passed IS a gate escape. No per-finding gate attribution is needed.
 
-**But "the gates passed" is not "the gates saw this tree".** Two `mutates_source`
-steps run between them — `finalize-step-simplify` (8) and
-`finalize-step-security-audit` (9) — and a forward pass never returns to order 5 to
-re-gate their edits, so the escape claim rests on the gate-certified tree and the
-reviewed tree being the SAME tree, proven by SHA rather than assumed.
+**But "the gates passed" is not "the gates saw this tree".** Source-mutating steps
+run between certification and review — `finalize-step-simplify` (8) and
+`finalize-step-security-audit` (9), and the gate itself (5), whose own item-5f
+commit lands after the tree it just certified — and a forward pass never returns to
+order 5 to re-gate their edits, so the escape claim rests on the gate-certified tree
+and the reviewed tree being the SAME tree, proven by SHA rather than assumed. No
+count is pinned here: membership is whatever each step's declared `mutates_source`
+makes it, so a step that declares the fact later is covered by its own declaration.
 
 Three properties make the signal usable rather than harmful, and all are tested
 here in the direction that matters:
@@ -300,11 +303,12 @@ def test_an_unsubstantiated_gate_state_fails_closed_to_excluded():
 
 
 def test_a_tree_the_gates_never_saw_is_excluded():
-    """Two source-mutating finalize steps run BETWEEN the gates and review.
+    """Source-mutating finalize steps run BETWEEN gate certification and review.
 
     `pre-push-quality-gate` is order 5 and self-review 7, but `finalize-step-simplify`
     (8) and `finalize-step-security-audit` (9) are `mutates_source: true` and run
-    after them; the dispatcher's re-entry check only re-fires a step the loop
+    after them — as is the gate itself, whose item-5f commit lands after the tree it
+    certified; the dispatcher's re-entry check only re-fires a step the loop
     REACHES, and a forward pass never returns to order 5. So a line those steps
     introduced reaches the reviewer at order 30 having never been gated.
 
