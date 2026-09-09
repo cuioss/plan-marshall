@@ -7,9 +7,22 @@ import re
 from typing import Any
 
 from _dep_detection import extract_frontmatter
+from _doctor_shared import resolve_runtime_target
 
 Finding = dict[str, Any]
 Frontmatter = dict[str, Any]
+
+
+def _task_prohibition_binds() -> bool:
+    """Whether the ``agent-task-tool-prohibited`` rule binds for the active target.
+
+    The rule is a Claude rule-pack member: on Claude the host restricts Task
+    from sub-agents, so declaring it in an agent's ``tools:`` is an error. On
+    OpenCode the ``task`` tool exists and subagent dispatch is supported, so
+    the prohibition does not bind there. An unrecognised target defaults to the
+    Claude rule-pack (every runtime-less environment is a Claude checkout).
+    """
+    return resolve_runtime_target() != 'opencode'
 
 
 def validate_frontmatter_agent(frontmatter: Frontmatter) -> tuple[list[Finding], list[Finding]]:
@@ -55,8 +68,10 @@ def validate_frontmatter_agent(frontmatter: Frontmatter) -> tuple[list[Finding],
             )
             tools_list = []
 
-        # Check for prohibited Task tool (Rule 6)
-        if 'Task' in tools_list:
+        # Check for prohibited Task tool (Rule 6) — Claude rule-pack member.
+        # On OpenCode the task tool exists and subagent dispatch is supported,
+        # so the prohibition only binds on the Claude rule-pack target.
+        if 'Task' in tools_list and _task_prohibition_binds():
             errors.append(
                 {
                     'type': 'prohibited_tool',

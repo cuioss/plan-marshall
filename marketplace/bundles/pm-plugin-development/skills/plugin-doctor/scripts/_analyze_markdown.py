@@ -312,21 +312,23 @@ DYNAMIC_LEVEL_EXECUTOR_REF = (
 # target live under ``target/{target}/`` (e.g. ``target/claude/`` for the
 # Claude rule-pack target), outside the doctor's source-of-truth scan path
 # (``marketplace/bundles/``), so they are exempt from the
-# ``hardcoded-model-on-canonical`` rule. The prefix is target-specific because
-# the build-output directory is named for the target; the literal
-# ``target/claude/`` is a Claude rule-pack concern, not an engine constant.
-_BUILD_OUTPUT_PREFIXES = {
-    'claude': 'target/claude/',
-    'opencode': 'target/opencode/',
-}
+# ``hardcoded-model-on-canonical`` rule. The prefix is derived from the
+# resolved target's own name — the build generator names every target's output
+# directory after the target (``output_dir / target_name``) — so no core-owned
+# per-target table is maintained; the literal ``target/claude/`` is a Claude
+# rule-pack concern, not an engine constant.
 
 
 def _build_output_prefix() -> str:
     """Return the active target's build-output directory prefix.
 
-    Falls back to the Claude prefix when the target is unrecognised (every
-    runtime-less environment is a Claude checkout)."""
-    return _BUILD_OUTPUT_PREFIXES.get(resolve_runtime_target(), 'target/claude/')
+    The generator derives each target's output directory as
+    ``{output_dir}/{target_name}``, so the prefix is ``target/{target}/`` for
+    the active target. ``resolve_runtime_target`` supplies the target's own
+    identity (falling back to the single default target in a runtime-less
+    environment), so no core-owned per-target table is consulted.
+    """
+    return f'target/{resolve_runtime_target()}/'
 
 
 def check_hardcoded_model_on_canonical(frontmatter: str, file_path: str) -> list:

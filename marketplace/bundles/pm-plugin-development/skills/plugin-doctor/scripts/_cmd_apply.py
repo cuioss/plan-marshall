@@ -18,9 +18,16 @@ from _doctor_shared import read_json_input, resolve_runtime_target
 # active target is resolved through the platform-runtime layout op (via
 # ``_doctor_shared.resolve_runtime_target``), so the fix handler emits the
 # shape the active target's loader understands instead of hardcoding the
-# Claude form.
-_OPENCODE_AGENT_FRONTMATTER = 'tools: Read, Write, Edit\nmode: subagent\nmodel: anthropic/claude-sonnet-4\n'
-_CLAUDE_AGENT_FRONTMATTER = 'tools: Read, Write, Edit\nmodel: sonnet\n'
+# Claude form. The per-target agent templates in ``fix-templates.json``
+# (``templates.missing-frontmatter.agent.{target}``) are the single
+# authoritative definition; ``_OPENCODE_AGENT_FRONTMATTER`` /
+# ``_CLAUDE_AGENT_FRONTMATTER`` are DERIVED from that file when it is present,
+# so only one population exists. The baked ``_FALLBACK_*`` literals serve the
+# absent-or-incomplete case only: they are used when the template file is
+# missing or does not carry a complete ``opencode``/``claude`` agent block —
+# the only situations where no shipped population is left to drift from.
+_FALLBACK_OPENCODE_AGENT_FRONTMATTER = 'tools: Read, Write, Edit\nmode: subagent\nmodel: anthropic/claude-sonnet-4\n'
+_FALLBACK_CLAUDE_AGENT_FRONTMATTER = 'tools: Read, Write, Edit\nmodel: sonnet\n'
 
 
 def load_templates(script_dir: Path) -> dict:
@@ -31,6 +38,49 @@ def load_templates(script_dir: Path) -> dict:
             result: dict = json.load(f)
             return result
     return {}
+
+
+def _derive_agent_frontmatter_defaults(script_dir: Path) -> tuple[str, str]:
+    """Derive the per-target agent-frontmatter blocks from the shipped templates.
+
+    ``fix-templates.json`` (``templates.missing-frontmatter.agent.{target}``)
+    is the single authoritative definition of the blocks; the baked
+    ``_FALLBACK_*`` literals are used only when the assets file is absent or
+    does not carry a complete ``opencode``/``claude`` agent block.
+    Returns ``(opencode_block, claude_block)``.
+    """
+    agent = load_templates(script_dir).get('templates', {}).get('missing-frontmatter', {}).get('agent', {})
+    if isinstance(agent, dict) and agent.get('opencode') and agent.get('claude'):
+        return str(agent['opencode']), str(agent['claude'])
+    return _FALLBACK_OPENCODE_AGENT_FRONTMATTER, _FALLBACK_CLAUDE_AGENT_FRONTMATTER
+
+
+_OPENCODE_AGENT_FRONTMATTER, _CLAUDE_AGENT_FRONTMATTER = _derive_agent_frontmatter_defaults(
+    Path(__file__).parent
+)
+
+
+def _agent_frontmatter_block(templates: dict) -> str:
+    """Resolve the target-aware agent-frontmatter block from the fix templates.
+
+    The templates declare the per-target agent frontmatter block as
+    ``templates.missing-frontmatter.agent.{target}``. The active target is
+    resolved through ``resolve_runtime_target``; an unrecognised target falls
+    back to the Claude block (every runtime-less environment is a Claude
+    checkout), and an absent assets file falls back to the module constants.
+    """
+    target = resolve_runtime_target()
+    templates_root = templates.get('templates', {})
+    entry = templates_root.get('missing-frontmatter', {})
+    agent_templates = entry.get('agent', {}) if isinstance(entry, dict) else {}
+    if isinstance(agent_templates, dict):
+        block = agent_templates.get(target)
+        if block is not None:
+            return str(block)
+        if target == 'opencode':
+            return _OPENCODE_AGENT_FRONTMATTER
+        return _CLAUDE_AGENT_FRONTMATTER
+    return _OPENCODE_AGENT_FRONTMATTER if target == 'opencode' else _CLAUDE_AGENT_FRONTMATTER
 
 
 def apply_missing_frontmatter(file_path: Path, fix: dict, templates: dict) -> dict:
@@ -57,10 +107,7 @@ name: {name}
 description: [Description needed]
 """
     if component_type == 'agent':
-        if resolve_runtime_target() == 'opencode':
-            frontmatter += _OPENCODE_AGENT_FRONTMATTER
-        else:
-            frontmatter += _CLAUDE_AGENT_FRONTMATTER
+        frontmatter += _agent_frontmatter_block(templates)
     frontmatter += '---\n\n'
 
     new_content = frontmatter + content
@@ -72,7 +119,23 @@ description: [Description needed]
 
 
 def apply_array_syntax_fix(file_path: Path, fix: dict, templates: dict) -> dict:
-    """Convert array syntax tools: [A, B] to comma-separated tools: A, B."""
+    """Convert array syntax tools: [A, B] to comma-separated tools: A, B.
+
+    The array-vs-comma ``tools:`` check is a Claude rule-pack concern
+    (``array-syntax-tools``): the rule-pack declares the comma-separated form
+    as the Claude-parser rule, and the fix is gated on the resolved target so
+    it only applies when the Claude rule-pack is active. On OpenCode the fix
+    declines (the ``array-syntax-tools`` rule does not bind there); the
+    comma-separated agent ``tools:`` lines this bundle emits for OpenCode are
+    the SOURCE form the build maps to a ``permission:`` block at emit time, not
+    a comma-format rule the fixer enforces.
+    """
+    if resolve_runtime_target() != 'claude':
+        return {
+            'success': False,
+            'error': 'array-syntax-tools is a Claude rule-pack fix; it does not bind on the active target',
+        }
+
     with open(file_path, encoding='utf-8') as f:
         content = f.read()
 
@@ -161,7 +224,20 @@ def apply_trailing_whitespace_fix(file_path: Path, fix: dict, templates: dict) -
 
 
 def apply_task_tool_fix(file_path: Path, fix: dict, templates: dict) -> dict:
-    """Remove Task tool from agent's tools declaration."""
+    """Remove Task tool from agent's tools declaration.
+
+    Mirrors the analyzer's target gate: ``agent-task-tool-prohibited`` is a
+    Claude rule-pack rule (``plugin-create:component validate`` accepts a
+    ``Task`` declaration on OpenCode), so on OpenCode the fix declines rather
+    than deleting a valid declaration. The gate also protects direct or stale
+    fix requests that bypass analyze.
+    """
+    if resolve_runtime_target() == 'opencode':
+        return {
+            'success': False,
+            'error': 'agent-task-tool-prohibited is a Claude rule-pack fix; it does not bind on the active target',
+        }
+
     with open(file_path, encoding='utf-8') as f:
         content = f.read()
 

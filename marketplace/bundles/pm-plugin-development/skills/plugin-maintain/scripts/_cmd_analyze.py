@@ -91,7 +91,13 @@ def check_tool_compliance(frontmatter: dict[str, Any] | None, body: str) -> list
 
     tools_raw = frontmatter.get('tools', '')
 
-    # Check for array syntax
+    # Check for array syntax. This is a SOURCE-CONVENTION check, not the
+    # Claude rule-pack gate: the comma-separated form is the bundle's emitted
+    # source convention on every target (the build maps the source ``tools:``
+    # line to a per-target permission block at emit time), so plugin-maintain
+    # flags array syntax in source regardless of the active target. The
+    # doctor's ``array-syntax-tools`` fix/verify handlers are the Claude-gated
+    # counterparts that operate on the resolved target.
     if isinstance(tools_raw, dict) and tools_raw.get('is_array'):
         issues.append(
             {

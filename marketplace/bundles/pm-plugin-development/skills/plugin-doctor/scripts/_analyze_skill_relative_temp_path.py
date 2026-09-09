@@ -13,7 +13,7 @@ The canonical violation example (from the source bug) is:
 
     git -C {worktree_path} commit -F .plan/temp/{plan_id}-commit-msg.txt
 
-The harness ``Write`` tool resolves a relative ``.plan/temp/...`` path against
+The host's ``Write`` tool resolves a relative ``.plan/temp/...`` path against
 the MAIN checkout, while ``git -C {worktree_path}`` resolves the same relative
 path against the WORKTREE.  The two legs reference two different files on disk,
 so the commit reads a stale (previous deliverable's) or empty message instead
@@ -160,7 +160,7 @@ def _make_finding(
         rule_id=RULE_ID,
         description=(
             f'Relative ``.plan/temp`` path ``{temp_path}`` consumed by '
-            '``git -C ... commit -F`` in skill markdown. The harness ``Write`` '
+            '``git -C ... commit -F`` in skill markdown. The host ``Write`` '
             'tool resolves a relative ``.plan/temp`` path against the main '
             'checkout while ``git -C {worktree_path}`` resolves it against the '
             'worktree, so a relative-path round-trip references two different '

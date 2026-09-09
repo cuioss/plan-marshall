@@ -2457,10 +2457,16 @@ def test_build_output_prefix_target_aware_for_opencode(monkeypatch):
     assert _analyze_markdown_mod._build_output_prefix() == 'target/opencode/'
 
 
-def test_build_output_prefix_unknown_target_falls_back_to_claude(monkeypatch):
-    """An unrecognised target falls back to the Claude build-output prefix."""
+def test_build_output_prefix_unknown_target_derives_from_target_name(monkeypatch):
+    """An unrecognised target derives its own build-output prefix, not a Claude fallback.
+
+    The build generator names every target's output directory after the target
+    (``output_dir / target_name``), so the prefix is ``target/{target}/`` even
+    for a target the doctor has no rule-pack table for — there is no core-owned
+    per-target table to fall back to (principles §6).
+    """
     monkeypatch.setattr(_analyze_markdown_mod, 'resolve_runtime_target', lambda: 'mystery')
-    assert _analyze_markdown_mod._build_output_prefix() == 'target/claude/'
+    assert _analyze_markdown_mod._build_output_prefix() == 'target/mystery/'
 
 
 def test_hardcoded_model_exempts_active_target_build_output(monkeypatch):

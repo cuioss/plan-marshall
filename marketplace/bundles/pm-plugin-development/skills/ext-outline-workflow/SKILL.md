@@ -172,31 +172,35 @@ A one-line note in the deliverable's "Change per file" or "Verification" block i
 **Change per file:** Sweep all three shell-marshalling families (chain-shape, bash-write-impersonation, argument-marshalling) and replace with the documented safe alternative.
 ```
 
-This rule prevents the recurring failure mode where structural-rule sweeps catch only the family named in the source lesson and miss adjacent families that trip the same harness shapes.
+This rule prevents the recurring failure mode where structural-rule sweeps catch only the family named in the source lesson and miss adjacent families that trip the same target shapes.
 
 ## Human-Gated Harness-Config Classification
 
-This is a domain-specific classification dimension for the `plan-marshall-plugin-dev` domain — it fires whenever a deliverable being authored touches the Claude Code harness-configuration surface, which requires a human action to take effect. It is **track-agnostic**: phase-3-outline's thin special-deliverable-class trigger (the "Human-gated harness-config deliverable class") fires on both the Simple Track (Step 7) and the Complex Track (Step 10) and routes here for the substance. Apply the predicate to every deliverable's `**Affected files:**` (or the writes its narrative describes), regardless of change type.
+This is a domain-specific classification dimension for the `plan-marshall-plugin-dev` domain — it fires whenever a deliverable being authored touches the active target's settings/permission surface, which requires a human action to take effect. It is **track-agnostic**: phase-3-outline's thin special-deliverable-class trigger (the "Human-gated harness-config deliverable class") fires on both the Simple Track (Step 7) and the Complex Track (Step 10) and routes here for the substance. Apply the predicate to every deliverable's `**Affected files:**` (or the writes its narrative describes), regardless of change type.
+
+> The section heading keeps the `Harness-Config` name because it is a cross-bundle anchor contract: `plan-marshall:phase-3-outline` links to `#human-gated-harness-config-classification`, and that surface belongs to another plan. The classification's substance is target-normalized — see the predicate and the Claude-target note below.
 
 ### Predicate
 
-A deliverable is **human-gated** when its `Affected files` (or its narrative's described writes) match any of the concrete path / pattern rows below. Match on the path first, then — for the settings-file rows — on the named key being added or edited:
+A deliverable is **human-gated** when its `Affected files` (or its narrative's described writes) match any of the concrete path / pattern rows below. Match on the path first, then — for the settings-file rows — on the named key being added or edited. The concrete settings surface is the active target's own: the rows below name the Claude layout, and the platform-runtime settings/permission operations (`permission analyze` / `permission configure` on the `project` scope) operate on the ACTIVE target's settings surface — they do not expand these rows or render them per target. An author on another registered target applies the same predicate to that target's settings files by matching the two activation characteristics listed below.
+
+> **Claude target material.** The `.claude` settings and hook paths below are the Claude target's settings surface. The classification intent is target-agnostic — a settings or permission write that needs a human grant or a restart is human-gated on every target — but the concrete path rows are Claude layout only; there is no per-target resolver or renderer for them, so for any other target the author transposes the rows by hand.
 
 | Surface (concrete path / pattern) | Trigger key (within the path) | Why it is human-gated |
 |-----------------------------------|-------------------------------|------------------------|
-| `.claude/settings.json` | any write | Harness configuration the runtime reads at startup; a write does not take effect until the session is restarted / reloaded, and writing it during an unattended run trips the permission UI. |
-| `.claude/settings.local.json` | any write | Per-machine harness override with the same startup-reload activation latency and permission characteristics as `settings.json`. |
-| `.claude/settings.json` or `.claude/settings.local.json` | the `hooks` block (a `SessionStart` / `UserPromptSubmit` / `Stop` entry), OR a new hook script under `.claude/hooks/**` | Registering a lifecycle hook arms code the harness executes on its own schedule; the user must trust/activate the hook, and the registration write hits the same permission gate. |
-| `.claude/settings.json` or `.claude/settings.local.json` | the `permissions.allow` / `permissions.deny` arrays | Widening or narrowing what the harness may run is a security-relevant action that requires an explicit human grant; an unattended task cannot self-approve it. |
+| `.claude/settings.json` | any write | Target configuration the runtime reads at startup; a write does not take effect until the session is restarted / reloaded, and writing it during an unattended run trips the permission UI. |
+| `.claude/settings.local.json` | any write | Per-machine target override with the same startup-reload activation latency and permission characteristics as `settings.json`. |
+| `.claude/settings.json` or `.claude/settings.local.json` | the `hooks` block (a `SessionStart` / `UserPromptSubmit` / `Stop` entry), OR a new hook script under `.claude/hooks/**` | Registering a lifecycle hook arms code the target executes on its own schedule; the user must trust/activate the hook, and the registration write hits the same permission gate. |
+| `.claude/settings.json` or `.claude/settings.local.json` | the `permissions.allow` / `permissions.deny` arrays | Widening or narrowing what the target may run is a security-relevant action that requires an explicit human grant; an unattended task cannot self-approve it. |
 
-The two activation characteristics that define the dimension are (1) the **permission-prompt** gate — an unattended task cannot satisfy the harness's permission UI when it writes these files — and (2) the **startup-reload activation latency** — the write has no effect until the session is restarted/reloaded, so an automated verification step in the same run cannot observe its effect.
+The two activation characteristics that define the dimension are (1) the **permission-prompt** gate — an unattended task cannot satisfy the target's permission UI when it writes these files — and (2) the **startup-reload activation latency** — the write has no effect until the session is restarted/reloaded, so an automated verification step in the same run cannot observe its effect.
 
 ### Required Action
 
 When the predicate fires, the outline MUST **split the unattended marketplace work from the human-gated activation step**, OR explicitly annotate the confirmation-gated path on the single deliverable:
 
 - **Split (preferred)**: the unattended deliverable authors the marketplace source that *defines* the hook / config / permission shape (the skill body, the hook script, the documented allow-list entry). A separate, explicitly human-gated activation step writes `.claude/settings.json` (or installs the hook, or grants the permission). Phase-5-execute runs the unattended deliverable to completion; the activation step is surfaced to the user rather than attempted by an automated task.
-- **Annotate (single-deliverable alternative)**: when the work genuinely cannot be split, the deliverable carries a `**Human-gated activation:**` note naming the exact harness write the user must perform and stating that phase-5-execute will pause for confirmation at that point.
+- **Annotate (single-deliverable alternative)**: when the work genuinely cannot be split, the deliverable carries a `**Human-gated activation:**` note naming the exact target write the user must perform and stating that phase-5-execute will pause for confirmation at that point.
 
 The failure mode this dimension prevents: an unattended phase-5-execute task that tries to write `.claude/settings.json` (or install a hook, or edit an allow-list) hits a permission wall it cannot satisfy, returns a verification failure, and loop-backs — burning iterations on a step that was never automatable. Classifying the surface as human-gated at outline time splits the automatable authoring from the non-automatable activation so the loop never stalls.
 

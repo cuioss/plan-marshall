@@ -27,11 +27,15 @@ from _dep_detection import (
 )
 from argparse_surface import derive_surface, is_derivable, resolve_executor
 from marketplace_bundles import resolve_bundles_root
-from marketplace_paths import get_bundle_cache_roots
+from marketplace_paths import (
+    _first_existing_bundle_cache_root,
+    _resolve_skill_root,
+    get_bundle_cache_roots,
+    get_project_skill_roots,
+)
 
 # Constants for path discovery
 MARKETPLACE_BUNDLES_PATH = 'marketplace/bundles'
-CLAUDE_DIR = '.claude'
 
 
 class AstCache:
@@ -741,27 +745,11 @@ def build_dependency_index(
     return index
 
 
-def _first_existing_bundle_cache_root() -> Path | None:
-    """Return the first deployed-bundle cache root that exists on disk, else None.
-
-    Routes through the platform-runtime ``layout bundle-cache-root`` op (via
-    ``marketplace_paths.get_bundle_cache_roots``), so deployed-bundle discovery
-    covers both the Claude ``~/.claude/plugins/cache/plan-marshall`` cache root
-    and the OpenCode user-global skill roots. The literal Claude cache subpath
-    is no longer hardcoded here.
-    """
-    for root in get_bundle_cache_roots():
-        candidate = Path(root).expanduser()
-        if candidate.is_dir():
-            return candidate
-    return None
-
-
 def get_base_path(scope: str) -> Path:
     """Determine base path based on scope.
 
     Args:
-        scope: One of 'auto', 'marketplace', 'plugin-cache', 'project'
+        scope: One of 'auto', 'marketplace', 'plugin-cache', 'global', 'project'
 
     Returns:
         Path to the base directory
@@ -799,10 +787,28 @@ def get_base_path(scope: str) -> Path:
             f'Plugin cache not found in any of: {", ".join(get_bundle_cache_roots())}'
         )
 
+    if scope == 'global':
+        # User-global deployment layout — delegated to the shared layout
+        # helper, which resolves the global deployment root (the shared helper
+        # resolves ``~/.claude``; a target's global deployment layout is a
+        # plan-marshall-surface concern). The scope no longer crashes here.
+        from marketplace_paths import get_base_path as _shared_get_base_path
+
+        return _shared_get_base_path('global')
+
     if scope == 'project':
-        project_claude = Path.cwd() / CLAUDE_DIR
-        if project_claude.is_dir():
-            return project_claude
-        raise FileNotFoundError(f'Project .claude directory not found: {project_claude}')
+        # The project-local skill tree is resolved through the platform-runtime
+        # ``layout skill-roots`` op (via ``marketplace_paths.get_project_skill_roots``),
+        # so the same scope covers both the Claude ``.claude/skills`` tree and the
+        # OpenCode layout. The first existing root wins; a root that does not exist
+        # is reported against the highest-priority candidate.
+        anchor = Path.cwd()
+        for root in get_project_skill_roots():
+            candidate = _resolve_skill_root(root, anchor)
+            if candidate.is_dir():
+                return candidate
+        raise FileNotFoundError(
+            f'Project-local skill tree not found in any of: {", ".join(get_project_skill_roots())}'
+        )
 
     raise ValueError(f'Invalid scope: {scope}')

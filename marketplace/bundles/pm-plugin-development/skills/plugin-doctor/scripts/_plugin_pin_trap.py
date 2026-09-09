@@ -713,11 +713,15 @@ def _version_from_announced_path(path_str: str) -> str | None:
     """Extract the version-dir segment from a loader-announced base directory string.
 
     The loader announces a path like
-    ``~/.claude/plugins/cache/plan-marshall/0.1.1069/skills/{skill}/...``. The
-    version dir is the segment immediately preceding ``skills``; when that anchor
-    is absent, the last version-shaped segment is used. Returns ``None`` when no
-    version-shaped segment is present, so a string the assertion cannot parse
-    yields ``indeterminate`` rather than a false verdict.
+    ``~/.claude/plugins/cache/plan-marshall/0.1.1069/skills/{skill}/...`` —
+    **Claude target material** describing the Claude loader's announced path
+    format (the deployed-bundle layout is resolved by a caller through the
+    platform-runtime ``layout bundle-cache-root`` op; ``observe`` consumes the
+    caller-supplied observation). The version dir is the segment immediately
+    preceding ``skills``; when that anchor is absent, the last version-shaped
+    segment is used. Returns ``None`` when no version-shaped segment is present,
+    so a string the assertion cannot parse yields ``indeterminate`` rather than
+    a false verdict.
     """
     parts = Path(path_str).parts
     if 'skills' in parts:

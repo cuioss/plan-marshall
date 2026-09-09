@@ -116,6 +116,23 @@ def test_verify_task_tool_resolved_when_task_removed(tmp_path):
     assert result['issue_resolved'] is True
 
 
+def test_verify_task_tool_declines_on_opencode(monkeypatch, tmp_path):
+    """verify_task_tool_fix is Claude-rule-pack scoped: it declines on OpenCode.
+
+    Mirrors the fixer's gate — the rule does not bind there, so the verify
+    reports ``issue_resolved`` as ``None`` rather than judging a Task
+    declaration that is valid on the active target.
+    """
+    monkeypatch.setattr(_verify, 'resolve_runtime_target', lambda: 'opencode')
+    f = _file(tmp_path, '---\nname: a\ntools: Read, Task, Skill\n---\n\n# A\n')
+
+    result = _verify.verify_task_tool_fix(f)
+
+    assert result['verified'] is True
+    assert result['issue_resolved'] is None
+    assert 'does not bind on the active target' in result['details']
+
+
 # =============================================================================
 # verify_trailing_whitespace_fix
 # =============================================================================

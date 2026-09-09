@@ -12,11 +12,11 @@ Directory scope to scan. Default: `auto`
 
 | Value | Description |
 |-------|-------------|
-| `auto` | **Default**. Tries `marketplace/bundles/` first, falls back to `plugin-cache` |
+| `auto` | **Default**. Tries `marketplace/bundles/` first, falls back to the deployed-bundle cache |
 | `marketplace` | Explicit: scans marketplace/bundles/ directory only |
-| `plugin-cache` | Explicit: scans ~/.claude/plugins/cache/plan-marshall/ only |
-| `global` | Scans ~/.claude directory |
-| `project` | Scans .claude directory in current working directory |
+| `plugin-cache` | Explicit: scans the deployed-bundle cache only (resolved target-aware via the `layout bundle-cache-root` op; the Claude deployment lives under `~/.claude/plugins/cache/plan-marshall/`) |
+| `global` | Scans the user-global deployment directory (Claude: `~/.claude`) |
+| `project` | Scans the project-local skill tree (resolved target-aware via the `layout skill-roots` op; Claude: `.claude/skills`) |
 
 The `auto` default makes the script work in both the marketplace repo and other projects without specifying a scope.
 
@@ -236,7 +236,7 @@ python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventor
 
 ## --include-project-skills (optional flag)
 
-When specified, includes project-level skills from `.claude/skills/` directory. Creates a `project-skills` pseudo-bundle.
+When specified, includes project-level skills from the active target's project-local skill roots (resolved via the `layout skill-roots` op; Claude: `.claude/skills/`). Creates a `project-skills` pseudo-bundle.
 
 ```bash
 python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory \

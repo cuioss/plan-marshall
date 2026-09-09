@@ -102,7 +102,7 @@ import re
 from pathlib import Path
 
 from _analyze_shared import read_frontmatter_disable_list
-from _doctor_shared import Finding
+from _doctor_shared import Finding, resolve_project_skill_trees
 from _rule_registry import RuleDescriptor
 
 RULE_ID = 'skill-self-declared-rule-violation'
@@ -305,26 +305,22 @@ def _skill_source_targets(marketplace_root: Path) -> list[Path]:
     return results
 
 
-def _claude_skills_root(marketplace_root: Path) -> Path:
-    """Resolve the project-local ``.claude/skills`` tree from ``marketplace_root``.
-
-    ``marketplace_root`` is ``<repo>/marketplace/bundles``; the project-local
-    skills tree is ``<repo>/.claude/skills`` — two levels up, then
-    ``.claude/skills``.
-    """
-    return marketplace_root.parent.parent / '.claude' / 'skills'
-
-
 def _claude_skill_source_targets(marketplace_root: Path) -> list[Path]:
-    """Return every ``SKILL.md`` under the project-local ``.claude/skills/**`` tree."""
-    skills_root = _claude_skills_root(marketplace_root)
-    if not skills_root.is_dir():
-        return []
-    try:
-        sources = sorted(skills_root.rglob('SKILL.md'))
-    except OSError:
-        return []
-    return [src for src in sources if src.is_file()]
+    """Return every ``SKILL.md`` under the project-local skill trees.
+
+    The project-local trees are resolved through the platform-runtime layout op
+    (``_doctor_shared.resolve_project_skill_trees`` → ``marketplace_paths.get_project_skill_roots``),
+    so the same scan covers both the Claude ``.claude/skills/**`` tree and the
+    OpenCode layout — no segment-wise ``.claude/skills`` anchor is hardcoded.
+    """
+    sources: list[Path] = []
+    for skills_root in resolve_project_skill_trees(marketplace_root):
+        try:
+            found = sorted(skills_root.rglob('SKILL.md'))
+        except OSError:
+            continue
+        sources.extend(src for src in found if src.is_file())
+    return sources
 
 
 # ---------------------------------------------------------------------------

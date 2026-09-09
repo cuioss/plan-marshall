@@ -26,7 +26,7 @@ Safe fixes can be auto-applied without user confirmation. They are mechanical fi
 - Generate appropriate frontmatter with defaults
 - Prepend to file content
 
-**Template (Agent)**:
+**Template (Agent)** — **Claude target material** (the target-keyed agent block; on OpenCode the fix emits `mode: subagent` + a provider-qualified `model: anthropic/...`, resolved via the active target):
 ```yaml
 ---
 name: {filename}
@@ -113,6 +113,8 @@ description: [Description needed]
 ### 6. array-syntax-tools
 
 **Description**: Tools declared with array syntax `[A, B]` instead of comma-separated.
+
+> **Claude target material / Claude rule-pack gate.** `array-syntax-tools` is a Claude rule-pack rule: the comma-separated `tools:` form is the Claude-parser rule. The fix and verify handlers are gated on the resolved target — on a non-Claude target they decline (the rule does not bind there).
 
 **Detection**: `^tools:\s*\[` pattern in frontmatter
 

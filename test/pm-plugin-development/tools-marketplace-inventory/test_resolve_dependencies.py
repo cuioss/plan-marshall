@@ -29,6 +29,7 @@ list (mirroring the established ``integration/`` segregation pattern).
 
 from pathlib import Path
 
+import marketplace_paths as _mp_paths_mod
 import pytest
 
 from conftest import PROJECT_ROOT, load_script_module
@@ -805,7 +806,7 @@ class TestGetBasePathBundleCacheRouting:
         cache = tmp_path / "deployed-cache"
         cache.mkdir()
         monkeypatch.setattr(
-            _dep_index_mod, "get_bundle_cache_roots", lambda: (str(cache),)
+            _mp_paths_mod, "get_bundle_cache_roots", lambda: (str(cache),)
         )
         assert _dep_index_mod.get_base_path("plugin-cache") == cache
 
@@ -814,7 +815,7 @@ class TestGetBasePathBundleCacheRouting:
         present = tmp_path / "present-cache"
         present.mkdir()
         monkeypatch.setattr(
-            _dep_index_mod,
+            _mp_paths_mod,
             "get_bundle_cache_roots",
             lambda: (str(tmp_path / "missing"), str(present)),
         )
@@ -823,10 +824,54 @@ class TestGetBasePathBundleCacheRouting:
     def test_plugin_cache_scope_raises_when_no_root_exists(self, tmp_path, monkeypatch):
         """When no layout-op cache root exists, plugin-cache scope raises."""
         monkeypatch.setattr(
-            _dep_index_mod, "get_bundle_cache_roots", lambda: (str(tmp_path / "nope"),)
+            _mp_paths_mod, "get_bundle_cache_roots", lambda: (str(tmp_path / "nope"),)
         )
         with pytest.raises(FileNotFoundError):
             _dep_index_mod.get_base_path("plugin-cache")
+
+
+class TestGetBasePathProjectAndGlobalScope:
+    """get_base_path routes the project scope through the layout skill-roots op.
+
+    The project scope resolves the project-local skill tree through
+    ``get_project_skill_roots`` (the platform-runtime ``layout skill-roots`` op)
+    rather than hardcoding a ``.claude`` construction, and the global scope
+    delegates to the shared layout helper. Forcing the roots to a tmp dir proves
+    the routing.
+    """
+
+    def test_project_scope_routes_through_layout_skill_roots(self, tmp_path, monkeypatch):
+        """project scope returns the first existing project-local skill root."""
+        root = tmp_path / "project-root"
+        root.mkdir()
+        monkeypatch.setattr(_dep_index_mod, "get_project_skill_roots", lambda: (str(root),))
+        assert _dep_index_mod.get_base_path("project") == root
+
+    def test_project_scope_skips_missing_root(self, tmp_path, monkeypatch):
+        """A non-existent first project root is skipped in favour of an existing later root."""
+        present = tmp_path / "present-root"
+        present.mkdir()
+        monkeypatch.setattr(
+            _dep_index_mod,
+            "get_project_skill_roots",
+            lambda: (str(tmp_path / "missing"), str(present)),
+        )
+        assert _dep_index_mod.get_base_path("project") == present
+
+    def test_project_scope_raises_when_no_root_exists(self, tmp_path, monkeypatch):
+        """When no project-local skill root exists, project scope raises."""
+        monkeypatch.setattr(
+            _dep_index_mod, "get_project_skill_roots", lambda: (str(tmp_path / "nope"),)
+        )
+        with pytest.raises(FileNotFoundError):
+            _dep_index_mod.get_base_path("project")
+
+    def test_global_scope_delegates_to_shared_helper(self, tmp_path, monkeypatch):
+        """global scope delegates to the shared layout helper rather than crashing."""
+        home = tmp_path / "home"
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+        result = _dep_index_mod.get_base_path("global")
+        assert result == home / ".claude"
 
 
 # =============================================================================

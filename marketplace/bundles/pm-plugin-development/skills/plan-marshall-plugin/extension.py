@@ -32,6 +32,7 @@ if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
 from extension_base import DerivationResolverBase, ExtensionBase, PathAttributionBase  # noqa: E402
+from marketplace_paths import CLAUDE_DIR  # noqa: E402
 
 MARKDOWN_DEP_TYPES = frozenset({'script', 'skill', 'path', 'implements'})
 """Reference kinds the markdown resolver owns.
@@ -156,7 +157,7 @@ class Extension(ExtensionBase, DerivationResolverBase, PathAttributionBase):
         The project-local ``.claude`` tree this extension claims through Axis-D
         ``claim_paths`` is deliberately absent: that claim settles which module a
         path is attributed to, while this one decides whether a plan loads the
-        plugin-development skills, and a change to a project's own harness
+        plugin-development skills, and a change to a project's own target
         configuration is not marketplace-component development.
         """
         return ['marketplace/bundles/**']
@@ -318,7 +319,7 @@ class Extension(ExtensionBase, DerivationResolverBase, PathAttributionBase):
         **The ownership decision, made explicitly.** The ``.claude`` tree holds
         the project-local Claude Code plugin artifacts — skills under
         ``.claude/skills``, slash commands under ``.claude/commands``, and the
-        ``.claude/settings.json`` harness configuration. Every one of them is a
+        ``.claude/settings.json`` target configuration. Every one of them is a
         Claude Code plugin artifact, and the plugin-development domain is the one
         that understands that content: it owns the plugin doctor, the marketplace
         inventory, and the plugin architecture standards. **Owner = who
@@ -347,6 +348,9 @@ class Extension(ExtensionBase, DerivationResolverBase, PathAttributionBase):
         inconsistency this attributor exists to end. An fnmatch-shaped
         ``.claude/**`` would miss the segment ``.claude`` itself; the seam matches
         by directory-prefix nesting, not glob, so the bare segment is correct.
+        The segment is supplied by the shared layout module
+        (``marketplace_paths.CLAUDE_DIR``) so the Claude-target project-local
+        tree name is single-sourced rather than a literal re-stated here.
 
         **A split of artifacts from their tests is accepted, not introduced.** The
         project-local skills under ``.claude/skills`` have their tests under
@@ -365,4 +369,4 @@ class Extension(ExtensionBase, DerivationResolverBase, PathAttributionBase):
 
         See ``extension-api/standards/ext-point-path-attribution.md``.
         """
-        return [('.claude', 'pm-plugin-development')], []
+        return [(CLAUDE_DIR, 'pm-plugin-development')], []

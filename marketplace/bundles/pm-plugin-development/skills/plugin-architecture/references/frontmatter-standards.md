@@ -2,6 +2,16 @@
 
 YAML frontmatter configuration standards for agents, commands, and skills in the marketplace.
 
+> **Target split.** This document separates the **target-agnostic** field semantics — what a
+> component's frontmatter MEANS, independent of which assistant target loads it — from the
+> **Claude target material**: the Claude parser rules, the Claude tool vocabulary, the model
+> aliases, the color enum, the `.claude` mount paths, and the settings-permission sections. The
+> source format in `marketplace/bundles/` is Claude Code native (§ the single-source-of-truth
+> principle); the Claude-specific sections below bind authors of the Claude-target format and are
+> marked as such. An author on another registered target reads the target-agnostic field semantics
+> and the build target's own `mapping.json` data for its per-target rendering; the sections marked
+> **Claude target material** do not bind them.
+
 ## Table of Contents
 
 1. [Frontmatter Format](#frontmatter-format)
@@ -34,7 +44,7 @@ tools: Read, Write, Edit, Bash
 1. **Frontmatter delimiters**: Must be exactly `---` (three hyphens) on separate lines
 2. **No blank lines**: Between opening `---` and first field, or between fields and closing `---`
 3. **Field syntax**: `field-name: value` with single space after colon
-4. **Tools format**: **Comma-separated**, NOT array syntax
+4. **Tools format**: **Comma-separated**, NOT array syntax — this is a Claude-parser rule; see [Tools Declaration](#tools-declaration)
 
 ## Agent Frontmatter
 
@@ -70,10 +80,10 @@ tools: Read, Write, Edit, Bash, Grep, Glob
   - Output format returned
 - Multi-line format using `|` is recommended for readability
 
-**tools** (required):
-- Format: **Comma-separated list** (NOT array syntax)
-- Available tools: `Read`, `Write`, `Edit`, `Bash`, `Grep`, `Glob`, `Task`
-- **CRITICAL**: Do NOT include `Task` tool (see Pattern 18 in architecture-rules.md)
+**tools** (required) — **Claude target material**:
+- Format: **Comma-separated list** (NOT array syntax) — a Claude-parser rule
+- Available tools: `Read`, `Write`, `Edit`, `Bash`, `Grep`, `Glob`, `Task` — the Claude tool vocabulary; the tool names and the `Bash(...)` permission grammar are Claude-target data, resolved per target by the build's `mapping.json` (`tool_permissions`)
+- **CRITICAL**: Do NOT include `Task` tool (see Pattern 18 in architecture-rules.md) — a Claude rule-pack member
 - Bash permissions can include wildcards: `Bash(git:*)`, `Bash(./script.sh:*)`
 - See [Tools Declaration](#tools-declaration) for detailed rules
 
@@ -84,13 +94,13 @@ model: sonnet
 color: blue
 ```
 
-**model** (optional):
-- Valid values: `sonnet`, `opus`, `haiku`
+**model** (optional) — **Claude target material**:
+- Valid values: `sonnet`, `opus`, `haiku` — the Claude model aliases
 - Default: Inherits from parent/thread
 - Recommendation: Use `haiku` for simple, deterministic tasks to reduce cost
 
-**color** (optional):
-- Valid values: `red`, `orange`, `yellow`, `green`, `blue`, `purple`, `pink`, `gray`
+**color** (optional) — **Claude target material**:
+- Valid values: `red`, `orange`, `yellow`, `green`, `blue`, `purple`, `pink`, `gray` — the Claude color enum
 - Purpose: Visual identification in UI
 - No functional impact
 
@@ -142,13 +152,13 @@ Commands use the same field specifications as agents with these differences:
 - Should be single-line for commands
 - Focus on user-facing purpose, not technical details
 
-**tools** (required):
+**tools** (required) — **Claude target material**:
 - Commands can use `Task` tool to invoke agents (Pattern 6: Commands Orchestrate, Agents Execute)
-- Same comma-separated format as agents
+- Same comma-separated format as agents — a Claude-parser rule
 
 ### Optional Fields
 
-Same as agents: `model`, `color`, `targets` (see [Target Scoping](#target-scoping))
+Same as agents: `model`, `color` (**Claude target material**), `targets` (see [Target Scoping](#target-scoping))
 
 ### Complete Command Example
 
@@ -487,6 +497,12 @@ The discriminator is the *referent*, never the vocabulary. Describing the mechan
 
 ## Tools Declaration
 
+> **Claude target material.** This section states the Claude frontmatter tool grammar — the
+> comma-separated format the Claude parser accepts, the Claude tool vocabulary, and the `Bash(...)`
+> permission patterns. Other targets consume the tool-name and permission vocabulary as `mapping.json`
+> data at build time and render their own declaration grammar; the rules below bind the Claude-target
+> format only.
+
 ### Correct Format: Comma-Separated
 
 **CRITICAL**: Official Claude Code documentation specifies **comma-separated format**.
@@ -544,6 +560,10 @@ This improves readability but has no functional impact.
 
 ## Common Issues
 
+> **Claude target material.** Issues 1, 2, 3 and 5 describe Claude-parser and Claude-tool-vocabulary
+> edge cases; Issue 4 (unsupported skill fields) is target-agnostic — skills carry no tool
+> declaration on any target.
+
 ### Issue 1: Grep Breaking Bash Tool Parsing
 
 An undocumented edge case in Claude Code's frontmatter parser: listing `Grep` alongside a parameterized `Bash(...)` entry causes the Bash permission to fail ("Bash tool not available"). **Fix**: remove `Grep` from the frontmatter tools declaration — workflow steps can still use Grep without declaring it. Correct: `tools: Read, Glob, Bash(./.claude/skills/script.sh:*)`.
@@ -577,6 +597,10 @@ Tool names are case-sensitive. Use exactly: `Read`, `Write`, `Edit`, `Bash`, `Gr
 
 ### Tools Validation
 
+> **Claude target material.** The tool list, capitalization, Task restriction, and Grep/Bash
+> interaction below are Claude rule-pack rules — the Claude tool vocabulary. A non-Claude target
+> derives its tool-name vocabulary from its own `mapping.json` data.
+
 1. **Format**: Must be comma-separated (not array, not newline-separated)
 2. **Tool names**: Must be from valid tool list
 3. **Capitalization**: Must match exactly (`Read` not `read`)
@@ -587,6 +611,12 @@ Tool names are case-sensitive. Use exactly: `Read`, `Write`, `Edit`, `Bash`, `Gr
 **Detection Script**: `analyze-markdown-file.sh` and `analyze-skill-structure.sh` validate tools
 
 ### Permission Patterns
+
+> **Claude target material.** The mount points, settings-file permission grammar, and the three
+> path formats below are Claude-layout and Claude-settings concerns. The mount path (`./.claude/skills/`)
+> and the settings files (`~/.claude/settings.json`, `.claude/settings.json`) are Claude-only layouts;
+> the permission intents normalize through the platform-runtime `permission configure` op, which
+> renders each target's own settings grammar.
 
 #### Skill Script Mounting
 
@@ -701,15 +731,15 @@ Use this checklist when creating or reviewing frontmatter:
 - Valid YAML syntax (no tabs, proper spacing)
 - `targets` field, if present, is non-empty and names only registered build targets — and the component meets the three-condition admission test in [Target Scoping](#target-scoping)
 
-**Agents**:
+**Agents** — tool/model/color bullets are **Claude target material**:
 - `tools` field uses comma-separated format (not array)
 - Tools list does NOT include `Task`
 - Tools list does NOT include `Grep` if using parameterized `Bash`
 - `description` includes input/output examples
-- `model` field (if present) uses valid value: `sonnet`, `opus`, `haiku`
-- `color` field (if present) uses valid color name
+- `model` field (if present) uses valid value: `sonnet`, `opus`, `haiku` (Claude model aliases)
+- `color` field (if present) uses valid color name (Claude color enum)
 
-**Commands**:
+**Commands** — tool bullets are **Claude target material**:
 - `tools` field uses comma-separated format (not array)
 - Can include `Task` tool if orchestrating agents
 - Tools list does NOT include `Grep` if using parameterized `Bash`
@@ -730,6 +760,6 @@ Use this checklist when creating or reviewing frontmatter:
 - architecture-rules.md - Pattern 18 (Task tool restrictions), Pattern 6 (Orchestration)
 - script-development.md - Bash script integration patterns
 
-**Official Documentation**:
+**Official Documentation** — **Claude target material**:
 - Claude Code documentation: https://docs.claude.com/en/docs/claude-code/settings
 - Agent SDK: https://platform.claude.com/docs/en/agent-sdk/subagents

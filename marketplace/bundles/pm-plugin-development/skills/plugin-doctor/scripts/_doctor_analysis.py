@@ -33,7 +33,7 @@ from _analyze_structure import analyze_skill_structure
 from _analyze_verb_chains import analyze_verb_chains
 from _dep_detection import extract_frontmatter
 from _dep_index import AstCache
-from _doctor_shared import Finding
+from _doctor_shared import Finding, resolve_runtime_target
 
 # Subdirectories that may contain markdown sub-documents
 SUBDOC_DIRS = ['references', 'standards', 'workflow', 'templates']
@@ -335,7 +335,10 @@ def extract_issues_from_markdown_analysis(analysis: dict, file_path: str, compon
 
     # Check rule violations
     rules = analysis.get('rules', {})
-    if rules.get('agent_task_tool_prohibited'):
+    # ``agent-task-tool-prohibited`` is a Claude rule-pack rule (validate
+    # accepts a ``Task`` declaration on OpenCode), so the finding is gated on
+    # the resolved target like ``apply_task_tool_fix`` and ``verify_task_tool_fix``.
+    if rules.get('agent_task_tool_prohibited') and resolve_runtime_target() != 'opencode':
         issues.append(
             Finding(
                 type='agent-task-tool-prohibited',
@@ -566,7 +569,8 @@ def extract_issues_from_coverage_analysis(coverage: dict, file_path: str, compon
     """Extract deterministic issues from tool coverage analysis.
 
     NOTE: This function extracts issues that can be determined structurally:
-    - agent-task-tool-prohibited (Task declared in agent frontmatter)
+    - agent-task-tool-prohibited (Task declared in agent frontmatter; Claude
+      rule-pack rule — gated off when the active target is OpenCode)
     - agent-maven-restricted (Maven calls outside builder)
     - Backup file patterns (quality issue)
 
@@ -579,8 +583,14 @@ def extract_issues_from_coverage_analysis(coverage: dict, file_path: str, compon
     # Only extract deterministic violations
     violations = coverage.get('critical_violations', {})
 
-    # agent-task-tool-prohibited: Agent declares Task tool (deterministic - check frontmatter only)
-    if component_type == 'agent' and violations.get('has_task_declared'):
+    # agent-task-tool-prohibited: Agent declares Task tool (deterministic - check frontmatter only).
+    # Claude rule-pack gate: on OpenCode a declared ``Task`` is a valid
+    # subagent capability and must not surface as a doctor finding.
+    if (
+        component_type == 'agent'
+        and violations.get('has_task_declared')
+        and resolve_runtime_target() != 'opencode'
+    ):
         issues.append(
             Finding(
                 type='agent-task-tool-prohibited',
