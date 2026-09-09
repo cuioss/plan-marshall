@@ -11,6 +11,13 @@ nine effort slots): ``economic`` 30, ``balanced`` 36, ``high-end`` 41 —
 so each rung is genuinely distinct from its neighbours (every adjacent
 step is at least +5).
 
+The ``(model, effort)`` pairs named below (e.g. ``level-4`` → ``opus,
+medium``) are illustrative shorthand for the ``effort-levels.md`` Level Table
+— the single source of the level → primitive binding — and are not a
+restatement of it. The table values live in ``effort-levels.md`` (mirrored by
+the build target's ``LEVEL_TABLE`` lockstep test) and nowhere else in this
+module.
+
 - ``ECONOMIC`` — minimum-cost configuration; stored in literal-expanded
   form (every ``KNOWN_ROLES`` phase carries an explicit entry mirroring
   the on-disk shape that ``apply-preset economic`` writes after
@@ -36,8 +43,9 @@ step is at least +5).
   (verification-feedback) and finalize-default slots at ``level-4``.
   ``level-5`` is a deliberate preset default here — the top rung is meant
   to be genuinely high-end. ``level-6``/``level-7`` are NOT used as preset
-  defaults: they resolve to alias-capability-gated efforts (opus xhigh /
-  fable max) that the build target refuses to emit when the resolved alias
+  defaults: they resolve to alias-capability-gated efforts (per the
+  ``effort-levels.md`` Level Table — the single source) that the build target
+  refuses to emit when the resolved alias
   lacks the capability (silently falling back to the canonical variant),
   so those two tiers stay reserved for explicit per-phase opt-in.
 
@@ -88,7 +96,8 @@ ALLOWED_LEVELS: tuple[str, ...] = (
 #
 # Empty does NOT mean a preset may carry any level. No preset carries
 # ``level-6`` or ``level-7``, and none may: both resolve to
-# alias-capability-gated efforts (opus xhigh / fable max) that the build target
+# alias-capability-gated efforts (per the ``effort-levels.md`` Level Table — the
+# single source) that the build target
 # silently downgrades to the canonical variant when the resolved alias lacks
 # the capability. A preset naming them would advertise a tier it cannot
 # guarantee to every project that applies it. They remain available for an
@@ -207,14 +216,17 @@ class EffortPresets:
     }
     """Upper-tier preset, stored in literal-expanded form (every
     ``KNOWN_ROLES`` phase carries an explicit entry). Default ``level-4``
-    (opus, medium); pushes every analytical phase (phase-2/3/4), the
+    (opus, medium per the ``effort-levels.md`` Level Table); pushes every
+    analytical phase (phase-2/3/4), the
     per-task implementation tier (``phase-5-execute.default``), and
-    ``post-run-review`` to ``level-5`` (opus, high), keeping only the triage
+    ``post-run-review`` to ``level-5`` (opus, high per the ``effort-levels.md``
+    Level Table), keeping only the triage
     (verification-feedback) and finalize-default slots at ``level-4``.
     Summed-level spread 41. ``level-5`` is a deliberate preset default here —
     the top rung is meant to be genuinely high-end; ``level-6``/``level-7``
-    stay out of presets because their alias-capability-gated efforts (opus
-    xhigh / fable max) silently fall back to the canonical variant when the
+    stay out of presets because their alias-capability-gated efforts (per the
+    ``effort-levels.md`` Level Table — the single source) silently fall back to
+    the canonical variant when the
     resolved alias lacks the capability. The redundancy against the
     bubbling-resolution semantics is intentional — it mirrors the on-disk
     shape produced by ``apply-preset high-end`` after ``_expand_phase_effort``

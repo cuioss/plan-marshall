@@ -60,7 +60,8 @@ ALLOWED_LEVELS = (
 )
 
 # No levels are currently reserved. `level-7` is the current top tier
-# (resolves to fable, max — sits above Opus). Future palette expansion may
+# (binding per the effort-levels.md Level Table — the single source). Future
+# palette expansion may
 # repopulate this tuple.
 RESERVED_LEVELS: tuple[str, ...] = ()
 

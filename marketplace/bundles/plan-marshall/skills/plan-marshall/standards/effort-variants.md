@@ -60,13 +60,13 @@ The plan-wide `plan.effort` is a single string.
 
 ## Build-Time Alias-Capability Guard
 
-The two top tiers resolve to alias-capability-gated efforts: `level-6` resolves to `(opus, xhigh)` and `level-7` resolves to `(fable, max)`. The target's build-time emitter inspects the canonical agent's resolved alias capability flags and refuses to emit the `execution-context-level-6.md` / `execution-context-level-7.md` variant when the resolved alias does not advertise the level's effort (`xhigh` / `max`) support. The emitter logs a build-time warning naming the canonical and the missing capability.
+The two top tiers (`level-6` / `level-7`) resolve to alias-capability-gated efforts — the exact `(model, effort)` bindings are the single source in [`effort-levels.md`](effort-levels.md) and are not restated here. The target's build-time emitter inspects the canonical agent's resolved alias capability flags and refuses to emit the `execution-context-level-6.md` / `execution-context-level-7.md` variant when the resolved alias does not advertise the level's effort (`xhigh` / `max`) support. The emitter logs a build-time warning naming the canonical and the missing capability.
 
 At runtime: a dispatch site whose resolver returns `execution-context-level-6` / `execution-context-level-7` against a target where the variant was skipped will fail with `Agent type not found` from Claude Code's plugin loader. The resolver does not know the emitter skipped a variant — the contract is one-way (build → registry). Operators see this only via build logs.
 
 ## Environment-Variable Override
 
-`CLAUDE_CODE_SUBAGENT_MODEL`, when set at Claude Code session start, overrides every subagent's pinned `model:` declaration (per code.claude.com agent docs). This takes effect **above** the resolver: the variant is still selected per `marshal.json`, but Claude Code substitutes the env var's model on subagent launch. To restore variant-pinned behaviour:
+**Claude target note.** `CLAUDE_CODE_SUBAGENT_MODEL` is a Claude Code host variable: when set at Claude Code session start, it overrides every subagent's pinned `model:` declaration (per code.claude.com agent docs). This takes effect **above** the resolver: the variant is still selected per `marshal.json`, but Claude Code substitutes the env var's model on subagent launch. To restore variant-pinned behaviour:
 
 ```bash
 unset CLAUDE_CODE_SUBAGENT_MODEL

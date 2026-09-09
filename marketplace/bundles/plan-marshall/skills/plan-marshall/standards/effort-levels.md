@@ -28,10 +28,12 @@ The model column lists **aliases** (`fable`, `opus`, `sonnet`, `haiku`), not ver
 The level table maps to model **aliases** (`fable`, `opus`, `sonnet`, `haiku`) rather than version-pinned IDs (e.g., `claude-opus-4-8`). Rationale:
 
 - **Resilience to model rotation**: code.claude.com rotates the alias targets at the runtime; pinning to an ID in the schema would force a marketplace-wide edit on every model release.
-- **User override compatibility**: the `CLAUDE_CODE_SUBAGENT_MODEL` environment variable accepts aliases and overrides the variant's pinned model at session start. Authors authoring against aliases get the same override semantics users expect.
+- **User override compatibility (Claude target)**: the `CLAUDE_CODE_SUBAGENT_MODEL` environment variable — a Claude Code host variable — accepts aliases and overrides the variant's pinned model at session start. Authors authoring against aliases get the same override semantics users expect.
 - **Single point of mapping**: the alias → ID resolution lives in `marketplace/targets/opencode/mapping.json` (`model_map`) and is reused by the Claude target for the alias-capability guard. Adding a new model means editing one file.
 
 The only place pinned IDs are written is the build-time guard for the alias-capability-gated levels (`level-6`, `level-7`): the mapping file flags whether the resolved ID accepts the requested effort. Authors and users never see the IDs.
+
+> **Known coupling — recorded as a proposal.** The OpenCode target's variant emitter imports `LEVEL_TABLE` from the Claude target (`marketplace/targets/claude/variant_emitter.py`) rather than owning its own copy — a deliberate single-source reuse whose cross-target import direction a lockstep test pins (`opencode_ve.LEVEL_TABLE is claude_ve.LEVEL_TABLE`). The cleaner fix — lifting the table into a target-neutral shared module both targets import — is `marketplace/targets` work outside this plan's surface and is recorded here as the proposal rather than implemented.
 
 ## The Alias-Capability Guard
 
