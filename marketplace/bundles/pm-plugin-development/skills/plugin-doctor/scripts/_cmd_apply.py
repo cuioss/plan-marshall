@@ -23,7 +23,9 @@ from _doctor_shared import read_json_input, resolve_runtime_target
 # authoritative definition; ``_OPENCODE_AGENT_FRONTMATTER`` /
 # ``_CLAUDE_AGENT_FRONTMATTER`` are DERIVED from that file when it is present,
 # so only one population exists. The baked ``_FALLBACK_*`` literals serve the
-# absent-assets case only, where no shipped population is left to drift from.
+# absent-or-incomplete case only: they are used when the template file is
+# missing or does not carry a complete ``opencode``/``claude`` agent block —
+# the only situations where no shipped population is left to drift from.
 _FALLBACK_OPENCODE_AGENT_FRONTMATTER = 'tools: Read, Write, Edit\nmode: subagent\nmodel: anthropic/claude-sonnet-4\n'
 _FALLBACK_CLAUDE_AGENT_FRONTMATTER = 'tools: Read, Write, Edit\nmodel: sonnet\n'
 
@@ -43,7 +45,8 @@ def _derive_agent_frontmatter_defaults(script_dir: Path) -> tuple[str, str]:
 
     ``fix-templates.json`` (``templates.missing-frontmatter.agent.{target}``)
     is the single authoritative definition of the blocks; the baked
-    ``_FALLBACK_*`` literals are used only when the assets file is absent.
+    ``_FALLBACK_*`` literals are used only when the assets file is absent or
+    does not carry a complete ``opencode``/``claude`` agent block.
     Returns ``(opencode_block, claude_block)``.
     """
     agent = load_templates(script_dir).get('templates', {}).get('missing-frontmatter', {}).get('agent', {})
