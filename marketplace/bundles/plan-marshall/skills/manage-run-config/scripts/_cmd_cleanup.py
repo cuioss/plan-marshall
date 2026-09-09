@@ -18,6 +18,7 @@ from typing import Any
 
 # Direct imports - PYTHONPATH set by executor
 from _config_defaults import DEFAULT_SYSTEM_RETENTION
+from command_forms import STEWARD_COMMAND
 from constants import (
     CI_BODIES_DIRNAME,
     CLEANUP_TARGET_ALL,
@@ -39,7 +40,6 @@ from file_ops import (
     get_temp_dir,
     output_toon,
 )
-from command_forms import STEWARD_COMMAND
 from marketplace_paths import NO_PLAN_SENTINEL
 
 # Configuration — delegate to file_ops for consistent path resolution.

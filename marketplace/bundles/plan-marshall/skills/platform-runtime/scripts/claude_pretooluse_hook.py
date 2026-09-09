@@ -55,7 +55,6 @@ from collections.abc import Callable
 from typing import Any
 
 import pretooluse_gate as gate
-
 from command_forms import STEWARD_COMMAND, SYNC_PLUGIN_CACHE_COMMAND
 
 # =============================================================================
