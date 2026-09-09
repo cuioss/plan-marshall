@@ -76,25 +76,25 @@ Modules discovered: 10
 
 **Hybrid modules** are detected automatically when both pom.xml and package.json exist.
 
-## Document Build Commands in CLAUDE.md
+## Document Build Commands in the Agent-Instructions File
 
-**Purpose**: Add resolved build commands to CLAUDE.md so agents invoke builds via canonical names, not hard-coded tool commands.
+**Purpose**: Add resolved build commands to the project's agent-instructions file so agents invoke builds via canonical names, not hard-coded tool commands. The write target is the **active target's** agent-instructions file — `CLAUDE.md` on Claude, `AGENTS.md` on OpenCode — resolved through the shared per-target lookup (`marketplace_paths.agent_instructions_filename()`), never a hardcoded `CLAUDE.md`.
 
 **Prerequisite**: Discovery completed (architecture API is available).
 
-**Skip condition**: If CLAUDE.md already has a `### Build Commands` heading, skip this sub-operation.
+**Skip condition**: If the agent-instructions file already has a `### Build Commands` heading, skip this sub-operation.
 
-**Conflict handling**: If CLAUDE.md contains hand-written build patterns (`mvn`, `mvnw`, `gradle`, `npm run`, `./pw`, "build command"), ask before writing. Name the patterns that were found in the question, so the user is deciding about text they can identify:
+**Conflict handling**: If the agent-instructions file contains hand-written build patterns (`mvn`, `mvnw`, `gradle`, `npm run`, `./pw`, "build command"), ask before writing. Name the patterns that were found in the question, so the user is deciding about text they can identify:
 
 ```text
 AskUserQuestion:
-  question: "Your CLAUDE.md already describes how to build this project, in text somebody wrote by hand: {matched_patterns}. There is no way to tell from here whether that is still correct or left over from an earlier setup. Writing the resolved build commands over it would replace it. Should it?"
+  question: "Your agent-instructions file already describes how to build this project, in text somebody wrote by hand: {matched_patterns}. There is no way to tell from here whether that is still correct or left over from an earlier setup. Writing the resolved build commands over it would replace it. Should it?"
   header: "Build text"
   options:
     - label: "Replace existing (recommended)"
       description: "The hand-written text is overwritten with the build commands resolved for your modules, so agents call builds by canonical name rather than by a spelling that may no longer work. This is the only build-command edit that removes text you wrote"
     - label: "Keep existing"
-      description: "Your CLAUDE.md is left byte-for-byte as it is and no build-command section is written. Choose this if the text is deliberate; re-run the wizard later if you change your mind"
+      description: "Your agent-instructions file is left byte-for-byte as it is and no build-command section is written. Choose this if the text is deliberate; re-run the wizard later if you change your mind"
   multiSelect: false
 ```
 
@@ -114,7 +114,7 @@ Collect the `executable` value from each successful resolution. Track which cano
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture resolve --command {canonical} --module {module_name}
 ```
 
-**Add to CLAUDE.md** under the heading `### Build Commands` (in a "Development Notes" section) with bullets: a "Never hard-code" preamble, one bullet per resolved canonical command (`Compile`, `Quality gate`, `Tests`, `Full verify`, plus `Integration tests`, `E2E`, `Coverage`, `Benchmark` only when resolved on default), one bullet per child-module-only command in the form `{Canonical} ({module_name}): {executable} — only on {module_name}`, a reminder to use a 10-minute Bash timeout (600000ms), and a reminder to analyze each build's TOON result (`status`, `errors[N]{file,line,message,category}`, `log_file`).
+**Add to the agent-instructions file** (the active target's file — `CLAUDE.md` on Claude, `AGENTS.md` on OpenCode) under the heading `### Build Commands` (in a "Development Notes" section) with bullets: a "Never hard-code" preamble, one bullet per resolved canonical command (`Compile`, `Quality gate`, `Tests`, `Full verify`, plus `Integration tests`, `E2E`, `Coverage`, `Benchmark` only when resolved on default), one bullet per child-module-only command in the form `{Canonical} ({module_name}): {executable} — only on {module_name}`, a reminder to use a Bash timeout resolved through the platform-runtime `harness bash-timeout-ceiling` seam for the active target (600000ms on Claude, 120000ms on OpenCode — write the resolved value, never a fixed literal), and a reminder to analyze each build's TOON result (`status`, `errors[N]{file,line,message,category}`, `log_file`).
 
 Only include commands that resolved successfully.
 

@@ -114,6 +114,7 @@ from ci_base import (
     set_default_cwd,
     truncate_log_content,
 )
+from command_forms import STEWARD_COMMAND
 
 # ---------------------------------------------------------------------------
 # CLI wrappers
@@ -782,7 +783,7 @@ def _refuse_on_required_merge_train(operation: str) -> dict | None:
             operation,
             'This project has merge trains enabled, so an immediate merge bypasses the train the '
             'project requires. Route the MR onto the train via "ci pr merge-queue", or reconcile '
-            "the plan's use_merge_queue step param via /marshall-steward.",
+            f"the plan's use_merge_queue step param via {STEWARD_COMMAND}.",
             detail,
         )
     # Reached only by MERGE_QUEUE_ELIGIBLE_UNCONFIGURED and an error-free
@@ -863,7 +864,7 @@ def cmd_pr_merge_queue(args: argparse.Namespace) -> dict:
         return make_error(
             'pr_merge_queue',
             f'{_MERGE_TRAIN_INELIGIBLE_HINT} Provision merge trains for this project and '
-            "reconcile the plan's use_merge_queue step param via /marshall-steward, or disable "
+            f"reconcile the plan's use_merge_queue step param via {STEWARD_COMMAND}, or disable "
             'that step param and merge via "ci pr safe-merge".',
             detail,
         )
@@ -886,7 +887,7 @@ def cmd_pr_merge_queue(args: argparse.Namespace) -> dict:
             return make_error(
                 'pr_merge_queue',
                 f'project {project_path}: {_MERGE_TRAIN_INELIGIBLE_HINT} To merge this MR now '
-                "instead, disable the plan's use_merge_queue step param (via /marshall-steward) "
+                f"instead, disable the plan's use_merge_queue step param (via {STEWARD_COMMAND}) "
                 'and merge via "ci pr safe-merge".',
                 stderr_text,
             )

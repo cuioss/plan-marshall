@@ -76,16 +76,28 @@ def test_read_runtime_target_claude_when_unparseable(tmp_path: Path):
 # =============================================================================
 
 
-def test_detect_claude_root_none_when_cache_absent(tmp_path: Path, monkeypatch):
+@pytest.fixture
+def claude_roots(tmp_path: Path):
+    """Stub the runtime-resolved bundle-cache roots at a tmp plugin-cache root.
+
+    ``_detect_claude_root`` derives its cache base from
+    ``get_bundle_cache_roots()`` rather than a hardcoded ``~/.claude`` literal,
+    so detection tests must stub the op output — not ``Path.home``.
+    """
+    base = tmp_path / '.claude' / 'plugins' / 'cache'
+    return lambda: (str(base / 'plan-marshall'),)
+
+
+def test_detect_claude_root_none_when_cache_absent(tmp_path: Path, monkeypatch, claude_roots):
     """_detect_claude_root returns None when the plugin cache does not exist."""
-    monkeypatch.setattr(Path, 'home', lambda: tmp_path)
+    monkeypatch.setattr(bp, 'get_bundle_cache_roots', claude_roots)
 
     assert bp._detect_claude_root() is None
 
 
-def test_detect_claude_root_finds_marker(tmp_path: Path, monkeypatch):
+def test_detect_claude_root_finds_marker(tmp_path: Path, monkeypatch, claude_roots):
     """_detect_claude_root returns the plugin dir holding a bundle marker file."""
-    monkeypatch.setattr(Path, 'home', lambda: tmp_path)
+    monkeypatch.setattr(bp, 'get_bundle_cache_roots', claude_roots)
     version_dir = (
         tmp_path / '.claude' / 'plugins' / 'cache' / 'plan-marshall' / 'plan-marshall' / '1.0.0'
     )
@@ -99,9 +111,9 @@ def test_detect_claude_root_finds_marker(tmp_path: Path, monkeypatch):
     assert root.name == 'plan-marshall'
 
 
-def test_detect_claude_root_none_without_marker(tmp_path: Path, monkeypatch):
+def test_detect_claude_root_none_without_marker(tmp_path: Path, monkeypatch, claude_roots):
     """_detect_claude_root returns None when no bundle carries the marker file."""
-    monkeypatch.setattr(Path, 'home', lambda: tmp_path)
+    monkeypatch.setattr(bp, 'get_bundle_cache_roots', claude_roots)
     (tmp_path / '.claude' / 'plugins' / 'cache' / 'plan-marshall' / 'bundle' / '1.0.0').mkdir(
         parents=True
     )
@@ -114,13 +126,13 @@ def test_detect_claude_root_none_without_marker(tmp_path: Path, monkeypatch):
 # =============================================================================
 
 
-def test_detect_opencode_root_via_env_config(tmp_path: Path, monkeypatch):
-    """_detect_opencode_root finds a plan-marshall skill under OPENCODE_CONFIG_DIR."""
-    monkeypatch.setattr(Path, 'home', lambda: tmp_path / 'empty-home')
+def test_detect_opencode_root_via_absolute_root(tmp_path: Path, monkeypatch):
+    """_detect_opencode_root finds a plan-marshall skill under a user-global root."""
     cfg = tmp_path / 'cfg'
     skills = cfg / 'skills'
     (skills / 'plan-marshall-core').mkdir(parents=True)
-    monkeypatch.setenv('OPENCODE_CONFIG_DIR', str(cfg))
+    monkeypatch.setattr(bp, 'get_project_skill_roots', lambda: (str(skills),))
+    monkeypatch.chdir(tmp_path)
 
     root = bp._detect_opencode_root()
 
@@ -130,8 +142,7 @@ def test_detect_opencode_root_via_env_config(tmp_path: Path, monkeypatch):
 
 def test_detect_opencode_root_via_relative_root(tmp_path: Path, monkeypatch):
     """_detect_opencode_root finds a plan-marshall skill under .opencode/skills."""
-    monkeypatch.setattr(Path, 'home', lambda: tmp_path / 'empty-home')
-    monkeypatch.delenv('OPENCODE_CONFIG_DIR', raising=False)
+    monkeypatch.setattr(bp, 'get_project_skill_roots', lambda: ('.opencode/skills',))
     work = tmp_path / 'work'
     (work / '.opencode' / 'skills' / 'plan-marshall-x').mkdir(parents=True)
     monkeypatch.chdir(work)
@@ -144,8 +155,7 @@ def test_detect_opencode_root_via_relative_root(tmp_path: Path, monkeypatch):
 
 def test_detect_opencode_root_none_when_no_skills(tmp_path: Path, monkeypatch):
     """_detect_opencode_root returns None when no discovery root carries a skill."""
-    monkeypatch.setattr(Path, 'home', lambda: tmp_path / 'empty-home')
-    monkeypatch.delenv('OPENCODE_CONFIG_DIR', raising=False)
+    monkeypatch.setattr(bp, 'get_project_skill_roots', lambda: ('.opencode/skills', '.claude/skills'))
     empty = tmp_path / 'empty-work'
     empty.mkdir()
     monkeypatch.chdir(empty)

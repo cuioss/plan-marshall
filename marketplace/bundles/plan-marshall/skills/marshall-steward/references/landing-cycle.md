@@ -61,7 +61,8 @@ git -C {repo_root} rev-parse --abbrev-ref HEAD
 
 - **On the base branch** (`main` / `master`): never commit steward artifacts
   directly to the base. Create a new working branch with a `chore/` prefix (the
-  closed CI-triggered prefix set per CLAUDE.md § "Branch Naming" — `chore/` is the
+  closed CI-triggered prefix set, owned by the `.github/workflows/python-verify.yml`
+  push-trigger allowlist per § "Branch Naming" — `chore/` is the
   correct prefix for steward-maintenance changes; `docs/` is retired). Derive a
   short slug (e.g. `chore/steward-landing-{short-slug}`):
 

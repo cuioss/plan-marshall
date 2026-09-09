@@ -141,20 +141,21 @@ PLAN_DIR_NAME = os.environ.get('PLAN_DIR_NAME', '.plan')
 SCRIPT_DIR = Path(__file__).parent.resolve()
 
 # Shared path resolution (from script-shared)
-from marketplace_bundles import (  # noqa: E402, I001
+# The SINGLE argparse accept-set derivation, shared with plugin-doctor's
+# edit-time rules. The generator embeds what it derives; the doctor reads the
+# same module at edit time. One derivation, two consumers, nothing to drift.
+import argparse_surface as surface_api  # noqa: E402
+from command_forms import SYNC_PLUGIN_CACHE_COMMAND  # noqa: E402
+from file_ops import get_base_dir as _get_plan_base_dir  # noqa: E402
+from file_ops import get_tracked_config_dir as _get_tracked_config_dir  # noqa: E402
+from marketplace_bundles import (  # noqa: E402
     build_pythonpath,
     collect_script_dirs,
     resolve_bundle_path,
 )
 from marketplace_paths import get_base_path as _shared_get_base_path  # noqa: E402
+from marketplace_paths import get_bundle_cache_roots as _shared_get_bundle_cache_roots  # noqa: E402
 from marketplace_paths import get_project_skill_roots as _shared_get_project_skill_roots  # noqa: E402
-from file_ops import get_base_dir as _get_plan_base_dir  # noqa: E402
-from file_ops import get_tracked_config_dir as _get_tracked_config_dir  # noqa: E402
-
-# The SINGLE argparse accept-set derivation, shared with plugin-doctor's
-# edit-time rules. The generator embeds what it derives; the doctor reads the
-# same module at edit time. One derivation, two consumers, nothing to drift.
-import argparse_surface as surface_api  # noqa: E402
 
 
 # Runtime-resolved locations. The executor lives at <root>/.plan/execute-script.py
@@ -710,7 +711,9 @@ def generate_mappings_code(mappings: dict[str, str]) -> str:
 # v3: each SCRIPT_SURFACES node additionally carries ``flag_arity`` (how many
 #     argv tokens a long flag binds as its value), which the executor's pre-spawn
 #     walk needs to tell a flag's VALUE from the next verb.
-_SUPPORTED_TEMPLATE_FORMAT_VERSION = 3
+# v4: adds the CACHE_RECOVERY_ROOTS placeholder (runtime-resolved bundle cache
+#     roots injected per target for the bootstrap's pruned-version self-heal).
+_SUPPORTED_TEMPLATE_FORMAT_VERSION = 4
 
 # Matches the template's ``# TEMPLATE_FORMAT_VERSION: N`` marker comment.
 _TEMPLATE_FORMAT_VERSION_RE = re.compile(r'^#\s*TEMPLATE_FORMAT_VERSION:\s*(\d+)\s*$', re.MULTILINE)
@@ -1263,6 +1266,21 @@ def generate_executor(
         else '    # (none detected)'
     )
 
+    # Cache-recovery roots for the template's pruned-version self-heal, resolved at
+    # generation time through the same runtime op the target-aware resolver family uses.
+    # The executor cannot import the shared resolver before its own bootstrap is done, so
+    # the recovered roots travel with the generated file. A target with no versioned cache
+    # (OpenCode) contributes no root and the recovery honestly finds nothing.
+    recovery_roots = _shared_get_bundle_cache_roots()
+    cache_recovery_lines = (
+        # repr() (not manual quotes) so a root path containing a quote cannot
+        # emit invalid generated Python and trip the unsubstituted-placeholder
+        # guard on regeneration.
+        '\n'.join(f'    {root!r},' for root in recovery_roots)
+        if recovery_roots
+        else '    # (no cache roots resolved)'
+    )
+
     # Collect ALL script directories (including subdirectories of skills like script-shared
     # that have no registered scripts but contain importable modules).
     # These are injected as extra PYTHONPATH entries so subprocess-invoked scripts can
@@ -1283,6 +1301,7 @@ def generate_executor(
         content = content.replace('{{SCRIPT_SURFACES}}', surfaces_code)
         content = content.replace('{{LOGGING_DIR}}', logging_dir)
         content = content.replace('{{SHARED_MODULE_DIRS}}', shared_module_lines)
+        content = content.replace('{{CACHE_RECOVERY_ROOTS}}', cache_recovery_lines)
         content = content.replace('{{EXTRA_SCRIPT_DIRS}}', extra_dirs_code)
         content = content.replace('{{PLAN_DIR_NAME}}', PLAN_DIR_NAME)
         content = content.replace('{{TARGET_AWARE_RESOLVER}}', resolver_code)
@@ -1324,7 +1343,7 @@ def generate_executor(
                 f'Template format skew: {executor_template} declares '
                 f'TEMPLATE_FORMAT_VERSION={template_version!r} but this generator supports '
                 f'{_SUPPORTED_TEMPLATE_FORMAT_VERSION}. Re-sync so the template and generator '
-                f'are the same version (run /sync-plugin-cache, then regenerate) before '
+                f'are the same version (run {SYNC_PLUGIN_CACHE_COMMAND}, then regenerate) before '
                 f'regenerating the executor. Existing executor left untouched.'
             ),
         }

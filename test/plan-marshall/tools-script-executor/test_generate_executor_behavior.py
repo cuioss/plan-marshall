@@ -76,6 +76,7 @@ def _load_template_module() -> types.ModuleType:
     source = source.replace('{{SCRIPT_SURFACES}}', '').replace('{{SUBCOMMAND_MAPPINGS}}', '')
     source = source.replace('{{LOGGING_DIR}}', logging_dir)
     source = source.replace('{{SHARED_MODULE_DIRS}}', '# (none)')
+    source = source.replace('{{CACHE_RECOVERY_ROOTS}}', '# (none)')
     source = source.replace('{{EXTRA_SCRIPT_DIRS}}', '')
     source = source.replace('{{PLAN_DIR_NAME}}', '.plan')
     source = source.replace('{{EXECUTOR_TARGET}}', 'claude')

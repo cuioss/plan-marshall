@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 # Direct imports - PYTHONPATH set by executor
+from command_forms import STEWARD_COMMAND
 from file_ops import (
     get_base_dir,
     get_marshal_path,
@@ -56,10 +57,10 @@ def require_initialized() -> None:
     """Raise exception if marshal.json doesn't exist."""
     if not TRACKED_CONFIG_DIR.exists():
         raise MarshalNotInitializedError(
-            f"Directory '{TRACKED_CONFIG_DIR}' does not exist. Run command /marshall-steward first"
+            f"Directory '{TRACKED_CONFIG_DIR}' does not exist. Run command {STEWARD_COMMAND} first"
         )
     if not MARSHAL_PATH.exists():
-        raise MarshalNotInitializedError('marshal.json not found. Run command /marshall-steward first')
+        raise MarshalNotInitializedError(f'marshal.json not found. Run command {STEWARD_COMMAND} first')
 
 
 class ConcurrentConfigModificationError(Exception):
@@ -796,7 +797,7 @@ def merge_build_map(config: dict) -> dict[str, list[dict[str, str]]]:
     if not isinstance(seed, dict):
         raise BuildMapMissingError(
             'build.map is absent or not a dict. Run `manage-config build-map seed` '
-            'or re-run /marshall-steward to seed it.'
+            f'or re-run {STEWARD_COMMAND} to seed it.'
         )
 
     # Deep-copy the seed so the caller never mutates the persisted block.
@@ -808,7 +809,7 @@ def merge_build_map(config: dict) -> dict[str, list[dict[str, str]]]:
     except (TypeError, ValueError) as exc:
         raise BuildMapMissingError(
             'build.map is corrupt. Run `manage-config build-map seed` '
-            'or re-run /marshall-steward to seed it.'
+            f'or re-run {STEWARD_COMMAND} to seed it.'
         ) from exc
 
 

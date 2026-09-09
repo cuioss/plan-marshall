@@ -353,7 +353,7 @@ canonical body doc, resolved by `resolve_step_doc_path(step_id)`:
 | Step kind | Body doc |
 |-----------|----------|
 | Built-in `default:` | `phase-6-finalize/workflow/{name}.md`, falling back to `phase-6-finalize/standards/{name}.md` |
-| `project:` | `.claude/skills/{name}/SKILL.md` |
+| `project:` | `.claude/skills/{name}/SKILL.md` (Claude target; OpenCode resolves its own project-local skill root — see `platform-runtime` `layout skill-roots` op) |
 
 The placement contract and its enforcement (a param-owning step MUST declare a
 well-formed block; missing/malformed declarations fail loud) are owned centrally
@@ -495,7 +495,7 @@ python3 .plan/execute-script.py plan-marshall:extension-api:extension_discovery 
   --ext-point EXT_POINT
 ```
 
-Enumerates every component declaring `implements: {EXT_POINT}` — scans every bundle's `skills/*/SKILL.md`, the phase-6-finalize `workflow/*.md` + `standards/*.md` step docs, and project-local `.claude/skills/finalize-step-*/SKILL.md`. Global discovery; takes no project-dir / plan-id routing.
+Enumerates every component declaring `implements: {EXT_POINT}` — scans every bundle's `skills/*/SKILL.md`, the phase-6-finalize `workflow/*.md` + `standards/*.md` step docs, and project-local `finalize-step-*` skills under the active target's project-local skill root (`.claude/skills/` on Claude; the runtime-resolved `layout skill-roots` op on any target). Global discovery; takes no project-dir / plan-id routing.
 
 ### extension_api — resolve-skills
 

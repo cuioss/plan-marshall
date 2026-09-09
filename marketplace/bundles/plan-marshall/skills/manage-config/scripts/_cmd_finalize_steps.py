@@ -46,6 +46,7 @@ from _config_core import (
     success_exit,
 )
 from _config_defaults import FINALIZE_STEP_EXT_POINT
+from command_forms import STEWARD_COMMAND
 from constants import FILE_STATUS
 from file_ops import get_plan_dir, read_json, write_json
 from finalize_step_presets import (
@@ -154,7 +155,7 @@ def cmd_finalize_steps_apply_preset(args) -> dict:
        steps), and save.
     """
     if not is_initialized():
-        return error_exit('marshal.json not initialized; run /marshall-steward first')
+        return error_exit(f'marshal.json not initialized; run {STEWARD_COMMAND} first')
 
     try:
         steps = FinalizeStepPresets.get(args.preset)
@@ -241,7 +242,7 @@ def cmd_finalize_steps_list_ask_lane(args) -> dict:
     ``default:sonar-roundtrip``) are the canonical members.
     """
     if not is_initialized():
-        return error_exit('marshal.json not initialized; run /marshall-steward first')
+        return error_exit(f'marshal.json not initialized; run {STEWARD_COMMAND} first')
 
     steps_map = _read_phase6_steps_raw(load_config())
     ask_steps = [
@@ -366,7 +367,7 @@ def cmd_finalize_steps_set_lane(args) -> dict:
         return error_exit(_reject_lane_value(lane))
 
     if not is_initialized():
-        return error_exit('marshal.json not initialized; run /marshall-steward first')
+        return error_exit(f'marshal.json not initialized; run {STEWARD_COMMAND} first')
 
     step_id = args.step_id
     if step_id not in _known_finalize_steps():

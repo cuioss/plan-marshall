@@ -103,7 +103,7 @@ qgate_pending_count: 0
 ```
 
 Plus `<usage>` tag with `total_tokens=38420, tool_uses=14, duration_ms=210000`.
-`total_tokens` is the canonical sub-agent `<usage>` token key consumed by `manage-metrics enrich`.
+`total_tokens` is the canonical sub-agent `<usage>` token key consumed by `manage-metrics enrich` (the envelope is the Claude-target shape, parsed by `platform-runtime`'s chat/usage ops).
 
 **Step 8 (orchestrator records):**
 

@@ -921,7 +921,7 @@ predicate differs.
 
 This is the sanctioned content-search path for a dispatched leaf whose `Grep` /
 `Glob` tools are unavailable and whose Bash file-search commands are refused by
-the PreToolUse enforcement hook.
+the PreToolUse enforcement hook (see `platform-runtime/standards/pretooluse-enforcement.md`).
 
 ```bash
 architecture.py search --content --pattern P [--category CATEGORY] [--literal] [--ignore-case]
@@ -1138,7 +1138,8 @@ message: "unterminated character set at position 0"
   the Python escapes (`\s`, `\w`, `\d`) instead.
 - Backtick in the pattern: write it as the regex escape `\x60` (regex mode, NOT
   `--literal`, which would escape the backslash). A literal backtick anywhere in
-  the command string is denied by the project's PreToolUse enforcement hook — it
+  the command string is denied by the project's PreToolUse enforcement hook (see
+  `platform-runtime/standards/pretooluse-enforcement.md`) — it
   matches its R1 shell-construct rule by plain substring, so quoting does not
   help — which would otherwise make a fenced-code-block sweep
   (`^\x60\x60\x60json`) unrunnable from inside a plan worktree.

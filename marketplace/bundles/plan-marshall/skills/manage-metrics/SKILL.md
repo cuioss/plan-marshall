@@ -69,7 +69,7 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics end-
 - `--tool-uses` — Tool use count from Task agent `<usage>` tag (optional)
 - `--retrospective-tokens` — Tokens attributable to the plan-retrospective dispatch within this phase window, recorded as the `retrospective_tokens` sub-field (optional; the explicit override for the accumulator-carried value the finalize retrospective step seeds)
 
-**Token data sources**: Task agents (spawned via Agent tool) report usage in `<usage>` XML tags upon completion. These contain `total_tokens`, `duration_ms`, and optionally `tool_uses`. The orchestrator may forward each return's totals via the optional flags above, or rely on `accumulate-agent-usage` to persist them on disk between agent dispatches (recommended for `phase-5-execute` and `phase-6-finalize` — see below).
+**Token data sources**: Task agents (spawned via Agent tool) report usage in `<usage>` XML tags upon completion (Claude target; the envelope shape is the host's, and `platform-runtime`'s chat/usage ops parse it — OpenCode reports usage through its own channel). These contain `total_tokens`, `duration_ms`, and optionally `tool_uses`. The orchestrator may forward each return's totals via the optional flags above, or rely on `accumulate-agent-usage` to persist them on disk between agent dispatches (recommended for `phase-5-execute` and `phase-6-finalize` — see below).
 
 **Output:**
 ```toon
@@ -827,7 +827,7 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics reco
 ### Data Sources
 
 - Wall-clock timing: bash timestamps via start-phase/end-phase
-- Token data: Task agent `<usage>` tags (total_tokens, duration_ms, tool_uses)
+- Token data: Task agent `<usage>` tags (total_tokens, duration_ms, tool_uses) — the Claude-target envelope, parsed by `platform-runtime`'s chat/usage ops
 - JSONL enrichment: host-platform session transcripts (per-phase subagent `<usage>` attribution)
 - Four-field usage view: raw `message.usage` dicts in the parent and subagent transcripts (input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens), plus the derived `billing_weighted_total`, attributed per phase by `enrich`
 

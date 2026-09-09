@@ -209,7 +209,7 @@ seam.
 Every write this surface makes is stamped with the ``merge-lock`` owner, and its
 clear is owner-scoped: a lock release retires only a token this surface set, so
 it can neither clobber a concurrent build bracket's ``build-busy`` token nor be
-clobbered by one. See ``manage-terminal-title/standards/terminal-title-architecture.md``
+clobbered by one. See ``platform-runtime/standards/terminal-title-architecture.md``
 § Channel Delivery Contract ruling (c) for the arbitration rule.
 
 **[LOCK] observability (best-effort, OUTSIDE the atomic window).** Each merge-lock
@@ -1038,7 +1038,9 @@ def _clear_title_token(plan_id: str) -> None:
     Scoped to the ``merge-lock`` owner, so a lock release cannot clobber a live
     ``build-busy`` token a concurrent build bracket owns — that clear is a
     reported no-op on the manage-status side, and the build bracket retires its
-    own token on its own ``PostToolUse:Bash`` event.
+    own token on its own ``PostToolUse:Bash`` event (Claude target; see
+    ``platform-runtime/standards/terminal-title-architecture.md`` § Channel
+    Delivery Contract ruling (c)).
     """
     try:
         _run_executor(

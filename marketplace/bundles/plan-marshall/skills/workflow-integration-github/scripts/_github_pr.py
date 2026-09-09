@@ -69,6 +69,7 @@ from ci_base import (
     prepare_body,
     read_and_consume_body,
 )
+from command_forms import STEWARD_COMMAND
 
 # ---------------------------------------------------------------------------
 # Bot-agnostic rate-limit / service-notice detection (any reviewer bot)
@@ -1582,7 +1583,7 @@ def _refuse_on_required_merge_queue(identifier: str, operation: str) -> dict | N
             f'PR {identifier} targets base branch {base_branch!r}, which has a required platform '
             f'merge queue — an immediate merge would close the PR unmerged. Route the PR '
             f'through the merge queue via "ci pr merge-queue", or reconcile the plan\'s '
-            f'use_merge_queue step param via /marshall-steward.',
+            f'use_merge_queue step param via {STEWARD_COMMAND}.',
             detail,
         )
     # MERGE_QUEUE_ELIGIBLE_UNCONFIGURED / MERGE_QUEUE_INELIGIBLE /
@@ -2212,7 +2213,7 @@ def cmd_pr_merge_queue(args: argparse.Namespace) -> dict:
             'pr_merge_queue',
             f'PR {identifier} targets base branch {base_branch!r}, which has NO platform merge queue '
             f'configured — enqueuing would silently enable plain auto-merge instead. Remedies: '
-            f'(a) run "/marshall-steward -> Configuration -> Merge Queue" to provision the merge '
+            f'(a) run "{STEWARD_COMMAND} -> Configuration -> Merge Queue" to provision the merge '
             f'queue on that branch, or (b) disable the plan\'s use_merge_queue step param to merge '
             f'immediately via "ci pr safe-merge".',
             detail,

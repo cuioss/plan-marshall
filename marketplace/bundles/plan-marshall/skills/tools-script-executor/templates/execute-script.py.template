@@ -49,10 +49,10 @@ Examples:
     python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory --audit-plan-id EXAMPLE-PLAN --include-descriptions
 """
 
-# TEMPLATE_FORMAT_VERSION: 3
+# TEMPLATE_FORMAT_VERSION: 4
 # Deterministic decoupling contract between this template's placeholder shapes
-# (the double-brace-wrapped `SHARED_MODULE_DIRS`, `SCRIPT_MAPPINGS` and
-# `SCRIPT_SURFACES` tokens) and
+# (the double-brace-wrapped `SHARED_MODULE_DIRS`, `CACHE_RECOVERY_ROOTS`,
+# `SCRIPT_MAPPINGS` and `SCRIPT_SURFACES` tokens) and
 # generate_executor.py's substitution logic. The token names are spelled here
 # WITHOUT their surrounding double braces on purpose: a literal double-brace token
 # in this comment would be matched by the global str.replace substitutions in both
@@ -86,15 +86,28 @@ MAPPINGS_FINGERPRINT = '{{MAPPINGS_FINGERPRINT}}'
 # Each entry is a (skill, pinned_dir) pair. The version-pinned plugin-cache path
 # baked in at generation time is the FAST PATH; when that directory is absent — its
 # embedded MARSHALL_VERSION cache dir was GC-pruned — the bootstrap re-resolves the
-# skill's scripts dir against the NEWEST surviving
-# ~/.claude/plugins/cache/plan-marshall/*/skills/{skill}/scripts version dir (the same
-# numeric-version-tuple max() walk the target-aware resolver uses), so a pruned pinned
-# version can no longer break the executor's own bootstrap imports. Same defect class
-# as the Path(__file__) cache-resolver bugs. Pure stdlib and fully defensive — a
-# resolution failure never raises.
+# skill's scripts dir against the NEWEST surviving version dir under the injected
+# cache-recovery roots (the same numeric-version-tuple max() walk the target-aware
+# resolver uses), so a pruned pinned version can no longer break the executor's own
+# bootstrap imports. Same defect class as the Path(__file__) cache-resolver bugs.
+# Pure stdlib and fully defensive — a resolution failure never raises.
 _BOOTSTRAP_SKILL_DIRS = [
 {{SHARED_MODULE_DIRS}}
 ]
+
+# The deployed-bundle cache roots the bootstrap re-resolves against when a
+# baked-in version-pinned bin dir was GC-pruned. Resolved at generation time
+# through the platform-runtime ``layout bundle-cache-root`` op (the same
+# runtime-resolved root the target-aware resolver family derives from) and
+# injected per target: the executor cannot import the shared resolver before
+# its own bootstrap has placed the shared modules on sys.path, so the recovery
+# roots travel with the generated file instead of being re-resolved at import.
+# A target without a versioned plugin cache (OpenCode) contributes no plumbable
+# root — the tuple is empty and the recovery finds nothing, which is the
+# honest shape for a target whose deployed skills are resolved directly.
+_CACHE_RECOVERY_ROOTS = (
+{{CACHE_RECOVERY_ROOTS}}
+)
 
 # The logging skill's scripts dir, resolved with the same pruned-version self-heal.
 _BOOTSTRAP_LOGGING_DIR = ('manage-logging', '{{LOGGING_DIR}}')
@@ -104,9 +117,9 @@ def _newest_cache_scripts_dir(skill: str) -> str | None:
     """Re-resolve ``{skill}/scripts`` against the newest surviving plugin-cache version dir.
 
     Fires only when a baked-in version-pinned bootstrap dir is absent (its embedded
-    MARSHALL_VERSION cache path was GC-pruned). Walks
-    ``~/.claude/plugins/cache/plan-marshall/*/skills/{skill}/scripts``, collecting every
-    version dir that carries the skill, and returns the NEWEST by numeric version-tuple —
+    MARSHALL_VERSION cache path was GC-pruned). Walks each injected cache root's
+    ``*/skills/{skill}/scripts`` in root order — the first root that carries the skill
+    wins — collecting every version dir, and returns the NEWEST by numeric version-tuple,
     the same newest-only selection the target-aware resolver uses. Pure stdlib and
     defensive: any failure (including a missing HOME) returns ``None`` rather than raising.
     """
@@ -116,19 +129,20 @@ def _newest_cache_scripts_dir(skill: str) -> str | None:
         return tuple(int(part) for part in _re.findall(r'\d+', name))
 
     try:
-        cache_root = Path.home() / '.claude' / 'plugins' / 'cache' / 'plan-marshall'
-        if not cache_root.is_dir():
-            return None
-        candidates = []
-        for version_dir in cache_root.iterdir():
-            if not version_dir.is_dir() or version_dir.name.startswith('.'):
+        for root in _CACHE_RECOVERY_ROOTS:
+            cache_root = Path(root).expanduser()
+            if not cache_root.is_dir():
                 continue
-            scripts_dir = version_dir / 'skills' / skill / 'scripts'
-            if scripts_dir.is_dir():
-                candidates.append((version_dir.name, scripts_dir))
-        if candidates:
-            _name, newest = max(candidates, key=lambda pair: _vkey(pair[0]))
-            return str(newest.resolve())
+            candidates = []
+            for version_dir in cache_root.iterdir():
+                if not version_dir.is_dir() or version_dir.name.startswith('.'):
+                    continue
+                scripts_dir = version_dir / 'skills' / skill / 'scripts'
+                if scripts_dir.is_dir():
+                    candidates.append((version_dir.name, scripts_dir))
+            if candidates:
+                _name, newest = max(candidates, key=lambda pair: _vkey(pair[0]))
+                return str(newest.resolve())
     except (OSError, ValueError, RuntimeError):
         pass
     return None

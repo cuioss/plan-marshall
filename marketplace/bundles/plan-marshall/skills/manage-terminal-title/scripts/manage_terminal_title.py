@@ -45,9 +45,9 @@ from datetime import UTC, datetime
 # --- Process-state enum (target-neutral) ------------------------------------
 #
 # The composer resolves the process icon from a target-neutral process state,
-# NOT from any target's event vocabulary. A target runtime maps its own events
-# (Claude's SessionStart/UserPromptSubmit/Notification/Stop/PreToolUse/...) to one
-# of these values before calling :func:`compose` / :func:`resolve_icon`.
+# NOT from any target's event vocabulary. A target runtime maps its own event
+# vocabulary to one of these values before calling :func:`compose` /
+# :func:`resolve_icon`.
 PROCESS_STATE_ACTIVE = "active"
 PROCESS_STATE_WAITING = "waiting"
 PROCESS_STATE_BUSY = "busy"
@@ -209,15 +209,14 @@ def _strip_control_chars(text: str) -> str:
 
     ``_compose_body`` is the single point where plan-derived free text
     (``short_description``, the orchestrator ``slug``) enters the title body
-    that :func:`compose` returns. Both the Claude runtime's OSC-0 terminal
-    title-set escape (``ESC ]0;{body} BEL``) and the ``hookSpecificOutput``
-    ``sessionTitle`` / ``statusLine`` channels embed that body verbatim, so an
-    unstripped ESC (0x1B) or BEL (0x07) byte in the source text would let the
-    body terminate the escape sequence early and splice in attacker-controlled
-    follow-on terminal escapes (OSC/terminal-escape injection). Stripping the
-    full C0 control range (not just ESC/BEL) here — at composition, the single
-    shared point every render/push channel consumes — closes the sink without
-    each channel having to duplicate the guard. Whitespace-collapsing upstream
+    that :func:`compose` returns. Every caller channel that embeds the composed
+    body in a terminal title-set escape embeds it verbatim, so an unstripped ESC
+    (0x1B) or BEL (0x07) byte in the source text would let the body terminate
+    the escape sequence early and splice in attacker-controlled follow-on
+    terminal escapes (OSC/terminal-escape injection). Stripping the full C0
+    control range (not just ESC/BEL) here — at composition, the single shared
+    point every render/push channel consumes — closes the sink without each
+    channel having to duplicate the guard. Whitespace-collapsing upstream
     (``derive_short_description``) does not cover this: its ``\\s+`` regex
     does not match ESC/BEL.
     """

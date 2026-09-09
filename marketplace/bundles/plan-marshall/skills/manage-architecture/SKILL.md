@@ -513,7 +513,7 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture s
   --content --pattern PATTERN [--category CATEGORY] [--literal] [--ignore-case]
 ```
 
-Searches inventoried file **bodies** and reports the module-attributed files containing `--pattern`. This is the sanctioned content-search path for a dispatched leaf whose `Grep` / `Glob` tools are unavailable and whose Bash file-search commands are refused by the PreToolUse enforcement hook.
+Searches inventoried file **bodies** and reports the module-attributed files containing `--pattern`. This is the sanctioned content-search path for a dispatched leaf whose `Grep` / `Glob` tools are unavailable and whose Bash file-search commands are refused by the PreToolUse enforcement hook (see `platform-runtime/standards/pretooluse-enforcement.md`).
 
 `--content` is the **mode selector and is argparse-required** — a bare `search --pattern X` is rejected at parse time rather than defaulting to a mode, so the mode stays explicit at every call site.
 

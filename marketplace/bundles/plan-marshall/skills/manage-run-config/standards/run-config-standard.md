@@ -454,7 +454,7 @@ Adaptive timeout management for **synchronous command execution** (Maven, npm, G
 
 ### Two-Layer Timeout Concept
 
-**Key Insight**: the host platform's Bash tool has a **default 120-second timeout**. Long-running builds need two timeout layers:
+**Key Insight**: the host platform's Bash tool has a **default 120-second timeout**, and the largest `timeout` it accepts is the seam-resolved ceiling — 600s on the Claude target, 120s on the OpenCode target (`harness bash-timeout-ceiling`, resolved per active target). Long-running builds need two timeout layers:
 
 1. **Outer timeout**: Bash tool's `timeout` parameter (prevents the host platform from canceling the operation)
 2. **Inner timeout**: Shell `timeout` command (controls actual execution)

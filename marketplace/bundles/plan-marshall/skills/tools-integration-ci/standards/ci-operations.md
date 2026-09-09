@@ -108,7 +108,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci checks wai
     [--error-style maven|gradle|npm|generic]
 ```
 
-**Bash tool timeout**: 1800000ms (30-minute safety net). Internal timeout managed by script.
+**Bash tool timeout**: pass the seam-resolved host cap (`harness bash-timeout-ceiling` — 600s on the Claude target) as the outer Bash timeout; the script's own internal wait budget for remote-CI latency may run longer (up to 1800000ms), managed by the script's adaptive inner wait, never by a Bash `timeout` above the host cap. Internal timeout managed by script.
 
 `--error-style` (default `generic`) selects how an auto-downloaded failure log is filtered
 when the run finishes with one or more failing checks — see Step 3 below.

@@ -306,7 +306,7 @@ Immediately after the `= ADR-NNN: Title` line, every ADR carries a machine-reada
 
 ## Authoring Discipline
 
-ADRs are **durable architectural statements**, not incident write-ups. An ADR should still read as a standalone decision record years after the PR that introduced it has scrolled out of memory and the lessons file referenced at write-time has been pruned. CLAUDE.md's project-wide rules — "no version history", "no timestamps", "no duplication", "current state only" — apply to ADR content in the section-specific shapes below.
+ADRs are **durable architectural statements**, not incident write-ups. An ADR should still read as a standalone decision record years after the PR that introduced it has scrolled out of memory and the lessons file referenced at write-time has been pruned. The repository's Documentation Standards — "no version history", "no timestamps", "no duplication", "current state only" (owned by `ref-agentfile-hygiene/standards/rubric.md` and enforced by the plugin-doctor rules) — apply to ADR content in the section-specific shapes below.
 
 ### Context
 

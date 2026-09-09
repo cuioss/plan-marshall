@@ -45,7 +45,7 @@ class PhaseData(TypedDict):
 class TitleTokenRecord(TypedDict):
     """The structured ``status.title_token`` record.
 
-    Specified once in ``manage-terminal-title/standards/terminal-title-architecture.md``
+    Specified once in ``platform-runtime/standards/terminal-title-architecture.md``
     § Channel Delivery Contract ruling (c); this TypedDict is its Python shape.
     """
 
@@ -80,7 +80,10 @@ TITLE_TOKEN_BUILD_BUSY = 'build-busy'
 TITLE_TOKEN_STATES = frozenset({'lock-waiting', 'lock-owned', TITLE_TOKEN_BUILD_BUSY})
 
 # Owner vocabulary — the writer that set the token. ``build-hook`` is the
-# PreToolUse:Bash / PostToolUse:Bash render assist that brackets a build window,
+# PreToolUse:Bash / PostToolUse:Bash render assist that brackets a build window
+# (Claude target; the hook-event bracket is specified in
+# ``platform-runtime/standards/terminal-title-architecture.md`` § Channel
+# Delivery Contract ruling (c)),
 # ``merge-lock`` is manage-locks/merge_lock.py, and ``cli`` is an explicit
 # ``manage-status title-token set`` invocation from the orchestration layer.
 TITLE_TOKEN_OWNER_BUILD_HOOK = 'build-hook'

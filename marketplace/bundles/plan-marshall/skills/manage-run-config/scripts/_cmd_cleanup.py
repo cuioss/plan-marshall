@@ -18,6 +18,7 @@ from typing import Any
 
 # Direct imports - PYTHONPATH set by executor
 from _config_defaults import DEFAULT_SYSTEM_RETENTION
+from command_forms import STEWARD_COMMAND
 from constants import (
     CI_BODIES_DIRNAME,
     CLEANUP_TARGET_ALL,
@@ -84,7 +85,7 @@ def get_retention_settings() -> dict[str, Any] | None:
             {
                 'status': 'error',
                 'error': 'file_not_found',
-                'message': 'marshal.json not found. Run command /marshall-steward first',
+                'message': f'marshal.json not found. Run command {STEWARD_COMMAND} first',
             }
         )
         return None
@@ -100,7 +101,7 @@ def get_retention_settings() -> dict[str, Any] | None:
             {
                 'status': 'error',
                 'error': 'missing_config',
-                'message': 'system.retention not configured. Run command /marshall-steward first',
+                'message': f'system.retention not configured. Run command {STEWARD_COMMAND} first',
             }
         )
         return None

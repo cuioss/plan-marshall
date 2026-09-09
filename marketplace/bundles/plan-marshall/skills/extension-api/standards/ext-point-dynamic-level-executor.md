@@ -23,10 +23,10 @@ dispatch site                   target = {base}-level-5
         │
         ▼
 target/claude/{bundle}/agents/  build-emitted variant {base}-level-5.md
-                                (model: opus, effort: high)
+                                (model/effort per effort-levels.md Level Table)
         │
         ▼
-Claude Code runtime             subagent runs on Opus, effort=high
+Claude Code runtime             subagent runs on the variant's pinned model
 ```
 
 ## Implementor Requirements
@@ -78,13 +78,13 @@ Given a canonical agent at `marketplace/bundles/{bundle}/agents/{name}.md` with 
 | Output File | Frontmatter Modification |
 |-------------|--------------------------|
 | `target/claude/{bundle}/agents/{name}.md` | Canonical: `implements:` and `levels:` **stripped**. All other fields preserved. Serves the `inherit` resolution. |
-| `target/claude/{bundle}/agents/{name}-level-1.md` | Variant: `name: {name}-level-1`, `model: haiku`, no `effort:` (haiku does not accept effort). `implements:`/`levels:` stripped. |
-| `target/claude/{bundle}/agents/{name}-level-2.md` | Variant: `name: {name}-level-2`, `model: sonnet`, `effort: medium`. |
-| `target/claude/{bundle}/agents/{name}-level-3.md` | Variant: `name: {name}-level-3`, `model: sonnet`, `effort: high`. |
-| `target/claude/{bundle}/agents/{name}-level-4.md` | Variant: `name: {name}-level-4`, `model: opus`, `effort: medium`. |
-| `target/claude/{bundle}/agents/{name}-level-5.md` | Variant: `name: {name}-level-5`, `model: opus`, `effort: high`. |
-| `target/claude/{bundle}/agents/{name}-level-6.md` | Variant: `name: {name}-level-6`, `model: opus`, `effort: xhigh`. **Refused at build time** when canonical's resolved model alias does not accept `effort: xhigh`. |
-| `target/claude/{bundle}/agents/{name}-level-7.md` | Variant: `name: {name}-level-7`, `model: fable`, `effort: max`. **Refused at build time** when canonical's resolved model alias does not accept `effort: max`. |
+| `target/claude/{bundle}/agents/{name}-level-1.md` | Variant: `name: {name}-level-1`, `model:` per the `effort-levels.md` Level Table (the level-1 alias omits `effort`). `implements:`/`levels:` stripped. |
+| `target/claude/{bundle}/agents/{name}-level-2.md` | Variant: `name: {name}-level-2`, `model:` + `effort:` per the `effort-levels.md` Level Table. |
+| `target/claude/{bundle}/agents/{name}-level-3.md` | Variant: `name: {name}-level-3`, `model:` + `effort:` per the `effort-levels.md` Level Table. |
+| `target/claude/{bundle}/agents/{name}-level-4.md` | Variant: `name: {name}-level-4`, `model:` + `effort:` per the `effort-levels.md` Level Table. |
+| `target/claude/{bundle}/agents/{name}-level-5.md` | Variant: `name: {name}-level-5`, `model:` + `effort:` per the `effort-levels.md` Level Table. |
+| `target/claude/{bundle}/agents/{name}-level-6.md` | Variant: `name: {name}-level-6`, `model:` + `effort:` per the `effort-levels.md` Level Table. **Refused at build time** when canonical's resolved model alias does not accept the level's effort. |
+| `target/claude/{bundle}/agents/{name}-level-7.md` | Variant: `name: {name}-level-7`, `model:` + `effort:` per the `effort-levels.md` Level Table. **Refused at build time** when canonical's resolved model alias does not accept the level's effort. |
 
 When the canonical declares `levels: [level-3, level-5]`, only `{name}.md`, `{name}-level-3.md`, and `{name}-level-5.md` are emitted.
 
@@ -143,13 +143,13 @@ The build target produces:
 ```text
 target/claude/plan-marshall/agents/
 ├── execution-context.md           # canonical, implements/levels stripped
-├── execution-context-level-1.md   # model: haiku
-├── execution-context-level-2.md   # model: sonnet, effort: medium
-├── execution-context-level-3.md   # model: sonnet, effort: high
-├── execution-context-level-4.md   # model: opus, effort: medium
-├── execution-context-level-5.md   # model: opus, effort: high
-├── execution-context-level-6.md   # model: opus, effort: xhigh
-└── execution-context-level-7.md   # model: fable, effort: max
+├── execution-context-level-1.md   # model/effort per effort-levels.md Level Table
+├── execution-context-level-2.md   # model/effort per effort-levels.md Level Table
+├── execution-context-level-3.md   # model/effort per effort-levels.md Level Table
+├── execution-context-level-4.md   # model/effort per effort-levels.md Level Table
+├── execution-context-level-5.md   # model/effort per effort-levels.md Level Table
+├── execution-context-level-6.md   # model/effort per effort-levels.md Level Table (alias-gated)
+└── execution-context-level-7.md   # model/effort per effort-levels.md Level Table (alias-gated)
 ```
 
 `target/claude/plan-marshall/.claude-plugin/plugin.json` registers eight agent entries for the canonical (the canonical + seven variants).

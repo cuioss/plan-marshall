@@ -68,7 +68,7 @@ JSON format for storage:
 |-------|------|-------------|
 | `title` | string | Plan title |
 | `current_phase` | string | Current active phase |
-| `title_token` | object (optional) | Transient title-token record `{owner, state, set_at}`. `state` ∈ `lock-waiting`, `lock-owned` (lock-coordination states surfaced as ⏳/🔒 glyphs), `build-busy` (the orchestration-busy state surfaced as a 🔨 icon-slot override, NOT a glyph). `owner` ∈ `build-hook`, `merge-lock`, `cli`. `set_at` is a UTC ISO-8601 instant and is the input to the 3600-second staleness rule — a record older than that reads as absent, and any writer may then overwrite it. Written by `title-token set` (last writer wins); removed by `title-token clear`, which is owner-scoped. Absent when no token is active. Consumed by the `manage-terminal-title` composer for glyph/icon selection; not a persisted plan field — it is ephemeral session state. `build-busy` is set/cleared by the `build-hook` render assist bracketing a Bash build window — see `manage-terminal-title/standards/terminal-title-architecture.md` § Channel Delivery Contract ruling (c) for the record contract. |
+| `title_token` | object (optional) | Transient title-token record `{owner, state, set_at}`. `state` ∈ `lock-waiting`, `lock-owned` (lock-coordination states surfaced as ⏳/🔒 glyphs), `build-busy` (the orchestration-busy state surfaced as a 🔨 icon-slot override, NOT a glyph). `owner` ∈ `build-hook`, `merge-lock`, `cli`. `set_at` is a UTC ISO-8601 instant and is the input to the 3600-second staleness rule — a record older than that reads as absent, and any writer may then overwrite it. Written by `title-token set` (last writer wins); removed by `title-token clear`, which is owner-scoped. Absent when no token is active. Consumed by the `manage-terminal-title` composer for glyph/icon selection; not a persisted plan field — it is ephemeral session state. `build-busy` is set/cleared by the `build-hook` render assist bracketing a Bash build window — see `platform-runtime/standards/terminal-title-architecture.md` § Channel Delivery Contract ruling (c) for the record contract. |
 | `phases` | list | Phase objects with name and status |
 | `metadata` | table | Key-value metadata (common fields: `change_type`, `confidence`, `domain`, `use_worktree`, `worktree_path`, `worktree_branch`, `session_ids`) |
 | `created` | string | ISO timestamp of creation |
@@ -98,7 +98,9 @@ consumer, so re-asserting it is a genuine absent→present change and does log.
 Comparing the raw field would stay silent about a token the renderers had
 stopped honouring.
 
-The gate exists because the `PreToolUse:Bash` render hook re-asserts
+The gate exists because the `PreToolUse:Bash` render hook (Claude target —
+see `platform-runtime/standards/terminal-title-architecture.md` § Channel
+Delivery Contract ruling (c)) re-asserts
 `build-busy`/`build-hook` on **every** build command, so an unconditional
 emission turned one build bracket into a run of identical lines carrying no new
 information. `set_at` is excluded from the comparison by design: it is refreshed

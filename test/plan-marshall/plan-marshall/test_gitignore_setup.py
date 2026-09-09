@@ -30,7 +30,7 @@ from gitignore_setup import (  # noqa: E402
 
 # Managed-block header comments — pinned here so the consolidation tests assert
 # against the exact strings the script emits.
-_MANAGED_COMMENT = '# Planning system (managed by /marshall-steward)'
+_MANAGED_COMMENT = '# Planning system (managed by plan-marshall)'
 _LOCAL_COMMENT = (
     '# Runtime state (plans, run-configuration, lessons-learned, memory, logs '
     '— managed by plan-marshall)'
@@ -129,7 +129,7 @@ class TestGitignoreSetupUnchanged:
         """
         gitignore_path = tmp_path / '.gitignore'
         gitignore_path.write_text(
-            '# Planning system (managed by /marshall-steward)\n'
+            '# Planning system (managed by plan-marshall)\n'
             '# Runtime state (plans, run-configuration, lessons-learned, memory, logs '
             '— managed by plan-marshall)\n'
             '.plan/\n!.plan/marshal.json\n!.plan/project-architecture/\n'
@@ -188,7 +188,7 @@ class TestGitignoreSetupIdempotency:
         assert second['status'] == 'unchanged'
         assert second['entries_added'] == 0
         content = (tmp_path / '.gitignore').read_text()
-        assert content.count('# Planning system (managed by /marshall-steward)') == 1
+        assert content.count('# Planning system (managed by plan-marshall)') == 1
         assert content.count(
             '# Runtime state (plans, run-configuration, lessons-learned, memory, logs '
             '— managed by plan-marshall)'
@@ -204,7 +204,7 @@ class TestGitignoreSetupIdempotency:
         # negation is missing.
         gitignore_path = tmp_path / '.gitignore'
         gitignore_path.write_text(
-            '# Planning system (managed by /marshall-steward)\n'
+            '# Planning system (managed by plan-marshall)\n'
             '# Runtime state (plans, run-configuration, lessons-learned, memory, logs '
             '— managed by plan-marshall)\n'
             '.plan/*\n!.plan/marshal.json\n'
@@ -217,12 +217,35 @@ class TestGitignoreSetupIdempotency:
         assert result['status'] == 'updated'
         assert result['entries_added'] == 1
         content = gitignore_path.read_text()
-        assert content.count('# Planning system (managed by /marshall-steward)') == 1
+        assert content.count('# Planning system (managed by plan-marshall)') == 1
         assert content.count(
             '# Runtime state (plans, run-configuration, lessons-learned, memory, logs '
             '— managed by plan-marshall)'
         ) == 1
         assert '!.plan/project-architecture/' in content
+
+    def test_legacy_comment_header_is_migrated_not_duplicated(self, tmp_path):
+        """An existing .gitignore carrying the legacy ``managed by
+        /marshall-steward`` header is recognized as managed and consolidated to
+        the single new header — never left alongside a re-emitted new one."""
+        gitignore_path = tmp_path / '.gitignore'
+        gitignore_path.write_text(
+            '# Planning system (managed by /marshall-steward)\n'
+            '# Runtime state (plans, run-configuration, lessons-learned, memory, logs '
+            '— managed by plan-marshall)\n'
+            '.plan/*\n!.plan/marshal.json\n'
+        )
+
+        result = setup_gitignore(tmp_path)
+
+        assert result['status'] in ('updated', 'unchanged')
+        content = gitignore_path.read_text()
+        assert content.count('# Planning system (managed by plan-marshall)') == 1
+        assert '# Planning system (managed by /marshall-steward)' not in content
+        assert content.count(
+            '# Runtime state (plans, run-configuration, lessons-learned, memory, logs '
+            '— managed by plan-marshall)'
+        ) == 1
 
 
 class TestGitignoreSetupDryRun:

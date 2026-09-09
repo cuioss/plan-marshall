@@ -548,6 +548,46 @@ class TestGetBasePath:
             get_base_path('bogus')
 
 
+class TestGetBasePathGlobalProjectRuntimeRouted:
+    """The global/project scopes route through the runtime's permission-settings base.
+
+    D1: ``get_base_path('global')`` / ``get_base_path('project')`` resolve the
+    settings BASE directory through the platform-runtime ``permission-settings``
+    op instead of constructing ``~/.claude`` / ``./.claude`` segment-wise. Where
+    the runtime is unreachable or honestly declines, the Claude-default anchor
+    is the fallback — never a constructed answer that pretends a target's
+    settings exist.
+    """
+
+    def test_global_scope_returns_runtime_settings_base(self, tmp_path, monkeypatch):
+        """A non-default global settings base supplied by the runtime wins."""
+        runtime_base = tmp_path / 'non-default' / 'global-settings'
+        monkeypatch.setattr(
+            marketplace_paths, '_invoke_settings_op', lambda scope: runtime_base
+        )
+        assert get_base_path('global') == runtime_base
+
+    def test_project_scope_returns_runtime_settings_base(self, tmp_path, monkeypatch):
+        """A non-default project settings base supplied by the runtime wins."""
+        runtime_base = tmp_path / 'non-default' / 'project-settings'
+        monkeypatch.setattr(
+            marketplace_paths, '_invoke_settings_op', lambda scope: runtime_base
+        )
+        assert get_base_path('project') == runtime_base
+
+    def test_global_scope_falls_back_when_runtime_unresolvable(self, tmp_path, monkeypatch):
+        """``global`` falls back to the Claude-default anchor without a runtime."""
+        monkeypatch.setattr(marketplace_paths, '_invoke_settings_op', lambda scope: None)
+        monkeypatch.setattr(Path, 'home', lambda: tmp_path)
+        assert get_base_path('global') == tmp_path / CLAUDE_DIR
+
+    def test_project_scope_falls_back_when_runtime_unresolvable(self, tmp_path, monkeypatch):
+        """``project`` falls back to the Claude-default anchor without a runtime."""
+        monkeypatch.setattr(marketplace_paths, '_invoke_settings_op', lambda scope: None)
+        monkeypatch.chdir(tmp_path)
+        assert get_base_path('project') == tmp_path / CLAUDE_DIR
+
+
 def _init_repo(repo: Path) -> None:
     """Initialise a fixture git repo so ``git worktree add`` runs end-to-end.
 

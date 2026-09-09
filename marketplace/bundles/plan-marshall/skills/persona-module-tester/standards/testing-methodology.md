@@ -172,11 +172,12 @@ backtick span or a quoted string.
 
 ### Where this rule comes from
 
-This is not a new standard. It is `CLAUDE.md` § Documentation Standards — "No version history", "No
+This is not a new standard. It is the repository's Documentation Standards — "No version history", "No
 timestamps", "Current state only" — applied to a tree those standards were never scoped over. It is
 the same rule that `pm-plugin-development:plugin-doctor` already enforces across
 `marketplace/bundles/**` through its `no-historical-prose-in-skills`, `no-incident-references`, and
-`no-lesson-id-in-skill-prose` rules. Over the test tree it is enforced by
+`no-lesson-id-in-skill-prose` rules (the rule's owner is the plugin-doctor rule-pack, not the
+repo-root agent-instructions file). Over the test tree it is enforced by
 [`test-docstring-historical-prose`](../../../../pm-plugin-development/skills/plugin-doctor/standards/doctor-test-conventions.md#test-docstring-historical-prose).
 
 The reasoning is the same in both trees: a citation reasons from something the reader cannot see. It

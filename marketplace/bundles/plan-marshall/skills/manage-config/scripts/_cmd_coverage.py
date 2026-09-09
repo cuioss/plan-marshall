@@ -45,6 +45,7 @@ from _config_core import (
     load_config,
     success_exit,
 )
+from command_forms import STEWARD_COMMAND
 
 # Allowed thoroughness rungs, kept in lock-step with the T1-T5 ladder in
 # persona-plan-marshall-agent/standards/thoroughness.md § Thoroughness Ladder.
@@ -234,7 +235,7 @@ def _resolve_cell(args) -> dict:
     on any failure, otherwise a dict carrying the four resolved values.
     """
     if not is_initialized():
-        return error_exit('marshal.json not initialized; run /marshall-steward first')
+        return error_exit(f'marshal.json not initialized; run {STEWARD_COMMAND} first')
 
     config = load_config()
     plan_block = config.get('plan', {})

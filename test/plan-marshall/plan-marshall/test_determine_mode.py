@@ -206,12 +206,29 @@ class TestCheckDocsSubcommand:
         assert 'CLAUDE.md' in result.get('file_ops', '')
 
     def test_file_ops_not_checked_for_agents_md(self, tmp_path):
-        """file_ops should only be checked for CLAUDE.md, not AGENTS.md."""
+        """file_ops should only be checked for the active target's agent-instructions file."""
         (tmp_path / 'AGENTS.md').write_text('Use .plan/temp for files.\n')
 
         result = cmd_check_docs(_variant(_CHECK_DOCS_ARGS, project_root=str(tmp_path)))
         assert result['status'] == 'success'
         assert result['check_status'] == 'ok'
+
+    def test_file_ops_resolves_agent_instructions_file_per_target(self, tmp_path, monkeypatch):
+        """file_ops targets the active target's agent-instructions file, never a
+        ['CLAUDE.md']-only list.
+
+        On the OpenCode target the file_ops rule must be checked against
+        ``AGENTS.md`` — the asymmetry a hardcoded CLAUDE.md-only list would miss.
+        """
+        import determine_mode as dm_mod
+
+        monkeypatch.setattr('marketplace_paths._read_runtime_target', lambda: 'opencode')
+        (tmp_path / 'AGENTS.md').write_text('# Agents\n')
+
+        result = cmd_check_docs(_variant(_CHECK_DOCS_ARGS, project_root=str(tmp_path)))
+        assert result['status'] == 'success'
+        assert result['check_status'] == 'needs_update'
+        assert 'AGENTS.md' in result.get('file_ops', '')
 
     def test_mixed_files_one_ok_one_missing(self, tmp_path):
         """Should only list files that need updating."""

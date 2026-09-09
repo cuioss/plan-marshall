@@ -35,7 +35,6 @@ Environment:
 """
 
 import argparse
-import os
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -59,6 +58,15 @@ for _lib in ('ref-toon-format', 'tools-file-ops'):
         sys.path.insert(0, _lib_path)
 
 from file_ops import get_base_dir, output_toon, safe_main  # noqa: E402
+
+# Shared path resolution (from script-shared). The layout ops are the single
+# source of target-resolved roots; this script consumes them rather than
+# re-enumerating per-target paths.
+from marketplace_paths import (  # noqa: E402
+    _resolve_skill_root,
+    get_bundle_cache_roots,
+    get_project_skill_roots,
+)
 
 # Default plugin name to search for
 PLUGIN_NAME = 'plan-marshall'
@@ -135,10 +143,10 @@ def detect_plugin_root(target: str | None = None) -> Path | None:
     For ``claude``: searches in ``~/.claude/plugins/cache/`` for
     directories containing a bundle with our marker file.
 
-    For ``opencode``: walks the seven OpenCode discovery roots in
-    priority order, returning the first root that contains at least
-    one ``{PLUGIN_NAME}-*`` skill directory. Mirrors the 7-root
-    resolver in ``tools-script-executor/scripts/generate_executor.py``.
+    For ``opencode``: walks the runtime-resolved project-local skill
+    roots (``get_project_skill_roots`` — the platform-runtime ``layout
+    skill-roots`` op) in priority order, returning the first root that
+    contains at least one ``{PLUGIN_NAME}-*`` skill directory.
 
     When ``target`` is ``None``, auto-detects by reading
     ``runtime.target`` from the nearest ``.plan/marshal.json``.
@@ -159,8 +167,17 @@ def detect_plugin_root(target: str | None = None) -> Path | None:
 
 
 def _detect_claude_root() -> Path | None:
-    """Detect the plugin root in the Claude plugin cache."""
-    cache_base = Path.home() / '.claude' / 'plugins' / 'cache'
+    """Detect the plugin root in the Claude plugin cache.
+
+    The cache base is derived from the runtime-resolved bundle-cache root
+    (``get_bundle_cache_roots``) rather than a hardcoded ``~/.claude`` literal:
+    the plugin-cache base is the parent of the plan-marshall cache root in the
+    single-bundle install layout ``{base}/{plugin}/{bundle}/{version}/…``.
+    """
+    roots = get_bundle_cache_roots()
+    if not roots:
+        return None
+    cache_base = Path(roots[0]).expanduser().parent
 
     if not cache_base.exists():
         return None
@@ -185,34 +202,20 @@ def _detect_claude_root() -> Path | None:
 
 
 def _detect_opencode_root() -> Path | None:
-    """Walk the seven OpenCode discovery roots for plan-marshall skills.
+    """Walk the OpenCode project-local skill roots for plan-marshall skills.
 
-    Returns the first root that contains at least one directory matching
+    The root set is the runtime-resolved ``layout skill-roots`` op output
+    (``get_project_skill_roots``) — the same single source the executor's
+    discovery uses — resolved here against the typical project base. Returns
+    the first root that contains at least one directory matching
     ``{PLUGIN_NAME}-*``.
     """
-    try:
-        home = Path.home()
-    except (OSError, RuntimeError):
-        return None
-
-    env_config = os.environ.get('OPENCODE_CONFIG_DIR', '')
-    roots: list[str] = [
-        str(Path(env_config) / 'skills') if env_config else '',
-        '.opencode/skills',
-        '.claude/skills',
-        '.agents/skills',
-        str(home / '.config' / 'opencode' / 'skills'),
-        str(home / '.claude' / 'skills'),
-        str(home / '.agents' / 'skills'),
-    ]
-
     marker_prefix = f'{PLUGIN_NAME}-'
 
-    for root in roots:
-        if not root:
-            continue
+    base = Path.cwd()
+    for root in get_project_skill_roots():
         try:
-            root_path = Path(root).resolve()
+            root_path = _resolve_skill_root(root, base).resolve()
             if not root_path.is_dir():
                 continue
             for entry in root_path.iterdir():

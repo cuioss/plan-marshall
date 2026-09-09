@@ -388,7 +388,8 @@ This handler is the consuming half of the leaf's live `execution_tier` resolutio
 After all tasks complete, transition and check auto-continue:
 
 **Metrics**: During the task loop, maintain a running sum of `total_tokens`,
-`tool_uses`, and `duration_ms` from each task agent's `<usage>` tag. The
+`tool_uses`, and `duration_ms` from each task agent's `<usage>` tag (the
+Claude-target envelope, parsed by `platform-runtime`'s chat/usage ops). The
 canonical sub-agent `<usage>` token key is `total_tokens` — emitters MUST use
 that key (the `manage-metrics enrich` parser also tolerates the
 `subagent_tokens` alias as a recovery fallback, but `total_tokens` is

@@ -105,7 +105,7 @@ Source: [ci-operations.md](ci-operations.md)
 | Subcommand | Required Flags | Optional Flags | Purpose |
 |------------|----------------|----------------|---------|
 | `checks status` | _exactly one of_ `--pr-number` _or_ `--head` | `--error-style {maven\|gradle\|npm\|generic}` | Check CI status for a PR |
-| `checks wait` | `--pr-number` | `--error-style {maven\|gradle\|npm\|generic}` | Poll CI until completion. Use Bash timeout ≥ 1800000 ms (30 min safety net) |
+| `checks wait` | `--pr-number` | `--error-style {maven\|gradle\|npm\|generic}` | Poll CI until completion. Pass the seam-resolved host cap as the Bash timeout (`harness bash-timeout-ceiling` — 600s on the Claude target); the script's internal wait budget for remote-CI latency is larger and managed by its adaptive inner wait |
 | `checks wait-for-status-flip` | `--pr-number` | `--expected {success\|failure\|any}`, `--timeout {seconds}`, `--interval {seconds}` | Block until the CI status flips off `pending` (default: any non-pending flip) |
 | `checks rerun` | `--run-id` | — | Rerun a failed CI workflow run |
 | `checks logs` | `--run-id` | — | Get logs from a CI workflow run |

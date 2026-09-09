@@ -486,7 +486,12 @@ body format (both live in the composer it imports).
    repaint a title for a session that no longer drives a plan. Every other source
    falls through to compose + emit.
 4. **Compose** via `compose(state, process_state)`, where the reader maps the
-   hook event and tool name to the target-neutral process state.
+   hook event and tool name to the target-neutral process state. On Claude Code
+   that mapping is `claude_runtime._claude_event_to_process_state(hook_event_name,
+   tool_name)`: `Stop` → `done`, `Notification` and `PreToolUse:AskUserQuestion`
+   → `waiting`, `PreToolUse:Bash` → `busy`, and everything else → `active`. The
+   mapping is the caller's half — it lives with the runtime so the composer stays
+   target-neutral.
    statusLine mode receives no hook stdin payload and composes with
    `process_state=None` (the composer applies the active icon for non-terminal
    phases and the ✅ override for terminal ones); hook mode parses the JSON

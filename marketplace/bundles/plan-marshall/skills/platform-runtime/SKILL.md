@@ -157,7 +157,7 @@ session → plan, read the title state from `status.json` (live first, archived
 fallback), call the pure `manage-terminal-title` composer, and — on the render
 path — emit per platform (OSC / statusLine / web sessionTitle). `status.json` is
 the single source of persisted title state — there is no `title-body.txt`
-artifact. See `manage-terminal-title/standards/terminal-title-architecture.md` for
+artifact. See `standards/terminal-title-architecture.md` for
 the canonical end-to-end architecture: state (`manage-status`), composer
 (`manage-terminal-title`), resolve+emit (`platform-runtime`), session-plan
 binding, output channels, platform abstraction, and the glyph + icon vocabulary.

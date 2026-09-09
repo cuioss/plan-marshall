@@ -30,7 +30,7 @@ the plan-marshall bundle:
   terminal is required.
 
 See
-[`../../manage-terminal-title/standards/terminal-title-architecture.md`](../../manage-terminal-title/standards/terminal-title-architecture.md)
+[`../../platform-runtime/standards/terminal-title-architecture.md`](../../platform-runtime/standards/terminal-title-architecture.md)
 for the full end-to-end architecture.
 
 The remaining wiring is the set of hook entries that drive the reader on every

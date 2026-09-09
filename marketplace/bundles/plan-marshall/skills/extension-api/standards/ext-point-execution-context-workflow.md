@@ -37,15 +37,15 @@ A skill MAY hold zero, one, or many `workflow/*.md` files. A SKILL.md MAY itself
 
 ### Workflow-Resolution Root
 
-The `workflow` field in a `Task:` prompt body is resolved against the **installed plugin cache** — `~/.claude/plugins/cache/plan-marshall/skills/{skill}/workflow/{file}.md` or `…/skills/{skill}/SKILL.md` — by the dispatched `plan-marshall:execution-context-{level}` agent. Resolution is never performed against:
+The `workflow` field in a `Task:` prompt body is resolved against the **installed plugin cache** — `~/.claude/plugins/cache/plan-marshall/skills/{skill}/workflow/{file}.md` or `…/skills/{skill}/SKILL.md` — by the dispatched `plan-marshall:execution-context-{level}` agent. **On the Claude target** (cache root = the runtime-resolved `layout bundle-cache-root` op), resolution is never performed against:
 
 - the active worktree path (e.g., `.plan/local/worktrees/{plan_id}/marketplace/bundles/plan-marshall/skills/…`),
 - the main checkout's `marketplace/bundles/` tree,
 - any other filesystem root supplied at dispatch time.
 
-The cache is the single resolution root for every workflow load, regardless of `WORKTREE` value or call site. `WORKTREE` governs where the dispatched workflow's tool calls (Edit / Write / Read / `git -C`) act; it does NOT govern where the workflow body itself is loaded from.
+On Claude the cache is the single resolution root for every workflow load, regardless of `WORKTREE` value or call site. `WORKTREE` governs where the dispatched workflow's tool calls (Edit / Write / Read / `git -C`) act; it does NOT govern where the workflow body itself is loaded from. **On OpenCode** there is no versioned plugin cache: the workflow body resolves from the checkout tree (the runtime's `layout skill-roots` op), so the cache-only rules below are Claude-specific.
 
-**Consequence — stale dispatch until cache sync + session restart**: a plan that modifies a `workflow/*.md` or `SKILL.md` in its worktree sees the **pre-change** version of that file at every dispatch site until BOTH of the following hold:
+**Consequence (Claude target) — stale dispatch until cache sync + session restart**: a plan that modifies a `workflow/*.md` or `SKILL.md` in its worktree sees the **pre-change** version of that file at every dispatch site until BOTH of the following hold:
 
 1. The plugin cache has been synced from the worktree (via `/sync-plugin-cache` or `project:finalize-step-sync-plugin-cache`), and
 2. The Claude Code session has been restarted so the host platform re-reads the cache instead of serving its in-process registry snapshot.

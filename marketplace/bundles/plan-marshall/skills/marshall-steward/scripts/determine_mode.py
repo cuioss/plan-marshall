@@ -132,7 +132,7 @@ for _ancestor in Path(__file__).resolve().parents:
         break
 
 from marketplace_bundles import resolve_skills_root  # noqa: E402
-from marketplace_paths import iter_project_skill_dirs  # noqa: E402
+from marketplace_paths import agent_instructions_filename, iter_project_skill_dirs  # noqa: E402
 
 _SKILLS_DIR = resolve_skills_root(Path(__file__))
 for _lib in ('ref-toon-format',):
@@ -160,6 +160,8 @@ CONTENT_CHECKS: list[dict[str, str | int | list[str]]] = [
     },
     {
         'key': 'file_ops',
+        # The rule lives in the active target's agent-instructions file — never
+        # a hardcoded ['CLAUDE.md'] list. Resolved per target in check_docs.
         'files': ['CLAUDE.md'],
         'pattern': 'use Glob, Read, Grep',
     },
@@ -434,6 +436,11 @@ def check_docs(project_root: Path) -> tuple[str, list[dict[str, str]]]:
         pattern = str(check['pattern'])
         files = check['files']
         assert isinstance(files, list)
+        # The file_ops rule targets the ACTIVE target's agent-instructions file
+        # (CLAUDE.md on Claude, AGENTS.md on OpenCode — resolved through the
+        # single per-target lookup), never a hardcoded list.
+        if check['key'] == 'file_ops':
+            files = [agent_instructions_filename()]
         min_bullets_raw = check.get('min_bullets')
         section_heading_raw = check.get('section_heading')
         for file_name in files:

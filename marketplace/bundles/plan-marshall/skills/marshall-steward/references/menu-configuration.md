@@ -310,7 +310,7 @@ If yes, apply fixes:
 ```bash
 python3 .plan/execute-script.py plan-marshall:tools-permission-fix:permission_fix apply-project-step-permissions \
   --marshal .plan/marshal.json \
-  --settings .claude/settings.json
+  --scope project
 ```
 
 **Finalize steps** (phase-6-finalize): preset-first, with a Custom escape hatch. Present the finalize-step preset picker BEFORE the per-step `list-finalize-steps` / `set-steps` multi-select, mirroring the single-AskUserQuestion preset-picker pattern documented in [effort-menu.md](../standards/effort-menu.md) (do not inline-copy that flow — the normative contract lives there). The three preset descriptions are sourced verbatim from `FinalizeStepPresets.describe(name)` (`finalize_step_presets.py`), and the Custom option falls through to the existing per-step multi-select.
@@ -833,7 +833,7 @@ Non-secret field updates via CLI args. For secret changes, user edits the creden
 > `marshall-steward-claude-wizards`. On a non-Claude target the option is absent
 > from the Configuration page and this branch is never reached.
 
-Configure the dynamic terminal-title integration so each terminal tab shows the active plan-marshall phase and live status (running / waiting / done / complete, plus the lock/build glyph) for the Claude Code session running in it. The title is a three-way split: `manage-status` persists the state into `status.json` (the single source of persisted title state), the pure `plan-marshall:manage-terminal-title` composer renders `{icon} {glyph} {body}`, and `plan-marshall:platform-runtime` (`session render-title`) reads `status.json` and emits per target. See [Terminal title integration](../../plan-marshall/SKILL.md#terminal-title-integration) in the plan-marshall skill for the runtime contract and `manage-terminal-title/standards/terminal-title-architecture.md` for the full architecture.
+Configure the dynamic terminal-title integration so each terminal tab shows the active plan-marshall phase and live status (running / waiting / done / complete, plus the lock/build glyph) for the Claude Code session running in it. The title is a three-way split: `manage-status` persists the state into `status.json` (the single source of persisted title state), the pure `plan-marshall:manage-terminal-title` composer renders `{icon} {glyph} {body}`, and `plan-marshall:platform-runtime` (`session render-title`) reads `status.json` and emits per target. See [Terminal title integration](../../plan-marshall/SKILL.md#terminal-title-integration) in the plan-marshall skill for the runtime contract and `platform-runtime/standards/terminal-title-architecture.md` for the full architecture.
 
 Load and execute the dedicated reference:
 
