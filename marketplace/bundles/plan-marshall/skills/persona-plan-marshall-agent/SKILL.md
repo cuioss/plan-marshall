@@ -85,7 +85,7 @@ The floor for ad-hoc build/verify invocations outside the architecture-resolved 
 
 The recurrence signature and orchestrator-tier rationale are documented in the adaptive-timeout infrastructure design.
 
-The 🔨 `build-busy` terminal-title bracket around such a call is **machine-owned and carries no agent obligation**: the `PreToolUse:Bash` render hook sets the token when a build-wrapper invocation enters and the paired `PostToolUse:Bash` hook clears it when the call exits, both on render events that deliver the repaint. Do NOT hand-write a `title-token set`/`clear` pair or a `session push-title-token` call around a build — see `manage-terminal-title/standards/terminal-title-architecture.md` § Channel Delivery Contract.
+The 🔨 `build-busy` terminal-title bracket around such a call is **machine-owned and carries no agent obligation**: the `PreToolUse:Bash` render hook sets the token when a build-wrapper invocation enters and the paired `PostToolUse:Bash` hook clears it when the call exits, both on render events that deliver the repaint. Do NOT hand-write a `title-token set`/`clear` pair or a `session push-title-token` call around a build — see `platform-runtime/standards/terminal-title-architecture.md` § Channel Delivery Contract.
 
 ### Bash: No file operations
 

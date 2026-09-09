@@ -45,7 +45,7 @@ class PhaseData(TypedDict):
 class TitleTokenRecord(TypedDict):
     """The structured ``status.title_token`` record.
 
-    Specified once in ``manage-terminal-title/standards/terminal-title-architecture.md``
+    Specified once in ``platform-runtime/standards/terminal-title-architecture.md``
     § Channel Delivery Contract ruling (c); this TypedDict is its Python shape.
     """
 

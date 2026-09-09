@@ -69,7 +69,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status title-
   --state build-busy --plan-id {plan_id} --owner cli
 ```
 
-There is **no live push**. Per `manage-terminal-title/standards/terminal-title-architecture.md` § Channel Delivery Contract ruling (a) the direct `/dev/tty` OSC write is deleted, and per ruling (b2) the paired repaint is necessarily **deferred to the next hook render event** — a writer reaches the terminal by settling state the renderer will read, never by pushing bytes at write time. During a detached wait the render cadence keeps firing on the orchestrator's own tool calls, so the 🔨 lands on the next one. The window between the state write and that event is knowingly stale and accepted.
+There is **no live push**. Per `platform-runtime/standards/terminal-title-architecture.md` § Channel Delivery Contract ruling (a) the direct `/dev/tty` OSC write is deleted, and per ruling (b2) the paired repaint is necessarily **deferred to the next hook render event** — a writer reaches the terminal by settling state the renderer will read, never by pushing bytes at write time. During a detached wait the render cadence keeps firing on the orchestrator's own tool calls, so the 🔨 lands on the next one. The window between the state write and that event is knowingly stale and accepted.
 
 The owner matters: `cli` keeps this gate disjoint from the `build-hook`-owned token that the `PreToolUse:Bash` / `PostToolUse:Bash` bracket writes around a *foreground* build wrapper, so neither surface clears the other's token.
 
@@ -129,7 +129,7 @@ The synchronous fallback is behaviourally identical to the pre-detach model; it 
 ## Related
 
 - [`build-server-client` SKILL.md](../../build-server-client/SKILL.md) — the submit/wait/ping/preflight client contract the build consumer routes through (replacing the build arm's former detach on this seam).
-- [`manage-terminal-title/standards/terminal-title-architecture.md`](../../manage-terminal-title/standards/terminal-title-architecture.md) — the Channel Delivery Contract that governs the title-state writes this seam makes: ruling (a) (the `/dev/tty` write is deleted), ruling (b2) (the paired repaint is deferred to the next render event), and ruling (c) (the owner-scoped record and its staleness threshold).
+- [`platform-runtime/standards/terminal-title-architecture.md`](../../platform-runtime/standards/terminal-title-architecture.md) — the Channel Delivery Contract that governs the title-state writes this seam makes: ruling (a) (the `/dev/tty` write is deleted), ruling (b2) (the paired repaint is deferred to the next render event), and ruling (c) (the owner-scoped record and its staleness threshold).
 - [`phase-5-execute/standards/canonical_verify.md`](../../phase-5-execute/standards/canonical_verify.md) — the `execution_tier=orchestrator` bullet names the orchestrator-tier build consumer, preserving the "not run inline by the step body" invariant.
 - [`tools-integration-ci/standards/blocking-wait-pattern.md`](../../tools-integration-ci/standards/blocking-wait-pattern.md) — the remote-CI wait's seed-then-watch pattern; the orchestrator detaches the whole CI wait behind this seam.
 

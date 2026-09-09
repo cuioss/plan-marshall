@@ -29,7 +29,7 @@ record into ``status.title_token`` and performs NO rendering — the composition
 
 The record shape, owner vocabulary, arbitration rule, and staleness threshold
 are specified in
-``manage-terminal-title/standards/terminal-title-architecture.md``
+``platform-runtime/standards/terminal-title-architecture.md``
 § Channel Delivery Contract ruling (c).
 """
 

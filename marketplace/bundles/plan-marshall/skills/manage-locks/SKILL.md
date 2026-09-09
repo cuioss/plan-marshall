@@ -281,7 +281,7 @@ writes a ⏳ `lock-waiting` / 🔒 `lock-owned` title token stamped with the
 `merge-lock` **owner**; the paired `release` clear is owner-scoped, so a lock
 surface can neither clobber a concurrent build bracket's `build-busy` token nor
 be clobbered by one. See
-[`manage-terminal-title/standards/terminal-title-architecture.md`](../manage-terminal-title/standards/terminal-title-architecture.md)
+[`platform-runtime/standards/terminal-title-architecture.md`](../platform-runtime/standards/terminal-title-architecture.md)
 § Channel Delivery Contract ruling (c) for the record shape and arbitration rule.
 
 ### merge_lock — check

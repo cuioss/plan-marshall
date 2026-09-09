@@ -388,7 +388,7 @@ def cmd_title_token(args: argparse.Namespace) -> dict[str, Any] | None:
 
     The record shape, owner vocabulary, arbitration rule, and staleness
     threshold are specified once in
-    ``manage-terminal-title/standards/terminal-title-architecture.md``
+    ``platform-runtime/standards/terminal-title-architecture.md``
     § Channel Delivery Contract ruling (c).
     """
     status = require_status(args)

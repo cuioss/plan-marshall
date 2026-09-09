@@ -89,9 +89,9 @@ The three states split into two rendering classes, both owned by the composer:
 
 `build-busy` is the orchestration-busy state: the `PreToolUse:Bash` render assist sets it when a build-wrapper invocation enters, and the paired `PostToolUse:Bash` assist clears it when that Bash call exits, so the title surfaces the 🔨 build symbol for the whole blocking window. Both halves are machine-driven — no LLM turn owns the clear. `manage-status` only persists the record; the icon-slot-override rendering and the precedence against the lock glyphs and process icons live entirely in `manage-terminal-title`.
 
-The record shape, the owner vocabulary, the arbitration rule, and the staleness threshold are specified once in `manage-terminal-title/standards/terminal-title-architecture.md` § Channel Delivery Contract ruling (c) and are not restated in normative form here.
+The record shape, the owner vocabulary, the arbitration rule, and the staleness threshold are specified once in `platform-runtime/standards/terminal-title-architecture.md` § Channel Delivery Contract ruling (c) and are not restated in normative form here.
 
-For the full three-way split (state / composer / resolve+emit), the glyph and icon vocabulary, and the read-from-`status.json` (live + archived fallback) emit path, see `manage-terminal-title/standards/terminal-title-architecture.md`.
+For the full three-way split (state / composer / resolve+emit), the glyph and icon vocabulary, and the read-from-`status.json` (live + archived fallback) emit path, see `platform-runtime/standards/terminal-title-architecture.md`.
 
 ## Metadata
 

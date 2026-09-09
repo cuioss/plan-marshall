@@ -50,8 +50,10 @@ three inputs are independent.
 `process_state` is a value from the target-neutral `PROCESS_STATES` vocabulary
 (`active` / `waiting` / `busy` / `done`), or `None` for push-mode / statusLine.
 The composer knows **no** hook-event vocabulary: the caller maps its own
-target-specific events to a process state first. On Claude Code that mapping is
-`claude_runtime._claude_event_to_process_state(hook_event_name, tool_name)`.
+target-specific events to a process state first. The event→state mapping is the
+caller's half and lives with the runtime — on Claude Code it is
+`claude_runtime._claude_event_to_process_state` (see
+`platform-runtime/standards/terminal-title-architecture.md` § Resolve + Emit).
 
 ### Body
 
@@ -129,18 +131,16 @@ hook event — to the process icon:
 | `busy` | ⚙ busy |
 | `done` | ✓ done |
 
-The event→state mapping is the CALLER's half and is deliberately not owned here:
-on Claude Code it lives in
-`claude_runtime._claude_event_to_process_state(hook_event_name, tool_name)`,
-which resolves `Stop` → `done`, `Notification` and `PreToolUse:AskUserQuestion`
-→ `waiting`, `PreToolUse:Bash` → `busy`, and everything else → `active`. Keeping
-that table on the caller is what lets this module stay target-neutral.
+The event→state mapping is the CALLER's half and is deliberately not owned here;
+it lives with the runtime — on Claude Code in
+`claude_runtime._claude_event_to_process_state` (see
+`platform-runtime/standards/terminal-title-architecture.md` § Resolve + Emit).
+Keeping that table on the caller is what lets this module stay target-neutral.
 
 The ⚙ busy icon (`_ICON_BUSY`, U+2699) is therefore surfaced while a
-long-running Bash tool call executes: `PreToolUse:Bash` maps to `busy` on enter
-and `PostToolUse:Bash` maps to `active` on exit, bracketing the busy window. ⚙
-is deliberately distinct from ➤ active, ? waiting, and the two
-`TITLE_TOKEN_GLYPHS` lock-state values (⏳ / 🔒).
+long-running Bash tool call executes — the caller brackets the busy window
+(busy on enter, back to ➤ active on exit). ⚙ is deliberately distinct from ➤
+active, ? waiting, and the two `TITLE_TOKEN_GLYPHS` lock-state values (⏳ / 🔒).
 
 **Terminal-state override:** when `state_dict['current_phase']` is `complete` or
 `archived`, `compose` forces the icon to ✅ (`_ICON_TERMINAL`, U+2705 — the thick
@@ -158,11 +158,11 @@ state, whereas 🔨 is the persistent orchestration-busy state held for the whol
 blocking window. The full icon precedence is **terminal ✅ > build-busy 🔨 >
 `icon_override` > process icon** — the terminal ✅ override still wins, so 🔨 never
 appears for a finished plan. `build-busy` is set and cleared by the
-**machine-owned** render-hook bracket — `PreToolUse:Bash` sets it, the paired
-`PostToolUse:Bash` clears it — so no LLM turn owns either half. See
-[`standards/terminal-title-architecture.md`](standards/terminal-title-architecture.md)
-§ Channel Delivery Contract ruling (c) for the record shape, owner vocabulary,
-arbitration rule, and staleness threshold.
+**machine-owned** render-hook bracket that the caller installs around a build
+window — no LLM turn owns either half. The bracket's event vocabulary, the
+record shape, owner vocabulary, arbitration rule, and staleness threshold live
+in [`platform-runtime/standards/terminal-title-architecture.md`](../platform-runtime/standards/terminal-title-architecture.md)
+§ Channel Delivery Contract ruling (c).
 
 For non-terminal phases without a `build-busy` token, `icon_override` (push-mode)
 supersedes the state-resolved icon when provided.
@@ -189,7 +189,7 @@ script notation.
   `--icon` optional) and the relocated **session→plan binding** (`session bind`
   last-driven-wins / `session resolve-plan` / `session doctor`, in
   `session_binding.py`). See
-  [`standards/terminal-title-architecture.md`](standards/terminal-title-architecture.md)
+  [`platform-runtime/standards/terminal-title-architecture.md`](../platform-runtime/standards/terminal-title-architecture.md)
   for the full state / compose / emit split, the drive seam, and the binding
   policy.
 - `plan-marshall:manage-status` — fires the repaint + bind drive seam

@@ -209,7 +209,7 @@ seam.
 Every write this surface makes is stamped with the ``merge-lock`` owner, and its
 clear is owner-scoped: a lock release retires only a token this surface set, so
 it can neither clobber a concurrent build bracket's ``build-busy`` token nor be
-clobbered by one. See ``manage-terminal-title/standards/terminal-title-architecture.md``
+clobbered by one. See ``platform-runtime/standards/terminal-title-architecture.md``
 § Channel Delivery Contract ruling (c) for the arbitration rule.
 
 **[LOCK] observability (best-effort, OUTSIDE the atomic window).** Each merge-lock
