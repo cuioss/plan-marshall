@@ -571,9 +571,12 @@ def cmd_archive(args: argparse.Namespace) -> dict[str, Any] | None:
     # NO binding release here, deliberately. The terminal title this archive just
     # persisted is painted by the NEXT hook event, which can only resolve the plan
     # while the session binding survives — releasing it here would destroy the
-    # delivery route for the state we just wrote. SessionStart:clear is the sole
-    # release point, and `session doctor` exempts this slot from GC until the
-    # terminal state has actually been delivered.
+    # delivery route for the state we just wrote. SessionStart:clear (the sole
+    # release point, Claude target — see
+    # platform-runtime/standards/terminal-title-architecture.md § Channel
+    # Delivery Contract ruling (b)) is where it is released, and `session doctor`
+    # exempts this slot from GC until the terminal state has actually been
+    # delivered.
 
     return {'status': 'success', 'plan_id': args.plan_id, 'archived_to': str(archive_path)}
 

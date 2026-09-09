@@ -632,7 +632,7 @@ The centralized standard forbids `cd {worktree_path} && <command>` shell compoun
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search --content --pattern "cd\s+[^\s]*worktree[^\s]*\s*\x26\x26"
 ```
 
-The trailing `\x26\x26` is the regex escape for the shell-compound token, and it is load-bearing: the PreToolUse R1 rule matches its shell-construct substrings by plain substring over the whole command, so writing the token literally makes this sweep un-runnable in the plan worktree it is written for. Do not "restore" the literal form.
+The trailing `\x26\x26` is the regex escape for the shell-compound token, and it is load-bearing: the PreToolUse R1 rule (see `platform-runtime/standards/pretooluse-enforcement.md`) matches its shell-construct substrings by plain substring over the whole command, so writing the token literally makes this sweep un-runnable in the plan worktree it is written for. Do not "restore" the literal form.
 
 Match also accepts the literal `cd "$WORKTREE"` / `cd ${worktree_path}` shapes. Any positive match is a violation.
 

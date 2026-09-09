@@ -1421,7 +1421,9 @@ def _log_execution_tier_routing(plan_id: str, mutated_tasks: int, phase_5_steps:
 # ``bash_timeout_seconds``, which ``_cmd_client_build._lookup_bash_timeout``
 # computes from ``timeout_get(command_key, ...)`` — the ADAPTIVE learned build
 # duration persisted in run-config. That quantity moves every time the command
-# runs, so a step whose learned duration sits near the 600s Bash ceiling can and
+# runs, so a step whose learned duration sits near the 600s Bash ceiling (the
+# Claude-target ``harness bash-timeout-ceiling`` value, resolved per active
+# target) can and
 # does cross the ceiling between compose and execute: the same compose, over the
 # same plan, with no code change, has stamped ``verify:coverage=per_task`` and
 # then ``verify:coverage=orchestrator`` after a single intervening build. A

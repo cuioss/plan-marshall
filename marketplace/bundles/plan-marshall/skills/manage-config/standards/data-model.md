@@ -741,7 +741,7 @@ Both `verification_steps` and `per_deliverable_build` reference verify steps by 
 The `verification_steps` field serializes on disk as the canonical keyed map (a JSON object keyed by step id). Verify steps own no params, so every value is an empty `{}` object. Key insertion order is the execution order. The reader consumes the keyed map directly. Two key types:
 
 - **Built-in steps** (`default:verify:{canonical}`): the parameterized canonical-verify step — e.g. `default:verify:quality-gate` (run quality-gate), `default:verify:module-tests` (run full test suite), `default:verify:coverage` (coverage threshold).
-- **Project steps** (`project:verify-step-*`): project-local verify-step skills discovered under `.claude/skills/`.
+- **Project steps** (`project:verify-step-*`): project-local verify-step skills discovered under the active target's project-local skill root (`.claude/skills/` on Claude; resolved via the platform-runtime `layout skill-roots` op).
 
 Built-in step keys are always first in the default map; project `verify-step-*` skills follow. The `skill-domains configure` verb seeds the map with the built-in verify steps.
 

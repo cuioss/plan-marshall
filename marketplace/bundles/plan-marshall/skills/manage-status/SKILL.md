@@ -98,7 +98,9 @@ consumer, so re-asserting it is a genuine absent→present change and does log.
 Comparing the raw field would stay silent about a token the renderers had
 stopped honouring.
 
-The gate exists because the `PreToolUse:Bash` render hook re-asserts
+The gate exists because the `PreToolUse:Bash` render hook (Claude target —
+see `platform-runtime/standards/terminal-title-architecture.md` § Channel
+Delivery Contract ruling (c)) re-asserts
 `build-busy`/`build-hook` on **every** build command, so an unconditional
 emission turned one build bracket into a run of identical lines carrying no new
 information. `set_at` is excluded from the comparison by design: it is refreshed

@@ -8,6 +8,12 @@ The exit-code contract for every `python3 .plan/execute-script.py` call in this 
 
 ## Overview
 
+> **Project-local skill root**: throughout this document, `.claude/skills/` is the
+> Claude-target spelling of the project-local skill root. The active target's
+> root is resolved through the platform-runtime `layout skill-roots` op
+> (`get_project_skill_roots()`); OpenCode resolves its own project-local skill
+> roots instead.
+
 A build verify step is one canonical verification command in the phase-5-execute pipeline — `quality-gate`, `module-tests` (`verify`), `coverage`, and the whole-tree-only gates `integration-tests` and `e2e`. Every built-in build verify step is backed by a single **parameterized** step body doc (`phase-5-execute/standards/canonical_verify.md`): the doc reads the canonical from the trailing segment of a `default:verify:{canonical}` step ID, resolves it via `architecture resolve --command {canonical}`, and runs the resolved executable. The canonical is a parameter, never a hardcoded branch, so one doc backs the whole set.
 
 This extension point names that step-doc archetype so build verify steps are identified by an `implements:` frontmatter declaration — the same identification model every other archetype already uses (domain-bundle, build, triage, recipe, outline, self-review, finalize-step) — rather than by hand-maintained registry constants. The declaration IS the membership marker: a step doc that carries `implements: plan-marshall:extension-api/standards/ext-point-build-verify-step` is a build-verify-step implementor; one that does not is not. There is no `verify_step: true` marker and no per-source glob within the built-in discovery surface.

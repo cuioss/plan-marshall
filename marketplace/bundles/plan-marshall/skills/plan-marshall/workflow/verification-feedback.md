@@ -118,7 +118,7 @@ Walk the producer surfaces sequentially, emitting findings of each type to the s
      --project-dir {worktree} checks wait --pr-number {pr_number} --adaptive
    ```
 
-   Bash tool timeout: 1800000 ms (30 min) — the outer ceiling; `--adaptive` seeds the inner `ci:wait` ceiling from the persisted budget so the wait converges on observed CI durations rather than the fixed baseline. On timeout, `AskUserQuestion` (continue / skip / abort).
+   Bash tool timeout: 1800000 ms (30 min) — the Claude-target outer ceiling configured for remote-CI waits (the host cap is resolved per active target through the platform-runtime `harness bash-timeout-ceiling` seam); `--adaptive` seeds the inner `ci:wait` ceiling from the persisted budget so the wait converges on observed CI durations rather than the fixed baseline. On timeout, `AskUserQuestion` (continue / skip / abort).
 
 4. **Fetch build status**:
 

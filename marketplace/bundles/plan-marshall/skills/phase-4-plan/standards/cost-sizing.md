@@ -8,7 +8,7 @@ The scale is **six sizes**: the original `S`/`M`/`L`/`XL` plus `XS` (determinist
 
 ## Why a planning-time cost model exists
 
-The phase-5-execute continue-vs-yield decision must be made at PLANNING time, not at execution time. A running subagent cannot measure its own context-window usage mid-turn — no tool, environment variable, signal, or API returns "tokens used / remaining" to the model while it executes. The only entity that sees real token counts is the orchestrator, and only AFTER a dispatch returns (the post-return `<usage>` block). Therefore the cost of each task is **predicted at plan time** from signals already present on the task record, and the executor never measures cost at runtime — it only reads a pre-computed envelope grouping.
+The phase-5-execute continue-vs-yield decision must be made at PLANNING time, not at execution time. A running subagent cannot measure its own context-window usage mid-turn — no tool, environment variable, signal, or API returns "tokens used / remaining" to the model while it executes. The only entity that sees real token counts is the orchestrator, and only AFTER a dispatch returns (the post-return `<usage>` block — the Claude-target envelope, parsed by `platform-runtime`'s chat/usage ops). Therefore the cost of each task is **predicted at plan time** from signals already present on the task record, and the executor never measures cost at runtime — it only reads a pre-computed envelope grouping.
 
 This rubric predicts **TOKENS**, not wall-clock time. The two are different: a task can be slow (a long build) yet token-cheap, or fast yet token-expensive (heavy generation across many files).
 

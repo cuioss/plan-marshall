@@ -71,7 +71,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status title-
 
 There is **no live push**. Per `platform-runtime/standards/terminal-title-architecture.md` § Channel Delivery Contract ruling (a) the direct `/dev/tty` OSC write is deleted, and per ruling (b2) the paired repaint is necessarily **deferred to the next hook render event** — a writer reaches the terminal by settling state the renderer will read, never by pushing bytes at write time. During a detached wait the render cadence keeps firing on the orchestrator's own tool calls, so the 🔨 lands on the next one. The window between the state write and that event is knowingly stale and accepted.
 
-The owner matters: `cli` keeps this gate disjoint from the `build-hook`-owned token that the `PreToolUse:Bash` / `PostToolUse:Bash` bracket writes around a *foreground* build wrapper, so neither surface clears the other's token.
+The owner matters: `cli` keeps this gate disjoint from the `build-hook`-owned token that the `PreToolUse:Bash` / `PostToolUse:Bash` bracket (Claude target) writes around a *foreground* build wrapper, so neither surface clears the other's token.
 
 ### (c) Invoke the command detached (background primitive)
 

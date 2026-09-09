@@ -15,7 +15,9 @@ Extensions are located at:
 marketplace/bundles/{bundle}/skills/plan-marshall-plugin/extension.py
 ```
 
-At runtime, they're discovered from the plugin cache:
+At runtime, they're discovered from the plugin cache (Claude target; the cache
+root is the runtime-resolved `layout bundle-cache-root` op — OpenCode has no
+separate plugin cache, so extension discovery is checkout-relative there):
 ```text
 ~/.claude/plugins/cache/plan-marshall/{bundle}/1.0.0/skills/plan-marshall-plugin/extension.py
 ```

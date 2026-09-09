@@ -442,7 +442,9 @@ def cmd_title_token(args: argparse.Namespace) -> dict[str, Any] | None:
             return current
 
         rmw_json(get_status_path(args.plan_id), _apply_set)
-        # Log only a value CHANGE. The PreToolUse:Bash render hook re-asserts the
+        # Log only a value CHANGE. The PreToolUse:Bash render hook (Claude
+        # target — see ``platform-runtime/standards/terminal-title-architecture.md``
+        # § Channel Delivery Contract ruling (c)) re-asserts the
         # same (owner, state) pair on every build command, so an unconditional
         # emission turned one bracket into a run of identical work-log lines
         # carrying no new information. The write itself is never suppressed —

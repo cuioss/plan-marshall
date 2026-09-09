@@ -78,10 +78,10 @@ The `VAR=val cmd` shape trips the host platform's permission UI and obscures the
 
 When invoking a build/verify canonical command (resolved via `plan-marshall:manage-architecture:architecture resolve` or via a workflow step that surfaces the canonical envelope), inspect the resolved TOON for `bash_timeout_seconds` and `execution_tier` fields:
 
-- **`execution_tier: per_task`** — the Bash call runs synchronously inside the current dispatch. Pass `timeout: bash_timeout_seconds * 1000` (milliseconds) on the Bash tool call. Never accept the default 2-minute Bash timeout for these commands; the host platform will silently auto-move the call to background and the dispatch will lose the synchronous-return path.
+- **`execution_tier: per_task`** — the Bash call runs synchronously inside the current dispatch. Pass `timeout: bash_timeout_seconds * 1000` (milliseconds) on the Bash tool call. Never accept the host's default Bash timeout (2 minutes on the Claude target; resolved per active target through the platform-runtime `harness bash-timeout-ceiling` seam) for these commands; the host platform will silently auto-move the call to background and the dispatch will lose the synchronous-return path.
 - **`execution_tier: orchestrator`** — the canonical command is owned by the orchestrator (e.g. long-running module-tests/verify/coverage on a worktree that the orchestrator drives). Sub-agents MUST NOT invoke the command via Bash from inside the dispatch. When the loaded workflow documents a hand-off step, follow it; otherwise return control to the orchestrator (with a TOON indicating the command cannot run within this dispatch) so the orchestrator can dispatch the build in its own envelope with the correct timeout.
 
-The floor for ad-hoc build/verify invocations outside the architecture-resolved envelope is 600000ms (10 minutes); the architecture-resolved `bash_timeout_seconds` always supersedes the floor.
+The floor for ad-hoc build/verify invocations outside the architecture-resolved envelope is 600000ms (10 minutes) on the Claude target (the seam-resolved `harness bash-timeout-ceiling` default; a target without that ceiling resolves its own); the architecture-resolved `bash_timeout_seconds` always supersedes the floor.
 
 The recurrence signature and orchestrator-tier rationale are documented in the adaptive-timeout infrastructure design.
 

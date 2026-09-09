@@ -37,7 +37,7 @@ A skill MAY hold zero, one, or many `workflow/*.md` files. A SKILL.md MAY itself
 
 ### Workflow-Resolution Root
 
-The `workflow` field in a `Task:` prompt body is resolved against the **installed plugin cache** — `~/.claude/plugins/cache/plan-marshall/skills/{skill}/workflow/{file}.md` or `…/skills/{skill}/SKILL.md` — by the dispatched `plan-marshall:execution-context-{level}` agent. Resolution is never performed against:
+The `workflow` field in a `Task:` prompt body is resolved against the **installed plugin cache** — `~/.claude/plugins/cache/plan-marshall/skills/{skill}/workflow/{file}.md` or `…/skills/{skill}/SKILL.md` (Claude target; the cache root is the runtime-resolved `layout bundle-cache-root` op, and OpenCode resolves the checkout tree instead) — by the dispatched `plan-marshall:execution-context-{level}` agent. Resolution is never performed against:
 
 - the active worktree path (e.g., `.plan/local/worktrees/{plan_id}/marketplace/bundles/plan-marshall/skills/…`),
 - the main checkout's `marketplace/bundles/` tree,

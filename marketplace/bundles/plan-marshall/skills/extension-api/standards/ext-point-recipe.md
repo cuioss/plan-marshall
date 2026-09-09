@@ -4,6 +4,12 @@
 
 ## Overview
 
+> **Project-local skill root**: throughout this document, `.claude/skills/` is the
+> Claude-target spelling of the project-local skill root. The active target's
+> root is resolved through the platform-runtime `layout skill-roots` op
+> (`get_project_skill_roots()`); OpenCode resolves its own project-local skill
+> roots instead.
+
 Recipe extensions declare predefined, repeatable transformations that bypass change-type detection and provide their own discovery, analysis, and deliverable patterns. Recipes are presented to users via `/plan-marshall action=recipe` and execute deterministic architecture-to-deliverable mappings.
 
 ## Implementor Requirements
