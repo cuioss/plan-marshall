@@ -65,7 +65,19 @@ def verify_array_syntax_fix(file_path: Path) -> dict:
 
 
 def verify_task_tool_fix(file_path: Path) -> dict:
-    """Verify Task tool was removed from declaration."""
+    """Verify Task tool was removed from declaration.
+
+    Mirrors ``apply_task_tool_fix``'s target gate: ``agent-task-tool-prohibited``
+    is a Claude rule-pack rule, so on a non-Claude target the verify declines
+    rather than reporting on a rule that does not bind there.
+    """
+    if resolve_runtime_target() == 'opencode':
+        return {
+            'verified': True,
+            'issue_resolved': None,
+            'details': 'agent-task-tool-prohibited is a Claude rule-pack rule; it does not bind on the active target',
+        }
+
     try:
         content = file_path.read_text(encoding='utf-8', errors='replace')
     except OSError as e:

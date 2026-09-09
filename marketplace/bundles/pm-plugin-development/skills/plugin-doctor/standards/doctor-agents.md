@@ -12,14 +12,18 @@ Follows the common workflow pattern (see SKILL.md). Reference guide: `agents-gui
 
 **Check against agents-guide.md**:
 - Tool fit score >= 70% (good) or >= 90% (excellent)
-- No agent-task-tool-prohibited violations (agents cannot use Task tool)
+- No agent-task-tool-prohibited violations when the Claude rule-pack binds — the `Task` tool is
+  denied to Claude sub-agents. `plugin-create:component validate` accepts a `Task` declaration on
+  the OpenCode target (the `task` tool exists and subagent dispatch is supported there), and the
+  doctor reports this rule only when `resolve_runtime_target() != 'opencode'`, matching the
+  validator's binding.
 - No agent-maven-restricted violations (only maven-builder can use Maven)
 - No agent-lessons-via-skill violations (must use manage-lessons skill, not self-invoke)
 - No `hardcoded-model-on-canonical` violations (see below)
 
 ### `hardcoded-model-on-canonical` rule
 
-**Rationale**: The role-variants system (see [`plan-marshall:plan-marshall/standards/effort-variants.md`](../../../../plan-marshall/skills/plan-marshall/standards/effort-variants.md)) routes per-role model selection through build-time variant emission. Canonical agent files in `marketplace/bundles/{bundle}/agents/` MUST NOT pin `model:` or `effort:` directly — variants are emitted by the Claude target with the right `(model, effort)` per ordinal level, and the canonical no-suffix file serves the `inherit` resolution. Pinning a model on the canonical defeats the system; declaring `implements:` AND a model line creates silent shadowing.
+**Rationale**: The role-variants system (see [`plan-marshall:plan-marshall/standards/effort-variants.md`](../../../../plan-marshall/skills/plan-marshall/standards/effort-variants.md)) routes per-role model selection through build-time variant emission. Canonical agent files in `marketplace/bundles/{bundle}/agents/` MUST NOT pin `model:` or `effort:` directly — variants are emitted by the ACTIVE target with the right `(model, effort)` per ordinal level, and the canonical no-suffix file serves the `inherit` resolution. Pinning a model on the canonical defeats the system; declaring `implements:` AND a model line creates silent shadowing.
 
 The rule fires hard errors in two branches:
 

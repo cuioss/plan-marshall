@@ -282,6 +282,29 @@ def test_missing_frontmatter_consumes_target_keyed_template(monkeypatch, tmp_pat
     )
 
 
+def test_apply_task_tool_fix_declines_on_opencode(monkeypatch, tmp_path):
+    """apply_task_tool_fix is Claude-rule-pack scoped: it declines on OpenCode."""
+    monkeypatch.setattr(_cmd_apply_mod, 'resolve_runtime_target', lambda: 'opencode')
+    agent_file = tmp_path / 'agents' / 'a.md'
+    agent_file.parent.mkdir(parents=True, exist_ok=True)
+    agent_file.write_text('---\nname: a\ntools: Read, Task, Skill\n---\n\n# A\n')
+    result = _cmd_apply_mod.apply_task_tool_fix(agent_file, {}, {})
+    assert result['success'] is False, f'OpenCode must decline the Claude rule-pack fix: {result}'
+    assert 'does not bind on the active target' in result.get('error', '')
+    assert 'Task' in agent_file.read_text(), 'OpenCode must not delete the Task declaration'
+
+
+def test_apply_task_tool_fix_removes_task_on_claude(monkeypatch, tmp_path):
+    """apply_task_tool_fix removes Task on the Claude target."""
+    monkeypatch.setattr(_cmd_apply_mod, 'resolve_runtime_target', lambda: 'claude')
+    agent_file = tmp_path / 'agents' / 'a.md'
+    agent_file.parent.mkdir(parents=True, exist_ok=True)
+    agent_file.write_text('---\nname: a\ntools: Read, Task, Skill\n---\n\n# A\n')
+    result = _cmd_apply_mod.apply_task_tool_fix(agent_file, {}, {})
+    assert result['success'] is True, f'Claude must allow the fix: {result}'
+    assert 'Task' not in agent_file.read_text(), f'Task must be removed on Claude, got:\n{agent_file.read_text()}'
+
+
 def test_array_syntax_fix_gates_on_target(monkeypatch):
     """apply_array_syntax_fix is Claude-only: it declines on OpenCode."""
     monkeypatch.setattr(_cmd_apply_mod, 'resolve_runtime_target', lambda: 'opencode')

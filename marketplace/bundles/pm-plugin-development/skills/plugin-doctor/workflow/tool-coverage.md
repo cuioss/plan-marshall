@@ -30,7 +30,7 @@ Each hit carries its `module`, `category` and `path`, so the sweep reports which
 
 ### Step 2: Identify actual tool invocations
 
-Pattern table — these are the canonical invocation signals to recognise. The tool **vocabulary** is the Claude tool set declared as data in `_analyze_allowed_tools_drift.py::_KNOWN_TOOLS` (the single source the doctor's analyzers share); the table below adds the workflow-level invocation signals (`SlashCommand`, `WebSearch`, `TodoWrite`) that semantic coverage analysis recognises beyond the body-invocation detection set.
+Pattern table — these are the canonical invocation signals to recognise. The body-invocation vocabulary is the Claude tool set declared as data in `_analyze_allowed_tools_drift.py::_KNOWN_TOOLS` (the single source the doctor's analyzers share); a drift-guard test asserts the body-invocation rows below equal that population, so a tool added or removed on either side is a red build rather than a silent drift. The workflow-level signals below the table (`SlashCommand`, `WebSearch`, `TodoWrite`) are NOT body tools and are listed apart — they are operation shapes the semantic coverage pass recognises beyond the `_KNOWN_TOOLS` set.
 
 | Tool | Invocation patterns |
 |------|---------------------|
@@ -40,12 +40,17 @@ Pattern table — these are the canonical invocation signals to recognise. The t
 | Glob | `Glob:`, `Glob tool`, `Glob pattern` |
 | Grep | `Grep:`, `Grep tool`, `search with Grep` |
 | Bash | `Bash:`, `Bash command`, `execute via Bash` |
-| Task | `Task:`, `Task tool`, `spawn.*agent`, `subagent_type` |
-| Skill | `Skill:`, `Skill tool`, `load.*skill`, `activate.*skill` |
-| SlashCommand | `SlashCommand:`, `SlashCommand(`, `run.*command` |
-| WebFetch | `WebFetch:`, `WebFetch tool`, `fetch.*url` |
-| WebSearch | `WebSearch:`, `WebSearch tool`, `search.*web` |
 | AskUserQuestion | `AskUserQuestion:`, `prompt.*user`, `ask.*user` |
+| Skill | `Skill:`, `Skill tool`, `load.*skill`, `activate.*skill` |
+| Task | `Task:`, `Task tool`, `spawn.*agent`, `subagent_type` |
+| WebFetch | `WebFetch:`, `WebFetch tool`, `fetch.*url` |
+
+**Workflow-only signals** (not body tools):
+
+| Signal | Invocation patterns |
+|--------|---------------------|
+| SlashCommand | `SlashCommand:`, `SlashCommand(`, `run.*command` |
+| WebSearch | `WebSearch:`, `WebSearch tool`, `search.*web` |
 | TodoWrite | `TodoWrite:`, `update.*todo`, `track.*progress` |
 
 ### Step 3: Distinguish usage from documentation

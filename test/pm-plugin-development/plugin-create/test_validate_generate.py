@@ -412,6 +412,13 @@ def test_generate_agent_opencode_keeps_existing_qualified_model(monkeypatch):
     assert 'model: anthropic/claude-opus-4-8' in content, f'Qualified model must pass through, got:\n{content}'
 
 
+def test_generate_agent_opencode_keeps_foreign_qualified_model(monkeypatch):
+    """A provider-qualified model from another provider is not double-prefixed."""
+    content = _generate_agent_with_model(monkeypatch, 'opencode', model='openai/gpt-4')
+    assert 'model: openai/gpt-4' in content, f'Foreign provider id must pass through, got:\n{content}'
+    assert 'anthropic/' not in content, f'Non-Anthropic id must not acquire an anthropic prefix, got:\n{content}'
+
+
 def test_generate_agent_opencode_without_model_still_declares_subagent(monkeypatch):
     """On OpenCode the subagent mode is declared even when no model is supplied."""
     monkeypatch.setattr(_cmd_generate_mod, 'resolve_runtime_target', lambda: 'opencode')

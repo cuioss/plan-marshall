@@ -18,11 +18,14 @@ from _doctor_shared import read_json_input, resolve_runtime_target
 # active target is resolved through the platform-runtime layout op (via
 # ``_doctor_shared.resolve_runtime_target``), so the fix handler emits the
 # shape the active target's loader understands instead of hardcoding the
-# Claude form. The per-target agent templates live in ``fix-templates.json``
-# (``templates.missing-frontmatter.agent.{target}``) as data; these constants
-# are the fallback used when the assets file is absent.
-_OPENCODE_AGENT_FRONTMATTER = 'tools: Read, Write, Edit\nmode: subagent\nmodel: anthropic/claude-sonnet-4\n'
-_CLAUDE_AGENT_FRONTMATTER = 'tools: Read, Write, Edit\nmodel: sonnet\n'
+# Claude form. The per-target agent templates in ``fix-templates.json``
+# (``templates.missing-frontmatter.agent.{target}``) are the single
+# authoritative definition; ``_OPENCODE_AGENT_FRONTMATTER`` /
+# ``_CLAUDE_AGENT_FRONTMATTER`` are DERIVED from that file when it is present,
+# so only one population exists. The baked ``_FALLBACK_*`` literals serve the
+# absent-assets case only, where no shipped population is left to drift from.
+_FALLBACK_OPENCODE_AGENT_FRONTMATTER = 'tools: Read, Write, Edit\nmode: subagent\nmodel: anthropic/claude-sonnet-4\n'
+_FALLBACK_CLAUDE_AGENT_FRONTMATTER = 'tools: Read, Write, Edit\nmodel: sonnet\n'
 
 
 def load_templates(script_dir: Path) -> dict:
@@ -33,6 +36,25 @@ def load_templates(script_dir: Path) -> dict:
             result: dict = json.load(f)
             return result
     return {}
+
+
+def _derive_agent_frontmatter_defaults(script_dir: Path) -> tuple[str, str]:
+    """Derive the per-target agent-frontmatter blocks from the shipped templates.
+
+    ``fix-templates.json`` (``templates.missing-frontmatter.agent.{target}``)
+    is the single authoritative definition of the blocks; the baked
+    ``_FALLBACK_*`` literals are used only when the assets file is absent.
+    Returns ``(opencode_block, claude_block)``.
+    """
+    agent = load_templates(script_dir).get('templates', {}).get('missing-frontmatter', {}).get('agent', {})
+    if isinstance(agent, dict) and agent.get('opencode') and agent.get('claude'):
+        return str(agent['opencode']), str(agent['claude'])
+    return _FALLBACK_OPENCODE_AGENT_FRONTMATTER, _FALLBACK_CLAUDE_AGENT_FRONTMATTER
+
+
+_OPENCODE_AGENT_FRONTMATTER, _CLAUDE_AGENT_FRONTMATTER = _derive_agent_frontmatter_defaults(
+    Path(__file__).parent
+)
 
 
 def _agent_frontmatter_block(templates: dict) -> str:
@@ -199,7 +221,20 @@ def apply_trailing_whitespace_fix(file_path: Path, fix: dict, templates: dict) -
 
 
 def apply_task_tool_fix(file_path: Path, fix: dict, templates: dict) -> dict:
-    """Remove Task tool from agent's tools declaration."""
+    """Remove Task tool from agent's tools declaration.
+
+    Mirrors the analyzer's target gate: ``agent-task-tool-prohibited`` is a
+    Claude rule-pack rule (``plugin-create:component validate`` accepts a
+    ``Task`` declaration on OpenCode), so on OpenCode the fix declines rather
+    than deleting a valid declaration. The gate also protects direct or stale
+    fix requests that bypass analyze.
+    """
+    if resolve_runtime_target() == 'opencode':
+        return {
+            'success': False,
+            'error': 'agent-task-tool-prohibited is a Claude rule-pack fix; it does not bind on the active target',
+        }
+
     with open(file_path, encoding='utf-8') as f:
         content = f.read()
 

@@ -13,8 +13,9 @@ def generate_agent_frontmatter(answers: dict[str, Any]) -> dict[str, Any]:
     """Generate frontmatter for agent component.
 
     The emitted shape is target-aware: on OpenCode the agent declares
-    ``mode: subagent`` and the ``model`` is provider-qualified
-    (``anthropic/<id>``); on Claude the bare alias is emitted verbatim.
+    ``mode: subagent`` and the ``model`` is provider-qualified (a bare alias
+    becomes ``anthropic/<alias>``, an already-qualified ``provider/model``
+    passes through verbatim); on Claude the bare alias is emitted verbatim.
 
     Raises:
         ValueError: If the ``tools`` field is missing or empty.
@@ -27,11 +28,14 @@ def generate_agent_frontmatter(answers: dict[str, Any]) -> dict[str, Any]:
 
     if resolve_runtime_target() == 'opencode':
         # OpenCode agents declare a subagent mode and a provider-qualified
-        # model id rather than the bare Claude alias.
+        # model id rather than the bare Claude alias. A value that already
+        # carries a provider (``openai/gpt-4`` or ``anthropic/claude-...``) is
+        # preserved verbatim; only a bare alias (``opus``) is qualified with
+        # the ``anthropic/`` prefix.
         frontmatter['mode'] = 'subagent'
         if 'model' in frontmatter:
             model = frontmatter['model']
-            if model and not str(model).startswith('anthropic/'):
+            if model and '/' not in str(model):
                 frontmatter['model'] = f'anthropic/{model}'
 
     # Format tools as comma-separated string (not array)

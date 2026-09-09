@@ -86,9 +86,12 @@ Resolved absolute path:
 > **Claude target material.** The `Bash(...)` permission-wildcard grammar below is the Claude
 > settings-DSL form; it is a twin of the canonical grammar in
 > `plugin-architecture/references/frontmatter-standards.md` (Permission Patterns), which is also
-> marked Claude target material. An author on another registered target expresses the same
-> permission intent through the platform-runtime `permission configure` op, which renders the
-> target's own settings grammar.
+> marked Claude target material. On another registered target, express the same permission intent
+> through the platform-runtime `permission configure` op **only where that target's runtime
+> implements a permission-write backend** (Claude): the op renders the target's own settings
+> grammar. On a target whose op is an honest no-op (OpenCode ships no validated permission-write
+> backend, so the op returns `toon_noop`), apply the intent directly in that target's native
+> settings file instead of relying on the op.
 
 Each skill with scripts generates ONE permission wildcard per script type:
 

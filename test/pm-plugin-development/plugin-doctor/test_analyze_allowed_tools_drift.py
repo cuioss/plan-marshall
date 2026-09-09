@@ -48,7 +48,9 @@ Test layers:
 
 from pathlib import Path
 
-from conftest import get_script_path, load_script_module
+import re
+
+from conftest import get_script_path, get_skill_dir, load_script_module
 
 from _plugin_doctor_fixtures import assert_analyzer_findings
 
@@ -480,3 +482,48 @@ def test_analyzer_source_has_no_inline_marker_references() -> None:
         assert marker not in source, (
             f'Retired inline marker {marker!r} still present in analyzer source'
         )
+
+
+# ===========================================================================
+# (i) tool-coverage.md Step-2 table drift guard
+# ===========================================================================
+# tool-coverage.md declares its body-invocation vocabulary as the
+# ``_KNOWN_TOOLS`` population (the single source the analyzers share) and
+# lists the workflow-only signals separately. These tests pin the shipped
+# Step-2 table to that population, so a tool added or removed on either side
+# is a red build rather than a silent drift.
+
+_WORKFLOW_ONLY_SIGNALS = frozenset({'SlashCommand', 'WebSearch', 'TodoWrite'})
+
+_TOOL_COVERAGE_DOC = get_skill_dir(
+    'pm-plugin-development', 'plugin-doctor'
+) / 'workflow' / 'tool-coverage.md'
+
+
+def _tool_coverage_table_rows() -> list[str]:
+    """Extract the Step-2 table row verbs, ignoring the two header rows."""
+    text = _TOOL_COVERAGE_DOC.read_text(encoding='utf-8')
+    return [
+        m.group(1)
+        for m in re.finditer(r'^\| ([A-Za-z]+) \|', text, re.MULTILINE)
+        if m.group(1) not in ('Tool', 'Signal')
+    ]
+
+
+def test_tool_coverage_body_rows_equal_known_tools() -> None:
+    """The body-invocation rows are exactly the ``_KNOWN_TOOLS`` population, in order."""
+    rows = _tool_coverage_table_rows()
+    body_tools = [t for t in rows if t not in _WORKFLOW_ONLY_SIGNALS]
+    assert body_tools == list(_aatd._KNOWN_TOOLS), (
+        f'tool-coverage.md body-invocation table drifted from _KNOWN_TOOLS: '
+        f'doc={body_tools} analyzer={list(_aatd._KNOWN_TOOLS)}'
+    )
+
+
+def test_tool_coverage_workflow_signals_listed_apart() -> None:
+    """SlashCommand/WebSearch/TodoWrite stay workflow-only, never body rows."""
+    rows = _tool_coverage_table_rows()
+    signals = [t for t in rows if t in _WORKFLOW_ONLY_SIGNALS]
+    assert sorted(signals) == sorted(_WORKFLOW_ONLY_SIGNALS), (
+        f'Workflow-only signals must all appear in the doc, got: {signals}'
+    )

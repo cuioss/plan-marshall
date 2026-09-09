@@ -136,6 +136,30 @@ def test_coverage_interpretation_emits_finding_shaped_dict():
     ]
 
 
+def test_task_tool_coverage_finding_gated_off_on_opencode(monkeypatch):
+    """agent-task-tool-prohibited is Claude rule-pack scoped: no finding on OpenCode.
+
+    Matches ``plugin-create:component validate``, which accepts a ``Task``
+    declaration on the OpenCode target (the ``task`` tool exists there).
+    """
+    monkeypatch.setattr(_analysis, 'resolve_runtime_target', lambda: 'opencode')
+    issues = _analysis.extract_issues_from_coverage_analysis(
+        {'critical_violations': {'has_task_declared': True}}, 'agent.md', 'agent'
+    )
+
+    assert issues == []
+
+
+def test_task_tool_markdown_finding_gated_off_on_opencode(monkeypatch):
+    """The rules-based emission path is equally gated when OpenCode is active."""
+    monkeypatch.setattr(_analysis, 'resolve_runtime_target', lambda: 'opencode')
+    issues = _analysis.extract_issues_from_markdown_analysis(
+        {'rules': {'agent_task_tool_prohibited': True}}, 'agent.md', 'agent'
+    )
+
+    assert all(i.get('type') != 'agent-task-tool-prohibited' for i in issues)
+
+
 def test_subdoc_interpretation_emits_finding_shaped_dict():
     """extract_issues_from_subdoc_analysis builds Finding internally and emits its dict."""
     issues = _analysis.extract_issues_from_subdoc_analysis(
