@@ -62,6 +62,11 @@ from toon_parser import serialize_toon  # noqa: E402
 # The comment names the planning system neutrally (no host-specific command
 # form) so the persisted file reads the same on every target.
 GITIGNORE_COMMENT = '# Planning system (managed by plan-marshall)'
+# Legacy header spelling — the pre-D5 comment named the Claude slash command.
+# Kept in the managed set so consolidation re-emits GITIGNORE_COMMENT for an
+# existing file that still carries it instead of treating the old line as user
+# content and leaving two headers.
+LEGACY_GITIGNORE_COMMENT = '# Planning system (managed by /marshall-steward)'
 GITIGNORE_LOCAL_COMMENT = (
     '# Runtime state (plans, run-configuration, lessons-learned, memory, logs — managed by plan-marshall)'
 )
@@ -76,7 +81,7 @@ GITIGNORE_PLAN_LOCAL_WORKTREES = '.plan/local/worktrees/'
 # whose stripped form is in this set is part of the managed block and is
 # subject to consolidation; everything else is user-authored content that is
 # preserved verbatim.
-_MANAGED_COMMENT_LINES = frozenset({GITIGNORE_COMMENT, GITIGNORE_LOCAL_COMMENT})
+_MANAGED_COMMENT_LINES = frozenset({GITIGNORE_COMMENT, LEGACY_GITIGNORE_COMMENT, GITIGNORE_LOCAL_COMMENT})
 _MANAGED_RULE_LINES = frozenset({
     GITIGNORE_PLAN_DIR,
     '.plan/',

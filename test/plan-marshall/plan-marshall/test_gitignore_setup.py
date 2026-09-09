@@ -224,6 +224,29 @@ class TestGitignoreSetupIdempotency:
         ) == 1
         assert '!.plan/project-architecture/' in content
 
+    def test_legacy_comment_header_is_migrated_not_duplicated(self, tmp_path):
+        """An existing .gitignore carrying the legacy ``managed by
+        /marshall-steward`` header is recognized as managed and consolidated to
+        the single new header — never left alongside a re-emitted new one."""
+        gitignore_path = tmp_path / '.gitignore'
+        gitignore_path.write_text(
+            '# Planning system (managed by /marshall-steward)\n'
+            '# Runtime state (plans, run-configuration, lessons-learned, memory, logs '
+            '— managed by plan-marshall)\n'
+            '.plan/*\n!.plan/marshal.json\n'
+        )
+
+        result = setup_gitignore(tmp_path)
+
+        assert result['status'] in ('updated', 'unchanged')
+        content = gitignore_path.read_text()
+        assert content.count('# Planning system (managed by plan-marshall)') == 1
+        assert '# Planning system (managed by /marshall-steward)' not in content
+        assert content.count(
+            '# Runtime state (plans, run-configuration, lessons-learned, memory, logs '
+            '— managed by plan-marshall)'
+        ) == 1
+
 
 class TestGitignoreSetupDryRun:
     """Test gitignore_setup.py dry-run mode via direct import."""

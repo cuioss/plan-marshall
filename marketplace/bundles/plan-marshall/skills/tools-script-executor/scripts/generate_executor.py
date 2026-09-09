@@ -1273,7 +1273,10 @@ def generate_executor(
     # (OpenCode) contributes no root and the recovery honestly finds nothing.
     recovery_roots = _shared_get_bundle_cache_roots()
     cache_recovery_lines = (
-        '\n'.join(f"    '{root}'," for root in recovery_roots)
+        # repr() (not manual quotes) so a root path containing a quote cannot
+        # emit invalid generated Python and trip the unsubstituted-placeholder
+        # guard on regeneration.
+        '\n'.join(f'    {root!r},' for root in recovery_roots)
         if recovery_roots
         else '    # (no cache roots resolved)'
     )

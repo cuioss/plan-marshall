@@ -445,7 +445,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
       --pr-number {pr_number} --adaptive
   ```
 
-**Bash tool timeout**: 1800000ms (30-minute safety net — the Claude-target outer ceiling configured for remote-CI waits, host cap resolved per active target through the platform-runtime `harness bash-timeout-ceiling` seam; `--adaptive` seeds the inner `ci:wait` ceiling from the persisted budget so the wait converges on observed CI durations rather than the fixed baseline).
+**Bash tool timeout**: pass the seam-resolved host cap (`harness bash-timeout-ceiling` — 600s on the Claude target) as the outer Bash timeout; `--adaptive` seeds the inner `ci:wait` budget (which may run longer than the Bash cap) from the persisted budget so the wait converges on observed CI durations rather than the fixed baseline.
 
 The disposition of a red gate depends on WHICH path produced it — the two paths are NOT symmetric, because only the merge-queue path has an authoritative re-test behind it:
 
@@ -1504,7 +1504,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-
     --pr-number {pr_number} --adaptive
 ```
 
-**Bash tool timeout**: 1800000ms (30-minute safety net — the Claude-target outer ceiling configured for remote-CI waits, host cap resolved per active target through the platform-runtime `harness bash-timeout-ceiling` seam; `--adaptive` seeds the inner `ci:wait` ceiling from the persisted budget so the wait converges on observed CI durations rather than the fixed baseline).
+**Bash tool timeout**: pass the seam-resolved host cap (`harness bash-timeout-ceiling` — 600s on the Claude target) as the outer Bash timeout; `--adaptive` seeds the inner `ci:wait` budget (which may run longer than the Bash cap) from the persisted budget so the wait converges on observed CI durations rather than the fixed baseline.
 
 If CI fails → log warning but continue (PR is already merged):
 ```bash

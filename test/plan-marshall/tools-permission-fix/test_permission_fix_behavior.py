@@ -345,8 +345,9 @@ class TestEnsureWildcardsApplied:
         assert 'Invalid JSON' in result['error']
 
     def test_scope_project_resolves_settings_via_ops(self, tmp_path, monkeypatch):
-        """ensure-wildcards accepts --scope and resolves the path through the
-        permission ops — the steward surfaces carry no settings-path literal."""
+        """ensure-wildcards accepts --scope, resolves the path through the
+        permission ops, and WRITES through the resolved path — a --scope call
+        must never fall back to a None settings path for the save."""
         import permission_common as pc_mod
 
         settings_file = tmp_path / 'settings.json'
@@ -358,11 +359,14 @@ class TestEnsureWildcardsApplied:
         )
 
         result = pf.cmd_ensure_wildcards(
-            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'ensure-wildcards', '--scope', 'project', '--marketplace-json', str(marketplace_file), '--dry-run')
+            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'ensure-wildcards', '--scope', 'project', '--marketplace-json', str(marketplace_file))
         )
 
         assert result['status'] == 'success'
-        assert result['applied'] is False
+        assert result['applied'] is True
+        assert result['settings_path'] == str(settings_file)
+        allow = _read_allow(settings_file)
+        assert 'Skill(foo:*)' in allow
 
 
 # =============================================================================

@@ -528,7 +528,8 @@ def cmd_ensure_wildcards(args: argparse.Namespace) -> dict:
     if not is_claude_target():
         return _decline_non_claude('ensure-wildcards')
 
-    settings, error = load_settings(resolve_settings_arg(args))
+    settings_path = resolve_settings_arg(args)
+    settings, error = load_settings(settings_path)
     if error:
         return {'status': 'error', 'error': error}
 
@@ -564,7 +565,7 @@ def cmd_ensure_wildcards(args: argparse.Namespace) -> dict:
         'total': len(required_wildcards),
         'bundles_analyzed': len(bundles),
         'dry_run': args.dry_run,
-        'settings_path': args.settings,
+        'settings_path': str(settings_path),
         'marketplace_path': args.marketplace_json,
     }
 
@@ -574,7 +575,7 @@ def cmd_ensure_wildcards(args: argparse.Namespace) -> dict:
                 allow_list.append(wildcard)
         allow_list.sort()
 
-        if save_settings(args.settings, settings):
+        if save_settings(str(settings_path), settings):
             result['applied'] = True
         else:
             result['error'] = 'Failed to save settings'

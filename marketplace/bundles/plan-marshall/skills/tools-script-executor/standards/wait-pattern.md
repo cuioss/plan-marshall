@@ -58,7 +58,7 @@ The wait pattern provides a **synchronous blocking** mechanism that:
 
 ## Two-Layer Timeout Concept
 
-**Key Insight**: the host platform's Bash tool has a **default 120-second timeout** (Claude target; the default is resolved per active target through the platform-runtime `harness bash-timeout-ceiling` seam). Long-running polling operations need two timeout layers:
+**Key Insight**: the host platform's Bash tool has a **default 120-second timeout**, and the largest `timeout` it accepts is the seam-resolved ceiling — 600s on the Claude target, 120s on the OpenCode target (`harness bash-timeout-ceiling`, resolved per active target). Long-running polling operations need two timeout layers:
 
 1. **Outer timeout**: Bash tool's `timeout` parameter (prevents the host platform from canceling the operation)
 2. **Inner timeout**: await_until's adaptive timeout (controls actual polling duration)
