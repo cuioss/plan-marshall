@@ -28,6 +28,7 @@ test_path_attribution_discovery.py and test_path_attribution_merge.py — this
 module covers only the ABC's own method contract and the hierarchy invariant.
 """
 
+import pytest
 from extension_base import (
     BuildExtensionBase,
     DerivationResolverBase,
@@ -132,31 +133,35 @@ def test_claim_paths_takes_no_arguments_so_the_attributor_stays_pure():
 # --- 3. The disjointness invariant -----------------------------------------
 
 
-def test_path_attribution_base_absent_from_extension_base_mro():
-    # Assert — Axis-D is NOT a face on Axis-A
-    assert PathAttributionBase not in ExtensionBase.__mro__
+#: ``(candidate, the hierarchy it must NOT appear in)`` — Axis-D against each of
+#: the three existing ABCs, in both directions. The Axis-C rows matter
+#: independently of the Axis-A/B ones: "which module owns this path" is a
+#: different question from "which modules depend on which", and bolting one onto
+#: the other would give a single ABC two unrelated contracts.
+_DISJOINT_HIERARCHY_PAIRS = [
+    (PathAttributionBase, ExtensionBase),
+    (PathAttributionBase, BuildExtensionBase),
+    (PathAttributionBase, DerivationResolverBase),
+    (ExtensionBase, PathAttributionBase),
+    (BuildExtensionBase, PathAttributionBase),
+    (DerivationResolverBase, PathAttributionBase),
+]
+
+_DISJOINT_HIERARCHY_IDS = [
+    'axis-d-is-not-a-face-on-axis-a',
+    'axis-d-is-not-a-face-on-axis-b',
+    'axis-d-is-not-a-face-on-axis-c',
+    'axis-d-does-not-inherit-axis-a',
+    'axis-d-does-not-inherit-axis-b',
+    'axis-d-does-not-inherit-axis-c',
+]
 
 
-def test_path_attribution_base_absent_from_build_extension_base_mro():
-    # Assert — Axis-D is NOT a face on Axis-B
-    assert PathAttributionBase not in BuildExtensionBase.__mro__
-
-
-def test_path_attribution_base_absent_from_derivation_resolver_base_mro():
-    # Assert — Axis-D is NOT a face on Axis-C either: "which module owns this
-    # path" is a different question from "which modules depend on which", and
-    # bolting it on would give one ABC two unrelated contracts.
-    assert PathAttributionBase not in DerivationResolverBase.__mro__
-
-
-def test_path_attribution_base_inherits_no_other_axis_abc():
-    # Arrange / Act
-    mro = PathAttributionBase.__mro__
-
-    # Assert — inherited by none, and inherits from none
-    assert ExtensionBase not in mro
-    assert BuildExtensionBase not in mro
-    assert DerivationResolverBase not in mro
+@pytest.mark.parametrize(
+    'candidate,hierarchy', _DISJOINT_HIERARCHY_PAIRS, ids=_DISJOINT_HIERARCHY_IDS
+)
+def test_axis_d_is_disjoint_from_every_other_abc(candidate, hierarchy):
+    assert candidate not in hierarchy.__mro__
 
 
 # --- 4. Multiple-inheritance opt-in ---------------------------------------

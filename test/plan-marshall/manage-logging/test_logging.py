@@ -166,40 +166,33 @@ def _init_plan_dir(plan_base: Path, plan_id: str) -> Path:
     return plan_dir
 
 
-def test_get_log_path_plan_scoped_script(monkeypatch):
-    """Script log path for an initialized plan (status.json present)."""
+@pytest.mark.parametrize(
+    ('log_type', 'expected_name'),
+    [
+        ('script', 'script-execution.log'),
+        ('work', 'work.log'),
+        ('decision', 'decision.log'),
+    ],
+    ids=[
+        'script-log-is-script-execution-log',
+        'work-log-is-work-log',
+        'decision-log-is-decision-log',
+    ],
+)
+def test_get_log_path_plan_scoped(monkeypatch, log_type, expected_name):
+    """Each log type resolves to its own file under an initialized plan's logs/.
+
+    Initialized means the plan dir carries the status.json sentinel; the orphan
+    (sentinel-less) counterpart is pinned separately below.
+    """
     with tempfile.TemporaryDirectory() as tmp:
         plan_base = Path(tmp)
         plan_dir = _init_plan_dir(plan_base, 'my-plan')
 
         with monkeypatch.context() as mp:
             mp.setenv('PLAN_BASE_DIR', str(plan_base))
-            path = module.get_log_path('my-plan', 'script')
-            assert path == plan_dir / 'logs' / 'script-execution.log'
-
-
-def test_get_log_path_plan_scoped_work(monkeypatch):
-    """Work log path for an initialized plan (status.json present)."""
-    with tempfile.TemporaryDirectory() as tmp:
-        plan_base = Path(tmp)
-        plan_dir = _init_plan_dir(plan_base, 'my-plan')
-
-        with monkeypatch.context() as mp:
-            mp.setenv('PLAN_BASE_DIR', str(plan_base))
-            path = module.get_log_path('my-plan', 'work')
-            assert path == plan_dir / 'logs' / 'work.log'
-
-
-def test_get_log_path_plan_scoped_decision(monkeypatch):
-    """Decision log path for an initialized plan (status.json present)."""
-    with tempfile.TemporaryDirectory() as tmp:
-        plan_base = Path(tmp)
-        plan_dir = _init_plan_dir(plan_base, 'my-plan')
-
-        with monkeypatch.context() as mp:
-            mp.setenv('PLAN_BASE_DIR', str(plan_base))
-            path = module.get_log_path('my-plan', 'decision')
-            assert path == plan_dir / 'logs' / 'decision.log'
+            path = module.get_log_path('my-plan', log_type)
+            assert path == plan_dir / 'logs' / expected_name
 
 
 def test_get_log_path_global_fallback(frozen_log_date, monkeypatch):
@@ -269,25 +262,24 @@ def test_get_log_path_sentinel_present_resolves_plan_scoped(monkeypatch):
 # =============================================================================
 
 
-def test_extract_plan_id_with_space_separator():
-    """Extract plan-id with --plan-id value format."""
-    args = ['add', '--plan-id', 'my-plan', '--file', 'test.md']
+@pytest.mark.parametrize(
+    ('args', 'expected'),
+    [
+        (['add', '--plan-id', 'my-plan', '--file', 'test.md'], 'my-plan'),
+        (['add', '--plan-id=my-plan', '--file', 'test.md'], 'my-plan'),
+        (['add', '--file', 'test.md'], None),
+    ],
+    ids=[
+        'space-separated-flag-yields-the-value',
+        'equals-joined-flag-yields-the-value',
+        'no-plan-id-flag-yields-none',
+    ],
+)
+def test_extract_plan_id(args, expected):
+    """Both accepted --plan-id spellings yield the id; its absence yields None."""
     result = module.extract_plan_id(args)
-    assert result == 'my-plan', f"Expected 'my-plan', got {result}"
 
-
-def test_extract_plan_id_with_equals_separator():
-    """Extract plan-id with --plan-id=value format."""
-    args = ['add', '--plan-id=my-plan', '--file', 'test.md']
-    result = module.extract_plan_id(args)
-    assert result == 'my-plan', f"Expected 'my-plan', got {result}"
-
-
-def test_extract_plan_id_missing():
-    """Return None when --plan-id is not present."""
-    args = ['add', '--file', 'test.md']
-    result = module.extract_plan_id(args)
-    assert result is None, f'Expected None, got {result}'
+    assert result == expected, f'Expected {expected!r}, got {result!r}'
 
 
 # =============================================================================

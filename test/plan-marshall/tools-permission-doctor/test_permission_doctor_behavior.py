@@ -15,6 +15,7 @@ no real ``~/.claude`` or project settings are read.
 import json
 
 import permission_common
+import pytest
 
 from conftest import load_script_module, parse_ns
 
@@ -34,21 +35,24 @@ def _write_settings(path, allow):
 class TestIsCoveredByWildcard:
     """Test is_covered_by_wildcard across its matching and non-matching branches."""
 
-    def test_colon_star_prefix_covers_specific(self):
-        """A 'name:*' wildcard covers a more specific same-prefix permission."""
-        assert pd.is_covered_by_wildcard('Bash(git:status)', 'Bash(git:*)') is True
-
-    def test_path_prefix_covers_nested_path(self):
-        """A Read/Write/Edit path wildcard covers a deeper nested path."""
-        assert pd.is_covered_by_wildcard('Read(src/lib/file.txt)', 'Read(src/**)') is True
-
-    def test_type_mismatch_not_covered(self):
-        """Differing permission types are never covered."""
-        assert pd.is_covered_by_wildcard('Read(src/x)', 'Write(src/**)') is False
-
-    def test_unrelated_specific_not_covered(self):
-        """A non-overlapping path is not covered by the wildcard."""
-        assert pd.is_covered_by_wildcard('Read(other/x)', 'Read(src/**)') is False
+    @pytest.mark.parametrize(
+        ('specific', 'wildcard', 'covered'),
+        [
+            ('Bash(git:status)', 'Bash(git:*)', True),
+            ('Read(src/lib/file.txt)', 'Read(src/**)', True),
+            ('Read(src/x)', 'Write(src/**)', False),
+            ('Read(other/x)', 'Read(src/**)', False),
+        ],
+        ids=[
+            'colon-star-wildcard-covers-a-same-prefix-command',
+            'path-wildcard-covers-a-deeper-nested-path',
+            'a-differing-permission-type-is-never-covered',
+            'a-non-overlapping-path-is-not-covered',
+        ],
+    )
+    def test_wildcard_coverage(self, specific, wildcard, covered):
+        """Both verdicts ride in one table: a matcher stuck at either is caught here."""
+        assert pd.is_covered_by_wildcard(specific, wildcard) is covered
 
 
 # =============================================================================
@@ -93,39 +97,40 @@ class TestIsMarketplacePermission:
 class TestLoadApprovedPermissions:
     """Test load_approved_permissions across its four return branches."""
 
-    def test_none_path_returns_empty(self):
-        """A None path yields an empty set."""
-        assert pd.load_approved_permissions(None) == set()
-
-    def test_missing_file_returns_empty(self, tmp_path):
-        """A non-existent file yields an empty set."""
-        assert pd.load_approved_permissions(str(tmp_path / 'nope.json')) == set()
-
-    def test_valid_file_returns_approved_set(self, tmp_path):
-        """A well-formed run-config returns the approved permissions as a set."""
-        approved = tmp_path / 'run-config.json'
-        approved.write_text(
-            json.dumps(
-                {
-                    'commands': {
-                        'setup-project-permissions': {
-                            'user_approved_permissions': ['Bash(sudo:*)', 'Write(/etc/**)']
+    @pytest.mark.parametrize(
+        ('filename', 'content', 'expected'),
+        [
+            (None, None, set()),
+            ('nope.json', None, set()),
+            (
+                'run-config.json',
+                json.dumps(
+                    {
+                        'commands': {
+                            'setup-project-permissions': {
+                                'user_approved_permissions': ['Bash(sudo:*)', 'Write(/etc/**)']
+                            }
                         }
                     }
-                }
-            )
-        )
+                ),
+                {'Bash(sudo:*)', 'Write(/etc/**)'},
+            ),
+            ('run-config.json', '{not valid json', set()),
+        ],
+        ids=[
+            'no-path-supplied-at-all',
+            'path-naming-a-file-that-does-not-exist',
+            'well-formed-run-config-yields-its-approved-set',
+            'malformed-json-yields-an-empty-set-rather-than-raising',
+        ],
+    )
+    def test_load_approved_permissions(self, tmp_path, filename, content, expected):
+        """A ``None`` filename means no path is supplied; a ``None`` content means none is written."""
+        path = None if filename is None else tmp_path / filename
+        if content is not None:
+            path.write_text(content)
 
-        result = pd.load_approved_permissions(str(approved))
-
-        assert result == {'Bash(sudo:*)', 'Write(/etc/**)'}
-
-    def test_malformed_json_returns_empty(self, tmp_path):
-        """A malformed run-config file yields an empty set rather than raising."""
-        approved = tmp_path / 'run-config.json'
-        approved.write_text('{not valid json')
-
-        assert pd.load_approved_permissions(str(approved)) == set()
+        assert pd.load_approved_permissions(None if path is None else str(path)) == expected
 
 
 # =============================================================================

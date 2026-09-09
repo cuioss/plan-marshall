@@ -14,6 +14,7 @@ Tier 3 (subprocess) retained for CLI plumbing and --scope tests.
 import json
 import os
 
+import pytest
 from permission_doctor import (
     cmd_detect_missing_project_step_permissions,
     cmd_detect_redundant,
@@ -170,28 +171,32 @@ This is a project-local command.
 class TestDetectSuspicious:
     """Test permission_doctor.py detect-suspicious subcommand via direct import."""
 
-    def test_detect_sudo_permission(self, tmp_path):
-        """Should flag sudo permissions as suspicious."""
+    @pytest.mark.parametrize(
+        'permission',
+        [
+            'Bash(sudo:*)',
+            'Write(/etc/**)',
+            'Bash(dd:if=/dev/zero)',
+            'Write(//Users/**)',
+        ],
+        ids=[
+            'privilege-escalation-via-sudo',
+            'write-access-to-a-system-path',
+            'low-level-disk-operation',
+            'write-access-across-every-user-home',
+        ],
+    )
+    def test_flags_a_dangerous_permission_as_suspicious(self, tmp_path, permission):
+        """Each of these grants is reported, so the clean-settings control below discriminates."""
         settings_file = tmp_path / 'settings.json'
-        settings_file.write_text(json.dumps({'permissions': {'allow': ['Bash(sudo:*)'], 'deny': [], 'ask': []}}))
+        settings_file.write_text(
+            json.dumps({'permissions': {'allow': [permission], 'deny': [], 'ask': []}})
+        )
 
         result = cmd_detect_suspicious(parse_ns('plan-marshall', 'tools-permission-doctor', 'permission_doctor.py', 'detect-suspicious', '--settings', str(settings_file)))
 
         assert result['status'] == 'success'
-        assert 'suspicious' in result
-        suspicious_perms = [s['permission'] for s in result['suspicious']]
-        assert 'Bash(sudo:*)' in suspicious_perms
-
-    def test_detect_system_path_access(self, tmp_path):
-        """Should flag system path access as suspicious."""
-        settings_file = tmp_path / 'settings.json'
-        settings_file.write_text(json.dumps({'permissions': {'allow': ['Write(/etc/**)'], 'deny': [], 'ask': []}}))
-
-        result = cmd_detect_suspicious(parse_ns('plan-marshall', 'tools-permission-doctor', 'permission_doctor.py', 'detect-suspicious', '--settings', str(settings_file)))
-
-        assert result['status'] == 'success'
-        suspicious_perms = [s['permission'] for s in result['suspicious']]
-        assert 'Write(/etc/**)' in suspicious_perms
+        assert permission in [s['permission'] for s in result['suspicious']]
 
     def test_output_includes_severity(self, tmp_path):
         """Suspicious permissions should include severity."""
@@ -204,30 +209,6 @@ class TestDetectSuspicious:
         if result['suspicious']:
             for item in result['suspicious']:
                 assert 'severity' in item
-
-    def test_detect_dangerous_command_dd(self, tmp_path):
-        """Should flag low-level disk operations like dd."""
-        settings_file = tmp_path / 'settings.json'
-        settings_file.write_text(
-            json.dumps({'permissions': {'allow': ['Bash(dd:if=/dev/zero)'], 'deny': [], 'ask': []}})
-        )
-
-        result = cmd_detect_suspicious(parse_ns('plan-marshall', 'tools-permission-doctor', 'permission_doctor.py', 'detect-suspicious', '--settings', str(settings_file)))
-
-        assert result['status'] == 'success'
-        suspicious_perms = [s['permission'] for s in result['suspicious']]
-        assert 'Bash(dd:if=/dev/zero)' in suspicious_perms
-
-    def test_detect_broad_write_all_users(self, tmp_path):
-        """Should flag broad write access to all users' directories."""
-        settings_file = tmp_path / 'settings.json'
-        settings_file.write_text(json.dumps({'permissions': {'allow': ['Write(//Users/**)'], 'deny': [], 'ask': []}}))
-
-        result = cmd_detect_suspicious(parse_ns('plan-marshall', 'tools-permission-doctor', 'permission_doctor.py', 'detect-suspicious', '--settings', str(settings_file)))
-
-        assert result['status'] == 'success'
-        suspicious_perms = [s['permission'] for s in result['suspicious']]
-        assert 'Write(//Users/**)' in suspicious_perms
 
     def test_clean_settings_no_suspicious(self, tmp_path):
         """Normal permissions should not be flagged as suspicious."""
@@ -406,25 +387,21 @@ def test_script_exists():
     assert SCRIPT_PATH.exists(), f'Script not found: {SCRIPT_PATH}'
 
 
-def test_help_works():
-    """Script should respond to --help."""
-    result = run_script(SCRIPT_PATH, '--help')
-    assert result.returncode == 0
-
-
-def test_detect_redundant_help():
-    """detect-redundant subcommand should have help."""
-    result = run_script(SCRIPT_PATH, 'detect-redundant', '--help')
-    assert result.returncode == 0
-
-
-def test_detect_suspicious_help():
-    """detect-suspicious subcommand should have help."""
-    result = run_script(SCRIPT_PATH, 'detect-suspicious', '--help')
-    assert result.returncode == 0
-
-
-def test_detect_missing_project_step_permissions_help():
-    """detect-missing-project-step-permissions subcommand should have help."""
-    result = run_script(SCRIPT_PATH, 'detect-missing-project-step-permissions', '--help')
-    assert result.returncode == 0
+@pytest.mark.parametrize(
+    'argv',
+    [
+        ('--help',),
+        ('detect-redundant', '--help'),
+        ('detect-suspicious', '--help'),
+        ('detect-missing-project-step-permissions', '--help'),
+    ],
+    ids=[
+        'top-level',
+        'detect-redundant',
+        'detect-suspicious',
+        'detect-missing-project-step-permissions',
+    ],
+)
+def test_help_exits_zero(argv):
+    """Help is reachable at the top level and on every declared subcommand."""
+    assert run_script(SCRIPT_PATH, *argv).returncode == 0

@@ -21,6 +21,8 @@ Tier 3 (subprocess) retained for CLI plumbing, --scope, and --target tests.
 
 import json
 
+import pytest
+
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from conftest import MARKETPLACE_ROOT, parse_ns, run_script
 
@@ -1086,82 +1088,33 @@ def test_script_exists():
     assert SCRIPT_PATH.exists(), f'Script not found: {SCRIPT_PATH}'
 
 
-def test_help_works():
-    """Script should respond to --help."""
-    result = run_script(SCRIPT_PATH, '--help')
-    assert result.returncode == 0
+#: Every subcommand the script declares, plus the empty prefix for the top-level
+#: parser. Kept as its own constant so the roster reads as the enumeration it is.
+_HELP_TARGETS: tuple[tuple[str, ...], ...] = (
+    (),
+    ('consolidate',),
+    ('ensure-wildcards',),
+    ('apply-fixes',),
+    ('add',),
+    ('remove',),
+    ('ensure',),
+    ('generate-wildcards',),
+    ('ensure-executor',),
+    ('cleanup-scripts',),
+    ('migrate-executor',),
+    ('apply-project-step-permissions',),
+    ('remove-redundant',),
+)
 
 
-def test_consolidate_help():
-    """consolidate subcommand should have help."""
-    result = run_script(SCRIPT_PATH, 'consolidate', '--help')
-    assert result.returncode == 0
-
-
-def test_ensure_wildcards_help():
-    """ensure-wildcards subcommand should have help."""
-    result = run_script(SCRIPT_PATH, 'ensure-wildcards', '--help')
-    assert result.returncode == 0
-
-
-def test_apply_fixes_help():
-    """apply-fixes subcommand should have help."""
-    result = run_script(SCRIPT_PATH, 'apply-fixes', '--help')
-    assert result.returncode == 0
-
-
-def test_add_help():
-    """add subcommand should have help."""
-    result = run_script(SCRIPT_PATH, 'add', '--help')
-    assert result.returncode == 0
-
-
-def test_remove_help():
-    """remove subcommand should have help."""
-    result = run_script(SCRIPT_PATH, 'remove', '--help')
-    assert result.returncode == 0
-
-
-def test_ensure_help():
-    """ensure subcommand should have help."""
-    result = run_script(SCRIPT_PATH, 'ensure', '--help')
-    assert result.returncode == 0
-
-
-def test_generate_wildcards_help():
-    """generate-wildcards subcommand should have help."""
-    result = run_script(SCRIPT_PATH, 'generate-wildcards', '--help')
-    assert result.returncode == 0
-
-
-def test_ensure_executor_help():
-    """ensure-executor subcommand should have help."""
-    result = run_script(SCRIPT_PATH, 'ensure-executor', '--help')
-    assert result.returncode == 0
-
-
-def test_cleanup_scripts_help():
-    """cleanup-scripts subcommand should have help."""
-    result = run_script(SCRIPT_PATH, 'cleanup-scripts', '--help')
-    assert result.returncode == 0
-
-
-def test_migrate_executor_help():
-    """migrate-executor subcommand should have help."""
-    result = run_script(SCRIPT_PATH, 'migrate-executor', '--help')
-    assert result.returncode == 0
-
-
-def test_apply_project_step_permissions_help():
-    """apply-project-step-permissions subcommand should have help."""
-    result = run_script(SCRIPT_PATH, 'apply-project-step-permissions', '--help')
-    assert result.returncode == 0
-
-
-def test_remove_redundant_help():
-    """remove-redundant subcommand should have help."""
-    result = run_script(SCRIPT_PATH, 'remove-redundant', '--help')
-    assert result.returncode == 0
+@pytest.mark.parametrize(
+    'verb',
+    _HELP_TARGETS,
+    ids=[('top-level' if not verb else verb[0]) for verb in _HELP_TARGETS],
+)
+def test_help_exits_zero(verb):
+    """Help is reachable at the top level and on every declared subcommand."""
+    assert run_script(SCRIPT_PATH, *verb, '--help').returncode == 0
 
 
 # =============================================================================

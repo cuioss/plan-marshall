@@ -98,44 +98,40 @@ def test_canonical_commands_expected_keys():
     assert set(CANONICAL_COMMANDS.keys()) == expected
 
 
-def test_profile_patterns_integration_tests():
-    """Integration test aliases map to CMD_INTEGRATION_TESTS."""
-    aliases = ['integration-tests', 'integration-test', 'it']
+#: ``(the aliases a canonical answers to, that canonical)``, one row per key of
+#: ``CANONICAL_COMMANDS`` — the authoritative alias declaration. The subject under
+#: test is ``PROFILE_PATTERNS``, which ``_build_profile_patterns()`` flattens out of
+#: that declaration; deriving the rows from the declaration one level up rather than
+#: from the flattening is what keeps the assertions falsifiable. The rows prove every
+#: declared alias reaches ``PROFILE_PATTERNS`` under its own canonical (catching a
+#: dropped alias, a wrong canonical, or a key collision between two canonicals);
+#: ``test_the_alias_table_states_every_live_alias`` closes the other direction, so
+#: together they assert the flattening is total and carries nothing else.
+_PROFILE_ALIAS_CASES = [(meta['aliases'], cmd) for cmd, meta in CANONICAL_COMMANDS.items()]
+
+#: Ids derived from the same canonical keys, so they stay in lock-step with the rows.
+_PROFILE_ALIAS_IDS = list(CANONICAL_COMMANDS)
+
+
+@pytest.mark.parametrize('aliases,canonical', _PROFILE_ALIAS_CASES, ids=_PROFILE_ALIAS_IDS)
+def test_profile_patterns_map_every_alias_to_its_canonical(aliases: list[str], canonical: str):
     for alias in aliases:
         assert alias in PROFILE_PATTERNS, f"'{alias}' should be in PROFILE_PATTERNS"
-        assert PROFILE_PATTERNS[alias] == CMD_INTEGRATION_TESTS
+        assert PROFILE_PATTERNS[alias] == canonical
 
 
-def test_profile_patterns_e2e():
-    """E2E aliases map to CMD_E2E."""
-    aliases = ['e2e', 'e2e-tests', 'acceptance', 'end-to-end']
-    for alias in aliases:
-        assert alias in PROFILE_PATTERNS, f"'{alias}' should be in PROFILE_PATTERNS"
-        assert PROFILE_PATTERNS[alias] == CMD_E2E
+def test_the_alias_table_states_every_live_alias():
+    """The declared alias set equals the flattened one, quantified over the mapping.
 
-
-def test_profile_patterns_quality_gate():
-    """Quality gate aliases map to CMD_QUALITY_GATE."""
-    aliases = ['pre-commit', 'precommit', 'sonar', 'lint', 'check', 'quality']
-    for alias in aliases:
-        assert alias in PROFILE_PATTERNS, f"'{alias}' should be in PROFILE_PATTERNS"
-        assert PROFILE_PATTERNS[alias] == CMD_QUALITY_GATE
-
-
-def test_profile_patterns_coverage():
-    """Coverage aliases map to CMD_COVERAGE."""
-    aliases = ['coverage', 'jacoco']
-    for alias in aliases:
-        assert alias in PROFILE_PATTERNS, f"'{alias}' should be in PROFILE_PATTERNS"
-        assert PROFILE_PATTERNS[alias] == CMD_COVERAGE
-
-
-def test_profile_patterns_benchmark():
-    """Benchmark aliases map to CMD_BENCHMARK."""
-    aliases = ['benchmark', 'performance', 'benchmarks', 'jmh', 'perf', 'load']
-    for alias in aliases:
-        assert alias in PROFILE_PATTERNS, f"'{alias}' should be in PROFILE_PATTERNS"
-        assert PROFILE_PATTERNS[alias] == CMD_BENCHMARK
+    The rows above only reach aliases ``CANONICAL_COMMANDS`` declares, so on their
+    own they stay green when ``_build_profile_patterns()`` invents a key no canonical
+    declared. This is the closing direction: ``PROFILE_PATTERNS`` carries the declared
+    aliases and nothing besides.
+    """
+    # Non-vacuity first: an empty mapping makes both sides equal and asserts nothing.
+    assert PROFILE_PATTERNS, 'PROFILE_PATTERNS is empty — this guard would pass vacuously'
+    stated = {alias for aliases, _ in _PROFILE_ALIAS_CASES for alias in aliases}
+    assert stated == set(PROFILE_PATTERNS)
 
 
 class ConcreteExtension(ExtensionBase):
@@ -565,33 +561,37 @@ def _git_init_and_track(root, rel_paths: list[str]) -> None:
     subprocess.run(['git', '-C', str(root), 'add', '-A'], check=True)
 
 
-def test_filter_retains_route_matching_tracked_file(tmp_path):
-    """(a) A route whose pattern matches a tracked file is retained."""
-    _git_init_and_track(tmp_path, ['scripts/foo.py', 'test/bar.py', 'pyproject.toml'])
+#: ``(tracked files, the routes the ``minimal`` domain retains — ``None`` when
+#: the domain is omitted entirely because every one of its routes was pruned)``.
+#: The two ``None`` rows are the prune side of the filter: a tree matching no
+#: route, and a tree with no tracked file at all.
+_DERIVER_FILTER_CASES = [
+    (
+        ['scripts/foo.py', 'test/bar.py', 'pyproject.toml'],
+        [('pyproject.toml', 'config'), ('scripts/*.py', 'production'), ('test/*.py', 'test')],
+    ),
+    (['scripts/foo.py'], [('scripts/*.py', 'production')]),
+    (['README.md'], None),
+    ([], None),
+]
+
+_DERIVER_FILTER_IDS = [
+    'every-route-has-a-matching-file',
+    'only-one-route-has-a-matching-file',
+    'no-route-has-a-matching-file',
+    'nothing-is-tracked-at-all',
+]
+
+
+@pytest.mark.parametrize('tracked,expected', _DERIVER_FILTER_CASES, ids=_DERIVER_FILTER_IDS)
+def test_the_tree_presence_filter_keeps_only_live_routes(tmp_path, tracked, expected):
+    _git_init_and_track(tmp_path, tracked)
+
     derived = derive_globs_from_tree(str(tmp_path), [_DeriverRouteExtension()])
-    assert ('scripts/*.py', 'production') in derived['minimal']
 
-
-def test_filter_prunes_route_matching_no_tracked_file(tmp_path):
-    """(b) A route whose pattern matches NO tracked file is pruned."""
-    # Only scripts/ has a matching file — test/ and pyproject.toml routes are dead.
-    _git_init_and_track(tmp_path, ['scripts/foo.py'])
-    derived = derive_globs_from_tree(str(tmp_path), [_DeriverRouteExtension()])
-    assert derived['minimal'] == [('scripts/*.py', 'production')]
-
-
-def test_filter_omits_domain_when_every_route_is_pruned(tmp_path):
-    """(c) A domain whose every route is pruned is omitted from the result."""
-    _git_init_and_track(tmp_path, ['README.md'])  # matches none of the routes
-    derived = derive_globs_from_tree(str(tmp_path), [_DeriverRouteExtension()])
-    assert derived == {}
-
-
-def test_filter_empty_tracked_set_prunes_all_routes(tmp_path):
-    """(d) An empty tracked-file set prunes all routes (returns empty)."""
-    _git_init_and_track(tmp_path, [])
-    derived = derive_globs_from_tree(str(tmp_path), [_DeriverRouteExtension()])
-    assert derived == {}
+    assert derived.get('minimal') == expected
+    if expected is None:
+        assert derived == {}
 
 
 def test_filter_live_and_dead_route_same_domain_yields_only_live(tmp_path):
@@ -627,54 +627,36 @@ def test_filter_live_and_dead_route_same_domain_yields_only_live(tmp_path):
 # bare-basename subdir-matching defect fix.
 
 
-def test_route_matches_bare_basename_at_repo_root():
-    """A bare-basename route matches the file at repo root."""
-    assert route_matches('package.json', 'package.json') is True
+#: ``(repo-relative path, route pattern, matches?)`` — both regimes, each with
+#: its own negative control. The bare-basename subdir row is the core defect fix
+#: (``package.json`` must match ``nifi-cuioss-ui/package.json``, which the
+#: pre-fix full-path fnmatch would have pruned as dead); its negative keeps the
+#: basename anchor precise. The path-bearing negative is the complementary half:
+#: a directory-anchored glob must not follow a same-basename file elsewhere.
+_ROUTE_MATCH_CASES = [
+    ('package.json', 'package.json', True),
+    ('nifi-cuioss-ui/package.json', 'package.json', True),
+    ('src/components/App.tsx', '*.tsx', True),
+    ('nifi-cuioss-ui/package-lock.json', 'package.json', False),
+    ('scripts/foo.py', 'scripts/*.py', True),
+    ('vendor/foo.py', 'scripts/*.py', False),
+    ('marketplace/targets/generate.py', 'marketplace/*.py', True),
+]
+
+_ROUTE_MATCH_IDS = [
+    'bare-basename-at-repo-root',
+    'bare-basename-in-a-subdirectory',
+    'bare-basename-glob-in-a-subdirectory',
+    'bare-basename-does-not-match-a-different-basename',
+    'path-bearing-against-the-full-path',
+    'path-bearing-stays-anchored-to-its-directory',
+    'path-bearing-single-star-spans-a-slash',
+]
 
 
-def test_route_matches_bare_basename_in_subdirectory():
-    """A bare-basename route matches the file in a subdirectory (anchored on basename).
-
-    The core defect fix: ``package.json`` (no ``/``) must match
-    ``nifi-cuioss-ui/package.json``. The pre-fix full-path fnmatch would have
-    returned False and wrongly pruned the subdir-only config route.
-    """
-    assert route_matches('nifi-cuioss-ui/package.json', 'package.json') is True
-
-
-def test_route_matches_bare_basename_glob_in_subdirectory():
-    """A bare-basename GLOB (e.g. ``*.tsx``) matches by basename anywhere in the tree."""
-    assert route_matches('src/components/App.tsx', '*.tsx') is True
-
-
-def test_route_matches_bare_basename_no_false_positive_on_different_basename():
-    """A bare-basename route does NOT match a file whose basename differs.
-
-    Anchoring on the basename keeps the match precise: ``package.json`` must not
-    match ``nifi-cuioss-ui/package-lock.json`` (a different basename) even though
-    it lives in a subdirectory.
-    """
-    assert route_matches('nifi-cuioss-ui/package-lock.json', 'package.json') is False
-
-
-def test_route_matches_path_bearing_matches_full_path():
-    """A path-bearing route matches against the whole repo-relative path."""
-    assert route_matches('scripts/foo.py', 'scripts/*.py') is True
-
-
-def test_route_matches_path_bearing_no_false_positive_on_unrelated_dir():
-    """A path-bearing route does NOT false-positive on a same-basename file elsewhere.
-
-    The complementary half of the bare-basename fix: a path-bearing glob
-    (``scripts/*.py``) stays anchored to its directory, so a file with the same
-    basename under an unrelated directory (``vendor/foo.py``) does NOT match.
-    """
-    assert route_matches('vendor/foo.py', 'scripts/*.py') is False
-
-
-def test_route_matches_path_bearing_single_star_spans_slash():
-    """A single ``*`` in a path-bearing route spans ``/`` (fnmatch semantics)."""
-    assert route_matches('marketplace/targets/generate.py', 'marketplace/*.py') is True
+@pytest.mark.parametrize('path,pattern,expected', _ROUTE_MATCH_CASES, ids=_ROUTE_MATCH_IDS)
+def test_route_matches(path: str, pattern: str, expected: bool):
+    assert route_matches(path, pattern) is expected
 
 
 def test_derive_globs_retains_bare_basename_subdir_only_config(tmp_path):
@@ -722,50 +704,39 @@ def _loop_matches_any(pattern: str, tracked: list[str]) -> bool:
     return any(route_matches(p, pattern) for p in tracked)
 
 
-def test_pattern_matches_any_bare_basename_at_repo_root():
-    """Bare-basename pattern matches a tracked file at repo root."""
-    assert _pattern_matches_any('package.json', ['package.json', 'src/app.py']) is True
+#: ``(pattern, tracked corpus, matches?)`` — the batch helper read over the same
+#: two regimes and the same negative controls as ``route_matches`` above, plus
+#: the empty-corpus rows that are the dead-route prune case.
+_PATTERN_MATCHES_ANY_CASES = [
+    ('package.json', ['package.json', 'src/app.py'], True),
+    ('package.json', ['nifi-cuioss-ui/package.json'], True),
+    ('*.tsx', ['src/components/App.tsx'], True),
+    ('package.json', ['nifi-cuioss-ui/package-lock.json'], False),
+    ('scripts/*.py', ['scripts/foo.py', 'test/bar.py'], True),
+    ('scripts/*.py', ['vendor/foo.py'], False),
+    ('marketplace/*.py', ['marketplace/targets/generate.py'], True),
+    ('scripts/*.py', [], False),
+    ('package.json', [], False),
+]
+
+_PATTERN_MATCHES_ANY_IDS = [
+    'bare-basename-at-repo-root',
+    'bare-basename-in-a-subdirectory',
+    'bare-basename-glob-in-a-subdirectory',
+    'bare-basename-does-not-match-a-different-basename',
+    'path-bearing-against-the-full-path',
+    'path-bearing-stays-anchored-to-its-directory',
+    'path-bearing-single-star-spans-a-slash',
+    'empty-corpus-with-a-path-bearing-pattern',
+    'empty-corpus-with-a-bare-basename-pattern',
+]
 
 
-def test_pattern_matches_any_bare_basename_in_subdirectory():
-    """Bare-basename pattern matches a tracked file in a subdirectory (basename-anchored).
-
-    Mirrors the bare-basename regime of the seed-prune fix: ``package.json`` (no
-    ``/``) matches ``nifi-cuioss-ui/package.json`` because the helper filters the
-    corpus by basename.
-    """
-    assert _pattern_matches_any('package.json', ['nifi-cuioss-ui/package.json']) is True
-
-
-def test_pattern_matches_any_bare_basename_glob_in_subdirectory():
-    """Bare-basename GLOB matches by basename anywhere in the tree."""
-    assert _pattern_matches_any('*.tsx', ['src/components/App.tsx']) is True
-
-
-def test_pattern_matches_any_bare_basename_no_false_positive():
-    """Bare-basename pattern does not match a different basename in a subdirectory."""
-    assert _pattern_matches_any('package.json', ['nifi-cuioss-ui/package-lock.json']) is False
-
-
-def test_pattern_matches_any_path_bearing_matches_full_path():
-    """Path-bearing pattern matches against the whole repo-relative path."""
-    assert _pattern_matches_any('scripts/*.py', ['scripts/foo.py', 'test/bar.py']) is True
-
-
-def test_pattern_matches_any_path_bearing_no_false_positive_on_unrelated_dir():
-    """Path-bearing pattern stays anchored to its directory (no cross-dir basename match)."""
-    assert _pattern_matches_any('scripts/*.py', ['vendor/foo.py']) is False
-
-
-def test_pattern_matches_any_path_bearing_single_star_spans_slash():
-    """A single ``*`` in a path-bearing pattern spans ``/`` (fnmatch semantics)."""
-    assert _pattern_matches_any('marketplace/*.py', ['marketplace/targets/generate.py']) is True
-
-
-def test_pattern_matches_any_empty_corpus_returns_false():
-    """An empty tracked corpus never matches — the dead-route prune case."""
-    assert _pattern_matches_any('scripts/*.py', []) is False
-    assert _pattern_matches_any('package.json', []) is False
+@pytest.mark.parametrize(
+    'pattern,tracked,expected', _PATTERN_MATCHES_ANY_CASES, ids=_PATTERN_MATCHES_ANY_IDS
+)
+def test_pattern_matches_any(pattern: str, tracked: list[str], expected: bool):
+    assert _pattern_matches_any(pattern, tracked) is expected
 
 
 def test_pattern_matches_any_equivalent_to_per_element_loop():
@@ -803,21 +774,28 @@ def test_pattern_matches_any_equivalent_to_per_element_loop():
 # =============================================================================
 
 
-def test_tracked_basenames_extracts_basenames():
-    """_tracked_basenames returns the basename of each path in the tuple."""
-    result = _tracked_basenames(('src/app.py', 'nifi-cuioss-ui/package.json', 'build.py'))
-    assert result == ['app.py', 'package.json', 'build.py']
+#: ``(tracked tuple, the basenames extracted from it)``. A path with no
+#: directory separator IS its own basename, which is the row that keeps a
+#: naive split from dropping repo-root files.
+_TRACKED_BASENAME_CASES = [
+    (
+        ('src/app.py', 'nifi-cuioss-ui/package.json', 'build.py'),
+        ['app.py', 'package.json', 'build.py'],
+    ),
+    ((), []),
+    (('README.md', 'pyproject.toml'), ['README.md', 'pyproject.toml']),
+]
+
+_TRACKED_BASENAME_IDS = [
+    'paths-at-mixed-depths',
+    'an-empty-tuple',
+    'paths-at-the-repo-root',
+]
 
 
-def test_tracked_basenames_empty_tuple():
-    """An empty tuple returns an empty list."""
-    assert _tracked_basenames(()) == []
-
-
-def test_tracked_basenames_repo_root_paths():
-    """Paths at repo root (no directory separator) return the path itself."""
-    result = _tracked_basenames(('README.md', 'pyproject.toml'))
-    assert result == ['README.md', 'pyproject.toml']
+@pytest.mark.parametrize('tracked,expected', _TRACKED_BASENAME_CASES, ids=_TRACKED_BASENAME_IDS)
+def test_tracked_basenames(tracked: tuple[str, ...], expected: list[str]):
+    assert _tracked_basenames(tracked) == expected
 
 
 def test_tracked_basenames_cache_identity():
@@ -1440,43 +1418,54 @@ class TestReadBuildMapRoutes:
         assert read_build_map_routes() == []
 
 
+#: ``(path, declared routes, the role resolved)``. The two ``None`` rows are the
+#: helper's absence contract — an unrouted path and a route carrying no role are
+#: both "no role", never a default one. The four precedence rows state each
+#: winning pair in BOTH declaration orders, which is what makes the answer a
+#: precedence rule rather than a first match.
+_RESOLVE_ROUTE_ROLE_CASES = [
+    (
+        '.claude/skills/a/scripts/b.py',
+        [('.claude/skills/*.py', ROLE_PRODUCTION)],
+        ROLE_PRODUCTION,
+    ),
+    ('nested/dir/pyproject.toml', [('pyproject.toml', ROLE_CONFIG)], ROLE_CONFIG),
+    ('doc/x.md', [('src/*.py', ROLE_PRODUCTION)], None),
+    ('src/a.py', [('src/*.py', None)], None),
+    (
+        'shared/a.py',
+        [('shared/*.py', ROLE_CONFIG), ('shared/*.py', ROLE_PRODUCTION)],
+        ROLE_PRODUCTION,
+    ),
+    (
+        'shared/a.py',
+        [('shared/*.py', ROLE_PRODUCTION), ('shared/*.py', ROLE_CONFIG)],
+        ROLE_PRODUCTION,
+    ),
+    ('shared/a.py', [('shared/*.py', ROLE_CONFIG), ('shared/*.py', ROLE_TEST)], ROLE_TEST),
+    ('shared/a.py', [('shared/*.py', ROLE_TEST), ('shared/*.py', ROLE_CONFIG)], ROLE_TEST),
+]
+
+_RESOLVE_ROUTE_ROLE_IDS = [
+    'a-matching-route-returns-its-role',
+    'a-bare-basename-route-matches-anywhere-in-the-tree',
+    'an-unrouted-path-has-no-role',
+    'a-route-carrying-no-role-contributes-none',
+    'production-beats-config-declared-second',
+    'production-beats-config-declared-first',
+    'test-beats-config-declared-second',
+    'test-beats-config-declared-first',
+]
+
+
 class TestResolveRouteRole:
     """The per-path lookup, including its precedence and its ``None`` contract."""
 
-    def test_matching_route_returns_its_role(self):
-        routes = [('.claude/skills/*.py', ROLE_PRODUCTION)]
-        assert resolve_route_role('.claude/skills/a/scripts/b.py', routes) == ROLE_PRODUCTION
-
-    def test_bare_basename_route_matches_anywhere_in_the_tree(self):
-        routes = [('pyproject.toml', ROLE_CONFIG)]
-        assert resolve_route_role('nested/dir/pyproject.toml', routes) == ROLE_CONFIG
-
-    def test_unrouted_path_is_none_not_a_role(self):
-        assert resolve_route_role('doc/x.md', [('src/*.py', ROLE_PRODUCTION)]) is None
-
-    def test_role_none_routes_are_ignored_by_the_lookup(self):
-        assert resolve_route_role('src/a.py', [('src/*.py', None)]) is None
-
     @pytest.mark.parametrize(
-        'ordered_routes',
-        [
-            [('shared/*.py', ROLE_CONFIG), ('shared/*.py', ROLE_PRODUCTION)],
-            [('shared/*.py', ROLE_PRODUCTION), ('shared/*.py', ROLE_CONFIG)],
-        ],
+        'path,routes,expected', _RESOLVE_ROUTE_ROLE_CASES, ids=_RESOLVE_ROUTE_ROLE_IDS
     )
-    def test_production_wins_over_config_in_either_declaration_order(self, ordered_routes):
-        """Precedence, not first match — the answer cannot depend on seed order."""
-        assert resolve_route_role('shared/a.py', ordered_routes) == ROLE_PRODUCTION
-
-    @pytest.mark.parametrize(
-        'ordered_routes',
-        [
-            [('shared/*.py', ROLE_CONFIG), ('shared/*.py', ROLE_TEST)],
-            [('shared/*.py', ROLE_TEST), ('shared/*.py', ROLE_CONFIG)],
-        ],
-    )
-    def test_test_wins_over_config_in_either_declaration_order(self, ordered_routes):
-        assert resolve_route_role('shared/a.py', ordered_routes) == ROLE_TEST
+    def test_resolve_route_role(self, path, routes, expected):
+        assert resolve_route_role(path, routes) == expected
 
     def test_every_role_in_the_closed_set_is_resolvable(self):
         """Quantified over the vocabulary, so a role added later cannot be missed."""

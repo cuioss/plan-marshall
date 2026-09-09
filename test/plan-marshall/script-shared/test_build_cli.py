@@ -82,54 +82,47 @@ def test_build_cli_no_longer_exposes_search_markers_subparser():
     assert not hasattr(_build_cli, 'add_search_markers_subparser')
 
 
-def test_add_project_dir_arg_registers_both_flags():
+#: ``(argv, expected project_dir, expected plan_id)`` for the parser the helper
+#: builds. The defaults encode the canonical contract: ``project_dir='.'`` so the
+#: resolver detects "user did not pass --project-dir", and ``plan_id=None`` so it
+#: detects absence. The both-supplied row is deliberately an ACCEPTING one —
+#: argparse enforces single-flag uniqueness only, and the cross-flag exclusion
+#: fires later inside ``build_main`` via ``resolve_project_dir``.
+_ROUTING_PAIR_PARSE_CASES = [
+    ([], '.', None),
+    (['--plan-id', CANONICAL_PLAN_ID], '.', CANONICAL_PLAN_ID),
+    (['--project-dir', CANONICAL_PROJECT_DIR], CANONICAL_PROJECT_DIR, None),
+    (
+        ['--project-dir', CANONICAL_PROJECT_DIR, '--plan-id', CANONICAL_PLAN_ID],
+        CANONICAL_PROJECT_DIR,
+        CANONICAL_PLAN_ID,
+    ),
+]
+
+_ROUTING_PAIR_PARSE_IDS = [
+    'neither-flag-yields-both-defaults',
+    'plan-id-only',
+    'project-dir-only',
+    'both-flags-are-accepted-at-the-argparse-level',
+]
+
+
+@pytest.mark.parametrize(
+    'argv,expected_project_dir,expected_plan_id',
+    _ROUTING_PAIR_PARSE_CASES,
+    ids=_ROUTING_PAIR_PARSE_IDS,
+)
+def test_add_project_dir_arg_registers_both_flags(
+    argv: list[str], expected_project_dir: str, expected_plan_id: str | None
+):
     """The helper attaches BOTH --project-dir and --plan-id to a parser."""
     parser = argparse.ArgumentParser()
     add_project_dir_arg(parser)
 
-    # Default values match the canonical contract: project_dir='.' so
-    # the resolver detects "user did not pass --project-dir";
-    # plan_id=None so the resolver detects absence.
-    args = parser.parse_args([])
-    assert args.project_dir == '.'
-    assert args.plan_id is None
+    args = parser.parse_args(argv)
 
-
-def test_add_project_dir_arg_accepts_plan_id():
-    parser = argparse.ArgumentParser()
-    add_project_dir_arg(parser)
-    args = parser.parse_args(['--plan-id', CANONICAL_PLAN_ID])
-    assert args.plan_id == CANONICAL_PLAN_ID
-    assert args.project_dir == '.'
-
-
-def test_add_project_dir_arg_accepts_project_dir():
-    parser = argparse.ArgumentParser()
-    add_project_dir_arg(parser)
-    args = parser.parse_args(['--project-dir', CANONICAL_PROJECT_DIR])
-    assert args.project_dir == CANONICAL_PROJECT_DIR
-    assert args.plan_id is None
-
-
-def test_add_project_dir_arg_accepts_both_at_argparse_level():
-    """argparse itself does NOT reject the both-supplied case.
-
-    The error fires later, inside ``build_main`` via ``resolve_project_dir``.
-    Argparse only enforces single-flag uniqueness; the cross-flag
-    mutual-exclusion is a runtime concern.
-    """
-    parser = argparse.ArgumentParser()
-    add_project_dir_arg(parser)
-    args = parser.parse_args(
-        [
-            '--project-dir',
-            CANONICAL_PROJECT_DIR,
-            '--plan-id',
-            CANONICAL_PLAN_ID,
-        ]
-    )
-    assert args.project_dir == CANONICAL_PROJECT_DIR
-    assert args.plan_id == CANONICAL_PLAN_ID
+    assert args.project_dir == expected_project_dir
+    assert args.plan_id == expected_plan_id
 
 
 @pytest.mark.parametrize(

@@ -537,63 +537,58 @@ def _write_manifest(skill_dir, *, implements, with_extension=True):
 # --- read_implements_field unit coverage -------------------------------------
 
 
-def test_read_implements_field_returns_value(tmp_path):
-    """The reader returns the implements: declaration as a one-element list.
+#: Two further ext-point values, used only to build the block-sequence case
+#: below. Declared here rather than reused from the module-level constants
+#: further down: a ``parametrize`` decorator is evaluated where it is written, so
+#: a name bound later in the file is not yet defined at this point.
+_EXECUTION_CONTEXT_WORKFLOW = (
+    'plan-marshall:extension-api/standards/ext-point-execution-context-workflow'
+)
+_FINALIZE_STEP_ARCHETYPE = 'plan-marshall:extension-api/standards/ext-point-finalize-step'
 
-    ``read_implements_field`` now returns a ``list[str]`` (supporting multi-interface
-    block-sequence declarations); an inline scalar normalizes to a one-element list.
+
+@pytest.mark.parametrize(
+    ('skill_md_source', 'expected'),
+    [
+        (
+            f'---\nname: m\nimplements: {_DOMAIN_BUNDLE_ARCHETYPE}\nuser-invocable: false\n---\n\n# m\n',
+            [_DOMAIN_BUNDLE_ARCHETYPE],
+        ),
+        (
+            f'---\nname: m\nimplements: "{_DOMAIN_BUNDLE_ARCHETYPE}"\n---\n\n# m\n',
+            [_DOMAIN_BUNDLE_ARCHETYPE],
+        ),
+        (
+            '---\nname: m\nimplements:\n'
+            f'  - {_EXECUTION_CONTEXT_WORKFLOW}\n'
+            f'  - {_FINALIZE_STEP_ARCHETYPE}\n'
+            '---\n\n# m\n',
+            [_EXECUTION_CONTEXT_WORKFLOW, _FINALIZE_STEP_ARCHETYPE],
+        ),
+        ('---\nname: m\nuser-invocable: false\n---\n\n# m\n', []),
+        ('# manifest\n\nNo frontmatter here.\n', []),
+    ],
+    ids=[
+        'inline-scalar-normalizes-to-one-element-list',
+        'double-quoted-scalar-strips-the-quotes',
+        'block-sequence-returns-every-value-in-order',
+        'frontmatter-without-an-implements-key',
+        'no-frontmatter-block-at-all',
+    ],
+)
+def test_read_implements_field(tmp_path, skill_md_source, expected):
+    """``read_implements_field`` returns every declared interface, in order.
+
+    The return is always a ``list[str]``: an inline scalar (quoted or bare)
+    normalizes to a one-element list, a YAML block sequence returns each declared
+    value in declaration order, and a doc that declares nothing — no key, or no
+    frontmatter block at all — yields the empty list rather than ``None``.
     """
     skill = tmp_path / 'manifest'
-    _write_manifest(skill, implements=_DOMAIN_BUNDLE_ARCHETYPE, with_extension=False)
-    assert _discovery.read_implements_field(skill / 'SKILL.md') == [_DOMAIN_BUNDLE_ARCHETYPE]
-
-
-def test_read_implements_field_strips_surrounding_quotes(tmp_path):
-    """A double- or single-quoted implements: value resolves to the bare value (list form)."""
-    skill = tmp_path / 'manifest'
     skill.mkdir()
-    (skill / 'SKILL.md').write_text(
-        '---\nname: m\nimplements: "' + _DOMAIN_BUNDLE_ARCHETYPE + '"\n---\n\n# m\n',
-        encoding='utf-8',
-    )
-    assert _discovery.read_implements_field(skill / 'SKILL.md') == [_DOMAIN_BUNDLE_ARCHETYPE]
+    (skill / 'SKILL.md').write_text(skill_md_source, encoding='utf-8')
 
-
-def test_read_implements_field_returns_block_sequence_values(tmp_path):
-    """A YAML block-sequence implements: returns every declared interface, in order.
-
-    A step doc may declare more than one interface (e.g. a phase-6 workflow step
-    that implements both ext-point-execution-context-workflow and
-    ext-point-finalize-step); the reader returns each declared value.
-    """
-    skill = tmp_path / 'manifest'
-    skill.mkdir()
-    (skill / 'SKILL.md').write_text(
-        '---\nname: m\nimplements:\n'
-        '  - plan-marshall:extension-api/standards/ext-point-execution-context-workflow\n'
-        '  - plan-marshall:extension-api/standards/ext-point-finalize-step\n'
-        '---\n\n# m\n',
-        encoding='utf-8',
-    )
-    assert _discovery.read_implements_field(skill / 'SKILL.md') == [
-        'plan-marshall:extension-api/standards/ext-point-execution-context-workflow',
-        'plan-marshall:extension-api/standards/ext-point-finalize-step',
-    ]
-
-
-def test_read_implements_field_empty_when_key_absent(tmp_path):
-    """A manifest with frontmatter but no implements: key yields an empty list."""
-    skill = tmp_path / 'manifest'
-    _write_manifest(skill, implements=None, with_extension=False)
-    assert _discovery.read_implements_field(skill / 'SKILL.md') == []
-
-
-def test_read_implements_field_empty_when_no_frontmatter(tmp_path):
-    """A SKILL.md with no leading --- frontmatter block yields an empty list."""
-    skill = tmp_path / 'manifest'
-    skill.mkdir()
-    (skill / 'SKILL.md').write_text('# manifest\n\nNo frontmatter here.\n', encoding='utf-8')
-    assert _discovery.read_implements_field(skill / 'SKILL.md') == []
+    assert _discovery.read_implements_field(skill / 'SKILL.md') == expected
 
 
 def test_read_implements_field_empty_when_file_missing(tmp_path):
@@ -604,54 +599,47 @@ def test_read_implements_field_empty_when_file_missing(tmp_path):
 # --- find_extension_path synthetic-tree coverage -----------------------------
 
 
-def test_find_extension_path_resolves_via_frontmatter_declaration(tmp_path):
-    """find_extension_path() matches the manifest by implements:, not directory name.
+@pytest.mark.parametrize(
+    ('skill_subpath', 'implements', 'with_extension', 'expect_resolved'),
+    [
+        ('skills/arbitrary-manifest-name', _DOMAIN_BUNDLE_ARCHETYPE, True, True),
+        ('1.0.0/skills/plan-marshall-plugin', _DOMAIN_BUNDLE_ARCHETYPE, True, True),
+        ('skills/plan-marshall-plugin', None, True, False),
+        (
+            'skills/plan-marshall-plugin',
+            'plan-marshall:extension-api/standards/ext-point-recipe',
+            True,
+            False,
+        ),
+        ('skills/plan-marshall-plugin', _DOMAIN_BUNDLE_ARCHETYPE, False, False),
+    ],
+    ids=[
+        'declaration-under-an-arbitrary-directory-name',
+        'declaration-in-the-versioned-cache-layout',
+        'legacy-directory-name-without-a-declaration',
+        'declaration-of-a-different-ext-point',
+        'matching-declaration-with-no-sibling-extension',
+    ],
+)
+def test_find_extension_path_resolves_by_declaration_alone(
+    tmp_path, skill_subpath, implements, with_extension, expect_resolved
+):
+    """Resolution keys on the ``implements:`` declaration, never the directory name.
 
-    The manifest lives under an arbitrarily-named skill directory (NOT
-    plan-marshall-plugin) and is discovered purely by its implements: declaration.
+    The two resolving rows show the manifest is found under an arbitrary skill
+    directory and under the versioned-cache layout alike. The three ``None`` rows
+    are the matched controls that prove the path heuristic is gone: the legacy
+    ``plan-marshall-plugin`` directory name resolves NOTHING on its own, a
+    declaration of a different ext-point does not match, and a matching manifest
+    with no sibling ``extension.py`` has nothing to resolve to.
     """
     bundle = tmp_path / 'some-bundle'
-    skill = bundle / 'skills' / 'arbitrary-manifest-name'
-    _write_manifest(skill, implements=_DOMAIN_BUNDLE_ARCHETYPE)
+    skill = bundle / skill_subpath
+    _write_manifest(skill, implements=implements, with_extension=with_extension)
+
     resolved = _discovery.find_extension_path(bundle)
-    assert resolved == skill / 'extension.py'
 
-
-def test_find_extension_path_ignores_directory_name_without_declaration(tmp_path):
-    """A plan-marshall-plugin dir WITHOUT the implements: key is NOT discovered.
-
-    Proves the directory-name path heuristic is gone: the legacy directory name
-    no longer suffices for discovery.
-    """
-    bundle = tmp_path / 'some-bundle'
-    skill = bundle / 'skills' / 'plan-marshall-plugin'
-    _write_manifest(skill, implements=None)
-    assert _discovery.find_extension_path(bundle) is None
-
-
-def test_find_extension_path_ignores_non_matching_declaration(tmp_path):
-    """A manifest declaring a DIFFERENT implements: value is not discovered."""
-    bundle = tmp_path / 'some-bundle'
-    skill = bundle / 'skills' / 'plan-marshall-plugin'
-    _write_manifest(skill, implements='plan-marshall:extension-api/standards/ext-point-recipe')
-    assert _discovery.find_extension_path(bundle) is None
-
-
-def test_find_extension_path_none_when_sibling_extension_missing(tmp_path):
-    """A matching manifest with no sibling extension.py yields None."""
-    bundle = tmp_path / 'some-bundle'
-    skill = bundle / 'skills' / 'plan-marshall-plugin'
-    _write_manifest(skill, implements=_DOMAIN_BUNDLE_ARCHETYPE, with_extension=False)
-    assert _discovery.find_extension_path(bundle) is None
-
-
-def test_find_extension_path_resolves_versioned_cache_structure(tmp_path):
-    """The versioned-cache branch (bundle/{version}/skills/...) still resolves."""
-    bundle = tmp_path / 'some-bundle'
-    skill = bundle / '1.0.0' / 'skills' / 'plan-marshall-plugin'
-    _write_manifest(skill, implements=_DOMAIN_BUNDLE_ARCHETYPE)
-    resolved = _discovery.find_extension_path(bundle)
-    assert resolved == skill / 'extension.py'
+    assert resolved == (skill / 'extension.py' if expect_resolved else None)
 
 
 def test_find_extension_path_prefers_source_over_versioned(tmp_path):
@@ -1401,62 +1389,54 @@ def test_build_implementor_record_surfaces_metadata_verification_profile(tmp_pat
     assert record['verification_profile'] == 'security'
 
 
-def test_read_frontmatter_fields_reads_metadata_nested_key(tmp_path):
-    """``_read_frontmatter_fields`` reads a requested key from the ``metadata:`` block.
+@pytest.mark.parametrize(
+    ('frontmatter_lines', 'expected_fields'),
+    [
+        (
+            ['metadata:', '  verification_profile: docs'],
+            {'verification_profile': 'docs'},
+        ),
+        (
+            [
+                'verification_profile: top-level',
+                'metadata:',
+                '  verification_profile: nested',
+            ],
+            {'verification_profile': 'top-level'},
+        ),
+        (
+            [
+                'metadata:',
+                '  verification_profile: security',
+                '  unrelated_metadata: ignore-me',
+            ],
+            {'verification_profile': 'security'},
+        ),
+    ],
+    ids=[
+        'metadata-nested-key-is-read',
+        'top-level-declaration-wins-over-metadata',
+        'unrequested-metadata-key-is-not-surfaced',
+    ],
+)
+def test_read_frontmatter_fields_reads_the_requested_key(
+    tmp_path, frontmatter_lines, expected_fields
+):
+    """Only the requested keys are returned, top-level first, metadata as fallback.
 
-    The metadata block carries one-level-deep declarations; a requested key found
-    there is surfaced under its bare name.
+    The ``metadata:`` block carries one-level-deep declarations, and a requested
+    key found there is surfaced under its bare name. A top-level declaration of
+    the same name is authoritative over the nested one, and an incidental
+    metadata sub-key nobody asked for is not returned at all — asserted by
+    comparing the WHOLE returned mapping rather than indexing one key, so a leak
+    fails rather than going unnoticed.
     """
     doc = tmp_path / 'SKILL.md'
-    _write_implementor_doc(doc, lines=['metadata:', '  verification_profile: docs'])
+    _write_implementor_doc(doc, lines=frontmatter_lines)
 
     fields = _discovery._read_frontmatter_fields(doc, ('verification_profile',))
 
-    assert fields == {'verification_profile': 'docs'}
-
-
-def test_read_frontmatter_fields_top_level_wins_over_metadata(tmp_path):
-    """A top-level declaration wins over a ``metadata:``-nested one of the same name.
-
-    When both a top-level ``verification_profile`` and a ``metadata.verification_profile``
-    are present, the top-level value is authoritative — the metadata value is a
-    fallback only.
-    """
-    doc = tmp_path / 'SKILL.md'
-    _write_implementor_doc(
-        doc,
-        lines=[
-            'verification_profile: top-level',
-            'metadata:',
-            '  verification_profile: nested',
-        ],
-    )
-
-    fields = _discovery._read_frontmatter_fields(doc, ('verification_profile',))
-
-    assert fields['verification_profile'] == 'top-level'
-
-
-def test_read_frontmatter_fields_metadata_does_not_leak_unrequested_keys(tmp_path):
-    """A non-requested key inside the ``metadata:`` block is not surfaced.
-
-    Only keys named in the requested-keys tuple are read from the metadata block;
-    incidental metadata sub-keys (e.g. a recipe's own bookkeeping) must not appear
-    in the returned fields.
-    """
-    doc = tmp_path / 'SKILL.md'
-    _write_implementor_doc(
-        doc,
-        lines=[
-            'metadata:',
-            '  verification_profile: security',
-            '  unrelated_metadata: ignore-me',
-        ],
-    )
-
-    fields = _discovery._read_frontmatter_fields(doc, ('verification_profile',))
-
-    assert fields == {'verification_profile': 'security'}
+    assert fields == expected_fields
 
 
 def test_recipe_security_audit_declares_metadata_verification_profile():

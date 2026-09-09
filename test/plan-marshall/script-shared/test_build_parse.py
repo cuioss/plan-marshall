@@ -3,10 +3,10 @@
 """Tests for build_parse.py module."""
 
 import json
-import tempfile
 from pathlib import Path
 
 import _build_parse as _build_parse_mod
+import pytest
 
 MODE_ACTIONABLE = _build_parse_mod.MODE_ACTIONABLE
 MODE_ERRORS = _build_parse_mod.MODE_ERRORS
@@ -226,126 +226,118 @@ def _use_plan_base_dir(monkeypatch, tmpdir: str) -> None:
     monkeypatch.setenv('PLAN_BASE_DIR', tmpdir)
 
 
-def test_load_acceptable_warnings_nonexistent(monkeypatch):
-    """Returns empty list when config doesn't exist."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        _use_plan_base_dir(monkeypatch, tmpdir)
+#: ``(run-configuration.json content, patterns loaded for 'maven')``. ``None``
+#: means the file is never written, which is a different absence from a file
+#: that exists and holds no maven section — both must yield the empty list.
+_ACCEPTABLE_WARNINGS_CASES = [
+    (None, []),
+    (json.dumps({'npm': {'acceptable_warnings': ['pattern']}}), []),
+    (json.dumps({'maven': {'other_key': 'value'}}), []),
+    (
+        json.dumps({'maven': {'acceptable_warnings': ['unchecked', 'deprecated', '^.*raw type.*$']}}),
+        ['unchecked', 'deprecated', '^.*raw type.*$'],
+    ),
+    ('not valid json', []),
+]
 
-        result = load_acceptable_warnings(tmpdir, 'maven')
-        assert result == []
-
-
-def test_load_acceptable_warnings_missing_build_system(monkeypatch):
-    """Returns empty list when build system not in config."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        _use_plan_base_dir(monkeypatch, tmpdir)
-        config = {'npm': {'acceptable_warnings': ['pattern']}}
-        (Path(tmpdir) / 'run-configuration.json').write_text(json.dumps(config))
-
-        result = load_acceptable_warnings(tmpdir, 'maven')
-        assert result == []
-
-
-def test_load_acceptable_warnings_missing_key(monkeypatch):
-    """Returns empty list when acceptable_warnings not in build system config."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        _use_plan_base_dir(monkeypatch, tmpdir)
-        config = {'maven': {'other_key': 'value'}}
-        (Path(tmpdir) / 'run-configuration.json').write_text(json.dumps(config))
-
-        result = load_acceptable_warnings(tmpdir, 'maven')
-        assert result == []
+_ACCEPTABLE_WARNINGS_IDS = [
+    'no-config-file-at-all',
+    'config-without-a-maven-section',
+    'maven-section-without-the-key',
+    'maven-patterns-are-loaded-in-order',
+    'config-file-is-not-json',
+]
 
 
-def test_load_acceptable_warnings_loads(monkeypatch):
-    """Loads patterns from config."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        _use_plan_base_dir(monkeypatch, tmpdir)
-        config = {'maven': {'acceptable_warnings': ['unchecked', 'deprecated', '^.*raw type.*$']}}
-        (Path(tmpdir) / 'run-configuration.json').write_text(json.dumps(config))
+@pytest.mark.parametrize(
+    'config_text,expected', _ACCEPTABLE_WARNINGS_CASES, ids=_ACCEPTABLE_WARNINGS_IDS
+)
+def test_load_acceptable_warnings(monkeypatch, tmp_path: Path, config_text, expected):
+    _use_plan_base_dir(monkeypatch, str(tmp_path))
+    if config_text is not None:
+        (tmp_path / 'run-configuration.json').write_text(config_text)
 
-        result = load_acceptable_warnings(tmpdir, 'maven')
-        assert len(result) == 3
-        assert 'unchecked' in result
-        assert 'deprecated' in result
+    assert load_acceptable_warnings(str(tmp_path), 'maven') == expected
 
 
-def test_load_acceptable_warnings_invalid_json(monkeypatch):
-    """Returns empty list for invalid JSON."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        _use_plan_base_dir(monkeypatch, tmpdir)
-        (Path(tmpdir) / 'run-configuration.json').write_text('not valid json')
+#: ``(warning message, acceptance patterns, accepted?)``. A pattern starting
+#: with ``^`` is treated as a regex and anything else as a substring, and both
+#: match case-insensitively — so each spelling carries a matching row, a
+#: differently-cased row, and a non-matching row.
+#:
+#:
+#: The unparseable pattern ``^(invalid`` carries two rows because the substring
+#: check runs BEFORE the regex attempt, so one row cannot state both halves. The
+#: ``False`` row's message omits the pattern text, which is what lets it reach
+#: the regex attempt at all — that is the row pinning that a ``re.error`` is
+#: swallowed rather than propagated out of the filter. The ``True`` row's
+#: message carries the pattern text verbatim and never reaches the regex,
+#: pinning that the substring check wins first. Giving the ``False`` row a
+#: message containing the pattern text would collapse it onto the ``True`` row's
+#: path and delete the swallow coverage entirely.
+_WARNING_ACCEPTANCE_CASES = [
+    ('some warning', [], False),
+    ('uses unchecked or unsafe operations', ['unchecked'], True),
+    ('Uses UNCHECKED operations', ['unchecked'], True),
+    ('some warning', ['unchecked'], False),
+    ('raw type usage in Main.java', ['^.*raw type.*$'], True),
+    ('RAW TYPE usage', ['^.*raw type.*$'], True),
+    ('some warning', ['^.*unchecked.*$'], False),
+    ('some warning', ['^(invalid'], False),
+    ('a warning mentioning ^(invalid verbatim', ['^(invalid'], True),
+    ('deprecated API', ['unchecked', 'deprecated', 'raw type'], True),
+]
 
-        result = load_acceptable_warnings(tmpdir, 'maven')
-        assert result == []
-
-
-def test_is_warning_accepted_empty_patterns():
-    """Returns False with empty patterns."""
-    warning = Issue(None, None, 'some warning', SEVERITY_WARNING)
-    assert not is_warning_accepted(warning, [])
-
-
-def test_is_warning_accepted_substring():
-    """Matches substring pattern."""
-    warning = Issue(None, None, 'uses unchecked or unsafe operations', SEVERITY_WARNING)
-    assert is_warning_accepted(warning, ['unchecked'])
-
-
-def test_is_warning_accepted_substring_case_insensitive():
-    """Substring matching is case-insensitive."""
-    warning = Issue(None, None, 'Uses UNCHECKED operations', SEVERITY_WARNING)
-    assert is_warning_accepted(warning, ['unchecked'])
-
-
-def test_is_warning_accepted_substring_no_match():
-    """Returns False when substring doesn't match."""
-    warning = Issue(None, None, 'some warning', SEVERITY_WARNING)
-    assert not is_warning_accepted(warning, ['unchecked'])
-
-
-def test_is_warning_accepted_regex():
-    """Matches regex pattern starting with ^."""
-    warning = Issue(None, None, 'raw type usage in Main.java', SEVERITY_WARNING)
-    assert is_warning_accepted(warning, ['^.*raw type.*$'])
-
-
-def test_is_warning_accepted_regex_case_insensitive():
-    """Regex matching is case-insensitive."""
-    warning = Issue(None, None, 'RAW TYPE usage', SEVERITY_WARNING)
-    assert is_warning_accepted(warning, ['^.*raw type.*$'])
+_WARNING_ACCEPTANCE_IDS = [
+    'no-patterns-accepts-nothing',
+    'substring-match',
+    'substring-match-is-case-insensitive',
+    'substring-that-does-not-match',
+    'regex-match',
+    'regex-match-is-case-insensitive',
+    'regex-that-does-not-match',
+    'unparseable-regex-is-swallowed-not-raised',
+    'unparseable-regex-still-substring-matches',
+    'any-one-of-several-patterns-matching-is-enough',
+]
 
 
-def test_is_warning_accepted_regex_no_match():
-    """Returns False when regex doesn't match."""
-    warning = Issue(None, None, 'some warning', SEVERITY_WARNING)
-    assert not is_warning_accepted(warning, ['^.*unchecked.*$'])
+@pytest.mark.parametrize(
+    'message,patterns,expected', _WARNING_ACCEPTANCE_CASES, ids=_WARNING_ACCEPTANCE_IDS
+)
+def test_is_warning_accepted(message: str, patterns: list[str], expected: bool):
+    warning = Issue(None, None, message, SEVERITY_WARNING)
+
+    assert bool(is_warning_accepted(warning, patterns)) is expected
 
 
-def test_is_warning_accepted_invalid_regex():
-    """Skips invalid regex patterns."""
-    warning = Issue(None, None, 'some warning', SEVERITY_WARNING)
-    assert not is_warning_accepted(warning, ['^(invalid'])
+#: The two-warning input every mode row is filtered from: one message the
+#: pattern accepts and one it does not.
+_MIXED_WARNING_MESSAGES = ['unchecked operation', 'other warning']
+
+#: ``(mode, the messages that survive)``. Stating the surviving MESSAGES rather
+#: than a count is what makes the actionable row assert WHICH warning was
+#: dropped, not merely that one was.
+_FILTER_MODE_CASES = [
+    (MODE_ACTIONABLE, ['other warning']),
+    (MODE_STRUCTURED, ['unchecked operation', 'other warning']),
+    (MODE_ERRORS, []),
+]
+
+_FILTER_MODE_IDS = [
+    'actionable-drops-the-accepted-warning',
+    'structured-keeps-both',
+    'errors-keeps-none',
+]
 
 
-def test_is_warning_accepted_multiple_patterns():
-    """Returns True if any pattern matches."""
-    warning = Issue(None, None, 'deprecated API', SEVERITY_WARNING)
-    patterns = ['unchecked', 'deprecated', 'raw type']
-    assert is_warning_accepted(warning, patterns)
+@pytest.mark.parametrize('mode,expected_messages', _FILTER_MODE_CASES, ids=_FILTER_MODE_IDS)
+def test_filter_warnings_per_mode(mode: str, expected_messages: list[str]):
+    warnings = [Issue(None, None, message, SEVERITY_WARNING) for message in _MIXED_WARNING_MESSAGES]
 
+    result = filter_warnings(warnings, ['unchecked'], mode)
 
-def test_filter_warnings_actionable():
-    """Actionable mode filters out accepted warnings."""
-    warnings = [
-        Issue(None, None, 'unchecked operation', SEVERITY_WARNING),
-        Issue(None, None, 'other warning', SEVERITY_WARNING),
-    ]
-    patterns = ['unchecked']
-
-    result = filter_warnings(warnings, patterns, MODE_ACTIONABLE)
-    assert len(result) == 1
-    assert result[0].message == 'other warning'
+    assert [warning.message for warning in result] == expected_messages
 
 
 def test_filter_warnings_default_mode():
@@ -355,18 +347,6 @@ def test_filter_warnings_default_mode():
 
     result = filter_warnings(warnings, patterns)
     assert len(result) == 0
-
-
-def test_filter_warnings_structured_keeps_all():
-    """Structured mode keeps all warnings."""
-    warnings = [
-        Issue(None, None, 'unchecked operation', SEVERITY_WARNING),
-        Issue(None, None, 'other warning', SEVERITY_WARNING),
-    ]
-    patterns = ['unchecked']
-
-    result = filter_warnings(warnings, patterns, MODE_STRUCTURED)
-    assert len(result) == 2
 
 
 def test_filter_warnings_structured_marks_accepted():
@@ -385,17 +365,6 @@ def test_filter_warnings_structured_marks_accepted():
     assert accepted[0].message == 'unchecked operation'
     assert len(not_accepted) == 1
     assert not_accepted[0].message == 'other warning'
-
-
-def test_filter_warnings_errors_returns_empty():
-    """Errors mode returns empty list."""
-    warnings = [
-        Issue(None, None, 'warning 1', SEVERITY_WARNING),
-        Issue(None, None, 'warning 2', SEVERITY_WARNING),
-    ]
-
-    result = filter_warnings(warnings, [], MODE_ERRORS)
-    assert result == []
 
 
 def test_filter_warnings_preserves_fields():
@@ -417,48 +386,35 @@ def test_filter_warnings_preserves_fields():
     assert result[0].stack_trace == 'trace'
 
 
-def test_partition_issues_empty():
-    """Returns empty lists for empty input."""
-    errors, warnings = partition_issues([])
-    assert errors == []
-    assert warnings == []
+#: ``(severities to build issues from, expected error count, expected warning
+#: count)``. The severity homogeneity of each partition is asserted on every row
+#: rather than only on the mixed one, since it is the property the split exists
+#: to produce.
+_PARTITION_CASES = [
+    ([], 0, 0),
+    ([SEVERITY_ERROR, SEVERITY_ERROR], 2, 0),
+    ([SEVERITY_WARNING, SEVERITY_WARNING], 0, 2),
+    ([SEVERITY_ERROR, SEVERITY_WARNING, SEVERITY_ERROR, SEVERITY_WARNING], 2, 2),
+]
+
+_PARTITION_IDS = ['no-issues', 'errors-only', 'warnings-only', 'mixed']
 
 
-def test_partition_issues_errors_only():
-    """Correctly partitions errors only."""
+@pytest.mark.parametrize(
+    'severities,expected_errors,expected_warnings', _PARTITION_CASES, ids=_PARTITION_IDS
+)
+def test_partition_issues(severities: list[str], expected_errors: int, expected_warnings: int):
     issues = [
-        Issue(None, None, 'error 1', SEVERITY_ERROR),
-        Issue(None, None, 'error 2', SEVERITY_ERROR),
+        Issue(None, None, f'issue {index}', severity)
+        for index, severity in enumerate(severities)
     ]
+
     errors, warnings = partition_issues(issues)
-    assert len(errors) == 2
-    assert len(warnings) == 0
 
-
-def test_partition_issues_warnings_only():
-    """Correctly partitions warnings only."""
-    issues = [
-        Issue(None, None, 'warning 1', SEVERITY_WARNING),
-        Issue(None, None, 'warning 2', SEVERITY_WARNING),
-    ]
-    errors, warnings = partition_issues(issues)
-    assert len(errors) == 0
-    assert len(warnings) == 2
-
-
-def test_partition_issues_mixed():
-    """Correctly partitions mixed issues."""
-    issues = [
-        Issue(None, None, 'error 1', SEVERITY_ERROR),
-        Issue(None, None, 'warning 1', SEVERITY_WARNING),
-        Issue(None, None, 'error 2', SEVERITY_ERROR),
-        Issue(None, None, 'warning 2', SEVERITY_WARNING),
-    ]
-    errors, warnings = partition_issues(issues)
-    assert len(errors) == 2
-    assert len(warnings) == 2
-    assert all(e.severity == SEVERITY_ERROR for e in errors)
-    assert all(w.severity == SEVERITY_WARNING for w in warnings)
+    assert len(errors) == expected_errors
+    assert len(warnings) == expected_warnings
+    assert all(issue.severity == SEVERITY_ERROR for issue in errors)
+    assert all(issue.severity == SEVERITY_WARNING for issue in warnings)
 
 
 def test_partition_issues_preserves_order():
@@ -524,41 +480,35 @@ def test_generate_summary_other_categories():
 # =============================================================================
 
 
-def test_strip_ansi_removes_color_codes():
-    """strip_ansi removes ANSI SGR colour codes, leaving plain text."""
-    # Arrange
-    colored = '\x1b[31mFAILED\x1b[0m tests/test_foo.py::test_bar'
+#: ``(text as read from a log, text after stripping)``. The last row is the
+#: matched control: text carrying no escape sequence must come back untouched,
+#: without which a stripper that mangled ordinary output would still pass.
+_STRIP_ANSI_CASES = [
+    (
+        '\x1b[31mFAILED\x1b[0m tests/test_foo.py::test_bar',
+        'FAILED tests/test_foo.py::test_bar',
+    ),
+    (
+        '\x1b[31m1 failed\x1b[0m, \x1b[32m10308 passed\x1b[0m in 42.00s',
+        '1 failed, 10308 passed in 42.00s',
+    ),
+    ('1 failed, 10308 passed in 42.00s', '1 failed, 10308 passed in 42.00s'),
+]
 
-    # Act
-    result = strip_ansi(colored)
+_STRIP_ANSI_IDS = [
+    'coloured-failure-line',
+    'coloured-summary-line',
+    'text-with-no-escape-sequences',
+]
 
-    # Assert
-    assert result == 'FAILED tests/test_foo.py::test_bar'
+
+@pytest.mark.parametrize('text,expected', _STRIP_ANSI_CASES, ids=_STRIP_ANSI_IDS)
+def test_strip_ansi(text: str, expected: str):
+    """strip_ansi removes ANSI SGR colour codes and leaves everything else alone."""
+    result = strip_ansi(text)
+
+    assert result == expected
     assert '\x1b' not in result
-
-
-def test_strip_ansi_removes_summary_line_color():
-    """strip_ansi cleans a colour-coded pytest summary line to plain text."""
-    # Arrange
-    colored = '\x1b[31m1 failed\x1b[0m, \x1b[32m10308 passed\x1b[0m in 42.00s'
-
-    # Act
-    result = strip_ansi(colored)
-
-    # Assert
-    assert result == '1 failed, 10308 passed in 42.00s'
-
-
-def test_strip_ansi_leaves_clean_text_unchanged():
-    """strip_ansi returns text without escape sequences unchanged."""
-    # Arrange
-    clean = '1 failed, 10308 passed in 42.00s'
-
-    # Act
-    result = strip_ansi(clean)
-
-    # Assert
-    assert result == clean
 
 
 def test_read_log_text_strips_ansi_from_file(tmp_path):

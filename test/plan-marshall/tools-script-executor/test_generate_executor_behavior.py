@@ -101,47 +101,43 @@ def _load_template_module() -> types.ModuleType:
 # =============================================================================
 
 
-def test_read_marshal_target_returns_declared_target(tmp_path):
-    """A marshal.json declaring runtime.target returns that target verbatim."""
-    plan_dir = tmp_path / '.plan'
-    plan_dir.mkdir()
-    (plan_dir / 'marshal.json').write_text('{"runtime": {"target": "opencode"}}', encoding='utf-8')
+@pytest.mark.parametrize(
+    ('marshal_body', 'expected_target'),
+    [
+        ('{"runtime": {"target": "opencode"}}', 'opencode'),
+        (None, 'claude'),
+        ('{not valid json', 'claude'),
+        ('{"other": {"target": "opencode"}}', 'claude'),
+        ('{"runtime": "opencode"}', 'claude'),
+    ],
+    ids=[
+        'declared-target-is-returned-verbatim',
+        'no-marshal-json-anywhere-up-the-tree',
+        'marshal-json-is-not-valid-json',
+        'no-runtime-key',
+        'runtime-is-a-scalar-not-a-mapping',
+    ],
+)
+def test_read_marshal_target(tmp_path, marshal_body, expected_target):
+    """A declared runtime.target is returned; every unusable shape reads 'claude'.
 
-    assert _gen.read_marshal_target(cwd=tmp_path) == 'opencode'
+    ``marshal_body`` of ``None`` writes no file at all, so the walk reaches the
+    filesystem root without a hit. The remaining defaulting rows are the ways a
+    file that DOES exist can fail to name a target: unparseable JSON, no
+    ``runtime`` key, and a ``runtime`` that is a scalar rather than a mapping.
+    The first row is their matched control — a reader that always answered
+    'claude' would fail on it rather than satisfy every defaulting row.
 
+    The scalar row's value is deliberately NOT 'claude': a scalar equal to the
+    fallback would let a reader that dropped the mapping check and returned the
+    scalar verbatim pass anyway.
+    """
+    if marshal_body is not None:
+        plan_dir = tmp_path / '.plan'
+        plan_dir.mkdir()
+        (plan_dir / 'marshal.json').write_text(marshal_body, encoding='utf-8')
 
-def test_read_marshal_target_defaults_to_claude_when_no_marshal(tmp_path):
-    """With no marshal.json anywhere up the tree, the target defaults to claude."""
-    # tmp_path has no .plan/marshal.json; the walk reaches the filesystem root
-    # without a hit and falls through to the documented default.
-    assert _gen.read_marshal_target(cwd=tmp_path) == 'claude'
-
-
-def test_read_marshal_target_defaults_to_claude_on_malformed_json(tmp_path):
-    """A marshal.json that is not valid JSON resolves to the claude default."""
-    plan_dir = tmp_path / '.plan'
-    plan_dir.mkdir()
-    (plan_dir / 'marshal.json').write_text('{not valid json', encoding='utf-8')
-
-    assert _gen.read_marshal_target(cwd=tmp_path) == 'claude'
-
-
-def test_read_marshal_target_defaults_when_runtime_key_missing(tmp_path):
-    """A marshal.json with no runtime.target key resolves to the claude default."""
-    plan_dir = tmp_path / '.plan'
-    plan_dir.mkdir()
-    (plan_dir / 'marshal.json').write_text('{"other": {"target": "opencode"}}', encoding='utf-8')
-
-    assert _gen.read_marshal_target(cwd=tmp_path) == 'claude'
-
-
-def test_read_marshal_target_defaults_when_runtime_not_dict(tmp_path):
-    """A marshal.json whose runtime is a scalar (not a mapping) defaults to claude."""
-    plan_dir = tmp_path / '.plan'
-    plan_dir.mkdir()
-    (plan_dir / 'marshal.json').write_text('{"runtime": "claude"}', encoding='utf-8')
-
-    assert _gen.read_marshal_target(cwd=tmp_path) == 'claude'
+    assert _gen.read_marshal_target(cwd=tmp_path) == expected_target
 
 
 # =============================================================================
@@ -447,7 +443,19 @@ def test_fail_open_guard_allows_zero_surfaces_against_empty_previous(tmp_path, m
     assert (plan_dir / 'execute-script.py').exists()
 
 
-@pytest.mark.parametrize('derived,reused', [(1, 0), (0, 1)])
+#: The two ways an emission can be non-empty, as ``(derived, reused)`` counts.
+#: The ids are stated rather than left to pytest: these rows are bare integers,
+#: so the generated ids would be the coordinate pairs ``1-0`` and ``0-1`` — which
+#: name the numbers rather than the emission each one stands for.
+_NON_EMPTY_EMISSIONS = [(1, 0), (0, 1)]
+
+_NON_EMPTY_EMISSION_IDS = [
+    'one-freshly-derived-surface',
+    'one-surface-reused-unchanged',
+]
+
+
+@pytest.mark.parametrize('derived,reused', _NON_EMPTY_EMISSIONS, ids=_NON_EMPTY_EMISSION_IDS)
 def test_fail_open_guard_does_not_trip_when_surfaces_are_emitted(tmp_path, monkeypatch, derived, reused, previous_surfaces):
     """Either a derived OR a reused surface is a non-empty emission → no false trip.
 

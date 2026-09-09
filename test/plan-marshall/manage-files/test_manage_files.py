@@ -340,23 +340,24 @@ def test_write_content_and_content_file_mutually_exclusive(plan_context, tmp_pat
 # =============================================================================
 
 
-def test_cli_missing_required_args(plan_context):
-    """Test that missing required args produces exit code 2 (argparse error)."""
-    result = run_script(SCRIPT_PATH, 'write', '--plan-id', 'test-plan')
-    # argparse exits with code 2 for missing required args (--file)
-    assert not result.success
+@pytest.mark.parametrize(
+    ('argv', 'expect_success'),
+    [
+        (('write', '--plan-id', 'test-plan'), False),
+        (('--help',), True),
+        (('write', '--help'), True),
+    ],
+    ids=[
+        'write-without-required-file-flag-is-rejected',
+        'top-level-help-exits-zero',
+        'subcommand-help-exits-zero',
+    ],
+)
+def test_cli_argv_exit_status(plan_context, argv, expect_success):
+    """Help exits zero at both levels; argparse rejects a command missing a required flag."""
+    result = run_script(SCRIPT_PATH, *argv)
 
-
-def test_cli_help_flag(plan_context):
-    """Test that --help produces exit code 0."""
-    result = run_script(SCRIPT_PATH, '--help')
-    assert result.success
-
-
-def test_cli_subcommand_help(plan_context):
-    """Test that subcommand --help produces exit code 0."""
-    result = run_script(SCRIPT_PATH, 'write', '--help')
-    assert result.success
+    assert result.success is expect_success
 
 
 # =============================================================================

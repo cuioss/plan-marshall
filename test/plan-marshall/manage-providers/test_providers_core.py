@@ -632,32 +632,32 @@ class TestApplyExtraPassthroughDenylist:
         assert config == {'org': 'acme'}
 
 
+_DECLARED_PROVIDER = {'skill_name': 'test-provider', 'display_name': 'Test', 'auth_type': 'token'}
+
+
 class TestLoadDeclaredProviders:
     """Tests for load_declared_providers()."""
 
-    def test_returns_empty_list_when_no_marshal_json(self, tmp_path, monkeypatch):
-        """Should return empty list when marshal.json does not exist."""
-        stage_marshal(tmp_path, monkeypatch, config=None)
-        providers = load_declared_providers()
-        assert providers == []
-
-    def test_returns_empty_list_when_no_providers_key(self, tmp_path, monkeypatch):
-        """Should return empty list when marshal.json has no providers key."""
-        stage_marshal(tmp_path, monkeypatch, {'other': 'data'})
-        providers = load_declared_providers()
-        assert providers == []
-
-    def test_returns_providers_from_marshal_json(self, tmp_path, monkeypatch):
-        """Should return providers list from marshal.json."""
-        config = {
-            'providers': [
-                {'skill_name': 'test-provider', 'display_name': 'Test', 'auth_type': 'token'},
-            ],
-        }
+    @pytest.mark.parametrize(
+        ('config', 'expected_providers'),
+        [
+            (None, []),
+            ({'other': 'data'}, []),
+            ({'providers': [_DECLARED_PROVIDER]}, [_DECLARED_PROVIDER]),
+        ],
+        ids=[
+            'a-missing-marshal-json-declares-nothing',
+            'a-marshal-json-without-a-providers-key-declares-nothing',
+            'a-declared-provider-comes-back-verbatim',
+        ],
+    )
+    def test_the_providers_key_is_returned_as_declared(
+        self, tmp_path, monkeypatch, config, expected_providers
+    ):
+        """The loader hands back the ``providers`` list, or an empty one when absent."""
         stage_marshal(tmp_path, monkeypatch, config)
-        providers = load_declared_providers()
-        assert len(providers) == 1
-        assert providers[0]['skill_name'] == 'test-provider'
+
+        assert load_declared_providers() == expected_providers
 
     def test_handles_invalid_json(self, tmp_path, monkeypatch):
         """Should return empty list on invalid JSON."""
@@ -823,48 +823,33 @@ class TestGetAuthenticatedClientBasic:
         (tmp_path / '.plan').mkdir()
         monkeypatch.setattr('_providers_core.CREDENTIALS_DIR', tmp_path / 'creds')
 
-    def test_empty_password_raises_naming_the_password(self, tmp_path, monkeypatch):
-        """An empty password raises ValueError naming the password field."""
-        self._stage(tmp_path, monkeypatch)
-        skill = 'test-basic-empty-password'
-        save_credential(
-            skill,
-            {'skill': skill, 'auth_type': 'basic', 'username': 'alice', 'password': ''},
-            'global',
-        )
+    @pytest.mark.parametrize(
+        ('credential_fields', 'expected_message'),
+        [
+            ({'username': 'alice', 'password': ''}, 'Password missing in credentials'),
+            ({'username': 'alice'}, 'Password missing in credentials'),
+            ({'username': '', 'password': 's3cret'}, 'Username missing in credentials'),
+        ],
+        ids=[
+            'an-empty-password-is-rejected-and-named',
+            'an-absent-password-key-reaches-the-same-guard',
+            'an-empty-username-is-rejected-and-named-first',
+        ],
+    )
+    def test_an_incomplete_basic_credential_names_the_field_it_is_missing(
+        self, tmp_path, monkeypatch, credential_fields, expected_message
+    ):
+        """Each missing half of a basic credential is refused up front, by name.
 
-        with pytest.raises(ValueError, match='Password missing in credentials'):
-            get_authenticated_client(skill)
-
-    def test_absent_password_key_raises_naming_the_password(self, tmp_path, monkeypatch):
-        """A credential with no ``password`` key at all takes the same path.
-
-        Distinct from the empty-string case: the value arrives from
-        ``credential.get('password', '')``, so an absent key and an empty value
-        reach the guard by different routes.
+        The empty-string and absent-key cases are distinct routes to one guard:
+        the value arrives from ``credential.get('password', '')``, so a key that
+        is absent and one that is empty reach it differently.
         """
         self._stage(tmp_path, monkeypatch)
-        skill = 'test-basic-no-password-key'
-        save_credential(
-            skill,
-            {'skill': skill, 'auth_type': 'basic', 'username': 'alice'},
-            'global',
-        )
+        skill = 'test-basic-incomplete'
+        save_credential(skill, {'skill': skill, 'auth_type': 'basic', **credential_fields}, 'global')
 
-        with pytest.raises(ValueError, match='Password missing in credentials'):
-            get_authenticated_client(skill)
-
-    def test_missing_username_still_names_the_username(self, tmp_path, monkeypatch):
-        """The pre-existing username guard is unchanged and still fires first."""
-        self._stage(tmp_path, monkeypatch)
-        skill = 'test-basic-no-username'
-        save_credential(
-            skill,
-            {'skill': skill, 'auth_type': 'basic', 'username': '', 'password': 's3cret'},
-            'global',
-        )
-
-        with pytest.raises(ValueError, match='Username missing in credentials'):
+        with pytest.raises(ValueError, match=expected_message):
             get_authenticated_client(skill)
 
     def test_complete_basic_credential_builds_authorization_header(self, tmp_path, monkeypatch):
@@ -1055,6 +1040,15 @@ class TestCombineAuthOutput:
         assert combine_auth_output(None, None) == ''
 
 
+#: The exit-code semantics the decision degrades to when the captured output
+#: carries no attributable account report. Shared by the three tests below that
+#: each drive a DIFFERENT marker-less output through the same fallback.
+_EXIT_CODE_FALLBACK_CASES = [
+    pytest.param(0, True, id='zero-exit'),
+    pytest.param(1, False, id='nonzero-exit'),
+]
+
+
 class TestSystemAuthSucceeded:
     """Tests for _system_auth_succeeded() — the shared active-account decision."""
 
@@ -1087,10 +1081,7 @@ class TestSystemAuthSucceeded:
         """Negative control: the ordinary single-healthy-account report succeeds."""
         assert _system_auth_succeeded(0, _HEALTHY_ACCOUNT_REPORT) is True
 
-    @pytest.mark.parametrize(
-        ('returncode', 'expected'),
-        [pytest.param(0, True, id='zero-exit'), pytest.param(1, False, id='nonzero-exit')],
-    )
+    @pytest.mark.parametrize(('returncode', 'expected'), _EXIT_CODE_FALLBACK_CASES)
     def test_output_without_account_block_falls_back_to_exit_code(self, returncode, expected):
         """Output carrying no ``Active account:`` marker defers to the exit code.
 
@@ -1100,18 +1091,12 @@ class TestSystemAuthSucceeded:
         """
         assert _system_auth_succeeded(returncode, 'Alice Example\n') is expected
 
-    @pytest.mark.parametrize(
-        ('returncode', 'expected'),
-        [pytest.param(0, True, id='zero-exit'), pytest.param(1, False, id='nonzero-exit')],
-    )
+    @pytest.mark.parametrize(('returncode', 'expected'), _EXIT_CODE_FALLBACK_CASES)
     def test_empty_output_falls_back_to_exit_code(self, returncode, expected):
         """Empty output carries no account report and defers to the exit code."""
         assert _system_auth_succeeded(returncode, '') is expected
 
-    @pytest.mark.parametrize(
-        ('returncode', 'expected'),
-        [pytest.param(0, True, id='zero-exit'), pytest.param(1, False, id='nonzero-exit')],
-    )
+    @pytest.mark.parametrize(('returncode', 'expected'), _EXIT_CODE_FALLBACK_CASES)
     def test_unattributable_active_marker_falls_back_to_exit_code(self, returncode, expected):
         """An active marker with no preceding account header is not attributable.
 

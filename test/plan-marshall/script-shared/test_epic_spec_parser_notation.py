@@ -76,21 +76,121 @@ def paths(entries) -> set[str]:
     return {entry.path for entry in entries}
 
 
-# --- fenced blocks -----------------------------------------------------------
+# --- which lines of a document are surface -----------------------------------
+#
+# The mask decides where a code block OPENS and CLOSES, and a block that closes
+# too early stops masking the lines after it. A ``#`` comment among those lines
+# then reads as a heading, the enclosing section is truncated there, and every
+# entry declared after it disappears — so the spec resolves to ``prose`` and the
+# disjointness gate reads a confident empty surface over a spec that declared
+# files. Each row below is one whole document, read for exactly that: what
+# survives the mask and the section bound, and what does not.
 
-
-def test_fenced_block_entries_are_ignored(repo: Path, plans: Path) -> None:
-    body = (
-        '# PLAN-121\n\n## Expected Surface\n\n'
+_SURFACE_CASES = [
+    (
+        'PLAN-121',
         '- Adds `test/theta/test_a.py`\n\n'
         '```text\n'
         '- Adds `test/never/test_b.py`\n'
+        '```\n',
+        {'test/theta/test_a.py'},
+    ),
+    # CommonMark closes only on a run AT LEAST AS LONG as the opener. A mask
+    # comparing only the fence CHARACTER ends the outer block at the first inner
+    # ``` — after which the ``#`` comment on the next line reads as a heading and
+    # truncates the section, dropping BOTH declared entries.
+    (
+        'PLAN-170',
+        '````text\n'
+        '# the files this spec expects to touch\n'
         '```\n'
-    )
+        '# an inner example, not the close of the outer block\n'
+        '```\n'
+        '````\n'
+        '- Adds `test/alpha/test_one.py`\n'
+        '- Adds `test/alpha/test_two.py`\n',
+        {'test/alpha/test_one.py', 'test/alpha/test_two.py'},
+    ),
+    # The matched partner of the run-length row above: the same truncation,
+    # reached through the indentation clause instead of the length clause. A
+    # four-column-indented delimiter is body text, not a close.
+    (
+        'PLAN-171',
+        '```text\n'
+        '# the files this spec expects to touch\n'
+        '    ```\n'
+        '# an indented delimiter is body text, not the close of this block\n'
+        '```\n'
+        '- Adds `test/alpha/test_one.py`\n'
+        '- Adds `test/alpha/test_two.py`\n',
+        {'test/alpha/test_one.py', 'test/alpha/test_two.py'},
+    ),
+    # Negative control for the two rows above: the close clauses still CLOSE.
+    # Without it, a mask that never closed at all would pass both while masking
+    # the rest of every document.
+    (
+        'PLAN-172',
+        '```text\n'
+        '- Adds `test/never/test_b.py`\n'
+        '```\n'
+        '- Adds `test/alpha/test_one.py`\n',
+        {'test/alpha/test_one.py'},
+    ),
+    # A backtick fence's info string may not itself contain a backtick, so this
+    # line is an ordinary paragraph — the shape a sentence takes when it opens
+    # with the fence marker and then quotes inline code. Reading it as an opener
+    # masks the remainder of the section and drops the entry after it.
+    (
+        'PLAN-173',
+        '``` see `x` for the marker\n- Adds `test/alpha/test_one.py`\n',
+        {'test/alpha/test_one.py'},
+    ),
+    # The top-level INDENTED block form of the same rule.
+    (
+        'PLAN-161',
+        '- Adds `test/alpha/test_one.py`\n\n'
+        'The notation this plan retires reads:\n\n'
+        '    - Adds `test/never/test_b.py`\n',
+        {'test/alpha/test_one.py'},
+    ),
+    # The control that keeps the indented-block rule from swallowing a nested
+    # list item: past the third column it is a bullet, not code.
+    (
+        'PLAN-163',
+        '- Adds `test/alpha/**`\n    - and `test/alpha/test_nested.py`\n',
+        {'test/alpha/**', 'test/alpha/test_nested.py'},
+    ),
+    # The section bound: a later heading ends the body, so an entry named under
+    # it belongs to that section rather than to this one.
+    (
+        'PLAN-123',
+        '- Adds `test/kappa/test_a.py`\n\n## Notes\n\n- Mentions `test/outside/test_b.py`\n',
+        {'test/kappa/test_a.py'},
+    ),
+]
 
-    claim = claim_for(plans, repo, 'PLAN-121.md', body)
+_SURFACE_IDS = [
+    'a-fenced-sample-declares-nothing',
+    'a-shorter-inner-run-does-not-close-a-longer-fence',
+    'an-over-indented-delimiter-does-not-close-a-fence',
+    'a-matching-run-does-close-the-fence',
+    'a-fence-marker-with-a-backtick-info-string-opens-nothing',
+    'an-indented-sample-declares-nothing',
+    'a-nested-list-item-is-a-bullet-not-code',
+    'the-section-body-stops-at-the-next-heading',
+]
 
-    assert paths(claim.claimed) == {'test/theta/test_a.py'}
+
+@pytest.mark.parametrize('plan_id,section_body,expected', _SURFACE_CASES, ids=_SURFACE_IDS)
+def test_only_the_declared_entries_resolve(
+    repo: Path, plans: Path, plan_id: str, section_body: str, expected: set[str]
+) -> None:
+    body = f'# {plan_id}\n\n## Expected Surface\n\n{section_body}'
+
+    claim = claim_for(plans, repo, f'{plan_id}.md', body)
+
+    assert paths(claim.claimed) == expected
+    assert claim.spec_class == spec_parser.CLASS_DECLARATIVE
 
 
 def test_fenced_derived_sample_does_not_override_the_declarative_verdict(
@@ -110,121 +210,6 @@ def test_fenced_derived_sample_does_not_override_the_declarative_verdict(
     assert 'DERIVED' not in claim.evidence
 
 
-# --- where a fenced block ENDS -----------------------------------------------
-#
-# The mask decides where a block CLOSES, and a block that closes too early stops
-# masking the lines after it. A ``#`` comment among those lines then reads as a
-# heading, the enclosing section is truncated there, and every entry declared
-# after it disappears — so the spec resolves to ``prose`` and the disjointness
-# gate reads a confident empty surface over a spec that declared files. Each
-# case below is a matched pair: a positive control that the declared entries DO
-# resolve past the example, and the fence shape that would swallow them.
-
-
-def test_a_three_backtick_example_does_not_close_a_four_backtick_block(
-    repo: Path, plans: Path
-) -> None:
-    """CommonMark closes only on a run AT LEAST AS LONG as the opener.
-
-    A mask comparing only the fence CHARACTER ends the outer block at the first
-    inner ``` — after which the ``#`` comment on the next line reads as a heading
-    and truncates the section, dropping BOTH declared entries.
-    """
-    body = (
-        '# PLAN-170\n\n## Expected Surface\n\n'
-        '````text\n'
-        '# the files this spec expects to touch\n'
-        '```\n'
-        '# an inner example, not the close of the outer block\n'
-        '```\n'
-        '````\n'
-        '- Adds `test/alpha/test_one.py`\n'
-        '- Adds `test/alpha/test_two.py`\n'
-    )
-
-    claim = claim_for(plans, repo, 'PLAN-170.md', body)
-
-    assert paths(claim.claimed) == {'test/alpha/test_one.py', 'test/alpha/test_two.py'}
-    assert claim.spec_class == spec_parser.CLASS_DECLARATIVE
-
-
-def test_an_over_indented_delimiter_does_not_close_a_block(repo: Path, plans: Path) -> None:
-    """A four-column-indented delimiter is body text, not a close.
-
-    The matched partner of the run-length case above: the same truncation,
-    reached through the indentation clause instead of the length clause.
-    """
-    body = (
-        '# PLAN-171\n\n## Expected Surface\n\n'
-        '```text\n'
-        '# the files this spec expects to touch\n'
-        '    ```\n'
-        '# an indented delimiter is body text, not the close of this block\n'
-        '```\n'
-        '- Adds `test/alpha/test_one.py`\n'
-        '- Adds `test/alpha/test_two.py`\n'
-    )
-
-    claim = claim_for(plans, repo, 'PLAN-171.md', body)
-
-    assert paths(claim.claimed) == {'test/alpha/test_one.py', 'test/alpha/test_two.py'}
-
-
-def test_a_matching_run_does_close_the_block(repo: Path, plans: Path) -> None:
-    """Negative control: the close clauses still CLOSE.
-
-    Without this, a mask that never closed at all would pass both cases above
-    while masking the rest of every document.
-    """
-    body = (
-        '# PLAN-172\n\n## Expected Surface\n\n'
-        '```text\n'
-        '- Adds `test/never/test_b.py`\n'
-        '```\n'
-        '- Adds `test/alpha/test_one.py`\n'
-    )
-
-    claim = claim_for(plans, repo, 'PLAN-172.md', body)
-
-    assert paths(claim.claimed) == {'test/alpha/test_one.py'}
-
-
-def test_a_backtick_fence_whose_info_string_carries_a_backtick_opens_nothing(
-    repo: Path, plans: Path
-) -> None:
-    """A backtick fence's info string may not itself contain a backtick.
-
-    The line is an ordinary paragraph — the shape a sentence takes when it opens
-    with the fence marker and then quotes inline code. Reading it as an opener
-    masks the remainder of the section and drops the entries after it.
-    """
-    body = (
-        '# PLAN-173\n\n## Expected Surface\n\n'
-        '``` see `x` for the marker\n'
-        '- Adds `test/alpha/test_one.py`\n'
-    )
-
-    claim = claim_for(plans, repo, 'PLAN-173.md', body)
-
-    assert paths(claim.claimed) == {'test/alpha/test_one.py'}
-
-
-# --- indented blocks ---------------------------------------------------------
-
-
-def test_indented_code_sample_is_not_harvested_as_a_bullet(repo: Path, plans: Path) -> None:
-    body = (
-        '# PLAN-161\n\n## Expected Surface\n\n'
-        '- Adds `test/alpha/test_one.py`\n\n'
-        'The notation this plan retires reads:\n\n'
-        '    - Adds `test/never/test_b.py`\n'
-    )
-
-    claim = claim_for(plans, repo, 'PLAN-161.md', body)
-
-    assert paths(claim.claimed) == {'test/alpha/test_one.py'}
-
-
 def test_indented_derived_sample_does_not_override_the_declarative_verdict(
     repo: Path, plans: Path
 ) -> None:
@@ -238,20 +223,6 @@ def test_indented_derived_sample_does_not_override_the_declarative_verdict(
     claim = claim_for(plans, repo, 'PLAN-162.md', body)
 
     assert claim.spec_class == spec_parser.CLASS_DECLARATIVE
-
-
-def test_nested_list_item_past_the_third_column_is_a_bullet_not_code(
-    repo: Path, plans: Path
-) -> None:
-    body = (
-        '# PLAN-163\n\n## Expected Surface\n\n'
-        '- Adds `test/alpha/**`\n'
-        '    - and `test/alpha/test_nested.py`\n'
-    )
-
-    claim = claim_for(plans, repo, 'PLAN-163.md', body)
-
-    assert paths(claim.claimed) == {'test/alpha/**', 'test/alpha/test_nested.py'}
 
 
 # --- corpus notation tolerances ----------------------------------------------
@@ -352,19 +323,6 @@ def test_a_near_miss_heading_is_not_the_addressed_section(repo: Path, plans: Pat
 
     with pytest.raises(spec_parser.UnclassifiableSpecError):
         spec_parser.classify_spec(path, repo)
-
-
-def test_section_body_stops_at_the_next_heading(repo: Path, plans: Path) -> None:
-    body = (
-        '# PLAN-123\n\n## Expected Surface\n\n'
-        '- Adds `test/kappa/test_a.py`\n\n'
-        '## Notes\n\n'
-        '- Mentions `test/outside/test_b.py`\n'
-    )
-
-    claim = claim_for(plans, repo, 'PLAN-123.md', body)
-
-    assert paths(claim.claimed) == {'test/kappa/test_a.py'}
 
 
 # --- plan-id notation --------------------------------------------------------

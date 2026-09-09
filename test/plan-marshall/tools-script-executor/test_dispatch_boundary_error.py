@@ -75,12 +75,74 @@ def executor_with_mock_log_entry():
     return executor, mock_log_entry
 
 
-def test_emit_records_script_internal_failure_for_exit_code_1(executor_with_mock_log_entry):
+# Stderr as a real argparse rejection renders it — multi-line, which is also what
+# makes it the natural input for the single-line collapse assertion below.
+ARGPARSE_STDERR = (
+    'usage: manage-files.py [-h] ...\n'
+    'manage-files.py: error: unrecognized arguments: --bogus'
+)
+
+
+@pytest.mark.parametrize(
+    ('exit_code', 'stderr', 'expected_failure_kind'),
+    [
+        (1, DEFAULT_STDERR, 'script_internal_failure'),
+        (42, DEFAULT_STDERR, 'script_internal_failure'),
+        (2, ARGPARSE_STDERR, 'argparse_rejection'),
+    ],
+    ids=[
+        'exit-1-script-internal-failure',
+        'exit-42-script-internal-failure',
+        'exit-2-argparse-rejection',
+    ],
+)
+def test_emit_records_one_entry_carrying_the_classified_failure_kind(
+    executor_with_mock_log_entry, exit_code, stderr, expected_failure_kind
+):
+    """A non-zero exit lands exactly one entry naming its classified failure kind.
+
+    Exit 2 is Python's argparse convention for a parse failure; every other
+    non-zero code is a script-internal failure. 42 is here so the internal-failure
+    branch cannot be passing on a hard-coded ``== 1``.
     """
-    Exit code 1 lands a single ``log_entry`` call with
-    ``failure_kind=script_internal_failure`` and the notation embedded
-    verbatim into the message.
-    """
+    executor, mock_log_entry = executor_with_mock_log_entry
+
+    executor.emit_dispatch_failure_work_log(
+        notation=TEST_NOTATION,
+        exit_code=exit_code,
+        stdout='',
+        stderr=stderr,
+        script_args=['read', '--plan-id', DEFAULT_PLAN_ID, '--file', 'foo.json'],
+        audit_plan_id=None,
+    )
+
+    assert mock_log_entry.call_count == 1, (
+        f'Expected exactly one log_entry call for exit_code={exit_code}, '
+        f'got {mock_log_entry.call_count}'
+    )
+
+    positional = mock_log_entry.call_args.args
+    assert positional[0] == 'work', f"Expected log_type='work', got {positional[0]!r}"
+    assert positional[1] == DEFAULT_PLAN_ID, (
+        f'Expected plan_id={DEFAULT_PLAN_ID!r}, got {positional[1]!r}'
+    )
+    assert positional[2] == 'ERROR', f"Expected level='ERROR', got {positional[2]!r}"
+
+    message = positional[3]
+    assert f'[ERROR] (plan-marshall:execute-script:{exit_code})' in message, (
+        f'Caller-prefix line did not embed exit code {exit_code} in tag: {message!r}'
+    )
+    assert f'notation={TEST_NOTATION}' in message, f'Notation missing from message: {message!r}'
+    assert f'exit_code={exit_code}' in message, (
+        f'exit_code={exit_code} missing from message: {message!r}'
+    )
+    assert f'failure_kind={expected_failure_kind}' in message, (
+        f'Expected failure_kind={expected_failure_kind} in: {message!r}'
+    )
+
+
+def test_emit_detail_falls_back_to_stderr_when_stdout_is_empty(executor_with_mock_log_entry):
+    """With empty stdout the detail field is taken from stderr (precedence 3)."""
     executor, mock_log_entry = executor_with_mock_log_entry
 
     executor.emit_dispatch_failure_work_log(
@@ -92,99 +154,32 @@ def test_emit_records_script_internal_failure_for_exit_code_1(executor_with_mock
         audit_plan_id=None,
     )
 
-    assert mock_log_entry.call_count == 1, (
-        f'Expected exactly one log_entry call for exit_code=1, got {mock_log_entry.call_count}'
-    )
-
-    call_args = mock_log_entry.call_args
-    positional = call_args.args
-    assert positional[0] == 'work', f"Expected log_type='work', got {positional[0]!r}"
-    assert positional[1] == DEFAULT_PLAN_ID, f"Expected plan_id={DEFAULT_PLAN_ID!r}, got {positional[1]!r}"
-    assert positional[2] == 'ERROR', f"Expected level='ERROR', got {positional[2]!r}"
-
-    message = positional[3]
-    assert '[ERROR] (plan-marshall:execute-script:1)' in message, (
-        f'Caller-prefix line did not embed exit code 1 in tag: {message!r}'
-    )
-    assert f'notation={TEST_NOTATION}' in message, f'Notation missing from message: {message!r}'
-    assert 'exit_code=1' in message, f'exit_code=1 missing from message: {message!r}'
-    assert 'failure_kind=script_internal_failure' in message, (
-        f'Expected failure_kind=script_internal_failure in: {message!r}'
-    )
-    # With empty stdout, the detail field falls back to stderr (precedence 3).
-    assert f'detail={DEFAULT_STDERR}' in message, f'stderr-derived detail missing from message: {message!r}'
-
-
-def test_emit_records_script_internal_failure_for_unusual_exit_code(executor_with_mock_log_entry):
-    """
-    Any non-zero exit code that is NOT 2 maps to
-    ``script_internal_failure``. Picks 42 as a representative non-1
-    non-2 value to make sure the branch is not hard-coded to ``== 1``.
-    """
-    executor, mock_log_entry = executor_with_mock_log_entry
-
-    executor.emit_dispatch_failure_work_log(
-        notation=TEST_NOTATION,
-        exit_code=42,
-        stdout='',
-        stderr=DEFAULT_STDERR,
-        script_args=['--plan-id', DEFAULT_PLAN_ID],
-        audit_plan_id=None,
-    )
-
-    assert mock_log_entry.call_count == 1
     message = mock_log_entry.call_args.args[3]
-    assert 'exit_code=42' in message, f'exit_code=42 missing from: {message!r}'
-    assert 'failure_kind=script_internal_failure' in message, (
-        f'Unusual exit codes must still map to script_internal_failure: {message!r}'
-    )
-    assert '[ERROR] (plan-marshall:execute-script:42)' in message, (
-        f'Caller-prefix line did not embed exit code 42: {message!r}'
+    assert f'detail={DEFAULT_STDERR}' in message, (
+        f'stderr-derived detail missing from message: {message!r}'
     )
 
 
-def test_emit_records_argparse_rejection_for_exit_code_2(executor_with_mock_log_entry):
-    """
-    Exit code 2 — Python's argparse convention for parse failures — maps
-    to ``failure_kind=argparse_rejection`` and lands a single
-    ``log_entry`` call with the canonical message shape.
+def test_emit_collapses_a_multi_line_stderr_into_a_single_line_entry(
+    executor_with_mock_log_entry,
+):
+    """work.log is line-oriented, so the captured stderr's newlines are collapsed.
+
+    Driven with a real multi-line argparse rejection, which is the shape that
+    actually carries newlines into the boundary.
     """
     executor, mock_log_entry = executor_with_mock_log_entry
-
-    argparse_stderr = (
-        "usage: manage-files.py [-h] ...\n"
-        "manage-files.py: error: unrecognized arguments: --bogus"
-    )
 
     executor.emit_dispatch_failure_work_log(
         notation=TEST_NOTATION,
         exit_code=2,
         stdout='',
-        stderr=argparse_stderr,
+        stderr=ARGPARSE_STDERR,
         script_args=['read', '--plan-id', DEFAULT_PLAN_ID, '--bogus'],
         audit_plan_id=None,
     )
 
-    assert mock_log_entry.call_count == 1, (
-        f'Expected exactly one log_entry call for exit_code=2, got {mock_log_entry.call_count}'
-    )
-
-    positional = mock_log_entry.call_args.args
-    assert positional[0] == 'work'
-    assert positional[1] == DEFAULT_PLAN_ID
-    assert positional[2] == 'ERROR'
-
-    message = positional[3]
-    assert 'exit_code=2' in message, f'exit_code=2 missing from message: {message!r}'
-    assert 'failure_kind=argparse_rejection' in message, (
-        f'Exit code 2 must classify as argparse_rejection: {message!r}'
-    )
-    assert '[ERROR] (plan-marshall:execute-script:2)' in message, (
-        f'Caller-prefix line did not embed exit code 2: {message!r}'
-    )
-    # Newlines in the captured stderr must be collapsed so the work.log
-    # entry stays single-line — this is part of the boundary's contract
-    # and the most natural place to assert it.
+    message = mock_log_entry.call_args.args[3]
     assert '\n' not in message, (
         f'Boundary message must be single-line; embedded newline found: {message!r}'
     )
@@ -711,50 +706,41 @@ def test_walk_steps_over_a_routing_flag_value_and_reaches_the_leaf(
     )
 
 
-def test_walk_does_not_step_over_a_bare_switch(executor_with_mock_log_entry):
-    """A zero-arity flag consumes nothing, so the next token IS the verb."""
+@pytest.mark.parametrize(
+    ('argv', 'expected_flags'),
+    [
+        (['--verbose', 'plan', 'get'], ['verbose']),
+        (['--project-dir=/x', 'plan', 'get'], ['project-dir']),
+        (['--project-dir', '--verbose', 'plan', 'get'], ['project-dir', 'verbose']),
+    ],
+    ids=[
+        'bare-switch-consumes-no-token',
+        'equals-joined-flag-binds-no-token',
+        'arity-1-flag-never-binds-a-following-flag',
+    ],
+)
+def test_walk_reaches_the_leaf_across_every_flag_spelling(
+    executor_with_mock_log_entry, argv, expected_flags
+):
+    """Each flag spelling consumes exactly its own tokens and no verb behind it.
+
+    A zero-arity switch consumes nothing; an ``=``-joined flag carries its value
+    inside the token; and declared arity does not override argparse's own "a flag
+    ends a value" rule. Getting any of the three wrong swallows a verb, so each
+    case is asserted on the RESOLVED CHAIN and the accepted flag set rather than
+    on the spawn/refuse verdict, which a wrong-but-accepting node would hide.
+    """
     executor, _mock = executor_with_mock_log_entry
 
     resolution, rejection = executor._resolve_invocation(
-        'test:skill:script', _ROOT_WITH_ROUTING_FLAGS, ['--verbose', 'plan', 'get']
+        'test:skill:script', _ROOT_WITH_ROUTING_FLAGS, argv
     )
 
-    assert rejection is None
+    assert rejection is None, rejection
     assert resolution['chain'] == ['plan', 'get'], (
-        f'a bare switch consumed the verb behind it; got {resolution["chain"]!r}'
+        f'a flag consumed the verb path behind it; got {resolution["chain"]!r}'
     )
-
-
-def test_walk_treats_an_equals_joined_flag_as_binding_no_token(
-    executor_with_mock_log_entry,
-):
-    executor, _mock = executor_with_mock_log_entry
-
-    resolution, _rejection = executor._resolve_invocation(
-        'test:skill:script', _ROOT_WITH_ROUTING_FLAGS, ['--project-dir=/x', 'plan', 'get']
-    )
-
-    assert resolution['chain'] == ['plan', 'get']
-    assert resolution['flags'] == ['project-dir']
-
-
-def test_walk_never_binds_a_following_flag_token_as_a_value(
-    executor_with_mock_log_entry,
-):
-    """Declared arity does not override argparse's own "a flag ends a value" rule."""
-    executor, _mock = executor_with_mock_log_entry
-
-    resolution, _rejection = executor._resolve_invocation(
-        'test:skill:script',
-        _ROOT_WITH_ROUTING_FLAGS,
-        ['--project-dir', '--verbose', 'plan', 'get'],
-    )
-
-    assert resolution['chain'] == ['plan', 'get'], (
-        f'an arity-1 flag consumed the FLAG that followed it and then lost the '
-        f'verb path; got {resolution["chain"]!r}'
-    )
-    assert resolution['flags'] == ['project-dir', 'verbose']
+    assert resolution['flags'] == expected_flags
 
 
 def test_walk_abandons_when_an_unknown_arity_flag_precedes_a_verb(

@@ -185,6 +185,29 @@ def _stub_hook_stdin(monkeypatch, payload: dict[str, Any]) -> None:
     monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(payload)))
 
 
+#: The renderer's two delivery channels, as ``statusline=`` values. They reach
+#: the host by different routes — the statusLine footer takes plain text, the
+#: hook envelope takes JSON on stdout — so a no-op that leaked bytes into one of
+#: them would be invisible to a test that only drove the other. Every no-op
+#: parametrized over this pair therefore asserts silence on BOTH.
+_RENDER_MODES = [True, False]
+
+_RENDER_MODE_IDS = ['statusline-mode', 'hook-mode']
+
+#: Stdin bodies the hook-mode parse must survive without raising. The four cover
+#: the distinct ways the payload can fail to be a hook event: nothing was piped,
+#: only whitespace was, the bytes are not JSON at all, and the bytes ARE valid
+#: JSON but decode to a list rather than the object the parse indexes into.
+_BAD_STDIN = ["", "   ", "not-json{", "[1, 2, 3]"]
+
+_BAD_STDIN_IDS = [
+    'nothing-piped',
+    'whitespace-only',
+    'not-json-at-all',
+    'valid-json-but-not-an-object',
+]
+
+
 class TestSessionTeardown:
     """Tests for the activation-gated ``session teardown`` operation.
 
@@ -467,25 +490,37 @@ class TestSessionRenderTitleStatusline:
         # 🔒 is the lock-owned glyph (owned by the D12 composer).
         assert captured == "➤ \U0001f512 pm:5-execute:locked-task"
 
-    def test_statusline_missing_session_id_writes_nothing(self, rt, monkeypatch, capsys):
-        """statusline noop: missing $CLAUDE_CODE_SESSION_ID — nothing written to stdout, empty return."""
+    @pytest.mark.parametrize("statusline", _RENDER_MODES, ids=_RENDER_MODE_IDS)
+    def test_missing_session_id_writes_nothing(self, statusline, rt, monkeypatch, capsys):
+        """An absent ``$CLAUDE_CODE_SESSION_ID`` is a silent no-op on both channels.
+
+        The empty RETURN is load-bearing on the statusLine channel specifically:
+        the caller prints whatever comes back, so a TOON noop row would be
+        painted into the statusLine slot itself. On the hook channel the same
+        empty return keeps a TOON tail off the host-parsed stdout.
+        """
         monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
         capsys.readouterr()
-        # statusline noop returns empty string (NOT a TOON noop) so the
-        # caller's print(result) does not paint a noop envelope into the
-        # statusLine slot.
-        assert rt.session_render_title(statusline=True) == ""
+
+        assert rt.session_render_title(statusline=statusline) == ""
         assert capsys.readouterr().out == ""
 
-    def test_statusline_no_active_plan_writes_nothing(self, rt, monkeypatch, capsys, session_cache_base):
-        """statusline noop: session has no registered plan — nothing written to stdout, empty return."""
+    @pytest.mark.parametrize("statusline", _RENDER_MODES, ids=_RENDER_MODE_IDS)
+    def test_no_active_plan_writes_nothing(
+        self, statusline, rt, monkeypatch, capsys, session_cache_base
+    ):
+        """A session that maps to no plan is a silent no-op on both channels."""
         monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-without-plan")
         capsys.readouterr()
-        assert rt.session_render_title(statusline=True) == ""
+
+        assert rt.session_render_title(statusline=statusline) == ""
         assert capsys.readouterr().out == ""
 
-    def test_statusline_missing_status_json_writes_nothing(self, rt, tmp_path, monkeypatch, capsys, session_cache_base):
-        """statusline noop: session resolves to plan but status.json is missing — empty return."""
+    @pytest.mark.parametrize("statusline", _RENDER_MODES, ids=_RENDER_MODE_IDS)
+    def test_missing_status_json_writes_nothing(
+        self, statusline, rt, tmp_path, monkeypatch, capsys, session_cache_base
+    ):
+        """A resolved plan whose ``status.json`` is absent is a no-op on both channels."""
         import claude_runtime as _cr
 
         session_id = "sess-no-status"
@@ -499,39 +534,7 @@ class TestSessionRenderTitleStatusline:
         monkeypatch.chdir(tmp_path)
 
         capsys.readouterr()
-        assert rt.session_render_title(statusline=True) == ""
-        assert capsys.readouterr().out == ""
-
-    def test_hook_mode_missing_session_id_writes_nothing(self, rt, monkeypatch, capsys):
-        """Hook mode noop (missing session id): empty stdout, empty return — host-parser contract requires absolute silence."""
-        monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
-        capsys.readouterr()
-        assert rt.session_render_title(statusline=False) == ""
-        assert capsys.readouterr().out == ""
-
-    def test_hook_mode_no_active_plan_writes_nothing(self, rt, monkeypatch, capsys, session_cache_base):
-        """Hook mode noop (no plan mapping): empty stdout, empty return."""
-        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-no-plan-mapping")
-        capsys.readouterr()
-        assert rt.session_render_title(statusline=False) == ""
-        assert capsys.readouterr().out == ""
-
-    def test_hook_mode_missing_status_json_writes_nothing(self, rt, tmp_path, monkeypatch, capsys, session_cache_base):
-        """Hook mode noop (status.json missing): empty stdout, empty return."""
-        import claude_runtime as _cr
-
-        session_id = "sess-no-status-json"
-        plan_id = "plan-no-status"
-        cache_dir = tmp_path / "sessions" / session_id
-        cache_dir.mkdir(parents=True)
-        (cache_dir / "active-plan").write_text(plan_id, encoding="utf-8")
-
-        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
-        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", session_id)
-        monkeypatch.chdir(tmp_path)
-
-        capsys.readouterr()
-        assert rt.session_render_title(statusline=False) == ""
+        assert rt.session_render_title(statusline=statusline) == ""
         assert capsys.readouterr().out == ""
 
     def test_hook_mode_empty_current_phase_writes_nothing(self, rt, tmp_path, monkeypatch, capsys):
@@ -898,6 +901,36 @@ class TestSessionRenderTitle:
 # =============================================================================
 
 
+#: ``(stdin hook payload, the icon the composer must resolve for it)``. The
+#: palette is EVENT-driven, and the rows are ordered so that fact is readable:
+#: the two ``PreToolUse`` rows differ only in the tool (a question asks, any
+#: other tool is busy), while the two ``PostToolUse`` rows carry those same two
+#: tools and both return to the active arrow — so the pairing shows the tool
+#: matters only on the way IN. ``Notification`` asks like a question does,
+#: ``Stop`` is the one done state, and ``SessionStart`` opens on active.
+_ICON_CASES = [
+    ({"hook_event_name": "UserPromptSubmit"}, "➤"),
+    ({"hook_event_name": "Notification"}, "?"),
+    ({"hook_event_name": "PreToolUse", "tool_name": "AskUserQuestion"}, "?"),
+    ({"hook_event_name": "PreToolUse", "tool_name": "Bash"}, "⚙"),
+    ({"hook_event_name": "PostToolUse", "tool_name": "AskUserQuestion"}, "➤"),
+    ({"hook_event_name": "PostToolUse", "tool_name": "Bash"}, "➤"),
+    ({"hook_event_name": "Stop"}, "✓"),
+    ({"hook_event_name": "SessionStart"}, "➤"),
+]
+
+_ICON_IDS = [
+    'user-prompt-submit-is-active',
+    'notification-asks',
+    'pre-tool-use-question-asks',
+    'pre-tool-use-other-tool-is-busy',
+    'post-tool-use-question-returns-to-active',
+    'post-tool-use-other-tool-returns-to-active',
+    'stop-is-done',
+    'session-start-is-active',
+]
+
+
 class TestSessionRenderTitleStateAwareIcon:
     """Tests for hook-mode session_render_title icon selection driven by stdin payload.
 
@@ -919,17 +952,7 @@ class TestSessionRenderTitleStateAwareIcon:
         return f"pm:{current_phase}:{short_description}"
 
     @pytest.mark.parametrize(
-        ("payload", "expected_icon"),
-        [
-            ({"hook_event_name": "UserPromptSubmit"}, "➤"),
-            ({"hook_event_name": "Notification"}, "?"),
-            ({"hook_event_name": "PreToolUse", "tool_name": "AskUserQuestion"}, "?"),
-            ({"hook_event_name": "PreToolUse", "tool_name": "Bash"}, "⚙"),
-            ({"hook_event_name": "PostToolUse", "tool_name": "AskUserQuestion"}, "➤"),
-            ({"hook_event_name": "PostToolUse", "tool_name": "Bash"}, "➤"),
-            ({"hook_event_name": "Stop"}, "✓"),
-            ({"hook_event_name": "SessionStart"}, "➤"),
-        ],
+        ("payload", "expected_icon"), _ICON_CASES, ids=_ICON_IDS
     )
     def test_hook_mode_icon_from_stdin_payload(
         self, payload, expected_icon, rt, tmp_path, monkeypatch, capsys
@@ -948,7 +971,7 @@ class TestSessionRenderTitleStateAwareIcon:
         envelope = json.loads(captured)
         assert envelope["terminalSequence"] == f"\x1b]0;{expected_icon} {body}\x07"
 
-    @pytest.mark.parametrize("stdin_text", ["", "   ", "not-json{", "[1, 2, 3]"])
+    @pytest.mark.parametrize("stdin_text", _BAD_STDIN, ids=_BAD_STDIN_IDS)
     def test_hook_mode_defensive_default_on_bad_stdin(
         self, stdin_text, rt, tmp_path, monkeypatch, capsys
     ):
@@ -1148,7 +1171,11 @@ class TestSessionRenderTitleSessionTitleEmit:
         assert "➤" not in envelope["hookSpecificOutput"]["sessionTitle"]
         assert envelope["hookSpecificOutput"]["hookEventName"] == "UserPromptSubmit"
 
-    @pytest.mark.parametrize("source", ["startup", "resume"])
+    @pytest.mark.parametrize(
+        "source",
+        ["startup", "resume"],
+        ids=['session-start-startup', 'session-start-resume'],
+    )
     def test_session_start_startup_or_resume_emits_session_title(
         self, source, rt, tmp_path, monkeypatch, capsys
     ):
@@ -1203,7 +1230,13 @@ class TestSessionRenderTitleSessionTitleEmit:
             {"hook_event_name": "Notification"},
             {"hook_event_name": "Stop"},
             {"hook_event_name": "PostToolUse", "tool_name": "Bash"},
-            {"hook_event_name": "SessionStart"},  # SessionStart with NO source
+            {"hook_event_name": "SessionStart"},
+        ],
+        ids=[
+            'notification',
+            'stop',
+            'post-tool-use',
+            'session-start-carrying-no-source',
         ],
     )
     def test_non_supporting_events_omit_session_title(
@@ -1226,7 +1259,7 @@ class TestSessionRenderTitleSessionTitleEmit:
         # No stray sessionTitle.
         assert "hookSpecificOutput" not in envelope
 
-    @pytest.mark.parametrize("stdin_text", ["", "   ", "not-json{", "[1, 2, 3]"])
+    @pytest.mark.parametrize("stdin_text", _BAD_STDIN, ids=_BAD_STDIN_IDS)
     def test_malformed_stdin_omits_session_title_but_still_emits_terminal_sequence(
         self, stdin_text, rt, tmp_path, monkeypatch, capsys
     ):

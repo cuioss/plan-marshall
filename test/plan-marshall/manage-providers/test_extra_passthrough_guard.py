@@ -14,6 +14,7 @@ commands for the same inputs.
 """
 
 import _providers_core
+import pytest
 
 from conftest import load_script_module
 
@@ -26,14 +27,62 @@ SECRET_PLACEHOLDERS = _providers_core.SECRET_PLACEHOLDERS
 # === Direct guard behaviour ===
 
 
-def test_secret_keys_are_rejected():
-    """A key naming any secret field is dropped, never written to the config."""
-    config: dict = {}
-    applied = apply_extra_passthrough(
-        config, ['token=leak', 'username=admin', 'password=hunter2']
-    )
-    assert applied == []
-    assert config == {}
+#: ``(initial_config, pairs, expected_applied, expected_config)`` per case. The
+#: initial config is COPIED into each test so a case row is never mutated by the
+#: run that consumes it.
+_PASSTHROUGH_CASES = [
+    ({}, ['token=leak', 'username=admin', 'password=hunter2'], [], {}),
+    ({}, ['Token=leak', 'TOKEN=leak', 'Password=hunter2', 'UserName=admin'], [], {}),
+    (
+        {},
+        ['organization=acme', 'project_key=acme_proj'],
+        ['organization', 'project_key'],
+        {'organization': 'acme', 'project_key': 'acme_proj'},
+    ),
+    ({}, ['=novalue', '   =spaces', 'region=eu'], ['region'], {'region': 'eu'}),
+    ({}, ['  region  =eu'], ['region'], {'region': 'eu'}),
+    ({}, ['noseparator', 'region=eu'], ['region'], {'region': 'eu'}),
+    ({}, ['filter=a=b=c'], ['filter'], {'filter': 'a=b=c'}),
+    ({}, ['region=eu', 'region=us'], ['region'], {'region': 'us'}),
+    (
+        {'url': 'https://example', 'organization': 'old'},
+        ['organization=new', 'project_key=p'],
+        ['organization', 'project_key'],
+        {'url': 'https://example', 'organization': 'new', 'project_key': 'p'},
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ('initial_config', 'pairs', 'expected_applied', 'expected_config'),
+    _PASSTHROUGH_CASES,
+    ids=[
+        'every-secret-named-key-is-dropped',
+        'a-mixed-case-secret-key-is-dropped-too',
+        'benign-keys-are-written-in-the-order-supplied',
+        'empty-and-whitespace-only-keys-are-skipped',
+        'a-padded-key-is-stored-in-its-stripped-form',
+        'an-entry-without-an-equals-sign-is-ignored',
+        'only-the-first-equals-splits-key-from-value',
+        'a-repeated-key-is-reported-once-and-the-last-value-wins',
+        'pre-existing-config-keys-survive-untouched',
+    ],
+)
+def test_the_guard_reports_the_keys_it_accepted_and_writes_exactly_those(
+    initial_config, pairs, expected_applied, expected_config
+):
+    """The returned key list and the resulting config agree on what got through.
+
+    Case-insensitivity is part of the denylist rather than a separate contract:
+    the key is lowered before the membership check, so ``Token`` can no more
+    reach ``marshal.json`` than ``token`` can (CWE-178).
+    """
+    config: dict = dict(initial_config)
+
+    applied = apply_extra_passthrough(config, pairs)
+
+    assert applied == expected_applied
+    assert config == expected_config
 
 
 def test_each_secret_placeholder_key_is_rejected():
@@ -43,81 +92,6 @@ def test_each_secret_placeholder_key_is_rejected():
         applied = apply_extra_passthrough(config, [f'{secret_key}=value'])
         assert applied == [], f'{secret_key} should be rejected'
         assert secret_key not in config
-
-
-def test_secret_keys_are_rejected_case_insensitively():
-    """A capital/mixed-case variant of a secret key is rejected too (CWE-178).
-
-    The denylist normalizes the key with ``.lower()`` before the membership
-    check, so ``Token`` / ``TOKEN`` / ``Password`` can never bypass the guard
-    and persist a secret into the git-tracked ``marshal.json``.
-    """
-    config: dict = {}
-    applied = apply_extra_passthrough(
-        config, ['Token=leak', 'TOKEN=leak', 'Password=hunter2', 'UserName=admin']
-    )
-    assert applied == []
-    assert config == {}
-
-
-def test_benign_keys_are_applied_in_order():
-    """Non-secret keys are written and returned in supplied order."""
-    config: dict = {}
-    applied = apply_extra_passthrough(config, ['organization=acme', 'project_key=acme_proj'])
-    assert applied == ['organization', 'project_key']
-    assert config == {'organization': 'acme', 'project_key': 'acme_proj'}
-
-
-def test_empty_and_whitespace_only_keys_are_skipped():
-    """A whitespace-only key collapses to empty and is skipped."""
-    config: dict = {}
-    applied = apply_extra_passthrough(config, ['=novalue', '   =spaces', 'region=eu'])
-    assert applied == ['region']
-    assert config == {'region': 'eu'}
-
-
-def test_keys_are_whitespace_stripped():
-    """Surrounding whitespace is stripped from the key before it is stored."""
-    config: dict = {}
-    applied = apply_extra_passthrough(config, ['  region  =eu'])
-    assert applied == ['region']
-    assert config == {'region': 'eu'}
-
-
-def test_pairs_without_equals_are_skipped():
-    """An entry lacking ``=`` is ignored entirely."""
-    config: dict = {}
-    applied = apply_extra_passthrough(config, ['noseparator', 'region=eu'])
-    assert applied == ['region']
-    assert config == {'region': 'eu'}
-
-
-def test_value_may_contain_equals():
-    """Only the first ``=`` splits key from value; the value keeps the rest."""
-    config: dict = {}
-    applied = apply_extra_passthrough(config, ['filter=a=b=c'])
-    assert applied == ['filter']
-    assert config == {'filter': 'a=b=c'}
-
-
-def test_duplicate_keys_are_deduped_last_value_wins():
-    """A repeated key appears once in the returned list; the last value wins."""
-    config: dict = {}
-    applied = apply_extra_passthrough(config, ['region=eu', 'region=us'])
-    assert applied == ['region']
-    assert config == {'region': 'us'}
-
-
-def test_existing_config_keys_are_preserved():
-    """Pre-existing keys not named by --extra survive untouched."""
-    config: dict = {'url': 'https://example', 'organization': 'old'}
-    applied = apply_extra_passthrough(config, ['organization=new', 'project_key=p'])
-    assert applied == ['organization', 'project_key']
-    assert config == {
-        'url': 'https://example',
-        'organization': 'new',
-        'project_key': 'p',
-    }
 
 
 # === configure-command call shape ===

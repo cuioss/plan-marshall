@@ -261,72 +261,57 @@ def test_min_confidence_floor_is_a_float_in_unit_interval():
 # =============================================================================
 
 
-def test_load_registry_returns_empty_when_helper_missing(monkeypatch):
-    """When the discovery helper cannot be imported, ``[]`` is returned."""
-    real_import = builtins.__import__
+#: Sentinel for the row where the discovery helper cannot be imported at all —
+#: distinct from a helper that imports and then misbehaves.
+_HELPER_MISSING = object()
 
-    def _fake_import(name, *args, **kwargs):
-        if name == '_cmd_skill_resolution':
-            raise ImportError('simulated absence of _cmd_skill_resolution')
-        return real_import(name, *args, **kwargs)
-
-    monkeypatch.setattr(builtins, '__import__', _fake_import)
-    assert load_registry() == []
+#: The one well-formed discovery return, so the pass-through row can assert
+#: identity rather than a re-stated literal.
+_DISCOVERED_RECIPES = [{'key': 'doc-verify', 'name': 'Verify Documentation'}]
 
 
-def test_load_registry_tolerates_discovery_exception(monkeypatch):
-    """A discovery-helper exception is swallowed into an empty registry."""
-    real_import = builtins.__import__
+def _raising_discover():
+    raise OSError('simulated registry read failure')
 
-    def _raising_discover():
-        raise OSError('simulated registry read failure')
 
+#: ``(what ``_discover_all_recipes`` does, the registry loaded)``. Every failure
+#: shape degrades to the empty list; the last row is the matched control that a
+#: well-formed return is passed through rather than swallowed with the rest.
+_LOAD_REGISTRY_CASES = [
+    (_HELPER_MISSING, []),
+    (_raising_discover, []),
+    (lambda: {'not': 'a list'}, []),
+    (lambda: _DISCOVERED_RECIPES, _DISCOVERED_RECIPES),
+]
+
+_LOAD_REGISTRY_IDS = [
+    'the-helper-cannot-be-imported',
+    'discovery-raises',
+    'discovery-returns-a-non-list',
+    'discovery-returns-a-well-formed-list',
+]
+
+
+@pytest.mark.parametrize('discover,expected', _LOAD_REGISTRY_CASES, ids=_LOAD_REGISTRY_IDS)
+def test_load_registry(monkeypatch, discover, expected):
     import types
 
-    fake_mod = types.ModuleType('_cmd_skill_resolution')
-    fake_mod._discover_all_recipes = _raising_discover
+    real_import = builtins.__import__
+    fake_mod = None
+    if discover is not _HELPER_MISSING:
+        fake_mod = types.ModuleType('_cmd_skill_resolution')
+        fake_mod._discover_all_recipes = discover
+
     def _fake_import(name, *args, **kwargs):
         if name == '_cmd_skill_resolution':
+            if fake_mod is None:
+                raise ImportError('simulated absence of _cmd_skill_resolution')
             return fake_mod
         return real_import(name, *args, **kwargs)
 
     monkeypatch.setattr(builtins, '__import__', _fake_import)
-    assert load_registry() == []
 
-
-def test_load_registry_coerces_non_list_to_empty(monkeypatch):
-    """A non-list discovery return is normalized to an empty list."""
-    import types
-
-    fake_mod = types.ModuleType('_cmd_skill_resolution')
-    fake_mod._discover_all_recipes = lambda: {'not': 'a list'}
-    real_import = builtins.__import__
-
-    def _fake_import(name, *args, **kwargs):
-        if name == '_cmd_skill_resolution':
-            return fake_mod
-        return real_import(name, *args, **kwargs)
-
-    monkeypatch.setattr(builtins, '__import__', _fake_import)
-    assert load_registry() == []
-
-
-def test_load_registry_returns_discovered_list(monkeypatch):
-    """A well-formed discovery return is passed through verbatim."""
-    import types
-
-    recipes = [{'key': 'doc-verify', 'name': 'Verify Documentation'}]
-    fake_mod = types.ModuleType('_cmd_skill_resolution')
-    fake_mod._discover_all_recipes = lambda: recipes
-    real_import = builtins.__import__
-
-    def _fake_import(name, *args, **kwargs):
-        if name == '_cmd_skill_resolution':
-            return fake_mod
-        return real_import(name, *args, **kwargs)
-
-    monkeypatch.setattr(builtins, '__import__', _fake_import)
-    assert load_registry() == recipes
+    assert load_registry() == expected
 
 
 # =============================================================================
@@ -401,12 +386,19 @@ _REQ_TERMINAL_TITLE = (
     'current title-handling surface and refactor it toward coherence.'
 )
 
-_SURGICAL_MATCH_REQUESTS = (
-    _REQ_CHECK_ERA_STAMPS,
-    _REQ_GET_DELIVERABLE,
-    _REQ_MANIFEST_ORDER,
-    _REQ_SAFE_MERGE,
-)
+#: The real archived requests, keyed by the id each carries in the test report.
+#: Both tables below derive their ids from THIS mapping rather than zipping a
+#: parallel list on by position: the requests are multi-paragraph strings pytest
+#: cannot name on its own, and an id list drawn from anywhere else would silently
+#: relabel every row the moment this order moves.
+_SURGICAL_MATCH_REQUESTS_BY_ID = {
+    'check-era-stamps': _REQ_CHECK_ERA_STAMPS,
+    'get-deliverable': _REQ_GET_DELIVERABLE,
+    'manifest-order': _REQ_MANIFEST_ORDER,
+    'safe-merge': _REQ_SAFE_MERGE,
+}
+
+_SURGICAL_MATCH_REQUESTS = tuple(_SURGICAL_MATCH_REQUESTS_BY_ID.values())
 
 _SURGICAL_RECIPE = {
     'key': 'surgical-fix',
@@ -421,62 +413,77 @@ _SURGICAL_RECIPE = {
 # --- _score_prediagnosed_shape (pure) ----------------------------------------
 
 
-@pytest.mark.parametrize('request_text', _SURGICAL_MATCH_REQUESTS)
-def test_shape_strong_for_prediagnosed_surgical_requests(request_text):
-    """Each real pre-diagnosed surgical request scores the strong shape band."""
-    assert _score_prediagnosed_shape(request_text) == 0.75
+#: ``(narrative, shape band)`` — every band the shape arm can award. The four
+#: strong rows are the REAL archived requests; the veto row is the broad
+#: structural-review request; the zero rows are the shapes that must not score
+#: at all (no narrative, and a stated root cause carrying no path / notation /
+#: CLI / fenced anchor); and the two middle rows separate a generic root cause
+#: from an explicit exact-change marker.
+_SHAPE_BAND_CASES = [
+    *((request, 0.75) for request in _SURGICAL_MATCH_REQUESTS),
+    (_REQ_TERMINAL_TITLE, 0.0),
+    ('', 0.0),
+    (None, 0.0),
+    (
+        'The root cause is a stale cache; the exact change is known but no anchor is named here.',
+        0.0,
+    ),
+    ('The root cause lives in marketplace/pkg/module.py and needs a small tweak.', 0.45),
+    ('Exact change: patch marketplace/pkg/module.py to add the missing guard.', 0.6),
+]
+
+_SHAPE_BAND_IDS = [
+    *(f'real-request-{key}' for key in _SURGICAL_MATCH_REQUESTS_BY_ID),
+    'a-broad-structural-review-request-is-vetoed',
+    'an-empty-narrative',
+    'no-narrative-at-all',
+    'a-root-cause-with-no-concrete-anchor',
+    'a-generic-root-cause-plus-an-anchor',
+    'an-exact-change-marker-without-the-root-cause-phrase',
+]
 
 
-def test_shape_vetoed_for_broad_structural_review_request():
-    """A structural-review / consolidation request is vetoed to zero shape."""
-    assert _score_prediagnosed_shape(_REQ_TERMINAL_TITLE) == 0.0
-
-
-def test_shape_zero_for_empty_or_none():
-    """Empty / None narrative yields a zero shape (no raise)."""
-    assert _score_prediagnosed_shape('') == 0.0
-    assert _score_prediagnosed_shape(None) == 0.0
-
-
-def test_shape_zero_without_concrete_anchor():
-    """A stated root cause with NO file/notation/CLI/fence anchor scores zero."""
-    narrative = 'The root cause is a stale cache; the exact change is known but no anchor is named here.'
-    # No path (``x.y``), no ``manage-*`` notation, no fenced block, no CLI call.
-    assert _score_prediagnosed_shape(narrative) == 0.0
-
-
-def test_shape_floor_band_root_cause_plus_anchor_only():
-    """A generic root cause + anchor (no exact-change marker) clears only the floor."""
-    narrative = 'The root cause lives in marketplace/pkg/module.py and needs a small tweak.'
-    assert _score_prediagnosed_shape(narrative) == 0.45
-
-
-def test_shape_auto_route_band_exact_change_without_root_cause_phrase():
-    """An exact-change marker + anchor (no literal 'root cause') sits at the auto-route band."""
-    narrative = 'Exact change: patch marketplace/pkg/module.py to add the missing guard.'
-    assert _score_prediagnosed_shape(narrative) == 0.6
+@pytest.mark.parametrize('narrative,expected', _SHAPE_BAND_CASES, ids=_SHAPE_BAND_IDS)
+def test_score_prediagnosed_shape(narrative, expected):
+    assert _score_prediagnosed_shape(narrative) == expected
 
 
 # --- _is_surgical_fix_recipe -------------------------------------------------
 
 
-def test_is_surgical_fix_recipe_matches_identity_variants():
-    """The surgical-fix identity resolves across skill / name / key spellings."""
-    assert _is_surgical_fix_recipe({'name': 'recipe-surgical-fix'})
-    assert _is_surgical_fix_recipe({'skill': 'plan-marshall:recipe-surgical-fix'})
-    assert _is_surgical_fix_recipe({'key': 'surgical-fix'})
+#: ``(recipe, is it the surgical-fix recipe?)``. The identity resolves from any
+#: of the three spellings a registry entry can carry; the two negatives keep the
+#: match from widening to every recipe.
+_SURGICAL_IDENTITY_CASES = [
+    ({'name': 'recipe-surgical-fix'}, True),
+    ({'skill': 'plan-marshall:recipe-surgical-fix'}, True),
+    ({'key': 'surgical-fix'}, True),
+    (_DOC_RECIPE, False),
+    ({'name': 'recipe-simplify-codebase'}, False),
+]
+
+_SURGICAL_IDENTITY_IDS = [
+    'by-name',
+    'by-skill-notation',
+    'by-key',
+    'a-documentation-recipe',
+    'another-recipe-whose-name-starts-with-recipe',
+]
 
 
-def test_is_surgical_fix_recipe_false_for_other_recipes():
-    """A non-surgical recipe identity is not treated as surgical-fix."""
-    assert not _is_surgical_fix_recipe(_DOC_RECIPE)
-    assert not _is_surgical_fix_recipe({'name': 'recipe-simplify-codebase'})
+@pytest.mark.parametrize(
+    'recipe,expected', _SURGICAL_IDENTITY_CASES, ids=_SURGICAL_IDENTITY_IDS
+)
+def test_is_surgical_fix_recipe(recipe: dict, expected: bool):
+    assert bool(_is_surgical_fix_recipe(recipe)) is expected
 
 
 # --- score_recipe SHAPE blend (surgical-fix only) ----------------------------
 
 
-@pytest.mark.parametrize('request_text', _SURGICAL_MATCH_REQUESTS)
+@pytest.mark.parametrize(
+    'request_text', _SURGICAL_MATCH_REQUESTS, ids=list(_SURGICAL_MATCH_REQUESTS_BY_ID)
+)
 def test_score_recipe_shape_lifts_surgical_fix_above_auto_route(request_text):
     """The shape arm lifts surgical-fix confidence to the strong band for real requests.
 

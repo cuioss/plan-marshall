@@ -8,6 +8,7 @@ both permission_doctor and permission_fix scripts.
 
 import json
 
+import pytest
 from permission_common import (
     EXIT_SUCCESS,
     get_project_settings_path,
@@ -34,23 +35,35 @@ class TestLoadSettings:
         assert error is None
         assert data['permissions']['allow'] == ['Bash(git:*)']
 
-    def test_load_none_path(self):
-        data, error = load_settings(None)
-        assert error == 'No settings path provided'
-        assert data == {}
+    @pytest.mark.parametrize(
+        ('filename', 'content', 'expected_error_fragment'),
+        [
+            (None, None, 'No settings path provided'),
+            ('nonexistent.json', None, 'not found'),
+            ('bad.json', 'not valid json {{{', 'Invalid JSON'),
+        ],
+        ids=[
+            'no-path-supplied-at-all',
+            'path-naming-a-file-that-does-not-exist',
+            'file-present-but-not-valid-json',
+        ],
+    )
+    def test_unusable_source_yields_empty_data_and_an_error_naming_why(
+        self, tmp_path, filename, content, expected_error_fragment
+    ):
+        """A ``None`` filename means no path is supplied; a ``None`` content means none is written.
 
-    def test_load_missing_file(self, tmp_path):
-        data, error = load_settings(str(tmp_path / 'nonexistent.json'))
-        assert 'not found' in error
-        assert data == {}
+        Every unusable source returns the same empty dict, so the error string is
+        the only thing that tells the caller which of them it hit.
+        """
+        path = None if filename is None else tmp_path / filename
+        if content is not None:
+            path.write_text(content)
 
-    def test_load_invalid_json(self, tmp_path):
-        settings_file = tmp_path / 'bad.json'
-        settings_file.write_text('not valid json {{{')
+        data, error = load_settings(None if path is None else str(path))
 
-        data, error = load_settings(str(settings_file))
-        assert 'Invalid JSON' in error
         assert data == {}
+        assert expected_error_fragment in error
 
     def test_load_adds_missing_permission_keys(self, tmp_path):
         """Settings without permissions key should get defaults added."""
@@ -153,17 +166,26 @@ class TestProjectSettingsReadPreference:
         monkeypatch.chdir(tmp_path)
         return claude_dir
 
-    def test_prefers_settings_local_json_when_present(self, tmp_path, monkeypatch):
-        claude_dir = self._project(tmp_path, monkeypatch, 'settings.local.json', 'settings.json')
-        assert get_project_settings_path() == claude_dir / 'settings.local.json'
+    @pytest.mark.parametrize(
+        ('present_files', 'expected_name'),
+        [
+            (('settings.local.json', 'settings.json'), 'settings.local.json'),
+            (('settings.local.json',), 'settings.local.json'),
+            (('settings.json',), 'settings.json'),
+        ],
+        ids=[
+            'both-files-present-prefers-the-local-one',
+            'only-the-local-file-is-present',
+            'only-the-shared-file-is-present',
+        ],
+    )
+    def test_read_path_prefers_settings_local_json(
+        self, tmp_path, monkeypatch, present_files, expected_name
+    ):
+        """Which files exist in .claude/ decides which one the read path names."""
+        claude_dir = self._project(tmp_path, monkeypatch, *present_files)
 
-    def test_reads_settings_local_json_when_it_is_the_only_one(self, tmp_path, monkeypatch):
-        claude_dir = self._project(tmp_path, monkeypatch, 'settings.local.json')
-        assert get_project_settings_path() == claude_dir / 'settings.local.json'
-
-    def test_falls_back_to_settings_json(self, tmp_path, monkeypatch):
-        claude_dir = self._project(tmp_path, monkeypatch, 'settings.json')
-        assert get_project_settings_path() == claude_dir / 'settings.json'
+        assert get_project_settings_path() == claude_dir / expected_name
 
     def test_names_settings_json_when_neither_file_exists(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
@@ -190,20 +212,25 @@ class TestResolveScopeToPaths:
         assert local_path is None
         assert '.claude/settings.json' in global_path
 
-    def test_project_scope(self):
-        global_path, local_path = resolve_scope_to_paths('project')
-        assert global_path is None
-        assert local_path is not None
+    @pytest.mark.parametrize(
+        ('scope', 'has_global', 'has_local'),
+        [
+            ('project', False, True),
+            ('both', True, True),
+            ('invalid', False, False),
+        ],
+        ids=[
+            'project-resolves-only-the-local-path',
+            'both-resolves-both-paths',
+            'an-unrecognised-scope-resolves-neither',
+        ],
+    )
+    def test_scope_selects_which_paths_resolve(self, scope, has_global, has_local):
+        """The ``global`` scope is pinned separately above, where the path SHAPE is asserted too."""
+        global_path, local_path = resolve_scope_to_paths(scope)
 
-    def test_both_scope(self):
-        global_path, local_path = resolve_scope_to_paths('both')
-        assert global_path is not None
-        assert local_path is not None
-
-    def test_invalid_scope(self):
-        global_path, local_path = resolve_scope_to_paths('invalid')
-        assert global_path is None
-        assert local_path is None
+        assert (global_path is not None) is has_global
+        assert (local_path is not None) is has_local
 
     def test_declining_runtime_yields_none_paths(self, monkeypatch):
         """A runtime that declines path resolution yields (None, None).

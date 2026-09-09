@@ -23,6 +23,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 import claude_runtime
 import permission_common
 import platform_runtime
@@ -428,6 +430,37 @@ class TestOpenCodePermissionsHonestNoop:
 # =============================================================================
 
 
+#: Placeholder the write-dispatch rows carry where a real marshal path belongs.
+#: The path is only known once ``tmp_path`` exists, so the row states the SLOT and
+#: the test substitutes it — keeping the table plain data rather than a callable.
+_MARSHAL_SLOT = "{marshal}"
+
+#: The argv of every write op, as the router receives it. Only the command line
+#: varies: each row drives a different write op through the public dispatch
+#: surface against the SAME malformed settings file, so the fail-closed rule is
+#: shown to be a property of the write path rather than of one op that happens to
+#: check. The ``ensure-steps`` row reads a marshal as well, which is why the slot
+#: exists — its marshal is valid, so the settings guard is what refuses.
+_WRITE_DISPATCH_ARGV = [
+    ["permission", "configure", "--scope", "project",
+     "--permissions", '{"kind":"path","tool":"Read","path":"**"}'],
+    ["permission", "fix", "--scope", "project", "--operation", "add",
+     "--permissions", '{"kind":"path","tool":"Read","path":"**"}'],
+    ["permission", "ensure-wildcards", "--scope", "project",
+     "--marketplace-dir", "marketplace/"],
+    ["permission", "ensure-steps", "--marshal", _MARSHAL_SLOT, "--scope", "project"],
+    ["permission", "web-apply", "--scope", "project", "--add", '["example.com"]'],
+]
+
+_WRITE_DISPATCH_IDS = [
+    'configure',
+    'fix',
+    'ensure-wildcards',
+    'ensure-steps',
+    'web-apply',
+]
+
+
 class TestFailClosedDispatchRegression:
     """Drive the fail-closed write/audit paths end-to-end through ``platform_runtime.main``.
 
@@ -462,68 +495,21 @@ class TestFailClosedDispatchRegression:
         assert rc == 0
         return _parse(capsys.readouterr().out)
 
-    def test_configure_write_fails_closed_via_dispatch(self, tmp_path, monkeypatch, capsys) -> None:
-        claude_dir = self._claude_project(tmp_path, monkeypatch)
-        settings = self._malformed_project_settings(claude_dir)
-        before = settings.read_bytes()
-        parsed = self._run(
-            capsys, ["permission", "configure", "--scope", "project", "--permissions", '{"kind":"path","tool":"Read","path":"**"}']
-        )
-        assert parsed["status"] == "error"
-        assert parsed["error"] == "invalid_settings"
-        assert settings.read_bytes() == before
-
-    def test_fix_write_fails_closed_via_dispatch(self, tmp_path, monkeypatch, capsys) -> None:
-        claude_dir = self._claude_project(tmp_path, monkeypatch)
-        settings = self._malformed_project_settings(claude_dir)
-        before = settings.read_bytes()
-        parsed = self._run(
-            capsys,
-            ["permission", "fix", "--scope", "project", "--operation", "add", "--permissions", '{"kind":"path","tool":"Read","path":"**"}'],
-        )
-        assert parsed["status"] == "error"
-        assert parsed["error"] == "invalid_settings"
-        assert settings.read_bytes() == before
-
-    def test_ensure_wildcards_write_fails_closed_via_dispatch(
-        self, tmp_path, monkeypatch, capsys
+    @pytest.mark.parametrize("argv", _WRITE_DISPATCH_ARGV, ids=_WRITE_DISPATCH_IDS)
+    def test_a_write_op_fails_closed_via_dispatch(
+        self, tmp_path, monkeypatch, capsys, argv: list[str]
     ) -> None:
+        """Every write op refuses a malformed settings file and leaves its bytes alone."""
         claude_dir = self._claude_project(tmp_path, monkeypatch)
         settings = self._malformed_project_settings(claude_dir)
         before = settings.read_bytes()
-        parsed = self._run(
-            capsys,
-            ["permission", "ensure-wildcards", "--scope", "project", "--marketplace-dir", "marketplace/"],
-        )
-        assert parsed["status"] == "error"
-        assert parsed["error"] == "invalid_settings"
-        assert settings.read_bytes() == before
-
-    def test_ensure_steps_write_fails_closed_via_dispatch(
-        self, tmp_path, monkeypatch, capsys
-    ) -> None:
-        claude_dir = self._claude_project(tmp_path, monkeypatch)
-        settings = self._malformed_project_settings(claude_dir)
-        before = settings.read_bytes()
-        # A VALID marshal so the marshal guard passes and the settings guard fires.
+        # A VALID marshal, so the marshal guard passes on the row that reads one
+        # and the SETTINGS guard is the thing under test on every row alike.
         marshal = tmp_path / "valid-marshal.json"
         marshal.write_text(json.dumps({"plan": {}}), encoding="utf-8")
-        parsed = self._run(
-            capsys,
-            ["permission", "ensure-steps", "--marshal", str(marshal), "--scope", "project"],
-        )
-        assert parsed["status"] == "error"
-        assert parsed["error"] == "invalid_settings"
-        assert settings.read_bytes() == before
 
-    def test_web_apply_write_fails_closed_via_dispatch(self, tmp_path, monkeypatch, capsys) -> None:
-        claude_dir = self._claude_project(tmp_path, monkeypatch)
-        settings = self._malformed_project_settings(claude_dir)
-        before = settings.read_bytes()
-        parsed = self._run(
-            capsys,
-            ["permission", "web-apply", "--scope", "project", "--add", json.dumps(["example.com"])],
-        )
+        parsed = self._run(capsys, [str(marshal) if a == _MARSHAL_SLOT else a for a in argv])
+
         assert parsed["status"] == "error"
         assert parsed["error"] == "invalid_settings"
         assert settings.read_bytes() == before

@@ -22,6 +22,7 @@ the six unmapped commands got there, with only ``clean`` ever explained.
 """
 
 import _build_examined as examined
+import pytest
 from _extension_constants import ALL_CANONICAL_COMMANDS
 
 
@@ -231,42 +232,68 @@ class TestMapsArePopulationDerived:
             assert reason.strip(), command
 
 
+#: ``(analyses examined, tests executed, expected reason)``. The first row is the
+#: matched positive control: the SAME helper, on a population that can clear
+#: something, declines to refuse — without it a helper that always named a cause
+#: would satisfy every refusal row below.
+_REFUSAL_REASON_CASES = [
+    (examined.examined_analyses('quality-gate'), 0, None),
+    (None, None, 'population_unknown'),
+    (frozenset(), 0, 'population_empty'),
+    # Reachable over the function's declared domain (an arbitrary analysis set),
+    # which is what makes this a live branch rather than dead code: a future
+    # analysis kind with no finding type mapped to it lands here.
+    (frozenset({'provenance-audit'}), 0, 'no_analysis_reaches_a_finding_type'),
+]
+
+_REFUSAL_REASON_IDS = [
+    'something-is-clearable-so-there-is-no-refusal',
+    'population-unknown',
+    'population-measured-but-empty',
+    'analysis-reaches-no-finding-type',
+]
+
+
 class TestRefusalReasonNamesItsCause:
     """Every refusal path is reachable and reports a distinct cause."""
 
-    def test_no_reason_when_something_is_clearable(self):
-        analyses = examined.examined_analyses('quality-gate')
-        assert examined.refusal_reason(analyses, 0) is None
+    @pytest.mark.parametrize(
+        'analyses,tests_run,expected_reason',
+        _REFUSAL_REASON_CASES,
+        ids=_REFUSAL_REASON_IDS,
+    )
+    def test_the_refusal_reason_names_its_cause(self, analyses, tests_run, expected_reason):
+        assert examined.refusal_reason(analyses, tests_run) == expected_reason
 
-    def test_unknown_population(self):
-        assert examined.refusal_reason(None, None) == 'population_unknown'
 
-    def test_measured_empty_population(self):
-        assert examined.refusal_reason(frozenset(), 0) == 'population_empty'
+#: ``(analyses examined, tests executed, fragments the label must carry)``. The
+#: unknown row asserts the WORD rather than a zero in both halves of the label,
+#: which is the distinction the label exists to publish.
+_POPULATION_LABEL_CASES = [
+    (None, None, ['analyses examined: unknown', 'unknown test(s) executed']),
+    (
+        examined.examined_analyses('verify'),
+        2750,
+        ['compile, lint, test', '2750 test(s) executed'],
+    ),
+    (frozenset(), 0, ['analyses examined: none']),
+]
 
-    def test_analysis_that_reaches_no_finding_type(self):
-        # Reachable over the function's declared domain (an arbitrary analysis
-        # set), which is what makes this a live branch rather than dead code: a
-        # future analysis kind with no finding type mapped to it lands here.
-        assert (
-            examined.refusal_reason(frozenset({'provenance-audit'}), 0)
-            == 'no_analysis_reaches_a_finding_type'
-        )
+_POPULATION_LABEL_IDS = [
+    'unknown-population-and-unknown-count',
+    'measured-population-with-a-measured-count',
+    'measured-but-empty-analysis-set',
+]
 
 
 class TestPopulationLabelPublishesWhatWasExamined:
     """The label is stamped into every resolution detail, so it must be legible."""
 
-    def test_unknown_renders_as_the_word_not_as_a_zero(self):
-        label = examined.population_label(None, None)
-        assert 'analyses examined: unknown' in label
-        assert 'unknown test(s) executed' in label
+    @pytest.mark.parametrize(
+        'analyses,tests_run,fragments', _POPULATION_LABEL_CASES, ids=_POPULATION_LABEL_IDS
+    )
+    def test_the_label_renders_the_population_it_was_given(self, analyses, tests_run, fragments):
+        label = examined.population_label(analyses, tests_run)
 
-    def test_measured_population_renders_its_members_and_count(self):
-        analyses = examined.examined_analyses('verify')
-        label = examined.population_label(analyses, 2750)
-        assert 'compile, lint, test' in label
-        assert '2750 test(s) executed' in label
-
-    def test_measured_empty_analysis_set_renders_as_none(self):
-        assert 'analyses examined: none' in examined.population_label(frozenset(), 0)
+        for fragment in fragments:
+            assert fragment in label, label

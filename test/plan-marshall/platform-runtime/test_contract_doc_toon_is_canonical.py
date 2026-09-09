@@ -87,10 +87,17 @@ def _cases() -> list[tuple[str, int, str]]:
     return cases
 
 
+#: Collected once at import. The scan walks every standards document, so calling
+#: ``_cases()`` a second time to build the ids would read the whole directory
+#: again — and, worse, would let the parameter list and the id list come from two
+#: separate scans that could disagree if a file changed between them.
+_CASES = _cases()
+
+
 @pytest.mark.parametrize(
     ("doc_name", "lineno", "block"),
-    _cases(),
-    ids=[f"{doc}-L{line}" for doc, line, _ in _cases()],
+    _CASES,
+    ids=[f"{doc}-L{line}" for doc, line, _ in _CASES],
 )
 def test_documented_toon_block_is_what_the_serializer_emits(
     doc_name: str, lineno: int, block: str

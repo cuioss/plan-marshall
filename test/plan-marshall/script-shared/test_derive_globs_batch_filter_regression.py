@@ -26,6 +26,7 @@ helper.
 import subprocess
 from pathlib import Path
 
+import pytest
 from extension_base import (
     ROLE_CONFIG,
     ROLE_PRODUCTION,
@@ -102,13 +103,34 @@ def test_derive_globs_keeps_live_routes_across_both_regimes(tmp_path):
     ]
 
 
-def test_derive_globs_prunes_dead_path_bearing_route(tmp_path):
-    """The ``vendor/*.py`` route is pruned — no tracked vendor file matches it."""
-    _git_init_and_track(tmp_path, _FIXTURE_TREE)
+#: ``(tracked corpus, route, whether the route survives the prune)`` — one row
+#: per glob regime, each driven against the corpus that isolates it:
+#:
+#: * the dead path-bearing route, pruned because no ``vendor/`` file is tracked;
+#: * the bare-basename route, retained on a basename match several segments deep,
+#:   which a full-path-only matcher would prune as dead;
+#: * the path-bearing route, retained because its single ``*`` spans the
+#:   ``targets/`` segment under fnmatch semantics.
+_ROUTE_SURVIVAL_CASES = [
+    (_FIXTURE_TREE, ('vendor/*.py', 'production'), False),
+    (['nifi-cuioss-ui/package.json'], ('package.json', 'config'), True),
+    (['marketplace/targets/generate.py'], ('marketplace/*.py', 'production'), True),
+]
+
+_ROUTE_SURVIVAL_IDS = [
+    'dead-path-bearing-route-is-pruned',
+    'bare-basename-route-matches-a-subdir-only-file',
+    'path-bearing-single-star-spans-a-slash',
+]
+
+
+@pytest.mark.parametrize('tracked,route,survives', _ROUTE_SURVIVAL_CASES, ids=_ROUTE_SURVIVAL_IDS)
+def test_derive_globs_route_survival(tmp_path, tracked, route, survives):
+    _git_init_and_track(tmp_path, tracked)
 
     derived = derive_globs_from_tree(str(tmp_path), [_DualRegimeExtension()])
 
-    assert ('vendor/*.py', 'production') not in derived['dual']
+    assert (route in derived['dual']) is survives, derived['dual']
 
 
 def test_derive_globs_prune_matches_per_element_oracle(tmp_path):
@@ -138,30 +160,3 @@ def test_derive_globs_prune_matches_per_element_oracle(tmp_path):
     )
 
 
-def test_derive_globs_bare_basename_subdir_only_survives(tmp_path):
-    """A bare-basename route whose ONLY tracked file is subdir-deep is retained.
-
-    Directly pins the regime the batch refactor must preserve: ``package.json``
-    (no ``/``) matched by basename against ``nifi-cuioss-ui/package.json``. A
-    full-path-only matcher would prune it as dead — the regression fails if the
-    bare-basename regime is ever lost.
-    """
-    _git_init_and_track(tmp_path, ['nifi-cuioss-ui/package.json'])
-
-    derived = derive_globs_from_tree(str(tmp_path), [_DualRegimeExtension()])
-
-    assert ('package.json', 'config') in derived['dual']
-
-
-def test_derive_globs_path_bearing_single_star_spans_slash(tmp_path):
-    """A path-bearing route's single ``*`` spans ``/`` end-to-end at the deriver.
-
-    ``marketplace/*.py`` must retain because ``marketplace/targets/generate.py``
-    is tracked — the single ``*`` spans the ``targets/`` segment under fnmatch
-    semantics, exactly as the per-element loop produced.
-    """
-    _git_init_and_track(tmp_path, ['marketplace/targets/generate.py'])
-
-    derived = derive_globs_from_tree(str(tmp_path), [_DualRegimeExtension()])
-
-    assert ('marketplace/*.py', 'production') in derived['dual']

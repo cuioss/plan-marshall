@@ -22,6 +22,7 @@ Covered:
   empty/whitespace id, and an id already claimed by another attributor.
 """
 
+import pytest
 from extension_base import (
     BuildExtensionBase,
     ExtensionBase,
@@ -219,55 +220,56 @@ def test_results_are_sorted_by_attributor_id(monkeypatch):
 
 
 # =============================================================================
-# Skip condition 1 — the id accessor raises
+# The four skip conditions — the unusable attributor is dropped, not the run
 # =============================================================================
+#
+# One table, because all four conditions share one call and one assertion and
+# differ only in WHICH attributor is unusable. Each case pairs the bad
+# attributor with a healthy sibling, so a condition that dropped the whole
+# discovery rather than the offending record would fail here rather than pass
+# vacuously against an empty expectation.
 
 
-def test_attributor_whose_id_accessor_raises_is_skipped(monkeypatch):
-    # Arrange — a raising attributor alongside a healthy sibling
+@pytest.mark.parametrize(
+    'unusable_attributor',
+    [
+        _RaisingAttributor(),
+        _EmptyIdAttributor(),
+        _BuildSideAttributor('   '),
+        _NonStringIdAttributor(1),
+    ],
+    ids=[
+        'id-accessor-raises',
+        'empty-id',
+        'whitespace-only-id',
+        'non-string-id',
+    ],
+)
+def test_unusable_attributor_is_skipped_and_its_sibling_survives(
+    monkeypatch, unusable_attributor
+):
+    """An attributor with no usable identity is dropped; the sibling survives.
+
+    A raising id accessor must not be fatal; an attributor that cannot identify
+    itself would produce producer-less claims; and a truthy non-string id would
+    raise on the mixed-type sort, so it is rejected before the sort runs.
+    """
+    # Arrange — the unusable attributor alongside a healthy sibling
     _patch_collectors(
         monkeypatch,
-        build_modules=(_RaisingAttributor(), _BuildSideAttributor('pyproject')),
+        build_modules=(unusable_attributor, _BuildSideAttributor('pyproject')),
     )
 
-    # Act — discovery must not crash
-    attributors = _disc.discover_path_attributors()
-
-    # Assert — the broken attributor is dropped, the sibling survives
-    assert [rec['id'] for rec in attributors] == ['pyproject']
-
-
-# =============================================================================
-# Skip condition 2 — an empty or whitespace-only id
-# =============================================================================
-
-
-def test_attributor_with_empty_id_is_skipped(monkeypatch):
-    # Arrange
-    _patch_collectors(
-        monkeypatch,
-        build_modules=(_EmptyIdAttributor(), _BuildSideAttributor('pyproject')),
-    )
-
-    # Act
-    attributors = _disc.discover_path_attributors()
-
-    # Assert — an unidentifiable attributor would produce producer-less claims
-    assert [rec['id'] for rec in attributors] == ['pyproject']
-
-
-def test_attributor_with_whitespace_only_id_is_skipped(monkeypatch):
-    # Arrange — truthy, but carries no identity
-    _patch_collectors(
-        monkeypatch,
-        build_modules=(_BuildSideAttributor('   '), _BuildSideAttributor('pyproject')),
-    )
-
-    # Act
+    # Act — discovery must neither admit the bad record nor crash
     attributors = _disc.discover_path_attributors()
 
     # Assert
     assert [rec['id'] for rec in attributors] == ['pyproject']
+
+
+# =============================================================================
+# Identity normalization and the aggregate empty outcome
+# =============================================================================
 
 
 def test_attributor_id_is_normalized_by_stripping_surrounding_whitespace(monkeypatch):
@@ -293,22 +295,8 @@ def test_all_attributors_unidentifiable_yields_empty_list(monkeypatch):
 
 
 # =============================================================================
-# Skip condition 3 — a truthy NON-STRING id would raise on the mixed-type sort
+# A rejected non-string id must not disturb the sort of what survives
 # =============================================================================
-
-
-def test_attributor_with_non_string_id_is_skipped(monkeypatch):
-    # Arrange — the int 1 passes a falsiness check but is not a usable producer id
-    _patch_collectors(
-        monkeypatch,
-        build_modules=(_NonStringIdAttributor(1), _BuildSideAttributor('pyproject')),
-    )
-
-    # Act — discovery must neither admit it nor raise while sorting
-    attributors = _disc.discover_path_attributors()
-
-    # Assert
-    assert [rec['id'] for rec in attributors] == ['pyproject']
 
 
 def test_non_string_id_does_not_break_the_sort_of_surviving_attributors(monkeypatch):

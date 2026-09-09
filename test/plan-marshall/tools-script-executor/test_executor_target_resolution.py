@@ -52,47 +52,43 @@ def _exec_resolver(resolver_code: str) -> types.ModuleType:
 class TestReadMarshalTarget:
     """Tests for the marshal.json target extractor."""
 
-    def test_reads_target_from_plan_marshal_json(self, tmp_path):
-        """Returns runtime.target when marshal.json is present and well-formed."""
+    @pytest.mark.parametrize(
+        ('marshal_body', 'expected_target'),
+        [
+            (json.dumps({'runtime': {'target': 'opencode'}}), 'opencode'),
+            (json.dumps({'runtime': {'target': 'claude'}}), 'claude'),
+            (None, 'claude'),
+            ('{}', 'claude'),
+            (json.dumps({'runtime': {'target': ''}}), 'claude'),
+            ('not json {{{', 'claude'),
+        ],
+        ids=[
+            'explicit-opencode-target',
+            'explicit-claude-target',
+            'no-marshal-file',
+            'no-runtime-key',
+            'empty-target-string',
+            'malformed-json',
+        ],
+    )
+    def test_target_is_read_or_defaults_to_claude(self, tmp_path, marshal_body, expected_target):
+        """A declared target is returned; every unusable declaration reads 'claude'.
+
+        ``marshal_body`` of ``None`` writes no file at all — the absent-config
+        case. The remaining defaulting rows enumerate the ways a file that DOES
+        exist can fail to name a target: no ``runtime`` key, an empty target
+        string, and a body that is not JSON. The two explicit rows are their
+        matched positive controls, so a reader that always answered 'claude'
+        would fail here rather than satisfy every defaulting row.
+        """
         module = _load_generate_executor()
 
-        plan_dir = tmp_path / '.plan'
-        plan_dir.mkdir()
-        marshal = {'runtime': {'target': 'opencode'}}
-        (plan_dir / 'marshal.json').write_text(json.dumps(marshal), encoding='utf-8')
+        if marshal_body is not None:
+            plan_dir = tmp_path / '.plan'
+            plan_dir.mkdir()
+            (plan_dir / 'marshal.json').write_text(marshal_body, encoding='utf-8')
 
-        result = module.read_marshal_target(cwd=tmp_path)
-        assert result == 'opencode'
-
-    def test_defaults_to_claude_when_marshal_absent(self, tmp_path):
-        """Returns 'claude' when no marshal.json is found."""
-        module = _load_generate_executor()
-
-        result = module.read_marshal_target(cwd=tmp_path)
-        assert result == 'claude'
-
-    def test_defaults_to_claude_when_runtime_key_missing(self, tmp_path):
-        """Returns 'claude' when marshal.json lacks the runtime.target key."""
-        module = _load_generate_executor()
-
-        plan_dir = tmp_path / '.plan'
-        plan_dir.mkdir()
-        (plan_dir / 'marshal.json').write_text('{}', encoding='utf-8')
-
-        result = module.read_marshal_target(cwd=tmp_path)
-        assert result == 'claude'
-
-    def test_defaults_to_claude_when_runtime_target_empty_string(self, tmp_path):
-        """Returns 'claude' when runtime.target is an empty string."""
-        module = _load_generate_executor()
-
-        plan_dir = tmp_path / '.plan'
-        plan_dir.mkdir()
-        marshal = {'runtime': {'target': ''}}
-        (plan_dir / 'marshal.json').write_text(json.dumps(marshal), encoding='utf-8')
-
-        result = module.read_marshal_target(cwd=tmp_path)
-        assert result == 'claude'
+        assert module.read_marshal_target(cwd=tmp_path) == expected_target
 
     def test_walks_up_from_subdir(self, tmp_path):
         """Finds marshal.json when cwd is a subdirectory of the project root."""
@@ -108,29 +104,6 @@ class TestReadMarshalTarget:
 
         result = module.read_marshal_target(cwd=subdir)
         assert result == 'opencode'
-
-    def test_defaults_to_claude_on_malformed_json(self, tmp_path):
-        """Returns 'claude' when marshal.json is not valid JSON."""
-        module = _load_generate_executor()
-
-        plan_dir = tmp_path / '.plan'
-        plan_dir.mkdir()
-        (plan_dir / 'marshal.json').write_text('not json {{{', encoding='utf-8')
-
-        result = module.read_marshal_target(cwd=tmp_path)
-        assert result == 'claude'
-
-    def test_reads_target_claude(self, tmp_path):
-        """Returns 'claude' when runtime.target is explicitly 'claude'."""
-        module = _load_generate_executor()
-
-        plan_dir = tmp_path / '.plan'
-        plan_dir.mkdir()
-        marshal = {'runtime': {'target': 'claude'}}
-        (plan_dir / 'marshal.json').write_text(json.dumps(marshal), encoding='utf-8')
-
-        result = module.read_marshal_target(cwd=tmp_path)
-        assert result == 'claude'
 
 
 class TestGenerateTargetAwareResolverCode:

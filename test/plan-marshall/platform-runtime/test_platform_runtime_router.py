@@ -247,83 +247,99 @@ class TestWaitForDispatch:
 # =============================================================================
 
 
+#: ``(argv, the operation it names, the arguments left over)``. The parser takes
+#: one or two leading tokens depending on the group, so the rows cover both
+#: arities and the two edges: empty argv, which names no operation at all, and a
+#: single unrecognised token, which is returned AS the operation rather than
+#: guessed at. Every other row is a real two-token operation with a different
+#: argument tail, so the split point is shown not to depend on what follows it.
+_BUILD_OPERATION_CASES = [
+    ([], "", []),
+    (["health-check", "--checks", "all"], "health-check", ["--checks", "all"]),
+    (
+        ["project", "initial-setup", "--project-dir", "."],
+        "project initial-setup",
+        ["--project-dir", "."],
+    ),
+    (
+        ["session", "capture", "--plan-id", "my-plan"],
+        "session capture",
+        ["--plan-id", "my-plan"],
+    ),
+    (
+        ["permission", "web-apply", "--scope", "project", "--dry-run"],
+        "permission web-apply",
+        ["--scope", "project", "--dry-run"],
+    ),
+    (
+        ["metrics", "capture", "--plan-id", "p1", "--phase", "p1"],
+        "metrics capture",
+        ["--plan-id", "p1", "--phase", "p1"],
+    ),
+    (["session", "reload-directive"], "session reload-directive", []),
+    (
+        ["subagent", "dispatch", "--agent", "my-agent"],
+        "subagent dispatch",
+        ["--agent", "my-agent"],
+    ),
+    (["unknown-op"], "unknown-op", []),
+]
+
+_BUILD_OPERATION_IDS = [
+    'empty-argv-names-no-operation',
+    'health-check-is-a-single-token',
+    'project-initial-setup',
+    'session-capture',
+    'permission-web-apply',
+    'metrics-capture',
+    'session-reload-directive-with-no-arguments',
+    'subagent-dispatch',
+    'a-single-unknown-token-is-the-operation',
+]
+
+#: The documented group/subcommand pairs whose two tokens join into one operation
+#: string. Listed separately from the table above because the claim is different:
+#: those rows pin the SPLIT (what becomes arguments), while these pin that every
+#: published pair is recognised as a two-part operation at all.
+_TWO_PART_GROUPS = [
+    ("session", "render-title"),
+    ("session", "push-title-token"),
+    ("session", "bind"),
+    ("session", "resolve-plan"),
+    ("session", "doctor"),
+    ("permission", "configure"),
+    ("permission", "analyze"),
+    ("permission", "fix"),
+    ("permission", "ensure-wildcards"),
+    ("permission", "ensure-steps"),
+    ("permission", "web-analyze"),
+]
+
+_TWO_PART_GROUP_IDS = [f'{group}-{subcommand}' for group, subcommand in _TWO_PART_GROUPS]
+
+
 class TestBuildOperation:
     """Tests for the argv-to-operation parser."""
 
-    def test_empty_argv_returns_empty_operation(self):
-        """Empty argv produces an empty operation string and no remaining args."""
-        op, remaining = _build_operation([])
-        assert op == ""
-        assert remaining == []
+    @pytest.mark.parametrize(
+        ("argv", "operation", "remaining"), _BUILD_OPERATION_CASES, ids=_BUILD_OPERATION_IDS
+    )
+    def test_argv_splits_into_an_operation_and_its_arguments(
+        self, argv: list[str], operation: str, remaining: list[str]
+    ) -> None:
+        """The leading token(s) become the operation; everything after is arguments."""
+        assert _build_operation(argv) == (operation, remaining)
 
-    def test_health_check_is_single_token(self):
-        """health-check is recognized as a single-token operation."""
-        op, remaining = _build_operation(["health-check", "--checks", "all"])
-        assert op == "health-check"
-        assert remaining == ["--checks", "all"]
+    @pytest.mark.parametrize(
+        ("group", "subcommand"), _TWO_PART_GROUPS, ids=_TWO_PART_GROUP_IDS
+    )
+    def test_every_documented_group_produces_a_two_part_operation(
+        self, group: str, subcommand: str
+    ) -> None:
+        """Each documented group/subcommand pair joins into one operation string."""
+        operation, _remaining = _build_operation([group, subcommand])
 
-    def test_two_token_operation_project_initial_setup(self):
-        """project initial-setup produces the two-word operation string."""
-        op, remaining = _build_operation(["project", "initial-setup", "--project-dir", "."])
-        assert op == "project initial-setup"
-        assert remaining == ["--project-dir", "."]
-
-    def test_two_token_operation_session_capture(self):
-        """session capture operation is parsed correctly."""
-        op, remaining = _build_operation(["session", "capture", "--plan-id", "my-plan"])
-        assert op == "session capture"
-        assert remaining == ["--plan-id", "my-plan"]
-
-    def test_two_token_operation_permission_web_apply(self):
-        """permission web-apply operation is parsed correctly."""
-        op, remaining = _build_operation(
-            ["permission", "web-apply", "--scope", "project", "--dry-run"]
-        )
-        assert op == "permission web-apply"
-        assert remaining == ["--scope", "project", "--dry-run"]
-
-    def test_two_token_operation_metrics_capture(self):
-        """metrics capture operation is parsed correctly."""
-        op, remaining = _build_operation(["metrics", "capture", "--plan-id", "p1", "--phase", "p1"])
-        assert op == "metrics capture"
-        assert remaining == ["--plan-id", "p1", "--phase", "p1"]
-
-    def test_two_token_operation_session_reload_directive(self):
-        """session reload-directive (the 22nd operation) parses to a two-token op."""
-        op, remaining = _build_operation(["session", "reload-directive"])
-        assert op == "session reload-directive"
-        assert remaining == []
-
-    def test_two_token_operation_subagent_dispatch(self):
-        """subagent dispatch operation is parsed correctly."""
-        op, remaining = _build_operation(["subagent", "dispatch", "--agent", "my-agent"])
-        assert op == "subagent dispatch"
-        assert remaining == ["--agent", "my-agent"]
-
-    def test_single_unknown_token_returns_token_as_operation(self):
-        """A single unrecognized token is returned as the operation with no remaining."""
-        op, remaining = _build_operation(["unknown-op"])
-        assert op == "unknown-op"
-        assert remaining == []
-
-    def test_all_standard_groups_produce_two_part_operations(self):
-        """All documented operation groups produce two-part identifiers."""
-        groups = [
-            ("session", "render-title"),
-            ("session", "push-title-token"),
-            ("session", "bind"),
-            ("session", "resolve-plan"),
-            ("session", "doctor"),
-            ("permission", "configure"),
-            ("permission", "analyze"),
-            ("permission", "fix"),
-            ("permission", "ensure-wildcards"),
-            ("permission", "ensure-steps"),
-            ("permission", "web-analyze"),
-        ]
-        for group, subcommand in groups:
-            op, _ = _build_operation([group, subcommand])
-            assert op == f"{group} {subcommand}", f"Failed for {group} {subcommand}"
+        assert operation == f"{group} {subcommand}"
 
 
 # =============================================================================
@@ -388,38 +404,44 @@ class TestReadMarshal:
 # =============================================================================
 
 
+#: ``(marshal data, the target it resolves to)``. Both registered targets are
+#: represented, so the resolver is shown to read the VALUE rather than to
+#: recognise one name. The ``None`` rows walk the ladder down to the value: no
+#: ``runtime`` key, a ``runtime`` that is not an object, an object with no
+#: ``target``, and a ``target`` that is present but empty — each a different
+#: place the read can come up short, and each answering ``None`` rather than a
+#: guess. The last row is the one exception to that: a non-string target is
+#: COERCED rather than refused.
+_RESOLVE_TARGET_CASES = [
+    ({"runtime": {"target": "claude"}}, "claude"),
+    ({"runtime": {"target": "opencode"}}, "opencode"),
+    ({}, None),
+    ({"runtime": "claude"}, None),
+    ({"runtime": {}}, None),
+    ({"runtime": {"target": ""}}, None),
+    ({"runtime": {"target": 42}}, "42"),
+]
+
+_RESOLVE_TARGET_IDS = [
+    'claude',
+    'opencode',
+    'no-runtime-key',
+    'runtime-is-not-an-object',
+    'no-target-key',
+    'target-is-the-empty-string',
+    'a-non-string-target-is-coerced',
+]
+
+
 class TestResolveTarget:
     """Tests for target extraction from marshal data."""
 
-    def test_extracts_target_from_valid_marshal(self):
-        """_resolve_target returns the target string from runtime.target."""
-        data = {"runtime": {"target": "claude"}}
-        assert _resolve_target(data) == "claude"
-
-    def test_returns_none_when_runtime_key_missing(self):
-        """_resolve_target returns None when 'runtime' key is absent."""
-        assert _resolve_target({}) is None
-
-    def test_returns_none_when_runtime_is_not_dict(self):
-        """_resolve_target returns None when 'runtime' value is not a dict."""
-        assert _resolve_target({"runtime": "claude"}) is None
-
-    def test_returns_none_when_target_key_missing(self):
-        """_resolve_target returns None when 'target' key is absent in runtime."""
-        assert _resolve_target({"runtime": {}}) is None
-
-    def test_returns_none_when_target_is_empty_string(self):
-        """_resolve_target returns None when target is an empty string."""
-        assert _resolve_target({"runtime": {"target": ""}}) is None
-
-    def test_returns_string_for_non_string_target(self):
-        """_resolve_target coerces non-string target to str."""
-        result = _resolve_target({"runtime": {"target": 42}})
-        assert result == "42"
-
-    def test_opencode_target(self):
-        """_resolve_target correctly extracts the 'opencode' target."""
-        assert _resolve_target({"runtime": {"target": "opencode"}}) == "opencode"
+    @pytest.mark.parametrize(
+        ("marshal", "expected"), _RESOLVE_TARGET_CASES, ids=_RESOLVE_TARGET_IDS
+    )
+    def test_a_target_resolves_or_reports_that_it_did_not(self, marshal, expected):
+        """A usable ``runtime.target`` resolves; every other shape reports ``None``."""
+        assert _resolve_target(marshal) == expected
 
 
 # =============================================================================
@@ -446,11 +468,14 @@ class TestMakeRuntime:
         assert runtime is not None
         assert isinstance(runtime, OpenCodeRuntime)
 
-    def test_unknown_target_returns_none(self):
-        """_make_runtime returns None for unrecognized target strings."""
-        assert _make_runtime("unknown") is None
-        assert _make_runtime("") is None
-        assert _make_runtime("CLAUDE") is None  # case-sensitive
+    @pytest.mark.parametrize(
+        "target",
+        ["unknown", "", "CLAUDE"],
+        ids=['an-unregistered-name', 'the-empty-string', 'the-right-name-in-the-wrong-case'],
+    )
+    def test_unknown_target_returns_none(self, target: str) -> None:
+        """The registry lookup is exact — a near miss resolves to no runtime."""
+        assert _make_runtime(target) is None
 
 
 # =============================================================================
@@ -461,19 +486,18 @@ class TestMakeRuntime:
 class TestParseJsonList:
     """Tests for the JSON-array argument helper."""
 
-    def test_parses_empty_array(self):
-        """_parse_json_list parses an empty JSON array."""
-        assert _parse_json_list("[]") == []
-
-    def test_parses_string_array(self):
-        """_parse_json_list parses a JSON array of strings."""
-        result = _parse_json_list('["Read(**)", "Write(.plan/**)"]')
-        assert result == ["Read(**)", "Write(.plan/**)"]
-
-    def test_coerces_non_strings_to_str(self):
-        """_parse_json_list coerces non-string elements to str."""
-        result = _parse_json_list("[1, 2, 3]")
-        assert result == ["1", "2", "3"]
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            ("[]", []),
+            ('["Read(**)", "Write(.plan/**)"]', ["Read(**)", "Write(.plan/**)"]),
+            ("[1, 2, 3]", ["1", "2", "3"]),
+        ],
+        ids=['an-empty-array', 'an-array-of-strings', 'non-strings-are-coerced'],
+    )
+    def test_a_json_array_parses_to_a_list_of_strings(self, raw: str, expected: list[str]) -> None:
+        """Every element comes back as a string, whatever it was in the JSON."""
+        assert _parse_json_list(raw) == expected
 
     def test_raises_on_non_array_json(self):
         """_parse_json_list raises ValueError for a non-array JSON value."""

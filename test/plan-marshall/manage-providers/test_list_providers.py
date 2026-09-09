@@ -241,46 +241,47 @@ class TestScanForProvidersCacheOnly:
 # =============================================================================
 
 
+#: ``(module_body, expected_declarations)`` per candidate-module shape.
+_PROVIDER_MODULE_CASES = [
+    (
+        'def get_provider_declarations():\n'
+        '    return [{"skill_name": "plan-marshall:workflow-integration-git", "category": "version-control"}]\n',
+        [{'skill_name': 'plan-marshall:workflow-integration-git', 'category': 'version-control'}],
+    ),
+    ('x = 42\n', []),
+    ('raise ValueError("bad")\n', []),
+    (
+        'def get_provider_declarations():\n'
+        '    return [\n'
+        '        {"skill_name": "one"},\n'
+        '        {"skill_name": "two"},\n'
+        '    ]\n',
+        [{'skill_name': 'one'}, {'skill_name': 'two'}],
+    ),
+]
+
+
 class TestLoadProviderModule:
     """Tests for _load_provider_module()."""
 
-    def test_loads_valid_module(self, tmp_path):
-        """Loads module and calls get_provider_declarations()."""
-        pf = tmp_path / 'valid_provider.py'
-        pf.write_text(
-            'def get_provider_declarations():\n'
-            '    return [{"skill_name": "plan-marshall:workflow-integration-git", "category": "version-control"}]\n'
-        )
-        result = _load_provider_module(pf)
-        assert len(result) == 1
-        assert result[0]['skill_name'] == 'plan-marshall:workflow-integration-git'
+    @pytest.mark.parametrize(
+        ('module_body', 'expected_declarations'),
+        _PROVIDER_MODULE_CASES,
+        ids=[
+            'a-declaring-module-yields-its-declaration',
+            'a-module-without-the-function-yields-nothing',
+            'a-module-that-raises-on-import-yields-nothing',
+            'one-module-may-declare-several-providers',
+        ],
+    )
+    def test_a_candidate_yields_exactly_the_declarations_it_publishes(
+        self, tmp_path, module_body, expected_declarations
+    ):
+        """A candidate contributes its declarations, or nothing when it has none."""
+        provider_file = tmp_path / 'candidate_provider.py'
+        provider_file.write_text(module_body)
 
-    def test_returns_empty_for_missing_function(self, tmp_path):
-        """Returns empty list when module has no get_provider_declarations."""
-        pf = tmp_path / 'no_func_provider.py'
-        pf.write_text('x = 42\n')
-        result = _load_provider_module(pf)
-        assert result == []
-
-    def test_returns_empty_on_import_error(self, tmp_path):
-        """Returns empty list when module raises on import."""
-        pf = tmp_path / 'err_provider.py'
-        pf.write_text('raise ValueError("bad")\n')
-        result = _load_provider_module(pf)
-        assert result == []
-
-    def test_returns_multiple_declarations(self, tmp_path):
-        """A single module can return multiple provider declarations."""
-        pf = tmp_path / 'multi_provider.py'
-        pf.write_text(
-            'def get_provider_declarations():\n'
-            '    return [\n'
-            '        {"skill_name": "one"},\n'
-            '        {"skill_name": "two"},\n'
-            '    ]\n'
-        )
-        result = _load_provider_module(pf)
-        assert len(result) == 2
+        assert _load_provider_module(provider_file) == expected_declarations
 
 
 # =============================================================================
@@ -293,106 +294,56 @@ def _make_provider(skill_name: str, category: str) -> dict:
     return {'skill_name': skill_name, 'category': category}
 
 
+_GIT = 'plan-marshall:workflow-integration-git'
+_GITHUB = 'plan-marshall:workflow-integration-github'
+_GITLAB = 'plan-marshall:workflow-integration-gitlab'
+_SONAR = 'plan-marshall:workflow-integration-sonar'
+_CUSTOM = 'plan-marshall:custom-tool'
+
+_ROSTER_GIT_AND_GITHUB = [
+    _make_provider(_GIT, 'version-control'),
+    _make_provider(_GITHUB, 'ci'),
+]
+_ROSTER_WITH_SONAR = [*_ROSTER_GIT_AND_GITHUB, _make_provider(_SONAR, 'other')]
+_ROSTER_WITH_TWO_CI = [*_ROSTER_GIT_AND_GITHUB, _make_provider(_GITLAB, 'ci')]
+_ROSTER_WITH_TWO_OTHER = [*_ROSTER_WITH_SONAR, _make_provider(_CUSTOM, 'other')]
+
+#: ``(roster, selection, expected_error_fragments)``. Cardinality is per category:
+#: exactly one version-control provider, at most one CI provider, any number of
+#: ``other``. An empty fragment tuple means the selection is valid.
+_PROVIDER_SELECTION_CASES = [
+    (_ROSTER_WITH_SONAR, [_GIT, _GITHUB, _SONAR], ()),
+    (_ROSTER_GIT_AND_GITHUB, [_GIT, _GITHUB], ()),
+    (_ROSTER_GIT_AND_GITHUB, [_GIT], ()),
+    (_ROSTER_WITH_TWO_OTHER, [_GIT, _GITHUB, _SONAR, _CUSTOM], ()),
+    (_ROSTER_GIT_AND_GITHUB, [_GITHUB], ('version-control',)),
+    (_ROSTER_WITH_TWO_CI, [_GIT, _GITHUB, _GITLAB], ('ci',)),
+]
+
+
 class TestValidateProviderSelection:
     """Tests for _validate_provider_selection()."""
 
-    def test_valid_all_categories(self):
-        """git + github + sonar passes validation (empty errors)."""
-        providers = [
-            _make_provider('plan-marshall:workflow-integration-git', 'version-control'),
-            _make_provider('plan-marshall:workflow-integration-github', 'ci'),
-            _make_provider('plan-marshall:workflow-integration-sonar', 'other'),
-        ]
-        errors = _validate_provider_selection(
-            providers,
-            [
-                'plan-marshall:workflow-integration-git',
-                'plan-marshall:workflow-integration-github',
-                'plan-marshall:workflow-integration-sonar',
-            ],
-        )
-        assert errors == []
+    @pytest.mark.parametrize(
+        ('providers', 'selection', 'expected_error_fragments'),
+        _PROVIDER_SELECTION_CASES,
+        ids=[
+            'version-control-plus-ci-plus-one-other-is-valid',
+            'version-control-plus-ci-is-valid',
+            'version-control-alone-is-valid-because-ci-is-optional',
+            'version-control-plus-ci-plus-two-others-is-valid',
+            'a-selection-without-version-control-is-rejected',
+            'a-selection-with-two-ci-providers-is-rejected',
+        ],
+    )
+    def test_the_selection_is_validated_against_the_per_category_cardinality(
+        self, providers, selection, expected_error_fragments
+    ):
+        """Each rejected selection yields one error naming the category at fault."""
+        errors = _validate_provider_selection(providers, selection)
 
-    def test_valid_git_and_ci_only(self):
-        """git + github passes (CI is optional, no other required)."""
-        providers = [
-            _make_provider('plan-marshall:workflow-integration-git', 'version-control'),
-            _make_provider('plan-marshall:workflow-integration-github', 'ci'),
-        ]
-        errors = _validate_provider_selection(
-            providers,
-            [
-                'plan-marshall:workflow-integration-git',
-                'plan-marshall:workflow-integration-github',
-            ],
-        )
-        assert errors == []
-
-    def test_valid_git_only(self):
-        """git alone passes (no CI is valid)."""
-        providers = [
-            _make_provider('plan-marshall:workflow-integration-git', 'version-control'),
-            _make_provider('plan-marshall:workflow-integration-github', 'ci'),
-        ]
-        errors = _validate_provider_selection(
-            providers,
-            [
-                'plan-marshall:workflow-integration-git',
-            ],
-        )
-        assert errors == []
-
-    def test_missing_version_control(self):
-        """github only fails with version-control error."""
-        providers = [
-            _make_provider('plan-marshall:workflow-integration-git', 'version-control'),
-            _make_provider('plan-marshall:workflow-integration-github', 'ci'),
-        ]
-        errors = _validate_provider_selection(
-            providers,
-            [
-                'plan-marshall:workflow-integration-github',
-            ],
-        )
-        assert len(errors) == 1
-        assert 'version-control' in errors[0]
-
-    def test_both_ci_providers_selected(self):
-        """git + github + gitlab fails with ci error."""
-        providers = [
-            _make_provider('plan-marshall:workflow-integration-git', 'version-control'),
-            _make_provider('plan-marshall:workflow-integration-github', 'ci'),
-            _make_provider('plan-marshall:workflow-integration-gitlab', 'ci'),
-        ]
-        errors = _validate_provider_selection(
-            providers,
-            [
-                'plan-marshall:workflow-integration-git',
-                'plan-marshall:workflow-integration-github',
-                'plan-marshall:workflow-integration-gitlab',
-            ],
-        )
-        assert len(errors) == 1
-        assert 'ci' in errors[0]
-
-    def test_multiple_other_providers_valid(self):
-        """git + github + sonar + another_other passes (other has no limit)."""
-        providers = [
-            _make_provider('plan-marshall:workflow-integration-git', 'version-control'),
-            _make_provider('plan-marshall:workflow-integration-github', 'ci'),
-            _make_provider('plan-marshall:workflow-integration-sonar', 'other'),
-            _make_provider('plan-marshall:custom-tool', 'other'),
-        ]
-        errors = _validate_provider_selection(
-            providers,
-            [
-                'plan-marshall:workflow-integration-git',
-                'plan-marshall:workflow-integration-github',
-                'plan-marshall:workflow-integration-sonar',
-                'plan-marshall:custom-tool',
-            ],
-        )
-        assert errors == []
+        assert len(errors) == len(expected_error_fragments)
+        assert all(fragment in ' '.join(errors) for fragment in expected_error_fragments)
 
 
 # =============================================================================
@@ -680,66 +631,47 @@ class TestRunListProviders:
 class TestFindByCategory:
     """Tests for find_by_category()."""
 
-    def test_returns_matching_providers(self, tmp_path, monkeypatch):
-        """Returns providers matching the given category."""
-        import _config_core
-
-        plan_dir = tmp_path / '.plan'
-        plan_dir.mkdir()
-        marshal_path = plan_dir / 'marshal.json'
-        marshal_path.write_text(
-            json.dumps(
+    @pytest.mark.parametrize(
+        ('marshal_config', 'category', 'expected'),
+        [
+            (
                 {
                     'providers': [
                         {'skill_name': 'git', 'category': 'version-control'},
                         {'skill_name': 'github', 'category': 'ci'},
                         {'skill_name': 'sonar', 'category': 'other'},
                     ],
-                }
-            )
-        )
-        monkeypatch.setattr(_config_core, 'PLAN_BASE_DIR', tmp_path)
-        monkeypatch.setattr(_config_core, 'MARSHAL_PATH', marshal_path)
-
-        result = find_by_category('ci')
-        assert len(result) == 1
-        assert result[0]['skill_name'] == 'github'
-
-    def test_returns_empty_for_unknown_category(self, tmp_path, monkeypatch):
-        """Returns empty list when no providers match."""
+                },
+                'ci',
+                [{'skill_name': 'github', 'category': 'ci'}],
+            ),
+            (
+                {'providers': [{'skill_name': 'git', 'category': 'version-control'}]},
+                'nonexistent',
+                [],
+            ),
+            ({}, 'ci', []),
+        ],
+        ids=[
+            'the-provider-declaring-the-category-is-returned',
+            'a-category-no-provider-declares-matches-nothing',
+            'a-marshal-json-without-a-providers-key-matches-nothing',
+        ],
+    )
+    def test_only_the_providers_declaring_the_category_are_returned(
+        self, tmp_path, monkeypatch, marshal_config, category, expected
+    ):
+        """The lookup filters the persisted roster by category and nothing else."""
         import _config_core
 
         plan_dir = tmp_path / '.plan'
         plan_dir.mkdir()
         marshal_path = plan_dir / 'marshal.json'
-        marshal_path.write_text(
-            json.dumps(
-                {
-                    'providers': [
-                        {'skill_name': 'git', 'category': 'version-control'},
-                    ],
-                }
-            )
-        )
+        marshal_path.write_text(json.dumps(marshal_config))
         monkeypatch.setattr(_config_core, 'PLAN_BASE_DIR', tmp_path)
         monkeypatch.setattr(_config_core, 'MARSHAL_PATH', marshal_path)
 
-        result = find_by_category('nonexistent')
-        assert result == []
-
-    def test_returns_empty_when_no_providers(self, tmp_path, monkeypatch):
-        """Returns empty list when no providers configured."""
-        import _config_core
-
-        plan_dir = tmp_path / '.plan'
-        plan_dir.mkdir()
-        marshal_path = plan_dir / 'marshal.json'
-        marshal_path.write_text(json.dumps({}))
-        monkeypatch.setattr(_config_core, 'PLAN_BASE_DIR', tmp_path)
-        monkeypatch.setattr(_config_core, 'MARSHAL_PATH', marshal_path)
-
-        result = find_by_category('ci')
-        assert result == []
+        assert find_by_category(category) == expected
 
     def test_run_find_by_category_cli(self, tmp_path, monkeypatch, capsys):
         """CLI subcommand outputs TOON with matching providers."""

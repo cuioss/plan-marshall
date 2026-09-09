@@ -29,6 +29,7 @@ test_derivation_resolver_discovery.py and test_derivation_merge.py — this modu
 covers only the ABC's own method contract and the hierarchy invariant.
 """
 
+import pytest
 from extension_base import (
     BuildExtensionBase,
     DerivationResolverBase,
@@ -165,30 +166,36 @@ def test_derive_edges_receives_both_module_maps():
 # --- 3. The disjointness invariant -----------------------------------------
 
 
-def test_derivation_resolver_base_absent_from_extension_base_mro():
-    # Assert — Axis-C is NOT a face on Axis-A
-    assert DerivationResolverBase not in ExtensionBase.__mro__
+#: ``(candidate, the hierarchy it must NOT appear in)`` — the full pairwise
+#: matrix over the three ABCs. The premise the mechanism choice rests on is that
+#: NO pair is related in either direction: a face declared on any one of them
+#: would be structurally unreachable from the other two, which is why Axis-C is a
+#: sibling ABC opted into by multiple inheritance rather than a method on either
+#: existing base.
+_DISJOINT_HIERARCHY_PAIRS = [
+    (DerivationResolverBase, ExtensionBase),
+    (DerivationResolverBase, BuildExtensionBase),
+    (ExtensionBase, DerivationResolverBase),
+    (BuildExtensionBase, DerivationResolverBase),
+    (BuildExtensionBase, ExtensionBase),
+    (ExtensionBase, BuildExtensionBase),
+]
+
+_DISJOINT_HIERARCHY_IDS = [
+    'axis-c-is-not-a-face-on-axis-a',
+    'axis-c-is-not-a-face-on-axis-b',
+    'axis-c-does-not-inherit-axis-a',
+    'axis-c-does-not-inherit-axis-b',
+    'axis-b-is-not-a-face-on-axis-a',
+    'axis-a-is-not-a-face-on-axis-b',
+]
 
 
-def test_derivation_resolver_base_absent_from_build_extension_base_mro():
-    # Assert — Axis-C is NOT a face on Axis-B
-    assert DerivationResolverBase not in BuildExtensionBase.__mro__
-
-
-def test_derivation_resolver_base_inherits_neither_existing_abc():
-    # Arrange / Act
-    mro = DerivationResolverBase.__mro__
-
-    # Assert — inherited by neither, and inherits from neither
-    assert ExtensionBase not in mro
-    assert BuildExtensionBase not in mro
-
-
-def test_axis_a_and_axis_b_hierarchies_are_themselves_disjoint():
-    # Assert — the premise the mechanism choice rests on: a face on either ABC
-    # would be structurally unreachable from the other
-    assert BuildExtensionBase not in ExtensionBase.__mro__
-    assert ExtensionBase not in BuildExtensionBase.__mro__
+@pytest.mark.parametrize(
+    'candidate,hierarchy', _DISJOINT_HIERARCHY_PAIRS, ids=_DISJOINT_HIERARCHY_IDS
+)
+def test_the_three_abc_hierarchies_are_pairwise_disjoint(candidate, hierarchy):
+    assert candidate not in hierarchy.__mro__
 
 
 # --- 4. Multiple-inheritance opt-in ---------------------------------------
