@@ -44,6 +44,8 @@ The build server is three skills plus a shared protocol library, over a machine-
 
 The shared protocol library `_build_server_protocol` is imported by both sides: it owns the length-prefixed JSON frame codec (a 4-byte big-endian length prefix + a UTF-8 JSON body, so nested/multi-line error payloads round-trip losslessly), the `JobSpec` struct, and the status-schema helpers that map to and from the shared `_build_result` shape. Neither the client nor the daemon re-declares the wire contract.
 
+**`--project-dir` is re-resolved by the child, not the caller — pass an absolute path.** The daemon child re-invokes the executor with the caller's original argv, so a RELATIVE `--project-dir` is resolved against the daemon child's own working directory, never the caller's. Empirically this is a silent-wrong-tree trap: `--project-dir .` invoked from a worktree built the *main* checkout (green, wrong tree — the run's own edits were not tested), and a relative worktree path from the main checkout double-nested and died with a `pw/pwx not found` fallback. Only an ABSOLUTE `--project-dir` is cwd-independent. Whenever a gate targets a different tree than the caller's, pass the absolute path and confirm the tree actually built via the gate result's `[EXEC]` line (it prints the resolved executor path).
+
 The daemon's four cores are separable pure units wired behind the socket:
 
 * **Verifier** (`_marshalld_verifier`) — S1/S2 positional verification of every submit against the project's registration; a pure function given a resolver injection.
