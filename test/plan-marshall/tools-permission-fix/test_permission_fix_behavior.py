@@ -81,7 +81,16 @@ class TestApplyFixesApplied:
         _write_settings(settings_file, ['Read(src/)', 'Bash(git:*)'])
 
         # Act
-        result = pf.cmd_apply_fixes(parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'apply-fixes', '--settings', str(settings_file)))
+        result = pf.cmd_apply_fixes(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'apply-fixes',
+                '--settings',
+                str(settings_file),
+            )
+        )
 
         # Assert
         assert result['status'] == 'success'
@@ -94,7 +103,14 @@ class TestApplyFixesApplied:
     def test_error_on_missing_settings_file(self, tmp_path):
         """A non-existent settings path surfaces a structured error."""
         result = pf.cmd_apply_fixes(
-            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'apply-fixes', '--settings', str(tmp_path / 'nope.json'))
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'apply-fixes',
+                '--settings',
+                str(tmp_path / 'nope.json'),
+            )
         )
 
         assert result['status'] == 'error'
@@ -109,7 +125,16 @@ class TestApplyFixesApplied:
             sorted(['Bash(git:*)', 'Edit(.plan/**)', 'Read(~/.claude/plugins/cache/**)']),
         )
 
-        result = pf.cmd_apply_fixes(parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'apply-fixes', '--settings', str(settings_file)))
+        result = pf.cmd_apply_fixes(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'apply-fixes',
+                '--settings',
+                str(settings_file),
+            )
+        )
 
         assert result['status'] == 'success'
         assert result['changes_made'] is False
@@ -210,7 +235,16 @@ class TestConsolidateApplied:
         )
 
         # Act
-        result = pf.cmd_consolidate(parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'consolidate', '--settings', str(settings_file)))
+        result = pf.cmd_consolidate(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'consolidate',
+                '--settings',
+                str(settings_file),
+            )
+        )
 
         # Assert
         assert result['status'] == 'success'
@@ -229,7 +263,17 @@ class TestConsolidateApplied:
             ['Read(logs/app-2025-11-20.log)', 'Read(logs/app-2025-11-21.log)'],
         )
 
-        result = pf.cmd_consolidate(parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'consolidate', '--settings', str(settings_file), '--dry-run'))
+        result = pf.cmd_consolidate(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'consolidate',
+                '--settings',
+                str(settings_file),
+                '--dry-run',
+            )
+        )
 
         assert result['status'] == 'success'
         assert result['consolidated'] == 2
@@ -238,7 +282,14 @@ class TestConsolidateApplied:
     def test_error_on_missing_settings(self, tmp_path):
         """A non-existent settings path surfaces a structured error."""
         result = pf.cmd_consolidate(
-            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'consolidate', '--settings', str(tmp_path / 'missing.json'))
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'consolidate',
+                '--settings',
+                str(tmp_path / 'missing.json'),
+            )
         )
 
         assert result['status'] == 'error'
@@ -300,7 +351,16 @@ class TestEnsureWildcardsApplied:
         marketplace_file.write_text(json.dumps({'bundles': {'foo': {'skills': ['s'], 'commands': ['c']}}}))
 
         result = pf.cmd_ensure_wildcards(
-            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'ensure-wildcards', '--settings', str(settings_file), '--marketplace-json', str(marketplace_file))
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'ensure-wildcards',
+                '--settings',
+                str(settings_file),
+                '--marketplace-json',
+                str(marketplace_file),
+            )
         )
 
         assert result['status'] == 'success'
@@ -312,7 +372,17 @@ class TestEnsureWildcardsApplied:
     def test_error_on_missing_settings(self, tmp_path):
         """A missing settings file surfaces a structured error before reading the marketplace."""
         result = pf.cmd_ensure_wildcards(
-            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'ensure-wildcards', '--settings', str(tmp_path / 'none.json'), '--marketplace-json', str(tmp_path / 'm.json'), '--dry-run')
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'ensure-wildcards',
+                '--settings',
+                str(tmp_path / 'none.json'),
+                '--marketplace-json',
+                str(tmp_path / 'm.json'),
+                '--dry-run',
+            )
         )
 
         assert result['status'] == 'error'
@@ -324,7 +394,17 @@ class TestEnsureWildcardsApplied:
         _write_settings(settings_file, [])
 
         result = pf.cmd_ensure_wildcards(
-            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'ensure-wildcards', '--settings', str(settings_file), '--marketplace-json', str(tmp_path / 'missing.json'), '--dry-run')
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'ensure-wildcards',
+                '--settings',
+                str(settings_file),
+                '--marketplace-json',
+                str(tmp_path / 'missing.json'),
+                '--dry-run',
+            )
         )
 
         assert result['status'] == 'error'
@@ -338,7 +418,17 @@ class TestEnsureWildcardsApplied:
         marketplace_file.write_text('{not json')
 
         result = pf.cmd_ensure_wildcards(
-            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'ensure-wildcards', '--settings', str(settings_file), '--marketplace-json', str(marketplace_file), '--dry-run')
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'ensure-wildcards',
+                '--settings',
+                str(settings_file),
+                '--marketplace-json',
+                str(marketplace_file),
+                '--dry-run',
+            )
         )
 
         assert result['status'] == 'error'
@@ -354,12 +444,19 @@ class TestEnsureWildcardsApplied:
         _write_settings(settings_file, [])
         marketplace_file = tmp_path / 'marketplace.json'
         marketplace_file.write_text(json.dumps({'bundles': {'foo': {'skills': ['s'], 'commands': ['c']}}}))
-        monkeypatch.setattr(
-            pc_mod, 'get_project_settings_path_for_write', lambda: settings_file
-        )
+        monkeypatch.setattr(pc_mod, 'get_project_settings_path_for_write', lambda: settings_file)
 
         result = pf.cmd_ensure_wildcards(
-            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'ensure-wildcards', '--scope', 'project', '--marketplace-json', str(marketplace_file))
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'ensure-wildcards',
+                '--scope',
+                'project',
+                '--marketplace-json',
+                str(marketplace_file),
+            )
         )
 
         assert result['status'] == 'success'
@@ -413,9 +510,7 @@ class TestScanMarketplaceDirEdges:
         """A bundle with malformed plugin.json contributes empty skills/commands."""
         plugin_dir = tmp_path / '.claude-plugin'
         plugin_dir.mkdir(parents=True)
-        (plugin_dir / 'marketplace.json').write_text(
-            json.dumps({'plugins': [{'name': 'b', 'source': './bundles/b'}]})
-        )
+        (plugin_dir / 'marketplace.json').write_text(json.dumps({'plugins': [{'name': 'b', 'source': './bundles/b'}]}))
         bundle_plugin = tmp_path / 'bundles' / 'b' / '.claude-plugin'
         bundle_plugin.mkdir(parents=True)
         (bundle_plugin / 'plugin.json').write_text('{not valid')
@@ -433,9 +528,7 @@ class TestScanMarketplaceDirEdges:
         (plugin_dir / 'marketplace.json').write_text(json.dumps({'plugins': [{'name': 'b'}]}))
         bundle_plugin = tmp_path / 'bundles' / 'b' / '.claude-plugin'
         bundle_plugin.mkdir(parents=True)
-        (bundle_plugin / 'plugin.json').write_text(
-            json.dumps({'skills': ['./skills/s.md'], 'commands': []})
-        )
+        (bundle_plugin / 'plugin.json').write_text(json.dumps({'skills': ['./skills/s.md'], 'commands': []}))
 
         result = pf.scan_marketplace_dir(str(tmp_path))
 
@@ -456,7 +549,16 @@ class TestGenerateWildcardsEdges:
         inventory = tmp_path / 'inv.json'
         inventory.write_text(json.dumps({'bundles': []}))
 
-        result = pf.cmd_generate_wildcards(parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'generate-wildcards', '--input', str(inventory)))
+        result = pf.cmd_generate_wildcards(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'generate-wildcards',
+                '--input',
+                str(inventory),
+            )
+        )
 
         assert result['status'] == 'success'
         assert result['error'] == 'No bundles found in inventory'
@@ -465,7 +567,14 @@ class TestGenerateWildcardsEdges:
     def test_missing_input_file_errors(self, tmp_path):
         """A non-existent input file surfaces an input-not-found error."""
         result = pf.cmd_generate_wildcards(
-            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'generate-wildcards', '--input', str(tmp_path / 'nope.json'))
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'generate-wildcards',
+                '--input',
+                str(tmp_path / 'nope.json'),
+            )
         )
 
         assert result['status'] == 'error'
@@ -476,7 +585,16 @@ class TestGenerateWildcardsEdges:
         inventory = tmp_path / 'inv.json'
         inventory.write_text('{broken json')
 
-        result = pf.cmd_generate_wildcards(parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'generate-wildcards', '--input', str(inventory)))
+        result = pf.cmd_generate_wildcards(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'generate-wildcards',
+                '--input',
+                str(inventory),
+            )
+        )
 
         assert result['status'] == 'error'
         assert 'Invalid JSON' in result['error']
@@ -507,7 +625,17 @@ class TestExecutorSubcommandsInProcess:
         """Dry-run reports 'would_add' and leaves the file untouched."""
         settings_file = self._setup_project(tmp_path, ['Bash(git:*)'])
 
-        result = pf.cmd_ensure_executor(parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'ensure-executor', '--target', 'project', '--dry-run'))
+        result = pf.cmd_ensure_executor(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'ensure-executor',
+                '--target',
+                'project',
+                '--dry-run',
+            )
+        )
 
         assert result['action'] == 'would_add'
         assert result['success'] is True
@@ -518,7 +646,9 @@ class TestExecutorSubcommandsInProcess:
         self._setup_project(tmp_path, ['Bash(git:*)'])
 
         result = pf.cmd_cleanup_scripts(
-            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'cleanup-scripts', '--target', 'project')
+            parse_ns(
+                'plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'cleanup-scripts', '--target', 'project'
+            )
         )
 
         assert result['action'] == 'nothing_to_remove'
@@ -530,7 +660,15 @@ class TestExecutorSubcommandsInProcess:
         settings_file = self._setup_project(tmp_path, ['Bash(git:*)', script_perm])
 
         result = pf.cmd_cleanup_scripts(
-            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'cleanup-scripts', '--target', 'project', '--dry-run')
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'cleanup-scripts',
+                '--target',
+                'project',
+                '--dry-run',
+            )
         )
 
         assert result['action'] == 'would_remove'
@@ -542,7 +680,15 @@ class TestExecutorSubcommandsInProcess:
         settings_file = self._setup_project(tmp_path, ['Bash(git:*)', pf.OVERLY_BROAD_PYTHON])
 
         result = pf.cmd_cleanup_scripts(
-            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'cleanup-scripts', '--target', 'project', '--remove-broad-python')
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'cleanup-scripts',
+                '--target',
+                'project',
+                '--remove-broad-python',
+            )
         )
 
         assert result['success'] is True
@@ -555,7 +701,15 @@ class TestExecutorSubcommandsInProcess:
         settings_file = self._setup_project(tmp_path, ['Bash(git:*)', script_perm])
 
         result = pf.cmd_migrate_executor(
-            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'migrate-executor', '--target', 'project', '--dry-run')
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'migrate-executor',
+                '--target',
+                'project',
+                '--dry-run',
+            )
         )
 
         assert result['success'] is True
@@ -566,12 +720,18 @@ class TestExecutorSubcommandsInProcess:
 
     def test_migrate_executor_executor_already_present_removes_broad_python(self, tmp_path, in_tmp_cwd):
         """When the executor perm already exists, migration only cleans up extras."""
-        settings_file = self._setup_project(
-            tmp_path, ['Bash(git:*)', pf.EXECUTOR_PERMISSION, pf.OVERLY_BROAD_PYTHON]
-        )
+        settings_file = self._setup_project(tmp_path, ['Bash(git:*)', pf.EXECUTOR_PERMISSION, pf.OVERLY_BROAD_PYTHON])
 
         result = pf.cmd_migrate_executor(
-            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'migrate-executor', '--target', 'project', '--remove-broad-python')
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'migrate-executor',
+                '--target',
+                'project',
+                '--remove-broad-python',
+            )
         )
 
         assert result['success'] is True
@@ -605,7 +765,18 @@ class TestAddRemoveInProcess:
         """Adding a new permission writes it and reports 'added'."""
         settings_file = self._setup_project(tmp_path, ['Bash(git:*)'])
 
-        result = pf.cmd_add(parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'add', '--permission', 'Bash(npm:*)', '--target', 'project'))
+        result = pf.cmd_add(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'add',
+                '--permission',
+                'Bash(npm:*)',
+                '--target',
+                'project',
+            )
+        )
 
         assert result['action'] == 'added'
         assert result['success'] is True
@@ -615,7 +786,18 @@ class TestAddRemoveInProcess:
         """Adding an existing permission reports 'already_exists'."""
         self._setup_project(tmp_path, ['Bash(git:*)'])
 
-        result = pf.cmd_add(parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'add', '--permission', 'Bash(git:*)', '--target', 'project'))
+        result = pf.cmd_add(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'add',
+                '--permission',
+                'Bash(git:*)',
+                '--target',
+                'project',
+            )
+        )
 
         assert result['action'] == 'already_exists'
 
@@ -623,7 +805,18 @@ class TestAddRemoveInProcess:
         """Removing an existing permission deletes it and reports 'removed'."""
         settings_file = self._setup_project(tmp_path, ['Bash(git:*)', 'Bash(npm:*)'])
 
-        result = pf.cmd_remove(parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'remove', '--permission', 'Bash(npm:*)', '--target', 'project'))
+        result = pf.cmd_remove(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'remove',
+                '--permission',
+                'Bash(npm:*)',
+                '--target',
+                'project',
+            )
+        )
 
         assert result['action'] == 'removed'
         assert 'Bash(npm:*)' not in _read_allow(settings_file)
@@ -632,7 +825,18 @@ class TestAddRemoveInProcess:
         """Removing a missing permission reports 'not_found'."""
         self._setup_project(tmp_path, ['Bash(git:*)'])
 
-        result = pf.cmd_remove(parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'remove', '--permission', 'Bash(absent:*)', '--target', 'project'))
+        result = pf.cmd_remove(
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'remove',
+                '--permission',
+                'Bash(absent:*)',
+                '--target',
+                'project',
+            )
+        )
 
         assert result['action'] == 'not_found'
 
@@ -651,7 +855,16 @@ class TestRemoveRedundantErrors:
         _write_settings(local_file, ['Bash(git:*)'])
 
         result = pf.cmd_remove_redundant(
-            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'remove-redundant', '--global-settings', str(tmp_path / 'missing-global.json'), '--local-settings', str(local_file))
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'remove-redundant',
+                '--global-settings',
+                str(tmp_path / 'missing-global.json'),
+                '--local-settings',
+                str(local_file),
+            )
         )
 
         assert result['status'] == 'error'
@@ -663,7 +876,16 @@ class TestRemoveRedundantErrors:
         _write_settings(global_file, ['Bash(git:*)'])
 
         result = pf.cmd_remove_redundant(
-            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'remove-redundant', '--global-settings', str(global_file), '--local-settings', str(tmp_path / 'missing-local.json'))
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'remove-redundant',
+                '--global-settings',
+                str(global_file),
+                '--local-settings',
+                str(tmp_path / 'missing-local.json'),
+            )
         )
 
         assert result['status'] == 'error'
@@ -683,7 +905,17 @@ class TestApplyProjectStepPermissionsErrors:
         _write_settings(settings_file, [])
 
         result = pf.cmd_apply_project_step_permissions(
-            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'apply-project-step-permissions', '--marshal', str(tmp_path / 'missing.json'), '--settings', str(settings_file), '--dry-run')
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'apply-project-step-permissions',
+                '--marshal',
+                str(tmp_path / 'missing.json'),
+                '--settings',
+                str(settings_file),
+                '--dry-run',
+            )
         )
 
         assert result['status'] == 'error'
@@ -694,7 +926,17 @@ class TestApplyProjectStepPermissionsErrors:
         marshal_file.write_text(json.dumps({'plan': {'phase-6-finalize': {'steps': []}}}))
 
         result = pf.cmd_apply_project_step_permissions(
-            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'apply-project-step-permissions', '--marshal', str(marshal_file), '--settings', str(tmp_path / 'missing.json'), '--dry-run')
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'apply-project-step-permissions',
+                '--marshal',
+                str(marshal_file),
+                '--settings',
+                str(tmp_path / 'missing.json'),
+                '--dry-run',
+            )
         )
 
         assert result['status'] == 'error'
@@ -740,12 +982,22 @@ class TestPermissionDslDeclinesOnNonClaude:
     def test_apply_fixes_declines_on_opencode(self, monkeypatch, tmp_path):
         """apply-fixes on a non-Claude target returns a no-op, not a normalized render."""
         settings_file = tmp_path / 'settings.json'
-        _write_settings(settings_file, ['Read(target/build-2025-11-20-174411.log)', 'Read(target/build-2025-11-20-174411.log)'])
+        _write_settings(
+            settings_file, ['Read(target/build-2025-11-20-174411.log)', 'Read(target/build-2025-11-20-174411.log)']
+        )
 
         self._force_opencode(monkeypatch)
 
         result = pf.cmd_apply_fixes(
-            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'apply-fixes', '--settings', str(settings_file), '--dry-run')
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'apply-fixes',
+                '--settings',
+                str(settings_file),
+                '--dry-run',
+            )
         )
 
         self._assert_declines(result)
@@ -753,12 +1005,22 @@ class TestPermissionDslDeclinesOnNonClaude:
     def test_consolidate_declines_on_opencode(self, monkeypatch, tmp_path):
         """consolidate on a non-Claude target returns a no-op, not timestamp wildcards."""
         settings_file = tmp_path / 'settings.json'
-        _write_settings(settings_file, ['Read(target/build-2025-11-20-174411.log)', 'Read(target/build-2025-11-20-174412.log)'])
+        _write_settings(
+            settings_file, ['Read(target/build-2025-11-20-174411.log)', 'Read(target/build-2025-11-20-174412.log)']
+        )
 
         self._force_opencode(monkeypatch)
 
         result = pf.cmd_consolidate(
-            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'consolidate', '--settings', str(settings_file), '--dry-run')
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'consolidate',
+                '--settings',
+                str(settings_file),
+                '--dry-run',
+            )
         )
 
         self._assert_declines(result)
@@ -773,7 +1035,17 @@ class TestPermissionDslDeclinesOnNonClaude:
         self._force_opencode(monkeypatch)
 
         result = pf.cmd_ensure_wildcards(
-            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'ensure-wildcards', '--settings', str(settings_file), '--marketplace-json', str(marketplace_file), '--dry-run')
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'ensure-wildcards',
+                '--settings',
+                str(settings_file),
+                '--marketplace-json',
+                str(marketplace_file),
+                '--dry-run',
+            )
         )
 
         self._assert_declines(result)
@@ -781,12 +1053,26 @@ class TestPermissionDslDeclinesOnNonClaude:
     def test_generate_wildcards_declines_on_opencode(self, monkeypatch, tmp_path):
         """generate-wildcards on a non-Claude target returns a no-op, not wildcard lists."""
         inventory_file = tmp_path / 'inventory.json'
-        inventory_file.write_text(json.dumps({'bundles': [{'name': 'plan-marshall', 'skills': [{'name': 'manage-files'}]}], 'statistics': {'total_bundles': 1, 'total_skills': 1, 'total_commands': 0}}))
+        inventory_file.write_text(
+            json.dumps(
+                {
+                    'bundles': [{'name': 'plan-marshall', 'skills': [{'name': 'manage-files'}]}],
+                    'statistics': {'total_bundles': 1, 'total_skills': 1, 'total_commands': 0},
+                }
+            )
+        )
 
         self._force_opencode(monkeypatch)
 
         result = pf.cmd_generate_wildcards(
-            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'generate-wildcards', '--input', str(inventory_file))
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'generate-wildcards',
+                '--input',
+                str(inventory_file),
+            )
         )
 
         self._assert_declines(result)
@@ -796,7 +1082,15 @@ class TestPermissionDslDeclinesOnNonClaude:
         self._force_opencode(monkeypatch)
 
         result = pf.cmd_ensure_executor(
-            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'ensure-executor', '--target', 'project', '--dry-run')
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'ensure-executor',
+                '--target',
+                'project',
+                '--dry-run',
+            )
         )
 
         self._assert_declines(result)
@@ -806,7 +1100,9 @@ class TestPermissionDslDeclinesOnNonClaude:
         self._force_opencode(monkeypatch)
 
         result = pf.cmd_cleanup_scripts(
-            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'cleanup-scripts', '--target', 'project')
+            parse_ns(
+                'plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'cleanup-scripts', '--target', 'project'
+            )
         )
 
         self._assert_declines(result)
@@ -816,7 +1112,15 @@ class TestPermissionDslDeclinesOnNonClaude:
         self._force_opencode(monkeypatch)
 
         result = pf.cmd_migrate_executor(
-            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'migrate-executor', '--target', 'project', '--dry-run')
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'migrate-executor',
+                '--target',
+                'project',
+                '--dry-run',
+            )
         )
 
         self._assert_declines(result)
@@ -824,14 +1128,26 @@ class TestPermissionDslDeclinesOnNonClaude:
     def test_apply_project_step_permissions_declines_on_opencode(self, monkeypatch, tmp_path):
         """apply-project-step-permissions on a non-Claude target returns a no-op, not Skill(...) rules."""
         marshal_file = tmp_path / 'marshal.json'
-        marshal_file.write_text(json.dumps({'plan': {'phase-6-finalize': {'steps': ['project:finalize-step-plugin-doctor']}}}))
+        marshal_file.write_text(
+            json.dumps({'plan': {'phase-6-finalize': {'steps': ['project:finalize-step-plugin-doctor']}}})
+        )
         settings_file = tmp_path / 'settings.json'
         _write_settings(settings_file, [])
 
         self._force_opencode(monkeypatch)
 
         result = pf.cmd_apply_project_step_permissions(
-            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'apply-project-step-permissions', '--marshal', str(marshal_file), '--settings', str(settings_file), '--dry-run')
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'apply-project-step-permissions',
+                '--marshal',
+                str(marshal_file),
+                '--settings',
+                str(settings_file),
+                '--dry-run',
+            )
         )
 
         self._assert_declines(result)
@@ -846,7 +1162,16 @@ class TestPermissionDslDeclinesOnNonClaude:
         self._force_opencode(monkeypatch)
 
         result = pf.cmd_remove_redundant(
-            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'remove-redundant', '--global-settings', str(global_file), '--local-settings', str(local_file))
+            parse_ns(
+                'plan-marshall',
+                'tools-permission-fix',
+                'permission_fix.py',
+                'remove-redundant',
+                '--global-settings',
+                str(global_file),
+                '--local-settings',
+                str(local_file),
+            )
         )
 
         assert result.get('status') == 'skipped'
@@ -857,7 +1182,9 @@ class TestPermissionDslDeclinesOnNonClaude:
         self._force_opencode(monkeypatch)
 
         result = pf.cmd_remove_redundant(
-            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'remove-redundant', '--scope', 'both')
+            parse_ns(
+                'plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'remove-redundant', '--scope', 'both'
+            )
         )
 
         assert result.get('status') == 'skipped'

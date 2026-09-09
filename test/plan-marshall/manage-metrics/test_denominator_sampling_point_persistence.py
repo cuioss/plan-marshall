@@ -8,7 +8,6 @@ deliverable extractors read one heading pattern rather than two, since a
 disagreement there would move the denominator without moving its sampling point.
 """
 
-
 import re
 
 import _plan_parsing
@@ -135,6 +134,7 @@ def test_two_generations_of_the_same_plan_are_distinguishable_by_the_field(plan_
 # One deliverable grammar, not two producers of one number
 # =============================================================================
 
+
 def test_the_two_deliverable_extractors_share_one_heading_pattern(monkeypatch):
     """The agreement above is by construction, not by two matching literals.
 
@@ -194,12 +194,10 @@ def test_the_two_deliverable_extractors_share_one_heading_pattern(monkeypatch):
 
     headings = _plan_parsing.extract_deliverable_headings(probe)
     assert [item['title'] for item in headings] == ['Substituted grammar'], (
-        'extract_deliverable_headings does not match through '
-        'DELIVERABLE_HEADING_PATTERN — it holds a copy of its own'
+        'extract_deliverable_headings does not match through DELIVERABLE_HEADING_PATTERN — it holds a copy of its own'
     )
 
     blocks = _plan_parsing.split_deliverable_blocks(probe)
     assert [item['title'] for item in blocks] == ['Substituted grammar'], (
-        'split_deliverable_blocks does not split on DELIVERABLE_HEADING_PATTERN '
-        '— it holds a copy of its own'
+        'split_deliverable_blocks does not split on DELIVERABLE_HEADING_PATTERN — it holds a copy of its own'
     )

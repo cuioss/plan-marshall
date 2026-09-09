@@ -9,7 +9,9 @@ import pytest
 
 from conftest import load_script_module
 
-_gradle_cmd_find_project_mod = load_script_module('plan-marshall', 'build-gradle', '_gradle_cmd_find_project.py', '_gradle_cmd_find_project')
+_gradle_cmd_find_project_mod = load_script_module(
+    'plan-marshall', 'build-gradle', '_gradle_cmd_find_project.py', '_gradle_cmd_find_project'
+)
 
 find_build_files = _gradle_cmd_find_project_mod.find_build_files
 find_settings_file = _gradle_cmd_find_project_mod.find_settings_file

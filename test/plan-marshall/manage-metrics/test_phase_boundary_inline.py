@@ -31,7 +31,6 @@ The negative control (an unclosed phase still flips
 `any_phase_missing_end_time`) keeps the check non-vacuous.
 """
 
-
 from _manage_metrics_fixtures import (
     ns_generate,
     ns_phase_boundary,
@@ -182,6 +181,7 @@ def test_inline_main_context_surfaced_on_mixed_finalize_phase(plan_context, monk
 # Inline-phase recording: an inline close still carries its end_time marker
 # =============================================================================
 
+
 def test_recipe_inline_refine_outline_carry_total_tokens_after_enrich(plan_context, monkeypatch):
     """The recipe-inline 2-refine / 3-outline phases carry a derived total_tokens after enrich."""
     _drive_full_six_phase_plan('inline-recipe')
@@ -275,6 +275,7 @@ def test_unclosed_phase_still_flips_missing_end_time(plan_context):
 # ran BOTH dispatched steps (total_tokens present) AND inline steps (four-field
 # usage present) surfaces the inline contribution as a distinct field.
 # =============================================================================
+
 
 def test_dispatched_phase_without_four_field_usage_is_marked_unmeasured(plan_context, monkeypatch):
     """A dispatched phase enrich never attributed carries the unmeasured marker.

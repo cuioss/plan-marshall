@@ -22,9 +22,7 @@ import re
 ROSTER_ROW = re.compile(r'^-\s+`([^`]+)`')
 
 
-def section_lines(
-    text: str, heading: str, stop_prefixes: tuple[str, ...] = ('## ',)
-) -> list[str]:
+def section_lines(text: str, heading: str, stop_prefixes: tuple[str, ...] = ('## ',)) -> list[str]:
     """Return the lines between ``heading`` and the next stop-prefixed line.
 
     Args:

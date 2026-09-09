@@ -10,7 +10,6 @@ Its sections, in order:
 * Width-agnostic numeric-prefix parsing and numbering
 """
 
-
 from argparse import Namespace
 from pathlib import Path
 
@@ -85,6 +84,7 @@ def test_create_multiple_adrs(adr_dir):
 # Tier 2: scan subcommand
 # =========================================================================
 
+
 def test_create_emits_metadata_block(adr_dir):
     """create produces an ADR carrying the (empty) metadata block."""
     result = cmd_create(Namespace(command='create', title='Has Block', status='Proposed'))
@@ -105,6 +105,7 @@ def test_create_emits_metadata_block(adr_dir):
 # =========================================================================
 # Tier 2: Width-agnostic numeric-prefix parsing and numbering
 # =========================================================================
+
 
 def test_create_next_filename_on_seven_adr_three_digit_corpus(adr_dir):
     """Success criterion: a 7-ADR 3-digit corpus emits the next ADR as 008-."""
@@ -131,6 +132,7 @@ def test_create_on_empty_corpus_emits_four_digit_prefix(adr_dir):
 # =========================================================================
 # Tier 2: Direct import tests
 # =========================================================================
+
 
 def test_list_adrs(adr_dir):
     """Test listing ADRs."""
@@ -176,6 +178,7 @@ def test_read_adr_not_found(adr_dir):
 # Tier 2: Width-agnostic numeric-prefix parsing and numbering
 # =========================================================================
 
+
 def test_read_update_delete_on_four_digit_corpus(adr_dir):
     """read/update/delete resolve a 4-digit-prefixed ADR by its number."""
     _touch_adr(adr_dir, '0008-Wide.adoc', title='Wide', status='Proposed')
@@ -196,6 +199,7 @@ def test_read_update_delete_on_four_digit_corpus(adr_dir):
 # =========================================================================
 # Tier 2: Direct import tests
 # =========================================================================
+
 
 def test_update_adr_status(adr_dir):
     """Test updating ADR status."""

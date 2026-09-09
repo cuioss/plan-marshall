@@ -8,7 +8,6 @@ the aliases that reach the same handler, and the error each reports for a missin
 lesson, a malformed payload or an absent root.
 """
 
-
 from pathlib import Path
 import pytest
 from _manage_lessons_main_dispatch_fixtures import _run_main, _seed_lesson
@@ -51,8 +50,15 @@ class TestMainCreationVerbs:
             monkeypatch,
             capsys,
             [
-                'add', '--component', 'svc:x', '--category', 'improvement',
-                '--title', 'With Bundle', '--bundle', 'pm-dev-java',
+                'add',
+                '--component',
+                'svc:x',
+                '--category',
+                'improvement',
+                '--title',
+                'With Bundle',
+                '--bundle',
+                'pm-dev-java',
             ],
         )
         assert code == 0
@@ -118,9 +124,7 @@ class TestMainReadVerbs:
         assert toon['status'] == 'success'
         assert toon['filtered'] == 2
 
-    def test_main_list_stalled_absent_plans_root_reports_could_not_look(
-        self, corpus, monkeypatch, capsys
-    ):
+    def test_main_list_stalled_absent_plans_root_reports_could_not_look(self, corpus, monkeypatch, capsys):
         """Through main(), an absent plans root reports WHICH kind of zero it is.
 
         The corpus fixture seeds no ``plans/`` directory, so the scan could not
@@ -142,7 +146,8 @@ class TestMainMutationVerbs:
     def test_main_update_component_reports_field_and_previous(self, corpus, monkeypatch, capsys):
         _seed_lesson(corpus, '2025-01-01-01-030', component='svc:old')
         code, toon = _run_main(
-            monkeypatch, capsys,
+            monkeypatch,
+            capsys,
             ['update', '--lesson-id', '2025-01-01-01-030', '--component', 'svc:new'],
         )
         assert code == 0
@@ -154,7 +159,8 @@ class TestMainMutationVerbs:
     def test_main_update_category_validates_and_records_field(self, corpus, monkeypatch, capsys):
         _seed_lesson(corpus, '2025-01-01-01-031', category='bug')
         code, toon = _run_main(
-            monkeypatch, capsys,
+            monkeypatch,
+            capsys,
             ['update', '--lesson-id', '2025-01-01-01-031', '--category', 'improvement'],
         )
         assert code == 0
@@ -165,7 +171,8 @@ class TestMainMutationVerbs:
     def test_main_set_title_rewrites_h1(self, corpus, monkeypatch, capsys):
         path = _seed_lesson(corpus, '2025-01-01-01-040', title='Old Heading')
         code, toon = _run_main(
-            monkeypatch, capsys,
+            monkeypatch,
+            capsys,
             ['set-title', '--lesson-id', '2025-01-01-01-040', '--title', 'New Heading'],
         )
         assert code == 0
@@ -177,7 +184,8 @@ class TestMainMutationVerbs:
     def test_main_set_body_replaces_body_via_content_flag(self, corpus, monkeypatch, capsys):
         path = _seed_lesson(corpus, '2025-01-01-01-041', title='Body Host', body='original body.\n')
         code, toon = _run_main(
-            monkeypatch, capsys,
+            monkeypatch,
+            capsys,
             ['set-body', '--lesson-id', '2025-01-01-01-041', '--content', 'replacement body'],
         )
         assert code == 0
@@ -195,9 +203,18 @@ class TestMainLifecycleVerbs:
     def test_main_remove_force_deletes_and_tombstones(self, corpus, monkeypatch, capsys):
         path = _seed_lesson(corpus, '2025-01-01-01-050', title='Doomed')
         code, toon = _run_main(
-            monkeypatch, capsys,
-            ['remove', '--lesson-id', '2025-01-01-01-050', '--reason', 'dup',
-             '--coverage-verdict', 'redundant', '--force'],
+            monkeypatch,
+            capsys,
+            [
+                'remove',
+                '--lesson-id',
+                '2025-01-01-01-050',
+                '--reason',
+                'dup',
+                '--coverage-verdict',
+                'redundant',
+                '--force',
+            ],
         )
         assert code == 0
         assert toon['status'] == 'success'
@@ -216,9 +233,18 @@ class TestMainLifecycleVerbs:
         """
         path = _seed_lesson(corpus, '2025-01-01-01-051', title='Unevidenced')
         code, _toon = _run_main(
-            monkeypatch, capsys,
-            ['remove', '--lesson-id', '2025-01-01-01-051', '--reason', 'claimed',
-             '--coverage-verdict', 'completely_covered', '--force'],
+            monkeypatch,
+            capsys,
+            [
+                'remove',
+                '--lesson-id',
+                '2025-01-01-01-051',
+                '--reason',
+                'claimed',
+                '--coverage-verdict',
+                'completely_covered',
+                '--force',
+            ],
         )
         assert code == 2
         assert path.exists()
@@ -228,9 +254,9 @@ class TestMainLifecycleVerbs:
         source = _seed_lesson(corpus, '2025-01-01-01-060', title='Source', body='src body.\n')
         _seed_lesson(corpus, '2025-01-02-01-001', title='Canonical', body='canon body.\n')
         code, toon = _run_main(
-            monkeypatch, capsys,
-            ['supersede', '--lesson-id', '2025-01-01-01-060',
-             '--by', '2025-01-02-01-001', '--reason', 'merged'],
+            monkeypatch,
+            capsys,
+            ['supersede', '--lesson-id', '2025-01-01-01-060', '--by', '2025-01-02-01-001', '--reason', 'merged'],
         )
         assert code == 0
         assert toon['status'] == 'success'
@@ -241,9 +267,9 @@ class TestMainLifecycleVerbs:
     def test_main_supersede_self_rejected(self, corpus, monkeypatch, capsys):
         _seed_lesson(corpus, '2025-01-01-01-061', title='Selfie')
         code, toon = _run_main(
-            monkeypatch, capsys,
-            ['supersede', '--lesson-id', '2025-01-01-01-061',
-             '--by', '2025-01-01-01-061', '--reason', 'self'],
+            monkeypatch,
+            capsys,
+            ['supersede', '--lesson-id', '2025-01-01-01-061', '--by', '2025-01-01-01-061', '--reason', 'self'],
         )
         assert code == 0
         assert toon['status'] == 'error'
@@ -258,7 +284,8 @@ class TestMainLifecycleVerbs:
             '{"lesson_id": "2025-01-01-01-070", "status": "superseded"}', encoding='utf-8'
         )
         code, toon = _run_main(
-            monkeypatch, capsys,
+            monkeypatch,
+            capsys,
             ['cleanup-superseded', '--lesson-id', '2025-01-01-01-070', '--dry-run'],
         )
         assert code == 0
@@ -274,7 +301,8 @@ class TestMainRelocationVerbs:
     def test_main_convert_then_restore_round_trip(self, corpus, monkeypatch, capsys):
         _seed_lesson(corpus, '2025-01-01-01-080', title='Relocatable')
         code, toon = _run_main(
-            monkeypatch, capsys,
+            monkeypatch,
+            capsys,
             ['convert-to-plan', '--lesson-id', '2025-01-01-01-080', '--plan-id', 'reloc-plan'],
         )
         assert code == 0
@@ -284,17 +312,13 @@ class TestMainRelocationVerbs:
         # Source removed from the corpus by the move.
         assert not (corpus / 'lessons-learned' / '2025-01-01-01-080.md').exists()
 
-        code2, toon2 = _run_main(
-            monkeypatch, capsys, ['restore-from-plan', '--plan-id', 'reloc-plan']
-        )
+        code2, toon2 = _run_main(monkeypatch, capsys, ['restore-from-plan', '--plan-id', 'reloc-plan'])
         assert code2 == 0
         assert toon2['status'] == 'success'
         assert toon2['restored_count'] == 1
         assert (corpus / 'lessons-learned' / '2025-01-01-01-080.md').exists()
 
-    def test_main_restore_from_plan_absent_dir_reports_unresolved(
-        self, corpus, monkeypatch, capsys
-    ):
+    def test_main_restore_from_plan_absent_dir_reports_unresolved(self, corpus, monkeypatch, capsys):
         """Through main(), an absent plan dir is the non-benign outcome.
 
         The verb never scanned anything, so it must NOT report ``no_lesson_file``
@@ -303,9 +327,7 @@ class TestMainRelocationVerbs:
         verdict in the TOON, so the exit code stays 0 while ``status`` is
         ``error``.
         """
-        code, toon = _run_main(
-            monkeypatch, capsys, ['restore-from-plan', '--plan-id', 'empty-plan']
-        )
+        code, toon = _run_main(monkeypatch, capsys, ['restore-from-plan', '--plan-id', 'empty-plan'])
         assert code == 0
         assert toon['status'] == 'error'
         assert toon['error'] == 'plan_dir_unresolved'
@@ -318,7 +340,9 @@ class TestMainAggregateVerb:
 
     def test_main_aggregate_groups_cross_ref_pair(self, corpus, monkeypatch, capsys):
         _seed_lesson(
-            corpus, '2025-03-01-01-001', title='Agg Primary',
+            corpus,
+            '2025-03-01-01-001',
+            title='Agg Primary',
             body='Refers to 2025-03-01-01-002 directly.\n',
         )
         _seed_lesson(corpus, '2025-03-01-01-002', title='Agg Partner', body='No back-ref.\n')
@@ -345,7 +369,8 @@ class TestMainArgparseErrors:
 
     def test_main_invalid_category_choice_exits_2(self, corpus, monkeypatch, capsys):
         code, _ = _run_main(
-            monkeypatch, capsys,
+            monkeypatch,
+            capsys,
             ['add', '--component', 'svc:x', '--category', 'nonsense', '--title', 'T'],
         )
         assert code == 2

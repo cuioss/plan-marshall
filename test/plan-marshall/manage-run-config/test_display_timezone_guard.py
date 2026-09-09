@@ -138,8 +138,7 @@ def test_classification_covers_the_live_population_and_is_non_empty(capsys):
     # renders.
     for declared in render_files | owner_files:
         assert declared in scanned, (
-            f'Classified file {declared!r} is not a live timestamp site — '
-            'the classification has drifted from the tree.'
+            f'Classified file {declared!r} is not a live timestamp site — the classification has drifted from the tree.'
         )
 
 
@@ -227,8 +226,7 @@ def test_helper_only_population_has_an_explicit_classification_entry(capsys):
     stale = declared - helper_only
     assert not stale, (
         'helper_only_sites declares module(s) that are no longer in the live '
-        'helper-only difference — the classification has drifted from the tree:\n'
-        + json.dumps(sorted(stale), indent=2)
+        'helper-only difference — the classification has drifted from the tree:\n' + json.dumps(sorted(stale), indent=2)
     )
 
 
@@ -254,8 +252,7 @@ def test_published_census_covers_every_helper_reaching_module(capsys):
         print(
             '\n[display-timezone guard] helper-arm coverage:',
             json.dumps(
-                {'helper_arm_files': len(helper_arm), 'scanned_files': len(scanned),
-                 'uncovered': sorted(uncovered)},
+                {'helper_arm_files': len(helper_arm), 'scanned_files': len(scanned), 'uncovered': sorted(uncovered)},
                 indent=2,
             ),
         )
@@ -286,8 +283,7 @@ def test_helper_only_entries_are_well_formed(capsys):
         rel = entry['file']
         verdict = entry['classification']
         assert verdict in verdicts, (
-            f'helper_only_sites entry {rel!r} carries an unknown classification '
-            f'{verdict!r} — expected STORE or RENDER.'
+            f'helper_only_sites entry {rel!r} carries an unknown classification {verdict!r} — expected STORE or RENDER.'
         )
         verdicts[verdict] += 1
 
@@ -469,8 +465,7 @@ def test_knob_symbols_never_reach_a_store_or_compare_site():
 
     assert not leaks, (
         'Knob-consumer symbol(s) reached a non-RENDER, non-owner file — a '
-        'STORE/COMPARE site is consulting display_timezone:\n'
-        + json.dumps(leaks, indent=2)
+        'STORE/COMPARE site is consulting display_timezone:\n' + json.dumps(leaks, indent=2)
     )
 
     # The guard must have something to examine — the owner + render files DO
@@ -535,6 +530,5 @@ def test_knob_symbols_never_reach_a_store_or_compare_site():
         'raw knob read inside one is a STORE/COMPARE site consulting the display '
         'zone that neither of the other arms can see. Route the site through '
         'render_timestamp(...) — which labels the converted instant and spends '
-        'budget — or move it back to the UTC store primitive:\n'
-        + json.dumps(direct_touches, indent=2)
+        'budget — or move it back to the UTC store primitive:\n' + json.dumps(direct_touches, indent=2)
     )

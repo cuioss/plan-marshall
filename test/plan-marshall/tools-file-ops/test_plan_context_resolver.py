@@ -94,9 +94,7 @@ def _create_real_plan(plan_context, plan_id=REAL_PLAN_ID):
 class TestRealPlanIdReturnsBothFaces:
     """A real id that resolves yields a plan dir AND a worktree path."""
 
-    def test_returns_plan_dir_and_worktree_path(
-        self, plan_context, monkeypatch, stub_checkout_root
-    ):
+    def test_returns_plan_dir_and_worktree_path(self, plan_context, monkeypatch, stub_checkout_root):
         expected_dir = _create_real_plan(plan_context)
         _stub_worktree_query(
             monkeypatch,
@@ -112,9 +110,7 @@ class TestRealPlanIdReturnsBothFaces:
         assert ctx.worktree_path == STUB_WORKTREE
         assert ctx.is_sentinel is False
 
-    def test_worktree_face_is_resolved_lazily_not_at_construction(
-        self, plan_context, monkeypatch, stub_checkout_root
-    ):
+    def test_worktree_face_is_resolved_lazily_not_at_construction(self, plan_context, monkeypatch, stub_checkout_root):
         """Constructing the context must NOT shell out to manage-status.
 
         The laziness is load-bearing, not an optimisation: ``get_plan_dir``
@@ -144,9 +140,7 @@ class TestRealPlanIdReturnsBothFaces:
         assert ctx.worktree_path == STUB_WORKTREE
         assert calls == [REAL_PLAN_ID], 'repeat access must not re-shell-out'
 
-    def test_relative_persisted_worktree_path_is_absolutized(
-        self, plan_context, monkeypatch, stub_checkout_root
-    ):
+    def test_relative_persisted_worktree_path_is_absolutized(self, plan_context, monkeypatch, stub_checkout_root):
         """A persisted relative path is returned absolute, never verbatim."""
         _create_real_plan(plan_context)
         _stub_worktree_query(
@@ -160,9 +154,7 @@ class TestRealPlanIdReturnsBothFaces:
         assert ctx.worktree_path.endswith('some/wt')
         assert ctx.worktree_path.startswith('/')
 
-    def test_materialized_with_empty_path_raises(
-        self, plan_context, monkeypatch, stub_checkout_root
-    ):
+    def test_materialized_with_empty_path_raises(self, plan_context, monkeypatch, stub_checkout_root):
         """``materialized`` with an empty path is corrupt metadata, not a fallback.
 
         The producer only publishes ``materialized`` when it has a non-empty
@@ -171,9 +163,7 @@ class TestRealPlanIdReturnsBothFaces:
         would hand the caller a tree the plan never bound to.
         """
         _create_real_plan(plan_context)
-        _stub_worktree_query(
-            monkeypatch, worktree_state=WORKTREE_STATE_MATERIALIZED, worktree_path=''
-        )
+        _stub_worktree_query(monkeypatch, worktree_state=WORKTREE_STATE_MATERIALIZED, worktree_path='')
 
         ctx = resolve_plan_context(REAL_PLAN_ID)
 
@@ -189,9 +179,7 @@ class TestRealPlanIdReturnsBothFaces:
 class TestRealPlanIdWithoutWorktree:
     """``disabled`` resolves the worktree face to the main checkout."""
 
-    def test_worktree_face_is_the_main_checkout(
-        self, plan_context, monkeypatch, stub_checkout_root
-    ):
+    def test_worktree_face_is_the_main_checkout(self, plan_context, monkeypatch, stub_checkout_root):
         expected_dir = _create_real_plan(plan_context)
         _stub_worktree_query(monkeypatch, worktree_state=WORKTREE_STATE_DISABLED)
 
@@ -238,9 +226,7 @@ class TestWorktreeStateDiscriminator:
         expected_has_worktree,
     ):
         _create_real_plan(plan_context)
-        _stub_worktree_query(
-            monkeypatch, worktree_state=state, worktree_path=persisted_path
-        )
+        _stub_worktree_query(monkeypatch, worktree_state=state, worktree_path=persisted_path)
 
         ctx = resolve_plan_context(REAL_PLAN_ID)
 
@@ -264,9 +250,7 @@ class TestWorktreeStateDiscriminator:
 
         assert ctx.worktree_path == STUB_CHECKOUT_ROOT
 
-    def test_has_worktree_is_false_while_pending(
-        self, plan_context, monkeypatch, stub_checkout_root
-    ):
+    def test_has_worktree_is_false_while_pending(self, plan_context, monkeypatch, stub_checkout_root):
         """``has_worktree`` answers "does one exist", not "was one asked for".
 
         Every consumer of this face refuses when it is False — the finalize
@@ -319,17 +303,13 @@ class TestSentinelMaterialization:
         """
         resolve_plan_context(NO_PLAN_SENTINEL)
 
-        assert file_ops.require_plan_exists(NO_PLAN_SENTINEL) == (
-            plan_context.plans_dir / NO_PLAN_SENTINEL
-        )
+        assert file_ops.require_plan_exists(NO_PLAN_SENTINEL) == (plan_context.plans_dir / NO_PLAN_SENTINEL)
 
     def test_status_json_marks_the_plan_as_a_sentinel(self, plan_context):
         """The written marker records what it is, and that it has no worktree."""
         resolve_plan_context(NO_PLAN_SENTINEL)
 
-        payload = json.loads(
-            (plan_context.plans_dir / NO_PLAN_SENTINEL / 'status.json').read_text()
-        )
+        payload = json.loads((plan_context.plans_dir / NO_PLAN_SENTINEL / 'status.json').read_text())
         metadata = payload['plan']['metadata']
         assert metadata['sentinel'] is True
         assert metadata['use_worktree'] is False
@@ -381,10 +361,9 @@ class TestSentinelWorktreeFace:
         to the same value. Pinning "the query was never called" is what proves
         the sentinel short-circuits ahead of the subprocess.
         """
+
         def _explode(_plan_id):
-            raise AssertionError(
-                'the NO_PLAN sentinel must not query manage-status get-worktree-path'
-            )
+            raise AssertionError('the NO_PLAN sentinel must not query manage-status get-worktree-path')
 
         monkeypatch.setattr(file_ops, '_query_worktree_path', _explode)
 

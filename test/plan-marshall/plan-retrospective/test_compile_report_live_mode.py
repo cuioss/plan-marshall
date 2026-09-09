@@ -5,7 +5,6 @@ Scope: the documents a live run writes, which conditional sections it emits, and
 archived mode differs — its filename, and its refusal to overwrite.
 """
 
-
 from __future__ import annotations
 
 import itertools
@@ -31,9 +30,7 @@ from toon_parser import parse_toon
 
 from conftest import MARKETPLACE_ROOT, run_script
 
-_REFERENCES_DIR = (
-    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'references'
-)
+_REFERENCES_DIR = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'references'
 
 #: Top-level keys the log-analysis fragment shape carries beyond the original
 #: fixture's counts/percentiles core. Written out rather than derived from the
@@ -97,9 +94,7 @@ class TestCommittedFragmentKeyNames:
         still MENTIONS the retired name when explaining why it was retired.
         """
         fragment = parse_toon(
-            (_STRIPPED_ARCHIVE_FIXTURE / 'work' / 'fragment-plan-efficiency.toon').read_text(
-                encoding='utf-8'
-            )
+            (_STRIPPED_ARCHIVE_FIXTURE / 'work' / 'fragment-plan-efficiency.toon').read_text(encoding='utf-8')
         )
         documented = _documented_ratio_keys()
         ratios = fragment['ratios']
@@ -109,8 +104,7 @@ class TestCommittedFragmentKeyNames:
         assert 'worked_seconds_per_task' in ratios
         assert 'seconds_per_task' not in ratios
         assert set(ratios) <= documented, (
-            f'the fixture carries ratio keys the shipped shape does not declare: '
-            f'{sorted(set(ratios) - documented)}'
+            f'the fixture carries ratio keys the shipped shape does not declare: {sorted(set(ratios) - documented)}'
         )
 
     def test_the_efficiency_fixture_carries_the_ratio_numerator_companion(self) -> None:
@@ -123,9 +117,7 @@ class TestCommittedFragmentKeyNames:
         absence is what a revert would leave behind.
         """
         fragment = parse_toon(
-            (_STRIPPED_ARCHIVE_FIXTURE / 'work' / 'fragment-plan-efficiency.toon').read_text(
-                encoding='utf-8'
-            )
+            (_STRIPPED_ARCHIVE_FIXTURE / 'work' / 'fragment-plan-efficiency.toon').read_text(encoding='utf-8')
         )
         totals = fragment['totals']
 
@@ -322,9 +314,7 @@ class TestStrippedArchiveIntegration:
             else:
                 fragment_path = work_dir / f'fragment-{aspect}.toon'
                 body_lines = _registry_render_fragment_lines(aspect, trigger)[1:]
-                fragment_path.write_text(
-                    '\n'.join(line[2:] for line in body_lines) + '\n', encoding='utf-8'
-                )
+                fragment_path.write_text('\n'.join(line[2:] for line in body_lines) + '\n', encoding='utf-8')
             result_add = run_script(
                 _COLLECT_FRAGMENTS_SCRIPT,
                 'add',

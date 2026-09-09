@@ -141,8 +141,7 @@ def compute_barrier_state(
     for name, state, head in signals:
         if state not in VALID_SIGNAL_STATES:
             raise ValueError(
-                f'invalid signal state {state!r} for {name!r}: '
-                f'expected one of {sorted(VALID_SIGNAL_STATES)}'
+                f'invalid signal state {state!r} for {name!r}: expected one of {sorted(VALID_SIGNAL_STATES)}'
             )
         if state in _TERMINAL_STATES and head != settled_head:
             # Observed against a now-stale HEAD — a HEAD advance (bounded
@@ -196,9 +195,7 @@ def _parse_signal(raw: str) -> tuple[str, str, str]:
     elif len(parts) == 3:
         name, state, head = parts
     else:
-        raise ValueError(
-            f'invalid --signal {raw!r}: expected NAME:STATE or NAME:STATE:HEAD'
-        )
+        raise ValueError(f'invalid --signal {raw!r}: expected NAME:STATE or NAME:STATE:HEAD')
     if not name:
         raise ValueError(f'invalid --signal {raw!r}: empty signal name')
     return name, state, head

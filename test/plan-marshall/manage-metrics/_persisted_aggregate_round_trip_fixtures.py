@@ -26,7 +26,6 @@ partiality verdict is deliberately left intact, because the boundary file cannot
 honestly supply a wall-clock the close never stamped.
 """
 
-
 from pathlib import Path
 
 import pytest
@@ -85,7 +84,7 @@ def _top_level_field(content: str, key: str) -> str | None:
 
 def _phase_block(content: str, phase: str) -> str:
     start = content.index(f'[{phase}]')
-    rest = content[start + len(f'[{phase}]'):]
+    rest = content[start + len(f'[{phase}]') :]
     nxt = rest.find('\n[')
     return rest if nxt == -1 else rest[:nxt]
 

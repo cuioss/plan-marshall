@@ -106,10 +106,14 @@ def test_main_derive_cost_size_returns_size_band(plan_context, monkeypatch, caps
         capsys,
         [
             'derive-cost-size',
-            '--step-count', '3',
-            '--profile', 'implementation',
-            '--skills-count', '2',
-            '--target-file-count', '3',
+            '--step-count',
+            '3',
+            '--profile',
+            'implementation',
+            '--skills-count',
+            '2',
+            '--target-file-count',
+            '3',
         ],
     )
 

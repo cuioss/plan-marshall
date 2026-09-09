@@ -56,13 +56,17 @@ def _resolve_branch_and_path(args) -> tuple[str | None, Path | None, dict | None
             # environment/module problem, and reporting it as a missing plan
             # sends the caller looking in the wrong place. Same vocabulary as
             # the equivalent path in _cmd_baseline_reconcile.py.
-            return None, None, {
-                'status': 'error',
-                'operation': 'force-push-with-lease',
-                'plan_id': plan_id,
-                'error_type': 'status_module_unavailable',
-                'message': f'file_ops module unavailable: {exc}',
-            }
+            return (
+                None,
+                None,
+                {
+                    'status': 'error',
+                    'operation': 'force-push-with-lease',
+                    'plan_id': plan_id,
+                    'error_type': 'status_module_unavailable',
+                    'message': f'file_ops module unavailable: {exc}',
+                },
+            )
 
         try:
             context = resolve_plan_context(plan_id, ensure=False)
@@ -82,25 +86,33 @@ def _resolve_branch_and_path(args) -> tuple[str | None, Path | None, dict | None
             # a state rather than an error, and it falls through to the
             # worktree_not_materialized classification below, which says what is
             # actually true of it.
-            return None, None, {
-                'status': 'error',
-                'operation': 'force-push-with-lease',
-                'plan_id': plan_id,
-                'error_type': 'worktree_resolution_failed',
-                'message': str(exc),
-            }
+            return (
+                None,
+                None,
+                {
+                    'status': 'error',
+                    'operation': 'force-push-with-lease',
+                    'plan_id': plan_id,
+                    'error_type': 'worktree_resolution_failed',
+                    'message': str(exc),
+                },
+            )
 
         if not worktree_path_str or not plan_branch:
-            return None, None, {
-                'status': 'error',
-                'operation': 'force-push-with-lease',
-                'plan_id': plan_id,
-                'error_type': 'worktree_not_materialized',
-                'message': (
-                    'plan has no materialized worktree: the resolver reported no '
-                    'dedicated worktree path, or no feature branch is recorded'
-                ),
-            }
+            return (
+                None,
+                None,
+                {
+                    'status': 'error',
+                    'operation': 'force-push-with-lease',
+                    'plan_id': plan_id,
+                    'error_type': 'worktree_not_materialized',
+                    'message': (
+                        'plan has no materialized worktree: the resolver reported no '
+                        'dedicated worktree path, or no feature branch is recorded'
+                    ),
+                },
+            )
 
         return plan_branch, Path(worktree_path_str), None
 
@@ -109,13 +121,16 @@ def _resolve_branch_and_path(args) -> tuple[str | None, Path | None, dict | None
         project_dir = getattr(args, 'project_dir', None)
         branch = getattr(args, 'branch', None)
         if not project_dir or not branch:
-            return None, None, {
-                'status': 'error',
-                'operation': 'force-push-with-lease',
-                'error_type': 'missing_required_arg',
-                'message': 'one of --plan-id or --project-dir is required; '
-                           '--project-dir also requires --branch',
-            }
+            return (
+                None,
+                None,
+                {
+                    'status': 'error',
+                    'operation': 'force-push-with-lease',
+                    'error_type': 'missing_required_arg',
+                    'message': 'one of --plan-id or --project-dir is required; --project-dir also requires --branch',
+                },
+            )
         return branch, Path(project_dir), None
 
 
@@ -183,15 +198,11 @@ def cmd_force_push(args) -> dict:
         }
 
     # Perform the push with --force-with-lease.
-    rc, _stdout, stderr = run_git(
-        ['-C', str(worktree_path), 'push', 'origin', branch, '--force-with-lease']
-    )
+    rc, _stdout, stderr = run_git(['-C', str(worktree_path), 'push', 'origin', branch, '--force-with-lease'])
 
     if rc == 0:
         # Invariant §5.1.4 — capture remote SHA after successful push.
-        rc_ls, ls_out, _ls_err = run_git(
-            ['-C', str(worktree_path), 'ls-remote', 'origin', branch]
-        )
+        rc_ls, ls_out, _ls_err = run_git(['-C', str(worktree_path), 'ls-remote', 'origin', branch])
         remote_sha: str | None = None
         if rc_ls == 0 and ls_out:
             parts = ls_out.split()

@@ -321,6 +321,7 @@ class TestCommentsStage:
             # Force one add_finding call to fail so count_stored drifts
             # below expected_stored; the second succeeds.
             with patch('_findings_core.add_finding') as mock_add:
+
                 def _side_effect(**kwargs):
                     # First call (C1) fails; second (C2) succeeds.
                     if mock_add.call_count == 1:
@@ -478,12 +479,7 @@ class TestCommentsStage:
         q = query_findings('gh-pr-stage-newid', finding_type='pr-comment')
         assert q['filtered_count'] == 2
         stored_ids = {
-            m.group('id')
-            for m in (
-                github_pr._COMMENT_ID_DETAIL.search(f['detail'] or '')
-                for f in q['findings']
-            )
-            if m
+            m.group('id') for m in (github_pr._COMMENT_ID_DETAIL.search(f['detail'] or '') for f in q['findings']) if m
         }
         assert stored_ids == {'RB1', 'RB2'}
 
@@ -1223,9 +1219,7 @@ class TestRefusalNoticeProducerFilter:
         # whether a threshold is ever measured, so it can never rescue this body.
         assert _has_code_anchor(_CODERABBIT_COMMAND_REPLY_REFUSAL)
         # ...leaving the registry data arm as the only thing that recognizes it.
-        assert refusal_layers(_CODERABBIT_COMMAND_REPLY_REFUSAL, 'coderabbit') == [
-            REFUSAL_LAYER_REGISTRY
-        ]
+        assert refusal_layers(_CODERABBIT_COMMAND_REPLY_REFUSAL, 'coderabbit') == [REFUSAL_LAYER_REGISTRY]
         assert _is_refusal_notice(_CODERABBIT_COMMAND_REPLY_REFUSAL, 'coderabbit')
         # And it stays bot-scoped: no other bot's record, and no human, cross-matches.
         assert not _is_refusal_notice(_CODERABBIT_COMMAND_REPLY_REFUSAL, 'sourcery')
@@ -1244,9 +1238,7 @@ class TestRefusalNoticeProducerFilter:
 
         markers = bot_registry.refusal_patterns('coderabbit')
         matched_by_summary = [m for m in markers if m in _CODERABBIT_REVIEW_LIMIT_REFUSAL]
-        matched_by_command_reply = [
-            m for m in markers if m in _CODERABBIT_COMMAND_REPLY_REFUSAL
-        ]
+        matched_by_command_reply = [m for m in markers if m in _CODERABBIT_COMMAND_REPLY_REFUSAL]
         assert matched_by_summary, 'the review-summary refusal must stay registered'
         assert matched_by_command_reply, 'the command-reply refusal must be registered too'
         assert not set(matched_by_summary) & set(matched_by_command_reply)
@@ -1397,9 +1389,7 @@ class TestRefusalNoticeProducerFilter:
         # a refusal is a signal about the review, not something to triage.
         assert 'comment_id: R2' in q['findings'][0]['detail']
 
-    def test_fetch_findings_counts_the_command_reply_refusal_and_keeps_the_real_finding(
-        self, plan_context
-    ):
+    def test_fetch_findings_counts_the_command_reply_refusal_and_keeps_the_real_finding(self, plan_context):
         """End-to-end: the command reply is a REFUSAL, not an actionable finding.
 
         This is the observed producer half of the defect. Unrecognized, the reply
@@ -1441,9 +1431,7 @@ class TestRefusalNoticeProducerFilter:
                 'total': len(comments),
                 'unresolved': len(comments),
             }
-            result = cmd_fetch_findings(
-                _stage_make_args(1368, 'gh-pr-refusal-cr-command-reply')
-            )
+            result = cmd_fetch_findings(_stage_make_args(1368, 'gh-pr-refusal-cr-command-reply'))
 
         assert result['status'] == 'success'
         assert result['count_fetched'] == 2
@@ -1799,9 +1787,7 @@ class TestPostResponses:
     silently downgraded into the batch.
     """
 
-    def _stage_one_finding(
-        self, plan_id, thread_id, body='A substantive concern about null handling.', kind='inline'
-    ):
+    def _stage_one_finding(self, plan_id, thread_id, body='A substantive concern about null handling.', kind='inline'):
         """File one pr-comment finding via fetch_findings and return its hash_id."""
         comments = [
             {
@@ -1928,9 +1914,7 @@ class TestPostResponses:
 
         from _findings_core import resolve_finding
 
-        resolve_finding(
-            'gh-respond-inline-nothread', hash_id, 'suppressed', detail='Suppressed with rationale.'
-        )
+        resolve_finding('gh-respond-inline-nothread', hash_id, 'suppressed', detail='Suppressed with rationale.')
 
         with (
             patch('github_pr._github.run_graphql', return_value=(0, {}, '')) as mock_graphql,
@@ -2185,13 +2169,13 @@ def _assert_store_refusal(payload, root):
     """Assert ``payload`` is the store's own refusal, naming the root it looked under."""
     assert payload.get('status') == 'error', payload
     assert payload.get('error') == 'findings_store_unresolved', (
-        'the provider must re-publish the store\'s own error code rather than mint a '
+        "the provider must re-publish the store's own error code rather than mint a "
         f'second vocabulary for the same fact: {payload}'
     )
     assert payload.get('findings_store_state') == 'plan_absent'
     assert payload.get('unresolved_store') is True
     assert str(root) in str(payload.get('message', '')), (
-        'the refusal must carry the store\'s provenance naming the resolved root'
+        "the refusal must carry the store's provenance naming the resolved root"
     )
 
 
@@ -2233,8 +2217,7 @@ def test_fetch_findings_against_a_resolved_empty_store_is_a_genuine_success(plan
     assert result['status'] == 'success', result
     assert result['count_fetched'] == 1
     assert result['count_stored'] == 1, (
-        'the comment must still be filed — the guard keys on the unreached store, '
-        'never on an empty finding list'
+        'the comment must still be filed — the guard keys on the unreached store, never on an empty finding list'
     )
     assert result['count_skipped_duplicate'] == 0
 

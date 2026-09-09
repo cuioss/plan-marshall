@@ -70,7 +70,10 @@ def _session(responses=None, diagnostics=None, root='/tmp') -> LspSession:
 
 
 def _text_edit(sl, sc, el, ec, new_text):
-    return {'range': {'start': {'line': sl, 'character': sc}, 'end': {'line': el, 'character': ec}}, 'newText': new_text}
+    return {
+        'range': {'start': {'line': sl, 'character': sc}, 'end': {'line': el, 'character': ec}},
+        'newText': new_text,
+    }
 
 
 # =============================================================================
@@ -113,8 +116,9 @@ def test_select_language_server_resolves_only_a_usable_entry(config, expected):
 def test_lookup_ran_found_nothing_is_ok_with_provider(tmp_path):
     target = tmp_path / 'm.py'
     target.write_text('x = 1\n')
-    result = client._run_lookup(_session({'textDocument/documentSymbol': []}), 'python', 'document-symbol',
-                                str(target), 0, 0, None)
+    result = client._run_lookup(
+        _session({'textDocument/documentSymbol': []}), 'python', 'document-symbol', str(target), 0, 0, None
+    )
     assert result['status'] == 'success'
     assert result['state'] == client.STATE_OK
     assert result['provider_count'] == 1
@@ -125,8 +129,9 @@ def test_lookup_document_symbol_returns_coordinates(tmp_path):
     target = tmp_path / 'm.py'
     target.write_text('def foo():\n    return 1\n')
     symbols = [{'name': 'foo', 'kind': 12, 'selectionRange': {'start': {'line': 0, 'character': 4}}}]
-    result = client._run_lookup(_session({'textDocument/documentSymbol': symbols}), 'python', 'document-symbol',
-                                str(target), 0, 0, None)
+    result = client._run_lookup(
+        _session({'textDocument/documentSymbol': symbols}), 'python', 'document-symbol', str(target), 0, 0, None
+    )
     assert result['provider_count'] == 1
     assert result['location_count'] == 1
     assert result['locations'][0]['name'] == 'foo'
@@ -136,20 +141,31 @@ def test_lookup_document_symbol_returns_coordinates(tmp_path):
 def test_lookup_references_returns_locations(tmp_path):
     target = tmp_path / 'm.py'
     target.write_text('x = 1\n')
-    locations = [{'uri': path_to_uri(target), 'range': {'start': {'line': 3, 'character': 2},
-                                                        'end': {'line': 3, 'character': 5}}}]
-    result = client._run_lookup(_session({'textDocument/references': locations}), 'python', 'references',
-                                str(target), 0, 0, None)
+    locations = [
+        {
+            'uri': path_to_uri(target),
+            'range': {'start': {'line': 3, 'character': 2}, 'end': {'line': 3, 'character': 5}},
+        }
+    ]
+    result = client._run_lookup(
+        _session({'textDocument/references': locations}), 'python', 'references', str(target), 0, 0, None
+    )
     assert result['location_count'] == 1
     assert result['locations'][0]['path'] == str(target.resolve())
     assert result['locations'][0]['line'] == 3
 
 
 def test_lookup_workspace_symbol():
-    symbols = [{'name': 'Thing', 'kind': 5, 'location': {'uri': 'file:///a.py',
-                                                         'range': {'start': {'line': 1, 'character': 0}}}}]
-    result = client._run_lookup(_session({'workspace/symbol': symbols}), 'python', 'workspace-symbol',
-                                None, 0, 0, 'Thing')
+    symbols = [
+        {
+            'name': 'Thing',
+            'kind': 5,
+            'location': {'uri': 'file:///a.py', 'range': {'start': {'line': 1, 'character': 0}}},
+        }
+    ]
+    result = client._run_lookup(
+        _session({'workspace/symbol': symbols}), 'python', 'workspace-symbol', None, 0, 0, 'Thing'
+    )
     assert result['location_count'] == 1
     assert result['locations'][0]['name'] == 'Thing'
 
@@ -159,10 +175,62 @@ def test_three_states_are_distinguishable(plan_context):
     # ran-and-found-nothing (server ran)
     ran = client._run_lookup(_session({'workspace/symbol': []}), 'python', 'workspace-symbol', None, 0, 0, 'x')
     # not configured (empty store)
-    not_configured = client.cmd_lookup(parse_ns('plan-marshall', 'lsp-client', 'lsp_client.py', 'lookup', '--language', 'python', '--project-path', '.', '--kind', 'workspace-symbol', '--line', '0', '--character', '0', '--symbol', 'x'))
+    not_configured = client.cmd_lookup(
+        parse_ns(
+            'plan-marshall',
+            'lsp-client',
+            'lsp_client.py',
+            'lookup',
+            '--language',
+            'python',
+            '--project-path',
+            '.',
+            '--kind',
+            'workspace-symbol',
+            '--line',
+            '0',
+            '--character',
+            '0',
+            '--symbol',
+            'x',
+        )
+    )
     # configured but unreachable
-    run_config.cmd_language_server_set(parse_ns('plan-marshall', 'manage-run-config', 'run_config.py', 'language-server', 'set', '--language', 'python', '--command', '["/nonexistent/definitely-not-a-real-lsp"]', '--language-id', 'python'))
-    unreachable = client.cmd_lookup(parse_ns('plan-marshall', 'lsp-client', 'lsp_client.py', 'lookup', '--language', 'python', '--project-path', '.', '--kind', 'workspace-symbol', '--line', '0', '--character', '0', '--symbol', 'x'))
+    run_config.cmd_language_server_set(
+        parse_ns(
+            'plan-marshall',
+            'manage-run-config',
+            'run_config.py',
+            'language-server',
+            'set',
+            '--language',
+            'python',
+            '--command',
+            '["/nonexistent/definitely-not-a-real-lsp"]',
+            '--language-id',
+            'python',
+        )
+    )
+    unreachable = client.cmd_lookup(
+        parse_ns(
+            'plan-marshall',
+            'lsp-client',
+            'lsp_client.py',
+            'lookup',
+            '--language',
+            'python',
+            '--project-path',
+            '.',
+            '--kind',
+            'workspace-symbol',
+            '--line',
+            '0',
+            '--character',
+            '0',
+            '--symbol',
+            'x',
+        )
+    )
 
     triples = {
         (ran['status'], ran['state'], ran['provider_count']),
@@ -182,15 +250,37 @@ def test_three_states_are_distinguishable(plan_context):
 
 
 def test_preflight_not_configured(plan_context):
-    result = client.cmd_preflight(parse_ns('plan-marshall', 'lsp-client', 'lsp_client.py', 'preflight', '--language', 'python', '--project-path', '.'))
+    result = client.cmd_preflight(
+        parse_ns(
+            'plan-marshall', 'lsp-client', 'lsp_client.py', 'preflight', '--language', 'python', '--project-path', '.'
+        )
+    )
     assert result['state'] == client.STATE_NOT_CONFIGURED
     assert result['configured'] is False
     assert result['reachable'] is False
 
 
 def test_preflight_unreachable(plan_context):
-    run_config.cmd_language_server_set(parse_ns('plan-marshall', 'manage-run-config', 'run_config.py', 'language-server', 'set', '--language', 'python', '--command', '["/nonexistent/definitely-not-a-real-lsp"]', '--language-id', 'python'))
-    result = client.cmd_preflight(parse_ns('plan-marshall', 'lsp-client', 'lsp_client.py', 'preflight', '--language', 'python', '--project-path', '.'))
+    run_config.cmd_language_server_set(
+        parse_ns(
+            'plan-marshall',
+            'manage-run-config',
+            'run_config.py',
+            'language-server',
+            'set',
+            '--language',
+            'python',
+            '--command',
+            '["/nonexistent/definitely-not-a-real-lsp"]',
+            '--language-id',
+            'python',
+        )
+    )
+    result = client.cmd_preflight(
+        parse_ns(
+            'plan-marshall', 'lsp-client', 'lsp_client.py', 'preflight', '--language', 'python', '--project-path', '.'
+        )
+    )
     assert result['state'] == client.STATE_UNREACHABLE
     assert result['configured'] is True
     assert result['reachable'] is False
@@ -215,9 +305,34 @@ def test_preflight_ready_against_a_fake_server(plan_context, tmp_path):
     empty default is needed.
     """
     command = write_fake_server(tmp_path, {})
-    run_config.cmd_language_server_set(parse_ns('plan-marshall', 'manage-run-config', 'run_config.py', 'language-server', 'set', '--language', 'python', '--command', json.dumps(command), '--language-id', 'python'))
+    run_config.cmd_language_server_set(
+        parse_ns(
+            'plan-marshall',
+            'manage-run-config',
+            'run_config.py',
+            'language-server',
+            'set',
+            '--language',
+            'python',
+            '--command',
+            json.dumps(command),
+            '--language-id',
+            'python',
+        )
+    )
 
-    result = client.cmd_preflight(parse_ns('plan-marshall', 'lsp-client', 'lsp_client.py', 'preflight', '--language', 'python', '--project-path', str(tmp_path)))
+    result = client.cmd_preflight(
+        parse_ns(
+            'plan-marshall',
+            'lsp-client',
+            'lsp_client.py',
+            'preflight',
+            '--language',
+            'python',
+            '--project-path',
+            str(tmp_path),
+        )
+    )
 
     assert result['state'] == client.STATE_READY
     assert result['configured'] is True
@@ -232,8 +347,9 @@ def test_preflight_ready_against_a_fake_server(plan_context, tmp_path):
 def test_edit_clean_applies_and_captures_footprint(tmp_path):
     target = tmp_path / 'm.py'
     target.write_text('foo = 1\n')
-    workspace_edit = {'documentChanges': [
-        {'textDocument': {'uri': path_to_uri(target)}, 'edits': [_text_edit(0, 0, 0, 3, 'bar')]}]}
+    workspace_edit = {
+        'documentChanges': [{'textDocument': {'uri': path_to_uri(target)}, 'edits': [_text_edit(0, 0, 0, 3, 'bar')]}]
+    }
     session = _session({'textDocument/rename': workspace_edit}, diagnostics=[[], []])
     result = client._run_edit(session, 'python', str(target), 0, 0, 'bar')
     assert result['status'] == 'success'
@@ -246,8 +362,9 @@ def test_edit_clean_applies_and_captures_footprint(tmp_path):
 def test_edit_worsened_fails_and_rolls_back(tmp_path):
     target = tmp_path / 'm.py'
     target.write_text('foo = 1\n')
-    workspace_edit = {'documentChanges': [
-        {'textDocument': {'uri': path_to_uri(target)}, 'edits': [_text_edit(0, 0, 0, 3, 'bar')]}]}
+    workspace_edit = {
+        'documentChanges': [{'textDocument': {'uri': path_to_uri(target)}, 'edits': [_text_edit(0, 0, 0, 3, 'bar')]}]
+    }
     # baseline clean, post-application one Error diagnostic -> worsened.
     session = _session({'textDocument/rename': workspace_edit}, diagnostics=[[], [{'severity': 1, 'message': 'boom'}]])
     result = client._run_edit(session, 'python', str(target), 0, 0, 'bar')
@@ -274,7 +391,26 @@ def test_edit_no_workspace_edit(tmp_path):
 def test_edit_degraded_when_not_configured(plan_context, tmp_path):
     target = tmp_path / 'm.py'
     target.write_text('foo = 1\n')
-    result = client.cmd_edit(parse_ns('plan-marshall', 'lsp-client', 'lsp_client.py', 'edit', '--language', 'python', '--project-path', '.', '--file', str(target), '--line', '0', '--character', '0', '--new-name', 'bar'))
+    result = client.cmd_edit(
+        parse_ns(
+            'plan-marshall',
+            'lsp-client',
+            'lsp_client.py',
+            'edit',
+            '--language',
+            'python',
+            '--project-path',
+            '.',
+            '--file',
+            str(target),
+            '--line',
+            '0',
+            '--character',
+            '0',
+            '--new-name',
+            'bar',
+        )
+    )
     assert result['status'] == 'degraded'
     assert result['state'] == client.STATE_NOT_CONFIGURED
     assert result['fallback'] == 'read_edit'

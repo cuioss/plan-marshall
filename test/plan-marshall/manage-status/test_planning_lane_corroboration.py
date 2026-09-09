@@ -56,7 +56,6 @@ The measured-evidence bound adds four more:
   is still low-confidence once the bridge resolves ``plan_source``.
 """
 
-
 from __future__ import annotations
 
 import pytest
@@ -92,9 +91,7 @@ def test_d3a_recorded_vector_does_not_route_deep():
     ``light``, and S7 is reported under ``suppressed_signals`` rather than silently
     dropped.
     """
-    result = evaluate_signals_pure(
-        **_RECORDED_VECTOR, scope_band_rule=_MEASURED_MIDDLE_BAND
-    )
+    result = evaluate_signals_pure(**_RECORDED_VECTOR, scope_band_rule=_MEASURED_MIDDLE_BAND)
 
     assert result['lane'] == 'light'
     assert result['fired_signals'] == []
@@ -139,6 +136,7 @@ def test_recorded_vector_without_a_measured_band_keeps_the_lane():
 # D0/D3(b) — the orchestrator-spec plan_source bridge (end-to-end via the router)
 # =============================================================================
 
+
 def test_recorded_case_end_to_end_routes_light(plan_context):
     """End-to-end wiring of D3(a): a MEASURED middle band that fires ONLY S7 routes
     light through the real command entry point.
@@ -154,8 +152,7 @@ def test_recorded_case_end_to_end_routes_light(plan_context):
     _write_orchestrator_request(
         plan_dir,
         '.plan/local/orchestrator/y/plans/PLAN-03-y.md',
-        'Update pkg/one.py, pkg/two.py, pkg/three.py and pkg/four.py. '
-        'This is foundation work the rest builds on.',
+        'Update pkg/one.py, pkg/two.py, pkg/three.py and pkg/four.py. This is foundation work the rest builds on.',
     )
     _write_status(plan_dir, metadata={})
     _write_references(plan_dir, scope_estimate='single_module')
@@ -450,9 +447,7 @@ class TestTheConfidencePopulationIsDerivedNotMirrored:
         result = evaluate_signals_pure(**{**self._VECTOR, 'change_type': None})
         confidence = result['confidence']
 
-        assert confidence['signals_resolved'] + confidence['signals_null'] == (
-            confidence['signals_total']
-        )
+        assert confidence['signals_resolved'] + confidence['signals_null'] == (confidence['signals_total'])
 
     def test_a_null_signal_is_named_by_the_key_the_map_uses(self):
         """The null names are read off the mapping, so they cannot drift from it."""
@@ -467,9 +462,7 @@ class TestTheConfidencePopulationIsDerivedNotMirrored:
 
         assert result['confidence']['null_signals'] == []
         assert result['confidence']['signals_null'] == 0
-        assert result['confidence']['signals_resolved'] == (
-            result['confidence']['signals_total']
-        )
+        assert result['confidence']['signals_resolved'] == (result['confidence']['signals_total'])
 
 
 def test_one_null_discriminator_is_not_low_confidence():
@@ -497,6 +490,7 @@ def test_one_null_discriminator_is_not_low_confidence():
 # =============================================================================
 # D0/D3(b) — the orchestrator-spec plan_source bridge (end-to-end via the router)
 # =============================================================================
+
 
 def test_d3b_orchestrator_spec_resolves_plan_source_nonnull(plan_context):
     """(b) An orchestrator-spec-sourced request resolves ``plan_source`` non-null.
@@ -526,9 +520,7 @@ def test_metadata_plan_source_wins_over_the_bridge(plan_context):
     wins, even if ``request.md`` also carries a ``source_id``.
     """
     plan_dir = plan_context.plan_dir_for('pl-d3b-meta')
-    _write_orchestrator_request(
-        plan_dir, '.plan/local/orchestrator/x/plans/PLAN-01-x.md', 'Implement pkg/a.py.'
-    )
+    _write_orchestrator_request(plan_dir, '.plan/local/orchestrator/x/plans/PLAN-01-x.md', 'Implement pkg/a.py.')
     _write_status(plan_dir, metadata={'plan_source': '2026-05-11-08-004'})
     _write_references(plan_dir, scope_estimate='single_module')
     _write_marshal(plan_context.fixture_dir)

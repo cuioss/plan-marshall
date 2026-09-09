@@ -30,9 +30,7 @@ SUBCOMMAND_DEFAULTS = [
 ]
 
 
-@pytest.mark.parametrize(
-    ('argv', 'expected'), SUBCOMMAND_DEFAULTS, ids=[argv[0] for argv, _ in SUBCOMMAND_DEFAULTS]
-)
+@pytest.mark.parametrize(('argv', 'expected'), SUBCOMMAND_DEFAULTS, ids=[argv[0] for argv, _ in SUBCOMMAND_DEFAULTS])
 def test_seam_parses_each_subcommand_with_its_defaults(argv, expected):
     """The published seam parses each subcommand and applies the parser's own defaults."""
     namespace = parse_ns(BUNDLE, SKILL, SCRIPT, *argv, register=False)

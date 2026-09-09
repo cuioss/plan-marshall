@@ -134,9 +134,7 @@ def build_parser():
 
     from _build_cli import add_run_subparser
 
-    parser = _argparse.ArgumentParser(
-        description='Build execute (run) command surface', allow_abbrev=False
-    )
+    parser = _argparse.ArgumentParser(description='Build execute (run) command surface', allow_abbrev=False)
     subparsers = parser.add_subparsers(dest='command', required=True)
     add_run_subparser(subparsers)
     return parser
@@ -156,20 +154,19 @@ def routable_notations() -> tuple[str, ...]:
     """
     return tuple(sorted(_TOOL_NOTATIONS.values()))
 
+
 # build_server.py (the build-server-client verbs) is NOT an executor-registered
 # notation reachable from this build subprocess's PYTHONPATH, so it is reused as
 # the single owner of the submit/wait/preflight contract via an in-process
 # file-path import, mirroring _build_queue_slot._load_build_queue. The sibling
 # scripts dirs it imports transitively are ensured on sys.path before the exec.
 _FACTORY_DIR = Path(__file__).resolve().parent
-_BUILD_SERVER_CLIENT_PATH = (
-    _FACTORY_DIR.parent.parent.parent / 'build-server-client' / 'scripts' / 'build_server.py'
-)
+_BUILD_SERVER_CLIENT_PATH = _FACTORY_DIR.parent.parent.parent / 'build-server-client' / 'scripts' / 'build_server.py'
 _BUILD_SERVER_DEP_DIRS: tuple[Path, ...] = (
-    _BUILD_SERVER_CLIENT_PATH.parent,                                   # build_server itself
-    _FACTORY_DIR,                                                       # _build_server_protocol/_registry
-    _FACTORY_DIR.parent,                                               # marketplace_paths, worktree_sha
-    _FACTORY_DIR.parent / 'workflow',                                  # triage_helpers
+    _BUILD_SERVER_CLIENT_PATH.parent,  # build_server itself
+    _FACTORY_DIR,  # _build_server_protocol/_registry
+    _FACTORY_DIR.parent,  # marketplace_paths, worktree_sha
+    _FACTORY_DIR.parent / 'workflow',  # triage_helpers
     _FACTORY_DIR.parent.parent.parent / 'manage-change-ledger' / 'scripts',  # _ledger_core
 )
 
@@ -280,9 +277,7 @@ def _write_fallback_state(state: dict[str, Any]) -> None:
         pass
 
 
-def _update_fallback_streak(
-    resolved: str, reason: str | None, plan_id: str | None
-) -> tuple[str | None, bool]:
+def _update_fallback_streak(resolved: str, reason: str | None, plan_id: str | None) -> tuple[str | None, bool]:
     """Track the plan's consecutive daemon-unreachable fallbacks.
 
     Returns ``(escalation_message, suppress_repeat)``:
@@ -511,9 +506,7 @@ def _daemon_result_to_direct(waited: dict[str, Any], command_str: str) -> Direct
     if job_status == 'success':
         verdict = read_log_verdict(log_file)
         if verdict is not None and verdict.status != STATUS_SUCCESS:
-            return _result_for_log_verdict(
-                verdict, duration=duration, log_file=log_file, command_str=command_str
-            )
+            return _result_for_log_verdict(verdict, duration=duration, log_file=log_file, command_str=command_str)
         # CARRY the inner wrapper's own executed-test count. The renderer would
         # otherwise re-parse THIS log — which holds the wrapper's emitted TOON,
         # not the raw test-runner output — find no summary, and publish a zero
@@ -572,9 +565,7 @@ def _daemon_result_to_direct(waited: dict[str, Any], command_str: str) -> Direct
     )
 
 
-def _result_for_log_verdict(
-    verdict: Any, *, duration: int, log_file: str, command_str: str
-) -> DirectCommandResult:
+def _result_for_log_verdict(verdict: Any, *, duration: int, log_file: str, command_str: str) -> DirectCommandResult:
     """Render a disagreeing job-log verdict into its OWN result shape.
 
     The cross-check in :func:`_daemon_result_to_direct` fires when the daemon
@@ -894,8 +885,7 @@ def compute_command_key(config: ExecuteConfig, command_args: str) -> str:
 def create_execute_handlers(
     config: ExecuteConfig,
     parse_log_fn: Callable,
-    wrap_execute_fn: Callable[[Callable[..., DirectCommandResult]], Callable[..., DirectCommandResult]]
-    | None = None,
+    wrap_execute_fn: Callable[[Callable[..., DirectCommandResult]], Callable[..., DirectCommandResult]] | None = None,
 ) -> tuple[Callable[..., DirectCommandResult], Callable]:
     """Create execute_direct() and cmd_run() functions from config.
 
@@ -1045,8 +1035,12 @@ def create_execute_handlers(
             # Requested daemon, but the build carries env / working-dir the
             # daemon cannot honour — fail loud instead of falling back.
             return _emit_daemon_required(
-                config.tool_name, command_args, getattr(args, 'format', 'toon'),
-                'env_or_working_dir_set', notation, plan_id,
+                config.tool_name,
+                command_args,
+                getattr(args, 'format', 'toon'),
+                'env_or_working_dir_set',
+                notation,
+                plan_id,
             )
         if execution_mode == 'auto' and daemon_incompatible:
             # auto mode carrying env / working-dir the daemon cannot honour:
@@ -1084,8 +1078,12 @@ def create_execute_handlers(
             # ``in_daemon_job`` (this process IS the daemon child).
             if execution_mode == 'daemon' and reason != 'in_daemon_job':
                 return _emit_daemon_required(
-                    config.tool_name, command_args, getattr(args, 'format', 'toon'),
-                    reason, notation, plan_id,
+                    config.tool_name,
+                    command_args,
+                    getattr(args, 'format', 'toon'),
+                    reason,
+                    notation,
+                    plan_id,
                 )
             # auto (or the daemon child): record the degradation reason so the
             # in-process fallback is never silent (a bare re-entrancy /

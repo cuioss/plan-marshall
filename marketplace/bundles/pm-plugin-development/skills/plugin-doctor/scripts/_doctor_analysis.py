@@ -80,7 +80,7 @@ def _read_file_bloat_ack_tag(content: str) -> str | None:
     if nested_match:
         value = nested_match.group(1).strip().strip('"\'')
         if _ACK_TAG_RE.match(value):
-            return value[len('ack-'):]
+            return value[len('ack-') :]
         return None
 
     # Match dotted inline form: quality.file-bloat: value
@@ -92,7 +92,7 @@ def _read_file_bloat_ack_tag(content: str) -> str | None:
     if inline_match:
         value = inline_match.group(1).strip().strip('"\'')
         if _ACK_TAG_RE.match(value):
-            return value[len('ack-'):]
+            return value[len('ack-') :]
 
     return None
 
@@ -586,11 +586,7 @@ def extract_issues_from_coverage_analysis(coverage: dict, file_path: str, compon
     # agent-task-tool-prohibited: Agent declares Task tool (deterministic - check frontmatter only).
     # Claude rule-pack gate: on OpenCode a declared ``Task`` is a valid
     # subagent capability and must not surface as a doctor finding.
-    if (
-        component_type == 'agent'
-        and violations.get('has_task_declared')
-        and resolve_runtime_target() != 'opencode'
-    ):
+    if component_type == 'agent' and violations.get('has_task_declared') and resolve_runtime_target() != 'opencode':
         issues.append(
             Finding(
                 type='agent-task-tool-prohibited',
@@ -933,9 +929,7 @@ def analyze_markdown_mirror_rules(marketplace_root: Path) -> list[dict]:
                 # derive_link_boundary. Without this, the explicit marketplace_root
                 # argument would override the widening and in-repo cross-tree links
                 # (e.g. into doc/) would never be existence-checked.
-                for violation in check_broken_relative_link(
-                    content, file_path, boundary_dir=marketplace_root.parent
-                ):
+                for violation in check_broken_relative_link(content, file_path, boundary_dir=marketplace_root.parent):
                     findings.append(
                         Finding(
                             type='broken-relative-link',

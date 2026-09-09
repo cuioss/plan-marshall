@@ -37,10 +37,7 @@ def _write_source_marketplace(root: Path, plugin_names: list[str]) -> None:
     """Write a minimal source marketplace.json under ``root/.claude-plugin/``."""
     manifest = {
         'name': 'demo-marketplace',
-        'plugins': [
-            {'name': name, 'description': name, 'source': f'./bundles/{name}'}
-            for name in plugin_names
-        ],
+        'plugins': [{'name': name, 'description': name, 'source': f'./bundles/{name}'} for name in plugin_names],
     }
     _write(root / '.claude-plugin' / 'marketplace.json', json.dumps(manifest, indent=2) + '\n')
 
@@ -292,9 +289,7 @@ _VALID_JSON_NON_OBJECTS = ['[]', '"x"', 'null', '3']
 
 
 @pytest.mark.parametrize('payload', _VALID_JSON_NON_OBJECTS, ids=['array', 'string', 'null', 'number'])
-def test_valid_json_that_is_not_an_object_returns_the_diagnostic(
-    clean_marketplace: tuple[Path, Path], payload: str
-):
+def test_valid_json_that_is_not_an_object_returns_the_diagnostic(clean_marketplace: tuple[Path, Path], payload: str):
     """A parseable non-object is unusable too, and must not escape as a traceback.
 
     A guard keyed on ``JSONDecodeError`` alone covers only half of "unusable":
@@ -316,9 +311,7 @@ def test_valid_json_that_is_not_an_object_returns_the_diagnostic(
     assert './pw generate-claude' in result.summary
 
 
-def test_an_unreadable_emitted_plugin_json_returns_the_diagnostic(
-    clean_marketplace: tuple[Path, Path]
-):
+def test_an_unreadable_emitted_plugin_json_returns_the_diagnostic(clean_marketplace: tuple[Path, Path]):
     """A path that exists but cannot be READ is unusable in the same way.
 
     ``read_text`` raises ``OSError`` when the path is a directory or permissions
@@ -340,9 +333,7 @@ def test_an_unreadable_emitted_plugin_json_returns_the_diagnostic(
     assert './pw generate-claude' in result.summary
 
 
-def test_undecodable_bytes_in_an_emitted_plugin_json_return_the_diagnostic(
-    clean_marketplace: tuple[Path, Path]
-):
+def test_undecodable_bytes_in_an_emitted_plugin_json_return_the_diagnostic(clean_marketplace: tuple[Path, Path]):
     """Bytes that are not valid UTF-8 raise ``UnicodeDecodeError``, not a decode error.
 
     ``UnicodeDecodeError`` derives from ``ValueError`` and is raised by
@@ -361,9 +352,7 @@ def test_undecodable_bytes_in_an_emitted_plugin_json_return_the_diagnostic(
 
 
 @pytest.mark.parametrize('field_name', _ARRAY_FIELDS)
-def test_a_non_list_array_field_returns_the_diagnostic(
-    clean_marketplace: tuple[Path, Path], field_name: str
-):
+def test_a_non_list_array_field_returns_the_diagnostic(clean_marketplace: tuple[Path, Path], field_name: str):
     """``isinstance(parsed, dict)`` is not the whole of "usable".
 
     The diff calls ``list()`` on every array field and ``set()`` on two of them,
@@ -391,9 +380,7 @@ def test_a_non_list_array_field_returns_the_diagnostic(
 
 
 @pytest.mark.parametrize('field_name', _ARRAY_FIELDS)
-def test_an_explicit_null_array_field_returns_the_diagnostic(
-    clean_marketplace: tuple[Path, Path], field_name: str
-):
+def test_an_explicit_null_array_field_returns_the_diagnostic(clean_marketplace: tuple[Path, Path], field_name: str):
     """An explicit ``null`` is a value that is not a list, and is refused as one.
 
     ``parsed.get(field_name)`` collapses "field absent" and "field present and
@@ -483,17 +470,13 @@ def test_a_list_of_strings_is_still_accepted(clean_marketplace: tuple[Path, Path
     bundles = list(iter_bundle_dirs(marketplace, None))
     result = run_equality_check(target, bundles)
 
-    emitted = json.loads(
-        (target / 'demo' / '.claude-plugin' / 'plugin.json').read_text(encoding='utf-8')
-    )
+    emitted = json.loads((target / 'demo' / '.claude-plugin' / 'plugin.json').read_text(encoding='utf-8'))
     assert emitted['agents'] == ['./agents/demo-agent.md'], 'fixture precondition'
     assert result.passed is True
     assert result.unusable_target_bundles == []
 
 
-def test_the_unusable_list_is_named_for_the_outcome_not_one_of_its_causes(
-    clean_marketplace: tuple[Path, Path]
-):
+def test_the_unusable_list_is_named_for_the_outcome_not_one_of_its_causes(clean_marketplace: tuple[Path, Path]):
     """A present-but-corrupt bundle is reported as unusable, never as missing.
 
     The field carries both causes, so naming it ``missing`` told its reader the

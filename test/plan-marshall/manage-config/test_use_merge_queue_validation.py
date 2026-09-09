@@ -17,9 +17,7 @@ from _manage_config_fixtures import create_marshal_json
 
 from conftest import load_script_module
 
-_qp = load_script_module(
-    'plan-marshall', 'manage-config', '_cmd_quality_phases.py', module_name='_cmd_quality_phases'
-)
+_qp = load_script_module('plan-marshall', 'manage-config', '_cmd_quality_phases.py', module_name='_cmd_quality_phases')
 
 
 def _probe(**fields):
@@ -172,9 +170,7 @@ def test_step_set_rejects_enable_on_ineligible(monkeypatch, plan_context):
 def test_step_set_permits_enable_on_eligible_and_persists(monkeypatch, plan_context):
     create_marshal_json(plan_context.fixture_dir)
     _seed_branch_cleanup_step(plan_context.fixture_dir)
-    monkeypatch.setattr(
-        _qp, '_run_merge_queue_probe', _probe(status='success', eligibility='eligible_configured')
-    )
+    monkeypatch.setattr(_qp, '_run_merge_queue_probe', _probe(status='success', eligibility='eligible_configured'))
 
     result = _qp.cmd_phase(_step_set_ns('true'), 'phase-6-finalize')
 

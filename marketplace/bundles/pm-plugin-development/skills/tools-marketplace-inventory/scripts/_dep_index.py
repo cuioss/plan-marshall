@@ -731,9 +731,7 @@ def build_dependency_index(
 
     # Detect dependencies for each component
     for component in components:
-        _index_dependencies_from(
-            index, component.file_path, component.component_id, dep_types, executor
-        )
+        _index_dependencies_from(index, component.file_path, component.component_id, dep_types, executor)
 
     # Sub-documents are EDGE SOURCES, never components: an edge cited in
     # ``workflow/light-lane.md`` is attributed to the skill that owns the file.
@@ -783,9 +781,7 @@ def get_base_path(scope: str) -> Path:
         cache = _first_existing_bundle_cache_root()
         if cache is not None:
             return cache
-        raise FileNotFoundError(
-            f'Plugin cache not found in any of: {", ".join(get_bundle_cache_roots())}'
-        )
+        raise FileNotFoundError(f'Plugin cache not found in any of: {", ".join(get_bundle_cache_roots())}')
 
     if scope == 'global':
         # User-global deployment layout — delegated to the shared layout
@@ -807,8 +803,6 @@ def get_base_path(scope: str) -> Path:
             candidate = _resolve_skill_root(root, anchor)
             if candidate.is_dir():
                 return candidate
-        raise FileNotFoundError(
-            f'Project-local skill tree not found in any of: {", ".join(get_project_skill_roots())}'
-        )
+        raise FileNotFoundError(f'Project-local skill tree not found in any of: {", ".join(get_project_skill_roots())}')
 
     raise ValueError(f'Invalid scope: {scope}')

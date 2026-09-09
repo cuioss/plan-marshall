@@ -186,9 +186,7 @@ def _flatten(
         bare_skill = edge.split(':', 1)[1] if ':' in edge else edge
         if bare_skill.startswith('persona-'):
             # Recurse into composed personas; their identity skill IS merged.
-            err = _flatten(
-                bundles_root, edge, domains, ordered, seen, visiting, include_self_composition=True
-            )
+            err = _flatten(bundles_root, edge, domains, ordered, seen, visiting, include_self_composition=True)
             if err is not None:
                 visiting.discard(persona_key)
                 return err

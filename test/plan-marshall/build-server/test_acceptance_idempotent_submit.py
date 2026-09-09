@@ -57,12 +57,16 @@ def test_daemon_submit_attaches_identical_concurrent_submits(home, tmp_path):
     # submit — and this test is about idempotent ATTACHMENT, not interpreter shape.
     spec = make_job_spec(
         command=['python3', str(root / '.plan' / 'execute-script.py'), _NOTATION, 'run'],
-        exec_path=canonical, project_path=canonical, plan_id='p',
+        exec_path=canonical,
+        project_path=canonical,
+        plan_id='p',
     )
 
     async def _drive():
         daemon = marshalld.Daemon(
-            scheduler=Scheduler(max_slots=2), journal=Journal(), log_dir=tmp_path / 'job-logs',
+            scheduler=Scheduler(max_slots=2),
+            journal=Journal(),
+            log_dir=tmp_path / 'job-logs',
         )
         first = await daemon.handle_request({'op': 'submit', 'job': spec.to_dict()})
         second = await daemon.handle_request({'op': 'submit', 'job': spec.to_dict()})

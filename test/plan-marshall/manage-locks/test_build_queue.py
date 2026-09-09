@@ -5,7 +5,6 @@
 concurrency limiter with a FIFO waiting queue.
 """
 
-
 from __future__ import annotations
 
 from argparse import Namespace
@@ -85,9 +84,7 @@ class TestDeadHolderReclamation:
 
 
 class TestForeignProjectHolderPrune:
-    def test_foreign_project_live_holder_is_not_pruned(
-        self, isolated_base: dict, tmp_path: Path
-    ) -> None:
+    def test_foreign_project_live_holder_is_not_pruned(self, isolated_base: dict, tmp_path: Path) -> None:
         import time
 
         base = isolated_base['base']
@@ -125,9 +122,7 @@ class TestForeignProjectHolderPrune:
         state = _read_queue(isolated_base['queue_path'])
         assert foreign_id in [e['id'] for e in state['active']]
 
-    def test_foreign_project_dead_holder_is_pruned(
-        self, isolated_base: dict, tmp_path: Path
-    ) -> None:
+    def test_foreign_project_dead_holder_is_pruned(self, isolated_base: dict, tmp_path: Path) -> None:
         import time
 
         base = isolated_base['base']
@@ -194,9 +189,7 @@ class TestSharedCoreDelegation:
 
 
 class TestMachineGlobalResolution:
-    def test_queue_resolves_under_home_root_ignoring_cwd(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_queue_resolves_under_home_root_ignoring_cwd(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         # The queue lives under the machine-global home root, NOT PLAN_BASE_DIR.
         # Pinning cwd into a worktree does not redirect it — home_root() is
         # host-wide and cwd-independent.

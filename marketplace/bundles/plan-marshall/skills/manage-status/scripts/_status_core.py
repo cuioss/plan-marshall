@@ -89,9 +89,7 @@ TITLE_TOKEN_STATES = frozenset({'lock-waiting', 'lock-owned', TITLE_TOKEN_BUILD_
 TITLE_TOKEN_OWNER_BUILD_HOOK = 'build-hook'
 TITLE_TOKEN_OWNER_MERGE_LOCK = 'merge-lock'
 TITLE_TOKEN_OWNER_CLI = 'cli'
-TITLE_TOKEN_OWNERS = frozenset(
-    {TITLE_TOKEN_OWNER_BUILD_HOOK, TITLE_TOKEN_OWNER_MERGE_LOCK, TITLE_TOKEN_OWNER_CLI}
-)
+TITLE_TOKEN_OWNERS = frozenset({TITLE_TOKEN_OWNER_BUILD_HOOK, TITLE_TOKEN_OWNER_MERGE_LOCK, TITLE_TOKEN_OWNER_CLI})
 
 # Aged-token staleness threshold, in seconds. Derived, not arbitrary: it
 # comfortably exceeds the longest architecture-resolved build ceiling in this
@@ -148,6 +146,7 @@ def write_status(plan_id: str, status: dict[Any, Any], *, preserve_title_token: 
             coordination state worth arbitrating over), not an instance of the
             race above.
     """
+
     def _apply(current: dict[str, Any]) -> dict[str, Any]:
         if preserve_title_token:
             live = current.get('title_token')
@@ -237,9 +236,7 @@ def write_store_status(store: str, entry_id: str, status: dict[Any, Any]) -> Non
     write_json(get_store_status_path(store, entry_id), status)
 
 
-def _require_orchestrator_status(
-    args: argparse.Namespace, allow_archived: bool = False
-) -> dict[Any, Any] | None:
+def _require_orchestrator_status(args: argparse.Namespace, allow_archived: bool = False) -> dict[Any, Any] | None:
     """Validate the slug and read the orchestrator status, TOON error when missing.
 
     ``allow_archived`` threads into :func:`read_store_status`: READ verbs pass

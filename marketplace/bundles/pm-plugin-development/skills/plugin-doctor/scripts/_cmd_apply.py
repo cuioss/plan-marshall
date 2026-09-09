@@ -55,9 +55,7 @@ def _derive_agent_frontmatter_defaults(script_dir: Path) -> tuple[str, str]:
     return _FALLBACK_OPENCODE_AGENT_FRONTMATTER, _FALLBACK_CLAUDE_AGENT_FRONTMATTER
 
 
-_OPENCODE_AGENT_FRONTMATTER, _CLAUDE_AGENT_FRONTMATTER = _derive_agent_frontmatter_defaults(
-    Path(__file__).parent
-)
+_OPENCODE_AGENT_FRONTMATTER, _CLAUDE_AGENT_FRONTMATTER = _derive_agent_frontmatter_defaults(Path(__file__).parent)
 
 
 def _agent_frontmatter_block(templates: dict) -> str:
@@ -460,9 +458,9 @@ def apply_signature_docstring_fix(file_path: Path, fix: dict, templates: dict) -
         if sole_statement:
             # Preserve the docstring's indentation for the replacement ``pass``.
             indent = lines[start - 1][: len(lines[start - 1]) - len(lines[start - 1].lstrip())]
-            lines[start - 1:end] = [f'{indent}pass']
+            lines[start - 1 : end] = [f'{indent}pass']
         else:
-            del lines[start - 1:end]
+            del lines[start - 1 : end]
 
     new_content = '\n'.join(lines)
     with open(file_path, 'w', encoding='utf-8') as f:

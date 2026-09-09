@@ -160,11 +160,7 @@ def analyze_verify_step_contract(marketplace_root: Path) -> list[dict]:
         present, canonicals = _read_key_values(fm_lines, 'canonicals')
         if canonicals:
             continue
-        defect = (
-            'missing required `canonicals:` list'
-            if not present
-            else 'empty `canonicals:` list'
-        )
+        defect = 'missing required `canonicals:` list' if not present else 'empty `canonicals:` list'
         findings.append(
             Finding(
                 type=FINDING_TYPE,

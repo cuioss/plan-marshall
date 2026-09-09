@@ -6,7 +6,6 @@ undefined ratio and from a measured zero — and the slow-call ceiling that fire
 independently of it.
 """
 
-
 from __future__ import annotations
 
 import pytest
@@ -47,12 +46,16 @@ class TestContextPositionCost:
 
     def test_reports_per_phase_rate_and_position_multiple(self):
         per_phase = {
-            '4-plan': self._phase([
-                {'tool_uses': 10, 'cache_read_input_tokens': 100_000},
-            ]),
-            '6-finalize': self._phase([
-                {'tool_uses': 10, 'cache_read_input_tokens': 1_000_000},
-            ]),
+            '4-plan': self._phase(
+                [
+                    {'tool_uses': 10, 'cache_read_input_tokens': 100_000},
+                ]
+            ),
+            '6-finalize': self._phase(
+                [
+                    {'tool_uses': 10, 'cache_read_input_tokens': 1_000_000},
+                ]
+            ),
         }
 
         result = _analyze_logs.summarize_context_position_cost(per_phase)
@@ -68,10 +71,12 @@ class TestContextPositionCost:
         # key. Folding it in as 0 would understate the rate; it is excluded and
         # counted instead.
         per_phase = {
-            '5-execute': self._phase([
-                {'tool_uses': 10, 'cache_read_input_tokens': 500_000},
-                {'tool_uses': 10},  # unmeasured -> excluded
-            ]),
+            '5-execute': self._phase(
+                [
+                    {'tool_uses': 10, 'cache_read_input_tokens': 500_000},
+                    {'tool_uses': 10},  # unmeasured -> excluded
+                ]
+            ),
         }
 
         result = _analyze_logs.summarize_context_position_cost(per_phase)
@@ -99,11 +104,13 @@ class TestContextPositionCost:
         # The two exclusion causes need different remedies, so they are never
         # summed into one bucket. The three counts reconcile against total_rows.
         per_phase = {
-            '5-execute': self._phase([
-                {'tool_uses': 4, 'cache_read_input_tokens': 4_000},
-                {'tool_uses': 9},                                   # writer recorded nothing
-                {'tool_uses': 0, 'cache_read_input_tokens': 700},   # recorded, ratio undefined
-            ]),
+            '5-execute': self._phase(
+                [
+                    {'tool_uses': 4, 'cache_read_input_tokens': 4_000},
+                    {'tool_uses': 9},  # writer recorded nothing
+                    {'tool_uses': 0, 'cache_read_input_tokens': 700},  # recorded, ratio undefined
+                ]
+            ),
         }
 
         result = _analyze_logs.summarize_context_position_cost(per_phase)
@@ -112,10 +119,7 @@ class TestContextPositionCost:
         assert result['measured_rows'] == 1
         assert result['unmeasured_rows'] == 1
         assert result['no_tool_use_rows'] == 1
-        assert (
-            result['measured_rows'] + result['unmeasured_rows'] + result['no_tool_use_rows']
-            == result['total_rows']
-        )
+        assert result['measured_rows'] + result['unmeasured_rows'] + result['no_tool_use_rows'] == result['total_rows']
 
     def test_undefined_requires_a_complete_phase_record(self):
         # `undefined` asserts the record is complete. A phase carrying BOTH an
@@ -123,10 +127,12 @@ class TestContextPositionCost:
         # `unmeasured` is the honest token — claiming `undefined` here would
         # assert completeness the phase does not have.
         per_phase = {
-            '5-execute': self._phase([
-                {'tool_uses': 5},                                  # writer recorded nothing
-                {'tool_uses': 0, 'cache_read_input_tokens': 10},   # recorded, ratio undefined
-            ]),
+            '5-execute': self._phase(
+                [
+                    {'tool_uses': 5},  # writer recorded nothing
+                    {'tool_uses': 0, 'cache_read_input_tokens': 10},  # recorded, ratio undefined
+                ]
+            ),
         }
 
         result = _analyze_logs.summarize_context_position_cost(per_phase)

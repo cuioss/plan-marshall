@@ -42,9 +42,7 @@ _analyze_logs = load_script_module(
     'plan-marshall', 'plan-retrospective', 'analyze-logs.py', 'analyze_logs_marker_contract_mod'
 )
 
-_SKILL_DOC = (
-    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-5-execute' / 'SKILL.md'
-)
+_SKILL_DOC = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-5-execute' / 'SKILL.md'
 
 #: The Step-4 section that owns the first-entry / re-entry discriminator.
 _STEP_4_HEADING = '### Step 4: Log Phase Start and Surface Active Worktree (Once per phase)'
@@ -78,8 +76,7 @@ _SAME_COMMAND_CHAR = r'(?:(?!```|\n[ \t]*\n|manage-status\b)[\s\S])'
 #: the four literals must be carried by ONE invocation rather than collected
 #: across a command boundary.
 _METADATA_SET_RE = re.compile(
-    r'manage-status\s+metadata\b' + _SAME_COMMAND_CHAR + r'{0,200}?--set\b'
-    + _SAME_COMMAND_CHAR + r'{0,200}?'
+    r'manage-status\s+metadata\b' + _SAME_COMMAND_CHAR + r'{0,200}?--set\b' + _SAME_COMMAND_CHAR + r'{0,200}?'
     r'--field\s+phase_5_first_entry_logged\b' + _SAME_COMMAND_CHAR + r'{0,80}?--value\s+true\b'
 )
 
@@ -90,9 +87,7 @@ def _skill_text() -> str:
 
 
 def _step_4_section(text: str | None = None) -> str:
-    return '\n'.join(
-        section_lines(text if text is not None else _skill_text(), _STEP_4_HEADING, _STEP_STOP_PREFIXES)
-    )
+    return '\n'.join(section_lines(text if text is not None else _skill_text(), _STEP_4_HEADING, _STEP_STOP_PREFIXES))
 
 
 def _documented_messages(section: str) -> list[str]:

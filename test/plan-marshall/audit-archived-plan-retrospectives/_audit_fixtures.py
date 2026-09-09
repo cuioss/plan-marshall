@@ -23,14 +23,7 @@ from typing import Any
 
 from conftest import PROJECT_ROOT
 
-_AUDIT_SCRIPT = (
-    PROJECT_ROOT
-    / '.claude'
-    / 'skills'
-    / 'audit-archived-plan-retrospectives'
-    / 'scripts'
-    / 'audit.py'
-)
+_AUDIT_SCRIPT = PROJECT_ROOT / '.claude' / 'skills' / 'audit-archived-plan-retrospectives' / 'scripts' / 'audit.py'
 
 
 def _load_audit():
@@ -55,7 +48,8 @@ AUDIT_SCRIPTS_DIR = _AUDIT_SCRIPT.parent
 #: The globbed ``script-execution-*.log`` name the probe fixtures write to.
 #: ``cross_global_log_analysis`` only picks up files matching that glob, so the
 #: name is part of the fixture contract rather than an arbitrary label.
-PROBE_LOG_NAME = "script-execution-2026-06-29.log"
+PROBE_LOG_NAME = 'script-execution-2026-06-29.log'
+
 
 def _inputs(phase_5: list[str]) -> Any:
     """Build a minimal PlanInputs carrying only the phase_5 manifest list."""
@@ -65,6 +59,7 @@ def _inputs(phase_5: list[str]) -> Any:
         manifest_present=True,
         manifest_phase_5=list(phase_5),
     )
+
 
 def _phase(
     name: str,
@@ -84,6 +79,7 @@ def _phase(
         idle_duration_ms=idle_duration_ms,
     )
 
+
 def _write_metrics_toon(plan_dir: Path, blocks: dict[str, dict[str, Any]]) -> None:
     """Write an INI-shaped `work/metrics.toon` the audit parser reads."""
     lines = ['plan_id: fixture', '']
@@ -96,6 +92,7 @@ def _write_metrics_toon(plan_dir: Path, blocks: dict[str, dict[str, Any]]) -> No
     work.mkdir(parents=True, exist_ok=True)
     (work / 'metrics.toon').write_text('\n'.join(lines) + '\n', encoding='utf-8')
 
+
 def _plan_with_counters(repo_root: Path, name: str, phases: dict[str, dict[str, int]]) -> Any:
     """Stage an archived plan whose metrics.toon carries per-phase counters.
 
@@ -105,12 +102,8 @@ def _plan_with_counters(repo_root: Path, name: str, phases: dict[str, dict[str, 
     """
     plan_dir = repo_root / '.plan' / 'local' / 'archived-plans' / name
     (plan_dir / 'work').mkdir(parents=True, exist_ok=True)
-    (plan_dir / 'references.json').write_text(
-        '{"scope_estimate": "surgical"}', encoding='utf-8'
-    )
-    (plan_dir / 'status.json').write_text(
-        '{"metadata": {"change_type": "feature"}}', encoding='utf-8'
-    )
+    (plan_dir / 'references.json').write_text('{"scope_estimate": "surgical"}', encoding='utf-8')
+    (plan_dir / 'status.json').write_text('{"metadata": {"change_type": "feature"}}', encoding='utf-8')
     lines: list[str] = []
     for phase, fields in phases.items():
         lines.append(f'[{phase}]')
@@ -120,6 +113,7 @@ def _plan_with_counters(repo_root: Path, name: str, phases: dict[str, dict[str, 
         lines.append('')
     (plan_dir / 'work' / 'metrics.toon').write_text('\n'.join(lines), encoding='utf-8')
     return audit.collect_inputs(plan_dir)
+
 
 def _counters(exploration: int, work: int, execute: int = 0, **extra: int) -> dict[str, int]:
     """Build a counter dict for one measure pair, defaulting the rest to a measured 0."""
@@ -132,6 +126,7 @@ def _counters(exploration: int, work: int, execute: int = 0, **extra: int) -> di
     }
     fields.update(extra)
     return fields
+
 
 def _shares_plan(
     repo_root: Path,
@@ -166,6 +161,7 @@ def _shares_plan(
         },
     )
 
+
 def _write_log(repo_root: Path, name: str, lines: list[str]) -> None:
     """Write a global log file under ``{repo_root}/.plan/local/logs/{name}``.
 
@@ -177,6 +173,7 @@ def _write_log(repo_root: Path, name: str, lines: list[str]) -> None:
     logs_dir = repo_root / '.plan' / 'local' / 'logs'
     logs_dir.mkdir(parents=True, exist_ok=True)
     (logs_dir / name).write_text('\n'.join(lines) + '\n', encoding='utf-8')
+
 
 def _write_metrics_window(
     repo_root: Path,
@@ -196,18 +193,14 @@ def _write_metrics_window(
     sub = 'archived-plans' if archived else 'plans'
     work = repo_root / '.plan' / 'local' / sub / plan_id / 'work'
     work.mkdir(parents=True, exist_ok=True)
-    body = (
-        'report: metrics\n'
-        'phases:\n'
-        '  - phase: 5-execute\n'
-        f'    start_time: {start}\n'
-        f'    end_time: {end}\n'
-    )
+    body = f'report: metrics\nphases:\n  - phase: 5-execute\n    start_time: {start}\n    end_time: {end}\n'
     (work / 'metrics.toon').write_text(body, encoding='utf-8')
+
 
 def _line(ts: str, level: str, rest: str, *, hash_: str = '3befe7') -> str:
     """Build a single log line in the shared ``_LOG_LINE_RE`` grammar."""
     return f'[{ts}] [{level}] [{hash_}] {rest}'
+
 
 def _write_token_plan(
     repo_root: Path,
@@ -265,14 +258,13 @@ def _write_token_plan(
     for phase, tokens in phase_tokens.items():
         metrics_lines.append(f'[{phase}]')
         metrics_lines.append(f'  total_tokens: {tokens}')
-    (plan_dir / 'work' / 'metrics.toon').write_text(
-        '\n'.join(metrics_lines) + '\n', encoding='utf-8'
-    )
+    (plan_dir / 'work' / 'metrics.toon').write_text('\n'.join(metrics_lines) + '\n', encoding='utf-8')
 
     for n in range(1, task_count + 1):
         (plan_dir / 'tasks' / f'TASK-{n:03d}.json').write_text('{}', encoding='utf-8')
 
     return audit.collect_inputs(plan_dir)
+
 
 def _sbm_call(ts: str, notation: str, sub: str, dur: float | None = None) -> str:
     """Build one ``script-execution.log`` call line in the ``_SBM_CALL_RE`` grammar.
@@ -285,6 +277,7 @@ def _sbm_call(ts: str, notation: str, sub: str, dur: float | None = None) -> str
     head = f'[{ts}Z] [INFO] [3befe7] {notation} {sub}'
     return head if dur is None else f'{head} ({dur:.1f}s)'
 
+
 def _sbm_dispatch(ts: str, role: str) -> str:
     """Build one ``work.log`` ``[DISPATCH] ... role=phase-N...`` marker line.
 
@@ -294,9 +287,11 @@ def _sbm_dispatch(ts: str, role: str) -> str:
     """
     return f'[{ts}Z] [INFO] [3befe7] [DISPATCH] (orchestrator) role={role} dispatched'
 
+
 # Build notation for a staged kind=build ledger row. The re-base derives build
 # time from the change-ledger, which records `command` per build system.
 _LEDGER_NOTATION_PYPROJECT = 'plan-marshall:build-pyproject:pyproject_build'
+
 
 def _sbm_ledger_row(
     plan_id: str,
@@ -323,6 +318,7 @@ def _sbm_ledger_row(
         'timestamp_iso': ts,
     }
 
+
 def _write_change_ledger(repo_root: Path, rows: list[dict[str, Any]]) -> None:
     """Append kind=build rows to ``<repo_root>/.plan/work/change-ledger.jsonl``."""
     import json as _json
@@ -333,9 +329,11 @@ def _write_change_ledger(repo_root: Path, rows: list[dict[str, Any]]) -> None:
         for row in rows:
             fh.write(_json.dumps(row) + '\n')
 
+
 def _sbm_index(repo_root: Path) -> dict[str, list[dict[str, Any]]]:
     """The ledger build-index the check consumes, loaded from the staged ledger."""
     return audit._load_build_ledger_index(repo_root)
+
 
 def _write_sbm_plan(
     repo_root: Path,
@@ -368,27 +366,17 @@ def _write_sbm_plan(
     plan_dir = repo_root / '.plan' / 'temp' / 'sbm-corpus' / plan_id
     logs_dir = plan_dir / 'logs'
     logs_dir.mkdir(parents=True, exist_ok=True)
-    (logs_dir / 'script-execution.log').write_text(
-        '\n'.join(sel_lines or []) + '\n', encoding='utf-8'
-    )
-    (logs_dir / 'work.log').write_text(
-        '\n'.join(work_lines or []) + '\n', encoding='utf-8'
-    )
-    (plan_dir / 'references.json').write_text(
-        _json.dumps({'modified_files': modified_files or []}), encoding='utf-8'
-    )
+    (logs_dir / 'script-execution.log').write_text('\n'.join(sel_lines or []) + '\n', encoding='utf-8')
+    (logs_dir / 'work.log').write_text('\n'.join(work_lines or []) + '\n', encoding='utf-8')
+    (plan_dir / 'references.json').write_text(_json.dumps({'modified_files': modified_files or []}), encoding='utf-8')
     (plan_dir / 'status.json').write_text(
         _json.dumps({'metadata': {'change_type': change_type} if change_type else {}}),
         encoding='utf-8',
     )
     for i in range(ci_runs):
-        (plan_dir / 'artifacts' / 'ci-runs' / f'run-{i}').mkdir(
-            parents=True, exist_ok=True
-        )
+        (plan_dir / 'artifacts' / 'ci-runs' / f'run-{i}').mkdir(parents=True, exist_ok=True)
     if ledger_builds:
-        _write_change_ledger(
-            repo_root, [_sbm_ledger_row(plan_id, **b) for b in ledger_builds]
-        )
+        _write_change_ledger(repo_root, [_sbm_ledger_row(plan_id, **b) for b in ledger_builds])
     if metrics_phases:
         _write_metrics_toon(
             plan_dir,
@@ -396,9 +384,11 @@ def _write_sbm_plan(
         )
     return audit.collect_inputs(plan_dir)
 
+
 _BUILD = 'pm:build-pyproject:pyproject_build'
 
 _ARCH = 'pm:manage-architecture:architecture'
+
 
 def _write_ii_plan(
     repo_root: Path,
@@ -483,46 +473,38 @@ def _write_ii_plan(
         for phase, tokens in phase_tokens.items():
             metrics_lines.append(f'[{phase}]')
             metrics_lines.append(f'  total_tokens: {tokens}')
-        (plan_dir / 'work' / 'metrics.toon').write_text(
-            '\n'.join(metrics_lines) + '\n', encoding='utf-8'
-        )
+        (plan_dir / 'work' / 'metrics.toon').write_text('\n'.join(metrics_lines) + '\n', encoding='utf-8')
     if has_references:
-        (plan_dir / 'references.json').write_text(
-            _json.dumps({'modified_files': []}), encoding='utf-8'
-        )
+        (plan_dir / 'references.json').write_text(_json.dumps({'modified_files': []}), encoding='utf-8')
     if has_tasks:
         (plan_dir / 'tasks').mkdir(parents=True, exist_ok=True)
         (plan_dir / 'tasks' / 'TASK-001.json').write_text('{}', encoding='utf-8')
     if has_findings:
         (plan_dir / 'artifacts' / 'findings').mkdir(parents=True, exist_ok=True)
-        (plan_dir / 'artifacts' / 'findings' / 'f.jsonl').write_text(
-            '{"id": 1}\n', encoding='utf-8'
-        )
+        (plan_dir / 'artifacts' / 'findings' / 'f.jsonl').write_text('{"id": 1}\n', encoding='utf-8')
     logs_dir = plan_dir / 'logs'
     logs_dir.mkdir(parents=True, exist_ok=True)
     if has_script_log:
-        (logs_dir / 'script-execution.log').write_text(
-            '[2026-06-01T10:00:00Z] [INFO] call\n', encoding='utf-8'
-        )
+        (logs_dir / 'script-execution.log').write_text('[2026-06-01T10:00:00Z] [INFO] call\n', encoding='utf-8')
     work_lines = ['[2026-06-01T10:00:00Z] [INFO] [3befe7] work line']
     if dispatch_marker:
         work_lines.append(
-            '[2026-06-01T10:00:01Z] [INFO] [3befe7] '
-            '[DISPATCH] (orchestrator) role=phase-5-execute dispatched'
+            '[2026-06-01T10:00:01Z] [INFO] [3befe7] [DISPATCH] (orchestrator) role=phase-5-execute dispatched'
         )
-    (logs_dir / 'work.log').write_text(
-        '\n'.join(work_lines) + '\n', encoding='utf-8'
-    )
+    (logs_dir / 'work.log').write_text('\n'.join(work_lines) + '\n', encoding='utf-8')
 
     return audit.PlanInputs(plan_id=plan_id, plan_dir=plan_dir)
+
 
 def _flag_result(rows: list[dict[str, Any]]) -> dict[str, Any]:
     """Wrap per-plan ``{plan_id, flags}`` rows in the cross-plan result shape."""
     return {'rows': rows}
 
+
 def _coupling_row(result: dict[str, Any], name: str) -> dict[str, Any]:
     """Return the single coupling row matching ``name`` from a synthesis result."""
     return next(r for r in result['rows'] if r['coupling'] == name)
+
 
 def _write_preference_plan(
     repo_root: Path,
@@ -540,6 +522,7 @@ def _write_preference_plan(
     lines = '\n'.join(_json.dumps(f) for f in findings) + '\n'
     (findings_dir / 'findings.jsonl').write_text(lines, encoding='utf-8')
     return audit.collect_inputs(plan_dir)
+
 
 def _write_shipping_plan(
     repo_root: Path,
@@ -563,17 +546,13 @@ def _write_shipping_plan(
     plan_dir = repo_root / '.plan' / 'temp' / 'ship-corpus' / plan_id
     plan_dir.mkdir(parents=True, exist_ok=True)
     (plan_dir / 'references.json').write_text(
-        _json.dumps(
-            {'scope_estimate': 'surgical', 'modified_files': modified_files or []}
-        ),
+        _json.dumps({'scope_estimate': 'surgical', 'modified_files': modified_files or []}),
         encoding='utf-8',
     )
     metadata: dict[str, Any] = {'change_type': 'bug_fix'}
     if archived_reason is not None:
         metadata['archived_reason'] = archived_reason
-    (plan_dir / 'status.json').write_text(
-        _json.dumps({'metadata': metadata}), encoding='utf-8'
-    )
+    (plan_dir / 'status.json').write_text(_json.dumps({'metadata': metadata}), encoding='utf-8')
     if pr_number is not None:
         run_dir = plan_dir / 'artifacts' / 'ci-runs' / 'run-1'
         run_dir.mkdir(parents=True, exist_ok=True)
@@ -583,12 +562,15 @@ def _write_shipping_plan(
         )
     return audit.collect_inputs(plan_dir)
 
+
 _EXECUTE_PHASE = '5-execute'
+
 
 def _phase_block(phase: str, **fields: int) -> str:
     """Render one `[phase]` section of a `metrics.toon`."""
     body = ''.join(f'  {key}: {value}\n' for key, value in fields.items())
     return f'[{phase}]\n{body}'
+
 
 def _clean_metrics_body(**execute_fields: int) -> str:
     """A fully-recorded six-phase `metrics.toon` carrying *execute_fields*.
@@ -615,6 +597,7 @@ def _clean_metrics_body(**execute_fields: int) -> str:
         blocks.append(_phase_block(phase, **fields))
     return ''.join(blocks)
 
+
 def _write_billing_plan(
     repo_root: Path,
     plan_id: str,
@@ -638,15 +621,12 @@ def _write_billing_plan(
         _json.dumps({'scope_estimate': 'surgical', 'modified_files': ['src/a.py']}),
         encoding='utf-8',
     )
-    (plan_dir / 'status.json').write_text(
-        _json.dumps({'metadata': {'change_type': 'bug_fix'}}), encoding='utf-8'
-    )
+    (plan_dir / 'status.json').write_text(_json.dumps({'metadata': {'change_type': 'bug_fix'}}), encoding='utf-8')
     (plan_dir / 'work' / 'metrics.toon').write_text(metrics_body, encoding='utf-8')
     for phase, body in (ledgers or {}).items():
-        (plan_dir / 'work' / f'metrics-dispatch-boundaries-{phase}.toon').write_text(
-            body, encoding='utf-8'
-        )
+        (plan_dir / 'work' / f'metrics-dispatch-boundaries-{phase}.toon').write_text(body, encoding='utf-8')
     return audit.collect_inputs(plan_dir)
+
 
 def _billing_row(result: dict[str, Any], plan_id: str) -> dict[str, Any]:
     return next(r for r in result['rows'] if r['plan_id'] == plan_id)
@@ -654,12 +634,10 @@ def _billing_row(result: dict[str, Any], plan_id: str) -> dict[str, Any]:
 
 def minimal_corpus(repo_root: Path) -> list:
     """Build a one-plan archived corpus and return its collected inputs."""
-    plan_dir = repo_root / ".plan" / "local" / "archived-plans" / "sample-plan"
+    plan_dir = repo_root / '.plan' / 'local' / 'archived-plans' / 'sample-plan'
     plan_dir.mkdir(parents=True)
-    (plan_dir / "references.json").write_text('{"scope_estimate": "surgical"}', encoding="utf-8")
-    (plan_dir / "status.json").write_text(
-        '{"metadata": {"change_type": "bug_fix"}}', encoding="utf-8"
-    )
+    (plan_dir / 'references.json').write_text('{"scope_estimate": "surgical"}', encoding='utf-8')
+    (plan_dir / 'status.json').write_text('{"metadata": {"change_type": "bug_fix"}}', encoding='utf-8')
     return [audit.collect_inputs(plan_dir)]
 
 

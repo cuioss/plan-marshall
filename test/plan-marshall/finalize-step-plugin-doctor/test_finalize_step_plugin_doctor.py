@@ -59,7 +59,7 @@ def _step5_gate_block(content: str) -> str:
     """
     start = content.find('### Step 5')
     assert start != -1, 'Wrapper SKILL.md should declare a Step 5 gate section'
-    rest = content[start + len('### Step 5'):]
+    rest = content[start + len('### Step 5') :]
     end_candidates = [pos for pos in (rest.find('\n## '), rest.find('\n### Step 6')) if pos != -1]
     end = min(end_candidates) if end_candidates else len(rest)
     return rest[:end]
@@ -200,9 +200,7 @@ class TestRuleRunningScopeableGate:
         assert 'doctor-marketplace \\\n  scan' not in block and 'doctor-marketplace scan' not in block, (
             'Step 5 must not use the rule-less `scan` subcommand as the gate'
         )
-        assert 'list-components --paths' not in block, (
-            'Step 5 must not use the rule-less `list-components` as the gate'
-        )
+        assert 'list-components --paths' not in block, 'Step 5 must not use the rule-less `list-components` as the gate'
 
 
 class TestGateOrderingBeforePush:

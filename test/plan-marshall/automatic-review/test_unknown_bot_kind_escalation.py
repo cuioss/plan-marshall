@@ -223,8 +223,7 @@ def test_escalation_points_at_the_two_knobs_that_hold_the_token():
     block = _escalation_block()
 
     assert 'required_bots' in block and 'optional_bots' in block, (
-        'the escalation prescribes correcting the token without naming the knobs it '
-        'lives in'
+        'the escalation prescribes correcting the token without naming the knobs it lives in'
     )
 
 

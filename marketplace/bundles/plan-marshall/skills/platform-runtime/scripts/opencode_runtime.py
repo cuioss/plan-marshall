@@ -24,6 +24,7 @@ OpenCode-specific behaviour:
 
 All methods return a serialized TOON string via the helpers in runtime_base.
 """
+
 from __future__ import annotations
 
 import json
@@ -61,20 +62,20 @@ class OpenCodeRuntime(Runtime):
         import pathlib
 
         proj = pathlib.Path(project_dir)
-        plan_dir = proj / ".plan"
+        plan_dir = proj / '.plan'
 
         try:
             plan_dir.mkdir(parents=True, exist_ok=True)
-            temp_dir = plan_dir / "temp"
+            temp_dir = plan_dir / 'temp'
             temp_dir.mkdir(parents=True, exist_ok=True)
         except OSError as exc:
             return toon_error(
-                "project initial-setup",
-                "io_error",
-                f"Failed to create .plan directory: {exc}",
+                'project initial-setup',
+                'io_error',
+                f'Failed to create .plan directory: {exc}',
             )
 
-        marshal_path = plan_dir / "marshal.json"
+        marshal_path = plan_dir / 'marshal.json'
         # Three corrupt-input edges, mirroring the sibling ClaudeRuntime: a MISSING
         # file starts from {}; an unreadable or unparseable one is caught by the
         # except clause; and a PARSEABLE file of the wrong SHAPE is refused by the
@@ -87,43 +88,41 @@ class OpenCodeRuntime(Runtime):
         try:
             if marshal_path.exists():
                 # Untyped until the shape guard below runs — see marshal_shape_error.
-                existing: Any = json.loads(marshal_path.read_text(encoding="utf-8"))
+                existing: Any = json.loads(marshal_path.read_text(encoding='utf-8'))
             else:
                 existing = {}
         except (OSError, json.JSONDecodeError) as exc:
             return toon_error(
-                "project initial-setup",
-                "io_error",
-                f"Failed to read marshal.json: {exc}",
+                'project initial-setup',
+                'io_error',
+                f'Failed to read marshal.json: {exc}',
             )
 
-        shape_error = marshal_shape_error("project initial-setup", marshal_path, existing)
+        shape_error = marshal_shape_error('project initial-setup', marshal_path, existing)
         if shape_error is not None:
             return shape_error
 
-        if "runtime" not in existing:
-            existing["runtime"] = {}
-        existing["runtime"]["target"] = target
+        if 'runtime' not in existing:
+            existing['runtime'] = {}
+        existing['runtime']['target'] = target
 
         try:
-            marshal_path.write_text(json.dumps(existing, indent=2), encoding="utf-8")
+            marshal_path.write_text(json.dumps(existing, indent=2), encoding='utf-8')
         except OSError as exc:
             return toon_error(
-                "project initial-setup",
-                "io_error",
-                f"Failed to write marshal.json: {exc}",
+                'project initial-setup',
+                'io_error',
+                f'Failed to write marshal.json: {exc}',
             )
 
         return toon_success(
-            "project initial-setup",
+            'project initial-setup',
             {
-                "target": target,
-                "project_dir": str(proj.resolve()),
-                "marshal_written": True,
-                "hook_installed": False,
-                "hook_skip_reason": (
-                    "OpenCode does not support a SessionStart hook equivalent (issue #9292)"
-                ),
+                'target': target,
+                'project_dir': str(proj.resolve()),
+                'marshal_written': True,
+                'hook_installed': False,
+                'hook_skip_reason': ('OpenCode does not support a SessionStart hook equivalent (issue #9292)'),
             },
         )
 
@@ -141,9 +140,8 @@ class OpenCodeRuntime(Runtime):
         invocation — both install modes, any key set — is the whole behaviour.
         """
         return toon_noop(
-            "project install-hook",
-            "OpenCode exposes no session/display hook channel to wire"
-            " (issue anomalyco/opencode#8619)",
+            'project install-hook',
+            'OpenCode exposes no session/display hook channel to wire (issue anomalyco/opencode#8619)',
             "Use OpenCode's built-in session mechanism for plan visibility",
         )
 
@@ -165,24 +163,24 @@ class OpenCodeRuntime(Runtime):
         home = pathlib.Path.home()
         roots: list[str] = []
 
-        env_config_dir = os.environ.get("OPENCODE_CONFIG_DIR", "")
+        env_config_dir = os.environ.get('OPENCODE_CONFIG_DIR', '')
         if env_config_dir:
-            roots.append(str(pathlib.Path(env_config_dir) / "skills"))
+            roots.append(str(pathlib.Path(env_config_dir) / 'skills'))
 
         roots.extend(
             [
-                ".opencode/skills",
-                ".claude/skills",
-                ".agents/skills",
-                str(home / ".config" / "opencode" / "skills"),
-                str(home / ".claude" / "skills"),
-                str(home / ".agents" / "skills"),
+                '.opencode/skills',
+                '.claude/skills',
+                '.agents/skills',
+                str(home / '.config' / 'opencode' / 'skills'),
+                str(home / '.claude' / 'skills'),
+                str(home / '.agents' / 'skills'),
             ]
         )
 
         return toon_success(
-            "layout skill-roots",
-            {"target": "opencode", "roots": roots},
+            'layout skill-roots',
+            {'target': 'opencode', 'roots': roots},
         )
 
     def layout_bundle_cache_root(self) -> str:
@@ -200,21 +198,21 @@ class OpenCodeRuntime(Runtime):
         home = pathlib.Path.home()
         roots: list[str] = []
 
-        env_config_dir = os.environ.get("OPENCODE_CONFIG_DIR", "")
+        env_config_dir = os.environ.get('OPENCODE_CONFIG_DIR', '')
         if env_config_dir:
-            roots.append(str(pathlib.Path(env_config_dir) / "skills"))
+            roots.append(str(pathlib.Path(env_config_dir) / 'skills'))
 
         roots.extend(
             [
-                str(home / ".config" / "opencode" / "skills"),
-                str(home / ".claude" / "skills"),
-                str(home / ".agents" / "skills"),
+                str(home / '.config' / 'opencode' / 'skills'),
+                str(home / '.claude' / 'skills'),
+                str(home / '.agents' / 'skills'),
             ]
         )
 
         return toon_success(
-            "layout bundle-cache-root",
-            {"target": "opencode", "roots": roots},
+            'layout bundle-cache-root',
+            {'target': 'opencode', 'roots': roots},
         )
 
     # ------------------------------------------------------------------
@@ -230,8 +228,8 @@ class OpenCodeRuntime(Runtime):
         ``timeout`` must be bound by the target it actually runs on.
         """
         return toon_success(
-            "harness bash-timeout-ceiling",
-            {"target": "opencode", "ceiling_seconds": 120},
+            'harness bash-timeout-ceiling',
+            {'target': 'opencode', 'ceiling_seconds': 120},
         )
 
     # ------------------------------------------------------------------
@@ -247,18 +245,16 @@ class OpenCodeRuntime(Runtime):
         than ``hook_not_configured``.
         """
         return toon_noop(
-            "session capture",
-            "OpenCode does not expose a platform-provided session id to the shell;"
-            " tracked upstream at issue #9292",
-            "pass --total-tokens manually to metrics capture",
+            'session capture',
+            'OpenCode does not expose a platform-provided session id to the shell; tracked upstream at issue #9292',
+            'pass --total-tokens manually to metrics capture',
         )
 
     def session_render_title(self, statusline: bool = False) -> str:
         """No-op: OpenCode has no plugin-driven terminal-title hook."""
         return toon_noop(
-            "session render-title",
-            "OpenCode has no plugin-driven terminal-title hook"
-            " (issue anomalyco/opencode#8619)",
+            'session render-title',
+            'OpenCode has no plugin-driven terminal-title hook (issue anomalyco/opencode#8619)',
             "Use OpenCode's built-in TUI status surface for plan visibility",
         )
 
@@ -266,51 +262,51 @@ class OpenCodeRuntime(Runtime):
         self,
         plan_id: str,
         icon: str | None = None,
-        store: str = "plans",
+        store: str = 'plans',
         slug: str | None = None,
     ) -> str:
         """No-op: OpenCode has neither a session id to bind nor a render channel."""
         return toon_noop(
-            "session push-title-token",
-            "OpenCode exposes no platform-provided session id to bind"
-            " (issue #9292) and has no plugin-driven terminal-title render channel"
-            " for a later event to deliver on (issue anomalyco/opencode#8619)",
+            'session push-title-token',
+            'OpenCode exposes no platform-provided session id to bind'
+            ' (issue #9292) and has no plugin-driven terminal-title render channel'
+            ' for a later event to deliver on (issue anomalyco/opencode#8619)',
             "Use OpenCode's built-in TUI status surface for plan visibility",
         )
 
     def session_bind(self, plan_id: str, session_id: str | None = None) -> str:
         """No-op: OpenCode does not expose a platform session id to bind."""
         return toon_noop(
-            "session bind",
-            "OpenCode does not expose a platform-provided session id to the shell,"
-            " so there is no per-session slot to bind (issue #9292)",
+            'session bind',
+            'OpenCode does not expose a platform-provided session id to the shell,'
+            ' so there is no per-session slot to bind (issue #9292)',
             "Use OpenCode's built-in session mechanism for plan visibility",
         )
 
     def session_resolve_plan(self, session_id: str | None = None) -> str:
         """No-op: OpenCode does not expose a platform session id to resolve."""
         return toon_noop(
-            "session resolve-plan",
-            "OpenCode does not expose a platform-provided session id to the shell,"
-            " so there is no per-session binding to resolve (issue #9292)",
+            'session resolve-plan',
+            'OpenCode does not expose a platform-provided session id to the shell,'
+            ' so there is no per-session binding to resolve (issue #9292)',
             "Use OpenCode's built-in session mechanism for plan visibility",
         )
 
     def session_doctor(self, fix: bool = False) -> str:
         """No-op: OpenCode keeps no per-session active-plan cache to scan."""
         return toon_noop(
-            "session doctor",
-            "OpenCode does not expose a platform-provided session id, so there is"
-            " no per-session active-plan cache to scan (issue #9292)",
+            'session doctor',
+            'OpenCode does not expose a platform-provided session id, so there is'
+            ' no per-session active-plan cache to scan (issue #9292)',
             "Use OpenCode's built-in session mechanism for plan visibility",
         )
 
     def session_teardown(self) -> str:
         """No-op: OpenCode exposes no session binding to release."""
         return toon_noop(
-            "session teardown",
-            "OpenCode does not expose a platform-provided session id to the shell,"
-            " so there is no per-session binding to release (issue #9292)",
+            'session teardown',
+            'OpenCode does not expose a platform-provided session id to the shell,'
+            ' so there is no per-session binding to release (issue #9292)',
             "Use OpenCode's built-in session mechanism for plan visibility",
         )
 
@@ -319,11 +315,9 @@ class OpenCodeRuntime(Runtime):
         Claude's ``/reload-plugins``; a full session restart is required to pick
         up the regenerated executor / agent set."""
         return toon_noop(
-            "session reload-directive",
-            "OpenCode exposes no live plugin-reload command equivalent to Claude's"
-            " /reload-plugins",
-            "Restart the OpenCode session to pick up the regenerated executor /"
-            " agent set",
+            'session reload-directive',
+            "OpenCode exposes no live plugin-reload command equivalent to Claude's /reload-plugins",
+            'Restart the OpenCode session to pick up the regenerated executor / agent set',
         )
 
     # ------------------------------------------------------------------
@@ -338,49 +332,44 @@ class OpenCodeRuntime(Runtime):
     # map onto OpenCode's settings format; surfacing a fake ``permissions_written``
     # count would mislead callers into believing the operation took effect.
     _PERMISSION_NOOP_REASON = (
-        "OpenCode has no validated permission backend; the Claude permission "
+        'OpenCode has no validated permission backend; the Claude permission '
         "grammar does not map onto OpenCode's settings format"
     )
-    _PERMISSION_NOOP_ALTERNATIVE = (
-        "Manage OpenCode permissions through OpenCode's own settings; this op is "
-        "Claude-only"
-    )
+    _PERMISSION_NOOP_ALTERNATIVE = "Manage OpenCode permissions through OpenCode's own settings; this op is Claude-only"
 
     def permission_configure(self, scope: str, grants: list[dict[str, Any]]) -> str:
         """Honest no-op: OpenCode has no validated permission-write backend."""
-        if scope not in ("project", "global"):
+        if scope not in ('project', 'global'):
             return toon_error(
-                "permission configure",
-                "invalid_scope",
+                'permission configure',
+                'invalid_scope',
                 f"--scope must be 'project' or 'global'; got {scope!r}",
             )
         return toon_noop(
-            "permission configure",
+            'permission configure',
             self._PERMISSION_NOOP_REASON,
             self._PERMISSION_NOOP_ALTERNATIVE,
         )
 
-    def permission_analyze(
-        self, scope: str, checks: list[str], marshal_path: str | None
-    ) -> str:
+    def permission_analyze(self, scope: str, checks: list[str], marshal_path: str | None) -> str:
         """Honest no-op: OpenCode has no Claude-grammar permission audit."""
-        valid_scopes = ("global", "project", "both")
+        valid_scopes = ('global', 'project', 'both')
         if scope not in valid_scopes:
             return toon_error(
-                "permission analyze",
-                "invalid_scope",
-                f"--scope must be one of {valid_scopes}; got {scope!r}",
+                'permission analyze',
+                'invalid_scope',
+                f'--scope must be one of {valid_scopes}; got {scope!r}',
             )
-        valid_checks = {"redundant", "suspicious", "missing-steps", "all"}
+        valid_checks = {'redundant', 'suspicious', 'missing-steps', 'all'}
         for check in checks:
             if check not in valid_checks:
                 return toon_error(
-                    "permission analyze",
-                    "invalid_check",
-                    f"Unknown check {check!r}; valid checks are: {', '.join(sorted(valid_checks))}",
+                    'permission analyze',
+                    'invalid_check',
+                    f'Unknown check {check!r}; valid checks are: {", ".join(sorted(valid_checks))}',
                 )
         return toon_noop(
-            "permission analyze",
+            'permission analyze',
             self._PERMISSION_NOOP_REASON,
             self._PERMISSION_NOOP_ALTERNATIVE,
         )
@@ -393,76 +382,72 @@ class OpenCodeRuntime(Runtime):
         dry_run: bool,
     ) -> str:
         """Honest no-op: OpenCode has no validated permission-fix backend."""
-        if scope not in ("project", "global"):
+        if scope not in ('project', 'global'):
             return toon_error(
-                "permission fix",
-                "invalid_scope",
+                'permission fix',
+                'invalid_scope',
                 f"--scope must be 'project' or 'global'; got {scope!r}",
             )
         valid_ops = set(PERMISSION_FIX_OPERATIONS)
         if operation not in valid_ops:
             return toon_error(
-                "permission fix",
-                "invalid_operation",
-                f"--operation must be one of {sorted(valid_ops)}; got {operation!r}",
+                'permission fix',
+                'invalid_operation',
+                f'--operation must be one of {sorted(valid_ops)}; got {operation!r}',
             )
         return toon_noop(
-            "permission fix",
+            'permission fix',
             self._PERMISSION_NOOP_REASON,
             self._PERMISSION_NOOP_ALTERNATIVE,
         )
 
-    def permission_ensure_wildcards(
-        self, scope: str, marketplace_dir: str, dry_run: bool
-    ) -> str:
+    def permission_ensure_wildcards(self, scope: str, marketplace_dir: str, dry_run: bool) -> str:
         """Honest no-op: OpenCode has no marketplace-wildcard permission backend."""
-        if scope not in ("project", "global"):
+        if scope not in ('project', 'global'):
             return toon_error(
-                "permission ensure-wildcards",
-                "invalid_scope",
+                'permission ensure-wildcards',
+                'invalid_scope',
                 f"--scope must be 'project' or 'global'; got {scope!r}",
             )
         return toon_noop(
-            "permission ensure-wildcards",
+            'permission ensure-wildcards',
             self._PERMISSION_NOOP_REASON,
             self._PERMISSION_NOOP_ALTERNATIVE,
         )
 
-    def permission_ensure_steps(
-        self, marshal_path: str, scope: str, dry_run: bool
-    ) -> str:
+    def permission_ensure_steps(self, marshal_path: str, scope: str, dry_run: bool) -> str:
         """Honest no-op: OpenCode has no per-step permission backend."""
         import pathlib
 
         if not pathlib.Path(marshal_path).exists():
             return toon_error(
-                "permission ensure-steps",
-                "marshal_not_found",
+                'permission ensure-steps',
+                'marshal_not_found',
                 f"{marshal_path} not found; run 'project initial-setup' first",
             )
-        if scope not in ("project", "global"):
+        if scope not in ('project', 'global'):
             return toon_error(
-                "permission ensure-steps",
-                "invalid_scope",
+                'permission ensure-steps',
+                'invalid_scope',
                 f"--scope must be 'project' or 'global'; got {scope!r}",
             )
         return toon_noop(
-            "permission ensure-steps",
+            'permission ensure-steps',
             self._PERMISSION_NOOP_REASON,
             self._PERMISSION_NOOP_ALTERNATIVE,
         )
 
     def permission_web_analyze(self, scope: str) -> str:
         """Honest no-op: OpenCode has no WebFetch-grammar permission audit."""
-        valid_scopes = ("global", "project", "both")
+        valid_scopes = ('global', 'project', 'both')
         if scope not in valid_scopes:
             return toon_error(
-                "permission web-analyze",
-                "invalid_scope",
+                'permission web-analyze',
+                'invalid_scope',
                 f"--scope must be 'global', 'project', or 'both'; got {scope!r}",
             )
         return toon_noop(
-            "permission web-analyze",
+            'permission web-analyze',
             self._PERMISSION_NOOP_REASON,
             self._PERMISSION_NOOP_ALTERNATIVE,
         )
@@ -475,14 +460,14 @@ class OpenCodeRuntime(Runtime):
         dry_run: bool,
     ) -> str:
         """Honest no-op: OpenCode has no WebFetch-domain permission backend."""
-        if scope not in ("project", "global"):
+        if scope not in ('project', 'global'):
             return toon_error(
-                "permission web-apply",
-                "invalid_scope",
+                'permission web-apply',
+                'invalid_scope',
                 f"--scope must be 'project' or 'global'; got {scope!r}",
             )
         return toon_noop(
-            "permission web-apply",
+            'permission web-apply',
             self._PERMISSION_NOOP_REASON,
             self._PERMISSION_NOOP_ALTERNATIVE,
         )
@@ -491,21 +476,15 @@ class OpenCodeRuntime(Runtime):
     # Permission settings I/O — honest no-ops for OpenCode
     # ------------------------------------------------------------------
 
-    def permission_settings_path(
-        self, scope: str, write: bool = False, project_dir: str | None = None
-    ) -> str:
+    def permission_settings_path(self, scope: str, write: bool = False, project_dir: str | None = None) -> str:
         """Decline — OpenCode has no permission settings files."""
-        raise RuntimeError(
-            f"permission_settings_path: {self._PERMISSION_NOOP_REASON}"
-        )
+        raise RuntimeError(f'permission_settings_path: {self._PERMISSION_NOOP_REASON}')
 
     def permission_load_settings(self, path: str) -> dict[str, Any]:
         """Decline — OpenCode has no permission settings files."""
         return {}
 
-    def permission_save_settings(
-        self, path: str, settings: dict[str, Any]
-    ) -> bool:
+    def permission_save_settings(self, path: str, settings: dict[str, Any]) -> bool:
         """Decline — OpenCode has no permission settings files."""
         return False
 
@@ -517,16 +496,14 @@ class OpenCodeRuntime(Runtime):
     ) -> dict[str, Any]:
         """Decline — OpenCode has no permission settings files."""
         return {
-            "defaults_added": [],
-            "defaults_added_count": 0,
-            "defaults_removed": [],
-            "defaults_removed_count": 0,
-            "applied": False,
+            'defaults_added': [],
+            'defaults_added_count': 0,
+            'defaults_removed': [],
+            'defaults_removed_count': 0,
+            'applied': False,
         }
 
-    def permission_check_skill_coverage(
-        self, skill: str, allow_list: list[str]
-    ) -> str | None:
+    def permission_check_skill_coverage(self, skill: str, allow_list: list[str]) -> str | None:
         """Decline — OpenCode has no permission settings files."""
         return None
 
@@ -534,20 +511,18 @@ class OpenCodeRuntime(Runtime):
         """Load marshal.json — target-neutral, same schema on every target."""
         marshal = Path(marshal_path)
         if not marshal.exists():
-            return {"error": f"marshal.json not found: {marshal_path}"}
+            return {'error': f'marshal.json not found: {marshal_path}'}
         try:
-            data = json.loads(marshal.read_text(encoding="utf-8"))
+            data = json.loads(marshal.read_text(encoding='utf-8'))
         except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-            return {"error": f"Invalid JSON in {marshal_path}: {exc}"}
+            return {'error': f'Invalid JSON in {marshal_path}: {exc}'}
         except OSError as exc:
-            return {"error": f"Could not read {marshal_path}: {exc}"}
+            return {'error': f'Could not read {marshal_path}: {exc}'}
         if not isinstance(data, dict):
-            return {"error": f"Invalid marshal.json (expected object) in {marshal_path}"}
+            return {'error': f'Invalid marshal.json (expected object) in {marshal_path}'}
         return data
 
-    def permission_extract_project_steps(
-        self, marshal_config: dict[str, Any]
-    ) -> list[dict[str, Any]]:
+    def permission_extract_project_steps(self, marshal_config: dict[str, Any]) -> list[dict[str, Any]]:
         """Enumerate project:{skill} step references — target-neutral.
 
         Scans the same phases as the Claude side: ``plan.{phase-5-execute}.steps``
@@ -555,30 +530,26 @@ class OpenCodeRuntime(Runtime):
         phase}`` dict per ``project:``-prefixed entry. Marshal.json is a shared,
         target-neutral file, so the schema is identical across targets.
         """
-        if "error" in marshal_config:
+        if 'error' in marshal_config:
             return []
-        plan = marshal_config.get("plan", {})
+        plan = marshal_config.get('plan', {})
         if not isinstance(plan, dict):
             return []
         steps: list[dict[str, Any]] = []
-        for phase in ("phase-5-execute", "phase-6-finalize"):
+        for phase in ('phase-5-execute', 'phase-6-finalize'):
             phase_config = plan.get(phase, {})
             if not isinstance(phase_config, dict):
                 continue
-            entries = phase_config.get("steps", [])
+            entries = phase_config.get('steps', [])
             if not isinstance(entries, list):
                 continue
             for step in entries:
-                if (
-                    isinstance(step, str)
-                    and step.startswith("project:")
-                    and len(step) > len("project:")
-                ):
+                if isinstance(step, str) and step.startswith('project:') and len(step) > len('project:'):
                     steps.append(
                         {
-                            "skill": step[len("project:") :],
-                            "step": step,
-                            "phase": phase,
+                            'skill': step[len('project:') :],
+                            'step': step,
+                            'phase': phase,
                         }
                     )
         return steps
@@ -587,9 +558,7 @@ class OpenCodeRuntime(Runtime):
     # Metrics
     # ------------------------------------------------------------------
 
-    def metrics_capture(
-        self, plan_id: str, phase: str, total_tokens: int | None
-    ) -> str:
+    def metrics_capture(self, plan_id: str, phase: str, total_tokens: int | None) -> str:
         """Record token consumption for OpenCode.
 
         This operation is an honest ``no-op`` on OpenCode — on EVERY input,
@@ -612,24 +581,23 @@ class OpenCodeRuntime(Runtime):
         """
         if total_tokens is None:
             reason = (
-                "automatic token capture requires a platform-provided session id,"
-                " which OpenCode does not expose (issue #9292)"
+                'automatic token capture requires a platform-provided session id,'
+                ' which OpenCode does not expose (issue #9292)'
             )
             alternative = (
-                "run metrics capture on the Claude target, or wire a shared"
-                " metrics-persistence boundary OpenCode can reach"
+                'run metrics capture on the Claude target, or wire a shared'
+                ' metrics-persistence boundary OpenCode can reach'
             )
         else:
             reason = (
-                "OpenCode reaches no token-persistence boundary, so an explicit"
-                " count cannot be stored (issue #9292)"
+                'OpenCode reaches no token-persistence boundary, so an explicit count cannot be stored (issue #9292)'
             )
             alternative = (
-                "run metrics capture on the Claude target, or wire a shared"
-                " metrics-persistence boundary OpenCode can reach"
+                'run metrics capture on the Claude target, or wire a shared'
+                ' metrics-persistence boundary OpenCode can reach'
             )
         return toon_noop(
-            "metrics capture",
+            'metrics capture',
             reason,
             alternative,
         )
@@ -658,9 +626,9 @@ class OpenCodeRuntime(Runtime):
         explicit-unknown rule of ADR-009.
         """
         return toon_noop(
-            "metrics normalized-tokens",
-            "transcript_not_found",
-            "pass --total-tokens manually to metrics capture",
+            'metrics normalized-tokens',
+            'transcript_not_found',
+            'pass --total-tokens manually to metrics capture',
         )
 
     def chat_extract_signal(self, session_id: str) -> str:
@@ -683,10 +651,9 @@ class OpenCodeRuntime(Runtime):
         of ADR-009.
         """
         return toon_noop(
-            "chat extract-signal",
-            "transcript_not_found",
-            "run on a target that exposes a session transcript, or "
-            "record the session with session capture first",
+            'chat extract-signal',
+            'transcript_not_found',
+            'run on a target that exposes a session transcript, or record the session with session capture first',
         )
 
     # ------------------------------------------------------------------
@@ -709,35 +676,35 @@ class OpenCodeRuntime(Runtime):
 
         if prompt_file is not None and not pathlib.Path(prompt_file).exists():
             return toon_error(
-                "subagent dispatch",
-                "prompt_not_found",
-                f"prompt file not found: {prompt_file}",
+                'subagent dispatch',
+                'prompt_not_found',
+                f'prompt file not found: {prompt_file}',
             )
 
-        prompt_body = f"Run {agent}"
+        prompt_body = f'Run {agent}'
         if prompt_file is not None:
             try:
-                prompt_body = pathlib.Path(prompt_file).read_text(encoding="utf-8")
+                prompt_body = pathlib.Path(prompt_file).read_text(encoding='utf-8')
             except OSError as exc:
                 return toon_error(
-                    "subagent dispatch",
-                    "prompt_not_found",
-                    f"Failed to read prompt file {prompt_file}: {exc}",
+                    'subagent dispatch',
+                    'prompt_not_found',
+                    f'Failed to read prompt file {prompt_file}: {exc}',
                 )
 
         if context:
             for key, value in context.items():
-                prompt_body = prompt_body.replace(f"{{{key}}}", str(value))
+                prompt_body = prompt_body.replace(f'{{{key}}}', str(value))
 
         return toon_success(
-            "subagent dispatch",
+            'subagent dispatch',
             {
-                "platform": "opencode",
-                "invocation": {
-                    "tool": "task",
-                    "description": f"Run {agent}",
-                    "prompt": prompt_body,
-                    "subagent_type": agent,
+                'platform': 'opencode',
+                'invocation': {
+                    'tool': 'task',
+                    'description': f'Run {agent}',
+                    'prompt': prompt_body,
+                    'subagent_type': agent,
                 },
             },
         )
@@ -762,15 +729,15 @@ class OpenCodeRuntime(Runtime):
         checkpoint-and-re-dispatch remains available when the bound is large.
         """
         return toon_noop(
-            "wait for",
+            'wait for',
             "OpenCode's runtime holds no wait channel — it has no platform-provided"
-            " session id (issue #9292), no hook channel"
-            " (issue anomalyco/opencode#8619), and no shared build layer to inspect"
-            " an observable through, so a wait held here would be unobservable and"
-            " could not be re-attached",
+            ' session id (issue #9292), no hook channel'
+            ' (issue anomalyco/opencode#8619), and no shared build layer to inspect'
+            ' an observable through, so a wait held here would be unobservable and'
+            ' could not be re-attached',
             "Invoke the observable's own bounded-wait verb synchronously in-turn"
-            " (build-server-client wait, ci checks wait), or checkpoint and"
-            " re-dispatch to re-establish the wait from persisted state",
+            ' (build-server-client wait, ci checks wait), or checkpoint and'
+            ' re-dispatch to re-establish the wait from persisted state',
         )
 
     # ------------------------------------------------------------------
@@ -785,74 +752,69 @@ class OpenCodeRuntime(Runtime):
         """
         import pathlib
 
-        check_list = [c.strip() for c in checks.split(",")]
-        if "all" in check_list:
-            check_list = ["permissions", "display", "mcp-diagnostics", "hook"]
+        check_list = [c.strip() for c in checks.split(',')]
+        if 'all' in check_list:
+            check_list = ['permissions', 'display', 'mcp-diagnostics', 'hook']
 
         results: list[dict[str, Any]] = []
         all_healthy = True
 
         for check in check_list:
-            if check == "permissions":
+            if check == 'permissions':
                 # OpenCode settings file presence
-                settings = pathlib.Path(".opencode/settings.json")
+                settings = pathlib.Path('.opencode/settings.json')
                 healthy = settings.exists()
                 detail = (
-                    ".opencode/settings.json present"
+                    '.opencode/settings.json present'
                     if healthy
-                    else ".opencode/settings.json not found; OpenCode may not be initialised"
+                    else '.opencode/settings.json not found; OpenCode may not be initialised'
                 )
-                results.append({"check": check, "healthy": healthy, "detail": detail})
+                results.append({'check': check, 'healthy': healthy, 'detail': detail})
                 if not healthy:
                     all_healthy = False
 
-            elif check == "display":
+            elif check == 'display':
                 # OpenCode has no plugin-driven display hook — always unhealthy
                 results.append(
                     {
-                        "check": check,
-                        "healthy": False,
-                        "detail": (
-                            "OpenCode has no plugin-driven terminal-title hook"
-                            " (issue anomalyco/opencode#8619)"
-                        ),
+                        'check': check,
+                        'healthy': False,
+                        'detail': ('OpenCode has no plugin-driven terminal-title hook (issue anomalyco/opencode#8619)'),
                     }
                 )
                 all_healthy = False
 
-            elif check == "mcp-diagnostics":
+            elif check == 'mcp-diagnostics':
                 # Check for OpenCode MCP server (port 63342 by convention)
                 import socket
 
                 try:
-                    with socket.create_connection(("127.0.0.1", 63342), timeout=1):
+                    with socket.create_connection(('127.0.0.1', 63342), timeout=1):
                         healthy = True
-                        detail = "MCP server reachable at 127.0.0.1:63342"
+                        detail = 'MCP server reachable at 127.0.0.1:63342'
                 except OSError:
                     healthy = False
-                    detail = "MCP server not reachable at 127.0.0.1:63342"
-                results.append({"check": check, "healthy": healthy, "detail": detail})
+                    detail = 'MCP server not reachable at 127.0.0.1:63342'
+                results.append({'check': check, 'healthy': healthy, 'detail': detail})
                 if not healthy:
                     all_healthy = False
 
-            elif check == "hook":
+            elif check == 'hook':
                 # No SessionStart hook on OpenCode
                 results.append(
                     {
-                        "check": check,
-                        "healthy": False,
-                        "detail": (
-                            "SessionStart hook not applicable on OpenCode (issue #9292)"
-                        ),
+                        'check': check,
+                        'healthy': False,
+                        'detail': ('SessionStart hook not applicable on OpenCode (issue #9292)'),
                     }
                 )
                 all_healthy = False
 
         return toon_success(
-            "health-check",
+            'health-check',
             {
-                "checks_run": check_list,
-                "all_healthy": all_healthy,
-                "results": results,
+                'checks_run': check_list,
+                'all_healthy': all_healthy,
+                'results': results,
             },
         )

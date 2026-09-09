@@ -39,6 +39,5 @@ def test_bundle_manifest_declares_fsl_license(manifest):
     data = json.loads(manifest.read_text(encoding='utf-8'))
 
     assert data.get('license') == EXPECTED_LICENSE, (
-        f'{manifest.relative_to(PROJECT_ROOT)} declares license '
-        f'{data.get("license")!r}, expected {EXPECTED_LICENSE!r}'
+        f'{manifest.relative_to(PROJECT_ROOT)} declares license {data.get("license")!r}, expected {EXPECTED_LICENSE!r}'
     )

@@ -9,7 +9,6 @@ Its sections, in order:
 * detect_outcome_for_diffed_tasks
 """
 
-
 from __future__ import annotations
 
 import json
@@ -19,8 +18,6 @@ from _analyze_logs_fixtures import _analyze_logs
 # =============================================================================
 # Phase-5 logging-gap fact extractors
 # =============================================================================
-
-
 
 
 class TestPairOutcomeEmissions:
@@ -83,18 +80,12 @@ class TestClusterDispatches:
 
     @staticmethod
     def _marker(ts: str, kind: str = 'Starting') -> str:
-        return (
-            f'[{ts}] [INFO] [abc] '
-            f'[STATUS] (plan-marshall:phase-5-execute) {kind} execute phase — 3 tasks pending'
-        )
+        return f'[{ts}] [INFO] [abc] [STATUS] (plan-marshall:phase-5-execute) {kind} execute phase — 3 tasks pending'
 
     @staticmethod
     def _noise(ts: str, task: str = 'TASK-001') -> str:
         """A phase-5-tagged NON-marker line — inert for clustering."""
-        return (
-            f'[{ts}] [INFO] [def] '
-            f'[OUTCOME] (plan-marshall:phase-5-execute) Completed {task}: x (1 steps)'
-        )
+        return f'[{ts}] [INFO] [def] [OUTCOME] (plan-marshall:phase-5-execute) Completed {task}: x (1 steps)'
 
     def test_cluster_dispatches_single_cluster(self):
         """Markers within `gap_threshold_s` of each other form one cluster."""
@@ -169,8 +160,7 @@ class TestClusterDispatches:
         parameter is kept in the signature purely for caller stability."""
         work = [self._marker('2026-05-08T14:00:00Z')]
         script = [
-            '[2026-05-08T14:00:05Z] [INFO] [xyz] '
-            'plan-marshall:manage-tasks:manage-tasks next (0.12s)',
+            '[2026-05-08T14:00:05Z] [INFO] [xyz] plan-marshall:manage-tasks:manage-tasks next (0.12s)',
         ]
         with_script = _analyze_logs.cluster_dispatches(work, script, gap_threshold_s=30.0)
         without_script = _analyze_logs.cluster_dispatches(work, [], gap_threshold_s=30.0)

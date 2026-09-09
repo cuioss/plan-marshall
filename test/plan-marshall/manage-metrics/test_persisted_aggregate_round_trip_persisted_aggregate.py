@@ -7,7 +7,6 @@ population, exclusions and span marker, that durations persist as milliseconds, 
 that a later write invalidates rather than strands it.
 """
 
-
 from datetime import UTC, datetime, timedelta
 
 from _manage_metrics_fixtures import (
@@ -92,10 +91,7 @@ class TestPersistedAggregate:
         for index, column in enumerate(_TOTAL_COLUMNS, start=1):
             if rendered_cells[index] == '-':
                 continue
-            count_field = (
-                f'{manage_metrics._TOTALS_FIELDS[column]}'
-                f'{manage_metrics._POPULATION_COUNT_SUFFIX}'
-            )
+            count_field = f'{manage_metrics._TOTALS_FIELDS[column]}{manage_metrics._POPULATION_COUNT_SUFFIX}'
             persisted = _top_level_field(store, count_field)
             assert persisted is not None, f'{column} rendered a total with no persisted population'
             assert int(persisted) > 0
@@ -193,8 +189,12 @@ class TestPersistedAggregate:
         # aggregate's UNIT, not the close path's clamp.
         raw = manage_metrics.read_metrics_raw(plan_id)
         raw['phases']['5-execute'].update(
-            {'end_time': '2026-01-01T00:01:00Z', 'duration_seconds': 60.0,
-             'agent_duration_ms': 59960, 'total_tokens': 10}
+            {
+                'end_time': '2026-01-01T00:01:00Z',
+                'duration_seconds': 60.0,
+                'agent_duration_ms': 59960,
+                'total_tokens': 10,
+            }
         )
         manage_metrics.write_metrics(plan_id, raw)
 
@@ -230,9 +230,7 @@ class TestWorkedTimeExcludesTheIdleGap:
         opened = datetime.now(UTC) - timedelta(milliseconds=self._WALL_MS)
         raw['phases']['5-execute']['start_time'] = opened.isoformat()
         manage_metrics.write_metrics(plan_id, raw)
-        cmd_end_phase(
-            ns_end_phase(plan_id, '5-execute', total_tokens=5000, duration_ms=self._WORKED_MS)
-        )
+        cmd_end_phase(ns_end_phase(plan_id, '5-execute', total_tokens=5000, duration_ms=self._WORKED_MS))
 
     def test_worked_excludes_the_gap_and_wall_includes_it(self, plan_context):
         """The two totals disagree by the idle gap — that IS the deliverable."""

@@ -111,10 +111,7 @@ def test_verify_executor_survives_quote_in_executor_path(tmp_path, monkeypatch):
 
     # Point the logging-module verification at a real plan_logging.py so the
     # second probe subprocess succeeds; the executor path is the quote-carrying one.
-    logging_scripts = (
-        PROJECT_ROOT
-        / 'marketplace/bundles/plan-marshall/skills/manage-logging/scripts'
-    )
+    logging_scripts = PROJECT_ROOT / 'marketplace/bundles/plan-marshall/skills/manage-logging/scripts'
     # Derived from the production function rather than restated. A hardcoded
     # mirror of the shared-module set goes stale the moment a shared skill is
     # added, and this test would then validate the quote-path case with

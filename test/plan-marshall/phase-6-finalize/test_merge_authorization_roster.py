@@ -266,22 +266,19 @@ def _undeclared_grant_kinds(declared: set[str]) -> list[str]:
     'block,expected_kind,expected_class',
     [
         pytest.param(
-            'merge-authorization grant --plan-id P --kind sample-override '
-            '--head abc --gap-class sample-gap\n',
+            'merge-authorization grant --plan-id P --kind sample-override --head abc --gap-class sample-gap\n',
             'sample-override',
             'sample-gap',
             id='space-separated',
         ),
         pytest.param(
-            'merge-authorization grant --plan-id=P --kind=sample-override '
-            '--head=abc --gap-class=sample-gap\n',
+            'merge-authorization grant --plan-id=P --kind=sample-override --head=abc --gap-class=sample-gap\n',
             'sample-override',
             'sample-gap',
             id='equals-separated',
         ),
         pytest.param(
-            'merge-authorization grant --plan-id P --kind=sample-override '
-            '--head abc --gap-class sample-gap\n',
+            'merge-authorization grant --plan-id P --kind=sample-override --head abc --gap-class sample-gap\n',
             'sample-override',
             'sample-gap',
             id='mixed-forms',
@@ -374,8 +371,7 @@ def test_every_head_bound_row_has_a_grant_site(kind, row_line):
 
     if bound_via == 'out_of_class':
         assert head_bound != 'yes', (
-            f'{kind} is declared out_of_class but claims head_bound: yes — the two '
-            'claims contradict each other.'
+            f'{kind} is declared out_of_class but claims head_bound: yes — the two claims contradict each other.'
         )
         return
 
@@ -447,8 +443,7 @@ def test_out_of_class_rows_are_annotated_rather_than_silently_absent(kind, row_l
     """
     if _claim(row_line, 'bound_via') == 'grant':
         assert _claim(row_line, 'head_bound') == 'yes', (
-            f'{kind} binds via grant, so it belongs to the HEAD-bound class and must '
-            'claim head_bound: yes.'
+            f'{kind} binds via grant, so it belongs to the HEAD-bound class and must claim head_bound: yes.'
         )
         return
 
@@ -457,8 +452,7 @@ def test_out_of_class_rows_are_annotated_rather_than_silently_absent(kind, row_l
         'member outside the HEAD-bound class must say which class it is in.'
     )
     assert len(_rationale(row_line).split()) >= 8, (
-        f'{kind} sits outside the grant class but carries no rationale explaining WHY: '
-        f'{row_line}'
+        f'{kind} sits outside the grant class but carries no rationale explaining WHY: {row_line}'
     )
 
 
@@ -574,7 +568,7 @@ def test_barrier_routes_on_admissibility_not_on_head_validity():
         'The escape hatch must be BOUND, not removed.'
     )
     assert _BARRIER_INADMISSIBLE, (
-        'Every grant row declares the barrier\'s own gap class, so this test cannot '
+        "Every grant row declares the barrier's own gap class, so this test cannot "
         'distinguish admissibility-routing from HEAD-only routing and would pass '
         'vacuously. The cross-kind hazard is real precisely because rows like '
         'pre-merge-consent authorize a DIFFERENT gap at the same HEAD.'
@@ -587,7 +581,7 @@ def test_barrier_routes_on_admissibility_not_on_head_validity():
             f'The barrier\'s "{_CHECK_VERB}" invocation passes --gap-class {classes}, not '
             f'[{_BARRIER_GAP_CLASS!r}]. --gap-class is what scopes the admissibility '
             'verdict to the gap THIS barrier reports; omitting it is an argparse '
-            'rejection and passing another gate\'s class answers the wrong question.'
+            "rejection and passing another gate's class answers the wrong question."
         )
 
     assert 'any_admissible' in section, (

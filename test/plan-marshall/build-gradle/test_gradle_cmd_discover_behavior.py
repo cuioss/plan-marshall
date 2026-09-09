@@ -90,7 +90,7 @@ def test_parse_dependencies_output_extracts_direct_deps():
     """First-level '+---'/'\\---' lines become 'group:artifact:compile' strings."""
     # Arrange
     log = (
-        'compileClasspath - Compile classpath for source set \'main\'.\n'
+        "compileClasspath - Compile classpath for source set 'main'.\n"
         '+--- org.springframework.boot:spring-boot-starter -> 3.0.0\n'
         '\\--- com.google.guava:guava:31.1-jre\n'
     )
@@ -118,10 +118,7 @@ def test_parse_dependencies_output_captures_project_deps():
 def test_parse_dependencies_output_skips_transitive_lines():
     """Lines carrying a '|' (transitive) prefix are ignored."""
     # Arrange
-    log = (
-        '+--- com.example:direct:1.0\n'
-        '|    \\--- com.example:transitive:1.0\n'
-    )
+    log = '+--- com.example:direct:1.0\n|    \\--- com.example:transitive:1.0\n'
 
     # Act
     deps = _mod._parse_dependencies_output(log)
@@ -440,7 +437,9 @@ def test_get_quality_tasks_extracts_known_tasks(tmp_path, monkeypatch):
         'someUnknownTask - Not a quality task\n'
     )
     monkeypatch.setattr(
-        sys.modules['_gradle_execute'], 'execute_direct', lambda **kwargs: {'status': 'success', 'log_file': str(log_file)}
+        sys.modules['_gradle_execute'],
+        'execute_direct',
+        lambda **kwargs: {'status': 'success', 'log_file': str(log_file)},
     )
 
     # Act

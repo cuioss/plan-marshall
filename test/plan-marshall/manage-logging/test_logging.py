@@ -95,9 +95,7 @@ def test_format_log_entry_field_value_cannot_forge_a_second_header():
         f'control characters in a field value forged an extra entry: {entry!r}'
     )
     # The field survives as exactly one indented line, with the injection inlined.
-    assert len(module.FIELD_PATTERN.findall(entry)) == 1, (
-        f'field value newlines forged an extra field line: {entry!r}'
-    )
+    assert len(module.FIELD_PATTERN.findall(entry)) == 1, f'field value newlines forged an extra field line: {entry!r}'
 
 
 def test_format_log_entry_skips_empty_fields():
@@ -234,9 +232,7 @@ def test_get_log_path_orphan_dir_without_sentinel_falls_back_to_global(monkeypat
                 ('decision', 'decision-'),
             ):
                 path = module.get_log_path('orphan-plan', log_type)
-                assert path.parent == plan_base / 'logs', (
-                    f'{log_type}: expected global fallback, got {path}'
-                )
+                assert path.parent == plan_base / 'logs', f'{log_type}: expected global fallback, got {path}'
                 assert path.name.startswith(prefix), f'{log_type}: unexpected name {path.name}'
                 # The orphan dir must NOT acquire a plan-scoped logs/ subdirectory.
                 assert not (orphan_dir / 'logs').exists(), (

@@ -291,10 +291,7 @@ def merge_path_claims(
                 )
                 continue
             if module_name not in known_modules:
-                notes.append(
-                    f'{_MERGE_NOTE_PREFIX}dropped claim ({prefix} -> {module_name}) — '
-                    f'unknown module name'
-                )
+                notes.append(f'{_MERGE_NOTE_PREFIX}dropped claim ({prefix} -> {module_name}) — unknown module name')
                 continue
             producers_by_claim.setdefault((prefix, module_name), set()).add(attributor_id)
         notes_by_id[attributor_id] = notes
@@ -302,9 +299,7 @@ def merge_path_claims(
     modules_by_prefix: dict[str, set[str]] = {}
     for prefix, module_name in producers_by_claim:
         modules_by_prefix.setdefault(prefix, set()).add(module_name)
-    contested_prefixes = {
-        prefix for prefix, modules in modules_by_prefix.items() if len(modules) > 1
-    }
+    contested_prefixes = {prefix for prefix, modules in modules_by_prefix.items() if len(modules) > 1}
 
     # The ambiguous-ownership obligation: a contested prefix yields no claim, and
     # every attributor that contended for it learns why from its own report. A

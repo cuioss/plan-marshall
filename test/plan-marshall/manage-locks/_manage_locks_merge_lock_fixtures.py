@@ -69,7 +69,6 @@ pytest's default ``prepend`` import mode requires unique test-module basenames
 across the suite.
 """
 
-
 from __future__ import annotations
 
 import json
@@ -184,9 +183,7 @@ class _TokenRecorder:
         monkeypatch.setattr(merge_lock, '_clear_title_token', lambda p: self.cleared.append(p))
         # icon is optional: a glyph push (acquire) records the icon; a plain
         # icon-less repaint (the clear path) records None.
-        monkeypatch.setattr(
-            merge_lock, '_push_title_token', lambda _p, icon=None: self.pushed_icons.append(icon)
-        )
+        monkeypatch.setattr(merge_lock, '_push_title_token', lambda _p, icon=None: self.pushed_icons.append(icon))
 
 
 @pytest.fixture(autouse=True)

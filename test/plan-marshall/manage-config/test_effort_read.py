@@ -25,9 +25,7 @@ from conftest import add_skill_scripts_to_path, load_script_module
 # plan-marshall scripts directory is importable BEFORE loading _cmd_effort.
 add_skill_scripts_to_path('plan-marshall', 'plan-marshall')
 
-_cmd_models_mod = load_script_module(
-    'plan-marshall', 'manage-config', '_cmd_effort.py', module_name='_cmd_effort'
-)
+_cmd_models_mod = load_script_module('plan-marshall', 'manage-config', '_cmd_effort.py', module_name='_cmd_effort')
 cmd_effort = _cmd_models_mod.cmd_effort
 cmd_effort_resolve_target = _cmd_models_mod.cmd_effort_resolve_target
 
@@ -451,5 +449,3 @@ def test_read_does_not_mutate_marshal(plan_context):
     cmd_effort_resolve_target(_ns(role='phase-6-finalize.verification-feedback'))
 
     assert _hash_marshal(plan_context.fixture_dir) == before
-
-

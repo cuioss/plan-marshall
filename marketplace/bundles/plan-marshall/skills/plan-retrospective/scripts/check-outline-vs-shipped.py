@@ -233,15 +233,9 @@ def compare(
     * ``exclude_violated`` — ``exclude & footprint``
     """
     return {
-        'include_unrealised': _class_block(
-            include - footprint, len(include), POPULATION_CERTAIN_INCLUDE
-        ),
-        'touched_but_unassessed': _class_block(
-            footprint - assessed, len(footprint), POPULATION_FOOTPRINT
-        ),
-        'exclude_violated': _class_block(
-            exclude & footprint, len(exclude), POPULATION_CERTAIN_EXCLUDE
-        ),
+        'include_unrealised': _class_block(include - footprint, len(include), POPULATION_CERTAIN_INCLUDE),
+        'touched_but_unassessed': _class_block(footprint - assessed, len(footprint), POPULATION_FOOTPRINT),
+        'exclude_violated': _class_block(exclude & footprint, len(exclude), POPULATION_CERTAIN_EXCLUDE),
     }
 
 
@@ -261,13 +255,9 @@ def build_findings(counts: dict[str, Any]) -> list[dict[str, str]]:
             '(may be a silent descope, or a forecast a later decision abandoned)'
         ),
         'touched_but_unassessed': (
-            'present in the realized footprint carrying no assessment '
-            '(ordinary discovery — the system working)'
+            'present in the realized footprint carrying no assessment (ordinary discovery — the system working)'
         ),
-        'exclude_violated': (
-            'assessed CERTAIN_EXCLUDE and touched anyway '
-            '(the one unambiguously bad outcome)'
-        ),
+        'exclude_violated': ('assessed CERTAIN_EXCLUDE and touched anyway (the one unambiguously bad outcome)'),
     }
     findings: list[dict[str, str]] = []
     for name, message in messages.items():

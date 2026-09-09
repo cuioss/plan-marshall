@@ -77,14 +77,20 @@ def _build_parser() -> argparse.ArgumentParser:
         description='Deploy the generated OpenCode tree with the singular→plural rename.',
         allow_abbrev=False,
     )
-    parser.add_argument('--source', type=Path, default=None, metavar='PATH',
-                        help='Source root (default: {cwd}/target/opencode/).')
-    parser.add_argument('--target-dir', type=Path, default=None, metavar='PATH',
-                        help='Destination directory (default: ~/.config/opencode/).')
-    parser.add_argument('--bundles', type=str, default=None, metavar='NAME',
-                        help='Restrict the deploy to a single bundle.')
-    parser.add_argument('--dry-run', action='store_true',
-                        help='Print actions without touching the filesystem.')
+    parser.add_argument(
+        '--source', type=Path, default=None, metavar='PATH', help='Source root (default: {cwd}/target/opencode/).'
+    )
+    parser.add_argument(
+        '--target-dir',
+        type=Path,
+        default=None,
+        metavar='PATH',
+        help='Destination directory (default: ~/.config/opencode/).',
+    )
+    parser.add_argument(
+        '--bundles', type=str, default=None, metavar='NAME', help='Restrict the deploy to a single bundle.'
+    )
+    parser.add_argument('--dry-run', action='store_true', help='Print actions without touching the filesystem.')
     return parser
 
 
@@ -133,10 +139,7 @@ def _enumerate_source_skills(source: Path, only_bundle: str | None) -> list[Path
     skill_dir = source / 'skill'
     if not skill_dir.is_dir():
         return []
-    skills = sorted(
-        p for p in skill_dir.iterdir()
-        if p.is_dir() and (p / 'SKILL.md').exists()
-    )
+    skills = sorted(p for p in skill_dir.iterdir() if p.is_dir() and (p / 'SKILL.md').exists())
     if only_bundle is not None:
         skills = [s for s in skills if s.name.startswith(f'{only_bundle}-')]
     return skills
@@ -147,10 +150,7 @@ def _enumerate_source_agents(source: Path) -> list[Path]:
     agent_dir = source / 'agent'
     if not agent_dir.is_dir():
         return []
-    return sorted(
-        p for p in agent_dir.iterdir()
-        if p.is_file() and p.suffix == '.md'
-    )
+    return sorted(p for p in agent_dir.iterdir() if p.is_file() and p.suffix == '.md')
 
 
 def _enumerate_source_commands(source: Path, only_bundle: str | None) -> list[Path]:
@@ -158,10 +158,7 @@ def _enumerate_source_commands(source: Path, only_bundle: str | None) -> list[Pa
     command_dir = source / 'command'
     if not command_dir.is_dir():
         return []
-    commands = sorted(
-        p for p in command_dir.iterdir()
-        if p.is_file() and p.suffix == '.md'
-    )
+    commands = sorted(p for p in command_dir.iterdir() if p.is_file() and p.suffix == '.md')
     if only_bundle is not None:
         commands = [c for c in commands if c.name.startswith(f'{only_bundle}-')]
     return commands
@@ -198,10 +195,7 @@ def _derive_synced_bundles(skills: list[Path], commands: list[Path], only_bundle
             matched: set[str] = set()
             for path in list(skills) + list(commands):
                 name = path.name.removesuffix('.md')
-                matches = [
-                    kb for kb in known_bundles
-                    if name == kb or name.startswith(f'{kb}-')
-                ]
+                matches = [kb for kb in known_bundles if name == kb or name.startswith(f'{kb}-')]
                 if matches:
                     matched.add(max(matches, key=len))
             if matched:
@@ -372,7 +366,11 @@ def main(argv: list[str] | None = None) -> int:
 
     # Prune stale managed entries BEFORE deploying.
     removed = _prune_managed(
-        dest, source_skill_names, source_command_names, synced_bundles, dry_run=dry_run,
+        dest,
+        source_skill_names,
+        source_command_names,
+        synced_bundles,
+        dry_run=dry_run,
     )
 
     # Deploy

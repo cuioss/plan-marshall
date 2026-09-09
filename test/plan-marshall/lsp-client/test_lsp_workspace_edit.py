@@ -16,7 +16,10 @@ import pytest
 
 
 def _text_edit(sl, sc, el, ec, new_text):
-    return {'range': {'start': {'line': sl, 'character': sc}, 'end': {'line': el, 'character': ec}}, 'newText': new_text}
+    return {
+        'range': {'start': {'line': sl, 'character': sc}, 'end': {'line': el, 'character': ec}},
+        'newText': new_text,
+    }
 
 
 # -- URI round-trip -----------------------------------------------------------
@@ -38,10 +41,15 @@ def test_uri_to_path_passthrough_non_file():
 
 
 def test_normalize_document_changes():
-    edit = {'documentChanges': [
-        {'textDocument': {'uri': 'file:///a.py', 'version': 1}, 'edits': [_text_edit(0, 0, 0, 1, 'X')]},
-        {'textDocument': {'uri': 'file:///b.py', 'version': 1}, 'edits': [_text_edit(0, 0, 0, 1, 'Y'), _text_edit(1, 0, 1, 1, 'Z')]},
-    ]}
+    edit = {
+        'documentChanges': [
+            {'textDocument': {'uri': 'file:///a.py', 'version': 1}, 'edits': [_text_edit(0, 0, 0, 1, 'X')]},
+            {
+                'textDocument': {'uri': 'file:///b.py', 'version': 1},
+                'edits': [_text_edit(0, 0, 0, 1, 'Y'), _text_edit(1, 0, 1, 1, 'Z')],
+            },
+        ]
+    }
     changes, notes = we.normalize_changes(edit)
     assert set(changes) == {'/a.py', '/b.py'}
     assert len(changes['/b.py']) == 2
@@ -62,10 +70,15 @@ def test_normalize_reports_resource_operation():
 
 
 def test_capture_footprint_from_edit():
-    edit = {'documentChanges': [
-        {'textDocument': {'uri': 'file:///b.py'}, 'edits': [_text_edit(0, 0, 0, 1, 'Y')]},
-        {'textDocument': {'uri': 'file:///a.py'}, 'edits': [_text_edit(0, 0, 0, 1, 'X'), _text_edit(2, 0, 2, 1, 'W')]},
-    ]}
+    edit = {
+        'documentChanges': [
+            {'textDocument': {'uri': 'file:///b.py'}, 'edits': [_text_edit(0, 0, 0, 1, 'Y')]},
+            {
+                'textDocument': {'uri': 'file:///a.py'},
+                'edits': [_text_edit(0, 0, 0, 1, 'X'), _text_edit(2, 0, 2, 1, 'W')],
+            },
+        ]
+    }
     footprint = we.capture_footprint(edit)
     # Sorted by path; edit_count taken from the edit itself.
     assert footprint == [{'path': '/a.py', 'edit_count': 2}, {'path': '/b.py', 'edit_count': 1}]
@@ -110,10 +123,12 @@ def test_two_URI_SPELLINGS_for_one_file_normalise_to_one_entry(tmp_path):
     """
     target = tmp_path / 'a.py'
     target.write_text('one\n')
-    edit = {'changes': {
-        we.path_to_uri(target): [_text_edit(0, 0, 0, 3, 'TWO')],
-        f'file://{tmp_path}/./a.py': [_text_edit(0, 0, 0, 3, 'THREE')],
-    }}
+    edit = {
+        'changes': {
+            we.path_to_uri(target): [_text_edit(0, 0, 0, 3, 'TWO')],
+            f'file://{tmp_path}/./a.py': [_text_edit(0, 0, 0, 3, 'THREE')],
+        }
+    }
 
     changes, _notes = we.normalize_changes(edit)
     assert len(changes) == 1, f'one file produced {len(changes)} entries: {list(changes)}'
@@ -163,10 +178,12 @@ def test_apply_and_restore_round_trip(tmp_path):
     b = tmp_path / 'b.py'
     a.write_text('foo = 1\n')
     b.write_text('bar = 2\n')
-    edit = {'documentChanges': [
-        {'textDocument': {'uri': we.path_to_uri(a)}, 'edits': [_text_edit(0, 0, 0, 3, 'FOO')]},
-        {'textDocument': {'uri': we.path_to_uri(b)}, 'edits': [_text_edit(0, 0, 0, 3, 'BAR')]},
-    ]}
+    edit = {
+        'documentChanges': [
+            {'textDocument': {'uri': we.path_to_uri(a)}, 'edits': [_text_edit(0, 0, 0, 3, 'FOO')]},
+            {'textDocument': {'uri': we.path_to_uri(b)}, 'edits': [_text_edit(0, 0, 0, 3, 'BAR')]},
+        ]
+    }
     footprint, originals = we.apply_workspace_edit(edit)
     assert {row['path'] for row in footprint} == {str(a.resolve()), str(b.resolve())}
     assert a.read_text() == 'FOO = 1\n'
@@ -184,13 +201,15 @@ def test_apply_rolls_back_every_written_file_when_a_later_one_fails(tmp_path):
     for name, text in originals_text.items():
         files[name] = tmp_path / name
         files[name].write_text(text)
-    edit = {'documentChanges': [
-        {'textDocument': {'uri': we.path_to_uri(files['a.py'])}, 'edits': [_text_edit(0, 0, 0, 3, 'AAA')]},
-        # No 'range' — the exact shape a server bug produces, raising mid-apply
-        # after a.py has already been rewritten.
-        {'textDocument': {'uri': we.path_to_uri(files['b.py'])}, 'edits': [{'newText': 'oops'}]},
-        {'textDocument': {'uri': we.path_to_uri(files['c.py'])}, 'edits': [_text_edit(0, 0, 0, 3, 'CCC')]},
-    ]}
+    edit = {
+        'documentChanges': [
+            {'textDocument': {'uri': we.path_to_uri(files['a.py'])}, 'edits': [_text_edit(0, 0, 0, 3, 'AAA')]},
+            # No 'range' — the exact shape a server bug produces, raising mid-apply
+            # after a.py has already been rewritten.
+            {'textDocument': {'uri': we.path_to_uri(files['b.py'])}, 'edits': [{'newText': 'oops'}]},
+            {'textDocument': {'uri': we.path_to_uri(files['c.py'])}, 'edits': [_text_edit(0, 0, 0, 3, 'CCC')]},
+        ]
+    }
 
     with pytest.raises(we.WorkspaceApplyError) as raised:
         we.apply_workspace_edit(edit)
@@ -220,10 +239,12 @@ def test_a_write_that_fails_PART_WAY_restores_the_file_it_damaged(tmp_path):
     for name, text in originals_text.items():
         files[name] = tmp_path / name
         files[name].write_text(text)
-    edit = {'documentChanges': [
-        {'textDocument': {'uri': we.path_to_uri(files[name])}, 'edits': [_text_edit(0, 0, 0, 3, 'XXX')]}
-        for name in originals_text
-    ]}
+    edit = {
+        'documentChanges': [
+            {'textDocument': {'uri': we.path_to_uri(files[name])}, 'edits': [_text_edit(0, 0, 0, 3, 'XXX')]}
+            for name in originals_text
+        ]
+    }
 
     real_write = Path.write_text
     state = {'failed': False}
@@ -260,10 +281,12 @@ def test_a_rollback_that_cannot_restore_the_damaged_file_says_so(tmp_path):
     for name, text in (('a.py', 'foo = 1\n'), ('b.py', 'bar = 2\n')):
         files[name] = tmp_path / name
         files[name].write_text(text)
-    edit = {'documentChanges': [
-        {'textDocument': {'uri': we.path_to_uri(files[name])}, 'edits': [_text_edit(0, 0, 0, 3, 'XXX')]}
-        for name in files
-    ]}
+    edit = {
+        'documentChanges': [
+            {'textDocument': {'uri': we.path_to_uri(files[name])}, 'edits': [_text_edit(0, 0, 0, 3, 'XXX')]}
+            for name in files
+        ]
+    }
 
     real_write = Path.write_text
 
@@ -300,10 +323,12 @@ def test_a_write_that_fails_BEFORE_truncating_reports_no_restore_error(tmp_path)
     for name, text in originals_text.items():
         files[name] = tmp_path / name
         files[name].write_text(text)
-    edit = {'documentChanges': [
-        {'textDocument': {'uri': we.path_to_uri(files[name])}, 'edits': [_text_edit(0, 0, 0, 3, 'XXX')]}
-        for name in originals_text
-    ]}
+    edit = {
+        'documentChanges': [
+            {'textDocument': {'uri': we.path_to_uri(files[name])}, 'edits': [_text_edit(0, 0, 0, 3, 'XXX')]}
+            for name in originals_text
+        ]
+    }
 
     real_write = Path.write_text
 
@@ -333,8 +358,7 @@ def test_count_error_diagnostics_counts_only_errors():
 
 
 def _error(message, line=0, code='E'):
-    return {'severity': 1, 'code': code, 'message': message,
-            'range': {'start': {'line': line, 'character': 0}}}
+    return {'severity': 1, 'code': code, 'message': message, 'range': {'start': {'line': line, 'character': 0}}}
 
 
 def test_edit_verdict_fails_when_any_file_gained_an_error():
@@ -380,9 +404,7 @@ def _by_message_and_line(diagnostics):
         'the-same-message-at-a-different-line-is-a-different-diagnostic',
     ],
 )
-def test_diagnostic_delta_reports_the_added_and_removed_sets(
-    before, after, expected_added, expected_removed
-):
+def test_diagnostic_delta_reports_the_added_and_removed_sets(before, after, expected_added, expected_removed):
     """The delta is a multiset difference over ``(message, line)``, errors only."""
     added, removed = we.diagnostic_delta(before, after)
 
@@ -410,13 +432,18 @@ def test_a_real_edit_spans_two_separate_module_directories(tmp_path):
     caller.parent.mkdir(parents=True)
     definer.write_text('def old_name():\n    return 1\n')
     caller.write_text('from pkg_definer.target import old_name\nold_name()\n')
-    edit = {'documentChanges': [
-        {'textDocument': {'uri': we.path_to_uri(definer)}, 'edits': [_text_edit(0, 4, 0, 12, 'new_name')]},
-        {'textDocument': {'uri': we.path_to_uri(caller)}, 'edits': [
-            _text_edit(0, 31, 0, 39, 'new_name'),
-            _text_edit(1, 0, 1, 8, 'new_name'),
-        ]},
-    ]}
+    edit = {
+        'documentChanges': [
+            {'textDocument': {'uri': we.path_to_uri(definer)}, 'edits': [_text_edit(0, 4, 0, 12, 'new_name')]},
+            {
+                'textDocument': {'uri': we.path_to_uri(caller)},
+                'edits': [
+                    _text_edit(0, 31, 0, 39, 'new_name'),
+                    _text_edit(1, 0, 1, 8, 'new_name'),
+                ],
+            },
+        ]
+    }
 
     footprint, originals = we.apply_workspace_edit(edit)
 
@@ -444,10 +471,12 @@ def test_the_diagnostics_worsened_rollback_mirrored_at_the_pure_layer(tmp_path):
     second = tmp_path / 'b.py'
     first.write_text('foo = 1\n')
     second.write_text('bar = 2\n')
-    edit = {'documentChanges': [
-        {'textDocument': {'uri': we.path_to_uri(first)}, 'edits': [_text_edit(0, 0, 0, 3, 'FOO')]},
-        {'textDocument': {'uri': we.path_to_uri(second)}, 'edits': [_text_edit(0, 0, 0, 3, 'BAR')]},
-    ]}
+    edit = {
+        'documentChanges': [
+            {'textDocument': {'uri': we.path_to_uri(first)}, 'edits': [_text_edit(0, 0, 0, 3, 'FOO')]},
+            {'textDocument': {'uri': we.path_to_uri(second)}, 'edits': [_text_edit(0, 0, 0, 3, 'BAR')]},
+        ]
+    }
     before_by_path = {str(first.resolve()): [], str(second.resolve()): []}
     # The server's post-edit verdict: `first` stays clean, `second` gained an error.
     after_by_path = {str(first.resolve()): [], str(second.resolve()): [_error('boom')]}

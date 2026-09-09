@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for manage-status.py read: cmd_set_phase and its drive seam, plus the script-source path guard."""
 
-
 from argparse import Namespace
 from pathlib import Path
 
@@ -50,16 +49,12 @@ def test_cmd_set_phase_fires_drive_seam_after_write(plan_context, monkeypatch):
     result = cmd_set_phase(Namespace(plan_id='setphase-drive', phase='3-outline'))
 
     assert result['status'] == 'success'
-    assert calls == ['setphase-drive'], (
-        f'cmd_set_phase must fire the drive seam once with the plan_id, got {calls!r}.'
-    )
+    assert calls == ['setphase-drive'], f'cmd_set_phase must fire the drive seam once with the plan_id, got {calls!r}.'
 
 
 def test_cmd_set_phase_invalid_does_not_fire_drive_seam(plan_context, monkeypatch):
     """An invalid-phase error returns before write_status — the seam must NOT fire."""
-    cmd_create(
-        Namespace(plan_id='setphase-invalid-drive', title='Invalid', phases='1-init,2-refine', force=False)
-    )
+    cmd_create(Namespace(plan_id='setphase-invalid-drive', title='Invalid', phases='1-init,2-refine', force=False))
     calls = []
     monkeypatch.setattr(_query, '_surface_drive', lambda pid: calls.append(pid))
 
@@ -67,7 +62,4 @@ def test_cmd_set_phase_invalid_does_not_fire_drive_seam(plan_context, monkeypatc
 
     assert result['status'] == 'error'
     assert result['error'] == 'invalid_phase'
-    assert calls == [], (
-        f'The drive seam must not fire when set-phase is rejected before '
-        f'write_status, got {calls!r}.'
-    )
+    assert calls == [], f'The drive seam must not fire when set-phase is rejected before write_status, got {calls!r}.'

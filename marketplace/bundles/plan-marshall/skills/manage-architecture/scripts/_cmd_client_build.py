@@ -397,10 +397,7 @@ def _compute_execution_tier_fields(bash_timeout_seconds: int, measured: bool) ->
     that contradicts its own tier. Hint strings are pinned recognition tokens
     consumers match on; see module docstring.
     """
-    exceeds = (
-        HARNESS_BASH_CEILING_SECONDS is not None
-        and bash_timeout_seconds > HARNESS_BASH_CEILING_SECONDS
-    )
+    exceeds = HARNESS_BASH_CEILING_SECONDS is not None and bash_timeout_seconds > HARNESS_BASH_CEILING_SECONDS
     tier = 'per_task' if (measured and not exceeds) else 'orchestrator'
     if exceeds:
         hint = _HINT_ORCHESTRATOR

@@ -8,7 +8,6 @@ Its sections, in order:
 * end-phase accumulator fallback (Tier 2 - direct import)
 """
 
-
 from _manage_metrics_fixtures import (
     ns_accumulate,
     ns_end_phase,
@@ -64,9 +63,7 @@ class TestAccumulateAgentUsage:
         cmd_accumulate_agent_usage(
             ns_accumulate('accum-sum', '6-finalize', total_tokens=250, tool_uses=5, duration_ms=2500)
         )
-        result = cmd_accumulate_agent_usage(
-            ns_accumulate('accum-sum', '6-finalize', total_tokens=50, duration_ms=500)
-        )
+        result = cmd_accumulate_agent_usage(ns_accumulate('accum-sum', '6-finalize', total_tokens=50, duration_ms=500))
         assert result['total_tokens'] == 400
         assert result['tool_uses'] == 7  # third call omitted tool_uses → unchanged
         assert result['duration_ms'] == 4000
@@ -116,6 +113,7 @@ class TestAccumulateAgentUsage:
 # Test: end-phase accumulator fallback (Tier 2 - direct import)
 # =============================================================================
 
+
 class TestRetrospectiveTokensAccumulatorCarry:
     """retrospective_tokens flows accumulate-agent-usage → accumulator file → end-phase / phase-boundary.
 
@@ -137,27 +135,19 @@ class TestRetrospectiveTokensAccumulatorCarry:
         assert result['retrospective_tokens'] == 4000
         assert result['total_tokens'] == 10000
 
-        acc_path = (
-            plan_context.plan_dir_for('retro-accum-create') / 'work' / 'metrics-accumulator-6-finalize.toon'
-        )
+        acc_path = plan_context.plan_dir_for('retro-accum-create') / 'work' / 'metrics-accumulator-6-finalize.toon'
         content = acc_path.read_text()
         assert 'retrospective_tokens: 4000' in content
 
     def test_accumulate_sums_retrospective_tokens_across_calls(self, plan_context):
         """Repeated retrospective_tokens contributions sum like the other accumulator fields."""
-        cmd_accumulate_agent_usage(
-            ns_accumulate('retro-accum-sum', '6-finalize', retrospective_tokens=1500)
-        )
-        result = cmd_accumulate_agent_usage(
-            ns_accumulate('retro-accum-sum', '6-finalize', retrospective_tokens=2500)
-        )
+        cmd_accumulate_agent_usage(ns_accumulate('retro-accum-sum', '6-finalize', retrospective_tokens=1500))
+        result = cmd_accumulate_agent_usage(ns_accumulate('retro-accum-sum', '6-finalize', retrospective_tokens=2500))
         assert result['retrospective_tokens'] == 4000
 
     def test_accumulate_omitted_retrospective_tokens_stays_zero(self, plan_context):
         """A call without --retrospective-tokens leaves the running total at zero."""
-        result = cmd_accumulate_agent_usage(
-            ns_accumulate('retro-accum-omit', '6-finalize', total_tokens=500)
-        )
+        result = cmd_accumulate_agent_usage(ns_accumulate('retro-accum-omit', '6-finalize', total_tokens=500))
         assert result['retrospective_tokens'] == 0
 
     def test_end_phase_reads_retrospective_tokens_from_accumulator(self, plan_context):
@@ -172,27 +162,19 @@ class TestRetrospectiveTokensAccumulatorCarry:
 
         assert result['status'] == 'success'
         assert result['retrospective_tokens'] == 3000
-        metrics = (
-            plan_context.plan_dir_for('retro-ep-fallback') / 'work' / 'metrics.toon'
-        ).read_text()
+        metrics = (plan_context.plan_dir_for('retro-ep-fallback') / 'work' / 'metrics.toon').read_text()
         assert 'retrospective_tokens: 3000' in metrics
 
     def test_end_phase_explicit_retrospective_tokens_overrides_accumulator(self, plan_context):
         """An explicit --retrospective-tokens flag wins over the accumulator value."""
         cmd_start_phase(ns_start_phase('retro-ep-override', '6-finalize'))
-        cmd_accumulate_agent_usage(
-            ns_accumulate('retro-ep-override', '6-finalize', retrospective_tokens=999)
-        )
+        cmd_accumulate_agent_usage(ns_accumulate('retro-ep-override', '6-finalize', retrospective_tokens=999))
         _pin_start_time_to_past('retro-ep-override', '6-finalize')
 
-        result = cmd_end_phase(
-            ns_end_phase('retro-ep-override', '6-finalize', retrospective_tokens=5000)
-        )
+        result = cmd_end_phase(ns_end_phase('retro-ep-override', '6-finalize', retrospective_tokens=5000))
 
         assert result['retrospective_tokens'] == 5000
-        metrics = (
-            plan_context.plan_dir_for('retro-ep-override') / 'work' / 'metrics.toon'
-        ).read_text()
+        metrics = (plan_context.plan_dir_for('retro-ep-override') / 'work' / 'metrics.toon').read_text()
         assert 'retrospective_tokens: 5000' in metrics
 
     def test_end_phase_no_accumulator_no_flag_omits_retrospective_tokens(self, plan_context):
@@ -202,9 +184,7 @@ class TestRetrospectiveTokensAccumulatorCarry:
 
         assert result['status'] == 'success'
         assert 'retrospective_tokens' not in result
-        metrics = (
-            plan_context.plan_dir_for('retro-ep-absent') / 'work' / 'metrics.toon'
-        ).read_text()
+        metrics = (plan_context.plan_dir_for('retro-ep-absent') / 'work' / 'metrics.toon').read_text()
         assert 'retrospective_tokens' not in metrics
 
     def test_end_phase_zero_accumulator_omits_retrospective_tokens(self, plan_context):
@@ -224,9 +204,7 @@ class TestRetrospectiveTokensAccumulatorCarry:
 
         assert result['status'] == 'success'
         assert 'retrospective_tokens' not in result
-        metrics = (
-            plan_context.plan_dir_for('retro-ep-zero') / 'work' / 'metrics.toon'
-        ).read_text()
+        metrics = (plan_context.plan_dir_for('retro-ep-zero') / 'work' / 'metrics.toon').read_text()
         assert 'retrospective_tokens' not in metrics
 
     def test_phase_boundary_reads_retrospective_tokens_from_accumulator(self, plan_context):
@@ -242,17 +220,13 @@ class TestRetrospectiveTokensAccumulatorCarry:
         )
 
         assert result['status'] == 'success'
-        metrics = (
-            plan_context.plan_dir_for('retro-pb-fallback') / 'work' / 'metrics.toon'
-        ).read_text()
+        metrics = (plan_context.plan_dir_for('retro-pb-fallback') / 'work' / 'metrics.toon').read_text()
         assert 'retrospective_tokens: 2200' in metrics
 
     def test_phase_boundary_explicit_retrospective_tokens_overrides_accumulator(self, plan_context):
         """An explicit --retrospective-tokens flag on phase-boundary wins over the accumulator."""
         cmd_start_phase(ns_start_phase('retro-pb-override', '5-execute'))
-        cmd_accumulate_agent_usage(
-            ns_accumulate('retro-pb-override', '5-execute', retrospective_tokens=111)
-        )
+        cmd_accumulate_agent_usage(ns_accumulate('retro-pb-override', '5-execute', retrospective_tokens=111))
         _pin_start_time_to_past('retro-pb-override', '5-execute')
 
         result = manage_metrics.cmd_phase_boundary(
@@ -265,9 +239,7 @@ class TestRetrospectiveTokensAccumulatorCarry:
         )
 
         assert result['status'] == 'success'
-        metrics = (
-            plan_context.plan_dir_for('retro-pb-override') / 'work' / 'metrics.toon'
-        ).read_text()
+        metrics = (plan_context.plan_dir_for('retro-pb-override') / 'work' / 'metrics.toon').read_text()
         assert 'retrospective_tokens: 6000' in metrics
 
     def test_phase_boundary_zero_accumulator_omits_retrospective_tokens(self, plan_context):
@@ -287,9 +259,7 @@ class TestRetrospectiveTokensAccumulatorCarry:
         )
 
         assert result['status'] == 'success'
-        metrics = (
-            plan_context.plan_dir_for('retro-pb-zero') / 'work' / 'metrics.toon'
-        ).read_text()
+        metrics = (plan_context.plan_dir_for('retro-pb-zero') / 'work' / 'metrics.toon').read_text()
         assert 'retrospective_tokens' not in metrics
 
 

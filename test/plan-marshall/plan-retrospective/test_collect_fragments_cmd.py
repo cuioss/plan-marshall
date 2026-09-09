@@ -6,7 +6,6 @@ overwrite flag's two outcomes, and the aspects it refuses: unregistered,
 reserved-underscore, and a bundle missing its meta mode.
 """
 
-
 from __future__ import annotations
 
 from pathlib import Path

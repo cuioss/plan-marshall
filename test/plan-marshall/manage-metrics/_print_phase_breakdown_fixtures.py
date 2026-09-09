@@ -15,7 +15,6 @@ Covers:
 - Direct cmd_* call (Tier 2 import) and CLI plumbing (subprocess).
 """
 
-
 # ruff: noqa: I001
 import pytest
 

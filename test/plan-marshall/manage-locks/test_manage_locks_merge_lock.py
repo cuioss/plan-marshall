@@ -5,7 +5,6 @@
 merge-to-main serializer fronted by a FIFO admission queue.
 """
 
-
 from __future__ import annotations
 
 import json
@@ -113,9 +112,7 @@ class TestSiblingKeyPreservation:
         """The round-trip is the real exposure: an acquire followed by a release is
         two wholesale replaces, either of which would drop the co-tenant."""
         co_tenant = {'coderabbit': {'holder': 'plan-x', 'pr_number': 7, 'expires_at': 1.0, 'attempts': 2}}
-        isolated_base['queue_path'].write_text(
-            json.dumps({'waiting': [], 'rate_windows': co_tenant}), encoding='utf-8'
-        )
+        isolated_base['queue_path'].write_text(json.dumps({'waiting': [], 'rate_windows': co_tenant}), encoding='utf-8')
 
         merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
         merge_lock.run_release(Namespace(plan_id='plan-a'))
@@ -146,10 +143,14 @@ class TestFifoAdmission:
         # Seed the queue directly so 'front' is the oldest entry and 'behind' is
         # strictly later — no lock file is created (no acquire has run yet).
         isolated_base['queue_path'].write_text(
-            json.dumps({'waiting': [
-                {'plan_id': 'front', 'ts': 1.0},
-                {'plan_id': 'behind', 'ts': 2.0},
-            ]}),
+            json.dumps(
+                {
+                    'waiting': [
+                        {'plan_id': 'front', 'ts': 1.0},
+                        {'plan_id': 'behind', 'ts': 2.0},
+                    ]
+                }
+            ),
             encoding='utf-8',
         )
         assert not isolated_base['lock_path'].exists()
@@ -171,10 +172,14 @@ class TestFifoAdmission:
         for name in ('front', 'behind'):
             _make_live_plan(base, name)
         isolated_base['queue_path'].write_text(
-            json.dumps({'waiting': [
-                {'plan_id': 'front', 'ts': 1.0},
-                {'plan_id': 'behind', 'ts': 2.0},
-            ]}),
+            json.dumps(
+                {
+                    'waiting': [
+                        {'plan_id': 'front', 'ts': 1.0},
+                        {'plan_id': 'behind', 'ts': 2.0},
+                    ]
+                }
+            ),
             encoding='utf-8',
         )
 
@@ -245,10 +250,14 @@ class TestFifoAdmission:
             _make_live_plan(base, name)
         # Append order [first, second], but ts is inverted (first.ts > second.ts).
         isolated_base['queue_path'].write_text(
-            json.dumps({'waiting': [
-                {'plan_id': 'first', 'ts': 2.0},
-                {'plan_id': 'second', 'ts': 1.0},
-            ]}),
+            json.dumps(
+                {
+                    'waiting': [
+                        {'plan_id': 'first', 'ts': 2.0},
+                        {'plan_id': 'second', 'ts': 1.0},
+                    ]
+                }
+            ),
             encoding='utf-8',
         )
         assert not isolated_base['lock_path'].exists()

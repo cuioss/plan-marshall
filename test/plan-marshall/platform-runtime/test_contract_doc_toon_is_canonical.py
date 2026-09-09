@@ -41,7 +41,7 @@ from toon_parser import parse_toon, serialize_toon
 
 from conftest import get_skill_dir
 
-_STANDARDS = get_skill_dir("plan-marshall", "platform-runtime") / "standards"
+_STANDARDS = get_skill_dir('plan-marshall', 'platform-runtime') / 'standards'
 
 
 def _toon_blocks(doc: pathlib.Path) -> list[tuple[int, str]]:
@@ -59,31 +59,29 @@ def _toon_blocks(doc: pathlib.Path) -> list[tuple[int, str]]:
     blocks: list[tuple[int, str]] = []
     body: list[str] | None = None
     start = 0
-    for lineno, line in enumerate(doc.read_text(encoding="utf-8").splitlines(), 1):
-        if line.strip() == "```toon" and body is None:
+    for lineno, line in enumerate(doc.read_text(encoding='utf-8').splitlines(), 1):
+        if line.strip() == '```toon' and body is None:
             body, start = [], lineno
-        elif line.strip() == "```" and body is not None:
-            blocks.append((start, "\n".join(body)))
+        elif line.strip() == '```' and body is not None:
+            blocks.append((start, '\n'.join(body)))
             body = None
         elif body is not None:
             body.append(line)
     if body is not None:
         raise AssertionError(
-            f"{doc}: ```toon fence opened at line {start} is never closed. "
-            "The scan would silently DROP this block, and the parametrized test "
-            "would still pass on every other block — so a malformed documented "
-            "payload would read as verified. Close the fence."
+            f'{doc}: ```toon fence opened at line {start} is never closed. '
+            'The scan would silently DROP this block, and the parametrized test '
+            'would still pass on every other block — so a malformed documented '
+            'payload would read as verified. Close the fence.'
         )
     return blocks
 
 
 def _cases() -> list[tuple[str, int, str]]:
     cases = [
-        (doc.name, lineno, block)
-        for doc in sorted(_STANDARDS.glob("*.md"))
-        for lineno, block in _toon_blocks(doc)
+        (doc.name, lineno, block) for doc in sorted(_STANDARDS.glob('*.md')) for lineno, block in _toon_blocks(doc)
     ]
-    assert cases, f"no TOON blocks found under {_STANDARDS} — the scan is broken"
+    assert cases, f'no TOON blocks found under {_STANDARDS} — the scan is broken'
     return cases
 
 
@@ -95,15 +93,13 @@ _CASES = _cases()
 
 
 @pytest.mark.parametrize(
-    ("doc_name", "lineno", "block"),
+    ('doc_name', 'lineno', 'block'),
     _CASES,
-    ids=[f"{doc}-L{line}" for doc, line, _ in _CASES],
+    ids=[f'{doc}-L{line}' for doc, line, _ in _CASES],
 )
-def test_documented_toon_block_is_what_the_serializer_emits(
-    doc_name: str, lineno: int, block: str
-) -> None:
+def test_documented_toon_block_is_what_the_serializer_emits(doc_name: str, lineno: int, block: str) -> None:
     """Each documented payload round-trips through the canonical serializer unchanged."""
     assert serialize_toon(parse_toon(block)) == block, (
-        f"{doc_name}:{lineno} is not in the shape serialize_toon emits — "
-        f"it documents a payload the runtime cannot produce"
+        f'{doc_name}:{lineno} is not in the shape serialize_toon emits — '
+        f'it documents a payload the runtime cannot produce'
     )

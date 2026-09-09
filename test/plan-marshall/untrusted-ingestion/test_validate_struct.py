@@ -23,7 +23,7 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'untrusted-ingestion', 'validate_
 
 def _validate(schema: str, struct: dict) -> dict:
     result = run_script(SCRIPT_PATH, 'validate', '--schema', schema, '--struct', json.dumps(struct))
-    assert result.returncode == 0, f"script crashed: {result.stderr}"
+    assert result.returncode == 0, f'script crashed: {result.stderr}'
     return parse_toon(result.stdout)
 
 

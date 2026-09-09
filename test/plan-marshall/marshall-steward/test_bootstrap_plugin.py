@@ -17,9 +17,7 @@ _SCRIPTS_DIR = Path(get_script_path('plan-marshall', 'marshall-steward', 'bootst
 SCRIPT_PATH = _SCRIPTS_DIR / 'bootstrap_plugin.py'
 
 # Tier 2 direct import — resolution by (bundle, skill, script).
-_mod = load_script_module(
-    'plan-marshall', 'marshall-steward', 'bootstrap_plugin.py', module_name='bootstrap_plugin'
-)
+_mod = load_script_module('plan-marshall', 'marshall-steward', 'bootstrap_plugin.py', module_name='bootstrap_plugin')
 
 read_state = _mod.read_state
 write_state = _mod.write_state

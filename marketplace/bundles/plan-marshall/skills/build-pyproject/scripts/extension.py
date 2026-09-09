@@ -123,9 +123,7 @@ def _test_fixture_routes() -> tuple[str, ...]:
     A single ``*`` spans ``/`` under fnmatch, so one glob per (root, suffix) pair
     covers both direct children and nested fixture trees.
     """
-    return tuple(
-        f'{root}/*{suffix}' for suffix in _TEST_FIXTURE_SUFFIXES for root in _TEST_ROOTS
-    )
+    return tuple(f'{root}/*{suffix}' for suffix in _TEST_FIXTURE_SUFFIXES for root in _TEST_ROOTS)
 
 
 class BuildExtension(BuildExtensionBase, DerivationResolverBase):
@@ -204,9 +202,7 @@ class BuildExtension(BuildExtensionBase, DerivationResolverBase):
         See extension-api/standards/extension-contract.md § classify_paths()
         for the full contract.
         """
-        claims: dict[str, list[str]] = {
-            'production': [], 'test': [], 'documentation': [], 'config': []
-        }
+        claims: dict[str, list[str]] = {'production': [], 'test': [], 'documentation': [], 'config': []}
         for path in paths:
             match = self._match_classify(path)
             if match is not None:
@@ -369,6 +365,4 @@ class BuildExtension(BuildExtensionBase, DerivationResolverBase):
             ``(dependent, dependency)`` module-name pairs. ``notes`` names every
             distribution-name collision that suppressed an edge.
         """
-        return derive_name_edges(
-            derived_by_name, PYTHON_BUILD_SYSTEM, self._distribution_name, normalize_pep503
-        )
+        return derive_name_edges(derived_by_name, PYTHON_BUILD_SYSTEM, self._distribution_name, normalize_pep503)

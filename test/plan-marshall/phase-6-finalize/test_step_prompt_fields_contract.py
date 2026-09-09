@@ -107,9 +107,7 @@ _FIELD_KEY = 'requires_prompt_fields'
 #: contract requires EXACTLY ONE of workflow/instructions per dispatch, so both
 #: are contract names. Authoritative source: agents/execution-context.md
 #: § "Input — Prompt-Body Contract".
-_CONTRACT_FIELDS = frozenset(
-    {'name', 'plan_id', 'skills', 'workflow', 'instructions', 'WORKTREE'}
-)
+_CONTRACT_FIELDS = frozenset({'name', 'plan_id', 'skills', 'workflow', 'instructions', 'WORKTREE'})
 
 #: Runtime inputs the DISPATCHER fills from its own run state at the dispatch
 #: site — the phase that dispatched, the producer that raised the round, the
@@ -120,9 +118,7 @@ _CONTRACT_FIELDS = frozenset(
 #: additionally declared by ext-point-execution-context-workflow.md to be the
 #: optional 6th-field extension of the canonical 5-field contract, so treating
 #: it as step-specific would contradict a contract that already names it generic.
-_DISPATCHER_SUPPLIED_FIELDS = frozenset(
-    {'caller_phase', 'iteration', 'producer', 'session_id'}
-)
+_DISPATCHER_SUPPLIED_FIELDS = frozenset({'caller_phase', 'iteration', 'producer', 'session_id'})
 
 #: The ONE exempt set every assertion in this module uses. A prompt-body field
 #: outside it — carried in a step's own block, or marked Required in a step's
@@ -196,8 +192,7 @@ def _record_for(step_name: str) -> dict:
         if record['name'] == step_name:
             return record
     raise AssertionError(
-        f'{step_name} is not a discovered finalize-step implementor, so the '
-        f'anchor assertion has nothing to read.'
+        f'{step_name} is not a discovered finalize-step implementor, so the anchor assertion has nothing to read.'
     )
 
 
@@ -224,7 +219,7 @@ def _prompt_blocks(text: str) -> list[str]:
             continue
         prompt_indent = len(match.group(1))
         body: list[str] = []
-        for candidate in lines[index + 1:]:
+        for candidate in lines[index + 1 :]:
             if candidate.strip() == '':
                 body.append(candidate)
                 continue
@@ -386,7 +381,7 @@ def test_no_orphan_prompt_field_declaration():
         carried = _step_specific_fields(doc_path)
         orphans = _orphans(set(record['prompt_fields']), carried)
         if orphans:
-            offenders.append(f"{record['name']}: {orphans}")
+            offenders.append(f'{record["name"]}: {orphans}')
 
     assert not offenders, (
         f'These steps have their own `prompt: |` dispatch body and declare '
@@ -405,7 +400,7 @@ def test_no_undeclared_prompt_field():
         carried = _step_specific_fields(Path(record['path']))
         undeclared = _undeclared(declared, carried)
         if undeclared:
-            offenders.append(f"{record['name']}: {undeclared}")
+            offenders.append(f'{record["name"]}: {undeclared}')
 
     assert not offenders, (
         f'These steps carry prompt-body fields beyond the exempt set that '
@@ -515,19 +510,13 @@ def _required_table_keys(doc_path: Path) -> set[str]:
         row_index = index + 2
         if _strip_emphasis(header[0]).lower() == _INPUT_TABLE_HEADER:
             required_at = next(
-                (
-                    position
-                    for position, cell in enumerate(header)
-                    if _strip_emphasis(cell).lower() == 'required'
-                ),
+                (position for position, cell in enumerate(header) if _strip_emphasis(cell).lower() == 'required'),
                 None,
             )
             if required_at is not None:
                 while row_index < len(lines) and lines[row_index].strip().startswith('|'):
                     row = _table_cells(lines[row_index])
-                    if len(row) > required_at and (
-                        _strip_emphasis(row[required_at]).lower() in _REQUIRED_AFFIRMATIVE
-                    ):
+                    if len(row) > required_at and (_strip_emphasis(row[required_at]).lower() in _REQUIRED_AFFIRMATIVE):
                         keys.add(_normalize_key(row[0]))
                     row_index += 1
         else:
@@ -613,9 +602,7 @@ def _ext_point_doc() -> Path:
     """
     bundle, _, rest = _EXT_POINT.partition(':')
     skill, _, tail = rest.partition('/')
-    path = (
-        Path(PROJECT_ROOT) / 'marketplace' / 'bundles' / bundle / 'skills' / skill / f'{tail}.md'
-    )
+    path = Path(PROJECT_ROOT) / 'marketplace' / 'bundles' / bundle / 'skills' / skill / f'{tail}.md'
     assert path.is_file(), (
         f'{_EXT_POINT} resolved to {path}, which does not exist. The standard this '
         f'module binds its selector to is unreadable, so the binding assertion '
@@ -651,7 +638,7 @@ def test_input_table_header_literal_is_the_documented_one():
     lowered = text.lower()
     assert 'first header cell' in lowered, (
         f'{_ext_point_doc()} contains {_INPUT_TABLE_HEADER!r} but never states the '
-        f'FIRST-HEADER-CELL identification rule, so the selector\'s discriminator '
+        f"FIRST-HEADER-CELL identification rule, so the selector's discriminator "
         f'is still undocumented. The standard must say which cell carries the '
         f'discrimination, or a step author cannot know how to title the table.'
     )
@@ -661,11 +648,7 @@ def test_input_table_header_literal_is_the_documented_one():
     # emphasis" — a table headed the other way satisfied the prose and was
     # silently unselected. Bind every spelling the selector accepts to a
     # spelling the standard shows as matching, so the two cannot part again.
-    unstated = [
-        spelling
-        for spelling in _EMPHASIS_SPELLINGS
-        if spelling.format(_INPUT_TABLE_HEADER) not in lowered
-    ]
+    unstated = [spelling for spelling in _EMPHASIS_SPELLINGS if spelling.format(_INPUT_TABLE_HEADER) not in lowered]
     assert unstated == [], (
         f'{_ext_point_doc()} does not show these emphasis spellings of the header '
         f'as matching: {unstated}. The selector strips them, so the standard '
@@ -699,11 +682,7 @@ def _differing_lines(left: Path, right: Path) -> list[int]:
         f'{left.name} and {right.name} differ in line COUNT, so a difference in '
         f'outcome cannot be attributed to the header cell alone.'
     )
-    return [
-        index
-        for index, (one, other) in enumerate(zip(left_lines, right_lines, strict=True))
-        if one != other
-    ]
+    return [index for index, (one, other) in enumerate(zip(left_lines, right_lines, strict=True)) if one != other]
 
 
 def test_input_table_selector_is_matched_by_the_documented_header_alone(tmp_path: Path):
@@ -727,9 +706,7 @@ def test_input_table_selector_is_matched_by_the_documented_header_alone(tmp_path
     empty offender list.
     """
     positive = tmp_path / 'documented_header.md'
-    positive.write_text(
-        _SYNTH_TABLE_DOC.format(header='Prompt-body field'), encoding='utf-8'
-    )
+    positive.write_text(_SYNTH_TABLE_DOC.format(header='Prompt-body field'), encoding='utf-8')
     negative = tmp_path / 'reworded_header.md'
     negative.write_text(_SYNTH_TABLE_DOC.format(header='Field'), encoding='utf-8')
 
@@ -770,9 +747,7 @@ def test_input_table_selector_is_matched_by_the_documented_header_alone(tmp_path
 
 
 @pytest.mark.parametrize('spelling', _EMPHASIS_SPELLINGS, ids=list(_EMPHASIS_SPELLINGS))
-def test_input_table_selector_strips_either_emphasis_delimiter(
-    tmp_path: Path, spelling: str
-):
+def test_input_table_selector_strips_either_emphasis_delimiter(tmp_path: Path, spelling: str):
     """(8) Matched control pair over the EMPHASIS clause specifically.
 
     The literal half of the rule already had a control; the emphasis half did
@@ -801,9 +776,7 @@ def test_input_table_selector_strips_either_emphasis_delimiter(
         encoding='utf-8',
     )
     reworded = tmp_path / 'emphasised_reworded_header.md'
-    reworded.write_text(
-        _SYNTH_TABLE_DOC.format(header=spelling.format('Field')), encoding='utf-8'
-    )
+    reworded.write_text(_SYNTH_TABLE_DOC.format(header=spelling.format('Field')), encoding='utf-8')
 
     # The emphasis is really present, and it is the ONLY difference from the
     # plain fixture — otherwise "differs only in using emphasis" is a claim
@@ -817,9 +790,7 @@ def test_input_table_selector_strips_either_emphasis_delimiter(
     )
 
     # POSITIVE: emphasis changes nothing about selection.
-    assert _table_step_specific_keys(emphasised) == _table_step_specific_keys(plain) == {
-        'candidates'
-    }, (
+    assert _table_step_specific_keys(emphasised) == _table_step_specific_keys(plain) == {'candidates'}, (
         f'A header wearing {spelling!r} emphasis parsed as '
         f'{sorted(_table_step_specific_keys(emphasised))} while the plain header '
         f'parsed as {sorted(_table_step_specific_keys(plain))}. The standard calls '
@@ -854,9 +825,7 @@ def test_input_table_selector_requires_a_matched_emphasis_pair(tmp_path: Path):
     mangle any field name that legitimately begins or ends with one.
     """
     unpaired = tmp_path / 'unpaired_delimiter.md'
-    unpaired.write_text(
-        _SYNTH_TABLE_DOC.format(header=f'_{_INPUT_TABLE_HEADER}'), encoding='utf-8'
-    )
+    unpaired.write_text(_SYNTH_TABLE_DOC.format(header=f'_{_INPUT_TABLE_HEADER}'), encoding='utf-8')
 
     assert _table_step_specific_keys(unpaired) == set(), (
         f'A header with ONE unpaired delimiter was selected; parsed '
@@ -884,16 +853,8 @@ def test_input_table_selector_publishes_the_matched_population():
     records = find_implementors(_EXT_POINT)
     assert records, 'no finalize steps discovered — the selector has nothing to run over'
 
-    matched = [
-        record['name']
-        for record in records
-        if _required_table_keys(Path(record['path']))
-    ]
-    with_step_specific = [
-        record['name']
-        for record in records
-        if _table_step_specific_keys(Path(record['path']))
-    ]
+    matched = [record['name'] for record in records if _required_table_keys(Path(record['path']))]
+    with_step_specific = [record['name'] for record in records if _table_step_specific_keys(Path(record['path']))]
 
     # Published on a clean run, not only on failure.
     print(
@@ -925,16 +886,14 @@ def test_input_table_required_keys_equal_the_declaration():
         declared = set(_declared_prompt_fields(doc_path))
         tabled = _table_step_specific_keys(doc_path)
         if declared != tabled:
-            offenders.append(
-                f"{record['name']}: declared={sorted(declared)} table={sorted(tabled)}"
-            )
+            offenders.append(f'{record["name"]}: declared={sorted(declared)} table={sorted(tabled)}')
 
     assert not offenders, (
-        f'These steps\' input tables and {_FIELD_KEY} declarations disagree. The '
+        f"These steps' input tables and {_FIELD_KEY} declarations disagree. The "
         f'input table is the surface ext-point-finalize-step.md names as the '
         f'declaration site, so a Required non-exempt row with no declaration is a '
         f'field the dispatcher is never told to forward, and a declaration with no '
-        f'Required row states an obligation the step\'s documented interface does '
+        f"Required row states an obligation the step's documented interface does "
         f'not: {offenders}'
     )
 
@@ -952,20 +911,15 @@ def test_the_first_two_scopes_reach_a_proper_subset_of_the_population():
     """
     records = find_implementors(_EXT_POINT)
     with_own_block = [
-        record['name']
-        for record in records
-        if _prompt_blocks(Path(record['path']).read_text(encoding='utf-8'))
+        record['name'] for record in records if _prompt_blocks(Path(record['path']).read_text(encoding='utf-8'))
     ]
 
     assert records, 'no finalize steps discovered'
-    assert with_own_block, (
-        'No discovered step has its own `prompt:` block, so (3) and (4) reach '
-        'nothing at all.'
-    )
+    assert with_own_block, 'No discovered step has its own `prompt:` block, so (3) and (4) reach nothing at all.'
     assert len(with_own_block) < len(records), (
         f'Every discovered step ({len(records)}) now has its own dispatch block, '
         f'so the coverage asymmetry this test publishes no longer exists and the '
-        f'module docstring\'s account of (3)/(4) reach must be re-derived. '
+        f"module docstring's account of (3)/(4) reach must be re-derived. "
         f'With a block: {sorted(with_own_block)}'
     )
 
@@ -1180,14 +1134,11 @@ def test_undeclared_detection_fires_on_an_injected_divergence():
 
     diverged = _undeclared(set(), carried)
     assert diverged == ['candidates'], (
-        f'The ∀-direction core did not flag the undeclared carried field; got '
-        f'{diverged}.'
+        f'The ∀-direction core did not flag the undeclared carried field; got {diverged}.'
     )
 
     matched = _undeclared({'candidates'}, carried)
-    assert matched == [], (
-        f'The ∀-direction core flagged a field that IS declared; got {matched}.'
-    )
+    assert matched == [], f'The ∀-direction core flagged a field that IS declared; got {matched}.'
 
 
 def test_block_parser_isolates_two_adjacent_dispatches():

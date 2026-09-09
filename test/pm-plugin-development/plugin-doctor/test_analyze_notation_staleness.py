@@ -99,10 +99,7 @@ def test_stale_notation_flagged(tmp_path):
     )
     _write_skill_md(
         skill_dir,
-        'See command:\n'
-        '```bash\n'
-        'python3 .plan/execute-script.py plan-marshall:manage-status:manage_status read\n'
-        '```\n',
+        'See command:\n```bash\npython3 .plan/execute-script.py plan-marshall:manage-status:manage_status read\n```\n',
     )
 
     findings = assert_analyzer_findings(analyze_notation_staleness, [skill_dir], [RULE_ID])
@@ -224,6 +221,4 @@ def test_file_entry_resolves_marketplace_root(tmp_path):
     )
 
     findings = assert_analyzer_findings(analyze_notation_staleness, [md_path], [RULE_ID])
-    assert findings[0]['details']['notation'] == (
-        'plan-marshall:manage-status:manage_status'
-    )
+    assert findings[0]['details']['notation'] == ('plan-marshall:manage-status:manage_status')

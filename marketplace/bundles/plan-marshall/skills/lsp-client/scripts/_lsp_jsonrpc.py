@@ -398,9 +398,12 @@ class LspSession:
         text = Path(abs_path).read_text(encoding='utf-8')
         self._doc_versions[abs_path] = 1
         self._open_paths.add(abs_path)
-        self._t.notify('textDocument/didOpen', {
-            'textDocument': {'uri': path_to_uri(abs_path), 'languageId': 'python', 'version': 1, 'text': text},
-        })
+        self._t.notify(
+            'textDocument/didOpen',
+            {
+                'textDocument': {'uri': path_to_uri(abs_path), 'languageId': 'python', 'version': 1, 'text': text},
+            },
+        )
 
     def is_open(self, path: str) -> bool:
         """Report whether ``didOpen`` has already been sent for ``path``."""
@@ -421,32 +424,44 @@ class LspSession:
         version = self._doc_versions.get(abs_path, 1) + 1
         self._doc_versions[abs_path] = version
         seq_before_change = self._t.diagnostics_seq(uri)
-        self._t.notify('textDocument/didChange', {
-            'textDocument': {'uri': uri, 'version': version},
-            'contentChanges': [{'text': text}],
-        })
+        self._t.notify(
+            'textDocument/didChange',
+            {
+                'textDocument': {'uri': uri, 'version': version},
+                'contentChanges': [{'text': text}],
+            },
+        )
         return seq_before_change
 
     def document_symbols(self, path: str) -> list[dict[str, Any]]:
-        response = self._t.request('textDocument/documentSymbol', {
-            'textDocument': {'uri': path_to_uri(path)},
-        })
+        response = self._t.request(
+            'textDocument/documentSymbol',
+            {
+                'textDocument': {'uri': path_to_uri(path)},
+            },
+        )
         result = response.get('result') or []
         return list(result)
 
     def definition(self, path: str, line: int, character: int) -> list[dict[str, Any]]:
-        response = self._t.request('textDocument/definition', {
-            'textDocument': {'uri': path_to_uri(path)},
-            'position': {'line': line, 'character': character},
-        })
+        response = self._t.request(
+            'textDocument/definition',
+            {
+                'textDocument': {'uri': path_to_uri(path)},
+                'position': {'line': line, 'character': character},
+            },
+        )
         return _as_location_list(response.get('result'))
 
     def references(self, path: str, line: int, character: int) -> list[dict[str, Any]]:
-        response = self._t.request('textDocument/references', {
-            'textDocument': {'uri': path_to_uri(path)},
-            'position': {'line': line, 'character': character},
-            'context': {'includeDeclaration': True},
-        })
+        response = self._t.request(
+            'textDocument/references',
+            {
+                'textDocument': {'uri': path_to_uri(path)},
+                'position': {'line': line, 'character': character},
+                'context': {'includeDeclaration': True},
+            },
+        )
         return _as_location_list(response.get('result'))
 
     def workspace_symbol(self, query: str) -> list[dict[str, Any]]:
@@ -456,11 +471,14 @@ class LspSession:
         return list(result)
 
     def rename(self, path: str, line: int, character: int, new_name: str) -> dict[str, Any]:
-        response = self._t.request('textDocument/rename', {
-            'textDocument': {'uri': path_to_uri(path)},
-            'position': {'line': line, 'character': character},
-            'newName': new_name,
-        })
+        response = self._t.request(
+            'textDocument/rename',
+            {
+                'textDocument': {'uri': path_to_uri(path)},
+                'position': {'line': line, 'character': character},
+                'newName': new_name,
+            },
+        )
         result = response.get('result')
         return result if isinstance(result, dict) else {}
 

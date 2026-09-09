@@ -21,7 +21,6 @@ every dispatch therefore raises ``SystemExit`` whose ``.code`` is the script's
 integer return.
 """
 
-
 import json
 import sys
 
@@ -65,6 +64,4 @@ def _pin_stale_snapshot(monkeypatch, snapshot):
     """
     import _status_core
 
-    monkeypatch.setattr(
-        _status_core, 'read_status', lambda _plan_id: json.loads(json.dumps(snapshot))
-    )
+    monkeypatch.setattr(_status_core, 'read_status', lambda _plan_id: json.loads(json.dumps(snapshot)))

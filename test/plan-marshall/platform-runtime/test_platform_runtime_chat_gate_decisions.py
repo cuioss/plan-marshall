@@ -103,11 +103,13 @@ _DECISION_ID_CASES = [
     (None, set()),
     ({'type': 'tool_use', 'id': 'x'}, set()),
     (
-        [{
-            'type': 'tool_use',
-            'name': f'mcp__srv__{_mod.OPERATOR_DECISION_TOOL}',
-            'id': 'tu_x',
-        }],
+        [
+            {
+                'type': 'tool_use',
+                'name': f'mcp__srv__{_mod.OPERATOR_DECISION_TOOL}',
+                'id': 'tu_x',
+            }
+        ],
         set(),
     ),
     (
@@ -171,9 +173,7 @@ _GATE_DECISION_CASES = [
     (_result_block('tu_1', REFUSAL), set(), [REFUSAL]),
     (_result_block('tu_1', f'MARKERS = (\n    "{REFUSAL}",\n)\n'), set(), []),
     (
-        _result_block(
-            't', "the user doesn't want to proceed with this tool use — quoted in a doc"
-        ),
+        _result_block('t', "the user doesn't want to proceed with this tool use — quoted in a doc"),
         set(),
         [],
     ),
@@ -198,9 +198,7 @@ _GATE_DECISION_IDS = [
 
 
 class TestExtractGateDecisions:
-    @pytest.mark.parametrize(
-        ('blocks', 'decision_ids', 'expected'), _GATE_DECISION_CASES, ids=_GATE_DECISION_IDS
-    )
+    @pytest.mark.parametrize(('blocks', 'decision_ids', 'expected'), _GATE_DECISION_CASES, ids=_GATE_DECISION_IDS)
     def test_only_a_real_operator_decision_is_extracted(self, blocks, decision_ids, expected):
         """Two shapes count — an answer to the decision tool, and a verbatim refusal."""
         assert _mod.extract_gate_decisions(blocks, decision_ids) == expected

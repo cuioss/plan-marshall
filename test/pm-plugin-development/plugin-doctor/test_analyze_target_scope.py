@@ -38,9 +38,7 @@ from conftest import load_script_module
 # a helper that forwards its parameters is invisible to it, and every such
 # site widens the blind spot the guard bounds. Passing literals keeps this
 # file inside what the guard can see.
-_ats = load_script_module(
-    'pm-plugin-development', 'plugin-doctor', '_analyze_target_scope.py', '_analyze_target_scope'
-)
+_ats = load_script_module('pm-plugin-development', 'plugin-doctor', '_analyze_target_scope.py', '_analyze_target_scope')
 
 analyze_target_scope = _ats.analyze_target_scope
 component_files = _ats.component_files
@@ -226,9 +224,7 @@ def test_shapes_the_scanner_declines_to_read(value):
     assert declared_targets(f'---\nname: a\n{value}\n---\n') is None
 
 
-@pytest.mark.parametrize(
-    'text', [pytest.param(text, id=key) for text, key in _BLOCKS_WITHOUT_A_DECLARATION]
-)
+@pytest.mark.parametrize('text', [pytest.param(text, id=key) for text, key in _BLOCKS_WITHOUT_A_DECLARATION])
 def test_blocks_that_yield_no_declaration(text):
     """No key here, or none this scanner will claim. Either way: silence."""
     assert declared_targets(text) is None
@@ -264,6 +260,7 @@ def test_a_declaration_reports_its_file_line_number():
 # Soundness — the promise this rule actually makes
 # ---------------------------------------------------------------------------
 
+
 # The corpus is DERIVED, not transcribed. Two hand-copied versions each
 # omitted the shape that was breaking soundness at the time — round 13's
 # missed the column-zero block, and its replacement missed the quoted flow
@@ -286,10 +283,7 @@ def _soundness_corpus() -> list[tuple[str, bool]]:
     import importlib.util
     import pathlib
 
-    sibling = (
-        pathlib.Path(__file__).resolve().parents[2]
-        / 'marketplace' / 'targets' / 'test_component_targets.py'
-    )
+    sibling = pathlib.Path(__file__).resolve().parents[2] / 'marketplace' / 'targets' / 'test_component_targets.py'
     spec = importlib.util.spec_from_file_location('_ct_fixtures', sibling)
     assert spec is not None and spec.loader is not None, sibling
     fixtures = importlib.util.module_from_spec(spec)
@@ -322,16 +316,25 @@ def _soundness_corpus() -> list[tuple[str, bool]]:
     rows += [
         (value, False)
         for value in (
-            'targets: [cluade]', 'targets: [claude, cluade]', 'targets: cluade',
-            'targets: [pr-agent]', 'targets:\n- cluade', 'targets: ["cluade"]',
-            "targets: ['cluade']", 'targets:\n- "cluade"', 'targets: 3',
-            'targets: true', 'targets: [1, 2]', 'targets: !!str claude',
-            'targets: [claude] extra', 'targets: [pr-agent, claude]',
-            'name: only', 'metadata:\n  targets: nonsense',
+            'targets: [cluade]',
+            'targets: [claude, cluade]',
+            'targets: cluade',
+            'targets: [pr-agent]',
+            'targets:\n- cluade',
+            'targets: ["cluade"]',
+            "targets: ['cluade']",
+            'targets:\n- "cluade"',
+            'targets: 3',
+            'targets: true',
+            'targets: [1, 2]',
+            'targets: !!str claude',
+            'targets: [claude] extra',
+            'targets: [pr-agent, claude]',
+            'name: only',
+            'metadata:\n  targets: nonsense',
         )
     ]
     return rows
-
 
 
 def test_every_finding_is_a_real_build_failure(tmp_path):
@@ -378,8 +381,7 @@ def test_every_finding_is_a_real_build_failure(tmp_path):
         except TargetScopeError:
             continue
         raise AssertionError(
-            f'{text!r}: the rule reported '
-            f'{findings[0]["details"]["reason"]} but the build accepted it as {scope}'
+            f'{text!r}: the rule reported {findings[0]["details"]["reason"]} but the build accepted it as {scope}'
         )
 
 

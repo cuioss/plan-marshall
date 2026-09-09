@@ -20,7 +20,6 @@ result — a fixture in this file must be a well-formed plan except for the one
 fault the test injects.
 """
 
-
 from __future__ import annotations
 
 import json
@@ -112,9 +111,7 @@ def _write_task(
     raw_steps = steps or [{'number': 1, 'target': _EXISTING_FILE, 'status': 'pending'}]
     # intent is a required step member; default omitting fixtures to 'read'
     # (existence-required) so legacy files_exist cases keep their semantics.
-    normalized_steps = [
-        ({'intent': 'read', **s} if isinstance(s, dict) else s) for s in raw_steps
-    ]
+    normalized_steps = [({'intent': 'read', **s} if isinstance(s, dict) else s) for s in raw_steps]
     record = {
         'number': number,
         'title': title,
@@ -163,6 +160,7 @@ def _write_outline(plan_dir: Path, deliverables: list[dict[str, Any]]) -> None:
 # =============================================================================
 # Files-exist check
 # =============================================================================
+
 
 def _files_exist_failed(plan_context, slug, target, intent):
     """Seed one task with a single (target, intent) step and return failed count."""

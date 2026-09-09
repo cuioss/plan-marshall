@@ -396,9 +396,7 @@ def _make_findings_run_script_stub():
                 return None
             return serialize_toon(query_qgate_findings(plan_id, phase, resolution=resolution))
         if args[1] == 'list':
-            return serialize_toon(
-                query_findings(plan_id, finding_type=_flag(args, '--type'), resolution=resolution)
-            )
+            return serialize_toon(query_findings(plan_id, finding_type=_flag(args, '--type'), resolution=resolution))
         return None
 
     return _stub
@@ -466,9 +464,7 @@ def test_capture_at_finalize_succeeds_when_qgate_finding_rejected(
     """A Q-Gate finding resolved ``rejected`` drops out of the aggregated pending
     count; the 6-finalize boundary clears."""
     pid = 'pf-qgate-rejected'
-    r = real_findings_store.add_qgate_finding(
-        pid, '5-execute', 'qgate', 'test-failure', 'Refuted QG', 'Detail'
-    )
+    r = real_findings_store.add_qgate_finding(pid, '5-execute', 'qgate', 'test-failure', 'Refuted QG', 'Detail')
     real_findings_store.resolve_qgate_finding(pid, '5-execute', r['hash_id'], 'rejected')
 
     result = cmds.cmd_capture(_ns(plan_id=pid, phase='6-finalize'))
@@ -538,6 +534,7 @@ def test_qgate_aggregated_helper_returns_none_on_partial_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Any per-phase query failure poisons the aggregate to ``None``."""
+
     def _fake_run(args: list[str]) -> str | None:
         phase = args[args.index('--phase') + 1]
         if phase == '4-plan':
@@ -746,13 +743,10 @@ def test_actionable_type_roundtrip_queried_matches_produced(
     else:
         stub_query_counts[finding_type] = produced_count
 
-    queried_count = inv._capture_pending_findings_blocking_count(
-        'plan-roundtrip', {}, '5-execute'
-    )
+    queried_count = inv._capture_pending_findings_blocking_count('plan-roundtrip', {}, '5-execute')
 
     assert queried_count == produced_count, (
-        f'Round-trip failed for actionable type {finding_type!r}: '
-        f'queried={queried_count}, produced={produced_count}.'
+        f'Round-trip failed for actionable type {finding_type!r}: queried={queried_count}, produced={produced_count}.'
     )
 
 
@@ -772,16 +766,12 @@ def test_all_actionable_types_have_dispatch_no_silent_zero(
             continue
         stub_query_counts[finding_type] = 1
 
-    queried_total = inv._capture_pending_findings_blocking_count(
-        'plan-tripwire', {}, '5-execute'
-    )
+    queried_total = inv._capture_pending_findings_blocking_count('plan-tripwire', {}, '5-execute')
 
     assert queried_total == len(actionable)
 
 
-@pytest.mark.parametrize(
-    'knowledge_type', ['insight', 'tip', 'best-practice', 'improvement']
-)
+@pytest.mark.parametrize('knowledge_type', ['insight', 'tip', 'best-practice', 'improvement'])
 def test_knowledge_type_never_counts_toward_blocking(
     knowledge_type: str,
     only_pending_findings_invariants,
@@ -793,13 +783,10 @@ def test_knowledge_type_never_counts_toward_blocking(
     at the guarded boundary — the fixed rule excludes it."""
     stub_query_counts[knowledge_type] = 9
 
-    queried_total = inv._capture_pending_findings_blocking_count(
-        'plan-knowledge', {}, '6-finalize'
-    )
+    queried_total = inv._capture_pending_findings_blocking_count('plan-knowledge', {}, '6-finalize')
 
     assert queried_total == 0, (
-        f'KNOWLEDGE type {knowledge_type!r} must never count toward the block, '
-        f'got {queried_total}'
+        f'KNOWLEDGE type {knowledge_type!r} must never count toward the block, got {queried_total}'
     )
 
 
@@ -844,6 +831,7 @@ def explode_phase_steps(monkeypatch: pytest.MonkeyPatch) -> None:
     verb. If a future refactor wires ``cmd_findings_check`` to ``capture_all``,
     the ``PhaseStepsIncomplete`` raised here would surface and break the test.
     """
+
     def _explode(_pid: str, _md: dict, phase: str):
         raise inv.PhaseStepsIncomplete(phase, missing=['step-a'], not_done=[])
 

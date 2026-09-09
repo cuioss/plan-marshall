@@ -159,7 +159,7 @@ def iter_fenced_blocks(text: str) -> list[FencedBlock]:
                 buffer = []
                 in_fence = False
             else:
-                language = stripped[len(_FENCE):].strip()
+                language = stripped[len(_FENCE) :].strip()
                 start_line = number
                 in_fence = True
             continue

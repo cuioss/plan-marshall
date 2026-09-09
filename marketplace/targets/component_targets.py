@@ -207,9 +207,7 @@ def component_tree_target_names() -> frozenset[str]:
     """
     from marketplace.targets import TARGET_REGISTRY  # read at call time, after every target has registered
 
-    return frozenset(
-        name for name, target_cls in TARGET_REGISTRY.items() if target_cls().emits_bundle_tree
-    )
+    return frozenset(name for name, target_cls in TARGET_REGISTRY.items() if target_cls().emits_bundle_tree)
 
 
 # ---------------------------------------------------------------------------
@@ -237,7 +235,7 @@ def _frontmatter_block(text: str) -> str | None:
     close_fence = _CLOSE_FENCE_RE.search(text, start - 1)
     if close_fence is None:
         return None
-    return text[start:close_fence.start()]
+    return text[start : close_fence.start()]
 
 
 #: Returned when the ``targets:`` key is not present at all. A distinct

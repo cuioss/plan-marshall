@@ -32,14 +32,19 @@ def home(tmp_path, monkeypatch):
 
 def _spec(fingerprint: str) -> JobSpec:
     return JobSpec(
-        command=['python3', 'x'], exec_path='/t', project_path='/t',
-        plan_id='p', fingerprint=fingerprint,
+        command=['python3', 'x'],
+        exec_path='/t',
+        project_path='/t',
+        plan_id='p',
+        fingerprint=fingerprint,
     )
 
 
 def test_ping_reports_zero_counts_on_an_idle_daemon(home, tmp_path):
     daemon = marshalld.Daemon(
-        scheduler=Scheduler(max_slots=2), journal=Journal(), log_dir=tmp_path / 'job-logs',
+        scheduler=Scheduler(max_slots=2),
+        journal=Journal(),
+        log_dir=tmp_path / 'job-logs',
     )
 
     response = asyncio.run(daemon.handle_request({'op': 'ping'}))

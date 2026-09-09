@@ -20,9 +20,7 @@ from conftest import get_script_path, load_script_module, run_script
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-run-config', 'run_config.py')
 
 # In-process handle for resolver-behaviour tests (mirrors test_git_merge_lock.py).
-run_config = load_script_module(
-    'plan-marshall', 'manage-run-config', 'run_config.py', module_name='run_config'
-)
+run_config = load_script_module('plan-marshall', 'manage-run-config', 'run_config.py', module_name='run_config')
 
 
 # =============================================================================
@@ -296,11 +294,7 @@ def test_timeout_get_enforces_minimum_on_persisted(plan_context):
     # A very low persisted timeout, e.g. from a warm JVM run.
     config = {
         'version': 1,
-        'commands': {
-            'maven:discover': {
-                'timeout_seconds': 15
-            }
-        },
+        'commands': {'maven:discover': {'timeout_seconds': 15}},
     }
     (plan_dir / 'run-configuration.json').write_text(json.dumps(config))
 
@@ -316,9 +310,7 @@ def test_timeout_get_enforces_minimum_on_default(plan_context):
     """Test timeout get enforces minimum bound when default is too low."""
     (plan_context.fixture_dir).mkdir(parents=True, exist_ok=True)
 
-    result = run_script(
-        SCRIPT_PATH, 'timeout', 'get', '--command', 'quick:command', '--default', '30'
-    )
+    result = run_script(SCRIPT_PATH, 'timeout', 'get', '--command', 'quick:command', '--default', '30')
 
     assert result.success, f'Should succeed: {result.stderr}'
     data = result.toon()

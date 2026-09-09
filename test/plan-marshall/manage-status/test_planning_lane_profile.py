@@ -9,7 +9,6 @@ Its sections, in order:
 * D2 acceptance — pre-route classification unblocks the light lane
 """
 
-
 from __future__ import annotations
 
 from argparse import Namespace
@@ -212,6 +211,7 @@ def test_evaluate_signals_pure_emits_profile_projection():
 # classify_scope_pure — pre-route coarse scope classifier (D2)
 # =============================================================================
 
+
 @pytest.mark.parametrize(
     ('body', 'expected_rule', 'expected_count', 'expected_fan_out'),
     [
@@ -233,9 +233,7 @@ def test_evaluate_signals_pure_emits_profile_projection():
         ('Make the thing better, somehow.', 'pathless_non_empty_body', 0, False),
     ],
 )
-def test_classify_scope_pure_reports_the_band_rule_that_fired(
-    body, expected_rule, expected_count, expected_fan_out
-):
+def test_classify_scope_pure_reports_the_band_rule_that_fired(body, expected_rule, expected_count, expected_fan_out):
     """Every row of the band table reports its own ``band_rule`` plus both measurements.
 
     One case per table row, so a future row that stops being reachable — a
@@ -300,18 +298,13 @@ def test_distinct_paths_counts_a_citation_it_cannot_distinguish_from_a_target():
     one-directional: citations INFLATE the count, and inflation moves the band
     from ``surgical`` toward ``single_module`` (wider), never the reverse.
     """
-    citation_only = (
-        'Tidy the hand-off prose. See '
-        f'`{_BOILERPLATE_CITATION}` for the tier contract.'
-    )
+    citation_only = f'Tidy the hand-off prose. See `{_BOILERPLATE_CITATION}` for the tier contract.'
 
     assert _mod._distinct_paths(citation_only) == {_BOILERPLATE_CITATION}
     assert scope_estimate_from_request_pure(citation_only) == 'surgical'
 
     # Adding real targets alongside the citation moves the band wider, never narrower.
-    with_targets = (
-        f'{citation_only} Change a/one.py, b/two.py, c/three.py and d/four.py.'
-    )
+    with_targets = f'{citation_only} Change a/one.py, b/two.py, c/three.py and d/four.py.'
     assert scope_estimate_from_request_pure(with_targets) == 'single_module'
 
 

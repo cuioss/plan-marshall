@@ -287,11 +287,11 @@ def _discover_all_recipes() -> list[dict]:
         if not frontmatter:
             continue
         domain_match = re.search(r'^recipe_domain:\s*(.+)$', frontmatter, re.MULTILINE)
-        domain = domain_match.group(1).strip().strip("'\"") if domain_match else ''
+        domain = domain_match.group(1).strip().strip('\'"') if domain_match else ''
         profile_match = re.search(r'^recipe_profile:\s*(.+)$', frontmatter, re.MULTILINE)
-        profile = profile_match.group(1).strip().strip("'\"") if profile_match else ''
+        profile = profile_match.group(1).strip().strip('\'"') if profile_match else ''
         package_source_match = re.search(r'^recipe_package_source:\s*(.+)$', frontmatter, re.MULTILINE)
-        package_source = package_source_match.group(1).strip().strip("'\"") if package_source_match else ''
+        package_source = package_source_match.group(1).strip().strip('\'"') if package_source_match else ''
 
         if not domain:
             continue
@@ -437,14 +437,10 @@ def cmd_resolve_outline_skill(args) -> dict:
 
     if len(declared_by) == 1:
         skill, first_domain = next(iter(declared_by.items()))
-        return success_exit(
-            {**roster, 'skill': skill, 'source': 'domain_specific', 'resolved_from': first_domain}
-        )
+        return success_exit({**roster, 'skill': skill, 'source': 'domain_specific', 'resolved_from': first_domain})
 
     if not declared_by:
-        return success_exit(
-            {**roster, 'skill': 'none', 'source': 'generic', 'reason': 'no_domain_skill'}
-        )
+        return success_exit({**roster, 'skill': 'none', 'source': 'generic', 'reason': 'no_domain_skill'})
 
     return success_exit(
         {

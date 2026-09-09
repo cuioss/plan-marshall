@@ -144,9 +144,7 @@ def _timeout_result_input() -> DirectCommandResult:
 
 def _emit_timeout(capsys, parser) -> dict:
     """Run cmd_run_common over a timeout result and return the emitted JSON."""
-    exit_code = _build_shared.cmd_run_common(
-        _timeout_result_input(), parser, 'python', output_format='json'
-    )
+    exit_code = _build_shared.cmd_run_common(_timeout_result_input(), parser, 'python', output_format='json')
     assert exit_code == 0, 'a timeout is modeled in the output, not the exit code'
     emitted: dict = json.loads(capsys.readouterr().out)
     return emitted
@@ -204,9 +202,7 @@ def test_timeout_degrades_to_bare_result_when_parser_raises(capsys):
     def _raising_parser(log_file, *args):
         raise OSError('log file vanished')
 
-    exit_code = _build_shared.cmd_run_common(
-        _timeout_result_input(), _raising_parser, 'python', output_format='json'
-    )
+    exit_code = _build_shared.cmd_run_common(_timeout_result_input(), _raising_parser, 'python', output_format='json')
     captured = capsys.readouterr()
 
     assert exit_code == 0

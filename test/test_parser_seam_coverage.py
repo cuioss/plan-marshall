@@ -161,16 +161,11 @@ SEAM_EXEMPT: dict[str, ShapeVerdict] = {
 #: against the guard's own derived population both ways, so this is a verdict record
 #: rather than a hand-kept list.
 NON_CLI_LIBRARY: dict[str, str] = {
-    'plan-marshall:manage-terminal-title:manage_terminal_title.py':
-        'terminal-title rendering library called by the runtime hooks; its skill publishes no CLI.',
-    'plan-marshall:ref-toon-format:toon_parser.py':
-        'TOON parse/serialize library imported across every bundle; its skill publishes no CLI.',
-    'plan-marshall:tools-input-validation:input_validation.py':
-        'shared argument- and identifier-validation helpers; its skill publishes no CLI.',
-    'plan-marshall:tools-input-validation:schema_validation.py':
-        'shared schema-validation helpers; its skill publishes no CLI.',
-    'pm-documents:plan-marshall-plugin:doc_references.py':
-        'documentation-reference helpers for the bundle extension; its skill publishes no CLI.',
+    'plan-marshall:manage-terminal-title:manage_terminal_title.py': 'terminal-title rendering library called by the runtime hooks; its skill publishes no CLI.',
+    'plan-marshall:ref-toon-format:toon_parser.py': 'TOON parse/serialize library imported across every bundle; its skill publishes no CLI.',
+    'plan-marshall:tools-input-validation:input_validation.py': 'shared argument- and identifier-validation helpers; its skill publishes no CLI.',
+    'plan-marshall:tools-input-validation:schema_validation.py': 'shared schema-validation helpers; its skill publishes no CLI.',
+    'pm-documents:plan-marshall-plugin:doc_references.py': 'documentation-reference helpers for the bundle extension; its skill publishes no CLI.',
 }
 
 LIVE_PROBED = frozenset(label for label, row in SEAM_EXEMPT.items() if row.probe == PROBE_LIVE)
@@ -225,9 +220,7 @@ def _module_bindings(module: ast.Module) -> dict[str, str]:
             bound.update((alias.asname or alias.name, _BOUND_IMPORTED) for alias in node.names)
         elif isinstance(node, ast.Import):
             # ``import pkg.mod`` binds ``pkg``; only an ``as`` clause binds the tail.
-            bound.update(
-                (alias.asname or alias.name.split('.', 1)[0], _BOUND_IMPORTED) for alias in node.names
-            )
+            bound.update((alias.asname or alias.name.split('.', 1)[0], _BOUND_IMPORTED) for alias in node.names)
     return bound
 
 

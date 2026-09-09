@@ -47,7 +47,6 @@ Together they make the gate's four-way decision (``exempt`` / ``fresh`` /
 ledger, and the live project footprint.
 """
 
-
 from __future__ import annotations
 
 import json
@@ -226,9 +225,7 @@ def _stub_expected_notations(monkeypatch, notations: frozenset[str]) -> None:
     cross-check consults — rather than the cross-check itself, so the real
     corroborate/refute comparison still executes against a pinned expectation.
     """
-    monkeypatch.setattr(
-        _crosscheck_mod, 'resolve_expected_notations', lambda _project_dir: (notations, None)
-    )
+    monkeypatch.setattr(_crosscheck_mod, 'resolve_expected_notations', lambda _project_dir: (notations, None))
 
 
 def _stub_verdict(monkeypatch, verdict: dict) -> None:

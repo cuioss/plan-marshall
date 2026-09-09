@@ -95,9 +95,7 @@ def test_mixed_with_docs_bucket_via_fakes():
 
 def test_unknown_bucket_via_fakes():
     py = fake_python_extension(production=['scripts/foo.py'])
-    bucket, unclaimed = _classify(
-        ['scripts/foo.py', 'mystery.xyz'], extensions=[py]
-    )
+    bucket, unclaimed = _classify(['scripts/foo.py', 'mystery.xyz'], extensions=[py])
     assert bucket == 'unknown'
     assert unclaimed == ['mystery.xyz']
 
@@ -110,18 +108,12 @@ def test_unknown_bucket_via_fakes():
 def test_mixed_code_does_not_include_documentation():
     """mixed_code must NOT contain documentation paths — adding any docs path
     upgrades the bucket to mixed_with_docs."""
-    py = fake_python_extension(
-        production=['scripts/foo.py'], tests=['test/foo_test.py']
-    )
-    bucket_no_docs, _ = _classify(
-        ['scripts/foo.py', 'test/foo_test.py'], extensions=[py]
-    )
+    py = fake_python_extension(production=['scripts/foo.py'], tests=['test/foo_test.py'])
+    bucket_no_docs, _ = _classify(['scripts/foo.py', 'test/foo_test.py'], extensions=[py])
     assert bucket_no_docs == 'mixed_code'
 
     docs = fake_documentation_extension(documentation=['README.md'])
-    bucket_with_docs, _ = _classify(
-        ['scripts/foo.py', 'test/foo_test.py', 'README.md'], extensions=[py, docs]
-    )
+    bucket_with_docs, _ = _classify(['scripts/foo.py', 'test/foo_test.py', 'README.md'], extensions=[py, docs])
     assert bucket_with_docs == 'mixed_with_docs'
 
 

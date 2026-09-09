@@ -104,9 +104,7 @@ from resolve_project_dir import (
 # =============================================================================
 
 
-def _format_scope_statement(
-    surface_scope: str, files_in_scope: int, since_ref: str | None
-) -> str:
+def _format_scope_statement(surface_scope: str, files_in_scope: int, since_ref: str | None) -> str:
     """Render the scope statement every absence/residual claim must publish.
 
     An absence claim the cognitive review makes downstream — the clean verdict
@@ -138,9 +136,7 @@ def _format_scope_statement(
             f'{anchor} — a scoped round, so a clean result covers only '
             f'{demonstrative} {noun}, NOT the full plan surface'
         )
-    return (
-        f'searched full scope: {files_in_scope} {noun} across the whole plan diff'
-    )
+    return f'searched full scope: {files_in_scope} {noun} across the whole plan diff'
 
 
 def _format_structural_limit() -> str:
@@ -167,7 +163,7 @@ def _format_structural_limit() -> str:
     most in need of the disclaimer is the clean one.
     """
     return (
-        'structural limit: this pass matches patterns over the diff\'s added lines '
+        "structural limit: this pass matches patterns over the diff's added lines "
         'and adjudicates the statements it finds against each other, so it reaches '
         'INTERNAL CONSISTENCY between statements present in the diff. It does NOT '
         'evaluate the behaviour of the code under inputs the diff does not contain — '
@@ -208,12 +204,8 @@ def _compose_candidate_output(detected: dict[str, list]) -> dict[str, Any]:
             f'detected: {sorted(registered - detected.keys())}'
         )
 
-    counts: dict[str, Any] = {
-        spec.key: len(detected[spec.key]) for spec in CANDIDATE_LISTS
-    }
-    counts['total'] = sum(
-        len(detected[spec.key]) for spec in CANDIDATE_LISTS if spec.in_total
-    )
+    counts: dict[str, Any] = {spec.key: len(detected[spec.key]) for spec in CANDIDATE_LISTS}
+    counts['total'] = sum(len(detected[spec.key]) for spec in CANDIDATE_LISTS if spec.in_total)
 
     # ``by_family`` is derived from the SAME registry and the SAME ``in_total``
     # population as ``total``, so the family counts sum EXACTLY to ``total``.
@@ -362,9 +354,7 @@ def _cmd_surface(args: argparse.Namespace) -> int:
     if allow_set is not None:
         changed_pairs = [pr for pr in changed_pairs if pr[0] in allow_set]
     touched_claims = _detect_touched_claims(changed_pairs)
-    advertised_form_help_strings = _detect_advertised_form_help_strings(
-        added, project_dir
-    )
+    advertised_form_help_strings = _detect_advertised_form_help_strings(added, project_dir)
     ordinal_references = _detect_ordinal_references(added, project_dir)
     scan_derived_keys = _detect_scan_derived_keys(added, project_dir)
     worked_example_pairs = _detect_worked_example_pairs(added, project_dir)
@@ -406,9 +396,7 @@ def _cmd_surface(args: argparse.Namespace) -> int:
         'since_ref': since_ref or '',
         'surface_scope': surface_scope,
         'files_in_scope': files_in_scope,
-        'scope_statement': _format_scope_statement(
-            surface_scope, files_in_scope, since_ref
-        ),
+        'scope_statement': _format_scope_statement(surface_scope, files_in_scope, since_ref),
         # The second, orthogonal honesty field: what this ANALYSIS cannot evaluate
         # at all, as distinct from which files it happened to search. Kept separate
         # from scope_statement so a caller reading either one cannot believe it has
@@ -490,8 +478,7 @@ def _cmd_scan_worked_examples(args: argparse.Namespace) -> int:
     if paths_glob.startswith('/') or '..' in Path(paths_glob).parts:
         output_toon_error(
             'paths_glob_invalid',
-            'paths-glob must be a relative pattern with no parent-directory '
-            f'segments: {paths_glob!r}',
+            f'paths-glob must be a relative pattern with no parent-directory segments: {paths_glob!r}',
         )
         return 1
 
@@ -561,9 +548,7 @@ class _TermPreservingHelpFormatter(argparse.HelpFormatter):
 
     def _split_lines(self, text: str, width: int) -> list[str]:
         collapsed = self._whitespace_matcher.sub(' ', text).strip()
-        return textwrap.wrap(
-            collapsed, width, break_on_hyphens=False, break_long_words=False
-        )
+        return textwrap.wrap(collapsed, width, break_on_hyphens=False, break_long_words=False)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -577,8 +562,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p_surface = sub.add_parser(
         'surface',
         help=(
-            f'Emit {len(CANDIDATE_LISTS)} candidate lists '
-            f'({candidate_list_prose()}) from the worktree diff as TOON.'
+            f'Emit {len(CANDIDATE_LISTS)} candidate lists ({candidate_list_prose()}) from the worktree diff as TOON.'
         ),
         allow_abbrev=False,
         formatter_class=_TermPreservingHelpFormatter,

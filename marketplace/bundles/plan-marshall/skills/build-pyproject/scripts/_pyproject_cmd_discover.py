@@ -361,7 +361,9 @@ def _load_toml(descriptor: Path) -> dict | None:
             data: dict = tomllib.load(handle)
     except (TOML_DECODE_ERROR, OSError, UnicodeDecodeError) as exc:
         log_entry(
-            'script', 'global', 'WARNING',
+            'script',
+            'global',
+            'WARNING',
             f'[PYTHON-DISCOVER] Unreadable descriptor {descriptor}: {type(exc).__name__}: {exc} — '
             f'the module publishes no name or dependencies, and any edge declared ON it is lost',
         )
@@ -411,8 +413,12 @@ def _read_pep621(data: dict, metadata: dict, dependencies: list[str]) -> None:
     crawl.
     """
     project = _table(data, 'project')
-    for key, field in (('name', 'name'), ('version', 'version'), ('description', 'description'),
-                       ('requires-python', 'requires_python')):
+    for key, field in (
+        ('name', 'name'),
+        ('version', 'version'),
+        ('description', 'description'),
+        ('requires-python', 'requires_python'),
+    ):
         if project.get(key):
             metadata[field] = project[key]
 
@@ -506,7 +512,9 @@ def _read_setup_cfg(descriptor: Path, metadata: dict, dependencies: list[str]) -
         requires = parser.get('options', 'install_requires', fallback='')
     except (configparser.Error, OSError, UnicodeDecodeError) as exc:
         log_entry(
-            'script', 'global', 'WARNING',
+            'script',
+            'global',
+            'WARNING',
             f'[PYTHON-DISCOVER] Unreadable descriptor {descriptor}: {type(exc).__name__}: {exc} — '
             f'the module publishes no name or dependencies, and any edge declared ON it is lost',
         )

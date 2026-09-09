@@ -311,14 +311,10 @@ def test_capture_config_hash_drifts_on_genuine_config_change(monkeypatch, tmp_pa
     monkeypatch.setattr(inv, 'get_marshal_path', lambda: marshal, raising=False)
     monkeypatch.setattr(inv, '_run_script', lambda _args: 'phase: constant\n')
 
-    marshal.write_text(
-        json.dumps({'plan': {'phase-5-execute': {'max_iterations': 5}}}), encoding='utf-8'
-    )
+    marshal.write_text(json.dumps({'plan': {'phase-5-execute': {'max_iterations': 5}}}), encoding='utf-8')
     before = inv._capture_config_hash('p', {}, '5-execute')
 
-    marshal.write_text(
-        json.dumps({'plan': {'phase-5-execute': {'max_iterations': 9}}}), encoding='utf-8'
-    )
+    marshal.write_text(json.dumps({'plan': {'phase-5-execute': {'max_iterations': 9}}}), encoding='utf-8')
     after = inv._capture_config_hash('p', {}, '5-execute')
 
     assert before is not None

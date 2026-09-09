@@ -56,9 +56,7 @@ INTERSECTING_COMPONENT = 'plan-marshall:phase-3-outline'
 
 # The component the intersecting plan does NOT edit — live inventory reports
 # zero active lessons for it, matching the non-intersecting case.
-NON_INTERSECTING_PATH = (
-    'marketplace/bundles/plan-marshall/skills/manage-lessons/scripts/_lessons_query.py'
-)
+NON_INTERSECTING_PATH = 'marketplace/bundles/plan-marshall/skills/manage-lessons/scripts/_lessons_query.py'
 INTERSECTING_PATH = 'marketplace/bundles/plan-marshall/skills/phase-3-outline/SKILL.md'
 
 ARTIFACT_RELPATH = ('work', 'lessons-consult.toon')
@@ -207,9 +205,7 @@ class TestNonIntersectingPlanCostsNothing:
 
         _run_consult(tmp_path, 'quiet-plan')
 
-        produced = sorted(
-            str(p.relative_to(plan_dir)) for p in plan_dir.rglob('*') if p.is_file()
-        )
+        produced = sorted(str(p.relative_to(plan_dir)) for p in plan_dir.rglob('*') if p.is_file())
         assert produced == ['solution_outline.md', 'work/lessons-consult.toon']
 
 

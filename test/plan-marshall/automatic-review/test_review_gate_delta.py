@@ -490,13 +490,9 @@ def test_a_padded_registry_entry_still_matches(monkeypatch):
     import bot_registry
     from review_gate_delta import is_status_summary
 
-    monkeypatch.setattr(
-        bot_registry, 'review_body_summary_patterns', lambda _k: ['  Actionable comments posted:  ']
-    )
+    monkeypatch.setattr(bot_registry, 'review_body_summary_patterns', lambda _k: ['  Actionable comments posted:  '])
 
-    assert is_status_summary(
-        {'bot_kind': 'coderabbit', 'kind': 'review_body', 'body': 'Actionable comments posted: 5'}
-    )
+    assert is_status_summary({'bot_kind': 'coderabbit', 'kind': 'review_body', 'body': 'Actionable comments posted: 5'})
 
 
 def test_an_empty_registry_entry_does_not_match_everything(monkeypatch):
@@ -511,9 +507,7 @@ def test_an_empty_registry_entry_does_not_match_everything(monkeypatch):
 
     monkeypatch.setattr(bot_registry, 'review_body_summary_patterns', lambda _k: ['', '   '])
 
-    assert not is_status_summary(
-        {'bot_kind': 'coderabbit', 'kind': 'review_body', 'body': 'A real review comment.'}
-    )
+    assert not is_status_summary({'bot_kind': 'coderabbit', 'kind': 'review_body', 'body': 'A real review comment.'})
 
 
 def test_a_bot_login_carrying_the_bot_suffix_still_resolves(monkeypatch):
@@ -526,9 +520,9 @@ def test_a_bot_login_carrying_the_bot_suffix_still_resolves(monkeypatch):
     from review_gate_delta import is_status_summary
 
     for login in ('coderabbitai[bot]', 'CodeRabbitAI', 'CodeRabbitAI[bot]'):
-        assert is_status_summary(
-            {'author': login, 'kind': 'review_body', 'body': 'Actionable comments posted: 5'}
-        ), login
+        assert is_status_summary({'author': login, 'kind': 'review_body', 'body': 'Actionable comments posted: 5'}), (
+            login
+        )
 
 
 def test_a_bot_declaring_no_summary_pattern_keeps_every_review_body():
@@ -662,9 +656,7 @@ class TestCLI:
         from review_gate_delta import build_parser
 
         with pytest.raises(SystemExit):
-            build_parser().parse_args(
-                ['assess', '--plan-id', 'p', '--gates-green', '--gates-red']
-            )
+            build_parser().parse_args(['assess', '--plan-id', 'p', '--gates-green', '--gates-red'])
 
     def test_bare_list_flags_read_as_empty(self):
         """A caller interpolating an empty variable gets the empty list, not a rejection."""

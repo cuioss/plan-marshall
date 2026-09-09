@@ -42,9 +42,7 @@ _ORCH_SCRIPT = 'orchestrator.py'
 ORCH_SCRIPT_PATH = get_script_path(_ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT)
 STATUS_SCRIPT_PATH = get_script_path('plan-marshall', 'manage-status', 'manage-status.py')
 
-_orch = load_script_module(
-    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT, 'orchestrator_script'
-)
+_orch = load_script_module(_ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT, 'orchestrator_script')
 
 cmd_archive = _orch.cmd_archive
 cmd_resume_summary = _orch.cmd_resume_summary
@@ -85,20 +83,32 @@ def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
 
 
 _ARCHIVE_ARGS = parse_ns(
-    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
-    'archive', '--slug', _BASE_SLUG,
+    _ORCH_BUNDLE,
+    _ORCH_SKILL,
+    _ORCH_SCRIPT,
+    'archive',
+    '--slug',
+    _BASE_SLUG,
     register=False,
 )
 
 _SCAFFOLD_ARGS = parse_ns(
-    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
-    'scaffold', '--slug', _BASE_SLUG,
+    _ORCH_BUNDLE,
+    _ORCH_SKILL,
+    _ORCH_SCRIPT,
+    'scaffold',
+    '--slug',
+    _BASE_SLUG,
     register=False,
 )
 
 _RESUME_SUMMARY_ARGS = parse_ns(
-    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
-    'resume-summary', '--slug', _BASE_SLUG,
+    _ORCH_BUNDLE,
+    _ORCH_SKILL,
+    _ORCH_SCRIPT,
+    'resume-summary',
+    '--slug',
+    _BASE_SLUG,
     register=False,
 )
 
@@ -359,9 +369,7 @@ class TestCli:
         env = {'PLAN_BASE_DIR': str(plan_context.fixture_dir)}
         _seed_active_epic(plan_context, 'cli-busy-epic', phase='orchestrating')
 
-        result = run_script(
-            ORCH_SCRIPT_PATH, 'archive', '--slug', 'cli-busy-epic', env_overrides=env
-        )
+        result = run_script(ORCH_SCRIPT_PATH, 'archive', '--slug', 'cli-busy-epic', env_overrides=env)
 
         assert result.returncode == 0
         assert 'error: not_closed' in result.stdout

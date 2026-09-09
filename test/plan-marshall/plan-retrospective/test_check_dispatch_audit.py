@@ -18,12 +18,7 @@ from toon_parser import serialize_toon
 from conftest import MARKETPLACE_ROOT, run_script
 
 SCRIPT_PATH = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'plan-retrospective'
-    / 'scripts'
-    / 'check-dispatch-audit.py'
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'scripts' / 'check-dispatch-audit.py'
 )
 
 _TS = '2026-04-17T11:00:00Z'
@@ -45,10 +40,7 @@ def _step_completed_line(step: str, outcome: str | None = 'done') -> str:
     earlier runs, so both shapes appear in the real corpus and both must count.
     """
     suffix = f' (outcome={outcome})' if outcome is not None else ''
-    return (
-        f'[{_TS}] [INFO] [bbbbbb] [STEP] (plan-marshall:phase-6-finalize) '
-        f'Completed step: {step}{suffix}'
-    )
+    return f'[{_TS}] [INFO] [bbbbbb] [STEP] (plan-marshall:phase-6-finalize) Completed step: {step}{suffix}'
 
 
 def _resolve_line(role: str) -> str:
@@ -75,9 +67,7 @@ def _write_plan(
     logs_dir.mkdir(parents=True)
 
     (logs_dir / 'work.log').write_text('\n'.join(work_lines or []) + '\n', encoding='utf-8')
-    (logs_dir / 'decision.log').write_text(
-        '\n'.join(decision_lines or []) + '\n', encoding='utf-8'
-    )
+    (logs_dir / 'decision.log').write_text('\n'.join(decision_lines or []) + '\n', encoding='utf-8')
 
     if execution_log is not None:
         (plan_dir / 'execution.toon').write_text(
@@ -206,10 +196,20 @@ def test_missing_dispatch_emission_on_dispatched_but_unlogged(tmp_path, monkeypa
         monkeypatch,
         work_lines=[_step_completed_line('default:finalize-step-simplify')],  # no [DISPATCH] line
         execution_log=[
-            {'step_id': 'finalize-step-simplify', 'phase': '6-finalize',
-             'outcome': 'done', 'total_tokens': 5000, 'tool_uses': 10},
-            {'step_id': 'finalize-step-security-audit', 'phase': '6-finalize',
-             'outcome': 'done', 'total_tokens': 3000, 'tool_uses': 6},
+            {
+                'step_id': 'finalize-step-simplify',
+                'phase': '6-finalize',
+                'outcome': 'done',
+                'total_tokens': 5000,
+                'tool_uses': 10,
+            },
+            {
+                'step_id': 'finalize-step-security-audit',
+                'phase': '6-finalize',
+                'outcome': 'done',
+                'total_tokens': 3000,
+                'tool_uses': 6,
+            },
         ],
         phase_steps={
             'default:finalize-step-simplify': {'outcome': 'done'},
@@ -236,8 +236,7 @@ def test_conditional_inline_step_not_flagged(tmp_path, monkeypatch):
         monkeypatch,
         work_lines=[_step_completed_line('default:adr-propose')],
         execution_log=[
-            {'step_id': 'adr-propose', 'phase': '6-finalize',
-             'outcome': 'skipped', 'total_tokens': 0, 'tool_uses': 0},
+            {'step_id': 'adr-propose', 'phase': '6-finalize', 'outcome': 'skipped', 'total_tokens': 0, 'tool_uses': 0},
         ],
         phase_steps={'default:adr-propose': {'outcome': 'skipped'}},
     )
@@ -281,8 +280,13 @@ def test_dispatched_step_with_line_is_clean(tmp_path, monkeypatch):
             _step_completed_line('default:finalize-step-simplify'),
         ],
         execution_log=[
-            {'step_id': 'finalize-step-simplify', 'phase': '6-finalize',
-             'outcome': 'done', 'total_tokens': 5000, 'tool_uses': 10},
+            {
+                'step_id': 'finalize-step-simplify',
+                'phase': '6-finalize',
+                'outcome': 'done',
+                'total_tokens': 5000,
+                'tool_uses': 10,
+            },
         ],
         phase_steps={'default:finalize-step-simplify': {'outcome': 'done'}},
     )
@@ -310,8 +314,13 @@ def test_sparse_channel_lowers_confidence_to_none(tmp_path, monkeypatch):
             _step_completed_line('default:push'),
         ],
         execution_log=[
-            {'step_id': 'finalize-step-simplify', 'phase': '6-finalize',
-             'outcome': 'done', 'total_tokens': 5000, 'tool_uses': 10},
+            {
+                'step_id': 'finalize-step-simplify',
+                'phase': '6-finalize',
+                'outcome': 'done',
+                'total_tokens': 5000,
+                'tool_uses': 10,
+            },
         ],
         phase_steps={'default:finalize-step-simplify': {'outcome': 'done'}},
     )
@@ -378,8 +387,13 @@ def test_full_channel_is_nominal_confidence(tmp_path, monkeypatch):
             _step_completed_line('default:finalize-step-simplify'),
         ],
         execution_log=[
-            {'step_id': 'finalize-step-simplify', 'phase': '6-finalize',
-             'outcome': 'done', 'total_tokens': 5000, 'tool_uses': 10},
+            {
+                'step_id': 'finalize-step-simplify',
+                'phase': '6-finalize',
+                'outcome': 'done',
+                'total_tokens': 5000,
+                'tool_uses': 10,
+            },
         ],
         phase_steps={'default:finalize-step-simplify': {'outcome': 'done'}},
     )
@@ -403,10 +417,20 @@ def test_low_confidence_when_dispatch_lines_short_of_dispatched_steps(tmp_path, 
             _step_completed_line('default:finalize-step-security-audit'),
         ],
         execution_log=[
-            {'step_id': 'finalize-step-simplify', 'phase': '6-finalize',
-             'outcome': 'done', 'total_tokens': 5000, 'tool_uses': 10},
-            {'step_id': 'finalize-step-security-audit', 'phase': '6-finalize',
-             'outcome': 'done', 'total_tokens': 3000, 'tool_uses': 6},
+            {
+                'step_id': 'finalize-step-simplify',
+                'phase': '6-finalize',
+                'outcome': 'done',
+                'total_tokens': 5000,
+                'tool_uses': 10,
+            },
+            {
+                'step_id': 'finalize-step-security-audit',
+                'phase': '6-finalize',
+                'outcome': 'done',
+                'total_tokens': 3000,
+                'tool_uses': 6,
+            },
         ],
         phase_steps={
             'default:finalize-step-simplify': {'outcome': 'done'},
@@ -545,9 +569,7 @@ def test_one_more_completion_is_what_flips_the_grade(tmp_path, monkeypatch):
     entirely and happens to return the expected constant. Asserting that the two
     otherwise-identical fixtures DISAGREE is the claim neither can make alone.
     """
-    at_threshold = _ratio_channel(
-        tmp_path, monkeypatch, 'flip-at-threshold', ['default:a', 'default:b']
-    )
+    at_threshold = _ratio_channel(tmp_path, monkeypatch, 'flip-at-threshold', ['default:a', 'default:b'])
     below_threshold = _ratio_channel(
         tmp_path, monkeypatch, 'flip-below-threshold', ['default:a', 'default:b', 'default:c']
     )
@@ -587,10 +609,7 @@ def test_generic_subagent_violation_on_raw_task(tmp_path, monkeypatch):
     plan_id = _write_plan(
         tmp_path,
         monkeypatch,
-        work_lines=[
-            f'[{_TS}] [INFO] [aaaaaa] [STATUS] (plan-marshall:phase-5-execute) '
-            f'Task: general-purpose spawned'
-        ],
+        work_lines=[f'[{_TS}] [INFO] [aaaaaa] [STATUS] (plan-marshall:phase-5-execute) Task: general-purpose spawned'],
     )
     data = _run(plan_id)
     entry = _category(data, 'generic_subagent_violation')
@@ -666,9 +685,7 @@ def test_absent_inputs_degrade_cleanly(tmp_path, monkeypatch):
 # step number: both of those move under ordinary renumbering while the invocation
 # and its position relative to its consumer do not.
 
-_RETRO_SKILL_DOC = (
-    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'SKILL.md'
-)
+_RETRO_SKILL_DOC = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'SKILL.md'
 
 #: The reconcile invocation itself — the load-bearing literal of the prose step.
 _METRICS_RECONCILE_COMMAND = 'plan-marshall:manage-metrics:manage-metrics generate'
@@ -789,7 +806,7 @@ def _reconcile_conditions(text: str) -> str:
     if start < 0:
         return ''
     next_step = _NEXT_STEP_HEADING.search(text, start)
-    return text[start:] if next_step is None else text[start:next_step.start()]
+    return text[start:] if next_step is None else text[start : next_step.start()]
 
 
 def _pre_fix_reconcile_conditions(text: str) -> str:
@@ -885,12 +902,10 @@ def test_document_contract_detects_the_pre_fix_and_reordered_shapes():
     """
     step = _reconcile_step(
         '### Step 2.5: Reconcile the phase accumulators (live modes only)',
-        '**Live modes only.** Archived mode is read-only and MUST NOT write to the '
-        'archived plan directory.',
+        '**Live modes only.** Archived mode is read-only and MUST NOT write to the archived plan directory.',
     )
     aspect_table = (
-        '### Step 3: Dispatch Aspects (in order)\n\n'
-        f'| 4 | Plan efficiency | {_CONSUMING_ASPECT_KEY} | (LLM) | ref |\n'
+        f'### Step 3: Dispatch Aspects (in order)\n\n| 4 | Plan efficiency | {_CONSUMING_ASPECT_KEY} | (LLM) | ref |\n'
     )
 
     # Positive control — the shipped shape clears all three checks, so none of
@@ -914,8 +929,7 @@ def test_document_contract_detects_the_pre_fix_and_reordered_shapes():
     reordered = aspect_table + step
     assert _reconcile_offset(reordered) >= 0
     assert _reconcile_offset(reordered) > _consumer_offset(reordered), (
-        'the ordering check failed to notice a reconcile positioned after the aspect '
-        'that consumes it'
+        'the ordering check failed to notice a reconcile positioned after the aspect that consumes it'
     )
 
     # Condition stripped — the step and its order survive, the bound does not.
@@ -974,9 +988,7 @@ def test_document_contract_detects_the_pre_fix_and_reordered_shapes():
     assert 'archived' in permissive_write_conditions.lower(), (
         'Fixture sanity: the permissive-write arm must NAME archived mode'
     )
-    assert 'MUST NOT' in permissive_write_conditions, (
-        'Fixture sanity: the permissive-write arm must carry a `MUST NOT`'
-    )
+    assert 'MUST NOT' in permissive_write_conditions, 'Fixture sanity: the permissive-write arm must carry a `MUST NOT`'
     assert _PRE_FIX_ARCHIVED_WRITE_PROHIBITION.search(permissive_write_conditions), (
         'Fixture sanity: the permissive-write arm must be ADMITTED by the pre-fix '
         'pattern. This is the discriminator — without it the arm could go green '
@@ -987,7 +999,7 @@ def test_document_contract_detects_the_pre_fix_and_reordered_shapes():
     assert not _prohibits_the_archived_write(permissive_write_conditions), (
         'the archived-write bound fired on a region whose sentence chains MUST NOT, '
         'write and archived while EXPRESSLY PERMITTING the archived write — the '
-        'archived directory is a co-occurring noun there, not the write\'s target, '
+        "archived directory is a co-occurring noun there, not the write's target, "
         'so the check is still weaker than the property its failure message names'
     )
 
@@ -1005,9 +1017,7 @@ def test_document_contract_detects_the_pre_fix_and_reordered_shapes():
         'Archived mode may write the reconciled metrics back into the archived plan '
         'directory, but the caller MUST NOT write to the archived handshakes ledger',
     )
-    permissive_destination_conditions = _reconcile_conditions(
-        permissive_destination + aspect_table
-    )
+    permissive_destination_conditions = _reconcile_conditions(permissive_destination + aspect_table)
 
     # Fixture sanity — the arm must be the shape the preposition-only pattern
     # accepted. `_PRE_FIX_ARCHIVED_WRITE_PROHIBITION` is the TWO-ALTERNATIVE oracle
@@ -1069,7 +1079,7 @@ def test_document_contract_detects_the_pre_fix_and_reordered_shapes():
         # heading form it names.
         assert _prohibits_the_archived_write(_pre_fix_reconcile_conditions(widened)), (
             f'Fixture sanity ({label}): the pre-fix literal terminator must OVERRUN '
-            'this heading and reach the later step\'s prohibition, or the arm does '
+            "this heading and reach the later step's prohibition, or the arm does "
             'not exercise the gap it claims to'
         )
 
@@ -1099,10 +1109,8 @@ def test_document_contract_detects_the_pre_fix_and_reordered_shapes():
         '**Live modes only.** Archived mode is read-only and MUST NOT write to the '
         'archived plan directory.',
     )
-    assert _prohibits_the_archived_write(
-        _reconcile_conditions(code_block_marker + aspect_table)
-    ), (
-        'a four-space-indented `###` line terminated the region, so the step\'s OWN '
+    assert _prohibits_the_archived_write(_reconcile_conditions(code_block_marker + aspect_table)), (
+        "a four-space-indented `###` line terminated the region, so the step's OWN "
         'bound was cut out of it. Four spaces is an indented code block in CommonMark, '
         'not an ATX heading — a terminator that treats it as one has widened past the '
         'rule its own docstring states, and every ADMIT arm above stays green while it '
@@ -1118,7 +1126,7 @@ def test_document_contract_detects_the_pre_fix_and_reordered_shapes():
         'archived plan directory.',
     )
     assert _prohibits_the_archived_write(_reconcile_conditions(subsection + aspect_table)), (
-        'a `####` subsection heading terminated the region, so the step\'s OWN bound '
+        "a `####` subsection heading terminated the region, so the step's OWN bound "
         'was cut out of it — the terminator widened past level-3 headings into the '
         'deeper ones that belong to the step being read'
     )

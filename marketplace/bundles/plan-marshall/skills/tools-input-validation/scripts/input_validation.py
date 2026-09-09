@@ -1053,9 +1053,7 @@ def _augment_misplaced_router_flag(
     if not misplaced:
         return message
     named = ', '.join(misplaced)
-    invocation = (
-        f'python3 .plan/execute-script.py {notation}' if notation else prog
-    )
+    invocation = f'python3 .plan/execute-script.py {notation}' if notation else prog
     if argv:
         # ``shlex.join`` on the ARGUMENTS, not on the invocation: the corrected
         # example is meant to be copied and run, and a value carrying a space or

@@ -49,6 +49,7 @@ def no_pm_marketplace_root(monkeypatch):
     """Clear PM_MARKETPLACE_ROOT so resolution falls through to its next source."""
     monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
 
+
 SKILL_DIR = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'tools-script-executor'
 TEMPLATES_DIR = SKILL_DIR / 'templates'
 EXECUTOR_TEMPLATE = TEMPLATES_DIR / 'execute-script.py.template'
@@ -208,9 +209,7 @@ def test_pm_marketplace_root_unset_uses_embedded_tree(two_marketplace_trees, no_
     assert result.returncode == 0, (
         f'Executor failed without PM_MARKETPLACE_ROOT.\nstdout: {result.stdout}\nstderr: {result.stderr}'
     )
-    assert 'SENTINEL:A' in result.stdout, (
-        f'Expected embedded tree A to be invoked, got stdout:\n{result.stdout}'
-    )
+    assert 'SENTINEL:A' in result.stdout, f'Expected embedded tree A to be invoked, got stdout:\n{result.stdout}'
     assert 'SENTINEL:B' not in result.stdout, (
         f'Tree B should NOT have been invoked when PM_MARKETPLACE_ROOT is unset. stdout:\n{result.stdout}'
     )
@@ -256,8 +255,7 @@ def test_pm_marketplace_root_set_selects_the_env_rooted_tree(
     )
 
     assert result.returncode == 0, (
-        f'Executor failed with PM_MARKETPLACE_ROOT={env_value}.\n'
-        f'stdout: {result.stdout}\nstderr: {result.stderr}'
+        f'Executor failed with PM_MARKETPLACE_ROOT={env_value}.\nstdout: {result.stdout}\nstderr: {result.stderr}'
     )
     assert f'SENTINEL:{expected_tree}' in result.stdout, (
         f'Expected tree {expected_tree} to be invoked, got stdout:\n{result.stdout}'
@@ -385,16 +383,11 @@ def test_invented_subcommand_reaches_argparse_native_rejection(post_removal_exec
 
     # argparse exits 2 on invalid subparser choices.
     assert result.returncode == 2, (
-        f'argparse should reject invented subcommand with exit 2. '
-        f'stdout: {result.stdout}\nstderr: {result.stderr}'
+        f'argparse should reject invented subcommand with exit 2. stdout: {result.stdout}\nstderr: {result.stderr}'
     )
     # argparse's stderr shape names the invalid choice and lists valid ones.
-    assert 'invalid choice' in result.stderr, (
-        f'argparse stderr should mention `invalid choice`: {result.stderr}'
-    )
-    assert "'invented-verb'" in result.stderr, (
-        f'argparse stderr should quote the rejected token: {result.stderr}'
-    )
+    assert 'invalid choice' in result.stderr, f'argparse stderr should mention `invalid choice`: {result.stderr}'
+    assert "'invented-verb'" in result.stderr, f'argparse stderr should quote the rejected token: {result.stderr}'
     # The legacy pre-flight TOON shape MUST NOT appear — confirms the
     # validator is structurally gone.
     assert 'invented_subcommand' not in result.stderr, (
@@ -413,9 +406,7 @@ def test_help_flag_reaches_script_help(post_removal_executor, no_pm_marketplace_
         '--help',
     )
 
-    assert result.returncode == 0, (
-        f'Help flag must reach the script.\nstdout: {result.stdout}\nstderr: {result.stderr}'
-    )
+    assert result.returncode == 0, f'Help flag must reach the script.\nstdout: {result.stdout}\nstderr: {result.stderr}'
     # No legacy pre-flight TOON in either stream.
     assert 'invented_subcommand' not in result.stderr
     assert 'invented_subcommand' not in result.stdout
@@ -479,7 +470,17 @@ def test_stale_embedded_path_self_heals_via_cwd_walk(tmp_path, no_pm_marketplace
     live_script = _build_fake_marketplace(checkout_root, tree_id='LIVE')
 
     # The embedded path points at a tree that no longer exists on disk.
-    stale_script = tmp_path / 'gone' / 'marketplace' / 'bundles' / 'fakebundle' / 'skills' / 'fakeskill' / 'scripts' / 'fakeskill.py'
+    stale_script = (
+        tmp_path
+        / 'gone'
+        / 'marketplace'
+        / 'bundles'
+        / 'fakebundle'
+        / 'skills'
+        / 'fakeskill'
+        / 'scripts'
+        / 'fakeskill.py'
+    )
 
     plan_dir = checkout_root / '.plan'
     plan_dir.mkdir(parents=True)
@@ -615,10 +616,7 @@ def _build_fake_build_skill(root: Path, body: str) -> Path:
     makes the executor's ``_is_build_class_notation`` boundary fire; the other
     half is the ``run`` subcommand every dispatch below supplies.
     """
-    script_dir = (
-        root / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills'
-        / 'build-pyproject' / 'scripts'
-    )
+    script_dir = root / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'build-pyproject' / 'scripts'
     script_dir.mkdir(parents=True, exist_ok=True)
     script_path = script_dir / 'pyproject_build.py'
     script_path.write_text(body)
@@ -668,14 +666,8 @@ def _run_build_dispatch(tmp_path: Path, script_body: str) -> list[dict]:
     _run_executor(executor_path, plan_dir, BUILD_CLASS_NOTATION, 'run')
 
     ledger_path = plan_dir / 'work' / 'change-ledger.jsonl'
-    assert ledger_path.is_file(), (
-        f'Boundary did not stamp a kind=build ledger row at {ledger_path}'
-    )
-    return [
-        json.loads(line)
-        for line in ledger_path.read_text().splitlines()
-        if line.strip()
-    ]
+    assert ledger_path.is_file(), f'Boundary did not stamp a kind=build ledger row at {ledger_path}'
+    return [json.loads(line) for line in ledger_path.read_text().splitlines() if line.strip()]
 
 
 @pytest.mark.parametrize(
@@ -738,9 +730,7 @@ def _run_build_dispatch(tmp_path: Path, script_body: str) -> list[dict]:
 def test_build_boundary_stamps_derived_status(tmp_path, stdout, exit_code, expected_status, no_pm_marketplace_root):
     """The kind=build row carries the truthfully derived `status`."""
 
-    entries = _run_build_dispatch(
-        tmp_path, BUILD_SCRIPT_TEMPLATE.format(stdout=stdout, exit_code=exit_code)
-    )
+    entries = _run_build_dispatch(tmp_path, BUILD_SCRIPT_TEMPLATE.format(stdout=stdout, exit_code=exit_code))
 
     assert len(entries) == 1
     entry = entries[0]

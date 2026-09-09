@@ -9,7 +9,6 @@ Its sections, in order:
 * metadata / title-token / update-phase / progress
 """
 
-
 import json
 
 from _manage_status_main_dispatch_fixtures import _PHASES, _parse, _run
@@ -95,14 +94,14 @@ def test_main_metadata_set_then_get(plan_context, monkeypatch, capsys):
     _run(monkeypatch, capsys, ['create', '--plan-id', 'ms-disp-md', '--title', 'MD', '--phases', _PHASES])
 
     code, out, _ = _run(
-        monkeypatch, capsys, ['metadata', '--plan-id', 'ms-disp-md', '--set', '--field', 'change_type', '--value', 'feature']
+        monkeypatch,
+        capsys,
+        ['metadata', '--plan-id', 'ms-disp-md', '--set', '--field', 'change_type', '--value', 'feature'],
     )
     assert code == 0
     assert _parse(out)['status'] == 'success'
 
-    code, out, _ = _run(
-        monkeypatch, capsys, ['metadata', '--plan-id', 'ms-disp-md', '--get', '--field', 'change_type']
-    )
+    code, out, _ = _run(monkeypatch, capsys, ['metadata', '--plan-id', 'ms-disp-md', '--get', '--field', 'change_type'])
     assert code == 0
     data = _parse(out)
     assert data['status'] == 'success'
@@ -122,8 +121,14 @@ def test_main_title_token_set_then_clear(plan_context, monkeypatch, capsys):
         monkeypatch,
         capsys,
         [
-            'title-token', 'set', '--plan-id', 'ms-disp-tt',
-            '--state', 'build-busy', '--owner', 'build-hook',
+            'title-token',
+            'set',
+            '--plan-id',
+            'ms-disp-tt',
+            '--state',
+            'build-busy',
+            '--owner',
+            'build-hook',
         ],
     )
     assert code == 0
@@ -146,9 +151,7 @@ def test_main_title_token_set_then_clear(plan_context, monkeypatch, capsys):
 
 def test_main_title_token_rejects_unknown_state(plan_context, monkeypatch, capsys):
     """An out-of-enum --state is an argparse rejection (exit 2)."""
-    code, _, _ = _run(
-        monkeypatch, capsys, ['title-token', 'set', '--plan-id', 'ms-disp-tt2', '--state', 'not-a-state']
-    )
+    code, _, _ = _run(monkeypatch, capsys, ['title-token', 'set', '--plan-id', 'ms-disp-tt2', '--state', 'not-a-state'])
 
     assert code == 2
 
@@ -163,8 +166,14 @@ def test_main_title_token_rejects_unknown_owner(plan_context, monkeypatch, capsy
         monkeypatch,
         capsys,
         [
-            'title-token', 'set', '--plan-id', 'ms-disp-tt3',
-            '--state', 'build-busy', '--owner', 'not-an-owner',
+            'title-token',
+            'set',
+            '--plan-id',
+            'ms-disp-tt3',
+            '--state',
+            'build-busy',
+            '--owner',
+            'not-an-owner',
         ],
     )
 

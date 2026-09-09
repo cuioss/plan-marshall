@@ -14,7 +14,6 @@ shape ``_handshake_store.save_rows``
 emits in production.
 """
 
-
 from __future__ import annotations
 
 from conftest import MARKETPLACE_ROOT, load_script_module

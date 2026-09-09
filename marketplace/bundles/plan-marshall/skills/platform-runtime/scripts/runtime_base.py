@@ -9,6 +9,7 @@ implements every operation for one target, or declines it via the no-op policy.
 TOON helpers delegate to the canonical toon_parser from ref-toon-format — no
 ad-hoc parsing or serialization in this module.
 """
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -28,12 +29,12 @@ from toon_parser import serialize_toon
 #:
 #: Order is the argparse help order, so it is meaningful and kept.
 PERMISSION_FIX_OPERATIONS: tuple[str, ...] = (
-    "normalize",
-    "add",
-    "remove",
-    "ensure",
-    "consolidate",
-    "protect-path",
+    'normalize',
+    'add',
+    'remove',
+    'ensure',
+    'consolidate',
+    'protect-path',
 )
 
 # =============================================================================
@@ -57,8 +58,8 @@ def toon_success(operation: str, result: dict[str, Any] | None = None) -> str:
         Serialized TOON string.
     """
     data: dict[str, Any] = {
-        "status": "success",
-        "operation": operation,
+        'status': 'success',
+        'operation': operation,
     }
     if result:
         data.update(result)
@@ -77,10 +78,10 @@ def toon_error(operation: str, code: str, message: str) -> str:
         Serialized TOON string.
     """
     data: dict[str, Any] = {
-        "status": "error",
-        "operation": operation,
-        "error": code,
-        "message": message,
+        'status': 'error',
+        'operation': operation,
+        'error': code,
+        'message': message,
     }
     return serialize_toon(data)
 
@@ -97,10 +98,10 @@ def toon_noop(operation: str, reason: str, alternative: str) -> str:
         Serialized TOON string.
     """
     data: dict[str, Any] = {
-        "status": "no-op",
-        "operation": operation,
-        "reason": reason,
-        "alternative": alternative,
+        'status': 'no-op',
+        'operation': operation,
+        'reason': reason,
+        'alternative': alternative,
     }
     return serialize_toon(data)
 
@@ -114,7 +115,7 @@ def describe_targets(registry_keys: Collection[str]) -> str:
     circular import.  Accepts any iterable of strings; sorted for stable
     output.
     """
-    return ", ".join(sorted(registry_keys))
+    return ', '.join(sorted(registry_keys))
 
 
 def marshal_shape_error(operation: str, marshal_path: Any, marshal_data: Any) -> str | None:
@@ -154,16 +155,16 @@ def marshal_shape_error(operation: str, marshal_path: Any, marshal_data: Any) ->
     if not isinstance(marshal_data, dict):
         return toon_error(
             operation,
-            "io_error",
-            f"marshal.json at {marshal_path} parsed as "
-            f"{type(marshal_data).__name__}, not a JSON object; refusing to overwrite it",
+            'io_error',
+            f'marshal.json at {marshal_path} parsed as '
+            f'{type(marshal_data).__name__}, not a JSON object; refusing to overwrite it',
         )
-    if "runtime" in marshal_data and not isinstance(marshal_data["runtime"], dict):
+    if 'runtime' in marshal_data and not isinstance(marshal_data['runtime'], dict):
         return toon_error(
             operation,
-            "io_error",
+            'io_error',
             f"marshal.json at {marshal_path} carries a 'runtime' key that is "
-            f"{type(marshal_data['runtime']).__name__}, not a JSON object; refusing to overwrite it",
+            f'{type(marshal_data["runtime"]).__name__}, not a JSON object; refusing to overwrite it',
         )
     return None
 
@@ -445,7 +446,7 @@ class Runtime(ABC):
         self,
         plan_id: str,
         icon: str | None = None,
-        store: str = "plans",
+        store: str = 'plans',
         slug: str | None = None,
     ) -> str:
         """Bind the session and settle *plan_id*'s title state for the next render.
@@ -654,9 +655,7 @@ class Runtime(ABC):
         """
 
     @abstractmethod
-    def permission_analyze(
-        self, scope: str, checks: list[str], marshal_path: str | None
-    ) -> str:
+    def permission_analyze(self, scope: str, checks: list[str], marshal_path: str | None) -> str:
         """Read-only audit of permission configuration.
 
         Args:
@@ -703,9 +702,7 @@ class Runtime(ABC):
         """
 
     @abstractmethod
-    def permission_ensure_wildcards(
-        self, scope: str, marketplace_dir: str, dry_run: bool
-    ) -> str:
+    def permission_ensure_wildcards(self, scope: str, marketplace_dir: str, dry_run: bool) -> str:
         """Ensure marketplace bundle wildcard permissions exist.
 
         Args:
@@ -721,9 +718,7 @@ class Runtime(ABC):
         """
 
     @abstractmethod
-    def permission_ensure_steps(
-        self, marshal_path: str, scope: str, dry_run: bool
-    ) -> str:
+    def permission_ensure_steps(self, marshal_path: str, scope: str, dry_run: bool) -> str:
         """Ensure permissions exist for all ``project:{skill}`` steps.
 
         Args:
@@ -780,9 +775,7 @@ class Runtime(ABC):
     # ------------------------------------------------------------------
 
     @abstractmethod
-    def permission_settings_path(
-        self, scope: str, write: bool = False, project_dir: str | None = None
-    ) -> str:
+    def permission_settings_path(self, scope: str, write: bool = False, project_dir: str | None = None) -> str:
         """Resolve the settings file path for a permission scope.
 
         Args:
@@ -852,9 +845,7 @@ class Runtime(ABC):
         """
 
     @abstractmethod
-    def permission_check_skill_coverage(
-        self, skill: str, allow_list: list[str]
-    ) -> str | None:
+    def permission_check_skill_coverage(self, skill: str, allow_list: list[str]) -> str | None:
         """Check if a skill is covered by an allow rule.
 
         Matches exact ``Skill({skill})`` or covering wildcard
@@ -881,9 +872,7 @@ class Runtime(ABC):
         """
 
     @abstractmethod
-    def permission_extract_project_steps(
-        self, marshal_config: dict[str, Any]
-    ) -> list[dict[str, Any]]:
+    def permission_extract_project_steps(self, marshal_config: dict[str, Any]) -> list[dict[str, Any]]:
         """Enumerate ``project:{skill}`` step references from marshal config.
 
         Args:
@@ -898,9 +887,7 @@ class Runtime(ABC):
     # ------------------------------------------------------------------
 
     @abstractmethod
-    def metrics_capture(
-        self, plan_id: str, phase: str, total_tokens: int | None
-    ) -> str:
+    def metrics_capture(self, plan_id: str, phase: str, total_tokens: int | None) -> str:
         """Record token consumption for a planning phase.
 
         A target that exposes a session transcript sums the tokens recorded

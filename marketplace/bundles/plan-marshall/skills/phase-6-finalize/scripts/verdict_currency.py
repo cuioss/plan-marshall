@@ -146,37 +146,27 @@ REASON_DIFF_UNAVAILABLE = 'tree_diff_unavailable'
 #: Human phrasing per reason, used for the ``detail`` field and the dispatcher's
 #: INFO decision line. Keyed by reason token so the two never drift.
 _REASON_DETAIL: dict[str, str] = {
-    REASON_HEAD_UNCHANGED: (
-        'the recorded SHA equals the live HEAD, so the verdict is still anchored to this tree'
-    ),
+    REASON_HEAD_UNCHANGED: ('the recorded SHA equals the live HEAD, so the verdict is still anchored to this tree'),
     REASON_DISJOINT: (
         'the tree difference between the recorded SHA and the live HEAD touches no declared '
         'verdict input, so a re-run would re-compute the same verdict from unchanged content'
     ),
     REASON_MATCHED: (
-        'the tree difference touches at least one declared verdict input, so the recorded '
-        'verdict may no longer hold'
+        'the tree difference touches at least one declared verdict input, so the recorded verdict may no longer hold'
     ),
     REASON_UNDECLARED: (
         'the step declares no verdict_inputs surface, so no advance can be proven '
         'non-invalidating — re-firing is the fail-closed answer'
     ),
-    REASON_STEP_UNRESOLVED: (
-        'the step matched no finalize-step implementor, so its verdict surface is unknown'
-    ),
+    REASON_STEP_UNRESOLVED: ('the step matched no finalize-step implementor, so its verdict surface is unknown'),
     REASON_DISCOVERY_UNAVAILABLE: (
         'the extension-discovery machinery could not run, so the declaration could not be read'
     ),
     REASON_NOT_HEAD_DEPENDENT: (
-        'the step does not declare head_dependent: true, so this classifier is not its '
-        're-entry authority'
+        'the step does not declare head_dependent: true, so this classifier is not its re-entry authority'
     ),
-    REASON_NO_RECORDED_HEAD: (
-        'the record carries no head_at_completion, so there is no anchor to diff against'
-    ),
-    REASON_DIFF_UNAVAILABLE: (
-        'the tree diff between the recorded SHA and the live HEAD could not be computed'
-    ),
+    REASON_NO_RECORDED_HEAD: ('the record carries no head_at_completion, so there is no anchor to diff against'),
+    REASON_DIFF_UNAVAILABLE: ('the tree diff between the recorded SHA and the live HEAD could not be computed'),
 }
 
 
@@ -210,11 +200,7 @@ def classify_advance(
     if not verdict_inputs:
         return VERDICT_INVALIDATED, REASON_UNDECLARED, []
 
-    matched = [
-        path
-        for path in changed_paths
-        if any(fnmatch.fnmatch(path, glob) for glob in verdict_inputs)
-    ]
+    matched = [path for path in changed_paths if any(fnmatch.fnmatch(path, glob) for glob in verdict_inputs)]
     if matched:
         return VERDICT_INVALIDATED, REASON_MATCHED, matched
     return VERDICT_PRESERVED, REASON_DISJOINT, []
@@ -393,16 +379,28 @@ def classify_step(
     """
     if not recorded_head:
         return _payload(
-            step, VERDICT_INVALIDATED, REASON_NO_RECORDED_HEAD,
-            recorded_head, live_head, [], [], [],
+            step,
+            VERDICT_INVALIDATED,
+            REASON_NO_RECORDED_HEAD,
+            recorded_head,
+            live_head,
+            [],
+            [],
+            [],
         )
 
     if not live_head:
         live_head = resolve_live_head(worktree_path)
     if not live_head:
         return _payload(
-            step, VERDICT_INVALIDATED, REASON_DIFF_UNAVAILABLE,
-            recorded_head, live_head, [], [], [],
+            step,
+            VERDICT_INVALIDATED,
+            REASON_DIFF_UNAVAILABLE,
+            recorded_head,
+            live_head,
+            [],
+            [],
+            [],
         )
 
     # Equal SHAs short-circuit BEFORE anything is resolved. Identical SHAs mean
@@ -415,38 +413,75 @@ def classify_step(
     # "consults none".
     if recorded_head == live_head:
         return _payload(
-            step, VERDICT_PRESERVED, REASON_HEAD_UNCHANGED,
-            recorded_head, live_head, [], [], [],
+            step,
+            VERDICT_PRESERVED,
+            REASON_HEAD_UNCHANGED,
+            recorded_head,
+            live_head,
+            [],
+            [],
+            [],
         )
 
     globs, is_head_dependent, unresolved = resolve_verdict_inputs(step)
     if unresolved is not None:
         return _payload(
-            step, VERDICT_INVALIDATED, unresolved,
-            recorded_head, live_head, globs, [], [],
+            step,
+            VERDICT_INVALIDATED,
+            unresolved,
+            recorded_head,
+            live_head,
+            globs,
+            [],
+            [],
         )
     if not is_head_dependent:
         return _payload(
-            step, VERDICT_INVALIDATED, REASON_NOT_HEAD_DEPENDENT,
-            recorded_head, live_head, globs, [], [],
+            step,
+            VERDICT_INVALIDATED,
+            REASON_NOT_HEAD_DEPENDENT,
+            recorded_head,
+            live_head,
+            globs,
+            [],
+            [],
         )
 
     if not globs:
         return _payload(
-            step, VERDICT_INVALIDATED, REASON_UNDECLARED,
-            recorded_head, live_head, globs, [], [],
+            step,
+            VERDICT_INVALIDATED,
+            REASON_UNDECLARED,
+            recorded_head,
+            live_head,
+            globs,
+            [],
+            [],
         )
 
     changed, ok = resolve_changed_paths(worktree_path, recorded_head, live_head)
     if not ok:
         return _payload(
-            step, VERDICT_INVALIDATED, REASON_DIFF_UNAVAILABLE,
-            recorded_head, live_head, globs, [], [],
+            step,
+            VERDICT_INVALIDATED,
+            REASON_DIFF_UNAVAILABLE,
+            recorded_head,
+            live_head,
+            globs,
+            [],
+            [],
         )
 
     verdict, reason, matched = classify_advance(globs, changed)
     return _payload(
-        step, verdict, reason, recorded_head, live_head, globs, changed, matched,
+        step,
+        verdict,
+        reason,
+        recorded_head,
+        live_head,
+        globs,
+        changed,
+        matched,
     )
 
 

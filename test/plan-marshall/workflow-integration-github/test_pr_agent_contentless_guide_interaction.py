@@ -92,13 +92,7 @@ from conftest import PROJECT_ROOT, load_script_module
 # ``sys.path`` setup does not reach it. This bootstrap therefore stays where
 # every marketplace one was removed, and it is what the file-level ``I001, E402``
 # waiver above is still paying for.
-_SCRIPTS_DIR = (
-    PROJECT_ROOT
-    / '.claude'
-    / 'skills'
-    / 'finalize-step-review-retrospective'
-    / 'scripts'
-)
+_SCRIPTS_DIR = PROJECT_ROOT / '.claude' / 'skills' / 'finalize-step-review-retrospective' / 'scripts'
 if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
 
@@ -169,9 +163,7 @@ def _patch_provider(monkeypatch, comments, head_sha='deadbeef', head_committed_a
     producer's read would shell out to a real ``gh``.
     """
     monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (True, ''))
-    monkeypatch.setattr(
-        github_pr._github, 'fetch_pr_head_committed_at', lambda pr_number: head_committed_at
-    )
+    monkeypatch.setattr(github_pr._github, 'fetch_pr_head_committed_at', lambda pr_number: head_committed_at)
     monkeypatch.setattr(
         github_pr._github,
         'fetch_pr_comments_data',
@@ -507,9 +499,7 @@ def test_dropped_guide_goes_stale_once_head_advances(plan_context, monkeypatch):
     _patch_provider(monkeypatch, [guide], head_sha=_HEAD_B)
     second = _run_fetch(1207, plan_id)
     assert second['participated_bots'] == []
-    assert second['stale_participation_bots'] == [
-        {'bot_kind': 'cuioss-review-bot', 'evidence_kind': 'issue_comment'}
-    ]
+    assert second['stale_participation_bots'] == [{'bot_kind': 'cuioss-review-bot', 'evidence_kind': 'issue_comment'}]
 
 
 def test_guide_edited_after_head_advance_credits_participation_again(plan_context, monkeypatch):
@@ -588,14 +578,16 @@ def test_surviving_guide_record_scores_neither_false_positive_nor_vacuous_zero()
     test written as ``not row['pct_resolved_as_fixed']`` would pass against the
     defect. The identity check is deliberate.
     """
-    report = rr.aggregate([
-        {
-            'author': _PR_AGENT_LOGIN,
-            'kind': 'issue_comment',
-            'title': 'PR Reviewer Guide',
-            'resolution': 'accepted',
-        }
-    ])
+    report = rr.aggregate(
+        [
+            {
+                'author': _PR_AGENT_LOGIN,
+                'kind': 'issue_comment',
+                'title': 'PR Reviewer Guide',
+                'resolution': 'accepted',
+            }
+        ]
+    )
 
     rows = [row for row in report['reviewers'] if row['author'] == _PR_AGENT_LOGIN]
     assert len(rows) == 1

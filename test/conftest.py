@@ -73,6 +73,7 @@ collect_ignore = [
 # Executor Bootstrap (CI session setup)
 # =============================================================================
 
+
 class ExecutorBootstrapError(RuntimeError):
     """The suite's executor substrate could not be brought into existence.
 
@@ -141,12 +142,7 @@ def _ensure_executor_present(
 
     if generator is None:
         generator = (
-            MARKETPLACE_ROOT
-            / 'plan-marshall'
-            / 'skills'
-            / 'tools-script-executor'
-            / 'scripts'
-            / 'generate_executor.py'
+            MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'tools-script-executor' / 'scripts' / 'generate_executor.py'
         )
     if not generator.exists():
         raise ExecutorBootstrapError(
@@ -175,8 +171,7 @@ def _ensure_executor_present(
     except (subprocess.TimeoutExpired, OSError) as exc:
         detail = getattr(exc, 'stderr', None) or ''
         raise ExecutorBootstrapError(
-            f'Executor bootstrap failed while running {generator}: {exc}. '
-            f'{detail}'.rstrip()
+            f'Executor bootstrap failed while running {generator}: {exc}. {detail}'.rstrip()
         ) from exc
 
     # Three independent readings of "the generation did not succeed", because no
@@ -186,11 +181,7 @@ def _ensure_executor_present(
     # broken substrate and report green on a smaller suite, which is the failure
     # this bootstrap is closed against.
     wrote_executor = executor_path.exists()
-    if (
-        result.returncode != 0
-        or EXECUTOR_GENERATION_ERROR_TOKEN in result.stdout
-        or not wrote_executor
-    ):
+    if result.returncode != 0 or EXECUTOR_GENERATION_ERROR_TOKEN in result.stdout or not wrote_executor:
         raise ExecutorBootstrapError(
             f'Executor bootstrap failed while running {generator}: '
             f'exit={result.returncode} executor_written={wrote_executor} '
@@ -724,8 +715,7 @@ def _parse_via_main(module: ModuleType, label: str, argv: list[str]) -> argparse
     main = getattr(module, 'main', None)
     if not callable(main):
         raise ParserSeamNotFound(
-            f'{label}: no parser seam — the module publishes none of '
-            f'{PARSER_BUILDER_NAMES} and has no callable main().'
+            f'{label}: no parser seam — the module publishes none of {PARSER_BUILDER_NAMES} and has no callable main().'
         )
 
     real_parse_args = argparse.ArgumentParser.parse_args
@@ -770,15 +760,10 @@ def _parse_via_main(module: ModuleType, label: str, argv: list[str]) -> argparse
             f'{label}: the parser was entered for argv {argv!r} but main() returned '
             'without yielding a namespace — it caught the parse failure itself.'
         )
-    raise ParserSeamNotFound(
-        f'{label}: main() returned without calling parse_args, so no namespace '
-        'could be captured.'
-    )
+    raise ParserSeamNotFound(f'{label}: main() returned without calling parse_args, so no namespace could be captured.')
 
 
-def parse_ns(
-    bundle: str, skill: str, script: str, *argv: str, register: bool = True
-) -> argparse.Namespace:
+def parse_ns(bundle: str, skill: str, script: str, *argv: str, register: bool = True) -> argparse.Namespace:
     """Build an ``argparse.Namespace`` by running the script's OWN parser.
 
     The shared replacement for a hand-built ``argparse.Namespace(...)``. A
@@ -1013,9 +998,7 @@ def _module_drives_real_state(module_path) -> bool:
     except OSError:
         _REAL_STATE_MODULE_CACHE[key] = False
         return False
-    drives = any(symbol in source for symbol in _REAL_STATE_SYMBOLS) or bool(
-        _PLAN_BASE_DIR_SET_RE.search(source)
-    )
+    drives = any(symbol in source for symbol in _REAL_STATE_SYMBOLS) or bool(_PLAN_BASE_DIR_SET_RE.search(source))
     _REAL_STATE_MODULE_CACHE[key] = drives
     return drives
 
@@ -1203,21 +1186,15 @@ def _guard_roster() -> tuple[list[tuple[str, str]], list[str]]:
     discovered = _discover_guard_publishers()
 
     unlisted = [relative for relative in discovered if relative not in listed_paths]
-    no_longer_publishing = [
-        relative for relative in listed_paths if relative not in discovered
-    ]
+    no_longer_publishing = [relative for relative in listed_paths if relative not in discovered]
 
     entries = listed + [
-        (f'UNLISTED:{relative.rsplit("/", 1)[-1].removesuffix(".py")}', relative)
-        for relative in unlisted
+        (f'UNLISTED:{relative.rsplit("/", 1)[-1].removesuffix(".py")}', relative) for relative in unlisted
     ]
 
     discrepancies: list[str] = []
     if unlisted:
-        discrepancies.append(
-            f'{len(unlisted)} publisher(s) with no _ROUTING_GUARD_MODULES row: '
-            + ', '.join(unlisted)
-        )
+        discrepancies.append(f'{len(unlisted)} publisher(s) with no _ROUTING_GUARD_MODULES row: ' + ', '.join(unlisted))
     if no_longer_publishing:
         discrepancies.append(
             f'{len(no_longer_publishing)} row(s) whose module no longer publishes '
@@ -2784,8 +2761,7 @@ def create_marshal_json(
     else:
         if preset not in MARSHAL_PRESETS:
             raise ValueError(
-                f'create_marshal_json: unknown preset {preset!r}; '
-                f'known presets are {sorted(MARSHAL_PRESETS)}.'
+                f'create_marshal_json: unknown preset {preset!r}; known presets are {sorted(MARSHAL_PRESETS)}.'
             )
         # Deep-copied, not ``.copy()``-ed: a shallow copy shares every nested
         # dict with the module-level baseline, so one test mutating

@@ -97,14 +97,7 @@ class TestValidDeclarations:
     def test_comments_and_blank_lines_ignored(self):
         """Comment and blank lines inside the block do not break parsing."""
         doc = create_temp_file(
-            _doc(
-                'configurable:\n'
-                '  # a leading comment\n'
-                '\n'
-                '  - key: foo\n'
-                '    default: bar\n'
-                '    description: A param.'
-            ),
+            _doc('configurable:\n  # a leading comment\n\n  - key: foo\n    default: bar\n    description: A param.'),
             suffix='.md',
         )
         try:
@@ -116,13 +109,7 @@ class TestValidDeclarations:
     def test_block_terminates_at_next_top_level_key(self):
         """A top-level key after the block terminates it without leaking."""
         doc = create_temp_file(
-            _doc(
-                'configurable:\n'
-                '  - key: foo\n'
-                '    default: bar\n'
-                '    description: A param.\n'
-                'trailing_key: ignored'
-            ),
+            _doc('configurable:\n  - key: foo\n    default: bar\n    description: A param.\ntrailing_key: ignored'),
             suffix='.md',
         )
         try:
@@ -189,12 +176,7 @@ class TestScalarCoercion:
     def test_default_scalar_coercion(self, raw_default, expected):
         """Each scalar form coerces to its expected Python value."""
         doc = create_temp_file(
-            _doc(
-                'configurable:\n'
-                '  - key: param\n'
-                f'    default: {raw_default}\n'
-                '    description: A param.'
-            ),
+            _doc(f'configurable:\n  - key: param\n    default: {raw_default}\n    description: A param.'),
             suffix='.md',
         )
         try:
@@ -313,9 +295,7 @@ class TestResolveStepDocPath:
         expected = (tmp_path / '.claude' / 'skills' / 'finalize-step-demo' / 'SKILL.md').resolve()
         assert path == expected
 
-    def test_a_step_on_a_lower_priority_root_resolves_to_that_root(
-        self, tmp_path, monkeypatch
-    ):
+    def test_a_step_on_a_lower_priority_root_resolves_to_that_root(self, tmp_path, monkeypatch):
         """The resolver searches every declared root, not just the first.
 
         Discovery scans the same root list. A step it finds under a root this
@@ -326,18 +306,14 @@ class TestResolveStepDocPath:
         import file_ops
 
         monkeypatch.setattr(file_ops, '_resolve_plan_root', lambda: tmp_path)
-        monkeypatch.setattr(
-            cc, 'get_project_skill_roots', lambda: ('first/steps', 'second/steps')
-        )
+        monkeypatch.setattr(cc, 'get_project_skill_roots', lambda: ('first/steps', 'second/steps'))
         on_disk = tmp_path / 'second' / 'steps' / 'finalize-step-demo'
         on_disk.mkdir(parents=True)
         (on_disk / 'SKILL.md').write_text('# Step\n', encoding='utf-8')
 
         assert resolve_step_doc_path('project:finalize-step-demo') == on_disk / 'SKILL.md'
 
-    def test_a_step_on_no_root_is_reported_against_the_highest_priority_one(
-        self, tmp_path, monkeypatch
-    ):
+    def test_a_step_on_no_root_is_reported_against_the_highest_priority_one(self, tmp_path, monkeypatch):
         """Nothing on disk yields a deterministic path, taken from the FIRST root.
 
         The caller needs a path to name in its error; taking the last root would
@@ -347,9 +323,7 @@ class TestResolveStepDocPath:
         import file_ops
 
         monkeypatch.setattr(file_ops, '_resolve_plan_root', lambda: tmp_path)
-        monkeypatch.setattr(
-            cc, 'get_project_skill_roots', lambda: ('first/steps', 'second/steps')
-        )
+        monkeypatch.setattr(cc, 'get_project_skill_roots', lambda: ('first/steps', 'second/steps'))
 
         assert resolve_step_doc_path('project:finalize-step-demo') == (
             tmp_path / 'first' / 'steps' / 'finalize-step-demo' / 'SKILL.md'
@@ -366,15 +340,11 @@ class TestResolveStepDocPath:
 
         # Only standards/ exists -> resolves to standards/.
         (skill_dir / 'standards' / 'branch-cleanup.md').write_text('x', encoding='utf-8')
-        assert resolve_step_doc_path('default:branch-cleanup') == (
-            skill_dir / 'standards' / 'branch-cleanup.md'
-        )
+        assert resolve_step_doc_path('default:branch-cleanup') == (skill_dir / 'standards' / 'branch-cleanup.md')
 
         # workflow/ exists -> wins over standards/.
         (skill_dir / 'workflow' / 'branch-cleanup.md').write_text('x', encoding='utf-8')
-        assert resolve_step_doc_path('default:branch-cleanup') == (
-            skill_dir / 'workflow' / 'branch-cleanup.md'
-        )
+        assert resolve_step_doc_path('default:branch-cleanup') == (skill_dir / 'workflow' / 'branch-cleanup.md')
 
     def test_missing_built_in_returns_preferred_workflow_path(self, tmp_path, monkeypatch):
         """When neither body doc exists, the preferred workflow/ path is returned."""
@@ -382,9 +352,7 @@ class TestResolveStepDocPath:
 
         skill_dir = tmp_path / 'phase-6-finalize'
         monkeypatch.setattr(cc, '_phase_6_skill_dir', lambda: skill_dir)
-        assert resolve_step_doc_path('default:absent') == (
-            skill_dir / 'workflow' / 'absent.md'
-        )
+        assert resolve_step_doc_path('default:absent') == (skill_dir / 'workflow' / 'absent.md')
 
 
 # =============================================================================
@@ -398,12 +366,7 @@ class TestCli:
     def test_parse_success_emits_params_toon(self):
         """parse on a valid doc exits 0 and emits the params rows."""
         doc = create_temp_file(
-            _doc(
-                'configurable:\n'
-                '  - key: foo\n'
-                '    default: bar\n'
-                '    description: A param.'
-            ),
+            _doc('configurable:\n  - key: foo\n    default: bar\n    description: A param.'),
             suffix='.md',
         )
         try:

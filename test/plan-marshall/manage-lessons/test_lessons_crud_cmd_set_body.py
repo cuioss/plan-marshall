@@ -9,7 +9,6 @@ Its sections, in order:
 * cmd_get
 """
 
-
 from argparse import Namespace
 from pathlib import Path
 from unittest.mock import patch
@@ -324,6 +323,7 @@ class TestCmdSetBody:
 # =============================================================================
 # Tier 2: cmd_get
 # =============================================================================
+
 
 class TestCliReadAlias:
     """Subprocess test pinning ``read`` as an alias for the ``get`` subcommand."""

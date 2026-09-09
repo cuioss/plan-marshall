@@ -50,18 +50,14 @@ from conftest import get_script_path, load_script_module, run_script
 # ``register=False``: only the returned module is needed, and a sibling suite
 # imports ``review_completeness`` plainly. Registering under that name would put two
 # copies in play, reachable by different routes and differing by collection order.
-rc = load_script_module(
-    'plan-marshall', 'automatic-review', 'review_completeness.py', register=False
-)
+rc = load_script_module('plan-marshall', 'automatic-review', 'review_completeness.py', register=False)
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'automatic-review', 'review_completeness.py')
 SCRIPTS_DIR = SCRIPT_PATH.parent
 
 _CONTRACT_DOC = SCRIPTS_DIR.parent / 'standards' / 'bot-participation-contract.md'
 _AR_SKILL = SCRIPTS_DIR.parent / 'SKILL.md'
-_BRANCH_CLEANUP = (
-    SCRIPTS_DIR.parent.parent / 'phase-6-finalize' / 'standards' / 'branch-cleanup.md'
-)
+_BRANCH_CLEANUP = SCRIPTS_DIR.parent.parent / 'phase-6-finalize' / 'standards' / 'branch-cleanup.md'
 #: The dispatcher that actually FIRES the operator prompt (item 7a). The leaf only
 #: returns an envelope, so this file — not the leaf's — is where a wrong remedy set
 #: reaches a human.
@@ -85,9 +81,7 @@ def _state_of(result: dict, bot: str) -> str:
 #: here: the whole point of the population is to be complete, and a literal is
 #: complete only until the next member is added.
 _TERMINAL_STATES = frozenset(
-    value
-    for name, value in vars(rc).items()
-    if name.startswith('STATE_') and isinstance(value, str)
+    value for name, value in vars(rc).items() if name.startswith('STATE_') and isinstance(value, str)
 )
 
 #: Per member: can a plan exit this state by an action of its OWN — as opposed to
@@ -101,17 +95,17 @@ _TERMINAL_STATES = frozenset(
 #: sequence escalates immediately for ``hard_quota`` and ``unknown``, so the plan does
 #: not act on those — it asks.
 _PASSABLE_BY_PLAN_ACTION = {
-    rc.STATE_PARTICIPATED: True,             # not a block at all
-    rc.STATE_PARTICIPATED_BUT_EMPTY: True,   # accounted-for, never a block
-    rc.STATE_IN_PROGRESS: True,              # the run finishes; time is the remedy
-    rc.STATE_NOT_TRIGGERED: True,            # generate the trigger event
-    rc.STATE_PARTICIPATED_STALE: True,       # re-trigger a re-review
-    rc.STATE_ABSENT: True,                   # loop back and re-trigger the silent bot
-    rc.STATE_REFUSED_AWAITABLE: True,        # claim the window and await the reset
-    rc.STATE_REFUSED_UNKNOWN: False,         # recovery escalates rather than awaiting
-    rc.STATE_REFUSED_HARD: False,            # a budget the plan cannot restore
-    rc.STATE_DECLINED: False,                # re-triggering yields another decline
-    rc.STATE_REFUSED_STRUCTURAL: False,      # the ceiling is on the diff, not on time
+    rc.STATE_PARTICIPATED: True,  # not a block at all
+    rc.STATE_PARTICIPATED_BUT_EMPTY: True,  # accounted-for, never a block
+    rc.STATE_IN_PROGRESS: True,  # the run finishes; time is the remedy
+    rc.STATE_NOT_TRIGGERED: True,  # generate the trigger event
+    rc.STATE_PARTICIPATED_STALE: True,  # re-trigger a re-review
+    rc.STATE_ABSENT: True,  # loop back and re-trigger the silent bot
+    rc.STATE_REFUSED_AWAITABLE: True,  # claim the window and await the reset
+    rc.STATE_REFUSED_UNKNOWN: False,  # recovery escalates rather than awaiting
+    rc.STATE_REFUSED_HARD: False,  # a budget the plan cannot restore
+    rc.STATE_DECLINED: False,  # re-triggering yields another decline
+    rc.STATE_REFUSED_STRUCTURAL: False,  # the ceiling is on the diff, not on time
     # The remedy is an edit to the reviewer CONFIGURATION — the third case this
     # classification's own docstring names as outside the plan's reach. No plan-side
     # move exists at all: the token names no reviewer, so there is nothing to
@@ -133,17 +127,17 @@ _PASSABLE_BY_PLAN_ACTION = {
 #: and it is knowable in advance — which is why it earns both its own member and an
 #: advance-disclosure surface.
 _AWAIT_CAN_EVER_SUCCEED = {
-    rc.STATE_PARTICIPATED: False,            # nothing to wait for
+    rc.STATE_PARTICIPATED: False,  # nothing to wait for
     rc.STATE_PARTICIPATED_BUT_EMPTY: False,  # nothing to wait for
-    rc.STATE_IN_PROGRESS: True,              # the run is still going
-    rc.STATE_NOT_TRIGGERED: False,           # nothing was asked; waiting asks nothing
-    rc.STATE_PARTICIPATED_STALE: False,      # waiting alone refreshes no review
-    rc.STATE_ABSENT: True,                   # the bot may still answer
-    rc.STATE_REFUSED_AWAITABLE: True,        # the window reopens on its own
-    rc.STATE_REFUSED_UNKNOWN: True,          # not known to fail — see above
-    rc.STATE_REFUSED_HARD: False,            # does not reopen on a useful timescale
-    rc.STATE_DECLINED: False,                # the bot answered and will answer the same
-    rc.STATE_REFUSED_STRUCTURAL: False,      # ⭐ the diff is the limit; time is not
+    rc.STATE_IN_PROGRESS: True,  # the run is still going
+    rc.STATE_NOT_TRIGGERED: False,  # nothing was asked; waiting asks nothing
+    rc.STATE_PARTICIPATED_STALE: False,  # waiting alone refreshes no review
+    rc.STATE_ABSENT: True,  # the bot may still answer
+    rc.STATE_REFUSED_AWAITABLE: True,  # the window reopens on its own
+    rc.STATE_REFUSED_UNKNOWN: True,  # not known to fail — see above
+    rc.STATE_REFUSED_HARD: False,  # does not reopen on a useful timescale
+    rc.STATE_DECLINED: False,  # the bot answered and will answer the same
+    rc.STATE_REFUSED_STRUCTURAL: False,  # ⭐ the diff is the limit; time is not
     # No reviewer answers to this NAME, and none ever could — participation is keyed
     # by a bot_kind derived from an author login, so a token outside that codomain
     # can never be credited however long the wait. This is the strongest ``False`` on
@@ -197,9 +191,7 @@ class TestTerminalStatePopulation:
         """
         table = _CONTRACT_DOC.read_text(encoding='utf-8')
         for state in sorted(rc._UNPROVEN_STATES):
-            assert f'`{state}`' in table, (
-                f'{state} blocks the merge but is undocumented in the contract'
-            )
+            assert f'`{state}`' in table, f'{state} blocks the merge but is undocumented in the contract'
 
     def test_the_non_option_population_is_non_empty(self):
         """The members for which a wait CANNOT work — non-empty, so nothing is vacuous.
@@ -222,7 +214,8 @@ class TestTerminalStatePopulation:
         an accepted gap they would be genuine deadlocks.
         """
         stuck = {
-            state for state in _TERMINAL_STATES
+            state
+            for state in _TERMINAL_STATES
             if not _PASSABLE_BY_PLAN_ACTION[state]
             and not _AWAIT_CAN_EVER_SUCCEED[state]
             and state in rc._UNPROVEN_STATES
@@ -240,9 +233,7 @@ class TestTerminalStatePopulation:
         """
         for state in _TERMINAL_STATES:
             if _AWAIT_CAN_EVER_SUCCEED[state] and state in rc._UNPROVEN_STATES:
-                assert _PASSABLE_BY_PLAN_ACTION[state] or state in (
-                    rc.STATE_REFUSED_UNKNOWN,
-                ), (
+                assert _PASSABLE_BY_PLAN_ACTION[state] or state in (rc.STATE_REFUSED_UNKNOWN,), (
                     f'{state} is marked await-can-succeed yet not passable by the plan '
                     f'acting — waiting IS an action, so the pair is incoherent'
                 )
@@ -261,6 +252,7 @@ class TestTerminalStatePopulation:
 # (a) Classification — a size refusal is structural, not temporal, not absent
 # ---------------------------------------------------------------------------
 
+
 class TestSizeRefusalClassifiesStructural:
     """(a) A size-caused refusal resolves to the structural member."""
 
@@ -274,7 +266,8 @@ class TestSizeRefusalClassifiesStructural:
         plan_id = 'struct-size-not-rate'
         plan_context.plan_dir_for(plan_id)
         result = rc.check_completeness(
-            plan_id, ['sourcery'],
+            plan_id,
+            ['sourcery'],
             refused_bots=['sourcery'],
             refused_causes={'sourcery': 'size'},
         )
@@ -291,7 +284,8 @@ class TestSizeRefusalClassifiesStructural:
         plan_id = 'struct-size-not-absent'
         plan_context.plan_dir_for(plan_id)
         result = rc.check_completeness(
-            plan_id, ['sourcery'],
+            plan_id,
+            ['sourcery'],
             refused_bots=['sourcery'],
             refused_causes={'sourcery': 'size'},
         )
@@ -312,7 +306,8 @@ class TestSizeRefusalClassifiesStructural:
         plan_id = 'struct-cause-dominates'
         plan_context.plan_dir_for(plan_id)
         result = rc.check_completeness(
-            plan_id, ['coderabbit'],
+            plan_id,
+            ['coderabbit'],
             refused_bots=['coderabbit'],
             refused_causes={'coderabbit': 'size'},
         )
@@ -329,7 +324,10 @@ class TestSizeRefusalClassifiesStructural:
         plan_id = f'struct-sweep-{bot}'
         plan_context.plan_dir_for(plan_id)
         result = rc.check_completeness(
-            plan_id, [bot], refused_bots=[bot], refused_causes={bot: 'size'},
+            plan_id,
+            [bot],
+            refused_bots=[bot],
+            refused_causes={bot: 'size'},
         )
         assert _state_of(result, bot) == rc.STATE_REFUSED_STRUCTURAL
 
@@ -350,7 +348,8 @@ class TestSizeRefusalClassifiesStructural:
         plan_id = 'struct-quota-untouched'
         plan_context.plan_dir_for(plan_id)
         result = rc.check_completeness(
-            plan_id, ['coderabbit'],
+            plan_id,
+            ['coderabbit'],
             refused_bots=['coderabbit'],
             refused_causes={'coderabbit': 'quota'},
         )
@@ -373,7 +372,9 @@ class TestSizeRefusalClassifiesStructural:
         plan_id = 'struct-still-blocks'
         plan_context.plan_dir_for(plan_id)
         result = rc.check_completeness(
-            plan_id, ['sourcery'], refused_bots=['sourcery'],
+            plan_id,
+            ['sourcery'],
+            refused_bots=['sourcery'],
             refused_causes={'sourcery': 'size'},
         )
         assert result['participation_complete'] is False
@@ -398,9 +399,7 @@ class TestSizeRefusalClassifiesStructural:
             ('neither', {}, 'STATE_REFUSED_HARD'),
         ],
     )
-    def test_check_and_deficit_agree_on_the_member(
-        self, plan_context, case, kwargs, expected_attr
-    ):
+    def test_check_and_deficit_agree_on_the_member(self, plan_context, case, kwargs, expected_attr):
         """Both commands apply the SAME cause handling, so neither names a different member.
 
         ``deficit`` publishes a per-reviewer ``state`` column. If only ``check``
@@ -413,9 +412,7 @@ class TestSizeRefusalClassifiesStructural:
         shared = {'refused_bots': ['sourcery'], **kwargs}
         check = rc.check_completeness(plan_id, ['sourcery'], **shared)
         deficit = rc.check_deficit(plan_id, ['sourcery'], **shared)
-        deficit_state = next(
-            r['state'] for r in deficit['reviewers'] if r['bot_kind'] == 'sourcery'
-        )
+        deficit_state = next(r['state'] for r in deficit['reviewers'] if r['bot_kind'] == 'sourcery')
         assert deficit_state == _state_of(check, 'sourcery') == getattr(rc, expected_attr)
 
     def test_the_summary_distinguishes_structural_from_temporal(self, plan_context):
@@ -428,11 +425,15 @@ class TestSizeRefusalClassifiesStructural:
         plan_id = 'struct-summary'
         plan_context.plan_dir_for(plan_id)
         structural = rc.check_completeness(
-            plan_id, ['sourcery'], refused_bots=['sourcery'],
+            plan_id,
+            ['sourcery'],
+            refused_bots=['sourcery'],
             refused_causes={'sourcery': 'size'},
         )
         temporal = rc.check_completeness(
-            plan_id, ['sourcery'], refused_bots=['sourcery'],
+            plan_id,
+            ['sourcery'],
+            refused_bots=['sourcery'],
             refused_causes={'sourcery': 'quota'},
         )
         assert structural['review_state_summary'] != temporal['review_state_summary']
@@ -475,7 +476,7 @@ def _hook_structural_table() -> str:
     hook: str = _FINALIZE_SKILL.read_text(encoding='utf-8')
     start = hook.index('reason: refusal_structural` — its OWN branch table')
     nxt = re.search(r'^\s{0,4}#{2,6}\s', hook[start:], re.MULTILINE)
-    return hook[start:start + nxt.start()] if nxt else hook[start:]
+    return hook[start : start + nxt.start()] if nxt else hook[start:]
 
 
 def _barrier_structural_prompt() -> str:
@@ -547,7 +548,7 @@ def _barrier_structural_options() -> str:
     warning. What must be free of a futile remedy is the list of selectable options.
     """
     block = _barrier_structural_prompt()
-    return block[block.index('options:'):]
+    return block[block.index('options:') :]
 
 
 def _section(doc: str, heading_pattern: str) -> str:
@@ -584,8 +585,7 @@ class TestNoAwaitOnTheStructuralBranch:
         assert block, 'the refusal_structural escalate_ask shape is missing from SKILL.md'
         body = block.group('body')
         assert not _WAIT_OFFER.search(body), (
-            f'the structural escalation offers a wait, which is the non-option this '
-            f'member exists to remove:\n{body}'
+            f'the structural escalation offers a wait, which is the non-option this member exists to remove:\n{body}'
         )
 
     def test_the_structural_shape_carries_no_timeout_budget(self):
@@ -651,10 +651,7 @@ class TestNoAwaitOnTheStructuralBranch:
     def test_the_contract_forbids_an_await_on_the_member(self):
         """The taxonomy's own row names the remedy set and excludes awaiting."""
         row = _section(_CONTRACT_DOC.read_text(encoding='utf-8'), r'Failure taxonomy')
-        structural = next(
-            line for line in row.splitlines()
-            if line.startswith('| `refused_structural`')
-        )
+        structural = next(line for line in row.splitlines() if line.startswith('| `refused_structural`'))
         assert 'never await' in structural.lower()
         for remedy in ('split', 'accept', 'disable'):
             assert remedy in structural.lower(), f'{remedy} missing from the remedy set'
@@ -717,8 +714,7 @@ class TestNoAwaitOnTheStructuralBranch:
         """
         table = _hook_structural_table().lower()
         assert 'required_bots' in table, (
-            'the disable-reviewer branch does not name the required-bots scoping its '
-            'settling claim depends on'
+            'the disable-reviewer branch does not name the required-bots scoping its settling claim depends on'
         )
         recovery = _AR_SKILL.read_text(encoding='utf-8')
         assert 'Scope the recovery to REQUIRED bots' in recovery
@@ -736,9 +732,7 @@ class TestNoAwaitOnTheStructuralBranch:
         mentions = [m.start() for m in re.finditer('refused_structural', barrier)]
         assert mentions, 'branch-cleanup never mentions the structural member'
         assert any(
-            'split' in barrier[start:start + 1500]
-            and 'cap' in barrier[start:start + 1500]
-            for start in mentions
+            'split' in barrier[start : start + 1500] and 'cap' in barrier[start : start + 1500] for start in mentions
         ), 'no mention of the structural member names both its remedy and its cap'
 
     def test_the_barriers_own_prompt_offers_the_structural_remedies(self):
@@ -771,9 +765,7 @@ class TestNoAwaitOnTheStructuralBranch:
         """
         options = _barrier_structural_options()
         lowered = options.lower()
-        assert not _WAIT_OFFER.search(options), (
-            f'the barrier prompt offers a wait:\n{options}'
-        )
+        assert not _WAIT_OFFER.search(options), f'the barrier prompt offers a wait:\n{options}'
         assert 're-triage' not in lowered, (
             'the structural prompt offers "Re-triage now" — re-requesting a review that '
             'is futile against an unchanged diff'
@@ -820,18 +812,12 @@ class TestNoAwaitOnTheStructuralBranch:
         # The SOURCE, named — and named as the CONSUMER's spelling. The producer
         # emits refused_size_caps[]; reading that name off the check return finds
         # nothing and renders every cap as absent.
-        assert 'refusal_causes[]' in block, (
-            'the derivation does not name the payload field it reads'
-        )
+        assert 'refusal_causes[]' in block, 'the derivation does not name the payload field it reads'
         # The multi-bot RENDERING, decided rather than left to the renderer.
-        assert '{bot_kind}:{cap} pairs' in block, (
-            'the derivation does not state the multi-bot rendering as a pair list'
-        )
+        assert '{bot_kind}:{cap} pairs' in block, 'the derivation does not state the multi-bot rendering as a pair list'
         # The unknown fallback — a blank or a default would make an unquantified
         # gap read as a quantified one.
-        assert 'unknown' in block, (
-            'the derivation does not say what a bot stating no ceiling renders as'
-        )
+        assert 'unknown' in block, 'the derivation does not say what a bot stating no ceiling renders as'
 
     def test_the_cap_derivation_disambiguates_the_two_spellings(self):
         """The producer's field name must be named as the WRONG one to read here.
@@ -849,9 +835,7 @@ class TestNoAwaitOnTheStructuralBranch:
         # Bounded on the document's own next heading rather than a character count,
         # for the same reason as the sibling above: a fixed window stops covering
         # whatever the instruction grows to carry, and says nothing when it does.
-        read_instruction = _to_next_heading(
-            barrier, barrier.index('Read `participation_complete`')
-        )
+        read_instruction = _to_next_heading(barrier, barrier.index('Read `participation_complete`'))
         assert '`refusal_causes`' in read_instruction, (
             'refusal_causes is not among the fields the step is told to read from the '
             'review_completeness check return, so the {cap} derivation reads a field '
@@ -874,9 +858,7 @@ class TestNoAwaitOnTheStructuralBranch:
             'the structural sub-branch states no precedence against the pending-findings '
             'path, which mandates the loop-back it forbids'
         )
-        assert '{count} == 0' in section, (
-            'the structural disposition does not scope itself to the zero-pending case'
-        )
+        assert '{count} == 0' in section, 'the structural disposition does not scope itself to the zero-pending case'
 
     def test_the_structural_accept_branch_mints_an_authorization(self):
         """An option labelled "record reason" must actually record something.
@@ -903,7 +885,7 @@ class TestNoAwaitOnTheStructuralBranch:
         """
         skill = _AR_SKILL.read_text(encoding='utf-8')
         start = skill.index('### review_completeness — deficit')
-        block = skill[start:skill.index('```', skill.index('```bash', start) + 7)]
+        block = skill[start : skill.index('```', skill.index('```bash', start) + 7)]
         assert '--refusal-size-caps' in block
 
     def test_the_default_path_uses_the_sibling_loop_back_not_a_new_semantic(self):
@@ -939,9 +921,7 @@ class TestNoAwaitOnTheStructuralBranch:
         """
         section = ' '.join(_barrier_structural_section().split())
         assert 'AUTHORIZATION' in section or 'authorization' in section
-        assert 'max_iterations' in section, (
-            'the branch does not state what bounds an unattended run'
-        )
+        assert 'max_iterations' in section, 'the branch does not state what bounds an unattended run'
 
     def test_the_default_paths_remedies_are_complete_invocations(self):
         """A remedy an operator cannot copy-run is no remedy.
@@ -952,12 +932,10 @@ class TestNoAwaitOnTheStructuralBranch:
         executor prefix, so copying either remedy verbatim is an argparse rejection.
         """
         commands = _barrier_structural_commands()
-        grant = commands[commands.index('merge-authorization grant'):]
-        for required in (
-            '--plan-id', '--kind', '--head', '--gap-class', '--granted-over', '--reason'
-        ):
+        grant = commands[commands.index('merge-authorization grant') :]
+        for required in ('--plan-id', '--kind', '--head', '--gap-class', '--granted-over', '--reason'):
             assert required in grant[:1400], f'the grant remedy omits {required}'
-        params = commands[commands.index('step-params set'):]
+        params = commands[commands.index('step-params set') :]
         for required in ('--plan-id', '--param', '--value'):
             assert required in params[:1400], f'the reclassify remedy omits {required}'
         # Both remedies must be reachable through the executor, not by raw path.
@@ -982,6 +960,7 @@ class TestNoAwaitOnTheStructuralBranch:
 # (c) The finding carries the cap
 # ---------------------------------------------------------------------------
 
+
 class TestTheCapIsRecorded:
     """(c) The stated ceiling travels with the finding, and an absent one stays absent."""
 
@@ -989,14 +968,13 @@ class TestTheCapIsRecorded:
         plan_id = 'struct-cap-reported'
         plan_context.plan_dir_for(plan_id)
         result = rc.check_completeness(
-            plan_id, ['sourcery'],
+            plan_id,
+            ['sourcery'],
             refused_bots=['sourcery'],
             refused_causes={'sourcery': 'size'},
             refusal_size_caps={'sourcery': '4242 diff characters'},
         )
-        assert result['refusal_causes'] == [
-            {'bot_kind': 'sourcery', 'cause': 'size', 'cap': '4242 diff characters'}
-        ]
+        assert result['refusal_causes'] == [{'bot_kind': 'sourcery', 'cause': 'size', 'cap': '4242 diff characters'}]
 
     def test_an_unstated_cap_reads_unknown_and_is_never_defaulted(self, plan_context):
         """A cap nobody observed must not be invented.
@@ -1008,7 +986,8 @@ class TestTheCapIsRecorded:
         plan_id = 'struct-cap-unknown'
         plan_context.plan_dir_for(plan_id)
         result = rc.check_completeness(
-            plan_id, ['sourcery'],
+            plan_id,
+            ['sourcery'],
             refused_bots=['sourcery'],
             refused_causes={'sourcery': 'size'},
         )
@@ -1018,10 +997,18 @@ class TestTheCapIsRecorded:
         plan_id = 'struct-cap-cli'
         plan_context.plan_dir_for(plan_id)
         result = run_script(
-            SCRIPT_PATH, 'check', '--plan-id', plan_id,
-            '--required-bots', 'sourcery', '--refused-bots', 'sourcery',
-            '--refused-causes', 'sourcery:size',
-            '--refusal-size-caps', 'sourcery:4242 diff characters',
+            SCRIPT_PATH,
+            'check',
+            '--plan-id',
+            plan_id,
+            '--required-bots',
+            'sourcery',
+            '--refused-bots',
+            'sourcery',
+            '--refused-causes',
+            'sourcery:size',
+            '--refusal-size-caps',
+            'sourcery:4242 diff characters',
         )
         assert result.returncode == 0
         assert 'refusal_causes[1]{bot_kind,cause,cap}:' in result.stdout
@@ -1032,9 +1019,16 @@ class TestTheCapIsRecorded:
         plan_id = 'struct-cap-cli-unknown'
         plan_context.plan_dir_for(plan_id)
         result = run_script(
-            SCRIPT_PATH, 'check', '--plan-id', plan_id,
-            '--required-bots', 'sourcery', '--refused-bots', 'sourcery',
-            '--refused-causes', 'sourcery:size',
+            SCRIPT_PATH,
+            'check',
+            '--plan-id',
+            plan_id,
+            '--required-bots',
+            'sourcery',
+            '--refused-bots',
+            'sourcery',
+            '--refused-causes',
+            'sourcery:size',
         )
         assert result.returncode == 0
         assert 'sourcery,size,unknown' in result.stdout
@@ -1044,8 +1038,14 @@ class TestTheCapIsRecorded:
         plan_id = 'struct-cap-malformed'
         plan_context.plan_dir_for(plan_id)
         result = run_script(
-            SCRIPT_PATH, 'check', '--plan-id', plan_id,
-            '--required-bots', 'sourcery', '--refusal-size-caps', 'sourcery',
+            SCRIPT_PATH,
+            'check',
+            '--plan-id',
+            plan_id,
+            '--required-bots',
+            'sourcery',
+            '--refusal-size-caps',
+            'sourcery',
         )
         assert result.returncode == 1
         assert 'participation_complete' not in result.stdout
@@ -1058,9 +1058,17 @@ class TestTheCapIsRecorded:
         plan_id = 'struct-cap-bare'
         plan_context.plan_dir_for(plan_id)
         result = run_script(
-            SCRIPT_PATH, 'check', '--plan-id', plan_id,
-            '--required-bots', 'sourcery', '--refused-bots', 'sourcery',
-            '--refused-causes', 'sourcery:size', '--refusal-size-caps',
+            SCRIPT_PATH,
+            'check',
+            '--plan-id',
+            plan_id,
+            '--required-bots',
+            'sourcery',
+            '--refused-bots',
+            'sourcery',
+            '--refused-causes',
+            'sourcery:size',
+            '--refusal-size-caps',
         )
         assert result.returncode == 0
         assert 'sourcery,size,unknown' in result.stdout
@@ -1074,7 +1082,8 @@ class TestTheCapIsRecorded:
         plan_id = 'struct-measured'
         plan_context.plan_dir_for(plan_id)
         result = rc.check_completeness(
-            plan_id, ['sourcery'],
+            plan_id,
+            ['sourcery'],
             refused_bots=['sourcery'],
             refused_causes={'sourcery': 'size'},
             refusal_size_caps={'sourcery': '4242 diff characters'},
@@ -1087,11 +1096,20 @@ class TestTheCapIsRecorded:
         plan_id = 'struct-measured-cli'
         plan_context.plan_dir_for(plan_id)
         result = run_script(
-            SCRIPT_PATH, 'check', '--plan-id', plan_id,
-            '--required-bots', 'sourcery', '--refused-bots', 'sourcery',
-            '--refused-causes', 'sourcery:size',
-            '--refusal-size-caps', 'sourcery:4242 diff characters',
-            '--measured-diff-size', '9001 changed lines',
+            SCRIPT_PATH,
+            'check',
+            '--plan-id',
+            plan_id,
+            '--required-bots',
+            'sourcery',
+            '--refused-bots',
+            'sourcery',
+            '--refused-causes',
+            'sourcery:size',
+            '--refusal-size-caps',
+            'sourcery:4242 diff characters',
+            '--measured-diff-size',
+            '9001 changed lines',
         )
         assert result.returncode == 0
         assert 'measured_diff_size: 9001 changed lines' in result.stdout
@@ -1102,9 +1120,16 @@ class TestTheCapIsRecorded:
         plan_id = 'struct-unmeasured'
         plan_context.plan_dir_for(plan_id)
         result = run_script(
-            SCRIPT_PATH, 'check', '--plan-id', plan_id,
-            '--required-bots', 'sourcery', '--refused-bots', 'sourcery',
-            '--refused-causes', 'sourcery:size',
+            SCRIPT_PATH,
+            'check',
+            '--plan-id',
+            plan_id,
+            '--required-bots',
+            'sourcery',
+            '--refused-bots',
+            'sourcery',
+            '--refused-causes',
+            'sourcery:size',
         )
         assert result.returncode == 0
         assert 'measured_diff_size' not in result.stdout
@@ -1122,14 +1147,13 @@ class TestTheCapIsRecorded:
         plan_id = 'struct-cap-without-cause'
         plan_context.plan_dir_for(plan_id)
         result = rc.check_completeness(
-            plan_id, ['sourcery'],
+            plan_id,
+            ['sourcery'],
             refused_bots=['sourcery'],
             refusal_size_caps={'sourcery': '4242 diff characters'},
         )
         assert _state_of(result, 'sourcery') == rc.STATE_REFUSED_STRUCTURAL
-        assert result['refusal_causes'] == [
-            {'bot_kind': 'sourcery', 'cause': 'size', 'cap': '4242 diff characters'}
-        ]
+        assert result['refusal_causes'] == [{'bot_kind': 'sourcery', 'cause': 'size', 'cap': '4242 diff characters'}]
 
     def test_a_cause_without_a_cap_is_never_inferred_backwards(self, plan_context):
         """The recovery is one-directional. A cause with no cap is an ordinary unknown.
@@ -1140,7 +1164,8 @@ class TestTheCapIsRecorded:
         plan_id = 'struct-cause-without-cap'
         plan_context.plan_dir_for(plan_id)
         result = rc.check_completeness(
-            plan_id, ['sourcery'],
+            plan_id,
+            ['sourcery'],
             refused_bots=['sourcery'],
             refused_causes={'sourcery': 'quota'},
         )
@@ -1156,7 +1181,8 @@ class TestTheCapIsRecorded:
         plan_id = 'struct-measured-unit'
         plan_context.plan_dir_for(plan_id)
         result = rc.check_completeness(
-            plan_id, ['sourcery'],
+            plan_id,
+            ['sourcery'],
             refused_bots=['sourcery'],
             refused_causes={'sourcery': 'size'},
             measured_diff_size='9001 changed lines',
@@ -1167,6 +1193,7 @@ class TestTheCapIsRecorded:
 # ---------------------------------------------------------------------------
 # Advance disclosure — the ceiling is knowable before the review is requested
 # ---------------------------------------------------------------------------
+
 
 class TestAdvanceDisclosure:
     """A structural ceiling is a property of the REVIEWER, so it is disclosable early.
@@ -1228,6 +1255,7 @@ class TestAdvanceDisclosure:
 # ---------------------------------------------------------------------------
 # The producer-side extraction seam
 # ---------------------------------------------------------------------------
+
 
 class TestCapExtraction:
     """``_github_pr.refusal_size_cap`` — the seam that READS the cap off the notice.
@@ -1293,9 +1321,7 @@ class TestCapExtraction:
     def test_a_malformed_registry_pattern_is_skipped_not_raised(self, monkeypatch):
         """A bad registry edit must not break the producer's return path."""
         seam = self._seam()
-        monkeypatch.setattr(
-            seam.bot_registry, 'refusal_size_cap_patterns', lambda _bot: ['([unclosed']
-        )
+        monkeypatch.setattr(seam.bot_registry, 'refusal_size_cap_patterns', lambda _bot: ['([unclosed'])
         assert seam.refusal_size_cap('review limit of 10 things', 'sourcery') == ''
 
     def test_a_non_participating_group_does_not_crash_the_producer(self, monkeypatch):
@@ -1330,28 +1356,20 @@ class TestCapExtraction:
         look audited against a figure nobody observed.
         """
         seam = self._seam()
-        monkeypatch.setattr(
-            seam.bot_registry, 'refusal_size_cap_patterns', lambda _bot: [r'review limit of ([0-9]*)']
-        )
+        monkeypatch.setattr(seam.bot_registry, 'refusal_size_cap_patterns', lambda _bot: [r'review limit of ([0-9]*)'])
         assert seam.refusal_size_cap('review limit of  chars', 'sourcery') == ''
 
     def test_a_pattern_capturing_only_whitespace_yields_unknown(self, monkeypatch):
         """An empty capture is no figure, not an empty-string cap."""
         seam = self._seam()
-        monkeypatch.setattr(
-            seam.bot_registry, 'refusal_size_cap_patterns', lambda _bot: [r'limit of(\s*)']
-        )
+        monkeypatch.setattr(seam.bot_registry, 'refusal_size_cap_patterns', lambda _bot: [r'limit of(\s*)'])
         assert seam.refusal_size_cap('review limit of 4242 chars', 'sourcery') == ''
 
     def test_a_pattern_declaring_no_group_uses_the_whole_match(self, monkeypatch):
         """The no-group convention is preserved — the fix narrows only the group case."""
         seam = self._seam()
-        monkeypatch.setattr(
-            seam.bot_registry, 'refusal_size_cap_patterns', lambda _bot: [r'[0-9]+ diff characters']
-        )
-        assert seam.refusal_size_cap(
-            'review limit of 4242 diff characters', 'sourcery'
-        ) == '4242 diff characters'
+        monkeypatch.setattr(seam.bot_registry, 'refusal_size_cap_patterns', lambda _bot: [r'[0-9]+ diff characters'])
+        assert seam.refusal_size_cap('review limit of 4242 diff characters', 'sourcery') == '4242 diff characters'
 
 
 class TestUnrecognisedRefusalIsADistinctState:
@@ -1384,10 +1402,7 @@ class TestUnrecognisedRefusalIsADistinctState:
         """
         seam = self._seam()
         body = (
-            '> [!WARNING]\n'
-            '> ## Rate limit exceeded\n'
-            '>\n'
-            '> This reviewer has reached its limit and will try again later.'
+            '> [!WARNING]\n> ## Rate limit exceeded\n>\n> This reviewer has reached its limit and will try again later.'
         )
         # The structural arm reads it...
         assert seam._is_rate_limit_notice(body) is True
@@ -1439,7 +1454,8 @@ class TestDiffMeasurement:
     def test_the_measurement_sums_additions_and_deletions_with_its_unit(self, monkeypatch):
         seam = self._seam()
         monkeypatch.setattr(
-            seam.github_ops, 'run_gh',
+            seam.github_ops,
+            'run_gh',
             lambda *_a, **_k: (0, '{"additions": 900, "deletions": 340}', ''),
         )
         assert seam.measure_diff_size(7) == '1240 changed lines'
@@ -1447,11 +1463,11 @@ class TestDiffMeasurement:
     @pytest.mark.parametrize(
         'returncode, stdout',
         [
-            (1, ''),                                   # the read failed
-            (0, ''),                                   # empty output
-            (0, 'not json'),                           # unparseable
-            (0, '[]'),                                 # wrong shape
-            (0, '{"additions": 900}'),                 # a field missing
+            (1, ''),  # the read failed
+            (0, ''),  # empty output
+            (0, 'not json'),  # unparseable
+            (0, '[]'),  # wrong shape
+            (0, '{"additions": 900}'),  # a field missing
             (0, '{"additions": "900", "deletions": 1}'),  # a field non-numeric
         ],
     )
@@ -1462,9 +1478,7 @@ class TestDiffMeasurement:
         unmeasurable gap look audited against a number nobody observed.
         """
         seam = self._seam()
-        monkeypatch.setattr(
-            seam.github_ops, 'run_gh', lambda *_a, **_k: (returncode, stdout, 'err')
-        )
+        monkeypatch.setattr(seam.github_ops, 'run_gh', lambda *_a, **_k: (returncode, stdout, 'err'))
         assert seam.measure_diff_size(7) == ''
 
 
@@ -1517,9 +1531,14 @@ class TestStaleParticipationSurvivesAnInadmissibleEvidenceKind:
         plan_context.plan_dir_for(plan_id)
 
         result = run_script(
-            SCRIPT_PATH, 'check', '--plan-id', plan_id,
-            '--required-bots', 'cuioss-review-bot',
-            '--stale-participation-bots', f'cuioss-review-bot:{self._INADMISSIBLE}',
+            SCRIPT_PATH,
+            'check',
+            '--plan-id',
+            plan_id,
+            '--required-bots',
+            'cuioss-review-bot',
+            '--stale-participation-bots',
+            f'cuioss-review-bot:{self._INADMISSIBLE}',
         )
 
         assert result.returncode == 0
@@ -1537,8 +1556,14 @@ class TestStaleParticipationSurvivesAnInadmissibleEvidenceKind:
         plan_context.plan_dir_for(plan_id)
 
         result = run_script(
-            SCRIPT_PATH, 'check', '--plan-id', plan_id,
-            '--required-bots', 'cuioss-review-bot', '--stale-participation-bots', 'cuioss-review-bot',
+            SCRIPT_PATH,
+            'check',
+            '--plan-id',
+            plan_id,
+            '--required-bots',
+            'cuioss-review-bot',
+            '--stale-participation-bots',
+            'cuioss-review-bot',
         )
 
         assert result.returncode == 1
@@ -1549,9 +1574,7 @@ class TestStaleParticipationSurvivesAnInadmissibleEvidenceKind:
         declared = bot_registry.participation_evidence('cuioss-review-bot')
         assert declared, 'cuioss-review-bot must declare a publish shape for this control'
 
-        assert rc.parse_stale_participation(f'cuioss-review-bot:{declared[0]}') == {
-            'cuioss-review-bot': declared[0]
-        }
+        assert rc.parse_stale_participation(f'cuioss-review-bot:{declared[0]}') == {'cuioss-review-bot': declared[0]}
 
 
 # ---------------------------------------------------------------------------
@@ -1567,11 +1590,7 @@ def _registered_list_flags() -> set[str]:
     """
     parser = argparse.ArgumentParser()
     rc._add_bot_observation_flags(parser)
-    return {
-        action.option_strings[0]
-        for action in parser._actions
-        if action.option_strings and action.nargs == '?'
-    }
+    return {action.option_strings[0] for action in parser._actions if action.option_strings and action.nargs == '?'}
 
 
 def _routing() -> dict[str, str]:
@@ -1615,9 +1634,7 @@ def _form_of(parse_name: str) -> str:
         return 'pair'
     if pair_rejected and not bare_rejected:
         return 'bare'
-    raise AssertionError(
-        f'{parse_name} accepts or rejects both token shapes, so it declares no form'
-    )
+    raise AssertionError(f'{parse_name} accepts or rejects both token shapes, so it declares no form')
 
 
 def _form_sets() -> tuple[set[str], set[str]]:
@@ -1674,9 +1691,7 @@ def _pair_form_claim(text: str, doc_name: str) -> str:
     return claim
 
 
-def _assert_pair_form_claim_parity(
-    text: str, doc_name: str, pair: set[str], bare: set[str]
-) -> None:
+def _assert_pair_form_claim_parity(text: str, doc_name: str, pair: set[str], bare: set[str]) -> None:
     """THE parity rule — one definition, called by the guard AND its control.
 
     The sliced pair-form claim must name every derived pair-form flag and no
@@ -1687,13 +1702,9 @@ def _assert_pair_form_claim_parity(
     """
     claim = _pair_form_claim(text, doc_name)
     for flag in sorted(pair):
-        assert f'`{flag}`' in claim, (
-            f'{doc_name} omits pair-form {flag} from its pair-form claim'
-        )
+        assert f'`{flag}`' in claim, f'{doc_name} omits pair-form {flag} from its pair-form claim'
     offenders = [flag for flag in sorted(bare) if f'`{flag}`' in claim]
-    assert not offenders, (
-        f'{doc_name} lists BARE-form {", ".join(offenders)} among the pair-form flags'
-    )
+    assert not offenders, f'{doc_name} lists BARE-form {", ".join(offenders)} among the pair-form flags'
 
 
 class TestTheFlagFormPartitionIsDerivedNotRemembered:
@@ -1760,9 +1771,7 @@ class TestTheFlagFormPartitionIsDerivedNotRemembered:
         """
         doc = rc.__doc__ or ''
         check_line = next(ln for ln in doc.splitlines() if 'review_completeness.py check' in ln)
-        deficit_line = next(
-            ln for ln in doc.splitlines() if 'review_completeness.py deficit' in ln
-        )
+        deficit_line = next(ln for ln in doc.splitlines() if 'review_completeness.py deficit' in ln)
 
         for flag in sorted(_registered_list_flags()):
             assert flag in check_line, f'{flag} is shared but missing from the check synopsis'
@@ -1832,24 +1841,19 @@ class TestTheFlagFormPartitionIsDerivedNotRemembered:
             f'The rest take BARE `{{bot_kind}}` tokens: {bare_listing}.'
         )
 
-        assert f'`{planted}`' in _pair_form_claim(broken, 'synthetic'), (
-            'the planted flag must land inside the slice'
-        )
+        assert f'`{planted}`' in _pair_form_claim(broken, 'synthetic'), 'the planted flag must land inside the slice'
 
         with pytest.raises(AssertionError) as rejection:
             _assert_pair_form_claim_parity(broken, 'synthetic', pair, bare)
         assert f'BARE-form {planted}' in str(rejection.value), (
-            f'the guard must reject exactly the planted bare-form flag; '
-            f'got {rejection.value}'
+            f'the guard must reject exactly the planted bare-form flag; got {rejection.value}'
         )
 
         # And the matched POSITIVE control: the same rule ACCEPTS the real docs,
         # so the rejection above is the planted drift and not a rule that rejects
         # everything.
         for doc_path in (_AR_SKILL, _BRANCH_CLEANUP):
-            _assert_pair_form_claim_parity(
-                doc_path.read_text(encoding='utf-8'), doc_path.name, pair, bare
-            )
+            _assert_pair_form_claim_parity(doc_path.read_text(encoding='utf-8'), doc_path.name, pair, bare)
 
 
 # ---------------------------------------------------------------------------
@@ -1907,9 +1911,7 @@ def _members_no_wait_can_serve() -> set[str]:
     must first be classified, and classifying it await-futile immediately obliges
     BOTH consuming docs to exempt it from the default loop-back.
     """
-    return {
-        state for state in rc._UNPROVEN_STATES if not _AWAIT_CAN_EVER_SUCCEED[state]
-    }
+    return {state for state in rc._UNPROVEN_STATES if not _AWAIT_CAN_EVER_SUCCEED[state]}
 
 
 def _assert_remedy_guard_parity(text: str, doc_name: str, required: set[str]) -> None:
@@ -1943,9 +1945,7 @@ def _synthetic_guard(members: list[str]) -> str:
     claim, which makes an over-reaching slice fail the scaffold's own positive
     control rather than passing silently.
     """
-    listing = '; '.join(
-        f'a required bot on `{member}` names a remedy of its own' for member in members
-    )
+    listing = '; '.join(f'a required bot on `{member}` names a remedy of its own' for member in members)
     return (
         'A preceding paragraph that the slice must not reach.\n\n'
         f'{_REMEDY_GUARD_ANCHOR} re-entering, because some blocking members name a '
@@ -1974,13 +1974,10 @@ class TestBothConsumerDocsExemptEveryAwaitFutileMember:
     def test_the_obligation_set_is_non_empty(self):
         """⛔ Vacuity guard, asserted FIRST — an empty set makes every sweep below pass."""
         assert _members_no_wait_can_serve(), (
-            'no blocking member was derived as await-futile — the parity sweeps '
-            'below would pass over nothing'
+            'no blocking member was derived as await-futile — the parity sweeps below would pass over nothing'
         )
 
-    @pytest.mark.parametrize(
-        'doc_path', [_AR_SKILL, _BRANCH_CLEANUP], ids=lambda path: str(path.name)
-    )
+    @pytest.mark.parametrize('doc_path', [_AR_SKILL, _BRANCH_CLEANUP], ids=lambda path: str(path.name))
     def test_the_doc_exempts_exactly_the_await_futile_members(self, doc_path):
         """Each consuming doc, held to the derived set in both directions.
 
@@ -2002,13 +1999,9 @@ class TestBothConsumerDocsExemptEveryAwaitFutileMember:
         Asserted separately so the divergence fails mechanically even in the window
         where the derived obligation set is itself wrong.
         """
-        skill = _remedy_guard_members(
-            _remedy_guard_text(_AR_SKILL.read_text(encoding='utf-8'), _AR_SKILL.name)
-        )
+        skill = _remedy_guard_members(_remedy_guard_text(_AR_SKILL.read_text(encoding='utf-8'), _AR_SKILL.name))
         barrier = _remedy_guard_members(
-            _remedy_guard_text(
-                _BRANCH_CLEANUP.read_text(encoding='utf-8'), _BRANCH_CLEANUP.name
-            )
+            _remedy_guard_text(_BRANCH_CLEANUP.read_text(encoding='utf-8'), _BRANCH_CLEANUP.name)
         )
         assert skill and barrier, 'a guard naming no member makes this comparison vacuous'
         assert skill == barrier, (
@@ -2043,17 +2036,14 @@ class TestBothConsumerDocsExemptEveryAwaitFutileMember:
         with pytest.raises(AssertionError) as rejection:
             _assert_remedy_guard_parity(broken, 'synthetic', required)
         assert omitted in str(rejection.value), (
-            f'the guard must reject exactly the omitted member {omitted}; '
-            f'got {rejection.value}'
+            f'the guard must reject exactly the omitted member {omitted}; got {rejection.value}'
         )
 
         # And the matched POSITIVE control: the same rule ACCEPTS the real docs, so
         # the rejection above is the planted omission and not a rule that rejects
         # everything.
         for doc_path in (_AR_SKILL, _BRANCH_CLEANUP):
-            _assert_remedy_guard_parity(
-                doc_path.read_text(encoding='utf-8'), doc_path.name, required
-            )
+            _assert_remedy_guard_parity(doc_path.read_text(encoding='utf-8'), doc_path.name, required)
 
     def test_the_rule_rejects_a_doc_that_exempts_a_member_a_wait_can_serve(self):
         """⛔ Negative control, other direction: over-listing is a defect too.
@@ -2063,18 +2053,13 @@ class TestBothConsumerDocsExemptEveryAwaitFutileMember:
         polarity reversed, and a containment-only assertion would pass on it.
         """
         required = _members_no_wait_can_serve()
-        serviceable = sorted(
-            state for state in rc._UNPROVEN_STATES if _AWAIT_CAN_EVER_SUCCEED[state]
-        )
-        assert serviceable, (
-            'no blocking member is await-serviceable — this control would plant nothing'
-        )
+        serviceable = sorted(state for state in rc._UNPROVEN_STATES if _AWAIT_CAN_EVER_SUCCEED[state])
+        assert serviceable, 'no blocking member is await-serviceable — this control would plant nothing'
         planted = serviceable[0]
         broken = _synthetic_guard(sorted(required) + [planted])
 
         with pytest.raises(AssertionError) as rejection:
             _assert_remedy_guard_parity(broken, 'synthetic', required)
         assert planted in str(rejection.value), (
-            f'the guard must reject exactly the planted awaitable member {planted}; '
-            f'got {rejection.value}'
+            f'the guard must reject exactly the planted awaitable member {planted}; got {rejection.value}'
         )

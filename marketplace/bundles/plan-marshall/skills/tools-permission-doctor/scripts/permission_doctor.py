@@ -66,8 +66,7 @@ def _could_not_evaluate(operation: str) -> dict:
     return {
         'status': 'skipped',
         'operation': operation,
-        'reason': 'The Claude permission rule-pack does not apply to this target; '
-        'no analysis was performed',
+        'reason': 'The Claude permission rule-pack does not apply to this target; no analysis was performed',
     }
 
 
@@ -448,6 +447,7 @@ def cmd_detect_suspicious(args) -> dict:
 # ``skill_permission_covered`` checks ``Skill(...)`` patterns — Claude-specific.
 # ``load_marshal_config`` and ``extract_project_steps`` delegate to the runtime
 # (target-neutral).
+
 
 def load_marshal_config(path: str) -> tuple[dict, str | None]:
     """Load marshal.json config file.

@@ -106,7 +106,7 @@ def handle_read(args: argparse.Namespace) -> dict[str, Any]:
             'status': 'error',
             'error': 'wrong_parameters',
             'plan_id': plan_id,
-            'message': "--type script does not support --store orchestrator (script logging is plans/global-only)",
+            'message': '--type script does not support --store orchestrator (script logging is plans/global-only)',
         }
 
     # Work and decision logs support full parsing

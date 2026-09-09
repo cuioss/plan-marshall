@@ -24,8 +24,7 @@ from conftest import MARKETPLACE_ROOT
 _CORROBORATION_JSON_MARKER = 'mergedAt'
 
 _CORROBORATED_MERGE_PAYLOAD = (
-    '{"state": "MERGED", "mergedAt": "2026-01-01T00:00:00Z", '
-    '"baseRefName": "main", "headRefOid": "abc123"}'
+    '{"state": "MERGED", "mergedAt": "2026-01-01T00:00:00Z", "baseRefName": "main", "headRefOid": "abc123"}'
 )
 
 
@@ -554,14 +553,7 @@ def test_pr_view_success_is_unchanged_and_carries_no_cause(monkeypatch, provider
 
 # --- The consumer side: create-pr must create ONLY on the genuine absence -----
 
-_CREATE_PR_DOC = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'phase-6-finalize'
-    / 'workflow'
-    / 'create-pr.md'
-)
+_CREATE_PR_DOC = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'workflow' / 'create-pr.md'
 
 
 def test_create_pr_doc_creates_only_on_the_no_pr_cause():
@@ -1585,12 +1577,10 @@ def test_ci_wait_exits_immediately_for_skipped_only_check_set(monkeypatch):
     result = github_ops.cmd_ci_wait(ns)
     assert result['status'] == 'success'
     assert result['final_status'] == 'success', (
-        f'SKIPPED-only check set must classify as final_status=success; '
-        f'got {result!r}'
+        f'SKIPPED-only check set must classify as final_status=success; got {result!r}'
     )
     assert result.get('failing_checks', []) == [], (
-        f'SKIPPED-only check set must produce zero failing_checks; '
-        f'got {result.get("failing_checks")!r}'
+        f'SKIPPED-only check set must produce zero failing_checks; got {result.get("failing_checks")!r}'
     )
 
 

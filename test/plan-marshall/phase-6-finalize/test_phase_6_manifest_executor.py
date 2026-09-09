@@ -197,12 +197,10 @@ class TestExecutorDispatchScenarios:
         steps = manifest['phase_6']['steps']
         # Row 5 retains the review gates under the new contract.
         assert 'automatic-review' in steps, (
-            'surgical bug_fix MUST retain automatic-review under the new '
-            'precondition-resolver contract'
+            'surgical bug_fix MUST retain automatic-review under the new precondition-resolver contract'
         )
         assert 'sonar-roundtrip' in steps, (
-            'surgical bug_fix MUST retain sonar-roundtrip under the new '
-            'precondition-resolver contract'
+            'surgical bug_fix MUST retain sonar-roundtrip under the new precondition-resolver contract'
         )
         # ci-wait is defensively narrowed out.
         assert 'ci-wait' not in steps
@@ -240,12 +238,8 @@ class TestExecutorDispatchScenarios:
         assert manifest is not None
         steps = manifest['phase_6']['steps']
         # Review gates RETAINED under the new contract.
-        assert 'automatic-review' in steps, (
-            'recipe row MUST retain automatic-review under the new contract'
-        )
-        assert 'sonar-roundtrip' in steps, (
-            'recipe row MUST retain sonar-roundtrip under the new contract'
-        )
+        assert 'automatic-review' in steps, 'recipe row MUST retain automatic-review under the new contract'
+        assert 'sonar-roundtrip' in steps, 'recipe row MUST retain sonar-roundtrip under the new contract'
         # Legacy ci-wait defensively dropped.
         assert 'ci-wait' not in steps
 
@@ -441,20 +435,9 @@ class TestSkillMdManifestNarrative:
 # ===========================================================================
 
 
-_AUTOMATED_REVIEW_FRONTMATTER = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'automatic-review'
-    / 'SKILL.md'
-)
+_AUTOMATED_REVIEW_FRONTMATTER = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'automatic-review' / 'SKILL.md'
 _SONAR_ROUNDTRIP_FRONTMATTER = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'phase-6-finalize'
-    / 'workflow'
-    / 'sonar-roundtrip.md'
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'workflow' / 'sonar-roundtrip.md'
 )
 
 
@@ -480,12 +463,9 @@ class TestCIPreconditionContract:
         head, sep, _rest = text.partition('\n---\n')
         # head is "---\nname: ..."; the second --- is the closing fence we
         # captured via sep. Inspect head for the requires: line.
-        assert sep == '\n---\n', (
-            'automatic-review.md must start with a YAML frontmatter block'
-        )
+        assert sep == '\n---\n', 'automatic-review.md must start with a YAML frontmatter block'
         assert 'requires: [ci-complete]' in head, (
-            'automatic-review.md frontmatter MUST declare requires: '
-            '[ci-complete]; got head=\n' + head
+            'automatic-review.md frontmatter MUST declare requires: [ci-complete]; got head=\n' + head
         )
 
     def test_sonar_roundtrip_declares_requires_ci_complete(self):
@@ -495,12 +475,9 @@ class TestCIPreconditionContract:
         """
         text = _SONAR_ROUNDTRIP_FRONTMATTER.read_text(encoding='utf-8')
         head, sep, _rest = text.partition('\n---\n')
-        assert sep == '\n---\n', (
-            'sonar-roundtrip.md must start with a YAML frontmatter block'
-        )
+        assert sep == '\n---\n', 'sonar-roundtrip.md must start with a YAML frontmatter block'
         assert 'requires: [ci-complete]' in head, (
-            'sonar-roundtrip.md frontmatter MUST declare requires: '
-            '[ci-complete]; got head=\n' + head
+            'sonar-roundtrip.md frontmatter MUST declare requires: [ci-complete]; got head=\n' + head
         )
 
     def test_composer_does_not_emit_ci_wait_before_automated_review(self, plan_context):
@@ -519,12 +496,8 @@ class TestCIPreconditionContract:
         manifest = read_manifest('p6-precond-default')
         assert manifest is not None
         steps = manifest['phase_6']['steps']
-        assert 'ci-wait' not in steps, (
-            f'default-row composer MUST NOT emit ci-wait; got steps {steps}'
-        )
-        assert 'automatic-review' in steps, (
-            'default-row composer must still include automatic-review'
-        )
+        assert 'ci-wait' not in steps, f'default-row composer MUST NOT emit ci-wait; got steps {steps}'
+        assert 'automatic-review' in steps, 'default-row composer must still include automatic-review'
 
     def test_recipe_path_retains_review_gates(self, plan_context):
         """Row 2 (recipe) — review gates RETAINED. The legacy ``ci-wait``
@@ -549,16 +522,12 @@ class TestCIPreconditionContract:
         assert manifest is not None
         steps = manifest['phase_6']['steps']
         assert 'automatic-review' in steps, (
-            'recipe row MUST retain automatic-review — review gates are '
-            'never silently suppressed'
+            'recipe row MUST retain automatic-review — review gates are never silently suppressed'
         )
         assert 'sonar-roundtrip' in steps, (
-            'recipe row MUST retain sonar-roundtrip — review gates are '
-            'never silently suppressed'
+            'recipe row MUST retain sonar-roundtrip — review gates are never silently suppressed'
         )
-        assert 'ci-wait' not in steps, (
-            'recipe row MUST defensively drop legacy ci-wait step ID'
-        )
+        assert 'ci-wait' not in steps, 'recipe row MUST defensively drop legacy ci-wait step ID'
 
     def test_surgical_tech_debt_retains_review_gates(self, plan_context):
         """Row 5 (surgical_tech_debt variant) — review gates RETAINED. Same
@@ -580,15 +549,9 @@ class TestCIPreconditionContract:
         manifest = read_manifest('p6-precond-docs')
         assert manifest is not None
         steps = manifest['phase_6']['steps']
-        assert 'automatic-review' in steps, (
-            'surgical_tech_debt row MUST retain automatic-review'
-        )
-        assert 'sonar-roundtrip' in steps, (
-            'surgical_tech_debt row MUST retain sonar-roundtrip'
-        )
-        assert 'ci-wait' not in steps, (
-            'surgical_tech_debt row MUST defensively drop legacy ci-wait step ID'
-        )
+        assert 'automatic-review' in steps, 'surgical_tech_debt row MUST retain automatic-review'
+        assert 'sonar-roundtrip' in steps, 'surgical_tech_debt row MUST retain sonar-roundtrip'
+        assert 'ci-wait' not in steps, 'surgical_tech_debt row MUST defensively drop legacy ci-wait step ID'
 
     def test_surgical_bug_fix_retains_review_gates(self, plan_context):
         """Row 5 (surgical_bug_fix / surgical_tech_debt) — review gates
@@ -609,15 +572,9 @@ class TestCIPreconditionContract:
         manifest = read_manifest('p6-precond-surgical-bug')
         assert manifest is not None
         steps = manifest['phase_6']['steps']
-        assert 'automatic-review' in steps, (
-            'surgical_bug_fix row MUST retain automatic-review'
-        )
-        assert 'sonar-roundtrip' in steps, (
-            'surgical_bug_fix row MUST retain sonar-roundtrip'
-        )
-        assert 'ci-wait' not in steps, (
-            'surgical_bug_fix row MUST defensively drop legacy ci-wait step ID'
-        )
+        assert 'automatic-review' in steps, 'surgical_bug_fix row MUST retain automatic-review'
+        assert 'sonar-roundtrip' in steps, 'surgical_bug_fix row MUST retain sonar-roundtrip'
+        assert 'ci-wait' not in steps, 'surgical_bug_fix row MUST defensively drop legacy ci-wait step ID'
 
     def test_automated_review_md_does_not_read_ci_wait_outcome(self):
         """The ``automatic-review.md`` body MUST NOT include the legacy
@@ -651,29 +608,9 @@ class TestCIPreconditionContract:
 # ===========================================================================
 
 
-_AUTOMATED_REVIEW_MD = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'automatic-review'
-    / 'SKILL.md'
-)
-_JSONL_FORMAT_MD = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-findings'
-    / 'standards'
-    / 'jsonl-format.md'
-)
-_TRIAGE_MD = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'plan-marshall'
-    / 'workflow'
-    / 'triage.md'
-)
+_AUTOMATED_REVIEW_MD = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'automatic-review' / 'SKILL.md'
+_JSONL_FORMAT_MD = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'manage-findings' / 'standards' / 'jsonl-format.md'
+_TRIAGE_MD = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-marshall' / 'workflow' / 'triage.md'
 
 
 class TestAutomatedReviewCiSignalAndOverflow:
@@ -709,24 +646,16 @@ class TestAutomatedReviewCiSignalAndOverflow:
 
     # ---- Precondition declaration ---------------------------------------
 
-    def test_automated_review_declares_requires_ci_complete_in_frontmatter(
-        self, automated_review_text: str
-    ):
+    def test_automated_review_declares_requires_ci_complete_in_frontmatter(self, automated_review_text: str):
         """``automatic-review.md`` MUST declare ``requires: [ci-complete]``
         in its YAML frontmatter so the dispatcher invokes the precondition
         resolver before the body runs.
         """
         head, sep, _rest = automated_review_text.partition('\n---\n')
-        assert sep == '\n---\n', (
-            'automatic-review.md must start with a YAML frontmatter block'
-        )
-        assert 'requires: [ci-complete]' in head, (
-            'automatic-review.md frontmatter MUST declare requires: [ci-complete]'
-        )
+        assert sep == '\n---\n', 'automatic-review.md must start with a YAML frontmatter block'
+        assert 'requires: [ci-complete]' in head, 'automatic-review.md frontmatter MUST declare requires: [ci-complete]'
 
-    def test_automated_review_does_not_poll_ci_inline(
-        self, automated_review_text: str
-    ):
+    def test_automated_review_does_not_poll_ci_inline(self, automated_review_text: str):
         """The legacy ``ci wait --pr-number`` polling primitive MUST NOT
         appear in the automatic-review step body — that responsibility is
         owned by the dispatcher's precondition resolver. A reappearance
@@ -745,9 +674,7 @@ class TestAutomatedReviewCiSignalAndOverflow:
             'subsection — CI completion is now a dispatcher-resolved precondition'
         )
 
-    def test_automated_review_does_not_read_ci_wait_outcome_record(
-        self, automated_review_text: str
-    ):
+    def test_automated_review_does_not_read_ci_wait_outcome_record(self, automated_review_text: str):
         """``automatic-review.md`` MUST NOT read the legacy
         ``phase_steps["6-finalize"]["ci-wait"]`` outcome record. The
         precondition resolver runs ahead of the body and surfaces
@@ -757,9 +684,7 @@ class TestAutomatedReviewCiSignalAndOverflow:
             'automatic-review.md must not read the legacy ci-wait outcome record'
         )
 
-    def test_timeout_contract_describes_precondition_split(
-        self, automated_review_text: str
-    ):
+    def test_timeout_contract_describes_precondition_split(self, automated_review_text: str):
         """The 900 s budget is now ``FIND-only`` — triage and RESPOND moved out
         of this step and run once at the dispatcher level as the unified
         wait-region triage. CI wait wall-clock is bounded separately by the
@@ -774,12 +699,10 @@ class TestAutomatedReviewCiSignalAndOverflow:
             '(triage/RESPOND moved to the dispatcher-level unified triage)'
         )
         assert 'triage-only' not in text_lower, (
-            'the legacy triage-only combined-budget shape must be gone — the '
-            '900 s budget is now FIND-only'
+            'the legacy triage-only combined-budget shape must be gone — the 900 s budget is now FIND-only'
         )
         assert 'precondition' in text_lower, (
-            'Timeout Contract must reference the precondition resolver as the '
-            'CI wait-time owner'
+            'Timeout Contract must reference the precondition resolver as the CI wait-time owner'
         )
         assert 'review arm' in text_lower or 'review-arm' in text_lower, (
             'the precondition must be gated on the per-signal review arm, not '
@@ -789,9 +712,7 @@ class TestAutomatedReviewCiSignalAndOverflow:
 
     # ---- Overflow handling -----------------------------------------------
 
-    def test_overflow_section_documented_in_triage(
-        self, triage_text: str
-    ):
+    def test_overflow_section_documented_in_triage(self, triage_text: str):
         """The overflow handling section MUST exist in the shared triage
         workflow so the contract is reachable from every call site that
         dispatches `cross.triage` (automatic-review, sonar-roundtrip,
@@ -801,18 +722,14 @@ class TestAutomatedReviewCiSignalAndOverflow:
             'triage.md must document overflow / timeout handling'
         )
 
-    def test_overflow_files_pr_comment_overflow_finding(
-        self, triage_text: str
-    ):
+    def test_overflow_files_pr_comment_overflow_finding(self, triage_text: str):
         """When the per-iteration budget is nearly exhausted, the triage
         workflow MUST file exactly one ``{finding_type}-overflow`` envelope
         finding (via ``manage-findings add``) carrying the unprocessed
         hash_ids in ``detail``. The pr-comment-specific shape (used by
         automatic-review) is named explicitly in the documentation."""
         text = triage_text
-        assert 'pr-comment-overflow' in text, (
-            'triage.md must reference the pr-comment-overflow finding type by name'
-        )
+        assert 'pr-comment-overflow' in text, 'triage.md must reference the pr-comment-overflow finding type by name'
         # The documented add command uses the parameterised type form so
         # every finding_type has its own overflow envelope shape.
         assert '--type {finding_type}-overflow' in text or '--type pr-comment-overflow' in text, (
@@ -822,9 +739,7 @@ class TestAutomatedReviewCiSignalAndOverflow:
             'triage.md must document carrying the unprocessed hash_ids in --detail'
         )
 
-    def test_overflow_returns_loop_back_outcome(
-        self, triage_text: str
-    ):
+    def test_overflow_returns_loop_back_outcome(self, triage_text: str):
         """The overflow path MUST return ``outcome: loop_back`` so the
         calling manifest step (automatic-review / sonar-roundtrip /
         phase-5-execute Step 11) re-fires the dispatch on the next phase entry."""
@@ -841,9 +756,7 @@ class TestAutomatedReviewCiSignalAndOverflow:
             'Overflow section in triage.md must return outcome: loop_back so the calling step re-fires'
         )
 
-    def test_overflow_threshold_is_conservative(
-        self, triage_text: str
-    ):
+    def test_overflow_threshold_is_conservative(self, triage_text: str):
         """The documented overflow heuristic MUST trigger before the wrapper
         fires — the 75 % threshold leaves enough budget for the overflow
         capture itself plus a safety margin."""
@@ -854,9 +767,7 @@ class TestAutomatedReviewCiSignalAndOverflow:
 
     # ---- pr-comment-overflow finding type contract ------------------------
 
-    def test_pr_comment_overflow_registered_in_jsonl_format(
-        self, jsonl_format_text: str
-    ):
+    def test_pr_comment_overflow_registered_in_jsonl_format(self, jsonl_format_text: str):
         """The ``pr-comment-overflow`` finding type MUST be enumerated in
         ``manage-findings/standards/jsonl-format.md`` so producers can ``add``
         it without an unknown-type error."""
@@ -866,17 +777,13 @@ class TestAutomatedReviewCiSignalAndOverflow:
             'jsonl-format.md must list pr-comment-overflow.jsonl in the per-type file enumeration'
         )
         # Required-fields type taxonomy.
-        assert 'pr-comment-overflow' in text, (
-            'jsonl-format.md must include pr-comment-overflow in the type taxonomy'
-        )
+        assert 'pr-comment-overflow' in text, 'jsonl-format.md must include pr-comment-overflow in the type taxonomy'
         # Promotion table — non-promotable.
         assert '| `pr-comment-overflow` | Not promotable' in text, (
             'jsonl-format.md must list pr-comment-overflow as Not promotable in the promotion table'
         )
 
-    def test_pr_comment_overflow_contract_documented(
-        self, jsonl_format_text: str
-    ):
+    def test_pr_comment_overflow_contract_documented(self, jsonl_format_text: str):
         """The ``pr-comment-overflow`` type's purpose, ``detail`` shape, and
         resolution semantics MUST be documented in jsonl-format.md so the
         consumer's contract is greppable."""
@@ -899,9 +806,7 @@ class TestAutomatedReviewCiSignalAndOverflow:
             'pr-comment-overflow contract must document the resolution lifecycle (pending until subsequent iteration processes them)'
         )
 
-    def test_pr_comment_overflow_is_non_blocking(
-        self, jsonl_format_text: str
-    ):
+    def test_pr_comment_overflow_is_non_blocking(self, jsonl_format_text: str):
         """``pr-comment-overflow`` MUST be documented as non-blocking — the
         deferred work is handled by ``loop_back`` re-entry, not by gating the
         phase boundary. Marking it blocking would defeat the whole point of
@@ -939,44 +844,16 @@ class TestAutomatedReviewCiSignalAndOverflow:
 
 
 _CONFIG_DEFAULTS_PY = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-config'
-    / 'scripts'
-    / '_config_defaults.py'
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'manage-config' / 'scripts' / '_config_defaults.py'
 )
-_EXECUTION_WORKFLOW_MD = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'plan-marshall'
-    / 'workflow'
-    / 'execution.md'
-)
+_EXECUTION_WORKFLOW_MD = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-marshall' / 'workflow' / 'execution.md'
 _PHASE_LIFECYCLE_MD = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'ref-workflow-architecture'
-    / 'standards'
-    / 'phase-lifecycle.md'
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'ref-workflow-architecture' / 'standards' / 'phase-lifecycle.md'
 )
 _MARSHAL_JSON_REFERENCE_MD = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'extension-api'
-    / 'standards'
-    / 'marshal-json-reference.md'
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'extension-api' / 'standards' / 'marshal-json-reference.md'
 )
-_MANAGE_CONFIG_SKILL_MD = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-config'
-    / 'SKILL.md'
-)
+_MANAGE_CONFIG_SKILL_MD = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'manage-config' / 'SKILL.md'
 
 
 class TestLoopBackWithoutAskingContract:
@@ -1029,9 +906,7 @@ class TestLoopBackWithoutAskingContract:
 
     # ---- Defaults surface ------------------------------------------------
 
-    def test_loop_back_without_asking_default_is_true(
-        self, config_defaults_text: str
-    ):
+    def test_loop_back_without_asking_default_is_true(self, config_defaults_text: str):
         """``loop_back_without_asking`` MUST default to ``True`` — the
         symmetric counterpart of ``finalize_without_asking=True``. A
         finalize-side fix is corrective work inside a plan the user already
@@ -1042,12 +917,12 @@ class TestLoopBackWithoutAskingContract:
         its owning phase."""
         # Locate the DEFAULT_PLAN_FINALIZE block and confirm the field is
         # declared with default True.
-        assert "DEFAULT_PLAN_FINALIZE = {" in config_defaults_text, (
+        assert 'DEFAULT_PLAN_FINALIZE = {' in config_defaults_text, (
             'DEFAULT_PLAN_FINALIZE block must exist in _config_defaults.py'
         )
-        block_start = config_defaults_text.index("DEFAULT_PLAN_FINALIZE = {")
+        block_start = config_defaults_text.index('DEFAULT_PLAN_FINALIZE = {')
         # Find the closing brace of the dict literal.
-        block_end = config_defaults_text.index("\n}\n", block_start)
+        block_end = config_defaults_text.index('\n}\n', block_start)
         block = config_defaults_text[block_start : block_end + 3]
         # The field MUST be present and default to True in the finalize block.
         assert "'loop_back_without_asking': True" in block, (
@@ -1058,9 +933,7 @@ class TestLoopBackWithoutAskingContract:
             'DEFAULT_CEREMONY_POLICY must be gone after the ceremony_policy dissolution'
         )
 
-    def test_loop_back_field_read_through_phase_get(
-        self, manage_config_skill_text: str
-    ):
+    def test_loop_back_field_read_through_phase_get(self, manage_config_skill_text: str):
         """The field MUST be readable via the standard
         ``plan phase-6-finalize get --field loop_back_without_asking`` shape
         (the distributed runtime read surface). The SKILL.md must document the
@@ -1077,9 +950,7 @@ class TestLoopBackWithoutAskingContract:
 
     # ---- SKILL.md dispatch loop documentation ----------------------------
 
-    def test_phase_6_skill_md_documents_loop_back_continuation_hook(
-        self, phase_6_skill_md_text: str
-    ):
+    def test_phase_6_skill_md_documents_loop_back_continuation_hook(self, phase_6_skill_md_text: str):
         """``phase-6-finalize/SKILL.md`` Step 3 MUST declare a "Loop-back
         continuation hook" that fires when a step's recorded outcome is
         ``loop_back``."""
@@ -1096,9 +967,7 @@ class TestLoopBackWithoutAskingContract:
             'Loop-back continuation hook must appear inside the Step 3 dispatch loop body, not somewhere else'
         )
 
-    def test_phase_6_skill_md_documents_flag_unset_halt(
-        self, phase_6_skill_md_text: str
-    ):
+    def test_phase_6_skill_md_documents_flag_unset_halt(self, phase_6_skill_md_text: str):
         """When ``loop_back_without_asking == false`` (default), the
         dispatcher MUST halt the FOR loop and return control to the user —
         no inline re-dispatch."""
@@ -1113,9 +982,7 @@ class TestLoopBackWithoutAskingContract:
             'SKILL.md must document the flag-unset halt-and-return-to-user behaviour'
         )
 
-    def test_phase_6_skill_md_documents_flag_set_inline_dispatch(
-        self, phase_6_skill_md_text: str
-    ):
+    def test_phase_6_skill_md_documents_flag_set_inline_dispatch(self, phase_6_skill_md_text: str):
         """When ``loop_back_without_asking == true``, the dispatcher MUST
         re-dispatch the execute pipeline inline (Skill: phase-5-execute) and
         re-enter the FOR loop."""
@@ -1130,27 +997,21 @@ class TestLoopBackWithoutAskingContract:
             'SKILL.md flag-set branch must document re-entering the FOR loop after the inline execute returns'
         )
 
-    def test_phase_6_skill_md_documents_max_iterations_cap(
-        self, phase_6_skill_md_text: str
-    ):
+    def test_phase_6_skill_md_documents_max_iterations_cap(self, phase_6_skill_md_text: str):
         """The loop-back hook MUST cap the inline re-entry at
         ``phase-6-finalize.max_iterations`` (default 3). Beyond that, the
         dispatcher halts and prompts the user EVEN WITH the flag set — the
         ceiling is the structural safety valve."""
         text = phase_6_skill_md_text
         # The cap-reached branch must reference max_iterations.
-        assert 'max_iterations' in text, (
-            'SKILL.md hook must reference max_iterations as the loop-back ceiling'
-        )
+        assert 'max_iterations' in text, 'SKILL.md hook must reference max_iterations as the loop-back ceiling'
         # And must explicitly halt-and-prompt on cap exhaustion.
         text_lower = text.lower()
         assert 'ceiling' in text_lower or 'cap' in text_lower, (
             'SKILL.md hook must document the cap as a structural safety valve'
         )
 
-    def test_phase_6_skill_md_documents_iteration_log_line(
-        self, phase_6_skill_md_text: str
-    ):
+    def test_phase_6_skill_md_documents_iteration_log_line(self, phase_6_skill_md_text: str):
         """The canonical ``[STATUS] Loop-back iteration {N}/{max}`` work-log
         line MUST be documented so retrospective analysis can grep for it.
 
@@ -1162,18 +1023,14 @@ class TestLoopBackWithoutAskingContract:
         # The literal line shape — substring match (the runtime substitutes
         # the placeholders).
         assert '[STATUS]' in text, 'SKILL.md must use the canonical [STATUS] log marker'
-        assert 'Loop-back iteration' in text, (
-            'SKILL.md must document the "Loop-back iteration" log-line text'
-        )
+        assert 'Loop-back iteration' in text, 'SKILL.md must document the "Loop-back iteration" log-line text'
         # The {N}/{max} shape must be visible (placeholders or actual count
         # syntax), in either the admission form or the plain-counter form.
         assert (
             '{loop_back_iteration + 1}/{max_iterations}' in text
             or '{loop_back_iteration}/{max_iterations}' in text
             or '{N}/{max}' in text
-        ), (
-            'SKILL.md must show the iteration counter shape ({N}/{max} or named placeholders)'
-        )
+        ), 'SKILL.md must show the iteration counter shape ({N}/{max} or named placeholders)'
 
     # ---- Ceiling enforceability (persisted counter + admission boundary) ---
     #
@@ -1202,9 +1059,7 @@ class TestLoopBackWithoutAskingContract:
         assert section.strip(), 'Loop-back hook section resolved empty'
         return section
 
-    def test_loop_back_iteration_counter_is_persisted_not_in_model_context(
-        self, phase_6_skill_md_text: str
-    ):
+    def test_loop_back_iteration_counter_is_persisted_not_in_model_context(self, phase_6_skill_md_text: str):
         """The counter MUST live in status metadata, not in model context.
 
         An in-memory counter is reset by every session restart, every phase
@@ -1222,8 +1077,7 @@ class TestLoopBackWithoutAskingContract:
             'manage-status metadata --set --field loop_back_iteration'
         )
         assert '--get --field loop_back_iteration' in text, (
-            'SKILL.md must document reading the count back via '
-            'manage-status metadata --get --field loop_back_iteration'
+            'SKILL.md must document reading the count back via manage-status metadata --get --field loop_back_iteration'
         )
         # The retired model-context claims must NOT survive anywhere in the doc.
         for retired in (
@@ -1236,9 +1090,7 @@ class TestLoopBackWithoutAskingContract:
                 'the durable-count contract the ceiling depends on'
             )
 
-    def test_ceiling_is_consulted_before_the_knob_on_both_branches(
-        self, phase_6_skill_md_text: str
-    ):
+    def test_ceiling_is_consulted_before_the_knob_on_both_branches(self, phase_6_skill_md_text: str):
         """The ceiling gate MUST precede the ``loop_back_without_asking`` read.
 
         Position IS the contract here: a ceiling evaluated after the knob read,
@@ -1253,9 +1105,7 @@ class TestLoopBackWithoutAskingContract:
         # would assert nothing about where the gate actually runs. The gate is
         # the admission comparison; the knob consult is its config read.
         ceiling_at = section.find('Ceiling admission gate')
-        knob_at = section.find(
-            'plan phase-6-finalize get --field loop_back_without_asking'
-        )
+        knob_at = section.find('plan phase-6-finalize get --field loop_back_without_asking')
 
         assert ceiling_at != -1, (
             'The loop-back hook declares no "Ceiling admission gate" — the '
@@ -1277,9 +1127,7 @@ class TestLoopBackWithoutAskingContract:
             'branches, so a later edit cannot re-nest it under one'
         )
 
-    def test_ceiling_breach_message_is_distinct_from_the_ordinary_halt(
-        self, phase_6_skill_md_text: str
-    ):
+    def test_ceiling_breach_message_is_distinct_from_the_ordinary_halt(self, phase_6_skill_md_text: str):
         """A refused loop-back MUST NOT read as an ordinary halt-and-prompt.
 
         The two outcomes mean different things — "a loop-back awaits your
@@ -1288,12 +1136,9 @@ class TestLoopBackWithoutAskingContract:
         """
         section = self._loop_back_hook_section(phase_6_skill_md_text)
 
-        assert 'Loop-back ceiling breached' in section, (
-            'The breach path must carry its own distinct message marker'
-        )
+        assert 'Loop-back ceiling breached' in section, 'The breach path must carry its own distinct message marker'
         assert 'refusing to admit' in section, (
-            'The breach message must state that the iteration was REFUSED, not '
-            'merely that the run paused'
+            'The breach message must state that the iteration was REFUSED, not merely that the run paused'
         )
         # The consequence the breach message must additionally state.
         section_lower = section.lower()
@@ -1308,9 +1153,7 @@ class TestLoopBackWithoutAskingContract:
             'outcomes are genuinely distinguishable rather than collapsed'
         )
 
-    def test_phase_6_skill_md_documents_truth_table(
-        self, phase_6_skill_md_text: str
-    ):
+    def test_phase_6_skill_md_documents_truth_table(self, phase_6_skill_md_text: str):
         """The four-corner truth table for the symmetric flag pair MUST be
         documented so the interaction with ``finalize_without_asking`` is
         explicit (forward + reverse)."""
@@ -1327,9 +1170,7 @@ class TestLoopBackWithoutAskingContract:
 
     # ---- workflow/execution.md "Loop-back continuation" subsection -----
 
-    def test_execution_workflow_has_loop_back_continuation_subsection(
-        self, execution_workflow_text: str
-    ):
+    def test_execution_workflow_has_loop_back_continuation_subsection(self, execution_workflow_text: str):
         """``plan-marshall/workflow/execution.md`` MUST carry a "Loop-back
         continuation" subsection that mirrors the existing forward
         ``finalize_without_asking`` block."""
@@ -1344,9 +1185,7 @@ class TestLoopBackWithoutAskingContract:
             'Loop-back continuation must appear inside the Finalize Phase region of execution.md'
         )
 
-    def test_execution_workflow_documents_both_branches(
-        self, execution_workflow_text: str
-    ):
+    def test_execution_workflow_documents_both_branches(self, execution_workflow_text: str):
         """The "Loop-back continuation" subsection MUST document both the
         flag-set (auto-continue) and flag-unset (STOP and prompt) branches —
         the same shape as the forward ``finalize_without_asking`` block."""
@@ -1367,17 +1206,11 @@ class TestLoopBackWithoutAskingContract:
             'Loop-back continuation must document the flag-unset branch'
         )
         # Halt marker for the flag-unset branch.
-        assert 'stop' in text_lower, (
-            'Flag-unset branch must explicitly STOP rather than continuing'
-        )
+        assert 'stop' in text_lower, 'Flag-unset branch must explicitly STOP rather than continuing'
         # Auto-continue marker for the flag-set branch.
-        assert 'auto-continu' in text_lower, (
-            'Flag-set branch must reference auto-continuation'
-        )
+        assert 'auto-continu' in text_lower, 'Flag-set branch must reference auto-continuation'
 
-    def test_execution_workflow_documents_double_gate(
-        self, execution_workflow_text: str
-    ):
+    def test_execution_workflow_documents_double_gate(self, execution_workflow_text: str):
         """The Loop-back continuation subsection MUST document that symmetric
         loop-back is doubly-gated by both flags in series — both
         ``loop_back_without_asking`` AND ``finalize_without_asking`` must be
@@ -1397,9 +1230,7 @@ class TestLoopBackWithoutAskingContract:
 
     # ---- Sibling notes in cross-references --------------------------------
 
-    def test_phase_lifecycle_mentions_loop_back_alongside_forward_gates(
-        self, phase_lifecycle_text: str
-    ):
+    def test_phase_lifecycle_mentions_loop_back_alongside_forward_gates(self, phase_lifecycle_text: str):
         """``ref-workflow-architecture/standards/phase-lifecycle.md`` MUST
         mention ``loop_back_without_asking`` alongside the existing forward
         gates (``plan_without_asking`` / ``execute_without_asking`` /
@@ -1414,13 +1245,10 @@ class TestLoopBackWithoutAskingContract:
         loopback_idx = text.index('loop_back_without_asking')
         # Within ~600 characters of the existing gates list.
         assert abs(loopback_idx - gates_idx) < 600, (
-            'loop_back_without_asking must be documented next to the existing review gates, '
-            'not in an unrelated section'
+            'loop_back_without_asking must be documented next to the existing review gates, not in an unrelated section'
         )
 
-    def test_marshal_json_reference_registers_the_field(
-        self, marshal_reference_text: str
-    ):
+    def test_marshal_json_reference_registers_the_field(self, marshal_reference_text: str):
         """``extension-api/standards/marshal-json-reference.md`` MUST register
         ``plan.phase-6-finalize.loop_back_without_asking`` near the existing
         ``finalize_without_asking`` row.

@@ -32,7 +32,9 @@ from typing import Any
 
 from conftest import load_script_module, parse_ns
 
-_architecture_core = load_script_module('plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core')
+_architecture_core = load_script_module(
+    'plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core'
+)
 _cmd_client = load_script_module('plan-marshall', 'manage-architecture', '_cmd_client.py', '_cmd_client')
 _architecture = load_script_module('plan-marshall', 'manage-architecture', 'architecture.py', 'architecture')
 
@@ -71,8 +73,14 @@ def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
 #: call, and ``register=False`` so it cannot displace the ``architecture``
 #: registration this module performs above.
 _DIFF_MODULES_ARGS = parse_ns(
-    _ARCH_BUNDLE, _ARCH_SKILL, _ARCH_SCRIPT,
-    '--project-dir', '.', 'diff-modules', '--pre', '.',
+    _ARCH_BUNDLE,
+    _ARCH_SKILL,
+    _ARCH_SCRIPT,
+    '--project-dir',
+    '.',
+    'diff-modules',
+    '--pre',
+    '.',
     register=False,
 )
 

@@ -186,9 +186,7 @@ _SKILL_SECTION_HEADING = '## Dispatched workflows vs inline steps'
 #: emission-contract citation in THAT document lies inside this section. It never
 #: bounded the sweep's population, which is the whole skill directory — see
 #: ``_SECTION_SCOPED_DOCS``.
-_SKILL_STEP3_HEADING = (
-    '### Step 3: Execute Step Pipeline (Manifest-Driven, Resumable, Timeout-Wrapped)'
-)
+_SKILL_STEP3_HEADING = '### Step 3: Execute Step Pipeline (Manifest-Driven, Resumable, Timeout-Wrapped)'
 
 #: Terminate the Step-3 scope at the next ``### `` step heading as well as at
 #: the next ``## `` heading. The bare ``('## ',)`` default does NOT stop at
@@ -230,9 +228,7 @@ _SPELLED_CARDINALS = (
 #: is unchanged; the alternation is what closes the blind spot that let BOTH
 #: newly-covered HEAD-dependent sites survive every previous sweep — they spelled
 #: their count as "six", and ``\b\d+`` cannot see a word.
-_COUNT_BEFORE_STEPS = re.compile(
-    rf'\b(?:\d+|{_SPELLED_CARDINALS})\s[\w\s+]{{0,40}}?\bsteps?\b', re.IGNORECASE
-)
+_COUNT_BEFORE_STEPS = re.compile(rf'\b(?:\d+|{_SPELLED_CARDINALS})\s[\w\s+]{{0,40}}?\bsteps?\b', re.IGNORECASE)
 _COUNT_BOLD_CLASSIFIER = re.compile(r'\d+\s+(?:dispatch|run\s+inline|inline)\b', re.IGNORECASE)
 _COUNT_RATIO = re.compile(r'\b\d+\s*/\s*\d+\s+roster\b', re.IGNORECASE)
 
@@ -330,9 +326,7 @@ _TERMINATION_CAUSE_FLAG = re.compile(r'--termination-cause\s+\{([^}]+)\}')
 #: The boundary-recording invocation the ``--termination-cause`` flag belongs to.
 #: Asserted present so a renamed verb fails loudly rather than leaving the sweep
 #: reading an alternation that no longer governs anything.
-_BOUNDARY_RECORD_COMMAND = (
-    'plan-marshall:manage-metrics:manage-metrics record-dispatch-boundary'
-)
+_BOUNDARY_RECORD_COMMAND = 'plan-marshall:manage-metrics:manage-metrics record-dispatch-boundary'
 
 #: The five causes, in the order the contract declares them. This tuple is the
 #: INDEPENDENT oracle — it is copied from the specification, not derived from the
@@ -413,9 +407,7 @@ def _row_declares_resolver_lookup(row: str) -> bool:
     return bool(_RESOLVER_LOOKUP.search(row))
 
 
-def _blank_outside_section(
-    text: str, heading: str, stop_prefixes: tuple[str, ...]
-) -> str:
+def _blank_outside_section(text: str, heading: str, stop_prefixes: tuple[str, ...]) -> str:
     """Return ``text`` with every line outside the named section blanked.
 
     Blanking rather than slicing keeps the line count — and therefore every
@@ -430,9 +422,7 @@ def _blank_outside_section(
     """
     lines = text.splitlines()
     section = section_lines(text, heading, stop_prefixes=stop_prefixes)
-    heading_index = next(
-        index for index, line in enumerate(lines) if line.strip() == heading
-    )
+    heading_index = next(index for index, line in enumerate(lines) if line.strip() == heading)
     start = heading_index + 1
     scoped = [''] * len(lines)
     scoped[start : start + len(section)] = section
@@ -541,17 +531,12 @@ def _head_dependent_region() -> str:
     a vacuously-empty sweep is the failure mode this guard exists to prevent.
     """
     text = _SKILL_DOC.read_text(encoding='utf-8')
-    section = section_lines(
-        text, _SKILL_STEP3_HEADING, stop_prefixes=_SKILL_SECTION_STOP_PREFIXES
-    )
+    section = section_lines(text, _SKILL_STEP3_HEADING, stop_prefixes=_SKILL_SECTION_STOP_PREFIXES)
     assert section, (
-        f'SKILL.md section {_SKILL_STEP3_HEADING!r} parsed empty — the '
-        'HEAD-dependent sweep would be vacuous.'
+        f'SKILL.md section {_SKILL_STEP3_HEADING!r} parsed empty — the HEAD-dependent sweep would be vacuous.'
     )
 
-    start = next(
-        (i for i, line in enumerate(section) if _HEAD_DEP_BLOCK_START in line), None
-    )
+    start = next((i for i, line in enumerate(section) if _HEAD_DEP_BLOCK_START in line), None)
     assert start is not None, (
         f'Marker {_HEAD_DEP_BLOCK_START!r} not found in § {_SKILL_STEP3_HEADING!r}. '
         'The HEAD-dependent special-case block was renamed or removed — fix the '
@@ -604,9 +589,7 @@ def _continued_command_span(lines: list[str], index: int) -> str:
 def _seam_resolve_sites(lines: list[str]) -> list[tuple[int, str]]:
     """Return ``(line_index, whole_invocation_text)`` per ``effort resolve-target`` call."""
     return [
-        (index, _continued_command_span(lines, index))
-        for index, line in enumerate(lines)
-        if _SEAM_RESOLVE.search(line)
+        (index, _continued_command_span(lines, index)) for index, line in enumerate(lines) if _SEAM_RESOLVE.search(line)
     ]
 
 
@@ -753,9 +736,7 @@ def _step_doc_claims(
     claims: list[tuple[str, str, str]] = []
     findings: list[str] = []
     for path in _finalize_step_doc_paths() if paths is None else paths:
-        claim, finding = _classify_discovered_doc(
-            str(path), path.read_text(encoding='utf-8'), registered
-        )
+        claim, finding = _classify_discovered_doc(str(path), path.read_text(encoding='utf-8'), registered)
         if claim is not None:
             claims.append(claim)
         if finding is not None:
@@ -836,9 +817,7 @@ def _classification_mismatches(
     """
     mismatches: list[str] = []
     for rel, key, claim in claims:
-        expected, opposite = (
-            (inline, dispatched) if claim == 'inline' else (dispatched, inline)
-        )
+        expected, opposite = (inline, dispatched) if claim == 'inline' else (dispatched, inline)
         if key in expected and key not in opposite:
             continue
         mismatches.append(
@@ -869,9 +848,7 @@ def test_every_registered_step_is_classified_exactly_once():
         f'in dispatch-inline-split.md: {sorted(unclassified)}'
     )
     ghosts = classified - registered
-    assert not ghosts, (
-        f'Roster rows that name no registered finalize step: {sorted(ghosts)}'
-    )
+    assert not ghosts, f'Roster rows that name no registered finalize step: {sorted(ghosts)}'
     assert classified == registered
 
 
@@ -881,10 +858,7 @@ def test_roster_lists_are_disjoint():
 
     overlap = set(dispatched) & set(inline)
 
-    assert not overlap, (
-        f'Steps classified BOTH dispatched and inline (exactly one required): '
-        f'{sorted(overlap)}'
-    )
+    assert not overlap, f'Steps classified BOTH dispatched and inline (exactly one required): {sorted(overlap)}'
 
 
 def test_roster_rows_carry_no_duplicates():
@@ -929,10 +903,7 @@ def test_skill_dispatch_section_carries_no_step_count_claim():
 
     hits = _count_claims(section)
 
-    assert not hits, (
-        f'Step-count claim(s) reintroduced into the SKILL.md '
-        f'"{_SKILL_SECTION_HEADING}" section: {hits}'
-    )
+    assert not hits, f'Step-count claim(s) reintroduced into the SKILL.md "{_SKILL_SECTION_HEADING}" section: {hits}'
 
 
 def test_skill_head_dependent_region_carries_no_step_count_claim():
@@ -972,9 +943,7 @@ def test_count_claim_patterns_detect_the_pre_fix_prose():
     ]
 
     for sample in pre_fix_samples:
-        assert _count_claims(sample), (
-            f'Count-claim sweep failed to detect known pre-fix prose: {sample!r}'
-        )
+        assert _count_claims(sample), f'Count-claim sweep failed to detect known pre-fix prose: {sample!r}'
 
 
 def test_count_claim_patterns_do_not_fire_on_ordinary_cardinal_prose():
@@ -1027,9 +996,7 @@ def test_every_dispatched_roster_row_declares_a_resolver_lookup():
 def test_roster_row_population_matches_the_closure_parser():
     # Guards the new parser against silently reading a different population than
     # the closure assertions do — a divergence would make (d) cover a subset.
-    assert [key for key, _ in _roster_rows(_DISPATCHED_HEADING)] == _roster(
-        _DISPATCHED_HEADING
-    )
+    assert [key for key, _ in _roster_rows(_DISPATCHED_HEADING)] == _roster(_DISPATCHED_HEADING)
 
 
 # ---------------------------------------------------------------------------
@@ -1074,9 +1041,7 @@ def test_every_task_spawn_is_preceded_by_a_seam_resolve():
         f'no `Task:` spawn found under {_SKILL_DIR} — the assertion would be vacuous'
     )
 
-    unpaired = [
-        f'{rel}: {hit}' for rel, text in corpus for hit in _spawns_missing_seam_resolve(text)
-    ]
+    unpaired = [f'{rel}: {hit}' for rel, text in corpus for hit in _spawns_missing_seam_resolve(text)]
 
     assert not unpaired, (
         f'`Task:` spawn(s) under the finalize skill with no preceding '
@@ -1092,9 +1057,7 @@ def test_no_hand_written_dispatch_emit_survives():
     # per-role blind spot the seam closes. No dispatch branch may carry one.
     corpus = _seam_sweep_corpus()
 
-    hand_written = [
-        f'{rel}: {hit}' for rel, text in corpus for hit in _hand_written_dispatch_emits(text)
-    ]
+    hand_written = [f'{rel}: {hit}' for rel, text in corpus for hit in _hand_written_dispatch_emits(text)]
 
     assert not hand_written, (
         f'Hand-written `--message "[DISPATCH] …"` emit(s) under the finalize skill '
@@ -1113,7 +1076,7 @@ def test_resolver_lookup_detector_fires_on_the_pre_fix_row():
     # rejects the exact lookup-less rows this deliverable completed.
     pre_fix_rows = [
         '- `project:finalize-step-lessons-housekeeping` — `mode: workflow`; reasons '
-        'from the just-finished plan\'s outcome about the lessons corpus (remove / '
+        "from the just-finished plan's outcome about the lessons corpus (remove / "
         'promote-then-retire / trim), so it earns an envelope',
         '- `project:finalize-step-review-retrospective` — `mode: workflow`; hybrid by '
         'construction — a deterministic per-reviewer metrics pass augmented by an LLM '
@@ -1133,9 +1096,7 @@ def test_resolver_lookup_detector_fires_on_the_pre_fix_row():
         'verification-feedback` (`producer=plugin-doctor` runtime input)',
     ]
     for row in post_fix_rows:
-        assert _row_declares_resolver_lookup(row), (
-            f'Resolver-lookup detector rejected a valid post-fix row: {row!r}'
-        )
+        assert _row_declares_resolver_lookup(row), f'Resolver-lookup detector rejected a valid post-fix row: {row!r}'
 
 
 def test_seam_resolve_detectors_fire_on_the_pre_fix_shape():
@@ -1251,24 +1212,19 @@ def test_hand_written_emit_detector_fires_on_the_single_quoted_form():
     )
 
     assert _hand_written_dispatch_emits(single_quoted), (
-        "Hand-written-emit detector failed to flag a single-quoted --message "
+        'Hand-written-emit detector failed to flag a single-quoted --message '
         "'[DISPATCH] …' line — shell-valid, and the exact shape that slipped past "
         'the double-quote-only pattern'
     )
 
     # The double-quoted form stays covered — the widening adds a shape, it does not
     # trade one for the other.
-    double_quoted = single_quoted.replace("'[DISPATCH]", '"[DISPATCH]').replace(
-        "role={role}'", 'role={role}"'
-    )
+    double_quoted = single_quoted.replace("'[DISPATCH]", '"[DISPATCH]').replace("role={role}'", 'role={role}"')
     assert _hand_written_dispatch_emits(double_quoted)
 
     # Negative control — prose ABOUT the flag, with no --message argument, is not an
     # emit site. A detector that fired here would have to be suppressed to stay green.
-    prose = (
-        '            The resolve seam owns the emission; a hand-written [DISPATCH] '
-        'line double-emits.'
-    )
+    prose = '            The resolve seam owns the emission; a hand-written [DISPATCH] line double-emits.'
     assert not _hand_written_dispatch_emits(prose)
 
 
@@ -1285,13 +1241,10 @@ def test_finalize_step_registry_population_is_non_empty_and_readable():
     paths = _finalize_step_doc_paths()
 
     assert paths, (
-        'find_implementors discovered no finalize-step docs — the cross-document '
-        'consistency sweep would be vacuous'
+        'find_implementors discovered no finalize-step docs — the cross-document consistency sweep would be vacuous'
     )
     missing = [str(path) for path in paths if not path.exists()]
-    assert not missing, (
-        f'Discovered finalize-step doc(s) do not exist on disk: {missing}'
-    )
+    assert not missing, f'Discovered finalize-step doc(s) do not exist on disk: {missing}'
 
 
 def test_touched_step_docs_agree_with_the_roster_classification():
@@ -1309,9 +1262,7 @@ def test_touched_step_docs_agree_with_the_roster_classification():
     )
 
     # Act
-    mismatches = _classification_mismatches(
-        claims, set(_roster(_DISPATCHED_HEADING)), set(_roster(_INLINE_HEADING))
-    )
+    mismatches = _classification_mismatches(claims, set(_roster(_DISPATCHED_HEADING)), set(_roster(_INLINE_HEADING)))
 
     # Assert
     assert not mismatches, (
@@ -1372,9 +1323,7 @@ def test_unregistered_self_classifying_docs_are_reported_as_registry_absence():
     _claims, findings = _step_doc_claims()
 
     for finding in findings:
-        assert 'registry absence' in finding, (
-            f'registry-absence finding does not name the condition: {finding!r}'
-        )
+        assert 'registry absence' in finding, f'registry-absence finding does not name the condition: {finding!r}'
         assert 'contributes no comparison' in finding, (
             f'registry-absence finding does not name its consequence: {finding!r}'
         )
@@ -1438,8 +1387,7 @@ def test_self_classification_detector_matches_the_step_doc_sentence():
     match = _SELF_CLASSIFICATION.search(sentence)
 
     assert match is not None, (
-        'Self-classification detector failed to match architecture-refresh.md\'s '
-        'canonical inline sentence'
+        "Self-classification detector failed to match architecture-refresh.md's canonical inline sentence"
     )
     assert match.group(1) == 'inline'
 
@@ -1457,8 +1405,7 @@ def test_self_classification_detector_matches_the_step_doc_sentence():
     ]
     for narrative in narrative_not_a_claim:
         assert _SELF_CLASSIFICATION.search(narrative) is None, (
-            f'Self-classification detector read narrative prose as a classification '
-            f'claim: {narrative!r}'
+            f'Self-classification detector read narrative prose as a classification claim: {narrative!r}'
         )
 
 
@@ -1492,8 +1439,7 @@ def test_cross_document_consistency_detector_fires_on_the_pre_fix_shape():
 
     claims = [
         (
-            'marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/'
-            'architecture-refresh.md',
+            'marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/architecture-refresh.md',
             'default:architecture-refresh',
             'inline',
         )
@@ -1551,7 +1497,7 @@ def test_step_5c_declares_the_five_termination_causes_in_order():
     causes = _termination_causes_in_command(text)
 
     assert tuple(causes) == _TERMINATION_CAUSES, (
-        f'item 5c\'s `--termination-cause` alternation is {causes}, expected '
+        f"item 5c's `--termination-cause` alternation is {causes}, expected "
         f'{list(_TERMINATION_CAUSES)}. A findings-bearing `loop_back` must classify '
         'as `returned_with_findings`, never as `error`.'
     )
@@ -1570,12 +1516,9 @@ def test_step_5c_classification_table_matches_the_command_string():
     table_causes = [cause for cause, _rule in rows]
 
     duplicates = {cause for cause in table_causes if table_causes.count(cause) > 1}
-    assert not duplicates, (
-        f'item 5c\'s classification table carries duplicate cause row(s): '
-        f'{sorted(duplicates)}'
-    )
+    assert not duplicates, f"item 5c's classification table carries duplicate cause row(s): {sorted(duplicates)}"
     assert table_causes == _termination_causes_in_command(text), (
-        f'item 5c\'s classification table lists {table_causes}, while its '
+        f"item 5c's classification table lists {table_causes}, while its "
         f'`--termination-cause` alternation accepts {_termination_causes_in_command(text)} '
         '— the two surfaces are one contract and must agree in membership AND order'
     )
@@ -1602,7 +1545,7 @@ def test_step_5c_routes_a_findings_bearing_loop_back_away_from_error():
                 missing.append(f'{cause}: detection rule does not state {token!r}')
 
     assert not missing, (
-        'item 5c\'s classification contract no longer routes as specified — a '
+        "item 5c's classification contract no longer routes as specified — a "
         'findings-bearing `loop_back` stamped `error` grades a working gate as a '
         f'defect, which is the silent revert this test exists to catch: {missing}'
     )
@@ -1628,8 +1571,7 @@ def test_step_5c_detectors_fire_on_the_pre_fix_four_cause_block():
             '`AskUserQuestion` review gate that halted dispatch. |',
             '      | `blocked_session_restart` | The dispatch was cut short by a '
             'session restart, harness cancellation, or the per-agent timeout. |',
-            '      | `error` | The dispatched step recorded `outcome: failed` or '
-            '`outcome: loop_back`. |',
+            '      | `error` | The dispatched step recorded `outcome: failed` or `outcome: loop_back`. |',
             '',
             '         python3 .plan/execute-script.py '
             'plan-marshall:manage-metrics:manage-metrics record-dispatch-boundary \\',
@@ -1640,19 +1582,16 @@ def test_step_5c_detectors_fire_on_the_pre_fix_four_cause_block():
 
     pre_fix_causes = _termination_causes_in_command(pre_fix)
     assert tuple(pre_fix_causes) != _TERMINATION_CAUSES, (
-        'the order/membership detector failed to reject the pre-fix four-cause '
-        'alternation'
+        'the order/membership detector failed to reject the pre-fix four-cause alternation'
     )
     assert 'returned_with_findings' not in pre_fix_causes
 
     pre_fix_rules = dict(_termination_cause_rows(pre_fix))
     assert 'returned_with_findings' not in pre_fix_rules, (
-        'the table parser invented a `returned_with_findings` row the pre-fix block '
-        'does not contain'
+        'the table parser invented a `returned_with_findings` row the pre-fix block does not contain'
     )
     assert '`outcome: loop_back`' in pre_fix_rules['error'], (
-        'fixture sanity: the pre-fix block must fold `loop_back` into `error`, or the '
-        'guard proves nothing'
+        'fixture sanity: the pre-fix block must fold `loop_back` into `error`, or the guard proves nothing'
     )
     assert _CROSS_LEDGER_SENTENCE not in pre_fix
 
@@ -1674,6 +1613,4 @@ def test_step_5c_detectors_fire_on_the_pre_fix_four_cause_block():
         ]
     )
     assert tuple(_termination_causes_in_command(post_fix)) == _TERMINATION_CAUSES
-    assert [cause for cause, _rule in _termination_cause_rows(post_fix)] == list(
-        _TERMINATION_CAUSES
-    )
+    assert [cause for cause, _rule in _termination_cause_rows(post_fix)] == list(_TERMINATION_CAUSES)

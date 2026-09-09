@@ -23,7 +23,6 @@ sections pin the subcommand's own contract:
   (f) the artifact's TOON layout is parseable by the parse_toon helper.
 """
 
-
 from __future__ import annotations
 
 from argparse import Namespace

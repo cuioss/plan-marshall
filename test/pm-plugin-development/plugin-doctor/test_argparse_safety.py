@@ -292,6 +292,8 @@ def test_findings_byte_identical_with_and_without_cache(tmp_path):
         return sorted((Path(f['file']).name, f['line'], f['call']) for f in findings)
 
     assert _key(without_cache) == _key(with_cache)
-    assert _key(with_cache) == [('bad.py', 2, 'ArgumentParser'),
-                                ('emitter.py', 2, 'ArgumentParser'),
-                                ('generate.py', 2, 'ArgumentParser')]
+    assert _key(with_cache) == [
+        ('bad.py', 2, 'ArgumentParser'),
+        ('emitter.py', 2, 'ArgumentParser'),
+        ('generate.py', 2, 'ArgumentParser'),
+    ]

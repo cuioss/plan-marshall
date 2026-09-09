@@ -59,9 +59,7 @@ DEFAULT_PHASE_6_STEPS = _mem.DEFAULT_PHASE_6_STEPS
 # Step-ownership routing primitives live in _manifest_core (loaded directly:
 # the hyphenated entry does not re-export them). See the "Step ownership"
 # section in _manifest_core.py.
-_core = load_script_module(
-    'plan-marshall', 'manage-execution-manifest', '_manifest_core.py', module_name='_mem_core'
-)
+_core = load_script_module('plan-marshall', 'manage-execution-manifest', '_manifest_core.py', module_name='_mem_core')
 owner_of = _core.owner_of
 is_leaf_dispatchable = _core.is_leaf_dispatchable
 validate_step_owner = _core.validate_step_owner
@@ -123,10 +121,14 @@ def _record_ns(
     """
     argv = [
         'record-step',
-        '--plan-id', plan_id,
-        '--step-id', step_id,
-        '--phase', phase,
-        '--outcome', outcome,
+        '--plan-id',
+        plan_id,
+        '--step-id',
+        step_id,
+        '--phase',
+        phase,
+        '--outcome',
+        outcome,
     ]
     for flag, value in (
         ('--total-tokens', total_tokens),
@@ -210,9 +212,7 @@ def test_record_skipped_appends_row(plan_context):
     """A skipped step records a row with the skipped outcome."""
     _compose('rec-skip')
 
-    result = cmd_record_step(
-        _record_ns(plan_id='rec-skip', step_id='verify:coverage', outcome='skipped')
-    )
+    result = cmd_record_step(_record_ns(plan_id='rec-skip', step_id='verify:coverage', outcome='skipped'))
 
     assert result is not None and result['status'] == 'success'
     assert result['outcome'] == 'skipped'
@@ -225,9 +225,7 @@ def test_record_error_outcome_appends_row(plan_context):
     """An error step records a row with the error outcome."""
     _compose('rec-error')
 
-    result = cmd_record_step(
-        _record_ns(plan_id='rec-error', step_id='ci-verify', phase='6-finalize', outcome='error')
-    )
+    result = cmd_record_step(_record_ns(plan_id='rec-error', step_id='ci-verify', phase='6-finalize', outcome='error'))
 
     assert result is not None and result['status'] == 'success'
     assert result['outcome'] == 'error'
@@ -267,9 +265,7 @@ def test_omitted_flags_record_the_unmeasured_token(plan_context):
     """OMITTING the flags records the token — never a fabricated ``0``."""
     _compose('rec-unmeasured')
 
-    result = cmd_record_step(
-        _record_ns(plan_id='rec-unmeasured', step_id='verify:quality-gate', outcome='executed')
-    )
+    result = cmd_record_step(_record_ns(plan_id='rec-unmeasured', step_id='verify:quality-gate', outcome='executed'))
 
     assert result is not None
     assert result['total_tokens'] == UNMEASURED_COLUMN_TOKEN
@@ -340,9 +336,7 @@ def test_unmeasured_token_matches_the_sibling_ledger():
     cross-ledger reader would silently classify one skill's unmeasured column as
     unrecognised.
     """
-    metrics = load_script_module(
-        'plan-marshall', 'manage-metrics', 'manage-metrics.py', module_name='_mm_token_drift'
-    )
+    metrics = load_script_module('plan-marshall', 'manage-metrics', 'manage-metrics.py', module_name='_mm_token_drift')
 
     assert UNMEASURED_COLUMN_TOKEN == metrics.UNMEASURED_COLUMN_TOKEN
 
@@ -604,9 +598,7 @@ def test_an_outcome_outside_the_partition_is_still_refused(plan_context):
     """
     _compose('rec-partition-closed')
 
-    result = cmd_record_step(
-        _record_ns(plan_id='rec-partition-closed', step_id='x', outcome='returned_with_findings')
-    )
+    result = cmd_record_step(_record_ns(plan_id='rec-partition-closed', step_id='x', outcome='returned_with_findings'))
 
     assert result is not None
     assert result['error'] == 'invalid_outcome'
@@ -632,10 +624,14 @@ def test_a_step_outcome_is_representable_in_the_manifest_ledger(plan_context, ou
         'manage-status',
         'manage-status.py',
         'mark-step-done',
-        '--plan-id', 'rec-cross-ledger',
-        '--phase', '6-finalize',
-        '--step', 'a-step',
-        '--outcome', outcome,
+        '--plan-id',
+        'rec-cross-ledger',
+        '--phase',
+        '6-finalize',
+        '--step',
+        'a-step',
+        '--outcome',
+        outcome,
         register=False,
     )
 
@@ -643,9 +639,7 @@ def test_a_step_outcome_is_representable_in_the_manifest_ledger(plan_context, ou
     # (`loop_back`) cannot be interpolated into one verbatim.
     plan_id = 'rec-cross-' + outcome.replace('_', '-')
     _compose(plan_id)
-    result = cmd_record_step(
-        _record_ns(plan_id=plan_id, step_id='a-step', phase='6-finalize', outcome=outcome)
-    )
+    result = cmd_record_step(_record_ns(plan_id=plan_id, step_id='a-step', phase='6-finalize', outcome=outcome))
 
     assert result is not None and result['status'] == 'success'
     assert result['outcome'] == outcome

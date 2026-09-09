@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the `batch-add` subcommand of manage-tasks."""
 
-
 import pytest
 from _manage_tasks_batch_add_fixtures import (
     _BARE_BLOCK_TASK_TOON,

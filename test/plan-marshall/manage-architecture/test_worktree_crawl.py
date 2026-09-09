@@ -14,7 +14,9 @@ import tempfile
 
 from conftest import load_script_module
 
-_architecture_core = load_script_module('plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core')
+_architecture_core = load_script_module(
+    'plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core'
+)
 
 crawl_all_modules = _architecture_core.crawl_all_modules
 iter_modules = _architecture_core.iter_modules

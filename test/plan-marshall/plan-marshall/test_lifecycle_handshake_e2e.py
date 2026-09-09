@@ -88,9 +88,7 @@ _NON_NULL_CORE_INVARIANTS = (
 
 # Loaded under a name used nowhere else in the tree, so the registration the
 # shared loader performs cannot displace another module's copy.
-_query = load_script_module(
-    'plan-marshall', 'manage-tasks', '_tasks_query.py', '_e2e_handshake_tasks_query'
-)
+_query = load_script_module('plan-marshall', 'manage-tasks', '_tasks_query.py', '_e2e_handshake_tasks_query')
 
 cmd_list = _query.cmd_list
 cmd_read = _query.cmd_read
@@ -119,23 +117,46 @@ def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
 #: ``register=False`` throughout, so none displaces a module registration this
 #: file already performs under its own explicit names.
 _TASKS_LIST_ARGS = parse_ns(
-    'plan-marshall', 'manage-tasks', 'manage-tasks.py',
-    'list', '--plan-id', 'placeholder',
+    'plan-marshall',
+    'manage-tasks',
+    'manage-tasks.py',
+    'list',
+    '--plan-id',
+    'placeholder',
     register=False,
 )
 _TASKS_READ_ARGS = parse_ns(
-    'plan-marshall', 'manage-tasks', 'manage-tasks.py',
-    'read', '--plan-id', 'placeholder', '--task-number', '1',
+    'plan-marshall',
+    'manage-tasks',
+    'manage-tasks.py',
+    'read',
+    '--plan-id',
+    'placeholder',
+    '--task-number',
+    '1',
     register=False,
 )
 _HANDSHAKE_CAPTURE_ARGS = parse_ns(
-    'plan-marshall', 'plan-marshall', 'phase_handshake.py',
-    'capture', '--plan-id', 'placeholder', '--phase', '1-init',
+    'plan-marshall',
+    'plan-marshall',
+    'phase_handshake.py',
+    'capture',
+    '--plan-id',
+    'placeholder',
+    '--phase',
+    '1-init',
     register=False,
 )
 _HANDSHAKE_VERIFY_ARGS = parse_ns(
-    'plan-marshall', 'plan-marshall', 'phase_handshake.py',
-    'verify', '--plan-id', 'placeholder', '--phase', '1-init', '--strict',
+    'plan-marshall',
+    'plan-marshall',
+    'phase_handshake.py',
+    'verify',
+    '--plan-id',
+    'placeholder',
+    '--phase',
+    '1-init',
+    '--strict',
     register=False,
 )
 
@@ -332,9 +353,7 @@ def test_lifecycle_captures_handshakes_for_all_phases(
     for row in rows:
         for invariant in _NON_NULL_CORE_INVARIANTS:
             value = row.get(invariant)
-            assert value not in (None, ''), (
-                f'phase {row["phase"]} missing non-null invariant {invariant}: row={row}'
-            )
+            assert value not in (None, ''), f'phase {row["phase"]} missing non-null invariant {invariant}: row={row}'
 
 
 def test_lifecycle_summarize_invariants_zero_warnings_live_mode(

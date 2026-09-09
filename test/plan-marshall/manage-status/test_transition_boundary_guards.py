@@ -34,12 +34,8 @@ import pytest
 
 from conftest import load_script_module
 
-_lifecycle = load_script_module(
-    'plan-marshall', 'manage-status', '_cmd_lifecycle.py', '_status_cmd_lifecycle_boundary'
-)
-_query = load_script_module(
-    'plan-marshall', 'manage-status', '_status_query.py', '_status_query_boundary'
-)
+_lifecycle = load_script_module('plan-marshall', 'manage-status', '_cmd_lifecycle.py', '_status_cmd_lifecycle_boundary')
+_query = load_script_module('plan-marshall', 'manage-status', '_status_query.py', '_status_query_boundary')
 
 cmd_create = _lifecycle.cmd_create
 cmd_transition = _lifecycle.cmd_transition
@@ -149,9 +145,7 @@ def _seed_boundary_plan(plan_context, plan_id: str, metadata: dict) -> Path:
     status['metadata'] = metadata
     status_path.write_text(json.dumps(status), encoding='utf-8')
 
-    _cmds.cmd_capture(
-        Namespace(plan_id=plan_id, phase='5-execute', override=False, reason=None, strict=False)
-    )
+    _cmds.cmd_capture(Namespace(plan_id=plan_id, phase='5-execute', override=False, reason=None, strict=False))
     return status_path
 
 
@@ -165,9 +159,7 @@ def test_dirty_worktree_refuses_transition_and_lists_paths(
 ):
     """Uncommitted changes at the guarded boundary → worktree_dirty_at_boundary."""
     plan_id = 'boundary-dirty-refuses'
-    status_path = _seed_boundary_plan(
-        plan_context, plan_id, {'use_worktree': True, 'worktree_path': str(git_worktree)}
-    )
+    status_path = _seed_boundary_plan(plan_context, plan_id, {'use_worktree': True, 'worktree_path': str(git_worktree)})
     # Dirty the tree: one modified tracked file + one untracked file.
     (git_worktree / 'src.py').write_text('x = 2\n')
     (git_worktree / 'stray.py').write_text('y = 3\n')
@@ -182,12 +174,11 @@ def test_dirty_worktree_refuses_transition_and_lists_paths(
         f'The _clean_tree_refusal guard in cmd_transition is not firing.'
     )
     assert set(result['dirty_files']) == {'src.py', 'stray.py'}, (
-        f"Refusal must list the dirty paths, got {result['dirty_files']!r}."
+        f'Refusal must list the dirty paths, got {result["dirty_files"]!r}.'
     )
     after = json.loads(status_path.read_text(encoding='utf-8'))
     assert after['current_phase'] == before['current_phase'] == '5-execute', (
-        'cmd_transition wrote status despite the dirty-tree refusal — the '
-        'guard must short-circuit before write_status.'
+        'cmd_transition wrote status despite the dirty-tree refusal — the guard must short-circuit before write_status.'
     )
     assert after['phases'] == before['phases'], (
         'Phase list mutated despite the dirty-tree refusal — write_status fired.'
@@ -199,21 +190,15 @@ def test_dirty_worktree_refuses_transition_and_lists_paths(
 # =============================================================================
 
 
-def test_clean_worktree_passes_transition(
-    plan_context, _stubbed_invariants, _stub_metadata, git_worktree
-):
+def test_clean_worktree_passes_transition(plan_context, _stubbed_invariants, _stub_metadata, git_worktree):
     """A clean tree at the guarded boundary transitions normally."""
     plan_id = 'boundary-clean-passes'
-    status_path = _seed_boundary_plan(
-        plan_context, plan_id, {'use_worktree': True, 'worktree_path': str(git_worktree)}
-    )
+    status_path = _seed_boundary_plan(plan_context, plan_id, {'use_worktree': True, 'worktree_path': str(git_worktree)})
 
     result = cmd_transition(Namespace(plan_id=plan_id, completed='5-execute'))
 
     assert result is not None
-    assert result['status'] == 'success', (
-        f'Clean worktree must pass the boundary guard, got {result!r}.'
-    )
+    assert result['status'] == 'success', f'Clean worktree must pass the boundary guard, got {result!r}.'
     assert result['next_phase'] == '6-finalize'
     after = json.loads(status_path.read_text(encoding='utf-8'))
     assert after['current_phase'] == '6-finalize'
@@ -225,18 +210,14 @@ def test_plan_state_under_gitignored_dot_plan_stays_clean(
     """Worktree-resident plan state under gitignored ``.plan/`` never dirties
     the boundary — the porcelain read must not see it."""
     plan_id = 'boundary-plan-state-ignored'
-    _seed_boundary_plan(
-        plan_context, plan_id, {'use_worktree': True, 'worktree_path': str(git_worktree)}
-    )
+    _seed_boundary_plan(plan_context, plan_id, {'use_worktree': True, 'worktree_path': str(git_worktree)})
     plan_state = git_worktree / '.plan' / 'local' / 'plans' / plan_id
     plan_state.mkdir(parents=True)
     (plan_state / 'status.json').write_text('{}')
 
     result = cmd_transition(Namespace(plan_id=plan_id, completed='5-execute'))
 
-    assert result['status'] == 'success', (
-        f'Gitignored .plan/ state must not trip the clean-tree guard, got {result!r}.'
-    )
+    assert result['status'] == 'success', f'Gitignored .plan/ state must not trip the clean-tree guard, got {result!r}.'
 
 
 # =============================================================================
@@ -244,9 +225,7 @@ def test_plan_state_under_gitignored_dot_plan_stays_clean(
 # =============================================================================
 
 
-def test_use_worktree_false_skips_guard(
-    plan_context, _stubbed_invariants, _stub_metadata, git_worktree
-):
+def test_use_worktree_false_skips_guard(plan_context, _stubbed_invariants, _stub_metadata, git_worktree):
     """Main-checkout plans (use_worktree=false) never run the porcelain read —
     even when a stale worktree_path points at a dirty tree."""
     plan_id = 'boundary-no-worktree-skips'
@@ -259,25 +238,16 @@ def test_use_worktree_false_skips_guard(
 
     result = cmd_transition(Namespace(plan_id=plan_id, completed='5-execute'))
 
-    assert result['status'] == 'success', (
-        f'use_worktree=false must skip the clean-tree guard, got {result!r}.'
-    )
+    assert result['status'] == 'success', f'use_worktree=false must skip the clean-tree guard, got {result!r}.'
     assert result['next_phase'] == '6-finalize'
 
 
-def test_empty_worktree_path_defers_to_verify_guard(
-    plan_context, _stubbed_invariants, _stub_metadata
-):
+def test_empty_worktree_path_defers_to_verify_guard(plan_context, _stubbed_invariants, _stub_metadata):
     """``use_worktree=true`` with an empty path is the strict-verify guard's
     refusal territory (worktree_unresolved) — the clean-tree guard itself must
     not fire on an empty path."""
     assert _lifecycle._clean_tree_refusal('any-plan', {}) is None
-    assert (
-        _lifecycle._clean_tree_refusal(
-            'any-plan', {'metadata': {'use_worktree': True, 'worktree_path': ''}}
-        )
-        is None
-    )
+    assert _lifecycle._clean_tree_refusal('any-plan', {'metadata': {'use_worktree': True, 'worktree_path': ''}}) is None
 
 
 # =============================================================================
@@ -298,9 +268,7 @@ def test_refusal_dict_blocks_transition_for_cli_wrapper(
     ``verify_blocks_transition`` — the exact predicate manage-status.py main()
     gates its exit-1 on, keeping the CLI wrapper in lockstep."""
     plan_id = 'boundary-cli-lockstep'
-    _seed_boundary_plan(
-        plan_context, plan_id, {'use_worktree': True, 'worktree_path': str(git_worktree)}
-    )
+    _seed_boundary_plan(plan_context, plan_id, {'use_worktree': True, 'worktree_path': str(git_worktree)})
     (git_worktree / 'src.py').write_text('x = 42\n')
 
     result = cmd_transition(Namespace(plan_id=plan_id, completed='5-execute'))

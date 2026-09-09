@@ -235,8 +235,7 @@ def cmd_domain_narrow(args) -> dict[str, Any]:
             'status': 'error',
             'error': 'domains_unreadable',
             'message': (
-                f'references.json for plan {plan_id} carries no readable domains list, '
-                'so there was no set to narrow'
+                f'references.json for plan {plan_id} carries no readable domains list, so there was no set to narrow'
             ),
         }
 

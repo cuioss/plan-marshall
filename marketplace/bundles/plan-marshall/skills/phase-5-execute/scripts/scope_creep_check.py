@@ -272,9 +272,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     subparsers = parser.add_subparsers(dest='command', required=True)
 
-    check_parser = subparsers.add_parser(
-        'check', help='Run scope-creep check', allow_abbrev=False
-    )
+    check_parser = subparsers.add_parser('check', help='Run scope-creep check', allow_abbrev=False)
     check_parser.add_argument('--plan-id', required=True)
     check_parser.add_argument('--threshold', type=int, default=None)
     check_parser.set_defaults(func=cmd_check)

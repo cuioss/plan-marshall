@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for manage-locks ``_locks_core.py`` shared coordination primitives."""
 
-
 from __future__ import annotations
 
 import json
@@ -28,9 +27,7 @@ def test_mid_recovery_holder_is_dead_by_plan_dir_but_has_live_worktree(plan_cont
     base = plan_context.fixture_dir
     worktree = base / 'worktrees' / 'lc-mid-recovery'
     worktree.mkdir(parents=True, exist_ok=True)
-    (worktree / '.git').write_text(
-        'gitdir: /main/.git/worktrees/lc-mid-recovery\n', encoding='utf-8'
-    )
+    (worktree / '.git').write_text('gitdir: /main/.git/worktrees/lc-mid-recovery\n', encoding='utf-8')
 
     assert holder_is_dead('lc-mid-recovery') is True
     assert holder_has_live_worktree('lc-mid-recovery') is True

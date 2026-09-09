@@ -113,10 +113,7 @@ class TestEmitRecurringBlockSeverity:
         # both rows genuine; the count + threshold lines present
         assert 'genuine_signal_count: 2' in block
         assert 'threshold: 3' in block
-        assert (
-            'rows[2]{signature,occurrence_count,plan_ids,candidate,severity}:'
-            in block
-        )
+        assert 'rows[2]{signature,occurrence_count,plan_ids,candidate,severity}:' in block
 
     def test_empty_systemic_rows_yields_zero_genuine(self):
         result = {'threshold': 3, 'systemic_count': 0, 'rows': []}
@@ -161,7 +158,4 @@ class TestEmitTrendBlockSeverity:
         block = audit.emit_trend_block(result)
 
         assert 'genuine_signal_count: 0' in block
-        assert (
-            'rows[2]{plan_id,phases,total_tokens,tokens_per_phase,severity}:'
-            in block
-        )
+        assert 'rows[2]{plan_id,phases,total_tokens,tokens_per_phase,severity}:' in block

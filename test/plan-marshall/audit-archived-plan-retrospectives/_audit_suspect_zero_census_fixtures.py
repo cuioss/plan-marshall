@@ -22,7 +22,6 @@ would report the same thing for a check whose predicate cannot fire and a check
 that is doing its job over a clean corpus.
 """
 
-
 import re
 from pathlib import Path
 
@@ -40,9 +39,7 @@ from _audit_fixtures import audit
 _EXAMINED_POPULATION_KEYS = audit._EXAMINED_POPULATION_KEYS
 
 
-_EMPTY_POPULATION_RE = re.compile(
-    rf"^(?:{'|'.join(_EXAMINED_POPULATION_KEYS)}):\s*0\s*$", re.MULTILINE
-)
+_EMPTY_POPULATION_RE = re.compile(rf'^(?:{"|".join(_EXAMINED_POPULATION_KEYS)}):\s*0\s*$', re.MULTILINE)
 
 
 def _declares_empty_population(block: str) -> bool:
@@ -74,32 +71,24 @@ def _shipping_corpus(repo_root: Path) -> list:
     zero and a check that still reports `plans_in_corpus: 0` did so by its OWN
     narrowing.
     """
-    plan_dir = repo_root / ".plan" / "local" / "archived-plans" / "shipping-plan"
+    plan_dir = repo_root / '.plan' / 'local' / 'archived-plans' / 'shipping-plan'
     plan_dir.mkdir(parents=True)
-    (plan_dir / "references.json").write_text(
+    (plan_dir / 'references.json').write_text(
         '{"scope_estimate": "surgical", "modified_files": ["src/a.py"]}',
-        encoding="utf-8",
+        encoding='utf-8',
     )
-    (plan_dir / "status.json").write_text(
-        '{"metadata": {"change_type": "bug_fix"}}', encoding="utf-8"
-    )
+    (plan_dir / 'status.json').write_text('{"metadata": {"change_type": "bug_fix"}}', encoding='utf-8')
     return [audit.collect_inputs(plan_dir)]
 
 
-_UNMEASURED_BLOCK = (
-    "check: merge-window-accounting\nstatus: unmeasured\nunmeasured_reason: no substrate\n"
-)
+_UNMEASURED_BLOCK = 'check: merge-window-accounting\nstatus: unmeasured\nunmeasured_reason: no substrate\n'
 
 
-_MEASURED_ZERO_BLOCK = (
-    "check: dispatch-topology\nstatus: success\ngenuine_signal_count: 0\nrows[3]{a}:\n"
-)
+_MEASURED_ZERO_BLOCK = 'check: dispatch-topology\nstatus: success\ngenuine_signal_count: 0\nrows[3]{a}:\n'
 
 
-_FIRED_BLOCK = (
-    "check: dispatch-topology\nstatus: success\ngenuine_signal_count: 2\nrows[3]{a}:\n"
-)
+_FIRED_BLOCK = 'check: dispatch-topology\nstatus: success\ngenuine_signal_count: 2\nrows[3]{a}:\n'
 
 
 def _audit_source() -> str:
-    return Path(audit.__file__).read_text(encoding="utf-8")
+    return Path(audit.__file__).read_text(encoding='utf-8')

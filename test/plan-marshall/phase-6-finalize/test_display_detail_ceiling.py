@@ -93,25 +93,17 @@ _CONTRACT_TEXT: str = _CONTRACT_DOC.read_text(encoding='utf-8')
 
 #: The ceiling every ``display_detail`` obeys, owned by the external-step
 #: contract and read from it rather than restated.
-CEILING = _sole_int(
-    _CEILING_RE, _CONTRACT_TEXT, 'The display_detail character ceiling', _CONTRACT_DOC.name
-)
+CEILING = _sole_int(_CEILING_RE, _CONTRACT_TEXT, 'The display_detail character ceiling', _CONTRACT_DOC.name)
 
 #: The two placeholder budgets the gate document declares for its own variants.
-COUNT_BUDGET = _sole_int(
-    _COUNT_BUDGET_RE, _GATE_TEXT, 'The count-placeholder digit budget', _GATE_DOC.name
-)
-TRUNCATED_NAME_BUDGET = _sole_int(
-    _TRUNCATION_RE, _GATE_TEXT, 'The truncated-name width', _GATE_DOC.name
-)
+COUNT_BUDGET = _sole_int(_COUNT_BUDGET_RE, _GATE_TEXT, 'The count-placeholder digit budget', _GATE_DOC.name)
+TRUNCATED_NAME_BUDGET = _sole_int(_TRUNCATION_RE, _GATE_TEXT, 'The truncated-name width', _GATE_DOC.name)
 
 #: The width a SINGLE untruncated module name can reach, derived from the real
 #: bundle set rather than assumed. Branch B interpolates one such name per
 #: alternative; the gate document permits that because one name is bounded in a
 #: way a SET of names is not, and this is the bound.
-LONGEST_MODULE_NAME = max(
-    (len(path.name) for path in MARKETPLACE_ROOT.iterdir() if path.is_dir()), default=0
-)
+LONGEST_MODULE_NAME = max((len(path.name) for path in MARKETPLACE_ROOT.iterdir() if path.is_dir()), default=0)
 
 #: Placeholder classification. The WIDTHS above are derived from the documents;
 #: what lives here is only which class each placeholder belongs to, and its
@@ -160,11 +152,7 @@ def _alternatives(payload: str) -> list[str]:
     document does not have. Splitting is therefore load-bearing rather than a way
     to dodge the ceiling — each alternative is measured on its own.
     """
-    if (
-        payload.startswith('{')
-        and payload.endswith('}')
-        and _ALTERNATION_SEPARATOR in payload
-    ):
+    if payload.startswith('{') and payload.endswith('}') and _ALTERNATION_SEPARATOR in payload:
         return [alt.strip() for alt in payload[1:-1].split(_ALTERNATION_SEPARATOR)]
     return [payload]
 
@@ -176,8 +164,7 @@ _VARIANTS: list[str] = [alt for payload in _PAYLOADS for alt in _alternatives(pa
 # parametrize is a pytest SKIP, not a failure, so a derivation that matched
 # nothing would report a clean sweep over nothing.
 assert _VARIANTS, (
-    f'No --display-detail variant was derived from {_GATE_DOC.name} — the ceiling '
-    f'sweep would pass over an empty set'
+    f'No --display-detail variant was derived from {_GATE_DOC.name} — the ceiling sweep would pass over an empty set'
 )
 
 #: Published on EVERY run — passing included — by the root conftest's
@@ -260,7 +247,7 @@ def test_every_variant_fits_the_ceiling_at_worst_case_expansion(variant):
 def test_payload_detector_fires_on_a_call_and_not_on_prose():
     call = '  --display-detail "{N} bundles green, whole-tree gates green" \\'
     prose = (
-        'The same discipline governs this step\'s own display_detail: see the '
+        "The same discipline governs this step's own display_detail: see the "
         'degraded detail variant under Mark Step Complete below.'
     )
 
@@ -315,10 +302,7 @@ def test_brace_residue_detector_fires_on_a_non_identifier_construct():
 
 def test_alternation_splitter_is_load_bearing_for_the_failure_menu():
     """The menu breaches unsplit and fits per alternative — so the split is required."""
-    menu = (
-        '{quality-gate failed for {bundle} | whole-tree quality-gate red | '
-        'test-compile red}'
-    )
+    menu = '{quality-gate failed for {bundle} | whole-tree quality-gate red | test-compile red}'
 
     unsplit, _unbudgeted = _expand(menu)
     assert len(unsplit) > CEILING, (
@@ -328,14 +312,12 @@ def test_alternation_splitter_is_load_bearing_for_the_failure_menu():
 
     alternatives = _alternatives(menu)
     assert len(alternatives) == 3, (
-        f'The alternation splitter did not separate the menu into its individual '
-        f'alternatives; got {alternatives}'
+        f'The alternation splitter did not separate the menu into its individual alternatives; got {alternatives}'
     )
     for alternative in alternatives:
         expanded, _unbudgeted = _expand(alternative)
         assert len(expanded) <= CEILING, (
-            f'Alternative {alternative!r} expands to {len(expanded)} characters, '
-            f'over the {CEILING}-character ceiling'
+            f'Alternative {alternative!r} expands to {len(expanded)} characters, over the {CEILING}-character ceiling'
         )
 
 

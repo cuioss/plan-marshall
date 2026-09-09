@@ -20,36 +20,36 @@ from conftest import get_skill_dir
 
 def test_toon_success_minimal():
     """toon_success without result dict returns status and operation."""
-    output = toon_success("session capture")
+    output = toon_success('session capture')
     result = parse_toon(output)
-    assert result["status"] == "success"
-    assert result["operation"] == "session capture"
+    assert result['status'] == 'success'
+    assert result['operation'] == 'session capture'
 
 
 def test_toon_success_with_result():
     """toon_success merges result fields into the response."""
-    output = toon_success("health-check", {"passed": True, "checks_run": 3})
+    output = toon_success('health-check', {'passed': True, 'checks_run': 3})
     result = parse_toon(output)
-    assert result["status"] == "success"
-    assert result["operation"] == "health-check"
-    assert result["passed"] is True
-    assert result["checks_run"] == 3
+    assert result['status'] == 'success'
+    assert result['operation'] == 'health-check'
+    assert result['passed'] is True
+    assert result['checks_run'] == 3
 
 
 def test_toon_success_result_none_ignored():
     """toon_success with result=None behaves identically to no result."""
-    output_none = toon_success("project initial-setup", None)
-    output_default = toon_success("project initial-setup")
+    output_none = toon_success('project initial-setup', None)
+    output_default = toon_success('project initial-setup')
     assert parse_toon(output_none) == parse_toon(output_default)
 
 
 def test_toon_success_round_trip():
     """toon_success output parses back to a dict with the expected fields."""
-    output = toon_success("permission configure", {"scope": "project", "count": 5})
+    output = toon_success('permission configure', {'scope': 'project', 'count': 5})
     result = parse_toon(output)
-    assert result["status"] == "success"
-    assert result["scope"] == "project"
-    assert result["count"] == 5
+    assert result['status'] == 'success'
+    assert result['scope'] == 'project'
+    assert result['count'] == 5
 
 
 # =============================================================================
@@ -59,30 +59,30 @@ def test_toon_success_round_trip():
 
 def test_toon_error_fields():
     """toon_error populates status, operation, error, and message."""
-    output = toon_error("session capture", "hook_not_configured", "SessionStart hook missing")
+    output = toon_error('session capture', 'hook_not_configured', 'SessionStart hook missing')
     result = parse_toon(output)
-    assert result["status"] == "error"
-    assert result["operation"] == "session capture"
-    assert result["error"] == "hook_not_configured"
-    assert "hook" in result["message"].lower()
+    assert result['status'] == 'error'
+    assert result['operation'] == 'session capture'
+    assert result['error'] == 'hook_not_configured'
+    assert 'hook' in result['message'].lower()
 
 
 def test_toon_error_round_trip():
     """toon_error output round-trips through parse_toon without data loss."""
-    code = "marshal_not_found"
-    msg = ".plan/marshal.json missing"
-    output = toon_error("subagent dispatch", code, msg)
+    code = 'marshal_not_found'
+    msg = '.plan/marshal.json missing'
+    output = toon_error('subagent dispatch', code, msg)
     result = parse_toon(output)
-    assert result["error"] == code
-    assert result["message"] == msg
+    assert result['error'] == code
+    assert result['message'] == msg
 
 
 def test_toon_error_distinct_from_noop():
     """toon_error must not include reason/alternative keys."""
-    output = toon_error("permission analyze", "invalid_check", "unknown check name")
+    output = toon_error('permission analyze', 'invalid_check', 'unknown check name')
     result = parse_toon(output)
-    assert "reason" not in result
-    assert "alternative" not in result
+    assert 'reason' not in result
+    assert 'alternative' not in result
 
 
 # =============================================================================
@@ -93,33 +93,33 @@ def test_toon_error_distinct_from_noop():
 def test_toon_noop_fields():
     """toon_noop populates status, operation, reason, and alternative."""
     output = toon_noop(
-        "session render-title",
-        "OpenCode has no plugin-driven terminal-title hook",
+        'session render-title',
+        'OpenCode has no plugin-driven terminal-title hook',
         "Use OpenCode's built-in TUI status surface",
     )
     result = parse_toon(output)
-    assert result["status"] == "no-op"
-    assert result["operation"] == "session render-title"
-    assert "OpenCode" in result["reason"]
-    assert "TUI" in result["alternative"]
+    assert result['status'] == 'no-op'
+    assert result['operation'] == 'session render-title'
+    assert 'OpenCode' in result['reason']
+    assert 'TUI' in result['alternative']
 
 
 def test_toon_noop_round_trip():
     """toon_noop output round-trips through parse_toon."""
-    reason = "automatic token capture requires a platform-provided session id"
-    alternative = "pass --total-tokens manually"
-    output = toon_noop("metrics capture", reason, alternative)
+    reason = 'automatic token capture requires a platform-provided session id'
+    alternative = 'pass --total-tokens manually'
+    output = toon_noop('metrics capture', reason, alternative)
     result = parse_toon(output)
-    assert result["reason"] == reason
-    assert result["alternative"] == alternative
+    assert result['reason'] == reason
+    assert result['alternative'] == alternative
 
 
 def test_toon_noop_distinct_from_error():
     """toon_noop must not include error/message keys."""
-    output = toon_noop("session render-title", "no hook", "use TUI")
+    output = toon_noop('session render-title', 'no hook', 'use TUI')
     result = parse_toon(output)
-    assert "error" not in result
-    assert "message" not in result
+    assert 'error' not in result
+    assert 'message' not in result
 
 
 # =============================================================================
@@ -131,16 +131,16 @@ class _ConcreteRuntime(Runtime):
     """Minimal concrete subclass that implements every abstract method."""
 
     def project_initial_setup(self, project_dir: str, target: str) -> str:
-        return toon_success("project initial-setup")
+        return toon_success('project initial-setup')
 
     def layout_skill_roots(self) -> str:
-        return toon_success("layout skill-roots")
+        return toon_success('layout skill-roots')
 
     def layout_bundle_cache_root(self) -> str:
-        return toon_success("layout bundle-cache-root")
+        return toon_success('layout bundle-cache-root')
 
     def harness_bash_timeout_ceiling(self) -> str:
-        return toon_success("harness bash-timeout-ceiling")
+        return toon_success('harness bash-timeout-ceiling')
 
     def project_install_hook(
         self,
@@ -148,97 +148,93 @@ class _ConcreteRuntime(Runtime):
         overwrite: Sequence[str] = (),
         enforcement: bool = False,
     ) -> str:
-        return toon_success("project install-hook")
+        return toon_success('project install-hook')
 
     def session_capture(self, plan_id: str) -> str:
-        return toon_success("session capture")
+        return toon_success('session capture')
 
     def session_render_title(self, statusline: bool = False) -> str:
-        return toon_success("session render-title")
+        return toon_success('session render-title')
 
     def session_push_title_token(
         self,
         plan_id: str,
         icon: str | None = None,
-        store: str = "plans",
+        store: str = 'plans',
         slug: str | None = None,
     ) -> str:
-        return toon_success("session push-title-token")
+        return toon_success('session push-title-token')
 
     def session_bind(self, plan_id: str, session_id: str | None = None) -> str:
-        return toon_success("session bind")
+        return toon_success('session bind')
 
     def session_resolve_plan(self, session_id: str | None = None) -> str:
-        return toon_success("session resolve-plan")
+        return toon_success('session resolve-plan')
 
     def session_doctor(self, fix: bool = False) -> str:
-        return toon_success("session doctor")
+        return toon_success('session doctor')
 
     def session_teardown(self) -> str:
-        return toon_success("session teardown")
+        return toon_success('session teardown')
 
     def session_reload_directive(self) -> str:
-        return toon_success("session reload-directive")
+        return toon_success('session reload-directive')
 
     def permission_configure(self, scope: str, permissions: list) -> str:
-        return toon_success("permission configure")
+        return toon_success('permission configure')
 
     def permission_analyze(self, scope: str, checks: list, marshal_path) -> str:
-        return toon_success("permission analyze")
+        return toon_success('permission analyze')
 
     def permission_fix(self, scope: str, operation: str, permissions: list, dry_run: bool) -> str:
-        return toon_success("permission fix")
+        return toon_success('permission fix')
 
     def permission_ensure_wildcards(self, scope: str, marketplace_dir: str, dry_run: bool) -> str:
-        return toon_success("permission ensure-wildcards")
+        return toon_success('permission ensure-wildcards')
 
     def permission_ensure_steps(self, marshal_path: str, scope: str, dry_run: bool) -> str:
-        return toon_success("permission ensure-steps")
+        return toon_success('permission ensure-steps')
 
     def permission_web_analyze(self, scope: str) -> str:
-        return toon_success("permission web-analyze")
+        return toon_success('permission web-analyze')
 
     def permission_web_apply(self, scope: str, add: list, remove: list, dry_run: bool) -> str:
-        return toon_success("permission web-apply")
+        return toon_success('permission web-apply')
 
     def metrics_capture(self, plan_id: str, phase: str, total_tokens) -> str:
-        return toon_success("metrics capture")
+        return toon_success('metrics capture')
 
     def metrics_normalized_tokens(self, session_id: str, windows, output_file: str) -> str:
-        return toon_success("metrics normalized-tokens")
+        return toon_success('metrics normalized-tokens')
 
     def chat_extract_signal(self, session_id: str) -> str:
-        return toon_success("chat extract-signal")
+        return toon_success('chat extract-signal')
 
     def subagent_dispatch(self, agent: str, prompt_file, context) -> str:
-        return toon_success("subagent dispatch")
+        return toon_success('subagent dispatch')
 
     def wait_for(self, observable: str, reference: str, bound_seconds: int) -> str:
-        return toon_success("wait for")
+        return toon_success('wait for')
 
     def health_check(self, checks: str) -> str:
-        return toon_success("health-check")
+        return toon_success('health-check')
 
-    def permission_settings_path(
-        self, scope: str, write: bool = False, project_dir: str | None = None
-    ) -> str:
-        return "/tmp/settings.json"
+    def permission_settings_path(self, scope: str, write: bool = False, project_dir: str | None = None) -> str:
+        return '/tmp/settings.json'
 
     def permission_load_settings(self, path: str) -> dict:
-        return {"permissions": {"allow": []}}
+        return {'permissions': {'allow': []}}
 
     def permission_save_settings(self, path: str, settings: dict) -> bool:
         return True
 
-    def permission_ensure_defaults(
-        self, settings: dict, settings_path: str, dry_run: bool = False
-    ) -> dict:
+    def permission_ensure_defaults(self, settings: dict, settings_path: str, dry_run: bool = False) -> dict:
         return {
-            "defaults_added": [],
-            "defaults_added_count": 0,
-            "defaults_removed": [],
-            "defaults_removed_count": 0,
-            "applied": False,
+            'defaults_added': [],
+            'defaults_added_count': 0,
+            'defaults_removed': [],
+            'defaults_removed_count': 0,
+            'applied': False,
         }
 
     def permission_check_skill_coverage(self, skill: str, allow_list: list) -> str | None:
@@ -252,57 +248,55 @@ class _ConcreteRuntime(Runtime):
 
 
 ALL_ABSTRACT_METHODS = [
-    "project_initial_setup",
-    "project_install_hook",
-    "layout_skill_roots",
-    "layout_bundle_cache_root",
-    "harness_bash_timeout_ceiling",
-    "session_capture",
-    "session_render_title",
-    "session_push_title_token",
-    "session_bind",
-    "session_resolve_plan",
-    "session_doctor",
-    "session_teardown",
-    "session_reload_directive",
-    "permission_configure",
-    "permission_analyze",
-    "permission_fix",
-    "permission_ensure_wildcards",
-    "permission_ensure_steps",
-    "permission_web_analyze",
-    "permission_web_apply",
-    "metrics_capture",
-    "metrics_normalized_tokens",
-    "chat_extract_signal",
-    "subagent_dispatch",
-    "wait_for",
-    "health_check",
-    "permission_settings_path",
-    "permission_load_settings",
-    "permission_save_settings",
-    "permission_ensure_defaults",
-    "permission_check_skill_coverage",
-    "permission_load_marshal_config",
-    "permission_extract_project_steps",
+    'project_initial_setup',
+    'project_install_hook',
+    'layout_skill_roots',
+    'layout_bundle_cache_root',
+    'harness_bash_timeout_ceiling',
+    'session_capture',
+    'session_render_title',
+    'session_push_title_token',
+    'session_bind',
+    'session_resolve_plan',
+    'session_doctor',
+    'session_teardown',
+    'session_reload_directive',
+    'permission_configure',
+    'permission_analyze',
+    'permission_fix',
+    'permission_ensure_wildcards',
+    'permission_ensure_steps',
+    'permission_web_analyze',
+    'permission_web_apply',
+    'metrics_capture',
+    'metrics_normalized_tokens',
+    'chat_extract_signal',
+    'subagent_dispatch',
+    'wait_for',
+    'health_check',
+    'permission_settings_path',
+    'permission_load_settings',
+    'permission_save_settings',
+    'permission_ensure_defaults',
+    'permission_check_skill_coverage',
+    'permission_load_marshal_config',
+    'permission_extract_project_steps',
 ]
 
 
 def test_runtime_has_33_abstract_methods():
     """Runtime ABC exposes exactly 33 abstract methods."""
-    abstract_methods = getattr(Runtime, "__abstractmethods__", frozenset())
+    abstract_methods = getattr(Runtime, '__abstractmethods__', frozenset())
     assert len(abstract_methods) == 33, (
-        f"Expected 33 abstract methods, found {len(abstract_methods)}: {sorted(abstract_methods)}"
+        f'Expected 33 abstract methods, found {len(abstract_methods)}: {sorted(abstract_methods)}'
     )
 
 
 def test_all_expected_methods_are_abstract():
     """Each of the documented operations is abstract on Runtime."""
-    abstract_methods = getattr(Runtime, "__abstractmethods__", frozenset())
+    abstract_methods = getattr(Runtime, '__abstractmethods__', frozenset())
     for method in ALL_ABSTRACT_METHODS:
-        assert method in abstract_methods, (
-            f"Expected {method!r} to be abstract on Runtime"
-        )
+        assert method in abstract_methods, f'Expected {method!r} to be abstract on Runtime'
 
 
 def test_runtime_cannot_be_instantiated_directly():
@@ -311,14 +305,14 @@ def test_runtime_cannot_be_instantiated_directly():
         Runtime()
 
 
-@pytest.mark.parametrize("missing_method", ALL_ABSTRACT_METHODS)
+@pytest.mark.parametrize('missing_method', ALL_ABSTRACT_METHODS)
 def test_subclass_missing_one_method_raises(missing_method: str):
     """A subclass omitting any single abstract method cannot be instantiated."""
     # Build a complete set of stubs, then remove the one under test.
-    stubs = {m: lambda self, *a, **kw: "" for m in ALL_ABSTRACT_METHODS}
+    stubs = {m: lambda self, *a, **kw: '' for m in ALL_ABSTRACT_METHODS}
     del stubs[missing_method]
-    PartialRuntime = type("PartialRuntime", (Runtime,), stubs)
-    with pytest.raises(TypeError, match="abstract"):
+    PartialRuntime = type('PartialRuntime', (Runtime,), stubs)
+    with pytest.raises(TypeError, match='abstract'):
         PartialRuntime()
 
 
@@ -338,39 +332,39 @@ def test_concrete_returns_valid_toon_for_each_method():
     runtime = _ConcreteRuntime()
 
     outputs = [
-        runtime.project_initial_setup(".", "claude"),
-        runtime.project_install_hook("claude"),
+        runtime.project_initial_setup('.', 'claude'),
+        runtime.project_install_hook('claude'),
         runtime.layout_skill_roots(),
         runtime.layout_bundle_cache_root(),
         runtime.harness_bash_timeout_ceiling(),
-        runtime.session_capture("my-plan"),
+        runtime.session_capture('my-plan'),
         runtime.session_render_title(),
-        runtime.session_push_title_token("my-plan", "⏳"),
-        runtime.session_bind("my-plan"),
+        runtime.session_push_title_token('my-plan', '⏳'),
+        runtime.session_bind('my-plan'),
         runtime.session_resolve_plan(),
         runtime.session_doctor(),
         runtime.session_teardown(),
         runtime.session_reload_directive(),
-        runtime.permission_configure("project", ["Read(**)"]),
-        runtime.permission_analyze("both", ["all"], None),
-        runtime.permission_fix("project", "normalize", [], False),
-        runtime.permission_ensure_wildcards("project", "marketplace/", False),
-        runtime.permission_ensure_steps(".plan/marshal.json", "project", False),
-        runtime.permission_web_analyze("global"),
-        runtime.permission_web_apply("project", ["example.com"], [], False),
-        runtime.metrics_capture("my-plan", "phase-1-init", None),
-        runtime.metrics_normalized_tokens("sid", [], "/tmp/out.json"),
-        runtime.chat_extract_signal("sid"),
-        runtime.subagent_dispatch("execution-context", None, None),
-        runtime.wait_for("build-job", "job-1", 60),
-        runtime.health_check("all"),
+        runtime.permission_configure('project', ['Read(**)']),
+        runtime.permission_analyze('both', ['all'], None),
+        runtime.permission_fix('project', 'normalize', [], False),
+        runtime.permission_ensure_wildcards('project', 'marketplace/', False),
+        runtime.permission_ensure_steps('.plan/marshal.json', 'project', False),
+        runtime.permission_web_analyze('global'),
+        runtime.permission_web_apply('project', ['example.com'], [], False),
+        runtime.metrics_capture('my-plan', 'phase-1-init', None),
+        runtime.metrics_normalized_tokens('sid', [], '/tmp/out.json'),
+        runtime.chat_extract_signal('sid'),
+        runtime.subagent_dispatch('execution-context', None, None),
+        runtime.wait_for('build-job', 'job-1', 60),
+        runtime.health_check('all'),
     ]
 
-    assert len(outputs) == 26, "Expected output for each of the 26 TOON-returning operations"
+    assert len(outputs) == 26, 'Expected output for each of the 26 TOON-returning operations'
     for output in outputs:
         result = parse_toon(output)
-        assert result.get("status") == "success", (
-            f"Expected status=success, got {result.get('status')!r} in: {output!r}"
+        assert result.get('status') == 'success', (
+            f'Expected status=success, got {result.get("status")!r} in: {output!r}'
         )
 
 
@@ -397,49 +391,44 @@ def test_every_toon_operation_documents_a_decline_path():
     dispatchable 26, and the helper subset is exactly the 7 that never return
     TOON outcomes.
     """
-    abstract = set(getattr(Runtime, "__abstractmethods__", frozenset()))
-    assert len(abstract) == 33, f"Runtime method population collapsed: {len(abstract)}"
+    abstract = set(getattr(Runtime, '__abstractmethods__', frozenset()))
+    assert len(abstract) == 33, f'Runtime method population collapsed: {len(abstract)}'
 
     def _doc(name: str) -> str:
-        return getattr(Runtime, name).__doc__ or ""
+        return getattr(Runtime, name).__doc__ or ''
 
     toon_operations: list[str] = []
     helpers: list[str] = []
     for name in sorted(abstract):
         doc = _doc(name)
-        is_operation = (
-            "Serialized TOON" in doc
-            or "no-op TOON instead" in doc
-            or "ordinary no-op TOON" in doc
-        )
+        is_operation = 'Serialized TOON' in doc or 'no-op TOON instead' in doc or 'ordinary no-op TOON' in doc
         (toon_operations if is_operation else helpers).append(name)
 
     # Non-vacuity: 26 dispatchable operations and 7 non-TOON helper methods.
     assert len(toon_operations) == 26, (
-        f"Expected 26 TOON-returning operations, found {len(toon_operations)}: "
-        f"{toon_operations}"
+        f'Expected 26 TOON-returning operations, found {len(toon_operations)}: {toon_operations}'
     )
-    assert len(helpers) == 7, f"Expected 7 non-TOON helpers, found {len(helpers)}: {helpers}"
+    assert len(helpers) == 7, f'Expected 7 non-TOON helpers, found {len(helpers)}: {helpers}'
 
     # Every TOON operation documents a decline path — a `no-op` — so a reader
     # can answer "what does a target that cannot do this return?" for each one.
     for name in toon_operations:
         doc = _doc(name)
-        assert "no-op" in doc, f"{name}: contract documents no no-op decline path"
+        assert 'no-op' in doc, f'{name}: contract documents no no-op decline path'
 
     # The four operations that previously documented no decline vocabulary at
     # all carry the FULL shape — a `no-op` with a `reason` and an `alternative`
     # — not merely the presence of the word `no-op`.
     for name in (
-        "project_initial_setup",
-        "health_check",
-        "layout_skill_roots",
-        "layout_bundle_cache_root",
+        'project_initial_setup',
+        'health_check',
+        'layout_skill_roots',
+        'layout_bundle_cache_root',
     ):
         doc = _doc(name)
-        assert "no-op" in doc, f"{name}: documents no no-op decline path"
-        assert "reason" in doc, f"{name}: decline path must carry a `reason`"
-        assert "alternative" in doc, f"{name}: decline path must carry an `alternative`"
+        assert 'no-op' in doc, f'{name}: documents no no-op decline path'
+        assert 'reason' in doc, f'{name}: decline path must carry a `reason`'
+        assert 'alternative' in doc, f'{name}: decline path must carry an `alternative`'
 
 
 # =============================================================================
@@ -448,7 +437,7 @@ def test_every_toon_operation_documents_a_decline_path():
 
 
 def _skill_md_path():
-    return get_skill_dir("plan-marshall", "platform-runtime") / "SKILL.md"
+    return get_skill_dir('plan-marshall', 'platform-runtime') / 'SKILL.md'
 
 
 def test_skill_md_operations_table_has_no_per_target_restatements():
@@ -460,31 +449,30 @@ def test_skill_md_operations_table_has_no_per_target_restatements():
     """
     skill_md = _skill_md_path()
     if not skill_md.is_file():
-        pytest.skip("SKILL.md not found (non-checkout environment)")
+        pytest.skip('SKILL.md not found (non-checkout environment)')
 
-    text = skill_md.read_text(encoding="utf-8")
+    text = skill_md.read_text(encoding='utf-8')
     lines = text.splitlines()
 
     # Find the operations table — lines starting with "| `"
     in_table = False
-    target_patterns = ("no-op on ", "no-op on\n", "declines on ", "not supported on ")
+    target_patterns = ('no-op on ', 'no-op on\n', 'declines on ', 'not supported on ')
     violations = []
 
     for i, line in enumerate(lines, 1):
         stripped = line.strip()
-        if stripped.startswith("| Operation"):
+        if stripped.startswith('| Operation'):
             in_table = True
             continue
-        if in_table and not stripped.startswith("| `") and not stripped.startswith("|---"):
+        if in_table and not stripped.startswith('| `') and not stripped.startswith('|---'):
             break  # end of table
-        if in_table and stripped.startswith("| `"):
+        if in_table and stripped.startswith('| `'):
             for pat in target_patterns:
                 if pat in stripped.lower():
                     violations.append((i, pat.strip(), stripped))
 
     assert not violations, (
-        "SKILL.md operations table contains per-target restatements "
-        "(decline paths belong in contract.md and ABC docstrings): "
-        + "; ".join(f"L{line}: {pat!r} in {text!r}" for line, pat, text in violations)
+        'SKILL.md operations table contains per-target restatements '
+        '(decline paths belong in contract.md and ABC docstrings): '
+        + '; '.join(f'L{line}: {pat!r} in {text!r}' for line, pat, text in violations)
     )
-

@@ -48,22 +48,10 @@ from conftest import MARKETPLACE_ROOT, PLAN_DIR_NAME, PROJECT_ROOT, run_script
 # -----------------------------------------------------------------------------
 
 
-_AGENT_PATH = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'plan-marshall'
-    / 'workflow'
-    / 'q-gate-validation.md'
-)
+_AGENT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-marshall' / 'workflow' / 'q-gate-validation.md'
 
 _WORKTREE_HANDLING_PATH = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'workflow-integration-git'
-    / 'standards'
-    / 'worktree-handling.md'
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'workflow-integration-git' / 'standards' / 'worktree-handling.md'
 )
 
 _PATTERN_LETTERS = ('WL-A', 'WL-B', 'WL-C')
@@ -179,8 +167,7 @@ def test_pattern_wl_a_documents_cd_compound(section_2_15_text: str) -> None:
     # Headers describe the pattern; the literal "cd" plus a worktree token
     # must appear in the WL-A description.
     assert re.search(r'WL-A.*cd\s+', section_2_15_text, re.DOTALL) is not None, (
-        'WL-A subsection must explicitly reference the forbidden ``cd '
-        '<worktree_path>`` shell-compound pattern.'
+        'WL-A subsection must explicitly reference the forbidden ``cd <worktree_path>`` shell-compound pattern.'
     )
 
 
@@ -189,8 +176,7 @@ def test_pattern_wl_b_documents_claude_worktrees_path(section_2_15_text: str) ->
     literal that TASK-4 of the same plan migrated to ``.plan/local/worktrees/``.
     """
     assert 'WL-B' in section_2_15_text and '.claude/worktrees/' in section_2_15_text, (
-        'WL-B subsection must reference the stale .claude/worktrees/ path '
-        'literal so the linter target stays explicit.'
+        'WL-B subsection must reference the stale .claude/worktrees/ path literal so the linter target stays explicit.'
     )
 
 
@@ -236,8 +222,7 @@ def test_section_documents_activation_condition(section_2_15_text: str) -> None:
     validator does not run against unrelated deliverables.
     """
     assert 'Activation condition' in section_2_15_text, (
-        'Section 2.15 must include an "Activation condition" subsection so '
-        'the validator scope is explicit and bounded.'
+        'Section 2.15 must include an "Activation condition" subsection so the validator scope is explicit and bounded.'
     )
 
 
@@ -280,12 +265,8 @@ def test_section_documents_pass_and_fail_criteria(section_2_15_text: str) -> Non
     """Section 2.15 must declare both Pass criteria and Fail criteria so
     the validator's decision boundary is explicit.
     """
-    assert 'Pass criteria' in section_2_15_text, (
-        'Section 2.15 must include a "Pass criteria" subsection.'
-    )
-    assert 'Fail criteria' in section_2_15_text, (
-        'Section 2.15 must include a "Fail criteria" subsection.'
-    )
+    assert 'Pass criteria' in section_2_15_text, 'Section 2.15 must include a "Pass criteria" subsection.'
+    assert 'Fail criteria' in section_2_15_text, 'Section 2.15 must include a "Fail criteria" subsection.'
 
 
 def test_section_references_phase_3_outline_and_4_plan(section_2_15_text: str) -> None:
@@ -607,10 +588,7 @@ def _derive_manage_logging_verb_population() -> tuple[str, ...]:
             break
     # Fail LOUD when the population cannot be derived: an empty verb set would
     # make every control that iterates it silently vacuous.
-    assert verbs, (
-        f'Could not derive the manage-logging subcommand choices from its top-level '
-        f'usage line: {usage!r}'
-    )
+    assert verbs, f'Could not derive the manage-logging subcommand choices from its top-level usage line: {usage!r}'
     return verbs
 
 
@@ -698,8 +676,7 @@ def test_wl_c_sweep_regex_alternation_pins_the_eight_auto_routing_notations(
     """
     alternation_match = re.search(r'plan-marshall:\(([a-z|\-]+)\)', wl_c_block_text)
     assert alternation_match is not None, (
-        'Could not find the WL-C sweep regex alternation group '
-        '"plan-marshall:(...)" in the WL-C block.'
+        'Could not find the WL-C sweep regex alternation group "plan-marshall:(...)" in the WL-C block.'
     )
     notations = frozenset(alternation_match.group(1).split('|'))
     assert notations == _EXPECTED_WL_C_NOTATIONS, (
@@ -714,7 +691,7 @@ def test_wl_c_documents_the_optionality_resolution_step(section_2_15_text: str) 
     assert 'WL-C optionality resolution' in section_2_15_text, (
         'Section 2.15 must document a "WL-C optionality resolution" step between the '
         'sweep and the finding, or WL-C reverts to flagging every plan-id-less '
-        'invocation regardless of the verb\'s declared optionality.'
+        "invocation regardless of the verb's declared optionality."
     )
 
 
@@ -724,9 +701,7 @@ def test_wl_c_names_both_optionality_sources(section_2_15_text: str) -> None:
         'The WL-C optionality-resolution step must name the primary source: probing '
         'the live parser with --help and reading its usage: line.'
     )
-    assert (
-        'Fallback source' in section_2_15_text and '## Canonical invocations' in section_2_15_text
-    ), (
+    assert 'Fallback source' in section_2_15_text and '## Canonical invocations' in section_2_15_text, (
         'The WL-C optionality-resolution step must name the fallback source: the owning '
         "SKILL.md's ## Canonical invocations entry for the verb."
     )
@@ -774,7 +749,7 @@ def test_stale_auto_routing_scripts_cross_reference_is_gone(agent_text: str) -> 
     """
     assert 'Auto-routing scripts' not in agent_text, (
         'q-gate-validation.md still cites a worktree-handling.md "Auto-routing scripts" '
-        'subsection, which does not exist. The whitelist is the sweep regex\'s own '
+        "subsection, which does not exist. The whitelist is the sweep regex's own "
         'alternation group, and the contract lives in the "--plan-id Four-State '
         'Contract" section.'
     )
@@ -792,9 +767,7 @@ def test_test_file_lives_at_expected_path() -> None:
     ``lesson-2026-05-07-11-001``.
     """
     here = Path(__file__).resolve()
-    expected_suffix = Path(
-        'test/plan-marshall/q-gate-validation-agent/test_q_gate_validation_worktree_linter.py'
-    )
+    expected_suffix = Path('test/plan-marshall/q-gate-validation-agent/test_q_gate_validation_worktree_linter.py')
     assert str(here).endswith(str(expected_suffix)), (
         f'Test file moved from expected path. Got {here}, expected suffix {expected_suffix}.'
     )

@@ -24,7 +24,9 @@ from conftest import load_skill_module
 def load_frontend_cui_extension():
     """Load pm-dev-frontend-cui extension.py and return an Extension instance."""
     module = load_skill_module(
-        'pm-dev-frontend-cui', 'plan-marshall-plugin', 'extension.py',
+        'pm-dev-frontend-cui',
+        'plan-marshall-plugin',
+        'extension.py',
         'extension_pm_dev_frontend_cui',
     )
 

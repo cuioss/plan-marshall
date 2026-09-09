@@ -417,9 +417,7 @@ def test_normalize_error_fills_defaults():
 
 
 def test_normalize_error_drops_extra_keys():
-    normalized = proto.normalize_error(
-        {'file': 'f', 'line': 1, 'message': 'm', 'category': 'c', 'extra': 'x'}
-    )
+    normalized = proto.normalize_error({'file': 'f', 'line': 1, 'message': 'm', 'category': 'c', 'extra': 'x'})
 
     assert set(normalized) == set(proto.ERROR_FIELDS)
 
@@ -555,9 +553,7 @@ def test_status_from_result_maps_error_to_failure():
     assert payload['exit_code'] == 1
     assert payload['duration_seconds'] == 12
     assert payload['log_file'] == '/tmp/x.log'
-    assert payload['errors'] == [
-        {'file': '', 'line': None, 'message': 'boom', 'category': ''}
-    ]
+    assert payload['errors'] == [{'file': '', 'line': None, 'message': 'boom', 'category': ''}]
 
 
 def test_status_from_result_killed_overrides_status():
@@ -653,11 +649,7 @@ class TestReadLogVerdict:
         # The wrapper streams progress first, then emits its final result TOON to
         # the SAME log; the last top-level status:/exit_code: must win.
         log = tmp_path / 'job.log'
-        log.write_text(
-            'status: running\nexit_code: 0\n'
-            '... more build chatter ...\n'
-            'status: error\nexit_code: 5\n'
-        )
+        log.write_text('status: running\nexit_code: 0\n... more build chatter ...\nstatus: error\nexit_code: 5\n')
 
         verdict = proto.read_log_verdict(str(log))
 

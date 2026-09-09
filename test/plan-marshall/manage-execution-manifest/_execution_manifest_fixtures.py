@@ -63,25 +63,25 @@ class FakeExtension(ExtensionBase):
         self._specificity = specificity or {}
 
     def get_skill_domains(self) -> list[dict]:
-        return [{
-            'domain': {
-                'key': self._domain_key,
-                'name': self._domain_key,
-                'description': '',
-            },
-            'profiles': {
-                'core': {'defaults': [], 'optionals': []},
-                'implementation': {'defaults': [], 'optionals': []},
-                'module_testing': {'defaults': [], 'optionals': []},
-                'quality': {'defaults': [], 'optionals': []},
-            },
-        }]
+        return [
+            {
+                'domain': {
+                    'key': self._domain_key,
+                    'name': self._domain_key,
+                    'description': '',
+                },
+                'profiles': {
+                    'core': {'defaults': [], 'optionals': []},
+                    'implementation': {'defaults': [], 'optionals': []},
+                    'module_testing': {'defaults': [], 'optionals': []},
+                    'quality': {'defaults': [], 'optionals': []},
+                },
+            }
+        ]
 
     def classify_paths(self, paths: list[str]) -> dict[str, list[str]]:
         path_set = set(paths)
-        result: dict[str, list[str]] = {
-            'production': [], 'test': [], 'documentation': [], 'config': []
-        }
+        result: dict[str, list[str]] = {'production': [], 'test': [], 'documentation': [], 'config': []}
         for role, claimed in self._claims.items():
             result[role] = [p for p in claimed if p in path_set]
         return result
@@ -149,11 +149,16 @@ def fake_lane_blocks() -> dict[str, dict[str, str]]:
         'push': {'class': 'core', 'tier': 'minimal', 'cost_size': 'XS'},
         'archive-plan': {'class': 'core', 'tier': 'minimal', 'cost_size': 'XS'},
         'sonar-roundtrip': {
-            'class': 'prunable', 'tier': 'standard', 'prunable_when': 'no_code_delta', 'cost_size': 'L',
+            'class': 'prunable',
+            'tier': 'standard',
+            'prunable_when': 'no_code_delta',
+            'cost_size': 'L',
         },
         'finalize-step-security-audit': {'class': 'adversarial', 'tier': 'full', 'cost_size': 'L'},
         'plan-marshall:plan-retrospective': {'class': 'prunable', 'tier': 'full', 'cost_size': 'L'},
         'project:finalize-step-deploy-target': {
-            'class': 'derived-state', 'tier': 'minimal', 'cost_size': 'XS',
+            'class': 'derived-state',
+            'tier': 'minimal',
+            'cost_size': 'XS',
         },
     }

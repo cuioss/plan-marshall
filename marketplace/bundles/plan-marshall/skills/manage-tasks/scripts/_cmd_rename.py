@@ -49,9 +49,7 @@ def _write_mappings(path: Path, mappings: list[dict]) -> None:
     atomic_write_file(path, '\n'.join(lines))
 
 
-def _apply_mappings_to_tasks(
-    plan_id: str, old_path: str, new_path: str, include_completed: bool = False
-) -> list[dict]:
+def _apply_mappings_to_tasks(plan_id: str, old_path: str, new_path: str, include_completed: bool = False) -> list[dict]:
     """Rewrite step targets that match old_path.
 
     By default only unfinished work is rewritten: a task whose status is ``done``
@@ -135,22 +133,16 @@ def cmd_rename_path(args) -> dict:
     mappings.append({'old_path': old_path, 'new_path': new_path})
     _write_mappings(mapping_path, mappings)
 
-    rewritten = _apply_mappings_to_tasks(
-        args.plan_id, old_path, new_path, include_completed=args.include_completed
-    )
+    rewritten = _apply_mappings_to_tasks(args.plan_id, old_path, new_path, include_completed=args.include_completed)
     # Finished work is EITHER guard: a done step, or a done task whose step rows
     # still read `pending`. Filtering on the step status alone would report the
     # second shape as an ordinary pending rewrite, which is precisely the
     # distinction this count exists to draw.
-    completed_rewritten = [
-        r for r in rewritten if r['step_status'] != 'pending' or r['task_status'] == 'done'
-    ]
+    completed_rewritten = [r for r in rewritten if r['step_status'] != 'pending' or r['task_status'] == 'done']
 
     # A rewrite that edited finished work says so in the log line — the count
     # alone would not distinguish it from an ordinary pending-only rewrite.
-    completed_note = (
-        f' ({len(completed_rewritten)} on already-completed work)' if completed_rewritten else ''
-    )
+    completed_note = f' ({len(completed_rewritten)} on already-completed work)' if completed_rewritten else ''
     log_entry(
         'work',
         args.plan_id,

@@ -152,10 +152,7 @@ class TestBootstrapGuard:
 # interpreter, whose observable is exactly what a real generator emits.
 
 _ERROR_STUB = (
-    'import sys\n'
-    'print("status: error")\n'
-    'print("error: Fail-open regeneration refused: stub refusal")\n'
-    'sys.exit(0)\n'
+    'import sys\nprint("status: error")\nprint("error: Fail-open regeneration refused: stub refusal")\nsys.exit(0)\n'
 )
 
 

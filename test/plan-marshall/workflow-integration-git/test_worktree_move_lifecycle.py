@@ -72,8 +72,14 @@ def _prepare_ns(plan_id: str) -> Namespace:
     parser.
     """
     ns: Namespace = parse_ns(
-        'plan-marshall', 'workflow-integration-git', 'prepare_execute.py',
-        'prepare', '--plan-id', plan_id, '--branch', f'feature/{plan_id}',
+        'plan-marshall',
+        'workflow-integration-git',
+        'prepare_execute.py',
+        'prepare',
+        '--plan-id',
+        plan_id,
+        '--branch',
+        f'feature/{plan_id}',
     )
     return ns
 
@@ -226,7 +232,9 @@ class TestWorktreeMoveLifecycle:
 
         # Move the plan dir back into main.
         move_back = integrate_into_main.run_integrate_into_main(
-            parse_ns('plan-marshall', 'workflow-integration-git', 'integrate_into_main.py', 'integrate', '--plan-id', plan_id)
+            parse_ns(
+                'plan-marshall', 'workflow-integration-git', 'integrate_into_main.py', 'integrate', '--plan-id', plan_id
+            )
         )
         assert move_back['status'] == 'success', move_back
         assert move_back['action'] == 'integrated'

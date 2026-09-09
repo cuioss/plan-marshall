@@ -7,7 +7,6 @@ Its sections, in order:
 * D5b — a reduced input set reports the reduction
 """
 
-
 from __future__ import annotations
 
 from _footprint_oracle_classification_fixtures import (
@@ -42,9 +41,7 @@ class TestProjectLocalTreeSurvivesFilter:
         )
         diff = _write_diff(tmp_path, PROJECT_LOCAL_PRODUCTION)
 
-        result = run_script(
-            MANIFEST_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live', '--diff-file', str(diff)
-        )
+        result = run_script(MANIFEST_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live', '--diff-file', str(diff))
         assert result.success, result.stderr
         data = result.toon()
 
@@ -70,9 +67,7 @@ class TestProjectLocalTreeSurvivesFilter:
             ['.plan/plans/oracle-plan/status.json', '.claude/skills/sync-plugin-cache/scripts/sync.py'],
         )
 
-        result = run_script(
-            MANIFEST_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live', '--diff-file', str(diff)
-        )
+        result = run_script(MANIFEST_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live', '--diff-file', str(diff))
         assert result.success, result.stderr
         data = result.toon()
         assert data['diff']['files_filtered'] == 1
@@ -102,15 +97,12 @@ class TestProjectLocalTreeSurvivesFilter:
         (logs / 'decision.log').write_text('[2026-04-17T10:00:00Z] [INFO] [aaaaaa] nothing\n', encoding='utf-8')
         diff = _write_diff(tmp_path, PROJECT_LOCAL_PRODUCTION)
 
-        result = run_script(
-            ROUTING_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live', '--diff-file', str(diff)
-        )
+        result = run_script(ROUTING_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live', '--diff-file', str(diff))
         assert result.success, result.stderr
         data = result.toon()
         simplify = [c for c in data['mis_prune_checks'] if c['check'] == 'mis_prune:finalize-step-simplify']
         assert simplify, data['mis_prune_checks']
         assert simplify[0]['status'] == 'fail', simplify[0]
-
 
     def test_unclassifiable_path_counts_as_production_for_the_mis_prune(self, tmp_path, monkeypatch):
         """Fail-closed: a path no route covers must not exonerate a ``no_code_delta`` prune.
@@ -135,13 +127,9 @@ class TestProjectLocalTreeSurvivesFilter:
         (logs / 'decision.log').write_text('[2026-04-17T10:00:00Z] [INFO] [aaaaaa] nothing\n', encoding='utf-8')
         diff = _write_diff(tmp_path, ['some/unrouted/module.rb'])
 
-        result = run_script(
-            ROUTING_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live', '--diff-file', str(diff)
-        )
+        result = run_script(ROUTING_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live', '--diff-file', str(diff))
         assert result.success, result.stderr
-        simplify = [
-            c for c in result.toon()['mis_prune_checks'] if c['check'] == 'mis_prune:finalize-step-simplify'
-        ]
+        simplify = [c for c in result.toon()['mis_prune_checks'] if c['check'] == 'mis_prune:finalize-step-simplify']
         assert simplify[0]['status'] == 'fail', simplify[0]
 
     def test_documentation_alone_does_not_count_as_production(self, tmp_path, monkeypatch):
@@ -161,13 +149,9 @@ class TestProjectLocalTreeSurvivesFilter:
         (logs / 'decision.log').write_text('[2026-04-17T10:00:00Z] [INFO] [aaaaaa] nothing\n', encoding='utf-8')
         diff = _write_diff(tmp_path, ['doc/developer/build.adoc', '.plan/plans/oracle-plan/status.json'])
 
-        result = run_script(
-            ROUTING_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live', '--diff-file', str(diff)
-        )
+        result = run_script(ROUTING_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live', '--diff-file', str(diff))
         assert result.success, result.stderr
-        simplify = [
-            c for c in result.toon()['mis_prune_checks'] if c['check'] == 'mis_prune:finalize-step-simplify'
-        ]
+        simplify = [c for c in result.toon()['mis_prune_checks'] if c['check'] == 'mis_prune:finalize-step-simplify']
         assert simplify[0]['status'] == 'pass', simplify[0]
 
 
@@ -205,9 +189,7 @@ class TestReducedInputSetReportsReduction:
             ],
         )
 
-        result = run_script(
-            MANIFEST_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live', '--diff-file', str(diff)
-        )
+        result = run_script(MANIFEST_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live', '--diff-file', str(diff))
         assert result.success, result.stderr
         data = result.toon()
 
@@ -230,9 +212,7 @@ class TestReducedInputSetReportsReduction:
         )
         diff = _write_diff(tmp_path, ['doc/developer/build.adoc', 'doc/developer/marketplace-build.adoc'])
 
-        result = run_script(
-            MANIFEST_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live', '--diff-file', str(diff)
-        )
+        result = run_script(MANIFEST_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live', '--diff-file', str(diff))
         assert result.success, result.stderr
         data = result.toon()
         assert _check(data['checks'], 'docs_only_diff')['status'] == 'pass'

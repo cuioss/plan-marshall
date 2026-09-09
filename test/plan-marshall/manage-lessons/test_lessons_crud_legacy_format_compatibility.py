@@ -6,7 +6,6 @@
 Its one section: legacy-format compatibility (read paths).
 """
 
-
 from argparse import Namespace
 from unittest.mock import patch
 from _lessons_helpers import cmd_get, cmd_list

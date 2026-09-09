@@ -45,10 +45,7 @@ class OpenCodeTarget(TargetBase):
         bundles: list[str] | None = None,
     ) -> list[Path]:
         if output_dir is None:
-            raise ValueError(
-                'OpenCodeTarget requires --output: pass an output directory '
-                '(e.g. target/opencode/)'
-            )
+            raise ValueError('OpenCodeTarget requires --output: pass an output directory (e.g. target/opencode/)')
         rules = load_transform_rules(self.config_dir / 'mapping.json')
         lookup = build_user_invocable_lookup(marketplace_dir)
         transformer = make_body_transformer(lookup, rules)

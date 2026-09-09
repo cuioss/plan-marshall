@@ -19,6 +19,7 @@ Covers:
     not been delivered keeps its slot, and loses the exemption the moment the
     delivery marker lands — a state-driven predicate, never a time window
 """
+
 from __future__ import annotations
 
 import json
@@ -29,16 +30,16 @@ import pytest
 import session_binding
 
 # Canonical session-UUID-shaped ids (all-hex, correct segment lengths).
-SID_A = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
-SID_B = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
-SID_C = "cccccccc-cccc-cccc-cccc-cccccccccccc"
+SID_A = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
+SID_B = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
+SID_C = 'cccccccc-cccc-cccc-cccc-cccccccccccc'
 
 #: Values that are not a safe single path segment. Both ids in this module are
 #: path segments under the cache root, so the same set rejects both: empty,
 #: either separator, the two traversal spellings, a value past the length cap,
 #: and one carrying a NUL byte. Held as one constant because four sweeps assert
 #: against it, and a value added to only some of them would leave a real gap.
-_UNSAFE_SEGMENTS = ["", "a/b", "a\\b", "..", ".", "x" * 121, "a\x00b"]
+_UNSAFE_SEGMENTS = ['', 'a/b', 'a\\b', '..', '.', 'x' * 121, 'a\x00b']
 
 _UNSAFE_SEGMENT_IDS = [
     'empty',
@@ -53,7 +54,7 @@ _UNSAFE_SEGMENT_IDS = [
 #: The same set plus a full traversal path — the shape a session id is most
 #: likely to arrive as from a hostile or confused caller, and the reason the
 #: session-id sweeps carry one row the plan-id sweeps do not need.
-_UNSAFE_SESSION_IDS = ["../../etc/passwd", *_UNSAFE_SEGMENTS]
+_UNSAFE_SESSION_IDS = ['../../etc/passwd', *_UNSAFE_SEGMENTS]
 
 _UNSAFE_SESSION_ID_IDS = ['a-traversal-path', *_UNSAFE_SEGMENT_IDS]
 
@@ -61,8 +62,8 @@ _UNSAFE_SESSION_ID_IDS = ['a-traversal-path', *_UNSAFE_SEGMENT_IDS]
 @pytest.fixture()
 def cache(tmp_path, monkeypatch):
     """Redirect the per-session cache to a tmp dir; return the sessions root."""
-    root = tmp_path / "sessions"
-    monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", root)
+    root = tmp_path / 'sessions'
+    monkeypatch.setattr(session_binding, '_SESSION_CACHE_BASE', root)
     return root
 
 
@@ -70,36 +71,34 @@ def cache(tmp_path, monkeypatch):
 def project(tmp_path, monkeypatch):
     """chdir to a tmp project root so _plan_is_live resolves plan dirs there."""
     monkeypatch.chdir(tmp_path)
-    (tmp_path / ".plan" / "local" / "plans").mkdir(parents=True)
+    (tmp_path / '.plan' / 'local' / 'plans').mkdir(parents=True)
     return tmp_path
 
 
 def _make_live_plan(project_root, plan_id: str) -> None:
     """Create a live (non-archived) plan directory under the project root."""
-    (project_root / ".plan" / "local" / "plans" / plan_id).mkdir(parents=True, exist_ok=True)
+    (project_root / '.plan' / 'local' / 'plans' / plan_id).mkdir(parents=True, exist_ok=True)
 
 
 def _make_archived_plan(
     project_root,
     plan_id: str,
     *,
-    current_phase: str = "complete",
+    current_phase: str = 'complete',
     delivered: bool = False,
-    date_prefix: str = "2026-05-29",
+    date_prefix: str = '2026-05-29',
 ) -> None:
     """Create an archived plan dir carrying a ``status.json`` title state.
 
     ``delivered=True`` stamps the delivery marker, which is the ONLY thing that
     lifts the GC exemption — there is deliberately no timestamp involved.
     """
-    archived = (
-        project_root / ".plan" / "local" / "archived-plans" / f"{date_prefix}-{plan_id}"
-    )
+    archived = project_root / '.plan' / 'local' / 'archived-plans' / f'{date_prefix}-{plan_id}'
     archived.mkdir(parents=True, exist_ok=True)
-    status: dict[str, object] = {"current_phase": current_phase}
+    status: dict[str, object] = {'current_phase': current_phase}
     if delivered:
         status[session_binding._DELIVERED_MARKER] = True
-    (archived / "status.json").write_text(json.dumps(status), encoding="utf-8")
+    (archived / 'status.json').write_text(json.dumps(status), encoding='utf-8')
 
 
 # =============================================================================
@@ -117,24 +116,24 @@ class TestUnbind:
 
     def test_unbind_removes_existing_slot_and_prunes_session_dir(self, cache):
         """An existing slot is removed and its now-empty session dir is pruned."""
-        assert session_binding.bind(SID_A, "plan-a") is True
-        assert (cache / SID_A / "active-plan").is_file()
+        assert session_binding.bind(SID_A, 'plan-a') is True
+        assert (cache / SID_A / 'active-plan').is_file()
 
         assert session_binding.unbind(SID_A) is True
 
-        assert not (cache / SID_A / "active-plan").exists()
+        assert not (cache / SID_A / 'active-plan').exists()
         assert not (cache / SID_A).exists()
         assert session_binding.resolve_plan(SID_A) is None
 
     def test_unbind_touches_only_the_callers_own_slot(self, cache):
         """A sibling session's binding survives the caller's unbind untouched."""
-        session_binding.bind(SID_A, "plan-a")
-        session_binding.bind(SID_B, "plan-b")
+        session_binding.bind(SID_A, 'plan-a')
+        session_binding.bind(SID_B, 'plan-b')
 
         session_binding.unbind(SID_A)
 
         assert session_binding.resolve_plan(SID_A) is None
-        assert session_binding.resolve_plan(SID_B) == "plan-b"
+        assert session_binding.resolve_plan(SID_B) == 'plan-b'
 
     def test_unbind_is_idempotent_on_absent_slot(self, cache):
         """Unbinding an already-absent slot reports success and does not raise."""
@@ -142,31 +141,31 @@ class TestUnbind:
         assert session_binding.unbind(SID_C) is True
         assert session_binding.resolve_plan(SID_C) is None
 
-    @pytest.mark.parametrize("bad", _UNSAFE_SESSION_IDS, ids=_UNSAFE_SESSION_ID_IDS)
+    @pytest.mark.parametrize('bad', _UNSAFE_SESSION_IDS, ids=_UNSAFE_SESSION_ID_IDS)
     def test_unbind_rejects_malformed_session_id(self, cache, bad):
         """A malformed session id is rejected before any filesystem touch."""
         assert session_binding.unbind(bad) is False
 
     def test_unbind_returns_false_on_io_error(self, cache, monkeypatch):
         """An I/O error yields False rather than propagating — never raises."""
-        session_binding.bind(SID_A, "plan-a")
+        session_binding.bind(SID_A, 'plan-a')
 
         def _raise(*_args, **_kwargs):
-            raise OSError(13, "Permission denied")
+            raise OSError(13, 'Permission denied')
 
-        monkeypatch.setattr(session_binding.Path, "unlink", _raise)
+        monkeypatch.setattr(session_binding.Path, 'unlink', _raise)
 
         assert session_binding.unbind(SID_A) is False
 
     def test_unbind_keeps_a_non_empty_session_dir(self, cache):
         """The dir prune is best-effort: a session dir holding other files stays."""
-        session_binding.bind(SID_A, "plan-a")
-        (cache / SID_A / "other-file").write_text("keep me", encoding="utf-8")
+        session_binding.bind(SID_A, 'plan-a')
+        (cache / SID_A / 'other-file').write_text('keep me', encoding='utf-8')
 
         assert session_binding.unbind(SID_A) is True
 
-        assert not (cache / SID_A / "active-plan").exists()
-        assert (cache / SID_A / "other-file").is_file()
+        assert not (cache / SID_A / 'active-plan').exists()
+        assert (cache / SID_A / 'other-file').is_file()
 
 
 # =============================================================================
@@ -188,18 +187,18 @@ class TestValidators:
 
     def test_valid_session_id_accepts_non_uuid_single_segment(self):
         """A non-UUID single segment (e.g. a test session id) is accepted — lax by design."""
-        assert session_binding._valid_session_id("sess-tab-A") is True
+        assert session_binding._valid_session_id('sess-tab-A') is True
 
-    @pytest.mark.parametrize("bad", _UNSAFE_SESSION_IDS, ids=_UNSAFE_SESSION_ID_IDS)
+    @pytest.mark.parametrize('bad', _UNSAFE_SESSION_IDS, ids=_UNSAFE_SESSION_ID_IDS)
     def test_valid_session_id_rejects_unsafe(self, bad):
         """Empty, traversal, separator, null-byte, and over-length session ids are rejected."""
         assert session_binding._valid_session_id(bad) is False
 
     def test_valid_plan_id_accepts_simple(self):
         """A simple single-segment plan id passes validation."""
-        assert session_binding._valid_plan_id("my-plan-123") is True
+        assert session_binding._valid_plan_id('my-plan-123') is True
 
-    @pytest.mark.parametrize("bad", _UNSAFE_SEGMENTS, ids=_UNSAFE_SEGMENT_IDS)
+    @pytest.mark.parametrize('bad', _UNSAFE_SEGMENTS, ids=_UNSAFE_SEGMENT_IDS)
     def test_valid_plan_id_rejects_unsafe(self, bad):
         """Empty, traversal, separator, null-byte, and over-length plan ids are rejected."""
         assert session_binding._valid_plan_id(bad) is False
@@ -219,18 +218,18 @@ class TestResolvePlan:
 
     def test_returns_bound_plan(self, cache):
         """After a bind, resolve returns the bound plan id."""
-        session_binding.bind(SID_A, "plan-1")
-        assert session_binding.resolve_plan(SID_A) == "plan-1"
+        session_binding.bind(SID_A, 'plan-1')
+        assert session_binding.resolve_plan(SID_A) == 'plan-1'
 
     def test_malformed_session_id_returns_none(self, cache):
         """A malformed session id resolves to None without touching disk."""
-        assert session_binding.resolve_plan("../evil") is None
+        assert session_binding.resolve_plan('../evil') is None
 
     def test_empty_slot_file_returns_none(self, cache):
         """An empty active-plan file resolves to None (treated as unbound)."""
-        slot = cache / SID_A / "active-plan"
+        slot = cache / SID_A / 'active-plan'
         slot.parent.mkdir(parents=True)
-        slot.write_text("   ", encoding="utf-8")
+        slot.write_text('   ', encoding='utf-8')
         assert session_binding.resolve_plan(SID_A) is None
 
 
@@ -244,29 +243,29 @@ class TestBind:
 
     def test_writes_slot(self, cache):
         """bind writes the caller's slot and returns True."""
-        assert session_binding.bind(SID_A, "plan-1") is True
-        assert (cache / SID_A / "active-plan").read_text(encoding="utf-8") == "plan-1"
+        assert session_binding.bind(SID_A, 'plan-1') is True
+        assert (cache / SID_A / 'active-plan').read_text(encoding='utf-8') == 'plan-1'
 
     def test_last_driven_wins_overwrites_differing_binding(self, cache):
         """A second bind to a DIFFERENT plan overwrites — never protects the prior binding."""
-        assert session_binding.bind(SID_A, "plan-1") is True
-        assert session_binding.bind(SID_A, "plan-2") is True
-        assert session_binding.resolve_plan(SID_A) == "plan-2"
+        assert session_binding.bind(SID_A, 'plan-1') is True
+        assert session_binding.bind(SID_A, 'plan-2') is True
+        assert session_binding.resolve_plan(SID_A) == 'plan-2'
 
     def test_idempotent_rebind_same_plan(self, cache):
         """Re-binding the same plan is idempotent and succeeds."""
-        assert session_binding.bind(SID_A, "plan-1") is True
-        assert session_binding.bind(SID_A, "plan-1") is True
-        assert session_binding.resolve_plan(SID_A) == "plan-1"
+        assert session_binding.bind(SID_A, 'plan-1') is True
+        assert session_binding.bind(SID_A, 'plan-1') is True
+        assert session_binding.resolve_plan(SID_A) == 'plan-1'
 
     def test_rejects_invalid_session_id(self, cache):
         """bind rejects a malformed session id (returns False, writes nothing)."""
-        assert session_binding.bind("../evil", "plan-1") is False
+        assert session_binding.bind('../evil', 'plan-1') is False
         assert not (cache).exists() or not any(cache.iterdir())
 
     def test_rejects_invalid_plan_id(self, cache):
         """bind rejects a traversal plan id (returns False, writes nothing)."""
-        assert session_binding.bind(SID_A, "../evil") is False
+        assert session_binding.bind(SID_A, '../evil') is False
         assert session_binding.resolve_plan(SID_A) is None
 
 
@@ -280,77 +279,77 @@ class TestDoctor:
 
     def test_single_binding_no_conflict(self, cache, project):
         """One session bound to one live plan reports no conflicts and no stale."""
-        _make_live_plan(project, "plan-1")
-        session_binding.bind(SID_A, "plan-1")
+        _make_live_plan(project, 'plan-1')
+        session_binding.bind(SID_A, 'plan-1')
         report = session_binding.doctor()
-        assert report["scanned"] == 1
-        assert report["conflicts"] == []
-        assert report["stale"] == []
-        assert report["gc_removed"] == 0
+        assert report['scanned'] == 1
+        assert report['conflicts'] == []
+        assert report['stale'] == []
+        assert report['gc_removed'] == 0
 
     def test_detects_two_sessions_one_plan_conflict(self, cache, project):
         """Two live sessions bound to the same plan are flagged as a conflict."""
-        _make_live_plan(project, "plan-1")
-        session_binding.bind(SID_A, "plan-1")
-        session_binding.bind(SID_B, "plan-1")
+        _make_live_plan(project, 'plan-1')
+        session_binding.bind(SID_A, 'plan-1')
+        session_binding.bind(SID_B, 'plan-1')
         report = session_binding.doctor()
-        assert len(report["conflicts"]) == 1
-        conflict = report["conflicts"][0]
-        assert conflict["plan_id"] == "plan-1"
-        assert sorted(conflict["sessions"]) == sorted([SID_A, SID_B])
+        assert len(report['conflicts']) == 1
+        conflict = report['conflicts'][0]
+        assert conflict['plan_id'] == 'plan-1'
+        assert sorted(conflict['sessions']) == sorted([SID_A, SID_B])
 
     def test_distinct_plans_no_conflict(self, cache, project):
         """Two sessions bound to distinct plans report no conflict."""
-        _make_live_plan(project, "plan-1")
-        _make_live_plan(project, "plan-2")
-        session_binding.bind(SID_A, "plan-1")
-        session_binding.bind(SID_B, "plan-2")
+        _make_live_plan(project, 'plan-1')
+        _make_live_plan(project, 'plan-2')
+        session_binding.bind(SID_A, 'plan-1')
+        session_binding.bind(SID_B, 'plan-2')
         report = session_binding.doctor()
-        assert report["conflicts"] == []
+        assert report['conflicts'] == []
 
     def test_flags_stale_slot(self, cache, project):
         """A slot bound to an archived/deleted plan (no live dir) is flagged stale."""
-        _make_live_plan(project, "live-plan")
-        session_binding.bind(SID_A, "live-plan")
-        session_binding.bind(SID_B, "gone-plan")  # no live dir → stale
+        _make_live_plan(project, 'live-plan')
+        session_binding.bind(SID_A, 'live-plan')
+        session_binding.bind(SID_B, 'gone-plan')  # no live dir → stale
         report = session_binding.doctor()
-        stale_plans = {s["plan_id"] for s in report["stale"]}
-        assert stale_plans == {"gone-plan"}
+        stale_plans = {s['plan_id'] for s in report['stale']}
+        assert stale_plans == {'gone-plan'}
 
     def test_fix_gcs_stale_slot_preserves_live(self, cache, project):
         """--fix removes the stale slot but preserves the live-plan slot."""
-        _make_live_plan(project, "live-plan")
-        session_binding.bind(SID_A, "live-plan")
-        session_binding.bind(SID_B, "gone-plan")
+        _make_live_plan(project, 'live-plan')
+        session_binding.bind(SID_A, 'live-plan')
+        session_binding.bind(SID_B, 'gone-plan')
         report = session_binding.doctor(fix=True)
-        assert report["gc_removed"] == 1
+        assert report['gc_removed'] == 1
         assert session_binding.resolve_plan(SID_B) is None  # stale slot GC'd
-        assert session_binding.resolve_plan(SID_A) == "live-plan"  # live preserved
+        assert session_binding.resolve_plan(SID_A) == 'live-plan'  # live preserved
 
     def test_fix_prunes_empty_session_dir(self, cache, project):
         """--fix removes the now-empty session directory, not just the active-plan file."""
-        session_binding.bind(SID_B, "gone-plan")
+        session_binding.bind(SID_B, 'gone-plan')
         assert (cache / SID_B).is_dir()
         session_binding.doctor(fix=True)
-        assert not (cache / SID_B / "active-plan").exists()  # slot file gone
+        assert not (cache / SID_B / 'active-plan').exists()  # slot file gone
         assert not (cache / SID_B).exists()  # empty parent dir pruned
 
     def test_no_index_json_written(self, cache, project):
         """doctor keeps no shared mutable index — no index.json is ever created."""
-        _make_live_plan(project, "plan-1")
-        session_binding.bind(SID_A, "plan-1")
+        _make_live_plan(project, 'plan-1')
+        session_binding.bind(SID_A, 'plan-1')
         session_binding.doctor(fix=True)
-        assert not (cache / "index.json").exists()
-        assert not (cache.parent / "index.json").exists()
+        assert not (cache / 'index.json').exists()
+        assert not (cache.parent / 'index.json').exists()
 
     def test_empty_cache_reports_zero(self, cache, project):
         """A doctor run over an empty cache reports nothing scanned."""
         report = session_binding.doctor()
-        assert report["scanned"] == 0
-        assert report["conflicts"] == []
-        assert report["stale"] == []
-        assert report["orphans"] == []
-        assert report["orphans_removed"] == 0
+        assert report['scanned'] == 0
+        assert report['conflicts'] == []
+        assert report['stale'] == []
+        assert report['orphans'] == []
+        assert report['orphans_removed'] == 0
 
 
 # =============================================================================
@@ -373,27 +372,25 @@ class TestMainAnchoredSweep:
     @staticmethod
     def _make_worktree_plan(project_root, plan_id: str):
         """Create a phase-5+ worktree-resident live plan and return the worktree root."""
-        worktree_root = project_root / ".plan" / "local" / "worktrees" / plan_id
-        (worktree_root / ".plan" / "local" / "plans" / plan_id).mkdir(parents=True)
+        worktree_root = project_root / '.plan' / 'local' / 'worktrees' / plan_id
+        (worktree_root / '.plan' / 'local' / 'plans' / plan_id).mkdir(parents=True)
         return worktree_root
 
     def test_main_anchored_sweep_preserves_both_residencies(self, cache, project):
         """From the project root, a main-resident and a worktree-resident plan are both live."""
-        _make_live_plan(project, "main-plan")
-        self._make_worktree_plan(project, "wt-plan")
-        session_binding.bind(SID_A, "main-plan")
-        session_binding.bind(SID_B, "wt-plan")
+        _make_live_plan(project, 'main-plan')
+        self._make_worktree_plan(project, 'wt-plan')
+        session_binding.bind(SID_A, 'main-plan')
+        session_binding.bind(SID_B, 'wt-plan')
 
         report = session_binding.doctor(fix=True)
 
-        assert report["stale"] == []
-        assert report["gc_removed"] == 0
-        assert session_binding.resolve_plan(SID_A) == "main-plan"
-        assert session_binding.resolve_plan(SID_B) == "wt-plan"
+        assert report['stale'] == []
+        assert report['gc_removed'] == 0
+        assert session_binding.resolve_plan(SID_A) == 'main-plan'
+        assert session_binding.resolve_plan(SID_B) == 'wt-plan'
 
-    def test_worktree_anchored_sweep_misjudges_the_main_resident_plan(
-        self, cache, project, monkeypatch
-    ):
+    def test_worktree_anchored_sweep_misjudges_the_main_resident_plan(self, cache, project, monkeypatch):
         """DOCUMENTED HAZARD: from inside a worktree the main-resident plan reads as stale.
 
         This is the failure mode the main-anchored-caller invariant exists to
@@ -401,17 +398,17 @@ class TestMainAnchoredSweep:
         A caller that runs the sweep from a worktree cwd would GC a binding whose
         plan is very much alive.
         """
-        _make_live_plan(project, "main-plan")
-        worktree_root = self._make_worktree_plan(project, "wt-plan")
-        session_binding.bind(SID_A, "main-plan")
-        session_binding.bind(SID_B, "wt-plan")
+        _make_live_plan(project, 'main-plan')
+        worktree_root = self._make_worktree_plan(project, 'wt-plan')
+        session_binding.bind(SID_A, 'main-plan')
+        session_binding.bind(SID_B, 'wt-plan')
 
         monkeypatch.chdir(worktree_root)
 
         report = session_binding.doctor()
 
-        stale_plans = {s["plan_id"] for s in report["stale"]}
-        assert stale_plans == {"main-plan"}
+        stale_plans = {s['plan_id'] for s in report['stale']}
+        assert stale_plans == {'main-plan'}
 
 
 # =============================================================================
@@ -431,38 +428,38 @@ class TestBenignCoexistence:
 
     def test_two_sessions_one_plan_coexist_benignly(self, cache, project):
         """Both forward lookups stay exact, the conflict is reported, and --fix destroys nothing."""
-        _make_live_plan(project, "shared-plan")
-        assert session_binding.bind(SID_A, "shared-plan") is True
-        assert session_binding.bind(SID_B, "shared-plan") is True
+        _make_live_plan(project, 'shared-plan')
+        assert session_binding.bind(SID_A, 'shared-plan') is True
+        assert session_binding.bind(SID_B, 'shared-plan') is True
 
         # (a) The forward lookup is exact for each session independently.
-        assert session_binding.resolve_plan(SID_A) == "shared-plan"
-        assert session_binding.resolve_plan(SID_B) == "shared-plan"
+        assert session_binding.resolve_plan(SID_A) == 'shared-plan'
+        assert session_binding.resolve_plan(SID_B) == 'shared-plan'
 
         # (b) The plan is reported as a conflict naming both sessions.
         report = session_binding.doctor()
-        assert len(report["conflicts"]) == 1
-        assert report["conflicts"][0]["plan_id"] == "shared-plan"
-        assert report["conflicts"][0]["sessions"] == sorted([SID_A, SID_B])
-        assert report["stale"] == []
+        assert len(report['conflicts']) == 1
+        assert report['conflicts'][0]['plan_id'] == 'shared-plan'
+        assert report['conflicts'][0]['sessions'] == sorted([SID_A, SID_B])
+        assert report['stale'] == []
 
         # (c) --fix removes neither slot: a conflict is not a GC trigger.
         fixed = session_binding.doctor(fix=True)
-        assert fixed["gc_removed"] == 0
-        assert fixed["orphans_removed"] == 0
-        assert session_binding.resolve_plan(SID_A) == "shared-plan"
-        assert session_binding.resolve_plan(SID_B) == "shared-plan"
+        assert fixed['gc_removed'] == 0
+        assert fixed['orphans_removed'] == 0
+        assert session_binding.resolve_plan(SID_A) == 'shared-plan'
+        assert session_binding.resolve_plan(SID_B) == 'shared-plan'
 
     def test_unbind_of_one_session_leaves_the_coexisting_binding_intact(self, cache, project):
         """The self-scoped-teardown half: one session's unbind never drops the sibling's slot."""
-        _make_live_plan(project, "shared-plan")
-        session_binding.bind(SID_A, "shared-plan")
-        session_binding.bind(SID_B, "shared-plan")
+        _make_live_plan(project, 'shared-plan')
+        session_binding.bind(SID_A, 'shared-plan')
+        session_binding.bind(SID_B, 'shared-plan')
 
         assert session_binding.unbind(SID_A) is True
 
         assert session_binding.resolve_plan(SID_A) is None
-        assert session_binding.resolve_plan(SID_B) == "shared-plan"
+        assert session_binding.resolve_plan(SID_B) == 'shared-plan'
 
 
 # =============================================================================
@@ -481,18 +478,18 @@ class TestDoctorOrphans:
 
     def test_empty_slot_dir_is_reported_and_pruned(self, cache, project):
         """A zero-byte active-plan file makes its directory an orphan."""
-        slot = cache / SID_A / "active-plan"
+        slot = cache / SID_A / 'active-plan'
         slot.parent.mkdir(parents=True)
-        slot.write_text("", encoding="utf-8")
+        slot.write_text('', encoding='utf-8')
 
         report = session_binding.doctor()
-        assert report["orphans"] == [SID_A]
-        assert report["orphans_removed"] == 0
+        assert report['orphans'] == [SID_A]
+        assert report['orphans_removed'] == 0
         assert (cache / SID_A).is_dir()  # a plain scan never mutates
 
         report = session_binding.doctor(fix=True)
-        assert report["orphans"] == [SID_A]
-        assert report["orphans_removed"] == 1
+        assert report['orphans'] == [SID_A]
+        assert report['orphans_removed'] == 1
         assert not (cache / SID_A).exists()
 
     def test_absent_slot_dir_is_reported_and_pruned(self, cache, project):
@@ -500,67 +497,67 @@ class TestDoctorOrphans:
         (cache / SID_A).mkdir(parents=True)
 
         report = session_binding.doctor()
-        assert report["orphans"] == [SID_A]
-        assert report["orphans_removed"] == 0
+        assert report['orphans'] == [SID_A]
+        assert report['orphans_removed'] == 0
         assert (cache / SID_A).is_dir()
 
         report = session_binding.doctor(fix=True)
-        assert report["orphans"] == [SID_A]
-        assert report["orphans_removed"] == 1
+        assert report['orphans'] == [SID_A]
+        assert report['orphans_removed'] == 1
         assert not (cache / SID_A).exists()
 
     def test_unreadable_slot_dir_is_reported_and_pruned(self, cache, project, monkeypatch):
         """A slot whose read raises OSError makes its directory an orphan."""
-        session_binding.bind(SID_A, "plan-1")
+        session_binding.bind(SID_A, 'plan-1')
 
         def _raise(*_args, **_kwargs):
-            raise OSError(13, "Permission denied")
+            raise OSError(13, 'Permission denied')
 
-        monkeypatch.setattr(session_binding.Path, "read_text", _raise)
+        monkeypatch.setattr(session_binding.Path, 'read_text', _raise)
 
         report = session_binding.doctor()
-        assert report["orphans"] == [SID_A]
-        assert report["orphans_removed"] == 0
+        assert report['orphans'] == [SID_A]
+        assert report['orphans_removed'] == 0
 
         report = session_binding.doctor(fix=True)
-        assert report["orphans_removed"] == 1
+        assert report['orphans_removed'] == 1
         assert not (cache / SID_A).exists()
 
     def test_live_slot_dir_is_never_an_orphan(self, cache, project):
         """A directory holding a live readable slot is not reported and survives --fix."""
-        _make_live_plan(project, "plan-1")
-        session_binding.bind(SID_A, "plan-1")
+        _make_live_plan(project, 'plan-1')
+        session_binding.bind(SID_A, 'plan-1')
 
         report = session_binding.doctor(fix=True)
 
-        assert report["orphans"] == []
-        assert report["orphans_removed"] == 0
-        assert report["scanned"] == 1
-        assert session_binding.resolve_plan(SID_A) == "plan-1"
+        assert report['orphans'] == []
+        assert report['orphans_removed'] == 0
+        assert report['scanned'] == 1
+        assert session_binding.resolve_plan(SID_A) == 'plan-1'
 
     def test_orphan_dir_holding_other_files_survives_the_prune(self, cache, project):
         """The prune is best-effort: a reported orphan holding other files stays."""
         (cache / SID_A).mkdir(parents=True)
-        (cache / SID_A / "other-file").write_text("keep me", encoding="utf-8")
+        (cache / SID_A / 'other-file').write_text('keep me', encoding='utf-8')
 
         report = session_binding.doctor(fix=True)
 
-        assert report["orphans"] == [SID_A]
+        assert report['orphans'] == [SID_A]
         # _remove_slot_and_prune reports success (the absent slot file is not an
         # error) while the rmdir of the non-empty dir is silently skipped.
-        assert report["orphans_removed"] == 1
-        assert (cache / SID_A / "other-file").is_file()
+        assert report['orphans_removed'] == 1
+        assert (cache / SID_A / 'other-file').is_file()
 
     def test_stale_slot_is_not_double_counted_as_an_orphan(self, cache, project):
         """A stale slot resolves to a plan_id, so it is never also an orphan."""
-        session_binding.bind(SID_B, "gone-plan")
+        session_binding.bind(SID_B, 'gone-plan')
 
         report = session_binding.doctor(fix=True)
 
-        assert [s["plan_id"] for s in report["stale"]] == ["gone-plan"]
-        assert report["gc_removed"] == 1
-        assert report["orphans"] == []
-        assert report["orphans_removed"] == 0
+        assert [s['plan_id'] for s in report['stale']] == ['gone-plan']
+        assert report['gc_removed'] == 1
+        assert report['orphans'] == []
+        assert report['orphans_removed'] == 0
 
 
 # =============================================================================
@@ -579,13 +576,13 @@ class TestOrchestratorSlot:
 
     def test_bind_orchestrator_writes_slot(self, cache):
         """bind_orchestrator writes the active-orchestrator slot and returns True."""
-        assert session_binding.bind_orchestrator(SID_A, "my-epic") is True
-        assert (cache / SID_A / "active-orchestrator").read_text(encoding="utf-8") == "my-epic"
+        assert session_binding.bind_orchestrator(SID_A, 'my-epic') is True
+        assert (cache / SID_A / 'active-orchestrator').read_text(encoding='utf-8') == 'my-epic'
 
     def test_resolve_orchestrator_reads_bound_slug(self, cache):
         """resolve_orchestrator returns the bound epic slug."""
-        session_binding.bind_orchestrator(SID_A, "my-epic")
-        assert session_binding.resolve_orchestrator(SID_A) == "my-epic"
+        session_binding.bind_orchestrator(SID_A, 'my-epic')
+        assert session_binding.resolve_orchestrator(SID_A) == 'my-epic'
 
     def test_resolve_orchestrator_unbound_returns_none(self, cache):
         """An unbound session resolves to None on the orchestrator slot."""
@@ -593,15 +590,15 @@ class TestOrchestratorSlot:
 
     def test_resolve_orchestrator_rejects_malformed_session_id(self, cache):
         """A malformed session id resolves to None without touching disk."""
-        assert session_binding.resolve_orchestrator("../evil") is None
+        assert session_binding.resolve_orchestrator('../evil') is None
 
     def test_bind_orchestrator_last_driven_wins(self, cache):
         """A second bind_orchestrator to a different slug overwrites the prior slug."""
-        session_binding.bind_orchestrator(SID_A, "epic-1")
-        session_binding.bind_orchestrator(SID_A, "epic-2")
-        assert session_binding.resolve_orchestrator(SID_A) == "epic-2"
+        session_binding.bind_orchestrator(SID_A, 'epic-1')
+        session_binding.bind_orchestrator(SID_A, 'epic-2')
+        assert session_binding.resolve_orchestrator(SID_A) == 'epic-2'
 
-    @pytest.mark.parametrize("bad", _UNSAFE_SEGMENTS, ids=_UNSAFE_SEGMENT_IDS)
+    @pytest.mark.parametrize('bad', _UNSAFE_SEGMENTS, ids=_UNSAFE_SEGMENT_IDS)
     def test_bind_orchestrator_rejects_invalid_slug(self, cache, bad):
         """bind_orchestrator rejects a traversal/over-length slug and writes nothing."""
         assert session_binding.bind_orchestrator(SID_A, bad) is False
@@ -609,35 +606,35 @@ class TestOrchestratorSlot:
 
     def test_bind_orchestrator_rejects_invalid_session_id(self, cache):
         """bind_orchestrator rejects a malformed session id (returns False)."""
-        assert session_binding.bind_orchestrator("../evil", "my-epic") is False
+        assert session_binding.bind_orchestrator('../evil', 'my-epic') is False
 
     # --- mutual exclusion (kind-disjoint, last-driven-wins across kinds) ---
 
     def test_bind_orchestrator_clears_plan_slot(self, cache):
         """Binding an epic clears a pre-existing plan binding on the same session."""
-        session_binding.bind(SID_A, "plan-1")
-        session_binding.bind_orchestrator(SID_A, "my-epic")
+        session_binding.bind(SID_A, 'plan-1')
+        session_binding.bind_orchestrator(SID_A, 'my-epic')
         assert session_binding.resolve_plan(SID_A) is None
-        assert session_binding.resolve_orchestrator(SID_A) == "my-epic"
+        assert session_binding.resolve_orchestrator(SID_A) == 'my-epic'
 
     def test_bind_plan_clears_orchestrator_slot(self, cache):
         """Binding a plan clears a pre-existing epic binding on the same session."""
-        session_binding.bind_orchestrator(SID_A, "my-epic")
-        session_binding.bind(SID_A, "plan-1")
+        session_binding.bind_orchestrator(SID_A, 'my-epic')
+        session_binding.bind(SID_A, 'plan-1')
         assert session_binding.resolve_orchestrator(SID_A) is None
-        assert session_binding.resolve_plan(SID_A) == "plan-1"
+        assert session_binding.resolve_plan(SID_A) == 'plan-1'
 
     def test_bind_orchestrator_touches_only_callers_own_session(self, cache):
         """A sibling session's plan binding survives another session's epic bind."""
-        session_binding.bind(SID_B, "plan-b")
-        session_binding.bind_orchestrator(SID_A, "my-epic")
-        assert session_binding.resolve_plan(SID_B) == "plan-b"
+        session_binding.bind(SID_B, 'plan-b')
+        session_binding.bind_orchestrator(SID_A, 'my-epic')
+        assert session_binding.resolve_plan(SID_B) == 'plan-b'
 
     # --- unbind removes BOTH slots (kind-agnostic teardown) ---
 
     def test_unbind_removes_orchestrator_slot(self, cache):
         """unbind removes an orchestrator-only binding and prunes the empty dir."""
-        session_binding.bind_orchestrator(SID_A, "my-epic")
+        session_binding.bind_orchestrator(SID_A, 'my-epic')
         assert session_binding.unbind(SID_A) is True
         assert session_binding.resolve_orchestrator(SID_A) is None
         assert not (cache / SID_A).exists()
@@ -650,8 +647,8 @@ class TestOrchestratorSlot:
         clears each slot regardless of how it came to exist, then prunes the dir.
         """
         (cache / SID_A).mkdir(parents=True)
-        (cache / SID_A / "active-plan").write_text("plan-1", encoding="utf-8")
-        (cache / SID_A / "active-orchestrator").write_text("my-epic", encoding="utf-8")
+        (cache / SID_A / 'active-plan').write_text('plan-1', encoding='utf-8')
+        (cache / SID_A / 'active-orchestrator').write_text('my-epic', encoding='utf-8')
 
         assert session_binding.unbind(SID_A) is True
 
@@ -663,33 +660,33 @@ class TestOrchestratorSlot:
 
     def test_doctor_does_not_treat_orchestrator_dir_as_orphan(self, cache, project):
         """An orchestrator-only session dir carries a live binding — not an orphan."""
-        session_binding.bind_orchestrator(SID_A, "my-epic")
+        session_binding.bind_orchestrator(SID_A, 'my-epic')
 
         report = session_binding.doctor()
 
-        assert report["orphans"] == []
+        assert report['orphans'] == []
 
     def test_doctor_fix_never_gcs_an_orchestrator_binding(self, cache, project):
         """--fix leaves a live orchestrator binding untouched (never wrongly GC'd)."""
-        session_binding.bind_orchestrator(SID_A, "my-epic")
+        session_binding.bind_orchestrator(SID_A, 'my-epic')
 
         report = session_binding.doctor(fix=True)
 
-        assert report["orphans_removed"] == 0
-        assert report["gc_removed"] == 0
-        assert session_binding.resolve_orchestrator(SID_A) == "my-epic"
-        assert (cache / SID_A / "active-orchestrator").is_file()
+        assert report['orphans_removed'] == 0
+        assert report['gc_removed'] == 0
+        assert session_binding.resolve_orchestrator(SID_A) == 'my-epic'
+        assert (cache / SID_A / 'active-orchestrator').is_file()
 
     def test_doctor_orchestrator_dir_excluded_from_plan_scanned_count(self, cache, project):
         """An orchestrator-only dir is kind-disjoint — not a scanned plan slot."""
-        session_binding.bind_orchestrator(SID_A, "my-epic")
+        session_binding.bind_orchestrator(SID_A, 'my-epic')
 
         report = session_binding.doctor()
 
         # scanned counts live PLAN slots only; the orchestrator dir contributes none.
-        assert report["scanned"] == 0
-        assert report["conflicts"] == []
-        assert report["stale"] == []
+        assert report['scanned'] == 0
+        assert report['conflicts'] == []
+        assert report['stale'] == []
 
 
 # =============================================================================
@@ -708,28 +705,28 @@ class TestTerminalDeliveryGcExemption:
 
     def test_archived_plan_awaiting_delivery_is_not_stale(self, cache, project):
         """Terminal phase + no delivery marker → the slot is exempt from the GC."""
-        _make_archived_plan(project, "owed-plan")
-        session_binding.bind(SID_A, "owed-plan")
+        _make_archived_plan(project, 'owed-plan')
+        session_binding.bind(SID_A, 'owed-plan')
 
-        assert session_binding._plan_is_live("owed-plan") is True
+        assert session_binding._plan_is_live('owed-plan') is True
 
         report = session_binding.doctor(fix=True)
 
-        assert report["stale"] == []
-        assert report["gc_removed"] == 0
-        assert session_binding.resolve_plan(SID_A) == "owed-plan"
+        assert report['stale'] == []
+        assert report['gc_removed'] == 0
+        assert session_binding.resolve_plan(SID_A) == 'owed-plan'
 
     def test_archived_plan_after_delivery_is_collected(self, cache, project):
         """Once the delivery marker lands, the same slot becomes GC-eligible."""
-        _make_archived_plan(project, "paid-plan", delivered=True)
-        session_binding.bind(SID_A, "paid-plan")
+        _make_archived_plan(project, 'paid-plan', delivered=True)
+        session_binding.bind(SID_A, 'paid-plan')
 
-        assert session_binding._plan_is_live("paid-plan") is False
+        assert session_binding._plan_is_live('paid-plan') is False
 
         report = session_binding.doctor(fix=True)
 
-        assert report["stale"] == [{"session_id": SID_A, "plan_id": "paid-plan"}]
-        assert report["gc_removed"] == 1
+        assert report['stale'] == [{'session_id': SID_A, 'plan_id': 'paid-plan'}]
+        assert report['gc_removed'] == 1
         assert session_binding.resolve_plan(SID_A) is None
 
     def test_exemption_flips_on_the_marker_alone(self, cache, project):
@@ -738,24 +735,24 @@ class TestTerminalDeliveryGcExemption:
         The same archived plan is evaluated twice with nothing changed but the
         marker, so a time-windowed implementation could not produce this result.
         """
-        _make_archived_plan(project, "flip-plan")
-        assert session_binding._plan_is_live("flip-plan") is True
+        _make_archived_plan(project, 'flip-plan')
+        assert session_binding._plan_is_live('flip-plan') is True
 
-        _make_archived_plan(project, "flip-plan", delivered=True)
-        assert session_binding._plan_is_live("flip-plan") is False
+        _make_archived_plan(project, 'flip-plan', delivered=True)
+        assert session_binding._plan_is_live('flip-plan') is False
 
     def test_non_terminal_archived_plan_owes_no_delivery(self, cache, project):
         """An archived plan that never reached a terminal phase is not exempt."""
-        _make_archived_plan(project, "mid-plan", current_phase="5-execute")
+        _make_archived_plan(project, 'mid-plan', current_phase='5-execute')
 
-        assert session_binding._plan_is_live("mid-plan") is False
+        assert session_binding._plan_is_live('mid-plan') is False
 
     def test_deleted_plan_is_still_collectable(self, cache, project):
         """A plan with neither a live dir nor an archived status is not exempt."""
-        session_binding.bind(SID_A, "vanished-plan")
+        session_binding.bind(SID_A, 'vanished-plan')
 
-        assert session_binding._plan_is_live("vanished-plan") is False
+        assert session_binding._plan_is_live('vanished-plan') is False
 
         report = session_binding.doctor(fix=True)
 
-        assert report["gc_removed"] == 1
+        assert report['gc_removed'] == 1

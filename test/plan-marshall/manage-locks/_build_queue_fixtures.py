@@ -65,7 +65,6 @@ pins ``build_queue.main_checkout_root`` to that same root so stamped
 ``project_root`` liveness resolves under ``<PLAN_BASE_DIR>``.
 """
 
-
 from __future__ import annotations
 
 import json
@@ -120,9 +119,7 @@ def _init_git_repo(repo: Path) -> None:
 
 def _set_max_slots(base: Path, max_slots: int) -> None:
     """Write a marshal.json with the configured ``build.queue.max_slots``."""
-    (base / 'marshal.json').write_text(
-        json.dumps({'build': {'queue': {'max_slots': max_slots}}}), encoding='utf-8'
-    )
+    (base / 'marshal.json').write_text(json.dumps({'build': {'queue': {'max_slots': max_slots}}}), encoding='utf-8')
 
 
 def _read_queue(queue_path: Path) -> dict:
@@ -136,6 +133,7 @@ def _read_queue(queue_path: Path) -> dict:
 # adaptive build_queue_upper_limit). ADDITIVE over D4: these are new functions,
 # none of D4's [LOCK]-event tests above are modified.
 # =============================================================================
+
 
 def _write_queue(queue_path: Path, state: dict) -> None:
     """Persist a hand-built queue state directly (for seeding stale entries)."""

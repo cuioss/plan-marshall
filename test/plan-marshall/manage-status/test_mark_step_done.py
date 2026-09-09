@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the mark-step-done subcommand of manage-status."""
 
-
 import pytest
 from _mark_step_done_fixtures import _args, _make_plan, cmd_mark_step_done, read_status, write_status
 
@@ -50,9 +49,7 @@ def test_mark_step_force_overwrites_stale_legacy_key_without_duplicate(plan_cont
     }
     write_status(plan_id, status)
 
-    result = cmd_mark_step_done(
-        _args(plan_id, '6-finalize', 'push', 'skipped', force=True, display_detail='new')
-    )
+    result = cmd_mark_step_done(_args(plan_id, '6-finalize', 'push', 'skipped', force=True, display_detail='new'))
 
     assert result['status'] == 'success'
     assert result['changed'] is True
@@ -97,14 +94,23 @@ def test_mark_step_thrice_fired_step_retains_every_firing(plan_context):
 
     cmd_mark_step_done(
         _args(
-            plan_id, '6-finalize', 'automatic-review', 'loop_back',
-            display_detail='findings round 1', loop_back_target='5-execute',
+            plan_id,
+            '6-finalize',
+            'automatic-review',
+            'loop_back',
+            display_detail='findings round 1',
+            loop_back_target='5-execute',
         )
     )
     cmd_mark_step_done(
         _args(
-            plan_id, '6-finalize', 'automatic-review', 'loop_back', force=True,
-            display_detail='findings round 2', loop_back_target='6-finalize',
+            plan_id,
+            '6-finalize',
+            'automatic-review',
+            'loop_back',
+            force=True,
+            display_detail='findings round 2',
+            loop_back_target='6-finalize',
         )
     )
     # `automatic-review` declares `head_dependent: true`, so its terminal `done`
@@ -112,8 +118,13 @@ def test_mark_step_thrice_fired_step_retains_every_firing(plan_context):
     # written, which would leave this test asserting against the SECOND firing.
     third = cmd_mark_step_done(
         _args(
-            plan_id, '6-finalize', 'automatic-review', 'done', force=True,
-            display_detail='clean', head_at_completion='c' * 40,
+            plan_id,
+            '6-finalize',
+            'automatic-review',
+            'done',
+            force=True,
+            display_detail='clean',
+            head_at_completion='c' * 40,
         )
     )
     assert third['status'] == 'success', third
@@ -145,9 +156,7 @@ def test_mark_step_single_firing_writes_the_historical_record_shape(plan_context
     plan_id = 'mark-step-firings-one'
     _make_plan(plan_id)
 
-    cmd_mark_step_done(
-        _args(plan_id, '6-finalize', 'push', 'done', display_detail='pushed')
-    )
+    cmd_mark_step_done(_args(plan_id, '6-finalize', 'push', 'done', display_detail='pushed'))
 
     entry = read_status(plan_id)['metadata']['phase_steps']['6-finalize']['push']
     assert entry == {'outcome': 'done', 'display_detail': 'pushed'}
@@ -164,12 +173,8 @@ def test_mark_step_unchanged_recall_appends_no_firing(plan_context):
     plan_id = 'mark-step-firings-idempotent'
     _make_plan(plan_id)
 
-    cmd_mark_step_done(
-        _args(plan_id, '6-finalize', 'push', 'done', display_detail='pushed')
-    )
-    second = cmd_mark_step_done(
-        _args(plan_id, '6-finalize', 'push', 'done', display_detail='pushed')
-    )
+    cmd_mark_step_done(_args(plan_id, '6-finalize', 'push', 'done', display_detail='pushed'))
+    second = cmd_mark_step_done(_args(plan_id, '6-finalize', 'push', 'done', display_detail='pushed'))
 
     assert second['changed'] is False
     entry = read_status(plan_id)['metadata']['phase_steps']['6-finalize']['push']
@@ -191,23 +196,28 @@ def test_mark_step_trail_is_append_only_across_a_fourth_firing(plan_context):
     # assertions below reading an earlier firing.
     for call in (
         _args(
-            plan_id, '6-finalize', 'ci-verify', 'loop_back',
-            display_detail='r1', loop_back_target='5-execute',
+            plan_id,
+            '6-finalize',
+            'ci-verify',
+            'loop_back',
+            display_detail='r1',
+            loop_back_target='5-execute',
         ),
         _args(plan_id, '6-finalize', 'ci-verify', 'failed', force=True, display_detail='r2'),
         _args(plan_id, '6-finalize', 'ci-verify', 'skipped', force=True, display_detail='r3'),
     ):
         assert cmd_mark_step_done(call)['status'] == 'success'
-    after_three = list(
-        read_status(plan_id)['metadata']['phase_steps']['6-finalize']['ci-verify'][
-            'prior_firings'
-        ]
-    )
+    after_three = list(read_status(plan_id)['metadata']['phase_steps']['6-finalize']['ci-verify']['prior_firings'])
 
     fourth = cmd_mark_step_done(
         _args(
-            plan_id, '6-finalize', 'ci-verify', 'done', force=True,
-            display_detail='r4', head_at_completion='d' * 40,
+            plan_id,
+            '6-finalize',
+            'ci-verify',
+            'done',
+            force=True,
+            display_detail='r4',
+            head_at_completion='d' * 40,
         )
     )
     assert fourth['status'] == 'success', fourth
@@ -293,9 +303,7 @@ def test_mark_step_fact_value_may_contain_equals_sign(plan_context):
     """Only the FIRST '=' separates key from value, so a value may contain '='."""
     plan_id = 'mark-step-facts-equals'
     _make_plan(plan_id)
-    result = cmd_mark_step_done(
-        _args(plan_id, '6-finalize', 'push', 'done', fact=['detail=a=b'])
-    )
+    result = cmd_mark_step_done(_args(plan_id, '6-finalize', 'push', 'done', fact=['detail=a=b']))
 
     assert result['status'] == 'success'
     assert result['facts'] == {'detail': 'a=b'}
@@ -328,9 +336,7 @@ def test_mark_step_omits_facts_key_when_flag_absent(plan_context):
 def test_mark_step_rejects_malformed_fact_token(plan_context, bad_token, plan_id):
     """A malformed --fact token is named in an invalid_fact error, never dropped."""
     _make_plan(plan_id)
-    result = cmd_mark_step_done(
-        _args(plan_id, '6-finalize', 'push', 'done', fact=[bad_token])
-    )
+    result = cmd_mark_step_done(_args(plan_id, '6-finalize', 'push', 'done', fact=[bad_token]))
 
     assert result['status'] == 'error'
     assert result['error'] == 'invalid_fact'
@@ -346,9 +352,7 @@ def test_mark_step_malformed_fact_rejected_even_alongside_valid_facts(plan_conte
     """One malformed token rejects the whole call — valid siblings are not partially applied."""
     plan_id = 'mark-step-facts-bad-mixed'
     _make_plan(plan_id)
-    result = cmd_mark_step_done(
-        _args(plan_id, '6-finalize', 'push', 'done', fact=['action=noop', 'bogus'])
-    )
+    result = cmd_mark_step_done(_args(plan_id, '6-finalize', 'push', 'done', fact=['action=noop', 'bogus']))
 
     assert result['status'] == 'error'
     assert result['error'] == 'invalid_fact'

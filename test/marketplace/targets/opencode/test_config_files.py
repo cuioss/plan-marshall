@@ -21,6 +21,7 @@ def opencode_config_dir() -> Path:
 # mapping.json
 # ---------------------------------------------------------------------------
 
+
 class TestMappingJsonSchema:
     def test_file_exists(self, opencode_config_dir: Path):
         assert (opencode_config_dir / 'mapping.json').is_file()
@@ -45,17 +46,13 @@ class TestMappingJsonSchema:
             assert isinstance(key, str), f'tool_permissions key must be str: {key!r}'
             if value is None:
                 continue  # target-absent sentinel — no OpenCode analog
-            assert isinstance(value, str), (
-                f'tool_permissions[{key!r}] must be str or None (target-absent marker)'
-            )
+            assert isinstance(value, str), f'tool_permissions[{key!r}] must be str or None (target-absent marker)'
             assert value, 'non-null tool_permissions values must be non-empty'
 
     def test_monitor_is_target_absent_sentinel(self, opencode_config_dir: Path):
         """`Monitor` is present-with-null: a defined disposition, not a missing key."""
         data = load_mapping(opencode_config_dir)
-        assert 'Monitor' in data['tool_permissions'], (
-            'Monitor must be present so the build has a defined disposition'
-        )
+        assert 'Monitor' in data['tool_permissions'], 'Monitor must be present so the build has a defined disposition'
         assert data['tool_permissions']['Monitor'] is None
 
     def test_model_map_object_shape(self, opencode_config_dir: Path):
@@ -123,9 +120,7 @@ class TestBodyIdiomRewritesSchema:
         for idiom, record in data['body_idiom_rewrites'].items():
             assert isinstance(record, dict), f'{idiom} record must be a dict'
             disposition = record.get('disposition')
-            assert disposition in self._KNOWN_DISPOSITIONS, (
-                f'{idiom} carries unknown disposition {disposition!r}'
-            )
+            assert disposition in self._KNOWN_DISPOSITIONS, f'{idiom} carries unknown disposition {disposition!r}'
 
     def test_askuserquestion_rewrites_to_question_tool(self, opencode_config_dir: Path):
         data = load_mapping(opencode_config_dir)
@@ -147,9 +142,7 @@ class TestBodyIdiomRewritesSchema:
         for idiom, record in data['body_idiom_rewrites'].items():
             if record.get('disposition') == 'rewrite_inline_code':
                 tool = record.get('opencode_tool')
-                assert isinstance(tool, str) and tool, (
-                    f'{idiom} rewrite_inline_code missing opencode_tool'
-                )
+                assert isinstance(tool, str) and tool, f'{idiom} rewrite_inline_code missing opencode_tool'
 
 
 class TestStructuralRewriteSchema:
@@ -187,6 +180,7 @@ class TestStructuralRewriteSchema:
 # frontmatter-rules.json
 # ---------------------------------------------------------------------------
 
+
 class TestFrontmatterRulesSchema:
     def test_file_exists(self, opencode_config_dir: Path):
         assert (opencode_config_dir / 'frontmatter-rules.json').is_file()
@@ -219,6 +213,7 @@ class TestFrontmatterRulesSchema:
 # ---------------------------------------------------------------------------
 # Loader fail-fast on malformed input
 # ---------------------------------------------------------------------------
+
 
 class TestLoaderFailFast:
     def test_load_mapping_rejects_non_object(self, tmp_path: Path):

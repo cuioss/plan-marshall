@@ -151,6 +151,7 @@ class TestResolveCommandTierEarlyReturns:
 
     def test_non_build_command_returns_none_without_subprocess(self, monkeypatch):
         """A command that fails the parser never reaches the executor lookup."""
+
         # If the executor resolver were consulted, this sentinel would raise.
         def _boom():
             raise AssertionError('_resolve_executor must not run for a non-build command')

@@ -10,7 +10,6 @@ Tests for manage-findings.py script.
 Tier 2 (direct import) tests with 2-3 subprocess tests for CLI plumbing.
 """
 
-
 from argparse import Namespace
 
 from conftest import get_script_path, load_script_module
@@ -23,9 +22,7 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'manage-findings', 'manage-findin
 
 # Tier 2 direct import — the hyphenated script, loaded unregistered so the copy
 # staged here cannot displace one another suite holds under the same name.
-_mod = load_script_module(
-    'plan-marshall', 'manage-findings', 'manage-findings.py', 'manage_findings', register=False
-)
+_mod = load_script_module('plan-marshall', 'manage-findings', 'manage-findings.py', 'manage_findings', register=False)
 
 
 cmd_add = _mod.cmd_add

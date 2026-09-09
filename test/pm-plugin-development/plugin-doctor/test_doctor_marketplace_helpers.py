@@ -85,9 +85,7 @@ def test_parse_rules_flag_none_is_empty():
 
 
 def test_parse_rules_flag_keeps_known_tokens():
-    assert _doctor._parse_rules_flag('argument_naming,verb_chain') == frozenset(
-        {'argument_naming', 'verb_chain'}
-    )
+    assert _doctor._parse_rules_flag('argument_naming,verb_chain') == frozenset({'argument_naming', 'verb_chain'})
 
 
 def test_parse_rules_flag_drops_unknown_and_warns(capsys):

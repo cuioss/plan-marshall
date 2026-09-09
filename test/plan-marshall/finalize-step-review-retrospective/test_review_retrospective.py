@@ -47,13 +47,7 @@ from conftest import PROJECT_ROOT
 # conftest's ``sys.path`` setup walks only that tree, so neither can address this
 # module. The bootstrap therefore stays where every marketplace one was removed,
 # and it is what the file-level ``I001, E402`` waiver above is still paying for.
-_SCRIPTS_DIR = (
-    PROJECT_ROOT
-    / '.claude'
-    / 'skills'
-    / 'finalize-step-review-retrospective'
-    / 'scripts'
-)
+_SCRIPTS_DIR = PROJECT_ROOT / '.claude' / 'skills' / 'finalize-step-review-retrospective' / 'scripts'
 if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
 
@@ -174,14 +168,16 @@ def test_inline_is_actionable():
 def test_substantive_review_body_is_actionable():
     # Sourcery's Overall-Comments shape: a substantive review_body with no
     # status-summary signature, so it counts as actionable.
-    result = rr.aggregate([
-        {
-            'author': 'sourcery-ai',
-            'kind': 'review_body',
-            'title': 'Consider extracting the validation helper',
-            'detail': 'The block at L40 duplicates L88.',
-        }
-    ])
+    result = rr.aggregate(
+        [
+            {
+                'author': 'sourcery-ai',
+                'kind': 'review_body',
+                'title': 'Consider extracting the validation helper',
+                'detail': 'The block at L40 duplicates L88.',
+            }
+        ]
+    )
 
     row = _reviewer(result, 'sourcery-ai')
     assert row['raw_total'] == 1
@@ -201,15 +197,17 @@ def test_issue_comment_is_meta():
 def test_coderabbit_status_summary_review_body_is_meta():
     # CodeRabbit status-summary review_body: author=coderabbitai + the
     # "Actionable comments posted" signature => META, never actionable.
-    result = rr.aggregate([
-        {
-            'author': 'coderabbitai',
-            'kind': 'review_body',
-            'title': 'PR #1 review_body comment by coderabbitai (1)',
-            'body': 'Actionable comments posted: 5',
-            'detail': '',
-        }
-    ])
+    result = rr.aggregate(
+        [
+            {
+                'author': 'coderabbitai',
+                'kind': 'review_body',
+                'title': 'PR #1 review_body comment by coderabbitai (1)',
+                'body': 'Actionable comments posted: 5',
+                'detail': '',
+            }
+        ]
+    )
 
     row = _reviewer(result, 'coderabbitai')
     assert row['raw_total'] == 1
@@ -220,15 +218,17 @@ def test_coderabbit_status_summary_review_body_is_meta():
 def test_status_summary_signature_only_meta_for_coderabbit_author():
     # The status-summary signature is gated on the CodeRabbit author — the same
     # title from another reviewer is a genuine substantive review_body.
-    result = rr.aggregate([
-        {
-            'author': 'sourcery-ai',
-            'kind': 'review_body',
-            'title': 'PR #1 review_body comment by coderabbitai (1)',
-            'body': 'Actionable comments posted: 5',
-            'detail': '',
-        }
-    ])
+    result = rr.aggregate(
+        [
+            {
+                'author': 'sourcery-ai',
+                'kind': 'review_body',
+                'title': 'PR #1 review_body comment by coderabbitai (1)',
+                'body': 'Actionable comments posted: 5',
+                'detail': '',
+            }
+        ]
+    )
 
     row = _reviewer(result, 'sourcery-ai')
     assert row['actionable_count'] == 1
@@ -237,14 +237,16 @@ def test_status_summary_signature_only_meta_for_coderabbit_author():
 
 def test_status_summary_signature_matched_in_body_case_insensitively():
     # Mixed case in the BODY — still matched (the first line is lowercased).
-    result = rr.aggregate([
-        {
-            'author': 'coderabbitai',
-            'kind': 'review_body',
-            'title': 'PR #1 review_body comment by coderabbitai (1)',
-            'body': 'ACTIONABLE Comments Posted: 3',
-        }
-    ])
+    result = rr.aggregate(
+        [
+            {
+                'author': 'coderabbitai',
+                'kind': 'review_body',
+                'title': 'PR #1 review_body comment by coderabbitai (1)',
+                'body': 'ACTIONABLE Comments Posted: 3',
+            }
+        ]
+    )
 
     row = _reviewer(result, 'coderabbitai')
     assert row['actionable_count'] == 0
@@ -258,15 +260,17 @@ def test_signature_in_title_or_detail_alone_does_not_make_a_body_meta():
     # title/detail never fired on a real record, so every status summary was counted
     # as actionable — and the fixtures that "proved" the carve-out worked used a
     # shape production never produces.
-    result = rr.aggregate([
-        {
-            'author': 'coderabbitai',
-            'kind': 'review_body',
-            'title': 'Actionable comments posted: 3',
-            'detail': 'Actionable comments posted: 3',
-            'body': 'The guard coerces UNKNOWN into a positive.',
-        }
-    ])
+    result = rr.aggregate(
+        [
+            {
+                'author': 'coderabbitai',
+                'kind': 'review_body',
+                'title': 'Actionable comments posted: 3',
+                'detail': 'Actionable comments posted: 3',
+                'body': 'The guard coerces UNKNOWN into a positive.',
+            }
+        ]
+    )
 
     row = _reviewer(result, 'coderabbitai')
     assert row['actionable_count'] == 1
@@ -277,13 +281,15 @@ def test_a_review_mentioning_the_phrase_mid_body_stays_actionable():
     # Only a body that OPENS with the status line is a summary. A genuine review
     # that refers to the phrase further down is not boilerplate; dropping it would
     # deflate the reviewer's actionable_count and its %-resolved-as-fixed.
-    result = rr.aggregate([
-        {
-            'author': 'coderabbitai',
-            'kind': 'review_body',
-            'body': 'The guard is wrong.\n\nActionable comments posted: 1',
-        }
-    ])
+    result = rr.aggregate(
+        [
+            {
+                'author': 'coderabbitai',
+                'kind': 'review_body',
+                'body': 'The guard is wrong.\n\nActionable comments posted: 1',
+            }
+        ]
+    )
 
     row = _reviewer(result, 'coderabbitai')
     assert row['actionable_count'] == 1
@@ -293,13 +299,15 @@ def test_a_review_mentioning_the_phrase_mid_body_stays_actionable():
 def test_a_real_summary_with_its_details_block_is_meta():
     # The shape a real status summary takes. An earlier rule tested whether a later
     # line followed and therefore COUNTED this one as actionable.
-    result = rr.aggregate([
-        {
-            'author': 'coderabbitai',
-            'kind': 'review_body',
-            'body': '**Actionable comments posted: 3**\n\n<details>\nwalkthrough\n</details>',
-        }
-    ])
+    result = rr.aggregate(
+        [
+            {
+                'author': 'coderabbitai',
+                'kind': 'review_body',
+                'body': '**Actionable comments posted: 3**\n\n<details>\nwalkthrough\n</details>',
+            }
+        ]
+    )
 
     row = _reviewer(result, 'coderabbitai')
     assert row['actionable_count'] == 0
@@ -338,10 +346,12 @@ def test_explicit_unknown_kind_is_meta():
 
 
 def test_missing_author_bucketed_as_unattributed():
-    result = rr.aggregate([
-        {'kind': 'inline'},
-        {'author': '', 'kind': 'review_body', 'title': 'x'},
-    ])
+    result = rr.aggregate(
+        [
+            {'kind': 'inline'},
+            {'author': '', 'kind': 'review_body', 'title': 'x'},
+        ]
+    )
 
     row = _reviewer(result, 'unattributed')
     assert row['raw_total'] == 2
@@ -355,9 +365,7 @@ def test_unattributed_status_summary_not_special_cased():
     # The status-summary META carve-out is gated on author=coderabbitai, so an
     # unattributed record with that signature is still a substantive (actionable)
     # review_body.
-    result = rr.aggregate([
-        {'kind': 'review_body', 'body': 'Actionable comments posted: 9'}
-    ])
+    result = rr.aggregate([{'kind': 'review_body', 'body': 'Actionable comments posted: 9'}])
 
     row = _reviewer(result, 'unattributed')
     assert row['actionable_count'] == 1
@@ -421,9 +429,7 @@ def test_missing_resolution_defaults_to_pending():
 def test_unrecognized_resolution_not_bucketed_but_counts_in_raw_total():
     # A resolution outside the canonical six is excluded from every resolution
     # bucket, yet still increments raw_total and its (author, kind) group.
-    result = rr.aggregate([
-        {'author': 'alice', 'kind': 'inline', 'resolution': 'wontfix'}
-    ])
+    result = rr.aggregate([{'author': 'alice', 'kind': 'inline', 'resolution': 'wontfix'}])
 
     row = _reviewer(result, 'alice')
     assert row['raw_total'] == 1
@@ -442,10 +448,12 @@ def test_unrecognized_resolution_not_bucketed_but_counts_in_raw_total():
 
 
 def test_pct_resolved_as_fixed_all_fixed():
-    result = rr.aggregate([
-        {'author': 'alice', 'kind': 'inline', 'resolution': 'fixed'},
-        {'author': 'alice', 'kind': 'inline', 'resolution': 'fixed'},
-    ])
+    result = rr.aggregate(
+        [
+            {'author': 'alice', 'kind': 'inline', 'resolution': 'fixed'},
+            {'author': 'alice', 'kind': 'inline', 'resolution': 'fixed'},
+        ]
+    )
 
     row = _reviewer(result, 'alice')
     assert row['pct_resolved_as_fixed'] == 100.0
@@ -460,11 +468,13 @@ def test_rejected_is_what_drives_false_positives_count():
     is visible as its own per-reviewer field rather than surviving only inside
     ``raw_total``.
     """
-    result = rr.aggregate([
-        {'author': 'alice', 'kind': 'inline', 'resolution': 'rejected'},
-        {'author': 'alice', 'kind': 'inline', 'resolution': 'rejected'},
-        {'author': 'alice', 'kind': 'inline', 'resolution': 'fixed'},
-    ])
+    result = rr.aggregate(
+        [
+            {'author': 'alice', 'kind': 'inline', 'resolution': 'rejected'},
+            {'author': 'alice', 'kind': 'inline', 'resolution': 'rejected'},
+            {'author': 'alice', 'kind': 'inline', 'resolution': 'fixed'},
+        ]
+    )
 
     row = _reviewer(result, 'alice')
     assert row['rejected'] == 2
@@ -485,10 +495,12 @@ def test_acknowledged_dispositions_land_in_neither_quality_bucket():
     away. They still increment their own fields and the resolved denominator;
     what they must not do is claim the reviewer was right OR wrong.
     """
-    result = rr.aggregate([
-        {'author': 'alice', 'kind': 'inline', 'resolution': 'accepted'},
-        {'author': 'alice', 'kind': 'inline', 'resolution': 'taken_into_account'},
-    ])
+    result = rr.aggregate(
+        [
+            {'author': 'alice', 'kind': 'inline', 'resolution': 'accepted'},
+            {'author': 'alice', 'kind': 'inline', 'resolution': 'taken_into_account'},
+        ]
+    )
 
     row = _reviewer(result, 'alice')
     assert row['accepted'] == 1
@@ -513,10 +525,12 @@ def test_meta_fixed_record_never_inflates_the_ratio_above_100():
     denominator is zero and the metric is None — never ``0.0``, and never a value
     above 100.
     """
-    result = rr.aggregate([
-        {'author': 'alice', 'kind': 'issue_comment', 'resolution': 'fixed'},
-        {'author': 'alice', 'kind': 'inline', 'resolution': 'pending'},
-    ])
+    result = rr.aggregate(
+        [
+            {'author': 'alice', 'kind': 'issue_comment', 'resolution': 'fixed'},
+            {'author': 'alice', 'kind': 'inline', 'resolution': 'pending'},
+        ]
+    )
 
     row = _reviewer(result, 'alice')
     assert row['fixed'] == 1

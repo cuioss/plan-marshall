@@ -74,9 +74,7 @@ def create_nested_marshal_json(fixture_dir: Path) -> Path:
                 },
             },
         },
-        'system': {
-            'retention': {'logs_days': 1, 'archived_plans_days': 5, 'temp_on_maintenance': True}
-        },
+        'system': {'retention': {'logs_days': 1, 'archived_plans_days': 5, 'temp_on_maintenance': True}},
         'plan': {
             'phase-1-init': {
                 'branch_strategy': 'direct',

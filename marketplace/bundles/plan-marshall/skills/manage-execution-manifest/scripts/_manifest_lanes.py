@@ -44,7 +44,12 @@ DEFAULT_EXECUTION_PROFILE = 'full'
 # cost-sizing.md; mirrored here only as the fallback when marshal.json carries no
 # override). Kept in sync with manage-config ``_config_defaults.py``.
 _DEFAULT_COST_SIZE_TABLE = {
-    'XS': '5K', 'S': '25K', 'M': '60K', 'L': '130K', 'XL': '260K', 'XXL': '520K',
+    'XS': '5K',
+    'S': '25K',
+    'M': '60K',
+    'L': '130K',
+    'XL': '260K',
+    'XXL': '520K',
 }
 
 
@@ -234,6 +239,7 @@ def _parse_cost_magnitude(raw: str) -> int:
     rather than crashing).
     """
     from sensible_number import parse_sensible_int
+
     try:
         return parse_sensible_int(raw)
     except (ValueError, TypeError):

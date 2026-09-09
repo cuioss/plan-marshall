@@ -82,23 +82,25 @@ GITIGNORE_PLAN_LOCAL_WORKTREES = '.plan/local/worktrees/'
 # subject to consolidation; everything else is user-authored content that is
 # preserved verbatim.
 _MANAGED_COMMENT_LINES = frozenset({GITIGNORE_COMMENT, LEGACY_GITIGNORE_COMMENT, GITIGNORE_LOCAL_COMMENT})
-_MANAGED_RULE_LINES = frozenset({
-    GITIGNORE_PLAN_DIR,
-    '.plan/',
-    '.plan',
-    GITIGNORE_MARSHAL_EXCEPTION,
-    GITIGNORE_ARCHITECTURE_EXCEPTION,
-    # Legacy rules — no longer emitted by setup_gitignore, but retained here so
-    # the consolidation pass keeps recognizing and preserving them in existing
-    # .gitignore files instead of reclassifying them as user content.
-    # SHIM(B): legacy managed .gitignore rules no longer emitted by setup_gitignore but still recognized/preserved.
-    # shim-owner: marshall-steward
-    # shim-floor: the setup_gitignore change that stopped emitting the plugin-doctor exception and .plan/local/worktrees managed rules (retained for recognition only)
-    # shim-remove-when: no existing .gitignore carries the retained legacy managed rules
-    GITIGNORE_PLUGIN_DOCTOR_EXCEPTION,
-    GITIGNORE_PLAN_LOCAL_WORKTREES,
-    '.plan/local/worktrees',
-})
+_MANAGED_RULE_LINES = frozenset(
+    {
+        GITIGNORE_PLAN_DIR,
+        '.plan/',
+        '.plan',
+        GITIGNORE_MARSHAL_EXCEPTION,
+        GITIGNORE_ARCHITECTURE_EXCEPTION,
+        # Legacy rules — no longer emitted by setup_gitignore, but retained here so
+        # the consolidation pass keeps recognizing and preserving them in existing
+        # .gitignore files instead of reclassifying them as user content.
+        # SHIM(B): legacy managed .gitignore rules no longer emitted by setup_gitignore but still recognized/preserved.
+        # shim-owner: marshall-steward
+        # shim-floor: the setup_gitignore change that stopped emitting the plugin-doctor exception and .plan/local/worktrees managed rules (retained for recognition only)
+        # shim-remove-when: no existing .gitignore carries the retained legacy managed rules
+        GITIGNORE_PLUGIN_DOCTOR_EXCEPTION,
+        GITIGNORE_PLAN_LOCAL_WORKTREES,
+        '.plan/local/worktrees',
+    }
+)
 
 
 # SHIM(A): pre-PR#666 .gitignore files with several managed blocks (collapsed into one).

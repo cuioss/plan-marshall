@@ -85,11 +85,11 @@ def test_steps_sort_reorders_shuffled_to_ascending_with_unknown_key_pinned(plan_
     monkeypatch.setattr(_manifest_validation, '_resolve_step_order', _fake_resolve)
 
     shuffled = {
-        'default:archive-plan': {},                                        # order 50
-        'default:push': {},                                                # order 10
+        'default:archive-plan': {},  # order 50
+        'default:push': {},  # order 10
         'plan-marshall:automatic-review': {'review_bot_buffer_seconds': 300},  # None -> pinned at index 2
-        'default:create-pr': {},                                           # order 20
-        'default:ci-verify': {},                                           # order 30
+        'default:create-pr': {},  # order 20
+        'default:ci-verify': {},  # order 30
     }
     create_marshal_json(plan_context.fixture_dir, _finalize_config(shuffled))
 
@@ -120,8 +120,8 @@ def test_steps_sort_preserves_values_byte_identical(plan_context, monkeypatch):
 
     shuffled = {
         'default:ci-verify': {'nested': {'a': 1, 'b': [2, 3]}, 'flag': True},  # order 30
-        'default:push': {'reviewers': ['x', 'y']},                            # order 10
-        'default:create-pr': {},                                             # order 20
+        'default:push': {'reviewers': ['x', 'y']},  # order 10
+        'default:create-pr': {},  # order 20
     }
     create_marshal_json(plan_context.fixture_dir, _finalize_config(shuffled))
 
@@ -143,8 +143,8 @@ def test_steps_sort_is_idempotent(plan_context, monkeypatch):
 
     shuffled = {
         'default:archive-plan': {},  # 50
-        'default:push': {},          # 10
-        'default:create-pr': {},     # 20
+        'default:push': {},  # 10
+        'default:create-pr': {},  # 20
     }
     create_marshal_json(plan_context.fixture_dir, _finalize_config(shuffled))
 
@@ -167,9 +167,9 @@ def test_steps_sort_already_sorted_is_noop(plan_context, monkeypatch):
     monkeypatch.setattr(_manifest_validation, '_resolve_step_order', _fake_resolve)
 
     already_sorted = {
-        'default:push': {},        # 10
-        'default:create-pr': {},   # 20
-        'default:ci-verify': {},   # 30
+        'default:push': {},  # 10
+        'default:create-pr': {},  # 20
+        'default:ci-verify': {},  # 30
     }
     create_marshal_json(plan_context.fixture_dir, _finalize_config(already_sorted))
 
@@ -191,18 +191,18 @@ def test_steps_sort_does_not_touch_phase_5_verification_steps(plan_context, monk
 
     shuffled = {
         'default:create-pr': {},  # 20
-        'default:push': {},       # 10
+        'default:push': {},  # 10
     }
     create_marshal_json(plan_context.fixture_dir, _finalize_config(shuffled))
-    phase5_before = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())[
-        'plan'
-    ]['phase-5-execute']['verification_steps']
+    phase5_before = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())['plan']['phase-5-execute'][
+        'verification_steps'
+    ]
 
     cmd_steps_sort(Namespace())
 
-    phase5_after = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())[
-        'plan'
-    ]['phase-5-execute']['verification_steps']
+    phase5_after = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())['plan']['phase-5-execute'][
+        'verification_steps'
+    ]
     assert phase5_after == phase5_before
 
 

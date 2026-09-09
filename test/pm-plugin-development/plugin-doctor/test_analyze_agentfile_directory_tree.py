@@ -54,16 +54,7 @@ def _write_agentfile(repo: Path, relpath: str, content: str) -> Path:
 
 
 # A fenced block drawing a directory tree with all three glyphs.
-_TREE_FENCE = (
-    '# Project\n'
-    '\n'
-    '```\n'
-    'repo/\n'
-    '├── src/\n'
-    '│   └── main.py\n'
-    '└── README.md\n'
-    '```\n'
-)
+_TREE_FENCE = '# Project\n\n```\nrepo/\n├── src/\n│   └── main.py\n└── README.md\n```\n'
 
 
 # ===========================================================================
@@ -219,14 +210,14 @@ class TestQualityGateRegistration:
         # The marketplace-wide dispatch lives on _runner.RuleRunner: agentfile
         # rules run in run_analyze_marketplace_rules AND run_quality_gate
         # (build-failing under quality-gate).
-        runner_src: str = (
-            get_scripts_dir('pm-plugin-development', 'plugin-doctor') / '_runner.py'
-        ).read_text(encoding='utf-8')
+        runner_src: str = (get_scripts_dir('pm-plugin-development', 'plugin-doctor') / '_runner.py').read_text(
+            encoding='utf-8'
+        )
 
         def _method_body(method: str) -> str:
             marker = f'    def {method}('
             start = runner_src.index(marker)
-            rest = runner_src[start + len(marker):]
+            rest = runner_src[start + len(marker) :]
             nxt = rest.find('\n    def ')
             return rest if nxt == -1 else rest[:nxt]
 

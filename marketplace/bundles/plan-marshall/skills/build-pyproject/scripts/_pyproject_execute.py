@@ -188,6 +188,4 @@ def _wrap_with_self_heal(
     return execute_direct
 
 
-execute_direct, cmd_run = create_execute_handlers(
-    _CONFIG, parse_log, wrap_execute_fn=_wrap_with_self_heal
-)
+execute_direct, cmd_run = create_execute_handlers(_CONFIG, parse_log, wrap_execute_fn=_wrap_with_self_heal)

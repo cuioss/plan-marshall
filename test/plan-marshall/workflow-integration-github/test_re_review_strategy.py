@@ -549,9 +549,7 @@ def test_the_guard_sweep_population_is_non_empty_and_publishes_its_size():
     strategy has no chokepoint to guard, so it would silently contribute a
     hollow case.
     """
-    assert _GUARD_SWEEP_POPULATION, (
-        'the registry declares no bots — every chokepoint sweep below would be vacuous'
-    )
+    assert _GUARD_SWEEP_POPULATION, 'the registry declares no bots — every chokepoint sweep below would be vacuous'
     assert _GUARD_SWEEP_POPULATION_SIZE == len(_GUARD_SWEEP_POPULATION)
     for bot_kind in _GUARD_SWEEP_POPULATION:
         assert github_re_review.resolve_strategy(bot_kind) is not None, bot_kind
@@ -869,9 +867,7 @@ _PR_AGENT_LOGIN = 'cuioss-review-bot'
 _TRIGGER = '2026-01-01T00:02:00Z'
 
 
-def _await_with_comments(
-    monkeypatch, comments, *, reviews=None, bot_kind='cuioss-review-bot', head_sha='headsha'
-):
+def _await_with_comments(monkeypatch, comments, *, reviews=None, bot_kind='cuioss-review-bot', head_sha='headsha'):
     """Run ``await_fresh_review`` over a fixed comment (and review) set.
 
     ``head_sha`` is parametrized for the reviewed-commit-reference cases below, which
@@ -886,9 +882,7 @@ def _await_with_comments(
     )
     _patch_comments(monkeypatch, comments)
     strategy = github_re_review.resolve_strategy(bot_kind)
-    return strategy.await_fresh_review(
-        42, head_sha, _TRIGGER, bot_kind=bot_kind, timeout=1, interval=0
-    )
+    return strategy.await_fresh_review(42, head_sha, _TRIGGER, bot_kind=bot_kind, timeout=1, interval=0)
 
 
 def test_await_matches_bot_issue_comment_when_no_review_exists(monkeypatch):
@@ -898,9 +892,7 @@ def test_await_matches_bot_issue_comment_when_no_review_exists(monkeypatch):
     the weaker signal: ``matched_signal: issue_comment`` and
     ``head_sha_verified: false``, because a comment carries no reviewed-commit SHA.
     """
-    result = _await_with_comments(
-        monkeypatch, [_comment(_PR_AGENT_LOGIN, created_at='2026-01-01T00:05:00Z')]
-    )
+    result = _await_with_comments(monkeypatch, [_comment(_PR_AGENT_LOGIN, created_at='2026-01-01T00:05:00Z')])
 
     assert result['status'] == 'success'
     assert result['matched'] is True
@@ -914,9 +906,7 @@ def test_await_matches_bot_issue_comment_when_no_review_exists(monkeypatch):
 
 def test_await_does_not_match_a_different_bots_comment(monkeypatch):
     """A comment from a DIFFERENT registered bot does not satisfy this bot's await."""
-    result = _await_with_comments(
-        monkeypatch, [_comment('coderabbitai', created_at='2026-01-01T00:05:00Z')]
-    )
+    result = _await_with_comments(monkeypatch, [_comment('coderabbitai', created_at='2026-01-01T00:05:00Z')])
 
     assert result['matched'] is False
     assert result['matched_signal'] == ''
@@ -929,9 +919,7 @@ def test_await_does_not_match_a_human_comment(monkeypatch):
     An unresolvable author yields no ``bot_kind``, so it can never equal the
     awaited one — human PR chatter cannot be mistaken for a completed review.
     """
-    result = _await_with_comments(
-        monkeypatch, [_comment('alice', created_at='2026-01-01T00:05:00Z')]
-    )
+    result = _await_with_comments(monkeypatch, [_comment('alice', created_at='2026-01-01T00:05:00Z')])
 
     assert result['matched'] is False
     assert result['matched_signal'] == ''
@@ -939,9 +927,7 @@ def test_await_does_not_match_a_human_comment(monkeypatch):
 
 def test_await_does_not_match_a_comment_predating_the_trigger(monkeypatch):
     """A pre-existing bot comment (older than the trigger) does not satisfy await."""
-    result = _await_with_comments(
-        monkeypatch, [_comment(_PR_AGENT_LOGIN, created_at='2026-01-01T00:00:00Z')]
-    )
+    result = _await_with_comments(monkeypatch, [_comment(_PR_AGENT_LOGIN, created_at='2026-01-01T00:00:00Z')])
 
     assert result['matched'] is False
     assert result['matched_signal'] == ''
@@ -1505,8 +1491,7 @@ def test_structural_fallback_rejects_an_uncaptured_refusal_on_the_comment_path(m
 # CodeRabbit's OBSERVED refusal, carrying a machine-readable ETA its registry
 # ``rate_limit_eta_patterns`` extract.
 _CODERABBIT_REFUSAL_WITH_ETA = (
-    '> [!WARNING] > ## Review limit reached > '
-    'Please wait 12 minutes and 30 seconds before requesting another review.'
+    '> [!WARNING] > ## Review limit reached > Please wait 12 minutes and 30 seconds before requesting another review.'
 )
 
 
@@ -1640,9 +1625,7 @@ def test_a_registry_recognised_size_refusal_records_its_cause_and_stated_cap():
     arming fixture that consumes it. A key that is only covered downstream is a key
     whose removal reads as someone else's failure.
     """
-    record = github_re_review._ReReviewStrategy._refusal_record(
-        _SOURCERY_REFUSAL, 'sourcery', 'review'
-    )
+    record = github_re_review._ReReviewStrategy._refusal_record(_SOURCERY_REFUSAL, 'sourcery', 'review')
 
     assert record is not None
     assert record['layer'] == _github_pr.REFUSAL_LAYER_REGISTRY
@@ -1661,13 +1644,10 @@ def test_a_refusal_stating_no_ceiling_records_an_empty_cap():
     plausible constant.
     """
     no_ceiling = (
-        'Sourcery was unable to review this pull request because '
-        'you have reached your weekly rate limit of reviews.'
+        'Sourcery was unable to review this pull request because you have reached your weekly rate limit of reviews.'
     )
 
-    record = github_re_review._ReReviewStrategy._refusal_record(
-        no_ceiling, 'sourcery', 'review'
-    )
+    record = github_re_review._ReReviewStrategy._refusal_record(no_ceiling, 'sourcery', 'review')
 
     assert record is not None
     assert record['layer'] == _github_pr.REFUSAL_LAYER_REGISTRY
@@ -1877,24 +1857,14 @@ def test_with_no_threshold_the_re_review_path_behaves_exactly_as_at_head(monkeyp
     nobody measured would block merges on no evidence. Arming the threshold is what
     turns the fix on, and that is a separate, evidence-gated decision.
     """
-    assert (
-        github_re_review._is_unrecognised_refusal.__globals__['UNRECOGNISED_REFUSAL_MAX_CHARS']
-        is None
-    )
+    assert github_re_review._is_unrecognised_refusal.__globals__['UNRECOGNISED_REFUSAL_MAX_CHARS'] is None
 
-    assert (
-        github_re_review._ReReviewStrategy._refusal_record(
-            _UNRECOGNISED_REFUSAL, 'sourcery', 'review'
-        )
-        is None
-    )
+    assert github_re_review._ReReviewStrategy._refusal_record(_UNRECOGNISED_REFUSAL, 'sourcery', 'review') is None
 
     # The two-axis keys do NOT depend on the enumerative arm: at this same shipped
     # (inert) threshold a body an earlier arm recognises still carries both. Pinned
     # here so the keys cannot be mistaken for something the arm introduced.
-    recognised = github_re_review._ReReviewStrategy._refusal_record(
-        _SOURCERY_REFUSAL, 'sourcery', 'review'
-    )
+    recognised = github_re_review._ReReviewStrategy._refusal_record(_SOURCERY_REFUSAL, 'sourcery', 'review')
     assert recognised is not None
     assert recognised['cause'] == _github_pr.REFUSAL_CAUSE_SIZE
     assert recognised['cap'] == '150000 characters'
@@ -1973,9 +1943,7 @@ def test_an_armed_threshold_withholds_a_genuine_anchorless_review(monkeypatch):
     assert len(_GENUINE_REVIEW_BODY) < 200
 
     _arm_enumerative(monkeypatch, max_chars=200)
-    record = github_re_review._ReReviewStrategy._refusal_record(
-        _GENUINE_REVIEW_BODY, 'sourcery', 'review'
-    )
+    record = github_re_review._ReReviewStrategy._refusal_record(_GENUINE_REVIEW_BODY, 'sourcery', 'review')
 
     assert record is not None
     assert record['layer'] == _github_pr.REFUSAL_LAYER_ENUMERATIVE

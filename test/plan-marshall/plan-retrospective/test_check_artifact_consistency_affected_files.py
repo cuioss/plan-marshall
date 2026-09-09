@@ -6,7 +6,6 @@ both empty) and the bullet extraction that feeds them, including what a delivera
 that will not parse does to recall.
 """
 
-
 from __future__ import annotations
 
 import json
@@ -302,9 +301,7 @@ class TestAffectedFilesBulletParsing:
         assert recall['status'] == 'skip'
         assert 'no deliverable declares' in recall['message'].lower()
 
-    def test_sibling_declaration_does_not_absorb_unparseable_deliverable(
-        self, tmp_path, monkeypatch
-    ):
+    def test_sibling_declaration_does_not_absorb_unparseable_deliverable(self, tmp_path, monkeypatch):
         """Sibling-absorption regression: a well-formed ``deliverable 1`` must
         not mask ``deliverable 2``'s unparseable heading.
 

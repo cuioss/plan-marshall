@@ -134,7 +134,7 @@ def _add_phase_subparser(
         # for a step id in a single call; `step set` writes one step-owned param.
         # Both operate on the marshal.json keyed-map step structure.
         phase_step = phase_sub.add_parser(
-            'step', help='Get/set a step\'s nested param object (keyed-map)', allow_abbrev=False
+            'step', help="Get/set a step's nested param object (keyed-map)", allow_abbrev=False
         )
         step_sub = phase_step.add_subparsers(dest='step_verb', required=True, help='Step operation')
 
@@ -144,7 +144,7 @@ def _add_phase_subparser(
         step_get.add_argument('--step-id', required=True, help='Step id (e.g., default:sonar-roundtrip)')
 
         step_set = step_sub.add_parser(
-            'set', help='Set one step-owned param into a step\'s nested object', allow_abbrev=False
+            'set', help="Set one step-owned param into a step's nested object", allow_abbrev=False
         )
         step_set.add_argument('--step-id', required=True, help='Step id (e.g., default:branch-cleanup)')
         step_set.add_argument('--param', required=True, help='Param key (e.g., pr_merge_strategy)')
@@ -250,7 +250,11 @@ def main() -> int:
     sd_configure = sd_sub.add_parser('configure', help='Configure selected domains', allow_abbrev=False)
     sd_configure.add_argument('--domains', required=True, help='Comma-separated domain names to enable')
 
-    sd_sub.add_parser('discover-project', help="Discover project-level skills from the target's project-local-skill roots", allow_abbrev=False)
+    sd_sub.add_parser(
+        'discover-project',
+        help="Discover project-level skills from the target's project-local-skill roots",
+        allow_abbrev=False,
+    )
 
     sd_attach = sd_sub.add_parser('attach-project', help='Attach project-level skills to a domain', allow_abbrev=False)
     add_domain_arg(sd_attach)
@@ -369,8 +373,7 @@ def main() -> int:
     # --- build-decision ---
     p_bd = subparsers.add_parser(
         'build-decision',
-        help='Return the build-necessity verdict for a plan footprint '
-        '(build / not_necessary / unknown verdict)',
+        help='Return the build-necessity verdict for a plan footprint (build / not_necessary / unknown verdict)',
         allow_abbrev=False,
     )
     p_bd.add_argument(
@@ -515,6 +518,7 @@ def main() -> int:
         help='Write per-phase effort attributes from a named preset',
         allow_abbrev=False,
     )
+
     # Validation uses ``type=`` rather than ``choices=`` so the documented
     # case-insensitive / underscore-alias behaviour (``HIGH_END``,
     # ``high_end``, ``Balanced``) works end-to-end through the CLI, not
@@ -822,7 +826,9 @@ def main() -> int:
         help='Classify request text as analysis/planning/implementation (deterministic, heuristic-first)',
         allow_abbrev=False,
     )
-    p_ac.add_argument('--request-text', dest='request_text', required=True, help='Free-form request narrative to classify')
+    p_ac.add_argument(
+        '--request-text', dest='request_text', required=True, help='Free-form request narrative to classify'
+    )
     p_ac.add_argument(
         '--threshold',
         type=float,
@@ -859,9 +865,9 @@ def main() -> int:
         help='Deterministic domain detector for phase-1-init Step 7 (no LLM dispatch)',
         description=(
             "Walk the plan's clarified-request narrative for explicit mentions of "
-            "configured skill_domains and return the matching domains. Single-domain "
-            "projects auto-select. A multi-match returns ambiguous=true so the caller "
-            "raises an AskUserQuestion — no LLM fallback applies."
+            'configured skill_domains and return the matching domains. Single-domain '
+            'projects auto-select. A multi-match returns ambiguous=true so the caller '
+            'raises an AskUserQuestion — no LLM fallback applies.'
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         allow_abbrev=False,

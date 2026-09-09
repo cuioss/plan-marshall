@@ -632,9 +632,7 @@ def get_store_dir(store: str, entry_id: str, allow_archived: bool = False) -> Pa
             if archived.exists():
                 return archived
         return active
-    raise ValueError(
-        f"unknown store {store!r}: expected 'plans' or 'orchestrator'"
-    )
+    raise ValueError(f"unknown store {store!r}: expected 'plans' or 'orchestrator'")
 
 
 def get_archived_orchestrator_dir(slug: str) -> Path:
@@ -685,16 +683,8 @@ def _reject_unsafe_entry_id(entry_id: str) -> None:
     """
     if not entry_id or not entry_id.strip():
         raise ValueError('orchestrator entry_id must be a non-empty identifier')
-    if (
-        '..' in entry_id
-        or '/' in entry_id
-        or '\\' in entry_id
-        or '\x00' in entry_id
-    ):
-        raise ValueError(
-            f'unsafe orchestrator entry_id {entry_id!r}: must not contain '
-            "'..', '/', '\\', or a null byte"
-        )
+    if '..' in entry_id or '/' in entry_id or '\\' in entry_id or '\x00' in entry_id:
+        raise ValueError(f"unsafe orchestrator entry_id {entry_id!r}: must not contain '..', '/', '\\', or a null byte")
 
 
 def get_plan_dir(plan_id: str) -> Path:
@@ -899,7 +889,7 @@ def _run_get_worktree_path(plan_id: str) -> str:
     except RuntimeError as exc:
         raise WorktreeResolutionError(
             'Cannot locate executor — not inside a git checkout. '
-            "Pass --project-dir explicitly or run from a checkout that "
+            'Pass --project-dir explicitly or run from a checkout that '
             "contains '.plan/execute-script.py'."
         ) from exc
 
@@ -927,8 +917,7 @@ def _run_get_worktree_path(plan_id: str) -> str:
     if completed.returncode != 0:
         stderr = (completed.stderr or '').strip()
         raise WorktreeResolutionError(
-            f'manage-status get-worktree-path failed (exit {completed.returncode}) '
-            f"for plan_id='{plan_id}': {stderr}"
+            f"manage-status get-worktree-path failed (exit {completed.returncode}) for plan_id='{plan_id}': {stderr}"
         )
 
     return completed.stdout
@@ -998,8 +987,7 @@ def _parse_get_worktree_branch_output(stdout: str) -> str:
             message_field = value
     if not saw_status_success:
         raise WorktreeResolutionError(
-            f'manage-status get-worktree-path returned non-success: '
-            f"error='{error_field}' message='{message_field}'"
+            f"manage-status get-worktree-path returned non-success: error='{error_field}' message='{message_field}'"
         )
     return branch
 
@@ -1060,8 +1048,7 @@ def _parse_get_worktree_path_output(stdout: str) -> tuple[str, str]:
             message_field = value
     if not saw_status_success:
         raise WorktreeResolutionError(
-            f"manage-status get-worktree-path returned non-success: "
-            f"error='{error_field}' message='{message_field}'"
+            f"manage-status get-worktree-path returned non-success: error='{error_field}' message='{message_field}'"
         )
     if worktree_state not in VALID_WORKTREE_STATES:
         raise WorktreeResolutionError(
@@ -1117,9 +1104,7 @@ class PlanContext:
     plan_dir: Path
     is_sentinel: bool
     _worktree_path: str | None = field(default=None, init=False, repr=False)
-    _worktree_query: tuple[str, str] | None = field(
-        default=None, init=False, repr=False
-    )
+    _worktree_query: tuple[str, str] | None = field(default=None, init=False, repr=False)
     _worktree_branch: str | None = field(default=None, init=False, repr=False)
 
     @property
@@ -1230,8 +1215,7 @@ class PlanContext:
         if state == WORKTREE_STATE_MATERIALIZED:
             if not worktree_path:
                 raise WorktreeResolutionError(
-                    f"Plan '{self.plan_id}' reports worktree_state=materialized "
-                    'but worktree_path is empty.'
+                    f"Plan '{self.plan_id}' reports worktree_state=materialized but worktree_path is empty."
                 )
             return os.path.abspath(worktree_path)
         return cwd_checkout_root()
@@ -1257,9 +1241,7 @@ def _materialize_sentinel_plan(plan_dir: Path) -> None:
             {
                 'plan': {
                     'title': 'Plan-less operations sentinel',
-                    'short_description': (
-                        'Shared directory backing genuinely plan-less callers'
-                    ),
+                    'short_description': ('Shared directory backing genuinely plan-less callers'),
                     'metadata': {'use_worktree': False, 'sentinel': True},
                 }
             },
@@ -1320,9 +1302,7 @@ class PlanNotFoundError(Exception):
         self.plan_id = plan_id
         self.plan_dir = plan_dir
         self.reason = reason
-        super().__init__(
-            f"plan '{plan_id}' not found: {reason} (expected at {plan_dir})"
-        )
+        super().__init__(f"plan '{plan_id}' not found: {reason} (expected at {plan_dir})")
 
     @property
     def envelope(self) -> dict[str, Any]:
@@ -1382,9 +1362,7 @@ def require_plan_exists(plan_id: str) -> Path:
     if not plan_dir.is_dir():
         raise PlanNotFoundError(plan_id, plan_dir, 'plan directory does not exist')
     if not (plan_dir / 'status.json').is_file():
-        raise PlanNotFoundError(
-            plan_id, plan_dir, 'plan directory exists but is missing status.json'
-        )
+        raise PlanNotFoundError(plan_id, plan_dir, 'plan directory exists but is missing status.json')
     return plan_dir
 
 

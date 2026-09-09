@@ -22,9 +22,7 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'workflow-integration-git', 'git-
 
 # The entrypoint filename is kebab-case (git-workflow.py), which is not a
 # valid Python module identifier — load it via importlib instead of `import`.
-git_workflow = load_script_module(
-    'plan-marshall', 'workflow-integration-git', 'git-workflow.py', 'git_workflow'
-)
+git_workflow = load_script_module('plan-marshall', 'workflow-integration-git', 'git-workflow.py', 'git_workflow')
 _SKIP_DIRS = git_workflow._SKIP_DIRS
 SAFE_ARTIFACT_PATTERNS = git_workflow.SAFE_ARTIFACT_PATTERNS
 UNCERTAIN_ARTIFACT_PATTERNS = git_workflow.UNCERTAIN_ARTIFACT_PATTERNS
@@ -71,9 +69,7 @@ def _git_init_with_identity(repo: Path) -> None:
     subprocess.run(['git', 'config', 'user.name', 'Test'], cwd=repo, capture_output=True)
 
 
-def _repo_with_live_worktree(
-    root: Path, worktree_path: Path, branch: str = 'feature/EXAMPLE-PLAN'
-) -> Path:
+def _repo_with_live_worktree(root: Path, worktree_path: Path, branch: str = 'feature/EXAMPLE-PLAN') -> Path:
     """Init ``root`` as a repo with one commit and a linked worktree at ``worktree_path``.
 
     Models how plan-marshall runs a plan: in a linked git worktree that
@@ -87,9 +83,7 @@ def _repo_with_live_worktree(
     subprocess.run(['git', 'commit', '-m', 'init'], cwd=root, capture_output=True)
     subprocess.run(['git', 'branch', branch], cwd=root, capture_output=True)
     worktree_path.parent.mkdir(parents=True, exist_ok=True)
-    subprocess.run(
-        ['git', 'worktree', 'add', str(worktree_path), branch], cwd=root, capture_output=True
-    )
+    subprocess.run(['git', 'worktree', 'add', str(worktree_path), branch], cwd=root, capture_output=True)
     return worktree_path
 
 
@@ -126,8 +120,7 @@ def _assert_plan_state_excluded_control_safe(result: dict) -> None:
         f"the scan root's own live plan state was offered for deletion: {offered}"
     )
     assert 'scratch.temp' in result['safe'], (
-        f'control artifact missing from safe — the exclusion above would be '
-        f'vacuous on an empty scan: {result["safe"]}'
+        f'control artifact missing from safe — the exclusion above would be vacuous on an empty scan: {result["safe"]}'
     )
 
 
@@ -266,9 +259,7 @@ class TestFormatCommit:
         long_scope = 'very-long-module-name'
         long_subject = 'a' * 50  # type(scope): subject -> 5 + 23 + 4 + 50 = 82 chars
 
-        result = cmd_format_commit(
-            _format_commit_args(commit_type='feat', scope=long_scope, subject=long_subject)
-        )
+        result = cmd_format_commit(_format_commit_args(commit_type='feat', scope=long_scope, subject=long_subject))
 
         assert not result['validation']['valid']
         assert any('Header' in w for w in result['validation']['warnings'])
@@ -527,9 +518,7 @@ class TestBranchSyncState:
         subprocess.run(['git', 'add', '.'], cwd=work, capture_output=True)
         subprocess.run(['git', 'commit', '-m', 'init'], cwd=work, capture_output=True)
         subprocess.run(['git', 'checkout', '-b', self.BRANCH], cwd=work, capture_output=True)
-        subprocess.run(
-            ['git', 'remote', 'add', 'origin', f'file://{origin}'], cwd=work, capture_output=True
-        )
+        subprocess.run(['git', 'remote', 'add', 'origin', f'file://{origin}'], cwd=work, capture_output=True)
         return work
 
     def _push(self, work: Path) -> None:
@@ -555,9 +544,7 @@ class TestBranchSyncState:
         subprocess.run(['git', 'commit', '-m', 'init'], cwd=work, capture_output=True)
         # Deterministic base branch name regardless of the git default.
         subprocess.run(['git', 'branch', '-M', 'main'], cwd=work, capture_output=True)
-        subprocess.run(
-            ['git', 'remote', 'add', 'origin', f'file://{origin}'], cwd=work, capture_output=True
-        )
+        subprocess.run(['git', 'remote', 'add', 'origin', f'file://{origin}'], cwd=work, capture_output=True)
         subprocess.run(['git', 'push', '-u', 'origin', 'main'], cwd=work, capture_output=True)
         # Feature branch with a commit, fast-forward-merged into main and pushed.
         subprocess.run(['git', 'checkout', '-b', self.BRANCH], cwd=work, capture_output=True)
@@ -579,18 +566,12 @@ class TestBranchSyncState:
         subprocess.run(['git', 'commit', '-am', 'local-only'], cwd=work, capture_output=True)
 
     def _rev_parse(self, work: Path, ref: str) -> str:
-        result = subprocess.run(
-            ['git', 'rev-parse', ref], cwd=work, capture_output=True, text=True
-        )
+        result = subprocess.run(['git', 'rev-parse', ref], cwd=work, capture_output=True, text=True)
         return result.stdout.strip()
 
     def _state(self, monkeypatch, work: Path) -> dict:
-        monkeypatch.setattr(
-            git_workflow, '_resolve_worktree_path_for_plan', lambda plan_id: (work, None)
-        )
-        monkeypatch.setattr(
-            git_workflow, '_read_metadata_field', lambda plan_id, field: self.BRANCH
-        )
+        monkeypatch.setattr(git_workflow, '_resolve_worktree_path_for_plan', lambda plan_id: (work, None))
+        monkeypatch.setattr(git_workflow, '_read_metadata_field', lambda plan_id, field: self.BRANCH)
         return dict(git_workflow.cmd_branch_sync_state(Namespace(plan_id='sync-plan')))
 
     def test_synced_after_push(self, tmp_path: Path, monkeypatch):
@@ -659,9 +640,7 @@ class TestBranchSyncState:
     def test_missing_branch_metadata_is_error(self, tmp_path: Path, monkeypatch):
         """Absent worktree_branch metadata surfaces worktree_not_materialized."""
         work = self._seed_repo_with_origin(tmp_path)
-        monkeypatch.setattr(
-            git_workflow, '_resolve_worktree_path_for_plan', lambda plan_id: (work, None)
-        )
+        monkeypatch.setattr(git_workflow, '_resolve_worktree_path_for_plan', lambda plan_id: (work, None))
         monkeypatch.setattr(git_workflow, '_read_metadata_field', lambda plan_id, field: '')
 
         result = git_workflow.cmd_branch_sync_state(Namespace(plan_id='sync-plan'))
@@ -715,8 +694,8 @@ class TestBranchSyncState:
         # rather than re-deriving the mapping from the state token.
         for payload in payloads:
             assert payload['barrier_action'] == git_workflow.push_barrier_action(payload['state']), (
-                f"branch-sync-state published barrier_action={payload['barrier_action']!r} for "
-                f"state={payload['state']!r}, which disagrees with push_barrier_action. The "
+                f'branch-sync-state published barrier_action={payload["barrier_action"]!r} for '
+                f'state={payload["state"]!r}, which disagrees with push_barrier_action. The '
                 f'published field and the mapping must not drift.'
             )
 
@@ -742,9 +721,7 @@ class TestBranchSyncState:
         opposite action.
         """
         work = self._seed_repo_with_origin(tmp_path)
-        monkeypatch.setattr(
-            git_workflow, '_resolve_worktree_path_for_plan', lambda plan_id: (work, None)
-        )
+        monkeypatch.setattr(git_workflow, '_resolve_worktree_path_for_plan', lambda plan_id: (work, None))
         monkeypatch.setattr(git_workflow, '_read_metadata_field', lambda plan_id, field: '')
 
         result = git_workflow.cmd_branch_sync_state(Namespace(plan_id='sync-plan'))
@@ -836,9 +813,7 @@ class TestDetectArtifacts:
         assert '.plan/temp' not in '\n'.join(result['uncertain']), (
             f'.plan/ state offered for deletion at all: {result["uncertain"]}'
         )
-        assert 'scratch.temp' in result['safe'], (
-            f'control artifact missing from safe: {result["safe"]}'
-        )
+        assert 'scratch.temp' in result['safe'], f'control artifact missing from safe: {result["safe"]}'
 
     def test_detects_dist_next_as_uncertain(self, tmp_path: Path):
         """dist/ and .next/ directories are uncertain."""
@@ -1022,9 +997,7 @@ class TestDetectArtifactsLivePlanArtifacts:
         Red pre-fix: the worktree boundary collapses in ``git ls-files`` and the
         exact-match exclusion misses ``…/logs/work.log``, so it lands in ``safe``.
         """
-        worktree = _repo_with_live_worktree(
-            tmp_path, tmp_path / '.plan' / 'local' / 'worktrees' / 'EXAMPLE-PLAN'
-        )
+        worktree = _repo_with_live_worktree(tmp_path, tmp_path / '.plan' / 'local' / 'worktrees' / 'EXAMPLE-PLAN')
         _create_file(worktree, 'logs/work.log')
         _create_file(worktree, '.mypy_cache/3.11/builtins.data.json')
         # A control artifact OUTSIDE any worktree that SHOULD be offered as safe.
@@ -1041,9 +1014,7 @@ class TestDetectArtifactsLivePlanArtifacts:
         )
         # Positive population: the scan DID classify a real artifact, so the
         # absence above is meaningful rather than a scan that matched nothing.
-        assert 'scratch.temp' in result['safe'], (
-            f'control artifact missing from safe: {result["safe"]}'
-        )
+        assert 'scratch.temp' in result['safe'], f'control artifact missing from safe: {result["safe"]}'
 
     def test_nested_plan_worktree_caches_excluded_by_boundary_pruning(self, tmp_path: Path):
         """A nested plan worktree's caches are offered nowhere — via boundary pruning.
@@ -1056,9 +1027,7 @@ class TestDetectArtifactsLivePlanArtifacts:
         ``TestCollapsedIgnoredDirPrefixBranch`` is.
         """
         (tmp_path / '.gitignore').write_text('.plan/\n')
-        worktree = _repo_with_live_worktree(
-            tmp_path, tmp_path / '.plan' / 'local' / 'worktrees' / 'EXAMPLE-PLAN'
-        )
+        worktree = _repo_with_live_worktree(tmp_path, tmp_path / '.plan' / 'local' / 'worktrees' / 'EXAMPLE-PLAN')
         _create_file(worktree, '.mypy_cache/3.11/builtins.data.json')
         _create_file(worktree, 'module/__pycache__/foo.pyc')
         _create_file(tmp_path, 'scratch.temp')
@@ -1073,9 +1042,7 @@ class TestDetectArtifactsLivePlanArtifacts:
             f'gitignored worktree cache offered for deletion: {offered}'
         )
         # Positive population — the exclusions above are not a vacuous empty scan.
-        assert 'scratch.temp' in result['safe'], (
-            f'control artifact missing from safe: {result["safe"]}'
-        )
+        assert 'scratch.temp' in result['safe'], f'control artifact missing from safe: {result["safe"]}'
 
     def test_exposure_derivation_nonempty_and_excludes_live_member(self, tmp_path: Path):
         """D5(c): the exposure derivation is asserted non-empty and contains a
@@ -1089,18 +1056,14 @@ class TestDetectArtifactsLivePlanArtifacts:
         proves the derivation both examined a populated tree and filtered the
         live member out of it.
         """
-        worktree = _repo_with_live_worktree(
-            tmp_path, tmp_path / '.plan' / 'local' / 'worktrees' / 'EXAMPLE-PLAN'
-        )
+        worktree = _repo_with_live_worktree(tmp_path, tmp_path / '.plan' / 'local' / 'worktrees' / 'EXAMPLE-PLAN')
         _create_file(worktree, 'logs/work.log')
         _create_file(tmp_path, 'scratch.temp')
 
         result = scan_artifacts(tmp_path, respect_gitignore=True)
 
         assert result['safe'], 'scan produced an empty safe set — the negatives would be vacuous'
-        assert 'scratch.temp' in result['safe'], (
-            f'control artifact missing from safe: {result["safe"]}'
-        )
+        assert 'scratch.temp' in result['safe'], f'control artifact missing from safe: {result["safe"]}'
         assert not any('work.log' in f for f in result['safe']), (
             f"live plan's own work.log offered as safe: {result['safe']}"
         )
@@ -1122,9 +1085,7 @@ class TestDetectArtifactsLivePlanArtifacts:
         assert not any('work.log' in f for f in result['safe']), (
             f"live plan's work.log offered as safe without gitignore: {result['safe']}"
         )
-        assert 'scratch.temp' in result['safe'], (
-            f'control artifact missing from safe: {result["safe"]}'
-        )
+        assert 'scratch.temp' in result['safe'], f'control artifact missing from safe: {result["safe"]}'
 
 
 class TestDetectArtifactsIndeterminateIgnoreSet:
@@ -1161,9 +1122,7 @@ class TestDetectArtifactsIndeterminateIgnoreSet:
 
         monkeypatch.setattr(git_workflow, '_observe_z', _observe)
 
-    def test_default_flags_error_when_ignore_set_indeterminate(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ):
+    def test_default_flags_error_when_ignore_set_indeterminate(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         """Default flags -> ``status: error`` naming the root, and no ``safe`` list."""
         self._repo_with_one_gitignored_artifact(tmp_path)
         self._fail_only_the_ignore_query(monkeypatch)
@@ -1173,13 +1132,9 @@ class TestDetectArtifactsIndeterminateIgnoreSet:
         assert result['status'] == 'error'
         assert result['error_code'] == git_workflow.ErrorCode.FETCH_FAILURE
         assert result['root'] == str(tmp_path)
-        assert 'safe' not in result, (
-            f'an errored scan still offered artifacts for deletion: {result}'
-        )
+        assert 'safe' not in result, f'an errored scan still offered artifacts for deletion: {result}'
 
-    def test_no_gitignore_still_succeeds_on_the_same_tree(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ):
+    def test_no_gitignore_still_succeeds_on_the_same_tree(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         """``--no-gitignore`` is the documented path for a tree with no readable ignore set.
 
         Matched positive control for the error above: the same tree and the same
@@ -1258,9 +1213,7 @@ class TestCollapsedIgnoredDirPrefixBranch:
     that can exclude anything beneath it.
     """
 
-    def test_paths_under_collapsed_ignored_dir_are_excluded(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ):
+    def test_paths_under_collapsed_ignored_dir_are_excluded(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         """A collapsed ``ignored-tree/`` entry excludes its descendants, not just itself."""
         _create_file(tmp_path, 'ignored-tree/nested/output.log')
         _create_file(tmp_path, 'scratch.temp')
@@ -1278,8 +1231,7 @@ class TestCollapsedIgnoredDirPrefixBranch:
             f'a path beneath a collapsed ignored-directory entry was offered: {offered}'
         )
         assert 'scratch.temp' in result['safe'], (
-            f'control artifact missing from safe — the exclusion would be vacuous: '
-            f'{result["safe"]}'
+            f'control artifact missing from safe — the exclusion would be vacuous: {result["safe"]}'
         )
 
 
@@ -1299,9 +1251,7 @@ class TestIgnoreExclusionHelpers:
         # git collapses a fully-ignored directory to one trailing-slash entry;
         # every descendant must still be treated as ignored.
         ignored_dirs = ('.plan/local/worktrees/EXAMPLE-PLAN/',)
-        assert git_workflow._is_ignored(
-            '.plan/local/worktrees/EXAMPLE-PLAN/logs/work.log', set(), ignored_dirs
-        )
+        assert git_workflow._is_ignored('.plan/local/worktrees/EXAMPLE-PLAN/logs/work.log', set(), ignored_dirs)
 
 
 class TestIgnoreQueryHonesty:
@@ -1326,9 +1276,7 @@ class TestIgnoreQueryHonesty:
     never produces a non-empty one.
     """
 
-    def test_unresolvable_ignore_set_offers_nothing_as_safe(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ):
+    def test_unresolvable_ignore_set_offers_nothing_as_safe(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         """An unreadable ignore set yields no ``safe`` entry at all."""
         _create_file(tmp_path, 'scratch.temp')
         monkeypatch.setattr(git_workflow, 'get_gitignored_files', lambda root: None)
@@ -1336,9 +1284,7 @@ class TestIgnoreQueryHonesty:
         result = scan_artifacts(tmp_path, respect_gitignore=True)
 
         assert result['gitignore_resolved'] is False
-        assert result['safe'] == [], (
-            f'unresolvable ignore set still offered safe deletions: {result["safe"]}'
-        )
+        assert result['safe'] == [], f'unresolvable ignore set still offered safe deletions: {result["safe"]}'
         # The artifact was still SEEN — reported, just never as auto-deletable.
         # Without this, a scan that matched nothing would satisfy the assertion
         # above vacuously and the test would pass for the wrong reason.
@@ -1359,9 +1305,7 @@ class TestIgnoreQueryHonesty:
         assert result['gitignore_resolved'] is True
         assert 'scratch.temp' in result['safe']
 
-    def test_ignore_query_requests_collapsed_directory_entries(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ):
+    def test_ignore_query_requests_collapsed_directory_entries(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         """The query passes ``--directory`` so ignored directories collapse.
 
         Asserted against the constructed argv at the subprocess boundary rather
@@ -1385,9 +1329,7 @@ class TestIgnoreQueryHonesty:
         assert seen, 'ignore query issued no subprocess call'
         assert '--directory' in seen[0], f'ignore query omits --directory: {seen[0]}'
 
-    def test_query_failure_returns_none_not_empty_set(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ):
+    def test_query_failure_returns_none_not_empty_set(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         """A failed query returns ``None`` — the unknown sentinel — never ``set()``."""
 
         def _raise_timeout(argv, **kwargs):
@@ -1440,9 +1382,7 @@ class TestTrackednessOraclePathSpelling:
         assert ' leading.log' in result['uncertain'], (
             f'tracked spaced fixture not demoted: uncertain={result["uncertain"]}'
         )
-        assert ' leading.log' not in result['safe'], (
-            f'tracked spaced fixture offered for deletion: {result["safe"]}'
-        )
+        assert ' leading.log' not in result['safe'], f'tracked spaced fixture offered for deletion: {result["safe"]}'
 
     def test_both_git_observations_are_nul_delimited_and_surrogate_decoded(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -1477,13 +1417,9 @@ class TestTrackednessOraclePathSpelling:
             assert kwargs.get('errors') == 'surrogateescape', (
                 f'observation does not decode with surrogateescape: {kwargs}'
             )
-            assert not kwargs.get('text'), (
-                f'observation still uses strict text=True decoding: {kwargs}'
-            )
+            assert not kwargs.get('text'), f'observation still uses strict text=True decoding: {kwargs}'
 
-    def test_unresolvable_tracked_set_offers_nothing_as_safe(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ):
+    def test_unresolvable_tracked_set_offers_nothing_as_safe(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         """An unreadable TRACKED set fails closed, exactly as the ignore set does.
 
         Both oracles feed the same safety decision. An unknown tracked set means
@@ -1497,9 +1433,7 @@ class TestTrackednessOraclePathSpelling:
         result = scan_artifacts(tmp_path, respect_gitignore=False)
 
         assert result['tracked_resolved'] is False
-        assert result['safe'] == [], (
-            f'unresolvable tracked set still offered safe deletions: {result["safe"]}'
-        )
+        assert result['safe'] == [], f'unresolvable tracked set still offered safe deletions: {result["safe"]}'
         assert 'scratch.temp' in result['uncertain']
 
     def test_resolved_oracles_still_offer_safe(self, tmp_path: Path):
@@ -1518,9 +1452,7 @@ class TestTrackednessOraclePathSpelling:
         assert result['tracked_resolved'] is True
         assert 'scratch.temp' in result['safe']
 
-    def test_walked_path_is_normalised_once_for_every_consumer(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ):
+    def test_walked_path_is_normalised_once_for_every_consumer(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         """Every consumer of the walked path sees the same ``/``-spelled form.
 
         ``os.path.relpath`` returns OS-native separators, while ``_observe_z``
@@ -1560,9 +1492,7 @@ class TestTrackednessOraclePathSpelling:
         )
         # Positive population: it WAS seen and classified, so the negative above
         # is not a scan that simply matched nothing.
-        assert any('output.log' in f for f in offered), (
-            f'tracked nested fixture not classified at all: {offered}'
-        )
+        assert any('output.log' in f for f in offered), f'tracked nested fixture not classified at all: {offered}'
 
     def test_is_ignored_no_false_prefix_match(self):
         # A sibling path that merely shares a name prefix must NOT be excluded.
@@ -1655,9 +1585,9 @@ class TestArtifactConfigLoading:
         """skip_dirs entries are not also in uncertain_patterns."""
         for skip_dir in _SKIP_DIRS:
             for pattern in UNCERTAIN_ARTIFACT_PATTERNS:
-                assert not (
-                    pattern.startswith(f'{skip_dir}/') or pattern.startswith(f'{skip_dir}/**')
-                ), f'skip_dir "{skip_dir}" overlaps with uncertain pattern "{pattern}"'
+                assert not (pattern.startswith(f'{skip_dir}/') or pattern.startswith(f'{skip_dir}/**')), (
+                    f'skip_dir "{skip_dir}" overlaps with uncertain pattern "{pattern}"'
+                )
 
 
 class TestToonContract:
@@ -1737,9 +1667,7 @@ class TestWorktreeRemoveMoveBackPrecondition:
         monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', None)
 
     def _patch(self, monkeypatch, main: Path, worktree: Path) -> None:
-        monkeypatch.setattr(
-            git_workflow, '_resolve_worktree_path_for_plan', lambda plan_id: (worktree, None)
-        )
+        monkeypatch.setattr(git_workflow, '_resolve_worktree_path_for_plan', lambda plan_id: (worktree, None))
         monkeypatch.setattr(git_workflow, 'main_checkout_root', lambda: main)
         self._pin_main_anchor(monkeypatch, main)
         monkeypatch.setattr(git_workflow, '_read_metadata_field', lambda plan_id, field: '')
@@ -1754,9 +1682,7 @@ class TestWorktreeRemoveMoveBackPrecondition:
         return worktree / '.plan' / 'local' / 'plans' / self.PLAN_ID / 'status.json'
 
     def _remove(self, force: bool = False) -> dict:
-        return dict(
-            git_workflow.cmd_worktree_remove(Namespace(plan_id=self.PLAN_ID, force=force))
-        )
+        return dict(git_workflow.cmd_worktree_remove(Namespace(plan_id=self.PLAN_ID, force=force)))
 
     def test_refuses_while_plan_dir_not_moved_back(self, tmp_path: Path, monkeypatch):
         """(a) plan dir only in the worktree, main empty → refusal, tree intact."""
@@ -1770,9 +1696,7 @@ class TestWorktreeRemoveMoveBackPrecondition:
             f'Expected the move-back precondition refusal, got {result!r}.'
         )
         assert 'integrate_into_main' in result['message']
-        assert worktree.exists(), (
-            'The refusal must leave the worktree (the sole plan-state copy) intact.'
-        )
+        assert worktree.exists(), 'The refusal must leave the worktree (the sole plan-state copy) intact.'
 
     def test_force_does_not_override_refusal(self, tmp_path: Path, monkeypatch):
         """(b) --force keeps its dirty-tree meaning only — refusal persists."""
@@ -1803,9 +1727,7 @@ class TestWorktreeRemoveMoveBackPrecondition:
         """(d) absent worktree still short-circuits to the noop success."""
         main, _worktree = self._seed_main_and_worktree(tmp_path)
         absent = tmp_path / 'absent-wt'
-        monkeypatch.setattr(
-            git_workflow, '_resolve_worktree_path_for_plan', lambda plan_id: (absent, None)
-        )
+        monkeypatch.setattr(git_workflow, '_resolve_worktree_path_for_plan', lambda plan_id: (absent, None))
         monkeypatch.setattr(git_workflow, 'main_checkout_root', lambda: main)
         monkeypatch.setattr(git_workflow, '_read_metadata_field', lambda plan_id, field: '')
 
@@ -1813,14 +1735,11 @@ class TestWorktreeRemoveMoveBackPrecondition:
 
         assert result['status'] == 'success'
         assert result['action'] == 'noop', (
-            'The target-absent noop branch must fire BEFORE the move-back '
-            f'precondition, got {result!r}.'
+            f'The target-absent noop branch must fire BEFORE the move-back precondition, got {result!r}.'
         )
 
     @pytest.mark.parametrize('subdir', ['', 'nested/deeper'])
-    def test_refuses_when_cwd_inside_removal_target(
-        self, tmp_path: Path, monkeypatch, subdir: str
-    ):
+    def test_refuses_when_cwd_inside_removal_target(self, tmp_path: Path, monkeypatch, subdir: str):
         """(e) cwd at — or beneath — the target refuses, move-back notwithstanding.
 
         The plan dir HAS landed on main here, so the move-back precondition is
@@ -1841,9 +1760,7 @@ class TestWorktreeRemoveMoveBackPrecondition:
         )
         assert Path(result['cwd']) == cwd.resolve()
         assert 'change directory out of the worktree' in result['message']
-        assert 'Pass --force' not in result['message'], (
-            'The message must name the remedy, not offer --force as one.'
-        )
+        assert 'Pass --force' not in result['message'], 'The message must name the remedy, not offer --force as one.'
         assert worktree.exists()
 
     def test_cwd_refusal_not_overridable_by_force(self, tmp_path: Path, monkeypatch):
@@ -1861,9 +1778,7 @@ class TestWorktreeRemoveMoveBackPrecondition:
         )
         assert worktree.exists()
 
-    def test_cwd_refusal_survives_a_neutralised_move_back_predicate(
-        self, tmp_path: Path, monkeypatch
-    ):
+    def test_cwd_refusal_survives_a_neutralised_move_back_predicate(self, tmp_path: Path, monkeypatch):
         """(e) the refusal does not ride on the move-back predicate's verdict.
 
         The predicate is forced to report "moved back" while main in fact holds
@@ -1901,9 +1816,7 @@ class TestWorktreeRemoveMoveBackPrecondition:
 
         result = self._remove()
 
-        assert result['status'] == 'success', (
-            f'Standing on main must still reach the existing outcome, got {result!r}.'
-        )
+        assert result['status'] == 'success', f'Standing on main must still reach the existing outcome, got {result!r}.'
         assert result['action'] == 'removed'
         assert not worktree.exists()
 
@@ -2067,17 +1980,13 @@ class TestCoAuthorTrailerConvention:
         the documentation must show.
         """
         occurrences, scanned = _tracked_trailer_lines()
-        non_test = [
-            (rel, line) for rel, line in occurrences if not rel.startswith('test/')
-        ]
+        non_test = [(rel, line) for rel, line in occurrences if not rel.startswith('test/')]
 
         assert non_test, (
             f'no trailer found outside test/ in {scanned} tracked files — the '
             'documented convention has no stated site left to check'
         )
-        deviations = [
-            (rel, line) for rel, line in non_test if line != DEFAULT_COAUTHOR_TRAILER
-        ]
+        deviations = [(rel, line) for rel, line in non_test if line != DEFAULT_COAUTHOR_TRAILER]
 
         assert not deviations, (
             f'non-default co-author trailer in {len(deviations)} of '

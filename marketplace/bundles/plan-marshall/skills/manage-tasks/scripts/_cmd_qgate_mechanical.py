@@ -151,8 +151,7 @@ def _load_deliverables(plan_id: str) -> tuple[list[dict[str, Any]], dict[int, st
     try:
         deliverables = extract_deliverables(deliverables_section)
         prose_by_number = {
-            int(block['number']): str(block['content'])
-            for block in split_deliverable_blocks(deliverables_section)
+            int(block['number']): str(block['content']) for block in split_deliverable_blocks(deliverables_section)
         }
     except (ValueError, AttributeError):
         return [], {}, False
@@ -182,9 +181,7 @@ def _check_coverage(
     emitted = 0
 
     deliverable_numbers = {int(d['number']) for d in deliverables}
-    task_deliverables: set[int] = {
-        int(t.get('deliverable', 0)) for t in tasks if int(t.get('deliverable', 0)) > 0
-    }
+    task_deliverables: set[int] = {int(t.get('deliverable', 0)) for t in tasks if int(t.get('deliverable', 0)) > 0}
 
     for d in sorted(deliverable_numbers):
         if d not in task_deliverables:
@@ -214,7 +211,7 @@ def _check_coverage(
                 detail=(
                     f'TASK-{t["number"]:03d} {t.get("title", "?")!r} carries '
                     f'deliverable={deliverable}, but the solution outline has no '
-                    f'such deliverable. Either fix the task\'s deliverable field '
+                    f"such deliverable. Either fix the task's deliverable field "
                     f'or add the missing deliverable to solution_outline.md.'
                 ),
                 persist_failures=persist_failures,
@@ -505,8 +502,7 @@ def _check_keyword_drift(
     # cache per-deliverable haystacks so two tasks under the same deliverable
     # reuse the concatenation work.
     patterns: list[tuple[str, re.Pattern[str]]] = [
-        (keyword, re.compile(r'\b' + re.escape(keyword) + r'\b', re.IGNORECASE))
-        for keyword in _PLANNING_KEYWORDS
+        (keyword, re.compile(r'\b' + re.escape(keyword) + r'\b', re.IGNORECASE)) for keyword in _PLANNING_KEYWORDS
     ]
     haystack_cache: dict[int, str] = {}
 
@@ -529,13 +525,9 @@ def _check_keyword_drift(
                 emitted += _emit_finding(
                     plan_id,
                     title=(
-                        f'keyword_drift: TASK-{t["number"]:03d} uses '
-                        f'{keyword!r} not present in deliverable outline'
+                        f'keyword_drift: TASK-{t["number"]:03d} uses {keyword!r} not present in deliverable outline'
                     ),
-                    detail=(
-                        f'{excerpt}; deliverable {d_num} '
-                        f'outline does not mention {keyword!r}'
-                    ),
+                    detail=(f'{excerpt}; deliverable {d_num} outline does not mention {keyword!r}'),
                     persist_failures=persist_failures,
                     emit=emit,
                 )
@@ -636,9 +628,7 @@ def cmd_qgate_mechanical(args) -> dict[str, Any]:
     # into the ``findings_emitted`` zero bucket.
     persist_failures: list[dict[str, str]] = []
 
-    coverage_failed, e = _check_coverage(
-        plan_id, all_tasks, deliverables, persist_failures, emit=emit
-    )
+    coverage_failed, e = _check_coverage(plan_id, all_tasks, deliverables, persist_failures, emit=emit)
     findings_emitted += e
     checks['coverage'] = {'failed': coverage_failed}
 
@@ -650,9 +640,7 @@ def cmd_qgate_mechanical(args) -> dict[str, Any]:
     findings_emitted += e
     checks['acyclic'] = {'failed': acyclic_failed}
 
-    files_failed, e = _check_files_exist(
-        plan_id, all_tasks, repo_root, persist_failures, emit=emit
-    )
+    files_failed, e = _check_files_exist(plan_id, all_tasks, repo_root, persist_failures, emit=emit)
     findings_emitted += e
     checks['files_exist'] = {'failed': files_failed}
 
@@ -662,9 +650,7 @@ def cmd_qgate_mechanical(args) -> dict[str, Any]:
     findings_emitted += e
     checks['keyword_drift'] = {'failed': keyword_failed}
 
-    structural_failed, e = _check_structural_token_drift(
-        plan_id, task_dir, persist_failures, emit=emit
-    )
+    structural_failed, e = _check_structural_token_drift(plan_id, task_dir, persist_failures, emit=emit)
     findings_emitted += e
     checks['structural_token_drift'] = {'failed': structural_failed}
 
@@ -722,9 +708,7 @@ def cmd_qgate_mechanical(args) -> dict[str, Any]:
         'declared_set_closure': closure_population,
         'declared_scope_reconciliation': scope_population,
     }
-    population_complete = bool(
-        closure_population['population_complete'] and scope_population['population_complete']
-    )
+    population_complete = bool(closure_population['population_complete'] and scope_population['population_complete'])
     ambiguous = not parseable or not population_complete
 
     return {

@@ -42,30 +42,55 @@ cmd_format = _format_mod.cmd_format
 # namespace simply lacks. Parsed once at module scope: parse_ns re-executes the
 # script module on every call.
 _STATS_NS = parse_ns(
-    'pm-documents', 'ref-asciidoc', 'asciidoc.py',
-    'stats', '--directory', '.', register=False,
+    'pm-documents',
+    'ref-asciidoc',
+    'asciidoc.py',
+    'stats',
+    '--directory',
+    '.',
+    register=False,
 )
 _VALIDATE_NS = parse_ns(
-    'pm-documents', 'ref-asciidoc', 'asciidoc.py',
-    'validate', '--path', '.', register=False,
+    'pm-documents',
+    'ref-asciidoc',
+    'asciidoc.py',
+    'validate',
+    '--path',
+    '.',
+    register=False,
 )
 _FORMAT_NS = parse_ns(
-    'pm-documents', 'ref-asciidoc', 'asciidoc.py',
-    'format', '--path', '.', register=False,
+    'pm-documents',
+    'ref-asciidoc',
+    'asciidoc.py',
+    'format',
+    '--path',
+    '.',
+    register=False,
 )
 _VERIFY_LINKS_NS = parse_ns(
-    'pm-documents', 'ref-asciidoc', 'asciidoc.py',
-    'verify-links', '--file', 'placeholder.adoc', register=False,
+    'pm-documents',
+    'ref-asciidoc',
+    'asciidoc.py',
+    'verify-links',
+    '--file',
+    'placeholder.adoc',
+    register=False,
 )
 _CLASSIFY_NS = parse_ns(
-    'pm-documents', 'ref-asciidoc', 'asciidoc.py',
-    'classify-links', register=False,
+    'pm-documents',
+    'ref-asciidoc',
+    'asciidoc.py',
+    'classify-links',
+    register=False,
 )
 
 
 def _ns(template: Namespace, **overrides) -> Namespace:
     """A parser-produced namespace with this test's values overlaid."""
     return Namespace(**{**vars(template), **overrides})
+
+
 cmd_verify_links = _verify_links_mod.cmd_verify_links
 verify_links = _verify_links_mod.verify_links
 extract_anchors_from_file = _verify_links_mod.extract_anchors_from_file
@@ -242,9 +267,7 @@ def test_validate_rejects_invalid_format():
 
 
 def test_validate_nonexistent_path_reports_error():
-    result = cmd_validate(
-        _ns(_VALIDATE_NS, path='/nonexistent/path', format='console', ignore_patterns=None)
-    )
+    result = cmd_validate(_ns(_VALIDATE_NS, path='/nonexistent/path', format='console', ignore_patterns=None))
 
     assert result['status'] == 'error', 'Nonexistent path should produce error status'
 
@@ -283,9 +306,7 @@ def test_format_nonexistent_path_reports_error():
 def test_verify_links_processes_single_file():
     empty_file = LINK_VERIFY_FIXTURES / 'empty.adoc'
 
-    result = cmd_verify_links(
-        _ns(_VERIFY_LINKS_NS, file=str(empty_file), directory=None, recursive=False, report=None)
-    )
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(empty_file), directory=None, recursive=False, report=None))
 
     assert str(result.get('data', {}).get('files_processed', '')) == '1', 'Single file mode processes one file'
 
@@ -293,9 +314,7 @@ def test_verify_links_processes_single_file():
 def test_verify_links_handles_empty_file():
     empty_file = LINK_VERIFY_FIXTURES / 'empty.adoc'
 
-    result = cmd_verify_links(
-        _ns(_VERIFY_LINKS_NS, file=str(empty_file), directory=None, recursive=False, report=None)
-    )
+    result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=str(empty_file), directory=None, recursive=False, report=None))
 
     assert result['status'] in ('success', 'failure', 'error')
 
@@ -343,9 +362,7 @@ def test_classify_links_writes_categorized_output():
         output_file = Path(f.name)
 
     try:
-        result = cmd_classify_links(
-            _ns(_CLASSIFY_NS, input=str(input_file), output=str(output_file), pretty=True)
-        )
+        result = cmd_classify_links(_ns(_CLASSIFY_NS, input=str(input_file), output=str(output_file), pretty=True))
 
         assert result['status'] == 'success'
         assert output_file.exists(), 'Classification completed'
@@ -474,9 +491,7 @@ def test_cmd_verify_links_directory_mode_processes_every_adoc():
         _write_adoc(d, 'one.adoc', '= One\n\nbody\n')
         _write_adoc(d, 'two.adoc', '= Two\n\nbody\n')
 
-        result = cmd_verify_links(
-            _ns(_VERIFY_LINKS_NS, file=None, directory=str(d), recursive=False, report=None)
-        )
+        result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=None, directory=str(d), recursive=False, report=None))
 
         assert result['data']['files_processed'] == 2
 
@@ -484,9 +499,7 @@ def test_cmd_verify_links_directory_mode_processes_every_adoc():
 def test_cmd_verify_links_empty_directory_reports_no_files():
     """A directory with no .adoc files yields a structured no_files error."""
     with tempfile.TemporaryDirectory() as tmp:
-        result = cmd_verify_links(
-            _ns(_VERIFY_LINKS_NS, file=None, directory=tmp, recursive=False, report=None)
-        )
+        result = cmd_verify_links(_ns(_VERIFY_LINKS_NS, file=None, directory=tmp, recursive=False, report=None))
 
         assert result['status'] == 'error'
         assert result['error'] == 'no_files'

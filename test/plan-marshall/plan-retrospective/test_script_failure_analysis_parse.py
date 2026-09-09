@@ -4,7 +4,6 @@
 Its one section: Unit tests (pure helpers).
 """
 
-
 from __future__ import annotations
 
 from _script_failure_analysis_fixtures import (
@@ -48,7 +47,8 @@ class TestClassifyFailure:
 class TestParseFailures:
     def test_skips_successful_calls(self):
         lines = (
-            _success('01', 'plan-marshall:manage-files:manage-files', 'read') + '\n'
+            _success('01', 'plan-marshall:manage-files:manage-files', 'read')
+            + '\n'
             + _success('02', 'plan-marshall:manage-tasks:manage-tasks', 'list')
         ).splitlines()
         assert _mod.parse_failures(lines) == []
@@ -56,9 +56,13 @@ class TestParseFailures:
     def test_captures_failure_with_stderr_block(self):
         lines = (
             _failure(
-                '01', 'plan-marshall:manage-tasks:manage-tasks', 'invalid-sub', 2,
+                '01',
+                'plan-marshall:manage-tasks:manage-tasks',
+                'invalid-sub',
+                2,
                 "argparse: invalid choice: 'invalid-sub' (choose from 'add', 'read')",
-            ) + '\n'
+            )
+            + '\n'
             + _success('05', 'plan-marshall:manage-files:manage-files', 'read')
         ).splitlines()
         failures = _mod.parse_failures(lines)
@@ -73,7 +77,11 @@ class TestParseFailures:
         # A header whose continuation block reports exit_code 0 is a success.
         lines = (
             _failure(
-                '01', 'plan-marshall:manage-files:manage-files', 'read', 0, 'ignored',
+                '01',
+                'plan-marshall:manage-files:manage-files',
+                'read',
+                0,
+                'ignored',
             )
         ).splitlines()
         assert _mod.parse_failures(lines) == []
@@ -106,8 +114,11 @@ class TestParseWorkLogFailures:
     def test_captures_argparse_rejection_line(self):
         lines = [
             _work_failure(
-                '01', 'plan-marshall:manage-status:manage-status', 2, 'argparse_rejection',
-                "manage-status.py: error: unrecognized arguments: --field metadata",
+                '01',
+                'plan-marshall:manage-status:manage-status',
+                2,
+                'argparse_rejection',
+                'manage-status.py: error: unrecognized arguments: --field metadata',
             ),
         ]
         scan = _mod.parse_work_log_failures(lines)
@@ -123,7 +134,10 @@ class TestParseWorkLogFailures:
         # The work.log-sourced diagnostic text flows through the SAME classifier.
         lines = [
             _work_failure(
-                '01', 'plan-marshall:manage-findings:manage-findings', 2, 'argparse_rejection',
+                '01',
+                'plan-marshall:manage-findings:manage-findings',
+                2,
+                'argparse_rejection',
                 "manage-findings: error: invalid choice: 'query' (choose from 'add', 'list')",
             ),
         ]
@@ -147,7 +161,10 @@ class TestParseWorkLogFailures:
         # failure — it must be dropped even if it carries a script_failure marker.
         lines = [
             _work_failure(
-                '01', 'plan-marshall:manage-references:manage-references', 0, 'operation_failure',
+                '01',
+                'plan-marshall:manage-references:manage-references',
+                0,
+                'operation_failure',
                 'field_not_found',
             ),
         ]
@@ -160,8 +177,11 @@ class TestParseWorkLogFailures:
     def test_handles_script_internal_failure_empty_detail(self):
         lines = [
             _work_failure(
-                '01', 'plan-marshall:manage-references:manage-references', 1,
-                'script_internal_failure', '',
+                '01',
+                'plan-marshall:manage-references:manage-references',
+                1,
+                'script_internal_failure',
+                '',
             ),
         ]
         scan = _mod.parse_work_log_failures(lines)
@@ -183,14 +203,16 @@ class TestProducerDerivedLineShape:
         """A line rendered from the PRODUCER's format parses into exactly one record."""
         lines = [
             _work_failure(
-                '01', 'plan-marshall:manage-tasks:manage-tasks', 2, 'argparse_rejection',
+                '01',
+                'plan-marshall:manage-tasks:manage-tasks',
+                2,
+                'argparse_rejection',
                 "manage-tasks: error: invalid choice: 'start' (choose from 'add', 'read')",
             ),
         ]
         scan = _mod.parse_work_log_failures(lines)
         assert len(scan.failures) == 1, (
-            'the parser no longer recognises the shape the executor emits — '
-            f'derived format: {EMITTED_MESSAGE_FORMAT!r}'
+            f'the parser no longer recognises the shape the executor emits — derived format: {EMITTED_MESSAGE_FORMAT!r}'
         )
         assert scan.unrecognized_lines == 0
         record = scan.failures[0]
@@ -206,7 +228,10 @@ class TestProducerDerivedLineShape:
         """
         lines = [
             _legacy_work_failure(
-                '01', 'plan-marshall:manage-status:manage-status', 2, 'argparse_rejection',
+                '01',
+                'plan-marshall:manage-status:manage-status',
+                2,
+                'argparse_rejection',
             ),
         ]
         scan = _mod.parse_work_log_failures(lines)

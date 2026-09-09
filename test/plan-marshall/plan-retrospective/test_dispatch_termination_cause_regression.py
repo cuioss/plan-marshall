@@ -205,9 +205,7 @@ class TestDispatchTerminationCauseCleanExitReplay:
         (plan_dir / 'logs' / 'work.log').write_text('', encoding='utf-8')
         (plan_dir / 'logs' / 'decision.log').write_text('', encoding='utf-8')
         (plan_dir / 'logs' / 'script-execution.log').write_text('', encoding='utf-8')
-        (plan_dir / 'references.json').write_text(
-            json.dumps({'modified_files': []}), encoding='utf-8'
-        )
+        (plan_dir / 'references.json').write_text(json.dumps({'modified_files': []}), encoding='utf-8')
 
         result = run_script(ANALYZE_LOGS, 'run', '--plan-id', plan_id, '--mode', 'live')
         assert result.success, result.stderr
@@ -219,8 +217,7 @@ class TestDispatchTerminationCauseCleanExitReplay:
         # Precondition for the LLM rule — the artifact exists.
         present = boundaries['present']
         assert str(present).lower() == 'true', (
-            f'dispatch_boundaries.present must be True when the boundary file is '
-            f'staged; got {present!r}'
+            f'dispatch_boundaries.present must be True when the boundary file is staged; got {present!r}'
         )
 
         # New-format clean-exit counter — three rows in the fixture.
@@ -280,9 +277,7 @@ class TestDispatchTerminationCauseLegacyUnknownWarning:
         (plan_dir / 'logs' / 'script-execution.log').write_text('', encoding='utf-8')
         # references.json must exist with an empty modified_files list so
         # the unrelated ARTIFACT-missing branch in cmd_run stays quiet.
-        (plan_dir / 'references.json').write_text(
-            json.dumps({'modified_files': []}), encoding='utf-8'
-        )
+        (plan_dir / 'references.json').write_text(json.dumps({'modified_files': []}), encoding='utf-8')
         monkeypatch.setenv('PLAN_BASE_DIR', str(base))
 
         result = run_script(ANALYZE_LOGS, 'run', '--plan-id', plan_id, '--mode', 'live')
@@ -295,8 +290,7 @@ class TestDispatchTerminationCauseLegacyUnknownWarning:
         # Precondition for the LLM warning branch — the artifact exists.
         present = boundaries['present']
         assert str(present).lower() == 'true', (
-            f'dispatch_boundaries.present must be True when the legacy boundary '
-            f'file is staged; got {present!r}'
+            f'dispatch_boundaries.present must be True when the legacy boundary file is staged; got {present!r}'
         )
 
         # The whole point of the warning rule — a single ``unknown`` row

@@ -33,26 +33,52 @@ _cmd_readme_mod = _load_module('_cmd_readme', '_cmd_readme.py')
 # author remembered. Parsed once at module scope: parse_ns re-executes the script
 # module on every call.
 _UPDATE_NS = parse_ns(
-    'pm-plugin-development', 'plugin-maintain', 'maintain.py',
-    'update', '--component', 'placeholder.md', '--updates', '{}', register=False,
+    'pm-plugin-development',
+    'plugin-maintain',
+    'maintain.py',
+    'update',
+    '--component',
+    'placeholder.md',
+    '--updates',
+    '{}',
+    register=False,
 )
 _ANALYZE_NS = parse_ns(
-    'pm-plugin-development', 'plugin-maintain', 'maintain.py',
-    'analyze', '--component', 'placeholder.md', register=False,
+    'pm-plugin-development',
+    'plugin-maintain',
+    'maintain.py',
+    'analyze',
+    '--component',
+    'placeholder.md',
+    register=False,
 )
 _CHECK_DUP_NS = parse_ns(
-    'pm-plugin-development', 'plugin-maintain', 'maintain.py',
-    'check-duplication', '--skill-path', '.', '--content-file', 'placeholder.md', register=False,
+    'pm-plugin-development',
+    'plugin-maintain',
+    'maintain.py',
+    'check-duplication',
+    '--skill-path',
+    '.',
+    '--content-file',
+    'placeholder.md',
+    register=False,
 )
 _README_NS = parse_ns(
-    'pm-plugin-development', 'plugin-maintain', 'maintain.py',
-    'readme', '--bundle-path', '.', register=False,
+    'pm-plugin-development',
+    'plugin-maintain',
+    'maintain.py',
+    'readme',
+    '--bundle-path',
+    '.',
+    register=False,
 )
 
 
 def _ns(template: Namespace, **overrides) -> Namespace:
     """A parser-produced namespace with this test's values overlaid."""
     return Namespace(**{**vars(template), **overrides})
+
+
 _cmd_update_mod = _load_module('_cmd_update', '_cmd_update.py')
 
 cmd_analyze = _cmd_analyze_mod.cmd_analyze

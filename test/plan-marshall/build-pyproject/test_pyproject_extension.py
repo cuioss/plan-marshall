@@ -61,8 +61,7 @@ BuildExtension = _EXTENSION_MODULE.BuildExtension
 # source of the generated executor, the single most-executed python artifact in
 # the repository.
 EXECUTOR_TEMPLATE = (
-    'marketplace/bundles/plan-marshall/skills/tools-script-executor/'
-    'templates/execute-script.py.template'
+    'marketplace/bundles/plan-marshall/skills/tools-script-executor/templates/execute-script.py.template'
 )
 
 
@@ -77,8 +76,7 @@ def _tracked() -> list[str]:
     """
     tracked = _list_tracked_files(str(PROJECT_ROOT))
     assert tracked, (
-        'git ls-files returned no tracked paths - the population assertions '
-        'would pass vacuously over an empty set'
+        'git ls-files returned no tracked paths - the population assertions would pass vacuously over an empty set'
     )
     return tracked
 
@@ -131,9 +129,7 @@ def test_classify_paths_claims_pyproject_but_not_lockfile_or_marshal_together():
 def test_classify_paths_claims_scripts_python_as_production():
     """Python under a scripts/ directory is claimed as production."""
     ext = BuildExtension()
-    result = ext.classify_paths(
-        ['marketplace/bundles/foo/skills/bar/scripts/baz.py']
-    )
+    result = ext.classify_paths(['marketplace/bundles/foo/skills/bar/scripts/baz.py'])
     assert 'marketplace/bundles/foo/skills/bar/scripts/baz.py' in result['production']
 
 
@@ -195,13 +191,15 @@ def test_classify_paths_handles_empty_input():
 def test_classify_paths_mixed_input():
     """A mixed input list classifies each path into the right bucket."""
     ext = BuildExtension()
-    result = ext.classify_paths([
-        'skills/bar/scripts/baz.py',
-        'test/test_foo.py',
-        'pyproject.toml',
-        'uv.lock',
-        'marshal.json',
-    ])
+    result = ext.classify_paths(
+        [
+            'skills/bar/scripts/baz.py',
+            'test/test_foo.py',
+            'pyproject.toml',
+            'uv.lock',
+            'marshal.json',
+        ]
+    )
     assert result['production'] == ['skills/bar/scripts/baz.py']
     assert result['test'] == ['test/test_foo.py']
     assert result['config'] == ['pyproject.toml']
@@ -213,9 +211,7 @@ def test_classify_path_specificity_returns_score_for_claimed_role():
     # pyproject.toml -> ('pyproject.toml', 'config', 1)
     assert ext.classify_path_specificity('pyproject.toml', 'config') == 1
     # skills/bar/scripts/baz.py -> ('**/scripts/**/*.py', 'production', 2)
-    assert (
-        ext.classify_path_specificity('skills/bar/scripts/baz.py', 'production') == 2
-    )
+    assert ext.classify_path_specificity('skills/bar/scripts/baz.py', 'production') == 2
 
 
 def test_classify_path_specificity_returns_zero_for_wrong_role():
@@ -355,9 +351,7 @@ def test_classify_path_specificity_for_python_source_template_is_zero():
 def test_classify_globs_covers_the_executor_template():
     """The build_map seed carries a production route matching the executor template."""
     ext = BuildExtension()
-    production_routes = [
-        pattern for pattern, role in ext.classify_globs() if role == 'production'
-    ]
+    production_routes = [pattern for pattern, role in ext.classify_globs() if role == 'production']
     assert any(route_matches(EXECUTOR_TEMPLATE, pattern) for pattern in production_routes)
 
 
@@ -525,10 +519,7 @@ def test_tracked_python_source_artifacts_at_the_declared_roots_are_all_claimed()
         if path.endswith('.py.template')
         or (
             path.endswith(('.py', '.pyi'))
-            and (
-                path == 'build.py'
-                or path.startswith(('marketplace/bundles/', 'marketplace/targets/'))
-            )
+            and (path == 'build.py' or path.startswith(('marketplace/bundles/', 'marketplace/targets/')))
         )
     ]
     assert EXECUTOR_TEMPLATE in population
@@ -540,11 +531,7 @@ def test_tracked_test_root_fixture_classes_are_all_claimed():
     """No tracked fixture in a routed class survives unclaimed under either pytest root."""
     ext = BuildExtension()
     suffixes = _EXTENSION_MODULE._TEST_FIXTURE_SUFFIXES
-    population = [
-        path
-        for path in _tracked()
-        if path.startswith(('test/', 'tests/')) and path.endswith(suffixes)
-    ]
+    population = [path for path in _tracked() if path.startswith(('test/', 'tests/')) and path.endswith(suffixes)]
     assert population, 'no tracked fixture content in the routed classes'
     claimed = set(ext.classify_paths(population)['test'])
     assert set(population) - claimed == set()
@@ -561,46 +548,31 @@ def test_tracked_routed_population_is_covered_by_the_build_map_routes():
         if path.endswith('.py.template')
         or (
             path.endswith(('.py', '.pyi'))
-            and (
-                path == 'build.py'
-                or path.startswith(('marketplace/bundles/', 'marketplace/targets/'))
-            )
+            and (path == 'build.py' or path.startswith(('marketplace/bundles/', 'marketplace/targets/')))
         )
         or (path.startswith(('test/', 'tests/')) and path.endswith(suffixes))
     ]
     assert population
-    uncovered = [
-        path
-        for path in population
-        if not any(route_matches(path, pattern) for pattern in routes)
-    ]
+    uncovered = [path for path in population if not any(route_matches(path, pattern) for pattern in routes)]
     assert uncovered == []
 
 
 def test_classify_build_class_production_maps_to_compile():
     """A production path derives the compile build_class via the inherited default."""
     ext = BuildExtension()
-    assert (
-        ext.classify_build_class('marketplace/bundles/foo.py', 'production')
-        == BUILD_CLASS_PROD_COMPILE
-    )
+    assert ext.classify_build_class('marketplace/bundles/foo.py', 'production') == BUILD_CLASS_PROD_COMPILE
 
 
 def test_classify_build_class_test_maps_to_module_tests():
     """A test path derives the module-tests build_class via the inherited default."""
     ext = BuildExtension()
-    assert (
-        ext.classify_build_class('test/test_foo.py', 'test') == BUILD_CLASS_TEST_RUN
-    )
+    assert ext.classify_build_class('test/test_foo.py', 'test') == BUILD_CLASS_TEST_RUN
 
 
 def test_classify_build_class_config_maps_to_verify():
     """A config path (pyproject.toml) derives the verify build_class."""
     ext = BuildExtension()
-    assert (
-        ext.classify_build_class('pyproject.toml', 'config')
-        == BUILD_CLASS_BUILD_CONFIG_FULL
-    )
+    assert ext.classify_build_class('pyproject.toml', 'config') == BUILD_CLASS_BUILD_CONFIG_FULL
 
 
 def test_classify_build_class_every_route_role_resolves_to_a_member():

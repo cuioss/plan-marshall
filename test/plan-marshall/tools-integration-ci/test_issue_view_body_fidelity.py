@@ -57,14 +57,7 @@ from toon_parser import parse_toon, serialize_toon
 # key/value pair (``status: blocked`` — the same key the envelope itself uses),
 # a colon inside list text, and an indented continuation.
 BODY_WITH_TOON_SHAPES = (
-    '## Steps to reproduce\n'
-    '\n'
-    'status: blocked\n'
-    '\n'
-    '- bullet: with a colon\n'
-    '    indented continuation\n'
-    '\n'
-    'Closes #1431'
+    '## Steps to reproduce\n\nstatus: blocked\n\n- bullet: with a colon\n    indented continuation\n\nCloses #1431'
 )
 
 # The matched control body. Deliberately unrelated to the one above so that any

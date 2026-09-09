@@ -138,9 +138,7 @@ def test_system_non_dict_retention_block_set_returns_structured_error(plan_conte
         config=_marshal_with_block(system={'retention': 'totally-wrong'}),
     )
 
-    result = cmd_system(
-        Namespace(sub_noun='retention', verb='set', field='logs_days', value='7')
-    )
+    result = cmd_system(Namespace(sub_noun='retention', verb='set', field='logs_days', value='7'))
 
     assert result['status'] == 'error'
     assert result['error_type'] == 'invalid_type'
@@ -193,16 +191,12 @@ def test_plan_phase_3_outline_q_gate_validation_set_get_roundtrip(plan_context):
     """`plan phase-3-outline set/get --field q_gate_validation` round-trips a valid value."""
     create_marshal_json(plan_context.fixture_dir)
 
-    set_result = cmd_plan(
-        Namespace(sub_noun='phase-3-outline', verb='set', field='q_gate_validation', value='once')
-    )
+    set_result = cmd_plan(Namespace(sub_noun='phase-3-outline', verb='set', field='q_gate_validation', value='once'))
     assert set_result['status'] == 'success'
     assert set_result['field'] == 'q_gate_validation'
     assert set_result['value'] == 'once'
 
-    get_result = cmd_plan(
-        Namespace(sub_noun='phase-3-outline', verb='get', field='q_gate_validation')
-    )
+    get_result = cmd_plan(Namespace(sub_noun='phase-3-outline', verb='get', field='q_gate_validation'))
     assert get_result['status'] == 'success'
     assert get_result['value'] == 'once'
 
@@ -211,15 +205,11 @@ def test_plan_phase_4_plan_q_gate_validation_set_get_roundtrip(plan_context):
     """`plan phase-4-plan set/get --field q_gate_validation` round-trips a valid value."""
     create_marshal_json(plan_context.fixture_dir)
 
-    set_result = cmd_plan(
-        Namespace(sub_noun='phase-4-plan', verb='set', field='q_gate_validation', value='off')
-    )
+    set_result = cmd_plan(Namespace(sub_noun='phase-4-plan', verb='set', field='q_gate_validation', value='off'))
     assert set_result['status'] == 'success'
     assert set_result['value'] == 'off'
 
-    get_result = cmd_plan(
-        Namespace(sub_noun='phase-4-plan', verb='get', field='q_gate_validation')
-    )
+    get_result = cmd_plan(Namespace(sub_noun='phase-4-plan', verb='get', field='q_gate_validation'))
     assert get_result['status'] == 'success'
     assert get_result['value'] == 'off'
 
@@ -228,9 +218,7 @@ def test_plan_q_gate_validation_get_returns_once_default(plan_context):
     """A fresh config lacking q_gate_validation surfaces the seeded 'once' default via get."""
     create_marshal_json(plan_context.fixture_dir)
 
-    get_result = cmd_plan(
-        Namespace(sub_noun='phase-4-plan', verb='get', field='q_gate_validation')
-    )
+    get_result = cmd_plan(Namespace(sub_noun='phase-4-plan', verb='get', field='q_gate_validation'))
 
     assert get_result['status'] == 'success'
     assert get_result['value'] == 'once'
@@ -240,9 +228,7 @@ def test_plan_q_gate_validation_set_rejects_invalid_value(plan_context):
     """A malformed q_gate_validation value is rejected at the set boundary, naming the field."""
     create_marshal_json(plan_context.fixture_dir)
 
-    result = cmd_plan(
-        Namespace(sub_noun='phase-3-outline', verb='set', field='q_gate_validation', value='sometimes')
-    )
+    result = cmd_plan(Namespace(sub_noun='phase-3-outline', verb='set', field='q_gate_validation', value='sometimes'))
 
     assert result['status'] == 'error'
     # the validator error message names the offending dotted field path
@@ -303,9 +289,7 @@ def test_project_set_working_prefixes_succeeds(plan_context):
     """The known list-valued `working_prefixes` field still sets and round-trips."""
     create_marshal_json(plan_context.fixture_dir)
 
-    set_result = cmd_project(
-        Namespace(verb='set', field='working_prefixes', value='["feature/", "fix/"]')
-    )
+    set_result = cmd_project(Namespace(verb='set', field='working_prefixes', value='["feature/", "fix/"]'))
     assert set_result['status'] == 'success'
     assert set_result['value'] == ['feature/', 'fix/']
 
@@ -331,9 +315,7 @@ def test_project_set_pr_compact_max_changed_files_succeeds(plan_context):
     """The known `pr_compact_max_changed_files` field still sets and round-trips."""
     create_marshal_json(plan_context.fixture_dir)
 
-    set_result = cmd_project(
-        Namespace(verb='set', field='pr_compact_max_changed_files', value='200')
-    )
+    set_result = cmd_project(Namespace(verb='set', field='pr_compact_max_changed_files', value='200'))
     assert set_result['status'] == 'success'
     assert set_result['value'] == 200
 
@@ -358,9 +340,7 @@ def test_project_set_pr_compact_max_changed_files_succeeds(plan_context):
 
 def _project_get_ns(field: str):
     """Build the `project get --field X` namespace through the script's own parser."""
-    return parse_ns(
-        'plan-marshall', 'manage-config', 'manage-config.py', 'project', 'get', '--field', field
-    )
+    return parse_ns('plan-marshall', 'manage-config', 'manage-config.py', 'project', 'get', '--field', field)
 
 
 def test_project_get_rejects_unknown_field_name(plan_context):
@@ -378,9 +358,7 @@ def test_project_get_rejects_unknown_field_persisted_in_live_block(plan_context)
     """An unknown key already persisted in the live project block is refused, not returned."""
     create_marshal_json(
         plan_context.fixture_dir,
-        config=_marshal_with_block(
-            project={'default_base_branch': 'main', 'retired_lane_knob': 'stale-value'}
-        ),
+        config=_marshal_with_block(project={'default_base_branch': 'main', 'retired_lane_knob': 'stale-value'}),
     )
 
     result = cmd_project(_project_get_ns('retired_lane_knob'))

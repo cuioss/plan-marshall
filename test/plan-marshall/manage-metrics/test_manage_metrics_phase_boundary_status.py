@@ -12,7 +12,6 @@ Its sections, in order:
 * invalid input rejection
 """
 
-
 from _manage_metrics_fixtures import (
     ns_boundary_status,
     ns_end_phase,
@@ -74,9 +73,7 @@ def test_end_phase_clamps_worked_to_wall(plan_context):
     # Start then immediately end (wall span ~0); forward a huge worked window.
     cmd_start_phase(ns_start_phase('clamp-end', '3-outline'))
 
-    result = cmd_end_phase(
-        ns_end_phase('clamp-end', phase='3-outline', duration_ms=888_888_888)
-    )
+    result = cmd_end_phase(ns_end_phase('clamp-end', phase='3-outline', duration_ms=888_888_888))
 
     assert result['status'] == 'success'
     content = (plan_context.plan_dir_for('clamp-end') / 'work' / 'metrics.toon').read_text()
@@ -142,9 +139,7 @@ def test_retrospective_tokens_absent_when_not_forwarded(plan_context):
     cmd_start_phase(ns_start_phase('retro-absent', '6-finalize'))
 
     # total_tokens only, no retrospective attribution.
-    result = cmd_end_phase(
-        ns_end_phase('retro-absent', phase='6-finalize', total_tokens=10000)
-    )
+    result = cmd_end_phase(ns_end_phase('retro-absent', phase='6-finalize', total_tokens=10000))
 
     # default-absent: the field never appears.
     assert result['status'] == 'success'
@@ -198,9 +193,7 @@ def test_boundary_status_missing_when_prev_started_but_not_ended(plan_context):
     cmd_start_phase(ns_start_phase('bs-missing-prev', '1-init'))
     cmd_start_phase(ns_start_phase('bs-missing-prev', '2-refine'))
 
-    result = cmd_boundary_status(
-        ns_boundary_status('bs-missing-prev', prev_phase='1-init', next_phase='2-refine')
-    )
+    result = cmd_boundary_status(ns_boundary_status('bs-missing-prev', prev_phase='1-init', next_phase='2-refine'))
 
     assert result['status'] == 'success'
     assert result['classification'] == 'missing'
@@ -214,9 +207,7 @@ def test_boundary_status_missing_reports_both_offending_fields(plan_context):
     # 1-init opened, never closed; 2-refine never opened.
     cmd_start_phase(ns_start_phase('bs-missing-both', '1-init'))
 
-    result = cmd_boundary_status(
-        ns_boundary_status('bs-missing-both', prev_phase='1-init', next_phase='2-refine')
-    )
+    result = cmd_boundary_status(ns_boundary_status('bs-missing-both', prev_phase='1-init', next_phase='2-refine'))
 
     assert result['status'] == 'success'
     assert result['classification'] == 'missing'
@@ -236,9 +227,7 @@ def test_boundary_status_stamped_when_boundary_complete(plan_context):
     cmd_start_phase(ns_start_phase('bs-stamped', '1-init'))
     cmd_phase_boundary(ns_phase_boundary('bs-stamped', prev_phase='1-init', next_phase='2-refine'))
 
-    result = cmd_boundary_status(
-        ns_boundary_status('bs-stamped', prev_phase='1-init', next_phase='2-refine')
-    )
+    result = cmd_boundary_status(ns_boundary_status('bs-stamped', prev_phase='1-init', next_phase='2-refine'))
 
     assert result['status'] == 'success'
     assert result['classification'] == 'stamped'
@@ -291,9 +280,7 @@ def test_boundary_status_not_applicable_when_prev_phase_never_started(plan_conte
     # Only 2-refine started; 1-init has no row at all.
     cmd_start_phase(ns_start_phase('bs-na', '2-refine'))
 
-    result = cmd_boundary_status(
-        ns_boundary_status('bs-na', prev_phase='1-init', next_phase='2-refine')
-    )
+    result = cmd_boundary_status(ns_boundary_status('bs-na', prev_phase='1-init', next_phase='2-refine'))
 
     assert result['status'] == 'success'
     assert result['classification'] == 'not_applicable'
@@ -329,9 +316,7 @@ def test_boundary_status_invalid_next_phase_rejected(plan_context):
 
 def test_boundary_status_invalid_prev_phase_rejected(plan_context):
     """Invalid prev-phase name returns invalid_phase error (no mutation)."""
-    result = cmd_boundary_status(
-        ns_boundary_status('bs-bad-prev', prev_phase='nope', next_phase='2-refine')
-    )
+    result = cmd_boundary_status(ns_boundary_status('bs-bad-prev', prev_phase='nope', next_phase='2-refine'))
     assert result['status'] == 'error'
     assert result['error'] == 'invalid_phase'
     assert 'prev_phase' in result['message']

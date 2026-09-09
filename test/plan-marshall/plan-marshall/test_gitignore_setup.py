@@ -31,10 +31,7 @@ from gitignore_setup import (  # noqa: E402
 # Managed-block header comments — pinned here so the consolidation tests assert
 # against the exact strings the script emits.
 _MANAGED_COMMENT = '# Planning system (managed by plan-marshall)'
-_LOCAL_COMMENT = (
-    '# Runtime state (plans, run-configuration, lessons-learned, memory, logs '
-    '— managed by plan-marshall)'
-)
+_LOCAL_COMMENT = '# Runtime state (plans, run-configuration, lessons-learned, memory, logs — managed by plan-marshall)'
 
 
 # =============================================================================
@@ -189,10 +186,12 @@ class TestGitignoreSetupIdempotency:
         assert second['entries_added'] == 0
         content = (tmp_path / '.gitignore').read_text()
         assert content.count('# Planning system (managed by plan-marshall)') == 1
-        assert content.count(
-            '# Runtime state (plans, run-configuration, lessons-learned, memory, logs '
-            '— managed by plan-marshall)'
-        ) == 1
+        assert (
+            content.count(
+                '# Runtime state (plans, run-configuration, lessons-learned, memory, logs — managed by plan-marshall)'
+            )
+            == 1
+        )
 
     def test_comment_not_re_emitted_when_entries_added_to_commented_file(self, tmp_path):
         """An update that adds missing entries must not re-emit an existing comment.
@@ -218,10 +217,12 @@ class TestGitignoreSetupIdempotency:
         assert result['entries_added'] == 1
         content = gitignore_path.read_text()
         assert content.count('# Planning system (managed by plan-marshall)') == 1
-        assert content.count(
-            '# Runtime state (plans, run-configuration, lessons-learned, memory, logs '
-            '— managed by plan-marshall)'
-        ) == 1
+        assert (
+            content.count(
+                '# Runtime state (plans, run-configuration, lessons-learned, memory, logs — managed by plan-marshall)'
+            )
+            == 1
+        )
         assert '!.plan/project-architecture/' in content
 
     def test_legacy_comment_header_is_migrated_not_duplicated(self, tmp_path):
@@ -242,10 +243,12 @@ class TestGitignoreSetupIdempotency:
         content = gitignore_path.read_text()
         assert content.count('# Planning system (managed by plan-marshall)') == 1
         assert '# Planning system (managed by /marshall-steward)' not in content
-        assert content.count(
-            '# Runtime state (plans, run-configuration, lessons-learned, memory, logs '
-            '— managed by plan-marshall)'
-        ) == 1
+        assert (
+            content.count(
+                '# Runtime state (plans, run-configuration, lessons-learned, memory, logs — managed by plan-marshall)'
+            )
+            == 1
+        )
 
 
 class TestGitignoreSetupDryRun:

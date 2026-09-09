@@ -433,9 +433,7 @@ def cmd_title_token(args: argparse.Namespace) -> dict[str, Any] | None:
             # honouring.
             previous = read_title_token(current)
             set_outcome['changed'] = not (
-                isinstance(previous, dict)
-                and previous.get('owner') == owner
-                and previous.get('state') == state
+                isinstance(previous, dict) and previous.get('owner') == owner and previous.get('state') == state
             )
             current['title_token'] = record
             current['updated'] = now_utc_iso()
@@ -451,9 +449,7 @@ def cmd_title_token(args: argparse.Namespace) -> dict[str, Any] | None:
         # ``set_at`` still refreshes, so the aged-token staleness predicate keeps
         # seeing a live token across a long build.
         if set_outcome['changed']:
-            log_entry(
-                'work', args.plan_id, 'INFO', f'[MANAGE-STATUS] Title token: {state} (owner={owner})'
-            )
+            log_entry('work', args.plan_id, 'INFO', f'[MANAGE-STATUS] Title token: {state} (owner={owner})')
         return {
             'status': 'success',
             'plan_id': args.plan_id,

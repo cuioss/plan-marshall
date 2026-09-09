@@ -87,12 +87,14 @@ def _is_truthy_metadata(value: Any) -> bool:
 # layer-D leak-into-main guard (:func:`_check_main_dirty_drift`), which only
 # fires for the planning-phase boundaries where a free-form filesystem write
 # can still land in the main checkout.
-_PLANNING_PHASES_ON_MAIN: frozenset[str] = frozenset({
-    '1-init',
-    '2-refine',
-    '3-outline',
-    '4-plan',
-})
+_PLANNING_PHASES_ON_MAIN: frozenset[str] = frozenset(
+    {
+        '1-init',
+        '2-refine',
+        '3-outline',
+        '4-plan',
+    }
+)
 
 
 def _resolve_worktree_assertion(
@@ -164,10 +166,7 @@ def _resolve_worktree_assertion(
             'error': 'worktree_unresolved',
             'reason': 'worktree_path_not_found',
             'worktree_path': path_str,
-            'message': (
-                f'metadata.worktree_path={path_str!r} does not exist on disk; '
-                'phase entry refuses to advance.'
-            ),
+            'message': (f'metadata.worktree_path={path_str!r} does not exist on disk; phase entry refuses to advance.'),
         }
 
     try:
@@ -184,8 +183,7 @@ def _resolve_worktree_assertion(
             'reason': 'git_invocation_failed',
             'worktree_path': path_str,
             'message': (
-                f'metadata.worktree_path={path_str!r} could not be probed via '
-                f'git rev-parse --show-toplevel: {exc}.'
+                f'metadata.worktree_path={path_str!r} could not be probed via git rev-parse --show-toplevel: {exc}.'
             ),
         }
 
@@ -573,9 +571,7 @@ def cmd_verify(args: Any) -> dict[str, Any]:
                 'invariant': 'pending_findings_blocking_count',
                 'captured': str(captured_row.get('pending_findings_blocking_count', '')),
                 'observed': (
-                    f'blocking(count={exc.blocking_count},'
-                    f'blocking_types={exc.blocking_types},'
-                    f'per_type={exc.per_type})'
+                    f'blocking(count={exc.blocking_count},blocking_types={exc.blocking_types},per_type={exc.per_type})'
                 ),
             }
         ]

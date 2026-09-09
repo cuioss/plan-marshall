@@ -6,7 +6,6 @@ Holds the module-level loads, constants and helpers it uses, so
 the module itself carries the import and not the preamble.
 """
 
-
 from __future__ import annotations
 
 import importlib.util
@@ -23,36 +22,19 @@ from conftest import MARKETPLACE_ROOT, PROJECT_ROOT, load_script_module
 
 #: The document under guard: its § 2 table is the anchors key space.
 _ANCHORS_DOC = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'plan-retrospective'
-    / 'references'
-    / 'plan-efficiency.md'
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'references' / 'plan-efficiency.md'
 )
 
 
 #: Authoritative source of the canonical change_type vocabulary.
 _CHANGE_TYPES_DOC = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'ref-workflow-architecture'
-    / 'standards'
-    / 'change-types.md'
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'ref-workflow-architecture' / 'standards' / 'change-types.md'
 )
 
 
 #: The audit skill's deterministic computation core (no executor notation — it
 #: runs via a direct ``python3 .../audit.py``, so it is loaded by file location).
-_AUDIT_SCRIPT = (
-    PROJECT_ROOT
-    / '.claude'
-    / 'skills'
-    / 'audit-archived-plan-retrospectives'
-    / 'scripts'
-    / 'audit.py'
-)
+_AUDIT_SCRIPT = PROJECT_ROOT / '.claude' / 'skills' / 'audit-archived-plan-retrospectives' / 'scripts' / 'audit.py'
 
 
 #: Heading prefixes the section slicer anchors on.
@@ -175,17 +157,13 @@ def _anchor_keys(content: str) -> list[tuple[str, str]]:
 
 def _live_scope_estimates() -> set[str]:
     """The live ``scope_estimate`` enum, imported from its owning script."""
-    outline = load_script_module(
-        'plan-marshall', 'manage-solution-outline', 'manage-solution-outline.py'
-    )
+    outline = load_script_module('plan-marshall', 'manage-solution-outline', 'manage-solution-outline.py')
     return set(outline.SCOPE_ESTIMATE_VALUES)
 
 
 def _canonical_change_types() -> set[str]:
     """The canonical change_type vocabulary, parsed from change-types.md."""
-    block = _section_block(
-        _CHANGE_TYPES_DOC.read_text(encoding='utf-8'), _CANONICAL_CHANGE_TYPE_HEADING
-    )
+    block = _section_block(_CHANGE_TYPES_DOC.read_text(encoding='utf-8'), _CANONICAL_CHANGE_TYPE_HEADING)
     keys = {row[0] for row in _parse_keyed_table(block, ('Key',))}
     if not keys:
         raise AssertionError(
@@ -208,11 +186,7 @@ def _live_change_types() -> set[str]:
 
 def _expected_cross_product() -> set[tuple[str, str]]:
     """The exact ``(scope_estimate, change_type)`` key space the table must carry."""
-    return {
-        (scope, change_type)
-        for scope in _live_scope_estimates()
-        for change_type in _live_change_types()
-    }
+    return {(scope, change_type) for scope in _live_scope_estimates() for change_type in _live_change_types()}
 
 
 def _key_diff(

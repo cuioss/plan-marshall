@@ -262,9 +262,7 @@ class TestDeclaredSide:
         outline, under the same heading, and still reaches neither side.
         """
         _write_references({'branch': 'feature/test', 'affected_files': ['src/mutated.py']})
-        _write_outline(
-            _outline_declaring('- `src/mutated.py` (write-replace)', '- `src/consulted.py` (read)')
-        )
+        _write_outline(_outline_declaring('- `src/mutated.py` (write-replace)', '- `src/consulted.py` (read)'))
 
         result = cmd_reconcile_scope(_ns())
 
@@ -307,11 +305,13 @@ class TestRealizedSideAndRunCoverage:
 
     def test_a_captured_footprint_establishes_the_realized_side(self, plan_context):
         """The recorded capture resolves, and compares against the declaration."""
-        _write_references({
-            'branch': 'feature/test',
-            'affected_files': ['src/one.py', 'src/two.py'],
-            'realized_footprint': ['src/two.py', 'src/three.py'],
-        })
+        _write_references(
+            {
+                'branch': 'feature/test',
+                'affected_files': ['src/one.py', 'src/two.py'],
+                'realized_footprint': ['src/two.py', 'src/three.py'],
+            }
+        )
         _write_outline(_outline_declaring(*_mutation_bullets(['src/one.py', 'src/two.py'])))
 
         result = cmd_reconcile_scope(_ns())

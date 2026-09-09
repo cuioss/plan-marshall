@@ -15,33 +15,29 @@ from _audit_fixtures import audit
 
 def _plan_with_metrics(repo_root: Path, body: str) -> audit.PlanInputs:
     """Stage a one-plan corpus whose metrics.toon carries `body`; return inputs."""
-    plan_dir = repo_root / ".plan" / "local" / "archived-plans" / "sample-plan"
-    (plan_dir / "work").mkdir(parents=True, exist_ok=True)
-    (plan_dir / "references.json").write_text('{"scope_estimate": "surgical"}', encoding="utf-8")
-    (plan_dir / "status.json").write_text(
-        '{"metadata": {"change_type": "bug_fix"}}', encoding="utf-8"
-    )
-    (plan_dir / "work" / "metrics.toon").write_text(body, encoding="utf-8")
+    plan_dir = repo_root / '.plan' / 'local' / 'archived-plans' / 'sample-plan'
+    (plan_dir / 'work').mkdir(parents=True, exist_ok=True)
+    (plan_dir / 'references.json').write_text('{"scope_estimate": "surgical"}', encoding='utf-8')
+    (plan_dir / 'status.json').write_text('{"metadata": {"change_type": "bug_fix"}}', encoding='utf-8')
+    (plan_dir / 'work' / 'metrics.toon').write_text(body, encoding='utf-8')
     return audit.collect_inputs(plan_dir)
 
 
-_PHASE_BODY = "[4-plan]\n  total_tokens: 100\n[5-execute]\n  total_tokens: 0\n"
+_PHASE_BODY = '[4-plan]\n  total_tokens: 100\n[5-execute]\n  total_tokens: 0\n'
 # A zero-token 5-execute on a PRE-#812 record: no marker pair at all.
 _METRICS_UNEXPLAINED = _PHASE_BODY
 # The SAME zero-token 5-execute, explained by the CURRENT markers.
-_METRICS_MARKED = (
-    "any_phase_missing_end_time: true\nphases_missing_end_time: 5-execute\n" + _PHASE_BODY
-)
+_METRICS_MARKED = 'any_phase_missing_end_time: true\nphases_missing_end_time: 5-execute\n' + _PHASE_BODY
 # The SAME zero-token 5-execute, named under the RETIRED keys — an archived
 # record written before the rename. The reader must recognise the state and
 # refuse to read the value out of it.
-_METRICS_OLD_SCHEMA = "partial: true\nunrecorded_phases: 5-execute\n" + _PHASE_BODY
+_METRICS_OLD_SCHEMA = 'partial: true\nunrecorded_phases: 5-execute\n' + _PHASE_BODY
 
 
 def test_metrics_unexplained_zero_token_is_incomplete(tmp_path):
     inputs = _plan_with_metrics(tmp_path, _METRICS_UNEXPLAINED)
     result = audit.check_metrics(inputs)
-    assert "5-execute" in result["incomplete_recording"]
+    assert '5-execute' in result['incomplete_recording']
 
 
 def test_metrics_marker_explained_zero_token_not_incomplete(tmp_path):
@@ -49,10 +45,8 @@ def test_metrics_marker_explained_zero_token_not_incomplete(tmp_path):
     result = audit.check_metrics(inputs)
     # The marker-explained phase is excluded from incomplete_recording and
     # surfaced as an informational explained-gap anomaly instead.
-    assert "5-execute" not in result["incomplete_recording"]
-    assert any(
-        "explained by the phases_missing_end_time marker" in a for a in result["anomalies"]
-    ), result["anomalies"]
+    assert '5-execute' not in result['incomplete_recording']
+    assert any('explained by the phases_missing_end_time marker' in a for a in result['anomalies']), result['anomalies']
 
 
 def test_metrics_old_schema_record_explains_nothing(tmp_path):
@@ -65,29 +59,29 @@ def test_metrics_old_schema_record_explains_nothing(tmp_path):
     """
     inputs = _plan_with_metrics(tmp_path, _METRICS_OLD_SCHEMA)
     result = audit.check_metrics(inputs)
-    assert "5-execute" in result["incomplete_recording"]
-    assert any("old-schema" in a for a in result["anomalies"]), result["anomalies"]
+    assert '5-execute' in result['incomplete_recording']
+    assert any('old-schema' in a for a in result['anomalies']), result['anomalies']
 
 
 def test_parse_metrics_end_time_presence_reads_current_markers(tmp_path):
-    path = tmp_path / "metrics.toon"
-    path.write_text(_METRICS_MARKED, encoding="utf-8")
+    path = tmp_path / 'metrics.toon'
+    path.write_text(_METRICS_MARKED, encoding='utf-8')
     presence = audit.parse_metrics_end_time_presence(path)
     assert presence.schema == audit.METRICS_SCHEMA_CURRENT
     assert presence.readable is True
     assert presence.any_phase_missing_end_time is True
-    assert presence.phases_missing_end_time == frozenset({"5-execute"})
-    assert presence.explained_phases == frozenset({"5-execute"})
+    assert presence.phases_missing_end_time == frozenset({'5-execute'})
+    assert presence.explained_phases == frozenset({'5-execute'})
     assert presence.forces_floor is True
-    assert presence.unreadable_note == ""
+    assert presence.unreadable_note == ''
 
 
 def test_parse_metrics_end_time_presence_current_and_clean(tmp_path):
     """A readable record with nothing missing is the ONE non-floor state."""
-    path = tmp_path / "metrics.toon"
+    path = tmp_path / 'metrics.toon'
     path.write_text(
-        "any_phase_missing_end_time: false\nphases_missing_end_time: \n" + _PHASE_BODY,
-        encoding="utf-8",
+        'any_phase_missing_end_time: false\nphases_missing_end_time: \n' + _PHASE_BODY,
+        encoding='utf-8',
     )
     presence = audit.parse_metrics_end_time_presence(path)
     assert presence.schema == audit.METRICS_SCHEMA_CURRENT
@@ -107,15 +101,15 @@ def test_parse_metrics_end_time_presence_derives_bool_from_list_only_record(tmp_
     exists to remove. The surviving list is the authority.
     """
     # Arrange: the list names a phase; the bool key is absent entirely.
-    path = tmp_path / "metrics.toon"
-    path.write_text("phases_missing_end_time: 5-execute\n" + _PHASE_BODY, encoding="utf-8")
+    path = tmp_path / 'metrics.toon'
+    path.write_text('phases_missing_end_time: 5-execute\n' + _PHASE_BODY, encoding='utf-8')
 
     # Act
     presence = audit.parse_metrics_end_time_presence(path)
 
     # Assert: the bool is derived from the list, and the record floors.
     assert presence.schema == audit.METRICS_SCHEMA_CURRENT
-    assert presence.phases_missing_end_time == frozenset({"5-execute"})
+    assert presence.phases_missing_end_time == frozenset({'5-execute'})
     assert presence.any_phase_missing_end_time is True
     assert presence.forces_floor is True
 
@@ -131,8 +125,8 @@ def test_parse_metrics_end_time_presence_list_only_empty_list_stays_clean(tmp_pa
     ``test_parse_metrics_end_time_presence_current_and_clean`` above.
     """
     # Arrange: the bool key is absent and the list is present but empty.
-    path = tmp_path / "metrics.toon"
-    path.write_text("phases_missing_end_time: \n" + _PHASE_BODY, encoding="utf-8")
+    path = tmp_path / 'metrics.toon'
+    path.write_text('phases_missing_end_time: \n' + _PHASE_BODY, encoding='utf-8')
 
     # Act
     presence = audit.parse_metrics_end_time_presence(path)
@@ -146,8 +140,8 @@ def test_parse_metrics_end_time_presence_list_only_empty_list_stays_clean(tmp_pa
 
 def test_parse_metrics_end_time_presence_reports_old_schema(tmp_path):
     """A record carrying only the RETIRED keys is old-schema, values withheld."""
-    path = tmp_path / "metrics.toon"
-    path.write_text(_METRICS_OLD_SCHEMA, encoding="utf-8")
+    path = tmp_path / 'metrics.toon'
+    path.write_text(_METRICS_OLD_SCHEMA, encoding='utf-8')
     presence = audit.parse_metrics_end_time_presence(path)
     assert presence.schema == audit.METRICS_SCHEMA_OLD
     assert presence.readable is False
@@ -157,37 +151,37 @@ def test_parse_metrics_end_time_presence_reports_old_schema(tmp_path):
     assert presence.phases_missing_end_time is None
     assert presence.explained_phases == frozenset()
     assert presence.forces_floor is True
-    assert "old-schema" in presence.unreadable_note
+    assert 'old-schema' in presence.unreadable_note
 
 
 def test_parse_metrics_end_time_presence_reports_pre_812(tmp_path):
     """A record carrying NEITHER pair is pre-#812 — distinct from old-schema."""
-    path = tmp_path / "metrics.toon"
-    path.write_text(_METRICS_UNEXPLAINED, encoding="utf-8")
+    path = tmp_path / 'metrics.toon'
+    path.write_text(_METRICS_UNEXPLAINED, encoding='utf-8')
     presence = audit.parse_metrics_end_time_presence(path)
     assert presence.schema == audit.METRICS_SCHEMA_PRE_812
     assert presence.schema != audit.METRICS_SCHEMA_OLD
     assert presence.any_phase_missing_end_time is None
     assert presence.phases_missing_end_time is None
     assert presence.forces_floor is True
-    assert "pre-#812" in presence.unreadable_note
-    assert "old-schema" not in presence.unreadable_note
+    assert 'pre-#812' in presence.unreadable_note
+    assert 'old-schema' not in presence.unreadable_note
 
 
 def test_input_integrity_unexplained_execute_is_blind(tmp_path):
     inputs = _plan_with_metrics(tmp_path, _METRICS_UNEXPLAINED)
     result = audit.check_input_integrity(inputs)
-    assert result["data_confidence"] == "blind"
-    assert "5-execute" in result["metrics_blind"]
+    assert result['data_confidence'] == 'blind'
+    assert '5-execute' in result['metrics_blind']
 
 
 def test_input_integrity_marker_explained_execute_is_partial_not_blind(tmp_path):
     inputs = _plan_with_metrics(tmp_path, _METRICS_MARKED)
     result = audit.check_input_integrity(inputs)
     # A marker-explained zero-token execute is an explained gap, never blind.
-    assert result["data_confidence"] == "partial"
-    assert "5-execute" not in result["metrics_blind"]
-    assert result["metrics_marker_schema"] == audit.METRICS_SCHEMA_CURRENT
+    assert result['data_confidence'] == 'partial'
+    assert '5-execute' not in result['metrics_blind']
+    assert result['metrics_marker_schema'] == audit.METRICS_SCHEMA_CURRENT
 
 
 def test_input_integrity_old_schema_execute_stays_blind(tmp_path):
@@ -198,6 +192,6 @@ def test_input_integrity_old_schema_execute_stays_blind(tmp_path):
     """
     inputs = _plan_with_metrics(tmp_path, _METRICS_OLD_SCHEMA)
     result = audit.check_input_integrity(inputs)
-    assert result["metrics_marker_schema"] == audit.METRICS_SCHEMA_OLD
-    assert result["data_confidence"] == "blind"
-    assert "5-execute" in result["metrics_blind"]
+    assert result['metrics_marker_schema'] == audit.METRICS_SCHEMA_OLD
+    assert result['data_confidence'] == 'blind'
+    assert '5-execute' in result['metrics_blind']

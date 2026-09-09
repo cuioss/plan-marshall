@@ -13,7 +13,6 @@ Tier 2 (direct import) tests for cmd_* functions, with 2 subprocess
 tests retained for CLI plumbing verification.
 """
 
-
 import json
 from pathlib import Path
 
@@ -129,6 +128,7 @@ def _unseeded_plan_dir(plan_context, plan_id: str) -> Path:
 # =============================================================================
 # Test: generate (Tier 2 - direct import)
 # =============================================================================
+
 
 def _phase_breakdown_header(md_content: str) -> str:
     """Return the header row of the ## Phase Breakdown table."""
@@ -312,9 +312,7 @@ def _contract_attribution_keys() -> set[str]:
     match = re.search(r'\{phase_name:\s*\{(.*?)\}\}', doc, re.DOTALL)
     assert match is not None, 'contract docstring no longer declares a per-phase bucket shape'
     declared = {key.strip() for key in match.group(1).split(',') if key.strip()}
-    return {
-        k for k in declared if k.startswith('cache_read_attributed_') or k == 'cache_read_unattributed'
-    }
+    return {k for k in declared if k.startswith('cache_read_attributed_') or k == 'cache_read_unattributed'}
 
 
 def _contract_subsource_keys() -> set[str]:
@@ -333,11 +331,7 @@ def _contract_subsource_keys() -> set[str]:
     assert match is not None, 'contract docstring no longer declares a per-phase bucket shape'
     declared = {key.strip() for key in match.group(1).split(',') if key.strip()}
     return {
-        k
-        for k in declared
-        if k.startswith('exploration_')
-        and k.endswith('_bytes')
-        and not k.endswith('_result_bytes')
+        k for k in declared if k.startswith('exploration_') and k.endswith('_bytes') and not k.endswith('_result_bytes')
     }
 
 
@@ -444,9 +438,7 @@ def _derive_phase_row_fields(source: str) -> set[str]:
     """Recover every literal field key the script assigns onto a phase row."""
     import re
 
-    pattern = re.compile(
-        r"(?:phase|phase_data|phase_row|phases\[phase_name\])\['([a-z_]+)'\]\s*="
-    )
+    pattern = re.compile(r"(?:phase|phase_data|phase_row|phases\[phase_name\])\['([a-z_]+)'\]\s*=")
     return set(pattern.findall(source))
 
 
@@ -597,9 +589,7 @@ def _parse_termination_cause_sites(content: str) -> list[tuple[str, set[str]]]:
 # drops one value and proves the guard fails — a guard that cannot fail is not a
 # guard.
 
-_LOGGING_GAP_ANALYSIS_MD = (
-    _SKILL_DIR.parent / 'plan-retrospective' / 'references' / 'logging-gap-analysis.md'
-)
+_LOGGING_GAP_ANALYSIS_MD = _SKILL_DIR.parent / 'plan-retrospective' / 'references' / 'logging-gap-analysis.md'
 
 
 def _parse_backticked_value_list(content: str, anchor: str) -> list[str]:
@@ -621,7 +611,7 @@ def _parse_backticked_value_list(content: str, anchor: str) -> list[str]:
     normalized = re.sub(r'\s+', ' ', content)
     occurrences = normalized.count(anchor)
     assert occurrences == 1, f'anchor must occur exactly once, found {occurrences}: {anchor!r}'
-    tail = normalized[normalized.find(anchor) + len(anchor):]
+    tail = normalized[normalized.find(anchor) + len(anchor) :]
     run = re.match(r'\s*((?:`[a-z_]+`\s*,?\s*)+)', tail)
     assert run is not None, f'no backticked value enumeration follows anchor: {anchor!r}'
     return re.findall(r'`([a-z_]+)`', run.group(1))

@@ -32,12 +32,7 @@ from _self_review_patterns import CANDIDATE_LISTS, CandidateList
 from conftest import MARKETPLACE_ROOT
 
 _WORKFLOW_DOC = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'phase-6-finalize'
-    / 'workflow'
-    / 'pre-submission-self-review.md'
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'workflow' / 'pre-submission-self-review.md'
 )
 
 #: The Step-3 checks region boundaries. Coverage is asserted ONLY inside the
@@ -202,8 +197,7 @@ def _counted_lists() -> list[CandidateList]:
 # nothing reports clean — the vacuous-confident-zero shape this module exists to
 # prevent, reproduced inside it.
 assert _counted_lists(), (
-    'no CANDIDATE_LISTS entry carries in_total, so the coverage sweep below would '
-    'pass having examined nothing'
+    'no CANDIDATE_LISTS entry carries in_total, so the coverage sweep below would pass having examined nothing'
 )
 
 #: Published on EVERY run — passing included — by the root conftest's
@@ -232,11 +226,7 @@ def _uncovered(candidate_lists: tuple[CandidateList, ...], check_block: str) -> 
     so a negative control can drive it with synthetic input, proving the invariant
     actually fails when a counted entry lacks a check rather than passing vacuously.
     """
-    return [
-        spec.key
-        for spec in candidate_lists
-        if spec.in_total and f'`{spec.key}`' not in check_block
-    ]
+    return [spec.key for spec in candidate_lists if spec.in_total and f'`{spec.key}`' not in check_block]
 
 
 class TestCountedListCheckCoverage:
@@ -471,9 +461,7 @@ class TestCountedListCheckCoverage:
 
     def test_both_new_checks_exist(self):
         # The two entries the plan targets each gained a consuming numbered check.
-        block = _numbered_check_block(
-            _checks_region(_WORKFLOW_DOC.read_text(encoding='utf-8'))
-        )
+        block = _numbered_check_block(_checks_region(_WORKFLOW_DOC.read_text(encoding='utf-8')))
         assert '`duplicate_claimable_keys`' in block
         assert '`discard_without_report`' in block
 

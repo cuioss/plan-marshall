@@ -30,10 +30,7 @@ from marketplace.targets.claude.variant_emitter import (
 )
 
 REPO_ROOT = PROJECT_ROOT
-EFFORT_LEVELS_MD = (
-    REPO_ROOT
-    / 'marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-levels.md'
-)
+EFFORT_LEVELS_MD = REPO_ROOT / 'marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-levels.md'
 MAPPING_JSON = REPO_ROOT / 'marketplace/targets/opencode/mapping.json'
 
 _ROW_RE = re.compile(
@@ -86,9 +83,7 @@ def test_level_table_matches_effort_levels_md() -> None:
 def test_alias_gated_efforts_match_doc_gating_notes() -> None:
     doc = _parse_doc_table()
     doc_gated_efforts = {
-        row['effort']
-        for row in doc.values()
-        if 'alias-capability-gated' in str(row['_notes']).lower()
+        row['effort'] for row in doc.values() if 'alias-capability-gated' in str(row['_notes']).lower()
     }
     assert doc_gated_efforts == set(ALIAS_GATED_EFFORTS), (
         f'effort-levels.md marks {sorted(str(e) for e in doc_gated_efforts)} as '
@@ -101,9 +96,7 @@ def test_level_table_aliases_resolve_in_mapping_json() -> None:
     model_map = json.loads(MAPPING_JSON.read_text(encoding='utf-8'))['model_map']
     for level, binding in LEVEL_TABLE.items():
         alias = binding['model']
-        assert alias in model_map, (
-            f'{level}: alias {alias!r} missing from mapping.json model_map'
-        )
+        assert alias in model_map, f'{level}: alias {alias!r} missing from mapping.json model_map'
 
 
 def test_ungated_efforts_are_universally_supported() -> None:

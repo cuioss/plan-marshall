@@ -140,9 +140,7 @@ def test_handler_refuses_minimal_with_the_routed_message(plan_context):
     """End to end through the handler: the refusal an operator actually sees."""
     create_marshal_json(plan_context.fixture_dir)
 
-    result = cmd_finalize_steps_set_lane(
-        Namespace(step_id=_LANE_STEP_ID, lane='minimal', plan_id=None)
-    )
+    result = cmd_finalize_steps_set_lane(Namespace(step_id=_LANE_STEP_ID, lane='minimal', plan_id=None))
 
     assert result['status'] == 'error'
     assert _ROUTE_MARKER in result['error']
@@ -159,25 +157,25 @@ def test_cli_reaches_the_handler_instead_of_dying_at_argparse(plan_context):
     create_marshal_json(plan_context.fixture_dir)
 
     result = run_script(
-        SCRIPT_PATH, 'finalize-steps', 'set-lane',
-        '--step-id', _LANE_STEP_ID, '--lane', 'minimal',
+        SCRIPT_PATH,
+        'finalize-steps',
+        'set-lane',
+        '--step-id',
+        _LANE_STEP_ID,
+        '--lane',
+        'minimal',
     )
 
     combined = f'{result.stdout}\n{result.stderr}'
     assert 'invalid choice' not in combined, (
-        f'argparse rejected --lane before the handler ran, so the routed message is '
-        f'unreachable: {combined}'
+        f'argparse rejected --lane before the handler ran, so the routed message is unreachable: {combined}'
     )
     # The refusal rides `status: error`, not the exit code: manage-config's `main`
     # returns 0 after printing any result, so every validation error in this script
     # signals on the TOON. Moving this check off argparse moved it onto the same
     # channel its siblings (unknown step id, uninitialized marshal) already used.
-    assert 'status: error' in combined, (
-        f'a refused write must not report success: {combined}'
-    )
-    assert _ROUTE_MARKER in combined, (
-        f'the CLI refusal does not name the `{_ROUTE_MARKER}` route: {combined}'
-    )
+    assert 'status: error' in combined, f'a refused write must not report success: {combined}'
+    assert _ROUTE_MARKER in combined, f'the CLI refusal does not name the `{_ROUTE_MARKER}` route: {combined}'
 
 
 # ---------------------------------------------------------------------------
@@ -198,9 +196,7 @@ def _documented_lane_values() -> list[str]:
     documented for some other verb cannot be read in its place.
     """
     text = _MANAGE_CONFIG_SKILL.read_text(encoding='utf-8')
-    section = re.search(
-        r'^### finalize-steps set-lane$(.*?)(?=^### |\Z)', text, re.MULTILINE | re.DOTALL
-    )
+    section = re.search(r'^### finalize-steps set-lane$(.*?)(?=^### |\Z)', text, re.MULTILINE | re.DOTALL)
     assert section, (
         f'{_MANAGE_CONFIG_SKILL.name} carries no "### finalize-steps set-lane" canonical '
         f'section, so the documented enum cannot be located and this binding would be vacuous.'
@@ -240,7 +236,7 @@ def test_the_section_anchor_excludes_a_neighbouring_verbs_enum(tmp_path):
     assert section
     match = _DOCUMENTED_LANE_ENUM.search(section.group(1))
     assert match and match.group(1) == 'off,standard,full', (
-        'the anchored extraction picked up a neighbouring verb\'s enum'
+        "the anchored extraction picked up a neighbouring verb's enum"
     )
 
 

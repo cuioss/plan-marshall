@@ -241,7 +241,7 @@ def _map_target_to_module(rel_path: str) -> str:
     # and rewrite ``.claude/x`` into a different in-tree path.
     normalized = rel_path.replace('\\', '/').removeprefix('./')
     if normalized.startswith(_MARKETPLACE_PREFIX):
-        remainder = normalized[len(_MARKETPLACE_PREFIX):]
+        remainder = normalized[len(_MARKETPLACE_PREFIX) :]
         bundle = remainder.split('/', 1)[0]
         if bundle:
             return bundle
@@ -344,9 +344,7 @@ def build_doc_component_refs(project_root: str, doc_module_rel: str) -> list[dic
             continue
         self_anchors = extract_anchors(text)
         for target, anchor in extract_references(text):
-            target_module, resolved = _resolve_one(
-                doc_file, root, target, anchor, self_anchors, anchor_cache
-            )
+            target_module, resolved = _resolve_one(doc_file, root, target, anchor, self_anchors, anchor_cache)
             triples.add((target_module, 'path', resolved))
 
     return [

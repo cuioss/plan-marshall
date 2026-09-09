@@ -26,9 +26,7 @@ from conftest import load_script_module
 
 EffortPresets = effort_presets.EffortPresets
 
-_cmd_effort_mod = load_script_module(
-    'plan-marshall', 'manage-config', '_cmd_effort.py', module_name='_cmd_effort'
-)
+_cmd_effort_mod = load_script_module('plan-marshall', 'manage-config', '_cmd_effort.py', module_name='_cmd_effort')
 cmd_effort = _cmd_effort_mod.cmd_effort
 cmd_effort_apply_preset = _cmd_effort_mod.cmd_effort_apply_preset
 cmd_effort_identify = _cmd_effort_mod.cmd_effort_identify
@@ -64,15 +62,14 @@ def _expanded_preset(preset: dict) -> dict:
             sub_dict: dict = {}
             for subkey in schema:
                 sub_value = preset_group.get(subkey, default_level)
-                sub_dict[subkey] = (
-                    sub_value if isinstance(sub_value, str) else default_level
-                )
+                sub_dict[subkey] = sub_value if isinstance(sub_value, str) else default_level
             roles_view[group] = sub_dict
         elif isinstance(preset_group, str):
             roles_view[group] = preset_group
         else:
             roles_view[group] = default_level
     return {'default': default_level, 'roles': roles_view}
+
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from conftest import run_script  # noqa: E402
@@ -189,9 +186,7 @@ def test_apply_preset_economic_writes_expanded_payload(plan_context):
     # contribute 1, nested groups contribute len(subkeys)). Overrides
     # count is the per-leaf override count from the preset payload.
     assert result['roles_count'] == _expected_roles_count(EffortPresets.ECONOMIC)
-    assert result['overrides_count'] == _expected_overrides_count(
-        EffortPresets.ECONOMIC
-    )
+    assert result['overrides_count'] == _expected_overrides_count(EffortPresets.ECONOMIC)
 
     # Disk state matches the EXPANDED ECONOMIC payload.
     on_disk = _read_marshal_models(plan_context.fixture_dir)
@@ -201,24 +196,18 @@ def test_apply_preset_economic_writes_expanded_payload(plan_context):
     # a string shorthand or as a dict; the writer picks the compact
     # shape that fits the preset).
     for group, schema in KNOWN_ROLES.items():
-        assert group in on_disk['roles'], (
-            f"group '{group}' missing from expanded on-disk roles map"
-        )
+        assert group in on_disk['roles'], f"group '{group}' missing from expanded on-disk roles map"
         value = on_disk['roles'][group]
         if isinstance(value, dict):
             for subkey in schema:
-                assert subkey in value, (
-                    f"subkey '{group}.{subkey}' missing from on-disk map"
-                )
+                assert subkey in value, f"subkey '{group}.{subkey}' missing from on-disk map"
 
     # ECONOMIC carries `phase-6-finalize` as a dict-valued override; the
     # writer expands the dict so every sub-key is explicit on disk (overrides
     # win, any missing sub-key receives the ECONOMIC default of 'level-3').
     # The resolver returns the sub-key-specific source path because
     # the on-disk phase-6-finalize entry is a dict.
-    read_result = cmd_effort(
-        Namespace(role='phase-6-finalize.verification-feedback', phase=None, default=False)
-    )
+    read_result = cmd_effort(Namespace(role='phase-6-finalize.verification-feedback', phase=None, default=False))
     assert read_result['status'] == 'success'
     assert read_result['level'] == 'level-3'
     assert read_result['source'] == 'plan.phase-6-finalize.effort.verification-feedback'
@@ -235,9 +224,7 @@ def test_apply_preset_balanced_then_read_phase_6_verification_feedback_returns_h
 
     cmd_effort_apply_preset(Namespace(preset='balanced'))
 
-    read_result = cmd_effort(
-        Namespace(role='phase-6-finalize.verification-feedback', phase=None, default=False)
-    )
+    read_result = cmd_effort(Namespace(role='phase-6-finalize.verification-feedback', phase=None, default=False))
     assert read_result['status'] == 'success'
     assert read_result['level'] == 'level-3'
     assert read_result['source'] == 'plan.phase-6-finalize.effort.verification-feedback'
@@ -294,9 +281,7 @@ def test_apply_preset_high_end_overwrites_pre_seeded_block(plan_context):
 def test_apply_preset_bogus_rejected_by_argparse(plan_context):
     _write_marshal_with_models(plan_context.fixture_dir, None)
 
-    result = run_script(
-        SCRIPT_PATH, 'effort', 'apply-preset', '--preset', 'bogus'
-    )
+    result = run_script(SCRIPT_PATH, 'effort', 'apply-preset', '--preset', 'bogus')
 
     assert not result.success, 'argparse should reject unknown preset'
     # argparse choices= produces an error mentioning the valid options.
@@ -433,9 +418,7 @@ def test_set_nested_scope_into_empty_phase(plan_context):
     config['plan']['phase-6-finalize'] = {'max_iterations': 3}
     marshal_path.write_text(json.dumps(config, indent=2), encoding='utf-8')
 
-    result = cmd_effort_set(
-        Namespace(scope='phase-6-finalize.verification-feedback', level='level-5')
-    )
+    result = cmd_effort_set(Namespace(scope='phase-6-finalize.verification-feedback', level='level-5'))
 
     assert result['status'] == 'success'
     assert result['scope'] == 'phase-6-finalize.verification-feedback'
@@ -468,9 +451,7 @@ def test_set_nested_scope_preserves_sibling_subkeys(plan_context):
     }
     marshal_path.write_text(json.dumps(config, indent=2), encoding='utf-8')
 
-    result = cmd_effort_set(
-        Namespace(scope='phase-6-finalize.verification-feedback', level='level-5')
-    )
+    result = cmd_effort_set(Namespace(scope='phase-6-finalize.verification-feedback', level='level-5'))
 
     assert result['status'] == 'success'
 
@@ -500,9 +481,7 @@ def test_set_nested_scope_normalizes_scalar_to_object(plan_context):
     config['plan']['phase-6-finalize'] = {'effort': 'level-2'}
     marshal_path.write_text(json.dumps(config, indent=2), encoding='utf-8')
 
-    result = cmd_effort_set(
-        Namespace(scope='phase-6-finalize.verification-feedback', level='level-5')
-    )
+    result = cmd_effort_set(Namespace(scope='phase-6-finalize.verification-feedback', level='level-5'))
 
     assert result['status'] == 'success'
 
@@ -547,9 +526,7 @@ def test_set_plan_scope_writes_plan_wide_scalar(plan_context):
 def test_set_invalid_level_rejected(plan_context):
     create_marshal_json(plan_context.fixture_dir)
 
-    result = cmd_effort_set(
-        Namespace(scope='phase-6-finalize.verification-feedback', level='level-99')
-    )
+    result = cmd_effort_set(Namespace(scope='phase-6-finalize.verification-feedback', level='level-99'))
 
     assert result['status'] == 'error'
     # The error mentions the offending value and the allowed set.
@@ -581,9 +558,7 @@ def test_set_plan_scope_invalid_level_rejected(plan_context):
 def test_set_unknown_phase_rejected(plan_context):
     create_marshal_json(plan_context.fixture_dir)
 
-    result = cmd_effort_set(
-        Namespace(scope='phase-99-bogus.verification-feedback', level='level-3')
-    )
+    result = cmd_effort_set(Namespace(scope='phase-99-bogus.verification-feedback', level='level-3'))
 
     assert result['status'] == 'error'
     assert 'phase-99-bogus' in result['error']
@@ -599,9 +574,7 @@ def test_set_unknown_role_rejected(plan_context):
 
     # `phase-2-refine` is a valid group but its only sub-key is `default`;
     # `verification-feedback` is not in its schema, so the role is unknown.
-    result = cmd_effort_set(
-        Namespace(scope='phase-2-refine.verification-feedback', level='level-3')
-    )
+    result = cmd_effort_set(Namespace(scope='phase-2-refine.verification-feedback', level='level-3'))
 
     assert result['status'] == 'error'
     assert 'verification-feedback' in result['error']
@@ -643,9 +616,7 @@ def test_set_wired_through_argparse_end_to_end(plan_context):
         'level-5',
     )
 
-    assert result.success, (
-        f'effort set should succeed end-to-end; stderr={result.stderr}'
-    )
+    assert result.success, f'effort set should succeed end-to-end; stderr={result.stderr}'
     payload = result.toon()
     assert payload['status'] == 'success'
     assert payload['scope'] == 'phase-6-finalize.verification-feedback'

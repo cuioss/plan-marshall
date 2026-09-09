@@ -14,8 +14,7 @@ from conftest import PROJECT_ROOT
 # A request body that PASSES S5 concreteness (names a file path) so S5/S1 do not
 # fire — lets the other signals drive the counterfactual in isolation.
 _CONCRETE_REQUEST = (
-    '# Request\n\n## Clarified Request\n\n'
-    'Update `marketplace/bundles/plan-marshall/skills/x/scripts/x.py` to fix it.\n'
+    '# Request\n\n## Clarified Request\n\nUpdate `marketplace/bundles/plan-marshall/skills/x/scripts/x.py` to fix it.\n'
 )
 
 
@@ -53,9 +52,7 @@ def _write_track_plan(
     metadata: dict[str, Any] = {'change_type': change_type, 'plan_source': plan_source}
     if planning_lane is not None:
         metadata['planning_lane'] = planning_lane
-    (plan_dir / 'status.json').write_text(
-        _json.dumps({'metadata': metadata}), encoding='utf-8'
-    )
+    (plan_dir / 'status.json').write_text(_json.dumps({'metadata': metadata}), encoding='utf-8')
 
     if write_request:
         (plan_dir / 'request.md').write_text(request_body, encoding='utf-8')
@@ -74,9 +71,7 @@ class TestTrackSelectionAccuracy:
     OVER-TRACKED / UNDER-TRACKED / correct verdict per plan."""
 
     def test_collect_inputs_populates_planning_lane_and_track(self, tmp_path: Path):
-        inputs = _write_track_plan(
-            tmp_path, 'plan-fields', planning_lane='deep', track='complex'
-        )
+        inputs = _write_track_plan(tmp_path, 'plan-fields', planning_lane='deep', track='complex')
 
         assert inputs.planning_lane == 'deep'
         assert inputs.track == 'complex'
@@ -84,8 +79,11 @@ class TestTrackSelectionAccuracy:
     def test_correct_when_actual_deep_matches_counterfactual_deep(self, tmp_path: Path):
         # Ran deep/complex; a multi_module scope (S2) scores the counterfactual deep.
         inputs = _write_track_plan(
-            tmp_path, 'plan-correct',
-            planning_lane='deep', track='complex', scope_estimate='multi_module',
+            tmp_path,
+            'plan-correct',
+            planning_lane='deep',
+            track='complex',
+            scope_estimate='multi_module',
         )
         routing = audit._load_routing_logic(PROJECT_ROOT)
         assert routing is not None, 'live routing module must import'
@@ -98,8 +96,11 @@ class TestTrackSelectionAccuracy:
     def test_over_tracked_when_actual_deep_but_counterfactual_light(self, tmp_path: Path):
         # Ran deep/complex but every signal is light → OVER-TRACKED.
         inputs = _write_track_plan(
-            tmp_path, 'plan-over',
-            planning_lane='deep', track='complex', scope_estimate='surgical',
+            tmp_path,
+            'plan-over',
+            planning_lane='deep',
+            track='complex',
+            scope_estimate='surgical',
         )
         routing = audit._load_routing_logic(PROJECT_ROOT)
 
@@ -111,8 +112,11 @@ class TestTrackSelectionAccuracy:
     def test_under_tracked_when_actual_light_but_counterfactual_deep(self, tmp_path: Path):
         # Ran light/simple but a multi_module scope (S2) scores deep → UNDER-TRACKED.
         inputs = _write_track_plan(
-            tmp_path, 'plan-under',
-            planning_lane='light', track='simple', scope_estimate='multi_module',
+            tmp_path,
+            'plan-under',
+            planning_lane='light',
+            track='simple',
+            scope_estimate='multi_module',
         )
         routing = audit._load_routing_logic(PROJECT_ROOT)
 
@@ -124,8 +128,11 @@ class TestTrackSelectionAccuracy:
     def test_correct_when_actual_light_matches_counterfactual_light(self, tmp_path: Path):
         # Ran light/simple and every signal is light → correct.
         inputs = _write_track_plan(
-            tmp_path, 'plan-light-correct',
-            planning_lane='light', track='simple', scope_estimate='surgical',
+            tmp_path,
+            'plan-light-correct',
+            planning_lane='light',
+            track='simple',
+            scope_estimate='surgical',
         )
         routing = audit._load_routing_logic(PROJECT_ROOT)
 
@@ -137,7 +144,10 @@ class TestTrackSelectionAccuracy:
     def test_not_recorded_when_no_lane_or_track(self, tmp_path: Path):
         # A plan that never recorded a planning lane/track → not_recorded.
         inputs = _write_track_plan(
-            tmp_path, 'plan-missing', planning_lane=None, track=None,
+            tmp_path,
+            'plan-missing',
+            planning_lane=None,
+            track=None,
         )
         routing = audit._load_routing_logic(PROJECT_ROOT)
 
@@ -150,7 +160,10 @@ class TestTrackSelectionAccuracy:
     def test_no_routing_logic_when_router_unavailable(self, tmp_path: Path):
         # When the routing module cannot be imported the check degrades gracefully.
         inputs = _write_track_plan(
-            tmp_path, 'plan-noroute', planning_lane='deep', track='complex',
+            tmp_path,
+            'plan-noroute',
+            planning_lane='deep',
+            track='complex',
         )
 
         row = audit.check_track_selection_accuracy(inputs, None, _NON_BREAKING_COMPAT)
@@ -161,8 +174,11 @@ class TestTrackSelectionAccuracy:
         # references.json carries no `track`; the actual track is derived from the
         # recorded lane (deep ⇒ complex).
         inputs = _write_track_plan(
-            tmp_path, 'plan-derive',
-            planning_lane='deep', track=None, scope_estimate='multi_module',
+            tmp_path,
+            'plan-derive',
+            planning_lane='deep',
+            track=None,
+            scope_estimate='multi_module',
         )
         routing = audit._load_routing_logic(PROJECT_ROOT)
 
@@ -177,8 +193,11 @@ class TestTrackSelectionAccuracy:
         # so breaking compatibility alone no longer scores the counterfactual
         # deep. A plan that ran light is therefore correct, not UNDER-TRACKED.
         inputs = _write_track_plan(
-            tmp_path, 'plan-s4',
-            planning_lane='light', track='simple', scope_estimate='surgical',
+            tmp_path,
+            'plan-s4',
+            planning_lane='light',
+            track='simple',
+            scope_estimate='surgical',
         )
         routing = audit._load_routing_logic(PROJECT_ROOT)
 
@@ -192,8 +211,11 @@ class TestTrackSelectionAccuracy:
         # still contributes to a deep counterfactual: a broad-scope plan that ran
         # light is UNDER-TRACKED (S2 + S4 both score deep).
         inputs = _write_track_plan(
-            tmp_path, 'plan-s4-broad',
-            planning_lane='light', track='simple', scope_estimate='multi_module',
+            tmp_path,
+            'plan-s4-broad',
+            planning_lane='light',
+            track='simple',
+            scope_estimate='multi_module',
         )
         routing = audit._load_routing_logic(PROJECT_ROOT)
 
@@ -209,8 +231,11 @@ class TestTrackSelectionAccuracy:
         # request_concrete=False, fire S5, score the counterfactual deep, and
         # manufacture a false UNDER-TRACKED verdict.
         inputs = _write_track_plan(
-            tmp_path, 'plan-no-request',
-            planning_lane='light', track='simple', scope_estimate='surgical',
+            tmp_path,
+            'plan-no-request',
+            planning_lane='light',
+            track='simple',
+            scope_estimate='surgical',
             write_request=False,
         )
         routing = audit._load_routing_logic(PROJECT_ROOT)
@@ -225,15 +250,16 @@ class TestTrackSelectionAccuracy:
         assert row['actual_lane'] == 'light'
         assert row['actual_track'] == 'simple'
 
-    def test_unreadable_request_md_treated_as_unknown_not_vague(
-        self, tmp_path: Path, monkeypatch
-    ):
+    def test_unreadable_request_md_treated_as_unknown_not_vague(self, tmp_path: Path, monkeypatch):
         # An OSError reading an existing request.md must be treated as unknown (no
         # S5 deep-bias), NOT as a vague request. A light/surgical plan therefore
         # stays correct rather than being pushed to a false UNDER-TRACKED.
         inputs = _write_track_plan(
-            tmp_path, 'plan-unreadable',
-            planning_lane='light', track='simple', scope_estimate='surgical',
+            tmp_path,
+            'plan-unreadable',
+            planning_lane='light',
+            track='simple',
+            scope_estimate='surgical',
         )
         routing = audit._load_routing_logic(PROJECT_ROOT)
         assert routing is not None, 'live routing module must import'
@@ -266,8 +292,11 @@ class TestTrackSelectionAccuracy:
         # resolve against the isolated tree (routing is unavailable there, so the
         # row degrades to `no_routing_logic`) and the live .plan tree is untouched.
         inputs = _write_track_plan(
-            tmp_path, 'plan-e2e',
-            planning_lane='deep', track='complex', scope_estimate='surgical',
+            tmp_path,
+            'plan-e2e',
+            planning_lane='deep',
+            track='complex',
+            scope_estimate='surgical',
         )
 
         output = audit.run_checks([inputs], ['track-selection-accuracy'], tmp_path)

@@ -39,7 +39,10 @@ from conftest import PlanContext, load_script_module
 
 
 _mem = load_script_module(
-    'plan-marshall', 'manage-execution-manifest', 'manage-execution-manifest.py', module_name='_mem_script_decision_rules'
+    'plan-marshall',
+    'manage-execution-manifest',
+    'manage-execution-manifest.py',
+    module_name='_mem_script_decision_rules',
 )
 cmd_compose = _mem.cmd_compose
 read_manifest = _mem.read_manifest
@@ -114,9 +117,7 @@ def _seed_marshal(ci_provider: str | None = 'github') -> Path:
         },
     }
     if ci_provider:
-        marshal['providers'] = [
-            {'skill_name': f'plan-marshall:workflow-integration-{ci_provider}', 'category': 'ci'}
-        ]
+        marshal['providers'] = [{'skill_name': f'plan-marshall:workflow-integration-{ci_provider}', 'category': 'ci'}]
     marshal_path = get_marshal_path()
     marshal_path.parent.mkdir(parents=True, exist_ok=True)
     marshal_path.write_text(json.dumps(marshal, indent=2))
@@ -542,9 +543,7 @@ class TestDecideSubtractionRecords:
 
     def test_surgical_bug_fix_row_records_every_drop(self):
         """Rule 5 narrows both phases, and the reason names the firing rule."""
-        body, rule, dropped = self._decide_with(
-            change_type='bug_fix', scope_estimate='surgical'
-        )
+        body, rule, dropped = self._decide_with(change_type='bug_fix', scope_estimate='surgical')
 
         assert rule == 'surgical_bug_fix'
         self._assert_records_match_the_removals(body, dropped, self._PHASE_5, self._PHASE_6)
@@ -552,9 +551,7 @@ class TestDecideSubtractionRecords:
 
     def test_verification_no_files_row_records_every_drop(self):
         """Rule 6 narrows phase-6 to the analysis minimum and keeps phase-5 whole."""
-        body, rule, dropped = self._decide_with(
-            change_type='verification', affected_files_count=0
-        )
+        body, rule, dropped = self._decide_with(change_type='verification', affected_files_count=0)
 
         assert rule == 'verification_no_files'
         self._assert_records_match_the_removals(body, dropped, self._PHASE_5, self._PHASE_6)
@@ -861,16 +858,12 @@ class TestSecurityClassInactivePreFilter:
         # non-zero surface must keep the step whatever the plan's change_type is,
         # which the absent parameter makes structurally true.
         assert 'change_type' not in _apply_security_class_inactive.__code__.co_varnames
-        kept, dropped = _apply_security_class_inactive(
-            ['finalize-step-security-audit'], _SECURITY_CLASS, 4, 0
-        )
+        kept, dropped = _apply_security_class_inactive(['finalize-step-security-audit'], _SECURITY_CLASS, 4, 0)
         assert kept == ['finalize-step-security-audit']
         assert dropped == []
 
     def test_drop_record_names_step_and_reason(self):
-        kept, dropped = _apply_security_class_inactive(
-            ['finalize-step-security-audit', 'push'], _SECURITY_CLASS, 0, 0
-        )
+        kept, dropped = _apply_security_class_inactive(['finalize-step-security-audit', 'push'], _SECURITY_CLASS, 0, 0)
         assert kept == ['push']
         assert dropped == [
             {
@@ -950,12 +943,12 @@ class TestUnresolvedAskProviderDropPreFilter:
     @pytest.mark.parametrize(
         'ar_lane,ci_provider,expect_present',
         [
-            ('ask', None, False),      # unresolved ask + no CI provider → DROP
-            ('ask', 'github', True),   # unresolved ask + CI provider → keep
-            ('ask', 'gitlab', True),   # provider identity is irrelevant — any non-None keeps
-            ('auto', None, True),      # resolved auto (steward answered) → keep even w/o provider
-            ('full', None, True),      # resolved full → keep even w/o provider
-            ('off', None, True),       # off is resolved; the later lane pass drops it, not this one
+            ('ask', None, False),  # unresolved ask + no CI provider → DROP
+            ('ask', 'github', True),  # unresolved ask + CI provider → keep
+            ('ask', 'gitlab', True),  # provider identity is irrelevant — any non-None keeps
+            ('auto', None, True),  # resolved auto (steward answered) → keep even w/o provider
+            ('full', None, True),  # resolved full → keep even w/o provider
+            ('off', None, True),  # off is resolved; the later lane pass drops it, not this one
         ],
     )
     def test_automatic_review_truth_table(self, ar_lane, ci_provider, expect_present):
@@ -971,11 +964,11 @@ class TestUnresolvedAskProviderDropPreFilter:
     @pytest.mark.parametrize(
         'sr_lane,sonar_provider,expect_present',
         [
-            ('ask', None, False),      # unresolved ask + no Sonar provider → DROP
-            ('ask', 'sonar', True),    # unresolved ask + Sonar provider → keep
-            ('auto', None, True),      # resolved auto → keep even w/o provider
-            ('full', None, True),      # resolved full → keep even w/o provider
-            ('off', None, True),       # off is resolved; dropped later by the lane pass, not here
+            ('ask', None, False),  # unresolved ask + no Sonar provider → DROP
+            ('ask', 'sonar', True),  # unresolved ask + Sonar provider → keep
+            ('auto', None, True),  # resolved auto → keep even w/o provider
+            ('full', None, True),  # resolved full → keep even w/o provider
+            ('off', None, True),  # off is resolved; dropped later by the lane pass, not here
         ],
     )
     def test_sonar_roundtrip_truth_table(self, sr_lane, sonar_provider, expect_present):
@@ -1020,17 +1013,13 @@ class TestUnresolvedAskProviderDropPreFilter:
 
     def test_non_infra_elements_pass_through_untouched(self):
         candidates = ['push', 'archive-plan', 'finalize-step-simplify']
-        kept, dropped = _apply_unresolved_ask_provider_drop(
-            candidates, _override_map(ar_lane='ask'), None, None
-        )
+        kept, dropped = _apply_unresolved_ask_provider_drop(candidates, _override_map(ar_lane='ask'), None, None)
         assert kept == candidates
         assert dropped == []
 
     def test_does_not_mutate_input_list(self):
         candidates = ['plan-marshall:automatic-review', 'push']
-        _apply_unresolved_ask_provider_drop(
-            candidates, _override_map(ar_lane='ask'), None, None
-        )
+        _apply_unresolved_ask_provider_drop(candidates, _override_map(ar_lane='ask'), None, None)
         assert candidates == ['plan-marshall:automatic-review', 'push']
 
 
@@ -1092,10 +1081,13 @@ class TestHasDeclaredLaneOverride:
     def test_declaration_matches_across_default_prefix(self):
         # Marshal keys preserve prefixes while candidates are bare-normalized;
         # the lookup strips ``default:`` from the KEY before comparing.
-        assert _has_declared_lane_override(
-            'pre-submission-self-review',
-            _lane_map('default:pre-submission-self-review', 'minimal'),
-        ) is True
+        assert (
+            _has_declared_lane_override(
+                'pre-submission-self-review',
+                _lane_map('default:pre-submission-self-review', 'minimal'),
+            )
+            is True
+        )
 
 
 class TestScopeGatedFinalizeDeclaredLaneImmunity:
@@ -1262,23 +1254,17 @@ class TestReadSonarProvider:
         marshal_path.write_text(json.dumps(marshal, indent=2))
 
     def test_returns_sonar_when_declared(self, plan_context):
-        self._seed_providers(
-            [{'skill_name': 'plan-marshall:workflow-integration-sonar', 'category': 'sonar'}]
-        )
+        self._seed_providers([{'skill_name': 'plan-marshall:workflow-integration-sonar', 'category': 'sonar'}])
         assert _read_sonar_provider() == 'sonar'
 
     def test_returns_sonar_regardless_of_category(self, plan_context):
         # The reader keys on skill_name, not category, so a differently-categorized
         # Sonar entry still resolves.
-        self._seed_providers(
-            [{'skill_name': 'plan-marshall:workflow-integration-sonar', 'category': 'quality'}]
-        )
+        self._seed_providers([{'skill_name': 'plan-marshall:workflow-integration-sonar', 'category': 'quality'}])
         assert _read_sonar_provider() == 'sonar'
 
     def test_none_when_no_sonar_provider(self, plan_context):
-        self._seed_providers(
-            [{'skill_name': 'plan-marshall:workflow-integration-github', 'category': 'ci'}]
-        )
+        self._seed_providers([{'skill_name': 'plan-marshall:workflow-integration-github', 'category': 'ci'}])
         assert _read_sonar_provider() is None
 
     def test_none_when_providers_absent(self, plan_context):

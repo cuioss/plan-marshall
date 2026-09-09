@@ -8,7 +8,6 @@ Its sections, in order:
 * End-to-end through the mechanical Q-Gate
 """
 
-
 from __future__ import annotations
 
 from argparse import Namespace
@@ -56,18 +55,14 @@ def test_a_home_relative_glob_is_unmeasured_not_empty():
     expansion = expand_declared_glob('~/x/*.py', PROJECT_ROOT)
 
     assert expansion.expandable is False
-    _gaps, population = check_declared_scope_reconciliation(
-        [_deliverable(1, survey=['~/x/*.py'])], PROJECT_ROOT
-    )
+    _gaps, population = check_declared_scope_reconciliation([_deliverable(1, survey=['~/x/*.py'])], PROJECT_ROOT)
     assert population['globs_unexpandable'] == 1
     assert population['population_complete'] is False
 
 
 def test_expand_declared_glob_reports_expandability_separately_from_emptiness():
     """A pattern matching nothing and a pattern that cannot expand differ."""
-    empty = expand_declared_glob(
-        'marketplace/bundles/plan-marshall/skills/manage-tasks/no-such-dir/*.md', PROJECT_ROOT
-    )
+    empty = expand_declared_glob('marketplace/bundles/plan-marshall/skills/manage-tasks/no-such-dir/*.md', PROJECT_ROOT)
     absolute = expand_declared_glob('/etc/*.conf', PROJECT_ROOT)
 
     assert empty.matches == [] and empty.expandable is True and empty.truncated is False
@@ -109,6 +104,7 @@ def test_population_reports_what_was_actually_scanned():
 # End-to-end through the mechanical Q-Gate
 # =============================================================================
 
+
 def test_population_publishes_member_identities_not_only_counts():
     """The positive-population assertion needs the members, not the cardinality.
 
@@ -128,6 +124,7 @@ def test_population_publishes_member_identities_not_only_counts():
 # Population — the positive-population guard (D3)
 # =============================================================================
 
+
 def test_verification_tasks_are_excluded_from_the_scanned_population():
     """A verification task's steps are commands, not paths, so it is skipped."""
     deliverables = [_deliverable(1, affected=[_REAL_A])]
@@ -142,6 +139,7 @@ def test_verification_tasks_are_excluded_from_the_scanned_population():
 # =============================================================================
 # End-to-end through the mechanical Q-Gate
 # =============================================================================
+
 
 def test_qgate_reports_closure_gap_while_files_exist_stays_clean(plan_context):
     """Every declared path resolves, and the set is still incomplete.
@@ -224,9 +222,7 @@ def test_an_in_repo_dotdot_glob_expands_to_canonical_paths():
     manufactured a claim_vs_index finding against a path the deliverable HAD
     enumerated.
     """
-    canonical = sorted(
-        p.relative_to(PROJECT_ROOT).as_posix() for p in PROJECT_ROOT.glob(_STANDARDS_GLOB)
-    )
+    canonical = sorted(p.relative_to(PROJECT_ROOT).as_posix() for p in PROJECT_ROOT.glob(_STANDARDS_GLOB))
     assert canonical, 'positive-population guard: the glob must match something'
     detoured = 'doc/../' + _STANDARDS_GLOB
 

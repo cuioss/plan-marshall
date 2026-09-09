@@ -38,20 +38,11 @@ from _dispatch_roster import section_lines
 from conftest import MARKETPLACE_ROOT
 
 _SKILLS = MARKETPLACE_ROOT / 'plan-marshall' / 'skills'
-_EXT_POINT_DOC = (
-    _SKILLS
-    / 'extension-api'
-    / 'standards'
-    / 'ext-point-self-review-surfacing.md'
-)
-_WORKFLOW_DOC = (
-    _SKILLS / 'phase-6-finalize' / 'workflow' / 'pre-submission-self-review.md'
-)
+_EXT_POINT_DOC = _SKILLS / 'extension-api' / 'standards' / 'ext-point-self-review-surfacing.md'
+_WORKFLOW_DOC = _SKILLS / 'phase-6-finalize' / 'workflow' / 'pre-submission-self-review.md'
 
 _FAILURE_MODE_HEADING = '## Failure Mode Contract'
-_DELTA_COVERAGE_HEADING = (
-    '### `delta_coverage` — what the round observed over what it searched'
-)
+_DELTA_COVERAGE_HEADING = '### `delta_coverage` — what the round observed over what it searched'
 _STOP_PREFIXES = ('### ', '## ', '# ', '---')
 
 #: A markdown table body row: at least two ``|``-delimited cells, and not the
@@ -125,19 +116,13 @@ _COLLAPSE_PROHIBITION = re.compile(r'MUST\s+NOT\s+be\s+reported\s+under\s+the\s+
 
 
 def _route_one_rows() -> list[tuple[str, str]]:
-    return [
-        (condition, output)
-        for condition, output in _FAILURE_MODE_ROWS
-        if _NO_IMPLEMENTOR_MARKER.search(condition)
-    ]
+    return [(condition, output) for condition, output in _FAILURE_MODE_ROWS if _NO_IMPLEMENTOR_MARKER.search(condition)]
 
 
 def _classifiable_rows() -> list[tuple[str, str]]:
     """Every failure-mode row that is NOT route 1 — the matched control set."""
     return [
-        (condition, output)
-        for condition, output in _FAILURE_MODE_ROWS
-        if not _NO_IMPLEMENTOR_MARKER.search(condition)
+        (condition, output) for condition, output in _FAILURE_MODE_ROWS if not _NO_IMPLEMENTOR_MARKER.search(condition)
     ]
 
 
@@ -366,11 +351,7 @@ def test_route_matcher_separates_the_no_implementor_row_from_its_siblings():
         ('Git unavailable or wrong cwd', 'error'),
     ]
 
-    matched = [
-        condition
-        for condition, _output in synthetic
-        if _NO_IMPLEMENTOR_MARKER.search(condition)
-    ]
+    matched = [condition for condition, _output in synthetic if _NO_IMPLEMENTOR_MARKER.search(condition)]
 
     assert matched == ['No domain implementor resolved (consumer dispatch)'], (
         f'The route-1 matcher does not isolate the no-implementor condition — '
@@ -380,10 +361,7 @@ def test_route_matcher_separates_the_no_implementor_row_from_its_siblings():
 
 
 def test_collapse_prohibition_detector_fires_only_on_the_prohibiting_wording():
-    prohibiting = (
-        'It MUST NOT be reported under the same verdict as a round that ran and '
-        'surfaced zero candidates'
-    )
+    prohibiting = 'It MUST NOT be reported under the same verdict as a round that ran and surfaced zero candidates'
     permissive = (
         'The consumer step succeeds without dispatching the LLM cognitive phase '
         '(outcome=done, empty candidate envelope)'

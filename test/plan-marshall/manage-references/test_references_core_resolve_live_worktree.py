@@ -30,9 +30,7 @@ from pathlib import Path
 
 from conftest import load_script_module
 
-_core = load_script_module(
-    'plan-marshall', 'manage-references', '_references_core.py', '_references_core_rlw'
-)
+_core = load_script_module('plan-marshall', 'manage-references', '_references_core.py', '_references_core_rlw')
 
 resolve_live_worktree = _core.resolve_live_worktree
 WorktreeResolutionError = _core.WorktreeResolutionError
@@ -96,9 +94,7 @@ class TestHasWorktreeGate:
         resolve_live_worktree('demo-plan')
         assert seen == {'plan_id': 'demo-plan', 'ensure': False}
 
-    def test_main_checkout_plan_returns_none_despite_real_path(
-        self, monkeypatch, tmp_path
-    ):
+    def test_main_checkout_plan_returns_none_despite_real_path(self, monkeypatch, tmp_path):
         """``has_worktree=False`` wins even though ``worktree_path`` is a real dir.
 
         The resolver falls back to the main checkout for a plan that binds no

@@ -11,7 +11,6 @@ Its sections, in order:
 * Idempotent acquire — FIFO position preserved across re-polls (b8c531 / e738fe)
 """
 
-
 from __future__ import annotations
 
 from argparse import Namespace
@@ -254,9 +253,7 @@ class TestIdempotentAcquire:
         assert re_w2['admission'] == 'blocked'
         assert re_w2['id'] == w2['id']
 
-    def test_re_acquire_non_head_waiter_stays_blocked_when_one_slot_frees(
-        self, isolated_base: dict
-    ) -> None:
+    def test_re_acquire_non_head_waiter_stays_blocked_when_one_slot_frees(self, isolated_base: dict) -> None:
         """FIFO order is honoured when a single slot frees: only the oldest
         waiting plan is promotable. A non-head waiter that re-polls stays blocked
         even though a slot is free, because an earlier waiter holds priority."""

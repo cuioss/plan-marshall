@@ -37,8 +37,14 @@ _MAVEN_NOTATION = 'plan-marshall:build-maven:maven'
 #: hand-built namespace it replaces omitted entirely. Hoisted to module scope
 #: because ``parse_ns`` re-executes the script module on every call.
 _RUN_ARGS: argparse.Namespace = parse_ns(
-    'plan-marshall', 'build-pyproject', 'pyproject_build.py',
-    'run', '--command-args', 'verify core', '--plan-id', 'plan-x',
+    'plan-marshall',
+    'build-pyproject',
+    'pyproject_build.py',
+    'run',
+    '--command-args',
+    'verify core',
+    '--plan-id',
+    'plan-x',
     register=False,
 )
 #: ``--plan-id`` and ``--project-dir`` are mutually exclusive on the shared build
@@ -111,9 +117,9 @@ def captured(monkeypatch) -> list[tuple[str, str | None, str, str]]:
     """Record every ``log_entry`` call the factory makes at the capture seam."""
     calls: list[tuple[str, str | None, str, str]] = []
     monkeypatch.setattr(
-        factory, 'log_entry', lambda log_type, plan_id, level, message: calls.append(
-            (log_type, plan_id, level, message)
-        )
+        factory,
+        'log_entry',
+        lambda log_type, plan_id, level, message: calls.append((log_type, plan_id, level, message)),
     )
     return calls
 
@@ -121,9 +127,9 @@ def captured(monkeypatch) -> list[tuple[str, str | None, str, str]]:
 def _install_in_process_stubs(monkeypatch) -> None:
     """Stub the in-process build tail so cmd_run reaches its resolution record."""
     monkeypatch.setattr(
-        factory, 'execute_direct_base',
-        lambda **kw: {'status': 'success', 'exit_code': 0, 'duration_seconds': 1,
-                      'log_file': 'l', 'command': 'c'},
+        factory,
+        'execute_direct_base',
+        lambda **kw: {'status': 'success', 'exit_code': 0, 'duration_seconds': 1, 'log_file': 'l', 'command': 'c'},
     )
 
     @contextmanager
@@ -137,7 +143,8 @@ def _install_in_process_stubs(monkeypatch) -> None:
 def test_routed_resolution_reaches_the_captured_sink(monkeypatch, capsys, captured):
     # Arrange: a ready daemon that accepts the job and drives it to success.
     monkeypatch.setattr(
-        factory, '_load_build_server',
+        factory,
+        '_load_build_server',
         lambda: _FakeClient(preflight={'status': 'success', 'preflight': 'ready'}),
     )
     monkeypatch.setattr(factory, 'cmd_run_common', lambda **kw: 0)
@@ -160,7 +167,8 @@ def test_routed_resolution_reaches_the_captured_sink(monkeypatch, capsys, captur
 def test_in_process_fallback_reason_is_captured_at_warning(monkeypatch, capsys, captured):
     # Arrange: the daemon is down, so auto mode falls back and names the reason.
     monkeypatch.setattr(
-        factory, '_load_build_server',
+        factory,
+        '_load_build_server',
         lambda: _FakeClient(preflight={'status': 'success', 'preflight': 'down', 'reason': 'socket_absent'}),
     )
     _install_in_process_stubs(monkeypatch)
@@ -183,7 +191,8 @@ def test_in_process_fallback_reason_is_captured_at_warning(monkeypatch, capsys, 
 def test_daemon_fail_loud_resolution_is_captured_at_warning(monkeypatch, capsys, captured):
     # Arrange: execution_mode=daemon against a down daemon ⇒ hard refusal.
     monkeypatch.setattr(
-        factory, '_load_build_server',
+        factory,
+        '_load_build_server',
         lambda: _FakeClient(preflight={'status': 'success', 'preflight': 'down', 'reason': 'socket_absent'}),
     )
     _, cmd_run = factory.create_execute_handlers(_config(), parse_log_fn=lambda *a: None)
@@ -207,9 +216,7 @@ def test_daemon_fail_loud_resolution_is_captured_at_warning(monkeypatch, capsys,
 
 
 @pytest.mark.parametrize('child_execution_mode', ['auto', 'daemon'])
-def test_daemon_child_reentrancy_records_no_second_resolution(
-    monkeypatch, capsys, captured, child_execution_mode
-):
+def test_daemon_child_reentrancy_records_no_second_resolution(monkeypatch, capsys, captured, child_execution_mode):
     # Arrange: the daemon child re-runs the SAME executor command in-process,
     # with MARSHALLD_JOB set so _route_to_daemon short-circuits to in_daemon_job.
     monkeypatch.setenv('MARSHALLD_JOB', 'JOB-1')
@@ -229,7 +236,8 @@ def test_daemon_child_reentrancy_records_no_second_resolution(
 def test_one_routed_request_produces_exactly_one_resolution_record(monkeypatch, capsys, captured):
     # Arrange: the routing parent sees a ready daemon and routes the build.
     monkeypatch.setattr(
-        factory, '_load_build_server',
+        factory,
+        '_load_build_server',
         lambda: _FakeClient(preflight={'status': 'success', 'preflight': 'ready'}),
     )
     monkeypatch.setattr(factory, 'cmd_run_common', lambda **kw: 0)

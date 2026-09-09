@@ -72,9 +72,7 @@ def test_auto_suggest_imports_scoring_core_from_script_shared():
     assert not hasattr(_mod, '_score_recipe'), (
         'module-local _score_recipe should be gone after the script-shared extraction'
     )
-    assert not hasattr(_mod, '_tokenize'), (
-        'module-local _tokenize should be gone after the script-shared extraction'
-    )
+    assert not hasattr(_mod, '_tokenize'), 'module-local _tokenize should be gone after the script-shared extraction'
     # The shared names are bound at module scope via the recipe_scoring import.
     assert callable(_mod.score_recipe)
     assert callable(_mod.tokenize)
@@ -99,7 +97,7 @@ def test_known_good_documentation_request_lands_on_doc_verify(plan_context):
     result = cmd_auto_suggest(_ns('ls-docverify'))
     assert result['status'] == 'success'
     keys = [s['key'] for s in result['suggestions']]
-    assert 'doc-verify' in keys, f"doc-verify missing from suggestions; got {keys}"
+    assert 'doc-verify' in keys, f'doc-verify missing from suggestions; got {keys}'
 
 
 def test_max_suggestions_caps_returned_list(plan_context):

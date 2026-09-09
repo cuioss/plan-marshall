@@ -9,7 +9,6 @@ Covers:
 * Hour-aware id generation backing ``cmd_add`` (TestGetNextIdHourAware)
 """
 
-
 import json
 from argparse import Namespace
 from pathlib import Path

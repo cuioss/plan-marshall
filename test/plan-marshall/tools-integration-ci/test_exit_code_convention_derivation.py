@@ -198,8 +198,7 @@ def test_manage_only_document_is_dropped_by_retention_rule_c(tmp_path):
         'only documents invoking at least one non-manage-* skill segment.'
     )
     assert result.coverage.files_scanned == 1, (
-        'The document was not scanned, so the empty population is unmeasured rather than a '
-        'measured drop by rule (c).'
+        'The document was not scanned, so the empty population is unmeasured rather than a measured drop by rule (c).'
     )
 
 
@@ -210,8 +209,7 @@ def test_retention_needs_only_one_non_manage_notation(tmp_path):
     result = derivation.derive(tmp_path)
 
     assert _all_paths(result) == {'marketplace/bundles/b/skills/s/SKILL.md'}, (
-        'A document invoking both manage-* and ci was dropped; rule (c) requires only one '
-        'non-manage-* notation.'
+        'A document invoking both manage-* and ci was dropped; rule (c) requires only one non-manage-* notation.'
     )
 
 
@@ -278,8 +276,7 @@ def test_document_with_manage_scoped_convention_classifies_narrow(tmp_path):
     result = derivation.derive(tmp_path)
 
     assert result.narrow == ('marketplace/bundles/b/skills/s/SKILL.md',), (
-        f'A manage-*-scoped convention was not classified narrow. widened={result.widened}, '
-        f'none={result.none}.'
+        f'A manage-*-scoped convention was not classified narrow. widened={result.widened}, none={result.none}.'
     )
 
 
@@ -371,7 +368,7 @@ def test_convention_heading_inside_a_fenced_block_is_not_the_documents_own(tmp_p
     result = derivation.derive(tmp_path)
 
     assert result.none == ('marketplace/bundles/b/skills/s/SKILL.md',), (
-        f'A convention heading shown inside a code fence was read as the document\'s own. '
+        f"A convention heading shown inside a code fence was read as the document's own. "
         f'widened={result.widened}, narrow={result.narrow}.'
     )
 
@@ -394,8 +391,7 @@ def test_the_three_classes_are_disjoint_and_total(tmp_path):
     )
     assert len(_all_paths(result)) == 3, 'A document appears in more than one class.'
     assert result.coverage.files_scanned == 4, (
-        'The manage-*-only document must still be scanned — it is dropped by rule (c), not '
-        'excluded from coverage.'
+        'The manage-*-only document must still be scanned — it is dropped by rule (c), not excluded from coverage.'
     )
 
 
@@ -505,9 +501,9 @@ def test_body_sweep_reports_an_unreadable_file_rather_than_a_clean_single_body(t
     sweep = derivation.sweep_convention_bodies(tmp_path)
 
     assert sweep.occurrences == 1
-    assert sweep.coverage.unreadable == (
-        'marketplace/bundles/b/skills/canon/standards/broken.md',
-    ), f'The undecodable document was not named: {sweep.coverage.unreadable}.'
+    assert sweep.coverage.unreadable == ('marketplace/bundles/b/skills/canon/standards/broken.md',), (
+        f'The undecodable document was not named: {sweep.coverage.unreadable}.'
+    )
     assert sweep.coverage.complete is False, (
         'The sweep reports complete coverage despite an unreadable file, so its single-body '
         'result would read as a measurement rather than a gap.'

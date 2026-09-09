@@ -26,7 +26,6 @@ properties the pre-merge barrier relies on:
   mask a lapsed sibling.
 """
 
-
 from argparse import Namespace
 
 from conftest import get_script_path, load_script_module
@@ -34,9 +33,7 @@ from conftest import get_script_path, load_script_module
 _lifecycle = load_script_module('plan-marshall', 'manage-status', '_cmd_lifecycle.py', '_merge_auth_lifecycle')
 
 
-_merge_auth = load_script_module(
-    'plan-marshall', 'manage-status', '_cmd_merge_authorization.py', '_merge_auth_cmd'
-)
+_merge_auth = load_script_module('plan-marshall', 'manage-status', '_cmd_merge_authorization.py', '_merge_auth_cmd')
 
 
 _status_core = load_script_module('plan-marshall', 'manage-status', '_status_core.py', '_merge_auth_core')

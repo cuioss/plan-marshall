@@ -191,6 +191,7 @@ def _declared_python_floor() -> tuple[int, int]:
     )
     return int(match.group(1)), int(match.group(2))
 
+
 #: The two provider handler modules. The registry population is read from these.
 _PROVIDER_MODULES: dict[str, Path] = {
     'github': _SKILLS / 'workflow-integration-github' / 'scripts' / 'github_ops.py',
@@ -216,9 +217,7 @@ _EXPECTED_DISPATCH_SET: frozenset[str] = frozenset({'safe-merge', 'merge-queue'}
 #: it gives a DECLARED reachability population that is independent of the derived
 #: one — so the closure assertion compares two real sides rather than comparing a
 #: derivation against a literal in this file.
-_DISPATCH_TABLE_ROW_RE = re.compile(
-    r'^\|\s*`ci pr ([a-z-]+)`\s*\|\s*(\*\*never\*\*|yes)\s*\|', re.MULTILINE
-)
+_DISPATCH_TABLE_ROW_RE = re.compile(r'^\|\s*`ci pr ([a-z-]+)`\s*\|\s*(\*\*never\*\*|yes)\s*\|', re.MULTILINE)
 
 #: A merge-shaped ``ci pr`` verb. Alternatives are ordered longest-first and the
 #: trailing guard rejects a longer verb, so ``pr merge-queue`` is never read as
@@ -464,9 +463,7 @@ def _decline_routing_defects(text: str) -> list[str]:
 #: outcome. Derived in two independent steps — the dispatch is a fenced invocation,
 #: the consumption is a bold-lead arm — so a document that gains a `matched`-alone
 #: arm joins this population and is then held to the polarity contract below.
-_RE_REVIEW_CONSUMERS: list[Path] = [
-    doc for doc in _re_review_dispatchers() if _matched_arms(_read(doc))
-]
+_RE_REVIEW_CONSUMERS: list[Path] = [doc for doc in _re_review_dispatchers() if _matched_arms(_read(doc))]
 
 
 def test_the_re_review_consumer_set_is_derived_and_plural():
@@ -531,10 +528,7 @@ def test_the_false_polarity_is_the_antecedent_of_the_decline_branch(doc):
     )
 
     defects = _decline_routing_defects(text)
-    assert not defects, (
-        f'{doc.name} does not route the re-review outcome on head_sha_verified: '
-        + '; '.join(defects)
-    )
+    assert not defects, f'{doc.name} does not route the re-review outcome on head_sha_verified: ' + '; '.join(defects)
 
 
 def test_the_decline_routing_predicate_rejects_each_defect_shape():
@@ -548,9 +542,7 @@ def test_the_decline_routing_predicate_rejects_each_defect_shape():
     everything.
     """
     matched_alone = '- **When `matched: true`**, the fresh review is now on the PR.\n'
-    unrecorded = (
-        '- **When `matched: true` AND `head_sha_verified: false`**, the bot declined.\n'
-    )
+    unrecorded = '- **When `matched: true` AND `head_sha_verified: false`**, the bot declined.\n'
     inverted = (
         '- **When `matched: true` AND `head_sha_verified: true`**, add `{bot_kind}` to the '
         'accumulating `{declined_bots}` set.\n'
@@ -567,14 +559,11 @@ def test_the_decline_routing_predicate_rejects_each_defect_shape():
         "'When `matched: true`': branches on matched alone, with no polarity stated"
     ]
     assert _decline_routing_defects(unrecorded) == [
-        "'When `matched: true` AND `head_sha_verified: false`': the decline arm "
-        'accumulates no {declined_bots}'
+        "'When `matched: true` AND `head_sha_verified: false`': the decline arm accumulates no {declined_bots}"
     ]
     assert _decline_routing_defects(inverted) == [
-        "'When `matched: true` AND `head_sha_verified: true`': a VERIFIED review is "
-        'accumulated as a decline',
-        "'When `matched: true` AND `head_sha_verified: false`': the decline arm "
-        'accumulates no {declined_bots}',
+        "'When `matched: true` AND `head_sha_verified: true`': a VERIFIED review is accumulated as a decline",
+        "'When `matched: true` AND `head_sha_verified: false`': the decline arm accumulates no {declined_bots}",
     ]
     assert _decline_routing_defects(compliant) == []
 
@@ -660,8 +649,7 @@ def test_dispatch_set_over_the_derived_document_set_is_closed():
         'agree; a divergence means one of the two silently moved.'
     )
     assert not (declared_unreachable & union), (
-        f'{sorted(declared_unreachable & union)} is declared unreachable yet is actually '
-        'dispatched by the step body.'
+        f'{sorted(declared_unreachable & union)} is declared unreachable yet is actually dispatched by the step body.'
     )
 
 
@@ -761,9 +749,7 @@ def _merge_shaped_registry_keys(provider: str) -> list[tuple[str, ...]]:
 
 
 _REGISTRY_SIZES: dict[str, int] = {p: len(_registry_keys(p)) for p in _PROVIDER_MODULES}
-_MERGE_SHAPED: dict[str, list[tuple[str, ...]]] = {
-    p: _merge_shaped_registry_keys(p) for p in _PROVIDER_MODULES
-}
+_MERGE_SHAPED: dict[str, list[tuple[str, ...]]] = {p: _merge_shaped_registry_keys(p) for p in _PROVIDER_MODULES}
 _MERGE_SHAPED_TOTAL: int = sum(len(v) for v in _MERGE_SHAPED.values())
 
 #: Published on EVERY run — passing included — by the root conftest's
@@ -921,8 +907,7 @@ def test_registry_populations_are_published_and_plausible():
         'probably only partly matched, which would silently shrink the merge-shaped subset.'
     )
     assert _REGISTRY_SIZES['gitlab'] >= 30, (
-        f'GitLab registry size = {_REGISTRY_SIZES["gitlab"]} — implausibly small; see the '
-        'GitHub message above.'
+        f'GitLab registry size = {_REGISTRY_SIZES["gitlab"]} — implausibly small; see the GitHub message above.'
     )
     by_provider = {p: sorted(k[1] for k in v) for p, v in _MERGE_SHAPED.items()}
     empty = sorted(p for p, verbs in by_provider.items() if not verbs)
@@ -1032,7 +1017,7 @@ def test_ordering_arm_covers_a_published_non_empty_population():
     assert exercising, (
         f'The ordering arm of (2b) is exercised by 0 of {_MERGE_SHAPED_TOTAL} merge-shaped '
         f'members — every member skipped it. Skipped: {sorted(skipping)}. The arm is guarded '
-        f'by finding {_SUCCESS_LITERAL} in the handler\'s non-prose code, so a population-wide '
+        f"by finding {_SUCCESS_LITERAL} in the handler's non-prose code, so a population-wide "
         'skip means that literal no longer matches how these handlers build their success '
         'envelope (a different spelling, a helper, or dict mutation). The per-member '
         'assertions would all still pass while asserting nothing about ordering.'
@@ -1136,12 +1121,10 @@ def test_prose_blanking_is_offset_preserving():
         'from the two views are no longer comparable.'
     )
     assert 'merge-train preflight' not in blanked, (
-        'A comment survived the blanking, so comment text can still satisfy a text search '
-        'over the blanked view.'
+        'A comment survived the blanking, so comment text can still satisfy a text search over the blanked view.'
     )
     assert 'merge_queue surface at length' not in blanked, (
-        'A docstring survived the blanking, so docstring text can still satisfy a text '
-        'search over the blanked view.'
+        'A docstring survived the blanking, so docstring text can still satisfy a text search over the blanked view.'
     )
     assert _SUCCESS_LITERAL in blanked, (
         'The success literal was blanked along with the documentation. It is executable '
@@ -1230,9 +1213,7 @@ def test_every_use_merge_queue_consumption_site_is_observable():
     """
     text = _read(_BRANCH_CLEANUP)
     read_offsets = [m.start() for m in _USE_MERGE_QUEUE_READ_RE.finditer(text)]
-    marker_offsets = [
-        m.start() for m in re.finditer(re.escape(_OBSERVABILITY_MARKER), text)
-    ]
+    marker_offsets = [m.start() for m in re.finditer(re.escape(_OBSERVABILITY_MARKER), text)]
 
     assert read_offsets, (
         'No `use_merge_queue` consumption site was derived from '
@@ -1256,7 +1237,7 @@ def test_every_use_merge_queue_consumption_site_is_observable():
         assert marker_at not in claimed, (
             f'Two `use_merge_queue` consumption sites (offsets {claimed[marker_at]} and '
             f'{read_at}) share a single {_OBSERVABILITY_MARKER} block at offset {marker_at}. '
-            'A site whose own block was deleted is borrowing its neighbour\'s; equal totals '
+            "A site whose own block was deleted is borrowing its neighbour's; equal totals "
             'would have hidden this.'
         )
         claimed[marker_at] = read_at
@@ -1296,7 +1277,7 @@ def test_every_observability_line_names_the_value_and_its_provenance():
     )
     for block in logged:
         assert 'provenance' in block, (
-            'An observability decision-log line does not name the value\'s provenance. '
+            "An observability decision-log line does not name the value's provenance. "
             'Without it a reader cannot tell whether the bound value came from the '
             'one-stop params object or from an undocumented second read.'
         )
@@ -1393,7 +1374,7 @@ def test_queue_landing_gate_precedes_and_guards_the_branch_prune():
         assert obligation in gate_section, (
             f'The queue-landing gate does not state its {obligation!r} obligation. Its '
             'failure path MUST release the merge mutex and return WITHOUT pruning — a '
-            'held lock blocks every other plan, and a prune destroys the queue\'s ref.'
+            "held lock blocks every other plan, and a prune destroys the queue's ref."
         )
 
     # Anchor the guard window on the ENCLOSING heading rather than on a fixed
@@ -1460,15 +1441,11 @@ _CI_API_CONTRACT: Path = _SKILLS / 'tools-integration-ci' / 'standards' / 'api-c
 #: The `checks status` response-schema line. Requires an ALTERNATION (two or more
 #: `|`-joined values), so a single-valued illustrative `overall_status: pending`
 #: elsewhere in the document is not mistaken for a declaration of the set.
-_API_TOON_ALTERNATION_RE = re.compile(
-    r'^overall_status: ([a-z_]+(?:\|[a-z_]+)+)$', re.MULTILINE
-)
+_API_TOON_ALTERNATION_RE = re.compile(r'^overall_status: ([a-z_]+(?:\|[a-z_]+)+)$', re.MULTILINE)
 
 #: The `Overall Status Logic` bullet block in the same document — one `- \`value\`:`
 #: row per member.
-_API_LOGIC_BLOCK_RE = re.compile(
-    r'\*\*Overall Status Logic\*\*:\n((?:- `[a-z_]+`:[^\n]*\n)+)'
-)
+_API_LOGIC_BLOCK_RE = re.compile(r'\*\*Overall Status Logic\*\*:\n((?:- `[a-z_]+`:[^\n]*\n)+)')
 
 #: The function whose returned literals ARE the vocabulary.
 _DERIVE_FN_NAME = '_derive_overall_status'
@@ -1482,11 +1459,7 @@ def _vocabulary_definition_modules() -> list[Path]:
     bound to a hand-written pair would repeat the same mistake one level up.
     """
     needle = f'def {_DERIVE_FN_NAME}('
-    return sorted(
-        path
-        for path in _SKILLS.rglob('*.py')
-        if needle in path.read_text(encoding='utf-8')
-    )
+    return sorted(path for path in _SKILLS.rglob('*.py') if needle in path.read_text(encoding='utf-8'))
 
 
 def _returned_status_literals(path: Path) -> frozenset[str]:
@@ -1573,9 +1546,7 @@ def _api_contract_logic_vocabulary() -> frozenset[str]:
 #: guard back to the single-site shape that let a sibling drift.
 _DOC_VOCABULARY_SITES: dict[str, Callable[[], frozenset[str]]] = {
     f'{_BRANCH_CLEANUP.name} § positive-shape requirement': _branch_cleanup_vocabulary,
-    f'{_CI_API_CONTRACT.name} § checks status response schema': (
-        _api_contract_schema_vocabulary
-    ),
+    f'{_CI_API_CONTRACT.name} § checks status response schema': (_api_contract_schema_vocabulary),
     f'{_CI_API_CONTRACT.name} § Overall Status Logic': _api_contract_logic_vocabulary,
 }
 
@@ -1636,9 +1607,7 @@ class TestOverallStatusVocabularyParity:
         )
 
     @pytest.mark.parametrize('site', sorted(_DOC_VOCABULARY_SITES))
-    @pytest.mark.parametrize(
-        'module', _VOCAB_DEFINITION_MODULES, ids=lambda p: p.parent.parent.name
-    )
+    @pytest.mark.parametrize('module', _VOCAB_DEFINITION_MODULES, ids=lambda p: p.parent.parent.name)
     def test_definition_vocabulary_matches_each_documented_site(self, module, site):
         """Every provider's returned-literal set equals every documented statement."""
         derived = _returned_status_literals(module)

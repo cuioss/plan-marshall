@@ -33,15 +33,24 @@ class TestTokenEconomicsCrossCheck:
         # two feature plans, one chore plan
         inputs = [
             _write_token_plan(
-                tmp_path, 'feat-a', change_type='feature', files=2,
+                tmp_path,
+                'feat-a',
+                change_type='feature',
+                files=2,
                 phase_tokens={'5-execute': 4_000},
             ),
             _write_token_plan(
-                tmp_path, 'feat-b', change_type='feature', files=2,
+                tmp_path,
+                'feat-b',
+                change_type='feature',
+                files=2,
                 phase_tokens={'5-execute': 6_000},
             ),
             _write_token_plan(
-                tmp_path, 'chore-a', change_type='chore', files=5,
+                tmp_path,
+                'chore-a',
+                change_type='chore',
+                files=5,
                 phase_tokens={'5-execute': 5_000},
             ),
         ]
@@ -60,15 +69,21 @@ class TestTokenEconomicsCrossCheck:
         # two scopes
         inputs = [
             _write_token_plan(
-                tmp_path, 'surg-a', scope_estimate='surgical',
+                tmp_path,
+                'surg-a',
+                scope_estimate='surgical',
                 phase_tokens={'5-execute': 3_000},
             ),
             _write_token_plan(
-                tmp_path, 'surg-b', scope_estimate='surgical',
+                tmp_path,
+                'surg-b',
+                scope_estimate='surgical',
                 phase_tokens={'5-execute': 5_000},
             ),
             _write_token_plan(
-                tmp_path, 'mm-a', scope_estimate='multi_module',
+                tmp_path,
+                'mm-a',
+                scope_estimate='multi_module',
                 phase_tokens={'5-execute': 9_000},
             ),
         ]
@@ -89,9 +104,7 @@ class TestTokenEconomicsCrossCheck:
         assert result['by_change_type'] == []
         assert result['by_scope'] == []
 
-    def test_emit_block_carries_derived_thresholds_and_genuine_count(
-        self, tmp_path: Path
-    ):
+    def test_emit_block_carries_derived_thresholds_and_genuine_count(self, tmp_path: Path):
         # a corpus with exactly one clearly-flagged plan (long session).
         # The token/file footprint is deliberately UNIFORM across all four plans so
         # the corpus-relative floor/big-spend outlier flags correctly suppress (no
@@ -102,13 +115,16 @@ class TestTokenEconomicsCrossCheck:
         # the p75 and exceeds it.
         short = [
             _write_token_plan(
-                tmp_path, f'short-{i}',
+                tmp_path,
+                f'short-{i}',
                 phase_tokens={'5-execute': 5_000},
             )
             for i in range(3)
         ]
         flagged = _write_token_plan(
-            tmp_path, 'flagged', session_message_count=999,
+            tmp_path,
+            'flagged',
+            session_message_count=999,
             phase_tokens={'5-execute': 5_000},
         )
         result = audit.cross_token_economics([*short, flagged])
@@ -125,16 +141,20 @@ class TestTokenEconomicsCrossCheck:
         # the flagged plan's row carries the genuine severity stamp
         assert 'genuine' in block
 
-    def test_emit_block_includes_by_change_type_and_by_scope_tables(
-        self, tmp_path: Path
-    ):
+    def test_emit_block_includes_by_change_type_and_by_scope_tables(self, tmp_path: Path):
         inputs = [
             _write_token_plan(
-                tmp_path, 'a', change_type='feature', scope_estimate='surgical',
+                tmp_path,
+                'a',
+                change_type='feature',
+                scope_estimate='surgical',
                 phase_tokens={'5-execute': 5_000},
             ),
             _write_token_plan(
-                tmp_path, 'b', change_type='fix', scope_estimate='multi_module',
+                tmp_path,
+                'b',
+                change_type='fix',
+                scope_estimate='multi_module',
                 phase_tokens={'5-execute': 7_000},
             ),
         ]
@@ -151,20 +171,10 @@ class TestTokenEconomicsCrossCheck:
         # two corpora with disjoint scales must yield different floors,
         # proving the cut-points float with the live distribution (no magic number).
         small_rows = audit._collect_token_economics_rows(
-            [
-                _write_token_plan(
-                    tmp_path, f'sm-{i}', phase_tokens={'5-execute': (i + 1) * 100}
-                )
-                for i in range(10)
-            ]
+            [_write_token_plan(tmp_path, f'sm-{i}', phase_tokens={'5-execute': (i + 1) * 100}) for i in range(10)]
         )
         big_rows = audit._collect_token_economics_rows(
-            [
-                _write_token_plan(
-                    tmp_path, f'bg-{i}', phase_tokens={'5-execute': (i + 1) * 100_000}
-                )
-                for i in range(10)
-            ]
+            [_write_token_plan(tmp_path, f'bg-{i}', phase_tokens={'5-execute': (i + 1) * 100_000}) for i in range(10)]
         )
 
         small_thr = audit._derive_token_economics_thresholds(small_rows)

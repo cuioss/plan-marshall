@@ -111,9 +111,7 @@ def test_pinned_versions_survive_when_every_version_is_marked(tmp_path: Path, mo
     cache_root = _make_cache(tmp_path, versions)
     _make_manifest(tmp_path, '0.1.5')
     project_root = _make_project(tmp_path, keep_versions=1, keep_days=0, provisioned='0.1.3')
-    monkeypatch.setattr(
-        cache_retention, '_executing_version_dir', lambda: (cache_root / _BUNDLE / '0.1.7').resolve()
-    )
+    monkeypatch.setattr(cache_retention, '_executing_version_dir', lambda: (cache_root / _BUNDLE / '0.1.7').resolve())
 
     report = cache_retention.sweep(cache_root, apply_changes=False, project_root=project_root)
 
@@ -146,9 +144,7 @@ def test_executing_version_dir_is_never_removed(tmp_path: Path, monkeypatch: pyt
     versions = [f'0.1.{n}' for n in range(1, 11)]
     cache_root = _make_cache(tmp_path, versions)
     project_root = _make_project(tmp_path, keep_versions=1, keep_days=0)
-    monkeypatch.setattr(
-        cache_retention, '_executing_version_dir', lambda: (cache_root / _BUNDLE / '0.1.2').resolve()
-    )
+    monkeypatch.setattr(cache_retention, '_executing_version_dir', lambda: (cache_root / _BUNDLE / '0.1.2').resolve())
 
     report = cache_retention.sweep(cache_root, project_root=project_root)
 
@@ -298,9 +294,7 @@ def test_cli_sweep_defaults_to_dry_run(tmp_path: Path, capsys: pytest.CaptureFix
     cache_root = _make_cache(tmp_path, versions)
     project_root = _make_project(tmp_path, keep_versions=1, keep_days=0)
 
-    exit_code = cache_retention.main(
-        ['sweep', '--cache-root', str(cache_root), '--project-root', str(project_root)]
-    )
+    exit_code = cache_retention.main(['sweep', '--cache-root', str(cache_root), '--project-root', str(project_root)])
     parsed = parse_toon(capsys.readouterr().out)
 
     assert exit_code == 0

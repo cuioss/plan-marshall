@@ -48,10 +48,10 @@ from datetime import UTC, datetime
 # NOT from any target's event vocabulary. A target runtime maps its own event
 # vocabulary to one of these values before calling :func:`compose` /
 # :func:`resolve_icon`.
-PROCESS_STATE_ACTIVE = "active"
-PROCESS_STATE_WAITING = "waiting"
-PROCESS_STATE_BUSY = "busy"
-PROCESS_STATE_DONE = "done"
+PROCESS_STATE_ACTIVE = 'active'
+PROCESS_STATE_WAITING = 'waiting'
+PROCESS_STATE_BUSY = 'busy'
+PROCESS_STATE_DONE = 'done'
 
 PROCESS_STATES: frozenset[str] = frozenset(
     {PROCESS_STATE_ACTIVE, PROCESS_STATE_WAITING, PROCESS_STATE_BUSY, PROCESS_STATE_DONE}
@@ -70,12 +70,12 @@ PROCESS_STATES: frozenset[str] = frozenset(
 #       ``build-busy`` title-token on an active phase. Deliberately distinct from
 #       the ⚙ ``_ICON_BUSY`` momentary-busy icon — ``build-busy`` is a persistent,
 #       token-keyed icon override (see :func:`compose`), not the per-tool ⚙ state.
-_ICON_ACTIVE = "➤"  # ➤
-_ICON_WAITING = "?"
-_ICON_DONE = "✓"  # ✓
-_ICON_TERMINAL = "✅"  # ✅
-_ICON_BUSY = "⚙"  # ⚙
-_ICON_BUILD = "\U0001f528"  # 🔨
+_ICON_ACTIVE = '➤'  # ➤
+_ICON_WAITING = '?'
+_ICON_DONE = '✓'  # ✓
+_ICON_TERMINAL = '✅'  # ✅
+_ICON_BUSY = '⚙'  # ⚙
+_ICON_BUILD = '\U0001f528'  # 🔨
 
 # Process-state → icon map. The terminal-phase ✅ override is applied by
 # :func:`compose`, NOT here.
@@ -94,8 +94,8 @@ _PROCESS_STATE_ICONS: dict[str, str] = {
 # ``title_token`` field; this map is the single owner of the state → glyph
 # rendering and is keyed on the record's ``state``.
 TITLE_TOKEN_GLYPHS: dict[str, str] = {
-    "lock-waiting": "⏳",  # ⏳
-    "lock-owned": "\U0001f512",  # 🔒
+    'lock-waiting': '⏳',  # ⏳
+    'lock-owned': '\U0001f512',  # 🔒
 }
 
 # Aged-token staleness threshold in seconds — mirrors
@@ -106,9 +106,7 @@ TITLE_TOKEN_GLYPHS: dict[str, str] = {
 TITLE_TOKEN_STALE_AFTER_SECONDS = 3600
 
 
-def title_token_state(
-    state_dict: dict[str, object], *, now: datetime | None = None
-) -> str | None:
+def title_token_state(state_dict: dict[str, object], *, now: datetime | None = None) -> str | None:
     """Extract the live ``title_token`` state marker from *state_dict*.
 
     Reads the structured ``{owner, state, set_at}`` record and returns its
@@ -122,19 +120,19 @@ def title_token_state(
     clock read. The reader that loaded ``status.json`` is the layer that already
     touches the outside world, so it is the layer that supplies ``now``.
     """
-    record = state_dict.get("title_token")
+    record = state_dict.get('title_token')
     if not isinstance(record, dict):
         return None
-    marker = record.get("state")
+    marker = record.get('state')
     if not isinstance(marker, str) or not marker:
         return None
     if now is None:
         return marker
-    raw_set_at = record.get("set_at")
+    raw_set_at = record.get('set_at')
     if not isinstance(raw_set_at, str) or not raw_set_at:
         return None
     try:
-        parsed = datetime.fromisoformat(raw_set_at.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(raw_set_at.replace('Z', '+00:00'))
     except ValueError:
         return None
     if parsed.tzinfo is None:
@@ -143,13 +141,14 @@ def title_token_state(
         return None
     return marker
 
+
 # The orchestration-busy title-token. Deliberately ABSENT from
 # ``TITLE_TOKEN_GLYPHS``: ``build-busy`` is rendered as a token-keyed **icon-slot
 # override** (🔨 forced into the icon slot by :func:`compose`), NOT as a prepended
 # glyph. Its absence from the glyph map makes glyph suppression for ``build-busy``
 # automatic — ``TITLE_TOKEN_GLYPHS.get("build-busy")`` is ``None``, so the
 # glyph-prepend block emits no glyph segment for it.
-_TITLE_TOKEN_BUILD_BUSY = "build-busy"
+_TITLE_TOKEN_BUILD_BUSY = 'build-busy'
 
 
 # --- Terminal phases --------------------------------------------------------
@@ -158,11 +157,11 @@ _TITLE_TOKEN_BUILD_BUSY = "build-busy"
 # the Completed body (never ``None``), and the title_token glyph is suppressed,
 # so a finished plan always renders with the terminal icon, never the ➤/?
 # process icons, and never a lock glyph.
-_TERMINAL_PHASES: frozenset[str] = frozenset({"complete", "archived"})
+_TERMINAL_PHASES: frozenset[str] = frozenset({'complete', 'archived'})
 
 # Body prefix for an active phase and the Completed terminal body, respectively.
-_BODY_PREFIX = "pm"
-_COMPLETED_PHASE_LABEL = "Completed"
+_BODY_PREFIX = 'pm'
+_COMPLETED_PHASE_LABEL = 'Completed'
 
 # --- Orchestrator body (kind == orchestrator) --------------------------------
 #
@@ -172,8 +171,8 @@ _COMPLETED_PHASE_LABEL = "Completed"
 # their existing semantics (process icon, ``build-busy`` 🔨 override) — only
 # the body composition branches on the kind. The composer stays a pure leaf
 # function of the passed state.
-_KIND_ORCHESTRATOR = "orchestrator"
-_ORCHESTRATOR_BODY_PREFIX = "Orchestrator"
+_KIND_ORCHESTRATOR = 'orchestrator'
+_ORCHESTRATOR_BODY_PREFIX = 'Orchestrator'
 
 
 def resolve_icon(process_state: str | None) -> str:
@@ -248,19 +247,19 @@ def _compose_body(state_dict: dict[str, object]) -> str | None:
 
     Pure — operates solely on the passed ``state_dict``.
     """
-    if state_dict.get("kind") == _KIND_ORCHESTRATOR:
-        slug = state_dict.get("slug")
-        slug_str = _strip_control_chars(slug.strip()) if isinstance(slug, str) else ""
+    if state_dict.get('kind') == _KIND_ORCHESTRATOR:
+        slug = state_dict.get('slug')
+        slug_str = _strip_control_chars(slug.strip()) if isinstance(slug, str) else ''
         if not slug_str:
             return None
-        return f"{_ORCHESTRATOR_BODY_PREFIX}-{slug_str}"
+        return f'{_ORCHESTRATOR_BODY_PREFIX}-{slug_str}'
 
-    phase = state_dict.get("current_phase")
+    phase = state_dict.get('current_phase')
     if not phase or not isinstance(phase, str):
         return None
 
-    short = state_dict.get("short_description")
-    short_str = _strip_control_chars(short.strip()) if isinstance(short, str) else ""
+    short = state_dict.get('short_description')
+    short_str = _strip_control_chars(short.strip()) if isinstance(short, str) else ''
 
     if phase in _TERMINAL_PHASES:
         label = _COMPLETED_PHASE_LABEL
@@ -268,8 +267,8 @@ def _compose_body(state_dict: dict[str, object]) -> str | None:
         label = phase
 
     if short_str:
-        return f"{_BODY_PREFIX}:{label}:{short_str}"
-    return f"{_BODY_PREFIX}:{label}"
+        return f'{_BODY_PREFIX}:{label}:{short_str}'
+    return f'{_BODY_PREFIX}:{label}'
 
 
 def compose(
@@ -343,7 +342,7 @@ def compose(
     if body is None:
         return None
 
-    phase = state_dict.get("current_phase")
+    phase = state_dict.get('current_phase')
     is_terminal = isinstance(phase, str) and phase in _TERMINAL_PHASES
     token = title_token_state(state_dict)
     is_build_busy = token == _TITLE_TOKEN_BUILD_BUSY
@@ -364,6 +363,6 @@ def compose(
     if not is_terminal:
         glyph = TITLE_TOKEN_GLYPHS.get(token) if token is not None else None
         if glyph:
-            return f"{icon} {glyph} {body}"
+            return f'{icon} {glyph} {body}'
 
-    return f"{icon} {body}"
+    return f'{icon} {body}'

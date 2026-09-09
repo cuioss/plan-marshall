@@ -38,9 +38,7 @@ from conftest import load_script_module
 _architecture_core = load_script_module(
     'plan-marshall', 'manage-architecture', '_architecture_core.py', module_name='_architecture_core'
 )
-_cmd_client = load_script_module(
-    'plan-marshall', 'manage-architecture', '_cmd_client.py', module_name='_cmd_client'
-)
+_cmd_client = load_script_module('plan-marshall', 'manage-architecture', '_cmd_client.py', module_name='_cmd_client')
 
 save_project_meta = _architecture_core.save_project_meta
 save_module_derived = _architecture_core.save_module_derived
@@ -118,15 +116,11 @@ def _seed(project_dir: str) -> None:
     marshal = Path(project_dir) / '.plan' / 'marshal.json'
     marshal.parent.mkdir(parents=True, exist_ok=True)
     # build_map is relocated under the top-level build block (single source of truth).
-    marshal.write_text(
-        json.dumps({'build': {'map': _BUILD_MAP}}, indent=2), encoding='utf-8'
-    )
+    marshal.write_text(json.dumps({'build': {'map': _BUILD_MAP}}, indent=2), encoding='utf-8')
 
 
 def _derive(project_dir: str, changed: str) -> dict:
-    result: dict = cmd_derive_verification(
-        Namespace(changed_artifacts=changed, project_dir=project_dir)
-    )
+    result: dict = cmd_derive_verification(Namespace(changed_artifacts=changed, project_dir=project_dir))
     return result
 
 
@@ -146,10 +140,7 @@ _DOCS_ONLY_SETS = (
     'marketplace/bundles/plan-marshall/skills/manage-architecture/SKILL.md',
     'marketplace/bundles/pm-dev-python/skills/plan-marshall-plugin/SKILL.md',
     'pm-a/skills/foo/SKILL.md',
-    (
-        'marketplace/bundles/plan-marshall/skills/a/SKILL.md,'
-        'marketplace/bundles/plan-marshall/skills/b/SKILL.md'
-    ),
+    ('marketplace/bundles/plan-marshall/skills/a/SKILL.md,marketplace/bundles/plan-marshall/skills/b/SKILL.md'),
 )
 
 # A representative population of single-module production changed sets.
@@ -180,8 +171,7 @@ def test_every_docs_only_set_derives_zero_python_builds():
             verbs = set(_verbs(result))
             python_builds = verbs & _PYTHON_BUILD_VERBS
             assert python_builds == set(), (
-                f'docs-only changed set {changed!r} unexpectedly derived '
-                f'Python build verbs: {sorted(python_builds)}'
+                f'docs-only changed set {changed!r} unexpectedly derived Python build verbs: {sorted(python_builds)}'
             )
 
 
@@ -220,8 +210,7 @@ def test_every_production_set_derives_compile():
             if 'compile' in _verbs(result):
                 compile_hits += 1
         assert compile_hits == len(_PRODUCTION_SETS), (
-            f'compile derived for only {compile_hits}/{len(_PRODUCTION_SETS)} '
-            'production sets — expected ~100% coverage'
+            f'compile derived for only {compile_hits}/{len(_PRODUCTION_SETS)} production sets — expected ~100% coverage'
         )
 
 
@@ -236,7 +225,7 @@ def test_production_sets_never_derive_per_task_verify():
             result = _derive(str(project), changed)
             assert 'verify' not in _verbs(result), (
                 f'production changed set {changed!r} derived a per-task heavy '
-                "`verify` run — heavy runs belong to the execute-exit holistic "
+                '`verify` run — heavy runs belong to the execute-exit holistic '
                 'verify only, never the per-task deriver'
             )
 
@@ -271,11 +260,15 @@ def test_no_changed_set_anywhere_derives_a_per_task_verify():
             'test/pm-a/test_foo.py,'
             'marketplace/bundles/plan-marshall/skills/manage-architecture/SKILL.md'
         )
-        population = list(_DOCS_ONLY_SETS) + list(_PRODUCTION_SETS) + [
-            'test/pm-a/test_foo.py',
-            'test/pm-b/test_bar.py',
-            mixed,
-        ]
+        population = (
+            list(_DOCS_ONLY_SETS)
+            + list(_PRODUCTION_SETS)
+            + [
+                'test/pm-a/test_foo.py',
+                'test/pm-b/test_bar.py',
+                mixed,
+            ]
+        )
 
         heavy_runs = 0
         for changed in population:
@@ -308,9 +301,7 @@ def test_two_bundle_production_set_derives_one_compile_each():
         _seed(str(project))
 
         result = _derive(str(project), 'pm-a/scripts/a.py,pm-b/scripts/x.py')
-        compile_execs = sorted(
-            c['executable'] for c in result['commands'] if c['command'] == 'compile'
-        )
+        compile_execs = sorted(c['executable'] for c in result['commands'] if c['command'] == 'compile')
         assert len(compile_execs) == 2
         assert any('compile pm-a' in e for e in compile_execs)
         assert any('compile pm-b' in e for e in compile_execs)

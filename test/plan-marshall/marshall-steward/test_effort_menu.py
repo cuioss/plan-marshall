@@ -29,9 +29,7 @@ from conftest import add_skill_scripts_to_path, load_script_module
 
 add_skill_scripts_to_path('plan-marshall', 'manage-config')
 
-_cmd_models_mod = load_script_module(
-    'plan-marshall', 'manage-config', '_cmd_effort.py', module_name='_cmd_effort'
-)
+_cmd_models_mod = load_script_module('plan-marshall', 'manage-config', '_cmd_effort.py', module_name='_cmd_effort')
 cmd_effort = _cmd_models_mod.cmd_effort
 
 
@@ -93,12 +91,8 @@ def test_round_trip_default_and_role_persist(plan_context):
         },
     )
 
-    result_role = cmd_effort(
-        Namespace(role='phase-6-finalize.verification-feedback', phase=None, default=False)
-    )
-    result_other = cmd_effort(
-        Namespace(role='phase-3-outline', phase=None, default=False)
-    )
+    result_role = cmd_effort(Namespace(role='phase-6-finalize.verification-feedback', phase=None, default=False))
+    result_other = cmd_effort(Namespace(role='phase-3-outline', phase=None, default=False))
 
     assert result_role['status'] == 'success'
     assert result_role['level'] == 'level-3'
@@ -118,9 +112,7 @@ def test_round_trip_default_and_role_persist(plan_context):
 
 def test_round_trip_repeated_reads_do_not_mutate(plan_context):
     """Multiple `manage-config effort read` invocations leave marshal.json byte-identical."""
-    marshal_path = _seed_marshal(
-        plan_context.fixture_dir, {'default': 'level-1', 'roles': {'research': 'level-5'}}
-    )
+    marshal_path = _seed_marshal(plan_context.fixture_dir, {'default': 'level-1', 'roles': {'research': 'level-5'}})
     before = marshal_path.read_bytes()
 
     for role in ('research', 'q_gate_validation', 'phase_init'):
@@ -142,9 +134,7 @@ def test_invalid_level_refused_at_read(plan_context):
         {'roles': {'phase-6-finalize': {'verification-feedback': 'ultra'}}},
     )
 
-    result = cmd_effort(
-        Namespace(role='phase-6-finalize.verification-feedback', phase=None, default=False)
-    )
+    result = cmd_effort(Namespace(role='phase-6-finalize.verification-feedback', phase=None, default=False))
 
     assert result['status'] == 'error'
     assert "invalid effort 'ultra'" in result['error']

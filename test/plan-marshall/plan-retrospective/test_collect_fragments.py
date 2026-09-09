@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for ``collect-fragments.py``."""
 
-
 from __future__ import annotations
 
 import tempfile
@@ -218,6 +217,7 @@ class TestAuthoritativeAspectInventory:
 # =============================================================================
 # Direct-import unit tests — exercise internal functions for coverage
 # =============================================================================
+
 
 class TestResolveBundlePath:
     """Direct unit tests for resolve_bundle_path.

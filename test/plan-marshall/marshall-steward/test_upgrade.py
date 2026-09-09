@@ -131,9 +131,7 @@ def test_plain_mode_prompts_all_top_level_gates(
     assert [stage['top_level_gate'] for stage in parsed['stages']] == ['prompt'] * 4
 
 
-def test_nested_gates_are_integrate_invariant(
-    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
-):
+def test_nested_gates_are_integrate_invariant(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch):
     """The nested-gate sets are identical under ``integrate`` true and false —
     ``integrate`` suppresses only the top-level stage gates, never the nested
     ones — and match the documented mapping.
@@ -148,9 +146,7 @@ def test_nested_gates_are_integrate_invariant(
     assert true_nested == _EXPECTED_NESTED_GATES
 
 
-def test_toon_carries_documented_keys(
-    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
-):
+def test_toon_carries_documented_keys(capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch):
     """The emitted TOON parses and carries the documented top-level keys and
     per-stage row keys.
     """
@@ -640,9 +636,7 @@ class TestValidateBotListsVerb:
         """A marshal.json carrying ``params`` on the automatic-review step."""
         return {'plan': {'phase-6-finalize': {'steps': {_STEP_ID: params}}}}
 
-    def test_verb_reports_the_unknown_token_read_from_disk(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ):
+    def test_verb_reports_the_unknown_token_read_from_disk(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         """End to end from the staged file, not from a hand-built param dict."""
         self._stage(tmp_path, monkeypatch, self._config({'required_bots': _UNREGISTERED_TOKEN}))
 
@@ -654,27 +648,21 @@ class TestValidateBotListsVerb:
         assert result['unknown_tokens'] == [_UNREGISTERED_TOKEN]
         assert result['known_bot_kinds'] == bot_registry.bot_kinds()
 
-    def test_verb_never_rewrites_marshal_json(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ):
+    def test_verb_never_rewrites_marshal_json(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         """Reports and never rewrites — asserted on the FILE.
 
         Run against the state most likely to tempt a fix-up — a config carrying an
         unknown token — so a verb that "helpfully" dropped or corrected it would
         fail here rather than on a case with nothing to change.
         """
-        marshal = self._stage(
-            tmp_path, monkeypatch, self._config({'required_bots': _UNREGISTERED_TOKEN})
-        )
+        marshal = self._stage(tmp_path, monkeypatch, self._config({'required_bots': _UNREGISTERED_TOKEN}))
         before = marshal.read_bytes()
 
         upgrade.cmd_validate_bot_lists(argparse.Namespace())
 
         assert marshal.read_bytes() == before
 
-    def test_verb_reports_clean_over_a_stated_population(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ):
+    def test_verb_reports_clean_over_a_stated_population(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         """The negative control at the verb layer, not just the pure function."""
         params = _valid_params()
         self._stage(tmp_path, monkeypatch, self._config(params))
@@ -686,9 +674,7 @@ class TestValidateBotListsVerb:
         assert result['checked_count'] == len(_configured_tokens(params))
         assert result['checked_count'] > 0
 
-    def test_verb_is_a_noop_on_a_project_without_the_step(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ):
+    def test_verb_is_a_noop_on_a_project_without_the_step(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         """State 4 — an absent step is a typed no-op, never a traceback."""
         self._stage(tmp_path, monkeypatch, {'plan': {}})
 
@@ -698,9 +684,7 @@ class TestValidateBotListsVerb:
         assert result['state'] == 'noop'
         assert _STEP_ID in result['detail']
 
-    def test_verb_is_a_noop_on_an_uninitialized_project(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ):
+    def test_verb_is_a_noop_on_an_uninitialized_project(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         """No marshal.json at all — the verb runs as an upgrade sub-step, which can
         be pointed at a project that was never initialized."""
         import _config_core
@@ -733,9 +717,7 @@ class TestValidateBotListsVerb:
         self._stage(tmp_path, monkeypatch, {'plan': {}})
         absent_step = upgrade.cmd_validate_bot_lists(argparse.Namespace())
 
-        self._stage(
-            tmp_path, monkeypatch, self._config({'required_bots': '', 'optional_bots': ''})
-        )
+        self._stage(tmp_path, monkeypatch, self._config({'required_bots': '', 'optional_bots': ''}))
         configured_but_empty = upgrade.cmd_validate_bot_lists(argparse.Namespace())
 
         assert uninitialized['state'] == 'noop'

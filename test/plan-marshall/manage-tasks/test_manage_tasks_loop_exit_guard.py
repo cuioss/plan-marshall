@@ -115,9 +115,7 @@ def test_loop_exit_guard_ignores_blocked_and_failed_status(plan_context):
         deliverable=2,
         steps=['src/main/java/B.java'],
     )
-    cmd_finalize_step(
-        _finalize_step_ns(plan_id='guard-mixed', task=2, step=1, outcome='failed', reason='intentional')
-    )
+    cmd_finalize_step(_finalize_step_ns(plan_id='guard-mixed', task=2, step=1, outcome='failed', reason='intentional'))
 
     result = cmd_loop_exit_guard(_loop_exit_guard_ns(plan_id='guard-mixed'))
 

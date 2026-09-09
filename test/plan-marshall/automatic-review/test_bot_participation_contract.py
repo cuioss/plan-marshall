@@ -83,9 +83,7 @@ from conftest import (
 # (``test_unknown_bot_kind_escalation.py``) imports ``review_completeness`` plainly.
 # Registering under that name would put two copies of the module in play, reachable
 # by different routes and differing by collection order.
-rc = load_script_module(
-    'plan-marshall', 'automatic-review', 'review_completeness.py', register=False
-)
+rc = load_script_module('plan-marshall', 'automatic-review', 'review_completeness.py', register=False)
 
 _AR_SCRIPTS = get_script_path('plan-marshall', 'automatic-review', 'review_completeness.py').parent
 
@@ -104,6 +102,7 @@ def _live_step_params() -> dict:
     config = json.loads(_MARSHAL_JSON.read_text(encoding='utf-8'))
     params: dict = config['plan']['phase-6-finalize']['steps'][_AUTOMATIC_REVIEW_STEP_ID]
     return params
+
 
 # The three provenance values the contract declares. Sourced from the contract doc
 # itself rather than restated as a convenience literal.
@@ -243,9 +242,7 @@ def _failure_taxonomy_section() -> str:
     doc-to-code direction below could never fail.
     """
     doc = _CONTRACT_DOC.read_text(encoding='utf-8')
-    section = re.search(
-        r'^## Failure taxonomy$(?P<body>.*?)(?=^## )', doc, re.DOTALL | re.MULTILINE
-    )
+    section = re.search(r'^## Failure taxonomy$(?P<body>.*?)(?=^## )', doc, re.DOTALL | re.MULTILINE)
     assert section, 'the contract must carry a "## Failure taxonomy" section'
     return section.group('body')
 
@@ -435,10 +432,7 @@ class TestThisRepositorysSettledConfiguration:
         """
         params = _live_step_params()
         configured = [
-            b.strip()
-            for key in ('required_bots', 'optional_bots')
-            for b in params[key].split(',')
-            if b.strip()
+            b.strip() for key in ('required_bots', 'optional_bots') for b in params[key].split(',') if b.strip()
         ]
 
         registered = _registered_bots()
@@ -595,8 +589,7 @@ class TestFailureTaxonomyIsExhaustive:
         # zero-match pass meaningful is how many docs were actually read.
         scanned = sum(1 for _ in _MARKETPLACE_DOCS.rglob('*.md'))
         assert scanned > 0, (
-            f'{_MARKETPLACE_DOCS} yielded no markdown — the sweep is vacuous and a '
-            f'clean result would mean nothing'
+            f'{_MARKETPLACE_DOCS} yielded no markdown — the sweep is vacuous and a clean result would mean nothing'
         )
 
         for doc, stated in _blocking_count_sites():
@@ -629,9 +622,7 @@ class TestFailureTaxonomyIsExhaustive:
 
         # Negative: the corrected wording states no count and must not be read
         # as one — otherwise the fix would itself trip the guard.
-        assert _stated_blocking_counts(
-            'because two of the blocking members name a different remedy'
-        ) == ()
+        assert _stated_blocking_counts('because two of the blocking members name a different remedy') == ()
         assert _stated_blocking_counts('the blocking members enumerated above') == ()
 
         # And the defect the controls describe is genuinely a defect: the
@@ -651,9 +642,7 @@ class TestFailureTaxonomyIsExhaustive:
             'not_triggered',
         ],
     )
-    def test_every_registered_bot_classifies_into_exactly_one_member(
-        self, observation, plan_context
-    ):
+    def test_every_registered_bot_classifies_into_exactly_one_member(self, observation, plan_context):
         """Sweep the WHOLE registered population under each observation shape.
 
         The population comes from ``bot_registry.bot_kinds()``, so a bot added in a
@@ -694,9 +683,7 @@ class TestFailureTaxonomyIsExhaustive:
             # at once. There is no observation set to key by bot here.
             kwargs['not_triggered'] = True
         elif observation.startswith('participated'):
-            kwargs['participated_bots'] = {
-                bot: bot_registry.participation_evidence(bot)[0] for bot in bots
-            }
+            kwargs['participated_bots'] = {bot: bot_registry.participation_evidence(bot)[0] for bot in bots}
             if observation == 'participated_with_findings':
                 import _findings_core as fc
 
@@ -1041,9 +1028,7 @@ def _notation_pattern(script_name: str) -> re.Pattern:
     ``execute-script.py`` instead would additionally require the two to be adjacent
     after continuation folding, which is a property of how the doc happens to wrap.
     """
-    return re.compile(
-        r'([a-z][a-z0-9-]*):([a-z][a-z0-9-]*):' + re.escape(script_name) + r'(?![0-9A-Za-z_])'
-    )
+    return re.compile(r'([a-z][a-z0-9-]*):([a-z][a-z0-9-]*):' + re.escape(script_name) + r'(?![0-9A-Za-z_])')
 
 
 def _invoked_script_path(family: str, command: str) -> str:
@@ -1168,9 +1153,7 @@ class TestCallSitePopulation:
         grouped = _confirmed_counts_by_family()
 
         assert grouped, '_CONFIRMED_SITES is empty — every per-site assertion is vacuous'
-        differing = {
-            family: sites for family, sites in grouped.items() if len(set(sites.values())) > 1
-        }
+        differing = {family: sites for family, sites in grouped.items() if len(set(sites.values())) > 1}
         assert differing, (
             'no invocation family holds two confirmed sites with different flag counts, '
             'so the per-site count shape asserts nothing a single shared count would not. '
@@ -1282,9 +1265,7 @@ class TestCallSitePopulation:
 
 _GH_SCRIPT = get_script_path('plan-marshall', 'workflow-integration-github', 'github_pr.py')
 
-_BRANCH_CLEANUP_DOC = (
-    _AR_SCRIPTS.parent.parent / 'phase-6-finalize' / 'standards' / 'branch-cleanup.md'
-)
+_BRANCH_CLEANUP_DOC = _AR_SCRIPTS.parent.parent / 'phase-6-finalize' / 'standards' / 'branch-cleanup.md'
 _GH_SKILL = _GH_SCRIPT.parent.parent / 'SKILL.md'
 
 
@@ -1403,6 +1384,7 @@ class TestCrashedGateNeverRecordsAPass:
 # =============================================================================
 # Advertised-form agreement — the documented shape matches the live argparse
 # =============================================================================
+
 
 #: Matches an optional-value flag rendering: ``[--flag [VALUE]]`` — the nested
 #: bracket pair argparse itself emits for ``nargs='?'``.

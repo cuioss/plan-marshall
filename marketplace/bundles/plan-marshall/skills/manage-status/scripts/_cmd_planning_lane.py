@@ -767,8 +767,7 @@ def evaluate_signals_pure(
     # measured; the S6 override and the mid-execute escalation ratchet remain
     # available in every case.
     scope_measured_noncommittal = (
-        scope_estimate in _NONCOMMITTAL_SCOPE_ESTIMATES
-        and scope_band_rule == 'path_count_middle_band'
+        scope_estimate in _NONCOMMITTAL_SCOPE_ESTIMATES and scope_band_rule == 'path_count_middle_band'
     )
     suppressed_signals: list[str] = []
     if fired == ['S7:risk_prose'] and scope_measured_noncommittal:
@@ -795,9 +794,7 @@ def evaluate_signals_pure(
     # keeps the population total: a signal added to `signals` is scored on the same
     # edit, instead of being silently omitted from a hand-maintained second copy
     # while `signals_total` kept publishing the smaller size.
-    scored_signals = {
-        name: value for name, value in signals.items() if name != _OVERRIDE_SIGNAL
-    }
+    scored_signals = {name: value for name, value in signals.items() if name != _OVERRIDE_SIGNAL}
     null_signals = sorted(name for name, value in scored_signals.items() if value is None)
     signals_null = len(null_signals)
     signals_resolved = len(scored_signals) - signals_null

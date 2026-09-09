@@ -34,9 +34,7 @@ def _write_baseline(baseline_dir: str, meta: dict) -> None:
     ``_project.json`` directly, so the test writes the baseline at the simple
     shape rather than nesting a full ``.plan/project-architecture/`` subtree.
     """
-    (Path(baseline_dir) / '_project.json').write_text(
-        json.dumps(meta, indent=2, sort_keys=True), encoding='utf-8'
-    )
+    (Path(baseline_dir) / '_project.json').write_text(json.dumps(meta, indent=2, sort_keys=True), encoding='utf-8')
 
 
 def _curated_meta(name: str = 'curated-project') -> dict:

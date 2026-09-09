@@ -46,9 +46,7 @@ from conftest import MARKETPLACE_ROOT, load_script_module, parse_ns
 
 # Loaded under a name used nowhere else in the tree, so the registration the
 # shared loader performs cannot displace another module's copy.
-_crud = load_script_module(
-    'plan-marshall', 'manage-references', '_references_crud.py', '_p2refine_refs_crud'
-)
+_crud = load_script_module('plan-marshall', 'manage-references', '_references_crud.py', '_p2refine_refs_crud')
 cmd_create = _crud.cmd_create
 cmd_get = _crud.cmd_get
 cmd_set = _crud.cmd_set
@@ -89,9 +87,7 @@ def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
 #: site, and every namespace carries the ``command`` discriminator the hand-built
 #: ones lacked.
 _CREATE_ARGS = _verb_args('create', '--plan-id', 'placeholder', '--branch', 'feature/test')
-_SET_ARGS = _verb_args(
-    'set', '--plan-id', 'placeholder', '--field', 'scope_estimate', '--value', 'placeholder'
-)
+_SET_ARGS = _verb_args('set', '--plan-id', 'placeholder', '--field', 'scope_estimate', '--value', 'placeholder')
 _GET_ARGS = _verb_args('get', '--plan-id', 'placeholder', '--field', 'scope_estimate')
 
 
@@ -332,9 +328,7 @@ def test_scope_estimate_persists_to_references_json(value: str, plan_context) ->
     plan_id = f'phase2-scope-estimate-{value.replace("_", "-")}'
     # Bootstrap references.json — phase-1-init does this for real plans;
     # we replicate the minimum here so the persistence call has a target.
-    create_result = cmd_create(
-        _variant(_CREATE_ARGS, plan_id=plan_id)
-    )
+    create_result = cmd_create(_variant(_CREATE_ARGS, plan_id=plan_id))
     assert create_result['status'] == 'success', create_result
 
     # Step 13 contract: persist scope_estimate
@@ -359,9 +353,7 @@ def test_scope_estimate_overwrite_records_previous(plan_context) -> None:
     prior value via the ``previous`` field.
     """
     plan_id = 'phase2-scope-estimate-overwrite'
-    cmd_create(
-        _variant(_CREATE_ARGS, plan_id=plan_id)
-    )
+    cmd_create(_variant(_CREATE_ARGS, plan_id=plan_id))
     cmd_set(_variant(_SET_ARGS, plan_id=plan_id, value='single_module'))
     overwrite = cmd_set(_variant(_SET_ARGS, plan_id=plan_id, value='surgical'))
 
@@ -450,9 +442,7 @@ def test_detail_doc_documents_pr_title_persist_obligation() -> None:
         'persistence call so phase-6-finalize create-pr.md has a deterministic '
         'title source.'
     )
-    assert 'pr_title:' in text, (
-        'Detail doc Step 13 return TOON must surface pr_title for downstream visibility.'
-    )
+    assert 'pr_title:' in text, 'Detail doc Step 13 return TOON must surface pr_title for downstream visibility.'
 
 
 def test_skill_md_documents_pr_title_persist_obligation() -> None:

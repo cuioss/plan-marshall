@@ -30,7 +30,7 @@ def _token(state: str, owner: str) -> dict:
     file, so staleness is never evaluated — ``set_at`` only needs to be a
     well-formed timestamp, not a specific instant.
     """
-    return {"owner": owner, "state": state, "set_at": datetime.now(UTC).isoformat()}
+    return {'owner': owner, 'state': state, 'set_at': datetime.now(UTC).isoformat()}
 
 
 def _write_orchestrator_status(tmp_path, slug: str, extra: dict | None = None) -> None:
@@ -211,18 +211,14 @@ class TestPushTitleTokenSeam:
         monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
         runtime = claude_runtime.ClaudeRuntime()
 
-        result = runtime.session_push_title_token(
-            '', None, store='orchestrator', slug='missing-epic'
-        )
+        result = runtime.session_push_title_token('', None, store='orchestrator', slug='missing-epic')
 
         assert 'status: success' in result
         assert 'no_title_state' in result
         assert 'slug: missing-epic' in result
         assert 'pushed' not in result
 
-    def test_should_noop_when_plan_state_absent_via_default_store(
-        self, monkeypatch, tmp_path
-    ):
+    def test_should_noop_when_plan_state_absent_via_default_store(self, monkeypatch, tmp_path):
         monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
         monkeypatch.chdir(tmp_path)
         runtime = claude_runtime.ClaudeRuntime()
@@ -241,9 +237,7 @@ class TestPushTitleTokenCliBoundary:
     def test_should_reject_orchestrator_store_without_slug(self):
         runtime = claude_runtime.ClaudeRuntime()
 
-        result = platform_runtime._dispatch(
-            runtime, 'session push-title-token', ['--store', 'orchestrator']
-        )
+        result = platform_runtime._dispatch(runtime, 'session push-title-token', ['--store', 'orchestrator'])
 
         assert 'status: error' in result
         assert 'invalid_argument' in result
@@ -258,9 +252,7 @@ class TestPushTitleTokenCliBoundary:
         assert 'invalid_argument' in result
         assert '--plan-id' in result
 
-    def test_should_route_orchestrator_store_through_state_read(
-        self, monkeypatch, tmp_path
-    ):
+    def test_should_route_orchestrator_store_through_state_read(self, monkeypatch, tmp_path):
         monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
         runtime = claude_runtime.ClaudeRuntime()
 

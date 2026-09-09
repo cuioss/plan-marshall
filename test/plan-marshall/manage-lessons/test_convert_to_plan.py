@@ -161,9 +161,7 @@ class TestConvertToPlanTombstoneReservation:
         monkeypatch.setattr(_mod, 'datetime', _FakeDatetime(frozen))
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
-            convert_result = cmd_convert_to_plan(
-                Namespace(lesson_id='2025-01-01-02-001', plan_id='my-plan')
-            )
+            convert_result = cmd_convert_to_plan(Namespace(lesson_id='2025-01-01-02-001', plan_id='my-plan'))
             assert convert_result['status'] == 'success'
             # Source .md has been relocated out of lessons-learned/.
             assert not (lessons_dir / '2025-01-01-02-001.md').exists()
@@ -202,8 +200,9 @@ Body content here.
 
         destination = tmp_path / 'plans' / 'my-plan' / 'lesson-2025-01-01-001.md'
 
-        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}), patch.object(
-            _mod.shutil, 'copyfile', side_effect=OSError('disk full')
+        with (
+            patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}),
+            patch.object(_mod.shutil, 'copyfile', side_effect=OSError('disk full')),
         ):
             result = cmd_convert_to_plan(Namespace(lesson_id='2025-01-01-001', plan_id='my-plan'))
 
@@ -224,8 +223,9 @@ Body content here.
         lessons_dir.mkdir(parents=True)
         (lessons_dir / '2025-01-01-001.md').write_text(self._LESSON_CONTENT)
 
-        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}), patch.object(
-            _mod.shutil, 'copyfile', side_effect=OSError('disk full')
+        with (
+            patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}),
+            patch.object(_mod.shutil, 'copyfile', side_effect=OSError('disk full')),
         ):
             result = cmd_convert_to_plan(Namespace(lesson_id='2025-01-01-001', plan_id='my-plan'))
 
@@ -246,8 +246,9 @@ Body content here.
             # Simulate a partial write: the destination ends up shorter than source.
             Path(dst).write_bytes(b'partial')
 
-        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}), patch.object(
-            _mod.shutil, 'copyfile', side_effect=_truncated_copy
+        with (
+            patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}),
+            patch.object(_mod.shutil, 'copyfile', side_effect=_truncated_copy),
         ):
             result = cmd_convert_to_plan(Namespace(lesson_id='2025-01-01-001', plan_id='my-plan'))
 

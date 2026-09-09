@@ -142,9 +142,7 @@ def test_transition_last_phase(plan_context):
 def test_transition_invalid_phase(plan_context):
     """Test transition with invalid phase name."""
     _create_plan('invalid-transition', 'Invalid Test', '1-init,2-refine')
-    result = run_script(
-        LIFECYCLE_SCRIPT, 'transition', '--plan-id', 'invalid-transition', '--completed', 'nonexistent'
-    )
+    result = run_script(LIFECYCLE_SCRIPT, 'transition', '--plan-id', 'invalid-transition', '--completed', 'nonexistent')
     assert result.success, 'Expected exit 0 for expected error'
     data = parse_toon(result.stdout)
     assert data['status'] == 'error'

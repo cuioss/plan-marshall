@@ -27,7 +27,9 @@ from conftest import MARKETPLACE_ROOT, load_script_module
 from _plugin_doctor_fixtures import assert_analyzer_findings
 
 _mod = load_script_module(
-    'pm-plugin-development', 'plugin-doctor', '_analyze_readme_skill_coverage.py',
+    'pm-plugin-development',
+    'plugin-doctor',
+    '_analyze_readme_skill_coverage.py',
     '_analyze_readme_skill_coverage',
 )
 analyze_readme_skill_coverage = _mod.analyze_readme_skill_coverage

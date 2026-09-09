@@ -26,18 +26,14 @@ from pathlib import Path
 
 from conftest import MARKETPLACE_ROOT, load_script_module
 
-_inbox = load_script_module(
-    'plan-marshall', 'plan-orchestrator', '_orchestrator_inbox.py', 'orchestrator_inbox'
-)
+_inbox = load_script_module('plan-marshall', 'plan-orchestrator', '_orchestrator_inbox.py', 'orchestrator_inbox')
 
 #: Imported from the source of truth — never re-listed as a literal here.
 KINDS = _inbox.KINDS
 
 _PLAN_MARSHALL: Path = MARKETPLACE_ROOT / 'plan-marshall' / 'skills'
 _ANALYZE: Path = _PLAN_MARSHALL / 'plan-orchestrator' / 'workflow' / 'analyze.md'
-_ORCHESTRATION_MODEL: Path = (
-    _PLAN_MARSHALL / 'persona-plan-orchestrator' / 'standards' / 'orchestration-model.md'
-)
+_ORCHESTRATION_MODEL: Path = _PLAN_MARSHALL / 'persona-plan-orchestrator' / 'standards' / 'orchestration-model.md'
 
 #: The four Step 5b dispositions, as the bolded table labels analyze.md carries.
 DISPOSITIONS = ('Promote', 'Fold', 'Stage', 'Discard')
@@ -93,11 +89,7 @@ def _rows(section: str, prefix: str) -> list[str]:
     could only pass against an unindented table, which makes it a vacuous guard
     that never actually reads the contract it claims to pin.
     """
-    return [
-        stripped
-        for stripped in (line.strip() for line in section.splitlines())
-        if stripped.startswith(prefix)
-    ]
+    return [stripped for stripped in (line.strip() for line in section.splitlines()) if stripped.startswith(prefix)]
 
 
 def _drain_loop_section() -> str:
@@ -127,9 +119,7 @@ def _archive_trigger_paragraph() -> str:
     This is the in-line index of the consuming/excluded disposition sets, so it
     is deliberately scoped ABOVE the fence and away from the sub-items.
     """
-    match = re.search(
-        r'\*\*Archive on consume\.\*\*(.*?)(?=```)', _drain_loop_section(), re.DOTALL
-    )
+    match = re.search(r'\*\*Archive on consume\.\*\*(.*?)(?=```)', _drain_loop_section(), re.DOTALL)
     assert match, (
         'analyze.md: the "**Archive on consume.**" paragraph (item 4) was not '
         'found — the archive-trigger rule cannot be verified'
@@ -183,10 +173,7 @@ class TestFourInputModes:
             'analyze.md: the input-modes table has no "Inbox scan" row — the fourth '
             'mode is announced by the heading but never defined'
         )
-        assert 'inbox/' in section, (
-            'analyze.md: the Inbox scan row does not name the epic\'s inbox/ queue '
-            'as its source'
-        )
+        assert 'inbox/' in section, "analyze.md: the Inbox scan row does not name the epic's inbox/ queue as its source"
 
 
 # =============================================================================
@@ -202,9 +189,7 @@ class TestPerKindRouting:
         )
 
     def test_every_kind_has_a_named_routing_branch(self):
-        section = _section(
-            _analyze_text(), '### Step 3: Classify the granularity', 'analyze.md'
-        )
+        section = _section(_analyze_text(), '### Step 3: Classify the granularity', 'analyze.md')
 
         for kind in sorted(KINDS):
             row = next(iter(_rows(section, f'| `{kind}` |')), None)
@@ -292,9 +277,7 @@ class TestDispositions:
 
 class TestArchiveOnConsume:
     def test_the_drain_archives_a_consumed_message(self):
-        section = _section(
-            _analyze_text(), '### Step 3: Classify the granularity', 'analyze.md'
-        )
+        section = _section(_analyze_text(), '### Step 3: Classify the granularity', 'analyze.md')
 
         assert 'inbox archive' in section, (
             'analyze.md: the Step 3 drain loop never names "inbox archive" — a '
@@ -302,9 +285,7 @@ class TestArchiveOnConsume:
         )
 
     def test_the_ordering_is_persist_then_archive(self):
-        section = _section(
-            _analyze_text(), '### Step 3: Classify the granularity', 'analyze.md'
-        )
+        section = _section(_analyze_text(), '### Step 3: Classify the granularity', 'analyze.md')
 
         assert 'persist-then-archive' in section, (
             'analyze.md: the Step 3 drain loop does not state the '
@@ -313,9 +294,7 @@ class TestArchiveOnConsume:
         )
 
     def test_an_invalid_message_is_left_un_archived(self):
-        section = _section(
-            _analyze_text(), '### Step 3: Classify the granularity', 'analyze.md'
-        )
+        section = _section(_analyze_text(), '### Step 3: Classify the granularity', 'analyze.md')
 
         assert 'un-archived' in section, (
             'analyze.md: the Step 3 drain loop does not state that an invalid '
@@ -347,8 +326,7 @@ class TestArchiveOnConsume:
         )
         for target in ('Step 4', 'Step 5b'):
             assert target in paragraph, (
-                f'analyze.md: the archive-on-consume trigger paragraph does not '
-                f'name {target!r} as a consuming path'
+                f'analyze.md: the archive-on-consume trigger paragraph does not name {target!r} as a consuming path'
             )
 
     def test_the_excluded_disposition_list_names_both_exclusions(self):
@@ -362,7 +340,7 @@ class TestArchiveOnConsume:
 
         for excluded in ('invalid', 'archive_failed'):
             assert excluded in paragraph, (
-                f'analyze.md: the archive-on-consume paragraph\'s excluded-'
+                f"analyze.md: the archive-on-consume paragraph's excluded-"
                 f'disposition list does not name {excluded!r} — the in-line '
                 f'enumeration under-counts the non-consuming dispositions'
             )
@@ -376,7 +354,7 @@ class TestArchiveOnConsume:
             'from a successful one and the message silently re-processed'
         )
         assert 'Open Defect' in item, (
-            'analyze.md: item 4\'s archive-failure branch does not record the '
+            "analyze.md: item 4's archive-failure branch does not record the "
             'failure as an Open Defect — the refusal would leave no ledger record'
         )
         for code in (
@@ -386,7 +364,7 @@ class TestArchiveOnConsume:
             'invalid_message_name',
         ):
             assert code in item, (
-                f'analyze.md: item 4\'s archive-failure branch does not name the '
+                f"analyze.md: item 4's archive-failure branch does not name the "
                 f'{code!r} error code among the refusals it records'
             )
 
@@ -419,8 +397,7 @@ class TestOutputBlock:
             'cannot tell the singular half from the plural half'
         )
         assert 'inbox_scan' in section, (
-            'analyze.md: the ## Output block\'s mode field does not carry the '
-            '"inbox_scan" value'
+            'analyze.md: the ## Output block\'s mode field does not carry the "inbox_scan" value'
         )
 
     def test_output_declares_the_three_drain_counters(self):
@@ -428,8 +405,7 @@ class TestOutputBlock:
 
         for field in ('messages_scanned', 'messages_archived', 'messages_invalid'):
             assert field in section, (
-                f'analyze.md: the ## Output block declares no {field!r} field — the '
-                f'drain result is not reportable'
+                f'analyze.md: the ## Output block declares no {field!r} field — the drain result is not reportable'
             )
 
     def test_output_declares_the_drained_table(self):
@@ -460,10 +436,7 @@ class TestOutputBlock:
     def test_output_states_the_widened_three_term_invariant(self):
         section = _section(_analyze_text(), '## Output', 'analyze.md')
 
-        assert (
-            'messages_archived + messages_invalid + messages_archive_failed '
-            '== messages_scanned'
-        ) in section, (
+        assert ('messages_archived + messages_invalid + messages_archive_failed == messages_scanned') in section, (
             'analyze.md: the ## Output block still states the two-term accounting '
             'invariant — a message left un-archived by a refused archival would '
             'read as an unexplained gap'
@@ -504,8 +477,7 @@ class TestOrdinalDriftGuard:
         headings = set(_HEADING_RE.findall(_analyze_text()))
 
         assert headings, (
-            'analyze.md: no "### Step N" headings found — the ordinal-drift guard '
-            'cannot resolve any citation'
+            'analyze.md: no "### Step N" headings found — the ordinal-drift guard cannot resolve any citation'
         )
         for ordinal in citations:
             assert ordinal in headings, (

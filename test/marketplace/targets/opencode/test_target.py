@@ -24,17 +24,20 @@ def fixture_marketplace(tmp_path: Path) -> Path:
     """Marketplace tree with a single bundle covering skills/agents/commands."""
     marketplace = tmp_path / 'bundles'
     bundle = marketplace / 'demo'
-    plugin_doc = json.dumps(
-        {
-            'name': 'demo',
-            'version': '0.0.1',
-            'description': 'Demo bundle for OpenCode tests',
-            'agents': ['./agents/demo-agent.md'],
-            'commands': ['./commands/demo-cmd.md'],
-            'skills': ['./skills/demo-skill'],
-        },
-        indent=2,
-    ) + '\n'
+    plugin_doc = (
+        json.dumps(
+            {
+                'name': 'demo',
+                'version': '0.0.1',
+                'description': 'Demo bundle for OpenCode tests',
+                'agents': ['./agents/demo-agent.md'],
+                'commands': ['./commands/demo-cmd.md'],
+                'skills': ['./skills/demo-skill'],
+            },
+            indent=2,
+        )
+        + '\n'
+    )
     _write(bundle / '.claude-plugin' / 'plugin.json', plugin_doc)
     _write(
         bundle / 'skills' / 'demo-skill' / 'SKILL.md',

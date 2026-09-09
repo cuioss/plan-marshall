@@ -628,14 +628,9 @@ def test_every_build_class_subcommand_defaults_plan_id_to_the_sentinel(monkeypat
     added to any wrapper joins this check with no edit here.
     """
     roster = build_class_roster()
-    population = [
-        (notation, subcommand)
-        for notation, subcommands in roster.items()
-        for subcommand in subcommands
-    ]
+    population = [(notation, subcommand) for notation, subcommands in roster.items() for subcommand in subcommands]
     assert population, (
-        'The build-class roster derived an EMPTY population, so the defaulting '
-        'verdict below would hold vacuously.'
+        'The build-class roster derived an EMPTY population, so the defaulting verdict below would hold vacuously.'
     )
 
     unresolved: list[str] = []
@@ -653,9 +648,7 @@ def test_every_build_class_subcommand_defaults_plan_id_to_the_sentinel(monkeypat
                     )
                     driven += 1
                     if getattr(args, 'plan_id', None) != NO_PLAN_SENTINEL:
-                        unresolved.append(
-                            f'{script_path.stem}:{subcommand} -> {getattr(args, "plan_id", None)!r}'
-                        )
+                        unresolved.append(f'{script_path.stem}:{subcommand} -> {getattr(args, "plan_id", None)!r}')
 
     # The loop above re-derives the population so it can drive each subcommand;
     # pinning its count against ``build_class_roster()`` keeps the two
@@ -747,13 +740,11 @@ def test_every_roster_notation_is_a_build_class_dispatch():
     """
     prefixes = build_class_prefixes()
     unclassified = sorted(
-        notation
-        for notation in build_class_roster()
-        if not any(notation.startswith(prefix) for prefix in prefixes)
+        notation for notation in build_class_roster() if not any(notation.startswith(prefix) for prefix in prefixes)
     )
 
     assert not unclassified, (
-        f'These build wrappers are not covered by the executor\'s '
+        f"These build wrappers are not covered by the executor's "
         f'_BUILD_CLASS_PREFIXES ({sorted(prefixes)}): {unclassified}. Their '
         'dispatches would never append a kind=build change-ledger entry.'
     )
@@ -769,9 +760,7 @@ def test_every_build_class_prefix_is_represented_in_the_roster():
     """
     notations = list(build_class_roster())
     unrepresented = sorted(
-        prefix
-        for prefix in build_class_prefixes()
-        if not any(notation.startswith(prefix) for notation in notations)
+        prefix for prefix in build_class_prefixes() if not any(notation.startswith(prefix) for notation in notations)
     )
 
     assert not unrepresented, (
@@ -856,13 +845,10 @@ def test_every_build_class_subcommand_declares_the_routing_pair():
     still existing.
     """
     roster = build_class_roster()
-    population = [
-        (notation, subcommand) for notation, subcommands in roster.items() for subcommand in subcommands
-    ]
+    population = [(notation, subcommand) for notation, subcommands in roster.items() for subcommand in subcommands]
 
     assert population, (
-        'The build-class roster derived an EMPTY population, so the '
-        'universality verdict below would hold vacuously.'
+        'The build-class roster derived an EMPTY population, so the universality verdict below would hold vacuously.'
     )
 
     missing = {

@@ -44,6 +44,7 @@ analyze_argument_naming = _aan.analyze_argument_naming
 # are local because their shapes are specific to the workflow-scope cases.
 # ---------------------------------------------------------------------------
 
+
 def _write_fake_script(
     marketplace_root: Path,
     notation: str,
@@ -129,9 +130,7 @@ def test_workflow_md_invented_subcommand_emits_subcommand_unknown(tmp_path):
     findings = analyze_argument_naming(marketplace_root)
     subcmd_findings = _findings_by_rule(findings, 'ARGUMENT_NAMING_SUBCOMMAND_UNKNOWN')
     matching = [f for f in subcmd_findings if f['file'] == str(workflow_md)]
-    assert len(matching) == 1, (
-        f'Expected one SUBCOMMAND_UNKNOWN finding for the workflow body, got {findings!r}'
-    )
+    assert len(matching) == 1, f'Expected one SUBCOMMAND_UNKNOWN finding for the workflow body, got {findings!r}'
     finding = matching[0]
     assert finding['details']['notation'] == 'plan-marshall:manage-status:manage_status'
     assert finding['details']['subcommand'] == 'get'
@@ -161,13 +160,9 @@ def test_workflow_md_canonical_subcommand_no_finding(tmp_path):
 
     findings = analyze_argument_naming(marketplace_root)
     matching = [
-        f
-        for f in _findings_by_rule(findings, 'ARGUMENT_NAMING_SUBCOMMAND_UNKNOWN')
-        if f['file'] == str(workflow_md)
+        f for f in _findings_by_rule(findings, 'ARGUMENT_NAMING_SUBCOMMAND_UNKNOWN') if f['file'] == str(workflow_md)
     ]
-    assert matching == [], (
-        f'Canonical subcommand in workflow body should yield no findings, got {matching!r}'
-    )
+    assert matching == [], f'Canonical subcommand in workflow body should yield no findings, got {matching!r}'
 
 
 def test_workflow_md_invented_flag_emits_flag_unknown(tmp_path):
@@ -202,9 +197,7 @@ def test_workflow_md_invented_flag_emits_flag_unknown(tmp_path):
     findings = analyze_argument_naming(marketplace_root)
     flag_findings = _findings_by_rule(findings, 'ARGUMENT_NAMING_FLAG_UNKNOWN')
     matching = [f for f in flag_findings if f['file'] == str(workflow_md)]
-    assert len(matching) == 1, (
-        f'Expected one FLAG_UNKNOWN finding for the workflow body, got {findings!r}'
-    )
+    assert len(matching) == 1, f'Expected one FLAG_UNKNOWN finding for the workflow body, got {findings!r}'
     finding = matching[0]
     assert finding['details']['notation'] == 'plan-marshall:manage-findings:manage-findings'
     assert finding['details']['subcommand'] == 'add'
@@ -242,11 +235,5 @@ def test_workflow_md_canonical_flag_no_finding(tmp_path):
     )
 
     findings = analyze_argument_naming(marketplace_root)
-    matching = [
-        f
-        for f in _findings_by_rule(findings, 'ARGUMENT_NAMING_FLAG_UNKNOWN')
-        if f['file'] == str(workflow_md)
-    ]
-    assert matching == [], (
-        f'Canonical flags in workflow body should yield no findings, got {matching!r}'
-    )
+    matching = [f for f in _findings_by_rule(findings, 'ARGUMENT_NAMING_FLAG_UNKNOWN') if f['file'] == str(workflow_md)]
+    assert matching == [], f'Canonical flags in workflow body should yield no findings, got {matching!r}'

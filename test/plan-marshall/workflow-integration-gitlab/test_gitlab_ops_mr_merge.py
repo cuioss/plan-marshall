@@ -470,9 +470,7 @@ def test_safe_merge_can_be_merged_on_first_poll(monkeypatch):
     _install_common(monkeypatch)
     run_glab_stub, captured = _capture_run_glab(merge_ok=True, delete_mode='ok')
     monkeypatch.setattr(gitlab_ops, 'run_glab', run_glab_stub)
-    monkeypatch.setattr(
-        gitlab_ops, 'view_pr_data', lambda head=None: _safe_merge_view_payload('can_be_merged')
-    )
+    monkeypatch.setattr(gitlab_ops, 'view_pr_data', lambda head=None: _safe_merge_view_payload('can_be_merged'))
 
     result = gitlab_ops.cmd_pr_safe_merge(_safe_merge_ns())
 
@@ -574,9 +572,7 @@ def test_safe_merge_delete_branch_round_trip(monkeypatch):
     _install_common(monkeypatch)
     run_glab_stub, captured = _capture_run_glab(merge_ok=True, delete_mode='ok')
     monkeypatch.setattr(gitlab_ops, 'run_glab', run_glab_stub)
-    monkeypatch.setattr(
-        gitlab_ops, 'view_pr_data', lambda head=None: _safe_merge_view_payload('can_be_merged')
-    )
+    monkeypatch.setattr(gitlab_ops, 'view_pr_data', lambda head=None: _safe_merge_view_payload('can_be_merged'))
 
     result = gitlab_ops.cmd_pr_safe_merge(_safe_merge_ns(delete_branch=True))
 
@@ -677,9 +673,7 @@ def test_mr_merge_uncorroborated_merge_refuses_and_skips_branch_delete(monkeypat
     _install_common(monkeypatch)
     run_glab_stub, captured = _capture_run_glab(merge_ok=True, delete_mode='ok')
     monkeypatch.setattr(gitlab_ops, 'run_glab', run_glab_stub)
-    monkeypatch.setattr(
-        gitlab_ops, 'view_pr_data', lambda head=None: _mr_view_success_payload(state=post_merge_state)
-    )
+    monkeypatch.setattr(gitlab_ops, 'view_pr_data', lambda head=None: _mr_view_success_payload(state=post_merge_state))
 
     result = gitlab_ops.cmd_pr_merge(_merge_ns(delete_branch=True))
 

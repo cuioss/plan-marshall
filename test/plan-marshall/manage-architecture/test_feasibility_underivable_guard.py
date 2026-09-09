@@ -56,12 +56,7 @@ get_module_graph = _cmd_client.get_module_graph
 
 #: The standards document that carries the guard in its only shipped form.
 _GUARD_DOC = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'phase-2-refine'
-    / 'standards'
-    / 'refine-workflow-detail.md'
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-2-refine' / 'standards' / 'refine-workflow-detail.md'
 )
 
 #: The guard block's opening token. A bold marker rather than a heading: the guard
@@ -137,9 +132,7 @@ class _StubResolver:
 
 
 def _register(monkeypatch, *resolvers: _StubResolver) -> None:
-    records = [
-        {'origin': f'stub-{r.resolver_id}', 'id': r.resolver_id, 'module': r} for r in resolvers
-    ]
+    records = [{'origin': f'stub-{r.resolver_id}', 'id': r.resolver_id, 'module': r} for r in resolvers]
     monkeypatch.setattr(extension_discovery, 'discover_derivation_resolvers', lambda: records)
 
 
@@ -323,16 +316,11 @@ def test_guard_parser_fires_on_the_deleted_and_inverted_block():
     # notices the two ways the guard can regress — deletion, and inversion.
     live = _GUARD_DOC.read_text(encoding='utf-8')
 
-    deleted = '\n'.join(
-        line for line in live.splitlines() if line not in set(_guard_block(live))
-    )
+    deleted = '\n'.join(line for line in live.splitlines() if line not in set(_guard_block(live)))
     assert _guard_block(deleted) == [], (
-        'the block parser still finds a guard after every one of its lines was '
-        'removed — it would not notice a deletion'
+        'the block parser still finds a guard after every one of its lines was removed — it would not notice a deletion'
     )
-    assert _guard_arms(deleted) == {}, (
-        'the arm parser still reports arms after the block was deleted'
-    )
+    assert _guard_arms(deleted) == {}, 'the arm parser still reports arms after the block was deleted'
 
     inverted = '\n'.join(
         [
@@ -340,16 +328,14 @@ def test_guard_parser_fires_on_the_deleted_and_inverted_block():
             '',
             '- `resolver_count: 0` — no resolver ran, so there are no edges to '
             'contradict the request. A clean feasibility pass is correct here.',
-            '- `resolver_count: N` (N ≥ 1) with empty edges — treat dependency '
-            'direction as **UNDERIVABLE**.',
+            '- `resolver_count: N` (N ≥ 1) with empty edges — treat dependency direction as **UNDERIVABLE**.',
             '',
             '### Next Section',
         ]
     )
     inverted_arms = _guard_arms(inverted)
     assert inverted_arms == {'0': True, 'N': False}, (
-        f'the arm parser did not read the inverted fixture as inverted: '
-        f'{inverted_arms}'
+        f'the arm parser did not read the inverted fixture as inverted: {inverted_arms}'
     )
     # ... and the local model DISAGREES with the inverted document, which is the
     # disagreement `test_local_consumer_model_matches_the_documented_arms` reports.

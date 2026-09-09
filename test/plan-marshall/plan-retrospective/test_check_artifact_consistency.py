@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for ``check-artifact-consistency.py``."""
 
-
 from __future__ import annotations
 
 import json
@@ -42,9 +41,7 @@ class TestHappyPath:
 
 
 class TestFaultInjection:
-    def test_missing_deliverables_fail_and_missing_metrics_is_inconclusive(
-        self, tmp_path, monkeypatch
-    ):
+    def test_missing_deliverables_fail_and_missing_metrics_is_inconclusive(self, tmp_path, monkeypatch):
         """Structural faults still ``fail``; the absent ``metrics.md`` does not.
 
         ``metrics.md`` is produced by ``default:record-metrics``, which the LIVE
@@ -74,10 +71,9 @@ class TestFaultInjection:
         summary = data['summary']
         assert int(summary['failed']) >= 2
         findings = data['findings']
-        assert any(
-            f.get('severity') == 'warning' and 'ordered after' in f.get('message', '')
-            for f in findings
-        ), f'The inconclusive metrics verdict must reach findings, got {findings}'
+        assert any(f.get('severity') == 'warning' and 'ordered after' in f.get('message', '') for f in findings), (
+            f'The inconclusive metrics verdict must reach findings, got {findings}'
+        )
 
     def test_missing_solution_outline_emits_error(self, tmp_path, monkeypatch):
         plan_id = 'no-outline'

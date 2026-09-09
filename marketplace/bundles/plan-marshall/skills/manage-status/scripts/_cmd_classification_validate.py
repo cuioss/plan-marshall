@@ -145,9 +145,7 @@ def _detect_affected_files_without_scope(references: dict[str, Any]) -> dict[str
     }
 
 
-def _detect_scale_mismatch_light_routing(
-    plan_id: str, references: dict[str, Any]
-) -> dict[str, Any] | None:
+def _detect_scale_mismatch_light_routing(plan_id: str, references: dict[str, Any]) -> dict[str, Any] | None:
     """Mismatch class 3 — a narrow persisted band over a demonstrably large body.
 
     Returns a finding-descriptor dict when ``scope_estimate`` is persisted as

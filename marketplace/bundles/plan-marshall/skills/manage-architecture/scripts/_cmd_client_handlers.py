@@ -194,11 +194,7 @@ def cmd_capabilities(args: argparse.Namespace) -> dict[str, Any]:
         # envelope does not have — the exact "registered-but-unrun producer"
         # this report refuses to report as a capability.
         resolver_count = graph_result.get('resolver_count', 0)
-        dispatched_producers = [
-            report['id']
-            for report in resolvers
-            if report.get('status') != STATUS_NOT_DISPATCHED
-        ]
+        dispatched_producers = [report['id'] for report in resolvers if report.get('status') != STATUS_NOT_DISPATCHED]
         edge_count = graph_result.get('graph', {}).get('edge_count', 0)
 
         # Path attribution (which-module rung 3). The probe path is immaterial: an
@@ -854,9 +850,7 @@ def cmd_files(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
-def _collapse_claimed_duplicate_rows(
-    results: list[dict[str, Any]], module_names: list[str]
-) -> list[dict[str, Any]]:
+def _collapse_claimed_duplicate_rows(results: list[dict[str, Any]], module_names: list[str]) -> list[dict[str, Any]]:
     """Collapse duplicate inventory rows for a claimed path onto its owner's row.
 
     The reader-side de-duplication precedence for the Axis-D ownership seam. One
@@ -989,8 +983,10 @@ def cmd_which_module(args: argparse.Namespace) -> dict[str, Any]:
         for _category, path in pairs:
             if path == target:
                 candidate = (len(module_path_norm), name)
-                if inventory_best is None or candidate[0] > inventory_best[0] or (
-                    candidate[0] == inventory_best[0] and candidate[1] < inventory_best[1]
+                if (
+                    inventory_best is None
+                    or candidate[0] > inventory_best[0]
+                    or (candidate[0] == inventory_best[0] and candidate[1] < inventory_best[1])
                 ):
                     inventory_best = candidate
                 break
@@ -998,8 +994,10 @@ def cmd_which_module(args: argparse.Namespace) -> dict[str, Any]:
         containment_len = longest_containing_prefix(target, paths)
         if containment_len is not None:
             candidate = (containment_len, name)
-            if containment_best is None or candidate[0] > containment_best[0] or (
-                candidate[0] == containment_best[0] and candidate[1] < containment_best[1]
+            if (
+                containment_best is None
+                or candidate[0] > containment_best[0]
+                or (candidate[0] == containment_best[0] and candidate[1] < containment_best[1])
             ):
                 containment_best = candidate
 
@@ -1031,9 +1029,7 @@ def cmd_which_module(args: argparse.Namespace) -> dict[str, Any]:
         'attributors': [report['id'] for report in attributor_reports],
         'attributor_count': len(attributor_reports),
         'attributor_notes': [
-            {'attributor': report['id'], 'note': note}
-            for report in attributor_reports
-            for note in report['notes']
+            {'attributor': report['id'], 'note': note} for report in attributor_reports for note in report['notes']
         ],
         'truncated': bool(truncation_entries),
         'elided': truncation_entries,
@@ -1077,9 +1073,7 @@ def cmd_find(args: argparse.Namespace) -> dict[str, Any]:
             derived = load_module_derived(name, args.project_dir)
         except DataNotFoundError:
             continue
-        pairs, module_truncations = _resolve_module_inventory(
-            name, derived, args.project_dir, category_filter
-        )
+        pairs, module_truncations = _resolve_module_inventory(name, derived, args.project_dir, category_filter)
         truncation_entries.extend(module_truncations)
         for category, path in pairs:
             if category_filter and category != category_filter:
@@ -1220,9 +1214,7 @@ def cmd_search(args: argparse.Namespace) -> dict[str, Any]:
             derived = load_module_derived(name, args.project_dir)
         except DataNotFoundError:
             continue
-        pairs, module_truncations = _resolve_module_inventory(
-            name, derived, args.project_dir, category_filter
-        )
+        pairs, module_truncations = _resolve_module_inventory(name, derived, args.project_dir, category_filter)
         truncation_entries.extend(module_truncations)
         for category, path in pairs:
             if category_filter and category != category_filter:
@@ -1238,9 +1230,7 @@ def cmd_search(args: argparse.Namespace) -> dict[str, Any]:
             files_scanned += 1
             match_count = sum(1 for _ in compiled.finditer(text))
             if match_count:
-                results.append(
-                    {'module': name, 'category': category, 'path': path, 'match_count': match_count}
-                )
+                results.append({'module': name, 'category': category, 'path': path, 'match_count': match_count})
 
     results = _collapse_claimed_duplicate_rows(results, module_names)
     results.sort(key=lambda item: (item['module'], item['category'], item['path']))
@@ -1492,9 +1482,7 @@ def cmd_descriptor_regression_check(args: argparse.Namespace) -> dict[str, Any]:
         violations.append({'field': 'description', 'reason': 'curated description blanked'})
 
     if _is_blanked(baseline_meta.get('description_reasoning'), current_meta.get('description_reasoning')):
-        violations.append(
-            {'field': 'description_reasoning', 'reason': 'curated description_reasoning blanked'}
-        )
+        violations.append({'field': 'description_reasoning', 'reason': 'curated description_reasoning blanked'})
 
     return {
         'status': 'success',

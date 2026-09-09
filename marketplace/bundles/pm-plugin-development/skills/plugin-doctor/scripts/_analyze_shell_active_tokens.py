@@ -192,7 +192,7 @@ def _strip_inline_code(line: str) -> str:
 def _check_glob_wildcard(line: str) -> list[str]:
     """Return wildcard snippets found in ``line`` outside inline code."""
     stripped = _strip_inline_code(line)
-    return [stripped[m.start():m.start() + 1] for m in _GLOB_WILDCARD_RE.finditer(stripped)]
+    return [stripped[m.start() : m.start() + 1] for m in _GLOB_WILDCARD_RE.finditer(stripped)]
 
 
 def _check_dollar_token(line: str) -> list[str]:

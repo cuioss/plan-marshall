@@ -94,8 +94,7 @@ class TestBothMarkersPresent:
         py = _scripts_dir(mp) / '_analyze_offender2.py'
         _write_py(
             py,
-            '_BASH_FENCE_INFO_STRINGS = frozenset({"bash"})\n'
-            '_INLINE_CODE_RE = None\n',
+            '_BASH_FENCE_INFO_STRINGS = frozenset({"bash"})\n_INLINE_CODE_RE = None\n',
         )
         findings = analyze_bash_fence_inline_code_exemption(mp)
         assert findings
@@ -127,9 +126,7 @@ class TestOnlyBashFenceMarker:
         py = _scripts_dir(mp) / '_analyze_bash_only.py'
         _write_py(
             py,
-            '_BASH_FENCE_INFO_STRINGS = ("bash", "sh")\n'
-            'def analyze_bash_only(root):\n'
-            '    return []\n',
+            '_BASH_FENCE_INFO_STRINGS = ("bash", "sh")\ndef analyze_bash_only(root):\n    return []\n',
         )
         assert_analyzer_findings(analyze_bash_fence_inline_code_exemption, mp, [])
 
@@ -147,9 +144,7 @@ class TestOnlyInlineCodeHelper:
         py = _scripts_dir(mp) / '_analyze_prose.py'
         _write_py(
             py,
-            "_INLINE_CODE_RE = r'`[^`]+`'\n"
-            'def analyze_prose(root):\n'
-            '    return []\n',
+            "_INLINE_CODE_RE = r'`[^`]+`'\ndef analyze_prose(root):\n    return []\n",
         )
         assert_analyzer_findings(analyze_bash_fence_inline_code_exemption, mp, [])
 
@@ -158,8 +153,7 @@ class TestOnlyInlineCodeHelper:
         py = _scripts_dir(mp) / '_analyze_prose2.py'
         _write_py(
             py,
-            'def _inline_code_spans(line):\n'
-            '    return []\n',
+            'def _inline_code_spans(line):\n    return []\n',
         )
         assert_analyzer_findings(analyze_bash_fence_inline_code_exemption, mp, [])
 
@@ -177,9 +171,7 @@ class TestInlineCodeSpansVariant:
         py = _scripts_dir(mp) / '_analyze_offender_spans.py'
         _write_py(
             py,
-            '_BASH_FENCE_INFO_STRINGS = ("bash", "sh")\n'
-            'def _inline_code_spans(line):\n'
-            '    return []\n',
+            '_BASH_FENCE_INFO_STRINGS = ("bash", "sh")\ndef _inline_code_spans(line):\n    return []\n',
         )
         findings = assert_analyzer_findings(analyze_bash_fence_inline_code_exemption, mp, [RULE_ID])
         assert '_inline_code_spans' in findings[0]['snippet']
@@ -195,13 +187,7 @@ class TestSelfReferenceExclusion:
 
     def test_self_reference_whitelisted(self, tmp_path: Path) -> None:
         path = (
-            tmp_path
-            / 'bundles'
-            / 'b1'
-            / 'skills'
-            / 's1'
-            / 'scripts'
-            / '_analyze_bash_fence_inline_code_exemption.py'
+            tmp_path / 'bundles' / 'b1' / 'skills' / 's1' / 'scripts' / '_analyze_bash_fence_inline_code_exemption.py'
         )
         assert is_whitelisted(path)
 
@@ -212,21 +198,12 @@ class TestSelfReferenceExclusion:
         py = _scripts_dir(mp) / '_analyze_bash_fence_inline_code_exemption.py'
         _write_py(
             py,
-            '_BASH_FENCE_INFO_STRINGS = ("bash",)\n'
-            "_INLINE_CODE_RE = r'`[^`]+`'\n",
+            '_BASH_FENCE_INFO_STRINGS = ("bash",)\n_INLINE_CODE_RE = r\'`[^`]+`\'\n',
         )
         assert_analyzer_findings(analyze_bash_fence_inline_code_exemption, mp, [])
 
     def test_dispatch_host_whitelisted(self, tmp_path: Path) -> None:
-        path = (
-            tmp_path
-            / 'bundles'
-            / 'b1'
-            / 'skills'
-            / 's1'
-            / 'scripts'
-            / 'doctor-marketplace.py'
-        )
+        path = tmp_path / 'bundles' / 'b1' / 'skills' / 's1' / 'scripts' / 'doctor-marketplace.py'
         assert is_whitelisted(path)
 
     def test_dispatch_host_produces_no_finding(self, tmp_path: Path) -> None:

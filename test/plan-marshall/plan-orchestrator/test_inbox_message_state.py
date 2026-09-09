@@ -41,12 +41,8 @@ _ORCH_BUNDLE = 'plan-marshall'
 _ORCH_SKILL = 'plan-orchestrator'
 _ORCH_SCRIPT = 'orchestrator.py'
 
-_inbox = load_script_module(
-    'plan-marshall', 'plan-orchestrator', '_orchestrator_inbox.py', 'orchestrator_inbox'
-)
-_orch = load_script_module(
-    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT, 'orchestrator_script'
-)
+_inbox = load_script_module('plan-marshall', 'plan-orchestrator', '_orchestrator_inbox.py', 'orchestrator_inbox')
+_orch = load_script_module(_ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT, 'orchestrator_script')
 
 LIFECYCLE_LIVE = _inbox.LIFECYCLE_LIVE
 LIFECYCLE_SUPERSEDED = _inbox.LIFECYCLE_SUPERSEDED
@@ -102,59 +98,124 @@ def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
 
 
 _SCAFFOLD_ARGS = parse_ns(
-    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
-    'scaffold', '--slug', EPIC,
+    _ORCH_BUNDLE,
+    _ORCH_SKILL,
+    _ORCH_SCRIPT,
+    'scaffold',
+    '--slug',
+    EPIC,
     register=False,
 )
 
 _WRITE_ARGS = parse_ns(
-    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
-    'inbox', 'write', '--slug', EPIC,
-    '--sender-type', 'plan', '--sender-id', SENDER,
-    '--kind', 'landing', '--payload-file', '',
+    _ORCH_BUNDLE,
+    _ORCH_SKILL,
+    _ORCH_SCRIPT,
+    'inbox',
+    'write',
+    '--slug',
+    EPIC,
+    '--sender-type',
+    'plan',
+    '--sender-id',
+    SENDER,
+    '--kind',
+    'landing',
+    '--payload-file',
+    '',
     register=False,
 )
 
 _AMEND_ARGS = parse_ns(
-    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
-    'inbox', 'amend', '--slug', EPIC, '--message', '', '--payload-file', '',
+    _ORCH_BUNDLE,
+    _ORCH_SKILL,
+    _ORCH_SCRIPT,
+    'inbox',
+    'amend',
+    '--slug',
+    EPIC,
+    '--message',
+    '',
+    '--payload-file',
+    '',
     register=False,
 )
 
 _SUPERSEDE_ARGS = parse_ns(
-    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
-    'inbox', 'supersede', '--slug', EPIC, '--message', '', '--by', '',
+    _ORCH_BUNDLE,
+    _ORCH_SKILL,
+    _ORCH_SCRIPT,
+    'inbox',
+    'supersede',
+    '--slug',
+    EPIC,
+    '--message',
+    '',
+    '--by',
+    '',
     register=False,
 )
 
 _CLOSE_STREAM_ARGS = parse_ns(
-    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
-    'inbox', 'close-stream', '--slug', EPIC,
-    '--sender-type', 'plan', '--sender-id', SENDER,
+    _ORCH_BUNDLE,
+    _ORCH_SKILL,
+    _ORCH_SCRIPT,
+    'inbox',
+    'close-stream',
+    '--slug',
+    EPIC,
+    '--sender-type',
+    'plan',
+    '--sender-id',
+    SENDER,
     register=False,
 )
 
 _VALIDATE_ARGS = parse_ns(
-    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
-    'inbox', 'validate', '--slug', EPIC, '--message', '',
+    _ORCH_BUNDLE,
+    _ORCH_SKILL,
+    _ORCH_SCRIPT,
+    'inbox',
+    'validate',
+    '--slug',
+    EPIC,
+    '--message',
+    '',
     register=False,
 )
 
 _LIST_ARGS = parse_ns(
-    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
-    'inbox', 'list', '--slug', EPIC,
+    _ORCH_BUNDLE,
+    _ORCH_SKILL,
+    _ORCH_SCRIPT,
+    'inbox',
+    'list',
+    '--slug',
+    EPIC,
     register=False,
 )
 
 _ARCHIVE_ARGS = parse_ns(
-    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
-    'inbox', 'archive', '--slug', EPIC, '--message', '',
+    _ORCH_BUNDLE,
+    _ORCH_SKILL,
+    _ORCH_SCRIPT,
+    'inbox',
+    'archive',
+    '--slug',
+    EPIC,
+    '--message',
+    '',
     register=False,
 )
 
 _MIGRATE_ARCHIVE_ARGS = parse_ns(
-    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
-    'inbox', 'migrate-archive', '--slug', EPIC,
+    _ORCH_BUNDLE,
+    _ORCH_SKILL,
+    _ORCH_SCRIPT,
+    'inbox',
+    'migrate-archive',
+    '--slug',
+    EPIC,
     register=False,
 )
 
@@ -232,9 +293,7 @@ class TestInboxAmend:
         cmd_scaffold(_SCAFFOLD_ARGS)
         message = _write_message(plan_context, tmp_path, 'first version', 'a.md')
 
-        result = cmd_inbox_amend(
-            _amend_args(message, _payload(tmp_path, 'corrected version', 'b.md'))
-        )
+        result = cmd_inbox_amend(_amend_args(message, _payload(tmp_path, 'corrected version', 'b.md')))
 
         assert result['status'] == 'success'
         assert result['operation'] == 'inbox-amend'
@@ -255,9 +314,7 @@ class TestInboxAmend:
         assert 'revision=1' in text
         assert 'amended=' in text
 
-    def test_amended_message_is_distinguishable_from_a_virgin_one_from_the_envelope(
-        self, plan_context, tmp_path
-    ):
+    def test_amended_message_is_distinguishable_from_a_virgin_one_from_the_envelope(self, plan_context, tmp_path):
         # (D5a) The load-bearing claim, checked from the ENVELOPE alone: the
         # amended message's header carries fields the virgin one's does not, so
         # no body diff against a kept copy is needed to see the mutation.
@@ -293,9 +350,7 @@ class TestInboxAmend:
         assert error_code is None
         assert after['created'] == '2020-01-01T00:00:00Z'
 
-    def test_should_bump_revision_monotonically_across_two_amends(
-        self, plan_context, tmp_path
-    ):
+    def test_should_bump_revision_monotonically_across_two_amends(self, plan_context, tmp_path):
         cmd_scaffold(_SCAFFOLD_ARGS)
         message = _write_message(plan_context, tmp_path, 'v1', 'a.md')
 
@@ -318,9 +373,7 @@ class TestInboxAmend:
         assert result['lifecycle'] == LIFECYCLE_LIVE
 
     def test_should_reject_an_unsafe_slug(self, plan_context, tmp_path):
-        result = cmd_inbox_amend(
-            _amend_args('x-001.md', _payload(tmp_path), slug='../evil')
-        )
+        result = cmd_inbox_amend(_amend_args('x-001.md', _payload(tmp_path), slug='../evil'))
 
         assert result['error'] == 'invalid_slug'
 
@@ -386,9 +439,7 @@ class TestInboxSupersede:
         assert f'lifecycle={LIFECYCLE_SUPERSEDED}' in text
         assert f'superseded_by={second}' in text
 
-    def test_superseded_message_stops_appearing_as_live_but_stays_resolvable(
-        self, plan_context, tmp_path
-    ):
+    def test_superseded_message_stops_appearing_as_live_but_stays_resolvable(self, plan_context, tmp_path):
         # (D5c) The retired message drops out of the live set yet still resolves.
         cmd_scaffold(_SCAFFOLD_ARGS)
         first = _write_message(plan_context, tmp_path, 'wrong body', 'a.md')
@@ -482,9 +533,7 @@ def _state_message(**state: str) -> str:
 class TestStateFieldValidation:
     def test_should_reject_amended_without_a_revision_bump(self):
         # (D5d) Monotonicity: a claimed amendment with no advanced revision.
-        ok, error_code, _ = validate_envelope(
-            _state_message(amended='2020-02-02T00:00:00Z')
-        )
+        ok, error_code, _ = validate_envelope(_state_message(amended='2020-02-02T00:00:00Z'))
 
         assert (ok, error_code) == (False, 'revision_not_monotonic')
 
@@ -494,9 +543,7 @@ class TestStateFieldValidation:
         assert (ok, error_code) == (False, 'revision_not_monotonic')
 
     def test_should_accept_a_consistent_amended_revision_pair(self):
-        ok, error_code, _ = validate_envelope(
-            _state_message(revision='1', amended='2020-02-02T00:00:00Z')
-        )
+        ok, error_code, _ = validate_envelope(_state_message(revision='1', amended='2020-02-02T00:00:00Z'))
 
         assert (ok, error_code) == (True, None)
 
@@ -511,9 +558,7 @@ class TestStateFieldValidation:
         assert (ok, error_code) == (False, 'invalid_lifecycle')
 
     def test_should_reject_superseded_without_a_pointer(self):
-        ok, error_code, _ = validate_envelope(
-            _state_message(lifecycle=LIFECYCLE_SUPERSEDED)
-        )
+        ok, error_code, _ = validate_envelope(_state_message(lifecycle=LIFECYCLE_SUPERSEDED))
 
         assert (ok, error_code) == (False, 'invalid_supersede_state')
 
@@ -526,12 +571,10 @@ class TestStateFieldValidation:
         # Two-sided: every declared lifecycle is reachable through a real
         # message, and none reports one outside the module's own frozenset.
         live = validate_envelope(_state_message())[2].get('lifecycle', LIFECYCLE_LIVE)
-        superseded = validate_envelope(
-            _state_message(lifecycle=LIFECYCLE_SUPERSEDED, superseded_by='x-002.md')
-        )[2]['lifecycle']
-        stream_end = validate_envelope(
-            _state_message(lifecycle=LIFECYCLE_STREAM_END)
-        )[2]['lifecycle']
+        superseded = validate_envelope(_state_message(lifecycle=LIFECYCLE_SUPERSEDED, superseded_by='x-002.md'))[2][
+            'lifecycle'
+        ]
+        stream_end = validate_envelope(_state_message(lifecycle=LIFECYCLE_STREAM_END))[2]['lifecycle']
 
         assert {live, superseded, stream_end} == LIFECYCLES
 
@@ -699,9 +742,7 @@ class TestListSurfacesState:
         assert rows[amended]['revision'] == '1'
         assert rows[virgin] != rows[amended]
 
-    def test_a_blocked_queue_zero_is_distinct_from_an_empty_queue_zero(
-        self, plan_context, tmp_path
-    ):
+    def test_a_blocked_queue_zero_is_distinct_from_an_empty_queue_zero(self, plan_context, tmp_path):
         """``live_count: 0`` alone is not EMPTY — the third zero is BLOCKED.
 
         A queue holding nothing but malformed messages reports ``live_count: 0``
@@ -716,9 +757,7 @@ class TestListSurfacesState:
         # A malformed message: a header-only file. It carries one of the six base
         # header fields, so validate_envelope rejects it as missing_header_field
         # (asserted below, so the code cannot drift out from under this comment).
-        (_inbox_dir(plan_context) / f'{SENDER}-001.md').write_text(
-            'envelope_version=1\n', encoding='utf-8'
-        )
+        (_inbox_dir(plan_context) / f'{SENDER}-001.md').write_text('envelope_version=1\n', encoding='utf-8')
         blocked = cmd_inbox_list(_LIST_ARGS)
 
         # The rejection code is pinned, so the comment above cannot go stale.
@@ -768,9 +807,7 @@ class TestFolderedArchive:
         assert result['archived_to'].endswith(f'archive/{SENDER}/{message}')
         assert (_inbox_dir(plan_context) / 'archive' / SENDER / message).is_file()
 
-    def test_archive_refuses_a_sender_unsafe_as_a_directory_name(
-        self, plan_context, tmp_path
-    ):
+    def test_archive_refuses_a_sender_unsafe_as_a_directory_name(self, plan_context, tmp_path):
         # (D4 safety) A ``..``-shaped sender segment is a valid FILENAME
         # component but would traverse out of the archive as a DIRECTORY. It is
         # refused fail-closed rather than folded into ``archive/../``.
@@ -788,9 +825,7 @@ class TestFolderedArchive:
         assert planted.is_file()
         assert not (inbox.parent / '..-001.md').exists()
 
-    def test_migrate_archive_folds_flat_and_reports_per_sender_counts(
-        self, plan_context, tmp_path
-    ):
+    def test_migrate_archive_folds_flat_and_reports_per_sender_counts(self, plan_context, tmp_path):
         cmd_scaffold(_SCAFFOLD_ARGS)
         archive = _inbox_dir(plan_context) / 'archive'
         archive.mkdir(parents=True, exist_ok=True)
@@ -819,9 +854,7 @@ class TestFolderedArchive:
 
         assert second['moved_total'] == 0
 
-    def test_migrate_archive_skips_a_sender_unsafe_as_a_directory(
-        self, plan_context, tmp_path
-    ):
+    def test_migrate_archive_skips_a_sender_unsafe_as_a_directory(self, plan_context, tmp_path):
         cmd_scaffold(_SCAFFOLD_ARGS)
         archive = _inbox_dir(plan_context) / 'archive'
         archive.mkdir(parents=True, exist_ok=True)
@@ -834,9 +867,7 @@ class TestFolderedArchive:
         # The unsafe file was left in place, not folded into a traversing path.
         assert (archive / '..-001.md').is_file()
 
-    def test_write_then_drain_then_write_folds_and_never_reuses_a_sequence(
-        self, plan_context, tmp_path
-    ):
+    def test_write_then_drain_then_write_folds_and_never_reuses_a_sequence(self, plan_context, tmp_path):
         # The full cycle end-to-end: a drained sender's next write lands above
         # the foldered archived twin, and archives cleanly under the sender dir.
         cmd_scaffold(_SCAFFOLD_ARGS)

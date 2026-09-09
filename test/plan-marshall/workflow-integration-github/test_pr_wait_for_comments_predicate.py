@@ -202,9 +202,7 @@ def test_a_refusal_never_satisfies_the_movement_arm(monkeypatch):
     # about itself, not a re-review. The timestamp DID move here, so the only
     # thing that can reject it is the refusal seam.
     mover = _the_mover()
-    refusal = _comment(
-        mover, created_at=_before_wait(), updated_at=_after_wait(), body=_REFUSAL_BODY
-    )
+    refusal = _comment(mover, created_at=_before_wait(), updated_at=_after_wait(), body=_REFUSAL_BODY)
     _wire(
         monkeypatch,
         [

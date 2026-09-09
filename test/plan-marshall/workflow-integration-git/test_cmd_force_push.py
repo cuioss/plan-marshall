@@ -49,9 +49,7 @@ from conftest import get_script_path, load_script_module, run_script
 _FORCE_PUSH_PATH = get_script_path('plan-marshall', 'workflow-integration-git', '_cmd_force_push.py')
 _SCRIPT_PATH = get_script_path('plan-marshall', 'workflow-integration-git', 'git-workflow.py')
 
-_mod = load_script_module(
-    'plan-marshall', 'workflow-integration-git', '_cmd_force_push.py', '_cmd_force_push'
-)
+_mod = load_script_module('plan-marshall', 'workflow-integration-git', '_cmd_force_push.py', '_cmd_force_push')
 
 cmd_force_push = _mod.cmd_force_push
 _verify_git_repo = _mod._verify_git_repo
@@ -253,9 +251,16 @@ class TestCmdForcePushPushFailures:
         """Lease violation with 'rejected' + 'non-fast-forward' → push_rejected_non_fast_forward."""
         _init_repo(tmp_path)
         _create_feature_branch(tmp_path, 'feature/x')
-        _patch_run_git(monkeypatch, {
-            ('push', 'origin'): (1, '', 'error: failed to push some refs\n! [rejected] feature/x -> feature/x (non-fast-forward)'),
-        })
+        _patch_run_git(
+            monkeypatch,
+            {
+                ('push', 'origin'): (
+                    1,
+                    '',
+                    'error: failed to push some refs\n! [rejected] feature/x -> feature/x (non-fast-forward)',
+                ),
+            },
+        )
         args = Namespace(plan_id=None, project_dir=str(tmp_path), branch='feature/x')
 
         result = cmd_force_push(args)
@@ -263,15 +268,16 @@ class TestCmdForcePushPushFailures:
         assert result['status'] == 'rejected'
         assert result['error_type'] == 'push_rejected_non_fast_forward'
 
-    def test_generic_push_failure_mapped_to_push_failed(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_generic_push_failure_mapped_to_push_failed(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Non-rejection push failure → push_failed."""
         _init_repo(tmp_path)
         _create_feature_branch(tmp_path, 'feature/x')
-        _patch_run_git(monkeypatch, {
-            ('push', 'origin'): (1, '', 'error: could not connect to remote'),
-        })
+        _patch_run_git(
+            monkeypatch,
+            {
+                ('push', 'origin'): (1, '', 'error: could not connect to remote'),
+            },
+        )
         args = Namespace(plan_id=None, project_dir=str(tmp_path), branch='feature/x')
 
         result = cmd_force_push(args)
@@ -279,16 +285,17 @@ class TestCmdForcePushPushFailures:
         assert result['status'] == 'error'
         assert result['error_type'] == 'push_failed'
 
-    def test_success_path_returns_success_status(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_success_path_returns_success_status(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Successful push returns status=success and branch/remote fields."""
         _init_repo(tmp_path)
         _create_feature_branch(tmp_path, 'feature/x')
-        _patch_run_git(monkeypatch, {
-            ('push', 'origin'): (0, '', ''),
-            ('ls-remote', 'origin'): (0, 'abc123\trefs/heads/feature/x\n', ''),
-        })
+        _patch_run_git(
+            monkeypatch,
+            {
+                ('push', 'origin'): (0, '', ''),
+                ('ls-remote', 'origin'): (0, 'abc123\trefs/heads/feature/x\n', ''),
+            },
+        )
         args = Namespace(plan_id=None, project_dir=str(tmp_path), branch='feature/x')
 
         result = cmd_force_push(args)
@@ -299,16 +306,17 @@ class TestCmdForcePushPushFailures:
         assert 'remote_sha' in result
         assert result['remote_sha'] == 'abc123'
 
-    def test_success_without_ls_remote_omits_remote_sha(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_success_without_ls_remote_omits_remote_sha(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """When ls-remote fails, remote_sha is absent (not None or empty)."""
         _init_repo(tmp_path)
         _create_feature_branch(tmp_path, 'feature/x')
-        _patch_run_git(monkeypatch, {
-            ('push', 'origin'): (0, '', ''),
-            ('ls-remote', 'origin'): (1, '', 'connection failed'),
-        })
+        _patch_run_git(
+            monkeypatch,
+            {
+                ('push', 'origin'): (0, '', ''),
+                ('ls-remote', 'origin'): (1, '', 'connection failed'),
+            },
+        )
         args = Namespace(plan_id=None, project_dir=str(tmp_path), branch='feature/x')
 
         result = cmd_force_push(args)
@@ -374,9 +382,7 @@ class TestResolveBranchAndPathViaResolver:
         assert error is not None
         assert error['error_type'] == 'worktree_not_materialized'
 
-    def test_resolution_failure_surfaces_the_resolver_message(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_resolution_failure_surfaces_the_resolver_message(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """A ``WorktreeResolutionError`` is surfaced verbatim, not swallowed.
 
         The classification is ``worktree_resolution_failed``, NOT
@@ -465,8 +471,10 @@ class TestCmdForcePushCli:
     def test_project_dir_requires_branch(self, tmp_path: Path) -> None:
         """--project-dir without --branch returns missing_required_arg error."""
         result = run_script(
-            _SCRIPT_PATH, 'force-push-with-lease',
-            '--project-dir', str(tmp_path),
+            _SCRIPT_PATH,
+            'force-push-with-lease',
+            '--project-dir',
+            str(tmp_path),
         )
 
         parsed = parse_toon(result.stdout)

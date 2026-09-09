@@ -53,17 +53,20 @@ def fixture_marketplace(tmp_path: Path) -> Path:
     """Build a tiny marketplace tree with a single complete bundle."""
     marketplace = tmp_path / 'bundles'
     marketplace.mkdir()
-    plugin_doc = json.dumps(
-        {
-            'name': 'demo',
-            'version': '0.0.1',
-            'description': 'Demo bundle',
-            'agents': ['./agents/demo-agent.md'],
-            'commands': [],
-            'skills': ['./skills/demo-skill'],
-        },
-        indent=2,
-    ) + '\n'
+    plugin_doc = (
+        json.dumps(
+            {
+                'name': 'demo',
+                'version': '0.0.1',
+                'description': 'Demo bundle',
+                'agents': ['./agents/demo-agent.md'],
+                'commands': [],
+                'skills': ['./skills/demo-skill'],
+            },
+            indent=2,
+        )
+        + '\n'
+    )
     _write_bundle(
         marketplace,
         'demo',
@@ -173,9 +176,7 @@ def test_emit_bundle_verbatim_does_not_touch_sibling_bundles(tmp_path: Path):
     """
     marketplace = tmp_path / 'bundles'
     out_dir = tmp_path / 'out'
-    plugin_doc = json.dumps(
-        {'name': 'a', 'version': '0.0.1', 'description': 'a'}, indent=2
-    ) + '\n'
+    plugin_doc = json.dumps({'name': 'a', 'version': '0.0.1', 'description': 'a'}, indent=2) + '\n'
     _write_bundle(
         marketplace,
         'a',
@@ -279,15 +280,14 @@ def _synthetic_marketplace(root: Path, bundle_names: list[str]) -> Path:
             {
                 '.claude-plugin/plugin.json': json.dumps(
                     {'name': name, 'version': '0.0.1', 'description': name}, indent=2
-                ) + '\n',
+                )
+                + '\n',
                 f'agents/{name}-agent.md': f'---\nname: {name}-agent\n---\nbody',
             },
         )
     manifest = {
         'name': 'demo-marketplace',
-        'plugins': [
-            {'name': n, 'description': n, 'source': f'./bundles/{n}'} for n in bundle_names
-        ],
+        'plugins': [{'name': n, 'description': n, 'source': f'./bundles/{n}'} for n in bundle_names],
     }
     manifest_path = root / '.claude-plugin' / 'marketplace.json'
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
@@ -500,9 +500,7 @@ def test_emit_marker_fingerprint_non_empty_for_real_worktree(tmp_path: Path):
     ``FingerprintError``, the sentinel writer falls through to
     ``source_tree_fingerprint: null``, and the run still reports green.
     """
-    assert _REAL_MARKETPLACE_BUNDLES.is_dir(), (
-        f'Marketplace bundles tree not found at {_REAL_MARKETPLACE_BUNDLES}'
-    )
+    assert _REAL_MARKETPLACE_BUNDLES.is_dir(), f'Marketplace bundles tree not found at {_REAL_MARKETPLACE_BUNDLES}'
 
     output_dir = tmp_path / 'out'
     ClaudeTarget().generate(_REAL_MARKETPLACE_BUNDLES, output_dir)

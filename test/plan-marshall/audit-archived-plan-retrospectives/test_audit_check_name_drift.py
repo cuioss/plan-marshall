@@ -23,10 +23,7 @@ class TestNameDriftRoleResolution:
         cache: dict[str, str | None] = {}
 
         drift = audit.detect_name_drift(inputs, PROJECT_ROOT, cache)
-        resolved = {
-            audit._resolve_step_role(PROJECT_ROOT, s, cache)
-            for s in inputs.manifest_phase_5
-        }
+        resolved = {audit._resolve_step_role(PROJECT_ROOT, s, cache) for s in inputs.manifest_phase_5}
 
         # quality-gate → quality-gate, module-tests → module-tests; resolution is
         # in-code via the canonical→role table (no role-file read).
@@ -38,25 +35,14 @@ class TestNameDriftRoleResolution:
         # a coverage canonical resolves but alone gives zero intersection.
         cache: dict[str, str | None] = {}
 
-        assert (
-            audit._resolve_step_role(PROJECT_ROOT, 'default:verify:verify', cache)
-            == 'module-tests'
-        )
-        assert (
-            audit._resolve_step_role(PROJECT_ROOT, 'verify:module-tests', cache)
-            == 'module-tests'
-        )
-        assert (
-            audit._resolve_step_role(PROJECT_ROOT, 'default:verify:coverage', cache)
-            == 'coverage'
-        )
+        assert audit._resolve_step_role(PROJECT_ROOT, 'default:verify:verify', cache) == 'module-tests'
+        assert audit._resolve_step_role(PROJECT_ROOT, 'verify:module-tests', cache) == 'module-tests'
+        assert audit._resolve_step_role(PROJECT_ROOT, 'default:verify:coverage', cache) == 'coverage'
 
     def test_canonical_verify_alongside_coverage_not_flagged(self):
         # a coverage/integration step alongside a core role does NOT mis-flag:
         # the intersection with {quality-gate, module-tests} is non-empty.
-        inputs = _inputs(
-            ['default:verify:quality-gate', 'default:verify:coverage']
-        )
+        inputs = _inputs(['default:verify:quality-gate', 'default:verify:coverage'])
         cache: dict[str, str | None] = {}
 
         drift = audit.detect_name_drift(inputs, PROJECT_ROOT, cache)
@@ -82,10 +68,7 @@ class TestNameDriftRoleResolution:
         cache: dict[str, str | None] = {}
 
         drift = audit.detect_name_drift(inputs, PROJECT_ROOT, cache)
-        resolved = {
-            audit._resolve_step_role(PROJECT_ROOT, s, cache)
-            for s in inputs.manifest_phase_5
-        }
+        resolved = {audit._resolve_step_role(PROJECT_ROOT, s, cache) for s in inputs.manifest_phase_5}
 
         # the default: prefix is stripped and roles resolve correctly
         assert drift is None

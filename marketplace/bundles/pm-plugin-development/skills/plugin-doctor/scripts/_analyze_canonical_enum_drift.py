@@ -310,9 +310,7 @@ _VERB_TOKEN_RE = re.compile(r'^[a-z][a-z0-9\-]*$')
 # any other and is separated in :func:`derive_population`, which files it under
 # ``single_member_ambiguous`` rather than comparing it. This comment named
 # :func:`_enum_sites_in_skill` for one round after the test moved out of it.
-_ENUM_TOKEN_RE = re.compile(
-    r'(?<![A-Za-z0-9])--(?P<flag>[A-Za-z][A-Za-z0-9\-]*)\s+\{(?P<members>[^{}]+)\}'
-)
+_ENUM_TOKEN_RE = re.compile(r'(?<![A-Za-z0-9])--(?P<flag>[A-Za-z][A-Za-z0-9\-]*)\s+\{(?P<members>[^{}]+)\}')
 
 # The BRACE-LESS enum form, ``--flag a|b|c``. At least one pipe is required, so a
 # lone metavar (``--flag VALUE``) is not read as a one-member enum. Members carry
@@ -539,9 +537,7 @@ def _enum_sites_in_skill(
                     # this rule reports, so both are disclosed in rule-catalog.md
                     # rather than left implicit here.
                     continue
-                sites.append(
-                    (line, block_notation, block_path, match.group('flag'), members)
-                )
+                sites.append((line, block_notation, block_path, match.group('flag'), members))
     return sites
 
 
@@ -651,9 +647,7 @@ class _Resolver:
         self._root = marketplace_root
         self._get_tree = get_tree
 
-    def resolve_expr(
-        self, node: ast.expr, tree: ast.Module, depth: int
-    ) -> frozenset[str] | None:
+    def resolve_expr(self, node: ast.expr, tree: ast.Module, depth: int) -> frozenset[str] | None:
         if depth > _MAX_RESOLVE_DEPTH:
             return None
         literal = _string_sequence(node)
@@ -666,9 +660,7 @@ class _Resolver:
             return self.resolve_name(node.id, tree, depth + 1)
         return None
 
-    def resolve_name(
-        self, name: str, tree: ast.Module, depth: int
-    ) -> frozenset[str] | None:
+    def resolve_name(self, name: str, tree: ast.Module, depth: int) -> frozenset[str] | None:
         if depth > _MAX_RESOLVE_DEPTH:
             return None
         assigns = _module_level_assignments(tree)
@@ -784,11 +776,7 @@ def _build_parser_path_sets(tree: ast.Module) -> dict[str, set[tuple[str, ...]]]
             if verb is None:
                 continue
             spellings = [verb, *_string_list_kw(call, 'aliases')]
-            new_paths = {
-                owner_path + (spelling,)
-                for owner_path in owner_paths
-                for spelling in spellings
-            }
+            new_paths = {owner_path + (spelling,) for owner_path in owner_paths for spelling in spellings}
             for var in targets:
                 parser_paths.setdefault(var, set()).update(new_paths)
         elif name in _PARSER_GROUP_FACTORIES:
@@ -854,9 +842,7 @@ def _authority_by_subcommand_flag(
     # script that mixes the two forms with different sets gives this walk no
     # single authority. "Is the one that wins" stood here for several rounds and
     # is false in the only case where it is testable.
-    resolved: dict[tuple[tuple[str, ...], str], frozenset[str] | None] = dict(
-        _declarative_authority(tree, resolver)
-    )
+    resolved: dict[tuple[tuple[str, ...], str], frozenset[str] | None] = dict(_declarative_authority(tree, resolver))
     shadowed = _shadowed_receivers(tree)
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call) or not _is_add_argument(node):
@@ -1112,8 +1098,7 @@ def _shadowed_receivers(tree: ast.Module) -> dict[int, set[str]]:
     scope_funcs = _enclosing_functions(tree)
     laundering = _group_vars_off_shadowed_owner(tree, scope_params, scope_funcs)
     return {
-        id(node): set(scope_params[id(node)])
-        | {group for group, func in laundering if func in scope_funcs[id(node)]}
+        id(node): set(scope_params[id(node)]) | {group for group, func in laundering if func in scope_funcs[id(node)]}
         for node in ast.walk(tree)
         if isinstance(node, ast.Call) and _is_add_argument(node)
     }
@@ -1222,9 +1207,7 @@ def _group_vars_off_shadowed_owner(
             # An owner that is a parameter implies an enclosing function, so this
             # is unreachable; a module-level binding cannot be laundered.
             continue
-        laundered.update(
-            (t.id, enclosing[-1]) for t in stmt.targets if isinstance(t, ast.Name)
-        )
+        laundered.update((t.id, enclosing[-1]) for t in stmt.targets if isinstance(t, ast.Name))
     return laundered
 
 
@@ -1272,9 +1255,7 @@ def derive_population(marketplace_root: Path, cache=None) -> list[EnumSite]:
     get_tree = cache.get_tree if cache is not None else _fallback_get_tree()
     resolver = _Resolver(marketplace_root, get_tree)
     # Memoize per-script authority so a script documenting many enums parses once.
-    authority_cache: dict[
-        str, dict[tuple[tuple[str, ...], str], frozenset[str] | None]
-    ] = {}
+    authority_cache: dict[str, dict[tuple[tuple[str, ...], str], frozenset[str] | None]] = {}
     # Whether each notation's script parsed at all — the discriminator between
     # "the script could not be read" and "the script was read and declares no
     # resolvable choices for this flag". Both leave ``choices`` at ``None``.
@@ -1351,8 +1332,7 @@ def derive_population(marketplace_root: Path, cache=None) -> list[EnumSite]:
                 elif key not in authority:
                     cause = (
                         UNRESOLVED_AUTHORITY_INCOMPLETE
-                        if incomplete_cache[notation]
-                        or subcommand in incomplete_paths_cache[notation]
+                        if incomplete_cache[notation] or subcommand in incomplete_paths_cache[notation]
                         else UNRESOLVED_NO_CHOICES_DECLARED
                     )
                 else:
@@ -1434,9 +1414,7 @@ def derive_coverage(population: list[EnumSite]) -> dict:
         'resolved': total - len(unresolved_sites),
         'unresolved': len(unresolved_sites),
         'unresolved_fraction': round(len(unresolved_sites) / total, 3) if total else 0.0,
-        'blind_spots': sum(
-            count for cause, count in causes.items() if cause in UNRESOLVED_BLIND_SPOT_CAUSES
-        ),
+        'blind_spots': sum(count for cause, count in causes.items() if cause in UNRESOLVED_BLIND_SPOT_CAUSES),
         'unresolved_causes': causes,
     }
 
@@ -1524,9 +1502,7 @@ def _findings_from_population(population: list[EnumSite]) -> list[dict]:
     return [f.to_dict() for f in findings]
 
 
-def analyze_canonical_enum_drift_with_population(
-    marketplace_root: Path, cache=None
-) -> tuple[list[dict], int]:
+def analyze_canonical_enum_drift_with_population(marketplace_root: Path, cache=None) -> tuple[list[dict], int]:
     """Return ``(findings, population_size)`` from a SINGLE derivation.
 
     The runner publishes the examined population on its rule summaries, and a

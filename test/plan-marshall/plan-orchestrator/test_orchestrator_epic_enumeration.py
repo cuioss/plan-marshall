@@ -45,9 +45,7 @@ _ORCH_SCRIPT = 'orchestrator.py'
 
 SCRIPT_PATH = get_script_path(_ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT)
 
-_orch = load_script_module(
-    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT, 'orchestrator_script'
-)
+_orch = load_script_module(_ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT, 'orchestrator_script')
 
 cmd_corpus_epics = _orch.cmd_corpus_epics
 SCOPE_ACTIVE = _orch.SCOPE_ACTIVE
@@ -61,8 +59,11 @@ SCOPE_ARCHIVED = _orch.SCOPE_ARCHIVED
 #: every call, and ``register=False`` so it cannot displace the explicitly-named
 #: registration above.
 _EPICS_ARGS = parse_ns(
-    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
-    'corpus', 'epics',
+    _ORCH_BUNDLE,
+    _ORCH_SKILL,
+    _ORCH_SCRIPT,
+    'corpus',
+    'epics',
     register=False,
 )
 
@@ -112,12 +113,8 @@ class TestCorpusEpicsPopulation:
 
         assert result['status'] == 'success'
         assert result['operation'] == 'corpus-epics'
-        assert result['active'] == sorted(_ACTIVE_EPICS), (
-            'the active fixture epics did not materialize'
-        )
-        assert result['archived'] == sorted(_ARCHIVED_EPICS), (
-            'the archived fixture epics did not materialize'
-        )
+        assert result['active'] == sorted(_ACTIVE_EPICS), 'the active fixture epics did not materialize'
+        assert result['archived'] == sorted(_ARCHIVED_EPICS), 'the archived fixture epics did not materialize'
 
     def test_the_published_total_equals_the_lists_actually_returned(self, plan_context):
         """The count cannot drift from the population it names."""
@@ -131,9 +128,7 @@ class TestCorpusEpicsPopulation:
         assert result['archived_count'] == len(result['archived'])
         assert result['total_count'] == len(result['active']) + len(result['archived'])
         seeded = len(_ACTIVE_EPICS) + len(_ARCHIVED_EPICS)
-        assert result['total_count'] == seeded, (
-            f'{result["total_count"]} reported over a seeded population of {seeded}'
-        )
+        assert result['total_count'] == seeded, f'{result["total_count"]} reported over a seeded population of {seeded}'
 
     def test_a_slug_in_both_homes_separates_total_from_distinct(self, plan_context):
         # A partially relocated epic. The row population and the union disagree
@@ -175,9 +170,7 @@ class TestCorpusEpicsDerivedZero:
 
     def test_an_absent_store_root_is_distinguished_from_an_empty_one(self, plan_context):
         active_root, _ = _store_roots(plan_context)
-        assert not active_root.exists(), (
-            'the fixture pre-created the root under test — the absent state is unreachable'
-        )
+        assert not active_root.exists(), 'the fixture pre-created the root under test — the absent state is unreachable'
 
         result = cmd_corpus_epics(_EPICS_ARGS)
 
@@ -186,9 +179,7 @@ class TestCorpusEpicsDerivedZero:
         assert result['total_count'] == 0
         assert rows[SCOPE_ACTIVE]['exists'] is False, 'an absent root must not report as present'
         assert rows[SCOPE_ACTIVE]['listed'] is False
-        assert rows[SCOPE_ACTIVE]['error'] == '', (
-            'an absent root is a derived zero, not a failure to read'
-        )
+        assert rows[SCOPE_ACTIVE]['error'] == '', 'an absent root is a derived zero, not a failure to read'
         # Absent, but still named — the caller can see WHICH directory was missing.
         assert rows[SCOPE_ACTIVE]['path'] == str(active_root)
 
@@ -205,9 +196,7 @@ class TestCorpusEpicsDropsNothing:
         rows = _roots_by_scope(result)
         assert result['non_directory_count'] == 1
         assert result['non_directory'][0] == {'scope': SCOPE_ACTIVE, 'entry': '.DS_Store'}
-        assert result['active'] == sorted(_ACTIVE_EPICS), (
-            'a stray file must not disturb the slug list'
-        )
+        assert result['active'] == sorted(_ACTIVE_EPICS), 'a stray file must not disturb the slug list'
         # The partition is TOTAL, so the row's own scanned count is checkable
         # against the three populations rather than taken on trust.
         assert rows[SCOPE_ACTIVE]['entries_scanned'] == len(_ACTIVE_EPICS) + 1
@@ -248,9 +237,7 @@ class TestCorpusEpicsDropsNothing:
 class TestCorpusEpicsResolvesMainAnchored:
     """The store is main-anchored, so the walk must not move with the cwd."""
 
-    def test_both_roots_resolve_through_the_main_anchored_resolver(
-        self, plan_context, monkeypatch, tmp_path
-    ):
+    def test_both_roots_resolve_through_the_main_anchored_resolver(self, plan_context, monkeypatch, tmp_path):
         """Discriminator: a cwd-relative root would not follow this stub.
 
         Redirecting ONLY ``resolve_main_anchored_path`` moves both roots. A root
@@ -258,9 +245,7 @@ class TestCorpusEpicsResolvesMainAnchored:
         fails if the enumeration ever stops routing through the anchored resolver.
         """
         anchored = tmp_path / 'main-anchor'
-        monkeypatch.setattr(
-            file_ops, 'resolve_main_anchored_path', lambda subpath: anchored / str(subpath)
-        )
+        monkeypatch.setattr(file_ops, 'resolve_main_anchored_path', lambda subpath: anchored / str(subpath))
 
         result = cmd_corpus_epics(_EPICS_ARGS)
 
@@ -269,9 +254,7 @@ class TestCorpusEpicsResolvesMainAnchored:
         assert rows[SCOPE_ACTIVE]['path'] == str(anchored / 'orchestrator')
         assert rows[SCOPE_ARCHIVED]['path'] == str(anchored / 'archived-orchestrators')
 
-    def test_the_roots_do_not_move_with_the_working_directory(
-        self, plan_context, monkeypatch, tmp_path
-    ):
+    def test_the_roots_do_not_move_with_the_working_directory(self, plan_context, monkeypatch, tmp_path):
         """A worktree and the main checkout must resolve the SAME store root."""
         _seed_epic_population(plan_context)
         before = cmd_corpus_epics(_EPICS_ARGS)
@@ -282,14 +265,12 @@ class TestCorpusEpicsResolvesMainAnchored:
         after = cmd_corpus_epics(_EPICS_ARGS)
 
         assert len(after['roots']) == 2
-        assert [row['path'] for row in after['roots']] == [
-            row['path'] for row in before['roots']
-        ], 'the store root moved with the cwd — the enumeration is not main-anchored'
+        assert [row['path'] for row in after['roots']] == [row['path'] for row in before['roots']], (
+            'the store root moved with the cwd — the enumeration is not main-anchored'
+        )
         # The population is non-empty on both sides, so this is two agreeing
         # readings of a real store rather than two agreeing empties.
-        assert after['total_count'] == before['total_count'] == len(_ACTIVE_EPICS) + len(
-            _ARCHIVED_EPICS
-        )
+        assert after['total_count'] == before['total_count'] == len(_ACTIVE_EPICS) + len(_ARCHIVED_EPICS)
 
 
 class TestCorpusEpicsCli:

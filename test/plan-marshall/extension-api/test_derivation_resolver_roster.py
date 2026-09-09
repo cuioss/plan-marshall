@@ -72,9 +72,7 @@ class _StubResolver:
 
 
 def _register(monkeypatch, *resolvers: _StubResolver) -> None:
-    records = [
-        {'origin': f'bundle-{r.resolver_id}', 'id': r.resolver_id, 'module': r} for r in resolvers
-    ]
+    records = [{'origin': f'bundle-{r.resolver_id}', 'id': r.resolver_id, 'module': r} for r in resolvers]
     monkeypatch.setattr(_live('extension_discovery'), 'discover_derivation_resolvers', lambda: records)
 
 
@@ -134,7 +132,18 @@ def test_unconfigured_resolvers_are_enabled_but_not_configured(plan_context, ros
 
 def test_disabled_resolver_stays_in_the_roster(plan_context, roster):
     """⛔ Pruning it would leave the menu unable to offer re-enabling it."""
-    run_config.cmd_derivation_resolver_set(parse_ns('plan-marshall', 'manage-run-config', 'run_config.py', 'derivation-resolver', 'set', '--resolver', 'python', '--disabled'))
+    run_config.cmd_derivation_resolver_set(
+        parse_ns(
+            'plan-marshall',
+            'manage-run-config',
+            'run_config.py',
+            'derivation-resolver',
+            'set',
+            '--resolver',
+            'python',
+            '--disabled',
+        )
+    )
 
     result = extension_api.list_derivation_resolvers()
     assert [entry['id'] for entry in result['resolvers']] == ['markdown', 'python']
@@ -144,7 +153,18 @@ def test_disabled_resolver_stays_in_the_roster(plan_context, roster):
 
 def test_explicitly_enabled_resolver_is_marked_configured(plan_context, roster):
     """Enabled-by-default and enabled-on-purpose stay distinguishable."""
-    run_config.cmd_derivation_resolver_set(parse_ns('plan-marshall', 'manage-run-config', 'run_config.py', 'derivation-resolver', 'set', '--resolver', 'python', '--enabled'))
+    run_config.cmd_derivation_resolver_set(
+        parse_ns(
+            'plan-marshall',
+            'manage-run-config',
+            'run_config.py',
+            'derivation-resolver',
+            'set',
+            '--resolver',
+            'python',
+            '--enabled',
+        )
+    )
 
     entries = _by_id(extension_api.list_derivation_resolvers())
     assert entries['python']['enabled'] is True
@@ -161,13 +181,45 @@ def test_explicitly_enabled_resolver_is_marked_configured(plan_context, roster):
 def test_binding_change_round_trips_through_the_roster(plan_context, roster):
     assert _by_id(extension_api.list_derivation_resolvers())['python']['enabled'] is True
 
-    run_config.cmd_derivation_resolver_set(parse_ns('plan-marshall', 'manage-run-config', 'run_config.py', 'derivation-resolver', 'set', '--resolver', 'python', '--disabled'))
+    run_config.cmd_derivation_resolver_set(
+        parse_ns(
+            'plan-marshall',
+            'manage-run-config',
+            'run_config.py',
+            'derivation-resolver',
+            'set',
+            '--resolver',
+            'python',
+            '--disabled',
+        )
+    )
     assert _by_id(extension_api.list_derivation_resolvers())['python']['enabled'] is False
 
-    run_config.cmd_derivation_resolver_set(parse_ns('plan-marshall', 'manage-run-config', 'run_config.py', 'derivation-resolver', 'set', '--resolver', 'python', '--enabled'))
+    run_config.cmd_derivation_resolver_set(
+        parse_ns(
+            'plan-marshall',
+            'manage-run-config',
+            'run_config.py',
+            'derivation-resolver',
+            'set',
+            '--resolver',
+            'python',
+            '--enabled',
+        )
+    )
     assert _by_id(extension_api.list_derivation_resolvers())['python']['enabled'] is True
 
-    run_config.cmd_derivation_resolver_remove(parse_ns('plan-marshall', 'manage-run-config', 'run_config.py', 'derivation-resolver', 'remove', '--resolver', 'python'))
+    run_config.cmd_derivation_resolver_remove(
+        parse_ns(
+            'plan-marshall',
+            'manage-run-config',
+            'run_config.py',
+            'derivation-resolver',
+            'remove',
+            '--resolver',
+            'python',
+        )
+    )
     entry = _by_id(extension_api.list_derivation_resolvers())['python']
     assert entry['enabled'] is True
     assert entry['configured'] is False
@@ -175,7 +227,18 @@ def test_binding_change_round_trips_through_the_roster(plan_context, roster):
 
 def test_round_trip_persists_to_the_machine_local_store(plan_context, roster):
     """The round-trip goes through the file, not through in-process state."""
-    run_config.cmd_derivation_resolver_set(parse_ns('plan-marshall', 'manage-run-config', 'run_config.py', 'derivation-resolver', 'set', '--resolver', 'markdown', '--disabled'))
+    run_config.cmd_derivation_resolver_set(
+        parse_ns(
+            'plan-marshall',
+            'manage-run-config',
+            'run_config.py',
+            'derivation-resolver',
+            'set',
+            '--resolver',
+            'markdown',
+            '--disabled',
+        )
+    )
 
     config = run_config.read_run_config(run_config.get_run_config_path())
     assert config['derivation_resolvers'] == {'markdown': {'enabled': False}}
@@ -257,7 +320,9 @@ def test_unreadable_store_reports_every_resolver_enabled(plan_context, roster, m
 
 
 def test_cli_verb_dispatches_to_the_roster(plan_context, roster):
-    result = extension_api.cmd_derivation_resolvers_list(parse_ns('plan-marshall', 'manage-run-config', 'run_config.py', 'derivation-resolver', 'list'))
+    result = extension_api.cmd_derivation_resolvers_list(
+        parse_ns('plan-marshall', 'manage-run-config', 'run_config.py', 'derivation-resolver', 'list')
+    )
     assert result['status'] == 'success'
     assert [entry['id'] for entry in result['resolvers']] == ['markdown', 'python']
 
@@ -302,8 +367,15 @@ def test_both_readers_agree_on_a_non_dict_entry(plan_context, roster):
 
     roster_says = _by_id(extension_api.list_derivation_resolvers())['markdown']['configured']
     store_says = _live('run_config').cmd_derivation_resolver_get(
-        parse_ns('plan-marshall', 'manage-run-config', 'run_config.py',
-                 'derivation-resolver', 'get', '--resolver', 'markdown')
+        parse_ns(
+            'plan-marshall',
+            'manage-run-config',
+            'run_config.py',
+            'derivation-resolver',
+            'get',
+            '--resolver',
+            'markdown',
+        )
     )['configured']
 
     assert roster_says == store_says
@@ -312,12 +384,30 @@ def test_both_readers_agree_on_a_non_dict_entry(plan_context, roster):
 
 def test_both_readers_agree_on_a_well_formed_entry(plan_context, roster):
     """The control: agreement must not have been bought by reporting False always."""
-    run_config.cmd_derivation_resolver_set(parse_ns('plan-marshall', 'manage-run-config', 'run_config.py', 'derivation-resolver', 'set', '--resolver', 'markdown', '--enabled'))
+    run_config.cmd_derivation_resolver_set(
+        parse_ns(
+            'plan-marshall',
+            'manage-run-config',
+            'run_config.py',
+            'derivation-resolver',
+            'set',
+            '--resolver',
+            'markdown',
+            '--enabled',
+        )
+    )
 
     roster_says = _by_id(extension_api.list_derivation_resolvers())['markdown']['configured']
     store_says = _live('run_config').cmd_derivation_resolver_get(
-        parse_ns('plan-marshall', 'manage-run-config', 'run_config.py',
-                 'derivation-resolver', 'get', '--resolver', 'markdown')
+        parse_ns(
+            'plan-marshall',
+            'manage-run-config',
+            'run_config.py',
+            'derivation-resolver',
+            'get',
+            '--resolver',
+            'markdown',
+        )
     )['configured']
 
     assert roster_says == store_says

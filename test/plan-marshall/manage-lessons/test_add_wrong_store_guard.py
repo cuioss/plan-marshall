@@ -3,7 +3,6 @@
 # ruff: noqa: I001
 """Tests for the ``add`` subcommand of manage-lessons.py."""
 
-
 import json
 from argparse import Namespace
 from pathlib import Path

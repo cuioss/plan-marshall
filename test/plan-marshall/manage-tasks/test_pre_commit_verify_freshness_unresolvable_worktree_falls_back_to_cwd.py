@@ -5,7 +5,6 @@
 Scope: that an unresolvable worktree falls back to the current directory.
 """
 
-
 from __future__ import annotations
 
 from argparse import Namespace
@@ -27,9 +26,7 @@ from _pre_commit_verify_freshness_fixtures import (
 )
 
 
-def test_unresolvable_worktree_falls_back_to_cwd(
-    plan_context, monkeypatch, tmp_path
-) -> None:
+def test_unresolvable_worktree_falls_back_to_cwd(plan_context, monkeypatch, tmp_path) -> None:
     """An unresolvable worktree degrades to cwd rather than aborting the gate.
 
     The fallback is deliberate and predates the migration: a plan whose worktree

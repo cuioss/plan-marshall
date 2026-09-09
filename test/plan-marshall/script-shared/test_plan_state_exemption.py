@@ -182,9 +182,7 @@ def _repo_with_quoted_tracked_plan_file(root: Path, name: str) -> tuple[Path, st
     target.write_text('{"schema": 1, "dirty": true}\n', encoding='utf-8')
 
     tracked = sorted(_index_paths(repo))
-    assert len(tracked) == 1, (
-        f'probe repo must hold exactly one tracked .plan/ path, got {tracked}'
-    )
+    assert len(tracked) == 1, f'probe repo must hold exactly one tracked .plan/ path, got {tracked}'
     spelling = tracked[0]
 
     line_form = _git(repo, 'status', '--porcelain').stdout.strip()
@@ -241,9 +239,7 @@ def test_partition_no_plan_paths_retains_all(tmp_path: Path) -> None:
     ``.plan/`` candidate, the predicate must not need a trackedness observation
     at all, so a non-repo tree still returns cleanly.
     """
-    retained, exempted = pse.partition_plan_state_exemption(
-        ['src/main.py', 'README.md'], tmp_path
-    )
+    retained, exempted = pse.partition_plan_state_exemption(['src/main.py', 'README.md'], tmp_path)
     assert retained == ['README.md', 'src/main.py']  # sorted, de-duplicated
     assert exempted == []
 
@@ -304,9 +300,7 @@ def test_partition_still_exempts_untracked_plan_file_after_a_staged_deletion(
     repo = _repo_with_tracked_plan_file(tmp_path)
     _git(repo, 'rm', '.plan/marshal.json')
 
-    retained, exempted = pse.partition_plan_state_exemption(
-        ['.plan/marshal.json', '.plan/local/status.json'], repo
-    )
+    retained, exempted = pse.partition_plan_state_exemption(['.plan/marshal.json', '.plan/local/status.json'], repo)
 
     assert retained == ['.plan/marshal.json']
     assert exempted == ['.plan/local/status.json']
@@ -345,10 +339,10 @@ def test_partition_mixed_population(tmp_path: Path) -> None:
     """Tracked ``.plan/`` and non-``.plan/`` retained; untracked ``.plan/`` exempted."""
     repo = _repo_with_tracked_plan_file(tmp_path)
     paths = [
-        '.plan/marshal.json',        # tracked   → retained
-        '.plan/local/work.log',      # untracked → exempted
-        'src/main.py',               # non-.plan → retained
-        'my.plan/foo.py',            # not a .plan/ path → retained
+        '.plan/marshal.json',  # tracked   → retained
+        '.plan/local/work.log',  # untracked → exempted
+        'src/main.py',  # non-.plan → retained
+        'my.plan/foo.py',  # not a .plan/ path → retained
     ]
     retained, exempted = pse.partition_plan_state_exemption(paths, repo)
     assert retained == ['.plan/marshal.json', 'my.plan/foo.py', 'src/main.py']
@@ -375,9 +369,7 @@ def test_partition_fails_closed_when_tree_is_not_a_repo(outside_repo_dir: Path) 
     """
     not_a_repo = outside_repo_dir / 'plain'
     not_a_repo.mkdir()
-    retained, exempted = pse.partition_plan_state_exemption(
-        ['.plan/marshal.json', '.plan/local/work.log'], not_a_repo
-    )
+    retained, exempted = pse.partition_plan_state_exemption(['.plan/marshal.json', '.plan/local/work.log'], not_a_repo)
     assert retained == ['.plan/local/work.log', '.plan/marshal.json']
     assert exempted == []
 
@@ -510,14 +502,10 @@ def test_partition_retains_a_staged_deletion_when_the_head_read_fails(
     """
     repo = _repo_with_tracked_plan_file(tmp_path)
     _git(repo, 'rm', '.plan/marshal.json')
-    assert '.plan/marshal.json' not in _index_paths(repo), (
-        'precondition: the staged deletion must have left the index'
-    )
+    assert '.plan/marshal.json' not in _index_paths(repo), 'precondition: the staged deletion must have left the index'
     _break_the_head_tree(repo)
 
-    retained, exempted = pse.partition_plan_state_exemption(
-        ['.plan/marshal.json', '.plan/local/status.json'], repo
-    )
+    retained, exempted = pse.partition_plan_state_exemption(['.plan/marshal.json', '.plan/local/status.json'], repo)
 
     assert retained == ['.plan/local/status.json', '.plan/marshal.json']
     assert exempted == []

@@ -222,9 +222,7 @@ def holder_has_live_worktree(holder: str) -> bool:
     return git_marker.exists() or live_plan_dir.exists()
 
 
-def holder_staleness(
-    holder: str, project_root: str | Path | None = None
-) -> Literal['fresh', 'stale', 'unknown']:
+def holder_staleness(holder: str, project_root: str | Path | None = None) -> Literal['fresh', 'stale', 'unknown']:
     """Return a main-anchored three-valued staleness verdict for ``holder``.
 
     The authoritative, cwd-independent answer to "is this recorded holder safe to

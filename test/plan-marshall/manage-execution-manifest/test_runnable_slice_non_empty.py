@@ -157,9 +157,7 @@ def _stamp_through_composer(monkeypatch, plan_id: str, step_id: str, fields: dic
     """
     toon: str = _core.serialize_toon({'status': 'success', **fields})
     monkeypatch.setattr(_mem, '_resolve_executor', lambda: Path('/dev/null'))
-    monkeypatch.setattr(
-        _mem.subprocess, 'run', lambda *a, **k: SimpleNamespace(returncode=0, stdout=toon)
-    )
+    monkeypatch.setattr(_mem.subprocess, 'run', lambda *a, **k: SimpleNamespace(returncode=0, stdout=toon))
     records = _stamp(plan_id, [step_id])
     assert records[0]['step_id'] == step_id
     tier: str = records[0]['tier']
@@ -224,8 +222,7 @@ def test_the_leafs_runnable_slice_is_non_empty(monkeypatch):
     runnable = {args for args, tier in tiers.items() if tier == 'per_task'}
 
     assert runnable, (
-        'the phase-5 leaf runnable slice is EMPTY — every measured canonical '
-        f'resolved orchestrator: {tiers}'
+        f'the phase-5 leaf runnable slice is EMPTY — every measured canonical resolved orchestrator: {tiers}'
     )
 
 

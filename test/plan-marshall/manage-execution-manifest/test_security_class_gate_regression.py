@@ -47,7 +47,10 @@ from conftest import PlanContext, load_script_module
 
 
 _mem = load_script_module(
-    'plan-marshall', 'manage-execution-manifest', 'manage-execution-manifest.py', module_name='_mem_script_security_class_regression'
+    'plan-marshall',
+    'manage-execution-manifest',
+    'manage-execution-manifest.py',
+    module_name='_mem_script_security_class_regression',
 )
 cmd_compose = _mem.cmd_compose
 read_manifest = _mem.read_manifest

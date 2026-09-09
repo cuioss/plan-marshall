@@ -9,7 +9,6 @@ Its sections, in order:
 * Case (c) — grouping by cross-reference
 """
 
-
 from pathlib import Path
 from unittest.mock import patch
 
@@ -189,9 +188,7 @@ class TestGroupByWorkflowBoundary:
         assert group['tier'] == 'shared-workflow-boundary'
         assert group['enacted'] is False
         for row in group['absorbed']:
-            assert row['reason'] == (
-                'shared workflow-boundary plan-marshall:phase-5-execute'
-            )
+            assert row['reason'] == ('shared workflow-boundary plan-marshall:phase-5-execute')
 
 
 # =============================================================================
@@ -246,6 +243,7 @@ class TestGroupByCrossRef:
 # Case (b) — grouping by shared standards directory
 # =============================================================================
 
+
 class TestDeriveStandardsDirResolverPath:
     """``_derive_standards_dir`` resolves the bundles root through the
     cache-aware ``find_marketplace_path`` resolver in script-shared rather than
@@ -275,10 +273,7 @@ class TestDeriveStandardsDirResolverPath:
             result = _derive_standards_dir('plan-marshall:phase-5-execute')
 
         mock_resolver.assert_called_once_with()
-        assert result == (
-            '/anchored/checkout/marketplace/bundles'
-            '/plan-marshall/skills/phase-5-execute/standards/'
-        )
+        assert result == ('/anchored/checkout/marketplace/bundles/plan-marshall/skills/phase-5-execute/standards/')
 
     def test_derived_dir_anchored_on_resolved_path(self):
         """The derived standards dir is built from the resolver's returned path
@@ -290,8 +285,7 @@ class TestDeriveStandardsDirResolverPath:
             result = _derive_standards_dir('pm-dev-java:java-core')
 
         assert result == (
-            '/home/u/.claude/plugins/cache/pm/marketplace/bundles'
-            '/pm-dev-java/skills/java-core/standards/'
+            '/home/u/.claude/plugins/cache/pm/marketplace/bundles/pm-dev-java/skills/java-core/standards/'
         )
         # No bare literal meta path is exercised when the resolver returns a path.
         assert not result.startswith(f'{MARKETPLACE_BUNDLES_PATH}/')
@@ -304,9 +298,7 @@ class TestDeriveStandardsDirResolverPath:
         with patch.object(_mod, 'find_marketplace_path', return_value=None):
             result = _derive_standards_dir('plan-marshall:phase-1-init')
 
-        assert result == (
-            f'{MARKETPLACE_BUNDLES_PATH}/plan-marshall/skills/phase-1-init/standards/'
-        )
+        assert result == (f'{MARKETPLACE_BUNDLES_PATH}/plan-marshall/skills/phase-1-init/standards/')
 
     def test_unparseable_component_skips_resolver(self):
         """Component values that are not exactly ``{bundle}:{skill}`` return the

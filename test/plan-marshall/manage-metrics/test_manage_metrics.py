@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for manage-metrics.py CLI script."""
 
-
 import re
 from pathlib import Path
 
@@ -97,13 +96,9 @@ def test_lattice_names_every_usage_field_the_script_writes():
     derived = _derived_usage_fields()
     assert derived, 'the script-derived field sweep produced nothing — the guard is vacuous'
 
-    missing = _fields_missing_from_lattice(
-        _DATA_FORMAT_MD.read_text(encoding='utf-8'), derived
-    )
+    missing = _fields_missing_from_lattice(_DATA_FORMAT_MD.read_text(encoding='utf-8'), derived)
 
-    assert missing == set(), (
-        f'the lattice omits token/usage fields the script writes: {sorted(missing)}'
-    )
+    assert missing == set(), f'the lattice omits token/usage fields the script writes: {sorted(missing)}'
 
 
 def test_lattice_completeness_check_detects_a_removed_row():
@@ -117,11 +112,7 @@ def test_lattice_completeness_check_detects_a_removed_row():
     victim = 'subagent_total_tokens'
     assert victim in derived
 
-    mutated = '\n'.join(
-        line
-        for line in content.splitlines()
-        if not (line.startswith('|') and f'`{victim}`' in line)
-    )
+    mutated = '\n'.join(line for line in content.splitlines() if not (line.startswith('|') and f'`{victim}`' in line))
     assert mutated != content
 
     assert _fields_missing_from_lattice(mutated, derived) == {victim}
@@ -168,15 +159,10 @@ def test_every_documented_termination_cause_site_matches_the_enum():
     assert sites, 'no --termination-cause value list found in SKILL.md'
 
     stale = [
-        (label, sorted(expected - values), sorted(values - expected))
-        for label, values in sites
-        if values != expected
+        (label, sorted(expected - values), sorted(values - expected)) for label, values in sites if values != expected
     ]
 
-    assert stale == [], (
-        'SKILL.md sites disagree with DISPATCH_TERMINATION_CAUSES '
-        f'(site, missing, unexpected): {stale}'
-    )
+    assert stale == [], f'SKILL.md sites disagree with DISPATCH_TERMINATION_CAUSES (site, missing, unexpected): {stale}'
 
 
 def test_every_declared_population_has_a_bullet_note():
@@ -216,10 +202,7 @@ def test_termination_cause_check_detects_a_single_stale_site():
     victim = 'error'
     assert victim in expected
 
-    brace_sites = [
-        label for label, _ in _parse_termination_cause_sites(content)
-        if label.startswith('brace-form')
-    ]
+    brace_sites = [label for label, _ in _parse_termination_cause_sites(content) if label.startswith('brace-form')]
     assert len(brace_sites) > 1, 'need more than one brace site to prove single-site detection'
 
     # Drop the victim from exactly ONE brace-form occurrence. `error` sits in the
@@ -229,9 +212,7 @@ def test_termination_cause_check_detects_a_single_stale_site():
     mutated = content.replace(f'|{victim}|', '|', 1)
     assert mutated != content
 
-    stale = [
-        label for label, values in _parse_termination_cause_sites(mutated) if values != expected
-    ]
+    stale = [label for label, values in _parse_termination_cause_sites(mutated) if values != expected]
 
     assert len(stale) == 1, f'expected exactly one stale site to be reported, got {stale}'
 
@@ -244,9 +225,7 @@ def test_logging_gap_analysis_termination_cause_set_matches_the_enum():
     causes. Both sides are derived — the documented set from the markdown, the
     expected set from DISPATCH_TERMINATION_CAUSES.
     """
-    _assert_documented_set_matches_enum(
-        _LOGGING_GAP_ANALYSIS_MD.read_text(encoding='utf-8'), 'the accepted causes:'
-    )
+    _assert_documented_set_matches_enum(_LOGGING_GAP_ANALYSIS_MD.read_text(encoding='utf-8'), 'the accepted causes:')
 
 
 def test_logging_gap_analysis_guard_detects_a_dropped_value():
@@ -270,9 +249,7 @@ def test_logging_gap_analysis_guard_detects_a_dropped_value():
 
 def test_data_format_termination_cause_enum_matches_the_enum():
     """The data-format.md dispatch-boundary termination_cause enum equals the tuple."""
-    _assert_documented_set_matches_enum(
-        _DATA_FORMAT_MD.read_text(encoding='utf-8'), '`termination_cause` enum**:'
-    )
+    _assert_documented_set_matches_enum(_DATA_FORMAT_MD.read_text(encoding='utf-8'), '`termination_cause` enum**:')
 
 
 def test_data_format_termination_cause_guard_detects_a_dropped_value():
@@ -331,9 +308,7 @@ def test_repeated_enrich_keeps_a_genuinely_mixed_row_labelled_mixed(plan_context
     cmd_end_phase(ns_end_phase(plan_id, '6-finalize', total_tokens=88000))
 
     _run_enrich_with_buckets(plan_id, monkeypatch, {'6-finalize': _INLINE_BUCKET})
-    assert _phase_row(plan_id, '6-finalize')['total_tokens_population'] == (
-        manage_metrics.POPULATION_MIXED
-    )
+    assert _phase_row(plan_id, '6-finalize')['total_tokens_population'] == (manage_metrics.POPULATION_MIXED)
 
     _run_enrich_with_buckets(plan_id, monkeypatch, {'6-finalize': _INLINE_BUCKET})
     row = _phase_row(plan_id, '6-finalize')

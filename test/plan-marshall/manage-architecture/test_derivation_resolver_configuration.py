@@ -59,6 +59,7 @@ def _live(module_name: str):
     """
     return importlib.import_module(module_name)
 
+
 _architecture_core = load_script_module(
     'plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core'
 )
@@ -102,14 +103,24 @@ def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
 #: because only the namespace is wanted, and because publishing ``run_config``
 #: would displace the plain import above.
 _RESOLVER_SET_ARGS = parse_ns(
-    _RUN_CONFIG_BUNDLE, _RUN_CONFIG_SKILL, _RUN_CONFIG_SCRIPT,
-    'derivation-resolver', 'set', '--resolver', 'resolver', '--disabled',
+    _RUN_CONFIG_BUNDLE,
+    _RUN_CONFIG_SKILL,
+    _RUN_CONFIG_SCRIPT,
+    'derivation-resolver',
+    'set',
+    '--resolver',
+    'resolver',
+    '--disabled',
     register=False,
 )
 
 _CAPABILITIES_ARGS = parse_ns(
-    _ARCH_BUNDLE, _ARCH_SKILL, _ARCH_SCRIPT,
-    '--project-dir', '.', 'capabilities',
+    _ARCH_BUNDLE,
+    _ARCH_SKILL,
+    _ARCH_SCRIPT,
+    '--project-dir',
+    '.',
+    'capabilities',
     register=False,
 )
 
@@ -162,9 +173,7 @@ class _StubResolver:
 
 
 def _register(monkeypatch, *resolvers: _StubResolver) -> None:
-    records = [
-        {'origin': f'stub-{r.resolver_id}', 'id': r.resolver_id, 'module': r} for r in resolvers
-    ]
+    records = [{'origin': f'stub-{r.resolver_id}', 'id': r.resolver_id, 'module': r} for r in resolvers]
     monkeypatch.setattr(_live('extension_discovery'), 'discover_derivation_resolvers', lambda: records)
 
 
@@ -227,9 +236,7 @@ def test_configuring_one_resolver_does_not_deactivate_the_others(plan_context, t
     The plausible misreading of a config section is "now only what is listed
     runs". Disabling ``alpha`` must leave ``beta`` deriving.
     """
-    run_config.cmd_derivation_resolver_set(
-        _variant(_RESOLVER_SET_ARGS, resolver='alpha')
-    )
+    run_config.cmd_derivation_resolver_set(_variant(_RESOLVER_SET_ARGS, resolver='alpha'))
 
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_triple(tmpdir)
@@ -294,9 +301,7 @@ def test_resolver_count_excludes_only_the_disabled_ones(plan_context, two_resolv
     assert reports['beta']['status'] == 'not_dispatched'
 
 
-def test_capabilities_reports_not_derivable_when_every_resolver_is_disabled(
-    plan_context, two_resolvers
-):
+def test_capabilities_reports_not_derivable_when_every_resolver_is_disabled(plan_context, two_resolvers):
     """⛔ A registered-but-unrun producer is never reported as a capability.
 
     Disabling every resolver leaves the envelope genuinely unable to derive
@@ -447,9 +452,7 @@ def test_overview_footer_does_not_credit_a_disabled_resolver(plan_context, two_r
     assert 'switched off by the machine-local configuration — beta' in rendered
 
 
-def test_overview_footer_states_the_cause_when_every_resolver_is_disabled(
-    plan_context, two_resolvers
-):
+def test_overview_footer_states_the_cause_when_every_resolver_is_disabled(plan_context, two_resolvers):
     """A sparse graph explains itself rather than reading as "nothing depends on anything"."""
     for resolver_id in ('alpha', 'beta'):
         run_config.cmd_derivation_resolver_set(_variant(_RESOLVER_SET_ARGS, resolver=resolver_id))
@@ -556,4 +559,3 @@ def test_raising_enabled_check_treats_the_resolver_as_active(plan_context, two_r
         result = get_module_graph(tmpdir)
 
     assert result['graph']['edge_count'] == 2
-

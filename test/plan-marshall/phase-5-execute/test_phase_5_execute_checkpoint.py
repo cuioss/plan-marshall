@@ -28,13 +28,7 @@ import pytest
 
 from conftest import MARKETPLACE_ROOT
 
-SKILL_PATH = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'phase-5-execute'
-    / 'SKILL.md'
-)
+SKILL_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-5-execute' / 'SKILL.md'
 
 LONG_RUNNING = {'verify', 'coverage', 'quality-gate'}
 

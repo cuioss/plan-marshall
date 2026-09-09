@@ -90,9 +90,7 @@ def compute_worktree_sha(worktree_root: str | Path) -> str | None:
 
     _diff_rc, diff_out = _run_git(['diff', 'HEAD'], worktree_root)
 
-    _others_rc, others_out = _run_git(
-        ['ls-files', '--others', '--exclude-standard'], worktree_root
-    )
+    _others_rc, others_out = _run_git(['ls-files', '--others', '--exclude-standard'], worktree_root)
 
     hasher = hashlib.sha256()
     hasher.update(head)
@@ -100,9 +98,7 @@ def compute_worktree_sha(worktree_root: str | Path) -> str | None:
     hasher.update(diff_out)
     hasher.update(_NULL)
 
-    others = sorted(
-        line for line in others_out.decode('utf-8', 'surrogateescape').splitlines() if line
-    )
+    others = sorted(line for line in others_out.decode('utf-8', 'surrogateescape').splitlines() if line)
     for rel_path in others:
         hasher.update(rel_path.encode('utf-8', 'surrogateescape'))
         hasher.update(_NULL)

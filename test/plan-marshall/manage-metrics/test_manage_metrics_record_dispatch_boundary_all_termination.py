@@ -12,7 +12,6 @@ Its sections, in order:
 * (j) returned_with_findings — the productive-loop-back dispatch-ledger member
 """
 
-
 from __future__ import annotations
 
 import pytest
@@ -225,6 +224,7 @@ def test_dispatch_termination_causes_contains_returned_with_findings():
 #     both the enum membership and the recorder's acceptance of the value.
 # =============================================================================
 
+
 def test_budget_yield_cause_accepted_and_recorded(plan_context):
     """budget_yield records a single data row carrying the cause verbatim."""
     plan_id = 'disp-budget-yield'
@@ -264,9 +264,7 @@ def test_budget_yield_subprocess_accepted_by_argparse(plan_context):
         '--termination-cause',
         'budget_yield',
     )
-    assert result.returncode == 0, (
-        f'budget_yield MUST be accepted by argparse: {result.stderr}'
-    )
+    assert result.returncode == 0, f'budget_yield MUST be accepted by argparse: {result.stderr}'
     assert _boundary_path(plan_dir, '5-execute').exists()
 
 
@@ -281,6 +279,7 @@ def test_budget_yield_subprocess_accepted_by_argparse(plan_context):
 #     membership and the recorder's acceptance of the value on the finalize
 #     boundary file (its actual routing target).
 # =============================================================================
+
 
 def test_returned_with_findings_recorded_on_the_finalize_boundary(plan_context):
     """A loop-back dispatch is stamped returned_with_findings in the finalize file.
@@ -327,7 +326,5 @@ def test_returned_with_findings_subprocess_accepted_by_argparse(plan_context):
         '--termination-cause',
         'returned_with_findings',
     )
-    assert result.returncode == 0, (
-        f'returned_with_findings MUST be accepted by argparse: {result.stderr}'
-    )
+    assert result.returncode == 0, f'returned_with_findings MUST be accepted by argparse: {result.stderr}'
     assert _boundary_path(plan_dir, '6-finalize').exists()

@@ -62,9 +62,7 @@ def env(tmp_path: Path):
             self.overrides = {'PLAN_BASE_DIR': str(base)}
 
         def run(self, *args: str):
-            return run_script(
-                _SCRIPT, *args, cwd=str(base), env_overrides=self.overrides
-            )
+            return run_script(_SCRIPT, *args, cwd=str(base), env_overrides=self.overrides)
 
         def append_build(
             self,
@@ -76,9 +74,17 @@ def env(tmp_path: Path):
             log_file: str | None = None,
         ):
             argv = [
-                'append', '--kind', 'build', '--notation', notation,
-                '--exit-code', str(exit_code), '--status', status,
-                '--worktree-sha', worktree_sha,
+                'append',
+                '--kind',
+                'build',
+                '--notation',
+                notation,
+                '--exit-code',
+                str(exit_code),
+                '--status',
+                status,
+                '--worktree-sha',
+                worktree_sha,
             ]
             if log_file is not None:
                 argv += ['--log-file', log_file]
@@ -95,9 +101,12 @@ def env(tmp_path: Path):
         ) -> dict:
             result = self.run(
                 'classify-outcome',
-                '--job-status', job_status,
-                '--output-bytes', str(output_bytes),
-                '--worktree-sha', worktree_sha,
+                '--job-status',
+                job_status,
+                '--output-bytes',
+                str(output_bytes),
+                '--worktree-sha',
+                worktree_sha,
             )
             assert result.success, result.stderr
             data: dict = result.toon()
@@ -269,17 +278,11 @@ def test_error_and_unknown_rows_yield_distinguishable_verdicts(env) -> None:
     worktree shas lets a single test observe both verdicts and compare them
     directly, rather than inferring the distinction from two isolated runs.
     """
-    env.append_build(
-        status='error', exit_code=1, log_file='/tmp/build.log', worktree_sha=_SHA_A
-    )
+    env.append_build(status='error', exit_code=1, log_file='/tmp/build.log', worktree_sha=_SHA_A)
     env.append_build(status='unknown', worktree_sha=_SHA_B)
 
-    error_data = env.classify(
-        job_status='completed', output_bytes=42, worktree_sha=_SHA_A
-    )
-    unknown_data = env.classify(
-        job_status='completed', output_bytes=42, worktree_sha=_SHA_B
-    )
+    error_data = env.classify(job_status='completed', output_bytes=42, worktree_sha=_SHA_A)
+    unknown_data = env.classify(job_status='completed', output_bytes=42, worktree_sha=_SHA_B)
 
     assert error_data['verdict'] == 'error', error_data
     assert unknown_data['verdict'] == 'undecidable', unknown_data
@@ -319,9 +322,7 @@ def test_error_display_detail_is_the_bounded_summary(env) -> None:
     arm's text is already short enough to serve as its own summary. The two
     fields therefore diverge here and only here.
     """
-    env.append_build(
-        status='error', exit_code=1, log_file='/tmp/a-very-long-build-log-path.log'
-    )
+    env.append_build(status='error', exit_code=1, log_file='/tmp/a-very-long-build-log-path.log')
 
     data = env.classify(job_status='completed', output_bytes=42, worktree_sha=_SHA_A)
 
@@ -400,8 +401,13 @@ def test_killed_job_report_wins_over_error_row(env) -> None:
 def test_job_status_is_choices_validated(env) -> None:
     """``--job-status`` accepts only completed|killed (argparse rejection)."""
     result = env.run(
-        'classify-outcome', '--job-status', 'flaky',
-        '--output-bytes', '0', '--worktree-sha', _SHA_A,
+        'classify-outcome',
+        '--job-status',
+        'flaky',
+        '--output-bytes',
+        '0',
+        '--worktree-sha',
+        _SHA_A,
     )
 
     assert not result.success
@@ -409,9 +415,7 @@ def test_job_status_is_choices_validated(env) -> None:
 
 def test_output_bytes_is_required(env) -> None:
     """``--output-bytes`` is a required argument."""
-    result = env.run(
-        'classify-outcome', '--job-status', 'killed', '--worktree-sha', _SHA_A
-    )
+    result = env.run('classify-outcome', '--job-status', 'killed', '--worktree-sha', _SHA_A)
 
     assert not result.success
 
@@ -420,8 +424,6 @@ def test_worktree_sha_is_required(env) -> None:
     """``--worktree-sha`` is required — an unscoped cross-check could match a
     stale row from a different worktree state and misclassify a kill as
     success."""
-    result = env.run(
-        'classify-outcome', '--job-status', 'killed', '--output-bytes', '0'
-    )
+    result = env.run('classify-outcome', '--job-status', 'killed', '--output-bytes', '0')
 
     assert not result.success

@@ -30,9 +30,7 @@ from _lessons_helpers import cmd_list_stalled, cmd_restore_from_plan
 
 from conftest import load_script_module
 
-_lifecycle = load_script_module(
-    'plan-marshall', 'manage-status', '_cmd_lifecycle.py', '_fail_open_cmd_lifecycle'
-)
+_lifecycle = load_script_module('plan-marshall', 'manage-status', '_cmd_lifecycle.py', '_fail_open_cmd_lifecycle')
 cmd_delete_plan = _lifecycle.cmd_delete_plan
 
 
@@ -40,8 +38,7 @@ def _write_carried_lesson(plan_dir, lesson_id: str, body: str = 'Body.\n') -> No
     """Write a relocated ``lesson-{id}.md`` into ``plan_dir``."""
     plan_dir.mkdir(parents=True, exist_ok=True)
     (plan_dir / f'lesson-{lesson_id}.md').write_text(
-        f'id={lesson_id}\ncomponent=test\ncategory=bug\ncreated=2025-01-01\n\n'
-        f'# Lesson {lesson_id}\n\n{body}',
+        f'id={lesson_id}\ncomponent=test\ncategory=bug\ncreated=2025-01-01\n\n# Lesson {lesson_id}\n\n{body}',
         encoding='utf-8',
     )
 
@@ -91,9 +88,7 @@ class TestOverridePredicateAgreement:
     a mislabelled store much later.
     """
 
-    def test_env_override_makes_both_sites_take_the_override_branch(
-        self, tmp_path, monkeypatch
-    ):
+    def test_env_override_makes_both_sites_take_the_override_branch(self, tmp_path, monkeypatch):
         """The ``PLAN_BASE_DIR`` disjunct: both sites read it, and agree."""
         import _lessons_io
         import file_ops
@@ -112,9 +107,7 @@ class TestOverridePredicateAgreement:
             'the two copies of the override condition have drifted.'
         )
 
-    def test_set_base_dir_override_makes_both_sites_take_the_override_branch(
-        self, tmp_path, monkeypatch
-    ):
+    def test_set_base_dir_override_makes_both_sites_take_the_override_branch(self, tmp_path, monkeypatch):
         """The ``set_base_dir()`` disjunct, with ``PLAN_BASE_DIR`` unset.
 
         Covered separately because the condition is a two-term disjunction: a
@@ -133,9 +126,7 @@ class TestOverridePredicateAgreement:
         assert store.resolution == 'override'
         assert store.path == resolved
 
-    def test_no_override_makes_both_sites_take_the_main_anchored_branch(
-        self, monkeypatch
-    ):
+    def test_no_override_makes_both_sites_take_the_main_anchored_branch(self, monkeypatch):
         """The negative arm: neither term set, so both sites go to git.
 
         Without this the pair could agree only because both always report
@@ -157,9 +148,7 @@ class TestOverridePredicateAgreement:
         resolved = resolve_main_anchored_path(_lessons_io.DIR_LESSONS)
 
         assert store.resolution == 'main_anchored'
-        assert resolved == (
-            main_checkout_root() / PLAN_DIR_NAME / 'local' / _lessons_io.DIR_LESSONS
-        )
+        assert resolved == (main_checkout_root() / PLAN_DIR_NAME / 'local' / _lessons_io.DIR_LESSONS)
         assert store.path == resolved
 
 
@@ -313,10 +302,7 @@ class TestDeletePlanCorpusLossDirection:
 
         # The assertion is survival, not an outcome code: the carried body must
         # still be readable SOMEWHERE under the store after the call.
-        surviving = [
-            path.read_text(encoding='utf-8')
-            for path in base.rglob('*.md')
-        ]
+        surviving = [path.read_text(encoding='utf-8') for path in base.rglob('*.md')]
         assert any(carried_body in text for text in surviving), (
             'The carried lesson body vanished from disk after delete-plan — the '
             'plan directory held the only copy and was deleted anyway.'

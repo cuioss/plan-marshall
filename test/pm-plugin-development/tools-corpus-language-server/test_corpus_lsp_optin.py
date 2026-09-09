@@ -16,9 +16,7 @@ from test_corpus_index import build_corpus
 
 from conftest import load_script_module
 
-corpus_lsp = load_script_module(
-    'pm-plugin-development', 'tools-corpus-language-server', 'corpus_lsp.py'
-)
+corpus_lsp = load_script_module('pm-plugin-development', 'tools-corpus-language-server', 'corpus_lsp.py')
 
 
 def _project(root: Path, marshal: dict | None) -> Path:
@@ -236,9 +234,7 @@ class TestEnabledCliVerbPayloads:
 
     def test_query_definition_payload_keys(self, tmp_path: Path) -> None:
         _project(tmp_path, ENABLED)
-        payload = corpus_lsp.cmd_query(
-            self._args(tmp_path, kind='definition', notation='alpha:target-skill')
-        )
+        payload = corpus_lsp.cmd_query(self._args(tmp_path, kind='definition', notation='alpha:target-skill'))
 
         assert (payload['state'], payload['provider_count'], payload['status']) == ('ok', 1, 'success')
         assert set(payload) == self._QUERY_COMMON_KEYS | {'definition'}
@@ -261,9 +257,7 @@ class TestEnabledCliVerbPayloads:
         the same note) satisfies every one of them.
         """
         _project(tmp_path, ENABLED)
-        payload = corpus_lsp.cmd_query(
-            self._args(tmp_path, kind='references', notation='alpha:target-skill')
-        )
+        payload = corpus_lsp.cmd_query(self._args(tmp_path, kind='references', notation='alpha:target-skill'))
 
         assert (payload['state'], payload['provider_count'], payload['status']) == ('ok', 1, 'success')
         assert set(payload) == self._QUERY_COMMON_KEYS | {
@@ -279,9 +273,7 @@ class TestEnabledCliVerbPayloads:
 
     def test_query_hover_payload_keys(self, tmp_path: Path) -> None:
         _project(tmp_path, ENABLED)
-        payload = corpus_lsp.cmd_query(
-            self._args(tmp_path, kind='hover', notation='alpha:target-skill')
-        )
+        payload = corpus_lsp.cmd_query(self._args(tmp_path, kind='hover', notation='alpha:target-skill'))
 
         assert set(payload) == self._QUERY_COMMON_KEYS | {'hover'}
         assert payload['hover'] is not None
@@ -296,9 +288,7 @@ class TestEnabledCliVerbPayloads:
         unchecked.
         """
         _project(tmp_path, ENABLED)
-        payload = corpus_lsp.cmd_query(
-            self._args(tmp_path, kind='definition', notation='alpha:no-such-skill')
-        )
+        payload = corpus_lsp.cmd_query(self._args(tmp_path, kind='definition', notation='alpha:no-such-skill'))
 
         assert (payload['state'], payload['provider_count'], payload['status']) == ('ok', 1, 'success')
         assert payload['known'] is False
@@ -317,11 +307,7 @@ class TestEnabledButCorpusMissingDegrades:
     ``configured: true`` and a ``reason``.
     """
 
-    _MISSING = {
-        'code_intelligence': {
-            'corpus_language_server': {'enabled': True, 'corpus_path': 'no/such/corpus'}
-        }
-    }
+    _MISSING = {'code_intelligence': {'corpus_language_server': {'enabled': True, 'corpus_path': 'no/such/corpus'}}}
 
     @staticmethod
     def _args(root: Path, **extra):
@@ -332,7 +318,9 @@ class TestEnabledButCorpusMissingDegrades:
         payload = corpus_lsp.cmd_preflight(self._args(tmp_path))
 
         assert (payload['state'], payload['provider_count'], payload['status']) == (
-            'not_configured', 0, 'degraded',
+            'not_configured',
+            0,
+            'degraded',
         )
         assert payload['configured'] is True, (
             'a project that opted in and mis-set the path must not be reported as '
@@ -373,12 +361,12 @@ class TestEnabledButCorpusMissingDegrades:
         not own.
         """
         _project(tmp_path, self._MISSING)
-        payload = corpus_lsp.cmd_query(
-            self._args(tmp_path, kind='definition', notation='alpha:target-skill')
-        )
+        payload = corpus_lsp.cmd_query(self._args(tmp_path, kind='definition', notation='alpha:target-skill'))
 
         assert (payload['state'], payload['provider_count'], payload['status']) == (
-            'not_configured', 0, 'degraded',
+            'not_configured',
+            0,
+            'degraded',
         )
         assert payload['fallback'] == 'read_grep'
         assert 'corpus path' in payload['reason']

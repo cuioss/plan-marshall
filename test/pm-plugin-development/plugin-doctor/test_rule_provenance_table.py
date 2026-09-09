@@ -161,7 +161,9 @@ def _all_emitted_rule_ids() -> set[str]:
             content = py_file.read_text(encoding='utf-8', errors='replace')
         except OSError:
             continue
-        for match in re.finditer(r"^(RULE[A-Z_]*|FINDING_TYPE)\s*=\s*'([A-Za-z_][A-Za-z0-9_-]+)'", content, re.MULTILINE):
+        for match in re.finditer(
+            r"^(RULE[A-Z_]*|FINDING_TYPE)\s*=\s*'([A-Za-z_][A-Za-z0-9_-]+)'", content, re.MULTILINE
+        ):
             token = match.group(2)
             if _is_audit_tracked_rule_id(token):
                 rule_ids.add(token)
@@ -247,16 +249,12 @@ def test_safe_and_risky_subset_of_fixable():
     # RISKY_FIX_TYPES is allowed to include rules not yet in FIXABLE_ISSUE_TYPES
     # only for rules that are still under review; pin the current state with a
     # tolerance set tied to the documented surface.
-    assert not safe_orphans, (
-        f'SAFE_FIX_TYPES entries missing from FIXABLE_ISSUE_TYPES: {sorted(safe_orphans)}'
-    )
+    assert not safe_orphans, f'SAFE_FIX_TYPES entries missing from FIXABLE_ISSUE_TYPES: {sorted(safe_orphans)}'
     # Risky orphans are acceptable transitional state but must be documented in
     # the provenance table.
     documented = _provenance_rule_ids()
     risky_undocumented = sorted(risky - documented)
-    assert not risky_undocumented, (
-        f'RISKY_FIX_TYPES entries missing from rule-provenance.md: {risky_undocumented}'
-    )
+    assert not risky_undocumented, f'RISKY_FIX_TYPES entries missing from rule-provenance.md: {risky_undocumented}'
 
 
 def test_unsupported_skill_tools_field_absent_from_provenance():

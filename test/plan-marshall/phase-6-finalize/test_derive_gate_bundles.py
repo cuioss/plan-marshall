@@ -47,9 +47,7 @@ from conftest import (
     run_script,
 )
 
-_mod = load_script_module(
-    'plan-marshall', 'phase-6-finalize', 'derive_gate_bundles.py'
-)
+_mod = load_script_module('plan-marshall', 'phase-6-finalize', 'derive_gate_bundles.py')
 derive_gate_bundles = _mod.derive_gate_bundles
 
 # Globs broad enough to admit both a bundle-rooted path and a test-rooted path.
@@ -91,13 +89,9 @@ def test_test_plan_marshall_path_resolves_to_plan_marshall():
 
 
 def test_marketplace_bundles_path_resolves_to_bundle():
-    files = [
-        'marketplace/bundles/plan-marshall/skills/phase-6-finalize/scripts/foo.py'
-    ]
+    files = ['marketplace/bundles/plan-marshall/skills/phase-6-finalize/scripts/foo.py']
 
-    bundles, unresolved = derive_gate_bundles(
-        files, ['marketplace/bundles/*'], MARKETPLACE_ROOT
-    )
+    bundles, unresolved = derive_gate_bundles(files, ['marketplace/bundles/*'], MARKETPLACE_ROOT)
 
     assert bundles == ['plan-marshall']
     assert unresolved == []
@@ -215,16 +209,13 @@ def test_rule_four_negative_with_matched_positive_control():
     ]
 
     # Act
-    bundles, unresolved = derive_gate_bundles(
-        files, ['src/*', 'marketplace/bundles/*', 'test/*'], MARKETPLACE_ROOT
-    )
+    bundles, unresolved = derive_gate_bundles(files, ['src/*', 'marketplace/bundles/*', 'test/*'], MARKETPLACE_ROOT)
 
     # Assert — POSITIVE CONTROL: both resolvable shapes still resolve, and
     # neither leaked into ``unresolved``. Without this half, a seam that routed
     # everything to ``unresolved`` would pass the negative above.
     assert bundles == ['plan-marshall', 'pm-dev-java']
-    assert 'marketplace/bundles/plan-marshall/skills/phase-6-finalize/scripts/x.py' \
-        not in unresolved
+    assert 'marketplace/bundles/plan-marshall/skills/phase-6-finalize/scripts/x.py' not in unresolved
     assert 'test/pm-dev-java/junit-core/test_y.py' not in unresolved
 
     # Assert — NEGATIVE: only the consumer-shaped path is reported.
@@ -272,9 +263,7 @@ def test_cli_emits_toon_bundles_and_unresolved():
     data = result.toon()
     assert data['status'] == 'success'
     assert _as_list(data['bundles']) == ['plan-marshall', 'pm-dev-java']
-    assert _as_list(data['unresolved']) == [
-        'test/marketplace/targets/test_frontmatter.py'
-    ]
+    assert _as_list(data['unresolved']) == ['test/marketplace/targets/test_frontmatter.py']
 
 
 # ---------------------------------------------------------------------------

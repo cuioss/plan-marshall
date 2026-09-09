@@ -6,7 +6,6 @@ than a zero percent or a set mismatch — and that the summary reconciles across
 warn, inconclusive and failing plans alike.
 """
 
-
 from __future__ import annotations
 
 import json
@@ -40,9 +39,7 @@ class TestUnresolvableFootprintIsUnmeasurable:
     """
 
     def test_recall_reports_inconclusive_not_zero_percent(self, tmp_path):
-        plan_dir = _setup_archived_plan_with_references(
-            tmp_path, {'domains': []}, name='archived-unresolvable-recall'
-        )
+        plan_dir = _setup_archived_plan_with_references(tmp_path, {'domains': []}, name='archived-unresolvable-recall')
         result = _run_archived(plan_dir)
         assert result.success, result.stderr
         data = result.toon()
@@ -59,9 +56,7 @@ class TestUnresolvableFootprintIsUnmeasurable:
         )
 
     def test_exact_match_peer_reports_inconclusive_not_set_mismatch(self, tmp_path):
-        plan_dir = _setup_archived_plan_with_references(
-            tmp_path, {'domains': []}, name='archived-unresolvable-exact'
-        )
+        plan_dir = _setup_archived_plan_with_references(tmp_path, {'domains': []}, name='archived-unresolvable-exact')
         result = _run_archived(plan_dir)
         assert result.success, result.stderr
         data = result.toon()
@@ -143,9 +138,7 @@ class TestSummaryCountsEveryEmittedStatus:
         self._assert_reconciles(result.toon())
 
     def test_reconciles_when_inconclusive_verdicts_are_emitted(self, tmp_path):
-        plan_dir = _setup_archived_plan_with_references(
-            tmp_path, {'domains': []}, name='archived-summary-inconclusive'
-        )
+        plan_dir = _setup_archived_plan_with_references(tmp_path, {'domains': []}, name='archived-summary-inconclusive')
         result = _run_archived(plan_dir)
         assert result.success, result.stderr
         data = result.toon()
@@ -220,17 +213,13 @@ class TestResolveFootprintTiers:
         assert 'committed.py' in footprint
         assert 'uncommitted.py' in footprint
         assert 'base.txt' not in footprint
-        assert asked == ['demo-plan'], (
-            'tier 1 must reach the worktree through the resolver, keyed on plan_id'
-        )
+        assert asked == ['demo-plan'], 'tier 1 must reach the worktree through the resolver, keyed on plan_id'
 
     def test_tier1_skipped_in_archived_mode(self, tmp_path, monkeypatch):
         """``plan_id=None`` skips tier 1 — an archived worktree no longer exists."""
         plan_dir = tmp_path / 'plan'
         plan_dir.mkdir()
-        (plan_dir / 'references.json').write_text(
-            json.dumps({'modified_files': ['legacy/a.py']})
-        )
+        (plan_dir / 'references.json').write_text(json.dumps({'modified_files': ['legacy/a.py']}))
 
         asked = []
 
@@ -261,9 +250,7 @@ class TestResolveFootprintTiers:
         (plan_dir / 'references.json').write_text(
             json.dumps({'base_branch': 'main', 'modified_files': ['legacy/a.py']})
         )
-        (plan_dir / 'status.json').write_text(
-            json.dumps({'metadata': {'worktree_path': str(repo)}})
-        )
+        (plan_dir / 'status.json').write_text(json.dumps({'metadata': {'worktree_path': str(repo)}}))
 
         assert _check_mod._resolve_footprint(plan_dir, None) == {'legacy/a.py'}
 
@@ -271,9 +258,7 @@ class TestResolveFootprintTiers:
         """No worktree → fall back to the legacy ``modified_files`` key."""
         plan_dir = tmp_path / 'plan'
         plan_dir.mkdir()
-        (plan_dir / 'references.json').write_text(
-            json.dumps({'modified_files': ['legacy/a.py', 'legacy/b.py']})
-        )
+        (plan_dir / 'references.json').write_text(json.dumps({'modified_files': ['legacy/a.py', 'legacy/b.py']}))
         # No status.json at all → no worktree path resolvable.
 
         footprint = _check_mod._resolve_footprint(plan_dir)
@@ -330,9 +315,7 @@ class TestResolveFootprintTiers:
 
         plan_dir = tmp_path / 'plan'
         plan_dir.mkdir()
-        (plan_dir / 'references.json').write_text(
-            json.dumps({'modified_files': ['legacy/a.py']})
-        )
+        (plan_dir / 'references.json').write_text(json.dumps({'modified_files': ['legacy/a.py']}))
         monkeypatch.setattr(_fr_mod, 'resolve_live_worktree', lambda plan_id: plain)
 
         footprint = _check_mod._resolve_footprint(plan_dir, 'demo-plan')

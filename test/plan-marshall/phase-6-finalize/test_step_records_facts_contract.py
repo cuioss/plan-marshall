@@ -248,9 +248,7 @@ def test_declared_obligation_population_is_non_empty():
 
 def test_every_declaring_doc_has_parseable_terminal_call_sites():
     """Vacuity guard: a doc whose call sites do not parse would pass (4)-(7) free."""
-    offenders = [
-        record['name'] for record in _declaring_records() if not _doc_blocks(record)
-    ]
+    offenders = [record['name'] for record in _declaring_records() if not _doc_blocks(record)]
 
     assert not offenders, (
         f'These steps declare {_FACT_KEY} but no terminal mark-step-done call '
@@ -301,7 +299,7 @@ def test_no_orphan_declaration():
             wired.update(_block_facts(block))
         orphans = [key for key in record['facts'] if key not in wired]
         if orphans:
-            offenders.append(f"{record['name']}: {orphans}")
+            offenders.append(f'{record["name"]}: {orphans}')
 
     assert not offenders, (
         'These steps declare fact keys that no terminal mark-step-done call site '
@@ -318,7 +316,7 @@ def test_no_undeclared_record():
         for block in _doc_blocks(record):
             undeclared = [key for key in _block_facts(block) if key not in declared]
             if undeclared:
-                offenders.append(f"{record['name']}: {undeclared}")
+                offenders.append(f'{record["name"]}: {undeclared}')
 
     assert not offenders, (
         'These steps wire --fact keys that their records_facts frontmatter does '
@@ -342,7 +340,7 @@ def test_work_performed_is_recorded_on_every_done_call_site():
             if _block_outcome(block) != 'done':
                 continue
             if _WORK_PERFORMED not in _block_facts(block):
-                offenders.append(f"{record['name']}: {block.splitlines()[0].strip()}")
+                offenders.append(f'{record["name"]}: {block.splitlines()[0].strip()}')
 
     assert not offenders, (
         f'These --outcome done call sites omit --fact {_WORK_PERFORMED}=. For a '
@@ -388,7 +386,7 @@ def test_work_performed_has_a_false_carrier_on_every_declaring_step():
             if _block_outcome(block) in _TERMINAL_OUTCOMES
         }
         if 'false' not in values:
-            offenders.append(f"{record['name']}: recorded values {sorted(v for v in values if v)}")
+            offenders.append(f'{record["name"]}: recorded values {sorted(v for v in values if v)}')
 
     assert not offenders, (
         f'These steps declare {_WORK_PERFORMED} but no TERMINAL call site '
@@ -425,9 +423,7 @@ def test_branch_cleanup_no_longer_carries_the_fixed_literal():
 def _sonar_branch_c_block() -> str:
     """The sonar-roundtrip no-scan call site, identified by its rendered detail."""
     record = _record_for(_OPERATOR_ADDED_STEP)
-    candidates = [
-        block for block in _doc_blocks(record) if 'Sonar not configured' in block
-    ]
+    candidates = [block for block in _doc_blocks(record) if 'Sonar not configured' in block]
     assert len(candidates) == 1, (
         f'Expected exactly one sonar-roundtrip "Sonar not configured" call-site '
         f'block (Branch C); found {len(candidates)}. The anchor cannot identify '
@@ -454,7 +450,7 @@ def test_sonar_branch_c_records_only_that_no_work_was_performed():
     assert scan_facts, (
         f'{_OPERATOR_ADDED_STEP} declares no fact key besides {_WORK_PERFORMED}, '
         f'so the leak check below has nothing to guard and would pass vacuously. '
-        f"Declared: {sorted(record['facts'])}"
+        f'Declared: {sorted(record["facts"])}'
     )
 
     assert facts.get(_WORK_PERFORMED) == 'false', (
@@ -495,8 +491,7 @@ _PRE_FIX_SONAR_BRANCH_C = (
 def test_fixed_literal_detector_fires_on_the_pre_fix_branch_a():
     """Guards (8): a typo'd literal would make the assertion vacuously green."""
     assert _BRANCH_A_FIXED_LITERAL in _PRE_FIX_BRANCH_A, (
-        'The Defect-A literal detector does not match the known pre-fix Branch A '
-        'text, so assertion (8) proves nothing'
+        'The Defect-A literal detector does not match the known pre-fix Branch A text, so assertion (8) proves nothing'
     )
 
     post_fix = '  --display-detail "{rendered_detail}"'
@@ -511,8 +506,7 @@ def test_fact_and_outcome_detectors_fire_on_the_pre_fix_call_sites():
     ):
         blocks = _call_site_blocks(pre_fix)
         assert len(blocks) == 1, (
-            f'Call-site parse failed on the known pre-fix {label} invocation; '
-            f'got {len(blocks)} blocks'
+            f'Call-site parse failed on the known pre-fix {label} invocation; got {len(blocks)} blocks'
         )
         assert _block_outcome(blocks[0]) == 'done', (
             f'Outcome detector failed to read --outcome done from the pre-fix '

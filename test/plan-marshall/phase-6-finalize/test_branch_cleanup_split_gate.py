@@ -21,12 +21,7 @@ from pathlib import Path
 from conftest import MARKETPLACE_ROOT, load_script_module
 
 _BRANCH_CLEANUP_DOC: Path = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'phase-6-finalize'
-    / 'standards'
-    / 'branch-cleanup.md'
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'standards' / 'branch-cleanup.md'
 )
 
 
@@ -35,9 +30,7 @@ def _load_module(name: str, filename: str):
 
 
 _cmd_init_mod = _load_module('_cmd_init_for_split_gate', '_cmd_init.py')
-_cmd_quality_phases_mod = _load_module(
-    '_cmd_quality_phases_for_split_gate', '_cmd_quality_phases.py'
-)
+_cmd_quality_phases_mod = _load_module('_cmd_quality_phases_for_split_gate', '_cmd_quality_phases.py')
 
 
 def _branch_cleanup_text() -> str:
@@ -181,6 +174,5 @@ def test_doc_preserves_state_merged_reentry_path():
     pre_merge_idx = text.index('### Pre-Merge Confirmation Gate')
     pre_merge_section = text[pre_merge_idx:]
     assert 'state == merged' in pre_merge_section, (
-        'pre-merge gate must preserve the state==merged re-entry path '
-        '(nothing to merge → skip the merge gate)'
+        'pre-merge gate must preserve the state==merged re-entry path (nothing to merge → skip the merge gate)'
     )

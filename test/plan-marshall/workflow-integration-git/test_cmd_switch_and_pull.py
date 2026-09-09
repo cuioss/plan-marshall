@@ -48,9 +48,7 @@ from conftest import get_script_path, load_script_module, run_script
 # Load module under test
 # ---------------------------------------------------------------------------
 
-_SWITCH_AND_PULL_PATH = get_script_path(
-    'plan-marshall', 'workflow-integration-git', '_cmd_switch_and_pull.py'
-)
+_SWITCH_AND_PULL_PATH = get_script_path('plan-marshall', 'workflow-integration-git', '_cmd_switch_and_pull.py')
 _SCRIPT_PATH = get_script_path('plan-marshall', 'workflow-integration-git', 'git-workflow.py')
 
 _mod = load_script_module(
@@ -77,7 +75,9 @@ def _init_repo(path: Path) -> str:
     subprocess.run(['git', '-C', str(path), 'commit', '-m', 'init'], check=True)
     result = subprocess.run(
         ['git', '-C', str(path), 'rev-parse', 'HEAD'],
-        capture_output=True, text=True, check=True,
+        capture_output=True,
+        text=True,
+        check=True,
     )
     return result.stdout.strip()
 
@@ -169,9 +169,7 @@ class TestCmdSwitchAndPullEscapeHatch:
         assert result['error_type'] == 'project_dir_not_a_git_repo'
         assert result['operation'] == 'switch-and-pull'
 
-    def test_remote_branch_not_found_returns_error(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_remote_branch_not_found_returns_error(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """When ls-remote returns empty output, error_type is branch_not_found."""
         _init_repo(tmp_path)
         orig = _mod.run_git
@@ -190,9 +188,7 @@ class TestCmdSwitchAndPullEscapeHatch:
         assert result['error_type'] == 'branch_not_found'
         assert 'origin/main' in result['message']
 
-    def test_ls_remote_failure_returns_branch_not_found(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_ls_remote_failure_returns_branch_not_found(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """When ls-remote exits non-zero, error_type is branch_not_found."""
         _init_repo(tmp_path)
         orig = _mod.run_git
@@ -252,9 +248,7 @@ class TestCmdSwitchAndPullEscapeHatch:
         assert result['status'] == 'error'
         assert result['error_type'] == expected_type
 
-    def test_pull_failure_returns_pull_failed(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_pull_failure_returns_pull_failed(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """git pull non-zero exit → pull_failed."""
         _init_repo(tmp_path)
         orig = _mod.run_git
@@ -279,9 +273,7 @@ class TestCmdSwitchAndPullEscapeHatch:
         assert result['error_type'] == 'pull_failed'
         assert 'pre_sha' in result
 
-    def test_success_path_returns_required_fields(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_success_path_returns_required_fields(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Successful switch-and-pull returns status, pre_sha, post_sha, commits_pulled."""
         _init_repo(tmp_path)
         orig = _mod.run_git
@@ -315,9 +307,7 @@ class TestCmdSwitchAndPullEscapeHatch:
         assert 'post_sha' in result
         assert result['commits_pulled'] == 2
 
-    def test_success_zero_commits_pulled(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_success_zero_commits_pulled(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Already-up-to-date pull returns commits_pulled = 0."""
         _init_repo(tmp_path)
         orig = _mod.run_git
@@ -346,9 +336,7 @@ class TestCmdSwitchAndPullEscapeHatch:
         assert result['status'] == 'success'
         assert result['commits_pulled'] == 0
 
-    def test_envelope_echoes_base_branch(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_envelope_echoes_base_branch(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Response envelope always includes operation and base_branch."""
         _init_repo(tmp_path)
         orig = _mod.run_git
@@ -444,9 +432,7 @@ class TestResolveProjectDirViaResolver:
             'main-anchored or it aims at the worktree from phase-5 onward'
         )
 
-    def test_resolves_main_from_inside_a_linked_worktree(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_resolves_main_from_inside_a_linked_worktree(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """(REAL RESOLVER) cwd pinned to a worktree still resolves the main checkout.
 
         No path resolver is stubbed here — ``git rev-parse --git-common-dir``
@@ -542,8 +528,10 @@ class TestCmdSwitchAndPullCli:
     def test_missing_base_arg_exits_nonzero(self, tmp_path: Path) -> None:
         """--base is required; omitting it produces argparse error (exit != 0)."""
         result = run_script(
-            _SCRIPT_PATH, 'switch-and-pull',
-            '--project-dir', str(tmp_path),
+            _SCRIPT_PATH,
+            'switch-and-pull',
+            '--project-dir',
+            str(tmp_path),
         )
 
         assert result.returncode != 0
@@ -553,9 +541,12 @@ class TestCmdSwitchAndPullCli:
         # Must be OUTSIDE the repo: pytest's tmp_path now roots under the
         # repo-local --basetemp, which IS a git repo.
         result = run_script(
-            _SCRIPT_PATH, 'switch-and-pull',
-            '--project-dir', str(outside_repo_dir),
-            '--base', 'main',
+            _SCRIPT_PATH,
+            'switch-and-pull',
+            '--project-dir',
+            str(outside_repo_dir),
+            '--base',
+            'main',
         )
 
         parsed = parse_toon(result.stdout)

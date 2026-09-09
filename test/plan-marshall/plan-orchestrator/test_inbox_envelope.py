@@ -76,12 +76,8 @@ import pytest
 
 from conftest import load_script_module, parse_ns
 
-_inbox = load_script_module(
-    'plan-marshall', 'plan-orchestrator', '_orchestrator_inbox.py', 'orchestrator_inbox'
-)
-_orch = load_script_module(
-    'plan-marshall', 'plan-orchestrator', 'orchestrator.py', 'orchestrator_script'
-)
+_inbox = load_script_module('plan-marshall', 'plan-orchestrator', '_orchestrator_inbox.py', 'orchestrator_inbox')
+_orch = load_script_module('plan-marshall', 'plan-orchestrator', 'orchestrator.py', 'orchestrator_script')
 
 DETECTION_TOKENS = _inbox.DETECTION_TOKENS
 ENVELOPE_VERSION = _inbox.ENVELOPE_VERSION
@@ -144,9 +140,18 @@ def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
 #: none of which the hand-built namespaces they replace had.
 _SCAFFOLD_ARGS = _verb_args('scaffold', '--slug', EPIC)
 _WRITE_ARGS = _verb_args(
-    'inbox', 'write',
-    '--slug', EPIC, '--sender-type', 'plan', '--sender-id', SENDER,
-    '--kind', 'landing', '--payload-file', 'placeholder',
+    'inbox',
+    'write',
+    '--slug',
+    EPIC,
+    '--sender-type',
+    'plan',
+    '--sender-id',
+    SENDER,
+    '--kind',
+    'landing',
+    '--payload-file',
+    'placeholder',
 )
 _VALIDATE_ARGS = _verb_args('inbox', 'validate', '--slug', EPIC, '--message', 'placeholder-001.md')
 _LIST_ARGS = _verb_args('inbox', 'list', '--slug', EPIC)
@@ -241,24 +246,18 @@ class TestEnvelopeRoundTrip:
 
     def test_should_accept_every_declared_kind(self):
         for kind in sorted(KINDS):
-            ok, _, _ = validate_envelope(
-                compose_envelope('plan', SENDER, EPIC, kind, 'body')
-            )
+            ok, _, _ = validate_envelope(compose_envelope('plan', SENDER, EPIC, kind, 'body'))
             assert ok is True, kind
 
     def test_should_accept_every_declared_sender_type(self):
         for sender_type in sorted(SENDER_TYPES):
-            ok, _, _ = validate_envelope(
-                compose_envelope(sender_type, SENDER, EPIC, 'landing', 'body')
-            )
+            ok, _, _ = validate_envelope(compose_envelope(sender_type, SENDER, EPIC, 'landing', 'body'))
             assert ok is True, sender_type
 
     def test_should_accept_matching_epic_and_filename_context(self):
         text = compose_envelope('plan', SENDER, EPIC, 'landing', 'body')
 
-        ok, error_code, _ = validate_envelope(
-            text, expected_epic=EPIC, filename=f'{SENDER}-001.md'
-        )
+        ok, error_code, _ = validate_envelope(text, expected_epic=EPIC, filename=f'{SENDER}-001.md')
 
         assert (ok, error_code) == (True, None)
 
@@ -275,9 +274,7 @@ def _header_without(field: str) -> str:
     value — the two reach ``missing_header_field`` by different routes, which is
     why both are rows in the sweep below.
     """
-    return '\n'.join(
-        line for line in _header_text().split('\n') if not line.startswith(f'{field}=')
-    )
+    return '\n'.join(line for line in _header_text().split('\n') if not line.startswith(f'{field}='))
 
 
 #: The exhaustive rejection sweep, as one table: ``(text, expected_epic, filename,
@@ -319,9 +316,7 @@ class TestEnvelopeRejections:
         ids=_REJECTION_IDS,
     )
     def test_should_reject(self, text, expected_epic, filename, expected_code):
-        ok, error_code, _ = validate_envelope(
-            text, expected_epic=expected_epic, filename=filename
-        )
+        ok, error_code, _ = validate_envelope(text, expected_epic=expected_epic, filename=filename)
 
         assert (ok, error_code) == (False, expected_code)
 
@@ -397,9 +392,7 @@ class TestSequenceAllocation:
         assert (first.name, second.name) == (f'{SENDER}-001.md', f'{SENDER}-002.md')
         assert first.read_text(encoding='utf-8') == 'first\n'
 
-    def test_should_retry_the_next_sequence_when_the_claim_collides(
-        self, tmp_path, monkeypatch
-    ):
+    def test_should_retry_the_next_sequence_when_the_claim_collides(self, tmp_path, monkeypatch):
         # Simulate the check-then-act window: the scan proposes a sequence that
         # a concurrent writer has already claimed between scan and create.
         (tmp_path / f'{SENDER}-001.md').write_text('concurrent\n', encoding='utf-8')
@@ -547,18 +540,12 @@ class TestInboxWrite:
         assert result['message'] == f'{SENDER}-001.md'
         path = _inbox_dir(plan_context) / f'{SENDER}-001.md'
         assert path.is_file()
-        ok, error_code, _ = validate_envelope(
-            path.read_text(encoding='utf-8'), expected_epic=EPIC, filename=path.name
-        )
+        ok, error_code, _ = validate_envelope(path.read_text(encoding='utf-8'), expected_epic=EPIC, filename=path.name)
         assert (ok, error_code) == (True, None)
 
-    def test_should_stamp_the_supplied_sender_and_epic_in_the_header(
-        self, plan_context, tmp_path
-    ):
+    def test_should_stamp_the_supplied_sender_and_epic_in_the_header(self, plan_context, tmp_path):
         cmd_scaffold(_SCAFFOLD_ARGS)
-        cmd_inbox_write(
-            _write_args(kind='candidate-lesson', payload_file=_payload(tmp_path))
-        )
+        cmd_inbox_write(_write_args(kind='candidate-lesson', payload_file=_payload(tmp_path)))
 
         text = (_inbox_dir(plan_context) / f'{SENDER}-001.md').read_text(encoding='utf-8')
 
@@ -567,15 +554,11 @@ class TestInboxWrite:
         assert header['epic'] == EPIC
         assert header['kind'] == 'candidate-lesson'
 
-    def test_should_append_a_second_message_without_clobbering(
-        self, plan_context, tmp_path
-    ):
+    def test_should_append_a_second_message_without_clobbering(self, plan_context, tmp_path):
         cmd_scaffold(_SCAFFOLD_ARGS)
         cmd_inbox_write(_write_args(payload_file=_payload(tmp_path, 'first body')))
 
-        result = cmd_inbox_write(
-            _write_args(payload_file=_payload(tmp_path, 'second body'))
-        )
+        result = cmd_inbox_write(_write_args(payload_file=_payload(tmp_path, 'second body')))
 
         assert result['message'] == f'{SENDER}-002.md'
         first = (_inbox_dir(plan_context) / f'{SENDER}-001.md').read_text(encoding='utf-8')
@@ -591,9 +574,7 @@ class TestInboxWrite:
         assert text.endswith(f'{body}\n')
 
     def test_should_reject_an_unsafe_slug(self, plan_context, tmp_path):
-        result = cmd_inbox_write(
-            _write_args(slug='../evil', payload_file=_payload(tmp_path))
-        )
+        result = cmd_inbox_write(_write_args(slug='../evil', payload_file=_payload(tmp_path)))
 
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_slug'
@@ -601,9 +582,7 @@ class TestInboxWrite:
     def test_should_reject_an_unsafe_sender_id(self, plan_context, tmp_path):
         cmd_scaffold(_SCAFFOLD_ARGS)
 
-        result = cmd_inbox_write(
-            _write_args(sender_id='../escape', payload_file=_payload(tmp_path))
-        )
+        result = cmd_inbox_write(_write_args(sender_id='../escape', payload_file=_payload(tmp_path)))
 
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_sender_id'
@@ -611,9 +590,7 @@ class TestInboxWrite:
     def test_should_reject_an_unknown_sender_type(self, plan_context, tmp_path):
         cmd_scaffold(_SCAFFOLD_ARGS)
 
-        result = cmd_inbox_write(
-            _write_args(sender_type='robot', payload_file=_payload(tmp_path))
-        )
+        result = cmd_inbox_write(_write_args(sender_type='robot', payload_file=_payload(tmp_path)))
 
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_sender_type'
@@ -621,17 +598,13 @@ class TestInboxWrite:
     def test_should_reject_an_unknown_kind(self, plan_context, tmp_path):
         cmd_scaffold(_SCAFFOLD_ARGS)
 
-        result = cmd_inbox_write(
-            _write_args(kind='gossip', payload_file=_payload(tmp_path))
-        )
+        result = cmd_inbox_write(_write_args(kind='gossip', payload_file=_payload(tmp_path)))
 
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_kind'
 
     def test_should_reject_an_absent_epic_tree(self, plan_context, tmp_path):
-        result = cmd_inbox_write(
-            _write_args(slug='never-scaffolded', payload_file=_payload(tmp_path))
-        )
+        result = cmd_inbox_write(_write_args(slug='never-scaffolded', payload_file=_payload(tmp_path)))
 
         assert result['status'] == 'error'
         assert result['error'] == 'epic_not_found'
@@ -639,9 +612,7 @@ class TestInboxWrite:
     def test_should_reject_a_missing_payload_file(self, plan_context, tmp_path):
         cmd_scaffold(_SCAFFOLD_ARGS)
 
-        result = cmd_inbox_write(
-            _write_args(payload_file=str(tmp_path / 'absent.md'))
-        )
+        result = cmd_inbox_write(_write_args(payload_file=str(tmp_path / 'absent.md')))
 
         assert result['status'] == 'error'
         assert result['error'] == 'payload_not_found'
@@ -673,9 +644,7 @@ class TestInboxWrite:
 
 
 class TestInboxValidate:
-    def test_should_accept_a_message_written_by_the_write_verb(
-        self, plan_context, tmp_path
-    ):
+    def test_should_accept_a_message_written_by_the_write_verb(self, plan_context, tmp_path):
         cmd_scaffold(_SCAFFOLD_ARGS)
         written = cmd_inbox_write(_write_args(payload_file=_payload(tmp_path)))
 
@@ -699,9 +668,7 @@ class TestInboxValidate:
     def test_should_reject_a_message_name_carrying_a_path(self, plan_context):
         cmd_scaffold(_SCAFFOLD_ARGS)
 
-        result = cmd_inbox_validate(
-            _variant(_VALIDATE_ARGS, message='../status.json')
-        )
+        result = cmd_inbox_validate(_variant(_VALIDATE_ARGS, message='../status.json'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_message_name'
@@ -730,9 +697,7 @@ class TestInboxValidate:
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_slug'
 
-    def test_should_report_the_queued_location_for_a_live_message(
-        self, plan_context, tmp_path
-    ):
+    def test_should_report_the_queued_location_for_a_live_message(self, plan_context, tmp_path):
         cmd_scaffold(_SCAFFOLD_ARGS)
         written = cmd_inbox_write(_write_args(payload_file=_payload(tmp_path)))
 
@@ -742,9 +707,7 @@ class TestInboxValidate:
         assert result['location'] == 'queued'
         assert result['archive_path'] == ''
 
-    def test_should_resolve_a_consumed_message_out_of_the_archive(
-        self, plan_context, tmp_path
-    ):
+    def test_should_resolve_a_consumed_message_out_of_the_archive(self, plan_context, tmp_path):
         # The defect this fixes: a drained message was indistinguishable from a
         # never-written one, because both answered ``file_not_found``.
         cmd_scaffold(_SCAFFOLD_ARGS)
@@ -758,9 +721,7 @@ class TestInboxValidate:
         assert result['location'] == 'archived'
         assert result['archive_path'].endswith(f'archive/{SENDER}/{written["message"]}')
 
-    def test_should_report_the_same_header_fields_for_both_success_branches(
-        self, plan_context, tmp_path
-    ):
+    def test_should_report_the_same_header_fields_for_both_success_branches(self, plan_context, tmp_path):
         # Success-payload field symmetry: the archived branch is not a reduced
         # payload — it carries every field the queued branch carries, so a
         # consumer never has to special-case where the message was found.
@@ -776,21 +737,15 @@ class TestInboxValidate:
         reported = tuple(field for field in HEADER_FIELDS if field != 'epic')
 
         assert set(archived) == set(queued)
-        assert {key: archived[key] for key in reported} == {
-            key: queued[key] for key in reported
-        }
+        assert {key: archived[key] for key in reported} == {key: queued[key] for key in reported}
 
-    def test_should_validate_an_archived_message_through_the_same_seam(
-        self, plan_context
-    ):
+    def test_should_validate_an_archived_message_through_the_same_seam(self, plan_context):
         # An archived message is not trusted on account of being archived: the
         # identical rejection codes still fire against it.
         cmd_scaffold(_SCAFFOLD_ARGS)
         archive = _inbox_dir(plan_context) / 'archive'
         archive.mkdir(parents=True, exist_ok=True)
-        (archive / f'{SENDER}-001.md').write_text(
-            _message(envelope_version='99'), encoding='utf-8'
-        )
+        (archive / f'{SENDER}-001.md').write_text(_message(envelope_version='99'), encoding='utf-8')
 
         result = cmd_inbox_validate(_variant(_VALIDATE_ARGS, message=f'{SENDER}-001.md'))
 
@@ -804,9 +759,7 @@ class TestInboxValidate:
         (inbox / f'{SENDER}-001.md').write_text(_message(kind='landing'), encoding='utf-8')
         archive = inbox / 'archive'
         archive.mkdir(parents=True, exist_ok=True)
-        (archive / f'{SENDER}-001.md').write_text(
-            _message(kind='finding'), encoding='utf-8'
-        )
+        (archive / f'{SENDER}-001.md').write_text(_message(kind='finding'), encoding='utf-8')
 
         result = cmd_inbox_validate(_variant(_VALIDATE_ARGS, message=f'{SENDER}-001.md'))
 
@@ -828,9 +781,7 @@ class TestInboxListState:
     pre-existing ``epic_not_found`` error branch remains the third zero.
     """
 
-    def test_should_report_present_state_and_the_scanned_directory(
-        self, plan_context, tmp_path
-    ):
+    def test_should_report_present_state_and_the_scanned_directory(self, plan_context, tmp_path):
         cmd_scaffold(_SCAFFOLD_ARGS)
         cmd_inbox_write(_write_args(payload_file=_payload(tmp_path)))
 
@@ -841,9 +792,7 @@ class TestInboxListState:
         assert result['count'] == 1
         assert result['inbox_dir'] == str(_inbox_dir(plan_context))
 
-    def test_should_report_present_state_for_a_genuinely_empty_queue(
-        self, plan_context
-    ):
+    def test_should_report_present_state_for_a_genuinely_empty_queue(self, plan_context):
         # Zero #3: it looked at a real directory and found nothing.
         cmd_scaffold(_SCAFFOLD_ARGS)
         assert _inbox_dir(plan_context).is_dir()
@@ -854,9 +803,7 @@ class TestInboxListState:
         assert result['count'] == 0
         assert result['inbox_state'] == 'present'
 
-    def test_should_report_missing_state_when_the_inbox_directory_is_absent(
-        self, plan_context
-    ):
+    def test_should_report_missing_state_when_the_inbox_directory_is_absent(self, plan_context):
         # Zero #2: the epic tree is there but the enumeration could not look.
         cmd_scaffold(_SCAFFOLD_ARGS)
         _inbox_dir(plan_context).rmdir()
@@ -885,9 +832,7 @@ class TestInboxListState:
         assert looked != could_not_look
         assert looked['inbox_dir'] == could_not_look['inbox_dir']
 
-    def test_should_stay_non_faulting_when_the_inbox_directory_is_absent(
-        self, plan_context
-    ):
+    def test_should_stay_non_faulting_when_the_inbox_directory_is_absent(self, plan_context):
         # The discriminator rides the PAYLOAD, never the status — an absent
         # inbox/ must not abort a drain.
         cmd_scaffold(_SCAFFOLD_ARGS)
@@ -930,9 +875,7 @@ class TestInboxListStateUnderConcurrentDrain:
     makes the two fields consistent by construction.
     """
 
-    def test_should_not_pair_a_non_zero_count_with_the_missing_state(
-        self, plan_context, tmp_path, monkeypatch
-    ):
+    def test_should_not_pair_a_non_zero_count_with_the_missing_state(self, plan_context, tmp_path, monkeypatch):
         cmd_scaffold(_SCAFFOLD_ARGS)
         cmd_inbox_write(_write_args(payload_file=_payload(tmp_path)))
         inbox = _inbox_dir(plan_context)
@@ -951,8 +894,7 @@ class TestInboxListStateUnderConcurrentDrain:
         result = cmd_inbox_list(_LIST_ARGS)
 
         assert not inbox.exists(), (
-            'the seam did not fire — the assertion below would pass vacuously '
-            'against an inbox/ that was never removed'
+            'the seam did not fire — the assertion below would pass vacuously against an inbox/ that was never removed'
         )
         assert result['count'] == 1
         assert result['inbox_state'] == 'present'
@@ -1005,8 +947,7 @@ class TestResolveMessagePath:
         (archive / 'retired-001.md').write_text('x', encoding='utf-8')
 
         observed = {
-            resolve_message_path(tmp_path, name)[1]
-            for name in ('queued-001.md', 'retired-001.md', 'absent-001.md')
+            resolve_message_path(tmp_path, name)[1] for name in ('queued-001.md', 'retired-001.md', 'absent-001.md')
         }
 
         assert observed == MESSAGE_LOCATIONS
@@ -1055,9 +996,7 @@ class TestInboxArchiveRace:
         dest = archive_dir / SENDER / f'{SENDER}-001.md'
         return inbox / f'{SENDER}-001.md', archive_dir, dest
 
-    def test_should_refuse_a_destination_that_appears_inside_the_window(
-        self, plan_context, tmp_path, monkeypatch
-    ):
+    def test_should_refuse_a_destination_that_appears_inside_the_window(self, plan_context, tmp_path, monkeypatch):
         source, _archive_dir, dest = self._seed(plan_context, tmp_path)
         _open_race_window(
             monkeypatch,
@@ -1108,9 +1047,7 @@ class TestInboxArchiveRace:
         assert result['error'] == 'invalid_message_name'
         assert result['message_name'] == 'archive'
 
-    def test_should_report_already_archived_when_the_race_is_lost(
-        self, plan_context, tmp_path, monkeypatch
-    ):
+    def test_should_report_already_archived_when_the_race_is_lost(self, plan_context, tmp_path, monkeypatch):
         source, _archive_dir, dest = self._seed(plan_context, tmp_path)
 
         def concurrent_winner() -> None:
@@ -1204,9 +1141,7 @@ class TestArchiveAwareAllocation:
         assert path == inbox / f'{SENDER}-002.md'
         assert sorted(p.name for p in archive.iterdir()) == [f'{SENDER}-001.md']
 
-    def test_should_archive_cleanly_after_a_drained_sender_writes_again(
-        self, plan_context, tmp_path
-    ):
+    def test_should_archive_cleanly_after_a_drained_sender_writes_again(self, plan_context, tmp_path):
         # (b) The full write -> drain -> write -> drain cycle: the second write
         # lands at -002 and its archival succeeds instead of colliding with the
         # retired -001 record.
@@ -1258,9 +1193,7 @@ class TestInboxArchiveClaimPins:
         assert source.is_file()
         assert dest.read_text(encoding='utf-8') == 'the earlier audit record\n'
 
-    def test_should_report_already_archived_for_the_same_inode(
-        self, plan_context, tmp_path
-    ):
+    def test_should_report_already_archived_for_the_same_inode(self, plan_context, tmp_path):
         # (f) The same-inode window: a concurrent winner has linked but not yet
         # unlinked. Inode identity, not source presence, is the discriminator.
         source, dest = self._seed(plan_context, tmp_path)
@@ -1296,14 +1229,10 @@ class TestInboxArchiveAsName:
         source = inbox / f'{SENDER}-001.md'
         sender_archive = inbox / 'archive' / SENDER
         sender_archive.mkdir(parents=True, exist_ok=True)
-        (sender_archive / source.name).write_text(
-            'the earlier audit record\n', encoding='utf-8'
-        )
+        (sender_archive / source.name).write_text('the earlier audit record\n', encoding='utf-8')
         return source, sender_archive
 
-    def test_should_accept_an_override_that_preserves_the_sender(
-        self, plan_context, tmp_path
-    ):
+    def test_should_accept_an_override_that_preserves_the_sender(self, plan_context, tmp_path):
         # (g) Positive arm. The accepted name is asserted to be the
         # sender-matching one, so the constraint cannot pass vacuously via a
         # rule that accepts everything.
@@ -1317,17 +1246,11 @@ class TestInboxArchiveAsName:
         assert result['already_archived'] is False
         assert result['archived_to'].endswith(recovery_name)
         assert not source.exists()
-        assert (archive / recovery_name).read_text(encoding='utf-8').endswith(
-            'stranded body\n'
-        )
+        assert (archive / recovery_name).read_text(encoding='utf-8').endswith('stranded body\n')
         # The pre-existing audit record was never clobbered.
-        assert (archive / source.name).read_text(
-            encoding='utf-8'
-        ) == 'the earlier audit record\n'
+        assert (archive / source.name).read_text(encoding='utf-8') == 'the earlier audit record\n'
 
-    def test_should_refuse_an_override_that_drops_the_sender(
-        self, plan_context, tmp_path
-    ):
+    def test_should_refuse_an_override_that_drops_the_sender(self, plan_context, tmp_path):
         # (h) Negative arm, distinct code.
         source, archive = self._strand(plan_context, tmp_path)
 
@@ -1343,34 +1266,26 @@ class TestInboxArchiveAsName:
         # rule — neither validation shadows the other.
         source, archive = self._strand(plan_context, tmp_path)
 
-        result = cmd_inbox_archive(
-            _archive_args(source.name, as_name=f'../{SENDER}-001.md')
-        )
+        result = cmd_inbox_archive(_archive_args(source.name, as_name=f'../{SENDER}-001.md'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_message_name'
         assert source.is_file()
         assert sorted(p.name for p in archive.iterdir()) == [source.name]
 
-    def test_should_refuse_an_override_when_no_sender_is_derivable(
-        self, plan_context, tmp_path
-    ):
+    def test_should_refuse_an_override_when_no_sender_is_derivable(self, plan_context, tmp_path):
         cmd_scaffold(_SCAFFOLD_ARGS)
         inbox = _inbox_dir(plan_context)
         off_shape = inbox / 'notes.md'
         off_shape.write_text('not a message\n', encoding='utf-8')
 
-        result = cmd_inbox_archive(
-            _archive_args(off_shape.name, as_name=f'{SENDER}-001.md')
-        )
+        result = cmd_inbox_archive(_archive_args(off_shape.name, as_name=f'{SENDER}-001.md'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'as_name_sender_mismatch'
         assert off_shape.is_file()
 
-    def test_should_leave_the_default_destination_path_unchanged(
-        self, plan_context, tmp_path
-    ):
+    def test_should_leave_the_default_destination_path_unchanged(self, plan_context, tmp_path):
         cmd_scaffold(_SCAFFOLD_ARGS)
         written = cmd_inbox_write(_write_args(payload_file=_payload(tmp_path)))
 

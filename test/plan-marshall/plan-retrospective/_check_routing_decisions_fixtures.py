@@ -17,7 +17,6 @@ FIRST, and ``log_readable`` is the sole discriminator between a substantiated
 ``fail`` and an honest ``inconclusive``.
 """
 
-
 from __future__ import annotations
 
 import json
@@ -29,9 +28,7 @@ from toon_parser import serialize_toon
 
 from conftest import load_script_module
 
-_crd = load_script_module(
-    'plan-marshall', 'plan-retrospective', 'check-routing-decisions.py', 'crd_behavior_mod'
-)
+_crd = load_script_module('plan-marshall', 'plan-retrospective', 'check-routing-decisions.py', 'crd_behavior_mod')
 
 
 # The recorded non-predicate removal mechanisms.
@@ -65,11 +62,8 @@ LANE_RESOLUTION_LINE = '[2026-04-17T10:00:00Z] [INFO] [aaaaaa] ' + format_droppe
 )
 
 
-LANE_RESOLUTION_SECOND_STEP_LINE = (
-    '[2026-04-17T10:00:01Z] [INFO] [aaaaab] '
-    + format_dropped_record(
-        'lane_resolution', 'plan-retrospective', _TIER_REASON, target=_LANE_TARGET
-    )
+LANE_RESOLUTION_SECOND_STEP_LINE = '[2026-04-17T10:00:01Z] [INFO] [aaaaab] ' + format_dropped_record(
+    'lane_resolution', 'plan-retrospective', _TIER_REASON, target=_LANE_TARGET
 )
 
 

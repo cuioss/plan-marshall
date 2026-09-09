@@ -35,40 +35,40 @@ _box_run_lines = _mod._box_run_lines
 
 # A misaligned box: the interior lines and the bottom rule do not reach the
 # column the longest interior line implies, so the right borders are ragged.
-MISALIGNED_BOX = "\n".join(
+MISALIGNED_BOX = '\n'.join(
     [
-        "Intro paragraph.",
-        "",
-        "```",
-        "┌────┐",
-        "│ short │",
-        "│ a longer line │",
-        "└────┘",
-        "```",
-        "",
-        "Outro paragraph.",
+        'Intro paragraph.',
+        '',
+        '```',
+        '┌────┐',
+        '│ short │',
+        '│ a longer line │',
+        '└────┘',
+        '```',
+        '',
+        'Outro paragraph.',
     ]
 )
 
 # An already-aligned box: every right border sits in the same column.
-ALIGNED_BOX = "\n".join(
+ALIGNED_BOX = '\n'.join(
     [
-        "```",
-        "┌───────────────┐",
-        "│ short         │",
-        "│ a longer line │",
-        "└───────────────┘",
-        "```",
+        '```',
+        '┌───────────────┐',
+        '│ short         │',
+        '│ a longer line │',
+        '└───────────────┘',
+        '```',
     ]
 )
 
 # Box-like content OUTSIDE any code fence must be ignored — only boxes inside
 # code/literal blocks are normalized.
-BOX_OUTSIDE_FENCE = "\n".join(
+BOX_OUTSIDE_FENCE = '\n'.join(
     [
-        "┌────┐",
-        "│ x │",
-        "└────┘",
+        '┌────┐',
+        '│ x │',
+        '└────┘',
     ]
 )
 
@@ -79,45 +79,45 @@ BOX_OUTSIDE_FENCE = "\n".join(
 
 
 def test_is_top_rule_detects_top_border():
-    assert is_top_rule("┌────┐")
-    assert is_top_rule("    ┌──┐")  # leading indent ignored
+    assert is_top_rule('┌────┐')
+    assert is_top_rule('    ┌──┐')  # leading indent ignored
 
 
 def test_is_top_rule_rejects_non_top_lines():
-    assert not is_top_rule("│ content │")
-    assert not is_top_rule("└────┘")
-    assert not is_top_rule("plain text")
-    assert not is_top_rule("")
+    assert not is_top_rule('│ content │')
+    assert not is_top_rule('└────┘')
+    assert not is_top_rule('plain text')
+    assert not is_top_rule('')
 
 
 def test_is_top_rule_rejects_text_between_corners():
     # A line with non-horizontal characters between the corners is NOT a top rule.
-    assert not is_top_rule("┌ some text ┐")
-    assert not is_top_rule("┌─ text ─┐")
+    assert not is_top_rule('┌ some text ┐')
+    assert not is_top_rule('┌─ text ─┐')
 
 
 def test_is_bottom_rule_detects_bottom_border():
-    assert is_bottom_rule("└────┘")
-    assert is_bottom_rule("  └──┘")
+    assert is_bottom_rule('└────┘')
+    assert is_bottom_rule('  └──┘')
 
 
 def test_is_bottom_rule_rejects_non_bottom_lines():
-    assert not is_bottom_rule("┌────┐")
-    assert not is_bottom_rule("│ content │")
+    assert not is_bottom_rule('┌────┐')
+    assert not is_bottom_rule('│ content │')
 
 
 def test_is_bottom_rule_rejects_text_between_corners():
     # A line with non-horizontal characters between the corners is NOT a bottom rule.
-    assert not is_bottom_rule("└ some text ┘")
-    assert not is_bottom_rule("└─ text ─┘")
+    assert not is_bottom_rule('└ some text ┘')
+    assert not is_bottom_rule('└─ text ─┘')
 
 
 def test_is_box_line_requires_both_vertical_borders():
-    assert is_box_line("│ content │")
-    assert not is_box_line("│ only-left")
-    assert not is_box_line("only-right │")
+    assert is_box_line('│ content │')
+    assert not is_box_line('│ only-left')
+    assert not is_box_line('only-right │')
     # A lone connector pipe is not a box interior line.
-    assert not is_box_line("│")
+    assert not is_box_line('│')
 
 
 # =============================================================================
@@ -126,7 +126,7 @@ def test_is_box_line_requires_both_vertical_borders():
 
 
 def test_box_run_lines_matches_bottom_rule():
-    lines = ["┌──┐", "│x│", "│yy│", "└──┘"]
+    lines = ['┌──┐', '│x│', '│yy│', '└──┘']
 
     bottom = _box_run_lines(lines, 0)
 
@@ -135,7 +135,7 @@ def test_box_run_lines_matches_bottom_rule():
 
 def test_box_run_lines_returns_none_on_blank_break():
     # A blank line breaks the run before a bottom rule appears.
-    lines = ["┌──┐", "│x│", "", "└──┘"]
+    lines = ['┌──┐', '│x│', '', '└──┘']
 
     bottom = _box_run_lines(lines, 0)
 
@@ -144,7 +144,7 @@ def test_box_run_lines_returns_none_on_blank_break():
 
 def test_box_run_lines_treats_deeper_indent_as_interior():
     # A deeper-indented line is interior content, not a terminator.
-    lines = ["┌──┐", "│x│", "  nested content", "│y│", "└──┘"]
+    lines = ['┌──┐', '│x│', '  nested content', '│y│', '└──┘']
 
     bottom = _box_run_lines(lines, 0)
 
@@ -154,7 +154,7 @@ def test_box_run_lines_treats_deeper_indent_as_interior():
 
 def test_box_run_lines_terminates_on_shallower_indent():
     # A line at shallower indent than the box exits the box context.
-    lines = ["  ┌──┐", "  │x│", "unindented line", "  └──┘"]
+    lines = ['  ┌──┐', '  │x│', 'unindented line', '  └──┘']
 
     bottom = _box_run_lines(lines, 0)
 
@@ -168,24 +168,24 @@ def test_box_run_lines_terminates_on_shallower_indent():
 
 
 def test_rebuild_box_aligns_right_borders_to_widest_line():
-    lines = ["┌──┐", "│ short │", "│ a longer line │", "└──┘"]
+    lines = ['┌──┐', '│ short │', '│ a longer line │', '└──┘']
 
     rebuilt = rebuild_box(lines, 0, 3)
 
     # Every line now has the same total length.
     widths = {len(line) for line in rebuilt}
-    assert len(widths) == 1, f"expected uniform width, got {widths}"
-    assert rebuilt[0].startswith("┌") and rebuilt[0].endswith("┐")
-    assert rebuilt[-1].startswith("└") and rebuilt[-1].endswith("┘")
+    assert len(widths) == 1, f'expected uniform width, got {widths}'
+    assert rebuilt[0].startswith('┌') and rebuilt[0].endswith('┐')
+    assert rebuilt[-1].startswith('└') and rebuilt[-1].endswith('┘')
 
 
 def test_rebuild_box_is_a_fixed_point_for_aligned_input():
     # An already-aligned box.
     lines = [
-        "┌───────────────┐",
-        "│ short         │",
-        "│ a longer line │",
-        "└───────────────┘",
+        '┌───────────────┐',
+        '│ short         │',
+        '│ a longer line │',
+        '└───────────────┘',
     ]
 
     rebuilt = rebuild_box(lines, 0, 3)
@@ -200,18 +200,18 @@ def test_rebuild_box_is_a_fixed_point_for_aligned_input():
 
 
 def test_process_file_detects_misalignment(tmp_path):
-    md = tmp_path / "diagram.md"
-    md.write_text(MISALIGNED_BOX, encoding="utf-8")
+    md = tmp_path / 'diagram.md'
+    md.write_text(MISALIGNED_BOX, encoding='utf-8')
 
     _new_lines, changed = _process_file(md)
 
     # At least one interior/border line is reported as changed.
-    assert changed, "expected misaligned lines to be detected"
+    assert changed, 'expected misaligned lines to be detected'
 
 
 def test_process_file_reports_no_change_for_aligned_box(tmp_path):
-    md = tmp_path / "aligned.md"
-    md.write_text(ALIGNED_BOX, encoding="utf-8")
+    md = tmp_path / 'aligned.md'
+    md.write_text(ALIGNED_BOX, encoding='utf-8')
 
     _new_lines, changed = _process_file(md)
 
@@ -220,8 +220,8 @@ def test_process_file_reports_no_change_for_aligned_box(tmp_path):
 
 def test_process_file_ignores_boxes_outside_code_blocks(tmp_path):
     # A ragged box that is NOT inside a fence must be left alone.
-    md = tmp_path / "outside.md"
-    md.write_text(BOX_OUTSIDE_FENCE, encoding="utf-8")
+    md = tmp_path / 'outside.md'
+    md.write_text(BOX_OUTSIDE_FENCE, encoding='utf-8')
 
     _new_lines, changed = _process_file(md)
 
@@ -234,60 +234,60 @@ def test_process_file_ignores_boxes_outside_code_blocks(tmp_path):
 
 
 def test_script_exists():
-    assert SCRIPT_PATH.exists(), f"Script not found: {SCRIPT_PATH}"
+    assert SCRIPT_PATH.exists(), f'Script not found: {SCRIPT_PATH}'
 
 
 def test_check_subcommand_reports_misalignment(tmp_path):
-    md = tmp_path / "diagram.md"
-    md.write_text(MISALIGNED_BOX, encoding="utf-8")
+    md = tmp_path / 'diagram.md'
+    md.write_text(MISALIGNED_BOX, encoding='utf-8')
 
-    result = run_script(SCRIPT_PATH, "check", "--path", str(md))
+    result = run_script(SCRIPT_PATH, 'check', '--path', str(md))
 
-    assert result.success, f"check failed: {result.stderr}"
+    assert result.success, f'check failed: {result.stderr}'
     data = result.toon()
-    assert data["operation"] == "check"
-    assert data["misaligned_count"] >= 1
+    assert data['operation'] == 'check'
+    assert data['misaligned_count'] >= 1
 
 
 def test_check_subcommand_clean_on_aligned(tmp_path):
-    md = tmp_path / "aligned.md"
-    md.write_text(ALIGNED_BOX, encoding="utf-8")
+    md = tmp_path / 'aligned.md'
+    md.write_text(ALIGNED_BOX, encoding='utf-8')
 
-    result = run_script(SCRIPT_PATH, "check", "--path", str(md))
+    result = run_script(SCRIPT_PATH, 'check', '--path', str(md))
 
-    assert result.success, f"check failed: {result.stderr}"
+    assert result.success, f'check failed: {result.stderr}'
     data = result.toon()
-    assert data["misaligned_count"] == 0
+    assert data['misaligned_count'] == 0
 
 
 def test_fix_subcommand_repairs_and_is_idempotent(tmp_path):
-    md = tmp_path / "diagram.md"
-    md.write_text(MISALIGNED_BOX, encoding="utf-8")
+    md = tmp_path / 'diagram.md'
+    md.write_text(MISALIGNED_BOX, encoding='utf-8')
 
-    first = run_script(SCRIPT_PATH, "fix", "--path", str(md))
+    first = run_script(SCRIPT_PATH, 'fix', '--path', str(md))
 
     # The file was reported as fixed.
-    assert first.success, f"first fix failed: {first.stderr}"
+    assert first.success, f'first fix failed: {first.stderr}'
     first_data = first.toon()
-    assert first_data["files_fixed"] == 1
-    assert first_data["lines_changed"] >= 1
+    assert first_data['files_fixed'] == 1
+    assert first_data['lines_changed'] >= 1
 
-    repaired = md.read_text(encoding="utf-8")
+    repaired = md.read_text(encoding='utf-8')
 
     # A re-check now reports zero misalignment.
-    recheck = run_script(SCRIPT_PATH, "check", "--path", str(md))
+    recheck = run_script(SCRIPT_PATH, 'check', '--path', str(md))
     assert recheck.success
-    assert recheck.toon()["misaligned_count"] == 0
+    assert recheck.toon()['misaligned_count'] == 0
 
     # A second fix pass is idempotent: nothing changes on disk and the
     # script reports zero files fixed.
-    second = run_script(SCRIPT_PATH, "fix", "--path", str(md))
+    second = run_script(SCRIPT_PATH, 'fix', '--path', str(md))
 
     # Idempotence: byte-identical content and no further fixes.
-    assert second.success, f"second fix failed: {second.stderr}"
+    assert second.success, f'second fix failed: {second.stderr}'
     second_data = second.toon()
-    assert second_data["files_fixed"] == 0
-    assert md.read_text(encoding="utf-8") == repaired
+    assert second_data['files_fixed'] == 0
+    assert md.read_text(encoding='utf-8') == repaired
 
 
 def test_main_requires_subcommand():
@@ -296,4 +296,4 @@ def test_main_requires_subcommand():
 
     assert not result.success
     combined = (result.stdout + result.stderr).lower()
-    assert "usage" in combined or "error" in combined
+    assert 'usage' in combined or 'error' in combined

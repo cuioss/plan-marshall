@@ -20,7 +20,6 @@ that the block's extent is a single shared predicate both readers resolve, rathe
 two copies that agree until one is edited.
 """
 
-
 import pytest
 import toon_parser
 from _manage_tasks_batch_add_fixtures import copy_block_scalar_body, parse_stdin_task

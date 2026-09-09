@@ -226,11 +226,7 @@ def footprint_consuming_aspect_keys() -> tuple[str, ...]:
     that shape.
     """
     declared = set(FOOTPRINT_CONSUMING_ASPECTS)
-    return tuple(
-        fragment_key
-        for _heading, fragment_key, _trigger in SECTION_SPEC
-        if fragment_key in declared
-    )
+    return tuple(fragment_key for _heading, fragment_key, _trigger in SECTION_SPEC if fragment_key in declared)
 
 
 # Fields whose presence lets a reader tell a section's "zero findings" apart from

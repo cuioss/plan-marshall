@@ -17,7 +17,6 @@ worktree moved-in plan discovery), cmd_list_orphans, and cmd_mark_step_done
 loop-back target validation.
 """
 
-
 import json
 from argparse import Namespace
 from pathlib import Path
@@ -218,9 +217,7 @@ def _seed_plan_with_5_execute_capture(plan_id):
     for phase in ('1-init', '2-refine', '3-outline', '4-plan'):
         cmd_update_phase(Namespace(plan_id=plan_id, phase=phase, status='done'))
     cmd_set_phase(Namespace(plan_id=plan_id, phase='5-execute'))
-    _cmds.cmd_capture(
-        Namespace(plan_id=plan_id, phase='5-execute', override=False, reason=None, strict=False)
-    )
+    _cmds.cmd_capture(Namespace(plan_id=plan_id, phase='5-execute', override=False, reason=None, strict=False))
 
 
 def _seed_plan_with_4_plan_capture(plan_id):
@@ -236,9 +233,7 @@ def _seed_plan_with_4_plan_capture(plan_id):
     for phase in ('1-init', '2-refine', '3-outline'):
         cmd_update_phase(Namespace(plan_id=plan_id, phase=phase, status='done'))
     cmd_set_phase(Namespace(plan_id=plan_id, phase='4-plan'))
-    _cmds.cmd_capture(
-        Namespace(plan_id=plan_id, phase='4-plan', override=False, reason=None, strict=False)
-    )
+    _cmds.cmd_capture(Namespace(plan_id=plan_id, phase='4-plan', override=False, reason=None, strict=False))
 
 
 # =============================================================================
@@ -290,14 +285,11 @@ def _setup_plan(plan_id: str) -> None:
 # Fixed actionable-vs-knowledge rule at the 5-execute -> 6-finalize boundary
 # =============================================================================
 
+
 def _stub_finding_queries(monkeypatch, per_type: dict[str, int], qgate: int = 0) -> None:
     """Stub the per-type and qgate-aggregator query helpers."""
-    monkeypatch.setattr(
-        _inv, '_query_pending_count_for_type', lambda _pid, ft: per_type.get(ft, 0)
-    )
-    monkeypatch.setattr(
-        _inv, '_query_pending_qgate_count_aggregated', lambda _pid: qgate
-    )
+    monkeypatch.setattr(_inv, '_query_pending_count_for_type', lambda _pid, ft: per_type.get(ft, 0))
+    monkeypatch.setattr(_inv, '_query_pending_qgate_count_aggregated', lambda _pid: qgate)
 
 
 # =============================================================================

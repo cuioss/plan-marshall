@@ -20,14 +20,9 @@ class TestTokenEconomicsFlags:
         # a corpus where one plan sits in the bottom decile AND the
         # bottom file-count quartile (the non-amortizing 6-phase tax).
         corpus = [
-            _write_token_plan(
-                tmp_path, f'big-{i}', files=20, phase_tokens={'5-execute': 50_000}
-            )
-            for i in range(9)
+            _write_token_plan(tmp_path, f'big-{i}', files=20, phase_tokens={'5-execute': 50_000}) for i in range(9)
         ]
-        floor = _write_token_plan(
-            tmp_path, 'floor', files=1, phase_tokens={'5-execute': 500}
-        )
+        floor = _write_token_plan(tmp_path, 'floor', files=1, phase_tokens={'5-execute': 500})
         rows = audit._collect_token_economics_rows([*corpus, floor])
         thr = audit._derive_token_economics_thresholds(rows)
         floor_row = next(r for r in rows if r.plan_id == 'floor')
@@ -42,13 +37,15 @@ class TestTokenEconomicsFlags:
         # corpus median planning/exec ratio is low; one plan blows past it
         baseline = [
             _write_token_plan(
-                tmp_path, f'bal-{i}',
+                tmp_path,
+                f'bal-{i}',
                 phase_tokens={'2-refine': 1_000, '5-execute': 10_000},
             )
             for i in range(3)
         ]
         heavy = _write_token_plan(
-            tmp_path, 'planheavy',
+            tmp_path,
+            'planheavy',
             phase_tokens={'2-refine': 8_000, '4-plan': 8_000, '5-execute': 2_000},
         )
         rows = audit._collect_token_economics_rows([*baseline, heavy])
@@ -66,11 +63,13 @@ class TestTokenEconomicsFlags:
         rows = audit._collect_token_economics_rows(
             [
                 _write_token_plan(
-                    tmp_path, 'm',
+                    tmp_path,
+                    'm',
                     phase_tokens={'2-refine': 1_000, '5-execute': 5_000},
                 ),
                 _write_token_plan(
-                    tmp_path, 'blind',
+                    tmp_path,
+                    'blind',
                     phase_tokens={'2-refine': 9_000, '4-plan': 9_000},
                 ),
             ]
@@ -94,7 +93,8 @@ class TestTokenEconomicsFlags:
         # `cut > 0` guard correctly declines to call that lone plan "heavy".)
         light = [
             _write_token_plan(
-                tmp_path, f'exec-{i}',
+                tmp_path,
+                f'exec-{i}',
                 phase_tokens={
                     '2-refine': 1_000,
                     '3-outline': 1_000,
@@ -105,7 +105,8 @@ class TestTokenEconomicsFlags:
             for i in range(3)
         ]
         heavy = _write_token_plan(
-            tmp_path, 'phaseheavy',
+            tmp_path,
+            'phaseheavy',
             phase_tokens={
                 '2-refine': 3_000,
                 '3-outline': 3_000,
@@ -128,44 +129,33 @@ class TestTokenEconomicsFlags:
         # a plan at/above the corpus median total but with a footprint
         # in the bottom file-count quartile (the tokens/file inversion).
         small_cheap = [
-            _write_token_plan(
-                tmp_path, f'sm-{i}', files=2, phase_tokens={'5-execute': 1_000}
-            )
-            for i in range(3)
+            _write_token_plan(tmp_path, f'sm-{i}', files=2, phase_tokens={'5-execute': 1_000}) for i in range(3)
         ]
-        big_tiny = _write_token_plan(
-            tmp_path, 'inversion', files=2, phase_tokens={'5-execute': 80_000}
-        )
-        wide = [
-            _write_token_plan(
-                tmp_path, f'wide-{i}', files=40, phase_tokens={'5-execute': 5_000}
-            )
-            for i in range(3)
-        ]
+        big_tiny = _write_token_plan(tmp_path, 'inversion', files=2, phase_tokens={'5-execute': 80_000})
+        wide = [_write_token_plan(tmp_path, f'wide-{i}', files=40, phase_tokens={'5-execute': 5_000}) for i in range(3)]
         rows = audit._collect_token_economics_rows([*small_cheap, big_tiny, *wide])
         thr = audit._derive_token_economics_thresholds(rows)
         inv_row = next(r for r in rows if r.plan_id == 'inversion')
 
         flags = audit._token_economics_flags(inv_row, thr)
 
-        assert any(
-            f.startswith('big_spend_tiny_footprint(')
-            and '>=median=' in f
-            and 'p25=' in f
-            for f in flags
-        )
+        assert any(f.startswith('big_spend_tiny_footprint(') and '>=median=' in f and 'p25=' in f for f in flags)
 
     def test_long_session_fires_at_message_p75(self, tmp_path: Path):
         # three short sessions, one long one at/above the corpus p75
         short = [
             _write_token_plan(
-                tmp_path, f'short-{i}', session_message_count=50,
+                tmp_path,
+                f'short-{i}',
+                session_message_count=50,
                 phase_tokens={'5-execute': 5_000},
             )
             for i in range(3)
         ]
         long_plan = _write_token_plan(
-            tmp_path, 'marathon', session_message_count=900,
+            tmp_path,
+            'marathon',
+            session_message_count=900,
             phase_tokens={'5-execute': 5_000},
         )
         rows = audit._collect_token_economics_rows([*short, long_plan])
@@ -182,9 +172,7 @@ class TestTokenEconomicsFlags:
         # so the reader knows every downstream number is a floor.
         rows = audit._collect_token_economics_rows(
             [
-                _write_token_plan(
-                    tmp_path, 'blind', phase_tokens={'2-refine': 4_000, '4-plan': 6_000}
-                ),
+                _write_token_plan(tmp_path, 'blind', phase_tokens={'2-refine': 4_000, '4-plan': 6_000}),
             ]
         )
         thr = audit._derive_token_economics_thresholds(rows)
@@ -205,7 +193,9 @@ class TestTokenEconomicsFlags:
         rows = audit._collect_token_economics_rows(
             [
                 _write_token_plan(
-                    tmp_path, f'clean-{i}', files=10,
+                    tmp_path,
+                    f'clean-{i}',
+                    files=10,
                     phase_tokens={'5-execute': 10_000},
                 )
                 for i in range(5)

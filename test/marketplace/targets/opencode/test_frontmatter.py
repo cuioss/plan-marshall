@@ -41,6 +41,7 @@ def rules(opencode_config_dir: Path) -> dict[str, list[str]]:
 # parse_frontmatter
 # ---------------------------------------------------------------------------
 
+
 class TestParseFrontmatter:
     def test_no_frontmatter_returns_empty_and_full_body(self):
         fm, body = parse_frontmatter('# heading\nplain body\n')
@@ -82,14 +83,7 @@ class TestParseFrontmatter:
         substring; a raw-substring search would stop at the ``---`` inside the
         ``description`` value and silently drop every later field.
         """
-        content = (
-            '---\n'
-            'name: foo\n'
-            'description: before --- after\n'
-            'tools: Read, Write\n'
-            '---\n'
-            'body\n'
-        )
+        content = '---\nname: foo\ndescription: before --- after\ntools: Read, Write\n---\nbody\n'
         fm, body = parse_frontmatter(content)
         assert fm['name'] == 'foo'
         assert fm['description'] == 'before --- after'
@@ -108,10 +102,9 @@ class TestParseFrontmatter:
 # tool → permission mapping
 # ---------------------------------------------------------------------------
 
+
 class TestToolPermissionMapping:
-    def test_known_tools_map_to_permissions(
-        self, mapping: dict[str, dict], rules: dict[str, list[str]]
-    ):
+    def test_known_tools_map_to_permissions(self, mapping: dict[str, dict], rules: dict[str, list[str]]):
         fm = {
             'description': 'agent',
             'tools': 'Read, Write, Bash',
@@ -121,9 +114,7 @@ class TestToolPermissionMapping:
         assert 'edit: allow' in result  # Write maps to edit
         assert 'bash: allow' in result
 
-    def test_duplicate_permissions_deduplicated(
-        self, mapping: dict[str, dict], rules: dict[str, list[str]]
-    ):
+    def test_duplicate_permissions_deduplicated(self, mapping: dict[str, dict], rules: dict[str, list[str]]):
         fm = {
             'description': 'agent',
             # Write and Edit both map to 'edit'
@@ -133,16 +124,12 @@ class TestToolPermissionMapping:
         # 'edit: allow' appears exactly once
         assert result.count('edit: allow') == 1
 
-    def test_unmapped_tool_raises(
-        self, mapping: dict[str, dict], rules: dict[str, list[str]]
-    ):
+    def test_unmapped_tool_raises(self, mapping: dict[str, dict], rules: dict[str, list[str]]):
         fm = {'description': 'agent', 'tools': 'Read, BogusTool'}
         with pytest.raises(UnmappedToolError):
             transform_agent_frontmatter(fm, mapping, rules, source_label='agents/x.md')
 
-    def test_no_tools_field_omits_permission_block(
-        self, mapping: dict[str, dict], rules: dict[str, list[str]]
-    ):
+    def test_no_tools_field_omits_permission_block(self, mapping: dict[str, dict], rules: dict[str, list[str]]):
         fm = {'description': 'agent'}
         result = transform_agent_frontmatter(fm, mapping, rules, source_label='agents/x.md')
         assert 'permission:' not in result
@@ -156,16 +143,12 @@ class TestTargetAbsentToolDisposition:
     to a *missing key*, not removed.
     """
 
-    def test_target_absent_tool_transforms_without_raising(
-        self, mapping: dict[str, dict], rules: dict[str, list[str]]
-    ):
+    def test_target_absent_tool_transforms_without_raising(self, mapping: dict[str, dict], rules: dict[str, list[str]]):
         fm = {'description': 'agent', 'tools': 'Monitor'}
         result = transform_agent_frontmatter(fm, mapping, rules, source_label='agents/x.md')
         assert 'description: agent' in result
 
-    def test_target_absent_tool_emits_no_permission_line(
-        self, mapping: dict[str, dict], rules: dict[str, list[str]]
-    ):
+    def test_target_absent_tool_emits_no_permission_line(self, mapping: dict[str, dict], rules: dict[str, list[str]]):
         fm = {'description': 'agent', 'tools': 'Monitor'}
         result = transform_agent_frontmatter(fm, mapping, rules, source_label='agents/x.md')
         assert 'permission:' not in result
@@ -181,9 +164,7 @@ class TestTargetAbsentToolDisposition:
         # Exactly the two mapped permissions — the sentinel contributes none.
         assert result.count(': allow') == 2
 
-    def test_genuinely_unknown_tool_still_raises(
-        self, mapping: dict[str, dict], rules: dict[str, list[str]]
-    ):
+    def test_genuinely_unknown_tool_still_raises(self, mapping: dict[str, dict], rules: dict[str, list[str]]):
         """The fail-closed guard survives: a MISSING key still raises."""
         fm = {'description': 'agent', 'tools': 'Monitor, TotallyUnknownTool'}
         with pytest.raises(UnmappedToolError, match='TotallyUnknownTool'):
@@ -194,25 +175,20 @@ class TestTargetAbsentToolDisposition:
 # model alias resolution
 # ---------------------------------------------------------------------------
 
+
 class TestModelAliasResolution:
-    def test_known_alias_resolves_to_prefixed_id(
-        self, mapping: dict[str, dict], rules: dict[str, list[str]]
-    ):
+    def test_known_alias_resolves_to_prefixed_id(self, mapping: dict[str, dict], rules: dict[str, list[str]]):
         fm = {'description': 'agent', 'model': 'sonnet'}
         result = transform_agent_frontmatter(fm, mapping, rules, source_label='agents/x.md')
         sonnet_id = mapping['model_map']['sonnet']['id']
         assert f'model: {OPENCODE_MODEL_PREFIX}{sonnet_id}' in result
 
-    def test_unknown_alias_passes_through(
-        self, mapping: dict[str, dict], rules: dict[str, list[str]]
-    ):
+    def test_unknown_alias_passes_through(self, mapping: dict[str, dict], rules: dict[str, list[str]]):
         fm = {'description': 'agent', 'model': 'anthropic/custom-model'}
         result = transform_agent_frontmatter(fm, mapping, rules, source_label='agents/x.md')
         assert 'model: anthropic/custom-model' in result
 
-    def test_no_model_field_omits_model_line(
-        self, mapping: dict[str, dict], rules: dict[str, list[str]]
-    ):
+    def test_no_model_field_omits_model_line(self, mapping: dict[str, dict], rules: dict[str, list[str]]):
         fm = {'description': 'agent'}
         result = transform_agent_frontmatter(fm, mapping, rules, source_label='agents/x.md')
         assert 'model:' not in result
@@ -222,16 +198,13 @@ class TestModelAliasResolution:
 # required-field validation
 # ---------------------------------------------------------------------------
 
+
 class TestRequiredFieldValidation:
     def test_skill_missing_description_raises(self, rules: dict[str, list[str]]):
         with pytest.raises(UnmappedFrontmatterError):
-            transform_skill_frontmatter(
-                {'name': 'x'}, 'demo', 'x', rules, source_label='skills/x/SKILL.md'
-            )
+            transform_skill_frontmatter({'name': 'x'}, 'demo', 'x', rules, source_label='skills/x/SKILL.md')
 
-    def test_agent_missing_description_raises(
-        self, mapping: dict[str, dict], rules: dict[str, list[str]]
-    ):
+    def test_agent_missing_description_raises(self, mapping: dict[str, dict], rules: dict[str, list[str]]):
         with pytest.raises(UnmappedFrontmatterError):
             transform_agent_frontmatter({}, mapping, rules, source_label='agents/x.md')
 
@@ -239,9 +212,7 @@ class TestRequiredFieldValidation:
         with pytest.raises(UnmappedFrontmatterError):
             transform_command_frontmatter({}, rules, source_label='commands/x.md')
 
-    def test_skill_present_description_emits_compatibility_marker(
-        self, rules: dict[str, list[str]]
-    ):
+    def test_skill_present_description_emits_compatibility_marker(self, rules: dict[str, list[str]]):
         result = transform_skill_frontmatter(
             {'description': 'a skill'},
             'demo',
@@ -257,6 +228,7 @@ class TestRequiredFieldValidation:
 # ---------------------------------------------------------------------------
 # load_mapping / load_rules error paths
 # ---------------------------------------------------------------------------
+
 
 class TestConfigLoading:
     def test_missing_mapping_raises_filenotfound(self, tmp_path: Path):

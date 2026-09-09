@@ -24,9 +24,7 @@ from conftest import MARKETPLACE_ROOT, load_script_module
 # ``determine_mode`` lazily imports ``_config_defaults`` (for working-prefix drift
 # detection). No bootstrap is needed for that: the root conftest already puts every
 # marketplace ``scripts/`` directory on ``sys.path`` before any test module loads.
-dm = load_script_module(
-    'plan-marshall', 'marshall-steward', 'determine_mode.py', 'determine_mode_behavior_cov'
-)
+dm = load_script_module('plan-marshall', 'marshall-steward', 'determine_mode.py', 'determine_mode_behavior_cov')
 
 
 # =============================================================================
@@ -139,14 +137,7 @@ def test_count_section_bullets_returns_zero_when_section_absent():
 
 def test_count_section_bullets_counts_until_next_heading():
     """count_section_bullets counts top-level bullets and stops at the next heading."""
-    content = (
-        '## Rules\n'
-        '- one\n'
-        '- two\n'
-        '  - nested ignored\n'
-        '## Next\n'
-        '- not counted\n'
-    )
+    content = '## Rules\n- one\n- two\n  - nested ignored\n## Next\n- not counted\n'
 
     assert dm.count_section_bullets(content, 'Rules') == 2
 
@@ -629,13 +620,9 @@ def test_cmd_check_missing_finalize_steps_reports_dropped_project_step(tmp_path:
     (skill_dir / 'SKILL.md').write_text('# finalize-step-custom\n')
     plan_dir = project_root / '.plan'
     plan_dir.mkdir(parents=True)
-    (plan_dir / 'marshal.json').write_text(
-        json.dumps({'plan': {'phase-6-finalize': {'steps': ['default:push']}}})
-    )
+    (plan_dir / 'marshal.json').write_text(json.dumps({'plan': {'phase-6-finalize': {'steps': ['default:push']}}}))
 
-    result = dm.cmd_check_missing_finalize_steps(
-        _ns(plan_dir=str(plan_dir), project_root=str(project_root))
-    )
+    result = dm.cmd_check_missing_finalize_steps(_ns(plan_dir=str(plan_dir), project_root=str(project_root)))
 
     assert result['status'] == 'missing'
     assert 'project:finalize-step-custom' in result['missing_project_finalize_steps']
@@ -671,7 +658,9 @@ def _fake_subprocess(monkeypatch, *, returncode: int, stdout: str = '', stderr: 
         calls['timeout'] = timeout
         return result
 
-    monkeypatch.setattr(dm, 'subprocess', types.SimpleNamespace(run=_fake_run, TimeoutExpired=subprocess.TimeoutExpired))
+    monkeypatch.setattr(
+        dm, 'subprocess', types.SimpleNamespace(run=_fake_run, TimeoutExpired=subprocess.TimeoutExpired)
+    )
     return calls
 
 
@@ -814,9 +803,7 @@ def test_main_mode_dispatch(tmp_path: Path, monkeypatch, capsys):
 
 def test_main_check_structure_dispatch(tmp_path: Path, monkeypatch, capsys):
     """main() routes 'check-structure' and reports the missing status."""
-    monkeypatch.setattr(
-        sys, 'argv', ['determine_mode', 'check-structure', '--plan-dir', str(tmp_path)]
-    )
+    monkeypatch.setattr(sys, 'argv', ['determine_mode', 'check-structure', '--plan-dir', str(tmp_path)])
 
     rc = dm.main()
 
@@ -827,9 +814,7 @@ def test_main_check_structure_dispatch(tmp_path: Path, monkeypatch, capsys):
 def test_main_check_working_prefixes_dispatch(tmp_path: Path, monkeypatch, capsys):
     """main() routes 'check-working-prefixes' and reports ok for a complete config."""
     _write_project_marshal(tmp_path, {'working_prefixes': _default_prefixes()})
-    monkeypatch.setattr(
-        sys, 'argv', ['determine_mode', 'check-working-prefixes', '--plan-dir', str(tmp_path)]
-    )
+    monkeypatch.setattr(sys, 'argv', ['determine_mode', 'check-working-prefixes', '--plan-dir', str(tmp_path)])
 
     rc = dm.main()
 

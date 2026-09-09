@@ -205,14 +205,12 @@ def test_the_token_scan_is_not_vacuous():
 
 
 def test_no_shipped_doc_pins_a_build_tool_outside_the_allow_list():
-    offenders = {
-        rel: tokens for rel, tokens in _HITS.items() if rel not in _ALLOW_LIST
-    }
+    offenders = {rel: tokens for rel, tokens in _HITS.items() if rel not in _ALLOW_LIST}
 
     assert not offenders, (
         f'These shipped documents name a concrete build tool and are not on the '
         f'legitimate-self-reference allow-list ({len(_ALLOW_LIST)} entries, '
-        f'derived from deliverable 1\'s classification): {offenders}. '
+        f"derived from deliverable 1's classification): {offenders}. "
         f'Either resolve the command through '
         f'`architecture resolve --command {{canonical}}`, or declare the '
         f'meta-project scope at the site and add the file to the allow-list '
@@ -227,9 +225,7 @@ def test_no_shipped_doc_pins_a_build_tool_outside_the_allow_list():
 
 
 def test_every_allow_list_entry_still_exists():
-    missing = sorted(
-        rel for rel in _ALLOW_LIST if not (PROJECT_ROOT / rel).is_file()
-    )
+    missing = sorted(rel for rel in _ALLOW_LIST if not (PROJECT_ROOT / rel).is_file())
 
     assert not missing, (
         f'These allow-list entries name no file in the tree, so the allow-list '
@@ -244,11 +240,7 @@ def test_every_allow_list_entry_still_carries_a_token():
     later removed keep standing as a permanent, unfalsifiable licence to
     reintroduce one.
     """
-    stale = sorted(
-        rel
-        for rel in _ALLOW_LIST
-        if (PROJECT_ROOT / rel).is_file() and not _tokens_in(PROJECT_ROOT / rel)
-    )
+    stale = sorted(rel for rel in _ALLOW_LIST if (PROJECT_ROOT / rel).is_file() and not _tokens_in(PROJECT_ROOT / rel))
 
     assert not stale, (
         f'These allow-list entries carry no build-tool token any more, so their '
@@ -279,18 +271,12 @@ def test_the_two_allow_list_categories_are_disjoint():
 
 
 def test_the_token_removed_shape_b_files_carry_no_build_tool_token():
-    assert _D1_SHAPE_B_TOKEN_REMOVED, (
-        'No token-removed shape-B file is registered, so this assertion sweeps '
-        'nothing'
-    )
+    assert _D1_SHAPE_B_TOKEN_REMOVED, 'No token-removed shape-B file is registered, so this assertion sweeps nothing'
 
     regressed = {}
     for rel in _D1_SHAPE_B_TOKEN_REMOVED:
         path = PROJECT_ROOT / rel
-        assert path.is_file(), (
-            f'{rel} no longer exists, so the remediation it records cannot be '
-            f'verified'
-        )
+        assert path.is_file(), f'{rel} no longer exists, so the remediation it records cannot be verified'
         tokens = _tokens_in(path)
         if tokens:
             regressed[rel] = tokens
@@ -323,11 +309,7 @@ def test_the_token_removed_files_are_not_on_the_allow_list():
 def test_token_detector_fires_on_a_consumer_facing_instruction(tmp_path):
     pinned = tmp_path / 'pinned.md'
     pinned.write_text(
-        'Run the gate before pushing:\n'
-        '\n'
-        '```bash\n'
-        './pw verify plan-marshall\n'
-        '```\n',
+        'Run the gate before pushing:\n\n```bash\n./pw verify plan-marshall\n```\n',
         encoding='utf-8',
     )
 

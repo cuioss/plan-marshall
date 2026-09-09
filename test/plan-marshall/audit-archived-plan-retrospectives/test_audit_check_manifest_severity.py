@@ -40,19 +40,7 @@ class TestManifestSeverityPrecision:
         assert 'name_drift_count: 1' in block
 
     def test_severity_classifier_marks_informational_rows(self):
-        assert (
-            audit._manifest_genuine({'verdict': 'drift', 'name_drift': None})
-            is True
-        )
-        assert (
-            audit._manifest_genuine({'verdict': 'ok', 'name_drift': 'x'})
-            is True
-        )
-        assert (
-            audit._manifest_genuine({'verdict': 'incomplete', 'name_drift': None})
-            is False
-        )
-        assert (
-            audit._manifest_genuine({'verdict': 'ok', 'name_drift': None})
-            is False
-        )
+        assert audit._manifest_genuine({'verdict': 'drift', 'name_drift': None}) is True
+        assert audit._manifest_genuine({'verdict': 'ok', 'name_drift': 'x'}) is True
+        assert audit._manifest_genuine({'verdict': 'incomplete', 'name_drift': None}) is False
+        assert audit._manifest_genuine({'verdict': 'ok', 'name_drift': None}) is False

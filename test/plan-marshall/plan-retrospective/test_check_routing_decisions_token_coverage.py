@@ -20,7 +20,6 @@ readable" is vacuously true over zero rows.
 Every positive assertion has its fully-measured, populated control beside it.
 """
 
-
 from __future__ import annotations
 
 from _check_routing_decisions_fixtures import _crd
@@ -45,9 +44,7 @@ class TestSumCoverageIsPublished:
 
     def test_a_fully_measured_population_reports_no_gap(self):
         """The control: without it, a reader that reported everything unmeasured passes."""
-        coverage = _crd.summarize_execution_log_tokens(
-            _manifest(_row('a', 40_000), _row('b', 60_000))
-        )
+        coverage = _crd.summarize_execution_log_tokens(_manifest(_row('a', 40_000), _row('b', 60_000)))
 
         assert coverage['total_tokens'] == 100_000
         assert coverage['rows_in_population'] == 2
@@ -90,9 +87,7 @@ class TestSumCoverageIsPublished:
 
         assert coverage['rows_in_population'] == 3
         assert (
-            coverage['rows_measured']
-            + coverage['rows_unmeasured']
-            + coverage['rows_unrecognised']
+            coverage['rows_measured'] + coverage['rows_unmeasured'] + coverage['rows_unrecognised']
             == coverage['rows_in_population']
         )
 
@@ -177,9 +172,7 @@ class TestCostPreviewRefusesOverAnEmptyPopulation:
 
     def test_rows_only_outside_the_population_refuse(self):
         """Rows exist, but none in the population the sum names."""
-        preview = _crd.evaluate_cost_preview(
-            _manifest(_row('a', 60_000, phase='1-init')), self._METADATA
-        )
+        preview = _crd.evaluate_cost_preview(_manifest(_row('a', 60_000, phase='1-init')), self._METADATA)
 
         assert preview['comparison'] == _crd.COMPARISON_REFUSED
         assert 'empty_population' in preview['comparison_reason']
@@ -299,9 +292,7 @@ class TestANonDecimalDigitCellIsUnrecognisedNotAnException:
 
     def test_a_corrupt_cell_does_not_stop_the_rest_of_the_population(self):
         """The consequence: the readable rows still sum, and the gap is published."""
-        coverage = _crd.summarize_execution_log_tokens(
-            _manifest(_row('a', 40_000), _row('b', '²'))
-        )
+        coverage = _crd.summarize_execution_log_tokens(_manifest(_row('a', 40_000), _row('b', '²')))
 
         assert coverage['total_tokens'] == 40_000
         assert coverage['rows_in_population'] == 2
@@ -349,9 +340,7 @@ class TestANegativeCountIsUnrecognisedInBothArms:
 
     def test_a_negative_does_not_subtract_from_a_readable_population(self):
         """The consequence: the readable rows sum intact and the gap is published."""
-        coverage = _crd.summarize_execution_log_tokens(
-            _manifest(_row('a', 40_000), _row('b', -1))
-        )
+        coverage = _crd.summarize_execution_log_tokens(_manifest(_row('a', 40_000), _row('b', -1)))
 
         assert coverage['total_tokens'] == 40_000
         assert coverage['rows_in_population'] == 2

@@ -288,9 +288,7 @@ def _extract_bullet_entries(block_content: str) -> list[dict[str, str | None]]:
             # Stop at the next bold heading (next deliverable field).
             chunk = re.split(r'\*\*[A-Z][^*]+:\*\*', block, maxsplit=1)[0]
             for match in _AFFECTED_FILE_BULLET_RE.finditer(chunk):
-                path, intent = _split_intent_suffix(
-                    match.group('quoted'), match.group('qtail'), match.group('bare')
-                )
+                path, intent = _split_intent_suffix(match.group('quoted'), match.group('qtail'), match.group('bare'))
                 if path:
                     entries.append({'path': path, 'intent': intent or default_intent})
     return entries
@@ -344,11 +342,7 @@ def extract_modification_intent_files(content: str) -> list[str]:
     and this filter then excludes them. An explicitly marked non-read survey
     bullet still counts: the heading supplies a default, never an override.
     """
-    return [
-        str(entry['path'])
-        for entry in _extract_bullet_entries(content)
-        if entry['intent'] != _READ_INTENT
-    ]
+    return [str(entry['path']) for entry in _extract_bullet_entries(content) if entry['intent'] != _READ_INTENT]
 
 
 def _declaration_state_per_deliverable(solution_content: str) -> list[dict[str, Any]]:
@@ -377,8 +371,7 @@ def _declaration_state_per_deliverable(solution_content: str) -> list[dict[str, 
                 'number': block['number'],
                 'title': block['title'],
                 'heading_present': any(
-                    f'**{heading}:**' in block['content']
-                    for heading, _default in _DECLARATION_HEADINGS
+                    f'**{heading}:**' in block['content'] for heading, _default in _DECLARATION_HEADINGS
                 ),
                 'files': _extract_bullets(block['content']),
             }
@@ -490,8 +483,7 @@ def check_affected_files_recall(
     if not declared:
         return (
             'skip',
-            'Every declared file carries read intent — no modification is '
-            'expected, so recall has nothing to compare',
+            'Every declared file carries read intent — no modification is expected, so recall has nothing to compare',
             {
                 'declared': 0,
                 'deliverables': len(deliverables),
@@ -579,8 +571,7 @@ def check_affected_files_exact_match(
         if not outline_files and not references_files:
             return (
                 'inconclusive',
-                'Both the declared set and the resolved footprint are empty — '
-                'the comparison substantiates no verdict',
+                'Both the declared set and the resolved footprint are empty — the comparison substantiates no verdict',
                 [],
                 [],
             )
@@ -802,9 +793,7 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
                     'message': f'solution_outline.md read_failed: {e}',
                 }
             )
-            findings.append(
-                {'severity': 'error', 'message': f'solution_outline.md read_failed: {e}'}
-            )
+            findings.append({'severity': 'error', 'message': f'solution_outline.md read_failed: {e}'})
         else:
             status, message = check_solution_outline_sections(solution_content)
             checks.append({'name': 'solution_outline_sections', 'status': status, 'message': message})

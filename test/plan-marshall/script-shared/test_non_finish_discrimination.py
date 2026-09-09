@@ -81,9 +81,7 @@ _CONDITIONS = {
     _KILLED: _make_result('killed', -9, error='killed', message=KILLED_MESSAGE),
     _TIMEOUT: _make_result('timeout', -1, error='timeout'),
     _RED: _make_result('error', 1, error='build_failed'),
-    _INDETERMINATE: _make_result(
-        'indeterminate', -1, error='indeterminate', message="daemon reported 'quiesced'"
-    ),
+    _INDETERMINATE: _make_result('indeterminate', -1, error='indeterminate', message="daemon reported 'quiesced'"),
 }
 
 #: The two NON-FINISHES. Neither reported a verdict, so neither may be
@@ -321,9 +319,7 @@ class TestEmitChokePointKeepsTheThreeApart:
 
     def test_control_red_build_still_stores_findings(self):
         """CONTROL: the producer-side finding store still fires on a real failure."""
-        with patch.object(
-            _build_shared_mod, '_store_build_findings', return_value=(1, 1, [])
-        ) as store:
+        with patch.object(_build_shared_mod, '_store_build_findings', return_value=(1, 1, [])) as store:
             cmd_run_common(
                 _CONDITIONS[_RED],
                 _failing_parser,
@@ -440,9 +436,7 @@ class TestCrossCheckPreservesTheLogVerdict:
             # an AttributeError raised deep inside the production read. Same
             # convention as the sibling ``test_daemon_routed_test_count``, which
             # drives a real on-disk job log for the same reason.
-            verdict = LogVerdict(
-                status=verdict_status, exit_code=exit_code, tests_run=tests_run
-            )
+            verdict = LogVerdict(status=verdict_status, exit_code=exit_code, tests_run=tests_run)
         with patch.object(factory, 'read_log_verdict', return_value=verdict):
             return factory._daemon_result_to_direct(
                 {
@@ -645,9 +639,7 @@ class TestVocabularyTranslationIsTotal:
         assert non_terminal == [], (
             'every _build_result status must translate to a member of '
             f'TERMINAL_STATUSES {sorted(protocol.TERMINAL_STATUSES)}; these do not: '
-            + ', '.join(
-                f'{s} -> {protocol.wire_status_from_result(s)}' for s in non_terminal
-            )
+            + ', '.join(f'{s} -> {protocol.wire_status_from_result(s)}' for s in non_terminal)
         )
 
     def test_the_modules_own_population_matches_the_independently_derived_one(self):

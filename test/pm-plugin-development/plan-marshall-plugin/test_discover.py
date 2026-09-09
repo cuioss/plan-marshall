@@ -187,9 +187,7 @@ def test_discover_bundles_nonexistent():
 def test_load_valid_plugin_json():
     """Test loading a valid plugin.json file."""
     project_root = PROJECT_ROOT
-    plugin_path = (
-        project_root / 'marketplace' / 'bundles' / 'pm-plugin-development' / '.claude-plugin' / 'plugin.json'
-    )
+    plugin_path = project_root / 'marketplace' / 'bundles' / 'pm-plugin-development' / '.claude-plugin' / 'plugin.json'
 
     if plugin_path.exists():
         data = load_plugin_json(plugin_path)
@@ -344,9 +342,7 @@ def test_discover_commands_refuses_traversal_reference():
     with tempfile.TemporaryDirectory() as td:
         bundle = _seed_traversal_bundle(Path(td))
 
-        packages = discover_commands(
-            bundle, {'commands': ['./commands/real-command.md', '../decoy/other-command.md']}
-        )
+        packages = discover_commands(bundle, {'commands': ['./commands/real-command.md', '../decoy/other-command.md']})
 
         assert set(packages) == {'command:real-command'}
         assert packages['command:real-command']['path'] == 'commands/real-command.md'

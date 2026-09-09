@@ -10,7 +10,6 @@ Its sections, in order:
 * Subcommand wrapper + missing-plan handling
 """
 
-
 from __future__ import annotations
 
 from _classification_validation_gate_fixtures import (
@@ -55,9 +54,7 @@ def test_class_two_and_class_three_are_mutually_exclusive(plan_context):
 def test_class_one_and_class_three_co_fire_two_findings(plan_context):
     """The reachable two-class maximum: a feature-shaped bug_fix stamp over a large body."""
     plan_dir = plan_context.plan_dir_for('cv-one-and-three')
-    _write_request(
-        plan_dir, _body_with_paths(_MULTI_MODULE_MIN_PATHS, lead=f'{_FEATURE_BODY} ')
-    )
+    _write_request(plan_dir, _body_with_paths(_MULTI_MODULE_MIN_PATHS, lead=f'{_FEATURE_BODY} '))
     _write_status(plan_dir, metadata={'change_type': 'bug_fix'})
     _write_references(plan_dir, scope_estimate='surgical')
 

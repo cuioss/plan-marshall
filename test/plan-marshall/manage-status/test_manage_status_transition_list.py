@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for manage-status.py transition: list across main and worktree, and orphan discovery."""
 
-
 import shutil
 from argparse import Namespace
 
@@ -37,15 +36,14 @@ def test_list_discovers_moved_in_worktree_plan(plan_context):
     assert result['status'] == 'success'
     assert result['total'] == 1, (
         f'cmd_list is blind to the moved-in worktree plan: expected total=1, '
-        f"got {result['total']} plans={result['plans']!r}. A regression to the "
+        f'got {result["total"]} plans={result["plans"]!r}. A regression to the '
         f'main-only plans_dir walk drops every phase-5+ plan whose directory '
         f'moved into its worktree (ADR-002).'
     )
     entry = result['plans'][0]
     assert entry['id'] == 'moved-in-plan'
     assert entry['location'] == 'worktree', (
-        f"Moved-in plan must be tagged location='worktree', got "
-        f"{entry['location']!r}."
+        f"Moved-in plan must be tagged location='worktree', got {entry['location']!r}."
     )
     assert entry['current_phase'] == '5-execute'
 
@@ -74,8 +72,7 @@ def test_list_merges_main_and_worktree_plans_sorted(plan_context):
 
     assert result['status'] == 'success'
     assert result['total'] == 2, (
-        f'Expected both the main-checkout and worktree plans, got '
-        f"total={result['total']} plans={result['plans']!r}."
+        f'Expected both the main-checkout and worktree plans, got total={result["total"]} plans={result["plans"]!r}.'
     )
     ids = [p['id'] for p in result['plans']]
     assert ids == ['alpha-on-main', 'zeta-in-worktree'], (
@@ -109,14 +106,12 @@ def test_list_dedupes_plan_present_in_both_main_and_worktree(plan_context):
 
     assert result['status'] == 'success'
     assert result['total'] == 1, (
-        f"Plan present in both sources must appear exactly once, got "
-        f"total={result['total']} plans={result['plans']!r}."
+        f'Plan present in both sources must appear exactly once, got total={result["total"]} plans={result["plans"]!r}.'
     )
     entry = result['plans'][0]
     assert entry['id'] == 'dual-present'
     assert entry['location'] == 'current', (
-        f"The main-checkout entry must win dedup (main scan runs first), got "
-        f"location={entry['location']!r}."
+        f'The main-checkout entry must win dedup (main scan runs first), got location={entry["location"]!r}.'
     )
 
 
@@ -128,15 +123,13 @@ def test_list_worktree_plan_honours_phase_filter(plan_context):
     _passes_phase_filter predicate as the main scan.
     """
     shutil.rmtree(plan_context.plan_dir, ignore_errors=True)
-    _seed_worktree_resident_plan(
-        plan_context.fixture_dir, 'filtered-worktree', current_phase='5-execute'
-    )
+    _seed_worktree_resident_plan(plan_context.fixture_dir, 'filtered-worktree', current_phase='5-execute')
 
     excluded = cmd_list(Namespace(filter='3-outline'))
     assert excluded['status'] == 'success'
     assert excluded['total'] == 0, (
         f'Worktree plan in 5-execute must be excluded by --filter 3-outline, '
-        f"got {excluded['plans']!r}. The worktree scan must apply the phase "
+        f'got {excluded["plans"]!r}. The worktree scan must apply the phase '
         f'filter, not just the main scan.'
     )
 
@@ -159,10 +152,7 @@ def test_list_cli_surfaces_worktree_plan(plan_context):
 
     result = run_script(SCRIPT_PATH, 'list')
 
-    assert result.success, (
-        f'list subcommand must be resolvable via the script entry point. '
-        f'stderr: {result.stderr}'
-    )
+    assert result.success, f'list subcommand must be resolvable via the script entry point. stderr: {result.stderr}'
     assert 'status: success' in result.stdout
     assert 'cli-worktree-plan' in result.stdout, (
         f'CLI list output missing the moved-in worktree plan: {result.stdout!r}'
@@ -192,7 +182,7 @@ def test_list_orphans_skips_dir_with_status_json(plan_context):
 
     assert result['status'] == 'success'
     assert result['total'] == 0, (
-        f"Legitimate plan with status.json must NOT be reported as orphan, got: {result['orphans']}"
+        f'Legitimate plan with status.json must NOT be reported as orphan, got: {result["orphans"]}'
     )
     assert result['orphans'] == []
 
@@ -257,8 +247,8 @@ def test_list_orphans_mixed_eight_orphans_plus_two_legitimate_plans(plan_context
     result = cmd_list_orphans(Namespace())
     assert result['status'] == 'success'
     assert result['total'] == 8, (
-        f"Expected exactly 8 orphans (legitimate lesson-* plans must be filtered out), "
-        f"got total={result['total']} ids={[o['id'] for o in result['orphans']]}"
+        f'Expected exactly 8 orphans (legitimate lesson-* plans must be filtered out), '
+        f'got total={result["total"]} ids={[o["id"] for o in result["orphans"]]}'
     )
     returned_ids = [o['id'] for o in result['orphans']]
     assert returned_ids == sorted(orphan_names), (
@@ -269,8 +259,7 @@ def test_list_orphans_mixed_eight_orphans_plus_two_legitimate_plans(plan_context
 
     cli_result = run_script(SCRIPT_PATH, 'list-orphans')
     assert cli_result.success, (
-        f'list-orphans subcommand must be resolvable via the script entry point. '
-        f'stderr: {cli_result.stderr}'
+        f'list-orphans subcommand must be resolvable via the script entry point. stderr: {cli_result.stderr}'
     )
     assert 'status: success' in cli_result.stdout
     for name in orphan_names:

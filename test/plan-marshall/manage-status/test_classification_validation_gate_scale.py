@@ -9,7 +9,6 @@ Its sections, in order:
 * Class 3 — fan_out_marker propagation (the sibling of the scan_incomplete row)
 """
 
-
 from __future__ import annotations
 
 import builtins
@@ -132,9 +131,7 @@ def test_scale_mismatch_boundary_is_driven_by_the_sensor_threshold(plan_context)
     at_floor_result = run_classification_validation('cv-scale-at-floor')
 
     assert below_result['mismatch_count'] == 0, f'{below} paths must not fire'
-    assert at_floor_result['mismatch_count'] == 1, (
-        f'{_MULTI_MODULE_MIN_PATHS} paths must fire'
-    )
+    assert at_floor_result['mismatch_count'] == 1, f'{_MULTI_MODULE_MIN_PATHS} paths must fire'
 
 
 # -----------------------------------------------------------------------------
@@ -165,8 +162,7 @@ def test_scale_mismatch_fires_when_the_scan_is_incomplete_below_the_floor(plan_c
 
     classes = {m['mismatch'] for m in result['mismatches']}
     assert classes == {'scale_mismatch_light_routing'}, (
-        'an incomplete scan under the floor must fall through to the mismatch, '
-        'not short-circuit past it'
+        'an incomplete scan under the floor must fall through to the mismatch, not short-circuit past it'
     )
     assert result['findings_emitted'] == 1
     # Flag-not-block is unchanged by the widened predicate.
@@ -245,8 +241,7 @@ def test_scale_mismatch_fires_on_a_fan_out_marker_below_the_floor(plan_context):
 
     classes = {m['mismatch'] for m in result['mismatches']}
     assert classes == {'scale_mismatch_light_routing'}, (
-        'a fan-out marker under the path-count floor must fall through to the '
-        'mismatch, not short-circuit past it'
+        'a fan-out marker under the path-count floor must fall through to the mismatch, not short-circuit past it'
     )
     assert result['findings_emitted'] == 1
     assert result['status'] == 'success'

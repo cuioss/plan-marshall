@@ -92,9 +92,7 @@ def _discover_steps_for_phase(phase_section: str) -> list[dict]:
     return []
 
 
-def _resolve_step_orders(
-    steps: list[str], phase_section: str
-) -> tuple[list[tuple[str, float]], dict | None]:
+def _resolve_step_orders(steps: list[str], phase_section: str) -> tuple[list[tuple[str, float]], dict | None]:
     """Resolve `(step, order)` pairs and detect missing/colliding orders.
 
     Order is taken exclusively from each step's authoritative source (frontmatter
@@ -201,11 +199,7 @@ def _steps_map(raw) -> dict:
     """
     if not isinstance(raw, dict):
         return {}
-    return {
-        step_id: (value if isinstance(value, dict) else {})
-        for step_id, value in raw.items()
-    }
-
+    return {step_id: (value if isinstance(value, dict) else {}) for step_id, value in raw.items()}
 
 
 # Actionable remedy pair surfaced when a use_merge_queue set is rejected. Both
@@ -280,17 +274,11 @@ def _validate_use_merge_queue(value, config: dict | None = None) -> str | None:
     probe = _run_merge_queue_probe()
     if probe.get('status') != 'success':
         detail = probe.get('display_detail') or probe.get('error') or 'probe did not succeed'
-        return (
-            f'Cannot enable use_merge_queue — the merge-queue probe failed: {detail}. '
-            f'{_MERGE_QUEUE_BOTH_REMEDIES}'
-        )
+        return f'Cannot enable use_merge_queue — the merge-queue probe failed: {detail}. {_MERGE_QUEUE_BOTH_REMEDIES}'
     eligibility = probe.get('eligibility')
     if eligibility in _MERGE_QUEUE_ELIGIBLE_STATES:
         return None
-    return (
-        f"Cannot enable use_merge_queue — the platform merge queue is '{eligibility}'. "
-        f'{_MERGE_QUEUE_BOTH_REMEDIES}'
-    )
+    return f"Cannot enable use_merge_queue — the platform merge queue is '{eligibility}'. {_MERGE_QUEUE_BOTH_REMEDIES}"
 
 
 def _cmd_step(args, phase_section: str, section: dict, plan_config: dict, config: dict) -> dict:
@@ -317,9 +305,7 @@ def _cmd_step(args, phase_section: str, section: dict, plan_config: dict, config
     if args.step_verb == 'get':
         if step_id not in steps:
             return error_exit(f"Step '{step_id}' not found in {phase_section}")
-        return success_exit(
-            {'phase': phase_section, 'step_id': step_id, 'params': steps[step_id]}
-        )
+        return success_exit({'phase': phase_section, 'step_id': step_id, 'params': steps[step_id]})
 
     if args.step_verb == 'set':
         if step_id not in steps:
@@ -342,9 +328,7 @@ def _cmd_step(args, phase_section: str, section: dict, plan_config: dict, config
         plan_config[phase_section] = section
         config['plan'] = plan_config
         save_config(config)
-        return success_exit(
-            {'phase': phase_section, 'step_id': step_id, 'params': params}
-        )
+        return success_exit({'phase': phase_section, 'step_id': step_id, 'params': params})
 
     return error_exit(f"Unknown step verb '{args.step_verb}'")
 
@@ -482,9 +466,7 @@ def cmd_phase(args, phase_section: str) -> dict:
         plan_config[phase_section] = section
         config['plan'] = plan_config
         save_config(config)
-        return success_exit(
-            {'phase': phase_section, step_key: sorted_map, 'count': len(sorted_map)}
-        )
+        return success_exit({'phase': phase_section, step_key: sorted_map, 'count': len(sorted_map)})
 
     elif args.verb == 'add-step' and phase_section in STEP_PHASES:
         step_key = STEP_KEYS[phase_section]
@@ -505,9 +487,7 @@ def cmd_phase(args, phase_section: str) -> dict:
         plan_config[phase_section] = section
         config['plan'] = plan_config
         save_config(config)
-        return success_exit(
-            {'phase': phase_section, 'step': step, step_key: sorted_map, 'count': len(sorted_map)}
-        )
+        return success_exit({'phase': phase_section, 'step': step, step_key: sorted_map, 'count': len(sorted_map)})
 
     elif args.verb == 'remove-step' and phase_section in STEP_PHASES:
         step_key = STEP_KEYS[phase_section]
@@ -522,9 +502,7 @@ def cmd_phase(args, phase_section: str) -> dict:
         plan_config[phase_section] = section
         config['plan'] = plan_config
         save_config(config)
-        return success_exit(
-            {'phase': phase_section, 'step': step, step_key: existing, 'count': len(existing)}
-        )
+        return success_exit({'phase': phase_section, 'step': step, step_key: existing, 'count': len(existing)})
 
     elif args.verb == 'remove-field':
         # Delete an arbitrary scalar/list key from the persisted phase section.

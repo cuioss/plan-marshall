@@ -10,7 +10,6 @@ deliverable count against its sibling producer and the sampling point against
 the module's single discriminator vocabulary.
 """
 
-
 import json
 
 import pytest
@@ -169,9 +168,7 @@ def test_references_json_without_an_affected_files_list_is_absent(plan_context):
     """
     plan_id = 'denom-no-files-key'
     plan_dir = _seed_phases(plan_id)
-    (plan_dir / 'references.json').write_text(
-        json.dumps({'base_branch': 'main'}), encoding='utf-8'
-    )
+    (plan_dir / 'references.json').write_text(json.dumps({'base_branch': 'main'}), encoding='utf-8')
 
     cmd_generate(ns_generate(plan_id))
 
@@ -193,9 +190,7 @@ def test_references_json_without_an_affected_files_list_is_absent(plan_context):
         ),
     ],
 )
-def test_readable_outline_with_no_deliverable_heading_is_counted_as_zero(
-    plan_context, label, outline
-):
+def test_readable_outline_with_no_deliverable_heading_is_counted_as_zero(plan_context, label, outline):
     """A readable outline yielding no heading is a measured `0`, not absence.
 
     The count was taken and the answer was zero. Only an outline that could not
@@ -215,6 +210,7 @@ def test_readable_outline_with_no_deliverable_heading_is_counted_as_zero(
 # =============================================================================
 # One deliverable grammar, not two producers of one number
 # =============================================================================
+
 
 @pytest.mark.parametrize('label', sorted(_DIVERGENT_OUTLINES))
 def test_deliverable_count_agrees_with_the_sibling_producer(plan_context, label):
@@ -262,9 +258,7 @@ def test_deliverable_count_agrees_with_the_sibling_producer(plan_context, label)
     # outline. So the agreement above is a real constraint, not two
     # implementations that happen to coincide on the input chosen.
     retired = len([line for line in outline.splitlines() if _RETIRED_WHOLE_FILE_RE.match(line)])
-    assert retired != counted, (
-        f'{label} no longer distinguishes the two grammars — pick a divergent outline'
-    )
+    assert retired != counted, f'{label} no longer distinguishes the two grammars — pick a divergent outline'
 
 
 # =============================================================================
@@ -297,9 +291,7 @@ def test_sampling_point_reuses_the_modules_single_discriminator_vocabulary():
     vocabularies = {
         name: value
         for name, value in vars(manage_metrics).items()
-        if not name.startswith('_')
-        and isinstance(value, tuple)
-        and all(isinstance(item, str) for item in value)
+        if not name.startswith('_') and isinstance(value, tuple) and all(isinstance(item, str) for item in value)
     }
 
     # Non-vacuity: the derived population is non-empty AND covers the three named

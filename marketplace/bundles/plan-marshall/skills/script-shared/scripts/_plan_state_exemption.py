@@ -219,9 +219,7 @@ def tracked_plan_paths(tree: str | Path) -> set[str] | None:
     index = _observe_z(tree, ['ls-files', '-z', '--', _PLAN_STATE_PREFIX])
     if index is None:
         return None
-    head = _observe_z(
-        tree, ['ls-tree', '-r', '-z', '--name-only', 'HEAD', '--', _PLAN_STATE_PREFIX]
-    )
+    head = _observe_z(tree, ['ls-tree', '-r', '-z', '--name-only', 'HEAD', '--', _PLAN_STATE_PREFIX])
     if head is None:
         if not _repository_is_unborn(tree):
             # The repository HOLDS commits, so the index answer is not complete —
@@ -235,9 +233,7 @@ def tracked_plan_paths(tree: str | Path) -> set[str] | None:
     return index | head
 
 
-def partition_plan_state_exemption(
-    paths: list[str], tree: str | Path
-) -> tuple[list[str], list[str]]:
+def partition_plan_state_exemption(paths: list[str], tree: str | Path) -> tuple[list[str], list[str]]:
     """Split observed dirty ``paths`` into ``(retained, exempted)`` against ``tree``.
 
     A path is **exempted** (dropped) only when it is a ``.plan/`` path CONFIRMED

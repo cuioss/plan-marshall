@@ -28,6 +28,7 @@ real settings files are mutated.
 Integration test: test_project_initial_setup_fresh_init is a full end-to-end
 test that exercises the happy-path of project_initial_setup without mocking.
 """
+
 from __future__ import annotations  # noqa: I001
 
 import contextlib
@@ -82,17 +83,17 @@ def _accept_connection(*_args, **_kwargs):
 
 def _make_settings(allow: list[str] | None = None) -> dict[str, Any]:
     """Build a minimal settings dict for tests."""
-    return {"permissions": {"allow": list(allow or []), "deny": [], "ask": []}}
+    return {'permissions': {'allow': list(allow or []), 'deny': [], 'ask': []}}
 
 
 def _write_settings(path: Path, allow: list[str] | None = None) -> None:
     """Write a minimal settings.json at *path*."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(_make_settings(allow)), encoding="utf-8")
+    path.write_text(json.dumps(_make_settings(allow)), encoding='utf-8')
 
 
-def _make_marshal(target: str = "claude") -> dict[str, Any]:
-    return {"runtime": {"target": target}}
+def _make_marshal(target: str = 'claude') -> dict[str, Any]:
+    return {'runtime': {'target': target}}
 
 
 def _parsed(output: str) -> dict[str, Any]:
@@ -114,9 +115,9 @@ def rt(tmp_path, monkeypatch):
     """
     import claude_runtime as _cr
 
-    monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
-    monkeypatch.setattr(_cr, "_CLAUDE_PROJECTS_DIR", tmp_path / "projects")
-    monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
+    monkeypatch.setattr(session_binding, '_SESSION_CACHE_BASE', tmp_path / 'sessions')
+    monkeypatch.setattr(_cr, '_CLAUDE_PROJECTS_DIR', tmp_path / 'projects')
+    monkeypatch.setattr(_cr, '_PLAN_DIR_NAME', '.plan')
     return ClaudeRuntime()
 
 
@@ -137,26 +138,26 @@ class TestReadActiveOrchestrator:
     @pytest.fixture()
     def session_cache_base(self, tmp_path, monkeypatch):
         """Redirect the session cache root to an isolated tmp_path."""
-        monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
+        monkeypatch.setattr(session_binding, '_SESSION_CACHE_BASE', tmp_path / 'sessions')
 
     def test_returns_bound_epic_slug(self, session_cache_base):
         """After bind_orchestrator, the helper returns the bound epic slug."""
-        session_binding.bind_orchestrator("sess-orch-read", "my-epic")
-        assert claude_runtime._read_active_orchestrator("sess-orch-read") == "my-epic"
+        session_binding.bind_orchestrator('sess-orch-read', 'my-epic')
+        assert claude_runtime._read_active_orchestrator('sess-orch-read') == 'my-epic'
 
     def test_unbound_session_returns_none(self, session_cache_base):
         """An unbound session resolves to None."""
-        assert claude_runtime._read_active_orchestrator("sess-orch-none") is None
+        assert claude_runtime._read_active_orchestrator('sess-orch-none') is None
 
     def test_malformed_session_id_returns_none(self, session_cache_base):
         """A malformed session id resolves to None without touching disk."""
-        assert claude_runtime._read_active_orchestrator("../evil") is None
+        assert claude_runtime._read_active_orchestrator('../evil') is None
 
     def test_plan_binding_does_not_leak_into_orchestrator_read(self, session_cache_base):
         """A plan-bound session (no epic) resolves None on the orchestrator read —
         the two kind-disjoint slots do not cross-read."""
-        session_binding.bind("sess-plan-only", "some-plan")
-        assert claude_runtime._read_active_orchestrator("sess-plan-only") is None
+        session_binding.bind('sess-plan-only', 'some-plan')
+        assert claude_runtime._read_active_orchestrator('sess-plan-only') is None
 
 
 # =============================================================================
@@ -169,27 +170,27 @@ class TestProjectInitialSetup:
 
     def test_unknown_target_returns_error(self, rt, tmp_path):
         """Passing an unknown target returns status=error."""
-        result = _parsed(rt.project_initial_setup(str(tmp_path), "unknown_target"))
-        assert result["status"] == "error"
-        assert result["error"] == "unknown_target"
+        result = _parsed(rt.project_initial_setup(str(tmp_path), 'unknown_target'))
+        assert result['status'] == 'error'
+        assert result['error'] == 'unknown_target'
 
     def test_creates_plan_temp_directory(self, rt, tmp_path):
         """project_initial_setup creates .plan/temp/ under the project dir."""
-        project_dir = tmp_path / "my-project"
+        project_dir = tmp_path / 'my-project'
         project_dir.mkdir()
-        output = rt.project_initial_setup(str(project_dir), "claude")
+        output = rt.project_initial_setup(str(project_dir), 'claude')
         result = _parsed(output)
-        assert result["status"] == "success"
-        assert (project_dir / ".plan" / "temp").is_dir()
+        assert result['status'] == 'success'
+        assert (project_dir / '.plan' / 'temp').is_dir()
 
     def test_writes_marshal_json_with_runtime_target(self, rt, tmp_path):
         """project_initial_setup writes .plan/marshal.json with runtime.target=claude."""
-        project_dir = tmp_path / "proj"
+        project_dir = tmp_path / 'proj'
         project_dir.mkdir()
-        rt.project_initial_setup(str(project_dir), "claude")
-        marshal = json.loads((project_dir / ".plan" / "marshal.json").read_text())
-        assert marshal["runtime"]["target"] == "claude"
-        assert marshal["project_dir"] == str(project_dir.resolve())
+        rt.project_initial_setup(str(project_dir), 'claude')
+        marshal = json.loads((project_dir / '.plan' / 'marshal.json').read_text())
+        assert marshal['runtime']['target'] == 'claude'
+        assert marshal['project_dir'] == str(project_dir.resolve())
 
     def test_preserves_pre_existing_marshal_blocks(self, rt, tmp_path):
         """An existing marshal.json is MERGED into, never overwritten.
@@ -205,30 +206,30 @@ class TestProjectInitialSetup:
         read-merges; the two targets implement one contract operation and must
         not disagree on whether it is destructive.
         """
-        project_dir = tmp_path / "preserve-proj"
-        marshal_path = project_dir / ".plan" / "marshal.json"
+        project_dir = tmp_path / 'preserve-proj'
+        marshal_path = project_dir / '.plan' / 'marshal.json'
         marshal_path.parent.mkdir(parents=True)
         marshal_path.write_text(
             json.dumps(
                 {
-                    "plan": {"phase-2-refine": {"compatibility": "breaking"}},
-                    "build": {"map": {"python": []}},
-                    "runtime": {"target": "opencode"},
+                    'plan': {'phase-2-refine': {'compatibility': 'breaking'}},
+                    'build': {'map': {'python': []}},
+                    'runtime': {'target': 'opencode'},
                 }
             ),
-            encoding="utf-8",
+            encoding='utf-8',
         )
 
-        result = _parsed(rt.project_initial_setup(str(project_dir), "claude"))
-        assert result["status"] == "success"
+        result = _parsed(rt.project_initial_setup(str(project_dir), 'claude'))
+        assert result['status'] == 'success'
 
         marshal = json.loads(marshal_path.read_text())
         # The operation's own effect landed...
-        assert marshal["runtime"]["target"] == "claude"
-        assert marshal["project_dir"] == str(project_dir.resolve())
+        assert marshal['runtime']['target'] == 'claude'
+        assert marshal['project_dir'] == str(project_dir.resolve())
         # ...and every pre-existing block survived it.
-        assert marshal["plan"] == {"phase-2-refine": {"compatibility": "breaking"}}
-        assert marshal["build"] == {"map": {"python": []}}
+        assert marshal['plan'] == {'phase-2-refine': {'compatibility': 'breaking'}}
+        assert marshal['build'] == {'map': {'python': []}}
 
     def test_unparseable_marshal_yields_io_error_and_leaves_file_intact(self, rt, tmp_path):
         """A corrupt marshal.json is reported as io_error and left untouched.
@@ -239,30 +240,28 @@ class TestProjectInitialSetup:
         document would overwrite precisely the config a corrupt-file path must
         preserve, turning an unreadable config into a destroyed one.
         """
-        project_dir = tmp_path / "corrupt-proj"
-        marshal_path = project_dir / ".plan" / "marshal.json"
+        project_dir = tmp_path / 'corrupt-proj'
+        marshal_path = project_dir / '.plan' / 'marshal.json'
         marshal_path.parent.mkdir(parents=True)
         corrupt = '{"plan": {"phase-2-refine": '  # truncated — not valid JSON
-        marshal_path.write_text(corrupt, encoding="utf-8")
+        marshal_path.write_text(corrupt, encoding='utf-8')
 
-        result = _parsed(rt.project_initial_setup(str(project_dir), "claude"))
+        result = _parsed(rt.project_initial_setup(str(project_dir), 'claude'))
 
-        assert result["status"] == "error"
-        assert result["error"] == "io_error"
+        assert result['status'] == 'error'
+        assert result['error'] == 'io_error'
         # The corrupt bytes are still exactly what they were — not replaced by
         # a fresh document, and not emptied.
-        assert marshal_path.read_text(encoding="utf-8") == corrupt
+        assert marshal_path.read_text(encoding='utf-8') == corrupt
 
     @pytest.mark.parametrize(
-        ("raw", "case_id"),
+        ('raw', 'case_id'),
         [
-            pytest.param("[]", "top-level-list", id="top-level-list"),
-            pytest.param('{"runtime": null}', "null-runtime", id="null-runtime-block"),
+            pytest.param('[]', 'top-level-list', id='top-level-list'),
+            pytest.param('{"runtime": null}', 'null-runtime', id='null-runtime-block'),
         ],
     )
-    def test_parseable_but_wrong_shape_yields_io_error_and_leaves_file_intact(
-        self, rt, tmp_path, raw, case_id
-    ):
+    def test_parseable_but_wrong_shape_yields_io_error_and_leaves_file_intact(self, rt, tmp_path, raw, case_id):
         """A PARSEABLE marshal.json of the wrong shape takes the io_error route too.
 
         The parse edge and the shape edge are distinct: ``json.loads`` succeeds on
@@ -282,16 +281,16 @@ class TestProjectInitialSetup:
         Both assert the file is byte-unchanged: refusing must not overwrite the
         config the refusal exists to preserve.
         """
-        project_dir = tmp_path / f"shape-{case_id}"
-        marshal_path = project_dir / ".plan" / "marshal.json"
+        project_dir = tmp_path / f'shape-{case_id}'
+        marshal_path = project_dir / '.plan' / 'marshal.json'
         marshal_path.parent.mkdir(parents=True)
-        marshal_path.write_text(raw, encoding="utf-8")
+        marshal_path.write_text(raw, encoding='utf-8')
 
-        result = _parsed(rt.project_initial_setup(str(project_dir), "claude"))
+        result = _parsed(rt.project_initial_setup(str(project_dir), 'claude'))
 
-        assert result["status"] == "error"
-        assert result["error"] == "io_error"
-        assert marshal_path.read_text(encoding="utf-8") == raw
+        assert result['status'] == 'error'
+        assert result['error'] == 'io_error'
+        assert marshal_path.read_text(encoding='utf-8') == raw
 
     def test_absent_runtime_key_is_not_treated_as_a_shape_violation(self, rt, tmp_path):
         """Matched negative control: a runtime-less object still initializes.
@@ -301,36 +300,36 @@ class TestProjectInitialSetup:
         document lacking a dict ``runtime`` block would satisfy both rejection
         cases above while making a first-run initialization impossible.
         """
-        project_dir = tmp_path / "no-runtime-key"
-        marshal_path = project_dir / ".plan" / "marshal.json"
+        project_dir = tmp_path / 'no-runtime-key'
+        marshal_path = project_dir / '.plan' / 'marshal.json'
         marshal_path.parent.mkdir(parents=True)
-        marshal_path.write_text(json.dumps({"plan": {"keep": True}}), encoding="utf-8")
+        marshal_path.write_text(json.dumps({'plan': {'keep': True}}), encoding='utf-8')
 
-        result = _parsed(rt.project_initial_setup(str(project_dir), "claude"))
+        result = _parsed(rt.project_initial_setup(str(project_dir), 'claude'))
 
-        assert result["status"] == "success"
+        assert result['status'] == 'success'
         marshal = json.loads(marshal_path.read_text())
-        assert marshal["runtime"]["target"] == "claude"
-        assert marshal["plan"] == {"keep": True}
+        assert marshal['runtime']['target'] == 'claude'
+        assert marshal['plan'] == {'keep': True}
 
     def test_response_includes_target_and_marshal_written(self, rt, tmp_path):
         """Success response includes target, project_dir, marshal_written fields."""
-        project_dir = tmp_path / "proj2"
+        project_dir = tmp_path / 'proj2'
         project_dir.mkdir()
-        result = _parsed(rt.project_initial_setup(str(project_dir), "claude"))
-        assert result["target"] == "claude"
-        assert result["marshal_written"] is True
+        result = _parsed(rt.project_initial_setup(str(project_dir), 'claude'))
+        assert result['target'] == 'claude'
+        assert result['marshal_written'] is True
 
     def test_hook_not_installed_twice(self, rt, tmp_path):
         """Calling project_initial_setup twice does not duplicate the hook entry."""
-        project_dir = tmp_path / "proj3"
+        project_dir = tmp_path / 'proj3'
         project_dir.mkdir()
-        rt.project_initial_setup(str(project_dir), "claude")
-        rt.project_initial_setup(str(project_dir), "claude")
-        settings = json.loads((project_dir / ".claude" / "settings.local.json").read_text())
-        session_starts = settings.get("hooks", {}).get("SessionStart", [])
+        rt.project_initial_setup(str(project_dir), 'claude')
+        rt.project_initial_setup(str(project_dir), 'claude')
+        settings = json.loads((project_dir / '.claude' / 'settings.local.json').read_text())
+        session_starts = settings.get('hooks', {}).get('SessionStart', [])
         hook_count = sum(
-            sum(1 for h in entry.get("hooks", []) if h.get("command") == _HOOK_COMMAND)
+            sum(1 for h in entry.get('hooks', []) if h.get('command') == _HOOK_COMMAND)
             for entry in session_starts
             if isinstance(entry, dict)
         )
@@ -338,14 +337,14 @@ class TestProjectInitialSetup:
 
     def test_installs_session_start_hook(self, rt, tmp_path):
         """project_initial_setup writes the SessionStart hook to .claude/settings.local.json."""
-        project_dir = tmp_path / "proj4"
+        project_dir = tmp_path / 'proj4'
         project_dir.mkdir()
-        result = _parsed(rt.project_initial_setup(str(project_dir), "claude"))
-        assert result["hook_installed"] is True
-        settings_path = project_dir / ".claude" / "settings.local.json"
+        result = _parsed(rt.project_initial_setup(str(project_dir), 'claude'))
+        assert result['hook_installed'] is True
+        settings_path = project_dir / '.claude' / 'settings.local.json'
         assert settings_path.is_file()
         settings = json.loads(settings_path.read_text())
-        session_starts = settings.get("hooks", {}).get("SessionStart", [])
+        session_starts = settings.get('hooks', {}).get('SessionStart', [])
         assert len(session_starts) >= 1
 
 
@@ -354,40 +353,40 @@ class TestProjectInitialSetupFreshInit:
 
     def test_fresh_init_creates_all_expected_artifacts(self, tmp_path):
         """Full happy-path: directories, marshal.json, and SessionStart hook all created."""
-        project_dir = tmp_path / "integration-project"
+        project_dir = tmp_path / 'integration-project'
         project_dir.mkdir()
 
         # Run without any monkeypatching — real filesystem operations.
         runtime = ClaudeRuntime()
-        output = runtime.project_initial_setup(str(project_dir), "claude")
+        output = runtime.project_initial_setup(str(project_dir), 'claude')
         result = _parsed(output)
 
         # Status
-        assert result["status"] == "success"
-        assert result["target"] == "claude"
-        assert result["marshal_written"] is True
+        assert result['status'] == 'success'
+        assert result['target'] == 'claude'
+        assert result['marshal_written'] is True
 
         # Directory structure
-        assert (project_dir / ".plan").is_dir()
-        assert (project_dir / ".plan" / "temp").is_dir()
+        assert (project_dir / '.plan').is_dir()
+        assert (project_dir / '.plan' / 'temp').is_dir()
 
         # marshal.json content
-        marshal_path = project_dir / ".plan" / "marshal.json"
+        marshal_path = project_dir / '.plan' / 'marshal.json'
         assert marshal_path.is_file()
         marshal = json.loads(marshal_path.read_text())
-        assert marshal["runtime"]["target"] == "claude"
-        assert "project_dir" in marshal
+        assert marshal['runtime']['target'] == 'claude'
+        assert 'project_dir' in marshal
 
         # SessionStart hook in settings.local.json
-        settings_path = project_dir / ".claude" / "settings.local.json"
+        settings_path = project_dir / '.claude' / 'settings.local.json'
         assert settings_path.is_file()
         settings = json.loads(settings_path.read_text())
-        session_starts = settings.get("hooks", {}).get("SessionStart", [])
+        session_starts = settings.get('hooks', {}).get('SessionStart', [])
         hook_commands = [
-            h.get("command")
+            h.get('command')
             for entry in session_starts
             if isinstance(entry, dict)
-            for h in entry.get("hooks", [])
+            for h in entry.get('hooks', [])
             if isinstance(h, dict)
         ]
         assert _HOOK_COMMAND in hook_commands
@@ -401,10 +400,10 @@ class TestProjectInitialSetupFreshInit:
 def _collect_commands(entries: list[dict[str, Any]]) -> list[str]:
     """Return the list of hook commands inside a hooks-event entry list."""
     commands: list = [
-        h.get("command")
+        h.get('command')
         for entry in entries
         if isinstance(entry, dict)
-        for h in entry.get("hooks", [])
+        for h in entry.get('hooks', [])
         if isinstance(h, dict)
     ]
     return commands
@@ -419,15 +418,15 @@ def _count_command(entries: list[dict[str, Any]], command: str) -> int:
 # as the single test-side copy so the partition assertions and the per-event
 # assertions cannot drift apart.
 _NINE_RENDER_LABELS = {
-    "SessionStart:matcher-less",
-    "SessionStart:clear",
-    "UserPromptSubmit",
-    "Notification",
-    "Stop",
-    "PreToolUse:AskUserQuestion",
-    "PreToolUse:Bash",
-    "PostToolUse:AskUserQuestion",
-    "PostToolUse:Bash",
+    'SessionStart:matcher-less',
+    'SessionStart:clear',
+    'UserPromptSubmit',
+    'Notification',
+    'Stop',
+    'PreToolUse:AskUserQuestion',
+    'PreToolUse:Bash',
+    'PostToolUse:AskUserQuestion',
+    'PostToolUse:Bash',
 }
 
 
@@ -438,11 +437,11 @@ def _timeouts_for(entries: list[dict[str, Any]], command: str) -> set:
     carries exactly this value" without depending on entry ordering.
     """
     return {
-        h.get("timeout")
+        h.get('timeout')
         for entry in entries
         if isinstance(entry, dict)
-        for h in entry.get("hooks", [])
-        if isinstance(h, dict) and h.get("command") == command
+        for h in entry.get('hooks', [])
+        if isinstance(h, dict) and h.get('command') == command
     }
 
 
@@ -454,7 +453,7 @@ def _render_timeouts(entries: list[dict[str, Any]]) -> set:
 def _all_render_timeouts(settings: dict[str, Any]) -> set:
     """Return every render-entry ``timeout`` across every hooks block."""
     values: set = set()
-    for block in settings.get("hooks", {}).values():
+    for block in settings.get('hooks', {}).values():
         if isinstance(block, list):
             values |= _render_timeouts(block)
     return values
@@ -468,16 +467,16 @@ def _stale_every_timeout(target: Path, stale_value: int = 5000) -> None:
     rather than over a hand-picked sample.
     """
     settings = json.loads(target.read_text())
-    for block in settings.get("hooks", {}).values():
+    for block in settings.get('hooks', {}).values():
         if not isinstance(block, list):
             continue
         for entry in block:
             if not isinstance(entry, dict):
                 continue
-            for hook in entry.get("hooks", []):
-                if isinstance(hook, dict) and "timeout" in hook:
-                    hook["timeout"] = stale_value
-    target.write_text(json.dumps(settings), encoding="utf-8")
+            for hook in entry.get('hooks', []):
+                if isinstance(hook, dict) and 'timeout' in hook:
+                    hook['timeout'] = stale_value
+    target.write_text(json.dumps(settings), encoding='utf-8')
 
 
 def _stale_capture_timeout_only(target: Path, stale_value: int = 5000) -> None:
@@ -489,13 +488,13 @@ def _stale_capture_timeout_only(target: Path, stale_value: int = 5000) -> None:
     the nine render labels from a report of what the call actually rewrote.
     """
     settings = json.loads(target.read_text())
-    for entry in settings.get("hooks", {}).get("SessionStart", []):
+    for entry in settings.get('hooks', {}).get('SessionStart', []):
         if not isinstance(entry, dict):
             continue
-        for hook in entry.get("hooks", []):
-            if isinstance(hook, dict) and hook.get("command") == _HOOK_COMMAND:
-                hook["timeout"] = stale_value
-    target.write_text(json.dumps(settings), encoding="utf-8")
+        for hook in entry.get('hooks', []):
+            if isinstance(hook, dict) and hook.get('command') == _HOOK_COMMAND:
+                hook['timeout'] = stale_value
+    target.write_text(json.dumps(settings), encoding='utf-8')
 
 
 def _drop_capture_entry(target: Path) -> None:
@@ -506,24 +505,21 @@ def _drop_capture_entry(target: Path) -> None:
     install appends it and writes the file with no render label changing.
     """
     settings = json.loads(target.read_text())
-    hooks = settings.get("hooks", {})
-    hooks["SessionStart"] = [
+    hooks = settings.get('hooks', {})
+    hooks['SessionStart'] = [
         entry
-        for entry in hooks.get("SessionStart", [])
+        for entry in hooks.get('SessionStart', [])
         if not (
             isinstance(entry, dict)
-            and any(
-                isinstance(h, dict) and h.get("command") == _HOOK_COMMAND
-                for h in entry.get("hooks", [])
-            )
+            and any(isinstance(h, dict) and h.get('command') == _HOOK_COMMAND for h in entry.get('hooks', []))
         )
     ]
-    target.write_text(json.dumps(settings), encoding="utf-8")
+    target.write_text(json.dumps(settings), encoding='utf-8')
 
 
 def _capture_timeouts(settings: dict[str, Any]) -> set:
     """Return the ``timeout`` values on the SessionStart capture entries."""
-    return _timeouts_for(settings.get("hooks", {}).get("SessionStart", []), _HOOK_COMMAND)
+    return _timeouts_for(settings.get('hooks', {}).get('SessionStart', []), _HOOK_COMMAND)
 
 
 def _assert_nine_label_partition(result: dict[str, Any]) -> None:
@@ -535,12 +531,10 @@ def _assert_nine_label_partition(result: dict[str, Any]) -> None:
     asserting this property asserts the same strength of it.
     """
     combined = (
-        list(result["installed_events"])
-        + list(result["migrated_events"])
-        + list(result["already_present_events"])
+        list(result['installed_events']) + list(result['migrated_events']) + list(result['already_present_events'])
     )
     assert sorted(combined) == sorted(_NINE_RENDER_LABELS)
-    assert len(combined) == len(set(combined)), f"double-membership in {combined}"
+    assert len(combined) == len(set(combined)), f'double-membership in {combined}'
 
 
 # =============================================================================
@@ -561,12 +555,12 @@ class TestExecutorGuardFailSoft:
     def test_command_constants_are_guarded(self):
         """Every executor-invoking command constant carries the guard wrapper."""
         for command in (_RENDER_HOOK_COMMAND, _STATUSLINE_COMMAND, _HOOK_COMMAND):
-            assert command.startswith("[ -f .plan/execute-script.py ] && ")
-            assert command.endswith(" || true")
-            assert "python3 .plan/execute-script.py" in command
+            assert command.startswith('[ -f .plan/execute-script.py ] && ')
+            assert command.endswith(' || true')
+            assert 'python3 .plan/execute-script.py' in command
         # The statusLine variant passes --statusline to the renderer (BEFORE the
         # trailing || true), never after it.
-        assert "render-title --statusline || true" in _STATUSLINE_COMMAND
+        assert 'render-title --statusline || true' in _STATUSLINE_COMMAND
 
     def test_absent_executor_exits_zero_silently(self, tmp_path):
         """With no .plan/execute-script.py in cwd, the guarded render command exits
@@ -579,19 +573,17 @@ class TestExecutorGuardFailSoft:
             text=True,
         )
         assert result.returncode == 0
-        assert result.stdout == ""
-        assert result.stderr == ""
+        assert result.stdout == ''
+        assert result.stderr == ''
 
     def test_present_executor_runs_the_command(self, tmp_path):
         """With a .plan/execute-script.py present, the guard's then-branch fires and
         runs the command (a stub executor writes a marker proving it ran)."""
-        plan_dir = tmp_path / ".plan"
+        plan_dir = tmp_path / '.plan'
         plan_dir.mkdir()
-        marker = tmp_path / "ran.txt"
-        (plan_dir / "execute-script.py").write_text(
-            "#!/usr/bin/env python3\n"
-            "import pathlib\n"
-            f"pathlib.Path({str(marker)!r}).write_text('ran')\n"
+        marker = tmp_path / 'ran.txt'
+        (plan_dir / 'execute-script.py').write_text(
+            f"#!/usr/bin/env python3\nimport pathlib\npathlib.Path({str(marker)!r}).write_text('ran')\n"
         )
         result = subprocess.run(
             _RENDER_HOOK_COMMAND,
@@ -602,7 +594,7 @@ class TestExecutorGuardFailSoft:
         )
         assert result.returncode == 0
         assert marker.is_file()
-        assert marker.read_text() == "ran"
+        assert marker.read_text() == 'ran'
 
     def test_install_writes_guarded_command_and_health_check_matches(self, rt, tmp_path):
         """_install_terminal_title_hooks writes the guarded command form, and
@@ -610,16 +602,16 @@ class TestExecutorGuardFailSoft:
         because both read the same single-sourced constant)."""
         import claude_runtime as _cr
 
-        target = tmp_path / ".claude" / "settings.local.json"
+        target = tmp_path / '.claude' / 'settings.local.json'
         rt.project_install_hook(str(target))
         settings = json.loads(target.read_text())
-        ups = settings["hooks"]["UserPromptSubmit"]
+        ups = settings['hooks']['UserPromptSubmit']
         commands = _collect_commands(ups)
         assert commands  # at least one render entry installed
         assert all(c == _RENDER_HOOK_COMMAND for c in commands)
-        assert all(c.startswith("[ -f .plan/execute-script.py ] && ") for c in commands)
+        assert all(c.startswith('[ -f .plan/execute-script.py ] && ') for c in commands)
         # The health-check matcher recognizes the guarded installed command.
-        assert _cr._has_render_entry(ups, matcher="")
+        assert _cr._has_render_entry(ups, matcher='')
 
 
 class TestInstallTerminalTitleHooks:
@@ -645,80 +637,77 @@ class TestInstallTerminalTitleHooks:
         ``matcher: "clear"`` entry, and PostToolUse is matcher-SCOPED
         (AskUserQuestion + Bash) rather than matcher-less.
         """
-        target = tmp_path / ".claude" / "settings.local.json"
+        target = tmp_path / '.claude' / 'settings.local.json'
         result = _parsed(rt.project_install_hook(str(target)))
-        assert result["status"] == "success"
-        assert result["hook_installed"] is True
+        assert result['status'] == 'success'
+        assert result['hook_installed'] is True
 
         settings = json.loads(target.read_text())
-        hooks_block = settings["hooks"]
+        hooks_block = settings['hooks']
 
         # SessionStart carries the capture entry plus TWO render entries: the
         # matcher-less one and the matcher:"clear" one that routes the session
         # teardown. The clear entry is installed rather than merely expected —
         # an expectation the installer never satisfies would make every fresh
         # install report unhealthy.
-        session_start = hooks_block["SessionStart"]
+        session_start = hooks_block['SessionStart']
         assert _count_command(session_start, _RENDER_HOOK_COMMAND) == 2
         matchers_with_render = {
-            entry.get("matcher", "")
+            entry.get('matcher', '')
             for entry in session_start
-            if isinstance(entry, dict)
-            and any(h.get("command") == _RENDER_HOOK_COMMAND for h in entry.get("hooks", []))
+            if isinstance(entry, dict) and any(h.get('command') == _RENDER_HOOK_COMMAND for h in entry.get('hooks', []))
         }
-        assert matchers_with_render == {"", "clear"}
+        assert matchers_with_render == {'', 'clear'}
 
         # UserPromptSubmit, Notification, Stop — each one matcher-less render entry.
-        for event_name in ("UserPromptSubmit", "Notification", "Stop"):
+        for event_name in ('UserPromptSubmit', 'Notification', 'Stop'):
             event_entries = hooks_block[event_name]
             assert _count_command(event_entries, _RENDER_HOOK_COMMAND) == 1
             # The single entry is matcher-less.
-            assert event_entries[0].get("matcher", "") == ""
+            assert event_entries[0].get('matcher', '') == ''
 
         # PreToolUse: matcher="AskUserQuestion" AND matcher="Bash" render entries.
-        pre_tool_use = hooks_block["PreToolUse"]
+        pre_tool_use = hooks_block['PreToolUse']
         assert _count_command(pre_tool_use, _RENDER_HOOK_COMMAND) == 2
         pre_matchers = {
-            entry.get("matcher")
+            entry.get('matcher')
             for entry in pre_tool_use
-            if isinstance(entry, dict)
-            and any(h.get("command") == _RENDER_HOOK_COMMAND for h in entry.get("hooks", []))
+            if isinstance(entry, dict) and any(h.get('command') == _RENDER_HOOK_COMMAND for h in entry.get('hooks', []))
         }
-        assert pre_matchers == {"AskUserQuestion", "Bash"}
+        assert pre_matchers == {'AskUserQuestion', 'Bash'}
 
         # PostToolUse: TWO matcher-scoped render entries, never a matcher-less
         # one. PostToolUse:Bash is the entry the machine-owned build-busy clear
         # rides, so the absence of a matcher-less entry is asserted explicitly
         # rather than implied by the count.
-        post_tool_use = hooks_block["PostToolUse"]
+        post_tool_use = hooks_block['PostToolUse']
         assert _count_command(post_tool_use, _RENDER_HOOK_COMMAND) == 2
         post_matchers = {
-            entry.get("matcher", "")
+            entry.get('matcher', '')
             for entry in post_tool_use
-            if isinstance(entry, dict)
-            and any(h.get("command") == _RENDER_HOOK_COMMAND for h in entry.get("hooks", []))
+            if isinstance(entry, dict) and any(h.get('command') == _RENDER_HOOK_COMMAND for h in entry.get('hooks', []))
         }
-        assert post_matchers == {"AskUserQuestion", "Bash"}
-        assert "" not in post_matchers
+        assert post_matchers == {'AskUserQuestion', 'Bash'}
+        assert '' not in post_matchers
 
     def test_fresh_install_writes_statusline_command(self, rt, tmp_path):
         """Fresh install writes statusLine = {type: command, command: _STATUSLINE_COMMAND}."""
-        target = tmp_path / ".claude" / "settings.local.json"
+        target = tmp_path / '.claude' / 'settings.local.json'
         result = _parsed(rt.project_install_hook(str(target)))
-        assert result["statusLine_status"] == "installed"
+        assert result['statusLine_status'] == 'installed'
 
         settings = json.loads(target.read_text())
-        assert settings["statusLine"]["type"] == "command"
-        assert settings["statusLine"]["command"] == _STATUSLINE_COMMAND
+        assert settings['statusLine']['type'] == 'command'
+        assert settings['statusLine']['command'] == _STATUSLINE_COMMAND
 
     def test_fresh_install_writes_env_disable_entry(self, rt, tmp_path):
         """Fresh install writes env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE = "1"."""
-        target = tmp_path / ".claude" / "settings.local.json"
+        target = tmp_path / '.claude' / 'settings.local.json'
         result = _parsed(rt.project_install_hook(str(target)))
-        assert result["env_status"] == "installed"
+        assert result['env_status'] == 'installed'
 
         settings = json.loads(target.read_text())
-        assert settings["env"]["CLAUDE_CODE_DISABLE_TERMINAL_TITLE"] == "1"
+        assert settings['env']['CLAUDE_CODE_DISABLE_TERMINAL_TITLE'] == '1'
 
     def test_fresh_install_response_lists_installed_events(self, rt, tmp_path):
         """installed_events lists every event freshly wired, by its check label.
@@ -729,19 +718,19 @@ class TestInstallTerminalTitleHooks:
         expect (or vice versa) is exactly the class of divergence that let a
         missing entry go unreported.
         """
-        target = tmp_path / ".claude" / "settings.local.json"
+        target = tmp_path / '.claude' / 'settings.local.json'
         result = _parsed(rt.project_install_hook(str(target)))
-        installed = result["installed_events"]
+        installed = result['installed_events']
         assert set(installed) == {
-            "SessionStart:matcher-less",
-            "SessionStart:clear",
-            "UserPromptSubmit",
-            "Notification",
-            "Stop",
-            "PreToolUse:AskUserQuestion",
-            "PreToolUse:Bash",
-            "PostToolUse:AskUserQuestion",
-            "PostToolUse:Bash",
+            'SessionStart:matcher-less',
+            'SessionStart:clear',
+            'UserPromptSubmit',
+            'Notification',
+            'Stop',
+            'PreToolUse:AskUserQuestion',
+            'PreToolUse:Bash',
+            'PostToolUse:AskUserQuestion',
+            'PostToolUse:Bash',
         }
 
     def test_installer_labels_match_the_health_check_expected_set(self, rt, tmp_path):
@@ -754,11 +743,11 @@ class TestInstallTerminalTitleHooks:
         """
         import claude_runtime as _cr
 
-        target = tmp_path / ".claude" / "settings.local.json"
+        target = tmp_path / '.claude' / 'settings.local.json'
         result = _parsed(rt.project_install_hook(str(target)))
 
         expected = {label for label, _block, _matcher in _cr._DISPLAY_RENDER_ENTRIES}
-        assert set(result["installed_events"]) == expected
+        assert set(result['installed_events']) == expected
 
     # ------------------------------------------------------------------
     # (b) Re-running is idempotent across all hook blocks.
@@ -773,17 +762,17 @@ class TestInstallTerminalTitleHooks:
         rewrote a correct value would still leave the file byte-identical only
         by luck, and reporting a migration here would be a false change signal.
         """
-        target = tmp_path / ".claude" / "settings.local.json"
+        target = tmp_path / '.claude' / 'settings.local.json'
         rt.project_install_hook(str(target))
         first_settings = json.loads(target.read_text())
 
         result = _parsed(rt.project_install_hook(str(target)))
-        assert result["already_present"] is True
-        assert result["installed_events"] == []
-        assert result["migrated_events"] == []
-        assert set(result["already_present_events"]) == _NINE_RENDER_LABELS
-        assert result["statusLine_status"] == "already_present"
-        assert result["env_status"] == "already_present"
+        assert result['already_present'] is True
+        assert result['installed_events'] == []
+        assert result['migrated_events'] == []
+        assert set(result['already_present_events']) == _NINE_RENDER_LABELS
+        assert result['statusLine_status'] == 'already_present'
+        assert result['env_status'] == 'already_present'
 
         second_settings = json.loads(target.read_text())
         # File contents are byte-identical: no duplicate entries, no toggles.
@@ -791,20 +780,20 @@ class TestInstallTerminalTitleHooks:
 
     def test_idempotent_render_commands_not_duplicated(self, rt, tmp_path):
         """Across two installs, each hook block keeps its exact render-entry count."""
-        target = tmp_path / ".claude" / "settings.local.json"
+        target = tmp_path / '.claude' / 'settings.local.json'
         rt.project_install_hook(str(target))
         rt.project_install_hook(str(target))
 
         settings = json.loads(target.read_text())
-        hooks_block = settings["hooks"]
+        hooks_block = settings['hooks']
         # SessionStart carries two render entries (matcher-less + clear).
-        assert _count_command(hooks_block["SessionStart"], _RENDER_HOOK_COMMAND) == 2
-        for event_name in ("UserPromptSubmit", "Notification", "Stop"):
+        assert _count_command(hooks_block['SessionStart'], _RENDER_HOOK_COMMAND) == 2
+        for event_name in ('UserPromptSubmit', 'Notification', 'Stop'):
             assert _count_command(hooks_block[event_name], _RENDER_HOOK_COMMAND) == 1
         # PreToolUse carries two render entries (AskUserQuestion + Bash).
-        assert _count_command(hooks_block["PreToolUse"], _RENDER_HOOK_COMMAND) == 2
+        assert _count_command(hooks_block['PreToolUse'], _RENDER_HOOK_COMMAND) == 2
         # PostToolUse likewise carries two, matcher-scoped.
-        assert _count_command(hooks_block["PostToolUse"], _RENDER_HOOK_COMMAND) == 2
+        assert _count_command(hooks_block['PostToolUse'], _RENDER_HOOK_COMMAND) == 2
 
     # ------------------------------------------------------------------
     # (b2) Tool-scoped PreToolUse and PostToolUse entries.
@@ -818,57 +807,55 @@ class TestInstallTerminalTitleHooks:
         cadence was broadened again and PostToolUse:Bash — the entry the
         machine-owned build-busy clear rides — was pruned away.
         """
-        target = tmp_path / ".claude" / "settings.local.json"
+        target = tmp_path / '.claude' / 'settings.local.json'
         result = _parsed(rt.project_install_hook(str(target)))
-        assert result["status"] == "success"
-        installed = set(result["installed_events"])
-        assert "PreToolUse:AskUserQuestion" in installed
-        assert "PreToolUse:Bash" in installed
-        assert "PostToolUse:AskUserQuestion" in installed
-        assert "PostToolUse:Bash" in installed
-        assert "PostToolUse" not in installed
+        assert result['status'] == 'success'
+        installed = set(result['installed_events'])
+        assert 'PreToolUse:AskUserQuestion' in installed
+        assert 'PreToolUse:Bash' in installed
+        assert 'PostToolUse:AskUserQuestion' in installed
+        assert 'PostToolUse:Bash' in installed
+        assert 'PostToolUse' not in installed
 
         settings = json.loads(target.read_text())
-        hooks_block = settings["hooks"]
+        hooks_block = settings['hooks']
         # PreToolUse has exactly two render entries (AskUserQuestion + Bash).
-        pre = hooks_block["PreToolUse"]
+        pre = hooks_block['PreToolUse']
         assert _count_command(pre, _RENDER_HOOK_COMMAND) == 2
         pre_matchers = {
-            entry.get("matcher")
+            entry.get('matcher')
             for entry in pre
-            if isinstance(entry, dict)
-            and any(h.get("command") == _RENDER_HOOK_COMMAND for h in entry.get("hooks", []))
+            if isinstance(entry, dict) and any(h.get('command') == _RENDER_HOOK_COMMAND for h in entry.get('hooks', []))
         }
-        assert pre_matchers == {"AskUserQuestion", "Bash"}
+        assert pre_matchers == {'AskUserQuestion', 'Bash'}
         # PostToolUse likewise has exactly two, and both are matcher-scoped.
-        post = hooks_block["PostToolUse"]
+        post = hooks_block['PostToolUse']
         assert _count_command(post, _RENDER_HOOK_COMMAND) == 2
         post_matchers = {
-            entry.get("matcher")
+            entry.get('matcher')
             for entry in post
-            if isinstance(entry, dict)
-            and any(h.get("command") == _RENDER_HOOK_COMMAND for h in entry.get("hooks", []))
+            if isinstance(entry, dict) and any(h.get('command') == _RENDER_HOOK_COMMAND for h in entry.get('hooks', []))
         }
-        assert post_matchers == {"AskUserQuestion", "Bash"}
+        assert post_matchers == {'AskUserQuestion', 'Bash'}
 
     def test_tool_scoped_entries_dedup_idempotent(self, rt, tmp_path):
         """Re-invoking reports all four tool-scoped entries already-present."""
-        target = tmp_path / ".claude" / "settings.local.json"
+        target = tmp_path / '.claude' / 'settings.local.json'
         rt.project_install_hook(str(target))
 
         result = _parsed(rt.project_install_hook(str(target)))
-        already = set(result["already_present_events"])
-        assert "PreToolUse:AskUserQuestion" in already
-        assert "PreToolUse:Bash" in already
-        assert "PostToolUse:AskUserQuestion" in already
-        assert "PostToolUse:Bash" in already
+        already = set(result['already_present_events'])
+        assert 'PreToolUse:AskUserQuestion' in already
+        assert 'PreToolUse:Bash' in already
+        assert 'PostToolUse:AskUserQuestion' in already
+        assert 'PostToolUse:Bash' in already
         # Nothing fresh installed on the second run.
-        assert result["installed_events"] == []
+        assert result['installed_events'] == []
 
         settings = json.loads(target.read_text())
-        hooks_block = settings["hooks"]
-        assert _count_command(hooks_block["PreToolUse"], _RENDER_HOOK_COMMAND) == 2
-        assert _count_command(hooks_block["PostToolUse"], _RENDER_HOOK_COMMAND) == 2
+        hooks_block = settings['hooks']
+        assert _count_command(hooks_block['PreToolUse'], _RENDER_HOOK_COMMAND) == 2
+        assert _count_command(hooks_block['PostToolUse'], _RENDER_HOOK_COMMAND) == 2
 
     # ------------------------------------------------------------------
     # (b3) The installer PRUNES NOTHING — matcher-scoped entries are the target.
@@ -893,24 +880,24 @@ class TestInstallTerminalTitleHooks:
         target.write_text(
             json.dumps(
                 {
-                    "hooks": {
-                        "PostToolUse": [
+                    'hooks': {
+                        'PostToolUse': [
                             {
-                                "matcher": matcher,
-                                "hooks": [
+                                'matcher': matcher,
+                                'hooks': [
                                     {
-                                        "type": "command",
-                                        "command": _RENDER_HOOK_COMMAND,
-                                        "timeout": 5000,
+                                        'type': 'command',
+                                        'command': _RENDER_HOOK_COMMAND,
+                                        'timeout': 5000,
                                     }
                                 ],
                             }
-                            for matcher in ("AskUserQuestion", "Bash")
+                            for matcher in ('AskUserQuestion', 'Bash')
                         ]
                     }
                 }
             ),
-            encoding="utf-8",
+            encoding='utf-8',
         )
 
     def test_prune_helper_is_deleted(self):
@@ -922,7 +909,7 @@ class TestInstallTerminalTitleHooks:
         """
         import claude_runtime as _cr
 
-        assert not hasattr(_cr, "_prune_matcher_scoped_render_entries")
+        assert not hasattr(_cr, '_prune_matcher_scoped_render_entries')
 
     def test_install_over_existing_scoped_entries_preserves_both(self, rt, tmp_path):
         """Installing over both matcher-scoped entries keeps BOTH, prunes neither.
@@ -935,78 +922,77 @@ class TestInstallTerminalTitleHooks:
         """
         import claude_runtime as _cr
 
-        target = tmp_path / ".claude" / "settings.local.json"
+        target = tmp_path / '.claude' / 'settings.local.json'
         self._seed_scoped_post_tool_use(target)
 
         result = _parsed(rt.project_install_hook(str(target)))
-        assert result["status"] == "success"
-        migrated = set(result["migrated_events"])
-        already = set(result["already_present_events"])
-        assert "PostToolUse:AskUserQuestion" in migrated
-        assert "PostToolUse:Bash" in migrated
-        assert "PostToolUse:AskUserQuestion" not in already
-        assert "PostToolUse:Bash" not in already
+        assert result['status'] == 'success'
+        migrated = set(result['migrated_events'])
+        already = set(result['already_present_events'])
+        assert 'PostToolUse:AskUserQuestion' in migrated
+        assert 'PostToolUse:Bash' in migrated
+        assert 'PostToolUse:AskUserQuestion' not in already
+        assert 'PostToolUse:Bash' not in already
         # A converged run changed the file, so the top-level no-op flag is False.
-        assert result["already_present"] is False
+        assert result['already_present'] is False
 
         settings = json.loads(target.read_text())
-        post = settings["hooks"]["PostToolUse"]
+        post = settings['hooks']['PostToolUse']
         assert _count_command(post, _RENDER_HOOK_COMMAND) == 2
         # The stale value was actually rewritten — the outcome label alone is
         # not evidence that the settings file changed.
         assert _render_timeouts(post) == {_cr._HOOK_TIMEOUT_SECONDS}
         post_matchers = {
-            entry.get("matcher", "")
+            entry.get('matcher', '')
             for entry in post
-            if isinstance(entry, dict)
-            and any(h.get("command") == _RENDER_HOOK_COMMAND for h in entry.get("hooks", []))
+            if isinstance(entry, dict) and any(h.get('command') == _RENDER_HOOK_COMMAND for h in entry.get('hooks', []))
         }
-        assert post_matchers == {"AskUserQuestion", "Bash"}
+        assert post_matchers == {'AskUserQuestion', 'Bash'}
 
     def test_install_preserves_foreign_post_tool_use_entries(self, rt, tmp_path):
         """A foreign PostToolUse hook belonging to someone else survives untouched."""
-        target = tmp_path / ".claude" / "settings.local.json"
+        target = tmp_path / '.claude' / 'settings.local.json'
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(
             json.dumps(
                 {
-                    "hooks": {
-                        "PostToolUse": [
+                    'hooks': {
+                        'PostToolUse': [
                             {
-                                "matcher": "Edit",
-                                "hooks": [{"type": "command", "command": "echo foreign"}],
+                                'matcher': 'Edit',
+                                'hooks': [{'type': 'command', 'command': 'echo foreign'}],
                             },
                         ]
                     }
                 }
             ),
-            encoding="utf-8",
+            encoding='utf-8',
         )
 
         rt.project_install_hook(str(target))
 
         settings = json.loads(target.read_text())
-        post = settings["hooks"]["PostToolUse"]
-        assert "echo foreign" in _collect_commands(post)
+        post = settings['hooks']['PostToolUse']
+        assert 'echo foreign' in _collect_commands(post)
         assert _count_command(post, _RENDER_HOOK_COMMAND) == 2
 
     def test_install_leaves_pre_tool_use_and_enforcement_untouched(self, rt, tmp_path):
         """A re-install never disturbs the PreToolUse render or enforcement entries."""
-        target = tmp_path / ".claude" / "settings.local.json"
+        target = tmp_path / '.claude' / 'settings.local.json'
         rt.project_install_hook(str(target))
         rt.project_install_hook(str(target), enforcement=True)
         settings = json.loads(target.read_text())
-        pre_before = settings["hooks"]["PreToolUse"]
+        pre_before = settings['hooks']['PreToolUse']
 
         rt.project_install_hook(str(target))
 
         after = json.loads(target.read_text())
         # PreToolUse block is byte-identical — both render matchers plus enforcement.
-        assert after["hooks"]["PreToolUse"] == pre_before
-        assert _count_command(after["hooks"]["PreToolUse"], _RENDER_HOOK_COMMAND) == 2
-        assert _count_command(after["hooks"]["PreToolUse"], _ENFORCEMENT_HOOK_COMMAND) == 1
+        assert after['hooks']['PreToolUse'] == pre_before
+        assert _count_command(after['hooks']['PreToolUse'], _RENDER_HOOK_COMMAND) == 2
+        assert _count_command(after['hooks']['PreToolUse'], _ENFORCEMENT_HOOK_COMMAND) == 1
         # PostToolUse keeps its two matcher-scoped entries.
-        assert _count_command(after["hooks"]["PostToolUse"], _RENDER_HOOK_COMMAND) == 2
+        assert _count_command(after['hooks']['PostToolUse'], _RENDER_HOOK_COMMAND) == 2
 
     def test_a_pre_existing_matcher_less_post_entry_is_not_removed(self, rt, tmp_path):
         """A matcher-less PostToolUse render entry someone else installed SURVIVES.
@@ -1023,20 +1009,20 @@ class TestInstallTerminalTitleHooks:
         deleting it, so the preserved value is asserted rather than left as
         incidental fixture input.
         """
-        target = tmp_path / ".claude" / "settings.local.json"
+        target = tmp_path / '.claude' / 'settings.local.json'
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(
             json.dumps(
                 {
-                    "hooks": {
-                        "PostToolUse": [
+                    'hooks': {
+                        'PostToolUse': [
                             {
-                                "matcher": "",
-                                "hooks": [
+                                'matcher': '',
+                                'hooks': [
                                     {
-                                        "type": "command",
-                                        "command": _RENDER_HOOK_COMMAND,
-                                        "timeout": 5000,
+                                        'type': 'command',
+                                        'command': _RENDER_HOOK_COMMAND,
+                                        'timeout': 5000,
                                     }
                                 ],
                             }
@@ -1044,30 +1030,25 @@ class TestInstallTerminalTitleHooks:
                     }
                 }
             ),
-            encoding="utf-8",
+            encoding='utf-8',
         )
 
         import claude_runtime as _cr
 
         rt.project_install_hook(str(target))
 
-        post = json.loads(target.read_text())["hooks"]["PostToolUse"]
+        post = json.loads(target.read_text())['hooks']['PostToolUse']
         matchers = {
-            entry.get("matcher", "")
+            entry.get('matcher', '')
             for entry in post
-            if isinstance(entry, dict)
-            and any(h.get("command") == _RENDER_HOOK_COMMAND for h in entry.get("hooks", []))
+            if isinstance(entry, dict) and any(h.get('command') == _RENDER_HOOK_COMMAND for h in entry.get('hooks', []))
         }
-        assert matchers == {"", "AskUserQuestion", "Bash"}
+        assert matchers == {'', 'AskUserQuestion', 'Bash'}
         # The foreign matcher-less entry keeps its stale value untouched, while
         # the two freshly-added scoped entries carry the current one.
-        matcher_less = [
-            entry for entry in post if isinstance(entry, dict) and entry.get("matcher", "") == ""
-        ]
+        matcher_less = [entry for entry in post if isinstance(entry, dict) and entry.get('matcher', '') == '']
         assert _render_timeouts(matcher_less) == {5000}
-        scoped = [
-            entry for entry in post if isinstance(entry, dict) and entry.get("matcher", "") != ""
-        ]
+        scoped = [entry for entry in post if isinstance(entry, dict) and entry.get('matcher', '') != '']
         assert _render_timeouts(scoped) == {_cr._HOOK_TIMEOUT_SECONDS}
 
     # ------------------------------------------------------------------
@@ -1077,17 +1058,17 @@ class TestInstallTerminalTitleHooks:
     def test_foreign_statusline_returns_already_present_other(self, rt, tmp_path):
         """A pre-existing statusLine whose command differs from ours is preserved and reported
         as already_present_other (no overwrite without the flag)."""
-        target = tmp_path / ".claude" / "settings.local.json"
+        target = tmp_path / '.claude' / 'settings.local.json'
         target.parent.mkdir(parents=True)
-        existing = {"statusLine": {"type": "command", "command": "echo hello-world"}}
-        target.write_text(json.dumps(existing), encoding="utf-8")
+        existing = {'statusLine': {'type': 'command', 'command': 'echo hello-world'}}
+        target.write_text(json.dumps(existing), encoding='utf-8')
 
         result = _parsed(rt.project_install_hook(str(target)))
-        assert result["statusLine_status"] == "already_present_other"
+        assert result['statusLine_status'] == 'already_present_other'
 
         settings = json.loads(target.read_text())
         # Foreign value preserved untouched.
-        assert settings["statusLine"]["command"] == "echo hello-world"
+        assert settings['statusLine']['command'] == 'echo hello-world'
 
     # ------------------------------------------------------------------
     # (d) Existing foreign env value yields already_present_other (preserved).
@@ -1096,17 +1077,17 @@ class TestInstallTerminalTitleHooks:
     def test_foreign_env_disable_returns_already_present_other(self, rt, tmp_path):
         """A pre-existing env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE with a non-'1' value is
         preserved and reported as already_present_other."""
-        target = tmp_path / ".claude" / "settings.local.json"
+        target = tmp_path / '.claude' / 'settings.local.json'
         target.parent.mkdir(parents=True)
-        existing = {"env": {"CLAUDE_CODE_DISABLE_TERMINAL_TITLE": "0"}}
-        target.write_text(json.dumps(existing), encoding="utf-8")
+        existing = {'env': {'CLAUDE_CODE_DISABLE_TERMINAL_TITLE': '0'}}
+        target.write_text(json.dumps(existing), encoding='utf-8')
 
         result = _parsed(rt.project_install_hook(str(target)))
-        assert result["env_status"] == "already_present_other"
+        assert result['env_status'] == 'already_present_other'
 
         settings = json.loads(target.read_text())
         # Foreign value preserved untouched.
-        assert settings["env"]["CLAUDE_CODE_DISABLE_TERMINAL_TITLE"] == "0"
+        assert settings['env']['CLAUDE_CODE_DISABLE_TERMINAL_TITLE'] == '0'
 
     # ------------------------------------------------------------------
     # (e) The 'statusline' / 'env-disable' overwrite keys replace foreign values.
@@ -1114,33 +1095,29 @@ class TestInstallTerminalTitleHooks:
 
     def test_overwrite_statusline_key_replaces_foreign_command(self, rt, tmp_path):
         """The 'statusline' overwrite key replaces a foreign statusLine command with ours."""
-        target = tmp_path / ".claude" / "settings.local.json"
+        target = tmp_path / '.claude' / 'settings.local.json'
         target.parent.mkdir(parents=True)
-        existing = {"statusLine": {"type": "command", "command": "echo hello-world"}}
-        target.write_text(json.dumps(existing), encoding="utf-8")
+        existing = {'statusLine': {'type': 'command', 'command': 'echo hello-world'}}
+        target.write_text(json.dumps(existing), encoding='utf-8')
 
-        result = _parsed(
-            rt.project_install_hook(str(target), overwrite=("statusline",))
-        )
-        assert result["statusLine_status"] == "overwritten"
+        result = _parsed(rt.project_install_hook(str(target), overwrite=('statusline',)))
+        assert result['statusLine_status'] == 'overwritten'
 
         settings = json.loads(target.read_text())
-        assert settings["statusLine"]["command"] == _STATUSLINE_COMMAND
+        assert settings['statusLine']['command'] == _STATUSLINE_COMMAND
 
     def test_overwrite_env_disable_key_replaces_foreign_value(self, rt, tmp_path):
         """The 'env-disable' overwrite key replaces a foreign env value with '1'."""
-        target = tmp_path / ".claude" / "settings.local.json"
+        target = tmp_path / '.claude' / 'settings.local.json'
         target.parent.mkdir(parents=True)
-        existing = {"env": {"CLAUDE_CODE_DISABLE_TERMINAL_TITLE": "0"}}
-        target.write_text(json.dumps(existing), encoding="utf-8")
+        existing = {'env': {'CLAUDE_CODE_DISABLE_TERMINAL_TITLE': '0'}}
+        target.write_text(json.dumps(existing), encoding='utf-8')
 
-        result = _parsed(
-            rt.project_install_hook(str(target), overwrite=("env-disable",))
-        )
-        assert result["env_status"] == "overwritten"
+        result = _parsed(rt.project_install_hook(str(target), overwrite=('env-disable',)))
+        assert result['env_status'] == 'overwritten'
 
         settings = json.loads(target.read_text())
-        assert settings["env"]["CLAUDE_CODE_DISABLE_TERMINAL_TITLE"] == "1"
+        assert settings['env']['CLAUDE_CODE_DISABLE_TERMINAL_TITLE'] == '1'
 
     # ------------------------------------------------------------------
     # (f) Existing claude_hook SessionStart entry is preserved.
@@ -1163,102 +1140,93 @@ class TestInstallTerminalTitleHooks:
         asserted here rather than the value being left as incidental fixture
         input.
         """
-        target = tmp_path / ".claude" / "settings.local.json"
+        target = tmp_path / '.claude' / 'settings.local.json'
         target.parent.mkdir(parents=True)
         existing = {
-            "hooks": {
-                "SessionStart": [
+            'hooks': {
+                'SessionStart': [
                     {
-                        "matcher": "",
-                        "hooks": [{"type": "command", "command": _HOOK_COMMAND, "timeout": 5000}],
+                        'matcher': '',
+                        'hooks': [{'type': 'command', 'command': _HOOK_COMMAND, 'timeout': 5000}],
                     }
                 ]
             }
         }
-        target.write_text(json.dumps(existing), encoding="utf-8")
+        target.write_text(json.dumps(existing), encoding='utf-8')
 
         result = _parsed(rt.project_install_hook(str(target)))
-        assert result["status"] == "success"
+        assert result['status'] == 'success'
 
         import claude_runtime as _cr
 
         settings = json.loads(target.read_text())
-        session_start = settings["hooks"]["SessionStart"]
+        session_start = settings['hooks']['SessionStart']
         # Foreign capture entry still present, undisturbed.
         assert _count_command(session_start, _HOOK_COMMAND) == 1
         # Both render entries were added: matcher-less and matcher:"clear",
         # each exactly once — no duplication of either.
         assert _count_command(session_start, _RENDER_HOOK_COMMAND) == 2
         matchers_with_render = {
-            entry.get("matcher", "")
+            entry.get('matcher', '')
             for entry in session_start
-            if isinstance(entry, dict)
-            and any(h.get("command") == _RENDER_HOOK_COMMAND for h in entry.get("hooks", []))
+            if isinstance(entry, dict) and any(h.get('command') == _RENDER_HOOK_COMMAND for h in entry.get('hooks', []))
         }
-        assert matchers_with_render == {"", "clear"}
+        assert matchers_with_render == {'', 'clear'}
         # The pre-existing capture entry's stale timeout was converged...
         assert _timeouts_for(session_start, _HOOK_COMMAND) == {_cr._HOOK_TIMEOUT_SECONDS}
         # ...and that convergence is reported on its OWN field, under no event
         # label, because the capture entry owns none. The three lists stay a
         # partition of the nine render labels.
-        assert result["capture_status"] == "migrated"
-        assert "SessionStart:capture" not in set(result["migrated_events"])
+        assert result['capture_status'] == 'migrated'
+        assert 'SessionStart:capture' not in set(result['migrated_events'])
         _assert_nine_label_partition(result)
 
     def test_preserves_unrelated_existing_hooks_block(self, rt, tmp_path):
         """Existing unrelated hooks (e.g. UserPromptSubmit with a foreign command) are preserved
         alongside the inserted render entry."""
-        target = tmp_path / ".claude" / "settings.local.json"
+        target = tmp_path / '.claude' / 'settings.local.json'
         target.parent.mkdir(parents=True)
         existing = {
-            "permissions": {"allow": ["Read(**)"]},
-            "hooks": {
-                "UserPromptSubmit": [
-                    {"matcher": "", "hooks": [{"type": "command", "command": "echo hi"}]}
-                ]
-            },
+            'permissions': {'allow': ['Read(**)']},
+            'hooks': {'UserPromptSubmit': [{'matcher': '', 'hooks': [{'type': 'command', 'command': 'echo hi'}]}]},
         }
-        target.write_text(json.dumps(existing), encoding="utf-8")
+        target.write_text(json.dumps(existing), encoding='utf-8')
 
         result = _parsed(rt.project_install_hook(str(target)))
-        assert result["status"] == "success"
+        assert result['status'] == 'success'
 
         settings = json.loads(target.read_text())
         # Unrelated permission block preserved.
-        assert settings["permissions"]["allow"] == ["Read(**)"]
+        assert settings['permissions']['allow'] == ['Read(**)']
         # Foreign UserPromptSubmit hook preserved.
-        ups_commands = _collect_commands(settings["hooks"]["UserPromptSubmit"])
-        assert "echo hi" in ups_commands
+        ups_commands = _collect_commands(settings['hooks']['UserPromptSubmit'])
+        assert 'echo hi' in ups_commands
         # Our render entry added alongside the foreign one.
         assert _RENDER_HOOK_COMMAND in ups_commands
 
     def test_shared_helper_parity_with_initial_setup(self, rt, tmp_path):
         """project_install_hook produces the same SessionStart wiring as project_initial_setup."""
         # project_initial_setup writes to .claude/settings.local.json.
-        setup_project = tmp_path / "setup-proj"
+        setup_project = tmp_path / 'setup-proj'
         setup_project.mkdir()
-        rt.project_initial_setup(str(setup_project), "claude")
-        setup_settings = json.loads(
-            (setup_project / ".claude" / "settings.local.json").read_text()
-        )
+        rt.project_initial_setup(str(setup_project), 'claude')
+        setup_settings = json.loads((setup_project / '.claude' / 'settings.local.json').read_text())
 
         # project_install_hook writes to an arbitrary target file.
-        install_target = tmp_path / "install" / "settings.local.json"
+        install_target = tmp_path / 'install' / 'settings.local.json'
         rt.project_install_hook(str(install_target))
         install_settings = json.loads(install_target.read_text())
 
         # Both code paths produce identical hooks / statusLine / env wiring.
-        assert setup_settings["hooks"] == install_settings["hooks"]
-        assert setup_settings["statusLine"] == install_settings["statusLine"]
-        assert setup_settings["env"] == install_settings["env"]
+        assert setup_settings['hooks'] == install_settings['hooks']
+        assert setup_settings['statusLine'] == install_settings['statusLine']
+        assert setup_settings['env'] == install_settings['env']
 
     # ------------------------------------------------------------------
     # (g) Target argument shape — platform identifier vs absolute path.
     # ------------------------------------------------------------------
 
-    def test_target_claude_pins_settings_local_when_no_settings_json_exists(
-        self, rt, tmp_path, monkeypatch
-    ):
+    def test_target_claude_pins_settings_local_when_no_settings_json_exists(self, rt, tmp_path, monkeypatch):
         """``--target claude`` resolves ``.claude/settings.local.json``, never a literal ``./claude`` path.
 
         The matched negative control for the settings.json-present case below:
@@ -1268,25 +1236,23 @@ class TestInstallTerminalTitleHooks:
         """
         monkeypatch.chdir(tmp_path)
 
-        result = _parsed(rt.project_install_hook("claude"))
+        result = _parsed(rt.project_install_hook('claude'))
 
-        assert result["status"] == "success"
+        assert result['status'] == 'success'
         # The resolved path lives under .claude/ — never a stray ./claude file.
-        resolved = Path(result["settings_path"])
+        resolved = Path(result['settings_path'])
         assert resolved.is_absolute()
-        assert resolved.parent.name == ".claude"
-        assert resolved.name == "settings.local.json"
+        assert resolved.parent.name == '.claude'
+        assert resolved.name == 'settings.local.json'
         # No stray ./claude file in cwd.
-        assert not (tmp_path / "claude").exists()
+        assert not (tmp_path / 'claude').exists()
         # The actual settings file got the wiring.
         assert resolved.is_file()
         wiring = json.loads(resolved.read_text())
-        assert "hooks" in wiring
-        assert "UserPromptSubmit" in wiring["hooks"]
+        assert 'hooks' in wiring
+        assert 'UserPromptSubmit' in wiring['hooks']
 
-    def test_target_claude_pins_settings_local_even_when_settings_json_exists(
-        self, rt, tmp_path, monkeypatch
-    ):
+    def test_target_claude_pins_settings_local_even_when_settings_json_exists(self, rt, tmp_path, monkeypatch):
         """``--target claude`` pins settings.local.json even when settings.json exists.
 
         The terminal-title bundle is machine-local operator wiring — absolute
@@ -1297,36 +1263,34 @@ class TestInstallTerminalTitleHooks:
         enters version control.
         """
         monkeypatch.chdir(tmp_path)
-        claude_dir = tmp_path / ".claude"
+        claude_dir = tmp_path / '.claude'
         claude_dir.mkdir()
-        settings_json = claude_dir / "settings.json"
-        settings_json.write_text(
-            json.dumps({"permissions": {"allow": []}}), encoding="utf-8"
-        )
+        settings_json = claude_dir / 'settings.json'
+        settings_json.write_text(json.dumps({'permissions': {'allow': []}}), encoding='utf-8')
         shared_before = settings_json.read_text()
 
-        result = _parsed(rt.project_install_hook("claude"))
+        result = _parsed(rt.project_install_hook('claude'))
 
-        assert result["status"] == "success"
-        assert Path(result["settings_path"]).name == "settings.local.json"
+        assert result['status'] == 'success'
+        assert Path(result['settings_path']).name == 'settings.local.json'
 
         # The full terminal-title bundle landed in settings.local.json.
-        local = json.loads((claude_dir / "settings.local.json").read_text())
-        assert _count_command(local["hooks"]["UserPromptSubmit"], _RENDER_HOOK_COMMAND) == 1
-        assert local["statusLine"]["command"] == _STATUSLINE_COMMAND
-        assert local["env"]["CLAUDE_CODE_DISABLE_TERMINAL_TITLE"] == "1"
+        local = json.loads((claude_dir / 'settings.local.json').read_text())
+        assert _count_command(local['hooks']['UserPromptSubmit'], _RENDER_HOOK_COMMAND) == 1
+        assert local['statusLine']['command'] == _STATUSLINE_COMMAND
+        assert local['env']['CLAUDE_CODE_DISABLE_TERMINAL_TITLE'] == '1'
         # The shared settings.json was NOT touched — byte-identical, not merely
         # "no hooks block" (an in-place rewrite without hooks would be a bug too).
         assert settings_json.read_text() == shared_before
-        assert "hooks" not in json.loads(shared_before)
+        assert 'hooks' not in json.loads(shared_before)
 
     @pytest.mark.parametrize(
-        "invalid,absolute",
+        'invalid,absolute',
         [
-            ("opencode", False),
-            ("settings.local.json", False),
-            ("./settings.json", False),
-            ("no-extension", True),
+            ('opencode', False),
+            ('settings.local.json', False),
+            ('./settings.json', False),
+            ('no-extension', True),
         ],
         ids=[
             'another-platform-identifier',
@@ -1335,9 +1299,7 @@ class TestInstallTerminalTitleHooks:
             'absolute-path-without-a-json-suffix',
         ],
     )
-    def test_target_relative_path_or_bare_identifier_rejected(
-        self, rt, tmp_path, monkeypatch, invalid, absolute
-    ):
+    def test_target_relative_path_or_bare_identifier_rejected(self, rt, tmp_path, monkeypatch, invalid, absolute):
         """A target that is neither ``claude`` nor an absolute ``.json`` path is refused.
 
         Each row is a different way of being neither, and all four must refuse
@@ -1355,19 +1317,19 @@ class TestInstallTerminalTitleHooks:
 
         result = _parsed(rt.project_install_hook(target))
 
-        assert result["status"] == "error", f"expected error for target={target!r}, got {result}"
-        assert result["error"] == "unknown_target", f"target={target!r}: {result}"
+        assert result['status'] == 'error', f'expected error for target={target!r}, got {result}'
+        assert result['error'] == 'unknown_target', f'target={target!r}: {result}'
         assert not (tmp_path / invalid).exists()
 
     @pytest.mark.parametrize(
-        "keys",
+        'keys',
         [
-            ("bogus",),
-            ("overwrite-statusline",),
-            ("statusline", "bogus"),
-            ("statusLine",),
+            ('bogus',),
+            ('overwrite-statusline',),
+            ('statusline', 'bogus'),
+            ('statusLine',),
         ],
-        ids=["unknown", "old-flag-spelling", "one-valid-one-not", "wrong-case"],
+        ids=['unknown', 'old-flag-spelling', 'one-valid-one-not', 'wrong-case'],
     )
     def test_unrecognised_overwrite_key_rejected_before_any_write(self, rt, tmp_path, keys):
         """An overwrite key outside the target's key set is rejected, and nothing is written.
@@ -1377,25 +1339,23 @@ class TestInstallTerminalTitleHooks:
         the wrong answer rather than a missing one. The rejection precedes path
         resolution, so no settings file is created or modified.
         """
-        target = tmp_path / ".claude" / "settings.local.json"
+        target = tmp_path / '.claude' / 'settings.local.json'
         target.parent.mkdir(parents=True)
 
         result = _parsed(rt.project_install_hook(str(target), overwrite=keys))
 
-        assert result["status"] == "error"
-        assert result["error"] == "unknown_overwrite_key"
+        assert result['status'] == 'error'
+        assert result['error'] == 'unknown_overwrite_key'
         assert not target.exists()
 
     def test_recognised_overwrite_keys_are_accepted(self, rt, tmp_path):
         """Both of the target's documented overwrite keys pass validation together."""
-        target = tmp_path / ".claude" / "settings.local.json"
+        target = tmp_path / '.claude' / 'settings.local.json'
         target.parent.mkdir(parents=True)
 
-        result = _parsed(
-            rt.project_install_hook(str(target), overwrite=("statusline", "env-disable"))
-        )
+        result = _parsed(rt.project_install_hook(str(target), overwrite=('statusline', 'env-disable')))
 
-        assert result["status"] == "success"
+        assert result['status'] == 'success'
 
 
 # =============================================================================
@@ -1413,30 +1373,30 @@ class TestInstallEnforcementHook:
 
     def test_fresh_enforcement_install_adds_entry(self, rt, tmp_path):
         """--enforcement installs the PreToolUse enforcement entry and reports installed."""
-        target = tmp_path / ".claude" / "settings.local.json"
+        target = tmp_path / '.claude' / 'settings.local.json'
         result = _parsed(rt.project_install_hook(str(target), enforcement=True))
 
-        assert result["status"] == "success"
-        assert result["enforcement_installed"] is True
-        assert result["enforcement_status"] == "installed"
-        assert result["already_present"] is False
+        assert result['status'] == 'success'
+        assert result['enforcement_installed'] is True
+        assert result['enforcement_status'] == 'installed'
+        assert result['already_present'] is False
 
         wiring = json.loads(target.read_text())
-        pre = wiring["hooks"]["PreToolUse"]
+        pre = wiring['hooks']['PreToolUse']
         assert _count_command(pre, _ENFORCEMENT_HOOK_COMMAND) == 1
 
     def test_idempotent_second_enforcement_run_already_present(self, rt, tmp_path):
         """A second --enforcement run reports already_present and adds nothing."""
-        target = tmp_path / ".claude" / "settings.local.json"
+        target = tmp_path / '.claude' / 'settings.local.json'
         rt.project_install_hook(str(target), enforcement=True)
         result = _parsed(rt.project_install_hook(str(target), enforcement=True))
 
-        assert result["enforcement_status"] == "already_present"
-        assert result["already_present"] is True
+        assert result['enforcement_status'] == 'already_present'
+        assert result['already_present'] is True
 
         wiring = json.loads(target.read_text())
         # Still exactly one enforcement entry — no duplication.
-        assert _count_command(wiring["hooks"]["PreToolUse"], _ENFORCEMENT_HOOK_COMMAND) == 1
+        assert _count_command(wiring['hooks']['PreToolUse'], _ENFORCEMENT_HOOK_COMMAND) == 1
 
     def test_already_present_does_not_rewrite_file(self, rt, tmp_path):
         """A second --enforcement run on an already-present entry must not rewrite the file.
@@ -1451,7 +1411,8 @@ class TestInstallEnforcementHook:
         file was rewritten identically.
         """
         import os
-        target = tmp_path / ".claude" / "settings.local.json"
+
+        target = tmp_path / '.claude' / 'settings.local.json'
         rt.project_install_hook(str(target), enforcement=True)
 
         content_before = target.read_bytes()
@@ -1459,39 +1420,39 @@ class TestInstallEnforcementHook:
 
         result = _parsed(rt.project_install_hook(str(target), enforcement=True))
 
-        assert result["enforcement_status"] == "already_present"
-        assert result["already_present"] is True
+        assert result['enforcement_status'] == 'already_present'
+        assert result['already_present'] is True
         # File must not have been touched (byte-identical, same mtime).
         assert target.read_bytes() == content_before
         assert os.stat(target).st_mtime_ns == mtime_before
 
     def test_plain_install_does_not_add_enforcement_entry(self, rt, tmp_path):
         """A plain install-hook (no --enforcement) never installs the enforcement entry."""
-        target = tmp_path / ".claude" / "settings.local.json"
+        target = tmp_path / '.claude' / 'settings.local.json'
         rt.project_install_hook(str(target))
 
         wiring = json.loads(target.read_text())
-        pre = wiring["hooks"].get("PreToolUse", [])
+        pre = wiring['hooks'].get('PreToolUse', [])
         assert _count_command(pre, _ENFORCEMENT_HOOK_COMMAND) == 0
 
     def test_enforcement_install_does_not_add_terminal_title_wiring(self, rt, tmp_path):
         """--enforcement installs ONLY the enforcement entry — no render/statusLine/env wiring."""
-        target = tmp_path / ".claude" / "settings.local.json"
+        target = tmp_path / '.claude' / 'settings.local.json'
         rt.project_install_hook(str(target), enforcement=True)
 
         wiring = json.loads(target.read_text())
-        hooks = wiring.get("hooks", {})
+        hooks = wiring.get('hooks', {})
         # No render entries anywhere, no statusLine, no env disable.
         for block in hooks.values():
             assert _count_command(block, _RENDER_HOOK_COMMAND) == 0
-        assert "statusLine" not in wiring
-        assert "CLAUDE_CODE_DISABLE_TERMINAL_TITLE" not in wiring.get("env", {})
+        assert 'statusLine' not in wiring
+        assert 'CLAUDE_CODE_DISABLE_TERMINAL_TITLE' not in wiring.get('env', {})
         # SessionStart was never created (no capture/render entries added).
-        assert "SessionStart" not in hooks
+        assert 'SessionStart' not in hooks
 
     def test_enforcement_install_preserves_existing_terminal_title_hooks(self, rt, tmp_path):
         """Installing enforcement onto a terminal-title-wired file preserves all render entries."""
-        target = tmp_path / ".claude" / "settings.local.json"
+        target = tmp_path / '.claude' / 'settings.local.json'
         # First fully wire terminal-title.
         rt.project_install_hook(str(target))
         before = json.loads(target.read_text())
@@ -1499,27 +1460,27 @@ class TestInstallEnforcementHook:
         rt.project_install_hook(str(target), enforcement=True)
         after = json.loads(target.read_text())
 
-        hooks = after["hooks"]
+        hooks = after['hooks']
         # Existing render entries intact.
-        assert _count_command(hooks["SessionStart"], _RENDER_HOOK_COMMAND) == 2
-        assert _count_command(hooks["PreToolUse"], _RENDER_HOOK_COMMAND) == 2
-        assert _count_command(hooks["PostToolUse"], _RENDER_HOOK_COMMAND) == 2
+        assert _count_command(hooks['SessionStart'], _RENDER_HOOK_COMMAND) == 2
+        assert _count_command(hooks['PreToolUse'], _RENDER_HOOK_COMMAND) == 2
+        assert _count_command(hooks['PostToolUse'], _RENDER_HOOK_COMMAND) == 2
         # statusLine + env preserved verbatim.
-        assert after["statusLine"] == before["statusLine"]
-        assert after["env"] == before["env"]
+        assert after['statusLine'] == before['statusLine']
+        assert after['env'] == before['env']
         # Enforcement entry added alongside the render entries.
-        assert _count_command(hooks["PreToolUse"], _ENFORCEMENT_HOOK_COMMAND) == 1
+        assert _count_command(hooks['PreToolUse'], _ENFORCEMENT_HOOK_COMMAND) == 1
 
     def test_terminal_title_install_preserves_existing_enforcement_entry(self, rt, tmp_path):
         """Installing terminal-title onto an enforcement-wired file preserves the enforcement entry."""
-        target = tmp_path / ".claude" / "settings.local.json"
+        target = tmp_path / '.claude' / 'settings.local.json'
         # First install enforcement only.
         rt.project_install_hook(str(target), enforcement=True)
         # Then install the terminal-title bundle.
         rt.project_install_hook(str(target))
 
         wiring = json.loads(target.read_text())
-        pre = wiring["hooks"]["PreToolUse"]
+        pre = wiring['hooks']['PreToolUse']
         # Enforcement entry survives the terminal-title install.
         assert _count_command(pre, _ENFORCEMENT_HOOK_COMMAND) == 1
         # And the render entries were added.
@@ -1536,27 +1497,27 @@ class TestInstallEnforcementHook:
         settings.json where the display health-check could not see it.
         """
         monkeypatch.chdir(tmp_path)
-        claude_dir = tmp_path / ".claude"
+        claude_dir = tmp_path / '.claude'
         claude_dir.mkdir()
         # A pre-existing shared settings.json — the prefer-settings.json resolver
         # would otherwise target this file.
-        settings_json = claude_dir / "settings.json"
-        settings_json.write_text(json.dumps({"permissions": {"allow": []}}))
+        settings_json = claude_dir / 'settings.json'
+        settings_json.write_text(json.dumps({'permissions': {'allow': []}}))
         shared_before = settings_json.read_text()
 
-        result = _parsed(rt.project_install_hook("claude", enforcement=True))
+        result = _parsed(rt.project_install_hook('claude', enforcement=True))
 
-        assert result["status"] == "success"
-        assert result["enforcement_installed"] is True
+        assert result['status'] == 'success'
+        assert result['enforcement_installed'] is True
         # The entry landed in settings.local.json, NOT the shared settings.json.
-        assert Path(result["settings_path"]).name == "settings.local.json"
-        local = json.loads((claude_dir / "settings.local.json").read_text())
-        assert _count_command(local["hooks"]["PreToolUse"], _ENFORCEMENT_HOOK_COMMAND) == 1
+        assert Path(result['settings_path']).name == 'settings.local.json'
+        local = json.loads((claude_dir / 'settings.local.json').read_text())
+        assert _count_command(local['hooks']['PreToolUse'], _ENFORCEMENT_HOOK_COMMAND) == 1
         # The shared settings.json was NOT touched — byte-identical, not merely
         # "no hooks block" (an in-place rewrite without hooks would be a bug too).
         assert settings_json.read_text() == shared_before
         shared = json.loads(shared_before)
-        assert "hooks" not in shared
+        assert 'hooks' not in shared
 
 
 class TestEnforcementEntryMustBeMatcherLess:
@@ -1577,12 +1538,12 @@ class TestEnforcementEntryMustBeMatcherLess:
         """A PreToolUse entry carrying the enforcement command under *matcher*."""
         return [
             {
-                "matcher": matcher,
-                "hooks": [
+                'matcher': matcher,
+                'hooks': [
                     {
-                        "type": "command",
-                        "command": _ENFORCEMENT_HOOK_COMMAND,
-                        "timeout": timeout,
+                        'type': 'command',
+                        'command': _ENFORCEMENT_HOOK_COMMAND,
+                        'timeout': timeout,
                     }
                 ],
             }
@@ -1590,19 +1551,17 @@ class TestEnforcementEntryMustBeMatcherLess:
 
     def _write_pre_tool_use(self, target: Path, entries: list[dict[str, Any]]) -> None:
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(
-            json.dumps({"hooks": {"PreToolUse": entries}}), encoding="utf-8"
-        )
+        target.write_text(json.dumps({'hooks': {'PreToolUse': entries}}), encoding='utf-8')
 
     def test_probe_is_scoped_like_its_render_sibling(self):
         """``_has_enforcement_entry`` takes and applies the same matcher scope."""
         import claude_runtime as _cr
 
-        scoped = self._scoped_entries("Bash")
-        matcher_less = self._scoped_entries("")
+        scoped = self._scoped_entries('Bash')
+        matcher_less = self._scoped_entries('')
 
-        assert _cr._has_enforcement_entry(scoped, matcher="") is False
-        assert _cr._has_enforcement_entry(matcher_less, matcher="") is True
+        assert _cr._has_enforcement_entry(scoped, matcher='') is False
+        assert _cr._has_enforcement_entry(matcher_less, matcher='') is True
         # matcher=None keeps the sibling's "any entry with this command" meaning,
         # so the scoping is a caller decision rather than a hard-wired one.
         assert _cr._has_enforcement_entry(scoped) is True
@@ -1615,27 +1574,24 @@ class TestEnforcementEntryMustBeMatcherLess:
         enforcement ran for ``Bash`` alone while the operator was told it was
         armed.
         """
-        target = tmp_path / ".claude" / "settings.local.json"
-        self._write_pre_tool_use(target, self._scoped_entries("Bash"))
+        target = tmp_path / '.claude' / 'settings.local.json'
+        self._write_pre_tool_use(target, self._scoped_entries('Bash'))
 
         result = _parsed(rt.project_install_hook(str(target), enforcement=True))
 
-        assert result["enforcement_status"] == "installed"
-        assert result["enforcement_installed"] is True
+        assert result['enforcement_status'] == 'installed'
+        assert result['enforcement_installed'] is True
 
-        pre = json.loads(target.read_text())["hooks"]["PreToolUse"]
+        pre = json.loads(target.read_text())['hooks']['PreToolUse']
         # The foreign scoped entry is preserved and the matcher-less one added.
         assert _count_command(pre, _ENFORCEMENT_HOOK_COMMAND) == 2
         matchers = {
-            entry.get("matcher", "")
+            entry.get('matcher', '')
             for entry in pre
             if isinstance(entry, dict)
-            and any(
-                h.get("command") == _ENFORCEMENT_HOOK_COMMAND
-                for h in entry.get("hooks", [])
-            )
+            and any(h.get('command') == _ENFORCEMENT_HOOK_COMMAND for h in entry.get('hooks', []))
         }
-        assert matchers == {"", "Bash"}
+        assert matchers == {'', 'Bash'}
 
     def test_matcher_less_entry_still_suppresses_the_install(self, rt, tmp_path):
         """The matched negative: a correct entry is still recognised as present.
@@ -1644,13 +1600,13 @@ class TestEnforcementEntryMustBeMatcherLess:
         wrong-matcher control above while re-appending a duplicate entry on
         every run.
         """
-        target = tmp_path / ".claude" / "settings.local.json"
-        self._write_pre_tool_use(target, self._scoped_entries(""))
+        target = tmp_path / '.claude' / 'settings.local.json'
+        self._write_pre_tool_use(target, self._scoped_entries(''))
 
         result = _parsed(rt.project_install_hook(str(target), enforcement=True))
 
-        assert result["enforcement_status"] == "already_present"
-        pre = json.loads(target.read_text())["hooks"]["PreToolUse"]
+        assert result['enforcement_status'] == 'already_present'
+        pre = json.loads(target.read_text())['hooks']['PreToolUse']
         assert _count_command(pre, _ENFORCEMENT_HOOK_COMMAND) == 1
 
     def test_migration_leaves_a_wrong_matcher_entry_alone(self, rt, tmp_path):
@@ -1663,33 +1619,29 @@ class TestEnforcementEntryMustBeMatcherLess:
         """
         import claude_runtime as _cr
 
-        target = tmp_path / ".claude" / "settings.local.json"
-        self._write_pre_tool_use(target, self._scoped_entries("Bash", timeout=5000))
+        target = tmp_path / '.claude' / 'settings.local.json'
+        self._write_pre_tool_use(target, self._scoped_entries('Bash', timeout=5000))
 
         rt.project_install_hook(str(target), enforcement=True)
 
-        pre = json.loads(target.read_text())["hooks"]["PreToolUse"]
-        scoped = [e for e in pre if e.get("matcher", "") == "Bash"]
-        matcher_less = [e for e in pre if e.get("matcher", "") == ""]
+        pre = json.loads(target.read_text())['hooks']['PreToolUse']
+        scoped = [e for e in pre if e.get('matcher', '') == 'Bash']
+        matcher_less = [e for e in pre if e.get('matcher', '') == '']
         assert _timeouts_for(scoped, _ENFORCEMENT_HOOK_COMMAND) == {5000}
-        assert _timeouts_for(matcher_less, _ENFORCEMENT_HOOK_COMMAND) == {
-            _cr._HOOK_TIMEOUT_SECONDS
-        }
+        assert _timeouts_for(matcher_less, _ENFORCEMENT_HOOK_COMMAND) == {_cr._HOOK_TIMEOUT_SECONDS}
 
     def test_migration_still_converges_the_matcher_less_entry(self, rt, tmp_path):
         """The matched positive: a stale matcher-less entry IS converged."""
         import claude_runtime as _cr
 
-        target = tmp_path / ".claude" / "settings.local.json"
-        self._write_pre_tool_use(target, self._scoped_entries("", timeout=5000))
+        target = tmp_path / '.claude' / 'settings.local.json'
+        self._write_pre_tool_use(target, self._scoped_entries('', timeout=5000))
 
         result = _parsed(rt.project_install_hook(str(target), enforcement=True))
 
-        assert result["enforcement_status"] == "migrated"
-        pre = json.loads(target.read_text())["hooks"]["PreToolUse"]
-        assert _timeouts_for(pre, _ENFORCEMENT_HOOK_COMMAND) == {
-            _cr._HOOK_TIMEOUT_SECONDS
-        }
+        assert result['enforcement_status'] == 'migrated'
+        pre = json.loads(target.read_text())['hooks']['PreToolUse']
+        assert _timeouts_for(pre, _ENFORCEMENT_HOOK_COMMAND) == {_cr._HOOK_TIMEOUT_SECONDS}
 
     def test_display_label_reads_missing_for_a_wrong_matcher_entry(self):
         """The health-check label is truthful once the probe is scoped.
@@ -1700,15 +1652,11 @@ class TestEnforcementEntryMustBeMatcherLess:
         """
         import claude_runtime as _cr
 
-        scoped_lines, _ = _cr._diagnose_display_entries(
-            {"hooks": {"PreToolUse": self._scoped_entries("Bash")}}
-        )
-        assert "PreToolUse:enforcement: MISSING" in scoped_lines
+        scoped_lines, _ = _cr._diagnose_display_entries({'hooks': {'PreToolUse': self._scoped_entries('Bash')}})
+        assert 'PreToolUse:enforcement: MISSING' in scoped_lines
 
-        matcher_less_lines, _ = _cr._diagnose_display_entries(
-            {"hooks": {"PreToolUse": self._scoped_entries("")}}
-        )
-        assert "PreToolUse:enforcement: present" in matcher_less_lines
+        matcher_less_lines, _ = _cr._diagnose_display_entries({'hooks': {'PreToolUse': self._scoped_entries('')}})
+        assert 'PreToolUse:enforcement: present' in matcher_less_lines
 
 
 class TestHookEntryTimeoutEmitSites:
@@ -1755,18 +1703,14 @@ class TestHookEntryTimeoutEmitSites:
         import claude_runtime as _cr
 
         builders = self._builders()
-        assert builders, "emit-site population is empty — nothing would be examined"
+        assert builders, 'emit-site population is empty — nothing would be examined'
 
         unanchored = [
-            getattr(builder, "__name__", repr(builder))
+            getattr(builder, '__name__', repr(builder))
             for builder in builders
-            if not callable(builder)
-            or getattr(_cr, getattr(builder, "__name__", ""), None) is not builder
+            if not callable(builder) or getattr(_cr, getattr(builder, '__name__', ''), None) is not builder
         ]
-        assert not unanchored, (
-            f"population={len(builders)} builder(s), unanchored={len(unanchored)}: "
-            f"{unanchored}"
-        )
+        assert not unanchored, f'population={len(builders)} builder(s), unanchored={len(unanchored)}: {unanchored}'
 
     def test_every_emit_site_emits_a_plausible_seconds_timeout(self):
         """No builder emits a timeout outside the plausible seconds range.
@@ -1782,19 +1726,16 @@ class TestHookEntryTimeoutEmitSites:
         divergent: list[tuple[str, object]] = []
         for builder in builders:
             entry = builder()
-            for hook in entry["hooks"]:
+            for hook in entry['hooks']:
                 examined += 1
-                timeout = hook.get("timeout")
+                timeout = hook.get('timeout')
                 if _cr._hook_timeout_is_stale(timeout):
                     divergent.append((builder.__name__, timeout))
 
         assert examined == len(builders), (
-            f"expected one emitted hook per builder: examined={examined}, "
-            f"builders={len(builders)}"
+            f'expected one emitted hook per builder: examined={examined}, builders={len(builders)}'
         )
-        assert not divergent, (
-            f"examined={examined} emit site(s), divergent={len(divergent)}: {divergent}"
-        )
+        assert not divergent, f'examined={examined} emit site(s), divergent={len(divergent)}: {divergent}'
 
     def test_every_builder_emits_the_same_value(self):
         """The emitted literals are identical — the stated position, not an accident.
@@ -1808,10 +1749,8 @@ class TestHookEntryTimeoutEmitSites:
         import claude_runtime as _cr
 
         builders = self._builders()
-        emitted = {builder()["hooks"][0]["timeout"] for builder in builders}
-        assert emitted == {_cr._HOOK_TIMEOUT_SECONDS}, (
-            f"population={len(builders)}, emitted={sorted(emitted)}"
-        )
+        emitted = {builder()['hooks'][0]['timeout'] for builder in builders}
+        assert emitted == {_cr._HOOK_TIMEOUT_SECONDS}, f'population={len(builders)}, emitted={sorted(emitted)}'
 
     def test_build_job_wire_status_key_is_not_an_emit_site(self):
         """The fourth ``"timeout"`` in the module is a wire-status NAME, not a value.
@@ -1823,16 +1762,16 @@ class TestHookEntryTimeoutEmitSites:
         """
         import claude_runtime as _cr
 
-        assert _cr._BUILD_JOB_STATUS_TO_OUTCOME["timeout"] == _cr.OUTCOME_TIMED_OUT
+        assert _cr._BUILD_JOB_STATUS_TO_OUTCOME['timeout'] == _cr.OUTCOME_TIMED_OUT
 
 
 class TestHookTimeoutStalenessPredicate:
     """``_hook_timeout_is_stale`` is RANGE-based, not an equality test on 5000."""
 
     @pytest.mark.parametrize(
-        "value",
-        [5000, 30000, 0, -1, None, "5", True, 1.5],
-        ids=["ms_5000", "ms_30000", "zero", "negative", "absent", "string", "bool", "float"],
+        'value',
+        [5000, 30000, 0, -1, None, '5', True, 1.5],
+        ids=['ms_5000', 'ms_30000', 'zero', 'negative', 'absent', 'string', 'bool', 'float'],
     )
     def test_implausible_values_are_stale(self, value):
         """Every value outside the plausible seconds range reads as stale."""
@@ -1840,7 +1779,7 @@ class TestHookTimeoutStalenessPredicate:
 
         assert _cr._hook_timeout_is_stale(value) is True
 
-    @pytest.mark.parametrize("value", [1, 5, 30, 120], ids=["min", "current", "operator", "max"])
+    @pytest.mark.parametrize('value', [1, 5, 30, 120], ids=['min', 'current', 'operator', 'max'])
     def test_plausible_values_are_not_stale(self, value):
         """A credible operator value inside the range is preserved, not normalised.
 
@@ -1879,37 +1818,35 @@ class TestHookTimeoutMigration:
         """A fully-provisioned pre-fix file converges on re-install, across all nine labels."""
         import claude_runtime as _cr
 
-        target = tmp_path / ".claude" / "settings.local.json"
+        target = tmp_path / '.claude' / 'settings.local.json'
         rt.project_install_hook(str(target))
         _stale_every_timeout(target)
         assert _all_render_timeouts(json.loads(target.read_text())) == {5000}
 
         result = _parsed(rt.project_install_hook(str(target)))
 
-        assert result["status"] == "success"
+        assert result['status'] == 'success'
         # Every label is on the migrate arm — nothing installed, nothing a no-op.
-        assert set(result["migrated_events"]) == _NINE_RENDER_LABELS
-        assert result["installed_events"] == []
-        assert result["already_present_events"] == []
-        assert result["already_present"] is False
+        assert set(result['migrated_events']) == _NINE_RENDER_LABELS
+        assert result['installed_events'] == []
+        assert result['already_present_events'] == []
+        assert result['already_present'] is False
         # The values were actually rewritten, not merely relabelled.
-        assert _all_render_timeouts(json.loads(target.read_text())) == {
-            _cr._HOOK_TIMEOUT_SECONDS
-        }
+        assert _all_render_timeouts(json.loads(target.read_text())) == {_cr._HOOK_TIMEOUT_SECONDS}
 
     def test_terminal_title_migration_does_not_duplicate_entries(self, rt, tmp_path):
         """Convergence rewrites in place — it never appends a second entry."""
-        target = tmp_path / ".claude" / "settings.local.json"
+        target = tmp_path / '.claude' / 'settings.local.json'
         rt.project_install_hook(str(target))
         _stale_every_timeout(target)
 
         rt.project_install_hook(str(target))
 
-        hooks_block = json.loads(target.read_text())["hooks"]
-        assert _count_command(hooks_block["SessionStart"], _RENDER_HOOK_COMMAND) == 2
-        assert _count_command(hooks_block["SessionStart"], _HOOK_COMMAND) == 1
-        assert _count_command(hooks_block["PreToolUse"], _RENDER_HOOK_COMMAND) == 2
-        assert _count_command(hooks_block["PostToolUse"], _RENDER_HOOK_COMMAND) == 2
+        hooks_block = json.loads(target.read_text())['hooks']
+        assert _count_command(hooks_block['SessionStart'], _RENDER_HOOK_COMMAND) == 2
+        assert _count_command(hooks_block['SessionStart'], _HOOK_COMMAND) == 1
+        assert _count_command(hooks_block['PreToolUse'], _RENDER_HOOK_COMMAND) == 2
+        assert _count_command(hooks_block['PostToolUse'], _RENDER_HOOK_COMMAND) == 2
 
     def test_terminal_title_preserves_a_deliberate_in_range_value(self, rt, tmp_path):
         """An operator value inside the plausible range is NOT rewritten.
@@ -1918,15 +1855,15 @@ class TestHookTimeoutMigration:
         migration that normalised every entry to the emitted literal would
         silently discard a deliberate operator choice.
         """
-        target = tmp_path / ".claude" / "settings.local.json"
+        target = tmp_path / '.claude' / 'settings.local.json'
         rt.project_install_hook(str(target))
         _stale_every_timeout(target, stale_value=30)
 
         result = _parsed(rt.project_install_hook(str(target)))
 
-        assert result["migrated_events"] == []
-        assert set(result["already_present_events"]) == _NINE_RENDER_LABELS
-        assert result["already_present"] is True
+        assert result['migrated_events'] == []
+        assert set(result['already_present_events']) == _NINE_RENDER_LABELS
+        assert result['already_present'] is True
         assert _all_render_timeouts(json.loads(target.read_text())) == {30}
 
     # ------------------------------------------------------------------
@@ -1942,23 +1879,21 @@ class TestHookTimeoutMigration:
         enforcement installer, which returns early (see
         ``TestInstallEnforcementHook.test_already_present_does_not_rewrite_file``).
         """
-        target = tmp_path / ".claude" / "settings.local.json"
+        target = tmp_path / '.claude' / 'settings.local.json'
         rt.project_install_hook(str(target))
         before = json.loads(target.read_text())
 
         result = _parsed(rt.project_install_hook(str(target)))
 
         assert json.loads(target.read_text()) == before
-        assert result["migrated_events"] == []
-        assert set(result["already_present_events"]) == _NINE_RENDER_LABELS
+        assert result['migrated_events'] == []
+        assert set(result['already_present_events']) == _NINE_RENDER_LABELS
 
     # ------------------------------------------------------------------
     # The three lists partition the nine labels.
     # ------------------------------------------------------------------
 
-    @pytest.mark.parametrize(
-        "stale", [True, False], ids=["migrate_arm", "untouched_arm"]
-    )
+    @pytest.mark.parametrize('stale', [True, False], ids=['migrate_arm', 'untouched_arm'])
     def test_the_three_event_lists_partition_the_nine_labels(self, rt, tmp_path, stale):
         """Every label appears in exactly one list, on both arms.
 
@@ -1966,7 +1901,7 @@ class TestHookTimeoutMigration:
         lists at once is the false "nothing changed" signal this contract exists
         to remove, and a union test alone would not catch it.
         """
-        target = tmp_path / ".claude" / "settings.local.json"
+        target = tmp_path / '.claude' / 'settings.local.json'
         rt.project_install_hook(str(target))
         if stale:
             _stale_every_timeout(target)
@@ -1983,18 +1918,18 @@ class TestHookTimeoutMigration:
         """A pre-fix enforcement entry converges and reports enforcement_status: migrated."""
         import claude_runtime as _cr
 
-        target = tmp_path / ".claude" / "settings.local.json"
+        target = tmp_path / '.claude' / 'settings.local.json'
         rt.project_install_hook(str(target), enforcement=True)
         _stale_every_timeout(target)
 
         result = _parsed(rt.project_install_hook(str(target), enforcement=True))
 
-        assert result["status"] == "success"
-        assert result["enforcement_status"] == "migrated"
+        assert result['status'] == 'success'
+        assert result['enforcement_status'] == 'migrated'
         # ``migrated`` is a DISTINCT member, never a flavour of already_present.
-        assert result["already_present"] is False
+        assert result['already_present'] is False
 
-        pre = json.loads(target.read_text())["hooks"]["PreToolUse"]
+        pre = json.loads(target.read_text())['hooks']['PreToolUse']
         assert _timeouts_for(pre, _ENFORCEMENT_HOOK_COMMAND) == {_cr._HOOK_TIMEOUT_SECONDS}
         # Converged in place — still exactly one enforcement entry.
         assert _count_command(pre, _ENFORCEMENT_HOOK_COMMAND) == 1
@@ -2003,14 +1938,14 @@ class TestHookTimeoutMigration:
         """The migrate arm DOES write — the mirror of the untouched arm's no-write claim."""
         import os
 
-        target = tmp_path / ".claude" / "settings.local.json"
+        target = tmp_path / '.claude' / 'settings.local.json'
         rt.project_install_hook(str(target), enforcement=True)
         _stale_every_timeout(target)
         content_before = target.read_bytes()
 
         result = _parsed(rt.project_install_hook(str(target), enforcement=True))
 
-        assert result["enforcement_status"] == "migrated"
+        assert result['enforcement_status'] == 'migrated'
         assert target.read_bytes() != content_before
         assert os.stat(target).st_size > 0
 
@@ -2018,7 +1953,7 @@ class TestHookTimeoutMigration:
         """An in-range operator value leaves the enforcement entry on the untouched arm."""
         import os
 
-        target = tmp_path / ".claude" / "settings.local.json"
+        target = tmp_path / '.claude' / 'settings.local.json'
         rt.project_install_hook(str(target), enforcement=True)
         _stale_every_timeout(target, stale_value=30)
         content_before = target.read_bytes()
@@ -2026,8 +1961,8 @@ class TestHookTimeoutMigration:
 
         result = _parsed(rt.project_install_hook(str(target), enforcement=True))
 
-        assert result["enforcement_status"] == "already_present"
-        assert result["already_present"] is True
+        assert result['enforcement_status'] == 'already_present'
+        assert result['already_present'] is True
         # No write at all — the deliberate value is preserved untouched.
         assert target.read_bytes() == content_before
         assert os.stat(target).st_mtime_ns == mtime_before
@@ -2036,16 +1971,16 @@ class TestHookTimeoutMigration:
         """The enforcement converge is keyed on its OWN command, not the render one."""
         import claude_runtime as _cr
 
-        target = tmp_path / ".claude" / "settings.local.json"
+        target = tmp_path / '.claude' / 'settings.local.json'
         rt.project_install_hook(str(target))
         rt.project_install_hook(str(target), enforcement=True)
         _stale_every_timeout(target)
 
         result = _parsed(rt.project_install_hook(str(target), enforcement=True))
 
-        assert result["enforcement_status"] == "migrated"
+        assert result['enforcement_status'] == 'migrated'
         settings = json.loads(target.read_text())
-        pre = settings["hooks"]["PreToolUse"]
+        pre = settings['hooks']['PreToolUse']
         # Only the enforcement entry converged; the render entries kept the
         # stale value because the enforcement install never touches them.
         assert _timeouts_for(pre, _ENFORCEMENT_HOOK_COMMAND) == {_cr._HOOK_TIMEOUT_SECONDS}
@@ -2069,7 +2004,7 @@ class TestCaptureEntryOutcomeIsReported:
         """Nine correct render entries + one stale capture entry is NOT a no-op."""
         import claude_runtime as _cr
 
-        target = tmp_path / ".claude" / "settings.local.json"
+        target = tmp_path / '.claude' / 'settings.local.json'
         rt.project_install_hook(str(target))
         _stale_capture_timeout_only(target)
         seeded = json.loads(target.read_text())
@@ -2081,18 +2016,16 @@ class TestCaptureEntryOutcomeIsReported:
 
         result = _parsed(rt.project_install_hook(str(target)))
 
-        assert result["status"] == "success"
+        assert result['status'] == 'success'
         # The value was actually rewritten...
-        assert _capture_timeouts(json.loads(target.read_text())) == {
-            _cr._HOOK_TIMEOUT_SECONDS
-        }
+        assert _capture_timeouts(json.loads(target.read_text())) == {_cr._HOOK_TIMEOUT_SECONDS}
         # ...and the run does not claim nothing changed.
-        assert result["capture_status"] == "migrated"
-        assert result["already_present"] is False
+        assert result['capture_status'] == 'migrated'
+        assert result['already_present'] is False
         # No render label moved: the three lists cannot be carrying this signal.
-        assert result["migrated_events"] == []
-        assert result["installed_events"] == []
-        assert set(result["already_present_events"]) == _NINE_RENDER_LABELS
+        assert result['migrated_events'] == []
+        assert result['installed_events'] == []
+        assert set(result['already_present_events']) == _NINE_RENDER_LABELS
 
     def test_missing_capture_entry_alone_is_installed_and_reported(self, rt, tmp_path):
         """Nine correct render entries + an absent capture entry is NOT a no-op.
@@ -2100,19 +2033,19 @@ class TestCaptureEntryOutcomeIsReported:
         The insertion mirror of the convergence case: the file is rewritten with
         a freshly appended capture entry while no render label changes.
         """
-        target = tmp_path / ".claude" / "settings.local.json"
+        target = tmp_path / '.claude' / 'settings.local.json'
         rt.project_install_hook(str(target))
         _drop_capture_entry(target)
         assert _capture_timeouts(json.loads(target.read_text())) == set()
 
         result = _parsed(rt.project_install_hook(str(target)))
 
-        session_start = json.loads(target.read_text())["hooks"]["SessionStart"]
+        session_start = json.loads(target.read_text())['hooks']['SessionStart']
         assert _count_command(session_start, _HOOK_COMMAND) == 1
-        assert result["capture_status"] == "installed"
-        assert result["already_present"] is False
-        assert result["installed_events"] == []
-        assert set(result["already_present_events"]) == _NINE_RENDER_LABELS
+        assert result['capture_status'] == 'installed'
+        assert result['already_present'] is False
+        assert result['installed_events'] == []
+        assert set(result['already_present_events']) == _NINE_RENDER_LABELS
 
     def test_correct_capture_entry_keeps_the_genuine_no_op(self, rt, tmp_path):
         """A wholly-correct file still reports the honest no-op.
@@ -2121,13 +2054,13 @@ class TestCaptureEntryOutcomeIsReported:
         into ``already_present`` must not make every re-install look like a
         change.
         """
-        target = tmp_path / ".claude" / "settings.local.json"
+        target = tmp_path / '.claude' / 'settings.local.json'
         rt.project_install_hook(str(target))
 
         result = _parsed(rt.project_install_hook(str(target)))
 
-        assert result["capture_status"] == "already_present"
-        assert result["already_present"] is True
+        assert result['capture_status'] == 'already_present'
+        assert result['already_present'] is True
 
     def test_capture_entry_never_joins_the_nine_label_partition(self, rt, tmp_path):
         """``capture_status`` is a separate field, never a tenth label.
@@ -2136,7 +2069,7 @@ class TestCaptureEntryOutcomeIsReported:
         event lists must keep partitioning exactly the nine render labels, so
         the capture entry's outcome must not be stuffed into any of them.
         """
-        target = tmp_path / ".claude" / "settings.local.json"
+        target = tmp_path / '.claude' / 'settings.local.json'
         rt.project_install_hook(str(target))
         _stale_capture_timeout_only(target)
 
@@ -2150,15 +2083,15 @@ class TestCaptureEntryOutcomeIsReported:
         The capture entry is converged by the same range-based predicate as the
         render entries, so a deliberate in-range value must survive here too.
         """
-        target = tmp_path / ".claude" / "settings.local.json"
+        target = tmp_path / '.claude' / 'settings.local.json'
         rt.project_install_hook(str(target))
         _stale_capture_timeout_only(target, stale_value=30)
 
         result = _parsed(rt.project_install_hook(str(target)))
 
         assert _capture_timeouts(json.loads(target.read_text())) == {30}
-        assert result["capture_status"] == "already_present"
-        assert result["already_present"] is True
+        assert result['capture_status'] == 'already_present'
+        assert result['already_present'] is True
 
 
 class TestDisplayEnforcementLabel:
@@ -2174,18 +2107,18 @@ class TestDisplayEnforcementLabel:
 
     def test_display_reports_enforcement_missing_before_install(self, rt, in_tmp_cwd):
         """The display check reports PreToolUse:enforcement MISSING before the install."""
-        result = _parsed(rt.health_check("display"))
-        display_result = next(r for r in result["results"] if r["check"] == "display")
-        assert "PreToolUse:enforcement: MISSING" in display_result["detail"]
+        result = _parsed(rt.health_check('display'))
+        display_result = next(r for r in result['results'] if r['check'] == 'display')
+        assert 'PreToolUse:enforcement: MISSING' in display_result['detail']
 
     def test_display_reports_enforcement_present_after_install(self, rt, tmp_path, in_tmp_cwd):
         """The display check reports PreToolUse:enforcement present after the enforcement install."""
-        target = tmp_path / ".claude" / "settings.local.json"
+        target = tmp_path / '.claude' / 'settings.local.json'
         rt.project_install_hook(str(target), enforcement=True)
 
-        result = _parsed(rt.health_check("display"))
-        display_result = next(r for r in result["results"] if r["check"] == "display")
-        assert "PreToolUse:enforcement: present" in display_result["detail"]
+        result = _parsed(rt.health_check('display'))
+        display_result = next(r for r in result['results'] if r['check'] == 'display')
+        assert 'PreToolUse:enforcement: present' in display_result['detail']
 
     def test_enforcement_only_install_keeps_display_unhealthy_for_terminal_title(self, rt, tmp_path, in_tmp_cwd):
         """An enforcement-only install does NOT make the terminal-title display healthy.
@@ -2194,15 +2127,15 @@ class TestDisplayEnforcementLabel:
         terminal-title render label MISSING, so the display stays unhealthy
         while the enforcement label itself reports present.
         """
-        target = tmp_path / ".claude" / "settings.local.json"
+        target = tmp_path / '.claude' / 'settings.local.json'
         rt.project_install_hook(str(target), enforcement=True)
 
-        result = _parsed(rt.health_check("display"))
-        display_result = next(r for r in result["results"] if r["check"] == "display")
-        assert display_result["healthy"] is False
-        detail = display_result["detail"]
-        assert "PreToolUse:enforcement: present" in detail
-        assert "SessionStart:matcher-less: MISSING" in detail
+        result = _parsed(rt.health_check('display'))
+        display_result = next(r for r in result['results'] if r['check'] == 'display')
+        assert display_result['healthy'] is False
+        detail = display_result['detail']
+        assert 'PreToolUse:enforcement: present' in detail
+        assert 'SessionStart:matcher-less: MISSING' in detail
 
     def test_display_reports_enforcement_present_when_entry_in_settings_json(self, rt, tmp_path, in_tmp_cwd):
         """The display check detects the enforcement entry in settings.json too.
@@ -2213,12 +2146,12 @@ class TestDisplayEnforcementLabel:
         though it was registered. The check now reads both files, like the
         sibling ``hook`` check.
         """
-        target = tmp_path / ".claude" / "settings.json"
+        target = tmp_path / '.claude' / 'settings.json'
         rt.project_install_hook(str(target), enforcement=True)
 
-        result = _parsed(rt.health_check("display"))
-        display_result = next(r for r in result["results"] if r["check"] == "display")
-        assert "PreToolUse:enforcement: present" in display_result["detail"]
+        result = _parsed(rt.health_check('display'))
+        display_result = next(r for r in result['results'] if r['check'] == 'display')
+        assert 'PreToolUse:enforcement: present' in display_result['detail']
 
 
 # =============================================================================
@@ -2232,7 +2165,7 @@ class TestDisplayEnforcementLabel:
 # title_token, the composed title is ``{icon} pm:X:Y`` (no glyph).
 
 
-def _title_token(state: str, owner: str = "cli", age_seconds: int = 0) -> dict[str, str]:
+def _title_token(state: str, owner: str = 'cli', age_seconds: int = 0) -> dict[str, str]:
     """Build a ``{owner, state, set_at}`` title-token record.
 
     ``status.title_token`` is a structured record, not a bare state string, so
@@ -2242,7 +2175,7 @@ def _title_token(state: str, owner: str = "cli", age_seconds: int = 0) -> dict[s
     from datetime import UTC, datetime, timedelta
 
     set_at = datetime.now(UTC) - timedelta(seconds=age_seconds)
-    return {"owner": owner, "state": state, "set_at": set_at.strftime("%Y-%m-%dT%H:%M:%SZ")}
+    return {'owner': owner, 'state': state, 'set_at': set_at.strftime('%Y-%m-%dT%H:%M:%SZ')}
 
 
 def _write_status_json(
@@ -2250,11 +2183,11 @@ def _write_status_json(
     *,
     session_id: str,
     plan_id: str,
-    current_phase: str | None = "5-execute",
-    short_description: str | None = "my-task",
+    current_phase: str | None = '5-execute',
+    short_description: str | None = 'my-task',
     title_token: dict[str, str] | None = None,
     archived: bool = False,
-    date_prefix: str = "2026-05-29",
+    date_prefix: str = '2026-05-29',
 ) -> None:
     """Materialize the session-cache pointer + a plan ``status.json`` on disk.
 
@@ -2264,35 +2197,33 @@ def _write_status_json(
     otherwise under the live ``plans/{plan_id}/`` dir. A ``None`` field is
     omitted from the JSON so the absent-field paths can be exercised.
     """
-    cache_dir = tmp_path / "sessions" / session_id
+    cache_dir = tmp_path / 'sessions' / session_id
     cache_dir.mkdir(parents=True, exist_ok=True)
-    (cache_dir / "active-plan").write_text(plan_id, encoding="utf-8")
+    (cache_dir / 'active-plan').write_text(plan_id, encoding='utf-8')
 
     status: dict[str, Any] = {}
     if current_phase is not None:
-        status["current_phase"] = current_phase
+        status['current_phase'] = current_phase
     if short_description is not None:
-        status["short_description"] = short_description
+        status['short_description'] = short_description
     if title_token is not None:
-        status["title_token"] = title_token
+        status['title_token'] = title_token
 
     if archived:
-        status_dir = (
-            tmp_path / ".plan" / "local" / "archived-plans" / f"{date_prefix}-{plan_id}"
-        )
+        status_dir = tmp_path / '.plan' / 'local' / 'archived-plans' / f'{date_prefix}-{plan_id}'
     else:
-        status_dir = tmp_path / ".plan" / "local" / "plans" / plan_id
+        status_dir = tmp_path / '.plan' / 'local' / 'plans' / plan_id
     status_dir.mkdir(parents=True, exist_ok=True)
-    (status_dir / "status.json").write_text(json.dumps(status), encoding="utf-8")
+    (status_dir / 'status.json').write_text(json.dumps(status), encoding='utf-8')
 
 
 def _redirect_render_env(tmp_path: Path, monkeypatch, session_id: str) -> None:
     """Redirect the renderer's module constants + env at *session_id*."""
     import claude_runtime as _cr
 
-    monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
-    monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
-    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", session_id)
+    monkeypatch.setattr(session_binding, '_SESSION_CACHE_BASE', tmp_path / 'sessions')
+    monkeypatch.setattr(_cr, '_PLAN_DIR_NAME', '.plan')
+    monkeypatch.setenv('CLAUDE_CODE_SESSION_ID', session_id)
     monkeypatch.chdir(tmp_path)
 
 
@@ -2306,26 +2237,26 @@ class TestSessionCapture:
 
     def test_missing_env_var_returns_error(self, rt, monkeypatch):
         """When $CLAUDE_CODE_SESSION_ID is unset, session_capture returns error."""
-        monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
-        result = _parsed(rt.session_capture("my-plan"))
-        assert result["status"] == "error"
-        assert result["error"] == "hook_not_configured"
+        monkeypatch.delenv('CLAUDE_CODE_SESSION_ID', raising=False)
+        result = _parsed(rt.session_capture('my-plan'))
+        assert result['status'] == 'error'
+        assert result['error'] == 'hook_not_configured'
 
     def test_stores_session_id_when_env_var_set(self, rt, monkeypatch):
         """When env var is set, session_capture stores and returns success."""
-        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "test-session-abc")
-        with patch("claude_runtime._manage_status_store_session", return_value=True):
-            result = _parsed(rt.session_capture("my-plan"))
-        assert result["status"] == "success"
-        assert result["session_id"] == "test-session-abc"
-        assert result["plan_id"] == "my-plan"
+        monkeypatch.setenv('CLAUDE_CODE_SESSION_ID', 'test-session-abc')
+        with patch('claude_runtime._manage_status_store_session', return_value=True):
+            result = _parsed(rt.session_capture('my-plan'))
+        assert result['status'] == 'success'
+        assert result['session_id'] == 'test-session-abc'
+        assert result['plan_id'] == 'my-plan'
 
     def test_stored_flag_reflects_subprocess_outcome(self, rt, monkeypatch):
         """stored field is True when subprocess succeeds, False when it fails."""
-        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-123")
-        with patch("claude_runtime._manage_status_store_session", return_value=False):
-            result = _parsed(rt.session_capture("plan-x"))
-        assert result["stored"] is False
+        monkeypatch.setenv('CLAUDE_CODE_SESSION_ID', 'sess-123')
+        with patch('claude_runtime._manage_status_store_session', return_value=False):
+            result = _parsed(rt.session_capture('plan-x'))
+        assert result['stored'] is False
 
 
 # =============================================================================
@@ -2349,24 +2280,24 @@ class TestComposerImportWiring:
 
         assert _cr.compose is not None
         # The composer is the manage-terminal-title module's function.
-        assert _cr.compose.__module__ == "manage_terminal_title"
+        assert _cr.compose.__module__ == 'manage_terminal_title'
 
     def test_icon_palette_removed_from_claude_runtime(self):
         """The icon palette + _resolve_icon moved to manage-terminal-title (D12)."""
         import claude_runtime as _cr
 
-        assert not hasattr(_cr, "_resolve_icon")
-        assert not hasattr(_cr, "_ICON_ACTIVE")
-        assert not hasattr(_cr, "_ICON_WAITING")
-        assert not hasattr(_cr, "_ICON_DONE")
+        assert not hasattr(_cr, '_resolve_icon')
+        assert not hasattr(_cr, '_ICON_ACTIVE')
+        assert not hasattr(_cr, '_ICON_WAITING')
+        assert not hasattr(_cr, '_ICON_DONE')
 
     def test_title_body_resolver_replaced_by_status_json(self):
         """The title-body.txt archived resolver is replaced by the status.json one."""
         import claude_runtime as _cr
 
-        assert not hasattr(_cr, "_resolve_archived_title_body")
-        assert hasattr(_cr, "_resolve_archived_status_json")
-        assert hasattr(_cr, "_read_title_state")
+        assert not hasattr(_cr, '_resolve_archived_title_body')
+        assert hasattr(_cr, '_resolve_archived_status_json')
+        assert hasattr(_cr, '_read_title_state')
 
 
 # =============================================================================
@@ -2388,32 +2319,29 @@ class TestCommandIsBuild:
     replaced it.
     """
 
-    @pytest.mark.parametrize("notation", sorted(_BUILD_WRAPPER_NOTATIONS))
+    @pytest.mark.parametrize('notation', sorted(_BUILD_WRAPPER_NOTATIONS))
     def test_each_wrapper_notation_matches(self, notation):
         """Every build-wrapper notation, in the executor's notation position, matches."""
-        command = (
-            f"python3 .plan/execute-script.py {notation}:run_build run "
-            '--command-args "verify plan-marshall"'
-        )
+        command = f'python3 .plan/execute-script.py {notation}:run_build run --command-args "verify plan-marshall"'
         assert _command_is_build(command) is True
 
-    @pytest.mark.parametrize("command", [None, ""], ids=['no-command', 'empty-command'])
+    @pytest.mark.parametrize('command', [None, ''], ids=['no-command', 'empty-command'])
     def test_empty_or_none_command_is_false(self, command):
         """An empty or None command is never a build command."""
         assert _command_is_build(command) is False
 
     @pytest.mark.parametrize(
-        "command",
+        'command',
         [
-            "verify",
-            "coverage",
-            "quality-gate",
-            "module-tests",
-            "echo verify",
-            "ls -la",
+            'verify',
+            'coverage',
+            'quality-gate',
+            'module-tests',
+            'echo verify',
+            'ls -la',
             "git commit -m 'verify the build'",
-            "python3 some_other_script.py run",
-            "cat plan-marshall/README.md",
+            'python3 some_other_script.py run',
+            'cat plan-marshall/README.md',
         ],
     )
     def test_non_build_commands_are_false(self, command):
@@ -2429,8 +2357,8 @@ class TestCommandIsBuild:
     def test_canonical_verb_via_wrapper_matches(self):
         """A canonical verb passed as --command-args to a wrapper matches via the notation."""
         command = (
-            "python3 .plan/execute-script.py "
-            "plan-marshall:build-pyproject:pyproject_build run "
+            'python3 .plan/execute-script.py '
+            'plan-marshall:build-pyproject:pyproject_build run '
             '--command-args "quality-gate plan-marshall"'
         )
         assert _command_is_build(command) is True
@@ -2451,8 +2379,8 @@ class TestCommandIsBuildMentionVsInvocation:
     """
 
     _INVOCATION = (
-        "python3 .plan/execute-script.py "
-        "plan-marshall:build-pyproject:pyproject_build run "
+        'python3 .plan/execute-script.py '
+        'plan-marshall:build-pyproject:pyproject_build run '
         '--command-args "verify plan-marshall"'
     )
 
@@ -2465,19 +2393,13 @@ class TestCommandIsBuildMentionVsInvocation:
     #: NON-build skill, which a positional-presence check would wave through.
     _MENTIONS = [
         "echo 'plan-marshall:build-pyproject:pyproject_build'",
-        "cat docs/plan-marshall:build-pyproject-notes.md",
+        'cat docs/plan-marshall:build-pyproject-notes.md',
         (
-            "python3 .plan/execute-script.py plan-marshall:manage-files:manage-files "
-            "add --plan-id p --file plan-marshall:build-pyproject.md"
+            'python3 .plan/execute-script.py plan-marshall:manage-files:manage-files '
+            'add --plan-id p --file plan-marshall:build-pyproject.md'
         ),
-        (
-            "python3 .plan/execute-script.py "
-            "not-plan-marshall:build-pyproject-shim:thing run"
-        ),
-        (
-            "python3 .plan/execute-script.py "
-            "plan-marshall:manage-status:manage-status read --plan-id p"
-        ),
+        ('python3 .plan/execute-script.py not-plan-marshall:build-pyproject-shim:thing run'),
+        ('python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read --plan-id p'),
     ]
 
     _MENTION_IDS = [
@@ -2488,7 +2410,7 @@ class TestCommandIsBuildMentionVsInvocation:
         'notation-position-held-by-a-non-build-skill',
     ]
 
-    @pytest.mark.parametrize("mention", _MENTIONS, ids=_MENTION_IDS)
+    @pytest.mark.parametrize('mention', _MENTIONS, ids=_MENTION_IDS)
     def test_a_mention_is_not_an_invocation(self, mention: str) -> None:
         """Naming a wrapper is not calling one — and a real call still matches.
 
@@ -2510,15 +2432,12 @@ class TestCommandIsBuildMentionVsInvocation:
 
     def test_an_executor_invocation_with_no_notation_is_not_a_build(self):
         """The executor named with nothing after it must not index past argv."""
-        assert _command_is_build("python3 .plan/execute-script.py") is False
+        assert _command_is_build('python3 .plan/execute-script.py') is False
 
     def test_an_absolute_executor_path_still_matches(self):
         """The executor is commonly invoked by absolute path — the structural
         match keys on the path SUFFIX, so that form must still be detected."""
-        command = (
-            "python3 /home/dev/repo/.plan/execute-script.py "
-            "plan-marshall:build-maven:maven run --targets verify"
-        )
+        command = 'python3 /home/dev/repo/.plan/execute-script.py plan-marshall:build-maven:maven run --targets verify'
         assert _command_is_build(command) is True
 
 
@@ -2541,19 +2460,19 @@ class TestSessionRenderTitleBuildBusy:
     mode is a silent no-op — the existing ⚙ busy mapping remains.
     """
 
-    _ICON_BUILD = "\U0001f528"  # 🔨 build-busy icon-slot override
-    _ICON_BUSY = "⚙"  # momentary-busy icon (bare PreToolUse:Bash)
-    _ICON_ACTIVE = "➤"  # active icon (PostToolUse / statusLine)
+    _ICON_BUILD = '\U0001f528'  # 🔨 build-busy icon-slot override
+    _ICON_BUSY = '⚙'  # momentary-busy icon (bare PreToolUse:Bash)
+    _ICON_ACTIVE = '➤'  # active icon (PostToolUse / statusLine)
 
     @staticmethod
     def _arrange(
         tmp_path,
         monkeypatch,
         *,
-        session_id="sess-build",
-        plan_id="build-plan",
-        current_phase="5-execute",
-        short_description="build-task",
+        session_id='sess-build',
+        plan_id='build-plan',
+        current_phase='5-execute',
+        short_description='build-task',
     ):
         _write_status_json(
             tmp_path,
@@ -2563,43 +2482,36 @@ class TestSessionRenderTitleBuildBusy:
             short_description=short_description,
         )
         _redirect_render_env(tmp_path, monkeypatch, session_id)
-        return f"pm:{current_phase}:{short_description}"
+        return f'pm:{current_phase}:{short_description}'
 
     @staticmethod
-    def _bash_payload(command, event="PreToolUse"):
+    def _bash_payload(command, event='PreToolUse'):
         """Build a ``{event}:Bash`` hook payload carrying *command*."""
         return {
-            "hook_event_name": event,
-            "tool_name": "Bash",
-            "tool_input": {"command": command},
+            'hook_event_name': event,
+            'tool_name': 'Bash',
+            'tool_input': {'command': command},
         }
 
-    @pytest.mark.parametrize("notation", sorted(_BUILD_WRAPPER_NOTATIONS))
-    def test_build_command_renders_build_busy_icon(
-        self, notation, rt, tmp_path, monkeypatch, capsys
-    ):
+    @pytest.mark.parametrize('notation', sorted(_BUILD_WRAPPER_NOTATIONS))
+    def test_build_command_renders_build_busy_icon(self, notation, rt, tmp_path, monkeypatch, capsys):
         """Each build-wrapper notation flips the OSC envelope to the 🔨 build-busy override."""
         from io import StringIO
 
         body = self._arrange(tmp_path, monkeypatch)
-        command = (
-            f"python3 .plan/execute-script.py {notation}:run_build run "
-            '--command-args "verify plan-marshall"'
-        )
-        monkeypatch.setattr("sys.stdin", StringIO(json.dumps(self._bash_payload(command))))
+        command = f'python3 .plan/execute-script.py {notation}:run_build run --command-args "verify plan-marshall"'
+        monkeypatch.setattr('sys.stdin', StringIO(json.dumps(self._bash_payload(command))))
 
         capsys.readouterr()
-        with patch("claude_runtime._manage_status_set_title_token", return_value=True):
+        with patch('claude_runtime._manage_status_set_title_token', return_value=True):
             returned = rt.session_render_title(statusline=False)
         captured = capsys.readouterr().out
 
-        assert returned == ""
+        assert returned == ''
         envelope = json.loads(captured)
-        assert envelope["terminalSequence"] == f"\x1b]0;{self._ICON_BUILD} {body}\x07"
+        assert envelope['terminalSequence'] == f'\x1b]0;{self._ICON_BUILD} {body}\x07'
 
-    def test_build_command_sets_and_pairs_a_clear_on_the_bash_bracket(
-        self, rt, tmp_path, monkeypatch, capsys
-    ):
+    def test_build_command_sets_and_pairs_a_clear_on_the_bash_bracket(self, rt, tmp_path, monkeypatch, capsys):
         """The bracket is a SET on enter and a paired CLEAR on exit.
 
         A set with no paired clear is the defect this asserts against: it leaves
@@ -2610,91 +2522,83 @@ class TestSessionRenderTitleBuildBusy:
         """
         from io import StringIO
 
-        self._arrange(tmp_path, monkeypatch, plan_id="persist-plan")
+        self._arrange(tmp_path, monkeypatch, plan_id='persist-plan')
         command = (
-            "python3 .plan/execute-script.py "
-            "plan-marshall:build-pyproject:pyproject_build run "
+            'python3 .plan/execute-script.py '
+            'plan-marshall:build-pyproject:pyproject_build run '
             '--command-args "verify plan-marshall"'
         )
 
         # Enter the build window.
-        monkeypatch.setattr("sys.stdin", StringIO(json.dumps(self._bash_payload(command))))
+        monkeypatch.setattr('sys.stdin', StringIO(json.dumps(self._bash_payload(command))))
         capsys.readouterr()
         with (
-            patch("claude_runtime._manage_status_set_title_token", return_value=True) as mock_set,
-            patch("claude_runtime._manage_status_clear_title_token", return_value=True) as mock_clear,
+            patch('claude_runtime._manage_status_set_title_token', return_value=True) as mock_set,
+            patch('claude_runtime._manage_status_clear_title_token', return_value=True) as mock_clear,
         ):
             rt.session_render_title(statusline=False)
-        mock_set.assert_called_once_with("persist-plan", "build-busy")
+        mock_set.assert_called_once_with('persist-plan', 'build-busy')
         mock_clear.assert_not_called()
 
         # Exit the build window: the paired clear fires on the SAME render event
         # family, which is what delivers the corrected title.
         monkeypatch.setattr(
-            "sys.stdin",
-            StringIO(json.dumps(self._bash_payload(command, event="PostToolUse"))),
+            'sys.stdin',
+            StringIO(json.dumps(self._bash_payload(command, event='PostToolUse'))),
         )
         capsys.readouterr()
         with (
-            patch("claude_runtime._manage_status_set_title_token", return_value=True) as mock_set,
-            patch("claude_runtime._manage_status_clear_title_token", return_value=True) as mock_clear,
+            patch('claude_runtime._manage_status_set_title_token', return_value=True) as mock_set,
+            patch('claude_runtime._manage_status_clear_title_token', return_value=True) as mock_clear,
         ):
             rt.session_render_title(statusline=False)
-        mock_clear.assert_called_once_with("persist-plan")
+        mock_clear.assert_called_once_with('persist-plan')
         mock_set.assert_not_called()
 
     @pytest.mark.parametrize(
-        "command",
+        'command',
         [
-            "echo verify",
-            "ls -la",
-            "git status",
+            'echo verify',
+            'ls -la',
+            'git status',
             "git commit -m 'verify the build'",
-            "python3 some_other_script.py run",
+            'python3 some_other_script.py run',
         ],
     )
-    def test_non_build_command_keeps_busy_icon_and_does_not_persist(
-        self, command, rt, tmp_path, monkeypatch, capsys
-    ):
+    def test_non_build_command_keeps_busy_icon_and_does_not_persist(self, command, rt, tmp_path, monkeypatch, capsys):
         """A non-build Bash command keeps the existing ⚙ busy icon and never persists build-busy."""
         from io import StringIO
 
         body = self._arrange(tmp_path, monkeypatch)
-        monkeypatch.setattr("sys.stdin", StringIO(json.dumps(self._bash_payload(command))))
+        monkeypatch.setattr('sys.stdin', StringIO(json.dumps(self._bash_payload(command))))
 
         capsys.readouterr()
-        with patch(
-            "claude_runtime._manage_status_set_title_token", return_value=True
-        ) as mock_set:
+        with patch('claude_runtime._manage_status_set_title_token', return_value=True) as mock_set:
             returned = rt.session_render_title(statusline=False)
         captured = capsys.readouterr().out
 
-        assert returned == ""
+        assert returned == ''
         envelope = json.loads(captured)
-        assert envelope["terminalSequence"] == f"\x1b]0;{self._ICON_BUSY} {body}\x07"
+        assert envelope['terminalSequence'] == f'\x1b]0;{self._ICON_BUSY} {body}\x07'
         mock_set.assert_not_called()
 
-    def test_bash_without_tool_input_keeps_busy_icon(
-        self, rt, tmp_path, monkeypatch, capsys
-    ):
+    def test_bash_without_tool_input_keeps_busy_icon(self, rt, tmp_path, monkeypatch, capsys):
         """A PreToolUse:Bash event with no tool_input is a silent no-op → ⚙ busy, no persist."""
         from io import StringIO
 
         body = self._arrange(tmp_path, monkeypatch)
         monkeypatch.setattr(
-            "sys.stdin",
-            StringIO(json.dumps({"hook_event_name": "PreToolUse", "tool_name": "Bash"})),
+            'sys.stdin',
+            StringIO(json.dumps({'hook_event_name': 'PreToolUse', 'tool_name': 'Bash'})),
         )
 
         capsys.readouterr()
-        with patch(
-            "claude_runtime._manage_status_set_title_token", return_value=True
-        ) as mock_set:
+        with patch('claude_runtime._manage_status_set_title_token', return_value=True) as mock_set:
             rt.session_render_title(statusline=False)
         captured = capsys.readouterr().out
 
         envelope = json.loads(captured)
-        assert envelope["terminalSequence"] == f"\x1b]0;{self._ICON_BUSY} {body}\x07"
+        assert envelope['terminalSequence'] == f'\x1b]0;{self._ICON_BUSY} {body}\x07'
         mock_set.assert_not_called()
 
     def test_build_command_on_post_tool_use_clears_and_repaints_in_the_same_render(
@@ -2710,33 +2614,28 @@ class TestSessionRenderTitleBuildBusy:
         """
         from io import StringIO
 
-        body = self._arrange(tmp_path, monkeypatch, plan_id="clear-plan")
-        command = (
-            "python3 .plan/execute-script.py "
-            "plan-marshall:build-maven:maven run --targets verify"
-        )
+        body = self._arrange(tmp_path, monkeypatch, plan_id='clear-plan')
+        command = 'python3 .plan/execute-script.py plan-marshall:build-maven:maven run --targets verify'
         monkeypatch.setattr(
-            "sys.stdin",
-            StringIO(json.dumps(self._bash_payload(command, event="PostToolUse"))),
+            'sys.stdin',
+            StringIO(json.dumps(self._bash_payload(command, event='PostToolUse'))),
         )
 
         capsys.readouterr()
         with (
-            patch("claude_runtime._manage_status_set_title_token", return_value=True) as mock_set,
-            patch("claude_runtime._manage_status_clear_title_token", return_value=True) as mock_clear,
+            patch('claude_runtime._manage_status_set_title_token', return_value=True) as mock_set,
+            patch('claude_runtime._manage_status_clear_title_token', return_value=True) as mock_clear,
         ):
             rt.session_render_title(statusline=False)
         captured = capsys.readouterr().out
 
         envelope = json.loads(captured)
         # The corrected title is DELIVERED on this very render, not merely persisted.
-        assert envelope["terminalSequence"] == f"\x1b]0;{self._ICON_ACTIVE} {body}\x07"
-        mock_clear.assert_called_once_with("clear-plan")
+        assert envelope['terminalSequence'] == f'\x1b]0;{self._ICON_ACTIVE} {body}\x07'
+        mock_clear.assert_called_once_with('clear-plan')
         mock_set.assert_not_called()
 
-    def test_non_build_command_on_post_tool_use_clears_nothing(
-        self, rt, tmp_path, monkeypatch, capsys
-    ):
+    def test_non_build_command_on_post_tool_use_clears_nothing(self, rt, tmp_path, monkeypatch, capsys):
         """The clear half is gated on the build predicate exactly as the set half.
 
         An ordinary Bash call exiting must not retire a token — including a live
@@ -2746,40 +2645,31 @@ class TestSessionRenderTitleBuildBusy:
 
         self._arrange(tmp_path, monkeypatch)
         monkeypatch.setattr(
-            "sys.stdin",
-            StringIO(json.dumps(self._bash_payload("git status", event="PostToolUse"))),
+            'sys.stdin',
+            StringIO(json.dumps(self._bash_payload('git status', event='PostToolUse'))),
         )
 
         capsys.readouterr()
-        with patch(
-            "claude_runtime._manage_status_clear_title_token", return_value=True
-        ) as mock_clear:
+        with patch('claude_runtime._manage_status_clear_title_token', return_value=True) as mock_clear:
             rt.session_render_title(statusline=False)
 
         mock_clear.assert_not_called()
 
-    def test_statusline_mode_never_triggers_build_busy(
-        self, rt, tmp_path, monkeypatch, capsys
-    ):
+    def test_statusline_mode_never_triggers_build_busy(self, rt, tmp_path, monkeypatch, capsys):
         """statusLine mode never reads stdin, so a build command never flips to 🔨 — active icon stays."""
         from io import StringIO
 
         body = self._arrange(tmp_path, monkeypatch)
-        command = (
-            "python3 .plan/execute-script.py "
-            "plan-marshall:build-gradle:gradle run --targets verify"
-        )
-        monkeypatch.setattr("sys.stdin", StringIO(json.dumps(self._bash_payload(command))))
+        command = 'python3 .plan/execute-script.py plan-marshall:build-gradle:gradle run --targets verify'
+        monkeypatch.setattr('sys.stdin', StringIO(json.dumps(self._bash_payload(command))))
 
         capsys.readouterr()
-        with patch(
-            "claude_runtime._manage_status_set_title_token", return_value=True
-        ) as mock_set:
+        with patch('claude_runtime._manage_status_set_title_token', return_value=True) as mock_set:
             returned = rt.session_render_title(statusline=True)
         captured = capsys.readouterr().out
 
-        assert returned == ""
-        assert captured == f"{self._ICON_ACTIVE} {body}"
+        assert returned == ''
+        assert captured == f'{self._ICON_ACTIVE} {body}'
         mock_set.assert_not_called()
 
 
@@ -2806,14 +2696,14 @@ class TestSessionRenderTitleArchivedFallback:
         tmp_path,
         monkeypatch,
         *,
-        session_id="sess-archived",
-        plan_id="archived-plan",
-        archived_phase="complete",
-        archived_short="consolidate-terminal-docs",
-        date_prefix="2026-05-29",
+        session_id='sess-archived',
+        plan_id='archived-plan',
+        archived_phase='complete',
+        archived_short='consolidate-terminal-docs',
+        date_prefix='2026-05-29',
         write_live=False,
-        live_phase="5-execute",
-        live_short="active-body",
+        live_phase='5-execute',
+        live_short='active-body',
     ):
         """Materialize an archived plan (and optionally a live plan) on disk.
 
@@ -2833,60 +2723,51 @@ class TestSessionRenderTitleArchivedFallback:
         """
         import claude_runtime as _cr
 
-        monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
+        monkeypatch.setattr(session_binding, '_SESSION_CACHE_BASE', tmp_path / 'sessions')
         session_binding.bind(session_id, plan_id)
         assert session_binding.resolve_plan(session_id) == plan_id, (
-            "the production binder did not establish the session→plan binding "
-            "these archived-title tests depend on"
+            'the production binder did not establish the session→plan binding these archived-title tests depend on'
         )
 
-        archived_dir = (
-            tmp_path / ".plan" / "local" / "archived-plans" / f"{date_prefix}-{plan_id}"
-        )
+        archived_dir = tmp_path / '.plan' / 'local' / 'archived-plans' / f'{date_prefix}-{plan_id}'
         archived_dir.mkdir(parents=True)
         archived_status: dict[str, Any] = {}
         if archived_phase:
-            archived_status["current_phase"] = archived_phase
+            archived_status['current_phase'] = archived_phase
         if archived_short is not None:
-            archived_status["short_description"] = archived_short
-        (archived_dir / "status.json").write_text(json.dumps(archived_status), encoding="utf-8")
+            archived_status['short_description'] = archived_short
+        (archived_dir / 'status.json').write_text(json.dumps(archived_status), encoding='utf-8')
 
         if write_live:
-            live_dir = tmp_path / ".plan" / "local" / "plans" / plan_id
+            live_dir = tmp_path / '.plan' / 'local' / 'plans' / plan_id
             live_dir.mkdir(parents=True)
-            (live_dir / "status.json").write_text(
-                json.dumps(
-                    {"current_phase": live_phase, "short_description": live_short}
-                ),
-                encoding="utf-8",
+            (live_dir / 'status.json').write_text(
+                json.dumps({'current_phase': live_phase, 'short_description': live_short}),
+                encoding='utf-8',
             )
 
-        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
-        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", session_id)
+        monkeypatch.setattr(_cr, '_PLAN_DIR_NAME', '.plan')
+        monkeypatch.setenv('CLAUDE_CODE_SESSION_ID', session_id)
         monkeypatch.chdir(tmp_path)
 
-    def test_falls_back_to_archived_status_when_live_absent(
-        self, rt, tmp_path, monkeypatch, capsys
-    ):
+    def test_falls_back_to_archived_status_when_live_absent(self, rt, tmp_path, monkeypatch, capsys):
         """Live status.json absent → reader globs the archived status.json and composes the Completed title.
 
         A ``complete`` phase forces the ✅ terminal icon inside the composer
         regardless of the (absent) hook event.
         """
-        self._arrange(tmp_path, monkeypatch, archived_short="consolidate-terminal-docs")
+        self._arrange(tmp_path, monkeypatch, archived_short='consolidate-terminal-docs')
 
         capsys.readouterr()
         returned = rt.session_render_title(statusline=False)
         captured = capsys.readouterr().out
 
-        assert returned == ""
+        assert returned == ''
         envelope = json.loads(captured)
         # Terminal phase → ✅ override + Completed body, both owned by the composer.
-        assert envelope["terminalSequence"] == "\x1b]0;✅ pm:Completed:consolidate-terminal-docs\x07"
+        assert envelope['terminalSequence'] == '\x1b]0;✅ pm:Completed:consolidate-terminal-docs\x07'
 
-    def test_terminal_icon_overrides_stop_event_from_archived_status(
-        self, rt, tmp_path, monkeypatch, capsys
-    ):
+    def test_terminal_icon_overrides_stop_event_from_archived_status(self, rt, tmp_path, monkeypatch, capsys):
         """Even a Stop hook payload over an archived terminal status emits the ✅ override.
 
         The composer's terminal-phase ✅ override wins over the ✓ Stop-event icon
@@ -2894,33 +2775,29 @@ class TestSessionRenderTitleArchivedFallback:
         """
         from io import StringIO
 
-        self._arrange(tmp_path, monkeypatch, archived_short="consolidate-terminal-docs")
-        monkeypatch.setattr("sys.stdin", StringIO(json.dumps({"hook_event_name": "Stop"})))
+        self._arrange(tmp_path, monkeypatch, archived_short='consolidate-terminal-docs')
+        monkeypatch.setattr('sys.stdin', StringIO(json.dumps({'hook_event_name': 'Stop'})))
 
         capsys.readouterr()
         returned = rt.session_render_title(statusline=False)
         captured = capsys.readouterr().out
 
-        assert returned == ""
+        assert returned == ''
         envelope = json.loads(captured)
-        assert envelope["terminalSequence"] == "\x1b]0;✅ pm:Completed:consolidate-terminal-docs\x07"
+        assert envelope['terminalSequence'] == '\x1b]0;✅ pm:Completed:consolidate-terminal-docs\x07'
 
-    def test_statusline_mode_emits_completed_title_from_archived_status(
-        self, rt, tmp_path, monkeypatch, capsys
-    ):
+    def test_statusline_mode_emits_completed_title_from_archived_status(self, rt, tmp_path, monkeypatch, capsys):
         """statusLine mode reads the archived terminal status and emits the composed ✅ Completed title."""
-        self._arrange(tmp_path, monkeypatch, archived_short="consolidate-terminal-docs")
+        self._arrange(tmp_path, monkeypatch, archived_short='consolidate-terminal-docs')
 
         capsys.readouterr()
         returned = rt.session_render_title(statusline=True)
         captured = capsys.readouterr().out
 
-        assert returned == ""
-        assert captured == "✅ pm:Completed:consolidate-terminal-docs"
+        assert returned == ''
+        assert captured == '✅ pm:Completed:consolidate-terminal-docs'
 
-    def test_live_status_wins_over_archived_when_both_present(
-        self, rt, tmp_path, monkeypatch, capsys
-    ):
+    def test_live_status_wins_over_archived_when_both_present(self, rt, tmp_path, monkeypatch, capsys):
         """When both the live and archived status.json exist, the LIVE state is composed.
 
         The fallback is strictly a live-status-absent branch — a live status.json
@@ -2930,60 +2807,56 @@ class TestSessionRenderTitleArchivedFallback:
         self._arrange(
             tmp_path,
             monkeypatch,
-            archived_phase="complete",
-            archived_short="stale-completed-body",
+            archived_phase='complete',
+            archived_short='stale-completed-body',
             write_live=True,
-            live_phase="5-execute",
-            live_short="active-body",
+            live_phase='5-execute',
+            live_short='active-body',
         )
 
         capsys.readouterr()
         returned = rt.session_render_title(statusline=False)
         captured = capsys.readouterr().out
 
-        assert returned == ""
+        assert returned == ''
         envelope = json.loads(captured)
-        assert "pm:5-execute:active-body" in envelope["terminalSequence"]
-        assert "Completed" not in captured
+        assert 'pm:5-execute:active-body' in envelope['terminalSequence']
+        assert 'Completed' not in captured
 
-    def test_empty_archived_status_writes_nothing(
-        self, rt, tmp_path, monkeypatch, capsys
-    ):
+    def test_empty_archived_status_writes_nothing(self, rt, tmp_path, monkeypatch, capsys):
         """An archived status.json with no current_phase → composer returns None → no-op."""
-        self._arrange(tmp_path, monkeypatch, archived_phase="", archived_short=None)
+        self._arrange(tmp_path, monkeypatch, archived_phase='', archived_short=None)
 
         capsys.readouterr()
         returned = rt.session_render_title(statusline=False)
         captured = capsys.readouterr().out
 
-        assert returned == ""
-        assert captured == ""
+        assert returned == ''
+        assert captured == ''
 
-    def test_no_live_and_no_archived_writes_nothing(
-        self, rt, tmp_path, monkeypatch, capsys
-    ):
+    def test_no_live_and_no_archived_writes_nothing(self, rt, tmp_path, monkeypatch, capsys):
         """Neither live nor archived status.json present → no-op (empty stdout, empty return)."""
         import claude_runtime as _cr
 
-        session_id = "sess-no-status"
-        plan_id = "ghost-plan"
-        cache_dir = tmp_path / "sessions" / session_id
+        session_id = 'sess-no-status'
+        plan_id = 'ghost-plan'
+        cache_dir = tmp_path / 'sessions' / session_id
         cache_dir.mkdir(parents=True)
-        (cache_dir / "active-plan").write_text(plan_id, encoding="utf-8")
+        (cache_dir / 'active-plan').write_text(plan_id, encoding='utf-8')
         # archived-plans/ exists but contains no matching plan dir.
-        (tmp_path / ".plan" / "local" / "archived-plans").mkdir(parents=True)
+        (tmp_path / '.plan' / 'local' / 'archived-plans').mkdir(parents=True)
 
-        monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
-        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
-        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", session_id)
+        monkeypatch.setattr(session_binding, '_SESSION_CACHE_BASE', tmp_path / 'sessions')
+        monkeypatch.setattr(_cr, '_PLAN_DIR_NAME', '.plan')
+        monkeypatch.setenv('CLAUDE_CODE_SESSION_ID', session_id)
         monkeypatch.chdir(tmp_path)
 
         capsys.readouterr()
         returned = rt.session_render_title(statusline=False)
         captured = capsys.readouterr().out
 
-        assert returned == ""
-        assert captured == ""
+        assert returned == ''
+        assert captured == ''
 
 
 class TestResolveArchivedStatusJson:
@@ -2999,7 +2872,8 @@ class TestResolveArchivedStatusJson:
     def plan_dir_name(self, monkeypatch):
         """Pin the plan directory name the archived-status read resolves against."""
         import claude_runtime as _cr
-        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
+
+        monkeypatch.setattr(_cr, '_PLAN_DIR_NAME', '.plan')
 
     @pytest.fixture()
     def in_tmp_cwd(self, tmp_path, monkeypatch):
@@ -3010,12 +2884,11 @@ class TestResolveArchivedStatusJson:
         """Returns the archived status.json path under {date}-{plan_id}/."""
         import claude_runtime as _cr
 
-        plan_id = "my-plan"
-        archived_dir = tmp_path / ".plan" / "local" / "archived-plans" / f"2026-05-29-{plan_id}"
+        plan_id = 'my-plan'
+        archived_dir = tmp_path / '.plan' / 'local' / 'archived-plans' / f'2026-05-29-{plan_id}'
         archived_dir.mkdir(parents=True)
-        status_path = archived_dir / "status.json"
-        status_path.write_text(json.dumps({"current_phase": "complete"}), encoding="utf-8")
-
+        status_path = archived_dir / 'status.json'
+        status_path.write_text(json.dumps({'current_phase': 'complete'}), encoding='utf-8')
 
         resolved = _cr._resolve_archived_status_json(plan_id)
         assert resolved is not None
@@ -3025,8 +2898,7 @@ class TestResolveArchivedStatusJson:
         """No archived-plans/ directory at all → None (not an error)."""
         import claude_runtime as _cr
 
-
-        assert _cr._resolve_archived_status_json("anything") is None
+        assert _cr._resolve_archived_status_json('anything') is None
 
     def test_does_not_match_unrelated_plan_dir(self, tmp_path, in_tmp_cwd, plan_dir_name):
         """The ``*-{plan_id}`` glob must not resolve a directory for a different
@@ -3036,13 +2908,12 @@ class TestResolveArchivedStatusJson:
         ``{date}-superplan`` (which ends in ``superplan``, not ``-plan``)."""
         import claude_runtime as _cr
 
-        other_dir = tmp_path / ".plan" / "local" / "archived-plans" / "2026-05-29-superplan"
+        other_dir = tmp_path / '.plan' / 'local' / 'archived-plans' / '2026-05-29-superplan'
         other_dir.mkdir(parents=True)
-        (other_dir / "status.json").write_text(json.dumps({"current_phase": "complete"}), encoding="utf-8")
-
+        (other_dir / 'status.json').write_text(json.dumps({'current_phase': 'complete'}), encoding='utf-8')
 
         # Only the unrelated -superplan dir exists → no resolution for 'plan'.
-        assert _cr._resolve_archived_status_json("plan") is None
+        assert _cr._resolve_archived_status_json('plan') is None
 
     def test_resolves_exact_plan_when_sibling_prefixed_dir_present(self, tmp_path, in_tmp_cwd, plan_dir_name):
         """With both a ``{date}-superplan`` archive and a ``{date}-plan`` archive
@@ -3050,17 +2921,16 @@ class TestResolveArchivedStatusJson:
         directory — the sibling whose suffix is ``superplan`` is ignored."""
         import claude_runtime as _cr
 
-        other_dir = tmp_path / ".plan" / "local" / "archived-plans" / "2026-05-29-superplan"
+        other_dir = tmp_path / '.plan' / 'local' / 'archived-plans' / '2026-05-29-superplan'
         other_dir.mkdir(parents=True)
-        (other_dir / "status.json").write_text(json.dumps({"current_phase": "complete"}), encoding="utf-8")
+        (other_dir / 'status.json').write_text(json.dumps({'current_phase': 'complete'}), encoding='utf-8')
 
-        exact_dir = tmp_path / ".plan" / "local" / "archived-plans" / "2026-05-30-plan"
+        exact_dir = tmp_path / '.plan' / 'local' / 'archived-plans' / '2026-05-30-plan'
         exact_dir.mkdir(parents=True)
-        exact_status = exact_dir / "status.json"
-        exact_status.write_text(json.dumps({"current_phase": "complete"}), encoding="utf-8")
+        exact_status = exact_dir / 'status.json'
+        exact_status.write_text(json.dumps({'current_phase': 'complete'}), encoding='utf-8')
 
-
-        resolved = _cr._resolve_archived_status_json("plan")
+        resolved = _cr._resolve_archived_status_json('plan')
         assert resolved is not None
         assert resolved.resolve() == exact_status.resolve()
 
@@ -3081,7 +2951,8 @@ class TestReadTitleState:
     def plan_dir_name(self, monkeypatch):
         """Pin the plan directory name the runtime resolves titles against."""
         import claude_runtime as _cr
-        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
+
+        monkeypatch.setattr(_cr, '_PLAN_DIR_NAME', '.plan')
 
     @pytest.fixture()
     def in_tmp_cwd(self, tmp_path, monkeypatch):
@@ -3092,27 +2963,26 @@ class TestReadTitleState:
         """Returns the {current_phase, short_description, title_token} dict from the live status.json."""
         import claude_runtime as _cr
 
-        plan_id = "live-plan"
-        record = _title_token("lock-owned", owner="merge-lock")
-        live_dir = tmp_path / ".plan" / "local" / "plans" / plan_id
+        plan_id = 'live-plan'
+        record = _title_token('lock-owned', owner='merge-lock')
+        live_dir = tmp_path / '.plan' / 'local' / 'plans' / plan_id
         live_dir.mkdir(parents=True)
-        (live_dir / "status.json").write_text(
+        (live_dir / 'status.json').write_text(
             json.dumps(
                 {
-                    "current_phase": "5-execute",
-                    "short_description": "do-work",
-                    "title_token": record,
+                    'current_phase': '5-execute',
+                    'short_description': 'do-work',
+                    'title_token': record,
                 }
             ),
-            encoding="utf-8",
+            encoding='utf-8',
         )
-
 
         state = _cr._read_title_state(plan_id)
         assert state == {
-            "current_phase": "5-execute",
-            "short_description": "do-work",
-            "title_token": record,
+            'current_phase': '5-execute',
+            'short_description': 'do-work',
+            'title_token': record,
         }
 
     def test_drops_an_aged_token_from_the_returned_state(self, tmp_path, in_tmp_cwd, plan_dir_name):
@@ -3126,27 +2996,26 @@ class TestReadTitleState:
         import claude_runtime as _cr
         from manage_terminal_title import TITLE_TOKEN_STALE_AFTER_SECONDS
 
-        plan_id = "aged-plan"
-        live_dir = tmp_path / ".plan" / "local" / "plans" / plan_id
+        plan_id = 'aged-plan'
+        live_dir = tmp_path / '.plan' / 'local' / 'plans' / plan_id
         live_dir.mkdir(parents=True)
-        (live_dir / "status.json").write_text(
+        (live_dir / 'status.json').write_text(
             json.dumps(
                 {
-                    "current_phase": "5-execute",
-                    "short_description": "do-work",
-                    "title_token": _title_token(
-                        "build-busy",
-                        owner="build-hook",
+                    'current_phase': '5-execute',
+                    'short_description': 'do-work',
+                    'title_token': _title_token(
+                        'build-busy',
+                        owner='build-hook',
                         age_seconds=TITLE_TOKEN_STALE_AFTER_SECONDS + 60,
                     ),
                 }
             ),
-            encoding="utf-8",
+            encoding='utf-8',
         )
 
-
         state = _cr._read_title_state(plan_id)
-        assert state == {"current_phase": "5-execute", "short_description": "do-work"}
+        assert state == {'current_phase': '5-execute', 'short_description': 'do-work'}
 
     def test_keeps_a_fresh_token_in_the_returned_state(self, tmp_path, in_tmp_cwd, plan_dir_name):
         """Positive control for the aged-token drop above: a record just inside
@@ -3155,72 +3024,63 @@ class TestReadTitleState:
         import claude_runtime as _cr
         from manage_terminal_title import TITLE_TOKEN_STALE_AFTER_SECONDS
 
-        plan_id = "fresh-plan"
-        record = _title_token(
-            "build-busy", owner="build-hook", age_seconds=TITLE_TOKEN_STALE_AFTER_SECONDS - 60
-        )
-        live_dir = tmp_path / ".plan" / "local" / "plans" / plan_id
+        plan_id = 'fresh-plan'
+        record = _title_token('build-busy', owner='build-hook', age_seconds=TITLE_TOKEN_STALE_AFTER_SECONDS - 60)
+        live_dir = tmp_path / '.plan' / 'local' / 'plans' / plan_id
         live_dir.mkdir(parents=True)
-        (live_dir / "status.json").write_text(
-            json.dumps({"current_phase": "5-execute", "title_token": record}), encoding="utf-8"
+        (live_dir / 'status.json').write_text(
+            json.dumps({'current_phase': '5-execute', 'title_token': record}), encoding='utf-8'
         )
 
-
-        assert _cr._read_title_state(plan_id)["title_token"] == record
+        assert _cr._read_title_state(plan_id)['title_token'] == record
 
     def test_drops_a_legacy_bare_string_token(self, tmp_path, in_tmp_cwd, plan_dir_name):
         """A status.json still carrying the retired bare-string shape reads as
         having no token, rather than propagating an unusable value downstream."""
         import claude_runtime as _cr
 
-        plan_id = "legacy-plan"
-        live_dir = tmp_path / ".plan" / "local" / "plans" / plan_id
+        plan_id = 'legacy-plan'
+        live_dir = tmp_path / '.plan' / 'local' / 'plans' / plan_id
         live_dir.mkdir(parents=True)
-        (live_dir / "status.json").write_text(
-            json.dumps({"current_phase": "5-execute", "title_token": "lock-owned"}),
-            encoding="utf-8",
+        (live_dir / 'status.json').write_text(
+            json.dumps({'current_phase': '5-execute', 'title_token': 'lock-owned'}),
+            encoding='utf-8',
         )
 
-
-        assert "title_token" not in _cr._read_title_state(plan_id)
+        assert 'title_token' not in _cr._read_title_state(plan_id)
 
     def test_falls_back_to_archived_status(self, tmp_path, in_tmp_cwd, plan_dir_name):
         """Live status.json absent → reads the archived status.json."""
         import claude_runtime as _cr
 
-        plan_id = "arch-plan"
-        archived_dir = tmp_path / ".plan" / "local" / "archived-plans" / f"2026-05-29-{plan_id}"
+        plan_id = 'arch-plan'
+        archived_dir = tmp_path / '.plan' / 'local' / 'archived-plans' / f'2026-05-29-{plan_id}'
         archived_dir.mkdir(parents=True)
-        (archived_dir / "status.json").write_text(
-            json.dumps({"current_phase": "complete", "short_description": "done-task"}),
-            encoding="utf-8",
+        (archived_dir / 'status.json').write_text(
+            json.dumps({'current_phase': 'complete', 'short_description': 'done-task'}),
+            encoding='utf-8',
         )
 
-
         state = _cr._read_title_state(plan_id)
-        assert state == {"current_phase": "complete", "short_description": "done-task"}
+        assert state == {'current_phase': 'complete', 'short_description': 'done-task'}
 
     def test_returns_none_when_no_status_anywhere(self, in_tmp_cwd, plan_dir_name):
         """Neither live nor archived status.json present → None."""
         import claude_runtime as _cr
 
-
-        assert _cr._read_title_state("ghost") is None
+        assert _cr._read_title_state('ghost') is None
 
     def test_omits_absent_optional_fields(self, tmp_path, in_tmp_cwd, plan_dir_name):
         """A status.json with only current_phase yields a dict without the optional keys."""
         import claude_runtime as _cr
 
-        plan_id = "minimal-plan"
-        live_dir = tmp_path / ".plan" / "local" / "plans" / plan_id
+        plan_id = 'minimal-plan'
+        live_dir = tmp_path / '.plan' / 'local' / 'plans' / plan_id
         live_dir.mkdir(parents=True)
-        (live_dir / "status.json").write_text(
-            json.dumps({"current_phase": "1-init"}), encoding="utf-8"
-        )
-
+        (live_dir / 'status.json').write_text(json.dumps({'current_phase': '1-init'}), encoding='utf-8')
 
         state = _cr._read_title_state(plan_id)
-        assert state == {"current_phase": "1-init"}
+        assert state == {'current_phase': '1-init'}
 
 
 # =============================================================================
@@ -3244,20 +3104,21 @@ class TestSessionPushTitleToken:
     """
 
     @staticmethod
-    def _write_live_status(tmp_path, monkeypatch, plan_id, *, current_phase="5-execute",
-                           short_description="push-task", title_token=None):
+    def _write_live_status(
+        tmp_path, monkeypatch, plan_id, *, current_phase='5-execute', short_description='push-task', title_token=None
+    ):
         import claude_runtime as _cr
 
-        live_dir = tmp_path / ".plan" / "local" / "plans" / plan_id
+        live_dir = tmp_path / '.plan' / 'local' / 'plans' / plan_id
         live_dir.mkdir(parents=True)
-        status: dict[str, Any] = {"current_phase": current_phase}
+        status: dict[str, Any] = {'current_phase': current_phase}
         if short_description is not None:
-            status["short_description"] = short_description
+            status['short_description'] = short_description
         if title_token is not None:
-            status["title_token"] = title_token
-        (live_dir / "status.json").write_text(json.dumps(status), encoding="utf-8")
+            status['title_token'] = title_token
+        (live_dir / 'status.json').write_text(json.dumps(status), encoding='utf-8')
 
-        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
+        monkeypatch.setattr(_cr, '_PLAN_DIR_NAME', '.plan')
         monkeypatch.chdir(tmp_path)
 
     def test_push_with_renderable_state_writes_no_terminal_bytes(self, rt, tmp_path, monkeypatch):
@@ -3267,11 +3128,14 @@ class TestSessionPushTitleToken:
         renderable state and an openable ``/dev/tty``, the seam must not open
         it. Delivery is the next hook render event's job.
         """
-        plan_id = "push-plan"
+        plan_id = 'push-plan'
         self._write_live_status(
-            tmp_path, monkeypatch, plan_id,
-            current_phase="5-execute", short_description="push-task",
-            title_token=_title_token("lock-owned", owner="merge-lock"),
+            tmp_path,
+            monkeypatch,
+            plan_id,
+            current_phase='5-execute',
+            short_description='push-task',
+            title_token=_title_token('lock-owned', owner='merge-lock'),
         )
 
         opened: list[str] = []
@@ -3281,16 +3145,16 @@ class TestSessionPushTitleToken:
             opened.append(str(path))
             return real_open(path, *args, **kwargs)
 
-        monkeypatch.setattr("builtins.open", _fake_open)
+        monkeypatch.setattr('builtins.open', _fake_open)
 
-        result = _parsed(rt.session_push_title_token(plan_id, "⏳"))
-        assert result["status"] == "success"
-        assert result["plan_id"] == plan_id
+        result = _parsed(rt.session_push_title_token(plan_id, '⏳'))
+        assert result['status'] == 'success'
+        assert result['plan_id'] == plan_id
         # Nothing to report as un-settled, and no delivery verdict at all.
-        assert "reason" not in result
-        assert "pushed" not in result
-        assert "delivery" not in result
-        assert "/dev/tty" not in opened
+        assert 'reason' not in result
+        assert 'pushed' not in result
+        assert 'delivery' not in result
+        assert '/dev/tty' not in opened
 
     def test_push_never_opens_dev_tty_even_when_it_would_succeed(self, rt, tmp_path, monkeypatch):
         """Negative control with an openable fake tty: no bytes are ever written.
@@ -3300,7 +3164,7 @@ class TestSessionPushTitleToken:
         that the environment lacks a terminal — a test run in a tty-less CI
         would pass vacuously otherwise.
         """
-        plan_id = "push-no-tty"
+        plan_id = 'push-no-tty'
         self._write_live_status(tmp_path, monkeypatch, plan_id)
 
         written: list[str] = []
@@ -3321,21 +3185,21 @@ class TestSessionPushTitleToken:
         real_open = open
 
         def _fake_open(path, *args, **kwargs):
-            if path == "/dev/tty":
+            if path == '/dev/tty':
                 return _FakeTTY()
             return real_open(path, *args, **kwargs)
 
-        monkeypatch.setattr("builtins.open", _fake_open)
+        monkeypatch.setattr('builtins.open', _fake_open)
 
-        result = _parsed(rt.session_push_title_token(plan_id, "⏳"))
-        assert result["status"] == "success"
+        result = _parsed(rt.session_push_title_token(plan_id, '⏳'))
+        assert result['status'] == 'success'
         assert written == []
 
     def test_push_with_no_status_state_reports_no_title_state(self, rt, tmp_path, monkeypatch):
         """No status.json for the plan → reason: no_title_state, /dev/tty untouched."""
         import claude_runtime as _cr
 
-        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
+        monkeypatch.setattr(_cr, '_PLAN_DIR_NAME', '.plan')
         monkeypatch.chdir(tmp_path)
 
         opened: list[str] = []
@@ -3345,13 +3209,13 @@ class TestSessionPushTitleToken:
             opened.append(str(path))
             return real_open(path, *args, **kwargs)
 
-        monkeypatch.setattr("builtins.open", _fake_open)
+        monkeypatch.setattr('builtins.open', _fake_open)
 
-        result = _parsed(rt.session_push_title_token("ghost-plan", "⏳"))
-        assert result["status"] == "success"
-        assert result["reason"] == "no_title_state"
-        assert "pushed" not in result
-        assert "/dev/tty" not in opened
+        result = _parsed(rt.session_push_title_token('ghost-plan', '⏳'))
+        assert result['status'] == 'success'
+        assert result['reason'] == 'no_title_state'
+        assert 'pushed' not in result
+        assert '/dev/tty' not in opened
 
     def test_push_with_unrenderable_state_reports_no_title_state(self, rt, tmp_path, monkeypatch):
         """status.json present but with no current_phase → composer returns None →
@@ -3365,16 +3229,14 @@ class TestSessionPushTitleToken:
         """
         import claude_runtime as _cr
 
-        plan_id = "unrenderable-plan"
+        plan_id = 'unrenderable-plan'
         # status.json with short_description but NO current_phase. _read_title_state
         # returns {"short_description": ...} (non-None); compose() returns None.
-        live_dir = tmp_path / ".plan" / "local" / "plans" / plan_id
+        live_dir = tmp_path / '.plan' / 'local' / 'plans' / plan_id
         live_dir.mkdir(parents=True)
-        (live_dir / "status.json").write_text(
-            json.dumps({"short_description": "orphan-no-phase"}), encoding="utf-8"
-        )
+        (live_dir / 'status.json').write_text(json.dumps({'short_description': 'orphan-no-phase'}), encoding='utf-8')
 
-        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
+        monkeypatch.setattr(_cr, '_PLAN_DIR_NAME', '.plan')
         monkeypatch.chdir(tmp_path)
 
         opened: list[str] = []
@@ -3384,13 +3246,13 @@ class TestSessionPushTitleToken:
             opened.append(str(path))
             return real_open(path, *args, **kwargs)
 
-        monkeypatch.setattr("builtins.open", _fake_open)
+        monkeypatch.setattr('builtins.open', _fake_open)
 
-        result = _parsed(rt.session_push_title_token(plan_id, "⏳"))
-        assert result["status"] == "success"
-        assert result["reason"] == "no_title_state"
-        assert "pushed" not in result
-        assert "/dev/tty" not in opened
+        result = _parsed(rt.session_push_title_token(plan_id, '⏳'))
+        assert result['status'] == 'success'
+        assert result['reason'] == 'no_title_state'
+        assert 'pushed' not in result
+        assert '/dev/tty' not in opened
 
     def test_push_emits_no_osc_bytes_on_any_channel(self, rt, tmp_path, monkeypatch):
         """The seam emits NO OSC escape at all — not to /dev/tty, not to stdout.
@@ -3401,10 +3263,14 @@ class TestSessionPushTitleToken:
         writes no escape anywhere. Checking stdout too closes the obvious
         wrong-fix (relocating the write rather than deleting it).
         """
-        plan_id = "push-fmt"
+        plan_id = 'push-fmt'
         self._write_live_status(
-            tmp_path, monkeypatch, plan_id,
-            current_phase="3-outline", short_description="fmt", title_token=None,
+            tmp_path,
+            monkeypatch,
+            plan_id,
+            current_phase='3-outline',
+            short_description='fmt',
+            title_token=None,
         )
 
         written: list[str] = []
@@ -3425,16 +3291,16 @@ class TestSessionPushTitleToken:
         real_open = open
 
         def _fake_open(path, *args, **kwargs):
-            if path == "/dev/tty":
+            if path == '/dev/tty':
                 return _FakeTTY()
             return real_open(path, *args, **kwargs)
 
-        monkeypatch.setattr("builtins.open", _fake_open)
+        monkeypatch.setattr('builtins.open', _fake_open)
 
-        returned = rt.session_push_title_token(plan_id, "🔨")
+        returned = rt.session_push_title_token(plan_id, '🔨')
 
         assert written == []
-        assert "\x1b]0;" not in returned
+        assert '\x1b]0;' not in returned
 
 
 # =============================================================================
@@ -3447,52 +3313,52 @@ class TestPermissionConfigure:
 
     def test_invalid_scope_returns_error(self, rt):
         """An invalid scope returns status=error."""
-        result = _parsed(rt.permission_configure("invalid", []))
-        assert result["status"] == "error"
-        assert result["error"] == "invalid_scope"
+        result = _parsed(rt.permission_configure('invalid', []))
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_scope'
 
     def test_writes_permissions_to_project_settings(self, rt, tmp_path, monkeypatch):
         """permission_configure renders semantic intents into the allow list."""
         import claude_runtime as _cr
 
-        settings_path = tmp_path / ".claude" / "settings.json"
+        settings_path = tmp_path / '.claude' / 'settings.json'
         _write_settings(settings_path, [])
-        monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: settings_path)
+        monkeypatch.setattr(_cr, '_claude_project_settings_path', lambda *_: settings_path)
 
-        grant = {"kind": "path", "tool": "Read", "path": "**"}
-        result = _parsed(rt.permission_configure("project", [grant]))
-        assert result["status"] == "success"
-        assert result["permissions_written"] == 1
+        grant = {'kind': 'path', 'tool': 'Read', 'path': '**'}
+        result = _parsed(rt.permission_configure('project', [grant]))
+        assert result['status'] == 'success'
+        assert result['permissions_written'] == 1
 
         saved = json.loads(settings_path.read_text())
-        assert saved["permissions"]["allow"] == ["Read(**)"]
+        assert saved['permissions']['allow'] == ['Read(**)']
 
     def test_invalid_intent_returns_error(self, rt, tmp_path, monkeypatch):
         """An unknown intent kind is refused before any settings are written."""
         import claude_runtime as _cr
 
-        settings_path = tmp_path / ".claude" / "settings.json"
+        settings_path = tmp_path / '.claude' / 'settings.json'
         _write_settings(settings_path, [])
-        monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: settings_path)
+        monkeypatch.setattr(_cr, '_claude_project_settings_path', lambda *_: settings_path)
 
-        result = _parsed(rt.permission_configure("project", [{"kind": "nope"}]))
-        assert result["status"] == "error"
-        assert result["error"] == "invalid_intent"
+        result = _parsed(rt.permission_configure('project', [{'kind': 'nope'}]))
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_intent'
         saved = json.loads(settings_path.read_text())
-        assert saved["permissions"]["allow"] == []
+        assert saved['permissions']['allow'] == []
 
     def test_empty_permissions_clears_allow_list(self, rt, tmp_path, monkeypatch):
         """Passing [] clears the allow list."""
         import claude_runtime as _cr
 
-        settings_path = tmp_path / ".claude" / "settings.json"
-        _write_settings(settings_path, ["Read(**)", "Write(**)"])
-        monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: settings_path)
+        settings_path = tmp_path / '.claude' / 'settings.json'
+        _write_settings(settings_path, ['Read(**)', 'Write(**)'])
+        monkeypatch.setattr(_cr, '_claude_project_settings_path', lambda *_: settings_path)
 
-        result = _parsed(rt.permission_configure("project", []))
-        assert result["status"] == "success"
+        result = _parsed(rt.permission_configure('project', []))
+        assert result['status'] == 'success'
         saved = json.loads(settings_path.read_text())
-        assert saved["permissions"]["allow"] == []
+        assert saved['permissions']['allow'] == []
 
 
 # =============================================================================
@@ -3504,67 +3370,67 @@ class TestPermissionAnalyze:
     """Tests for ClaudeRuntime.permission_analyze."""
 
     def test_invalid_scope_returns_error(self, rt):
-        result = _parsed(rt.permission_analyze("invalid", ["redundant"], None))
-        assert result["status"] == "error"
-        assert result["error"] == "invalid_scope"
+        result = _parsed(rt.permission_analyze('invalid', ['redundant'], None))
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_scope'
 
     def test_invalid_check_returns_error(self, rt):
-        result = _parsed(rt.permission_analyze("project", ["nonexistent"], None))
-        assert result["status"] == "error"
-        assert result["error"] == "invalid_check"
+        result = _parsed(rt.permission_analyze('project', ['nonexistent'], None))
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_check'
 
     def test_missing_steps_without_marshal_returns_error(self, rt):
         """missing-steps check without marshal_path returns error."""
-        result = _parsed(rt.permission_analyze("project", ["missing-steps"], None))
-        assert result["status"] == "error"
-        assert result["error"] == "marshal_not_found"
+        result = _parsed(rt.permission_analyze('project', ['missing-steps'], None))
+        assert result['status'] == 'error'
+        assert result['error'] == 'marshal_not_found'
 
     def test_redundant_check_detects_duplicates(self, rt, tmp_path, monkeypatch):
         """redundant check reports permissions present in both global and project."""
         import claude_runtime as _cr
 
-        global_settings = tmp_path / "global_settings.json"
-        project_settings = tmp_path / "project_settings.json"
-        shared_perm = "Read(.plan/**)"
-        _write_settings(global_settings, [shared_perm, "Write(**)"])
-        _write_settings(project_settings, [shared_perm, "Edit(**)"])
+        global_settings = tmp_path / 'global_settings.json'
+        project_settings = tmp_path / 'project_settings.json'
+        shared_perm = 'Read(.plan/**)'
+        _write_settings(global_settings, [shared_perm, 'Write(**)'])
+        _write_settings(project_settings, [shared_perm, 'Edit(**)'])
 
-        monkeypatch.setattr(_cr, "_claude_global_settings_path", lambda: global_settings)
-        monkeypatch.setattr(_cr, "_claude_project_settings_read_path", lambda *_: project_settings)
+        monkeypatch.setattr(_cr, '_claude_global_settings_path', lambda: global_settings)
+        monkeypatch.setattr(_cr, '_claude_project_settings_read_path', lambda *_: project_settings)
 
-        result = _parsed(rt.permission_analyze("both", ["redundant"], None))
-        assert result["status"] == "success"
-        assert result["total_findings"] >= 1
-        redundant_findings = [f for f in result["findings"] if f["check"] == "redundant"]
-        assert any(shared_perm in f["details"] for f in redundant_findings)
+        result = _parsed(rt.permission_analyze('both', ['redundant'], None))
+        assert result['status'] == 'success'
+        assert result['total_findings'] >= 1
+        redundant_findings = [f for f in result['findings'] if f['check'] == 'redundant']
+        assert any(shared_perm in f['details'] for f in redundant_findings)
 
     def test_suspicious_check_detects_broad_bash(self, rt, tmp_path, monkeypatch):
         """suspicious check reports Bash(*) as high-severity."""
         import claude_runtime as _cr
 
-        settings = tmp_path / "settings.json"
-        _write_settings(settings, ["Bash(*)", "Read(**)"])
-        monkeypatch.setattr(_cr, "_claude_project_settings_read_path", lambda *_: settings)
+        settings = tmp_path / 'settings.json'
+        _write_settings(settings, ['Bash(*)', 'Read(**)'])
+        monkeypatch.setattr(_cr, '_claude_project_settings_read_path', lambda *_: settings)
 
-        result = _parsed(rt.permission_analyze("project", ["suspicious"], None))
-        assert result["status"] == "success"
-        suspicious = [f for f in result["findings"] if f["check"] == "suspicious"]
-        assert any(f["severity"] == "high" for f in suspicious)
+        result = _parsed(rt.permission_analyze('project', ['suspicious'], None))
+        assert result['status'] == 'success'
+        suspicious = [f for f in result['findings'] if f['check'] == 'suspicious']
+        assert any(f['severity'] == 'high' for f in suspicious)
 
     def test_all_check_expands_to_three_checks(self, rt, tmp_path, monkeypatch):
         """checks=['all'] runs redundant, suspicious, and missing-steps (requires marshal)."""
         import claude_runtime as _cr
 
-        marshal = tmp_path / "marshal.json"
-        marshal.write_text(json.dumps({"plan": {}}), encoding="utf-8")
-        settings = tmp_path / "settings.json"
+        marshal = tmp_path / 'marshal.json'
+        marshal.write_text(json.dumps({'plan': {}}), encoding='utf-8')
+        settings = tmp_path / 'settings.json'
         _write_settings(settings, [])
-        monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: settings)
-        monkeypatch.setattr(_cr, "_claude_global_settings_path", lambda: settings)
+        monkeypatch.setattr(_cr, '_claude_project_settings_path', lambda *_: settings)
+        monkeypatch.setattr(_cr, '_claude_global_settings_path', lambda: settings)
 
-        result = _parsed(rt.permission_analyze("project", ["all"], str(marshal)))
-        assert result["status"] == "success"
-        assert sorted(result["checks_run"]) == sorted(["missing-steps", "redundant", "suspicious"])
+        result = _parsed(rt.permission_analyze('project', ['all'], str(marshal)))
+        assert result['status'] == 'success'
+        assert sorted(result['checks_run']) == sorted(['missing-steps', 'redundant', 'suspicious'])
 
 
 # =============================================================================
@@ -3576,86 +3442,86 @@ class TestPermissionFix:
     """Tests for ClaudeRuntime.permission_fix."""
 
     def test_invalid_scope_returns_error(self, rt):
-        result = _parsed(rt.permission_fix("invalid", "add", [], False))
-        assert result["status"] == "error"
-        assert result["error"] == "invalid_scope"
+        result = _parsed(rt.permission_fix('invalid', 'add', [], False))
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_scope'
 
     def test_invalid_operation_returns_error(self, rt):
-        result = _parsed(rt.permission_fix("project", "explode", [], False))
-        assert result["status"] == "error"
-        assert result["error"] == "invalid_operation"
+        result = _parsed(rt.permission_fix('project', 'explode', [], False))
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_operation'
 
     def test_add_operation_appends_new_permissions(self, rt, tmp_path, monkeypatch):
         """add operation renders an intent into the allow list."""
         import claude_runtime as _cr
 
-        settings_path = tmp_path / "settings.json"
-        _write_settings(settings_path, ["Read(**)"])
-        monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: settings_path)
+        settings_path = tmp_path / 'settings.json'
+        _write_settings(settings_path, ['Read(**)'])
+        monkeypatch.setattr(_cr, '_claude_project_settings_path', lambda *_: settings_path)
 
-        intent = {"kind": "path", "tool": "Write", "path": "**"}
-        result = _parsed(rt.permission_fix("project", "add", [intent], False))
-        assert result["status"] == "success"
-        assert result["changes_applied"] == 1
+        intent = {'kind': 'path', 'tool': 'Write', 'path': '**'}
+        result = _parsed(rt.permission_fix('project', 'add', [intent], False))
+        assert result['status'] == 'success'
+        assert result['changes_applied'] == 1
         saved = json.loads(settings_path.read_text())
-        assert "Write(**)" in saved["permissions"]["allow"]
+        assert 'Write(**)' in saved['permissions']['allow']
 
     def test_add_operation_does_not_duplicate(self, rt, tmp_path, monkeypatch):
         """add operation skips already-present permissions."""
         import claude_runtime as _cr
 
-        settings_path = tmp_path / "settings.json"
-        _write_settings(settings_path, ["Read(**)"])
-        monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: settings_path)
+        settings_path = tmp_path / 'settings.json'
+        _write_settings(settings_path, ['Read(**)'])
+        monkeypatch.setattr(_cr, '_claude_project_settings_path', lambda *_: settings_path)
 
-        intent = {"kind": "path", "tool": "Read", "path": "**"}
-        result = _parsed(rt.permission_fix("project", "add", [intent], False))
-        assert result["status"] == "success"
-        assert result["changes_applied"] == 0
+        intent = {'kind': 'path', 'tool': 'Read', 'path': '**'}
+        result = _parsed(rt.permission_fix('project', 'add', [intent], False))
+        assert result['status'] == 'success'
+        assert result['changes_applied'] == 0
 
     def test_add_invalid_intent_returns_error(self, rt, tmp_path, monkeypatch):
         """add with an unknown intent kind fails before writing."""
         import claude_runtime as _cr
 
-        settings_path = tmp_path / "settings.json"
-        _write_settings(settings_path, ["Read(**)"])
-        monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: settings_path)
+        settings_path = tmp_path / 'settings.json'
+        _write_settings(settings_path, ['Read(**)'])
+        monkeypatch.setattr(_cr, '_claude_project_settings_path', lambda *_: settings_path)
 
-        result = _parsed(rt.permission_fix("project", "add", [{"kind": "nope"}], False))
-        assert result["status"] == "error"
-        assert result["error"] == "invalid_intent"
+        result = _parsed(rt.permission_fix('project', 'add', [{'kind': 'nope'}], False))
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_intent'
 
     def test_remove_operation_removes_permissions(self, rt, tmp_path, monkeypatch):
         """remove operation removes matching permissions from the allow list."""
         import claude_runtime as _cr
 
-        settings_path = tmp_path / "settings.json"
-        _write_settings(settings_path, ["Read(**)", "Write(**)"])
-        monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: settings_path)
+        settings_path = tmp_path / 'settings.json'
+        _write_settings(settings_path, ['Read(**)', 'Write(**)'])
+        monkeypatch.setattr(_cr, '_claude_project_settings_path', lambda *_: settings_path)
 
-        intent = {"kind": "path", "tool": "Write", "path": "**"}
-        result = _parsed(rt.permission_fix("project", "remove", [intent], False))
-        assert result["status"] == "success"
-        assert result["changes_applied"] == 1
+        intent = {'kind': 'path', 'tool': 'Write', 'path': '**'}
+        result = _parsed(rt.permission_fix('project', 'remove', [intent], False))
+        assert result['status'] == 'success'
+        assert result['changes_applied'] == 1
         saved = json.loads(settings_path.read_text())
-        assert "Write(**)" not in saved["permissions"]["allow"]
+        assert 'Write(**)' not in saved['permissions']['allow']
 
     def test_normalize_deduplicates_and_adds_defaults(self, rt, tmp_path, monkeypatch):
         """normalize deduplicates and adds missing default permissions."""
         import claude_runtime as _cr
 
-        settings_path = tmp_path / "settings.json"
-        _write_settings(settings_path, ["Read(**)", "Read(**)"])  # duplicate
-        monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: settings_path)
+        settings_path = tmp_path / 'settings.json'
+        _write_settings(settings_path, ['Read(**)', 'Read(**)'])  # duplicate
+        monkeypatch.setattr(_cr, '_claude_project_settings_path', lambda *_: settings_path)
 
-        result = _parsed(rt.permission_fix("project", "normalize", [], False))
-        assert result["status"] == "success"
+        result = _parsed(rt.permission_fix('project', 'normalize', [], False))
+        assert result['status'] == 'success'
         saved = json.loads(settings_path.read_text())
-        allow = saved["permissions"]["allow"]
+        allow = saved['permissions']['allow']
         # No duplicates.
         assert len(allow) == len(set(allow))
         # Default entries added.
-        assert "Edit(.plan/**)" in allow
+        assert 'Edit(.plan/**)' in allow
 
     def test_normalize_prunes_a_retired_default(self, rt, tmp_path, monkeypatch):
         """normalize ensures the defaults, and ensuring is two-sided.
@@ -3669,17 +3535,17 @@ class TestPermissionFix:
         """
         import claude_runtime as _cr
 
-        settings_path = tmp_path / "settings.json"
-        _write_settings(settings_path, ["Write(.plan/**)", "Bash(git:*)"])
-        monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: settings_path)
+        settings_path = tmp_path / 'settings.json'
+        _write_settings(settings_path, ['Write(.plan/**)', 'Bash(git:*)'])
+        monkeypatch.setattr(_cr, '_claude_project_settings_path', lambda *_: settings_path)
 
-        result = _parsed(rt.permission_fix("project", "normalize", [], False))
+        result = _parsed(rt.permission_fix('project', 'normalize', [], False))
 
-        assert result["status"] == "success"
+        assert result['status'] == 'success'
         saved = json.loads(settings_path.read_text())
-        assert "Write(.plan/**)" not in saved["permissions"]["allow"]
+        assert 'Write(.plan/**)' not in saved['permissions']['allow']
         # The rule it supersedes is present, so the prune is a swap, not a loss.
-        assert "Edit(.plan/**)" in saved["permissions"]["allow"]
+        assert 'Edit(.plan/**)' in saved['permissions']['allow']
 
     def test_normalize_counts_a_prune_as_a_change(self, rt, tmp_path, monkeypatch):
         """A prune-only run must not report itself as having changed nothing.
@@ -3690,53 +3556,53 @@ class TestPermissionFix:
         """
         import claude_runtime as _cr
 
-        settings_path = tmp_path / "settings.json"
+        settings_path = tmp_path / 'settings.json'
         _write_settings(
             settings_path,
             sorted(
                 [
-                    "Bash(python3 .plan/execute-script.py *)",
-                    "Edit(.plan/**)",
-                    "Read(~/.claude/plugins/cache/**)",
-                    "Write(.plan/**)",
+                    'Bash(python3 .plan/execute-script.py *)',
+                    'Edit(.plan/**)',
+                    'Read(~/.claude/plugins/cache/**)',
+                    'Write(.plan/**)',
                 ]
             ),
         )
-        monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: settings_path)
+        monkeypatch.setattr(_cr, '_claude_project_settings_path', lambda *_: settings_path)
 
-        result = _parsed(rt.permission_fix("project", "normalize", [], False))
+        result = _parsed(rt.permission_fix('project', 'normalize', [], False))
 
-        assert result["changes_applied"] == 1
+        assert result['changes_applied'] == 1
 
     def test_dry_run_does_not_write_settings(self, rt, tmp_path, monkeypatch):
         """dry_run=True returns proposed_additions but does not mutate the file."""
         import claude_runtime as _cr
 
-        settings_path = tmp_path / "settings.json"
-        original = ["Read(**)"]
+        settings_path = tmp_path / 'settings.json'
+        original = ['Read(**)']
         _write_settings(settings_path, original)
-        monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: settings_path)
+        monkeypatch.setattr(_cr, '_claude_project_settings_path', lambda *_: settings_path)
 
-        result = _parsed(rt.permission_fix("project", "add", [{"kind": "path", "tool": "Write", "path": "**"}], True))
-        assert result["status"] == "success"
-        assert result["dry_run"] is True
-        assert result["changes_applied"] == 0
+        result = _parsed(rt.permission_fix('project', 'add', [{'kind': 'path', 'tool': 'Write', 'path': '**'}], True))
+        assert result['status'] == 'success'
+        assert result['dry_run'] is True
+        assert result['changes_applied'] == 0
         # File unchanged.
         saved = json.loads(settings_path.read_text())
-        assert saved["permissions"]["allow"] == original
+        assert saved['permissions']['allow'] == original
 
     def test_ensure_operation_adds_missing(self, rt, tmp_path, monkeypatch):
         """ensure operation renders an intent not already present."""
         import claude_runtime as _cr
 
-        settings_path = tmp_path / "settings.json"
+        settings_path = tmp_path / 'settings.json'
         _write_settings(settings_path, [])
-        monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: settings_path)
+        monkeypatch.setattr(_cr, '_claude_project_settings_path', lambda *_: settings_path)
 
-        result = _parsed(rt.permission_fix("project", "ensure", [{"kind": "executor"}], False))
-        assert result["status"] == "success"
+        result = _parsed(rt.permission_fix('project', 'ensure', [{'kind': 'executor'}], False))
+        assert result['status'] == 'success'
         saved = json.loads(settings_path.read_text())
-        assert "Bash(python3 .plan/execute-script.py *)" in saved["permissions"]["allow"]
+        assert 'Bash(python3 .plan/execute-script.py *)' in saved['permissions']['allow']
 
     def test_add_partial_multi_rule_intent_adds_only_missing(self, rt, tmp_path, monkeypatch):
         """add with one of a multi-rule intent's rules present adds only the missing rule.
@@ -3747,16 +3613,16 @@ class TestPermissionFix:
         """
         import claude_runtime as _cr
 
-        settings_path = tmp_path / "settings.json"
-        _write_settings(settings_path, ["Skill(x:*)"])
-        monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: settings_path)
+        settings_path = tmp_path / 'settings.json'
+        _write_settings(settings_path, ['Skill(x:*)'])
+        monkeypatch.setattr(_cr, '_claude_project_settings_path', lambda *_: settings_path)
 
-        intent = {"kind": "bundle", "name": "x"}
-        result = _parsed(rt.permission_fix("project", "add", [intent], False))
-        assert result["status"] == "success"
-        assert result["changes_applied"] == 1
+        intent = {'kind': 'bundle', 'name': 'x'}
+        result = _parsed(rt.permission_fix('project', 'add', [intent], False))
+        assert result['status'] == 'success'
+        assert result['changes_applied'] == 1
         saved = json.loads(settings_path.read_text())
-        assert saved["permissions"]["allow"] == ["Skill(x:*)", "SlashCommand(/x:*)"]
+        assert saved['permissions']['allow'] == ['Skill(x:*)', 'SlashCommand(/x:*)']
 
     def test_ensure_partial_multi_rule_intent_adds_only_missing(self, rt, tmp_path, monkeypatch):
         """ensure with one of a multi-rule intent's rules present adds only the missing rule.
@@ -3768,29 +3634,29 @@ class TestPermissionFix:
         """
         import claude_runtime as _cr
 
-        settings_path = tmp_path / "settings.json"
-        _write_settings(settings_path, ["Skill(x:*)"])
-        monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: settings_path)
+        settings_path = tmp_path / 'settings.json'
+        _write_settings(settings_path, ['Skill(x:*)'])
+        monkeypatch.setattr(_cr, '_claude_project_settings_path', lambda *_: settings_path)
 
-        intent = {"kind": "bundle", "name": "x"}
-        result = _parsed(rt.permission_fix("project", "ensure", [intent], False))
-        assert result["status"] == "success"
-        assert result["changes_applied"] == 1
+        intent = {'kind': 'bundle', 'name': 'x'}
+        result = _parsed(rt.permission_fix('project', 'ensure', [intent], False))
+        assert result['status'] == 'success'
+        assert result['changes_applied'] == 1
         saved = json.loads(settings_path.read_text())
-        assert saved["permissions"]["allow"] == ["Skill(x:*)", "SlashCommand(/x:*)"]
+        assert saved['permissions']['allow'] == ['Skill(x:*)', 'SlashCommand(/x:*)']
 
     def test_consolidate_replaces_enumerated_with_wildcard(self, rt, tmp_path, monkeypatch):
         """consolidate replaces 3+ same-tool permissions with a wildcard."""
         import claude_runtime as _cr
 
-        settings_path = tmp_path / "settings.json"
-        _write_settings(settings_path, ["Read(a)", "Read(b)", "Read(c)"])
-        monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: settings_path)
+        settings_path = tmp_path / 'settings.json'
+        _write_settings(settings_path, ['Read(a)', 'Read(b)', 'Read(c)'])
+        monkeypatch.setattr(_cr, '_claude_project_settings_path', lambda *_: settings_path)
 
-        result = _parsed(rt.permission_fix("project", "consolidate", [], False))
-        assert result["status"] == "success"
+        result = _parsed(rt.permission_fix('project', 'consolidate', [], False))
+        assert result['status'] == 'success'
         saved = json.loads(settings_path.read_text())
-        assert "Read(*)" in saved["permissions"]["allow"]
+        assert 'Read(*)' in saved['permissions']['allow']
 
 
 # =============================================================================
@@ -3802,89 +3668,89 @@ class TestPermissionEnsureWildcards:
     """Tests for ClaudeRuntime.permission_ensure_wildcards."""
 
     def test_invalid_scope_returns_error(self, rt):
-        result = _parsed(rt.permission_ensure_wildcards("invalid", ".", False))
-        assert result["status"] == "error"
-        assert result["error"] == "invalid_scope"
+        result = _parsed(rt.permission_ensure_wildcards('invalid', '.', False))
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_scope'
 
     def test_scans_bundles_and_adds_wildcards(self, rt, tmp_path, monkeypatch):
         """Bundles with plugin.json get Skill({bundle}:*) and SlashCommand(/{bundle}:*) permissions."""
         import claude_runtime as _cr
 
         # Create a fake marketplace dir with one bundle.
-        marketplace = tmp_path / "marketplace"
-        bundle_dir = marketplace / "my-bundle"
-        plugin_json = bundle_dir / ".claude-plugin" / "plugin.json"
+        marketplace = tmp_path / 'marketplace'
+        bundle_dir = marketplace / 'my-bundle'
+        plugin_json = bundle_dir / '.claude-plugin' / 'plugin.json'
         plugin_json.parent.mkdir(parents=True)
-        plugin_json.write_text("{}", encoding="utf-8")
+        plugin_json.write_text('{}', encoding='utf-8')
 
-        settings_path = tmp_path / "settings.json"
+        settings_path = tmp_path / 'settings.json'
         _write_settings(settings_path, [])
-        monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: settings_path)
+        monkeypatch.setattr(_cr, '_claude_project_settings_path', lambda *_: settings_path)
 
-        result = _parsed(rt.permission_ensure_wildcards("project", str(marketplace), False))
-        assert result["status"] == "success"
-        assert result["bundles_scanned"] == 1
+        result = _parsed(rt.permission_ensure_wildcards('project', str(marketplace), False))
+        assert result['status'] == 'success'
+        assert result['bundles_scanned'] == 1
         saved = json.loads(settings_path.read_text())
-        allow = saved["permissions"]["allow"]
-        assert "Skill(my-bundle:*)" in allow
-        assert "SlashCommand(/my-bundle:*)" in allow
+        allow = saved['permissions']['allow']
+        assert 'Skill(my-bundle:*)' in allow
+        assert 'SlashCommand(/my-bundle:*)' in allow
 
     def test_dry_run_reports_without_writing(self, rt, tmp_path, monkeypatch):
         """dry_run=True returns proposed_additions without mutating settings."""
         import claude_runtime as _cr
 
-        marketplace = tmp_path / "mp"
-        bundle_dir = marketplace / "bundle-x"
-        pj = bundle_dir / ".claude-plugin" / "plugin.json"
+        marketplace = tmp_path / 'mp'
+        bundle_dir = marketplace / 'bundle-x'
+        pj = bundle_dir / '.claude-plugin' / 'plugin.json'
         pj.parent.mkdir(parents=True)
-        pj.write_text("{}", encoding="utf-8")
+        pj.write_text('{}', encoding='utf-8')
 
-        settings_path = tmp_path / "settings.json"
+        settings_path = tmp_path / 'settings.json'
         _write_settings(settings_path, [])
-        monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: settings_path)
+        monkeypatch.setattr(_cr, '_claude_project_settings_path', lambda *_: settings_path)
 
-        result = _parsed(rt.permission_ensure_wildcards("project", str(marketplace), True))
-        assert result["dry_run"] is True
-        assert result["wildcards_added"] == 0
+        result = _parsed(rt.permission_ensure_wildcards('project', str(marketplace), True))
+        assert result['dry_run'] is True
+        assert result['wildcards_added'] == 0
         # File not changed.
         saved = json.loads(settings_path.read_text())
-        assert saved["permissions"]["allow"] == []
+        assert saved['permissions']['allow'] == []
 
     def test_dry_run_reports_semantic_bundle_intents(self, rt, tmp_path, monkeypatch):
         """dry-run proposed_additions are bundle intents, never rendered wildcard rules."""
         import claude_runtime as _cr
 
-        marketplace = tmp_path / "mpb"
-        bundle_dir = marketplace / "bundle-x"
-        pj = bundle_dir / ".claude-plugin" / "plugin.json"
+        marketplace = tmp_path / 'mpb'
+        bundle_dir = marketplace / 'bundle-x'
+        pj = bundle_dir / '.claude-plugin' / 'plugin.json'
         pj.parent.mkdir(parents=True)
-        pj.write_text("{}", encoding="utf-8")
+        pj.write_text('{}', encoding='utf-8')
 
-        settings_path = tmp_path / "settings.json"
+        settings_path = tmp_path / 'settings.json'
         _write_settings(settings_path, [])
-        monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: settings_path)
+        monkeypatch.setattr(_cr, '_claude_project_settings_path', lambda *_: settings_path)
 
-        result = _parsed(rt.permission_ensure_wildcards("project", str(marketplace), True))
-        assert result["status"] == "success"
-        assert result["proposed_additions"] == [{"kind": "bundle", "name": "bundle-x"}]
+        result = _parsed(rt.permission_ensure_wildcards('project', str(marketplace), True))
+        assert result['status'] == 'success'
+        assert result['proposed_additions'] == [{'kind': 'bundle', 'name': 'bundle-x'}]
 
     def test_already_present_wildcards_not_duplicated(self, rt, tmp_path, monkeypatch):
         """Wildcards already in the allow list are not added again."""
         import claude_runtime as _cr
 
-        marketplace = tmp_path / "mp2"
-        bundle_dir = marketplace / "bundle-y"
-        pj = bundle_dir / ".claude-plugin" / "plugin.json"
+        marketplace = tmp_path / 'mp2'
+        bundle_dir = marketplace / 'bundle-y'
+        pj = bundle_dir / '.claude-plugin' / 'plugin.json'
         pj.parent.mkdir(parents=True)
-        pj.write_text("{}", encoding="utf-8")
+        pj.write_text('{}', encoding='utf-8')
 
-        settings_path = tmp_path / "settings.json"
-        _write_settings(settings_path, ["Skill(bundle-y:*)", "SlashCommand(/bundle-y:*)"])
-        monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: settings_path)
+        settings_path = tmp_path / 'settings.json'
+        _write_settings(settings_path, ['Skill(bundle-y:*)', 'SlashCommand(/bundle-y:*)'])
+        monkeypatch.setattr(_cr, '_claude_project_settings_path', lambda *_: settings_path)
 
-        result = _parsed(rt.permission_ensure_wildcards("project", str(marketplace), False))
-        assert result["wildcards_already_present"] == 2
-        assert result["wildcards_added"] == 0
+        result = _parsed(rt.permission_ensure_wildcards('project', str(marketplace), False))
+        assert result['wildcards_already_present'] == 2
+        assert result['wildcards_added'] == 0
 
 
 # =============================================================================
@@ -3896,46 +3762,45 @@ class TestPermissionEnsureSteps:
     """Tests for ClaudeRuntime.permission_ensure_steps."""
 
     def test_invalid_scope_returns_error(self, rt, tmp_path):
-        result = _parsed(rt.permission_ensure_steps(str(tmp_path / "marshal.json"), "invalid", False))
-        assert result["status"] == "error"
-        assert result["error"] == "invalid_scope"
+        result = _parsed(rt.permission_ensure_steps(str(tmp_path / 'marshal.json'), 'invalid', False))
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_scope'
 
     def test_missing_marshal_returns_error(self, rt, tmp_path):
-        result = _parsed(rt.permission_ensure_steps(str(tmp_path / "missing.json"), "project", False))
-        assert result["status"] == "error"
-        assert result["error"] == "marshal_not_found"
+        result = _parsed(rt.permission_ensure_steps(str(tmp_path / 'missing.json'), 'project', False))
+        assert result['status'] == 'error'
+        assert result['error'] == 'marshal_not_found'
 
     def test_valid_marshal_returns_success(self, rt, tmp_path, monkeypatch):
         """A valid marshal.json (even with no steps) returns success."""
         import claude_runtime as _cr
 
-        marshal = tmp_path / "marshal.json"
-        marshal.write_text(json.dumps({"plan": {}}), encoding="utf-8")
-        settings_path = tmp_path / "settings.json"
+        marshal = tmp_path / 'marshal.json'
+        marshal.write_text(json.dumps({'plan': {}}), encoding='utf-8')
+        settings_path = tmp_path / 'settings.json'
         _write_settings(settings_path, [])
-        monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: settings_path)
+        monkeypatch.setattr(_cr, '_claude_project_settings_path', lambda *_: settings_path)
 
-        result = _parsed(rt.permission_ensure_steps(str(marshal), "project", False))
-        assert result["status"] == "success"
-        assert result["marshal"] == str(marshal)
-
+        result = _parsed(rt.permission_ensure_steps(str(marshal), 'project', False))
+        assert result['status'] == 'success'
+        assert result['marshal'] == str(marshal)
 
     def test_dry_run_reports_semantic_skill_intents(self, rt, tmp_path, monkeypatch):
         """dry-run proposed_additions are skill intents, never rendered DSL rules."""
         import claude_runtime as _cr
 
-        marshal = tmp_path / "marshal.json"
+        marshal = tmp_path / 'marshal.json'
         marshal.write_text(
-            json.dumps({"plan": {"phase-5-execute": {"steps": ["project:demo-skill"]}}}),
-            encoding="utf-8",
+            json.dumps({'plan': {'phase-5-execute': {'steps': ['project:demo-skill']}}}),
+            encoding='utf-8',
         )
-        settings_path = tmp_path / "settings.json"
+        settings_path = tmp_path / 'settings.json'
         _write_settings(settings_path, [])
-        monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: settings_path)
+        monkeypatch.setattr(_cr, '_claude_project_settings_path', lambda *_: settings_path)
 
-        result = _parsed(rt.permission_ensure_steps(str(marshal), "project", True))
-        assert result["status"] == "success"
-        assert result["proposed_additions"] == [{"kind": "skill", "name": "demo-skill"}]
+        result = _parsed(rt.permission_ensure_steps(str(marshal), 'project', True))
+        assert result['status'] == 'success'
+        assert result['proposed_additions'] == [{'kind': 'skill', 'name': 'demo-skill'}]
 
     def test_ensure_steps_dry_run_dedupes_repeated_skills(self, rt, tmp_path, monkeypatch):
         """Repeated project:{skill} steps report one proposed_addition in dry run.
@@ -3945,52 +3810,44 @@ class TestPermissionEnsureSteps:
         """
         import claude_runtime as _cr
 
-        marshal = tmp_path / "marshal.json"
+        marshal = tmp_path / 'marshal.json'
         marshal.write_text(
-            json.dumps(
-                {
-                    "plan": {
-                        "phase-5-execute": {
-                            "steps": ["project:demo-skill", "project:demo-skill"]
-                        }
-                    }
-                }
-            ),
-            encoding="utf-8",
+            json.dumps({'plan': {'phase-5-execute': {'steps': ['project:demo-skill', 'project:demo-skill']}}}),
+            encoding='utf-8',
         )
-        settings_path = tmp_path / "settings.json"
+        settings_path = tmp_path / 'settings.json'
         _write_settings(settings_path, [])
-        monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: settings_path)
+        monkeypatch.setattr(_cr, '_claude_project_settings_path', lambda *_: settings_path)
 
-        result = _parsed(rt.permission_ensure_steps(str(marshal), "project", True))
-        assert result["status"] == "success"
-        assert result["proposed_additions"] == [{"kind": "skill", "name": "demo-skill"}]
+        result = _parsed(rt.permission_ensure_steps(str(marshal), 'project', True))
+        assert result['status'] == 'success'
+        assert result['proposed_additions'] == [{'kind': 'skill', 'name': 'demo-skill'}]
 
     def test_add_dry_run_dedupes_repeated_intents(self, rt, tmp_path, monkeypatch):
         """Repeated intents report one proposed_addition in dry run."""
         import claude_runtime as _cr
 
-        settings_path = tmp_path / "settings.json"
+        settings_path = tmp_path / 'settings.json'
         _write_settings(settings_path, [])
-        monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: settings_path)
+        monkeypatch.setattr(_cr, '_claude_project_settings_path', lambda *_: settings_path)
 
-        intent = {"kind": "bundle", "name": "x"}
-        result = _parsed(rt.permission_fix("project", "add", [intent, intent], True))
-        assert result["status"] == "success"
-        assert result["proposed_additions"] == [intent]
+        intent = {'kind': 'bundle', 'name': 'x'}
+        result = _parsed(rt.permission_fix('project', 'add', [intent, intent], True))
+        assert result['status'] == 'success'
+        assert result['proposed_additions'] == [intent]
 
     def test_ensure_dry_run_dedupes_repeated_intents(self, rt, tmp_path, monkeypatch):
         """Repeated intents report one proposed_addition in dry run."""
         import claude_runtime as _cr
 
-        settings_path = tmp_path / "settings.json"
+        settings_path = tmp_path / 'settings.json'
         _write_settings(settings_path, [])
-        monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: settings_path)
+        monkeypatch.setattr(_cr, '_claude_project_settings_path', lambda *_: settings_path)
 
-        intent = {"kind": "bundle", "name": "x"}
-        result = _parsed(rt.permission_fix("project", "ensure", [intent, intent], True))
-        assert result["status"] == "success"
-        assert result["proposed_additions"] == [intent]
+        intent = {'kind': 'bundle', 'name': 'x'}
+        result = _parsed(rt.permission_fix('project', 'ensure', [intent, intent], True))
+        assert result['status'] == 'success'
+        assert result['proposed_additions'] == [intent]
 
 
 # =============================================================================
@@ -4002,50 +3859,50 @@ class TestPermissionWebAnalyze:
     """Tests for ClaudeRuntime.permission_web_analyze."""
 
     def test_invalid_scope_returns_error(self, rt):
-        result = _parsed(rt.permission_web_analyze("invalid"))
-        assert result["status"] == "error"
-        assert result["error"] == "invalid_scope"
+        result = _parsed(rt.permission_web_analyze('invalid'))
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_scope'
 
     def test_global_scope_returns_success(self, rt, tmp_path, monkeypatch):
         """global scope reads global settings and returns domain rows."""
         import claude_runtime as _cr
 
-        settings = tmp_path / "global.json"
-        _write_settings(settings, ["WebFetch(github.com)", "WebFetch(example.com)"])
-        monkeypatch.setattr(_cr, "_claude_global_settings_path", lambda: settings)
+        settings = tmp_path / 'global.json'
+        _write_settings(settings, ['WebFetch(github.com)', 'WebFetch(example.com)'])
+        monkeypatch.setattr(_cr, '_claude_global_settings_path', lambda: settings)
 
-        result = _parsed(rt.permission_web_analyze("global"))
-        assert result["status"] == "success"
-        assert result["total_domains"] == 2
+        result = _parsed(rt.permission_web_analyze('global'))
+        assert result['status'] == 'success'
+        assert result['total_domains'] == 2
 
     def test_both_scope_combines_global_and_project(self, rt, tmp_path, monkeypatch):
         """both scope includes domains from both global and project settings."""
         import claude_runtime as _cr
 
-        global_s = tmp_path / "global.json"
-        project_s = tmp_path / "project.json"
-        _write_settings(global_s, ["WebFetch(a.com)"])
-        _write_settings(project_s, ["WebFetch(b.com)"])
-        monkeypatch.setattr(_cr, "_claude_global_settings_path", lambda: global_s)
-        monkeypatch.setattr(_cr, "_claude_project_settings_read_path", lambda *_: project_s)
+        global_s = tmp_path / 'global.json'
+        project_s = tmp_path / 'project.json'
+        _write_settings(global_s, ['WebFetch(a.com)'])
+        _write_settings(project_s, ['WebFetch(b.com)'])
+        monkeypatch.setattr(_cr, '_claude_global_settings_path', lambda: global_s)
+        monkeypatch.setattr(_cr, '_claude_project_settings_read_path', lambda *_: project_s)
 
-        result = _parsed(rt.permission_web_analyze("both"))
-        assert result["total_domains"] == 2
+        result = _parsed(rt.permission_web_analyze('both'))
+        assert result['total_domains'] == 2
 
     def test_major_domain_categorized_correctly(self, rt, tmp_path, monkeypatch):
         """github.com is categorized as 'major'."""
         import claude_runtime as _cr
 
-        settings = tmp_path / "settings.json"
-        _write_settings(settings, ["WebFetch(github.com)"])
-        monkeypatch.setattr(_cr, "_claude_project_settings_read_path", lambda *_: settings)
+        settings = tmp_path / 'settings.json'
+        _write_settings(settings, ['WebFetch(github.com)'])
+        monkeypatch.setattr(_cr, '_claude_project_settings_read_path', lambda *_: settings)
 
-        result = _parsed(rt.permission_web_analyze("project"))
-        assert result["status"] == "success"
-        domains = result["domains"]
-        github_entry = next((d for d in domains if d["domain"] == "github.com"), None)
+        result = _parsed(rt.permission_web_analyze('project'))
+        assert result['status'] == 'success'
+        domains = result['domains']
+        github_entry = next((d for d in domains if d['domain'] == 'github.com'), None)
         assert github_entry is not None
-        assert github_entry["category"] == "major"
+        assert github_entry['category'] == 'major'
 
 
 # =============================================================================
@@ -4057,50 +3914,50 @@ class TestPermissionWebApply:
     """Tests for ClaudeRuntime.permission_web_apply."""
 
     def test_invalid_scope_returns_error(self, rt):
-        result = _parsed(rt.permission_web_apply("invalid", [], [], False))
-        assert result["status"] == "error"
-        assert result["error"] == "invalid_scope"
+        result = _parsed(rt.permission_web_apply('invalid', [], [], False))
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_scope'
 
     def test_add_domain_appends_webfetch_permission(self, rt, tmp_path, monkeypatch):
         """Adding a domain appends WebFetch({domain}) to the allow list."""
         import claude_runtime as _cr
 
-        settings_path = tmp_path / "settings.json"
+        settings_path = tmp_path / 'settings.json'
         _write_settings(settings_path, [])
-        monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: settings_path)
+        monkeypatch.setattr(_cr, '_claude_project_settings_path', lambda *_: settings_path)
 
-        result = _parsed(rt.permission_web_apply("project", ["docs.example.com"], [], False))
-        assert result["status"] == "success"
-        assert result["domains_added"] == 1
+        result = _parsed(rt.permission_web_apply('project', ['docs.example.com'], [], False))
+        assert result['status'] == 'success'
+        assert result['domains_added'] == 1
         saved = json.loads(settings_path.read_text())
-        assert "WebFetch(docs.example.com)" in saved["permissions"]["allow"]
+        assert 'WebFetch(docs.example.com)' in saved['permissions']['allow']
 
     def test_remove_domain_removes_webfetch_permission(self, rt, tmp_path, monkeypatch):
         """Removing a domain removes the corresponding WebFetch permission."""
         import claude_runtime as _cr
 
-        settings_path = tmp_path / "settings.json"
-        _write_settings(settings_path, ["WebFetch(old.com)", "Read(**)"])
-        monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: settings_path)
+        settings_path = tmp_path / 'settings.json'
+        _write_settings(settings_path, ['WebFetch(old.com)', 'Read(**)'])
+        monkeypatch.setattr(_cr, '_claude_project_settings_path', lambda *_: settings_path)
 
-        result = _parsed(rt.permission_web_apply("project", [], ["old.com"], False))
-        assert result["status"] == "success"
-        assert result["domains_removed"] == 1
+        result = _parsed(rt.permission_web_apply('project', [], ['old.com'], False))
+        assert result['status'] == 'success'
+        assert result['domains_removed'] == 1
         saved = json.loads(settings_path.read_text())
-        assert "WebFetch(old.com)" not in saved["permissions"]["allow"]
+        assert 'WebFetch(old.com)' not in saved['permissions']['allow']
 
     def test_dry_run_does_not_write(self, rt, tmp_path, monkeypatch):
         """dry_run=True computes counts without mutating the file."""
         import claude_runtime as _cr
 
-        settings_path = tmp_path / "settings.json"
-        original_allow = ["WebFetch(old.com)"]
+        settings_path = tmp_path / 'settings.json'
+        original_allow = ['WebFetch(old.com)']
         _write_settings(settings_path, original_allow)
-        monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: settings_path)
+        monkeypatch.setattr(_cr, '_claude_project_settings_path', lambda *_: settings_path)
 
-        rt.permission_web_apply("project", ["new.com"], [], True)
+        rt.permission_web_apply('project', ['new.com'], [], True)
         saved = json.loads(settings_path.read_text())
-        assert saved["permissions"]["allow"] == original_allow
+        assert saved['permissions']['allow'] == original_allow
 
 
 # =============================================================================
@@ -4115,60 +3972,60 @@ class TestMetricsCapture:
         """Providing total_tokens manually stores via manage-metrics and returns success."""
         import claude_runtime as _cr
 
-        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
+        monkeypatch.setattr(_cr, '_PLAN_DIR_NAME', '.plan')
         monkeypatch.chdir(tmp_path)
         # Cursor dir must exist.
-        cursor_dir = tmp_path / ".plan" / "local" / "plans" / "my-plan" / "work"
+        cursor_dir = tmp_path / '.plan' / 'local' / 'plans' / 'my-plan' / 'work'
         cursor_dir.mkdir(parents=True)
 
-        with patch("claude_runtime._manage_metrics_end_phase", return_value=True):
-            result = _parsed(rt.metrics_capture("my-plan", "phase-1-init", 12345))
+        with patch('claude_runtime._manage_metrics_end_phase', return_value=True):
+            result = _parsed(rt.metrics_capture('my-plan', 'phase-1-init', 12345))
 
-        assert result["status"] == "success"
-        assert result["tokens_captured"] == 12345
-        assert result["source"] == "manual"
+        assert result['status'] == 'success'
+        assert result['tokens_captured'] == 12345
+        assert result['source'] == 'manual'
 
     def test_no_session_id_returns_noop(self, rt, monkeypatch):
         """When no session_id is stored, metrics_capture returns no-op."""
-        with patch("claude_runtime._manage_status_read_session", return_value=None):
-            result = _parsed(rt.metrics_capture("plan-x", "phase-2-refine", None))
-        assert result["status"] == "no-op"
+        with patch('claude_runtime._manage_status_read_session', return_value=None):
+            result = _parsed(rt.metrics_capture('plan-x', 'phase-2-refine', None))
+        assert result['status'] == 'no-op'
 
     def test_no_transcript_returns_noop(self, rt, monkeypatch):
         """When transcript cannot be located, metrics_capture returns no-op."""
-        with patch("claude_runtime._manage_status_read_session", return_value="sess-123"):
-            with patch("claude_runtime._find_transcript", return_value=None):
-                result = _parsed(rt.metrics_capture("plan-y", "phase-3-outline", None))
-        assert result["status"] == "no-op"
+        with patch('claude_runtime._manage_status_read_session', return_value='sess-123'):
+            with patch('claude_runtime._find_transcript', return_value=None):
+                result = _parsed(rt.metrics_capture('plan-y', 'phase-3-outline', None))
+        assert result['status'] == 'no-op'
 
     def test_cursor_delta_captures_incremental_tokens(self, rt, tmp_path, monkeypatch):
         """Token count is prior_cursor subtracted from transcript total."""
         import claude_runtime as _cr
 
-        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
+        monkeypatch.setattr(_cr, '_PLAN_DIR_NAME', '.plan')
         monkeypatch.chdir(tmp_path)
 
         # Create a fake JSONL transcript.
-        transcript = tmp_path / "transcript.jsonl"
-        line1 = json.dumps({"message": {"usage": {"input_tokens": 100, "output_tokens": 50}}})
-        line2 = json.dumps({"message": {"usage": {"input_tokens": 80, "output_tokens": 20}}})
-        transcript.write_text(f"{line1}\n{line2}\n", encoding="utf-8")
+        transcript = tmp_path / 'transcript.jsonl'
+        line1 = json.dumps({'message': {'usage': {'input_tokens': 100, 'output_tokens': 50}}})
+        line2 = json.dumps({'message': {'usage': {'input_tokens': 80, 'output_tokens': 20}}})
+        transcript.write_text(f'{line1}\n{line2}\n', encoding='utf-8')
 
         # Cursor already at 100 from a prior capture.
-        cursor_dir = tmp_path / ".plan" / "local" / "plans" / "plan-tok" / "work"
+        cursor_dir = tmp_path / '.plan' / 'local' / 'plans' / 'plan-tok' / 'work'
         cursor_dir.mkdir(parents=True)
-        (cursor_dir / "metrics-cursor-phase-1-init.toon").write_text(
-            "plan_id: plan-tok\nphase: phase-1-init\ntotal_tokens: 100\n"
+        (cursor_dir / 'metrics-cursor-phase-1-init.toon').write_text(
+            'plan_id: plan-tok\nphase: phase-1-init\ntotal_tokens: 100\n'
         )
 
-        with patch("claude_runtime._manage_status_read_session", return_value="sess-tok"):
-            with patch("claude_runtime._find_transcript", return_value=transcript):
-                with patch("claude_runtime._manage_metrics_end_phase", return_value=True):
-                    result = _parsed(rt.metrics_capture("plan-tok", "phase-1-init", None))
+        with patch('claude_runtime._manage_status_read_session', return_value='sess-tok'):
+            with patch('claude_runtime._find_transcript', return_value=transcript):
+                with patch('claude_runtime._manage_metrics_end_phase', return_value=True):
+                    result = _parsed(rt.metrics_capture('plan-tok', 'phase-1-init', None))
 
-        assert result["status"] == "success"
+        assert result['status'] == 'success'
         # Total = 100+50+80+20 = 250; prior cursor = 100; captured = 150.
-        assert result["tokens_captured"] == 150
+        assert result['tokens_captured'] == 150
 
 
 # =============================================================================
@@ -4181,34 +4038,34 @@ class TestSubagentDispatch:
 
     def test_agent_not_found_returns_error(self, rt):
         """When agent file cannot be located, subagent_dispatch returns error."""
-        with patch("claude_runtime._find_agent_file", return_value=None):
-            result = _parsed(rt.subagent_dispatch("nonexistent-agent", None, None))
-        assert result["status"] == "error"
-        assert result["error"] == "prompt_not_found"
+        with patch('claude_runtime._find_agent_file', return_value=None):
+            result = _parsed(rt.subagent_dispatch('nonexistent-agent', None, None))
+        assert result['status'] == 'error'
+        assert result['error'] == 'prompt_not_found'
 
     def test_agent_with_unmapped_tool_returns_noop(self, rt, tmp_path):
         """An agent requiring an unmapped tool (e.g. SendMessage) returns no-op."""
-        agent_file = tmp_path / "bad-agent.md"
+        agent_file = tmp_path / 'bad-agent.md'
         agent_file.write_text(
-            "---\nname: bad-agent\ndescription: uses bad tool\ntools: [SendMessage]\n---\nBody.",
-            encoding="utf-8",
+            '---\nname: bad-agent\ndescription: uses bad tool\ntools: [SendMessage]\n---\nBody.',
+            encoding='utf-8',
         )
-        with patch("claude_runtime._find_agent_file", return_value=agent_file):
-            result = _parsed(rt.subagent_dispatch("bad-agent", None, None))
-        assert result["status"] == "no-op"
+        with patch('claude_runtime._find_agent_file', return_value=agent_file):
+            result = _parsed(rt.subagent_dispatch('bad-agent', None, None))
+        assert result['status'] == 'no-op'
 
     def test_valid_agent_returns_task_invocation(self, rt, tmp_path):
         """A valid agent returns success with platform=claude and invocation.tool=Task."""
-        agent_file = tmp_path / "good-agent.md"
+        agent_file = tmp_path / 'good-agent.md'
         agent_file.write_text(
-            "---\nname: good-agent\ndescription: Does something useful\ntools: [Read, Write]\n---\nDo the work.",
-            encoding="utf-8",
+            '---\nname: good-agent\ndescription: Does something useful\ntools: [Read, Write]\n---\nDo the work.',
+            encoding='utf-8',
         )
-        with patch("claude_runtime._find_agent_file", return_value=agent_file):
-            result = _parsed(rt.subagent_dispatch("good-agent", None, None))
-        assert result["status"] == "success"
-        assert result["platform"] == "claude"
-        assert result["invocation"]["tool"] == "Task"
+        with patch('claude_runtime._find_agent_file', return_value=agent_file):
+            result = _parsed(rt.subagent_dispatch('good-agent', None, None))
+        assert result['status'] == 'success'
+        assert result['platform'] == 'claude'
+        assert result['invocation']['tool'] == 'Task'
 
     def test_context_injected_into_prompt(self, rt, tmp_path):
         """Provided context is merged into the prompt body.
@@ -4218,18 +4075,18 @@ class TestSubagentDispatch:
         does not re-join into a single value).  The assertion therefore checks
         the raw TOON output string rather than the parsed dict.
         """
-        agent_file = tmp_path / "ctx-agent.md"
+        agent_file = tmp_path / 'ctx-agent.md'
         agent_file.write_text(
-            "---\nname: ctx-agent\ndescription: context test\ntools: [Read]\n---\nAgent body.",
-            encoding="utf-8",
+            '---\nname: ctx-agent\ndescription: context test\ntools: [Read]\n---\nAgent body.',
+            encoding='utf-8',
         )
-        with patch("claude_runtime._find_agent_file", return_value=agent_file):
-            raw_output = rt.subagent_dispatch("ctx-agent", None, {"plan_id": "my-plan"})
+        with patch('claude_runtime._find_agent_file', return_value=agent_file):
+            raw_output = rt.subagent_dispatch('ctx-agent', None, {'plan_id': 'my-plan'})
         # Check status via parsed TOON (single-line value — round-trips cleanly).
         result = _parsed(raw_output)
-        assert result["status"] == "success"
+        assert result['status'] == 'success'
         # Check prompt content in the raw TOON string (multi-line value).
-        assert "my-plan" in raw_output
+        assert 'my-plan' in raw_output
 
     def test_prompt_file_override_used_when_provided(self, rt, tmp_path):
         """When prompt_file is provided and exists, its content is used as the prompt body.
@@ -4237,32 +4094,32 @@ class TestSubagentDispatch:
         The prompt value may contain newlines and therefore does not round-trip
         cleanly through TOON.  The assertion checks the raw TOON output string.
         """
-        agent_file = tmp_path / "agent.md"
+        agent_file = tmp_path / 'agent.md'
         agent_file.write_text(
-            "---\nname: agent\ndescription: override test\ntools: [Read]\n---\nOriginal.",
-            encoding="utf-8",
+            '---\nname: agent\ndescription: override test\ntools: [Read]\n---\nOriginal.',
+            encoding='utf-8',
         )
-        override_file = tmp_path / "override.md"
-        override_file.write_text("Override body content.", encoding="utf-8")
+        override_file = tmp_path / 'override.md'
+        override_file.write_text('Override body content.', encoding='utf-8')
 
-        with patch("claude_runtime._find_agent_file", return_value=agent_file):
-            raw_output = rt.subagent_dispatch("agent", str(override_file), None)
+        with patch('claude_runtime._find_agent_file', return_value=agent_file):
+            raw_output = rt.subagent_dispatch('agent', str(override_file), None)
         result = _parsed(raw_output)
-        assert result["status"] == "success"
+        assert result['status'] == 'success'
         # Check prompt content in the raw TOON string (multi-line value).
-        assert "Override body content." in raw_output
+        assert 'Override body content.' in raw_output
 
     def test_missing_prompt_file_returns_error(self, rt, tmp_path):
         """A prompt_file path that does not exist returns error."""
-        agent_file = tmp_path / "agent2.md"
+        agent_file = tmp_path / 'agent2.md'
         agent_file.write_text(
-            "---\nname: agent2\ndescription: test\ntools: [Read]\n---\nBody.",
-            encoding="utf-8",
+            '---\nname: agent2\ndescription: test\ntools: [Read]\n---\nBody.',
+            encoding='utf-8',
         )
-        with patch("claude_runtime._find_agent_file", return_value=agent_file):
-            result = _parsed(rt.subagent_dispatch("agent2", str(tmp_path / "missing.md"), None))
-        assert result["status"] == "error"
-        assert result["error"] == "prompt_not_found"
+        with patch('claude_runtime._find_agent_file', return_value=agent_file):
+            result = _parsed(rt.subagent_dispatch('agent2', str(tmp_path / 'missing.md'), None))
+        assert result['status'] == 'error'
+        assert result['error'] == 'prompt_not_found'
 
 
 # =============================================================================
@@ -4279,9 +4136,9 @@ class TestHealthCheck:
         monkeypatch.chdir(tmp_path)
 
     def test_invalid_check_returns_error(self, rt):
-        result = _parsed(rt.health_check("invalid-check"))
-        assert result["status"] == "error"
-        assert result["error"] == "invalid_check"
+        result = _parsed(rt.health_check('invalid-check'))
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_check'
 
     def test_permissions_check_included_in_all(self, rt, tmp_path, monkeypatch, in_tmp_cwd):
         """checks='all' includes permissions, display, mcp-diagnostics, and hook.
@@ -4293,15 +4150,15 @@ class TestHealthCheck:
         import claude_runtime as _cr
 
         # Ensure no real settings file is accessed.
-        fake_settings = tmp_path / "settings.json"
+        fake_settings = tmp_path / 'settings.json'
         _write_settings(fake_settings, [])
-        monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: fake_settings)
+        monkeypatch.setattr(_cr, '_claude_project_settings_path', lambda *_: fake_settings)
 
-        result = _parsed(rt.health_check("all"))
-        assert "permissions" in result["checks_run"]
-        assert "display" in result["checks_run"]
-        assert "mcp-diagnostics" in result["checks_run"]
-        assert "hook" in result["checks_run"]
+        result = _parsed(rt.health_check('all'))
+        assert 'permissions' in result['checks_run']
+        assert 'display' in result['checks_run']
+        assert 'mcp-diagnostics' in result['checks_run']
+        assert 'hook' in result['checks_run']
 
     def test_unhealthy_mcp_alone_does_not_fail_the_verb(self, rt, monkeypatch):
         """The fail-closed behaviour is scoped to DISPLAY, not generalised.
@@ -4320,12 +4177,12 @@ class TestHealthCheck:
         """
         monkeypatch.setattr(socket, 'create_connection', _refuse_connection)
 
-        result = _parsed(rt.health_check("mcp-diagnostics"))
+        result = _parsed(rt.health_check('mcp-diagnostics'))
 
-        mcp_result = next(r for r in result["results"] if r["check"] == "mcp-diagnostics")
-        assert mcp_result["healthy"] is False
-        assert result["status"] == "success"
-        assert result["all_healthy"] is False
+        mcp_result = next(r for r in result['results'] if r['check'] == 'mcp-diagnostics')
+        assert mcp_result['healthy'] is False
+        assert result['status'] == 'success'
+        assert result['all_healthy'] is False
 
     def test_reachable_mcp_reports_healthy(self, rt, monkeypatch):
         """Matched positive control for the neutralized probe above.
@@ -4344,27 +4201,25 @@ class TestHealthCheck:
         """
         monkeypatch.setattr(socket, 'create_connection', _accept_connection)
 
-        result = _parsed(rt.health_check("mcp-diagnostics"))
+        result = _parsed(rt.health_check('mcp-diagnostics'))
 
-        mcp_result = next(r for r in result["results"] if r["check"] == "mcp-diagnostics")
-        assert mcp_result["healthy"] is True
-        assert result["status"] == "success"
+        mcp_result = next(r for r in result['results'] if r['check'] == 'mcp-diagnostics')
+        assert mcp_result['healthy'] is True
+        assert result['status'] == 'success'
 
     def test_permissions_healthy_when_settings_present(self, rt, tmp_path, monkeypatch, in_tmp_cwd):
         """permissions check is healthy when project settings.json exists."""
         import claude_runtime as _cr
 
-        fake_settings = tmp_path / "project_settings.json"
-        _write_settings(fake_settings, ["Read(**)"])
-        monkeypatch.setattr(_cr, "_claude_project_settings_read_path", lambda *_: fake_settings)
+        fake_settings = tmp_path / 'project_settings.json'
+        _write_settings(fake_settings, ['Read(**)'])
+        monkeypatch.setattr(_cr, '_claude_project_settings_read_path', lambda *_: fake_settings)
 
-        result = _parsed(rt.health_check("permissions"))
-        perm_result = next(r for r in result["results"] if r["check"] == "permissions")
-        assert perm_result["healthy"] is True
+        result = _parsed(rt.health_check('permissions'))
+        perm_result = next(r for r in result['results'] if r['check'] == 'permissions')
+        assert perm_result['healthy'] is True
 
-    def test_permissions_detail_names_the_settings_file_actually_resolved(
-        self, rt, tmp_path, monkeypatch, in_tmp_cwd
-    ):
+    def test_permissions_detail_names_the_settings_file_actually_resolved(self, rt, tmp_path, monkeypatch, in_tmp_cwd):
         """The permissions detail names the resolved file, not a hardcoded literal.
 
         The read selector prefers ``settings.json`` over ``settings.local.json``,
@@ -4374,15 +4229,15 @@ class TestHealthCheck:
         """
         import claude_runtime as _cr
 
-        fake_settings = tmp_path / "settings.json"
-        fake_settings.write_text('{"permissions": {"allow": ["Read(**)"]}}', encoding="utf-8")
-        monkeypatch.setattr(_cr, "_claude_project_settings_read_path", lambda *_: fake_settings)
+        fake_settings = tmp_path / 'settings.json'
+        fake_settings.write_text('{"permissions": {"allow": ["Read(**)"]}}', encoding='utf-8')
+        monkeypatch.setattr(_cr, '_claude_project_settings_read_path', lambda *_: fake_settings)
 
-        result = _parsed(rt.health_check("permissions"))
-        perm_result = next(r for r in result["results"] if r["check"] == "permissions")
-        assert perm_result["healthy"] is True
-        assert "settings.json" in perm_result["detail"]
-        assert "settings.local.json present" not in perm_result["detail"]
+        result = _parsed(rt.health_check('permissions'))
+        perm_result = next(r for r in result['results'] if r['check'] == 'permissions')
+        assert perm_result['healthy'] is True
+        assert 'settings.json' in perm_result['detail']
+        assert 'settings.local.json present' not in perm_result['detail']
 
     # Per-event labels reported by the display check, in order. Derived from
     # _DISPLAY_RENDER_ENTRIES rather than re-listed, so the expected set and the
@@ -4393,8 +4248,8 @@ class TestHealthCheck:
         import claude_runtime as _cr
 
         return tuple(label for label, _block, _matcher in _cr._DISPLAY_RENDER_ENTRIES) + (
-            "statusLine",
-            "env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE",
+            'statusLine',
+            'env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE',
         )
 
     # The subset of the labels above that report on a HOOK entry, and therefore
@@ -4416,15 +4271,15 @@ class TestHealthCheck:
         silently.
         """
         assert self._display_labels()[:9] == (
-            "SessionStart:matcher-less",
-            "SessionStart:clear",
-            "UserPromptSubmit",
-            "Notification",
-            "Stop",
-            "PreToolUse:AskUserQuestion",
-            "PreToolUse:Bash",
-            "PostToolUse:AskUserQuestion",
-            "PostToolUse:Bash",
+            'SessionStart:matcher-less',
+            'SessionStart:clear',
+            'UserPromptSubmit',
+            'Notification',
+            'Stop',
+            'PreToolUse:AskUserQuestion',
+            'PreToolUse:Bash',
+            'PostToolUse:AskUserQuestion',
+            'PostToolUse:Bash',
         )
 
     def test_display_healthy_when_fully_wired(self, rt, tmp_path, in_tmp_cwd):
@@ -4438,19 +4293,19 @@ class TestHealthCheck:
         NOT installed by the terminal-title path, so it reports MISSING without
         making the display unhealthy.
         """
-        target = tmp_path / ".claude" / "settings.local.json"
+        target = tmp_path / '.claude' / 'settings.local.json'
         rt.project_install_hook(str(target))
 
-        result = _parsed(rt.health_check("display"))
-        assert result["status"] == "success"
-        display_result = next(r for r in result["results"] if r["check"] == "display")
-        assert display_result["healthy"] is True
-        detail = display_result["detail"]
+        result = _parsed(rt.health_check('display'))
+        assert result['status'] == 'success'
+        display_result = next(r for r in result['results'] if r['check'] == 'display')
+        assert display_result['healthy'] is True
+        detail = display_result['detail']
         for label in self._display_labels():
-            assert f"{label}: present" in detail
+            assert f'{label}: present' in detail
         # The enforcement entry is orthogonal — absent after a terminal-title
         # install — so it is the ONLY MISSING line and the display stays healthy.
-        assert "PreToolUse:enforcement: MISSING" in detail
+        assert 'PreToolUse:enforcement: MISSING' in detail
 
     # -- Three-state per-label vocabulary: present / divergence / MISSING ----
     #
@@ -4472,25 +4327,25 @@ class TestHealthCheck:
         """
         import claude_runtime as _cr
 
-        rt.project_install_hook(str(tmp_path / ".claude" / "settings.json"))
-        rt.project_install_hook(str(tmp_path / ".claude" / "settings.local.json"))
+        rt.project_install_hook(str(tmp_path / '.claude' / 'settings.json'))
+        rt.project_install_hook(str(tmp_path / '.claude' / 'settings.local.json'))
 
-        result = _parsed(rt.health_check("display"))
-        assert result["status"] == "success"
-        display_result = next(r for r in result["results"] if r["check"] == "display")
-        assert display_result["healthy"] is True
-        detail = display_result["detail"]
+        result = _parsed(rt.health_check('display'))
+        assert result['status'] == 'success'
+        display_result = next(r for r in result['results'] if r['check'] == 'display')
+        assert display_result['healthy'] is True
+        detail = display_result['detail']
 
         labels = self._render_labels()
-        assert labels, "render-label population is empty — nothing would be examined"
+        assert labels, 'render-label population is empty — nothing would be examined'
         for label in labels:
-            assert f"{label}: {_cr._DIVERGENCE_TOKEN}" in detail
-            assert f"{label}: present" not in detail
+            assert f'{label}: {_cr._DIVERGENCE_TOKEN}' in detail
+            assert f'{label}: present' not in detail
 
         # statusLine and env are not hook entries — they merge first-seen-wins,
         # so they stay ``present`` and are NOT swept into the divergence.
-        assert "statusLine: present" in detail
-        assert "env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE: present" in detail
+        assert 'statusLine: present' in detail
+        assert 'env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE: present' in detail
 
     def test_display_single_homed_install_reports_no_divergence(self, rt, tmp_path, in_tmp_cwd):
         """NEGATIVE CONTROL — one settings file reads ``present`` on every label.
@@ -4502,15 +4357,15 @@ class TestHealthCheck:
         """
         import claude_runtime as _cr
 
-        rt.project_install_hook(str(tmp_path / ".claude" / "settings.local.json"))
+        rt.project_install_hook(str(tmp_path / '.claude' / 'settings.local.json'))
 
-        result = _parsed(rt.health_check("display"))
-        assert result["status"] == "success"
-        display_result = next(r for r in result["results"] if r["check"] == "display")
-        assert display_result["healthy"] is True
-        detail = display_result["detail"]
+        result = _parsed(rt.health_check('display'))
+        assert result['status'] == 'success'
+        display_result = next(r for r in result['results'] if r['check'] == 'display')
+        assert display_result['healthy'] is True
+        detail = display_result['detail']
         for label in self._display_labels():
-            assert f"{label}: present" in detail
+            assert f'{label}: present' in detail
         assert _cr._DIVERGENCE_TOKEN not in detail
 
     def test_display_absent_install_reads_missing_and_never_divergence(self, rt, in_tmp_cwd):
@@ -4522,16 +4377,14 @@ class TestHealthCheck:
         """
         import claude_runtime as _cr
 
-        result = _parsed(rt.health_check("display"))
-        display_result = next(r for r in result["results"] if r["check"] == "display")
-        detail = display_result["detail"]
+        result = _parsed(rt.health_check('display'))
+        display_result = next(r for r in result['results'] if r['check'] == 'display')
+        detail = display_result['detail']
         for label in self._display_labels():
-            assert f"{label}: MISSING" in detail
+            assert f'{label}: MISSING' in detail
         assert _cr._DIVERGENCE_TOKEN not in detail
 
-    def test_display_enforcement_label_reads_divergence_when_dual_homed(
-        self, rt, tmp_path, in_tmp_cwd
-    ):
+    def test_display_enforcement_label_reads_divergence_when_dual_homed(self, rt, tmp_path, in_tmp_cwd):
         """Coverage is uniform: the enforcement label diverges like every other.
 
         Pinned rather than left incidental — the enforcement entry is a hook
@@ -4547,20 +4400,17 @@ class TestHealthCheck:
         """
         import claude_runtime as _cr
 
-        for name in ("settings.json", "settings.local.json"):
-            target = str(tmp_path / ".claude" / name)
+        for name in ('settings.json', 'settings.local.json'):
+            target = str(tmp_path / '.claude' / name)
             rt.project_install_hook(target)
             rt.project_install_hook(target, enforcement=True)
 
-        result = _parsed(rt.health_check("display"))
-        assert result["status"] == "success"
-        display_result = next(r for r in result["results"] if r["check"] == "display")
-        assert display_result["healthy"] is True
-        assert (
-            f"PreToolUse:enforcement: {_cr._DIVERGENCE_TOKEN}"
-            in display_result["detail"]
-        )
-        assert "PreToolUse:enforcement: present" not in display_result["detail"]
+        result = _parsed(rt.health_check('display'))
+        assert result['status'] == 'success'
+        display_result = next(r for r in result['results'] if r['check'] == 'display')
+        assert display_result['healthy'] is True
+        assert f'PreToolUse:enforcement: {_cr._DIVERGENCE_TOKEN}' in display_result['detail']
+        assert 'PreToolUse:enforcement: present' not in display_result['detail']
 
     def test_dual_homed_labels_detector_pairs_positive_and_negative(self):
         """The detector itself, as a matched pair on the same input.
@@ -4573,21 +4423,17 @@ class TestHealthCheck:
         import claude_runtime as _cr
 
         installed = {
-            "hooks": {
-                "PreToolUse": [
+            'hooks': {
+                'PreToolUse': [
                     {
-                        "matcher": "",
-                        "hooks": [
-                            {"type": "command", "command": _ENFORCEMENT_HOOK_COMMAND}
-                        ],
+                        'matcher': '',
+                        'hooks': [{'type': 'command', 'command': _ENFORCEMENT_HOOK_COMMAND}],
                     }
                 ]
             }
         }
 
-        assert _cr._dual_homed_labels(installed, installed) == {
-            _cr._ENFORCEMENT_LABEL
-        }
+        assert _cr._dual_homed_labels(installed, installed) == {_cr._ENFORCEMENT_LABEL}
         assert _cr._dual_homed_labels(installed, {}) == set()
         assert _cr._dual_homed_labels({}, installed) == set()
         assert _cr._dual_homed_labels({}, {}) == set()
@@ -4600,9 +4446,9 @@ class TestHealthCheck:
         on status; that is how a missing render entry could sit unnoticed. The
         status is the assertion here.
         """
-        result = _parsed(rt.health_check("display"))
-        assert result["status"] == "error"
-        assert result["error"] == "display_unhealthy"
+        result = _parsed(rt.health_check('display'))
+        assert result['status'] == 'error'
+        assert result['error'] == 'display_unhealthy'
 
     def test_display_failure_preserves_the_full_report(self, rt, in_tmp_cwd):
         """Failing closed costs the caller NO diagnostic information.
@@ -4611,13 +4457,13 @@ class TestHealthCheck:
         success would. A failure that stripped the report would push callers
         back toward ignoring the status to keep the detail.
         """
-        result = _parsed(rt.health_check("display"))
-        assert result["status"] == "error"
-        assert result["all_healthy"] is False
-        display_result = next(r for r in result["results"] if r["check"] == "display")
-        assert display_result["healthy"] is False
+        result = _parsed(rt.health_check('display'))
+        assert result['status'] == 'error'
+        assert result['all_healthy'] is False
+        display_result = next(r for r in result['results'] if r['check'] == 'display')
+        assert display_result['healthy'] is False
         for label in self._display_labels():
-            assert f"{label}: MISSING" in display_result["detail"]
+            assert f'{label}: MISSING' in display_result['detail']
 
     def test_display_partial_install_names_each_missing_entry(self, rt, tmp_path, in_tmp_cwd):
         """A partial install (only SessionStart wired) reports the missing entries by label.
@@ -4626,36 +4472,34 @@ class TestHealthCheck:
         required label must be reported MISSING and the literal token MISSING
         (the load-bearing grep target the menu doc references) must appear.
         """
-        settings_path = tmp_path / ".claude" / "settings.local.json"
+        settings_path = tmp_path / '.claude' / 'settings.local.json'
         settings_path.parent.mkdir(parents=True)
         settings_data = {
-            "hooks": {
-                "SessionStart": [
+            'hooks': {
+                'SessionStart': [
                     {
-                        "matcher": "",
-                        "hooks": [
-                            {"type": "command", "command": _RENDER_HOOK_COMMAND}
-                        ],
+                        'matcher': '',
+                        'hooks': [{'type': 'command', 'command': _RENDER_HOOK_COMMAND}],
                     }
                 ]
             }
         }
-        settings_path.write_text(json.dumps(settings_data), encoding="utf-8")
+        settings_path.write_text(json.dumps(settings_data), encoding='utf-8')
 
-        result = _parsed(rt.health_check("display"))
-        assert result["status"] == "error"
-        display_result = next(r for r in result["results"] if r["check"] == "display")
-        assert display_result["healthy"] is False
-        detail = display_result["detail"]
+        result = _parsed(rt.health_check('display'))
+        assert result['status'] == 'error'
+        display_result = next(r for r in result['results'] if r['check'] == 'display')
+        assert display_result['healthy'] is False
+        detail = display_result['detail']
         # The one wired entry is present.
-        assert "SessionStart:matcher-less: present" in detail
+        assert 'SessionStart:matcher-less: present' in detail
         # Every other required entry is named MISSING — including
         # SessionStart:clear, whose absence the retired expected set could not
         # report at all.
         for label in self._display_labels():
-            if label == "SessionStart:matcher-less":
+            if label == 'SessionStart:matcher-less':
                 continue
-            assert f"{label}: MISSING" in detail
+            assert f'{label}: MISSING' in detail
 
     def test_removing_a_single_entry_flips_the_verdict_to_error(self, rt, tmp_path, in_tmp_cwd):
         """Removing ONE installed entry from a healthy install fails the check.
@@ -4664,23 +4508,21 @@ class TestHealthCheck:
         that returned error unconditionally would satisfy every failure
         assertion in this class.
         """
-        target = tmp_path / ".claude" / "settings.local.json"
+        target = tmp_path / '.claude' / 'settings.local.json'
         rt.project_install_hook(str(target))
-        assert _parsed(rt.health_check("display"))["status"] == "success"
+        assert _parsed(rt.health_check('display'))['status'] == 'success'
 
         settings = json.loads(target.read_text())
-        settings["hooks"]["PostToolUse"] = [
-            entry
-            for entry in settings["hooks"]["PostToolUse"]
-            if entry.get("matcher") != "Bash"
+        settings['hooks']['PostToolUse'] = [
+            entry for entry in settings['hooks']['PostToolUse'] if entry.get('matcher') != 'Bash'
         ]
-        target.write_text(json.dumps(settings), encoding="utf-8")
+        target.write_text(json.dumps(settings), encoding='utf-8')
 
-        result = _parsed(rt.health_check("display"))
-        assert result["status"] == "error"
-        assert result["error"] == "display_unhealthy"
-        display_result = next(r for r in result["results"] if r["check"] == "display")
-        assert "PostToolUse:Bash: MISSING" in display_result["detail"]
+        result = _parsed(rt.health_check('display'))
+        assert result['status'] == 'error'
+        assert result['error'] == 'display_unhealthy'
+        display_result = next(r for r in result['results'] if r['check'] == 'display')
+        assert 'PostToolUse:Bash: MISSING' in display_result['detail']
 
     def test_display_detail_contains_missing_token_when_any_entry_absent(self, rt, in_tmp_cwd):
         """The literal token MISSING is present whenever any required entry is absent.
@@ -4688,66 +4530,58 @@ class TestHealthCheck:
         Load-bearing for the menu-terminal-title.md diagnosis guidance, which
         tells the user to grep the detail field for MISSING.
         """
-        result = _parsed(rt.health_check("display"))
-        display_result = next(r for r in result["results"] if r["check"] == "display")
-        assert "MISSING" in display_result["detail"]
+        result = _parsed(rt.health_check('display'))
+        display_result = next(r for r in result['results'] if r['check'] == 'display')
+        assert 'MISSING' in display_result['detail']
 
     def test_hook_check_healthy_when_session_start_entry_present(self, rt, tmp_path, in_tmp_cwd):
         """hook check is healthy when .claude/settings.json contains SessionStart hook."""
-        settings_path = tmp_path / ".claude" / "settings.json"
+        settings_path = tmp_path / '.claude' / 'settings.json'
         settings_path.parent.mkdir(parents=True)
         settings_data = {
-            "hooks": {
-                "SessionStart": [
-                    {"matcher": "", "hooks": [{"type": "command", "command": _HOOK_COMMAND}]}
-                ]
-            }
+            'hooks': {'SessionStart': [{'matcher': '', 'hooks': [{'type': 'command', 'command': _HOOK_COMMAND}]}]}
         }
-        settings_path.write_text(json.dumps(settings_data), encoding="utf-8")
+        settings_path.write_text(json.dumps(settings_data), encoding='utf-8')
 
-        result = _parsed(rt.health_check("all"))
-        hook_result = next((r for r in result["results"] if r["check"] == "hook"), None)
+        result = _parsed(rt.health_check('all'))
+        hook_result = next((r for r in result['results'] if r['check'] == 'hook'), None)
         assert hook_result is not None
-        assert hook_result["healthy"] is True
+        assert hook_result['healthy'] is True
 
     @staticmethod
     def _write_hook_settings(path: Path) -> None:
         """Write a settings file at *path* containing the SessionStart hook."""
         path.parent.mkdir(parents=True, exist_ok=True)
         settings_data = {
-            "hooks": {
-                "SessionStart": [
-                    {"matcher": "", "hooks": [{"type": "command", "command": _HOOK_COMMAND}]}
-                ]
-            }
+            'hooks': {'SessionStart': [{'matcher': '', 'hooks': [{'type': 'command', 'command': _HOOK_COMMAND}]}]}
         }
-        path.write_text(json.dumps(settings_data), encoding="utf-8")
+        path.write_text(json.dumps(settings_data), encoding='utf-8')
 
     def test_hook_check_healthy_when_in_settings_json_only(self, rt, tmp_path, in_tmp_cwd):
         """hook check is healthy when the hook lives only in .claude/settings.json."""
-        self._write_hook_settings(tmp_path / ".claude" / "settings.json")
+        self._write_hook_settings(tmp_path / '.claude' / 'settings.json')
 
-        result = _parsed(rt.health_check("all"))
-        hook_result = next(r for r in result["results"] if r["check"] == "hook")
-        assert hook_result["healthy"] is True
-        assert "settings.json" in hook_result["detail"]
+        result = _parsed(rt.health_check('all'))
+        hook_result = next(r for r in result['results'] if r['check'] == 'hook')
+        assert hook_result['healthy'] is True
+        assert 'settings.json' in hook_result['detail']
 
     def test_hook_check_healthy_when_in_settings_local_json_only(self, rt, tmp_path, in_tmp_cwd):
         """hook check is healthy when the hook lives only in .claude/settings.local.json."""
-        self._write_hook_settings(tmp_path / ".claude" / "settings.local.json")
+        self._write_hook_settings(tmp_path / '.claude' / 'settings.local.json')
 
-        result = _parsed(rt.health_check("all"))
-        hook_result = next(r for r in result["results"] if r["check"] == "hook")
-        assert hook_result["healthy"] is True
-        assert "settings.local.json" in hook_result["detail"]
+        result = _parsed(rt.health_check('all'))
+        hook_result = next(r for r in result['results'] if r['check'] == 'hook')
+        assert hook_result['healthy'] is True
+        assert 'settings.local.json' in hook_result['detail']
 
     def test_hook_check_unhealthy_when_in_neither_file(self, rt, in_tmp_cwd):
         """hook check is unhealthy when the hook is absent from both settings files."""
 
-        result = _parsed(rt.health_check("all"))
-        hook_result = next(r for r in result["results"] if r["check"] == "hook")
-        assert hook_result["healthy"] is False
-        assert "missing" in hook_result["detail"]
+        result = _parsed(rt.health_check('all'))
+        hook_result = next(r for r in result['results'] if r['check'] == 'hook')
+        assert hook_result['healthy'] is False
+        assert 'missing' in hook_result['detail']
 
     def test_hook_check_healthy_when_in_both_files(self, rt, tmp_path, in_tmp_cwd):
         """hook check names the dual-homed install ``divergence`` — and stays healthy.
@@ -4760,19 +4594,17 @@ class TestHealthCheck:
         """
         import claude_runtime as _cr
 
-        self._write_hook_settings(tmp_path / ".claude" / "settings.json")
-        self._write_hook_settings(tmp_path / ".claude" / "settings.local.json")
+        self._write_hook_settings(tmp_path / '.claude' / 'settings.json')
+        self._write_hook_settings(tmp_path / '.claude' / 'settings.local.json')
 
-        result = _parsed(rt.health_check("all"))
-        hook_result = next(r for r in result["results"] if r["check"] == "hook")
-        assert hook_result["healthy"] is True
-        assert _cr._DIVERGENCE_TOKEN in hook_result["detail"]
-        assert "settings.json" in hook_result["detail"]
-        assert "settings.local.json" in hook_result["detail"]
+        result = _parsed(rt.health_check('all'))
+        hook_result = next(r for r in result['results'] if r['check'] == 'hook')
+        assert hook_result['healthy'] is True
+        assert _cr._DIVERGENCE_TOKEN in hook_result['detail']
+        assert 'settings.json' in hook_result['detail']
+        assert 'settings.local.json' in hook_result['detail']
 
-    def test_hook_check_single_homed_carries_no_divergence_token(
-        self, rt, tmp_path, in_tmp_cwd
-    ):
+    def test_hook_check_single_homed_carries_no_divergence_token(self, rt, tmp_path, in_tmp_cwd):
         """NEGATIVE CONTROL for the hook check's divergence token.
 
         Both one-sided installs are covered, because the arm that emits the
@@ -4782,29 +4614,29 @@ class TestHealthCheck:
         """
         import claude_runtime as _cr
 
-        self._write_hook_settings(tmp_path / ".claude" / "settings.json")
-        shared_only = _parsed(rt.health_check("all"))
-        shared_result = next(r for r in shared_only["results"] if r["check"] == "hook")
-        assert shared_result["healthy"] is True
-        assert _cr._DIVERGENCE_TOKEN not in shared_result["detail"]
+        self._write_hook_settings(tmp_path / '.claude' / 'settings.json')
+        shared_only = _parsed(rt.health_check('all'))
+        shared_result = next(r for r in shared_only['results'] if r['check'] == 'hook')
+        assert shared_result['healthy'] is True
+        assert _cr._DIVERGENCE_TOKEN not in shared_result['detail']
 
-        (tmp_path / ".claude" / "settings.json").unlink()
-        self._write_hook_settings(tmp_path / ".claude" / "settings.local.json")
-        local_only = _parsed(rt.health_check("all"))
-        local_result = next(r for r in local_only["results"] if r["check"] == "hook")
-        assert local_result["healthy"] is True
-        assert _cr._DIVERGENCE_TOKEN not in local_result["detail"]
+        (tmp_path / '.claude' / 'settings.json').unlink()
+        self._write_hook_settings(tmp_path / '.claude' / 'settings.local.json')
+        local_only = _parsed(rt.health_check('all'))
+        local_result = next(r for r in local_only['results'] if r['check'] == 'hook')
+        assert local_result['healthy'] is True
+        assert _cr._DIVERGENCE_TOKEN not in local_result['detail']
 
     def test_all_healthy_reflects_individual_results(self, rt, tmp_path, monkeypatch, in_tmp_cwd):
         """all_healthy is False when any single check is unhealthy."""
         import claude_runtime as _cr
 
         # No settings file → permissions check fails.
-        fake_settings = tmp_path / "nonexistent_settings.json"
-        monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: fake_settings)
+        fake_settings = tmp_path / 'nonexistent_settings.json'
+        monkeypatch.setattr(_cr, '_claude_project_settings_path', lambda *_: fake_settings)
 
-        result = _parsed(rt.health_check("permissions"))
-        assert result["all_healthy"] is False
+        result = _parsed(rt.health_check('permissions'))
+        assert result['all_healthy'] is False
 
 
 # =============================================================================
@@ -4819,50 +4651,40 @@ def _titlestate_reader_cwd(tmp_path, monkeypatch):
     temp tree. Returns the ``claude_runtime`` module."""
     import claude_runtime as _cr
 
-    monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
+    monkeypatch.setattr(_cr, '_PLAN_DIR_NAME', '.plan')
     monkeypatch.chdir(tmp_path)
     return _cr
 
 
 def _titlestate_write_live(tmp_path, plan_id, status):
     """Write the main-live ``status.json`` for *plan_id*."""
-    d = tmp_path / ".plan" / "local" / "plans" / plan_id
+    d = tmp_path / '.plan' / 'local' / 'plans' / plan_id
     d.mkdir(parents=True, exist_ok=True)
-    (d / "status.json").write_text(json.dumps(status), encoding="utf-8")
+    (d / 'status.json').write_text(json.dumps(status), encoding='utf-8')
 
 
 def _titlestate_write_worktree(tmp_path, plan_id, status):
     """Write the phase-5+ worktree ``status.json`` for *plan_id* at
     ``.plan/local/worktrees/{plan_id}/.plan/local/plans/{plan_id}/status.json``."""
-    d = (
-        tmp_path
-        / ".plan"
-        / "local"
-        / "worktrees"
-        / plan_id
-        / ".plan"
-        / "local"
-        / "plans"
-        / plan_id
-    )
+    d = tmp_path / '.plan' / 'local' / 'worktrees' / plan_id / '.plan' / 'local' / 'plans' / plan_id
     d.mkdir(parents=True, exist_ok=True)
-    (d / "status.json").write_text(json.dumps(status), encoding="utf-8")
+    (d / 'status.json').write_text(json.dumps(status), encoding='utf-8')
 
 
-def _titlestate_write_archived(tmp_path, plan_id, status, date_prefix="2026-05-29"):
+def _titlestate_write_archived(tmp_path, plan_id, status, date_prefix='2026-05-29'):
     """Write the archived ``status.json`` for *plan_id*."""
-    d = tmp_path / ".plan" / "local" / "archived-plans" / f"{date_prefix}-{plan_id}"
+    d = tmp_path / '.plan' / 'local' / 'archived-plans' / f'{date_prefix}-{plan_id}'
     d.mkdir(parents=True, exist_ok=True)
-    (d / "status.json").write_text(json.dumps(status), encoding="utf-8")
+    (d / 'status.json').write_text(json.dumps(status), encoding='utf-8')
 
 
 #: The status body planted at each of the three search locations. The bodies are
 #: deliberately distinct, so the state the reader returns NAMES which location it
 #: read rather than merely proving it read something.
 _TITLE_STATE_BODIES: dict[str, dict[str, str]] = {
-    'live': {"current_phase": "3-outline", "short_description": "live"},
-    'worktree': {"current_phase": "5-execute", "short_description": "wt"},
-    'archived': {"current_phase": "6-finalize", "short_description": "arch"},
+    'live': {'current_phase': '3-outline', 'short_description': 'live'},
+    'worktree': {'current_phase': '5-execute', 'short_description': 'wt'},
+    'archived': {'current_phase': '6-finalize', 'short_description': 'arch'},
 }
 
 _TITLE_STATE_WRITERS = {
@@ -4899,7 +4721,7 @@ class TestReadTitleStateWorktree:
     its worktree during phases 5-6 (ADR-002)."""
 
     @pytest.mark.parametrize(
-        ("populated", "expected"),
+        ('populated', 'expected'),
         _TITLE_STATE_PRECEDENCE,
         ids=_TITLE_STATE_PRECEDENCE_IDS,
     )
@@ -4907,31 +4729,29 @@ class TestReadTitleStateWorktree:
         """The reader takes the first of main-live / worktree / archived present."""
         cr = _titlestate_reader_cwd(tmp_path, monkeypatch)
         for location in populated:
-            _TITLE_STATE_WRITERS[location](
-                tmp_path, "wt-plan", _TITLE_STATE_BODIES[location]
-            )
+            _TITLE_STATE_WRITERS[location](tmp_path, 'wt-plan', _TITLE_STATE_BODIES[location])
 
-        assert cr._read_title_state("wt-plan") == expected
+        assert cr._read_title_state('wt-plan') == expected
 
     def test_resolve_worktree_status_json_present_returns_path(self, tmp_path, monkeypatch):
         """Focused probe — a present worktree status.json resolves to its path."""
         cr = _titlestate_reader_cwd(tmp_path, monkeypatch)
-        _titlestate_write_worktree(tmp_path, "wt-plan", {"current_phase": "5-execute"})
+        _titlestate_write_worktree(tmp_path, 'wt-plan', {'current_phase': '5-execute'})
 
-        resolved = cr._resolve_worktree_status_json("wt-plan")
+        resolved = cr._resolve_worktree_status_json('wt-plan')
 
         assert resolved is not None
         expected = (
             tmp_path
-            / ".plan"
-            / "local"
-            / "worktrees"
-            / "wt-plan"
-            / ".plan"
-            / "local"
-            / "plans"
-            / "wt-plan"
-            / "status.json"
+            / '.plan'
+            / 'local'
+            / 'worktrees'
+            / 'wt-plan'
+            / '.plan'
+            / 'local'
+            / 'plans'
+            / 'wt-plan'
+            / 'status.json'
         )
         assert resolved.resolve() == expected.resolve()
 
@@ -4939,7 +4759,7 @@ class TestReadTitleStateWorktree:
         """Focused probe — an absent worktree status.json resolves to None."""
         cr = _titlestate_reader_cwd(tmp_path, monkeypatch)
 
-        assert cr._resolve_worktree_status_json("wt-plan") is None
+        assert cr._resolve_worktree_status_json('wt-plan') is None
 
 
 # =============================================================================
@@ -4951,19 +4771,19 @@ def test_session_reload_directive_resolves_reload_plugins():
     """Claude resolves the /reload-plugins directive (a pure resolver — no
     filesystem), so a plain ClaudeRuntime instance suffices."""
     result = parse_toon(ClaudeRuntime().session_reload_directive())
-    assert result["status"] == "success"
-    assert result["operation"] == "session reload-directive"
-    assert result["directive"] == "/reload-plugins"
+    assert result['status'] == 'success'
+    assert result['operation'] == 'session reload-directive'
+    assert result['directive'] == '/reload-plugins'
 
 
 def test_session_reload_directive_carries_monitor_caveat():
     """The success payload carries the monitor caveat verbatim — plan-marshall
     registers no monitors, so /reload-plugins picks up the regenerated set live."""
     result = parse_toon(ClaudeRuntime().session_reload_directive())
-    caveat = result["caveat"]
-    assert "monitors require a full session restart" in caveat
-    assert "plan-marshall registers no monitors" in caveat
-    assert "/reload-plugins picks up the regenerated executor / agent set live" in caveat
+    caveat = result['caveat']
+    assert 'monitors require a full session restart' in caveat
+    assert 'plan-marshall registers no monitors' in caveat
+    assert '/reload-plugins picks up the regenerated executor / agent set live' in caveat
 
 
 # =============================================================================
@@ -5008,8 +4828,8 @@ class _PollRecorder:
 def _wait_for(
     poll: _PollRecorder,
     *,
-    observable: str = "build-job",
-    reference: str = "job-42",
+    observable: str = 'build-job',
+    reference: str = 'job-42',
     bound_seconds: int = 10,
     clock=None,
     channel_reason: str | None = None,
@@ -5017,9 +4837,9 @@ def _wait_for(
     """Run ``wait_for`` with the observable channel fully stubbed out."""
     clock = clock or _fake_clock(0.0, 0.0, 2.0)
     with (
-        patch("claude_runtime.build_job_verify_channel", lambda: channel_reason),
-        patch("claude_runtime.build_job_poll", poll),
-        patch("time.monotonic", clock),
+        patch('claude_runtime.build_job_verify_channel', lambda: channel_reason),
+        patch('claude_runtime.build_job_poll', poll),
+        patch('time.monotonic', clock),
     ):
         return parse_toon(ClaudeRuntime().wait_for(observable, reference, bound_seconds))
 
@@ -5030,7 +4850,7 @@ class TestWaitForVocabulary:
     def test_observable_kinds_are_a_closed_single_element_set(self):
         """Exactly one observable kind ships — the marshalld build job."""
         assert claude_runtime.WAIT_OBSERVABLES == (claude_runtime.OBSERVABLE_BUILD_JOB,)
-        assert claude_runtime.OBSERVABLE_BUILD_JOB == "build-job"
+        assert claude_runtime.OBSERVABLE_BUILD_JOB == 'build-job'
 
     def test_terminal_outcomes_exclude_pending(self):
         """``pending`` is deliberately absent — a bound is not a verdict."""
@@ -5038,31 +4858,26 @@ class TestWaitForVocabulary:
 
     def test_terminal_outcomes_are_the_four_documented_values(self):
         """The terminal set is exactly succeeded / failed / timed_out / killed."""
-        assert claude_runtime.TERMINAL_OUTCOMES == frozenset(
-            {"succeeded", "failed", "timed_out", "killed"}
-        )
+        assert claude_runtime.TERMINAL_OUTCOMES == frozenset({'succeeded', 'failed', 'timed_out', 'killed'})
 
     def test_every_failure_signature_maps_to_its_own_negative_outcome(self):
         """Silence is not success: each daemon failure status has a distinct
         negative outcome, so a failure can never read as continued waiting."""
         mapping = claude_runtime._BUILD_JOB_STATUS_TO_OUTCOME
-        assert mapping["failure"] == "failed"
-        assert mapping["timeout"] == "timed_out"
-        assert mapping["killed"] == "killed"
-        assert mapping["success"] == "succeeded"
+        assert mapping['failure'] == 'failed'
+        assert mapping['timeout'] == 'timed_out'
+        assert mapping['killed'] == 'killed'
+        assert mapping['success'] == 'succeeded'
 
     def test_killed_does_not_fold_into_failed(self):
         """An externally reaped job keeps its own outcome — it is not a flaky
         build and must not be blind-retried."""
         mapping = claude_runtime._BUILD_JOB_STATUS_TO_OUTCOME
-        assert mapping["killed"] != mapping["failure"]
+        assert mapping['killed'] != mapping['failure']
 
     def test_non_terminal_statuses_are_disjoint_from_the_outcome_map(self):
         """No wire status is both "keep waiting" and a terminal verdict."""
-        assert not (
-            claude_runtime._BUILD_JOB_NON_TERMINAL_STATUSES
-            & set(claude_runtime._BUILD_JOB_STATUS_TO_OUTCOME)
-        )
+        assert not (claude_runtime._BUILD_JOB_NON_TERMINAL_STATUSES & set(claude_runtime._BUILD_JOB_STATUS_TO_OUTCOME))
 
 
 class TestWaitForGuards:
@@ -5070,54 +4885,52 @@ class TestWaitForGuards:
 
     def test_unknown_observable_kind_is_rejected(self):
         """An unrecognised kind errors rather than being silently awaited."""
-        poll = _PollRecorder({"status": "success"})
-        result = _wait_for(poll, observable="ci-run")
+        poll = _PollRecorder({'status': 'success'})
+        result = _wait_for(poll, observable='ci-run')
 
-        assert result["status"] == "error"
-        assert result["error"] == "unsupported_observable"
-        assert "build-job" in result["message"]
+        assert result['status'] == 'error'
+        assert result['error'] == 'unsupported_observable'
+        assert 'build-job' in result['message']
         assert poll.calls == []
 
     def test_opaque_condition_descriptor_is_rejected_as_a_kind(self):
         """A free-form condition string is not an observable kind — a subprocess
         cannot evaluate an arbitrary predicate, so it is refused up front."""
-        poll = _PollRecorder({"status": "success"})
-        result = _wait_for(poll, observable="until the deploy looks healthy")
+        poll = _PollRecorder({'status': 'success'})
+        result = _wait_for(poll, observable='until the deploy looks healthy')
 
-        assert result["error"] == "unsupported_observable"
+        assert result['error'] == 'unsupported_observable'
         assert poll.calls == []
 
-    @pytest.mark.parametrize("bound", [0, -1, -3600])
+    @pytest.mark.parametrize('bound', [0, -1, -3600])
     def test_non_positive_bound_is_rejected(self, bound: int):
         """A bound must be a positive number of seconds."""
-        poll = _PollRecorder({"status": "success"})
+        poll = _PollRecorder({'status': 'success'})
         result = _wait_for(poll, bound_seconds=bound)
 
-        assert result["status"] == "error"
-        assert result["error"] == "invalid_bound"
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_bound'
         assert poll.calls == []
 
     def test_observable_kind_is_validated_before_the_bound(self):
         """With both inputs invalid, the kind rejection wins — the caller is told
         the observable is not inspectable at all before bound arithmetic."""
-        poll = _PollRecorder({"status": "success"})
-        result = _wait_for(poll, observable="ci-run", bound_seconds=0)
+        poll = _PollRecorder({'status': 'success'})
+        result = _wait_for(poll, observable='ci-run', bound_seconds=0)
 
-        assert result["error"] == "unsupported_observable"
+        assert result['error'] == 'unsupported_observable'
 
-    @pytest.mark.parametrize(
-        "reason", ["shared_build_layer_unavailable", "socket_absent", "version_mismatch"]
-    )
+    @pytest.mark.parametrize('reason', ['shared_build_layer_unavailable', 'socket_absent', 'version_mismatch'])
     def test_unverifiable_channel_errors_without_polling(self, reason: str):
         """An unreachable inspection channel is an explicit error — never a pass
         and never an implicit pending."""
-        poll = _PollRecorder({"status": "success"})
+        poll = _PollRecorder({'status': 'success'})
         result = _wait_for(poll, channel_reason=reason)
 
-        assert result["status"] == "error"
-        assert result["error"] == "observable_unreachable"
-        assert reason in result["message"]
-        assert "no outcome is implied" in result["message"]
+        assert result['status'] == 'error'
+        assert result['error'] == 'observable_unreachable'
+        assert reason in result['message']
+        assert 'no outcome is implied' in result['message']
         assert poll.calls == []
 
 
@@ -5125,93 +4938,89 @@ class TestWaitForOutcomes:
     """Normalized outcomes returned for each daemon wire status."""
 
     @pytest.mark.parametrize(
-        ("wire_status", "outcome"),
+        ('wire_status', 'outcome'),
         [
-            ("success", "succeeded"),
-            ("failure", "failed"),
-            ("timeout", "timed_out"),
-            ("killed", "killed"),
+            ('success', 'succeeded'),
+            ('failure', 'failed'),
+            ('timeout', 'timed_out'),
+            ('killed', 'killed'),
         ],
     )
     def test_terminal_status_maps_to_its_outcome(self, wire_status: str, outcome: str):
         """Each terminal wire status normalizes to its outcome, flagged terminal."""
-        poll = _PollRecorder({"status": wire_status})
+        poll = _PollRecorder({'status': wire_status})
         result = _wait_for(poll)
 
-        assert result["status"] == "success"
-        assert result["operation"] == "wait for"
-        assert result["outcome"] == outcome
-        assert result["terminal"] is True
+        assert result['status'] == 'success'
+        assert result['operation'] == 'wait for'
+        assert result['outcome'] == outcome
+        assert result['terminal'] is True
 
     def test_success_payload_echoes_the_intent_and_the_bounds(self):
         """The payload carries the kind, the reference, and both bound figures —
         and nothing observable-shaped."""
-        poll = _PollRecorder({"status": "success"})
-        result = _wait_for(poll, reference="job-99", bound_seconds=10)
+        poll = _PollRecorder({'status': 'success'})
+        result = _wait_for(poll, reference='job-99', bound_seconds=10)
 
-        assert result["observable"] == "build-job"
-        assert result["reference"] == "job-99"
-        assert result["bound_seconds"] == 10
-        assert result["elapsed_seconds"] == 2
+        assert result['observable'] == 'build-job'
+        assert result['reference'] == 'job-99'
+        assert result['bound_seconds'] == 10
+        assert result['elapsed_seconds'] == 2
 
     def test_no_daemon_shaped_field_crosses_the_boundary(self):
         """Daemon-internal keys are not leaked into the normalized payload."""
-        poll = _PollRecorder(
-            {"status": "failure", "log_file": "/tmp/x.log", "errors": [], "exit_code": 1}
-        )
+        poll = _PollRecorder({'status': 'failure', 'log_file': '/tmp/x.log', 'errors': [], 'exit_code': 1})
         result = _wait_for(poll)
 
-        for leaked in ("log_file", "errors", "exit_code"):
+        for leaked in ('log_file', 'errors', 'exit_code'):
             assert leaked not in result
 
     def test_unknown_reference_is_reported_as_such(self):
         """A ``not_found`` job is an error naming the reference, not a verdict."""
-        poll = _PollRecorder({"status": "not_found"})
-        result = _wait_for(poll, reference="job-nope")
+        poll = _PollRecorder({'status': 'not_found'})
+        result = _wait_for(poll, reference='job-nope')
 
-        assert result["status"] == "error"
-        assert result["error"] == "unknown_reference"
-        assert "job-nope" in result["message"]
+        assert result['status'] == 'error'
+        assert result['error'] == 'unknown_reference'
+        assert 'job-nope' in result['message']
 
     def test_channel_lost_mid_wait_is_an_error(self):
         """A channel that drops after verification errors rather than passing."""
-        poll = _PollRecorder({"status": "unreachable", "reason": "connection reset"})
+        poll = _PollRecorder({'status': 'unreachable', 'reason': 'connection reset'})
         result = _wait_for(poll)
 
-        assert result["status"] == "error"
-        assert result["error"] == "observable_unreachable"
-        assert "connection reset" in result["message"]
+        assert result['status'] == 'error'
+        assert result['error'] == 'observable_unreachable'
+        assert 'connection reset' in result['message']
 
     def test_out_of_vocabulary_status_refuses_to_infer(self):
         """An undocumented status is an explicit error — no outcome is guessed."""
-        poll = _PollRecorder({"status": "quantum-superposition"})
+        poll = _PollRecorder({'status': 'quantum-superposition'})
         result = _wait_for(poll)
 
-        assert result["status"] == "error"
-        assert result["error"] == "unexpected_observable_status"
-        assert "quantum-superposition" in result["message"]
+        assert result['status'] == 'error'
+        assert result['error'] == 'unexpected_observable_status'
+        assert 'quantum-superposition' in result['message']
 
-    @pytest.mark.parametrize("non_terminal", ["queued", "running"])
+    @pytest.mark.parametrize('non_terminal', ['queued', 'running'])
     def test_bound_exhaustion_yields_non_terminal_pending(self, non_terminal: str):
         """A bound is not a verdict: exhausting it returns pending / terminal
         false, an explicit unknown the caller must act on."""
-        poll = _PollRecorder({"status": non_terminal})
+        poll = _PollRecorder({'status': non_terminal})
         result = _wait_for(poll, clock=_fake_clock(0.0, 0.0, 11.0), bound_seconds=10)
 
-        assert result["status"] == "success"
-        assert result["outcome"] == "pending"
-        assert result["terminal"] is False
-        assert result["bound_seconds"] == 10
-        assert result["elapsed_seconds"] == 11
+        assert result['status'] == 'success'
+        assert result['outcome'] == 'pending'
+        assert result['terminal'] is False
+        assert result['bound_seconds'] == 10
+        assert result['elapsed_seconds'] == 11
 
     def test_non_terminal_status_is_re_polled_until_terminal(self):
         """A live job is re-polled; the first terminal status ends the wait."""
-        poll = _PollRecorder(
-            {"status": "queued"}, {"status": "running"}, {"status": "success"}
-        )
+        poll = _PollRecorder({'status': 'queued'}, {'status': 'running'}, {'status': 'success'})
         result = _wait_for(poll, clock=_fake_clock(0.0, 0.0, 1.0, 2.0, 3.0))
 
-        assert result["outcome"] == "succeeded"
+        assert result['outcome'] == 'succeeded'
         assert len(poll.calls) == 3
 
 
@@ -5220,14 +5029,14 @@ class TestWaitForPollBound:
 
     def test_poll_bound_is_capped_at_the_daemon_ceiling(self):
         """A caller bound larger than the ceiling is clamped per poll."""
-        poll = _PollRecorder({"status": "success"})
+        poll = _PollRecorder({'status': 'success'})
         _wait_for(poll, bound_seconds=100_000)
 
         assert poll.calls[0][1] == claude_runtime._BUILD_JOB_POLL_BOUND_SECONDS
 
     def test_poll_bound_follows_the_caller_bound_when_smaller(self):
         """Below the ceiling the caller's bound is used verbatim."""
-        poll = _PollRecorder({"status": "success"})
+        poll = _PollRecorder({'status': 'success'})
         _wait_for(poll, bound_seconds=10)
 
         assert poll.calls[0][1] == 10
@@ -5235,17 +5044,17 @@ class TestWaitForPollBound:
     def test_poll_bound_floors_at_one_second(self):
         """A sub-second remainder still issues a one-second poll rather than a
         zero-second one that would return instantly and spin."""
-        poll = _PollRecorder({"status": "success"})
+        poll = _PollRecorder({'status': 'success'})
         _wait_for(poll, bound_seconds=10, clock=_fake_clock(0.0, 9.5, 9.6))
 
         assert poll.calls[0][1] == 1
 
     def test_reference_is_forwarded_to_the_poll_verbatim(self):
         """The caller's reference reaches the daemon unmodified."""
-        poll = _PollRecorder({"status": "success"})
-        _wait_for(poll, reference="job-abc-123")
+        poll = _PollRecorder({'status': 'success'})
+        _wait_for(poll, reference='job-abc-123')
 
-        assert poll.calls[0][0] == "job-abc-123"
+        assert poll.calls[0][0] == 'job-abc-123'
 
 
 class TestBuildJobVerifyChannel:
@@ -5253,68 +5062,68 @@ class TestBuildJobVerifyChannel:
 
     def test_missing_shared_build_layer_is_named(self):
         """An un-importable shared build layer is reported, not swallowed."""
-        with patch("claude_runtime._build_job_modules", lambda: None):
-            assert claude_runtime.build_job_verify_channel() == "shared_build_layer_unavailable"
+        with patch('claude_runtime._build_job_modules', lambda: None):
+            assert claude_runtime.build_job_verify_channel() == 'shared_build_layer_unavailable'
 
     def test_absent_socket_is_named(self, tmp_path):
         """A registry with no socket file yields ``socket_absent``."""
         with (
-            patch("claude_runtime._build_job_modules", lambda: (object(), object())),
-            patch("claude_runtime._build_job_socket_path", lambda: tmp_path / "socket"),
+            patch('claude_runtime._build_job_modules', lambda: (object(), object())),
+            patch('claude_runtime._build_job_socket_path', lambda: tmp_path / 'socket'),
         ):
-            assert claude_runtime.build_job_verify_channel() == "socket_absent"
+            assert claude_runtime.build_job_verify_channel() == 'socket_absent'
 
     def test_unanswered_ping_is_named(self, tmp_path):
         """A present socket that does not answer yields ``unreachable``."""
-        sock = tmp_path / "socket"
-        sock.write_text("", encoding="utf-8")
+        sock = tmp_path / 'socket'
+        sock.write_text('', encoding='utf-8')
         with (
-            patch("claude_runtime._build_job_modules", lambda: (object(), object())),
-            patch("claude_runtime._build_job_socket_path", lambda: sock),
-            patch("claude_runtime._build_job_call", lambda request, timeout: None),
+            patch('claude_runtime._build_job_modules', lambda: (object(), object())),
+            patch('claude_runtime._build_job_socket_path', lambda: sock),
+            patch('claude_runtime._build_job_call', lambda request, timeout: None),
         ):
-            assert claude_runtime.build_job_verify_channel() == "unreachable"
+            assert claude_runtime.build_job_verify_channel() == 'unreachable'
 
     def test_non_ok_handshake_is_named(self, tmp_path):
         """A daemon answering with a non-ok status yields ``handshake_failed``."""
-        sock = tmp_path / "socket"
-        sock.write_text("", encoding="utf-8")
+        sock = tmp_path / 'socket'
+        sock.write_text('', encoding='utf-8')
         with (
-            patch("claude_runtime._build_job_modules", lambda: (object(), object())),
-            patch("claude_runtime._build_job_socket_path", lambda: sock),
+            patch('claude_runtime._build_job_modules', lambda: (object(), object())),
+            patch('claude_runtime._build_job_socket_path', lambda: sock),
             patch(
-                "claude_runtime._build_job_call",
-                lambda request, timeout: {"status": "refused"},
+                'claude_runtime._build_job_call',
+                lambda request, timeout: {'status': 'refused'},
             ),
         ):
-            assert claude_runtime.build_job_verify_channel() == "handshake_failed"
+            assert claude_runtime.build_job_verify_channel() == 'handshake_failed'
 
     def test_protocol_version_mismatch_is_named(self, tmp_path):
         """A daemon speaking another protocol version is not trusted."""
-        protocol = type("P", (), {"PROTOCOL_VERSION": "1"})
-        sock = tmp_path / "socket"
-        sock.write_text("", encoding="utf-8")
+        protocol = type('P', (), {'PROTOCOL_VERSION': '1'})
+        sock = tmp_path / 'socket'
+        sock.write_text('', encoding='utf-8')
         with (
-            patch("claude_runtime._build_job_modules", lambda: (protocol, object())),
-            patch("claude_runtime._build_job_socket_path", lambda: sock),
+            patch('claude_runtime._build_job_modules', lambda: (protocol, object())),
+            patch('claude_runtime._build_job_socket_path', lambda: sock),
             patch(
-                "claude_runtime._build_job_call",
-                lambda request, timeout: {"status": "ok", "version": "99"},
+                'claude_runtime._build_job_call',
+                lambda request, timeout: {'status': 'ok', 'version': '99'},
             ),
         ):
-            assert claude_runtime.build_job_verify_channel() == "version_mismatch"
+            assert claude_runtime.build_job_verify_channel() == 'version_mismatch'
 
     def test_verified_channel_returns_none(self, tmp_path):
         """A reachable daemon on the matching version verifies clean."""
-        protocol = type("P", (), {"PROTOCOL_VERSION": "1"})
-        sock = tmp_path / "socket"
-        sock.write_text("", encoding="utf-8")
+        protocol = type('P', (), {'PROTOCOL_VERSION': '1'})
+        sock = tmp_path / 'socket'
+        sock.write_text('', encoding='utf-8')
         with (
-            patch("claude_runtime._build_job_modules", lambda: (protocol, object())),
-            patch("claude_runtime._build_job_socket_path", lambda: sock),
+            patch('claude_runtime._build_job_modules', lambda: (protocol, object())),
+            patch('claude_runtime._build_job_socket_path', lambda: sock),
             patch(
-                "claude_runtime._build_job_call",
-                lambda request, timeout: {"status": "ok", "version": "1"},
+                'claude_runtime._build_job_call',
+                lambda request, timeout: {'status': 'ok', 'version': '1'},
             ),
         ):
             assert claude_runtime.build_job_verify_channel() is None
@@ -5328,14 +5137,14 @@ class TestBuildJobPoll:
         captured: dict[str, Any] = {}
 
         def _call(request, timeout):
-            captured["request"] = request
-            captured["timeout"] = timeout
-            return {"status": "success"}
+            captured['request'] = request
+            captured['timeout'] = timeout
+            return {'status': 'success'}
 
-        with patch("claude_runtime._build_job_call", _call):
-            claude_runtime.build_job_poll("job-7", 42)
+        with patch('claude_runtime._build_job_call', _call):
+            claude_runtime.build_job_poll('job-7', 42)
 
-        assert captured["request"] == {"op": "wait", "job_id": "job-7", "bound": 42}
+        assert captured['request'] == {'op': 'wait', 'job_id': 'job-7', 'bound': 42}
 
     def test_read_timeout_exceeds_the_long_poll_bound(self):
         """The socket read window outlasts the server-side hold, so a daemon that
@@ -5343,28 +5152,28 @@ class TestBuildJobPoll:
         captured: dict[str, Any] = {}
 
         def _call(request, timeout):
-            captured["timeout"] = timeout
-            return {"status": "success"}
+            captured['timeout'] = timeout
+            return {'status': 'success'}
 
-        with patch("claude_runtime._build_job_call", _call):
-            claude_runtime.build_job_poll("job-7", 42)
+        with patch('claude_runtime._build_job_call', _call):
+            claude_runtime.build_job_poll('job-7', 42)
 
-        assert captured["timeout"] > 42
+        assert captured['timeout'] > 42
 
     def test_unreachable_channel_yields_the_synthetic_payload(self):
         """A failed call surfaces as an explicit unreachable status — never as a
         terminal daemon status and never as an exception."""
-        with patch("claude_runtime._build_job_call", lambda request, timeout: None):
-            payload = claude_runtime.build_job_poll("job-7", 42)
+        with patch('claude_runtime._build_job_call', lambda request, timeout: None):
+            payload = claude_runtime.build_job_poll('job-7', 42)
 
-        assert payload["status"] == claude_runtime._BUILD_JOB_UNREACHABLE_STATUS
-        assert payload["reason"] == "unreachable"
+        assert payload['status'] == claude_runtime._BUILD_JOB_UNREACHABLE_STATUS
+        assert payload['reason'] == 'unreachable'
 
     def test_daemon_payload_passes_through_unmodified(self):
         """A real daemon response is returned as-is for the caller to normalize."""
-        payload = {"status": "failure", "duration_seconds": 12}
-        with patch("claude_runtime._build_job_call", lambda request, timeout: payload):
-            assert claude_runtime.build_job_poll("job-7", 42) == payload
+        payload = {'status': 'failure', 'duration_seconds': 12}
+        with patch('claude_runtime._build_job_call', lambda request, timeout: payload):
+            assert claude_runtime.build_job_poll('job-7', 42) == payload
 
 
 # =============================================================================
@@ -5380,16 +5189,16 @@ class TestBuildJobPoll:
 #: blank append cannot erase the identity), and a list present ALONGSIDE the
 #: legacy scalar, where the list wins.
 _SESSION_READ_CASES = [
-    ({claude_runtime.SESSION_IDS_FIELD: ["sess-first", "sess-second", "sess-newest"]}, "sess-newest"),
-    ({claude_runtime.SESSION_IDS_FIELD: ["sess-only"]}, "sess-only"),
+    ({claude_runtime.SESSION_IDS_FIELD: ['sess-first', 'sess-second', 'sess-newest']}, 'sess-newest'),
+    ({claude_runtime.SESSION_IDS_FIELD: ['sess-only']}, 'sess-only'),
     ({claude_runtime.SESSION_IDS_FIELD: []}, None),
-    ({claude_runtime.SESSION_IDS_FIELD: ["sess-real", "", None]}, "sess-real"),
+    ({claude_runtime.SESSION_IDS_FIELD: ['sess-real', '', None]}, 'sess-real'),
     (
         {
-            claude_runtime.SESSION_IDS_FIELD: ["sess-new"],
-            claude_runtime.LEGACY_SESSION_ID_FIELD: "sess-stale",
+            claude_runtime.SESSION_IDS_FIELD: ['sess-new'],
+            claude_runtime.LEGACY_SESSION_ID_FIELD: 'sess-stale',
         },
-        "sess-new",
+        'sess-new',
     ),
     ({}, None),
 ]
@@ -5424,7 +5233,7 @@ class TestSessionIdentityIsAList:
             seen.append(field)
             return responses.get(field)
 
-        monkeypatch.setattr(_cr, "_read_metadata_field", _fake)
+        monkeypatch.setattr(_cr, '_read_metadata_field', _fake)
         return seen
 
     def test_store_appends_to_the_session_ids_list(self, monkeypatch):
@@ -5437,36 +5246,33 @@ class TestSessionIdentityIsAList:
             returncode = 0
 
         def _fake_run(argv, **kwargs):
-            captured["argv"] = argv
+            captured['argv'] = argv
             return _Result()
 
-        monkeypatch.setattr(_cr.subprocess, "run", _fake_run)
-        assert _cr._manage_status_store_session("plan-a", "sess-9") is True
+        monkeypatch.setattr(_cr.subprocess, 'run', _fake_run)
+        assert _cr._manage_status_store_session('plan-a', 'sess-9') is True
 
-        argv = captured["argv"]
-        assert "--append" in argv, "the capture must append, not overwrite"
-        assert "--set" in argv
+        argv = captured['argv']
+        assert '--append' in argv, 'the capture must append, not overwrite'
+        assert '--set' in argv
         # The field written is the LIST field, and the value is this session.
-        assert argv[argv.index("--field") + 1] == _cr.SESSION_IDS_FIELD
-        assert argv[argv.index("--value") + 1] == "sess-9"
+        assert argv[argv.index('--field') + 1] == _cr.SESSION_IDS_FIELD
+        assert argv[argv.index('--value') + 1] == 'sess-9'
 
-    @pytest.mark.parametrize(
-        ("responses", "expected"), _SESSION_READ_CASES, ids=_SESSION_READ_IDS
-    )
+    @pytest.mark.parametrize(('responses', 'expected'), _SESSION_READ_CASES, ids=_SESSION_READ_IDS)
     def test_read_resolves_the_current_identity(self, monkeypatch, responses, expected):
         """The read resolves the newest usable entry, or reports no identity."""
         import claude_runtime as _cr
 
         self._reads(monkeypatch, responses)
 
-        assert _cr._manage_status_read_session("plan-a") == expected
+        assert _cr._manage_status_read_session('plan-a') == expected
 
     def test_legacy_scalar_is_still_readable(self, monkeypatch):
         """SHIM(B): a status.json written before the list existed still resolves."""
         import claude_runtime as _cr
 
-        seen = self._reads(monkeypatch, {_cr.LEGACY_SESSION_ID_FIELD: "sess-legacy"})
-        assert _cr._manage_status_read_session("plan-a") == "sess-legacy"
+        seen = self._reads(monkeypatch, {_cr.LEGACY_SESSION_ID_FIELD: 'sess-legacy'})
+        assert _cr._manage_status_read_session('plan-a') == 'sess-legacy'
         # The list field is consulted FIRST; the legacy scalar is the fallback.
         assert seen == [_cr.SESSION_IDS_FIELD, _cr.LEGACY_SESSION_ID_FIELD]
-

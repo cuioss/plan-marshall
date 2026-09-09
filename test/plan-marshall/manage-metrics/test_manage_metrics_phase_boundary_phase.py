@@ -9,7 +9,6 @@ Its sections, in order:
 * 1-init start_time backfill
 """
 
-
 from _manage_metrics_fixtures import (
     ns_phase_boundary,
     ns_start_phase,
@@ -192,6 +191,7 @@ def test_phase_boundary_equivalent_to_three_call_sequence(plan_context, monkeypa
 # 1-init start_time backfill (D4)
 # =============================================================================
 
+
 def test_phase_boundary_backfills_1init_start_time_from_status_created(plan_context):
     """1-init lacks start_time → cmd_phase_boundary backfills from status.json.created."""
     # status.json with a known `created` timestamp, well before end_now.
@@ -200,9 +200,7 @@ def test_phase_boundary_backfills_1init_start_time_from_status_created(plan_cont
     _seed_status_created(plan_dir, created_ts)
 
     # No cmd_start_phase call → metrics.toon has no 1-init.start_time.
-    result = cmd_phase_boundary(
-        ns_phase_boundary('boundary-backfill-01', prev_phase='1-init', next_phase='2-refine')
-    )
+    result = cmd_phase_boundary(ns_phase_boundary('boundary-backfill-01', prev_phase='1-init', next_phase='2-refine'))
     assert result['status'] == 'success'
 
     content = (plan_dir / 'work' / 'metrics.toon').read_text()
@@ -259,9 +257,7 @@ def test_phase_boundary_no_backfill_for_non_1init_prev_phase(plan_context):
 def test_phase_boundary_status_json_missing_no_exception(plan_context):
     """status.json missing → call succeeds, 1-init.start_time remains absent, no exception raised."""
     # Do NOT seed status.json. No prior cmd_start_phase either.
-    result = cmd_phase_boundary(
-        ns_phase_boundary('boundary-backfill-04', prev_phase='1-init', next_phase='2-refine')
-    )
+    result = cmd_phase_boundary(ns_phase_boundary('boundary-backfill-04', prev_phase='1-init', next_phase='2-refine'))
     assert result['status'] == 'success'
     # Backfill skipped silently → no start_time, no duration_seconds.
     content = (plan_context.plan_dir_for('boundary-backfill-04') / 'work' / 'metrics.toon').read_text()
@@ -305,9 +301,7 @@ def test_phase_boundary_uses_real_1init_start_time_when_present(plan_context):
     _seed_status_created(plan_dir, old_created_ts)
 
     # Step 3: fused phase-boundary call.
-    result = cmd_phase_boundary(
-        ns_phase_boundary('boundary-real-seed', prev_phase='1-init', next_phase='2-refine')
-    )
+    result = cmd_phase_boundary(ns_phase_boundary('boundary-real-seed', prev_phase='1-init', next_phase='2-refine'))
     assert result['status'] == 'success'
 
     # Step 4: verify the seeded value was used, not the backfill.
@@ -333,9 +327,7 @@ def test_phase_boundary_status_json_malformed_no_exception(plan_context):
     status_path = plan_dir / 'status.json'
     status_path.write_text('{this is not valid json', encoding='utf-8')
 
-    result = cmd_phase_boundary(
-        ns_phase_boundary('boundary-backfill-05', prev_phase='1-init', next_phase='2-refine')
-    )
+    result = cmd_phase_boundary(ns_phase_boundary('boundary-backfill-05', prev_phase='1-init', next_phase='2-refine'))
     assert result['status'] == 'success'
     content = (plan_dir / 'work' / 'metrics.toon').read_text()
     init_idx = content.index('[1-init]')

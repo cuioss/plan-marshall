@@ -15,7 +15,6 @@ side-effect. A record counts as *recorded* iff a dict entry with a terminal
 ``status.metadata.phase_steps[phase][step]``. The verb performs zero writes.
 """
 
-
 from argparse import Namespace
 
 from conftest import load_script_module
@@ -23,9 +22,7 @@ from conftest import load_script_module
 _lifecycle = load_script_module('plan-marshall', 'manage-status', '_cmd_lifecycle.py', '_assert_step_lifecycle')
 
 
-_assert_step = load_script_module(
-    'plan-marshall', 'manage-status', '_cmd_assert_step_recorded.py', '_assert_step_cmd'
-)
+_assert_step = load_script_module('plan-marshall', 'manage-status', '_cmd_assert_step_recorded.py', '_assert_step_cmd')
 
 
 _mark_step = load_script_module('plan-marshall', 'manage-status', '_cmd_mark_step.py', '_assert_step_mark_step')
@@ -102,6 +99,4 @@ def _seed_step(
     unanchored head-dependent ``done``, so a seed without it would never write
     the record the assertion under test reads back.
     """
-    cmd_mark_step_done(
-        _mark_args(plan_id, phase, step, outcome, head_at_completion=head_at_completion)
-    )
+    cmd_mark_step_done(_mark_args(plan_id, phase, step, outcome, head_at_completion=head_at_completion))

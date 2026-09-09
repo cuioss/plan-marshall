@@ -49,7 +49,9 @@ from conftest import load_script_module, parse_ns
 #: ``build_server`` into ``sys.modules`` would collide with the sibling modules
 #: that import it plainly.
 client = load_script_module(
-    'plan-marshall', 'build-server-client', 'build_server.py',
+    'plan-marshall',
+    'build-server-client',
+    'build_server.py',
     register=False,
 )
 
@@ -60,8 +62,14 @@ client = load_script_module(
 #: with the tmp-path-bound command line under test. ``register=False`` so it never
 #: publishes a second ``build_server`` in ``sys.modules``.
 _SUBMIT_ARGS = parse_ns(
-    'plan-marshall', 'build-server-client', 'build_server.py',
-    'submit', '--command', '[]', '--plan-id', 'p1',
+    'plan-marshall',
+    'build-server-client',
+    'build_server.py',
+    'submit',
+    '--command',
+    '[]',
+    '--plan-id',
+    'p1',
     register=False,
 )
 
@@ -126,9 +134,7 @@ def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
 
 
 def _submit_args(tmp_path) -> argparse.Namespace:
-    command = json.dumps(
-        [sys.executable, str(tmp_path / '.plan' / 'execute-script.py'), 'a:b:c', 'run']
-    )
+    command = json.dumps([sys.executable, str(tmp_path / '.plan' / 'execute-script.py'), 'a:b:c', 'run'])
     return _variant(
         _SUBMIT_ARGS,
         command=command,

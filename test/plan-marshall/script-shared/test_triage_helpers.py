@@ -183,9 +183,7 @@ _PRIORITY_IDS = [
 
 @pytest.mark.parametrize('priority,boost,expected', _PRIORITY_CASES, ids=_PRIORITY_IDS)
 def test_calculate_priority(priority: str, boost: int | None, expected: str):
-    resolved = (
-        calculate_priority(priority) if boost is None else calculate_priority(priority, boost)
-    )
+    resolved = calculate_priority(priority) if boost is None else calculate_priority(priority, boost)
 
     assert resolved == expected
 

@@ -50,8 +50,9 @@ def _module(directory: Path, name: str) -> Path:
 def _replace_first_three(target: Path) -> dict[str, Any]:
     return {
         'textDocument': {'uri': path_to_uri(target), 'version': 2},
-        'edits': [{'range': {'start': {'line': 0, 'character': 0}, 'end': {'line': 0, 'character': 3}},
-                   'newText': 'bar'}],
+        'edits': [
+            {'range': {'start': {'line': 0, 'character': 0}, 'end': {'line': 0, 'character': 3}}, 'newText': 'bar'}
+        ],
     }
 
 
@@ -84,10 +85,12 @@ def _configure_fake_server(
 def test_resource_operation_fails_the_verb_and_modifies_nothing(tmp_path):
     """A rename-file operation is refused, not applied minus the part we cannot do."""
     target = _module(tmp_path, 'm.py')
-    workspace_edit = {'documentChanges': [
-        {'kind': 'rename', 'oldUri': path_to_uri(target), 'newUri': path_to_uri(tmp_path / 'renamed.py')},
-        _replace_first_three(target),
-    ]}
+    workspace_edit = {
+        'documentChanges': [
+            {'kind': 'rename', 'oldUri': path_to_uri(target), 'newUri': path_to_uri(tmp_path / 'renamed.py')},
+            _replace_first_three(target),
+        ]
+    }
     session, _transport = _session(workspace_edit, [[], []])
 
     result = client._run_edit(session, 'python', str(target), 0, 0, 'bar')
@@ -104,16 +107,31 @@ def test_resource_operation_is_refused_through_the_cli_seam(plan_context, tmp_pa
     """The same refusal, with real argparse and real TOON rendering in between."""
     plan_base = Path(plan_context.fixture_dir)
     target = _module(tmp_path, 'm.py')
-    workspace_edit = {'documentChanges': [
-        {'kind': 'create', 'uri': path_to_uri(tmp_path / 'new.py')},
-        _replace_first_three(target),
-    ]}
+    workspace_edit = {
+        'documentChanges': [
+            {'kind': 'create', 'uri': path_to_uri(tmp_path / 'new.py')},
+            _replace_first_three(target),
+        ]
+    }
     _configure_fake_server(plan_base, workspace_edit)
 
     result = run_script(
-        SCRIPT_PATH, 'edit', '--language', 'python', '--project-path', str(tmp_path),
-        '--file', str(target), '--line', '0', '--character', '0', '--new-name', 'bar',
-        env_overrides={'PLAN_BASE_DIR': str(plan_base)}, timeout=60,
+        SCRIPT_PATH,
+        'edit',
+        '--language',
+        'python',
+        '--project-path',
+        str(tmp_path),
+        '--file',
+        str(target),
+        '--line',
+        '0',
+        '--character',
+        '0',
+        '--new-name',
+        'bar',
+        env_overrides={'PLAN_BASE_DIR': str(plan_base)},
+        timeout=60,
     )
 
     assert result.returncode == 0
@@ -130,12 +148,14 @@ def test_resource_operation_is_refused_through_the_cli_seam(plan_context, tmp_pa
 
 def test_three_file_edit_failing_on_the_second_rolls_all_three_back(tmp_path):
     first, second, third = (_module(tmp_path, name) for name in ('a.py', 'b.py', 'c.py'))
-    workspace_edit = {'documentChanges': [
-        _replace_first_three(first),
-        # No 'range' — raises inside the apply loop, after a.py is rewritten.
-        {'textDocument': {'uri': path_to_uri(second)}, 'edits': [{'newText': 'oops'}]},
-        _replace_first_three(third),
-    ]}
+    workspace_edit = {
+        'documentChanges': [
+            _replace_first_three(first),
+            # No 'range' — raises inside the apply loop, after a.py is rewritten.
+            {'textDocument': {'uri': path_to_uri(second)}, 'edits': [{'newText': 'oops'}]},
+            _replace_first_three(third),
+        ]
+    }
     session, _transport = _session(workspace_edit, [[], [], []])
 
     result = client._run_edit(session, 'python', str(first), 0, 0, 'bar')
@@ -161,15 +181,18 @@ def test_multi_file_edit_opens_each_uri_once_with_monotonic_versions(tmp_path):
     result = client._run_edit(session, 'python', str(first), 0, 0, 'bar')
     assert result['status'] == 'success'
 
-    opened = [params['textDocument']['uri'] for method, params in transport.notifications
-              if method == 'textDocument/didOpen']
+    opened = [
+        params['textDocument']['uri'] for method, params in transport.notifications if method == 'textDocument/didOpen'
+    ]
     assert sorted(opened) == sorted({path_to_uri(first), path_to_uri(second)})
     assert len(opened) == len(set(opened))  # a.py is reached twice but opened once
 
     for uri in set(opened):
-        versions = [params['textDocument']['version'] for method, params in transport.notifications
-                    if method in ('textDocument/didOpen', 'textDocument/didChange')
-                    and params['textDocument']['uri'] == uri]
+        versions = [
+            params['textDocument']['version']
+            for method, params in transport.notifications
+            if method in ('textDocument/didOpen', 'textDocument/didChange') and params['textDocument']['uri'] == uri
+        ]
         assert versions == sorted(versions)
         assert len(versions) == len(set(versions))
 
@@ -207,16 +230,35 @@ def test_workspace_symbol_rows_carry_path_through_the_cli_seam(plan_context, tmp
     """
     plan_base = Path(plan_context.fixture_dir)
     defining = _module(tmp_path, 'defines.py')
-    _configure_fake_server(plan_base, {}, workspace_symbols=[
-        {'name': 'Thing', 'kind': 5, 'containerName': 'Enclosing',
-         'location': {'uri': path_to_uri(defining),
-                      'range': {'start': {'line': 7, 'character': 4}, 'end': {'line': 7, 'character': 9}}}},
-    ])
+    _configure_fake_server(
+        plan_base,
+        {},
+        workspace_symbols=[
+            {
+                'name': 'Thing',
+                'kind': 5,
+                'containerName': 'Enclosing',
+                'location': {
+                    'uri': path_to_uri(defining),
+                    'range': {'start': {'line': 7, 'character': 4}, 'end': {'line': 7, 'character': 9}},
+                },
+            },
+        ],
+    )
 
     result = run_script(
-        SCRIPT_PATH, 'lookup', '--language', 'python', '--project-path', str(tmp_path),
-        '--kind', 'workspace-symbol', '--symbol', 'Thing',
-        env_overrides={'PLAN_BASE_DIR': str(plan_base)}, timeout=60,
+        SCRIPT_PATH,
+        'lookup',
+        '--language',
+        'python',
+        '--project-path',
+        str(tmp_path),
+        '--kind',
+        'workspace-symbol',
+        '--symbol',
+        'Thing',
+        env_overrides={'PLAN_BASE_DIR': str(plan_base)},
+        timeout=60,
     )
 
     assert result.returncode == 0, result.stderr
@@ -232,17 +274,44 @@ def test_workspace_symbol_rows_carry_path_through_the_cli_seam(plan_context, tmp
 def test_document_symbol_and_workspace_symbol_emit_the_same_key_set(tmp_path):
     target = _module(tmp_path, 'm.py')
     document_rows = client._run_lookup(
-        LspSession(FakeTransport({'textDocument/documentSymbol': [
-            {'name': 'Widget', 'kind': 5, 'range': {'start': {'line': 0, 'character': 0}}},
-        ]}), str(tmp_path)),
-        'python', 'document-symbol', str(target), 0, 0, None,
+        LspSession(
+            FakeTransport(
+                {
+                    'textDocument/documentSymbol': [
+                        {'name': 'Widget', 'kind': 5, 'range': {'start': {'line': 0, 'character': 0}}},
+                    ]
+                }
+            ),
+            str(tmp_path),
+        ),
+        'python',
+        'document-symbol',
+        str(target),
+        0,
+        0,
+        None,
     )['locations']
     workspace_rows = client._run_lookup(
-        LspSession(FakeTransport({'workspace/symbol': [
-            {'name': 'Widget', 'kind': 5,
-             'location': {'uri': path_to_uri(target), 'range': {'start': {'line': 0, 'character': 0}}}},
-        ]}), str(tmp_path)),
-        'python', 'workspace-symbol', None, 0, 0, 'Widget',
+        LspSession(
+            FakeTransport(
+                {
+                    'workspace/symbol': [
+                        {
+                            'name': 'Widget',
+                            'kind': 5,
+                            'location': {'uri': path_to_uri(target), 'range': {'start': {'line': 0, 'character': 0}}},
+                        },
+                    ]
+                }
+            ),
+            str(tmp_path),
+        ),
+        'python',
+        'workspace-symbol',
+        None,
+        0,
+        0,
+        'Widget',
     )['locations']
 
     assert set(document_rows[0]) == set(workspace_rows[0])
@@ -252,15 +321,25 @@ def test_document_symbol_and_workspace_symbol_emit_the_same_key_set(tmp_path):
 def test_document_symbol_flattens_a_class_so_its_methods_appear(tmp_path):
     target = _module(tmp_path, 'm.py')
     symbols = [
-        {'name': 'Widget', 'kind': 5, 'range': {'start': {'line': 0, 'character': 0}}, 'children': [
-            {'name': 'spin', 'kind': 6, 'range': {'start': {'line': 1, 'character': 4}}},
-            {'name': 'stop', 'kind': 6, 'range': {'start': {'line': 4, 'character': 4}}},
-        ]},
+        {
+            'name': 'Widget',
+            'kind': 5,
+            'range': {'start': {'line': 0, 'character': 0}},
+            'children': [
+                {'name': 'spin', 'kind': 6, 'range': {'start': {'line': 1, 'character': 4}}},
+                {'name': 'stop', 'kind': 6, 'range': {'start': {'line': 4, 'character': 4}}},
+            ],
+        },
         {'name': 'top_level', 'kind': 12, 'range': {'start': {'line': 8, 'character': 0}}},
     ]
     rows = client._run_lookup(
         LspSession(FakeTransport({'textDocument/documentSymbol': symbols}), str(tmp_path)),
-        'python', 'document-symbol', str(target), 0, 0, None,
+        'python',
+        'document-symbol',
+        str(target),
+        0,
+        0,
+        None,
     )['locations']
 
     by_name = {row['name']: row for row in rows}

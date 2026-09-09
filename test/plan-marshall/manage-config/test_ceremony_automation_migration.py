@@ -91,9 +91,7 @@ def test_each_knob_resolves_from_phase_6_finalize(plan_context):
 
     # each knob resolves to its post-migration default, read-only
     for knob, expected in _MIGRATED_KNOBS:
-        result = _cmd_quality_phases.cmd_phase(
-            Namespace(verb='get', field=knob), 'phase-6-finalize'
-        )
+        result = _cmd_quality_phases.cmd_phase(Namespace(verb='get', field=knob), 'phase-6-finalize')
         assert result['status'] == 'success', f'{knob} must resolve'
         assert result['field'] == knob
         assert result['value'] is expected, f'{knob} default must be {expected}'
@@ -108,9 +106,7 @@ def test_final_merge_without_asking_resolves_via_step_get(plan_context):
     before = _hash_marshal(plan_context.fixture_dir)
 
     step_id, param, expected = _STEP_OWNED_KNOB
-    result = _cmd_quality_phases.cmd_phase(
-        Namespace(verb='step', step_verb='get', step_id=step_id), 'phase-6-finalize'
-    )
+    result = _cmd_quality_phases.cmd_phase(Namespace(verb='step', step_verb='get', step_id=step_id), 'phase-6-finalize')
 
     assert result['status'] == 'success'
     assert result['step_id'] == step_id
@@ -139,9 +135,7 @@ def test_step_owned_knob_homed_in_configurable_declaration():
 
     step_id, param, expected = _STEP_OWNED_KNOB
     step_params = resolve_step_defaults(step_id)
-    assert param in step_params, (
-        f"{param} must be declared under {step_id}'s configurable: frontmatter"
-    )
+    assert param in step_params, f"{param} must be declared under {step_id}'s configurable: frontmatter"
     assert step_params[param] is expected
     # the centralized constant is gone
     assert not hasattr(_config_defaults, '_FINALIZE_STEP_PARAMS'), (
@@ -156,9 +150,7 @@ def test_get_default_config_homes_flat_knobs_under_phase_6_finalize():
     cfg = _config_defaults.get_default_config()
     finalize = cfg['plan']['phase-6-finalize']
     for knob, expected in _MIGRATED_KNOBS:
-        assert finalize.get(knob) is expected, (
-            f'plan.phase-6-finalize.{knob} must default to {expected}'
-        )
+        assert finalize.get(knob) is expected, f'plan.phase-6-finalize.{knob} must default to {expected}'
 
 
 def test_get_default_config_homes_step_owned_knob_under_branch_cleanup():
@@ -166,17 +158,13 @@ def test_get_default_config_homes_step_owned_knob_under_branch_cleanup():
     cfg = _config_defaults.get_default_config()
     step_id, param, expected = _STEP_OWNED_KNOB
     branch_cleanup = _params_for(cfg['plan']['phase-6-finalize']['steps'], step_id)
-    assert branch_cleanup.get(param) is expected, (
-        f'steps[{step_id}].{param} must default to {expected}'
-    )
+    assert branch_cleanup.get(param) is expected, f'steps[{step_id}].{param} must default to {expected}'
 
 
 def test_ceremony_policy_block_is_dissolved():
     """No top-level ceremony_policy key and no DEFAULT_CEREMONY_POLICY constant survive."""
     cfg = _config_defaults.get_default_config()
-    assert 'ceremony_policy' not in cfg, (
-        'ceremony_policy must be absent from get_default_config() after dissolution'
-    )
+    assert 'ceremony_policy' not in cfg, 'ceremony_policy must be absent from get_default_config() after dissolution'
     assert not hasattr(_config_defaults, 'DEFAULT_CEREMONY_POLICY'), (
         'DEFAULT_CEREMONY_POLICY must be gone after the dissolution'
     )
@@ -192,9 +180,7 @@ def test_migrated_defaults_match_historical_values():
     finalize = _config_defaults.DEFAULT_PLAN_FINALIZE
     # forward auto-continue True, reverse halt False, final-merge-without-asking False
     for knob, expected in _MIGRATED_KNOBS:
-        assert finalize[knob] is expected, (
-            f'{knob} must resolve to its post-migration default {expected}'
-        )
+        assert finalize[knob] is expected, f'{knob} must resolve to its post-migration default {expected}'
 
 
 def test_live_override_survives_and_resolves(plan_context):
@@ -208,17 +194,13 @@ def test_live_override_survives_and_resolves(plan_context):
     _cmd_init.cmd_init(Namespace(force=False))
     marshal_path = plan_context.fixture_dir / 'marshal.json'
     config = json.loads(marshal_path.read_text(encoding='utf-8'))
-    config.setdefault('plan', {}).setdefault('phase-6-finalize', {})[
-        'loop_back_without_asking'
-    ] = True
+    config.setdefault('plan', {}).setdefault('phase-6-finalize', {})['loop_back_without_asking'] = True
     marshal_path.write_text(json.dumps(config, indent=2), encoding='utf-8')
 
     overridden = _cmd_quality_phases.cmd_phase(
         Namespace(verb='get', field='loop_back_without_asking'), 'phase-6-finalize'
     )
-    sibling = _cmd_quality_phases.cmd_phase(
-        Namespace(verb='get', field='finalize_without_asking'), 'phase-6-finalize'
-    )
+    sibling = _cmd_quality_phases.cmd_phase(Namespace(verb='get', field='finalize_without_asking'), 'phase-6-finalize')
 
     # override wins; untouched sibling falls back to default
     assert overridden['value'] is True

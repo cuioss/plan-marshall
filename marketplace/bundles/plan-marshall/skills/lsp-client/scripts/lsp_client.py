@@ -212,15 +212,17 @@ def _symbol_rows(symbols: list[dict[str, Any]], default_path: str = '') -> list[
                 path = uri_to_path(location.get('uri', '')) or default_path
             start = rng.get('start') or {}
             name = symbol.get('name', '')
-            rows.append({
-                'name': name,
-                'kind': symbol.get('kind', 0),
-                'path': path,
-                'line': start.get('line', 0),
-                'character': start.get('character', 0),
-                'container': container or symbol.get('containerName', '') or '',
-                'depth': depth,
-            })
+            rows.append(
+                {
+                    'name': name,
+                    'kind': symbol.get('kind', 0),
+                    'path': path,
+                    'line': start.get('line', 0),
+                    'character': start.get('character', 0),
+                    'container': container or symbol.get('containerName', '') or '',
+                    'depth': depth,
+                }
+            )
             children = symbol.get('children')
             if isinstance(children, list):
                 _walk(children, name, depth + 1)
@@ -307,7 +309,9 @@ def _edit_failure(language: str, reason: str, footprint: list[dict[str, Any]], *
     return payload
 
 
-def _run_edit(session: LspSession, language: str, path: str, line: int, character: int, new_name: str) -> dict[str, Any]:
+def _run_edit(
+    session: LspSession, language: str, path: str, line: int, character: int, new_name: str
+) -> dict[str, Any]:
     """Rename a symbol via a WorkspaceEdit, capture footprint, apply, re-verify.
 
     The footprint is captured from the edit; the edit is applied all-or-nothing;
@@ -338,8 +342,11 @@ def _run_edit(session: LspSession, language: str, path: str, line: int, characte
         # A resource operation cannot be performed here. Applying the text-edit
         # remainder would land a partial refactor reported as a success.
         return _edit_failure(
-            language, REASON_UNSUPPORTED_RESOURCE_OPERATION, footprint,
-            notes=notes, unapplied_operation_count=len(notes),
+            language,
+            REASON_UNSUPPORTED_RESOURCE_OPERATION,
+            footprint,
+            notes=notes,
+            unapplied_operation_count=len(notes),
         )
 
     if not footprint:
@@ -364,8 +371,12 @@ def _run_edit(session: LspSession, language: str, path: str, line: int, characte
             # No baseline verdict — nothing has been written yet, so there is
             # nothing to roll back, but the edit cannot be verified either.
             return _edit_failure(
-                language, REASON_DIAGNOSTICS_UNAVAILABLE, footprint,
-                rolled_back=False, unverified_path=target, phase='before',
+                language,
+                REASON_DIAGNOSTICS_UNAVAILABLE,
+                footprint,
+                rolled_back=False,
+                unverified_path=target,
+                phase='before',
             )
         before_by_path[target] = diagnostics
         errors_before += count_error_diagnostics(diagnostics)
@@ -374,7 +385,9 @@ def _run_edit(session: LspSession, language: str, path: str, line: int, characte
         _applied_footprint, originals = apply_workspace_edit(workspace_edit)
     except WorkspaceApplyError as exc:
         payload = _edit_failure(
-            language, REASON_APPLY_FAILED, footprint,
+            language,
+            REASON_APPLY_FAILED,
+            footprint,
             failed_path=exc.path,
             rolled_back=exc.restore_error is None,
             detail=str(exc.cause),
@@ -404,8 +417,12 @@ def _run_edit(session: LspSession, language: str, path: str, line: int, characte
         if diagnostics is None:
             restore_files(originals)
             return _edit_failure(
-                language, REASON_DIAGNOSTICS_UNAVAILABLE, footprint,
-                rolled_back=True, unverified_path=target, phase='after',
+                language,
+                REASON_DIAGNOSTICS_UNAVAILABLE,
+                footprint,
+                rolled_back=True,
+                unverified_path=target,
+                phase='after',
                 errors_before=errors_before,
             )
         errors_after += count_error_diagnostics(diagnostics)
@@ -424,7 +441,9 @@ def _run_edit(session: LspSession, language: str, path: str, line: int, characte
     if verdict == 'failed':
         restore_files(originals)
         return _edit_failure(
-            language, REASON_DIAGNOSTICS_WORSENED, footprint,
+            language,
+            REASON_DIAGNOSTICS_WORSENED,
+            footprint,
             rolled_back=True,
             errors_before=errors_before,
             errors_after=errors_after,
@@ -561,7 +580,11 @@ def cmd_lookup(args: argparse.Namespace) -> dict[str, Any]:
     if args.kind in ('definition', 'references', 'document-symbol') and path is None:
         return {'status': 'error', 'error': 'missing_file', 'message': f'--file is required for kind={args.kind}'}
     if args.kind == 'workspace-symbol' and not args.symbol:
-        return {'status': 'error', 'error': 'missing_symbol', 'message': '--symbol is required for kind=workspace-symbol'}
+        return {
+            'status': 'error',
+            'error': 'missing_symbol',
+            'message': '--symbol is required for kind=workspace-symbol',
+        }
     return _with_session(
         args,
         lambda session: _run_lookup(session, args.language, args.kind, path, args.line, args.character, args.symbol),

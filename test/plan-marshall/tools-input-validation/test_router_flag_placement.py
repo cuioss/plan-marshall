@@ -111,13 +111,9 @@ def test_example_renders_the_callers_real_verb_and_moves_the_flag(monkeypatch, c
     The verb was in the failing argv all along, so a placeholder puts the reader
     back where argparse's raw message left them.
     """
-    monkeypatch.setattr(
-        'sys.argv', ['architecture', 'find', '--pattern', '*.py', '--project-dir', '/repo']
-    )
+    monkeypatch.setattr('sys.argv', ['architecture', 'find', '--pattern', '*.py', '--project-dir', '/repo'])
     with pytest.raises(SystemExit):
-        parse_args_with_toon_errors(
-            _build_parser(), notation='plan-marshall:manage-architecture:architecture'
-        )
+        parse_args_with_toon_errors(_build_parser(), notation='plan-marshall:manage-architecture:architecture')
 
     stderr = capsys.readouterr().err
 

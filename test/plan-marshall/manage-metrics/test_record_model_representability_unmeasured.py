@@ -9,7 +9,6 @@ Its sections, in order:
 * Fixtures: one file carrying both representations, and the legacy floor
 """
 
-
 from __future__ import annotations
 from _record_model_representability_fixtures import (
     _CONTEXT_COLUMNS,
@@ -51,6 +50,7 @@ def test_unmeasured_dispatch_columns_are_absent_rather_than_zero(plan_context):
 # =============================================================================
 # Fixtures: one file carrying both representations, and the legacy floor
 # =============================================================================
+
 
 def test_unmeasured_fixture_separates_measured_zeros_from_unmeasured_in_the_retrospective_reader():
     """One file, both representations, read per column by the retrospective reader."""
@@ -114,6 +114,7 @@ def test_unmeasured_fixture_separates_measured_zeros_from_unmeasured_in_the_audi
 # The composed record: no field asserts an unearned value
 # =============================================================================
 
+
 def test_measured_zero_dispatch_column_is_present_as_zero(plan_context):
     """A measured `0` is still `0` — on the row, and in the result.
 
@@ -129,9 +130,7 @@ def test_measured_zero_dispatch_column_is_present_as_zero(plan_context):
     # ... and only the two genuinely unmeasured columns are withheld.
     assert 'output_tokens' not in mixed_result
     assert 'cache_creation_input_tokens' not in mixed_result
-    assert mixed_result['unmeasured_context_load_columns'] == (
-        'output_tokens,cache_creation_input_tokens'
-    )
+    assert mixed_result['unmeasured_context_load_columns'] == ('output_tokens,cache_creation_input_tokens')
 
     rows = _data_rows(scenario['boundary_path'].read_text(encoding='utf-8'))
     assert rows[2].endswith(',clean_exit_queue_empty,45000,16,150000,0,unmeasured,0,unmeasured')

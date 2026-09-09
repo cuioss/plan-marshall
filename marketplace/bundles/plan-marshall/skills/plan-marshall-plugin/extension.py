@@ -370,9 +370,7 @@ class Extension(ExtensionBase, PathAttributionBase, DerivationResolverBase):
                     # An unhashable target would raise TypeError on the
                     # membership test below, and an empty or absent one names no
                     # endpoint that could be resolved either way.
-                    suppressed['malformed-reference'].append(
-                        f'{module_name} -> {target!r} [{LSP_DEP_TYPE}]'
-                    )
+                    suppressed['malformed-reference'].append(f'{module_name} -> {target!r} [{LSP_DEP_TYPE}]')
                     continue
 
                 candidate = f'{module_name} -> {target} [{LSP_DEP_TYPE}]'

@@ -42,9 +42,7 @@ from conftest import load_script_module
 # ``register=False``: only the returned module is needed, and a sibling suite
 # imports ``review_completeness`` plainly. Registering under that name would put two
 # copies in play, reachable by different routes and differing by collection order.
-rc = load_script_module(
-    'plan-marshall', 'automatic-review', 'review_completeness.py', register=False
-)
+rc = load_script_module('plan-marshall', 'automatic-review', 'review_completeness.py', register=False)
 
 _AUTOMATIC_REVIEW_STEP_ID = 'plan-marshall:automatic-review'
 
@@ -135,11 +133,7 @@ class TestLegacySemanticsSurviveTheMigration:
             plan_id = f'lbm-demotion-{index}'
             plan_context.plan_dir_for(plan_id)
             # Prove every OTHER bot, so only this one can be the blocker.
-            proven = {
-                other: bot_registry.participation_evidence(other)[0]
-                for other in required
-                if other != bot
-            }
+            proven = {other: bot_registry.participation_evidence(other)[0] for other in required if other != bot}
 
             result = rc.check_completeness(plan_id, required, participated_bots=proven)
 
@@ -292,9 +286,7 @@ class TestLiveConfigVerb:
         assert result['status'] == 'success'
         assert result['state'] == 'noop'
 
-    def test_verb_is_a_noop_success_on_an_uninitialized_project(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ):
+    def test_verb_is_a_noop_success_on_an_uninitialized_project(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         """No marshal.json at all is a typed no-op, never an escaping FileNotFoundError.
 
         The migration runs as a sub-step of the steward upgrade flow, which can be

@@ -22,7 +22,6 @@ construction and the second half survives: ``_exec_summary_is_drop``. Both
 instantiations are pinned below, each against the control that bounds it.
 """
 
-
 from __future__ import annotations
 
 from argparse import Namespace
@@ -231,9 +230,7 @@ class TestExecutiveSummaryResolvesTheQuestionAgainstItsOwnRenderer:
 
     def test_a_narrative_written_to_the_wrong_key_is_a_loud_drop(self, tmp_path):
         fragments = {'_executive-summary': {'narrative': 'written to the wrong key'}}
-        content, written, omitted, dropped = _cr.build_document(
-            'demo', 'live', tmp_path, None, fragments
-        )
+        content, written, omitted, dropped = _cr.build_document('demo', 'live', tmp_path, None, fragments)
         assert '## Executive Summary' not in content
         assert 'Executive Summary' not in written
         assert 'Executive Summary' in dropped
@@ -272,9 +269,7 @@ class TestExecutiveSummaryResolvesTheQuestionAgainstItsOwnRenderer:
         defect was precisely that they landed in opposite partitions.
         """
         fragments = {'_executive-summary': {'summary': '   '}}
-        _c, written, omitted, dropped = _cr.build_document(
-            'demo', 'live', tmp_path, None, fragments
-        )
+        _c, written, omitted, dropped = _cr.build_document('demo', 'live', tmp_path, None, fragments)
         assert 'Executive Summary' not in written
         assert 'Executive Summary' in omitted
         assert dropped == []
@@ -291,15 +286,11 @@ class TestExecutiveSummaryResolvesTheQuestionAgainstItsOwnRenderer:
         was the defect.
         """
         fragments = {'_executive-summary': {'summary': ''}}
-        _c, _w, omitted, dropped = _cr.build_document(
-            'demo', 'live', tmp_path, None, fragments
-        )
+        _c, _w, omitted, dropped = _cr.build_document('demo', 'live', tmp_path, None, fragments)
         assert 'Executive Summary' in omitted
         assert dropped == []
 
-    def test_a_blank_summary_beside_a_wrong_key_narrative_is_still_a_loud_drop(
-        self, tmp_path
-    ):
+    def test_a_blank_summary_beside_a_wrong_key_narrative_is_still_a_loud_drop(self, tmp_path):
         """⛔ The over-correction control: the exclusion must not MUTE the clause.
 
         Same blank ``summary``, but a narrative under another key. Had the fix
@@ -310,18 +301,14 @@ class TestExecutiveSummaryResolvesTheQuestionAgainstItsOwnRenderer:
         ``summary`` KEY from the payload question, not of the question itself.
         """
         fragments = {'_executive-summary': {'summary': '   ', 'narrative': 'real prose'}}
-        _c, _w, omitted, dropped = _cr.build_document(
-            'demo', 'live', tmp_path, None, fragments
-        )
+        _c, _w, omitted, dropped = _cr.build_document('demo', 'live', tmp_path, None, fragments)
         assert 'Executive Summary' in dropped
         assert 'Executive Summary' not in omitted
 
     def test_an_envelope_only_executive_summary_is_a_benign_omission(self, tmp_path):
         """The matched negative bounding the drop above: no payload, nothing lost."""
         fragments = {'_executive-summary': {'status': 'success', 'aspect': 'executive_summary'}}
-        _c, written, omitted, dropped = _cr.build_document(
-            'demo', 'live', tmp_path, None, fragments
-        )
+        _c, written, omitted, dropped = _cr.build_document('demo', 'live', tmp_path, None, fragments)
         assert 'Executive Summary' not in written
         assert 'Executive Summary' in omitted
         assert dropped == []
@@ -333,9 +320,7 @@ class TestExecutiveSummaryResolvesTheQuestionAgainstItsOwnRenderer:
         clause is what makes a bare ``0`` loud — a value a reader can act on that
         the ``summary``-only renderer will never show.
         """
-        _c, _w, _omitted, dropped = _cr.build_document(
-            'demo', 'live', tmp_path, None, {'_executive-summary': 0}
-        )
+        _c, _w, _omitted, dropped = _cr.build_document('demo', 'live', tmp_path, None, {'_executive-summary': 0})
         assert dropped == ['Executive Summary']
         assert _cr._fragment_has_payload(0) is False
 
@@ -365,9 +350,7 @@ class TestEmitPathStillRendersAttributedCleanRuns:
             'counts': {'total': 0, 'by_surface': {}},
             'findings': [],
         }
-        _c, written, omitted, dropped = _cr.build_document(
-            'demo', 'live', tmp_path, None, {fragment_key: fragment}
-        )
+        _c, written, omitted, dropped = _cr.build_document('demo', 'live', tmp_path, None, {fragment_key: fragment})
         assert heading in written
         assert heading not in omitted
         assert dropped == []

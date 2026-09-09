@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the deterministic envelope bin-packer (_tasks_envelope.py)."""
 
-
 import json
 
 from _tasks_envelope_fixtures import SCRIPT_PATH, _seed_task_file
@@ -19,8 +18,10 @@ def test_cli_pack_envelopes_returns_success(plan_context):
     result = run_script(
         SCRIPT_PATH,
         'pack-envelopes',
-        '--plan-id', 'env-success',
-        '--per-envelope-budget-tokens', '100',
+        '--plan-id',
+        'env-success',
+        '--per-envelope-budget-tokens',
+        '100',
     )
 
     assert result.returncode == 0
@@ -37,8 +38,10 @@ def test_cli_pack_envelopes_single_envelope(plan_context):
     result = run_script(
         SCRIPT_PATH,
         'pack-envelopes',
-        '--plan-id', 'env-single',
-        '--per-envelope-budget-tokens', '100',
+        '--plan-id',
+        'env-single',
+        '--per-envelope-budget-tokens',
+        '100',
     )
 
     assert result.returncode == 0
@@ -52,8 +55,10 @@ def test_cli_pack_envelopes_empty_plan(plan_context):
     result = run_script(
         SCRIPT_PATH,
         'pack-envelopes',
-        '--plan-id', 'env-empty',
-        '--per-envelope-budget-tokens', '100',
+        '--plan-id',
+        'env-empty',
+        '--per-envelope-budget-tokens',
+        '100',
     )
 
     assert result.returncode == 0
@@ -69,8 +74,10 @@ def test_cli_pack_envelopes_rejects_non_positive_budget(plan_context):
     result = run_script(
         SCRIPT_PATH,
         'pack-envelopes',
-        '--plan-id', 'env-bad-budget',
-        '--per-envelope-budget-tokens', '0',
+        '--plan-id',
+        'env-bad-budget',
+        '--per-envelope-budget-tokens',
+        '0',
     )
 
     assert result.returncode == 0
@@ -90,8 +97,10 @@ def test_cli_pack_envelopes_reports_error_for_unsized_task(plan_context):
     result = run_script(
         SCRIPT_PATH,
         'pack-envelopes',
-        '--plan-id', 'env-unsized',
-        '--per-envelope-budget-tokens', '100',
+        '--plan-id',
+        'env-unsized',
+        '--per-envelope-budget-tokens',
+        '100',
     )
 
     assert result.returncode == 0
@@ -105,7 +114,8 @@ def test_cli_pack_envelopes_missing_budget_arg_exits_2(plan_context):
     result = run_script(
         SCRIPT_PATH,
         'pack-envelopes',
-        '--plan-id', 'env-no-budget',
+        '--plan-id',
+        'env-no-budget',
     )
 
     assert result.returncode == 2

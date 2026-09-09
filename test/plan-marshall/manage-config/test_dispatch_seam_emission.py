@@ -120,9 +120,7 @@ def _global_dispatch_lines() -> list[str]:
     path = get_log_path(None, 'work')
     if not path.exists():
         return []
-    return [
-        line for line in path.read_text(encoding='utf-8').splitlines() if '[DISPATCH]' in line
-    ]
+    return [line for line in path.read_text(encoding='utf-8').splitlines() if '[DISPATCH]' in line]
 
 
 # =============================================================================
@@ -406,6 +404,4 @@ def test_sentinel_plan_id_is_displayed_as_none_and_filed_globally(plan_context):
     assert len(lines) == 1, f'expected exactly one global [DISPATCH] line, got {lines}'
     # ... and the line agrees with where it was filed.
     assert 'plan_id=none' in lines[0]
-    assert 'plan_id=NO_PLAN' not in lines[0], (
-        'the audit line must not name a plan the record was not filed under'
-    )
+    assert 'plan_id=NO_PLAN' not in lines[0], 'the audit line must not name a plan the record was not filed under'

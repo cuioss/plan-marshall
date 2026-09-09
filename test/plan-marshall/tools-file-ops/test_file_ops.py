@@ -56,16 +56,19 @@ def in_tmp_cwd(tmp_path, monkeypatch):
     """Run with the process working directory inside an isolated tmp_path."""
     monkeypatch.chdir(tmp_path)
 
+
 @pytest.fixture()
 def no_plan_base_dir(monkeypatch):
     """Clear PLAN_BASE_DIR so resolution falls through to its next source."""
     monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
+
 
 @pytest.fixture()
 def plan_base_dir_at_tmp(tmp_path, monkeypatch):
     """Point PLAN_BASE_DIR at an isolated tmp_path and yield that root."""
     monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
     return tmp_path
+
 
 @pytest.fixture(autouse=True)
 def _reset_base_dir_override():
@@ -122,9 +125,7 @@ def test_get_temp_dir_appends_only_a_named_subdir(tmp_path, plan_base_dir_at_tmp
         'an-already-terminated-content-is-not-double-newlined',
     ],
 )
-def test_atomic_write_file_writes_exactly_one_terminating_newline(
-    tmp_path, relative_path, content, expected_text
-):
+def test_atomic_write_file_writes_exactly_one_terminating_newline(tmp_path, relative_path, content, expected_text):
     """The file holds the content plus exactly one terminating newline."""
     path = tmp_path / relative_path
 
@@ -1180,8 +1181,7 @@ def _git(*args: str, cwd: Path) -> None:
     )
     if completed.returncode != 0:
         raise AssertionError(
-            f'git {" ".join(args)} failed in {cwd} (exit {completed.returncode}): '
-            f'{completed.stderr.strip()}'
+            f'git {" ".join(args)} failed in {cwd} (exit {completed.returncode}): {completed.stderr.strip()}'
         )
 
 
@@ -1207,9 +1207,15 @@ def real_main_checkout_and_worktree(tmp_path):
     main_root.mkdir()
     _git('init', '--quiet', cwd=main_root)
     _git(
-        '-c', 'user.email=tests@plan-marshall.invalid',
-        '-c', 'user.name=plan-marshall tests',
-        'commit', '--allow-empty', '--quiet', '-m', 'root',
+        '-c',
+        'user.email=tests@plan-marshall.invalid',
+        '-c',
+        'user.name=plan-marshall tests',
+        'commit',
+        '--allow-empty',
+        '--quiet',
+        '-m',
+        'root',
         cwd=main_root,
     )
 

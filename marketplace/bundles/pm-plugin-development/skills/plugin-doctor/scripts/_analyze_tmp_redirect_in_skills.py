@@ -205,9 +205,7 @@ def _scan_file(path: Path) -> list[dict]:
             operator = m.group(1)
             target_prefix = m.group(2)
             redirect_type = 'append' if operator == '>>' else 'overwrite'
-            findings.append(
-                _make_finding(path, idx + 1, redirect_type, target_prefix, line, m.start())
-            )
+            findings.append(_make_finding(path, idx + 1, redirect_type, target_prefix, line, m.start()))
 
     return findings
 

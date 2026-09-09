@@ -50,9 +50,7 @@ from conftest import MARKETPLACE_ROOT
 # ---------------------------------------------------------------------------
 
 # The retrospective skill body whose Step 6 emits the mark-step-done token.
-_RETROSPECTIVE_SKILL = (
-    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'SKILL.md'
-)
+_RETROSPECTIVE_SKILL = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'SKILL.md'
 
 # The canonical manifest step_id this regression pins the documented token to.
 _CANONICAL_STEP_ID = 'plan-marshall:plan-retrospective'
@@ -111,9 +109,7 @@ def test_documented_step_token_matches_manifest_step_id() -> None:
     step missing. Pinning the documented token to the manifest step_id catches
     the divergence at test time.
     """
-    assert _RETROSPECTIVE_SKILL.is_file(), (
-        f'expected retrospective skill body not found: {_RETROSPECTIVE_SKILL}'
-    )
+    assert _RETROSPECTIVE_SKILL.is_file(), f'expected retrospective skill body not found: {_RETROSPECTIVE_SKILL}'
 
     documented = _documented_step_token(_RETROSPECTIVE_SKILL)
 

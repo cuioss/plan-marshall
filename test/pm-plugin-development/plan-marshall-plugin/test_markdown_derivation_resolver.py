@@ -38,9 +38,7 @@ from conftest import load_skill_module
 
 def _load_plugin_extension():
     """Load the pm-plugin-development Extension under a distinct module name."""
-    return load_skill_module(
-        'pm-plugin-development', 'plan-marshall-plugin', 'extension.py', 'plugin_dev_extension'
-    )
+    return load_skill_module('pm-plugin-development', 'plan-marshall-plugin', 'extension.py', 'plugin_dev_extension')
 
 
 _extension_module = _load_plugin_extension()
@@ -183,9 +181,7 @@ def test_non_markdown_dep_types_are_ignored_without_a_note():
 def test_out_of_scope_entry_does_not_suppress_a_sibling_markdown_edge():
     """An ignored out-of-scope reference leaves the same module's markdown edges intact."""
     derived = {
-        'alpha': _module(
-            [_ref('beta', NON_MARKDOWN_DEP_TYPES[0]), _ref('beta', MARKDOWN_DEP_TYPES[0])]
-        ),
+        'alpha': _module([_ref('beta', NON_MARKDOWN_DEP_TYPES[0]), _ref('beta', MARKDOWN_DEP_TYPES[0])]),
         'beta': _module([]),
     }
 
@@ -292,9 +288,7 @@ def test_aggregated_note_bounds_its_sample_and_reports_the_overflow():
     ``NOTE_SAMPLE_LIMIT``, so the test keeps exercising the overflow branch at
     any cap value instead of quietly ceasing to reach it.
     """
-    unresolved = [
-        _ref(f'ghost-{index}', 'skill', resolved=False) for index in range(OVERFLOW_SAMPLE_SIZE)
-    ]
+    unresolved = [_ref(f'ghost-{index}', 'skill', resolved=False) for index in range(OVERFLOW_SAMPLE_SIZE)]
     derived = {'alpha': _module(unresolved)}
 
     _edges, notes = _derive(derived)

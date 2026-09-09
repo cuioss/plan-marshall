@@ -44,13 +44,9 @@ from _dispatch_roster import section_lines
 
 from conftest import MARKETPLACE_ROOT
 
-_SKILL_DOC = (
-    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'SKILL.md'
-)
+_SKILL_DOC = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'SKILL.md'
 
-_STEP_3_HEADING = (
-    '### Step 3: Execute Step Pipeline (Manifest-Driven, Resumable, Timeout-Wrapped)'
-)
+_STEP_3_HEADING = '### Step 3: Execute Step Pipeline (Manifest-Driven, Resumable, Timeout-Wrapped)'
 _STEP_3_STOP_PREFIXES = ('### ', '## ')
 
 #: The FOR statement that opens the dispatch loop body.
@@ -155,9 +151,7 @@ def _block_suppresses_via_mark_step_done(block: str) -> bool:
 
 def _blocks_using_the_suppression_flag(blocks: dict[str, str]) -> list[str]:
     """Return item markers whose block passes ``--no-completion-log`` on a command."""
-    return sorted(
-        item for item, block in blocks.items() if _block_suppresses_via_mark_step_done(block)
-    )
+    return sorted(item for item, block in blocks.items() if _block_suppresses_via_mark_step_done(block))
 
 
 def _terminal_exits_suppressing_emission(blocks: dict[str, str]) -> list[str]:
@@ -168,9 +162,7 @@ def _terminal_exits_suppressing_emission(blocks: dict[str, str]) -> list[str]:
     the silent gap the fusion exists to close.
     """
     return sorted(
-        item
-        for item, block in _terminal_exit_blocks(blocks).items()
-        if _block_suppresses_via_mark_step_done(block)
+        item for item, block in _terminal_exit_blocks(blocks).items() if _block_suppresses_via_mark_step_done(block)
     )
 
 
@@ -229,9 +221,7 @@ class TestFusionInvariants:
         )
 
     def test_no_terminal_exit_block_suppresses_the_fused_emission(self):
-        suppressed = _terminal_exits_suppressing_emission(
-            _item_blocks(_loop_body(_skill_text()))
-        )
+        suppressed = _terminal_exits_suppressing_emission(_item_blocks(_loop_body(_skill_text())))
 
         assert not suppressed, (
             f'Item block(s) {suppressed} record a terminal step outcome, leave the '
@@ -273,7 +263,7 @@ class TestDetectorsBite:
         )
         # The fused-emission prose (no --message "[STEP] …") must NOT match.
         post_fix = (
-            '      The `outcome=skipped` recording above already emitted this step\'s\n'
+            "      The `outcome=skipped` recording above already emitted this step's\n"
             '      `[STEP] … Completed step:` line: `mark-step-done` fuses that line.\n'
         )
         assert not _hand_written_completion_emits(post_fix)
@@ -290,8 +280,7 @@ class TestDetectorsBite:
             '      HALT the FOR loop.\n'
         )
         assert _terminal_exits_suppressing_emission(offending) == ['9z'], (
-            'Suppress-on-terminal-exit detector failed to flag a record-then-leave '
-            'block carrying --no-completion-log'
+            'Suppress-on-terminal-exit detector failed to flag a record-then-leave block carrying --no-completion-log'
         )
 
         # The same block WITHOUT the flag reaches the fused emission — not flagged.

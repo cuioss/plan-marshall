@@ -7,7 +7,6 @@ import. Below, verbatim, is the docstring of the module they were split from:
 Tests for ``check-artifact-consistency.py``.
 """
 
-
 from __future__ import annotations
 
 import json
@@ -181,9 +180,7 @@ def _setup_multi_deliverable_plan(
     plan_dir = base / 'plans' / plan_id
     build_happy_plan_dir(plan_dir)
 
-    (plan_dir / 'solution_outline.md').write_text(
-        _outline_with_deliverable_blocks(blocks), encoding='utf-8'
-    )
+    (plan_dir / 'solution_outline.md').write_text(_outline_with_deliverable_blocks(blocks), encoding='utf-8')
 
     tasks_dir = plan_dir / 'tasks'
     for leftover in tasks_dir.glob('TASK-*.json'):
@@ -225,6 +222,7 @@ def _run_archived(plan_dir: Path):
 # legacy key → unresolvable). These tests exercise the tier-1/legacy/unresolvable
 # endpoints; the capture and merge-commit tiers are covered in test_footprint_resolver.py.
 # =============================================================================
+
 
 def _load_check_module():
     return load_script_module(

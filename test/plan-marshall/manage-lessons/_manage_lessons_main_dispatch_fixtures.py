@@ -28,7 +28,6 @@ Lesson-ids use the canonical ``YYYY-MM-DD-HH-NNN`` shape (hyphenated, so
 titles / status fields rather than coerced numeric values.
 """
 
-
 import sys
 
 
@@ -47,9 +46,7 @@ from toon_parser import parse_toon
 # Loaded once with a UNIQUE module name so coverage of manage-lessons.py is
 # attributed to the real source file without colliding with the
 # ``_lessons_helpers`` ``manage_lessons`` registration used by sibling suites.
-_mod = load_script_module(
-    'plan-marshall', 'manage-lessons', 'manage-lessons.py', 'manage_lessons_main_dispatch'
-)
+_mod = load_script_module('plan-marshall', 'manage-lessons', 'manage-lessons.py', 'manage_lessons_main_dispatch')
 
 
 def _run_main(monkeypatch, capsys, argv: list[str]) -> tuple[int, dict]:

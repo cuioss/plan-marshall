@@ -353,9 +353,7 @@ def _latest_job_id_for_plan(plan_id: str) -> str | None:
     matches = [
         entry.get('job_id')
         for entry in entries
-        if entry.get('kind') == KIND_JOB
-        and entry.get('plan_id') == plan_id
-        and entry.get('job_id')
+        if entry.get('kind') == KIND_JOB and entry.get('plan_id') == plan_id and entry.get('job_id')
     ]
     return str(matches[-1]) if matches else None
 

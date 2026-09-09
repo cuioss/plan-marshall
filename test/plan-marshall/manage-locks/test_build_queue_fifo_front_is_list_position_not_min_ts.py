@@ -7,7 +7,6 @@ concurrency limiter with a FIFO waiting queue.
 Its one section: FIFO front is list position, NOT admit-ts (inverted-ts regression).
 """
 
-
 from __future__ import annotations
 
 from argparse import Namespace

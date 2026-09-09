@@ -165,6 +165,4 @@ def test_fixture_files_have_no_test_collisions():
     for agent_md in agent_files:
         if agent_md.name in fixture_names:
             collisions.append(agent_md)
-    assert collisions == [], (
-        f'POC fixture filenames collide with production agents: {collisions}'
-    )
+    assert collisions == [], f'POC fixture filenames collide with production agents: {collisions}'

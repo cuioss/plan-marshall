@@ -48,7 +48,6 @@ Coverage:
   directory (``head_unresolvable``).
 """
 
-
 from __future__ import annotations
 
 import json

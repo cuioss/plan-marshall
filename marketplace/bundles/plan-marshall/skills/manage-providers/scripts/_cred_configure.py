@@ -288,7 +288,7 @@ def run_configure(args: argparse.Namespace) -> int:
     if mismatch_warnings:
         result['warnings'] = [
             f"Supplied {w['field']}='{w['supplied']}' disagrees with pom.xml "
-            f"<sonar.{'organization' if w['field'] == 'organization' else 'projectKey'}>"
+            f'<sonar.{"organization" if w["field"] == "organization" else "projectKey"}>'
             f"='{w['pom_value']}' — keeping the supplied value"
             for w in mismatch_warnings
         ]

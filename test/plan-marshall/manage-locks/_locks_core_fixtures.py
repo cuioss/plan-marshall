@@ -30,7 +30,6 @@ The guard / RMW tests operate on free-standing JSON files under ``tmp_path`` and
 need no plan-tree scaffolding.
 """
 
-
 from __future__ import annotations
 
 from conftest import load_script_module

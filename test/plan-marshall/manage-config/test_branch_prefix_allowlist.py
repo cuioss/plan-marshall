@@ -33,7 +33,10 @@ _WORKFLOW_PATH = PROJECT_ROOT / '.github' / 'workflows' / 'python-verify.yml'
 _MARSHAL_PATH = PROJECT_ROOT / '.plan' / 'marshal.json'
 
 _config_defaults_mod = load_script_module(
-    'plan-marshall', 'manage-config', '_config_defaults.py', module_name='_config_defaults_for_branch_prefix_allowlist_test'
+    'plan-marshall',
+    'manage-config',
+    '_config_defaults.py',
+    module_name='_config_defaults_for_branch_prefix_allowlist_test',
 )
 
 
@@ -134,8 +137,7 @@ def test_workflow_push_allowlist_excludes_docs_prefix():
     # Anchor the match so legitimate prefixes that merely share the 'docs'
     # substring (e.g. 'documents/*') are not false-positives.
     assert not any(re.match(r'^docs(/|\*|$)', entry) for entry in actual), (
-        "'docs/' is explicitly retired and must be absent from the "
-        f'python-verify.yml push allowlist; found: {actual}'
+        f"'docs/' is explicitly retired and must be absent from the python-verify.yml push allowlist; found: {actual}"
     )
 
 
@@ -145,6 +147,5 @@ def test_docs_prefix_absent_from_working_prefixes():
 
     # 'docs/' is explicitly retired from the working-prefix set.
     assert 'docs/' not in prefixes, (
-        "'docs/' is explicitly retired and must be absent from "
-        f'project.working_prefixes; found: {prefixes}'
+        f"'docs/' is explicitly retired and must be absent from project.working_prefixes; found: {prefixes}"
     )

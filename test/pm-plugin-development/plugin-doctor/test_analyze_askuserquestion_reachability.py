@@ -17,6 +17,7 @@ Covers the askuserquestion-in-dispatched-workflow analyzer:
 - Clean baseline: an empty tree produces no findings
 - The rule appears in the doctor-marketplace rule registry (provenance table)
 """
+
 from pathlib import Path
 
 from conftest import PROJECT_ROOT, load_script_module
@@ -49,12 +50,7 @@ PROVENANCE_PATH = (
 )
 
 # A frontmatter block declaring the execution-context workflow-body marker.
-_IMPLEMENTS_FM = (
-    '---\n'
-    'implements: plan-marshall:extension-api/standards/'
-    'ext-point-execution-context-workflow\n'
-    '---\n'
-)
+_IMPLEMENTS_FM = '---\nimplements: plan-marshall:extension-api/standards/ext-point-execution-context-workflow\n---\n'
 
 # A canonical AskUserQuestion invocation block (header + questions: sub-key).
 _ASKUSER_BLOCK = (
@@ -119,23 +115,12 @@ class TestFlagsDispatchedLeaf:
         assert_analyzer_findings(analyze_askuserquestion_reachability, tmp_path, [RULE_ID])
 
     def test_question_subkey_variant_flagged(self, tmp_path):
-        content = (
-            _IMPLEMENTS_FM
-            + '\n# Fixture\n\n'
-            + 'AskUserQuestion:\n'
-            + '  question: "single question form"\n'
-        )
+        content = _IMPLEMENTS_FM + '\n# Fixture\n\n' + 'AskUserQuestion:\n' + '  question: "single question form"\n'
         _make_workflow_doc(tmp_path, content)
         assert_analyzer_findings(analyze_askuserquestion_reachability, tmp_path, [RULE_ID])
 
     def test_multiple_blocks_each_flagged(self, tmp_path):
-        content = (
-            _IMPLEMENTS_FM
-            + '\n# Fixture\n\n'
-            + _ASKUSER_BLOCK
-            + '\nProse between blocks.\n\n'
-            + _ASKUSER_BLOCK
-        )
+        content = _IMPLEMENTS_FM + '\n# Fixture\n\n' + _ASKUSER_BLOCK + '\nProse between blocks.\n\n' + _ASKUSER_BLOCK
         _make_workflow_doc(tmp_path, content)
         assert_analyzer_findings(analyze_askuserquestion_reachability, tmp_path, [RULE_ID] * 2)
 
@@ -186,26 +171,14 @@ class TestDoesNotFlag:
     def test_non_workflow_doc_not_flagged(self, tmp_path):
         # No implements marker and not a phase skill — an ordinary knowledge
         # doc that happens to carry an AskUserQuestion block is out of scope.
-        content = (
-            '---\n'
-            'name: ordinary-skill\n'
-            'mode: knowledge\n'
-            '---\n\n'
-            '# Ordinary\n\n'
-            + _ASKUSER_BLOCK
-        )
+        content = '---\nname: ordinary-skill\nmode: knowledge\n---\n\n# Ordinary\n\n' + _ASKUSER_BLOCK
         _make_workflow_doc(tmp_path, content, skill='ordinary-skill')
         assert_analyzer_findings(analyze_askuserquestion_reachability, tmp_path, [])
 
     def test_bare_header_without_subkey_not_flagged(self, tmp_path):
         # A bare AskUserQuestion: line whose next non-blank line is not a
         # questions:/question:/options: sub-key is not an invocation block.
-        content = (
-            _IMPLEMENTS_FM
-            + '\n# Fixture\n\n'
-            + 'AskUserQuestion:\n'
-            + 'some following prose, not a sub-key.\n'
-        )
+        content = _IMPLEMENTS_FM + '\n# Fixture\n\n' + 'AskUserQuestion:\n' + 'some following prose, not a sub-key.\n'
         _make_workflow_doc(tmp_path, content)
         assert_analyzer_findings(analyze_askuserquestion_reachability, tmp_path, [])
 
@@ -274,14 +247,7 @@ class TestRuleRegistry:
 
     def test_rule_id_appears_in_a_table_row(self):
         content = PROVENANCE_PATH.read_text(encoding='utf-8')
-        rows = [
-            line
-            for line in content.splitlines()
-            if line.startswith('|') and RULE_ID in line
-        ]
-        assert rows, (
-            f'{RULE_ID} must appear in a pipe-delimited table row in '
-            f'rule-provenance.md, not only in prose.'
-        )
+        rows = [line for line in content.splitlines() if line.startswith('|') and RULE_ID in line]
+        assert rows, f'{RULE_ID} must appear in a pipe-delimited table row in rule-provenance.md, not only in prose.'
         first_cell = rows[0].split('|')[1].strip().strip('`')
         assert first_cell == RULE_ID

@@ -44,9 +44,7 @@ import re
 #: The emitted shape. ``phase`` is the phase key (``6-finalize``), ``step`` the
 #: canonical step key, ``outcome`` the terminal outcome already validated by the
 #: producer against ``VALID_OUTCOMES``.
-COMPLETION_MARKER_TEMPLATE = (
-    '[STEP] (plan-marshall:phase-{phase}) Completed step: {step} (outcome={outcome})'
-)
+COMPLETION_MARKER_TEMPLATE = '[STEP] (plan-marshall:phase-{phase}) Completed step: {step} (outcome={outcome})'
 
 #: The read pattern. Prefix-anchored and NOT anchored on the line end: ``\S+``
 #: stops at the space before the ``(outcome=…)`` suffix, so this matches a

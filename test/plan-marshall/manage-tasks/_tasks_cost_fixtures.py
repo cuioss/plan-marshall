@@ -28,7 +28,6 @@ Tier 2 (direct import) tests for the pure functions, plus Tier 3 subprocess
 tests for the ``derive-cost-size`` CLI plumbing.
 """
 
-
 from conftest import get_script_path, load_script_module
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-tasks', 'manage-tasks.py')

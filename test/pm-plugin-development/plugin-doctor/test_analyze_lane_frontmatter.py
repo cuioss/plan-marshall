@@ -84,7 +84,9 @@ class TestValidLaneBlocks:
         scoped = _bundle_dir(tmp_path)
         _write(
             scoped / 'c.md',
-            _frontmatter('lane:\n  class: prunable\n  tier: standard\n  prunable_when: no_code_delta\n  cost_size: L\n'),
+            _frontmatter(
+                'lane:\n  class: prunable\n  tier: standard\n  prunable_when: no_code_delta\n  cost_size: L\n'
+            ),
         )
         assert_analyzer_findings(analyze_lane_frontmatter, tmp_path, [])
 

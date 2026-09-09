@@ -102,7 +102,8 @@ class TestInputIntegrityFlags:
     def test_zero_token_execute_sets_metrics_blind(self, tmp_path: Path):
         # a recorded 5-execute with zero tokens (the load-bearing case)
         inputs = _write_ii_plan(
-            tmp_path, 'exec-blind',
+            tmp_path,
+            'exec-blind',
             phase_tokens={'5-execute': 0, '6-finalize': 5_000},
         )
 
@@ -114,7 +115,8 @@ class TestInputIntegrityFlags:
     def test_zero_token_nonexecute_phase_sets_metrics_blind(self, tmp_path: Path):
         # a zero-token 6-finalize (data-bearing, but not the escalator)
         inputs = _write_ii_plan(
-            tmp_path, 'finalize-blind',
+            tmp_path,
+            'finalize-blind',
             phase_tokens={'5-execute': 10_000, '6-finalize': 0},
         )
 
@@ -127,7 +129,8 @@ class TestInputIntegrityFlags:
     def test_recorded_nonzero_phase_not_metrics_blind(self, tmp_path: Path):
         # both data-bearing phases carry tokens
         inputs = _write_ii_plan(
-            tmp_path, 'no-blind',
+            tmp_path,
+            'no-blind',
             phase_tokens={'5-execute': 1, '6-finalize': 1},
         )
 
@@ -139,7 +142,8 @@ class TestInputIntegrityFlags:
     def test_missing_execute_phase_sets_incomplete_lifecycle(self, tmp_path: Path):
         # 5-execute section never recorded (only 6-finalize)
         inputs = _write_ii_plan(
-            tmp_path, 'no-execute-phase',
+            tmp_path,
+            'no-execute-phase',
             phase_tokens={'6-finalize': 5_000},
         )
 
@@ -151,7 +155,8 @@ class TestInputIntegrityFlags:
     def test_missing_finalize_phase_sets_incomplete_lifecycle(self, tmp_path: Path):
         # 6-finalize section never recorded (only 5-execute)
         inputs = _write_ii_plan(
-            tmp_path, 'no-finalize-phase',
+            tmp_path,
+            'no-finalize-phase',
             phase_tokens={'5-execute': 10_000},
         )
 
@@ -200,7 +205,8 @@ class TestDataConfidenceBucket:
     def test_recorded_zero_execute_grades_blind(self, tmp_path: Path):
         # route 1: 5-execute present, stating zero tokens
         inputs = _write_ii_plan(
-            tmp_path, 'dc-recorded-zero',
+            tmp_path,
+            'dc-recorded-zero',
             phase_tokens={'5-execute': 0, '6-finalize': 5_000},
         )
 
@@ -210,7 +216,8 @@ class TestDataConfidenceBucket:
         # route 2: no 5-execute section at all. Absence is strictly LESS recorded
         # than a recorded zero, so it can never grade milder than the case above.
         inputs = _write_ii_plan(
-            tmp_path, 'dc-absent',
+            tmp_path,
+            'dc-absent',
             phase_tokens={'6-finalize': 5_000},
         )
 
@@ -226,7 +233,8 @@ class TestDataConfidenceBucket:
         # `phases_missing_end_time` was never CLOSED by design, so the gap is
         # explained rather than accidental.
         inputs = _write_ii_plan(
-            tmp_path, 'dc-explained',
+            tmp_path,
+            'dc-explained',
             phase_tokens={'5-execute': 0, '6-finalize': 5_000},
             marker_schema='current',
             phases_missing_end_time='5-execute',
@@ -245,7 +253,8 @@ class TestDataConfidenceBucket:
         """
         for schema in ('old-schema', 'pre-#812'):
             inputs = _write_ii_plan(
-                tmp_path, f'dc-unreadable-{schema.replace("#", "")}',
+                tmp_path,
+                f'dc-unreadable-{schema.replace("#", "")}',
                 phase_tokens={'5-execute': 0, '6-finalize': 5_000},
                 marker_schema=schema,
                 phases_missing_end_time='5-execute',
@@ -257,7 +266,8 @@ class TestDataConfidenceBucket:
         # the positive control: without it, every assertion above would pass
         # against a predicate that returned `blind` for literally every plan.
         inputs = _write_ii_plan(
-            tmp_path, 'dc-clean',
+            tmp_path,
+            'dc-clean',
             phase_tokens={'5-execute': 10_000, '6-finalize': 5_000},
         )
 

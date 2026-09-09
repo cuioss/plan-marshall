@@ -148,13 +148,9 @@ class TestMetricsEndTimeMarkerStates:
     )
 
     def _patch(self, monkeypatch, presence):
-        phases = [
-            _phase(name, total_tokens=tokens) for name, tokens in self._ZERO_TOKEN_PHASES
-        ]
+        phases = [_phase(name, total_tokens=tokens) for name, tokens in self._ZERO_TOKEN_PHASES]
         monkeypatch.setattr(audit, 'parse_metrics_toon', lambda _p: phases)
-        monkeypatch.setattr(
-            audit, 'parse_metrics_end_time_presence', lambda _p: presence
-        )
+        monkeypatch.setattr(audit, 'parse_metrics_end_time_presence', lambda _p: presence)
         return audit.check_metrics(_inputs([]))
 
     def test_current_marker_explains_the_zero_token_phase(self, monkeypatch):
@@ -170,9 +166,7 @@ class TestMetricsEndTimeMarkerStates:
 
         assert result['incomplete_recording'] == ''
         assert any(
-            'explained by the phases_missing_end_time marker' in a
-            and '6-finalize' in a
-            for a in result['anomalies']
+            'explained by the phases_missing_end_time marker' in a and '6-finalize' in a for a in result['anomalies']
         )
 
     def test_old_schema_explains_nothing_and_says_so(self, monkeypatch):
@@ -246,9 +240,7 @@ class TestMetricsEndTimeMarkerStates:
                 audit.MetricsEndTimePresence(
                     schema=schema,
                     any_phase_missing_end_time=True if readable else None,
-                    phases_missing_end_time=(
-                        frozenset({'6-finalize'}) if readable else None
-                    ),
+                    phases_missing_end_time=(frozenset({'6-finalize'}) if readable else None),
                 ),
             )
             if readable:
@@ -258,6 +250,5 @@ class TestMetricsEndTimeMarkerStates:
                 # An unreadable state explains NOTHING and must NAME itself.
                 assert result['incomplete_recording'] == '6-finalize', schema
                 assert any(schema in a for a in result['anomalies']), (
-                    f'marker state {schema!r} is unreadable but names itself in '
-                    f'no anomaly line: {result["anomalies"]}'
+                    f'marker state {schema!r} is unreadable but names itself in no anomaly line: {result["anomalies"]}'
                 )

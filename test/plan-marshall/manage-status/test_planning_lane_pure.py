@@ -5,7 +5,6 @@
 Its one section: _read_request_body — the whole-body, heading-blind read.
 """
 
-
 from __future__ import annotations
 
 import pytest
@@ -149,8 +148,8 @@ def test_pure_multiple_deep_signals_accumulate_in_fired_order():
     """Multiple deep signals all appear in fired_signals in canonical S1..S7 order."""
     result = _pure(
         scope_estimate='multi_module',  # S2
-        change_type='feature',           # S3
-        compatibility='breaking',        # S4
+        change_type='feature',  # S3
+        compatibility='breaking',  # S4
     )
 
     assert result['lane'] == 'deep'

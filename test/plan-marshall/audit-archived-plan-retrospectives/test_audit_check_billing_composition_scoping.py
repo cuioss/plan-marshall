@@ -69,9 +69,7 @@ class TestBillingCompositionCanonicalPhaseScoping:
 class TestBillingCompositionFloorAndPopulation:
     """Every figure carries its own population, and a floored figure says so."""
 
-    def test_every_emitted_figure_carries_a_population_and_a_label(
-        self, tmp_path: Path
-    ):
+    def test_every_emitted_figure_carries_a_population_and_a_label(self, tmp_path: Path):
         inputs = _write_billing_plan(
             tmp_path,
             'pop',
@@ -131,9 +129,7 @@ class TestBillingCompositionFloorAndPopulation:
         assert by_figure['billing_share_output_tokens']['population'] == 2
         assert by_figure['byte_share_exploration']['population'] == 1
 
-    def test_metrics_blind_plan_floors_the_figures_it_contributed_to(
-        self, tmp_path: Path
-    ):
+    def test_metrics_blind_plan_floors_the_figures_it_contributed_to(self, tmp_path: Path):
         # A zero-token 5-execute with NO partiality marker is `metrics_blind` —
         # the input-integrity verdict this check consumes rather than re-derives.
         body = ''.join(

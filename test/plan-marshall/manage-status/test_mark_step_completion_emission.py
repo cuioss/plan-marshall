@@ -33,12 +33,8 @@ from plan_logging import read_work_log
 
 from conftest import load_script_module
 
-_lifecycle = load_script_module(
-    'plan-marshall', 'manage-status', '_cmd_lifecycle.py', '_emit_lifecycle'
-)
-_mark_step = load_script_module(
-    'plan-marshall', 'manage-status', '_cmd_mark_step.py', '_emit_mark_step'
-)
+_lifecycle = load_script_module('plan-marshall', 'manage-status', '_cmd_lifecycle.py', '_emit_lifecycle')
+_mark_step = load_script_module('plan-marshall', 'manage-status', '_cmd_mark_step.py', '_emit_mark_step')
 
 cmd_create = _lifecycle.cmd_create
 cmd_mark_step_done = _mark_step.cmd_mark_step_done
@@ -218,9 +214,6 @@ def test_a_failed_firing_and_a_done_firing_are_distinguishable(plan_context):
     # ...and the outcome is the ONLY difference. Were anything else to vary, the
     # inequality above could hold for a reason that has nothing to do with the
     # outcome, and this control would be passing by accident.
-    assert done_line.replace('outcome=done', '<O>') == failed_line.replace(
-        'outcome=failed', '<O>'
-    ), (
-        f'the two lines differ somewhere other than the outcome:\n'
-        f'  done:   {done_line}\n  failed: {failed_line}'
+    assert done_line.replace('outcome=done', '<O>') == failed_line.replace('outcome=failed', '<O>'), (
+        f'the two lines differ somewhere other than the outcome:\n  done:   {done_line}\n  failed: {failed_line}'
     )

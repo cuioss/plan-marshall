@@ -55,6 +55,7 @@ _REQUIRED_SUBFIELDS: tuple[str, ...] = ('key', 'default', 'description')
 # Step-doc path resolution (mirrors manage-execution-manifest._resolve_standards_path)
 # =============================================================================
 
+
 def _phase_6_skill_dir() -> Path:
     """Return the ``phase-6-finalize`` skill directory in the owning bundle."""
     return resolve_skills_root(Path(__file__)) / 'phase-6-finalize'
@@ -63,7 +64,7 @@ def _phase_6_skill_dir() -> Path:
 def _strip_default_prefix(step_id: str) -> str:
     """Strip a leading ``default:`` prefix from a built-in step id."""
     prefix = 'default:'
-    return step_id[len(prefix):] if step_id.startswith(prefix) else step_id
+    return step_id[len(prefix) :] if step_id.startswith(prefix) else step_id
 
 
 def _guard_within(candidate: Path, parent_dir: Path, step_id: str) -> Path:
@@ -92,9 +93,9 @@ def _guard_within(candidate: Path, parent_dir: Path, step_id: str) -> Path:
     resolved_parent = parent_dir.resolve()
     if not resolved_candidate.is_relative_to(resolved_parent):
         raise ValueError(
-            f"configurable contract: step id {step_id!r} resolves to "
-            f"{resolved_candidate} which escapes the intended parent directory "
-            f"{resolved_parent} (path traversal rejected)"
+            f'configurable contract: step id {step_id!r} resolves to '
+            f'{resolved_candidate} which escapes the intended parent directory '
+            f'{resolved_parent} (path traversal rejected)'
         )
     return resolved_candidate
 
@@ -128,7 +129,7 @@ def resolve_step_doc_path(step_id: str) -> Path:
             path that escapes its intended parent directory (path traversal).
     """
     if step_id.startswith('project:'):
-        bare = step_id[len('project:'):]
+        bare = step_id[len('project:') :]
         # Project-local steps live under the PROJECT root's declared skill
         # root(s), resolved cwd-relatively (ADR-002) via
         # ``file_ops._resolve_plan_root`` — the SAME anchor and the SAME root
@@ -143,9 +144,7 @@ def resolve_step_doc_path(step_id: str) -> Path:
         from file_ops import _resolve_plan_root
 
         project_root = _resolve_plan_root() or Path.cwd()
-        roots = [
-            _resolve_skill_root(root, project_root) for root in get_project_skill_roots()
-        ]
+        roots = [_resolve_skill_root(root, project_root) for root in get_project_skill_roots()]
         for skills_root in roots:
             # Guard BEFORE probing: ``bare`` is externally controlled, so
             # testing the unguarded path would let a traversal value stat a
@@ -183,6 +182,7 @@ def resolve_step_doc_path(step_id: str) -> Path:
 # =============================================================================
 # Frontmatter extraction
 # =============================================================================
+
 
 def _extract_frontmatter_lines(text: str) -> list[str] | None:
     """Return the lines inside the leading ``---``-fenced frontmatter block.
@@ -297,6 +297,7 @@ def _parse_configurable_entries(fm_lines: list[str]) -> list[dict[str, Any]] | N
 # Public API
 # =============================================================================
 
+
 def parse_configurable(step_doc_path: str | Path) -> dict[str, dict[str, Any]]:
     """Parse a step body doc's ``configurable`` declaration.
 
@@ -323,25 +324,20 @@ def parse_configurable(step_doc_path: str | Path) -> dict[str, dict[str, Any]]:
     """
     path = Path(step_doc_path)
     if not path.is_file():
-        raise ValueError(
-            f"configurable contract: step body doc not found: {path}"
-        )
+        raise ValueError(f'configurable contract: step body doc not found: {path}')
     text = path.read_text(encoding='utf-8')
     fm_lines = _extract_frontmatter_lines(text)
     if fm_lines is None:
-        raise ValueError(
-            f"configurable contract: {path} has no '---'-fenced frontmatter block"
-        )
+        raise ValueError(f"configurable contract: {path} has no '---'-fenced frontmatter block")
     entries = _parse_configurable_entries(fm_lines)
     if entries is None:
         raise ValueError(
             f"configurable contract: {path} declares no 'configurable:' "
-            f"frontmatter block (a param-owning step MUST declare one)"
+            f'frontmatter block (a param-owning step MUST declare one)'
         )
     if not entries:
         raise ValueError(
-            f"configurable contract: {path} 'configurable:' block is empty "
-            f"(declare at least one param entry)"
+            f"configurable contract: {path} 'configurable:' block is empty (declare at least one param entry)"
         )
 
     result: dict[str, dict[str, Any]] = {}
@@ -349,29 +345,29 @@ def parse_configurable(step_doc_path: str | Path) -> dict[str, dict[str, Any]]:
         for subfield in _REQUIRED_SUBFIELDS:
             if subfield not in entry:
                 raise ValueError(
-                    f"configurable contract: {path} entry #{index + 1} is "
+                    f'configurable contract: {path} entry #{index + 1} is '
                     f"missing required sub-field '{subfield}' "
-                    f"(every entry needs key, default, description)"
+                    f'(every entry needs key, default, description)'
                 )
         extra_keys = set(entry) - set(_REQUIRED_SUBFIELDS)
         if extra_keys:
             raise ValueError(
-                f"configurable contract: {path} entry #{index + 1} declares "
-                f"unexpected sub-field(s) {sorted(extra_keys)} "
-                f"(every entry MUST carry exactly key, default, description)"
+                f'configurable contract: {path} entry #{index + 1} declares '
+                f'unexpected sub-field(s) {sorted(extra_keys)} '
+                f'(every entry MUST carry exactly key, default, description)'
             )
         key = entry['key']
         description = entry['description']
         if not isinstance(key, str):
             raise ValueError(
                 f"configurable contract: {path} entry #{index + 1} 'key' must "
-                f"be a string, got {type(key).__name__}: {key!r}"
+                f'be a string, got {type(key).__name__}: {key!r}'
             )
         if not isinstance(description, str):
             raise ValueError(
                 f"configurable contract: {path} entry '{key}' 'description' "
-                f"must be a string, got {type(description).__name__}: "
-                f"{description!r}"
+                f'must be a string, got {type(description).__name__}: '
+                f'{description!r}'
             )
         if not description.strip():
             raise ValueError(
@@ -379,9 +375,7 @@ def parse_configurable(step_doc_path: str | Path) -> dict[str, dict[str, Any]]:
                 f"'description' (descriptions MUST be non-empty)"
             )
         if key in result:
-            raise ValueError(
-                f"configurable contract: {path} declares duplicate key '{key}'"
-            )
+            raise ValueError(f"configurable contract: {path} declares duplicate key '{key}'")
         result[key] = {
             'default': entry['default'],
             'description': description,
@@ -440,9 +434,7 @@ def resolve_step_defaults_optional(step_id: str) -> dict[str, Any] | None:
     """
     path = resolve_step_doc_path(step_id)
     if not path.is_file():
-        raise ValueError(
-            f"configurable contract: step body doc not found: {path}"
-        )
+        raise ValueError(f'configurable contract: step body doc not found: {path}')
     text = path.read_text(encoding='utf-8')
     fm_lines = _extract_frontmatter_lines(text)
     if fm_lines is None:
@@ -461,12 +453,12 @@ def resolve_step_defaults_optional(step_id: str) -> dict[str, Any] | None:
 # CLI (diagnostic surface)
 # =============================================================================
 
+
 def _cmd_parse(args: argparse.Namespace) -> int:
     """Parse a step doc's configurable block and emit the schema as TOON."""
     schema = parse_configurable(args.path)
     rows = [
-        {'key': key, 'default': spec['default'], 'description': spec['description']}
-        for key, spec in schema.items()
+        {'key': key, 'default': spec['default'], 'description': spec['description']} for key, spec in schema.items()
     ]
     print(serialize_toon({'status': 'success', 'path': str(args.path), 'params': rows}))
     return 0

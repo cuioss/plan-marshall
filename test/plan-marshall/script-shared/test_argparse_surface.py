@@ -51,7 +51,7 @@ import argparse_surface as surf
 # in-process via ``runpy.run_path`` under redirected stdout/stderr: the
 # derivation already spawns the shim as a subprocess, so an inner spawn would
 # double the interpreter cold-start cost of every probe.
-_EXECUTOR_SHIM = textwrap.dedent('''
+_EXECUTOR_SHIM = textwrap.dedent("""
     #!/usr/bin/env python3
     import contextlib
     import io
@@ -99,7 +99,7 @@ _EXECUTOR_SHIM = textwrap.dedent('''
 
     if __name__ == '__main__':
         main()
-''').lstrip()
+""").lstrip()
 
 # A notation triple shaped like a real one so the derivation's own
 # ``bundle:skill:script`` split accepts it.
@@ -119,9 +119,7 @@ def _make_executor(tmp_path: Path, mapping: dict[str, Path]) -> Path:
     plan_dir.mkdir(parents=True, exist_ok=True)
     executor = plan_dir / 'execute-script.py'
     executor.write_text(_EXECUTOR_SHIM, encoding='utf-8')
-    (plan_dir / 'notation_map.json').write_text(
-        json.dumps({k: str(v) for k, v in mapping.items()}), encoding='utf-8'
-    )
+    (plan_dir / 'notation_map.json').write_text(json.dumps({k: str(v) for k, v in mapping.items()}), encoding='utf-8')
     return executor
 
 
@@ -156,7 +154,7 @@ def _alias_source() -> str:
     argparse also renders the ``read (get)`` grouping line, exercising the
     optional alias-enrichment anchor alongside the flat choice list.
     """
-    return textwrap.dedent('''
+    return textwrap.dedent("""
         import argparse
 
         def main():
@@ -169,12 +167,12 @@ def _alias_source() -> str:
 
         if __name__ == '__main__':
             main()
-    ''').lstrip()
+    """).lstrip()
 
 
 def _imported_parser_module() -> str:
     """A sibling module that OWNS the parser construction."""
-    return textwrap.dedent('''
+    return textwrap.dedent("""
         import argparse
 
         def build_parser():
@@ -184,7 +182,7 @@ def _imported_parser_module() -> str:
                 sub = subparsers.add_parser(name)
                 sub.add_argument('--plan-id')
             return parser
-    ''').lstrip()
+    """).lstrip()
 
 
 def _imported_parser_source() -> str:
@@ -195,7 +193,7 @@ def _imported_parser_source() -> str:
     heavily dispatched notations in the tree. ``--help`` renders the fully
     assembled parser regardless of which module built it.
     """
-    return textwrap.dedent('''
+    return textwrap.dedent("""
         import sys
         from pathlib import Path
 
@@ -207,12 +205,12 @@ def _imported_parser_source() -> str:
 
         if __name__ == '__main__':
             main()
-    ''').lstrip()
+    """).lstrip()
 
 
 def _nested_source() -> str:
     """A three-level verb tree — ``plan {phase} {get,set}``."""
-    return textwrap.dedent('''
+    return textwrap.dedent("""
         import argparse
 
         def main():
@@ -232,7 +230,7 @@ def _nested_source() -> str:
 
         if __name__ == '__main__':
             main()
-    ''').lstrip()
+    """).lstrip()
 
 
 def _custom_group_source() -> str:
@@ -243,7 +241,7 @@ def _custom_group_source() -> str:
     call — which is exactly why the asymmetric-error rule harvests every
     ``--long-token`` anywhere in the output.
     """
-    return textwrap.dedent('''
+    return textwrap.dedent("""
         import argparse
 
         def main():
@@ -257,7 +255,7 @@ def _custom_group_source() -> str:
 
         if __name__ == '__main__':
             main()
-    ''').lstrip()
+    """).lstrip()
 
 
 def _routing_flag_source() -> str:
@@ -269,7 +267,7 @@ def _routing_flag_source() -> str:
     it). A consumer walking argv cannot resolve the ``find`` node without
     knowing which of the two swallows the token that follows it.
     """
-    return textwrap.dedent('''
+    return textwrap.dedent("""
         import argparse
 
         def main():
@@ -285,17 +283,17 @@ def _routing_flag_source() -> str:
 
         if __name__ == '__main__':
             main()
-    ''').lstrip()
+    """).lstrip()
 
 
 def _nonzero_exit_source() -> str:
     """``--help`` exits non-zero — an import-time failure, a crashing main."""
-    return textwrap.dedent('''
+    return textwrap.dedent("""
         import sys
 
         sys.stderr.write('boom\\n')
         sys.exit(3)
-    ''').lstrip()
+    """).lstrip()
 
 
 def _silent_source() -> str:
@@ -305,11 +303,11 @@ def _silent_source() -> str:
 
 def _slow_source() -> str:
     """Sleeps well past any sane per-invocation timeout."""
-    return textwrap.dedent('''
+    return textwrap.dedent("""
         import time
 
         time.sleep(30)
-    ''').lstrip()
+    """).lstrip()
 
 
 def _no_structure_source() -> str:
@@ -320,10 +318,10 @@ def _no_structure_source() -> str:
     it as "an argparse parser declaring nothing" would mint an
     empty-but-confident surface.
     """
-    return textwrap.dedent('''
+    return textwrap.dedent("""
         print('usage: syn [options]')
         print('This is a hand-rolled CLI, not argparse.')
-    ''').lstrip()
+    """).lstrip()
 
 
 def _suppressed_choices_source() -> str:
@@ -334,7 +332,7 @@ def _suppressed_choices_source() -> str:
     has nothing to read. The node must report an unconfident child listing
     rather than "declares no subcommands".
     """
-    return textwrap.dedent('''
+    return textwrap.dedent("""
         import argparse
 
         def main():
@@ -346,7 +344,7 @@ def _suppressed_choices_source() -> str:
 
         if __name__ == '__main__':
             main()
-    ''').lstrip()
+    """).lstrip()
 
 
 # ---------------------------------------------------------------------------
@@ -422,17 +420,13 @@ class TestPositiveControls:
         assert surf.is_derivable(result), result
         arity = result.root.flag_arity
 
-        assert arity.get('project-dir') == 1, (
-            f'a value-taking routing flag must report arity 1: {arity}'
-        )
+        assert arity.get('project-dir') == 1, f'a value-taking routing flag must report arity 1: {arity}'
         assert arity.get('verbose') == 0, (
-            f'a store_true switch must report arity 0, not be conflated with a '
-            f'value-taking flag: {arity}'
+            f'a store_true switch must report arity 0, not be conflated with a value-taking flag: {arity}'
         )
         assert arity.get('coords') == 2, f'nargs=2 must report arity 2: {arity}'
         assert 'tags' not in arity, (
-            f"nargs='*' has no fixed count, so it must contribute NO entry "
-            f'rather than a guessed one: {arity}'
+            f"nargs='*' has no fixed count, so it must contribute NO entry rather than a guessed one: {arity}"
         )
 
     def test_subcommand_flag_arity_is_derived_on_the_child_node(self, tmp_path: Path):
@@ -463,8 +457,7 @@ class TestPositiveControls:
         assert surf.is_derivable(result)
         run = result.root.children['run']
         assert 'project-dir' in run.flags, (
-            'flag declared in a custom argument group was dropped — a '
-            'section-scoped scan would reject a valid call'
+            'flag declared in a custom argument group was dropped — a section-scoped scan would reject a valid call'
         )
         assert 'flag' in run.flags
 
@@ -562,9 +555,7 @@ class TestBounds:
         assert surf.is_derivable(result)
         plan = result.root.children['plan']
         assert plan.children == {}
-        assert not plan.children_confident, (
-            'depth-capped node must not read as "declares no children"'
-        )
+        assert not plan.children_confident, 'depth-capped node must not read as "declares no children"'
         node, unknown, _chain = result.resolve_path(['plan', 'phase-5-execute'])
         assert unknown is None
         assert node is plan
@@ -582,7 +573,7 @@ def _brief_sleep_source(seconds: float) -> str:
     shared budget can be proven to have actually been SPENT by the time a
     sibling notation's turn comes.
     """
-    return textwrap.dedent(f'''
+    return textwrap.dedent(f"""
         import argparse
         import time
 
@@ -595,12 +586,12 @@ def _brief_sleep_source(seconds: float) -> str:
 
         if __name__ == '__main__':
             main()
-    ''').lstrip()
+    """).lstrip()
 
 
 def _instant_source() -> str:
     """Renders a normal confident surface with no delay at all."""
-    return textwrap.dedent('''
+    return textwrap.dedent("""
         import argparse
 
         def main():
@@ -611,7 +602,7 @@ def _instant_source() -> str:
 
         if __name__ == '__main__':
             main()
-    ''').lstrip()
+    """).lstrip()
 
 
 class TestSharedBudgetAcrossNotations:
@@ -648,13 +639,9 @@ class TestSharedBudgetAcrossNotations:
             {self._SLOW_NOTATION: slow_script, self._FAST_NOTATION: fast_script},
         )
         surf.clear_memo()
-        config = surf.DerivationConfig(
-            use_disk_cache=False, max_workers=1, total_budget_seconds=0.2
-        )
+        config = surf.DerivationConfig(use_disk_cache=False, max_workers=1, total_budget_seconds=0.2)
 
-        index = surf.build_surface_index(
-            [self._SLOW_NOTATION, self._FAST_NOTATION], executor, config=config
-        )
+        index = surf.build_surface_index([self._SLOW_NOTATION, self._FAST_NOTATION], executor, config=config)
 
         fast_result = index[self._FAST_NOTATION]
         assert isinstance(fast_result, surf.NotDerivable), (
@@ -682,9 +669,7 @@ class TestSharedBudgetAcrossNotations:
         surf.clear_memo()
         config = surf.DerivationConfig(use_disk_cache=False, max_workers=1)
 
-        index = surf.build_surface_index(
-            [self._SLOW_NOTATION, self._FAST_NOTATION], executor, config=config
-        )
+        index = surf.build_surface_index([self._SLOW_NOTATION, self._FAST_NOTATION], executor, config=config)
 
         assert surf.is_derivable(index[self._FAST_NOTATION]), (
             f'the fast sibling failed even with no tight shared budget — the '
@@ -706,7 +691,7 @@ class TestPureParsers:
         decision would give the node children it does not have, and every valid
         call would then look like an unknown sub-verb.
         """
-        help_text = textwrap.dedent('''
+        help_text = textwrap.dedent("""
             usage: syn [-h] {alpha,beta}
 
             positional arguments:
@@ -714,12 +699,12 @@ class TestPureParsers:
 
             options:
               -h, --help     show this help message and exit
-        ''').lstrip()
+        """).lstrip()
         assert surf.parse_choice_list(help_text) == []
 
     def test_dispatch_marker_admits_names_from_the_positional_section(self):
         """Once dispatch is confirmed, the section widens the NAME set."""
-        help_text = textwrap.dedent('''
+        help_text = textwrap.dedent("""
             usage: syn [-h] {alpha,beta} ...
 
             positional arguments:
@@ -727,7 +712,7 @@ class TestPureParsers:
 
             options:
               -h, --help  show this help message and exit
-        ''').lstrip()
+        """).lstrip()
         assert set(surf.parse_choice_list(help_text)) == {'alpha', 'beta', 'gamma'}
 
     def test_required_flags_exclude_mutually_exclusive_group_members(self):
@@ -749,7 +734,7 @@ class TestPureParsers:
         entry the executor needs. The two-space anchor is what keeps that line
         out of the scan entirely.
         """
-        help_text = textwrap.dedent('''
+        help_text = textwrap.dedent("""
             usage: syn [-h] [--project-dir PROJECT_DIR] [--verbose] {find} ...
 
             positional arguments:
@@ -761,7 +746,7 @@ class TestPureParsers:
                                     Project directory (default: cwd).
               --verbose             Chatty output. Ignored when
                                     --project-dir. is absent.
-        ''').lstrip()
+        """).lstrip()
 
         arity = surf.parse_flag_arity(help_text)
 
@@ -773,14 +758,14 @@ class TestPureParsers:
         assert arity['help'] == 0
 
     def test_flag_arity_omits_a_variable_arity_option(self):
-        help_text = textwrap.dedent('''
+        help_text = textwrap.dedent("""
             usage: syn [-h] [--tags [TAGS ...]] [--paths PATHS [PATHS ...]]
 
             options:
               -h, --help                  show this help message and exit
               --tags [TAGS ...]           zero or more tags
               --paths PATHS [PATHS ...]   one or more paths
-        ''').lstrip()
+        """).lstrip()
 
         arity = surf.parse_flag_arity(help_text)
 
@@ -788,7 +773,7 @@ class TestPureParsers:
         assert 'paths' not in arity, f"nargs='+' must contribute no entry: {arity}"
 
     def test_flag_arity_handles_a_short_long_pair_and_a_choices_metavar(self):
-        help_text = textwrap.dedent('''
+        help_text = textwrap.dedent("""
             usage: syn [-h] [-p PLAN_ID] [--mode {a,b}]
 
             options:
@@ -796,20 +781,16 @@ class TestPureParsers:
               -p PLAN_ID, --plan-id PLAN_ID
                                     the plan
               --mode {a,b}          the mode
-        ''').lstrip()
+        """).lstrip()
 
         arity = surf.parse_flag_arity(help_text)
 
-        assert arity['plan-id'] == 1, (
-            f'the long half of a short/long pair must be found: {arity}'
-        )
-        assert arity['mode'] == 1, (
-            f'a comma-bearing choices metavar is ONE value token: {arity}'
-        )
+        assert arity['plan-id'] == 1, f'the long half of a short/long pair must be found: {arity}'
+        assert arity['mode'] == 1, f'a comma-bearing choices metavar is ONE value token: {arity}'
 
     def test_flag_arity_drops_a_name_two_option_lines_disagree_about(self):
         """Contradiction resolves to ABSENCE, never to the first-seen reading."""
-        help_text = textwrap.dedent('''
+        help_text = textwrap.dedent("""
             usage: syn [-h] [--scope SCOPE]
 
             options:
@@ -818,7 +799,7 @@ class TestPureParsers:
 
             extra options:
               --scope         a contradictory bare rendering
-        ''').lstrip()
+        """).lstrip()
 
         assert 'scope' not in surf.parse_flag_arity(help_text)
 
@@ -951,11 +932,7 @@ class TestLiveTreeCharacterization:
     def test_known_hard_notations_yield_confident_surfaces(self):
         executor = _live_executor()
         index = surf.build_surface_index(list(_KNOWN_HARD_NOTATIONS), executor)
-        unconfident = {
-            notation: result.reason
-            for notation, result in index.items()
-            if not surf.is_derivable(result)
-        }
+        unconfident = {notation: result.reason for notation, result in index.items() if not surf.is_derivable(result)}
         assert not unconfident, (
             'the promotion exists to cover these shapes — a parser assembled '
             f'in an imported module and alias-declaring scripts: {unconfident}'
@@ -1023,9 +1000,7 @@ class TestLiveTreeCharacterization:
         index = surf.build_surface_index(notations, executor, config=config)
 
         confident = [n for n, r in index.items() if surf.is_derivable(r)]
-        not_derivable = {
-            n: r.reason for n, r in index.items() if not surf.is_derivable(r)
-        }
+        not_derivable = {n: r.reason for n, r in index.items() if not surf.is_derivable(r)}
         assert len(index) == len(notations)
 
         # The invariant: no third bucket. A result is a usable surface or an
@@ -1037,8 +1012,7 @@ class TestLiveTreeCharacterization:
             )
             if surf.is_derivable(result) and not result.root.children:
                 assert not result.root.children_confident or result.root.flags, (
-                    f'{notation} derived an empty-but-confident surface — the '
-                    'shape that would reject every call'
+                    f'{notation} derived an empty-but-confident surface — the shape that would reject every call'
                 )
 
         # Published counts. Stated in the message so a coverage collapse is a
@@ -1048,8 +1022,7 @@ class TestLiveTreeCharacterization:
             f'not_derivable={len(not_derivable)} reasons={sorted(set(not_derivable.values()))}'
         )
         assert len(confident) >= len(notations) // 2, (
-            f'fewer than half the registered notations yielded a confident '
-            f'surface — {summary}'
+            f'fewer than half the registered notations yielded a confident surface — {summary}'
         )
 
 
@@ -1122,9 +1095,7 @@ class TestUniversalAcceptSet:
         """
         assert surf.UNIVERSAL_FLAG_ARITY['help'] == 0
 
-        derived = surf.parse_help_node(
-            'usage: prog [--help]\n\noptions:\n  --help  show this help\n'
-        )
+        derived = surf.parse_help_node('usage: prog [--help]\n\noptions:\n  --help  show this help\n')
         assert 'help' not in derived.flags, (
             'the derivation now keeps ``help``, so this membership may be '
             'redundant — re-derive the accept-set rather than assuming'

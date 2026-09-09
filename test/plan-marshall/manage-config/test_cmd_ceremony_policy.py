@@ -32,7 +32,10 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'manage-config', 'manage-config.p
 
 
 _cmd_quality_phases_mod = load_script_module(
-    'plan-marshall', 'manage-config', '_cmd_quality_phases.py', module_name='_cmd_quality_phases_for_verb_retirement_test'
+    'plan-marshall',
+    'manage-config',
+    '_cmd_quality_phases.py',
+    module_name='_cmd_quality_phases_for_verb_retirement_test',
 )
 _cmd_init_mod = load_script_module(
     'plan-marshall', 'manage-config', '_cmd_init.py', module_name='_cmd_init_for_verb_retirement_test'
@@ -70,28 +73,20 @@ _MIGRATED_KNOBS = (
 def test_ceremony_policy_get_verb_is_rejected():
     """``manage-config ceremony-policy get`` → argparse rejection (exit 2)."""
     result = run_script(SCRIPT_PATH, 'ceremony-policy', 'get', '--field', 'automation.finalize_without_asking')
-    assert result.returncode == 2, (
-        'ceremony-policy must be an invalid noun after retirement (argparse exit 2)'
-    )
+    assert result.returncode == 2, 'ceremony-policy must be an invalid noun after retirement (argparse exit 2)'
     assert 'invalid choice' in result.stderr or 'ceremony-policy' in result.stderr
 
 
 def test_ceremony_policy_set_verb_is_rejected():
     """``manage-config ceremony-policy set`` → argparse rejection (exit 2)."""
-    result = run_script(
-        SCRIPT_PATH, 'ceremony-policy', 'set', '--field', 'finalize.qgate', '--value', 'never'
-    )
-    assert result.returncode == 2, (
-        'ceremony-policy set must be rejected by argparse after retirement'
-    )
+    result = run_script(SCRIPT_PATH, 'ceremony-policy', 'set', '--field', 'finalize.qgate', '--value', 'never')
+    assert result.returncode == 2, 'ceremony-policy set must be rejected by argparse after retirement'
 
 
 def test_ceremony_policy_handler_script_is_deleted():
     """The ``_cmd_ceremony_policy.py`` handler must be absent from disk."""
     handler = get_scripts_dir('plan-marshall', 'manage-config') / '_cmd_ceremony_policy.py'
-    assert not handler.exists(), (
-        '_cmd_ceremony_policy.py must be deleted after the ceremony_policy dissolution'
-    )
+    assert not handler.exists(), '_cmd_ceremony_policy.py must be deleted after the ceremony_policy dissolution'
 
 
 # =============================================================================
@@ -106,9 +101,7 @@ def test_each_automation_knob_reads_via_phase_get(plan_context):
 
     # each knob resolves to its migrated default via the phase get path
     for knob, expected in _MIGRATED_KNOBS:
-        result = _cmd_quality_phases_mod.cmd_phase(
-            Namespace(verb='get', field=knob), 'phase-6-finalize'
-        )
+        result = _cmd_quality_phases_mod.cmd_phase(Namespace(verb='get', field=knob), 'phase-6-finalize')
         assert result['status'] == 'success', f'{knob} must resolve'
         assert result['value'] is expected, f'{knob} default must be {expected}'
 
@@ -176,8 +169,7 @@ def test_qgate_is_not_a_seeded_flat_finalize_field(plan_context):
 
     config = _config_defaults_mod.get_default_config()
     assert 'qgate' not in config['plan']['phase-6-finalize'], (
-        'qgate must not survive as a flat phase-6-finalize field after the '
-        'run-at-all → lane migration'
+        'qgate must not survive as a flat phase-6-finalize field after the run-at-all → lane migration'
     )
 
 
@@ -195,9 +187,7 @@ def test_simplify_step_no_longer_declares_a_simplify_run_at_all_param(plan_conte
 
     # the step declares no configurable params at all now (resolves to None/{}).
     resolved = resolve_step_defaults_optional('default:finalize-step-simplify') or {}
-    assert 'simplify' not in resolved, (
-        'default:finalize-step-simplify must no longer declare a simplify param'
-    )
+    assert 'simplify' not in resolved, 'default:finalize-step-simplify must no longer declare a simplify param'
 
     # and the seeded step nested-param object is the empty {} (config-less).
     config = _config_defaults_mod.get_default_config()
@@ -230,9 +220,7 @@ def test_set_lane_persists_off_and_resolves_the_ask(plan_context):
     """set-lane off persists the override and the element drops off the ask list."""
     _cmd_init_mod.cmd_init(Namespace(force=False))
 
-    set_result = cmd_set_lane(
-        Namespace(step_id='plan-marshall:automatic-review', lane='off')
-    )
+    set_result = cmd_set_lane(Namespace(step_id='plan-marshall:automatic-review', lane='off'))
     assert set_result['status'] == 'success'
     assert set_result['step_id'] == 'plan-marshall:automatic-review'
     assert set_result['lane'] == 'off'
@@ -254,15 +242,11 @@ def test_set_lane_accepts_standard_and_full(plan_context):
     """set-lane accepts each resolved value (off/standard/full)."""
     _cmd_init_mod.cmd_init(Namespace(force=False))
 
-    standard_result = cmd_set_lane(
-        Namespace(step_id='default:sonar-roundtrip', lane='standard')
-    )
+    standard_result = cmd_set_lane(Namespace(step_id='default:sonar-roundtrip', lane='standard'))
     assert standard_result['status'] == 'success'
     assert standard_result['lane'] == 'standard'
 
-    full_result = cmd_set_lane(
-        Namespace(step_id='plan-marshall:automatic-review', lane='full')
-    )
+    full_result = cmd_set_lane(Namespace(step_id='plan-marshall:automatic-review', lane='full'))
     assert full_result['status'] == 'success'
     assert full_result['lane'] == 'full'
 
@@ -277,9 +261,7 @@ def test_set_lane_rejects_non_resolved_lane_values(plan_context):
     _cmd_init_mod.cmd_init(Namespace(force=False))
 
     for bad in ('ask', 'minimal', 'bogus', ''):
-        result = cmd_set_lane(
-            Namespace(step_id='plan-marshall:automatic-review', lane=bad)
-        )
+        result = cmd_set_lane(Namespace(step_id='plan-marshall:automatic-review', lane=bad))
         assert result['status'] == 'error', f'lane={bad!r} must be rejected'
 
 
@@ -287,9 +269,7 @@ def test_set_lane_rejects_unknown_step_id(plan_context):
     """set-lane rejects a step id outside the discovered finalize-step universe."""
     _cmd_init_mod.cmd_init(Namespace(force=False))
 
-    result = cmd_set_lane(
-        Namespace(step_id='default:does-not-exist', lane='off')
-    )
+    result = cmd_set_lane(Namespace(step_id='default:does-not-exist', lane='off'))
     assert result['status'] == 'error'
 
 
@@ -297,9 +277,7 @@ def test_finalize_steps_list_ask_lane_cli_is_recognized():
     """`manage-config finalize-steps list-ask-lane` is a registered subcommand (not argparse-rejected)."""
     result = run_script(SCRIPT_PATH, 'finalize-steps', 'list-ask-lane')
     # Recognized subcommand → NOT an argparse exit-2 rejection.
-    assert result.returncode != 2, (
-        'finalize-steps list-ask-lane must be a registered subcommand'
-    )
+    assert result.returncode != 2, 'finalize-steps list-ask-lane must be a registered subcommand'
 
 
 def test_finalize_steps_set_lane_cli_rejects_invalid_lane_choice():

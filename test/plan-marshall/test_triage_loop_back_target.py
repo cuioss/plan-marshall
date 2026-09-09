@@ -47,8 +47,7 @@ class TestTriageGranularityClassification:
         return contract."""
         text = _TRIAGE_MD.read_text(encoding='utf-8')
         assert 'loop_back_target' in text, (
-            'triage.md must reference loop_back_target by name in the '
-            'Step 7 classification rule and Output TOON shape.'
+            'triage.md must reference loop_back_target by name in the Step 7 classification rule and Output TOON shape.'
         )
 
     def test_triage_md_documents_5_execute_target_for_fix_task_required(self) -> None:
@@ -57,19 +56,15 @@ class TestTriageGranularityClassification:
         # The classification table or rule prose must mention both halves of
         # the rule: the trigger condition and the resulting target value.
         assert 'fix_tasks_created' in text, (
-            'triage.md must reference fix_tasks_created in the granularity '
-            'classification rule.'
+            'triage.md must reference fix_tasks_created in the granularity classification rule.'
         )
-        assert '5-execute' in text, (
-            'triage.md must mention 5-execute as a loop_back_target value.'
-        )
+        assert '5-execute' in text, 'triage.md must mention 5-execute as a loop_back_target value.'
 
     def test_triage_md_documents_5_execute_target_for_overflow(self) -> None:
         """Disposition 2: `overflow_deferred > 0` → `5-execute`."""
         text = _TRIAGE_MD.read_text(encoding='utf-8')
         assert 'overflow_deferred' in text, (
-            'triage.md must reference overflow_deferred in the granularity '
-            'classification rule.'
+            'triage.md must reference overflow_deferred in the granularity classification rule.'
         )
 
     def test_triage_md_documents_6_finalize_target_for_inline_fixable(self) -> None:
@@ -77,19 +72,12 @@ class TestTriageGranularityClassification:
         (no fix-task allocation, no overflow) → `6-finalize`."""
         text = _TRIAGE_MD.read_text(encoding='utf-8')
         assert '6-finalize' in text, (
-            'triage.md must mention 6-finalize as a loop_back_target value '
-            'for the inline-fixable granularity tier.'
+            'triage.md must mention 6-finalize as a loop_back_target value for the inline-fixable granularity tier.'
         )
         # The inline-fixable tier mentions SUPPRESS and ACCEPT explicitly.
         text_lower = text.lower()
-        assert 'suppress' in text_lower, (
-            'triage.md must mention SUPPRESS as part of the inline-fixable '
-            'classification.'
-        )
-        assert 'accept' in text_lower, (
-            'triage.md must mention ACCEPT as part of the inline-fixable '
-            'classification.'
-        )
+        assert 'suppress' in text_lower, 'triage.md must mention SUPPRESS as part of the inline-fixable classification.'
+        assert 'accept' in text_lower, 'triage.md must mention ACCEPT as part of the inline-fixable classification.'
 
     def test_triage_md_output_block_declares_loop_back_target(self) -> None:
         """The Output TOON block in triage.md MUST declare
@@ -98,9 +86,7 @@ class TestTriageGranularityClassification:
         be able to read the field from the workflow's return TOON."""
         text = _TRIAGE_MD.read_text(encoding='utf-8')
         # Locate the Output section.
-        assert '## Output' in text, (
-            'triage.md must declare an Output section.'
-        )
+        assert '## Output' in text, 'triage.md must declare an Output section.'
         output_idx = text.index('## Output')
         # The next section header (or end of file) bounds the Output block.
         next_section_idx = text.find('\n## ', output_idx + len('## Output'))
@@ -110,7 +96,7 @@ class TestTriageGranularityClassification:
         assert 'loop_back_target' in output_block, (
             'triage.md Output block must declare loop_back_target as a '
             'returned field — downstream callers read this from the '
-            'workflow\'s return TOON to forward it to mark-step-done.'
+            "workflow's return TOON to forward it to mark-step-done."
         )
 
     def test_triage_md_documents_computation_rule(self) -> None:
@@ -121,8 +107,7 @@ class TestTriageGranularityClassification:
         text = _TRIAGE_MD.read_text(encoding='utf-8')
         # The computation rule mentions both branches explicitly.
         assert 'Computation rule' in text or 'computation rule' in text, (
-            'triage.md must include an explicit computation rule resolving '
-            'mixed-disposition cases.'
+            'triage.md must include an explicit computation rule resolving mixed-disposition cases.'
         )
 
 
@@ -154,8 +139,7 @@ class TestTriageGranularityCallSiteAlignment:
         path = get_skill_dir('plan-marshall', 'automatic-review') / 'SKILL.md'
         text = path.read_text(encoding='utf-8')
         assert '--loop-back-target' in text, (
-            'automatic-review.md must forward --loop-back-target to '
-            'mark-step-done on every loop_back outcome.'
+            'automatic-review.md must forward --loop-back-target to mark-step-done on every loop_back outcome.'
         )
 
     def test_sonar_roundtrip_is_find_only_and_delegates_loop_back(self) -> None:
@@ -167,20 +151,14 @@ class TestTriageGranularityCallSiteAlignment:
         A reappearance of `--loop-back-target` here would mean the retired
         inline `verification-feedback` (producer=sonar) triage dispatch has
         crept back in."""
-        path = (
-            get_skill_dir('plan-marshall', 'phase-6-finalize')
-            / 'workflow'
-            / 'sonar-roundtrip.md'
-        )
+        path = get_skill_dir('plan-marshall', 'phase-6-finalize') / 'workflow' / 'sonar-roundtrip.md'
         text = path.read_text(encoding='utf-8')
         assert '--loop-back-target' not in text, (
             'sonar-roundtrip.md is FIND-only and must NOT forward '
             '--loop-back-target — loop-back is owned by the dispatcher-level '
             'unified triage (producer=finalize-feedback).'
         )
-        assert 'FIND-only' in text, (
-            'sonar-roundtrip.md must declare its FIND-only role.'
-        )
+        assert 'FIND-only' in text, 'sonar-roundtrip.md must declare its FIND-only role.'
         assert 'finalize-feedback' in text, (
             'sonar-roundtrip.md must reference the dispatcher-owned unified '
             'triage (producer=finalize-feedback) that consumes its findings.'
@@ -193,15 +171,13 @@ class TestTriageGranularityCallSiteAlignment:
         path = get_skill_dir('plan-marshall', 'phase-6-finalize') / 'SKILL.md'
         text = path.read_text(encoding='utf-8')
         assert 'loop_back_target' in text, (
-            'phase-6-finalize/SKILL.md must read loop_back_target in the '
-            'continuation hook (§ 7b).'
+            'phase-6-finalize/SKILL.md must read loop_back_target in the continuation hook (§ 7b).'
         )
         # Both granularity tiers must be mentioned in the hook.
         # The granularity branch is documented in Step 3 § 7b.
         # Locate § 7b (the "7b. Loop-back continuation hook" subsection).
         assert '7b. Loop-back continuation hook' in text, (
-            'phase-6-finalize/SKILL.md must declare a "7b. Loop-back '
-            'continuation hook" subsection inside Step 3.'
+            'phase-6-finalize/SKILL.md must declare a "7b. Loop-back continuation hook" subsection inside Step 3.'
         )
         hook_idx = text.index('7b. Loop-back continuation hook')
         # The next sibling subsection (or end of file) bounds the hook.
@@ -218,19 +194,14 @@ class TestTriageGranularityCallSiteAlignment:
         """`plan-marshall/workflow/execution.md` § "Loop-back continuation"
         ELSE branch MUST display target-specific prompts — different text
         for `5-execute` vs `6-finalize`."""
-        path = (
-            get_skill_dir('plan-marshall', 'plan-marshall') / 'workflow' / 'execution.md'
-        )
+        path = get_skill_dir('plan-marshall', 'plan-marshall') / 'workflow' / 'execution.md'
         text = path.read_text(encoding='utf-8')
-        assert 'Loop-back continuation' in text, (
-            'execution.md must declare a "Loop-back continuation" section.'
-        )
+        assert 'Loop-back continuation' in text, 'execution.md must declare a "Loop-back continuation" section.'
         # Both target-specific prompt branches must exist.
         assert 'loop_back_target' in text, (
             'execution.md must read loop_back_target from the persisted '
             'phase_steps record before displaying user prompts.'
         )
         assert 'inline replay' in text or 'replay the finalize step' in text, (
-            'execution.md must describe the 6-finalize inline replay shape '
-            'in the user-facing prompt.'
+            'execution.md must describe the 6-finalize inline replay shape in the user-facing prompt.'
         )

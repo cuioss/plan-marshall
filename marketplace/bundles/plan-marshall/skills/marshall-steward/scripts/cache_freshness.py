@@ -95,12 +95,12 @@ _VERSION_DIR_RE = re.compile(r'^\d+\.\d+')
 # here made this remediation the one that stopped a step short of the outcome.
 REMEDIATION = (
     "Run '/plugin update plan-marshall' to update the installed plugin in place "
-    "(non-destructive — no uninstall or reinstall), then verify the update landed by "
+    '(non-destructive — no uninstall or reinstall), then verify the update landed by '
     "running '/plugin' and confirming plan-marshall reports the expected version, then "
     "reload the session's plugin set so the refreshed cache is visible to the running "
     "session — resolve the directive with 'platform_runtime session reload-directive' "
     "(on Claude it is '/reload-plugins'; on OpenCode the seam returns a no-op whose "
-    "alternative is a full session restart)."
+    'alternative is a full session restart).'
 )
 
 FRESH = 'fresh'
@@ -142,9 +142,7 @@ def newest_cache_version(cache_root: Path) -> str:
             children = list(bundle_dir.iterdir())
         except OSError:
             continue
-        version_dirs.extend(
-            child.name for child in children if child.is_dir() and _VERSION_DIR_RE.match(child.name)
-        )
+        version_dirs.extend(child.name for child in children if child.is_dir() and _VERSION_DIR_RE.match(child.name))
     if not version_dirs:
         return ''
     return max(version_dirs, key=_version_sort_key)
@@ -200,8 +198,7 @@ def check_freshness(cache_root: Path | None) -> dict:
     manifest_version = str(manifest.get('version', '') or '')
     if manifest_path is None or not manifest_version:
         return _unknown(
-            'marketplace-clone-root dist-manifest.json could not be resolved; '
-            'cache freshness cannot be substantiated',
+            'marketplace-clone-root dist-manifest.json could not be resolved; cache freshness cannot be substantiated',
             cache_root,
             cache_version,
         )

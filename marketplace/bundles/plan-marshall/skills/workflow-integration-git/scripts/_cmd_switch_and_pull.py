@@ -173,9 +173,7 @@ def cmd_switch_and_pull(args) -> dict:
             }
 
     # Invariant §5.2.1 — verify base branch exists on remote.
-    rc, ls_out, _ls_err = run_git(
-        ['-C', str(project_path), 'ls-remote', '--heads', 'origin', base_branch]
-    )
+    rc, ls_out, _ls_err = run_git(['-C', str(project_path), 'ls-remote', '--heads', 'origin', base_branch])
     if rc != 0 or not ls_out.strip():
         return {
             **envelope,
@@ -216,9 +214,7 @@ def cmd_switch_and_pull(args) -> dict:
         }
 
     # Invariant §5.2.3 — explicit pull origin {base_branch}.
-    rc, _pull_out, pull_err = run_git(
-        ['-C', str(project_path), 'pull', 'origin', base_branch]
-    )
+    rc, _pull_out, pull_err = run_git(['-C', str(project_path), 'pull', 'origin', base_branch])
     if rc != 0:
         return {
             **envelope,
@@ -235,9 +231,7 @@ def cmd_switch_and_pull(args) -> dict:
     # Invariant §5.2.4 — compute commits_pulled.
     commits_pulled = 0
     if pre_sha and post_sha:
-        rc_count, count_out, _err = run_git(
-            ['-C', str(project_path), 'rev-list', '--count', f'{pre_sha}..HEAD']
-        )
+        rc_count, count_out, _err = run_git(['-C', str(project_path), 'rev-list', '--count', f'{pre_sha}..HEAD'])
         if rc_count == 0 and count_out.strip().isdigit():
             commits_pulled = int(count_out.strip())
 

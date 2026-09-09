@@ -89,9 +89,7 @@ def _resolver_provenance_line(resolver_reports: list[dict[str, Any]]) -> str:
     def _ids(records: list[dict[str, Any]]) -> str:
         return ', '.join(sorted(str(rec.get('id', '')) for rec in records))
 
-    dispatched = [
-        rec for rec in resolver_reports if rec.get('status') != STATUS_NOT_DISPATCHED
-    ]
+    dispatched = [rec for rec in resolver_reports if rec.get('status') != STATUS_NOT_DISPATCHED]
     withheld = [rec for rec in resolver_reports if rec.get('status') == STATUS_NOT_DISPATCHED]
 
     if not dispatched:
@@ -102,15 +100,11 @@ def _resolver_provenance_line(resolver_reports: list[dict[str, Any]]) -> str:
 
     line = f'_Edge provenance: derived by {len(dispatched)} resolver(s) — {_ids(dispatched)}'
     if withheld:
-        line += (
-            f'; {len(withheld)} switched off by the machine-local configuration — {_ids(withheld)}'
-        )
+        line += f'; {len(withheld)} switched off by the machine-local configuration — {_ids(withheld)}'
     return line + '._'
 
 
-def _render_adjacency_section(
-    deps_map: dict[str, list[str]], resolver_reports: list[dict[str, Any]]
-) -> list[str]:
+def _render_adjacency_section(deps_map: dict[str, list[str]], resolver_reports: list[dict[str, Any]]) -> list[str]:
     if not deps_map:
         return []
     lines = ['## Adjacency', '', '| Module | Internal Dependencies |', '|---|---|']

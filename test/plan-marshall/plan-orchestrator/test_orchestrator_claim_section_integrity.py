@@ -48,9 +48,7 @@ _ORCH_BUNDLE = 'plan-marshall'
 _ORCH_SKILL = 'plan-orchestrator'
 _ORCH_SCRIPT = 'orchestrator.py'
 
-_orch = load_script_module(
-    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT, 'orchestrator_script'
-)
+_orch = load_script_module(_ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT, 'orchestrator_script')
 
 cmd_corpus_verdicts = _orch.cmd_corpus_verdicts
 cmd_corpus_set_verdict = _orch.cmd_corpus_set_verdict
@@ -106,24 +104,40 @@ def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
 
 
 _VERDICTS_ARGS = parse_ns(
-    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
-    'corpus', 'verdicts', '--slug', SLUG,
+    _ORCH_BUNDLE,
+    _ORCH_SKILL,
+    _ORCH_SCRIPT,
+    'corpus',
+    'verdicts',
+    '--slug',
+    SLUG,
     register=False,
 )
 
 #: The ``set-verdict`` base carries every one of that verb's nine flags, so the
 #: section-scope builder below overrides only the two addressing fields.
 _SET_VERDICT_ARGS = parse_ns(
-    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
-    'corpus', 'set-verdict',
-    '--slug', SLUG,
-    '--plan', 'PLAN-01',
-    '--claim-index', '0',
-    '--verdict', 'corroborated',
-    '--checked-at', SHA,
-    '--by', PRODUCER,
-    '--rescoped', 'n/a',
-    '--evidence', 'the section is settled as a whole',
+    _ORCH_BUNDLE,
+    _ORCH_SKILL,
+    _ORCH_SCRIPT,
+    'corpus',
+    'set-verdict',
+    '--slug',
+    SLUG,
+    '--plan',
+    'PLAN-01',
+    '--claim-index',
+    '0',
+    '--verdict',
+    'corroborated',
+    '--checked-at',
+    SHA,
+    '--by',
+    PRODUCER,
+    '--rescoped',
+    'n/a',
+    '--evidence',
+    'the section is settled as a whole',
     register=False,
 )
 
@@ -305,12 +319,9 @@ class TestUnreadableToStampedJourney:
 
         assert payload['specs_scanned'] == 1, 'the fixture population did not materialize'
         synthesised = [row for row in payload['claims'] if row['synthesised']]
-        assert len(synthesised) == 1, (
-            f'{len(synthesised)} synthesised row(s) over 1 unreadable section, expected 1'
-        )
+        assert len(synthesised) == 1, f'{len(synthesised)} synthesised row(s) over 1 unreadable section, expected 1'
         assert synthesised[0]['line'] == _TABLE_FORM[0], (
-            'the blocking row does not carry the offending line, so the shortfall '
-            'reason cannot be derived from it'
+            'the blocking row does not carry the offending line, so the shortfall reason cannot be derived from it'
         )
         # Same value, both surfaces: the join is now redundant, not broken.
         assert payload['unreadable_claim_sections'][0]['first_line'] == _TABLE_FORM[0]
@@ -330,8 +341,7 @@ class TestUnreadableToStampedJourney:
         assert len(rows) == 1, f'{len(rows)} section row(s), expected 1'
         assert rows[0]['synthesised'] is False
         assert rows[0]['line'].startswith(_TOP_LEVEL_VERDICT_PREFIX), (
-            'a settled section row must quote its own verdict bullet, not the '
-            'section heading line'
+            'a settled section row must quote its own verdict bullet, not the section heading line'
         )
 
     def test_the_claim_prose_survives_the_stamp_byte_for_byte(self, plan_context):
@@ -343,14 +353,8 @@ class TestUnreadableToStampedJourney:
         cmd_corpus_set_verdict(_section_scope_args('PLAN-01'))
 
         after = spec.read_text(encoding='utf-8')
-        added = [
-            line for line in after.splitlines() if line.startswith(_TOP_LEVEL_VERDICT_PREFIX)
-        ]
-        kept = [
-            line
-            for line in after.splitlines()
-            if not line.startswith(_TOP_LEVEL_VERDICT_PREFIX)
-        ]
+        added = [line for line in after.splitlines() if line.startswith(_TOP_LEVEL_VERDICT_PREFIX)]
+        kept = [line for line in after.splitlines() if not line.startswith(_TOP_LEVEL_VERDICT_PREFIX)]
         assert len(added) == 1, f'{len(added)} section verdict bullet(s) written, expected 1'
         assert '\n'.join(kept) + '\n' == before, (
             'the stamp rewrote the surrounding document rather than inserting one line'
@@ -476,8 +480,7 @@ _COLLAPSED_FORMS = (
 class TestPreFixParserCollapsedTheThreeForms:
     def test_the_pre_fix_parser_returned_the_same_empty_list_for_all_three(self):
         outcomes = {
-            name: _pre_fix_parse_claims(_spec_text(claim_lines).splitlines())
-            for name, claim_lines in _COLLAPSED_FORMS
+            name: _pre_fix_parse_claims(_spec_text(claim_lines).splitlines()) for name, claim_lines in _COLLAPSED_FORMS
         }
 
         assert len(outcomes) == 3, 'the collapsed-form population did not materialize'
@@ -499,13 +502,9 @@ class TestPreFixParserCollapsedTheThreeForms:
             'prose': CLAIM_SECTION_UNREADABLE,
             'absent': CLAIM_SECTION_ABSENT,
         }
-        assert len(set(states.values())) == 2, (
-            'the three forms still collapse to one state — the split is inert'
-        )
+        assert len(set(states.values())) == 2, 'the three forms still collapse to one state — the split is inert'
 
-    @pytest.mark.parametrize(
-        ('name', 'claim_lines'), _COLLAPSED_FORMS, ids=[form for form, _ in _COLLAPSED_FORMS]
-    )
+    @pytest.mark.parametrize(('name', 'claim_lines'), _COLLAPSED_FORMS, ids=[form for form, _ in _COLLAPSED_FORMS])
     def test_the_claim_list_itself_is_unchanged_by_the_split(self, name, claim_lines):
         # Matched control on the other direction: the split added a state, it did
         # not move any claim. Both parsers still agree there is no claim here, so

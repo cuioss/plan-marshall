@@ -22,7 +22,6 @@ coverage living in ``test/plan-marshall/manage-execution-manifest/``. This
 suite is scoped strictly to the recipe and auto-suggest contracts.
 """
 
-
 from argparse import Namespace
 
 import pytest
@@ -202,13 +201,10 @@ class TestRecipePathEndToEnd:
         phase_6 = manifest['phase_6']['steps']
         for retained in ('automatic-review', 'sonar-roundtrip'):
             assert retained in phase_6, (
-                f'recipe path MUST retain {retained!r} under the new contract '
-                f'(lesson_kind={lesson_kind})'
+                f'recipe path MUST retain {retained!r} under the new contract (lesson_kind={lesson_kind})'
             )
         # Legacy ci-wait still defensively narrowed out.
-        assert 'ci-wait' not in phase_6, (
-            f'recipe path MUST defensively drop legacy ci-wait (lesson_kind={lesson_kind})'
-        )
+        assert 'ci-wait' not in phase_6, f'recipe path MUST defensively drop legacy ci-wait (lesson_kind={lesson_kind})'
         # And keeps the must-run steps from the recipe contract.
         for required in ('push', 'lessons-capture'):
             assert required in phase_6, f'recipe path must keep {required!r} in Phase 6 (lesson_kind={lesson_kind})'

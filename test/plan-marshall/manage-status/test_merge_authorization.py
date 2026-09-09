@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the merge-authorization subcommand of manage-status."""
 
-
 from _merge_authorization_fixtures import (
     BARRIER_GAP,
     HEAD_A,
@@ -54,13 +53,9 @@ def test_check_at_the_granting_head_is_valid(plan_context):
     """
     plan_id = 'merge-auth-same-head'
     _make_plan(plan_id)
-    cmd_merge_authorization_grant(
-        _grant_args(plan_id, 'pre-merge-consent', HEAD_A, gap_class=MERGE_ACTION_GAP)
-    )
+    cmd_merge_authorization_grant(_grant_args(plan_id, 'pre-merge-consent', HEAD_A, gap_class=MERGE_ACTION_GAP))
 
-    result = cmd_merge_authorization_check(
-        _check_args(plan_id, HEAD_A, gap_class=MERGE_ACTION_GAP)
-    )
+    result = cmd_merge_authorization_check(_check_args(plan_id, HEAD_A, gap_class=MERGE_ACTION_GAP))
 
     assert result['any_authorized'] is True
     assert result['any_admissible'] is True
@@ -70,6 +65,7 @@ def test_check_at_the_granting_head_is_valid(plan_context):
 # =============================================================================
 # check — the single-question contract, pinned at the CLI boundary
 # =============================================================================
+
 
 def test_check_cli_accepts_the_documented_form(plan_context):
     """Positive control: the documented `check --plan-id --head --gap-class` form works.
@@ -207,9 +203,7 @@ def test_one_valid_authorization_does_not_mask_a_lapsed_sibling(plan_context):
     """
     plan_id = 'merge-auth-mixed'
     _make_plan(plan_id)
-    cmd_merge_authorization_grant(
-        _grant_args(plan_id, 'pre-merge-consent', HEAD_B, gap_class=MERGE_ACTION_GAP)
-    )
+    cmd_merge_authorization_grant(_grant_args(plan_id, 'pre-merge-consent', HEAD_B, gap_class=MERGE_ACTION_GAP))
     cmd_merge_authorization_grant(_grant_args(plan_id, 'barrier-ask-override', HEAD_A))
 
     result = cmd_merge_authorization_check(_check_args(plan_id, HEAD_B))
@@ -243,9 +237,7 @@ def test_valid_record_over_a_different_gap_is_not_admissible(plan_context):
     """
     plan_id = 'merge-auth-cross-gap'
     _make_plan(plan_id)
-    cmd_merge_authorization_grant(
-        _grant_args(plan_id, 'pre-merge-consent', HEAD_A, gap_class=MERGE_ACTION_GAP)
-    )
+    cmd_merge_authorization_grant(_grant_args(plan_id, 'pre-merge-consent', HEAD_A, gap_class=MERGE_ACTION_GAP))
 
     result = cmd_merge_authorization_check(_check_args(plan_id, HEAD_A, gap_class=BARRIER_GAP))
 
@@ -266,9 +258,7 @@ def test_matching_gap_class_at_the_granting_head_is_admissible(plan_context):
     """
     plan_id = 'merge-auth-matching-gap'
     _make_plan(plan_id)
-    cmd_merge_authorization_grant(
-        _grant_args(plan_id, 'barrier-ask-override', HEAD_A, gap_class=BARRIER_GAP)
-    )
+    cmd_merge_authorization_grant(_grant_args(plan_id, 'barrier-ask-override', HEAD_A, gap_class=BARRIER_GAP))
 
     result = cmd_merge_authorization_check(_check_args(plan_id, HEAD_A, gap_class=BARRIER_GAP))
 
@@ -287,9 +277,7 @@ def test_matching_gap_class_at_a_superseded_head_is_not_admissible(plan_context)
     """
     plan_id = 'merge-auth-matching-gap-stale'
     _make_plan(plan_id)
-    cmd_merge_authorization_grant(
-        _grant_args(plan_id, 'barrier-ask-override', HEAD_A, gap_class=BARRIER_GAP)
-    )
+    cmd_merge_authorization_grant(_grant_args(plan_id, 'barrier-ask-override', HEAD_A, gap_class=BARRIER_GAP))
 
     result = cmd_merge_authorization_check(_check_args(plan_id, HEAD_B, gap_class=BARRIER_GAP))
 

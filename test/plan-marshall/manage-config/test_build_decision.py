@@ -68,6 +68,7 @@ def _decision_ns(*, command: str | None = None, plan_id: str | None = None) -> N
     ns: Namespace = parse_ns(*_SCRIPT, *argv)
     return ns
 
+
 # extension_base lives in script-shared and is on PYTHONPATH (executor wires every
 # skill scripts dir). The handler resolves should_execute_build from it at call
 # time, so monkeypatching helpers on this same module object is what the handler
@@ -151,9 +152,7 @@ def test_footprint_intersecting_a_glob_is_build(monkeypatch):
     """A footprint touching a registered build glob -> build, echoing the command."""
     # a changed production .py matches the registered glob.
     monkeypatch.setattr(extension_base, '_read_build_map_globs', lambda _root=None: ['scripts/*.py'])
-    monkeypatch.setattr(
-        extension_base, '_resolve_plan_footprint', lambda _plan: ['scripts/foo.py']
-    )
+    monkeypatch.setattr(extension_base, '_resolve_plan_footprint', lambda _plan: ['scripts/foo.py'])
 
     verdict = extension_base.should_execute_build('quality-gate', 'my-plan')
 
@@ -175,9 +174,7 @@ def test_bare_basename_glob_matches_subdir_only_footprint(monkeypatch):
     """
     # Arrange — a bare-basename config glob, footprint is the file in a subdir.
     monkeypatch.setattr(extension_base, '_read_build_map_globs', lambda _root=None: ['package.json'])
-    monkeypatch.setattr(
-        extension_base, '_resolve_plan_footprint', lambda _plan: ['nifi-cuioss-ui/package.json']
-    )
+    monkeypatch.setattr(extension_base, '_resolve_plan_footprint', lambda _plan: ['nifi-cuioss-ui/package.json'])
 
     # Act
     verdict = extension_base.should_execute_build('verify', 'my-plan')
@@ -198,9 +195,7 @@ def test_path_bearing_glob_does_not_match_on_basename_alone(monkeypatch):
     # Arrange — a path-bearing production glob, footprint is a same-basename file
     # under an unrelated directory the glob does not cover.
     monkeypatch.setattr(extension_base, '_read_build_map_globs', lambda _root=None: ['scripts/*.py'])
-    monkeypatch.setattr(
-        extension_base, '_resolve_plan_footprint', lambda _plan: ['vendor/foo.py']
-    )
+    monkeypatch.setattr(extension_base, '_resolve_plan_footprint', lambda _plan: ['vendor/foo.py'])
 
     # Act
     verdict = extension_base.should_execute_build('quality-gate', 'my-plan')
@@ -218,13 +213,9 @@ def test_path_bearing_glob_does_not_match_on_basename_alone(monkeypatch):
 def test_handler_returns_build_verdict(monkeypatch):
     """The handler wraps a build verdict as a status: success dict."""
     monkeypatch.setattr(extension_base, '_read_build_map_globs', lambda _root=None: ['scripts/*.py'])
-    monkeypatch.setattr(
-        extension_base, '_resolve_plan_footprint', lambda _plan: ['scripts/foo.py']
-    )
+    monkeypatch.setattr(extension_base, '_resolve_plan_footprint', lambda _plan: ['scripts/foo.py'])
 
-    result = _cmd_build_map_mod.cmd_build_decision(
-        _decision_ns(command='quality-gate', plan_id='my-plan')
-    )
+    result = _cmd_build_map_mod.cmd_build_decision(_decision_ns(command='quality-gate', plan_id='my-plan'))
 
     assert result['status'] == 'success'
     assert result['decision'] == 'build'
@@ -237,9 +228,7 @@ def test_handler_returns_not_necessary_with_reason(monkeypatch):
     monkeypatch.setattr(extension_base, '_read_build_map_globs', lambda _root=None: ['scripts/*.py'])
     monkeypatch.setattr(extension_base, '_resolve_plan_footprint', lambda _plan: [])
 
-    result = _cmd_build_map_mod.cmd_build_decision(
-        _decision_ns(command='verify', plan_id='my-plan')
-    )
+    result = _cmd_build_map_mod.cmd_build_decision(_decision_ns(command='verify', plan_id='my-plan'))
 
     assert result['status'] == 'success'
     assert result['decision'] == 'not_necessary'
@@ -256,9 +245,7 @@ def test_handler_forwards_the_unknown_verdict_verbatim(monkeypatch):
     monkeypatch.setattr(extension_base, '_read_build_map_globs', lambda _root=None: ['scripts/*.py'])
     monkeypatch.setattr(extension_base, '_resolve_plan_footprint', lambda _plan: None)
 
-    result = _cmd_build_map_mod.cmd_build_decision(
-        _decision_ns(command='quality-gate', plan_id='my-plan')
-    )
+    result = _cmd_build_map_mod.cmd_build_decision(_decision_ns(command='quality-gate', plan_id='my-plan'))
 
     assert result['status'] == 'success'
     assert result['decision'] == 'unknown'
@@ -276,13 +263,9 @@ def test_handler_unknown_and_not_necessary_are_distinct(monkeypatch):
     monkeypatch.setattr(extension_base, '_read_build_map_globs', lambda _root=None: ['scripts/*.py'])
 
     monkeypatch.setattr(extension_base, '_resolve_plan_footprint', lambda _plan: None)
-    unresolvable = _cmd_build_map_mod.cmd_build_decision(
-        _decision_ns(plan_id='my-plan')
-    )
+    unresolvable = _cmd_build_map_mod.cmd_build_decision(_decision_ns(plan_id='my-plan'))
     monkeypatch.setattr(extension_base, '_resolve_plan_footprint', lambda _plan: [])
-    resolvable_empty = _cmd_build_map_mod.cmd_build_decision(
-        _decision_ns(plan_id='my-plan')
-    )
+    resolvable_empty = _cmd_build_map_mod.cmd_build_decision(_decision_ns(plan_id='my-plan'))
 
     assert unresolvable['decision'] == 'unknown'
     assert resolvable_empty['decision'] == 'not_necessary'
@@ -337,9 +320,7 @@ def test_parser_still_accepts_the_surviving_plan_id_flag():
     ns = _decision_ns(command='quality-gate', plan_id='my-plan')
 
     assert ns.plan_id == 'my-plan'
-    assert not hasattr(ns, 'audit_plan_id'), (
-        'the retired alias must leave no attribute behind on the namespace'
-    )
+    assert not hasattr(ns, 'audit_plan_id'), 'the retired alias must leave no attribute behind on the namespace'
 
 
 def test_handler_errors_when_plan_id_missing():
@@ -349,15 +330,11 @@ def test_handler_errors_when_plan_id_missing():
     ``--audit-plan-id`` as an alternative, which would now send a reader to a
     flag the parser rejects.
     """
-    result = _cmd_build_map_mod.cmd_build_decision(
-        _decision_ns(command='quality-gate')
-    )
+    result = _cmd_build_map_mod.cmd_build_decision(_decision_ns(command='quality-gate'))
 
     assert result['status'] == 'error'
     assert 'plan-id' in result['error']
-    assert 'audit-plan-id' not in result['error'], (
-        'the error must not point at the retired alias'
-    )
+    assert 'audit-plan-id' not in result['error'], 'the error must not point at the retired alias'
 
 
 # =============================================================================
@@ -383,9 +360,7 @@ def test_phase5_gate_pure_doc_footprint_resolves_not_necessary(monkeypatch):
     """
     # Arrange — production build globs exist, but the footprint is docs-only markdown
     # that intersects none of them.
-    monkeypatch.setattr(
-        extension_base, '_read_build_map_globs', lambda _root=None: ['scripts/*.py']
-    )
+    monkeypatch.setattr(extension_base, '_read_build_map_globs', lambda _root=None: ['scripts/*.py'])
     monkeypatch.setattr(
         extension_base,
         '_resolve_plan_footprint',
@@ -412,12 +387,8 @@ def test_phase5_gate_buildable_footprint_resolves_build(monkeypatch):
     runs the whole-tree quality sweep unchanged.
     """
     # Arrange — a changed production .py that matches the registered glob.
-    monkeypatch.setattr(
-        extension_base, '_read_build_map_globs', lambda _root=None: ['scripts/*.py']
-    )
-    monkeypatch.setattr(
-        extension_base, '_resolve_plan_footprint', lambda _plan: ['scripts/foo.py']
-    )
+    monkeypatch.setattr(extension_base, '_read_build_map_globs', lambda _root=None: ['scripts/*.py'])
+    monkeypatch.setattr(extension_base, '_resolve_plan_footprint', lambda _plan: ['scripts/foo.py'])
 
     # Act — the exact call shape phase-5 Step 11b issues.
     result = _cmd_build_map_mod.cmd_build_decision(
@@ -449,9 +420,7 @@ def test_handler_command_free_build_verdict_omits_label(monkeypatch):
     monkeypatch.setattr(extension_base, '_resolve_plan_footprint', lambda _plan: ['scripts/foo.py'])
 
     # Act — argparse supplies command=None when the optional flag is omitted.
-    result = _cmd_build_map_mod.cmd_build_decision(
-        _decision_ns(plan_id='my-plan')
-    )
+    result = _cmd_build_map_mod.cmd_build_decision(_decision_ns(plan_id='my-plan'))
 
     # Assert
     assert result['status'] == 'success'
@@ -470,9 +439,7 @@ def test_handler_command_free_not_necessary_verdict_omits_label(monkeypatch):
     )
 
     # Act
-    result = _cmd_build_map_mod.cmd_build_decision(
-        _decision_ns(plan_id='my-plan')
-    )
+    result = _cmd_build_map_mod.cmd_build_decision(_decision_ns(plan_id='my-plan'))
 
     # Assert
     assert result['status'] == 'success'
@@ -493,12 +460,8 @@ def test_handler_command_free_and_command_bearing_agree(monkeypatch):
     monkeypatch.setattr(extension_base, '_resolve_plan_footprint', lambda _plan: ['uv.lock'])
 
     # Act
-    command_free = _cmd_build_map_mod.cmd_build_decision(
-        _decision_ns(plan_id='my-plan')
-    )
-    with_command = _cmd_build_map_mod.cmd_build_decision(
-        _decision_ns(command='quality-gate', plan_id='my-plan')
-    )
+    command_free = _cmd_build_map_mod.cmd_build_decision(_decision_ns(plan_id='my-plan'))
+    with_command = _cmd_build_map_mod.cmd_build_decision(_decision_ns(command='quality-gate', plan_id='my-plan'))
 
     # Assert — same decision and same reason; the label is the only difference.
     assert command_free['decision'] == with_command['decision']
@@ -514,9 +477,7 @@ def test_handler_command_free_still_requires_a_plan_id():
     plan-scoped, so a command-free call without a plan identifier is unanswerable
     and must surface a structured error rather than a permissive default.
     """
-    result = _cmd_build_map_mod.cmd_build_decision(
-        _decision_ns()
-    )
+    result = _cmd_build_map_mod.cmd_build_decision(_decision_ns())
 
     assert result['status'] == 'error'
     assert 'plan-id' in result['error']
@@ -534,9 +495,7 @@ def test_handler_command_free_works_without_a_command_attribute(monkeypatch):
     monkeypatch.setattr(extension_base, '_resolve_plan_footprint', lambda _plan: ['scripts/foo.py'])
 
     # Act — note: no ``command`` attribute on the Namespace.
-    result = _cmd_build_map_mod.cmd_build_decision(
-        _decision_ns(plan_id='my-plan')
-    )
+    result = _cmd_build_map_mod.cmd_build_decision(_decision_ns(plan_id='my-plan'))
 
     # Assert
     assert result['status'] == 'success'

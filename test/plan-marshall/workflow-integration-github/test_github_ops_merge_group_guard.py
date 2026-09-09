@@ -88,16 +88,12 @@ def test_helper_detects_block_sequence_on_form(tmp_path):
 
 
 def test_helper_detects_quoted_on_key(tmp_path):
-    workflows_dir = _write_workflow(
-        tmp_path, 'ci.yml', 'name: CI\n"on": [push, merge_group]\njobs:\n  build: {}\n'
-    )
+    workflows_dir = _write_workflow(tmp_path, 'ci.yml', 'name: CI\n"on": [push, merge_group]\njobs:\n  build: {}\n')
     assert github_ops._repo_has_merge_group_trigger(workflows_dir) is True
 
 
 def test_helper_scans_yaml_extension_too(tmp_path):
-    workflows_dir = _write_workflow(
-        tmp_path, 'ci.yaml', 'name: CI\non: merge_group\njobs:\n  build: {}\n'
-    )
+    workflows_dir = _write_workflow(tmp_path, 'ci.yaml', 'name: CI\non: merge_group\njobs:\n  build: {}\n')
     assert github_ops._repo_has_merge_group_trigger(workflows_dir) is True
 
 
@@ -168,9 +164,7 @@ def test_helper_ignores_commented_out_trigger(tmp_path):
 def test_helper_detects_trigger_in_second_file(tmp_path):
     # First file has no trigger; a later file does → overall True.
     _write_workflow(tmp_path, 'a.yml', 'name: A\non:\n  push:\njobs:\n  build: {}\n')
-    workflows_dir = _write_workflow(
-        tmp_path, 'b.yml', 'name: B\non: merge_group\njobs:\n  build: {}\n'
-    )
+    workflows_dir = _write_workflow(tmp_path, 'b.yml', 'name: B\non: merge_group\njobs:\n  build: {}\n')
     assert github_ops._repo_has_merge_group_trigger(workflows_dir) is True
 
 

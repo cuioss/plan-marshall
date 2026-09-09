@@ -216,9 +216,7 @@ def test_step_params_set_writes_override_and_round_trips(plan_context):
     _seed_marshal_with_branch_cleanup_params(plan_context.fixture_dir)
     cmd_compose(_compose_ns('sp-set'))
 
-    set_result = cmd_step_params_set(
-        _set_ns('sp-set', '6-finalize', 'branch-cleanup', 'pr_merge_strategy', 'rebase')
-    )
+    set_result = cmd_step_params_set(_set_ns('sp-set', '6-finalize', 'branch-cleanup', 'pr_merge_strategy', 'rebase'))
 
     assert set_result is not None and set_result['status'] == 'success'
     assert set_result['params']['pr_merge_strategy'] == 'rebase'
@@ -240,9 +238,7 @@ def test_step_params_set_override_wins_over_marshal_default(plan_context):
     assert before['params']['pr_merge_strategy'] == 'squash'
 
     # write a per-plan override
-    cmd_step_params_set(
-        _set_ns('sp-override', '6-finalize', 'branch-cleanup', 'pr_merge_strategy', 'merge')
-    )
+    cmd_step_params_set(_set_ns('sp-override', '6-finalize', 'branch-cleanup', 'pr_merge_strategy', 'merge'))
 
     # the manifest value now wins over the marshal.json default
     after = cmd_step_params_get(_get_ns('sp-override', '6-finalize', 'branch-cleanup'))
@@ -255,9 +251,7 @@ def test_step_params_set_preserves_other_params(plan_context):
     _seed_marshal_with_branch_cleanup_params(plan_context.fixture_dir)
     cmd_compose(_compose_ns('sp-preserve'))
 
-    cmd_step_params_set(
-        _set_ns('sp-preserve', '6-finalize', 'branch-cleanup', 'final_merge_without_asking', 'true')
-    )
+    cmd_step_params_set(_set_ns('sp-preserve', '6-finalize', 'branch-cleanup', 'final_merge_without_asking', 'true'))
 
     result = cmd_step_params_get(_get_ns('sp-preserve', '6-finalize', 'branch-cleanup'))
     assert result is not None
@@ -273,9 +267,7 @@ def test_step_params_set_coerces_int_value(plan_context):
     _seed_marshal_with_branch_cleanup_params(plan_context.fixture_dir)
     cmd_compose(_compose_ns('sp-int'))
 
-    result = cmd_step_params_set(
-        _set_ns('sp-int', '6-finalize', 'sonar-roundtrip', 'ce_wait_timeout_seconds', '720')
-    )
+    result = cmd_step_params_set(_set_ns('sp-int', '6-finalize', 'sonar-roundtrip', 'ce_wait_timeout_seconds', '720'))
 
     assert result is not None and result['status'] == 'success'
     assert result['params']['ce_wait_timeout_seconds'] == 720
@@ -299,9 +291,7 @@ def test_step_params_set_invalid_phase_errors(plan_context):
     _seed_marshal_with_branch_cleanup_params(plan_context.fixture_dir)
     cmd_compose(_compose_ns('sp-set-bad-phase'))
 
-    result = cmd_step_params_set(
-        _set_ns('sp-set-bad-phase', '7-bogus', 'branch-cleanup', 'pr_merge_strategy', 'merge')
-    )
+    result = cmd_step_params_set(_set_ns('sp-set-bad-phase', '7-bogus', 'branch-cleanup', 'pr_merge_strategy', 'merge'))
 
     assert result is not None and result['status'] == 'error'
     assert result['error'] == 'invalid_phase'

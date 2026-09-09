@@ -109,9 +109,7 @@ def _run_cli(target_dir: Path, marketplace_dir: Path, capsys: pytest.CaptureFixt
     return exit_code, parsed
 
 
-def test_clean_emit_exits_zero_and_reports_passed(
-    synced_target: tuple[Path, Path], capsys: pytest.CaptureFixture[str]
-):
+def test_clean_emit_exits_zero_and_reports_passed(synced_target: tuple[Path, Path], capsys: pytest.CaptureFixture[str]):
     """A freshly emitted target is in sync — the CLI exits 0 and the TOON
     report carries ``passed: true`` with all drift counts zero.
     """
@@ -131,9 +129,7 @@ def test_clean_emit_exits_zero_and_reports_passed(
     assert 'passed' in parsed['summary']
 
 
-def test_toon_report_carries_documented_keys(
-    synced_target: tuple[Path, Path], capsys: pytest.CaptureFixture[str]
-):
+def test_toon_report_carries_documented_keys(synced_target: tuple[Path, Path], capsys: pytest.CaptureFixture[str]):
     """The serialized TOON report carries exactly the documented key set so
     downstream consumers (the ``upgrade`` verb Stage 3) can rely on the shape.
     """
@@ -169,9 +165,7 @@ def test_on_disk_md_mutation_exits_one_and_names_drifted_file(
     assert rel in parsed['summary']
 
 
-def test_missing_target_dir_exits_one_with_not_generated_diagnostic(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-):
+def test_missing_target_dir_exits_one_with_not_generated_diagnostic(tmp_path: Path, capsys: pytest.CaptureFixture[str]):
     """When the target dir is absent, the CLI exits 1 and the TOON summary
     carries the "not generated" diagnostic rather than crashing.
     """

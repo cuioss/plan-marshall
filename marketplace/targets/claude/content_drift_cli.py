@@ -52,15 +52,7 @@ if str(_repo_root) not in sys.path:
 # directory (the executor normally puts these on PYTHONPATH); add it so the
 # canonical serializer is used instead of hand-rolled TOON (ref-toon-format
 # forbids bypassing toon_parser).
-_toon_scripts = (
-    _repo_root
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'ref-toon-format'
-    / 'scripts'
-)
+_toon_scripts = _repo_root / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'ref-toon-format' / 'scripts'
 if str(_toon_scripts) not in sys.path:
     sys.path.insert(0, str(_toon_scripts))
 

@@ -22,9 +22,7 @@ from conftest import load_script_module
 # In-process module handle (coverage counts; unique module name avoids clobbering
 # the conftest-preimported ``run_config`` and the per-suite copy in
 # ``test_run_config.py``).
-run_config = load_script_module(
-    'plan-marshall', 'manage-run-config', 'run_config.py', 'run_config_behavior_cov'
-)
+run_config = load_script_module('plan-marshall', 'manage-run-config', 'run_config.py', 'run_config_behavior_cov')
 
 
 @pytest.fixture
@@ -97,9 +95,7 @@ def test_cmd_init_force_overwrites_existing(rc_env):
 
 def test_cmd_init_error_branch_returns_config_error(rc_env, monkeypatch):
     """cmd_init surfaces an error envelope when the path resolver raises."""
-    monkeypatch.setattr(
-        run_config, 'get_run_config_path', lambda *a, **k: (_ for _ in ()).throw(RuntimeError('boom'))
-    )
+    monkeypatch.setattr(run_config, 'get_run_config_path', lambda *a, **k: (_ for _ in ()).throw(RuntimeError('boom')))
 
     result = run_config.cmd_init(argparse.Namespace(force=False))
 
@@ -133,9 +129,7 @@ def test_validate_run_config_flags_wrong_version_type():
 
 def test_validate_run_config_flags_non_object_command_entry():
     """validate_run_config flags a command whose value is not an object."""
-    checks = run_config.validate_run_config(
-        {'version': 1, 'commands': {'bad': 'not-a-dict', 'good': {}}}
-    )
+    checks = run_config.validate_run_config({'version': 1, 'commands': {'bad': 'not-a-dict', 'good': {}}})
 
     entries = next(c for c in checks if c['check'] == 'command_entries')
     assert entries['passed'] is False
@@ -144,9 +138,7 @@ def test_validate_run_config_flags_non_object_command_entry():
 
 def test_validate_run_config_accepts_valid_command_entries():
     """validate_run_config counts valid command entries when all are objects."""
-    checks = run_config.validate_run_config(
-        {'version': 1, 'commands': {'a': {}, 'b': {}}, 'maven': {}}
-    )
+    checks = run_config.validate_run_config({'version': 1, 'commands': {'a': {}, 'b': {}}, 'maven': {}})
 
     entries = next(c for c in checks if c['check'] == 'command_entries')
     assert entries['passed'] is True
@@ -265,9 +257,7 @@ def test_timeout_get_no_override_path_is_unchanged(rc_env):
 
 def test_cmd_timeout_get_wraps_value(rc_env):
     """cmd_timeout_get returns the resolved timeout in a success envelope."""
-    result = run_config.cmd_timeout_get(
-        argparse.Namespace(command='ci:checks', default=300, explicit=None)
-    )
+    result = run_config.cmd_timeout_get(argparse.Namespace(command='ci:checks', default=300, explicit=None))
 
     assert result['status'] == 'success'
     assert result['command'] == 'ci:checks'
@@ -278,9 +268,7 @@ def test_cmd_timeout_get_forwards_explicit_override(rc_env):
     """cmd_timeout_get forwards --explicit so it overrides the persisted value."""
     _write_config({'version': 1, 'commands': {'ci:checks': {'timeout_seconds': 240}}})
 
-    result = run_config.cmd_timeout_get(
-        argparse.Namespace(command='ci:checks', default=300, explicit=1800)
-    )
+    result = run_config.cmd_timeout_get(argparse.Namespace(command='ci:checks', default=300, explicit=1800))
 
     assert result['status'] == 'success'
     assert result['timeout_seconds'] == 1800
@@ -301,9 +289,7 @@ def test_cmd_timeout_set_initial_then_weighted(rc_env):
 
 def test_cmd_timeout_set_error_branch(rc_env, monkeypatch):
     """cmd_timeout_set surfaces a config_error when persistence fails."""
-    monkeypatch.setattr(
-        run_config, 'get_run_config_path', lambda *a, **k: (_ for _ in ()).throw(RuntimeError('io'))
-    )
+    monkeypatch.setattr(run_config, 'get_run_config_path', lambda *a, **k: (_ for _ in ()).throw(RuntimeError('io')))
 
     result = run_config.cmd_timeout_set(argparse.Namespace(command='x', duration=1))
 
@@ -363,9 +349,7 @@ def test_cmd_warning_add_rejects_invalid_category(rc_env):
     """cmd_warning_add returns an error for a category outside the valid set."""
     _write_config({'version': 1, 'commands': {}})
 
-    result = run_config.cmd_warning_add(
-        argparse.Namespace(category='bogus', pattern='p', build_system='maven')
-    )
+    result = run_config.cmd_warning_add(argparse.Namespace(category='bogus', pattern='p', build_system='maven'))
 
     assert result['status'] == 'error'
     assert 'Invalid category' in result['message']
@@ -399,9 +383,7 @@ def test_cmd_warning_list_single_category(rc_env):
         }
     )
 
-    result = run_config.cmd_warning_list(
-        argparse.Namespace(category='plugin_compatibility', build_system='maven')
-    )
+    result = run_config.cmd_warning_list(argparse.Namespace(category='plugin_compatibility', build_system='maven'))
 
     assert result['category'] == 'plugin_compatibility'
     assert result['patterns'] == ['c']
@@ -456,9 +438,7 @@ def test_cmd_warning_remove_invalid_category_errors(rc_env):
     """cmd_warning_remove rejects an invalid category."""
     _write_config({'version': 1, 'commands': {}})
 
-    result = run_config.cmd_warning_remove(
-        argparse.Namespace(category='bogus', pattern='p', build_system='maven')
-    )
+    result = run_config.cmd_warning_remove(argparse.Namespace(category='bogus', pattern='p', build_system='maven'))
 
     assert result['status'] == 'error'
 
@@ -557,9 +537,7 @@ def test_read_build_queue_upper_limit_rejects_bool(rc_env):
 
 def test_read_build_queue_upper_limit_clamps_stored_value(rc_env):
     """_read_build_queue_upper_limit clamps an out-of-range stored value."""
-    _write_config(
-        {'version': 1, 'commands': {}, 'build': {'queue': {'upper_limit_seconds': 99999}}}
-    )
+    _write_config({'version': 1, 'commands': {}, 'build': {'queue': {'upper_limit_seconds': 99999}}})
 
     assert run_config._read_build_queue_upper_limit() == 3600
 
@@ -619,9 +597,7 @@ def test_main_validate_dispatch(rc_env, monkeypatch, capsys, tmp_path):
 
 def test_main_timeout_get_dispatch(rc_env, monkeypatch, capsys):
     """main() routes the nested 'timeout get' subcommand."""
-    monkeypatch.setattr(
-        sys, 'argv', ['run_config', 'timeout', 'get', '--command', 'x', '--default', '300']
-    )
+    monkeypatch.setattr(sys, 'argv', ['run_config', 'timeout', 'get', '--command', 'x', '--default', '300'])
 
     rc = run_config.main()
 

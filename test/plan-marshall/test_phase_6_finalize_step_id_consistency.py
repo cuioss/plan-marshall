@@ -53,9 +53,7 @@ from conftest import PROJECT_ROOT, get_skill_dir
 
 _PROJECT_SKILLS = PROJECT_ROOT / '.claude' / 'skills'
 _PRE_SUBMISSION_WORKFLOW = (
-    get_skill_dir('plan-marshall', 'phase-6-finalize')
-    / 'workflow'
-    / 'pre-submission-self-review.md'
+    get_skill_dir('plan-marshall', 'phase-6-finalize') / 'workflow' / 'pre-submission-self-review.md'
 )
 
 
@@ -73,12 +71,7 @@ def test_required_steps_parser_accepts_prefixed_ids(tmp_path: Path) -> None:
     """
     required = tmp_path / 'required-steps.md'
     required.write_text(
-        '# Required steps\n'
-        '\n'
-        '- default:pre-submission-self-review\n'
-        '- push\n'
-        '- create-pr\n'
-        '- default:archive-plan\n',
+        '# Required steps\n\n- default:pre-submission-self-review\n- push\n- create-pr\n- default:archive-plan\n',
         encoding='utf-8',
     )
 
@@ -107,8 +100,7 @@ def test_phase_steps_complete_matches_manifest_id_when_recorded_prefixed(
     """
     required = tmp_path / 'required-steps.md'
     required.write_text(
-        '- default:pre-submission-self-review\n'
-        '- push\n',
+        '- default:pre-submission-self-review\n- push\n',
         encoding='utf-8',
     )
     monkeypatch.setattr(inv, '_resolve_required_steps_path', lambda _p: required)
@@ -207,7 +199,7 @@ def _renderer_lookup(phase_steps: dict[str, dict], manifest_step_id: str) -> dic
         return record
     for prefix in ('project:', 'default:'):
         if manifest_step_id.startswith(prefix):
-            bare = manifest_step_id[len(prefix):]
+            bare = manifest_step_id[len(prefix) :]
             return phase_steps.get(bare)
     return None
 

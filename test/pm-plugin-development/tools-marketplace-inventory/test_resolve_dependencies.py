@@ -360,11 +360,7 @@ python3 .plan/execute-script.py plan-marshall:manage-files:manage-files add
             )
             index = build_dependency_index(bundles, set(DependencyType))
 
-        recorded = {
-            dep.target.to_notation()
-            for deps in index.forward_deps.values()
-            for dep in deps
-        }
+        recorded = {dep.target.to_notation() for deps in index.forward_deps.values() for dep in deps}
         assert 'com:8080:path' not in recorded
         assert 'localhost:3000:api' not in recorded
 
@@ -803,31 +799,27 @@ class TestGetBasePathBundleCacheRouting:
 
     def test_plugin_cache_scope_uses_layout_op_roots(self, tmp_path, monkeypatch):
         """plugin-cache scope returns the first existing layout-op cache root."""
-        cache = tmp_path / "deployed-cache"
+        cache = tmp_path / 'deployed-cache'
         cache.mkdir()
-        monkeypatch.setattr(
-            _mp_paths_mod, "get_bundle_cache_roots", lambda: (str(cache),)
-        )
-        assert _dep_index_mod.get_base_path("plugin-cache") == cache
+        monkeypatch.setattr(_mp_paths_mod, 'get_bundle_cache_roots', lambda: (str(cache),))
+        assert _dep_index_mod.get_base_path('plugin-cache') == cache
 
     def test_plugin_cache_scope_skips_missing_root(self, tmp_path, monkeypatch):
         """A non-existent first root is skipped in favour of an existing later root."""
-        present = tmp_path / "present-cache"
+        present = tmp_path / 'present-cache'
         present.mkdir()
         monkeypatch.setattr(
             _mp_paths_mod,
-            "get_bundle_cache_roots",
-            lambda: (str(tmp_path / "missing"), str(present)),
+            'get_bundle_cache_roots',
+            lambda: (str(tmp_path / 'missing'), str(present)),
         )
-        assert _dep_index_mod.get_base_path("plugin-cache") == present
+        assert _dep_index_mod.get_base_path('plugin-cache') == present
 
     def test_plugin_cache_scope_raises_when_no_root_exists(self, tmp_path, monkeypatch):
         """When no layout-op cache root exists, plugin-cache scope raises."""
-        monkeypatch.setattr(
-            _mp_paths_mod, "get_bundle_cache_roots", lambda: (str(tmp_path / "nope"),)
-        )
+        monkeypatch.setattr(_mp_paths_mod, 'get_bundle_cache_roots', lambda: (str(tmp_path / 'nope'),))
         with pytest.raises(FileNotFoundError):
-            _dep_index_mod.get_base_path("plugin-cache")
+            _dep_index_mod.get_base_path('plugin-cache')
 
 
 class TestGetBasePathProjectAndGlobalScope:
@@ -842,36 +834,34 @@ class TestGetBasePathProjectAndGlobalScope:
 
     def test_project_scope_routes_through_layout_skill_roots(self, tmp_path, monkeypatch):
         """project scope returns the first existing project-local skill root."""
-        root = tmp_path / "project-root"
+        root = tmp_path / 'project-root'
         root.mkdir()
-        monkeypatch.setattr(_dep_index_mod, "get_project_skill_roots", lambda: (str(root),))
-        assert _dep_index_mod.get_base_path("project") == root
+        monkeypatch.setattr(_dep_index_mod, 'get_project_skill_roots', lambda: (str(root),))
+        assert _dep_index_mod.get_base_path('project') == root
 
     def test_project_scope_skips_missing_root(self, tmp_path, monkeypatch):
         """A non-existent first project root is skipped in favour of an existing later root."""
-        present = tmp_path / "present-root"
+        present = tmp_path / 'present-root'
         present.mkdir()
         monkeypatch.setattr(
             _dep_index_mod,
-            "get_project_skill_roots",
-            lambda: (str(tmp_path / "missing"), str(present)),
+            'get_project_skill_roots',
+            lambda: (str(tmp_path / 'missing'), str(present)),
         )
-        assert _dep_index_mod.get_base_path("project") == present
+        assert _dep_index_mod.get_base_path('project') == present
 
     def test_project_scope_raises_when_no_root_exists(self, tmp_path, monkeypatch):
         """When no project-local skill root exists, project scope raises."""
-        monkeypatch.setattr(
-            _dep_index_mod, "get_project_skill_roots", lambda: (str(tmp_path / "nope"),)
-        )
+        monkeypatch.setattr(_dep_index_mod, 'get_project_skill_roots', lambda: (str(tmp_path / 'nope'),))
         with pytest.raises(FileNotFoundError):
-            _dep_index_mod.get_base_path("project")
+            _dep_index_mod.get_base_path('project')
 
     def test_global_scope_delegates_to_shared_helper(self, tmp_path, monkeypatch):
         """global scope delegates to the shared layout helper rather than crashing."""
-        home = tmp_path / "home"
-        monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
-        result = _dep_index_mod.get_base_path("global")
-        assert result == home / ".claude"
+        home = tmp_path / 'home'
+        monkeypatch.setattr(Path, 'home', classmethod(lambda cls: home))
+        result = _dep_index_mod.get_base_path('global')
+        assert result == home / '.claude'
 
 
 # =============================================================================
@@ -1216,8 +1206,7 @@ def test_live_anchor_persona_agent_subdoc_edge_is_indexed():
     index = build_dependency_index(_BUNDLES_ROOT)
 
     dependents = {
-        dep.source.to_notation()
-        for dep in index.get_reverse_deps('plan-marshall:untrusted-ingestion:validate_struct')
+        dep.source.to_notation() for dep in index.get_reverse_deps('plan-marshall:untrusted-ingestion:validate_struct')
     }
 
     assert 'plan-marshall:persona-plan-marshall-agent' in dependents
@@ -1375,8 +1364,7 @@ def _build_precision_graph(root: Path) -> Path:
 
     _write(
         pb / 'skills' / 'manage-thing' / 'SKILL.md',
-        '---\nname: manage-thing\ndescription: Entry-script-bearing skill\n---\n'
-        '# Manage Thing\n',
+        '---\nname: manage-thing\ndescription: Entry-script-bearing skill\n---\n# Manage Thing\n',
     )
     _write(
         pb / 'skills' / 'manage-thing' / 'scripts' / 'manage-thing.py',
@@ -1424,10 +1412,7 @@ class TestPrecisionRegressionFixture:
 
     def test_subcommand_resolves_to_the_entry_script(self, precision_index):
         """The subcommand reference resolves rather than reporting unresolved."""
-        targets = {
-            dep.target.to_notation()
-            for dep in precision_index.get_forward_deps('precision-bundle:phase-thing')
-        }
+        targets = {dep.target.to_notation() for dep in precision_index.get_forward_deps('precision-bundle:phase-thing')}
         assert 'precision-bundle:manage-thing:manage-thing' in targets
 
     def test_validation_fails_while_the_real_break_stands(self, precision_index):
@@ -1546,8 +1531,7 @@ class TestMisspelledScriptSegmentIsNotASubcommand:
         _write(root / 'skills' / 'real-skill' / 'scripts' / 'real_skill.py', '#!/usr/bin/env python3\n')
         _write(
             root / 'skills' / 'caller' / 'SKILL.md',
-            '---\nname: caller\ndescription: Cites a verb\n---\n# C\n'
-            'Run probe-bundle:real-skill:compose now.\n',
+            '---\nname: caller\ndescription: Cites a verb\n---\n# C\nRun probe-bundle:real-skill:compose now.\n',
         )
         index = build_dependency_index(root.parent, set(DependencyType))
         edges = [
@@ -1671,8 +1655,7 @@ class TestEntryScriptDocumentingItsOwnVerbs:
         )
         _write(
             root / 'skills' / 'real-skill' / 'scripts' / 'real-skill.py',
-            '#!/usr/bin/env python3\n'
-            '"""Dispatches probe-bundle:real-skill:compose."""\n',
+            '#!/usr/bin/env python3\n"""Dispatches probe-bundle:real-skill:compose."""\n',
         )
         _write(
             root / 'skills' / 'caller' / 'SKILL.md',
@@ -1691,9 +1674,7 @@ class TestEntryScriptDocumentingItsOwnVerbs:
         """
         index = self._index(tmp_path)
 
-        caller_targets = [
-            dep.target.to_notation() for dep in index.forward_deps.get('probe-bundle:caller', [])
-        ]
+        caller_targets = [dep.target.to_notation() for dep in index.forward_deps.get('probe-bundle:caller', [])]
         assert self._ENTRY in caller_targets, (
             'the outside caller must retarget onto the entry script — without '
             'this the self-edge assertions below are vacuous'
@@ -1733,15 +1714,11 @@ class TestOnlyVerbBearingShapesRetarget:
         edges onto `manage-lessons`, whose entry script registers no `references`
         or `standards` subcommand.
         """
-        assert _probe_reference(
-            tmp_path, 'Load `probe-bundle:real-skill:references/detail.md` first.'
-        ) == []
+        assert _probe_reference(tmp_path, 'Load `probe-bundle:real-skill:references/detail.md` first.') == []
 
     def test_placeholder_never_retargets_onto_the_entry_script(self, tmp_path):
         """A placeholder segment names nothing, so it cannot be a verb either."""
-        assert _probe_reference(
-            tmp_path, 'Referenced as `probe-bundle:real-skill:script` in docs.'
-        ) == []
+        assert _probe_reference(tmp_path, 'Referenced as `probe-bundle:real-skill:script` in docs.') == []
 
     def test_decision_log_prefix_still_retargets(self, tmp_path):
         """The control: the one excluded shape whose segment CAN be a verb."""

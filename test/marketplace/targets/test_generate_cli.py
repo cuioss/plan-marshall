@@ -105,9 +105,7 @@ class TestGenerateCli:
 
         one = _run_cli('--target', 'pr-agent', '--output', str(first))
         two = _run_cli('--target', 'pr-agent', '--output', str(second))
-        three = _run_cli(
-            '--target', 'pr-agent', '--output', str(scoped), '--bundles', 'plan-marshall'
-        )
+        three = _run_cli('--target', 'pr-agent', '--output', str(scoped), '--bundles', 'plan-marshall')
 
         assert one.returncode == 0, one.stderr
         assert two.returncode == 0, two.stderr

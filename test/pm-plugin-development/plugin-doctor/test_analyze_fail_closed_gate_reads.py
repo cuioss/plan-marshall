@@ -172,10 +172,7 @@ class TestFormANegatives:
         # not in scope for the fail-closed rule.
         _write_py(
             _script(mp, 'render.py'),
-            'from pathlib import Path\n'
-            '\n'
-            'def render_report(path):\n'
-            '    return Path(path).read_text()\n',
+            'from pathlib import Path\n\ndef render_report(path):\n    return Path(path).read_text()\n',
         )
         findings = analyze_fail_closed_gate_reads(mp)
         assert RULE_FAIL_CLOSED_GATE_READ not in _rules(findings)
@@ -186,10 +183,7 @@ class TestFormANegatives:
         # a file read and must not be flagged.
         _write_py(
             _script(mp, 'gate.py'),
-            'import json\n'
-            '\n'
-            'def cmd_run(raw):\n'
-            '    return json.loads(raw)\n',
+            'import json\n\ndef cmd_run(raw):\n    return json.loads(raw)\n',
         )
         findings = analyze_fail_closed_gate_reads(mp)
         assert RULE_FAIL_CLOSED_GATE_READ not in _rules(findings)
@@ -199,25 +193,24 @@ class TestFormANegatives:
         file_ops = mp / 'bundles' / 'plan-marshall' / 'skills' / 'tools-file-ops' / 'scripts' / 'file_ops.py'
         _write_py(
             file_ops,
-            'from pathlib import Path\n'
-            '\n'
-            'def cmd_run(args):\n'
-            '    return Path(args.path).read_text()\n',
+            'from pathlib import Path\n\ndef cmd_run(args):\n    return Path(args.path).read_text()\n',
         )
         assert_analyzer_findings(analyze_fail_closed_gate_reads, mp, [])
 
     def test_analyzer_self_reference_whitelisted(self, tmp_path: Path) -> None:
         mp = _make_marketplace(tmp_path)
         analyzer = (
-            mp / 'bundles' / 'pm-plugin-development' / 'skills' / 'plugin-doctor'
-            / 'scripts' / '_analyze_fail_closed_gate_reads.py'
+            mp
+            / 'bundles'
+            / 'pm-plugin-development'
+            / 'skills'
+            / 'plugin-doctor'
+            / 'scripts'
+            / '_analyze_fail_closed_gate_reads.py'
         )
         _write_py(
             analyzer,
-            'from pathlib import Path\n'
-            '\n'
-            'def cmd_run(args):\n'
-            '    return Path(args.path).read_text()\n',
+            'from pathlib import Path\n\ndef cmd_run(args):\n    return Path(args.path).read_text()\n',
         )
         assert_analyzer_findings(analyze_fail_closed_gate_reads, mp, [])
 

@@ -123,8 +123,7 @@ def built_executor(tmp_path_factory) -> Path:
 
     executor = plan_dir / 'execute-script.py'
     assert result.returncode == 0, (
-        f'Executor generation failed (exit {result.returncode}).\n'
-        f'stdout:\n{result.stdout}\nstderr:\n{result.stderr}'
+        f'Executor generation failed (exit {result.returncode}).\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}'
     )
     assert executor.is_file(), (
         f'Executor generation reported success but wrote no file at {executor}.\n'
@@ -161,20 +160,13 @@ class TestRealMarketplaceZeroFalsePositives:
         assert tree is not None, 'manage-logging --help must be reachable'
         index = {notation: tree}
         canonical_calls = [
-            f'python3 .plan/execute-script.py {notation} work '
-            f'--plan-id p --level INFO --message "[STATUS] hi"',
-            f'python3 .plan/execute-script.py {notation} decision '
-            f'--plan-id p --level INFO --message "(skill) decided"',
+            f'python3 .plan/execute-script.py {notation} work --plan-id p --level INFO --message "[STATUS] hi"',
+            f'python3 .plan/execute-script.py {notation} decision --plan-id p --level INFO --message "(skill) decided"',
             f'python3 .plan/execute-script.py {notation} separator --plan-id p',
         ]
         for call in canonical_calls:
-            findings = analyze_manage_invocation_markdown(
-                call + '\n', '/fake/SKILL.md', index
-            )
-            invalid = [
-                f for f in findings
-                if f['rule_id'] == RULE_MANAGE_INVOCATION_INVALID
-            ]
+            findings = analyze_manage_invocation_markdown(call + '\n', '/fake/SKILL.md', index)
+            invalid = [f for f in findings if f['rule_id'] == RULE_MANAGE_INVOCATION_INVALID]
             assert invalid == [], f'false positive(s) for canonical call: {call}\n{invalid}'
 
     def test_documented_alias_calls_not_flagged_in_real_bundle(self, built_executor: Path) -> None:
@@ -194,18 +186,13 @@ class TestRealMarketplaceZeroFalsePositives:
             tree = derive_script_tree(notation, built_executor)
             assert tree is not None, f'{notation} --help must be reachable'
             call = f'python3 .plan/execute-script.py {notation} {tail}'
-            findings = analyze_manage_invocation_markdown(
-                call + '\n', '/fake/SKILL.md', {notation: tree}
-            )
+            findings = analyze_manage_invocation_markdown(call + '\n', '/fake/SKILL.md', {notation: tree})
             invalid = [
-                f for f in findings
-                if f['rule_id'] == RULE_MANAGE_INVOCATION_INVALID
-                and f['details'].get('reason') == 'subcommand_unknown'
+                f
+                for f in findings
+                if f['rule_id'] == RULE_MANAGE_INVOCATION_INVALID and f['details'].get('reason') == 'subcommand_unknown'
             ]
-            assert invalid == [], (
-                f'documented alias invocation flagged as unknown subcommand: '
-                f'{call}\n{invalid}'
-            )
+            assert invalid == [], f'documented alias invocation flagged as unknown subcommand: {call}\n{invalid}'
 
     def test_many_subcommand_calls_not_flagged_in_real_bundle(self, built_executor: Path) -> None:
         notation = 'plan-marshall:manage-status:manage-status'
@@ -219,11 +206,6 @@ class TestRealMarketplaceZeroFalsePositives:
             f'python3 .plan/execute-script.py {notation} transition --plan-id p --completed 5-execute',
         ]
         for call in canonical_calls:
-            findings = analyze_manage_invocation_markdown(
-                call + '\n', '/fake/SKILL.md', index
-            )
-            invalid = [
-                f for f in findings
-                if f['rule_id'] == RULE_MANAGE_INVOCATION_INVALID
-            ]
+            findings = analyze_manage_invocation_markdown(call + '\n', '/fake/SKILL.md', index)
+            invalid = [f for f in findings if f['rule_id'] == RULE_MANAGE_INVOCATION_INVALID]
             assert invalid == [], f'false positive(s) for canonical call: {call}\n{invalid}'

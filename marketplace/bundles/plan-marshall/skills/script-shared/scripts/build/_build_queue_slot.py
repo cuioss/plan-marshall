@@ -105,10 +105,10 @@ _build_queue_mod: Any = None
 # transitive imports, so they are ensured on ``sys.path`` before the exec —
 # the build subprocess's executor PYTHONPATH does not include manage-locks.
 _BUILD_QUEUE_DEP_DIRS: tuple[Path, ...] = (
-    _BUILD_QUEUE_PATH.parent,                                          # manage-locks/scripts
-    _THIS_DIR.parent.parent.parent / 'tools-file-ops' / 'scripts',     # file_ops
-    _THIS_DIR.parent / 'workflow',                                     # triage_helpers
-    _THIS_DIR.parent,                                                  # marketplace_paths, toon_parser
+    _BUILD_QUEUE_PATH.parent,  # manage-locks/scripts
+    _THIS_DIR.parent.parent.parent / 'tools-file-ops' / 'scripts',  # file_ops
+    _THIS_DIR.parent / 'workflow',  # triage_helpers
+    _THIS_DIR.parent,  # marketplace_paths, toon_parser
 )
 
 
@@ -148,10 +148,7 @@ class BuildQueueTimeout(RuntimeError):
     def __init__(self, plan_id: str, max_retries: int) -> None:
         self.plan_id = plan_id
         self.max_retries = max_retries
-        super().__init__(
-            f'build queue saturated for plan {plan_id!r} after {max_retries} '
-            f'retries — try again later'
-        )
+        super().__init__(f'build queue saturated for plan {plan_id!r} after {max_retries} retries — try again later')
 
 
 def _resolve_max_retries() -> int:
@@ -205,7 +202,9 @@ def _release(plan_id: str, admission_id: str) -> None:
     if result.get('status') != 'success':
         logger.warning(
             'build_queue release failed for %s (id=%s): %s',
-            plan_id, admission_id, result.get('error', 'unknown'),
+            plan_id,
+            admission_id,
+            result.get('error', 'unknown'),
         )
 
 
@@ -235,9 +234,7 @@ def _wait_for_admission(plan_id: str, max_retries: int) -> str:
     result = _acquire(plan_id)
     if result.get('status') != 'success':
         # acquire is NOT best-effort: a queue we cannot reach is a hard failure.
-        raise RuntimeError(
-            f'build_queue acquire failed for {plan_id!r}: {result.get("error")}'
-        )
+        raise RuntimeError(f'build_queue acquire failed for {plan_id!r}: {result.get("error")}')
 
     admission_id = str(result['id'])
     if result.get('admission') == 'admitted':
@@ -260,9 +257,7 @@ def _wait_for_admission(plan_id: str, max_retries: int) -> str:
             # retry.
             result = _acquire(plan_id)
             if result.get('status') != 'success':
-                raise RuntimeError(
-                    f'build_queue acquire failed for {plan_id!r}: {result.get("error")}'
-                )
+                raise RuntimeError(f'build_queue acquire failed for {plan_id!r}: {result.get("error")}')
             admission_id = str(result['id'])
             if result.get('admission') == 'admitted':
                 return admission_id

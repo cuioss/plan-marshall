@@ -17,15 +17,11 @@ from conftest import load_script_module, run_script
 
 # Plan ids this module's tests file findings against — seeded by the autouse
 # ``_materialize_declared_plan_dirs`` fixture in ``test/conftest.py``.
-PLAN_IDS = (
-    'test-plan',
-)
+PLAN_IDS = ('test-plan',)
 
 # Tier 2 direct import — the hyphenated script, loaded unregistered so the copy
 # staged here cannot displace one another suite holds under the same name.
-_mod = load_script_module(
-    'plan-marshall', 'manage-findings', 'manage-findings.py', 'manage_findings', register=False
-)
+_mod = load_script_module('plan-marshall', 'manage-findings', 'manage-findings.py', 'manage_findings', register=False)
 
 cmd_assessment_add = _mod.cmd_assessment_add
 cmd_assessment_query = _mod.cmd_assessment_query

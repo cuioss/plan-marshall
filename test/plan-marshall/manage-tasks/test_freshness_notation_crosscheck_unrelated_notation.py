@@ -8,7 +8,6 @@ Its sections, in order:
 * Acceptance direction — legitimate evidence is not refused
 """
 
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -141,9 +140,7 @@ def test_multi_notation_project_still_passes(plan_context, monkeypatch, tmp_path
     assert result['matched_notation'] == _MAVEN
 
 
-def test_related_row_behind_an_unrelated_one_still_passes(
-    plan_context, monkeypatch, tmp_path
-) -> None:
+def test_related_row_behind_an_unrelated_one_still_passes(plan_context, monkeypatch, tmp_path) -> None:
     """A corroborated candidate is found even when an unrelated row precedes it.
 
     This is why the scan collects every candidate instead of returning on the
@@ -165,9 +162,7 @@ def test_related_row_behind_an_unrelated_one_still_passes(
     assert result['matched_entry_index'] == 1
 
 
-def test_unresolvable_architecture_passes_with_the_inability_recorded(
-    plan_context, monkeypatch, tmp_path
-) -> None:
+def test_unresolvable_architecture_passes_with_the_inability_recorded(plan_context, monkeypatch, tmp_path) -> None:
     """Resolution failure passes the gate, but never silently.
 
     An inability to resolve is the ABSENCE of knowledge, not a refutation:

@@ -242,8 +242,7 @@ class TestExecutorDispatchScenarios:
 
         dispatched = _derive_executor_dispatch(manifest)
         assert dispatched == [], (
-            'Empty verification_steps must skip Step 11b sweep entirely '
-            f'(no quality-gate appended), got {dispatched}'
+            f'Empty verification_steps must skip Step 11b sweep entirely (no quality-gate appended), got {dispatched}'
         )
 
     def test_quality_gate_already_last_still_appends_sweep(self, plan_context):
@@ -306,8 +305,7 @@ class TestExecutorDispatchScenarios:
 
         dispatched = _derive_executor_dispatch(manifest)
         assert dispatched == [], (
-            'early_terminate=true must skip entire execute loop including '
-            f'Step 11b sweep, got dispatch={dispatched}'
+            f'early_terminate=true must skip entire execute loop including Step 11b sweep, got dispatch={dispatched}'
         )
         # Defensive: zero quality-gate dispatches under early_terminate —
         # the sweep is gated on verification_steps non-empty, which is

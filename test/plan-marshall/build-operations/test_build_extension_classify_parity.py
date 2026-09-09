@@ -80,9 +80,7 @@ def test_shared_layout_role_parity(path):
     """Both extensions claim every shared-layout path under the SAME role."""
     maven_role = _role_of(MavenBuildExtension(), path)
     gradle_role = _role_of(GradleBuildExtension(), path)
-    assert maven_role == gradle_role, (
-        f'role drift for {path}: build-maven={maven_role}, build-gradle={gradle_role}'
-    )
+    assert maven_role == gradle_role, f'role drift for {path}: build-maven={maven_role}, build-gradle={gradle_role}'
 
 
 @pytest.mark.parametrize('path', SHARED_LAYOUT_PATHS)
@@ -95,16 +93,15 @@ def test_shared_layout_specificity_parity(path):
     if role is None:
         # Unclaimed rows score 0 for every role in both extensions.
         for probe_role in ROLES:
-            assert maven_ext.classify_path_specificity(
+            assert maven_ext.classify_path_specificity(path, probe_role) == gradle_ext.classify_path_specificity(
                 path, probe_role
-            ) == gradle_ext.classify_path_specificity(path, probe_role)
+            )
         return
 
     maven_score = maven_ext.classify_path_specificity(path, role)
     gradle_score = gradle_ext.classify_path_specificity(path, role)
     assert maven_score == gradle_score, (
-        f'specificity drift for {path} under {role}: '
-        f'build-maven={maven_score}, build-gradle={gradle_score}'
+        f'specificity drift for {path} under {role}: build-maven={maven_score}, build-gradle={gradle_score}'
     )
 
 

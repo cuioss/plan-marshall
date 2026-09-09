@@ -4,7 +4,6 @@
 """Tests for manage-status.py transition: the loop-back target contract,
 the inline strict-verify guard, and the persisted-title-state drive seam."""
 
-
 import json
 from argparse import Namespace
 
@@ -31,6 +30,7 @@ from conftest import run_script
 # boundaries (folded from the standalone phase_handshake verify --strict step
 # that orchestrator workflow docs used to issue separately at 5-execute -> 6-finalize).
 # =============================================================================
+
 
 @pytest.fixture
 def _stubbed_invariants(monkeypatch):
@@ -79,6 +79,7 @@ def _stubbed_invariants(monkeypatch):
 # =============================================================================
 # Test: Hybrid loopback contract — `--loop-back-target` granularity flag
 # =============================================================================
+
 
 class TestLoopBackTargetValidation:
     """The `--loop-back-target` flag is REQUIRED on every loop_back outcome
@@ -175,8 +176,7 @@ class TestLoopBackTargetValidation:
             'loop-back invalid target',
         )
         assert result.returncode == 2, (
-            f'argparse must reject invalid --loop-back-target value '
-            f'with exit code 2; got {result.returncode}'
+            f'argparse must reject invalid --loop-back-target value with exit code 2; got {result.returncode}'
         )
         assert 'invalid choice' in result.stderr.lower() or 'invalid-phase' in result.stderr.lower()
 
@@ -219,6 +219,7 @@ class TestLoopBackTargetValidation:
 # Regression Tests: persisted-title-state-write drive seam (Defects 1 & 2)
 # =============================================================================
 
+
 def test_cmd_transition_fires_drive_seam_after_write(plan_context, monkeypatch):
     """cmd_transition fires _surface_drive exactly once (with the plan_id) on advance."""
     plan_id = 'drive-seam-transition'
@@ -231,8 +232,7 @@ def test_cmd_transition_fires_drive_seam_after_write(plan_context, monkeypatch):
 
     assert result['status'] == 'success'
     assert calls == [plan_id], (
-        f'cmd_transition must fire the drive seam exactly once with the plan_id '
-        f'after write_status, got {calls!r}.'
+        f'cmd_transition must fire the drive seam exactly once with the plan_id after write_status, got {calls!r}.'
     )
 
 
@@ -252,8 +252,7 @@ def test_cmd_transition_drift_refusal_does_not_fire_drive_seam(
 
     assert result['status'] == 'drift'
     assert calls == [], (
-        f'The drive seam must not fire when the transition is refused before '
-        f'write_status, got {calls!r}.'
+        f'The drive seam must not fire when the transition is refused before write_status, got {calls!r}.'
     )
 
 
@@ -272,6 +271,7 @@ def test_surface_drive_fires_bind_then_repaint(monkeypatch):
 
 def test_surface_drive_swallows_delegation_failure(monkeypatch):
     """A raising primitive is fully swallowed — _surface_drive never propagates."""
+
     def _boom(_pid):
         raise RuntimeError('delegation blew up')
 

@@ -79,14 +79,7 @@ assert MARKETPLACE_ROOT.is_dir() and any(MARKETPLACE_ROOT.iterdir()), (
 # ``marketplace_bundles`` / ``toon_parser`` from the test PYTHONPATH at module
 # top, but neither is *called* during a ``parse_configurable(path)`` scan, so a
 # verbatim copy into the synthetic tree resolves and validates identically.
-_REAL_PARSER = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'extension-api'
-    / 'scripts'
-    / 'configurable_contract.py'
-)
+_REAL_PARSER = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'extension-api' / 'scripts' / 'configurable_contract.py'
 
 
 # ---------------------------------------------------------------------------
@@ -108,13 +101,7 @@ def _bundles_root(tmp_path: Path, with_parser: bool = True) -> Path:
     bundles_root = tmp_path / 'marketplace' / 'bundles'
     bundles_root.mkdir(parents=True, exist_ok=True)
     if with_parser:
-        ext_scripts = (
-            bundles_root
-            / 'plan-marshall'
-            / 'skills'
-            / 'extension-api'
-            / 'scripts'
-        )
+        ext_scripts = bundles_root / 'plan-marshall' / 'skills' / 'extension-api' / 'scripts'
         ext_scripts.mkdir(parents=True, exist_ok=True)
         shutil.copy2(_REAL_PARSER, ext_scripts / 'configurable_contract.py')
     return bundles_root
@@ -127,22 +114,14 @@ def _write_builtin_doc(
 
     Scope: ``plan-marshall/skills/phase-6-finalize/{workflow,standards}/*.md``.
     """
-    doc_dir = (
-        bundles_root
-        / 'plan-marshall'
-        / 'skills'
-        / 'phase-6-finalize'
-        / subdir
-    )
+    doc_dir = bundles_root / 'plan-marshall' / 'skills' / 'phase-6-finalize' / subdir
     doc_dir.mkdir(parents=True, exist_ok=True)
     doc = doc_dir / f'{name}.md'
     doc.write_text(content, encoding='utf-8')
     return doc
 
 
-def _write_project_doc(
-    tmp_path: Path, content: str, name: str = 'finalize-step-deploy-target'
-) -> Path:
+def _write_project_doc(tmp_path: Path, content: str, name: str = 'finalize-step-deploy-target') -> Path:
     """Create a project-local ``.claude/skills/{name}/SKILL.md``.
 
     Two levels up from ``{tmp_path}/marketplace/bundles`` is ``tmp_path``, where
@@ -191,28 +170,19 @@ class TestMalformedFires:
         'block',
         [
             pytest.param(
-                'configurable:\n'
-                '  - default: foo\n'
-                '    description: missing the key sub-field.\n',
+                'configurable:\n  - default: foo\n    description: missing the key sub-field.\n',
                 id='missing-key',
             ),
             pytest.param(
-                'configurable:\n'
-                '  - key: foo\n'
-                '    description: missing the default sub-field.\n',
+                'configurable:\n  - key: foo\n    description: missing the default sub-field.\n',
                 id='missing-default',
             ),
             pytest.param(
-                'configurable:\n'
-                '  - key: foo\n'
-                '    default: bar\n',
+                'configurable:\n  - key: foo\n    default: bar\n',
                 id='missing-description',
             ),
             pytest.param(
-                'configurable:\n'
-                '  - key: foo\n'
-                '    default: bar\n'
-                '    description: ""\n',
+                'configurable:\n  - key: foo\n    default: bar\n    description: ""\n',
                 id='empty-description',
             ),
             pytest.param(
@@ -242,12 +212,7 @@ class TestMalformedFires:
     def test_wrong_typed_description_triggers_finding(self, tmp_path: Path) -> None:
         """A boolean ``description`` is wrong-typed and fires the rule."""
         bundles_root = _bundles_root(tmp_path)
-        block = (
-            'configurable:\n'
-            '  - key: foo\n'
-            '    default: bar\n'
-            '    description: false\n'
-        )
+        block = 'configurable:\n  - key: foo\n    default: bar\n    description: false\n'
         _write_builtin_doc(bundles_root, _frontmatter(block))
 
         assert_analyzer_findings(scan_step_configurable_contract, bundles_root, [RULE_ID])
@@ -289,9 +254,7 @@ class TestCleanAndOwnerless:
             '  - key: foo\n'
             '    default: bar\n'  # missing description
         )
-        _write_builtin_doc(
-            bundles_root, _frontmatter(block), subdir='standards', name='branch-cleanup'
-        )
+        _write_builtin_doc(bundles_root, _frontmatter(block), subdir='standards', name='branch-cleanup')
 
         assert_analyzer_findings(scan_step_configurable_contract, bundles_root, [RULE_ID])
 
@@ -306,11 +269,7 @@ class TestProjectLocal:
 
     def test_project_local_malformed_fires(self, tmp_path: Path) -> None:
         bundles_root = _bundles_root(tmp_path)
-        block = (
-            'configurable:\n'
-            '  - key: foo\n'
-            '    description: missing the default sub-field.\n'
-        )
+        block = 'configurable:\n  - key: foo\n    description: missing the default sub-field.\n'
         md = _write_project_doc(tmp_path, _frontmatter(block))
 
         findings = assert_analyzer_findings(scan_step_configurable_contract, bundles_root, [RULE_ID])
@@ -334,9 +293,7 @@ class TestProjectLocal:
         builtin_block = 'configurable:\n  - key: a\n    default: 1\n'  # missing desc
         builtin = _write_builtin_doc(bundles_root, _frontmatter(builtin_block))
         project_block = 'configurable:\n  - default: 2\n    description: no key.\n'
-        project = _write_project_doc(
-            tmp_path, _frontmatter(project_block), name='finalize-step-plugin-doctor'
-        )
+        project = _write_project_doc(tmp_path, _frontmatter(project_block), name='finalize-step-plugin-doctor')
 
         findings = assert_analyzer_findings(scan_step_configurable_contract, bundles_root, [RULE_ID] * 2)
         files = {f['file'] for f in findings}
@@ -428,10 +385,7 @@ class TestDoctorMarketplaceWiring:
         """
         runner = _load_module('_runner', '_runner.py')
         assert hasattr(runner, 'scan_step_configurable_contract')
-        assert (
-            runner.scan_step_configurable_contract
-            is scan_step_configurable_contract
-        )
+        assert runner.scan_step_configurable_contract is scan_step_configurable_contract
 
     # Runs `cmd_quality_gate` over the whole real marketplace, so it contends with
     # the lint leg under `verify` and exceeds the global 300s hang detector there
@@ -452,9 +406,7 @@ class TestDoctorMarketplaceWiring:
 
         rules_run = {s['rule'] for s in result['rules_run']}
         assert 'scan_step_configurable_contract' in rules_run
-        summary = next(
-            s for s in result['rules_run'] if s['rule'] == 'scan_step_configurable_contract'
-        )
+        summary = next(s for s in result['rules_run'] if s['rule'] == 'scan_step_configurable_contract')
         assert summary['findings'] == 0
         # No issue of this rule's finding type leaked into the gate result.
         types = {i.get('type') for i in result['issues']}

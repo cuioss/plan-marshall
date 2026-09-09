@@ -526,9 +526,7 @@ def test_get_module_context_falls_back_to_checkout_when_worktree_unmaterialized(
     assert sorted(m['name'] for m in data['modules']) == sorted(population)
 
 
-def test_get_module_context_reads_the_worktree_when_it_is_materialized(
-    plan_context, monkeypatch, capsys, tmp_path
-):
+def test_get_module_context_reads_the_worktree_when_it_is_materialized(plan_context, monkeypatch, capsys, tmp_path):
     """Negative arm: a materialized worktree is read, and no fallback is reported.
 
     The worktree and the checkout are seeded with DISJOINT module sets, so the
@@ -564,9 +562,7 @@ def test_get_module_context_reads_the_worktree_when_it_is_materialized(
     assert sorted(m['name'] for m in data['modules']) == sorted(population)
 
 
-def test_get_module_context_non_resolution_failure_stays_fatal(
-    plan_context, monkeypatch, capsys, tmp_path
-):
+def test_get_module_context_non_resolution_failure_stays_fatal(plan_context, monkeypatch, capsys, tmp_path):
     """Scope arm: the fallback catches ONLY worktree-resolution failures.
 
     With the fallback armed (the stubbed plan has no materialized worktree),

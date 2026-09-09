@@ -47,10 +47,7 @@ from _cmd_coverage import (
 # The behavior-preserving instruction returned for any cell where either dial
 # is ``inherit``. Mirrors the ``inherit / inherit`` row of the contract's
 # expansion table.
-_BEHAVIOR_PRESERVING = (
-    'Behave exactly as the component does today — no breadth change, no '
-    'depth change.'
-)
+_BEHAVIOR_PRESERVING = 'Behave exactly as the component does today — no breadth change, no depth change.'
 
 
 class CoveragePresets:
@@ -85,12 +82,8 @@ class CoveragePresets:
             'Cover the cohesive unit (skill, package, feature) the artifact '
             'belongs to, including its untouched siblings.'
         ),
-        'module': (
-            'Cover the build/deploy unit (bundle) the component belongs to.'
-        ),
-        'overall': (
-            'Cover the entire codebase / full corpus — the widest radius.'
-        ),
+        'module': ('Cover the build/deploy unit (bundle) the component belongs to.'),
+        'overall': ('Cover the entire codebase / full corpus — the widest radius.'),
     }
 
     # Thoroughness rung -> depth instruction (how deeply to cover, which
@@ -102,12 +95,9 @@ class CoveragePresets:
             'representative subset in full, assume the remainder. No relation '
             'tracing. One lens.'
         ),
-        'T2': (
-            'Full-read: read every in-scope item in full, in isolation. No '
-            'cross-item relation tracing. One lens.'
-        ),
+        'T2': ('Full-read: read every in-scope item in full, in isolation. No cross-item relation tracing. One lens.'),
         'T3': (
-            'Full-read + local relations: T2 plus trace each item\'s '
+            "Full-read + local relations: T2 plus trace each item's "
             'immediate neighborhood one hop out — direct callers, tests, '
             'direct cross-references.'
         ),
@@ -227,8 +217,7 @@ def _validate_table() -> None:
     scope_keys = set(CoveragePresets._SCOPE_BREADTH)
     if scope_keys != set(concrete_scope):
         raise ValueError(
-            f'_SCOPE_BREADTH keys {sorted(scope_keys)} do not match the '
-            f'concrete scope ladder {sorted(concrete_scope)}'
+            f'_SCOPE_BREADTH keys {sorted(scope_keys)} do not match the concrete scope ladder {sorted(concrete_scope)}'
         )
 
     thoroughness_keys = set(CoveragePresets._THOROUGHNESS_DEPTH)

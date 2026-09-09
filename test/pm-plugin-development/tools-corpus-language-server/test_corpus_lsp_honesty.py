@@ -47,9 +47,7 @@ from conftest import PROJECT_ROOT, get_script_path, get_scripts_dir, load_script
 
 SCRIPTS_DIR = get_scripts_dir('pm-plugin-development', 'tools-corpus-language-server')
 
-corpus_lsp = load_script_module(
-    'pm-plugin-development', 'tools-corpus-language-server', 'corpus_lsp.py'
-)
+corpus_lsp = load_script_module('pm-plugin-development', 'tools-corpus-language-server', 'corpus_lsp.py')
 
 SCRIPT = get_script_path('pm-plugin-development', 'tools-corpus-language-server', 'corpus_lsp.py')
 
@@ -118,10 +116,14 @@ def test_a_handler_exception_is_answered_and_the_session_continues(tmp_path):
     project = _project(tmp_path)
     frames = (
         _framed({'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {}})
-        + _framed({
-            'jsonrpc': '2.0', 'id': 2, 'method': 'textDocument/definition',
-            'params': {'textDocument': {'uri': NULL_BYTE_URI}, 'position': {'line': 0, 'character': 0}},
-        })
+        + _framed(
+            {
+                'jsonrpc': '2.0',
+                'id': 2,
+                'method': 'textDocument/definition',
+                'params': {'textDocument': {'uri': NULL_BYTE_URI}, 'position': {'line': 0, 'character': 0}},
+            }
+        )
         + _framed({'jsonrpc': '2.0', 'id': 3, 'method': 'initialize', 'params': {}})
         + _framed({'jsonrpc': '2.0', 'method': 'exit'})
     )
@@ -142,10 +144,14 @@ def test_a_contained_exception_is_reported_on_stderr(tmp_path):
     project = _project(tmp_path)
     frames = (
         _framed({'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {}})
-        + _framed({
-            'jsonrpc': '2.0', 'id': 2, 'method': 'textDocument/definition',
-            'params': {'textDocument': {'uri': NULL_BYTE_URI}, 'position': {'line': 0, 'character': 0}},
-        })
+        + _framed(
+            {
+                'jsonrpc': '2.0',
+                'id': 2,
+                'method': 'textDocument/definition',
+                'params': {'textDocument': {'uri': NULL_BYTE_URI}, 'position': {'line': 0, 'character': 0}},
+            }
+        )
         + _framed({'jsonrpc': '2.0', 'method': 'exit'})
     )
 
@@ -282,13 +288,14 @@ def test_serve_without_project_path_adopts_the_client_root(tmp_path):
     project = _project(tmp_path / 'project')
     elsewhere = tmp_path / 'elsewhere'
     elsewhere.mkdir()
-    frames = (
-        _framed({
-            'jsonrpc': '2.0', 'id': 1, 'method': 'initialize',
+    frames = _framed(
+        {
+            'jsonrpc': '2.0',
+            'id': 1,
+            'method': 'initialize',
             'params': {'rootUri': project.resolve().as_uri()},
-        })
-        + _framed({'jsonrpc': '2.0', 'method': 'exit'})
-    )
+        }
+    ) + _framed({'jsonrpc': '2.0', 'method': 'exit'})
 
     result = _serve(None, frames, cwd=elsewhere)
 
@@ -303,13 +310,14 @@ def test_an_explicit_project_path_still_wins_over_root_uri(tmp_path):
     """The documented block's behaviour is unchanged for anyone who passes the flag."""
     configured = _project(tmp_path / 'configured', marshal=None)  # NOT enabled
     other = _project(tmp_path / 'other')  # enabled
-    frames = (
-        _framed({
-            'jsonrpc': '2.0', 'id': 1, 'method': 'initialize',
+    frames = _framed(
+        {
+            'jsonrpc': '2.0',
+            'id': 1,
+            'method': 'initialize',
             'params': {'rootUri': other.resolve().as_uri()},
-        })
-        + _framed({'jsonrpc': '2.0', 'method': 'exit'})
-    )
+        }
+    ) + _framed({'jsonrpc': '2.0', 'method': 'exit'})
 
     result = _serve(configured, frames)
 
@@ -406,9 +414,16 @@ def _project_with_corpus(tmp_path: Path) -> Path:
     base = _unverified_corpus(project)
     _write(
         project / '.plan' / 'marshal.json',
-        json.dumps({'code_intelligence': {'corpus_language_server': {
-            'enabled': True, 'corpus_path': str(base.relative_to(project)),
-        }}}),
+        json.dumps(
+            {
+                'code_intelligence': {
+                    'corpus_language_server': {
+                        'enabled': True,
+                        'corpus_path': str(base.relative_to(project)),
+                    }
+                }
+            }
+        ),
     )
     return project
 
@@ -449,7 +464,9 @@ def test_an_unverified_site_is_omitted_from_the_references_response(tmp_path):
     every_site = index.references(_UNVERIFIED_NOTATION)
     assert every_site, 'the fixture produced no inbound edge'
     unverified = [ref for ref in every_site if not ref.verified]
-    assert unverified, f'the fixture produced no UNVERIFIED site: {[(r.location.path.name, r.verified) for r in every_site]}'
+    assert unverified, (
+        f'the fixture produced no UNVERIFIED site: {[(r.location.path.name, r.verified) for r in every_site]}'
+    )
 
     server, sent = _server_over(base, project)
     document = _write(tmp_path / 'doc.md', 'Run `alpha:target-skill:target_script` here.\n')
@@ -498,9 +515,13 @@ def test_the_query_verb_still_emits_every_site_with_its_flag(tmp_path):
     """
     project = _project_with_corpus(tmp_path)
 
-    payload = corpus_lsp.cmd_query(argparse.Namespace(
-        project_path=str(project), kind='references', notation=_UNVERIFIED_NOTATION,
-    ))
+    payload = corpus_lsp.cmd_query(
+        argparse.Namespace(
+            project_path=str(project),
+            kind='references',
+            notation=_UNVERIFIED_NOTATION,
+        )
+    )
 
     assert payload['status'] == 'success'
     assert payload['reference_count'] >= 1
@@ -525,14 +546,18 @@ def test_the_running_server_withholds_the_unverified_site_and_says_how_many(tmp_
     document = _write(project / 'doc.md', 'Run `alpha:target-skill:target_script` here.\n')
     frames = (
         _framed({'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {}})
-        + _framed({
-            'jsonrpc': '2.0', 'id': 2, 'method': 'textDocument/references',
-            'params': {
-                'textDocument': {'uri': document.resolve().as_uri()},
-                'position': {'line': 0, 'character': 8},
-                'context': {'includeDeclaration': True},
-            },
-        })
+        + _framed(
+            {
+                'jsonrpc': '2.0',
+                'id': 2,
+                'method': 'textDocument/references',
+                'params': {
+                    'textDocument': {'uri': document.resolve().as_uri()},
+                    'position': {'line': 0, 'character': 8},
+                    'context': {'includeDeclaration': True},
+                },
+            }
+        )
         + _framed({'jsonrpc': '2.0', 'method': 'exit'})
     )
 
@@ -543,10 +568,7 @@ def test_the_running_server_withholds_the_unverified_site_and_says_how_many(tmp_
     responses = {message['id']: message for message in messages if 'id' in message}
     assert responses[2]['result'] == [], f'an unverified site reached the client: {responses[2]}'
 
-    logs = [
-        message for message in messages
-        if message.get('method') == 'window/logMessage'
-    ]
+    logs = [message for message in messages if message.get('method') == 'window/logMessage']
     assert logs, f'every site was withheld with no report on the wire: {messages}'
     assert 'could not be confirmed' in logs[0]['params']['message']
     # The COUNT, not just the fact — an empty list plus a bare notice would still

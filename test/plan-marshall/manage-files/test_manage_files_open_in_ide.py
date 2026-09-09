@@ -121,7 +121,9 @@ def test_detect_ide_linux_vscode_without_code_falls_through_to_jetbrains_probe()
 def test_detect_ide_linux_cursor_with_cursor_on_path():
     env = {'TERM_PROGRAM': 'cursor'}
 
-    with mock.patch.object(_mod.shutil, 'which', side_effect=lambda name: '/usr/bin/cursor' if name == 'cursor' else None):
+    with mock.patch.object(
+        _mod.shutil, 'which', side_effect=lambda name: '/usr/bin/cursor' if name == 'cursor' else None
+    ):
         result = detect_ide(env, 'linux')
 
     assert result is not None
@@ -136,7 +138,9 @@ def test_detect_ide_linux_jetbrains_priority_probe(launcher):
     env: dict[str, str] = {}
 
     # only `launcher` resolves on PATH
-    with mock.patch.object(_mod.shutil, 'which', side_effect=lambda name, want=launcher: f'/usr/bin/{name}' if name == want else None):
+    with mock.patch.object(
+        _mod.shutil, 'which', side_effect=lambda name, want=launcher: f'/usr/bin/{name}' if name == want else None
+    ):
         result = detect_ide(env, 'linux')
 
     assert result is not None
@@ -150,7 +154,9 @@ def test_detect_ide_linux_priority_first_match_wins():
     on_path = {'pycharm', 'idea', 'webstorm'}
 
     # all three on PATH; idea has the highest priority
-    with mock.patch.object(_mod.shutil, 'which', side_effect=lambda name: f'/usr/bin/{name}' if name in on_path else None):
+    with mock.patch.object(
+        _mod.shutil, 'which', side_effect=lambda name: f'/usr/bin/{name}' if name in on_path else None
+    ):
         result = detect_ide(env, 'linux')
 
     assert result is not None
@@ -255,9 +261,7 @@ def test_is_open_in_ide_enabled_missing_open_in_ide_key_defaults_true(plan_conte
 
 def test_is_open_in_ide_enabled_missing_plan_namespace_defaults_true(plan_context):
     """No plan namespace at all → default True."""
-    (plan_context.fixture_dir / 'marshal.json').write_text(
-        json.dumps({'skill_domains': {}}), encoding='utf-8'
-    )
+    (plan_context.fixture_dir / 'marshal.json').write_text(json.dumps({'skill_domains': {}}), encoding='utf-8')
 
     result = is_open_in_ide_enabled()
 
@@ -327,9 +331,7 @@ def test_is_open_in_ide_enabled_non_bool_value_raises_value_error(plan_context, 
     fails loudly instead.
     """
     marshal_path = plan_context.fixture_dir / 'marshal.json'
-    marshal_path.write_text(
-        json.dumps({'plan': {'open_in_ide': open_in_ide_value}}), encoding='utf-8'
-    )
+    marshal_path.write_text(json.dumps({'plan': {'open_in_ide': open_in_ide_value}}), encoding='utf-8')
 
     with pytest.raises(ValueError) as exc_info:
         is_open_in_ide_enabled()
@@ -389,9 +391,7 @@ def test_cmd_open_in_ide_disabled_by_config_short_circuits(plan_context):
 
 def test_cmd_open_in_ide_missing_key_acts_as_enabled(plan_context):
     """Missing plan.open_in_ide sub-namespace → behaves as if enabled=true."""
-    (plan_context.fixture_dir / 'marshal.json').write_text(
-        json.dumps({'plan': {}}), encoding='utf-8'
-    )
+    (plan_context.fixture_dir / 'marshal.json').write_text(json.dumps({'plan': {}}), encoding='utf-8')
     args = parse_ns('plan-marshall', 'manage-files', 'manage-files.py', 'open-in-ide', '--path', '/abs/path/file.md')
 
     completed = mock.MagicMock(returncode=0, stdout='', stderr='')
@@ -462,7 +462,16 @@ def test_cmd_open_in_ide_mode_b_document_resolution_failure(plan_context):
     (plan_context.fixture_dir / 'marshal.json').write_text(
         json.dumps({'plan': {'open_in_ide': True}}), encoding='utf-8'
     )
-    args = parse_ns('plan-marshall', 'manage-files', 'manage-files.py', 'open-in-ide', '--plan-id', 'e2e-mode-b-resolver-fail', '--document', 'solution_outline')
+    args = parse_ns(
+        'plan-marshall',
+        'manage-files',
+        'manage-files.py',
+        'open-in-ide',
+        '--plan-id',
+        'e2e-mode-b-resolver-fail',
+        '--document',
+        'solution_outline',
+    )
 
     # Simulate resolver returning non-zero
     proc = mock.MagicMock(returncode=2, stdout='', stderr='no outline found')

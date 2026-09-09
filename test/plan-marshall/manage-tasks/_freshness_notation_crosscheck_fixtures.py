@@ -45,7 +45,6 @@ resolver's own outcome contract is exercised directly against
 ``_freshness_crosscheck``, and the live path has its own dedicated case.
 """
 
-
 from __future__ import annotations
 
 import json
@@ -238,6 +237,7 @@ def _run(plan_context, monkeypatch, tmp_path, entries, plan_id) -> dict:
 # =============================================================================
 # Positive control: the WHOLE real path, no seam stubbed
 # =============================================================================
+
 
 class _FakeQueryModule:
     """Stand-in for ``_cmd_client_query`` exposing only the one function used.

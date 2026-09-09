@@ -7,7 +7,6 @@ comparison in both directions, and the distinct shapes a never-closed and a
 re-entered phase each take.
 """
 
-
 from datetime import timedelta
 
 from _ledger_reconciliation_fixtures import (
@@ -36,7 +35,8 @@ class TestManifestParsing:
 
     def test_execution_log_rows_are_read_from_the_manifest(self, plan_context):
         _write_execution_log(
-            plan_context, 'recon-parse',
+            plan_context,
+            'recon-parse',
             [('push', '6-finalize', '2026-01-01T10:00:00+00:00', 4000)],
         )
         rows, reason = _ledger.load_execution_log(plan_context.plan_dir_for('recon-parse'))
@@ -71,7 +71,8 @@ class TestDivergentRowsProduceFindings:
         plan_id = 'recon-orphan-exec'
         cmd_start_phase(ns_start_phase(plan_id, '6-finalize'))
         _write_execution_log(
-            plan_context, plan_id,
+            plan_context,
+            plan_id,
             [('push', '6-finalize', '2026-01-01T10:00:00+00:00', 4000)],
         )
 
@@ -134,7 +135,8 @@ class TestDivergentRowsProduceFindings:
         boundary_stamp = _parse_stamp(_boundary_timestamps(plan_context, plan_id, '6-finalize')[0])
         # Ten minutes after the boundary row — outside a 60s window, inside 3600s.
         _write_execution_log(
-            plan_context, plan_id,
+            plan_context,
+            plan_id,
             [('push', '6-finalize', (boundary_stamp + timedelta(minutes=10)).isoformat(), 4000)],
         )
 

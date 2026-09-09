@@ -92,9 +92,7 @@ def unclassifiable(epic_dir: Path) -> Path:
     """The same store root, carrying one spec with no ``## Expected Surface``."""
     plans = epic_dir / 'plans'
     plans.mkdir()
-    (plans / 'PLAN-900.md').write_text(
-        '# PLAN-900\n\n## Notes\n\nNo surface section here.\n', encoding='utf-8'
-    )
+    (plans / 'PLAN-900.md').write_text('# PLAN-900\n\n## Notes\n\nNo surface section here.\n', encoding='utf-8')
     return plans
 
 
@@ -145,9 +143,7 @@ def test_absent_plans_directory_reports_epic_corpus_not_found(verb: str, epic_di
 
 
 @pytest.mark.parametrize('verb', VERBS)
-def test_epic_corpus_not_found_names_the_directory_it_looked_for(
-    verb: str, epic_dir: Path
-) -> None:
+def test_epic_corpus_not_found_names_the_directory_it_looked_for(verb: str, epic_dir: Path) -> None:
     payload = invoke(verb, 'fixture-epic')
 
     assert payload['epic'] == 'fixture-epic'
@@ -158,9 +154,7 @@ def test_epic_corpus_not_found_names_the_directory_it_looked_for(
 
 
 @pytest.mark.parametrize('verb', VERBS)
-def test_spec_without_a_surface_section_reports_unclassifiable_spec(
-    verb: str, unclassifiable: Path
-) -> None:
+def test_spec_without_a_surface_section_reports_unclassifiable_spec(verb: str, unclassifiable: Path) -> None:
     payload = invoke(verb, 'fixture-epic')
 
     assert payload['status'] == 'error'
@@ -168,9 +162,7 @@ def test_spec_without_a_surface_section_reports_unclassifiable_spec(
 
 
 @pytest.mark.parametrize('verb', VERBS)
-def test_unclassifiable_spec_names_the_offending_spec_and_the_cause(
-    verb: str, unclassifiable: Path
-) -> None:
+def test_unclassifiable_spec_names_the_offending_spec_and_the_cause(verb: str, unclassifiable: Path) -> None:
     payload = invoke(verb, 'fixture-epic')
 
     assert payload['spec'] == 'PLAN-900.md'
@@ -181,17 +173,13 @@ def test_unclassifiable_spec_names_the_offending_spec_and_the_cause(
 
 
 def test_absent_baseline_file_reports_baseline_unreadable(loadable: Path, tmp_path: Path) -> None:
-    payload = invoke(
-        BASELINE_VERB, 'fixture-epic', '--baseline-findings', str(tmp_path / 'nowhere.txt')
-    )
+    payload = invoke(BASELINE_VERB, 'fixture-epic', '--baseline-findings', str(tmp_path / 'nowhere.txt'))
 
     assert payload['status'] == 'error'
     assert payload['error'] == ERROR_BASELINE_UNREADABLE
 
 
-def test_undecodable_baseline_file_reports_baseline_unreadable(
-    loadable: Path, tmp_path: Path
-) -> None:
+def test_undecodable_baseline_file_reports_baseline_unreadable(loadable: Path, tmp_path: Path) -> None:
     """The decode arm, which the absent-file case alone would leave unexercised.
 
     Two different exception types reach the same guard, and a guard catching only

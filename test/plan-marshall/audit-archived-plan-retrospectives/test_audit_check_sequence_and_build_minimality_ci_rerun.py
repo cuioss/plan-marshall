@@ -10,17 +10,15 @@ from _audit_fixtures import audit
 def test_sequence_ci_rerun_fires_on_multiple_ci_run_dirs(tmp_path):
     # Pin: the ci_rerun signal counts CI run directories. The re-doc that reworded
     # this signal changed only the interpretation guidance, not the counting logic.
-    plan_dir = tmp_path / ".plan" / "local" / "archived-plans" / "seq-plan"
-    (plan_dir / "artifacts" / "ci-runs" / "run-1").mkdir(parents=True)
-    (plan_dir / "artifacts" / "ci-runs" / "run-2").mkdir(parents=True)
-    (plan_dir / "references.json").write_text('{"scope_estimate": "surgical"}', encoding="utf-8")
-    (plan_dir / "status.json").write_text(
-        '{"metadata": {"change_type": "bug_fix"}}', encoding="utf-8"
-    )
+    plan_dir = tmp_path / '.plan' / 'local' / 'archived-plans' / 'seq-plan'
+    (plan_dir / 'artifacts' / 'ci-runs' / 'run-1').mkdir(parents=True)
+    (plan_dir / 'artifacts' / 'ci-runs' / 'run-2').mkdir(parents=True)
+    (plan_dir / 'references.json').write_text('{"scope_estimate": "surgical"}', encoding='utf-8')
+    (plan_dir / 'status.json').write_text('{"metadata": {"change_type": "bug_fix"}}', encoding='utf-8')
     inputs = audit.collect_inputs(plan_dir)
 
     # No builds staged in the ledger — this pins the ci_rerun signal (CI dirs).
     result = audit.cross_sequence_build_minimality([inputs], {})
-    row = next(r for r in result["rows"] if r["plan_id"] == "seq-plan")
-    assert row["ci_runs"] == 2
-    assert any(f.startswith("ci_rerun") for f in row["flags"]), row["flags"]
+    row = next(r for r in result['rows'] if r['plan_id'] == 'seq-plan')
+    assert row['ci_runs'] == 2
+    assert any(f.startswith('ci_rerun') for f in row['flags']), row['flags']

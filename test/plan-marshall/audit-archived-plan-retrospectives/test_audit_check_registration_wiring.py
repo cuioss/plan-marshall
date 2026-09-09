@@ -8,39 +8,37 @@ from _audit_fixtures import audit, minimal_corpus
 
 
 def test_new_checks_registered_and_era_stamped():
-    for c in ("dispatch-topology", "finalize-flow-conformance", "merge-window-accounting"):
+    for c in ('dispatch-topology', 'finalize-flow-conformance', 'merge-window-accounting'):
         assert c in audit.CHECK_NAMES
         assert c in audit.CHECK_ERA
-    assert "merge-window-accounting" in audit.CROSS_PLAN_CHECKS
-    assert "dispatch-topology" not in audit.CROSS_PLAN_CHECKS
-    assert audit.CHECK_NAMES[-1] == "cross-check-synthesis"
+    assert 'merge-window-accounting' in audit.CROSS_PLAN_CHECKS
+    assert 'dispatch-topology' not in audit.CROSS_PLAN_CHECKS
+    assert audit.CHECK_NAMES[-1] == 'cross-check-synthesis'
 
 
 def test_full_sweep_emits_new_blocks_and_couplings(tmp_path):
     inputs = minimal_corpus(tmp_path)
     output = audit.run_checks(inputs, list(audit.CHECK_NAMES), tmp_path)
     for c in (
-        "dispatch-topology",
-        "finalize-flow-conformance",
-        "lane-lever-effectiveness",
+        'dispatch-topology',
+        'finalize-flow-conformance',
+        'lane-lever-effectiveness',
     ):
-        assert f"check: {c}\nstatus: success\nfixed_since: {audit.CHECK_ERA[c]}" in output
+        assert f'check: {c}\nstatus: success\nfixed_since: {audit.CHECK_ERA[c]}' in output
     # merge-window-accounting reads the `[LOCK]` lifecycle timeline, which the
     # minimal corpus does not stage, so it reports `unmeasured` on this sweep —
     # the block is still emitted and still era-stamped. Asserting `success` here
     # would require the check to publish a contention count no data supports.
     assert (
-        "check: merge-window-accounting\nstatus: unmeasured\n"
-        f"fixed_since: {audit.CHECK_ERA['merge-window-accounting']}" in output
+        'check: merge-window-accounting\nstatus: unmeasured\n'
+        f'fixed_since: {audit.CHECK_ERA["merge-window-accounting"]}' in output
     )
     for coupling in (
-        "dispatch_topology_reentry",
-        "finalize_gate_gap_ci_rerun",
-        "merge_window_ci_rerun",
-        "surgical_overpay",
+        'dispatch_topology_reentry',
+        'finalize_gate_gap_ci_rerun',
+        'merge_window_ci_rerun',
+        'surgical_overpay',
     ):
         assert coupling in output
     # cross-check-synthesis remains the last check block, ahead of the meta blocks.
-    assert output.index("check: lane-lever-effectiveness") < output.index(
-        "check: cross-check-synthesis"
-    )
+    assert output.index('check: lane-lever-effectiveness') < output.index('check: cross-check-synthesis')

@@ -23,7 +23,8 @@ class TestSequenceBuildMinimalityFlags:
     def test_build_churn_flag_on_clustered_builds(self, tmp_path: Path):
         # two ledger builds 5 minutes apart (< 10-minute clustering window)
         inputs = _write_sbm_plan(
-            tmp_path, 'flag-churn',
+            tmp_path,
+            'flag-churn',
             ledger_builds=[
                 {'dur': 30.0, 'ts': '2026-06-01T10:00:00Z'},
                 {'dur': 30.0, 'ts': '2026-06-01T10:05:00Z'},
@@ -39,7 +40,8 @@ class TestSequenceBuildMinimalityFlags:
     def test_no_churn_when_builds_spaced_beyond_window(self, tmp_path: Path):
         # two ledger builds 20 minutes apart (> 10-minute window)
         inputs = _write_sbm_plan(
-            tmp_path, 'flag-nochurn',
+            tmp_path,
+            'flag-nochurn',
             ledger_builds=[
                 {'dur': 30.0, 'ts': '2026-06-01T10:00:00Z'},
                 {'dur': 30.0, 'ts': '2026-06-01T10:20:00Z'},
@@ -55,7 +57,8 @@ class TestSequenceBuildMinimalityFlags:
     def test_non_minimal_build_flag_on_heavy_build(self, tmp_path: Path):
         # a single heavy (> 400s) ledger build
         inputs = _write_sbm_plan(
-            tmp_path, 'flag-heavy',
+            tmp_path,
+            'flag-heavy',
             ledger_builds=[{'dur': 600.0}],
         )
 
@@ -68,7 +71,8 @@ class TestSequenceBuildMinimalityFlags:
     def test_docs_only_build_flag_when_no_py_touched(self, tmp_path: Path):
         # a ledger build ran but only a markdown file was modified
         inputs = _write_sbm_plan(
-            tmp_path, 'flag-docs',
+            tmp_path,
+            'flag-docs',
             ledger_builds=[{'dur': 30.0}],
             modified_files=['doc/guide.md'],
         )
@@ -82,7 +86,8 @@ class TestSequenceBuildMinimalityFlags:
     def test_no_docs_only_flag_when_py_touched(self, tmp_path: Path):
         # a ledger build ran and a .py file was modified
         inputs = _write_sbm_plan(
-            tmp_path, 'flag-py',
+            tmp_path,
+            'flag-py',
             ledger_builds=[{'dur': 30.0}],
             modified_files=['scripts/audit.py'],
         )
@@ -116,7 +121,8 @@ class TestSequenceBuildMinimalityFlags:
     def test_phase_reentry_flag_when_role_dispatched_twice(self, tmp_path: Path):
         # phase-5-execute dispatched twice on the work.log timeline
         inputs = _write_sbm_plan(
-            tmp_path, 'flag-reentry',
+            tmp_path,
+            'flag-reentry',
             work_lines=[
                 _sbm_dispatch('2026-06-01T10:00:00', 'phase-5-execute'),
                 _sbm_dispatch('2026-06-01T11:00:00', 'phase-5-execute'),
@@ -131,11 +137,10 @@ class TestSequenceBuildMinimalityFlags:
 
     def test_arch_over_resolution_flag_when_arch_dwarfs_builds(self, tmp_path: Path):
         # 5 architecture calls against a single ledger build (>= 5x ratio)
-        sel = [
-            _sbm_call(f'2026-06-01T10:0{i}:00', _ARCH, 'resolve', 0.5) for i in range(5)
-        ]
+        sel = [_sbm_call(f'2026-06-01T10:0{i}:00', _ARCH, 'resolve', 0.5) for i in range(5)]
         inputs = _write_sbm_plan(
-            tmp_path, 'flag-arch',
+            tmp_path,
+            'flag-arch',
             sel_lines=sel,
             ledger_builds=[{'dur': 30.0, 'ts': '2026-06-01T10:06:00Z'}],
         )
@@ -150,7 +155,8 @@ class TestSequenceBuildMinimalityFlags:
     def test_consecutive_dup_flag_on_back_to_back_identical_calls(self, tmp_path: Path):
         # two identical (notation, sub) calls back-to-back
         inputs = _write_sbm_plan(
-            tmp_path, 'flag-dup',
+            tmp_path,
+            'flag-dup',
             sel_lines=[
                 _sbm_call('2026-06-01T10:00:00', 'pm:manage-tasks:manage-tasks', 'read'),
                 _sbm_call('2026-06-01T10:01:00', 'pm:manage-tasks:manage-tasks', 'read'),
@@ -166,7 +172,8 @@ class TestSequenceBuildMinimalityFlags:
     def test_clean_minimal_plan_has_no_flags(self, tmp_path: Path):
         # one minimal ledger build touching a .py file, single CI run, distinct calls
         inputs = _write_sbm_plan(
-            tmp_path, 'flag-clean',
+            tmp_path,
+            'flag-clean',
             sel_lines=[_sbm_call('2026-06-01T10:00:00', _ARCH, 'resolve', 0.5)],
             modified_files=['scripts/audit.py'],
             ci_runs=1,

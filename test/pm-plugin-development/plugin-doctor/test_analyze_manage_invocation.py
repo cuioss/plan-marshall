@@ -104,7 +104,7 @@ def _flat_script_source() -> str:
     - ``bar`` subcommand has ``--gamma``.
     - Root parser has ``--debug``.
     """
-    return textwrap.dedent('''
+    return textwrap.dedent("""
         import argparse
 
         def main():
@@ -123,7 +123,7 @@ def _flat_script_source() -> str:
 
         if __name__ == '__main__':
             main()
-    ''').lstrip()
+    """).lstrip()
 
 
 def _nested_script_source() -> str:
@@ -134,7 +134,7 @@ def _nested_script_source() -> str:
         * ``query`` with ``--plan-id`` (required) and ``--phase``
     - ``other`` is a flat subcommand with ``--flag``.
     """
-    return textwrap.dedent('''
+    return textwrap.dedent("""
         import argparse
 
         def main():
@@ -159,12 +159,12 @@ def _nested_script_source() -> str:
 
         if __name__ == '__main__':
             main()
-    ''').lstrip()
+    """).lstrip()
 
 
 def _minimal_argparse_source() -> str:
     """Minimal argparse script — single ``run`` subcommand with one flag."""
-    return textwrap.dedent('''
+    return textwrap.dedent("""
         import argparse
 
         def main():
@@ -176,7 +176,7 @@ def _minimal_argparse_source() -> str:
 
         if __name__ == '__main__':
             main()
-    ''').lstrip()
+    """).lstrip()
 
 
 def _loop_registered_source() -> str:
@@ -189,7 +189,7 @@ def _loop_registered_source() -> str:
     ``--help`` derivation sees them because argparse renders the real
     registered choices regardless of how the parsers were built.
     """
-    return textwrap.dedent('''
+    return textwrap.dedent("""
         import argparse
 
         _SUBCOMMANDS = ['script', 'work', 'decision', 'separator', 'read']
@@ -206,7 +206,7 @@ def _loop_registered_source() -> str:
 
         if __name__ == '__main__':
             main()
-    ''').lstrip()
+    """).lstrip()
 
 
 def _many_subcommand_source() -> str:
@@ -217,7 +217,7 @@ def _many_subcommand_source() -> str:
     loop, the rest by helper calls, so a literal-only AST walk would miss
     most of them.
     """
-    return textwrap.dedent('''
+    return textwrap.dedent("""
         import argparse
 
         _VERBS = [
@@ -245,7 +245,7 @@ def _many_subcommand_source() -> str:
 
         if __name__ == '__main__':
             main()
-    ''').lstrip()
+    """).lstrip()
 
 
 def _shared_flag_source() -> str:
@@ -257,7 +257,7 @@ def _shared_flag_source() -> str:
     ``--help`` renders the real per-leaf flag surface including the shared
     flags, so the analyzer no longer falsely flags ``--plan-id`` as unknown.
     """
-    return textwrap.dedent('''
+    return textwrap.dedent("""
         import argparse
 
         def _add_common(p):
@@ -277,7 +277,7 @@ def _shared_flag_source() -> str:
 
         if __name__ == '__main__':
             main()
-    ''').lstrip()
+    """).lstrip()
 
 
 def _ansi_colored_script_source() -> str:
@@ -297,7 +297,7 @@ def _ansi_colored_script_source() -> str:
     root and every subparser (``add_subparsers`` defaults ``parser_class`` to
     the root's class), so ``foo``/``bar`` ``--help`` are colored too.
     """
-    return textwrap.dedent('''
+    return textwrap.dedent("""
         import argparse
 
         _COLOR_TOKENS = (
@@ -329,7 +329,7 @@ def _ansi_colored_script_source() -> str:
 
         if __name__ == '__main__':
             main()
-    ''').lstrip()
+    """).lstrip()
 
 
 # ---------------------------------------------------------------------------
@@ -353,7 +353,7 @@ def _ansi_colored_script_source() -> str:
 # repeated probes — the interpreter-shutdown flush race that motivated the old
 # subprocess design only manifested when ``runpy`` + ``SystemExit`` raced the
 # PARENT's ``capture_output`` teardown, which no longer applies here.
-_EXECUTOR_SHIM = textwrap.dedent('''
+_EXECUTOR_SHIM = textwrap.dedent("""
     #!/usr/bin/env python3
     import contextlib
     import io
@@ -401,7 +401,7 @@ _EXECUTOR_SHIM = textwrap.dedent('''
 
     if __name__ == '__main__':
         main()
-''').lstrip()
+""").lstrip()
 
 
 def _make_executor(tmp_path: Path, mapping: dict[str, Path]) -> Path:
@@ -416,9 +416,7 @@ def _make_executor(tmp_path: Path, mapping: dict[str, Path]) -> Path:
     executor.write_text(_EXECUTOR_SHIM, encoding='utf-8')
     import json
 
-    (plan_dir / 'notation_map.json').write_text(
-        json.dumps({k: str(v) for k, v in mapping.items()}), encoding='utf-8'
-    )
+    (plan_dir / 'notation_map.json').write_text(json.dumps({k: str(v) for k, v in mapping.items()}), encoding='utf-8')
     return executor
 
 
@@ -459,13 +457,10 @@ class TestSharedDerivationConsolidation:
         # explain why it was deleted, and a substring check over the source
         # would trip on that documentation.
         assert not hasattr(naming, 'ast'), (
-            'the accept-set module imports ast again — an AST walk reappeared '
-            'on the derivation path'
+            'the accept-set module imports ast again — an AST walk reappeared on the derivation path'
         )
         source = Path(naming.__file__).read_text(encoding='utf-8')
-        assert 'import ast' not in source, (
-            'an add_parser AST walk reappeared on the accept-set derivation path'
-        )
+        assert 'import ast' not in source, 'an add_parser AST walk reappeared on the accept-set derivation path'
 
     def test_universal_accept_set_is_the_shared_definition(self):
         """The flag allowlist is IMPORTED, not redeclared.
@@ -484,9 +479,7 @@ class TestSharedDerivationConsolidation:
         assert _ami._UNIVERSAL_FLAG_ARITY is surf.UNIVERSAL_FLAG_ARITY
         assert _ami._UNIVERSAL_FLAG_ALLOWLIST is surf.UNIVERSAL_FLAGS
 
-    def test_documented_help_invocation_is_not_reported_unknown(
-        self, flat_index: dict
-    ) -> None:
+    def test_documented_help_invocation_is_not_reported_unknown(self, flat_index: dict) -> None:
         """The behavioural half of the divergence, at this rule's own boundary.
 
         ``parse_help_node`` strips ``help`` from every derived flag set, so the
@@ -494,35 +487,20 @@ class TestSharedDerivationConsolidation:
         assertion above would still leave this passing on a set that happened
         not to be consulted.
         """
-        content = (
-            f'python3 .plan/execute-script.py {_SYN_NOTATION} foo --alpha x --help\n'
-        )
+        content = f'python3 .plan/execute-script.py {_SYN_NOTATION} foo --alpha x --help\n'
         findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', flat_index)
-        invalid = [
-            f for f in findings if f['rule_id'] == RULE_MANAGE_INVOCATION_INVALID
-        ]
-        assert invalid == [], (
-            f'a documented --help invocation was reported as invalid: {invalid}'
-        )
+        invalid = [f for f in findings if f['rule_id'] == RULE_MANAGE_INVOCATION_INVALID]
+        assert invalid == [], f'a documented --help invocation was reported as invalid: {invalid}'
 
-    def test_unknown_flag_is_still_reported_alongside_help(
-        self, flat_index: dict
-    ) -> None:
+    def test_unknown_flag_is_still_reported_alongside_help(self, flat_index: dict) -> None:
         """Negative control: the accept-set widens, it does not switch the rule off.
 
         Without this, the previous test would pass just as well on an analyzer
         that stopped validating flags on any line mentioning ``--help``.
         """
-        content = (
-            f'python3 .plan/execute-script.py {_SYN_NOTATION} foo '
-            f'--alpha x --not-a-real-flag y --help\n'
-        )
+        content = f'python3 .plan/execute-script.py {_SYN_NOTATION} foo --alpha x --not-a-real-flag y --help\n'
         findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', flat_index)
-        unknown = [
-            f
-            for f in findings
-            if f['details'].get('reason') == 'flag_unknown'
-        ]
+        unknown = [f for f in findings if f['details'].get('reason') == 'flag_unknown']
         assert [f['details']['flag'] for f in unknown] == ['not-a-real-flag'], (
             f'expected exactly the invented flag to be reported: {findings}'
         )
@@ -533,9 +511,7 @@ class TestSharedDerivationConsolidation:
         script.write_text('import sys\nsys.exit(3)\n', encoding='utf-8')
         executor = _make_executor(tmp_path, {_SYN_NOTATION: script})
         surf.clear_memo()
-        shared = surf.derive_surface(
-            _SYN_NOTATION, executor, config=surf.DerivationConfig(use_disk_cache=False)
-        )
+        shared = surf.derive_surface(_SYN_NOTATION, executor, config=surf.DerivationConfig(use_disk_cache=False))
         assert isinstance(shared, surf.NotDerivable)
         assert derive_script_tree(_SYN_NOTATION, executor) is None
 
@@ -580,7 +556,7 @@ def _ci_router_source() -> str:
     argparse dispatch and is therefore ABSENT from this synthetic surface —
     exactly as it is absent from the real ``ci --help``.
     """
-    return textwrap.dedent('''
+    return textwrap.dedent("""
         import argparse
 
         def main():
@@ -593,7 +569,7 @@ def _ci_router_source() -> str:
 
         if __name__ == '__main__':
             main()
-    ''').lstrip()
+    """).lstrip()
 
 
 @pytest.fixture
@@ -621,9 +597,7 @@ def test_router_verb_barrier_accepted(ci_router_index: dict) -> None:
         'plan-marshall:tools-integration-ci:ci barrier '
         '--settled-head SHA --signal ci:pending'
     )
-    findings = analyze_manage_invocation_markdown(
-        content, 'SKILL.md', ci_router_index
-    )
+    findings = analyze_manage_invocation_markdown(content, 'SKILL.md', ci_router_index)
     assert findings == []
 
 
@@ -633,13 +607,8 @@ def test_non_router_unknown_subcommand_still_flagged(ci_router_index: dict) -> N
     A genuinely-unregistered subcommand on the same notation is still flagged —
     only names listed in ``_ROUTER_VERBS`` for the notation are admitted.
     """
-    content = (
-        'python3 .plan/execute-script.py '
-        'plan-marshall:tools-integration-ci:ci bogus --flag x'
-    )
-    findings = analyze_manage_invocation_markdown(
-        content, 'SKILL.md', ci_router_index
-    )
+    content = 'python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci bogus --flag x'
+    findings = analyze_manage_invocation_markdown(content, 'SKILL.md', ci_router_index)
     assert len(findings) == 1
     assert findings[0]['details']['reason'] == 'subcommand_unknown'
 
@@ -656,9 +625,7 @@ def test_router_verb_unknown_flag_is_flagged(ci_router_index: dict) -> None:
         'plan-marshall:tools-integration-ci:ci barrier '
         '--settled-head SHA --signal ci:pending --bogus x'
     )
-    findings = analyze_manage_invocation_markdown(
-        content, 'SKILL.md', ci_router_index
-    )
+    findings = analyze_manage_invocation_markdown(content, 'SKILL.md', ci_router_index)
     assert len(findings) == 1
     assert findings[0]['details']['reason'] == 'flag_unknown'
     assert findings[0]['details']['flag'] == 'bogus'
@@ -667,13 +634,8 @@ def test_router_verb_unknown_flag_is_flagged(ci_router_index: dict) -> None:
 
 def test_router_verb_missing_required_flag_is_flagged(ci_router_index: dict) -> None:
     """A router verb's required flags are validated — omitting one is flagged."""
-    content = (
-        'python3 .plan/execute-script.py '
-        'plan-marshall:tools-integration-ci:ci barrier --settled-head SHA'
-    )
-    findings = analyze_manage_invocation_markdown(
-        content, 'SKILL.md', ci_router_index
-    )
+    content = 'python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci barrier --settled-head SHA'
+    findings = analyze_manage_invocation_markdown(content, 'SKILL.md', ci_router_index)
     assert len(findings) == 1
     assert findings[0]['details']['reason'] == 'required_flag_missing'
     assert findings[0]['details']['missing'] == ['signal']
@@ -686,9 +648,7 @@ def test_router_verb_injected_routing_flags_accepted(ci_router_index: dict) -> N
         'plan-marshall:tools-integration-ci:ci --plan-id p barrier '
         '--settled-head SHA --signal ci:pending'
     )
-    findings = analyze_manage_invocation_markdown(
-        content, 'SKILL.md', ci_router_index
-    )
+    findings = analyze_manage_invocation_markdown(content, 'SKILL.md', ci_router_index)
     assert findings == []
 
 
@@ -738,50 +698,74 @@ def _build_synthetic_marketplace(tmp_path: Path) -> Path:
 
     # In-scope, canonical block present.
     _write_skill_script(
-        bundles_dir, 'plan-marshall', 'manage-status', 'manage-status.py',
-        source=_minimal_argparse_source(), canonical_block=True,
+        bundles_dir,
+        'plan-marshall',
+        'manage-status',
+        'manage-status.py',
+        source=_minimal_argparse_source(),
+        canonical_block=True,
     )
     _write_skill_script(
-        bundles_dir, 'plan-marshall', 'manage-tasks', 'manage-tasks.py',
-        source=_minimal_argparse_source(), canonical_block=True,
+        bundles_dir,
+        'plan-marshall',
+        'manage-tasks',
+        'manage-tasks.py',
+        source=_minimal_argparse_source(),
+        canonical_block=True,
     )
     # In-scope, canonical block MISSING.
     _write_skill_script(
-        bundles_dir, 'plan-marshall', 'manage-config', 'manage-config.py',
-        source=_minimal_argparse_source(), canonical_block=False,
+        bundles_dir,
+        'plan-marshall',
+        'manage-config',
+        'manage-config.py',
+        source=_minimal_argparse_source(),
+        canonical_block=False,
     )
     # In-scope, entry-point filename differs from skill name, block missing.
     _write_skill_script(
-        bundles_dir, 'plan-marshall', 'plan-doctor', 'plan_doctor.py',
-        source=_minimal_argparse_source(), canonical_block=False,
+        bundles_dir,
+        'plan-marshall',
+        'plan-doctor',
+        'plan_doctor.py',
+        source=_minimal_argparse_source(),
+        canonical_block=False,
     )
 
     # Excluded: shared-only helper skill.
     _write_skill_script(
-        bundles_dir, 'plan-marshall', 'script-shared', 'helpers.py',
-        source=_minimal_argparse_source(), canonical_block=False,
+        bundles_dir,
+        'plan-marshall',
+        'script-shared',
+        'helpers.py',
+        source=_minimal_argparse_source(),
+        canonical_block=False,
     )
     # Excluded: non-entry-point reference skill.
     _write_skill_script(
-        bundles_dir, 'plan-marshall', 'ref-toon-format', 'toon.py',
-        source=_minimal_argparse_source(), canonical_block=False,
+        bundles_dir,
+        'plan-marshall',
+        'ref-toon-format',
+        'toon.py',
+        source=_minimal_argparse_source(),
+        canonical_block=False,
     )
     # Excluded: manage-findings has its own dedicated analyzer.
     _write_skill_script(
-        bundles_dir, 'plan-marshall', 'manage-findings', 'manage-findings.py',
-        source=_minimal_argparse_source(), canonical_block=False,
+        bundles_dir,
+        'plan-marshall',
+        'manage-findings',
+        'manage-findings.py',
+        source=_minimal_argparse_source(),
+        canonical_block=False,
     )
 
     # Not an entry point: underscore-prefixed helper alongside an entry point.
     logging_skill = bundles_dir / 'plan-marshall' / 'skills' / 'manage-logging'
     helper_scripts = logging_skill / 'scripts'
     helper_scripts.mkdir(parents=True, exist_ok=True)
-    (helper_scripts / 'manage-logging.py').write_text(
-        _minimal_argparse_source(), encoding='utf-8'
-    )
-    (helper_scripts / '_internal.py').write_text(
-        _minimal_argparse_source(), encoding='utf-8'
-    )
+    (helper_scripts / 'manage-logging.py').write_text(_minimal_argparse_source(), encoding='utf-8')
+    (helper_scripts / '_internal.py').write_text(_minimal_argparse_source(), encoding='utf-8')
     (logging_skill / 'SKILL.md').write_text(
         '# Skill\n\n## Canonical invocations\n\n### run\n\n```bash\nrun --flag x\n```\n',
         encoding='utf-8',
@@ -790,12 +774,8 @@ def _build_synthetic_marketplace(tmp_path: Path) -> Path:
     # Not an entry point: a script that declares no ArgumentParser.
     no_arg_skill = bundles_dir / 'plan-marshall' / 'skills' / 'no-cli-skill' / 'scripts'
     no_arg_skill.mkdir(parents=True, exist_ok=True)
-    (no_arg_skill / 'lib.py').write_text(
-        'def helper():\n    return 1\n', encoding='utf-8'
-    )
-    (bundles_dir / 'plan-marshall' / 'skills' / 'no-cli-skill' / 'SKILL.md').write_text(
-        '# Skill\n', encoding='utf-8'
-    )
+    (no_arg_skill / 'lib.py').write_text('def helper():\n    return 1\n', encoding='utf-8')
+    (bundles_dir / 'plan-marshall' / 'skills' / 'no-cli-skill' / 'SKILL.md').write_text('# Skill\n', encoding='utf-8')
 
     return marketplace_root
 
@@ -978,9 +958,7 @@ class TestLoopRegisteredSubcommands:
         executor = _make_executor(tmp_path, {_SYN_NOTATION: script})
         tree = derive_script_tree(_SYN_NOTATION, executor)
         assert tree is not None
-        assert tree.known_subcommands() == {
-            'script', 'work', 'decision', 'separator', 'read'
-        }
+        assert tree.known_subcommands() == {'script', 'work', 'decision', 'separator', 'read'}
 
     def test_loop_registered_invocation_is_not_flagged(self, tmp_path: Path) -> None:
         script = tmp_path / 'mlog.py'
@@ -992,8 +970,7 @@ class TestLoopRegisteredSubcommands:
         # The canonical ``work`` invocation must produce ZERO findings — it is
         # the exact false-positive shape the pivot fixes.
         content = (
-            f'python3 .plan/execute-script.py {_SYN_NOTATION} work '
-            f'--plan-id p --level INFO --message "[STATUS] hi"\n'
+            f'python3 .plan/execute-script.py {_SYN_NOTATION} work --plan-id p --level INFO --message "[STATUS] hi"\n'
         )
         findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', index)
         assert findings == []
@@ -1005,9 +982,7 @@ class TestLoopRegisteredSubcommands:
         tree = derive_script_tree(_SYN_NOTATION, executor)
         assert tree is not None
         index = {_SYN_NOTATION: tree}
-        content = (
-            f'python3 .plan/execute-script.py {_SYN_NOTATION} not-a-verb --plan-id p\n'
-        )
+        content = f'python3 .plan/execute-script.py {_SYN_NOTATION} not-a-verb --plan-id p\n'
         findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', index)
         assert len(findings) == 1
         assert findings[0]['details']['reason'] == 'subcommand_unknown'
@@ -1028,19 +1003,14 @@ class TestManySubcommandScript:
         for verb in ('metadata', 'get-worktree-path', 'transition', 'self-test'):
             assert verb in subs
 
-    def test_helper_registered_subcommand_invocation_clean(
-        self, tmp_path: Path
-    ) -> None:
+    def test_helper_registered_subcommand_invocation_clean(self, tmp_path: Path) -> None:
         script = tmp_path / 'mstat.py'
         script.write_text(_many_subcommand_source(), encoding='utf-8')
         executor = _make_executor(tmp_path, {_SYN_NOTATION: script})
         tree = derive_script_tree(_SYN_NOTATION, executor)
         assert tree is not None
         index = {_SYN_NOTATION: tree}
-        content = (
-            f'python3 .plan/execute-script.py {_SYN_NOTATION} get-worktree-path '
-            f'--plan-id p\n'
-        )
+        content = f'python3 .plan/execute-script.py {_SYN_NOTATION} get-worktree-path --plan-id p\n'
         findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', index)
         assert findings == []
 
@@ -1069,8 +1039,7 @@ class TestSharedFlagAcrossSubcommands:
         index = {_SYN_NOTATION: tree}
         # ``--plan-id`` / ``--task-number`` are shared — neither is unknown.
         content = (
-            f'python3 .plan/execute-script.py {_SYN_NOTATION} finalize-step '
-            f'--plan-id p --task-number 3 --status done\n'
+            f'python3 .plan/execute-script.py {_SYN_NOTATION} finalize-step --plan-id p --task-number 3 --status done\n'
         )
         findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', index)
         assert findings == []
@@ -1083,10 +1052,7 @@ class TestSharedFlagAcrossSubcommands:
         assert tree is not None
         index = {_SYN_NOTATION: tree}
         # Omit the required ``--task-number``.
-        content = (
-            f'python3 .plan/execute-script.py {_SYN_NOTATION} finalize-step '
-            f'--plan-id p --status done\n'
-        )
+        content = f'python3 .plan/execute-script.py {_SYN_NOTATION} finalize-step --plan-id p --status done\n'
         findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', index)
         assert len(findings) == 1
         assert findings[0]['details']['reason'] == 'required_flag_missing'
@@ -1102,24 +1068,18 @@ class TestPositiveCanonicalInvocations:
     """Each script accepts a canonical invocation cleanly."""
 
     def test_flat_subcommand_canonical_clean(self, flat_index: dict) -> None:
-        content = (
-            f'python3 .plan/execute-script.py {_SYN_NOTATION} foo --alpha v1 --beta v2\n'
-        )
+        content = f'python3 .plan/execute-script.py {_SYN_NOTATION} foo --alpha v1 --beta v2\n'
         findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', flat_index)
         assert findings == []
 
     def test_nested_subcommand_canonical_clean(self, nested_index: dict) -> None:
-        content = (
-            f'python3 .plan/execute-script.py {_SYN_NOTATION} qgate add --plan-id p1 --phase phase-5-execute\n'
-        )
+        content = f'python3 .plan/execute-script.py {_SYN_NOTATION} qgate add --plan-id p1 --phase phase-5-execute\n'
         findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', nested_index)
         assert findings == []
 
     def test_unknown_notation_is_skipped(self, flat_index: dict) -> None:
         """Notations not in the script_index are silently passed over."""
-        content = (
-            'python3 .plan/execute-script.py some-bundle:some-skill:some-script anything --x y\n'
-        )
+        content = 'python3 .plan/execute-script.py some-bundle:some-skill:some-script anything --x y\n'
         findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', flat_index)
         assert findings == []
 
@@ -1138,9 +1098,7 @@ class TestDiscoverInScopeScripts:
         notations = {d.notation for d in descriptors}
         assert notations == _EXPECTED_IN_SCOPE
 
-    def test_excludes_shared_reference_findings_and_helpers(
-        self, tmp_path: Path
-    ) -> None:
+    def test_excludes_shared_reference_findings_and_helpers(self, tmp_path: Path) -> None:
         marketplace_root = _build_synthetic_marketplace(tmp_path)
         descriptors = discover_in_scope_scripts(marketplace_root)
         notations = {d.notation for d in descriptors}
@@ -1159,9 +1117,7 @@ class TestDiscoverInScopeScripts:
         notations = {d.notation for d in descriptors}
         assert 'plan-marshall:no-cli-skill:lib' not in notations
 
-    def test_third_segment_is_script_stem_not_skill_name(
-        self, tmp_path: Path
-    ) -> None:
+    def test_third_segment_is_script_stem_not_skill_name(self, tmp_path: Path) -> None:
         """A skill whose entry-point filename differs from the skill name is
         keyed off the script stem, not a filename==skill assumption."""
         marketplace_root = _build_synthetic_marketplace(tmp_path)
@@ -1199,9 +1155,7 @@ class TestUnknownSubcommand:
     """An unregistered top-level subcommand produces one finding."""
 
     def test_unknown_subcommand_is_flagged(self, flat_index: dict) -> None:
-        content = (
-            f'python3 .plan/execute-script.py {_SYN_NOTATION} zzz --alpha v1\n'
-        )
+        content = f'python3 .plan/execute-script.py {_SYN_NOTATION} zzz --alpha v1\n'
         findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', flat_index)
         assert len(findings) == 1
         f = findings[0]
@@ -1211,13 +1165,9 @@ class TestUnknownSubcommand:
         assert set(f['details']['known_subcommands']) == {'foo', 'bar'}
         assert 'canonical_hint' in f['details']
 
-    def test_subcommand_finding_short_circuits_flag_validation(
-        self, flat_index: dict
-    ) -> None:
+    def test_subcommand_finding_short_circuits_flag_validation(self, flat_index: dict) -> None:
         """When subcommand is unknown, no flag findings are emitted on the same line."""
-        content = (
-            f'python3 .plan/execute-script.py {_SYN_NOTATION} zzz --not-a-real-flag\n'
-        )
+        content = f'python3 .plan/execute-script.py {_SYN_NOTATION} zzz --not-a-real-flag\n'
         findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', flat_index)
         assert len(findings) == 1
         assert findings[0]['details']['reason'] == 'subcommand_unknown'
@@ -1227,9 +1177,7 @@ class TestUnknownSubVerb:
     """An unregistered sub-verb under a nested subparser produces one finding."""
 
     def test_unknown_sub_verb_is_flagged(self, nested_index: dict) -> None:
-        content = (
-            f'python3 .plan/execute-script.py {_SYN_NOTATION} qgate banana --plan-id p\n'
-        )
+        content = f'python3 .plan/execute-script.py {_SYN_NOTATION} qgate banana --plan-id p\n'
         findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', nested_index)
         assert len(findings) == 1
         f = findings[0]
@@ -1245,9 +1193,7 @@ class TestUnknownSubVerb:
 
     def test_missing_sub_verb_is_flagged(self, nested_index: dict) -> None:
         """``qgate`` without a sub-verb still produces a sub_verb_unknown finding."""
-        content = (
-            f'python3 .plan/execute-script.py {_SYN_NOTATION} qgate --plan-id p\n'
-        )
+        content = f'python3 .plan/execute-script.py {_SYN_NOTATION} qgate --plan-id p\n'
         findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', nested_index)
         assert len(findings) == 1
         assert findings[0]['details']['reason'] == 'sub_verb_unknown'
@@ -1258,9 +1204,7 @@ class TestUnknownFlag:
     """An unregistered long flag under a resolved leaf parser is flagged."""
 
     def test_unknown_flag_on_flat_subcommand(self, flat_index: dict) -> None:
-        content = (
-            f'python3 .plan/execute-script.py {_SYN_NOTATION} foo --alpha v --not-a-flag z\n'
-        )
+        content = f'python3 .plan/execute-script.py {_SYN_NOTATION} foo --alpha v --not-a-flag z\n'
         findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', flat_index)
         # One finding for the unknown flag. No missing-required finding because
         # --alpha is satisfied.
@@ -1278,9 +1222,7 @@ class TestUnknownFlag:
         assert 'not-a-flag' not in known
 
     def test_unknown_flag_on_nested_sub_verb(self, nested_index: dict) -> None:
-        content = (
-            f'python3 .plan/execute-script.py {_SYN_NOTATION} qgate add --plan-id p --phase ph --bogus z\n'
-        )
+        content = f'python3 .plan/execute-script.py {_SYN_NOTATION} qgate add --plan-id p --phase ph --bogus z\n'
         findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', nested_index)
         # Required flags are satisfied — only the unknown-flag finding fires.
         assert len(findings) == 1
@@ -1293,9 +1235,7 @@ class TestMissingRequiredFlag:
 
     def test_missing_required_on_flat_subcommand(self, flat_index: dict) -> None:
         # ``foo`` requires --alpha; invocation omits it.
-        content = (
-            f'python3 .plan/execute-script.py {_SYN_NOTATION} foo --beta v2\n'
-        )
+        content = f'python3 .plan/execute-script.py {_SYN_NOTATION} foo --beta v2\n'
         findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', flat_index)
         assert len(findings) == 1
         f = findings[0]
@@ -1305,9 +1245,7 @@ class TestMissingRequiredFlag:
 
     def test_missing_required_on_nested_sub_verb(self, nested_index: dict) -> None:
         # ``qgate add`` requires both --plan-id and --phase; omit one.
-        content = (
-            f'python3 .plan/execute-script.py {_SYN_NOTATION} qgate add --plan-id p\n'
-        )
+        content = f'python3 .plan/execute-script.py {_SYN_NOTATION} qgate add --plan-id p\n'
         findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', nested_index)
         assert len(findings) == 1
         f = findings[0]
@@ -1323,9 +1261,7 @@ class TestMissingRequiredFlag:
 class TestMissingCanonicalBlock:
     """SKILL.md without ``## Canonical invocations`` produces a finding."""
 
-    def test_missing_block_flagged_only_for_skills_without_section(
-        self, tmp_path: Path
-    ) -> None:
+    def test_missing_block_flagged_only_for_skills_without_section(self, tmp_path: Path) -> None:
         marketplace_root = _build_synthetic_marketplace(tmp_path)
         # Exactly two findings, and both carry the canonical-block rule code —
         # the shared scaffold pins the rule identity alongside the count.
@@ -1351,8 +1287,12 @@ class TestMissingCanonicalBlock:
         bundles_dir = marketplace_root / 'marketplace' / 'bundles'
         bundles_dir.mkdir(parents=True)
         _write_skill_script(
-            bundles_dir, 'plan-marshall', 'manage-status', 'manage-status.py',
-            source=_minimal_argparse_source(), canonical_block=True,
+            bundles_dir,
+            'plan-marshall',
+            'manage-status',
+            'manage-status.py',
+            source=_minimal_argparse_source(),
+            canonical_block=True,
         )
         assert_analyzer_findings(check_missing_canonical_blocks, marketplace_root, [])
 
@@ -1361,8 +1301,12 @@ class TestMissingCanonicalBlock:
         bundles_dir = marketplace_root / 'marketplace' / 'bundles'
         bundles_dir.mkdir(parents=True)
         skill_dir = _write_skill_script(
-            bundles_dir, 'plan-marshall', 'manage-status', 'manage-status.py',
-            source=_minimal_argparse_source(), canonical_block=False,
+            bundles_dir,
+            'plan-marshall',
+            'manage-status',
+            'manage-status.py',
+            source=_minimal_argparse_source(),
+            canonical_block=False,
         )
         (skill_dir / 'SKILL.md').write_text(
             '# Skill\n\n## canonical INVOCATIONS\n\n### run\n',
@@ -1370,16 +1314,18 @@ class TestMissingCanonicalBlock:
         )
         assert_analyzer_findings(check_missing_canonical_blocks, marketplace_root, [])
 
-    def test_excluded_skill_not_flagged_for_missing_block(
-        self, tmp_path: Path
-    ) -> None:
+    def test_excluded_skill_not_flagged_for_missing_block(self, tmp_path: Path) -> None:
         """A shared-only skill without the section is NOT flagged (out of scope)."""
         marketplace_root = tmp_path / 'mp'
         bundles_dir = marketplace_root / 'marketplace' / 'bundles'
         bundles_dir.mkdir(parents=True)
         _write_skill_script(
-            bundles_dir, 'plan-marshall', 'script-shared', 'helpers.py',
-            source=_minimal_argparse_source(), canonical_block=False,
+            bundles_dir,
+            'plan-marshall',
+            'script-shared',
+            'helpers.py',
+            source=_minimal_argparse_source(),
+            canonical_block=False,
         )
         assert_analyzer_findings(check_missing_canonical_blocks, marketplace_root, [])
 
@@ -1392,9 +1338,7 @@ class TestMissingCanonicalBlock:
 class TestSkillScanner:
     """``scan_skill_for_manage_invocation`` walks SKILL.md + standards/refs/etc."""
 
-    def test_scanner_picks_up_skill_md_invocations(
-        self, tmp_path: Path, flat_index: dict
-    ) -> None:
+    def test_scanner_picks_up_skill_md_invocations(self, tmp_path: Path, flat_index: dict) -> None:
         skill_dir = tmp_path / 'my-skill'
         skill_dir.mkdir()
         (skill_dir / 'SKILL.md').write_text(
@@ -1406,9 +1350,7 @@ class TestSkillScanner:
         assert findings[0]['details']['reason'] == 'subcommand_unknown'
         assert findings[0]['file'].endswith('SKILL.md')
 
-    def test_scanner_aggregates_subdoc_findings(
-        self, tmp_path: Path, flat_index: dict
-    ) -> None:
+    def test_scanner_aggregates_subdoc_findings(self, tmp_path: Path, flat_index: dict) -> None:
         skill_dir = tmp_path / 'my-skill'
         (skill_dir / 'standards').mkdir(parents=True)
         (skill_dir / 'SKILL.md').write_text('# clean\n', encoding='utf-8')
@@ -1422,9 +1364,7 @@ class TestSkillScanner:
         reasons = {f['details']['reason'] for f in findings}
         assert reasons == {'flag_unknown', 'required_flag_missing'}
 
-    def test_scanner_returns_empty_for_clean_skill(
-        self, tmp_path: Path, flat_index: dict
-    ) -> None:
+    def test_scanner_returns_empty_for_clean_skill(self, tmp_path: Path, flat_index: dict) -> None:
         skill_dir = tmp_path / 'my-skill'
         skill_dir.mkdir()
         (skill_dir / 'SKILL.md').write_text(
@@ -1434,12 +1374,8 @@ class TestSkillScanner:
         findings = scan_skill_for_manage_invocation(skill_dir, flat_index)
         assert findings == []
 
-    def test_scanner_handles_missing_directory(
-        self, tmp_path: Path, flat_index: dict
-    ) -> None:
-        findings = scan_skill_for_manage_invocation(
-            tmp_path / 'nonexistent', flat_index
-        )
+    def test_scanner_handles_missing_directory(self, tmp_path: Path, flat_index: dict) -> None:
+        findings = scan_skill_for_manage_invocation(tmp_path / 'nonexistent', flat_index)
         assert findings == []
 
 
@@ -1451,15 +1387,9 @@ class TestSkillScanner:
 class TestFindingPayloadShape:
     """All findings carry the documented schema fields."""
 
-    def test_payload_contains_required_keys_invocation_rule(
-        self, flat_index: dict
-    ) -> None:
-        content = (
-            f'python3 .plan/execute-script.py {_SYN_NOTATION} zzz --alpha v\n'
-        )
-        findings = analyze_manage_invocation_markdown(
-            content, '/path/to/SKILL.md', flat_index
-        )
+    def test_payload_contains_required_keys_invocation_rule(self, flat_index: dict) -> None:
+        content = f'python3 .plan/execute-script.py {_SYN_NOTATION} zzz --alpha v\n'
+        findings = analyze_manage_invocation_markdown(content, '/path/to/SKILL.md', flat_index)
         assert findings
         f = findings[0]
         for key in (
@@ -1480,9 +1410,7 @@ class TestFindingPayloadShape:
         assert f['severity'] == 'error'
         assert f['fixable'] is False
 
-    def test_payload_contains_required_keys_canonical_block_rule(
-        self, tmp_path: Path
-    ) -> None:
+    def test_payload_contains_required_keys_canonical_block_rule(self, tmp_path: Path) -> None:
         marketplace_root = _build_synthetic_marketplace(tmp_path)
         findings = check_missing_canonical_blocks(marketplace_root)
         assert findings
@@ -1503,27 +1431,16 @@ class TestFindingPayloadShape:
         assert f['line'] == 1
 
     def test_canonical_hint_present_in_details(self, flat_index: dict) -> None:
-        content = (
-            f'python3 .plan/execute-script.py {_SYN_NOTATION} foo --bogus v\n'
-        )
-        findings = analyze_manage_invocation_markdown(
-            content, '/fake/SKILL.md', flat_index
-        )
+        content = f'python3 .plan/execute-script.py {_SYN_NOTATION} foo --bogus v\n'
+        findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', flat_index)
         assert findings
         details = findings[0]['details']
         assert 'canonical_hint' in details
         assert _SYN_NOTATION in details['canonical_hint']
 
     def test_line_number_anchored(self, flat_index: dict) -> None:
-        content = (
-            '# Title\n'
-            '\n'
-            '\n'
-            f'python3 .plan/execute-script.py {_SYN_NOTATION} zzz --alpha v\n'
-        )
-        findings = analyze_manage_invocation_markdown(
-            content, '/fake/SKILL.md', flat_index
-        )
+        content = f'# Title\n\n\npython3 .plan/execute-script.py {_SYN_NOTATION} zzz --alpha v\n'
+        findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', flat_index)
         assert findings
         assert findings[0]['line'] == 4
 
@@ -1555,9 +1472,7 @@ class TestMarketplaceAggregator:
         bundles_dir = marketplace_root / 'marketplace' / 'bundles'
         # Add one consumer bundle markdown with a bad invocation against an
         # in-scope notation (the synthetic script declares ``run``).
-        consumer_md = (
-            bundles_dir / 'consumer-bundle' / 'skills' / 'consumer-skill' / 'SKILL.md'
-        )
+        consumer_md = bundles_dir / 'consumer-bundle' / 'skills' / 'consumer-skill' / 'SKILL.md'
         consumer_md.parent.mkdir(parents=True)
         consumer_md.write_text(
             'python3 .plan/execute-script.py plan-marshall:manage-status:manage-status zzz --x y\n',
@@ -1576,8 +1491,12 @@ class TestMarketplaceAggregator:
         bundles_dir = marketplace_root / 'marketplace' / 'bundles'
         bundles_dir.mkdir(parents=True)
         _write_skill_script(
-            bundles_dir, 'plan-marshall', 'manage-status', 'manage-status.py',
-            source=_minimal_argparse_source(), canonical_block=True,
+            bundles_dir,
+            'plan-marshall',
+            'manage-status',
+            'manage-status.py',
+            source=_minimal_argparse_source(),
+            canonical_block=True,
         )
         _attach_executor_to_synthetic_marketplace(marketplace_root)
         assert_analyzer_findings(scan_manage_invocation, marketplace_root, [])
@@ -1650,10 +1569,7 @@ class TestTemplatedInvocationSkip:
         assert findings == []
 
     def test_usage_string_bracket_group_not_flagged(self, flat_index: dict) -> None:
-        content = (
-            f'python3 .plan/execute-script.py {_SYN_NOTATION} '
-            f'[--debug] foo --alpha v\n'
-        )
+        content = f'python3 .plan/execute-script.py {_SYN_NOTATION} [--debug] foo --alpha v\n'
         findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', flat_index)
         assert findings == []
 
@@ -1666,8 +1582,7 @@ class TestTemplatedInvocationSkip:
         # Placeholder only in a flag value — the concrete sub-verb chain is
         # still validated, so a genuinely-unknown flag is still caught.
         content = (
-            f'python3 .plan/execute-script.py {_SYN_NOTATION} qgate add '
-            f'--plan-id {{pid}} --phase {{ph}} --nope z\n'
+            f'python3 .plan/execute-script.py {_SYN_NOTATION} qgate add --plan-id {{pid}} --phase {{ph}} --nope z\n'
         )
         findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', nested_index)
         assert len(findings) == 1
@@ -1702,9 +1617,7 @@ class TestQualityGateWiring:
         _attach_executor_to_synthetic_marketplace(marketplace_root)
         # Add a consumer doc with a bad invocation so the rule fires.
         bundles_dir = marketplace_root / 'marketplace' / 'bundles'
-        consumer_md = (
-            bundles_dir / 'consumer-bundle' / 'skills' / 'consumer-skill' / 'SKILL.md'
-        )
+        consumer_md = bundles_dir / 'consumer-bundle' / 'skills' / 'consumer-skill' / 'SKILL.md'
         consumer_md.parent.mkdir(parents=True)
         consumer_md.write_text(
             'python3 .plan/execute-script.py plan-marshall:manage-status:manage-status zzz --x y\n',
@@ -1758,20 +1671,12 @@ class TestMultiLineBackslashContinuation:
     """Backslash-continued invocations are joined before flag validation."""
 
     def test_flags_on_continuation_lines_are_recognized(self, flat_index: dict) -> None:
-        content = (
-            f'python3 .plan/execute-script.py {_SYN_NOTATION} foo \\\n'
-            f'  --alpha v1 \\\n'
-            f'  --beta v2\n'
-        )
+        content = f'python3 .plan/execute-script.py {_SYN_NOTATION} foo \\\n  --alpha v1 \\\n  --beta v2\n'
         findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', flat_index)
         assert findings == []
 
     def test_continuation_does_not_swallow_unknown_flag(self, flat_index: dict) -> None:
-        content = (
-            f'python3 .plan/execute-script.py {_SYN_NOTATION} foo \\\n'
-            f'  --alpha v1 \\\n'
-            f'  --nope v3\n'
-        )
+        content = f'python3 .plan/execute-script.py {_SYN_NOTATION} foo \\\n  --alpha v1 \\\n  --nope v3\n'
         findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', flat_index)
         assert len(findings) == 1
         f = findings[0]
@@ -1794,26 +1699,17 @@ class TestShellQuotingFalsePositives:
     """Flag-like text inside quoted argument values is not parsed as a flag."""
 
     def test_double_quoted_value_with_dashes_is_not_a_flag(self, flat_index: dict) -> None:
-        content = (
-            f'python3 .plan/execute-script.py {_SYN_NOTATION} foo '
-            f'--alpha "release: --not-a-flag"\n'
-        )
+        content = f'python3 .plan/execute-script.py {_SYN_NOTATION} foo --alpha "release: --not-a-flag"\n'
         findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', flat_index)
         assert findings == []
 
     def test_single_quoted_value_with_dashes_is_not_a_flag(self, flat_index: dict) -> None:
-        content = (
-            f"python3 .plan/execute-script.py {_SYN_NOTATION} foo "
-            f"--alpha '--not-a-flag'\n"
-        )
+        content = f"python3 .plan/execute-script.py {_SYN_NOTATION} foo --alpha '--not-a-flag'\n"
         findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', flat_index)
         assert findings == []
 
     def test_unquoted_flag_still_validated(self, flat_index: dict) -> None:
-        content = (
-            f'python3 .plan/execute-script.py {_SYN_NOTATION} foo '
-            f'--alpha "in quotes --safe" --nope unsafe\n'
-        )
+        content = f'python3 .plan/execute-script.py {_SYN_NOTATION} foo --alpha "in quotes --safe" --nope unsafe\n'
         findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', flat_index)
         assert len(findings) == 1
         assert findings[0]['details']['reason'] == 'flag_unknown'
@@ -1823,12 +1719,10 @@ class TestShellQuotingFalsePositives:
 class TestFlatSubcommandWithPositionalArgs:
     """A flat subcommand that accepts positional args still gets flag validation."""
 
-    def test_positional_after_flat_subcommand_does_not_block_flag_check(
-        self, tmp_path: Path
-    ) -> None:
+    def test_positional_after_flat_subcommand_does_not_block_flag_check(self, tmp_path: Path) -> None:
         script = tmp_path / 'syn.py'
         script.write_text(
-            textwrap.dedent('''
+            textwrap.dedent("""
                 import argparse
 
                 def main():
@@ -1842,7 +1736,7 @@ class TestFlatSubcommandWithPositionalArgs:
 
                 if __name__ == '__main__':
                     main()
-            ''').lstrip(),
+            """).lstrip(),
             encoding='utf-8',
         )
         executor = _make_executor(tmp_path, {_SYN_NOTATION: script})
@@ -1850,15 +1744,11 @@ class TestFlatSubcommandWithPositionalArgs:
         assert tree is not None
 
         index = {_SYN_NOTATION: tree}
-        clean = (
-            f'python3 .plan/execute-script.py {_SYN_NOTATION} path src dst --json\n'
-        )
+        clean = f'python3 .plan/execute-script.py {_SYN_NOTATION} path src dst --json\n'
         findings = analyze_manage_invocation_markdown(clean, '/fake/SKILL.md', index)
         assert findings == []
 
-        bad = (
-            f'python3 .plan/execute-script.py {_SYN_NOTATION} path src dst --nope\n'
-        )
+        bad = f'python3 .plan/execute-script.py {_SYN_NOTATION} path src dst --nope\n'
         findings = analyze_manage_invocation_markdown(bad, '/fake/SKILL.md', index)
         assert len(findings) == 1
         assert findings[0]['details']['reason'] == 'flag_unknown'
@@ -1876,7 +1766,7 @@ class TestMutuallyExclusiveGroupSupport:
     def test_group_flags_attach_to_parent_leaf(self, tmp_path: Path) -> None:
         script = tmp_path / 'syn.py'
         script.write_text(
-            textwrap.dedent('''
+            textwrap.dedent("""
                 import argparse
 
                 def main():
@@ -1891,7 +1781,7 @@ class TestMutuallyExclusiveGroupSupport:
 
                 if __name__ == '__main__':
                     main()
-            ''').lstrip(),
+            """).lstrip(),
             encoding='utf-8',
         )
         executor = _make_executor(tmp_path, {_SYN_NOTATION: script})
@@ -1904,7 +1794,7 @@ class TestMutuallyExclusiveGroupSupport:
     def test_argument_group_flags_attach_to_parent_leaf(self, tmp_path: Path) -> None:
         script = tmp_path / 'syn.py'
         script.write_text(
-            textwrap.dedent('''
+            textwrap.dedent("""
                 import argparse
 
                 def main():
@@ -1918,7 +1808,7 @@ class TestMutuallyExclusiveGroupSupport:
 
                 if __name__ == '__main__':
                     main()
-            ''').lstrip(),
+            """).lstrip(),
             encoding='utf-8',
         )
         executor = _make_executor(tmp_path, {_SYN_NOTATION: script})
@@ -1944,7 +1834,7 @@ def _parents_inherited_source() -> str:
     AST extractor never modelled ``parents=`` at all, and per-leaf ``--help``
     validation mis-flags any flag argparse renders only on the parent.
     """
-    return textwrap.dedent('''
+    return textwrap.dedent("""
         import argparse
 
         def main():
@@ -1964,7 +1854,7 @@ def _parents_inherited_source() -> str:
 
         if __name__ == '__main__':
             main()
-    ''').lstrip()
+    """).lstrip()
 
 
 def _root_flag_source() -> str:
@@ -1978,7 +1868,7 @@ def _root_flag_source() -> str:
     ancestor-union must accept it at the leaf; per-leaf validation alone would
     mis-flag it.
     """
-    return textwrap.dedent('''
+    return textwrap.dedent("""
         import argparse
 
         def main():
@@ -1991,7 +1881,7 @@ def _root_flag_source() -> str:
 
         if __name__ == '__main__':
             main()
-    ''').lstrip()
+    """).lstrip()
 
 
 class TestParentInheritedFlags:
@@ -2007,21 +1897,12 @@ class TestParentInheritedFlags:
         # ``--plan-id`` is inherited from the ``parents=[common]`` parser; it
         # must NOT be flagged as unknown on either subcommand.
         for sub in ('run', 'check'):
-            content = (
-                f'python3 .plan/execute-script.py {_SYN_NOTATION} {sub} --plan-id p\n'
-            )
-            findings = analyze_manage_invocation_markdown(
-                content, '/fake/SKILL.md', index
-            )
-            invalid = [
-                f for f in findings
-                if f['rule_id'] == RULE_MANAGE_INVOCATION_INVALID
-            ]
+            content = f'python3 .plan/execute-script.py {_SYN_NOTATION} {sub} --plan-id p\n'
+            findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', index)
+            invalid = [f for f in findings if f['rule_id'] == RULE_MANAGE_INVOCATION_INVALID]
             assert invalid == [], f'parent-inherited --plan-id flagged on {sub}: {invalid}'
 
-    def test_genuinely_unknown_flag_still_flagged_with_parents(
-        self, tmp_path: Path
-    ) -> None:
+    def test_genuinely_unknown_flag_still_flagged_with_parents(self, tmp_path: Path) -> None:
         script = tmp_path / 'syn.py'
         script.write_text(_parents_inherited_source(), encoding='utf-8')
         executor = _make_executor(tmp_path, {_SYN_NOTATION: script})
@@ -2029,13 +1910,9 @@ class TestParentInheritedFlags:
         assert tree is not None
         index = {_SYN_NOTATION: tree}
         # A flag neither inherited nor declared anywhere is still a real defect.
-        content = (
-            f'python3 .plan/execute-script.py {_SYN_NOTATION} run --plan-id p --bogus z\n'
-        )
+        content = f'python3 .plan/execute-script.py {_SYN_NOTATION} run --plan-id p --bogus z\n'
         findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', index)
-        invalid = [
-            f for f in findings if f['rule_id'] == RULE_MANAGE_INVOCATION_INVALID
-        ]
+        invalid = [f for f in findings if f['rule_id'] == RULE_MANAGE_INVOCATION_INVALID]
         assert len(invalid) == 1
         assert invalid[0]['details']['reason'] == 'flag_unknown'
         assert invalid[0]['details']['flag'] == 'bogus'
@@ -2051,14 +1928,9 @@ class TestRootFlagAncestorUnion:
         tree = derive_script_tree(_SYN_NOTATION, executor)
         assert tree is not None
         index = {_SYN_NOTATION: tree}
-        content = (
-            f'python3 .plan/execute-script.py {_SYN_NOTATION} run '
-            f'--flag v --project-dir /x\n'
-        )
+        content = f'python3 .plan/execute-script.py {_SYN_NOTATION} run --flag v --project-dir /x\n'
         findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', index)
-        invalid = [
-            f for f in findings if f['rule_id'] == RULE_MANAGE_INVOCATION_INVALID
-        ]
+        invalid = [f for f in findings if f['rule_id'] == RULE_MANAGE_INVOCATION_INVALID]
         assert invalid == [], f'root-declared --project-dir flagged on subcommand: {invalid}'
 
 
@@ -2074,28 +1946,16 @@ class TestUniversalFlagAllowlist:
     def test_audit_plan_id_never_flagged(self, flat_index: dict) -> None:
         # ``foo`` declares --alpha (required) / --beta; --audit-plan-id is in no
         # node's surface but is executor-injected and must be accepted.
-        content = (
-            f'python3 .plan/execute-script.py {_SYN_NOTATION} foo '
-            f'--alpha v --audit-plan-id p\n'
-        )
+        content = f'python3 .plan/execute-script.py {_SYN_NOTATION} foo --alpha v --audit-plan-id p\n'
         findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', flat_index)
-        invalid = [
-            f for f in findings if f['rule_id'] == RULE_MANAGE_INVOCATION_INVALID
-        ]
+        invalid = [f for f in findings if f['rule_id'] == RULE_MANAGE_INVOCATION_INVALID]
         assert invalid == [], f'executor-injected --audit-plan-id flagged: {invalid}'
 
-    def test_universal_allowlist_does_not_mask_real_unknown_flag(
-        self, flat_index: dict
-    ) -> None:
+    def test_universal_allowlist_does_not_mask_real_unknown_flag(self, flat_index: dict) -> None:
         # --audit-plan-id is allowlisted; --bogus is still a real unknown flag.
-        content = (
-            f'python3 .plan/execute-script.py {_SYN_NOTATION} foo '
-            f'--alpha v --audit-plan-id p --bogus z\n'
-        )
+        content = f'python3 .plan/execute-script.py {_SYN_NOTATION} foo --alpha v --audit-plan-id p --bogus z\n'
         findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', flat_index)
-        invalid = [
-            f for f in findings if f['rule_id'] == RULE_MANAGE_INVOCATION_INVALID
-        ]
+        invalid = [f for f in findings if f['rule_id'] == RULE_MANAGE_INVOCATION_INVALID]
         assert len(invalid) == 1
         assert invalid[0]['details']['flag'] == 'bogus'
 
@@ -2116,7 +1976,7 @@ def _routing_flag_nested_source() -> str:
     value skips ``--verbose pr`` together and loses the subcommand, which is the
     same walk-desynchronisation defect in the other direction.
     """
-    return textwrap.dedent('''
+    return textwrap.dedent("""
         import argparse
 
         def main():
@@ -2136,7 +1996,7 @@ def _routing_flag_nested_source() -> str:
 
         if __name__ == '__main__':
             main()
-    ''').lstrip()
+    """).lstrip()
 
 
 class TestLeadingRoutingFlagBeforeSubcommand:
@@ -2157,9 +2017,7 @@ class TestLeadingRoutingFlagBeforeSubcommand:
         assert tree is not None
         return {_SYN_NOTATION: tree}
 
-    def test_routing_flag_before_subcommand_validates_clean(
-        self, tmp_path: Path
-    ) -> None:
+    def test_routing_flag_before_subcommand_validates_clean(self, tmp_path: Path) -> None:
         index = self._index(tmp_path)
         # ``--project-dir {WORKTREE}`` is a leading routing flag; the real
         # subcommand chain is ``pr prepare-comment``. Mirrors triage.md.
@@ -2169,16 +2027,10 @@ class TestLeadingRoutingFlagBeforeSubcommand:
             f'--plan-id {{plan_id}} --pr-number {{pr_number}}\n'
         )
         findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', index)
-        invalid = [
-            f for f in findings if f['rule_id'] == RULE_MANAGE_INVOCATION_INVALID
-        ]
-        assert invalid == [], (
-            f'leading --project-dir routing flag produced false positives: {invalid}'
-        )
+        invalid = [f for f in findings if f['rule_id'] == RULE_MANAGE_INVOCATION_INVALID]
+        assert invalid == [], f'leading --project-dir routing flag produced false positives: {invalid}'
 
-    def test_routing_flag_with_continuation_validates_clean(
-        self, tmp_path: Path
-    ) -> None:
+    def test_routing_flag_with_continuation_validates_clean(self, tmp_path: Path) -> None:
         index = self._index(tmp_path)
         # The same shape spread across a backslash continuation, as authored.
         content = (
@@ -2187,16 +2039,10 @@ class TestLeadingRoutingFlagBeforeSubcommand:
             f'  --plan-id {{plan_id}} --pr-number {{pr_number}}\n'
         )
         findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', index)
-        invalid = [
-            f for f in findings if f['rule_id'] == RULE_MANAGE_INVOCATION_INVALID
-        ]
-        assert invalid == [], (
-            f'continuation routing flag produced false positives: {invalid}'
-        )
+        invalid = [f for f in findings if f['rule_id'] == RULE_MANAGE_INVOCATION_INVALID]
+        assert invalid == [], f'continuation routing flag produced false positives: {invalid}'
 
-    def test_concrete_routing_flag_value_validates_clean(
-        self, tmp_path: Path
-    ) -> None:
+    def test_concrete_routing_flag_value_validates_clean(self, tmp_path: Path) -> None:
         index = self._index(tmp_path)
         # Non-templated concrete value for the routing flag — the value token
         # must be consumed wholesale so ``pr`` is the first positional.
@@ -2206,16 +2052,10 @@ class TestLeadingRoutingFlagBeforeSubcommand:
             f'--plan-id p --pr-number 7\n'
         )
         findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', index)
-        invalid = [
-            f for f in findings if f['rule_id'] == RULE_MANAGE_INVOCATION_INVALID
-        ]
-        assert invalid == [], (
-            f'concrete routing-flag value produced false positives: {invalid}'
-        )
+        invalid = [f for f in findings if f['rule_id'] == RULE_MANAGE_INVOCATION_INVALID]
+        assert invalid == [], f'concrete routing-flag value produced false positives: {invalid}'
 
-    def test_bare_routing_switch_before_subcommand_validates_clean(
-        self, tmp_path: Path
-    ) -> None:
+    def test_bare_routing_switch_before_subcommand_validates_clean(self, tmp_path: Path) -> None:
         """A ZERO-arity top-level switch must not swallow the subcommand.
 
         The skip consumed one value token per leading flag unconditionally, so
@@ -2226,54 +2066,31 @@ class TestLeadingRoutingFlagBeforeSubcommand:
         """
         index = self._index(tmp_path)
         content = (
-            f'python3 .plan/execute-script.py {_SYN_NOTATION} '
-            f'--verbose pr prepare-comment --plan-id p --pr-number 7\n'
+            f'python3 .plan/execute-script.py {_SYN_NOTATION} --verbose pr prepare-comment --plan-id p --pr-number 7\n'
         )
         findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', index)
-        invalid = [
-            f for f in findings if f['rule_id'] == RULE_MANAGE_INVOCATION_INVALID
-        ]
-        assert invalid == [], (
-            f'a bare leading switch swallowed the subcommand: {invalid}'
-        )
+        invalid = [f for f in findings if f['rule_id'] == RULE_MANAGE_INVOCATION_INVALID]
+        assert invalid == [], f'a bare leading switch swallowed the subcommand: {invalid}'
 
-    def test_wrong_sub_verb_after_bare_routing_switch_still_flagged(
-        self, tmp_path: Path
-    ) -> None:
+    def test_wrong_sub_verb_after_bare_routing_switch_still_flagged(self, tmp_path: Path) -> None:
         """Negative control for the arity-aware skip — it must not blind the rule."""
         index = self._index(tmp_path)
-        content = (
-            f'python3 .plan/execute-script.py {_SYN_NOTATION} '
-            f'--verbose pr bogus-verb --plan-id p\n'
-        )
+        content = f'python3 .plan/execute-script.py {_SYN_NOTATION} --verbose pr bogus-verb --plan-id p\n'
         findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', index)
-        invalid = [
-            f for f in findings if f['rule_id'] == RULE_MANAGE_INVOCATION_INVALID
-        ]
-        assert len(invalid) == 1, (
-            f'wrong sub-verb after a bare switch should still be flagged: {invalid}'
-        )
+        invalid = [f for f in findings if f['rule_id'] == RULE_MANAGE_INVOCATION_INVALID]
+        assert len(invalid) == 1, f'wrong sub-verb after a bare switch should still be flagged: {invalid}'
         assert invalid[0]['details']['reason'] == 'sub_verb_unknown'
         assert invalid[0]['details']['sub_verb'] == 'bogus-verb'
 
-    def test_wrong_sub_verb_after_routing_flag_still_flagged(
-        self, tmp_path: Path
-    ) -> None:
+    def test_wrong_sub_verb_after_routing_flag_still_flagged(self, tmp_path: Path) -> None:
         index = self._index(tmp_path)
         # The fix must NOT blind the validator: a genuinely-wrong sub-verb after
         # the leading routing flag must still resolve the real ``pr`` subcommand
         # and report the bad sub-verb.
-        content = (
-            f'python3 .plan/execute-script.py {_SYN_NOTATION} '
-            f'--project-dir /abs/path pr bogus-verb --plan-id p\n'
-        )
+        content = f'python3 .plan/execute-script.py {_SYN_NOTATION} --project-dir /abs/path pr bogus-verb --plan-id p\n'
         findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', index)
-        invalid = [
-            f for f in findings if f['rule_id'] == RULE_MANAGE_INVOCATION_INVALID
-        ]
-        assert len(invalid) == 1, (
-            f'wrong sub-verb after routing flag should still be flagged: {invalid}'
-        )
+        invalid = [f for f in findings if f['rule_id'] == RULE_MANAGE_INVOCATION_INVALID]
+        assert len(invalid) == 1, f'wrong sub-verb after routing flag should still be flagged: {invalid}'
         assert invalid[0]['details']['reason'] == 'sub_verb_unknown'
         assert invalid[0]['details']['sub_verb'] == 'bogus-verb'
 

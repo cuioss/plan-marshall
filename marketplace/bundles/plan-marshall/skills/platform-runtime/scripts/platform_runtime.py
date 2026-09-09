@@ -47,6 +47,7 @@ Exit codes:
 
 TOON contract: see standards/contract.md
 """
+
 from __future__ import annotations
 
 import argparse
@@ -70,8 +71,8 @@ from typing import Any
 
 # Libraries required by every target.
 _COMMON_BOOTSTRAP_LIBS: tuple[str, ...] = (
-    "ref-toon-format",
-    "platform-runtime",
+    'ref-toon-format',
+    'platform-runtime',
 )
 
 
@@ -85,9 +86,7 @@ def _find_skills_root() -> Path | None:
         The ``skills/`` ``Path`` when found, or ``None`` if not found.
     """
     for ancestor in Path(__file__).resolve().parents:
-        if ancestor.name == "skills" and (
-            ancestor.parent / ".claude-plugin" / "plugin.json"
-        ).is_file():
+        if ancestor.name == 'skills' and (ancestor.parent / '.claude-plugin' / 'plugin.json').is_file():
             return ancestor
     return None
 
@@ -129,7 +128,7 @@ def _bootstrap_glob_discover(target: str | None = None) -> Path | None:
         libs.extend(_TARGET_BOOTSTRAP_LIBS.get(target, ()))
 
     for lib_name in libs:
-        lib_dir = skills_root / lib_name / "scripts"
+        lib_dir = skills_root / lib_name / 'scripts'
         if not lib_dir.is_dir():
             continue
         lib_path = str(lib_dir)
@@ -189,35 +188,31 @@ from runtime_base import (  # noqa: E402
 # --- single registration record ------------------------------------------------
 
 _TARGET_RECORDS: dict[str, dict[str, Any]] = {
-    "claude": {
-        "runtime_class": ClaudeRuntime,
-        "bootstrap_libs": (
-            "tools-file-ops",
-            "tools-permission-doctor",
-            "tools-permission-fix",
-            "workflow-permission-web",
-            "script-shared",
+    'claude': {
+        'runtime_class': ClaudeRuntime,
+        'bootstrap_libs': (
+            'tools-file-ops',
+            'tools-permission-doctor',
+            'tools-permission-fix',
+            'workflow-permission-web',
+            'script-shared',
         ),
-        "default": True,
+        'default': True,
     },
-    "opencode": {
-        "runtime_class": OpenCodeRuntime,
-        "bootstrap_libs": (),
-        "default": False,
+    'opencode': {
+        'runtime_class': OpenCodeRuntime,
+        'bootstrap_libs': (),
+        'default': False,
     },
 }
 
-_DEFAULT_TARGET: str = next(
-    name for name, rec in _TARGET_RECORDS.items() if rec.get("default")
-)
-_REGISTRY: dict[str, type[Runtime]] = {
-    name: rec["runtime_class"] for name, rec in _TARGET_RECORDS.items()
-}
+_DEFAULT_TARGET: str = next(name for name, rec in _TARGET_RECORDS.items() if rec.get('default'))
+_REGISTRY: dict[str, type[Runtime]] = {name: rec['runtime_class'] for name, rec in _TARGET_RECORDS.items()}
 _TARGET_BOOTSTRAP_LIBS: dict[str, tuple[str, ...]] = {
-    name: rec["bootstrap_libs"] for name, rec in _TARGET_RECORDS.items()
+    name: rec['bootstrap_libs'] for name, rec in _TARGET_RECORDS.items()
 }
 
-_PLAN_DIR_NAME = os.environ.get("PLAN_DIR_NAME", ".plan")
+_PLAN_DIR_NAME = os.environ.get('PLAN_DIR_NAME', '.plan')
 
 
 def _parse_permission_intents(
@@ -234,9 +229,9 @@ def _parse_permission_intents(
         try:
             parsed = json.loads(token)
         except json.JSONDecodeError:
-            return [], f"permission must be a semantic intent (JSON); got {token!r}"
+            return [], f'permission must be a semantic intent (JSON); got {token!r}'
         if not isinstance(parsed, dict):
-            return [], f"permission must be a semantic intent (JSON object); got {token!r}"
+            return [], f'permission must be a semantic intent (JSON object); got {token!r}'
         intents.append(parsed)
     return intents, None
 
@@ -249,10 +244,10 @@ def _parse_permission_intents(
 def _read_marshal(project_dir: str | None = None) -> dict[str, Any] | None:
     """Read .plan/marshal.json from project_dir (or cwd walk fallback)."""
     if project_dir:
-        candidate = Path(project_dir) / _PLAN_DIR_NAME / "marshal.json"
+        candidate = Path(project_dir) / _PLAN_DIR_NAME / 'marshal.json'
         if candidate.is_file():
             try:
-                data = json.loads(candidate.read_text(encoding="utf-8"))
+                data = json.loads(candidate.read_text(encoding='utf-8'))
                 return data if isinstance(data, dict) else None
             except (OSError, json.JSONDecodeError):
                 return None
@@ -260,10 +255,10 @@ def _read_marshal(project_dir: str | None = None) -> dict[str, Any] | None:
 
     # Walk up from cwd to find the nearest marshal.json.
     for parent in [Path.cwd(), *Path.cwd().parents]:
-        candidate = parent / _PLAN_DIR_NAME / "marshal.json"
+        candidate = parent / _PLAN_DIR_NAME / 'marshal.json'
         if candidate.is_file():
             try:
-                data = json.loads(candidate.read_text(encoding="utf-8"))
+                data = json.loads(candidate.read_text(encoding='utf-8'))
                 return data if isinstance(data, dict) else None
             except (OSError, json.JSONDecodeError):
                 return None
@@ -272,10 +267,10 @@ def _read_marshal(project_dir: str | None = None) -> dict[str, Any] | None:
 
 def _resolve_target(marshal: dict[str, Any]) -> str | None:
     """Extract runtime.target from marshal data."""
-    runtime = marshal.get("runtime")
+    runtime = marshal.get('runtime')
     if not isinstance(runtime, dict):
         return None
-    target = runtime.get("target")
+    target = runtime.get('target')
     return str(target) if target else None
 
 
@@ -310,7 +305,7 @@ def _runtime_for_target(project_dir: str | None = None) -> Runtime:
         target = _DEFAULT_TARGET
     runtime = _make_runtime(target)
     if runtime is None:
-        raise RuntimeError(f"Unknown runtime target: {target!r}")
+        raise RuntimeError(f'Unknown runtime target: {target!r}')
     return runtime
 
 
@@ -323,7 +318,7 @@ def _parse_json_list(raw: str) -> list[str]:
     """Parse a JSON array string to a list of strings, or raise ValueError."""
     parsed = json.loads(raw)
     if not isinstance(parsed, list):
-        raise ValueError(f"expected JSON array, got {type(parsed).__name__}")
+        raise ValueError(f'expected JSON array, got {type(parsed).__name__}')
     return [str(item) for item in parsed]
 
 
@@ -331,7 +326,7 @@ def _parse_context(raw: str) -> dict[str, Any] | None:
     """Parse a JSON object string to a dict, or raise ValueError."""
     parsed = json.loads(raw)
     if not isinstance(parsed, dict):
-        raise ValueError(f"expected JSON object, got {type(parsed).__name__}")
+        raise ValueError(f'expected JSON object, got {type(parsed).__name__}')
     return parsed
 
 
@@ -341,27 +336,33 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
     # ------------------------------------------------------------------
     # project initial-setup
     # ------------------------------------------------------------------
-    if operation == "project initial-setup":
-        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime project initial-setup")
-        p.add_argument("--project-dir", default=".")
-        p.add_argument("--target", default=_DEFAULT_TARGET, choices=list(_REGISTRY))
+    if operation == 'project initial-setup':
+        p = argparse.ArgumentParser(allow_abbrev=False, prog='platform_runtime project initial-setup')
+        p.add_argument('--project-dir', default='.')
+        p.add_argument('--target', default=_DEFAULT_TARGET, choices=list(_REGISTRY))
         ns = p.parse_args(remaining)
         return runtime.project_initial_setup(ns.project_dir, ns.target)
 
     # ------------------------------------------------------------------
     # project install-hook
     # ------------------------------------------------------------------
-    if operation == "project install-hook":
-        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime project install-hook")
-        p.add_argument("--target", required=True,
-                       help="Platform target identifier, as in marshal.json runtime.target")
-        p.add_argument("--overwrite", action="append", default=[], metavar="KEY",
-                       help="Conflict key this call may overwrite instead of preserving and "
-                            "reporting (repeatable; the key set is target-defined, and a "
-                            "target that defines one rejects a key outside it)")
-        p.add_argument("--enforcement", action="store_true",
-                       help="Wire the target's tool-invocation enforcement integration instead "
-                            "of its session/display one")
+    if operation == 'project install-hook':
+        p = argparse.ArgumentParser(allow_abbrev=False, prog='platform_runtime project install-hook')
+        p.add_argument('--target', required=True, help='Platform target identifier, as in marshal.json runtime.target')
+        p.add_argument(
+            '--overwrite',
+            action='append',
+            default=[],
+            metavar='KEY',
+            help='Conflict key this call may overwrite instead of preserving and '
+            'reporting (repeatable; the key set is target-defined, and a '
+            'target that defines one rejects a key outside it)',
+        )
+        p.add_argument(
+            '--enforcement',
+            action='store_true',
+            help="Wire the target's tool-invocation enforcement integration instead of its session/display one",
+        )
         ns = p.parse_args(remaining)
         return runtime.project_install_hook(
             ns.target,
@@ -372,268 +373,272 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
     # ------------------------------------------------------------------
     # layout skill-roots
     # ------------------------------------------------------------------
-    if operation == "layout skill-roots":
-        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime layout skill-roots")
+    if operation == 'layout skill-roots':
+        p = argparse.ArgumentParser(allow_abbrev=False, prog='platform_runtime layout skill-roots')
         p.parse_args(remaining)
         return runtime.layout_skill_roots()
 
     # ------------------------------------------------------------------
     # layout bundle-cache-root
     # ------------------------------------------------------------------
-    if operation == "layout bundle-cache-root":
-        p = argparse.ArgumentParser(
-            allow_abbrev=False, prog="platform_runtime layout bundle-cache-root"
-        )
+    if operation == 'layout bundle-cache-root':
+        p = argparse.ArgumentParser(allow_abbrev=False, prog='platform_runtime layout bundle-cache-root')
         p.parse_args(remaining)
         return runtime.layout_bundle_cache_root()
 
     # ------------------------------------------------------------------
     # harness bash-timeout-ceiling
     # ------------------------------------------------------------------
-    if operation == "harness bash-timeout-ceiling":
-        p = argparse.ArgumentParser(
-            allow_abbrev=False, prog="platform_runtime harness bash-timeout-ceiling"
-        )
+    if operation == 'harness bash-timeout-ceiling':
+        p = argparse.ArgumentParser(allow_abbrev=False, prog='platform_runtime harness bash-timeout-ceiling')
         p.parse_args(remaining)
         return runtime.harness_bash_timeout_ceiling()
 
     # ------------------------------------------------------------------
     # session capture
     # ------------------------------------------------------------------
-    if operation == "session capture":
-        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime session capture")
-        p.add_argument("--plan-id", required=True)
+    if operation == 'session capture':
+        p = argparse.ArgumentParser(allow_abbrev=False, prog='platform_runtime session capture')
+        p.add_argument('--plan-id', required=True)
         ns = p.parse_args(remaining)
         return runtime.session_capture(ns.plan_id)
 
     # ------------------------------------------------------------------
     # session render-title
     # ------------------------------------------------------------------
-    if operation == "session render-title":
-        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime session render-title")
-        p.add_argument("--statusline", action="store_true",
-                       help="Emit the title as plain text on the target's persistent "
-                            "status-readout channel, instead of the structured envelope "
-                            "its event-driven channel expects")
+    if operation == 'session render-title':
+        p = argparse.ArgumentParser(allow_abbrev=False, prog='platform_runtime session render-title')
+        p.add_argument(
+            '--statusline',
+            action='store_true',
+            help="Emit the title as plain text on the target's persistent "
+            'status-readout channel, instead of the structured envelope '
+            'its event-driven channel expects',
+        )
         ns = p.parse_args(remaining)
         return runtime.session_render_title(statusline=ns.statusline)
 
     # ------------------------------------------------------------------
     # session push-title-token
     # ------------------------------------------------------------------
-    if operation == "session push-title-token":
-        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime session push-title-token")
-        p.add_argument("--plan-id", default=None,
-                       help="Plan identifier (required for the default plans store)")
-        p.add_argument("--icon", default=None,
-                       help="Optional push-mode icon glyph; omit for a plain repaint "
-                            "with the default active icon")
-        p.add_argument("--store", choices=["plans", "orchestrator"], default="plans",
-                       help="State store the title state is read from; "
-                            "'orchestrator' resolves the epic's status.json via "
-                            "get_store_dir('orchestrator', slug)")
-        p.add_argument("--slug", default=None,
-                       help="Epic slug (required with --store orchestrator)")
-        ns = p.parse_args(remaining)
-        if ns.store == "orchestrator" and not ns.slug:
-            return toon_error(
-                "session push-title-token",
-                "invalid_argument",
-                "--slug is required with --store orchestrator",
-            )
-        if ns.store == "plans" and not ns.plan_id:
-            return toon_error(
-                "session push-title-token",
-                "invalid_argument",
-                "--plan-id is required with the default plans store",
-            )
-        return runtime.session_push_title_token(
-            ns.plan_id or "", ns.icon, store=ns.store, slug=ns.slug
+    if operation == 'session push-title-token':
+        p = argparse.ArgumentParser(allow_abbrev=False, prog='platform_runtime session push-title-token')
+        p.add_argument('--plan-id', default=None, help='Plan identifier (required for the default plans store)')
+        p.add_argument(
+            '--icon',
+            default=None,
+            help='Optional push-mode icon glyph; omit for a plain repaint with the default active icon',
         )
+        p.add_argument(
+            '--store',
+            choices=['plans', 'orchestrator'],
+            default='plans',
+            help='State store the title state is read from; '
+            "'orchestrator' resolves the epic's status.json via "
+            "get_store_dir('orchestrator', slug)",
+        )
+        p.add_argument('--slug', default=None, help='Epic slug (required with --store orchestrator)')
+        ns = p.parse_args(remaining)
+        if ns.store == 'orchestrator' and not ns.slug:
+            return toon_error(
+                'session push-title-token',
+                'invalid_argument',
+                '--slug is required with --store orchestrator',
+            )
+        if ns.store == 'plans' and not ns.plan_id:
+            return toon_error(
+                'session push-title-token',
+                'invalid_argument',
+                '--plan-id is required with the default plans store',
+            )
+        return runtime.session_push_title_token(ns.plan_id or '', ns.icon, store=ns.store, slug=ns.slug)
 
     # ------------------------------------------------------------------
     # session bind
     # ------------------------------------------------------------------
-    if operation == "session bind":
-        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime session bind")
-        p.add_argument("--plan-id", required=True)
-        p.add_argument("--session-id", default=None,
-                       help="Optional explicit session id; falls back to whatever "
-                            "session identifier the active target exposes")
+    if operation == 'session bind':
+        p = argparse.ArgumentParser(allow_abbrev=False, prog='platform_runtime session bind')
+        p.add_argument('--plan-id', required=True)
+        p.add_argument(
+            '--session-id',
+            default=None,
+            help='Optional explicit session id; falls back to whatever session identifier the active target exposes',
+        )
         ns = p.parse_args(remaining)
         return runtime.session_bind(ns.plan_id, ns.session_id)
 
     # ------------------------------------------------------------------
     # session resolve-plan
     # ------------------------------------------------------------------
-    if operation == "session resolve-plan":
-        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime session resolve-plan")
-        p.add_argument("--session-id", default=None,
-                       help="Optional explicit session id; falls back to whatever "
-                            "session identifier the active target exposes")
+    if operation == 'session resolve-plan':
+        p = argparse.ArgumentParser(allow_abbrev=False, prog='platform_runtime session resolve-plan')
+        p.add_argument(
+            '--session-id',
+            default=None,
+            help='Optional explicit session id; falls back to whatever session identifier the active target exposes',
+        )
         ns = p.parse_args(remaining)
         return runtime.session_resolve_plan(ns.session_id)
 
     # ------------------------------------------------------------------
     # session doctor
     # ------------------------------------------------------------------
-    if operation == "session doctor":
-        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime session doctor")
-        p.add_argument("--fix", action="store_true",
-                       help="GC (remove) each stale slot whose plan is archived/deleted")
+    if operation == 'session doctor':
+        p = argparse.ArgumentParser(allow_abbrev=False, prog='platform_runtime session doctor')
+        p.add_argument('--fix', action='store_true', help='GC (remove) each stale slot whose plan is archived/deleted')
         ns = p.parse_args(remaining)
         return runtime.session_doctor(ns.fix)
 
     # ------------------------------------------------------------------
     # session teardown
     # ------------------------------------------------------------------
-    if operation == "session teardown":
-        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime session teardown")
+    if operation == 'session teardown':
+        p = argparse.ArgumentParser(allow_abbrev=False, prog='platform_runtime session teardown')
         p.parse_args(remaining)
         return runtime.session_teardown()
 
     # ------------------------------------------------------------------
     # session reload-directive
     # ------------------------------------------------------------------
-    if operation == "session reload-directive":
-        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime session reload-directive")
+    if operation == 'session reload-directive':
+        p = argparse.ArgumentParser(allow_abbrev=False, prog='platform_runtime session reload-directive')
         p.parse_args(remaining)
         return runtime.session_reload_directive()
 
     # ------------------------------------------------------------------
     # permission configure
     # ------------------------------------------------------------------
-    if operation == "permission configure":
-        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime permission configure")
-        p.add_argument("--scope", required=True, choices=["project", "global"])
-        p.add_argument("--permissions", nargs="+", required=True)
+    if operation == 'permission configure':
+        p = argparse.ArgumentParser(allow_abbrev=False, prog='platform_runtime permission configure')
+        p.add_argument('--scope', required=True, choices=['project', 'global'])
+        p.add_argument('--permissions', nargs='+', required=True)
         ns = p.parse_args(remaining)
         intents, intent_err = _parse_permission_intents(ns.permissions)
         if intent_err:
-            return toon_error("permission configure", "invalid_intent", intent_err)
+            return toon_error('permission configure', 'invalid_intent', intent_err)
         return runtime.permission_configure(ns.scope, intents)
 
     # ------------------------------------------------------------------
     # permission analyze
     # ------------------------------------------------------------------
-    if operation == "permission analyze":
-        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime permission analyze")
-        p.add_argument("--scope", required=True)
-        p.add_argument("--checks", required=True,
-                       help="Comma-separated: redundant,suspicious,missing-steps,all")
-        p.add_argument("--marshal", default=None)
+    if operation == 'permission analyze':
+        p = argparse.ArgumentParser(allow_abbrev=False, prog='platform_runtime permission analyze')
+        p.add_argument('--scope', required=True)
+        p.add_argument('--checks', required=True, help='Comma-separated: redundant,suspicious,missing-steps,all')
+        p.add_argument('--marshal', default=None)
         ns = p.parse_args(remaining)
-        checks = [c.strip() for c in ns.checks.split(",") if c.strip()]
+        checks = [c.strip() for c in ns.checks.split(',') if c.strip()]
         return runtime.permission_analyze(ns.scope, checks, ns.marshal)
 
     # ------------------------------------------------------------------
     # permission fix
     # ------------------------------------------------------------------
-    if operation == "permission fix":
-        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime permission fix")
-        p.add_argument("--scope", required=True)
-        p.add_argument("--operation", required=True,
-                       choices=list(PERMISSION_FIX_OPERATIONS))
-        p.add_argument("--permissions", nargs="*", default=[])
-        p.add_argument("--dry-run", action="store_true")
+    if operation == 'permission fix':
+        p = argparse.ArgumentParser(allow_abbrev=False, prog='platform_runtime permission fix')
+        p.add_argument('--scope', required=True)
+        p.add_argument('--operation', required=True, choices=list(PERMISSION_FIX_OPERATIONS))
+        p.add_argument('--permissions', nargs='*', default=[])
+        p.add_argument('--dry-run', action='store_true')
         ns = p.parse_args(remaining)
-        if ns.operation == "protect-path":
-            return runtime.permission_fix(
-                ns.scope, ns.operation, list(ns.permissions), ns.dry_run
-            )
+        if ns.operation == 'protect-path':
+            return runtime.permission_fix(ns.scope, ns.operation, list(ns.permissions), ns.dry_run)
         intents, intent_err = _parse_permission_intents(ns.permissions)
         if intent_err:
-            return toon_error("permission fix", "invalid_intent", intent_err)
+            return toon_error('permission fix', 'invalid_intent', intent_err)
         return runtime.permission_fix(ns.scope, ns.operation, intents, ns.dry_run)
 
     # ------------------------------------------------------------------
     # permission ensure-wildcards
     # ------------------------------------------------------------------
-    if operation == "permission ensure-wildcards":
-        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime permission ensure-wildcards")
-        p.add_argument("--scope", required=True)
-        p.add_argument("--marketplace-dir", default="marketplace/")
-        p.add_argument("--dry-run", action="store_true")
+    if operation == 'permission ensure-wildcards':
+        p = argparse.ArgumentParser(allow_abbrev=False, prog='platform_runtime permission ensure-wildcards')
+        p.add_argument('--scope', required=True)
+        p.add_argument('--marketplace-dir', default='marketplace/')
+        p.add_argument('--dry-run', action='store_true')
         ns = p.parse_args(remaining)
         return runtime.permission_ensure_wildcards(ns.scope, ns.marketplace_dir, ns.dry_run)
 
     # ------------------------------------------------------------------
     # permission ensure-steps
     # ------------------------------------------------------------------
-    if operation == "permission ensure-steps":
-        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime permission ensure-steps")
-        p.add_argument("--marshal", required=True)
-        p.add_argument("--scope", required=True)
-        p.add_argument("--dry-run", action="store_true")
+    if operation == 'permission ensure-steps':
+        p = argparse.ArgumentParser(allow_abbrev=False, prog='platform_runtime permission ensure-steps')
+        p.add_argument('--marshal', required=True)
+        p.add_argument('--scope', required=True)
+        p.add_argument('--dry-run', action='store_true')
         ns = p.parse_args(remaining)
         return runtime.permission_ensure_steps(ns.marshal, ns.scope, ns.dry_run)
 
     # ------------------------------------------------------------------
     # permission web-analyze
     # ------------------------------------------------------------------
-    if operation == "permission web-analyze":
-        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime permission web-analyze")
-        p.add_argument("--scope", required=True)
+    if operation == 'permission web-analyze':
+        p = argparse.ArgumentParser(allow_abbrev=False, prog='platform_runtime permission web-analyze')
+        p.add_argument('--scope', required=True)
         ns = p.parse_args(remaining)
         return runtime.permission_web_analyze(ns.scope)
 
     # ------------------------------------------------------------------
     # permission web-apply
     # ------------------------------------------------------------------
-    if operation == "permission web-apply":
-        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime permission web-apply")
-        p.add_argument("--scope", required=True)
-        p.add_argument("--add", default="[]")
-        p.add_argument("--remove", default="[]")
-        p.add_argument("--dry-run", action="store_true")
+    if operation == 'permission web-apply':
+        p = argparse.ArgumentParser(allow_abbrev=False, prog='platform_runtime permission web-apply')
+        p.add_argument('--scope', required=True)
+        p.add_argument('--add', default='[]')
+        p.add_argument('--remove', default='[]')
+        p.add_argument('--dry-run', action='store_true')
         ns = p.parse_args(remaining)
         try:
             add_list = _parse_json_list(ns.add)
             remove_list = _parse_json_list(ns.remove)
         except (json.JSONDecodeError, ValueError) as exc:
             return toon_error(
-                "permission web-apply",
-                "invalid_argument",
-                f"--add / --remove must be JSON arrays: {exc}",
+                'permission web-apply',
+                'invalid_argument',
+                f'--add / --remove must be JSON arrays: {exc}',
             )
         return runtime.permission_web_apply(ns.scope, add_list, remove_list, ns.dry_run)
 
     # ------------------------------------------------------------------
     # metrics capture
     # ------------------------------------------------------------------
-    if operation == "metrics capture":
-        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime metrics capture")
-        p.add_argument("--plan-id", required=True)
-        p.add_argument("--phase", required=True)
-        p.add_argument("--total-tokens", type=int, default=None)
+    if operation == 'metrics capture':
+        p = argparse.ArgumentParser(allow_abbrev=False, prog='platform_runtime metrics capture')
+        p.add_argument('--plan-id', required=True)
+        p.add_argument('--phase', required=True)
+        p.add_argument('--total-tokens', type=int, default=None)
         ns = p.parse_args(remaining)
         return runtime.metrics_capture(ns.plan_id, ns.phase, ns.total_tokens)
 
     # ------------------------------------------------------------------
     # metrics normalized-tokens
     # ------------------------------------------------------------------
-    if operation == "metrics normalized-tokens":
-        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime metrics normalized-tokens")
-        p.add_argument("--session-id", required=True)
-        p.add_argument("--windows-file", required=True,
-                       help="Path to a JSON file holding the [[phase, start_iso, end_iso], ...] windows")
-        p.add_argument("--output-file", required=True,
-                       help="Path the per-phase normalized-token JSON result is written to")
+    if operation == 'metrics normalized-tokens':
+        p = argparse.ArgumentParser(allow_abbrev=False, prog='platform_runtime metrics normalized-tokens')
+        p.add_argument('--session-id', required=True)
+        p.add_argument(
+            '--windows-file',
+            required=True,
+            help='Path to a JSON file holding the [[phase, start_iso, end_iso], ...] windows',
+        )
+        p.add_argument(
+            '--output-file', required=True, help='Path the per-phase normalized-token JSON result is written to'
+        )
         ns = p.parse_args(remaining)
         try:
-            raw = Path(ns.windows_file).read_text(encoding="utf-8")
+            raw = Path(ns.windows_file).read_text(encoding='utf-8')
             parsed = json.loads(raw)
         except (OSError, json.JSONDecodeError) as exc:
             return toon_error(
-                "metrics normalized-tokens",
-                "invalid_argument",
-                f"--windows-file must be a readable JSON file: {exc}",
+                'metrics normalized-tokens',
+                'invalid_argument',
+                f'--windows-file must be a readable JSON file: {exc}',
             )
         if not isinstance(parsed, list):
             return toon_error(
-                "metrics normalized-tokens",
-                "invalid_argument",
-                "--windows-file must hold a JSON array of [phase, start_iso, end_iso] triples",
+                'metrics normalized-tokens',
+                'invalid_argument',
+                '--windows-file must hold a JSON array of [phase, start_iso, end_iso] triples',
             )
         windows = [
             (str(entry[0]), str(entry[1]), str(entry[2]))
@@ -645,21 +650,24 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
     # ------------------------------------------------------------------
     # chat extract-signal
     # ------------------------------------------------------------------
-    if operation == "chat extract-signal":
-        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime chat extract-signal")
-        p.add_argument("--session-id", required=True,
-                       help="Platform session identifier whose transcript is reduced to its signal-bearing turns")
+    if operation == 'chat extract-signal':
+        p = argparse.ArgumentParser(allow_abbrev=False, prog='platform_runtime chat extract-signal')
+        p.add_argument(
+            '--session-id',
+            required=True,
+            help='Platform session identifier whose transcript is reduced to its signal-bearing turns',
+        )
         ns = p.parse_args(remaining)
         return runtime.chat_extract_signal(ns.session_id)
 
     # ------------------------------------------------------------------
     # subagent dispatch
     # ------------------------------------------------------------------
-    if operation == "subagent dispatch":
-        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime subagent dispatch")
-        p.add_argument("--agent", required=True)
-        p.add_argument("--prompt-file", default=None)
-        p.add_argument("--context", default=None)
+    if operation == 'subagent dispatch':
+        p = argparse.ArgumentParser(allow_abbrev=False, prog='platform_runtime subagent dispatch')
+        p.add_argument('--agent', required=True)
+        p.add_argument('--prompt-file', default=None)
+        p.add_argument('--context', default=None)
         ns = p.parse_args(remaining)
         context: dict[str, Any] | None = None
         if ns.context:
@@ -667,56 +675,64 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
                 context = _parse_context(ns.context)
             except (json.JSONDecodeError, ValueError) as exc:
                 return toon_error(
-                    "subagent dispatch",
-                    "invalid_argument",
-                    f"--context must be a JSON object: {exc}",
+                    'subagent dispatch',
+                    'invalid_argument',
+                    f'--context must be a JSON object: {exc}',
                 )
         return runtime.subagent_dispatch(ns.agent, ns.prompt_file, context)
 
     # ------------------------------------------------------------------
     # wait for
     # ------------------------------------------------------------------
-    if operation == "wait for":
-        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime wait for")
-        p.add_argument("--observable", required=True,
-                       help="Observable KIND to inspect (closed set; e.g. build-job). "
-                            "An opaque condition descriptor is NOT accepted — a runtime "
-                            "subprocess cannot evaluate one")
-        p.add_argument("--reference", required=True,
-                       help="Concrete instance identifier within the observable kind "
-                            "(e.g. the build-server job_id)")
-        p.add_argument("--bound-seconds", type=int, required=True,
-                       help="Maximum wall-clock seconds to hold the wait. A BOUND, not a "
-                            "verdict: exhausting it yields outcome: pending, never a pass")
+    if operation == 'wait for':
+        p = argparse.ArgumentParser(allow_abbrev=False, prog='platform_runtime wait for')
+        p.add_argument(
+            '--observable',
+            required=True,
+            help='Observable KIND to inspect (closed set; e.g. build-job). '
+            'An opaque condition descriptor is NOT accepted — a runtime '
+            'subprocess cannot evaluate one',
+        )
+        p.add_argument(
+            '--reference',
+            required=True,
+            help='Concrete instance identifier within the observable kind (e.g. the build-server job_id)',
+        )
+        p.add_argument(
+            '--bound-seconds',
+            type=int,
+            required=True,
+            help='Maximum wall-clock seconds to hold the wait. A BOUND, not a '
+            'verdict: exhausting it yields outcome: pending, never a pass',
+        )
         ns = p.parse_args(remaining)
         return runtime.wait_for(ns.observable, ns.reference, ns.bound_seconds)
 
     # ------------------------------------------------------------------
     # health-check
     # ------------------------------------------------------------------
-    if operation == "health-check":
-        p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime health-check")
-        p.add_argument("--checks", required=True,
-                       help="Comma-separated: all,permissions,display,mcp-diagnostics")
+    if operation == 'health-check':
+        p = argparse.ArgumentParser(allow_abbrev=False, prog='platform_runtime health-check')
+        p.add_argument('--checks', required=True, help='Comma-separated: all,permissions,display,mcp-diagnostics')
         ns = p.parse_args(remaining)
         return runtime.health_check(ns.checks)
 
     # Unrecognized operation.
     return toon_error(
         operation,
-        "unknown_operation",
-        f"Unknown operation {operation!r}; "
-        "valid operations: project initial-setup, project install-hook, "
-        "layout skill-roots, layout bundle-cache-root, harness bash-timeout-ceiling, "
-        "session capture, session render-title, session push-title-token, "
-        "session bind, session resolve-plan, session doctor, session teardown, "
-        "session reload-directive, "
-        "permission configure, permission analyze, permission fix, "
-        "permission ensure-wildcards, permission ensure-steps, "
-        "permission web-analyze, permission web-apply, "
-        "metrics capture, metrics normalized-tokens, chat extract-signal, "
-        "subagent dispatch, "
-        "wait for, health-check",
+        'unknown_operation',
+        f'Unknown operation {operation!r}; '
+        'valid operations: project initial-setup, project install-hook, '
+        'layout skill-roots, layout bundle-cache-root, harness bash-timeout-ceiling, '
+        'session capture, session render-title, session push-title-token, '
+        'session bind, session resolve-plan, session doctor, session teardown, '
+        'session reload-directive, '
+        'permission configure, permission analyze, permission fix, '
+        'permission ensure-wildcards, permission ensure-steps, '
+        'permission web-analyze, permission web-apply, '
+        'metrics capture, metrics normalized-tokens, chat extract-signal, '
+        'subagent dispatch, '
+        'wait for, health-check',
     )
 
 
@@ -734,17 +750,17 @@ def _build_operation(argv: list[str]) -> tuple[str, list[str]]:
     Supported prefix tokens: project, layout, harness, session, permission, metrics, chat, subagent, wait, health-check.
     """
     if not argv:
-        return ("", [])
+        return ('', [])
 
     # health-check is a special case — single token.
-    if argv[0] == "health-check":
-        return ("health-check", argv[1:])
+    if argv[0] == 'health-check':
+        return ('health-check', argv[1:])
 
     # All other operations have the form: <group> <subcommand>
     if len(argv) >= 2:
         group = argv[0]
         subcommand = argv[1]
-        operation = f"{group} {subcommand}"
+        operation = f'{group} {subcommand}'
         return (operation, argv[2:])
 
     return (argv[0], [])
@@ -757,8 +773,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if not argv:
         print(
-            "usage: platform_runtime.py <operation> [args...]\n"
-            "See standards/contract.md for supported operations.",
+            'usage: platform_runtime.py <operation> [args...]\nSee standards/contract.md for supported operations.',
             file=sys.stderr,
         )
         return 1
@@ -773,11 +788,11 @@ def main(argv: list[str] | None = None) -> int:
     # All other operations use cwd-walk.
     # ------------------------------------------------------------------
     project_dir: str | None = None
-    if operation == "project initial-setup":
+    if operation == 'project initial-setup':
         # Peek at --project-dir without consuming remaining.
         peek = argparse.ArgumentParser(allow_abbrev=False, add_help=False)
-        peek.add_argument("--project-dir", default=None)
-        peek.add_argument("--target", default=_DEFAULT_TARGET)
+        peek.add_argument('--project-dir', default=None)
+        peek.add_argument('--target', default=_DEFAULT_TARGET)
         ns_peek, _ = peek.parse_known_args(remaining)
         if ns_peek.project_dir:
             project_dir = ns_peek.project_dir
@@ -798,17 +813,17 @@ def main(argv: list[str] | None = None) -> int:
             target = _DEFAULT_TARGET
     else:
         # marshal.json absent — only valid for ``project initial-setup``.
-        if operation == "project initial-setup":
+        if operation == 'project initial-setup':
             # Extract --target from remaining to bootstrap the correct runtime.
             peek2 = argparse.ArgumentParser(allow_abbrev=False, add_help=False)
-            peek2.add_argument("--target", default=_DEFAULT_TARGET)
+            peek2.add_argument('--target', default=_DEFAULT_TARGET)
             ns_peek2, _ = peek2.parse_known_args(remaining)
             target = ns_peek2.target
         else:
             print(
                 toon_error(
                     operation,
-                    "marshal_not_found",
+                    'marshal_not_found',
                     ".plan/marshal.json not found; run 'project initial-setup' first",
                 )
             )
@@ -826,9 +841,9 @@ def main(argv: list[str] | None = None) -> int:
         print(
             toon_error(
                 operation,
-                "unknown_target",
-                f"runtime.target {target!r} is not in the registry; "
-                f"valid targets are: {describe_targets(_REGISTRY.keys())}",
+                'unknown_target',
+                f'runtime.target {target!r} is not in the registry; '
+                f'valid targets are: {describe_targets(_REGISTRY.keys())}',
             )
         )
         return 0
@@ -851,21 +866,21 @@ def main(argv: list[str] | None = None) -> int:
     # recovery override, is not a registry key, and still reaches the
     # implementation that defines it.
     # ------------------------------------------------------------------
-    if operation == "project install-hook":
+    if operation == 'project install-hook':
         peek_target = argparse.ArgumentParser(allow_abbrev=False, add_help=False)
-        peek_target.add_argument("--target", default=None)
+        peek_target.add_argument('--target', default=None)
         ns_target, _ = peek_target.parse_known_args(remaining)
         requested = ns_target.target
         if requested in _REGISTRY and requested != target:
             print(
                 toon_error(
                     operation,
-                    "target_mismatch",
-                    f"--target {requested!r} names a different target than this "
+                    'target_mismatch',
+                    f'--target {requested!r} names a different target than this '
                     f"project's runtime.target {target!r}; the install would be "
-                    f"served by the {target!r} runtime and could not honour the "
-                    f"request. Run this from a {requested!r} project, or change "
-                    f"runtime.target in .plan/marshal.json.",
+                    f'served by the {target!r} runtime and could not honour the '
+                    f'request. Run this from a {requested!r} project, or change '
+                    f'runtime.target in .plan/marshal.json.',
                 )
             )
             return 0
@@ -888,5 +903,5 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     sys.exit(main())

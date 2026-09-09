@@ -42,9 +42,7 @@ class TestCrossCheckSynthesisFlaggedPlansHelper:
             ]
         )
 
-        matched = audit._syn_flagged_plans(
-            result, lambda f: f.startswith('build_churn')
-        )
+        matched = audit._syn_flagged_plans(result, lambda f: f.startswith('build_churn'))
 
         # only the churning plan is collected
         assert matched == {'p-churn'}
@@ -209,12 +207,8 @@ class TestCrossCheckSynthesisCouplingC:
     def test_fires_on_qgate_gap_plus_ci_rerun(self):
         # qgate gap intersects with a ci_rerun flag
         all_results = {
-            'quality-chain': _flag_result(
-                [{'plan_id': 'p-z', 'flags': ['no_qgate6']}]
-            ),
-            'sequence-and-build-minimality': _flag_result(
-                [{'plan_id': 'p-z', 'flags': ['ci_rerun:2']}]
-            ),
+            'quality-chain': _flag_result([{'plan_id': 'p-z', 'flags': ['no_qgate6']}]),
+            'sequence-and-build-minimality': _flag_result([{'plan_id': 'p-z', 'flags': ['ci_rerun:2']}]),
             'token-economics': _flag_result([]),
         }
 
@@ -228,13 +222,9 @@ class TestCrossCheckSynthesisCouplingC:
     def test_fires_on_qgate_gap_plus_finalize_heavy(self):
         # auto_review_only intersects with finalize_heavy
         all_results = {
-            'quality-chain': _flag_result(
-                [{'plan_id': 'p-w', 'flags': ['auto_review_only']}]
-            ),
+            'quality-chain': _flag_result([{'plan_id': 'p-w', 'flags': ['auto_review_only']}]),
             'sequence-and-build-minimality': _flag_result([]),
-            'token-economics': _flag_result(
-                [{'plan_id': 'p-w', 'flags': ['finalize_heavy']}]
-            ),
+            'token-economics': _flag_result([{'plan_id': 'p-w', 'flags': ['finalize_heavy']}]),
         }
 
         result = audit.cross_check_synthesis(all_results)
@@ -247,9 +237,7 @@ class TestCrossCheckSynthesisCouplingC:
     def test_does_not_fire_without_downstream_signal(self):
         # qgate gap present but no ci_rerun / finalize_heavy anywhere
         all_results = {
-            'quality-chain': _flag_result(
-                [{'plan_id': 'p-q', 'flags': ['no_qgate6']}]
-            ),
+            'quality-chain': _flag_result([{'plan_id': 'p-q', 'flags': ['no_qgate6']}]),
             'sequence-and-build-minimality': _flag_result([]),
             'token-economics': _flag_result([]),
         }

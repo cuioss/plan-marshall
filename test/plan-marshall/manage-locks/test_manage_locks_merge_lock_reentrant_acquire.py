@@ -11,7 +11,6 @@ Its sections, in order:
 * Reentrant per plan-id — a same-plan-id re-acquire is granted without blocking
 """
 
-
 from __future__ import annotations
 
 import time
@@ -72,10 +71,8 @@ class TestNoDoubleMerge:
         assert result['action'] == 'acquired'
         assert result['holder'] == 'plan-b'
 
-    @pytest.mark.xdist_group(name="manage_locks_contention")
-    def test_concurrent_acquire_admits_exactly_one_under_real_contention(
-        self, isolated_base: dict
-    ) -> None:
+    @pytest.mark.xdist_group(name='manage_locks_contention')
+    def test_concurrent_acquire_admits_exactly_one_under_real_contention(self, isolated_base: dict) -> None:
         """§5 (ii): N spawned subprocesses race the SAME main-anchored merge.lock +
         merge-queue.json via the CLI entry point. EXACTLY ONE returns
         ``status: success/acquired``; every other returns ``status: blocked``. Two
@@ -127,10 +124,8 @@ class TestNoDoubleMerge:
         for p in blocked:
             assert p['waiting_count'] >= 1, p
 
-    @pytest.mark.xdist_group(name="manage_locks_contention")
-    def test_concurrent_then_drained_serves_every_plan_exactly_once(
-        self, isolated_base: dict
-    ) -> None:
+    @pytest.mark.xdist_group(name='manage_locks_contention')
+    def test_concurrent_then_drained_serves_every_plan_exactly_once(self, isolated_base: dict) -> None:
         """N contenders race once (one admitted, the rest blocked into the FIFO
         queue), then the queue is drained in-process: each release advances the
         next front, and every one of the N plans is admitted exactly once with no
@@ -145,8 +140,14 @@ class TestNoDoubleMerge:
 
         def _acquire(i: int):
             return run_script(
-                SCRIPT_PATH, 'acquire', '--plan-id', f'p-{i}', '--timeout', '30',
-                env_overrides=env_overrides, timeout=90,
+                SCRIPT_PATH,
+                'acquire',
+                '--plan-id',
+                f'p-{i}',
+                '--timeout',
+                '30',
+                env_overrides=env_overrides,
+                timeout=90,
             )
 
         with ThreadPoolExecutor(max_workers=n) as pool:

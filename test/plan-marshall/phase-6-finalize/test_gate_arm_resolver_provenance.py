@@ -42,12 +42,7 @@ import pytest
 from conftest import MARKETPLACE_ROOT
 
 _GATE_DOC = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'phase-6-finalize'
-    / 'standards'
-    / 'pre-push-quality-gate.md'
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'standards' / 'pre-push-quality-gate.md'
 )
 
 #: An ``architecture resolve`` call — the marker that makes a section an ARM.
@@ -125,9 +120,7 @@ def _is_arm(body: str) -> bool:
 
 def _derive_arms() -> list[tuple[str, str]]:
     """Return ``(heading, body)`` for every resolver-backed arm, in document order."""
-    return [
-        (heading, body) for heading, body in _subsections(_doc_text()) if _is_arm(body)
-    ]
+    return [(heading, body) for heading, body in _subsections(_doc_text()) if _is_arm(body)]
 
 
 _ARMS = _derive_arms()
@@ -149,9 +142,7 @@ assert _ARMS, (
 GUARD_POPULATION_LABEL = 'pre-push-quality-gate resolver-backed arms'
 GUARD_POPULATION_SIZE = len(_ARMS)
 
-_ARM_IDS = [
-    re.sub(r'[^A-Za-z0-9]+', '-', heading).strip('-').lower() for heading, _body in _ARMS
-]
+_ARM_IDS = [re.sub(r'[^A-Za-z0-9]+', '-', heading).strip('-').lower() for heading, _body in _ARMS]
 
 
 # ---------------------------------------------------------------------------
@@ -199,8 +190,7 @@ def test_arm_detector_fires_on_a_resolver_backed_section_and_not_on_a_prose_one(
         'population would be empty and every sweep vacuous'
     )
     assert not _is_arm(prose_only), (
-        'The arm detector fires on a PROSE mention of resolution, so sections '
-        'that run no build would be swept as arms'
+        'The arm detector fires on a PROSE mention of resolution, so sections that run no build would be swept as arms'
     )
 
 

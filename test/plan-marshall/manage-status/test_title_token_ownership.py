@@ -26,9 +26,7 @@ from _manage_status_fixtures import _age_token
 
 from conftest import load_script_module
 
-_lifecycle = load_script_module(
-    'plan-marshall', 'manage-status', '_cmd_lifecycle.py', '_tto_cmd_lifecycle'
-)
+_lifecycle = load_script_module('plan-marshall', 'manage-status', '_cmd_lifecycle.py', '_tto_cmd_lifecycle')
 _query = load_script_module('plan-marshall', 'manage-status', '_status_query.py', '_tto_cmd_query')
 _core = load_script_module('plan-marshall', 'manage-status', '_status_core.py', '_tto_cmd_core')
 
@@ -42,9 +40,7 @@ title_token_is_stale = _core.title_token_is_stale
 
 
 def _read_status(plan_context, plan_id):
-    return json.loads(
-        (plan_context.plan_dir_for(plan_id) / 'status.json').read_text(encoding='utf-8')
-    )
+    return json.loads((plan_context.plan_dir_for(plan_id) / 'status.json').read_text(encoding='utf-8'))
 
 
 def _set(plan_id, state, owner='cli'):

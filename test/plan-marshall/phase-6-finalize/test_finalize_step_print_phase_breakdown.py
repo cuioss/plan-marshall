@@ -40,13 +40,7 @@ STANDARDS_PATH = (
     / 'standards'
     / 'finalize-step-print-phase-breakdown.md'
 )
-PHASE_6_SKILL_PATH = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'phase-6-finalize'
-    / 'SKILL.md'
-)
+PHASE_6_SKILL_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'SKILL.md'
 ARTIFACT_PATH = 'work/phase-breakdown-output.txt'
 
 
@@ -110,9 +104,7 @@ class TestStandardsBodyContract:
     def test_references_breakdown_artifact_path(self, standards_text: str):
         # Cross-deliverable contract: producer writes the same path the
         # renderer (consumer) reads in output-template.md snapshot procedure.
-        assert ARTIFACT_PATH in standards_text, (
-            f'standards must reference the artifact path {ARTIFACT_PATH!r}'
-        )
+        assert ARTIFACT_PATH in standards_text, f'standards must reference the artifact path {ARTIFACT_PATH!r}'
 
     def test_references_print_phase_breakdown_subcommand(self, standards_text: str):
         # Producer's data source — the manage-metrics subcommand that
@@ -129,9 +121,7 @@ class TestStandardsBodyContract:
     def test_documents_error_handling_section(self, standards_text: str):
         # Finalize must not block on presentation-only failures — error
         # handling section must exist.
-        assert re.search(r'(?im)^## Error Handling', standards_text), (
-            'expected an Error Handling section'
-        )
+        assert re.search(r'(?im)^## Error Handling', standards_text), 'expected an Error Handling section'
 
     def test_documents_ordering_constraint(self, standards_text: str):
         # The body explicitly notes the ordering constraint relative to
@@ -154,23 +144,19 @@ class TestCollapsedProducerPattern:
         # The collapsed shape no longer stages content to .plan/temp/ and then
         # invokes `manage-files write --content-file`.
         assert '--content-file' not in standards_text, (
-            'collapsed producer must not reference --content-file (was used by '
-            'the 3-step staging pattern)'
+            'collapsed producer must not reference --content-file (was used by the 3-step staging pattern)'
         )
 
     def test_no_plan_temp_staging(self, standards_text: str):
         # No `.plan/temp/` staging language remains.
-        assert '.plan/temp/' not in standards_text, (
-            'collapsed producer must not reference .plan/temp/ staging path'
-        )
+        assert '.plan/temp/' not in standards_text, 'collapsed producer must not reference .plan/temp/ staging path'
 
     def test_no_manage_files_write_step(self, standards_text: str):
         # `manage-files write` should no longer appear as a producer step. We
         # still allow the bundle name to surface in cross-references, so check
         # for the verb-level invocation pattern.
         assert 'manage-files write' not in standards_text, (
-            "collapsed producer must not invoke 'manage-files write' (the "
-            'producer writes the artifact directly)'
+            "collapsed producer must not invoke 'manage-files write' (the producer writes the artifact directly)"
         )
 
     def test_single_producer_bash_block(self, standards_text: str):
@@ -178,8 +164,7 @@ class TestCollapsedProducerPattern:
         # Find all fenced bash blocks and count matches.
         bash_blocks = re.findall(r'```bash\n(.*?)```', standards_text, re.DOTALL)
         producer_blocks = [
-            block for block in bash_blocks
-            if 'manage-metrics:manage-metrics print-phase-breakdown' in block
+            block for block in bash_blocks if 'manage-metrics:manage-metrics print-phase-breakdown' in block
         ]
         assert len(producer_blocks) == 1, (
             f'expected exactly one producer Bash block invoking '
@@ -190,8 +175,7 @@ class TestCollapsedProducerPattern:
         # The collapsed pattern consumes `bytes_written` from the script's
         # returned TOON envelope (replaces the prior `manage-files write` return).
         assert 'bytes_written' in standards_text, (
-            'collapsed producer must document the bytes_written field from '
-            'the print-phase-breakdown TOON envelope'
+            'collapsed producer must document the bytes_written field from the print-phase-breakdown TOON envelope'
         )
 
 

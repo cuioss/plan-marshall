@@ -141,9 +141,7 @@ def _install_simulated_ready_daemon(monkeypatch) -> tuple:
     # Downstream of both branches and not under test here.
     monkeypatch.setattr(factory, 'cmd_run_common', lambda **_kwargs: 0)
 
-    _execute_direct, cmd_run = factory.create_execute_handlers(
-        _make_config(), lambda *_a, **_k: ([], None, 'SUCCESS')
-    )
+    _execute_direct, cmd_run = factory.create_execute_handlers(_make_config(), lambda *_a, **_k: ([], None, 'SUCCESS'))
     return cmd_run, client, exec_recorder
 
 

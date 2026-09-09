@@ -26,9 +26,7 @@ from test_corpus_index import build_corpus
 
 from conftest import get_script_path, load_script_module
 
-corpus_lsp = load_script_module(
-    'pm-plugin-development', 'tools-corpus-language-server', 'corpus_lsp.py'
-)
+corpus_lsp = load_script_module('pm-plugin-development', 'tools-corpus-language-server', 'corpus_lsp.py')
 
 SCRIPT = get_script_path('pm-plugin-development', 'tools-corpus-language-server', 'corpus_lsp.py')
 
@@ -230,11 +228,13 @@ class TestDocumentSyncIsWiredToResolution:
         params = self._params(uri, 0)
 
         before = rpc.handle({'jsonrpc': '2.0', 'id': 1, 'method': 'textDocument/definition', 'params': params})
-        rpc.handle({
-            'jsonrpc': '2.0',
-            'method': 'textDocument/didOpen',
-            'params': {'textDocument': {'uri': uri, 'text': f'{CURSOR_LINE}\n'}},
-        })
+        rpc.handle(
+            {
+                'jsonrpc': '2.0',
+                'method': 'textDocument/didOpen',
+                'params': {'textDocument': {'uri': uri, 'text': f'{CURSOR_LINE}\n'}},
+            }
+        )
         after = rpc.handle({'jsonrpc': '2.0', 'id': 2, 'method': 'textDocument/definition', 'params': params})
 
         assert before is not None and before['result'] is None, (
@@ -256,19 +256,23 @@ class TestDocumentSyncIsWiredToResolution:
         uri = self._caller(root).as_uri()
         params = self._params(uri, 0)
 
-        rpc.handle({
-            'jsonrpc': '2.0',
-            'method': 'textDocument/didOpen',
-            'params': {'textDocument': {'uri': uri, 'text': f'{CURSOR_LINE}\n'}},
-        })
-        rpc.handle({
-            'jsonrpc': '2.0',
-            'method': 'textDocument/didChange',
-            'params': {
-                'textDocument': {'uri': uri},
-                'contentChanges': [{'text': 'the operator deleted the reference\n'}],
-            },
-        })
+        rpc.handle(
+            {
+                'jsonrpc': '2.0',
+                'method': 'textDocument/didOpen',
+                'params': {'textDocument': {'uri': uri, 'text': f'{CURSOR_LINE}\n'}},
+            }
+        )
+        rpc.handle(
+            {
+                'jsonrpc': '2.0',
+                'method': 'textDocument/didChange',
+                'params': {
+                    'textDocument': {'uri': uri},
+                    'contentChanges': [{'text': 'the operator deleted the reference\n'}],
+                },
+            }
+        )
         after = rpc.handle({'jsonrpc': '2.0', 'id': 1, 'method': 'textDocument/definition', 'params': params})
 
         assert after is not None and after['result'] is None
@@ -286,16 +290,20 @@ class TestDocumentSyncIsWiredToResolution:
         uri = caller.as_uri()
         file_line = caller.read_text(encoding='utf-8').split('\n').index(CURSOR_LINE)
 
-        rpc.handle({
-            'jsonrpc': '2.0',
-            'method': 'textDocument/didOpen',
-            'params': {'textDocument': {'uri': uri, 'text': f'{CURSOR_LINE}\n'}},
-        })
-        rpc.handle({
-            'jsonrpc': '2.0',
-            'method': 'textDocument/didClose',
-            'params': {'textDocument': {'uri': uri}},
-        })
+        rpc.handle(
+            {
+                'jsonrpc': '2.0',
+                'method': 'textDocument/didOpen',
+                'params': {'textDocument': {'uri': uri, 'text': f'{CURSOR_LINE}\n'}},
+            }
+        )
+        rpc.handle(
+            {
+                'jsonrpc': '2.0',
+                'method': 'textDocument/didClose',
+                'params': {'textDocument': {'uri': uri}},
+            }
+        )
         at_buffer_line = rpc.handle(
             {'jsonrpc': '2.0', 'id': 1, 'method': 'textDocument/definition', 'params': self._params(uri, 0)}
         )
@@ -327,11 +335,7 @@ class TestCorpusPathResolvesThroughTheRealClient:
         for child in corpus_root.iterdir():
             child.rename(custom / child.name)
         (root / '.plan').mkdir(parents=True, exist_ok=True)
-        marshal = {
-            'code_intelligence': {
-                'corpus_language_server': {'enabled': True, 'corpus_path': 'my-corpus'}
-            }
-        }
+        marshal = {'code_intelligence': {'corpus_language_server': {'enabled': True, 'corpus_path': 'my-corpus'}}}
         (root / '.plan' / 'marshal.json').write_text(json.dumps(marshal), encoding='utf-8')
         return root
 
@@ -342,13 +346,17 @@ class TestCorpusPathResolvesThroughTheRealClient:
         env = {k: v for k, v in os.environ.items() if k != 'PYTHONPATH'}
         stdin = (
             _framed({'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {}})
-            + _framed({
-                'jsonrpc': '2.0', 'id': 2, 'method': 'textDocument/definition',
-                'params': {
-                    'textDocument': {'uri': skill.as_uri()},
-                    'position': {'line': line_no, 'character': NOTATION_COLUMN},
-                },
-            })
+            + _framed(
+                {
+                    'jsonrpc': '2.0',
+                    'id': 2,
+                    'method': 'textDocument/definition',
+                    'params': {
+                        'textDocument': {'uri': skill.as_uri()},
+                        'position': {'line': line_no, 'character': NOTATION_COLUMN},
+                    },
+                }
+            )
             + _framed({'jsonrpc': '2.0', 'method': 'exit'})
         )
 
@@ -375,9 +383,7 @@ class TestCorpusPathResolvesThroughTheRealClient:
         """
         root = self._project_with_custom_corpus(tmp_path)
         marshal = {
-            'code_intelligence': {
-                'corpus_language_server': {'enabled': True, 'corpus_path': 'no/such/directory'}
-            }
+            'code_intelligence': {'corpus_language_server': {'enabled': True, 'corpus_path': 'no/such/directory'}}
         }
         (root / '.plan' / 'marshal.json').write_text(json.dumps(marshal), encoding='utf-8')
         skill = root / 'my-corpus' / 'beta' / 'skills' / 'caller' / 'SKILL.md'
@@ -385,13 +391,17 @@ class TestCorpusPathResolvesThroughTheRealClient:
         env = {k: v for k, v in os.environ.items() if k != 'PYTHONPATH'}
         stdin = (
             _framed({'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {}})
-            + _framed({
-                'jsonrpc': '2.0', 'id': 2, 'method': 'textDocument/definition',
-                'params': {
-                    'textDocument': {'uri': skill.as_uri()},
-                    'position': {'line': line_no, 'character': NOTATION_COLUMN},
-                },
-            })
+            + _framed(
+                {
+                    'jsonrpc': '2.0',
+                    'id': 2,
+                    'method': 'textDocument/definition',
+                    'params': {
+                        'textDocument': {'uri': skill.as_uri()},
+                        'position': {'line': line_no, 'character': NOTATION_COLUMN},
+                    },
+                }
+            )
             + _framed({'jsonrpc': '2.0', 'method': 'exit'})
         )
 
@@ -422,11 +432,7 @@ class TestMissingCorpusDegradesWithoutCorruptingTheSession:
     def _project_with_missing_corpus(root: Path) -> Path:
         (root / 'marketplace' / 'bundles').mkdir(parents=True, exist_ok=True)
         (root / '.plan').mkdir(parents=True, exist_ok=True)
-        marshal = {
-            'code_intelligence': {
-                'corpus_language_server': {'enabled': True, 'corpus_path': 'no/such/corpus'}
-            }
-        }
+        marshal = {'code_intelligence': {'corpus_language_server': {'enabled': True, 'corpus_path': 'no/such/corpus'}}}
         (root / '.plan' / 'marshal.json').write_text(json.dumps(marshal), encoding='utf-8')
         return root
 
@@ -437,13 +443,17 @@ class TestMissingCorpusDegradesWithoutCorruptingTheSession:
         env = {k: v for k, v in os.environ.items() if k != 'PYTHONPATH'}
         stdin = (
             _framed({'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {}})
-            + _framed({
-                'jsonrpc': '2.0', 'id': 2, 'method': 'textDocument/definition',
-                'params': {
-                    'textDocument': {'uri': doc.as_uri()},
-                    'position': {'line': 0, 'character': 5},
-                },
-            })
+            + _framed(
+                {
+                    'jsonrpc': '2.0',
+                    'id': 2,
+                    'method': 'textDocument/definition',
+                    'params': {
+                        'textDocument': {'uri': doc.as_uri()},
+                        'position': {'line': 0, 'character': 5},
+                    },
+                }
+            )
             + _framed({'jsonrpc': '2.0', 'method': 'exit'})
         )
 
@@ -458,5 +468,7 @@ class TestMissingCorpusDegradesWithoutCorruptingTheSession:
         assert result.returncode == 0, result.stderr.decode()
         assert result.stderr == b'', f'a missing corpus must degrade quietly, not log a defect: {result.stderr!r}'
         definition_response = next(m for m in _messages(result.stdout) if m.get('id') == 2)
-        assert 'error' not in definition_response, f'a missing corpus must not surface as a handler error: {definition_response}'
+        assert 'error' not in definition_response, (
+            f'a missing corpus must not surface as a handler error: {definition_response}'
+        )
         assert definition_response['result'] is None

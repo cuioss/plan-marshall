@@ -25,12 +25,8 @@ class TestTokenTrendCore:
             plan_dir = tmp_path / '.plan' / 'temp' / 'tt-corpus' / plan_id
             work_dir = plan_dir / 'work'
             work_dir.mkdir(parents=True, exist_ok=True)
-            (work_dir / 'metrics.toon').write_text(
-                f'[5-execute]\n  total_tokens: {total}\n', encoding='utf-8'
-            )
-            (plan_dir / 'references.json').write_text(
-                _json.dumps({}), encoding='utf-8'
-            )
+            (work_dir / 'metrics.toon').write_text(f'[5-execute]\n  total_tokens: {total}\n', encoding='utf-8')
+            (plan_dir / 'references.json').write_text(_json.dumps({}), encoding='utf-8')
             all_inputs.append(audit.collect_inputs(plan_dir))
 
         result = audit.cross_token_trend(all_inputs)
@@ -50,12 +46,8 @@ class TestTokenTrendCore:
             plan_dir = tmp_path / '.plan' / 'temp' / 'tt-corpus' / plan_id
             work_dir = plan_dir / 'work'
             work_dir.mkdir(parents=True, exist_ok=True)
-            (work_dir / 'metrics.toon').write_text(
-                '[5-execute]\n  total_tokens: 1000\n', encoding='utf-8'
-            )
-            (plan_dir / 'references.json').write_text(
-                _json.dumps({}), encoding='utf-8'
-            )
+            (work_dir / 'metrics.toon').write_text('[5-execute]\n  total_tokens: 1000\n', encoding='utf-8')
+            (plan_dir / 'references.json').write_text(_json.dumps({}), encoding='utf-8')
             all_inputs.append(audit.collect_inputs(plan_dir))
 
         result = audit.cross_token_trend(all_inputs)
@@ -74,12 +66,8 @@ class TestTokenTrendCore:
             plan_dir = tmp_path / '.plan' / 'temp' / 'tt-corpus' / plan_id
             work_dir = plan_dir / 'work'
             work_dir.mkdir(parents=True, exist_ok=True)
-            (work_dir / 'metrics.toon').write_text(
-                f'[5-execute]\n  total_tokens: {total}\n', encoding='utf-8'
-            )
-            (plan_dir / 'references.json').write_text(
-                _json.dumps({}), encoding='utf-8'
-            )
+            (work_dir / 'metrics.toon').write_text(f'[5-execute]\n  total_tokens: {total}\n', encoding='utf-8')
+            (plan_dir / 'references.json').write_text(_json.dumps({}), encoding='utf-8')
             all_inputs.append(audit.collect_inputs(plan_dir))
 
         result = audit.cross_token_trend(all_inputs)
@@ -99,12 +87,8 @@ class TestTokenTrendCore:
             plan_dir = tmp_path / '.plan' / 'temp' / 'tt-corpus' / plan_id
             work_dir = plan_dir / 'work'
             work_dir.mkdir(parents=True, exist_ok=True)
-            (work_dir / 'metrics.toon').write_text(
-                '[5-execute]\n  total_tokens: 1000\n', encoding='utf-8'
-            )
-            (plan_dir / 'references.json').write_text(
-                _json.dumps({}), encoding='utf-8'
-            )
+            (work_dir / 'metrics.toon').write_text('[5-execute]\n  total_tokens: 1000\n', encoding='utf-8')
+            (plan_dir / 'references.json').write_text(_json.dumps({}), encoding='utf-8')
             all_inputs.append(audit.collect_inputs(plan_dir))
         # one plan WITHOUT metrics
         bare_dir = tmp_path / '.plan' / 'temp' / 'tt-corpus' / '2026-05-20-bare'

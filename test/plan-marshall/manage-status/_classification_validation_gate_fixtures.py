@@ -53,7 +53,6 @@ Coverage:
   changes the resolved lane.
 """
 
-
 from __future__ import annotations
 
 import json
@@ -106,13 +105,7 @@ _BUGFIX_BODY = 'The parser crashes on empty input — this is a regression; fix 
 
 def _write_request(plan_dir: Path, body: str) -> None:
     plan_dir.mkdir(parents=True, exist_ok=True)
-    content = (
-        '# Request\n\n'
-        '## Original Input\n\n'
-        '(unused)\n\n'
-        '## Clarified Request\n\n'
-        f'{body}\n'
-    )
+    content = f'# Request\n\n## Original Input\n\n(unused)\n\n## Clarified Request\n\n{body}\n'
     (plan_dir / 'request.md').write_text(content, encoding='utf-8')
 
 

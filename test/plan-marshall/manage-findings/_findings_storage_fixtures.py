@@ -26,7 +26,6 @@ semantics) live in ``test_findings_store_*.py`` and ``test_manage_findings*.py``
 the modules this preamble serves are intentionally storage-layout focused.
 """
 
-
 from conftest import load_script_module
 
 _findings_core = load_script_module('plan-marshall', 'manage-findings', '_findings_core.py')

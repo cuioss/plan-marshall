@@ -45,7 +45,6 @@ Isolation: every test runs against an isolated ``PLAN_BASE_DIR`` staged under
 ``.plan/local/merge-queue.json`` under ``-n auto``.
 """
 
-
 from __future__ import annotations
 
 import json
@@ -57,9 +56,7 @@ from _manage_locks_fixtures import _make_live_plan
 
 from conftest import get_script_path, load_script_module
 
-merge_lock = load_script_module(
-    'plan-marshall', 'manage-locks', 'merge_lock.py', 'merge_lock_rate_window_under_test'
-)
+merge_lock = load_script_module('plan-marshall', 'manage-locks', 'merge_lock.py', 'merge_lock_rate_window_under_test')
 
 # The real CLI entry point. The Namespace-driven helpers below bypass argparse,
 # so anything the SHIPPED command line decides — which flags exist, and what a
@@ -120,13 +117,9 @@ def _check(
     return result
 
 
-def _release(
-    plan_id: str, bot_kind: str = 'coderabbit', attempt_cap: int = _DEFAULT_ATTEMPT_CAP
-) -> dict:
+def _release(plan_id: str, bot_kind: str = 'coderabbit', attempt_cap: int = _DEFAULT_ATTEMPT_CAP) -> dict:
     result: dict = merge_lock.run_rate_window(
-        Namespace(
-            action='release', plan_id=plan_id, bot_kind=bot_kind, attempt_cap=attempt_cap
-        )
+        Namespace(action='release', plan_id=plan_id, bot_kind=bot_kind, attempt_cap=attempt_cap)
     )
     return result
 

@@ -372,9 +372,7 @@ COUNT_CLAIM_NOUNS = ('rows', 'plans', 'staged', 'shipped', 'running', 'parked', 
 #: ``COUNT_CLAIM_NOUNS`` alone: a noun present in a hand-written alternation but absent
 #: from the tuple would make :func:`_count_divergences` raise ``KeyError`` at
 #: ``derived[key]``.
-_COUNT_CLAIM_ALTERNATION = '|'.join(
-    f'{noun[:-1]}s?' if noun.endswith('s') else noun for noun in COUNT_CLAIM_NOUNS
-)
+_COUNT_CLAIM_ALTERNATION = '|'.join(f'{noun[:-1]}s?' if noun.endswith('s') else noun for noun in COUNT_CLAIM_NOUNS)
 
 #: One count claim plus the short tail that follows it. The tail is captured in a
 #: LOOKAHEAD so a SCOPED claim can be recognised (see :data:`_SCOPED_CLAIM_RE`)
@@ -500,8 +498,10 @@ assert frozenset(GENERATED_BLOCKS) == frozenset(GENERATED_BLOCK_OWNING_SECTION),
 def _begin_marker(name: str) -> str:
     return f'<!-- BEGIN GENERATED: {name} -->'
 
+
 def _end_marker(name: str) -> str:
     return f'<!-- END GENERATED: {name} -->'
+
 
 #: A settled-narrative relocation pointer left at a section's origin in
 #: ``epic.md``. It names the destination heading in ``settled.md`` in double
@@ -778,9 +778,7 @@ def _set_row_field(row: dict[str, Any], field: str, value: str) -> dict[str, Any
     return {'previous': previous, 'new': value}
 
 
-def _mutate_plan_row(
-    slug: str, plan_id: str, apply: Callable[[dict[str, Any]], dict[str, Any]]
-) -> dict[str, Any]:
+def _mutate_plan_row(slug: str, plan_id: str, apply: Callable[[dict[str, Any]], dict[str, Any]]) -> dict[str, Any]:
     """Apply ``apply`` to one ``plans[]`` row inside a serialized critical section.
 
     The row-LOCATING write path for the plan queue: ``--transition`` and
@@ -926,18 +924,12 @@ def _spec_presence(root: Path, plan_id: str) -> dict[str, Any]:
         'spec_absent_warning': '',
     }
     try:
-        listed = sorted(
-            path
-            for path in plans_dir.iterdir()
-            if path.match(SPEC_GLOB) and path.is_file()
-        )
+        listed = sorted(path for path in plans_dir.iterdir() if path.match(SPEC_GLOB) and path.is_file())
     except FileNotFoundError:
         # A derived absence: the directory that would hold the spec does not
         # exist, so it holds no spec for any id. The warning names the directory
         # the zero was derived from rather than asserting a bare absence.
-        verdict['spec_absent_warning'] = (
-            f'no spec staged for {plan_id}: {plans_dir} does not exist'
-        )
+        verdict['spec_absent_warning'] = f'no spec staged for {plan_id}: {plans_dir} does not exist'
         return verdict
     except OSError as exc:
         # Something occupies the path but could not be walked (permissions, not
@@ -948,8 +940,7 @@ def _spec_presence(root: Path, plan_id: str) -> dict[str, Any]:
     match = next((path for path in listed if _spec_matches_row(path, plan_id)), None)
     if match is None:
         verdict['spec_absent_warning'] = (
-            f'no spec staged for {plan_id}: {plans_dir} holds '
-            f'{len(listed)} spec(s), none matching'
+            f'no spec staged for {plan_id}: {plans_dir} holds {len(listed)} spec(s), none matching'
         )
         return verdict
     verdict['spec_presence'] = SPEC_PRESENCE_PRESENT
@@ -1019,14 +1010,12 @@ def _queue_add_row(args: argparse.Namespace) -> dict[str, Any]:
     """
     probe = _probe_status_document(args.slug)
     if probe['state'] == STATUS_DOC_ABSENT:
-        return _error(
-            args.slug, 'file_not_found', 'status.json not found in orchestrator store'
-        )
+        return _error(args.slug, 'file_not_found', 'status.json not found in orchestrator store')
     if probe['state'] == STATUS_DOC_NON_OBJECT:
         return _error(
             args.slug,
             'invalid_status_document',
-            f"status.json is present but is not a JSON object ({probe['detail']}); "
+            f'status.json is present but is not a JSON object ({probe["detail"]}); '
             'the row was refused and NOTHING was written — repair the document '
             'before staging, so whatever it holds is not silently discarded',
             observed_type=probe['observed_type'],
@@ -1055,8 +1044,7 @@ def _queue_add_row(args: argparse.Namespace) -> dict[str, Any]:
         return _error(
             args.slug,
             'duplicate_plan_id',
-            f'plan {args.add_row!r} is already queued; '
-            'use --transition or --set-row to update the existing row',
+            f'plan {args.add_row!r} is already queued; use --transition or --set-row to update the existing row',
             existing_status=str(duplicate.get('status', '')),
         )
     return {
@@ -1114,9 +1102,7 @@ def cmd_queue(args: argparse.Namespace) -> dict[str, Any]:
     # because the append form legitimately carries it as the seed status. Without
     # that carve-out every `--add-row ... --status X` call would read as two
     # write forms at once and be rejected by the mutual-exclusion guard below.
-    transition_given = args.transition is not None or (
-        args.status is not None and not add_row_given
-    )
+    transition_given = args.transition is not None or (args.status is not None and not add_row_given)
     if sum((transition_given, set_row_given, add_row_given)) > 1:
         return _error(
             args.slug,
@@ -1161,9 +1147,7 @@ def cmd_queue(args: argparse.Namespace) -> dict[str, Any]:
     is_read = not set_row_given and not transition_given
     status_doc = _read_status(args.slug, allow_archived=is_read)
     if not status_doc:
-        return _error(
-            args.slug, 'file_not_found', 'status.json not found in orchestrator store'
-        )
+        return _error(args.slug, 'file_not_found', 'status.json not found in orchestrator store')
     if is_read:
         return {
             'status': 'success',
@@ -1177,9 +1161,7 @@ def cmd_queue(args: argparse.Namespace) -> dict[str, Any]:
     plan_id = args.set_row if set_row_given else args.transition
     field = args.field if set_row_given else 'status'
     value = args.value if set_row_given else args.status
-    outcome = _mutate_plan_row(
-        args.slug, plan_id, lambda row: _set_row_field(row, field, value)
-    )
+    outcome = _mutate_plan_row(args.slug, plan_id, lambda row: _set_row_field(row, field, value))
     if 'result' not in outcome:
         return _error(
             args.slug,
@@ -1248,9 +1230,7 @@ def _format_inbox_line(counts: InboxCounts) -> str:
     """
     if not counts.present:
         return '**Inbox (derived)**: no inbox directory (nothing to drain from)'
-    return (
-        f'**Inbox (derived)**: {counts.queued} queued, {counts.archived} archived'
-    )
+    return f'**Inbox (derived)**: {counts.queued} queued, {counts.archived} archived'
 
 
 def _build_summary(status_doc: dict[str, Any], counts: InboxCounts) -> str:
@@ -1292,10 +1272,7 @@ def _build_summary(status_doc: dict[str, Any], counts: InboxCounts) -> str:
             lines.extend(f'- {_format_plan_line(plan)}' for plan in group)
     lines.append('**Queue** (staged, in order):')
     if staged:
-        lines.extend(
-            f'{position}. {_format_plan_line(plan)}'
-            for position, plan in enumerate(staged, start=1)
-        )
+        lines.extend(f'{position}. {_format_plan_line(plan)}' for position, plan in enumerate(staged, start=1))
     else:
         lines.append('- (empty)')
     for plan in other:
@@ -1417,9 +1394,7 @@ def cmd_resume_summary(args: argparse.Namespace) -> dict[str, Any]:
         return _error(args.slug, 'invalid_slug', invalid)
     status_doc = _read_status(args.slug, allow_archived=True)
     if not status_doc:
-        return _error(
-            args.slug, 'file_not_found', 'status.json not found in orchestrator store'
-        )
+        return _error(args.slug, 'file_not_found', 'status.json not found in orchestrator store')
     root = _epic_root(args.slug, allow_archived=True)
     counts = inbox_counts(root / INBOX_SUBDIR)
     summary = _build_summary(status_doc, counts)
@@ -1492,8 +1467,7 @@ def cmd_archive(args: argparse.Namespace) -> dict[str, Any]:
         return _error(
             args.slug,
             'archive_conflict',
-            f'epic {args.slug!r} already has an archived tree at {dest}; '
-            'refusing to clobber the audit record',
+            f'epic {args.slug!r} already has an archived tree at {dest}; refusing to clobber the audit record',
             archived_to=str(dest),
         )
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -1667,9 +1641,7 @@ def _fenced_mask(lines: list[str]) -> list[bool]:
     return mask
 
 
-def _section_span(
-    lines: list[str], heading_re: re.Pattern[str], fenced: list[bool] | None = None
-) -> tuple[int, int]:
+def _section_span(lines: list[str], heading_re: re.Pattern[str], fenced: list[bool] | None = None) -> tuple[int, int]:
     """Return the ``[start, end)`` line span of one section's body.
 
     ``(-1, -1)`` when the document carries no matching heading. The body ends at
@@ -1825,10 +1797,7 @@ def cmd_corpus_surfaces(args: argparse.Namespace) -> dict[str, Any]:
 
 def _spec_pointers(text: str) -> set[str]:
     """Extract the normalized orchestrator spec pointers named in ``text``."""
-    return {
-        f'{match.group("slug")}/plans/{match.group("spec")}'
-        for match in SPEC_POINTER_RE.finditer(text)
-    }
+    return {f'{match.group("slug")}/plans/{match.group("spec")}' for match in SPEC_POINTER_RE.finditer(text)}
 
 
 def _own_pointer(slug: str, spec_name: str) -> str:
@@ -1949,9 +1918,7 @@ def _parse_claim_section(lines: list[str]) -> dict[str, Any]:
     }
 
 
-def _claim_block_end(
-    lines: list[str], claim_line: int, section_end: int, fenced: list[bool] | None = None
-) -> int:
+def _claim_block_end(lines: list[str], claim_line: int, section_end: int, fenced: list[bool] | None = None) -> int:
     """One past the claim bullet's own text block — the verdict insertion point.
 
     The bullet/heading terminators are tested against the fence mask, so a fenced
@@ -2062,9 +2029,7 @@ def _verdict_row(
     return row
 
 
-def _spec_verdict_rows(
-    spec_name: str, lines: list[str], section: dict[str, Any], head: str
-) -> list[dict[str, Any]]:
+def _spec_verdict_rows(spec_name: str, lines: list[str], section: dict[str, Any], head: str) -> list[dict[str, Any]]:
     """Every payload row one spec contributes: its claim rows, then AT MOST one section row.
 
     The section row has two mutually exclusive causes, which is what makes "at
@@ -2136,9 +2101,7 @@ def cmd_corpus_enumerate(args: argparse.Namespace) -> dict[str, Any]:
         return _error(args.slug, 'invalid_slug', invalid)
     status_doc = _read_status(args.slug, allow_archived=True)
     if not status_doc:
-        return _error(
-            args.slug, 'file_not_found', 'status.json not found in orchestrator store'
-        )
+        return _error(args.slug, 'file_not_found', 'status.json not found in orchestrator store')
     root = _epic_root(args.slug, allow_archived=True)
     rows = [row for row in status_doc.get('plans', []) if isinstance(row, dict)]
     specs = _spec_paths(root)
@@ -2162,9 +2125,7 @@ def cmd_corpus_enumerate(args: argparse.Namespace) -> dict[str, Any]:
             }
         )
     unreadable = [
-        {'spec': spec.name, 'error': error}
-        for spec, error in ((spec, _read_spec(spec)[1]) for spec in specs)
-        if error
+        {'spec': spec.name, 'error': error} for spec, error in ((spec, _read_spec(spec)[1]) for spec in specs) if error
     ]
     tally = Counter(record['status'] for record in row_records)
     return {
@@ -2176,9 +2137,7 @@ def cmd_corpus_enumerate(args: argparse.Namespace) -> dict[str, Any]:
         'rows_scanned': sum(1 for record in row_records if record['id']),
         'specs_total': len(specs),
         'specs_scanned': len(specs) - len(unreadable),
-        'status_tally': [
-            {'status': name, 'count': count} for name, count in sorted(tally.items())
-        ],
+        'status_tally': [{'status': name, 'count': count} for name, count in sorted(tally.items())],
         'rows': row_records,
         'rows_without_spec_count': len(rows_without_spec),
         'rows_without_spec': rows_without_spec,
@@ -2243,9 +2202,7 @@ def cmd_corpus_verdicts(args: argparse.Namespace) -> dict[str, Any]:
                 {
                     'spec': spec.name,
                     'first_line': section['first_line'],
-                    'section_verdict': (
-                        'present' if section['section_verdict_line'] >= 0 else 'absent'
-                    ),
+                    'section_verdict': ('present' if section['section_verdict_line'] >= 0 else 'absent'),
                 }
             )
     return {
@@ -2257,9 +2214,7 @@ def cmd_corpus_verdicts(args: argparse.Namespace) -> dict[str, Any]:
         'specs_total': len(specs),
         'specs_scanned': specs_scanned,
         'claims_scanned': claims_scanned,
-        'claim_section_states': [
-            {'state': state, 'count': state_counts[state]} for state in CLAIM_SECTION_STATES
-        ],
+        'claim_section_states': [{'state': state, 'count': state_counts[state]} for state in CLAIM_SECTION_STATES],
         'unreadable_claim_section_count': len(unreadable_sections),
         'unreadable_claim_sections': unreadable_sections,
         'count': len(rows),
@@ -2570,10 +2525,7 @@ def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
     # indeterminate state declares no comparable path, so it can form no overlap
     # row at all — and without these counts a ``file_overlap_match_count: 0``
     # cannot state which zero it is: nothing collided, or nothing was comparable.
-    own_surfaces = [
-        {'spec': record['name'], 'derivation_status': record['derivation_status']}
-        for record in own
-    ]
+    own_surfaces = [{'spec': record['name'], 'derivation_status': record['derivation_status']} for record in own]
     own_tally = dict.fromkeys(SURFACE_STATES, 0)
     for record in own:
         own_tally[record['derivation_status']] += 1
@@ -2601,9 +2553,7 @@ def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
         'specs_comparable': len(comparable),
         'specs_indeterminate': len(own_paths) - len(comparable),
         'compared_path_count': sum(len(record['paths']) for record in own),
-        'spec_surface_states': [
-            {'derivation_status': state, 'count': own_tally[state]} for state in SURFACE_STATES
-        ],
+        'spec_surface_states': [{'derivation_status': state, 'count': own_tally[state]} for state in SURFACE_STATES],
         'spec_surfaces': own_surfaces,
         'source_origin_match_count': len(origin_matches),
         'source_origin_matches': origin_matches,
@@ -2639,8 +2589,7 @@ def _validate_set_verdict_args(args: argparse.Namespace) -> dict[str, Any] | Non
         return _error(
             args.slug,
             'invalid_rescoped_combination',
-            f'--rescoped must be {NOT_APPLICABLE!r} when --verdict is not {CONTRADICTED!r}, '
-            f'got: {args.rescoped}',
+            f'--rescoped must be {NOT_APPLICABLE!r} when --verdict is not {CONTRADICTED!r}, got: {args.rescoped}',
         )
     if not _CHECKED_AT_RE.match(args.checked_at):
         return _error(
@@ -2649,9 +2598,7 @@ def _validate_set_verdict_args(args: argparse.Namespace) -> dict[str, Any] | Non
             f'--checked-at must be 7-40 lowercase hex characters, got: {args.checked_at}',
         )
     if not args.by.strip() or not args.evidence.strip():
-        return _error(
-            args.slug, 'wrong_parameters', '--by and --evidence must both be non-empty'
-        )
+        return _error(args.slug, 'wrong_parameters', '--by and --evidence must both be non-empty')
     if VERDICT_SEPARATOR in args.by or VERDICT_SEPARATOR in args.checked_at:
         return _error(
             args.slug,
@@ -2684,9 +2631,7 @@ def _validate_set_verdict_args(args: argparse.Namespace) -> dict[str, Any] | Non
     return None
 
 
-def _section_scope_rejection(
-    slug: str, spec_name: str, section: dict[str, Any]
-) -> dict[str, Any]:
+def _section_scope_rejection(slug: str, spec_name: str, section: dict[str, Any]) -> dict[str, Any]:
     """The rejection envelope for a ``--section-scope`` stamp that does not apply.
 
     Called only once the state is known NOT to be ``unreadable``, so it always
@@ -2872,9 +2817,7 @@ def _running_plans_signal(status_doc: dict[str, Any]) -> dict[str, Any]:
         )
     rows = [row for row in raw if isinstance(row, dict)]
     population = f'plans[]: {len(rows)} row(s) scanned'
-    running = sorted(
-        str(row.get('id', '')) for row in rows if str(row.get('status', '')) == RUNNING_STATUS
-    )
+    running = sorted(str(row.get('id', '')) for row in rows if str(row.get('status', '')) == RUNNING_STATUS)
     if running:
         return _signal(
             'running_plans',
@@ -2976,9 +2919,7 @@ def _inbox_signal(slug: str) -> dict[str, Any]:
         )
     population = f'inbox/: {counts.queued} queued and {counts.archived} archived'
     if counts.queued:
-        return _signal(
-            'inbox', NOT_READY, f'{counts.queued} message(s) still queued', population
-        )
+        return _signal('inbox', NOT_READY, f'{counts.queued} message(s) still queued', population)
     return _signal('inbox', READY, 'no queued message', population)
 
 
@@ -2990,15 +2931,11 @@ def _worktree_signal() -> dict[str, Any]:
         return _signal('worktree', READINESS_INDETERMINATE, head_error, 'git: not readable')
     porcelain, porcelain_error = _git_read('worktree-status')
     if porcelain is None:
-        return _signal(
-            'worktree', READINESS_INDETERMINATE, porcelain_error, 'git: not readable'
-        )
+        return _signal('worktree', READINESS_INDETERMINATE, porcelain_error, 'git: not readable')
     changed = [line for line in porcelain.splitlines() if line.strip()]
     population = f'git status --porcelain: {len(changed)} changed path(s) at {head}'
     if changed:
-        return _signal(
-            'worktree', NOT_READY, f'{len(changed)} uncommitted path(s) at {head}', population
-        )
+        return _signal('worktree', NOT_READY, f'{len(changed)} uncommitted path(s) at {head}', population)
     return _signal('worktree', READY, f'clean worktree at {head}', population)
 
 
@@ -3155,9 +3092,7 @@ def _marker_indices(lines: list[str], name: str) -> tuple[int, int]:
     begin_idx = next((index for index, line in enumerate(lines) if line.strip() == begin), -1)
     if begin_idx < 0:
         return (-1, -1)
-    end_idx = next(
-        (index for index in range(begin_idx + 1, len(lines)) if lines[index].strip() == end), -1
-    )
+    end_idx = next((index for index in range(begin_idx + 1, len(lines)) if lines[index].strip() == end), -1)
     return (begin_idx, end_idx)
 
 
@@ -3249,9 +3184,7 @@ def _invariant_no_terminal_in_live_queue(queue_body: str) -> dict[str, Any]:
             f'terminal status leaked into the live queue: {", ".join(leaked)}',
             population,
         )
-    return _invariant(
-        'no_terminal_in_live_queue', 'ok', 'no shipped/landed row in the live queue', population
-    )
+    return _invariant('no_terminal_in_live_queue', 'ok', 'no shipped/landed row in the live queue', population)
 
 
 def _settled_headings(text: str) -> set[str]:
@@ -3297,9 +3230,7 @@ def _invariant_pointers_reachable(epic_text: str, root: Path) -> dict[str, Any]:
         )
     settled_text, _ = _read_spec(settled_path)
     if settled_text is None:
-        return _invariant(
-            'relocated_pointer_reachable', 'indeterminate', 'settled.md could not be read', population
-        )
+        return _invariant('relocated_pointer_reachable', 'indeterminate', 'settled.md could not be read', population)
     present = _settled_headings(settled_text)
     unreachable = sorted({heading for heading in wanted if heading not in present})
     if unreachable:
@@ -3459,9 +3390,7 @@ def cmd_compact(args: argparse.Namespace) -> dict[str, Any]:
     text = original
     regenerated: list[dict[str, Any]] = []
     for name in GENERATED_BLOCKS:
-        text, outcome, lines_before, lines_after, replaced_body = _replace_block(
-            text, name, bodies[name]
-        )
+        text, outcome, lines_before, lines_after, replaced_body = _replace_block(text, name, bodies[name])
         regenerated.append(
             {
                 'surface': name,
@@ -3479,9 +3408,7 @@ def cmd_compact(args: argparse.Namespace) -> dict[str, Any]:
         _invariant_no_terminal_in_live_queue(bodies['ordered-queue']),
         _invariant_pointers_reachable(text, root),
     ]
-    unreachable_blocks = [
-        row['surface'] for row in regenerated if row['outcome'] == 'markers_absent'
-    ]
+    unreachable_blocks = [row['surface'] for row in regenerated if row['outcome'] == 'markers_absent']
     abstained = _abstained_sections(original, unreachable_blocks)
     return {
         'status': 'success',
@@ -3493,12 +3420,8 @@ def cmd_compact(args: argparse.Namespace) -> dict[str, Any]:
         'regenerated_count': sum(1 for row in regenerated if row['outcome'] == 'regenerated'),
         'regenerated': regenerated,
         'invariants': invariants,
-        'abstained_count': sum(
-            1 for row in abstained if row['treatment'] == TREATMENT_PRESERVED
-        ),
-        'unreachable_count': sum(
-            1 for row in abstained if row['treatment'] == TREATMENT_UNREACHABLE
-        ),
+        'abstained_count': sum(1 for row in abstained if row['treatment'] == TREATMENT_PRESERVED),
+        'unreachable_count': sum(1 for row in abstained if row['treatment'] == TREATMENT_UNREACHABLE),
         'abstained': abstained,
     }
 
@@ -3646,8 +3569,8 @@ def _add_corpus_group(subparsers: Any) -> None:
     corpus = subparsers.add_parser(
         'corpus',
         help=(
-            "Epic spec corpus: enumerate the epic population, reconcile the queue "
-            'against the plans/ specs in both directions, publish every spec\'s '
+            'Epic spec corpus: enumerate the epic population, reconcile the queue '
+            "against the plans/ specs in both directions, publish every spec's "
             'declared surface and derivation status, and read or stamp the '
             're-grounding verdict field.'
         ),
@@ -3714,9 +3637,7 @@ def _add_corpus_group(subparsers: Any) -> None:
         allow_abbrev=False,
     )
     _add_slug_arg(set_verdict)
-    set_verdict.add_argument(
-        '--plan', required=True, metavar='PLAN-NN', help='Plan id whose spec carries the claim.'
-    )
+    set_verdict.add_argument('--plan', required=True, metavar='PLAN-NN', help='Plan id whose spec carries the claim.')
     # Exactly one addressing mode, always. Making the pair required keeps
     # ``--claim-index`` a pure zero-based ordinal — the section address is its own
     # flag rather than a negative sentinel smuggled through the ordinal.
@@ -3726,7 +3647,7 @@ def _add_corpus_group(subparsers: Any) -> None:
         type=int,
         default=None,
         metavar='N',
-        help='Zero-based index of the claim bullet within the spec\'s ## Claim Labels section.',
+        help="Zero-based index of the claim bullet within the spec's ## Claim Labels section.",
     )
     address.add_argument(
         '--section-scope',
@@ -3736,9 +3657,7 @@ def _add_corpus_group(subparsers: Any) -> None:
             'could not read; refused for an absent, empty or parsed one.'
         ),
     )
-    set_verdict.add_argument(
-        '--verdict', required=True, help=f'One of {sorted(VERDICT_VALUES)}.'
-    )
+    set_verdict.add_argument('--verdict', required=True, help=f'One of {sorted(VERDICT_VALUES)}.')
     set_verdict.add_argument(
         '--checked-at', required=True, metavar='SHA', help='The 7-40 hex HEAD sha the check ran against.'
     )
@@ -3827,9 +3746,7 @@ def _add_inbox_group(subparsers: Any) -> None:
         required=True,
         help="Sender identifier (a plan id); also the message filename's sender segment.",
     )
-    write.add_argument(
-        '--kind', required=True, help=f'Payload kind: one of {sorted(KINDS)}.'
-    )
+    write.add_argument('--kind', required=True, help=f'Payload kind: one of {sorted(KINDS)}.')
     write.add_argument(
         '--payload-file',
         required=True,
@@ -3852,8 +3769,7 @@ def _add_inbox_group(subparsers: Any) -> None:
 
     amend = actions.add_parser(
         'amend',
-        help='Correct a filed message body in place, preserving created, '
-        'stamping amended + a monotonic revision.',
+        help='Correct a filed message body in place, preserving created, stamping amended + a monotonic revision.',
         allow_abbrev=False,
     )
     _add_slug_arg(amend)
@@ -3887,15 +3803,13 @@ def _add_inbox_group(subparsers: Any) -> None:
         '--by',
         required=True,
         metavar='NAME',
-        help="Bare successor message filename; must resolve in the epic inbox/ "
-        'or inbox/archive/.',
+        help='Bare successor message filename; must resolve in the epic inbox/ or inbox/archive/.',
     )
     supersede.set_defaults(handler=cmd_inbox_supersede)
 
     close_stream = actions.add_parser(
         'close-stream',
-        help="File a terminal lifecycle=stream-end marker declaring the sender's "
-        'stream ended.',
+        help="File a terminal lifecycle=stream-end marker declaring the sender's stream ended.",
         allow_abbrev=False,
     )
     _add_slug_arg(close_stream)
@@ -3965,8 +3879,7 @@ def _add_inbox_group(subparsers: Any) -> None:
 
     migrate_archive = actions.add_parser(
         'migrate-archive',
-        help='Fold a flat inbox/archive/ into per-sender subdirectories, '
-        'reporting the count moved per sender.',
+        help='Fold a flat inbox/archive/ into per-sender subdirectories, reporting the count moved per sender.',
         allow_abbrev=False,
     )
     _add_slug_arg(migrate_archive)
@@ -3980,7 +3893,7 @@ def _add_inbox_group(subparsers: Any) -> None:
     detect.add_argument(
         '--source-id',
         required=True,
-        help="The request.md source_id value recorded by phase-1-init.",
+        help='The request.md source_id value recorded by phase-1-init.',
     )
     detect.set_defaults(handler=cmd_inbox_detect)
 

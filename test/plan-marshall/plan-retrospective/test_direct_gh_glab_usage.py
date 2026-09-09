@@ -3,7 +3,6 @@
 the retrospective-aspect extension point that homes the former Surface C.
 """
 
-
 from __future__ import annotations
 
 from _direct_gh_glab_usage_fixtures import (
@@ -117,8 +116,13 @@ class TestSurfaceCDomainContribution:
                 return []
 
             def applies_to_module(self, module_data, active_profiles=None) -> dict:  # type: ignore[override]
-                return {'applicable': False, 'confidence': 'none', 'signals': [], 'additive_to': None,
-                        'skills_by_profile': {}}
+                return {
+                    'applicable': False,
+                    'confidence': 'none',
+                    'signals': [],
+                    'additive_to': None,
+                    'skills_by_profile': {},
+                }
 
             def discover_modules(self, project_root: str) -> list:
                 return []

@@ -29,9 +29,7 @@ from _marshalld_scheduler import Scheduler
 # sys.executable` would silently pin the verifier to, so monkeypatching
 # marshalld.sys.executable to it is what makes the construction-level assertion
 # below non-vacuous.
-_FRAMEWORK_INTERPRETER = (
-    '/Library/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python'
-)
+_FRAMEWORK_INTERPRETER = '/Library/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python'
 
 
 def _registry(root: str, *, containers: list[str] | None = None, allowlist: list[str] | None = None) -> dict:

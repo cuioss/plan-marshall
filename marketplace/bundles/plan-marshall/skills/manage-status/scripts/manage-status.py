@@ -99,8 +99,7 @@ def _loop_back_target_type(value: str) -> str:
     normalised = value.lower()
     if normalised not in VALID_LOOP_BACK_TARGETS:
         raise argparse.ArgumentTypeError(
-            f'--loop-back-target must be one of '
-            f'{list(VALID_LOOP_BACK_TARGETS)}, got: {value}'
+            f'--loop-back-target must be one of {list(VALID_LOOP_BACK_TARGETS)}, got: {value}'
         )
     return normalised
 
@@ -491,7 +490,7 @@ def main() -> int:
             'Bind a merge-gate authorization to the HEAD it was granted against AND '
             'to the gap class it was granted over. '
             "'grant' persists merge_authorizations[kind] = {head, gap_class, "
-            "granted_over, reason, granted_at}; a re-grant at a new HEAD overwrites "
+            'granted_over, reason, granted_at}; a re-grant at a new HEAD overwrites '
             'the record, and that overwrite IS the sanctioned re-seek (there is no '
             "revoke verb). 'check' takes no --kind — the caller asks one question "
             "('is there an admissible authorization for the gap I am reporting'), so "
@@ -562,7 +561,7 @@ def main() -> int:
 
     merge_authorization_check_parser = merge_authorization_subparsers.add_parser(
         'check',
-        help='Return each record\'s HEAD verdict and its admissibility for the caller\'s gap',
+        help="Return each record's HEAD verdict and its admissibility for the caller's gap",
         allow_abbrev=False,
     )
     add_plan_id_arg(merge_authorization_check_parser)
@@ -596,13 +595,13 @@ def main() -> int:
         help='Deterministic change-type classifier for phase-3-outline Step 4 (no LLM dispatch)',
         description=(
             "Classify a plan's clarified-request narrative against a fixed "
-            "keyword table and return one of feature, bug_fix, tech_debt, "
-            "enhancement, verification, analysis — or ambiguous=true when "
-            "no keyword fires, when the top two scores tie, or when "
-            "confidence falls below 0.7. Use --persist to write the result "
-            "to status.metadata.change_type when the heuristic resolves "
-            "(persistence is skipped in the ambiguous branch so the LLM "
-            "detect-change-type workflow is the single writer there)."
+            'keyword table and return one of feature, bug_fix, tech_debt, '
+            'enhancement, verification, analysis — or ambiguous=true when '
+            'no keyword fires, when the top two scores tie, or when '
+            'confidence falls below 0.7. Use --persist to write the result '
+            'to status.metadata.change_type when the heuristic resolves '
+            '(persistence is skipped in the ambiguous branch so the LLM '
+            'detect-change-type workflow is the single writer there).'
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         allow_abbrev=False,
@@ -620,21 +619,21 @@ def main() -> int:
         'scope-estimate-heuristic',
         help='Deterministic pre-route scope_estimate classifier for phase-1-init (no LLM, no architecture calls)',
         description=(
-            "Classify a coarse scope_estimate "
-            "(surgical | single_module | multi_module | none) from "
-            "the WHOLE request.md body by counting distinct file-path references, "
-            "with ZERO architecture queries. The scored text is heading-blind — the "
+            'Classify a coarse scope_estimate '
+            '(surgical | single_module | multi_module | none) from '
+            'the WHOLE request.md body by counting distinct file-path references, '
+            'with ZERO architecture queries. The scored text is heading-blind — the '
             "entire file minus its own '# Request' title line, with no section "
             "selected — so an ingested spec's own '##' headings cannot truncate it. "
             "'none' is the DECLARED UNKNOWN emitted when the body is unscoreable "
-            "(request.md absent, unreadable, or empty); the companion scope_resolved "
-            "boolean tells a classified band apart from that unknown, which biases "
-            "the lane deep rather than guessing a narrow band. Run BEFORE the "
-            "planning-lane route at phase-1-init so the router reads a real "
-            "scope_estimate instead of None. Use --persist to write the result to "
+            '(request.md absent, unreadable, or empty); the companion scope_resolved '
+            'boolean tells a classified band apart from that unknown, which biases '
+            'the lane deep rather than guessing a narrow band. Run BEFORE the '
+            'planning-lane route at phase-1-init so the router reads a real '
+            'scope_estimate instead of None. Use --persist to write the result to '
             "references.json's scope_estimate field (the S2 signal source). The "
-            "deep-lane refine Step 9 module-mapping derivation overwrites the coarse "
-            "guess when the deep lane runs, so no accuracy is lost."
+            'deep-lane refine Step 9 module-mapping derivation overwrites the coarse '
+            'guess when the deep lane runs, so no accuracy is lost.'
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         allow_abbrev=False,
@@ -652,16 +651,16 @@ def main() -> int:
         'aggregate-confidence',
         help='Weighted-math confidence aggregator for phase-2-refine Step 10 (no LLM dispatch)',
         description=(
-            "Compute the overall confidence from per-dimension scores using the "
-            "fixed weights from phase-2-refine SKILL.md Step 10: correctness 20%, "
-            "completeness 20%, consistency 20%, non-duplication 10%, ambiguity 20%, "
-            "module-mapping 10%. Scores are 0..100; missing dimensions default to 0 "
-            "and are reported in missing_dimensions. Use --scores-file PATH (JSON "
-            "object keyed by dimension) for batch input, or pass individual "
-            "--<dimension> N flags; the two forms are mutually exclusive when "
-            "--scores-file is supplied (CLI flags still override file values for "
-            "any keys they specify). With --persist, the overall confidence is "
-            "written to status.metadata.confidence."
+            'Compute the overall confidence from per-dimension scores using the '
+            'fixed weights from phase-2-refine SKILL.md Step 10: correctness 20%, '
+            'completeness 20%, consistency 20%, non-duplication 10%, ambiguity 20%, '
+            'module-mapping 10%. Scores are 0..100; missing dimensions default to 0 '
+            'and are reported in missing_dimensions. Use --scores-file PATH (JSON '
+            'object keyed by dimension) for batch input, or pass individual '
+            '--<dimension> N flags; the two forms are mutually exclusive when '
+            '--scores-file is supplied (CLI flags still override file values for '
+            'any keys they specify). With --persist, the overall confidence is '
+            'written to status.metadata.confidence.'
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         allow_abbrev=False,
@@ -700,31 +699,29 @@ def main() -> int:
         'planning-lane',
         help='Deterministic planning-lane router (route | escalate)',
         description=(
-            "Resolve planning_lane in {light, deep} from cheap field reads + a "
-            "request.md regex (zero codebase discovery, zero LLM cognition). "
+            'Resolve planning_lane in {light, deep} from cheap field reads + a '
+            'request.md regex (zero codebase discovery, zero LLM cognition). '
             "'route' evaluates the DQ1 signal set (S1-S7): default is light; a "
-            "deep-precondition signal forces deep, subject to two documented "
-            "exceptions. (1) Narrow-and-concrete carve-out: when scope_estimate "
-            "== surgical AND the request is concrete, S3 (change_type) and S4 "
-            "(compatibility) are suppressed so neither forces deep alone; "
-            "single_module is the catch-all middle band and does NOT earn the "
-            "carve-out. (2) Corroboration bound: S7 (author risk prose) alone "
-            "does not carry deep against a MEASURED single_module band "
-            "(path_count_middle_band) — an unmeasured or absent band leaves the "
-            "warning uncontradicted, so S7 keeps the lane, and the denied signal "
-            "is reported under suppressed_signals. S1/S2/S5/S6 are unaffected by "
-            "both. plan.phase-1-init.deep_lane (always|never|auto) short-circuits "
+            'deep-precondition signal forces deep, subject to two documented '
+            'exceptions. (1) Narrow-and-concrete carve-out: when scope_estimate '
+            '== surgical AND the request is concrete, S3 (change_type) and S4 '
+            '(compatibility) are suppressed so neither forces deep alone; '
+            'single_module is the catch-all middle band and does NOT earn the '
+            'carve-out. (2) Corroboration bound: S7 (author risk prose) alone '
+            'does not carry deep against a MEASURED single_module band '
+            '(path_count_middle_band) — an unmeasured or absent band leaves the '
+            'warning uncontradicted, so S7 keeps the lane, and the denied signal '
+            'is reported under suppressed_signals. S1/S2/S5/S6 are unaffected by '
+            'both. plan.phase-1-init.deep_lane (always|never|auto) short-circuits '
             "the signals. 'escalate' is the one-way light->deep ratchet — it sets "
-            "planning_lane=deep + lane_escalated=true and refuses any downgrade to "
-            "light. Both verbs emit one decision-log line. See the manage-status "
-            "skill § planning-lane for the full signal table."
+            'planning_lane=deep + lane_escalated=true and refuses any downgrade to '
+            'light. Both verbs emit one decision-log line. See the manage-status '
+            'skill § planning-lane for the full signal table.'
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         allow_abbrev=False,
     )
-    planning_lane_subparsers = planning_lane_parser.add_subparsers(
-        dest='planning_lane_verb', required=True
-    )
+    planning_lane_subparsers = planning_lane_parser.add_subparsers(dest='planning_lane_verb', required=True)
 
     planning_lane_route_parser = planning_lane_subparsers.add_parser(
         'route',
@@ -770,12 +767,12 @@ def main() -> int:
         help='Cross-check change_type/scope_estimate vs cheap request signals (flag-not-block)',
         description=(
             "Deterministic classification-validation gate. Cross-checks the plan's "
-            "change_type and scope_estimate against cheap request signals and emits a "
-            "phase-1-init Q-Gate finding (recorded against 2-refine) on a mismatch. "
-            "Flags three classes — feature-as-bug_fix, non-empty-affected_files with "
-            "a null scope_estimate, and scale-mismatch-light-routing (a surgical "
-            "scope_estimate over a request body the scope sensor reads as "
-            "multi_module) — and NEVER blocks routing. Also runs automatically "
+            'change_type and scope_estimate against cheap request signals and emits a '
+            'phase-1-init Q-Gate finding (recorded against 2-refine) on a mismatch. '
+            'Flags three classes — feature-as-bug_fix, non-empty-affected_files with '
+            'a null scope_estimate, and scale-mismatch-light-routing (a surgical '
+            'scope_estimate over a request body the scope sensor reads as '
+            'multi_module) — and NEVER blocks routing. Also runs automatically '
             "as a pre-route pass inside 'planning-lane route'."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -789,17 +786,17 @@ def main() -> int:
         'sibling-collision-check',
         help='Flag source-origin / file-overlap collisions against active sibling plans (read-only)',
         description=(
-            "Init-time semantic sibling-dedup collision gate. Scans every active "
-            "(non-archived) sibling plan and flags two collision classes against "
-            "the plan under init: (1) source-origin match — the same audit / "
-            "lesson / issue source_id backing more than one active plan (a "
+            'Init-time semantic sibling-dedup collision gate. Scans every active '
+            '(non-archived) sibling plan and flags two collision classes against '
+            'the plan under init: (1) source-origin match — the same audit / '
+            'lesson / issue source_id backing more than one active plan (a '
             "same-source fan-out), read from each plan's request.md header; and "
             "(2) file-path overlap — concrete file paths named in this plan's "
             "request.md body intersecting a sibling's references.json "
-            "affected_files. Deterministic and read-only — no LLM, no writes. "
-            "Returns source_origin_matches[] and file_overlap_matches[] plus a "
-            "collision_detected boolean; phase-1-init consumes the result and "
-            "raises the user gate (proceed / rename / abort) before phase-2."
+            'affected_files. Deterministic and read-only — no LLM, no writes. '
+            'Returns source_origin_matches[] and file_overlap_matches[] plus a '
+            'collision_detected boolean; phase-1-init consumes the result and '
+            'raises the user gate (proceed / rename / abort) before phase-2.'
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         allow_abbrev=False,

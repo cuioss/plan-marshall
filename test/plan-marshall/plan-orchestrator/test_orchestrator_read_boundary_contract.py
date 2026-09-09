@@ -57,19 +57,10 @@ _CLAUDE_MD = PROJECT_ROOT / 'CLAUDE.md'
 #: The three orchestrator documents whose presence proves ``MARKETPLACE_ROOT``
 #: resolved to a real tree rather than an empty one.
 _ORCHESTRATION_MODEL = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'persona-plan-orchestrator'
-    / 'standards'
-    / 'orchestration-model.md'
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'persona-plan-orchestrator' / 'standards' / 'orchestration-model.md'
 )
-_PLAN_ORCHESTRATOR_SKILL = (
-    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-orchestrator' / 'SKILL.md'
-)
-_PERSONA_ORCHESTRATOR_SKILL = (
-    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'persona-plan-orchestrator' / 'SKILL.md'
-)
+_PLAN_ORCHESTRATOR_SKILL = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-orchestrator' / 'SKILL.md'
+_PERSONA_ORCHESTRATOR_SKILL = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'persona-plan-orchestrator' / 'SKILL.md'
 #: The marketplace-external restatement. Its presence proves ``PROJECT_ROOT /
 #: 'doc'`` resolved, rather than silently shrinking the population to
 #: marketplace-only — the precise vacuity the widening exists to prevent.
@@ -471,8 +462,7 @@ def test_no_document_prohibits_a_read_another_document_permits():
 
     contradiction = prohibited & permitted
     offenders = '\n'.join(
-        f'  {path.relative_to(PROJECT_ROOT)}:{lineno}: {sentence}'
-        for path, lineno, sentence in prohibitions
+        f'  {path.relative_to(PROJECT_ROOT)}:{lineno}: {sentence}' for path, lineno, sentence in prohibitions
     )
 
     assert not contradiction, (

@@ -367,8 +367,7 @@ def test_worktree_path_override_bypasses_the_resolver_entirely(plan_context):
     assert result['status'] == 'success'
     assert result['worktree_path'] == str(worktree)
     assert mock.call_count == 0, (
-        'the --worktree-path override still consulted the resolver; the escape '
-        'hatch must short-circuit resolution'
+        'the --worktree-path override still consulted the resolver; the escape hatch must short-circuit resolution'
     )
 
 
@@ -493,20 +492,27 @@ def test_stale_base_branch_no_detectable_default(plan_context):
 
     subprocess.run(
         ['git', 'clone', '--bare', '-q', str(seed), str(remote)],
-        check=True, capture_output=True, text=True,
+        check=True,
+        capture_output=True,
+        text=True,
     )
     subprocess.run(
         ['git', 'clone', '-q', str(remote), str(worktree)],
-        check=True, capture_output=True, text=True,
+        check=True,
+        capture_output=True,
+        text=True,
     )
     _git(worktree, 'config', 'user.email', 'tests@example.com')
     _git(worktree, 'config', 'user.name', 'Test')
 
     _write_status(
-        plan_dir, worktree,
+        plan_dir,
+        worktree,
         subprocess.run(
             ['git', '-C', str(worktree), 'rev-parse', 'HEAD'],
-            check=True, capture_output=True, text=True,
+            check=True,
+            capture_output=True,
+            text=True,
         ).stdout.strip(),
     )
 
@@ -971,8 +977,7 @@ def test_two_calls_after_reconcile_agree_zero_upstream_no_overlap(plan_context):
     assert second['status'] == 'success'
     # D5(a): a 0-behind branch reports zero upstream and no overlap.
     assert second['upstream_commit_count'] == 0, (
-        'a 0-behind branch reported upstream commits — the anchor re-listed the '
-        'merged-in commit as upstream'
+        'a 0-behind branch reported upstream commits — the anchor re-listed the merged-in commit as upstream'
     )
     assert second['classification'] == 'no_overlap'
     # D5(d): the two verdicts against one unchanged state do not contradict.
@@ -1009,8 +1014,7 @@ def test_in_flight_set_excludes_files_the_plan_never_touched(plan_context):
     assert 'in_flight_files' in result
     assert 'local.txt' in result['in_flight_files']
     assert 'upstream.txt' not in result['in_flight_files'], (
-        'the in-flight set folded in an upstream file the plan never touched — '
-        'the anchor is stale, not the merge-base'
+        'the in-flight set folded in an upstream file the plan never touched — the anchor is stale, not the merge-base'
     )
 
 
@@ -1041,8 +1045,7 @@ def test_merge_base_recomputed_not_read_from_stored_status(plan_context):
 
     assert result['status'] == 'success'
     assert result['upstream_commit_count'] == 1, (
-        'the anchor came from the poisoned stored worktree_sha, not the '
-        'recomputed merge-base'
+        'the anchor came from the poisoned stored worktree_sha, not the recomputed merge-base'
     )
     assert result.get('merge_base_source') == 'merge_base'
 
@@ -1055,16 +1058,12 @@ def test_classify_only_never_moves_head_on_every_classification(plan_context):
     cases = [
         (
             'no_overlap',
-            lambda root: _setup_remote_and_worktree(
-                root, upstream_commits=2, upstream_conflicts=False
-            ),
+            lambda root: _setup_remote_and_worktree(root, upstream_commits=2, upstream_conflicts=False),
         ),
         ('overlap_no_content_conflict', _setup_overlap_no_conflict),
         (
             'overlap_with_content_conflict',
-            lambda root: _setup_remote_and_worktree(
-                root, upstream_commits=1, upstream_conflicts=True
-            ),
+            lambda root: _setup_remote_and_worktree(root, upstream_commits=1, upstream_conflicts=True),
         ),
     ]
     for expected, builder in cases:
@@ -1169,7 +1168,9 @@ def test_persisted_base_branch_outranks_the_configured_one(monkeypatch):
     """
     monkeypatch.setattr(_mod, '_read_references_base_branch', lambda plan_id: 'release-2')
     monkeypatch.setattr(
-        _mod, 'load_config', lambda: {'plan': {'phase-2-refine': {'base_branch': 'stale-main'}}},
+        _mod,
+        'load_config',
+        lambda: {'plan': {'phase-2-refine': {'base_branch': 'stale-main'}}},
         raising=False,
     )
 
@@ -1206,7 +1207,8 @@ def test_resolution_falls_through_to_config_when_no_reference_is_persisted(monke
     # land on the source module -- patching `_mod.load_config` is silently
     # ineffective and would make this test pass for the wrong reason.
     monkeypatch.setattr(
-        _config_core, 'load_config',
+        _config_core,
+        'load_config',
         lambda: {'plan': {'phase-2-refine': {'base_branch': 'configured'}}},
     )
 
@@ -1235,6 +1237,7 @@ def test_reader_is_fail_soft_on_every_unavailability_path(monkeypatch):
     # over-claim in a different shape: a narrowed `except FileNotFoundError` would
     # let the other two escape as hard failures and this test would stay green.
     for exc in (FileNotFoundError, OSError, ValueError):
+
         def _raises(plan_id, e=exc):
             raise e(plan_id)
 
@@ -1264,13 +1267,7 @@ def test_reader_is_fail_soft_on_every_unavailability_path(monkeypatch):
 # the restatement this guard exists to forbid).
 
 _SKILL_DOC = (
-    PROJECT_ROOT
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'workflow-integration-git'
-    / 'SKILL.md'
+    PROJECT_ROOT / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'workflow-integration-git' / 'SKILL.md'
 )
 
 _RECONCILE_SOURCE = get_script_path('plan-marshall', 'workflow-integration-git', '_cmd_baseline_reconcile.py')
@@ -1450,8 +1447,7 @@ def test_the_slash_joined_reason_row_expands_to_every_token_it_groups():
     }
 
     assert grouped <= documented, (
-        f'the slash-joined row did not expand; missing {sorted(grouped - documented)}. '
-        f'Parsed: {sorted(documented)}'
+        f'the slash-joined row did not expand; missing {sorted(grouped - documented)}. Parsed: {sorted(documented)}'
     )
     # The row really is joined — otherwise this asserts nothing about grouping.
     text = _SKILL_DOC.read_text(encoding='utf-8')
@@ -1465,18 +1461,13 @@ def test_the_slash_joined_reason_row_expands_to_every_token_it_groups():
 #: as a whole table so the injection exercises the parser's header match,
 #: delimiter check, and backtick extraction — not just its row loop.
 _INJECTED_DOC_ROW = (
-    '\n| `reason` | Meaning |\n'
-    '|---|---|\n'
-    '| `control_only_documented_reason` | a state the script cannot reach |\n'
+    '\n| `reason` | Meaning |\n|---|---|\n| `control_only_documented_reason` | a state the script cannot reach |\n'
 )
 
 #: An emission site appended to the script source for a reason the table omits.
 #: A ``{'reason': …}`` dict literal — one of the three shapes the AST derivation
 #: claims to recognise — so the injection tests that recognition.
-_INJECTED_EMISSION_SITE = (
-    "\n\ndef _control_only_emission():\n"
-    "    return {'reason': 'control_only_emitted_reason'}\n"
-)
+_INJECTED_EMISSION_SITE = "\n\ndef _control_only_emission():\n    return {'reason': 'control_only_emitted_reason'}\n"
 
 
 def test_an_injected_token_on_either_side_is_derived_and_flagged():
@@ -1519,9 +1510,7 @@ def test_an_injected_token_on_either_side_is_derived_and_flagged():
     injected_doc = _SKILL_DOC.read_text(encoding='utf-8') + _INJECTED_DOC_ROW
     documented_with_phantom = _table_tokens('reason', doc_text=injected_doc)
 
-    assert documented_with_phantom - documented_reasons == {
-        'control_only_documented_reason'
-    }, (
+    assert documented_with_phantom - documented_reasons == {'control_only_documented_reason'}, (
         f'the table parser did not pick up the injected row, so the '
         f'documented-side derivation is not being driven. Parsed: '
         f'{sorted(documented_with_phantom - documented_reasons)}'
@@ -1529,9 +1518,9 @@ def test_an_injected_token_on_either_side_is_derived_and_flagged():
     assert documented_with_phantom != emitted_reasons, (
         'a documented-but-never-emitted token left the guard equality intact'
     )
-    assert documented_with_phantom - emitted_reasons == {
-        'control_only_documented_reason'
-    }, 'a documented-but-never-emitted token was not detected'
+    assert documented_with_phantom - emitted_reasons == {'control_only_documented_reason'}, (
+        'a documented-but-never-emitted token was not detected'
+    )
 
     # EMITTED side — derive from a source carrying one extra emission site.
     injected_source = _RECONCILE_SOURCE.read_text(encoding='utf-8') + _INJECTED_EMISSION_SITE

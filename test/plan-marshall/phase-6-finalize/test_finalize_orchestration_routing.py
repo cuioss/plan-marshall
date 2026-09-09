@@ -51,9 +51,7 @@ import extension_discovery
 from conftest import MARKETPLACE_ROOT, PROJECT_ROOT, load_script_module
 from extension_discovery import find_implementors
 
-_inbox = load_script_module(
-    'plan-marshall', 'plan-orchestrator', '_orchestrator_inbox.py', 'orchestrator_inbox'
-)
+_inbox = load_script_module('plan-marshall', 'plan-orchestrator', '_orchestrator_inbox.py', 'orchestrator_inbox')
 classify_source_id = _inbox.classify_source_id
 
 _PLAN_MARSHALL = MARKETPLACE_ROOT / 'plan-marshall' / 'skills'
@@ -248,7 +246,10 @@ class TestZeroGlobalStoreWritesLessonsCapture:
         branch = self._branch()
 
         # The one landing an orchestrated run owes is now the terminal step's.
-        assert 'The one landing an orchestrated finalize run owes its epic is emitted by the dedicated `emit-landing`' in branch
+        assert (
+            'The one landing an orchestrated finalize run owes its epic is emitted by the dedicated `emit-landing`'
+            in branch
+        )
 
     def test_orchestrated_branch_performs_no_classification(self):
         assert 'no** global-vs-epic classification' in self._branch()
@@ -402,9 +403,7 @@ class TestEveryWriteSiteNamedInOneStandard:
 class TestWriteSiteSetIsClosed:
     def test_every_registered_step_key_resolves_to_a_body_document(self):
         unresolved = [
-            step
-            for step in _registered_finalize_steps()
-            if not any(doc.is_file() for doc in _step_documents(step))
+            step for step in _registered_finalize_steps() if not any(doc.is_file() for doc in _step_documents(step))
         ]
 
         # `lessons-capture` and friends resolve via standards/ OR workflow/; a key
@@ -557,9 +556,7 @@ class TestShortCircuitCarveOut:
     def test_orchestration_resolution_precedes_the_short_circuit(self):
         item = self._item_4b()
 
-        assert item.index('a0. Resolve orchestration context') < item.index(
-            'b. Three-zero short-circuit'
-        )
+        assert item.index('a0. Resolve orchestration context') < item.index('b. Three-zero short-circuit')
 
     def test_resolution_is_documented_as_running_before_the_short_circuit(self):
         assert 'runs BEFORE the three-zero short-circuit' in self._item_4b()
@@ -632,11 +629,7 @@ _TABLE_END = '### Interface Contract for External Steps'
 
 def _built_in_records() -> list[dict]:
     """The authoritative built-in step records, straight from discovery."""
-    return [
-        record
-        for record in find_implementors(_EXT_POINT)
-        if record.get('source') == _BUILT_IN_SOURCE
-    ]
+    return [record for record in find_implementors(_EXT_POINT) if record.get('source') == _BUILT_IN_SOURCE]
 
 
 def _dispatch_table_rows() -> list[tuple[str, str]]:
@@ -667,11 +660,7 @@ def _missing_from_table(row_names: set[str]) -> list[str]:
     uses — a guard that re-implemented the check would prove nothing about the
     check that actually runs.
     """
-    return sorted(
-        record['name']
-        for record in _built_in_records()
-        if record['name'] not in row_names
-    )
+    return sorted(record['name'] for record in _built_in_records() if record['name'] not in row_names)
 
 
 class TestBuiltInStepDispatchTableMatchesDiscovery:
@@ -736,10 +725,7 @@ class TestBuiltInStepDispatchTableMatchesDiscovery:
         different document is exactly as wrong as one pointing at nothing, and
         an existence-only check would pass it.
         """
-        discovered_paths = {
-            record['name']: Path(record['path']).resolve()
-            for record in _built_in_records()
-        }
+        discovered_paths = {record['name']: Path(record['path']).resolve() for record in _built_in_records()}
 
         mismatches = []
         for name, doc in _dispatch_table_rows():
@@ -751,7 +737,7 @@ class TestBuiltInStepDispatchTableMatchesDiscovery:
                 mismatches.append(f'{name}: table says {doc} -> {actual}, discovery says {expected}')
 
         assert mismatches == [], (
-            'These table rows name a document that is not the step\'s '
+            "These table rows name a document that is not the step's "
             'authoritative doc. A moved doc is the residual the compose-time '
             'unresolvable_step gate does NOT cover, because that gate fires on a '
             f'missing built-in, not on a mis-pointed table row: {mismatches}'
@@ -816,9 +802,7 @@ class TestDefaultPhase6StepsMatchesDiscovery:
     def test_every_default_step_resolves_to_a_discovered_step(self):
         known = self._order_by_canonical_key()
 
-        unresolved = [
-            step for step in _manifest_core.DEFAULT_PHASE_6_STEPS if step not in known
-        ]
+        unresolved = [step for step in _manifest_core.DEFAULT_PHASE_6_STEPS if step not in known]
 
         assert unresolved == [], (
             'These default candidate steps resolve to no discovered step doc, so '
@@ -828,18 +812,14 @@ class TestDefaultPhase6StepsMatchesDiscovery:
 
     def test_default_set_is_written_in_ascending_frontmatter_order(self):
         known = self._order_by_canonical_key()
-        resolved = [
-            (step, known[step])
-            for step in _manifest_core.DEFAULT_PHASE_6_STEPS
-            if step in known
-        ]
+        resolved = [(step, known[step]) for step in _manifest_core.DEFAULT_PHASE_6_STEPS if step in known]
 
         orders = [order for _, order in resolved]
 
         assert orders == sorted(orders), (
             'DEFAULT_PHASE_6_STEPS is no longer written in ascending frontmatter '
             'order. Its own comment states the sequence is kept in lock-step with '
-            'each step doc\'s order fact, so a sequence that disagrees reads as a '
+            "each step doc's order fact, so a sequence that disagrees reads as a "
             'second, competing statement of the pipeline order. Resolved '
             f'(step, order) pairs as written: {resolved}'
         )
@@ -887,15 +867,13 @@ class TestNoTwoFinalizeStepsShareAnOrder:
         by_order: dict[int, list[str]] = {}
         for order, name in self._orders_by_name():
             by_order.setdefault(order, []).append(name)
-        collisions = {
-            order: sorted(names) for order, names in by_order.items() if len(names) > 1
-        }
+        collisions = {order: sorted(names) for order, names in by_order.items() if len(names) > 1}
 
         assert not collisions, (
             'Two or more finalize steps share an `order`. The composer sort '
             '(`_sort_steps_by_frontmatter_order`) is stable, so it would resolve them only by '
             'their input list position — an undeclared, emergent tie-break the banded allocation '
-            'contract forbids. Give each colliding step a distinct order from its band\'s reserved '
+            "contract forbids. Give each colliding step a distinct order from its band's reserved "
             f'gaps. Colliding orders: {collisions}. See '
             'extension-api/standards/finalize-step-order-bands.md § "The collision rule".'
         )
@@ -920,8 +898,7 @@ class TestCanonicalDestroysDeclarationsExist:
     _ANCHORS = {
         'default:archive-plan': (
             'plan-directory',
-            'archive-plan moves the plan directory, so every step that reads plan state '
-            'must be ordered before it',
+            'archive-plan moves the plan directory, so every step that reads plan state must be ordered before it',
         ),
         'default:branch-cleanup': (
             'worktree',
@@ -934,15 +911,11 @@ class TestCanonicalDestroysDeclarationsExist:
         """Every discovered step's `destroys:` declaration, read off its own frontmatter."""
         out: dict[str, list[str]] = {}
         for record in find_implementors(_EXT_POINT):
-            fields = extension_discovery._read_frontmatter_fields(
-                Path(str(record.get('path', ''))), ('destroys',)
-            )
+            fields = extension_discovery._read_frontmatter_fields(Path(str(record.get('path', ''))), ('destroys',))
             declared = fields.get('destroys')
             if declared is None:
                 continue
-            out[str(record.get('name', ''))] = (
-                list(declared) if isinstance(declared, list) else [declared]
-            )
+            out[str(record.get('name', ''))] = list(declared) if isinstance(declared, list) else [declared]
         return out
 
     def test_discovery_is_non_empty(self):

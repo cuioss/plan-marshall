@@ -125,7 +125,7 @@ _INLINE_DONE_CALL_PATTERNS: tuple[re.Pattern[str], ...] = (
 # run mark-step-done`` would otherwise be masked as a prohibition, silently
 # skipping a genuine inline done-marking violation on that same line.
 _PROHIBITION_RE = re.compile(
-    r"\b(?:do|does|did|must|should|shall|will|can|could|would)\s+not\b"
+    r'\b(?:do|does|did|must|should|shall|will|can|could|would)\s+not\b'
     r"|\bnever\b|n't",
     re.IGNORECASE,
 )
@@ -190,11 +190,7 @@ def _inline_done_line(line: str) -> bool:
 
 def _has_triad(region_text: str) -> bool:
     """Return True when the FIX body carries the full not-done/loop_back/STOP triad."""
-    return bool(
-        _NOT_DONE_RE.search(region_text)
-        and _LOOP_BACK_RE.search(region_text)
-        and _STOP_RE.search(region_text)
-    )
+    return bool(_NOT_DONE_RE.search(region_text) and _LOOP_BACK_RE.search(region_text) and _STOP_RE.search(region_text))
 
 
 def _scan_file(path: Path) -> list[Finding]:

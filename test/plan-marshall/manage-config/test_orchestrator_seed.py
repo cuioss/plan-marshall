@@ -47,8 +47,15 @@ def test_string_shorthand_effort_is_legal():
 def test_object_effort_over_known_keys_is_legal():
     """An effort object over the known surfaces + default + max is legal."""
     validate_orchestrator_block(
-        {'effort': {'analyze': 'level-6', 'decompose': 'level-4', 'reader': 'level-5',
-                    'default': 'level-3', 'max': 'level-7'}}
+        {
+            'effort': {
+                'analyze': 'level-6',
+                'decompose': 'level-4',
+                'reader': 'level-5',
+                'default': 'level-3',
+                'max': 'level-7',
+            }
+        }
     )
 
 
@@ -60,9 +67,7 @@ def test_parallelization_scope_positive_int_is_legal():
 
 def test_fully_populated_block_is_legal():
     """A block carrying both effort and parallelization_scope is legal."""
-    validate_orchestrator_block(
-        {'effort': {'analyze': 'level-6', 'max': 'level-5'}, 'parallelization_scope': 3}
-    )
+    validate_orchestrator_block({'effort': {'analyze': 'level-6', 'max': 'level-5'}, 'parallelization_scope': 3})
 
 
 def test_inherit_is_a_legal_effort_level():
@@ -214,9 +219,7 @@ def test_validation_accepts_both_seeded_and_legacy_shapes():
     ``effort`` / ``parallelization_scope`` exactly as it accepts the fully-seeded
     block.
     """
-    validate_orchestrator_block(
-        _config_defaults_mod.get_default_config()['orchestrator']
-    )  # newly-seeded shape
+    validate_orchestrator_block(_config_defaults_mod.get_default_config()['orchestrator'])  # newly-seeded shape
     validate_orchestrator_block({'auto_emit': False})  # genuine legacy shape
 
 

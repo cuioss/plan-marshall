@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the phase-4-plan mechanical Q-Gate's CLOSURE checks."""
 
-
 from __future__ import annotations
 
 from fnmatch import fnmatch
@@ -101,6 +100,7 @@ def test_projection_covers_the_mutation_scope_of_a_survey_deliverable():
 # =============================================================================
 # Referrer closure — step target the deliverable never declared
 # =============================================================================
+
 
 def test_projection_leaves_a_declared_glob_to_the_reconciliation_check():
     """A declared glob in the write-set is not reported as an unprojected write.
@@ -206,6 +206,7 @@ def test_declared_glob_fully_enumerated_is_closed():
 # End-to-end through the mechanical Q-Gate
 # =============================================================================
 
+
 class EscapePreconditionUnmet(Exception):
     """The escaping-glob fixture could not be constructed on this platform.
 
@@ -264,8 +265,7 @@ def _escape_target() -> tuple[str, Path]:
         )
     if not list(outside.glob('*.conf')):
         raise EscapePreconditionUnmet(
-            f'the escape target {outside} exists but is unpopulated, so an empty '
-            f'result would prove nothing'
+            f'the escape target {outside} exists but is unpopulated, so an empty result would prove nothing'
         )
     return escape, outside
 

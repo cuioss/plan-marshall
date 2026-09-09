@@ -222,9 +222,7 @@ class TestRegistrationExemption:
         """A directory lacking ``.claude-plugin/plugin.json`` is not scanned."""
         stray = tmp_path / 'not-a-bundle' / 'skills' / 'orphan'
         stray.mkdir(parents=True)
-        (stray / 'SKILL.md').write_text(
-            '---\nname: orphan\nuser-invocable: true\n---\n', encoding='utf-8'
-        )
+        (stray / 'SKILL.md').write_text('---\nname: orphan\nuser-invocable: true\n---\n', encoding='utf-8')
 
         assert_analyzer_findings(analyze_plugin_json_orphans, tmp_path, [])
 

@@ -11,6 +11,7 @@ Covers:
   - _dispatch: correct routing and argparse for all 26 operations
   - main: full integration — no args, missing marshal, unknown target, dispatch
 """
+
 from __future__ import annotations
 
 import json
@@ -42,6 +43,7 @@ def in_tmp_cwd(tmp_path, monkeypatch):
     """Run with the process working directory inside an isolated tmp_path."""
     monkeypatch.chdir(tmp_path)
 
+
 # =============================================================================
 # Helpers
 # =============================================================================
@@ -52,12 +54,12 @@ def _parsed(output: str) -> dict[str, Any]:
     return parse_toon(output)
 
 
-def _make_marshal_file(directory: Path, target: str = "claude") -> Path:
+def _make_marshal_file(directory: Path, target: str = 'claude') -> Path:
     """Write a minimal .plan/marshal.json and return its path."""
-    plan_dir = directory / ".plan"
+    plan_dir = directory / '.plan'
     plan_dir.mkdir(parents=True, exist_ok=True)
-    marshal_path = plan_dir / "marshal.json"
-    marshal_path.write_text(json.dumps({"runtime": {"target": target}}), encoding="utf-8")
+    marshal_path = plan_dir / 'marshal.json'
+    marshal_path.write_text(json.dumps({'runtime': {'target': target}}), encoding='utf-8')
     return marshal_path
 
 
@@ -97,30 +99,30 @@ def _make_runtime_returning(runtime: MagicMock):
 def _mock_runtime() -> MagicMock:
     """Return a MagicMock that returns valid TOON for every Runtime method."""
     rt = MagicMock()
-    rt.project_initial_setup.return_value = toon_success("project initial-setup")
-    rt.project_install_hook.return_value = toon_success("project install-hook")
-    rt.session_capture.return_value = toon_success("session capture")
-    rt.session_render_title.return_value = toon_success("session render-title")
-    rt.session_push_title_token.return_value = toon_success("session push-title-token")
-    rt.session_bind.return_value = toon_success("session bind")
-    rt.session_resolve_plan.return_value = toon_success("session resolve-plan")
-    rt.session_doctor.return_value = toon_success("session doctor")
-    rt.session_teardown.return_value = toon_success("session teardown")
-    rt.session_reload_directive.return_value = toon_success("session reload-directive")
-    rt.permission_configure.return_value = toon_success("permission configure")
-    rt.permission_analyze.return_value = toon_success("permission analyze")
-    rt.permission_fix.return_value = toon_success("permission fix")
-    rt.permission_ensure_wildcards.return_value = toon_success("permission ensure-wildcards")
-    rt.permission_ensure_steps.return_value = toon_success("permission ensure-steps")
-    rt.permission_web_analyze.return_value = toon_success("permission web-analyze")
-    rt.permission_web_apply.return_value = toon_success("permission web-apply")
-    rt.metrics_capture.return_value = toon_success("metrics capture")
-    rt.metrics_normalized_tokens.return_value = toon_success("metrics normalized-tokens")
-    rt.chat_extract_signal.return_value = toon_success("chat extract-signal")
-    rt.subagent_dispatch.return_value = toon_success("subagent dispatch")
-    rt.wait_for.return_value = toon_success("wait for")
-    rt.health_check.return_value = toon_success("health-check")
-    rt.harness_bash_timeout_ceiling.return_value = toon_success("harness bash-timeout-ceiling")
+    rt.project_initial_setup.return_value = toon_success('project initial-setup')
+    rt.project_install_hook.return_value = toon_success('project install-hook')
+    rt.session_capture.return_value = toon_success('session capture')
+    rt.session_render_title.return_value = toon_success('session render-title')
+    rt.session_push_title_token.return_value = toon_success('session push-title-token')
+    rt.session_bind.return_value = toon_success('session bind')
+    rt.session_resolve_plan.return_value = toon_success('session resolve-plan')
+    rt.session_doctor.return_value = toon_success('session doctor')
+    rt.session_teardown.return_value = toon_success('session teardown')
+    rt.session_reload_directive.return_value = toon_success('session reload-directive')
+    rt.permission_configure.return_value = toon_success('permission configure')
+    rt.permission_analyze.return_value = toon_success('permission analyze')
+    rt.permission_fix.return_value = toon_success('permission fix')
+    rt.permission_ensure_wildcards.return_value = toon_success('permission ensure-wildcards')
+    rt.permission_ensure_steps.return_value = toon_success('permission ensure-steps')
+    rt.permission_web_analyze.return_value = toon_success('permission web-analyze')
+    rt.permission_web_apply.return_value = toon_success('permission web-apply')
+    rt.metrics_capture.return_value = toon_success('metrics capture')
+    rt.metrics_normalized_tokens.return_value = toon_success('metrics normalized-tokens')
+    rt.chat_extract_signal.return_value = toon_success('chat extract-signal')
+    rt.subagent_dispatch.return_value = toon_success('subagent dispatch')
+    rt.wait_for.return_value = toon_success('wait for')
+    rt.health_check.return_value = toon_success('health-check')
+    rt.harness_bash_timeout_ceiling.return_value = toon_success('harness bash-timeout-ceiling')
     return rt
 
 
@@ -134,30 +136,30 @@ class TestSessionTeardownDispatch:
 
     def test_teardown_parses_as_a_two_token_operation(self):
         """``session teardown`` parses to the two-word operation with no args."""
-        op, remaining = _build_operation(["session", "teardown"])
-        assert op == "session teardown"
+        op, remaining = _build_operation(['session', 'teardown'])
+        assert op == 'session teardown'
         assert remaining == []
 
     def test_dispatch_routes_to_session_teardown(self):
         """The router calls ``session_teardown()`` and returns its TOON verbatim."""
         rt = _mock_runtime()
-        result = _dispatch(rt, "session teardown", [])
+        result = _dispatch(rt, 'session teardown', [])
         rt.session_teardown.assert_called_once_with()
-        assert _parsed(result)["operation"] == "session teardown"
+        assert _parsed(result)['operation'] == 'session teardown'
 
     def test_dispatch_rejects_unexpected_arguments(self):
         """The op takes no arguments — a stray flag is an argparse rejection."""
         rt = _mock_runtime()
         with pytest.raises(SystemExit):
-            _dispatch(rt, "session teardown", ["--plan-id", "p1"])
+            _dispatch(rt, 'session teardown', ['--plan-id', 'p1'])
 
     def test_unknown_operation_error_names_session_teardown(self):
         """The unknown-operation error string enumerates ``session teardown``."""
         rt = _mock_runtime()
-        result = _parsed(_dispatch(rt, "session not-a-verb", []))
-        assert result["status"] == "error"
-        assert result["error"] == "unknown_operation"
-        assert "session teardown" in result["message"]
+        result = _parsed(_dispatch(rt, 'session not-a-verb', []))
+        assert result['status'] == 'error'
+        assert result['error'] == 'unknown_operation'
+        assert 'session teardown' in result['message']
 
 
 # =============================================================================
@@ -169,30 +171,33 @@ class TestWaitForDispatch:
     """The ``wait for`` operation is registered in the dispatch chain."""
 
     _ARGS = [
-        "--observable", "build-job",
-        "--reference", "job-42",
-        "--bound-seconds", "300",
+        '--observable',
+        'build-job',
+        '--reference',
+        'job-42',
+        '--bound-seconds',
+        '300',
     ]
 
     def test_wait_for_parses_as_a_two_token_operation(self):
         """``wait for`` parses to the two-word operation, flags left as remaining."""
-        op, remaining = _build_operation(["wait", "for", *self._ARGS])
-        assert op == "wait for"
+        op, remaining = _build_operation(['wait', 'for', *self._ARGS])
+        assert op == 'wait for'
         assert remaining == self._ARGS
 
     def test_dispatch_routes_to_wait_for_with_typed_arguments(self):
         """The router forwards the three arguments, with the bound typed as int."""
         rt = _mock_runtime()
-        result = _dispatch(rt, "wait for", list(self._ARGS))
-        rt.wait_for.assert_called_once_with("build-job", "job-42", 300)
-        assert _parsed(result)["operation"] == "wait for"
+        result = _dispatch(rt, 'wait for', list(self._ARGS))
+        rt.wait_for.assert_called_once_with('build-job', 'job-42', 300)
+        assert _parsed(result)['operation'] == 'wait for'
 
     def test_dispatch_returns_the_runtime_toon_verbatim(self):
         """The router is a pass-through — it does not re-wrap the runtime payload."""
         rt = _mock_runtime()
-        rt.wait_for.return_value = toon_success("wait for", {"outcome": "succeeded"})
-        result = _parsed(_dispatch(rt, "wait for", list(self._ARGS)))
-        assert result["outcome"] == "succeeded"
+        rt.wait_for.return_value = toon_success('wait for', {'outcome': 'succeeded'})
+        result = _parsed(_dispatch(rt, 'wait for', list(self._ARGS)))
+        assert result['outcome'] == 'succeeded'
 
     def test_dispatch_passes_an_unknown_observable_through_to_the_runtime(self):
         """The router does not police the observable vocabulary — the runtime owns
@@ -200,22 +205,20 @@ class TestWaitForDispatch:
         rt = _mock_runtime()
         _dispatch(
             rt,
-            "wait for",
-            ["--observable", "ci-run", "--reference", "r", "--bound-seconds", "1"],
+            'wait for',
+            ['--observable', 'ci-run', '--reference', 'r', '--bound-seconds', '1'],
         )
-        rt.wait_for.assert_called_once_with("ci-run", "r", 1)
+        rt.wait_for.assert_called_once_with('ci-run', 'r', 1)
 
-    @pytest.mark.parametrize(
-        "missing", ["--observable", "--reference", "--bound-seconds"]
-    )
+    @pytest.mark.parametrize('missing', ['--observable', '--reference', '--bound-seconds'])
     def test_each_argument_is_required(self, missing: str):
         """Omitting any of the three arguments is an argparse rejection."""
         args = list(self._ARGS)
         index = args.index(missing)
-        del args[index:index + 2]
+        del args[index : index + 2]
         rt = _mock_runtime()
         with pytest.raises(SystemExit):
-            _dispatch(rt, "wait for", args)
+            _dispatch(rt, 'wait for', args)
 
     def test_non_integer_bound_is_rejected(self):
         """``--bound-seconds`` is typed — a non-integer never reaches the runtime."""
@@ -223,8 +226,8 @@ class TestWaitForDispatch:
         with pytest.raises(SystemExit):
             _dispatch(
                 rt,
-                "wait for",
-                ["--observable", "build-job", "--reference", "j", "--bound-seconds", "soon"],
+                'wait for',
+                ['--observable', 'build-job', '--reference', 'j', '--bound-seconds', 'soon'],
             )
         rt.wait_for.assert_not_called()
 
@@ -232,14 +235,14 @@ class TestWaitForDispatch:
         """A stray flag is an argparse rejection rather than a silent ignore."""
         rt = _mock_runtime()
         with pytest.raises(SystemExit):
-            _dispatch(rt, "wait for", [*self._ARGS, "--condition", "looks-done"])
+            _dispatch(rt, 'wait for', [*self._ARGS, '--condition', 'looks-done'])
 
     def test_unknown_operation_error_names_wait_for(self):
         """The unknown-operation error string enumerates ``wait for``."""
         rt = _mock_runtime()
-        result = _parsed(_dispatch(rt, "wait until", []))
-        assert result["error"] == "unknown_operation"
-        assert "wait for" in result["message"]
+        result = _parsed(_dispatch(rt, 'wait until', []))
+        assert result['error'] == 'unknown_operation'
+        assert 'wait for' in result['message']
 
 
 # =============================================================================
@@ -254,35 +257,35 @@ class TestWaitForDispatch:
 #: guessed at. Every other row is a real two-token operation with a different
 #: argument tail, so the split point is shown not to depend on what follows it.
 _BUILD_OPERATION_CASES = [
-    ([], "", []),
-    (["health-check", "--checks", "all"], "health-check", ["--checks", "all"]),
+    ([], '', []),
+    (['health-check', '--checks', 'all'], 'health-check', ['--checks', 'all']),
     (
-        ["project", "initial-setup", "--project-dir", "."],
-        "project initial-setup",
-        ["--project-dir", "."],
+        ['project', 'initial-setup', '--project-dir', '.'],
+        'project initial-setup',
+        ['--project-dir', '.'],
     ),
     (
-        ["session", "capture", "--plan-id", "my-plan"],
-        "session capture",
-        ["--plan-id", "my-plan"],
+        ['session', 'capture', '--plan-id', 'my-plan'],
+        'session capture',
+        ['--plan-id', 'my-plan'],
     ),
     (
-        ["permission", "web-apply", "--scope", "project", "--dry-run"],
-        "permission web-apply",
-        ["--scope", "project", "--dry-run"],
+        ['permission', 'web-apply', '--scope', 'project', '--dry-run'],
+        'permission web-apply',
+        ['--scope', 'project', '--dry-run'],
     ),
     (
-        ["metrics", "capture", "--plan-id", "p1", "--phase", "p1"],
-        "metrics capture",
-        ["--plan-id", "p1", "--phase", "p1"],
+        ['metrics', 'capture', '--plan-id', 'p1', '--phase', 'p1'],
+        'metrics capture',
+        ['--plan-id', 'p1', '--phase', 'p1'],
     ),
-    (["session", "reload-directive"], "session reload-directive", []),
+    (['session', 'reload-directive'], 'session reload-directive', []),
     (
-        ["subagent", "dispatch", "--agent", "my-agent"],
-        "subagent dispatch",
-        ["--agent", "my-agent"],
+        ['subagent', 'dispatch', '--agent', 'my-agent'],
+        'subagent dispatch',
+        ['--agent', 'my-agent'],
     ),
-    (["unknown-op"], "unknown-op", []),
+    (['unknown-op'], 'unknown-op', []),
 ]
 
 _BUILD_OPERATION_IDS = [
@@ -302,17 +305,17 @@ _BUILD_OPERATION_IDS = [
 #: those rows pin the SPLIT (what becomes arguments), while these pin that every
 #: published pair is recognised as a two-part operation at all.
 _TWO_PART_GROUPS = [
-    ("session", "render-title"),
-    ("session", "push-title-token"),
-    ("session", "bind"),
-    ("session", "resolve-plan"),
-    ("session", "doctor"),
-    ("permission", "configure"),
-    ("permission", "analyze"),
-    ("permission", "fix"),
-    ("permission", "ensure-wildcards"),
-    ("permission", "ensure-steps"),
-    ("permission", "web-analyze"),
+    ('session', 'render-title'),
+    ('session', 'push-title-token'),
+    ('session', 'bind'),
+    ('session', 'resolve-plan'),
+    ('session', 'doctor'),
+    ('permission', 'configure'),
+    ('permission', 'analyze'),
+    ('permission', 'fix'),
+    ('permission', 'ensure-wildcards'),
+    ('permission', 'ensure-steps'),
+    ('permission', 'web-analyze'),
 ]
 
 _TWO_PART_GROUP_IDS = [f'{group}-{subcommand}' for group, subcommand in _TWO_PART_GROUPS]
@@ -321,25 +324,19 @@ _TWO_PART_GROUP_IDS = [f'{group}-{subcommand}' for group, subcommand in _TWO_PAR
 class TestBuildOperation:
     """Tests for the argv-to-operation parser."""
 
-    @pytest.mark.parametrize(
-        ("argv", "operation", "remaining"), _BUILD_OPERATION_CASES, ids=_BUILD_OPERATION_IDS
-    )
+    @pytest.mark.parametrize(('argv', 'operation', 'remaining'), _BUILD_OPERATION_CASES, ids=_BUILD_OPERATION_IDS)
     def test_argv_splits_into_an_operation_and_its_arguments(
         self, argv: list[str], operation: str, remaining: list[str]
     ) -> None:
         """The leading token(s) become the operation; everything after is arguments."""
         assert _build_operation(argv) == (operation, remaining)
 
-    @pytest.mark.parametrize(
-        ("group", "subcommand"), _TWO_PART_GROUPS, ids=_TWO_PART_GROUP_IDS
-    )
-    def test_every_documented_group_produces_a_two_part_operation(
-        self, group: str, subcommand: str
-    ) -> None:
+    @pytest.mark.parametrize(('group', 'subcommand'), _TWO_PART_GROUPS, ids=_TWO_PART_GROUP_IDS)
+    def test_every_documented_group_produces_a_two_part_operation(self, group: str, subcommand: str) -> None:
         """Each documented group/subcommand pair joins into one operation string."""
         operation, _remaining = _build_operation([group, subcommand])
 
-        assert operation == f"{group} {subcommand}"
+        assert operation == f'{group} {subcommand}'
 
 
 # =============================================================================
@@ -352,10 +349,10 @@ class TestReadMarshal:
 
     def test_reads_marshal_from_explicit_project_dir(self, tmp_path):
         """_read_marshal returns parsed dict when project_dir contains .plan/marshal.json."""
-        _make_marshal_file(tmp_path, "claude")
+        _make_marshal_file(tmp_path, 'claude')
         result = _read_marshal(str(tmp_path))
         assert result is not None
-        assert result["runtime"]["target"] == "claude"
+        assert result['runtime']['target'] == 'claude'
 
     def test_returns_none_when_project_dir_has_no_marshal(self, tmp_path):
         """_read_marshal returns None when marshal.json is absent in project_dir."""
@@ -364,30 +361,30 @@ class TestReadMarshal:
 
     def test_returns_none_for_malformed_json_in_project_dir(self, tmp_path):
         """_read_marshal returns None when marshal.json contains malformed JSON."""
-        plan_dir = tmp_path / ".plan"
+        plan_dir = tmp_path / '.plan'
         plan_dir.mkdir()
-        (plan_dir / "marshal.json").write_text("{ not valid json }", encoding="utf-8")
+        (plan_dir / 'marshal.json').write_text('{ not valid json }', encoding='utf-8')
         result = _read_marshal(str(tmp_path))
         assert result is None
 
     def test_returns_none_when_marshal_is_not_dict(self, tmp_path):
         """_read_marshal returns None when marshal.json root is not a JSON object."""
-        plan_dir = tmp_path / ".plan"
+        plan_dir = tmp_path / '.plan'
         plan_dir.mkdir()
-        (plan_dir / "marshal.json").write_text(json.dumps([1, 2, 3]), encoding="utf-8")
+        (plan_dir / 'marshal.json').write_text(json.dumps([1, 2, 3]), encoding='utf-8')
         result = _read_marshal(str(tmp_path))
         assert result is None
 
     def test_cwd_walk_finds_marshal_in_parent(self, tmp_path, monkeypatch):
         """Without project_dir, _read_marshal walks up from cwd to find marshal.json."""
-        _make_marshal_file(tmp_path, "opencode")
+        _make_marshal_file(tmp_path, 'opencode')
         # Change cwd to a sub-directory so the walk must climb.
-        nested = tmp_path / "a" / "b"
+        nested = tmp_path / 'a' / 'b'
         nested.mkdir(parents=True)
         monkeypatch.chdir(nested)
         result = _read_marshal(None)
         assert result is not None
-        assert result["runtime"]["target"] == "opencode"
+        assert result['runtime']['target'] == 'opencode'
 
     def test_cwd_walk_returns_none_when_no_marshal_found(self, outside_repo_dir, monkeypatch):
         """_read_marshal returns None when marshal.json is absent in the entire ancestry."""
@@ -413,13 +410,13 @@ class TestReadMarshal:
 #: guess. The last row is the one exception to that: a non-string target is
 #: COERCED rather than refused.
 _RESOLVE_TARGET_CASES = [
-    ({"runtime": {"target": "claude"}}, "claude"),
-    ({"runtime": {"target": "opencode"}}, "opencode"),
+    ({'runtime': {'target': 'claude'}}, 'claude'),
+    ({'runtime': {'target': 'opencode'}}, 'opencode'),
     ({}, None),
-    ({"runtime": "claude"}, None),
-    ({"runtime": {}}, None),
-    ({"runtime": {"target": ""}}, None),
-    ({"runtime": {"target": 42}}, "42"),
+    ({'runtime': 'claude'}, None),
+    ({'runtime': {}}, None),
+    ({'runtime': {'target': ''}}, None),
+    ({'runtime': {'target': 42}}, '42'),
 ]
 
 _RESOLVE_TARGET_IDS = [
@@ -436,9 +433,7 @@ _RESOLVE_TARGET_IDS = [
 class TestResolveTarget:
     """Tests for target extraction from marshal data."""
 
-    @pytest.mark.parametrize(
-        ("marshal", "expected"), _RESOLVE_TARGET_CASES, ids=_RESOLVE_TARGET_IDS
-    )
+    @pytest.mark.parametrize(('marshal', 'expected'), _RESOLVE_TARGET_CASES, ids=_RESOLVE_TARGET_IDS)
     def test_a_target_resolves_or_reports_that_it_did_not(self, marshal, expected):
         """A usable ``runtime.target`` resolves; every other shape reports ``None``."""
         assert _resolve_target(marshal) == expected
@@ -456,7 +451,7 @@ class TestMakeRuntime:
         """_make_runtime('claude') returns a ClaudeRuntime instance."""
         from claude_runtime import ClaudeRuntime
 
-        runtime = _make_runtime("claude")
+        runtime = _make_runtime('claude')
         assert runtime is not None
         assert isinstance(runtime, ClaudeRuntime)
 
@@ -464,13 +459,13 @@ class TestMakeRuntime:
         """_make_runtime('opencode') returns an OpenCodeRuntime instance."""
         from opencode_runtime import OpenCodeRuntime
 
-        runtime = _make_runtime("opencode")
+        runtime = _make_runtime('opencode')
         assert runtime is not None
         assert isinstance(runtime, OpenCodeRuntime)
 
     @pytest.mark.parametrize(
-        "target",
-        ["unknown", "", "CLAUDE"],
+        'target',
+        ['unknown', '', 'CLAUDE'],
         ids=['an-unregistered-name', 'the-empty-string', 'the-right-name-in-the-wrong-case'],
     )
     def test_unknown_target_returns_none(self, target: str) -> None:
@@ -487,11 +482,11 @@ class TestParseJsonList:
     """Tests for the JSON-array argument helper."""
 
     @pytest.mark.parametrize(
-        ("raw", "expected"),
+        ('raw', 'expected'),
         [
-            ("[]", []),
-            ('["Read(**)", "Write(.plan/**)"]', ["Read(**)", "Write(.plan/**)"]),
-            ("[1, 2, 3]", ["1", "2", "3"]),
+            ('[]', []),
+            ('["Read(**)", "Write(.plan/**)"]', ['Read(**)', 'Write(.plan/**)']),
+            ('[1, 2, 3]', ['1', '2', '3']),
         ],
         ids=['an-empty-array', 'an-array-of-strings', 'non-strings-are-coerced'],
     )
@@ -501,7 +496,7 @@ class TestParseJsonList:
 
     def test_raises_on_non_array_json(self):
         """_parse_json_list raises ValueError for a non-array JSON value."""
-        with pytest.raises(ValueError, match="expected JSON array"):
+        with pytest.raises(ValueError, match='expected JSON array'):
             _parse_json_list('{"key": "value"}')
 
     def test_raises_on_invalid_json(self):
@@ -509,7 +504,7 @@ class TestParseJsonList:
         import json as _json
 
         with pytest.raises(_json.JSONDecodeError):
-            _parse_json_list("not json")
+            _parse_json_list('not json')
 
 
 # =============================================================================
@@ -523,19 +518,19 @@ class TestParseContext:
     def test_parses_valid_object(self):
         """_parse_context returns a dict for a valid JSON object."""
         result = _parse_context('{"key": "value", "count": 3}')
-        assert result == {"key": "value", "count": 3}
+        assert result == {'key': 'value', 'count': 3}
 
     def test_raises_on_non_object_json(self):
         """_parse_context raises ValueError for a JSON array."""
-        with pytest.raises(ValueError, match="expected JSON object"):
-            _parse_context("[1, 2, 3]")
+        with pytest.raises(ValueError, match='expected JSON object'):
+            _parse_context('[1, 2, 3]')
 
     def test_raises_on_invalid_json(self):
         """_parse_context raises json.JSONDecodeError for malformed input."""
         import json as _json
 
         with pytest.raises(_json.JSONDecodeError):
-            _parse_context("not json")
+            _parse_context('not json')
 
 
 # =============================================================================
@@ -555,21 +550,21 @@ class TestDispatch:
 
     def test_dispatch_project_initial_setup(self, rt):
         """project initial-setup passes project_dir and target to runtime."""
-        _dispatch(rt, "project initial-setup", ["--project-dir", "/tmp/proj", "--target", "claude"])
-        rt.project_initial_setup.assert_called_once_with("/tmp/proj", "claude")
+        _dispatch(rt, 'project initial-setup', ['--project-dir', '/tmp/proj', '--target', 'claude'])
+        rt.project_initial_setup.assert_called_once_with('/tmp/proj', 'claude')
 
     def test_dispatch_project_initial_setup_defaults(self, rt):
         """project initial-setup uses '.' and 'claude' as defaults."""
-        _dispatch(rt, "project initial-setup", [])
-        rt.project_initial_setup.assert_called_once_with(".", "claude")
+        _dispatch(rt, 'project initial-setup', [])
+        rt.project_initial_setup.assert_called_once_with('.', 'claude')
 
     # ---- project install-hook -------------------------------------------------
 
     def test_dispatch_project_install_hook(self, rt):
         """project install-hook forwards the target id, with no overwrite key authorised."""
-        _dispatch(rt, "project install-hook", ["--target", "claude"])
+        _dispatch(rt, 'project install-hook', ['--target', 'claude'])
         rt.project_install_hook.assert_called_once_with(
-            "claude",
+            'claude',
             overwrite=(),
             enforcement=False,
         )
@@ -578,28 +573,28 @@ class TestDispatch:
         """Repeated --overwrite accumulates into the overwrite key tuple, in order."""
         _dispatch(
             rt,
-            "project install-hook",
+            'project install-hook',
             [
-                "--target",
-                "claude",
-                "--overwrite",
-                "statusline",
-                "--overwrite",
-                "env-disable",
+                '--target',
+                'claude',
+                '--overwrite',
+                'statusline',
+                '--overwrite',
+                'env-disable',
             ],
         )
         rt.project_install_hook.assert_called_once_with(
-            "claude",
-            overwrite=("statusline", "env-disable"),
+            'claude',
+            overwrite=('statusline', 'env-disable'),
             enforcement=False,
         )
 
     def test_dispatch_project_install_hook_forwards_unknown_overwrite_key(self, rt):
         """The router does not validate overwrite keys — the target owns the key set."""
-        _dispatch(rt, "project install-hook", ["--target", "claude", "--overwrite", "bogus"])
+        _dispatch(rt, 'project install-hook', ['--target', 'claude', '--overwrite', 'bogus'])
         rt.project_install_hook.assert_called_once_with(
-            "claude",
-            overwrite=("bogus",),
+            'claude',
+            overwrite=('bogus',),
             enforcement=False,
         )
 
@@ -607,11 +602,11 @@ class TestDispatch:
         """project install-hook forwards enforcement=True when --enforcement is supplied."""
         _dispatch(
             rt,
-            "project install-hook",
-            ["--target", "claude", "--enforcement"],
+            'project install-hook',
+            ['--target', 'claude', '--enforcement'],
         )
         rt.project_install_hook.assert_called_once_with(
-            "claude",
+            'claude',
             overwrite=(),
             enforcement=True,
         )
@@ -619,26 +614,26 @@ class TestDispatch:
     def test_dispatch_project_install_hook_missing_target_rejected(self, rt):
         """project install-hook without --target is rejected by argparse (SystemExit)."""
         with pytest.raises(SystemExit):
-            _dispatch(rt, "project install-hook", [])
+            _dispatch(rt, 'project install-hook', [])
         rt.project_install_hook.assert_not_called()
 
     # ---- session capture ------------------------------------------------------
 
     def test_dispatch_session_capture(self, rt):
         """session capture forwards --plan-id to runtime."""
-        _dispatch(rt, "session capture", ["--plan-id", "my-plan"])
-        rt.session_capture.assert_called_once_with("my-plan")
+        _dispatch(rt, 'session capture', ['--plan-id', 'my-plan'])
+        rt.session_capture.assert_called_once_with('my-plan')
 
     # ---- session render-title -------------------------------------------------
 
     def test_dispatch_session_render_title(self, rt):
         """session render-title defaults to statusline=False."""
-        _dispatch(rt, "session render-title", [])
+        _dispatch(rt, 'session render-title', [])
         rt.session_render_title.assert_called_once_with(statusline=False)
 
     def test_dispatch_session_render_title_with_statusline(self, rt):
         """session render-title --statusline forwards statusline=True."""
-        _dispatch(rt, "session render-title", ["--statusline"])
+        _dispatch(rt, 'session render-title', ['--statusline'])
         rt.session_render_title.assert_called_once_with(statusline=True)
 
     # ---- session push-title-token --------------------------------------------
@@ -647,15 +642,15 @@ class TestDispatch:
         """session push-title-token forwards --plan-id and --icon to runtime."""
         _dispatch(
             rt,
-            "session push-title-token",
-            ["--plan-id", "my-plan", "--icon", "⏳"],
+            'session push-title-token',
+            ['--plan-id', 'my-plan', '--icon', '⏳'],
         )
-        rt.session_push_title_token.assert_called_once_with("my-plan", "⏳", store="plans", slug=None)
+        rt.session_push_title_token.assert_called_once_with('my-plan', '⏳', store='plans', slug=None)
 
     def test_dispatch_session_push_title_token_icon_optional(self, rt):
         """session push-title-token without --icon forwards icon=None (plain repaint)."""
-        _dispatch(rt, "session push-title-token", ["--plan-id", "my-plan"])
-        rt.session_push_title_token.assert_called_once_with("my-plan", None, store="plans", slug=None)
+        _dispatch(rt, 'session push-title-token', ['--plan-id', 'my-plan'])
+        rt.session_push_title_token.assert_called_once_with('my-plan', None, store='plans', slug=None)
 
     # ---- session bind ---------------------------------------------------------
 
@@ -663,53 +658,53 @@ class TestDispatch:
         """session bind forwards --plan-id and --session-id to runtime."""
         _dispatch(
             rt,
-            "session bind",
-            ["--plan-id", "my-plan", "--session-id", "sess-1"],
+            'session bind',
+            ['--plan-id', 'my-plan', '--session-id', 'sess-1'],
         )
-        rt.session_bind.assert_called_once_with("my-plan", "sess-1")
+        rt.session_bind.assert_called_once_with('my-plan', 'sess-1')
 
     def test_dispatch_session_bind_session_id_optional(self, rt):
         """session bind without --session-id forwards session_id=None (env fallback)."""
-        _dispatch(rt, "session bind", ["--plan-id", "my-plan"])
-        rt.session_bind.assert_called_once_with("my-plan", None)
+        _dispatch(rt, 'session bind', ['--plan-id', 'my-plan'])
+        rt.session_bind.assert_called_once_with('my-plan', None)
 
     def test_dispatch_session_bind_missing_plan_id_rejected(self, rt):
         """session bind without --plan-id is rejected by argparse (SystemExit)."""
         with pytest.raises(SystemExit):
-            _dispatch(rt, "session bind", [])
+            _dispatch(rt, 'session bind', [])
         rt.session_bind.assert_not_called()
 
     # ---- session resolve-plan -------------------------------------------------
 
     def test_dispatch_session_resolve_plan(self, rt):
         """session resolve-plan forwards --session-id to runtime."""
-        _dispatch(rt, "session resolve-plan", ["--session-id", "sess-1"])
-        rt.session_resolve_plan.assert_called_once_with("sess-1")
+        _dispatch(rt, 'session resolve-plan', ['--session-id', 'sess-1'])
+        rt.session_resolve_plan.assert_called_once_with('sess-1')
 
     def test_dispatch_session_resolve_plan_session_id_optional(self, rt):
         """session resolve-plan without --session-id forwards session_id=None."""
-        _dispatch(rt, "session resolve-plan", [])
+        _dispatch(rt, 'session resolve-plan', [])
         rt.session_resolve_plan.assert_called_once_with(None)
 
     # ---- session doctor -------------------------------------------------------
 
     def test_dispatch_session_doctor(self, rt):
         """session doctor without --fix forwards fix=False."""
-        _dispatch(rt, "session doctor", [])
+        _dispatch(rt, 'session doctor', [])
         rt.session_doctor.assert_called_once_with(False)
 
     def test_dispatch_session_doctor_fix(self, rt):
         """session doctor --fix forwards fix=True."""
-        _dispatch(rt, "session doctor", ["--fix"])
+        _dispatch(rt, 'session doctor', ['--fix'])
         rt.session_doctor.assert_called_once_with(True)
 
     # ---- session reload-directive (the 22nd operation) ------------------------
 
     def test_dispatch_session_reload_directive(self, rt):
         """The router dispatches the 22nd operation to session_reload_directive()."""
-        result = _dispatch(rt, "session reload-directive", [])
+        result = _dispatch(rt, 'session reload-directive', [])
         rt.session_reload_directive.assert_called_once_with()
-        assert parse_toon(result)["operation"] == "session reload-directive"
+        assert parse_toon(result)['operation'] == 'session reload-directive'
 
     # ---- permission configure -------------------------------------------------
 
@@ -717,27 +712,27 @@ class TestDispatch:
         """permission configure forwards semantic --permissions intents to runtime."""
         _dispatch(
             rt,
-            "permission configure",
+            'permission configure',
             [
-                "--scope", "project",
-                "--permissions", '{"kind":"path","tool":"Read","path":"**"}',
+                '--scope',
+                'project',
+                '--permissions',
+                '{"kind":"path","tool":"Read","path":"**"}',
             ],
         )
-        rt.permission_configure.assert_called_once_with(
-            "project", [{"kind": "path", "tool": "Read", "path": "**"}]
-        )
+        rt.permission_configure.assert_called_once_with('project', [{'kind': 'path', 'tool': 'Read', 'path': '**'}])
 
     def test_dispatch_permission_configure_bad_intent(self, rt):
         """permission configure with a non-JSON --permissions value errors."""
         result = _parsed(
             _dispatch(
                 rt,
-                "permission configure",
-                ["--scope", "project", "--permissions", "Read(**)"],
+                'permission configure',
+                ['--scope', 'project', '--permissions', 'Read(**)'],
             )
         )
-        assert result["status"] == "error"
-        assert result["error"] == "invalid_intent"
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_intent'
         rt.permission_configure.assert_not_called()
 
     # ---- permission analyze ---------------------------------------------------
@@ -746,17 +741,15 @@ class TestDispatch:
         """permission analyze forwards scope, checks list, and marshal path to runtime."""
         _dispatch(
             rt,
-            "permission analyze",
-            ["--scope", "both", "--checks", "redundant,missing-steps", "--marshal", "/tmp/m.json"],
+            'permission analyze',
+            ['--scope', 'both', '--checks', 'redundant,missing-steps', '--marshal', '/tmp/m.json'],
         )
-        rt.permission_analyze.assert_called_once_with(
-            "both", ["redundant", "missing-steps"], "/tmp/m.json"
-        )
+        rt.permission_analyze.assert_called_once_with('both', ['redundant', 'missing-steps'], '/tmp/m.json')
 
     def test_dispatch_permission_analyze_no_marshal(self, rt):
         """permission analyze without --marshal passes None as marshal_path."""
-        _dispatch(rt, "permission analyze", ["--scope", "global", "--checks", "all"])
-        rt.permission_analyze.assert_called_once_with("global", ["all"], None)
+        _dispatch(rt, 'permission analyze', ['--scope', 'global', '--checks', 'all'])
+        rt.permission_analyze.assert_called_once_with('global', ['all'], None)
 
     # ---- permission fix -------------------------------------------------------
 
@@ -764,25 +757,28 @@ class TestDispatch:
         """permission fix normalize forwards scope, operation, empty permissions, dry_run=False."""
         _dispatch(
             rt,
-            "permission fix",
-            ["--scope", "project", "--operation", "normalize"],
+            'permission fix',
+            ['--scope', 'project', '--operation', 'normalize'],
         )
-        rt.permission_fix.assert_called_once_with("project", "normalize", [], False)
+        rt.permission_fix.assert_called_once_with('project', 'normalize', [], False)
 
     def test_dispatch_permission_fix_add_dry_run(self, rt):
         """permission fix add with --dry-run forwards semantic intents and dry_run=True."""
         _dispatch(
             rt,
-            "permission fix",
+            'permission fix',
             [
-                "--scope", "global",
-                "--operation", "add",
-                "--permissions", '{"kind":"path","tool":"Read","path":"**"}',
-                "--dry-run",
+                '--scope',
+                'global',
+                '--operation',
+                'add',
+                '--permissions',
+                '{"kind":"path","tool":"Read","path":"**"}',
+                '--dry-run',
             ],
         )
         rt.permission_fix.assert_called_once_with(
-            "global", "add", [{"kind": "path", "tool": "Read", "path": "**"}], True
+            'global', 'add', [{'kind': 'path', 'tool': 'Read', 'path': '**'}], True
         )
 
     # ---- permission ensure-wildcards ------------------------------------------
@@ -791,15 +787,15 @@ class TestDispatch:
         """permission ensure-wildcards forwards scope, marketplace_dir, dry_run to runtime."""
         _dispatch(
             rt,
-            "permission ensure-wildcards",
-            ["--scope", "project", "--marketplace-dir", "mktplace/", "--dry-run"],
+            'permission ensure-wildcards',
+            ['--scope', 'project', '--marketplace-dir', 'mktplace/', '--dry-run'],
         )
-        rt.permission_ensure_wildcards.assert_called_once_with("project", "mktplace/", True)
+        rt.permission_ensure_wildcards.assert_called_once_with('project', 'mktplace/', True)
 
     def test_dispatch_permission_ensure_wildcards_defaults(self, rt):
         """permission ensure-wildcards uses 'marketplace/' as default marketplace-dir."""
-        _dispatch(rt, "permission ensure-wildcards", ["--scope", "global"])
-        rt.permission_ensure_wildcards.assert_called_once_with("global", "marketplace/", False)
+        _dispatch(rt, 'permission ensure-wildcards', ['--scope', 'global'])
+        rt.permission_ensure_wildcards.assert_called_once_with('global', 'marketplace/', False)
 
     # ---- permission ensure-steps ----------------------------------------------
 
@@ -807,48 +803,51 @@ class TestDispatch:
         """permission ensure-steps forwards marshal path, scope, and dry_run to runtime."""
         _dispatch(
             rt,
-            "permission ensure-steps",
-            ["--marshal", ".plan/marshal.json", "--scope", "project"],
+            'permission ensure-steps',
+            ['--marshal', '.plan/marshal.json', '--scope', 'project'],
         )
-        rt.permission_ensure_steps.assert_called_once_with(".plan/marshal.json", "project", False)
+        rt.permission_ensure_steps.assert_called_once_with('.plan/marshal.json', 'project', False)
 
     # ---- permission web-analyze -----------------------------------------------
 
     def test_dispatch_permission_web_analyze(self, rt):
         """permission web-analyze forwards scope to runtime."""
-        _dispatch(rt, "permission web-analyze", ["--scope", "both"])
-        rt.permission_web_analyze.assert_called_once_with("both")
+        _dispatch(rt, 'permission web-analyze', ['--scope', 'both'])
+        rt.permission_web_analyze.assert_called_once_with('both')
 
     # ---- permission web-apply -------------------------------------------------
 
     def test_dispatch_permission_web_apply_defaults(self, rt):
         """permission web-apply with only --scope uses empty add/remove lists."""
-        _dispatch(rt, "permission web-apply", ["--scope", "project"])
-        rt.permission_web_apply.assert_called_once_with("project", [], [], False)
+        _dispatch(rt, 'permission web-apply', ['--scope', 'project'])
+        rt.permission_web_apply.assert_called_once_with('project', [], [], False)
 
     def test_dispatch_permission_web_apply_with_lists(self, rt):
         """permission web-apply parses --add and --remove JSON arrays."""
         _dispatch(
             rt,
-            "permission web-apply",
+            'permission web-apply',
             [
-                "--scope", "global",
-                "--add", '["example.com"]',
-                "--remove", '["old.com"]',
+                '--scope',
+                'global',
+                '--add',
+                '["example.com"]',
+                '--remove',
+                '["old.com"]',
             ],
         )
-        rt.permission_web_apply.assert_called_once_with("global", ["example.com"], ["old.com"], False)
+        rt.permission_web_apply.assert_called_once_with('global', ['example.com'], ['old.com'], False)
 
     def test_dispatch_permission_web_apply_invalid_add_returns_error(self, rt):
         """permission web-apply with non-array --add returns TOON error instead of raising."""
         result = _dispatch(
             rt,
-            "permission web-apply",
-            ["--scope", "project", "--add", '{"bad": "input"}'],
+            'permission web-apply',
+            ['--scope', 'project', '--add', '{"bad": "input"}'],
         )
         parsed = _parsed(result)
-        assert parsed["status"] == "error"
-        assert "invalid_argument" in parsed.get("error", "")
+        assert parsed['status'] == 'error'
+        assert 'invalid_argument' in parsed.get('error', '')
         rt.permission_web_apply.assert_not_called()
 
     # ---- metrics capture ------------------------------------------------------
@@ -857,102 +856,102 @@ class TestDispatch:
         """metrics capture forwards plan_id, phase, and total_tokens to runtime."""
         _dispatch(
             rt,
-            "metrics capture",
-            ["--plan-id", "my-plan", "--phase", "phase-1-init", "--total-tokens", "5000"],
+            'metrics capture',
+            ['--plan-id', 'my-plan', '--phase', 'phase-1-init', '--total-tokens', '5000'],
         )
-        rt.metrics_capture.assert_called_once_with("my-plan", "phase-1-init", 5000)
+        rt.metrics_capture.assert_called_once_with('my-plan', 'phase-1-init', 5000)
 
     def test_dispatch_metrics_capture_no_tokens(self, rt):
         """metrics capture without --total-tokens passes None."""
-        _dispatch(rt, "metrics capture", ["--plan-id", "p", "--phase", "ph"])
-        rt.metrics_capture.assert_called_once_with("p", "ph", None)
+        _dispatch(rt, 'metrics capture', ['--plan-id', 'p', '--phase', 'ph'])
+        rt.metrics_capture.assert_called_once_with('p', 'ph', None)
 
     # ---- chat extract-signal ----------------------------------------------------
 
     def test_dispatch_chat_extract_signal(self, rt):
         """chat extract-signal forwards --session-id to the runtime op."""
-        _dispatch(rt, "chat extract-signal", ["--session-id", "22222222-2222-2222-2222-222222222299"])
-        rt.chat_extract_signal.assert_called_once_with("22222222-2222-2222-2222-222222222299")
+        _dispatch(rt, 'chat extract-signal', ['--session-id', '22222222-2222-2222-2222-222222222299'])
+        rt.chat_extract_signal.assert_called_once_with('22222222-2222-2222-2222-222222222299')
 
     def test_dispatch_chat_extract_signal_required_session_id(self, rt):
         """chat extract-signal without --session-id is rejected by argparse."""
         with pytest.raises(SystemExit):
-            _dispatch(rt, "chat extract-signal", [])
+            _dispatch(rt, 'chat extract-signal', [])
         rt.chat_extract_signal.assert_not_called()
 
     # ---- subagent dispatch ----------------------------------------------------
 
     def test_dispatch_subagent_dispatch_minimal(self, rt):
         """subagent dispatch with only --agent passes None for prompt_file and context."""
-        _dispatch(rt, "subagent dispatch", ["--agent", "execution-context"])
-        rt.subagent_dispatch.assert_called_once_with("execution-context", None, None)
+        _dispatch(rt, 'subagent dispatch', ['--agent', 'execution-context'])
+        rt.subagent_dispatch.assert_called_once_with('execution-context', None, None)
 
     def test_dispatch_subagent_dispatch_with_context(self, rt):
         """subagent dispatch parses --context JSON object."""
         _dispatch(
             rt,
-            "subagent dispatch",
-            ["--agent", "my-agent", "--context", '{"plan_id": "p1"}'],
+            'subagent dispatch',
+            ['--agent', 'my-agent', '--context', '{"plan_id": "p1"}'],
         )
-        rt.subagent_dispatch.assert_called_once_with("my-agent", None, {"plan_id": "p1"})
+        rt.subagent_dispatch.assert_called_once_with('my-agent', None, {'plan_id': 'p1'})
 
     def test_dispatch_subagent_dispatch_invalid_context_returns_error(self, rt):
         """subagent dispatch with non-object --context returns TOON error."""
         result = _dispatch(
             rt,
-            "subagent dispatch",
-            ["--agent", "my-agent", "--context", "[1, 2]"],
+            'subagent dispatch',
+            ['--agent', 'my-agent', '--context', '[1, 2]'],
         )
         parsed = _parsed(result)
-        assert parsed["status"] == "error"
-        assert "invalid_argument" in parsed.get("error", "")
+        assert parsed['status'] == 'error'
+        assert 'invalid_argument' in parsed.get('error', '')
         rt.subagent_dispatch.assert_not_called()
 
     def test_dispatch_subagent_dispatch_with_prompt_file(self, rt):
         """subagent dispatch forwards --prompt-file to runtime."""
         _dispatch(
             rt,
-            "subagent dispatch",
-            ["--agent", "my-agent", "--prompt-file", "/tmp/prompt.md"],
+            'subagent dispatch',
+            ['--agent', 'my-agent', '--prompt-file', '/tmp/prompt.md'],
         )
-        rt.subagent_dispatch.assert_called_once_with("my-agent", "/tmp/prompt.md", None)
+        rt.subagent_dispatch.assert_called_once_with('my-agent', '/tmp/prompt.md', None)
 
     # ---- health-check ---------------------------------------------------------
 
     def test_dispatch_health_check(self, rt):
         """health-check forwards --checks to runtime."""
-        _dispatch(rt, "health-check", ["--checks", "all"])
-        rt.health_check.assert_called_once_with("all")
+        _dispatch(rt, 'health-check', ['--checks', 'all'])
+        rt.health_check.assert_called_once_with('all')
 
     def test_dispatch_health_check_specific_checks(self, rt):
         """health-check forwards specific comma-separated checks to runtime."""
-        _dispatch(rt, "health-check", ["--checks", "permissions,display"])
-        rt.health_check.assert_called_once_with("permissions,display")
+        _dispatch(rt, 'health-check', ['--checks', 'permissions,display'])
+        rt.health_check.assert_called_once_with('permissions,display')
 
     # ---- harness bash-timeout-ceiling ------------------------------------------
 
     def test_dispatch_harness_bash_timeout_ceiling(self, rt):
         """harness bash-timeout-ceiling rejects stray args and forwards to runtime."""
-        result = _dispatch(rt, "harness bash-timeout-ceiling", [])
+        result = _dispatch(rt, 'harness bash-timeout-ceiling', [])
         parsed = _parsed(result)
-        assert parsed["operation"] == "harness bash-timeout-ceiling"
-        assert parsed["status"] == "success"
+        assert parsed['operation'] == 'harness bash-timeout-ceiling'
+        assert parsed['status'] == 'success'
         rt.harness_bash_timeout_ceiling.assert_called_once_with()
 
     def test_dispatch_harness_bash_timeout_ceiling_rejects_args(self, rt):
         """harness bash-timeout-ceiling takes no arguments."""
         with pytest.raises(SystemExit):
-            _dispatch(rt, "harness bash-timeout-ceiling", ["--ceiling", "999"])
+            _dispatch(rt, 'harness bash-timeout-ceiling', ['--ceiling', '999'])
         rt.harness_bash_timeout_ceiling.assert_not_called()
 
     # ---- unknown operation ----------------------------------------------------
 
     def test_dispatch_unknown_operation_returns_toon_error(self, rt):
         """An unrecognized operation returns a TOON error without calling the runtime."""
-        result = _dispatch(rt, "not-a-real-operation", [])
+        result = _dispatch(rt, 'not-a-real-operation', [])
         parsed = _parsed(result)
-        assert parsed["status"] == "error"
-        assert "unknown_operation" in parsed.get("error", "")
+        assert parsed['status'] == 'error'
+        assert 'unknown_operation' in parsed.get('error', '')
         # No runtime methods should have been called.
         rt.project_initial_setup.assert_not_called()
         rt.session_capture.assert_not_called()
@@ -971,7 +970,7 @@ class TestMain:
         code = main([])
         assert code == 1
         captured = capsys.readouterr()
-        assert "usage" in captured.err.lower() or "platform_runtime" in captured.err.lower()
+        assert 'usage' in captured.err.lower() or 'platform_runtime' in captured.err.lower()
 
     def test_main_missing_marshal_returns_0_with_toon_error(self, outside_repo_dir, monkeypatch, capsys):
         """main() with non-project-initial-setup op and no marshal prints TOON error, exit 0."""
@@ -979,33 +978,33 @@ class TestMain:
         # Must be OUTSIDE the repo: pytest's tmp_path now roots under the
         # repo-local --basetemp, whose ancestry contains the real .plan/marshal.json.
         monkeypatch.chdir(outside_repo_dir)
-        code = main(["session", "capture", "--plan-id", "p1"])
+        code = main(['session', 'capture', '--plan-id', 'p1'])
         assert code == 0
         captured = capsys.readouterr()
         parsed = _parsed(captured.out)
-        assert parsed["status"] == "error"
-        assert parsed["error"] == "marshal_not_found"
+        assert parsed['status'] == 'error'
+        assert parsed['error'] == 'marshal_not_found'
 
     def test_main_unknown_target_in_marshal_returns_0_with_toon_error(self, tmp_path, capsys, in_tmp_cwd):
         """main() with an unknown runtime.target in marshal prints TOON error, exit 0."""
-        _make_marshal_file(tmp_path, "unsupported-runtime")
-        code = main(["session", "capture", "--plan-id", "p1"])
+        _make_marshal_file(tmp_path, 'unsupported-runtime')
+        code = main(['session', 'capture', '--plan-id', 'p1'])
         assert code == 0
         captured = capsys.readouterr()
         parsed = _parsed(captured.out)
-        assert parsed["status"] == "error"
-        assert parsed["error"] == "unknown_target"
+        assert parsed['status'] == 'error'
+        assert parsed['error'] == 'unknown_target'
 
     def test_main_dispatches_to_runtime_and_prints_toon(self, tmp_path, capsys, in_tmp_cwd):
         """main() with a valid marshal dispatches correctly and prints TOON to stdout."""
-        _make_marshal_file(tmp_path, "claude")
+        _make_marshal_file(tmp_path, 'claude')
         rt = _mock_runtime()
         with _make_runtime_returning(rt):
-            code = main(["session", "render-title"])
+            code = main(['session', 'render-title'])
         assert code == 0
         captured = capsys.readouterr()
         parsed = _parsed(captured.out)
-        assert parsed["status"] == "success"
+        assert parsed['status'] == 'success'
         rt.session_render_title.assert_called_once()
 
     # ---- project install-hook: the two-target-identifier seam ----------------
@@ -1018,57 +1017,49 @@ class TestMain:
     # the wrong question), and claude-serving-opencode raised ``unknown_target``
     # ("must be 'claude' or an absolute path" — an error about the wrong thing).
 
-    def test_install_hook_refuses_a_registered_target_other_than_the_projects(
-        self, tmp_path, capsys, in_tmp_cwd
-    ):
+    def test_install_hook_refuses_a_registered_target_other_than_the_projects(self, tmp_path, capsys, in_tmp_cwd):
         """An opencode project asked to install the claude hook is refused, not declined."""
-        _make_marshal_file(tmp_path, "opencode")
+        _make_marshal_file(tmp_path, 'opencode')
         rt = _mock_runtime()
         with _make_runtime_returning(rt):
-            code = main(["project", "install-hook", "--target", "claude"])
+            code = main(['project', 'install-hook', '--target', 'claude'])
         assert code == 0
         parsed = _parsed(capsys.readouterr().out)
-        assert parsed["status"] == "error"
-        assert parsed["error"] == "target_mismatch"
+        assert parsed['status'] == 'error'
+        assert parsed['error'] == 'target_mismatch'
         # The refusal must happen BEFORE dispatch: reaching the runtime at all is
         # what produced the misleading no-op this guard exists to prevent.
         rt.project_install_hook.assert_not_called()
 
-    def test_install_hook_refuses_the_inverse_mismatch_too(
-        self, tmp_path, capsys, in_tmp_cwd
-    ):
+    def test_install_hook_refuses_the_inverse_mismatch_too(self, tmp_path, capsys, in_tmp_cwd):
         """The guard is symmetric — a claude project asked for opencode is refused."""
-        _make_marshal_file(tmp_path, "claude")
+        _make_marshal_file(tmp_path, 'claude')
         rt = _mock_runtime()
         with _make_runtime_returning(rt):
-            code = main(["project", "install-hook", "--target", "opencode"])
+            code = main(['project', 'install-hook', '--target', 'opencode'])
         assert code == 0
         parsed = _parsed(capsys.readouterr().out)
-        assert parsed["status"] == "error"
-        assert parsed["error"] == "target_mismatch"
+        assert parsed['status'] == 'error'
+        assert parsed['error'] == 'target_mismatch'
         rt.project_install_hook.assert_not_called()
 
-    def test_install_hook_allows_the_projects_own_target(
-        self, tmp_path, capsys, in_tmp_cwd
-    ):
+    def test_install_hook_allows_the_projects_own_target(self, tmp_path, capsys, in_tmp_cwd):
         """Agreement is the ordinary path and must still dispatch."""
-        _make_marshal_file(tmp_path, "claude")
+        _make_marshal_file(tmp_path, 'claude')
         rt = _mock_runtime()
         with _make_runtime_returning(rt):
-            code = main(["project", "install-hook", "--target", "claude"])
+            code = main(['project', 'install-hook', '--target', 'claude'])
         assert code == 0
         rt.project_install_hook.assert_called_once()
 
-    def test_install_hook_still_passes_an_absolute_settings_path_through(
-        self, tmp_path, capsys, in_tmp_cwd
-    ):
+    def test_install_hook_still_passes_an_absolute_settings_path_through(self, tmp_path, capsys, in_tmp_cwd):
         """The absolute-path test/recovery override is NOT a registry key, so it is
         not a mismatch and must still reach the implementation that defines it."""
-        _make_marshal_file(tmp_path, "claude")
-        override = str(tmp_path / "settings.local.json")
+        _make_marshal_file(tmp_path, 'claude')
+        override = str(tmp_path / 'settings.local.json')
         rt = _mock_runtime()
         with _make_runtime_returning(rt):
-            code = main(["project", "install-hook", "--target", override])
+            code = main(['project', 'install-hook', '--target', override])
         assert code == 0
         rt.project_install_hook.assert_called_once()
         assert rt.project_install_hook.call_args.args[0] == override
@@ -1077,39 +1068,41 @@ class TestMain:
         """project initial-setup can run before marshal.json exists; uses --target arg."""
         rt = _mock_runtime()
         with _make_runtime_returning(rt) as mock_make:
-            code = main(
-                ["project", "initial-setup", "--project-dir", str(tmp_path), "--target", "opencode"]
-            )
+            code = main(['project', 'initial-setup', '--project-dir', str(tmp_path), '--target', 'opencode'])
         assert code == 0
-        mock_make.assert_called_once_with("opencode")
+        mock_make.assert_called_once_with('opencode')
 
     def test_main_marshal_with_missing_target_defaults_to_claude(self, tmp_path, capsys, in_tmp_cwd):
         """When marshal.json exists but lacks runtime.target, router defaults to 'claude'."""
-        plan_dir = tmp_path / ".plan"
+        plan_dir = tmp_path / '.plan'
         plan_dir.mkdir()
-        (plan_dir / "marshal.json").write_text(json.dumps({"runtime": {}}), encoding="utf-8")
+        (plan_dir / 'marshal.json').write_text(json.dumps({'runtime': {}}), encoding='utf-8')
         rt = _mock_runtime()
         with _make_runtime_returning(rt) as mock_make:
-            code = main(["health-check", "--checks", "all"])
+            code = main(['health-check', '--checks', 'all'])
         assert code == 0
-        mock_make.assert_called_once_with("claude")
+        mock_make.assert_called_once_with('claude')
 
     def test_main_dispatches_wait_for(self, tmp_path, capsys, in_tmp_cwd):
         """``wait for`` is reachable end-to-end through main()."""
-        _make_marshal_file(tmp_path, "claude")
+        _make_marshal_file(tmp_path, 'claude')
         rt = _mock_runtime()
         with _make_runtime_returning(rt):
             code = main(
                 [
-                    "wait", "for",
-                    "--observable", "build-job",
-                    "--reference", "job-1",
-                    "--bound-seconds", "60",
+                    'wait',
+                    'for',
+                    '--observable',
+                    'build-job',
+                    '--reference',
+                    'job-1',
+                    '--bound-seconds',
+                    '60',
                 ]
             )
         assert code == 0
-        assert _parsed(capsys.readouterr().out)["status"] == "success"
-        rt.wait_for.assert_called_once_with("build-job", "job-1", 60)
+        assert _parsed(capsys.readouterr().out)['status'] == 'success'
+        rt.wait_for.assert_called_once_with('build-job', 'job-1', 60)
 
     def test_main_uses_plan_dir_name_env_var(self, tmp_path, monkeypatch, capsys, in_tmp_cwd):
         """main() respects PLAN_DIR_NAME env var when locating marshal.json.
@@ -1120,18 +1113,16 @@ class TestMain:
         the ambient ``.plan``. It goes through ``_router_globals`` because
         ``_read_marshal`` reads the name from the same namespace ``main`` does.
         """
-        monkeypatch.setenv("PLAN_DIR_NAME", ".custom-plan")
-        custom_plan = tmp_path / ".custom-plan"
+        monkeypatch.setenv('PLAN_DIR_NAME', '.custom-plan')
+        custom_plan = tmp_path / '.custom-plan'
         custom_plan.mkdir()
-        (custom_plan / "marshal.json").write_text(
-            json.dumps({"runtime": {"target": "claude"}}), encoding="utf-8"
-        )
+        (custom_plan / 'marshal.json').write_text(json.dumps({'runtime': {'target': 'claude'}}), encoding='utf-8')
         rt = _mock_runtime()
         recorder = MagicMock(return_value=rt)
-        with _router_globals(_PLAN_DIR_NAME=".custom-plan", _make_runtime=recorder):
-            code = main(["health-check", "--checks", "all"])
+        with _router_globals(_PLAN_DIR_NAME='.custom-plan', _make_runtime=recorder):
+            code = main(['health-check', '--checks', 'all'])
         assert code == 0
-        recorder.assert_called_once_with("claude")
+        recorder.assert_called_once_with('claude')
 
 
 # =============================================================================

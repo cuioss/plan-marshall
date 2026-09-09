@@ -57,9 +57,7 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'workflow-integration-git', 'git-
 
 # The entrypoint filename is kebab-case (git-workflow.py), which is not a
 # valid Python module identifier — load it via importlib instead of `import`.
-git_workflow = load_script_module(
-    'plan-marshall', 'workflow-integration-git', 'git-workflow.py', 'git_workflow'
-)
+git_workflow = load_script_module('plan-marshall', 'workflow-integration-git', 'git-workflow.py', 'git_workflow')
 
 cmd_locate_plan_checkout = git_workflow.cmd_locate_plan_checkout
 cmd_worktree_create = git_workflow.cmd_worktree_create
@@ -80,7 +78,9 @@ def _serialize_toon_payload(payload: dict) -> str:
     return serialize_toon(payload)
 
 
-def _stub_manage_status_call(monkeypatch: pytest.MonkeyPatch, responses: dict[tuple[str, ...], tuple[int, dict | str, str]]) -> list[tuple[str, ...]]:
+def _stub_manage_status_call(
+    monkeypatch: pytest.MonkeyPatch, responses: dict[tuple[str, ...], tuple[int, dict | str, str]]
+) -> list[tuple[str, ...]]:
     """Replace ``git_workflow._manage_status_call`` with a stub.
 
     ``responses`` maps an arg tuple to a ``(returncode, stdout_payload, stderr)``
@@ -261,9 +261,7 @@ class TestWorktreePathResolution:
         assert result['exists'] is True
         assert mock.call_count == 1, 'resolution did not go through the resolver seam'
 
-    def test_returns_plan_resolution_failed_when_use_worktree_false(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_returns_plan_resolution_failed_when_use_worktree_false(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """A plan with no DEDICATED worktree is refused, not answered with main.
 
         ``worktree-path`` is a worktree verb: silently returning the main
@@ -280,9 +278,7 @@ class TestWorktreePathResolution:
         assert 'No worktree configured' in result['message']
         assert mock.call_count == 1
 
-    def test_propagates_resolver_error(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_propagates_resolver_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """A resolver failure surfaces as ``plan_resolution_failed``, message intact."""
         import file_ops  # local import: the handle is needed only to patch a seam here
 
@@ -313,9 +309,7 @@ class TestWorktreeCreate:
     override below).
     """
 
-    def test_create_writes_metadata_via_manage_status(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_create_writes_metadata_via_manage_status(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """A successful ``worktree-create`` invokes ``manage-status metadata
         --set`` for ``use_worktree``, ``worktree_path``, and ``worktree_branch``
         so subsequent verbs can resolve the path through the canonical channel.
@@ -357,12 +351,30 @@ class TestWorktreeCreate:
                     {'status': 'success'},
                     '',
                 ),
-                ('metadata', '--plan-id', 'my-plan', '--set', '--field', 'worktree_path', '--value', str(target_root / 'my-plan')): (
+                (
+                    'metadata',
+                    '--plan-id',
+                    'my-plan',
+                    '--set',
+                    '--field',
+                    'worktree_path',
+                    '--value',
+                    str(target_root / 'my-plan'),
+                ): (
                     0,
                     {'status': 'success'},
                     '',
                 ),
-                ('metadata', '--plan-id', 'my-plan', '--set', '--field', 'worktree_branch', '--value', 'feature/my-plan'): (
+                (
+                    'metadata',
+                    '--plan-id',
+                    'my-plan',
+                    '--set',
+                    '--field',
+                    'worktree_branch',
+                    '--value',
+                    'feature/my-plan',
+                ): (
                     0,
                     {'status': 'success'},
                     '',
@@ -370,9 +382,7 @@ class TestWorktreeCreate:
             },
         )
 
-        result = cmd_worktree_create(
-            Namespace(plan_id='my-plan', branch='feature/my-plan', base=None)
-        )
+        result = cmd_worktree_create(Namespace(plan_id='my-plan', branch='feature/my-plan', base=None))
 
         assert result['status'] == 'success', result
         assert result['plan_id'] == 'my-plan'
@@ -380,14 +390,10 @@ class TestWorktreeCreate:
         assert result['branch'] == 'feature/my-plan'
 
         # All three metadata fields must have been persisted via manage-status.
-        recorded_fields = {
-            call[5] for call in calls if len(call) >= 6 and call[0] == 'metadata' and call[3] == '--set'
-        }
+        recorded_fields = {call[5] for call in calls if len(call) >= 6 and call[0] == 'metadata' and call[3] == '--set'}
         assert recorded_fields == {'use_worktree', 'worktree_path', 'worktree_branch'}
 
-    def test_create_rejects_when_not_in_git_repo(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_create_rejects_when_not_in_git_repo(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Outside a git repo, ``get_worktree_root()`` raises and the verb
         emits ``plan_resolution_failed`` instead of leaking the exception."""
 
@@ -396,9 +402,7 @@ class TestWorktreeCreate:
 
         monkeypatch.setattr(git_workflow, 'get_worktree_root', raising)
 
-        result = cmd_worktree_create(
-            Namespace(plan_id='no-repo', branch='feature/no-repo', base=None)
-        )
+        result = cmd_worktree_create(Namespace(plan_id='no-repo', branch='feature/no-repo', base=None))
         assert result['status'] == 'error'
         assert result['error'] == 'plan_resolution_failed'
 
@@ -432,9 +436,7 @@ class TestWorktreeRemove:
     can be observed deterministically.
     """
 
-    def test_remove_drops_worktree_then_branch(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_remove_drops_worktree_then_branch(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         worktree = tmp_path / '.plan' / 'local' / 'worktrees' / 'rm-me'
         worktree.mkdir(parents=True)
 
@@ -607,9 +609,7 @@ def _entry_count(root: Path) -> int:
     return len(list(root.rglob('*')))
 
 
-def _stage_removal(
-    root: Path, monkeypatch: pytest.MonkeyPatch, *, plan_id: str, extra_files: int = 0
-) -> Path:
+def _stage_removal(root: Path, monkeypatch: pytest.MonkeyPatch, *, plan_id: str, extra_files: int = 0) -> Path:
     """Stage a removable worktree under ``root`` and return its path.
 
     Mirrors ``TestWorktreeRemove``'s staging — ``main_checkout_root`` pinned to
@@ -658,9 +658,7 @@ def _seed_scratch(worktree: Path) -> Path:
     return scratch
 
 
-def _record_run_git(
-    monkeypatch: pytest.MonkeyPatch, worktree: Path, *, rc: int = 0, stderr: str = ''
-) -> list[dict]:
+def _record_run_git(monkeypatch: pytest.MonkeyPatch, worktree: Path, *, rc: int = 0, stderr: str = '') -> list[dict]:
     """Stub ``run_git``, recording each call's argv AND the timeout it was given.
 
     The budget is captured at the CALL because that is the only place it is
@@ -791,9 +789,7 @@ class TestRemovalBudgetReachesGit:
             'a tree below the scaling threshold must keep the ordinary git-call floor'
         )
 
-    def test_the_budget_grows_with_the_observed_tree(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_the_budget_grows_with_the_observed_tree(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Two trees differing only in size receive two different budgets.
 
         This is the end-to-end scaling proof, over a REAL measurement of a real
@@ -808,9 +804,7 @@ class TestRemovalBudgetReachesGit:
 
         observed: dict[str, tuple[int, int]] = {}
         for plan_id, extra_files in (('small-tree', 0), ('large-tree', 30)):
-            worktree = _stage_removal(
-                tmp_path / plan_id, monkeypatch, plan_id=plan_id, extra_files=extra_files
-            )
+            worktree = _stage_removal(tmp_path / plan_id, monkeypatch, plan_id=plan_id, extra_files=extra_files)
             _record_run_git(monkeypatch, worktree)
             result = _run_removal(worktree, plan_id)
             assert result['status'] == 'success', result
@@ -819,9 +813,7 @@ class TestRemovalBudgetReachesGit:
         small_entries, small_budget = observed['small-tree']
         large_entries, large_budget = observed['large-tree']
         assert large_entries > small_entries, 'the fixture must produce two different trees'
-        assert large_budget > small_budget, (
-            f'the budget must follow the observed tree, got {observed!r}'
-        )
+        assert large_budget > small_budget, f'the budget must follow the observed tree, got {observed!r}'
         for entries, budget in observed.values():
             # rate == 1 ⇒ the scaled term is the entry count itself.
             assert budget == max(1, min(entries, git_workflow._REMOVAL_TIMEOUT_CEILING_SECONDS))
@@ -851,9 +843,7 @@ class TestRemovalTimeoutIsItsOwnFailure:
         needs to know which budget expired against which tree.
         """
         worktree = _stage_removal(tmp_path, monkeypatch, plan_id=self.PLAN_ID)
-        calls = _record_run_git(
-            monkeypatch, worktree, rc=124, stderr='git timed out after 60 seconds'
-        )
+        calls = _record_run_git(monkeypatch, worktree, rc=124, stderr='git timed out after 60 seconds')
 
         result = _run_removal(worktree, self.PLAN_ID)
 
@@ -865,9 +855,7 @@ class TestRemovalTimeoutIsItsOwnFailure:
         assert result['measured_entries'] == calls[0]['entries_at_call']
         assert result['budget_basis'] == 'measured_tree'
         assert result['worktree_path'] == str(worktree)
-        assert 'Do NOT pass --force' in result['hint'], (
-            'the wrong remedy must be named as wrong, not merely omitted'
-        )
+        assert 'Do NOT pass --force' in result['hint'], 'the wrong remedy must be named as wrong, not merely omitted'
         assert worktree.is_dir(), 'a timed-out removal leaves the worktree on disk'
 
     def test_an_ordinary_git_failure_still_maps_to_worktree_remove_failed(
@@ -925,9 +913,7 @@ class TestScratchClearingNeverLeavesTheTarget:
         outside.mkdir()
         (outside / 'keep.txt').write_text('keep\n')
         (worktree / '.plan' / 'temp').mkdir(parents=True)
-        (worktree / '.plan' / 'temp' / 'pytest-basetemp').symlink_to(
-            outside, target_is_directory=True
-        )
+        (worktree / '.plan' / 'temp' / 'pytest-basetemp').symlink_to(outside, target_is_directory=True)
         _record_run_git(monkeypatch, worktree)
 
         result = _run_removal(worktree, self.PLAN_ID)
@@ -936,28 +922,21 @@ class TestScratchClearingNeverLeavesTheTarget:
         assert result['scratch_cleared'] is False
         assert result['scratch_entries_removed'] == 0
         assert 'symlink' in result['scratch_note']
-        assert (outside / 'keep.txt').is_file(), (
-            'the symlink target lives outside the removal target and must survive'
-        )
+        assert (outside / 'keep.txt').is_file(), 'the symlink target lives outside the removal target and must survive'
 
 
 class TestRemovalBudgetDerivation:
     """``_derive_removal_timeout`` — the shipped magnitudes, as a pure function."""
 
     def test_a_small_measured_tree_takes_the_floor(self) -> None:
-        assert (
-            git_workflow._derive_removal_timeout(10, 'measured_tree')
-            == git_workflow._DEFAULT_TIMEOUT_SECONDS
-        )
+        assert git_workflow._derive_removal_timeout(10, 'measured_tree') == git_workflow._DEFAULT_TIMEOUT_SECONDS
 
     def test_a_large_measured_tree_scales_with_the_count(self) -> None:
         entries = git_workflow._REMOVAL_ENTRIES_PER_SECOND * 300
         assert git_workflow._derive_removal_timeout(entries, 'measured_tree') == 300
 
     def test_the_scaled_budget_is_capped(self) -> None:
-        entries = git_workflow._REMOVAL_ENTRIES_PER_SECOND * (
-            git_workflow._REMOVAL_TIMEOUT_CEILING_SECONDS + 10_000
-        )
+        entries = git_workflow._REMOVAL_ENTRIES_PER_SECOND * (git_workflow._REMOVAL_TIMEOUT_CEILING_SECONDS + 10_000)
         assert (
             git_workflow._derive_removal_timeout(entries, 'measured_tree')
             == git_workflow._REMOVAL_TIMEOUT_CEILING_SECONDS
@@ -972,9 +951,7 @@ class TestRemovalBudgetDerivation:
         ],
         ids=['capped', 'incomplete', 'failed'],
     )
-    def test_every_lower_bound_basis_takes_the_ceiling(
-        self, entries: int | None, basis: str
-    ) -> None:
+    def test_every_lower_bound_basis_takes_the_ceiling(self, entries: int | None, basis: str) -> None:
         """A count that is a LOWER BOUND must never be scaled.
 
         The entry count is deliberately 1 on the two bases that carry one: the
@@ -983,10 +960,7 @@ class TestRemovalBudgetDerivation:
         the derivation exists to prevent — and would do it while looking like a
         measurement.
         """
-        assert (
-            git_workflow._derive_removal_timeout(entries, basis)
-            == git_workflow._REMOVAL_TIMEOUT_CEILING_SECONDS
-        )
+        assert git_workflow._derive_removal_timeout(entries, basis) == git_workflow._REMOVAL_TIMEOUT_CEILING_SECONDS
 
 
 class TestTreeMeasurement:
@@ -1081,9 +1055,7 @@ class TestWorktreeList:
     skipped.
     """
 
-    def test_filters_to_worktree_plans_only(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_filters_to_worktree_plans_only(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         worktree_a = tmp_path / 'wt-a'
         worktree_a.mkdir()
 
@@ -1131,9 +1103,7 @@ class TestWorktreeList:
         assert result['worktrees'][0]['path'] == str(worktree_a)
         assert result['worktrees'][0]['branch'] == 'feature/with-worktree'
 
-    def test_list_propagates_manage_status_failure(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_list_propagates_manage_status_failure(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Top-level ``manage-status list`` failure surfaces
         ``plan_resolution_failed`` instead of an empty success."""
         _stub_manage_status_call(
@@ -1274,9 +1244,7 @@ class TestLocatePlanCheckout:
         assert result['location'] == 'current'
         assert 'worktree_path' not in result
 
-    def test_returns_not_found_for_unknown_plan(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_returns_not_found_for_unknown_plan(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """When neither the current checkout nor any registered worktree holds
         the plan dir, the verb returns ``location=not_found``."""
         current_root = tmp_path / 'current'

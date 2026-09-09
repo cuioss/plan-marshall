@@ -17,9 +17,7 @@ from pathlib import Path
 
 from conftest import load_script_module
 
-_rewrite_log = load_script_module(
-    'plan-marshall', 'build-maven', '_maven_cmd_rewrite_log.py', '_maven_cmd_rewrite_log'
-)
+_rewrite_log = load_script_module('plan-marshall', 'build-maven', '_maven_cmd_rewrite_log.py', '_maven_cmd_rewrite_log')
 
 reached_rewrite_run = _rewrite_log.reached_rewrite_run
 consume_rewrite_log = _rewrite_log.consume_rewrite_log
@@ -32,9 +30,7 @@ VERDICT_PARSE_ERROR = _rewrite_log.VERDICT_PARSE_ERROR
 
 # The domain-owned parser — imported here only to drive the
 # observed-case dispatch against the fixture without the executor subprocess.
-_parser = load_script_module(
-    'pm-dev-java-cui', 'parse-rewrite-log', 'parse_rewrite_log.py', 'parse_rewrite_log'
-)
+_parser = load_script_module('pm-dev-java-cui', 'parse-rewrite-log', 'parse_rewrite_log.py', 'parse_rewrite_log')
 
 TEST_DATA_DIR = Path(__file__).parent / 'fixtures' / 'log-test-data'
 OBSERVED_LOG = TEST_DATA_DIR / 'rewrite-run-observed.log'

@@ -64,9 +64,7 @@ def _run_git(repo_root: Path, *args: str) -> str:
     )
     if result.returncode != 0:
         stderr = result.stderr.strip() or result.stdout.strip()
-        raise FingerprintError(
-            f'git {" ".join(args)} (cwd={repo_root}) exited {result.returncode}: {stderr}'
-        )
+        raise FingerprintError(f'git {" ".join(args)} (cwd={repo_root}) exited {result.returncode}: {stderr}')
     return result.stdout
 
 
@@ -106,20 +104,14 @@ def hash_objects(repo_root: Path, paths: list[str]) -> list[str]:
     )
     if result.returncode != 0:
         stderr = result.stderr.strip() or result.stdout.strip()
-        raise FingerprintError(
-            f'git hash-object --stdin-paths (cwd={repo_root}) exited {result.returncode}: {stderr}'
-        )
+        raise FingerprintError(f'git hash-object --stdin-paths (cwd={repo_root}) exited {result.returncode}: {stderr}')
     shas = [line.strip() for line in result.stdout.splitlines() if line.strip()]
     if len(shas) != len(paths):
-        raise FingerprintError(
-            f'git hash-object returned {len(shas)} hashes for {len(paths)} paths'
-        )
+        raise FingerprintError(f'git hash-object returned {len(shas)} hashes for {len(paths)} paths')
     return shas
 
 
-def compute_source_tree_fingerprint(
-    repo_root: Path, prefix: str = DEFAULT_PREFIX
-) -> str:
+def compute_source_tree_fingerprint(repo_root: Path, prefix: str = DEFAULT_PREFIX) -> str:
     """Compute the worktree-content fingerprint over ``{repo_root}/{prefix}``.
 
     Procedure:

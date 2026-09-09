@@ -40,7 +40,21 @@ pytestmark = pytest.mark.skipif(_PYRIGHT is None, reason='pyright-langserver not
 
 
 def _configure(project: Path) -> None:
-    run_config.cmd_language_server_set(parse_ns('plan-marshall', 'manage-run-config', 'run_config.py', 'language-server', 'set', '--language', 'python', '--command', str(json.dumps([_PYRIGHT, '--stdio'])), '--language-id', 'python'))
+    run_config.cmd_language_server_set(
+        parse_ns(
+            'plan-marshall',
+            'manage-run-config',
+            'run_config.py',
+            'language-server',
+            'set',
+            '--language',
+            'python',
+            '--command',
+            str(json.dumps([_PYRIGHT, '--stdio'])),
+            '--language-id',
+            'python',
+        )
+    )
 
 
 def _sample_project(tmp_path: Path) -> Path:
@@ -55,7 +69,18 @@ def _sample_project(tmp_path: Path) -> Path:
 def test_real_preflight_ready(plan_context, tmp_path):
     project = _sample_project(tmp_path)
     _configure(project)
-    result = client.cmd_preflight(parse_ns('plan-marshall', 'lsp-client', 'lsp_client.py', 'preflight', '--language', 'python', '--project-path', str(project)))
+    result = client.cmd_preflight(
+        parse_ns(
+            'plan-marshall',
+            'lsp-client',
+            'lsp_client.py',
+            'preflight',
+            '--language',
+            'python',
+            '--project-path',
+            str(project),
+        )
+    )
     assert result['state'] == client.STATE_READY  # the reachable sentinel the consumer wiring gates on
     assert result['configured'] is True
     assert result['reachable'] is True
@@ -66,13 +91,51 @@ def test_real_document_symbol_and_references(plan_context, tmp_path):
     _configure(project)
     target = str(project / 'sample.py')
 
-    docsym = client.cmd_lookup(parse_ns('plan-marshall', 'lsp-client', 'lsp_client.py', 'lookup', '--language', 'python', '--project-path', str(project), '--kind', 'document-symbol', '--file', str(target), '--line', '0', '--character', '0'))
+    docsym = client.cmd_lookup(
+        parse_ns(
+            'plan-marshall',
+            'lsp-client',
+            'lsp_client.py',
+            'lookup',
+            '--language',
+            'python',
+            '--project-path',
+            str(project),
+            '--kind',
+            'document-symbol',
+            '--file',
+            str(target),
+            '--line',
+            '0',
+            '--character',
+            '0',
+        )
+    )
     assert docsym['state'] == client.STATE_OK
     assert docsym['provider_count'] == 1
     names = {row['name'] for row in docsym['locations']}
     assert {'compute', 'caller'} <= names
 
-    refs = client.cmd_lookup(parse_ns('plan-marshall', 'lsp-client', 'lsp_client.py', 'lookup', '--language', 'python', '--project-path', str(project), '--kind', 'references', '--file', str(target), '--line', '0', '--character', '4'))
+    refs = client.cmd_lookup(
+        parse_ns(
+            'plan-marshall',
+            'lsp-client',
+            'lsp_client.py',
+            'lookup',
+            '--language',
+            'python',
+            '--project-path',
+            str(project),
+            '--kind',
+            'references',
+            '--file',
+            str(target),
+            '--line',
+            '0',
+            '--character',
+            '4',
+        )
+    )
     assert refs['provider_count'] == 1
     assert refs['location_count'] >= 2  # definition + two call sites
 
@@ -80,7 +143,26 @@ def test_real_document_symbol_and_references(plan_context, tmp_path):
 def test_real_workspace_symbol_after_indexing(plan_context, tmp_path):
     project = _sample_project(tmp_path)
     _configure(project)
-    result = client.cmd_lookup(parse_ns('plan-marshall', 'lsp-client', 'lsp_client.py', 'lookup', '--language', 'python', '--project-path', str(project), '--kind', 'workspace-symbol', '--line', '0', '--character', '0', '--symbol', 'compute'))
+    result = client.cmd_lookup(
+        parse_ns(
+            'plan-marshall',
+            'lsp-client',
+            'lsp_client.py',
+            'lookup',
+            '--language',
+            'python',
+            '--project-path',
+            str(project),
+            '--kind',
+            'workspace-symbol',
+            '--line',
+            '0',
+            '--character',
+            '0',
+            '--symbol',
+            'compute',
+        )
+    )
     assert result['state'] == client.STATE_OK
     assert result['provider_count'] == 1
     assert result['location_count'] >= 1
@@ -94,7 +176,26 @@ def test_real_workspace_symbol_rows_name_the_defining_file(plan_context, tmp_pat
     defining.write_text('class WidgetFromOtherModule:\n    def spin(self):\n        return 1\n')
     _configure(project)
 
-    result = client.cmd_lookup(parse_ns('plan-marshall', 'lsp-client', 'lsp_client.py', 'lookup', '--language', 'python', '--project-path', str(project), '--kind', 'workspace-symbol', '--line', '0', '--character', '0', '--symbol', 'WidgetFromOtherModule'))
+    result = client.cmd_lookup(
+        parse_ns(
+            'plan-marshall',
+            'lsp-client',
+            'lsp_client.py',
+            'lookup',
+            '--language',
+            'python',
+            '--project-path',
+            str(project),
+            '--kind',
+            'workspace-symbol',
+            '--line',
+            '0',
+            '--character',
+            '0',
+            '--symbol',
+            'WidgetFromOtherModule',
+        )
+    )
 
     assert result['state'] == client.STATE_OK
     matches = [row for row in result['locations'] if row['name'] == 'WidgetFromOtherModule']
@@ -107,10 +208,31 @@ def test_real_document_symbol_flattens_a_class_and_carries_its_path(plan_context
     """A class's methods are present, with the queried file on every row."""
     project = _sample_project(tmp_path)
     target = project / 'widget.py'
-    target.write_text('class Widget:\n    def spin(self):\n        return 1\n\n    def stop(self):\n        return 2\n\n\ndef top_level():\n    return 3\n')
+    target.write_text(
+        'class Widget:\n    def spin(self):\n        return 1\n\n    def stop(self):\n        return 2\n\n\ndef top_level():\n    return 3\n'
+    )
     _configure(project)
 
-    result = client.cmd_lookup(parse_ns('plan-marshall', 'lsp-client', 'lsp_client.py', 'lookup', '--language', 'python', '--project-path', str(project), '--kind', 'document-symbol', '--file', str(target), '--line', '0', '--character', '0'))
+    result = client.cmd_lookup(
+        parse_ns(
+            'plan-marshall',
+            'lsp-client',
+            'lsp_client.py',
+            'lookup',
+            '--language',
+            'python',
+            '--project-path',
+            str(project),
+            '--kind',
+            'document-symbol',
+            '--file',
+            str(target),
+            '--line',
+            '0',
+            '--character',
+            '0',
+        )
+    )
 
     by_name = {row['name']: row for row in result['locations']}
     assert {'Widget', 'spin', 'stop', 'top_level'} <= set(by_name)
@@ -124,7 +246,26 @@ def test_real_clean_rename_edit(plan_context, tmp_path):
     project = _sample_project(tmp_path)
     _configure(project)
     target = project / 'sample.py'
-    result = client.cmd_edit(parse_ns('plan-marshall', 'lsp-client', 'lsp_client.py', 'edit', '--language', 'python', '--project-path', str(project), '--file', str(target), '--line', '0', '--character', '4', '--new-name', 'renamed'))
+    result = client.cmd_edit(
+        parse_ns(
+            'plan-marshall',
+            'lsp-client',
+            'lsp_client.py',
+            'edit',
+            '--language',
+            'python',
+            '--project-path',
+            str(project),
+            '--file',
+            str(target),
+            '--line',
+            '0',
+            '--character',
+            '4',
+            '--new-name',
+            'renamed',
+        )
+    )
     assert result['status'] == 'success'
     assert result['applied'] is True
     assert result['file_count'] == 1
@@ -149,11 +290,19 @@ def test_real_adversarial_defect_fails_and_rolls_back(plan_context, tmp_path):
         errors_before = count_error_diagnostics(before)
 
         # Replace a valid line with a reference to an undefined symbol.
-        defect = {'documentChanges': [{
-            'textDocument': {'uri': path_to_uri(target), 'version': 2},
-            'edits': [{'range': {'start': {'line': 1, 'character': 4}, 'end': {'line': 1, 'character': 20}},
-                       'newText': 'return undefined_symbol_xyz'}],
-        }]}
+        defect = {
+            'documentChanges': [
+                {
+                    'textDocument': {'uri': path_to_uri(target), 'version': 2},
+                    'edits': [
+                        {
+                            'range': {'start': {'line': 1, 'character': 4}, 'end': {'line': 1, 'character': 20}},
+                            'newText': 'return undefined_symbol_xyz',
+                        }
+                    ],
+                }
+            ]
+        }
         _footprint, originals = apply_workspace_edit(defect)
         seq_before_change = session.change_to_disk(str(target))
         after = session.diagnostics(str(target), after_seq=seq_before_change)

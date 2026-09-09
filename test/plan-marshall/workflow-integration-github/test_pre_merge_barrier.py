@@ -137,9 +137,7 @@ def _run_fetch(pr_number, plan_id):
 def _pending(plan_id):
     """The pending pr-comment findings — the exact set the barrier query returns."""
     return [
-        f
-        for f in query_findings(plan_id, finding_type='pr-comment')['findings']
-        if f.get('resolution') == 'pending'
+        f for f in query_findings(plan_id, finding_type='pr-comment')['findings'] if f.get('resolution') == 'pending'
     ]
 
 
@@ -282,8 +280,7 @@ def test_self_response_loop_bound_reports_qgate_finding(plan_context, monkeypatc
     """
     plan_id = 'barrier-self-response-bound'
     accumulated = [
-        _self_response_comment(f'self-{i}', anchor=f'c{i}')
-        for i in range(github_pr._SELF_RESPONSE_LOOP_BOUND)
+        _self_response_comment(f'self-{i}', anchor=f'c{i}') for i in range(github_pr._SELF_RESPONSE_LOOP_BOUND)
     ]
     _patch_provider(monkeypatch, accumulated)
 
@@ -315,9 +312,7 @@ def test_self_response_loop_bound_reports_qgate_finding(plan_context, monkeypatc
 # ``register=False``: only the returned module is needed, and a sibling suite
 # imports ``review_completeness`` plainly. Publishing under that name would put two
 # copies in play, reachable by different routes and differing by collection order.
-review_completeness = load_script_module(
-    'plan-marshall', 'automatic-review', 'review_completeness.py', register=False
-)
+review_completeness = load_script_module('plan-marshall', 'automatic-review', 'review_completeness.py', register=False)
 
 # The widened-member parity cases seed their own plan ids — the ``PLAN_IDS +=``
 # derivation lives beside ``_MEMBER_OBSERVATIONS``, the population it derives
@@ -337,9 +332,7 @@ def _participation_csv(fetch_result):
     takes ``bot_kind:evidence_kind`` pairs. The barrier crosses exactly this seam,
     so the tests cross it too rather than hand-building an already-parsed map.
     """
-    return ','.join(
-        f'{row["bot_kind"]}:{row["evidence_kind"]}' for row in fetch_result['participated_bots']
-    )
+    return ','.join(f'{row["bot_kind"]}:{row["evidence_kind"]}' for row in fetch_result['participated_bots'])
 
 
 def _completeness(plan_id, participated_csv, required, optional, **observation):
@@ -433,9 +426,7 @@ def test_optional_bot_silence_does_not_block_merge(plan_context, monkeypatch):
 _merge_auth = load_script_module(
     'plan-marshall', 'manage-status', '_cmd_merge_authorization.py', '_barrier_merge_auth_cmd'
 )
-_lifecycle = load_script_module(
-    'plan-marshall', 'manage-status', '_cmd_lifecycle.py', '_barrier_merge_auth_lifecycle'
-)
+_lifecycle = load_script_module('plan-marshall', 'manage-status', '_cmd_lifecycle.py', '_barrier_merge_auth_lifecycle')
 
 #: The docs-only tree the operator actually inspected when they ruled.
 _DOCS_ONLY_HEAD = 'd0c50n1ya1b2c3d4e5f60718293a4b5c6d7e8f90'
@@ -554,9 +545,7 @@ def test_stale_override_does_not_satisfy_barrier_after_head_advances(plan_contex
     assert reseeked['lapsed_kinds'] == []
 
 
-def test_consent_over_a_different_gap_at_the_same_head_does_not_satisfy_barrier(
-    plan_context, monkeypatch
-):
+def test_consent_over_a_different_gap_at_the_same_head_does_not_satisfy_barrier(plan_context, monkeypatch):
     """The CROSS-KIND case: same HEAD, valid authorization, still inadmissible.
 
     HEAD-binding alone does not make the barrier safe. On the default interactive
@@ -741,7 +730,7 @@ _UNPRODUCIBLE_MEMBERS = {
         'decided from the CONFIGURATION, not from an observation: it requires the '
         'required token to be absent from bot_registry.bot_kinds(), which no entry in '
         '_MEMBER_OBSERVATIONS can produce because those are predicate observations and '
-        'this is a registry fact. Producing it would mean swapping the scenario\'s '
+        "this is a registry fact. Producing it would mean swapping the scenario's "
         'required bot for an unregistered token — and that changes the bot whose state '
         'the parity compares, so the absent baseline and the widened run would name '
         'DIFFERENT bots in unproven_bots and the projection could never be equal. The '
@@ -771,9 +760,7 @@ def test_the_swept_members_cover_the_taxonomys_blocking_set():
     covered = set(_MEMBER_OBSERVATIONS)
     excluded = set(_UNPRODUCIBLE_MEMBERS)
 
-    assert not (covered & excluded), (
-        f'these members are both swept and excluded: {sorted(covered & excluded)}'
-    )
+    assert not (covered & excluded), f'these members are both swept and excluded: {sorted(covered & excluded)}'
     assert covered | excluded == blocking, (
         'the swept members no longer partition the taxonomy blocking set.\n'
         f'  blocking but neither swept nor excluded: {sorted(blocking - covered - excluded)}\n'
@@ -802,14 +789,9 @@ def test_the_structural_member_is_actually_swept():
 #: thing a reader of a failing node id needs. Sorted so the node ids are stable.
 @pytest.mark.parametrize(
     ('member', 'observation'),
-    [
-        pytest.param(member, observation, id=member)
-        for member, observation in sorted(_MEMBER_OBSERVATIONS.items())
-    ],
+    [pytest.param(member, observation, id=member) for member, observation in sorted(_MEMBER_OBSERVATIONS.items())],
 )
-def test_widened_member_gates_byte_identically_to_absent(
-    member, observation, plan_context, monkeypatch
-):
+def test_widened_member_gates_byte_identically_to_absent(member, observation, plan_context, monkeypatch):
     """A widened member's merge verdict equals ``absent``'s, and the check can fail.
 
     One scenario is built once — CodeRabbit reviewed, the required ``cuioss-review-bot`` did
@@ -851,9 +833,7 @@ def test_widened_member_gates_byte_identically_to_absent(
     assert _state_of(widened_verdict, 'cuioss-review-bot') == member
 
     # THE property: the barrier cannot tell the two apart.
-    assert _barrier_projection(widened_verdict, pending) == _barrier_projection(
-        absent_verdict, pending
-    )
+    assert _barrier_projection(widened_verdict, pending) == _barrier_projection(absent_verdict, pending)
 
     # Matched negative control, same store and same required set: a proven
     # participant's verdict MUST differ. The evidence kind comes from the registry
@@ -866,6 +846,4 @@ def test_widened_member_gates_byte_identically_to_absent(
     )
 
     assert _state_of(participated_verdict, 'cuioss-review-bot') != review_completeness.STATE_ABSENT
-    assert _barrier_projection(participated_verdict, pending) != _barrier_projection(
-        absent_verdict, pending
-    )
+    assert _barrier_projection(participated_verdict, pending) != _barrier_projection(absent_verdict, pending)

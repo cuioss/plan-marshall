@@ -216,9 +216,7 @@ def _has_segment_run(segments: tuple[str, ...], run: tuple[str, ...]) -> bool:
     """Return True when ``run`` appears as a consecutive sub-sequence of ``segments``."""
     if not run or len(run) > len(segments):
         return False
-    return any(
-        segments[index : index + len(run)] == run for index in range(len(segments) - len(run) + 1)
-    )
+    return any(segments[index : index + len(run)] == run for index in range(len(segments) - len(run) + 1))
 
 
 def _is_infrastructure_config_path(path: str) -> bool:
@@ -634,8 +632,7 @@ def _normalize_step_params_block(manifest: dict[str, Any]) -> None:
             section['step_params'] = {}
             continue
         section['step_params'] = {
-            step_id: (params if isinstance(params, dict) else {})
-            for step_id, params in step_params.items()
+            step_id: (params if isinstance(params, dict) else {}) for step_id, params in step_params.items()
         }
 
 

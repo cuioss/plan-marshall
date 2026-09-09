@@ -43,9 +43,7 @@ _ORCH_SCRIPT = 'orchestrator.py'
 
 SCRIPT_PATH = get_script_path(_ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT)
 
-_orch = load_script_module(
-    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT, 'orchestrator_compact_script'
-)
+_orch = load_script_module(_ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT, 'orchestrator_compact_script')
 
 cmd_compact = _orch.cmd_compact
 GENERATED_BLOCKS = _orch.GENERATED_BLOCKS
@@ -94,8 +92,12 @@ def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
 
 
 _COMPACT_ARGS = parse_ns(
-    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
-    'compact', '--slug', SLUG,
+    _ORCH_BUNDLE,
+    _ORCH_SKILL,
+    _ORCH_SCRIPT,
+    'compact',
+    '--slug',
+    SLUG,
     register=False,
 )
 
@@ -282,8 +284,7 @@ def _regenerated(result: dict, surface: str) -> dict:
 def _abstained(result: dict, section: str) -> dict:
     rows: list[dict] = [row for row in result['abstained'] if row['section'] == section]
     assert len(rows) == 1, (
-        f'expected exactly one {section!r} abstained row, got '
-        f'{[row["section"] for row in result["abstained"]]}'
+        f'expected exactly one {section!r} abstained row, got {[row["section"] for row in result["abstained"]]}'
     )
     return rows[0]
 
@@ -433,9 +434,7 @@ class TestNarrativeSurvivesVerbatim:
         # A second pass changes nothing at all — across a pass that was performed.
         assert after_second == after_first
 
-    def test_content_outside_the_markers_is_untouched_when_only_the_queue_changes(
-        self, plan_context
-    ):
+    def test_content_outside_the_markers_is_untouched_when_only_the_queue_changes(self, plan_context):
         _write_status(plan_context, [_row('PLAN-01', status='parked')])
         _write_spec(plan_context, 'PLAN-01-alpha.md', surface=['scripts/a.py'])
         _write_epic(plan_context, resume_body='**Resume anchor**: kept')
@@ -559,9 +558,7 @@ class TestMarkersAbsent:
 
         result = _run()
 
-        assert _abstained(result, 'Ordered Queue')['treatment'] == (
-            'markers_absent_not_regenerated'
-        )
+        assert _abstained(result, 'Ordered Queue')['treatment'] == ('markers_absent_not_regenerated')
 
     def test_an_unreachable_surface_is_counted_apart_from_the_abstentions(self, plan_context):
         """``abstained_count`` counts choices; ``unreachable_count`` counts blind spots."""
@@ -572,9 +569,7 @@ class TestMarkersAbsent:
         result = _run()
 
         assert result['unreachable_count'] == 1
-        preserved = [
-            row for row in result['abstained'] if row['treatment'] == 'preserved_verbatim'
-        ]
+        preserved = [row for row in result['abstained'] if row['treatment'] == 'preserved_verbatim']
         assert result['abstained_count'] == len(preserved)
         assert 'Ordered Queue' not in [row['section'] for row in preserved]
 
@@ -632,9 +627,7 @@ class TestMarkersAbsent:
         result = _run()
 
         assert _regenerated(result, 'ordered-queue')['outcome'] == 'markers_absent'
-        assert _abstained(result, 'Ordered Queue')['treatment'] == (
-            'markers_absent_not_regenerated'
-        )
+        assert _abstained(result, 'Ordered Queue')['treatment'] == ('markers_absent_not_regenerated')
         assert result['unreachable_count'] == 1
 
     def test_a_reachable_ledger_reports_no_unreachable_section(self, plan_context):
@@ -644,9 +637,7 @@ class TestMarkersAbsent:
         result = _run()
 
         assert result['unreachable_count'] == 0
-        assert all(
-            row['treatment'] == 'preserved_verbatim' for row in result['abstained']
-        )
+        assert all(row['treatment'] == 'preserved_verbatim' for row in result['abstained'])
 
 
 # =============================================================================

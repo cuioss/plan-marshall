@@ -420,5 +420,3 @@ def _read_settled_change_type(plan_id: str) -> str | None:
     if value is None or value not in VALID_CHANGE_TYPES:
         return None
     return value
-
-

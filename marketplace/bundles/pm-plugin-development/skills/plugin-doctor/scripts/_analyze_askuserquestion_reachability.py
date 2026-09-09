@@ -91,9 +91,7 @@ RULE_DESCRIPTOR = RuleDescriptor(
 # The execution-context workflow-body extension-point marker. A doc carrying
 # this in its ``implements:`` frontmatter is a declared dispatchable workflow
 # body.
-IMPLEMENTS_MARKER = (
-    'plan-marshall:extension-api/standards/ext-point-execution-context-workflow'
-)
+IMPLEMENTS_MARKER = 'plan-marshall:extension-api/standards/ext-point-execution-context-workflow'
 
 # ---------------------------------------------------------------------------
 # Detection patterns
@@ -212,7 +210,7 @@ def _scan_file(path: Path) -> list[dict]:
         # Confirm the header introduces a structured invocation block: the next
         # non-blank line must be a ``questions:`` / ``question:`` / ``options:``
         # sub-key. A bare header with no block body is not an invocation.
-        for follow in lines[idx + 1:]:
+        for follow in lines[idx + 1 :]:
             if not follow.strip():
                 continue
             if _ASKUSER_SUBKEY_RE.match(follow):

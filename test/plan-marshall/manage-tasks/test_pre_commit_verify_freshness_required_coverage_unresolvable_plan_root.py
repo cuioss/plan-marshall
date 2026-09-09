@@ -45,7 +45,6 @@ assertions are on a coverage requirement the shipped derivation computed rather
 than on a shape the test handed it.
 """
 
-
 from __future__ import annotations
 
 import extension_base
@@ -67,8 +66,7 @@ _PLAN_ID = 'freshness-required-coverage-unresolvable-root'
 #: False; the path ends in ``.py``, so the compile and lint analyses join the
 #: unconditional test one.
 _RESOLVABLE_FOOTPRINT = (
-    'marketplace/bundles/plan-marshall/skills/manage-tasks/scripts/'
-    '_cmd_pre_commit_verify_freshness.py'
+    'marketplace/bundles/plan-marshall/skills/manage-tasks/scripts/_cmd_pre_commit_verify_freshness.py'
 )
 
 #: The registered bundle ``_RESOLVABLE_FOOTPRINT`` resolves to (path segment 2
@@ -129,9 +127,7 @@ def test_unresolvable_plan_root_returns_the_declared_unknown(
     assert reason == REASON_REQUIRED_COVERAGE_UNKNOWN
 
 
-def test_a_resolvable_footprint_yields_coverage_with_no_reason(
-    plan_context, monkeypatch
-) -> None:
+def test_a_resolvable_footprint_yields_coverage_with_no_reason(plan_context, monkeypatch) -> None:
     """Negative control: the declared unknown is CONDITIONAL, not the only answer.
 
     Broadening an ``except`` clause can only ever make MORE inputs take the
@@ -152,9 +148,7 @@ def test_a_resolvable_footprint_yields_coverage_with_no_reason(
     plan_context.plan_dir_for(_PLAN_ID)
     vocabulary, vocabulary_reason = load_analysis_vocabulary()
     assert vocabulary is not None, vocabulary_reason
-    monkeypatch.setattr(
-        extension_base, '_resolve_plan_footprint', lambda _plan: [_RESOLVABLE_FOOTPRINT]
-    )
+    monkeypatch.setattr(extension_base, '_resolve_plan_footprint', lambda _plan: [_RESOLVABLE_FOOTPRINT])
 
     required, reason = _freshness_mod._resolve_required_coverage(_PLAN_ID)
 

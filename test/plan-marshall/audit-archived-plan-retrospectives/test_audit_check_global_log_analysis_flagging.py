@@ -65,9 +65,7 @@ class TestGlobalLogAnalysisPlanAttribution:
 
     def test_in_window_line_attributed_to_plan(self, tmp_path: Path):
         # a plan window enclosing the error line's timestamp
-        _write_metrics_window(
-            tmp_path, 'plan-alpha', '2026-06-01T10:00:00Z', '2026-06-01T11:00:00Z'
-        )
+        _write_metrics_window(tmp_path, 'plan-alpha', '2026-06-01T10:00:00Z', '2026-06-01T11:00:00Z')
         _write_log(
             tmp_path,
             'work-2026-06-01.log',
@@ -82,9 +80,7 @@ class TestGlobalLogAnalysisPlanAttribution:
 
     def test_outside_window_line_is_ad_hoc(self, tmp_path: Path):
         # the error timestamp falls OUTSIDE the plan window
-        _write_metrics_window(
-            tmp_path, 'plan-alpha', '2026-06-01T10:00:00Z', '2026-06-01T11:00:00Z'
-        )
+        _write_metrics_window(tmp_path, 'plan-alpha', '2026-06-01T10:00:00Z', '2026-06-01T11:00:00Z')
         _write_log(
             tmp_path,
             'work-2026-06-01.log',
@@ -119,12 +115,8 @@ class TestGlobalLogAnalysisPlanAttribution:
 
     def test_overlapping_windows_attribute_all_enclosing_plans(self, tmp_path: Path):
         # two plans whose windows both contain the timestamp
-        _write_metrics_window(
-            tmp_path, 'plan-aaa', '2026-06-01T10:00:00Z', '2026-06-01T12:00:00Z'
-        )
-        _write_metrics_window(
-            tmp_path, 'plan-bbb', '2026-06-01T11:00:00Z', '2026-06-01T13:00:00Z'
-        )
+        _write_metrics_window(tmp_path, 'plan-aaa', '2026-06-01T10:00:00Z', '2026-06-01T12:00:00Z')
+        _write_metrics_window(tmp_path, 'plan-bbb', '2026-06-01T11:00:00Z', '2026-06-01T13:00:00Z')
         _write_log(
             tmp_path,
             'work-2026-06-01.log',

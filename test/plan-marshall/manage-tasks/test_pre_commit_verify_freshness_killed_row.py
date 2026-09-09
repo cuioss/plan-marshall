@@ -5,7 +5,6 @@
 Its one section: Build-necessity short-circuit — the sole build/no-build authority.
 """
 
-
 from __future__ import annotations
 
 import json
@@ -54,9 +53,7 @@ def test_killed_row_is_not_reported_as_a_mutation(plan_context, monkeypatch, tmp
     """The defect in one assertion: a kill is not a mutation and must not read as one."""
     _write_status(plan_context.plan_dir_for('freshness-killed-not-mutated'))
     _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
-    ledger_path = _write_ledger(
-        tmp_path, [_build_entry(worktree_sha=_CURRENT_SHA, exit_code=-9, status='killed')]
-    )
+    ledger_path = _write_ledger(tmp_path, [_build_entry(worktree_sha=_CURRENT_SHA, exit_code=-9, status='killed')])
     _stub_ledger_path(monkeypatch, ledger_path)
 
     result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-killed-not-mutated'))
@@ -66,15 +63,11 @@ def test_killed_row_is_not_reported_as_a_mutation(plan_context, monkeypatch, tmp
     assert 'do not blind-retry' in result['message'], result
 
 
-def test_timeout_row_is_not_reported_as_a_failing_build(
-    plan_context, monkeypatch, tmp_path
-) -> None:
+def test_timeout_row_is_not_reported_as_a_failing_build(plan_context, monkeypatch, tmp_path) -> None:
     """A timeout is not a red test — the refusal must not describe one."""
     _write_status(plan_context.plan_dir_for('freshness-timeout-not-red'))
     _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
-    ledger_path = _write_ledger(
-        tmp_path, [_build_entry(worktree_sha=_CURRENT_SHA, exit_code=0, status='timeout')]
-    )
+    ledger_path = _write_ledger(tmp_path, [_build_entry(worktree_sha=_CURRENT_SHA, exit_code=0, status='timeout')])
     _stub_ledger_path(monkeypatch, ledger_path)
 
     result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-timeout-not-red'))
@@ -84,15 +77,11 @@ def test_timeout_row_is_not_reported_as_a_failing_build(
     assert 'Fix the reported failures' not in result['message'], result
 
 
-def test_control_error_row_still_prescribes_fixing_the_code(
-    plan_context, monkeypatch, tmp_path
-) -> None:
+def test_control_error_row_still_prescribes_fixing_the_code(plan_context, monkeypatch, tmp_path) -> None:
     """CONTROL: a genuinely failing build still tells the caller to fix the code."""
     _write_status(plan_context.plan_dir_for('freshness-error-remedy'))
     _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
-    ledger_path = _write_ledger(
-        tmp_path, [_build_entry(worktree_sha=_CURRENT_SHA, exit_code=1, status='error')]
-    )
+    ledger_path = _write_ledger(tmp_path, [_build_entry(worktree_sha=_CURRENT_SHA, exit_code=1, status='error')])
     _stub_ledger_path(monkeypatch, ledger_path)
 
     result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-error-remedy'))
@@ -102,15 +91,11 @@ def test_control_error_row_still_prescribes_fixing_the_code(
     assert 'do not blind-retry' not in result['message'], result
 
 
-def test_statusless_row_reports_indeterminate_not_mutation(
-    plan_context, monkeypatch, tmp_path
-) -> None:
+def test_statusless_row_reports_indeterminate_not_mutation(plan_context, monkeypatch, tmp_path) -> None:
     """A row with no ``status`` was still a build against this tree, not a mutation."""
     _write_status(plan_context.plan_dir_for('freshness-statusless-reason'))
     _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
-    ledger_path = _write_ledger(
-        tmp_path, [_build_entry(worktree_sha=_CURRENT_SHA, exit_code=0, status=None)]
-    )
+    ledger_path = _write_ledger(tmp_path, [_build_entry(worktree_sha=_CURRENT_SHA, exit_code=0, status=None)])
     _stub_ledger_path(monkeypatch, ledger_path)
 
     result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-statusless-reason'))
@@ -155,9 +140,7 @@ def test_malformed_ledger_lines_are_skipped(plan_context, monkeypatch, tmp_path)
     _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
     ledger_path = tmp_path / 'change-ledger.jsonl'
     valid = json.dumps(_build_entry(worktree_sha=_CURRENT_SHA), sort_keys=True)
-    ledger_path.write_text(
-        'not-json-at-all\n' + valid + '\n{ broken json\n', encoding='utf-8'
-    )
+    ledger_path.write_text('not-json-at-all\n' + valid + '\n{ broken json\n', encoding='utf-8')
     _stub_ledger_path(monkeypatch, ledger_path)
 
     result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-malformed'))
@@ -165,15 +148,11 @@ def test_malformed_ledger_lines_are_skipped(plan_context, monkeypatch, tmp_path)
     assert result['status'] == 'fresh', result
 
 
-def test_malformed_manifest_is_irrelevant_to_the_gate(
-    plan_context, monkeypatch, tmp_path
-) -> None:
+def test_malformed_manifest_is_irrelevant_to_the_gate(plan_context, monkeypatch, tmp_path) -> None:
     """An unparseable manifest cannot affect the gate — it is never parsed."""
     plan_dir = plan_context.plan_dir_for('freshness-nb-bad-manifest')
     _write_status(plan_dir)
-    (plan_dir / 'execution.toon').write_text(
-        '{ this is not valid toon\n  : : :\n', encoding='utf-8'
-    )
+    (plan_dir / 'execution.toon').write_text('{ this is not valid toon\n  : : :\n', encoding='utf-8')
     _stub_verdict(monkeypatch, {'decision': 'build'})
     _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
     ledger_path = _write_ledger(tmp_path, [_build_entry(worktree_sha=_CURRENT_SHA)])
@@ -206,9 +185,7 @@ def test_malformed_manifest_is_irrelevant_to_the_gate(
 # step list looks like, it must not move the outcome.
 
 
-def test_not_necessary_verdict_short_circuits_to_exempt(
-    plan_context, monkeypatch, tmp_path
-) -> None:
+def test_not_necessary_verdict_short_circuits_to_exempt(plan_context, monkeypatch, tmp_path) -> None:
     """A ``not_necessary`` verdict -> exempt, before the ledger is ever consulted.
 
     The documented property is that the gate returns ``exempt`` carrying the

@@ -237,9 +237,7 @@ def _derive_documents() -> tuple[str, ...]:
     """
     knobs = _family()
     return tuple(
-        document
-        for document in _candidate_documents()
-        if any(_documented_values(document, knob) for knob in knobs)
+        document for document in _candidate_documents() if any(_documented_values(document, knob) for knob in knobs)
     )
 
 
@@ -271,8 +269,7 @@ def test_documented_default_equals_declared_default(document, knob):
 
     for shape, value in _documented_values(document, knob):
         assert value == expected, (
-            f'{document} states {knob} default as `{value}` via its {shape}, '
-            f'but the declaring source says `{expected}`'
+            f'{document} states {knob} default as `{value}` via its {shape}, but the declaring source says `{expected}`'
         )
 
 
@@ -283,11 +280,7 @@ def test_every_declared_knob_has_a_documented_row(knob):
     An operator cannot configure a knob they cannot find, so an unmentioned gate
     is a documentation defect even though nothing contradicts it.
     """
-    sites = [
-        (document, shape, value)
-        for document in _DOCUMENTS
-        for shape, value in _documented_values(document, knob)
-    ]
+    sites = [(document, shape, value) for document in _DOCUMENTS for shape, value in _documented_values(document, knob)]
 
     assert sites, f'{knob} is declared but restated in no document under {[r for r, _ in _DOC_ROOTS]}'
 
@@ -455,8 +448,7 @@ def _census_rows() -> tuple[_CensusRow, ...]:
     if table is None:
         return ()
     return tuple(
-        _CensusRow(match['gate'], match['default'], match['path'])
-        for match in _CENSUS_ROW_RE.finditer(table['rows'])
+        _CensusRow(match['gate'], match['default'], match['path']) for match in _CENSUS_ROW_RE.finditer(table['rows'])
     )
 
 
@@ -491,6 +483,5 @@ def test_census_default_equals_declared_default(row):
     declared = _as_stated(_declared_at(row.path))
 
     assert row.stated == declared, (
-        f'{_ANCHOR_DOC} states the {row.gate} default as `{row.stated}`, '
-        f'but {row.path} declares `{declared}`'
+        f'{_ANCHOR_DOC} states the {row.gate} default as `{row.stated}`, but {row.path} declares `{declared}`'
     )

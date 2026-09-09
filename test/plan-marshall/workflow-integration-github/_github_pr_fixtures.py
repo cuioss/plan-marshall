@@ -76,11 +76,7 @@ CURRENCY_SUBJECT_BOT_COUNT: int = len(CURRENCY_SUBJECT_BOTS)
 #: currency-blind gap recorded in ``automatic-review/standards/bot-participation-contract.md``
 #: — would otherwise be asserted over nothing.
 CURRENCY_BLIND_BOTS: tuple[str, ...] = guard_non_empty(
-    tuple(
-        bot
-        for bot in bot_registry.bot_kinds()
-        if not bot_registry.participation_requires_update(bot)
-    ),
+    tuple(bot for bot in bot_registry.bot_kinds() if not bot_registry.participation_requires_update(bot)),
     'CURRENCY_BLIND_BOTS',
     'bot_registry.bot_kinds() filtered by NOT bot_registry.participation_requires_update',
 )

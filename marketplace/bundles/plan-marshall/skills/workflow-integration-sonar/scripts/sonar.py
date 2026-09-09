@@ -137,6 +137,7 @@ def _read_manifest_sonar_params(plan_id: str) -> dict[str, Any]:
     params = step_params.get(_SONAR_ROUNDTRIP_STEP_ID, {})
     return params if isinstance(params, dict) else {}
 
+
 # CE task states that mean "analysis has settled" (the issue store on the
 # server is now consistent for the PR). PENDING / IN_PROGRESS mean the engine
 # is still processing and the issue set may be incomplete.
@@ -279,8 +280,7 @@ def _wait_for_ce_ready(project: str, pr: str | None, timeout: int) -> dict[str, 
         return {
             'count_status': 'undecidable',
             'count_status_reason': (
-                f'CE analysis not DONE within {timeout}s '
-                f'(last state={ce_state}, queue={last.get("queue_length", "?")})'
+                f'CE analysis not DONE within {timeout}s (last state={ce_state}, queue={last.get("queue_length", "?")})'
             ),
         }
     return {'count_status': 'confirmed'}
@@ -815,7 +815,10 @@ Examples:
                 'args': [
                     {'flags': ['--plan-id'], 'dest': 'plan_id', 'required': True, 'help': 'Plan ID for finding store'},
                     {'flags': ['--project'], 'required': True, 'help': 'SonarQube project key'},
-                    {'flags': ['--pr'], 'help': 'Pull request ID — scopes the CE-status lookup and new-code enumeration'},
+                    {
+                        'flags': ['--pr'],
+                        'help': 'Pull request ID — scopes the CE-status lookup and new-code enumeration',
+                    },
                     {'flags': ['--severities'], 'help': 'Filter by severity (comma-separated)'},
                     {'flags': ['--types'], 'help': 'Filter by type (comma-separated)'},
                     {
@@ -834,7 +837,11 @@ Examples:
                 'handler': cmd_post_responses,
                 'args': [
                     {'flags': ['--plan-id'], 'dest': 'plan_id', 'required': True, 'help': 'Plan ID for finding store'},
-                    {'flags': ['--project'], 'required': False, 'help': 'SonarQube project key (accepted for API uniformity)'},
+                    {
+                        'flags': ['--project'],
+                        'required': False,
+                        'help': 'SonarQube project key (accepted for API uniformity)',
+                    },
                 ],
             },
         ],

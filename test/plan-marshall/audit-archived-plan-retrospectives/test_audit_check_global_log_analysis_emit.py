@@ -29,9 +29,7 @@ class TestEmitGlobalLogBlock:
 
     def test_block_carries_summary_lines_and_genuine_count(self, tmp_path: Path):
         # one genuine ERROR failure (carries failure markers) + one slow call
-        _write_metrics_window(
-            tmp_path, 'plan-x', '2026-06-01T10:00:00Z', '2026-06-01T11:00:00Z'
-        )
+        _write_metrics_window(tmp_path, 'plan-x', '2026-06-01T10:00:00Z', '2026-06-01T11:00:00Z')
         _write_log(
             tmp_path,
             'script-execution-2026-06-01.log',
@@ -64,9 +62,7 @@ class TestEmitGlobalLogBlock:
         # markers, and excludes (a) DEBUG diagnostics (below INFO) and (b) bare
         # script-call probes at an elevated level with no failure marker (a benign
         # non-zero-exit query such as `exists`/`read` answering "not found").
-        _write_metrics_window(
-            tmp_path, 'plan-x', '2026-06-01T10:00:00Z', '2026-06-01T11:00:00Z'
-        )
+        _write_metrics_window(tmp_path, 'plan-x', '2026-06-01T10:00:00Z', '2026-06-01T11:00:00Z')
         _write_log(
             tmp_path,
             'script-execution-2026-06-01.log',
@@ -92,9 +88,7 @@ class TestEmitGlobalLogBlock:
         # The benign-probe exclusion is restricted to read-only QUERY subcommands.
         # A non-query command (e.g. `run`) at ERROR with no failure marker must STILL
         # be flagged — it is a genuine failure, not a "not found" probe.
-        _write_metrics_window(
-            tmp_path, 'plan-x', '2026-06-01T10:00:00Z', '2026-06-01T11:00:00Z'
-        )
+        _write_metrics_window(tmp_path, 'plan-x', '2026-06-01T10:00:00Z', '2026-06-01T11:00:00Z')
         _write_log(
             tmp_path,
             'script-execution-2026-06-01.log',

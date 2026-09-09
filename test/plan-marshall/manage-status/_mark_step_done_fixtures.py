@@ -8,7 +8,6 @@ import. Below, verbatim, is the docstring of the module they were split from:
 Tests for the mark-step-done subcommand of manage-status.
 """
 
-
 from argparse import Namespace
 
 from conftest import load_script_module

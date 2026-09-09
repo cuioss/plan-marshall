@@ -161,9 +161,7 @@ def resolve_diff_file_path(diff_file: str, plan_dir: Path) -> Path:
         # candidate would then resolve to an existing DIRECTORY — failing later
         # with a confusing "is a directory" read error instead of naming the
         # actual defect, and only by luck rather than by rule.
-        raise ValueError(
-            f'Diff file does not exist: {diff_file!r} — the argument is empty and names no path'
-        )
+        raise ValueError(f'Diff file does not exist: {diff_file!r} — the argument is empty and names no path')
     raw = Path(diff_file)
     if raw.is_absolute():
         if raw.exists():

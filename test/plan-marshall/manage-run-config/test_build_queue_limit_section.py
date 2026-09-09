@@ -25,9 +25,7 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'manage-run-config', 'run_config.
 # regression: the seeded build.queue.upper_limit_seconds default must match the
 # run-config reader's clamp floor so a freshly-seeded value and an absent-section
 # read resolve to the same operator-facing value.
-_config_defaults_mod = load_script_module(
-    'plan-marshall', 'manage-config', '_config_defaults.py'
-)
+_config_defaults_mod = load_script_module('plan-marshall', 'manage-config', '_config_defaults.py')
 _run_config_mod = load_script_module(
     'plan-marshall', 'manage-run-config', 'run_config.py', module_name='run_config_for_floor'
 )

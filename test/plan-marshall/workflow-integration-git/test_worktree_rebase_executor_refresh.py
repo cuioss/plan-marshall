@@ -52,9 +52,7 @@ cmd_worktree_rebase_to = git_workflow.cmd_worktree_rebase_to
 
 
 def _git(repo: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        ['git', '-C', str(repo), *args], capture_output=True, text=True, check=check
-    )
+    return subprocess.run(['git', '-C', str(repo), *args], capture_output=True, text=True, check=check)
 
 
 def _init_main_repo(repo: Path) -> None:
@@ -130,9 +128,7 @@ class _GeneratorSpy:
 
 def _invoke(env: dict, monkeypatch, spy=None, base: str = 'main') -> dict:
     target = env['worktree']
-    monkeypatch.setattr(
-        git_workflow, '_resolve_worktree_path_for_plan', lambda _pid: (target, None)
-    )
+    monkeypatch.setattr(git_workflow, '_resolve_worktree_path_for_plan', lambda _pid: (target, None))
     monkeypatch.setattr(git_workflow, '_find_plan_root_from_cwd', lambda: target)
     if spy is not None:
         monkeypatch.setattr(git_workflow, '_run_generate_executor', spy)
@@ -160,8 +156,7 @@ class TestDriftedExecutorIsRegenerated:
         assert result['executor_drift'] == 'drift'
         assert result['executor_regenerated'] is True
         assert spy.verbs == ['drift', 'generate'], (
-            'a drifted script set must be probed and then regenerated, '
-            f'got {spy.verbs}'
+            f'a drifted script set must be probed and then regenerated, got {spy.verbs}'
         )
 
     def test_replayed_rebase_without_drift_does_not_regenerate(self, env, monkeypatch):
@@ -224,9 +219,7 @@ class TestRefreshIsNonFatal:
 
 
 class TestSuccessIsDerivedFromDiskNotExitCode:
-    def test_generation_exiting_zero_without_landing_a_file_is_not_success(
-        self, env, monkeypatch
-    ):
+    def test_generation_exiting_zero_without_landing_a_file_is_not_success(self, env, monkeypatch):
         """`returncode == 0` is not proof the executor exists.
 
         The generator can exit 0 having written nothing when marketplace
@@ -242,9 +235,7 @@ class TestSuccessIsDerivedFromDiskNotExitCode:
 
         assert result['status'] == 'success', 'the rebase itself succeeded'
         assert spy.verbs == ['drift', 'generate'], 'generation was attempted'
-        assert result['executor_regenerated'] is False, (
-            'no executor landed on disk, so the refresh did not succeed'
-        )
+        assert result['executor_regenerated'] is False, 'no executor landed on disk, so the refresh did not succeed'
         assert 'no executor landed' in result['executor_detail']
 
     def test_generation_that_lands_a_file_is_success(self, env, monkeypatch):
@@ -292,7 +283,7 @@ class TestSubprocessSeamShape:
         assert argv[argv.index('--marketplace-root') + 1] == str(env['worktree'])
         assert captured['cwd'] == str(env['worktree']), (
             'cwd MUST be pinned to the worktree — the generator resolves its '
-            "OUTPUT location by walking up from cwd, so an unpinned call would "
+            'OUTPUT location by walking up from cwd, so an unpinned call would '
             "rewrite main's executor"
         )
 
@@ -345,9 +336,7 @@ class TestUnexpectedSeamExceptionAtTheCliGate:
     ``status: error`` TOON the rest of the script's callers rely on.
     """
 
-    def test_unexpected_seam_exception_propagates_through_cmd_worktree_rebase_to(
-        self, env, monkeypatch
-    ):
+    def test_unexpected_seam_exception_propagates_through_cmd_worktree_rebase_to(self, env, monkeypatch):
         _commit(env['main_repo'], 'upstream.txt', 'new\n', 'upstream script change')
         _commit(env['worktree'], 'local.txt', 'mine\n', 'local work')
 
@@ -357,16 +346,12 @@ class TestUnexpectedSeamExceptionAtTheCliGate:
         with pytest.raises(RuntimeError, match='boom: unexpected seam fault'):
             _invoke(env, monkeypatch, spy=_raising_spy)
 
-    def test_safe_main_absorbs_the_same_fault_into_an_error_toon(
-        self, env, monkeypatch, capsys
-    ):
+    def test_safe_main_absorbs_the_same_fault_into_an_error_toon(self, env, monkeypatch, capsys):
         _commit(env['main_repo'], 'upstream.txt', 'new\n', 'upstream script change')
         _commit(env['worktree'], 'local.txt', 'mine\n', 'local work')
 
         target = env['worktree']
-        monkeypatch.setattr(
-            git_workflow, '_resolve_worktree_path_for_plan', lambda _pid: (target, None)
-        )
+        monkeypatch.setattr(git_workflow, '_resolve_worktree_path_for_plan', lambda _pid: (target, None))
         monkeypatch.setattr(git_workflow, '_find_plan_root_from_cwd', lambda: target)
 
         def _raising_spy(_worktree, _verb, *_args):
@@ -389,6 +374,5 @@ class TestUnexpectedSeamExceptionAtTheCliGate:
         assert 'status: error' in captured.out
         assert 'internal_error' in captured.out
         assert 'boom: unexpected seam fault' in captured.out, (
-            'the absorbed exception message must reach the TOON payload, not '
-            'be swallowed by the gate'
+            'the absorbed exception message must reach the TOON payload, not be swallowed by the gate'
         )

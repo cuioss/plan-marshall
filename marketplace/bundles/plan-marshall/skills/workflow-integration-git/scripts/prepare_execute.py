@@ -221,9 +221,7 @@ def _restore_slot(src: Path, dst: Path) -> None:
 #   3. The meta-project-only, post-merge REgeneration of MAIN's executor by
 #      ``project:finalize-step-sync-plugin-cache``.
 
-_GENERATE_EXECUTOR_PATH = (
-    _THIS_DIR.parent.parent / 'tools-script-executor' / 'scripts' / 'generate_executor.py'
-)
+_GENERATE_EXECUTOR_PATH = _THIS_DIR.parent.parent / 'tools-script-executor' / 'scripts' / 'generate_executor.py'
 
 
 #: Re-exported under this module's historical private names so the many call
@@ -235,9 +233,7 @@ _worktree_executor_path = worktree_executor_path
 _executor_landed = executor_landed
 
 
-def _already_moved_in_response(
-    worktree_path: Path, plan_id: str, *, main_copy_absent: bool = False
-) -> dict[str, Any]:
+def _already_moved_in_response(worktree_path: Path, plan_id: str, *, main_copy_absent: bool = False) -> dict[str, Any]:
     """Build the noop/healed success payload for a plan dir already resident in
     the worktree — shared by the primary idempotence guard (keyed on
     ``_is_real_moved_in``) and the resolution-robust re-entry recognition (keyed
@@ -477,9 +473,7 @@ def run_prepare_execute(args: Namespace) -> dict[str, Any]:
                 )
             )
         git_workflow = _load_git_workflow()
-        create_result = git_workflow.cmd_worktree_create(
-            Namespace(plan_id=plan_id, branch=branch, base=base)
-        )
+        create_result = git_workflow.cmd_worktree_create(Namespace(plan_id=plan_id, branch=branch, base=base))
         if create_result.get('status') != 'success' and create_result.get('error') != 'worktree_exists':
             return _assert_cwd_unchanged(
                 {
@@ -550,9 +544,7 @@ def run_prepare_execute(args: Namespace) -> dict[str, Any]:
     # it, so this branch never green-lights a blocking state.
     if not main_plan_dir.exists():
         if _worktree_holds_moved_in_plan(worktree_path, plan_id):
-            return _assert_cwd_unchanged(
-                _already_moved_in_response(worktree_path, plan_id, main_copy_absent=True)
-            )
+            return _assert_cwd_unchanged(_already_moved_in_response(worktree_path, plan_id, main_copy_absent=True))
         return _assert_cwd_unchanged(
             make_error(
                 f'plan directory not found on main checkout: {main_plan_dir}',

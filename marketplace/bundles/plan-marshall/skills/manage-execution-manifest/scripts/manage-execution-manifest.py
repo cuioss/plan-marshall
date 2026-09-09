@@ -561,9 +561,7 @@ def _log_candidate_source(plan_id: str, phase_key: str, source: str) -> None:
     preserved) or ``'csv_fallback'`` (no marshal.json available; the
     composer fell back to the ``--phase-{5,6}-steps`` CSV).
     """
-    message = (
-        f'(plan-marshall:manage-execution-manifest:compose) {phase_key} candidate source: {source}'
-    )
+    message = f'(plan-marshall:manage-execution-manifest:compose) {phase_key} candidate source: {source}'
     _emit_decision_log(plan_id, message)
 
 
@@ -612,9 +610,7 @@ def _log_pre_push_quality_gate_kept_unknown(plan_id: str, reason: str) -> None:
     _emit_decision_log(plan_id, message)
 
 
-def _log_prefilter_omitted(
-    plan_id: str, step_name: str, change_type: str, affected_files_count: int
-) -> None:
+def _log_prefilter_omitted(plan_id: str, step_name: str, change_type: str, affected_files_count: int) -> None:
     """Emit the decision-log entry for an ``*_inactive`` pre-filter (simplify or security_audit)."""
     message = (
         f'(plan-marshall:manage-execution-manifest:compose) {step_name} omitted — '
@@ -957,9 +953,7 @@ def _apply_terminal_emission_orchestration_gate(
     dropped, empty when it was kept or was already absent), so the drop is reported
     through the same convention every other narrowing site uses.
     """
-    present = any(
-        canonicalize_step_key(step) == _TERMINAL_EMISSION_STEP for step in phase_6_candidates
-    )
+    present = any(canonicalize_step_key(step) == _TERMINAL_EMISSION_STEP for step in phase_6_candidates)
     if not present:
         return phase_6_candidates, []
 
@@ -970,9 +964,7 @@ def _apply_terminal_emission_orchestration_gate(
         # The single detector is unavailable in this environment; fail toward the
         # non-orchestrated default and drop the step rather than seed an emission
         # that may write nowhere.
-        kept = [
-            s for s in phase_6_candidates if canonicalize_step_key(s) != _TERMINAL_EMISSION_STEP
-        ]
+        kept = [s for s in phase_6_candidates if canonicalize_step_key(s) != _TERMINAL_EMISSION_STEP]
         return kept, [
             {
                 'step': _TERMINAL_EMISSION_STEP,
@@ -985,14 +977,11 @@ def _apply_terminal_emission_orchestration_gate(
     if verdict.orchestrated:
         return phase_6_candidates, []
 
-    kept = [
-        s for s in phase_6_candidates if canonicalize_step_key(s) != _TERMINAL_EMISSION_STEP
-    ]
+    kept = [s for s in phase_6_candidates if canonicalize_step_key(s) != _TERMINAL_EMISSION_STEP]
     return kept, [
         {
             'step': _TERMINAL_EMISSION_STEP,
-            'reason': f'plan is not orchestrated (detection={verdict.detection}); '
-            'no epic inbox to write a landing to',
+            'reason': f'plan is not orchestrated (detection={verdict.detection}); no epic inbox to write a landing to',
         }
     ]
 
@@ -1196,9 +1185,7 @@ def _resolve_command_tier(cmd: str, plan_id: str) -> dict[str, Any] | None:
     return _invoke_architecture_resolve(argv_extra, plan_id)
 
 
-def _route_task_verification_commands(
-    plan_id: str, body: dict[str, Any]
-) -> tuple[int, list[tuple[Path, str]]]:
+def _route_task_verification_commands(plan_id: str, body: dict[str, Any]) -> tuple[int, list[tuple[Path, str]]]:
     """Walk plan tasks; route verification commands by ``execution_tier``.
 
     For each ``TASK-*.json`` under ``{plan_dir}/tasks/``:
@@ -1303,9 +1290,9 @@ def _route_task_verification_commands(
                     # re-resolves live) rather than routing it to a nonexistent
                     # gate. Restricted to KNOWN canonical commands so a genuinely
                     # custom / typo'd verb still routes and fails loud, as before.
-                    if verb in ALL_CANONICAL_COMMANDS and not _check_step_resolvable(
-                        candidate, 'phase_5'
-                    ).get('resolvable'):
+                    if verb in ALL_CANONICAL_COMMANDS and not _check_step_resolvable(candidate, 'phase_5').get(
+                        'resolvable'
+                    ):
                         _emit_decision_log(
                             plan_id,
                             '(plan-marshall:manage-execution-manifest:compose) '
@@ -1688,16 +1675,11 @@ def _ceremony_prefilter_warnings(
         # to a security-class drop would misreport the reason the step vanished.
         # Membership is read through the same persona predicate the gate itself
         # uses — never a hardcoded step id.
-        gate = (
-            'zero-change-surface gate'
-            if _is_security_class_step(step)
-            else 'change_type/affected_files gate'
-        )
+        gate = 'zero-change-surface gate' if _is_security_class_step(step) else 'change_type/affected_files gate'
         warnings.append(
             (
                 step,
-                f'ceremony pre-filter ({gate}) removed this '
-                'operator-selected step — the lane did not drop it',
+                f'ceremony pre-filter ({gate}) removed this operator-selected step — the lane did not drop it',
             )
         )
     return warnings
@@ -1895,13 +1877,13 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
             'error': 'change_type_scope_conflict',
             'message': (
                 f"change_type scope conflict: the plan's settled classification "
-                f"(status.metadata.change_type — the PLAN scope) is {settled_change_type!r}, "
-                f"but compose was supplied --plan-change-type {supplied_change_type!r} "
-                f"(a DELIVERABLE-scoped value). The settled plan classification is "
+                f'(status.metadata.change_type — the PLAN scope) is {settled_change_type!r}, '
+                f'but compose was supplied --plan-change-type {supplied_change_type!r} '
+                f'(a DELIVERABLE-scoped value). The settled plan classification is '
                 f"authoritative — a deliverable's local change type must not narrow "
-                f"verification for the whole plan. Re-run compose with "
-                f"--plan-change-type {settled_change_type} (or correct "
-                f"status.metadata.change_type if the settled classification is itself wrong)."
+                f'verification for the whole plan. Re-run compose with '
+                f'--plan-change-type {settled_change_type} (or correct '
+                f'status.metadata.change_type if the settled classification is itself wrong).'
             ),
             'settled_change_type': settled_change_type,
             'supplied_change_type': supplied_change_type,
@@ -2370,8 +2352,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     if resolution_error is not None:
         _emit_decision_log(
             plan_id,
-            '(plan-marshall:manage-execution-manifest:compose) unresolvable_step — '
-            f'{resolution_error["message"]}',
+            f'(plan-marshall:manage-execution-manifest:compose) unresolvable_step — {resolution_error["message"]}',
         )
         return {
             'status': 'error',
@@ -2401,8 +2382,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     if canonical_error is not None:
         _emit_decision_log(
             plan_id,
-            '(plan-marshall:manage-execution-manifest:compose) non_canonical_step — '
-            f'{canonical_error["message"]}',
+            f'(plan-marshall:manage-execution-manifest:compose) non_canonical_step — {canonical_error["message"]}',
         )
         return {
             'status': 'error',
@@ -2436,8 +2416,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     if ascending_error is not None:
         _emit_decision_log(
             plan_id,
-            '(plan-marshall:manage-execution-manifest:compose) phase_6_order_violation — '
-            f'{ascending_error["message"]}',
+            f'(plan-marshall:manage-execution-manifest:compose) phase_6_order_violation — {ascending_error["message"]}',
         )
         return {
             'status': 'error',
@@ -2504,9 +2483,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     body['phase_5']['step_params'] = _snapshot_step_params(
         list(body['phase_5'].get('verification_steps', [])), marshal_phase_5_map
     )
-    body['phase_6']['step_params'] = _snapshot_step_params(
-        list(body['phase_6'].get('steps', [])), marshal_phase_6_map
-    )
+    body['phase_6']['step_params'] = _snapshot_step_params(list(body['phase_6'].get('steps', [])), marshal_phase_6_map)
     # The pre-subtraction candidate set (captured above), persisted so a later
     # ``reconcile`` can diff live config against what this compose actually
     # chose FROM. See the capture site for why the emitted list cannot serve.
@@ -2566,8 +2543,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     for warned_step, warning in lane_warnings:
         _emit_decision_log(
             plan_id,
-            '(plan-marshall:manage-execution-manifest:compose) lane_resolution warning — '
-            f'{warned_step}: {warning}',
+            f'(plan-marshall:manage-execution-manifest:compose) lane_resolution warning — {warned_step}: {warning}',
         )
     _log_decision(plan_id, rule, body)
 
@@ -3103,9 +3079,7 @@ def cmd_reconcile(args: argparse.Namespace) -> dict[str, Any] | None:
     live_set = set(live_candidates or ())
 
     composed_candidates = phase_6.get('candidate_steps')
-    backfill_determinable = (
-        isinstance(composed_candidates, list) and live_candidates is not None
-    )
+    backfill_determinable = isinstance(composed_candidates, list) and live_candidates is not None
 
     # Partition the frozen list. A step that resolves is retained untouched; an
     # unloadable one is stale or broken by whether live config still wants it.
@@ -3145,11 +3119,7 @@ def cmd_reconcile(args: argparse.Namespace) -> dict[str, Any] | None:
     # both inputs must be present for the diff to mean anything, and expressing
     # that directly is what makes the two reads below type-safe.
     if isinstance(composed_candidates, list) and live_candidates is not None:
-        composed_set = {
-            canonicalize_step_key(step)
-            for step in composed_candidates
-            if isinstance(step, str)
-        }
+        composed_set = {canonicalize_step_key(step) for step in composed_candidates if isinstance(step, str)}
         # Canonical for the same reason the stale test above is: a prefixed
         # frozen id must not read as "absent from the manifest" and get
         # backfilled as a duplicate of a step already there.
@@ -3157,9 +3127,7 @@ def cmd_reconcile(args: argparse.Namespace) -> dict[str, Any] | None:
         backfill = [
             step
             for step in live_candidates
-            if step not in composed_set
-            and step not in frozen_set
-            and _check_step_loadable(step)['loadable']
+            if step not in composed_set and step not in frozen_set and _check_step_loadable(step)['loadable']
         ]
 
     reconciled = bool(stale or backfill)
@@ -3172,9 +3140,7 @@ def cmd_reconcile(args: argparse.Namespace) -> dict[str, Any] | None:
             marshal_map = _read_merged_phase_6_step_map(plan_id)
             phase_6['step_params'] = {
                 **{step: params.get(step) for step in merged if step in params},
-                **_snapshot_step_params(
-                    [step for step in merged if step not in params], marshal_map
-                ),
+                **_snapshot_step_params([step for step in merged if step not in params], marshal_map),
             }
         write_manifest(plan_id, manifest)
 
@@ -3275,10 +3241,7 @@ def cmd_validate_loadable(args: argparse.Namespace) -> dict[str, Any] | None:
             'status': 'error',
             'plan_id': plan_id,
             'error': 'invalid_arguments',
-            'message': (
-                'validate-loadable requires exactly one of '
-                '--step-id, --all, or --check-seed'
-            ),
+            'message': ('validate-loadable requires exactly one of --step-id, --all, or --check-seed'),
         }
 
     if check_seed:
@@ -3288,10 +3251,7 @@ def cmd_validate_loadable(args: argparse.Namespace) -> dict[str, Any] | None:
                 'status': 'error',
                 'plan_id': plan_id,
                 'error': 'seed_unreadable',
-                'message': (
-                    'could not read plan.phase-6-finalize.steps from marshal.json '
-                    f'({get_marshal_path()})'
-                ),
+                'message': (f'could not read plan.phase-6-finalize.steps from marshal.json ({get_marshal_path()})'),
             }
         order_message = _check_ascending_order(seed_steps)
         if order_message is not None:
@@ -3353,15 +3313,17 @@ def cmd_validate_loadable(args: argparse.Namespace) -> dict[str, Any] | None:
         # `unloadable_count` totals the defect, instead of silently
         # dropping the entry from validation.
         offending_type = type(entry).__name__
-        results.append({
-            'step_id': str(entry),
-            'standards_path': '',
-            'loadable': False,
-            'message': (
-                f'manifest step entry has non-string type `{offending_type}` '
-                f'(value: {entry!r}) — manifest is corrupt; only str step IDs are valid'
-            ),
-        })
+        results.append(
+            {
+                'step_id': str(entry),
+                'standards_path': '',
+                'loadable': False,
+                'message': (
+                    f'manifest step entry has non-string type `{offending_type}` '
+                    f'(value: {entry!r}) — manifest is corrupt; only str step IDs are valid'
+                ),
+            }
+        )
     unloadable_count = sum(1 for r in results if not r['loadable'])
 
     # Per the D4 array-authority contract, the composed ``phase_6.steps`` array
@@ -3469,16 +3431,12 @@ def _build_parser() -> argparse.ArgumentParser:
     record_step_parser.add_argument(
         '--phase',
         required=True,
-        help='Phase the step ran in (one of VALID_RECORD_PHASES: '
-        + '|'.join(VALID_RECORD_PHASES)
-        + ')',
+        help='Phase the step ran in (one of VALID_RECORD_PHASES: ' + '|'.join(VALID_RECORD_PHASES) + ')',
     )
     record_step_parser.add_argument(
         '--outcome',
         required=True,
-        help='Execution outcome (one of VALID_RECORD_OUTCOMES: '
-        + '|'.join(VALID_RECORD_OUTCOMES)
-        + ')',
+        help='Execution outcome (one of VALID_RECORD_OUTCOMES: ' + '|'.join(VALID_RECORD_OUTCOMES) + ')',
     )
     # The three optional token-attribution flags default to ``None``, NOT ``0``.
     # The default is the whole discriminator: with ``default=0`` an omitted flag
@@ -3535,8 +3493,7 @@ def _build_parser() -> argparse.ArgumentParser:
         '--apply',
         action='store_true',
         help=(
-            'Write the reconciled step list back to execution.toon. Without it '
-            'the verb only reports the divergence.'
+            'Write the reconciled step list back to execution.toon. Without it the verb only reports the divergence.'
         ),
     )
 
@@ -3579,7 +3536,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
 
     sp_get = step_params_sub.add_parser(
-        'get', help='Get a step\'s snapshotted param object from the manifest', allow_abbrev=False
+        'get', help="Get a step's snapshotted param object from the manifest", allow_abbrev=False
     )
     add_plan_id_arg(sp_get)
     sp_get.add_argument('--phase', required=True, help='Phase: 5-execute or 6-finalize')

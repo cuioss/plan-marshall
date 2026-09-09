@@ -43,13 +43,15 @@ from file_ops import get_plan_dir
 # ``manage_status.py`` main() treat the same situations as boundary refusals.
 # Single source of truth — both consumers import this name; do not duplicate
 # the literal set.
-VERIFY_REFUSAL_ERRORS = frozenset({
-    'worktree_unresolved',
-    'worktree_metadata_drift',
-    'main_checkout_dirtied_during_plan',
-    'worktree_dirty_at_boundary',
-    'main_capture_read_the_worktree',
-})
+VERIFY_REFUSAL_ERRORS = frozenset(
+    {
+        'worktree_unresolved',
+        'worktree_metadata_drift',
+        'main_checkout_dirtied_during_plan',
+        'worktree_dirty_at_boundary',
+        'main_capture_read_the_worktree',
+    }
+)
 
 
 def _clean_tree_refusal(plan_id: str, status: dict[str, Any]) -> dict[str, Any] | None:
@@ -164,8 +166,7 @@ def _loop_back_auto_override(
     write_status(args.plan_id, status)
 
     diff_summary = '; '.join(
-        f'{d.get("invariant")}: {d.get("captured")} -> {d.get("observed")}'
-        for d in verify_result.get('diffs', [])
+        f'{d.get("invariant")}: {d.get("captured")} -> {d.get("observed")}' for d in verify_result.get('diffs', [])
     )
     log_entry(
         'decision',
@@ -413,11 +414,7 @@ def cmd_transition(args: argparse.Namespace) -> dict[str, Any] | None:
             if isinstance(metadata, dict) and metadata.get('loop_back_reentry'):
                 marker = metadata.pop('loop_back_reentry')
                 write_status(args.plan_id, status)
-                from_phase = (
-                    marker.get('from_phase', 'unknown')
-                    if isinstance(marker, dict)
-                    else 'unknown'
-                )
+                from_phase = marker.get('from_phase', 'unknown') if isinstance(marker, dict) else 'unknown'
                 log_entry(
                     'decision',
                     args.plan_id,
@@ -684,8 +681,7 @@ def _restore_lesson_from_plan_dir(plan_id: str, plan_dir: Path) -> LessonCarryBa
             '',
             [],
             [],
-            f'Plan directory {plan_dir} does not exist, so it was never scanned '
-            f'for lesson files.',
+            f'Plan directory {plan_dir} does not exist, so it was never scanned for lesson files.',
         )
 
     matches = sorted(plan_dir.glob('lesson-*.md'))
@@ -700,17 +696,12 @@ def _restore_lesson_from_plan_dir(plan_id: str, plan_dir: Path) -> LessonCarryBa
             store.resolution,
             '',
             [],
-            [
-                {'lesson_id': m.stem[len('lesson-'):], 'reason': 'store_unresolved'}
-                for m in matches
-            ],
+            [{'lesson_id': m.stem[len('lesson-') :], 'reason': 'store_unresolved'} for m in matches],
             store.detail,
         )
 
     if not matches:
-        return LessonCarryBack(
-            'no_lesson_file', store.resolution, str(store.path), [], [], store.detail
-        )
+        return LessonCarryBack('no_lesson_file', store.resolution, str(store.path), [], [], store.detail)
 
     lessons_dir = store.path.resolve()
     lessons_dir.mkdir(parents=True, exist_ok=True)
@@ -723,7 +714,7 @@ def _restore_lesson_from_plan_dir(plan_id: str, plan_dir: Path) -> LessonCarryBa
         # read off the resolved path describes the link's target rather than the
         # file the plan actually carries — and the traversal guard below would
         # then be inspecting the wrong name entirely.
-        lesson_id = match.stem[len('lesson-'):]
+        lesson_id = match.stem[len('lesson-') :]
         if any(sep in lesson_id for sep in ('/', '\\', '..')):
             skipped.append({'lesson_id': lesson_id, 'reason': 'path_traversal'})
             continue

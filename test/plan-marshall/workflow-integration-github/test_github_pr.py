@@ -159,9 +159,7 @@ def _patch_provider(monkeypatch, comments, head_sha='deadbeef', head_committed_a
     commit ordering is unaffected by the guard.
     """
     monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (True, ''))
-    monkeypatch.setattr(
-        github_pr._github, 'fetch_pr_head_committed_at', lambda pr_number: head_committed_at
-    )
+    monkeypatch.setattr(github_pr._github, 'fetch_pr_head_committed_at', lambda pr_number: head_committed_at)
     monkeypatch.setattr(
         github_pr._github,
         'fetch_pr_comments_data',
@@ -418,9 +416,7 @@ def test_classification_union_spans_both_lists(plan_context, monkeypatch):
     plan_id = 'gh-pr-classification-union'
     _patch_provider(monkeypatch, _COMMENTS)
 
-    result = _run_fetch_classified(
-        103, plan_id, required_bots='coderabbit,cuioss-review-bot', optional_bots='sourcery'
-    )
+    result = _run_fetch_classified(103, plan_id, required_bots='coderabbit,cuioss-review-bot', optional_bots='sourcery')
     assert result['status'] == 'success'
     assert result['count_stored'] == len(_COMMENTS)
     assert result['unclassified_bots'] == []
@@ -632,9 +628,7 @@ def test_human_comment_quoting_the_disposition_heading_is_still_stored(plan_cont
             'thread_id': '',
             'kind': 'issue_comment',
             'body': (
-                '> ## Triage dispositions\n'
-                '>\n'
-                'This disposition is wrong: the guard still misses the empty-thread case.'
+                '> ## Triage dispositions\n>\nThis disposition is wrong: the guard still misses the empty-thread case.'
             ),
             'resolved': False,
         },
@@ -921,11 +915,7 @@ _RATE_LIMIT_NOTICES = {
         'that can be reviewed per hour.'
     ),
     # Sourcery: a weekly-review-limit note in a callout, "reached your ... limit".
-    'sourcery': (
-        '> [!NOTE]\n'
-        '> Sourcery has reached your weekly review limit. '
-        'Reviews will resume next Monday.'
-    ),
+    'sourcery': ('> [!NOTE]\n> Sourcery has reached your weekly review limit. Reviews will resume next Monday.'),
     # Arbitrary unknown/renamed bot: a limit heading + "hit the ... rate limit"
     # + a "try again" service tail. No code names this bot.
     'unknown': (
@@ -942,9 +932,7 @@ _RATE_LIMIT_NOTICES = {
 # notice-voiced past tense the recognizer keys on, so none may be dropped.
 _GENUINE_RATE_LIMIT_MENTIONS = {
     # Plain inline comment, no notice structure at all.
-    'coderabbit': (
-        'This off-by-one in the slice bound drops the last element; use len(items).'
-    ),
+    'coderabbit': ('This off-by-one in the slice bound drops the last element; use len(items).'),
     # Mentions a rate limit in prose, no notice structure.
     'sourcery': (
         'Consider adding a retry with backoff here in case the API rate limit is '
@@ -1090,9 +1078,7 @@ def test_fetch_findings_surfaces_rate_limit_refusals_bot_agnostically(plan_conte
     assert result['producer_mismatch_hash_id'] is None
 
     stored = query_findings(plan_id, finding_type='pr-comment')['findings']
-    stored_ids = {
-        _stored_comment_id(f) for f in stored
-    }
+    stored_ids = {_stored_comment_id(f) for f in stored}
     assert stored_ids == {'cr-genuine', 'sr-genuine', 'unk-genuine'}
 
 
@@ -1115,8 +1101,7 @@ _DRIFTED_CODERABBIT_NOTICE = (
 #: The same presentation carrying CodeRabbit's DECLARED wording, so both arms match
 #: and the arms AGREE — the matched control for the drift case.
 _AGREEING_CODERABBIT_NOTICE = (
-    '> [!WARNING] > ## Review limit reached > '
-    'Review limit reached. Reviews will resume after the limit resets.'
+    '> [!WARNING] > ## Review limit reached > Review limit reached. Reviews will resume after the limit resets.'
 )
 
 #: Sourcery's OBSERVED size refusal — the MIRROR direction of the drifted notice
@@ -1137,9 +1122,7 @@ def _drift_records(result):
     return {(r['bot_kind'], r['layer']) for r in result['refusal_pattern_drift']}
 
 
-def test_fetch_findings_reports_drift_when_only_the_structural_arm_matched(
-    plan_context, monkeypatch
-):
+def test_fetch_findings_reports_drift_when_only_the_structural_arm_matched(plan_context, monkeypatch):
     """⛔ A refusal caught by SHAPE alone names the bot whose wording has drifted.
 
     The notice is recognised, so the refusal itself is handled exactly as before —
@@ -1171,14 +1154,10 @@ def test_fetch_findings_reports_drift_when_only_the_structural_arm_matched(
     assert result['count_skipped_refusal'] == 1
     assert result['refused_bots'] == ['coderabbit']
     # ...and the drift is reported, naming the arm that fired ALONE.
-    assert result['refusal_pattern_drift'] == [
-        {'bot_kind': 'coderabbit', 'layer': _github_pr.REFUSAL_LAYER_STRUCTURAL}
-    ]
+    assert result['refusal_pattern_drift'] == [{'bot_kind': 'coderabbit', 'layer': _github_pr.REFUSAL_LAYER_STRUCTURAL}]
 
 
-def test_fetch_findings_reports_no_drift_when_only_the_registry_arm_matched(
-    plan_context, monkeypatch
-):
+def test_fetch_findings_reports_no_drift_when_only_the_registry_arm_matched(plan_context, monkeypatch):
     """⛔ MATCHED NEGATIVE CONTROL: a registry-only match is the DESIGN, not decay.
 
     The exact mirror of the positive case above — one arm fires there too, so a
@@ -1199,9 +1178,7 @@ def test_fetch_findings_reports_no_drift_when_only_the_registry_arm_matched(
     # The arms really do differ, and in the REGISTRY direction — the mirror of the
     # positive case. Read from the live seam so a registry rewording that made this
     # body structurally visible fails here rather than silently neutering the test.
-    assert _github_pr.refusal_layers(_SOURCERY_SIZE_REFUSAL, 'sourcery') == [
-        _github_pr.REFUSAL_LAYER_REGISTRY
-    ]
+    assert _github_pr.refusal_layers(_SOURCERY_SIZE_REFUSAL, 'sourcery') == [_github_pr.REFUSAL_LAYER_REGISTRY]
     # ...and the drift channel is genuinely REACHED: review_body is a shape Sourcery
     # declares, so an empty result below is the direction, never the shape gate.
     assert 'review_body' in bot_registry.participation_evidence('sourcery')
@@ -1259,9 +1236,7 @@ def test_fetch_findings_reports_no_drift_when_both_arms_agree(plan_context, monk
     assert result['refusal_pattern_drift'] == []
 
 
-def test_fetch_findings_reports_no_drift_for_an_unattributable_refusal(
-    plan_context, monkeypatch
-):
+def test_fetch_findings_reports_no_drift_for_an_unattributable_refusal(plan_context, monkeypatch):
     """An unregistered author has no declared wording that COULD have drifted.
 
     The notice is still recognised structurally and still counted, but naming a
@@ -1322,9 +1297,7 @@ def _undeclared_shape_pairs() -> list[tuple[str, str]]:
     ]
 
 
-def test_fetch_findings_reports_no_drift_outside_a_declared_publish_shape(
-    plan_context, monkeypatch
-):
+def test_fetch_findings_reports_no_drift_outside_a_declared_publish_shape(plan_context, monkeypatch):
     """Scoped to the bot's declared ``participation_evidence`` shapes.
 
     A body arriving in a shape the bot does NOT declare is no evidence that the
@@ -2282,7 +2255,11 @@ def test_post_responses_second_round_transmits_only_newly_resolved_dispositions(
 
     round1 = [
         _stage_respondable(
-            plan_id, pr_number=400, comment_id=f'r1-{i}', thread_id='', resolution_detail=f'Accepted: round-1 reply {i}.'
+            plan_id,
+            pr_number=400,
+            comment_id=f'r1-{i}',
+            thread_id='',
+            resolution_detail=f'Accepted: round-1 reply {i}.',
         )
         for i in range(4)
     ]
@@ -2291,7 +2268,11 @@ def test_post_responses_second_round_transmits_only_newly_resolved_dispositions(
 
     round2 = [
         _stage_respondable(
-            plan_id, pr_number=400, comment_id=f'r2-{i}', thread_id='', resolution_detail=f'Accepted: round-2 reply {i}.'
+            plan_id,
+            pr_number=400,
+            comment_id=f'r2-{i}',
+            thread_id='',
+            resolution_detail=f'Accepted: round-2 reply {i}.',
         )
         for i in range(3)
     ]
@@ -2412,7 +2393,12 @@ def test_post_responses_thread_reply_path_is_idempotent_across_rounds(plan_conte
     monkeypatch.setattr(github_pr._github, 'run_graphql', _run_graphql)
 
     hash_id = _stage_respondable(
-        plan_id, pr_number=405, comment_id='ti', thread_id='PRRT_IDEM', resolution_detail='Fixed in TASK-9.', kind='inline'
+        plan_id,
+        pr_number=405,
+        comment_id='ti',
+        thread_id='PRRT_IDEM',
+        resolution_detail='Fixed in TASK-9.',
+        kind='inline',
     )
 
     first = _run_post_responses(405, plan_id)
@@ -2751,15 +2737,11 @@ class TestBareClassificationFlags:
         a future assertion that the omitted flag is ``None`` would be wrong, and
         this pins which value is correct.
         """
-        args = _parsed_fetch_args(
-            monkeypatch, ['fetch_findings', '--pr-number', '1', '--plan-id', 'p']
-        )
+        args = _parsed_fetch_args(monkeypatch, ['fetch_findings', '--pr-number', '1', '--plan-id', 'p'])
 
         assert getattr(args, dest) == ''
 
-    def test_bare_flags_reach_the_handler_and_still_warn_but_ingest(
-        self, plan_context, monkeypatch, capsys
-    ):
+    def test_bare_flags_reach_the_handler_and_still_warn_but_ingest(self, plan_context, monkeypatch, capsys):
         """END-TO-END through the relaxed parser: bare flags still ingest everything.
 
         Distinct from ``test_empty_classification_lists_still_ingest_every_bot``,
@@ -3022,9 +3004,7 @@ def test_currency_anchor_is_recorded_in_the_ledger_on_credit(plan_context, monke
 
 
 @pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
-def test_edit_at_one_commit_does_not_credit_a_later_commit(
-    bot_kind, plan_context, monkeypatch
-):
+def test_edit_at_one_commit_does_not_credit_a_later_commit(bot_kind, plan_context, monkeypatch):
     """An in-place edit credits the commit it was made against, NOT every later HEAD.
 
     The defect this forbids: with the edit arm keyed on
@@ -3052,9 +3032,7 @@ def test_edit_at_one_commit_does_not_credit_a_later_commit(
     _patch_provider(monkeypatch, [edited], head_sha=_HEAD_C)
     at_c = _run_fetch(135, plan_id)
     assert at_c['participated_bots'] == []
-    assert at_c['stale_participation_bots'] == [
-        {'bot_kind': bot_kind, 'evidence_kind': edited['kind']}
-    ]
+    assert at_c['stale_participation_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': edited['kind']}]
 
 
 def _publish_comment(bot_kind, comment_id, *, created_at, updated_at=None, body=None):
@@ -3093,9 +3071,7 @@ _HEAD_C = 'cccccccccccccccccccccccccccccccccccccccc'
 
 
 @pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
-def test_second_fetch_at_the_same_head_stays_participated(
-    bot_kind, plan_context, monkeypatch
-):
+def test_second_fetch_at_the_same_head_stays_participated(bot_kind, plan_context, monkeypatch):
     """Re-evaluating at an UNCHANGED HEAD returns the same verdict — the observer-effect regression.
 
     D4(b)/(c) and the core defect this plan closes. The currency credit is an SHA
@@ -3124,9 +3100,7 @@ def test_second_fetch_at_the_same_head_stays_participated(
 
 
 @pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
-def test_unresolvable_head_sha_fails_closed_and_stays_idempotent(
-    bot_kind, plan_context, monkeypatch
-):
+def test_unresolvable_head_sha_fails_closed_and_stays_idempotent(bot_kind, plan_context, monkeypatch):
     """An unreadable merge-candidate SHA withholds the credit AND returns the same answer twice.
 
     ``fetch_pr_head_sha`` returns an empty string on any provider-failure path. The
@@ -3156,9 +3130,7 @@ def test_unresolvable_head_sha_fails_closed_and_stays_idempotent(
     assert first['participated_bots'] == []
     assert first['stale_participation_bots'] == []
     assert first['merge_candidate_sha_resolved'] is False
-    assert first['undecidable_participation_bots'] == [
-        {'bot_kind': bot_kind, 'evidence_kind': comment['kind']}
-    ]
+    assert first['undecidable_participation_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': comment['kind']}]
     # Idempotent: the second evaluation matches the first exactly.
     assert second['participated_bots'] == first['participated_bots']
     assert second['stale_participation_bots'] == first['stale_participation_bots']
@@ -3166,9 +3138,7 @@ def test_unresolvable_head_sha_fails_closed_and_stays_idempotent(
 
 
 @pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
-def test_review_predating_the_merge_candidate_is_stale(
-    bot_kind, plan_context, monkeypatch
-):
+def test_review_predating_the_merge_candidate_is_stale(bot_kind, plan_context, monkeypatch):
     """After HEAD advances past the reviewed commit, the unchanged comment is STALE — D4(a).
 
     The matched control for the idempotence case above: identical observation history
@@ -3190,15 +3160,11 @@ def test_review_predating_the_merge_candidate_is_stale(
     _patch_provider(monkeypatch, [comment], head_sha=_HEAD_B)
     second = _run_fetch(131, plan_id)
     assert second['participated_bots'] == []
-    assert second['stale_participation_bots'] == [
-        {'bot_kind': bot_kind, 'evidence_kind': comment['kind']}
-    ]
+    assert second['stale_participation_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': comment['kind']}]
 
 
 @pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
-def test_in_place_edit_credits_participation_after_a_head_advance(
-    bot_kind, plan_context, monkeypatch
-):
+def test_in_place_edit_credits_participation_after_a_head_advance(bot_kind, plan_context, monkeypatch):
     """An in-place EDIT re-credits the bot even after HEAD advances past the recorded commit.
 
     The edit-movement arm of the currency test, exercised where it actually matters:
@@ -3223,9 +3189,7 @@ def test_in_place_edit_credits_participation_after_a_head_advance(
 
 
 @pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
-def test_a_fresh_comment_outranks_a_stale_one_through_the_subtraction(
-    bot_kind, plan_context, monkeypatch
-):
+def test_a_fresh_comment_outranks_a_stale_one_through_the_subtraction(bot_kind, plan_context, monkeypatch):
     """One stale and one fresh comment resolves ``participated``, never both states.
 
     The stale comment is listed FIRST, which is the ordering under which the
@@ -3279,9 +3243,7 @@ def _two_evidence_comments(bot_kind):
 
 
 @pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
-def test_two_unchanged_evidence_comments_are_stale_at_an_advanced_head(
-    bot_kind, plan_context, monkeypatch
-):
+def test_two_unchanged_evidence_comments_are_stale_at_an_advanced_head(bot_kind, plan_context, monkeypatch):
     """Neither of a bot's two unchanged comments credits it once HEAD advances.
 
     Both are credited and recorded at HEAD_A. At HEAD_B neither has been edited and
@@ -3298,23 +3260,17 @@ def test_two_unchanged_evidence_comments_are_stale_at_an_advanced_head(
 
     _patch_provider(monkeypatch, comments, head_sha=_HEAD_A)
     at_a = _run_fetch(160, plan_id)
-    assert at_a['participated_bots'] == [
-        {'bot_kind': bot_kind, 'evidence_kind': comments[0]['kind']}
-    ]
+    assert at_a['participated_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': comments[0]['kind']}]
 
     _patch_provider(monkeypatch, comments, head_sha=_HEAD_B)
     at_b = _run_fetch(160, plan_id)
     assert at_b['status'] == 'success'
     assert at_b['participated_bots'] == []
-    assert at_b['stale_participation_bots'] == [
-        {'bot_kind': bot_kind, 'evidence_kind': comments[0]['kind']}
-    ]
+    assert at_b['stale_participation_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': comments[0]['kind']}]
 
 
 @pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
-def test_a_rejecting_fetch_stages_no_ledger_row_so_the_verdict_holds(
-    bot_kind, plan_context, monkeypatch
-):
+def test_a_rejecting_fetch_stages_no_ledger_row_so_the_verdict_holds(bot_kind, plan_context, monkeypatch):
     """A third fetch at the UNCHANGED advanced HEAD returns the identical verdict.
 
     The pass-only staging rule, pinned by its consequence. A ledger row is written
@@ -3338,9 +3294,7 @@ def test_a_rejecting_fetch_stages_no_ledger_row_so_the_verdict_holds(
     assert third['status'] == 'success'
     assert third['participated_bots'] == at_b['participated_bots'] == []
     assert third['stale_participation_bots'] == at_b['stale_participation_bots']
-    assert third['stale_participation_bots'] == [
-        {'bot_kind': bot_kind, 'evidence_kind': comments[0]['kind']}
-    ]
+    assert third['stale_participation_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': comments[0]['kind']}]
 
     # And the ledger still anchors both comments on HEAD_A — the rejecting fetch wrote
     # nothing, which is what makes the verdict above hold rather than flip.
@@ -3360,9 +3314,7 @@ def test_a_rejecting_fetch_stages_no_ledger_row_so_the_verdict_holds(
 
 
 @pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
-def test_a_comment_predating_the_merge_candidate_is_stale_on_first_observation(
-    bot_kind, plan_context, monkeypatch
-):
+def test_a_comment_predating_the_merge_candidate_is_stale_on_first_observation(bot_kind, plan_context, monkeypatch):
     """A comment older than the commit cannot be an observation of it — even unseen.
 
     The first-observation arm's ledger-silence means only that THIS PLAN has not seen
@@ -3378,18 +3330,14 @@ def test_a_comment_predating_the_merge_candidate_is_stale_on_first_observation(
 
     assert result['status'] == 'success'
     assert result['participated_bots'] == []
-    assert result['stale_participation_bots'] == [
-        {'bot_kind': bot_kind, 'evidence_kind': comment['kind']}
-    ]
+    assert result['stale_participation_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': comment['kind']}]
     # A withheld credit stages no anchor either — otherwise the next fetch would read
     # the comment as SHA-current and credit what this fetch refused.
     assert github_pr._recorded_currency_records(plan_id) == {}
 
 
 @pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
-def test_a_fresh_edit_at_an_unreadable_head_blocks_on_both_fetches(
-    bot_kind, plan_context, monkeypatch
-):
+def test_a_fresh_edit_at_an_unreadable_head_blocks_on_both_fetches(bot_kind, plan_context, monkeypatch):
     """An unreadable head fails closed on the EDIT arm too, and writes no poisoned row.
 
     An edit proves a fresh review of *something*; without a readable head there is no
@@ -3415,9 +3363,7 @@ def test_a_fresh_edit_at_an_unreadable_head_blocks_on_both_fetches(
     # The credit is withheld on the EDIT arm — and disclosed as undecidable rather than
     # stale, because the head read is what failed.
     assert first['stale_participation_bots'] == []
-    assert first['undecidable_participation_bots'] == [
-        {'bot_kind': bot_kind, 'evidence_kind': edited['kind']}
-    ]
+    assert first['undecidable_participation_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': edited['kind']}]
     assert second['participated_bots'] == first['participated_bots']
     assert second['stale_participation_bots'] == first['stale_participation_bots']
     assert second['undecidable_participation_bots'] == first['undecidable_participation_bots']
@@ -3428,9 +3374,7 @@ def test_a_fresh_edit_at_an_unreadable_head_blocks_on_both_fetches(
 
 
 @pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
-def test_a_pre_upgrade_key_only_ledger_row_resolves_stale_not_participated(
-    bot_kind, plan_context, monkeypatch
-):
+def test_a_pre_upgrade_key_only_ledger_row_resolves_stale_not_participated(bot_kind, plan_context, monkeypatch):
     """A row carrying no reviewed SHA is REFUSED, never read as a first observation.
 
     Dropping such a row is the non-fix: an absent key takes the first-observation arm,
@@ -3459,15 +3403,10 @@ def test_a_pre_upgrade_key_only_ledger_row_resolves_stale_not_participated(
     # predicate regresses — not a downstream assertion about the reader's vocabulary.
     assert result['status'] == 'success'
     assert result['participated_bots'] == []
-    assert result['stale_participation_bots'] == [
-        {'bot_kind': bot_kind, 'evidence_kind': comment['kind']}
-    ]
+    assert result['stale_participation_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': comment['kind']}]
     # ...and the mechanism that produced it: the row survived the read as the stated
     # third state rather than being dropped or coerced into a usable-looking anchor.
-    assert (
-        github_pr._recorded_currency_records(plan_id)[(bot_kind, 'guide-1')]
-        is github_pr.INVALID_LEGACY_RECORD
-    )
+    assert github_pr._recorded_currency_records(plan_id)[(bot_kind, 'guide-1')] is github_pr.INVALID_LEGACY_RECORD
 
 
 # --- D3: an unresolvable merge candidate is UNDECIDABLE, never blocking-stale.
@@ -3480,9 +3419,7 @@ def test_a_pre_upgrade_key_only_ledger_row_resolves_stale_not_participated(
 
 
 @pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
-def test_a_credited_bot_becomes_undecidable_when_the_head_read_fails(
-    bot_kind, plan_context, monkeypatch
-):
+def test_a_credited_bot_becomes_undecidable_when_the_head_read_fails(bot_kind, plan_context, monkeypatch):
     """A resolved-then-unresolved sequence moves the bot to undecidable, not to stale.
 
     Fetch 1 reads a real head and credits the bot. Fetch 2 cannot read the head at all.
@@ -3500,9 +3437,7 @@ def test_a_credited_bot_becomes_undecidable_when_the_head_read_fails(
     _patch_provider(monkeypatch, [comment], head_sha=_HEAD_A)
     credited = _run_fetch(180, plan_id)
     assert credited['merge_candidate_sha_resolved'] is True
-    assert credited['participated_bots'] == [
-        {'bot_kind': bot_kind, 'evidence_kind': comment['kind']}
-    ]
+    assert credited['participated_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': comment['kind']}]
     assert credited['undecidable_participation_bots'] == []
 
     _patch_provider(monkeypatch, [comment], head_sha='')
@@ -3512,9 +3447,7 @@ def test_a_credited_bot_becomes_undecidable_when_the_head_read_fails(
     assert unread['merge_candidate_sha_resolved'] is False
     assert unread['participated_bots'] == []
     assert unread['stale_participation_bots'] == []
-    assert unread['undecidable_participation_bots'] == [
-        {'bot_kind': bot_kind, 'evidence_kind': comment['kind']}
-    ]
+    assert unread['undecidable_participation_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': comment['kind']}]
 
 
 # --- D4: the cross-iteration filing dedup identity carries an EDIT TERM.
@@ -3561,9 +3494,7 @@ def test_an_edited_comment_is_filed_as_new_information(bot_kind, plan_context, m
 
 
 @pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
-def test_an_unchanged_comment_still_dedupes_under_the_widened_key(
-    bot_kind, plan_context, monkeypatch
-):
+def test_an_unchanged_comment_still_dedupes_under_the_widened_key(bot_kind, plan_context, monkeypatch):
     """The widening must not turn every re-fetch into a re-file.
 
     The matched control for the case above: an unchanged comment carries an unchanged
@@ -3586,15 +3517,11 @@ def test_an_unchanged_comment_still_dedupes_under_the_widened_key(
     # write-only — every stored finding would read back as a pre-upgrade row and the
     # dedup would silently fall back to two terms, which is indistinguishable from the
     # defect while every count above still looks right.
-    assert github_pr._detail_field(stored[0].get('detail'), github_pr._EDIT_TERM_DETAIL) == (
-        clean['updated_at']
-    )
+    assert github_pr._detail_field(stored[0].get('detail'), github_pr._EDIT_TERM_DETAIL) == (clean['updated_at'])
 
 
 @pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
-def test_a_pre_upgrade_finding_without_an_edit_term_does_not_refile_history(
-    bot_kind, plan_context, monkeypatch
-):
+def test_a_pre_upgrade_finding_without_an_edit_term_does_not_refile_history(bot_kind, plan_context, monkeypatch):
     """A finding stored before the edit term existed still dedupes, against ANY term.
 
     A pre-upgrade row carries no ``edit_term`` line, so it can match no three-term key.
@@ -3610,11 +3537,11 @@ def test_a_pre_upgrade_finding_without_an_edit_term_does_not_refile_history(
     added = _live_findings_core().add_finding(
         plan_id=plan_id,
         finding_type='pr-comment',
-        title=f"PR #192 {comment['kind']} comment by {comment['author']} (guide-persistent)",
+        title=f'PR #192 {comment["kind"]} comment by {comment["author"]} (guide-persistent)',
         detail=(
             'pr_number: 192\n'
-            f"kind: {comment['kind']}\n"
-            f"author: {comment['author']}\n"
+            f'kind: {comment["kind"]}\n'
+            f'author: {comment["author"]}\n'
             'thread_id: \n'
             'comment_id: guide-persistent'
         ),
@@ -3679,9 +3606,7 @@ def test_the_pre_rename_ledger_filename_is_the_literal_real_plans_carry():
 
 
 @pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
-def test_a_ledger_written_under_the_pre_rename_filename_is_still_read(
-    bot_kind, plan_context, monkeypatch
-):
+def test_a_ledger_written_under_the_pre_rename_filename_is_still_read(bot_kind, plan_context, monkeypatch):
     """An anchor recorded under the OLD filename still denies a credit at an advanced HEAD.
 
     The migration's whole point, asserted through its CONSEQUENCE rather than through the
@@ -3704,9 +3629,7 @@ def test_a_ledger_written_under_the_pre_rename_filename_is_still_read(
 
     assert result['status'] == 'success'
     assert result['participated_bots'] == []
-    assert result['stale_participation_bots'] == [
-        {'bot_kind': bot_kind, 'evidence_kind': comment['kind']}
-    ]
+    assert result['stale_participation_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': comment['kind']}]
     # ...and the mechanism: the row reached the reader as a usable anchor, not as the
     # invalid-legacy sentinel and not as an absent key.
     assert github_pr._recorded_currency_records(plan_id)[(bot_kind, 'guide-1')] == (
@@ -3716,9 +3639,7 @@ def test_a_ledger_written_under_the_pre_rename_filename_is_still_read(
 
 
 @pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
-def test_the_same_fetch_with_no_ledger_at_all_credits_the_comment(
-    bot_kind, plan_context, monkeypatch
-):
+def test_the_same_fetch_with_no_ledger_at_all_credits_the_comment(bot_kind, plan_context, monkeypatch):
     """Matched negative control: without the legacy row, that very fetch CREDITS the bot.
 
     Identical comment, identical advanced HEAD — the only difference is whether a row was
@@ -3733,16 +3654,12 @@ def test_the_same_fetch_with_no_ledger_at_all_credits_the_comment(
     result = _run_fetch(201, plan_id)
 
     assert result['status'] == 'success'
-    assert result['participated_bots'] == [
-        {'bot_kind': bot_kind, 'evidence_kind': comment['kind']}
-    ]
+    assert result['participated_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': comment['kind']}]
     assert result['stale_participation_bots'] == []
 
 
 @pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
-def test_a_populated_current_ledger_does_not_hide_the_pre_rename_rows(
-    bot_kind, plan_context, monkeypatch
-):
+def test_a_populated_current_ledger_does_not_hide_the_pre_rename_rows(bot_kind, plan_context, monkeypatch):
     """⛔ The per-FILE fallback shape is refuted here: both files are read, always.
 
     Reading the old file only while the new one is ABSENT looks equivalent and is not.
@@ -3773,9 +3690,7 @@ def test_a_populated_current_ledger_does_not_hide_the_pre_rename_rows(
     # is what CREATES the current file, the precondition the fallback shape trips over.
     _patch_provider(monkeypatch, comments, head_sha=_HEAD_A)
     at_a = _run_fetch(202, plan_id)
-    assert at_a['participated_bots'] == [
-        {'bot_kind': bot_kind, 'evidence_kind': guide_a['kind']}
-    ]
+    assert at_a['participated_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': guide_a['kind']}]
     assert github_pr._currency_ledger_path(plan_id).exists()
 
     # HEAD advances. Neither comment moved, and both anchors point at HEAD_A.
@@ -3784,9 +3699,7 @@ def test_a_populated_current_ledger_does_not_hide_the_pre_rename_rows(
 
     assert at_b['status'] == 'success'
     assert at_b['participated_bots'] == []
-    assert at_b['stale_participation_bots'] == [
-        {'bot_kind': bot_kind, 'evidence_kind': guide_a['kind']}
-    ]
+    assert at_b['stale_participation_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': guide_a['kind']}]
     # Both anchors resolved, each from the file that holds it.
     ledger = github_pr._recorded_currency_records(plan_id)
     assert ledger[(bot_kind, 'guide-a')] == (_HEAD_A, guide_a['updated_at'])
@@ -3794,9 +3707,7 @@ def test_a_populated_current_ledger_does_not_hide_the_pre_rename_rows(
 
 
 @pytest.mark.parametrize('bot_kind', CURRENCY_SUBJECT_BOTS)
-def test_a_credit_is_written_only_under_the_current_filename(
-    bot_kind, plan_context, monkeypatch
-):
+def test_a_credit_is_written_only_under_the_current_filename(bot_kind, plan_context, monkeypatch):
     """The pre-rename file is READ and never written — the migration is one-directional.
 
     Appending to it as well would keep minting rows under a name that no longer says what
@@ -3808,9 +3719,7 @@ def test_a_credit_is_written_only_under_the_current_filename(
 
     result = _run_fetch(203, plan_id)
 
-    assert result['participated_bots'] == [
-        {'bot_kind': bot_kind, 'evidence_kind': comment['kind']}
-    ]
+    assert result['participated_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': comment['kind']}]
     assert github_pr._currency_ledger_path(plan_id).exists()
     assert not github_pr._legacy_currency_ledger_path(plan_id).exists()
 
@@ -3825,9 +3734,7 @@ def test_a_credit_is_written_only_under_the_current_filename(
 # a documented gap nobody re-derives from the code is how the reach drifted in the first
 # place.
 
-_CONTRACT_DOC = (
-    get_skill_dir('plan-marshall', 'automatic-review') / 'standards' / 'bot-participation-contract.md'
-)
+_CONTRACT_DOC = get_skill_dir('plan-marshall', 'automatic-review') / 'standards' / 'bot-participation-contract.md'
 _CONTRACT_TEXT = _CONTRACT_DOC.read_text(encoding='utf-8')
 
 
@@ -3871,9 +3778,7 @@ def test_the_contract_records_the_currency_blind_gap_rather_than_leaving_it_infe
 
 
 @pytest.mark.parametrize('bot_kind', CURRENCY_BLIND_BOTS)
-def test_an_append_per_review_bot_stays_credited_after_a_head_advance(
-    bot_kind, plan_context, monkeypatch
-):
+def test_an_append_per_review_bot_stays_credited_after_a_head_advance(bot_kind, plan_context, monkeypatch):
     """The documented behaviour, asserted as a REACH DIFFERENCE on one identical fixture.
 
     ⚠ This case is deliberately GREEN against the pre-change code, and that is the correct
@@ -4015,9 +3920,7 @@ def test_fetch_findings_reports_refusal_causes(plan_context, monkeypatch):
     # The CAP rides alongside the cause, read off the SIZE-refusing bot's own notice —
     # and only that bot's: a quota refusal names no diff ceiling, so CodeRabbit
     # contributes no row rather than a zero or an empty one.
-    assert result['refused_size_caps'] == [
-        {'bot_kind': 'sourcery', 'cap': '150000 diff characters'}
-    ]
+    assert result['refused_size_caps'] == [{'bot_kind': 'sourcery', 'cap': '150000 diff characters'}]
     # ...and the measurement that makes the recorded gap auditable rather than asserted.
     assert result['measured_diff_size'] == '1240 changed lines'
 
@@ -4035,11 +3938,7 @@ def test_fetch_findings_size_cause_is_sticky(plan_context, monkeypatch):
             'author': 'sourcery-ai',
             'thread_id': '',
             'kind': 'review_body',
-            'body': (
-                '> [!NOTE]\n'
-                '> Sourcery: you have reached your weekly rate limit of 500000 diff '
-                'characters.'
-            ),
+            'body': ('> [!NOTE]\n> Sourcery: you have reached your weekly rate limit of 500000 diff characters.'),
             'resolved': False,
         },
         {
@@ -4081,11 +3980,7 @@ def test_fetch_findings_size_cause_is_sticky_size_first(plan_context, monkeypatc
             'author': 'sourcery-ai',
             'thread_id': '',
             'kind': 'review_body',
-            'body': (
-                '> [!NOTE]\n'
-                '> Sourcery: you have reached your weekly rate limit of 500000 diff '
-                'characters.'
-            ),
+            'body': ('> [!NOTE]\n> Sourcery: you have reached your weekly rate limit of 500000 diff characters.'),
             'resolved': False,
         },
     ]
@@ -4096,9 +3991,7 @@ def test_fetch_findings_size_cause_is_sticky_size_first(plan_context, monkeypatc
     assert result['refused_causes'] == [{'bot_kind': 'sourcery', 'cause': 'size'}]
 
 
-def test_fetch_findings_measures_the_diff_on_a_size_refusal_with_no_stated_cap(
-    plan_context, monkeypatch
-):
+def test_fetch_findings_measures_the_diff_on_a_size_refusal_with_no_stated_cap(plan_context, monkeypatch):
     """⛔ The measurement is gated on the CAUSE, never on a successfully-extracted cap.
 
     Those two come apart exactly where the measurement matters most. A size refusal
@@ -4134,9 +4027,7 @@ def test_fetch_findings_measures_the_diff_on_a_size_refusal_with_no_stated_cap(
     assert result['measured_diff_size'] == '1240 changed lines'
 
 
-def test_fetch_findings_does_not_measure_the_diff_without_a_size_refusal(
-    plan_context, monkeypatch
-):
+def test_fetch_findings_does_not_measure_the_diff_without_a_size_refusal(plan_context, monkeypatch):
     """A quota-only refusal names no diff ceiling, so it buys no provider round-trip.
 
     The measurement is a real extra call; paying it on every fetch would tax the common
@@ -4167,9 +4058,7 @@ def test_fetch_findings_does_not_measure_the_diff_without_a_size_refusal(
     assert result['measured_diff_size'] == ''
 
 
-def test_fetch_findings_reports_an_unmeasurable_diff_as_unknown_never_zero(
-    plan_context, monkeypatch
-):
+def test_fetch_findings_reports_an_unmeasurable_diff_as_unknown_never_zero(plan_context, monkeypatch):
     """A failed measurement stays empty. ``0`` would read as an empty diff refused."""
     plan_id = 'gh-pr-size-refusal-unmeasurable'
     comments = [
@@ -4189,9 +4078,7 @@ def test_fetch_findings_reports_an_unmeasurable_diff_as_unknown_never_zero(
     assert result['status'] == 'success'
     assert result['measured_diff_size'] == ''
     # The cap still travels — the two are independent, so losing one must not lose both.
-    assert result['refused_size_caps'] == [
-        {'bot_kind': 'sourcery', 'cap': '150000 diff characters'}
-    ]
+    assert result['refused_size_caps'] == [{'bot_kind': 'sourcery', 'cap': '150000 diff characters'}]
 
 
 # ============================================================================
@@ -4234,9 +4121,7 @@ _ISO_COMMIT_AT = '2026-08-25T12:00:00Z'
         ('2026-08-25T11:30:00-05:00', '2026-08-25T10:00:00Z', 'max over mixed shapes'),
     ],
 )
-def test_comment_predates_commit_withholds_when_the_timestamps_do_not_compare(
-    updated_at, created_at, why
-):
+def test_comment_predates_commit_withholds_when_the_timestamps_do_not_compare(updated_at, created_at, why):
     """An uncomparable timestamp yields the promised False, not a lexicographic guess.
 
     ⛔ This is the docstring's third undecidable case, which had no guard. Withholding

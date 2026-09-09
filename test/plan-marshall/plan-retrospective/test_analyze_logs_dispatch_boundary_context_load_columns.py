@@ -6,7 +6,6 @@ absent, unmeasured, unrecognised and measured-zero apart across both the legacy
 five-column and the widened nine-column shapes.
 """
 
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -291,10 +290,7 @@ class TestDispatchBoundaryContextLoadColumns:
             plan_dir,
             '5-execute',
             self._CTX_HEADER,
-            [
-                '2026-05-08T14:00:00Z,budget_yield,100,2,1000,'
-                'unmeasured,unmeasured,unmeasured,unmeasured'
-            ],
+            ['2026-05-08T14:00:00Z,budget_yield,100,2,1000,unmeasured,unmeasured,unmeasured,unmeasured'],
         )
 
         result = _analyze_logs._parse_dispatch_boundary_file(path)

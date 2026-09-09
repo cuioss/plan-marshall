@@ -48,21 +48,12 @@ from conftest import MARKETPLACE_ROOT, get_script_path, load_script_module
 #: Loaded with an explicitly named binding rather than a star-unpack, and with
 #: ``register=False`` so this module's load cannot displace the ``sys.modules``
 #: entry ``test_derive_gate_bundles.py`` publishes for the same script.
-_derive_module = load_script_module(
-    'plan-marshall', 'phase-6-finalize', 'derive_gate_bundles.py', register=False
-)
+_derive_module = load_script_module('plan-marshall', 'phase-6-finalize', 'derive_gate_bundles.py', register=False)
 
-_SCRIPT_PATH = get_script_path(
-    'plan-marshall', 'phase-6-finalize', 'derive_gate_bundles.py'
-)
+_SCRIPT_PATH = get_script_path('plan-marshall', 'phase-6-finalize', 'derive_gate_bundles.py')
 
 _GATE_DOC = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'phase-6-finalize'
-    / 'standards'
-    / 'pre-push-quality-gate.md'
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'standards' / 'pre-push-quality-gate.md'
 )
 
 _DERIVE_HEADING = '### Derive unique bundle set'
@@ -121,9 +112,7 @@ GUARD_POPULATION_SIZE = len(_SITES)
 #: never dropped in silence. Matched as a NEGATED-drop phrase, because the
 #: affirmative token ("silent drop") appears inside every correct site as the
 #: thing being denied — a bare substring test for it would fire on the fix.
-_NEVER_SILENTLY_DROPPED = re.compile(
-    r'never\s+(?:a\s+)?silent(?:ly)?\s+drop(?:ped)?', re.IGNORECASE
-)
+_NEVER_SILENTLY_DROPPED = re.compile(r'never\s+(?:a\s+)?silent(?:ly)?\s+drop(?:ped)?', re.IGNORECASE)
 
 #: Rule 4's own statement: a path of ANY OTHER SHAPE reaches ``unresolved``.
 _ANY_OTHER_SHAPE = re.compile(r'any\s+other\s+shape', re.IGNORECASE)
@@ -205,9 +194,7 @@ def test_rule_four_is_stated_explicitly_where_it_is_declared():
     """
     assert _RULE_FOUR_SITES, 'No rule-4 site registered — the sweep would be vacuous'
 
-    missing = [
-        name for name in _RULE_FOUR_SITES if not _ANY_OTHER_SHAPE.search(_reads(name))
-    ]
+    missing = [name for name in _RULE_FOUR_SITES if not _ANY_OTHER_SHAPE.search(_reads(name))]
 
     assert not missing, (
         f'These sites declare rule 4 but no longer state that a path of any '
@@ -227,8 +214,7 @@ def test_rule_four_sites_are_a_real_subset_of_the_declaring_sites():
     unknown = [name for name in _RULE_FOUR_SITES if name not in known]
 
     assert not unknown, (
-        f'These rule-4 site names are not declaring sites at all: {unknown}. '
-        f'Known sites: {sorted(known)}'
+        f'These rule-4 site names are not declaring sites at all: {unknown}. Known sites: {sorted(known)}'
     )
     assert len(_RULE_FOUR_SITES) < len(_SITES), (
         'Every site is registered as stating rule 4 explicitly, which would '
@@ -277,9 +263,7 @@ def test_the_pre_fix_silent_drop_comment_is_absent_from_the_script():
 
 
 def test_never_silently_dropped_detector_separates_the_two_wordings():
-    pre_fix = (
-        '4. Any other shape contributes no bundle (silent drop by rule 4).\n'
-    )
+    pre_fix = '4. Any other shape contributes no bundle (silent drop by rule 4).\n'
     post_fix = (
         '3. ``test/<b>/...`` -> the path is appended to ``unresolved[]`` — '
         'never silently dropped, never a hard failure.\n'
@@ -298,18 +282,12 @@ def test_never_silently_dropped_detector_separates_the_two_wordings():
 
 def test_any_other_shape_detector_fires_on_both_wordings_of_rule_four():
     # Positive control: the shipped statement of rule 4.
-    assert _ANY_OTHER_SHAPE.search(
-        'Any other shape resolves to no bundle and is appended to unresolved[].'
-    )
+    assert _ANY_OTHER_SHAPE.search('Any other shape resolves to no bundle and is appended to unresolved[].')
     # And on the pre-fix one, so the rule-4 sweep is measuring the RULE's
     # presence rather than the fix's wording.
-    assert _ANY_OTHER_SHAPE.search(
-        'Any other shape contributes no bundle (silent drop by rule 4).'
-    )
+    assert _ANY_OTHER_SHAPE.search('Any other shape contributes no bundle (silent drop by rule 4).')
     # Negative control: prose that declares no rule-4 disposition at all.
-    assert not _ANY_OTHER_SHAPE.search(
-        'Skip the path when it matches none of the build_map globs.'
-    )
+    assert not _ANY_OTHER_SHAPE.search('Skip the path when it matches none of the build_map globs.')
 
 
 def test_pre_fix_comment_detector_fires_on_a_synthetic_regression():

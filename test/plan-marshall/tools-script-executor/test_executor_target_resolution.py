@@ -142,9 +142,7 @@ class TestGenerateTargetAwareResolverCode:
         module = _load_generate_executor()
         for target in ('claude', 'opencode'):
             code = module.generate_target_aware_resolver_code(target)
-            assert 'def _resolve_notation_by_target(' in code, (
-                f'Target {target!r} resolver missing function definition'
-            )
+            assert 'def _resolve_notation_by_target(' in code, f'Target {target!r} resolver missing function definition'
 
     def test_resolver_code_is_valid_python(self):
         """Both resolver code strings compile without syntax errors."""
@@ -160,9 +158,7 @@ class TestGenerateTargetAwareResolverCode:
         """Claude resolver body mentions the plugin-cache path."""
         module = _load_generate_executor()
         code = module.generate_target_aware_resolver_code('claude')
-        assert 'plugins' in code and 'cache' in code, (
-            'Claude resolver must reference the plugin cache path'
-        )
+        assert 'plugins' in code and 'cache' in code, 'Claude resolver must reference the plugin cache path'
 
     def test_opencode_resolver_references_seven_roots(self):
         """OpenCode resolver body references the 7 skill discovery roots."""
@@ -179,7 +175,7 @@ class TestGenerateTargetAwareResolverCode:
         module = _load_generate_executor()
         code = module.generate_target_aware_resolver_code('opencode')
         # The dash-namespaced pattern must be present
-        assert "f'{bundle}-{skill}'" in code or "bundle-skill" in code or "dir_name" in code, (
+        assert "f'{bundle}-{skill}'" in code or 'bundle-skill' in code or 'dir_name' in code, (
             'OpenCode resolver must construct dash-namespaced directory name'
         )
 
@@ -214,7 +210,6 @@ class TestClaudeResolver:
         cache_dir = tmp_path / '.claude' / 'plugins' / 'cache' / 'plan-marshall' / '1.0.0' / 'skills'
         cache_dir.mkdir(parents=True)
 
-
         result = ns._resolve_notation_by_target('no-bundle:no-skill:no-script')
         assert result is None
 
@@ -225,14 +220,11 @@ class TestClaudeResolver:
         ns = _exec_resolver(code)
 
         # Set up a minimal cache tree with a real script file
-        version_dir = (
-            tmp_path / '.claude' / 'plugins' / 'cache' / 'plan-marshall' / '1.2.3'
-        )
+        version_dir = tmp_path / '.claude' / 'plugins' / 'cache' / 'plan-marshall' / '1.2.3'
         scripts_dir = version_dir / 'skills' / 'manage-status' / 'scripts'
         scripts_dir.mkdir(parents=True)
         script_file = scripts_dir / 'manage-status.py'
         script_file.write_text('# stub', encoding='utf-8')
-
 
         result = ns._resolve_notation_by_target('plan-marshall:manage-status:manage-status')
         assert result is not None, 'Expected to find the script in the fake cache'
@@ -246,13 +238,10 @@ class TestClaudeResolver:
         ns = _exec_resolver(code)
 
         # Create only a hidden version dir — should not be discovered
-        hidden_version = (
-            tmp_path / '.claude' / 'plugins' / 'cache' / 'plan-marshall' / '.hidden-version'
-        )
+        hidden_version = tmp_path / '.claude' / 'plugins' / 'cache' / 'plan-marshall' / '.hidden-version'
         scripts_dir = hidden_version / 'skills' / 'some-skill' / 'scripts'
         scripts_dir.mkdir(parents=True)
         (scripts_dir / 'some_script.py').write_text('# hidden', encoding='utf-8')
-
 
         result = ns._resolve_notation_by_target('plan-marshall:some-skill:some_script')
         assert result is None, 'Hidden version directories must be skipped'
@@ -262,7 +251,6 @@ class TestClaudeResolver:
         module = _load_generate_executor()
         code = module.generate_target_aware_resolver_code('claude')
         ns = _exec_resolver(code)
-
 
         assert ns._resolve_notation_by_target('two:parts') is None
         assert ns._resolve_notation_by_target('too:many:parts:here') is None
@@ -294,7 +282,6 @@ class TestOpenCodeResolver:
         code = module.generate_target_aware_resolver_code('opencode')
         ns = _exec_resolver(code)
 
-
         result = ns._resolve_notation_by_target('plan-marshall:manage-status:manage-status')
         assert result is None
 
@@ -303,7 +290,6 @@ class TestOpenCodeResolver:
         module = _load_generate_executor()
         code = module.generate_target_aware_resolver_code('opencode')
         ns = _exec_resolver(code)
-
 
         # Create the .opencode/skills/{bundle}-{skill}/scripts/{script}.py structure
         skill_dir = tmp_path / '.opencode' / 'skills' / 'plan-marshall-manage-status' / 'scripts'
@@ -323,7 +309,6 @@ class TestOpenCodeResolver:
         module = _load_generate_executor()
         code = module.generate_target_aware_resolver_code('opencode')
         ns = _exec_resolver(code)
-
 
         # Set up OPENCODE_CONFIG_DIR root with the target script
         config_dir = tmp_path / 'opencode-config'
@@ -353,12 +338,8 @@ class TestOpenCodeResolver:
         code = module.generate_target_aware_resolver_code('opencode')
         ns = _exec_resolver(code)
 
-
         # Create the user-global root
-        skill_dir = (
-            tmp_path / '.config' / 'opencode' / 'skills'
-            / 'plan-marshall-manage-status' / 'scripts'
-        )
+        skill_dir = tmp_path / '.config' / 'opencode' / 'skills' / 'plan-marshall-manage-status' / 'scripts'
         skill_dir.mkdir(parents=True)
         (skill_dir / 'manage-status.py').write_text('# user-global', encoding='utf-8')
 
@@ -374,21 +355,16 @@ class TestOpenCodeResolver:
         code = module.generate_target_aware_resolver_code('opencode')
         ns = _exec_resolver(code)
 
-
         # Create the WRONG (slash-namespaced) layout — must NOT be found
         wrong_dir = tmp_path / '.opencode' / 'skills' / 'plan-marshall' / 'manage-status' / 'scripts'
         wrong_dir.mkdir(parents=True)
         (wrong_dir / 'manage-status.py').write_text('# wrong layout', encoding='utf-8')
 
         result_wrong = ns._resolve_notation_by_target('plan-marshall:manage-status:manage-status')
-        assert result_wrong is None, (
-            'Slash-namespaced layout must not be found; resolver uses dash-namespaced dirs'
-        )
+        assert result_wrong is None, 'Slash-namespaced layout must not be found; resolver uses dash-namespaced dirs'
 
         # Create the CORRECT (dash-namespaced) layout — must be found
-        correct_dir = (
-            tmp_path / '.opencode' / 'skills' / 'plan-marshall-manage-status' / 'scripts'
-        )
+        correct_dir = tmp_path / '.opencode' / 'skills' / 'plan-marshall-manage-status' / 'scripts'
         correct_dir.mkdir(parents=True)
         (correct_dir / 'manage-status.py').write_text('# correct layout', encoding='utf-8')
 
@@ -402,14 +378,10 @@ class TestOpenCodeResolver:
         code = module.generate_target_aware_resolver_code('opencode')
         ns = _exec_resolver(code)
 
-
         # Create the dash-namespaced layout
-        skill_dir = (
-            tmp_path / '.opencode' / 'skills' / 'plan-marshall-manage-status' / 'scripts'
-        )
+        skill_dir = tmp_path / '.opencode' / 'skills' / 'plan-marshall-manage-status' / 'scripts'
         skill_dir.mkdir(parents=True)
         (skill_dir / 'manage-status.py').write_text('# stub', encoding='utf-8')
-
 
         result = ns._resolve_notation_by_target('plan-marshall:manage-status:manage-status')
         assert result is not None
@@ -420,7 +392,6 @@ class TestOpenCodeResolver:
         module = _load_generate_executor()
         code = module.generate_target_aware_resolver_code('opencode')
         ns = _exec_resolver(code)
-
 
         assert ns._resolve_notation_by_target('two:parts') is None
         assert ns._resolve_notation_by_target('too:many:parts:here') is None
@@ -487,9 +458,7 @@ class TestGenerateExecutorInjectsResolver:
             generated = self._generate_to_tmp(tmp_path, module, target, monkeypatch)
             content = generated.read_text(encoding='utf-8')
             unresolved = re.findall(r'\{\{[A-Z_]+\}\}', content)
-            assert unresolved == [], (
-                f'Target {target!r}: unresolved template tokens in executor: {unresolved}'
-            )
+            assert unresolved == [], f'Target {target!r}: unresolved template tokens in executor: {unresolved}'
 
     def test_resolve_notation_calls_target_resolver(self, tmp_path, monkeypatch):
         """The generated executor's resolve_notation calls _resolve_notation_by_target."""
@@ -502,12 +471,7 @@ class TestGenerateExecutorInjectsResolver:
 
 
 EXECUTOR_TEMPLATE = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'tools-script-executor'
-    / 'templates'
-    / 'execute-script.py.template'
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'tools-script-executor' / 'templates' / 'execute-script.py.template'
 )
 
 
@@ -543,10 +507,7 @@ class TestCwdWalkResolver:
 
     def _make_marketplace_script(self, root: Path) -> Path:
         """Create marketplace/bundles/b/skills/s/scripts/sc.py under ``root``."""
-        scripts_dir = (
-            root / 'marketplace' / 'bundles' / 'plan-marshall'
-            / 'skills' / 'manage-status' / 'scripts'
-        )
+        scripts_dir = root / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'manage-status' / 'scripts'
         scripts_dir.mkdir(parents=True)
         script_file = scripts_dir / 'manage-status.py'
         script_file.write_text('# stub', encoding='utf-8')
@@ -602,9 +563,7 @@ class TestCmdGenerateTargetFlag:
 
         env = os.environ.copy()
         pythonpath = os.pathsep.join(_MARKETPLACE_SCRIPT_DIRS)
-        env['PYTHONPATH'] = (
-            f'{pythonpath}{os.pathsep}{env["PYTHONPATH"]}' if 'PYTHONPATH' in env else pythonpath
-        )
+        env['PYTHONPATH'] = f'{pythonpath}{os.pathsep}{env["PYTHONPATH"]}' if 'PYTHONPATH' in env else pythonpath
         result = subprocess.run(
             [sys.executable, str(GENERATE_SCRIPT), 'generate', '--help'],
             capture_output=True,
@@ -634,6 +593,4 @@ class TestCmdGenerateTargetFlag:
         result = module.cmd_generate(FakeArgs())
 
         assert result.get('status') == 'success', f'Expected success, got {result}'
-        assert result.get('executor_target') == 'opencode', (
-            f'Expected executor_target=opencode, got {result}'
-        )
+        assert result.get('executor_target') == 'opencode', f'Expected executor_target=opencode, got {result}'

@@ -242,12 +242,10 @@ _SUBSTRATE_EXPLANATIONS: dict[str, str] = {
         'invocation is judged against was never read'
     ),
     SUBSTRATE_EXECUTOR_UNREADABLE: (
-        'the generated executor exists but could not be read or decoded, so the '
-        'notation registry was never read'
+        'the generated executor exists but could not be read or decoded, so the notation registry was never read'
     ),
     SUBSTRATE_REGISTRY_EMPTY: (
-        'the generated executor was read but its SCRIPTS literal registers no '
-        'notation, so the registry is empty'
+        'the generated executor was read but its SCRIPTS literal registers no notation, so the registry is empty'
     ),
 }
 
@@ -331,6 +329,7 @@ _QUOTED_RUN_RE = re.compile(r'"[^"]*"|\'[^\']*\'')
 def _without_quoted_values(text: str) -> str:
     """``text`` with the CONTENTS of quoted runs blanked, offsets preserved."""
     return _QUOTED_RUN_RE.sub(lambda m: m.group(0)[0] + ' ' * (len(m.group(0)) - 2) + m.group(0)[-1], text)
+
 
 # Canonical Forms table parser — extracts the rightmost code-fenced cell.
 # The table format is:
@@ -576,8 +575,7 @@ def _substrate_absent_finding(
             f'{OUTCOME_COULD_NOT_LOOK}: {registry.unusable_because} '
             f'({registry.executor_path}). {markdown_targets} markdown file(s) '
             f'carrying {population_size} executor invocation(s) were in scope and '
-            'NONE were judged — this run is not a clean result. '
-            + REMEDY_SUBSTRATE
+            'NONE were judged — this run is not a clean result. ' + REMEDY_SUBSTRATE
         ),
         details={
             'outcome': OUTCOME_COULD_NOT_LOOK,
@@ -1304,9 +1302,7 @@ def _corpus_invocations(marketplace_root: Path) -> list[_Invocation]:
     against. Keeping the two apart is what lets an unusable-registry run still
     state how much it was looking at when it could not rule.
     """
-    return [
-        inv for md in _markdown_targets(marketplace_root) for inv in _extract_invocations(md)
-    ]
+    return [inv for md in _markdown_targets(marketplace_root) for inv in _extract_invocations(md)]
 
 
 def _invocation_is_blind_spot(
@@ -1404,9 +1400,7 @@ def analyze_argument_naming(marketplace_root: Path) -> list[dict]:
     :func:`analyze_argument_naming_with_population`, which is the SAME derivation
     rather than a second one that could disagree with it.
     """
-    findings, _population_size, _blind_spots = analyze_argument_naming_with_population(
-        marketplace_root
-    )
+    findings, _population_size, _blind_spots = analyze_argument_naming_with_population(marketplace_root)
     return findings
 
 
@@ -1465,7 +1459,5 @@ def analyze_argument_naming_with_population(
     findings.extend(scan_flag(marketplace_root, script_index))
     findings.extend(scan_router_flag_placement(marketplace_root, script_index))
     findings.extend(scan_canonical_forms(marketplace_root, script_index))
-    blind_spots = sum(
-        1 for inv in population if _invocation_is_blind_spot(inv, registered, script_index)
-    )
+    blind_spots = sum(1 for inv in population if _invocation_is_blind_spot(inv, registered, script_index))
     return findings, len(population), blind_spots

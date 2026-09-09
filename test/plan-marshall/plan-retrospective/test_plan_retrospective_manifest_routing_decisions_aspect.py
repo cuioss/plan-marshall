@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the routing-decisions aspect of ``check-routing-decisions.py``."""
 
-
 from __future__ import annotations
 
 import pytest
@@ -19,9 +18,7 @@ class TestRoutingDecisionsAspect:
     """Deterministic predicate re-evaluation + the LLM-judgement boundary."""
 
     def test_no_manifest_emits_skipped_fragment(self, tmp_path, monkeypatch):
-        plan_id, plan_dir = _setup_plan_with_manifest(
-            tmp_path, monkeypatch, manifest_body='', plan_id='routing-legacy'
-        )
+        plan_id, plan_dir = _setup_plan_with_manifest(tmp_path, monkeypatch, manifest_body='', plan_id='routing-legacy')
         (plan_dir / 'execution.toon').unlink()
 
         result = _run_routing(plan_id)
@@ -203,9 +200,7 @@ class TestRoutingDecisionsAspect:
 
     def test_cost_preview_not_attempted_without_a_prediction(self, tmp_path, monkeypatch):
         """No recorded prediction is `not_attempted`, distinct from a refusal."""
-        plan_id = self._setup_cost_plan(
-            tmp_path, monkeypatch, {'execution_profile': 'minimal'}
-        )
+        plan_id = self._setup_cost_plan(tmp_path, monkeypatch, {'execution_profile': 'minimal'})
 
         preview = _run_routing(plan_id).toon()['cost_preview']
 
@@ -219,9 +214,7 @@ class TestRoutingDecisionsAspect:
         ['12.5', 'abc', '-100', ''],
         ids=['non-integer', 'non-numeric', 'negative', 'empty'],
     )
-    def test_a_recorded_but_unreadable_preview_is_not_reported_as_absent(
-        self, tmp_path, monkeypatch, recorded
-    ):
+    def test_a_recorded_but_unreadable_preview_is_not_reported_as_absent(self, tmp_path, monkeypatch, recorded):
         """A present-but-unparseable value is a third state, not an absence.
 
         Collapsing it into "no cost preview recorded" states something the record
@@ -263,9 +256,7 @@ class TestRoutingDecisionsAspect:
 
     def test_a_truly_absent_preview_still_says_so(self, tmp_path, monkeypatch):
         """The negative control: absence and unreadability stay distinguishable."""
-        plan_id = self._setup_cost_plan(
-            tmp_path, monkeypatch, {'execution_profile': 'minimal'}
-        )
+        plan_id = self._setup_cost_plan(tmp_path, monkeypatch, {'execution_profile': 'minimal'})
 
         preview = _run_routing(plan_id).toon()['cost_preview']
 
@@ -275,9 +266,7 @@ class TestRoutingDecisionsAspect:
 
     def test_cost_preview_never_names_the_sum_actual(self, tmp_path, monkeypatch):
         """The 2-of-6-phase sum is not published under the name `actual_tokens`."""
-        plan_id = self._setup_cost_plan(
-            tmp_path, monkeypatch, {'execution_profile': 'minimal'}
-        )
+        plan_id = self._setup_cost_plan(tmp_path, monkeypatch, {'execution_profile': 'minimal'})
 
         preview = _run_routing(plan_id).toon()['cost_preview']
 

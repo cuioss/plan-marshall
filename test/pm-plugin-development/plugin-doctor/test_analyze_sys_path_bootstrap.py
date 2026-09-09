@@ -13,6 +13,7 @@ Covers:
 - Real-tree guard: the shipped marketplace tree is clean, so the allowlist is in
   sync with reality
 """
+
 from pathlib import Path
 
 from conftest import MARKETPLACE_ROOT, load_script_module
@@ -103,9 +104,7 @@ class TestAstNotText:
         _make_script(
             tmp_path,
             _NON_ALLOWLISTED,
-            'import re\n'
-            'PATTERN = re.compile(r"sys\\\\.path\\\\.insert")\n'
-            'HELP = "call sys.path.append to bootstrap"\n',
+            'import re\nPATTERN = re.compile(r"sys\\\\.path\\\\.insert")\nHELP = "call sys.path.append to bootstrap"\n',
         )
         assert_analyzer_findings(analyze_sys_path_bootstrap, tmp_path, [])
 
@@ -131,7 +130,6 @@ class TestRealTreeInSync:
     def test_shipped_marketplace_tree_is_clean(self):
         """The allowlist stays in sync: the real tree has zero violations."""
         findings = analyze_sys_path_bootstrap(MARKETPLACE_ROOT)
-        assert findings == [], (
-            'Non-allowlisted sys.path mutations found in the shipped tree:\n'
-            + '\n'.join(f"{f['file']}:{f['line']} ({f['call']})" for f in findings)
+        assert findings == [], 'Non-allowlisted sys.path mutations found in the shipped tree:\n' + '\n'.join(
+            f'{f["file"]}:{f["line"]} ({f["call"]})' for f in findings
         )

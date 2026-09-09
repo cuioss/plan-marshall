@@ -141,13 +141,15 @@ _FORM_A_MARKER = '.plan/plans/'
 # .plan-domain subdirectory names that are legal join targets only via the
 # canonical helpers in file_ops.py.  A parent-walking chain that ultimately
 # joins against one of these names is form-B drift.
-_PLAN_DOMAIN_DIRS: frozenset[str] = frozenset({
-    'plans',
-    'lessons-learned',
-    'logs',
-    'archived-plans',
-    'workspace',
-})
+_PLAN_DOMAIN_DIRS: frozenset[str] = frozenset(
+    {
+        'plans',
+        'lessons-learned',
+        'logs',
+        'archived-plans',
+        'workspace',
+    }
+)
 
 # ---------------------------------------------------------------------------
 # Whitelist — path-component-anchored
@@ -219,19 +221,21 @@ _WORKTREE_PATH_KEY = 'worktree_path'
 # exemptions silently un-guarding a renamed successor); and the raw bypassing
 # set, taken BEFORE the baseline is subtracted, is non-empty — the anti-vacuity
 # proof that the guard can actually flag something against the real tree.
-_BASELINE_STRAGGLERS: frozenset[str] = frozenset({
-    'manage-tasks/_cmd_pre_commit_verify_freshness.py',
-    'plan-marshall/_handshake_commands.py',
-    'platform-runtime/claude_runtime.py',
-    'workflow-integration-git/_cmd_baseline_reconcile.py',
-    'workflow-integration-git/_cmd_force_push.py',
-    'workflow-integration-git/_cmd_prune_ref.py',
-    'workflow-integration-git/_cmd_switch_and_pull.py',
-    'workflow-integration-git/git-workflow.py',
-    'workflow-integration-git/integrate_into_main.py',
-    'workflow-integration-github/github_ops.py',
-    'workflow-integration-gitlab/gitlab_ops.py',
-})
+_BASELINE_STRAGGLERS: frozenset[str] = frozenset(
+    {
+        'manage-tasks/_cmd_pre_commit_verify_freshness.py',
+        'plan-marshall/_handshake_commands.py',
+        'platform-runtime/claude_runtime.py',
+        'workflow-integration-git/_cmd_baseline_reconcile.py',
+        'workflow-integration-git/_cmd_force_push.py',
+        'workflow-integration-git/_cmd_prune_ref.py',
+        'workflow-integration-git/_cmd_switch_and_pull.py',
+        'workflow-integration-git/git-workflow.py',
+        'workflow-integration-git/integrate_into_main.py',
+        'workflow-integration-github/github_ops.py',
+        'workflow-integration-gitlab/gitlab_ops.py',
+    }
+)
 
 
 def is_whitelisted(file_path: Path) -> bool:
@@ -367,8 +371,7 @@ class _FormAVisitor(ast.NodeVisitor):
                         return True
             # Stop propagating past assignment, return, or binary-op parents
             # (those ARE path-construction contexts)
-            if isinstance(parent, (ast.Assign, ast.AnnAssign, ast.Return,
-                                   ast.BinOp, ast.JoinedStr)):
+            if isinstance(parent, (ast.Assign, ast.AnnAssign, ast.Return, ast.BinOp, ast.JoinedStr)):
                 break
         return False
 
@@ -466,12 +469,7 @@ def _extract_joined_string(node: ast.expr) -> str | None:
     recognised.
     """
     # Unwrap str(...) wrapper
-    if (
-        isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Name)
-        and node.func.id == 'str'
-        and len(node.args) == 1
-    ):
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == 'str' and len(node.args) == 1:
         return _extract_joined_string(node.args[0])
 
     # Path(<chain>, "subdir", ...) constructor
@@ -650,8 +648,7 @@ def _declares_private_rederiver(tree: ast.Module) -> bool:
     :func:`collect_bypass_signals` reading its body.
     """
     return any(
-        isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-        and node.name.startswith(_PRIVATE_REDERIVER_PREFIXES)
+        isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith(_PRIVATE_REDERIVER_PREFIXES)
         for node in ast.walk(tree)
     )
 
@@ -724,11 +721,7 @@ def collect_bypass_signals(tree: ast.Module) -> list[tuple[int, str]]:
         # ``_worktree_path_key_read_lines`` in test_resolver_migration.py.
         if isinstance(node, ast.Subscript):
             key = node.slice
-            if (
-                isinstance(node.ctx, ast.Load)
-                and isinstance(key, ast.Constant)
-                and key.value == _WORKTREE_PATH_KEY
-            ):
+            if isinstance(node.ctx, ast.Load) and isinstance(key, ast.Constant) and key.value == _WORKTREE_PATH_KEY:
                 signals.append((getattr(node, 'lineno', 0), 'worktree_path_metadata_read'))
             continue
 

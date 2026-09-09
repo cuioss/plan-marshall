@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the ``pre-commit-verify-freshness`` subcommand of manage-tasks."""
 
-
 from __future__ import annotations
 
 from argparse import Namespace
@@ -55,9 +54,7 @@ def _stub_resolver_seam(monkeypatch):
     )
 
 
-def test_short_circuit_forwards_the_verdict_reason_verbatim(
-    plan_context, monkeypatch, tmp_path
-) -> None:
+def test_short_circuit_forwards_the_verdict_reason_verbatim(plan_context, monkeypatch, tmp_path) -> None:
     """The gate reports the authority's reason, never one of its own.
 
     Owning an exemption vocabulary is what made the gate a second oracle: a
@@ -79,16 +76,12 @@ def test_short_circuit_forwards_the_verdict_reason_verbatim(
     result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-reason-forwarded'))
 
     assert result['status'] == 'exempt', result
-    assert result['reason'] == (
-        'build_map registers no globs — project has no buildable file types'
-    )
+    assert result['reason'] == ('build_map registers no globs — project has no buildable file types')
     # The retired shape-derived vocabulary must not reappear.
     assert result['reason'] not in ('documentation_only', 'lint_only')
 
 
-def test_short_circuit_beats_an_otherwise_stale_ledger(
-    plan_context, monkeypatch, tmp_path
-) -> None:
+def test_short_circuit_beats_an_otherwise_stale_ledger(plan_context, monkeypatch, tmp_path) -> None:
     """``not_necessary`` wins over a ledger that would otherwise report stale.
 
     A real worktree sha plus a ledger holding only a build for a DIFFERENT sha is
@@ -97,9 +90,7 @@ def test_short_circuit_beats_an_otherwise_stale_ledger(
     """
     plan_dir = plan_context.plan_dir_for('freshness-nb-stale-ledger')
     _write_status(plan_dir)
-    _stub_verdict(
-        monkeypatch, {'decision': 'not_necessary', 'reason': 'plan footprint is empty'}
-    )
+    _stub_verdict(monkeypatch, {'decision': 'not_necessary', 'reason': 'plan footprint is empty'})
     _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
     ledger_path = _write_ledger(tmp_path, [_build_entry(worktree_sha=_OTHER_SHA)])
     _stub_ledger_path(monkeypatch, ledger_path)
@@ -110,9 +101,7 @@ def test_short_circuit_beats_an_otherwise_stale_ledger(
     assert result['reason'] == 'plan footprint is empty'
 
 
-def test_build_verdict_falls_through_to_the_ledger_scan(
-    plan_context, monkeypatch, tmp_path
-) -> None:
+def test_build_verdict_falls_through_to_the_ledger_scan(plan_context, monkeypatch, tmp_path) -> None:
     """A ``build`` verdict is a pure pass-through -> the scan governs the outcome."""
     plan_dir = plan_context.plan_dir_for('freshness-build-needed')
     _write_status(plan_dir)
@@ -126,9 +115,7 @@ def test_build_verdict_falls_through_to_the_ledger_scan(
     assert result['status'] == 'stale', result
 
 
-def test_build_shaped_steps_still_exempt_a_footprint_needing_no_build(
-    plan_context, monkeypatch, tmp_path
-) -> None:
+def test_build_shaped_steps_still_exempt_a_footprint_needing_no_build(plan_context, monkeypatch, tmp_path) -> None:
     """A markdown-only footprint is exempt even though the manifest composes builds.
 
     The converse gap the consolidation closes: a plan whose manifest carries
@@ -152,9 +139,7 @@ def test_build_shaped_steps_still_exempt_a_footprint_needing_no_build(
     _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
     _stub_ledger_path(monkeypatch, tmp_path / 'never-written.jsonl')
 
-    result = cmd_pre_commit_verify_freshness(
-        Namespace(plan_id='freshness-docs-footprint-build-steps')
-    )
+    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-docs-footprint-build-steps'))
 
     assert result['status'] == 'exempt', result
     assert 'no build_map glob' in result['reason']
@@ -173,9 +158,7 @@ def test_consult_is_command_free(plan_context, monkeypatch, tmp_path) -> None:
     _write_status(plan_dir)
     # Undo the autouse stub so the REAL _build_necessity_verdict runs and its
     # delegation to the authority is observed.
-    monkeypatch.setattr(
-        _freshness_mod, '_build_necessity_verdict', _REAL_BUILD_NECESSITY_VERDICT
-    )
+    monkeypatch.setattr(_freshness_mod, '_build_necessity_verdict', _REAL_BUILD_NECESSITY_VERDICT)
     calls: list[tuple] = []
 
     import extension_base
@@ -195,9 +178,7 @@ def test_consult_is_command_free(plan_context, monkeypatch, tmp_path) -> None:
     assert result['reason'] == 'stubbed'
 
 
-def test_unobtainable_verdict_fails_closed_into_the_ledger_scan(
-    plan_context, monkeypatch, tmp_path
-) -> None:
+def test_unobtainable_verdict_fails_closed_into_the_ledger_scan(plan_context, monkeypatch, tmp_path) -> None:
     """A consult that raises degrades to ``build`` -> the scan still gates.
 
     The fail-closed direction matters: an authority that cannot be reached must
@@ -207,9 +188,7 @@ def test_unobtainable_verdict_fails_closed_into_the_ledger_scan(
     plan_dir = plan_context.plan_dir_for('freshness-verdict-error')
     _write_status(plan_dir)
     # Undo the autouse stub so the real helper's except-branch runs.
-    monkeypatch.setattr(
-        _freshness_mod, '_build_necessity_verdict', _REAL_BUILD_NECESSITY_VERDICT
-    )
+    monkeypatch.setattr(_freshness_mod, '_build_necessity_verdict', _REAL_BUILD_NECESSITY_VERDICT)
 
     import extension_base
 
@@ -236,9 +215,7 @@ def test_unobtainable_verdict_fails_closed_into_the_ledger_scan(
 # silently be reintroduced side by side and every other test would still pass.
 
 
-def test_empty_step_list_does_not_exempt_when_a_build_is_necessary(
-    plan_context, monkeypatch, tmp_path
-) -> None:
+def test_empty_step_list_does_not_exempt_when_a_build_is_necessary(plan_context, monkeypatch, tmp_path) -> None:
     """Empty ``verification_steps`` + ``build`` verdict -> still gated.
 
     The retired ``documentation_only`` exemption keyed on exactly this manifest
@@ -253,16 +230,12 @@ def test_empty_step_list_does_not_exempt_when_a_build_is_necessary(
     ledger_path = _write_ledger(tmp_path, [_build_entry(worktree_sha=_OTHER_SHA)])
     _stub_ledger_path(monkeypatch, ledger_path)
 
-    result = cmd_pre_commit_verify_freshness(
-        Namespace(plan_id='freshness-empty-steps-but-code')
-    )
+    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-empty-steps-but-code'))
 
     assert result['status'] == 'stale', result
 
 
-def test_all_quality_gate_steps_do_not_exempt_when_a_build_is_necessary(
-    plan_context, monkeypatch, tmp_path
-) -> None:
+def test_all_quality_gate_steps_do_not_exempt_when_a_build_is_necessary(plan_context, monkeypatch, tmp_path) -> None:
     """All-``quality-gate`` steps + ``build`` verdict -> still gated.
 
     The retired ``lint_only`` exemption keyed on exactly this manifest shape.
@@ -278,16 +251,12 @@ def test_all_quality_gate_steps_do_not_exempt_when_a_build_is_necessary(
     ledger_path = _write_ledger(tmp_path, [_build_entry(worktree_sha=_OTHER_SHA)])
     _stub_ledger_path(monkeypatch, ledger_path)
 
-    result = cmd_pre_commit_verify_freshness(
-        Namespace(plan_id='freshness-lint-steps-but-code')
-    )
+    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-lint-steps-but-code'))
 
     assert result['status'] == 'stale', result
 
 
-def test_absent_manifest_is_irrelevant_to_the_gate(
-    plan_context, monkeypatch, tmp_path
-) -> None:
+def test_absent_manifest_is_irrelevant_to_the_gate(plan_context, monkeypatch, tmp_path) -> None:
     """No ``execution.toon`` at all changes nothing — the manifest is not read.
 
     The retired predicate degraded to "no exemption" on a missing manifest; the
@@ -296,9 +265,7 @@ def test_absent_manifest_is_irrelevant_to_the_gate(
     plan_dir = plan_context.plan_dir_for('freshness-nb-no-manifest')
     _write_status(plan_dir)
     # Deliberately do NOT write execution.toon.
-    _stub_verdict(
-        monkeypatch, {'decision': 'not_necessary', 'reason': 'plan footprint is empty'}
-    )
+    _stub_verdict(monkeypatch, {'decision': 'not_necessary', 'reason': 'plan footprint is empty'})
     _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
     _stub_ledger_path(monkeypatch, tmp_path / 'never-written.jsonl')
 
@@ -312,9 +279,8 @@ def test_absent_manifest_is_irrelevant_to_the_gate(
 # Resolver-migration contract
 # =============================================================================
 
-def test_worktree_root_routes_through_the_resolver(
-    plan_context, monkeypatch, tmp_path
-) -> None:
+
+def test_worktree_root_routes_through_the_resolver(plan_context, monkeypatch, tmp_path) -> None:
     """The root reaches the single ``get-worktree-path`` seam, exactly once."""
     plan_dir = plan_context.plan_dir_for('freshness-routing')
     _write_status(plan_dir)
@@ -326,14 +292,11 @@ def test_worktree_root_routes_through_the_resolver(
 
     assert seen == [Path(CANONICAL_WORKTREE)]
     assert mock.call_count == 1, (
-        'the freshness gate did not reach the single resolver seam exactly once '
-        f'(call_count={mock.call_count})'
+        f'the freshness gate did not reach the single resolver seam exactly once (call_count={mock.call_count})'
     )
 
 
-def test_worktree_root_ignores_status_metadata(
-    plan_context, monkeypatch, tmp_path
-) -> None:
+def test_worktree_root_ignores_status_metadata(plan_context, monkeypatch, tmp_path) -> None:
     """A ``status.metadata.worktree_path`` decoy must NOT steer the resolution.
 
     The retired implementation read exactly this field. Seeding it with a path
@@ -350,14 +313,10 @@ def test_worktree_root_ignores_status_metadata(
     with patch_query_worktree_path(True):
         cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-decoy'))
 
-    assert seen == [Path(CANONICAL_WORKTREE)], (
-        'the gate followed status.metadata.worktree_path instead of the resolver'
-    )
+    assert seen == [Path(CANONICAL_WORKTREE)], 'the gate followed status.metadata.worktree_path instead of the resolver'
 
 
-def test_no_plan_sentinel_resolves_to_the_main_checkout(
-    plan_context, monkeypatch, tmp_path
-) -> None:
+def test_no_plan_sentinel_resolves_to_the_main_checkout(plan_context, monkeypatch, tmp_path) -> None:
     """``NO_PLAN`` resolves to the main checkout without shelling out."""
     plan_context.plan_dir_for(NO_PLAN_SENTINEL)
     seen = _capture_worktree_root(monkeypatch)

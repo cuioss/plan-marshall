@@ -376,13 +376,12 @@ def _load_phase_handshake_module():
     '__main__'`` guard is skipped, leaving ``main()`` callable from the
     test.
     """
-    return load_script_module(
-        'plan-marshall', 'plan-marshall', 'phase_handshake.py', 'phase_handshake_under_test'
-    ).main
+    return load_script_module('plan-marshall', 'plan-marshall', 'phase_handshake.py', 'phase_handshake_under_test').main
 
 
 def test_cli_strict_propagates_nonzero_exit_on_worktree_unresolved(
-    monkeypatch: pytest.MonkeyPatch, plan_context,
+    monkeypatch: pytest.MonkeyPatch,
+    plan_context,
 ) -> None:
     """``verify --strict`` returns non-zero when assertion fails.
 
@@ -418,9 +417,7 @@ def test_cli_strict_propagates_nonzero_exit_on_worktree_unresolved(
     main_fn = _load_phase_handshake_module()
     with pytest.raises(SystemExit) as excinfo:
         main_fn()
-    assert excinfo.value.code == 1, (
-        f'--strict must exit non-zero on worktree_unresolved, got {excinfo.value.code}'
-    )
+    assert excinfo.value.code == 1, f'--strict must exit non-zero on worktree_unresolved, got {excinfo.value.code}'
 
 
 # =============================================================================
@@ -429,7 +426,10 @@ def test_cli_strict_propagates_nonzero_exit_on_worktree_unresolved(
 
 
 def test_cli_strict_exits_zero_when_worktree_resolves(
-    stubbed_invariants, monkeypatch: pytest.MonkeyPatch, git_worktree: Path, plan_context,
+    stubbed_invariants,
+    monkeypatch: pytest.MonkeyPatch,
+    git_worktree: Path,
+    plan_context,
 ) -> None:
     """Counterpart to the unresolved case: clean worktree → exit 0 under --strict.
 
@@ -470,9 +470,7 @@ def test_cli_strict_exits_zero_when_worktree_resolves(
     main_fn = _load_phase_handshake_module()
     with pytest.raises(SystemExit) as excinfo:
         main_fn()
-    assert excinfo.value.code == 0, (
-        f'--strict on a resolved worktree must exit 0, got {excinfo.value.code}'
-    )
+    assert excinfo.value.code == 0, f'--strict on a resolved worktree must exit 0, got {excinfo.value.code}'
 
 
 # =============================================================================
@@ -498,9 +496,7 @@ def test_cli_strict_exits_zero_when_worktree_resolves(
 # =============================================================================
 
 
-def _patch_main_dirty_files(
-    monkeypatch: pytest.MonkeyPatch, sequence: list[list[str] | None]
-):
+def _patch_main_dirty_files(monkeypatch: pytest.MonkeyPatch, sequence: list[list[str] | None]):
     """Replace ``inv._capture_main_dirty_files`` with a sequence-driven stub.
 
     Each call returns the next entry from ``sequence`` (cycling on the last
@@ -534,6 +530,7 @@ def _layer_d_invariants() -> list:
     effect (registry tuples cache the function reference at construction
     time, but the trampoline re-resolves the attribute on every call).
     """
+
     def _trampoline(plan_id, metadata, phase):
         return inv._capture_main_dirty_files(plan_id, metadata, phase)
 
@@ -541,7 +538,9 @@ def _layer_d_invariants() -> list:
 
 
 def test_layer_d_clean_baseline_and_live_succeeds(
-    monkeypatch: pytest.MonkeyPatch, git_worktree: Path, plan_context,
+    monkeypatch: pytest.MonkeyPatch,
+    git_worktree: Path,
+    plan_context,
 ) -> None:
     """(a) Worktree-routed plan, no dirty paths at either capture → verify ok.
 
@@ -565,7 +564,9 @@ def test_layer_d_clean_baseline_and_live_succeeds(
 
 
 def test_layer_d_proper_superset_drift_raises_at_planning_boundary(
-    monkeypatch: pytest.MonkeyPatch, git_worktree: Path, plan_context,
+    monkeypatch: pytest.MonkeyPatch,
+    git_worktree: Path,
+    plan_context,
 ) -> None:
     """(b) Worktree plan, live set is a proper superset → structured error.
 
@@ -597,13 +598,14 @@ def test_layer_d_proper_superset_drift_raises_at_planning_boundary(
     assert sorted(result['baseline']) == ['existing.txt']
     assert sorted(result['observed']) == ['existing.txt', 'leaked-readme.md', 'src/leaked.py']
     assert sorted(result['newly_dirty']) == ['leaked-readme.md', 'src/leaked.py'], (
-        'newly_dirty must list ONLY the paths that appeared between captures, '
-        f'got {result["newly_dirty"]}'
+        f'newly_dirty must list ONLY the paths that appeared between captures, got {result["newly_dirty"]}'
     )
 
 
 def test_layer_d_relaxed_at_phase_5_boundary(
-    monkeypatch: pytest.MonkeyPatch, git_worktree: Path, plan_context,
+    monkeypatch: pytest.MonkeyPatch,
+    git_worktree: Path,
+    plan_context,
 ) -> None:
     """Layer-D leak-into-main guard is RELAXED at the 5-execute → 6-finalize
     boundary under the cwd-pinned move model (Option 5' / ADR-002).
@@ -630,13 +632,13 @@ def test_layer_d_relaxed_at_phase_5_boundary(
     result = cmds.cmd_verify(_ns(plan_id=plan_id, phase='5-execute'))
 
     assert result['status'] == 'ok', (
-        'layer-D drift must be RELAXED at the 5-execute boundary under the '
-        f'cwd-pinned move model; got {result}'
+        f'layer-D drift must be RELAXED at the 5-execute boundary under the cwd-pinned move model; got {result}'
     )
 
 
 def test_layer_d_main_checkout_plan_is_gated_off(
-    monkeypatch: pytest.MonkeyPatch, plan_context,
+    monkeypatch: pytest.MonkeyPatch,
+    plan_context,
 ) -> None:
     """(c) ``use_worktree=false`` plan dirties main freely → no drift error.
 
@@ -663,13 +665,14 @@ def test_layer_d_main_checkout_plan_is_gated_off(
     result = cmds.cmd_verify(_ns(plan_id=plan_id, phase='4-plan'))
 
     assert result['status'] == 'ok', (
-        'main-checkout plans must not trip the layer-D drift invariant '
-        f'(use_worktree=false gate); got {result}'
+        f'main-checkout plans must not trip the layer-D drift invariant (use_worktree=false gate); got {result}'
     )
 
 
 def test_layer_d_dot_plan_paths_are_filtered_and_do_not_trip(
-    monkeypatch: pytest.MonkeyPatch, git_worktree: Path, plan_context,
+    monkeypatch: pytest.MonkeyPatch,
+    git_worktree: Path,
+    plan_context,
 ) -> None:
     """(d) UNTRACKED ``.plan/`` artifacts in main MUST be filtered before drift check.
 
@@ -714,13 +717,14 @@ def test_layer_d_dot_plan_paths_are_filtered_and_do_not_trip(
     result = cmds.cmd_verify(_ns(plan_id=plan_id, phase='4-plan'))
 
     assert result['status'] == 'ok', (
-        'untracked ``.plan/`` paths must be filtered before the drift check fires, '
-        f'got {result}'
+        f'untracked ``.plan/`` paths must be filtered before the drift check fires, got {result}'
     )
 
 
 def test_layer_d_baseline_equal_live_yields_no_drift(
-    monkeypatch: pytest.MonkeyPatch, git_worktree: Path, plan_context,
+    monkeypatch: pytest.MonkeyPatch,
+    git_worktree: Path,
+    plan_context,
 ) -> None:
     """(e) Pre-existing dirty file unchanged across boundaries → no drift.
 
@@ -755,7 +759,9 @@ def test_layer_d_baseline_equal_live_yields_no_drift(
 
 
 def test_cli_strict_propagates_nonzero_exit_on_main_dirty_drift(
-    monkeypatch: pytest.MonkeyPatch, git_worktree: Path, plan_context,
+    monkeypatch: pytest.MonkeyPatch,
+    git_worktree: Path,
+    plan_context,
 ) -> None:
     """``verify --strict`` exits non-zero on layer-D drift at a planning boundary.
 
@@ -799,6 +805,5 @@ def test_cli_strict_propagates_nonzero_exit_on_main_dirty_drift(
     with pytest.raises(SystemExit) as excinfo:
         main_fn()
     assert excinfo.value.code == 1, (
-        '--strict must exit non-zero on main_checkout_dirtied_during_plan, '
-        f'got {excinfo.value.code}'
+        f'--strict must exit non-zero on main_checkout_dirtied_during_plan, got {excinfo.value.code}'
     )

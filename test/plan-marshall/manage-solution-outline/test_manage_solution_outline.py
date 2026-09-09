@@ -591,7 +591,9 @@ def test_write_validates_existing_file(plan_context, monkeypatch):
     # path resolution that might hit real ~/.plan-marshall-credentials.
     monkeypatch.setenv('HOME', str(plan_context.fixture_dir))
     monkeypatch.setenv('PLAN_MARSHALL_CREDENTIALS_DIR', str(plan_context.fixture_dir / 'creds'))
-    (plan_context.plan_dir_for('solution-invalid') / 'solution_outline.md').write_text('# Just a title\n\nNo required sections here.')
+    (plan_context.plan_dir_for('solution-invalid') / 'solution_outline.md').write_text(
+        '# Just a title\n\nNo required sections here.'
+    )
 
     result = cmd_write(_write_ns(plan_id='solution-invalid'))
     assert result['error'] == 'validation_failed'
@@ -992,9 +994,7 @@ def test_cli_get_deliverable_matches_read_deliverable_number_document_not_found(
     get_result = run_script(
         SCRIPT_PATH, 'get-deliverable', '--plan-id', 'cli-get-deliverable-nodoc', '--deliverable-number', '1'
     )
-    read_result = run_script(
-        SCRIPT_PATH, 'read', '--plan-id', 'cli-get-deliverable-nodoc', '--deliverable-number', '1'
-    )
+    read_result = run_script(SCRIPT_PATH, 'read', '--plan-id', 'cli-get-deliverable-nodoc', '--deliverable-number', '1')
     assert get_result.success, f'get-deliverable failed: {get_result.stderr}'
     assert read_result.success, f'read failed: {read_result.stderr}'
     get_data = parse_toon(get_result.stdout)

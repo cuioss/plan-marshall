@@ -139,9 +139,7 @@ def run_content_drift_check(target_dir: Path, marketplace_dir: Path) -> ContentD
     bundle_names = [b.name for b in bundle_dirs]
 
     if not target_dir.is_dir():
-        summary = (
-            f"target/claude not generated at {target_dir} — run './pw generate-claude' first"
-        )
+        summary = f"target/claude not generated at {target_dir} — run './pw generate-claude' first"
         return ContentDriftResult(passed=False, summary=summary)
 
     with tempfile.TemporaryDirectory(prefix='claude-content-drift-') as tmp:
@@ -178,8 +176,8 @@ def run_content_drift_check(target_dir: Path, marketplace_dir: Path) -> ContentD
         summary = (
             f'content-drift check failed: {"; ".join(parts)}. '
             "Re-run './pw generate-claude' "
-            "to regenerate target/claude/ from current sources. "
-            "Do NOT edit the source .md files under marketplace/bundles/ — they are canonical."
+            'to regenerate target/claude/ from current sources. '
+            'Do NOT edit the source .md files under marketplace/bundles/ — they are canonical.'
         )
 
     return ContentDriftResult(

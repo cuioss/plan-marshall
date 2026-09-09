@@ -3,7 +3,6 @@
 """Tests for the field-only ``title-token`` verb of manage-status.py:
 set and clear arbitration, argument rejection, and the absence of rendering."""
 
-
 from argparse import Namespace
 
 from _title_token_fixtures import (
@@ -19,6 +18,7 @@ from conftest import run_script
 # =============================================================================
 # arbitration: open SET (last writer wins), owner-scoped CLEAR
 # =============================================================================
+
 
 def test_clear_from_a_foreign_owner_is_a_reported_no_op(plan_context):
     """A ``clear`` from an owner that does not own the live record leaves it
@@ -67,6 +67,7 @@ def test_lock_clear_does_not_clear_a_foreign_build_busy_but_does_clear_its_own(p
 # =============================================================================
 # clear: removes the field, idempotent when unset
 # =============================================================================
+
 
 def test_clear_removes_title_token_field(plan_context):
     """``title-token clear`` removes a previously-set title_token field."""
@@ -118,6 +119,7 @@ def test_clear_twice_is_idempotent(plan_context):
 # argparse: invalid --state / --owner is rejected with exit code 2
 # =============================================================================
 
+
 def test_clear_invalid_owner_rejected_by_argparse():
     """``title-token clear --owner <bad>`` is likewise rejected at parse time."""
     result = run_script(
@@ -135,6 +137,7 @@ def test_clear_invalid_owner_rejected_by_argparse():
 # =============================================================================
 # no rendering: the verb writes no title-body.txt artifact
 # =============================================================================
+
 
 def test_clear_writes_no_title_body_artifact(plan_context):
     """``clear`` persists only status.json — no title-body.txt rendering."""

@@ -169,14 +169,14 @@ def _validate_field(
             return value, errors
         max_length = spec.get('max_length')
         if max_length is not None and len(value) > max_length:
-            clamped.append(f"{path} (string {len(value)}→{max_length})")
+            clamped.append(f'{path} (string {len(value)}→{max_length})')
             value = value[:max_length]
         return value, errors
 
     if isinstance(value, list):
         max_items = spec.get('max_items')
         if max_items is not None and len(value) > max_items:
-            clamped.append(f"{path} (array {len(value)}→{max_items})")
+            clamped.append(f'{path} (array {len(value)}→{max_items})')
             value = value[:max_items]
 
         if spec.get('url_list'):
@@ -186,7 +186,7 @@ def _validate_field(
                     errors.append(f"Field '{path}[{i}]' should be str, got {type(item).__name__}")
                     continue
                 if not _domain_allowed(item):
-                    domain_errors.append(f"{path}[{i}]: {item}")
+                    domain_errors.append(f'{path}[{i}]: {item}')
                 new_list.append(item)
             return new_list, errors
 
@@ -194,7 +194,7 @@ def _validate_field(
         if item_spec is not None:
             new_list = []
             for i, item in enumerate(value):
-                clamped_item, item_errors = _validate_object(f"{path}[{i}]", item, item_spec, clamped, domain_errors)
+                clamped_item, item_errors = _validate_object(f'{path}[{i}]', item, item_spec, clamped, domain_errors)
                 errors.extend(item_errors)
                 new_list.append(clamped_item)
             return new_list, errors
@@ -222,7 +222,7 @@ def _validate_object(
 
     result: dict[str, Any] = {}
     for field, spec in schema.items():
-        field_path = f"{path}.{field}" if path else field
+        field_path = f'{path}.{field}' if path else field
         if field not in obj:
             # Absent fields are permitted; the reader emits what it extracted.
             continue
@@ -254,14 +254,14 @@ def validate_candidate(schema_name: str, candidate: Any) -> dict[str, Any]:
     schema = SCHEMAS.get(schema_name)
     if schema is None:
         return make_error(
-            f"Unknown schema: {schema_name}",
+            f'Unknown schema: {schema_name}',
             code='invalid_input',
             valid_schemas=sorted(SCHEMAS.keys()),
         )
 
     if not isinstance(candidate, dict):
         return make_error(
-            f"Candidate struct must be a JSON object, got {type(candidate).__name__}",
+            f'Candidate struct must be a JSON object, got {type(candidate).__name__}',
             code='schema_violation',
         )
 
@@ -315,7 +315,11 @@ Examples:
                 'help': 'Validate (and clamp) a candidate struct against a schema',
                 'handler': cmd_validate,
                 'args': [
-                    {'flags': ['--schema'], 'required': True, 'help': 'Schema selector: research|ci-finding|issue-body|finding'},
+                    {
+                        'flags': ['--schema'],
+                        'required': True,
+                        'help': 'Schema selector: research|ci-finding|issue-body|finding',
+                    },
                     {'flags': ['--struct'], 'required': True, 'help': 'Candidate struct as a JSON string'},
                 ],
             },

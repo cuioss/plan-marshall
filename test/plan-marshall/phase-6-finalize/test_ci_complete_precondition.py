@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-# ruff: noqa: I001, E402
+# ruff: noqa: E402
 """Unit tests for the phase-6-finalize CI-completion precondition resolver.
 
 The helper at ``scripts/ci_complete_precondition.py`` is the dispatcher-side
@@ -49,6 +49,7 @@ def _strip_ansi(text: str) -> str:
     """Remove ANSI SGR color escapes from ``text``."""
     return _ANSI_SGR_RE.sub('', text)
 
+
 # PlanContext fixture is provided automatically by conftest.py as `plan_context`.
 
 # ---------------------------------------------------------------------------
@@ -62,6 +63,7 @@ def _strip_ansi(text: str) -> str:
 # ---------------------------------------------------------------------------
 
 from conftest import PROJECT_ROOT, get_scripts_dir, load_script_module
+
 _SCRIPTS_DIR = get_scripts_dir('plan-marshall', 'phase-6-finalize')
 
 
@@ -127,10 +129,7 @@ class _StubCiWait:
         self.calls.append((plan_id, pr_number, timeout_seconds, worktree_path))
         # Pop the next envelope; fail loudly if exhausted (test bug).
         if not self.envelopes:
-            raise AssertionError(
-                'Stub ci_wait_runner exhausted — test scheduled more calls '
-                'than expected'
-            )
+            raise AssertionError('Stub ci_wait_runner exhausted — test scheduled more calls than expected')
         return self.envelopes.pop(0)
 
 
@@ -199,9 +198,7 @@ def test_cache_miss_then_hit_does_not_repoll(plan_context):
     plan_id = 'ci-precond-cache-miss-then-hit'
     git_stub = _StubGitHead(_SHA_A)
     # Only one envelope provided — a second call would raise.
-    wait_stub = _StubCiWait(
-        [{'status': 'success', 'final_status': 'success'}]
-    )
+    wait_stub = _StubCiWait([{'status': 'success', 'final_status': 'success'}])
 
     first = resolve(
         plan_id=plan_id,
@@ -233,9 +230,7 @@ def test_cache_miss_then_hit_does_not_repoll(plan_context):
     assert second['head_sha'] == _SHA_A
     assert second['ci_final_status'] == 'success'
     # Critically: ci wait was NOT invoked a second time.
-    assert len(wait_stub.calls) == 1, (
-        'satisfied must short-circuit without re-invoking ci wait'
-    )
+    assert len(wait_stub.calls) == 1, 'satisfied must short-circuit without re-invoking ci wait'
 
 
 # ---------------------------------------------------------------------------
@@ -278,9 +273,7 @@ def test_head_advance_invalidates_cache(plan_context):
     # Cache is stale → resolver re-polls and reports wait_succeeded again.
     assert second['status'] == 'wait_succeeded'
     assert second['head_sha'] == _SHA_B
-    assert len(wait_stub.calls) == 2, (
-        'HEAD advance must force a fresh ci wait poll'
-    )
+    assert len(wait_stub.calls) == 2, 'HEAD advance must force a fresh ci wait poll'
     # Cache now reflects the new SHA.
     cache_after = _read_cache(plan_id)
     assert cache_after is not None
@@ -295,9 +288,7 @@ def test_head_advance_invalidates_cache(plan_context):
 def test_ci_failure_returns_wait_failed_without_caching(plan_context):
     plan_id = 'ci-precond-ci-failure'
     git_stub = _StubGitHead(_SHA_A)
-    wait_stub = _StubCiWait(
-        [{'status': 'success', 'final_status': 'failure'}]
-    )
+    wait_stub = _StubCiWait([{'status': 'success', 'final_status': 'failure'}])
 
     result = resolve(
         plan_id=plan_id,
@@ -312,9 +303,7 @@ def test_ci_failure_returns_wait_failed_without_caching(plan_context):
     assert result['ci_final_status'] == 'failure'
     # Critically: NO cache entry written on failure.
     cache_path = _cache_path(plan_id)
-    assert not cache_path.exists(), (
-        'Failure outcomes must not be cached; re-entry must re-poll'
-    )
+    assert not cache_path.exists(), 'Failure outcomes must not be cached; re-entry must re-poll'
 
 
 # ---------------------------------------------------------------------------
@@ -356,9 +345,7 @@ def test_ci_timeout_returns_wait_failed_with_timeout_reason(plan_context):
         'dispatcher can include the reason in the consumer step display'
     )
     cache_path = _cache_path(plan_id)
-    assert not cache_path.exists(), (
-        'Timeout outcomes must not be cached; re-entry must re-poll'
-    )
+    assert not cache_path.exists(), 'Timeout outcomes must not be cached; re-entry must re-poll'
     # The deadline path records the provider's true duration so the ci:wait
     # ceiling ratchets upward — the starved-ratchet fix.
     assert timeout_set_stub.recorded == [600], (
@@ -387,9 +374,7 @@ def test_deadline_exceeded_records_measured_elapsed_via_timeout_set(plan_context
     git_stub = _StubGitHead(_SHA_A)
     timeout_set_stub = _StubTimeoutSet()
     # No duration_sec — the elapsed fallback drives the record.
-    wait_stub = _StubCiWait(
-        [{'status': 'timeout', 'wait_outcome': 'deadline_exceeded'}]
-    )
+    wait_stub = _StubCiWait([{'status': 'timeout', 'wait_outcome': 'deadline_exceeded'}])
     # clock ticks [0, 605] → measured elapsed 605s, >= the 600s ceiling.
     clock = _StubClock([0.0, 605.0])
 
@@ -407,8 +392,7 @@ def test_deadline_exceeded_records_measured_elapsed_via_timeout_set(plan_context
     assert result['status'] == 'wait_failed'
     assert result['ci_final_status'] == 'timeout'
     assert timeout_set_stub.recorded == [605], (
-        'The measured elapsed-at-deadline must be recorded so the ci:wait '
-        'ceiling ratchets upward'
+        'The measured elapsed-at-deadline must be recorded so the ci:wait ceiling ratchets upward'
     )
 
 
@@ -443,9 +427,7 @@ def test_provider_duration_preferred_over_measured_elapsed(plan_context):
         monotonic_clock=clock,
     )
 
-    assert timeout_set_stub.recorded == [800], (
-        'Provider duration_sec must be preferred over the measured elapsed'
-    )
+    assert timeout_set_stub.recorded == [800], 'Provider duration_sec must be preferred over the measured elapsed'
 
 
 def test_sub_ceiling_non_success_does_not_record(plan_context):
@@ -457,9 +439,7 @@ def test_sub_ceiling_non_success_does_not_record(plan_context):
     git_stub = _StubGitHead(_SHA_A)
     timeout_set_stub = _StubTimeoutSet()
     # Executor-crash-style error envelope, no duration_sec.
-    wait_stub = _StubCiWait(
-        [{'status': 'error', 'error': 'executor crashed immediately'}]
-    )
+    wait_stub = _StubCiWait([{'status': 'error', 'error': 'executor crashed immediately'}])
     # clock ticks [0, 3] → measured elapsed 3s, well below the 600s ceiling.
     clock = _StubClock([0.0, 3.0])
 
@@ -474,9 +454,7 @@ def test_sub_ceiling_non_success_does_not_record(plan_context):
         monotonic_clock=clock,
     )
 
-    assert timeout_set_stub.recorded == [], (
-        'A sub-ceiling elapsed with no provider duration must not be recorded'
-    )
+    assert timeout_set_stub.recorded == [], 'A sub-ceiling elapsed with no provider duration must not be recorded'
 
 
 def test_repeated_deadline_exceeded_ratchets_upward(plan_context):
@@ -493,9 +471,7 @@ def test_repeated_deadline_exceeded_ratchets_upward(plan_context):
         worktree_path=_WORKTREE,
         pr_number=_PR,
         timeout_seconds=600,
-        ci_wait_runner=_StubCiWait(
-            [{'status': 'timeout', 'wait_outcome': 'deadline_exceeded'}]
-        ),
+        ci_wait_runner=_StubCiWait([{'status': 'timeout', 'wait_outcome': 'deadline_exceeded'}]),
         git_head_resolver=git_stub,
         timeout_set_runner=timeout_set_stub,
         monotonic_clock=_StubClock([0.0, 601.0]),
@@ -508,9 +484,7 @@ def test_repeated_deadline_exceeded_ratchets_upward(plan_context):
         worktree_path=_WORKTREE,
         pr_number=_PR,
         timeout_seconds=750,
-        ci_wait_runner=_StubCiWait(
-            [{'status': 'timeout', 'wait_outcome': 'deadline_exceeded'}]
-        ),
+        ci_wait_runner=_StubCiWait([{'status': 'timeout', 'wait_outcome': 'deadline_exceeded'}]),
         git_head_resolver=git_stub,
         timeout_set_runner=timeout_set_stub,
         monotonic_clock=_StubClock([0.0, 751.0]),
@@ -561,19 +535,14 @@ def test_executor_invocation_with_scrubbed_pythonpath():
     # session-level conftest bootstrap ensures this for fresh checkouts;
     # local dev environments and CI both pass through that path.
     assert _EXECUTOR_PATH.is_file(), (
-        f'Executor missing at {_EXECUTOR_PATH} — '
-        'conftest session bootstrap should have generated it'
+        f'Executor missing at {_EXECUTOR_PATH} — conftest session bootstrap should have generated it'
     )
 
     # Build a deliberately scrubbed environment: drop PYTHONPATH and
     # PYTHONHOME entirely so the subprocess CANNOT inherit any path
     # injection from the calling pytest session. Keep PATH / HOME /
     # encoding vars so subprocess startup itself remains viable.
-    scrubbed_env = {
-        k: v
-        for k, v in os.environ.items()
-        if k not in {'PYTHONPATH', 'PYTHONHOME'}
-    }
+    scrubbed_env = {k: v for k, v in os.environ.items() if k not in {'PYTHONPATH', 'PYTHONHOME'}}
     # Belt-and-braces: even an inherited '' value would break our intent.
     assert 'PYTHONPATH' not in scrubbed_env
     assert 'PYTHONHOME' not in scrubbed_env
@@ -611,10 +580,7 @@ def test_executor_invocation_with_scrubbed_pythonpath():
     assert 'usage: ci_complete_precondition.py' in plain_stdout, (
         f'Argparse usage banner missing from stdout: {completed.stdout!r}'
     )
-    assert 'resolve' in plain_stdout, (
-        f'``resolve`` subcommand missing from help output: '
-        f'{completed.stdout!r}'
-    )
+    assert 'resolve' in plain_stdout, f'``resolve`` subcommand missing from help output: {completed.stdout!r}'
 
 
 def test_source_script_has_no_self_bootstrap():
@@ -784,9 +750,7 @@ def test_satisfied_does_not_carry_failing_checks_field(plan_context):
     plan_id = 'ci-precond-satisfied-no-failing-checks'
     git_stub = _StubGitHead(_SHA_A)
     # First call: populate the cache via wait_succeeded.
-    wait_stub = _StubCiWait(
-        [{'status': 'success', 'final_status': 'success'}]
-    )
+    wait_stub = _StubCiWait([{'status': 'success', 'final_status': 'success'}])
     resolve(
         plan_id=plan_id,
         worktree_path=_WORKTREE,
@@ -817,9 +781,7 @@ def test_wait_succeeded_does_not_carry_failing_checks_field(plan_context):
     """
     plan_id = 'ci-precond-wait-succeeded-no-failing-checks'
     git_stub = _StubGitHead(_SHA_A)
-    wait_stub = _StubCiWait(
-        [{'status': 'success', 'final_status': 'success'}]
-    )
+    wait_stub = _StubCiWait([{'status': 'success', 'final_status': 'success'}])
 
     result = resolve(
         plan_id=plan_id,
@@ -857,21 +819,19 @@ class _CapturingSubprocessRun:
         self.captured_cmd: list[str] | None = None
         self.captured_kwargs: dict | None = None
 
-    def __call__(self, cmd, *args, **kwargs):  # deliberately unannotated: it accepts whatever subprocess.run is called with
+    def __call__(
+        self, cmd, *args, **kwargs
+    ):  # deliberately unannotated: it accepts whatever subprocess.run is called with
         self.captured_cmd = list(cmd)
         self.captured_kwargs = dict(kwargs)
-        return subprocess.CompletedProcess(
-            args=cmd, returncode=0, stdout=self.stdout, stderr=''
-        )
+        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout=self.stdout, stderr='')
 
 
 def test_run_ci_wait_uses_checks_wait_subcommand_vector(monkeypatch):
     """``_run_ci_wait`` MUST construct the executor command with the
     ``checks wait`` subcommand vector — never the non-existent ``ci wait``.
     """
-    capturing = _CapturingSubprocessRun(
-        stdout='status: success\nfinal_status: success\n'
-    )
+    capturing = _CapturingSubprocessRun(stdout='status: success\nfinal_status: success\n')
     monkeypatch.setattr(_resolver_mod.subprocess, 'run', capturing)
 
     result = _resolver_mod._run_ci_wait(
@@ -886,15 +846,12 @@ def test_run_ci_wait_uses_checks_wait_subcommand_vector(monkeypatch):
     # The corrected vector: 'checks' immediately followed by 'wait'.
     assert 'checks' in cmd, f'cmd missing "checks" segment: {cmd!r}'
     checks_idx = cmd.index('checks')
-    assert cmd[checks_idx + 1] == 'wait', (
-        f'"checks" must be immediately followed by "wait": {cmd!r}'
-    )
+    assert cmd[checks_idx + 1] == 'wait', f'"checks" must be immediately followed by "wait": {cmd!r}'
     # The legacy non-existent vector MUST NOT be present: there must be no
     # 'ci' element immediately followed by 'wait'.
     for i, token in enumerate(cmd[:-1]):
         assert not (token == 'ci' and cmd[i + 1] == 'wait'), (
-            f'legacy "ci wait" subcommand vector reappeared in {cmd!r} — '
-            'the ci.py executor has no "ci" subcommand'
+            f'legacy "ci wait" subcommand vector reappeared in {cmd!r} — the ci.py executor has no "ci" subcommand'
         )
     # The wait primitive's --pr-number / --timeout flags are unchanged.
     assert '--pr-number' in cmd
@@ -909,9 +866,7 @@ def test_run_ci_wait_success_envelope_yields_wait_succeeded(plan_context, monkey
     This pins the corrected vector all the way to the public return value
     without injecting the ``ci_wait_runner`` seam.
     """
-    capturing = _CapturingSubprocessRun(
-        stdout='status: success\nfinal_status: success\n'
-    )
+    capturing = _CapturingSubprocessRun(stdout='status: success\nfinal_status: success\n')
     monkeypatch.setattr(_resolver_mod.subprocess, 'run', capturing)
 
     plan_id = 'ci-precond-vector-end-to-end'
@@ -943,7 +898,9 @@ def test_run_ci_wait_success_envelope_yields_wait_succeeded(plan_context, monkey
 # ---------------------------------------------------------------------------
 
 
-def _raise_timeout_expired(cmd, *args, **kwargs):  # deliberately unannotated: it accepts whatever subprocess.run is called with
+def _raise_timeout_expired(
+    cmd, *args, **kwargs
+):  # deliberately unannotated: it accepts whatever subprocess.run is called with
     """subprocess.run stand-in that always raises TimeoutExpired.
 
     Mirrors the real signature: subprocess.run forwards its ``timeout``
@@ -956,9 +913,7 @@ def test_run_ci_wait_returns_timeout_envelope_on_subprocess_timeout(monkeypatch)
     """``_run_ci_wait`` MUST catch ``subprocess.TimeoutExpired`` and return a
     timeout-like envelope instead of propagating the exception.
     """
-    monkeypatch.setattr(
-        _resolver_mod.subprocess, 'run', _raise_timeout_expired
-    )
+    monkeypatch.setattr(_resolver_mod.subprocess, 'run', _raise_timeout_expired)
 
     result = _resolver_mod._run_ci_wait(
         plan_id='ci-precond-subprocess-timeout',
@@ -970,8 +925,7 @@ def test_run_ci_wait_returns_timeout_envelope_on_subprocess_timeout(monkeypatch)
     # The envelope is a dict (no exception escaped) with the timeout markers.
     assert isinstance(result, dict)
     assert result['status'] == 'timeout', (
-        'A wedged ci wait subprocess must surface a timeout-like envelope, '
-        f'not {result.get("status")!r}'
+        f'A wedged ci wait subprocess must surface a timeout-like envelope, not {result.get("status")!r}'
     )
     assert result['wait_outcome'] == 'deadline_exceeded', (
         'The deadline_exceeded marker lets downstream consumers classify '
@@ -982,9 +936,7 @@ def test_run_ci_wait_returns_timeout_envelope_on_subprocess_timeout(monkeypatch)
     assert str(DEFAULT_CI_WAIT_TIMEOUT_SECONDS + 30) in result['error']
 
 
-def test_resolve_routes_subprocess_timeout_to_wait_failed_timeout(
-    plan_context, monkeypatch
-):
+def test_resolve_routes_subprocess_timeout_to_wait_failed_timeout(plan_context, monkeypatch):
     """End-to-end: a ``subprocess.TimeoutExpired`` from the real
     ``_run_ci_wait`` (driven through ``resolve`` without the ci_wait_runner
     seam) MUST resolve to ``wait_failed`` / ``ci_final_status: timeout`` and
@@ -992,9 +944,7 @@ def test_resolve_routes_subprocess_timeout_to_wait_failed_timeout(
     deadline. This pins that the new except-branch envelope threads cleanly
     through resolve()'s non-success classification.
     """
-    monkeypatch.setattr(
-        _resolver_mod.subprocess, 'run', _raise_timeout_expired
-    )
+    monkeypatch.setattr(_resolver_mod.subprocess, 'run', _raise_timeout_expired)
 
     plan_id = 'ci-precond-subprocess-timeout-end-to-end'
     result = resolve(
@@ -1009,9 +959,7 @@ def test_resolve_routes_subprocess_timeout_to_wait_failed_timeout(
     assert result['ci_final_status'] == 'timeout'
     assert result['wait_outcome'] == 'deadline_exceeded'
     # Timeout outcomes are never cached — re-entry must re-poll.
-    assert not _cache_path(plan_id).exists(), (
-        'A subprocess-timeout outcome must not be cached'
-    )
+    assert not _cache_path(plan_id).exists(), 'A subprocess-timeout outcome must not be cached'
 
 
 # ---------------------------------------------------------------------------
@@ -1061,9 +1009,7 @@ def test_resolve_reads_timeout_from_run_config_entry(plan_context):
     plan_id = 'ci-precond-runconfig-seeded'
     get_stub = _StubTimeoutGetSeeded(seeded_value=420)
     set_stub = _StubTimeoutSet()
-    wait_stub = _StubCiWait(
-        [{'status': 'success', 'final_status': 'success'}]
-    )
+    wait_stub = _StubCiWait([{'status': 'success', 'final_status': 'success'}])
 
     result = resolve(
         plan_id=plan_id,
@@ -1094,9 +1040,7 @@ def test_resolve_uses_default_timeout_when_no_run_config_entry(plan_context):
     plan_id = 'ci-precond-runconfig-missing'
     get_stub = _StubTimeoutGetMissing()
     set_stub = _StubTimeoutSet()
-    wait_stub = _StubCiWait(
-        [{'status': 'success', 'final_status': 'success'}]
-    )
+    wait_stub = _StubCiWait([{'status': 'success', 'final_status': 'success'}])
 
     result = resolve(
         plan_id=plan_id,
@@ -1113,10 +1057,7 @@ def test_resolve_uses_default_timeout_when_no_run_config_entry(plan_context):
     # The default reached the clamp, which reduced it to the largest inner
     # ceiling that still leaves the outer call strictly under the harness.
     assert wait_stub.calls[0][2] == _MAX_INNER_WAIT_SECONDS
-    assert (
-        wait_stub.calls[0][2] + CI_WAIT_OUTER_BUFFER_SECONDS
-        < HARNESS_BASH_CEILING_SECONDS
-    )
+    assert wait_stub.calls[0][2] + CI_WAIT_OUTER_BUFFER_SECONDS < HARNESS_BASH_CEILING_SECONDS
 
 
 def test_resolve_records_observed_duration_after_successful_wait(plan_context):
@@ -1159,9 +1100,7 @@ def test_resolve_explicit_timeout_overrides_run_config_lookup(plan_context):
     plan_id = 'ci-precond-runconfig-explicit'
     get_stub = _StubTimeoutGetSeeded(seeded_value=420)
     set_stub = _StubTimeoutSet()
-    wait_stub = _StubCiWait(
-        [{'status': 'success', 'final_status': 'success'}]
-    )
+    wait_stub = _StubCiWait([{'status': 'success', 'final_status': 'success'}])
 
     result = resolve(
         plan_id=plan_id,
@@ -1325,9 +1264,7 @@ def test_resolve_skips_writeback_when_duration_absent(plan_context):
     get_stub = _StubTimeoutGetMissing()
     set_stub = _StubTimeoutSet()
     # Envelope carries no duration_sec field.
-    wait_stub = _StubCiWait(
-        [{'status': 'success', 'final_status': 'success'}]
-    )
+    wait_stub = _StubCiWait([{'status': 'success', 'final_status': 'success'}])
 
     result = resolve(
         plan_id=plan_id,
@@ -1353,14 +1290,7 @@ def test_resolve_skips_writeback_when_duration_absent(plan_context):
 # ---------------------------------------------------------------------------
 
 
-_FIXTURE_DIR = (
-    PROJECT_ROOT
-    / 'test'
-    / 'plan-marshall'
-    / 'phase-6-finalize'
-    / 'fixtures'
-    / 'ci-wait'
-)
+_FIXTURE_DIR = PROJECT_ROOT / 'test' / 'plan-marshall' / 'phase-6-finalize' / 'fixtures' / 'ci-wait'
 
 
 def _load_parse_toon():
@@ -1370,9 +1300,7 @@ def _load_parse_toon():
     test tree, so publishing this copy under that name would displace the module
     those imports already hold.
     """
-    return load_script_module(
-        'plan-marshall', 'ref-toon-format', 'toon_parser.py', register=False
-    ).parse_toon
+    return load_script_module('plan-marshall', 'ref-toon-format', 'toon_parser.py', register=False).parse_toon
 
 
 _parse_toon = _load_parse_toon()
@@ -1381,7 +1309,9 @@ _parse_toon = _load_parse_toon()
 def _make_fixture_wait_runner(parsed: dict):
     """Build a ci_wait_runner stub that returns the parsed-fixture dict."""
 
-    def _runner(plan_id, pr_number, timeout_seconds, worktree_path):  # the parameters are unused: the stub exists to match the real runner's signature
+    def _runner(
+        plan_id, pr_number, timeout_seconds, worktree_path
+    ):  # the parameters are unused: the stub exists to match the real runner's signature
         return parsed
 
     return _runner
@@ -1428,12 +1358,12 @@ def test_fixture_dir_present():
         'single-check-success.toon',
         'many-checks-success.toon',
         # Stress fixtures added per Q-Gate finding e2c3ee (stressors a-f).
-        'url-with-commas-and-quotes.toon',          # (a) commas/quotes in URL
-        'check-name-special-chars.toon',            # (b) special chars in name
-        'multi-line-error-summary.toon',            # (c) multi-line | content
-        'older-gh-envelope.toon',                   # (d) older gh format
-        'huge-checks-block.toon',                   # (e) >50 rows
-        'mixed-skipped-cancelled-neutral.toon',     # (f) SKIPPED+CANCELLED+NEUTRAL
+        'url-with-commas-and-quotes.toon',  # (a) commas/quotes in URL
+        'check-name-special-chars.toon',  # (b) special chars in name
+        'multi-line-error-summary.toon',  # (c) multi-line | content
+        'older-gh-envelope.toon',  # (d) older gh format
+        'huge-checks-block.toon',  # (e) >50 rows
+        'mixed-skipped-cancelled-neutral.toon',  # (f) SKIPPED+CANCELLED+NEUTRAL
         # Additional failure-mode regression fixture surfaced by (b).
         'failing-checks-with-colon-names.toon',
     }
@@ -1455,10 +1385,10 @@ def test_fixture_green_success_resolves_to_success(plan_context):
     plan_id = 'ci-fixture-green-success'
     result = _run_fixture_through_resolver(fixture, plan_id)
     assert result['status'] == 'wait_succeeded', (
-        f"green-success.toon expected wait_succeeded, got "
-        f"{result['status']} (ci_final_status="
-        f"{result.get('ci_final_status')!r}). A green run read as a failure "
-        f"blocks finalize on every passing PR."
+        f'green-success.toon expected wait_succeeded, got '
+        f'{result["status"]} (ci_final_status='
+        f'{result.get("ci_final_status")!r}). A green run read as a failure '
+        f'blocks finalize on every passing PR.'
     )
     assert result['ci_final_status'] == 'success'
 
@@ -1588,9 +1518,9 @@ def test_fixture_check_name_special_chars_preserves_all_rows():
     raw = fixture.read_text()
     parsed = _parse_toon(raw)
     assert len(parsed.get('checks') or []) == 5, (
-        f"Expected 5 checks rows, got {len(parsed.get('checks') or [])}. "
+        f'Expected 5 checks rows, got {len(parsed.get("checks") or [])}. '
         'The parser truncated the array — most likely the key/value '
-        "detection heuristic in `_parse_uniform_array` fired on a row "
+        'detection heuristic in `_parse_uniform_array` fired on a row '
         "whose first column legitimately contains ':' (e.g. 'lint:strict')."
     )
     # The bug-trigger row must be present with name verbatim.
@@ -1643,9 +1573,7 @@ def test_fixture_huge_checks_block_resolves_to_success(plan_context):
     # Verify the parser captured every row — pin the structural completeness.
     raw = fixture.read_text()
     parsed = _parse_toon(raw)
-    assert len(parsed['checks']) == 55, (
-        f"Expected all 55 rows, got {len(parsed['checks'])}"
-    )
+    assert len(parsed['checks']) == 55, f'Expected all 55 rows, got {len(parsed["checks"])}'
 
 
 def test_fixture_mixed_skipped_cancelled_neutral_resolves_to_failure(plan_context):
@@ -1683,7 +1611,7 @@ def test_fixture_failing_checks_with_colon_names_forwards_full_list(plan_context
     failing_names = [c['name'] for c in result.get('failing_checks') or []]
     assert failing_names == ['lint:strict', 'coverage:enforce'], (
         f'Expected [lint:strict, coverage:enforce], got {failing_names!r}. '
-        "If this is an empty list, the parser regression has returned — "
+        'If this is an empty list, the parser regression has returned — '
         'the key/value detection heuristic in _parse_uniform_array fired '
         'on the colon-bearing first column and truncated the array.'
     )
@@ -1733,8 +1661,7 @@ def test_parse_toon_inline_table_handles_colon_in_first_column():
     # The post-table sentinel key/value MUST still be picked up — the
     # array-exit condition must work for genuine top-level keys.
     assert parsed.get('sentinel') == 'present', (
-        'The fix must not interfere with array-exit on genuine top-level '
-        'key/value pairs that follow the array.'
+        'The fix must not interfere with array-exit on genuine top-level key/value pairs that follow the array.'
     )
 
 
@@ -1752,11 +1679,7 @@ def test_parse_toon_inline_table_handles_colon_in_first_column_csv():
     whitespace (or EOL) after the colon, CSV first-column-with-colon
     never does.
     """
-    toon = (
-        'failures[1]{notation,exit_code}:\n'
-        '  plan-marshall:foo:bar,1\n'
-        'sentinel: present\n'
-    )
+    toon = 'failures[1]{notation,exit_code}:\n  plan-marshall:foo:bar,1\nsentinel: present\n'
     parsed = _parse_toon(toon)
     failures = parsed.get('failures') or []
     assert len(failures) == 1, (
@@ -1769,8 +1692,7 @@ def test_parse_toon_inline_table_handles_colon_in_first_column_csv():
     assert failures[0]['notation'] == 'plan-marshall:foo:bar'
     assert int(failures[0]['exit_code']) == 1
     assert parsed.get('sentinel') == 'present', (
-        'The fix must not interfere with array-exit on genuine top-level '
-        'key/value pairs that follow the array.'
+        'The fix must not interfere with array-exit on genuine top-level key/value pairs that follow the array.'
     )
 
 
@@ -1914,8 +1836,7 @@ def test_signal_arm_review_red_ci_proceeds_as_settled(plan_context):
     assert result['status'] == 'arm_proceed'
     assert result['signal_arm'] == 'review'
     assert result['arm_state'] == 'settled', (
-        'the review arm is stable once CI has FINISHED regardless of colour '
-        '— a red CI must not label it failed'
+        'the review arm is stable once CI has FINISHED regardless of colour — a red CI must not label it failed'
     )
     assert result['ci_final_status'] == 'failure'
 
@@ -1954,9 +1875,7 @@ def test_signal_arm_green_sonar_settles(plan_context):
         plan_id=plan_id,
         worktree_path=_WORKTREE,
         pr_number=_PR,
-        ci_wait_runner=_StubCiWait(
-            [{'status': 'success', 'final_status': 'success'}]
-        ),
+        ci_wait_runner=_StubCiWait([{'status': 'success', 'final_status': 'success'}]),
         git_head_resolver=_StubGitHead(_SHA_A),
         signal_arm='sonar',
     )
@@ -1972,9 +1891,7 @@ def test_signal_arm_green_review_settles(plan_context):
         plan_id=plan_id,
         worktree_path=_WORKTREE,
         pr_number=_PR,
-        ci_wait_runner=_StubCiWait(
-            [{'status': 'success', 'final_status': 'success'}]
-        ),
+        ci_wait_runner=_StubCiWait([{'status': 'success', 'final_status': 'success'}]),
         git_head_resolver=_StubGitHead(_SHA_A),
         signal_arm='review',
     )
@@ -2024,9 +1941,7 @@ def test_signal_arm_pending_review_waits(plan_context):
     semantics are symmetric across producer arms.
     """
     plan_id = 'ci-precond-signal-pending-review'
-    wait_stub = _StubCiWait(
-        [{'status': 'timeout', 'wait_outcome': 'deadline_exceeded'}]
-    )
+    wait_stub = _StubCiWait([{'status': 'timeout', 'wait_outcome': 'deadline_exceeded'}])
 
     result = resolve(
         plan_id=plan_id,
@@ -2086,9 +2001,7 @@ def test_signal_arm_cache_hit_settles_without_repolling(plan_context):
         plan_id=plan_id,
         worktree_path=_WORKTREE,
         pr_number=_PR,
-        ci_wait_runner=_StubCiWait(
-            [{'status': 'success', 'final_status': 'success'}]
-        ),
+        ci_wait_runner=_StubCiWait([{'status': 'success', 'final_status': 'success'}]),
         git_head_resolver=git_stub,
     )
     # Second: a per-signal resolution with NO envelopes — must hit the cache.
@@ -2104,9 +2017,7 @@ def test_signal_arm_cache_hit_settles_without_repolling(plan_context):
 
     assert result['status'] == 'arm_proceed'
     assert result['arm_state'] == 'settled'
-    assert len(empty_wait.calls) == 0, (
-        'a cache hit must settle the arm without re-invoking ci wait'
-    )
+    assert len(empty_wait.calls) == 0, 'a cache hit must settle the arm without re-invoking ci wait'
 
 
 def test_signal_arm_ci_value_falls_back_to_legacy(plan_context):
@@ -2119,9 +2030,7 @@ def test_signal_arm_ci_value_falls_back_to_legacy(plan_context):
         plan_id=plan_id,
         worktree_path=_WORKTREE,
         pr_number=_PR,
-        ci_wait_runner=_StubCiWait(
-            [{'status': 'success', 'final_status': 'success'}]
-        ),
+        ci_wait_runner=_StubCiWait([{'status': 'success', 'final_status': 'success'}]),
         git_head_resolver=_StubGitHead(_SHA_A),
         signal_arm='ci',
     )
@@ -2171,19 +2080,13 @@ def test_clamp_constants_leave_the_outer_call_under_the_harness_ceiling():
     strictly below the harness Bash ceiling — the invariant every other
     clamp test depends on.
     """
-    assert (
-        _MAX_INNER_WAIT_SECONDS + CI_WAIT_OUTER_BUFFER_SECONDS
-        < HARNESS_BASH_CEILING_SECONDS
-    ), (
+    assert _MAX_INNER_WAIT_SECONDS + CI_WAIT_OUTER_BUFFER_SECONDS < HARNESS_BASH_CEILING_SECONDS, (
         f'{_MAX_INNER_WAIT_SECONDS} + {CI_WAIT_OUTER_BUFFER_SECONDS} must be '
         f'strictly below {HARNESS_BASH_CEILING_SECONDS}'
     )
     # Strictly below, not merely at-or-below: the largest admissible inner
     # ceiling is exactly one second short of the buffer-adjusted ceiling.
-    assert (
-        _MAX_INNER_WAIT_SECONDS
-        == HARNESS_BASH_CEILING_SECONDS - CI_WAIT_OUTER_BUFFER_SECONDS - 1
-    )
+    assert _MAX_INNER_WAIT_SECONDS == HARNESS_BASH_CEILING_SECONDS - CI_WAIT_OUTER_BUFFER_SECONDS - 1
 
 
 def test_learned_ceiling_above_the_harness_bound_is_clamped(plan_context):
@@ -2193,9 +2096,7 @@ def test_learned_ceiling_above_the_harness_bound_is_clamped(plan_context):
     plan_id = 'ci-precond-clamp-learned'
     # The ratchet has grown the persisted ceiling well past the harness bound.
     get_stub = _StubTimeoutGetSeeded(seeded_value=5000)
-    wait_stub = _StubCiWait(
-        [{'status': 'success', 'final_status': 'success'}]
-    )
+    wait_stub = _StubCiWait([{'status': 'success', 'final_status': 'success'}])
 
     result = resolve(
         plan_id=plan_id,
@@ -2214,9 +2115,7 @@ def test_learned_ceiling_above_the_harness_bound_is_clamped(plan_context):
         f'{_MAX_INNER_WAIT_SECONDS}s, got {consumed}s — an unclamped value '
         'lets the harness kill the call before the resolver can return'
     )
-    assert (
-        consumed + CI_WAIT_OUTER_BUFFER_SECONDS < HARNESS_BASH_CEILING_SECONDS
-    )
+    assert consumed + CI_WAIT_OUTER_BUFFER_SECONDS < HARNESS_BASH_CEILING_SECONDS
 
 
 def test_explicit_timeout_above_the_harness_bound_is_clamped(plan_context):
@@ -2225,9 +2124,7 @@ def test_explicit_timeout_above_the_harness_bound_is_clamped(plan_context):
     """
     plan_id = 'ci-precond-clamp-explicit'
     get_stub = _StubTimeoutGetSeeded(seeded_value=120)
-    wait_stub = _StubCiWait(
-        [{'status': 'success', 'final_status': 'success'}]
-    )
+    wait_stub = _StubCiWait([{'status': 'success', 'final_status': 'success'}])
 
     resolve(
         plan_id=plan_id,
@@ -2251,9 +2148,7 @@ def test_below_bound_ceiling_passes_through_the_clamp_unchanged(plan_context):
     reaches the wait subprocess verbatim.
     """
     plan_id = 'ci-precond-clamp-passthrough'
-    wait_stub = _StubCiWait(
-        [{'status': 'success', 'final_status': 'success'}]
-    )
+    wait_stub = _StubCiWait([{'status': 'success', 'final_status': 'success'}])
 
     resolve(
         plan_id=plan_id,
@@ -2285,9 +2180,7 @@ def test_zero_and_negative_ceilings_are_raised_to_the_positive_lower_bound(
         )
 
     plan_id = 'ci-precond-clamp-lower-bound'
-    wait_stub = _StubCiWait(
-        [{'status': 'success', 'final_status': 'success'}]
-    )
+    wait_stub = _StubCiWait([{'status': 'success', 'final_status': 'success'}])
 
     resolve(
         plan_id=plan_id,
@@ -2299,14 +2192,10 @@ def test_zero_and_negative_ceilings_are_raised_to_the_positive_lower_bound(
         timeout_set_runner=_StubTimeoutSet(),
     )
 
-    assert wait_stub.calls[0][2] == 1, (
-        'The consumed ceiling reaching the wait seam must be positive'
-    )
+    assert wait_stub.calls[0][2] == 1, 'The consumed ceiling reaching the wait seam must be positive'
 
 
-def test_outer_subprocess_timeout_is_strictly_below_the_harness_ceiling(
-    plan_context, monkeypatch
-):
+def test_outer_subprocess_timeout_is_strictly_below_the_harness_ceiling(plan_context, monkeypatch):
     """End-to-end through the REAL ``_run_ci_wait``: the outer
     ``subprocess.run(timeout=...)`` deadline the resolver actually consumes
     MUST be strictly below ``HARNESS_BASH_CEILING_SECONDS``, even when the
@@ -2316,9 +2205,7 @@ def test_outer_subprocess_timeout_is_strictly_below_the_harness_ceiling(
     tests above pin the clamped INNER value, but only this one observes the
     OUTER deadline the host platform measures against.
     """
-    capturing = _CapturingSubprocessRun(
-        stdout='status: success\nfinal_status: success\n'
-    )
+    capturing = _CapturingSubprocessRun(stdout='status: success\nfinal_status: success\n')
     monkeypatch.setattr(_resolver_mod.subprocess, 'run', capturing)
 
     result = resolve(
@@ -2384,9 +2271,7 @@ def test_clamped_deadline_still_returns_structured_arm_pending(plan_context):
     ``arm_pending`` envelope rather than an opaque harness kill.
     """
     plan_id = 'ci-precond-clamp-structured-arm-pending'
-    wait_stub = _StubCiWait(
-        [{'status': 'timeout', 'wait_outcome': 'deadline_exceeded'}]
-    )
+    wait_stub = _StubCiWait([{'status': 'timeout', 'wait_outcome': 'deadline_exceeded'}])
 
     result = resolve(
         plan_id=plan_id,
@@ -2458,9 +2343,7 @@ def test_ratchet_never_records_below_the_requested_ceiling(plan_context):
     """
     plan_id = 'ci-precond-ratchet-not-below-request'
     set_stub = _StubTimeoutSet()
-    wait_stub = _StubCiWait(
-        [{'status': 'timeout', 'wait_outcome': 'deadline_exceeded'}]
-    )
+    wait_stub = _StubCiWait([{'status': 'timeout', 'wait_outcome': 'deadline_exceeded'}])
     requested = 5000
     elapsed = _MAX_INNER_WAIT_SECONDS + 2
 
@@ -2495,9 +2378,7 @@ def test_ratchet_records_measured_elapsed_when_request_fits_under_the_clamp(
     """
     plan_id = 'ci-precond-ratchet-elapsed-under-clamp'
     set_stub = _StubTimeoutSet()
-    wait_stub = _StubCiWait(
-        [{'status': 'timeout', 'wait_outcome': 'deadline_exceeded'}]
-    )
+    wait_stub = _StubCiWait([{'status': 'timeout', 'wait_outcome': 'deadline_exceeded'}])
     requested = 300
     elapsed = requested + 5
 
@@ -2512,13 +2393,10 @@ def test_ratchet_records_measured_elapsed_when_request_fits_under_the_clamp(
         monotonic_clock=_StubClock([0.0, float(elapsed)]),
     )
 
-    assert requested < _MAX_INNER_WAIT_SECONDS, (
-        'fixture precondition: the requested ceiling is consumed unclamped'
-    )
+    assert requested < _MAX_INNER_WAIT_SECONDS, 'fixture precondition: the requested ceiling is consumed unclamped'
     assert wait_stub.calls[0][2] == requested
     assert set_stub.recorded == [elapsed], (
-        'A wait that consumed the full requested ceiling must still feed the '
-        'upward ratchet'
+        'A wait that consumed the full requested ceiling must still feed the upward ratchet'
     )
 
 

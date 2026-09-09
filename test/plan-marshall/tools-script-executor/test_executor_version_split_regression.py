@@ -174,9 +174,7 @@ def _leg_versions(cache_root: Path) -> tuple[str, str, str]:
     ],
     ids=['none-marked', 'newest-marked', 'older-marked', 'all-marked'],
 )
-def test_all_three_legs_agree_on_newest_whatever_the_marker_state(
-    tmp_path, newest_marked, older_marked
-):
+def test_all_three_legs_agree_on_newest_whatever_the_marker_state(tmp_path, newest_marked, older_marked):
     """Every marker state selects NEWEST, because the marker is never consulted.
 
     Nothing in the code pins a version dir against the marker; no such mechanism
@@ -293,9 +291,7 @@ def _seed_runtime_cache(home: Path, marked: tuple[str, ...] = ()) -> Path:
     [(), (NEWEST,), (OLDER,), (OLDER, NEWEST)],
     ids=['none-marked', 'newest-marked', 'older-marked', 'all-marked'],
 )
-def test_generated_runtime_resolver_agrees_with_the_generation_time_selector(
-    tmp_path, monkeypatch, marked
-):
+def test_generated_runtime_resolver_agrees_with_the_generation_time_selector(tmp_path, monkeypatch, marked):
     """A SCRIPTS-miss resolves to the same version dir the write-time selector chose.
 
     The generated executor re-derives a version dir at RUNTIME for any notation

@@ -47,9 +47,7 @@ from conftest import load_script_module
 # ``register=False``: this module only needs the returned object, and publishing a
 # second ``_footprint_resolver`` entry would displace the one the resolver's main
 # test module registered.
-_fr = load_script_module(
-    'plan-marshall', 'plan-retrospective', '_footprint_resolver.py', register=False
-)
+_fr = load_script_module('plan-marshall', 'plan-retrospective', '_footprint_resolver.py', register=False)
 
 #: The tier these controls are about.
 _PR_LANDING = 'pr_landing'
@@ -61,9 +59,7 @@ _PR_NUMBER = 456
 #: declared precedence order rather than restated. A tier inserted above it grows
 #: this tuple, and the coverage assertion below then fails until a control exists
 #: for it — the population guards itself.
-_TIERS_ABOVE_PR_LANDING: tuple[str, ...] = _fr.RESOLVING_TIERS[
-    : _fr.RESOLVING_TIERS.index(_PR_LANDING)
-]
+_TIERS_ABOVE_PR_LANDING: tuple[str, ...] = _fr.RESOLVING_TIERS[: _fr.RESOLVING_TIERS.index(_PR_LANDING)]
 
 #: The path set the provider stub attributes to the PR's landing. Held disjoint
 #: from every higher-tier answer so a tier that wrongly fired is VISIBLE in the
@@ -180,13 +176,7 @@ def _stub_ci(monkeypatch, stdout: str, returncode: int = 0) -> list[list[str]]:
 
 def _merged_payload(sha: str) -> str:
     """A ``ci pr view`` TOON payload reporting ``_PR_NUMBER`` merged at ``sha``."""
-    return (
-        'status: success\n'
-        'operation: pr_view\n'
-        f'pr_number: {_PR_NUMBER}\n'
-        'state: merged\n'
-        f'merge_commit_sha: {sha}\n'
-    )
+    return f'status: success\noperation: pr_view\npr_number: {_PR_NUMBER}\nstate: merged\nmerge_commit_sha: {sha}\n'
 
 
 def _establish_live_diff(monkeypatch) -> None:
@@ -293,9 +283,7 @@ def test_a_genuine_merge_commit_landing_keeps_precedence_over_the_pr_tier(tmp_pa
     assert calls == []
 
 
-def test_no_higher_precedence_tier_is_overridden_and_all_of_them_were_exercised(
-    tmp_path, monkeypatch
-):
+def test_no_higher_precedence_tier_is_overridden_and_all_of_them_were_exercised(tmp_path, monkeypatch):
     """The direction, swept over every tier that outranks the PR-landing tier.
 
     Publishes the population it compared: a sweep that established no tier would

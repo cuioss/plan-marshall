@@ -575,9 +575,7 @@ class Daemon:
             payload = status_payload('failure', error=str(exc))
         self._journal.record_result(job_id, payload)
         self._audit_job_fate(job_id, str(payload.get('status', '')), spec_dict)
-        self._journal.record_duration(
-            _command_key(spec_dict), float(payload.get('duration_seconds', 0) or 0)
-        )
+        self._journal.record_duration(_command_key(spec_dict), float(payload.get('duration_seconds', 0) or 0))
         self._scheduler.complete(job_id)
         self._progress.pop(job_id, None)
         self._tasks.pop(job_id, None)

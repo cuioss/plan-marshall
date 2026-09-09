@@ -24,8 +24,15 @@ def _set(**kwargs) -> argparse.Namespace:
 
 def test_cli_set_succeeds(plan_context):
     result = run_script(
-        SCRIPT_PATH, 'language-server', 'set',
-        '--language', 'python', '--command', '["pyright-langserver", "--stdio"]', '--language-id', 'python',
+        SCRIPT_PATH,
+        'language-server',
+        'set',
+        '--language',
+        'python',
+        '--command',
+        '["pyright-langserver", "--stdio"]',
+        '--language-id',
+        'python',
     )
     assert result.success, result.stderr
     data = result.toon()

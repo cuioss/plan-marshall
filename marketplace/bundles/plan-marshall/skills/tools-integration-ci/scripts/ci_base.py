@@ -64,9 +64,7 @@ MERGE_QUEUE_UNSUPPORTED = 'unsupported'
 # The two probe outcomes that permit enabling `use_merge_queue`. The set-time
 # validation (D4) rejects the config set when the probe returns a value OUTSIDE
 # this set.
-MERGE_QUEUE_ELIGIBLE_STATES = frozenset(
-    {MERGE_QUEUE_ELIGIBLE_CONFIGURED, MERGE_QUEUE_ELIGIBLE_UNCONFIGURED}
-)
+MERGE_QUEUE_ELIGIBLE_STATES = frozenset({MERGE_QUEUE_ELIGIBLE_CONFIGURED, MERGE_QUEUE_ELIGIBLE_UNCONFIGURED})
 
 # ---------------------------------------------------------------------------
 # `pr view` failure-cause vocabulary (shared across providers)
@@ -130,6 +128,7 @@ def classify_pr_view_failure(stderr: str) -> str:
     if any(signature in haystack for signature in _NO_PR_STDERR_SIGNATURES):
         return PR_VIEW_CAUSE_NO_PR
     return PR_VIEW_CAUSE_PROVIDER_FAILED
+
 
 # ---------------------------------------------------------------------------
 # Auto-merge routing note (advisory, shared across providers)
@@ -511,11 +510,7 @@ def record_wait_mechanism(
     if wait_mechanism not in WAIT_MECHANISMS or dispatch not in WAIT_DISPATCH_MODES:
         return
 
-    level = (
-        'WARNING'
-        if wait_mechanism in _WAIT_FALLBACK_MECHANISMS or outcome == 'deadline_exceeded'
-        else 'INFO'
-    )
+    level = 'WARNING' if wait_mechanism in _WAIT_FALLBACK_MECHANISMS or outcome == 'deadline_exceeded' else 'INFO'
     message = (
         f'[WAIT] consumer={_sanitize_wait_value(consumer)} '
         f'mechanism={wait_mechanism} '
@@ -1349,9 +1344,7 @@ def build_parser(
         allow_abbrev=False,
     )
     add_plan_id_arg(issue_prepare_comment)
-    issue_prepare_comment.add_argument(
-        '--slot', default=None, help='Optional slot identifier (default: "default")'
-    )
+    issue_prepare_comment.add_argument('--slot', default=None, help='Optional slot identifier (default: "default")')
 
     # pr prepare-body — allocate scratch path for PR create description
     pr_prepare_body = pr_sub.add_parser(
@@ -2014,9 +2007,7 @@ def enrich_failing_checks_with_logs(
             if result.get('status') != 'success':
                 continue
             entry['log_file'] = _select_slug_path(result.get('log_paths'), slug, '.log')
-            entry['filtered_log_file'] = _select_slug_path(
-                result.get('filtered_log_paths'), slug, '.filtered.log'
-            )
+            entry['filtered_log_file'] = _select_slug_path(result.get('filtered_log_paths'), slug, '.filtered.log')
         except Exception:
             # Per-entry graceful degradation: a single failure must never
             # abort enrichment of the remaining entries or raise.

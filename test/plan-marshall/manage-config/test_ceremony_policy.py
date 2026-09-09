@@ -67,6 +67,7 @@ def _step_ids(steps_map: dict) -> list:
     """Return the ordered step-id list from the keyed-map form of steps."""
     return list(steps_map.keys())
 
+
 # The distributed run-at-all gates that stay FLAT phase-level siblings, and the
 # phase block each lives under. The finalize `qgate` gate is intentionally absent
 # here — it has been migrated off the run-at-all channel onto the per-element
@@ -114,17 +115,13 @@ _SEEDED_FOLDED_KNOBS = (
 )
 def test_dissolved_ceremony_symbol_is_gone(symbol):
     """No ``CEREMONY_*`` / ``ceremony_policy`` symbol survives in _config_defaults."""
-    assert not hasattr(_config_defaults_mod, symbol), (
-        f'{symbol} must be gone after the ceremony_policy dissolution'
-    )
+    assert not hasattr(_config_defaults_mod, symbol), f'{symbol} must be gone after the ceremony_policy dissolution'
 
 
 def test_get_default_config_has_no_ceremony_policy_key():
     """get_default_config() must NOT carry a top-level ceremony_policy block."""
     config = _config_defaults_mod.get_default_config()
-    assert 'ceremony_policy' not in config, (
-        'ceremony_policy must be absent from get_default_config() after dissolution'
-    )
+    assert 'ceremony_policy' not in config, 'ceremony_policy must be absent from get_default_config() after dissolution'
 
 
 # =============================================================================
@@ -137,9 +134,7 @@ def test_distributed_gate_in_default_config(phase, gate):
     """Each run-at-all gate defaults to 'auto' under its owning phase block."""
     config = _config_defaults_mod.get_default_config()
     phase_block = config['plan'][phase]
-    assert phase_block.get(gate) == 'auto', (
-        f'plan.{phase}.{gate} must default to auto in get_default_config()'
-    )
+    assert phase_block.get(gate) == 'auto', f'plan.{phase}.{gate} must default to auto in get_default_config()'
 
 
 @pytest.mark.parametrize('phase,gate', _DISTRIBUTED_GATES)
@@ -232,9 +227,7 @@ def test_set_path_rejects_out_of_enum_gate_mode(phase, gate, plan_context):
     """Setting a planning gate to an out-of-enum value is rejected at the set boundary."""
     _cmd_init_mod.cmd_init(Namespace(force=False))
 
-    result = _cmd_quality_phases_mod.cmd_phase(
-        Namespace(verb='set', field=gate, value='sometimes'), phase
-    )
+    result = _cmd_quality_phases_mod.cmd_phase(Namespace(verb='set', field=gate, value='sometimes'), phase)
 
     assert result['status'] == 'error'
     assert gate in result.get('message', '') or gate in str(result)
@@ -246,8 +239,6 @@ def test_set_path_accepts_every_valid_gate_mode(phase, gate, plan_context):
     _cmd_init_mod.cmd_init(Namespace(force=False))
 
     for value in _config_defaults_mod.VALID_GATE_MODE:
-        result = _cmd_quality_phases_mod.cmd_phase(
-            Namespace(verb='set', field=gate, value=value), phase
-        )
+        result = _cmd_quality_phases_mod.cmd_phase(Namespace(verb='set', field=gate, value=value), phase)
         assert result['status'] == 'success'
         assert result['value'] == value

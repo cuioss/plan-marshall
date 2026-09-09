@@ -6,7 +6,6 @@ Holds the module-level loads, constants and helpers it uses, so
 the module itself carries the import and not the preamble.
 """
 
-
 from __future__ import annotations
 
 import json
@@ -15,9 +14,7 @@ from pathlib import Path
 
 from conftest import load_script_module
 
-_mod = load_script_module(
-    'plan-marshall', 'manage-status', '_cmd_planning_lane.py', '_cmd_planning_lane_corroboration'
-)
+_mod = load_script_module('plan-marshall', 'manage-status', '_cmd_planning_lane.py', '_cmd_planning_lane_corroboration')
 
 
 evaluate_signals_pure = _mod.evaluate_signals_pure

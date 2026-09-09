@@ -254,8 +254,14 @@ def test_allowed_levels_is_numeric_palette() -> None:
     # Pin the breaking rename: ALLOWED_LEVELS is the numeric level-N palette
     # plus the special non-numeric `inherit` sentinel. No old token remains.
     assert mp.ALLOWED_LEVELS == (
-        'level-1', 'level-2', 'level-3', 'level-4',
-        'level-5', 'level-6', 'level-7', 'inherit',
+        'level-1',
+        'level-2',
+        'level-3',
+        'level-4',
+        'level-5',
+        'level-6',
+        'level-7',
+        'inherit',
     )
 
 
@@ -286,8 +292,7 @@ def test_preset_role_keys_are_subset_of_cmd_models_known_roles(preset_name: str)
         if isinstance(group_value, dict):
             for subkey in group_value:
                 assert subkey in schema, (
-                    f"preset '{preset_name}' subkey '{group}.{subkey}' is "
-                    f"not registered (valid: {list(schema)})"
+                    f"preset '{preset_name}' subkey '{group}.{subkey}' is not registered (valid: {list(schema)})"
                 )
 
 
@@ -349,6 +354,7 @@ def test_get_returns_deep_copy_top_level_mutation_does_not_leak() -> None:
 
 def test_get_returns_deep_copy_nested_roles_mutation_does_not_leak() -> None:
     import copy as _copy
+
     original_roles = _copy.deepcopy(mp.EffortPresets.BALANCED['roles'])
     snapshot = mp.EffortPresets.get('balanced')
     # Mutate a dict-valued phase entry, overwrite a string-valued one,
@@ -381,9 +387,7 @@ def test_preset_ladder_is_monotonic() -> None:
     polymorphic-value rule. Any future preset edit that softens the ladder
     at any slot must fail this test.
     """
-    ordinal: tuple[str, ...] = (
-        'level-1', 'level-2', 'level-3', 'level-4', 'level-5', 'level-6', 'level-7'
-    )
+    ordinal: tuple[str, ...] = ('level-1', 'level-2', 'level-3', 'level-4', 'level-5', 'level-6', 'level-7')
     rank = {level: idx for idx, level in enumerate(ordinal)}
 
     presets = {
@@ -480,6 +484,7 @@ def _spread(preset: dict) -> int:
     value (only ``inherit`` is possible, and no preset uses it) would raise,
     which is the intended fail-loud behaviour for a malformed preset.
     """
+
     def _ordinal(level: str) -> int:
         return int(level.split('-', 1)[1])
 
@@ -707,18 +712,14 @@ def _mentioned_slots(description: str) -> dict[str, str]:
             following = [level for pos, level in level_positions if pos > start]
             if not following:
                 raise AssertionError(
-                    f"slot '{slot}' is named at offset {start} but no level-N "
-                    f'follows it: {description!r}'
+                    f"slot '{slot}' is named at offset {start} but no level-N follows it: {description!r}"
                 )
             governing.add(following[0])
             start = description.find(slot, start + 1)
         if not governing:
             continue
         if len(governing) > 1:
-            raise AssertionError(
-                f"slot '{slot}' is named with conflicting levels "
-                f'{sorted(governing)}: {description!r}'
-            )
+            raise AssertionError(f"slot '{slot}' is named with conflicting levels {sorted(governing)}: {description!r}")
         mentioned[slot] = governing.pop()
     return mentioned
 
@@ -726,9 +727,7 @@ def _mentioned_slots(description: str) -> dict[str, str]:
 def _stated_default(description: str) -> str:
     match = _STATED_DEFAULT_RE.search(description)
     if match is None:
-        raise AssertionError(
-            f'description states no plan-level default: {description!r}'
-        )
+        raise AssertionError(f'description states no plan-level default: {description!r}')
     return match.group(1)
 
 
@@ -774,9 +773,7 @@ def test_describe_reconstructs_every_slot_of_its_payload(preset_name: str) -> No
     payload_slots = _expand_slots(mp.EffortPresets.get(preset_name))
     reconstructed = _reconstruct_from_description(mp.EffortPresets.describe(preset_name))
     differing = {
-        slot: (reconstructed[slot], level)
-        for slot, level in payload_slots.items()
-        if reconstructed[slot] != level
+        slot: (reconstructed[slot], level) for slot, level in payload_slots.items() if reconstructed[slot] != level
     }
     assert reconstructed == payload_slots, (
         f"preset '{preset_name}' description does not reconstruct its "
@@ -797,10 +794,7 @@ def test_describe_names_every_slot_that_deviates_from_the_stated_default(
     description = mp.EffortPresets.describe(preset_name)
     slots = _expand_slots(mp.EffortPresets.get(preset_name))
     stated_default = _stated_default(description)
-    deviating = {
-        slot for slot, level in slots.items()
-        if slot != 'default' and level != stated_default
-    }
+    deviating = {slot for slot, level in slots.items() if slot != 'default' and level != stated_default}
     named = set(_mentioned_slots(description))
     assert deviating <= named, (
         f"preset '{preset_name}' description leaves deviating slot(s) "
@@ -821,9 +815,7 @@ def test_describe_stated_spread_matches_the_reconstructed_spread(preset_name: st
     preset = mp.EffortPresets.get(preset_name)
     description = mp.EffortPresets.describe(preset_name)
     match = _STATED_SPREAD_RE.search(description)
-    assert match is not None, (
-        f"preset '{preset_name}' description quotes no summed-level spread"
-    )
+    assert match is not None, f"preset '{preset_name}' description quotes no summed-level spread"
     stated_spread = int(match.group(1))
     reconstructed_spread = _sum_ordinals(_reconstruct_from_description(description))
     assert stated_spread == reconstructed_spread == _spread(preset), (

@@ -107,9 +107,7 @@ def _phase_steps_complete_applies(phase: str) -> bool:
     bundles = find_marketplace_path()
     if bundles is None:
         return False
-    candidate = (
-        bundles / 'plan-marshall' / 'skills' / f'phase-{phase}' / 'standards' / 'required-steps.md'
-    )
+    candidate = bundles / 'plan-marshall' / 'skills' / f'phase-{phase}' / 'standards' / 'required-steps.md'
     return candidate.is_file()
 
 
@@ -245,11 +243,7 @@ def expected_invariants(
             if value not in (None, ''):
                 include_worktree = True
                 break
-    if (
-        not include_worktree
-        and _phase_at_or_after_execute(phase)
-        and worktree_routed
-    ):
+    if not include_worktree and _phase_at_or_after_execute(phase) and worktree_routed:
         # Signal 2: the plan is worktree-routed AND the phase is at or after
         # 5-execute, so the worktree is materialized → an empty captured value
         # is a real capture gap. Phases 1-4 (and the un-phased default) never
@@ -304,9 +298,7 @@ def detect_drift(phase_map: dict[str, dict[str, Any]]) -> list[dict[str, str]]:
 
 def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     plan_dir = resolve_plan_dir(args.mode, args.plan_id, args.archived_plan_path)
-    worktree_routed = plan_is_worktree_routed(
-        plan_dir, args.plan_id if args.mode == 'live' else None
-    )
+    worktree_routed = plan_is_worktree_routed(plan_dir, args.plan_id if args.mode == 'live' else None)
     rows = load_handshake_rows(plan_dir)
     # Un-phased default used only for the no-handshakes-found path where there
     # is no phase to pass; per-phase expected sets are computed inside the loop.

@@ -7,7 +7,6 @@ per-component cap bounds them — what a binding cap reports, what it keeps, and
 rejection a negative cap earns.
 """
 
-
 from _consult_fixtures import (
     OUTLINE_COMPONENT,
     OUTLINE_LESSON_IDS,
@@ -186,9 +185,7 @@ class TestArtifactWrite:
         assert artifact.exists()
         assert result['artifact_path'] == str(artifact.resolve())
         recorded = parse_toon(artifact.read_text(encoding='utf-8'))
-        assert [row['lesson_id'] for row in recorded['surfaced']] == [
-            row['lesson_id'] for row in result['surfaced']
-        ]
+        assert [row['lesson_id'] for row in recorded['surfaced']] == [row['lesson_id'] for row in result['surfaced']]
 
     def test_zero_match_still_writes_the_artifact(self, tmp_path):
         """A present artifact with surfaced_count 0 means 'fired, matched nothing'."""

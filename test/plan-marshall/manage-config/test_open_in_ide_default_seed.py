@@ -13,9 +13,7 @@ from argparse import Namespace
 
 from conftest import load_script_module
 
-_cmd_init_mod = load_script_module(
-    'plan-marshall', 'manage-config', '_cmd_init.py', module_name='_cmd_init_seed_test'
-)
+_cmd_init_mod = load_script_module('plan-marshall', 'manage-config', '_cmd_init.py', module_name='_cmd_init_seed_test')
 cmd_init = _cmd_init_mod.cmd_init
 
 
@@ -30,11 +28,7 @@ def test_init_seeds_open_in_ide_true_under_plan_namespace(plan_context):
     config = json.loads(marshal_path.read_text(encoding='utf-8'))
 
     # Flat boolean under `plan`; not a top-level alias, not a sub-dict.
-    assert 'open_in_ide' not in config, (
-        "open_in_ide must NOT be a top-level key — it lives under `plan`."
-    )
+    assert 'open_in_ide' not in config, 'open_in_ide must NOT be a top-level key — it lives under `plan`.'
     assert 'plan' in config
-    assert 'open_in_ide' in config['plan'], (
-        'plan.open_in_ide must be seeded by manage-config init'
-    )
+    assert 'open_in_ide' in config['plan'], 'plan.open_in_ide must be seeded by manage-config init'
     assert config['plan']['open_in_ide'] is True

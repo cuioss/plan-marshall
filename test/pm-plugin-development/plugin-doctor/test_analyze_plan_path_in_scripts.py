@@ -55,9 +55,7 @@ def _load_module(name: str, filename: str):
     return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
 
 
-_appis = _load_module(
-    '_analyze_plan_path_in_scripts', '_analyze_plan_path_in_scripts.py'
-)
+_appis = _load_module('_analyze_plan_path_in_scripts', '_analyze_plan_path_in_scripts.py')
 
 analyze_plan_path_in_scripts = _appis.analyze_plan_path_in_scripts
 is_whitelisted = _appis.is_whitelisted
@@ -110,15 +108,7 @@ class TestEndToEndScan:
         mp = _make_marketplace(tmp_path)
 
         # Production hit: a real .plan/plans/ literal in a production script.
-        prod_py = (
-            mp
-            / 'bundles'
-            / 'my-bundle'
-            / 'skills'
-            / 'my-skill'
-            / 'scripts'
-            / 'do_work.py'
-        )
+        prod_py = mp / 'bundles' / 'my-bundle' / 'skills' / 'my-skill' / 'scripts' / 'do_work.py'
         _write_py(
             prod_py,
             '# Production script\nplan_dir = ".plan/plans/" + plan_id\n',
@@ -155,15 +145,7 @@ class TestClassify:
     """``_classify`` distinguishes production scripts from test files."""
 
     def test_production_script_classification(self, tmp_path: Path) -> None:
-        path = (
-            tmp_path
-            / 'bundles'
-            / 'b1'
-            / 'skills'
-            / 's1'
-            / 'scripts'
-            / 'do_work.py'
-        )
+        path = tmp_path / 'bundles' / 'b1' / 'skills' / 's1' / 'scripts' / 'do_work.py'
         assert _classify(path) == 'production_script'
 
     def test_test_directory_classified_as_test(self, tmp_path: Path) -> None:
@@ -175,27 +157,11 @@ class TestClassify:
         assert _classify(path) == 'test_assertion'
 
     def test_test_prefix_filename_classified_as_test(self, tmp_path: Path) -> None:
-        path = (
-            tmp_path
-            / 'bundles'
-            / 'b1'
-            / 'skills'
-            / 's1'
-            / 'scripts'
-            / 'test_runner.py'
-        )
+        path = tmp_path / 'bundles' / 'b1' / 'skills' / 's1' / 'scripts' / 'test_runner.py'
         assert _classify(path) == 'test_assertion'
 
     def test_test_suffix_filename_classified_as_test(self, tmp_path: Path) -> None:
-        path = (
-            tmp_path
-            / 'bundles'
-            / 'b1'
-            / 'skills'
-            / 's1'
-            / 'scripts'
-            / 'runner_test.py'
-        )
+        path = tmp_path / 'bundles' / 'b1' / 'skills' / 's1' / 'scripts' / 'runner_test.py'
         assert _classify(path) == 'test_assertion'
 
 
@@ -220,29 +186,11 @@ class TestWhitelist:
         assert is_whitelisted(path)
 
     def test_arbitrary_other_path_not_whitelisted(self, tmp_path: Path) -> None:
-        path = (
-            tmp_path
-            / 'bundles'
-            / 'b1'
-            / 'skills'
-            / 's1'
-            / 'scripts'
-            / 'do_work.py'
-        )
+        path = tmp_path / 'bundles' / 'b1' / 'skills' / 's1' / 'scripts' / 'do_work.py'
         assert not is_whitelisted(path)
 
-    def test_similar_name_but_different_filename_not_whitelisted(
-        self, tmp_path: Path
-    ) -> None:
-        path = (
-            tmp_path
-            / 'bundles'
-            / 'b1'
-            / 'skills'
-            / 's1'
-            / 'scripts'
-            / '_analyze_plan_path_in_scripts_helper.py'
-        )
+    def test_similar_name_but_different_filename_not_whitelisted(self, tmp_path: Path) -> None:
+        path = tmp_path / 'bundles' / 'b1' / 'skills' / 's1' / 'scripts' / '_analyze_plan_path_in_scripts_helper.py'
         assert not is_whitelisted(path)
 
 
@@ -278,20 +226,10 @@ class TestMultiHitInSingleFile:
     """``_scan_file`` emits a separate finding per code-literal occurrence."""
 
     def test_multiple_code_literal_occurrences(self, tmp_path: Path) -> None:
-        py = (
-            tmp_path
-            / 'bundles'
-            / 'b1'
-            / 'skills'
-            / 's1'
-            / 'scripts'
-            / 'multi.py'
-        )
+        py = tmp_path / 'bundles' / 'b1' / 'skills' / 's1' / 'scripts' / 'multi.py'
         _write_py(
             py,
-            '# Two code-literal hits\n'
-            'a = ".plan/plans/" + plan_id\n'
-            'b = ".plan/plans/" + other_id\n',
+            '# Two code-literal hits\na = ".plan/plans/" + plan_id\nb = ".plan/plans/" + other_id\n',
         )
         findings = _scan_file(py)
         assert len(findings) == 2
@@ -314,15 +252,7 @@ class TestDocstringSkip:
 
     def test_docstring_only_occurrence_skipped(self, tmp_path: Path) -> None:
         mp = _make_marketplace(tmp_path)
-        py = (
-            mp
-            / 'bundles'
-            / 'b1'
-            / 'skills'
-            / 's1'
-            / 'scripts'
-            / 'docstring_only.py'
-        )
+        py = mp / 'bundles' / 'b1' / 'skills' / 's1' / 'scripts' / 'docstring_only.py'
         # Triple-quoted docstring contains the marker; no code-literal hit.
         _write_py(
             py,
@@ -333,15 +263,7 @@ class TestDocstringSkip:
 
     def test_single_quote_triple_docstring_skipped(self, tmp_path: Path) -> None:
         mp = _make_marketplace(tmp_path)
-        py = (
-            mp
-            / 'bundles'
-            / 'b1'
-            / 'skills'
-            / 's1'
-            / 'scripts'
-            / 'single_quote_docstring.py'
-        )
+        py = mp / 'bundles' / 'b1' / 'skills' / 's1' / 'scripts' / 'single_quote_docstring.py'
         _write_py(
             py,
             "'''Module docstring.\n\n.plan/plans/ inside single-quote triple block.\n'''\n\n"
@@ -352,19 +274,10 @@ class TestDocstringSkip:
     def test_mixed_docstring_and_code_literal(self, tmp_path: Path) -> None:
         """Docstring hit is skipped but the code-literal hit is reported."""
         mp = _make_marketplace(tmp_path)
-        py = (
-            mp
-            / 'bundles'
-            / 'b1'
-            / 'skills'
-            / 's1'
-            / 'scripts'
-            / 'mixed.py'
-        )
+        py = mp / 'bundles' / 'b1' / 'skills' / 's1' / 'scripts' / 'mixed.py'
         _write_py(
             py,
-            '"""Doc: .plan/plans/{id} legacy form."""\n\n'
-            'plan_dir = ".plan/plans/" + plan_id\n',
+            '"""Doc: .plan/plans/{id} legacy form."""\n\nplan_dir = ".plan/plans/" + plan_id\n',
         )
         findings = assert_analyzer_findings(analyze_plan_path_in_scripts, mp, [RULE_ID])
         assert findings[0]['category'] == 'production_script'
@@ -383,15 +296,7 @@ class TestFormANoRegression:
 
     def test_plan_plans_without_local_flagged(self, tmp_path: Path) -> None:
         """The drifted .plan/plans/ form is still flagged."""
-        py = (
-            tmp_path
-            / 'bundles'
-            / 'b1'
-            / 'skills'
-            / 's1'
-            / 'scripts'
-            / 'work.py'
-        )
+        py = tmp_path / 'bundles' / 'b1' / 'skills' / 's1' / 'scripts' / 'work.py'
         _write_py(py, 'plan_dir = ".plan/plans/" + plan_id\n')
         findings = _scan_file(py)
         assert len(findings) == 1
@@ -400,15 +305,7 @@ class TestFormANoRegression:
 
     def test_plan_local_plans_not_flagged(self, tmp_path: Path) -> None:
         """The canonical .plan/local/plans/ form is NOT flagged."""
-        py = (
-            tmp_path
-            / 'bundles'
-            / 'b1'
-            / 'skills'
-            / 's1'
-            / 'scripts'
-            / 'work.py'
-        )
+        py = tmp_path / 'bundles' / 'b1' / 'skills' / 's1' / 'scripts' / 'work.py'
         _write_py(py, 'plan_dir = ".plan/local/plans/" + plan_id\n')
         findings = _scan_file(py)
         assert findings == []
@@ -424,19 +321,10 @@ class TestFormBParentWalking:
 
     def test_path_file_parent_plans_flagged(self, tmp_path: Path) -> None:
         """Path(__file__).parent / "plans" is form-B drift and must be flagged."""
-        py = (
-            tmp_path
-            / 'bundles'
-            / 'b1'
-            / 'skills'
-            / 's1'
-            / 'scripts'
-            / 'work.py'
-        )
+        py = tmp_path / 'bundles' / 'b1' / 'skills' / 's1' / 'scripts' / 'work.py'
         _write_py(
             py,
-            'from pathlib import Path\n'
-            'PLAN_DIR = Path(__file__).parent / "plans"\n',
+            'from pathlib import Path\nPLAN_DIR = Path(__file__).parent / "plans"\n',
         )
         findings = _scan_file(py)
         assert len(findings) == 1
@@ -445,20 +333,10 @@ class TestFormBParentWalking:
 
     def test_os_path_dirname_plans_flagged(self, tmp_path: Path) -> None:
         """os.path.dirname(__file__) joined to a .plan-domain dir is form-B drift."""
-        py = (
-            tmp_path
-            / 'bundles'
-            / 'b1'
-            / 'skills'
-            / 's1'
-            / 'scripts'
-            / 'work.py'
-        )
+        py = tmp_path / 'bundles' / 'b1' / 'skills' / 's1' / 'scripts' / 'work.py'
         _write_py(
             py,
-            'import os\n'
-            'import os.path\n'
-            'PLAN_DIR = os.path.join(os.path.dirname(__file__), "plans")\n',
+            'import os\nimport os.path\nPLAN_DIR = os.path.join(os.path.dirname(__file__), "plans")\n',
         )
         findings = _scan_file(py)
         assert len(findings) == 1
@@ -467,19 +345,10 @@ class TestFormBParentWalking:
 
     def test_nested_parent_lessons_flagged(self, tmp_path: Path) -> None:
         """Multi-level parent chain joined to lessons-learned is flagged."""
-        py = (
-            tmp_path
-            / 'bundles'
-            / 'b1'
-            / 'skills'
-            / 's1'
-            / 'scripts'
-            / 'work.py'
-        )
+        py = tmp_path / 'bundles' / 'b1' / 'skills' / 's1' / 'scripts' / 'work.py'
         _write_py(
             py,
-            'from pathlib import Path\n'
-            'LESSONS = Path(__file__).parent.parent / "lessons-learned"\n',
+            'from pathlib import Path\nLESSONS = Path(__file__).parent.parent / "lessons-learned"\n',
         )
         findings = _scan_file(py)
         assert len(findings) == 1
@@ -487,38 +356,20 @@ class TestFormBParentWalking:
 
     def test_parent_chain_logs_domain_flagged(self, tmp_path: Path) -> None:
         """Parent chain joined to 'logs' (a .plan-domain dir) is flagged."""
-        py = (
-            tmp_path
-            / 'bundles'
-            / 'b1'
-            / 'skills'
-            / 's1'
-            / 'scripts'
-            / 'work.py'
-        )
+        py = tmp_path / 'bundles' / 'b1' / 'skills' / 's1' / 'scripts' / 'work.py'
         _write_py(
             py,
-            'from pathlib import Path\n'
-            'LOG_DIR = Path(__file__).parent / "logs"\n',
+            'from pathlib import Path\nLOG_DIR = Path(__file__).parent / "logs"\n',
         )
         findings = _scan_file(py)
         assert len(findings) == 1
 
     def test_parent_chain_non_plan_domain_not_flagged(self, tmp_path: Path) -> None:
         """Parent chain joined to a non-.plan-domain dir is NOT flagged."""
-        py = (
-            tmp_path
-            / 'bundles'
-            / 'b1'
-            / 'skills'
-            / 's1'
-            / 'scripts'
-            / 'work.py'
-        )
+        py = tmp_path / 'bundles' / 'b1' / 'skills' / 's1' / 'scripts' / 'work.py'
         _write_py(
             py,
-            'from pathlib import Path\n'
-            'DATA_DIR = Path(__file__).parent / "data"\n',
+            'from pathlib import Path\nDATA_DIR = Path(__file__).parent / "data"\n',
         )
         findings = _scan_file(py)
         assert findings == []
@@ -540,74 +391,37 @@ class TestFormBParentWalking:
 class TestSysPathInsertExemption:
     """sys.path.insert / sys.path.append bootstrap chains are NOT flagged."""
 
-    def test_sys_path_insert_with_plans_domain_not_flagged(
-        self, tmp_path: Path
-    ) -> None:
+    def test_sys_path_insert_with_plans_domain_not_flagged(self, tmp_path: Path) -> None:
         """sys.path.insert(0, Path(__file__).parent / "plans") is a bootstrap
         idiom and must NOT produce a form-B finding.
         """
-        py = (
-            tmp_path
-            / 'bundles'
-            / 'b1'
-            / 'skills'
-            / 's1'
-            / 'scripts'
-            / 'work.py'
-        )
+        py = tmp_path / 'bundles' / 'b1' / 'skills' / 's1' / 'scripts' / 'work.py'
         _write_py(
             py,
-            'import sys\n'
-            'from pathlib import Path\n'
-            'sys.path.insert(0, str(Path(__file__).parent / "plans"))\n',
+            'import sys\nfrom pathlib import Path\nsys.path.insert(0, str(Path(__file__).parent / "plans"))\n',
         )
         findings = _scan_file(py)
-        assert findings == [], (
-            'sys.path.insert bootstrap must not be flagged as form-B drift'
-        )
+        assert findings == [], 'sys.path.insert bootstrap must not be flagged as form-B drift'
 
     def test_sys_path_append_exemption(self, tmp_path: Path) -> None:
         """sys.path.append(Path(__file__).parent / "logs") is also exempt."""
-        py = (
-            tmp_path
-            / 'bundles'
-            / 'b1'
-            / 'skills'
-            / 's1'
-            / 'scripts'
-            / 'work.py'
-        )
+        py = tmp_path / 'bundles' / 'b1' / 'skills' / 's1' / 'scripts' / 'work.py'
         _write_py(
             py,
-            'import sys\n'
-            'from pathlib import Path\n'
-            'sys.path.append(str(Path(__file__).parent / "logs"))\n',
+            'import sys\nfrom pathlib import Path\nsys.path.append(str(Path(__file__).parent / "logs"))\n',
         )
         findings = _scan_file(py)
-        assert findings == [], (
-            'sys.path.append bootstrap must not be flagged as form-B drift'
-        )
+        assert findings == [], 'sys.path.append bootstrap must not be flagged as form-B drift'
 
     def test_non_sys_path_same_pattern_flagged(self, tmp_path: Path) -> None:
         """The same parent-chain pattern outside a sys.path call IS flagged."""
-        py = (
-            tmp_path
-            / 'bundles'
-            / 'b1'
-            / 'skills'
-            / 's1'
-            / 'scripts'
-            / 'work.py'
-        )
+        py = tmp_path / 'bundles' / 'b1' / 'skills' / 's1' / 'scripts' / 'work.py'
         _write_py(
             py,
-            'from pathlib import Path\n'
-            'MY_DIR = Path(__file__).parent / "plans"\n',
+            'from pathlib import Path\nMY_DIR = Path(__file__).parent / "plans"\n',
         )
         findings = _scan_file(py)
-        assert len(findings) == 1, (
-            'parent chain outside sys.path call must be flagged as form-B drift'
-        )
+        assert len(findings) == 1, 'parent chain outside sys.path call must be flagged as form-B drift'
 
 
 # ===========================================================================
@@ -620,58 +434,27 @@ class TestFileOpsExemption:
 
     def test_file_ops_path_whitelisted(self, tmp_path: Path) -> None:
         """The path tools-file-ops/.../file_ops.py is whitelisted."""
-        path = (
-            tmp_path
-            / 'bundles'
-            / 'plan-marshall'
-            / 'skills'
-            / 'tools-file-ops'
-            / 'scripts'
-            / 'file_ops.py'
-        )
+        path = tmp_path / 'bundles' / 'plan-marshall' / 'skills' / 'tools-file-ops' / 'scripts' / 'file_ops.py'
         assert is_whitelisted(path)
 
-    def test_file_ops_with_plan_plans_literal_not_flagged(
-        self, tmp_path: Path
-    ) -> None:
+    def test_file_ops_with_plan_plans_literal_not_flagged(self, tmp_path: Path) -> None:
         """A file_ops.py containing .plan/plans/ is silently skipped."""
         mp = _make_marketplace(tmp_path)
-        py = (
-            mp
-            / 'bundles'
-            / 'plan-marshall'
-            / 'skills'
-            / 'tools-file-ops'
-            / 'scripts'
-            / 'file_ops.py'
-        )
+        py = mp / 'bundles' / 'plan-marshall' / 'skills' / 'tools-file-ops' / 'scripts' / 'file_ops.py'
         _write_py(py, 'canonical = ".plan/plans/" + plan_id\n')
         findings = analyze_plan_path_in_scripts(mp)
-        assert findings == [], (
-            'file_ops.py must be whitelisted and produce no findings'
-        )
+        assert findings == [], 'file_ops.py must be whitelisted and produce no findings'
 
     def test_file_ops_with_parent_chain_not_flagged(self, tmp_path: Path) -> None:
         """file_ops.py containing a parent-walking chain is silently skipped."""
         mp = _make_marketplace(tmp_path)
-        py = (
-            mp
-            / 'bundles'
-            / 'plan-marshall'
-            / 'skills'
-            / 'tools-file-ops'
-            / 'scripts'
-            / 'file_ops.py'
-        )
+        py = mp / 'bundles' / 'plan-marshall' / 'skills' / 'tools-file-ops' / 'scripts' / 'file_ops.py'
         _write_py(
             py,
-            'from pathlib import Path\n'
-            '_BASE = Path(__file__).parent / "plans"\n',
+            'from pathlib import Path\n_BASE = Path(__file__).parent / "plans"\n',
         )
         findings = analyze_plan_path_in_scripts(mp)
-        assert findings == [], (
-            'file_ops.py parent-chain must be whitelisted and produce no findings'
-        )
+        assert findings == [], 'file_ops.py parent-chain must be whitelisted and produce no findings'
 
 
 # ===========================================================================
@@ -779,9 +562,7 @@ class TestFormCPopulationDerivation:
         py = _write_consumer(mp, 's1', 'a.py', _BYPASSER_METADATA_READ)
         assert 'private_rederiver' in binding_arms(ast.parse(py.read_text(encoding='utf-8')))
 
-    def test_resolver_ref_arm_keeps_migrated_consumer_in_population(
-        self, tmp_path: Path
-    ) -> None:
+    def test_resolver_ref_arm_keeps_migrated_consumer_in_population(self, tmp_path: Path) -> None:
         """The migration-stable arm: a migrated consumer stays in the population.
 
         Without this arm a migration that replaces a hand-rolled binding with a
@@ -816,13 +597,7 @@ class TestFormCPopulationDerivation:
     def test_whitelisted_file_excluded_from_population(self, tmp_path: Path) -> None:
         mp = _make_marketplace(tmp_path)
         _write_py(
-            mp
-            / 'bundles'
-            / 'plan-marshall'
-            / 'skills'
-            / 'tools-file-ops'
-            / 'scripts'
-            / 'file_ops.py',
+            mp / 'bundles' / 'plan-marshall' / 'skills' / 'tools-file-ops' / 'scripts' / 'file_ops.py',
             _BYPASSER_SHELL_OUT,
         )
         assert derive_working_tree_binding_population(mp) == []
@@ -859,16 +634,13 @@ class TestFormCVerdict:
             mp,
             's1',
             'a.py',
-            'def _resolve_worktree_path(metadata):\n'
-            "    return metadata['worktree_path']\n",
+            "def _resolve_worktree_path(metadata):\n    return metadata['worktree_path']\n",
         )
         findings = find_resolver_bypasses(mp, apply_baseline=False)
         assert len(findings) == 1
         assert findings[0]['signal'] == 'worktree_path_metadata_read'
 
-    def test_compliant_adapter_with_identical_helper_name_not_flagged(
-        self, tmp_path: Path
-    ) -> None:
+    def test_compliant_adapter_with_identical_helper_name_not_flagged(self, tmp_path: Path) -> None:
         """The load-bearing negative control: same helper NAME, delegating BODY.
 
         ``_BYPASSER_SHELL_OUT`` and ``_COMPLIANT_ADAPTER`` both define
@@ -921,9 +693,7 @@ class TestFormCBaselineSuppression:
         assert find_resolver_bypasses(mp, apply_baseline=False), (
             'the fixture must bypass before the baseline is applied'
         )
-        assert find_resolver_bypasses(mp, apply_baseline=True) == [], (
-            'a baseline member must be suppressed'
-        )
+        assert find_resolver_bypasses(mp, apply_baseline=True) == [], 'a baseline member must be suppressed'
 
     def test_non_member_at_same_filename_not_suppressed(self, tmp_path: Path) -> None:
         """Suppression keys on ``{skill}/{filename}``, not the filename alone."""
@@ -937,9 +707,7 @@ class TestFormCBaselineSuppression:
         path = tmp_path / 'bundles' / 'b' / 'skills' / 'my-skill' / 'scripts' / 'x.py'
         assert skill_key(path) == 'my-skill/x.py'
 
-    def test_skill_key_degrades_to_filename_without_skills_segment(
-        self, tmp_path: Path
-    ) -> None:
+    def test_skill_key_degrades_to_filename_without_skills_segment(self, tmp_path: Path) -> None:
         assert skill_key(tmp_path / 'flat' / 'x.py') == 'x.py'
 
 
@@ -964,9 +732,7 @@ class TestFormCAntiVacuityAgainstRealTree:
         population must be strictly larger — the guard must watch more than its
         own exemptions.
         """
-        population_keys = {
-            skill_key(p) for p in derive_working_tree_binding_population(REAL_MARKETPLACE)
-        }
+        population_keys = {skill_key(p) for p in derive_working_tree_binding_population(REAL_MARKETPLACE)}
         baseline = baseline_stragglers()
         orphans = sorted(baseline - population_keys)
         assert not orphans, (
@@ -974,8 +740,7 @@ class TestFormCAntiVacuityAgainstRealTree:
             'exemption set and the population disagree on what binds a worktree'
         )
         assert baseline < population_keys, (
-            'the baseline is not a STRICT subset — the guard watches nothing '
-            'beyond its own exemptions'
+            'the baseline is not a STRICT subset — the guard watches nothing beyond its own exemptions'
         )
 
     def test_property_3_no_phantom_baseline_entries(self) -> None:
@@ -993,9 +758,7 @@ class TestFormCAntiVacuityAgainstRealTree:
             matches = list(MARKETPLACE_ROOT.glob(f'*/skills/{skill}/scripts/{filename}'))
             if not any(m.is_file() for m in matches):
                 phantoms.append(member)
-        assert not phantoms, (
-            f'phantom baseline entries (no such file in the tree): {phantoms}'
-        )
+        assert not phantoms, f'phantom baseline entries (no such file in the tree): {phantoms}'
 
     def test_property_4_raw_bypassing_set_is_non_empty(self) -> None:
         """Before the baseline is subtracted, the guard flags something real.
@@ -1024,10 +787,7 @@ class TestFormCAntiVacuityAgainstRealTree:
             'firing and the detector really did regress.'
         )
         assert all(f['form'] == 'C' for f in raw)
-        assert all(
-            f['signal'] in ('worktree_path_shell_out', 'worktree_path_metadata_read')
-            for f in raw
-        )
+        assert all(f['signal'] in ('worktree_path_shell_out', 'worktree_path_metadata_read') for f in raw)
 
     def test_real_tree_is_clean_after_baseline(self) -> None:
         """With exemptions applied the real tree carries no form-C finding.
@@ -1037,8 +797,7 @@ class TestFormCAntiVacuityAgainstRealTree:
         """
         remaining = find_resolver_bypasses(REAL_MARKETPLACE, apply_baseline=True)
         assert remaining == [], (
-            'un-baselined resolver bypasses in the real tree: '
-            f'{sorted(skill_key(Path(f["file"])) for f in remaining)}'
+            f'un-baselined resolver bypasses in the real tree: {sorted(skill_key(Path(f["file"])) for f in remaining)}'
         )
 
     def test_whole_rule_is_clean_against_real_tree(self) -> None:
@@ -1051,14 +810,7 @@ class TestFormCAntiVacuityAgainstRealTree:
         Routing the producer through the resolver would close a cycle, since the
         resolver shells out to this very command.
         """
-        producer = (
-            MARKETPLACE_ROOT
-            / 'plan-marshall'
-            / 'skills'
-            / 'manage-status'
-            / 'scripts'
-            / 'manage-status.py'
-        )
+        producer = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'manage-status' / 'scripts' / 'manage-status.py'
         assert producer.is_file(), 'the canonical producer moved — revisit the whitelist'
         assert is_whitelisted(producer)
 

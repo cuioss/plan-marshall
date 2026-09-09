@@ -25,7 +25,10 @@ from extension_base import BuildExtensionBase
 from conftest import load_script_module
 
 _manifest_mod = load_script_module(
-    'plan-marshall', 'manage-execution-manifest', 'manage-execution-manifest.py', module_name='manage_execution_manifest'
+    'plan-marshall',
+    'manage-execution-manifest',
+    'manage-execution-manifest.py',
+    module_name='manage_execution_manifest',
 )
 _classify_paths_via_extensions = _manifest_mod._classify_paths_via_extensions
 _is_infrastructure_config_path = _manifest_mod._is_infrastructure_config_path
@@ -65,20 +68,20 @@ class _FakeExtension(BuildExtensionBase):
         self._specificity = specificity or {}
 
     def get_skill_domains(self) -> list[dict]:
-        return [{
-            'domain': {'key': self._domain_key, 'name': self._domain_key, 'description': ''},
-            'profiles': {
-                'core': {'defaults': [], 'optionals': []},
-                'implementation': {'defaults': [], 'optionals': []},
-                'module_testing': {'defaults': [], 'optionals': []},
-                'quality': {'defaults': [], 'optionals': []},
-            },
-        }]
+        return [
+            {
+                'domain': {'key': self._domain_key, 'name': self._domain_key, 'description': ''},
+                'profiles': {
+                    'core': {'defaults': [], 'optionals': []},
+                    'implementation': {'defaults': [], 'optionals': []},
+                    'module_testing': {'defaults': [], 'optionals': []},
+                    'quality': {'defaults': [], 'optionals': []},
+                },
+            }
+        ]
 
     def classify_paths(self, paths: list[str]) -> dict[str, list[str]]:
-        result: dict[str, list[str]] = {
-            'production': [], 'test': [], 'documentation': [], 'config': []
-        }
+        result: dict[str, list[str]] = {'production': [], 'test': [], 'documentation': [], 'config': []}
         for role, role_paths in self._claims.items():
             result[role] = [p for p in role_paths if p in paths]
         return result
@@ -166,9 +169,7 @@ def test_mixed_code_bucket():
             'config': [],
         },
     )
-    bucket, _ = _classify_paths_via_extensions(
-        ['scripts/foo.py', 'test/foo_test.py'], extensions=[py_ext]
-    )
+    bucket, _ = _classify_paths_via_extensions(['scripts/foo.py', 'test/foo_test.py'], extensions=[py_ext])
     assert bucket == 'mixed_code'
 
 
@@ -185,9 +186,7 @@ def test_mixed_with_docs_bucket():
             'config': [],
         },
     )
-    bucket, _ = _classify_paths_via_extensions(
-        ['scripts/foo.py', 'README.md'], extensions=[py_ext]
-    )
+    bucket, _ = _classify_paths_via_extensions(['scripts/foo.py', 'README.md'], extensions=[py_ext])
     assert bucket == 'mixed_with_docs'
 
 
@@ -203,9 +202,7 @@ def test_mixed_with_docs_includes_test_role():
             'config': [],
         },
     )
-    bucket, _ = _classify_paths_via_extensions(
-        ['test/foo_test.py', 'README.md'], extensions=[py_ext]
-    )
+    bucket, _ = _classify_paths_via_extensions(['test/foo_test.py', 'README.md'], extensions=[py_ext])
     assert bucket == 'mixed_with_docs'
 
 
@@ -215,12 +212,12 @@ def test_unknown_bucket_for_partially_unclaimed():
         'python',
         claims={
             'production': ['scripts/foo.py'],
-            'test': [], 'documentation': [], 'config': [],
+            'test': [],
+            'documentation': [],
+            'config': [],
         },
     )
-    bucket, unclaimed = _classify_paths_via_extensions(
-        ['scripts/foo.py', 'mystery.xyz'], extensions=[py_ext]
-    )
+    bucket, unclaimed = _classify_paths_via_extensions(['scripts/foo.py', 'mystery.xyz'], extensions=[py_ext])
     assert bucket == 'unknown'
     assert unclaimed == ['mystery.xyz']
 
@@ -236,9 +233,7 @@ def test_config_only_collapses_to_documentation_only():
     """
     py_ext = _FakeExtension(
         'python',
-        claims={
-            'production': [], 'test': [], 'documentation': [], 'config': ['pyproject.toml']
-        },
+        claims={'production': [], 'test': [], 'documentation': [], 'config': ['pyproject.toml']},
     )
     bucket, _ = _classify_paths_via_extensions(['pyproject.toml'], extensions=[py_ext])
     assert bucket == 'documentation_only'
@@ -254,9 +249,7 @@ def test_config_combined_with_production_yields_production_only():
             'config': ['pyproject.toml'],
         },
     )
-    bucket, _ = _classify_paths_via_extensions(
-        ['scripts/foo.py', 'pyproject.toml'], extensions=[py_ext]
-    )
+    bucket, _ = _classify_paths_via_extensions(['scripts/foo.py', 'pyproject.toml'], extensions=[py_ext])
     assert bucket == 'production_only'
 
 
@@ -356,7 +349,9 @@ def test_unknown_returns_unclaimed_paths_list():
         'python',
         claims={
             'production': ['scripts/foo.py'],
-            'test': [], 'documentation': [], 'config': [],
+            'test': [],
+            'documentation': [],
+            'config': [],
         },
     )
     bucket, unclaimed = _classify_paths_via_extensions(
@@ -379,12 +374,12 @@ def test_extension_raising_in_classify_paths_is_skipped():
         'python',
         claims={
             'production': ['scripts/foo.py'],
-            'test': [], 'documentation': [], 'config': [],
+            'test': [],
+            'documentation': [],
+            'config': [],
         },
     )
-    bucket, _ = _classify_paths_via_extensions(
-        ['scripts/foo.py'], extensions=[bad, good]
-    )
+    bucket, _ = _classify_paths_via_extensions(['scripts/foo.py'], extensions=[bad, good])
     assert bucket == 'production_only'
 
 
@@ -558,12 +553,12 @@ def test_infra_config_neither_inflates_nor_dilutes_the_code_bucket():
         'python',
         claims={
             'production': ['scripts/foo.py'],
-            'test': [], 'documentation': [], 'config': [],
+            'test': [],
+            'documentation': [],
+            'config': [],
         },
     )
-    bucket, unclaimed = _classify_paths_via_extensions(
-        ['scripts/foo.py', _CI_WORKFLOW_YAML], extensions=[py_ext]
-    )
+    bucket, unclaimed = _classify_paths_via_extensions(['scripts/foo.py', _CI_WORKFLOW_YAML], extensions=[py_ext])
     assert bucket == 'production_only'
     assert unclaimed == []
 
@@ -579,9 +574,7 @@ def test_maven_production_resource_is_never_stolen_by_the_infra_fallback():
     extensions = _real_build_extensions()
     assert extensions, 'discover_build_extensions() returned no build extensions'
 
-    bucket, unclaimed = _classify_paths_via_extensions(
-        ['src/main/resources/application.yml'], extensions=extensions
-    )
+    bucket, unclaimed = _classify_paths_via_extensions(['src/main/resources/application.yml'], extensions=extensions)
     assert bucket == 'production_only'
     assert unclaimed == []
 
@@ -599,9 +592,7 @@ def test_marshal_json_resolves_to_the_config_role_through_the_full_aggregator():
     extensions = _real_build_extensions()
     assert extensions, 'discover_build_extensions() returned no build extensions'
 
-    bucket, unclaimed = _classify_paths_via_extensions(
-        [_PLANNING_SYSTEM_CONFIG], extensions=extensions
-    )
+    bucket, unclaimed = _classify_paths_via_extensions([_PLANNING_SYSTEM_CONFIG], extensions=extensions)
 
     assert unclaimed == [], 'marshal.json must not reach the unclaimed set'
     assert bucket != 'unknown'
@@ -621,9 +612,7 @@ def test_planning_system_recognition_is_a_basename_rule_not_a_plan_directory_rul
     extensions = _real_build_extensions()
     assert extensions, 'discover_build_extensions() returned no build extensions'
 
-    bucket, unclaimed = _classify_paths_via_extensions(
-        [_PLANNING_SYSTEM_SIBLING_JSON], extensions=extensions
-    )
+    bucket, unclaimed = _classify_paths_via_extensions([_PLANNING_SYSTEM_SIBLING_JSON], extensions=extensions)
 
     assert bucket == 'unknown'
     assert unclaimed == [_PLANNING_SYSTEM_SIBLING_JSON]
@@ -673,9 +662,7 @@ def test_d3b_infra_only_footprint_falsifies_the_phase_4_qgate_blocking_predicate
     extensions = _real_build_extensions()
     assert extensions, 'discover_build_extensions() returned no build extensions'
 
-    bucket, unclaimed = _classify_paths_via_extensions(
-        list(_INFRA_ONLY_FOOTPRINT), extensions=extensions
-    )
+    bucket, unclaimed = _classify_paths_via_extensions(list(_INFRA_ONLY_FOOTPRINT), extensions=extensions)
     assert bucket != 'unknown'
     assert unclaimed == []
 
@@ -687,8 +674,7 @@ def test_d3b_infra_only_footprint_falsifies_the_phase_4_qgate_blocking_predicate
 #: The one ``.template`` file in the tree, and the path whose blocking
 #: ``unknown`` classification this rule exists to clear. Copied verbatim.
 _EXECUTOR_TEMPLATE = (
-    'marketplace/bundles/plan-marshall/skills/tools-script-executor/'
-    'templates/execute-script.py.template'
+    'marketplace/bundles/plan-marshall/skills/tools-script-executor/templates/execute-script.py.template'
 )
 
 #: A production probe an inline fake claims, used by :func:`_resolved_role` to
@@ -728,9 +714,7 @@ def _resolved_role(path: str, extensions=()) -> str:
         'probe',
         claims={'production': [_PROD_PROBE], 'test': [], 'documentation': [], 'config': []},
     )
-    paired, _ = _classify_paths_via_extensions(
-        [_PROD_PROBE, path], extensions=[probe_ext, *extensions]
-    )
+    paired, _ = _classify_paths_via_extensions([_PROD_PROBE, path], extensions=[probe_ext, *extensions])
     if paired == 'mixed_with_docs':
         return 'documentation'
     if paired == 'production_only':
@@ -749,14 +733,11 @@ def test_executor_template_resolves_to_a_code_bucket_not_unknown():
     extensions = _real_build_extensions()
     assert extensions, 'discover_build_extensions() returned no build extensions'
 
-    bucket, unclaimed = _classify_paths_via_extensions(
-        [_EXECUTOR_TEMPLATE], extensions=extensions
-    )
+    bucket, unclaimed = _classify_paths_via_extensions([_EXECUTOR_TEMPLATE], extensions=extensions)
 
     assert unclaimed == [], 'the executor template must not reach the unclaimed set'
     assert bucket == 'production_only', (
-        'the executor template must take the fail-closed production terminal, '
-        f'got bucket={bucket!r}'
+        f'the executor template must take the fail-closed production terminal, got bucket={bucket!r}'
     )
 
 

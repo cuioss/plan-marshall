@@ -15,7 +15,6 @@ enablement: the ``on:`` block MUST declare ``merge_group`` so the reusable verif
 job runs when a PR is queued.
 """
 
-
 import importlib.util
 import re
 
@@ -71,8 +70,7 @@ def test_on_block_declares_merge_group_trigger():
     if importlib.util.find_spec('yaml') is not None:
         on_section = _parse_on_section()
         assert on_section is not None, (
-            'python-verify.yml has no parseable on: block — the workflow cannot '
-            'declare any event triggers.'
+            'python-verify.yml has no parseable on: block — the workflow cannot declare any event triggers.'
         )
         assert 'merge_group' in on_section, (
             'python-verify.yml on: block does not declare a merge_group trigger. '
@@ -83,6 +81,5 @@ def test_on_block_declares_merge_group_trigger():
         )
     else:
         assert _merge_group_present_via_regex(), (
-            'python-verify.yml on: block does not declare a merge_group trigger '
-            '(regex fallback; pyyaml unavailable).'
+            'python-verify.yml on: block does not declare a merge_group trigger (regex fallback; pyyaml unavailable).'
         )

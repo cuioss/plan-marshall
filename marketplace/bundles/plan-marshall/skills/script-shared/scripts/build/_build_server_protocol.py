@@ -141,15 +141,11 @@ STATUS_NOT_FOUND = 'not_found'
 STATUS_REFUSED = 'refused'
 """Submit rejected by the verifier (S1/S2); carries a ``reason``."""
 
-TERMINAL_STATUSES = frozenset(
-    {STATUS_SUCCESS, STATUS_FAILURE, STATUS_TIMEOUT, STATUS_KILLED}
-)
+TERMINAL_STATUSES = frozenset({STATUS_SUCCESS, STATUS_FAILURE, STATUS_TIMEOUT, STATUS_KILLED})
 """The four terminal job statuses — a wait resolves once one of these is seen."""
 
 _RESULT_STATUSES: frozenset[str] = frozenset(
-    value
-    for name, value in vars(_build_result).items()
-    if name.startswith('STATUS_') and isinstance(value, str)
+    value for name, value in vars(_build_result).items() if name.startswith('STATUS_') and isinstance(value, str)
 )
 """Every ``_build_result`` status value, DERIVED from that module's namespace.
 
@@ -232,10 +228,7 @@ class FrameTooLargeError(FrameError):
     def __init__(self, declared_bytes: int, limit_bytes: int) -> None:
         self.declared_bytes = declared_bytes
         self.limit_bytes = limit_bytes
-        super().__init__(
-            f'frame body of {declared_bytes} bytes exceeds the '
-            f'{limit_bytes}-byte limit'
-        )
+        super().__init__(f'frame body of {declared_bytes} bytes exceeds the {limit_bytes}-byte limit')
 
 
 class FrameTruncatedError(FrameError):
@@ -297,9 +290,7 @@ def decode_payload(body: bytes) -> dict[str, Any]:
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise FrameDecodeError(f'frame body is not UTF-8 JSON: {exc}') from exc
     if not isinstance(obj, dict):
-        raise FrameDecodeError(
-            f'frame payload must be a JSON object, got {type(obj).__name__}'
-        )
+        raise FrameDecodeError(f'frame payload must be a JSON object, got {type(obj).__name__}')
     return obj
 
 
@@ -338,16 +329,14 @@ async def read_frame(reader: asyncio.StreamReader) -> dict[str, Any]:
         header = await reader.readexactly(LENGTH_PREFIX_BYTES)
     except asyncio.IncompleteReadError as exc:
         raise FrameTruncatedError(
-            f'stream closed before length prefix (read {len(exc.partial)} of '
-            f'{LENGTH_PREFIX_BYTES} bytes)'
+            f'stream closed before length prefix (read {len(exc.partial)} of {LENGTH_PREFIX_BYTES} bytes)'
         ) from exc
     length = _decode_length(header)
     try:
         body = await reader.readexactly(length)
     except asyncio.IncompleteReadError as exc:
         raise FrameTruncatedError(
-            f'stream closed before frame body (read {len(exc.partial)} of '
-            f'{length} bytes)'
+            f'stream closed before frame body (read {len(exc.partial)} of {length} bytes)'
         ) from exc
     return decode_payload(body)
 
@@ -390,8 +379,7 @@ def _recv_exactly(sock: socket.socket, count: int) -> bytes:
         chunk = sock.recv(remaining)
         if not chunk:
             raise FrameTruncatedError(
-                f'socket closed before frame complete (read '
-                f'{count - remaining} of {count} bytes)'
+                f'socket closed before frame complete (read {count - remaining} of {count} bytes)'
             )
         chunks.append(chunk)
         remaining -= len(chunk)
@@ -479,13 +467,9 @@ def positive_timeout_seconds(raw: str) -> int:
     try:
         value = int(raw)
     except (TypeError, ValueError):
-        raise argparse.ArgumentTypeError(
-            f'--timeout must be an integer number of seconds, got {raw!r}'
-        ) from None
+        raise argparse.ArgumentTypeError(f'--timeout must be an integer number of seconds, got {raw!r}') from None
     if value <= 0:
-        raise argparse.ArgumentTypeError(
-            f'--timeout must be a positive number of seconds, got {value}'
-        )
+        raise argparse.ArgumentTypeError(f'--timeout must be a positive number of seconds, got {value}')
     return value
 
 
@@ -592,13 +576,9 @@ class JobSpec:
         """
         missing = [key for key in _JOB_SPEC_REQUIRED if key not in data]
         if missing:
-            raise ValueError(
-                f'job spec is missing required field(s): {", ".join(missing)}'
-            )
+            raise ValueError(f'job spec is missing required field(s): {", ".join(missing)}')
         command = data['command']
-        if not isinstance(command, list) or not all(
-            isinstance(token, str) for token in command
-        ):
+        if not isinstance(command, list) or not all(isinstance(token, str) for token in command):
             raise ValueError('job spec command must be a list of strings')
         return cls(
             command=list(command),
@@ -699,9 +679,7 @@ def make_job_spec(
     Returns:
         A fully-populated job spec with a non-empty fingerprint.
     """
-    resolved = fingerprint or compute_fingerprint(
-        plan_id, command, exec_path, project_path, timeout
-    )
+    resolved = fingerprint or compute_fingerprint(plan_id, command, exec_path, project_path, timeout)
     return JobSpec(
         command=list(command),
         exec_path=exec_path,
@@ -859,9 +837,7 @@ def status_payload(
     return payload
 
 
-def status_from_result(
-    result: dict[str, Any], *, killed: bool = False, **extra: Any
-) -> dict[str, Any]:
+def status_from_result(result: dict[str, Any], *, killed: bool = False, **extra: Any) -> dict[str, Any]:
     """Map a shared :mod:`_build_result` result dict to a wire status payload.
 
     The ``log_file`` / ``duration_seconds`` / ``exit_code`` / ``errors`` fields
@@ -879,9 +855,7 @@ def status_from_result(
     Returns:
         The wire status payload dict.
     """
-    status = (
-        STATUS_KILLED if killed else wire_status_from_result(result.get('status', ''))
-    )
+    status = STATUS_KILLED if killed else wire_status_from_result(result.get('status', ''))
     return status_payload(
         status,
         duration_seconds=result.get('duration_seconds'),
@@ -1021,9 +995,7 @@ def _parse_errors_table(block_lines: list[str]) -> tuple[dict[str, Any], ...]:
     """
     header = _ERRORS_TABLE_HEADER.match(block_lines[0])
     try:
-        rows = parse_toon_table(
-            '\n'.join(block_lines) + '\n', 'errors', null_markers=set(_ERRORS_NULL_MARKERS)
-        )
+        rows = parse_toon_table('\n'.join(block_lines) + '\n', 'errors', null_markers=set(_ERRORS_NULL_MARKERS))
     except (ToonParseError, ValueError):
         return ()
     parsed = tuple(row for row in rows if isinstance(row, dict))
@@ -1119,6 +1091,4 @@ def read_log_verdict(log_file: str) -> LogVerdict | None:
         return None
     if status is None:
         return None
-    return LogVerdict(
-        status=status, exit_code=exit_code, tests_run=tests_run, errors=errors
-    )
+    return LogVerdict(status=status, exit_code=exit_code, tests_run=tests_run, errors=errors)

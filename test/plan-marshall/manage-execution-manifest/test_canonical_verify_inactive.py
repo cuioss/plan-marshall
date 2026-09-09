@@ -33,7 +33,6 @@ is also covered directly.
 
 # Tier 2 direct imports, resolved by (bundle, skill, script).
 
-
 from conftest import load_script_module
 
 _mem = load_script_module(
@@ -94,9 +93,7 @@ class TestCanonicalVerifyInactiveDrop:
         """``default:verify:integration-tests`` drops when the non-empty footprint
         has no integration-role path."""
         _patch_footprint(monkeypatch, ['src/main/Foo.java', 'README.md'])
-        kept, dropped = _apply_canonical_verify_inactive(
-            ['default:verify:integration-tests'], _PLAN_ID, {}
-        )
+        kept, dropped = _apply_canonical_verify_inactive(['default:verify:integration-tests'], _PLAN_ID, {})
         assert kept == []
         assert dropped == ['default:verify:integration-tests']
 
@@ -134,9 +131,7 @@ class TestCanonicalVerifyInactiveKeep:
     def test_integration_step_kept_when_footprint_has_integration_path(self, monkeypatch):
         """A non-empty footprint WITH an integration-role path keeps the step."""
         _patch_footprint(monkeypatch, ['src/test/java/FooIT.java'])
-        kept, dropped = _apply_canonical_verify_inactive(
-            ['default:verify:integration-tests'], _PLAN_ID, {}
-        )
+        kept, dropped = _apply_canonical_verify_inactive(['default:verify:integration-tests'], _PLAN_ID, {})
         assert kept == ['default:verify:integration-tests']
         assert dropped == []
 
@@ -179,9 +174,7 @@ class TestCanonicalVerifyInactiveKeep:
         steps = ['default:verify:integration-tests']
 
         _patch_footprint(monkeypatch, None)
-        kept_unresolvable, dropped_unresolvable = _apply_canonical_verify_inactive(
-            steps, _PLAN_ID, {}
-        )
+        kept_unresolvable, dropped_unresolvable = _apply_canonical_verify_inactive(steps, _PLAN_ID, {})
 
         _patch_footprint(monkeypatch, ['src/main/java/Foo.java'])
         kept_real, dropped_real = _apply_canonical_verify_inactive(steps, _PLAN_ID, {})

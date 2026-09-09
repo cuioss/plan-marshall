@@ -188,9 +188,7 @@ def _build_fence_set(lines: list[str]) -> set[int]:
     return inside
 
 
-def _declares_numbering_rule(
-    lines: list[str], frontmatter: set[int], fences: set[int]
-) -> bool:
+def _declares_numbering_rule(lines: list[str], frontmatter: set[int], fences: set[int]) -> bool:
     """Return True if the file declares a numbering-discipline rule in its body.
 
     Frontmatter and fenced-code-block lines are excluded — a declaration phrase

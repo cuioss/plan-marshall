@@ -25,7 +25,6 @@ exercise the ``pack-envelopes`` CLI plumbing in ``manage-tasks`` against
 on-disk task files seeded into the plan's ``tasks/`` directory.
 """
 
-
 import json
 
 from conftest import get_script_path, load_script_module
@@ -33,9 +32,7 @@ from conftest import get_script_path, load_script_module
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-tasks', 'manage-tasks.py')
 
 
-_envelope = load_script_module(
-    'plan-marshall', 'manage-tasks', '_tasks_envelope.py', '_tasks_envelope_under_test'
-)
+_envelope = load_script_module('plan-marshall', 'manage-tasks', '_tasks_envelope.py', '_tasks_envelope_under_test')
 
 
 pack_envelopes = _envelope.pack_envelopes
@@ -64,6 +61,4 @@ def _seed_task_file(plan_dir, number, cost):
         'predicted_cost_tokens': cost,
         'steps': [],
     }
-    (tasks_dir / f'TASK-{number:03d}.json').write_text(
-        json.dumps(task, indent=2), encoding='utf-8'
-    )
+    (tasks_dir / f'TASK-{number:03d}.json').write_text(json.dumps(task, indent=2), encoding='utf-8')

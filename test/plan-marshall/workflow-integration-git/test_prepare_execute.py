@@ -139,9 +139,7 @@ def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
 
 
 class TestPrepareExecuteHappyPath:
-    def test_moves_plan_dir_keeps_main_executor_generates_worktree_executor(
-        self, isolated_env: dict
-    ) -> None:
+    def test_moves_plan_dir_keeps_main_executor_generates_worktree_executor(self, isolated_env: dict) -> None:
         env = isolated_env
         result = prepare_execute.run_prepare_execute(
             Namespace(plan_id=env['plan_id'], branch='feature/sample-plan', base=None)
@@ -183,9 +181,7 @@ class TestPrepareExecuteHappyPath:
         for entry in wt_plan_local.rglob('*'):
             assert not entry.is_symlink(), f'unexpected symlink under worktree .plan/local: {entry}'
 
-    def test_rejects_symlinked_plan_local(
-        self, isolated_env: dict, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_rejects_symlinked_plan_local(self, isolated_env: dict, monkeypatch: pytest.MonkeyPatch) -> None:
         # A symlinked worktree .plan/local is rejected before any move-in: the
         # move-based model requires a real directory. Pre-materialize the
         # worktree with .plan/local as a symlink back to main.
@@ -194,9 +190,7 @@ class TestPrepareExecuteHappyPath:
         def symlink_worktree_create(args: Namespace) -> dict:
             target = env['worktrees_root'] / args.plan_id
             (target / '.plan').mkdir(parents=True, exist_ok=True)
-            (target / '.plan' / 'local').symlink_to(
-                env['main'] / '.plan' / 'local', target_is_directory=True
-            )
+            (target / '.plan' / 'local').symlink_to(env['main'] / '.plan' / 'local', target_is_directory=True)
             return {'status': 'success', 'plan_id': args.plan_id, 'worktree_path': str(target)}
 
         fake_module = type('M', (), {'cmd_worktree_create': staticmethod(symlink_worktree_create)})()
@@ -214,9 +208,7 @@ class TestPrepareExecuteHappyPath:
     def test_does_not_change_cwd(self, isolated_env: dict) -> None:
         env = isolated_env
         cwd_before = os.getcwd()
-        prepare_execute.run_prepare_execute(
-            Namespace(plan_id=env['plan_id'], branch='feature/sample-plan', base=None)
-        )
+        prepare_execute.run_prepare_execute(Namespace(plan_id=env['plan_id'], branch='feature/sample-plan', base=None))
         assert os.getcwd() == cwd_before
 
     def test_cwd_invariant_self_check_restores_and_errors(
@@ -284,9 +276,7 @@ class TestPrepareExecuteReentryIdempotence:
     symlinked-but-real ancestor). A genuinely missing plan still blocks
     NOT_FOUND. Guards the re-entry idempotency false-negative fix."""
 
-    def test_healthy_reentry_through_symlinked_ancestor_returns_noop(
-        self, isolated_env: dict
-    ) -> None:
+    def test_healthy_reentry_through_symlinked_ancestor_returns_noop(self, isolated_env: dict) -> None:
         env = isolated_env
         plan_id = env['plan_id']
         worktree_path = env['worktree_path']
@@ -379,9 +369,7 @@ class TestPrepareExecuteReentryIdempotence:
         assert result.get('error_code') == prepare_execute.ErrorCode.NOT_FOUND
         assert 'not found on main checkout' in result['error']
 
-    def test_plan_id_symlink_targeting_in_worktree_dir_is_rejected(
-        self, isolated_env: dict
-    ) -> None:
+    def test_plan_id_symlink_targeting_in_worktree_dir_is_rejected(self, isolated_env: dict) -> None:
         # A `{plan_id}` symlink whose target is ANOTHER in-worktree plan dir
         # stays under the worktree root, so it passes the `is_relative_to`
         # containment check — but it associates `plan_id` with the wrong plan's
@@ -440,9 +428,7 @@ class TestPrepareExecuteRollback:
         # Main's executor is never touched on the failure path either.
         assert env['executor'].is_file()
 
-    def test_missing_plan_dir_on_main_errors_without_moving(
-        self, isolated_env: dict
-    ) -> None:
+    def test_missing_plan_dir_on_main_errors_without_moving(self, isolated_env: dict) -> None:
         """When the plan dir is absent on main, the script fails loud (NOT_FOUND)
         rather than materializing an empty slot."""
         env = isolated_env
@@ -468,9 +454,7 @@ class TestPrepareExecuteInputValidation:
         """The worktree is not yet materialized and no --branch is supplied →
         INVALID_INPUT (cannot create the feature branch)."""
         env = isolated_env
-        result = prepare_execute.run_prepare_execute(
-            Namespace(plan_id=env['plan_id'], branch=None, base=None)
-        )
+        result = prepare_execute.run_prepare_execute(Namespace(plan_id=env['plan_id'], branch=None, base=None))
         assert result['status'] == 'error'
         assert result.get('error_code') == prepare_execute.ErrorCode.INVALID_INPUT
         # No move happened: plan dir still on main.
@@ -548,9 +532,7 @@ class TestMainExecutorPathResolution:
         monkeypatch.setattr(prepare_execute, 'get_plan_dir', raising_plan_dir)
         assert prepare_execute._main_executor_path(env['plan_id']) is None
 
-    def test_resolves_plan_ancestor_dot_plan_execute_script(
-        self, isolated_env: dict
-    ) -> None:
+    def test_resolves_plan_ancestor_dot_plan_execute_script(self, isolated_env: dict) -> None:
         # The resolver walks up from the main plan dir to the .plan ancestor and
         # appends execute-script.py — pointing at main's real executor.
         env = isolated_env
@@ -583,9 +565,7 @@ class TestCopyMainExecutor:
         assert 'no main executor available' in detail
         assert not (worktree_path / '.plan' / 'execute-script.py').exists()
 
-    def test_returns_false_when_main_executor_is_empty(
-        self, isolated_env: dict
-    ) -> None:
+    def test_returns_false_when_main_executor_is_empty(self, isolated_env: dict) -> None:
         # An empty main executor is treated as "not available" — _executor_landed
         # rejects zero-byte sources, so the copy never claims an empty source.
         env = isolated_env
@@ -597,9 +577,7 @@ class TestCopyMainExecutor:
         assert copied is False
         assert 'no main executor available' in detail
 
-    def test_returns_false_when_copy_raises_oserror(
-        self, isolated_env: dict, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_returns_false_when_copy_raises_oserror(self, isolated_env: dict, monkeypatch: pytest.MonkeyPatch) -> None:
         # A shutil.copy OSError is reported as a non-fatal failure, never raised.
         env = isolated_env
         worktree_path = env['worktree_path']
@@ -615,9 +593,7 @@ class TestCopyMainExecutor:
         assert copied is False
         assert 'copy-from-main failed' in detail
 
-    def test_successful_copy_is_byte_equivalent_and_reports_mechanism(
-        self, isolated_env: dict
-    ) -> None:
+    def test_successful_copy_is_byte_equivalent_and_reports_mechanism(self, isolated_env: dict) -> None:
         env = isolated_env
         worktree_path = env['worktree_path']
         (worktree_path / '.plan').mkdir(parents=True, exist_ok=True)
@@ -734,9 +710,7 @@ class TestGenerateWorktreeExecutorSuccessAndFailurePaths:
         worktree_path = env['worktree_path']
         (worktree_path / '.plan').mkdir(parents=True, exist_ok=True)
 
-        monkeypatch.setattr(
-            prepare_execute, '_GENERATE_EXECUTOR_PATH', env['main'] / 'nonexistent_gen.py'
-        )
+        monkeypatch.setattr(prepare_execute, '_GENERATE_EXECUTOR_PATH', env['main'] / 'nonexistent_gen.py')
 
         empty_main = env['main'] / 'empty'
         (empty_main / '.plan' / 'local' / 'plans' / env['plan_id']).mkdir(parents=True)
@@ -784,9 +758,7 @@ class TestGenerateWorktreeExecutorPostAssertion:
             lambda pid: empty_main / '.plan' / 'local' / 'plans' / pid,
         )
 
-        produced, detail = _REAL_GENERATE_WORKTREE_EXECUTOR(
-            worktree_path, env['plan_id']
-        )
+        produced, detail = _REAL_GENERATE_WORKTREE_EXECUTOR(worktree_path, env['plan_id'])
 
         assert produced is False, detail
         # The worktree executor genuinely does not exist on disk.
@@ -822,9 +794,7 @@ class TestGenerateWorktreeExecutorPostAssertion:
             lambda pid: empty_main / '.plan' / 'local' / 'plans' / pid,
         )
 
-        produced, detail = _REAL_GENERATE_WORKTREE_EXECUTOR(
-            worktree_path, env['plan_id']
-        )
+        produced, detail = _REAL_GENERATE_WORKTREE_EXECUTOR(worktree_path, env['plan_id'])
 
         assert produced is False, detail
 
@@ -843,13 +813,9 @@ class TestGenerateWorktreeExecutorPostAssertion:
         env['executor'].write_text(main_content)
 
         # Generation unavailable: point _GENERATE_EXECUTOR_PATH at an absent file.
-        monkeypatch.setattr(
-            prepare_execute, '_GENERATE_EXECUTOR_PATH', env['main'] / 'nonexistent_gen.py'
-        )
+        monkeypatch.setattr(prepare_execute, '_GENERATE_EXECUTOR_PATH', env['main'] / 'nonexistent_gen.py')
 
-        produced, detail = _REAL_GENERATE_WORKTREE_EXECUTOR(
-            worktree_path, env['plan_id']
-        )
+        produced, detail = _REAL_GENERATE_WORKTREE_EXECUTOR(worktree_path, env['plan_id'])
 
         assert produced is True, detail
         assert 'copied from main' in detail
@@ -877,9 +843,7 @@ class TestGenerateWorktreeExecutorPostAssertion:
 
         monkeypatch.setattr(prepare_execute.subprocess, 'run', lambda *a, **k: _Result())
 
-        produced, detail = _REAL_GENERATE_WORKTREE_EXECUTOR(
-            worktree_path, env['plan_id']
-        )
+        produced, detail = _REAL_GENERATE_WORKTREE_EXECUTOR(worktree_path, env['plan_id'])
 
         assert produced is True, detail
         assert 'copied from main' in detail
@@ -914,9 +878,7 @@ class TestPrepareExecuteSelfHeal:
 
         # Restore the REAL generation path so the heal exercises real logic with
         # the copy-from-main fallback (generation unavailable → copy main's).
-        monkeypatch.setattr(
-            prepare_execute, '_GENERATE_EXECUTOR_PATH', env['main'] / 'nonexistent_gen.py'
-        )
+        monkeypatch.setattr(prepare_execute, '_GENERATE_EXECUTOR_PATH', env['main'] / 'nonexistent_gen.py')
 
         # Re-run in the partial state.
         second = prepare_execute.run_prepare_execute(
@@ -972,13 +934,9 @@ class TestPrepareExecuteSelfHeal:
         # restoring the real function the generator-absent + no-main-executor
         # failure this test asserts can never occur. Mirrors the restore in
         # test_rerun_with_missing_executor_heals_returning_same_path.
-        monkeypatch.setattr(
-            prepare_execute, '_generate_worktree_executor', _REAL_GENERATE_WORKTREE_EXECUTOR
-        )
+        monkeypatch.setattr(prepare_execute, '_generate_worktree_executor', _REAL_GENERATE_WORKTREE_EXECUTOR)
         # Make BOTH heal mechanisms fail: generator absent + main executor gone.
-        monkeypatch.setattr(
-            prepare_execute, '_GENERATE_EXECUTOR_PATH', env['main'] / 'nonexistent_gen.py'
-        )
+        monkeypatch.setattr(prepare_execute, '_GENERATE_EXECUTOR_PATH', env['main'] / 'nonexistent_gen.py')
         env['executor'].unlink()  # remove main's executor → no copy source
 
         second = prepare_execute.run_prepare_execute(
@@ -1012,12 +970,8 @@ class TestPrepareExecuteNonFatalGeneration:
 
         # Restore the REAL generation path, then make BOTH mechanisms fail:
         # generator absent and no main executor to copy from.
-        monkeypatch.setattr(
-            prepare_execute, '_generate_worktree_executor', _REAL_GENERATE_WORKTREE_EXECUTOR
-        )
-        monkeypatch.setattr(
-            prepare_execute, '_GENERATE_EXECUTOR_PATH', env['main'] / 'nonexistent_gen.py'
-        )
+        monkeypatch.setattr(prepare_execute, '_generate_worktree_executor', _REAL_GENERATE_WORKTREE_EXECUTOR)
+        monkeypatch.setattr(prepare_execute, '_GENERATE_EXECUTOR_PATH', env['main'] / 'nonexistent_gen.py')
         # Point get_plan_dir at a main tree whose .plan has no execute-script.py
         # so the copy-from-main fallback also fails — but the plan dir to MOVE
         # still exists at the original location (the real move source).
@@ -1066,15 +1020,11 @@ class TestPrepareExecuteNonFatalGeneration:
 class TestPrepareExecuteEndToEndExecutorReporting:
     """Full move-in path with the real executor-generation logic wired in."""
 
-    def _wire_real_generation_no_marketplace(
-        self, env: dict, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def _wire_real_generation_no_marketplace(self, env: dict, monkeypatch: pytest.MonkeyPatch) -> None:
         """Restore the real _generate_worktree_executor and simulate a
         plugin-cache layout: a generator that exits 0 having written nothing
         (no reachable marketplace/bundles to anchor against)."""
-        monkeypatch.setattr(
-            prepare_execute, '_generate_worktree_executor', _REAL_GENERATE_WORKTREE_EXECUTOR
-        )
+        monkeypatch.setattr(prepare_execute, '_generate_worktree_executor', _REAL_GENERATE_WORKTREE_EXECUTOR)
         # Generator present but a no-op: exits 0 and writes no executor file —
         # the exact "exited 0, wrote nothing" plugin-cache condition.
         monkeypatch.setattr(prepare_execute, '_GENERATE_EXECUTOR_PATH', env['main'] / 'fake_gen.py')

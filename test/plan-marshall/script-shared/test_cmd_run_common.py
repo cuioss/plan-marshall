@@ -154,9 +154,7 @@ _STDOUT_IDS = [
 ]
 
 
-@pytest.mark.parametrize(
-    'result,parser,kwargs,present,absent', _STDOUT_CASES, ids=_STDOUT_IDS
-)
+@pytest.mark.parametrize('result,parser,kwargs,present,absent', _STDOUT_CASES, ids=_STDOUT_IDS)
 def test_cmd_run_common_stdout(capsys, result, parser, kwargs, present, absent):
     cmd_run_common(dict(result), parser, 'maven', **kwargs)
 
@@ -271,9 +269,7 @@ class TestCmdRunCommonGreenBuildReconciliation:
         _RECONCILIATION_CASES,
         ids=_RECONCILIATION_IDS,
     )
-    def test_reconciliation_routing(
-        self, result, parser, kwargs, reconciled_count, expected_call
-    ):
+    def test_reconciliation_routing(self, result, parser, kwargs, reconciled_count, expected_call):
         with patch.object(_build_shared_mod, '_reconcile_pending_build_findings') as mock_reconcile:
             mock_reconcile.return_value = reconciled_count
             rc = cmd_run_common(dict(result), parser, 'python', **kwargs)
@@ -315,9 +311,7 @@ class TestCmdRunCommonPublishesItsPopulation:
     executed-test count when it was never measured, so a consumer reading
     ``tests_run`` cannot read an unmeasured run as one that tested nothing."""
 
-    @pytest.mark.parametrize(
-        'command_args,present,absent', _POPULATION_STDOUT_CASES, ids=_POPULATION_STDOUT_IDS
-    )
+    @pytest.mark.parametrize('command_args,present,absent', _POPULATION_STDOUT_CASES, ids=_POPULATION_STDOUT_IDS)
     def test_the_published_population(self, capsys, command_args, present, absent):
         result = _make_result(status='success', command=f'./pw {command_args}')
 

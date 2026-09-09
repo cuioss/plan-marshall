@@ -98,9 +98,7 @@ _SITES = [
 
 @pytest.mark.parametrize('key_path,invoke,error_substr', _SITES)
 @pytest.mark.parametrize('offtype', _OFFTYPE_VALUES)
-def test_malformed_block_returns_structured_error(
-    plan_context, key_path, invoke, error_substr, offtype
-):
+def test_malformed_block_returns_structured_error(plan_context, key_path, invoke, error_substr, offtype):
     """Each Pattern B2 site returns a structured error (never raises) for a non-dict block."""
     create_marshal_json(plan_context.fixture_dir, config=_config_with(key_path, offtype))
 
@@ -119,6 +117,5 @@ def test_malformed_block_returns_structured_error(
         f'malformed {".".join(key_path)} block must yield a non-empty error message'
     )
     assert error_substr in result['error'], (
-        f"expected {error_substr!r} in error for malformed {'.'.join(key_path)} "
-        f"block; got {result['error']!r}"
+        f'expected {error_substr!r} in error for malformed {".".join(key_path)} block; got {result["error"]!r}'
     )

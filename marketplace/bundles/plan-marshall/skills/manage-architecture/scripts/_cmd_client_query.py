@@ -346,9 +346,7 @@ def get_module_graph(
                     {
                         'from': dep,
                         'to': module_name,
-                        'producers': producers_by_edge.get(
-                            (module_name, dep), [_PRODUCER_DECLARED]
-                        ),
+                        'producers': producers_by_edge.get((module_name, dep), [_PRODUCER_DECLARED]),
                     }
                 )
                 in_degree[module_name] += 1
@@ -638,9 +636,7 @@ def get_module_commands(module_name: str | None = None, project_dir: str = '.') 
 # which a profile MIGHT override), ``resolve_command`` lazily enriches that one
 # module via ``enrich_maven_module`` and re-resolves. The plain build verbs
 # (compile/verify/test/package/clean/install) NEVER trigger enrichment.
-_PROFILE_CANONICALS: frozenset[str] = frozenset(
-    {'coverage', 'integration-tests', 'e2e', 'benchmark'}
-)
+_PROFILE_CANONICALS: frozenset[str] = frozenset({'coverage', 'integration-tests', 'e2e', 'benchmark'})
 
 
 def _command_executable(commands: dict[str, Any], command_name: str) -> str:
@@ -1278,9 +1274,7 @@ def _load_module_maps(
         module_names = list(derived_by_name.keys())
 
     if enriched_by_name is None:
-        enriched_by_name = {
-            name: load_module_enriched_or_empty(name, project_dir) for name in module_names
-        }
+        enriched_by_name = {name: load_module_enriched_or_empty(name, project_dir) for name in module_names}
 
     return derived_by_name, enriched_by_name, module_names
 
@@ -1315,18 +1309,12 @@ def _build_internal_deps_map(
         per-resolver report list every graph-family caller surfaces so a
         zero-edge answer is never vacuous — an EMPTY list means no resolver ran.
     """
-    derived_by_name, enriched_by_name, module_names = _load_module_maps(
-        project_dir, derived_by_name, enriched_by_name
-    )
-    deps_map, _producers, resolver_reports = _build_deps_and_producers(
-        project_dir, derived_by_name, enriched_by_name
-    )
+    derived_by_name, enriched_by_name, module_names = _load_module_maps(project_dir, derived_by_name, enriched_by_name)
+    deps_map, _producers, resolver_reports = _build_deps_and_producers(project_dir, derived_by_name, enriched_by_name)
     return deps_map, module_names, resolver_reports
 
 
-def get_module_path(
-    source: str, target: str, project_dir: str = '.'
-) -> tuple[list[str] | None, list[dict[str, Any]]]:
+def get_module_path(source: str, target: str, project_dir: str = '.') -> tuple[list[str] | None, list[dict[str, Any]]]:
     """BFS shortest path from source to target over internal_dependencies edges.
 
     Edge semantics: a directed edge exists from M to N iff N appears in M's
@@ -1420,9 +1408,7 @@ def get_module_neighbors(
     return sorted(visited), resolver_reports
 
 
-def get_module_impact(
-    module_name: str, project_dir: str = '.'
-) -> tuple[list[str], list[dict[str, Any]]]:
+def get_module_impact(module_name: str, project_dir: str = '.') -> tuple[list[str], list[dict[str, Any]]]:
     """Transitive reverse-dependency closure of a module.
 
     Returns every module Y such that `module_name` is in the transitive closure

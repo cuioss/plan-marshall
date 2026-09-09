@@ -40,12 +40,7 @@ from conftest import MARKETPLACE_ROOT
 
 
 OUTPUT_TEMPLATE_PATH = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'phase-6-finalize'
-    / 'standards'
-    / 'output-template.md'
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'standards' / 'output-template.md'
 )
 FINALIZE_STEP_SKILL_PATH = (
     MARKETPLACE_ROOT
@@ -73,9 +68,7 @@ class TestSupplementSectionPresence:
 
     def test_supplement_section_heading_exists(self, output_template_text: str):
         idxs = _heading_indices(output_template_text, '## Phase Breakdown Supplement')
-        assert len(idxs) == 1, (
-            f'expected exactly one supplement section heading, got {len(idxs)}'
-        )
+        assert len(idxs) == 1, f'expected exactly one supplement section heading, got {len(idxs)}'
 
     def test_supplement_section_between_snapshot_and_emission(self, output_template_text: str):
         snapshot_idx = _heading_indices(output_template_text, '## Snapshot Procedure')
@@ -112,8 +105,7 @@ class TestSupplementSectionPresence:
         ]
         for phrase in forbidden_phrases:
             assert phrase not in output_template_text, (
-                f'legacy override-mode prose {phrase!r} must not reappear — '
-                f'the supplement append semantics replaces it'
+                f'legacy override-mode prose {phrase!r} must not reappear — the supplement append semantics replaces it'
             )
 
 
@@ -133,14 +125,10 @@ class TestSnapshotProcedureRead:
 
     def test_snapshot_runs_before_archive(self, output_template_text: str):
         snapshot_idx = output_template_text.find('## Snapshot Procedure')
-        archive_caveat_idx = output_template_text.find(
-            'BEFORE `default:archive-plan` runs', snapshot_idx
-        )
+        archive_caveat_idx = output_template_text.find('BEFORE `default:archive-plan` runs', snapshot_idx)
         # The "BEFORE archive" caveat exists and lives inside the snapshot
         # procedure section.
-        assert archive_caveat_idx > snapshot_idx, (
-            'expected a BEFORE archive caveat inside the Snapshot Procedure'
-        )
+        assert archive_caveat_idx > snapshot_idx, 'expected a BEFORE archive caveat inside the Snapshot Procedure'
 
 
 class TestEmissionProcedureAppend:
@@ -165,14 +153,11 @@ class TestEmissionProcedureAppend:
         assert 'phase_breakdown_override_content' in step_5_body
         assert 'Phase Breakdown' in step_5_body
         # The new append-after-iteration semantics must be explicit.
-        assert 'append' in step_5_body.lower(), (
-            'step 5 body MUST mention the append-after-iteration semantics'
-        )
+        assert 'append' in step_5_body.lower(), 'step 5 body MUST mention the append-after-iteration semantics'
         # The record-metrics row MUST emit unchanged — guard against
         # regression to substitute-row behaviour.
         assert 'unchanged' in step_5_body.lower() or 'including `record-metrics`' in step_5_body, (
-            'step 5 body should declare every step row (incl. record-metrics) '
-            'emits unchanged in supplement mode'
+            'step 5 body should declare every step row (incl. record-metrics) emits unchanged in supplement mode'
         )
 
     def test_default_block_still_documented(self, output_template_text: str):
@@ -204,9 +189,7 @@ class TestProducerConsumerContract:
     """
 
     def test_finalize_step_standards_exists(self):
-        assert FINALIZE_STEP_SKILL_PATH.is_file(), (
-            f'expected finalize-step standards at {FINALIZE_STEP_SKILL_PATH}'
-        )
+        assert FINALIZE_STEP_SKILL_PATH.is_file(), f'expected finalize-step standards at {FINALIZE_STEP_SKILL_PATH}'
 
     def test_path_appears_in_producer(self):
         producer_text = FINALIZE_STEP_SKILL_PATH.read_text(encoding='utf-8')
@@ -215,9 +198,7 @@ class TestProducerConsumerContract:
         )
 
     def test_path_appears_in_consumer(self, output_template_text: str):
-        assert SHARED_ARTIFACT_PATH in output_template_text, (
-            f'expected {SHARED_ARTIFACT_PATH} in output-template.md'
-        )
+        assert SHARED_ARTIFACT_PATH in output_template_text, f'expected {SHARED_ARTIFACT_PATH} in output-template.md'
 
     def test_path_matches_verbatim_in_both(self, output_template_text: str):
         # Same string in both documents — a typo on one side would trip this.

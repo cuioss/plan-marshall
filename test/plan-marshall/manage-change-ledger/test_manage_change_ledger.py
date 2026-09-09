@@ -6,7 +6,6 @@
 change-ledger.
 """
 
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -94,6 +93,7 @@ def test_build_record_defaults_the_three_wrapper_fields_to_none() -> None:
 # The never-null plan_id contract, asserted at the CLI VERB
 # ---------------------------------------------------------------------------
 
+
 def test_ledger_core_constructors_declare_plan_id_as_required_str() -> None:
     """``build_record`` / ``job_record`` no longer accept ``str | None``.
 
@@ -134,8 +134,15 @@ def test_query_empty_ledger_returns_zero(env) -> None:
 def test_query_round_trips_both_kinds(env) -> None:
     # one build entry and one change entry.
     env.run(
-        'append', '--kind', 'build', '--notation', 'n', '--exit-code', '0',
-        '--status', 'success',
+        'append',
+        '--kind',
+        'build',
+        '--notation',
+        'n',
+        '--exit-code',
+        '0',
+        '--status',
+        'success',
     )
     env.run(
         'append',
@@ -157,13 +164,9 @@ def test_query_round_trips_both_kinds(env) -> None:
 
 def test_query_kind_filter(env) -> None:
     # two builds, one change.
-    env.run('append', '--kind', 'build', '--notation', 'n1', '--exit-code', '0',
-            '--status', 'success')
-    env.run('append', '--kind', 'build', '--notation', 'n2', '--exit-code', '1',
-            '--status', 'error')
-    env.run(
-        'append', '--kind', 'change', '--deliverable-id', '1', '--commit-sha', 's'
-    )
+    env.run('append', '--kind', 'build', '--notation', 'n1', '--exit-code', '0', '--status', 'success')
+    env.run('append', '--kind', 'build', '--notation', 'n2', '--exit-code', '1', '--status', 'error')
+    env.run('append', '--kind', 'change', '--deliverable-id', '1', '--commit-sha', 's')
 
     # filter to builds only.
     result = env.run('query', '--kind', 'build')
@@ -174,10 +177,8 @@ def test_query_kind_filter(env) -> None:
 
 def test_query_exit_code_filter(env) -> None:
     # a passing and a failing build.
-    env.run('append', '--kind', 'build', '--notation', 'n1', '--exit-code', '0',
-            '--status', 'success')
-    env.run('append', '--kind', 'build', '--notation', 'n2', '--exit-code', '1',
-            '--status', 'error')
+    env.run('append', '--kind', 'build', '--notation', 'n1', '--exit-code', '0', '--status', 'success')
+    env.run('append', '--kind', 'build', '--notation', 'n2', '--exit-code', '1', '--status', 'error')
 
     # filter to the failing build.
     result = env.run('query', '--exit-code', '1')
@@ -203,8 +204,15 @@ def test_worktree_sha_matches_appended_entry(env) -> None:
 
     # append a build entry against the same (unchanged) tree.
     append_result = env.run(
-        'append', '--kind', 'build', '--notation', 'n', '--exit-code', '0',
-        '--status', 'success',
+        'append',
+        '--kind',
+        'build',
+        '--notation',
+        'n',
+        '--exit-code',
+        '0',
+        '--status',
+        'success',
     )
 
     # writer and verb hash the same tree to the same value.

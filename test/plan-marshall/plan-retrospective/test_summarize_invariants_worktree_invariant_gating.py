@@ -6,7 +6,6 @@ declared, and the worktree invariant only for a plan actually routed to one, nev
 for a main-checkout plan.
 """
 
-
 from __future__ import annotations
 
 import json
@@ -57,8 +56,7 @@ class TestConditionalPhaseStepsExpectation:
         init_phase = next((p for p in data['phases'] if p['phase'] == '1-init'), None)
         assert init_phase is not None, 'expected 1-init phase in output'
         assert 'phase_steps_complete' not in init_phase['invariants_missing'], (
-            'phase_steps_complete must not be flagged as missing for 1-init '
-            '(no required-steps.md for that phase)'
+            'phase_steps_complete must not be flagged as missing for 1-init (no required-steps.md for that phase)'
         )
 
     def test_phase_with_required_steps_flagged_when_missing(self, tmp_path, monkeypatch):
@@ -88,12 +86,10 @@ class TestConditionalPhaseStepsExpectation:
         finalize_phase = next((p for p in data['phases'] if p['phase'] == '6-finalize'), None)
         assert finalize_phase is not None, 'expected 6-finalize phase in output'
         assert 'phase_steps_complete' in finalize_phase['invariants_present'], (
-            'phase_steps_complete must appear in invariants_present for 6-finalize '
-            'when the value was captured'
+            'phase_steps_complete must appear in invariants_present for 6-finalize when the value was captured'
         )
         assert 'phase_steps_complete' not in finalize_phase['invariants_missing'], (
-            'phase_steps_complete must not be in invariants_missing for 6-finalize '
-            'when the value was captured'
+            'phase_steps_complete must not be in invariants_missing for 6-finalize when the value was captured'
         )
 
     def test_default_expected_invariants_omits_phase_steps_complete(self, tmp_path, monkeypatch):
@@ -111,8 +107,7 @@ class TestConditionalPhaseStepsExpectation:
         assert result.success, result.stderr
         data = result.toon()
         assert 'phase_steps_complete' not in data['expected_invariants'], (
-            'phase_steps_complete must not appear in top-level expected_invariants '
-            'when no phase is in context'
+            'phase_steps_complete must not appear in top-level expected_invariants when no phase is in context'
         )
 
 
@@ -235,12 +230,8 @@ class TestWorktreeInvariantGating:
 
         for phase in ('5-execute', '6-finalize'):
             expected = _summarize.expected_invariants(True, phase, phase_values)
-            assert 'worktree_sha' in expected, (
-                f'Signal 2 must fire for {phase} (>= 5-execute), got {expected}'
-            )
-            assert 'worktree_dirty' in expected, (
-                f'Signal 2 must fire for {phase} (>= 5-execute), got {expected}'
-            )
+            assert 'worktree_sha' in expected, f'Signal 2 must fire for {phase} (>= 5-execute), got {expected}'
+            assert 'worktree_dirty' in expected, f'Signal 2 must fire for {phase} (>= 5-execute), got {expected}'
 
     def test_metadata_dict_is_not_an_accepted_routing_verdict(self):
         """Guard: the first parameter is a bool, not a metadata mapping.
@@ -266,9 +257,7 @@ class TestWorktreeInvariantGating:
             'the routing verdict is resolved by plan_is_worktree_routed'
         )
 
-    def test_run_includes_worktree_invariants_for_worktree_routed_plan(
-        self, tmp_path, monkeypatch
-    ):
+    def test_run_includes_worktree_invariants_for_worktree_routed_plan(self, tmp_path, monkeypatch):
         """Integration contract: a worktree-routed plan expects worktree
         invariants at every captured phase; phases that captured them list
         them in ``invariants_present``.

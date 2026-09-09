@@ -269,9 +269,7 @@ def test_format_json_success_basic():
 
 def test_format_json_with_errors():
     """Formats error result with errors list."""
-    result = _result(
-        errors=[{'file': 'src/Main.java', 'line': 15, 'message': 'cannot find symbol'}]
-    )
+    result = _result(errors=[{'file': 'src/Main.java', 'line': 15, 'message': 'cannot find symbol'}])
 
     parsed = json.loads(format_json(result))
 

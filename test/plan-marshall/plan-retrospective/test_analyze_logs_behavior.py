@@ -295,9 +295,7 @@ class TestCmdRunInProcess:
                 _line('2026-04-17T10:01:00Z', 'INFO', '[ARTIFACT] (plan-marshall:phase-5-execute:1) wrote'),
             ],
         )
-        (plan_dir / 'references.json').write_text(
-            json.dumps({'modified_files': ['src/a.py']}), encoding='utf-8'
-        )
+        (plan_dir / 'references.json').write_text(json.dumps({'modified_files': ['src/a.py']}), encoding='utf-8')
 
         result = _al.cmd_run(_run_args(plan_dir))
 
@@ -322,10 +320,7 @@ class TestCmdRunInProcess:
         result = _al.cmd_run(_run_args(plan_dir))
 
         assert int(result['counts']['artifact_entries']) == 0
-        assert any(
-            f['severity'] == 'error' and 'ARTIFACT entries missing' in f['message']
-            for f in result['findings']
-        )
+        assert any(f['severity'] == 'error' and 'ARTIFACT entries missing' in f['message'] for f in result['findings'])
 
     def test_unresolvable_footprint_reports_unmeasurable_not_silence(self, tmp_path):
         """A footprint no tier could resolve makes the check UNMEASURABLE, not clean.
@@ -346,9 +341,7 @@ class TestCmdRunInProcess:
         result = _al.cmd_run(_run_args(plan_dir))
 
         assert int(result['counts']['artifact_entries']) == 0
-        unmeasurable = [
-            f for f in result['findings'] if 'ARTIFACT_COVERAGE_UNMEASURABLE' in f['message']
-        ]
+        unmeasurable = [f for f in result['findings'] if 'ARTIFACT_COVERAGE_UNMEASURABLE' in f['message']]
         assert len(unmeasurable) == 1, 'the unmeasurable state must be reported, not skipped'
         assert unmeasurable[0]['severity'] == 'warning'
         # It is NOT the graded failure: nothing was measured, so nothing failed.
@@ -368,9 +361,7 @@ class TestCmdRunInProcess:
             plan_dir,
             [_line('2026-04-17T10:00:00Z', 'INFO', '[STATUS] (plan-marshall:phase-1-init) Starting')],
         )
-        (plan_dir / 'references.json').write_text(
-            json.dumps({'modified_files': []}), encoding='utf-8'
-        )
+        (plan_dir / 'references.json').write_text(json.dumps({'modified_files': []}), encoding='utf-8')
 
         result = _al.cmd_run(_run_args(plan_dir))
 
@@ -421,9 +412,7 @@ class TestCmdRunInProcess:
             plan_dir,
             [_line('2026-04-17T10:00:00Z', 'INFO', '[STATUS] (plan-marshall:phase-1-init) Starting')],
         )
-        (plan_dir / 'references.json').write_text(
-            json.dumps({'modified_files': ['src/a.py']}), encoding='utf-8'
-        )
+        (plan_dir / 'references.json').write_text(json.dumps({'modified_files': ['src/a.py']}), encoding='utf-8')
 
         result = _al.cmd_run(_run_args(plan_dir))
         emission = result['artifact_emission']
@@ -438,9 +427,7 @@ class TestCmdRunInProcess:
             )
         assert not any('ARTIFACT_EMISSION' in f['message'] for f in result['findings'])
 
-    def test_change_qualified_shortfall_emits_partial_over_the_eligible_population(
-        self, tmp_path
-    ):
+    def test_change_qualified_shortfall_emits_partial_over_the_eligible_population(self, tmp_path):
         """⛔ The measured peer: the guard still BITES, over the eligible set only.
 
         Three completed tasks — two recorded as having changed a file (one of
@@ -561,8 +548,7 @@ class TestCmdRunInProcess:
                 'indistinguishable from a measured empty population'
             )
         assert not any('ARTIFACT_EMISSION' in f['message'] for f in result['findings']), (
-            'no emission finding may be made over a population that excluded '
-            'members it could not classify'
+            'no emission finding may be made over a population that excluded members it could not classify'
         )
         # The raw provenance figures stay published, unchanged.
         assert emission['completed_tasks'] == 3
@@ -583,9 +569,7 @@ class TestCmdRunInProcess:
         mixed_dir = self._mixed_record_plan(tmp_path / 'mixed')
         self._write_tasks(mixed_dir, {1: ['src/a.py']})
         self._write_unrecorded_tasks(mixed_dir, [2, 3])
-        mixed_reason = _al.cmd_run(_run_args(mixed_dir))['artifact_emission'][
-            'change_attribution_reason'
-        ]
+        mixed_reason = _al.cmd_run(_run_args(mixed_dir))['artifact_emission']['change_attribution_reason']
 
         none_dir = self._mixed_record_plan(tmp_path / 'none')
         self._write_unrecorded_tasks(none_dir, [1, 2, 3])
@@ -596,9 +580,7 @@ class TestCmdRunInProcess:
         assert 'no completed task record carries' not in mixed_reason
 
         assert none_emission['change_attribution'] == 'unavailable'
-        assert 'no completed task record carries' in (
-            none_emission['change_attribution_reason']
-        )
+        assert 'no completed task record carries' in (none_emission['change_attribution_reason'])
         assert mixed_reason != none_emission['change_attribution_reason']
 
     def test_the_same_three_tasks_fully_recorded_are_still_measured(self, tmp_path):
@@ -651,8 +633,10 @@ class TestCmdRunInProcess:
         )
         # Folded-in global logs carrying both an ERROR line and a fixture leak.
         (plan_dir / 'logs' / 'work-2026-06-01.log').write_text(
-            _line('2026-06-01T10:00:00Z', 'ERROR', '[STATUS] (x) boom') + '\n'
-            + _line('2026-06-01T10:00:01Z', 'INFO', '[STATUS] orphan-md-xyz123 leaked') + '\n',
+            _line('2026-06-01T10:00:00Z', 'ERROR', '[STATUS] (x) boom')
+            + '\n'
+            + _line('2026-06-01T10:00:01Z', 'INFO', '[STATUS] orphan-md-xyz123 leaked')
+            + '\n',
             encoding='utf-8',
         )
 

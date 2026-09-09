@@ -110,6 +110,7 @@ def in_project_root(monkeypatch):
     """Run with the process working directory at the repository root."""
     monkeypatch.chdir(PROJECT_ROOT)
 
+
 _SKILL_DIR = PROJECT_ROOT / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'tools-script-executor'
 _TEMPLATE_PATH = _SKILL_DIR / 'templates' / 'execute-script.py.template'
 _LOGGING_DIR = PROJECT_ROOT / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'manage-logging' / 'scripts'
@@ -198,9 +199,7 @@ def _build_class_notations() -> dict[str, dict[str, bool]]:
     """
     prefixes = tuple(build_class_prefixes())
     return {
-        notation: subcommands
-        for notation, subcommands in build_class_roster().items()
-        if notation.startswith(prefixes)
+        notation: subcommands for notation, subcommands in build_class_roster().items() if notation.startswith(prefixes)
     }
 
 
@@ -294,7 +293,7 @@ def test_predicate_sweep_covers_the_whole_build_class_domain_not_just_the_roster
     domain_assertions = swept_true + swept_false
     assert domain_assertions > roster_assertions, (
         f'the domain sweep made {domain_assertions} predicate assertions against the '
-        f'roster sweep\'s {roster_assertions} -- it is not actually wider, so it is a '
+        f"roster sweep's {roster_assertions} -- it is not actually wider, so it is a "
         'duplicate rather than the additional coverage it claims. If every build-class '
         'script now routes through build_main, delete this test instead of letting it '
         'stand as a vacuous restatement.'
@@ -389,9 +388,7 @@ def test_ledger_path_is_redirected_away_from_production(_isolated_ledger):
         f'the change-ledger resolved to {resolved} -- outside the isolated root '
         f'{_isolated_ledger}. This module must never write into a shared ledger.'
     )
-    assert resolved != _PRODUCTION_LEDGER, (
-        f'the change-ledger resolved to the production path {resolved}.'
-    )
+    assert resolved != _PRODUCTION_LEDGER, f'the change-ledger resolved to the production path {resolved}.'
 
 
 # =============================================================================
@@ -432,10 +429,7 @@ def _dispatch(
     """
     stub_script = tmp_path / 'stub_build.py'
     stub_script.write_text(
-        '#!/usr/bin/env python3\n'
-        'import sys\n'
-        f'sys.stdout.write({stub_stdout!r})\n'
-        'sys.exit(0)\n',
+        f'#!/usr/bin/env python3\nimport sys\nsys.stdout.write({stub_stdout!r})\nsys.exit(0)\n',
         encoding='utf-8',
     )
 
@@ -456,8 +450,7 @@ def _dispatch(
         cwd=str(PROJECT_ROOT),
     )
     assert result.returncode == 0, (
-        f'the executor must propagate the stub exit code 0, got {result.returncode} '
-        f'(stderr: {result.stderr!r})'
+        f'the executor must propagate the stub exit code 0, got {result.returncode} (stderr: {result.stderr!r})'
     )
 
     ledger = ledger_root / 'work' / 'change-ledger.jsonl'
@@ -841,8 +834,7 @@ def test_unknown_is_derived_only_and_never_wrapper_claimable():
         'very verdict that exists to record the ABSENCE of a readable assertion.'
     )
     assert not (WRAPPER_CLAIMABLE_BUILD_STATUSES & DERIVED_ONLY_BUILD_STATUSES), (
-        'the claimable and derived-only halves overlap, so "derived-only" no longer '
-        'names a distinct guarantee.'
+        'the claimable and derived-only halves overlap, so "derived-only" no longer names a distinct guarantee.'
     )
     assert BUILD_STATUSES == WRAPPER_CLAIMABLE_BUILD_STATUSES | DERIVED_ONLY_BUILD_STATUSES, (
         'the full kind=build vocabulary is no longer the union of its two halves -- a '

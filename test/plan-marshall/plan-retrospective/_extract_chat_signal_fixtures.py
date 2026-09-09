@@ -14,9 +14,7 @@ from __future__ import annotations
 from conftest import load_script_module, parse_ns
 
 # Direct module load so unit tests can poke the consumer seam.
-_mod = load_script_module(
-    'plan-marshall', 'plan-retrospective', 'extract-chat-signal.py', 'extract_chat_signal'
-)
+_mod = load_script_module('plan-marshall', 'plan-retrospective', 'extract-chat-signal.py', 'extract_chat_signal')
 
 # A real-shaped platform session id the runtime resolves to a transcript.
 SESSION_ID = '22222222-2222-2222-2222-222222222201'
@@ -88,5 +86,5 @@ def run_consumer(
     if read_budget is not None:
         args.read_budget_bytes = read_budget
     result = _mod.cmd_run(args)
-    assert seen == [session_id], f"forwarded id {seen!r} != requested {session_id!r}"
+    assert seen == [session_id], f'forwarded id {seen!r} != requested {session_id!r}'
     return result

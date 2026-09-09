@@ -210,9 +210,7 @@ def _terminal_payload(
     non-finish separation exists to prevent.
     """
     if status == 'timeout':
-        return status_from_result(
-            timeout_result(timeout_seconds, duration, log_file, command_str)
-        )
+        return status_from_result(timeout_result(timeout_seconds, duration, log_file, command_str))
     if status == STATUS_KILLED:
         return status_payload(
             STATUS_KILLED,
@@ -223,9 +221,7 @@ def _terminal_payload(
     if status == 'success':
         return status_from_result(success_result(duration, log_file, command_str))
     if status == STATUS_FAILURE:
-        return status_from_result(
-            error_result(ERROR_BUILD_FAILED, returncode or 1, duration, log_file, command_str)
-        )
+        return status_from_result(error_result(ERROR_BUILD_FAILED, returncode or 1, duration, log_file, command_str))
     # Unrecognised: the caller handed a status outside the terminal wire
     # vocabulary. Report it verbatim rather than claiming a failure nobody
     # observed — the client maps an unrecognised terminal status to

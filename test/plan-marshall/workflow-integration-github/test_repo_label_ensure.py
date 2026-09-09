@@ -64,9 +64,7 @@ def test_ensure_uses_idempotent_force_create_with_default_color(monkeypatch):
     assert result['status'] == 'success'
     assert result['label'] == 'skip-bot-review'
     assert result['ensured'] is True
-    assert captured == [
-        ['label', 'create', 'skip-bot-review', '--force', '--color', _github_pr._DEFAULT_LABEL_COLOR]
-    ]
+    assert captured == [['label', 'create', 'skip-bot-review', '--force', '--color', _github_pr._DEFAULT_LABEL_COLOR]]
 
 
 def test_ensure_passes_explicit_color_and_description(monkeypatch):
@@ -74,9 +72,7 @@ def test_ensure_passes_explicit_color_and_description(monkeypatch):
     captured: list = []
     _patch(monkeypatch, captured)
 
-    result = _github_pr.cmd_repo_label_ensure(
-        _make_args(color='0e8a16', description='Suppress bot review')
-    )
+    result = _github_pr.cmd_repo_label_ensure(_make_args(color='0e8a16', description='Suppress bot review'))
 
     assert result['status'] == 'success'
     assert captured[0] == [

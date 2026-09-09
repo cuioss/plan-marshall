@@ -10,9 +10,7 @@ field names so neither spelling silently drops declared tools.
 
 from conftest import load_script_module
 
-_coverage = load_script_module(
-    'pm-plugin-development', 'plugin-doctor', '_analyze_coverage.py', '_analyze_coverage'
-)
+_coverage = load_script_module('pm-plugin-development', 'plugin-doctor', '_analyze_coverage.py', '_analyze_coverage')
 
 parse_declared_tools = _coverage.parse_declared_tools
 

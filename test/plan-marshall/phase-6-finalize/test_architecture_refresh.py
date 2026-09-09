@@ -677,7 +677,9 @@ class TestNarrativeContract:
 
     def test_documents_changed_bucket_is_noise(self, standard_text: str):
         """The standard must document that the changed bucket is noise; consume added union removed."""
-        assert 'added ∪ removed' in standard_text  # the union sign is the literal the standard uses, not a lookalike to normalise away
+        assert (
+            'added ∪ removed' in standard_text
+        )  # the union sign is the literal the standard uses, not a lookalike to normalise away
         assert 'changed' in standard_text
 
     # ----- Step 3: Tier 0 ---------------------------------------------------
@@ -801,8 +803,7 @@ class TestNarrativeContract:
         offenders, examined = _scan_pr_operation_prescriptions(standard_text)
 
         assert examined, (
-            'Fenced-command scan resolved 0 command lines in '
-            'architecture-refresh.md — a clean result would be vacuous.'
+            'Fenced-command scan resolved 0 command lines in architecture-refresh.md — a clean result would be vacuous.'
         )
         print(
             f'architecture-refresh retired-PR-body-write scan: examined={examined} '
@@ -815,12 +816,8 @@ class TestNarrativeContract:
             f'— no PR exists yet. Offenders: {offenders}'
         )
 
-    @pytest.mark.parametrize(
-        'retired_call', _RETIRED_PR_CALL_SHAPES, ids=['pr-view', 'prepare-body', 'pr-edit']
-    )
-    def test_pr_operation_scan_fires_on_each_retired_call_shape(
-        self, standard_text: str, retired_call: str
-    ):
+    @pytest.mark.parametrize('retired_call', _RETIRED_PR_CALL_SHAPES, ids=['pr-view', 'prepare-body', 'pr-edit'])
+    def test_pr_operation_scan_fires_on_each_retired_call_shape(self, standard_text: str, retired_call: str):
         """Matched control pair, per retired shape, over the real document.
 
         POSITIVE control — the retired call re-introduced inside a fence — must
@@ -1031,9 +1028,7 @@ class TestPushScannerControls:
     def test_negative_control_ignores_a_described_push(self):
         """Prose about pushing, and a comment recording its absence, are NOT prescriptions."""
         offenders, examined = scan_push_prescriptions(_TIER_0_BLOCK_WITHOUT_PUSH)
-        assert examined > 0, (
-            'Control fixture resolved no command lines, so the clean result is vacuous.'
-        )
+        assert examined > 0, 'Control fixture resolved no command lines, so the clean result is vacuous.'
         assert offenders == [], (
             'The scanner reported a push prescription in a block that only DESCRIBES '
             f'not pushing — it would fail every correctly-fixed step doc: {offenders}'

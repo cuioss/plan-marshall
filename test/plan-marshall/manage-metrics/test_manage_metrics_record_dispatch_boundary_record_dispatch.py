@@ -5,7 +5,6 @@
 Its one section: (h) Script-side require_plan_exists guard.
 """
 
-
 from __future__ import annotations
 
 from _manage_metrics_record_dispatch_boundary_fixtures import (
@@ -51,9 +50,7 @@ def test_record_dispatch_boundary_rejects_unknown_plan_id_no_mkdir(tmp_path, mon
     assert not plans_dir.exists()
 
 
-def test_record_dispatch_boundary_rejects_plan_dir_missing_status_json_no_mkdir(
-    tmp_path, monkeypatch
-):
+def test_record_dispatch_boundary_rejects_plan_dir_missing_status_json_no_mkdir(tmp_path, monkeypatch):
     """Plan dir exists but no status.json: returns plan_not_found error."""
     monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
     half_dir = tmp_path / 'plans' / 'half-initialized'

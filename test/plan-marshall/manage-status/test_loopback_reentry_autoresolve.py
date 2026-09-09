@@ -34,12 +34,8 @@ import pytest
 
 from conftest import load_script_module
 
-_lifecycle = load_script_module(
-    'plan-marshall', 'manage-status', '_cmd_lifecycle.py', '_status_cmd_lifecycle_loopback'
-)
-_query = load_script_module(
-    'plan-marshall', 'manage-status', '_status_query.py', '_status_query_loopback'
-)
+_lifecycle = load_script_module('plan-marshall', 'manage-status', '_cmd_lifecycle.py', '_status_cmd_lifecycle_loopback')
+_query = load_script_module('plan-marshall', 'manage-status', '_status_query.py', '_status_query_loopback')
 
 cmd_create = _lifecycle.cmd_create
 cmd_transition = _lifecycle.cmd_transition
@@ -133,9 +129,7 @@ def _seed_plan(plan_context, plan_id: str, metadata: dict | None = None) -> Path
         status['metadata'] = metadata
         status_path.write_text(json.dumps(status), encoding='utf-8')
 
-    _cmds.cmd_capture(
-        Namespace(plan_id=plan_id, phase='5-execute', override=False, reason=None, strict=False)
-    )
+    _cmds.cmd_capture(Namespace(plan_id=plan_id, phase='5-execute', override=False, reason=None, strict=False))
     return status_path
 
 
@@ -154,9 +148,7 @@ def _is_true(value) -> bool:
 # =============================================================================
 
 
-def test_backward_set_phase_persists_loop_back_marker(
-    plan_context, _stubbed_invariants, _stub_metadata
-):
+def test_backward_set_phase_persists_loop_back_marker(plan_context, _stubbed_invariants, _stub_metadata):
     """5-execute → 2-refine (backward) writes metadata.loop_back_reentry."""
     plan_id = 'loopback-marker-persisted'
     status_path = _seed_plan(plan_context, plan_id, {'use_worktree': False})
@@ -166,8 +158,7 @@ def test_backward_set_phase_persists_loop_back_marker(
     assert result['status'] == 'success'
     marker = _read_status(status_path).get('metadata', {}).get('loop_back_reentry')
     assert marker is not None, (
-        'Backward set-phase must persist metadata.loop_back_reentry so the '
-        'guarded-boundary drift can be auto-resolved.'
+        'Backward set-phase must persist metadata.loop_back_reentry so the guarded-boundary drift can be auto-resolved.'
     )
     assert marker['from_phase'] == '5-execute'
     assert marker['to_phase'] == '2-refine'
@@ -179,9 +170,7 @@ def test_backward_set_phase_persists_loop_back_marker(
 # =============================================================================
 
 
-def test_drift_with_marker_auto_recaptures_and_advances(
-    plan_context, _stubbed_invariants, _stub_metadata
-):
+def test_drift_with_marker_auto_recaptures_and_advances(plan_context, _stubbed_invariants, _stub_metadata):
     """Invariant drift with the marker present is auto-resolved: the handshake
     row is replaced (override=true, reason recorded), the marker is cleared,
     and the transition proceeds to 6-finalize."""
@@ -200,9 +189,7 @@ def test_drift_with_marker_auto_recaptures_and_advances(
     result = cmd_transition(Namespace(plan_id=plan_id, completed='5-execute'))
 
     assert result is not None
-    assert result['status'] == 'success', (
-        f'Scheduled loop-back drift must be auto-resolved, got {result!r}.'
-    )
+    assert result['status'] == 'success', f'Scheduled loop-back drift must be auto-resolved, got {result!r}.'
     assert result['next_phase'] == '6-finalize'
 
     after = _read_status(status_path)
@@ -213,12 +200,10 @@ def test_drift_with_marker_auto_recaptures_and_advances(
 
     row = _store.get_row(plan_id, '5-execute')
     assert row is not None
-    assert _is_true(row.get('override')), (
-        f'Auto-recapture must mark the replaced row override=true, got {row!r}.'
+    assert _is_true(row.get('override')), f'Auto-recapture must mark the replaced row override=true, got {row!r}.'
+    assert 'loop-back re-entry auto-override (scheduled by 5-execute loop_back)' in str(row.get('override_reason')), (
+        f'Recorded reason must name the scheduling loop-back, got {row!r}.'
     )
-    assert 'loop-back re-entry auto-override (scheduled by 5-execute loop_back)' in str(
-        row.get('override_reason')
-    ), f'Recorded reason must name the scheduling loop-back, got {row!r}.'
     assert row.get('task_state_hash') == 'hash-tasks-after-loopback', (
         'The replaced row must capture the post-loop-back state.'
     )
@@ -229,9 +214,7 @@ def test_drift_with_marker_auto_recaptures_and_advances(
 # =============================================================================
 
 
-def test_clean_verify_with_marker_consumes_marker_without_recapture(
-    plan_context, _stubbed_invariants, _stub_metadata
-):
+def test_clean_verify_with_marker_consumes_marker_without_recapture(plan_context, _stubbed_invariants, _stub_metadata):
     """Consume-on-next-guarded-verification: a clean (non-blocking) guarded
     verify with the marker present must clear it — without a recapture — so a
     stale marker cannot incorrectly auto-override a later, genuinely
@@ -260,8 +243,7 @@ def test_clean_verify_with_marker_consumes_marker_without_recapture(
     row = _store.get_row(plan_id, '5-execute')
     assert row is not None
     assert not _is_true(row.get('override')), (
-        f'A clean verify must NOT recapture with override=true — the marker '
-        f'is consumed by a plain clear, got {row!r}.'
+        f'A clean verify must NOT recapture with override=true — the marker is consumed by a plain clear, got {row!r}.'
     )
     # Unscheduled drift AFTER the marker is consumed still blocks — proven by
     # test_drift_without_marker_still_blocks (case c); the marker-absence
@@ -283,9 +265,7 @@ def test_drift_without_marker_still_blocks(plan_context, _stubbed_invariants, _s
     result = cmd_transition(Namespace(plan_id=plan_id, completed='5-execute'))
 
     assert result is not None
-    assert result['status'] == 'drift', (
-        f'Drift without the marker must block the transition, got {result!r}.'
-    )
+    assert result['status'] == 'drift', f'Drift without the marker must block the transition, got {result!r}.'
     assert result['drift_count'] >= 1
     after = _read_status(status_path)
     assert after['current_phase'] == '5-execute', (
@@ -299,9 +279,7 @@ def test_drift_without_marker_still_blocks(plan_context, _stubbed_invariants, _s
 # =============================================================================
 
 
-def test_set_phase_loop_back_with_explicit_none_metadata(
-    plan_context, _stubbed_invariants, _stub_metadata
-):
+def test_set_phase_loop_back_with_explicit_none_metadata(plan_context, _stubbed_invariants, _stub_metadata):
     """An explicit JSON null for status['metadata'] must be normalized by the
     backward set-phase (dict.setdefault would return None and the marker
     assignment would raise TypeError)."""
@@ -335,22 +313,16 @@ def test_loop_back_auto_override_with_explicit_none_metadata():
     )
 
     assert result is verify_result, (
-        'None metadata carries no marker — the blocking verify result must be '
-        'returned unchanged, not crashed on.'
+        'None metadata carries no marker — the blocking verify result must be returned unchanged, not crashed on.'
     )
 
 
 def test_clean_tree_refusal_with_explicit_none_metadata():
     """_clean_tree_refusal must not raise AttributeError when
     status['metadata'] is explicitly None — no worktree means no refusal."""
-    result = _lifecycle._clean_tree_refusal(
-        'loopback-none-metadata-cleantree', {'metadata': None}
-    )
+    result = _lifecycle._clean_tree_refusal('loopback-none-metadata-cleantree', {'metadata': None})
 
-    assert result is None, (
-        'None metadata implies no use_worktree — the clean-tree gate must '
-        'pass through, not crash.'
-    )
+    assert result is None, 'None metadata implies no use_worktree — the clean-tree gate must pass through, not crash.'
 
 
 # =============================================================================

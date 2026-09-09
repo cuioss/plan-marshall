@@ -150,9 +150,7 @@ def test_capture_persists_unfinished_tasks_count_to_handshakes_toon(
     assert result['invariants'].get('unfinished_tasks_count') in (4, '4')
     row = store.get_row('cap-pending-persist', '5-execute')
     assert row is not None
-    assert 'unfinished_tasks_count' in row, (
-        f'unfinished_tasks_count must be a HANDSHAKE_FIELDS column, got {list(row)}'
-    )
+    assert 'unfinished_tasks_count' in row, f'unfinished_tasks_count must be a HANDSHAKE_FIELDS column, got {list(row)}'
     assert row['unfinished_tasks_count'] in (4, '4'), row
 
 
@@ -225,11 +223,13 @@ def _make_refs_toon_error() -> str:
 
 def test_references_valid_hash_stable_for_valid_file(monkeypatch: pytest.MonkeyPatch) -> None:
     """Capture of a present, valid references.json produces the same hash twice."""
-    valid_toon = _make_refs_toon_success({
-        'branch': 'feature/my-plan',
-        'base_branch': 'main',
-        'modified_files': [],
-    })
+    valid_toon = _make_refs_toon_success(
+        {
+            'branch': 'feature/my-plan',
+            'base_branch': 'main',
+            'modified_files': [],
+        }
+    )
     monkeypatch.setattr(inv, '_run_script', lambda _args: valid_toon)
 
     hash_a = inv._capture_references_valid('any', {}, '2-refine')
@@ -246,11 +246,13 @@ def test_references_valid_hash_stable_for_valid_file(monkeypatch: pytest.MonkeyP
 
 def test_references_valid_hash_differs_for_missing_file(monkeypatch: pytest.MonkeyPatch) -> None:
     """A missing references.json produces a hash that differs from the valid baseline."""
-    valid_toon = _make_refs_toon_success({
-        'branch': 'feature/my-plan',
-        'base_branch': 'main',
-        'modified_files': [],
-    })
+    valid_toon = _make_refs_toon_success(
+        {
+            'branch': 'feature/my-plan',
+            'base_branch': 'main',
+            'modified_files': [],
+        }
+    )
     error_toon = _make_refs_toon_error()
 
     monkeypatch.setattr(inv, '_run_script', lambda _args: valid_toon)
@@ -266,11 +268,13 @@ def test_references_valid_hash_differs_for_missing_file(monkeypatch: pytest.Monk
 
 def test_references_valid_hash_differs_for_non_dict_content(monkeypatch: pytest.MonkeyPatch) -> None:
     """An error response from manage-references read produces a hash differing from the valid baseline."""
-    valid_toon = _make_refs_toon_success({
-        'branch': 'feature/my-plan',
-        'base_branch': 'main',
-        'modified_files': [],
-    })
+    valid_toon = _make_refs_toon_success(
+        {
+            'branch': 'feature/my-plan',
+            'base_branch': 'main',
+            'modified_files': [],
+        }
+    )
     error_toon = _make_refs_toon_error()
 
     monkeypatch.setattr(inv, '_run_script', lambda _args: valid_toon)
@@ -286,13 +290,17 @@ def test_references_valid_hash_differs_for_non_dict_content(monkeypatch: pytest.
 
 def test_references_valid_hash_differs_for_missing_required_field(monkeypatch: pytest.MonkeyPatch) -> None:
     """Removing a still-required field (branch / base_branch) produces a different hash."""
-    full_toon = _make_refs_toon_success({
-        'branch': 'feature/my-plan',
-        'base_branch': 'main',
-    })
-    partial_toon = _make_refs_toon_success({
-        'base_branch': 'main',
-    })
+    full_toon = _make_refs_toon_success(
+        {
+            'branch': 'feature/my-plan',
+            'base_branch': 'main',
+        }
+    )
+    partial_toon = _make_refs_toon_success(
+        {
+            'base_branch': 'main',
+        }
+    )
 
     monkeypatch.setattr(inv, '_run_script', lambda _args: full_toon)
     hash_full = inv._capture_references_valid('any', {}, '2-refine')
@@ -310,15 +318,19 @@ def test_references_valid_hash_stable_when_modified_files_absent(monkeypatch: py
     NOT change the hash, so a references.json written before the key was retired
     still passes ``references_valid`` (the back-compat contract that protects the
     blocking handshake hash for in-flight plans)."""
-    with_mf_toon = _make_refs_toon_success({
-        'branch': 'feature/my-plan',
-        'base_branch': 'main',
-        'modified_files': [],
-    })
-    without_mf_toon = _make_refs_toon_success({
-        'branch': 'feature/my-plan',
-        'base_branch': 'main',
-    })
+    with_mf_toon = _make_refs_toon_success(
+        {
+            'branch': 'feature/my-plan',
+            'base_branch': 'main',
+            'modified_files': [],
+        }
+    )
+    without_mf_toon = _make_refs_toon_success(
+        {
+            'branch': 'feature/my-plan',
+            'base_branch': 'main',
+        }
+    )
 
     monkeypatch.setattr(inv, '_run_script', lambda _args: with_mf_toon)
     hash_with = inv._capture_references_valid('any', {}, '2-refine')
@@ -449,18 +461,14 @@ def test_verify_drift_main_sha_at_planning_phase_returns_ok_with_informational(
     stubbed_invariants['main_sha'] = 'def456'
     result = cmds.cmd_verify(_ns(plan_id='ver-cls-sha-planning', phase='3-outline'))
 
-    assert result['status'] == 'ok', (
-        f'main_sha drift at planning-phase 3-outline must NOT block, got {result!r}'
-    )
+    assert result['status'] == 'ok', f'main_sha drift at planning-phase 3-outline must NOT block, got {result!r}'
     assert result.get('informational_count', 0) == 1
     informational = result.get('informational_diffs') or []
     info_names = {d['invariant'] for d in informational}
     assert 'main_sha' in info_names
 
 
-def test_verify_drift_main_sha_at_5_execute_still_blocks(
-    plan_context, stubbed_invariants, stub_metadata
-) -> None:
+def test_verify_drift_main_sha_at_5_execute_still_blocks(plan_context, stubbed_invariants, stub_metadata) -> None:
     """At the 5-execute → 6-finalize boundary, main_sha drift IS blocking."""
     cmds.cmd_capture(_ns(plan_id='ver-cls-sha-execute', phase='5-execute'))
     stubbed_invariants['main_sha'] = 'def456'
@@ -536,9 +544,7 @@ def test_handshake_fields_includes_pr_title_present() -> None:
     assert 'pr_title_present' in store.HANDSHAKE_FIELDS
 
 
-def test_cmd_capture_pr_title_present_success(
-    plan_context, only_pr_title_invariant, stub_metadata
-) -> None:
+def test_cmd_capture_pr_title_present_success(plan_context, only_pr_title_invariant, stub_metadata) -> None:
     """A present pr_title at 2-refine captures a row with a non-empty column."""
     stub_metadata['pr_title'] = 'fix(create-pr): bind --title from persisted pr_title'
     result = cmds.cmd_capture(_ns(plan_id='prt-ok', phase='2-refine'))
@@ -549,9 +555,7 @@ def test_cmd_capture_pr_title_present_success(
     assert row['pr_title_present'] != ''
 
 
-def test_cmd_capture_pr_title_missing_returns_error(
-    plan_context, only_pr_title_invariant, stub_metadata
-) -> None:
+def test_cmd_capture_pr_title_missing_returns_error(plan_context, only_pr_title_invariant, stub_metadata) -> None:
     """An absent pr_title at 2-refine+ surfaces a structured error and no row."""
     # stub_metadata starts empty → pr_title absent.
     result = cmds.cmd_capture(_ns(plan_id='prt-fail', phase='2-refine'))
@@ -562,9 +566,7 @@ def test_cmd_capture_pr_title_missing_returns_error(
     assert store.get_row('prt-fail', '2-refine') is None
 
 
-def test_cmd_capture_pr_title_empty_returns_error(
-    plan_context, only_pr_title_invariant, stub_metadata
-) -> None:
+def test_cmd_capture_pr_title_empty_returns_error(plan_context, only_pr_title_invariant, stub_metadata) -> None:
     """A whitespace-only pr_title at 2-refine+ also raises and writes no row."""
     stub_metadata['pr_title'] = '   '
     result = cmds.cmd_capture(_ns(plan_id='prt-empty', phase='2-refine'))
@@ -573,9 +575,7 @@ def test_cmd_capture_pr_title_empty_returns_error(
     assert store.get_row('prt-empty', '2-refine') is None
 
 
-def test_cmd_capture_pr_title_omitted_at_1_init(
-    plan_context, only_pr_title_invariant, stub_metadata
-) -> None:
+def test_cmd_capture_pr_title_omitted_at_1_init(plan_context, only_pr_title_invariant, stub_metadata) -> None:
     """At 1-init the capture is a no-op — success with the column omitted."""
     result = cmds.cmd_capture(_ns(plan_id='prt-init', phase='1-init'))
     assert result['status'] == 'success'

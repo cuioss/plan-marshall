@@ -27,7 +27,6 @@ simulator below mirrors what the dispatcher would compute from the
 ``validate-loadable --all`` payload.
 """
 
-
 from argparse import Namespace
 
 from conftest import MARKETPLACE_ROOT, load_script_module

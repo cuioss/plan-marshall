@@ -60,38 +60,22 @@ class TestCompliantBranch:
     """Branches that contain at least one side-effect keyword produce no findings."""
 
     def test_mentions_decision_log(self, tmp_path: Path) -> None:
-        content = (
-            '## Resolution\n\n'
-            '### Hold\n\n'
-            'Record the decision to decision.log and pause execution.\n'
-        )
+        content = '## Resolution\n\n### Hold\n\nRecord the decision to decision.log and pause execution.\n'
         skill_dir, _ = _make_standards_file(tmp_path, content)
         assert_analyzer_findings(analyze_resolution_branch_markers, skill_dir, [])
 
     def test_mentions_metadata(self, tmp_path: Path) -> None:
-        content = (
-            '## Resolution\n\n'
-            '### Accept\n\n'
-            'Write acceptance to the metadata store for audit purposes.\n'
-        )
+        content = '## Resolution\n\n### Accept\n\nWrite acceptance to the metadata store for audit purposes.\n'
         skill_dir, _ = _make_standards_file(tmp_path, content)
         assert_analyzer_findings(analyze_resolution_branch_markers, skill_dir, [])
 
     def test_mentions_status(self, tmp_path: Path) -> None:
-        content = (
-            '## Resolution\n\n'
-            '### Defer\n\n'
-            'Update the task status to deferred and re-schedule.\n'
-        )
+        content = '## Resolution\n\n### Defer\n\nUpdate the task status to deferred and re-schedule.\n'
         skill_dir, _ = _make_standards_file(tmp_path, content)
         assert_analyzer_findings(analyze_resolution_branch_markers, skill_dir, [])
 
     def test_mentions_artifact(self, tmp_path: Path) -> None:
-        content = (
-            '## Resolution\n\n'
-            '### Split\n\n'
-            'Emit an artifact containing the split plan.\n'
-        )
+        content = '## Resolution\n\n### Split\n\nEmit an artifact containing the split plan.\n'
         skill_dir, _ = _make_standards_file(tmp_path, content)
         assert_analyzer_findings(analyze_resolution_branch_markers, skill_dir, [])
 
@@ -117,11 +101,7 @@ class TestNonCompliantBranch:
     """Branches with no side-effect keyword trigger a finding."""
 
     def test_no_side_effect_keyword(self, tmp_path: Path) -> None:
-        content = (
-            '## Resolution\n\n'
-            '### Hold\n\n'
-            'Pause execution and await further instructions.\n'
-        )
+        content = '## Resolution\n\n### Hold\n\nPause execution and await further instructions.\n'
         skill_dir, _ = _make_standards_file(tmp_path, content)
         findings = assert_analyzer_findings(analyze_resolution_branch_markers, skill_dir, [RULE_ID])
         f = findings[0]
@@ -131,11 +111,7 @@ class TestNonCompliantBranch:
 
     def test_finding_shape(self, tmp_path: Path) -> None:
         """Each finding carries rule_id, file, line, branch_name."""
-        content = (
-            '## Resolution\n\n'
-            '### Accept\n\n'
-            'Do something unspecified.\n'
-        )
+        content = '## Resolution\n\n### Accept\n\nDo something unspecified.\n'
         skill_dir, md_path = _make_standards_file(tmp_path, content)
         findings = analyze_resolution_branch_markers(skill_dir)
         assert findings
@@ -157,9 +133,7 @@ class TestOutOfScope:
         skill_dir = tmp_path / 'skill'
         (skill_dir / 'standards').mkdir(parents=True)
         (skill_dir / 'SKILL.md').write_text(
-            '## Resolution\n\n'
-            '### Hold\n\n'
-            'Pause without any side-effect documentation.\n',
+            '## Resolution\n\n### Hold\n\nPause without any side-effect documentation.\n',
             encoding='utf-8',
         )
         # No standards files → no findings
@@ -188,13 +162,7 @@ class TestMixedCompliance:
         assert findings[0]['branch_name'] == 'Hold'
 
     def test_two_non_compliant_branches(self, tmp_path: Path) -> None:
-        content = (
-            '## Resolution\n\n'
-            '### Hold\n\n'
-            'Pause execution.\n\n'
-            '### Reject\n\n'
-            'Discard the request.\n'
-        )
+        content = '## Resolution\n\n### Hold\n\nPause execution.\n\n### Reject\n\nDiscard the request.\n'
         skill_dir, _ = _make_standards_file(tmp_path, content)
         findings = assert_analyzer_findings(analyze_resolution_branch_markers, skill_dir, [RULE_ID] * 2)
         branch_names = {f['branch_name'] for f in findings}
@@ -231,13 +199,7 @@ class TestNoResolutionSection:
     """Files with no ## Resolution section produce no findings."""
 
     def test_no_resolution_section(self, tmp_path: Path) -> None:
-        content = (
-            '# Overview\n\n'
-            'Some text about the skill.\n\n'
-            '## Workflow\n\n'
-            '### Hold\n\n'
-            'Pause without logging.\n'
-        )
+        content = '# Overview\n\nSome text about the skill.\n\n## Workflow\n\n### Hold\n\nPause without logging.\n'
         skill_dir, _ = _make_standards_file(tmp_path, content)
         assert_analyzer_findings(analyze_resolution_branch_markers, skill_dir, [])
 
@@ -263,9 +225,7 @@ class TestMultipleStandardsFiles:
         skill_dir = tmp_path / 'skill'
         standards_dir = skill_dir / 'standards'
         standards_dir.mkdir(parents=True)
-        (standards_dir / 'a.md').write_text(
-            '# Section\nNo resolution here.\n', encoding='utf-8'
-        )
+        (standards_dir / 'a.md').write_text('# Section\nNo resolution here.\n', encoding='utf-8')
         # Body deliberately omits the side-effect keyword set
         # (log/metadata/status/artifact/record/emit/persist/update/write).
         (standards_dir / 'b.md').write_text(

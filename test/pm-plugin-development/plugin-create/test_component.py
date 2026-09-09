@@ -22,18 +22,34 @@ SCRIPT_PATH = get_script_path('pm-plugin-development', 'plugin-create', 'compone
 # default the real CLI applies. Parsed once at module scope: parse_ns
 # re-executes the script module on every call.
 _VALIDATE_NS = parse_ns(
-    'pm-plugin-development', 'plugin-create', 'component.py',
-    'validate', '--file', 'placeholder.md', '--type', 'skill', register=False,
+    'pm-plugin-development',
+    'plugin-create',
+    'component.py',
+    'validate',
+    '--file',
+    'placeholder.md',
+    '--type',
+    'skill',
+    register=False,
 )
 _GENERATE_NS = parse_ns(
-    'pm-plugin-development', 'plugin-create', 'component.py',
-    'generate', '--type', 'skill', '--config', '{}', register=False,
+    'pm-plugin-development',
+    'plugin-create',
+    'component.py',
+    'generate',
+    '--type',
+    'skill',
+    '--config',
+    '{}',
+    register=False,
 )
 
 
 def _ns(template: Namespace, **overrides) -> Namespace:
     """A parser-produced namespace with this test's values overlaid."""
     return Namespace(**{**vars(template), **overrides})
+
+
 FIXTURES_DIR = Path(__file__).parent / 'fixtures'
 
 # Direct imports for Tier 2 testing

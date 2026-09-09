@@ -66,12 +66,7 @@ CONCEPT_TYPES = _architecture_core.CONCEPT_TYPES
 #: The standard that RESTATES the concept-type vocabulary in prose. It is a second
 #: copy of a closed vocabulary, so it can drift from the code constant silently.
 _PERSISTENCE_STANDARD = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-architecture'
-    / 'standards'
-    / 'architecture-persistence.md'
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'manage-architecture' / 'standards' / 'architecture-persistence.md'
 )
 
 #: The STABLE MARKER the parse anchors on — the constant's own name, which the
@@ -139,6 +134,8 @@ def test_standard_and_code_declare_the_same_concept_type_vocabulary():
         f'Only in {_PERSISTENCE_STANDARD.name}: {sorted(documented - set(CONCEPT_TYPES))}. '
         f'Only in _architecture_core.CONCEPT_TYPES: {sorted(set(CONCEPT_TYPES) - documented)}.'
     )
+
+
 migrate_concept_document = _architecture_core.migrate_concept_document
 validate_concept_type = _architecture_core.validate_concept_type
 build_generation = _architecture_core.build_generation
@@ -194,9 +191,19 @@ def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
 #: the script module on every call, and ``register=False`` because only the
 #: namespace is wanted here.
 _ENRICH_PACKAGE_ARGS = parse_ns(
-    _ARCH_BUNDLE, _ARCH_SKILL, _ARCH_SCRIPT,
-    '--project-dir', '.', 'enrich', 'package',
-    '--module', 'module', '--package', 'package', '--description', 'description',
+    _ARCH_BUNDLE,
+    _ARCH_SKILL,
+    _ARCH_SCRIPT,
+    '--project-dir',
+    '.',
+    'enrich',
+    'package',
+    '--module',
+    'module',
+    '--package',
+    'package',
+    '--description',
+    'description',
     register=False,
 )
 
@@ -205,14 +212,27 @@ _ENRICH_PACKAGE_ARGS = parse_ns(
 #: CLI applies, including ``search``'s ``--literal`` / ``--ignore-case``
 #: store_true pair.
 _FIND_ARGS = parse_ns(
-    _ARCH_BUNDLE, _ARCH_SKILL, _ARCH_SCRIPT,
-    '--project-dir', '.', 'find', '--pattern', '.',
+    _ARCH_BUNDLE,
+    _ARCH_SKILL,
+    _ARCH_SCRIPT,
+    '--project-dir',
+    '.',
+    'find',
+    '--pattern',
+    '.',
     register=False,
 )
 
 _SEARCH_ARGS = parse_ns(
-    _ARCH_BUNDLE, _ARCH_SKILL, _ARCH_SCRIPT,
-    '--project-dir', '.', 'search', '--content', '--pattern', '.',
+    _ARCH_BUNDLE,
+    _ARCH_SKILL,
+    _ARCH_SCRIPT,
+    '--project-dir',
+    '.',
+    'search',
+    '--content',
+    '--pattern',
+    '.',
     register=False,
 )
 
@@ -490,7 +510,10 @@ def test_cmd_enrich_package_returns_named_error_for_non_resolving_key():
         setup_test_project(tmpdir)
         args = _variant(
             _ENRICH_PACKAGE_ARGS,
-            module='module-a', package='de.cuioss.nope', description='X', project_dir=tmpdir,
+            module='module-a',
+            package='de.cuioss.nope',
+            description='X',
+            project_dir=tmpdir,
         )
         result = cmd_enrich_package(args)
 
@@ -798,9 +821,7 @@ def test_search_count_and_file_count_converge_for_a_claimed_duplicate(monkeypatc
 
         # Negative control — the unclaimed duplicate makes the two counts differ.
         monkeypatch.setattr(_handlers, 'resolve_path_attribution', _no_claim_attributor)
-        unclaimed = _handlers.cmd_search(
-            _variant(_SEARCH_ARGS, project_dir=tmpdir, pattern=_DOC_BODY_TOKEN)
-        )
+        unclaimed = _handlers.cmd_search(_variant(_SEARCH_ARGS, project_dir=tmpdir, pattern=_DOC_BODY_TOKEN))
 
         assert unclaimed['status'] == 'success'
         assert unclaimed['count'] == _UNCOLLAPSED_ROWS
@@ -811,9 +832,7 @@ def test_search_count_and_file_count_converge_for_a_claimed_duplicate(monkeypatc
         )
 
         monkeypatch.setattr(_handlers, 'resolve_path_attribution', _claiming_attributor)
-        claimed = _handlers.cmd_search(
-            _variant(_SEARCH_ARGS, project_dir=tmpdir, pattern=_DOC_BODY_TOKEN)
-        )
+        claimed = _handlers.cmd_search(_variant(_SEARCH_ARGS, project_dir=tmpdir, pattern=_DOC_BODY_TOKEN))
 
         assert claimed['status'] == 'success'
         assert claimed['count'] == len(_CLAIMED_DOCS)

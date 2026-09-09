@@ -266,13 +266,10 @@ class TestCandidateFilesAreCached:
         index.references('alpha:target-skill')
 
         assert len(walks) == after_first, (
-            f'the candidate cache was not read: {len(walks) - after_first} extra '
-            f'filesystem walk(s) on the repeat call'
+            f'the candidate cache was not read: {len(walks) - after_first} extra filesystem walk(s) on the repeat call'
         )
 
-    def test_the_walk_runs_once_per_owner_not_once_per_edge(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
+    def test_the_walk_runs_once_per_owner_not_once_per_edge(self, tmp_path: Path, monkeypatch) -> None:
         """One walk per distinct owner, however many edges that owner contributes.
 
         ``resolve_reference_site`` runs once per reverse edge, so the population
@@ -296,6 +293,5 @@ class TestCandidateFilesAreCached:
         index.references('alpha:target-skill')
 
         assert len(walks) == len(owners), (
-            f'expected one walk per distinct owner ({len(owners)}), got {len(walks)} '
-            f'across {len(edges)} edge(s)'
+            f'expected one walk per distinct owner ({len(owners)}), got {len(walks)} across {len(edges)} edge(s)'
         )

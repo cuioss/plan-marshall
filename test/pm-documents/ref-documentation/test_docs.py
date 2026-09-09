@@ -19,12 +19,22 @@ SCRIPT_PATH = get_script_path('pm-documents', 'ref-documentation', 'docs.py')
 # author remembered. Parsed once at module scope: parse_ns re-executes the script
 # module on every call.
 _REVIEW_NS = parse_ns(
-    'pm-documents', 'ref-documentation', 'docs.py',
-    'review', '--file', 'placeholder.md', register=False,
+    'pm-documents',
+    'ref-documentation',
+    'docs.py',
+    'review',
+    '--file',
+    'placeholder.md',
+    register=False,
 )
 _TONE_NS = parse_ns(
-    'pm-documents', 'ref-documentation', 'docs.py',
-    'analyze-tone', '--file', 'placeholder.md', register=False,
+    'pm-documents',
+    'ref-documentation',
+    'docs.py',
+    'analyze-tone',
+    '--file',
+    'placeholder.md',
+    register=False,
 )
 
 

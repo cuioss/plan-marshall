@@ -203,9 +203,7 @@ def test_submit_success_writes_job_id_to_ledger(home, ledger, monkeypatch):
 
 
 @pytest.mark.parametrize('plan_id', [None, ''])
-def test_plan_less_submit_records_the_sentinel_and_reattaches(
-    home, ledger, monkeypatch, plan_id
-):
+def test_plan_less_submit_records_the_sentinel_and_reattaches(home, ledger, monkeypatch, plan_id):
     root = str(home / 'proj')
     monkeypatch.setattr(client, '_handshake', lambda _p: ({'version': '1'}, None))
     monkeypatch.setattr(
@@ -439,6 +437,7 @@ def test_wait_reattach_on_unreadable_ledger_degrades_to_not_found(home, ledger, 
     holding no matching row, so it falls through to the existing NOT_FOUND
     result that the no-row case already returns.
     """
+
     def _boom(*_args, **_kwargs):
         raise OSError('ledger unreadable')
 
@@ -537,9 +536,7 @@ def test_handshake_rejects_impostor_socket(home, monkeypatch):
 
 def test_handshake_rejects_version_mismatch(home, monkeypatch):
     monkeypatch.setattr(client, '_socket_owner_reason', lambda _p: None)
-    monkeypatch.setattr(
-        client, '_call_daemon', lambda _req, timeout: {'status': 'ok', 'version': '999'}
-    )
+    monkeypatch.setattr(client, '_call_daemon', lambda _req, timeout: {'status': 'ok', 'version': '999'})
 
     response, reason = client._handshake(client._socket_path())
 
@@ -595,9 +592,7 @@ def test_submit_degraded_fallback_logs_warning(home, ledger, captured_logs, monk
     client.run_submit(_submit_args(str(home / 'proj')))
 
     assert any(
-        level == 'WARNING'
-        and client.REASON_IMPOSTOR_SOCKET in message
-        and 'mechanism=in_process_fallback' in message
+        level == 'WARNING' and client.REASON_IMPOSTOR_SOCKET in message and 'mechanism=in_process_fallback' in message
         for _t, _p, level, message in captured_logs
     ), 'a degraded fallback must produce a captured WARNING entry naming the in-process fallback'
 
@@ -612,10 +607,9 @@ def test_submit_refused_logs_warning(home, ledger, captured_logs, monkeypatch):
 
     client.run_submit(_submit_args(str(home / 'proj')))
 
-    assert any(
-        level == 'WARNING' and 'not_registered' in message
-        for _t, _p, level, message in captured_logs
-    ), 'a refused submit must produce a captured WARNING entry'
+    assert any(level == 'WARNING' and 'not_registered' in message for _t, _p, level, message in captured_logs), (
+        'a refused submit must produce a captured WARNING entry'
+    )
 
 
 def test_wait_logs_result_entry_with_job_id(captured_logs, monkeypatch):
@@ -660,9 +654,7 @@ def test_wait_with_control_char_job_id_never_forges_a_log_header(captured_logs, 
         assert len(plan_logging.HEADER_PATTERN.findall(formatted)) == 1
 
 
-def test_wait_with_control_char_daemon_response_never_forges_a_log_header(
-    captured_logs, monkeypatch
-):
+def test_wait_with_control_char_daemon_response_never_forges_a_log_header(captured_logs, monkeypatch):
     # CWE-117 regression guard for the DAEMON-RESPONSE side of the wait path.
     # The sibling test above covers the client-supplied `--job-id`; here the
     # crafted control characters arrive in the daemon's own response fields
@@ -692,9 +684,7 @@ def test_wait_with_control_char_daemon_response_never_forges_a_log_header(
         assert len(plan_logging.HEADER_PATTERN.findall(formatted)) == 1
 
 
-def test_submit_with_control_char_daemon_response_never_forges_a_log_header(
-    home, ledger, captured_logs, monkeypatch
-):
+def test_submit_with_control_char_daemon_response_never_forges_a_log_header(home, ledger, captured_logs, monkeypatch):
     # CWE-117 regression guard for the daemon-response side of the submit path:
     # a refused `reason` and a queued `job_id` both come straight off the daemon
     # response into the work-log message, so both must be sanitized.
@@ -720,9 +710,7 @@ def test_submit_with_control_char_daemon_response_never_forges_a_log_header(
         assert len(plan_logging.HEADER_PATTERN.findall(formatted)) == 1
 
 
-def test_submit_refused_with_control_char_reason_never_forges_a_log_header(
-    home, ledger, captured_logs, monkeypatch
-):
+def test_submit_refused_with_control_char_reason_never_forges_a_log_header(home, ledger, captured_logs, monkeypatch):
     # The refused arm carries the daemon's `reason` into the WARNING message.
     monkeypatch.setattr(client, '_handshake', lambda _p: ({'version': '1'}, None))
     forged_header = '[2000-01-01T00:00:00Z] [ERROR] [abcdef] forged entry'
@@ -751,9 +739,7 @@ def test_wait_degraded_logs_warning(captured_logs, monkeypatch):
     client.run_wait(_variant(_WAIT_ARGS, job_id='JOB-1', plan_id='p1', bound=1))
 
     assert any(
-        level == 'WARNING'
-        and client.REASON_SOCKET_ABSENT in message
-        and 'mechanism=in_process_fallback' in message
+        level == 'WARNING' and client.REASON_SOCKET_ABSENT in message and 'mechanism=in_process_fallback' in message
         for _t, _p, level, message in captured_logs
     ), 'a degraded wait must produce a captured WARNING entry naming the in-process fallback'
 
@@ -812,14 +798,9 @@ def test_submit_with_control_char_notation_never_forges_a_log_header(home, ledge
         lambda _req, timeout: {'status': 'queued', 'job_id': 'JOB-1', 'attached': False},
     )
     forged_header = '[2000-01-01T00:00:00Z] [ERROR] [abcdef] forged entry'
-    command = (
-        '["python3", "' + root + '/.plan/execute-script.py", '
-        '"a:b:c\\n' + forged_header + '", "run"]'
-    )
+    command = '["python3", "' + root + '/.plan/execute-script.py", "a:b:c\\n' + forged_header + '", "run"]'
 
-    client.run_submit(
-        _variant(_SUBMIT_ARGS, command=command, exec_path=root, project_path=root, plan_id='p1')
-    )
+    client.run_submit(_variant(_SUBMIT_ARGS, command=command, exec_path=root, project_path=root, plan_id='p1'))
 
     work_entries = [c for c in captured_logs if c[0] == 'work']
     assert work_entries, 'submit must log (otherwise this test is vacuous)'

@@ -29,9 +29,7 @@ class TestExplorationShareRegistration:
         # the new check is inserted BEFORE the facet-completeness critic, which
         # consumes the other checks' retained results and must run last.
         assert audit.CHECK_NAMES[-1] == 'cross-check-synthesis'
-        assert audit.CHECK_NAMES.index('exploration-share') < audit.CHECK_NAMES.index(
-            'cross-check-synthesis'
-        )
+        assert audit.CHECK_NAMES.index('exploration-share') < audit.CHECK_NAMES.index('cross-check-synthesis')
 
     def test_era_stamp_rides_the_emitted_block(self, tmp_path: Path):
         # The stamp VALUE is pinned in test_audit_check_era_model.py, the mirror
@@ -39,25 +37,27 @@ class TestExplorationShareRegistration:
         # pinning the literal here too would go stale the moment the fill resolves
         # it, so this asserts only that whatever CHECK_ERA holds reaches the block.
         _shares_plan(
-            tmp_path, 'p1',
-            exploration_calls=1, other_calls=1,
-            exploration_bytes=1, other_bytes=1,
+            tmp_path,
+            'p1',
+            exploration_calls=1,
+            other_calls=1,
+            exploration_bytes=1,
+            other_bytes=1,
         )
-        block = audit._stamp_era(
-            audit.emit_exploration_share_block(audit.cross_exploration_share([]))
-        )
+        block = audit._stamp_era(audit.emit_exploration_share_block(audit.cross_exploration_share([])))
 
         assert f'fixed_since: {audit.CHECK_ERA["exploration-share"]}' in block
 
-    def test_check_accepted_as_a_cli_choice(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ):
+    def test_check_accepted_as_a_cli_choice(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         # --check choices are sourced from CHECK_NAMES; drive the real parser so an
         # argparse-level rejection would fail here rather than at audit time.
         _shares_plan(
-            tmp_path, 'p1',
-            exploration_calls=1, other_calls=1,
-            exploration_bytes=1, other_bytes=1,
+            tmp_path,
+            'p1',
+            exploration_calls=1,
+            other_calls=1,
+            exploration_bytes=1,
+            other_bytes=1,
         )
         # The sandbox carries a real `.plan/local` marker, and cwd is a NESTED
         # subdirectory of it, so `cwd != repo_root` and the persisted-report write
@@ -69,9 +69,7 @@ class TestExplorationShareRegistration:
         nested.mkdir(parents=True)
         monkeypatch.chdir(nested)
 
-        exit_code = audit.main(
-            ['--check', 'exploration-share', '--plan-dir', str(tmp_path)]
-        )
+        exit_code = audit.main(['--check', 'exploration-share', '--plan-dir', str(tmp_path)])
 
         assert exit_code == 0
         assert list((tmp_path / audit.AUDIT_REPORTS_REL).glob('*.toon')), (
@@ -100,9 +98,7 @@ class TestExplorationShareAbsentIsNotZero:
 
     def test_measured_zero_stays_in_the_corpus(self, tmp_path: Path):
         # the walk ran and found no calls: a real observation, not an absence
-        inputs = _plan_with_counters(
-            tmp_path, 'measured-zero', {'5-execute': _counters(0, 0)}
-        )
+        inputs = _plan_with_counters(tmp_path, 'measured-zero', {'5-execute': _counters(0, 0)})
 
         result = audit.cross_exploration_share([inputs])
 
@@ -149,11 +145,16 @@ class TestExplorationShareDenominator:
 
     def test_orchestration_and_unclassified_excluded_from_share(self, tmp_path: Path):
         inputs = _shares_plan(
-            tmp_path, 'excl',
-            exploration_calls=3, other_calls=1,
-            exploration_bytes=30, other_bytes=10,
-            orchestration_calls=100, orchestration_bytes=1000,
-            unclassified_calls=50, unclassified_bytes=500,
+            tmp_path,
+            'excl',
+            exploration_calls=3,
+            other_calls=1,
+            exploration_bytes=30,
+            other_bytes=10,
+            orchestration_calls=100,
+            orchestration_bytes=1000,
+            unclassified_calls=50,
+            unclassified_bytes=500,
         )
 
         result = audit.cross_exploration_share([inputs])

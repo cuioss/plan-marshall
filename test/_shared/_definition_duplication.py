@@ -175,20 +175,17 @@ def survey_refs(before_ref: str, after_ref: str, prefixes: list[str], repo: Path
 
 
 def _format_side(side: dict) -> list[str]:
-    out = [
-        f"  ref {side['ref']}: {side['definitions']} module-level definitions "
-        f"across {len(side['paths'])} modules"
-    ]
+    out = [f'  ref {side["ref"]}: {side["definitions"]} module-level definitions across {len(side["paths"])} modules']
     homed = side['duplicates_with_a_home']
     multi = side['multiple_bodies']
     out.append(f'    duplicates with a home ({len(homed)}) — one body everywhere, safe to hoist:')
     for entry in homed:
-        out.append(f"      {entry['name']} x{entry['occurrences']}: {', '.join(entry['paths'])}")
+        out.append(f'      {entry["name"]} x{entry["occurrences"]}: {", ".join(entry["paths"])}')
     out.append(f'    names carrying more than one body ({len(multi)}) — NOT duplicates:')
     for entry in multi:
         out.append(
-            f"      {entry['name']} x{entry['occurrences']} "
-            f"in {entry['distinct_bodies']} bodies: {', '.join(entry['paths'])}"
+            f'      {entry["name"]} x{entry["occurrences"]} '
+            f'in {entry["distinct_bodies"]} bodies: {", ".join(entry["paths"])}'
         )
     return out
 
@@ -196,8 +193,8 @@ def _format_side(side: dict) -> list[str]:
 def format_report(report: dict) -> str:
     """Render the survey, leading with the definition the instrument applied."""
     out = ['definition-duplication: two-ref survey of module-level definitions']
-    out.append(f"  paths covered: {', '.join(report['prefixes'])}")
-    out.append(f"  definition applied: {report['definition']}")
+    out.append(f'  paths covered: {", ".join(report["prefixes"])}')
+    out.append(f'  definition applied: {report["definition"]}')
     out.append('')
     out.extend(_format_side(report['before']))
     out.append('')

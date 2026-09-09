@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the generic ``direct-gh-glab-usage.py`` aspect: log and diff leaks (Surfaces A+B)."""
 
-
 from __future__ import annotations
 
 from _direct_gh_glab_usage_fixtures import SCRIPT_PATH, _commit_file, _init_git_repo

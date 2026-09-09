@@ -35,26 +35,41 @@ SCRIPT_PATH = get_script_path('pm-dev-java', 'manage-maven-profiles', 'profiles.
 # author remembered. Parsed once at module scope: parse_ns re-executes the script
 # module on every call.
 _CLASSIFY_NS = parse_ns(
-    'pm-dev-java', 'manage-maven-profiles', 'profiles.py',
-    'classify', '--profile-id', 'placeholder', register=False,
+    'pm-dev-java',
+    'manage-maven-profiles',
+    'profiles.py',
+    'classify',
+    '--profile-id',
+    'placeholder',
+    register=False,
 )
 _LIST_NS = parse_ns(
-    'pm-dev-java', 'manage-maven-profiles', 'profiles.py',
-    'list', register=False,
+    'pm-dev-java',
+    'manage-maven-profiles',
+    'profiles.py',
+    'list',
+    register=False,
 )
 _UNMATCHED_NS = parse_ns(
-    'pm-dev-java', 'manage-maven-profiles', 'profiles.py',
-    'unmatched', register=False,
+    'pm-dev-java',
+    'manage-maven-profiles',
+    'profiles.py',
+    'unmatched',
+    register=False,
 )
 _SUGGEST_NS = parse_ns(
-    'pm-dev-java', 'manage-maven-profiles', 'profiles.py',
-    'suggest', register=False,
+    'pm-dev-java',
+    'manage-maven-profiles',
+    'profiles.py',
+    'suggest',
+    register=False,
 )
 
 
 def _ns(template: Namespace, **overrides) -> Namespace:
     """A parser-produced namespace with this test's values overlaid."""
     return Namespace(**{**vars(template), **overrides})
+
 
 # =============================================================================
 # Helper Functions
@@ -493,9 +508,7 @@ def test_cli_rejects_project_dir_and_plan_id_together():
     """Supplying both --project-dir and --plan-id is a mutually-exclusive
     rejection (exit code 2), never a silent resolution of one over the other."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        result = run_script(
-            SCRIPT_PATH, '--project-dir', tmpdir, '--plan-id', 'some-plan', 'list'
-        )
+        result = run_script(SCRIPT_PATH, '--project-dir', tmpdir, '--plan-id', 'some-plan', 'list')
 
         assert result.returncode == 2
         assert result.stdout.strip()
@@ -635,9 +648,7 @@ def test_cmd_list_round_trips_a_profile_id_that_needs_quoting(capsys):
     """A profile id carrying a tab, a comma and a colon survives emit -> parse."""
     separator_laden_id = 'weird\tid,with:separators'
     with tempfile.TemporaryDirectory() as tmpdir:
-        create_test_derived_data(
-            tmpdir, profiles=[{'id': separator_laden_id, 'canonical': 'coverage'}]
-        )
+        create_test_derived_data(tmpdir, profiles=[{'id': separator_laden_id, 'canonical': 'coverage'}])
 
         rc = cmd_list(_ns(_LIST_NS, project_dir=tmpdir, module=None))
 

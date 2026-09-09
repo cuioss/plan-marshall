@@ -91,9 +91,10 @@ def test_record_dispatch_boundary_rejects_legacy_unknown_termination_cause():
     # argparse error messages enumerate the accepted set on stderr.
     combined = (result.stdout or '') + (result.stderr or '')
     assert 'clean_exit_queue_empty' in combined
-    assert 'unknown' not in (
-        combined.split('choose from')[1] if 'choose from' in combined else ''
-    ) or 'invalid choice' in combined
+    assert (
+        'unknown' not in (combined.split('choose from')[1] if 'choose from' in combined else '')
+        or 'invalid choice' in combined
+    )
 
 
 def test_record_dispatch_boundary_accepts_clean_exit_queue_empty():
@@ -112,4 +113,4 @@ def test_record_dispatch_boundary_accepts_clean_exit_queue_empty():
     # similar runtime error, but the parser-level rejection MUST NOT fire.
     combined = (result.stdout or '') + (result.stderr or '')
     assert 'invalid choice' not in combined
-    assert "argument --termination-cause" not in combined or 'choose from' not in combined
+    assert 'argument --termination-cause' not in combined or 'choose from' not in combined

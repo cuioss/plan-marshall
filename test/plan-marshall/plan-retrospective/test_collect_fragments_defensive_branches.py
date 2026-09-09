@@ -7,7 +7,6 @@ Its sections, in order:
 * main() entry point — exercises argparse configuration
 """
 
-
 from __future__ import annotations
 
 from _collect_fragments_fixtures import _load_module, _valid_fragment_body

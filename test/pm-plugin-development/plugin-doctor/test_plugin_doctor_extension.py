@@ -20,8 +20,11 @@ SCRIPT_PATH = get_script_path('pm-plugin-development', 'plugin-doctor', '_valida
 # author remembered. Parsed once at module scope: parse_ns re-executes the script
 # module on every call.
 _EXTENSION_NS = parse_ns(
-    'pm-plugin-development', 'plugin-doctor', '_validate.py',
-    'extension', register=False,
+    'pm-plugin-development',
+    'plugin-doctor',
+    '_validate.py',
+    'extension',
+    register=False,
 )
 
 

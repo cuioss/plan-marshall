@@ -547,14 +547,12 @@ def _staleness_guard(source_root: Path, marketplace_root: Path) -> GuardRefusal 
         sentinel = json.loads(sentinel_path.read_text(encoding='utf-8'))
     except (OSError, json.JSONDecodeError) as exc:
         return _stale(
-            f'staleness_guard: sentinel missing or unreadable at {sentinel_path} '
-            f'({exc}). {_regenerate_hint()}'
+            f'staleness_guard: sentinel missing or unreadable at {sentinel_path} ({exc}). {_regenerate_hint()}'
         )
     stored_fingerprint = sentinel.get('source_tree_fingerprint')
     if not isinstance(stored_fingerprint, str) or not stored_fingerprint:
         return _stale(
-            f'staleness_guard: sentinel at {sentinel_path} is missing '
-            f'source_tree_fingerprint. {_regenerate_hint()}'
+            f'staleness_guard: sentinel at {sentinel_path} is missing source_tree_fingerprint. {_regenerate_hint()}'
         )
 
     try:
@@ -702,13 +700,8 @@ def main(argv: list[str] | None = None) -> int:
 
     bundles = _select_bundles(source_root, args.bundle)
     if not bundles:
-        msg = (
-            f'no matching bundles in {source_root}'
-            + (f' (filter: --bundle {args.bundle})' if args.bundle else '')
-        )
-        sys.stdout.write(
-            _emit_toon(status='error', synced=[], failed=[], summary_message=msg)
-        )
+        msg = f'no matching bundles in {source_root}' + (f' (filter: --bundle {args.bundle})' if args.bundle else '')
+        sys.stdout.write(_emit_toon(status='error', synced=[], failed=[], summary_message=msg))
         return 1
 
     synced: list[dict[str, str]] = []

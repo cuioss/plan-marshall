@@ -5,7 +5,6 @@
 Its one section: require_plan_exists guard on plan-scoped writers (orphan-plan-dir guard).
 """
 
-
 import pytest
 from _manage_metrics_fixtures import (
     ns_accumulate,
@@ -122,10 +121,7 @@ class TestRecordDispatchBoundaryContextLoadColumns:
         content = artifact.read_text(encoding='utf-8')
         # Legacy five carry the supplied values; the four context columns carry
         # the token. The `0,0,0,0` tail the old default produced is GONE.
-        assert (
-            ',clean_exit_queue_empty,1000,5,2000,unmeasured,unmeasured,unmeasured,unmeasured'
-            in content
-        )
+        assert ',clean_exit_queue_empty,1000,5,2000,unmeasured,unmeasured,unmeasured,unmeasured' in content
         assert ',clean_exit_queue_empty,1000,5,2000,0,0,0,0' not in content
 
     def test_measured_zero_context_load_is_written_as_zero(self, plan_context):
@@ -171,9 +167,7 @@ class TestRecordDispatchBoundaryContextLoadColumns:
         pdir = plan_context.plan_dir_for(plan_id)
         (pdir / 'status.json').write_text('{}', encoding='utf-8')
         cmd_record_dispatch_boundary(
-            ns_record_dispatch_boundary(
-                plan_id, '5-execute', termination_cause='clean_exit_queue_empty'
-            )
+            ns_record_dispatch_boundary(plan_id, '5-execute', termination_cause='clean_exit_queue_empty')
         )
 
         artifact = pdir / 'work' / 'metrics-dispatch-boundaries-5-execute.toon'
@@ -206,7 +200,8 @@ class TestRecordDispatchBoundaryContextLoadColumns:
 
         artifact = pdir / 'work' / 'metrics-dispatch-boundaries-5-execute.toon'
         data_lines = [
-            line for line in artifact.read_text(encoding='utf-8').splitlines()
+            line
+            for line in artifact.read_text(encoding='utf-8').splitlines()
             if line and not line.startswith(('plan_id:', 'phase:', 'rows[]'))
         ]
         assert len(data_lines) == 1
@@ -253,9 +248,7 @@ class TestRecordDispatchBoundaryContextLoadColumns:
         content = artifact.read_text(encoding='utf-8')
         # total/tool/duration omitted → 0 (legacy default, unchanged); input=500
         # measured; the remaining three context columns carry the token.
-        assert (
-            ',clean_exit_queue_empty,0,0,0,500,unmeasured,unmeasured,unmeasured' in content
-        )
+        assert ',clean_exit_queue_empty,0,0,0,500,unmeasured,unmeasured,unmeasured' in content
 
 
 # =============================================================================
@@ -286,15 +279,11 @@ class TestPlanDirGuardOnWriters:
         ('generate', lambda pid: cmd_generate(ns_generate(pid))),
         (
             'phase-boundary',
-            lambda pid: manage_metrics.cmd_phase_boundary(
-                ns_phase_boundary(pid, '4-plan', '5-execute')
-            ),
+            lambda pid: manage_metrics.cmd_phase_boundary(ns_phase_boundary(pid, '4-plan', '5-execute')),
         ),
         (
             'accumulate-agent-usage',
-            lambda pid: cmd_accumulate_agent_usage(
-                ns_accumulate(pid, '5-execute', total_tokens=10)
-            ),
+            lambda pid: cmd_accumulate_agent_usage(ns_accumulate(pid, '5-execute', total_tokens=10)),
         ),
         ('enrich', lambda pid: cmd_enrich(ns_enrich(pid, 'any-session'))),
     ]
@@ -304,9 +293,7 @@ class TestPlanDirGuardOnWriters:
         _GUARDED_WRITERS,
         ids=[label for label, _ in _GUARDED_WRITERS],
     )
-    def test_writer_returns_plan_not_found_for_orphan_plan_dir(
-        self, plan_context, label, invoke
-    ):
+    def test_writer_returns_plan_not_found_for_orphan_plan_dir(self, plan_context, label, invoke):
         """An orphan plan dir (exists, no status.json) yields error: plan_not_found."""
         plan_id = _register_unseeded(f'guard-orphan-{label}')
         plan_dir = _unseeded_plan_dir(plan_context, plan_id)
@@ -328,9 +315,7 @@ class TestPlanDirGuardOnWriters:
         _GUARDED_WRITERS,
         ids=[label for label, _ in _GUARDED_WRITERS],
     )
-    def test_writer_returns_plan_not_found_when_plan_dir_absent(
-        self, plan_context, label, invoke
-    ):
+    def test_writer_returns_plan_not_found_when_plan_dir_absent(self, plan_context, label, invoke):
         """A plan_id whose dir was never created also trips the guard."""
         plan_id = _register_unseeded(f'guard-absent-{label}')
         # Deliberately do NOT create the directory — the guard must reject it.

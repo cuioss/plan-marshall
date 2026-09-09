@@ -123,17 +123,14 @@ REAL_B = 'archive-plan'
 
 
 class TestStaleStepIsDroppedNotFailed:
-    def test_frozen_step_absent_from_live_config_is_reported_stale(
-        self, plan_context
-    ):
+    def test_frozen_step_absent_from_live_config_is_reported_stale(self, plan_context):
         _write_marshal(plan_context.fixture_dir, [REAL_A, REAL_B])
         _seed_manifest('rec-stale', [REAL_A, GHOST, REAL_B], candidate_steps=[REAL_A, GHOST, REAL_B])
 
         result = cmd_reconcile(_reconcile_ns('rec-stale'))
         assert result is not None
         assert result['status'] == 'success', (
-            'a frozen step that live config has ALSO dropped must reconcile, '
-            f'not fail: {result}'
+            f'a frozen step that live config has ALSO dropped must reconcile, not fail: {result}'
         )
         assert result['stale'] == [GHOST]
         assert result['broken'] == []
@@ -158,9 +155,7 @@ class TestStaleStepIsDroppedNotFailed:
         cmd_reconcile(_reconcile_ns('rec-params', apply=True))
 
         persisted = read_manifest('rec-params')
-        assert GHOST not in persisted['phase_6']['step_params'], (
-            'a dropped step must not keep a params snapshot behind'
-        )
+        assert GHOST not in persisted['phase_6']['step_params'], 'a dropped step must not keep a params snapshot behind'
 
     def test_dry_run_does_not_write(self, plan_context):
         _write_marshal(plan_context.fixture_dir, [REAL_A])
@@ -185,8 +180,7 @@ class TestStaleStepIsDroppedNotFailed:
 
         cmd_reconcile(_reconcile_ns('rec-dry-log'))
         assert _emitted_for('rec-dry-log') == [], (
-            'a dry run emitted a decision-log line: '
-            f'{_emitted_for("rec-dry-log")}'
+            f'a dry run emitted a decision-log line: {_emitted_for("rec-dry-log")}'
         )
 
     def test_apply_emits_one_decision_log_line_per_dropped_step(self, plan_context):
@@ -286,9 +280,7 @@ class TestBrokenStepStillFailsLoud:
         _seed_manifest('rec-broken-apply', [REAL_A, GHOST], candidate_steps=[REAL_A, GHOST])
 
         cmd_reconcile(_reconcile_ns('rec-broken-apply', apply=True))
-        assert GHOST in read_manifest('rec-broken-apply')['phase_6']['steps'], (
-            'a failing reconcile must write nothing'
-        )
+        assert GHOST in read_manifest('rec-broken-apply')['phase_6']['steps'], 'a failing reconcile must write nothing'
 
 
 # =============================================================================
@@ -320,8 +312,7 @@ class TestBackfillIsNarrow:
         result = cmd_reconcile(_reconcile_ns('rec-matrix', apply=True))
         assert result['backfill'] == []
         assert REAL_B not in read_manifest('rec-matrix')['phase_6']['steps'], (
-            'a candidate the matrix already considered and dropped must not '
-            'be resurrected by reconcile'
+            'a candidate the matrix already considered and dropped must not be resurrected by reconcile'
         )
 
     def test_absent_candidate_snapshot_reports_indeterminate(self, plan_context):
@@ -355,9 +346,7 @@ class TestBackfillIsNarrow:
 
 
 class TestPrefixedFrozenIdsCompareCanonically:
-    def test_prefixed_frozen_step_is_not_dropped_when_live_lists_it_bare(
-        self, plan_context
-    ):
+    def test_prefixed_frozen_step_is_not_dropped_when_live_lists_it_bare(self, plan_context):
         """A hand-edited manifest may carry `default:`-prefixed ids.
 
         SKILL.md explicitly sanctions editing execution.toon directly, so the
@@ -366,9 +355,7 @@ class TestPrefixedFrozenIdsCompareCanonically:
         from live config and drop a step live config still schedules.
         """
         _write_marshal(plan_context.fixture_dir, [REAL_A, GHOST])
-        _seed_manifest(
-            'rec-prefixed', [REAL_A, f'default:{GHOST}'], candidate_steps=[REAL_A, GHOST]
-        )
+        _seed_manifest('rec-prefixed', [REAL_A, f'default:{GHOST}'], candidate_steps=[REAL_A, GHOST])
 
         result = cmd_reconcile(_reconcile_ns('rec-prefixed'))
         assert result['status'] == 'error', (
@@ -384,8 +371,7 @@ class TestPrefixedFrozenIdsCompareCanonically:
 
         result = cmd_reconcile(_reconcile_ns('rec-dup', apply=True))
         assert result['backfill'] == [], (
-            f'{REAL_B} is already in the manifest under a prefixed id; '
-            'backfilling it would duplicate the step'
+            f'{REAL_B} is already in the manifest under a prefixed id; backfilling it would duplicate the step'
         )
 
 
@@ -426,9 +412,7 @@ class TestConvergedManifestIsANoop:
         assert result['stale'] == []
         assert result['broken'] == []
         assert result['backfill'] == []
-        assert result['reconciled'] is False, (
-            'a converged manifest is not a reconciliation'
-        )
+        assert result['reconciled'] is False, 'a converged manifest is not a reconciliation'
 
     def test_missing_manifest_returns_file_not_found(self, plan_context):
         _write_marshal(plan_context.fixture_dir, [REAL_A])
@@ -468,6 +452,5 @@ class TestComposeSnapshotsCandidateSteps:
         # `candidate_steps`. Do not generalize this assertion — see
         # standards/manifest-schema.md.
         assert set(selected).issubset(set(candidates)), (
-            'with every ceremony gate at `auto`, each selected step must come '
-            'from the recorded candidate set'
+            'with every ceremony gate at `auto`, each selected step must come from the recorded candidate set'
         )

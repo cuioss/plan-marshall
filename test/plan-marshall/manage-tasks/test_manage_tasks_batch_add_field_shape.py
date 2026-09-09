@@ -21,7 +21,6 @@ asserting the legal shape of the same field still parses unchanged. A guard with
 its positive half is satisfied by one that always raises.
 """
 
-
 import pytest
 from _manage_tasks_batch_add_fixtures import parse_stdin_task
 

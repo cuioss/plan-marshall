@@ -4,7 +4,6 @@
 Tests for the ``aggregate`` subcommand of manage-lessons.py.
 """
 
-
 from pathlib import Path
 
 from _aggregate_fixtures import _make_lessons_dir, _run_aggregate, _seed_lesson

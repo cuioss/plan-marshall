@@ -33,7 +33,6 @@ regular file (and the matched-name id derivation that guard depends on), and
 path-traversal rejection on ``plan_id``.
 """
 
-
 from argparse import Namespace
 from unittest.mock import patch
 
@@ -94,8 +93,7 @@ Body content here.
         ids = ('2025-02-01-001', '2025-02-01-002', '2025-02-01-003')
         for lesson_id in ids:
             (plan_dir / f'lesson-{lesson_id}.md').write_text(
-                f'id={lesson_id}\ncomponent=test\ncategory=bug\ncreated=2025-02-01\n\n'
-                f'# Lesson {lesson_id}\n\nBody.\n'
+                f'id={lesson_id}\ncomponent=test\ncategory=bug\ncreated=2025-02-01\n\n# Lesson {lesson_id}\n\nBody.\n'
             )
 
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
@@ -159,9 +157,7 @@ Body content here.
         assert result['restored_count'] == 0
         assert result['restored_lessons'] == []
 
-    def test_unresolved_lessons_corpus_is_not_reported_as_a_resolved_store(
-        self, tmp_path, monkeypatch
-    ):
+    def test_unresolved_lessons_corpus_is_not_reported_as_a_resolved_store(self, tmp_path, monkeypatch):
         """The discriminator names the store that FAILED, not the one that resolved.
 
         The verb needs both stores. Here the plans root resolves and the lessons
@@ -188,9 +184,7 @@ Body content here.
         def _only_plans_resolves(subpath='lessons-learned'):
             if str(subpath) == 'plans':
                 return real_resolve(subpath)
-            return _lessons_query.LessonStore(
-                None, 'unresolved', 'cannot resolve the lessons corpus (test stub)'
-            )
+            return _lessons_query.LessonStore(None, 'unresolved', 'cannot resolve the lessons corpus (test stub)')
 
         monkeypatch.setattr(_lessons_query, 'resolve_lesson_store', _only_plans_resolves)
         monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
@@ -226,9 +220,7 @@ Body content here.
 
         def _only_lessons_resolves(subpath='lessons-learned'):
             if str(subpath) == 'plans':
-                return _lessons_query.LessonStore(
-                    None, 'unresolved', 'cannot resolve the plans root (test stub)'
-                )
+                return _lessons_query.LessonStore(None, 'unresolved', 'cannot resolve the plans root (test stub)')
             return real_resolve(subpath)
 
         monkeypatch.setattr(_lessons_query, 'resolve_lesson_store', _only_lessons_resolves)
@@ -298,9 +290,7 @@ Body content here.
         # The value is a member of the closed vocabulary consumers assert on.
         assert result['action'] in _lessons_query.RESTORE_ACTIONS
 
-    def test_mid_sequence_collision_reports_incomplete_with_the_partial_count(
-        self, tmp_path
-    ):
+    def test_mid_sequence_collision_reports_incomplete_with_the_partial_count(self, tmp_path):
         """A collision AFTER a successful move is also ``restore_incomplete``.
 
         The partial arm: one lesson genuinely landed, so ``restored_count`` is
@@ -353,9 +343,7 @@ Body content here.
         assert result['restored_count'] == 2
         assert 'error' not in result
 
-    def test_symlinked_entry_is_rejected_and_the_id_comes_from_the_matched_name(
-        self, tmp_path
-    ):
+    def test_symlinked_entry_is_rejected_and_the_id_comes_from_the_matched_name(self, tmp_path):
         """A symlinked ``lesson-*.md`` is ``unsafe_source``, rejected before any move.
 
         Deriving the id from a RESOLVED path reads it off the link's TARGET

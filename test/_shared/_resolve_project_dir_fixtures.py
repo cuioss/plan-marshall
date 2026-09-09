@@ -86,9 +86,7 @@ def worktree_query_result(use_worktree: bool, worktree_path: str = '') -> tuple[
     """
     from file_ops import derive_worktree_state
 
-    return derive_worktree_state(
-        {'use_worktree': use_worktree, 'worktree_path': worktree_path}
-    )
+    return derive_worktree_state({'use_worktree': use_worktree, 'worktree_path': worktree_path})
 
 
 @contextmanager
@@ -163,8 +161,7 @@ def patch_query_worktree_path_map(mapping: dict[str, Any]):
     def _resolve(plan_id: str):
         if plan_id not in mapping:
             raise AssertionError(
-                f'unstubbed worktree resolution for plan_id={plan_id!r}; '
-                f'stubbed ids are {sorted(mapping)}'
+                f'unstubbed worktree resolution for plan_id={plan_id!r}; stubbed ids are {sorted(mapping)}'
             )
         outcome = mapping[plan_id]
         if isinstance(outcome, Exception):
@@ -317,8 +314,7 @@ def assert_sentinel_accepted(resolve: Any) -> None:
     with patch_query_worktree_path(True) as mock, patch_main_checkout_root() as root_mock:
         resolved = resolve(NO_PLAN_SENTINEL)
     assert resolved == MAIN_CHECKOUT_ROOT, (
-        f'NO_PLAN sentinel resolved to {resolved!r}, expected the main '
-        f'checkout root {MAIN_CHECKOUT_ROOT!r}'
+        f'NO_PLAN sentinel resolved to {resolved!r}, expected the main checkout root {MAIN_CHECKOUT_ROOT!r}'
     )
     assert root_mock.called, 'The sentinel did not resolve via the checkout-root helper'
     assert mock.call_count == 0, (

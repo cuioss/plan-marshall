@@ -108,9 +108,7 @@ def test_domain_active_but_no_arch_gate_command_drops_step_with_warning(plan_con
         lru_cache(maxsize=1)(lambda: {'arch-gate'}),
     )
     # quality-gate resolves (a real gate); arch-gate does NOT (no module wires it).
-    monkeypatch.setattr(
-        _mem, '_invoke_architecture_resolve', _make_resolve_stub({'quality-gate', 'module-tests'})
-    )
+    monkeypatch.setattr(_mem, '_invoke_architecture_resolve', _make_resolve_stub({'quality-gate', 'module-tests'}))
 
     with _capture_decision_log() as captured:
         result = cmd_compose(
@@ -133,10 +131,7 @@ def test_domain_active_but_no_arch_gate_command_drops_step_with_warning(plan_con
     # A diagnosable [STATUS] warning named the dropped step and the reason.
     messages = [msg for _pid, msg in captured]
     assert any(
-        '[STATUS]' in msg
-        and 'domain_seeded_step_unresolvable' in msg
-        and 'verify:arch-gate' in msg
-        for msg in messages
+        '[STATUS]' in msg and 'domain_seeded_step_unresolvable' in msg and 'verify:arch-gate' in msg for msg in messages
     ), messages
 
 
@@ -184,6 +179,4 @@ def test_module_that_wires_arch_gate_keeps_step(plan_context, monkeypatch):
 
     # No drop warning was emitted for the kept step.
     messages = [msg for _pid, msg in captured]
-    assert not any(
-        'domain_seeded_step_unresolvable' in msg and 'verify:arch-gate' in msg for msg in messages
-    ), messages
+    assert not any('domain_seeded_step_unresolvable' in msg and 'verify:arch-gate' in msg for msg in messages), messages

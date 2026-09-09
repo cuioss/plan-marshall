@@ -100,9 +100,7 @@ def pack_envelopes(
             any task is missing / carries a malformed ``predicted_cost_tokens``.
     """
     if per_envelope_budget_tokens <= 0:
-        raise ValueError(
-            f'per_envelope_budget_tokens must be positive, got {per_envelope_budget_tokens!r}'
-        )
+        raise ValueError(f'per_envelope_budget_tokens must be positive, got {per_envelope_budget_tokens!r}')
 
     assignments: list[tuple[dict[str, Any], int]] = []
     envelopes: list[dict[str, Any]] = []

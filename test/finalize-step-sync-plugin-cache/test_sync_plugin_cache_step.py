@@ -27,12 +27,8 @@ from conftest import MARKETPLACE_ROOT, PROJECT_ROOT, load_script_module
 
 cd = load_script_module('plan-marshall', 'manage-config', '_config_defaults.py')
 
-_SKILL_MD = (
-    PROJECT_ROOT / '.claude' / 'skills' / 'finalize-step-sync-plugin-cache' / 'SKILL.md'
-)
-_DEPLOY_TARGET_SKILL_MD = (
-    PROJECT_ROOT / '.claude' / 'skills' / 'finalize-step-deploy-target' / 'SKILL.md'
-)
+_SKILL_MD = PROJECT_ROOT / '.claude' / 'skills' / 'finalize-step-sync-plugin-cache' / 'SKILL.md'
+_DEPLOY_TARGET_SKILL_MD = PROJECT_ROOT / '.claude' / 'skills' / 'finalize-step-deploy-target' / 'SKILL.md'
 
 
 def _parse_frontmatter(path: Path) -> dict[str, str]:
@@ -61,8 +57,7 @@ def test_skill_frontmatter_canonical_fields():
     assert fm.get('name') == 'finalize-step-sync-plugin-cache'
     assert fm.get('description'), 'description must be non-empty'
     assert fm.get('order') == '85', (
-        'sync-plugin-cache order must be 85 (post-merge: immediately after '
-        'deploy-target=80, before record-metrics=990)'
+        'sync-plugin-cache order must be 85 (post-merge: immediately after deploy-target=80, before record-metrics=990)'
     )
 
 
@@ -74,9 +69,7 @@ def test_order_after_deploy_target_post_merge():
 
     # Hard-coded create-pr order (20) — sourced from the bundled workflow doc.
     # Post-merge, both deploy/sync steps sort AFTER create-pr.
-    create_pr_md = (
-        MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'workflow' / 'create-pr.md'
-    )
+    create_pr_md = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'workflow' / 'create-pr.md'
     create_pr = _parse_frontmatter(create_pr_md)
 
     assert int(create_pr['order']) < int(deploy_target['order']) < int(sync_step['order'])
@@ -107,9 +100,7 @@ def test_sync_plugin_cache_is_not_a_built_in_default():
     """
     from extension_discovery import find_implementors
 
-    discovered_names = {
-        rec['name'] for rec in find_implementors(cd.FINALIZE_STEP_EXT_POINT) if rec.get('name')
-    }
+    discovered_names = {rec['name'] for rec in find_implementors(cd.FINALIZE_STEP_EXT_POINT) if rec.get('name')}
     assert 'default:sync-plugin-cache' not in discovered_names
     # Positive contract: the project-local step IS discovered under its
     # PATH-derived ``project:{dir}`` id — confirming the step is surfaced, not
@@ -123,14 +114,7 @@ def test_sync_plugin_cache_is_not_a_built_in_default():
 def test_no_bundled_standards_doc_for_sync_plugin_cache():
     """No bundled phase-6-finalize/standards/sync-plugin-cache.md exists — the
     skill is project-local under .claude/, not in the plan-marshall bundle."""
-    bundled = (
-        MARKETPLACE_ROOT
-        / 'plan-marshall'
-        / 'skills'
-        / 'phase-6-finalize'
-        / 'standards'
-        / 'sync-plugin-cache.md'
-    )
+    bundled = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'standards' / 'sync-plugin-cache.md'
     assert not bundled.exists(), (
         f'Unexpected bundled standards doc: {bundled}. The sync-plugin-cache step '
         f'is project-local only; no marketplace bundle should ship it.'
@@ -160,7 +144,7 @@ def _resolve_display_detail(parsed: dict[str, object]) -> tuple[str, str]:
     """
     status = parsed.get('status')
     if status == 'success':
-        return 'done', f"{parsed.get('synced_count')} bundles synced"
+        return 'done', f'{parsed.get("synced_count")} bundles synced'
     return 'failed', str(parsed.get('summary_message', 'unknown error'))
 
 

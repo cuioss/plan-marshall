@@ -82,11 +82,7 @@ def _is_excluded(rel: Path) -> bool:
 
 
 def _is_agent_file(rel: Path) -> bool:
-    return (
-        len(rel.parts) == 2
-        and rel.parts[0] == 'agents'
-        and rel.suffix == '.md'
-    )
+    return len(rel.parts) == 2 and rel.parts[0] == 'agents' and rel.suffix == '.md'
 
 
 def emit_bundle_verbatim(
@@ -162,9 +158,7 @@ def emit_bundle_verbatim(
 
         # Route role-eligible agents through variant emission.
         if _is_agent_file(rel):
-            result: VariantEmissionResult | None = emit_variants_for_agent(
-                source, dest, _OPENCODE_MAPPING
-            )
+            result: VariantEmissionResult | None = emit_variants_for_agent(source, dest, _OPENCODE_MAPPING)
             if result is not None:
                 written.append(result.canonical_path)
                 base_name = result.canonical_path.stem

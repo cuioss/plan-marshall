@@ -144,9 +144,7 @@ def test_transition_last_phase(plan_context):
 def test_transition_invalid_phase(plan_context):
     """Test transition with invalid phase name."""
     _create_plan('invalid-transition', 'Invalid Test', '1-init,2-refine')
-    result = run_script(
-        LIFECYCLE_SCRIPT, 'transition', '--plan-id', 'invalid-transition', '--completed', 'nonexistent'
-    )
+    result = run_script(LIFECYCLE_SCRIPT, 'transition', '--plan-id', 'invalid-transition', '--completed', 'nonexistent')
     assert result.success, 'Expected exit 0 for expected error'
     data = parse_toon(result.stdout)
     assert data['status'] == 'error'
@@ -247,9 +245,7 @@ def test_archive_not_found(plan_context):
 def test_transition_5_execute_does_not_seed_modified_files(plan_context):
     """Completing 5-execute must NOT add modified_files to references.json."""
     plan_dir = plan_context.plan_dir_for('no-seed-5exec-plan')
-    _create_plan(
-        'no-seed-5exec-plan', 'No Seed Test', '1-init,2-refine,3-outline,4-plan,5-execute,6-finalize'
-    )
+    _create_plan('no-seed-5exec-plan', 'No Seed Test', '1-init,2-refine,3-outline,4-plan,5-execute,6-finalize')
 
     # Advance to 5-execute.
     for completed in ('1-init', '2-refine', '3-outline', '4-plan'):
@@ -259,9 +255,7 @@ def test_transition_5_execute_does_not_seed_modified_files(plan_context):
     refs_path = plan_dir / 'references.json'
     refs_path.write_text(json.dumps({'base_branch': 'main'}, indent=2))
 
-    result = run_script(
-        LIFECYCLE_SCRIPT, 'transition', '--plan-id', 'no-seed-5exec-plan', '--completed', '5-execute'
-    )
+    result = run_script(LIFECYCLE_SCRIPT, 'transition', '--plan-id', 'no-seed-5exec-plan', '--completed', '5-execute')
     assert result.success, f'Transition failed: {result.stderr}'
     data = parse_toon(result.stdout)
     assert data['status'] == 'success'
@@ -282,19 +276,16 @@ def test_transition_never_touches_modified_files_for_any_phase(plan_context):
     """
     plan_dir = plan_context.plan_dir_for('untouched-ledger-plan')
     _create_plan(
-        'untouched-ledger-plan', 'Untouched Ledger Test',
+        'untouched-ledger-plan',
+        'Untouched Ledger Test',
         '1-init,2-refine,3-outline,4-plan,5-execute,6-finalize',
     )
 
     refs_path = plan_dir / 'references.json'
-    refs_path.write_text(
-        json.dumps({'base_branch': 'main', 'modified_files': ['legacy.py']}, indent=2)
-    )
+    refs_path.write_text(json.dumps({'base_branch': 'main', 'modified_files': ['legacy.py']}, indent=2))
 
     # Non-5-execute transition leaves the legacy ledger exactly as-is.
-    result = run_script(
-        LIFECYCLE_SCRIPT, 'transition', '--plan-id', 'untouched-ledger-plan', '--completed', '1-init'
-    )
+    result = run_script(LIFECYCLE_SCRIPT, 'transition', '--plan-id', 'untouched-ledger-plan', '--completed', '1-init')
     assert result.success, f'Transition failed: {result.stderr}'
     refs = json.loads(refs_path.read_text())
     assert refs.get('modified_files') == ['legacy.py'], (
@@ -303,9 +294,7 @@ def test_transition_never_touches_modified_files_for_any_phase(plan_context):
 
     # Advance to 5-execute, then the 5-execute transition is equally hands-off.
     for completed in ('2-refine', '3-outline', '4-plan'):
-        run_script(
-            LIFECYCLE_SCRIPT, 'transition', '--plan-id', 'untouched-ledger-plan', '--completed', completed
-        )
+        run_script(LIFECYCLE_SCRIPT, 'transition', '--plan-id', 'untouched-ledger-plan', '--completed', completed)
     result = run_script(
         LIFECYCLE_SCRIPT, 'transition', '--plan-id', 'untouched-ledger-plan', '--completed', '5-execute'
     )

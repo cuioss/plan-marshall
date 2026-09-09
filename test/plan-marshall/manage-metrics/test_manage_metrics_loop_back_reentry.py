@@ -79,7 +79,7 @@ def _seed_guarded_plan_dirs(plan_context, monkeypatch):
 def _phase_block(content: str, phase: str) -> str:
     """Return the metrics.toon text block for a single [phase] section."""
     start = content.index(f'[{phase}]')
-    rest = content[start + len(f'[{phase}]'):]
+    rest = content[start + len(f'[{phase}]') :]
     nxt = rest.find('\n[')
     return rest if nxt == -1 else rest[:nxt]
 

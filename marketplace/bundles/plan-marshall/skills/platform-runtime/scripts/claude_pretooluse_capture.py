@@ -25,6 +25,7 @@ Usage (invoked by Claude Code's PreToolUse hook mechanism, not directly):
     echo '{"tool_name": "Bash", "tool_input": {"command": "ls"}}' \\
         | python3 claude_pretooluse_capture.py
 """
+
 from __future__ import annotations
 
 import json
@@ -36,10 +37,10 @@ import pretooluse_gate as gate
 
 # Plan-dir name is configurable via the executor-exported PLAN_DIR_NAME env var,
 # with a fallback for standalone invocation.
-_PLAN_DIR_NAME = os.environ.get("PLAN_DIR_NAME", ".plan")
+_PLAN_DIR_NAME = os.environ.get('PLAN_DIR_NAME', '.plan')
 
 #: Capture file the sampled records are appended to, one JSON object per line.
-_CAPTURE_PATH = Path(_PLAN_DIR_NAME) / "temp" / "pretooluse-payload-samples.jsonl"
+_CAPTURE_PATH = Path(_PLAN_DIR_NAME) / 'temp' / 'pretooluse-payload-samples.jsonl'
 
 
 def _build_record(payload: dict) -> dict:
@@ -57,13 +58,13 @@ def _build_record(payload: dict) -> dict:
         the would-be ``context_gate`` verdict.
     """
     return {
-        "payload": payload,
-        "extracted": {
-            "sub_agent_identity": gate.sub_agent_identity(payload),
-            "cwd": gate.cwd(payload),
-            "tool_name": gate.tool_name(payload),
+        'payload': payload,
+        'extracted': {
+            'sub_agent_identity': gate.sub_agent_identity(payload),
+            'cwd': gate.cwd(payload),
+            'tool_name': gate.tool_name(payload),
         },
-        "would_be_context_verdict": gate.context_gate(payload),
+        'would_be_context_verdict': gate.context_gate(payload),
     }
 
 
@@ -75,8 +76,8 @@ def _append_record(record: dict) -> None:
     """
     try:
         _CAPTURE_PATH.parent.mkdir(parents=True, exist_ok=True)
-        with open(_CAPTURE_PATH, "a", encoding="utf-8") as fh:
-            fh.write(json.dumps(record) + "\n")
+        with open(_CAPTURE_PATH, 'a', encoding='utf-8') as fh:
+            fh.write(json.dumps(record) + '\n')
     except (OSError, TypeError, ValueError):
         # Observe-only: a failed capture append must never surface as a blocked
         # call. Degrade silently.
@@ -97,5 +98,5 @@ def main() -> int:
     return 0
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     sys.exit(main())

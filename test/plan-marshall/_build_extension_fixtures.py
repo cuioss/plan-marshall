@@ -129,9 +129,7 @@ def load_build_extension(skill, module_name):
     Returns:
         The skill's ``BuildExtension`` class.
     """
-    return load_script_module(
-        'plan-marshall', skill, 'extension.py', module_name, register=False
-    ).BuildExtension
+    return load_script_module('plan-marshall', skill, 'extension.py', module_name, register=False).BuildExtension
 
 
 # =============================================================================
@@ -376,9 +374,7 @@ def assert_run_config_key_contract(script_path, build_tool, canonical_args, *, c
 
     # 2. JSON format emits the same four fields (distinct CLI invocation — the
     #    ``--format json`` surface is not covered by the TOON spawns above).
-    result = run_script(
-        script_path, 'run-config-key', '--command-args', representative_args, '--format', 'json'
-    )
+    result = run_script(script_path, 'run-config-key', '--command-args', representative_args, '--format', 'json')
     assert result.success, f'Script failed: {result.stderr}'
     data = result.json()
     assert data['status'] == 'success'

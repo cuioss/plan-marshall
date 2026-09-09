@@ -106,9 +106,7 @@ class TestCandidateAttribution:
         such candidate under "produced no candidate" while it plainly produced
         one — the same mis-attribution the coverage fact exists to expose.
         """
-        detected: dict[str, list] = {
-            'source_of_truth': [{'name': 'X', 'files': 'a.py; b.py'}]
-        }
+        detected: dict[str, list] = {'source_of_truth': [{'name': 'X', 'files': 'a.py; b.py'}]}
 
         files, unattributed = _candidate_files(detected)
 
@@ -212,8 +210,7 @@ class TestPerClassCountsNotABoolean:
             for key in ('files', 'files_with_candidates', 'files_without_candidates'):
                 value = row[key]
                 assert isinstance(value, int) and not isinstance(value, bool), (
-                    f'{row["content_class"]}.{key} is {value!r} — the fact must '
-                    'publish per-class counts, not a boolean'
+                    f'{row["content_class"]}.{key} is {value!r} — the fact must publish per-class counts, not a boolean'
                 )
 
     def test_the_class_partition_is_total_over_the_scope(self):
@@ -225,16 +222,11 @@ class TestPerClassCountsNotABoolean:
 
     def test_each_class_splits_its_own_files_exactly(self):
         for row in _observing_round()['by_class']:
-            assert (
-                row['files_with_candidates'] + row['files_without_candidates']
-                == row['files']
-            )
+            assert row['files_with_candidates'] + row['files_without_candidates'] == row['files']
 
     def test_a_mixed_round_reports_the_split_per_class(self):
         """The per-class figures discriminate, rather than tracking the total."""
-        coverage = _compute_delta_coverage(
-            _SCOPE, {'regexes': [{'file': 'pkg/mod.py', 'line': 1}]}
-        )
+        coverage = _compute_delta_coverage(_SCOPE, {'regexes': [{'file': 'pkg/mod.py', 'line': 1}]})
         by_class = {row['content_class']: row for row in coverage['by_class']}
 
         assert by_class['python']['files_with_candidates'] == 1
@@ -250,9 +242,7 @@ class TestEmptyScope:
         assert coverage['files_in_scope'] == 0
         assert coverage['classes_present'] == 0
         assert 'absence of a search' in coverage['statement']
-        assert [row['content_class'] for row in coverage['by_class']] == list(
-            CONTENT_CLASSES
-        )
+        assert [row['content_class'] for row in coverage['by_class']] == list(CONTENT_CLASSES)
 
 
 # =============================================================================
@@ -305,9 +295,7 @@ class TestSurfaceEmitsTheFact:
         while the round the defect afflicts still published nothing.
         """
         repo = _fixture_repo(tmp_path)
-        script = get_script_path(
-            'pm-plugin-development', 'ext-self-review-plan-marshall', 'self_review.py'
-        )
+        script = get_script_path('pm-plugin-development', 'ext-self-review-plan-marshall', 'self_review.py')
 
         result = run_script(
             script,
@@ -323,8 +311,7 @@ class TestSurfaceEmitsTheFact:
         assert result.success, f'surface failed: stderr={result.stderr}'
         assert 'delta_coverage:' in result.stdout
         expected_header = (
-            f'by_class[{len(CONTENT_CLASSES)}]'
-            '{content_class,files,files_with_candidates,files_without_candidates}:'
+            f'by_class[{len(CONTENT_CLASSES)}]{{content_class,files,files_with_candidates,files_without_candidates}}:'
         )
         assert expected_header in result.stdout, (
             f'emitted surface does not carry one per-class row per declared '

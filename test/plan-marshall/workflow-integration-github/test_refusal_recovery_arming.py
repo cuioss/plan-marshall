@@ -202,9 +202,7 @@ def _bots_declaring_no_wording() -> list[str]:
 #: sweep tests only each bot's FIRST wording — Sourcery declares two, and the
 #: second (its weekly quota notice) went unswept entirely under a per-bot loop.
 _DECLARED_WORDING_PAIRS: list[tuple[str, str]] = [
-    (bot_kind, pattern)
-    for bot_kind in bot_registry.bot_kinds()
-    for pattern in bot_registry.refusal_patterns(bot_kind)
+    (bot_kind, pattern) for bot_kind in bot_registry.bot_kinds() for pattern in bot_registry.refusal_patterns(bot_kind)
 ]
 
 #: PUBLISHED population size. A parametrized sweep over an empty population yields
@@ -301,9 +299,7 @@ class TestNonCodeRabbitRefusalIsDetected:
         refuser, *others = bots
         comments = [_comment(refuser, _refusal_body(refuser), '2026-01-09T00:00:00Z')]
         for other in others:
-            comments.append(
-                _comment(other, 'Actionable comment: guard the array bound.', '2026-01-02T00:00:00Z')
-            )
+            comments.append(_comment(other, 'Actionable comment: guard the array bound.', '2026-01-02T00:00:00Z'))
 
         detected = _detect_rate_limited_bots(comments)
 
@@ -312,8 +308,7 @@ class TestNonCodeRabbitRefusalIsDetected:
     def test_a_healthy_review_from_every_bot_detects_nothing(self):
         """Precision guard: a real review is never reported as a refusal."""
         comments = [
-            _comment(bot, 'Reviewed the diff. One issue: the retry cap can be zero.')
-            for bot in _registered_bots()
+            _comment(bot, 'Reviewed the diff. One issue: the retry cap can be zero.') for bot in _registered_bots()
         ]
 
         assert _detect_rate_limited_bots(comments) == []
@@ -438,8 +433,7 @@ class TestTheDeclaredWordingSweep:
         registry instead of an implicit one.
         """
         assert _DECLARED_WORDING_PAIRS, (
-            'no registered bot declares any refusal_patterns — the declared-wording '
-            'sweep below would be vacuous'
+            'no registered bot declares any refusal_patterns — the declared-wording sweep below would be vacuous'
         )
         assert _DECLARED_WORDING_POPULATION_SIZE == len(_DECLARED_WORDING_PAIRS)
         # Every pair belongs to a registered bot — the population cannot drift onto
@@ -527,9 +521,7 @@ class TestTheDeclaredWordingSweep:
         """
         uncovered = _bots_declaring_no_wording()
         # Published: how many registered bots contribute NOTHING to the sweep above.
-        assert len(uncovered) == len(_registered_bots()) - len(
-            {bot for bot, _ in _DECLARED_WORDING_PAIRS}
-        )
+        assert len(uncovered) == len(_registered_bots()) - len({bot for bot, _ in _DECLARED_WORDING_PAIRS})
 
         for bot in uncovered:
             assert bot_registry.refusal_patterns(bot) == []
@@ -628,10 +620,7 @@ class TestTriggerSemanticsIsDeclaredByEveryBot:
 
     def test_an_unregistered_bot_fails_closed_to_requires_explicit_trigger(self):
         """The safe direction: never assume a bot reviews on push."""
-        assert (
-            bot_registry.trigger_semantics('no-such-bot')
-            == bot_registry.TRIGGER_SEMANTICS_REQUIRES_EXPLICIT_TRIGGER
-        )
+        assert bot_registry.trigger_semantics('no-such-bot') == bot_registry.TRIGGER_SEMANTICS_REQUIRES_EXPLICIT_TRIGGER
 
     def test_a_value_outside_the_closed_set_fails_closed(self, monkeypatch):
         """A malformed doc edit degrades safely rather than propagating a bad value."""
@@ -640,10 +629,7 @@ class TestTriggerSemanticsIsDeclaredByEveryBot:
         record['trigger_semantics'] = 'sometimes_maybe'
         monkeypatch.setitem(bot_registry.REGISTRY._by_kind, bot, record)
 
-        assert (
-            bot_registry.trigger_semantics(bot)
-            == bot_registry.TRIGGER_SEMANTICS_REQUIRES_EXPLICIT_TRIGGER
-        )
+        assert bot_registry.trigger_semantics(bot) == bot_registry.TRIGGER_SEMANTICS_REQUIRES_EXPLICIT_TRIGGER
 
 
 class TestTheCauseAxisDominatesTheClassAxis:
@@ -658,15 +644,11 @@ class TestTheCauseAxisDominatesTheClassAxis:
 
     @staticmethod
     def _awaitable_bots() -> list[str]:
-        bots = [
-            b for b in _registered_bots() if bot_registry.rate_limit_class(b) == 'awaitable_window'
-        ]
+        bots = [b for b in _registered_bots() if bot_registry.rate_limit_class(b) == 'awaitable_window']
         assert bots, 'registry must declare an awaitable_window bot for this to discriminate'
         return bots
 
-    def test_a_size_refusal_from_an_awaitable_bot_reports_cause_size_and_its_cap(
-        self, monkeypatch
-    ):
+    def test_a_size_refusal_from_an_awaitable_bot_reports_cause_size_and_its_cap(self, monkeypatch):
         """The producer record carries the cause and the ceiling the notice stated."""
         for bot in self._awaitable_bots():
             body = _declare_size_refusal(monkeypatch, bot)
@@ -697,10 +679,7 @@ class TestTheCauseAxisDominatesTheClassAxis:
             assert _action(bot, cause) == github_re_review.RECOVERY_ACTION_ESCALATE_STRUCTURAL
             assert _action(bot, cause) != github_re_review.RECOVERY_ACTION_AWAIT_WINDOW
             # Matched negative control: same bot, same declared class, quota cause.
-            assert (
-                _action(bot, _github_pr.REFUSAL_CAUSE_QUOTA)
-                == github_re_review.RECOVERY_ACTION_AWAIT_WINDOW
-            )
+            assert _action(bot, _github_pr.REFUSAL_CAUSE_QUOTA) == github_re_review.RECOVERY_ACTION_AWAIT_WINDOW
 
     def test_a_hard_quota_bots_size_refusal_escalates_for_the_size_ceiling(self, monkeypatch):
         """Its reason is ``size_ceiling``, never ``class_not_awaitable``.
@@ -873,18 +852,13 @@ class TestTheRecoveryActionSelectorDerivesItsVerdict:
         window arm for anyone, which is a different (and equally broken) code.
         """
         for bot in _bots_of_class('awaitable_window'):
-            assert (
-                _action(bot, window_expired=False)
-                == github_re_review.RECOVERY_ACTION_AWAIT_WINDOW
-            )
+            assert _action(bot, window_expired=False) == github_re_review.RECOVERY_ACTION_AWAIT_WINDOW
             assert _action(bot, window_expired=True) in (
                 github_re_review.RECOVERY_ACTION_CLOSE_AND_REOPEN,
                 github_re_review.RECOVERY_ACTION_GENERATE_TRIGGER,
             )
 
-    def test_close_and_reopen_needs_an_elapsed_window_on_an_explicit_trigger_bot(
-        self, monkeypatch
-    ):
+    def test_close_and_reopen_needs_an_elapsed_window_on_an_explicit_trigger_bot(self, monkeypatch):
         """Re-DELIVERING a dropped request is worth nothing before the claim is up.
 
         Close-and-reopen buys back no quota — the limit is ACCOUNT-scoped and no
@@ -895,28 +869,15 @@ class TestTheRecoveryActionSelectorDerivesItsVerdict:
         rather than being the fixed answer for an elapsed window.
         """
         for bot in _bots_of_class('awaitable_window'):
-            _set_trigger_semantics(
-                monkeypatch, bot, bot_registry.TRIGGER_SEMANTICS_REQUIRES_EXPLICIT_TRIGGER
-            )
-            assert (
-                _action(bot, window_expired=True)
-                == github_re_review.RECOVERY_ACTION_CLOSE_AND_REOPEN
-            )
+            _set_trigger_semantics(monkeypatch, bot, bot_registry.TRIGGER_SEMANTICS_REQUIRES_EXPLICIT_TRIGGER)
+            assert _action(bot, window_expired=True) == github_re_review.RECOVERY_ACTION_CLOSE_AND_REOPEN
             # Same bot, same semantics, claim still running: no close-and-reopen.
-            assert (
-                _action(bot, window_expired=False)
-                == github_re_review.RECOVERY_ACTION_AWAIT_WINDOW
-            )
+            assert _action(bot, window_expired=False) == github_re_review.RECOVERY_ACTION_AWAIT_WINDOW
 
             _set_trigger_semantics(monkeypatch, bot, bot_registry.TRIGGER_SEMANTICS_AUTO_ON_PUSH)
-            assert (
-                _action(bot, window_expired=True)
-                == github_re_review.RECOVERY_ACTION_GENERATE_TRIGGER
-            )
+            assert _action(bot, window_expired=True) == github_re_review.RECOVERY_ACTION_GENERATE_TRIGGER
 
-    def test_the_elapsed_arm_is_named_for_the_claim_clock_not_the_bots_readiness(
-        self, monkeypatch
-    ):
+    def test_the_elapsed_arm_is_named_for_the_claim_clock_not_the_bots_readiness(self, monkeypatch):
         """⛔ ``claim_window_elapsed`` — what elapsed is the CLAIM, not the bot's window.
 
         A stated ETA is an estimate and the real window slides, so a reason
@@ -927,9 +888,7 @@ class TestTheRecoveryActionSelectorDerivesItsVerdict:
         readiness if it does not vary with the bot's trigger semantics.
         """
         for bot in _bots_of_class('awaitable_window'):
-            _set_trigger_semantics(
-                monkeypatch, bot, bot_registry.TRIGGER_SEMANTICS_REQUIRES_EXPLICIT_TRIGGER
-            )
+            _set_trigger_semantics(monkeypatch, bot, bot_registry.TRIGGER_SEMANTICS_REQUIRES_EXPLICIT_TRIGGER)
             explicit = _verdict(bot, window_expired=True)
 
             _set_trigger_semantics(monkeypatch, bot, bot_registry.TRIGGER_SEMANTICS_AUTO_ON_PUSH)
@@ -1047,9 +1006,7 @@ class TestTheEtaExtractorCannotRaise:
 
     def test_a_declared_group_that_captured_nothing_yields_no_eta(self, monkeypatch):
         """The crash case: the first branch matches, the group is in the second."""
-        monkeypatch.setattr(
-            bot_registry, 'rate_limit_eta_patterns', lambda _kind: [r'limit reached|(ZZZ)']
-        )
+        monkeypatch.setattr(bot_registry, 'rate_limit_eta_patterns', lambda _kind: [r'limit reached|(ZZZ)'])
 
         for bot in _registered_bots():
             # The assertion is that this RETURNS at all — pre-fix it raised.
@@ -1074,18 +1031,14 @@ class TestTheEtaExtractorCannotRaise:
 
     def test_the_matched_control_a_capturing_pattern_still_yields_its_figure(self, monkeypatch):
         """Matched positive control: the fix did not simply disable extraction."""
-        monkeypatch.setattr(
-            bot_registry, 'rate_limit_eta_patterns', lambda _kind: [r'in ([0-9]+ minutes)']
-        )
+        monkeypatch.setattr(bot_registry, 'rate_limit_eta_patterns', lambda _kind: [r'in ([0-9]+ minutes)'])
 
         for bot in _registered_bots():
             assert _extract_rate_limit_eta(self._BODY, bot) == '18 minutes'
 
     def test_a_group_less_pattern_still_returns_the_whole_match(self, monkeypatch):
         """The no-group convention is preserved — group(0) remains the answer there."""
-        monkeypatch.setattr(
-            bot_registry, 'rate_limit_eta_patterns', lambda _kind: [r'[0-9]+ minutes']
-        )
+        monkeypatch.setattr(bot_registry, 'rate_limit_eta_patterns', lambda _kind: [r'[0-9]+ minutes'])
 
         for bot in _registered_bots():
             assert _extract_rate_limit_eta(self._BODY, bot) == '18 minutes'
@@ -1107,9 +1060,7 @@ class TestRefusalIsNeverABareTimeout:
         and the refusal vanished, so the caller could not tell a bot that
         explicitly declined from one that simply never responded.
         """
-        record = github_re_review._ReReviewStrategy._refusal_record(
-            _refusal_body(bot_kind), bot_kind, 'issue_comment'
-        )
+        record = github_re_review._ReReviewStrategy._refusal_record(_refusal_body(bot_kind), bot_kind, 'issue_comment')
 
         assert record is not None, f'{bot_kind} refusal must be recorded'
         assert record['bot_kind'] == bot_kind
@@ -1134,9 +1085,7 @@ class TestRefusalIsNeverABareTimeout:
         if not bot_registry.refusal_patterns(bot_kind):
             pytest.skip(f'{bot_kind} declares no observed refusal phrasing')
 
-        record = github_re_review._ReReviewStrategy._refusal_record(
-            _refusal_body(bot_kind), bot_kind, 'issue_comment'
-        )
+        record = github_re_review._ReReviewStrategy._refusal_record(_refusal_body(bot_kind), bot_kind, 'issue_comment')
 
         assert record['layer'] == _github_pr.REFUSAL_LAYER_REGISTRY
 
@@ -1158,22 +1107,14 @@ class TestTheEnumerativeArmOnTheReReviewPath:
         ``None``. Asserted at the shipped value rather than a patched one, so this
         pins what actually ships.
         """
-        assert (
-            github_re_review._is_unrecognised_refusal.__globals__['UNRECOGNISED_REFUSAL_MAX_CHARS']
-            is None
-        )
+        assert github_re_review._is_unrecognised_refusal.__globals__['UNRECOGNISED_REFUSAL_MAX_CHARS'] is None
         for bot in _registered_bots():
             assert (
-                github_re_review._ReReviewStrategy._refusal_record(
-                    'Skipping this one.', bot, 'issue_comment'
-                )
-                is None
+                github_re_review._ReReviewStrategy._refusal_record('Skipping this one.', bot, 'issue_comment') is None
             )
 
     @pytest.mark.parametrize('bot_kind', _registered_bots())
-    def test_an_unrecognised_refusal_is_recorded_under_the_enumerative_arm(
-        self, bot_kind, monkeypatch
-    ):
+    def test_an_unrecognised_refusal_is_recorded_under_the_enumerative_arm(self, bot_kind, monkeypatch):
         """With a threshold available the reworded refusal is recorded, not returned None.
 
         The body reaches no earlier arm — asserted — so the record can only come from
@@ -1192,9 +1133,7 @@ class TestTheEnumerativeArmOnTheReReviewPath:
         assert record['bot_kind'] == bot_kind
 
     @pytest.mark.parametrize('bot_kind', _registered_bots())
-    def test_an_unrecognised_refusal_is_still_a_refusal_and_states_no_eta(
-        self, bot_kind, monkeypatch
-    ):
+    def test_an_unrecognised_refusal_is_still_a_refusal_and_states_no_eta(self, bot_kind, monkeypatch):
         """It arms A recovery rather than vanishing into a timeout — and claims no ETA.
 
         What the enumerative arm supports is deliberately narrow: the body was not
@@ -1204,9 +1143,7 @@ class TestTheEnumerativeArmOnTheReReviewPath:
         ``_resolve_refusal_class`` and pinned below rather than here.
         """
         _arm_enumerative(monkeypatch)
-        record = github_re_review._ReReviewStrategy._refusal_record(
-            'Skipping this one.', bot_kind, 'issue_comment'
-        )
+        record = github_re_review._ReReviewStrategy._refusal_record('Skipping this one.', bot_kind, 'issue_comment')
 
         assert record is not None
         # It is a refusal, so it arms a recovery rather than vanishing into a timeout.
@@ -1219,9 +1156,7 @@ class TestTheEnumerativeArmOnTheReReviewPath:
         assert record['eta'] == ''
 
     @pytest.mark.parametrize('bot_kind', _registered_bots())
-    def test_a_genuine_short_review_with_an_anchor_is_still_not_a_refusal(
-        self, bot_kind, monkeypatch
-    ):
+    def test_a_genuine_short_review_with_an_anchor_is_still_not_a_refusal(self, bot_kind, monkeypatch):
         """Matched negative control: the arm does not swallow a real short review.
 
         Same bot, same length class, same armed threshold — the only difference is a
@@ -1302,19 +1237,14 @@ class TestUnreadRefusalNeverReportsAnAwaitableClass:
         a different, wrong answer. The control is the SAME bot with a refusal an
         earlier arm DID read, which must still report the declared class.
         """
-        awaitable = [
-            b for b in _registered_bots() if bot_registry.rate_limit_class(b) == 'awaitable_window'
-        ]
+        awaitable = [b for b in _registered_bots() if bot_registry.rate_limit_class(b) == 'awaitable_window']
         assert awaitable, 'registry must declare an awaitable_window bot for this to discriminate'
 
         for bot in awaitable:
             # Unread notice: the declared awaitability is NOT asserted.
             assert github_re_review._resolve_refusal_class(bot, [self._enumerative(bot)]) == 'unknown'
             # Matched negative control — same bot, a notice the registry arm READ.
-            assert (
-                github_re_review._resolve_refusal_class(bot, [self._registry(bot)])
-                == 'awaitable_window'
-            )
+            assert github_re_review._resolve_refusal_class(bot, [self._registry(bot)]) == 'awaitable_window'
 
     def test_a_mixed_set_matches_the_completeness_sites_quantifier(self):
         """The parity case: one readable refusal alongside an unreadable one.

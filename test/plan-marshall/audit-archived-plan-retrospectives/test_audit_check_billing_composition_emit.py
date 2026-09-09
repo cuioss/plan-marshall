@@ -19,9 +19,7 @@ from _audit_fixtures import (
 class TestBillingCompositionByteShares:
     """The four byte shares are taken over ALL buckets, residual included."""
 
-    def test_byte_shares_use_the_whole_observed_payload_population(
-        self, tmp_path: Path
-    ):
+    def test_byte_shares_use_the_whole_observed_payload_population(self, tmp_path: Path):
         inputs = _write_billing_plan(
             tmp_path,
             'bytes',
@@ -78,15 +76,10 @@ class TestBillingCompositionByteShares:
 class TestBillingCompositionAbsentIsNotZero:
     """A plan that measured neither family is excluded, never admitted at zero."""
 
-    def test_plan_measuring_neither_family_is_excluded_and_named(
-        self, tmp_path: Path
-    ):
+    def test_plan_measuring_neither_family_is_excluded_and_named(self, tmp_path: Path):
         # A metrics.toon carrying only durations — no four-field view, no byte
         # counters — measured nothing this check can read.
-        body = ''.join(
-            _phase_block(phase, total_tokens=100, duration_seconds=5)
-            for phase in audit._TE_PHASES
-        )
+        body = ''.join(_phase_block(phase, total_tokens=100, duration_seconds=5) for phase in audit._TE_PHASES)
         inputs = _write_billing_plan(tmp_path, 'unmeasured', body)
 
         result = audit.cross_billing_composition([inputs])
@@ -151,10 +144,7 @@ class TestBillingCompositionEmit:
         assert 'unabsorbed_loop_back_plans: 1' in block
         assert 'omitted_row_plans: 0' in block
         assert 'genuine_signal_count: 1' in block
-        assert (
-            'figures[8]{figure,unit,value,population,floor_population,label}:'
-            in block
-        )
+        assert 'figures[8]{figure,unit,value,population,floor_population,label}:' in block
         assert (
             'rows[1]{plan_id,billing_total,cache_read_share,cache_creation_share,'
             'output_share,exploration_byte_share,work_byte_share,'
@@ -165,16 +155,12 @@ class TestBillingCompositionEmit:
         # The two unreadable-marker tallies ride the block header, counted apart.
         assert 'old_schema_marker_plans: 0' in block
         assert 'pre_812_marker_plans: 0' in block
-        genuine_row = next(
-            ln.strip() for ln in block.splitlines() if ln.strip().startswith('emit,')
-        )
+        genuine_row = next(ln.strip() for ln in block.splitlines() if ln.strip().startswith('emit,'))
         assert genuine_row.endswith(',genuine')
         # The schema cell renders the readable state for this clean fixture.
         assert f',{audit.METRICS_SCHEMA_CURRENT},' in genuine_row
 
-    def test_block_states_the_reconciliation_and_exclusion_rules(
-        self, tmp_path: Path
-    ):
+    def test_block_states_the_reconciliation_and_exclusion_rules(self, tmp_path: Path):
         # The rules ride the block so a reader can never mistake the
         # reconciliation for a sum, or an excluded plan for a zero share.
         result = audit.cross_billing_composition([])
@@ -200,13 +186,9 @@ class TestBillingCompositionEmit:
                 cache_creation_input_tokens=8_000,
             ),
         )
-        no_ship = _write_shipping_plan(
-            tmp_path, 'no-ship', archived_reason='closed_superseded'
-        )
+        no_ship = _write_shipping_plan(tmp_path, 'no-ship', archived_reason='closed_superseded')
 
-        output = audit.run_checks(
-            [shipping, no_ship], ['billing-composition'], tmp_path
-        )
+        output = audit.run_checks([shipping, no_ship], ['billing-composition'], tmp_path)
 
         assert 'plans_excluded_non_shipping: 1' in output
         assert 'excluded_non_shipping_plan_ids: no-ship:closed_superseded' in output

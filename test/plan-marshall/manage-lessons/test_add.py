@@ -9,7 +9,6 @@ Covers:
 * ``status=active`` frontmatter seeding on add (TestStatusFrontmatterOnAdd)
 """
 
-
 import json
 from argparse import Namespace
 from pathlib import Path

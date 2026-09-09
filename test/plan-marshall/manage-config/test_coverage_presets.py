@@ -13,7 +13,6 @@ dependency, so these tests need no ``plan_context`` fixture — they exercise
 the in-memory table directly.
 """
 
-
 import pytest
 
 from conftest import load_script_module

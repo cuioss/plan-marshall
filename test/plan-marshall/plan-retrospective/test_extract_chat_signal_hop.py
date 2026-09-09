@@ -21,25 +21,25 @@ from _extract_chat_signal_fixtures import SESSION_ID, _mod
 # ``runtime_base.toon_success`` + ``serialize_toon`` render it (flat fields,
 # lowercase booleans). This is the real wire format the hop must parse.
 _TOON_SUCCESS = (
-    "status: success\n"
-    "operation: chat extract-signal\n"
-    f"session_id: {SESSION_ID}\n"
-    "transcript_path: /transcripts/project/session.jsonl\n"
-    "reduced_transcript: user: please revert that change\n"
-    "raw_turn_count: 25\n"
-    "kept_raw_count: 7\n"
-    "operator_turn_count: 3\n"
-    "gate_decision_count: 2\n"
-    "reduced_bytes: 4096\n"
-    "no_signal: false\n"
+    'status: success\n'
+    'operation: chat extract-signal\n'
+    f'session_id: {SESSION_ID}\n'
+    'transcript_path: /transcripts/project/session.jsonl\n'
+    'reduced_transcript: user: please revert that change\n'
+    'raw_turn_count: 25\n'
+    'kept_raw_count: 7\n'
+    'operator_turn_count: 3\n'
+    'gate_decision_count: 2\n'
+    'reduced_bytes: 4096\n'
+    'no_signal: false\n'
 )
 
 _TOON_NOOP = (
-    "status: no-op\n"
-    "operation: chat extract-signal\n"
-    "reason: transcript_not_found\n"
-    "alternative: run on a target that exposes a session transcript, or record "
-    "the session with session capture first\n"
+    'status: no-op\n'
+    'operation: chat extract-signal\n'
+    'reason: transcript_not_found\n'
+    'alternative: run on a target that exposes a session transcript, or record '
+    'the session with session capture first\n'
 )
 
 

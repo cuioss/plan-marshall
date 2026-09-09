@@ -250,9 +250,12 @@ def test_sync_opencode_bundles_flag_preserves_unselected_bundle_entries(tmp_path
     _write(dest / 'skills' / 'plan-marshall-gone' / 'SKILL.md', '# gone\n')
 
     result = _run(
-        '--source', str(source),
-        '--target-dir', str(dest),
-        '--bundles', 'plan-marshall',
+        '--source',
+        str(source),
+        '--target-dir',
+        str(dest),
+        '--bundles',
+        'plan-marshall',
     )
     assert result.returncode == 0, result.stderr
     # Selected bundle's stale entry pruned.
@@ -273,11 +276,9 @@ def _find_prefix_ambiguous_pair(bundles_dir: Path) -> tuple[str, str] | None:
     is a prefix of the other.  Returns the shorter / longer pair or ``None``
     when no ambiguous pair exists.
     """
-    names = sorted(
-        p.name for p in bundles_dir.iterdir() if p.is_dir()
-    )
+    names = sorted(p.name for p in bundles_dir.iterdir() if p.is_dir())
     for i, shorter in enumerate(names):
-        for longer in names[i + 1:]:
+        for longer in names[i + 1 :]:
             if longer.startswith(f'{shorter}-'):
                 return shorter, longer
     return None

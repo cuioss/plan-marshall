@@ -34,9 +34,7 @@ def claude_project(tmp_path, monkeypatch):
     """
     plan_dir = tmp_path / '.plan'
     plan_dir.mkdir(parents=True, exist_ok=True)
-    (plan_dir / 'marshal.json').write_text(
-        json.dumps({'runtime': {'target': 'claude'}}), encoding='utf-8'
-    )
+    (plan_dir / 'marshal.json').write_text(json.dumps({'runtime': {'target': 'claude'}}), encoding='utf-8')
     monkeypatch.chdir(tmp_path)
     return tmp_path
 
@@ -52,9 +50,7 @@ def _deny_list(project_root: Path) -> list[str]:
 class TestEnsureDeniedCLI:
     """Tests for the ensure-denied subcommand."""
 
-    def test_ensure_denied_writes_rules_for_the_credentials_dir(
-        self, claude_project, capsys
-    ) -> None:
+    def test_ensure_denied_writes_rules_for_the_credentials_dir(self, claude_project, capsys) -> None:
         import _cred_ensure_denied
 
         assert _cred_ensure_denied.run_ensure_denied(Namespace(target='project')) == 0
@@ -102,9 +98,7 @@ class TestEnsureDeniedCLI:
         # unchanged by the re-run — unlike an added/existing split, which moves.
         assert f'protection_rules_total: {len(first)}' in reported
 
-    def test_protection_total_counts_the_protection_not_the_deny_list(
-        self, claude_project, capsys
-    ) -> None:
+    def test_protection_total_counts_the_protection_not_the_deny_list(self, claude_project, capsys) -> None:
         """`protection_rules_total` is the protection's denominator, not the file's.
 
         An unrelated deny entry is seeded first, which is what makes the two
@@ -128,9 +122,7 @@ class TestEnsureDeniedCLI:
         assert f'protection_rules_total: {len(deny) - 1}' in reported
         assert f'rules_added: {len(deny) - 1}' in reported
 
-    def test_ensure_denied_reports_a_declining_target_as_no_op(
-        self, claude_project, monkeypatch, capsys
-    ) -> None:
+    def test_ensure_denied_reports_a_declining_target_as_no_op(self, claude_project, monkeypatch, capsys) -> None:
         """A target with no permission backend declines, and that is reported.
 
         Never as success: a fabricated effect count would tell an operator their
@@ -139,9 +131,7 @@ class TestEnsureDeniedCLI:
         import _cred_ensure_denied
 
         plan_dir = claude_project / '.plan'
-        (plan_dir / 'marshal.json').write_text(
-            json.dumps({'runtime': {'target': 'opencode'}}), encoding='utf-8'
-        )
+        (plan_dir / 'marshal.json').write_text(json.dumps({'runtime': {'target': 'opencode'}}), encoding='utf-8')
         # The memoised target read is per-process; drive the router directly.
         monkeypatch.setattr(_cred_ensure_denied, '_read_runtime_target', lambda: 'opencode')
 
@@ -152,9 +142,7 @@ class TestEnsureDeniedCLI:
         assert 'rules_added' not in reported
         assert _deny_list(claude_project) == []
 
-    def test_ensure_denied_reports_an_unresolvable_runtime_as_error(
-        self, claude_project, monkeypatch, capsys
-    ) -> None:
+    def test_ensure_denied_reports_an_unresolvable_runtime_as_error(self, claude_project, monkeypatch, capsys) -> None:
         """No runtime is an error, not a silent success."""
         import _cred_ensure_denied
 
@@ -163,7 +151,6 @@ class TestEnsureDeniedCLI:
 
         reported = capsys.readouterr().out
         assert 'status: error' in reported
-
 
     def test_an_unenforceable_directory_mode_does_not_cost_the_deny_rules(
         self, claude_project, monkeypatch, capsys
@@ -195,10 +182,7 @@ class TestEnsureDeniedCLI:
         assert 'status: success' in captured.out
         assert _deny_list(claude_project)
 
-
-    def test_the_runtimes_own_error_code_reaches_the_operator(
-        self, claude_project, monkeypatch, capsys
-    ) -> None:
+    def test_the_runtimes_own_error_code_reaches_the_operator(self, claude_project, monkeypatch, capsys) -> None:
         """A runtime error is forwarded by CODE, not flattened to a generic one.
 
         A caller branching on `error` needs the code the runtime produced —
@@ -211,12 +195,7 @@ class TestEnsureDeniedCLI:
 
         class _FailingRuntime:
             def permission_fix(self, *_args, **_kwargs):
-                return (
-                    'operation: permission fix\n'
-                    'status: error\n'
-                    'error: io_error\n'
-                    'message: Failed to write settings\n'
-                )
+                return 'operation: permission fix\nstatus: error\nerror: io_error\nmessage: Failed to write settings\n'
 
         monkeypatch.setattr(_cred_ensure_denied, '_resolve_runtime', _FailingRuntime)
         assert _cred_ensure_denied.run_ensure_denied(Namespace(target='project')) == 0
@@ -226,9 +205,7 @@ class TestEnsureDeniedCLI:
         # The specific code, not the `protect_path_failed` fallback.
         assert 'error: io_error' in reported
 
-    def test_the_reported_target_is_the_one_the_caller_asked_for(
-        self, claude_project, monkeypatch, capsys
-    ) -> None:
+    def test_the_reported_target_is_the_one_the_caller_asked_for(self, claude_project, monkeypatch, capsys) -> None:
         """`target` echoes the argument rather than a constant.
 
         Every other test in this module passes `project`, which is also the
@@ -241,9 +218,7 @@ class TestEnsureDeniedCLI:
 
         assert 'target: global' in capsys.readouterr().out
 
-    def test_a_loose_directory_mode_is_tightened_back_to_0700(
-        self, claude_project, capsys
-    ) -> None:
+    def test_a_loose_directory_mode_is_tightened_back_to_0700(self, claude_project, capsys) -> None:
         """The primary boundary is re-asserted, and says so.
 
         The deny rules are defence in depth; this mode is the boundary they back
@@ -265,9 +240,9 @@ class TestEnsureDeniedRendersNoGrammar:
     """The module states intent; it must not build or receive permission strings."""
 
     def test_module_source_constructs_no_permission_dsl(self) -> None:
-        source = get_script_path(
-            'plan-marshall', 'manage-providers', '_cred_ensure_denied.py'
-        ).read_text(encoding='utf-8')
+        source = get_script_path('plan-marshall', 'manage-providers', '_cred_ensure_denied.py').read_text(
+            encoding='utf-8'
+        )
 
         assert 'Read(' not in source
         assert 'Bash(' not in source

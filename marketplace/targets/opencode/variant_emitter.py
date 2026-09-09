@@ -99,11 +99,7 @@ def selected_levels(fm: dict[str, str]) -> list[str]:
     if not raw:
         return list(LEVEL_TABLE.keys())
     normalized = raw.strip().lstrip('[').rstrip(']')
-    listed = {
-        token.strip().strip('\'"')
-        for token in normalized.split(',')
-        if token.strip()
-    }
+    listed = {token.strip().strip('\'"') for token in normalized.split(',') if token.strip()}
     return [level for level in LEVEL_TABLE if level in listed]
 
 
@@ -237,9 +233,7 @@ def emit_agent_variants(
                     )
                 )
                 continue
-        block = render_variant_frontmatter(
-            fm, level, mapping, rules, source_label=source_label
-        )
+        block = render_variant_frontmatter(fm, level, mapping, rules, source_label=source_label)
         variant_path = agent_dir / f'{base_id}-{level}.md'
         variant_path.write_text(block + '\n\n' + transformed_body, encoding='utf-8')
         emitted.append(level)

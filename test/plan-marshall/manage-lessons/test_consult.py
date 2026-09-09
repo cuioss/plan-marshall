@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the ``consult`` subcommand of manage-lessons.py."""
 
-
 from _consult_fixtures import (
     OUTLINE_COMPONENT,
     OUTLINE_LESSON_IDS,

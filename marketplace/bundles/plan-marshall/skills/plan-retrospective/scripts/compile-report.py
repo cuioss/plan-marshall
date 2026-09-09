@@ -702,9 +702,7 @@ def _exec_summary_is_drop(exec_fragment: Any) -> bool:
         # same answer the payload clause gave — stated directly rather than
         # routed through a call whose dict-only contract would be re-read here.
         return False
-    return _fragment_has_payload(
-        {key: value for key, value in exec_fragment.items() if key != 'summary'}
-    )
+    return _fragment_has_payload({key: value for key, value in exec_fragment.items() if key != 'summary'})
 
 
 def _heading_from_aspect_key(aspect_key: str) -> str:
@@ -980,9 +978,7 @@ def _compose_time_producer_verdict(plan_dir: Path) -> str:
     return PRODUCER_DEGRADED if COMPOSE_TIME_DEGRADED_TOKEN in text else PRODUCER_RESOLVED
 
 
-def footprint_derivation_record(
-    fragments: dict[str, Any], plan_dir: Path
-) -> dict[str, Any] | None:
+def footprint_derivation_record(fragments: dict[str, Any], plan_dir: Path) -> dict[str, Any] | None:
     """Return the ONE plan-level footprint-derivation record, or ``None``.
 
     Every producer keeps its own honest report unchanged; this says once, with
@@ -1086,9 +1082,7 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     if derivation_record is not None:
         fragments[FOOTPRINT_AGGREGATE_KEY] = derivation_record
 
-    content, written, omitted, dropped = build_document(
-        plan_id, args.mode, plan_dir, args.session_id, fragments
-    )
+    content, written, omitted, dropped = build_document(plan_id, args.mode, plan_dir, args.session_id, fragments)
 
     output_path = resolve_output_path(args.mode, plan_dir)
     output_path.write_text(content, encoding='utf-8')
@@ -1126,14 +1120,10 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
         # The plan-level footprint-derivation aggregate's state, or ``None`` when
         # no record was derived. Published so a caller can branch on the signal
         # without re-parsing the rendered document.
-        'footprint_derivation_state': (
-            derivation_record['state'] if derivation_record is not None else None
-        ),
+        'footprint_derivation_state': (derivation_record['state'] if derivation_record is not None else None),
     }
     if dropped:
-        result['message'] = (
-            'Dropped non-empty sections from the compiled report: ' + ', '.join(dropped)
-        )
+        result['message'] = 'Dropped non-empty sections from the compiled report: ' + ', '.join(dropped)
     return result
 
 

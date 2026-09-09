@@ -122,21 +122,25 @@ def derive_ordering_edges() -> list[dict]:
             continue
         doc_path = Path(record['path'])
         if _declares_true(doc_path, _BEFORE_GATE_MARKER):
-            edges.append({
-                'producer': name,
-                'producer_order': order,
-                'consumer': _MERGE_GATE,
-                'consumer_order': gate_order,
-                'marker': _BEFORE_GATE_MARKER,
-            })
+            edges.append(
+                {
+                    'producer': name,
+                    'producer_order': order,
+                    'consumer': _MERGE_GATE,
+                    'consumer_order': gate_order,
+                    'marker': _BEFORE_GATE_MARKER,
+                }
+            )
         if _declares_true(doc_path, _AFTER_GATE_MARKER):
-            edges.append({
-                'producer': _MERGE_GATE,
-                'producer_order': gate_order,
-                'consumer': name,
-                'consumer_order': order,
-                'marker': _AFTER_GATE_MARKER,
-            })
+            edges.append(
+                {
+                    'producer': _MERGE_GATE,
+                    'producer_order': gate_order,
+                    'consumer': name,
+                    'consumer_order': order,
+                    'marker': _AFTER_GATE_MARKER,
+                }
+            )
     return edges
 
 
@@ -147,9 +151,7 @@ def _marker_carrying_step_count() -> int:
         if record.get('name') == _MERGE_GATE:
             continue
         doc_path = Path(record['path'])
-        if _declares_true(doc_path, _BEFORE_GATE_MARKER) or _declares_true(
-            doc_path, _AFTER_GATE_MARKER
-        ):
+        if _declares_true(doc_path, _BEFORE_GATE_MARKER) or _declares_true(doc_path, _AFTER_GATE_MARKER):
             count += 1
     return count
 
@@ -183,8 +185,7 @@ def test_every_derived_edge_is_order_satisfied():
     population is the DERIVED set, so a step added later is covered with no edit here.
     """
     offenders = [
-        f"{e['producer']} (order {e['producer_order']}) → {e['consumer']} "
-        f"(order {e['consumer_order']}) [{e['marker']}]"
+        f'{e["producer"]} (order {e["producer_order"]}) → {e["consumer"]} (order {e["consumer_order"]}) [{e["marker"]}]'
         for e in derive_ordering_edges()
         if e['producer_order'] >= e['consumer_order']
     ]
@@ -244,7 +245,7 @@ def test_no_other_consumer_side_marker_spelling_has_appeared():
         fields = extension_discovery._read_frontmatter_fields(doc_path, _ABSENT_CONSUMER_MARKERS)
         present = [key for key in _ABSENT_CONSUMER_MARKERS if key in fields]
         if present:
-            declarers.append(f"{record.get('name')}: {present}")
+            declarers.append(f'{record.get("name")}: {present}')
     assert not declarers, (
         'A finalize step declared a consumer-side marker under a spelling other than '
         f'`{_READS_MARKER}`. Two names for one concept split the derivation below, so '
@@ -314,8 +315,8 @@ def test_artifact_edge_set_is_derived_and_non_empty():
 def test_every_reader_runs_before_the_step_that_destroys_what_it_reads():
     """GATE: a step never reads an artifact a lower-ordered step has destroyed."""
     offenders = [
-        f"{e['reader']} (order {e['reader_order']}) reads {e['artifact']!r}, which "
-        f"{e['destroyer']} (order {e['destroyer_order']}) destroys"
+        f'{e["reader"]} (order {e["reader_order"]}) reads {e["artifact"]!r}, which '
+        f'{e["destroyer"]} (order {e["destroyer_order"]}) destroys'
         for e in derive_artifact_edges()
         if e['reader_order'] >= e['destroyer_order']
     ]
@@ -333,17 +334,20 @@ def test_every_declared_read_token_is_a_known_artifact():
     edge — a typo would make the read-before-destroy gate vacuous for that step while
     every assertion stayed green.
     """
-    known = {artifact for _n, _o, artifact in [
-        (r.get('name'), r.get('order'), a)
-        for r in _finalize_records()
-        for a in _artifact_lists(Path(r['path']), _DESTROYS_MARKER)
-    ]} | {'metrics'}
+    known = {
+        artifact
+        for _n, _o, artifact in [
+            (r.get('name'), r.get('order'), a)
+            for r in _finalize_records()
+            for a in _artifact_lists(Path(r['path']), _DESTROYS_MARKER)
+        ]
+    } | {'metrics'}
 
     offenders = []
     for record in _finalize_records():
         for artifact in _artifact_lists(Path(record['path']), _READS_MARKER):
             if artifact not in known:
-                offenders.append(f"{record.get('name')}: {artifact!r}")
+                offenders.append(f'{record.get("name")}: {artifact!r}')
 
     assert not offenders, (
         f'These steps declare a `{_READS_MARKER}` token that matches no `'
@@ -368,7 +372,7 @@ def test_the_producer_side_is_still_undeclared_below_the_floor():
             Path(record['path']), ('produces', 'emits', 'produces_artifacts')
         )
         if fields:
-            declarers.append(f"{record.get('name')}: {sorted(fields)}")
+            declarers.append(f'{record.get("name")}: {sorted(fields)}')
     assert not declarers, (
         'A finalize step declared a producer-side artifact marker. The read-before-produce '
         'direction is now derivable and this module should derive it rather than reporting '
@@ -479,13 +483,15 @@ def derive_push_barrier_edges() -> list[dict]:
         if name == _PUSH_BARRIER or not isinstance(order, int):
             continue
         if order < barrier_order:
-            edges.append({
-                'producer': name,
-                'producer_order': order,
-                'consumer': _PUSH_BARRIER,
-                'consumer_order': barrier_order,
-                'path': record['path'],
-            })
+            edges.append(
+                {
+                    'producer': name,
+                    'producer_order': order,
+                    'consumer': _PUSH_BARRIER,
+                    'consumer_order': barrier_order,
+                    'path': record['path'],
+                }
+            )
     return edges
 
 
@@ -540,9 +546,7 @@ def test_no_step_below_the_push_barrier_prescribes_a_push():
         pushes, examined = scan_push_prescriptions(text)
         commands_examined += examined
         for line in pushes:
-            offenders.append(
-                f"{edge['producer']} (order {edge['producer_order']}): {line!r}"
-            )
+            offenders.append(f'{edge["producer"]} (order {edge["producer_order"]}): {line!r}')
 
     assert edges, 'No step documents were examined — the verdict would be vacuous.'
     assert commands_examined > 0, (

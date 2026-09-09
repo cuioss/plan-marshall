@@ -161,9 +161,7 @@ def test_capture_phase_steps_no_required_file_returns_none(
     assert result is None
 
 
-def test_capture_phase_steps_empty_required_file_returns_none(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_capture_phase_steps_empty_required_file_returns_none(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     f = tmp_path / 'required-steps.md'
     _write_required_steps(f, '# Only prose, no bullets\n')
     monkeypatch.setattr(inv, '_resolve_required_steps_path', lambda _p: f)
@@ -221,9 +219,7 @@ def test_capture_phase_steps_unreadable_manifest_falls_back_to_full(
     assert excinfo.value.missing == ['step-b']
 
 
-def test_read_manifest_steps_reads_phase_block(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_read_manifest_steps_reads_phase_block(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     base = tmp_path / 'base'
     (base / 'plans' / 'pid').mkdir(parents=True)
     (base / 'plans' / 'pid' / 'execution.toon').write_text(
@@ -234,9 +230,7 @@ def test_read_manifest_steps_reads_phase_block(
     assert inv._read_manifest_steps('pid', '6-finalize') == {'push', 'project:foo'}
 
 
-def test_read_manifest_steps_missing_returns_none(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_read_manifest_steps_missing_returns_none(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr(inv, 'get_base_dir', lambda: tmp_path / 'nonexistent')
     assert inv._read_manifest_steps('pid', '6-finalize') is None
 

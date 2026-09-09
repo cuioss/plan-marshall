@@ -148,9 +148,7 @@ def _positionals_are_indexable(call: ast.Call) -> bool:
     return True
 
 
-def _registered_name(
-    call: ast.Call, constants: dict[str, str], takes_module_name: bool
-) -> str | None:
+def _registered_name(call: ast.Call, constants: dict[str, str], takes_module_name: bool) -> str | None:
     """Return the ``sys.modules`` name ``call`` publishes, or ``None``.
 
     ``None`` covers both a call that publishes nothing (``register=False``) and one
@@ -205,13 +203,7 @@ def _scan_test_tree() -> tuple[dict[str, set[str]], dict[str, set[str]], list[st
         for node in ast.walk(tree):
             if isinstance(node, ast.Call):
                 func = node.func
-                name = (
-                    func.attr
-                    if isinstance(func, ast.Attribute)
-                    else func.id
-                    if isinstance(func, ast.Name)
-                    else None
-                )
+                name = func.attr if isinstance(func, ast.Attribute) else func.id if isinstance(func, ast.Name) else None
                 if name not in REGISTERING_HELPERS:
                     continue
                 registered_as = _registered_name(node, constants, REGISTERING_HELPERS[name])

@@ -1126,9 +1126,7 @@ def read_commit_trailer() -> dict[str, str]:
     return {
         'name': name or COMMIT_TRAILER_NAME_DEFAULT,
         'email': email or COMMIT_TRAILER_EMAIL_DEFAULT,
-        'trailer': compose_commit_trailer(
-            name or COMMIT_TRAILER_NAME_DEFAULT, email or COMMIT_TRAILER_EMAIL_DEFAULT
-        ),
+        'trailer': compose_commit_trailer(name or COMMIT_TRAILER_NAME_DEFAULT, email or COMMIT_TRAILER_EMAIL_DEFAULT),
         'name_source': 'configured' if name else 'default',
         'email_source': 'configured' if email else 'default',
     }
@@ -1465,18 +1463,14 @@ Examples:
         help='Manage the observed CI-run duration rolling window (p50 seed source)',
         allow_abbrev=False,
     )
-    cid_subparsers = p_cid.add_subparsers(
-        dest='ci_duration_command', required=True, help='CI-duration operation'
-    )
+    cid_subparsers = p_cid.add_subparsers(dest='ci_duration_command', required=True, help='CI-duration operation')
 
     # ci-duration record
     p_cid_record = cid_subparsers.add_parser(
         'record', help='Append an observed CI-run duration to the rolling window', allow_abbrev=False
     )
     p_cid_record.add_argument('--command', required=True, help='Command identifier (e.g., "ci:wait")')
-    p_cid_record.add_argument(
-        '--duration', type=int, required=True, help='Observed CI-run duration in seconds'
-    )
+    p_cid_record.add_argument('--duration', type=int, required=True, help='Observed CI-run duration in seconds')
     p_cid_record.set_defaults(func=cmd_ci_duration_record)
 
     # ci-duration p50
@@ -1533,7 +1527,8 @@ Examples:
     p_dr_set.set_defaults(func=cmd_derivation_resolver_set)
 
     p_dr_list = dr_subparsers.add_parser(
-        'list', help='List every stored resolver entry, each flagged `configured`', allow_abbrev=False)
+        'list', help='List every stored resolver entry, each flagged `configured`', allow_abbrev=False
+    )
     p_dr_list.set_defaults(func=cmd_derivation_resolver_list)
 
     p_dr_remove = dr_subparsers.add_parser(
@@ -1552,14 +1547,10 @@ Examples:
         dest='display_timezone_command', required=True, help='Display-timezone operation'
     )
 
-    p_dtz_get = dtz_subparsers.add_parser(
-        'get', help="Get display_timezone (default 'UTC')", allow_abbrev=False
-    )
+    p_dtz_get = dtz_subparsers.add_parser('get', help="Get display_timezone (default 'UTC')", allow_abbrev=False)
     p_dtz_get.set_defaults(func=cmd_display_timezone_get)
 
-    p_dtz_set = dtz_subparsers.add_parser(
-        'set', help='Set display_timezone (IANA zone name)', allow_abbrev=False
-    )
+    p_dtz_set = dtz_subparsers.add_parser('set', help='Set display_timezone (IANA zone name)', allow_abbrev=False)
     p_dtz_set.add_argument(
         '--value',
         required=True,
@@ -1573,18 +1564,14 @@ Examples:
         help='Manage the commit co-author identity (default: plan-marshall)',
         allow_abbrev=False,
     )
-    ct_subparsers = p_ct.add_subparsers(
-        dest='commit_trailer_command', required=True, help='Commit-trailer operation'
-    )
+    ct_subparsers = p_ct.add_subparsers(dest='commit_trailer_command', required=True, help='Commit-trailer operation')
 
     p_ct_get = ct_subparsers.add_parser(
         'get', help='Resolve the co-author trailer and the source of each half', allow_abbrev=False
     )
     p_ct_get.set_defaults(func=cmd_commit_trailer_get)
 
-    p_ct_set = ct_subparsers.add_parser(
-        'set', help='Set the co-author name and/or email', allow_abbrev=False
-    )
+    p_ct_set = ct_subparsers.add_parser('set', help='Set the co-author name and/or email', allow_abbrev=False)
     p_ct_set.add_argument('--name', help=f'Co-author name (default: {COMMIT_TRAILER_NAME_DEFAULT})')
     p_ct_set.add_argument('--email', help=f'Co-author email (default: {COMMIT_TRAILER_EMAIL_DEFAULT})')
     p_ct_set.set_defaults(func=cmd_commit_trailer_set)

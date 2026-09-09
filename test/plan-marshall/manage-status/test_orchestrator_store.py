@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the manage-status orchestrator store (kind=orchestrator, D5)."""
 
-
 import json
 import threading
 from argparse import Namespace
@@ -86,9 +85,7 @@ class TestOrchestratorCli:
         )
 
         assert result.returncode == 0
-        content = json.loads(
-            _orchestrator_status_file(plan_context, 'cli-phases-epic').read_text(encoding='utf-8')
-        )
+        content = json.loads(_orchestrator_status_file(plan_context, 'cli-phases-epic').read_text(encoding='utf-8'))
         assert 'phases' not in content
         assert content['phase'] == 'init'
 
@@ -140,9 +137,7 @@ class TestOrchestratorConcurrentWrites:
                 start.wait()
                 for i in range(rounds):
                     cmd_orchestrator_metadata(
-                        Namespace(
-                            plan_id='race-epic', set=True, get=False, field=field, value=f'{field}-{i}'
-                        )
+                        Namespace(plan_id='race-epic', set=True, get=False, field=field, value=f'{field}-{i}')
                     )
             except Exception as exc:  # broad on purpose: the exception is collected and surfaced by the assertion below
                 errors.append(exc)

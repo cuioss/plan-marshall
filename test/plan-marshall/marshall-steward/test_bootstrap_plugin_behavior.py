@@ -18,9 +18,7 @@ import pytest
 
 from conftest import load_script_module
 
-bp = load_script_module(
-    'plan-marshall', 'marshall-steward', 'bootstrap_plugin.py', 'bootstrap_plugin_behavior_cov'
-)
+bp = load_script_module('plan-marshall', 'marshall-steward', 'bootstrap_plugin.py', 'bootstrap_plugin_behavior_cov')
 
 
 @pytest.fixture
@@ -98,9 +96,7 @@ def test_detect_claude_root_none_when_cache_absent(tmp_path: Path, monkeypatch, 
 def test_detect_claude_root_finds_marker(tmp_path: Path, monkeypatch, claude_roots):
     """_detect_claude_root returns the plugin dir holding a bundle marker file."""
     monkeypatch.setattr(bp, 'get_bundle_cache_roots', claude_roots)
-    version_dir = (
-        tmp_path / '.claude' / 'plugins' / 'cache' / 'plan-marshall' / 'plan-marshall' / '1.0.0'
-    )
+    version_dir = tmp_path / '.claude' / 'plugins' / 'cache' / 'plan-marshall' / 'plan-marshall' / '1.0.0'
     marker = version_dir / '.claude-plugin'
     marker.mkdir(parents=True)
     (marker / 'plugin.json').write_text('{}')
@@ -114,9 +110,7 @@ def test_detect_claude_root_finds_marker(tmp_path: Path, monkeypatch, claude_roo
 def test_detect_claude_root_none_without_marker(tmp_path: Path, monkeypatch, claude_roots):
     """_detect_claude_root returns None when no bundle carries the marker file."""
     monkeypatch.setattr(bp, 'get_bundle_cache_roots', claude_roots)
-    (tmp_path / '.claude' / 'plugins' / 'cache' / 'plan-marshall' / 'bundle' / '1.0.0').mkdir(
-        parents=True
-    )
+    (tmp_path / '.claude' / 'plugins' / 'cache' / 'plan-marshall' / 'bundle' / '1.0.0').mkdir(parents=True)
 
     assert bp._detect_claude_root() is None
 

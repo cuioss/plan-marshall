@@ -284,16 +284,10 @@ def _prune_dead_active(active: list[dict[str, Any]]) -> list[dict[str, Any]]:
     # shim-owner: manage-locks
     # shim-floor: the machine-global-queue change that had acquire stamp each entry's originating project_root (in-code anchor: the "breaking clean-start" this docstring names)
     # shim-remove-when: no live queue entry lacks project_root
-    return [
-        e
-        for e in active
-        if not holder_is_dead(_plan_id_of(e['id']), project_root=e.get('project_root'))
-    ]
+    return [e for e in active if not holder_is_dead(_plan_id_of(e['id']), project_root=e.get('project_root'))]
 
 
-def validate_lock_queue(
-    state: dict[str, Any], now: float, upper_limit: int, max_slots: int
-) -> list[dict[str, Any]]:
+def validate_lock_queue(state: dict[str, Any], now: float, upper_limit: int, max_slots: int) -> list[dict[str, Any]]:
     """Reap over-age active entries and FIFO-promote waiters into freed slots.
 
     A pure mutation over the passed-in ``state`` (it does NO file I/O — it is

@@ -34,9 +34,7 @@ import pytest
 
 from conftest import get_script_path, run_script
 
-SCRIPT_PATH = get_script_path(
-    "plan-marshall", "platform-runtime", "claude_pretooluse_capture.py"
-)
+SCRIPT_PATH = get_script_path('plan-marshall', 'platform-runtime', 'claude_pretooluse_capture.py')
 
 
 # =============================================================================
@@ -46,7 +44,7 @@ SCRIPT_PATH = get_script_path(
 
 def _capture_file(tmp_path: Path) -> Path:
     """Path the leaf appends to when run with cwd=tmp_path (PLAN_DIR_NAME=.plan)."""
-    return tmp_path / ".plan" / "temp" / "pretooluse-payload-samples.jsonl"
+    return tmp_path / '.plan' / 'temp' / 'pretooluse-payload-samples.jsonl'
 
 
 def _run(stdin: str, tmp_path: Path) -> Any:
@@ -59,11 +57,11 @@ def _read_records(tmp_path: Path) -> list[dict]:
     path = _capture_file(tmp_path)
     if not path.exists():
         return []
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
+    return [json.loads(line) for line in path.read_text(encoding='utf-8').splitlines() if line]
 
 
 def _worktree_cwd() -> str:
-    return f"/home/dev/project/{gate.WORKTREE_PATH_SEGMENT}/my-plan"
+    return f'/home/dev/project/{gate.WORKTREE_PATH_SEGMENT}/my-plan'
 
 
 # =============================================================================
@@ -72,38 +70,38 @@ def _worktree_cwd() -> str:
 
 
 def test_appends_one_record_per_call(tmp_path: Path) -> None:
-    payload = {"tool_name": "Bash", "tool_input": {"command": "ls"}}
+    payload = {'tool_name': 'Bash', 'tool_input': {'command': 'ls'}}
     result = _run(json.dumps(payload), tmp_path)
 
     assert result.returncode == 0
-    assert result.stdout == ""
+    assert result.stdout == ''
     records = _read_records(tmp_path)
     assert len(records) == 1
-    assert records[0]["payload"] == payload
+    assert records[0]['payload'] == payload
 
 
 def test_appends_accumulate_one_line_per_invocation(tmp_path: Path) -> None:
-    _run(json.dumps({"tool_name": "Bash"}), tmp_path)
-    _run(json.dumps({"tool_name": "Edit"}), tmp_path)
-    _run(json.dumps({"tool_name": "Read"}), tmp_path)
+    _run(json.dumps({'tool_name': 'Bash'}), tmp_path)
+    _run(json.dumps({'tool_name': 'Edit'}), tmp_path)
+    _run(json.dumps({'tool_name': 'Read'}), tmp_path)
 
     records = _read_records(tmp_path)
     assert len(records) == 3
-    assert [r["payload"]["tool_name"] for r in records] == ["Bash", "Edit", "Read"]
+    assert [r['payload']['tool_name'] for r in records] == ['Bash', 'Edit', 'Read']
 
 
 def test_record_pairs_payload_with_extracted_fields_and_verdict(tmp_path: Path) -> None:
     payload = {
-        gate.SUB_AGENT_IDENTITY_FIELD: "execution-context-level-2",
+        gate.SUB_AGENT_IDENTITY_FIELD: 'execution-context-level-2',
         gate.CWD_FIELD: _worktree_cwd(),
-        "tool_name": "Bash",
-        "tool_input": {"command": "cat foo"},
+        'tool_name': 'Bash',
+        'tool_input': {'command': 'cat foo'},
     }
     _run(json.dumps(payload), tmp_path)
 
     record = _read_records(tmp_path)[0]
-    assert set(record.keys()) == {"payload", "extracted", "would_be_context_verdict"}
-    assert set(record["extracted"].keys()) == {"sub_agent_identity", "cwd", "tool_name"}
+    assert set(record.keys()) == {'payload', 'extracted', 'would_be_context_verdict'}
+    assert set(record['extracted'].keys()) == {'sub_agent_identity', 'cwd', 'tool_name'}
 
 
 # =============================================================================
@@ -113,29 +111,29 @@ def test_record_pairs_payload_with_extracted_fields_and_verdict(tmp_path: Path) 
 
 def test_recorded_extractions_match_shared_gate(tmp_path: Path) -> None:
     payload = {
-        gate.SUB_AGENT_IDENTITY_FIELD: "execution-context-level-1",
+        gate.SUB_AGENT_IDENTITY_FIELD: 'execution-context-level-1',
         gate.CWD_FIELD: _worktree_cwd(),
-        "tool_name": "Edit",
+        'tool_name': 'Edit',
     }
     _run(json.dumps(payload), tmp_path)
 
     record = _read_records(tmp_path)[0]
-    assert record["extracted"]["sub_agent_identity"] == gate.sub_agent_identity(payload)
-    assert record["extracted"]["cwd"] == gate.cwd(payload)
-    assert record["extracted"]["tool_name"] == gate.tool_name(payload)
-    assert record["would_be_context_verdict"] == gate.context_gate(payload)
+    assert record['extracted']['sub_agent_identity'] == gate.sub_agent_identity(payload)
+    assert record['extracted']['cwd'] == gate.cwd(payload)
+    assert record['extracted']['tool_name'] == gate.tool_name(payload)
+    assert record['would_be_context_verdict'] == gate.context_gate(payload)
 
 
 def test_recorded_verdict_true_inside_plan_context(tmp_path: Path) -> None:
     payload = {gate.CWD_FIELD: _worktree_cwd()}
     _run(json.dumps(payload), tmp_path)
-    assert _read_records(tmp_path)[0]["would_be_context_verdict"] is True
+    assert _read_records(tmp_path)[0]['would_be_context_verdict'] is True
 
 
 def test_recorded_verdict_false_outside_plan_context(tmp_path: Path) -> None:
-    payload = {gate.CWD_FIELD: "/home/dev/project", "tool_name": "Bash"}
+    payload = {gate.CWD_FIELD: '/home/dev/project', 'tool_name': 'Bash'}
     _run(json.dumps(payload), tmp_path)
-    assert _read_records(tmp_path)[0]["would_be_context_verdict"] is False
+    assert _read_records(tmp_path)[0]['would_be_context_verdict'] is False
 
 
 # =============================================================================
@@ -147,7 +145,7 @@ def test_recorded_verdict_false_outside_plan_context(tmp_path: Path) -> None:
 #: bytes are not JSON, and the bytes are JSON but decode to a list. All three
 #: reduce to the SAME recorded row — an empty payload, and therefore the same
 #: ``False`` verdict — so the rows differ only in the input that produced it.
-_UNREADABLE_STDIN = ["", "{not valid json", "[1, 2, 3]"]
+_UNREADABLE_STDIN = ['', '{not valid json', '[1, 2, 3]']
 
 _UNREADABLE_STDIN_IDS = [
     'nothing-piped',
@@ -156,7 +154,7 @@ _UNREADABLE_STDIN_IDS = [
 ]
 
 
-@pytest.mark.parametrize("stdin", _UNREADABLE_STDIN, ids=_UNREADABLE_STDIN_IDS)
+@pytest.mark.parametrize('stdin', _UNREADABLE_STDIN, ids=_UNREADABLE_STDIN_IDS)
 def test_unreadable_stdin_still_records_and_never_blocks(stdin: str, tmp_path: Path) -> None:
     """Unreadable stdin records an empty payload, stays silent, and exits 0.
 
@@ -166,8 +164,8 @@ def test_unreadable_stdin_still_records_and_never_blocks(stdin: str, tmp_path: P
     result = _run(stdin, tmp_path)
 
     assert result.returncode == 0
-    assert result.stdout == ""
+    assert result.stdout == ''
     records = _read_records(tmp_path)
     assert len(records) == 1
-    assert records[0]["payload"] == {}
-    assert records[0]["would_be_context_verdict"] is False
+    assert records[0]['payload'] == {}
+    assert records[0]['would_be_context_verdict'] is False

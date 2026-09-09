@@ -92,9 +92,7 @@ class TestInlinePhaseIsNotMetricsBlind:
         assert '5-execute' in row['metrics_blind']
         assert row['data_confidence'] == 'blind'
 
-    def test_population_discriminator_does_not_corrupt_the_parsed_total(
-        self, tmp_path: Path
-    ):
+    def test_population_discriminator_does_not_corrupt_the_parsed_total(self, tmp_path: Path):
         # `parse_metrics_toon` whitelists the keys it consumes, so the string-valued
         # discriminator is ignored rather than coerced into a numeric field. This
         # is what makes the new field safe for every audit consumer.

@@ -195,8 +195,8 @@ def analyze_unused_parameter(marketplace_root: Path) -> list[dict]:
                                 RULE_UNUSED_PARAMETER,
                                 file_path,
                                 node.lineno,
-                                f"Parameter `{target.id}` discarded via `del` — preserved-for-future-use; "
-                                f"remove it and add back when a real caller needs it",
+                                f'Parameter `{target.id}` discarded via `del` — preserved-for-future-use; '
+                                f'remove it and add back when a real caller needs it',
                                 fixable=False,
                             )
                         )
@@ -310,7 +310,7 @@ def analyze_thin_wrapper(marketplace_root: Path) -> list[dict]:
                         RULE_THIN_WRAPPER,
                         file_path,
                         func.lineno,
-                        f"Thin wrapper `{func.name}` forwards args to one call — inline it at the call site",
+                        f'Thin wrapper `{func.name}` forwards args to one call — inline it at the call site',
                         fixable=False,
                     )
                 )
@@ -387,7 +387,7 @@ def analyze_signature_docstring(marketplace_root: Path) -> list[dict]:
                         RULE_SIGNATURE_DOCSTRING,
                         file_path,
                         func.lineno,
-                        f"Docstring for `{func.name}` only restates the signature — delete it or add a rationale",
+                        f'Docstring for `{func.name}` only restates the signature — delete it or add a rationale',
                         fixable=True,
                     )
                 )

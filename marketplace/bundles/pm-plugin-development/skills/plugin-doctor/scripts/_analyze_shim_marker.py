@@ -112,9 +112,7 @@ RULE_DESCRIPTOR = RuleDescriptor(
 # scripts has a broken derivation (the vacuity archetype), whereas a minimal or
 # fixture tree that does not carry the convention legitimately has no population
 # and is not flagged. Mirrors the 040 analyzer's ext-point-standard anchor.
-_CONVENTION_DOC_REL = (
-    'pm-plugin-development/skills/plugin-script-architecture/standards/shim-marker-convention.md'
-)
+_CONVENTION_DOC_REL = 'pm-plugin-development/skills/plugin-script-architecture/standards/shim-marker-convention.md'
 
 # --- Marker grammar -------------------------------------------------------
 # A conforming anchor: "# SHIM(A):" or "# SHIM(B):" followed by a non-empty
@@ -293,9 +291,7 @@ class _Marker:
         self.cover = cover
 
 
-def _parse_markers(
-    comments: list[tuple[int, str]], spans: list[tuple[int, int]]
-) -> list[_Marker]:
+def _parse_markers(comments: list[tuple[int, str]], spans: list[tuple[int, int]]) -> list[_Marker]:
     """Parse marker blocks from the comment stream.
 
     A block begins at an anchor-attempt comment. A conforming block has an

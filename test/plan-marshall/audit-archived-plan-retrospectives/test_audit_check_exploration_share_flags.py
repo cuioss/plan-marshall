@@ -22,9 +22,12 @@ class TestExplorationShareDegenerateCorpus:
     def test_single_plan_corpus_flags_nobody(self, tmp_path: Path):
         # one plan IS the distribution: max == median, so no spread, no flags.
         inputs = _shares_plan(
-            tmp_path, 'solo',
-            exploration_calls=9, other_calls=1,
-            exploration_bytes=900, other_bytes=100,
+            tmp_path,
+            'solo',
+            exploration_calls=9,
+            other_calls=1,
+            exploration_bytes=900,
+            other_bytes=100,
         )
 
         result = audit.cross_exploration_share([inputs])
@@ -38,9 +41,12 @@ class TestExplorationShareDegenerateCorpus:
         # every plan explores alike: max == median on both distributions.
         inputs = [
             _shares_plan(
-                tmp_path, name,
-                exploration_calls=8, other_calls=2,
-                exploration_bytes=800, other_bytes=200,
+                tmp_path,
+                name,
+                exploration_calls=8,
+                other_calls=2,
+                exploration_bytes=800,
+                other_bytes=200,
             )
             for name in ('u1', 'u2', 'u3')
         ]
@@ -58,19 +64,28 @@ class TestExplorationShareFlags:
     def test_byte_heavy_fires_on_the_high_tail(self, tmp_path: Path):
         inputs = [
             _shares_plan(
-                tmp_path, 'hi',
-                exploration_calls=9, other_calls=1,
-                exploration_bytes=900, other_bytes=100,
+                tmp_path,
+                'hi',
+                exploration_calls=9,
+                other_calls=1,
+                exploration_bytes=900,
+                other_bytes=100,
             ),
             _shares_plan(
-                tmp_path, 'mid',
-                exploration_calls=5, other_calls=5,
-                exploration_bytes=500, other_bytes=500,
+                tmp_path,
+                'mid',
+                exploration_calls=5,
+                other_calls=5,
+                exploration_bytes=500,
+                other_bytes=500,
             ),
             _shares_plan(
-                tmp_path, 'lo',
-                exploration_calls=1, other_calls=9,
-                exploration_bytes=100, other_bytes=900,
+                tmp_path,
+                'lo',
+                exploration_calls=1,
+                other_calls=9,
+                exploration_bytes=100,
+                other_bytes=900,
             ),
         ]
 
@@ -87,19 +102,28 @@ class TestExplorationShareFlags:
         # lookups return almost no context — the groping-around signature.
         inputs = [
             _shares_plan(
-                tmp_path, 'probe',
-                exploration_calls=9, other_calls=1,
-                exploration_bytes=10, other_bytes=990,
+                tmp_path,
+                'probe',
+                exploration_calls=9,
+                other_calls=1,
+                exploration_bytes=10,
+                other_bytes=990,
             ),
             _shares_plan(
-                tmp_path, 'balanced',
-                exploration_calls=5, other_calls=5,
-                exploration_bytes=500, other_bytes=500,
+                tmp_path,
+                'balanced',
+                exploration_calls=5,
+                other_calls=5,
+                exploration_bytes=500,
+                other_bytes=500,
             ),
             _shares_plan(
-                tmp_path, 'bulk',
-                exploration_calls=1, other_calls=9,
-                exploration_bytes=900, other_bytes=100,
+                tmp_path,
+                'bulk',
+                exploration_calls=1,
+                other_calls=9,
+                exploration_bytes=900,
+                other_bytes=100,
             ),
         ]
 
@@ -120,10 +144,14 @@ class TestExplorationShareFlags:
         # A tool name outside the classifier's domain is a maintenance signal, not
         # an outlier — it fires even in a degenerate single-plan corpus.
         inputs = _shares_plan(
-            tmp_path, 'unknown-tool',
-            exploration_calls=1, other_calls=1,
-            exploration_bytes=10, other_bytes=10,
-            unclassified_calls=2, unclassified_bytes=20,
+            tmp_path,
+            'unknown-tool',
+            exploration_calls=1,
+            other_calls=1,
+            exploration_bytes=10,
+            other_bytes=10,
+            unclassified_calls=2,
+            unclassified_bytes=20,
         )
 
         result = audit.cross_exploration_share([inputs])
@@ -138,14 +166,20 @@ class TestEmitExplorationShareBlock:
     def test_block_renders_header_columns_and_severity(self, tmp_path: Path):
         inputs = [
             _shares_plan(
-                tmp_path, 'hi',
-                exploration_calls=9, other_calls=1,
-                exploration_bytes=900, other_bytes=100,
+                tmp_path,
+                'hi',
+                exploration_calls=9,
+                other_calls=1,
+                exploration_bytes=900,
+                other_bytes=100,
             ),
             _shares_plan(
-                tmp_path, 'lo',
-                exploration_calls=1, other_calls=9,
-                exploration_bytes=100, other_bytes=900,
+                tmp_path,
+                'lo',
+                exploration_calls=1,
+                other_calls=9,
+                exploration_bytes=100,
+                other_bytes=900,
             ),
             _plan_with_counters(tmp_path, 'unmeasured', {'5-execute': {}}),
         ]
@@ -165,9 +199,7 @@ class TestEmitExplorationShareBlock:
             'turn_share,exploration_bytes,denom_bytes,byte_share,unclassified,'
             'flags,severity}:' in block
         )
-        genuine_row = next(
-            ln.strip() for ln in block.splitlines() if ln.strip().startswith('hi,')
-        )
+        genuine_row = next(ln.strip() for ln in block.splitlines() if ln.strip().startswith('hi,'))
         assert genuine_row.endswith(',genuine')
 
     def test_undefined_share_renders_as_not_available(self, tmp_path: Path):

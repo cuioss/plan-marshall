@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Storage-layout tests for the per-type findings JSONL split."""
 
-
 from _findings_storage_fixtures import (
     add_assessment,
     add_finding,
@@ -41,6 +40,7 @@ def test_findings_dir_absent_until_first_write(plan_context):
 # Routing: each storage flavour goes to its own file under findings/
 # =============================================================================
 
+
 def test_findings_qgate_assessments_coexist_in_same_dir(plan_context):
     """All three storage flavours share one `findings/` directory without colliding."""
     findings_dir = get_findings_dir('storage-coexist')
@@ -63,6 +63,7 @@ def test_findings_qgate_assessments_coexist_in_same_dir(plan_context):
 # =============================================================================
 # Lazy creation: per-type file appears only after first matching write
 # =============================================================================
+
 
 def test_per_type_file_created_lazily_on_first_add(plan_context):
     """Adding a `bug` finding creates `findings/bug.jsonl` only."""

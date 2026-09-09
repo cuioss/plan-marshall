@@ -245,9 +245,7 @@ def _fixture_repo(tmp_path: Path, generator_source: str) -> Path:
 
 
 def _surface(repo: Path) -> dict:
-    script = get_script_path(
-        'pm-plugin-development', 'ext-self-review-plan-marshall', 'self_review.py'
-    )
+    script = get_script_path('pm-plugin-development', 'ext-self-review-plan-marshall', 'self_review.py')
     result = run_script(
         script,
         'surface',
@@ -294,13 +292,10 @@ class TestPreFixScanningFormIsSurfaced:
         named = [e for e in _list_entries(data, _NEW_LIST) if e['name'] == '_split_bundle_version']
 
         assert len(named) == 1, (
-            f'Expected exactly one candidate naming _split_bundle_version. '
-            f'Got: {_list_entries(data, _NEW_LIST)}'
+            f'Expected exactly one candidate naming _split_bundle_version. Got: {_list_entries(data, _NEW_LIST)}'
         )
         assert named[0]['file'] == 'gen.py'
-        assert named[0]['sequence'] == 'parts', (
-            'The candidate must name the decomposed sequence the scan iterates'
-        )
+        assert named[0]['sequence'] == 'parts', 'The candidate must name the decomposed sequence the scan iterates'
 
     def test_guard_in_the_same_diff_sets_key_consumed(self, tmp_path):
         # The consuming guard ships in the SAME commit, so the Tier-2
@@ -325,11 +320,7 @@ class TestPreFixScanningFormIsSurfaced:
         # reachability to the new check.
         data = _surface(_fixture_repo(tmp_path, _PRE_FIX_SOURCE))
 
-        populated = {
-            key: _list_entries(data, key)
-            for key in _SIBLING_LISTS
-            if _list_entries(data, key)
-        }
+        populated = {key: _list_entries(data, key) for key in _SIBLING_LISTS if _list_entries(data, key)}
 
         assert not populated, (
             f'A sibling candidate list surfaced the #1013 pre-fix form, so '
@@ -397,8 +388,7 @@ class TestPostFixAnchoredFormIsNotSurfaced:
         assert '_VERSION_DIR_NAME_RE.match(' in source
         assert 'by_bundle.setdefault(bundle, set()).add(version)' in source
         assert 'for index, part in enumerate(parts):' not in source, (
-            'The anchored fixture must differ from the scanning fixture in the '
-            'scan loop specifically'
+            'The anchored fixture must differ from the scanning fixture in the scan loop specifically'
         )
 
 
@@ -415,29 +405,21 @@ class TestGuardReachabilityOnTheDiscriminatingInputs:
 
         # Every path under `1.0-my-bundle` stops the scan at the bundle name
         # itself, so both paths yield the identical key.
-        assert splits[0] == splits[1], (
-            f'Expected the scanning form to collapse both paths to one key. '
-            f'Got: {splits}'
-        )
+        assert splits[0] == splits[1], f'Expected the scanning form to collapse both paths to one key. Got: {splits}'
         assert not _guard_refuses(splits), (
-            "Guard 4's refusal must be unsatisfiable under the pre-fix form — "
-            'that unreachability IS the #1013 defect'
+            "Guard 4's refusal must be unsatisfiable under the pre-fix form — that unreachability IS the #1013 defect"
         )
 
     def test_pre_fix_collapses_a_version_shaped_ancestor_directory(self):
         splits = [_split_bundle_version_pre_fix(p) for p in _ANCESTOR_PATHS]
 
         assert splits[0] == splits[1], (
-            f'Expected the scanning form to collapse on the version-shaped '
-            f'ancestor directory. Got: {splits}'
+            f'Expected the scanning form to collapse on the version-shaped ancestor directory. Got: {splits}'
         )
         assert not _guard_refuses(splits)
 
     def test_post_fix_discriminates_the_bundle_name_input(self):
-        splits = [
-            _split_bundle_version_post_fix(p, _BUNDLE_NAME_CACHE_ROOT)
-            for p in _BUNDLE_NAME_PATHS
-        ]
+        splits = [_split_bundle_version_post_fix(p, _BUNDLE_NAME_CACHE_ROOT) for p in _BUNDLE_NAME_PATHS]
 
         assert splits == [('1.0-my-bundle', '0.1.100'), ('1.0-my-bundle', '0.1.200')]
         assert _guard_refuses(splits), (
@@ -446,9 +428,7 @@ class TestGuardReachabilityOnTheDiscriminatingInputs:
         )
 
     def test_post_fix_discriminates_the_ancestor_directory_input(self):
-        splits = [
-            _split_bundle_version_post_fix(p, _ANCESTOR_CACHE_ROOT) for p in _ANCESTOR_PATHS
-        ]
+        splits = [_split_bundle_version_post_fix(p, _ANCESTOR_CACHE_ROOT) for p in _ANCESTOR_PATHS]
 
         assert splits == [('plain-bundle', '0.1.100'), ('plain-bundle', '0.1.200')]
         assert _guard_refuses(splits)
@@ -456,13 +436,5 @@ class TestGuardReachabilityOnTheDiscriminatingInputs:
     def test_post_fix_returns_none_outside_the_cache_root(self):
         # The anchored form's documented None cases: a path outside base_path,
         # and a bundle segment carrying no version dir.
-        assert (
-            _split_bundle_version_post_fix('/elsewhere/a/b/c.md', _BUNDLE_NAME_CACHE_ROOT)
-            is None
-        )
-        assert (
-            _split_bundle_version_post_fix(
-                '/srv/cache/plain-bundle/skills/a.md', _BUNDLE_NAME_CACHE_ROOT
-            )
-            is None
-        )
+        assert _split_bundle_version_post_fix('/elsewhere/a/b/c.md', _BUNDLE_NAME_CACHE_ROOT) is None
+        assert _split_bundle_version_post_fix('/srv/cache/plain-bundle/skills/a.md', _BUNDLE_NAME_CACHE_ROOT) is None

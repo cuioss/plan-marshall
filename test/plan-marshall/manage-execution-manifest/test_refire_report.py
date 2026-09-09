@@ -205,11 +205,7 @@ def test_phase_filter_excludes_other_phases():
 
 
 def test_rows_are_ordered_worst_offender_first():
-    rows = (
-        [_row('push')]
-        + [_row('pre-submission-self-review')] * 7
-        + [_row('finalize-step-plugin-doctor')] * 3
-    )
+    rows = [_row('push')] + [_row('pre-submission-self-review')] * 7 + [_row('finalize-step-plugin-doctor')] * 3
 
     steps, _totals = summarize_refires(rows)
 

@@ -77,10 +77,7 @@ def executor_with_mock_log_entry():
 
 # Stderr as a real argparse rejection renders it — multi-line, which is also what
 # makes it the natural input for the single-line collapse assertion below.
-ARGPARSE_STDERR = (
-    'usage: manage-files.py [-h] ...\n'
-    'manage-files.py: error: unrecognized arguments: --bogus'
-)
+ARGPARSE_STDERR = 'usage: manage-files.py [-h] ...\nmanage-files.py: error: unrecognized arguments: --bogus'
 
 
 @pytest.mark.parametrize(
@@ -117,15 +114,12 @@ def test_emit_records_one_entry_carrying_the_classified_failure_kind(
     )
 
     assert mock_log_entry.call_count == 1, (
-        f'Expected exactly one log_entry call for exit_code={exit_code}, '
-        f'got {mock_log_entry.call_count}'
+        f'Expected exactly one log_entry call for exit_code={exit_code}, got {mock_log_entry.call_count}'
     )
 
     positional = mock_log_entry.call_args.args
     assert positional[0] == 'work', f"Expected log_type='work', got {positional[0]!r}"
-    assert positional[1] == DEFAULT_PLAN_ID, (
-        f'Expected plan_id={DEFAULT_PLAN_ID!r}, got {positional[1]!r}'
-    )
+    assert positional[1] == DEFAULT_PLAN_ID, f'Expected plan_id={DEFAULT_PLAN_ID!r}, got {positional[1]!r}'
     assert positional[2] == 'ERROR', f"Expected level='ERROR', got {positional[2]!r}"
 
     message = positional[3]
@@ -133,9 +127,7 @@ def test_emit_records_one_entry_carrying_the_classified_failure_kind(
         f'Caller-prefix line did not embed exit code {exit_code} in tag: {message!r}'
     )
     assert f'notation={TEST_NOTATION}' in message, f'Notation missing from message: {message!r}'
-    assert f'exit_code={exit_code}' in message, (
-        f'exit_code={exit_code} missing from message: {message!r}'
-    )
+    assert f'exit_code={exit_code}' in message, f'exit_code={exit_code} missing from message: {message!r}'
     assert f'failure_kind={expected_failure_kind}' in message, (
         f'Expected failure_kind={expected_failure_kind} in: {message!r}'
     )
@@ -155,9 +147,7 @@ def test_emit_detail_falls_back_to_stderr_when_stdout_is_empty(executor_with_moc
     )
 
     message = mock_log_entry.call_args.args[3]
-    assert f'detail={DEFAULT_STDERR}' in message, (
-        f'stderr-derived detail missing from message: {message!r}'
-    )
+    assert f'detail={DEFAULT_STDERR}' in message, f'stderr-derived detail missing from message: {message!r}'
 
 
 def test_emit_collapses_a_multi_line_stderr_into_a_single_line_entry(
@@ -180,9 +170,7 @@ def test_emit_collapses_a_multi_line_stderr_into_a_single_line_entry(
     )
 
     message = mock_log_entry.call_args.args[3]
-    assert '\n' not in message, (
-        f'Boundary message must be single-line; embedded newline found: {message!r}'
-    )
+    assert '\n' not in message, f'Boundary message must be single-line; embedded newline found: {message!r}'
 
 
 def test_emit_suppresses_log_for_manage_logging_recursion_target(executor_with_mock_log_entry):
@@ -226,14 +214,13 @@ def test_emit_suppresses_log_for_manage_logging_recursion_even_with_argparse_exi
         notation=MANAGE_LOGGING_NOTATION,
         exit_code=2,
         stdout='',
-        stderr="argparse: error",
+        stderr='argparse: error',
         script_args=['work', '--plan-id', DEFAULT_PLAN_ID, '--bogus'],
         audit_plan_id=None,
     )
 
     assert mock_log_entry.call_count == 0, (
-        f'manage-logging argparse failure must also be suppressed; got '
-        f'{mock_log_entry.call_count} call(s).'
+        f'manage-logging argparse failure must also be suppressed; got {mock_log_entry.call_count} call(s).'
     )
 
 
@@ -256,7 +243,7 @@ def test_emit_uses_audit_plan_id_when_script_args_lack_plan_id(executor_with_moc
     assert mock_log_entry.call_count == 1
     positional = mock_log_entry.call_args.args
     assert positional[1] == 'audit-fallback-plan', (
-        f"Expected audit_plan_id fallback to be used, got plan_id={positional[1]!r}"
+        f'Expected audit_plan_id fallback to be used, got plan_id={positional[1]!r}'
     )
 
 
@@ -279,8 +266,7 @@ def test_emit_drops_entry_when_no_plan_id_available(executor_with_mock_log_entry
     )
 
     assert mock_log_entry.call_count == 0, (
-        f'Boundary must drop the entry when no plan_id is available; got '
-        f'{mock_log_entry.call_count} call(s).'
+        f'Boundary must drop the entry when no plan_id is available; got {mock_log_entry.call_count} call(s).'
     )
 
 
@@ -460,10 +446,7 @@ def test_corrective_for_verb_nearest_spelling_form(executor_with_mock_log_entry)
 
     corrective = executor._corrective_for_verb(_REJECTION_NOTATION, [], 'reed', _VERB_NODE)
 
-    assert corrective == (
-        "Use `plan-marshall:manage-tasks:manage-tasks read` — "
-        "registered: ['get', 'list', 'read']"
-    )
+    assert corrective == ("Use `plan-marshall:manage-tasks:manage-tasks read` — registered: ['get', 'list', 'read']")
     # Control: this form never mentions an alias relation.
     assert 'alias of' not in corrective, f'nearest-spelling form must not phrase an alias: {corrective!r}'
 
@@ -479,8 +462,7 @@ def test_corrective_for_verb_alias_of_form(executor_with_mock_log_entry):
     corrective = executor._corrective_for_verb(_REJECTION_NOTATION, [], 'gett', _VERB_NODE)
 
     assert corrective == (
-        "Use `plan-marshall:manage-tasks:manage-tasks get` (an alias of `read`) — "
-        "registered: ['get', 'list', 'read']"
+        "Use `plan-marshall:manage-tasks:manage-tasks get` (an alias of `read`) — registered: ['get', 'list', 'read']"
     )
 
 
@@ -497,8 +479,7 @@ def test_corrective_for_verb_no_suggestion_form(executor_with_mock_log_entry):
     corrective = executor._corrective_for_verb(_REJECTION_NOTATION, [], 'nuke', _VERB_NODE)
 
     assert corrective == (
-        "Use a registered verb for `plan-marshall:manage-tasks:manage-tasks`: "
-        "['get', 'list', 'read']"
+        "Use a registered verb for `plan-marshall:manage-tasks:manage-tasks`: ['get', 'list', 'read']"
     )
     # Control: unlike the other two forms, this one names no single suggested
     # verb in backticks immediately after the notation — proving the pin
@@ -586,15 +567,12 @@ def test_unknown_flag_corrective_nearest_spelling_form(executor_with_mock_log_en
     executor, _mock = executor_with_mock_log_entry
     _install_flag_surface(executor)
 
-    rejection = executor._validate_invocation(
-        _FLAG_REJECTION_NOTATION, ['read', '--plna-id', 'x']
-    )
+    rejection = executor._validate_invocation(_FLAG_REJECTION_NOTATION, ['read', '--plna-id', 'x'])
 
     assert rejection is not None
     assert rejection['reason'] == 'unknown_flag'
     assert rejection['corrective'] == (
-        "Use `--plan-id` for `plan-marshall:manage-tasks:manage-tasks read` — "
-        "declared: ['plan-id', 'task-number']"
+        "Use `--plan-id` for `plan-marshall:manage-tasks:manage-tasks read` — declared: ['plan-id', 'task-number']"
     )
     # Control: the nearest-spelling form never falls back to the whole set.
     assert 'Use a declared flag for' not in rejection['corrective']
@@ -609,15 +587,12 @@ def test_unknown_flag_corrective_no_suggestion_form(executor_with_mock_log_entry
     executor, _mock = executor_with_mock_log_entry
     _install_flag_surface(executor)
 
-    rejection = executor._validate_invocation(
-        _FLAG_REJECTION_NOTATION, ['read', '--zzzzzzzzzzzz', 'x']
-    )
+    rejection = executor._validate_invocation(_FLAG_REJECTION_NOTATION, ['read', '--zzzzzzzzzzzz', 'x'])
 
     assert rejection is not None
     assert rejection['reason'] == 'unknown_flag'
     assert rejection['corrective'] == (
-        "Use a declared flag for `plan-marshall:manage-tasks:manage-tasks read`: "
-        "['plan-id', 'task-number']"
+        "Use a declared flag for `plan-marshall:manage-tasks:manage-tasks read`: ['plan-id', 'task-number']"
     )
     # Control: the fallback form never names a single suggested flag.
     assert not rejection['corrective'].startswith('Use `--')
@@ -696,13 +671,11 @@ def test_walk_steps_over_a_routing_flag_value_and_reaches_the_leaf(
     assert rejection is None, rejection
     assert resolution is not None
     assert resolution['chain'] == ['plan', 'get'], (
-        f"the routing flag's value swallowed the verb path; got "
-        f'{resolution["chain"]!r}'
+        f"the routing flag's value swallowed the verb path; got {resolution['chain']!r}"
     )
     assert resolution['flags'] == ['project-dir', 'field']
     assert 'field' in resolution['inherited'], (
-        'the leaf-declared flag is missing from the accept-set, so the walk '
-        'resolved a shallower node than it reached'
+        'the leaf-declared flag is missing from the accept-set, so the walk resolved a shallower node than it reached'
     )
 
 
@@ -719,9 +692,7 @@ def test_walk_steps_over_a_routing_flag_value_and_reaches_the_leaf(
         'arity-1-flag-never-binds-a-following-flag',
     ],
 )
-def test_walk_reaches_the_leaf_across_every_flag_spelling(
-    executor_with_mock_log_entry, argv, expected_flags
-):
+def test_walk_reaches_the_leaf_across_every_flag_spelling(executor_with_mock_log_entry, argv, expected_flags):
     """Each flag spelling consumes exactly its own tokens and no verb behind it.
 
     A zero-arity switch consumes nothing; an ``=``-joined flag carries its value
@@ -732,9 +703,7 @@ def test_walk_reaches_the_leaf_across_every_flag_spelling(
     """
     executor, _mock = executor_with_mock_log_entry
 
-    resolution, rejection = executor._resolve_invocation(
-        'test:skill:script', _ROOT_WITH_ROUTING_FLAGS, argv
-    )
+    resolution, rejection = executor._resolve_invocation('test:skill:script', _ROOT_WITH_ROUTING_FLAGS, argv)
 
     assert rejection is None, rejection
     assert resolution['chain'] == ['plan', 'get'], (
@@ -754,13 +723,10 @@ def test_walk_abandons_when_an_unknown_arity_flag_precedes_a_verb(
     executor, _mock = executor_with_mock_log_entry
     root = dict(_ROOT_WITH_ROUTING_FLAGS, flags=['mystery'], flag_arity={})
 
-    resolution, rejection = executor._resolve_invocation(
-        'test:skill:script', root, ['--mystery', 'plan', 'get']
-    )
+    resolution, rejection = executor._resolve_invocation('test:skill:script', root, ['--mystery', 'plan', 'get'])
 
     assert (resolution, rejection) == (None, None), (
-        'an unknowable arity in front of a verb must abandon the walk, not '
-        f'guess: got {resolution!r} / {rejection!r}'
+        f'an unknowable arity in front of a verb must abandon the walk, not guess: got {resolution!r} / {rejection!r}'
     )
 
 
@@ -807,8 +773,6 @@ def test_always_accepted_flags_and_their_arity_share_one_definition(
     """The allowlist and its arity map cannot drift apart — they are one object."""
     executor, _mock = executor_with_mock_log_entry
 
-    assert set(executor._ALWAYS_ACCEPTED_FLAGS) == set(
-        executor._ALWAYS_ACCEPTED_FLAG_ARITY
-    )
+    assert set(executor._ALWAYS_ACCEPTED_FLAGS) == set(executor._ALWAYS_ACCEPTED_FLAG_ARITY)
     assert executor._ALWAYS_ACCEPTED_FLAG_ARITY['project-dir'] == 1
     assert executor._ALWAYS_ACCEPTED_FLAG_ARITY['help'] == 0

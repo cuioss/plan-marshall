@@ -137,9 +137,7 @@ def test_validate_accepts_config_with_display_timezone(plan_context):
     """validate succeeds for a config that includes display_timezone."""
     config_path = plan_context.fixture_dir / 'run-configuration.json'
     config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(
-        json.dumps({'version': 1, 'commands': {}, 'display_timezone': 'America/New_York'})
-    )
+    config_path.write_text(json.dumps({'version': 1, 'commands': {}, 'display_timezone': 'America/New_York'}))
 
     result = run_script(SCRIPT_PATH, 'validate', '--file', str(config_path))
 

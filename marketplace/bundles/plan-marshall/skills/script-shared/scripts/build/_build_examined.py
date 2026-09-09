@@ -139,9 +139,7 @@ NON_ANALYSIS_COMMANDS: dict[str, str] = {
         'lifecycle including tests, npm resolves dependencies and runs none — so '
         'the token alone does not determine them'
     ),
-    'clean-install': (
-        'the ``clean`` + ``install`` chain, undetermined for both reasons above'
-    ),
+    'clean-install': ('the ``clean`` + ``install`` chain, undetermined for both reasons above'),
     'package': (
         'assembles an archive from already-built output; like ``install`` it is '
         'build-tool-dependent whether any analysis ran under it, and any that did '
@@ -211,9 +209,7 @@ def resolve_tests_run(analyses: frozenset[str] | None, parsed_total: int | None)
     return 0
 
 
-def clearable_finding_types(
-    analyses: frozenset[str] | None, tests_run: int | None
-) -> tuple[str, ...]:
+def clearable_finding_types(analyses: frozenset[str] | None, tests_run: int | None) -> tuple[str, ...]:
     """Return the finding types this green run is entitled to clear.
 
     A type is clearable only when the run performed at least one analysis that can

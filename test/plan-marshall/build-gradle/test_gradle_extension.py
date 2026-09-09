@@ -67,9 +67,7 @@ def test_classify_paths_claims_nested_main_resources_as_production():
     """A resource under a nested subproject's src/main/resources tree is production."""
     ext = BuildExtension()
     result = ext.classify_paths(['subproject-a/src/main/resources/application.properties'])
-    assert result['production'] == [
-        'subproject-a/src/main/resources/application.properties'
-    ]
+    assert result['production'] == ['subproject-a/src/main/resources/application.properties']
 
 
 def test_classify_paths_claims_bare_test_resources_as_test():
@@ -89,12 +87,14 @@ def test_classify_paths_claims_nested_test_resources_as_test():
 def test_classify_paths_nested_resources_match_bare_forms():
     """Nested and bare resource layouts classify identically."""
     ext = BuildExtension()
-    result = ext.classify_paths([
-        'src/main/resources/a.properties',
-        'subproject-a/src/main/resources/b.properties',
-        'src/test/resources/c.json',
-        'subproject-a/src/test/resources/d.json',
-    ])
+    result = ext.classify_paths(
+        [
+            'src/main/resources/a.properties',
+            'subproject-a/src/main/resources/b.properties',
+            'src/test/resources/c.json',
+            'subproject-a/src/test/resources/d.json',
+        ]
+    )
     assert result['production'] == [
         'src/main/resources/a.properties',
         'subproject-a/src/main/resources/b.properties',
@@ -108,11 +108,13 @@ def test_classify_paths_nested_resources_match_bare_forms():
 def test_classify_paths_claims_resources_regardless_of_extension():
     """A resource's role follows its tree, not its file suffix."""
     ext = BuildExtension()
-    result = ext.classify_paths([
-        'src/main/resources/logback.xml',
-        'src/main/resources/data.csv',
-        'src/main/resources/mystery.xyz',
-    ])
+    result = ext.classify_paths(
+        [
+            'src/main/resources/logback.xml',
+            'src/main/resources/data.csv',
+            'src/main/resources/mystery.xyz',
+        ]
+    )
     assert result['production'] == [
         'src/main/resources/logback.xml',
         'src/main/resources/data.csv',
@@ -242,14 +244,16 @@ def test_classify_paths_handles_empty_input():
 def test_classify_paths_mixed_input():
     """A mixed input list classifies each path into the right bucket."""
     ext = BuildExtension()
-    result = ext.classify_paths([
-        'src/main/resources/application.properties',
-        'src/main/java/com/example/Foo.java',
-        'src/test/resources/fixture.json',
-        'src/test/java/com/example/FooTest.java',
-        'build.gradle',
-        'build.sh',
-    ])
+    result = ext.classify_paths(
+        [
+            'src/main/resources/application.properties',
+            'src/main/java/com/example/Foo.java',
+            'src/test/resources/fixture.json',
+            'src/test/java/com/example/FooTest.java',
+            'build.gradle',
+            'build.sh',
+        ]
+    )
     assert result['production'] == [
         'src/main/resources/application.properties',
         'src/main/java/com/example/Foo.java',
@@ -267,28 +271,15 @@ def test_classify_paths_mixed_input():
 def test_classify_path_specificity_resources_scores_three():
     """A resource path returns the resource row's specificity of 3."""
     ext = BuildExtension()
-    assert (
-        ext.classify_path_specificity(
-            'src/main/resources/application.properties', 'production'
-        )
-        == 3
-    )
-    assert (
-        ext.classify_path_specificity('src/test/resources/fixture.json', 'test') == 3
-    )
+    assert ext.classify_path_specificity('src/main/resources/application.properties', 'production') == 3
+    assert ext.classify_path_specificity('src/test/resources/fixture.json', 'test') == 3
 
 
 def test_classify_path_specificity_java_scores_two():
     """A java source path returns the java row's specificity of 2."""
     ext = BuildExtension()
-    assert (
-        ext.classify_path_specificity('src/main/java/com/example/Foo.java', 'production')
-        == 2
-    )
-    assert (
-        ext.classify_path_specificity('src/test/java/com/example/FooTest.java', 'test')
-        == 2
-    )
+    assert ext.classify_path_specificity('src/main/java/com/example/Foo.java', 'production') == 2
+    assert ext.classify_path_specificity('src/test/java/com/example/FooTest.java', 'test') == 2
 
 
 def test_classify_path_specificity_gradle_descriptor_scores_one():
@@ -313,12 +304,7 @@ def test_classify_path_specificity_shell_script_scores_zero():
 def test_classify_path_specificity_returns_zero_for_wrong_role():
     """A path claimed under a different role than asked returns 0."""
     ext = BuildExtension()
-    assert (
-        ext.classify_path_specificity(
-            'src/main/resources/application.properties', 'test'
-        )
-        == 0
-    )
+    assert ext.classify_path_specificity('src/main/resources/application.properties', 'test') == 0
     assert ext.classify_path_specificity('build.gradle', 'production') == 0
 
 

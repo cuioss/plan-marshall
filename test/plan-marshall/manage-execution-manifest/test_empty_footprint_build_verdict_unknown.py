@@ -283,9 +283,7 @@ class TestResolvableEmptyFootprintStillDropsTheGate:
         assert '[STATUS] pre_push_quality_gate_inactive' in dropped_lines[0]
         assert _lines_naming(messages, 'kept pre-push-quality-gate on an unknown build verdict') == []
 
-    def test_only_the_footprint_state_differs_between_the_two_verdicts(
-        self, plan_context, monkeypatch
-    ):
+    def test_only_the_footprint_state_differs_between_the_two_verdicts(self, plan_context, monkeypatch):
         """Hold everything fixed and vary only unresolvable-vs-empty.
 
         The single assertion proving the resolver's three-state return is what
@@ -323,9 +321,7 @@ class TestBuildVerdictKeepsTheGate:
     indistinguishable without this arm plus the ``unknown`` arm above.
     """
 
-    def test_non_empty_buildable_footprint_keeps_the_gate_silently(
-        self, plan_context, monkeypatch
-    ):
+    def test_non_empty_buildable_footprint_keeps_the_gate_silently(self, plan_context, monkeypatch):
         plan_id = 'verdict-build-keeps-gate'
         candidates = _candidates()
         _seed_marshal(candidates)

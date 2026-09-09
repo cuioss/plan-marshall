@@ -317,9 +317,7 @@ def cmd_loop_exit_guard(args) -> dict:
     all_tasks = get_all_tasks(task_dir)
 
     pending_ids = [t['number'] for _, t in all_tasks if t.get('status') == 'pending']
-    in_progress_ids = [
-        t['number'] for _, t in all_tasks if t.get('status') == 'in_progress'
-    ]
+    in_progress_ids = [t['number'] for _, t in all_tasks if t.get('status') == 'in_progress']
     pending_count = len(pending_ids)
     in_progress_count = len(in_progress_ids)
 

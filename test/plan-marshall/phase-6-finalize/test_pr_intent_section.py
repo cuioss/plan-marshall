@@ -95,9 +95,7 @@ def _run(plan_id: str, draft: Path, body: Path, outline_stdout: str, capsys):
 class TestOmitWhenNoOutlineIntent:
     """The fail-first case: no outline => no section AT ALL."""
 
-    def test_absent_outline_writes_no_intent_heading_and_no_placeholder(
-        self, body_file, draft_file, capsys
-    ):
+    def test_absent_outline_writes_no_intent_heading_and_no_placeholder(self, body_file, draft_file, capsys):
         """The body is byte-identical — no heading, no placeholder text.
 
         An empty ``## Intent`` would tell a reviewer less than no section at all,
@@ -167,9 +165,7 @@ class TestBudgetAndTruncation:
         assert draft in written
         assert MARKER_STEM not in written
 
-    def test_over_budget_draft_is_truncated_and_the_marker_is_written(
-        self, body_file, draft_file, capsys
-    ):
+    def test_over_budget_draft_is_truncated_and_the_marker_is_written(self, body_file, draft_file, capsys):
         """A truncation with no marker FAILS — silent clipping is forbidden.
 
         The marker must land in the WRITTEN BODY, not merely in the return
@@ -186,7 +182,7 @@ class TestBudgetAndTruncation:
         assert MARKER_STEM in written, 'a truncation MUST be visibly marked in the body'
 
     def test_the_marker_quantifies_the_loss(self, body_file, draft_file, capsys):
-        """"Truncated" alone does not tell a reviewer how much is missing."""
+        """ "Truncated" alone does not tell a reviewer how much is missing."""
         total = 4200
         draft_file.write_text('x' * total, encoding='utf-8')
 
@@ -258,9 +254,7 @@ class TestBudgetAndTruncation:
 class TestOutlineIsReadThroughTheCanonicalReaderOnly:
     """No second outline reader, and no direct read of solution_outline.md."""
 
-    def test_the_constructed_argv_is_the_manage_solution_outline_read_verb(
-        self, body_file, draft_file, capsys
-    ):
+    def test_the_constructed_argv_is_the_manage_solution_outline_read_verb(self, body_file, draft_file, capsys):
         """Asserted on the argv at the LOWEST subprocess primitive.
 
         Per the project's constructed-argv discipline: asserting on a wrapper's
@@ -365,9 +359,7 @@ class TestCLISurface:
     def test_render_is_the_only_subcommand(self):
         parser = pis.build_parser()
 
-        parsed = parser.parse_args(
-            ['render', '--plan-id', 'p', '--draft-path', 'd', '--body-path', 'b']
-        )
+        parsed = parser.parse_args(['render', '--plan-id', 'p', '--draft-path', 'd', '--body-path', 'b'])
         assert parsed.command == 'render'
 
         with pytest.raises(SystemExit):

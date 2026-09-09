@@ -245,9 +245,7 @@ def test_the_project_data_companion_is_opt_in(tmp_path):
 #: Directory names that never hold collectable test source. ``fixtures`` is in
 #: ``norecursedirs`` (pyproject), so pytest never collects under it — a scan that
 #: walked it would report a testless module pytest does not import.
-EXCLUDED_DIR_NAMES = frozenset(
-    {'__pycache__', '.pytest_cache', '.mypy_cache', '.ruff_cache', 'fixtures'}
-)
+EXCLUDED_DIR_NAMES = frozenset({'__pycache__', '.pytest_cache', '.mypy_cache', '.ruff_cache', 'fixtures'})
 
 
 def _is_collected_name(name: str) -> bool:
@@ -315,7 +313,7 @@ def test_no_collected_module_under_test_declares_zero_tests():
         'nothing, so its clean result is vacuous. Check TEST_ROOT resolution.'
     )
     assert offenders == [], (
-        f'{len(offenders)} module(s) of {scanned} match pytest\'s collection '
+        f"{len(offenders)} module(s) of {scanned} match pytest's collection "
         'pattern while declaring no test. pytest imports them and collects '
         'nothing, so they are invisible in the run. Rename each to '
         f'_{{domain}}_fixtures.py per test/README.md: {offenders}'

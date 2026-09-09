@@ -7,7 +7,6 @@ the platform-runtime contract, that an absent counter is not persisted as zero w
 a measured zero is, and that the source reaches no transcript-engine symbol.
 """
 
-
 from pathlib import Path
 
 from _manage_metrics_fixtures import (
@@ -81,9 +80,7 @@ class TestExplorationCountersAbsentVsMeasuredZero:
     ``metrics.toon`` (persistence) and ``metrics.md`` (render).
     """
 
-    def test_absent_counters_are_not_persisted_as_zero_and_render_nothing(
-        self, plan_context, monkeypatch
-    ):
+    def test_absent_counters_are_not_persisted_as_zero_and_render_nothing(self, plan_context, monkeypatch):
         """A runtime that supplies no counters leaves the fields absent, not zeroed."""
         plan_dir = plan_context.plan_dir_for('expl-absent')
         manage_metrics.write_metrics('expl-absent', {'plan_id': 'expl-absent'})
@@ -99,9 +96,7 @@ class TestExplorationCountersAbsentVsMeasuredZero:
             counters={'message_count': 1},
         )
 
-        assert cmd_enrich(ns_enrich('expl-absent', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))[
-            'status'
-        ] == 'success'
+        assert cmd_enrich(ns_enrich('expl-absent', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))['status'] == 'success'
 
         five = manage_metrics.read_metrics_raw('expl-absent')['phases']['5-execute']
         for field in manage_metrics._EXPLORATION_COUNTER_FIELDS:
@@ -112,9 +107,7 @@ class TestExplorationCountersAbsentVsMeasuredZero:
         assert '- **Exploration tool calls**' not in md
         assert '- **Exploration result bytes**' not in md
 
-    def test_measured_zero_counter_is_persisted_and_rendered_as_zero(
-        self, plan_context, monkeypatch
-    ):
+    def test_measured_zero_counter_is_persisted_and_rendered_as_zero(self, plan_context, monkeypatch):
         """A counter supplied as 0 is a measurement: it is written and rendered as 0."""
         plan_dir = plan_context.plan_dir_for('expl-zero')
         manage_metrics.write_metrics('expl-zero', {'plan_id': 'expl-zero'})
@@ -136,9 +129,7 @@ class TestExplorationCountersAbsentVsMeasuredZero:
             counters={'message_count': 1, 'unclassified_tool_calls': 0},
         )
 
-        assert cmd_enrich(ns_enrich('expl-zero', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))[
-            'status'
-        ] == 'success'
+        assert cmd_enrich(ns_enrich('expl-zero', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))['status'] == 'success'
 
         five = manage_metrics.read_metrics_raw('expl-zero')['phases']['5-execute']
         assert five['exploration_tool_calls'] == 0
@@ -163,9 +154,7 @@ class TestExplorationSubsourceRoundTrip:
     sub-classified, which is not the claim that nothing was index-answerable.
     """
 
-    def test_absent_subsource_fields_are_not_persisted_as_zero_and_render_nothing(
-        self, plan_context, monkeypatch
-    ):
+    def test_absent_subsource_fields_are_not_persisted_as_zero_and_render_nothing(self, plan_context, monkeypatch):
         """A runtime supplying no sub-split leaves the fields absent, not zeroed."""
         plan_dir = plan_context.plan_dir_for('sub-absent')
         manage_metrics.write_metrics('sub-absent', {'plan_id': 'sub-absent'})
@@ -188,9 +177,7 @@ class TestExplorationSubsourceRoundTrip:
             counters={'message_count': 1},
         )
 
-        assert cmd_enrich(ns_enrich('sub-absent', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))[
-            'status'
-        ] == 'success'
+        assert cmd_enrich(ns_enrich('sub-absent', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))['status'] == 'success'
 
         five = manage_metrics.read_metrics_raw('sub-absent')['phases']['5-execute']
         assert five['exploration_result_bytes'] == 4096
@@ -224,9 +211,7 @@ class TestExplorationSubsourceRoundTrip:
             counters={'message_count': 1},
         )
 
-        assert cmd_enrich(ns_enrich('sub-zero', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))[
-            'status'
-        ] == 'success'
+        assert cmd_enrich(ns_enrich('sub-zero', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))['status'] == 'success'
 
         five = manage_metrics.read_metrics_raw('sub-zero')['phases']['5-execute']
         for field in manage_metrics._EXPLORATION_SUBSOURCE_FIELDS:
@@ -238,13 +223,9 @@ class TestExplorationSubsourceRoundTrip:
         assert '- **Exploration doc residency bytes**: 0' in md
         # The byte residual names its DENOMINATOR (exploration_result_bytes) so it
         # can never be read as the cache_read residual (plan 030 D1).
-        assert (
-            '- **Unattributed exploration bytes**: 0 of 0 exploration_result_bytes' in md
-        )
+        assert '- **Unattributed exploration bytes**: 0 of 0 exploration_result_bytes' in md
 
-    def test_split_round_trips_and_still_partitions_after_persistence(
-        self, plan_context, monkeypatch
-    ):
+    def test_split_round_trips_and_still_partitions_after_persistence(self, plan_context, monkeypatch):
         """The partition invariant is readable off the persisted row and the report."""
         plan_dir = plan_context.plan_dir_for('sub-split')
         manage_metrics.write_metrics('sub-split', {'plan_id': 'sub-split'})
@@ -270,26 +251,19 @@ class TestExplorationSubsourceRoundTrip:
             counters={'message_count': 1},
         )
 
-        assert cmd_enrich(ns_enrich('sub-split', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))[
-            'status'
-        ] == 'success'
+        assert cmd_enrich(ns_enrich('sub-split', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))['status'] == 'success'
 
         five = manage_metrics.read_metrics_raw('sub-split')['phases']['5-execute']
         for field, value in supplied.items():
             assert five[field] == value, field
-        persisted_sum = sum(
-            five[field] for field in manage_metrics._EXPLORATION_SUBSOURCE_FIELDS
-        )
+        persisted_sum = sum(five[field] for field in manage_metrics._EXPLORATION_SUBSOURCE_FIELDS)
         assert persisted_sum == five['exploration_result_bytes']
 
         cmd_generate(ns_generate('sub-split'))
         md = (plan_dir / 'metrics.md').read_text()
         assert '- **Exploration index answerable bytes**: 700' in md
         assert '- **Exploration doc residency bytes**: 250' in md
-        assert (
-            '- **Unattributed exploration bytes**: 50 of 1,000 exploration_result_bytes'
-            in md
-        )
+        assert '- **Unattributed exploration bytes**: 50 of 1,000 exploration_result_bytes' in md
 
 
 def test_exploration_buckets_match_platform_runtime_contract():
@@ -299,11 +273,7 @@ def test_exploration_buckets_match_platform_runtime_contract():
     are recovered from the contract's ``*_tool_calls`` keys, so adding a bucket to
     the producer without extending ``_EXPLORATION_BUCKETS`` fails loudly here.
     """
-    contract_buckets = {
-        key[: -len('_tool_calls')]
-        for key in _contract_counter_keys()
-        if key.endswith('_tool_calls')
-    }
+    contract_buckets = {key[: -len('_tool_calls')] for key in _contract_counter_keys() if key.endswith('_tool_calls')}
 
     assert contract_buckets, 'contract declares no *_tool_calls counter keys'
     assert set(manage_metrics._EXPLORATION_BUCKETS) == contract_buckets

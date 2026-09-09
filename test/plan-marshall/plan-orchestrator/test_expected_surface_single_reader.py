@@ -64,9 +64,7 @@ _ORCH_SKILL = 'plan-orchestrator'
 _ORCH_SCRIPT = 'orchestrator.py'
 _ORCH_MODULE_NAME = 'orchestrator_single_reader_guard'
 
-_orch = load_script_module(
-    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT, module_name=_ORCH_MODULE_NAME
-)
+_orch = load_script_module(_ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT, module_name=_ORCH_MODULE_NAME)
 
 #: The filename the sole reader must be, and nothing else.
 SOLE_READER = 'epic_spec_parser.py'
@@ -132,7 +130,7 @@ def test_the_enumerated_population_is_non_empty_and_reaches_both_bundles():
         'the walk is not reaching the module under test'
     )
     assert 'orchestrator.py' in names, (
-        f'the retired parse\'s former home is absent from the {len(modules)}-module '
+        f"the retired parse's former home is absent from the {len(modules)}-module "
         'population, so its residual-carrier case is unreachable'
     )
     bundles = {path.relative_to(MARKETPLACE_ROOT).parts[0] for path in modules}

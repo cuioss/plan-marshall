@@ -99,9 +99,7 @@ _DESCRIPTOR_COUNT_IDS = [
 ]
 
 
-@pytest.mark.parametrize(
-    'relative_dirs,expected_count', _DESCRIPTOR_COUNT_CASES, ids=_DESCRIPTOR_COUNT_IDS
-)
+@pytest.mark.parametrize('relative_dirs,expected_count', _DESCRIPTOR_COUNT_CASES, ids=_DESCRIPTOR_COUNT_IDS)
 def test_discover_descriptors_finds_every_descriptor_in_the_tree(
     tmp_path: Path, relative_dirs: list[str], expected_count: int
 ):
@@ -139,13 +137,10 @@ _EXCLUDED_DIR_SHAPES = {
 #: fail for a member it does not happen to name. Sorted because ``EXCLUDE_DIRS``
 #: is a set and the row order would otherwise vary between runs. The first path
 #: segment of each row is the excluded name.
-_EXCLUDED_DIR_CASES = [
-    _EXCLUDED_DIR_SHAPES.get(name, (name, 'pom.xml')) for name in sorted(EXCLUDE_DIRS)
-]
+_EXCLUDED_DIR_CASES = [_EXCLUDED_DIR_SHAPES.get(name, (name, 'pom.xml')) for name in sorted(EXCLUDE_DIRS)]
 
 _EXCLUDED_DIR_IDS = [
-    relative_dir.split('/', 1)[0].strip('._').replace('_', '-')
-    for relative_dir, _ in _EXCLUDED_DIR_CASES
+    relative_dir.split('/', 1)[0].strip('._').replace('_', '-') for relative_dir, _ in _EXCLUDED_DIR_CASES
 ]
 
 
@@ -163,12 +158,8 @@ def test_excluded_dir_sweep_covers_every_exclude_dir():
     assert len(_EXCLUDED_DIR_IDS) == len(set(_EXCLUDED_DIR_IDS)), 'row ids must be unique'
 
 
-@pytest.mark.parametrize(
-    'excluded_relative_dir,descriptor', _EXCLUDED_DIR_CASES, ids=_EXCLUDED_DIR_IDS
-)
-def test_discover_descriptors_skips_excluded_directories(
-    tmp_path: Path, excluded_relative_dir: str, descriptor: str
-):
+@pytest.mark.parametrize('excluded_relative_dir,descriptor', _EXCLUDED_DIR_CASES, ids=_EXCLUDED_DIR_IDS)
+def test_discover_descriptors_skips_excluded_directories(tmp_path: Path, excluded_relative_dir: str, descriptor: str):
     """A descriptor inside an excluded directory is never reported.
 
     The result is compared RELATIVE to the fixture root. The absolute path runs
@@ -266,9 +257,7 @@ _FIND_README_IDS = [
 
 
 @pytest.mark.parametrize('present,expected', _FIND_README_CASES, ids=_FIND_README_IDS)
-def test_find_readme_reports_the_first_matching_pattern(
-    tmp_path: Path, present: list[str], expected: str
-):
+def test_find_readme_reports_the_first_matching_pattern(tmp_path: Path, present: list[str], expected: str):
     for name in present:
         (tmp_path / name).touch()
 

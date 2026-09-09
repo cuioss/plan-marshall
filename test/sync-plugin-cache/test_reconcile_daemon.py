@@ -174,14 +174,10 @@ def test_counts_arriving_as_strings_are_still_counts():
     # count legitimately arrives as its decimal string. If those read as unknown
     # the guard above would defer EVERY reconcile and the upgrade path would be
     # dead code that still looked green.
-    idle = _status(
-        running_binary_path=_RUNNING_STALE, binary_diverges=True, in_flight='0', queued='0'
-    )
+    idle = _status(running_binary_path=_RUNNING_STALE, binary_diverges=True, in_flight='0', queued='0')
     assert rd.decide(idle) == rd.ReconcileDecision(rd.ACTION_UPGRADE, 'idle_and_stale')
 
-    busy = _status(
-        running_binary_path=_RUNNING_STALE, binary_diverges=True, in_flight='1', queued='0'
-    )
+    busy = _status(running_binary_path=_RUNNING_STALE, binary_diverges=True, in_flight='1', queued='0')
     assert rd.decide(busy).reason == 'busy'
 
 
@@ -237,7 +233,10 @@ def test_idle_and_stale_runs_upgrade_and_clears_marker(marker):
     status = _status(running_binary_path=_RUNNING_STALE, binary_diverges=True)
 
     summary = rd.reconcile(
-        status_reader=lambda: status, action_runner=runner, marker=marker, now='T0',
+        status_reader=lambda: status,
+        action_runner=runner,
+        marker=marker,
+        now='T0',
     )
 
     assert summary['action'] == rd.ACTION_UPGRADE
@@ -255,7 +254,10 @@ def test_busy_defer_never_runs_a_reconcile_verb_and_writes_marker(marker):
     status = _status(running_binary_path=_RUNNING_STALE, binary_diverges=True, in_flight=1)
 
     summary = rd.reconcile(
-        status_reader=lambda: status, action_runner=runner, marker=marker, now='T1',
+        status_reader=lambda: status,
+        action_runner=runner,
+        marker=marker,
+        now='T1',
     )
 
     assert summary['action'] == rd.ACTION_DEFER
@@ -305,7 +307,10 @@ def test_current_daemon_clears_a_stale_owed_marker(marker):
     runner = _Runner()
 
     summary = rd.reconcile(
-        status_reader=lambda: _status(binary_diverges=False), action_runner=runner, marker=marker, now='T0',
+        status_reader=lambda: _status(binary_diverges=False),
+        action_runner=runner,
+        marker=marker,
+        now='T0',
     )
 
     assert summary['action'] == rd.ACTION_NOOP
@@ -331,7 +336,10 @@ def test_status_unavailable_preserves_an_owed_marker(marker):
 def test_not_enrolled_is_silent_noop_with_no_verb(marker):
     runner = _Runner()
     summary = rd.reconcile(
-        status_reader=lambda: _status(registered=False), action_runner=runner, marker=marker, now='T0',
+        status_reader=lambda: _status(registered=False),
+        action_runner=runner,
+        marker=marker,
+        now='T0',
     )
     assert summary['action'] == rd.ACTION_NOOP
     assert runner.calls == []
@@ -341,15 +349,11 @@ def test_failed_upgrade_writes_the_owed_marker_and_never_clears_it(marker):
     # The verb says `success` but its own fields say the daemon was never
     # replaced. Gating on the word alone is what cleared a genuine owed marker
     # and recorded a still-stale daemon as reconciled.
-    marker.write_text(
-        json.dumps({'owed': True, 'since': 'T0', 'defer_count': 1}), encoding='utf-8'
-    )
+    marker.write_text(json.dumps({'owed': True, 'since': 'T0', 'defer_count': 1}), encoding='utf-8')
     runner = _Runner({'status': 'success', 'drain_exited': False, 'already_running': True})
     status = _status(running_binary_path=_RUNNING_STALE, binary_diverges=True)
 
-    summary = rd.reconcile(
-        status_reader=lambda: status, action_runner=runner, marker=marker, now='T1'
-    )
+    summary = rd.reconcile(status_reader=lambda: status, action_runner=runner, marker=marker, now='T1')
 
     assert runner.calls == ['upgrade']
     assert summary['reconcile_result'] == 'failed'
@@ -376,9 +380,7 @@ def test_failed_start_is_reported_by_already_running(marker):
     runner = _Runner({'status': 'success', 'already_running': True})
     status = _status(running=False, reason='socket_absent', running_binary_path=None)
 
-    summary = rd.reconcile(
-        status_reader=lambda: status, action_runner=runner, marker=marker, now='T1'
-    )
+    summary = rd.reconcile(status_reader=lambda: status, action_runner=runner, marker=marker, now='T1')
 
     assert runner.calls == ['start']
     assert summary['reconcile_result'] == 'failed'
@@ -397,9 +399,7 @@ def test_verb_that_reports_neither_field_cannot_prove_success(marker):
     runner = _Runner({'status': 'success'})
     status = _status(running_binary_path=_RUNNING_STALE, binary_diverges=True)
 
-    summary = rd.reconcile(
-        status_reader=lambda: status, action_runner=runner, marker=marker, now='T1'
-    )
+    summary = rd.reconcile(status_reader=lambda: status, action_runner=runner, marker=marker, now='T1')
 
     assert summary['reconcile_result'] == 'failed'
     assert summary['failure_reason'] == 'already_running_absent'
@@ -420,9 +420,7 @@ def test_empty_verb_result_is_a_failed_reconcile_that_keeps_the_debt(marker):
     runner = _Runner({})
     status = _status(running_binary_path=_RUNNING_STALE, binary_diverges=True)
 
-    summary = rd.reconcile(
-        status_reader=lambda: status, action_runner=runner, marker=marker, now='T1'
-    )
+    summary = rd.reconcile(status_reader=lambda: status, action_runner=runner, marker=marker, now='T1')
 
     assert runner.calls == ['upgrade']
     assert summary['reconcile_result'] == 'failed'
@@ -446,9 +444,7 @@ def test_verb_reporting_error_is_a_failed_reconcile(marker):
     runner = _Runner({'status': 'error', 'reason': 'drain_did_not_exit'})
     status = _status(running_binary_path=_RUNNING_STALE, binary_diverges=True)
 
-    summary = rd.reconcile(
-        status_reader=lambda: status, action_runner=runner, marker=marker, now='T1'
-    )
+    summary = rd.reconcile(status_reader=lambda: status, action_runner=runner, marker=marker, now='T1')
 
     assert summary['reconcile_result'] == 'failed'
     assert summary['failure_reason'] == 'verb_reported_error'
@@ -463,9 +459,7 @@ def test_confirmed_upgrade_still_clears_the_marker(marker):
     runner = _Runner({'status': 'success', 'drain_exited': True, 'already_running': False})
     status = _status(running_binary_path=_RUNNING_STALE, binary_diverges=True)
 
-    summary = rd.reconcile(
-        status_reader=lambda: status, action_runner=runner, marker=marker, now='T1'
-    )
+    summary = rd.reconcile(status_reader=lambda: status, action_runner=runner, marker=marker, now='T1')
 
     assert summary['reconcile_result'] == 'success'
     assert summary['owed_cleared'] is True
@@ -478,9 +472,7 @@ def test_toon_string_booleans_are_read_as_booleans(marker):
     runner = _Runner({'status': 'success', 'drain_exited': 'false', 'already_running': 'true'})
     status = _status(running_binary_path=_RUNNING_STALE, binary_diverges=True)
 
-    summary = rd.reconcile(
-        status_reader=lambda: status, action_runner=runner, marker=marker, now='T1'
-    )
+    summary = rd.reconcile(status_reader=lambda: status, action_runner=runner, marker=marker, now='T1')
 
     assert summary['reconcile_result'] == 'failed'
     assert summary['failure_reason'] == 'daemon_already_running'

@@ -76,9 +76,7 @@ NPM_FIXTURE = TEST_ROOT / 'build-npm' / 'fixtures' / 'workspace-monorepo'
 @pytest.fixture(autouse=True)
 def _no_maven_enrich(monkeypatch):
     """Neutralise the Maven lazy-enrich seam (see the module docstring)."""
-    monkeypatch.setattr(
-        _cmd_client_query, '_enrich_maven_module_cached', lambda name, derived, project_dir: None
-    )
+    monkeypatch.setattr(_cmd_client_query, '_enrich_maven_module_cached', lambda name, derived, project_dir: None)
 
 
 @pytest.fixture(autouse=True)
@@ -157,9 +155,7 @@ def test_same_fixture_yields_no_edges_when_no_resolver_is_registered(monkeypatch
     ('project_factory', 'module_name'),
     [(python_project, 'sample_core'), (npm_project, '@sample/core')],
 )
-def test_same_fixture_yields_no_impact_when_no_resolver_is_registered(
-    monkeypatch, project_factory, module_name
-):
+def test_same_fixture_yields_no_impact_when_no_resolver_is_registered(monkeypatch, project_factory, module_name):
     monkeypatch.setattr(extension_discovery, 'discover_derivation_resolvers', lambda: [])
 
     with project_factory() as project:
@@ -298,9 +294,7 @@ def test_npm_graph_reaches_scoped_workspace_members():
 
         # Graph edges run dependency -> dependent, so @sample/api depending on
         # @sample/core surfaces as ('@sample/core', '@sample/api').
-        assert ('@sample/core', '@sample/api') in [
-            (edge['from'], edge['to']) for edge in result['edges']
-        ]
+        assert ('@sample/core', '@sample/api') in [(edge['from'], edge['to']) for edge in result['edges']]
 
 
 # =============================================================================

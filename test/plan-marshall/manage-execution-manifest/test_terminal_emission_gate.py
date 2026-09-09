@@ -70,9 +70,7 @@ def _candidates() -> list[str]:
 class TestGateFunction:
     def test_orchestrated_plan_keeps_the_terminal_step(self, plan_context):
         plan_id = 'gate-orchestrated'
-        _write_request(
-            plan_context.plan_dir_for(plan_id), source='orchestrator', source_id=_ORCHESTRATED_POINTER
-        )
+        _write_request(plan_context.plan_dir_for(plan_id), source='orchestrator', source_id=_ORCHESTRATED_POINTER)
 
         kept, dropped = _apply_gate(_candidates(), plan_id)
 
@@ -145,9 +143,7 @@ class TestGateThroughCompose:
 
     def test_orchestrated_compose_keeps_the_step(self, plan_context):
         plan_id = 'compose-orchestrated'
-        _write_request(
-            plan_context.plan_dir_for(plan_id), source='orchestrator', source_id=_ORCHESTRATED_POINTER
-        )
+        _write_request(plan_context.plan_dir_for(plan_id), source='orchestrator', source_id=_ORCHESTRATED_POINTER)
 
         result = cmd_compose(_compose_ns(plan_id))
 

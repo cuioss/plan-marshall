@@ -41,6 +41,7 @@ import pytest
 # ---------------------------------------------------------------------------
 
 from conftest import get_scripts_dir, load_script_module
+
 _SCRIPTS_DIR = get_scripts_dir('plan-marshall', 'phase-6-finalize')
 
 
@@ -55,12 +56,8 @@ _mod = _load_module('ci_verify', 'ci_verify.py')
 from argparse import Namespace
 
 
-_ci_verify_lifecycle = load_script_module(
-    'plan-marshall', 'manage-status', '_cmd_lifecycle.py', '_ci_verify_lifecycle'
-)
-_ci_verify_mark_step = load_script_module(
-    'plan-marshall', 'manage-status', '_cmd_mark_step.py', '_ci_verify_mark_step'
-)
+_ci_verify_lifecycle = load_script_module('plan-marshall', 'manage-status', '_cmd_lifecycle.py', '_ci_verify_lifecycle')
+_ci_verify_mark_step = load_script_module('plan-marshall', 'manage-status', '_cmd_mark_step.py', '_ci_verify_mark_step')
 _ci_verify_status_core = load_script_module(
     'plan-marshall', 'manage-status', '_status_core.py', '_ci_verify_status_core'
 )
@@ -355,9 +352,7 @@ def test_required_field_guard_skips_persist_on_empty_run_id(tmp_path):
     envelope = {
         'status': 'success',
         'overall_status': 'success',
-        'checks': [
-            {'name': 'verify', 'status': 'SUCCESS', 'url': 'https://gitlab/x', 'workflow': 'verify'}
-        ],
+        'checks': [{'name': 'verify', 'status': 'SUCCESS', 'url': 'https://gitlab/x', 'workflow': 'verify'}],
     }
     persist = _StubPersist()
 
@@ -747,24 +742,17 @@ def test_first_missing_required_field_catches_zero_pr_number():
     """Both the int 0 and the string '0' PR number are caught as missing."""
     # Arrange / Act / Assert — int 0 (falsy).
     assert (
-        _first_missing_required_field(
-            plan_id='p', run_id='r', head_sha='h', pr_number=0, provider='github'
-        )
+        _first_missing_required_field(plan_id='p', run_id='r', head_sha='h', pr_number=0, provider='github')
         == 'pr_number'
     )
     # String '0' (truthy) — must ALSO be caught.
     assert (
-        _first_missing_required_field(
-            plan_id='p', run_id='r', head_sha='h', pr_number='0', provider='github'
-        )
+        _first_missing_required_field(plan_id='p', run_id='r', head_sha='h', pr_number='0', provider='github')
         == 'pr_number'
     )
     # A legitimate PR number passes the guard (returns None).
     assert (
-        _first_missing_required_field(
-            plan_id='p', run_id='r', head_sha='h', pr_number=123, provider='github'
-        )
-        is None
+        _first_missing_required_field(plan_id='p', run_id='r', head_sha='h', pr_number=123, provider='github') is None
     )
 
 
@@ -806,12 +794,18 @@ def test_build_parser_accepts_run_subcommand():
     args = parser.parse_args(
         [
             'run',
-            '--plan-id', 'p',
-            '--pr-number', '5',
-            '--worktree-path', '/tmp/wt',
-            '--provider', 'github',
-            '--final-status', 'success',
-            '--wait-outcome', 'completed',
+            '--plan-id',
+            'p',
+            '--pr-number',
+            '5',
+            '--worktree-path',
+            '/tmp/wt',
+            '--provider',
+            'github',
+            '--final-status',
+            'success',
+            '--wait-outcome',
+            'completed',
         ]
     )
     # Assert
@@ -830,12 +824,18 @@ def test_build_parser_rejects_illegal_wait_outcome():
         parser.parse_args(
             [
                 'run',
-                '--plan-id', 'p',
-                '--pr-number', '5',
-                '--worktree-path', '/tmp/wt',
-                '--provider', 'github',
-                '--final-status', 'failure',
-                '--wait-outcome', 'failure',
+                '--plan-id',
+                'p',
+                '--pr-number',
+                '5',
+                '--worktree-path',
+                '/tmp/wt',
+                '--provider',
+                'github',
+                '--final-status',
+                'failure',
+                '--wait-outcome',
+                'failure',
             ]
         )
 
@@ -935,9 +935,7 @@ def test_strict_mode_default_still_works(plan_context):
         plan_id=plan_id,
         worktree_path='/tmp/wt',
         pr_number=42,
-        ci_wait_runner=_StubCiWait(
-            {'status': 'success', 'final_status': 'success'}
-        ),
+        ci_wait_runner=_StubCiWait({'status': 'success', 'final_status': 'success'}),
         git_head_resolver=_StubGitHead('abc12345'),
     )
     assert result['status'] == 'wait_succeeded'
@@ -1043,9 +1041,9 @@ def test_required_steps_order_anchors_ci_verify_after_create_pr():
     create_pr_pos = content.find('- create-pr')
     ci_verify_pos = content.find('- ci-verify')
     automated_review_pos = content.find('- automatic-review')
-    assert (
-        0 < create_pr_pos < ci_verify_pos < automated_review_pos
-    ), 'required-steps.md must list ci-verify between create-pr and automatic-review'
+    assert 0 < create_pr_pos < ci_verify_pos < automated_review_pos, (
+        'required-steps.md must list ci-verify between create-pr and automatic-review'
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1079,8 +1077,7 @@ def test_skill_md_consumes_the_derived_fact_and_drops_the_literal():
         'per-step declarations — the defect this plan removed.'
     )
     assert 'head_dependent: true' in content, (
-        'SKILL.md must name the derived head_dependent fact as the source of '
-        'head-dependence membership.'
+        'SKILL.md must name the derived head_dependent fact as the source of head-dependence membership.'
     )
 
 
@@ -1170,9 +1167,7 @@ def test_standards_enumerates_all_seven_producer_strings():
         'ci-verify-missing',
     )
     for producer in expected_producers:
-        assert producer in content, (
-            f'Standards file must enumerate producer string {producer}'
-        )
+        assert producer in content, f'Standards file must enumerate producer string {producer}'
 
 
 def test_standards_enumerates_all_seven_subtype_tags():
@@ -1187,9 +1182,7 @@ def test_standards_enumerates_all_seven_subtype_tags():
         'ci_no_checks',
     )
     for subtype in expected_subtypes:
-        assert subtype in content, (
-            f'Standards file must enumerate subtype tag {subtype}'
-        )
+        assert subtype in content, f'Standards file must enumerate subtype tag {subtype}'
 
 
 # ---------------------------------------------------------------------------
@@ -1207,9 +1200,7 @@ def test_standards_declares_ci_complete_precondition():
     dispatcher invokes the precondition resolver.
     """
     content = _STANDARDS_PATH.read_text(encoding='utf-8')
-    assert 'requires: [ci-complete]' in content, (
-        'ci-verify standards must declare requires: [ci-complete]'
-    )
+    assert 'requires: [ci-complete]' in content, 'ci-verify standards must declare requires: [ci-complete]'
 
 
 def test_standards_references_consume_failures_mode():
@@ -1217,10 +1208,7 @@ def test_standards_references_consume_failures_mode():
     mode so future readers understand the contract.
     """
     content = _STANDARDS_PATH.read_text(encoding='utf-8')
-    assert 'consume-failures' in content, (
-        'ci-verify standards must document the consume-failures '
-        'precondition mode'
-    )
+    assert 'consume-failures' in content, 'ci-verify standards must document the consume-failures precondition mode'
 
 
 def test_executor_persists_artifacts_before_classification():
@@ -1239,6 +1227,5 @@ def test_executor_persists_artifacts_before_classification():
     assert persist_pos != -1, 'executor must call the persist seam'
     assert classify_pos != -1, 'executor must call classify_check on each check'
     assert persist_pos < classify_pos, (
-        'the persist seam must run before the classification loop so findings '
-        'can reference persisted per-job log paths'
+        'the persist seam must run before the classification loop so findings can reference persisted per-job log paths'
     )

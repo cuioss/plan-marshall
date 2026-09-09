@@ -10,7 +10,6 @@ Tests for manage-adr.py script.
 Tier 2 (direct import) tests with 2 subprocess CLI plumbing tests retained.
 """
 
-
 import re
 
 import pytest
@@ -85,9 +84,7 @@ def _build_metadata_block(*, summary='', tags='', affects='', supersedes=''):
 def _write_adr(adr_dir, filename, *, title, status='Proposed', **metadata):
     """Write an ADR file with a metadata block into the test ADR dir."""
     (adr_dir / filename).write_text(
-        f'= ADR-{filename[:3]}: {title}\n\n'
-        + _build_metadata_block(**metadata)
-        + f'\n== Status\n\n{status}\n'
+        f'= ADR-{filename[:3]}: {title}\n\n' + _build_metadata_block(**metadata) + f'\n== Status\n\n{status}\n'
     )
 
 

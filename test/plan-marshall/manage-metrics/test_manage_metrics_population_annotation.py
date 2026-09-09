@@ -7,7 +7,6 @@ inline row fed it, when an inline measure is excluded from the dispatched maximu
 and when a report carries no annotation at all.
 """
 
-
 import pytest
 from _manage_metrics_fixtures import (
     ns_end_phase,
@@ -53,9 +52,7 @@ def test_absent_or_unrecognised_population_reads_as_dispatched(raw):
     substring test over this field would classify some of them differently and
     render a marker no reader can interpret.
     """
-    assert manage_metrics._token_population({'total_tokens_population': raw}) == (
-        manage_metrics.POPULATION_DISPATCHED
-    )
+    assert manage_metrics._token_population({'total_tokens_population': raw}) == (manage_metrics.POPULATION_DISPATCHED)
     assert manage_metrics._token_population({}) == manage_metrics.POPULATION_DISPATCHED
 
 
@@ -170,9 +167,7 @@ def test_inline_phase_tokens_cell_and_annotation_declare_the_population(plan_con
     assert manage_metrics._POPULATION_BULLET_NOTE[manage_metrics.POPULATION_INLINE] in report
 
 
-def test_inline_row_carrying_a_competing_dispatched_measure_renders_both_markers(
-    plan_context, monkeypatch
-):
+def test_inline_row_carrying_a_competing_dispatched_measure_renders_both_markers(plan_context, monkeypatch):
     """An `inline` row that ALSO carries a dispatched measure keeps both markers.
 
     This is the row shape the non-idempotent population stamp destroyed, so the
@@ -286,9 +281,7 @@ def test_dispatched_only_report_carries_no_population_annotation(plan_context):
     assert manage_metrics._POPULATION_BULLET_NOTE[manage_metrics.POPULATION_DISPATCHED] in report
 
 
-def test_four_message_usage_bullets_render_under_the_main_context_heading(
-    plan_context, monkeypatch
-):
+def test_four_message_usage_bullets_render_under_the_main_context_heading(plan_context, monkeypatch):
     """Every `message.usage` bullet names its population — via a group heading.
 
     An API field name states no population at all, so these four were the only
@@ -327,13 +320,11 @@ def test_four_message_usage_bullets_render_under_the_main_context_heading(
         if _INLINE_BUCKET.get(field)
     ]
     assert expected, 'fixture must exercise at least one four-field bullet'
-    assert lines[heading_idx + 1: heading_idx + 1 + len(expected)] == expected
+    assert lines[heading_idx + 1 : heading_idx + 1 + len(expected)] == expected
 
     # No four-field bullet may escape the group by rendering at top level. The
     # nested form starts with two spaces, so a PREFIX test is what discriminates
     # them — an exact-membership test would match neither form and assert nothing.
     for _field, label in manage_metrics._FOUR_FIELD_USAGE_LABELS:
         top_level = f'- **{label}**:'
-        assert not any(ln.startswith(top_level) for ln in lines), (
-            f'{label} rendered outside the population group'
-        )
+        assert not any(ln.startswith(top_level) for ln in lines), f'{label} rendered outside the population group'

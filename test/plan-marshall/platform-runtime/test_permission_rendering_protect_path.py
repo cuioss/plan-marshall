@@ -6,6 +6,7 @@ It renders deny rules for a directory the caller names, writes them, and returns
 counts only — no rendered rule crosses back. A deny rule is a security control,
 so a path it cannot express faithfully is refused rather than approximated.
 """
+
 from __future__ import annotations  # noqa: I001
 
 import json
@@ -21,7 +22,6 @@ from toon_parser import parse_toon
 
 def _parse(output: str) -> dict[str, Any]:
     return parse_toon(output)
-
 
 
 #: ``(path, why refusing it matters)``. Every one of these renders SOMETHING —
@@ -85,21 +85,15 @@ class TestPermissionFixProtectPath:
         return tmp_path / 'creds'
 
     def _pin_scope_path(self, monkeypatch, settings_path: Path) -> None:
-        monkeypatch.setattr(
-            claude_runtime, '_settings_path_for_scope', lambda scope: settings_path
-        )
+        monkeypatch.setattr(claude_runtime, '_settings_path_for_scope', lambda scope: settings_path)
 
-    def test_writes_the_rendered_rules_to_the_deny_list(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
+    def test_writes_the_rendered_rules_to_the_deny_list(self, tmp_path: Path, monkeypatch) -> None:
         protected = self._protected(monkeypatch, tmp_path)
         settings_path = tmp_path / 'settings.json'
         self._pin_scope_path(monkeypatch, settings_path)
 
         result = _parse(
-            claude_runtime.ClaudeRuntime().permission_fix(
-                'global', 'protect-path', [str(protected)], False
-            )
+            claude_runtime.ClaudeRuntime().permission_fix('global', 'protect-path', [str(protected)], False)
         )
         assert result['status'] == 'success'
         assert result['fix_operation'] == 'protect-path'
@@ -117,15 +111,11 @@ class TestPermissionFixProtectPath:
         assert 'Bash(base64 ~/creds/*)' in deny
         assert 'Bash(python3 -c *creds*)' in deny
 
-    def test_no_rendered_rule_crosses_back_to_the_caller(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
+    def test_no_rendered_rule_crosses_back_to_the_caller(self, tmp_path: Path, monkeypatch) -> None:
         """The response is counts only — a caller cannot learn the DSL from it."""
         protected = self._protected(monkeypatch, tmp_path)
         self._pin_scope_path(monkeypatch, tmp_path / 'settings.json')
-        raw = claude_runtime.ClaudeRuntime().permission_fix(
-            'global', 'protect-path', [str(protected)], False
-        )
+        raw = claude_runtime.ClaudeRuntime().permission_fix('global', 'protect-path', [str(protected)], False)
         # Assert the operation SUCCEEDED first: an error TOON also contains no
         # rule text, so without this the test passes against a broken op.
         assert _parse(raw)['status'] == 'success'
@@ -146,9 +136,7 @@ class TestPermissionFixProtectPath:
         written = json.loads(settings_path.read_text(encoding='utf-8'))
         assert len(written['permissions']['deny']) == self.RULE_COUNT
 
-    def test_a_no_change_rerun_does_not_rewrite_the_file(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
+    def test_a_no_change_rerun_does_not_rewrite_the_file(self, tmp_path: Path, monkeypatch) -> None:
         """Adding nothing writes nothing.
 
         The file is re-serialized in a DIFFERENT formatting before the second
@@ -175,8 +163,7 @@ class TestPermissionFixProtectPath:
 
         assert result['changes_applied'] == 0
         assert settings_path.read_bytes() == before, (
-            'a no-change re-run re-serialized the file: an operator sees a '
-            'modified settings file for no effect'
+            'a no-change re-run re-serialized the file: an operator sees a modified settings file for no effect'
         )
 
     def test_preserves_unrelated_deny_entries(self, tmp_path: Path, monkeypatch) -> None:
@@ -188,11 +175,7 @@ class TestPermissionFixProtectPath:
         )
         self._pin_scope_path(monkeypatch, settings_path)
 
-        result = _parse(
-            claude_runtime.ClaudeRuntime().permission_fix(
-                'global', 'protect-path', [protected], False
-            )
-        )
+        result = _parse(claude_runtime.ClaudeRuntime().permission_fix('global', 'protect-path', [protected], False))
         written = json.loads(settings_path.read_text(encoding='utf-8'))
         assert written['permissions']['deny'][0] == 'Read(~/.ssh/**)'
         assert len(written['permissions']['deny']) == self.RULE_COUNT + 1
@@ -203,26 +186,18 @@ class TestPermissionFixProtectPath:
         assert result['rules_total'] == self.RULE_COUNT
         assert result['changes_applied'] == self.RULE_COUNT
 
-    def test_dry_run_writes_nothing_and_reports_a_count(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
+    def test_dry_run_writes_nothing_and_reports_a_count(self, tmp_path: Path, monkeypatch) -> None:
         protected = str(self._protected(monkeypatch, tmp_path))
         settings_path = tmp_path / 'settings.json'
         self._pin_scope_path(monkeypatch, settings_path)
 
-        result = _parse(
-            claude_runtime.ClaudeRuntime().permission_fix(
-                'global', 'protect-path', [protected], True
-            )
-        )
+        result = _parse(claude_runtime.ClaudeRuntime().permission_fix('global', 'protect-path', [protected], True))
         assert result['proposed_count'] == self.RULE_COUNT
         assert result['changes_applied'] == 0
         assert 'proposed_additions' not in result
         assert not settings_path.exists()
 
-    def test_dry_run_proposes_only_what_is_missing(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
+    def test_dry_run_proposes_only_what_is_missing(self, tmp_path: Path, monkeypatch) -> None:
         """`proposed_count` counts rules NOT already present, not rules rendered.
 
         Some of the protection's own rules are seeded first, which is what
@@ -246,9 +221,7 @@ class TestPermissionFixProtectPath:
         assert result['proposed_count'] == 5
         assert result['rules_total'] == self.RULE_COUNT
 
-    def test_one_directory_named_twice_is_counted_once(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
+    def test_one_directory_named_twice_is_counted_once(self, tmp_path: Path, monkeypatch) -> None:
         """`rules_total` must not double-count a rule the caller receives once.
 
         The per-path renderer de-duplicates within a path; without the same
@@ -261,9 +234,7 @@ class TestPermissionFixProtectPath:
         self._pin_scope_path(monkeypatch, settings_path)
 
         result = _parse(
-            claude_runtime.ClaudeRuntime().permission_fix(
-                'global', 'protect-path', [protected, protected], False
-            )
+            claude_runtime.ClaudeRuntime().permission_fix('global', 'protect-path', [protected, protected], False)
         )
 
         assert result['paths_named'] == 2
@@ -272,9 +243,7 @@ class TestPermissionFixProtectPath:
         written = json.loads(settings_path.read_text(encoding='utf-8'))
         assert len(written['permissions']['deny']) == self.RULE_COUNT
 
-    def test_two_distinct_directories_each_get_their_rules(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
+    def test_two_distinct_directories_each_get_their_rules(self, tmp_path: Path, monkeypatch) -> None:
         """De-duplication across paths must not collapse genuinely distinct sets."""
         monkeypatch.setattr(claude_runtime, 'resolve_home', lambda: tmp_path)
         settings_path = tmp_path / 'settings.json'
@@ -298,9 +267,7 @@ class TestPermissionFixProtectPath:
     def test_rejects_an_empty_path_list(self, tmp_path: Path, monkeypatch) -> None:
         """Protecting nothing is a caller error, never a silent success."""
         self._pin_scope_path(monkeypatch, tmp_path / 'settings.json')
-        result = _parse(
-            claude_runtime.ClaudeRuntime().permission_fix('global', 'protect-path', [], False)
-        )
+        result = _parse(claude_runtime.ClaudeRuntime().permission_fix('global', 'protect-path', [], False))
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_operation'
 
@@ -309,9 +276,7 @@ class TestPermissionFixProtectPath:
         _UNRENDERABLE_PATHS,
         ids=_UNRENDERABLE_PATH_IDS,
     )
-    def test_refuses_a_path_it_cannot_render_faithfully(
-        self, tmp_path: Path, monkeypatch, path: str, why: str
-    ) -> None:
+    def test_refuses_a_path_it_cannot_render_faithfully(self, tmp_path: Path, monkeypatch, path: str, why: str) -> None:
         """A deny rule is a security control: refuse rather than approximate.
 
         Each of these renders *something* — that is the danger. An empty
@@ -321,19 +286,13 @@ class TestPermissionFixProtectPath:
         settings_path = tmp_path / 'settings.json'
         self._pin_scope_path(monkeypatch, settings_path)
 
-        result = _parse(
-            claude_runtime.ClaudeRuntime().permission_fix(
-                'global', 'protect-path', [path], False
-            )
-        )
+        result = _parse(claude_runtime.ClaudeRuntime().permission_fix('global', 'protect-path', [path], False))
 
         assert result['status'] == 'error', why
         assert result['error'] == 'invalid_operation'
         assert not settings_path.exists(), 'a refused path must not reach the settings file'
 
-    def test_one_directory_spelled_two_ways_protects_it_once(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
+    def test_one_directory_spelled_two_ways_protects_it_once(self, tmp_path: Path, monkeypatch) -> None:
         """Both spellings normalize from one `Path`, so de-duplication sees them.
 
         Rendering the tilde arm through `Path` and the absolute arm from the raw
@@ -360,9 +319,7 @@ class TestPermissionFixProtectPath:
         assert len(written['permissions']['deny']) == self.RULE_COUNT
         assert not any('//' in rule for rule in written['permissions']['deny'])
 
-    def test_a_failed_write_is_an_error_not_a_reported_success(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
+    def test_a_failed_write_is_an_error_not_a_reported_success(self, tmp_path: Path, monkeypatch) -> None:
         """⛔ The fail-open this closes: a security control claiming rules it never wrote.
 
         `_save_settings` returns False on OSError, and the return was discarded
@@ -375,11 +332,7 @@ class TestPermissionFixProtectPath:
         self._pin_scope_path(monkeypatch, settings_path)
         monkeypatch.setattr(claude_runtime, '_save_settings', lambda path, settings: False)
 
-        result = _parse(
-            claude_runtime.ClaudeRuntime().permission_fix(
-                'global', 'protect-path', [protected], False
-            )
-        )
+        result = _parse(claude_runtime.ClaudeRuntime().permission_fix('global', 'protect-path', [protected], False))
 
         assert result['status'] == 'error'
         assert result['error'] == 'io_error'
@@ -393,17 +346,11 @@ class TestPermissionFixProtectPath:
         """
         protected = str(self._protected(monkeypatch, tmp_path))
         settings_path = tmp_path / 'settings.json'
-        settings_path.write_text(
-            json.dumps({'permissions': {'allow': [], 'deny': {}, 'ask': []}}), encoding='utf-8'
-        )
+        settings_path.write_text(json.dumps({'permissions': {'allow': [], 'deny': {}, 'ask': []}}), encoding='utf-8')
         self._pin_scope_path(monkeypatch, settings_path)
         before = settings_path.read_bytes()
 
-        result = _parse(
-            claude_runtime.ClaudeRuntime().permission_fix(
-                'global', 'protect-path', [protected], False
-            )
-        )
+        result = _parse(claude_runtime.ClaudeRuntime().permission_fix('global', 'protect-path', [protected], False))
 
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_settings'
@@ -411,9 +358,7 @@ class TestPermissionFixProtectPath:
 
     def test_opencode_declines_with_an_honest_noop(self) -> None:
         """A target with no permission backend declines — it does not error."""
-        result = _parse(
-            OpenCodeRuntime().permission_fix('global', 'protect-path', ['/tmp/creds'], False)
-        )
+        result = _parse(OpenCodeRuntime().permission_fix('global', 'protect-path', ['/tmp/creds'], False))
         assert result['status'] == 'no-op'
         assert 'OpenCode' in result['reason']
         assert result['alternative']
@@ -444,9 +389,7 @@ class TestPermissionFixProtectPath:
         )
 
     @pytest.mark.parametrize('operation', _OPERATION_ORACLE, ids=_OPERATION_ORACLE)
-    def test_both_runtimes_accept_the_operation(
-        self, tmp_path: Path, monkeypatch, operation: str
-    ) -> None:
+    def test_both_runtimes_accept_the_operation(self, tmp_path: Path, monkeypatch, operation: str) -> None:
         """Claude succeeds and OpenCode declines — neither rejects the operation.
 
         Both runtimes are driven per row, because the claim is a COMPARISON: an
@@ -460,9 +403,7 @@ class TestPermissionFixProtectPath:
         elif operation in ('add', 'remove', 'ensure'):
             args = [{'kind': 'path', 'tool': 'Read', 'path': str(tmp_path / 'arg')}]
 
-        claude = _parse(
-            claude_runtime.ClaudeRuntime().permission_fix('global', operation, args, True)
-        )
+        claude = _parse(claude_runtime.ClaudeRuntime().permission_fix('global', operation, args, True))
         opencode = _parse(OpenCodeRuntime().permission_fix('global', operation, args, True))
 
         assert claude['status'] == 'success', operation
@@ -480,9 +421,7 @@ class TestEveryMutatingBranchReportsAFailedWrite:
     """
 
     def _pin_scope_path(self, monkeypatch, settings_path: Path) -> None:
-        monkeypatch.setattr(
-            claude_runtime, '_settings_path_for_scope', lambda scope: settings_path
-        )
+        monkeypatch.setattr(claude_runtime, '_settings_path_for_scope', lambda scope: settings_path)
 
     @pytest.mark.parametrize(
         ('operation', 'permissions'),
@@ -517,11 +456,7 @@ class TestEveryMutatingBranchReportsAFailedWrite:
         self._pin_scope_path(monkeypatch, settings_path)
         monkeypatch.setattr(claude_runtime, '_save_settings', lambda _p, _s: False)
 
-        result = _parse(
-            claude_runtime.ClaudeRuntime().permission_fix(
-                'global', operation, permissions, False
-            )
-        )
+        result = _parse(claude_runtime.ClaudeRuntime().permission_fix('global', operation, permissions, False))
 
         assert result['status'] == 'error'
         assert result['error'] == 'io_error'

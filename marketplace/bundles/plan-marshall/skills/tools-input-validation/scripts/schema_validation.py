@@ -55,24 +55,60 @@ TASK_STATUS_VALUES = ('pending', 'in_progress', 'done', 'blocked', 'failed', 'co
 # the union of the required fields and the known-optional fields that legitimate
 # on-disk records carry, so tightening to strict-extra-keys does not reject any
 # valid structure.
-STATUS_ALLOWED_KEYS = frozenset({
-    'plan_id', 'current_phase', 'phases',
-    'title', 'short_description', 'created', 'updated', 'metadata',
-})
-REFERENCES_ALLOWED_KEYS = frozenset({
-    'plan_id',
-    'branch', 'base_branch', 'domains', 'scope_estimate', 'track',
-    'affected_files', 'worktree_path',
-})
-TASK_ALLOWED_KEYS = frozenset({
-    'task_id', 'title', 'status', 'steps',
-    'number', 'domain', 'profile', 'skills', 'origin', 'deliverable',
-    'depends_on', 'description', 'current_step', 'verification', 'metadata',
-})
-STEP_ALLOWED_KEYS = frozenset({
-    'id', 'title',
-    'number', 'target', 'status', 'intent', 'outcome',
-})
+STATUS_ALLOWED_KEYS = frozenset(
+    {
+        'plan_id',
+        'current_phase',
+        'phases',
+        'title',
+        'short_description',
+        'created',
+        'updated',
+        'metadata',
+    }
+)
+REFERENCES_ALLOWED_KEYS = frozenset(
+    {
+        'plan_id',
+        'branch',
+        'base_branch',
+        'domains',
+        'scope_estimate',
+        'track',
+        'affected_files',
+        'worktree_path',
+    }
+)
+TASK_ALLOWED_KEYS = frozenset(
+    {
+        'task_id',
+        'title',
+        'status',
+        'steps',
+        'number',
+        'domain',
+        'profile',
+        'skills',
+        'origin',
+        'deliverable',
+        'depends_on',
+        'description',
+        'current_step',
+        'verification',
+        'metadata',
+    }
+)
+STEP_ALLOWED_KEYS = frozenset(
+    {
+        'id',
+        'title',
+        'number',
+        'target',
+        'status',
+        'intent',
+        'outcome',
+    }
+)
 
 
 def _check_field(data: dict, field: str, expected_type: type | tuple[type, ...], required: bool = True) -> list[str]:

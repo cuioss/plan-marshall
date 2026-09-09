@@ -41,9 +41,7 @@ git_workflow = load_script_module(
 
 
 class TestResolutionScope:
-    def test_scope_is_main_when_base_is_main_anchored(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_scope_is_main_when_base_is_main_anchored(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         # Under a PLAN_BASE_DIR override BOTH get_base_dir() and
         # resolve_main_anchored_path('') resolve to the override, so the current base
         # IS the main-anchored base → the census is comprehensive → 'main'.
@@ -69,9 +67,7 @@ class TestResolutionScope:
 
         assert status_query._resolution_scope() == 'worktree_local'
 
-    def test_scope_is_unknown_when_base_unresolvable(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_scope_is_unknown_when_base_unresolvable(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         # An unresolvable base (get_base_dir raises RuntimeError) fails closed to
         # 'unknown' — neither authoritative — per ADR-009, never a vacuous 'main'.
         base = tmp_path / 'main' / '.plan' / 'local'
@@ -149,9 +145,7 @@ class TestWorktreeListScopePropagation:
         assert result['scope'] == 'worktree_local'
         assert result['count'] == 0
 
-    def test_propagates_main_scope_from_list_output(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_propagates_main_scope_from_list_output(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         base = tmp_path / 'main' / '.plan' / 'local'
         base.mkdir(parents=True)
         monkeypatch.setenv('PLAN_BASE_DIR', str(base))

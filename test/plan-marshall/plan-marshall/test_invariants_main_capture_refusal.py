@@ -48,13 +48,28 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'plan-marshall', 'phase_handshake
 #: neither publishes ``phase_handshake`` in ``sys.modules`` beside the handler
 #: modules imported above.
 _CAPTURE_ARGS = parse_ns(
-    'plan-marshall', 'plan-marshall', 'phase_handshake.py',
-    'capture', '--plan-id', 'p', '--phase', '5-execute', '--reason', '',
+    'plan-marshall',
+    'plan-marshall',
+    'phase_handshake.py',
+    'capture',
+    '--plan-id',
+    'p',
+    '--phase',
+    '5-execute',
+    '--reason',
+    '',
     register=False,
 )
 _VERIFY_ARGS = parse_ns(
-    'plan-marshall', 'plan-marshall', 'phase_handshake.py',
-    'verify', '--plan-id', 'p', '--phase', '5-execute', '--strict',
+    'plan-marshall',
+    'plan-marshall',
+    'phase_handshake.py',
+    'verify',
+    '--plan-id',
+    'p',
+    '--phase',
+    '5-execute',
+    '--strict',
     register=False,
 )
 
@@ -84,9 +99,7 @@ def _equal_head(_tree: object) -> str:
     return 'cafebabe1234'
 
 
-def test_refuses_when_both_columns_resolved_to_the_same_tree(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_refuses_when_both_columns_resolved_to_the_same_tree(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """The defect: the main-scoped resolution landed on the plan's worktree.
 
     Equal commits AND one directory. The payload names both resolved paths so
@@ -107,9 +120,7 @@ def test_refuses_when_both_columns_resolved_to_the_same_tree(
     assert excinfo.value.worktree_path == str(worktree)
 
 
-def test_permits_equal_shas_when_the_two_trees_are_distinct(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_permits_equal_shas_when_the_two_trees_are_distinct(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """A commit-less feature branch is LEGITIMATE and must not be refused.
 
     ``phase-5-execute`` Step 2.5 materializes the worktree unconditionally,
@@ -167,15 +178,11 @@ def test_the_gate_is_the_persisted_path_not_the_use_worktree_flag(
 
     assert inv._worktree_in_use('p', {'use_worktree': False, 'worktree_path': str(worktree)})
     with pytest.raises(inv.MainCaptureReadTheWorktree):
-        inv.capture_all(
-            'p', {'use_worktree': False, 'worktree_path': str(worktree)}, '5-execute'
-        )
+        inv.capture_all('p', {'use_worktree': False, 'worktree_path': str(worktree)}, '5-execute')
 
 
 @pytest.fixture()
-def worktree_shadowing_main(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> str:
+def worktree_shadowing_main(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> str:
     """Arrange the defect for the CLI-level tests: one tree, two column names."""
     _narrow_to_sha_columns(monkeypatch)
     worktree = tmp_path / 'wt'
@@ -219,18 +226,14 @@ def test_cmd_verify_returns_the_same_refusal_rather_than_raising(
     of the documented refusal — so this test drives the real ``cmd_verify``
     against a stored row rather than asserting the handler exists.
     """
-    monkeypatch.setattr(
-        hc, 'get_row', lambda _plan_id, _phase: {'phase': '5-execute', 'override': False}
-    )
+    monkeypatch.setattr(hc, 'get_row', lambda _plan_id, _phase: {'phase': '5-execute', 'override': False})
 
     result = hc.cmd_verify(_VERIFY_ARGS)
 
     assert result['status'] == 'error'
     assert result['error'] == 'main_capture_read_the_worktree'
     assert result['main_root'] == worktree_shadowing_main
-    assert result['message'] == hc.cmd_capture(_CAPTURE_ARGS)['message'], (
-        'capture and verify must present one envelope'
-    )
+    assert result['message'] == hc.cmd_capture(_CAPTURE_ARGS)['message'], 'capture and verify must present one envelope'
 
 
 def test_refusal_error_code_is_a_verify_refusal_that_blocks_transition() -> None:
@@ -239,9 +242,7 @@ def test_refusal_error_code_is_a_verify_refusal_that_blocks_transition() -> None
     Quantified over the shipped ``VERIFY_REFUSAL_ERRORS`` set rather than a
     hard-coded copy of it.
     """
-    lifecycle = load_script_module(
-        'plan-marshall', 'manage-status', '_cmd_lifecycle.py', 'lifecycle_refusal_mod'
-    )
+    lifecycle = load_script_module('plan-marshall', 'manage-status', '_cmd_lifecycle.py', 'lifecycle_refusal_mod')
 
     assert 'main_capture_read_the_worktree' in lifecycle.VERIFY_REFUSAL_ERRORS
 
@@ -257,9 +258,7 @@ def test_refusal_exits_non_zero_under_strict_verify(
     with a stubbed verb, so the assertion is the returned code and not the
     presence of a literal in the source.
     """
-    handshake = load_script_module(
-        'plan-marshall', 'plan-marshall', 'phase_handshake.py', 'handshake_strict_mod'
-    )
+    handshake = load_script_module('plan-marshall', 'plan-marshall', 'phase_handshake.py', 'handshake_strict_mod')
     refusal = {
         'status': 'error',
         'error': 'main_capture_read_the_worktree',
@@ -268,8 +267,7 @@ def test_refusal_exits_non_zero_under_strict_verify(
     }
     monkeypatch.setattr(handshake, 'cmd_verify', lambda _args: refusal)
     monkeypatch.setattr(
-        sys, 'argv', ['phase_handshake.py', 'verify', '--plan-id', 'p',
-                      '--phase', '5-execute', '--strict']
+        sys, 'argv', ['phase_handshake.py', 'verify', '--plan-id', 'p', '--phase', '5-execute', '--strict']
     )
 
     with pytest.raises(SystemExit) as excinfo:
@@ -279,23 +277,16 @@ def test_refusal_exits_non_zero_under_strict_verify(
     assert 'main_capture_read_the_worktree' in capsys.readouterr().out
 
 
-def test_a_clean_strict_verify_still_exits_zero(
-    monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_a_clean_strict_verify_still_exits_zero(monkeypatch: pytest.MonkeyPatch) -> None:
     """Negative control for the exit-code guard above.
 
     Without it, a ``main()`` that returned 1 unconditionally would satisfy the
     positive case and look correct.
     """
-    handshake = load_script_module(
-        'plan-marshall', 'plan-marshall', 'phase_handshake.py', 'handshake_clean_mod'
-    )
+    handshake = load_script_module('plan-marshall', 'plan-marshall', 'phase_handshake.py', 'handshake_clean_mod')
+    monkeypatch.setattr(handshake, 'cmd_verify', lambda _args: {'status': 'ok', 'plan_id': 'p'})
     monkeypatch.setattr(
-        handshake, 'cmd_verify', lambda _args: {'status': 'ok', 'plan_id': 'p'}
-    )
-    monkeypatch.setattr(
-        sys, 'argv', ['phase_handshake.py', 'verify', '--plan-id', 'p',
-                      '--phase', '5-execute', '--strict']
+        sys, 'argv', ['phase_handshake.py', 'verify', '--plan-id', 'p', '--phase', '5-execute', '--strict']
     )
 
     with pytest.raises(SystemExit) as excinfo:

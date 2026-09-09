@@ -94,9 +94,7 @@ class BuildExtension(BuildExtensionBase, DerivationResolverBase):
         See extension-api/standards/extension-contract.md § classify_paths()
         for the full contract.
         """
-        claims: dict[str, list[str]] = {
-            'production': [], 'test': [], 'documentation': [], 'config': []
-        }
+        claims: dict[str, list[str]] = {'production': [], 'test': [], 'documentation': [], 'config': []}
         for path in paths:
             match = self._match_classify(path)
             if match is not None:

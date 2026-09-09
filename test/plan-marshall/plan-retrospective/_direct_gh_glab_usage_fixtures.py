@@ -37,7 +37,6 @@ The wrapper-tangle DETECTION behaviour itself lives in
 ``test/pm-plugin-development/plan-marshall-plugin/test_wrapper_tangle_scan.py``.
 """
 
-
 from __future__ import annotations
 
 import subprocess

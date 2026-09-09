@@ -67,12 +67,9 @@ def test_read_pattern_round_trips_every_emitted_line(step: str, outcome: str):
         f'COMPLETION_MARKER_RE does not match a line COMPLETION_MARKER_TEMPLATE '
         f'produced: {line!r}. The producer and consumer shapes have drifted.'
     )
-    assert match.group('step') == step, (
-        f'Round-tripped step {match.group("step")!r} != emitted {step!r} in {line!r}.'
-    )
+    assert match.group('step') == step, f'Round-tripped step {match.group("step")!r} != emitted {step!r} in {line!r}.'
     assert match.group('outcome') == outcome, (
-        f'Round-tripped outcome {match.group("outcome")!r} != emitted {outcome!r} '
-        f'in {line!r}.'
+        f'Round-tripped outcome {match.group("outcome")!r} != emitted {outcome!r} in {line!r}.'
     )
 
 
@@ -84,9 +81,7 @@ def test_valid_outcomes_match_the_producers_enumeration():
     """
     from conftest import load_script_module
 
-    mark_step = load_script_module(
-        'plan-marshall', 'manage-status', '_cmd_mark_step.py', '_completion_marker_producer'
-    )
+    mark_step = load_script_module('plan-marshall', 'manage-status', '_cmd_mark_step.py', '_completion_marker_producer')
 
     assert set(_VALID_OUTCOMES) == set(mark_step.VALID_OUTCOMES), (
         f'This file round-trips {sorted(_VALID_OUTCOMES)} but the producer emits '
@@ -108,9 +103,7 @@ def test_read_pattern_still_reads_a_historical_line_carrying_no_outcome(step: st
     """
     # Arrange — derive the pre-widening shape FROM the template rather than
     # hand-typing it, so this control cannot itself drift from the real line.
-    historical = COMPLETION_MARKER_TEMPLATE.split(' (outcome=')[0].format(
-        phase=_PHASE, step=step
-    )
+    historical = COMPLETION_MARKER_TEMPLATE.split(' (outcome=')[0].format(phase=_PHASE, step=step)
 
     match = COMPLETION_MARKER_RE.search(historical)
 
@@ -161,11 +154,7 @@ def test_round_trip_fails_when_the_emitted_shape_drifts(drifted_template: str, d
     line = drifted_template.format(phase=_PHASE, step='push', outcome='done')
 
     match = COMPLETION_MARKER_RE.search(line)
-    round_tripped = (
-        match is not None
-        and match.group('step') == 'push'
-        and match.group('outcome') == 'done'
-    )
+    round_tripped = match is not None and match.group('step') == 'push' and match.group('outcome') == 'done'
 
     assert not round_tripped, (
         f'COMPLETION_MARKER_RE round-tripped a drifted line ({drift}): {line!r}. '
@@ -182,9 +171,7 @@ def test_drift_controls_are_genuine_mutations_of_the_live_template():
     """
     for param in _DRIFTED_TEMPLATES:
         drifted = param.values[0]
-        assert drifted != COMPLETION_MARKER_TEMPLATE, (
-            f'Drift control {param.id!r} is identical to the live template.'
-        )
+        assert drifted != COMPLETION_MARKER_TEMPLATE, f'Drift control {param.id!r} is identical to the live template.'
 
 
 def test_read_pattern_ignores_a_non_completion_step_line():

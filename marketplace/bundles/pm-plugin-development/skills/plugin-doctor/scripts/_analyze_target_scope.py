@@ -147,7 +147,7 @@ _DESCRIPTION_EMPTY = (
 
 _DESCRIPTION_CONTRADICTION = (
     'skill-internal file `targets:` frontmatter names a target its enclosing skill '
-    'scopes away — a file may only NARROW its component\'s scope, and the multi-target '
+    "scopes away — a file may only NARROW its component's scope, and the multi-target "
     'build rejects a widening, so until it is fixed the build fails.'
 )
 
@@ -177,7 +177,7 @@ def _frontmatter_block(text: str) -> str | None:
     close_fence = _CLOSE_FENCE_RE.search(text, start - 1)
     if close_fence is None:
         return None
-    return text[start:close_fence.start()]
+    return text[start : close_fence.start()]
 
 
 def _strip_comment(value: str) -> str:
@@ -382,7 +382,7 @@ def declared_targets(text: str) -> tuple[list[str], int] | None:
         # +2: the opening fence occupies line 1, so block line 0 is file line 2.
         line_number = index + 2
         head = _strip_comment(value.strip()).strip()
-        rest = lines[index + 1:]
+        rest = lines[index + 1 :]
         if head:
             if _is_continued(rest):
                 # An indented line after an inline value continues it, so the
@@ -406,9 +406,7 @@ def declared_targets(text: str) -> tuple[list[str], int] | None:
     return found
 
 
-def _readable_block_items(
-    rest: list[str], line_number: int
-) -> tuple[list[str], int] | None:
+def _readable_block_items(rest: list[str], line_number: int) -> tuple[list[str], int] | None:
     """Read a ``- `` block sequence beneath a valueless key, or give up.
 
     An empty result means the key genuinely declares nothing — YAML's null, or
@@ -479,9 +477,7 @@ def component_files(marketplace_root: Path) -> list[Path]:
             if not subdir.is_dir():
                 continue
             files.extend(
-                path
-                for path in sorted(subdir.glob('*.md'))
-                if path.is_file() and not path.name.startswith('.')
+                path for path in sorted(subdir.glob('*.md')) if path.is_file() and not path.name.startswith('.')
             )
         skills_dir = bundle_dir / 'skills'
         if not skills_dir.is_dir():

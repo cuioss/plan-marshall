@@ -78,9 +78,7 @@ _ONCE_REFUSED_NOW_READ = {
 _ONCE_REFUSED_WHOLE_FILE = {
     'uniformly-indented-block': '---\n  name: demo\n  targets: [claude]\n---\n',
     'comment-above-an-indented-block': '---\n# a note\n  name: demo\n  targets: [claude]\n---\n',
-    'value-continued-at-column-zero': (
-        '---\n  description: "one\ntwo"\n  targets: [claude]\n---\n'
-    ),
+    'value-continued-at-column-zero': ('---\n  description: "one\ntwo"\n  targets: [claude]\n---\n'),
 }
 
 
@@ -107,7 +105,9 @@ class _TreelessTarget(TargetBase):
     def emits_bundle_tree(self) -> bool:
         return False
 
-    def generate(self, marketplace_dir, output_dir, bundles=None):  # deliberately unannotated and undocumented: a stub that only has to satisfy the protocol
+    def generate(
+        self, marketplace_dir, output_dir, bundles=None
+    ):  # deliberately unannotated and undocumented: a stub that only has to satisfy the protocol
         return []
 
     def supports_agents(self) -> bool:
@@ -169,10 +169,7 @@ def test_every_authoring_spelling_yields_the_same_scope(tmp_path, frontmatter, e
 
 @pytest.mark.parametrize(
     ('key', 'expected'),
-    [
-        pytest.param(key, expected, id=key)
-        for key, (_form, expected) in _ONCE_REFUSED_NOW_READ.items()
-    ],
+    [pytest.param(key, expected, id=key) for key, (_form, expected) in _ONCE_REFUSED_NOW_READ.items()],
 )
 def test_shapes_a_line_scanner_refused_are_now_read(tmp_path, key, expected):
     """Twelve rounds of rejections that were never the author's fault.
@@ -207,9 +204,7 @@ def test_a_duplicate_key_resolves_the_way_yaml_resolves_it(tmp_path):
     YAML reader sees. Delegating the read closed it without a policy decision.
     """
     path = tmp_path / 'demo.md'
-    path.write_text(
-        '---\nname: demo\ntargets: [claude]\ntargets: [opencode]\n---\n', encoding='utf-8'
-    )
+    path.write_text('---\nname: demo\ntargets: [claude]\ntargets: [opencode]\n---\n', encoding='utf-8')
 
     assert read_target_scope(path) == {'opencode'}
 
@@ -231,9 +226,7 @@ def test_absent_field_means_every_target(tmp_path):
         pytest.param('---\nname: demo\n---\n', id='frontmatter-without-the-field'),
         pytest.param('---\n- a\n- b\n---\n', id='frontmatter-that-is-not-a-mapping'),
         pytest.param('---\n---\ntargets: [claude]\n---\n', id='immediately-closed-block'),
-        pytest.param(
-            '---\nname: demo\nmetadata:\n  targets: nonsense\n---\n', id='nested-under-a-key'
-        ),
+        pytest.param('---\nname: demo\nmetadata:\n  targets: nonsense\n---\n', id='nested-under-a-key'),
     ],
 )
 def test_shapes_that_declare_nothing(tmp_path, text):
@@ -256,9 +249,7 @@ def test_shapes_that_declare_nothing(tmp_path, text):
         pytest.param('--- \nname: demo\ntargets: [claude]\n---\n', id='fence-trailing-space'),
         pytest.param('---\nname: demo\ntargets: [claude]\n--- \n', id='close-trailing-space'),
         pytest.param('---\t\nname: demo\ntargets: [claude]\n---\n', id='fence-trailing-tab'),
-        pytest.param(
-            '---\ndescription: a --- b\ntargets: [claude]\n---\n', id='three-hyphens-in-a-value'
-        ),
+        pytest.param('---\ndescription: a --- b\ntargets: [claude]\n---\n', id='three-hyphens-in-a-value'),
     ],
 )
 def test_fence_handling_does_not_hide_a_declaration(tmp_path, text):
@@ -446,9 +437,7 @@ def test_a_list_of_names_is_still_read_when_a_name_looks_like_another_type(tmp_p
         pytest.param('description: a: b\nname: demo', False, id='never-mentions-it'),
     ],
 )
-def test_unparseable_frontmatter_is_refused_only_where_a_declaration_could_hide(
-    tmp_path, block, declares
-):
+def test_unparseable_frontmatter_is_refused_only_where_a_declaration_could_hide(tmp_path, block, declares):
     """Target scoping is not the repository's YAML linter.
 
     Unparseable frontmatter that never mentions ``targets:`` has no
@@ -711,9 +700,7 @@ def test_a_dotfile_component_is_not_walked(tmp_path):
     """A leading dot marks a file the emitters skip, so it is not validated."""
     bundle = tmp_path / 'demo'
     (bundle / 'commands').mkdir(parents=True)
-    (bundle / 'commands' / '.hidden.md').write_text(
-        '---\nname: h\ntargets: [typo]\n---\n', encoding='utf-8'
-    )
+    (bundle / 'commands' / '.hidden.md').write_text('---\nname: h\ntargets: [typo]\n---\n', encoding='utf-8')
 
     assert excluded_emission_roots(bundle, 'claude') == frozenset()
 
@@ -742,9 +729,7 @@ def _skill_bundle(
     def manifest(rel: Path, name: str, declaration: str | None) -> None:
         field = '' if declaration is None else f'targets: {declaration}\n'
         rel.parent.mkdir(parents=True, exist_ok=True)
-        rel.write_text(
-            f'---\nname: {name}\ndescription: d\n{field}---\n\n# Body\n', encoding='utf-8'
-        )
+        rel.write_text(f'---\nname: {name}\ndescription: d\n{field}---\n\n# Body\n', encoding='utf-8')
 
     manifest(skill_dir / 'SKILL.md', 'demo', parent_declaration)
     manifest(skill_dir / file_rel, 'x', file_declaration)
@@ -759,21 +744,15 @@ def test_a_file_inside_a_skill_can_scope_itself(tmp_path):
     """
     bundle = _skill_bundle(tmp_path, parent_declaration=None, file_declaration='[claude]')
 
-    assert excluded_emission_roots(bundle, 'opencode') == frozenset(
-        {Path('skills/demo/references/x.md')}
-    )
+    assert excluded_emission_roots(bundle, 'opencode') == frozenset({Path('skills/demo/references/x.md')})
     assert excluded_emission_roots(bundle, 'claude') == frozenset()
 
 
 def test_a_file_may_narrow_its_parent_scope(tmp_path):
     """``targets: [claude]`` inside a skill scoped ``[claude, opencode]`` narrows."""
-    bundle = _skill_bundle(
-        tmp_path, parent_declaration='[claude, opencode]', file_declaration='[claude]'
-    )
+    bundle = _skill_bundle(tmp_path, parent_declaration='[claude, opencode]', file_declaration='[claude]')
 
-    assert excluded_emission_roots(bundle, 'opencode') == frozenset(
-        {Path('skills/demo/references/x.md')}
-    )
+    assert excluded_emission_roots(bundle, 'opencode') == frozenset({Path('skills/demo/references/x.md')})
     assert excluded_emission_roots(bundle, 'claude') == frozenset()
 
 
@@ -784,9 +763,7 @@ def test_a_file_may_narrow_its_parent_scope(tmp_path):
         pytest.param('[claude]', '[opencode]', 'opencode', id='disjoint'),
     ],
 )
-def test_a_file_that_contradicts_its_parent_scope_fails_closed(
-    tmp_path, parent, file, expected_value
-):
+def test_a_file_that_contradicts_its_parent_scope_fails_closed(tmp_path, parent, file, expected_value):
     """A file may only NARROW its component's scope; widening fails closed.
 
     The walker is the only reader that holds both scopes, so the check lives
@@ -829,9 +806,7 @@ def test_a_file_declaring_only_non_tree_targets_fails_closed(tmp_path):
     """
     treeless = sorted(registered_target_names() - component_tree_target_names())
     assert treeless, 'fixture assumes at least one registered non-component-tree target'
-    bundle = _skill_bundle(
-        tmp_path, parent_declaration=None, file_declaration=f'[{", ".join(treeless)}]'
-    )
+    bundle = _skill_bundle(tmp_path, parent_declaration=None, file_declaration=f'[{", ".join(treeless)}]')
 
     with pytest.raises(TargetScopeError) as excinfo:
         excluded_emission_roots(bundle, 'claude')

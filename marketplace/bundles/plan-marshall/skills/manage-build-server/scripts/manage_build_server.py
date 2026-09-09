@@ -763,9 +763,7 @@ def run_status(_args: Namespace) -> dict[str, Any]:
             'pid': pid,
             # The RUNNING daemon's provenance, from the live process. `unknown`
             # (never the resolved path) when it cannot be read — fail-closed.
-            'running_binary_path': running_binary_path
-            if running_binary_path is not None
-            else _UNKNOWN_PROVENANCE,
+            'running_binary_path': running_binary_path if running_binary_path is not None else _UNKNOWN_PROVENANCE,
             # The resolve-now path: which binary a fresh start would launch today.
             'resolved_binary_path': resolved_binary_path,
             'binary_diverges': diverges,

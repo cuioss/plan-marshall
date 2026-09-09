@@ -93,9 +93,7 @@ _ORCH_SCRIPT = 'orchestrator.py'
 
 SCRIPT_PATH = get_script_path(_ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT)
 
-_orch = load_script_module(
-    'plan-marshall', 'plan-orchestrator', 'orchestrator.py', 'orchestrator_script'
-)
+_orch = load_script_module('plan-marshall', 'plan-orchestrator', 'orchestrator.py', 'orchestrator_script')
 
 #: The relocated SINGLE reader of ``## Expected Surface``, which ``orchestrator.py``
 #: now consumes instead of carrying its own parse.
@@ -111,9 +109,7 @@ _SURFACE_SKILL = 'script-shared'
 _SURFACE_SCRIPT = 'epic_spec_parser.py'
 _SURFACE_MODULE_NAME = 'epic_spec_parser_orchestrator_corpus_tests'
 
-_surface_reader = load_script_module(
-    _SURFACE_BUNDLE, _SURFACE_SKILL, _SURFACE_SCRIPT, module_name=_SURFACE_MODULE_NAME
-)
+_surface_reader = load_script_module(_SURFACE_BUNDLE, _SURFACE_SKILL, _SURFACE_SCRIPT, module_name=_SURFACE_MODULE_NAME)
 
 cmd_corpus_enumerate = _orch.cmd_corpus_enumerate
 cmd_corpus_cross_check = _orch.cmd_corpus_cross_check
@@ -163,6 +159,8 @@ def expected_surface_paths(text: str, tmp_path: Path) -> set:
     except _surface_reader.UnclassifiableSpecError:
         return set()
     return {entry.path for entry in claim.claimed}
+
+
 VERDICT_KEYS = _orch.VERDICT_KEYS
 VERDICT_SEPARATOR = _orch.VERDICT_SEPARATOR
 VERDICT_VALUES = _orch.VERDICT_VALUES
@@ -210,42 +208,73 @@ def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
 
 
 _ENUMERATE_ARGS = parse_ns(
-    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
-    'corpus', 'enumerate', '--slug', SLUG,
+    _ORCH_BUNDLE,
+    _ORCH_SKILL,
+    _ORCH_SCRIPT,
+    'corpus',
+    'enumerate',
+    '--slug',
+    SLUG,
     register=False,
 )
 
 _CROSS_CHECK_ARGS = parse_ns(
-    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
-    'corpus', 'cross-check', '--slug', SLUG,
+    _ORCH_BUNDLE,
+    _ORCH_SKILL,
+    _ORCH_SCRIPT,
+    'corpus',
+    'cross-check',
+    '--slug',
+    SLUG,
     register=False,
 )
 
 _SURFACES_ARGS = parse_ns(
-    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
-    'corpus', 'surfaces', '--slug', SLUG,
+    _ORCH_BUNDLE,
+    _ORCH_SKILL,
+    _ORCH_SCRIPT,
+    'corpus',
+    'surfaces',
+    '--slug',
+    SLUG,
     register=False,
 )
 
 _VERDICTS_ARGS = parse_ns(
-    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
-    'corpus', 'verdicts', '--slug', SLUG,
+    _ORCH_BUNDLE,
+    _ORCH_SKILL,
+    _ORCH_SCRIPT,
+    'corpus',
+    'verdicts',
+    '--slug',
+    SLUG,
     register=False,
 )
 
 #: The ``set-verdict`` base carries every one of that verb's nine flags, so a
 #: caller overriding one still gets the other eight from the parser.
 _SET_VERDICT_ARGS = parse_ns(
-    _ORCH_BUNDLE, _ORCH_SKILL, _ORCH_SCRIPT,
-    'corpus', 'set-verdict',
-    '--slug', SLUG,
-    '--plan', 'PLAN-01',
-    '--claim-index', '0',
-    '--verdict', 'corroborated',
-    '--checked-at', SHA,
-    '--by', PRODUCER,
-    '--rescoped', 'n/a',
-    '--evidence', 'holds at this sha',
+    _ORCH_BUNDLE,
+    _ORCH_SKILL,
+    _ORCH_SCRIPT,
+    'corpus',
+    'set-verdict',
+    '--slug',
+    SLUG,
+    '--plan',
+    'PLAN-01',
+    '--claim-index',
+    '0',
+    '--verdict',
+    'corroborated',
+    '--checked-at',
+    SHA,
+    '--by',
+    PRODUCER,
+    '--rescoped',
+    'n/a',
+    '--evidence',
+    'holds at this sha',
     register=False,
 )
 
@@ -926,9 +955,7 @@ class TestVerdictStaleness:
     # asserted nothing. Stubbing makes both assertions unconditional.
     STUB_HEAD = '1234567890abcdef1234567890abcdef12345678'
 
-    def test_a_verdict_at_another_sha_is_reported_stale_yet_still_admits(
-        self, plan_context, monkeypatch
-    ):
+    def test_a_verdict_at_another_sha_is_reported_stale_yet_still_admits(self, plan_context, monkeypatch):
         # Staleness is REPORTED, never promoted to blocking.
         monkeypatch.setattr(_orch, '_git_read', lambda operation: (self.STUB_HEAD, ''))
         _write_status(plan_context, [_row('PLAN-01')])
@@ -958,9 +985,7 @@ class TestVerdictStaleness:
             'PLAN-01-alpha.md',
             [
                 '- HYPOTHESIS: a clause — confirm/refute at `a.py` § `f` (verify-at-outline)',
-                _verdict_bullet(
-                    'corroborated', 'n/a', 'held', checked_at=self.STUB_HEAD[:7]
-                ),
+                _verdict_bullet('corroborated', 'n/a', 'held', checked_at=self.STUB_HEAD[:7]),
             ],
         )
 
@@ -1133,9 +1158,7 @@ class TestCorpusSetVerdictRejections:
         spec = self._spec(plan_context)
         before = spec.read_bytes()
 
-        result = cmd_corpus_set_verdict(
-            _set_verdict_args('PLAN-01', 0, verdict='corroborated', rescoped='no')
-        )
+        result = cmd_corpus_set_verdict(_set_verdict_args('PLAN-01', 0, verdict='corroborated', rescoped='no'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_rescoped_combination'
@@ -1170,9 +1193,7 @@ class TestCorpusSetVerdictRejections:
         spec = self._spec(plan_context)
         before = spec.read_bytes()
 
-        result = cmd_corpus_set_verdict(
-            _set_verdict_args('PLAN-01', 0, verdict='contradicted', rescoped='maybe')
-        )
+        result = cmd_corpus_set_verdict(_set_verdict_args('PLAN-01', 0, verdict='contradicted', rescoped='maybe'))
 
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_rescoped'
@@ -1203,9 +1224,7 @@ class TestCorpusSetVerdictRejections:
         spec = self._spec(plan_context)
         before = spec.read_bytes()
 
-        result = cmd_corpus_set_verdict(
-            _set_verdict_args('PLAN-01', 0, verdict='contradicted', rescoped='no')
-        )
+        result = cmd_corpus_set_verdict(_set_verdict_args('PLAN-01', 0, verdict='contradicted', rescoped='no'))
 
         assert result['status'] == 'success'
         assert spec.read_bytes() != before
@@ -1252,9 +1271,7 @@ class TestClaimSectionStateDiscrimination:
             f'{len(CLAIM_SECTION_STATES)} state(s) in the vocabulary, {len(covered)} exercised'
         )
 
-    @pytest.mark.parametrize(
-        ('expected_state', 'claim_lines'), _PARSE_STATE_CASES, ids=_PARSE_STATE_IDS
-    )
+    @pytest.mark.parametrize(('expected_state', 'claim_lines'), _PARSE_STATE_CASES, ids=_PARSE_STATE_IDS)
     def test_each_authoring_form_resolves_to_its_own_state(self, expected_state, claim_lines):
         lines = _spec_text(claim_lines).splitlines()
 
@@ -1298,9 +1315,7 @@ class TestClaimSectionStateDiscrimination:
 
         assert section['section_verdict_line'] >= 0
         assert section['section_verdict_text'] == bullet.removeprefix('- ')
-        assert [claim['text'] for claim in section['claims']] == [
-            line.removeprefix('- ') for line in _TWO_CLAIMS
-        ]
+        assert [claim['text'] for claim in section['claims']] == [line.removeprefix('- ') for line in _TWO_CLAIMS]
 
 
 class TestCorpusVerdictsClaimSectionReporting:
@@ -1325,9 +1340,9 @@ class TestCorpusVerdictsClaimSectionReporting:
 
         tally = {row['state']: row['count'] for row in result['claim_section_states']}
 
-        assert [row['state'] for row in result['claim_section_states']] == list(
-            CLAIM_SECTION_STATES
-        ), 'the tally is derived from the vocabulary, so its order and membership are total'
+        assert [row['state'] for row in result['claim_section_states']] == list(CLAIM_SECTION_STATES), (
+            'the tally is derived from the vocabulary, so its order and membership are total'
+        )
         assert tally == dict.fromkeys(CLAIM_SECTION_STATES, 1)
         assert sum(tally.values()) == result['specs_scanned']
 
@@ -1431,9 +1446,7 @@ class TestSectionScopedStamp:
 
         first = cmd_corpus_set_verdict(_section_scope_args('PLAN-01', evidence='first pass'))
         second = cmd_corpus_set_verdict(
-            _section_scope_args(
-                'PLAN-01', verdict='contradicted', rescoped='no', evidence='second pass'
-            )
+            _section_scope_args('PLAN-01', verdict='contradicted', rescoped='no', evidence='second pass')
         )
 
         assert first['replaced'] is False
@@ -1457,9 +1470,7 @@ class TestSectionScopedStamp:
         ((list(_EMPTY_CLAIM_SECTION), CLAIM_SECTION_EMPTY), (list(_ONE_CLAIM), CLAIM_SECTION_PARSED)),
         ids=['empty', 'parsed'],
     )
-    def test_should_refuse_a_readable_section_without_writing(
-        self, plan_context, claim_lines, expected_state
-    ):
+    def test_should_refuse_a_readable_section_without_writing(self, plan_context, claim_lines, expected_state):
         _write_status(plan_context, [_row('PLAN-01')])
         spec = _write_spec(plan_context, 'PLAN-01-alpha.md', claim_lines)
         before = spec.read_bytes()
@@ -1537,9 +1548,7 @@ class TestSetVerdictAddressingModes:
         # a hand-authored section verdict, since the tool refuses to write one
         # onto a parsed section.
         _write_status(plan_context, [_row('PLAN-01')])
-        spec = _write_spec(
-            plan_context, 'PLAN-01-alpha.md', [_section_verdict_bullet(), *_TWO_CLAIMS]
-        )
+        spec = _write_spec(plan_context, 'PLAN-01-alpha.md', [_section_verdict_bullet(), *_TWO_CLAIMS])
 
         stamped = cmd_corpus_set_verdict(_set_verdict_args('PLAN-01', 1, evidence='second only'))
 
@@ -1882,9 +1891,7 @@ class TestCrossCheckUnreadable:
 
         result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
 
-        assert result['unreadable'] == [
-            {'spec': f'{SIBLING_SLUG}/PLAN-77-broken.md', 'error': 'unreadable'}
-        ]
+        assert result['unreadable'] == [{'spec': f'{SIBLING_SLUG}/PLAN-77-broken.md', 'error': 'unreadable'}]
         assert result['unreadable_count'] == 1
         assert result['epics_scanned'] == 1, 'the epic itself was still scanned'
         assert result['candidates_scanned'] == 0, 'an unreadable candidate must not count as scanned'
@@ -2108,8 +2115,7 @@ class TestCrossCheckPublishesTheComparedPopulation:
 
         assert result['file_overlap_match_count'] == 0
         assert result['specs_comparable'] == 0, (
-            'a zero overlap over a zero comparable population is an UNCHECKED '
-            'negative, and the payload has to say so'
+            'a zero overlap over a zero comparable population is an UNCHECKED negative, and the payload has to say so'
         )
         assert result['specs_indeterminate'] == 2
         assert result['compared_path_count'] == 0
@@ -2173,13 +2179,9 @@ class TestCrossCheckPublishesTheComparedPopulation:
         tallied = [row['derivation_status'] for row in result['spec_surface_states']]
         assert tallied == list(SURFACE_STATES)
         assert sum(row['count'] for row in result['spec_surface_states']) == result['specs_total']
-        assert result['spec_surfaces'] == [
-            {'spec': 'PLAN-01-alpha.md', 'derivation_status': SURFACE_DECLARATIVE}
-        ]
+        assert result['spec_surfaces'] == [{'spec': 'PLAN-01-alpha.md', 'derivation_status': SURFACE_DECLARATIVE}]
 
-    def test_the_tally_invariant_holds_when_a_SIBLING_epic_has_an_unreadable_spec(
-        self, plan_context
-    ):
+    def test_the_tally_invariant_holds_when_a_SIBLING_epic_has_an_unreadable_spec(self, plan_context):
         # The population the test above cannot reach. Its fixture registers no
         # sibling epic, so the shared ``unreadable`` list holds only OWN entries
         # there and the sum-equals-total invariant passes whether the own tally is
@@ -2197,17 +2199,14 @@ class TestCrossCheckPublishesTheComparedPopulation:
         assert result['unreadable_count'] == 1, 'the sibling breakage must reach the shared list'
         assert result['specs_total'] == 1, "the sibling's spec is not one of OUR specs"
         assert sum(row['count'] for row in result['spec_surface_states']) == result['specs_total'], (
-            "the own-corpus tally must be derived from the own population: reading the SHARED "
+            'the own-corpus tally must be derived from the own population: reading the SHARED '
             'unreadable list here adds the sibling and breaks sum == specs_total'
         )
         unreadable_row = next(
-            row
-            for row in result['spec_surface_states']
-            if row['derivation_status'] == SURFACE_UNREADABLE
+            row for row in result['spec_surface_states'] if row['derivation_status'] == SURFACE_UNREADABLE
         )
         assert unreadable_row['count'] == 0, (
-            'no OWN spec was unreadable, so the own unreadable tally is zero even though '
-            'the shared list is not empty'
+            'no OWN spec was unreadable, so the own unreadable tally is zero even though the shared list is not empty'
         )
         assert result['specs_indeterminate'] == 0, (
             'specs_indeterminate is an own-corpus figure and must not absorb the sibling either'
@@ -2510,8 +2509,7 @@ class TestFencedExpectedSurface:
         paths = expected_surface_paths(text, tmp_path)
 
         assert len(paths) == len(declared), (
-            f'{len(declared)} path(s) declared after the nested fenced example, '
-            f'{len(paths)} extracted'
+            f'{len(declared)} path(s) declared after the nested fenced example, {len(paths)} extracted'
         )
         assert paths == set(declared)
 
@@ -2520,9 +2518,7 @@ class TestFencedExpectedSurface:
         # three-backtick example, so a truncated section reports a confident
         # no-overlap while still counting the spec in ``specs_scanned``.
         _write_status(plan_context, [_row('PLAN-01')])
-        _write_spec(
-            plan_context, 'PLAN-01-alpha.md', surface_lines=list(_NESTED_FENCED_SURFACE)
-        )
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=list(_NESTED_FENCED_SURFACE))
         _write_live_plan(plan_context, LIVE_PLAN_ID, affected_files=[OTHER_PATH])
 
         result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
@@ -2710,9 +2706,7 @@ class TestIndentPopulations:
             'space widths at or past the boundary plus three tab-bearing forms'
         )
         assert not set(_PERMITTED_INDENTS) & set(_REJECTED_INDENTS)
-        assert sum('\t' in indent for indent in _REJECTED_INDENTS) == 3, (
-            'the tab arm of the rejected population shrank'
-        )
+        assert sum('\t' in indent for indent in _REJECTED_INDENTS) == 3, 'the tab arm of the rejected population shrank'
 
 
 class TestFenceDelimiterIndentationBound:
@@ -2912,16 +2906,10 @@ class TestHeadingCaseIsNotSectionIdentity:
     # --- Expected Surface: positive control ---------------------------------
 
     @pytest.mark.parametrize('surface_heading', _SURFACE_HEADING_CASES)
-    def test_a_case_variant_surface_heading_yields_the_same_declared_paths(
-        self, surface_heading, tmp_path
-    ):
+    def test_a_case_variant_surface_heading_yields_the_same_declared_paths(self, surface_heading, tmp_path):
         declared = (SHARED_PATH, OTHER_PATH)
-        template = _spec_with_headings(
-            '## Claim Labels', '## Expected Surface', [_DEFAULT_CLAIM], _surface(*declared)
-        )
-        variant = _spec_with_headings(
-            '## Claim Labels', surface_heading, [_DEFAULT_CLAIM], _surface(*declared)
-        )
+        template = _spec_with_headings('## Claim Labels', '## Expected Surface', [_DEFAULT_CLAIM], _surface(*declared))
+        variant = _spec_with_headings('## Claim Labels', surface_heading, [_DEFAULT_CLAIM], _surface(*declared))
 
         template_paths = expected_surface_paths(template, tmp_path / 'template')
         variant_paths = expected_surface_paths(variant, tmp_path / 'variant')
@@ -2934,8 +2922,7 @@ class TestHeadingCaseIsNotSectionIdentity:
             'from the TEMPLATE-cased spec — the comparand itself is broken'
         )
         assert variant_paths == set(declared), (
-            f'{len(declared)} path(s) declared under {surface_heading!r}, '
-            f'{len(variant_paths)} extracted'
+            f'{len(declared)} path(s) declared under {surface_heading!r}, {len(variant_paths)} extracted'
         )
         assert variant_paths == template_paths
 
@@ -2985,17 +2972,14 @@ class TestHeadingCaseIsNotSectionIdentity:
             '- OBSERVED: first claim — read at `a.py` § `f`',
             '- OBSERVED: second claim — read at `b.py` § `g`',
         ]
-        variant = _spec_with_headings(
-            claim_heading, '## Expected Surface', claim_lines, list(_DEFAULT_SURFACE)
-        )
+        variant = _spec_with_headings(claim_heading, '## Expected Surface', claim_lines, list(_DEFAULT_SURFACE))
 
         section = parse_claim_section(variant.splitlines())
         claims = section['claims']
 
         assert section['state'] == CLAIM_SECTION_PARSED
         assert len(claims) == len(claim_lines), (
-            f'{len(claim_lines)} claim(s) declared under {claim_heading!r}, '
-            f'{len(claims)} parsed'
+            f'{len(claim_lines)} claim(s) declared under {claim_heading!r}, {len(claims)} parsed'
         )
         assert [claim['text'] for claim in claims] == [
             'OBSERVED: first claim — read at `a.py` § `f`',
@@ -3042,17 +3026,14 @@ class TestIndentedDelimiterExpectedSurface:
         ('label', 'surface'),
         (('four-space', _INDENTED_DELIMITER_SURFACE), ('tab', _TAB_DELIMITER_SURFACE)),
     )
-    def test_a_fenced_list_containing_an_over_indented_delimiter_yields_every_path(
-        self, label, surface, tmp_path
-    ):
+    def test_a_fenced_list_containing_an_over_indented_delimiter_yields_every_path(self, label, surface, tmp_path):
         declared = (SHARED_PATH, OTHER_PATH)
         text = _spec_text([_DEFAULT_CLAIM], list(surface))
 
         paths = expected_surface_paths(text, tmp_path)
 
         assert len(paths) == len(declared), (
-            f'{len(declared)} path(s) declared after the {label}-indented '
-            f'delimiter, {len(paths)} extracted'
+            f'{len(declared)} path(s) declared after the {label}-indented delimiter, {len(paths)} extracted'
         )
         assert paths == set(declared)
 
@@ -3074,9 +3055,7 @@ class TestIndentedDelimiterExpectedSurface:
         # End to end through the verb: with the section emptied, the spec is
         # still counted in ``specs_scanned`` and the zero reads as clean.
         _write_status(plan_context, [_row('PLAN-01')])
-        _write_spec(
-            plan_context, 'PLAN-01-alpha.md', surface_lines=list(_INDENTED_DELIMITER_SURFACE)
-        )
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=list(_INDENTED_DELIMITER_SURFACE))
         _write_live_plan(plan_context, LIVE_PLAN_ID, affected_files=[OTHER_PATH])
 
         result = cmd_corpus_cross_check(_CROSS_CHECK_ARGS)
@@ -3107,9 +3086,7 @@ class TestIndentedDelimiterClaimAddressing:
             'OBSERVED: second claim — read at `b.py` § `g`',
         ]
 
-    def test_claim_index_one_writes_under_the_second_claim_not_the_fenced_bullet(
-        self, plan_context
-    ):
+    def test_claim_index_one_writes_under_the_second_claim_not_the_fenced_bullet(self, plan_context):
         _write_status(plan_context, [_row('PLAN-01')])
         spec = _write_spec(plan_context, 'PLAN-01-alpha.md', list(_INDENTED_DELIMITER_CLAIMS))
 
@@ -3120,8 +3097,7 @@ class TestIndentedDelimiterClaimAddressing:
         text = spec.read_text(encoding='utf-8')
         assert text.count('- verdict:') == 1, 'a claim must never carry two verdicts'
         assert text.index('- verdict:') > text.index('- an illustrative bullet'), (
-            'the verdict was written inside the fenced example — --claim-index 1 '
-            'addressed the in-fence bullet'
+            'the verdict was written inside the fenced example — --claim-index 1 addressed the in-fence bullet'
         )
         assert text.index('- verdict:') > text.index('- OBSERVED: second claim'), (
             'the verdict was written above the second claim rather than beneath it'
@@ -3199,22 +3175,14 @@ def _pre_fix_fenced_mask(lines: list[str]) -> list[bool]:
         run = match.group('fence')
         if not open_char:
             open_char, open_length = run[0], len(run)
-        elif (
-            run[0] == open_char
-            and len(run) >= open_length
-            and not match.group('info').strip()
-        ):
+        elif run[0] == open_char and len(run) >= open_length and not match.group('info').strip():
             open_char, open_length = '', 0
     return mask
 
 
 def test_the_bound_changed_the_delimiter_match_set():
-    admitted_before = [
-        indent for indent in _REJECTED_INDENTS if _PRE_FIX_FENCE_DELIMITER_RE.match(f'{indent}```')
-    ]
-    admitted_now = [
-        indent for indent in _REJECTED_INDENTS if _orch._FENCE_DELIMITER_RE.match(f'{indent}```')
-    ]
+    admitted_before = [indent for indent in _REJECTED_INDENTS if _PRE_FIX_FENCE_DELIMITER_RE.match(f'{indent}```')]
+    admitted_now = [indent for indent in _REJECTED_INDENTS if _orch._FENCE_DELIMITER_RE.match(f'{indent}```')]
 
     assert len(admitted_before) == len(_REJECTED_INDENTS), (
         f'{len(admitted_before)} of {len(_REJECTED_INDENTS)} rejected indents were admitted '
@@ -3222,19 +3190,14 @@ def test_the_bound_changed_the_delimiter_match_set():
         'control above is vacuous'
     )
     assert admitted_now == [], (
-        f'{len(admitted_now)} of {len(_REJECTED_INDENTS)} rejected indents are still '
-        'admitted by the live regex'
+        f'{len(admitted_now)} of {len(_REJECTED_INDENTS)} rejected indents are still admitted by the live regex'
     )
 
 
 def test_the_bound_changed_the_heading_match_set():
     indented = [indent for indent in _PERMITTED_INDENTS if indent]
-    rejected_before = [
-        indent for indent in indented if _PRE_FIX_HEADING_RE.match(f'{indent}## Objective') is None
-    ]
-    accepted_now = [
-        indent for indent in _PERMITTED_INDENTS if HEADING_RE.match(f'{indent}## Objective')
-    ]
+    rejected_before = [indent for indent in indented if _PRE_FIX_HEADING_RE.match(f'{indent}## Objective') is None]
+    accepted_now = [indent for indent in _PERMITTED_INDENTS if HEADING_RE.match(f'{indent}## Objective')]
 
     assert len(rejected_before) == len(indented) == 3, (
         f'{len(rejected_before)} of {len(indented)} indented headings were rejected by the '
@@ -3253,13 +3216,11 @@ def test_the_pre_fix_mask_reproduces_the_recorded_disagreement():
     fixed = fenced_mask(lines)
 
     assert len(pre_fix) == len(fixed) == len(lines) == 5
-    assert pre_fix == [True, True, True, False, True], (
-        'the negative fixture no longer reproduces the pre-fix mask'
-    )
+    assert pre_fix == [True, True, True, False, True], 'the negative fixture no longer reproduces the pre-fix mask'
     assert fixed == [True] * len(lines)
     assert sum(pre_fix) == 4, (
         f'{sum(pre_fix)} of {len(lines)} lines masked before the fix, {sum(fixed)} after — '
-        'the unmasked line is the block\'s ``#`` comment, and reading it as a heading is '
+        "the unmasked line is the block's ``#`` comment, and reading it as a heading is "
         'what truncated the enclosing section and emptied the surface declared after it'
     )
 
@@ -3271,8 +3232,7 @@ def test_the_pre_fix_regex_opened_a_fence_on_a_prose_line_quoting_inline_code():
     fixed = fenced_mask(lines)
 
     assert pre_fix == [True, True, True], (
-        'the negative fixture no longer reproduces the pre-fix reading of an '
-        'inadmissible backtick info string'
+        'the negative fixture no longer reproduces the pre-fix reading of an inadmissible backtick info string'
     )
     assert not any(fixed), (
         f'{sum(fixed)} of {len(lines)} lines masked — a backtick fence whose info string '
@@ -3312,9 +3272,7 @@ def _pre_fix_own_unreadable_count(shared_unreadable: list) -> int:
 def _own_unreadable_tally(result: dict) -> int:
     """The shipped own-unreadable count, read off the real verb's payload."""
     count = next(
-        row['count']
-        for row in result['spec_surface_states']
-        if row['derivation_status'] == SURFACE_UNREADABLE
+        row['count'] for row in result['spec_surface_states'] if row['derivation_status'] == SURFACE_UNREADABLE
     )
     # The payload is an untyped dict, so the row value arrives as Any; the
     # int() is the narrowing this function's return type promises, not a coercion
@@ -3339,9 +3297,7 @@ def test_the_own_unreadable_tally_changed_over_a_sibling_bearing_population(plan
 
     assert pre_fix == 1, 'the negative fixture no longer reproduces the pre-fix tally'
     assert shipped == 0, 'no OWN spec was unreadable, so the own tally is zero'
-    assert pre_fix != shipped, (
-        'the shipped verb agrees with the pre-fix expression, so the fix is not in force'
-    )
+    assert pre_fix != shipped, 'the shipped verb agrees with the pre-fix expression, so the fix is not in force'
 
 
 def test_the_own_unreadable_tally_agrees_when_no_sibling_is_registered(plan_context):
@@ -3392,9 +3348,7 @@ def test_the_comparable_predicate_changed_for_a_derived_spec_that_resolves_paths
     assert _pre_fix_comparable(claim) is True, (
         'the fixture is only load-bearing if the derived spec DOES resolve a path'
     )
-    assert record['paths'] == set(), (
-        'a derived spec must contribute no comparable path however many it resolves'
-    )
+    assert record['paths'] == set(), 'a derived spec must contribute no comparable path however many it resolves'
 
 
 def test_the_comparable_predicate_is_unchanged_for_the_two_non_witnessing_shapes(tmp_path):
@@ -3499,8 +3453,7 @@ def test_only_one_module_implements_the_verdict_grammar():
     ]
 
     assert [module.name for module in carriers] == ['orchestrator.py'], (
-        'the re-grounding verdict grammar has a second implementation: '
-        f'{[str(module) for module in carriers]}'
+        f'the re-grounding verdict grammar has a second implementation: {[str(module) for module in carriers]}'
     )
 
 

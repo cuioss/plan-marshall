@@ -15,22 +15,10 @@ from _audit_fixtures import (
 
 from conftest import PROJECT_ROOT
 
-_CHECKS_DOC_DIR = (
-    PROJECT_ROOT
-    / '.claude'
-    / 'skills'
-    / 'audit-archived-plan-retrospectives'
-    / 'checks'
-)
+_CHECKS_DOC_DIR = PROJECT_ROOT / '.claude' / 'skills' / 'audit-archived-plan-retrospectives' / 'checks'
 
 
-_SKILL_DOC = (
-    PROJECT_ROOT
-    / '.claude'
-    / 'skills'
-    / 'audit-archived-plan-retrospectives'
-    / 'SKILL.md'
-)
+_SKILL_DOC = PROJECT_ROOT / '.claude' / 'skills' / 'audit-archived-plan-retrospectives' / 'SKILL.md'
 
 
 # The prose annotation a SKILL.md summary-table row carries when its check runs
@@ -59,7 +47,7 @@ def _skill_md_shipping_annotated_checks() -> set[str]:
     )
     assert heading is not None, 'SKILL.md has no "## Available checks" section'
     annotated: set[str] = set()
-    for line in lines[heading + 1:]:
+    for line in lines[heading + 1 :]:
         if line.startswith('## '):
             break
         if not line.startswith('|') or _SHIPPING_ANNOTATION not in line.lower():
@@ -84,20 +72,14 @@ class TestShippingPartition:
 
     def test_footprint_alone_is_shipping(self, tmp_path: Path):
         # a real footprint with no persisted CI run still delivered something
-        inputs = _write_shipping_plan(
-            tmp_path, 'footprint-only', modified_files=['src/a.py']
-        )
+        inputs = _write_shipping_plan(tmp_path, 'footprint-only', modified_files=['src/a.py'])
 
         assert audit.plan_pr_number(inputs.plan_dir) == ''
         assert audit._plan_shipped(inputs) is True
 
-    def test_neither_is_excluded_and_labelled_with_its_archived_reason(
-        self, tmp_path: Path
-    ):
+    def test_neither_is_excluded_and_labelled_with_its_archived_reason(self, tmp_path: Path):
         # no PR record, no footprint → excluded, labelled with the recorded reason
-        inputs = _write_shipping_plan(
-            tmp_path, 'no-ship', archived_reason='closed_superseded'
-        )
+        inputs = _write_shipping_plan(tmp_path, 'no-ship', archived_reason='closed_superseded')
 
         shipping, excluded = audit._partition_shipping([inputs])
 
@@ -105,9 +87,7 @@ class TestShippingPartition:
         assert [i.plan_id for i in excluded] == ['no-ship']
         assert audit._exclusion_label(excluded[0]) == 'no-ship:closed_superseded'
 
-    def test_missing_archived_reason_is_still_excluded_and_labelled_unrecorded(
-        self, tmp_path: Path
-    ):
+    def test_missing_archived_reason_is_still_excluded_and_labelled_unrecorded(self, tmp_path: Path):
         # the predicate is DERIVED, so an absent reason cannot re-admit the plan;
         # the label degrades to `unrecorded` rather than the exclusion vanishing.
         inputs = _write_shipping_plan(tmp_path, 'no-reason')
@@ -117,32 +97,24 @@ class TestShippingPartition:
         assert shipping == []
         assert audit._exclusion_label(excluded[0]) == 'no-reason:unrecorded'
 
-    def test_other_non_shipping_reason_excluded_by_the_same_predicate(
-        self, tmp_path: Path
-    ):
+    def test_other_non_shipping_reason_excluded_by_the_same_predicate(self, tmp_path: Path):
         # NOT `closed_superseded`: there is no per-value special case, so any
         # evidence-free plan is excluded and carries its own reason verbatim.
-        inputs = _write_shipping_plan(
-            tmp_path, 'abandoned', archived_reason='closed_abandoned'
-        )
+        inputs = _write_shipping_plan(tmp_path, 'abandoned', archived_reason='closed_abandoned')
 
         shipping, excluded = audit._partition_shipping([inputs])
 
         assert shipping == []
         assert audit._exclusion_label(excluded[0]) == 'abandoned:closed_abandoned'
 
-    def test_partitioned_check_reports_exclusion_apart_from_examined_count(
-        self, tmp_path: Path
-    ):
+    def test_partitioned_check_reports_exclusion_apart_from_examined_count(self, tmp_path: Path):
         # `scope-estimate-accuracy` is a delivery-cost check: two shipping plans
         # are examined, the third is excluded — two DISTINCT numbers, and the
         # excluded plan is NAMED rather than silently dropped.
         inputs = [
             _write_shipping_plan(tmp_path, 'ship-a', modified_files=['a.py']),
             _write_shipping_plan(tmp_path, 'ship-b', pr_number='99'),
-            _write_shipping_plan(
-                tmp_path, 'no-ship', archived_reason='closed_superseded'
-            ),
+            _write_shipping_plan(tmp_path, 'no-ship', archived_reason='closed_superseded'),
         ]
 
         output = audit.run_checks(inputs, ['scope-estimate-accuracy'], tmp_path)
@@ -160,9 +132,7 @@ class TestShippingPartition:
         # one health row per SCANNED plan, and carries no exclusion columns.
         inputs = [
             _write_shipping_plan(tmp_path, 'ship-a', modified_files=['a.py']),
-            _write_shipping_plan(
-                tmp_path, 'no-ship', archived_reason='closed_superseded'
-            ),
+            _write_shipping_plan(tmp_path, 'no-ship', archived_reason='closed_superseded'),
         ]
 
         output = audit.run_checks(inputs, ['input-integrity'], tmp_path)
@@ -210,10 +180,7 @@ class TestDeliveryCostPartitionContract:
 
     def test_partitions_exactly_cover_check_names(self):
         # regression tripwire — see the class docstring
-        assert (
-            audit.DELIVERY_COST_CHECKS | audit.FULL_CORPUS_CHECKS
-            == frozenset(audit.CHECK_NAMES)
-        )
+        assert audit.DELIVERY_COST_CHECKS | audit.FULL_CORPUS_CHECKS == frozenset(audit.CHECK_NAMES)
 
     def test_check_names_has_no_duplicates(self):
         # the set-based exact cover above compares SETS, so a duplicated entry in
@@ -259,6 +226,4 @@ class TestDeliveryCostPartitionContract:
         # annotations must be exactly DELIVERY_COST_CHECKS — no more (a row
         # annotated for a check the code does not partition), no fewer (a
         # partitioned check whose row lost, or never gained, the annotation).
-        assert _skill_md_shipping_annotated_checks() == set(
-            audit.DELIVERY_COST_CHECKS
-        )
+        assert _skill_md_shipping_annotated_checks() == set(audit.DELIVERY_COST_CHECKS)

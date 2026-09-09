@@ -352,9 +352,12 @@ def test_cli_update_non_integer_predicted_cost_tokens_exits_2():
     result = run_script(
         SCRIPT_PATH,
         'update',
-        '--plan-id', 'wb-cli-missing',
-        '--task-number', '1',
-        '--predicted-cost-tokens', 'lots',
+        '--plan-id',
+        'wb-cli-missing',
+        '--task-number',
+        '1',
+        '--predicted-cost-tokens',
+        'lots',
     )
 
     assert result.returncode == 2
@@ -365,9 +368,12 @@ def test_cli_update_non_integer_envelope_id_exits_2():
     result = run_script(
         SCRIPT_PATH,
         'update',
-        '--plan-id', 'wb-cli-missing',
-        '--task-number', '1',
-        '--envelope-id', 'two',
+        '--plan-id',
+        'wb-cli-missing',
+        '--task-number',
+        '1',
+        '--envelope-id',
+        'two',
     )
 
     assert result.returncode == 2

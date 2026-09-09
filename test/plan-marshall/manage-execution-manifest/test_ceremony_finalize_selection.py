@@ -62,7 +62,10 @@ from conftest import PlanContext, load_script_module
 
 
 _mem = load_script_module(
-    'plan-marshall', 'manage-execution-manifest', 'manage-execution-manifest.py', module_name='_mem_script_ceremony_finalize'
+    'plan-marshall',
+    'manage-execution-manifest',
+    'manage-execution-manifest.py',
+    module_name='_mem_script_ceremony_finalize',
 )
 cmd_compose = _mem.cmd_compose
 read_manifest = _mem.read_manifest
@@ -222,9 +225,7 @@ def _seed_marshal(
         },
     }
     if ci_provider:
-        marshal['providers'] = [
-            {'skill_name': f'plan-marshall:workflow-integration-{ci_provider}', 'category': 'ci'}
-        ]
+        marshal['providers'] = [{'skill_name': f'plan-marshall:workflow-integration-{ci_provider}', 'category': 'ci'}]
 
     marshal_path = get_marshal_path()
     marshal_path.parent.mkdir(parents=True, exist_ok=True)
@@ -373,9 +374,7 @@ class TestCeremonyFinalizeNever:
     """``never`` drops the gate's finalize step from phase_6.steps."""
 
     def test_never_drops_each_gate_step(self, plan_context):
-        _seed_marshal(
-            finalize_gates={'self_review': 'off', 'qgate': 'off'}
-        )
+        _seed_marshal(finalize_gates={'self_review': 'off', 'qgate': 'off'})
         _stub_footprint(_FOOTPRINT)
 
         result = cmd_compose(_compose_ns(plan_id='ceremony-never-all'))
@@ -391,16 +390,13 @@ class TestCeremonyFinalizeNever:
 
     def test_never_is_no_op_when_step_already_absent(self, plan_context):
         # Candidate set EXCLUDES self_review; never self_review is a no-op.
-        candidates = [s for s in _phase_6_with_ceremony_steps().split(',')
-                      if s != 'default:pre-submission-self-review']
+        candidates = [s for s in _phase_6_with_ceremony_steps().split(',') if s != 'default:pre-submission-self-review']
         # The seeded steps map IS the candidate list, so it must match the
         # composed candidate set (self_review owner excluded).
         _seed_marshal(finalize_gates={'self_review': 'off'}, candidates=candidates)
         _stub_footprint(_FOOTPRINT)
 
-        result = cmd_compose(
-            _compose_ns(plan_id='ceremony-never-absent', phase_6_steps=','.join(candidates))
-        )
+        result = cmd_compose(_compose_ns(plan_id='ceremony-never-absent', phase_6_steps=','.join(candidates)))
 
         assert result is not None
         assert result['status'] == 'success'
@@ -441,9 +437,7 @@ class TestCeremonyFinalizeAlways:
         runs — is unchanged; the mechanism that delivers it moved one stage
         earlier, from undoing the drop to preventing it.
         """
-        _seed_marshal(
-            finalize_gates={'self_review': 'minimal'}
-        )
+        _seed_marshal(finalize_gates={'self_review': 'minimal'})
         _stub_footprint(_FOOTPRINT)
 
         result = cmd_compose(
@@ -476,10 +470,7 @@ class TestCeremonyFinalizeAlways:
         # Candidate set WITHOUT the self-review owner, so the step is absent from
         # the seeded steps map (and therefore carries no lane declaration) and the
         # ceremony gate must insert it.
-        candidates = [
-            s for s in _phase_6_with_ceremony_steps().split(',')
-            if s != 'default:pre-submission-self-review'
-        ]
+        candidates = [s for s in _phase_6_with_ceremony_steps().split(',') if s != 'default:pre-submission-self-review']
         _seed_marshal(candidates=candidates)
         _stub_footprint(_FOOTPRINT)
         # Force the gate value directly — the owning step is absent from the map,
@@ -489,7 +480,10 @@ class TestCeremonyFinalizeAlways:
         # (and ignores) it.
         original_gates = _mem._read_finalize_gates
         _mem._read_finalize_gates = lambda _plan_id: {
-            'self_review': 'always', 'qgate': 'auto', 'simplify': 'auto', 'security_audit': 'auto',
+            'self_review': 'always',
+            'qgate': 'auto',
+            'simplify': 'auto',
+            'security_audit': 'auto',
         }
         try:
             result = cmd_compose(
@@ -615,10 +609,7 @@ class TestCeremonyFinalizeGenericSelfReviewForm:
         # `always` must see the already-present normalized form and NOT re-insert
         # a duplicate. Count raw occurrences (a set would mask the duplicate).
         steps = _manifest_phase_6_steps(result)
-        occurrences = sum(
-            1 for s in steps
-            if next(iter(_bare([s]))) == 'pre-submission-self-review'
-        )
+        occurrences = sum(1 for s in steps if next(iter(_bare([s]))) == 'pre-submission-self-review')
         assert occurrences == 1
         assert 'pre-submission-self-review' not in result['ceremony_finalize_forced_in']
 
@@ -665,9 +656,7 @@ class TestCeremonyFinalizeSimplify:
         _seed_marshal(finalize_gates={'simplify': 'auto'})
         _stub_footprint(_FOOTPRINT)
 
-        result = cmd_compose(
-            _compose_ns(plan_id='ceremony-simplify-auto-drop', change_type='analysis')
-        )
+        result = cmd_compose(_compose_ns(plan_id='ceremony-simplify-auto-drop', change_type='analysis'))
 
         assert result is not None
         assert result['status'] == 'success'
@@ -694,9 +683,7 @@ class TestCeremonyFinalizeSimplify:
         _seed_marshal(finalize_gates={'simplify': 'off'})
         _stub_footprint(_FOOTPRINT)
 
-        result = cmd_compose(
-            _compose_ns(plan_id='ceremony-simplify-never-absent', change_type='analysis')
-        )
+        result = cmd_compose(_compose_ns(plan_id='ceremony-simplify-never-absent', change_type='analysis'))
 
         assert result is not None
         assert result['status'] == 'success'
@@ -709,9 +696,7 @@ class TestCeremonyFinalizeSimplify:
         _seed_marshal(finalize_gates={'simplify': 'minimal'})
         _stub_footprint(_FOOTPRINT)
 
-        result = cmd_compose(
-            _compose_ns(plan_id='ceremony-simplify-always-readd', change_type='analysis')
-        )
+        result = cmd_compose(_compose_ns(plan_id='ceremony-simplify-always-readd', change_type='analysis'))
 
         assert result is not None
         assert result['status'] == 'success'
@@ -736,9 +721,7 @@ class TestCeremonyFinalizeSimplify:
         _seed_marshal(finalize_gates={'simplify': 'minimal'})
         _stub_footprint(_FOOTPRINT)
 
-        result = cmd_compose(
-            _compose_ns(plan_id='ceremony-simplify-always-order', change_type='analysis')
-        )
+        result = cmd_compose(_compose_ns(plan_id='ceremony-simplify-always-order', change_type='analysis'))
 
         assert result is not None
         steps = _manifest_phase_6_steps(result)
@@ -793,9 +776,7 @@ class TestCeremonyFinalizeSecurityAudit:
         _seed_marshal(finalize_gates={'security_audit': 'auto'})
         _stub_footprint(_FOOTPRINT)
 
-        result = cmd_compose(
-            _compose_ns(plan_id='ceremony-secaudit-auto-excluded-type', change_type='analysis')
-        )
+        result = cmd_compose(_compose_ns(plan_id='ceremony-secaudit-auto-excluded-type', change_type='analysis'))
 
         assert result is not None
         assert result['status'] == 'success'
@@ -822,9 +803,7 @@ class TestCeremonyFinalizeSecurityAudit:
         assert result is not None
         assert result['status'] == 'success'
         assert result['ceremony_finalize_gates']['security_audit'] == 'auto'
-        assert [r['step'] for r in result['security_class_omitted']] == [
-            'finalize-step-security-audit'
-        ]
+        assert [r['step'] for r in result['security_class_omitted']] == ['finalize-step-security-audit']
         # auto never force-includes — the pre-filter's drop stands.
         assert 'finalize-step-security-audit' not in result['ceremony_finalize_forced_in']
         assert 'finalize-step-security-audit' not in _bare(_manifest_phase_6_steps(result))
@@ -949,9 +928,7 @@ class TestEnhancementGateActivation:
         assert result['ceremony_finalize_forced_in'] == []
         assert result['ceremony_finalize_forced_out'] == []
 
-    def test_enhancement_with_zero_files_drops_simplify_but_keeps_security_audit(
-        self, plan_context
-    ):
+    def test_enhancement_with_zero_files_drops_simplify_but_keeps_security_audit(self, plan_context):
         # simplify_inactive's second leg is unchanged: affected_files_count == 0
         # drops finalize-step-simplify regardless of the code-touching change type.
         # security_class_inactive does NOT drop on that leg alone — the live
@@ -992,9 +969,7 @@ class TestEnhancementGateActivation:
         assert result is not None
         assert result['status'] == 'success'
         assert result['simplify_omitted'] is True
-        assert [r['step'] for r in result['security_class_omitted']] == [
-            'finalize-step-security-audit'
-        ]
+        assert [r['step'] for r in result['security_class_omitted']] == ['finalize-step-security-audit']
         bare = _bare(_manifest_phase_6_steps(result))
         assert 'finalize-step-simplify' not in bare
         assert 'finalize-step-security-audit' not in bare
@@ -1056,9 +1031,7 @@ class TestCeremonyFinalizePlanLocalChannel:
 
         # Channel A — plan-local only; marshal declares nothing.
         _seed_marshal(candidates=candidates)
-        _write_plan_local_overrides(
-            plan_context, 'ceremony-plan-local-off', {self._SELF_REVIEW_OWNER: {'lane': 'off'}}
-        )
+        _write_plan_local_overrides(plan_context, 'ceremony-plan-local-off', {self._SELF_REVIEW_OWNER: {'lane': 'off'}})
         plan_local = self._compose_with('ceremony-plan-local-off', candidates)
 
         # Channel B — marshal only; the plan declares nothing.
@@ -1067,10 +1040,7 @@ class TestCeremonyFinalizePlanLocalChannel:
 
         assert plan_local is not None and marshal is not None
         assert plan_local['ceremony_finalize_gates']['self_review'] == 'never'
-        assert (
-            plan_local['ceremony_finalize_gates']['self_review']
-            == marshal['ceremony_finalize_gates']['self_review']
-        )
+        assert plan_local['ceremony_finalize_gates']['self_review'] == marshal['ceremony_finalize_gates']['self_review']
         assert 'pre-submission-self-review' not in _bare(_manifest_phase_6_steps(plan_local))
         assert _bare(_manifest_phase_6_steps(plan_local)) == _bare(_manifest_phase_6_steps(marshal))
 
@@ -1090,10 +1060,7 @@ class TestCeremonyFinalizePlanLocalChannel:
 
         assert plan_local is not None and marshal is not None
         assert plan_local['ceremony_finalize_gates']['self_review'] == 'always'
-        assert (
-            plan_local['ceremony_finalize_gates']['self_review']
-            == marshal['ceremony_finalize_gates']['self_review']
-        )
+        assert plan_local['ceremony_finalize_gates']['self_review'] == marshal['ceremony_finalize_gates']['self_review']
 
     def test_plan_local_declaration_also_grants_scope_gate_immunity(self, plan_context):
         """ONE declaration reaches BOTH readers — the symmetric-pair obligation.
@@ -1170,9 +1137,7 @@ class TestCeremonyFinalizeDeterminism:
     """Re-composing with identical inputs yields an identical ceremony selection."""
 
     def test_repeated_compose_is_deterministic(self, plan_context):
-        _seed_marshal(
-            finalize_gates={'self_review': 'minimal', 'qgate': 'off', 'simplify': 'standard'}
-        )
+        _seed_marshal(finalize_gates={'self_review': 'minimal', 'qgate': 'off', 'simplify': 'standard'})
         _stub_footprint(_FOOTPRINT)
 
         ns1 = _compose_ns(plan_id='ceremony-determinism', scope_estimate='surgical', change_type='bug_fix')
@@ -1211,9 +1176,7 @@ class TestCeremonyFinalizeAdrPropose:
             ('enhancement', 'single_module'),
         ],
     )
-    def test_adr_propose_survives_ceremony_across_change_types(
-        self, plan_context, change_type, scope_estimate
-    ):
+    def test_adr_propose_survives_ceremony_across_change_types(self, plan_context, change_type, scope_estimate):
         _seed_marshal()  # all ceremony gates default to auto
         _stub_footprint(_FOOTPRINT)
 
@@ -1239,9 +1202,7 @@ class TestCeremonyFinalizeAdrPropose:
     def test_adr_propose_not_force_dropped_when_gates_set_to_never(self, plan_context):
         """Setting every ceremony gate to ``never`` drops only the ceremony
         steps — adr-propose is not a ceremony gate, so it survives."""
-        _seed_marshal(
-            finalize_gates={'self_review': 'off', 'qgate': 'off', 'simplify': 'off'}
-        )
+        _seed_marshal(finalize_gates={'self_review': 'off', 'qgate': 'off', 'simplify': 'off'})
         _stub_footprint(_FOOTPRINT)
 
         result = cmd_compose(_compose_ns(plan_id='ceremony-adr-never'))
@@ -1301,9 +1262,7 @@ _OPT_OUT_STEPS = ['sonar-roundtrip', 'plan-marshall:plan-retrospective']
 
 def _patch_immune_off_lanes(monkeypatch):
     """Monkeypatch ``_resolve_element_lane`` to the canned immune-off blocks."""
-    monkeypatch.setattr(
-        _mem, '_resolve_element_lane', lambda step: _IMMUNE_OFF_LANE_BLOCKS.get(step)
-    )
+    monkeypatch.setattr(_mem, '_resolve_element_lane', lambda step: _IMMUNE_OFF_LANE_BLOCKS.get(step))
 
 
 def _write_execution_profile(plan_context, plan_id, profile):
@@ -1424,8 +1383,13 @@ class TestCeremonyFinalizeImmuneOff:
         posture cutoff."""
         _patch_immune_off_lanes(monkeypatch)
         candidates = [
-            'push', 'create-pr', 'ci-verify', 'branch-cleanup',
-            'record-metrics', 'archive-plan', 'sonar-roundtrip',
+            'push',
+            'create-pr',
+            'ci-verify',
+            'branch-cleanup',
+            'record-metrics',
+            'archive-plan',
+            'sonar-roundtrip',
         ]
 
         # Baseline: no override → sonar-roundtrip (tier standard) survives standard posture.
@@ -1494,17 +1458,13 @@ class TestCeremonyPrefilterLaneWarnings:
         _stub_footprint([])
         _write_execution_profile(plan_context, plan_id, 'full')
 
-        result = cmd_compose(
-            _compose_ns(plan_id=plan_id, change_type='analysis', affected_files_count=0)
-        )
+        result = cmd_compose(_compose_ns(plan_id=plan_id, change_type='analysis', affected_files_count=0))
 
         assert result is not None
         assert result['status'] == 'success'
         # Each pre-filter's own omission signal, unchanged in meaning.
         assert result['simplify_omitted'] is True
-        assert [r['step'] for r in result['security_class_omitted']] == [
-            'finalize-step-security-audit'
-        ]
+        assert [r['step'] for r in result['security_class_omitted']] == ['finalize-step-security-audit']
         # The silent-drop scenario now yields a non-empty lane_warnings naming
         # the ceremony pre-filter as the remover for BOTH dropped steps.
         warned = {w['step']: w['warning'] for w in result['lane_warnings']}
@@ -1531,7 +1491,8 @@ class TestCeremonyPrefilterLaneWarnings:
         # never fires (a no-op over an absent step) → no warning entry.
         plan_id = 'ceremony-prefilter-no-candidate'
         candidates = [
-            s for s in _phase_6_with_ceremony_steps().split(',')
+            s
+            for s in _phase_6_with_ceremony_steps().split(',')
             if s not in ('finalize-step-simplify', 'finalize-step-security-audit')
         ]
         # finalize_gates={} still seeds the authoritative steps map from the

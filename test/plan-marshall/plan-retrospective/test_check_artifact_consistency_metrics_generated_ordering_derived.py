@@ -6,7 +6,6 @@ inconclusive — read from real discovery, and inconclusive rather than fail whe
 the ordering cannot be resolved.
 """
 
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -73,9 +72,7 @@ class TestMetricsGeneratedOrderingDerivedVerdict:
         monkeypatch.setattr(_check_mod, 'find_implementors', _fake_find_implementors)
         return queried
 
-    def test_producer_ordered_later_is_inconclusive_naming_the_ordering(
-        self, tmp_path, monkeypatch
-    ):
+    def test_producer_ordered_later_is_inconclusive_naming_the_ordering(self, tmp_path, monkeypatch):
         """Positive half: producer after consumer → ``inconclusive``, ordering named."""
         plan_dir = self._plan_dir_without_metrics(tmp_path)
         queried = self._stub_orders(monkeypatch, producer=998, consumer=995)
@@ -84,7 +81,7 @@ class TestMetricsGeneratedOrderingDerivedVerdict:
 
         assert status == 'inconclusive', (
             'A producer ordered after the consuming retrospective has not had its '
-            f'turn, so its artifact\'s absence is unmeasurable. Got: {status} — {message}'
+            f"turn, so its artifact's absence is unmeasurable. Got: {status} — {message}"
         )
         assert self._PRODUCER in message
         assert self._CONSUMER in message
@@ -92,9 +89,7 @@ class TestMetricsGeneratedOrderingDerivedVerdict:
             'The message must NAME the ordering it derived the verdict from, so a '
             f'reader can tell it apart from a genuine miss: {message}'
         )
-        assert 'did not run' not in message, (
-            'The retired causal claim must not survive on the inconclusive branch.'
-        )
+        assert 'did not run' not in message, 'The retired causal claim must not survive on the inconclusive branch.'
         assert queried == [_check_mod._FINALIZE_STEP_EXT_POINT] * 2, (
             'Both orders must be resolved from the finalize-step ext-point '
             f'registry the pipeline itself orders by, got {queried}'
@@ -190,9 +185,7 @@ class TestMetricsGeneratedOrderingDerivedVerdict:
             f'{self._PRODUCER} must be discoverable with an integer order; '
             'an unresolvable producer would make every stubbed branch above vacuous.'
         )
-        assert isinstance(consumer_order, int), (
-            f'{self._CONSUMER} must be discoverable with an integer order.'
-        )
+        assert isinstance(consumer_order, int), f'{self._CONSUMER} must be discoverable with an integer order.'
 
     def test_unknown_step_resolves_to_none(self):
         """The resolver reports not-discoverable rather than inventing a position."""

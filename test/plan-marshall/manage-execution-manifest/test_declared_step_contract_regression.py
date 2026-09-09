@@ -38,7 +38,10 @@ from argparse import Namespace
 from conftest import load_script_module
 
 _mem = load_script_module(
-    'plan-marshall', 'manage-execution-manifest', 'manage-execution-manifest.py', module_name='_mem_declared_contract_regression'
+    'plan-marshall',
+    'manage-execution-manifest',
+    'manage-execution-manifest.py',
+    module_name='_mem_declared_contract_regression',
 )
 _mem._log_decision = lambda *a, **kw: None
 
@@ -88,9 +91,7 @@ def _write_plan_local_overrides(plan_context, plan_id: str, overrides: dict) -> 
     """
     plan_dir = plan_context.plan_dir_for(plan_id)
     (plan_dir / 'status.json').write_text(
-        json.dumps(
-            {'plan_id': plan_id, 'metadata': {'finalize_step_overrides': overrides}}, indent=2
-        ),
+        json.dumps({'plan_id': plan_id, 'metadata': {'finalize_step_overrides': overrides}}, indent=2),
         encoding='utf-8',
     )
 
@@ -209,9 +210,7 @@ class TestDeclaredLaneSurvivesScopeGate:
         subtraction.
         """
         _seed_marshal(self._STEPS_WITHOUT_LANE)
-        _write_plan_local_overrides(
-            plan_context, 'dsc-plan-local', {_RETROSPECTIVE: {'lane': 'minimal'}}
-        )
+        _write_plan_local_overrides(plan_context, 'dsc-plan-local', {_RETROSPECTIVE: {'lane': 'minimal'}})
 
         result = cmd_compose(_compose_ns('dsc-plan-local', scope_estimate='single_module'))
 
@@ -235,9 +234,7 @@ class TestDeclaredLaneSurvivesScopeGate:
 
         # Channel B — plan-local declared, marshal silent.
         _seed_marshal(self._STEPS_WITHOUT_LANE)
-        _write_plan_local_overrides(
-            plan_context, 'dsc-chan-plan', {_RETROSPECTIVE: {'lane': 'minimal'}}
-        )
+        _write_plan_local_overrides(plan_context, 'dsc-chan-plan', {_RETROSPECTIVE: {'lane': 'minimal'}})
         plan_result = cmd_compose(_compose_ns('dsc-chan-plan', scope_estimate='single_module'))
         plan_steps = _persisted_phase_6_steps('dsc-chan-plan')
 
@@ -257,9 +254,7 @@ class TestDeclaredLaneSurvivesScopeGate:
         the declaration was never written project-wide.
         """
         _seed_marshal(self._STEPS_WITHOUT_LANE)
-        _write_plan_local_overrides(
-            plan_context, 'dsc-leak-declared', {_RETROSPECTIVE: {'lane': 'minimal'}}
-        )
+        _write_plan_local_overrides(plan_context, 'dsc-leak-declared', {_RETROSPECTIVE: {'lane': 'minimal'}})
 
         declared = cmd_compose(_compose_ns('dsc-leak-declared', scope_estimate='single_module'))
         sibling = cmd_compose(_compose_ns('dsc-leak-sibling', scope_estimate='single_module'))
@@ -341,8 +336,7 @@ class TestComposedPhase6IsAscending:
         steps = _persisted_phase_6_steps('dsc-order-emitter')
         assert _EMITTER in steps and 'branch-cleanup' in steps
         assert steps.index(_EMITTER) > steps.index('branch-cleanup'), (
-            f'{_EMITTER} (order {emitter_order}) must compose after branch-cleanup '
-            f'(order {gate_order}); got {steps!r}'
+            f'{_EMITTER} (order {emitter_order}) must compose after branch-cleanup (order {gate_order}); got {steps!r}'
         )
 
     def test_emitter_is_carried_as_the_bare_id(self, plan_context):
@@ -365,9 +359,7 @@ class TestComposedPhase6IsAscending:
         # archive-plan (order 1100, the terminus) is the terminal barrier.
         assert steps[-1] == 'archive-plan'
 
-    def test_discriminator_unverifiable_order_is_rejected_where_the_legacy_walk_passed(
-        self, plan_context, monkeypatch
-    ):
+    def test_discriminator_unverifiable_order_is_rejected_where_the_legacy_walk_passed(self, plan_context, monkeypatch):
         """Non-vacuity: the pre-fix and post-fix verdicts diverge inside one run.
 
         With the emitter's ``order:`` unreadable, the composer's sort PINS it at
@@ -387,9 +379,7 @@ class TestComposedPhase6IsAscending:
         )
 
         # Pre-fix verdict on the pinned list: silent pass.
-        pinned = _mv._sort_steps_by_frontmatter_order(
-            ['create-pr', 'branch-cleanup', _EMITTER, 'archive-plan']
-        )
+        pinned = _mv._sort_steps_by_frontmatter_order(['create-pr', 'branch-cleanup', _EMITTER, 'archive-plan'])
         assert pinned.index(_EMITTER) > pinned.index('branch-cleanup')
         assert _mv._check_ascending_order(pinned) is None
 
@@ -422,12 +412,12 @@ class TestPreviewAgreesWithCompose:
     #: is seeded first) so the sequence assertions below are not satisfied by an
     #: already-ordered seed.
     _CONFIG_DECIDED_SEED: dict[str, dict | None] = {
-        'default:branch-cleanup': None,   # order 70
-        'default:archive-plan': None,     # order 1100
-        'default:create-pr': None,        # order 20
-        'default:ci-verify': None,        # order 22
+        'default:branch-cleanup': None,  # order 70
+        'default:archive-plan': None,  # order 1100
+        'default:create-pr': None,  # order 20
+        'default:ci-verify': None,  # order 22
         'default:lessons-capture': None,
-        _EMITTER: None,                   # order 992
+        _EMITTER: None,  # order 992
     }
 
     def test_preview_membership_equals_compose_membership(self, plan_context):
@@ -475,9 +465,7 @@ class TestPreviewAgreesWithCompose:
         composed = _persisted_phase_6_steps('dsc-agree-discriminator')
 
         candidates = [_mem.canonicalize_step_key(k) for k in self._CONFIG_DECIDED_SEED]
-        raw_kept, _dropped, _warnings = _mem._apply_lane_resolution(
-            candidates, 'full', None, 'dsc-agree-discriminator'
-        )
+        raw_kept, _dropped, _warnings = _mem._apply_lane_resolution(candidates, 'full', None, 'dsc-agree-discriminator')
         assert raw_kept != composed, 'seed must be inverted for this discriminator to bite'
 
         preview = cmd_lanes_preview(Namespace(plan_id='dsc-agree-discriminator', phase_6_steps=None))

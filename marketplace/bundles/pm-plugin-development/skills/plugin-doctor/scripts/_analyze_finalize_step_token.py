@@ -141,13 +141,7 @@ def _load_optional_bundle_finalize_steps(marketplace_root: Path) -> list[str]:
     Returns an empty list when the query cannot be loaded (e.g. a synthetic
     ``tmp_path`` marketplace with no extension-api bundle).
     """
-    scripts_dir = (
-        marketplace_root
-        / 'plan-marshall'
-        / 'skills'
-        / 'extension-api'
-        / 'scripts'
-    )
+    scripts_dir = marketplace_root / 'plan-marshall' / 'skills' / 'extension-api' / 'scripts'
     inserted = False
     if scripts_dir.is_dir() and str(scripts_dir) not in sys.path:
         sys.path.insert(0, str(scripts_dir))
@@ -249,9 +243,7 @@ def _scan_skill(path: Path, expected_step_id: str) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 
-def _bundle_targets(
-    marketplace_root: Path, optional_steps: list[str]
-) -> list[tuple[Path, str]]:
+def _bundle_targets(marketplace_root: Path, optional_steps: list[str]) -> list[tuple[Path, str]]:
     """Return ``(SKILL.md path, expected_step_id)`` for in-scope bundle skills.
 
     A bundle skill is in scope when its ``{bundle}:{skill}`` reference is a

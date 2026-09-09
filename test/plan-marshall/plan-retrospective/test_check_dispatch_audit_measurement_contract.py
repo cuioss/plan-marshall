@@ -26,12 +26,7 @@ from toon_parser import serialize_toon
 from conftest import MARKETPLACE_ROOT, run_script
 
 SCRIPT_PATH = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'plan-retrospective'
-    / 'scripts'
-    / 'check-dispatch-audit.py'
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'scripts' / 'check-dispatch-audit.py'
 )
 
 _TS = '2026-04-17T11:00:00Z'
@@ -65,10 +60,7 @@ def _dispatch_line(
 
 
 def _step_completed_line(step: str) -> str:
-    return (
-        f'[{_TS}] [INFO] [bbbbbb] [STEP] (plan-marshall:phase-6-finalize) '
-        f'Completed step: {step} (outcome=done)'
-    )
+    return f'[{_TS}] [INFO] [bbbbbb] [STEP] (plan-marshall:phase-6-finalize) Completed step: {step} (outcome=done)'
 
 
 def _resolve_line(role: str, *, caller: str = 'plan-marshall:manage-config') -> str:
@@ -104,9 +96,7 @@ def _write_plan(
     logs_dir.mkdir(parents=True)
 
     (logs_dir / 'work.log').write_text('\n'.join(work_lines or []) + '\n', encoding='utf-8')
-    (logs_dir / 'decision.log').write_text(
-        '\n'.join(decision_lines or []) + '\n', encoding='utf-8'
-    )
+    (logs_dir / 'decision.log').write_text('\n'.join(decision_lines or []) + '\n', encoding='utf-8')
 
     if execution_log is not None:
         (plan_dir / 'execution.toon').write_text(
@@ -145,9 +135,7 @@ def _rows(block: dict, key: str) -> list[dict]:
 # =============================================================================
 
 
-def test_row_without_a_total_tokens_column_is_no_evidence_not_ran_inline(
-    tmp_path, monkeypatch
-):
+def test_row_without_a_total_tokens_column_is_no_evidence_not_ran_inline(tmp_path, monkeypatch):
     """A row carrying no ``total_tokens`` column at all classifies ``no_evidence``.
 
     This is the load-bearing half of the token-record fix. The predecessor
@@ -190,8 +178,7 @@ def test_explicit_zero_total_tokens_still_classifies_ran_inline(tmp_path, monkey
         monkeypatch,
         plan_id='token-explicit-zero',
         execution_log=[
-            {'step_id': 'push', 'phase': '6-finalize', 'outcome': 'done',
-             'total_tokens': 0},
+            {'step_id': 'push', 'phase': '6-finalize', 'outcome': 'done', 'total_tokens': 0},
         ],
         phase_steps={'push': {'outcome': 'done'}},
     )
@@ -212,8 +199,7 @@ def test_unreadable_total_tokens_value_is_no_evidence(tmp_path, monkeypatch):
         monkeypatch,
         plan_id='token-unreadable',
         execution_log=[
-            {'step_id': 'push', 'phase': '6-finalize', 'outcome': 'done',
-             'total_tokens': 'n/a'},
+            {'step_id': 'push', 'phase': '6-finalize', 'outcome': 'done', 'total_tokens': 'n/a'},
         ],
         phase_steps={'push': {'outcome': 'done'}},
     )
@@ -236,8 +222,7 @@ def test_a_recorded_measurement_outranks_its_absence_on_a_refire(tmp_path, monke
         monkeypatch,
         plan_id='token-refire',
         execution_log=[
-            {'step_id': 'push', 'phase': '6-finalize', 'outcome': 'done',
-             'total_tokens': 8000},
+            {'step_id': 'push', 'phase': '6-finalize', 'outcome': 'done', 'total_tokens': 8000},
             {'step_id': 'push', 'phase': '6-finalize', 'outcome': 'done'},
         ],
         phase_steps={'push': {'outcome': 'done'}},
@@ -255,30 +240,22 @@ def test_a_recorded_measurement_outranks_its_absence_on_a_refire(tmp_path, monke
 
 
 def test_absent_status_json_reports_not_evaluated_with_a_reason(tmp_path, monkeypatch):
-    plan_id = _write_plan(
-        tmp_path, monkeypatch, plan_id='status-absent', write_status=False
-    )
+    plan_id = _write_plan(tmp_path, monkeypatch, plan_id='status-absent', write_status=False)
     coverage = _run(plan_id)['dispatch_coverage']
 
     assert coverage['status'] == 'not_evaluated'
     assert 'status.json' in coverage['reason']
 
 
-def test_unparseable_status_json_reports_not_evaluated_with_a_reason(
-    tmp_path, monkeypatch
-):
-    plan_id = _write_plan(
-        tmp_path, monkeypatch, plan_id='status-broken', status_json='{not json'
-    )
+def test_unparseable_status_json_reports_not_evaluated_with_a_reason(tmp_path, monkeypatch):
+    plan_id = _write_plan(tmp_path, monkeypatch, plan_id='status-broken', status_json='{not json')
     coverage = _run(plan_id)['dispatch_coverage']
 
     assert coverage['status'] == 'not_evaluated'
     assert 'status.json' in coverage['reason']
 
 
-def test_valid_status_json_with_empty_finalize_map_is_a_measured_zero(
-    tmp_path, monkeypatch
-):
+def test_valid_status_json_with_empty_finalize_map_is_a_measured_zero(tmp_path, monkeypatch):
     """The discriminator: an EMPTY finalize map was read, so its zero is measured.
 
     ⛔ This is the control that makes the two assertions above mean something. An
@@ -286,9 +263,7 @@ def test_valid_status_json_with_empty_finalize_map_is_a_measured_zero(
     produced ``evaluated_population: 0`` and were byte-identical in the output;
     they are opposite statements about whether anything was read.
     """
-    plan_id = _write_plan(
-        tmp_path, monkeypatch, plan_id='status-empty-finalize', phase_steps={}
-    )
+    plan_id = _write_plan(tmp_path, monkeypatch, plan_id='status-empty-finalize', phase_steps={})
     coverage = _run(plan_id)['dispatch_coverage']
 
     assert coverage['status'] == 'evaluated'
@@ -303,9 +278,7 @@ def test_valid_status_json_with_empty_finalize_map_is_a_measured_zero(
 
 def test_confidence_not_evaluated_when_every_input_is_empty(tmp_path, monkeypatch):
     """The fourth grade. A log-less plan graded ``nominal`` before it existed."""
-    plan_id = _write_plan(
-        tmp_path, monkeypatch, plan_id='grade-not-evaluated', write_status=False
-    )
+    plan_id = _write_plan(tmp_path, monkeypatch, plan_id='grade-not-evaluated', write_status=False)
     channel = _run(plan_id)['channel_completeness']
 
     assert channel['confidence'] == 'not_evaluated'
@@ -316,9 +289,7 @@ def test_confidence_not_evaluated_when_every_input_is_empty(tmp_path, monkeypatc
     assert int(channel['all_caller_dispatch_line_count']) == 0
 
 
-def test_phase_5_dispatch_lines_do_not_rescue_an_empty_finalize_evaluation(
-    tmp_path, monkeypatch
-):
+def test_phase_5_dispatch_lines_do_not_rescue_an_empty_finalize_evaluation(tmp_path, monkeypatch):
     """⛔ The killing fixture: all-caller > 0 with every FINALIZE input at zero.
 
     This is the state the fourth grade exists for, and the state a fourth
@@ -346,9 +317,7 @@ def test_phase_5_dispatch_lines_do_not_rescue_an_empty_finalize_evaluation(
         plan_id='grade-not-evaluated-despite-phase-5-lines',
         work_lines=[
             _dispatch_line('phase-5-execute', caller='plan-marshall:phase-5-execute'),
-            _dispatch_line(
-                'verification-feedback', caller='plan-marshall:phase-5-execute'
-            ),
+            _dispatch_line('verification-feedback', caller='plan-marshall:phase-5-execute'),
         ],
         phase_steps={},
     )
@@ -372,9 +341,7 @@ def test_phase_5_dispatch_lines_do_not_rescue_an_empty_finalize_evaluation(
     assert channel['reason']
 
 
-def test_confidence_none_when_finalize_lines_absent_despite_a_proven_dispatch(
-    tmp_path, monkeypatch
-):
+def test_confidence_none_when_finalize_lines_absent_despite_a_proven_dispatch(tmp_path, monkeypatch):
     """Zero FINALIZE dispatch lines beside a token-proven dispatched step ⇒ ``none``.
 
     ⛔ The fixture's phase-5 lines are what make this a real test of the SCOPE
@@ -394,13 +361,10 @@ def test_confidence_none_when_finalize_lines_absent_despite_a_proven_dispatch(
                 caller='plan-marshall:phase-5-execute',
                 workflow='plan-marshall:other/SKILL.md',
             ),
-            _dispatch_line(
-                'verification-feedback', caller='plan-marshall:phase-5-execute'
-            ),
+            _dispatch_line('verification-feedback', caller='plan-marshall:phase-5-execute'),
         ],
         execution_log=[
-            {'step_id': 'automatic-review', 'phase': '6-finalize', 'outcome': 'done',
-             'total_tokens': 84000},
+            {'step_id': 'automatic-review', 'phase': '6-finalize', 'outcome': 'done', 'total_tokens': 84000},
         ],
         phase_steps={'automatic-review': {'outcome': 'done'}},
     )
@@ -419,9 +383,7 @@ def test_confidence_none_when_finalize_lines_absent_despite_a_proven_dispatch(
     assert int(data['dispatch_coverage']['missing_dispatch_emission']) == 1
 
 
-def test_confidence_low_when_lines_fall_short_of_proven_dispatches(
-    tmp_path, monkeypatch
-):
+def test_confidence_low_when_lines_fall_short_of_proven_dispatches(tmp_path, monkeypatch):
     plan_id = _write_plan(
         tmp_path,
         monkeypatch,
@@ -432,10 +394,8 @@ def test_confidence_low_when_lines_fall_short_of_proven_dispatches(
             _step_completed_line('finalize-step-security-audit'),
         ],
         execution_log=[
-            {'step_id': 'finalize-step-simplify', 'phase': '6-finalize',
-             'outcome': 'done', 'total_tokens': 5000},
-            {'step_id': 'finalize-step-security-audit', 'phase': '6-finalize',
-             'outcome': 'done', 'total_tokens': 3000},
+            {'step_id': 'finalize-step-simplify', 'phase': '6-finalize', 'outcome': 'done', 'total_tokens': 5000},
+            {'step_id': 'finalize-step-security-audit', 'phase': '6-finalize', 'outcome': 'done', 'total_tokens': 3000},
         ],
         phase_steps={
             'finalize-step-simplify': {'outcome': 'done'},
@@ -459,8 +419,7 @@ def test_confidence_nominal_when_the_channel_is_covered(tmp_path, monkeypatch):
             _step_completed_line('finalize-step-simplify'),
         ],
         execution_log=[
-            {'step_id': 'finalize-step-simplify', 'phase': '6-finalize',
-             'outcome': 'done', 'total_tokens': 5000},
+            {'step_id': 'finalize-step-simplify', 'phase': '6-finalize', 'outcome': 'done', 'total_tokens': 5000},
         ],
         phase_steps={'finalize-step-simplify': {'outcome': 'done'}},
     )
@@ -683,10 +642,8 @@ def test_refired_dispatch_lines_dedup_by_role_and_workflow(tmp_path, monkeypatch
             _dispatch_line('automatic-review'),
         ],
         execution_log=[
-            {'step_id': 'automatic-review', 'phase': '6-finalize', 'outcome': 'done',
-             'total_tokens': 84000},
-            {'step_id': 'create-pr', 'phase': '6-finalize', 'outcome': 'done',
-             'total_tokens': 12000},
+            {'step_id': 'automatic-review', 'phase': '6-finalize', 'outcome': 'done', 'total_tokens': 84000},
+            {'step_id': 'create-pr', 'phase': '6-finalize', 'outcome': 'done', 'total_tokens': 12000},
         ],
         phase_steps={
             'automatic-review': {'outcome': 'done'},
@@ -721,10 +678,8 @@ def test_two_steps_sharing_a_role_are_two_distinct_emissions(tmp_path, monkeypat
             _dispatch_line('leaf', workflow='plan-marshall:create-pr/SKILL.md'),
         ],
         execution_log=[
-            {'step_id': 'automatic-review', 'phase': '6-finalize', 'outcome': 'done',
-             'total_tokens': 84000},
-            {'step_id': 'create-pr', 'phase': '6-finalize', 'outcome': 'done',
-             'total_tokens': 12000},
+            {'step_id': 'automatic-review', 'phase': '6-finalize', 'outcome': 'done', 'total_tokens': 84000},
+            {'step_id': 'create-pr', 'phase': '6-finalize', 'outcome': 'done', 'total_tokens': 12000},
         ],
         phase_steps={
             'automatic-review': {'outcome': 'done'},
@@ -742,9 +697,7 @@ def test_two_steps_sharing_a_role_are_two_distinct_emissions(tmp_path, monkeypat
 # =============================================================================
 
 
-def test_list_checks_distinguish_an_empty_log_from_a_populated_clean_one(
-    tmp_path, monkeypatch
-):
+def test_list_checks_distinguish_an_empty_log_from_a_populated_clean_one(tmp_path, monkeypatch):
     """A run over no work log and a run over a clean one must differ visibly.
 
     Both report zero violations — correctly. The predecessor surfaced ONLY that
@@ -772,6 +725,5 @@ def test_list_checks_distinguish_an_empty_log_from_a_populated_clean_one(
         assert clean[name]['status'] == 'evaluated'
         assert int(empty[name]['evaluated_population']) == 0
         assert int(clean[name]['evaluated_population']) > 0, (
-            f'{name} must publish the population it scanned, or its zero is '
-            'indistinguishable from a zero over nothing'
+            f'{name} must publish the population it scanned, or its zero is indistinguishable from a zero over nothing'
         )

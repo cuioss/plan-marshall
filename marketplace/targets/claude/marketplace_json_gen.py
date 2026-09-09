@@ -40,10 +40,9 @@ def _read_source_marketplace(marketplace_src: Path) -> dict:
 def _rewrite_plugin_source(source_value: str, plugin_name: str) -> str:
     if not source_value.startswith(_SOURCE_PREFIX):
         raise ValueError(
-            f'plugin {plugin_name!r}: expected source to start with {_SOURCE_PREFIX!r}, '
-            f'got {source_value!r}'
+            f'plugin {plugin_name!r}: expected source to start with {_SOURCE_PREFIX!r}, got {source_value!r}'
         )
-    bundle_name = source_value[len(_SOURCE_PREFIX):]
+    bundle_name = source_value[len(_SOURCE_PREFIX) :]
     return f'{_TARGET_PREFIX}{bundle_name}'
 
 

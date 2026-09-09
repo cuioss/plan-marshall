@@ -9,7 +9,6 @@ Its sections, in order:
 * Hash-id-only operations: locate the owning per-type file
 """
 
-
 from _findings_storage_fixtures import (
     add_assessment,
     add_finding,
@@ -264,9 +263,7 @@ def test_resolve_finding_rejected_writes_back_to_owning_per_type_file(plan_conte
 
     target = add_finding('storage-reject-locate', 'sonar-issue', 'Rejected sonar', 'Detail')
 
-    outcome = resolve_finding(
-        'storage-reject-locate', target['hash_id'], 'rejected', detail='Out of scope'
-    )
+    outcome = resolve_finding('storage-reject-locate', target['hash_id'], 'rejected', detail='Out of scope')
 
     assert outcome['status'] == 'success'
     assert outcome['resolution'] == 'rejected'

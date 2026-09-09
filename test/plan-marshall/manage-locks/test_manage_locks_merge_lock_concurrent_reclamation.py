@@ -11,7 +11,6 @@ Its sections, in order:
 * Main-anchored resolution (the single deliberate exception)
 """
 
-
 from __future__ import annotations
 
 from argparse import Namespace
@@ -50,10 +49,8 @@ class TestConcurrentReclamation:
     process-level races are the load-bearing concurrency obligation for the merge
     mutex's reclamation path."""
 
-    @pytest.mark.xdist_group(name="manage_locks_contention")
-    def test_concurrent_acquire_against_dead_holder_admits_exactly_one_reclaimer(
-        self, isolated_base: dict
-    ) -> None:
+    @pytest.mark.xdist_group(name='manage_locks_contention')
+    def test_concurrent_acquire_against_dead_holder_admits_exactly_one_reclaimer(self, isolated_base: dict) -> None:
         """A dead-holder lock file + N live concurrent acquirers racing the SAME
         main-anchored merge.lock → EXACTLY ONE returns ``status: success``; every
         other returns ``status: blocked``. No second acquirer ever wins (FIFO
@@ -114,7 +111,7 @@ class TestConcurrentReclamation:
         assert recorded == winners[0]['holder']
         assert recorded != 'dead-holder'
 
-    @pytest.mark.xdist_group(name="manage_locks_contention")
+    @pytest.mark.xdist_group(name='manage_locks_contention')
     def test_concurrent_acquire_never_evicts_a_live_holder(self, isolated_base: dict) -> None:
         """A LIVE holder holds the lock while N concurrent acquirers race it → NONE
         win, ALL block, and the live holder's lock is never reclaimed or evicted.
@@ -163,10 +160,8 @@ class TestConcurrentReclamation:
         for p in blocked:
             assert p['blocking_plan_id'] == 'live-holder', p
 
-    @pytest.mark.xdist_group(name="manage_locks_contention")
-    def test_concurrent_reclaim_admits_exactly_one_across_repeated_trials(
-        self, isolated_base: dict
-    ) -> None:
+    @pytest.mark.xdist_group(name='manage_locks_contention')
+    def test_concurrent_reclaim_admits_exactly_one_across_repeated_trials(self, isolated_base: dict) -> None:
         """Hardened regression for the stale-reclaim TOCTOU double-grant (D1 fix).
 
         The single-shot ``test_concurrent_acquire_against_dead_holder_admits_exactly_one_reclaimer``

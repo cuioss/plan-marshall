@@ -63,17 +63,13 @@ import pytest
 
 from conftest import MARKETPLACE_ROOT
 
-WORKFLOW_DIR = (
-    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-marshall' / 'workflow'
-)
+WORKFLOW_DIR = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-marshall' / 'workflow'
 
 #: The layer-D recovery document lives here, NOT under the planning workflow
 #: directory. A population-derived guard whose population is drawn from the wrong
 #: directory set is the shrunk-population failure mode — the sweep looks total
 #: while the surface it never reaches carries the defect.
-WORKTREE_STANDARDS_DIR = (
-    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'workflow-integration-git' / 'standards'
-)
+WORKTREE_STANDARDS_DIR = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'workflow-integration-git' / 'standards'
 
 #: Every directory the named-recovery heading sweep covers.
 SWEPT_DIRS = (WORKFLOW_DIR, WORKTREE_STANDARDS_DIR)
@@ -114,9 +110,7 @@ _INSPECTION_COMMAND = re.compile(r'git diff\b[^\n`]*\.plan/marshal\.json')
 #: there a diff somewhere earlier", which a diff of an unrelated path satisfies.
 #: The lead-in is non-greedy so each destructive command in a line is matched on
 #: its own instead of collapsing into the last one.
-_DESTRUCTIVE_ANY_PATH = re.compile(
-    r'git\b[^\n`]*?\b(?:checkout\s+--|restore(?:\s+--)?)\s+(?P<operands>[^\n`]*)'
-)
+_DESTRUCTIVE_ANY_PATH = re.compile(r'git\b[^\n`]*?\b(?:checkout\s+--|restore(?:\s+--)?)\s+(?P<operands>[^\n`]*)')
 
 #: A ``git diff`` command span, captured to the end of its contiguous span so the
 #: flags the command carries are part of the match. ``[^\n`]*`` on both sides keeps
@@ -168,9 +162,7 @@ _MD_HEADING = re.compile(r'^#{1,6}\s')
 
 #: The cross-reference that points at the single authority — accepted as a
 #: ``- `` bullet or as an inline ``§`` citation, since both are pointers.
-_AUTHORITY_POINTER = re.compile(
-    r'`plan-marshall:plan-marshall/workflow/planning\.md`\s*§\s*"Named recovery case'
-)
+_AUTHORITY_POINTER = re.compile(r'`plan-marshall:plan-marshall/workflow/planning\.md`\s*§\s*"Named recovery case')
 
 #: The operator-disposition enumeration that only the authority may carry.
 #: Keyed on BOTH dispositions appearing as list items: naming the operator's two
@@ -355,8 +347,7 @@ def _inspection_precedes_disposal(text: str) -> bool:
     for destructive in _DESTRUCTIVE_ANY_PATH.finditer(text):
         destroyed = _command_paths(destructive.group('operands'))
         if not any(
-            offset < destructive.start() and _diff_covers(diff_paths, destroyed)
-            for offset, diff_paths in diffs
+            offset < destructive.start() and _diff_covers(diff_paths, destroyed) for offset, diff_paths in diffs
         ):
             return False
     return True
@@ -425,9 +416,7 @@ _CONTROL_INSPECTION_BEFORE_DISPOSAL = """### Recovery (control)
 #: ``--no-patch`` is git's own long synonym for ``-s``. Differs from its repaired
 #: twin ONLY in that flag, so a rejection is attributable to the synonym gap and
 #: not to a metadata-only mode the control happened to pick.
-_CONTROL_NO_PATCH_DIFF = _CONTROL_METADATA_ONLY_DIFF.replace(
-    'diff --name-only --', 'diff --no-patch --'
-)
+_CONTROL_NO_PATCH_DIFF = _CONTROL_METADATA_ONLY_DIFF.replace('diff --name-only --', 'diff --no-patch --')
 
 #: Inspects one path and destroys a DIFFERENT one. Every clause of the qualifier
 #: is satisfied — the diff surfaces content and precedes the discard — so the only
@@ -515,11 +504,7 @@ def test_worktree_handling_destructive_instructions_are_inspection_first():
     sections = _derive_document_sections(WORKTREE_HANDLING)
     assert sections, f'no sections derived from {WORKTREE_HANDLING} — the sweep is vacuous'
 
-    destructive = [
-        (heading, lineno, text)
-        for heading, lineno, text in sections
-        if _DESTRUCTIVE_ANY_PATH.search(text)
-    ]
+    destructive = [(heading, lineno, text) for heading, lineno, text in sections if _DESTRUCTIVE_ANY_PATH.search(text)]
     # Non-vacuous control, with the population size published: the document DOES
     # carry destructive instructions, so the qualifier assertion below examines a
     # populated surface instead of passing on an empty one.
@@ -601,16 +586,12 @@ def test_named_recovery_inspection_first_population_nonempty_and_covers_known_me
     clean tree, which is exactly the confusion this epic is named for)."""
     regions = _derive_named_recovery_regions()
     # Non-vacuous control: the surface is populated.
-    assert regions, (
-        'assertion-shape sweep matched nothing — cannot distinguish a fixed class '
-        'from a vanished one'
-    )
+    assert regions, 'assertion-shape sweep matched nothing — cannot distinguish a fixed class from a vanished one'
     known_files = {path.name for path, _, _ in regions}
     assert 'planning.md' in known_files
     assert 'planning-outline.md' in known_files
     assert sum(1 for path, _, _ in regions if path.name == 'planning-outline.md') >= 2, (
-        'planning-outline.md must carry the named-recovery case at both the '
-        'outline and plan phase boundaries'
+        'planning-outline.md must carry the named-recovery case at both the outline and plan phase boundaries'
     )
 
     # The derived population of correctly-handled sites — asserted non-empty.

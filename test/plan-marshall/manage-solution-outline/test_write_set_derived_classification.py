@@ -82,12 +82,7 @@ _CLASSIFIER_SOURCE = (
 )
 
 _OUTLINE_STANDARD = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'phase-3-outline'
-    / 'standards'
-    / 'outline-workflow-detail.md'
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-3-outline' / 'standards' / 'outline-workflow-detail.md'
 )
 
 #: A bucket-SHAPED token as the standard writes it: backticked, and either an
@@ -137,9 +132,7 @@ class TestBucketVocabularyHasOneAuthority:
     def test_every_declared_bucket_is_named_in_the_standard(self):
         """A bucket the classifier can return must be documented for outline authors."""
         text = _OUTLINE_STANDARD.read_text(encoding='utf-8')
-        undocumented = [
-            bucket for bucket in DECLARED_BUCKET_VOCABULARY if f'`{bucket}`' not in text
-        ]
+        undocumented = [bucket for bucket in DECLARED_BUCKET_VOCABULARY if f'`{bucket}`' not in text]
 
         assert not undocumented, (
             f'{_OUTLINE_STANDARD.name} names no `bucket` for {undocumented} — an '
@@ -343,21 +336,13 @@ class TestDeclaredBucketIsParsed:
 
     def test_bucket_comment_outside_the_profiles_line_is_ignored(self):
         """With no comment on the Profiles line, prose mentions yield nothing."""
-        content = (
-            'Earlier work used `<!-- bucket: production_only -->` here.\n\n'
-            '**Profiles:**\n'
-            '- implementation\n'
-        )
+        content = 'Earlier work used `<!-- bucket: production_only -->` here.\n\n**Profiles:**\n- implementation\n'
 
         assert extract_declared_bucket(content) is None
 
     def test_bucket_comment_is_not_read_as_a_profile(self):
         """Extraction must not disturb the sibling parse of the same line."""
-        section = (
-            '### 1. Sample\n\n'
-            '**Profiles:** <!-- bucket: production_only -->\n'
-            '- implementation\n\n'
-        )
+        section = '### 1. Sample\n\n**Profiles:** <!-- bucket: production_only -->\n- implementation\n\n'
 
         deliverable = extract_deliverables(section)[0]
 
@@ -405,9 +390,7 @@ class TestDeclaredBucketAgreesWithTheWriteSet:
 
         errors, _warnings = validate_deliverable_contract(deliverable)
 
-        assert not any('bucket' in e for e in errors), (
-            f'a read-only code reference flipped the bucket; errors={errors}'
-        )
+        assert not any('bucket' in e for e in errors), f'a read-only code reference flipped the bucket; errors={errors}'
 
     def test_code_bucket_over_a_docs_only_write_set_is_rejected(self):
         """A code bucket whose every declared write is documentation.
@@ -576,12 +559,9 @@ class TestAbsentBucketIsReported:
         errors, warnings = validate_deliverable_contract(deliverable)
 
         assert any('no file-type bucket declared' in w for w in warnings), (
-            f'a deliverable writing files with no declared bucket was silent; '
-            f'warnings={warnings}'
+            f'a deliverable writing files with no declared bucket was silent; warnings={warnings}'
         )
-        assert not any('bucket' in e for e in errors), (
-            f'the missing bucket must not be an error; errors={errors}'
-        )
+        assert not any('bucket' in e for e in errors), f'the missing bucket must not be an error; errors={errors}'
 
     def test_missing_bucket_over_an_empty_write_set_is_silent(self):
         """The matched negative control: a verification-only deliverable.
@@ -649,9 +629,7 @@ class TestBucketVocabularyIsChecked:
 
         errors, warnings = validate_deliverable_contract(deliverable)
 
-        assert any('is not one of the documented' in w for w in warnings), (
-            f'warnings={warnings}'
-        )
+        assert any('is not one of the documented' in w for w in warnings), f'warnings={warnings}'
         assert any('contradicts' in e for e in errors), f'errors={errors}'
 
     @pytest.mark.parametrize('bucket', DECLARED_BUCKET_VOCABULARY)
@@ -671,8 +649,7 @@ class TestBucketVocabularyIsChecked:
         _errors, warnings = validate_deliverable_contract(deliverable)
 
         assert not any('is not one of the documented' in w for w in warnings), (
-            f'documented bucket {bucket!r} was reported as unrecognized; '
-            f'warnings={warnings}'
+            f'documented bucket {bucket!r} was reported as unrecognized; warnings={warnings}'
         )
 
     def test_vocabulary_check_is_case_insensitive(self):
@@ -722,8 +699,7 @@ class TestUnavailablePredicateIsReported:
 
         assert any('contradicts' in e for e in errors), f'errors={errors}'
         assert not any('could not be imported' in w for w in warnings), (
-            f'the predicate was available, so no fail-open should be reported; '
-            f'warnings={warnings}'
+            f'the predicate was available, so no fail-open should be reported; warnings={warnings}'
         )
 
     def test_with_the_predicate_unimportable_the_fail_open_is_named(self, monkeypatch):
@@ -742,8 +718,7 @@ class TestUnavailablePredicateIsReported:
             f'a comparison that never ran reported a contradiction; errors={errors}'
         )
         assert any('could not be imported' in w for w in warnings), (
-            f'the un-run check was indistinguishable from a clean one; '
-            f'warnings={warnings}'
+            f'the un-run check was indistinguishable from a clean one; warnings={warnings}'
         )
         assert any('not a clean result' in w for w in warnings), (
             f'the warning must say what it is NOT; warnings={warnings}'

@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the ``qgate-mechanical-checks`` subcommand of manage-tasks."""
 
-
 from __future__ import annotations
 
 import json
@@ -307,6 +306,7 @@ def test_qgate_mechanical_emit_writes_findings(plan_context):
 # =============================================================================
 # Rejected persist (P3) — a rejection never lands in the no-op bucket
 # =============================================================================
+
 
 def test_qgate_mechanical_rejected_persist_surfaces_failure(plan_context, monkeypatch):
     """A REJECTED persist surfaces qgate_persist_failed plus the primitive's message.

@@ -88,9 +88,7 @@ class BuildExtension(BuildExtensionBase, DerivationResolverBase):
         See extension-api/standards/extension-contract.md § classify_paths()
         for the full contract.
         """
-        claims: dict[str, list[str]] = {
-            'production': [], 'test': [], 'documentation': [], 'config': []
-        }
+        claims: dict[str, list[str]] = {'production': [], 'test': [], 'documentation': [], 'config': []}
         for path in paths:
             match = self._match_classify(path)
             if match is not None:
@@ -187,8 +185,7 @@ class BuildExtension(BuildExtensionBase, DerivationResolverBase):
             naming signature; the inherited base default otherwise.
         """
         if role == 'test' and any(
-            fnmatch.fnmatchcase(basename(path), pattern)
-            for pattern in self._IT_BASENAME_PATTERNS
+            fnmatch.fnmatchcase(basename(path), pattern) for pattern in self._IT_BASENAME_PATTERNS
         ):
             return BUILD_CLASS_BUILD_CONFIG_FULL
         return super().classify_build_class(path, role)
@@ -254,10 +251,7 @@ class BuildExtension(BuildExtensionBase, DerivationResolverBase):
             if len(owners) == 1:
                 artifact_to_module[coordinate] = next(iter(owners))
                 continue
-            notes.append(
-                f'ambiguous coordinate {coordinate}: claimed by '
-                f'{", ".join(sorted(owners))} — no edge emitted'
-            )
+            notes.append(f'ambiguous coordinate {coordinate}: claimed by {", ".join(sorted(owners))} — no edge emitted')
         return artifact_to_module, notes
 
     def derive_edges(

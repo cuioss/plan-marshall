@@ -6,7 +6,6 @@ slowest-script ordering, and the finding raised when modified files carry no
 artifacts.
 """
 
-
 from __future__ import annotations
 
 import json

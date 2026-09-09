@@ -26,30 +26,30 @@ from _definition_duplication import (
 )
 
 #: Same name, same body, in two modules — a duplicate with a home.
-HOMED_A = '''\
+HOMED_A = """\
 def build_plan():
     return {'id': 'p'}
-'''
+"""
 
-HOMED_B = '''\
+HOMED_B = """\
 def build_plan():
     return {'id': 'p'}
 
 
 def other():
     return 2
-'''
+"""
 
 #: Same name, DIFFERENT bodies — two behaviours, not a duplicate.
-FORKED_A = '''\
+FORKED_A = """\
 def seed():
     return 1
-'''
+"""
 
-FORKED_B = '''\
+FORKED_B = """\
 def seed():
     return 2
-'''
+"""
 
 
 def _run(repo, *args: str) -> None:

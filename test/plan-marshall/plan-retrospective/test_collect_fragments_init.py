@@ -9,7 +9,6 @@ Its sections, in order:
 * add — fault paths
 """
 
-
 from __future__ import annotations
 
 import tempfile

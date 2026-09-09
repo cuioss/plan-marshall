@@ -100,15 +100,11 @@ def _bundle_marketplace(tmp_path: Path, monkeypatch) -> Path:
     """
     bundles_root = tmp_path / 'marketplace' / 'bundles'
     bundles_root.mkdir(parents=True)
-    monkeypatch.setattr(
-        _afst, '_load_optional_bundle_finalize_steps', lambda _root: [_BUNDLE_REF]
-    )
+    monkeypatch.setattr(_afst, '_load_optional_bundle_finalize_steps', lambda _root: [_BUNDLE_REF])
     return bundles_root
 
 
-def _write_bundle_skill(
-    bundles_root: Path, content: str, bundle: str = _BUNDLE, skill: str = _SKILL
-) -> Path:
+def _write_bundle_skill(bundles_root: Path, content: str, bundle: str = _BUNDLE, skill: str = _SKILL) -> Path:
     """Create ``{bundles_root}/{bundle}/skills/{skill}/SKILL.md``."""
     skill_dir = bundles_root / bundle / 'skills' / skill
     skill_dir.mkdir(parents=True, exist_ok=True)
@@ -117,9 +113,7 @@ def _write_bundle_skill(
     return md
 
 
-def _write_project_skill(
-    tmp_path: Path, content: str, name: str = 'finalize-step-deploy-target'
-) -> tuple[Path, Path]:
+def _write_project_skill(tmp_path: Path, content: str, name: str = 'finalize-step-deploy-target') -> tuple[Path, Path]:
     """Create a project-local ``.claude/skills/{name}/SKILL.md`` + bundles root.
 
     The scanner resolves ``.claude/skills`` as
@@ -162,11 +156,7 @@ class TestBundleViolating:
         bundles_root = _bundle_marketplace(tmp_path, monkeypatch)
         # Documented token uses a bare-skill name instead of the canonical
         # ``{bundle}:{skill}`` reference — the drift this rule exists to catch.
-        content = (
-            '# Plan Retrospective\n\n'
-            'Finalize tail:\n\n'
-            + _mark_step_done_block(_SKILL)
-        )
+        content = '# Plan Retrospective\n\nFinalize tail:\n\n' + _mark_step_done_block(_SKILL)
         md = _write_bundle_skill(bundles_root, content)
 
         findings = assert_analyzer_findings(scan_finalize_step_token, bundles_root, [RULE_ID])
@@ -175,9 +165,7 @@ class TestBundleViolating:
         assert f['details']['documented_token'] == _SKILL
         assert f['details']['expected_step_id'] == _BUNDLE_REF
 
-    def test_project_prefixed_token_on_bundle_skill_is_flagged(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
+    def test_project_prefixed_token_on_bundle_skill_is_flagged(self, tmp_path: Path, monkeypatch) -> None:
         """A ``project:`` token on a bundle skill drifts from its registry id."""
         bundles_root = _bundle_marketplace(tmp_path, monkeypatch)
         content = '# Skill\n\n' + _mark_step_done_block(f'project:{_SKILL}')
@@ -202,16 +190,12 @@ class TestBundleClean:
 
         assert_analyzer_findings(scan_finalize_step_token, bundles_root, [])
 
-    def test_out_of_registry_bundle_skill_is_not_scanned(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
+    def test_out_of_registry_bundle_skill_is_not_scanned(self, tmp_path: Path, monkeypatch) -> None:
         """A finalize-step-looking skill NOT in the registry is out of scope."""
         bundles_root = _bundle_marketplace(tmp_path, monkeypatch)
         # Drift in a skill that is NOT a registry member — must not be flagged.
         content = '# Other\n\n' + _mark_step_done_block('wrong-token')
-        _write_bundle_skill(
-            bundles_root, content, bundle='pm-dev-java', skill='some-step'
-        )
+        _write_bundle_skill(bundles_root, content, bundle='pm-dev-java', skill='some-step')
 
         assert_analyzer_findings(scan_finalize_step_token, bundles_root, [])
 
@@ -226,22 +210,16 @@ class TestSkipContext:
 
     def test_no_mark_step_done_block_is_skipped(self, tmp_path: Path, monkeypatch) -> None:
         bundles_root = _bundle_marketplace(tmp_path, monkeypatch)
-        content = (
-            '# Skill\n\nThis skill documents no finalize handshake at all.\n'
-        )
+        content = '# Skill\n\nThis skill documents no finalize handshake at all.\n'
         _write_bundle_skill(bundles_root, content)
 
         assert_analyzer_findings(scan_finalize_step_token, bundles_root, [])
 
-    def test_mark_step_done_wrong_phase_is_skipped(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
+    def test_mark_step_done_wrong_phase_is_skipped(self, tmp_path: Path, monkeypatch) -> None:
         """A ``mark-step-done`` under a non-6-finalize phase is not in scope."""
         bundles_root = _bundle_marketplace(tmp_path, monkeypatch)
         # Token drifts, but the phase is not 6-finalize — silently skipped.
-        content = '# Skill\n\n' + _mark_step_done_block(
-            'drifted', phase='5-execute'
-        )
+        content = '# Skill\n\n' + _mark_step_done_block('drifted', phase='5-execute')
         _write_bundle_skill(bundles_root, content)
 
         assert_analyzer_findings(scan_finalize_step_token, bundles_root, [])
@@ -255,9 +233,7 @@ class TestSkipContext:
 class TestEqualsForm:
     """Both ``--phase=6-finalize`` and ``--step=token`` (equals form) parse."""
 
-    def test_equals_form_violating_token_is_flagged(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
+    def test_equals_form_violating_token_is_flagged(self, tmp_path: Path, monkeypatch) -> None:
         bundles_root = _bundle_marketplace(tmp_path, monkeypatch)
         content = (
             '# Skill\n\n'
@@ -296,9 +272,7 @@ class TestProjectLocal:
     """The project-local ``.claude/skills/finalize-step-*`` tree is scanned
     with the ``project:{name}`` expected step_id."""
 
-    def test_project_local_drifted_token_is_flagged(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
+    def test_project_local_drifted_token_is_flagged(self, tmp_path: Path, monkeypatch) -> None:
         name = 'finalize-step-deploy-target'
         # Documented token drops the ``project:`` prefix — a drift.
         content = '# Deploy Target\n\n' + _mark_step_done_block(name)
@@ -310,20 +284,14 @@ class TestProjectLocal:
         assert f['details']['documented_token'] == name
         assert f['details']['expected_step_id'] == f'project:{name}'
 
-    def test_project_local_matching_token_is_clean(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
+    def test_project_local_matching_token_is_clean(self, tmp_path: Path, monkeypatch) -> None:
         name = 'finalize-step-deploy-target'
-        content = '# Deploy Target\n\n' + _mark_step_done_block(
-            f'project:{name}'
-        )
+        content = '# Deploy Target\n\n' + _mark_step_done_block(f'project:{name}')
         bundles_root, _ = _write_project_skill(tmp_path, content, name=name)
 
         assert_analyzer_findings(scan_finalize_step_token, bundles_root, [])
 
-    def test_project_local_without_handshake_is_skipped(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
+    def test_project_local_without_handshake_is_skipped(self, tmp_path: Path, monkeypatch) -> None:
         name = 'finalize-step-deploy-target'
         content = '# Deploy Target\n\nNo finalize handshake here.\n'
         bundles_root, _ = _write_project_skill(tmp_path, content, name=name)
@@ -334,9 +302,7 @@ class TestProjectLocal:
         """Findings from the bundle tree and ``.claude/skills`` combine."""
         bundles_root = _bundle_marketplace(tmp_path, monkeypatch)
         # Bundle-tree drift.
-        _write_bundle_skill(
-            bundles_root, '# Skill\n\n' + _mark_step_done_block(_SKILL)
-        )
+        _write_bundle_skill(bundles_root, '# Skill\n\n' + _mark_step_done_block(_SKILL))
         # Project-local drift (same tmp_path → same .claude/skills resolution).
         proj_name = 'finalize-step-plugin-doctor'
         proj_dir = tmp_path / '.claude' / 'skills' / proj_name
@@ -382,14 +348,7 @@ class TestFindingShape:
         # The --step token lands on line 6 (1: heading, 2: blank, 3: prose,
         # 4: blank, 5: fence-open, 6: mark-step-done command line).
         content = (
-            '# Skill\n'
-            '\n'
-            'Finalize tail:\n'
-            '\n'
-            '```bash\n'
-            'python3 x mark-step-done --phase 6-finalize --step '
-            f'{_SKILL}\n'
-            '```\n'
+            f'# Skill\n\nFinalize tail:\n\n```bash\npython3 x mark-step-done --phase 6-finalize --step {_SKILL}\n```\n'
         )
         _write_bundle_skill(bundles_root, content)
 

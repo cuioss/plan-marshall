@@ -273,9 +273,7 @@ def test_above_floor_explicit_request_binds(monkeypatch, tmp_path):
 
 def test_in_process_timeout_attaches_green_evidence(capsys, tmp_path):
     """A killed-after-green in-process run reports its zero-failure suite."""
-    exit_code = _build_shared.cmd_run_common(
-        _timeout_input(_green_log(tmp_path)), parse_log, 'python'
-    )
+    exit_code = _build_shared.cmd_run_common(_timeout_input(_green_log(tmp_path)), parse_log, 'python')
     emitted = capsys.readouterr().out
 
     assert exit_code == 0

@@ -48,17 +48,11 @@ from toon_parser import serialize_toon
 
 from conftest import load_script_module
 
-_cos = load_script_module(
-    'plan-marshall', 'plan-retrospective', 'check-outline-vs-shipped.py', 'cos_behavior_mod'
-)
+_cos = load_script_module('plan-marshall', 'plan-retrospective', 'check-outline-vs-shipped.py', 'cos_behavior_mod')
 
-_cr = load_script_module(
-    'plan-marshall', 'plan-retrospective', 'compile-report.py', 'cr_outline_vs_shipped_mod'
-)
+_cr = load_script_module('plan-marshall', 'plan-retrospective', 'compile-report.py', 'cr_outline_vs_shipped_mod')
 
-_fc = load_script_module(
-    'plan-marshall', 'manage-findings', '_findings_core.py', 'fc_outline_vs_shipped_mod'
-)
+_fc = load_script_module('plan-marshall', 'manage-findings', '_findings_core.py', 'fc_outline_vs_shipped_mod')
 
 _PLAN_ID = 'outline-vs-shipped-fixture'
 
@@ -340,9 +334,7 @@ class TestUnresolvableFootprint:
         that reported ``inconclusive`` unconditionally.
         """
         plan_dir = _seed([('src/a.py', _INCLUDE), ('src/forbidden.py', _EXCLUDE)])
-        (plan_dir / 'references.json').write_text(
-            json.dumps({'realized_footprint': ['src/a.py']}), encoding='utf-8'
-        )
+        (plan_dir / 'references.json').write_text(json.dumps({'realized_footprint': ['src/a.py']}), encoding='utf-8')
 
         result = _run(plan_dir, None)
 
@@ -364,9 +356,7 @@ class TestNoResolutionLifecycle:
         plan_dir = _seed([('src/a.py', _INCLUDE), ('src/forbidden.py', _EXCLUDE)])
 
         records = [
-            json.loads(line)
-            for line in _store_path(plan_dir).read_text(encoding='utf-8').splitlines()
-            if line.strip()
+            json.loads(line) for line in _store_path(plan_dir).read_text(encoding='utf-8').splitlines() if line.strip()
         ]
 
         assert len(records) == 2, 'anchor: an empty store would pass the claim vacuously'
@@ -418,21 +408,42 @@ def _every_input_shape() -> list[tuple[str, dict]]:
     shapes: list[tuple[str, dict]] = []
 
     plan = 'shape-all-three'
-    shapes.append(('all three classes fire', _run(
-        _seed([('src/planned.py', _INCLUDE), ('src/dropped.py', _INCLUDE),
-               ('src/forbidden.py', _EXCLUDE)], plan),
-        ['src/planned.py', 'src/forbidden.py', 'src/discovered.py'], plan,
-    )))
+    shapes.append(
+        (
+            'all three classes fire',
+            _run(
+                _seed(
+                    [('src/planned.py', _INCLUDE), ('src/dropped.py', _INCLUDE), ('src/forbidden.py', _EXCLUDE)], plan
+                ),
+                ['src/planned.py', 'src/forbidden.py', 'src/discovered.py'],
+                plan,
+            ),
+        )
+    )
 
     plan = 'shape-agreement'
-    shapes.append(('full agreement', _run(
-        _seed([('src/a.py', _INCLUDE)], plan), ['src/a.py'], plan,
-    )))
+    shapes.append(
+        (
+            'full agreement',
+            _run(
+                _seed([('src/a.py', _INCLUDE)], plan),
+                ['src/a.py'],
+                plan,
+            ),
+        )
+    )
 
     plan = 'shape-unresolvable'
-    shapes.append(('unresolvable footprint', _run(
-        _seed([('src/a.py', _INCLUDE)], plan), None, plan,
-    )))
+    shapes.append(
+        (
+            'unresolvable footprint',
+            _run(
+                _seed([('src/a.py', _INCLUDE)], plan),
+                None,
+                plan,
+            ),
+        )
+    )
 
     plan = 'shape-no-store'
     shapes.append(('no assessments store', _run(_plan_dir(plan), ['src/a.py'], plan)))
@@ -474,9 +485,7 @@ def _compile(tmp_dir: Path, fragment: dict) -> tuple[dict, str]:
     """Drive ``compile-report cmd_run`` end-to-end; return ``(result, document)``."""
     tmp_dir.mkdir(parents=True, exist_ok=True)
     bundle = tmp_dir / 'fragments.toon'
-    bundle.write_text(
-        serialize_toon({'_meta': {'mode': 'archived'}, _cos.ASPECT: fragment}), encoding='utf-8'
-    )
+    bundle.write_text(serialize_toon({'_meta': {'mode': 'archived'}, _cos.ASPECT: fragment}), encoding='utf-8')
     args = Namespace(
         command='run',
         plan_id=None,

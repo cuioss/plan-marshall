@@ -10,7 +10,6 @@ Its sections, in order:
 * Window boundary + multi-attempt counting
 """
 
-
 from __future__ import annotations
 
 import pytest
@@ -54,10 +53,13 @@ class TestDetectVoluntaryCheckpointPolling:
     # Genuine background-poll signals
     # ------------------------------------------------------------------
 
-    @pytest.mark.parametrize('window_text', [
-        'launched Bash with run_in_background=true',
-        'config has run_in_background: TRUE here',
-    ])
+    @pytest.mark.parametrize(
+        'window_text',
+        [
+            'launched Bash with run_in_background=true',
+            'config has run_in_background: TRUE here',
+        ],
+    )
     def test_run_in_background_marker_fires_candidate(self, window_text):
         """``run_in_background=true`` or ``run_in_background: TRUE`` in the
         window fires a candidate — the marker tolerates ``=`` or ``:`` and is
@@ -214,13 +216,13 @@ class TestDetectVoluntaryCheckpointPolling:
         distinct 1-based candidate line number.
         """
         lines = [
-            _attempt('first dispatch'),           # index 0 → line 1 (candidate)
-            _plain('run_in_background=true'),      # index 1
-            _plain('benign filler'),               # index 2
-            _attempt('second dispatch'),           # index 3 → line 4 (candidate)
-            _plain('until x; do sleep 1; done'),   # index 4
-            _attempt('third dispatch'),            # index 5 → line 6 (no signal)
-            _plain('verification passed'),          # index 6
+            _attempt('first dispatch'),  # index 0 → line 1 (candidate)
+            _plain('run_in_background=true'),  # index 1
+            _plain('benign filler'),  # index 2
+            _attempt('second dispatch'),  # index 3 → line 4 (candidate)
+            _plain('until x; do sleep 1; done'),  # index 4
+            _attempt('third dispatch'),  # index 5 → line 6 (no signal)
+            _plain('verification passed'),  # index 6
         ]
         result = _analyze_logs.detect_voluntary_checkpoint_polling(lines)
         assert result['precondition_met'] is True

@@ -733,9 +733,7 @@ def cmd_run_common(
     # `error_result` here and silently dropped them, so the discriminator the
     # daemon had already computed never reached any consumer.
     if result['status'] == STATUS_KILLED:
-        killed_extra = _non_finish_evidence(
-            log_file, command_str, parser_fn, parser_needs_command, 'Killed'
-        )
+        killed_extra = _non_finish_evidence(log_file, command_str, parser_fn, parser_needs_command, 'Killed')
         # The bound that did NOT fire is still diagnostic: it says how much
         # headroom the run had left when the kill arrived, which is what
         # separates "killed near its limit" from "killed early". The timeout
@@ -770,9 +768,7 @@ def cmd_run_common(
             log_file,
             command_str,
             exit_code=result['exit_code'],
-            **_non_finish_evidence(
-                log_file, command_str, parser_fn, parser_needs_command, 'Indeterminate'
-            ),
+            **_non_finish_evidence(log_file, command_str, parser_fn, parser_needs_command, 'Indeterminate'),
         )
         print(formatter(indeterminate_output))
         return 0  # Status modeled in output, not exit code
@@ -842,10 +838,7 @@ def cmd_run_common(
                 parsed_total = int(routed_total)
             tests_run = resolve_tests_run(analyses, parsed_total)
             refusal = refusal_reason(analyses, tests_run)
-            retained = (
-                '' if refusal is None
-                else f' — no pending finding cleared ({refusal})'
-            )
+            retained = '' if refusal is None else f' — no pending finding cleared ({refusal})'
             print(
                 f'[EXEC] green build: {population_label(analyses, tests_run)}{retained}',
                 file=sys.stderr,
@@ -865,7 +858,7 @@ def cmd_run_common(
                         tests_run=tests_run,
                     )
                 except Exception as e:
-                    print(f"[WARNING] Failed to reconcile pending build findings: {e}", file=sys.stderr)
+                    print(f'[WARNING] Failed to reconcile pending build findings: {e}', file=sys.stderr)
 
             # `tests_run` is emitted ONLY when it was measured. A consumer reading
             # the field on an unmeasured run finds it ABSENT rather than zero —
@@ -876,8 +869,7 @@ def cmd_run_common(
             population_fields: dict[str, Any] = {
                 'tests_population': 'measured' if tests_run is not None else 'unmeasured',
                 'analyses_examined': (
-                    'unknown' if analyses is None
-                    else (', '.join(sorted(analyses)) if analyses else 'none')
+                    'unknown' if analyses is None else (', '.join(sorted(analyses)) if analyses else 'none')
                 ),
             }
             if tests_run is not None:

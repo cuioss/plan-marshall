@@ -8,7 +8,6 @@ Its sections, in order:
 * Rule A + Rule B — two explicit-flag closes accumulate every field
 """
 
-
 from _manage_metrics_fixtures import (
     ns_end_phase,
     ns_generate,
@@ -123,6 +122,7 @@ def test_generate_monotonic_boundaries_have_no_warning(plan_context):
 # -----------------------------------------------------------------------------
 # Rule A + Rule B — two explicit-flag closes accumulate every field
 # -----------------------------------------------------------------------------
+
 
 def test_two_flag_closes_accumulate_all_five_fields(plan_context, monkeypatch):
     """Two explicit-flag closes of one phase sum all five accumulated fields.

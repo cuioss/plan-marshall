@@ -31,6 +31,7 @@ import json
 # ---------------------------------------------------------------------------
 
 from conftest import get_scripts_dir, load_script_module
+
 _SCRIPTS_DIR = get_scripts_dir('plan-marshall', 'manage-ci-artifacts')
 
 
@@ -247,9 +248,7 @@ def test_loop_back_does_not_overwrite_previous_run(plan_context):
         log_fetcher=_stub_fetcher,
     )
     old_manifest_after = _manifest_path(plan_id, '201').read_text(encoding='utf-8')
-    assert old_manifest_before == old_manifest_after, (
-        'Loop-back commit must not modify a previous run directory'
-    )
+    assert old_manifest_before == old_manifest_after, 'Loop-back commit must not modify a previous run directory'
 
 
 # ---------------------------------------------------------------------------
@@ -348,14 +347,11 @@ def test_cmd_persist_with_populated_jobs_file_writes_job_rows(tmp_path, capsys, 
     assert {j['name'] for j in manifest_jobs} == {'build', 'lint'}
     for row in manifest_jobs:
         assert row['log_path'], (
-            f'job row {row["name"]!r} has an empty log_path — the '
-            'green-CI persist path must record per-job evidence'
+            f'job row {row["name"]!r} has an empty log_path — the green-CI persist path must record per-job evidence'
         )
 
 
-def test_cmd_persist_with_empty_jobs_file_labels_zero_jobs_manifest(
-    tmp_path, capsys, plan_context
-):
+def test_cmd_persist_with_empty_jobs_file_labels_zero_jobs_manifest(tmp_path, capsys, plan_context):
     """An empty --jobs-file MUST produce a clearly-labelled zero-jobs
     manifest (jobs_source: empty) rather than silently looking like a
     run where no CI executed.
@@ -579,9 +575,7 @@ def test_cmd_persist_empty_run_id_exits_zero_with_toon_error(capsys, plan_contex
     assert 'run_id' in out
 
 
-def test_cmd_persist_unloadable_jobs_file_exits_zero_with_toon_error(
-    tmp_path, capsys, plan_context
-):
+def test_cmd_persist_unloadable_jobs_file_exits_zero_with_toon_error(tmp_path, capsys, plan_context):
     """cmd_persist handed an unparseable --jobs-file exits 0 with status:error.
 
     Malformed JSON in the jobs file is an operation failure, not a script
@@ -592,9 +586,7 @@ def test_cmd_persist_unloadable_jobs_file_exits_zero_with_toon_error(
     bad_jobs = tmp_path / 'bad-jobs.json'
     bad_jobs.write_text('{not valid json', encoding='utf-8')
 
-    exit_code = cmd_persist(
-        _persist_args(plan_id=plan_id, run_id='780', jobs_file=str(bad_jobs))
-    )
+    exit_code = cmd_persist(_persist_args(plan_id=plan_id, run_id='780', jobs_file=str(bad_jobs)))
     assert exit_code == 0
     out = capsys.readouterr().out
     assert 'status: error' in out
@@ -661,9 +653,7 @@ def test_persist_writes_slug_named_variants_for_shared_run_id(plan_context):
     assert 'verify / verify' in (run_dir / 'verify-verify.log').read_text(encoding='utf-8')
     assert 'build (3.12)' in (run_dir / 'build-3-12.log').read_text(encoding='utf-8')
     # Filtered content is the error-extraction variant, distinct per check.
-    assert 'FILTERED error for verify / verify' in (
-        run_dir / 'verify-verify.filtered.log'
-    ).read_text(encoding='utf-8')
+    assert 'FILTERED error for verify / verify' in (run_dir / 'verify-verify.filtered.log').read_text(encoding='utf-8')
 
 
 def test_persist_manifest_records_every_slugged_path(plan_context):

@@ -40,7 +40,7 @@ DECLARATION = "this plan's surface is the test tree entire"
 
 #: The claim line every body carries, so each body is a spec that resolves a
 #: surface rather than a bare paragraph.
-CLAIM_LINE = '- OBSERVED: test/beta/ — this plan\'s own mirror\n'
+CLAIM_LINE = "- OBSERVED: test/beta/ — this plan's own mirror\n"
 
 
 def spec(body: str) -> str:
@@ -137,12 +137,7 @@ def test_an_inline_span_still_contains_a_reproduction_in_its_own_paragraph() -> 
 #: then cut at the blank line, the reproduction falls outside every span, and the
 #: analysing plan is read as declaring the sweep it is quoting.
 _FENCED_ACROSS_A_BLANK_LINE_BODY = spec(
-    'PLAN-240 declares:\n\n'
-    '```text\n'
-    'the first line of the quoted block\n'
-    '\n'
-    f'{DECLARATION}\n'
-    '```\n'
+    f'PLAN-240 declares:\n\n```text\nthe first line of the quoted block\n\n{DECLARATION}\n```\n'
 )
 
 
@@ -178,34 +173,19 @@ def test_an_unterminated_fence_reaches_the_end_of_the_document() -> None:
 #: An opening delimiter whose run is FOUR backticks, with a bare three-backtick
 #: line inside the block. A length-blind close ends the block there, leaving the
 #: reproduction that follows uncontained.
-_FENCE_CLOSED_ONLY_BY_AN_EQUAL_OR_LONGER_RUN_BODY = spec(
-    'PLAN-240 declares:\n\n'
-    '````text\n'
-    '```\n'
-    f'{DECLARATION}\n'
-    '````\n'
-)
+_FENCE_CLOSED_ONLY_BY_AN_EQUAL_OR_LONGER_RUN_BODY = spec(f'PLAN-240 declares:\n\n````text\n```\n{DECLARATION}\n````\n')
 
 #: An opening delimiter of three backticks whose block contains a delimiter line
 #: CARRYING AN INFO STRING. Only the opening fence may carry one, so that line is
 #: body text; an info-blind close ends the block there.
 _FENCE_NOT_CLOSED_BY_A_DELIMITER_WITH_INFO_BODY = spec(
-    'PLAN-240 declares:\n\n'
-    '```text\n'
-    '```python\n'
-    f'{DECLARATION}\n'
-    '```\n'
+    f'PLAN-240 declares:\n\n```text\n```python\n{DECLARATION}\n```\n'
 )
 
 #: A block opened by three backticks and closed by FOUR. CommonMark closes on a
 #: run AT LEAST AS LONG as the opener, so this block is closed and its contents
 #: contained.
-_FENCE_CLOSED_BY_A_LONGER_RUN_BODY = spec(
-    'PLAN-240 declares:\n\n'
-    '```text\n'
-    f'{DECLARATION}\n'
-    '````\n'
-)
+_FENCE_CLOSED_BY_A_LONGER_RUN_BODY = spec(f'PLAN-240 declares:\n\n```text\n{DECLARATION}\n````\n')
 
 #: A PARAGRAPH that opens with the fence marker and then quotes inline code. A
 #: backtick fence's info string may not carry a backtick, so this is not an
@@ -226,9 +206,7 @@ def test_a_fenced_block_is_not_closed_by_a_shorter_run() -> None:
     example inside it, after which every reproduction below that example is
     uncontained and the quoting plan reads as a sweep.
     """
-    assert not partition_mod.is_sweep_declaration(
-        _FENCE_CLOSED_ONLY_BY_AN_EQUAL_OR_LONGER_RUN_BODY
-    )
+    assert not partition_mod.is_sweep_declaration(_FENCE_CLOSED_ONLY_BY_AN_EQUAL_OR_LONGER_RUN_BODY)
 
 
 def test_a_fenced_block_is_not_closed_by_a_delimiter_carrying_an_info_string() -> None:
@@ -238,9 +216,7 @@ def test_a_fenced_block_is_not_closed_by_a_delimiter_carrying_an_info_string() -
     the block at the first ```` ```lang ```` line inside it and leaves what
     follows uncontained.
     """
-    assert not partition_mod.is_sweep_declaration(
-        _FENCE_NOT_CLOSED_BY_A_DELIMITER_WITH_INFO_BODY
-    )
+    assert not partition_mod.is_sweep_declaration(_FENCE_NOT_CLOSED_BY_A_DELIMITER_WITH_INFO_BODY)
 
 
 def test_a_fenced_block_is_closed_by_a_longer_run() -> None:
@@ -254,8 +230,7 @@ def test_a_fenced_block_is_closed_by_a_longer_run() -> None:
     """
     assert not partition_mod.is_sweep_declaration(_FENCE_CLOSED_BY_A_LONGER_RUN_BODY)
     assert partition_mod.is_sweep_declaration(
-        f'{_FENCE_CLOSED_BY_A_LONGER_RUN_BODY}\n'
-        f'- OBSERVED: test/beta/ — ⛔ **the whole tree.** {DECLARATION}\n'
+        f'{_FENCE_CLOSED_BY_A_LONGER_RUN_BODY}\n- OBSERVED: test/beta/ — ⛔ **the whole tree.** {DECLARATION}\n'
     )
 
 

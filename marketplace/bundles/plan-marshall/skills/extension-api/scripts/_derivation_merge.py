@@ -174,8 +174,7 @@ def merge_resolver_edges(
             source, target = pair
             if source == target:
                 notes.append(
-                    f'{_MERGE_NOTE_PREFIX}dropped self-edge ({source} -> {target}) — '
-                    f'a module does not depend on itself'
+                    f'{_MERGE_NOTE_PREFIX}dropped self-edge ({source} -> {target}) — a module does not depend on itself'
                 )
                 continue
             unknown = [name for name in (source, target) if name not in known_modules]

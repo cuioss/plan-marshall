@@ -64,6 +64,7 @@ from _step_key_canonical import canonicalize_step_key
 from extension_discovery import find_implementors
 
 from conftest import PROJECT_ROOT, get_scripts_dir, get_skill_dir, load_script_module
+
 _SCRIPTS_DIR = get_scripts_dir('plan-marshall', 'phase-6-finalize')
 
 
@@ -160,9 +161,7 @@ def test_glob_outside_the_surface_does_not_match():
 
 
 def _patch_declaration(monkeypatch, globs, head_dependent, unresolved):
-    monkeypatch.setattr(
-        _mod, 'resolve_verdict_inputs', lambda _step: (globs, head_dependent, unresolved)
-    )
+    monkeypatch.setattr(_mod, 'resolve_verdict_inputs', lambda _step: (globs, head_dependent, unresolved))
 
 
 def test_absent_recorded_sha_invalidates(monkeypatch):
@@ -303,9 +302,7 @@ def test_equal_shas_short_circuit_without_a_diff(monkeypatch):
 def test_docs_only_advance_preserves_the_gate(monkeypatch):
     """The lever itself: a settle-band doc commit does not re-run the build gate."""
     _patch_declaration(monkeypatch, _SURFACE, True, None)
-    monkeypatch.setattr(
-        _mod, 'resolve_changed_paths', lambda *_a: (['doc/lessons/L-3.md'], True)
-    )
+    monkeypatch.setattr(_mod, 'resolve_changed_paths', lambda *_a: (['doc/lessons/L-3.md'], True))
 
     payload = _mod.classify_step('pre-push-quality-gate', '/nowhere', 'cafe', 'beef')
 
@@ -317,9 +314,7 @@ def test_docs_only_advance_preserves_the_gate(monkeypatch):
 def test_source_advance_still_refires_the_gate(monkeypatch):
     """The safety half: a source commit must re-fire, exactly as before."""
     _patch_declaration(monkeypatch, _SURFACE, True, None)
-    monkeypatch.setattr(
-        _mod, 'resolve_changed_paths', lambda *_a: (['marketplace/x/y.py'], True)
-    )
+    monkeypatch.setattr(_mod, 'resolve_changed_paths', lambda *_a: (['marketplace/x/y.py'], True))
 
     payload = _mod.classify_step('pre-push-quality-gate', '/nowhere', 'cafe', 'beef')
 
@@ -329,11 +324,7 @@ def test_source_advance_still_refires_the_gate(monkeypatch):
 
 def test_every_reason_token_carries_a_detail_phrasing():
     """The dispatcher logs ``detail``; a reason with no phrasing would log a token."""
-    tokens = [
-        value
-        for name, value in vars(_mod).items()
-        if name.startswith('REASON_') and isinstance(value, str)
-    ]
+    tokens = [value for name, value in vars(_mod).items() if name.startswith('REASON_') and isinstance(value, str)]
 
     assert tokens
     for token in tokens:
@@ -665,12 +656,8 @@ def test_wildcard_free_core_flags_an_untracked_literal_and_spares_a_tracked_one(
     absent = 'test/plan-marshall/phase-6-finalize/no_such_file.py'
     tracked = frozenset({present})
 
-    flagged, examined_flagged = _wildcard_free_offenders(
-        {'synthetic-step': ([absent], True)}, tracked
-    )
-    spared, examined_spared = _wildcard_free_offenders(
-        {'synthetic-step': ([present], True)}, tracked
-    )
+    flagged, examined_flagged = _wildcard_free_offenders({'synthetic-step': ([absent], True)}, tracked)
+    spared, examined_spared = _wildcard_free_offenders({'synthetic-step': ([present], True)}, tracked)
 
     # Both halves inspected exactly one glob — otherwise the split below could be
     # explained by one of them examining nothing rather than by the membership test.
@@ -711,9 +698,7 @@ def test_a_wholly_wildcard_bearing_declaration_examines_nothing():
 # The refusal table's rows are bound to their evidence
 # ---------------------------------------------------------------------------
 
-_VERDICT_CURRENCY_DOC = (
-    get_skill_dir('plan-marshall', 'phase-6-finalize') / 'standards' / 'verdict-currency.md'
-)
+_VERDICT_CURRENCY_DOC = get_skill_dir('plan-marshall', 'phase-6-finalize') / 'standards' / 'verdict-currency.md'
 
 #: The heading each refusing step's own doc must carry.
 _REFUSAL_HEADING = 'Verdict-input surface — deliberately undeclared'
@@ -724,9 +709,7 @@ _REFUSAL_HEADING = 'Verdict-input surface — deliberately undeclared'
 #: substring search over the whole doc stays green when the heading itself is
 #: renamed and only the cross-reference survives. The captured group is the
 #: heading level, reported in the assertion message.
-_REFUSAL_HEADING_RE = re.compile(
-    rf'^(#{{1,6}})\s+{re.escape(_REFUSAL_HEADING)}\s*$', re.MULTILINE
-)
+_REFUSAL_HEADING_RE = re.compile(rf'^(#{{1,6}})\s+{re.escape(_REFUSAL_HEADING)}\s*$', re.MULTILINE)
 
 
 #: The ATX levels the refusal section legitimately appears at. A project-local
@@ -755,8 +738,7 @@ def _tabled_refusals() -> list[str]:
     """
     text = _VERDICT_CURRENCY_DOC.read_text(encoding='utf-8')
     return [
-        m.group(1)
-        for m in re.finditer(r'^\|\s*`((?:default|project|plan-marshall):[^`]+)`\s*\|', text, re.MULTILINE)
+        m.group(1) for m in re.finditer(r'^\|\s*`((?:default|project|plan-marshall):[^`]+)`\s*\|', text, re.MULTILINE)
     ]
 
 
@@ -774,8 +756,7 @@ def test_every_tabled_refusal_carries_its_section():
     rather than leaving the table asserting evidence that is gone.
     """
     records = {
-        str(record.get('name', '')): Path(str(record.get('path', '')))
-        for record in find_implementors(_EXT_POINT)
+        str(record.get('name', '')): Path(str(record.get('path', ''))) for record in find_implementors(_EXT_POINT)
     }
 
     for step in _tabled_refusals():
@@ -790,7 +771,7 @@ def test_every_tabled_refusal_carries_its_section():
             f'"{_REFUSAL_HEADING}" section. The table would then assert evidence that is not '
             'there — the exact un-propagated-restatement defect it is meant to survive. '
             'The match is anchored to an ATX heading line: a surviving cross-reference to '
-            'the other step\'s section does not satisfy it.'
+            "the other step's section does not satisfy it."
         )
         assert level in _REFUSAL_HEADING_LEVELS, (
             f'{step} carries the refusal section at heading level {level!r}, which is not one '
@@ -811,10 +792,7 @@ def test_refusal_heading_match_ignores_a_cross_reference():
     than assumed.
     """
     heading_only = f'## {_REFUSAL_HEADING}\n\nbody text\n'
-    xref_only = (
-        'Some prose citing '
-        f'[§ "{_REFUSAL_HEADING}"](../other/doc.md) and nothing else.\n'
-    )
+    xref_only = f'Some prose citing [§ "{_REFUSAL_HEADING}"](../other/doc.md) and nothing else.\n'
 
     assert _refusal_heading_level(heading_only) == '##'
     assert _refusal_heading_level(xref_only) is None, (

@@ -15,6 +15,7 @@ Covers:
 - Multiple findings across lines / a clean baseline produces no findings
 - Agent and command markdown are scanned alongside skill markdown
 """
+
 from pathlib import Path
 
 from conftest import load_script_module
@@ -79,32 +80,19 @@ def _make_command_md(tmp_path: Path, content: str) -> Path:
 
 class TestRelativeTempGitCDetected:
     def test_relative_temp_commit_f_detected(self, tmp_path):
-        content = (
-            'Some prose.\n'
-            '```bash\n'
-            'git -C {worktree_path} commit -F .plan/temp/{plan_id}-commit-msg.txt\n'
-            '```\n'
-        )
+        content = 'Some prose.\n```bash\ngit -C {worktree_path} commit -F .plan/temp/{plan_id}-commit-msg.txt\n```\n'
         _make_skill_md(tmp_path, content)
         findings = assert_analyzer_findings(analyze_skill_relative_temp_path, tmp_path, [RULE_ID])
         assert findings[0]['temp_path'] == '.plan/temp/{plan_id}-commit-msg.txt'
 
     def test_relative_temp_in_sh_fence(self, tmp_path):
-        content = (
-            '```sh\n'
-            'git -C {worktree_path} commit -F .plan/temp/msg.txt\n'
-            '```\n'
-        )
+        content = '```sh\ngit -C {worktree_path} commit -F .plan/temp/msg.txt\n```\n'
         _make_skill_md(tmp_path, content)
         findings = assert_analyzer_findings(analyze_skill_relative_temp_path, tmp_path, [RULE_ID])
         assert findings[0]['temp_path'] == '.plan/temp/msg.txt'
 
     def test_relative_temp_with_concrete_worktree_path(self, tmp_path):
-        content = (
-            '```bash\n'
-            'git -C /tmp/wt commit -F .plan/temp/commit-msg.txt\n'
-            '```\n'
-        )
+        content = '```bash\ngit -C /tmp/wt commit -F .plan/temp/commit-msg.txt\n```\n'
         _make_skill_md(tmp_path, content)
         findings = assert_analyzer_findings(analyze_skill_relative_temp_path, tmp_path, [RULE_ID])
         assert findings[0]['temp_path'] == '.plan/temp/commit-msg.txt'
@@ -117,11 +105,7 @@ class TestRelativeTempGitCDetected:
 
 class TestWorktreeAbsoluteNotFlagged:
     def test_worktree_absolute_temp_not_flagged(self, tmp_path):
-        content = (
-            '```bash\n'
-            'git -C {worktree_path} commit -F {worktree_path}/.plan/temp/msg.txt\n'
-            '```\n'
-        )
+        content = '```bash\ngit -C {worktree_path} commit -F {worktree_path}/.plan/temp/msg.txt\n```\n'
         _make_skill_md(tmp_path, content)
         assert_analyzer_findings(analyze_skill_relative_temp_path, tmp_path, [])
 
@@ -133,29 +117,17 @@ class TestWorktreeAbsoluteNotFlagged:
 
 class TestPlanTempWithoutGitCNotFlagged:
     def test_plain_write_to_plan_temp_not_flagged(self, tmp_path):
-        content = (
-            '```bash\n'
-            'python3 script.py --output .plan/temp/plan_id-result.json\n'
-            '```\n'
-        )
+        content = '```bash\npython3 script.py --output .plan/temp/plan_id-result.json\n```\n'
         _make_skill_md(tmp_path, content)
         assert_analyzer_findings(analyze_skill_relative_temp_path, tmp_path, [])
 
     def test_git_without_dash_c_not_flagged(self, tmp_path):
-        content = (
-            '```bash\n'
-            'git commit -F .plan/temp/msg.txt\n'
-            '```\n'
-        )
+        content = '```bash\ngit commit -F .plan/temp/msg.txt\n```\n'
         _make_skill_md(tmp_path, content)
         assert_analyzer_findings(analyze_skill_relative_temp_path, tmp_path, [])
 
     def test_git_c_commit_non_temp_message_not_flagged(self, tmp_path):
-        content = (
-            '```bash\n'
-            'git -C {worktree_path} commit -F /var/folders/msg.txt\n'
-            '```\n'
-        )
+        content = '```bash\ngit -C {worktree_path} commit -F /var/folders/msg.txt\n```\n'
         _make_skill_md(tmp_path, content)
         assert_analyzer_findings(analyze_skill_relative_temp_path, tmp_path, [])
 
@@ -175,20 +147,12 @@ class TestProseAndNonBashNotScanned:
         assert_analyzer_findings(analyze_skill_relative_temp_path, tmp_path, [])
 
     def test_python_fence_not_scanned(self, tmp_path):
-        content = (
-            '```python\n'
-            'subprocess.run(["git", "-C", wt, "commit", "-F", ".plan/temp/m.txt"])\n'
-            '```\n'
-        )
+        content = '```python\nsubprocess.run(["git", "-C", wt, "commit", "-F", ".plan/temp/m.txt"])\n```\n'
         _make_skill_md(tmp_path, content)
         assert_analyzer_findings(analyze_skill_relative_temp_path, tmp_path, [])
 
     def test_text_fence_not_scanned(self, tmp_path):
-        content = (
-            '```text\n'
-            'git -C {worktree_path} commit -F .plan/temp/msg.txt\n'
-            '```\n'
-        )
+        content = '```text\ngit -C {worktree_path} commit -F .plan/temp/msg.txt\n```\n'
         _make_skill_md(tmp_path, content)
         assert_analyzer_findings(analyze_skill_relative_temp_path, tmp_path, [])
 
@@ -200,20 +164,12 @@ class TestProseAndNonBashNotScanned:
 
 class TestCommentLinesExempt:
     def test_comment_line_not_flagged(self, tmp_path):
-        content = (
-            '```bash\n'
-            '# git -C {worktree_path} commit -F .plan/temp/msg.txt\n'
-            '```\n'
-        )
+        content = '```bash\n# git -C {worktree_path} commit -F .plan/temp/msg.txt\n```\n'
         _make_skill_md(tmp_path, content)
         assert_analyzer_findings(analyze_skill_relative_temp_path, tmp_path, [])
 
     def test_indented_comment_line_not_flagged(self, tmp_path):
-        content = (
-            '```bash\n'
-            '  # git -C {worktree_path} commit -F .plan/temp/msg.txt\n'
-            '```\n'
-        )
+        content = '```bash\n  # git -C {worktree_path} commit -F .plan/temp/msg.txt\n```\n'
         _make_skill_md(tmp_path, content)
         assert_analyzer_findings(analyze_skill_relative_temp_path, tmp_path, [])
 
@@ -225,11 +181,7 @@ class TestCommentLinesExempt:
 
 class TestFindingShape:
     def test_required_fields_present(self, tmp_path):
-        content = (
-            '```bash\n'
-            'git -C {worktree_path} commit -F .plan/temp/commit-msg.txt\n'
-            '```\n'
-        )
+        content = '```bash\ngit -C {worktree_path} commit -F .plan/temp/commit-msg.txt\n```\n'
         _make_skill_md(tmp_path, content)
         findings = assert_analyzer_findings(analyze_skill_relative_temp_path, tmp_path, [RULE_ID])
         f = findings[0]
@@ -245,23 +197,13 @@ class TestFindingShape:
         assert isinstance(f['description'], str)
 
     def test_line_number_correct(self, tmp_path):
-        content = (
-            'Some intro text.\n'
-            '\n'
-            '```bash\n'
-            'git -C {worktree_path} commit -F .plan/temp/m.txt\n'
-            '```\n'
-        )
+        content = 'Some intro text.\n\n```bash\ngit -C {worktree_path} commit -F .plan/temp/m.txt\n```\n'
         _make_skill_md(tmp_path, content)
         findings = assert_analyzer_findings(analyze_skill_relative_temp_path, tmp_path, [RULE_ID])
         assert findings[0]['line'] == 4
 
     def test_file_path_is_absolute(self, tmp_path):
-        content = (
-            '```bash\n'
-            'git -C {worktree_path} commit -F .plan/temp/m.txt\n'
-            '```\n'
-        )
+        content = '```bash\ngit -C {worktree_path} commit -F .plan/temp/m.txt\n```\n'
         _make_skill_md(tmp_path, content)
         findings = assert_analyzer_findings(analyze_skill_relative_temp_path, tmp_path, [RULE_ID])
         assert Path(findings[0]['file']).is_absolute()
@@ -293,20 +235,12 @@ class TestMultipleFindings:
 
 class TestAgentAndCommandScanned:
     def test_agent_md_is_scanned(self, tmp_path):
-        content = (
-            '```bash\n'
-            'git -C {worktree_path} commit -F .plan/temp/agent-msg.txt\n'
-            '```\n'
-        )
+        content = '```bash\ngit -C {worktree_path} commit -F .plan/temp/agent-msg.txt\n```\n'
         _make_agent_md(tmp_path, content)
         assert_analyzer_findings(analyze_skill_relative_temp_path, tmp_path, [RULE_ID])
 
     def test_command_md_is_scanned(self, tmp_path):
-        content = (
-            '```bash\n'
-            'git -C {worktree_path} commit -F .plan/temp/cmd-msg.txt\n'
-            '```\n'
-        )
+        content = '```bash\ngit -C {worktree_path} commit -F .plan/temp/cmd-msg.txt\n```\n'
         _make_command_md(tmp_path, content)
         assert_analyzer_findings(analyze_skill_relative_temp_path, tmp_path, [RULE_ID])
 
@@ -318,13 +252,7 @@ class TestAgentAndCommandScanned:
 
 class TestCleanBaseline:
     def test_no_bash_fences_no_findings(self, tmp_path):
-        content = (
-            '# My Skill\n'
-            '\n'
-            'This skill does things.\n'
-            '\n'
-            'Reference: use `{worktree_path}/.plan/temp/msg.txt`\n'
-        )
+        content = '# My Skill\n\nThis skill does things.\n\nReference: use `{worktree_path}/.plan/temp/msg.txt`\n'
         _make_skill_md(tmp_path, content)
         assert_analyzer_findings(analyze_skill_relative_temp_path, tmp_path, [])
 

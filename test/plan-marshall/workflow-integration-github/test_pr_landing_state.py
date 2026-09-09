@@ -192,9 +192,13 @@ def test_handler_resolves_current_branch_when_branch_omitted(monkeypatch):
     def fake_run_gh(args, capture_json=False, timeout=60):
         # The resolved branch must be the one queried.
         assert '--head' in args and args[args.index('--head') + 1] == 'feature/resolved'
-        return 0, json.dumps(
-            [{'number': 7, 'state': 'OPEN', 'url': 'u', 'headRefName': 'feature/resolved', 'headRefOid': _TIP_SHA}]
-        ), ''
+        return (
+            0,
+            json.dumps(
+                [{'number': 7, 'state': 'OPEN', 'url': 'u', 'headRefName': 'feature/resolved', 'headRefOid': _TIP_SHA}]
+            ),
+            '',
+        )
 
     monkeypatch.setattr(github_ops, 'run_git', fake_run_git)
     monkeypatch.setattr(github_ops, 'run_gh', fake_run_gh)
@@ -375,9 +379,7 @@ def _api_contract_text() -> str:
 def _documented_pr_view_causes(text: str) -> set[str]:
     """The ``error_cause`` members the api-contract cause table names."""
     lines = text.splitlines()
-    header_at = next(
-        (i for i, line in enumerate(lines) if line.startswith(_CAUSE_TABLE_HEADER)), None
-    )
+    header_at = next((i for i, line in enumerate(lines) if line.startswith(_CAUSE_TABLE_HEADER)), None)
     assert header_at is not None, (
         f'{_API_CONTRACT} no longer carries the cause-table header '
         f'{_CAUSE_TABLE_HEADER!r}, so the documented population cannot be located at all. '
@@ -469,11 +471,7 @@ def test_cause_parity_rejects_an_extra_documented_member():
 
 
 def test_cause_parity_rejects_a_dropped_documented_member():
-    kept = [
-        line
-        for line in _api_contract_text().splitlines()
-        if not line.startswith('| `no_pr_found` |')
-    ]
+    kept = [line for line in _api_contract_text().splitlines() if not line.startswith('| `no_pr_found` |')]
     documented = _documented_pr_view_causes('\n'.join(kept))
     assert 'no_pr_found' not in documented
     assert documented != set(PR_VIEW_CAUSES)
@@ -492,8 +490,6 @@ def test_landing_parity_rejects_a_renamed_member():
 
 def test_landing_parity_rejects_a_dropped_member():
     text = _api_contract_text()
-    mutated = _LANDING_POPULATION_RE.sub(
-        'own declared population (`merged`, `pr_open`, `pushed_no_pr`)', text, count=1
-    )
+    mutated = _LANDING_POPULATION_RE.sub('own declared population (`merged`, `pr_open`, `pushed_no_pr`)', text, count=1)
     assert mutated != text, 'the drop mutation did not apply; the control proves nothing'
     assert _documented_landing_states(mutated) != set(LANDING_STATES)

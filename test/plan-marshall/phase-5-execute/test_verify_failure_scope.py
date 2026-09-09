@@ -49,18 +49,14 @@ def _stub_footprint(monkeypatch, footprint):
     ``plan_dir``. The extra parameter IS the migration, so the stub signature
     tracks it deliberately.
     """
-    monkeypatch.setattr(
-        vfs, '_resolve_declared_footprint', lambda plan_dir, plan_id: set(footprint)
-    )
+    monkeypatch.setattr(vfs, '_resolve_declared_footprint', lambda plan_dir, plan_id: set(footprint))
 
 
 def test_all_in_scope(plan_context, monkeypatch):
     plan_dir = plan_context.plan_dir_for('vfs-all-in')
     _write_refs(plan_dir)
     _stub_footprint(monkeypatch, ['src/a.py', 'src/b.py'])
-    result = vfs.classify_failure_scope(
-        'vfs-all-in', ['src/a.py', 'src/b.py'], plan_dir=plan_dir
-    )
+    result = vfs.classify_failure_scope('vfs-all-in', ['src/a.py', 'src/b.py'], plan_dir=plan_dir)
     assert result['status'] == 'success'
     assert result['total'] == 2
     assert result['in_scope_count'] == 2
@@ -107,9 +103,7 @@ def test_empty_error_paths(plan_context, monkeypatch):
     plan_dir = plan_context.plan_dir_for('vfs-empty')
     _write_refs(plan_dir)
     _stub_footprint(monkeypatch, ['src/a.py'])
-    result = vfs.classify_failure_scope(
-        'vfs-empty', [], plan_dir=plan_dir
-    )
+    result = vfs.classify_failure_scope('vfs-empty', [], plan_dir=plan_dir)
     assert result['status'] == 'success'
     assert result['total'] == 0
     assert result['in_scope_count'] == 0
@@ -118,9 +112,7 @@ def test_empty_error_paths(plan_context, monkeypatch):
     assert result['out_of_scope_paths'] == []
 
 
-def test_unmeasurable_footprint_does_not_attribute_failures_as_foreign(
-    plan_context, monkeypatch
-):
+def test_unmeasurable_footprint_does_not_attribute_failures_as_foreign(plan_context, monkeypatch):
     """An unresolvable footprint classifies NOTHING — it never claims "all foreign".
 
     Returning the empty set here used to put every error path in
@@ -133,9 +125,7 @@ def test_unmeasurable_footprint_does_not_attribute_failures_as_foreign(
     _write_refs(plan_dir)
     monkeypatch.setattr(vfs, '_resolve_declared_footprint', lambda plan_dir, plan_id: None)
 
-    result = vfs.classify_failure_scope(
-        'vfs-unmeasurable', ['foreign/x.py', 'foreign/y.py'], plan_dir=plan_dir
-    )
+    result = vfs.classify_failure_scope('vfs-unmeasurable', ['foreign/x.py', 'foreign/y.py'], plan_dir=plan_dir)
 
     assert result['status'] == 'success'
     assert result['footprint_resolved'] is False
@@ -148,9 +138,7 @@ def test_unmeasurable_footprint_does_not_attribute_failures_as_foreign(
     assert result['total'] == 2
 
 
-def test_unresolvable_worktree_does_not_classify_against_the_current_directory(
-    plan_context, monkeypatch, tmp_path
-):
+def test_unresolvable_worktree_does_not_classify_against_the_current_directory(plan_context, monkeypatch, tmp_path):
     """A worktree that will not resolve is UNMEASURABLE, not "use the cwd".
 
     The previous fallback derived a diff from whatever checkout the classifier
@@ -169,9 +157,7 @@ def test_unresolvable_worktree_does_not_classify_against_the_current_directory(
 
     assert vfs._resolve_declared_footprint(plan_dir, 'vfs-worktree-unresolvable') is None
 
-    result = vfs.classify_failure_scope(
-        'vfs-worktree-unresolvable', ['src/a.py'], plan_dir=plan_dir
-    )
+    result = vfs.classify_failure_scope('vfs-worktree-unresolvable', ['src/a.py'], plan_dir=plan_dir)
     assert result['footprint_resolved'] is False
     assert result['unresolved_reason'] == vfs.UNRESOLVED_REASON_FOOTPRINT
     assert result['unclassified_paths'] == ['src/a.py']
@@ -188,9 +174,7 @@ def test_measured_empty_footprint_still_classifies_as_foreign(plan_context, monk
     _write_refs(plan_dir)
     _stub_footprint(monkeypatch, [])
 
-    result = vfs.classify_failure_scope(
-        'vfs-measured-empty', ['foreign/x.py'], plan_dir=plan_dir
-    )
+    result = vfs.classify_failure_scope('vfs-measured-empty', ['foreign/x.py'], plan_dir=plan_dir)
 
     assert result['footprint_resolved'] is True
     assert result['exclusively_out_of_scope'] is True
@@ -202,9 +186,7 @@ def test_missing_references_returns_error(tmp_path):
     # resolver raises FileNotFoundError, which the classifier maps to an error.
     plan_dir = tmp_path / 'missing-plan'
     plan_dir.mkdir()
-    result = vfs.classify_failure_scope(
-        'vfs-missing', ['src/a.py'], plan_dir=plan_dir
-    )
+    result = vfs.classify_failure_scope('vfs-missing', ['src/a.py'], plan_dir=plan_dir)
     assert result['status'] == 'error'
     assert result['error'] == 'references_json_missing'
 
@@ -214,9 +196,7 @@ def test_blank_paths_filtered(plan_context, monkeypatch):
     plan_dir = plan_context.plan_dir_for('vfs-blank')
     _write_refs(plan_dir)
     _stub_footprint(monkeypatch, ['src/a.py'])
-    result = vfs.classify_failure_scope(
-        'vfs-blank', ['  ', '', 'src/a.py'], plan_dir=plan_dir
-    )
+    result = vfs.classify_failure_scope('vfs-blank', ['  ', '', 'src/a.py'], plan_dir=plan_dir)
     assert result['status'] == 'success'
     assert result['total'] == 1
     assert result['in_scope_count'] == 1
@@ -234,9 +214,7 @@ def test_plan_dir_resolved_via_plan_base_dir(plan_context, monkeypatch):
     plan_dir = plan_context.plan_dir_for(plan_id)
     _write_refs(plan_dir)
     _stub_footprint(monkeypatch, ['src/a.py'])
-    result = vfs.classify_failure_scope(
-        plan_id, ['src/a.py', 'foreign/x.py']
-    )
+    result = vfs.classify_failure_scope(plan_id, ['src/a.py', 'foreign/x.py'])
     assert result['status'] == 'success'
     assert result['total'] == 2
     assert result['in_scope_count'] == 1
@@ -259,9 +237,7 @@ def test_footprint_resolver_takes_worktree_from_the_resolver(plan_context, monke
     git-derivation primitive is patched so no real worktree is needed.
     """
     plan_dir = plan_context.plan_dir_for('vfs-resolver-seam')
-    (plan_dir / 'references.json').write_text(
-        json.dumps({'base_branch': 'develop'})
-    )
+    (plan_dir / 'references.json').write_text(json.dumps({'base_branch': 'develop'}))
     worktree = tmp_path / 'wt'
     worktree.mkdir()
 
@@ -281,8 +257,7 @@ def test_footprint_resolver_takes_worktree_from_the_resolver(plan_context, monke
     assert str(captured['worktree']) == str(worktree)
     assert captured['base_ref'] == 'develop'
     assert mock.call_count == 1, (
-        'the footprint resolver did not reach the single resolver seam — it is '
-        'still re-deriving the worktree locally'
+        'the footprint resolver did not reach the single resolver seam — it is still re-deriving the worktree locally'
     )
 
 
@@ -371,9 +346,7 @@ def test_emitted_paths_parse_back_as_a_list(plan_context, monkeypatch, capsys):
     plan_dir = plan_context.plan_dir_for('vfs-emit-list')
     _write_refs(plan_dir)
     _stub_footprint(monkeypatch, ['src/a.py'])
-    payload = vfs.classify_failure_scope(
-        'vfs-emit-list', ['foreign/x.py', 'foreign/y.py'], plan_dir=plan_dir
-    )
+    payload = vfs.classify_failure_scope('vfs-emit-list', ['foreign/x.py', 'foreign/y.py'], plan_dir=plan_dir)
 
     vfs._emit_toon(payload)
 
@@ -394,9 +367,7 @@ def test_emitted_unclassified_paths_parse_back_as_a_list(plan_context, monkeypat
     plan_dir = plan_context.plan_dir_for('vfs-emit-unclassified')
     _write_refs(plan_dir)
     monkeypatch.setattr(vfs, '_resolve_declared_footprint', lambda plan_dir, plan_id: None)
-    payload = vfs.classify_failure_scope(
-        'vfs-emit-unclassified', ['foreign/x.py'], plan_dir=plan_dir
-    )
+    payload = vfs.classify_failure_scope('vfs-emit-unclassified', ['foreign/x.py'], plan_dir=plan_dir)
 
     vfs._emit_toon(payload)
 

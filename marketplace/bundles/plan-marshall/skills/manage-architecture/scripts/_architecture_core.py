@@ -246,9 +246,7 @@ def validate_concept_type(concept_type: str) -> str:
             actionable rather than a bare rejection.
     """
     if concept_type not in CONCEPT_TYPES:
-        raise InvalidConceptTypeError(
-            f'Unknown concept type {concept_type!r}. Accepted types: {sorted(CONCEPT_TYPES)}'
-        )
+        raise InvalidConceptTypeError(f'Unknown concept type {concept_type!r}. Accepted types: {sorted(CONCEPT_TYPES)}')
     return concept_type
 
 
@@ -918,9 +916,7 @@ def merge_module_data(module_name: str, project_dir: str = '.') -> dict[str, Any
 
     key_packages = enriched.get('key_packages')
     if isinstance(key_packages, dict) and key_packages:
-        migrated_packages, unresolved = migrate_key_packages(
-            key_packages, derived.get('packages') or {}, project_dir
-        )
+        migrated_packages, unresolved = migrate_key_packages(key_packages, derived.get('packages') or {}, project_dir)
         enriched = {**enriched, 'key_packages': migrated_packages}
         if unresolved:
             _log_unresolved_package_keys(module_name, unresolved)
@@ -1034,9 +1030,7 @@ def _load_route_matcher():
     return route_matches
 
 
-def classify_changed_path(
-    path: str, merged_build_map: dict[str, list[dict[str, str]]]
-) -> tuple[str, str] | None:
+def classify_changed_path(path: str, merged_build_map: dict[str, list[dict[str, str]]]) -> tuple[str, str] | None:
     """Classify a single changed-artifact path to a build_class (longest-glob-wins).
 
     Matches ``path`` against every ``{glob, role, build_class}`` entry across
@@ -1122,9 +1116,7 @@ def _load_path_attribution_seam():
 _PATH_CLAIM_CACHE: dict[tuple[str, ...], tuple[list[dict[str, Any]], list[dict[str, Any]]]] = {}
 
 
-def resolve_path_attribution(
-    path: str, module_names: list[str]
-) -> tuple[str | None, list[dict[str, Any]]]:
+def resolve_path_attribution(path: str, module_names: list[str]) -> tuple[str | None, list[dict[str, Any]]]:
     """Resolve ``path`` through the Axis-D seam and return the attributor reports.
 
     The full-fidelity seam reader: it returns BOTH the resolved owner and the
@@ -1463,5 +1455,3 @@ def handle_module_not_found_result(module_name: str, project_dir: str) -> dict[s
         'module': module_name,
         'available': modules,
     }
-
-

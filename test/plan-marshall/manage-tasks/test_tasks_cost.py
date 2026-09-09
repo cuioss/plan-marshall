@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for deterministic task cost-sizing (_tasks_cost.py)."""
 
-
 import pytest
 from _tasks_cost_fixtures import (
     _L_MAX,
@@ -61,12 +60,7 @@ def test_profile_weight_none_takes_default():
 
 def test_compute_score_matches_weighted_sum():
     """Score is the exact weighted sum of the four signals."""
-    expected = (
-        (W_STEP * 4)
-        + (W_PROFILE * profile_weight('implementation'))
-        + (W_SKILLS * 2)
-        + (W_TARGET_FILES * 3)
-    )
+    expected = (W_STEP * 4) + (W_PROFILE * profile_weight('implementation')) + (W_SKILLS * 2) + (W_TARGET_FILES * 3)
     assert compute_score(4, 'implementation', 2, 3) == expected
 
 

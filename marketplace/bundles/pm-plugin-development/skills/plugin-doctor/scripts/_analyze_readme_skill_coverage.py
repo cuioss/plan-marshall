@@ -185,9 +185,7 @@ def derive_readme_population(marketplace_root: Path) -> list[BundleCoverage]:
             readme_text = readme.read_text(encoding='utf-8')
         except (OSError, UnicodeDecodeError):
             continue
-        undocumented = tuple(
-            name for name in registered if not _readme_names_skill(readme_text, name)
-        )
+        undocumented = tuple(name for name in registered if not _readme_names_skill(readme_text, name))
         coverage.append(
             BundleCoverage(
                 bundle=bundle_dir.name,

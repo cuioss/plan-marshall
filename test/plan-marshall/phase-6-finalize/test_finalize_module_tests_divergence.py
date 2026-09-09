@@ -26,12 +26,7 @@ from _test_scope_divergence import classify_divergence, resolve_test_scope
 from conftest import MARKETPLACE_ROOT
 
 _GATE_DOC = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'phase-6-finalize'
-    / 'standards'
-    / 'pre-push-quality-gate.md'
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize' / 'standards' / 'pre-push-quality-gate.md'
 )
 
 #: The three guards the gate runs, in `build.py:cmd_verify` order.
@@ -101,9 +96,7 @@ _TEMPLATE_RENDERINGS_LABEL = '`{dimension_clause}` has exactly two renderings'
 #: pre-fix prose, where "whole-tree" belongs to test-compile or module-tests and
 #: never to quality-gate — which is exactly the drift this sweep must catch. So
 #: every lock-step site spells the arm as one adjacent phrase.
-_WHOLE_TREE_QUALITY_GATE = re.compile(
-    r'whole-tree[\s`*_]{0,4}quality-gate', re.IGNORECASE
-)
+_WHOLE_TREE_QUALITY_GATE = re.compile(r'whole-tree[\s`*_]{0,4}quality-gate', re.IGNORECASE)
 
 #: The heading of the section that owns guard 1's whole-tree arm, and the
 #: heading levels that terminate it (``####`` and deeper stay inside).
@@ -121,9 +114,7 @@ _MODULE_ARG = re.compile(r'--module\b')
 
 #: The arm must RUN what it resolved — a resolved-then-discarded executable
 #: gates nothing, so presence of the resolve alone would be a half-assertion.
-_RUNS_RESOLVED_EXECUTABLE = re.compile(
-    r'run\s+the\s+captured\s+`?executable`?', re.IGNORECASE
-)
+_RUNS_RESOLVED_EXECUTABLE = re.compile(r'run\s+the\s+captured\s+`?executable`?', re.IGNORECASE)
 
 #: A WARNING the gate actually EMITS, as opposed to prose that mentions one. An
 #: emitted warning is the payload of a ``manage-logging`` invocation, so it
@@ -375,9 +366,7 @@ def _section(heading: str) -> list[str]:
     heading returns ``[]``, which every caller asserts against.
     """
     lines = _gate_text().splitlines()
-    start = next(
-        (i for i, line in enumerate(lines) if line.strip() == heading), None
-    )
+    start = next((i for i, line in enumerate(lines) if line.strip() == heading), None)
     if start is None:
         return []
     body: list[str] = []
@@ -390,11 +379,7 @@ def _section(heading: str) -> list[str]:
 
 def _default_scope_quality_gate_resolves(lines: list[str]) -> list[str]:
     """Return the ``quality-gate`` resolves carrying NO ``--module`` argument."""
-    return [
-        line
-        for line in lines
-        if _QG_RESOLVE.search(line) and not _MODULE_ARG.search(line)
-    ]
+    return [line for line in lines if _QG_RESOLVE.search(line) and not _MODULE_ARG.search(line)]
 
 
 def _names_all_three_dimensions(text: str) -> bool:
@@ -510,11 +495,7 @@ def test_gate_document_parses_and_discloses_unresolved_paths():
     assert '`unresolved_paths`' in text, (
         'The gate document must parse unresolved_paths from the resolve-test-scope TOON'
     )
-    disclosure = [
-        line
-        for line in text.splitlines()
-        if '[WARNING]' in line and 'unresolved_paths' in line
-    ]
+    disclosure = [line for line in text.splitlines() if '[WARNING]' in line and 'unresolved_paths' in line]
     assert disclosure, (
         'The gate document must emit a [WARNING] naming the unresolved paths — '
         'a parsed-but-undisclosed field is a silent drop (ADR-014)'
@@ -530,9 +511,7 @@ def _worked_example_block() -> list[str]:
     deleted example fails loudly instead of emptying the assertion.
     """
     lines = _gate_text().splitlines()
-    start = next(
-        (i for i, line in enumerate(lines) if _WORKED_EXAMPLE_LABEL in line), None
-    )
+    start = next((i for i, line in enumerate(lines) if _WORKED_EXAMPLE_LABEL in line), None)
     if start is None:
         return []
     block: list[str] = []
@@ -574,7 +553,7 @@ def test_degradation_warning_interpolates_the_derived_dimension_set():
         )
         pinned = [d for d in _WHOLE_TREE_ONLY_DIMENSIONS if d in warning]
         assert not pinned, (
-            f'The emitted WARNING pins this repository\'s dimension names '
+            f"The emitted WARNING pins this repository's dimension names "
             f'{pinned} instead of interpolating the derived set — the literal '
             f'is what a downstream agent copies. Offending line: {warning!r}'
         )
@@ -613,16 +592,12 @@ def _enumerated_dimension_items() -> list[str]:
     which the caller asserts against.
     """
     lines = _gate_text().splitlines()
-    start = next(
-        (i for i, line in enumerate(lines) if _DIMENSION_SOURCE_LABEL in line), None
-    )
+    start = next((i for i, line in enumerate(lines) if _DIMENSION_SOURCE_LABEL in line), None)
     if start is None:
         return []
     items: list[str] = []
     for line in lines[start + 1 :]:
-        if _SAME_OR_HIGHER_HEADING.match(line) or line.startswith(
-            _DIMENSION_SOURCE_TERMINATOR
-        ):
+        if _SAME_OR_HIGHER_HEADING.match(line) or line.startswith(_DIMENSION_SOURCE_TERMINATOR):
             break
         if _ENUMERATED_ITEM.match(line):
             items.append(line)
@@ -693,11 +668,7 @@ def test_whole_tree_only_dimension_population_is_derived_not_asserted():
         f'has drifted from the section that defines it: {unsourced}'
     )
 
-    uncovered = [
-        item
-        for item in items
-        if not any(d in item for d in _WHOLE_TREE_ONLY_DIMENSIONS)
-    ]
+    uncovered = [item for item in items if not any(d in item for d in _WHOLE_TREE_ONLY_DIMENSIONS)]
     assert not uncovered, (
         f'These enumerated dimensions are matched by no token in '
         f'{_WHOLE_TREE_ONLY_DIMENSIONS}, so the worked example could omit them '
@@ -751,11 +722,7 @@ def test_lock_step_sites_all_name_the_whole_tree_quality_gate_arm():
         f'{sorted(missing_sites)} — the sweep would silently skip them'
     )
 
-    stale = [
-        name
-        for name, body in sites.items()
-        if not _WHOLE_TREE_QUALITY_GATE.search(body)
-    ]
+    stale = [name for name, body in sites.items() if not _WHOLE_TREE_QUALITY_GATE.search(body)]
 
     assert not stale, (
         f'Lock-step drift: these sites describe the guard set without naming '
@@ -784,10 +751,7 @@ def test_lock_step_sites_all_name_every_guard():
     }
     incomplete = {name: missing for name, missing in drift.items() if missing}
 
-    assert not incomplete, (
-        f'Lock-step drift: these sites omit guards from the guard set '
-        f'{_GUARD_TOKENS}: {incomplete}'
-    )
+    assert not incomplete, f'Lock-step drift: these sites omit guards from the guard set {_GUARD_TOKENS}: {incomplete}'
 
 
 # ---------------------------------------------------------------------------
@@ -803,21 +767,14 @@ def test_three_dimension_detector_rejects_a_single_dimension_warning():
         'quality-gate unavailable — the plugin-doctor pass is UN-GATED.'
     )
     assert not _names_all_three_dimensions(single), (
-        'Three-dimension detector accepted a WARNING naming only one '
-        'dimension — the assertion would be vacuous'
+        'Three-dimension detector accepted a WARNING naming only one dimension — the assertion would be vacuous'
     )
 
     two = single.replace('UN-GATED.', 'UN-GATED, and .claude/ ruff coverage.')
-    assert not _names_all_three_dimensions(two), (
-        'Three-dimension detector accepted a two-dimension WARNING'
-    )
+    assert not _names_all_three_dimensions(two), 'Three-dimension detector accepted a two-dimension WARNING'
 
-    complete = two.replace(
-        'ruff coverage.', 'ruff coverage, and marketplace/targets SPDX coverage.'
-    )
-    assert _names_all_three_dimensions(complete), (
-        'Three-dimension detector rejected a complete three-dimension WARNING'
-    )
+    complete = two.replace('ruff coverage.', 'ruff coverage, and marketplace/targets SPDX coverage.')
+    assert _names_all_three_dimensions(complete), 'Three-dimension detector rejected a complete three-dimension WARNING'
 
 
 def test_reachability_detector_rejects_a_module_scoped_resolve_and_an_empty_arm():
@@ -878,10 +835,8 @@ def test_whole_tree_arm_detector_fires_on_the_pre_fix_bundle_only_prose():
         'description: Run quality-gate per affected bundle, then whole-tree '
         'test-compile, then gate whole-tree module-tests on scoped-vs-whole-tree '
         'divergence risk, as the last gate before push',
-        '**Branch A — all bundles green AND test-compile green AND module-tests '
-        'gate green**:',
-        '  --display-detail "quality-gate green for {N} bundle(s), test-compile '
-        'green, module-tests gate green" \\',
+        '**Branch A — all bundles green AND test-compile green AND module-tests gate green**:',
+        '  --display-detail "quality-gate green for {N} bundle(s), test-compile green, module-tests gate green" \\',
     ]
 
     # The frontmatter line is the subtle one: it DOES contain "whole-tree", but
@@ -893,8 +848,7 @@ def test_whole_tree_arm_detector_fires_on_the_pre_fix_bundle_only_prose():
     )
     for site in pre_fix_sites[1:]:
         assert not _WHOLE_TREE_QUALITY_GATE.search(site), (
-            f'Whole-tree-arm detector failed to reject a known pre-fix '
-            f'bundle-only site: {site!r}'
+            f'Whole-tree-arm detector failed to reject a known pre-fix bundle-only site: {site!r}'
         )
 
     # Positive control — the post-fix Branch A condition IS accepted.

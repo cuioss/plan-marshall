@@ -8,7 +8,6 @@ Its sections, in order:
 * Case (h) — end-to-end fixture matching the orchestrator consumption contract
 """
 
-
 from pathlib import Path
 
 from _aggregate_fixtures import AGGREGATE_PREVIEW_CHARS, _make_lessons_dir, _run_aggregate, _seed_lesson
@@ -97,9 +96,7 @@ class TestMergedBodyComposition:
         second_idx = preview.find('## Sub-task: Second Absorbed (2025-01-01-01-912)')
         assert first_idx >= 0, f'first H2 missing in preview: {preview!r}'
         assert second_idx >= 0, f'second H2 missing in preview: {preview!r}'
-        assert first_idx < second_idx, (
-            'absorbed H2 sub-sections must appear in id-ascending order'
-        )
+        assert first_idx < second_idx, 'absorbed H2 sub-sections must appear in id-ascending order'
         # The primary body must precede both H2 headings.
         primary_idx = preview.find('Primary content.')
         assert 0 <= primary_idx < first_idx

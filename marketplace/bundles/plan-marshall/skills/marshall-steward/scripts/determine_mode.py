@@ -452,9 +452,7 @@ def check_docs(project_root: Path) -> tuple[str, list[dict[str, str]]]:
                     # nothing, so the guidance is unreachable. Report it as its
                     # own reason — the remedy is a rename, not an append, so
                     # fix_docs must not treat it as fixable content drift.
-                    missing.append(
-                        {'file': str(file_name), 'check': str(check['key']), 'reason': 'wrong_case'}
-                    )
+                    missing.append({'file': str(file_name), 'check': str(check['key']), 'reason': 'wrong_case'})
                 continue  # Genuinely absent file — only check content in existing files
             content = file_path.read_text()
             if pattern not in content:
@@ -1042,10 +1040,7 @@ def main() -> int:
         '--project-root',
         type=str,
         default='.',
-        help=(
-            'Project root used to discover shipped project: finalize-step '
-            'skills under .claude/skills/ (default: .)'
-        ),
+        help=('Project root used to discover shipped project: finalize-step skills under .claude/skills/ (default: .)'),
     )
 
     # check-working-prefixes subcommand

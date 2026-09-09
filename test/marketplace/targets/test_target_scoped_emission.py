@@ -63,11 +63,7 @@ def _frontmatter(stem: str) -> str:
 
 def _scoped_away_from(target_name: str) -> set[str]:
     """Stems whose declaration excludes ``target_name`` — what it must NOT emit."""
-    return {
-        stem
-        for stem, scope in _FIXTURE_SCOPES.items()
-        if scope is not None and target_name not in scope
-    }
+    return {stem for stem, scope in _FIXTURE_SCOPES.items() if scope is not None and target_name not in scope}
 
 
 def _write(path: Path, content: str) -> None:
@@ -101,9 +97,7 @@ def marketplace(tmp_path: Path) -> Path:
             {
                 'name': 'demo-marketplace',
                 'owner': {'name': 'demo'},
-                'plugins': [
-                    {'name': 'demo', 'source': './bundles/demo', 'description': 'Demo bundle'}
-                ],
+                'plugins': [{'name': 'demo', 'source': './bundles/demo', 'description': 'Demo bundle'}],
             },
             indent=2,
         )
@@ -204,9 +198,7 @@ def test_unscoped_components_reach_every_target(claude_tree: Path, opencode_tree
     assert (opencode_tree / 'skill' / 'demo-plain-skill' / 'SKILL.md').is_file()
 
 
-def test_a_file_inside_an_unscoped_skill_takes_its_own_scope(
-    claude_tree: Path, opencode_tree: Path
-):
+def test_a_file_inside_an_unscoped_skill_takes_its_own_scope(claude_tree: Path, opencode_tree: Path):
     """A skill-internal file declaring ``targets: [claude]`` reaches claude only.
 
     The parent SKILL.md declares no scope, so this is the FILE-LEVEL mechanism
@@ -214,9 +206,7 @@ def test_a_file_inside_an_unscoped_skill_takes_its_own_scope(
     OpenCode tree, while its parent skill still ships everywhere.
     """
     claude_file = claude_tree / 'demo' / 'skills' / 'plain-skill' / 'references' / 'claude-notes.md'
-    opencode_file = (
-        opencode_tree / 'skill' / 'demo-plain-skill' / 'references' / 'claude-notes.md'
-    )
+    opencode_file = opencode_tree / 'skill' / 'demo-plain-skill' / 'references' / 'claude-notes.md'
 
     assert claude_file.is_file()
     assert not opencode_file.exists()
@@ -257,9 +247,7 @@ def test_every_component_tree_target_honours_the_filter(marketplace: Path, tmp_p
         # The file-level declarations ride the same sweep: a skill-internal
         # file scoped away from the target must not surface in its output
         # either, at one rule and no per-target path knowledge.
-        for stem in sorted(
-            stem for stem, scope in _SKILL_FILE_SCOPES.items() if scope and name not in scope
-        ):
+        for stem in sorted(stem for stem, scope in _SKILL_FILE_SCOPES.items() if scope and name not in scope):
             assert not any(stem in segment for segment in segments), (
                 f'{name} emitted skill file {stem}, which declares a scope excluding {name}'
             )
@@ -300,9 +288,7 @@ def test_manifest_drops_a_scoped_out_component_in_lock_step(marketplace: Path, t
 
 def test_emitted_manifest_matches_the_emitted_tree(claude_tree: Path):
     """The manifest the emit wrote declares the components the emit produced."""
-    manifest = json.loads(
-        (claude_tree / 'demo' / '.claude-plugin' / 'plugin.json').read_text(encoding='utf-8')
-    )
+    manifest = json.loads((claude_tree / 'demo' / '.claude-plugin' / 'plugin.json').read_text(encoding='utf-8'))
 
     assert sorted(manifest['commands']) == ['./commands/plain-cmd.md', './commands/scoped-cmd.md']
     assert sorted(manifest['agents']) == ['./agents/plain-agent.md', './agents/scoped-agent.md']
@@ -311,9 +297,7 @@ def test_emitted_manifest_matches_the_emitted_tree(claude_tree: Path):
     assert not (claude_tree / 'demo' / 'commands' / 'other-cmd.md').exists()
 
 
-def test_equality_gate_passes_over_a_tree_holding_a_scoped_component(
-    marketplace: Path, claude_tree: Path
-):
+def test_equality_gate_passes_over_a_tree_holding_a_scoped_component(marketplace: Path, claude_tree: Path):
     """A scoped component is deliberately absent, never drift."""
     result = run_equality_check(claude_tree, list(iter_bundle_dirs(marketplace, None)))
 
@@ -349,9 +333,7 @@ def test_generation_fails_on_an_invalid_declaration(
     assert 'bad.md' in str(excinfo.value)
 
 
-def test_validate_only_mode_rejects_an_invalid_skill_declaration(
-    marketplace: Path, tmp_path: Path, monkeypatch
-):
+def test_validate_only_mode_rejects_an_invalid_skill_declaration(marketplace: Path, tmp_path: Path, monkeypatch):
     """Validate-only mode must not pass a declaration an emit would reject.
 
     The equality path regenerates the manifest only, and the manifest never
@@ -360,9 +342,7 @@ def test_validate_only_mode_rejects_an_invalid_skill_declaration(
     """
     output = tmp_path / 'out' / 'claude'
     ClaudeTarget().generate(marketplace, output)
-    monkeypatch.setattr(
-        'marketplace.targets.claude.target.DEFAULT_VALIDATE_TARGET_DIR', output
-    )
+    monkeypatch.setattr('marketplace.targets.claude.target.DEFAULT_VALIDATE_TARGET_DIR', output)
     _write(
         marketplace / 'demo' / 'skills' / 'bad-skill' / 'SKILL.md',
         '---\nname: bad-skill\ndescription: d\ntargets: [cluade]\n---\n\n# Body\n',
@@ -372,9 +352,7 @@ def test_validate_only_mode_rejects_an_invalid_skill_declaration(
         ClaudeTarget().generate(marketplace, None)
 
 
-def test_generation_fails_when_no_named_target_emits_a_component_tree(
-    marketplace: Path, tmp_path: Path
-):
+def test_generation_fails_when_no_named_target_emits_a_component_tree(marketplace: Path, tmp_path: Path):
     """A registry-valid list that still ships the component nowhere is refused."""
     treeless = sorted(set(TARGET_REGISTRY) - component_tree_target_names())
     assert treeless, 'fixture assumes at least one registered non-component-tree target'

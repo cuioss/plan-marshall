@@ -11,7 +11,6 @@ auto-resolve the worktree via its two-state contract — while leaving Bucket A
 `--plan-id`, and commands carrying a legacy explicit `--project-dir` untouched.
 """
 
-
 import pytest
 
 # Cross-skill imports — PYTHONPATH is configured by the root test/conftest.py
@@ -259,7 +258,9 @@ def test_whitespace_only_command_returns_false():
 def test_malformed_quoting_returns_false():
     """A command with unbalanced quotes passes through without raising."""
     # unbalanced single quote trips shlex.split
-    command = "python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args 'module-tests"
+    command = (
+        "python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args 'module-tests"
+    )
 
     # must NOT raise
     rewritten, injected = inject_project_dir(command, PLAN_ID)
@@ -309,9 +310,7 @@ def _parse_toon_output(stdout: str) -> dict:
 
 def test_cli_entrypoint_emits_toon_on_injection(tmp_path):
     """CLI emits TOON with injected=true and the rewritten command on injection."""
-    command = (
-        'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "module-tests"'
-    )
+    command = 'python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "module-tests"'
     expected_rewritten, injected = inject_project_dir(command, PLAN_ID)
     assert injected is True  # sanity — the scenario should trigger injection
 
@@ -401,8 +400,7 @@ def test_skips_injection_when_plan_id_already_present(notation):
 
     # the helper recognises --plan-id and leaves the command alone.
     assert injected is False, (
-        f'inject_project_dir must NOT inject when --plan-id is already present; '
-        f'got rewritten={rewritten!r}'
+        f'inject_project_dir must NOT inject when --plan-id is already present; got rewritten={rewritten!r}'
     )
     # The original --plan-id must survive intact.
     assert '--plan-id task-routing-canonical' in rewritten

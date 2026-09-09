@@ -6,7 +6,6 @@ flags, the fixture-leak signature — and the tier-1 live diff, which runs only 
 worktree resolves.
 """
 
-
 from __future__ import annotations
 
 import json
@@ -189,9 +188,7 @@ class TestResolveFootprintTiers:
         assert 'committed.py' in footprint
         assert 'uncommitted.py' in footprint
         assert 'base.txt' not in footprint
-        assert asked == ['demo-plan'], (
-            'tier 1 must reach the worktree through the resolver, keyed on plan_id'
-        )
+        assert asked == ['demo-plan'], 'tier 1 must reach the worktree through the resolver, keyed on plan_id'
 
     def test_tier1_skipped_in_archived_mode(self, tmp_path, monkeypatch):
         """``plan_id=None`` skips tier 1 — an archived worktree no longer exists.
@@ -201,9 +198,7 @@ class TestResolveFootprintTiers:
         """
         plan_dir = tmp_path / 'plan'
         plan_dir.mkdir()
-        (plan_dir / 'references.json').write_text(
-            json.dumps({'modified_files': ['legacy/a.py']})
-        )
+        (plan_dir / 'references.json').write_text(json.dumps({'modified_files': ['legacy/a.py']}))
 
         asked = []
 
@@ -235,9 +230,7 @@ class TestResolveFootprintTiers:
         (plan_dir / 'references.json').write_text(
             json.dumps({'base_branch': 'main', 'modified_files': ['legacy/a.py']})
         )
-        (plan_dir / 'status.json').write_text(
-            json.dumps({'metadata': {'worktree_path': str(repo)}})
-        )
+        (plan_dir / 'status.json').write_text(json.dumps({'metadata': {'worktree_path': str(repo)}}))
 
         assert _analyze_logs.resolve_footprint(plan_dir, None) == ['legacy/a.py']
 
@@ -245,9 +238,7 @@ class TestResolveFootprintTiers:
         """No worktree → fall back to the legacy ``modified_files`` key."""
         plan_dir = tmp_path / 'plan'
         plan_dir.mkdir()
-        (plan_dir / 'references.json').write_text(
-            json.dumps({'modified_files': ['legacy/a.py', 'legacy/b.py']})
-        )
+        (plan_dir / 'references.json').write_text(json.dumps({'modified_files': ['legacy/a.py', 'legacy/b.py']}))
 
         footprint = _analyze_logs.resolve_footprint(plan_dir)
         assert sorted(footprint) == ['legacy/a.py', 'legacy/b.py']
@@ -279,9 +270,7 @@ class TestResolveFootprintTiers:
         footprint = _analyze_logs.resolve_footprint(plan_dir)
         assert footprint == []
 
-    def test_tier2_fallback_when_worktree_not_a_git_dir(
-        self, tmp_path, outside_repo_dir, monkeypatch
-    ):
+    def test_tier2_fallback_when_worktree_not_a_git_dir(self, tmp_path, outside_repo_dir, monkeypatch):
         """A resolved directory that is not a git tree falls through to the legacy key."""
         # ``plain`` must be OUTSIDE the repo: pytest's tmp_path now roots under
         # the repo-local --basetemp, where it IS a git tree and the tier-1 live
@@ -291,9 +280,7 @@ class TestResolveFootprintTiers:
 
         plan_dir = tmp_path / 'plan'
         plan_dir.mkdir()
-        (plan_dir / 'references.json').write_text(
-            json.dumps({'modified_files': ['legacy/a.py']})
-        )
+        (plan_dir / 'references.json').write_text(json.dumps({'modified_files': ['legacy/a.py']}))
         monkeypatch.setattr(_analyze_logs, 'resolve_live_worktree', lambda plan_id: plain)
 
         footprint = _analyze_logs.resolve_footprint(plan_dir, 'demo-plan')

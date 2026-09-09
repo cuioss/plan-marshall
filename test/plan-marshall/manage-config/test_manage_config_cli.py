@@ -94,9 +94,7 @@ def test_main_aspect_classify_implementation(plan_context, monkeypatch, capsys):
 
 def test_main_aspect_classify_analysis(plan_context, monkeypatch, capsys):
     """An analysis-dominated request classifies as analysis above the 0.7 threshold."""
-    code, out, _ = _drive(
-        monkeypatch, capsys, 'aspect-classify', '--request-text', 'analyze audit review investigate'
-    )
+    code, out, _ = _drive(monkeypatch, capsys, 'aspect-classify', '--request-text', 'analyze audit review investigate')
 
     assert code == 0
     data = parse_toon(out)
@@ -108,7 +106,9 @@ def test_main_aspect_classify_analysis(plan_context, monkeypatch, capsys):
 
 def test_main_recipe_match_routes(plan_context, monkeypatch, capsys):
     """`recipe-match` routes to cmd_recipe_match and returns a scored-matches envelope."""
-    code, out, _ = _drive(monkeypatch, capsys, 'recipe-match', '--request-text', 'refactor the codebase to profile standards')
+    code, out, _ = _drive(
+        monkeypatch, capsys, 'recipe-match', '--request-text', 'refactor the codebase to profile standards'
+    )
 
     assert code == 0
     data = parse_toon(out)
@@ -427,9 +427,7 @@ def test_main_finalize_steps_set_lane_without_plan_id_writes_marshal(plan_contex
     assert steps['plan-marshall:automatic-review']['lane'] == 'off'
 
 
-def test_main_finalize_steps_set_lane_with_plan_id_leaves_marshal_unchanged(
-    plan_context, monkeypatch, capsys
-):
+def test_main_finalize_steps_set_lane_with_plan_id_leaves_marshal_unchanged(plan_context, monkeypatch, capsys):
     """`finalize-steps set-lane --plan-id X` writes the plan and NOT marshal.json.
 
     The anti-leak assertion at the CLI surface. Reading the marshal bytes before
@@ -462,9 +460,7 @@ def test_main_finalize_steps_set_lane_with_plan_id_leaves_marshal_unchanged(
     assert data['plan_id'] == 'cli-plan-local'
     # The plan-local map received the declaration…
     status = json.loads((plan_dir / 'status.json').read_text(encoding='utf-8'))
-    assert status['metadata']['finalize_step_overrides'] == {
-        'plan-marshall:automatic-review': {'lane': 'full'}
-    }
+    assert status['metadata']['finalize_step_overrides'] == {'plan-marshall:automatic-review': {'lane': 'full'}}
     # …and marshal.json is byte-identical.
     assert marshal_path.read_bytes() == before
 
@@ -630,9 +626,7 @@ def test_main_resolve_outline_skill_accepts_the_repeated_domain_flag(plan_contex
     """`--domain` is repeatable at the CLI boundary — no argparse rejection."""
     create_nested_marshal_json(plan_context.fixture_dir)
 
-    code, out, err = _drive(
-        monkeypatch, capsys, 'resolve-outline-skill', '--domain', 'java', '--domain', 'javascript'
-    )
+    code, out, err = _drive(monkeypatch, capsys, 'resolve-outline-skill', '--domain', 'java', '--domain', 'javascript')
 
     assert code == 0, f'the repeated --domain form must parse, got exit {code}: {err!r}'
     assert 'unrecognized arguments' not in err
@@ -738,7 +732,14 @@ def test_main_skill_domains_set_flat_updates_defaults(plan_context, monkeypatch,
     create_marshal_json(plan_context.fixture_dir)
 
     code_set, out_set, _ = _drive(
-        monkeypatch, capsys, 'skill-domains', 'set', '--domain', 'java', '--defaults', 'pm-dev-java:java-core,pm-dev-java:javadoc'
+        monkeypatch,
+        capsys,
+        'skill-domains',
+        'set',
+        '--domain',
+        'java',
+        '--defaults',
+        'pm-dev-java:java-core,pm-dev-java:javadoc',
     )
     assert code_set == 0
     assert parse_toon(out_set)['status'] == 'success'

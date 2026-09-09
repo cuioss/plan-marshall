@@ -25,9 +25,7 @@ EXPECTED_VERBS = {
 
 def _load_extension():
     """Load the pm-dev-java-cui bundle extension.py and return an Extension instance."""
-    module = load_skill_module(
-        'pm-dev-java-cui', 'plan-marshall-plugin', 'extension.py', 'extension_pm_dev_java_cui'
-    )
+    module = load_skill_module('pm-dev-java-cui', 'plan-marshall-plugin', 'extension.py', 'extension_pm_dev_java_cui')
     return module.Extension()
 
 
@@ -157,9 +155,7 @@ def test_get_skill_domains_security_profile_defaults_to_cui_http():
 
 def test_applies_to_module_is_not_applicable_for_a_non_jvm_build():
     """A module built by neither Maven nor Gradle is not a java-cui module."""
-    result = _load_extension().applies_to_module(
-        {'build_systems': ['npm'], 'dependencies': [], 'packages': {}}
-    )
+    result = _load_extension().applies_to_module({'build_systems': ['npm'], 'dependencies': [], 'packages': {}})
 
     assert result['applicable'] is False
     assert result['confidence'] == 'none'
@@ -168,9 +164,7 @@ def test_applies_to_module_is_not_applicable_for_a_non_jvm_build():
 
 def test_applies_to_module_is_additive_to_java_for_a_maven_module():
     """A Maven module is a java-cui module, additive to the base java domain."""
-    result = _load_extension().applies_to_module(
-        {'build_systems': ['maven'], 'dependencies': [], 'packages': {}}
-    )
+    result = _load_extension().applies_to_module({'build_systems': ['maven'], 'dependencies': [], 'packages': {}})
 
     assert result['applicable'] is True
     assert result['additive_to'] == 'java'

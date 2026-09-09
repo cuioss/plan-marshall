@@ -55,9 +55,7 @@ def test_module_subcommand_accepts_canonical_module():
     explicit budget below is ~3x the worst observed solo run, leaving headroom
     for the ``pytest -n`` parallelism this suite runs under.
     """
-    result = run_script(
-        SCRIPT_PATH, 'module', '--module', HAPPY_VALUES['module'], timeout=180
-    )
+    result = run_script(SCRIPT_PATH, 'module', '--module', HAPPY_VALUES['module'], timeout=180)
     assert result.returncode == 0
     data = parse_toon(result.stdout)
     assert data.get('error') != 'invalid_module'

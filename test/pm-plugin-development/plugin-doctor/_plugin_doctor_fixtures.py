@@ -72,12 +72,7 @@ from conftest import MARKETPLACE_ROOT, load_script_module
 # ``marketplace_bundles`` / ``toon_parser`` at module top, both on the test
 # PYTHONPATH, and neither is called during a ``parse_configurable(path)`` scan.
 _CONFIGURABLE_CONTRACT_SRC = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'extension-api'
-    / 'scripts'
-    / 'configurable_contract.py'
+    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'extension-api' / 'scripts' / 'configurable_contract.py'
 ).read_text(encoding='utf-8')
 
 # ---------------------------------------------------------------------------
@@ -147,9 +142,7 @@ _alf = _load('_analyze_lane_frontmatter.py', '_alf_fixtures')
 _atrrs = _load('_analyze_triage_read_surface.py', '_atrrs_fixtures')
 _afnds = _load('_analyze_triage_fix_not_done_surface.py', '_afnds_fixtures')
 _avsc = _load('_analyze_verify_step_contract.py', '_avsc_fixtures')
-_atdw = _load(
-    '_analyze_thinking_directive_in_workflow_docs.py', '_atdw_fixtures'
-)
+_atdw = _load('_analyze_thinking_directive_in_workflow_docs.py', '_atdw_fixtures')
 _ashm = _load('_analyze_shim_marker.py', '_ashm_fixtures')
 _aced = _load('_analyze_canonical_enum_drift.py', '_aced_fixtures')
 _arsc = _load('_analyze_readme_skill_coverage.py', '_arsc_fixtures')
@@ -184,9 +177,7 @@ _NON_RULE_TYPE_TOKENS = frozenset(
 )
 
 _RULE_LITERAL_RE = re.compile(r"'(?:type|rule_id)':\s*'([A-Za-z_][A-Za-z0-9_-]+)'")
-_RULE_CONSTANT_RE = re.compile(
-    r"^(?:RULE[A-Z_]*|FINDING_TYPE)\s*=\s*'([A-Za-z_][A-Za-z0-9_-]+)'", re.MULTILINE
-)
+_RULE_CONSTANT_RE = re.compile(r"^(?:RULE[A-Z_]*|FINDING_TYPE)\s*=\s*'([A-Za-z_][A-Za-z0-9_-]+)'", re.MULTILINE)
 
 
 def _is_audit_tracked_rule_id(token: str) -> bool:
@@ -226,13 +217,7 @@ def _extract_rule_ids_from_module(path: Path) -> set[str]:
 
 def _scripts_dir(marketplace_root: Path) -> Path:
     """Resolve the plugin-doctor scripts directory from a marketplace root."""
-    return (
-        marketplace_root
-        / 'pm-plugin-development'
-        / 'skills'
-        / 'plugin-doctor'
-        / 'scripts'
-    )
+    return marketplace_root / 'pm-plugin-development' / 'skills' / 'plugin-doctor' / 'scripts'
 
 
 def registered_rule_ids(marketplace_root: Path) -> set[str]:
@@ -331,9 +316,7 @@ def _command_component(scratch_root: Path, cmd_name: str, cmd_md: str) -> dict:
     return {'name': cmd_name, 'path': str(md), 'type': 'command'}
 
 
-def _skill_with_subdoc(
-    scratch_root: Path, skill_name: str, subdoc_rel: str, subdoc_body: str
-) -> dict:
+def _skill_with_subdoc(scratch_root: Path, skill_name: str, subdoc_rel: str, subdoc_body: str) -> dict:
     """Materialize a clean skill plus one known-defect sub-document.
 
     ``subdoc_rel`` is a skill-root-relative path like ``standards/x.md``. The
@@ -360,13 +343,7 @@ def _skill_with_subdoc(
 # A skill SKILL.md with a forbidden ## Version section in a subdoc and various
 # defects; bodies are layered per rule below.
 
-_GOOD_SKILL_FM = (
-    '---\n'
-    'name: fixture-skill\n'
-    'description: A fixture skill\n'
-    'user-invocable: false\n'
-    '---\n'
-)
+_GOOD_SKILL_FM = '---\nname: fixture-skill\ndescription: A fixture skill\nuser-invocable: false\n---\n'
 
 
 # ---------------------------------------------------------------------------
@@ -427,9 +404,7 @@ def documented_verb_drift_entry_script(verbs: Sequence[str]) -> str:
     guard-less builder above stays the default precisely so the helper-module
     control has something to be a control against.
     """
-    return documented_verb_drift_script(verbs) + (
-        "\n\nif __name__ == '__main__':\n    main()\n"
-    )
+    return documented_verb_drift_script(verbs) + ("\n\nif __name__ == '__main__':\n    main()\n")
 
 
 def documented_verb_drift_skill_md(skill: str, documented: Sequence[str]) -> str:
@@ -441,20 +416,10 @@ def documented_verb_drift_skill_md(skill: str, documented: Sequence[str]) -> str
     NOT count.
     """
     blocks = ''.join(
-        '```bash\n'
-        f'python3 .plan/execute-script.py plan-marshall:{skill}:{skill} {verb} --plan-id P\n'
-        '```\n\n'
+        f'```bash\npython3 .plan/execute-script.py plan-marshall:{skill}:{skill} {verb} --plan-id P\n```\n\n'
         for verb in documented
     )
-    return (
-        '---\n'
-        f'name: {skill}\n'
-        'description: A fixture skill\n'
-        '---\n'
-        f'# {skill}\n\n'
-        '## Canonical invocations\n\n'
-        f'{blocks}'
-    )
+    return f'---\nname: {skill}\ndescription: A fixture skill\n---\n# {skill}\n\n## Canonical invocations\n\n{blocks}'
 
 
 def documented_verb_drift_files(
@@ -476,9 +441,7 @@ def documented_verb_drift_files(
     return {
         f'{base}/SKILL.md': documented_verb_drift_skill_md(skill, documented),
         f'{base}/scripts/{skill}.py': (
-            script_source
-            if script_source is not None
-            else documented_verb_drift_script(registered or ())
+            script_source if script_source is not None else documented_verb_drift_script(registered or ())
         ),
     }
 
@@ -503,9 +466,7 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
     corpus['sys-path-bootstrap'] = FixtureSpec(
         analyzer=_aspb.analyze_sys_path_bootstrap,
         files={
-            'plan-marshall/skills/manage-widgets/scripts/manage-widgets.py': (
-                'import sys\nsys.path.insert(0, "x")\n'
-            )
+            'plan-marshall/skills/manage-widgets/scripts/manage-widgets.py': ('import sys\nsys.path.insert(0, "x")\n')
         },
     )
     # A relative ``.plan/temp`` path consumed by ``git -C ... commit -F`` inside a
@@ -513,11 +474,7 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
     corpus['skill-relative-temp-path-git-c'] = FixtureSpec(
         analyzer=_asrtp.analyze_skill_relative_temp_path,
         files={
-            _PM_SKILL: (
-                '# F\n\n```bash\n'
-                'git -C {worktree_path} commit -F .plan/temp/{plan_id}-commit-msg.txt\n'
-                '```\n'
-            )
+            _PM_SKILL: ('# F\n\n```bash\ngit -C {worktree_path} commit -F .plan/temp/{plan_id}-commit-msg.txt\n```\n')
         },
     )
     corpus['shell-substitution-in-skills'] = FixtureSpec(
@@ -662,11 +619,7 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
     )
     corpus['no-historical-prose-in-skills'] = FixtureSpec(
         analyzer=_ahps.analyze_historical_prose_in_skills,
-        files={
-            _PM_SKILL: (
-                '# F\n\n- Driving lesson: `2026-01-01-12-001` (some past event)\n'
-            )
-        },
+        files={_PM_SKILL: ('# F\n\n- Driving lesson: `2026-01-01-12-001` (some past event)\n')},
     )
     corpus['no-lesson-id-in-skill-prose'] = FixtureSpec(
         analyzer=_alis.analyze_lesson_id_in_skill_prose,
@@ -683,22 +636,13 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
     )
     corpus['skill-self-declared-rule-violation'] = FixtureSpec(
         analyzer=_asdrc.analyze_self_declared_rule_compliance,
-        files={
-            _PM_SKILL: (
-                '# F\n\nThis skill uses flat-numbering for all steps.\n\n'
-                '### Step 1a\n\nbody\n'
-            )
-        },
+        files={_PM_SKILL: ('# F\n\nThis skill uses flat-numbering for all steps.\n\n### Step 1a\n\nbody\n')},
     )
     corpus['phase-5-step-missing-role-field'] = FixtureSpec(
         analyzer=_aroe.analyze_role_field,
         files={
             'plan-marshall/skills/phase-5-execute/standards/x.md': (
-                '---\n'
-                'name: default:quality_check\n'
-                'description: Run quality-gate\n'
-                'order: 10\n'
-                '---\n\n# X\n'
+                '---\nname: default:quality_check\ndescription: Run quality-gate\norder: 10\n---\n\n# X\n'
             )
         },
     )
@@ -730,9 +674,7 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
     corpus['step-configurable-contract'] = FixtureSpec(
         analyzer=_ascc.scan_step_configurable_contract,
         files={
-            'plan-marshall/skills/extension-api/scripts/configurable_contract.py': (
-                _CONFIGURABLE_CONTRACT_SRC
-            ),
+            'plan-marshall/skills/extension-api/scripts/configurable_contract.py': (_CONFIGURABLE_CONTRACT_SRC),
             'plan-marshall/skills/phase-6-finalize/workflow/sonar-roundtrip.md': (
                 '---\n'
                 'name: sonar-roundtrip\n'
@@ -750,15 +692,7 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
     corpus['allowed-tools-body-drift'] = FixtureSpec(
         analyzer=_aatd.analyze_allowed_tools_drift,
         files={
-            _PM_SKILL: (
-                '---\n'
-                'name: f\n'
-                'description: d\n'
-                'allowed-tools: Read\n'
-                '---\n\n'
-                '# F\n\n'
-                'Bash: run the command here\n'
-            )
+            _PM_SKILL: ('---\nname: f\ndescription: d\nallowed-tools: Read\n---\n\n# F\n\nBash: run the command here\n')
         },
     )
 
@@ -767,15 +701,11 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
     # so the lambda passes ``root / 'marketplace' / 'bundles'`` to make the
     # scratch root itself the repo root the agentfiles are materialized under.
     corpus['agentfile-line-count-over-budget'] = FixtureSpec(
-        analyzer=lambda root: _aalb.analyze_agentfile_line_budget(
-            root / 'marketplace' / 'bundles'
-        ),
+        analyzer=lambda root: _aalb.analyze_agentfile_line_budget(root / 'marketplace' / 'bundles'),
         files={'CLAUDE.md': '# F\n' + ('line\n' * 205)},
     )
     corpus['agentfile-directory-tree-present'] = FixtureSpec(
-        analyzer=lambda root: _aadt.analyze_agentfile_directory_tree(
-            root / 'marketplace' / 'bundles'
-        ),
+        analyzer=lambda root: _aadt.analyze_agentfile_directory_tree(root / 'marketplace' / 'bundles'),
         files={'CLAUDE.md': '# F\n\n```\nrepo/\n├── src/\n└── main.py\n```\n'},
     )
 
@@ -786,15 +716,7 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
     # nothing else.
     corpus['lane-frontmatter-invalid'] = FixtureSpec(
         analyzer=_alf.analyze_lane_frontmatter,
-        files={
-            _PM_SKILL: (
-                '---\n'
-                'name: f\n'
-                'lane:\n'
-                '  class: core\n'
-                '---\n\n# F\n'
-            )
-        },
+        files={_PM_SKILL: ('---\nname: f\nlane:\n  class: core\n---\n\n# F\n')},
     )
 
     # --- Pre-merge source-edit pushability ----------------------------------
@@ -831,9 +753,7 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
     corpus['declared-component-vs-disk'] = FixtureSpec(
         analyzer=_advd.analyze_declared_vs_disk,
         files={
-            'b/.claude-plugin/plugin.json': (
-                '{"name": "b", "skills": ["./skills/ghost-skill"]}\n'
-            ),
+            'b/.claude-plugin/plugin.json': ('{"name": "b", "skills": ["./skills/ghost-skill"]}\n'),
         },
     )
     # An Extension subclass with no real overrides, paired with a SKILL.md whose
@@ -842,10 +762,7 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
         analyzer=_apmt.analyze_provides_method_table,
         files={
             'b/skills/plan-marshall-plugin/extension.py': (
-                'from plan_marshall.script_shared import ExtensionBase\n'
-                '\n\n'
-                'class Extension(ExtensionBase):\n'
-                '    pass\n'
+                'from plan_marshall.script_shared import ExtensionBase\n\n\nclass Extension(ExtensionBase):\n    pass\n'
             ),
             'b/skills/plan-marshall-plugin/SKILL.md': (
                 '# plan-marshall-plugin\n\n'
@@ -911,9 +828,7 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
     corpus['broken-relative-link'] = FixtureSpec(
         analyzer=_da.analyze_markdown_mirror_rules,
         files={
-            'b/skills/fixture-skill/SKILL.md': (
-                '# Fixture\n\nSee [the standard](standards/missing.md) for details.\n'
-            ),
+            'b/skills/fixture-skill/SKILL.md': ('# Fixture\n\nSee [the standard](standards/missing.md) for details.\n'),
         },
     )
     # A component SKILL.md whose fenced block opens without a language
@@ -935,17 +850,13 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
         analyzer=_asn.analyze_skill_notation,
         files={
             'b/.claude-plugin/plugin.json': '{"name": "b"}\n',
-            'b/skills/real-skill/SKILL.md': (
-                '# F\n\nLoad it:\n\n```\nSkill: b:ghost-skill\n```\n'
-            ),
+            'b/skills/real-skill/SKILL.md': ('# F\n\nLoad it:\n\n```\nSkill: b:ghost-skill\n```\n'),
         },
     )
     corpus['recipe-missing-implements'] = FixtureSpec(
         analyzer=_afm.analyze_frontmatter,
         files={
-            'b/skills/recipe-fixture/SKILL.md': (
-                '---\nname: recipe-fixture\ndescription: A recipe\n---\n\n# Recipe\n'
-            ),
+            'b/skills/recipe-fixture/SKILL.md': ('---\nname: recipe-fixture\ndescription: A recipe\n---\n\n# Recipe\n'),
         },
     )
     corpus['resolver-matrix-coverage'] = FixtureSpec(
@@ -1013,17 +924,13 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
     corpus['executor-path-in-production'] = FixtureSpec(
         analyzer=_aepp.analyze_executor_path_in_production,
         files={
-            'bundles/b/skills/s/scripts/x.py': (
-                "RUNNER = '.plan/execute-script.py'\n"
-            ),
+            'bundles/b/skills/s/scripts/x.py': ("RUNNER = '.plan/execute-script.py'\n"),
         },
     )
     corpus['plan-path-in-scripts'] = FixtureSpec(
         analyzer=_apps.analyze_plan_path_in_scripts,
         files={
-            'bundles/b/skills/s/scripts/y.py': (
-                "PLAN_DIR = '.plan/plans/' + 'x'\n"
-            ),
+            'bundles/b/skills/s/scripts/y.py': ("PLAN_DIR = '.plan/plans/' + 'x'\n"),
         },
     )
     corpus['fail-closed-gate-read'] = FixtureSpec(
@@ -1092,18 +999,13 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
     corpus['shell-active-tokens'] = FixtureSpec(
         analyzer=lambda root: _asat.analyze_shell_active_tokens(root / 's'),
         files={
-            's/standards/x.md': (
-                '# F\n\nRun: `--detail "value `tok` end"`\n'
-            ),
+            's/standards/x.md': ('# F\n\nRun: `--detail "value `tok` end"`\n'),
         },
     )
     corpus['resolution-branch-side-effect-undocumented'] = FixtureSpec(
         analyzer=lambda root: _arbm.analyze_resolution_branch_markers(root / 's'),
         files={
-            's/standards/x.md': (
-                '# F\n\n## Resolution\n\n### Hold\n\n'
-                'The user keeps both surfaces and continues.\n'
-            ),
+            's/standards/x.md': ('# F\n\n## Resolution\n\n### Hold\n\nThe user keeps both surfaces and continues.\n'),
         },
     )
 
@@ -1112,9 +1014,7 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
     corpus['metadata-field-undefined'] = FixtureSpec(
         analyzer=_amfv.analyze_metadata_field_validity,
         files={
-            'bundles/b/skills/s/SKILL.md': (
-                '# F\n\nThe metadata write stores `bogus_undefined_field` here.\n'
-            ),
+            'bundles/b/skills/s/SKILL.md': ('# F\n\nThe metadata write stores `bogus_undefined_field` here.\n'),
         },
     )
 
@@ -1123,9 +1023,7 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
     corpus['refine-contract-violation'] = FixtureSpec(
         analyzer=lambda root: _ap2r.analyze_phase2_refine_contract([root]),
         files={
-            'phase-2-refine/workflow/x.md': (
-                '# F\n\nWrite("marketplace/bundles/foo/SKILL.md")\n'
-            ),
+            'phase-2-refine/workflow/x.md': ('# F\n\nWrite("marketplace/bundles/foo/SKILL.md")\n'),
         },
     )
 
@@ -1195,9 +1093,7 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
         analyzer=lambda root: _atc.analyze_test_docstring_prose(root / 'test'),
         files={
             'test/foo/test_prose.py': (
-                'def test_x():\n'
-                '    """Pins the fallback (closes lesson 2026-07-09-04-001)."""\n'
-                '    assert True\n'
+                'def test_x():\n    """Pins the fallback (closes lesson 2026-07-09-04-001)."""\n    assert True\n'
             ),
         },
     )
@@ -1209,24 +1105,16 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
         component=lambda root: _agent_component(root, 'a', '# No frontmatter\n')
     )
     corpus['invalid-yaml'] = FixtureSpec(
-        component=lambda root: _agent_component(
-            root, 'a', '---\nnot valid yaml here no colon\n---\n\n# A\n'
-        )
+        component=lambda root: _agent_component(root, 'a', '---\nnot valid yaml here no colon\n---\n\n# A\n')
     )
     corpus['missing-name-field'] = FixtureSpec(
-        component=lambda root: _agent_component(
-            root, 'a', '---\ndescription: d\ntools: Read\n---\n\n# A\n'
-        )
+        component=lambda root: _agent_component(root, 'a', '---\ndescription: d\ntools: Read\n---\n\n# A\n')
     )
     corpus['missing-description-field'] = FixtureSpec(
-        component=lambda root: _agent_component(
-            root, 'a', '---\nname: a\ntools: Read\n---\n\n# A\n'
-        )
+        component=lambda root: _agent_component(root, 'a', '---\nname: a\ntools: Read\n---\n\n# A\n')
     )
     corpus['missing-tools-field'] = FixtureSpec(
-        component=lambda root: _agent_component(
-            root, 'a', '---\nname: a\ndescription: d\n---\n\n# A\n'
-        )
+        component=lambda root: _agent_component(root, 'a', '---\nname: a\ndescription: d\n---\n\n# A\n')
     )
     corpus['agent-task-tool-prohibited'] = FixtureSpec(
         component=lambda root: _agent_component(
@@ -1242,8 +1130,7 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
         component=lambda root: _agent_component(
             root,
             'a',
-            '---\nname: a\ndescription: d\ntools: Read, Skill\n---\n\n'
-            '# A\n\n```\nBash: mvn clean install\n```\n',
+            '---\nname: a\ndescription: d\ntools: Read, Skill\n---\n\n# A\n\n```\nBash: mvn clean install\n```\n',
         )
     )
     corpus['workflow-hardcoded-script-path'] = FixtureSpec(
@@ -1273,22 +1160,17 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
         component=lambda root: _agent_component(
             root,
             'a',
-            '---\nname: a\ndescription: d\ntools: Read, Skill\n---\n\n'
-            '# A\n\nKeep a `config.py.bak` backup copy.\n',
+            '---\nname: a\ndescription: d\ntools: Read, Skill\n---\n\n# A\n\nKeep a `config.py.bak` backup copy.\n',
         )
     )
 
     # Skill-cluster fixtures.
 
     corpus['skill-naming-noun-suffix'] = FixtureSpec(
-        component=lambda root: _skill_component(
-            root, 'fixture-runner', _GOOD_SKILL_FM + '\n# Fixture\n'
-        )
+        component=lambda root: _skill_component(root, 'fixture-runner', _GOOD_SKILL_FM + '\n# Fixture\n')
     )
     corpus['missing-user-invocable'] = FixtureSpec(
-        component=lambda root: _skill_component(
-            root, 's', '---\nname: s\ndescription: d\n---\n\n# S\n'
-        )
+        component=lambda root: _skill_component(root, 's', '---\nname: s\ndescription: d\n---\n\n# S\n')
     )
     corpus['misspelled-user-invocable'] = FixtureSpec(
         component=lambda root: _skill_component(
@@ -1304,27 +1186,19 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
         )
     )
     corpus['file-bloat'] = FixtureSpec(
-        component=lambda root: _skill_component(
-            root, 's', _GOOD_SKILL_FM + '\n# S\n' + ('\nline\n' * 1300)
-        )
+        component=lambda root: _skill_component(root, 's', _GOOD_SKILL_FM + '\n# S\n' + ('\nline\n' * 1300))
     )
     corpus['checklist-pattern'] = FixtureSpec(
-        component=lambda root: _skill_component(
-            root, 's', _GOOD_SKILL_FM + '\n# S\n\n## Tasks\n\n- [ ] do a thing\n'
-        )
+        component=lambda root: _skill_component(root, 's', _GOOD_SKILL_FM + '\n# S\n\n## Tasks\n\n- [ ] do a thing\n')
     )
 
     # Subdoc-cluster fixtures — a skill whose subdoc trips each subdoc rule.
 
     corpus['subdoc-bloat'] = FixtureSpec(
-        component=lambda root: _skill_with_subdoc(
-            root, 's', 'standards/big.md', '# Big\n' + ('\nline\n' * 850)
-        )
+        component=lambda root: _skill_with_subdoc(root, 's', 'standards/big.md', '# Big\n' + ('\nline\n' * 850))
     )
     corpus['subdoc-forbidden-metadata'] = FixtureSpec(
-        component=lambda root: _skill_with_subdoc(
-            root, 's', 'standards/x.md', '# X\n\n## Version History\n\nv1.\n'
-        )
+        component=lambda root: _skill_with_subdoc(root, 's', 'standards/x.md', '# X\n\n## Version History\n\nv1.\n')
     )
     corpus['subdoc-hardcoded-script-path'] = FixtureSpec(
         component=lambda root: _skill_with_subdoc(
@@ -1335,9 +1209,7 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
         )
     )
     corpus['subdoc-checklist-pattern'] = FixtureSpec(
-        component=lambda root: _skill_with_subdoc(
-            root, 's', 'standards/x.md', '# X\n\n## Steps\n\n- [ ] do a thing\n'
-        )
+        component=lambda root: _skill_with_subdoc(root, 's', 'standards/x.md', '# X\n\n## Steps\n\n- [ ] do a thing\n')
     )
     corpus['skill-resolver-gap'] = FixtureSpec(
         component=lambda root: _skill_with_subdoc(
@@ -1364,16 +1236,13 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
 
     corpus['manage-findings-invocation-invalid'] = FixtureSpec(
         analyzer=lambda _root: _amfi.analyze_manage_findings_invocation(
-            'python3 .plan/execute-script.py '
-            'plan-marshall:manage-findings:manage_findings list --plan-id p\n',
+            'python3 .plan/execute-script.py plan-marshall:manage-findings:manage_findings list --plan-id p\n',
             'x.md',
         ),
         files={},
     )
     corpus['prose-verb-chain-consistency'] = FixtureSpec(
-        analyzer=lambda root: _avc.analyze_verb_chains(
-            root / 'marketplace' / 'bundles' / 'b' / 'skills' / 's'
-        ),
+        analyzer=lambda root: _avc.analyze_verb_chains(root / 'marketplace' / 'bundles' / 'b' / 'skills' / 's'),
         files={
             'marketplace/bundles/b/skills/s/scripts/x.py': (
                 'import argparse\n'
@@ -1382,9 +1251,7 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
                 "p_run = subparsers.add_parser('run', allow_abbrev=False)\n"
             ),
             'marketplace/bundles/b/skills/s/SKILL.md': (
-                '# F\n\n```bash\n'
-                'python3 .plan/execute-script.py b:s:x bogusverb --flag\n'
-                '```\n'
+                '# F\n\n```bash\npython3 .plan/execute-script.py b:s:x bogusverb --flag\n```\n'
             ),
         },
     )
@@ -1396,9 +1263,7 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
             'marketplace/bundles/b/.claude-plugin/plugin.json': '{"name": "b"}\n',
             'marketplace/bundles/b/skills/s/scripts/real.py': '# real script\n',
             'marketplace/bundles/b/skills/s/SKILL.md': (
-                '# F\n\n```bash\n'
-                'python3 .plan/execute-script.py b:s:ghost-script run\n'
-                '```\n'
+                '# F\n\n```bash\npython3 .plan/execute-script.py b:s:ghost-script run\n```\n'
             ),
         },
     )
@@ -1410,7 +1275,7 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
         files={
             'bundles/b/skills/s/scripts/_bad.py': (
                 "_BASH_FENCE_INFO_STRINGS = ('bash', 'sh')\n"
-                "_INLINE_CODE_RE = None  # inline-code exemption (must not co-exist)\n"
+                '_INLINE_CODE_RE = None  # inline-code exemption (must not co-exist)\n'
             ),
         },
     )
@@ -1420,14 +1285,10 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
     # avoiding the load_registered_notations executor dependency.
     _ScriptEntry = _aan._ScriptEntry
     corpus['ARGUMENT_NAMING_NOTATION_INVALID'] = FixtureSpec(
-        analyzer=lambda root: _aan.scan_notation(
-            root, {'b:s:registered'}
-        ),
+        analyzer=lambda root: _aan.scan_notation(root, {'b:s:registered'}),
         files={
             'bundles/b/skills/s/SKILL.md': (
-                '# F\n\n```bash\n'
-                'python3 .plan/execute-script.py b:s:unregistered-script run\n'
-                '```\n'
+                '# F\n\n```bash\npython3 .plan/execute-script.py b:s:unregistered-script run\n```\n'
             ),
         },
     )
@@ -1436,22 +1297,14 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
             root, {'b:s:x': _ScriptEntry(subcommands={'run': set()}, root_flags=set())}
         ),
         files={
-            'bundles/b/skills/s/SKILL.md': (
-                '# F\n\n```bash\n'
-                'python3 .plan/execute-script.py b:s:x bogusverb\n'
-                '```\n'
-            ),
+            'bundles/b/skills/s/SKILL.md': ('# F\n\n```bash\npython3 .plan/execute-script.py b:s:x bogusverb\n```\n'),
         },
     )
     corpus['ARGUMENT_NAMING_FLAG_UNKNOWN'] = FixtureSpec(
-        analyzer=lambda root: _aan.scan_flag(
-            root, {'b:s:x': _ScriptEntry(subcommands={}, root_flags={'name'})}
-        ),
+        analyzer=lambda root: _aan.scan_flag(root, {'b:s:x': _ScriptEntry(subcommands={}, root_flags={'name'})}),
         files={
             'bundles/b/skills/s/SKILL.md': (
-                '# F\n\n```bash\n'
-                'python3 .plan/execute-script.py b:s:x --bogus-flag value\n'
-                '```\n'
+                '# F\n\n```bash\npython3 .plan/execute-script.py b:s:x --bogus-flag value\n```\n'
             ),
         },
     )
@@ -1480,9 +1333,7 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
         ),
         files={
             'bundles/b/skills/s/SKILL.md': (
-                '# F\n\n```bash\n'
-                'python3 .plan/execute-script.py b:s:x list --config c1\n'
-                '```\n'
+                '# F\n\n```bash\npython3 .plan/execute-script.py b:s:x list --config c1\n```\n'
             ),
         },
     )
@@ -1527,8 +1378,7 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
         analyzer=lambda root: _atrrs.analyze_triage_read_surface(root),
         files={
             'plan-marshall/skills/s/workflow/triage.md': (
-                '# Triage\n\n'
-                'Read the finding detail from `raw_input.detail` before deciding.\n'
+                '# Triage\n\nRead the finding detail from `raw_input.detail` before deciding.\n'
             ),
         },
     )
@@ -1775,9 +1625,7 @@ def assert_analyzer_findings[FixtureT](
     findings = analyzer(fixture)
     actual = sorted(finding_code(f) for f in findings)
     expected = sorted(expected_codes)
-    assert actual == expected, (
-        f'analyzer emitted rule codes {actual}, expected {expected}'
-    )
+    assert actual == expected, f'analyzer emitted rule codes {actual}, expected {expected}'
     return findings
 
 
@@ -1790,6 +1638,6 @@ def _function_body(source: str, func_name: str) -> str:
     """Return the source slice of a top-level ``def func_name(`` block."""
     marker = f'\ndef {func_name}('
     start = source.index(marker)
-    rest = source[start + len(marker):]
+    rest = source[start + len(marker) :]
     next_def = rest.find('\ndef ')
     return rest if next_def == -1 else rest[:next_def]

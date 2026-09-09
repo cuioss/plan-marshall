@@ -25,30 +25,56 @@ cmd_list = _mod.cmd_list
 # author remembered. Parsed once at module scope: parse_ns re-executes the script
 # module on every call.
 _CREATE_NS = parse_ns(
-    'pm-documents', 'manage-interface', 'manage-interface.py',
-    'create', '--title', 'placeholder', '--type', 'REST_API', register=False,
+    'pm-documents',
+    'manage-interface',
+    'manage-interface.py',
+    'create',
+    '--title',
+    'placeholder',
+    '--type',
+    'REST_API',
+    register=False,
 )
 _LIST_NS = parse_ns(
-    'pm-documents', 'manage-interface', 'manage-interface.py',
-    'list', register=False,
+    'pm-documents',
+    'manage-interface',
+    'manage-interface.py',
+    'list',
+    register=False,
 )
 _DELETE_NS = parse_ns(
-    'pm-documents', 'manage-interface', 'manage-interface.py',
-    'delete', '--number', '1', '--force', register=False,
+    'pm-documents',
+    'manage-interface',
+    'manage-interface.py',
+    'delete',
+    '--number',
+    '1',
+    '--force',
+    register=False,
 )
 _READ_NS = parse_ns(
-    'pm-documents', 'manage-interface', 'manage-interface.py',
-    'read', '--number', '1', register=False,
+    'pm-documents',
+    'manage-interface',
+    'manage-interface.py',
+    'read',
+    '--number',
+    '1',
+    register=False,
 )
 _NEXT_NUMBER_NS = parse_ns(
-    'pm-documents', 'manage-interface', 'manage-interface.py',
-    'next-number', register=False,
+    'pm-documents',
+    'manage-interface',
+    'manage-interface.py',
+    'next-number',
+    register=False,
 )
 
 
 def _ns(template: Namespace, **overrides) -> Namespace:
     """A parser-produced namespace with this test's values overlaid."""
     return Namespace(**{**vars(template), **overrides})
+
+
 cmd_create = _mod.cmd_create
 cmd_read = _mod.cmd_read
 cmd_update = _mod.cmd_update

@@ -13,16 +13,11 @@ from _audit_fixtures import audit, minimal_corpus
 from conftest import PROJECT_ROOT
 
 _ERA_FILL_SCRIPT = (
-    PROJECT_ROOT / '.claude' / 'skills' / 'finalize-step-era-stamp-fill' / 'scripts'
-    / 'era_stamp_fill.py'
+    PROJECT_ROOT / '.claude' / 'skills' / 'finalize-step-era-stamp-fill' / 'scripts' / 'era_stamp_fill.py'
 )
-_AUDIT_SOURCE = (
-    PROJECT_ROOT / '.claude' / 'skills' / 'audit-archived-plan-retrospectives' / 'scripts'
-    / 'audit.py'
-)
+_AUDIT_SOURCE = PROJECT_ROOT / '.claude' / 'skills' / 'audit-archived-plan-retrospectives' / 'scripts' / 'audit.py'
 _MIRROR_SOURCE = (
-    PROJECT_ROOT / 'test' / 'plan-marshall' / 'audit-archived-plan-retrospectives'
-    / 'test_audit_check_era_model.py'
+    PROJECT_ROOT / 'test' / 'plan-marshall' / 'audit-archived-plan-retrospectives' / 'test_audit_check_era_model.py'
 )
 
 
@@ -51,8 +46,8 @@ def test_reworked_checks_carry_this_plan_boundary():
     # audit.py mirror. The `metrics` check does not share that boundary; it carries
     # this plan's own PR-PENDING stamp instead (see
     # test_metrics_check_carries_this_plan_pr_boundary).
-    for check in ("track-selection-accuracy", "lane-lever-effectiveness"):
-        assert audit.CHECK_ERA[check] == "#875", check
+    for check in ('track-selection-accuracy', 'lane-lever-effectiveness'):
+        assert audit.CHECK_ERA[check] == '#875', check
 
 
 def test_metrics_check_carries_this_plan_pr_boundary():
@@ -65,7 +60,7 @@ def test_metrics_check_carries_this_plan_pr_boundary():
     # This is the co-changing mirror of the audit.py
     # CHECK_ERA constant — the pair changes together and is the designated
     # acceptance for era-fill firing from a composed manifest.
-    assert audit.CHECK_ERA["metrics"] == "#922"
+    assert audit.CHECK_ERA['metrics'] == '#922'
 
 
 def test_global_log_analysis_carries_this_plan_pr_boundary():
@@ -74,7 +69,7 @@ def test_global_log_analysis_carries_this_plan_pr_boundary():
     # ends the `genuine_signal_count == row count` identity, so a reader of an
     # archived row needs to know which side of that boundary it was recorded on.
     # Co-changing mirror of the audit.py CHECK_ERA constant.
-    assert audit.CHECK_ERA["global-log-analysis"] == "#1260"
+    assert audit.CHECK_ERA['global-log-analysis'] == '#1260'
 
 
 def test_merge_window_accounting_carries_this_plan_pr_boundary():
@@ -82,7 +77,7 @@ def test_merge_window_accounting_carries_this_plan_pr_boundary():
     # --delete-branch/--strategy from the pr merge-queue enqueue path and D3 fixes the
     # merge-lock stale-holder liveness — both surfaces this check accounts for, so its
     # era boundary is plan-14's PR (`#877`).
-    assert audit.CHECK_ERA["merge-window-accounting"] == "#877"
+    assert audit.CHECK_ERA['merge-window-accounting'] == '#877'
 
 
 def test_finalize_flow_conformance_carries_this_plan_pr_boundary():
@@ -90,7 +85,7 @@ def test_finalize_flow_conformance_carries_this_plan_pr_boundary():
     # comment barrier and D2's completion-aware polling rework the finalize
     # merge-completeness surface this check accounts for, so its era boundary is
     # plan-17's PR (`#884`).
-    assert audit.CHECK_ERA["finalize-flow-conformance"] == "#884"
+    assert audit.CHECK_ERA['finalize-flow-conformance'] == '#884'
 
 
 def test_sequence_build_minimality_carries_this_plan_pr_boundary():
@@ -109,7 +104,7 @@ def test_sequence_build_minimality_carries_this_plan_pr_boundary():
     # This is the co-changing mirror of the audit.py CHECK_ERA constant — the pair
     # changes together and is the designated acceptance for era-fill firing from a
     # composed manifest.
-    assert audit.CHECK_ERA["sequence-and-build-minimality"] == "#1342"
+    assert audit.CHECK_ERA['sequence-and-build-minimality'] == '#1342'
 
 
 def test_pending_sentinel_is_in_the_form_the_finalize_step_resolves():
@@ -195,8 +190,7 @@ def test_pending_sentinel_count_is_lock_step_across_the_pair():
         for path in (_AUDIT_SOURCE, _MIRROR_SOURCE)
     }
     assert len(set(counts.values())) == 1, (
-        f'audit.py and its mirror carry different sentinel counts: {counts}. The pair must '
-        'move in lock-step.'
+        f'audit.py and its mirror carry different sentinel counts: {counts}. The pair must move in lock-step.'
     )
 
     if not any(counts.values()):
@@ -218,8 +212,8 @@ def test_plan8_reworked_checks_carry_pr_pending_boundary():
     #     finalize_heavy token-economics accounting this check flags.
     #   * token-efficiency-trend — plan-8's per-dispatch context trim lowers the
     #     tokens-per-phase floor this cross-plan trend check reads.
-    for check in ("token-economics", "token-efficiency-trend"):
-        assert audit.CHECK_ERA[check] == "#899", check
+    for check in ('token-economics', 'token-efficiency-trend'):
+        assert audit.CHECK_ERA[check] == '#899', check
 
 
 def test_dispatch_topology_carries_this_plan_pr_boundary():
@@ -232,40 +226,40 @@ def test_dispatch_topology_carries_this_plan_pr_boundary():
     # This is the co-changing mirror of the audit.py CHECK_ERA constant — the pair
     # changes together and is the designated acceptance for era-fill firing from a
     # composed manifest.
-    assert audit.CHECK_ERA["dispatch-topology"] == "#893"
+    assert audit.CHECK_ERA['dispatch-topology'] == '#893'
 
 
 def test_stamp_era_inserts_fixed_since_after_status():
     # Arrange: a synthetic check block for a known check.
-    block = "check: metrics\nstatus: success\ngenuine_signal_count: 0\nrows[0]{a}:\n"
+    block = 'check: metrics\nstatus: success\ngenuine_signal_count: 0\nrows[0]{a}:\n'
 
     # Act
     stamped = audit._stamp_era(block)
 
     # Assert: fixed_since rides immediately after the status line, sourced from CHECK_ERA.
-    lines = stamped.split("\n")
-    assert lines[0] == "check: metrics"
-    assert lines[1] == "status: success"
-    assert lines[2] == f"fixed_since: {audit.CHECK_ERA['metrics']}"
+    lines = stamped.split('\n')
+    assert lines[0] == 'check: metrics'
+    assert lines[1] == 'status: success'
+    assert lines[2] == f'fixed_since: {audit.CHECK_ERA["metrics"]}'
 
 
 def test_stamp_era_leaves_meta_blocks_untouched():
     # Meta blocks (report-diff / retire-on-quiet) carry no CHECK_ERA entry and
     # must pass through unchanged.
-    meta = "check: report-diff\nstatus: success\nrows[0]{a}:\n"
+    meta = 'check: report-diff\nstatus: success\nrows[0]{a}:\n'
     assert audit._stamp_era(meta) == meta
 
 
 def test_execution_context_manifest_era_stamped_to_promotion_boundary():
     # The self-review promotion (default:pre-submission-self-review) bumped the
     # finalize-step-id surface this check re-derives, so its era stamp moves to `#872`.
-    assert audit.CHECK_ERA["execution-context-manifest"] == "#872"
-    block = "check: execution-context-manifest\nstatus: success\nrows[0]{a}:\n"
+    assert audit.CHECK_ERA['execution-context-manifest'] == '#872'
+    block = 'check: execution-context-manifest\nstatus: success\nrows[0]{a}:\n'
     stamped = audit._stamp_era(block)
-    lines = stamped.split("\n")
-    assert lines[0] == "check: execution-context-manifest"
-    assert lines[1] == "status: success"
-    assert lines[2] == "fixed_since: #872"
+    lines = stamped.split('\n')
+    assert lines[0] == 'check: execution-context-manifest'
+    assert lines[1] == 'status: success'
+    assert lines[2] == 'fixed_since: #872'
 
 
 def test_full_run_stamps_every_check_block(tmp_path):
@@ -289,9 +283,9 @@ def test_full_run_stamps_every_check_block(tmp_path):
     # end.
     for check in audit.CHECK_NAMES:
         stamped = re.compile(
-            rf"^check: {re.escape(check)}\n"
-            rf"status: \S+\n"
-            rf"fixed_since: {re.escape(audit.CHECK_ERA[check])}$",
+            rf'^check: {re.escape(check)}\n'
+            rf'status: \S+\n'
+            rf'fixed_since: {re.escape(audit.CHECK_ERA[check])}$',
             re.MULTILINE,
         )
-        assert stamped.search(output), f"{check} missing its fixed_since stamp"
+        assert stamped.search(output), f'{check} missing its fixed_since stamp'

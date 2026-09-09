@@ -336,9 +336,7 @@ def test_router_consumed_subcommand_rejects_a_post_verb_plan_id(monkeypatch, cap
 
 def test_post_verb_subcommand_parses_and_binds_its_own_plan_id():
     """A post-verb verb accepts ``--plan-id`` AFTER the verb and binds the value."""
-    subcommand, leaf_argv = _first_parsable_subject(
-        POST_VERB_SUBCOMMANDS, skip=frozenset({'--plan-id'})
-    )
+    subcommand, leaf_argv = _first_parsable_subject(POST_VERB_SUBCOMMANDS, skip=frozenset({'--plan-id'}))
     namespace = _parses([*subcommand.split(' '), *leaf_argv, '--plan-id', 'PLAN-X'])
 
     assert namespace is not None, (
@@ -359,9 +357,7 @@ def test_post_verb_subcommand_rejects_the_pre_verb_form():
     deliverable is about: the cell must not name such a verb as taking the
     pre-verb flag.
     """
-    subcommand, leaf_argv = _first_parsable_subject(
-        POST_VERB_SUBCOMMANDS, skip=frozenset({'--plan-id'})
-    )
+    subcommand, leaf_argv = _first_parsable_subject(POST_VERB_SUBCOMMANDS, skip=frozenset({'--plan-id'}))
 
     assert _parses([*subcommand.split(' '), *leaf_argv]) is None, (
         f'`ci {subcommand}` parsed with NO --plan-id, so its post-verb flag is not really '

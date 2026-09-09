@@ -30,14 +30,17 @@ class TestPreferenceAuthorshipFilter:
         # pipeline's own posted comment. Pre-fix it promotes; the guard drops it.
         all_inputs = [
             _write_preference_plan(
-                tmp_path, f'self-{i}',
-                [{
-                    'type': 'pr-comment',
-                    'title': 'Pipeline note',
-                    'resolution': 'taken_into_account',
-                    'module': 'python',
-                    'author': 'repo-owner-bot',
-                }],
+                tmp_path,
+                f'self-{i}',
+                [
+                    {
+                        'type': 'pr-comment',
+                        'title': 'Pipeline note',
+                        'resolution': 'taken_into_account',
+                        'module': 'python',
+                        'author': 'repo-owner-bot',
+                    }
+                ],
             )
             for i in range(3)
         ]
@@ -53,15 +56,18 @@ class TestPreferenceAuthorshipFilter:
         # broken the feature to fix the bug.
         all_inputs = [
             _write_preference_plan(
-                tmp_path, f'bot-{i}',
-                [{
-                    'type': 'pr-comment',
-                    'title': 'Reviewer claim',
-                    'resolution': 'suppressed',
-                    'module': 'python',
-                    'author': 'coderabbitai',
-                    'bot_kind': 'coderabbit',
-                }],
+                tmp_path,
+                f'bot-{i}',
+                [
+                    {
+                        'type': 'pr-comment',
+                        'title': 'Reviewer claim',
+                        'resolution': 'suppressed',
+                        'module': 'python',
+                        'author': 'coderabbitai',
+                        'bot_kind': 'coderabbit',
+                    }
+                ],
             )
             for i in range(3)
         ]
@@ -81,7 +87,8 @@ class TestPreferenceAuthorshipFilter:
         # control proved in one assertion.
         all_inputs = [
             _write_preference_plan(
-                tmp_path, f'mix-{i}',
+                tmp_path,
+                f'mix-{i}',
                 [
                     {
                         'type': 'pr-comment',
@@ -114,13 +121,16 @@ class TestPreferenceAuthorshipFilter:
         # it is exactly the tool-disposition signal preference learning exists for.
         all_inputs = [
             _write_preference_plan(
-                tmp_path, f'lint-{i}',
-                [{
-                    'type': 'lint-issue',
-                    'title': 'Unused import',
-                    'resolution': 'suppressed',
-                    'module': 'python',
-                }],
+                tmp_path,
+                f'lint-{i}',
+                [
+                    {
+                        'type': 'lint-issue',
+                        'title': 'Unused import',
+                        'resolution': 'suppressed',
+                        'module': 'python',
+                    }
+                ],
             )
             for i in range(3)
         ]
@@ -142,14 +152,17 @@ class TestPreferenceAuthorshipFilter:
         # feature's real value (tool-disposition recurrences) is untouched.
         all_inputs = [
             _write_preference_plan(
-                tmp_path, f'human-{i}',
-                [{
-                    'type': 'pr-comment',
-                    'title': 'Consider a guard clause',
-                    'resolution': 'taken_into_account',
-                    'module': 'python',
-                    'author': 'some-human-reviewer',
-                }],
+                tmp_path,
+                f'human-{i}',
+                [
+                    {
+                        'type': 'pr-comment',
+                        'title': 'Consider a guard clause',
+                        'resolution': 'taken_into_account',
+                        'module': 'python',
+                        'author': 'some-human-reviewer',
+                    }
+                ],
             )
             for i in range(3)
         ]
@@ -168,15 +181,18 @@ class TestPreferenceAuthorshipFilter:
         # preference. Validation is against the live registry-derived set.
         all_inputs = [
             _write_preference_plan(
-                tmp_path, f'bogus-{i}',
-                [{
-                    'type': 'pr-comment',
-                    'title': 'Spurious claim',
-                    'resolution': 'taken_into_account',
-                    'module': 'python',
-                    'author': 'sonarcloud',
-                    'bot_kind': 'sonarcloud',
-                }],
+                tmp_path,
+                f'bogus-{i}',
+                [
+                    {
+                        'type': 'pr-comment',
+                        'title': 'Spurious claim',
+                        'resolution': 'taken_into_account',
+                        'module': 'python',
+                        'author': 'sonarcloud',
+                        'bot_kind': 'sonarcloud',
+                    }
+                ],
             )
             for i in range(3)
         ]
@@ -202,7 +218,8 @@ class TestPreferenceUnattributedBucketNotPromoted:
         # it from candidates and records it in unattributed_excluded_count.
         all_inputs = [
             _write_preference_plan(
-                tmp_path, f'u-{i}',
+                tmp_path,
+                f'u-{i}',
                 [{'type': 'lint-issue', 'title': 'Broad rule', 'resolution': 'suppressed'}],
             )
             for i in range(3)
@@ -221,7 +238,8 @@ class TestPreferenceUnattributedBucketNotPromoted:
         # counted-and-dropped. A gate that suppressed both would break the feature.
         all_inputs = [
             _write_preference_plan(
-                tmp_path, f'm-{i}',
+                tmp_path,
+                f'm-{i}',
                 [
                     {'type': 'lint-issue', 'title': 'Broad rule', 'resolution': 'suppressed'},
                     {'type': 'lint-issue', 'title': 'Scoped rule', 'resolution': 'suppressed', 'module': 'python'},

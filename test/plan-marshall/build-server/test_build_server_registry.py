@@ -74,9 +74,7 @@ def test_register_creates_record_and_file(home):
     root = home / 'proj'
     root.mkdir()
 
-    record = registry.register_project(
-        root, worktree_containers=[str(home / 'wts')], notation_allowlist=['a:b:c']
-    )
+    record = registry.register_project(root, worktree_containers=[str(home / 'wts')], notation_allowlist=['a:b:c'])
 
     assert registry.registry_path().exists()
     stored = registry.read_registry()['projects']

@@ -30,7 +30,9 @@ from typing import Any
 
 from conftest import load_script_module, parse_ns
 
-_architecture_core = load_script_module('plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core')
+_architecture_core = load_script_module(
+    'plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core'
+)
 _cmd_client = load_script_module('plan-marshall', 'manage-architecture', '_cmd_client.py', '_cmd_client')
 
 save_project_meta = _architecture_core.save_project_meta
@@ -69,8 +71,14 @@ def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
 #: re-executes the script module on every call, and ``register=False`` because
 #: only the namespace is wanted here.
 _DERIVE_ARGS = parse_ns(
-    _ARCH_BUNDLE, _ARCH_SKILL, _ARCH_SCRIPT,
-    '--project-dir', '.', 'derive-verification', '--changed-artifacts', '',
+    _ARCH_BUNDLE,
+    _ARCH_SKILL,
+    _ARCH_SCRIPT,
+    '--project-dir',
+    '.',
+    'derive-verification',
+    '--changed-artifacts',
+    '',
     register=False,
 )
 
@@ -321,15 +329,10 @@ def test_resolve_module_for_path_alphabetical_fallback_without_affinity():
         project.mkdir()
         _seed_virtual_siblings(str(project))
         # No preferred domain — pure alphabetical: maven < npm.
-        assert (
-            resolve_module_for_path('e-2-e-playwright/utils/constants.js', str(project))
-            == 'e-2-e-playwright-maven'
-        )
+        assert resolve_module_for_path('e-2-e-playwright/utils/constants.js', str(project)) == 'e-2-e-playwright-maven'
         # A domain neither sibling's technology serves — alphabetical fallback.
         assert (
-            resolve_module_for_path(
-                'e-2-e-playwright/utils/constants.js', str(project), preferred_domain='python'
-            )
+            resolve_module_for_path('e-2-e-playwright/utils/constants.js', str(project), preferred_domain='python')
             == 'e-2-e-playwright-maven'
         )
 
@@ -434,9 +437,7 @@ def test_docs_only_set_derives_zero_builds():
         _seed(str(project))
 
         doc_path = 'marketplace/bundles/plan-marshall/skills/manage-architecture/SKILL.md'
-        result = cmd_derive_verification(
-            _variant(_DERIVE_ARGS, changed_artifacts=doc_path, project_dir=str(project))
-        )
+        result = cmd_derive_verification(_variant(_DERIVE_ARGS, changed_artifacts=doc_path, project_dir=str(project)))
 
         assert result['status'] == 'success'
         # Zero commands — no compile / module-tests / verify and no doc gate.
@@ -494,11 +495,7 @@ def test_mixed_set_derives_union():
         result = cmd_derive_verification(
             _variant(
                 _DERIVE_ARGS,
-                changed_artifacts=(
-                    'pm-mod/scripts/architecture.py,'
-                    'test/pm-mod/test_foo.py,'
-                    f'{doc_path}'
-                ),
+                changed_artifacts=(f'pm-mod/scripts/architecture.py,test/pm-mod/test_foo.py,{doc_path}'),
                 project_dir=str(project),
             )
         )

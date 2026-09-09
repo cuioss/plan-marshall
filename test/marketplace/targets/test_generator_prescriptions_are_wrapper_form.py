@@ -173,11 +173,7 @@ def _lines_prescribing_bare_python_targets(text: str) -> list[str]:
     mention is introduced by a backtick or by sentence text. Shared by the sweep
     and by its positive control so the two cannot diverge.
     """
-    return [
-        line
-        for line in text.splitlines()
-        if line.strip().startswith(DEFECTIVE_BARE_PYTHON_TARGETS_PREFIX)
-    ]
+    return [line for line in text.splitlines() if line.strip().startswith(DEFECTIVE_BARE_PYTHON_TARGETS_PREFIX)]
 
 
 def test_the_bare_python_detector_fires_on_a_constructed_prescription():
@@ -230,8 +226,7 @@ def test_no_file_prescribes_the_bare_python_targets_invocation():
     assert not offenders, (
         f'{len(offenders)} file(s) of {len(files)} scanned across {labels} prescribe a '
         f'marketplace/targets script on the host interpreter, which dies on the project '
-        f'PyYAML dependency before running — use the ./pw wrapper alias:\n  '
-        + '\n  '.join(sorted(offenders))
+        f'PyYAML dependency before running — use the ./pw wrapper alias:\n  ' + '\n  '.join(sorted(offenders))
     )
 
 

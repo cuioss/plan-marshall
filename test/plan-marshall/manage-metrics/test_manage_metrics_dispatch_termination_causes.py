@@ -6,7 +6,6 @@ Scope: the termination-cause enum's exact membership, and how a phase closing a
 second time declares the split on its own row.
 """
 
-
 from _manage_metrics_fixtures import (
     ns_end_phase,
     ns_generate,
@@ -107,9 +106,7 @@ class TestCloseValueScopeDiscriminator:
         assert 'tool_uses' not in declared
         assert declared == ['close_count', 'duration_seconds']
 
-    def test_re_entered_phase_details_bullet_prints_the_rows_own_declaration(
-        self, plan_context
-    ):
+    def test_re_entered_phase_details_bullet_prints_the_rows_own_declaration(self, plan_context):
         """metrics.md renders the row's field lists rather than restating them.
 
         A hand-restated list at the render site would be a second copy free to

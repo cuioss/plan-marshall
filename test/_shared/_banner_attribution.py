@@ -93,26 +93,80 @@ _RULE_ONLY = re.compile(r'^#\s*[-=~_*]{4,}\s*$')
 #: Both shapes fail the same way — a spurious banner steals enclosure from every
 #: construct beneath it and injects its words into the distinctive-token set, so
 #: it can fabricate a misattribution or destroy a real heading's distinctiveness.
-_INLINE_HEADING = re.compile(
-    r'^#\s*(?P<rule>[-=~_*])(?P=rule){2,}\s*(?P<text>.*?)\s*[-=~_*]*\s*$'
-)
+_INLINE_HEADING = re.compile(r'^#\s*(?P<rule>[-=~_*])(?P=rule){2,}\s*(?P<text>.*?)\s*[-=~_*]*\s*$')
 
 #: Tokens too generic to attribute anything by. A banner whose only tokens are
 #: these names no subject, and a construct matching only on one of them would
 #: match nearly every heading.
-_STOPWORDS = frozenset({
-    'and', 'the', 'for', 'not', 'with', 'from', 'into', 'this', 'that', 'rule', 'rules',
-    'helper', 'helpers', 'shared', 'common', 'util', 'utils', 'test', 'tests', 'main',
-    # Structural section vocabulary. Nearly every module carries several of
-    # these across several headings, so they attribute nothing on their own —
-    # and leaving them in is what turns the check into a false-positive machine.
-    'entry', 'point', 'points', 'public', 'private', 'internal', 'scanner', 'scan',
-    'parsing', 'parser', 'derivation', 'detection', 'data', 'class', 'classes',
-    'form', 'file', 'files', 'source', 'population', 'finding', 'findings',
-    'construction', 'pattern', 'patterns', 'check', 'checks', 'side', 'state',
-    'states', 'line', 'lines', 'per', 'model', 'output', 'input', 'result',
-    'results', 'config', 'configuration', 'module', 'modules',
-})
+_STOPWORDS = frozenset(
+    {
+        'and',
+        'the',
+        'for',
+        'not',
+        'with',
+        'from',
+        'into',
+        'this',
+        'that',
+        'rule',
+        'rules',
+        'helper',
+        'helpers',
+        'shared',
+        'common',
+        'util',
+        'utils',
+        'test',
+        'tests',
+        'main',
+        # Structural section vocabulary. Nearly every module carries several of
+        # these across several headings, so they attribute nothing on their own —
+        # and leaving them in is what turns the check into a false-positive machine.
+        'entry',
+        'point',
+        'points',
+        'public',
+        'private',
+        'internal',
+        'scanner',
+        'scan',
+        'parsing',
+        'parser',
+        'derivation',
+        'detection',
+        'data',
+        'class',
+        'classes',
+        'form',
+        'file',
+        'files',
+        'source',
+        'population',
+        'finding',
+        'findings',
+        'construction',
+        'pattern',
+        'patterns',
+        'check',
+        'checks',
+        'side',
+        'state',
+        'states',
+        'line',
+        'lines',
+        'per',
+        'model',
+        'output',
+        'input',
+        'result',
+        'results',
+        'config',
+        'configuration',
+        'module',
+        'modules',
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -310,7 +364,7 @@ def _format_finding(finding: Misattribution) -> str:
 
 
 def _format_side(side: dict) -> list[str]:
-    out = [f"  ref {side['ref']}: {len(side['findings'])} misattributed across {len(side['paths'])} modules"]
+    out = [f'  ref {side["ref"]}: {len(side["findings"])} misattributed across {len(side["paths"])} modules']
     out.extend(_format_finding(finding) for finding in side['findings'])
     return out
 
@@ -318,8 +372,8 @@ def _format_side(side: dict) -> list[str]:
 def format_report(report: dict) -> str:
     """Render the report, leading with the definition the instrument applied."""
     out = ['banner-attribution: two-ref check of section membership']
-    out.append(f"  paths covered: {', '.join(report['prefixes'])}")
-    out.append(f"  definition applied: {report['definition']}")
+    out.append(f'  paths covered: {", ".join(report["prefixes"])}')
+    out.append(f'  definition applied: {report["definition"]}')
     out.append('')
     out.extend(_format_side(report['before']))
     out.append('')

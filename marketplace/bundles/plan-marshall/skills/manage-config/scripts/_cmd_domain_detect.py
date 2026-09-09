@@ -35,14 +35,14 @@ from _config_core import load_config
 from _plan_parsing import parse_document_sections
 from file_ops import get_plan_dir
 
-_TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9_]+")
+_TOKEN_RE = re.compile(r'[A-Za-z][A-Za-z0-9_]+')
 
 # A path-like token candidate. The character class admits '/' (separators), '.'
 # (extensions), '*' (a narrative that names a glob directly), '-' and '_'.
 # _extract_narrative_paths keeps only tokens that carry a '/' or a trailing
 # filename extension.
-_PATH_TOKEN_RE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_./*-]*")
-_EXT_RE = re.compile(r"\.[A-Za-z0-9]+$")
+_PATH_TOKEN_RE = re.compile(r'[A-Za-z0-9_][A-Za-z0-9_./*-]*')
+_EXT_RE = re.compile(r'\.[A-Za-z0-9]+$')
 
 
 def _tokenize(text: str) -> set[str]:
@@ -188,11 +188,7 @@ def _glob_to_regex(glob: str) -> re.Pattern[str]:
 
 def _always_on_domains(user_domains: dict[str, Any]) -> set[str]:
     """Return the set of non-system domains flagged ``always_on: true``."""
-    return {
-        domain
-        for domain, cfg in user_domains.items()
-        if isinstance(cfg, dict) and cfg.get('always_on') is True
-    }
+    return {domain for domain, cfg in user_domains.items() if isinstance(cfg, dict) and cfg.get('always_on') is True}
 
 
 def _glob_matched_domains(user_domains: dict[str, Any], file_signal: set[str]) -> set[str]:
@@ -239,9 +235,7 @@ def _additional_candidates(
     the ``always_on`` / ``file_globs`` legs are excluded — they are unioned into
     ``domains`` unconditionally, so offering them would be noise.
     """
-    return sorted(
-        _offerable_domains(user_domains) - {c['domain'] for c in candidates} - inclusion_union
-    )
+    return sorted(_offerable_domains(user_domains) - {c['domain'] for c in candidates} - inclusion_union)
 
 
 def _result(
@@ -365,9 +359,7 @@ def cmd_domain_detect(args) -> dict[str, Any]:
             plan_id,
             domains={override} | inclusion_union,
             candidates=override_candidates,
-            additional_candidates=_additional_candidates(
-                user_domains, override_candidates, inclusion_union
-            ),
+            additional_candidates=_additional_candidates(user_domains, override_candidates, inclusion_union),
             always_on=always_on_set,
             glob_matched=glob_matched_set,
             ambiguous=False,
@@ -383,9 +375,7 @@ def cmd_domain_detect(args) -> dict[str, Any]:
             plan_id,
             domains={only} | inclusion_union,
             candidates=only_candidates,
-            additional_candidates=_additional_candidates(
-                user_domains, only_candidates, inclusion_union
-            ),
+            additional_candidates=_additional_candidates(user_domains, only_candidates, inclusion_union),
             always_on=always_on_set,
             glob_matched=glob_matched_set,
             ambiguous=False,
@@ -411,9 +401,7 @@ def cmd_domain_detect(args) -> dict[str, Any]:
             plan_id,
             domains=detector_set | inclusion_union,
             candidates=candidates,
-            additional_candidates=_additional_candidates(
-                user_domains, candidates, inclusion_union
-            ),
+            additional_candidates=_additional_candidates(user_domains, candidates, inclusion_union),
             always_on=always_on_set,
             glob_matched=glob_matched_set,
             ambiguous=False,
@@ -426,9 +414,7 @@ def cmd_domain_detect(args) -> dict[str, Any]:
             plan_id,
             domains=detector_set | inclusion_union,
             candidates=candidates,
-            additional_candidates=_additional_candidates(
-                user_domains, candidates, inclusion_union
-            ),
+            additional_candidates=_additional_candidates(user_domains, candidates, inclusion_union),
             always_on=always_on_set,
             glob_matched=glob_matched_set,
             ambiguous=True,

@@ -56,9 +56,7 @@ from conftest import load_script_module
 
 # The entrypoint filename is kebab-case (git-workflow.py), which is not a
 # valid Python module identifier — load it via importlib instead of `import`.
-git_workflow = load_script_module(
-    'plan-marshall', 'workflow-integration-git', 'git-workflow.py', 'git_workflow'
-)
+git_workflow = load_script_module('plan-marshall', 'workflow-integration-git', 'git-workflow.py', 'git_workflow')
 _detect_worktree_state = git_workflow._detect_worktree_state
 cmd_worktree_rebase_to = git_workflow.cmd_worktree_rebase_to
 
@@ -280,9 +278,7 @@ class TestRebaseToAhead:
         # The branch's own commit must survive the no-op rebase.
         assert (rebase_env['worktree'] / 'feature.txt').exists()
 
-    def test_ahead_state_leaves_head_sha_unchanged(
-        self, rebase_env: dict, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_ahead_state_leaves_head_sha_unchanged(self, rebase_env: dict, monkeypatch: pytest.MonkeyPatch) -> None:
         """Pin the ``noop`` verdict to history identity, not to the label alone.
 
         The ``action`` field is only trustworthy if it is derived from evidence.
@@ -358,10 +354,9 @@ class TestRebaseToConflict:
         assert 'file.txt' in result['conflicts']
         assert 'rebase --continue' in result['message']
         # The rebase must be left in progress so callers can resolve.
-        rebase_in_progress = (
-            (rebase_env['worktree'] / '.git' / 'rebase-merge').exists()
-            or (rebase_env['worktree'] / '.git' / 'rebase-apply').exists()
-        )
+        rebase_in_progress = (rebase_env['worktree'] / '.git' / 'rebase-merge').exists() or (
+            rebase_env['worktree'] / '.git' / 'rebase-apply'
+        ).exists()
         assert rebase_in_progress, 'conflict state must leave rebase in progress'
 
 
@@ -500,9 +495,7 @@ class TestRebaseToStaleLocalBaseRegression:
 class TestRebaseToNoRemoteFallback:
     """A worktree with no ``origin`` remote falls back to rebasing onto local {base}."""
 
-    def test_no_origin_remote_rebases_onto_local_base(
-        self, rebase_env: dict, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_no_origin_remote_rebases_onto_local_base(self, rebase_env: dict, monkeypatch: pytest.MonkeyPatch) -> None:
         main_repo = rebase_env['main_repo']
         # Build a feature branch in the main repo with NO origin remote. The
         # worktree IS the main repo here (no clone, no origin); resolver and
@@ -514,9 +507,7 @@ class TestRebaseToNoRemoteFallback:
             main_repo, 'main_only.txt', 'main only\n', 'feat: advance local main', 'feature/no-remote'
         )
 
-        result = _invoke_rebase(
-            rebase_env, monkeypatch, base='main', resolver_target=main_repo, main_root=main_repo
-        )
+        result = _invoke_rebase(rebase_env, monkeypatch, base='main', resolver_target=main_repo, main_root=main_repo)
 
         assert result['status'] == 'success', result
         assert result['action'] == 'rebased'

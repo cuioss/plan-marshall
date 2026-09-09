@@ -26,8 +26,7 @@ extract_references = _doc_refs.extract_references
 
 def test_extract_asciidoc_macros():
     refs = extract_references(
-        'See xref:build.adoc[the build] and link:../user/guide.adoc[guide]\n'
-        'include::shared/frag.adoc[]\n'
+        'See xref:build.adoc[the build] and link:../user/guide.adoc[guide]\ninclude::shared/frag.adoc[]\n'
     )
     assert ('build.adoc', '') in refs
     assert ('../user/guide.adoc', '') in refs
@@ -60,9 +59,7 @@ def test_extract_markdown_link():
 
 
 def test_external_references_are_skipped():
-    refs = extract_references(
-        'link:https://example.com[site] and [ext](http://x.y) and xref:mailto:a@b[mail]'
-    )
+    refs = extract_references('link:https://example.com[site] and [ext](http://x.y) and xref:mailto:a@b[mail]')
     assert refs == []
 
 
@@ -145,8 +142,7 @@ def test_broken_anchor_reported_valid_anchor_not(tmp_path):
     _write(
         tmp_path,
         'doc/src.adoc',
-        'good: xref:target.adoc#_real_heading[ok]\n'
-        'bad: xref:target.adoc#_deleted_heading[dangling]\n',
+        'good: xref:target.adoc#_real_heading[ok]\nbad: xref:target.adoc#_deleted_heading[dangling]\n',
     )
     refs = build_doc_component_refs(str(tmp_path), 'doc')
     resolved_states = {r['resolved'] for r in refs}
@@ -179,8 +175,7 @@ def test_target_bundle_mapping_marketplace_and_doc(tmp_path):
     _write(
         tmp_path,
         'doc/a.adoc',
-        'to a bundle: link:../marketplace/bundles/pm-dev-java/skills/x/SKILL.md[skill]\n'
-        'to a doc: xref:b.adoc[doc]\n',
+        'to a bundle: link:../marketplace/bundles/pm-dev-java/skills/x/SKILL.md[skill]\nto a doc: xref:b.adoc[doc]\n',
     )
     _write(tmp_path, 'doc/b.adoc', '= B\n')
     _write(tmp_path, 'marketplace/bundles/pm-dev-java/skills/x/SKILL.md', '# skill\n')
@@ -208,9 +203,7 @@ def test_reference_escaping_repo_root_fails_closed(tmp_path):
     outside.write_text('= Secret\n\n== A Heading\n', encoding='utf-8')
 
     # No anchor: the pre-fix code would have returned resolved=True (file exists).
-    _module, resolved = _doc_refs._resolve_one(
-        ref_file, repo_root.resolve(), '../../secret.adoc', '', set(), {}
-    )
+    _module, resolved = _doc_refs._resolve_one(ref_file, repo_root.resolve(), '../../secret.adoc', '', set(), {})
     assert resolved is False
     # With an anchor that DOES exist in the outside file: the pre-fix code would
     # have read it and resolved the anchor; fail-closed reports False regardless.

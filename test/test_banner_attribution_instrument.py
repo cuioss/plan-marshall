@@ -30,7 +30,7 @@ from _banner_attribution import (
 
 #: Two sections whose subjects are distinctive, with each construct filed
 #: correctly. The negative control.
-CORRECTLY_FILED = '''\
+CORRECTLY_FILED = """\
 # --- tokenizer ---
 
 
@@ -43,11 +43,11 @@ def tokenizer_entry():
 
 def renderer_entry():
     return 2
-'''
+"""
 
 #: The same two sections with the renderer construct moved under the tokenizer
 #: heading. The planted misattribution.
-MISFILED = '''\
+MISFILED = """\
 # --- tokenizer ---
 
 
@@ -64,7 +64,7 @@ def renderer_entry():
 
 def renderer_other():
     return 3
-'''
+"""
 
 
 def _run(repo, *args: str) -> None:
@@ -171,10 +171,7 @@ def test_a_two_character_rule_run_is_not_a_heading():
     positive half pins that the documented three-rule form still IS a heading,
     so the bound cannot be raised until the real form stops being recognised.
     """
-    source = (
-        '# --- tokenizer ---\n'
-        '# --plan-id is forwarded to every child call\n'
-    )
+    source = '# --- tokenizer ---\n# --plan-id is forwarded to every child call\n'
 
     assert [banner.text for banner in collect_banners(source)] == ['tokenizer']
 

@@ -26,12 +26,11 @@ class TestInputIntegrityEmitBlock:
         # three plans: fully-recorded, partial, blind
         rows = [
             audit.check_input_integrity(_write_ii_plan(tmp_path, 'p-fr')),
-            audit.check_input_integrity(
-                _write_ii_plan(tmp_path, 'p-partial', has_references=False)
-            ),
+            audit.check_input_integrity(_write_ii_plan(tmp_path, 'p-partial', has_references=False)),
             audit.check_input_integrity(
                 _write_ii_plan(
-                    tmp_path, 'p-blind',
+                    tmp_path,
+                    'p-blind',
                     phase_tokens={'5-execute': 0, '6-finalize': 5_000},
                 )
             ),
@@ -53,13 +52,15 @@ class TestInputIntegrityEmitBlock:
             audit.check_input_integrity(_write_ii_plan(tmp_path, 'healthy')),
             audit.check_input_integrity(
                 _write_ii_plan(
-                    tmp_path, 'blind-b',
+                    tmp_path,
+                    'blind-b',
                     phase_tokens={'5-execute': 0, '6-finalize': 5_000},
                 )
             ),
             audit.check_input_integrity(
                 _write_ii_plan(
-                    tmp_path, 'blind-a',
+                    tmp_path,
+                    'blind-a',
                     phase_tokens={'5-execute': 0, '6-finalize': 5_000},
                 )
             ),
@@ -93,12 +94,8 @@ class TestInputIntegrityEmitBlock:
         """
         rows = [
             audit.check_input_integrity(_write_ii_plan(tmp_path, 'sch-current')),
-            audit.check_input_integrity(
-                _write_ii_plan(tmp_path, 'sch-old', marker_schema='old-schema')
-            ),
-            audit.check_input_integrity(
-                _write_ii_plan(tmp_path, 'sch-pre', marker_schema='pre-#812')
-            ),
+            audit.check_input_integrity(_write_ii_plan(tmp_path, 'sch-old', marker_schema='old-schema')),
+            audit.check_input_integrity(_write_ii_plan(tmp_path, 'sch-pre', marker_schema='pre-#812')),
         ]
 
         block = audit.emit_input_integrity_block(rows)
@@ -116,18 +113,15 @@ class TestInputIntegrityEmitBlock:
         rows = [
             audit.check_input_integrity(
                 _write_ii_plan(
-                    tmp_path, 'g',
+                    tmp_path,
+                    'g',
                     phase_tokens={'5-execute': 0, '6-finalize': 5_000},
                 )
             )
         ]
 
         block = audit.emit_input_integrity_block(rows)
-        row_line = next(
-            ln.strip()
-            for ln in block.splitlines()
-            if ln.strip().startswith('g,')
-        )
+        row_line = next(ln.strip() for ln in block.splitlines() if ln.strip().startswith('g,'))
 
         # the flagged row ends on the genuine cell + count reflects it
         assert row_line.endswith(',genuine')
@@ -138,11 +132,7 @@ class TestInputIntegrityEmitBlock:
         rows = [audit.check_input_integrity(_write_ii_plan(tmp_path, 'i'))]
 
         block = audit.emit_input_integrity_block(rows)
-        row_line = next(
-            ln.strip()
-            for ln in block.splitlines()
-            if ln.strip().startswith('i,')
-        )
+        row_line = next(ln.strip() for ln in block.splitlines() if ln.strip().startswith('i,'))
 
         # clean row stamps informational, genuine count is zero
         assert row_line.endswith(',informational')

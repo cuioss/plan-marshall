@@ -70,9 +70,7 @@ class TestBrokenRelativeLink:
         (tmp_path / 'standards').mkdir()
         (tmp_path / 'standards' / 'present.md').write_text('# present\n', encoding='utf-8')
         skill_md = tmp_path / 'SKILL.md'
-        skill_md.write_text(
-            '# Doc\n\nSee [the standard](standards/present.md).\n', encoding='utf-8'
-        )
+        skill_md.write_text('# Doc\n\nSee [the standard](standards/present.md).\n', encoding='utf-8')
 
         findings = check_broken_relative_link(skill_md.read_text(), str(skill_md))
 
@@ -83,9 +81,7 @@ class TestBrokenRelativeLink:
         (tmp_path / 'standards' / 'present.md').write_text('# present\n', encoding='utf-8')
         skill_md = tmp_path / 'SKILL.md'
         # The file part exists; the #anchor is stripped before resolution.
-        skill_md.write_text(
-            '# Doc\n\nSee [here](standards/present.md#section).\n', encoding='utf-8'
-        )
+        skill_md.write_text('# Doc\n\nSee [here](standards/present.md#section).\n', encoding='utf-8')
 
         findings = check_broken_relative_link(skill_md.read_text(), str(skill_md))
 
@@ -180,9 +176,7 @@ class TestBrokenRelativeLink:
         target = skill_a.parent / 'skill-b' / 'target.md'
         target.write_text('# target\n', encoding='utf-8')
         skill_md = skill_a / 'SKILL.md'
-        skill_md.write_text(
-            '# Doc\n\nSee [sibling](../skill-b/target.md).\n', encoding='utf-8'
-        )
+        skill_md.write_text('# Doc\n\nSee [sibling](../skill-b/target.md).\n', encoding='utf-8')
 
         findings = check_broken_relative_link(skill_md.read_text(), str(skill_md))
 
@@ -194,9 +188,7 @@ class TestBrokenRelativeLink:
         # one finding (the genuine broken-link case is preserved).
         _tree_root, skill_a = self._make_bundle_layout(tmp_path)
         skill_md = skill_a / 'SKILL.md'
-        skill_md.write_text(
-            '# Doc\n\nSee [sibling](../skill-b/missing.md).\n', encoding='utf-8'
-        )
+        skill_md.write_text('# Doc\n\nSee [sibling](../skill-b/missing.md).\n', encoding='utf-8')
 
         findings = check_broken_relative_link(skill_md.read_text(), str(skill_md))
 
@@ -213,17 +205,13 @@ class TestBrokenRelativeLink:
         target.write_text('# present\n', encoding='utf-8')
         skill_md = skill_a / 'SKILL.md'
         skill_md.write_text(
-            '# Doc\n\n'
-            'See [present](../skill-b/present.md) '
-            'and [gone](../skill-b/gone.md).\n',
+            '# Doc\n\nSee [present](../skill-b/present.md) and [gone](../skill-b/gone.md).\n',
             encoding='utf-8',
         )
         content = skill_md.read_text()
 
         no_boundary = check_broken_relative_link(content, str(skill_md))
-        root_boundary = check_broken_relative_link(
-            content, str(skill_md), boundary_dir=tree_root
-        )
+        root_boundary = check_broken_relative_link(content, str(skill_md), boundary_dir=tree_root)
 
         assert no_boundary == root_boundary
         assert len(no_boundary) == 1
@@ -265,9 +253,7 @@ class TestBrokenRelativeLink:
         _repo_root, skill_dir = self._make_repo_layout(tmp_path)
         skill_md = skill_dir / 'SKILL.md'
         # skill_dir is five levels below the repo root.
-        skill_md.write_text(
-            '# Doc\n\nSee [guide](../../../../../doc/missing.md).\n', encoding='utf-8'
-        )
+        skill_md.write_text('# Doc\n\nSee [guide](../../../../../doc/missing.md).\n', encoding='utf-8')
 
         findings = check_broken_relative_link(skill_md.read_text(), str(skill_md))
 
@@ -280,9 +266,7 @@ class TestBrokenRelativeLink:
         repo_root, skill_dir = self._make_repo_layout(tmp_path)
         (repo_root / 'doc' / 'guide.md').write_text('# guide\n', encoding='utf-8')
         skill_md = skill_dir / 'SKILL.md'
-        skill_md.write_text(
-            '# Doc\n\nSee [guide](../../../../../doc/guide.md).\n', encoding='utf-8'
-        )
+        skill_md.write_text('# Doc\n\nSee [guide](../../../../../doc/guide.md).\n', encoding='utf-8')
 
         findings = check_broken_relative_link(skill_md.read_text(), str(skill_md))
 
@@ -295,9 +279,7 @@ class TestBrokenRelativeLink:
         _repo_root, skill_dir = self._make_repo_layout(tmp_path)
         skill_md = skill_dir / 'SKILL.md'
         # Six levels up escapes the repo root (five levels reaches it).
-        skill_md.write_text(
-            '# Doc\n\nSee [outside](../../../../../../escaped.md).\n', encoding='utf-8'
-        )
+        skill_md.write_text('# Doc\n\nSee [outside](../../../../../../escaped.md).\n', encoding='utf-8')
 
         findings = check_broken_relative_link(skill_md.read_text(), str(skill_md))
 
@@ -311,9 +293,7 @@ class TestBrokenRelativeLink:
         assets = skill_dir / 'assets'
         assets.mkdir()
         template = assets / 'readme-template.md'
-        template.write_text(
-            '# {bundle-name}\n\n- [Docs](../../README.md)\n', encoding='utf-8'
-        )
+        template.write_text('# {bundle-name}\n\n- [Docs](../../README.md)\n', encoding='utf-8')
 
         findings = check_broken_relative_link(template.read_text(), str(template))
 
@@ -404,9 +384,7 @@ class TestAggregatorWiring:
 
     def test_clean_tree_is_silent(self, tmp_path: Path) -> None:
         (tmp_path / 'b' / 'skills' / 'fixture-skill' / 'standards').mkdir(parents=True)
-        (tmp_path / 'b' / 'skills' / 'fixture-skill' / 'standards' / 'x.md').write_text(
-            '# x\n', encoding='utf-8'
-        )
+        (tmp_path / 'b' / 'skills' / 'fixture-skill' / 'standards' / 'x.md').write_text('# x\n', encoding='utf-8')
         self._bundle_md(
             tmp_path,
             '# F\n\nSee [x](standards/x.md).\n\n```python\nok = 1\n```\n',

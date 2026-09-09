@@ -30,9 +30,7 @@ cmd_update_phase = _query.cmd_update_phase
 def test_metadata_set(plan_context):
     """Test setting a metadata field."""
     cmd_create(Namespace(plan_id='metadata-plan', title='Metadata Test', phases='1-init,2-refine', force=False))
-    result = cmd_metadata(
-        Namespace(plan_id='metadata-plan', set=True, get=False, field='change_type', value='feature')
-    )
+    result = cmd_metadata(Namespace(plan_id='metadata-plan', set=True, get=False, field='change_type', value='feature'))
     assert result['status'] == 'success'
     assert result['field'] == 'change_type'
     assert result['value'] == 'feature'
@@ -44,9 +42,7 @@ def test_metadata_get(plan_context):
     # Set metadata first
     cmd_metadata(Namespace(plan_id='metadata-get-plan', set=True, get=False, field='change_type', value='bug_fix'))
     # Get metadata
-    result = cmd_metadata(
-        Namespace(plan_id='metadata-get-plan', set=False, get=True, field='change_type', value=None)
-    )
+    result = cmd_metadata(Namespace(plan_id='metadata-get-plan', set=False, get=True, field='change_type', value=None))
     assert result['status'] == 'success'
     assert result['field'] == 'change_type'
     assert result['value'] == 'bug_fix'
@@ -66,9 +62,7 @@ def test_metadata_update_existing(plan_context):
     """Test updating an existing metadata field."""
     cmd_create(Namespace(plan_id='metadata-update-plan', title='Test', phases='1-init', force=False))
     # Set initial value
-    cmd_metadata(
-        Namespace(plan_id='metadata-update-plan', set=True, get=False, field='change_type', value='feature')
-    )
+    cmd_metadata(Namespace(plan_id='metadata-update-plan', set=True, get=False, field='change_type', value='feature'))
     # Update value
     result = cmd_metadata(
         Namespace(plan_id='metadata-update-plan', set=True, get=False, field='change_type', value='bug_fix')
@@ -201,15 +195,11 @@ def test_get_context_not_found(plan_context):
 
 
 def _append(plan_id, field, value):
-    return cmd_metadata(
-        Namespace(plan_id=plan_id, set=True, get=False, append=True, field=field, value=value)
-    )
+    return cmd_metadata(Namespace(plan_id=plan_id, set=True, get=False, append=True, field=field, value=value))
 
 
 def _get(plan_id, field):
-    return cmd_metadata(
-        Namespace(plan_id=plan_id, set=False, get=True, append=False, field=field, value=None)
-    )
+    return cmd_metadata(Namespace(plan_id=plan_id, set=False, get=True, append=False, field=field, value=None))
 
 
 def _new_plan(plan_id):
@@ -266,8 +256,7 @@ def test_metadata_append_refuses_a_non_list_field_and_leaves_the_document_identi
     """
     _new_plan('append-scalar')
     cmd_metadata(
-        Namespace(plan_id='append-scalar', set=True, get=False, append=False,
-                  field='change_type', value='feature')
+        Namespace(plan_id='append-scalar', set=True, get=False, append=False, field='change_type', value='feature')
     )
     status_path = _core.get_status_path('append-scalar')
     before = status_path.read_bytes()
@@ -283,8 +272,7 @@ def test_metadata_append_refuses_a_non_list_field_and_leaves_the_document_identi
 def test_metadata_append_without_set_is_an_error(plan_context):
     _new_plan('append-no-set')
     result = cmd_metadata(
-        Namespace(plan_id='append-no-set', set=False, get=False, append=True,
-                  field='session_ids', value='sess-1')
+        Namespace(plan_id='append-no-set', set=False, get=False, append=True, field='session_ids', value='sess-1')
     )
     assert result['status'] == 'error'
     assert result['error'] == 'append_without_set'
@@ -293,8 +281,7 @@ def test_metadata_append_without_set_is_an_error(plan_context):
 def test_metadata_append_without_value_is_an_error(plan_context):
     _new_plan('append-no-value')
     result = cmd_metadata(
-        Namespace(plan_id='append-no-value', set=True, get=False, append=True,
-                  field='session_ids', value=None)
+        Namespace(plan_id='append-no-value', set=True, get=False, append=True, field='session_ids', value=None)
     )
     assert result['status'] == 'error'
     assert result['error'] == 'missing_value'
@@ -304,12 +291,10 @@ def test_metadata_set_without_append_still_replaces(plan_context):
     """The default --set path is unchanged: last write wins, no list."""
     _new_plan('append-default')
     cmd_metadata(
-        Namespace(plan_id='append-default', set=True, get=False, append=False,
-                  field='change_type', value='feature')
+        Namespace(plan_id='append-default', set=True, get=False, append=False, field='change_type', value='feature')
     )
     cmd_metadata(
-        Namespace(plan_id='append-default', set=True, get=False, append=False,
-                  field='change_type', value='bug_fix')
+        Namespace(plan_id='append-default', set=True, get=False, append=False, field='change_type', value='bug_fix')
     )
     assert _get('append-default', 'change_type')['value'] == 'bug_fix'
 
@@ -317,8 +302,7 @@ def test_metadata_set_without_append_still_replaces(plan_context):
 def test_metadata_append_leaves_sibling_metadata_untouched(plan_context):
     _new_plan('append-siblings')
     cmd_metadata(
-        Namespace(plan_id='append-siblings', set=True, get=False, append=False,
-                  field='change_type', value='feature')
+        Namespace(plan_id='append-siblings', set=True, get=False, append=False, field='change_type', value='feature')
     )
     _append('append-siblings', 'session_ids', 'sess-1')
     assert _get('append-siblings', 'change_type')['value'] == 'feature'
@@ -338,8 +322,7 @@ def test_a_resume_on_a_pre_list_plan_does_not_fail(plan_context):
     _new_plan('resume-legacy')
     # A pre-list plan: the scalar field, no list field.
     cmd_metadata(
-        Namespace(plan_id='resume-legacy', set=True, get=False, append=False,
-                  field='session_id', value='sess-original')
+        Namespace(plan_id='resume-legacy', set=True, get=False, append=False, field='session_id', value='sess-original')
     )
 
     # The resuming session captures.

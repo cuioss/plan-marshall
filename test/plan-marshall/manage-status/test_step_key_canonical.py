@@ -32,12 +32,8 @@ def test_preserves_bare_names():
 
 def test_preserves_project_and_bundle_prefixes():
     """``project:`` and genuinely opt-in ``bundle:skill`` ids pass through verbatim."""
-    assert canonicalize_step_key('project:finalize-step-plugin-doctor') == (
-        'project:finalize-step-plugin-doctor'
-    )
-    assert canonicalize_step_key('plan-marshall:plan-retrospective') == (
-        'plan-marshall:plan-retrospective'
-    )
+    assert canonicalize_step_key('project:finalize-step-plugin-doctor') == ('project:finalize-step-plugin-doctor')
+    assert canonicalize_step_key('plan-marshall:plan-retrospective') == ('plan-marshall:plan-retrospective')
 
 
 def test_maps_promoted_builtin_alias_to_bare():

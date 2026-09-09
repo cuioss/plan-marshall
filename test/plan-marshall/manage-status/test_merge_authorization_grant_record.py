@@ -10,7 +10,6 @@ Its sections, in order:
 * check — the lapse rule (D5a) and the re-seek (D5b)
 """
 
-
 from _merge_authorization_fixtures import (
     BARRIER_GAP,
     HEAD_A,
@@ -58,6 +57,7 @@ def test_grant_persists_head_bound_record(plan_context):
 # check — the single-question contract, pinned at the CLI boundary
 # =============================================================================
 
+
 def test_grant_cli_requires_the_gap_class(plan_context):
     """`grant` without --gap-class is an argparse rejection.
 
@@ -92,6 +92,7 @@ def test_grant_cli_requires_the_gap_class(plan_context):
 # grant — persistence and the overwrite-is-the-re-seek contract
 # =============================================================================
 
+
 def test_record_round_trips_granted_over_and_reason(plan_context):
     """granted_over and reason survive persistence verbatim.
 
@@ -102,11 +103,9 @@ def test_record_round_trips_granted_over_and_reason(plan_context):
     plan_id = 'merge-auth-roundtrip'
     _make_plan(plan_id)
     gap = '3 unhandled, unproven_bots=cuioss-review-bot,sourcery'
-    reason = "operator: docs-only delta, bots are rate-limited until tomorrow"
+    reason = 'operator: docs-only delta, bots are rate-limited until tomorrow'
 
-    cmd_merge_authorization_grant(
-        _grant_args(plan_id, 'barrier-ask-override', HEAD_A, granted_over=gap, reason=reason)
-    )
+    cmd_merge_authorization_grant(_grant_args(plan_id, 'barrier-ask-override', HEAD_A, granted_over=gap, reason=reason))
 
     persisted = read_status(plan_id)['metadata']['merge_authorizations']['barrier-ask-override']
     assert persisted['granted_over'] == gap
@@ -120,6 +119,7 @@ def test_record_round_trips_granted_over_and_reason(plan_context):
 # =============================================================================
 # check — admissibility: the gap class, not just the HEAD
 # =============================================================================
+
 
 def test_record_without_a_gap_class_matches_no_class(plan_context):
     """A record carrying no ``gap_class`` is never admissible — no wildcard.
@@ -156,6 +156,7 @@ def test_record_without_a_gap_class_matches_no_class(plan_context):
 # grant — persistence and the overwrite-is-the-re-seek contract
 # =============================================================================
 
+
 def test_regrant_at_new_head_overwrites_the_record(plan_context):
     """A re-grant replaces the record rather than accumulating a second one.
 
@@ -179,6 +180,7 @@ def test_regrant_at_new_head_overwrites_the_record(plan_context):
 # =============================================================================
 # check — the lapse rule (D5a) and the re-seek (D5b)
 # =============================================================================
+
 
 def test_regrant_at_new_head_reauthorizes(plan_context):
     """The re-grant rule: a re-seek at the advanced HEAD restores authorization.

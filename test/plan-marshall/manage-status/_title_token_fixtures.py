@@ -33,7 +33,6 @@ are specified in
 § Channel Delivery Contract ruling (c).
 """
 
-
 import json
 import subprocess
 from argparse import Namespace
@@ -109,9 +108,7 @@ def _read_status(plan_context, plan_id):
 
 def _set(plan_id, state, owner='cli'):
     """Invoke ``title-token set`` for ``plan_id`` as ``owner``."""
-    return cmd_title_token(
-        Namespace(plan_id=plan_id, token_verb='set', state=state, owner=owner)
-    )
+    return cmd_title_token(Namespace(plan_id=plan_id, token_verb='set', state=state, owner=owner))
 
 
 def _clear(plan_id, owner='cli'):
@@ -184,6 +181,4 @@ def _repaint_reply(**fields):
     """Build a CompletedProcess carrying a push-title-token TOON reply."""
     lines = ['status: success', 'operation: session push-title-token']
     lines += [f'{key}: {value}' for key, value in fields.items()]
-    return subprocess.CompletedProcess(
-        args=[], returncode=0, stdout='\n'.join(lines) + '\n', stderr=''
-    )
+    return subprocess.CompletedProcess(args=[], returncode=0, stdout='\n'.join(lines) + '\n', stderr='')

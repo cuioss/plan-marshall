@@ -6,7 +6,6 @@ Scope: the missing-end-time partiality pair — what ``generate`` returns, what
 reaches metrics.toon, and the marker the report renders.
 """
 
-
 from _manage_metrics_fixtures import (
     ns_generate,
 )
@@ -141,9 +140,7 @@ class TestGeneratePartialityFields:
             'partial-retired-drop',
             {'phases': phases, 'partial': 'false', 'unrecorded_phases': ''},
         )
-        seeded = (
-            plan_context.plan_dir_for('partial-retired-drop') / 'work' / 'metrics.toon'
-        ).read_text()
+        seeded = (plan_context.plan_dir_for('partial-retired-drop') / 'work' / 'metrics.toon').read_text()
         # Guard the fixture itself: the retired pair really is on disk pre-generate.
         assert 'partial: false' in seeded
         assert 'unrecorded_phases: ' in seeded
@@ -156,9 +153,7 @@ class TestGeneratePartialityFields:
         assert data['any_phase_missing_end_time'] == 'true'
         assert data['phases_missing_end_time'] == '6-finalize'
 
-        toon = (
-            plan_context.plan_dir_for('partial-retired-drop') / 'work' / 'metrics.toon'
-        ).read_text()
+        toon = (plan_context.plan_dir_for('partial-retired-drop') / 'work' / 'metrics.toon').read_text()
         assert 'partial: false' not in toon
         assert 'unrecorded_phases:' not in toon
 
@@ -172,9 +167,7 @@ class TestGeneratePartialityFields:
         md = (plan_context.plan_dir_for('partial-md-marker') / 'metrics.md').read_text()
         md_lines = md.splitlines()
         marker_idx = next(
-            i
-            for i, line in enumerate(md_lines)
-            if line.startswith('> Phases missing an end_time boundary marker')
+            i for i, line in enumerate(md_lines) if line.startswith('> Phases missing an end_time boundary marker')
         )
         marker = md_lines[marker_idx]
         # The line NAMES the offending phase and the predicate it checked, and
@@ -227,9 +220,7 @@ class TestGenerateDenominatorFields:
         result = cmd_generate(ns_generate('gen-denominator'))
 
         assert result['deliverable_count'] == 2
-        assert result['deliverable_count_sampling_point'] == (
-            manage_metrics.SAMPLING_POINT_GENERATE_TIME
-        )
+        assert result['deliverable_count_sampling_point'] == (manage_metrics.SAMPLING_POINT_GENERATE_TIME)
         assert result['denominators_sampled_at']
 
     def test_return_omits_a_denominator_that_could_not_be_counted(self, plan_context):

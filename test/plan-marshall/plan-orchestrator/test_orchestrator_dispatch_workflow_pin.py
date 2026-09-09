@@ -74,9 +74,7 @@ _KNOWN_DISPATCH_DOCS: tuple[Path, ...] = (
 #: wants to illustrate the bare role lookup writes the FRAGMENT
 #: (``--role orchestrator.analyze``) instead of a whole invocation — which is what
 #: ``effort-roles.md`` does, and why it is correctly outside the derived surface.
-_INVOCATION_RE = re.compile(
-    r'effort resolve-target --role orchestrator\.(?:[a-z-]+|\{[a-z_]+\})[^`\n]*'
-)
+_INVOCATION_RE = re.compile(r'effort resolve-target --role orchestrator\.(?:[a-z-]+|\{[a-z_]+\})[^`\n]*')
 
 #: A resolve invocation ends at the first backtick (prose and table-cell forms)
 #: or at the end of the fenced command (standards form). Both are covered by
@@ -129,9 +127,7 @@ class TestDispatchResolveSitesCarryWorkflow:
         against the wrong root would make every later population a shrunken one
         while every assertion stayed green.
         """
-        assert _PLAN_MARSHALL.is_dir(), (
-            f'the plan-marshall skills tree root does not exist: {_PLAN_MARSHALL}'
-        )
+        assert _PLAN_MARSHALL.is_dir(), f'the plan-marshall skills tree root does not exist: {_PLAN_MARSHALL}'
         scanned = _scanned_docs_under(_PLAN_MARSHALL)
 
         assert len(scanned) > 50, (
@@ -227,12 +223,10 @@ class TestDispatchResolveSitesCarryWorkflow:
             f'{len(_scanned_docs_under(tmp_path))} document(s), expected only the newcomer'
         )
         assert [text for _, text in population if '--workflow' not in text], (
-            'the newcomer\'s flagless invocation was not reported as missing the flag'
+            "the newcomer's flagless invocation was not reported as missing the flag"
         )
 
-    def test_a_document_set_with_no_dispatch_invocation_yields_an_empty_population(
-        self, tmp_path
-    ):
+    def test_a_document_set_with_no_dispatch_invocation_yields_an_empty_population(self, tmp_path):
         # Matched negative control for the anti-vacuity guard: pointed at a
         # document carrying no dispatch invocation, the enumerator must return
         # empty rather than matching something incidental. Without this, a

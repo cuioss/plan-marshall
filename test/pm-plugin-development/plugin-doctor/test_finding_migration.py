@@ -110,13 +110,9 @@ def test_interpretation_functions_are_retained_and_callable():
 
 def test_markdown_interpretation_emits_finding_shaped_dict():
     """extract_issues_from_markdown_analysis builds Finding internally and emits its dict."""
-    issues = _analysis.extract_issues_from_markdown_analysis(
-        {'frontmatter': {'present': False}}, 'a.md', 'skill'
-    )
+    issues = _analysis.extract_issues_from_markdown_analysis({'frontmatter': {'present': False}}, 'a.md', 'skill')
 
-    assert issues == [
-        {'type': 'missing-frontmatter', 'file': 'a.md', 'severity': 'error', 'fixable': True}
-    ]
+    assert issues == [{'type': 'missing-frontmatter', 'file': 'a.md', 'severity': 'error', 'fixable': True}]
 
 
 def test_coverage_interpretation_emits_finding_shaped_dict():
@@ -163,9 +159,14 @@ def test_task_tool_markdown_finding_gated_off_on_opencode(monkeypatch):
 def test_subdoc_interpretation_emits_finding_shaped_dict():
     """extract_issues_from_subdoc_analysis builds Finding internally and emits its dict."""
     issues = _analysis.extract_issues_from_subdoc_analysis(
-        [{'path': 'sub.md', 'issues': [
-            {'type': 'subdoc-bloat', 'classification': 'BLOATED', 'line_count': 500},
-        ]}],
+        [
+            {
+                'path': 'sub.md',
+                'issues': [
+                    {'type': 'subdoc-bloat', 'classification': 'BLOATED', 'line_count': 500},
+                ],
+            }
+        ],
         'skill-dir',
     )
 
@@ -215,9 +216,7 @@ def test_every_finding_constructor_imports_from_shared():
     """No analyzer defines its own Finding — all import the single dataclass."""
     for name in _modules_constructing_finding():
         text = (_SCRIPTS_DIR / name).read_text(encoding='utf-8')
-        assert _FINDING_IMPORT in text, (
-            f'{name} constructs Finding but does not import it from _doctor_shared'
-        )
+        assert _FINDING_IMPORT in text, f'{name} constructs Finding but does not import it from _doctor_shared'
 
 
 # ---------------------------------------------------------------------------

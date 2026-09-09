@@ -79,15 +79,15 @@ class TestDeriveWorktreeState:
     def test_metadata_maps_to_its_state(self, metadata, expected_state, expected_path):
         assert derive_worktree_state(metadata) == (expected_state, expected_path)
 
-    @pytest.mark.parametrize(
-        'metadata', [None, [], 'not-a-mapping', 42], ids=['none', 'list', 'str', 'int']
-    )
+    @pytest.mark.parametrize('metadata', [None, [], 'not-a-mapping', 42], ids=['none', 'list', 'str', 'int'])
     def test_non_mapping_metadata_is_disabled(self, metadata):
         """Absent or malformed metadata is a plan with no worktree, not an error."""
         assert derive_worktree_state(metadata) == (WORKTREE_STATE_DISABLED, '')
 
     @pytest.mark.parametrize(
-        'worktree_path', [None, 0, [], {}, '   ', '\t\n'], ids=['none', 'int', 'list', 'dict', 'spaces', 'tab-newline'],
+        'worktree_path',
+        [None, 0, [], {}, '   ', '\t\n'],
+        ids=['none', 'int', 'list', 'dict', 'spaces', 'tab-newline'],
     )
     def test_non_string_path_is_pending_not_materialized(self, worktree_path):
         """A path that is not a usable string has not materialized a worktree.
@@ -95,9 +95,7 @@ class TestDeriveWorktreeState:
         Whitespace counts: ``os.path.abspath('   ')`` yields a directory under
         the cwd, so a blank path would otherwise become a working-tree root.
         """
-        state, path = derive_worktree_state(
-            {'use_worktree': True, 'worktree_path': worktree_path}
-        )
+        state, path = derive_worktree_state({'use_worktree': True, 'worktree_path': worktree_path})
 
         assert (state, path) == (WORKTREE_STATE_PENDING, '')
 
@@ -117,8 +115,17 @@ class TestDeriveWorktreeState:
             (None, WORKTREE_STATE_DISABLED),
         ],
         ids=[
-            'bool-true', 'str-true', 'str-True', 'str-1', 'int-1',
-            'bool-false', 'str-false', 'str-False', 'str-empty', 'int-0', 'absent',
+            'bool-true',
+            'str-true',
+            'str-True',
+            'str-1',
+            'int-1',
+            'bool-false',
+            'str-false',
+            'str-False',
+            'str-empty',
+            'int-0',
+            'absent',
         ],
     )
     def test_the_flag_is_coerced_not_merely_truth_tested(self, flag, expected_state):
@@ -130,9 +137,7 @@ class TestDeriveWorktreeState:
         (``_handshake_commands._is_truthy_metadata``) uses — the guard-one-end
         asymmetry is how those two readers came to disagree.
         """
-        state, _path = derive_worktree_state(
-            {'use_worktree': flag, 'worktree_path': STUB_WORKTREE}
-        )
+        state, _path = derive_worktree_state({'use_worktree': flag, 'worktree_path': STUB_WORKTREE})
 
         assert state == expected_state
 
@@ -146,9 +151,7 @@ class TestDeriveWorktreeState:
         flags = [True, False, None, 'true', 0]
         paths = [None, '', STUB_WORKTREE, 0, []]
         observed = {
-            derive_worktree_state({'use_worktree': flag, 'worktree_path': path})[0]
-            for flag in flags
-            for path in paths
+            derive_worktree_state({'use_worktree': flag, 'worktree_path': path})[0] for flag in flags for path in paths
         }
 
         assert observed, 'the enumeration produced no states'
@@ -189,9 +192,7 @@ class TestParseGetWorktreePathOutput:
         empty ``worktree_path`` — and a fixture that encodes an impossible
         payload is evidence about nothing.
         """
-        stdout = _payload(
-            status='success', worktree_state=state, worktree_path=f'"{published_path}"'
-        )
+        stdout = _payload(status='success', worktree_state=state, worktree_path=f'"{published_path}"')
 
         assert _parse_get_worktree_path_output(stdout) == (state, published_path)
 

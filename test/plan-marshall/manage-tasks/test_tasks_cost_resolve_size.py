@@ -10,7 +10,6 @@ Its sections, in order:
 * Subcommand integration via manage-tasks (Tier 3 — CLI plumbing)
 """
 
-
 import pytest
 from _tasks_cost_fixtures import (
     COST_SIZES,
@@ -134,12 +133,12 @@ def test_derive_cost_size_rejects_malformed_table():
 @pytest.mark.parametrize(
     'step_count,profile,skills,target_files,expected_size',
     [
-        (1, 'verification', 0, 1, 'XS'),      # 1-step doc-only verify -> score 18
-        (5, 'verification', 1, 5, 'M'),       # 5-step documentation edit -> score 77
-        (3, 'verification', 0, 2, 'S'),       # 3-step doc-only verify -> score 42
-        (14, 'implementation', 2, 6, 'L'),    # 14-step config change -> score 182
+        (1, 'verification', 0, 1, 'XS'),  # 1-step doc-only verify -> score 18
+        (5, 'verification', 1, 5, 'M'),  # 5-step documentation edit -> score 77
+        (3, 'verification', 0, 2, 'S'),  # 3-step doc-only verify -> score 42
+        (14, 'implementation', 2, 6, 'L'),  # 14-step config change -> score 182
         (55, 'module_testing', 3, 20, 'XL'),  # 55-step multi-file test refactor -> score 651
-        (70, 'module_testing', 4, 25, 'XXL'), # 70-step multi-module test rewrite -> score 824
+        (70, 'module_testing', 4, 25, 'XXL'),  # 70-step multi-module test rewrite -> score 824
     ],
 )
 def test_derive_cost_size_worked_examples(step_count, profile, skills, target_files, expected_size):
@@ -165,10 +164,14 @@ def test_cli_derive_cost_size_returns_success():
     result = run_script(
         SCRIPT_PATH,
         'derive-cost-size',
-        '--step-count', '3',
-        '--profile', 'verification',
-        '--skills-count', '0',
-        '--target-file-count', '2',
+        '--step-count',
+        '3',
+        '--profile',
+        'verification',
+        '--skills-count',
+        '0',
+        '--target-file-count',
+        '2',
     )
     assert result.returncode == 0
     assert 'status: success' in result.stdout
@@ -180,10 +183,14 @@ def test_cli_derive_cost_size_emits_predicted_tokens():
     result = run_script(
         SCRIPT_PATH,
         'derive-cost-size',
-        '--step-count', '14',
-        '--profile', 'implementation',
-        '--skills-count', '2',
-        '--target-file-count', '6',
+        '--step-count',
+        '14',
+        '--profile',
+        'implementation',
+        '--skills-count',
+        '2',
+        '--target-file-count',
+        '6',
     )
     assert result.returncode == 0
     assert 'cost_size: L' in result.stdout
@@ -195,11 +202,16 @@ def test_cli_derive_cost_size_honors_injected_size_table():
     result = run_script(
         SCRIPT_PATH,
         'derive-cost-size',
-        '--step-count', '14',
-        '--profile', 'implementation',
-        '--skills-count', '2',
-        '--target-file-count', '6',
-        '--size-table', '{"XS": "1K", "S": "1K", "M": "2K", "L": "3K", "XL": "4K", "XXL": "5K"}',
+        '--step-count',
+        '14',
+        '--profile',
+        'implementation',
+        '--skills-count',
+        '2',
+        '--target-file-count',
+        '6',
+        '--size-table',
+        '{"XS": "1K", "S": "1K", "M": "2K", "L": "3K", "XL": "4K", "XXL": "5K"}',
     )
     assert result.returncode == 0
     assert 'cost_size: L' in result.stdout
@@ -211,11 +223,16 @@ def test_cli_derive_cost_size_rejects_malformed_size_table_json():
     result = run_script(
         SCRIPT_PATH,
         'derive-cost-size',
-        '--step-count', '3',
-        '--profile', 'verification',
-        '--skills-count', '0',
-        '--target-file-count', '2',
-        '--size-table', '{not valid json',
+        '--step-count',
+        '3',
+        '--profile',
+        'verification',
+        '--skills-count',
+        '0',
+        '--target-file-count',
+        '2',
+        '--size-table',
+        '{not valid json',
     )
     assert result.returncode == 0
     assert 'status: error' in result.stdout
@@ -226,10 +243,14 @@ def test_cli_derive_cost_size_rejects_negative_count():
     result = run_script(
         SCRIPT_PATH,
         'derive-cost-size',
-        '--step-count', '-1',
-        '--profile', 'implementation',
-        '--skills-count', '0',
-        '--target-file-count', '0',
+        '--step-count',
+        '-1',
+        '--profile',
+        'implementation',
+        '--skills-count',
+        '0',
+        '--target-file-count',
+        '0',
     )
     assert result.returncode == 0
     assert 'status: error' in result.stdout
@@ -240,8 +261,11 @@ def test_cli_derive_cost_size_missing_required_arg_exits_2():
     result = run_script(
         SCRIPT_PATH,
         'derive-cost-size',
-        '--profile', 'implementation',
-        '--skills-count', '0',
-        '--target-file-count', '0',
+        '--profile',
+        'implementation',
+        '--skills-count',
+        '0',
+        '--target-file-count',
+        '0',
     )
     assert result.returncode == 2

@@ -59,6 +59,7 @@ def _params_for(steps_map: dict, step_id: str):
     """
     return steps_map[step_id]
 
+
 # =============================================================================
 # phase-5-execute Verification Pipeline Command Tests (Tier 2)
 # =============================================================================
@@ -111,9 +112,7 @@ def test_execute_set_steps_single_canonical_verify_round_trips(plan_context):
     config = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
     # verification_steps persists as the canonical keyed map; a config-less step
     # maps to an empty {} param object.
-    assert config['plan']['phase-5-execute']['verification_steps'] == {
-        'default:verify:quality-gate': {}
-    }
+    assert config['plan']['phase-5-execute']['verification_steps'] == {'default:verify:quality-gate': {}}
 
 
 def test_execute_set_steps_multiple_canonical_verify_succeeds_ordered_by_list_position(plan_context):
@@ -606,9 +605,7 @@ def test_execute_set_steps_round_trip_resolves_order(plan_context):
     assert result['status'] == 'success', f'Expected success (no missing_order), got {result}'
     config = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
     # config-less step persists as a {step_id: {}} entry in the keyed map
-    assert config['plan']['phase-5-execute']['verification_steps'] == {
-        'default:verify:quality-gate': {}
-    }
+    assert config['plan']['phase-5-execute']['verification_steps'] == {'default:verify:quality-gate': {}}
 
 
 # =============================================================================
@@ -708,9 +705,7 @@ def test_phase_5_execute_get_per_deliverable_build_default(plan_context):
     """Test plan phase-5-execute get returns the per_deliverable_build list default."""
     create_marshal_json(plan_context.fixture_dir)
 
-    result = cmd_plan(
-        Namespace(sub_noun='phase-5-execute', verb='get', field='per_deliverable_build')
-    )
+    result = cmd_plan(Namespace(sub_noun='phase-5-execute', verb='get', field='per_deliverable_build'))
 
     assert result['status'] == 'success'
     # The knob is now a LIST of default:verify:{canonical} step IDs.
@@ -883,17 +878,13 @@ def test_phase_5_execute_remove_field_deletes_persisted_key(plan_context):
     )
     assert set_result['status'] == 'success'
 
-    remove_result = cmd_plan(
-        Namespace(sub_noun='phase-5-execute', verb='remove-field', field='per_deliverable_build')
-    )
+    remove_result = cmd_plan(Namespace(sub_noun='phase-5-execute', verb='remove-field', field='per_deliverable_build'))
 
     assert remove_result['status'] == 'success'
     assert remove_result['removed'] is True
 
     # the seeded default is re-exposed after the override is removed
-    get_result = cmd_plan(
-        Namespace(sub_noun='phase-5-execute', verb='get', field='per_deliverable_build')
-    )
+    get_result = cmd_plan(Namespace(sub_noun='phase-5-execute', verb='get', field='per_deliverable_build'))
     assert get_result['value'] == ['default:verify:compile', 'default:verify:module-tests']
 
 
@@ -902,9 +893,7 @@ def test_phase_5_execute_remove_field_errors_on_absent_key(plan_context):
     create_marshal_json(plan_context.fixture_dir)
 
     # the legacy `steps` key has no default and is absent from a fresh config
-    result = cmd_plan(
-        Namespace(sub_noun='phase-5-execute', verb='remove-field', field='steps')
-    )
+    result = cmd_plan(Namespace(sub_noun='phase-5-execute', verb='remove-field', field='steps'))
 
     assert result['status'] == 'error'
 
@@ -1209,9 +1198,7 @@ def test_finalize_get_folded_knob_field_is_rejected(plan_context):
     """
     create_marshal_json(plan_context.fixture_dir, _marshal_without_finalize_section())
 
-    result = cmd_plan(
-        Namespace(sub_noun='phase-6-finalize', verb='get', field='simplify')
-    )
+    result = cmd_plan(Namespace(sub_noun='phase-6-finalize', verb='get', field='simplify'))
 
     assert result['status'] == 'error'
     assert 'simplify' in result['error']
@@ -1266,22 +1253,16 @@ def test_steps_map_empty_dict_yields_empty_dict():
 
 def test_steps_map_single_entry_keyed_map():
     """Single-entry keyed maps — one config-less, one param-bearing (edge case)."""
-    assert _cmd_quality_phases._steps_map({'default:push': {}}) == {
-        'default:push': {}
+    assert _cmd_quality_phases._steps_map({'default:push': {}}) == {'default:push': {}}
+    assert _cmd_quality_phases._steps_map({'plan-marshall:automatic-review': {'review_bot_buffer_seconds': 300}}) == {
+        'plan-marshall:automatic-review': {'review_bot_buffer_seconds': 300}
     }
-    assert _cmd_quality_phases._steps_map(
-        {'plan-marshall:automatic-review': {'review_bot_buffer_seconds': 300}}
-    ) == {'plan-marshall:automatic-review': {'review_bot_buffer_seconds': 300}}
 
 
 def test_steps_map_null_value_coerces_to_empty():
     """A keyed-map value that is null/{} coerces to an empty param dict."""
-    assert _cmd_quality_phases._steps_map({'default:push': None}) == {
-        'default:push': {}
-    }
-    assert _cmd_quality_phases._steps_map({'default:push': {}}) == {
-        'default:push': {}
-    }
+    assert _cmd_quality_phases._steps_map({'default:push': None}) == {'default:push': {}}
+    assert _cmd_quality_phases._steps_map({'default:push': {}}) == {'default:push': {}}
 
 
 def test_steps_map_returns_fresh_dict_callers_can_mutate():
@@ -1352,9 +1333,7 @@ def test_finalize_remove_step_persists_keyed_map_and_is_idempotent(plan_context)
     assert isinstance(before['plan']['phase-6-finalize']['steps'], dict)
 
     # First write — rewrites the keyed map.
-    first = cmd_plan(
-        Namespace(sub_noun='phase-6-finalize', verb='remove-step', step='default:lessons-capture')
-    )
+    first = cmd_plan(Namespace(sub_noun='phase-6-finalize', verb='remove-step', step='default:lessons-capture'))
     assert first['status'] == 'success'
 
     after_first = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
@@ -1362,14 +1341,10 @@ def test_finalize_remove_step_persists_keyed_map_and_is_idempotent(plan_context)
     assert isinstance(steps_after_first, dict)
     assert 'default:lessons-capture' not in _step_ids(steps_after_first)
     # The param-bearing step keeps its nested object in the keyed map.
-    assert _params_for(steps_after_first, 'plan-marshall:automatic-review') == {
-        'review_bot_buffer_seconds': 300
-    }
+    assert _params_for(steps_after_first, 'plan-marshall:automatic-review') == {'review_bot_buffer_seconds': 300}
 
     # Second write — operates on the keyed-map on-disk value; result is still a keyed map.
-    second = cmd_plan(
-        Namespace(sub_noun='phase-6-finalize', verb='remove-step', step='default:sonar-roundtrip')
-    )
+    second = cmd_plan(Namespace(sub_noun='phase-6-finalize', verb='remove-step', step='default:sonar-roundtrip'))
     assert second['status'] == 'success'
 
     after_second = json.loads((plan_context.fixture_dir / 'marshal.json').read_text())
@@ -1378,9 +1353,7 @@ def test_finalize_remove_step_persists_keyed_map_and_is_idempotent(plan_context)
     assert isinstance(steps_after_second, dict)
     assert 'default:sonar-roundtrip' not in _step_ids(steps_after_second)
     # The param-bearing step still survives with its nested object.
-    assert _params_for(steps_after_second, 'plan-marshall:automatic-review') == {
-        'review_bot_buffer_seconds': 300
-    }
+    assert _params_for(steps_after_second, 'plan-marshall:automatic-review') == {'review_bot_buffer_seconds': 300}
 
 
 def test_step_set_against_keyed_map_persists_keyed_map_form(plan_context):
@@ -1444,9 +1417,7 @@ def test_set_steps_against_keyed_map_preserves_params(plan_context):
     persisted = after['plan']['phase-6-finalize']['steps']
     assert isinstance(persisted, dict)
     # The retained param-bearing step keeps its params.
-    assert _params_for(persisted, 'plan-marshall:automatic-review') == {
-        'review_bot_buffer_seconds': 300
-    }
+    assert _params_for(persisted, 'plan-marshall:automatic-review') == {'review_bot_buffer_seconds': 300}
 
 
 # =============================================================================
@@ -1571,13 +1542,9 @@ def test_write_path_rejects_the_unreadable_field_the_read_path_rejects(plan_cont
     )
 
     read = cmd_plan(Namespace(sub_noun=_GUARD_PHASE, verb='get', field=_UNREADABLE_FIELD))
-    assert read['status'] == 'error', (
-        f'the READ path accepted {_UNREADABLE_FIELD!r}; the pair assumes it rejects it'
-    )
+    assert read['status'] == 'error', f'the READ path accepted {_UNREADABLE_FIELD!r}; the pair assumes it rejects it'
 
-    written = cmd_plan(
-        Namespace(sub_noun=_GUARD_PHASE, verb='set', field=_UNREADABLE_FIELD, value='true')
-    )
+    written = cmd_plan(Namespace(sub_noun=_GUARD_PHASE, verb='set', field=_UNREADABLE_FIELD, value='true'))
 
     assert written['status'] == 'error', (
         f'the WRITE path accepted {_UNREADABLE_FIELD!r}, which the READ path '
@@ -1615,9 +1582,7 @@ def test_write_path_still_accepts_a_readable_field(plan_context):
         f'so it cannot serve as the readable half of the pair.'
     )
 
-    written = cmd_plan(
-        Namespace(sub_noun=_GUARD_PHASE, verb='set', field=_READABLE_FIELD, value='false')
-    )
+    written = cmd_plan(Namespace(sub_noun=_GUARD_PHASE, verb='set', field=_READABLE_FIELD, value='false'))
 
     assert written['status'] == 'success', (
         f'the write-path guard refused the legitimate field {_READABLE_FIELD!r}: '
@@ -1677,9 +1642,7 @@ def test_read_and_write_paths_agree_across_the_derived_field_population(plan_con
     refused = []
     for field in sorted(scalar):
         current = cmd_plan(Namespace(sub_noun=_GUARD_PHASE, verb='get', field=field))['value']
-        written = cmd_plan(
-            Namespace(sub_noun=_GUARD_PHASE, verb='set', field=field, value=str(current))
-        )
+        written = cmd_plan(Namespace(sub_noun=_GUARD_PHASE, verb='set', field=field, value=str(current)))
         if written['status'] != 'success':
             refused.append(f'{field}: {written.get("error")}')
 

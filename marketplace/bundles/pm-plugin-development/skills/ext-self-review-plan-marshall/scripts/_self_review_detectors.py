@@ -358,9 +358,7 @@ def _collect_schema_bearing_within_radius(
     return out
 
 
-def _doc_referenced_skill_sources(
-    md_added: list[tuple[int, str]], project_dir: Path
-) -> list[str]:
+def _doc_referenced_skill_sources(md_added: list[tuple[int, str]], project_dir: Path) -> list[str]:
     """Return repo-relative SKILL.md paths referenced by a doc's added lines.
 
     A doc *references* a sibling script's output contract when its added lines
@@ -441,9 +439,7 @@ def _detect_contract_sources(
             union_sources.update(str(p.relative_to(project_dir)) for p in structural)
 
         if rel.endswith('.md'):
-            union_sources.update(
-                _doc_referenced_skill_sources(md_added_by_file.get(rel, []), project_dir)
-            )
+            union_sources.update(_doc_referenced_skill_sources(md_added_by_file.get(rel, []), project_dir))
 
         if union_sources:
             contract_entries.append(
@@ -501,19 +497,13 @@ def _detect_keep_markers(
         # can mask a removal.  Using line-number exclusion was insufficient
         # because it only covered markers added in the current diff, not
         # pre-existing markers that also carry the identifier text.
-        non_marker_lines = [
-            line
-            for line in post_image
-            if not _KEEP_MARKER.search(line)
-        ]
+        non_marker_lines = [line for line in post_image if not _KEEP_MARKER.search(line)]
         non_marker_blob = '\n'.join(non_marker_lines)
 
         for lineno, identifier in markers:
             # Use word-boundary guards to avoid false-positive substring matches
             # (e.g. identifier 'body' matching inside 'nobody' or 'method_body').
-            pattern = re.compile(
-                r'(?<![a-zA-Z0-9_-])' + re.escape(identifier) + r'(?![a-zA-Z0-9_-])'
-            )
+            pattern = re.compile(r'(?<![a-zA-Z0-9_-])' + re.escape(identifier) + r'(?![a-zA-Z0-9_-])')
             still_present = bool(pattern.search(non_marker_blob))
             kind = 'keep_protected' if still_present else 'keep_violation'
             candidates.append(
@@ -568,9 +558,7 @@ def _name_in_test_blob(name: str, test_blob: str) -> bool:
     """
     if not test_blob:
         return False
-    pattern = re.compile(
-        r'(?<![a-zA-Z0-9_-])' + re.escape(name) + r'(?![a-zA-Z0-9_-])'
-    )
+    pattern = re.compile(r'(?<![a-zA-Z0-9_-])' + re.escape(name) + r'(?![a-zA-Z0-9_-])')
     return bool(pattern.search(test_blob))
 
 
@@ -834,9 +822,7 @@ def _detect_same_document_consistency(added: list[tuple[str, int, str]]) -> list
     return out
 
 
-def _detect_description_vs_body(
-    added: list[tuple[str, int, str]], project_dir: Path
-) -> list[dict[str, Any]]:
+def _detect_description_vs_body(added: list[tuple[str, int, str]], project_dir: Path) -> list[dict[str, Any]]:
     """Detect a ``.md`` whose frontmatter description and body both changed.
 
     A frontmatter ``description:`` (or ``summary:``) line summarizes the
@@ -1037,9 +1023,7 @@ def _detect_unguarded_boundaries(
     return out
 
 
-def _detect_count_prose(
-    modified_files: list[str], project_dir: Path
-) -> list[dict[str, Any]]:
+def _detect_count_prose(modified_files: list[str], project_dir: Path) -> list[dict[str, Any]]:
     """Detect count-prose in a modified file's skill contract sources (Facet 2).
 
     For each modified file nested inside a skill directory (reuse
@@ -1126,8 +1110,7 @@ def _ordered_list_blocks(post_image: list[str]) -> list[dict[str, Any]]:
             # block by recording the line but not closing the block yet.
             if current is not None:
                 next_item = next(
-                    (post_image[j] for j in range(i + 1, n_lines)
-                     if post_image[j].strip() != ''),
+                    (post_image[j] for j in range(i + 1, n_lines) if post_image[j].strip() != ''),
                     None,
                 )
                 if next_item is not None and _ORDERED_LIST_ITEM.match(next_item):
@@ -1144,9 +1127,7 @@ def _ordered_list_blocks(post_image: list[str]) -> list[dict[str, Any]]:
     return blocks
 
 
-def _detect_ordinal_references(
-    added: list[tuple[str, int, str]], project_dir: Path
-) -> list[dict[str, Any]]:
+def _detect_ordinal_references(added: list[tuple[str, int, str]], project_dir: Path) -> list[dict[str, Any]]:
     """Detect same-document ordinal cross-references into a touched ordered list.
 
     Scans added ``.md`` lines for an ordinal reference — ``item N`` / ``step N``
@@ -1183,13 +1164,9 @@ def _detect_ordinal_references(
 
         for lineno, content in md_added_by_file[md_path]:
             for m in _ORDINAL_NOUN_REFERENCE.finditer(content):
-                _record_ordinal_reference(
-                    out, seen, blocks, added_lines, md_path, lineno, content, int(m.group('n'))
-                )
+                _record_ordinal_reference(out, seen, blocks, added_lines, md_path, lineno, content, int(m.group('n')))
             for m in _ORDINAL_PAREN_REFERENCE.finditer(content):
-                _record_ordinal_reference(
-                    out, seen, blocks, added_lines, md_path, lineno, content, int(m.group('n'))
-                )
+                _record_ordinal_reference(out, seen, blocks, added_lines, md_path, lineno, content, int(m.group('n')))
     return out
 
 
@@ -1258,18 +1235,14 @@ def _detect_touched_claims(
         added_tokens = _TOKENIZE.findall(added)
         if len(removed_tokens) != len(added_tokens):
             continue
-        differing = sum(
-            1 for a, b in zip(removed_tokens, added_tokens, strict=True) if a != b
-        )
+        differing = sum(1 for a, b in zip(removed_tokens, added_tokens, strict=True) if a != b)
         if differing != 1:
             continue
         out.append({'file': path, 'line': lineno, 'text': _truncate(added, 200)})
     return out
 
 
-def _raw_pass_line_for_dest(
-    file_lines: list[tuple[int, str]], dest: str
-) -> tuple[int, str] | None:
+def _raw_pass_line_for_dest(file_lines: list[tuple[int, str]], dest: str) -> tuple[int, str] | None:
     """Find a raw-value pass-through of ``args.<dest>`` among ``file_lines``.
 
     A *raw pass-through* is a use of the argparse destination attribute that
@@ -1284,9 +1257,7 @@ def _raw_pass_line_for_dest(
     """
     # Match args.<dest> (attribute access) NOT immediately followed by another
     # identifier char, so ``args.issue`` does not match ``args.issue_url``.
-    access = re.compile(
-        r'\bargs\.' + re.escape(dest) + r'(?![A-Za-z0-9_])'
-    )
+    access = re.compile(r'\bargs\.' + re.escape(dest) + r'(?![A-Za-z0-9_])')
     for lineno, content in file_lines:
         if access.search(content) is None:
             continue
@@ -1313,9 +1284,7 @@ def _resolve_dest_from_line(content: str) -> str | None:
     return None
 
 
-def _resolve_dest_from_post_image(
-    post_image: list[str], help_lineno: int
-) -> str | None:
+def _resolve_dest_from_post_image(post_image: list[str], help_lineno: int) -> str | None:
     """Resolve the dest by reconstructing a multi-line ``add_argument`` call.
 
     ``help_lineno`` is the 1-based post-image line of the ``help=`` string.
@@ -1427,9 +1396,7 @@ def _detect_advertised_form_help_strings(
                 # the call context from the file's post-image and retry.
                 if path not in post_image_cache:
                     post_image_cache[path] = _read_post_image(project_dir, path)
-                dest = _resolve_dest_from_post_image(
-                    post_image_cache[path], lineno
-                )
+                dest = _resolve_dest_from_post_image(post_image_cache[path], lineno)
             if dest is None:
                 continue
             raw_pass = _raw_pass_line_for_dest(file_lines, dest)
@@ -1510,7 +1477,7 @@ def _scan_derived_key_in_block(block: dict[str, Any]) -> tuple[str, int] | None:
             continue
         indent = len(content) - len(content.lstrip())
         body: list[str] = []
-        for _follow_lineno, follow in lines[idx + 1:]:
+        for _follow_lineno, follow in lines[idx + 1 :]:
             if not follow.strip():
                 continue
             if len(follow) - len(follow.lstrip()) <= indent:
@@ -1615,9 +1582,7 @@ def _detect_scan_derived_keys(
         else:
             scan_lines_by_file[path] = sorted(added_by_file[path].items())
 
-    blocks_by_file = {
-        path: _function_blocks(scan_lines) for path, scan_lines in scan_lines_by_file.items()
-    }
+    blocks_by_file = {path: _function_blocks(scan_lines) for path, scan_lines in scan_lines_by_file.items()}
 
     out: list[dict[str, Any]] = []
     for path in sorted(added_by_file):
@@ -1635,9 +1600,7 @@ def _detect_scan_derived_keys(
                     'line': scan_line,
                     'name': block['name'],
                     'sequence': sequence,
-                    'key_consumed': _key_consumed_as_identity(
-                        block['name'], blocks_by_file, added_by_file
-                    ),
+                    'key_consumed': _key_consumed_as_identity(block['name'], blocks_by_file, added_by_file),
                 }
             )
     return out
@@ -1677,11 +1640,7 @@ def _predicate_tokens_agree(required: set[str], example: set[str]) -> bool:
     sides are already filtered to ``_MIN_PREDICATE_TOKEN_LEN`` characters, so the
     prefix test cannot be satisfied by an incidental short stem.
     """
-    return any(
-        req == ex or req.startswith(ex) or ex.startswith(req)
-        for req in required
-        for ex in example
-    )
+    return any(req == ex or req.startswith(ex) or ex.startswith(req) for req in required for ex in example)
 
 
 def _balanced_paren_span(text: str, open_index: int) -> str | None:
@@ -1903,9 +1862,7 @@ def _good_regions(block: dict[str, Any]) -> list[dict[str, Any]]:
     return regions
 
 
-def _worked_example_pairs(
-    path: str, lines: list[str], touched: set[int] | None = None
-) -> list[dict[str, Any]]:
+def _worked_example_pairs(path: str, lines: list[str], touched: set[int] | None = None) -> list[dict[str, Any]]:
     """Adjudicate every GOOD/BAD worked-example pair in one markdown document.
 
     Returns one record per pair, carrying ``file``, ``line`` (the GOOD marker),
@@ -1940,9 +1897,7 @@ def _worked_example_pairs(
                 if not required_tokens or not exprs:
                     agrees: bool | None = None
                 else:
-                    agrees = _predicate_tokens_agree(
-                        required_tokens, _predicate_tokens(example_phrase)
-                    )
+                    agrees = _predicate_tokens_agree(required_tokens, _predicate_tokens(example_phrase))
                 out.append(
                     {
                         'file': path,
@@ -2041,9 +1996,7 @@ def _lines_inside_loop(block_lines: list[tuple[int, str]]) -> set[int]:
     return inside
 
 
-def _identity_insertion(
-    content: str, new_collections: set[str]
-) -> tuple[str, str, str] | None:
+def _identity_insertion(content: str, new_collections: set[str]) -> tuple[str, str, str] | None:
     """Return ``(collection, identity, form)`` when ``content`` claims an identity.
 
     Two forms, each onto a NEW (empty-initialized) collection:
@@ -2156,9 +2109,7 @@ def _claimable_key_hits_in_block(block: dict[str, Any]) -> list[dict[str, Any]]:
             continue
         if _identity_deduped(identity, blob):
             continue
-        hits.append(
-            {'line': lineno, 'collection': collection, 'key': identity, 'form': form}
-        )
+        hits.append({'line': lineno, 'collection': collection, 'key': identity, 'form': form})
     return hits
 
 
@@ -2264,9 +2215,7 @@ def _report_channel_name(block: dict[str, Any]) -> str | None:
     return None
 
 
-def _discard_branch_body(
-    body: list[tuple[int, str]], opener_index: int, if_indent: int
-) -> list[str]:
+def _discard_branch_body(body: list[tuple[int, str]], opener_index: int, if_indent: int) -> list[str]:
     """Return the deeper-indented body lines of the ``if`` opener at ``opener_index``.
 
     The branch body is every subsequent line indented strictly deeper than
@@ -2274,7 +2223,7 @@ def _discard_branch_body(
     comment lines are skipped (they neither belong to nor close the body).
     """
     body_lines: list[str] = []
-    for _lineno, content in body[opener_index + 1:]:
+    for _lineno, content in body[opener_index + 1 :]:
         if not content.strip() or content.lstrip().startswith('#'):
             continue
         indent = len(content) - len(content.lstrip())
@@ -2284,9 +2233,7 @@ def _discard_branch_body(
     return body_lines
 
 
-def _unreported_discards_in_block(
-    block: dict[str, Any], channel: str
-) -> list[dict[str, Any]]:
+def _unreported_discards_in_block(block: dict[str, Any], channel: str) -> list[dict[str, Any]]:
     """Return every BARE ``if``-guarded discard branch in a channel-owning block.
 
     A bare discard is an ``if``/``elif`` whose entire body is a single
@@ -2461,9 +2408,7 @@ def _candidate_files(detected: dict[str, list]) -> tuple[set[str], int]:
     return files, unattributed
 
 
-def _compute_delta_coverage(
-    modified_files: list[str], detected: dict[str, list]
-) -> dict[str, Any]:
+def _compute_delta_coverage(modified_files: list[str], detected: dict[str, list]) -> dict[str, Any]:
     """Report what this round's scope HELD against what this round actually REACHED.
 
     The surface's clean verdict is an absence claim, and an absence claim needs
@@ -2517,9 +2462,7 @@ def _compute_delta_coverage(
     files_in_scope = len(modified_files)
     files_with_candidates = len(set(modified_files) & reached)
     classes_present = sum(1 for row in by_class if row['files'])
-    silent_classes = sum(
-        1 for row in by_class if row['files'] and not row['files_with_candidates']
-    )
+    silent_classes = sum(1 for row in by_class if row['files'] and not row['files_with_candidates'])
 
     return {
         'files_in_scope': files_in_scope,
@@ -2528,9 +2471,7 @@ def _compute_delta_coverage(
         'classes_present': classes_present,
         'classes_present_without_candidates': silent_classes,
         'candidates_unattributed': unattributed,
-        'statement': _format_coverage_statement(
-            files_in_scope, files_with_candidates, classes_present, silent_classes
-        ),
+        'statement': _format_coverage_statement(files_in_scope, files_with_candidates, classes_present, silent_classes),
         'by_class': by_class,
     }
 

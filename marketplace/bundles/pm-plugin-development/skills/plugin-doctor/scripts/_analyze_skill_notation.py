@@ -62,9 +62,7 @@ _SEGMENT = r'[A-Za-z0-9][A-Za-z0-9_-]*'
 # `Skill:` keyword followed by the two-segment notation. A trailing third
 # segment (script notation) would make this an executor notation, not a skill
 # directive, so the skill segment is bounded by a non-`:` lookahead.
-_DIRECTIVE_RE = re.compile(
-    rf'\bSkill:\s+(?P<bundle>{_SEGMENT}):(?P<skill>{_SEGMENT})(?![:\w-])'
-)
+_DIRECTIVE_RE = re.compile(rf'\bSkill:\s+(?P<bundle>{_SEGMENT}):(?P<skill>{_SEGMENT})(?![:\w-])')
 
 # The bundle subtrees whose markdown is scanned.
 _COMPONENT_DIRS = ('skills', 'agents', 'commands')

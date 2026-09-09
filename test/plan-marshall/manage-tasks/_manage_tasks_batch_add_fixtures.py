@@ -16,7 +16,6 @@ Covers:
   - depends_on alternative encodings
 """
 
-
 from argparse import Namespace
 
 from conftest import load_script_module
@@ -79,9 +78,7 @@ def _entry(
         depends_on = []
     if skills is None:
         skills = []
-    normalized_steps = [
-        s if isinstance(s, dict) else {'target': s, 'intent': 'write-replace'} for s in steps
-    ]
+    normalized_steps = [s if isinstance(s, dict) else {'target': s, 'intent': 'write-replace'} for s in steps]
     entry = {
         'title': title,
         'deliverable': deliverable,

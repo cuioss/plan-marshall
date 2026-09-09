@@ -90,12 +90,14 @@ def test_classify_paths_claims_nested_test_resources_as_test():
 def test_classify_paths_nested_resources_match_bare_forms():
     """Nested and bare resource layouts classify identically."""
     ext = BuildExtension()
-    result = ext.classify_paths([
-        'src/main/resources/a.properties',
-        'module-a/src/main/resources/b.properties',
-        'src/test/resources/c.json',
-        'module-a/src/test/resources/d.json',
-    ])
+    result = ext.classify_paths(
+        [
+            'src/main/resources/a.properties',
+            'module-a/src/main/resources/b.properties',
+            'src/test/resources/c.json',
+            'module-a/src/test/resources/d.json',
+        ]
+    )
     assert result['production'] == [
         'src/main/resources/a.properties',
         'module-a/src/main/resources/b.properties',
@@ -109,11 +111,13 @@ def test_classify_paths_nested_resources_match_bare_forms():
 def test_classify_paths_claims_resources_regardless_of_extension():
     """A resource's role follows its tree, not its file suffix."""
     ext = BuildExtension()
-    result = ext.classify_paths([
-        'src/main/resources/logback.xml',
-        'src/main/resources/data.csv',
-        'src/main/resources/mystery.xyz',
-    ])
+    result = ext.classify_paths(
+        [
+            'src/main/resources/logback.xml',
+            'src/main/resources/data.csv',
+            'src/main/resources/mystery.xyz',
+        ]
+    )
     assert result['production'] == [
         'src/main/resources/logback.xml',
         'src/main/resources/data.csv',
@@ -221,14 +225,16 @@ def test_classify_paths_handles_empty_input():
 def test_classify_paths_mixed_input():
     """A mixed input list classifies each path into the right bucket."""
     ext = BuildExtension()
-    result = ext.classify_paths([
-        'src/main/resources/application.properties',
-        'src/main/java/com/example/Foo.java',
-        'src/test/resources/fixture.json',
-        'src/test/java/com/example/FooTest.java',
-        'pom.xml',
-        'build.sh',
-    ])
+    result = ext.classify_paths(
+        [
+            'src/main/resources/application.properties',
+            'src/main/java/com/example/Foo.java',
+            'src/test/resources/fixture.json',
+            'src/test/java/com/example/FooTest.java',
+            'pom.xml',
+            'build.sh',
+        ]
+    )
     assert result['production'] == [
         'src/main/resources/application.properties',
         'src/main/java/com/example/Foo.java',
@@ -246,28 +252,15 @@ def test_classify_paths_mixed_input():
 def test_classify_path_specificity_resources_scores_three():
     """A resource path returns the resource row's specificity of 3."""
     ext = BuildExtension()
-    assert (
-        ext.classify_path_specificity(
-            'src/main/resources/application.properties', 'production'
-        )
-        == 3
-    )
-    assert (
-        ext.classify_path_specificity('src/test/resources/fixture.json', 'test') == 3
-    )
+    assert ext.classify_path_specificity('src/main/resources/application.properties', 'production') == 3
+    assert ext.classify_path_specificity('src/test/resources/fixture.json', 'test') == 3
 
 
 def test_classify_path_specificity_java_scores_two():
     """A java source path returns the java row's specificity of 2."""
     ext = BuildExtension()
-    assert (
-        ext.classify_path_specificity('src/main/java/com/example/Foo.java', 'production')
-        == 2
-    )
-    assert (
-        ext.classify_path_specificity('src/test/java/com/example/FooTest.java', 'test')
-        == 2
-    )
+    assert ext.classify_path_specificity('src/main/java/com/example/Foo.java', 'production') == 2
+    assert ext.classify_path_specificity('src/test/java/com/example/FooTest.java', 'test') == 2
 
 
 def test_classify_path_specificity_pom_xml_scores_one():
@@ -286,12 +279,7 @@ def test_classify_path_specificity_shell_script_scores_zero():
 def test_classify_path_specificity_returns_zero_for_wrong_role():
     """A path claimed under a different role than asked returns 0."""
     ext = BuildExtension()
-    assert (
-        ext.classify_path_specificity(
-            'src/main/resources/application.properties', 'test'
-        )
-        == 0
-    )
+    assert ext.classify_path_specificity('src/main/resources/application.properties', 'test') == 0
     assert ext.classify_path_specificity('pom.xml', 'production') == 0
 
 
@@ -373,9 +361,7 @@ def test_it_suffix_java_under_src_test_resolves_verify_build_class():
         == BUILD_CLASS_BUILD_CONFIG_FULL
     )
     assert (
-        ext.classify_build_class(
-            'module-a/src/test/java/com/example/FooIT.java', 'test'
-        )
+        ext.classify_build_class('module-a/src/test/java/com/example/FooIT.java', 'test')
         == BUILD_CLASS_BUILD_CONFIG_FULL
     )
 
@@ -384,56 +370,32 @@ def test_it_prefix_and_itcase_java_resolve_verify_build_class():
     """The IT*.java and *ITCase.java sibling signatures also route to verify."""
     ext = BuildExtension()
     assert (
-        ext.classify_build_class('src/test/java/com/example/ITFooGateway.java', 'test')
-        == BUILD_CLASS_BUILD_CONFIG_FULL
+        ext.classify_build_class('src/test/java/com/example/ITFooGateway.java', 'test') == BUILD_CLASS_BUILD_CONFIG_FULL
     )
-    assert (
-        ext.classify_build_class('src/test/java/com/example/FooITCase.java', 'test')
-        == BUILD_CLASS_BUILD_CONFIG_FULL
-    )
+    assert ext.classify_build_class('src/test/java/com/example/FooITCase.java', 'test') == BUILD_CLASS_BUILD_CONFIG_FULL
 
 
 def test_plain_test_java_still_resolves_module_tests():
     """A plain FooTest.java keeps the Surefire module-tests default."""
     ext = BuildExtension()
-    assert (
-        ext.classify_build_class('src/test/java/com/example/FooTest.java', 'test')
-        == BUILD_CLASS_TEST_RUN
-    )
-    assert (
-        ext.classify_build_class(
-            'module-a/src/test/java/com/example/BarTest.java', 'test'
-        )
-        == BUILD_CLASS_TEST_RUN
-    )
+    assert ext.classify_build_class('src/test/java/com/example/FooTest.java', 'test') == BUILD_CLASS_TEST_RUN
+    assert ext.classify_build_class('module-a/src/test/java/com/example/BarTest.java', 'test') == BUILD_CLASS_TEST_RUN
 
 
 def test_it_signature_outside_test_role_keeps_base_default():
     """The IT signature discriminates only test-role paths — other roles unaffected."""
     ext = BuildExtension()
     assert ext.classify_build_class('pom.xml', 'config') == BUILD_CLASS_BUILD_CONFIG_FULL
-    assert (
-        ext.classify_build_class('src/main/java/com/example/ITHelper.java', 'production')
-        == BUILD_CLASS_PROD_COMPILE
-    )
+    assert ext.classify_build_class('src/main/java/com/example/ITHelper.java', 'production') == BUILD_CLASS_PROD_COMPILE
 
 
 def test_classify_build_class_accepts_route_pattern_strings():
     """The seed stamps (pattern, role) routes via classify_build_class — IT route
     patterns must stamp verify, the generic test route keeps module-tests."""
     ext = BuildExtension()
-    assert (
-        ext.classify_build_class('*/src/test/*IT.java', 'test')
-        == BUILD_CLASS_BUILD_CONFIG_FULL
-    )
-    assert (
-        ext.classify_build_class('src/test/*ITCase.java', 'test')
-        == BUILD_CLASS_BUILD_CONFIG_FULL
-    )
-    assert (
-        ext.classify_build_class('*/src/test/IT*.java', 'test')
-        == BUILD_CLASS_BUILD_CONFIG_FULL
-    )
+    assert ext.classify_build_class('*/src/test/*IT.java', 'test') == BUILD_CLASS_BUILD_CONFIG_FULL
+    assert ext.classify_build_class('src/test/*ITCase.java', 'test') == BUILD_CLASS_BUILD_CONFIG_FULL
+    assert ext.classify_build_class('*/src/test/IT*.java', 'test') == BUILD_CLASS_BUILD_CONFIG_FULL
     assert ext.classify_build_class('*/src/test/*.java', 'test') == BUILD_CLASS_TEST_RUN
 
 

@@ -70,8 +70,12 @@ def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
 #: scope because ``parse_ns`` re-executes the script module on every call, and
 #: ``register=False`` because only the namespace is wanted here.
 _CAPABILITIES_ARGS = parse_ns(
-    _ARCH_BUNDLE, _ARCH_SKILL, _ARCH_SCRIPT,
-    '--project-dir', '.', 'capabilities',
+    _ARCH_BUNDLE,
+    _ARCH_SKILL,
+    _ARCH_SCRIPT,
+    '--project-dir',
+    '.',
+    'capabilities',
     register=False,
 )
 
@@ -91,9 +95,7 @@ class _StubResolver:
 
 
 def _register_resolvers(monkeypatch, *resolvers: _StubResolver) -> None:
-    records = [
-        {'origin': f'stub-{r.resolver_id}', 'id': r.resolver_id, 'module': r} for r in resolvers
-    ]
+    records = [{'origin': f'stub-{r.resolver_id}', 'id': r.resolver_id, 'module': r} for r in resolvers]
     monkeypatch.setattr(extension_discovery, 'discover_derivation_resolvers', lambda: records)
 
 

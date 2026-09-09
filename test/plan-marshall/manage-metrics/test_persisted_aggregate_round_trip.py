@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """The rendered report and the store agree about what exists."""
 
-
 import re
 
 from _manage_metrics_fixtures import (
@@ -67,8 +66,7 @@ class TestInlineCostFieldOnEveryRow:
         cmd_start_phase(ns_start_phase(plan_id, '5-execute'))
         cmd_end_phase(ns_end_phase(plan_id, '5-execute', total_tokens=5000))
         cmd_generate(ns_generate(plan_id))
-        assert _phase_field(_store(plan_context, plan_id), '5-execute',
-                            'inline_main_context_tokens') == 'unmeasured'
+        assert _phase_field(_store(plan_context, plan_id), '5-execute', 'inline_main_context_tokens') == 'unmeasured'
 
         # enrich now visits the phase and measures no inline spend.
         raw = manage_metrics.read_metrics_raw(plan_id)
@@ -76,8 +74,7 @@ class TestInlineCostFieldOnEveryRow:
         manage_metrics.write_metrics(plan_id, raw)
         cmd_generate(ns_generate(plan_id))
 
-        assert _phase_field(_store(plan_context, plan_id), '5-execute',
-                            'inline_main_context_tokens') == '0'
+        assert _phase_field(_store(plan_context, plan_id), '5-execute', 'inline_main_context_tokens') == '0'
 
 
 class TestUnclosedBoundaryFold:
@@ -151,9 +148,7 @@ class TestUnclosedBoundaryFold:
         """
         plan_id = 'unclosed-partial'
         self._drive_unclosed_finalize(plan_id)
-        cmd_accumulate_agent_usage(
-            ns_accumulate(plan_id, '6-finalize', total_tokens=1000, duration_ms=600000)
-        )
+        cmd_accumulate_agent_usage(ns_accumulate(plan_id, '6-finalize', total_tokens=1000, duration_ms=600000))
 
         result = cmd_generate(ns_generate(plan_id))
 
@@ -229,9 +224,7 @@ def test_four_field_persistence_walks_the_canonical_label_set():
     assert manage_metrics._FOUR_FIELD_USAGE_FIELDS == tuple(
         field for field, _label in manage_metrics._FOUR_FIELD_USAGE_LABELS
     )
-    source = get_script_path('plan-marshall', 'manage-metrics', 'manage-metrics.py').read_text(
-        encoding='utf-8'
-    )
+    source = get_script_path('plan-marshall', 'manage-metrics', 'manage-metrics.py').read_text(encoding='utf-8')
     enrich_body = source.split('def cmd_enrich(', 1)[1]
     # The literal tuple this loop used to spell out must not have come back.
     assert not re.search(r"for field in \(\s*'input_tokens'", enrich_body)
@@ -336,9 +329,10 @@ class TestOverCoveringBoundaryIsNotCalledAFloor:
 
         # Precondition, read after generate: this row's coverage is `partial`,
         # so the ONLY difference from the over-covering case is the classification.
-        assert manage_metrics._boundary_coverage_state(
-            manage_metrics.read_metrics_raw(plan_id)['phases']['5-execute']
-        ) == 'partial'
+        assert (
+            manage_metrics._boundary_coverage_state(manage_metrics.read_metrics_raw(plan_id)['phases']['5-execute'])
+            == 'partial'
+        )
         report = _report(plan_context, plan_id)
         row = next(line for line in report.splitlines() if line.startswith('| 5-execute'))
         assert '(boundary floor)' in row

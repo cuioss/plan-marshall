@@ -158,13 +158,13 @@ def test_extension_discovery_does_not_use_input_validation_helpers() -> None:
 # These tests pin that wiring so a future regression that drops one of
 # the routing flags fails loudly.
 
+
 @pytest.mark.parametrize(
     ('required_source_token', 'why_it_is_required'),
     [
         (
             'import resolve_project_dir',
-            'import resolve_project_dir to enforce the two-state '
-            '--plan-id / --project-dir routing contract',
+            'import resolve_project_dir to enforce the two-state --plan-id / --project-dir routing contract',
         ),
         (
             'resolve_project_dir(',
@@ -177,8 +177,7 @@ def test_extension_discovery_does_not_use_input_validation_helpers() -> None:
         ),
         (
             'emit_worktree_error',
-            'call emit_worktree_error to surface the canonical TOON error payload '
-            'when --plan-id resolution fails',
+            'call emit_worktree_error to surface the canonical TOON error payload when --plan-id resolution fails',
         ),
     ],
     ids=[
@@ -201,9 +200,7 @@ def test_extension_discovery_source_carries_the_routing_wiring(
     """
     source = SCRIPT_PATH.read_text(encoding='utf-8')
 
-    assert required_source_token in source, (
-        f'extension_discovery.py must {why_it_is_required}.'
-    )
+    assert required_source_token in source, f'extension_discovery.py must {why_it_is_required}.'
 
 
 def test_extension_discovery_help_declares_routing_flag_pair() -> None:

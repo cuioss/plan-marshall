@@ -97,9 +97,7 @@ _NEWLY_DECLARED_MEMBERS = (
 
 #: The lower bound the derived set must cover. NOT an enumeration of the set —
 #: the set is derived and may legitimately be larger.
-_REQUIRED_MEMBERS = (
-    _KNOWN_MEMBERS + _PREVIOUSLY_OMITTED_MEMBERS + _NEWLY_DECLARED_MEMBERS
-)
+_REQUIRED_MEMBERS = _KNOWN_MEMBERS + _PREVIOUSLY_OMITTED_MEMBERS + _NEWLY_DECLARED_MEMBERS
 
 #: The persistence obligation every head-dependent step's doc body must carry.
 _HEAD_AT_COMPLETION_FLAG = '--head-at-completion'
@@ -242,7 +240,7 @@ def test_every_member_declares_the_head_at_completion_obligation():
         doc_path = Path(record['path'])
         body = doc_path.read_text(encoding='utf-8')
         if _HEAD_AT_COMPLETION_FLAG not in body:
-            offenders.append(f"{record['name']} ({doc_path})")
+            offenders.append(f'{record["name"]} ({doc_path})')
 
     assert not offenders, (
         f'These head_dependent steps do not document the {_HEAD_AT_COMPLETION_FLAG} '

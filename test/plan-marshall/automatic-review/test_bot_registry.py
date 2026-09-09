@@ -83,8 +83,7 @@ def test_cuioss_review_bot_login_and_kind_are_the_same_name():
     mapping = bot_registry.login_to_bot_kind()
 
     assert 'cuioss-review-bot' in mapping, (
-        'the cuioss-review-bot record is absent from the registry — the identity '
-        'assertion below would be vacuous'
+        'the cuioss-review-bot record is absent from the registry — the identity assertion below would be vacuous'
     )
     assert mapping['cuioss-review-bot'] == 'cuioss-review-bot'
     # ...and the round trip holds through the normalising lookup real callers use,
@@ -232,9 +231,7 @@ def test_rate_limit_class_fails_closed_for_absent_field(tmp_path):
     expensive failure — the caller burns its whole await budget and still times
     out. The default must therefore be the value that suppresses the await.
     """
-    (tmp_path / 'demo.md').write_text(
-        '```yaml\nbot_kind: demo\nauthor_login: demo-bot\n```\n', encoding='utf-8'
-    )
+    (tmp_path / 'demo.md').write_text('```yaml\nbot_kind: demo\nauthor_login: demo-bot\n```\n', encoding='utf-8')
     reg = bot_registry.BotRegistry(standards_dir=tmp_path)
 
     assert reg.rate_limit_class('demo') == 'unknown'
@@ -345,9 +342,7 @@ def test_rate_limit_eta_patterns_per_bot():
         'commenting `@sourcery-ai review`.'
     )
     assert any(re.search(pattern, observed) for pattern in sourcery)
-    assert next(
-        m.group(1) for p in sourcery if (m := re.search(p, observed))
-    ) == '3 days and 17 hours'
+    assert next(m.group(1) for p in sourcery if (m := re.search(p, observed))) == '3 days and 17 hours'
 
     assert bot_registry.rate_limit_eta_patterns('cuioss-review-bot') == []
 
@@ -379,9 +374,7 @@ def test_module_functions_match_registry_singleton():
             bot_registry.REGISTRY.actionable_content_markers(bot_kind)
         )
         assert bot_registry.rate_limit_class(bot_kind) == bot_registry.REGISTRY.rate_limit_class(bot_kind)
-        assert bot_registry.rate_limit_eta_patterns(bot_kind) == bot_registry.REGISTRY.rate_limit_eta_patterns(
-            bot_kind
-        )
+        assert bot_registry.rate_limit_eta_patterns(bot_kind) == bot_registry.REGISTRY.rate_limit_eta_patterns(bot_kind)
 
 
 # =============================================================================
@@ -436,17 +429,7 @@ def test_scalar_unquotes_and_coerces_bool():
 
 def test_extract_registry_block_selects_the_bot_kind_block():
     """The extractor returns the first ``yaml`` fence declaring ``bot_kind:``."""
-    md = (
-        '# Doc\n'
-        '```bash\n'
-        'echo not-this\n'
-        '```\n'
-        'prose\n'
-        '```yaml\n'
-        'bot_kind: example\n'
-        'author_login: example-bot\n'
-        '```\n'
-    )
+    md = '# Doc\n```bash\necho not-this\n```\nprose\n```yaml\nbot_kind: example\nauthor_login: example-bot\n```\n'
     block = bot_registry._extract_registry_block(md)
     assert block is not None
     assert 'bot_kind: example' in block
@@ -510,9 +493,7 @@ def test_registry_loads_from_synthetic_standards_dir(tmp_path):
 def test_registry_skips_docs_without_a_registry_block(tmp_path):
     """A standards doc with no bot_kind data block contributes no bot."""
     (tmp_path / 'prose-only.md').write_text('# Just prose\n\nNo data block here.\n', encoding='utf-8')
-    (tmp_path / 'real.md').write_text(
-        '```yaml\nbot_kind: real\nauthor_login: real-bot\n```\n', encoding='utf-8'
-    )
+    (tmp_path / 'real.md').write_text('```yaml\nbot_kind: real\nauthor_login: real-bot\n```\n', encoding='utf-8')
     reg = bot_registry.BotRegistry(standards_dir=tmp_path)
     assert reg.bot_kinds() == ['real']
 

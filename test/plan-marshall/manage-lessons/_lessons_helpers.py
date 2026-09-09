@@ -18,14 +18,7 @@ re-paying the module-load cost.
 from conftest import MARKETPLACE_ROOT, load_script_module
 
 # Script path used by both direct-import and subprocess (CLI plumbing) tests.
-SCRIPT_PATH = (
-    MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-lessons'
-    / 'scripts'
-    / 'manage-lessons.py'
-)
+SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'manage-lessons' / 'scripts' / 'manage-lessons.py'
 
 # Tier 2 direct imports — the hyphenated filename is not importable by name, so
 # the module is registered under the underscored ``manage_lessons`` alias.

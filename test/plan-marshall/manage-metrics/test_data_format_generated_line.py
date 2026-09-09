@@ -26,9 +26,7 @@ from conftest import get_script_path, get_skill_dir
 # otherwise be ``Any`` and the readers below would return ``Any`` as ``str``.
 DATA_FORMAT: Path = get_skill_dir('plan-marshall', 'manage-metrics') / 'standards' / 'data-format.md'
 EMITTER: Path = get_script_path('plan-marshall', 'manage-metrics', 'manage-metrics.py')
-RUN_CONFIG_STANDARD: Path = (
-    get_skill_dir('plan-marshall', 'manage-run-config') / 'standards' / 'run-config-standard.md'
-)
+RUN_CONFIG_STANDARD: Path = get_skill_dir('plan-marshall', 'manage-run-config') / 'standards' / 'run-config-standard.md'
 
 #: The rendered shape the emitter produces: the strftime pattern
 #: ``%Y-%m-%d %H:%M:%S`` followed by the default ``" UTC"`` suffix.
@@ -57,8 +55,7 @@ def test_emitter_still_renders_a_generated_line_through_the_knob() -> None:
         'and data-format.md must be corrected rather than this test relaxed.'
     )
     assert '"%Y-%m-%d %H:%M:%S", " UTC"' in text, (
-        'The Generated: line no longer renders with the %Y-%m-%d %H:%M:%S / " UTC" pair the '
-        'documented example shows.'
+        'The Generated: line no longer renders with the %Y-%m-%d %H:%M:%S / " UTC" pair the documented example shows.'
     )
 
 
@@ -85,8 +82,7 @@ def test_worked_example_heading_matches_the_emitter() -> None:
         'and the worked example together.'
     )
     assert '# Metrics: my-feature' in _doc_text(), (
-        "The worked example's heading does not match the emitter's "
-        '"# Metrics: {plan_id}" line.'
+        'The worked example\'s heading does not match the emitter\'s "# Metrics: {plan_id}" line.'
     )
 
 

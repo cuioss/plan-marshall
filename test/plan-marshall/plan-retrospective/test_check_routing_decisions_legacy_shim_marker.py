@@ -26,23 +26,16 @@ the EMITTER'S OWN SOURCE at the commit before the shape changed, and its
 provenance is recorded beside it so a later reader can re-verify it the same way.
 """
 
-
 from __future__ import annotations
 
 import json
 
 from conftest import MARKETPLACE_ROOT, get_script_path, load_script_module
 
-_crd = load_script_module(
-    'plan-marshall', 'plan-retrospective', 'check-routing-decisions.py', 'crd_legacy_shim_mod'
-)
-_shim = load_script_module(
-    'pm-plugin-development', 'plugin-doctor', '_analyze_shim_marker.py', 'shim_marker_for_crd'
-)
+_crd = load_script_module('plan-marshall', 'plan-retrospective', 'check-routing-decisions.py', 'crd_legacy_shim_mod')
+_shim = load_script_module('pm-plugin-development', 'plugin-doctor', '_analyze_shim_marker.py', 'shim_marker_for_crd')
 
-CRD_PATH = get_script_path(
-    'plan-marshall', 'plan-retrospective', 'check-routing-decisions.py'
-)
+CRD_PATH = get_script_path('plan-marshall', 'plan-retrospective', 'check-routing-decisions.py')
 
 #: The cause token whose entry carries the shim.
 LEGACY_CAUSE = 'posture_cutoff_legacy_aggregate'
@@ -114,9 +107,7 @@ def test_legacy_aggregate_entry_carries_a_conforming_shim_marker():
     )
 
     malformed = [(m.anchor_line, m.malformed_reason) for m in covering if m.malformed_reason]
-    assert not malformed, (
-        'The marker covering the entry is malformed: ' + json.dumps(malformed, indent=2)
-    )
+    assert not malformed, 'The marker covering the entry is malformed: ' + json.dumps(malformed, indent=2)
 
 
 def test_shim_marker_fields_are_present_and_non_empty():
@@ -146,8 +137,7 @@ def test_shim_marker_fields_are_present_and_non_empty():
     for name in ('shim-floor', 'shim-remove-when'):
         for value in values[name]:
             assert value.lower() not in {'legacy', 'n/a', 'tbd', 'unknown'}, (
-                f'{name} is a placeholder ({value!r}), not a concrete '
-                'boundary/extinction condition.'
+                f'{name} is a placeholder ({value!r}), not a concrete boundary/extinction condition.'
             )
 
 
@@ -184,20 +174,13 @@ def test_shim_marker_rule_reports_no_finding_for_this_script(capsys):
         'would be vacuous rather than meaningful.'
     )
     assert str(CRD_PATH) in {str(p) for p in scanned}, (
-        f'{CRD_PATH.name} is not in the scanned population, so a clean verdict for it '
-        'proves nothing.'
+        f'{CRD_PATH.name} is not in the scanned population, so a clean verdict for it proves nothing.'
     )
 
     ours = [f for f in findings if str(f.get('file', '')).endswith(CRD_PATH.name)]
-    assert not ours, (
-        f'The shim-marker rule reports finding(s) against {CRD_PATH.name}:\n'
-        + json.dumps(
-            [
-                {'type': f.get('type'), 'line': f.get('line'), 'message': f.get('message')}
-                for f in ours
-            ],
-            indent=2,
-        )
+    assert not ours, f'The shim-marker rule reports finding(s) against {CRD_PATH.name}:\n' + json.dumps(
+        [{'type': f.get('type'), 'line': f.get('line'), 'message': f.get('message')} for f in ours],
+        indent=2,
     )
 
 
@@ -236,6 +219,4 @@ def test_legacy_pattern_is_the_route_that_reaches_the_list_repr_branch():
     assert '[' in CAPTURED_LEGACY_AGGREGATE_LINE and ']' in CAPTURED_LEGACY_AGGREGATE_LINE
 
     tokens = _crd._parse_step_tokens(str(_EMITTED_DROPPED))
-    assert tokens == _EMITTED_DROPPED, (
-        f'The list-repr branch did not split the captured drop list: {tokens!r}'
-    )
+    assert tokens == _EMITTED_DROPPED, f'The list-repr branch did not split the captured drop list: {tokens!r}'

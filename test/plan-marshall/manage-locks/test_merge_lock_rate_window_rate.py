@@ -12,7 +12,6 @@ Its sections, in order:
 * Release
 """
 
-
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
@@ -137,9 +136,7 @@ class TestRateWindowCheck:
         assert result['attempts_remaining'] == result['attempt_cap']
         assert not isolated_base['queue_path'].exists()
 
-    def test_unclaimed_check_carries_the_same_field_set_as_a_claimed_one(
-        self, isolated_base: dict
-    ) -> None:
+    def test_unclaimed_check_carries_the_same_field_set_as_a_claimed_one(self, isolated_base: dict) -> None:
         """Schema parity, derived from the claimed-branch population rather than a
         hand-listed key set: a consumer polling ``expired`` / ``seconds_remaining``
         must not KeyError just because the window was never claimed. The

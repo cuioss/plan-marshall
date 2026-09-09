@@ -15,6 +15,7 @@ Covers the WORKFLOW_DOC_TOON_ERROR_FIELD analyzer:
 - Clean baseline: no fenced TOON error_type produces no findings
 - The rule appears in the doctor-marketplace rule registry (provenance table)
 """
+
 from pathlib import Path
 
 from conftest import PROJECT_ROOT, load_script_module
@@ -81,57 +82,27 @@ def _make_agent_md(tmp_path: Path, content: str) -> Path:
 
 class TestErrorTypeDetected:
     def test_colon_style_error_type_detected(self, tmp_path):
-        content = (
-            'Some prose.\n'
-            '```toon\n'
-            'status: error\n'
-            'error_type: refine_contract_violation\n'
-            '```\n'
-        )
+        content = 'Some prose.\n```toon\nstatus: error\nerror_type: refine_contract_violation\n```\n'
         _make_skill_md(tmp_path, content)
         assert_analyzer_findings(analyze_workflow_doc_toon_error_field, tmp_path, [RULE_ID])
 
     def test_tab_style_error_type_detected(self, tmp_path):
-        content = (
-            '```toon\n'
-            'status\terror\n'
-            'error_type\trefine_contract_violation\n'
-            '```\n'
-        )
+        content = '```toon\nstatus\terror\nerror_type\trefine_contract_violation\n```\n'
         _make_skill_md(tmp_path, content)
         assert_analyzer_findings(analyze_workflow_doc_toon_error_field, tmp_path, [RULE_ID])
 
     def test_indented_error_type_detected(self, tmp_path):
-        content = (
-            '```toon\n'
-            'result:\n'
-            '  status: error\n'
-            '  error_type: validation_failure\n'
-            '```\n'
-        )
+        content = '```toon\nresult:\n  status: error\n  error_type: validation_failure\n```\n'
         _make_skill_md(tmp_path, content)
         assert_analyzer_findings(analyze_workflow_doc_toon_error_field, tmp_path, [RULE_ID])
 
     def test_multiple_error_type_keys_each_flagged(self, tmp_path):
-        content = (
-            '```toon\n'
-            'error_type: first\n'
-            '```\n'
-            'Prose between blocks.\n'
-            '```toon\n'
-            'error_type: second\n'
-            '```\n'
-        )
+        content = '```toon\nerror_type: first\n```\nProse between blocks.\n```toon\nerror_type: second\n```\n'
         _make_skill_md(tmp_path, content)
         assert_analyzer_findings(analyze_workflow_doc_toon_error_field, tmp_path, [RULE_ID] * 2)
 
     def test_agent_md_is_scanned(self, tmp_path):
-        content = (
-            '```toon\n'
-            'status: error\n'
-            'error_type: dispatch_failure\n'
-            '```\n'
-        )
+        content = '```toon\nstatus: error\nerror_type: dispatch_failure\n```\n'
         _make_agent_md(tmp_path, content)
         assert_analyzer_findings(analyze_workflow_doc_toon_error_field, tmp_path, [RULE_ID])
 
@@ -144,11 +115,7 @@ class TestErrorTypeDetected:
 class TestCanonicalErrorKeyClean:
     def test_canonical_error_key_not_flagged(self, tmp_path):
         content = (
-            '```toon\n'
-            'status: error\n'
-            'error: refine_contract_violation\n'
-            'display_detail: "Human-readable message"\n'
-            '```\n'
+            '```toon\nstatus: error\nerror: refine_contract_violation\ndisplay_detail: "Human-readable message"\n```\n'
         )
         _make_skill_md(tmp_path, content)
         assert_analyzer_findings(analyze_workflow_doc_toon_error_field, tmp_path, [])
@@ -156,12 +123,7 @@ class TestCanonicalErrorKeyClean:
     def test_error_substring_key_not_flagged(self, tmp_path):
         # A key that merely starts with ``error`` but is not ``error_type``
         # must not trip the anchored matcher.
-        content = (
-            '```toon\n'
-            'status: error\n'
-            'error_context: some detail\n'
-            '```\n'
-        )
+        content = '```toon\nstatus: error\nerror_context: some detail\n```\n'
         _make_skill_md(tmp_path, content)
         assert_analyzer_findings(analyze_workflow_doc_toon_error_field, tmp_path, [])
 
@@ -173,12 +135,7 @@ class TestCanonicalErrorKeyClean:
 
 class TestOutOfScopeExclusions:
     def test_inline_brace_shorthand_not_flagged(self, tmp_path):
-        content = (
-            '```toon\n'
-            'errors[1]{status,error_type}:\n'
-            '  error,validation_failure\n'
-            '```\n'
-        )
+        content = '```toon\nerrors[1]{status,error_type}:\n  error,validation_failure\n```\n'
         _make_skill_md(tmp_path, content)
         assert_analyzer_findings(analyze_workflow_doc_toon_error_field, tmp_path, [])
 
@@ -191,20 +148,12 @@ class TestOutOfScopeExclusions:
         assert_analyzer_findings(analyze_workflow_doc_toon_error_field, tmp_path, [])
 
     def test_error_type_in_python_fence_not_flagged(self, tmp_path):
-        content = (
-            '```python\n'
-            'error_type: str = "validation_failure"\n'
-            '```\n'
-        )
+        content = '```python\nerror_type: str = "validation_failure"\n```\n'
         _make_skill_md(tmp_path, content)
         assert_analyzer_findings(analyze_workflow_doc_toon_error_field, tmp_path, [])
 
     def test_error_type_in_json_fence_not_flagged(self, tmp_path):
-        content = (
-            '```json\n'
-            '{"error_type": "validation_failure"}\n'
-            '```\n'
-        )
+        content = '```json\n{"error_type": "validation_failure"}\n```\n'
         _make_skill_md(tmp_path, content)
         assert_analyzer_findings(analyze_workflow_doc_toon_error_field, tmp_path, [])
 
@@ -216,12 +165,7 @@ class TestOutOfScopeExclusions:
 
 class TestFindingShape:
     def test_required_fields_present(self, tmp_path):
-        content = (
-            '```toon\n'
-            'status: error\n'
-            'error_type: refine_contract_violation\n'
-            '```\n'
-        )
+        content = '```toon\nstatus: error\nerror_type: refine_contract_violation\n```\n'
         _make_skill_md(tmp_path, content)
         findings = assert_analyzer_findings(analyze_workflow_doc_toon_error_field, tmp_path, [RULE_ID])
         f = findings[0]
@@ -235,25 +179,14 @@ class TestFindingShape:
         assert isinstance(f['description'], str)
 
     def test_line_number_correct(self, tmp_path):
-        content = (
-            'Intro text.\n'
-            '\n'
-            '```toon\n'
-            'status: error\n'
-            'error_type: validation_failure\n'
-            '```\n'
-        )
+        content = 'Intro text.\n\n```toon\nstatus: error\nerror_type: validation_failure\n```\n'
         _make_skill_md(tmp_path, content)
         findings = assert_analyzer_findings(analyze_workflow_doc_toon_error_field, tmp_path, [RULE_ID])
         # error_type is on the 5th line (1-based).
         assert findings[0]['line'] == 5
 
     def test_file_path_is_absolute(self, tmp_path):
-        content = (
-            '```toon\n'
-            'error_type: validation_failure\n'
-            '```\n'
-        )
+        content = '```toon\nerror_type: validation_failure\n```\n'
         _make_skill_md(tmp_path, content)
         findings = assert_analyzer_findings(analyze_workflow_doc_toon_error_field, tmp_path, [RULE_ID])
         assert Path(findings[0]['file']).is_absolute()
@@ -266,11 +199,7 @@ class TestFindingShape:
 
 class TestCleanBaseline:
     def test_no_toon_fences_no_findings(self, tmp_path):
-        content = (
-            '# My Skill\n'
-            '\n'
-            'This skill does things and returns an error envelope.\n'
-        )
+        content = '# My Skill\n\nThis skill does things and returns an error envelope.\n'
         _make_skill_md(tmp_path, content)
         assert_analyzer_findings(analyze_workflow_doc_toon_error_field, tmp_path, [])
 
@@ -302,15 +231,8 @@ class TestRuleRegistry:
 
     def test_rule_id_appears_in_a_table_row(self):
         content = PROVENANCE_PATH.read_text(encoding='utf-8')
-        rows = [
-            line
-            for line in content.splitlines()
-            if line.startswith('|') and RULE_ID in line
-        ]
-        assert rows, (
-            f'{RULE_ID} must appear in a pipe-delimited table row in '
-            f'rule-provenance.md, not only in prose.'
-        )
+        rows = [line for line in content.splitlines() if line.startswith('|') and RULE_ID in line]
+        assert rows, f'{RULE_ID} must appear in a pipe-delimited table row in rule-provenance.md, not only in prose.'
         # The first cell must carry the rule ID (backtick-wrapped per the table convention).
         first_cell = rows[0].split('|')[1].strip().strip('`')
         assert first_cell == RULE_ID

@@ -62,8 +62,14 @@ def _variant(base: argparse.Namespace, **overrides: Any) -> argparse.Namespace:
 #: lets a newly-added build flag break production while the tests stay green.
 #: Hoisted because ``parse_ns`` re-executes the script module on every call.
 _RUN_ARGS = parse_ns(
-    'plan-marshall', 'build-pyproject', 'pyproject_build.py',
-    'run', '--command-args', 'verify core', '--plan-id', 'plan-x',
+    'plan-marshall',
+    'build-pyproject',
+    'pyproject_build.py',
+    'run',
+    '--command-args',
+    'verify core',
+    '--plan-id',
+    'plan-x',
     register=False,
 )
 #: ``--plan-id`` and ``--project-dir`` are mutually exclusive on the shared build
@@ -77,8 +83,12 @@ _RUN_ARGS.project_dir = '/tree'
 #: The ``acquire`` namespace ``build_queue.py``'s OWN parser yields.
 #: ``register=False`` so it never displaces the ``build_queue`` imported above.
 _ACQUIRE_ARGS = parse_ns(
-    'plan-marshall', 'manage-locks', 'build_queue.py',
-    'acquire', '--plan-id', 'plan-x',
+    'plan-marshall',
+    'manage-locks',
+    'build_queue.py',
+    'acquire',
+    '--plan-id',
+    'plan-x',
     register=False,
 )
 
@@ -176,10 +186,7 @@ def test_resolve_notation_by_tool_name():
     assert factory._resolve_notation(_config(tool_name='maven')) == 'plan-marshall:build-maven:maven'
     assert factory._resolve_notation(_config(tool_name='gradle')) == 'plan-marshall:build-gradle:gradle'
     assert factory._resolve_notation(_config(tool_name='npm')) == 'plan-marshall:build-npm:npm'
-    assert (
-        factory._resolve_notation(_config(tool_name='python'))
-        == 'plan-marshall:build-pyproject:pyproject_build'
-    )
+    assert factory._resolve_notation(_config(tool_name='python')) == 'plan-marshall:build-pyproject:pyproject_build'
 
 
 def test_resolve_notation_explicit_override_wins():
@@ -234,9 +241,7 @@ def test_route_disabled_falls_back_without_submit(use_fake_client):
 
 
 def test_route_down_falls_back_with_named_reason(use_fake_client):
-    client = use_fake_client(
-        preflight={'status': 'success', 'preflight': 'down', 'reason': 'socket_absent'}
-    )
+    client = use_fake_client(preflight={'status': 'success', 'preflight': 'down', 'reason': 'socket_absent'})
 
     result, reason = factory._route_to_daemon(_config(), '/tree', 'plan-x')
 
@@ -481,9 +486,9 @@ def test_cmd_run_routes_and_takes_no_fallback_slot(monkeypatch):
 def test_cmd_run_falls_back_under_a_slot_when_not_routed(monkeypatch):
     monkeypatch.setattr(factory, '_route_to_daemon', lambda *a, **k: (None, 'disabled'))
     monkeypatch.setattr(
-        factory, 'execute_direct_base',
-        lambda **kw: {'status': 'success', 'exit_code': 0, 'duration_seconds': 1,
-                      'log_file': 'l', 'command': 'c'},
+        factory,
+        'execute_direct_base',
+        lambda **kw: {'status': 'success', 'exit_code': 0, 'duration_seconds': 1, 'log_file': 'l', 'command': 'c'},
     )
 
     entered = {'slot': False, 'plan_id': None}
@@ -513,9 +518,9 @@ def test_cmd_run_falls_back_under_a_slot_when_not_routed(monkeypatch):
 def _install_in_process_stubs(monkeypatch, entered):
     """Stub execute_direct_base + build_queue_slot + cmd_run_common for the in-process path."""
     monkeypatch.setattr(
-        factory, 'execute_direct_base',
-        lambda **kw: {'status': 'success', 'exit_code': 0, 'duration_seconds': 1,
-                      'log_file': 'l', 'command': 'c'},
+        factory,
+        'execute_direct_base',
+        lambda **kw: {'status': 'success', 'exit_code': 0, 'duration_seconds': 1, 'log_file': 'l', 'command': 'c'},
     )
 
     @contextmanager
@@ -575,9 +580,7 @@ def test_cmd_run_daemon_fail_loud_on_env_or_working_dir(monkeypatch, capsys):
 
     monkeypatch.setattr(factory, '_route_to_daemon', _must_not_route)
 
-    _, cmd_run = factory.create_execute_handlers(
-        _config(supports_env_vars=True), parse_log_fn=lambda *a: None
-    )
+    _, cmd_run = factory.create_execute_handlers(_config(supports_env_vars=True), parse_log_fn=lambda *a: None)
     rc = cmd_run(_run_args(execution_mode='daemon', env='KEY=VALUE'))
 
     assert rc == 1

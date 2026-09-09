@@ -41,9 +41,7 @@ from marketplace.targets.claude.variant_emitter import (
     supports_effort,
 )
 
-EXTENSION_POINT = (
-    'plan-marshall:extension-api/standards/ext-point-dynamic-level-executor'
-)
+EXTENSION_POINT = 'plan-marshall:extension-api/standards/ext-point-dynamic-level-executor'
 
 
 def _write(path: Path, content: str) -> Path:
@@ -194,15 +192,11 @@ def test_is_role_eligible_false_for_other_extension_point():
 def test_selected_levels_default_returns_all_seven():
     fm, _ = parse_frontmatter(f'---\nname: x\nimplements: {EXTENSION_POINT}\n---\nbody')
     assert fm is not None
-    assert selected_levels(fm) == [
-        'level-1', 'level-2', 'level-3', 'level-4', 'level-5', 'level-6', 'level-7'
-    ]
+    assert selected_levels(fm) == ['level-1', 'level-2', 'level-3', 'level-4', 'level-5', 'level-6', 'level-7']
 
 
 def test_selected_levels_whitelist_filters():
-    fm, _ = parse_frontmatter(
-        f'---\nname: x\nimplements: {EXTENSION_POINT}\nlevels: [level-3, level-5]\n---\nbody'
-    )
+    fm, _ = parse_frontmatter(f'---\nname: x\nimplements: {EXTENSION_POINT}\nlevels: [level-3, level-5]\n---\nbody')
     assert fm is not None
     assert selected_levels(fm) == ['level-3', 'level-5']
 
@@ -213,9 +207,7 @@ def test_selected_levels_whitelist_filters():
 
 
 def test_render_variant_haiku_omits_effort():
-    fm, body = parse_frontmatter(
-        f'---\nname: poc-agent\ntools: Read\nimplements: {EXTENSION_POINT}\n---\nbody\n'
-    )
+    fm, body = parse_frontmatter(f'---\nname: poc-agent\ntools: Read\nimplements: {EXTENSION_POINT}\n---\nbody\n')
     assert fm is not None
     rendered = render_variant(fm, body, 'level-1')
     assert 'name: poc-agent-level-1' in rendered
@@ -225,9 +217,7 @@ def test_render_variant_haiku_omits_effort():
 
 
 def test_render_variant_level_3_sets_model_and_effort():
-    fm, body = parse_frontmatter(
-        f'---\nname: poc-agent\nimplements: {EXTENSION_POINT}\n---\nbody\n'
-    )
+    fm, body = parse_frontmatter(f'---\nname: poc-agent\nimplements: {EXTENSION_POINT}\n---\nbody\n')
     assert fm is not None
     rendered = render_variant(fm, body, 'level-3')
     assert 'name: poc-agent-level-3' in rendered
@@ -237,9 +227,7 @@ def test_render_variant_level_3_sets_model_and_effort():
 
 def test_render_variant_level_5_uses_opus_high():
     """`level-5` resolves to `(opus, high)`."""
-    fm, body = parse_frontmatter(
-        f'---\nname: poc-agent\nimplements: {EXTENSION_POINT}\n---\nbody\n'
-    )
+    fm, body = parse_frontmatter(f'---\nname: poc-agent\nimplements: {EXTENSION_POINT}\n---\nbody\n')
     assert fm is not None
     rendered = render_variant(fm, body, 'level-5')
     assert 'model: opus' in rendered
@@ -248,9 +236,7 @@ def test_render_variant_level_5_uses_opus_high():
 
 def test_render_variant_level_4_uses_opus_medium():
     """`level-4` resolves to `(opus, medium)`."""
-    fm, body = parse_frontmatter(
-        f'---\nname: poc-agent\nimplements: {EXTENSION_POINT}\n---\nbody\n'
-    )
+    fm, body = parse_frontmatter(f'---\nname: poc-agent\nimplements: {EXTENSION_POINT}\n---\nbody\n')
     assert fm is not None
     rendered = render_variant(fm, body, 'level-4')
     assert 'model: opus' in rendered
@@ -259,9 +245,7 @@ def test_render_variant_level_4_uses_opus_medium():
 
 def test_render_variant_level_6_uses_opus_xhigh():
     """`level-6` resolves to `(opus, xhigh)` — Opus-4.8-only tier."""
-    fm, body = parse_frontmatter(
-        f'---\nname: poc-agent\nimplements: {EXTENSION_POINT}\n---\nbody\n'
-    )
+    fm, body = parse_frontmatter(f'---\nname: poc-agent\nimplements: {EXTENSION_POINT}\n---\nbody\n')
     assert fm is not None
     rendered = render_variant(fm, body, 'level-6')
     assert 'model: opus' in rendered
@@ -270,9 +254,7 @@ def test_render_variant_level_6_uses_opus_xhigh():
 
 def test_render_variant_level_7_uses_fable_max():
     """`level-7` resolves to `(fable, max)` — the new top tier above Opus."""
-    fm, body = parse_frontmatter(
-        f'---\nname: poc-agent\nimplements: {EXTENSION_POINT}\n---\nbody\n'
-    )
+    fm, body = parse_frontmatter(f'---\nname: poc-agent\nimplements: {EXTENSION_POINT}\n---\nbody\n')
     assert fm is not None
     rendered = render_variant(fm, body, 'level-7')
     assert 'model: fable' in rendered
@@ -294,9 +276,7 @@ def test_emit_variants_default_levels_creates_eight_files(tmp_path: Path, mappin
     assert result is not None
     # canonical + 7 variants
     assert dest.exists()
-    for level in [
-        'level-1', 'level-2', 'level-3', 'level-4', 'level-5', 'level-6', 'level-7'
-    ]:
+    for level in ['level-1', 'level-2', 'level-3', 'level-4', 'level-5', 'level-6', 'level-7']:
         assert (dest.parent / f'poc-{level}.md').exists(), level
     assert sorted(result.variants_emitted) == sorted(LEVEL_TABLE.keys())
     assert result.variants_skipped == []
@@ -561,9 +541,7 @@ def test_load_mapping_rereads_after_in_place_change(tmp_path: Path):
         json.dumps(
             {
                 'tool_permissions': {},
-                'model_map': {
-                    'opus': {'id': 'claude-opus', 'supports_effort': ['medium', 'high', 'xhigh']}
-                },
+                'model_map': {'opus': {'id': 'claude-opus', 'supports_effort': ['medium', 'high', 'xhigh']}},
             }
         ),
         encoding='utf-8',

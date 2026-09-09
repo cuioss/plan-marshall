@@ -163,9 +163,7 @@ RULE_DESCRIPTOR = RuleDescriptor(
     default_on=False,
 )
 
-_CANONICAL_BLOCK_HEADING = re.compile(
-    r'^##\s+Canonical\s+invocations\s*$', re.IGNORECASE | re.MULTILINE
-)
+_CANONICAL_BLOCK_HEADING = re.compile(r'^##\s+Canonical\s+invocations\s*$', re.IGNORECASE | re.MULTILINE)
 
 # ---------------------------------------------------------------------------
 # Registered-verb derivation (AST)
@@ -465,9 +463,7 @@ def _is_main_guard_test(test: ast.expr) -> bool:
         return False
     left = test.left
     right = test.comparators[0]
-    return (_is_dunder_name(left) and _is_main_literal(right)) or (
-        _is_main_literal(left) and _is_dunder_name(right)
-    )
+    return (_is_dunder_name(left) and _is_main_literal(right)) or (_is_main_literal(left) and _is_dunder_name(right))
 
 
 def _declares_main_guard(path: Path) -> bool | None:
@@ -490,9 +486,7 @@ def _declares_main_guard(path: Path) -> bool | None:
         tree = ast.parse(source)
     except SyntaxError:
         return None
-    return any(
-        isinstance(node, ast.If) and _is_main_guard_test(node.test) for node in tree.body
-    )
+    return any(isinstance(node, ast.If) and _is_main_guard_test(node.test) for node in tree.body)
 
 
 def owned_entry_scripts(skill_dir: Path) -> dict[str, Path]:
@@ -614,9 +608,7 @@ def analyze_documented_verb_set_drift_with_population(
         # EMPTY documented set and is compared anyway — that is the whole point of
         # deriving candidates from the script surface (see `owned_entry_scripts`).
         for notation in sorted(set(documented_by_script) | set(owned)):
-            documented, doc_path, doc_line = documented_by_script.get(
-                notation, (set(), skill_md, 1)
-            )
+            documented, doc_path, doc_line = documented_by_script.get(notation, (set(), skill_md, 1))
             script = owned.get(notation) or _script_path(skill_dir, notation.split(':')[-1])
             if script is None:
                 # The notation names no script file in this skill. That is

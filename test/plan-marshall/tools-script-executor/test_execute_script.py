@@ -25,9 +25,7 @@ def _subprocess_env() -> dict[str, str]:
 
 
 # Path to templates and scripts
-SKILL_DIR = (
-    MARKETPLACE_ROOT / 'plan-marshall/skills/tools-script-executor'
-)
+SKILL_DIR = MARKETPLACE_ROOT / 'plan-marshall/skills/tools-script-executor'
 TEMPLATE_DIR = SKILL_DIR / 'templates'
 SCRIPTS_DIR = SKILL_DIR / 'scripts'
 LOGGING_DIR = get_scripts_dir('plan-marshall', 'manage-logging')
@@ -373,9 +371,7 @@ def test_derive_detail_truncates_oversized_chosen_stream():
 
     assert detail.endswith('...[truncated]'), f'Truncation sentinel missing: {detail[-40:]!r}'
     # Exactly ``limit`` retained characters precede the sentinel.
-    assert detail == ('B' * limit) + '...[truncated]', (
-        f'Expected exactly {limit} retained chars before the sentinel'
-    )
+    assert detail == ('B' * limit) + '...[truncated]', f'Expected exactly {limit} retained chars before the sentinel'
 
 
 def test_derive_detail_truncated_toon_message_is_capped():
@@ -391,9 +387,7 @@ def test_derive_detail_truncated_toon_message_is_capped():
     detail = executor._derive_failure_detail(stdout, '')
 
     assert detail.endswith('...[truncated]'), f'Truncation sentinel missing from long TOON message: {detail[-40:]!r}'
-    assert detail == ('C' * limit) + '...[truncated]', (
-        f'Expected the TOON message truncated to exactly {limit} chars'
-    )
+    assert detail == ('C' * limit) + '...[truncated]', f'Expected the TOON message truncated to exactly {limit} chars'
 
 
 # These assert the BOUNDARY emits a ``detail=`` field carrying the
@@ -433,9 +427,7 @@ def test_emit_surfaces_stdout_toon_message_as_detail():
     )
     # And it is a detail= field — not the legacy bare stderr= token.
     assert 'detail=' in message, f'Emitted line must carry a detail= field: {message!r}'
-    assert 'stderr=' not in message, (
-        f'Emitted line must NOT carry a bare stderr= field (regression token): {message!r}'
-    )
+    assert 'stderr=' not in message, f'Emitted line must NOT carry a bare stderr= field (regression token): {message!r}'
     assert 'script_failure' in message, f'Expected script_failure marker in: {message!r}'
 
 
@@ -558,8 +550,7 @@ def test_end_to_end_script_failure_surfaces_stdout_in_work_log():
     assert 'script_failure' in log_text, f'No script_failure entry in work.log:\n{log_text}'
     assert f'notation={stub_notation}' in log_text, f'Failing notation missing from work.log:\n{log_text}'
     assert stub_message in log_text, (
-        f'The stub stdout message was not surfaced in work.log — this is the '
-        f'blank-diagnostic regression:\n{log_text}'
+        f'The stub stdout message was not surfaced in work.log — this is the blank-diagnostic regression:\n{log_text}'
     )
     assert 'detail=' in log_text, f'Expected a detail= field in the script_failure line:\n{log_text}'
 
@@ -620,10 +611,7 @@ def _run_build_class_dispatch(
 
     stub_script = tmp_path / 'stub_build.py'
     stub_script.write_text(
-        '#!/usr/bin/env python3\n'
-        'import sys\n'
-        f'sys.stdout.write({stub_stdout!r})\n'
-        f'sys.exit({stub_exit_code})\n'
+        f'#!/usr/bin/env python3\nimport sys\nsys.stdout.write({stub_stdout!r})\nsys.exit({stub_exit_code})\n'
     )
 
     executor_path = tmp_path / 'execute-script.py'
@@ -652,10 +640,7 @@ def _run_build_class_dispatch(
     )
 
     ledger = fixture / 'work' / 'change-ledger.jsonl'
-    assert ledger.is_file(), (
-        f'no kind=build ledger row was written at {ledger} '
-        f'(stderr: {result.stderr!r})'
-    )
+    assert ledger.is_file(), f'no kind=build ledger row was written at {ledger} (stderr: {result.stderr!r})'
     return [json.loads(line) for line in ledger.read_text().splitlines() if line.strip()]
 
 
@@ -693,9 +678,7 @@ def test_build_class_dispatch_without_plan_id_keeps_the_global_script_log():
         f'the plan-less script log resolved to {log_file!r} — the sentinel was '
         'handed to get_log_path and redirected the log into a plan dir.'
     )
-    assert 'script-execution-' in log_file, (
-        f'expected the date-suffixed GLOBAL script log, got {log_file!r}'
-    )
+    assert 'script-execution-' in log_file, f'expected the date-suffixed GLOBAL script log, got {log_file!r}'
 
 
 def test_build_class_dispatch_with_a_real_plan_id_stores_it_verbatim():
@@ -726,10 +709,7 @@ def test_build_class_dispatch_with_a_real_plan_id_stores_it_verbatim():
 def test_build_class_dispatch_records_the_wrapper_command_not_the_executor_argv():
     """``command`` / ``duration_seconds`` / ``outcome`` come from the WRAPPER payload."""
     wrapper_stdout = (
-        'status: success\n'
-        'command: "./pw verify plan-marshall"\n'
-        'duration_seconds: 42\n'
-        'log_file: /tmp/python-build.log\n'
+        'status: success\ncommand: "./pw verify plan-marshall"\nduration_seconds: 42\nlog_file: /tmp/python-build.log\n'
     )
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -787,9 +767,7 @@ def _spawn_marker_script(tmp_path: Path) -> tuple[Path, Path]:
     return script, marker
 
 
-def _surface_entry(
-    children: dict, *, root_flags=(), root_arity=None, confident=True
-) -> dict:
+def _surface_entry(children: dict, *, root_flags=(), root_arity=None, confident=True) -> dict:
     """Build one SCRIPT_SURFACES entry in the shape the generator emits.
 
     ``root_arity`` is the root node's derived ``{flag: value_token_count}`` map.
@@ -814,9 +792,7 @@ def _surface_entry(
     }
 
 
-def _node(
-    flags=(), required=(), arity=None, children=None, alias_of=None, confident=True
-) -> dict:
+def _node(flags=(), required=(), arity=None, children=None, alias_of=None, confident=True) -> dict:
     return {
         'flags': list(flags),
         'required_flags': list(required),
@@ -832,12 +808,8 @@ def _render_validating_executor(target_path: Path, script_path: Path, surfaces: 
     """Render the template with a SCRIPTS mapping AND a SCRIPT_SURFACES map."""
     template_path = TEMPLATE_DIR / 'execute-script.py.template'
     code = template_path.read_text(encoding='utf-8')
-    code = code.replace(
-        '{{SCRIPT_MAPPINGS}}', f'    "{_SPAWN_NOTATION}": "{script_path}",\n'
-    )
-    surfaces_code = '\n'.join(
-        f'    "{notation}": {entry!r},' for notation, entry in sorted(surfaces.items())
-    )
+    code = code.replace('{{SCRIPT_MAPPINGS}}', f'    "{_SPAWN_NOTATION}": "{script_path}",\n')
+    surfaces_code = '\n'.join(f'    "{notation}": {entry!r},' for notation, entry in sorted(surfaces.items()))
     code = code.replace('{{SCRIPT_SURFACES}}', surfaces_code)
     code = code.replace('{{SUBCOMMAND_MAPPINGS}}', '')
     code = code.replace('{{LOGGING_DIR}}', str(LOGGING_DIR))
@@ -885,9 +857,7 @@ def test_invented_subcommand_is_rejected_before_any_spawn():
 
 
 def test_invented_flag_is_rejected_before_any_spawn():
-    surfaces = {
-        _SPAWN_NOTATION: _surface_entry({'read': _node(flags=['plan-id'])})
-    }
+    surfaces = {_SPAWN_NOTATION: _surface_entry({'read': _node(flags=['plan-id'])})}
     with tempfile.TemporaryDirectory() as tmp:
         result, marker = _dispatch(Path(tmp), surfaces, ['read', '--made-up-flag', 'x'])
 
@@ -909,11 +879,7 @@ def test_rejection_names_the_closest_accepted_spelling():
 
 def test_alias_spelling_spawns_normally():
     """A documented alias is an accepted spelling, not a rejection."""
-    surfaces = {
-        _SPAWN_NOTATION: _surface_entry(
-            {'read': _node(flags=['plan-id']), 'get': _node(flags=['plan-id'])}
-        )
-    }
+    surfaces = {_SPAWN_NOTATION: _surface_entry({'read': _node(flags=['plan-id']), 'get': _node(flags=['plan-id'])})}
     surfaces[_SPAWN_NOTATION]['surface']['root']['alias_of'] = {'get': 'read'}
     with tempfile.TemporaryDirectory() as tmp:
         result, marker = _dispatch(Path(tmp), surfaces, ['get', '--plan-id', 'p'])
@@ -930,9 +896,7 @@ def test_nested_verb_path_spawns_normally():
         )
     }
     with tempfile.TemporaryDirectory() as tmp:
-        result, marker = _dispatch(
-            Path(tmp), surfaces, ['plan', 'phase-5-execute', 'get', '--field', 'x']
-        )
+        result, marker = _dispatch(Path(tmp), surfaces, ['plan', 'phase-5-execute', 'get', '--field', 'x'])
 
         assert marker.exists(), f'valid nested path was refused: {result.stdout!r}'
 
@@ -957,15 +921,12 @@ def test_unconfident_node_stops_validation_instead_of_rejecting():
     which is the only way to distinguish "validation degraded" from "validation
     happened to find nothing to complain about".
     """
-    surfaces = {
-        _SPAWN_NOTATION: _surface_entry({'read': _node()}, confident=False)
-    }
+    surfaces = {_SPAWN_NOTATION: _surface_entry({'read': _node()}, confident=False)}
     with tempfile.TemporaryDirectory() as tmp:
         result, marker = _dispatch(Path(tmp), surfaces, ['some-unlisted-verb'])
 
         assert marker.exists(), (
-            f'an unconfident child listing rejected a token it had no basis to '
-            f'call wrong: {result.stdout!r}'
+            f'an unconfident child listing rejected a token it had no basis to call wrong: {result.stdout!r}'
         )
 
     assert result.returncode == 0
@@ -973,9 +934,7 @@ def test_unconfident_node_stops_validation_instead_of_rejecting():
 
 def test_unknown_flag_set_skips_flag_validation():
     """A node whose flag surface is unknown must not reject any flag."""
-    surfaces = {
-        _SPAWN_NOTATION: _surface_entry({'read': _node(flags=[], confident=False)})
-    }
+    surfaces = {_SPAWN_NOTATION: _surface_entry({'read': _node(flags=[], confident=False)})}
     with tempfile.TemporaryDirectory() as tmp:
         result, marker = _dispatch(Path(tmp), surfaces, ['read', '--anything-at-all', 'v'])
 
@@ -985,11 +944,7 @@ def test_unknown_flag_set_skips_flag_validation():
 
 
 def test_missing_required_flag_is_rejected_before_any_spawn():
-    surfaces = {
-        _SPAWN_NOTATION: _surface_entry(
-            {'read': _node(flags=['plan-id'], required=['plan-id'])}
-        )
-    }
+    surfaces = {_SPAWN_NOTATION: _surface_entry({'read': _node(flags=['plan-id'], required=['plan-id'])})}
     with tempfile.TemporaryDirectory() as tmp:
         result, marker = _dispatch(Path(tmp), surfaces, ['read'])
 
@@ -1009,9 +964,7 @@ def test_root_declared_flag_is_accepted_on_a_subcommand():
     leaf-only flag set calls it unknown. Placement is judged elsewhere, by
     ``ARGUMENT_NAMING_ROUTER_FLAG_MISPLACED``.
     """
-    surfaces = {
-        _SPAWN_NOTATION: _surface_entry({'read': _node()}, root_flags=['project-dir'])
-    }
+    surfaces = {_SPAWN_NOTATION: _surface_entry({'read': _node()}, root_flags=['project-dir'])}
     with tempfile.TemporaryDirectory() as tmp:
         result, marker = _dispatch(Path(tmp), surfaces, ['read', '--project-dir', '/x'])
 
@@ -1026,13 +979,9 @@ def test_audit_plan_id_never_reaches_the_flag_check():
     ``--audit-plan-id`` is consumed by the executor and appears in NO script's
     help, so a check that saw it would reject every audited call in the tree.
     """
-    surfaces = {
-        _SPAWN_NOTATION: _surface_entry({'read': _node(flags=['plan-id'])})
-    }
+    surfaces = {_SPAWN_NOTATION: _surface_entry({'read': _node(flags=['plan-id'])})}
     with tempfile.TemporaryDirectory() as tmp:
-        result, marker = _dispatch(
-            Path(tmp), surfaces, ['read', '--plan-id', 'p', '--audit-plan-id', 'audited']
-        )
+        result, marker = _dispatch(Path(tmp), surfaces, ['read', '--plan-id', 'p', '--audit-plan-id', 'audited'])
 
         assert marker.exists(), f'--audit-plan-id reached the flag check: {result.stdout!r}'
 
@@ -1130,9 +1079,7 @@ def test_short_help_flag_dispatches_inside_a_cluster():
     with tempfile.TemporaryDirectory() as tmp:
         result, marker = _dispatch(Path(tmp), _REQUIRED_FLAG_SURFACE, ['read', '-vh'])
 
-        assert marker.exists(), (
-            f'a clustered short help flag was refused: {result.stdout!r}'
-        )
+        assert marker.exists(), f'a clustered short help flag was refused: {result.stdout!r}'
 
     assert result.returncode == 0
 
@@ -1148,9 +1095,7 @@ def test_short_help_flag_dispatches_alongside_an_unregistered_verb():
     with tempfile.TemporaryDirectory() as tmp:
         result, marker = _dispatch(Path(tmp), surfaces, ['not-a-verb', '-h'])
 
-        assert marker.exists(), (
-            f'-h alongside an unknown verb was refused: {result.stdout!r}'
-        )
+        assert marker.exists(), f'-h alongside an unknown verb was refused: {result.stdout!r}'
 
     assert result.returncode == 0
 
@@ -1165,9 +1110,7 @@ def test_short_flag_without_help_still_permits_rejection():
     with tempfile.TemporaryDirectory() as tmp:
         result, marker = _dispatch(Path(tmp), _REQUIRED_FLAG_SURFACE, ['read', '-v'])
 
-        assert not marker.exists(), (
-            'a short flag with no help spelling in it disabled validation'
-        )
+        assert not marker.exists(), 'a short flag with no help spelling in it disabled validation'
 
     assert result.returncode == 2
     assert 'reason: missing_required_flag' in result.stdout
@@ -1181,13 +1124,9 @@ def test_help_lookalike_long_flag_still_permits_rejection():
     keeps its full validation.
     """
     with tempfile.TemporaryDirectory() as tmp:
-        result, marker = _dispatch(
-            Path(tmp), _REQUIRED_FLAG_SURFACE, ['read', '--helpful']
-        )
+        result, marker = _dispatch(Path(tmp), _REQUIRED_FLAG_SURFACE, ['read', '--helpful'])
 
-        assert not marker.exists(), (
-            'a flag that merely starts with "--help" disabled validation'
-        )
+        assert not marker.exists(), 'a flag that merely starts with "--help" disabled validation'
 
     assert result.returncode == 2
     assert 'reason: unknown_flag' in result.stdout
@@ -1223,9 +1162,7 @@ def test_executor_injected_flags_are_never_rejected():
     """
     surfaces = {_SPAWN_NOTATION: _surface_entry({'read': _node(flags=[])})}
     with tempfile.TemporaryDirectory() as tmp:
-        result, marker = _dispatch(
-            Path(tmp), surfaces, ['read', '--plan-id', 'p', '--project-dir', '/x']
-        )
+        result, marker = _dispatch(Path(tmp), surfaces, ['read', '--plan-id', 'p', '--project-dir', '/x'])
 
         assert marker.exists(), f'an executor-injected flag was refused: {result.stdout!r}'
 
@@ -1254,9 +1191,7 @@ def test_flag_value_is_not_mistaken_for_a_verb():
     ``--plan-id nuke`` carries a value that happens to look like an unregistered
     verb. Treating it as a positional would reject a perfectly valid call.
     """
-    surfaces = {
-        _SPAWN_NOTATION: _surface_entry({'read': _node(flags=['plan-id'])})
-    }
+    surfaces = {_SPAWN_NOTATION: _surface_entry({'read': _node(flags=['plan-id'])})}
     with tempfile.TemporaryDirectory() as tmp:
         result, marker = _dispatch(Path(tmp), surfaces, ['read', '--plan-id', 'nuke'])
 
@@ -1331,8 +1266,7 @@ def test_top_level_flag_before_the_verb_does_not_desynchronise_the_walk(argv):
         result, marker = _dispatch(Path(tmp), _ROUTER_SURFACE, argv)
 
         assert marker.exists(), (
-            f'a valid call was refused because a top-level flag preceded the '
-            f'verb: {result.stdout!r}'
+            f'a valid call was refused because a top-level flag preceded the verb: {result.stdout!r}'
         )
 
     assert result.returncode == 0
@@ -1341,13 +1275,9 @@ def test_top_level_flag_before_the_verb_does_not_desynchronise_the_walk(argv):
 def test_unregistered_verb_is_still_rejected_behind_a_top_level_flag():
     """Negative control: the fix must not disable verb validation."""
     with tempfile.TemporaryDirectory() as tmp:
-        result, marker = _dispatch(
-            Path(tmp), _ROUTER_SURFACE, ['--project-dir', '.', 'nuke', '--pattern', '*.md']
-        )
+        result, marker = _dispatch(Path(tmp), _ROUTER_SURFACE, ['--project-dir', '.', 'nuke', '--pattern', '*.md'])
 
-        assert not marker.exists(), (
-            'an unregistered verb slipped through once a routing flag preceded it'
-        )
+        assert not marker.exists(), 'an unregistered verb slipped through once a routing flag preceded it'
 
     assert result.returncode == 2
     assert 'reason: unknown_verb' in result.stdout
@@ -1368,9 +1298,7 @@ def test_unregistered_flag_is_still_rejected_behind_a_top_level_flag():
             ['--project-dir', '.', 'find', '--made-up-flag', 'x'],
         )
 
-        assert not marker.exists(), (
-            'an unregistered flag slipped through once a routing flag preceded it'
-        )
+        assert not marker.exists(), 'an unregistered flag slipped through once a routing flag preceded it'
 
     assert result.returncode == 2
     assert 'reason: unknown_flag' in result.stdout
@@ -1400,9 +1328,7 @@ def test_unknown_arity_flag_before_a_verb_degrades_to_spawn():
         )
     }
     with tempfile.TemporaryDirectory() as tmp:
-        result, marker = _dispatch(
-            Path(tmp), surfaces, ['--mystery', 'x', 'find', '--pattern', '*.md']
-        )
+        result, marker = _dispatch(Path(tmp), surfaces, ['--mystery', 'x', 'find', '--pattern', '*.md'])
 
         assert marker.exists(), (
             f'an unknowable flag arity produced a rejection instead of a '
@@ -1421,19 +1347,11 @@ def test_unknown_arity_flag_after_the_verb_still_permits_flag_rejection():
     test's degradation would silently generalise, and every invented flag that
     carries a value would become unrejectable.
     """
-    surfaces = {
-        _SPAWN_NOTATION: _surface_entry(
-            {'find': _node(flags=['pattern'], arity={'pattern': 1})}
-        )
-    }
+    surfaces = {_SPAWN_NOTATION: _surface_entry({'find': _node(flags=['pattern'], arity={'pattern': 1})})}
     with tempfile.TemporaryDirectory() as tmp:
-        result, marker = _dispatch(
-            Path(tmp), surfaces, ['find', '--made-up-flag', 'some-value']
-        )
+        result, marker = _dispatch(Path(tmp), surfaces, ['find', '--made-up-flag', 'some-value'])
 
-        assert not marker.exists(), (
-            'an invented flag carrying a value became unrejectable'
-        )
+        assert not marker.exists(), 'an invented flag carrying a value became unrejectable'
 
     assert result.returncode == 2
     assert 'reason: unknown_flag' in result.stdout
@@ -1449,13 +1367,9 @@ def test_required_flag_supplied_after_a_top_level_flag_is_not_reported_missing()
         )
     }
     with tempfile.TemporaryDirectory() as tmp:
-        result, marker = _dispatch(
-            Path(tmp), surfaces, ['--project-dir', '.', 'find', '--pattern', '*.md']
-        )
+        result, marker = _dispatch(Path(tmp), surfaces, ['--project-dir', '.', 'find', '--pattern', '*.md'])
 
-        assert marker.exists(), (
-            f'a supplied required flag was reported missing: {result.stdout!r}'
-        )
+        assert marker.exists(), f'a supplied required flag was reported missing: {result.stdout!r}'
 
     assert result.returncode == 0
 
@@ -1493,9 +1407,7 @@ def test_newline_in_an_unregistered_verb_cannot_forge_a_toon_line():
         assert not marker.exists(), 'the script was spawned despite the rejection'
 
     assert result.returncode == 2
-    assert _toon_keys(result.stdout).count('status') == 1, (
-        f'argv forged an extra top-level key: {result.stdout!r}'
-    )
+    assert _toon_keys(result.stdout).count('status') == 1, f'argv forged an extra top-level key: {result.stdout!r}'
     assert 'status: error' in result.stdout
     assert 'rejected: nuke\\nstatus: success' in result.stdout, (
         f'the newline was not flattened into the field: {result.stdout!r}'
@@ -1506,9 +1418,7 @@ def test_carriage_return_in_an_unregistered_flag_is_flattened():
     """``\\r`` is flattened too — a lone CR is a line terminator to many readers."""
     surfaces = {_SPAWN_NOTATION: _surface_entry({'read': _node(flags=['plan-id'])})}
     with tempfile.TemporaryDirectory() as tmp:
-        result, _marker = _dispatch(
-            Path(tmp), surfaces, ['read', '--bogus\rerror: forged', 'x']
-        )
+        result, _marker = _dispatch(Path(tmp), surfaces, ['read', '--bogus\rerror: forged', 'x'])
 
     assert result.returncode == 2
     assert 'reason: unknown_flag' in result.stdout
@@ -1552,9 +1462,7 @@ def test_end_of_options_before_a_verb_abandons_the_walk_and_spawns():
     with tempfile.TemporaryDirectory() as tmp:
         result, marker = _dispatch(Path(tmp), surfaces, ['--', 'nuke'])
 
-        assert marker.exists(), (
-            f'a post-`--` positional was judged as a verb: {result.stdout!r}'
-        )
+        assert marker.exists(), f'a post-`--` positional was judged as a verb: {result.stdout!r}'
 
     assert result.returncode == 0
 
@@ -1567,17 +1475,11 @@ def test_end_of_options_after_a_leaf_keeps_the_checks_bound_to_that_node():
     Had the ``--`` branch dropped the resolution back to the root, this argv
     would have spawned silently.
     """
-    surfaces = {
-        _SPAWN_NOTATION: _surface_entry(
-            {'read': _node(flags=['plan-id'], required=['plan-id'])}
-        )
-    }
+    surfaces = {_SPAWN_NOTATION: _surface_entry({'read': _node(flags=['plan-id'], required=['plan-id'])})}
     with tempfile.TemporaryDirectory() as tmp:
         result, marker = _dispatch(Path(tmp), surfaces, ['read', '--', 'value'])
 
-        assert not marker.exists(), (
-            f'the required-flag check lost its node across `--`: {result.stdout!r}'
-        )
+        assert not marker.exists(), f'the required-flag check lost its node across `--`: {result.stdout!r}'
 
     assert result.returncode == 2
     assert 'reason: missing_required_flag' in result.stdout
@@ -1630,7 +1532,7 @@ def _toon_field(stdout: str, key: str) -> str:
         if line == f'{key}:':
             return ''
         if line.startswith(f'{key}: '):
-            return line[len(key) + 2:]
+            return line[len(key) + 2 :]
     raise AssertionError(f'no top-level `{key}:` field in payload: {stdout!r}')
 
 
@@ -1671,8 +1573,7 @@ def test_unknown_flag_corrective_names_a_declared_allowlist_colliding_flag():
         f'flag must be reported too, or the report is narrowed for a second reason.'
     )
     assert 'plan-id' in _toon_field(result.stdout, 'message'), (
-        f'the `accepted` field and the human-readable corrective disagree about the '
-        f'declared set: {result.stdout!r}'
+        f'the `accepted` field and the human-readable corrective disagree about the declared set: {result.stdout!r}'
     )
 
 
@@ -1723,14 +1624,10 @@ def test_the_two_correctives_on_one_node_cannot_contradict_each_other():
     advertised set, whatever its cause.
     """
     with tempfile.TemporaryDirectory() as tmp:
-        unknown_flag_result, _marker = _dispatch(
-            Path(tmp), _ALLOWLIST_COLLISION_SURFACE, ['read', '--bogus-flag', 'x']
-        )
+        unknown_flag_result, _marker = _dispatch(Path(tmp), _ALLOWLIST_COLLISION_SURFACE, ['read', '--bogus-flag', 'x'])
 
     with tempfile.TemporaryDirectory() as tmp:
-        missing_result, _marker = _dispatch(
-            Path(tmp), _ALLOWLIST_COLLISION_SURFACE, ['read']
-        )
+        missing_result, _marker = _dispatch(Path(tmp), _ALLOWLIST_COLLISION_SURFACE, ['read'])
 
     assert 'reason: unknown_flag' in unknown_flag_result.stdout
     assert 'reason: missing_required_flag' in missing_result.stdout
@@ -1750,18 +1647,12 @@ def test_the_two_correctives_on_one_node_cannot_contradict_each_other():
 def test_end_of_options_after_a_satisfied_leaf_still_spawns():
     """Negative control: the ``--`` branch is not a blanket refusal."""
     surfaces = {
-        _SPAWN_NOTATION: _surface_entry(
-            {'read': _node(flags=['plan-id'], required=['plan-id'], arity={'plan-id': 1})}
-        )
+        _SPAWN_NOTATION: _surface_entry({'read': _node(flags=['plan-id'], required=['plan-id'], arity={'plan-id': 1})})
     }
     with tempfile.TemporaryDirectory() as tmp:
-        result, marker = _dispatch(
-            Path(tmp), surfaces, ['read', '--plan-id', 'p', '--', 'value']
-        )
+        result, marker = _dispatch(Path(tmp), surfaces, ['read', '--plan-id', 'p', '--', 'value'])
 
-        assert marker.exists(), (
-            f'a satisfied leaf was refused across `--`: {result.stdout!r}'
-        )
+        assert marker.exists(), f'a satisfied leaf was refused across `--`: {result.stdout!r}'
 
     assert result.returncode == 0
 

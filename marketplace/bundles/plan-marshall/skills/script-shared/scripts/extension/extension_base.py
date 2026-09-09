@@ -71,9 +71,7 @@ from _extension_constants import (
 _SOURCE_SUFFIXES: tuple[str, ...] = ('.py',)
 
 
-def derive_globs_from_tree(
-    project_root: str, extensions: list
-) -> dict[str, list[tuple[str, str]]]:
+def derive_globs_from_tree(project_root: str, extensions: list) -> dict[str, list[tuple[str, str]]]:
     """Collect each build extension's explicit ``(pattern, role)`` build_map routes per domain.
 
     The shared base-lib consumer behind the build_map seed. Each registered build
@@ -150,13 +148,7 @@ def derive_globs_from_tree(
     return {
         key: live
         for key, routes in by_domain.items()
-        if (
-            live := sorted(
-                route
-                for route in routes
-                if _pattern_matches_any(route[0], tracked)
-            )
-        )
+        if (live := sorted(route for route in routes if _pattern_matches_any(route[0], tracked)))
     }
 
 
@@ -744,8 +736,7 @@ def should_execute_build(
         return {
             'decision': 'unknown',
             'reason': (
-                'plan footprint unresolvable — no materialized worktree carries '
-                'evidence of what this plan changed'
+                'plan footprint unresolvable — no materialized worktree carries evidence of what this plan changed'
             ),
             **label,
         }
@@ -1662,9 +1653,7 @@ class DerivationResolverBase(ABC):  # noqa: B024 — ABC contract anchor; every 
             sample = ', '.join(candidates[:NOTE_SAMPLE_LIMIT])
             overflow = len(candidates) - NOTE_SAMPLE_LIMIT
             suffix = f' (+{overflow} more)' if overflow > 0 else ''
-            notes.append(
-                f'{category}: {len(candidates)} reference(s) suppressed - sample: {sample}{suffix}'
-            )
+            notes.append(f'{category}: {len(candidates)} reference(s) suppressed - sample: {sample}{suffix}')
         return notes
 
 

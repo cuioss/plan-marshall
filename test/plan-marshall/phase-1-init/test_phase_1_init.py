@@ -25,9 +25,7 @@ from conftest import MARKETPLACE_ROOT, load_script_module, parse_ns
 # Tier 2 direct import — the hyphenated manage-lessons module, resolved by
 # (bundle, skill, file) and left unregistered so this copy cannot displace one
 # another suite holds.
-_mod = load_script_module(
-    'plan-marshall', 'manage-lessons', 'manage-lessons.py', 'manage_lessons', register=False
-)
+_mod = load_script_module('plan-marshall', 'manage-lessons', 'manage-lessons.py', 'manage_lessons', register=False)
 
 cmd_convert_to_plan = _mod.cmd_convert_to_plan
 
@@ -52,8 +50,14 @@ _CONTRACT_PLAN_ID = 'phase1-init-contract-plan'
 #: ``register=False`` so it never publishes a second ``manage-lessons`` in
 #: ``sys.modules`` beside the copy loaded above as ``manage_lessons``.
 _CONVERT_TO_PLAN_ARGS = parse_ns(
-    'plan-marshall', 'manage-lessons', 'manage-lessons.py',
-    'convert-to-plan', '--lesson-id', _LESSON_ID, '--plan-id', _CONTRACT_PLAN_ID,
+    'plan-marshall',
+    'manage-lessons',
+    'manage-lessons.py',
+    'convert-to-plan',
+    '--lesson-id',
+    _LESSON_ID,
+    '--plan-id',
+    _CONTRACT_PLAN_ID,
     register=False,
 )
 
@@ -121,13 +125,7 @@ class TestPhase1InitBaseBranchSeeding:
     """
 
     def _skill_md_text(self) -> str:
-        skill_md = (
-            MARKETPLACE_ROOT
-            / 'plan-marshall'
-            / 'skills'
-            / 'phase-1-init'
-            / 'SKILL.md'
-        )
+        skill_md = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-1-init' / 'SKILL.md'
         return str(skill_md.read_text(encoding='utf-8'))
 
     def test_skill_documents_manage_config_project_read(self):

@@ -334,12 +334,8 @@ class TestAnalyzeShellActiveTokensScope:
             'python3 .plan/execute-script.py x:y:z run --detail "hello `there`"\n',
             encoding='utf-8',
         )
-        (standards_dir / 'b.md').write_text(
-            'No violations here.\n', encoding='utf-8'
-        )
-        (standards_dir / 'c.md').write_text(
-            '```bash\necho {x,y}\n```\n', encoding='utf-8'
-        )
+        (standards_dir / 'b.md').write_text('No violations here.\n', encoding='utf-8')
+        (standards_dir / 'c.md').write_text('```bash\necho {x,y}\n```\n', encoding='utf-8')
         findings = analyze_shell_active_tokens(skill_dir)
         bt = _findings_by_class(findings, 'backtick-in-flag')
         be = _findings_by_class(findings, 'brace-expansion')

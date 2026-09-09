@@ -39,19 +39,20 @@ import pytest
 @pytest.fixture()
 def home_at_tmp(tmp_path, monkeypatch):
     """Resolve Path.home() to an isolated tmp_path/home."""
-    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
+    monkeypatch.setattr(Path, 'home', staticmethod(lambda: tmp_path / 'home'))
+
 
 def _parse(toon_str: str) -> dict:
     """Parse a TOON string and assert it is a non-empty dict."""
     result = parse_toon(toon_str)
-    assert isinstance(result, dict), f"parse_toon returned non-dict: {toon_str!r}"
+    assert isinstance(result, dict), f'parse_toon returned non-dict: {toon_str!r}'
     return result
 
 
 # Two well-separated phase windows used across the attribution tests.
 _WINDOWS: list[tuple[str, str, str]] = [
-    ("2-refine", "2026-03-27T09:00:00+00:00", "2026-03-27T09:30:00+00:00"),
-    ("5-execute", "2026-03-27T10:00:00+00:00", "2026-03-27T10:30:00+00:00"),
+    ('2-refine', '2026-03-27T09:00:00+00:00', '2026-03-27T09:30:00+00:00'),
+    ('5-execute', '2026-03-27T10:00:00+00:00', '2026-03-27T10:30:00+00:00'),
 ]
 
 
@@ -63,28 +64,28 @@ def _main_context_entry(
     cache_creation_input_tokens: int = 0,
 ) -> dict:
     """Build a JSONL entry shaped like an assistant message with main-context usage."""
-    usage = {"input_tokens": input_tokens, "output_tokens": output_tokens}
+    usage = {'input_tokens': input_tokens, 'output_tokens': output_tokens}
     if cache_read_input_tokens:
-        usage["cache_read_input_tokens"] = cache_read_input_tokens
+        usage['cache_read_input_tokens'] = cache_read_input_tokens
     if cache_creation_input_tokens:
-        usage["cache_creation_input_tokens"] = cache_creation_input_tokens
+        usage['cache_creation_input_tokens'] = cache_creation_input_tokens
     return {
-        "timestamp": timestamp,
-        "message": {"role": "assistant", "usage": usage, "content": [{"type": "text", "text": "x"}]},
+        'timestamp': timestamp,
+        'message': {'role': 'assistant', 'usage': usage, 'content': [{'type': 'text', 'text': 'x'}]},
     }
 
 
 def _agent_return_entry(timestamp: str, usage_block: str) -> dict:
     """Build a JSONL entry shaped like a Claude tool_result carrying an embedded <usage>."""
     return {
-        "timestamp": timestamp,
-        "message": {
-            "role": "user",
-            "content": [
+        'timestamp': timestamp,
+        'message': {
+            'role': 'user',
+            'content': [
                 {
-                    "type": "tool_result",
-                    "tool_use_id": "toolu_test",
-                    "content": [{"type": "text", "text": usage_block}],
+                    'type': 'tool_result',
+                    'tool_use_id': 'toolu_test',
+                    'content': [{'type': 'text', 'text': usage_block}],
                 }
             ],
         },
@@ -94,13 +95,10 @@ def _agent_return_entry(timestamp: str, usage_block: str) -> dict:
 def _tool_use_entry(timestamp: str, calls: list[tuple[str, str]]) -> dict:
     """Build an assistant entry carrying one ``tool_use`` item per ``(id, name)``."""
     return {
-        "timestamp": timestamp,
-        "message": {
-            "role": "assistant",
-            "content": [
-                {"type": "tool_use", "id": tool_id, "name": name, "input": {}}
-                for tool_id, name in calls
-            ],
+        'timestamp': timestamp,
+        'message': {
+            'role': 'assistant',
+            'content': [{'type': 'tool_use', 'id': tool_id, 'name': name, 'input': {}} for tool_id, name in calls],
         },
     }
 
@@ -108,14 +106,14 @@ def _tool_use_entry(timestamp: str, calls: list[tuple[str, str]]) -> dict:
 def _tool_result_entry(timestamp: str, tool_use_id: str, text: str) -> dict:
     """Build a user entry carrying the ``tool_result`` for *tool_use_id*."""
     return {
-        "timestamp": timestamp,
-        "message": {
-            "role": "user",
-            "content": [
+        'timestamp': timestamp,
+        'message': {
+            'role': 'user',
+            'content': [
                 {
-                    "type": "tool_result",
-                    "tool_use_id": tool_use_id,
-                    "content": [{"type": "text", "text": text}],
+                    'type': 'tool_result',
+                    'tool_use_id': tool_use_id,
+                    'content': [{'type': 'text', 'text': text}],
                 }
             ],
         },
@@ -130,10 +128,10 @@ def _contract_bucket_keys() -> set[str]:
     contract fails this assertion for BOTH implementations instead of the drift
     being invisible until a consumer reads a missing key.
     """
-    doc = Runtime.metrics_normalized_tokens.__doc__ or ""
-    match = re.search(r"\{phase_name:\s*\{(.*?)\}\}", doc, re.DOTALL)
-    assert match is not None, "contract docstring no longer declares a per-phase bucket shape"
-    return {key.strip() for key in match.group(1).split(",") if key.strip()}
+    doc = Runtime.metrics_normalized_tokens.__doc__ or ''
+    match = re.search(r'\{phase_name:\s*\{(.*?)\}\}', doc, re.DOTALL)
+    assert match is not None, 'contract docstring no longer declares a per-phase bucket shape'
+    return {key.strip() for key in match.group(1).split(',') if key.strip()}
 
 
 # The four raw ``message.usage`` key spellings the Claude producer emits ALONGSIDE
@@ -141,17 +139,15 @@ def _contract_bucket_keys() -> set[str]:
 # ``input``/``output``/``cache_read``/``cache_creation``, not additional contract
 # surface, so they are carved out of the exact-match assertion below.
 _RAW_USAGE_ALIASES = {
-    "input_tokens",
-    "output_tokens",
-    "cache_read_input_tokens",
-    "cache_creation_input_tokens",
+    'input_tokens',
+    'output_tokens',
+    'cache_read_input_tokens',
+    'cache_creation_input_tokens',
 }
 
 # The exploration-share counter keys, derived from the same contract docstring.
 _EXPECTED_COUNTER_KEYS = {
-    key
-    for key in _contract_bucket_keys()
-    if key.endswith("_tool_calls") or key.endswith("_result_bytes")
+    key for key in _contract_bucket_keys() if key.endswith('_tool_calls') or key.endswith('_result_bytes')
 }
 
 
@@ -161,9 +157,9 @@ def _expected_attribution_keys() -> set[str]:
     Derived rather than restated so a bucket added to ``_TOOL_BUCKETS`` cannot
     leave the attribution group behind without a test failing.
     """
-    return {
-        f"cache_read_attributed_{bucket}" for bucket in claude_runtime._TOOL_BUCKET_NAMES
-    } | {"cache_read_unattributed"}
+    return {f'cache_read_attributed_{bucket}' for bucket in claude_runtime._TOOL_BUCKET_NAMES} | {
+        'cache_read_unattributed'
+    }
 
 
 def _attribution_group(phase_bucket: dict) -> dict[str, int]:
@@ -173,9 +169,7 @@ def _attribution_group(phase_bucket: dict) -> dict[str, int]:
 
 def _expected_subsource_keys() -> set[str]:
     """The exploration sub-source key set, DERIVED from the producer's sub-source names."""
-    return {
-        f"exploration_{sub}_bytes" for sub in claude_runtime._EXPLORATION_SUBSOURCES
-    }
+    return {f'exploration_{sub}_bytes' for sub in claude_runtime._EXPLORATION_SUBSOURCES}
 
 
 def _tool_use_entry_with_input(timestamp: str, calls: list[tuple[str, str, dict]]) -> dict:
@@ -186,11 +180,11 @@ def _tool_use_entry_with_input(timestamp: str, calls: list[tuple[str, str, dict]
     ``_tool_use_entry``'s inputless one.
     """
     return {
-        "timestamp": timestamp,
-        "message": {
-            "role": "assistant",
-            "content": [
-                {"type": "tool_use", "id": tool_id, "name": name, "input": tool_input}
+        'timestamp': timestamp,
+        'message': {
+            'role': 'assistant',
+            'content': [
+                {'type': 'tool_use', 'id': tool_id, 'name': name, 'input': tool_input}
                 for tool_id, name, tool_input in calls
             ],
         },
@@ -199,9 +193,9 @@ def _tool_use_entry_with_input(timestamp: str, calls: list[tuple[str, str, dict]
 
 def _write_jsonl(path: Path, entries: list[dict]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as f:
+    with path.open('w', encoding='utf-8') as f:
         for entry in entries:
-            f.write(json.dumps(entry) + "\n")
+            f.write(json.dumps(entry) + '\n')
 
 
 # =============================================================================
@@ -211,58 +205,55 @@ def _write_jsonl(path: Path, entries: list[dict]) -> None:
 
 def test_claude_normalized_tokens_writes_per_phase_json(tmp_path, home_at_tmp):
     """The Claude op walks the transcript and writes per-phase normalized categories."""
-    session_id = "22222222-2222-2222-2222-222222222201"
-    projects_root = tmp_path / "home" / ".claude" / "projects" / "plan"
-    transcript = projects_root / f"{session_id}.jsonl"
+    session_id = '22222222-2222-2222-2222-222222222201'
+    projects_root = tmp_path / 'home' / '.claude' / 'projects' / 'plan'
+    transcript = projects_root / f'{session_id}.jsonl'
     _write_jsonl(
         transcript,
         [
             _main_context_entry(
-                "2026-03-27T10:10:00+00:00",
+                '2026-03-27T10:10:00+00:00',
                 input_tokens=100,
                 output_tokens=20,
                 cache_read_input_tokens=1000,
                 cache_creation_input_tokens=40,
             ),
             _tool_use_entry(
-                "2026-03-27T10:12:00+00:00",
-                [("toolu_r1", "Read"), ("toolu_b1", "Bash"), ("toolu_w1", "Write")],
+                '2026-03-27T10:12:00+00:00',
+                [('toolu_r1', 'Read'), ('toolu_b1', 'Bash'), ('toolu_w1', 'Write')],
             ),
-            _tool_result_entry("2026-03-27T10:12:10+00:00", "toolu_r1", "r" * 120),
-            _tool_result_entry("2026-03-27T10:12:20+00:00", "toolu_b1", "b" * 30),
-            _tool_result_entry("2026-03-27T10:12:30+00:00", "toolu_w1", "w" * 7),
+            _tool_result_entry('2026-03-27T10:12:10+00:00', 'toolu_r1', 'r' * 120),
+            _tool_result_entry('2026-03-27T10:12:20+00:00', 'toolu_b1', 'b' * 30),
+            _tool_result_entry('2026-03-27T10:12:30+00:00', 'toolu_w1', 'w' * 7),
             _agent_return_entry(
-                "2026-03-27T10:15:00+00:00",
-                "<usage>total_tokens: 4000\ntool_uses: 5\nduration_ms: 25000</usage>",
+                '2026-03-27T10:15:00+00:00',
+                '<usage>total_tokens: 4000\ntool_uses: 5\nduration_ms: 25000</usage>',
             ),
         ],
     )
 
+    output_file = tmp_path / 'normalized.json'
+    result = _parse(ClaudeRuntime().metrics_normalized_tokens(session_id, _WINDOWS, str(output_file)))
 
-    output_file = tmp_path / "normalized.json"
-    result = _parse(
-        ClaudeRuntime().metrics_normalized_tokens(session_id, _WINDOWS, str(output_file))
-    )
-
-    assert result["status"] == "success"
-    assert result["operation"] == "metrics normalized-tokens"
+    assert result['status'] == 'success'
+    assert result['operation'] == 'metrics normalized-tokens'
     assert output_file.is_file()
 
-    per_phase = json.loads(output_file.read_text(encoding="utf-8"))
-    five = per_phase["5-execute"]
+    per_phase = json.loads(output_file.read_text(encoding='utf-8'))
+    five = per_phase['5-execute']
     # The four-field view is normalized into both canonical and short keys.
-    assert five["input"] == 100
-    assert five["output"] == 20
-    assert five["cache_read"] == 1000
-    assert five["cache_creation"] == 40
+    assert five['input'] == 100
+    assert five['output'] == 20
+    assert five['cache_read'] == 1000
+    assert five['cache_creation'] == 40
     # billing = 100 + 20 + round(0.1*1000=100) + round(1.25*40=50) = 270.
-    assert five["billing_weighted_total"] == 270
+    assert five['billing_weighted_total'] == 270
     # total is the canonical four-field sum: 100 + 20 + 1000 + 40 = 1160.
-    assert five["total"] == 1160
+    assert five['total'] == 1160
     # The <usage> tag attribution lands in the same phase window.
-    assert five["subagent_total_tokens"] == 4000
-    assert five["subagent_tool_uses"] == 5
-    assert five["subagent_duration_ms"] == 25000
+    assert five['subagent_total_tokens'] == 4000
+    assert five['subagent_tool_uses'] == 5
+    assert five['subagent_duration_ms'] == 25000
 
     # Contract-level key-set assertion: what the producer emits must equal what
     # the ABC's contract docstring declares, modulo the raw-usage aliases. This
@@ -272,158 +263,144 @@ def test_claude_normalized_tokens_writes_per_phase_json(tmp_path, home_at_tmp):
 
     # Exploration-share counters: Read -> exploration, Bash -> execute,
     # Write -> work, each with its result payload's byte length.
-    assert five["exploration_tool_calls"] == 1
-    assert five["execute_tool_calls"] == 1
-    assert five["work_tool_calls"] == 1
-    assert five["exploration_result_bytes"] == 120
-    assert five["execute_result_bytes"] == 30
-    assert five["work_result_bytes"] == 7
+    assert five['exploration_tool_calls'] == 1
+    assert five['execute_tool_calls'] == 1
+    assert five['work_tool_calls'] == 1
+    assert five['exploration_result_bytes'] == 120
+    assert five['execute_result_bytes'] == 30
+    assert five['work_result_bytes'] == 7
     # Nothing landed in the excluded buckets, and the classifier met no unknown
     # name — a MEASURED zero, present as 0 rather than absent.
-    assert five["orchestration_tool_calls"] == 0
-    assert five["unclassified_tool_calls"] == 0
-    assert int(result["unclassified_tool_calls"]) == 0
+    assert five['orchestration_tool_calls'] == 0
+    assert five['unclassified_tool_calls'] == 0
+    assert int(result['unclassified_tool_calls']) == 0
 
 
 def test_claude_normalized_tokens_unknown_tool_name_is_counted_not_dropped(tmp_path, home_at_tmp):
     """A tool name outside the classifier's domain lands in unclassified, never dropped."""
-    session_id = "22222222-2222-2222-2222-222222222204"
-    projects_root = tmp_path / "home" / ".claude" / "projects" / "plan"
+    session_id = '22222222-2222-2222-2222-222222222204'
+    projects_root = tmp_path / 'home' / '.claude' / 'projects' / 'plan'
     _write_jsonl(
-        projects_root / f"{session_id}.jsonl",
+        projects_root / f'{session_id}.jsonl',
         [
-            _main_context_entry("2026-03-27T10:10:00+00:00", input_tokens=1, output_tokens=1),
-            _tool_use_entry("2026-03-27T10:11:00+00:00", [("toolu_x", "NoSuchToolInvented")]),
-            _tool_result_entry("2026-03-27T10:11:10+00:00", "toolu_x", "z" * 11),
+            _main_context_entry('2026-03-27T10:10:00+00:00', input_tokens=1, output_tokens=1),
+            _tool_use_entry('2026-03-27T10:11:00+00:00', [('toolu_x', 'NoSuchToolInvented')]),
+            _tool_result_entry('2026-03-27T10:11:10+00:00', 'toolu_x', 'z' * 11),
         ],
     )
 
+    output_file = tmp_path / 'normalized.json'
+    result = _parse(ClaudeRuntime().metrics_normalized_tokens(session_id, _WINDOWS, str(output_file)))
+    assert result['status'] == 'success'
 
-    output_file = tmp_path / "normalized.json"
-    result = _parse(
-        ClaudeRuntime().metrics_normalized_tokens(session_id, _WINDOWS, str(output_file))
-    )
-    assert result["status"] == "success"
-
-    five = json.loads(output_file.read_text(encoding="utf-8"))["5-execute"]
-    assert five["unclassified_tool_calls"] == 1
-    assert five["unclassified_result_bytes"] == 11
+    five = json.loads(output_file.read_text(encoding='utf-8'))['5-execute']
+    assert five['unclassified_tool_calls'] == 1
+    assert five['unclassified_result_bytes'] == 11
     # The unknown name inflated no other bucket.
-    assert five["exploration_tool_calls"] == 0
-    assert five["work_tool_calls"] == 0
-    assert five["execute_tool_calls"] == 0
-    assert five["orchestration_tool_calls"] == 0
+    assert five['exploration_tool_calls'] == 0
+    assert five['work_tool_calls'] == 0
+    assert five['execute_tool_calls'] == 0
+    assert five['orchestration_tool_calls'] == 0
     # ...and it is surfaced at run level so the classifier's gap is visible.
-    assert int(result["unclassified_tool_calls"]) == 1
+    assert int(result['unclassified_tool_calls']) == 1
 
 
 def test_claude_normalized_tokens_tool_name_matched_casefolded(tmp_path, home_at_tmp):
     """A casing variant of a known tool name resolves to the same bucket."""
-    session_id = "22222222-2222-2222-2222-222222222205"
-    projects_root = tmp_path / "home" / ".claude" / "projects" / "plan"
+    session_id = '22222222-2222-2222-2222-222222222205'
+    projects_root = tmp_path / 'home' / '.claude' / 'projects' / 'plan'
     _write_jsonl(
-        projects_root / f"{session_id}.jsonl",
+        projects_root / f'{session_id}.jsonl',
         [
-            _main_context_entry("2026-03-27T10:10:00+00:00", input_tokens=1, output_tokens=1),
+            _main_context_entry('2026-03-27T10:10:00+00:00', input_tokens=1, output_tokens=1),
             # ``bash`` really occurs lowercase in the corpus alongside ``Bash``.
-            _tool_use_entry("2026-03-27T10:11:00+00:00", [("toolu_l", "bash")]),
+            _tool_use_entry('2026-03-27T10:11:00+00:00', [('toolu_l', 'bash')]),
         ],
     )
 
+    output_file = tmp_path / 'normalized.json'
+    result = _parse(ClaudeRuntime().metrics_normalized_tokens(session_id, _WINDOWS, str(output_file)))
+    assert result['status'] == 'success'
 
-    output_file = tmp_path / "normalized.json"
-    result = _parse(
-        ClaudeRuntime().metrics_normalized_tokens(session_id, _WINDOWS, str(output_file))
-    )
-    assert result["status"] == "success"
-
-    five = json.loads(output_file.read_text(encoding="utf-8"))["5-execute"]
-    assert five["execute_tool_calls"] == 1
-    assert five["unclassified_tool_calls"] == 0
+    five = json.loads(output_file.read_text(encoding='utf-8'))['5-execute']
+    assert five['execute_tool_calls'] == 1
+    assert five['unclassified_tool_calls'] == 0
 
 
 def test_claude_normalized_tokens_subagent_transcript_summed(tmp_path, home_at_tmp):
     """A subagent transcript's four-field usage is summed and attributed by spawn window."""
-    session_id = "22222222-2222-2222-2222-222222222202"
-    projects_root = tmp_path / "home" / ".claude" / "projects" / "plan"
-    transcript = projects_root / f"{session_id}.jsonl"
+    session_id = '22222222-2222-2222-2222-222222222202'
+    projects_root = tmp_path / 'home' / '.claude' / 'projects' / 'plan'
+    transcript = projects_root / f'{session_id}.jsonl'
     _write_jsonl(
         transcript,
-        [_main_context_entry("2026-03-27T10:10:00+00:00", input_tokens=10, output_tokens=2)],
+        [_main_context_entry('2026-03-27T10:10:00+00:00', input_tokens=10, output_tokens=2)],
     )
-    sub_dir = projects_root / session_id / "subagents"
+    sub_dir = projects_root / session_id / 'subagents'
     sub_dir.mkdir(parents=True, exist_ok=True)
     _write_jsonl(
-        sub_dir / "agent-001.jsonl",
+        sub_dir / 'agent-001.jsonl',
         [
             {
-                "timestamp": "2026-03-27T10:12:00+00:00",
-                "message": {
-                    "role": "assistant",
-                    "usage": {
-                        "input_tokens": 900,
-                        "output_tokens": 180,
-                        "cache_read_input_tokens": 9000,
-                        "cache_creation_input_tokens": 360,
+                'timestamp': '2026-03-27T10:12:00+00:00',
+                'message': {
+                    'role': 'assistant',
+                    'usage': {
+                        'input_tokens': 900,
+                        'output_tokens': 180,
+                        'cache_read_input_tokens': 9000,
+                        'cache_creation_input_tokens': 360,
                     },
                 },
             }
         ],
     )
 
+    output_file = tmp_path / 'normalized.json'
+    result = _parse(ClaudeRuntime().metrics_normalized_tokens(session_id, _WINDOWS, str(output_file)))
+    assert result['status'] == 'success'
+    assert int(result['subagent_transcripts_walked']) == 1
 
-    output_file = tmp_path / "normalized.json"
-    result = _parse(
-        ClaudeRuntime().metrics_normalized_tokens(session_id, _WINDOWS, str(output_file))
-    )
-    assert result["status"] == "success"
-    assert int(result["subagent_transcripts_walked"]) == 1
-
-    five = json.loads(output_file.read_text(encoding="utf-8"))["5-execute"]
+    five = json.loads(output_file.read_text(encoding='utf-8'))['5-execute']
     # parent(10) + subagent(900) = 910 input; 2 + 180 = 182 output.
-    assert five["input"] == 910
-    assert five["output"] == 182
-    assert five["cache_read"] == 9000
-    assert five["cache_creation"] == 360
+    assert five['input'] == 910
+    assert five['output'] == 182
+    assert five['cache_read'] == 9000
+    assert five['cache_creation'] == 360
 
 
 def test_claude_normalized_tokens_subagent_keys_zero_without_subagent_usage(tmp_path, home_at_tmp):
     """A phase with no subagent usage still carries the four subagent_* keys at 0."""
-    session_id = "22222222-2222-2222-2222-222222222203"
-    projects_root = tmp_path / "home" / ".claude" / "projects" / "plan"
-    transcript = projects_root / f"{session_id}.jsonl"
+    session_id = '22222222-2222-2222-2222-222222222203'
+    projects_root = tmp_path / 'home' / '.claude' / 'projects' / 'plan'
+    transcript = projects_root / f'{session_id}.jsonl'
     _write_jsonl(
         transcript,
-        [_main_context_entry("2026-03-27T10:10:00+00:00", input_tokens=100, output_tokens=20)],
+        [_main_context_entry('2026-03-27T10:10:00+00:00', input_tokens=100, output_tokens=20)],
     )
 
+    output_file = tmp_path / 'normalized.json'
+    result = _parse(ClaudeRuntime().metrics_normalized_tokens(session_id, _WINDOWS, str(output_file)))
+    assert result['status'] == 'success'
 
-    output_file = tmp_path / "normalized.json"
-    result = _parse(
-        ClaudeRuntime().metrics_normalized_tokens(session_id, _WINDOWS, str(output_file))
-    )
-    assert result["status"] == "success"
-
-    five = json.loads(output_file.read_text(encoding="utf-8"))["5-execute"]
+    five = json.loads(output_file.read_text(encoding='utf-8'))['5-execute']
     # No <usage> tag and no subagent transcript → keys present, all zero.
-    assert five["subagent_total_tokens"] == 0
-    assert five["subagent_tool_uses"] == 0
-    assert five["subagent_duration_ms"] == 0
-    assert five["subagent_samples"] == 0
+    assert five['subagent_total_tokens'] == 0
+    assert five['subagent_tool_uses'] == 0
+    assert five['subagent_duration_ms'] == 0
+    assert five['subagent_samples'] == 0
 
 
 def test_claude_normalized_tokens_missing_transcript_is_noop(tmp_path, home_at_tmp):
     """No transcript on disk → the op returns a transcript_not_found no-op."""
-    (tmp_path / "home" / ".claude" / "projects").mkdir(parents=True, exist_ok=True)
+    (tmp_path / 'home' / '.claude' / 'projects').mkdir(parents=True, exist_ok=True)
 
-    output_file = tmp_path / "normalized.json"
+    output_file = tmp_path / 'normalized.json'
     result = _parse(
-        ClaudeRuntime().metrics_normalized_tokens(
-            "22222222-2222-2222-2222-222222222299", _WINDOWS, str(output_file)
-        )
+        ClaudeRuntime().metrics_normalized_tokens('22222222-2222-2222-2222-222222222299', _WINDOWS, str(output_file))
     )
-    assert result["status"] == "no-op"
-    assert result["reason"] == "transcript_not_found"
+    assert result['status'] == 'no-op'
+    assert result['reason'] == 'transcript_not_found'
     assert not output_file.exists()
 
 
@@ -434,13 +411,11 @@ def test_claude_normalized_tokens_missing_transcript_is_noop(tmp_path, home_at_t
 
 def test_opencode_normalized_tokens_is_noop(tmp_path):
     """OpenCode exposes no transcript → the op is an honest transcript_not_found no-op."""
-    output_file = tmp_path / "normalized.json"
-    result = _parse(
-        OpenCodeRuntime().metrics_normalized_tokens("any-session", _WINDOWS, str(output_file))
-    )
-    assert result["status"] == "no-op"
-    assert result["operation"] == "metrics normalized-tokens"
-    assert result["reason"] == "transcript_not_found"
+    output_file = tmp_path / 'normalized.json'
+    result = _parse(OpenCodeRuntime().metrics_normalized_tokens('any-session', _WINDOWS, str(output_file)))
+    assert result['status'] == 'no-op'
+    assert result['operation'] == 'metrics normalized-tokens'
+    assert result['reason'] == 'transcript_not_found'
     assert not output_file.exists()
 
 
@@ -452,10 +427,10 @@ def test_opencode_normalized_tokens_is_noop(tmp_path):
 def test_billing_weighted_total_arithmetic():
     """billing = input + output + round(0.1*cache_read) + round(1.25*cache_creation)."""
     four = {
-        "input_tokens": 1000,
-        "output_tokens": 200,
-        "cache_read_input_tokens": 5000,
-        "cache_creation_input_tokens": 400,
+        'input_tokens': 1000,
+        'output_tokens': 200,
+        'cache_read_input_tokens': 5000,
+        'cache_creation_input_tokens': 400,
     }
     # 1000 + 200 + round(500) + round(500) = 2200.
     assert claude_runtime._billing_weighted_total(four) == 2200
@@ -468,33 +443,33 @@ def test_billing_weighted_total_empty_is_zero():
 
 def test_sum_subagent_transcript_sums_four_fields(tmp_path):
     """_sum_subagent_transcript accumulates the four message.usage fields across lines."""
-    path = tmp_path / "agent-001.jsonl"
+    path = tmp_path / 'agent-001.jsonl'
     _write_jsonl(
         path,
         [
             {
-                "timestamp": "2026-03-27T10:05:00+00:00",
-                "message": {
-                    "usage": {
-                        "input_tokens": 100,
-                        "output_tokens": 10,
-                        "cache_read_input_tokens": 2000,
-                        "cache_creation_input_tokens": 300,
+                'timestamp': '2026-03-27T10:05:00+00:00',
+                'message': {
+                    'usage': {
+                        'input_tokens': 100,
+                        'output_tokens': 10,
+                        'cache_read_input_tokens': 2000,
+                        'cache_creation_input_tokens': 300,
                     }
                 },
             },
             {
-                "timestamp": "2026-03-27T10:06:00+00:00",
-                "message": {"usage": {"input_tokens": 50, "output_tokens": 5}},
+                'timestamp': '2026-03-27T10:06:00+00:00',
+                'message': {'usage': {'input_tokens': 50, 'output_tokens': 5}},
             },
         ],
     )
     fields, first_ts, tool_counters = claude_runtime._sum_subagent_transcript(path)
-    assert fields["input_tokens"] == 150
-    assert fields["output_tokens"] == 15
-    assert fields["cache_read_input_tokens"] == 2000
-    assert fields["cache_creation_input_tokens"] == 300
-    assert first_ts == "2026-03-27T10:05:00+00:00"
+    assert fields['input_tokens'] == 150
+    assert fields['output_tokens'] == 15
+    assert fields['cache_read_input_tokens'] == 2000
+    assert fields['cache_creation_input_tokens'] == 300
+    assert first_ts == '2026-03-27T10:05:00+00:00'
     # No tool_use items in this transcript → every counter is a measured zero,
     # and the key set is complete rather than partially populated.
     assert set(tool_counters) == set(_EXPECTED_COUNTER_KEYS)
@@ -503,20 +478,20 @@ def test_sum_subagent_transcript_sums_four_fields(tmp_path):
 
 def test_sum_subagent_transcript_counts_tool_calls_and_result_bytes(tmp_path):
     """A subagent transcript's tool calls are bucketed and their result bytes summed."""
-    path = tmp_path / "agent-002.jsonl"
+    path = tmp_path / 'agent-002.jsonl'
     _write_jsonl(
         path,
         [
-            _tool_use_entry("2026-03-27T10:05:00+00:00", [("toolu_a", "Read"), ("toolu_b", "Edit")]),
-            _tool_result_entry("2026-03-27T10:05:30+00:00", "toolu_a", "x" * 40),
-            _tool_result_entry("2026-03-27T10:05:40+00:00", "toolu_b", "y" * 9),
+            _tool_use_entry('2026-03-27T10:05:00+00:00', [('toolu_a', 'Read'), ('toolu_b', 'Edit')]),
+            _tool_result_entry('2026-03-27T10:05:30+00:00', 'toolu_a', 'x' * 40),
+            _tool_result_entry('2026-03-27T10:05:40+00:00', 'toolu_b', 'y' * 9),
         ],
     )
     _fields, _first_ts, tool_counters = claude_runtime._sum_subagent_transcript(path)
-    assert tool_counters["exploration_tool_calls"] == 1
-    assert tool_counters["work_tool_calls"] == 1
-    assert tool_counters["exploration_result_bytes"] == 40
-    assert tool_counters["work_result_bytes"] == 9
+    assert tool_counters['exploration_tool_calls'] == 1
+    assert tool_counters['work_tool_calls'] == 1
+    assert tool_counters['exploration_result_bytes'] == 40
+    assert tool_counters['work_result_bytes'] == 9
 
 
 # =============================================================================
@@ -526,7 +501,7 @@ def test_sum_subagent_transcript_counts_tool_calls_and_result_bytes(tmp_path):
 
 def test_attribute_cache_read_emits_the_full_key_set_derived_from_bucket_names():
     """The emitted group is one key per bucket plus the residual, derived not restated."""
-    attributed = claude_runtime._attribute_cache_read(500, {"exploration": 10})
+    attributed = claude_runtime._attribute_cache_read(500, {'exploration': 10})
 
     assert set(attributed) == _expected_attribution_keys()
     # The derivation is not vacuous: the producer really does declare more than
@@ -542,12 +517,12 @@ def test_attribute_cache_read_emits_the_full_key_set_derived_from_bucket_names()
 #: rounding crumbs appear; and a total of 1 that cannot be split at all.
 _CACHE_READ_RECONCILIATION_CASES = [
     (0, {}),
-    (0, {"exploration": 7}),
+    (0, {'exploration': 7}),
     (1000, {}),
-    (1000, {"exploration": 3}),
-    (1000, {"exploration": 1, "work": 2}),
-    (997, {"exploration": 13, "work": 7, "execute": 11, "orchestration": 3}),
-    (1, {"exploration": 1, "work": 1, "execute": 1}),
+    (1000, {'exploration': 3}),
+    (1000, {'exploration': 1, 'work': 2}),
+    (997, {'exploration': 13, 'work': 7, 'execute': 11, 'orchestration': 3}),
+    (1, {'exploration': 1, 'work': 1, 'execute': 1}),
 ]
 
 _CACHE_READ_RECONCILIATION_IDS = [
@@ -562,7 +537,7 @@ _CACHE_READ_RECONCILIATION_IDS = [
 
 
 @pytest.mark.parametrize(
-    ("total", "weights"),
+    ('total', 'weights'),
     _CACHE_READ_RECONCILIATION_CASES,
     ids=_CACHE_READ_RECONCILIATION_IDS,
 )
@@ -579,23 +554,23 @@ def test_attribute_cache_read_reconciles_exactly_to_the_recorded_total(total, we
 def test_attribute_cache_read_floors_named_parts_and_banks_the_remainder_in_the_residual():
     """Rounding crumbs land in the residual — never inflating a named share."""
     # weights 1:2 over a total of 10 → 10*1//3 = 3 and 10*2//3 = 6, remainder 1.
-    attributed = claude_runtime._attribute_cache_read(10, {"exploration": 1, "work": 2})
+    attributed = claude_runtime._attribute_cache_read(10, {'exploration': 1, 'work': 2})
 
-    assert attributed["cache_read_attributed_exploration"] == 3
-    assert attributed["cache_read_attributed_work"] == 6
-    assert attributed["cache_read_unattributed"] == 1
+    assert attributed['cache_read_attributed_exploration'] == 3
+    assert attributed['cache_read_attributed_work'] == 6
+    assert attributed['cache_read_unattributed'] == 1
     # Matched control on the direction of the rounding: the naive proportional
     # split would have handed exploration 3.33 and work 6.67, so a rounded-up
     # named share is what this assertion rules out.
-    assert attributed["cache_read_attributed_exploration"] < 10 * 1 / 3
+    assert attributed['cache_read_attributed_exploration'] < 10 * 1 / 3
 
 
 def test_attribute_cache_read_without_observed_weight_leaves_everything_in_the_residual():
     """A phase billed for a context read the walk cannot explain discloses it, not spreads it."""
     attributed = claude_runtime._attribute_cache_read(4321, {})
 
-    assert attributed["cache_read_unattributed"] == 4321
-    named = {k: v for k, v in attributed.items() if k != "cache_read_unattributed"}
+    assert attributed['cache_read_unattributed'] == 4321
+    named = {k: v for k, v in attributed.items() if k != 'cache_read_unattributed'}
     assert set(named.values()) == {0}, named
 
 
@@ -606,15 +581,13 @@ def test_attribute_cache_read_keeps_subagent_share_out_of_named_buckets():
     ``total_weight == 0`` branch already banked everything in the residual, so a
     test that only covered it would pass against the unfixed code.
     """
-    attributed = claude_runtime._attribute_cache_read(
-        100, {"exploration": 1, "work": 1}, subagent_cache_read=40
-    )
+    attributed = claude_runtime._attribute_cache_read(100, {'exploration': 1, 'work': 1}, subagent_cache_read=40)
 
     # Only the 60 the parent walk actually observed is split, 1:1.
-    assert attributed["cache_read_attributed_exploration"] == 30
-    assert attributed["cache_read_attributed_work"] == 30
+    assert attributed['cache_read_attributed_exploration'] == 30
+    assert attributed['cache_read_attributed_work'] == 30
     # The subagent's 40 reaches the residual instead of a named share.
-    assert attributed["cache_read_unattributed"] == 40
+    assert attributed['cache_read_unattributed'] == 40
     # Exact reconciliation still holds over the FULL recorded total.
     assert sum(attributed.values()) == 100
 
@@ -625,27 +598,25 @@ def test_attribute_cache_read_subagent_exclusion_is_load_bearing():
     Pins that the assertion above is not vacuous — remove the exclusion and this
     is the (wrong) split the fixed code no longer produces.
     """
-    without = claude_runtime._attribute_cache_read(100, {"exploration": 1, "work": 1})
+    without = claude_runtime._attribute_cache_read(100, {'exploration': 1, 'work': 1})
 
-    assert without["cache_read_attributed_exploration"] == 50
-    assert without["cache_read_attributed_work"] == 50
-    assert without["cache_read_unattributed"] == 0
+    assert without['cache_read_attributed_exploration'] == 50
+    assert without['cache_read_attributed_work'] == 50
+    assert without['cache_read_unattributed'] == 0
 
 
 def test_attribute_cache_read_subagent_exceeding_total_empties_rather_than_inverts():
     """A subagent figure larger than the phase total can only empty the split."""
-    attributed = claude_runtime._attribute_cache_read(
-        10, {"exploration": 3}, subagent_cache_read=999
-    )
+    attributed = claude_runtime._attribute_cache_read(10, {'exploration': 3}, subagent_cache_read=999)
 
-    assert attributed["cache_read_attributed_exploration"] == 0
-    assert attributed["cache_read_unattributed"] == 10
+    assert attributed['cache_read_attributed_exploration'] == 0
+    assert attributed['cache_read_unattributed'] == 10
     assert min(attributed.values()) >= 0, attributed
 
 
 def test_attribute_cache_read_zero_total_is_a_measured_zero_across_the_group():
     """Zero recorded cache_read still yields every key — a measured zero, never absent."""
-    attributed = claude_runtime._attribute_cache_read(0, {"exploration": 999, "work": 1})
+    attributed = claude_runtime._attribute_cache_read(0, {'exploration': 999, 'work': 1})
 
     assert set(attributed) == _expected_attribution_keys()
     assert set(attributed.values()) == {0}
@@ -659,99 +630,93 @@ def test_claude_normalized_tokens_attributes_cache_read_by_turn_weighted_residen
     turn earlier and is therefore re-read once more, so the honest split is 2:1 —
     which is what separates an attribution from a byte-share rename.
     """
-    session_id = "22222222-2222-2222-2222-222222222210"
-    projects_root = tmp_path / "home" / ".claude" / "projects" / "plan"
+    session_id = '22222222-2222-2222-2222-222222222210'
+    projects_root = tmp_path / 'home' / '.claude' / 'projects' / 'plan'
     _write_jsonl(
-        projects_root / f"{session_id}.jsonl",
+        projects_root / f'{session_id}.jsonl',
         [
             # Turn 1 — the whole phase's cache_read is billed here; nothing is
             # resident yet, so this turn contributes no weight to any bucket.
             _main_context_entry(
-                "2026-03-27T10:01:00+00:00",
+                '2026-03-27T10:01:00+00:00',
                 input_tokens=1,
                 output_tokens=1,
                 cache_read_input_tokens=1200,
             ),
-            _tool_use_entry("2026-03-27T10:02:00+00:00", [("toolu_r", "Read")]),
-            _tool_result_entry("2026-03-27T10:03:00+00:00", "toolu_r", "r" * 400),
+            _tool_use_entry('2026-03-27T10:02:00+00:00', [('toolu_r', 'Read')]),
+            _tool_result_entry('2026-03-27T10:03:00+00:00', 'toolu_r', 'r' * 400),
             # Turn 2 — the Read payload is resident.
-            _main_context_entry("2026-03-27T10:04:00+00:00", input_tokens=1, output_tokens=1),
-            _tool_use_entry("2026-03-27T10:05:00+00:00", [("toolu_w", "Write")]),
-            _tool_result_entry("2026-03-27T10:06:00+00:00", "toolu_w", "w" * 400),
+            _main_context_entry('2026-03-27T10:04:00+00:00', input_tokens=1, output_tokens=1),
+            _tool_use_entry('2026-03-27T10:05:00+00:00', [('toolu_w', 'Write')]),
+            _tool_result_entry('2026-03-27T10:06:00+00:00', 'toolu_w', 'w' * 400),
             # Turn 3 — both payloads are resident.
-            _main_context_entry("2026-03-27T10:07:00+00:00", input_tokens=1, output_tokens=1),
+            _main_context_entry('2026-03-27T10:07:00+00:00', input_tokens=1, output_tokens=1),
         ],
     )
 
+    output_file = tmp_path / 'normalized.json'
+    result = _parse(ClaudeRuntime().metrics_normalized_tokens(session_id, _WINDOWS, str(output_file)))
+    assert result['status'] == 'success'
 
-    output_file = tmp_path / "normalized.json"
-    result = _parse(
-        ClaudeRuntime().metrics_normalized_tokens(session_id, _WINDOWS, str(output_file))
-    )
-    assert result["status"] == "success"
-
-    five = json.loads(output_file.read_text(encoding="utf-8"))["5-execute"]
+    five = json.loads(output_file.read_text(encoding='utf-8'))['5-execute']
 
     # The byte shares really are equal — this is the control that makes the
     # unequal attribution below meaningful rather than incidental.
-    assert five["exploration_result_bytes"] == five["work_result_bytes"] == 400
+    assert five['exploration_result_bytes'] == five['work_result_bytes'] == 400
 
     # Residency weights are 400x2 vs 400x1, so 1200 splits 800 / 400.
-    assert five["cache_read"] == 1200
-    assert five["cache_read_attributed_exploration"] == 800
-    assert five["cache_read_attributed_work"] == 400
-    assert five["cache_read_attributed_execute"] == 0
-    assert five["cache_read_attributed_orchestration"] == 0
-    assert five["cache_read_attributed_unclassified"] == 0
+    assert five['cache_read'] == 1200
+    assert five['cache_read_attributed_exploration'] == 800
+    assert five['cache_read_attributed_work'] == 400
+    assert five['cache_read_attributed_execute'] == 0
+    assert five['cache_read_attributed_orchestration'] == 0
+    assert five['cache_read_attributed_unclassified'] == 0
     # Every unit of the recorded figure is accounted for, so the residual is a
     # measured zero — and it is still EMITTED, which is what lets a reader tell
     # "fully explained" apart from "never computed".
-    assert five["cache_read_unattributed"] == 0
-    assert "cache_read_unattributed" in five
-    assert sum(_attribution_group(five).values()) == five["cache_read"]
+    assert five['cache_read_unattributed'] == 0
+    assert 'cache_read_unattributed' in five
+    assert sum(_attribution_group(five).values()) == five['cache_read']
 
 
 def test_claude_normalized_tokens_zero_cache_read_phase_carries_the_full_attribution_group(tmp_path, home_at_tmp):
     """Matched negative control for the full-key-set rule: no cache_read, keys still present."""
-    session_id = "22222222-2222-2222-2222-222222222211"
-    projects_root = tmp_path / "home" / ".claude" / "projects" / "plan"
+    session_id = '22222222-2222-2222-2222-222222222211'
+    projects_root = tmp_path / 'home' / '.claude' / 'projects' / 'plan'
     _write_jsonl(
-        projects_root / f"{session_id}.jsonl",
+        projects_root / f'{session_id}.jsonl',
         [
             # No cache_read on the usage record at all, yet real payload traffic —
             # so the group cannot be emitted merely because weight exists.
-            _main_context_entry("2026-03-27T10:01:00+00:00", input_tokens=5, output_tokens=2),
-            _tool_use_entry("2026-03-27T10:02:00+00:00", [("toolu_r", "Read")]),
-            _tool_result_entry("2026-03-27T10:03:00+00:00", "toolu_r", "r" * 250),
-            _main_context_entry("2026-03-27T10:04:00+00:00", input_tokens=5, output_tokens=2),
+            _main_context_entry('2026-03-27T10:01:00+00:00', input_tokens=5, output_tokens=2),
+            _tool_use_entry('2026-03-27T10:02:00+00:00', [('toolu_r', 'Read')]),
+            _tool_result_entry('2026-03-27T10:03:00+00:00', 'toolu_r', 'r' * 250),
+            _main_context_entry('2026-03-27T10:04:00+00:00', input_tokens=5, output_tokens=2),
         ],
     )
 
+    output_file = tmp_path / 'normalized.json'
+    result = _parse(ClaudeRuntime().metrics_normalized_tokens(session_id, _WINDOWS, str(output_file)))
+    assert result['status'] == 'success'
 
-    output_file = tmp_path / "normalized.json"
-    result = _parse(
-        ClaudeRuntime().metrics_normalized_tokens(session_id, _WINDOWS, str(output_file))
-    )
-    assert result["status"] == "success"
-
-    five = json.loads(output_file.read_text(encoding="utf-8"))["5-execute"]
-    assert five["cache_read"] == 0
+    five = json.loads(output_file.read_text(encoding='utf-8'))['5-execute']
+    assert five['cache_read'] == 0
     # Bytes were observed, so the zero below is about the RECORDED figure being
     # zero — not about there being nothing to attribute.
-    assert five["exploration_result_bytes"] == 250
+    assert five['exploration_result_bytes'] == 250
     assert _expected_attribution_keys() <= set(five)
     assert set(_attribution_group(five).values()) == {0}
 
 
 def test_claude_normalized_tokens_unexplained_cache_read_lands_in_the_residual(tmp_path, home_at_tmp):
     """A phase billed for context it never sourced from a payload discloses the whole figure."""
-    session_id = "22222222-2222-2222-2222-222222222212"
-    projects_root = tmp_path / "home" / ".claude" / "projects" / "plan"
+    session_id = '22222222-2222-2222-2222-222222222212'
+    projects_root = tmp_path / 'home' / '.claude' / 'projects' / 'plan'
     _write_jsonl(
-        projects_root / f"{session_id}.jsonl",
+        projects_root / f'{session_id}.jsonl',
         [
             _main_context_entry(
-                "2026-03-27T10:01:00+00:00",
+                '2026-03-27T10:01:00+00:00',
                 input_tokens=3,
                 output_tokens=1,
                 cache_read_input_tokens=7777,
@@ -759,22 +724,15 @@ def test_claude_normalized_tokens_unexplained_cache_read_lands_in_the_residual(t
         ],
     )
 
+    output_file = tmp_path / 'normalized.json'
+    result = _parse(ClaudeRuntime().metrics_normalized_tokens(session_id, _WINDOWS, str(output_file)))
+    assert result['status'] == 'success'
 
-    output_file = tmp_path / "normalized.json"
-    result = _parse(
-        ClaudeRuntime().metrics_normalized_tokens(session_id, _WINDOWS, str(output_file))
-    )
-    assert result["status"] == "success"
-
-    five = json.loads(output_file.read_text(encoding="utf-8"))["5-execute"]
-    assert five["cache_read_unattributed"] == 7777
-    named = {
-        key: value
-        for key, value in _attribution_group(five).items()
-        if key != "cache_read_unattributed"
-    }
+    five = json.loads(output_file.read_text(encoding='utf-8'))['5-execute']
+    assert five['cache_read_unattributed'] == 7777
+    named = {key: value for key, value in _attribution_group(five).items() if key != 'cache_read_unattributed'}
     assert set(named.values()) == {0}, named
-    assert sum(_attribution_group(five).values()) == five["cache_read"]
+    assert sum(_attribution_group(five).values()) == five['cache_read']
 
 
 # =============================================================================
@@ -784,38 +742,35 @@ def test_claude_normalized_tokens_unexplained_cache_read_lands_in_the_residual(t
 
 def test_exploration_subsources_partition_the_parent_bucket_exactly(tmp_path, home_at_tmp):
     """The three sub-sources sum to exploration_result_bytes — a re-cut, not an addition."""
-    session_id = "22222222-2222-2222-2222-222222222220"
-    projects_root = tmp_path / "home" / ".claude" / "projects" / "plan"
+    session_id = '22222222-2222-2222-2222-222222222220'
+    projects_root = tmp_path / 'home' / '.claude' / 'projects' / 'plan'
     _write_jsonl(
-        projects_root / f"{session_id}.jsonl",
+        projects_root / f'{session_id}.jsonl',
         [
-            _main_context_entry("2026-03-27T10:01:00+00:00", input_tokens=1, output_tokens=1),
+            _main_context_entry('2026-03-27T10:01:00+00:00', input_tokens=1, output_tokens=1),
             _tool_use_entry_with_input(
-                "2026-03-27T10:02:00+00:00",
+                '2026-03-27T10:02:00+00:00',
                 [
-                    ("toolu_code", "Read", {"file_path": "marketplace/x/scripts/thing.py"}),
-                    ("toolu_doc", "Read", {"file_path": "doc/developer/build.adoc"}),
-                    ("toolu_web", "WebFetch", {"url": "https://example.invalid/page"}),
+                    ('toolu_code', 'Read', {'file_path': 'marketplace/x/scripts/thing.py'}),
+                    ('toolu_doc', 'Read', {'file_path': 'doc/developer/build.adoc'}),
+                    ('toolu_web', 'WebFetch', {'url': 'https://example.invalid/page'}),
                 ],
             ),
-            _tool_result_entry("2026-03-27T10:03:00+00:00", "toolu_code", "c" * 500),
-            _tool_result_entry("2026-03-27T10:03:10+00:00", "toolu_doc", "d" * 300),
-            _tool_result_entry("2026-03-27T10:03:20+00:00", "toolu_web", "w" * 200),
+            _tool_result_entry('2026-03-27T10:03:00+00:00', 'toolu_code', 'c' * 500),
+            _tool_result_entry('2026-03-27T10:03:10+00:00', 'toolu_doc', 'd' * 300),
+            _tool_result_entry('2026-03-27T10:03:20+00:00', 'toolu_web', 'w' * 200),
         ],
     )
 
+    output_file = tmp_path / 'normalized.json'
+    result = _parse(ClaudeRuntime().metrics_normalized_tokens(session_id, _WINDOWS, str(output_file)))
+    assert result['status'] == 'success'
 
-    output_file = tmp_path / "normalized.json"
-    result = _parse(
-        ClaudeRuntime().metrics_normalized_tokens(session_id, _WINDOWS, str(output_file))
-    )
-    assert result["status"] == "success"
+    five = json.loads(output_file.read_text(encoding='utf-8'))['5-execute']
 
-    five = json.loads(output_file.read_text(encoding="utf-8"))["5-execute"]
-
-    assert five["exploration_result_bytes"] == 1000
+    assert five['exploration_result_bytes'] == 1000
     subsources = {key: five[key] for key in _expected_subsource_keys()}
-    assert sum(subsources.values()) == five["exploration_result_bytes"], subsources
+    assert sum(subsources.values()) == five['exploration_result_bytes'], subsources
     # ...and the split is not degenerate: all three members carry weight, so a
     # partition that dumped everything into one member would fail here too.
     assert set(subsources.values()) != {0}
@@ -824,80 +779,72 @@ def test_exploration_subsources_partition_the_parent_bucket_exactly(tmp_path, ho
 
 def test_code_target_routes_to_index_answerable(tmp_path, home_at_tmp):
     """A source-code target is a lookup an index could answer."""
-    session_id = "22222222-2222-2222-2222-222222222221"
-    projects_root = tmp_path / "home" / ".claude" / "projects" / "plan"
+    session_id = '22222222-2222-2222-2222-222222222221'
+    projects_root = tmp_path / 'home' / '.claude' / 'projects' / 'plan'
     _write_jsonl(
-        projects_root / f"{session_id}.jsonl",
+        projects_root / f'{session_id}.jsonl',
         [
-            _main_context_entry("2026-03-27T10:01:00+00:00", input_tokens=1, output_tokens=1),
+            _main_context_entry('2026-03-27T10:01:00+00:00', input_tokens=1, output_tokens=1),
             _tool_use_entry_with_input(
-                "2026-03-27T10:02:00+00:00",
+                '2026-03-27T10:02:00+00:00',
                 [
-                    ("toolu_src", "Read", {"file_path": "marketplace/x/scripts/thing.py"}),
-                    ("toolu_test", "Read", {"file_path": "test/plan-marshall/x/test_thing.py"}),
+                    ('toolu_src', 'Read', {'file_path': 'marketplace/x/scripts/thing.py'}),
+                    ('toolu_test', 'Read', {'file_path': 'test/plan-marshall/x/test_thing.py'}),
                 ],
             ),
-            _tool_result_entry("2026-03-27T10:03:00+00:00", "toolu_src", "s" * 70),
-            _tool_result_entry("2026-03-27T10:03:10+00:00", "toolu_test", "t" * 30),
+            _tool_result_entry('2026-03-27T10:03:00+00:00', 'toolu_src', 's' * 70),
+            _tool_result_entry('2026-03-27T10:03:10+00:00', 'toolu_test', 't' * 30),
         ],
     )
 
-
-    output_file = tmp_path / "normalized.json"
+    output_file = tmp_path / 'normalized.json'
     assert (
-        _parse(ClaudeRuntime().metrics_normalized_tokens(session_id, _WINDOWS, str(output_file)))[
-            "status"
-        ]
-        == "success"
+        _parse(ClaudeRuntime().metrics_normalized_tokens(session_id, _WINDOWS, str(output_file)))['status'] == 'success'
     )
 
-    five = json.loads(output_file.read_text(encoding="utf-8"))["5-execute"]
+    five = json.loads(output_file.read_text(encoding='utf-8'))['5-execute']
     # Both source AND test code count as index-answerable.
-    assert five["exploration_index_answerable_bytes"] == 100
-    assert five["exploration_doc_residency_bytes"] == 0
-    assert five["exploration_unattributed_bytes"] == 0
+    assert five['exploration_index_answerable_bytes'] == 100
+    assert five['exploration_doc_residency_bytes'] == 0
+    assert five['exploration_unattributed_bytes'] == 0
 
 
 def test_document_targets_route_to_doc_residency(tmp_path, home_at_tmp):
     """Skill/standard markdown, doc/**, *.adoc and CLAUDE.md are all residency, not lookup."""
-    session_id = "22222222-2222-2222-2222-222222222222"
-    projects_root = tmp_path / "home" / ".claude" / "projects" / "plan"
+    session_id = '22222222-2222-2222-2222-222222222222'
+    projects_root = tmp_path / 'home' / '.claude' / 'projects' / 'plan'
     _write_jsonl(
-        projects_root / f"{session_id}.jsonl",
+        projects_root / f'{session_id}.jsonl',
         [
-            _main_context_entry("2026-03-27T10:01:00+00:00", input_tokens=1, output_tokens=1),
+            _main_context_entry('2026-03-27T10:01:00+00:00', input_tokens=1, output_tokens=1),
             _tool_use_entry_with_input(
-                "2026-03-27T10:02:00+00:00",
+                '2026-03-27T10:02:00+00:00',
                 [
-                    ("toolu_skill", "Read", {"file_path": "bundles/b/skills/s/SKILL.md"}),
-                    ("toolu_std", "Read", {"file_path": "bundles/b/skills/s/standards/x.md"}),
-                    ("toolu_doc", "Read", {"file_path": "doc/concepts/overview.md"}),
-                    ("toolu_adoc", "Read", {"file_path": "anywhere/notes.adoc"}),
-                    ("toolu_claude", "Read", {"file_path": "CLAUDE.md"}),
+                    ('toolu_skill', 'Read', {'file_path': 'bundles/b/skills/s/SKILL.md'}),
+                    ('toolu_std', 'Read', {'file_path': 'bundles/b/skills/s/standards/x.md'}),
+                    ('toolu_doc', 'Read', {'file_path': 'doc/concepts/overview.md'}),
+                    ('toolu_adoc', 'Read', {'file_path': 'anywhere/notes.adoc'}),
+                    ('toolu_claude', 'Read', {'file_path': 'CLAUDE.md'}),
                 ],
             ),
-            _tool_result_entry("2026-03-27T10:03:00+00:00", "toolu_skill", "a" * 10),
-            _tool_result_entry("2026-03-27T10:03:01+00:00", "toolu_std", "b" * 20),
-            _tool_result_entry("2026-03-27T10:03:02+00:00", "toolu_doc", "c" * 30),
-            _tool_result_entry("2026-03-27T10:03:03+00:00", "toolu_adoc", "d" * 40),
-            _tool_result_entry("2026-03-27T10:03:04+00:00", "toolu_claude", "e" * 50),
+            _tool_result_entry('2026-03-27T10:03:00+00:00', 'toolu_skill', 'a' * 10),
+            _tool_result_entry('2026-03-27T10:03:01+00:00', 'toolu_std', 'b' * 20),
+            _tool_result_entry('2026-03-27T10:03:02+00:00', 'toolu_doc', 'c' * 30),
+            _tool_result_entry('2026-03-27T10:03:03+00:00', 'toolu_adoc', 'd' * 40),
+            _tool_result_entry('2026-03-27T10:03:04+00:00', 'toolu_claude', 'e' * 50),
         ],
     )
 
-
-    output_file = tmp_path / "normalized.json"
+    output_file = tmp_path / 'normalized.json'
     assert (
-        _parse(ClaudeRuntime().metrics_normalized_tokens(session_id, _WINDOWS, str(output_file)))[
-            "status"
-        ]
-        == "success"
+        _parse(ClaudeRuntime().metrics_normalized_tokens(session_id, _WINDOWS, str(output_file)))['status'] == 'success'
     )
 
-    five = json.loads(output_file.read_text(encoding="utf-8"))["5-execute"]
+    five = json.loads(output_file.read_text(encoding='utf-8'))['5-execute']
     # All five document shapes land together — 10+20+30+40+50.
-    assert five["exploration_doc_residency_bytes"] == 150
-    assert five["exploration_index_answerable_bytes"] == 0
-    assert five["exploration_unattributed_bytes"] == 0
+    assert five['exploration_doc_residency_bytes'] == 150
+    assert five['exploration_index_answerable_bytes'] == 0
+    assert five['exploration_unattributed_bytes'] == 0
 
 
 #: ``(a ``tool_use`` item's ``input`` payload, the target path it yields)``.
@@ -908,12 +855,12 @@ def test_document_targets_route_to_doc_residency(tmp_path, home_at_tmp):
 #: never observed. The last two are the matched positive control: without them
 #: every ``None`` row above would pass on a helper that always returned ``None``.
 _TARGET_PATH_CASES = [
-    ({"url": "https://example.invalid"}, None),
-    ({"query": "how to"}, None),
+    ({'url': 'https://example.invalid'}, None),
+    ({'query': 'how to'}, None),
     (None, None),
     ({}, None),
-    ({"file_path": "a/b.py"}, "a/b.py"),
-    ({"path": "a/b"}, "a/b"),
+    ({'file_path': 'a/b.py'}, 'a/b.py'),
+    ({'path': 'a/b'}, 'a/b'),
 ]
 
 _TARGET_PATH_IDS = [
@@ -926,7 +873,7 @@ _TARGET_PATH_IDS = [
 ]
 
 
-@pytest.mark.parametrize(("tool_input", "expected"), _TARGET_PATH_CASES, ids=_TARGET_PATH_IDS)
+@pytest.mark.parametrize(('tool_input', 'expected'), _TARGET_PATH_CASES, ids=_TARGET_PATH_IDS)
 def test_extract_target_path_recovers_a_path_or_fails_open(tool_input, expected):
     """A path-bearing key is recovered; anything else yields None rather than a guess."""
     assert claude_runtime._extract_target_path(tool_input) == expected
@@ -934,76 +881,68 @@ def test_extract_target_path_recovers_a_path_or_fails_open(tool_input, expected)
 
 def test_a_pathless_call_classifies_as_unattributed():
     """Both fail-open arms resolve to the same sub-source, never to a named one."""
-    assert claude_runtime._classify_exploration_target(None) == "unattributed"
+    assert claude_runtime._classify_exploration_target(None) == 'unattributed'
 
 
 def test_unrecognised_and_pathless_calls_land_in_exploration_unattributed(tmp_path, home_at_tmp):
     """A non-path-addressed tool and an inputless call both fail open, never guessed."""
-    session_id = "22222222-2222-2222-2222-222222222223"
-    projects_root = tmp_path / "home" / ".claude" / "projects" / "plan"
+    session_id = '22222222-2222-2222-2222-222222222223'
+    projects_root = tmp_path / 'home' / '.claude' / 'projects' / 'plan'
     _write_jsonl(
-        projects_root / f"{session_id}.jsonl",
+        projects_root / f'{session_id}.jsonl',
         [
-            _main_context_entry("2026-03-27T10:01:00+00:00", input_tokens=1, output_tokens=1),
+            _main_context_entry('2026-03-27T10:01:00+00:00', input_tokens=1, output_tokens=1),
             _tool_use_entry_with_input(
-                "2026-03-27T10:02:00+00:00",
-                [("toolu_web", "WebSearch", {"query": "anything"})],
+                '2026-03-27T10:02:00+00:00',
+                [('toolu_web', 'WebSearch', {'query': 'anything'})],
             ),
             # ``_tool_use_entry`` emits items with NO ``input`` key — the shape the
             # census never observed live, kept as the defensive control.
-            _tool_use_entry("2026-03-27T10:02:30+00:00", [("toolu_bare", "Read")]),
-            _tool_result_entry("2026-03-27T10:03:00+00:00", "toolu_web", "w" * 60),
-            _tool_result_entry("2026-03-27T10:03:10+00:00", "toolu_bare", "b" * 40),
+            _tool_use_entry('2026-03-27T10:02:30+00:00', [('toolu_bare', 'Read')]),
+            _tool_result_entry('2026-03-27T10:03:00+00:00', 'toolu_web', 'w' * 60),
+            _tool_result_entry('2026-03-27T10:03:10+00:00', 'toolu_bare', 'b' * 40),
         ],
     )
 
-
-    output_file = tmp_path / "normalized.json"
+    output_file = tmp_path / 'normalized.json'
     assert (
-        _parse(ClaudeRuntime().metrics_normalized_tokens(session_id, _WINDOWS, str(output_file)))[
-            "status"
-        ]
-        == "success"
+        _parse(ClaudeRuntime().metrics_normalized_tokens(session_id, _WINDOWS, str(output_file)))['status'] == 'success'
     )
 
-    five = json.loads(output_file.read_text(encoding="utf-8"))["5-execute"]
-    assert five["exploration_unattributed_bytes"] == 100
-    assert five["exploration_index_answerable_bytes"] == 0
-    assert five["exploration_doc_residency_bytes"] == 0
+    five = json.loads(output_file.read_text(encoding='utf-8'))['5-execute']
+    assert five['exploration_unattributed_bytes'] == 100
+    assert five['exploration_index_answerable_bytes'] == 0
+    assert five['exploration_doc_residency_bytes'] == 0
     # The bytes were NOT dropped — the parent bucket still carries them, which is
     # what "fails open" means as distinct from "ignored".
-    assert five["exploration_result_bytes"] == 100
+    assert five['exploration_result_bytes'] == 100
 
 
 def test_phase_without_exploration_still_carries_the_subsource_keys(tmp_path, home_at_tmp):
     """Matched negative control for the full-key-set rule on the sub-source group."""
-    session_id = "22222222-2222-2222-2222-222222222224"
-    projects_root = tmp_path / "home" / ".claude" / "projects" / "plan"
+    session_id = '22222222-2222-2222-2222-222222222224'
+    projects_root = tmp_path / 'home' / '.claude' / 'projects' / 'plan'
     _write_jsonl(
-        projects_root / f"{session_id}.jsonl",
+        projects_root / f'{session_id}.jsonl',
         [
-            _main_context_entry("2026-03-27T10:01:00+00:00", input_tokens=1, output_tokens=1),
+            _main_context_entry('2026-03-27T10:01:00+00:00', input_tokens=1, output_tokens=1),
             # Work, not exploration — the sub-split has nothing to cut.
             _tool_use_entry_with_input(
-                "2026-03-27T10:02:00+00:00",
-                [("toolu_w", "Write", {"file_path": "a/b.py", "content": "x"})],
+                '2026-03-27T10:02:00+00:00',
+                [('toolu_w', 'Write', {'file_path': 'a/b.py', 'content': 'x'})],
             ),
-            _tool_result_entry("2026-03-27T10:03:00+00:00", "toolu_w", "ok"),
+            _tool_result_entry('2026-03-27T10:03:00+00:00', 'toolu_w', 'ok'),
         ],
     )
 
-
-    output_file = tmp_path / "normalized.json"
+    output_file = tmp_path / 'normalized.json'
     assert (
-        _parse(ClaudeRuntime().metrics_normalized_tokens(session_id, _WINDOWS, str(output_file)))[
-            "status"
-        ]
-        == "success"
+        _parse(ClaudeRuntime().metrics_normalized_tokens(session_id, _WINDOWS, str(output_file)))['status'] == 'success'
     )
 
-    five = json.loads(output_file.read_text(encoding="utf-8"))["5-execute"]
-    assert five["work_result_bytes"] == 2
-    assert five["exploration_result_bytes"] == 0
+    five = json.loads(output_file.read_text(encoding='utf-8'))['5-execute']
+    assert five['work_result_bytes'] == 2
+    assert five['exploration_result_bytes'] == 0
     assert _expected_subsource_keys() <= set(five)
     assert {five[key] for key in _expected_subsource_keys()} == {0}
 
@@ -1019,8 +958,8 @@ def test_subsource_keys_are_not_members_of_the_exploration_counter_family():
     assert not (subsource_keys & _EXPECTED_COUNTER_KEYS), subsource_keys & _EXPECTED_COUNTER_KEYS
     assert len(_EXPECTED_COUNTER_KEYS) == 10
     for key in subsource_keys:
-        assert key.endswith("_bytes")
-        assert not key.endswith("_result_bytes"), key
+        assert key.endswith('_bytes')
+        assert not key.endswith('_result_bytes'), key
     # The contract really does publish all three, so this is not vacuous.
     assert subsource_keys <= _contract_bucket_keys()
 
@@ -1032,43 +971,40 @@ def test_subagent_transcript_subsources_fold_into_the_parent_phase(tmp_path, hom
     ``exploration_result_bytes`` would grow while the three sub-sources did not —
     silently breaking the invariant exactly where most exploration happens.
     """
-    session_id = "22222222-2222-2222-2222-222222222225"
-    projects_root = tmp_path / "home" / ".claude" / "projects" / "plan"
+    session_id = '22222222-2222-2222-2222-222222222225'
+    projects_root = tmp_path / 'home' / '.claude' / 'projects' / 'plan'
     _write_jsonl(
-        projects_root / f"{session_id}.jsonl",
-        [_main_context_entry("2026-03-27T10:10:00+00:00", input_tokens=10, output_tokens=2)],
+        projects_root / f'{session_id}.jsonl',
+        [_main_context_entry('2026-03-27T10:10:00+00:00', input_tokens=10, output_tokens=2)],
     )
-    sub_dir = projects_root / session_id / "subagents"
+    sub_dir = projects_root / session_id / 'subagents'
     sub_dir.mkdir(parents=True, exist_ok=True)
     _write_jsonl(
-        sub_dir / "agent-001.jsonl",
+        sub_dir / 'agent-001.jsonl',
         [
             _tool_use_entry_with_input(
-                "2026-03-27T10:12:00+00:00",
+                '2026-03-27T10:12:00+00:00',
                 [
-                    ("toolu_s", "Read", {"file_path": "src/mod.py"}),
-                    ("toolu_d", "Read", {"file_path": "doc/guide.adoc"}),
+                    ('toolu_s', 'Read', {'file_path': 'src/mod.py'}),
+                    ('toolu_d', 'Read', {'file_path': 'doc/guide.adoc'}),
                 ],
             ),
-            _tool_result_entry("2026-03-27T10:12:30+00:00", "toolu_s", "s" * 80),
-            _tool_result_entry("2026-03-27T10:12:40+00:00", "toolu_d", "d" * 20),
+            _tool_result_entry('2026-03-27T10:12:30+00:00', 'toolu_s', 's' * 80),
+            _tool_result_entry('2026-03-27T10:12:40+00:00', 'toolu_d', 'd' * 20),
         ],
     )
 
+    output_file = tmp_path / 'normalized.json'
+    result = _parse(ClaudeRuntime().metrics_normalized_tokens(session_id, _WINDOWS, str(output_file)))
+    assert result['status'] == 'success'
+    assert int(result['subagent_transcripts_walked']) == 1
 
-    output_file = tmp_path / "normalized.json"
-    result = _parse(
-        ClaudeRuntime().metrics_normalized_tokens(session_id, _WINDOWS, str(output_file))
-    )
-    assert result["status"] == "success"
-    assert int(result["subagent_transcripts_walked"]) == 1
-
-    five = json.loads(output_file.read_text(encoding="utf-8"))["5-execute"]
-    assert five["exploration_result_bytes"] == 100
-    assert five["exploration_index_answerable_bytes"] == 80
-    assert five["exploration_doc_residency_bytes"] == 20
+    five = json.loads(output_file.read_text(encoding='utf-8'))['5-execute']
+    assert five['exploration_result_bytes'] == 100
+    assert five['exploration_index_answerable_bytes'] == 80
+    assert five['exploration_doc_residency_bytes'] == 20
     subsources = {key: five[key] for key in _expected_subsource_keys()}
-    assert sum(subsources.values()) == five["exploration_result_bytes"]
+    assert sum(subsources.values()) == five['exploration_result_bytes']
 
 
 # =============================================================================
@@ -1079,30 +1015,28 @@ def test_subagent_transcript_subsources_fold_into_the_parent_phase(tmp_path, hom
 def test_router_dispatches_normalized_tokens(tmp_path, monkeypatch, home_at_tmp):
     """The router routes ``metrics normalized-tokens`` to the Claude runtime op."""
     # marshal.json selecting the claude target.
-    marshal_dir = tmp_path / ".plan"
+    marshal_dir = tmp_path / '.plan'
     marshal_dir.mkdir(parents=True, exist_ok=True)
-    (marshal_dir / "marshal.json").write_text(
-        json.dumps({"runtime": {"target": "claude"}}), encoding="utf-8"
-    )
+    (marshal_dir / 'marshal.json').write_text(json.dumps({'runtime': {'target': 'claude'}}), encoding='utf-8')
 
-    windows_file = tmp_path / "windows.json"
-    windows_file.write_text(json.dumps([list(w) for w in _WINDOWS]), encoding="utf-8")
-    output_file = tmp_path / "out.json"
+    windows_file = tmp_path / 'windows.json'
+    windows_file.write_text(json.dumps([list(w) for w in _WINDOWS]), encoding='utf-8')
+    output_file = tmp_path / 'out.json'
 
     monkeypatch.chdir(tmp_path)
     # No transcript exists for this session → the dispatched op returns a no-op,
     # which proves the router reached the runtime method with parsed arguments.
-    (tmp_path / "home" / ".claude" / "projects").mkdir(parents=True, exist_ok=True)
+    (tmp_path / 'home' / '.claude' / 'projects').mkdir(parents=True, exist_ok=True)
 
     rc = platform_runtime.main(
         [
-            "metrics",
-            "normalized-tokens",
-            "--session-id",
-            "22222222-2222-2222-2222-222222222277",
-            "--windows-file",
+            'metrics',
+            'normalized-tokens',
+            '--session-id',
+            '22222222-2222-2222-2222-222222222277',
+            '--windows-file',
             str(windows_file),
-            "--output-file",
+            '--output-file',
             str(output_file),
         ]
     )
@@ -1111,27 +1045,25 @@ def test_router_dispatches_normalized_tokens(tmp_path, monkeypatch, home_at_tmp)
 
 def test_router_normalized_tokens_invalid_windows_file(tmp_path, monkeypatch, capsys):
     """A missing/malformed --windows-file yields an invalid_argument error TOON."""
-    marshal_dir = tmp_path / ".plan"
+    marshal_dir = tmp_path / '.plan'
     marshal_dir.mkdir(parents=True, exist_ok=True)
-    (marshal_dir / "marshal.json").write_text(
-        json.dumps({"runtime": {"target": "claude"}}), encoding="utf-8"
-    )
+    (marshal_dir / 'marshal.json').write_text(json.dumps({'runtime': {'target': 'claude'}}), encoding='utf-8')
 
     monkeypatch.chdir(tmp_path)
     rc = platform_runtime.main(
         [
-            "metrics",
-            "normalized-tokens",
-            "--session-id",
-            "22222222-2222-2222-2222-222222222266",
-            "--windows-file",
-            str(tmp_path / "does-not-exist.json"),
-            "--output-file",
-            str(tmp_path / "out.json"),
+            'metrics',
+            'normalized-tokens',
+            '--session-id',
+            '22222222-2222-2222-2222-222222222266',
+            '--windows-file',
+            str(tmp_path / 'does-not-exist.json'),
+            '--output-file',
+            str(tmp_path / 'out.json'),
         ]
     )
     assert rc == 0
     out = capsys.readouterr().out
     parsed = parse_toon(out)
-    assert parsed["status"] == "error"
-    assert parsed["error"] == "invalid_argument"
+    assert parsed['status'] == 'error'
+    assert parsed['error'] == 'invalid_argument'

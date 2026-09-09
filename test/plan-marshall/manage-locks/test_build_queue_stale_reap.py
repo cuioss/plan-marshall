@@ -9,7 +9,6 @@ Scope: reaping a stale active entry on the next acquire or release, the
 grows with a long hold between its floor and its ceiling.
 """
 
-
 from __future__ import annotations
 
 from argparse import Namespace
@@ -116,9 +115,7 @@ class TestStaleReap:
         content = _read_lock_log()
         assert 'reaped-stale' not in content
 
-    def test_entry_without_active_since_is_not_reaped_on_first_contact(
-        self, isolated_base: dict
-    ) -> None:
+    def test_entry_without_active_since_is_not_reaped_on_first_contact(self, isolated_base: dict) -> None:
         """An active entry written before D5 shipped (NO active_since key) is
         treated as `now` and is therefore never reaped on first contact."""
         base = isolated_base['base']
@@ -140,9 +137,7 @@ class TestStaleReap:
         assert legacy_id in active_ids
         assert 'reaped-stale' not in _read_lock_log()
 
-    def test_reaped_slot_fifo_promotes_waiter_with_fresh_active_since(
-        self, isolated_base: dict
-    ) -> None:
+    def test_reaped_slot_fifo_promotes_waiter_with_fresh_active_since(self, isolated_base: dict) -> None:
         """When a stale entry is reaped and a waiter exists, the waiter is
         FIFO-promoted into the freed slot and gets a fresh active_since."""
         import time

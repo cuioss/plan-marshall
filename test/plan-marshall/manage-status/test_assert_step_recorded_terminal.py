@@ -11,7 +11,6 @@ Its sections, in order:
 * Step not recorded -> not recorded / error under --require-terminal
 """
 
-
 import pytest
 from _assert_step_recorded_fixtures import (
     _assert_args,
@@ -122,6 +121,7 @@ def test_non_terminal_with_require_terminal_returns_error(plan_context):
 # stale legacy (``default:``-prefixed) key inserted earlier in the dict.
 # =============================================================================
 
+
 def test_non_terminal_near_miss_does_not_escalate_to_mismatched_key(plan_context):
     """A near-miss orphan whose outcome is NON-terminal must NOT trigger the
     mismatched-key branch — only a terminal orphan record counts as a near-miss.
@@ -134,9 +134,7 @@ def test_non_terminal_near_miss_does_not_escalate_to_mismatched_key(plan_context
     }
     write_status(plan_id, status)
 
-    result = cmd_assert_step_recorded(
-        _assert_args(plan_id, '6-finalize', 'plan-retrospective', require_terminal=True)
-    )
+    result = cmd_assert_step_recorded(_assert_args(plan_id, '6-finalize', 'plan-retrospective', require_terminal=True))
 
     assert result['status'] == 'error'
     assert result['error'] == 'step_record_missing'
@@ -148,6 +146,7 @@ def test_non_terminal_near_miss_does_not_escalate_to_mismatched_key(plan_context
 # =============================================================================
 # Step recorded but non-terminal value -> not recorded
 # =============================================================================
+
 
 def test_bare_string_legacy_entry_not_recorded(plan_context):
     """A legacy bare-string entry is not a dict, so it does NOT count as recorded."""
@@ -170,15 +169,14 @@ def test_bare_string_legacy_entry_not_recorded(plan_context):
 # variant spelling (shared canonicalize_step_key on both write and read).
 # =============================================================================
 
+
 def test_bare_record_matches_default_prefixed_query(plan_context):
     """Record via ``push`` then assert via ``default:push`` → recorded (no mismatch)."""
     plan_id = 'assert-canon-bare-to-default'
     _make_plan(plan_id)
     _seed_step(plan_id, '6-finalize', 'push', 'done')
 
-    result = cmd_assert_step_recorded(
-        _assert_args(plan_id, '6-finalize', 'default:push', require_terminal=True)
-    )
+    result = cmd_assert_step_recorded(_assert_args(plan_id, '6-finalize', 'default:push', require_terminal=True))
 
     assert result['status'] == 'success'
     assert result['recorded'] is True
