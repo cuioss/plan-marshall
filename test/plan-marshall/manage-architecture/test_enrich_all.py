@@ -16,7 +16,9 @@ from _arch_fixtures import setup_test_project
 
 from conftest import PLAN_DIR_NAME, PROJECT_ROOT, load_script_module
 
-_architecture_core = load_script_module('plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core')
+_architecture_core = load_script_module(
+    'plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core'
+)
 _cmd_enrich = load_script_module('plan-marshall', 'manage-architecture', '_cmd_enrich.py', '_cmd_enrich')
 _plan_logging = load_script_module('plan-marshall', 'manage-logging', 'plan_logging.py', 'plan_logging')
 
@@ -395,7 +397,7 @@ def test_enrich_all_raising_extension_does_not_pollute_production_global_log(mon
 
     # Regression assertion: no new leak-marker line in the real production log.
     after = _snapshot_real_global_log_lines()
-    new_lines = after[len(before):] if after[: len(before)] == before else after
+    new_lines = after[len(before) :] if after[: len(before)] == before else after
     leaked = [line for line in new_lines if any(marker in line for marker in _LEAK_MARKERS)]
     assert not leaked, (
         f'Discovery error path leaked {len(leaked)} entry/entries into the production '
@@ -428,7 +430,7 @@ def test_enrich_all_applicable_extension_does_not_pollute_production_global_log(
     assert result['status'] == 'success'
 
     after = _snapshot_real_global_log_lines()
-    new_lines = after[len(before):] if after[: len(before)] == before else after
+    new_lines = after[len(before) :] if after[: len(before)] == before else after
     leaked = [line for line in new_lines if any(marker in line for marker in _LEAK_MARKERS)]
     assert not leaked, (
         f'Applicable-extension path leaked {len(leaked)} entry/entries into the production '
@@ -436,57 +438,52 @@ def test_enrich_all_applicable_extension_does_not_pollute_production_global_log(
     )
 
 
-def _snapshot_real_global_log_sizes() -> dict[str, int]:
-    """Byte-size snapshot of EVERY file under the REAL global log dir.
-
-    Maps each file's path (relative to ``_REAL_GLOBAL_LOG_DIR``) to its byte
-    size. Returns ``{}`` when the directory is absent. This is a stronger
-    invariant than the line-based snapshot above: it catches an APPEND to any
-    log file (size growth) as well as a NEW file appearing, for every log file
-    in the dir — not only the ``script-execution-*.log`` family. The
-    before/after equality of this mapping is the deliverable-2 regression
-    signal: a leak either grows an existing file or creates a new one.
-
-    ``_REAL_GLOBAL_LOG_DIR`` is derived from ``PROJECT_ROOT`` (a real, fixed repo
-    path), NOT from ``get_global_log_dir()`` — so it resolves the genuine
-    production dir regardless of any active ``PLAN_BASE_DIR`` redirect.
-    """
-    if not _REAL_GLOBAL_LOG_DIR.exists():
-        return {}
-    sizes: dict[str, int] = {}
-    for path in sorted(_REAL_GLOBAL_LOG_DIR.rglob('*')):
-        if not path.is_file():
-            continue
-        sizes[str(path.relative_to(_REAL_GLOBAL_LOG_DIR))] = path.stat().st_size
-    return sizes
-
-
 def test_enrich_all_no_global_log_leak(monkeypatch):
-    """Deliverable-2 regression: fake-bundle discovery failures leave the real log byte-for-byte unchanged.
+    """Deliverable-2 regression: fake-bundle discovery failures leak no WARNING into the real log.
 
     Strict ordering, deterministic and order-independent:
 
-    1. Snapshot the REAL production global log dir (file set + per-file byte
-       size) BEFORE any redirect. ``_REAL_GLOBAL_LOG_DIR`` is resolved from
-       ``PROJECT_ROOT`` (independent of ``PLAN_BASE_DIR``), so the snapshot
-       always targets the genuine production dir.
+    1. Snapshot the REAL production global log dir's LINES before any redirect.
+       ``_REAL_GLOBAL_LOG_DIR`` is resolved from ``PROJECT_ROOT`` (independent of
+       ``PLAN_BASE_DIR``), so the snapshot always targets the genuine production dir.
     2. Redirect ``PLAN_BASE_DIR`` to a per-test temp dir, so any surviving
        ``'global'``/``None``-scope fallback write is contained in throwaway
        temp space and cannot touch the real dir even if a leak survives.
     3. Run ``enrich_all`` with ``_FakeExtensionRaises`` — the deliberately
        failing exception path that historically triggered the discovery
        WARNING leak.
-    4. Assert the real ``.plan/local/logs/`` is byte-for-byte unchanged: no new
-       files, no size growth in any log file.
+    4. Assert no line carrying a ``_LEAK_MARKERS`` token was appended.
 
-    Steps 1+4 prove the production log was untouched; the step-2 redirect makes
-    that assertion meaningful (a surviving fallback write lands in temp space)
-    rather than accidentally passing. Against the pre-fix ``'global'`` literal
-    WITHOUT the redirect this would fail (the discovery WARNING grows the real
-    ``script-execution-*.log``).
+    Steps 1+4 prove the production log took no discovery WARNING; the step-2
+    redirect makes that assertion meaningful (a surviving fallback write lands in
+    temp space) rather than accidentally passing. Against the pre-fix ``'global'``
+    literal WITHOUT the redirect this would fail (the discovery WARNING lands in
+    the real ``script-execution-*.log``).
+
+    ⚠ DELIBERATE NARROWING, and what it costs. This previously compared per-file
+    BYTE SIZES across every file in the dir, which is a strictly stronger
+    invariant: it also caught an append to a log file OUTSIDE the
+    ``script-execution-*.log`` family, and one carrying none of the markers. That
+    invariant is unusable here. The dir is a single shared mutable resource and
+    the suite runs under xdist, so any concurrently-executing test that
+    legitimately writes a log line grows these files and the size comparison
+    attributes that unrelated write to THIS test's code path — observed as an
+    intermittent failure under parallel execution. Marker filtering keeps the
+    regression signal exact and makes the guard immune to concurrent writers,
+    which is what the two sibling leak tests above already do. The residual gap
+    is a marker-less leak into a non-``script-execution`` file; nothing emits one
+    today, and no size-based guard can be made parallel-safe on a shared dir.
     """
     # Step 1 — snapshot the REAL production log dir before any redirect.
-    before = _snapshot_real_global_log_sizes()
+    #
+    # LINES, not byte sizes. The suite runs under xdist, and this dir is a single
+    # shared mutable resource: any concurrently-executing test that legitimately
+    # writes a log line grows these files, and a size comparison then attributes
+    # that unrelated write to THIS test's code path. Filtering the before/after
+    # delta to `_LEAK_MARKERS` keeps the regression signal exact while making the
+    # guard immune to concurrent writers -- which is what the two sibling leak
+    # tests in this file already do.
+    before = _snapshot_real_global_log_lines()
 
     raising_ext = _FakeExtensionRaises()
     _patch_extensions(monkeypatch, [{'bundle': 'leak-regress-bundle', 'path': '/fake/path', 'module': raising_ext}])
@@ -503,17 +500,12 @@ def test_enrich_all_no_global_log_leak(monkeypatch):
     assert result['status'] == 'success'
     assert result['errors'], 'Expected the raising extension to surface a captured error'
 
-    # Step 4 — the real production log dir is byte-for-byte unchanged.
-    after = _snapshot_real_global_log_sizes()
+    # Step 4 — no discovery-path WARNING reached the real production log.
+    after = _snapshot_real_global_log_lines()
 
-    new_files = sorted(set(after) - set(before))
-    grown_files = sorted(
-        f'{name}: {before[name]} -> {after[name]} bytes'
-        for name in set(before) & set(after)
-        if after[name] != before[name]
-    )
-    assert not new_files and not grown_files, (
-        f'Discovery error path mutated the production global log {_REAL_GLOBAL_LOG_DIR}:\n'
-        f'  new files: {new_files}\n'
-        f'  grown files: {grown_files}'
+    new_lines = after[len(before) :]
+    leaked = [line for line in new_lines if any(marker in line for marker in _LEAK_MARKERS)]
+    assert not leaked, (
+        f'Discovery error path leaked into the production global log {_REAL_GLOBAL_LOG_DIR}:\n'
+        + '\n'.join(f'  {line}' for line in leaked)
     )
