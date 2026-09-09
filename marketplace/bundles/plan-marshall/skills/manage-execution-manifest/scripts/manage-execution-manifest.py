@@ -1070,7 +1070,9 @@ def _log_ceremony_finalize_selection(
 # emitted by that script:
 #
 # * ``execution_tier == 'orchestrator'`` — the command's adaptive bash
-#   timeout has exceeded the host platform's 600s Bash-tool ceiling, so the
+#   timeout has exceeded the host platform's Bash-tool ceiling (600s on the
+#   Claude target — the ``harness bash-timeout-ceiling`` value, resolved per
+#   active target), so the
 #   command MUST run from orchestrator tier rather than a sub-agent's Bash
 #   call. The composer maps the build verb (``quality-gate`` / ``verify`` /
 #   ``module-tests`` / ``coverage``) to the matching phase-5 step ID,
@@ -1456,7 +1458,9 @@ def _resolve_step_execution_tier(canonical: str, plan_id: str) -> str:
 
     ``per_task`` is the PERMISSIVE default, NOT a safe floor: it is the value
     that would put a long build inline, where the host platform auto-backgrounds
-    it past the Bash ceiling and a leaf cannot reap it. It is acceptable here
+    it past the Bash ceiling (600s on the Claude target — the
+    ``harness bash-timeout-ceiling`` value, resolved per active target) and a
+    leaf cannot reap it. It is acceptable here
     only because the stamp is advisory — the leaf re-resolves the tier live when
     it runs the step and routes on THAT verdict, so a wrong compose-time default
     cannot send a long build inline on its own.

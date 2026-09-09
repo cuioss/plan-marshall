@@ -143,10 +143,10 @@ def detect_plugin_root(target: str | None = None) -> Path | None:
     For ``claude``: searches in ``~/.claude/plugins/cache/`` for
     directories containing a bundle with our marker file.
 
-    For ``opencode``: walks the seven OpenCode discovery roots in
-    priority order, returning the first root that contains at least
-    one ``{PLUGIN_NAME}-*`` skill directory. Mirrors the 7-root
-    resolver in ``tools-script-executor/scripts/generate_executor.py``.
+    For ``opencode``: walks the runtime-resolved project-local skill
+    roots (``get_project_skill_roots`` — the platform-runtime ``layout
+    skill-roots`` op) in priority order, returning the first root that
+    contains at least one ``{PLUGIN_NAME}-*`` skill directory.
 
     When ``target`` is ``None``, auto-detects by reading
     ``runtime.target`` from the nearest ``.plan/marshal.json``.
