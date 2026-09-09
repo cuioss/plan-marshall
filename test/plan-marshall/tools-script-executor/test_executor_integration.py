@@ -103,6 +103,7 @@ class ExecutorTestEnvironment:
             if input_validation_dir.is_dir()
             else '    # (none in test)',
         )
+        executor_content = executor_content.replace('{{CACHE_RECOVERY_ROOTS}}', '# (none in test)')
         executor_content = executor_content.replace('{{EXTRA_SCRIPT_DIRS}}', '')
         executor_content = executor_content.replace('{{PLAN_DIR_NAME}}', '.plan')
         executor_content = executor_content.replace('{{EXECUTOR_TARGET}}', 'claude')

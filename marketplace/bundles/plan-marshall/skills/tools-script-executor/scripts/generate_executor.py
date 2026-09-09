@@ -147,6 +147,7 @@ from marketplace_bundles import (  # noqa: E402, I001
     resolve_bundle_path,
 )
 from marketplace_paths import get_base_path as _shared_get_base_path  # noqa: E402
+from marketplace_paths import get_bundle_cache_roots as _shared_get_bundle_cache_roots  # noqa: E402
 from marketplace_paths import get_project_skill_roots as _shared_get_project_skill_roots  # noqa: E402
 from file_ops import get_base_dir as _get_plan_base_dir  # noqa: E402
 from file_ops import get_tracked_config_dir as _get_tracked_config_dir  # noqa: E402
@@ -710,7 +711,9 @@ def generate_mappings_code(mappings: dict[str, str]) -> str:
 # v3: each SCRIPT_SURFACES node additionally carries ``flag_arity`` (how many
 #     argv tokens a long flag binds as its value), which the executor's pre-spawn
 #     walk needs to tell a flag's VALUE from the next verb.
-_SUPPORTED_TEMPLATE_FORMAT_VERSION = 3
+# v4: adds the CACHE_RECOVERY_ROOTS placeholder (runtime-resolved bundle cache
+#     roots injected per target for the bootstrap's pruned-version self-heal).
+_SUPPORTED_TEMPLATE_FORMAT_VERSION = 4
 
 # Matches the template's ``# TEMPLATE_FORMAT_VERSION: N`` marker comment.
 _TEMPLATE_FORMAT_VERSION_RE = re.compile(r'^#\s*TEMPLATE_FORMAT_VERSION:\s*(\d+)\s*$', re.MULTILINE)
@@ -1263,6 +1266,18 @@ def generate_executor(
         else '    # (none detected)'
     )
 
+    # Cache-recovery roots for the template's pruned-version self-heal, resolved at
+    # generation time through the same runtime op the target-aware resolver family uses.
+    # The executor cannot import the shared resolver before its own bootstrap is done, so
+    # the recovered roots travel with the generated file. A target with no versioned cache
+    # (OpenCode) contributes no root and the recovery honestly finds nothing.
+    recovery_roots = _shared_get_bundle_cache_roots()
+    cache_recovery_lines = (
+        '\n'.join(f"    '{root}'," for root in recovery_roots)
+        if recovery_roots
+        else '    # (no cache roots resolved)'
+    )
+
     # Collect ALL script directories (including subdirectories of skills like script-shared
     # that have no registered scripts but contain importable modules).
     # These are injected as extra PYTHONPATH entries so subprocess-invoked scripts can
@@ -1283,6 +1298,7 @@ def generate_executor(
         content = content.replace('{{SCRIPT_SURFACES}}', surfaces_code)
         content = content.replace('{{LOGGING_DIR}}', logging_dir)
         content = content.replace('{{SHARED_MODULE_DIRS}}', shared_module_lines)
+        content = content.replace('{{CACHE_RECOVERY_ROOTS}}', cache_recovery_lines)
         content = content.replace('{{EXTRA_SCRIPT_DIRS}}', extra_dirs_code)
         content = content.replace('{{PLAN_DIR_NAME}}', PLAN_DIR_NAME)
         content = content.replace('{{TARGET_AWARE_RESOLVER}}', resolver_code)

@@ -278,16 +278,19 @@ def _template_path() -> Path:
     return tse_scripts.parent / 'templates' / 'execute-script.py.template'
 
 
-def _render_executor(pruned_base: Path) -> str:
+def _render_executor(pruned_base: Path, home: Path) -> str:
     """Render the executor template with every bootstrap dir PINNED at a pruned path.
 
     The shared-module and logging bootstrap dirs are pointed at
     ``{pruned_base}/skills/{skill}/scripts`` — directories that do NOT exist,
-    mirroring a GC-pruned embedded MARSHALL_VERSION cache path. Every other
-    substitution token is filled with a minimal valid value so the rendered file
-    is importable and its module-level shared imports (``plan_logging``,
-    ``toon_parser``, ``_ledger_core``, ``worktree_sha``) must resolve exclusively
-    through the template's newest-cache self-heal.
+    mirroring a GC-pruned embedded MARSHALL_VERSION cache path. The cache-recovery
+    roots are injected at the fake home's plugin-cache root — the same
+    generation-time injection the real generator performs, with the same
+    ``HOME`` the executor is invoked under. Every other substitution token is
+    filled with a minimal valid value so the rendered file is importable and its
+    module-level shared imports (``plan_logging``, ``toon_parser``,
+    ``_ledger_core``, ``worktree_sha``) must resolve exclusively through the
+    template's newest-cache self-heal.
     """
     template = _template_path().read_text(encoding='utf-8')
 
@@ -300,6 +303,8 @@ def _render_executor(pruned_base: Path) -> str:
     content = content.replace('{{SCRIPT_SURFACES}}', '')
     content = content.replace('{{LOGGING_DIR}}', pinned(_BOOTSTRAP_LOGGING_SKILL))
     content = content.replace('{{SHARED_MODULE_DIRS}}', shared_pairs)
+    recovery_root = home / '.claude' / 'plugins' / 'cache' / 'plan-marshall'
+    content = content.replace('{{CACHE_RECOVERY_ROOTS}}', f"    '{recovery_root}',")
     content = content.replace('{{EXTRA_SCRIPT_DIRS}}', '')
     content = content.replace('{{PLAN_DIR_NAME}}', '.plan')
     content = content.replace(
@@ -358,8 +363,8 @@ class TestTemplateBootstrapSelfHeal:
         # carries the real shared modules — the exact GC-pruned-pinned-version shape.
         pruned_base = tmp_path / 'pruned-cache'
         executor = tmp_path / 'execute-script.py'
-        executor.write_text(_render_executor(pruned_base), encoding='utf-8')
         home = tmp_path / 'fakehome'
+        executor.write_text(_render_executor(pruned_base, home), encoding='utf-8')
         _stand_up_fake_cache(home, self._ALL_BOOTSTRAP_SKILLS)
 
         # Act
@@ -377,8 +382,8 @@ class TestTemplateBootstrapSelfHeal:
         # genuinely breaks the imports, so the positive test above exercises the heal.
         pruned_base = tmp_path / 'pruned-cache'
         executor = tmp_path / 'execute-script.py'
-        executor.write_text(_render_executor(pruned_base), encoding='utf-8')
         home = tmp_path / 'emptyhome'
+        executor.write_text(_render_executor(pruned_base, home), encoding='utf-8')
         home.mkdir()
 
         # Act

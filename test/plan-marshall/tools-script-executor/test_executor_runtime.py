@@ -113,6 +113,7 @@ def _render_executor(target_path: Path, embedded_script_path: Path) -> Path:
         '{{SHARED_MODULE_DIRS}}',
         f"    ('tools-input-validation', '{INPUT_VALIDATION_DIR}'),",
     )
+    rendered = rendered.replace('{{CACHE_RECOVERY_ROOTS}}', '# (none in test)')
     rendered = rendered.replace('{{EXTRA_SCRIPT_DIRS}}', '')
     rendered = rendered.replace('{{PLAN_DIR_NAME}}', '.plan')
     rendered = rendered.replace('{{EXECUTOR_TARGET}}', 'claude')
@@ -312,6 +313,7 @@ def _render_executor_for_post_removal(
         '{{SHARED_MODULE_DIRS}}',
         f"    ('tools-input-validation', '{INPUT_VALIDATION_DIR}'),",
     )
+    rendered = rendered.replace('{{CACHE_RECOVERY_ROOTS}}', '# (none in test)')
     rendered = rendered.replace('{{EXTRA_SCRIPT_DIRS}}', '')
     rendered = rendered.replace('{{PLAN_DIR_NAME}}', '.plan')
     rendered = rendered.replace('{{EXECUTOR_TARGET}}', 'claude')
@@ -451,6 +453,7 @@ def _render_executor_with_cwd_walk(target_path: Path, embedded_script_path: Path
         '{{SHARED_MODULE_DIRS}}',
         f"    ('tools-input-validation', '{INPUT_VALIDATION_DIR}'),",
     )
+    rendered = rendered.replace('{{CACHE_RECOVERY_ROOTS}}', '# (none in test)')
     rendered = rendered.replace('{{EXTRA_SCRIPT_DIRS}}', '')
     rendered = rendered.replace('{{PLAN_DIR_NAME}}', '.plan')
     rendered = rendered.replace('{{EXECUTOR_TARGET}}', 'claude')
@@ -634,6 +637,7 @@ def _render_build_executor(target_path: Path, embedded_script_path: Path) -> Pat
         '{{SHARED_MODULE_DIRS}}',
         f"    ('tools-input-validation', '{INPUT_VALIDATION_DIR}'),",
     )
+    rendered = rendered.replace('{{CACHE_RECOVERY_ROOTS}}', '# (none in test)')
     rendered = rendered.replace('{{EXTRA_SCRIPT_DIRS}}', '')
     rendered = rendered.replace('{{PLAN_DIR_NAME}}', '.plan')
     rendered = rendered.replace('{{EXECUTOR_TARGET}}', 'claude')

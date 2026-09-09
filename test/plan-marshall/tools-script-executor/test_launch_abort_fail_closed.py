@@ -143,6 +143,7 @@ def _render_code(mappings: dict[str, Path]) -> str:
     code = code.replace('{{SCRIPT_SURFACES}}', '').replace('{{SUBCOMMAND_MAPPINGS}}', '')
     code = code.replace('{{LOGGING_DIR}}', str(_LOGGING_DIR))
     code = code.replace('{{SHARED_MODULE_DIRS}}', '# (none in test)')
+    code = code.replace('{{CACHE_RECOVERY_ROOTS}}', '# (none in test)')
     code = code.replace('{{EXTRA_SCRIPT_DIRS}}', '')
     code = code.replace('{{PLAN_DIR_NAME}}', '.plan')
     code = code.replace('{{EXECUTOR_TARGET}}', 'claude')

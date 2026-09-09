@@ -244,6 +244,42 @@ def _invoke_layout_op(target: str, method_name: str = 'layout_skill_roots') -> t
     return None
 
 
+def _invoke_settings_op(scope: str) -> Path | None:
+    """Resolve the settings BASE directory for ``scope`` via the runtime's op.
+
+    Calls the active target's ``permission_settings_path(scope)`` — the
+    platform-runtime permission-settings op — and returns the parent of the
+    resolved settings FILE: the settings-base directory the ``global`` and
+    ``project`` scopes of :func:`get_base_path` name. On Claude that is
+    ``~/.claude`` and ``./.claude`` respectively; a target without permission
+    settings files (OpenCode) declines with ``RuntimeError``, which lands here
+    as ``None``. Returns ``None`` on any resolution failure so the caller can
+    fall back to the Claude-default anchor — the same defensive posture as
+    :func:`_invoke_layout_op`. Imports the runtime scripts in-process (no
+    executor dependency).
+    """
+    skills_root = _find_skills_root()
+    if skills_root is None:
+        return None
+
+    for lib in ('ref-toon-format', 'platform-runtime'):
+        lib_dir = str(skills_root / lib / 'scripts')
+        if lib_dir not in sys.path:
+            sys.path.append(lib_dir)
+
+    try:
+        from platform_runtime import _make_runtime
+
+        # The same shared-resolution rule as _invoke_layout_op: an unregistered
+        # target resolves the default runtime, and the default carries the same
+        # settings base the router's own fallback would.
+        runtime: Any = _make_runtime(_read_runtime_target()) or _make_runtime(_default_runtime_target())
+        resolved = runtime.permission_settings_path(scope)
+    except Exception:
+        return None
+    return Path(resolved).parent
+
+
 def get_project_skill_roots() -> tuple[str, ...]:
     """Return the project-local-skill discovery root(s) for the active target.
 
@@ -741,8 +777,12 @@ def get_base_path(scope: str = 'auto', marketplace_root: Path | None = None) -> 
             - 'marketplace': force marketplace context
             - 'plugin-cache': force plugin cache context
             - 'cache-first': tries plugin-cache first, then marketplace (executor default)
-            - 'global': ~/.claude
-            - 'project': ./.claude
+            - 'global': the settings base for the user-global scope, resolved
+              through the runtime's permission-settings op (``~/.claude`` on
+              Claude; the Claude-default anchor when no runtime resolves)
+            - 'project': the settings base for the project-local scope, resolved
+              through the runtime's permission-settings op (``./.claude`` on
+              Claude; the Claude-default anchor when no runtime resolves)
         marketplace_root: Optional explicit override forwarded to
             :func:`find_marketplace_path`. Honored for the marketplace-aware
             scopes (``auto``, ``marketplace``, ``cache-first``); ignored for
@@ -831,9 +871,15 @@ def get_base_path(scope: str = 'auto', marketplace_root: Path | None = None) -> 
         )
 
     if scope == 'global':
+        base = _invoke_settings_op('global')
+        if base is not None:
+            return base
         return Path.home() / CLAUDE_DIR
 
     if scope == 'project':
+        base = _invoke_settings_op('project')
+        if base is not None:
+            return base
         return Path.cwd() / CLAUDE_DIR
 
     raise ValueError(f'Invalid scope: {scope}')
