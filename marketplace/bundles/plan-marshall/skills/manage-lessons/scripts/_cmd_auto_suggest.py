@@ -25,6 +25,7 @@ from typing import Any
 from _findings_core import add_finding
 from _plan_parsing import parse_document_sections
 from _status_core import read_status
+from command_forms import PLAN_MARSHALL_COMMAND
 from file_ops import get_plan_dir
 from recipe_scoring import (
     MIN_CONFIDENCE,
@@ -99,7 +100,7 @@ def _emit_finding(
         f'Recipe {key!r} matches the plan narrative with confidence '
         f'{confidence}. Matched keywords: '
         f'{breakdown.get("matched_keywords") or "(domain/scope only)"}. '
-        f'Run via: `/plan-marshall action=recipe --recipe {key}`, or set '
+        f'Run via: `{PLAN_MARSHALL_COMMAND} action=recipe --recipe {key}`, or set '
         f'``status.metadata.recipe_key={key}`` to auto-route at phase-3-outline.'
     )
     result = add_finding(

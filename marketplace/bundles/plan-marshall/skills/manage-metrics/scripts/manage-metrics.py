@@ -394,8 +394,8 @@ _FOUR_FIELD_USAGE_LABELS = (
 _FOUR_FIELD_USAGE_FIELDS = tuple(field for field, _label in _FOUR_FIELD_USAGE_LABELS)
 
 _FOUR_FIELD_GROUP_HEADING = (
-    "- **Main-context-window usage**: raw `message.usage` summed over this phase's parent "
-    'turns and the subagent transcripts attributed to the same window. Every bullet below '
+    "- **Main-context-window usage**: the runtime's normalized context-load view over this phase's "
+    'parent turns and the subagent transcripts attributed to the same window. Every bullet below '
     'measures that one population'
 )
 
@@ -403,7 +403,7 @@ _FOUR_FIELD_GROUP_HEADING = (
 # total names its own population, so the bullet stays legible without reading
 # the breakdown annotation first.
 _POPULATION_BULLET_NOTE = {
-    POPULATION_DISPATCHED: ("dispatched-subagent population — summed from the dispatched leaves' `<usage>` envelopes"),
+    POPULATION_DISPATCHED: ("dispatched-subagent population — summed from the dispatched leaves' reported totals"),
     POPULATION_INLINE: (
         'main-context-window population — this phase dispatched nothing, so enrich folded its '
         'inline main-context spend into this field; the same figure is recorded under its own '
@@ -2648,10 +2648,9 @@ def cmd_generate(args: argparse.Namespace) -> dict:
             # measure, not a reason to bury it.
             lines.append(
                 f'- **Billing-weighted total**: {int(billing):,} '
-                '(derived-cost population — input + output + 0.1 × cache_read + '
-                '1.25 × cache_creation. What this phase cost to buy, over the '
-                'main-context window; a different question from the dispatched '
-                'work the Tokens column measures, so the two are never summed)'
+                "(derived-cost population — the runtime's billing-weighted figure over the "
+                'main-context window. What this phase cost to buy, a different question from '
+                'the dispatched work the Tokens column measures, so the two are never summed)'
             )
 
         # Read-cost decomposition (plan 030 D3): the two levers inside the opaque

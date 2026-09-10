@@ -297,11 +297,10 @@ class TestGenerateRendersFourFieldUsage:
         assert '- **Cache read input tokens**: 10,000' in md
         assert '- **Cache creation input tokens**: 400' in md
         assert '- **Billing-weighted total**: 2,700' in md
-        # The bullet DEFINES the measure — names its population and its weights —
-        # rather than apologising for rendering it.
+        # The bullet DEFINES the measure — names its population and delegates
+        # the derivation to the runtime — rather than apologising for rendering it.
         assert 'derived-cost population' in md
-        assert '0.1 × cache_read' in md
-        assert '1.25 × cache_creation' in md
+        assert "the runtime's billing-weighted figure over the main-context window" in md
         # And the figure now also has a first-class column of its own.
         assert 'Billing (cost)' in md
 

@@ -224,8 +224,7 @@ def test_billing_bullet_states_the_measure_rather_than_apologising(plan_context)
 
     bullet = next(line for line in report.splitlines() if line.startswith('- **Billing-weighted total**:'))
     assert 'derived-cost population' in bullet
-    assert '0.1 × cache_read' in bullet
-    assert '1.25 × cache_creation' in bullet
+    assert "the runtime's billing-weighted figure over the main-context window" in bullet
     assert 'never summed' in bullet
     # The retired disclaimer form is gone.
     assert 'not a work-comparable measure' not in report
