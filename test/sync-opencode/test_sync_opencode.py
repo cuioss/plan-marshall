@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001
-"""Unit tests for the project-local sync_opencode.py deploy engine.
+"""Unit tests for the project-level sync_opencode.py deploy engine.
 
 Covers the singular→plural path mapping, --dry-run (no filesystem
 effect, actions listed), --bundles subsetting, stale-managed-entry
@@ -11,10 +11,11 @@ prefix-ambiguous bundle derivation (longest match resolves exactly one
 bundle per entry) — all against temp directories, no live OpenCode
 install.
 
-The script under test lives at
-``.claude/skills/sync-opencode/scripts/sync_opencode.py`` (project-local),
-not in any marketplace bundle — sync-opencode is meta-project-only
-tooling that does not ship to consumers of plan-marshall.
+The script under test lives at ``.opencode/scripts/sync_opencode.py``
+(project-level, deployed as the ``/sync-opencode`` OpenCode command from
+``.opencode/commands/``), not in any marketplace bundle — sync-opencode
+is meta-project-only tooling that does not ship to consumers of
+plan-marshall.
 """
 
 from __future__ import annotations
@@ -24,7 +25,7 @@ from pathlib import Path
 from conftest import PROJECT_ROOT, ScriptResult, run_script
 from toon_parser import parse_toon
 
-_SYNC_OP_XPY = PROJECT_ROOT / '.claude' / 'skills' / 'sync-opencode' / 'scripts' / 'sync_opencode.py'
+_SYNC_OP_XPY = PROJECT_ROOT / '.opencode' / 'scripts' / 'sync_opencode.py'
 
 # Singular source components → plural destination components, and the
 # emitter's singular directory layout under the source root.
