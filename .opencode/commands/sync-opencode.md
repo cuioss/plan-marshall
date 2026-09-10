@@ -4,15 +4,10 @@ description: Deploy the generated OpenCode tree into the OpenCode config directo
 
 Deploy the generated OpenCode tree into the OpenCode config directory.
 
-If `target/opencode/` is missing or stale, first regenerate it:
+Regenerate the target tree, then run the deploy engine with the `bash` tool:
 
-```
+```bash
 ./pw generate-opencode
-```
-
-Then run the deploy engine with the `bash` tool:
-
-```
 python3 .opencode/scripts/sync_opencode.py $ARGUMENTS
 ```
 
